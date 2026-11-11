@@ -679,6 +679,19 @@ export async function main(
 		),
 	};
 	let decision: RouteDecision;
+	// A signed local run was verified for this tree, so the jobs it covers are
+	// skipped and only a few short ones are left. They go where a job is known
+	// to start, without reading the queue. A pinned tier is an operator's own
+	// override and still wins.
+	if (mode === "auto" && env.HOBO_CI_ATTESTED === "true") {
+		decision = {
+			tier: "github",
+			runner: DEFAULT_GITHUB_MACHINE_TYPE,
+			reason:
+				"a signed local run covers this tree, so the jobs left do not wait for a fleet",
+		};
+		return report(decision, env);
+	}
 	try {
 		const read = githubReader(
 			env.GITHUB_API_URL ?? "https://api.github.com",
@@ -720,6 +733,13 @@ export async function main(
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
 		};
 	}
+	return report(decision, env);
+}
+
+function report(
+	decision: RouteDecision,
+	env: NodeJS.ProcessEnv,
+): RouteDecision {
 	const line = `runner: ${decision.runner} (${decision.tier}): ${decision.reason}`;
 	console.log(line);
 	if (env.GITHUB_OUTPUT)

@@ -309,6 +309,25 @@ function validateHoboCiWorkflow(
 				"pr-gate must run turbo affected lanes (or production git-range impact filter)",
 		});
 	}
+	// Jobs may be skipped for a signed local run only while the pr-gate still
+	// decides: the route job must verify the signature, and the gate must see
+	// that the route job itself succeeded before it accepts a skipped job.
+	if (/needs\.route\.outputs\.attested/u.test(content)) {
+		if (!content.includes("scripts/ci/verify-attestation.mts")) {
+			violations.push({
+				code: "workflow.pr-gate.attestation-unverified",
+				message:
+					"jobs are skipped for a signed local run, but the route job does not check out scripts/ci/verify-attestation.mts to verify it",
+			});
+		}
+		if (!content.includes("ROUTE_RESULT: ${{ needs.route.result }}")) {
+			violations.push({
+				code: "workflow.pr-gate.attestation-route-result",
+				message:
+					"pr-gate accepts jobs skipped for a signed local run without reading the route job's result",
+			});
+		}
+	}
 	for (const check of REQUIRED_PR_CHECKS) {
 		if (check === "conformance") {
 			if (!/test:contract:consumer/u.test(content)) {

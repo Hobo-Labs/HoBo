@@ -943,3 +943,68 @@ test("unrelated changes do not select the optimizexp drift lane", () => {
 	const { checks } = plan(["packages/core/src/index.ts"]);
 	assert.ok(!checks.some(isOptimizexpLane));
 });
+
+test("a change to anything that guards signed local runs runs those guards", () => {
+	const guardTests = [
+		"scripts/test/attestation.test.ts",
+		"scripts/test/verify-attestation.test.ts",
+		"scripts/test/attested-jobs.test.ts",
+		"scripts/test/merge-group-gate.test.ts",
+		"scripts/test/lint-actions-runner.test.ts",
+	];
+	const runsGuards = (checks: Check[]) => {
+		const tests = checks.find(
+			(check) =>
+				check.command === "node" &&
+				check.args.includes("scripts/test/attestation.test.ts"),
+		);
+		return {
+			tests: guardTests.every((file) => tests?.args.includes(file) === true),
+			nodeTest: tests?.args.slice(0, 3).join(" ") === "--import tsx --test",
+			actionsLint: checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run actions:lint",
+			),
+		};
+	};
+	// Each of these alone, with nothing else changed: a key-only change, a
+	// workflow-only change, the verifier, the description, the lint.
+	for (const file of [
+		".github/workflows/hobo-ci.yml",
+		".github/workflows/release-hobo.yml",
+		".github/actions/route-runner/action.yml",
+		".github/actions/route-runner/anything-new.sh",
+		"scripts/ci/attested-jobs.json",
+		"scripts/ci/attestation.mts",
+		"scripts/ci/verify-attestation.mts",
+		"scripts/lint-actions.ts",
+		".hobo/ci-attestors.json",
+		"scripts/ci/local-attest.mts",
+		"scripts/test/merge-group-gate.test.ts",
+	]) {
+		for (const overrides of [
+			{},
+			{ staged: true },
+			{ workspaceTestsCoveredExternally: true },
+		])
+			assert.deepEqual(
+				runsGuards(plan([file], overrides).checks),
+				{ tests: true, nodeTest: true, actionsLint: true },
+				`${file} ${JSON.stringify(overrides)}`,
+			);
+	}
+	// And not for a change that touches none of it.
+	for (const file of [
+		"docs/design/index.md",
+		"packages/core/src/index.ts",
+		".github/workflows/pricing-ci.yml",
+		".hobo/ci.json",
+		"scripts/ci/affected-lanes.mts",
+	])
+		assert.deepEqual(
+			runsGuards(plan([file]).checks),
+			{ tests: false, nodeTest: false, actionsLint: false },
+			file,
+		);
+});
