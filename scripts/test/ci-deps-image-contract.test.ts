@@ -333,7 +333,10 @@ describe("CI deps workflow contract", () => {
 		assert.ok(start > -1);
 		assert.ok(end > start);
 		includes(job, "name: CI deps layer (pnpm)");
-		includes(job, "needs: [route, ci-runner-image]");
+		// Not routed: it builds in the box's Docker context, which a
+		// GitHub-hosted machine does not have.
+		includes(job, "needs: [ci-runner-image]");
+		assert.ok(!job.includes("needs.route.outputs.runner"));
 		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");

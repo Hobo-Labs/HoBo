@@ -320,6 +320,10 @@ gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
 in its Route runners log was sent there for one of those reasons, and the same
 line says which.
 
+One job in `hobo-ci.yml` is never routed: **CI deps layer (pnpm)** always asks
+for the fleet, because it builds the deps image in the box's own Docker
+context. No gate waits for it.
+
 On the fleet, the deps layer is linked only into package directories the
 checkout still has. A layer built before a package was removed from the tree
 used to recreate that package's directory with only `node_modules` in it, and
