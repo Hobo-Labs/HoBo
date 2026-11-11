@@ -998,8 +998,7 @@ try {
 						void worker.prewarm(repository).catch((error) =>
 							log("hobo_ci_main_fabric_prewarm_failed", {
 								repository,
-								message:
-									error instanceof Error ? error.message : "unknown",
+								message: error instanceof Error ? error.message : "unknown",
 							}),
 						);
 					},

@@ -43,7 +43,7 @@ export type MergeQueuePositionSource = () => MergeQueuePositions | undefined;
 export async function fetchMergeQueuePositions(
 	github: GithubTransport,
 	installationId: number,
-	owner: string,
+	_owner: string,
 	repo: string,
 	branch: string,
 ): Promise<MergeQueuePositions | undefined> {
