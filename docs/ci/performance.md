@@ -114,7 +114,16 @@ unindexed new finding files as notices.
 - [Finding 101: shared box memory stall on shard 1](./findings/0101-shared-box-memory-stall-on-shard-1.md)
 - [Finding 102: dead JIT runner shard two checkout](./findings/0102-dead-jit-runner-shard-two-checkout.md)
 - [Finding 103: offline peer JIT shard two](./findings/0103-offline-peer-jit-shard-two.md)
+- [Finding 104: unlaunched reservation custody](./findings/0104-unlaunched-reservation-custody.md)
+- [Finding 105: per-job workdir inodes](./findings/0105-per-job-workdir-inodes.md)
+- [Finding 106: unlaunched release churn](./findings/0106-unlaunched-release-churn.md)
+- [Finding 107: plan shard fleet pickup](./findings/0107-plan-shard-fleet-pickup.md)
+- [Finding 108: drain stale reservation](./findings/0108-drain-stale-reservation.md)
+- [Finding 109: pr diff base stale event sha](./findings/0109-pr-diff-base-stale-event-sha.md)
 - [Finding 110: a failed Pages deploy was never retried](./findings/0110-a-failed-pages-deploy-was-never-retried.md)
+- [Finding 111: trunk headroom fleet defer](./findings/0111-trunk-headroom-fleet-defer.md)
+- [Finding 112: inbox drain stalls poll tick](./findings/0112-inbox-drain-stalls-poll-tick.md)
+- [Finding 113: main CI starved by cancel-in-progress](./findings/0113-main-ci-starved-by-cancel-in-progress.md)
 <!-- findings-index:end -->
 
 ## Data

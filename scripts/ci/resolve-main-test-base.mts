@@ -51,28 +51,39 @@ export async function fetchLastGreenMainSha(
 ): Promise<string | undefined> {
 	const [owner, repo] = options.repository.split("/");
 	if (!owner || !repo) return undefined;
-	const url = `https://api.github.com/repos/${owner}/${repo}/actions/runs?branch=main&event=push&status=completed&per_page=30`;
-	const response = await options.fetch(url, {
-		headers: {
-			Accept: "application/vnd.github+json",
-			Authorization: `Bearer ${options.token}`,
-			"X-GitHub-Api-Version": "2022-11-28",
-		},
-	});
-	if (!response.ok) return undefined;
-	// SAFETY: GitHub REST `workflow_runs` entries expose the fields `WorkflowRunRow` uses; extras are ignored.
-	const body = (await response.json()) as { workflow_runs?: WorkflowRunRow[] };
-	for (const run of body.workflow_runs ?? []) {
-		if (run.conclusion !== "success") continue;
-		if (!run.path.endsWith(`/${options.workflowBasename}`)) continue;
-		const sha = run.head_sha.trim();
-		if (!/^[0-9a-f]{40}$/iu.test(sha)) continue;
-		if (sha === options.head) continue;
-		if (!commitExists(sha)) continue;
-		if (!isAncestor(sha, options.head)) continue;
-		return sha;
+	// Runs of this one workflow: the repository-wide list mixes in every other
+	// workflow's push runs, which could crowd the last green one out of the page.
+	const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(options.workflowBasename)}/runs?branch=main&event=push&status=completed&per_page=30`;
+	// Every caller falls back without a last green commit (push parent, the push's
+	// own range), so a slow, refused or unreadable answer is "none", never a throw.
+	try {
+		const response = await options.fetch(url, {
+			signal: AbortSignal.timeout(15_000),
+			headers: {
+				Accept: "application/vnd.github+json",
+				Authorization: `Bearer ${options.token}`,
+				"X-GitHub-Api-Version": "2022-11-28",
+			},
+		});
+		if (!response.ok) return undefined;
+		// SAFETY: GitHub REST `workflow_runs` entries expose the fields `WorkflowRunRow` uses; extras are ignored.
+		const body = (await response.json()) as {
+			workflow_runs?: WorkflowRunRow[];
+		};
+		for (const run of body.workflow_runs ?? []) {
+			if (run.conclusion !== "success") continue;
+			if (!run.path.endsWith(`/${options.workflowBasename}`)) continue;
+			const sha = run.head_sha.trim();
+			if (!/^[0-9a-f]{40}$/iu.test(sha)) continue;
+			if (sha === options.head) continue;
+			if (!commitExists(sha)) continue;
+			if (!isAncestor(sha, options.head)) continue;
+			return sha;
+		}
+		return undefined;
+	} catch {
+		return undefined;
 	}
-	return undefined;
 }
 
 export function resolveMainTestBase(input: {
