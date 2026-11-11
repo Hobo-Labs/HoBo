@@ -13,8 +13,9 @@
 - [`03-data-plane.md`](./03-data-plane.md) — Data plane, AI generation, agents & operators
 - [`07-portability-extensibility.md`](./07-portability-extensibility.md) — Portability, extensibility, deployment topology & scope
 
-## Standalone placement ADRs
+## Standalone ADRs
 - [`yard-first-placement.md`](./yard-first-placement.md) — Yard owns provider selection; Camp provider-neutral until attached; Camps movable via Trails (implemented)
+- [`hosted-relay-stateless.md`](./hosted-relay-stateless.md) — ADR-0179: the hosted CI relay keeps no durable state (config service, cache with TTL/CAS, Vercel Queues, GitHub as system of record)
 
 ## Index
 
@@ -185,3 +186,4 @@
 | 0176 | Provider pricing uses deterministic fail-closed decimal quotes in `@hobo/pricing`; dispatcher v1 remains untouched | [provider-pricing](provider-pricing.md#adr-0176) |
 | 0177 | Data engines are one package each over a common `@hobo/data-core` contract (SQLite, PostgreSQL, MongoDB); continuous data migration is a closed pattern catalog, selected deterministically, proven by one conformance kit, and gated by a custody-path policy verdict re-evaluated before every phase | [data-plane](03-data-plane.md#adr-0177) |
 | 0178 | A provider's auth flows, capability mappings, and billing models are one serialized manifest (`@hobo/provider-manifest`) deserialized into the existing pricing-catalog and capability-manifest types | [provider-manifest](provider-manifest.md#adr-0178) |
+| 0179 | The hosted CI relay keeps no durable state: config and secrets in a separate service (Infisical, Vercel OIDC), short-lived job state in a Redis-protocol cache it may lose, Vercel Queues for intake and per-lease steps, GitHub as the system of record; supersedes the relay database, relay database fleet and Neon broker | [hosted-relay-stateless](hosted-relay-stateless.md#adr-0179) |
