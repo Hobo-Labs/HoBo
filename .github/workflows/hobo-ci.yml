@@ -135,16 +135,24 @@ jobs:
           else
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Materialize runner image (host cache or GHCR)
+        id: materialize
+        if: steps.rebuild.outputs.needed == 'true'
+        timeout-minutes: 5
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only
       - uses: ./.github/actions/ci-runner-preflight
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - uses: ./.github/actions/pnpm-store
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - name: Install root deps for shell lint
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
         run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
         id: ci_runner_image_build
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
@@ -166,7 +174,7 @@ jobs:
           if-no-files-found: ignore
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -175,9 +183,9 @@ jobs:
 
   ci-deps-image:
     name: CI deps layer (pnpm)
-    needs: [ci-runner-image]
+    needs: [route]
     if: >-
-      !cancelled() && needs.ci-runner-image.result != 'failure' && (
+      !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
