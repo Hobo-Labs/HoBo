@@ -48,6 +48,9 @@ const TEXT_CONFLICTS = new Set([
 	"CONFLICT (add/add)",
 ]);
 const REGULAR_FILE = new Set(["100644", "100755"]);
+/** Where fetched refs are kept, and where the agent's own commits stay reachable. */
+const FETCHED = "refs/hobo-agent/fetched/";
+const MADE = "refs/hobo-agent/commits/";
 
 function object(value: string): string {
 	if (!OBJECT.test(value)) throw new Error("invalid git object id");
@@ -91,6 +94,8 @@ export function createGitWorkspace(options: {
 		...AGENT_IDENTITY,
 		GIT_TERMINAL_PROMPT: "0",
 		GIT_CONFIG_NOSYSTEM: "1",
+		// A path is a path: `a[1].ts` must not match `a1.ts` as a glob.
+		GIT_LITERAL_PATHSPECS: "1",
 	};
 	function run(
 		args: readonly string[],
@@ -227,7 +232,12 @@ export function createGitWorkspace(options: {
 					!/^refs\/(?:heads|pull)\/[A-Za-z0-9._/-]+$/.test(ref)
 				)
 					throw new Error("refused git ref");
-			await run(["fetch", "--quiet", "--no-tags", remote, ...refs], {
+			// Store what was fetched under refs of the agent's own, so the next
+			// fetch can tell the remote what it already has.
+			const refspecs = refs.map((ref) =>
+				OBJECT.test(ref) ? ref : `+${ref}:${FETCHED}${ref.slice(5)}`,
+			);
+			await run(["fetch", "--quiet", "--no-tags", remote, ...refspecs], {
 				env: await remoteAuth(),
 			});
 		},
@@ -307,15 +317,40 @@ export function createGitWorkspace(options: {
 					);
 				}
 				const tree = await run(["write-tree"], { env });
+				// Dated by the newer parent, not the clock: the same merge always
+				// has the same commit id, so an attempt keyed by commit ids is
+				// recognised on the next pass instead of being made again.
+				const dates = await run([
+					"show",
+					"-s",
+					"--format=%ct",
+					...input.parents.map(object),
+				]);
+				const seconds = Math.max(
+					...dates.stdout
+						.toString("utf8")
+						.trim()
+						.split("\n")
+						.map((line) => Number(line)),
+				);
+				if (!Number.isSafeInteger(seconds))
+					throw new Error("unreadable parent commit date");
+				const date = `@${seconds} +0000`;
 				const commit = await run(
 					[
 						"commit-tree",
 						tree.stdout.toString("utf8").trim(),
 						...input.parents.flatMap((parent) => ["-p", object(parent)]),
 					],
-					{ input: input.message },
+					{
+						input: input.message,
+						env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+					},
 				);
-				return object(commit.stdout.toString("utf8").trim());
+				const id = object(commit.stdout.toString("utf8").trim());
+				// Keep it reachable until it is published, whenever that is.
+				await run(["update-ref", `${MADE}${id}`, id]);
+				return id;
 			} finally {
 				await rm(directory, { recursive: true, force: true });
 			}

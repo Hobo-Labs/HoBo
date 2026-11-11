@@ -11,7 +11,12 @@ import {
 } from "./_generated/agent_pb.js";
 import { agentPolicies, type ParsedAgentConfig } from "./config.js";
 import type { MergeWorkspace, TrialMerge } from "./git-workspace.js";
-import type { AgentEventType, AgentJournal } from "./journal.js";
+import {
+	type AgentEventType,
+	type AgentJournal,
+	enqueuedKey,
+	publishedKey,
+} from "./journal.js";
 import { type ObservedQueue, overlappingPairs, planQueue } from "./planner.js";
 import { type ResolutionEngine, resolveConflicts } from "./resolver.js";
 
@@ -108,7 +113,12 @@ export function createCiAgent(options: {
 	async function record(
 		repository: string,
 		type: AgentEventType,
-		body: { plan?: QueuePlan; resolution?: Resolution; numbers?: number[] },
+		body: {
+			plan?: QueuePlan;
+			resolution?: Resolution;
+			numbers?: number[];
+			headSha?: string;
+		},
 	) {
 		await journal.append(
 			create(AgentEventSchema, {
@@ -235,9 +245,12 @@ export function createCiAgent(options: {
 			]);
 
 			const baseConflicts = new Map<number, readonly string[]>();
+			// A trial merge that failed is not evidence of a clean one.
+			const baseUnknown = new Set<number>();
 			for (const entry of entries) {
 				const merge = await attempt(() => trial(entry.headSha, baseSha));
-				if (merge && !merge.clean)
+				if (!merge) baseUnknown.add(entry.number);
+				else if (!merge.clean)
 					baseConflicts.set(
 						entry.number,
 						merge.files.map((file) => file.path),
@@ -332,10 +345,13 @@ export function createCiAgent(options: {
 					theirsLabel: baseRef,
 				});
 				const resolution = settled?.resolution;
+				// A resolution settled on an earlier pass is published now if its
+				// push never succeeded (or the mode then was observe).
 				if (
-					!settled?.fresh ||
-					resolution?.outcome !== "resolved" ||
-					mode === "observe"
+					!resolution ||
+					resolution.outcome !== "resolved" ||
+					mode === "observe" ||
+					(await journal.has(publishedKey(resolution.key)))
 				)
 					continue;
 				const direct = mode === "apply" && !entry.fork;
@@ -372,8 +388,14 @@ export function createCiAgent(options: {
 					if (
 						entry.started ||
 						baseConflicts.has(entry.number) ||
+						baseUnknown.has(entry.number) ||
 						entry.dependsOn.some((parent) => !queued.has(parent)) ||
-						Date.parse(now()) - (enqueueAskedAt.get(key) ?? 0) < 600_000
+						Date.parse(now()) - (enqueueAskedAt.get(key) ?? 0) < 600_000 ||
+						// Enqueued once at this commit already. If the queue ejected it
+						// (its checks failed), a person or a new commit re-enqueues it.
+						(await journal.has(
+							enqueuedKey(repository, entry.number, entry.headSha),
+						))
 					)
 						continue;
 					// Asked once per commit and ten minutes, whatever the answer: the
@@ -384,6 +406,7 @@ export function createCiAgent(options: {
 						await publisher.enqueue(entry);
 						await record(repository, "ci.agent.EntryEnqueued", {
 							numbers: [entry.number],
+							headSha: entry.headSha,
 						});
 						queued.add(entry.number);
 						report.enqueued.push(entry.number);

@@ -183,12 +183,21 @@ export async function resolveConflicts(input: {
 		),
 	);
 	if (inputEstimate > budget.maxInputTokens) return refuse("input-budget");
-	if (inputEstimate + budget.maxOutputTokens > input.remainingTokens)
-		return refuse("daily-budget");
+	// Every file with regions is its own call, with its own output allowance.
+	const calls = prepared.filter((entry) => entry.regions.length > 0).length;
+	const reservation = inputEstimate + budget.maxOutputTokens * calls;
+	if (reservation > input.remainingTokens) return refuse("daily-budget");
 
 	const usage = { inputTokens: 0, outputTokens: 0 };
 	let last = { engineId: "", model: "" };
 	for (const engine of input.engines) {
+		// A fallback engine spends again: only while today's budget still covers it.
+		if (
+			last.engineId !== "" &&
+			usage.inputTokens + usage.outputTokens + reservation >
+				input.remainingTokens
+		)
+			break;
 		last = { engineId: engine.id, model: engine.model };
 		const resolved: ResolvedContent[] = [];
 		let unavailable = false;

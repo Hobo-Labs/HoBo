@@ -169,6 +169,38 @@ describe("relay agent (real git, GraphQL served from the repository state)", () 
 		restarted.close();
 	});
 
+	it("finishes a clone setup that was cut short", async () => {
+		// A bare repository without its remote, as a crash between the two steps leaves it.
+		repos.git(
+			state,
+			"init",
+			"--quiet",
+			"--bare",
+			join(state, "repositories", "hobo-labs__hobo.git"),
+		);
+		const { send } = serve([]);
+		const agent = createRelayAgent({
+			config: testConfig("observe"),
+			connections: async () => [
+				{ installationId: 42, repository: "hobo-labs/hobo" },
+			],
+			token: async () => "t",
+			stateDirectory: state,
+			engines: [takeBoth()],
+			fetch: send,
+			remoteUrl: () => repos.remote,
+		});
+		await expect(agent.pass()).resolves.toHaveLength(1);
+		expect(
+			repos.git(
+				join(state, "repositories", "hobo-labs__hobo.git"),
+				"config",
+				"remote.origin.url",
+			),
+		).toBe(repos.remote);
+		agent.close();
+	});
+
 	it("keeps going when one repository fails, then reports the pass as failed", async () => {
 		const { send } = serve([]);
 		const visited: string[] = [];

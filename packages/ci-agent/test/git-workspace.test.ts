@@ -153,6 +153,66 @@ describe("git workspace (real git)", () => {
 		).toBe("a.txt");
 	});
 
+	it("keeps what it fetches and what it commits, and commits the same merge to the same id", async () => {
+		const ours = repos.commit("ours", {
+			"a.txt": BASE.replace("two", "TWO ours"),
+		});
+		const theirs = repos.commit("theirs", {
+			"a.txt": BASE.replace("two", "TWO theirs"),
+		});
+		const workspace = await fetched({ ours: 1, theirs: 2 });
+		expect(
+			repos.git(
+				repos.agent,
+				"rev-parse",
+				"refs/hobo-agent/fetched/pull/1/head",
+			),
+		).toBe(ours);
+		expect(
+			repos.git(repos.agent, "rev-parse", "refs/hobo-agent/fetched/heads/main"),
+		).toBe(base);
+		const merge = await workspace.trial(ours, theirs);
+		const input = {
+			tree: merge.tree,
+			parents: [ours, theirs] as const,
+			files: new Map([["a.txt", BASE.replace("two", "TWO both")]]),
+			message: "Merge theirs into ours\n",
+		};
+		const first = await workspace.commit(input);
+		await new Promise((resolve) => setTimeout(resolve, 1100));
+		expect(await workspace.commit(input)).toBe(first);
+		expect(
+			repos.git(repos.agent, "rev-parse", `refs/hobo-agent/commits/${first}`),
+		).toBe(first);
+		// Dated by its newer parent.
+		expect(repos.git(repos.agent, "log", "-1", "--format=%ct", first)).toBe(
+			repos.git(repos.agent, "log", "-1", "--format=%ct", theirs),
+		);
+	});
+
+	it("treats a resolved path literally, never as a glob", async () => {
+		repos.commit("main", { "a[1].ts": BASE, "a1.ts": "decoy\n" });
+		const ours = repos.commit("ours", {
+			"a[1].ts": BASE.replace("two", "TWO ours"),
+		});
+		const theirs = repos.commit("theirs", {
+			"a[1].ts": BASE.replace("two", "TWO theirs"),
+		});
+		const workspace = await fetched({ ours: 1, theirs: 2 });
+		const merge = await workspace.trial(ours, theirs);
+		expect(merge.files.map((entry) => entry.path)).toEqual(["a[1].ts"]);
+		const commit = await workspace.commit({
+			tree: merge.tree,
+			parents: [ours, theirs],
+			files: new Map([["a[1].ts", "resolved\n"]]),
+			message: "m\n",
+		});
+		expect(repos.git(repos.agent, "show", `${commit}:a[1].ts`)).toBe(
+			"resolved",
+		);
+		expect(repos.git(repos.agent, "show", `${commit}:a1.ts`)).toBe("decoy");
+	});
+
 	it("fast-forwards a pull request branch and refuses to rewrite one", async () => {
 		const ours = repos.commit("ours", {
 			"a.txt": BASE.replace("two", "TWO ours"),

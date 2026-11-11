@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentEventSchema } from "../src/_generated/agent_pb.js";
-import { type AgentJournal, createMemoryJournal } from "../src/journal.js";
+import {
+	type AgentJournal,
+	createMemoryJournal,
+	enqueuedKey,
+	publishedKey,
+} from "../src/journal.js";
 import { createSqliteJournal } from "../src/sqlite-journal.js";
 
 const sha = (digit: number) => String(digit).repeat(40);
@@ -81,6 +86,41 @@ describe.each(journals)("%s journal", (_name, open) => {
 			"e3",
 			"e4",
 		]);
+	});
+
+	it("finds published and enqueued events by key, apart from settled ones", async () => {
+		const journal = open();
+		await journal.append(settled("e1", "2026-11-10T08:00:00.000Z", "k1", 5n));
+		expect(await journal.has(publishedKey("k1"))).toBe(false);
+		await journal.append(
+			create(AgentEventSchema, {
+				id: "e2",
+				type: "ci.agent.ResolutionPublished",
+				at: "2026-11-10T08:01:00.000Z",
+				repository: "hobo-labs/hobo",
+				resolution: { key: "k1", outcome: "resolved", commitSha: sha(4) },
+			}),
+		);
+		await journal.append(
+			create(AgentEventSchema, {
+				id: "e3",
+				type: "ci.agent.EntryEnqueued",
+				at: "2026-11-10T08:02:00.000Z",
+				repository: "hobo-labs/hobo",
+				numbers: [7],
+				headSha: sha(5),
+			}),
+		);
+		expect(await journal.has(publishedKey("k1"))).toBe(true);
+		expect(await journal.has(enqueuedKey("hobo-labs/hobo", 7, sha(5)))).toBe(
+			true,
+		);
+		expect(await journal.has(enqueuedKey("hobo-labs/hobo", 7, sha(6)))).toBe(
+			false,
+		);
+		expect(await journal.has("")).toBe(false);
+		// The settled record is still the settled one, not the published copy.
+		expect((await journal.settled("k1"))?.reason).toBe("low-confidence");
 	});
 
 	it("ignores a second append of the same event id", async () => {

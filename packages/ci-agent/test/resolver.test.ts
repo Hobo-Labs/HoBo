@@ -184,6 +184,56 @@ describe("conflict resolver", () => {
 		expect(result.usage).toEqual({ inputTokens: 300, outputTokens: 60 });
 	});
 
+	it("reserves output for every file, and does not let a fallback engine overspend", async () => {
+		const second = file("src/b.ts", conflicted.merged);
+		// One file reserves about 1,760 tokens (its prompt plus 1,000 output); two do not fit.
+		const { resolution, budget } = testPolicies({
+			budget: { maxOutputTokens: 1000 },
+		});
+		const one = await resolveConflicts({
+			files: [conflicted],
+			policy: resolution,
+			budget,
+			engines: [takeBoth()],
+			remainingTokens: 1800,
+			oursLabel: "a",
+			theirsLabel: "b",
+		});
+		expect(one.outcome).toBe("resolved");
+		const two = await resolveConflicts({
+			files: [conflicted, second],
+			policy: resolution,
+			budget,
+			engines: [takeBoth()],
+			remainingTokens: 1800,
+			oursLabel: "a",
+			theirsLabel: "b",
+		});
+		expect(two).toMatchObject({ outcome: "abstained", reason: "daily-budget" });
+
+		// The first engine spends 120 tokens and answers the wrong regions; 120 plus
+		// another full reservation exceeds 1,800, so the fallback is skipped.
+		const wrong = scriptedEngine(() => [
+			{ id: 99, resolution: "x\n", confidence: 1 },
+		]);
+		const fallback = takeBoth();
+		const spent = await resolveConflicts({
+			files: [conflicted],
+			policy: resolution,
+			budget,
+			engines: [wrong, fallback],
+			remainingTokens: 1800,
+			oursLabel: "a",
+			theirsLabel: "b",
+		});
+		expect(spent).toMatchObject({
+			outcome: "failed",
+			reason: "engine-unavailable",
+			usage: { inputTokens: 100, outputTokens: 20 },
+		});
+		expect(fallback.requests).toHaveLength(0);
+	});
+
 	it("fails when no engine answers", async () => {
 		const broken = scriptedEngine(() => {
 			throw new Error("timeout");

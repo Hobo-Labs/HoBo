@@ -171,4 +171,6 @@ message AgentEvent {
   Resolution resolution = 6;
   // The entry an EntryEnqueued event is about, and the members of a rollup.
   repeated uint32 numbers = 7;
+  // The commit an EntryEnqueued event enqueued. It is never enqueued again.
+  string head_sha = 8;
 }

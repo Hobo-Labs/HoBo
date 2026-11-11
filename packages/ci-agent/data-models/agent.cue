@@ -157,7 +157,8 @@ import "list"
 	plan?:       #QueuePlan
 	resolution?: #Resolution
 	numbers?:    [...#Number]
+	headSha?:    #Sha
 	if type == "ci.agent.PlanProposed" {plan: #QueuePlan}
 	if type == "ci.agent.ResolutionSettled" || type == "ci.agent.ResolutionPublished" || type == "ci.agent.RollupPublished" {resolution: #Resolution}
-	if type == "ci.agent.EntryEnqueued" {numbers: [#Number]}
+	if type == "ci.agent.EntryEnqueued" {numbers: [#Number], headSha: #Sha}
 }

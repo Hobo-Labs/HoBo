@@ -62,10 +62,11 @@ The agent is the one actor that writes its journal: it takes the commands
 above and appends events, and nothing else writes them. The journal is its
 event store, an append-only table in one SQLite file with a single writer.
 
-Three projections answer the agent's questions: the resolution recorded for
-a key (which makes an attempt happen at most once), tokens spent since a time
-(the daily budget), and the latest event of a type per repository (the last
-plan). They are materialized as columns written in the same statement as the
+Four projections answer the agent's questions: the resolution recorded for
+a key (which makes an attempt happen at most once), whether an event with a
+given key exists (a resolution already published, a commit already enqueued),
+tokens spent since a time (the daily budget), and the latest event of a type
+per repository (the last plan). They are materialized as columns written in the same statement as the
 event, and can be rebuilt from the event bodies alone. The same file is the
 read store; there is no separate one, and there are no snapshots, because
 every question is one indexed query over a journal that grows by a few rows
@@ -74,11 +75,30 @@ scanning its events.
 
 `ResolutionSettled` is written before anything is pushed, so a crash between
 the two leaves an attempt recorded and unpublished, never published and
-unrecorded.
+unrecorded. A later pass publishes a resolved attempt that has no
+`ResolutionPublished` event, from the journal and without asking a model
+again.
 
-The trial-merge cache and the enqueue cool-down are in memory only. Losing
-them on restart costs git work and at most one repeated enqueue request per
-waiting entry; a refused request is counted in the pass report and ignored.
+`EntryEnqueued` names the commit it enqueued, and the agent never enqueues
+that commit again. A pull request the merge queue ejects (its checks failed)
+waits for a person or a new commit; re-enqueueing it automatically would run
+the same failing checks every few minutes.
+
+The trial-merge cache and the cool-down after a refused enqueue are in memory
+only. Losing them on restart costs git work and at most one repeated enqueue
+request per waiting entry.
+
+## Merge commits are content-addressed
+
+A merge commit is dated by its newer parent, not by the clock, and written by
+a fixed identity, so the same merge always has the same commit id. Attempts
+are keyed by commit ids. With clock dates, a combined candidate built on a
+fresh merge commit would have a new id every pass, and a conflict that the
+model declined would be sent to it again every minute until the daily budget
+ran out. Each commit the agent writes is kept reachable under
+`refs/hobo-agent/commits/`, and what it fetches under
+`refs/hobo-agent/fetched/`, so garbage collection cannot remove a resolution
+waiting to be published and the next fetch only transfers what is new.
 
 ## Contracts
 

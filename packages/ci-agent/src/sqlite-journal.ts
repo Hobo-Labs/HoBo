@@ -4,6 +4,7 @@ import { z } from "zod";
 import { type AgentEvent, AgentEventSchema } from "./_generated/agent_pb.js";
 import {
 	type AgentJournal,
+	eventKey,
 	eventTokens,
 	SETTLING_EVENT_TYPES,
 } from "./journal.js";
@@ -51,17 +52,26 @@ export function createSqliteJournal(
 				event.type,
 				event.at,
 				event.repository,
-				SETTLING_EVENT_TYPES.includes(event.type)
-					? (event.resolution?.key ?? "")
-					: "",
+				eventKey(event),
 				eventTokens(event),
 				toJsonString(AgentEventSchema, event),
 			);
 		},
+		async has(key) {
+			return (
+				key !== "" &&
+				db
+					.prepare("SELECT 1 FROM agent_events WHERE key = ? LIMIT 1")
+					.get(key) !== undefined
+			);
+		},
 		async settled(key) {
+			// Settling events only: a published one shares no key with them.
+			const placeholders = SETTLING_EVENT_TYPES.map(() => "?").join(", ");
 			return one(
-				"SELECT body FROM agent_events WHERE key = ? ORDER BY position LIMIT 1",
+				`SELECT body FROM agent_events WHERE key = ? AND type IN (${placeholders}) ORDER BY position LIMIT 1`,
 				key,
+				...SETTLING_EVENT_TYPES,
 			)?.resolution;
 		},
 		async tokensSince(since) {

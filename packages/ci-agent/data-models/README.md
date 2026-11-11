@@ -16,7 +16,8 @@ fixtures against. Beyond field ranges it holds the cross-field rules:
 - A resolution has a commit only when its outcome is `resolved`, and only a
   commit can have a published ref; any other outcome carries a reason code.
 - A `PlanProposed` event carries a plan; a settled or published one carries
-  a resolution; an `EntryEnqueued` one names its entry.
+  a resolution; an `EntryEnqueued` one names its entry and the commit it
+  enqueued.
 
 `fixtures/valid` and `fixtures/invalid` exercise those rules.
 `test/config.test.ts` runs every `config-*` fixture through `parseAgentConfig`

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCiAgent } from "../src/agent.js";
+import type { MergeWorkspace } from "../src/git-workspace.js";
 import { createMemoryJournal } from "../src/journal.js";
 import { observeQueue } from "../src/planner.js";
 import type { ResolutionEngine } from "../src/resolver.js";
@@ -42,6 +43,8 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		pulls: Pull[],
 		overrides: PolicyOverrides = {},
 		engines: ResolutionEngine[] = [takeBoth()],
+		/** Wraps the real workspace, to fail one of its steps. */
+		wrap: (workspace: MergeWorkspace) => MergeWorkspace = (w) => w,
 	) {
 		const journal = createMemoryJournal();
 		const comments: { number: number; body: string }[] = [];
@@ -85,7 +88,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 					enqueued.push(entry.number);
 				},
 			},
-			workspace: repos.workspace(),
+			workspace: wrap(repos.workspace()),
 			engines,
 			journal,
 			now: () => clock,
@@ -415,6 +418,95 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			(await agent.tick()).resolutions.map((entry) => entry.number),
 		).toEqual([3]);
 		expect(engine.requests).toHaveLength(3);
+	});
+
+	it("publishes on a later pass a resolution whose push failed, without asking the model again", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		let failPush = true;
+		const { agent, comments } = setup(
+			"suggest",
+			[first],
+			{},
+			[engine],
+			(w) => ({
+				...w,
+				push: async (commit, ref) => {
+					if (failPush) throw new Error("network");
+					return w.push(commit, ref);
+				},
+			}),
+		);
+		const ref = `refs/heads/hobo-agent/resolve/1-${first.head.slice(0, 8)}`;
+		const report = await agent.tick();
+		expect(report.failures).toBe(1);
+		expect(comments).toEqual([]);
+		expect(() => repos.remoteRef(ref)).toThrow();
+
+		failPush = false;
+		const retried = await agent.tick();
+		expect(retried.resolutions).toEqual([]);
+		expect(repos.remoteRef(ref)).toBe(report.resolutions[0]?.commitSha);
+		expect(comments).toHaveLength(1);
+		expect(engine.requests).toHaveLength(1);
+		// Published once: a third pass changes nothing.
+		await agent.tick();
+		expect(comments).toHaveLength(1);
+	});
+
+	it("apply: never enqueues the same commit twice, even after the queue ejects it", async () => {
+		const clean = pull(1, "two", { paths: ["x.txt"] });
+		const { agent, enqueued } = setup("apply", [clean]);
+		expect((await agent.tick()).enqueued).toEqual([1]);
+		// The merge queue ejected it (its checks failed): it is waiting again.
+		enqueued.splice(0);
+		clock = "2026-11-10T13:00:00.000Z";
+		expect((await agent.tick()).enqueued).toEqual([]);
+		// A new commit on the pull request is a new candidate.
+		clean.head = repos.commit("pr-1", { "x.txt": "fixed\n" });
+		repos.pull(1, "pr-1");
+		expect((await agent.tick()).enqueued).toEqual([1]);
+	});
+
+	it("apply: does not enqueue a pull request whose trial merge could not run", async () => {
+		const broken = pull(1, "two", { paths: ["x.txt"] });
+		const clean = pull(2, "two", { paths: ["y.txt"] });
+		const { agent } = setup(
+			"apply",
+			[broken, clean],
+			{},
+			[takeBoth()],
+			(w) => ({
+				...w,
+				trial: async (ours, theirs) => {
+					if (ours === broken.head) throw new Error("git merge-tree failed");
+					return w.trial(ours, theirs);
+				},
+			}),
+		);
+		const report = await agent.tick();
+		expect(report.enqueued).toEqual([2]);
+		expect(report.failures).toBeGreaterThan(0);
+	});
+
+	it("rollup: an abstained peer conflict is not sent to the model again on later passes", async () => {
+		const first = pull(1, "TWO from 1");
+		const second = pull(2, "TWO from 2");
+		const unsure = takeBoth(0.3);
+		const { agent } = setup(
+			"suggest",
+			[first, second],
+			{ queue: { rollup: true } },
+			[unsure],
+		);
+		expect((await agent.tick()).rollupRef).toBeUndefined();
+		expect(unsure.requests).toHaveLength(1);
+		// Commit dates come from the parents, not the clock: a later pass makes
+		// the same candidate commit, so the attempt is recognised.
+		await new Promise((resolve) => setTimeout(resolve, 1100));
+		await agent.tick();
+		expect(unsure.requests).toHaveLength(1);
 	});
 
 	it("records a failed engine and does not publish anything", async () => {

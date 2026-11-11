@@ -25,6 +25,8 @@ export const SETTLING_EVENT_TYPES: readonly string[] = [
  */
 export interface AgentJournal {
 	append(event: AgentEvent): Promise<void>;
+	/** Whether an event with this key (see `eventKey`) was recorded. */
+	has(key: string): Promise<boolean>;
 	/** The resolution recorded for a key, if that merge was already attempted. */
 	settled(key: string): Promise<Resolution | undefined>;
 	/** Tokens spent by resolutions settled at or after `since` (an ISO time). */
@@ -36,6 +38,30 @@ export interface AgentJournal {
 	): Promise<AgentEvent | undefined>;
 	events(): Promise<readonly AgentEvent[]>;
 }
+
+/**
+ * The key a later pass looks an event up by: a settled or rolled-up
+ * resolution by its own key, a published one by `published:` and its key,
+ * and an enqueued entry by repository, number and commit. Other events have
+ * none. It is derived from the event alone, so it can be rebuilt by replay.
+ */
+export function eventKey(event: AgentEvent): string {
+	if (SETTLING_EVENT_TYPES.includes(event.type))
+		return event.resolution?.key ?? "";
+	if (event.type === "ci.agent.ResolutionPublished")
+		return publishedKey(event.resolution?.key ?? "");
+	if (event.type === "ci.agent.EntryEnqueued")
+		return enqueuedKey(event.repository, event.numbers[0] ?? 0, event.headSha);
+	return "";
+}
+
+export const publishedKey = (resolutionKey: string) =>
+	`published:${resolutionKey}`;
+export const enqueuedKey = (
+	repository: string,
+	number: number,
+	headSha: string,
+) => `enqueued:${repository}#${number}@${headSha}`;
 
 export function eventTokens(event: AgentEvent): number {
 	if (event.type !== "ci.agent.ResolutionSettled") return 0;
@@ -50,6 +76,9 @@ export function createMemoryJournal(): AgentJournal {
 		async append(event) {
 			if (events.some((existing) => existing.id === event.id)) return;
 			events.push(event);
+		},
+		async has(key) {
+			return key !== "" && events.some((event) => eventKey(event) === key);
 		},
 		async settled(key) {
 			return events.find(

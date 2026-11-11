@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { type AgentTickReport, type CiAgent, createCiAgent } from "./agent.js";
@@ -64,21 +64,19 @@ export function createRelayAgent(options: {
 			"repositories",
 			`${repository.replace("/", "__")}.git`,
 		);
-		if (!existsSync(directory)) {
-			const git = options.git ?? "git";
-			await run(git, ["init", "--quiet", "--bare", directory]);
-			await run(
-				git,
-				[
-					"remote",
-					"add",
-					"origin",
-					options.remoteUrl?.(repository) ??
-						`https://github.com/${repository}.git`,
-				],
-				{ cwd: directory },
-			);
-		}
+		// Both steps are idempotent, so a setup cut short is finished next time.
+		const git = options.git ?? "git";
+		await run(git, ["init", "--quiet", "--bare", directory]);
+		await run(
+			git,
+			[
+				"config",
+				"remote.origin.url",
+				options.remoteUrl?.(repository) ??
+					`https://github.com/${repository}.git`,
+			],
+			{ cwd: directory },
+		);
 		const graphql = createGithubGraphql({ token, fetch: options.fetch });
 		const queue = createGithubQueue({
 			repository,

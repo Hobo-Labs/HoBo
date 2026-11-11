@@ -41,7 +41,7 @@ Each pass (once a minute by default), per connected repository:
 | --- | --- | --- | --- |
 | `observe` | Yes, recorded in its journal only | Nothing | Nothing |
 | `suggest` | Yes | The merge commit to `hobo-agent/resolve/<pr>-<sha>`, plus a comment on the pull request. The pull request branch is not touched. | Nothing |
-| `apply` | Yes | The merge commit to the pull request's own branch (a fast-forward), plus a comment. A fork's branch is never pushed to; it gets the `suggest` treatment. | Labelled pull requests that merge cleanly, in planned order, up to `maxBatchSize` per pass |
+| `apply` | Yes | The merge commit to the pull request's own branch (a fast-forward), plus a comment. A fork's branch is never pushed to; it gets the `suggest` treatment. | Labelled pull requests that merge cleanly, in planned order, up to `maxBatchSize` per pass. A commit is enqueued once: if the queue ejects it, a person re-enqueues it or pushes a new commit |
 
 `apply` acts only when GitHub confirms that the base branch has a branch
 protection rule naming at least one required status check. Without that
@@ -199,7 +199,12 @@ What the agent will not do, and where that is enforced:
 - **One attempt per merge.** An attempt is keyed by the two commits and the
   policy. Its outcome is journalled, and the same pair is not tried again,
   including after a restart. Reaching the daily budget is the exception: that
-  merge is retried the next day.
+  merge is retried the next day. A resolution whose push failed is published
+  on a later pass without asking the model again.
+- **Budgets hold across calls.** Each file with conflicts is its own model
+  call, and an attempt reserves output tokens for every one of them before it
+  starts. A fallback engine is only tried while the day's budget still covers
+  a full attempt.
 - **Reasons are fixed codes.** Journal entries, logs and errors never carry
   model output or repository text.
 
