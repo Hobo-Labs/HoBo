@@ -161,21 +161,9 @@ jobs:
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "$GHCR_TOKEN" ]; then
-            echo "GHCR_TOKEN is unavailable; skipping runner image push"
-            exit 0
-          fi
-          version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
-          repo="${GITHUB_REPOSITORY,,}"
-          image="ghcr.io/${repo}/hobo-ci-worker:${version}"
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker tag "hobo-ci-worker:${version}" "$image"
-          docker push "$image"
-          docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
-          docker push "ghcr.io/${repo}/hobo-ci-worker:latest"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts
 
   ci-deps-image:
     name: CI deps layer (pnpm)
