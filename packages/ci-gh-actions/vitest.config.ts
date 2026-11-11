@@ -48,7 +48,9 @@ export default defineConfig({
 					// (test/setup/no-leaked-handles.ts).
 					isolate: false,
 					include: ["test/**/*.test.ts", "contracts/**/*.test.ts"],
-					exclude: ISOLATED,
+					// `*.deep.test.ts` is the deep tier (`test:deep`,
+					// vitest.deep.config.ts).
+					exclude: [...ISOLATED, "**/*.deep.test.ts"],
 					setupFiles: [setup("no-leaked-handles.ts")],
 				},
 			},

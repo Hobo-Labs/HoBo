@@ -14,6 +14,7 @@
  *    instant it stops counting, so selection can fail closed without asking
  *    anyone whether the provider has changed since.
  */
+
 import type {
 	CreatorAuthorityAfterClaim,
 	ProviderClass,
@@ -336,17 +337,55 @@ export function assertNoUpgradedUnknowns(
 	}
 }
 
+/**
+ * A compact JWS: a run of base64url characters that starts where a run starts
+ * and holds an `ey` header of ten characters or more and a payload of ten or
+ * more. The look-ahead reads the run once, so `-ey-ey-ey…` is one search; the
+ * `\bey…` form this replaced started again at every `ey` and read to the end.
+ * The same shape as `@hobo/provider-redaction`'s JWT_DETECTOR, kept here so the
+ * conformance evidence gate does not depend on the redaction package.
+ */
+const JWT_COMPACT_SERIALIZATION =
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}\.)(?:[A-Za-z0-9_]*-)*?ey[A-Za-z0-9_-]{10,}\./u;
+
+/** A private key's BEGIN line, any label up to the next `-`. */
+const PRIVATE_KEY_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/u;
+
+/**
+ * `word` spelled so that `i` alone matches what the `iu` form it replaced
+ * did: under `iu`, `s` also matched `ſ` (U+017F) and `k` matched `K`
+ * (U+212A). Explicit classes keep those spellings without the `u` flag,
+ * whose Unicode folding made the old patterns' starts ambiguous.
+ */
+function withFoldedLetters(word: string): string {
+	return word.replace(/s/gu, "[s\\u017F]").replace(/k/giu, "[k\\u212A]");
+}
+
 /** Values that must never appear anywhere in an artifact. */
-const SECRET_PATTERN: readonly RegExp[] = [
-	/postgres(?:ql)?:\/\/[^\s"]*:[^\s"]*@/iu,
-	/rediss?:\/\/[^\s"]*:[^\s"]*@/iu,
-	/mysql:\/\/[^\s"]*:[^\s"]*@/iu,
-	/mongodb(?:\+srv)?:\/\/[^\s"]*:[^\s"]*@/iu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
-	/\bBearer\s+[A-Za-z0-9._-]{8,}/iu,
+export const SECRET_PATTERN: readonly RegExp[] = [
+	// A connection string with credentials, looked for once per run of
+	// characters that are neither whitespace nor a quote: at the run's first
+	// `scheme://`, its first `:` after that and the first `@` after the `:`. A
+	// later `scheme://` in the same run reaches a `:` and an `@` no earlier, so
+	// it can match only where the first does; searching from every one of them,
+	// and to the end of the run each time, was quadratic.
+	...["postgres(?:ql)?", "rediss?", "mysql", "mongodb(?:\\+srv)?"]
+		.map(withFoldedLetters)
+		.map(
+			(scheme) =>
+				new RegExp(
+					`(?<![^\\s"])(?:(?!${scheme}:\\/\\/)[^\\s"])*${scheme}:\\/\\/[^\\s":]*:[^\\s"@]*@`,
+					"i",
+				),
+		),
+	PRIVATE_KEY_LINE,
+	/\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
-	/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/u,
-	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/iu,
+	JWT_COMPACT_SERIALIZATION,
+	new RegExp(
+		`"(?:${withFoldedLetters("password|passwd|secret|apiKey|api_key|accessKey|access_key|token")})"\\s*:`,
+		"i",
+	),
 ];
 
 /**

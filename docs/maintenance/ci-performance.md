@@ -266,7 +266,10 @@ config change missed. The check graph covers import edges only, plus one manifes
 workspace package by name reaches that package's `package.json` and `tsconfig.json`. Path literals,
 directories and data files a test reads, spawned programs and a tsconfig only a script names are edges
 of the planner that `--check` does not check; `scripts/test/dependent-tests.test.ts` pins those on a
-fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph.
+fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph. The
+real-tree pins count packages, so a change that adds or removes one re-pins them: #1803 added three
+packages a generated `@hobo/core` leaf does not reach and left that plan's skipped count at 103, where
+the planner gives 106.
 
 ## Frozen proofs and live-repo tests
 
