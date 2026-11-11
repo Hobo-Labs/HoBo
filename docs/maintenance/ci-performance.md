@@ -312,6 +312,32 @@ fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the ch
 real-tree cases name packages and count none, so adding a package the change does not reach leaves
 them alone (the Planner section above says what each asserts).
 
+## Script tests
+
+`scripts/test/*.test.ts` guard the CI tooling itself. Five of them had gone red on main while no job
+ran them, each because one side of a pin moved and the other did not:
+
+- `dependent-tests.test.ts`: the shard case read this checkout's turbo graph (see Planner above).
+- `deps-key.test.ts` pins a digest of the deps image recipe (`DEPS_LAYOUT.recipeSha256`) so that a
+  recipe edit is a decision: bump `DEPS_LAYOUT.version` when image contents or paths change, else
+  update the digest. #1747 and #1816 edited `build-deps.sh` (where free space is sampled, and
+  resolving the worker image before the build) without either. Neither changes what the image holds,
+  so the digest is updated and the version, which is what the deps key hashes, is not.
+- `pnpm-install.test.ts` counted six wrapped installs in `hobo-ci.yml`; there are nine. It now names
+  the one bare install (the runner image job's `--ignore-scripts` install for shell lint) and fails on
+  any other, so a job added with a wrapped install changes nothing.
+- `ci-deps-image-contract.test.ts` checks that the S0 job (`main-gate`) does not need the deps image
+  job. Its slice of the workflow ran to `artifact-trust:` and took in `main_workspace_tests` when
+  #1840 added it; the shards link the deps layer and do need that job. The slice is now `main-gate`
+  alone.
+- `memory-env.test.ts` holds every single-worker Vitest pin to `capVitestWorkers(1)`, so that
+  `HOBO_TEST_MAX_WORKERS` cannot raise it. `packages/hobo/vitest.config.ts` gained
+  `fileParallelism: false` in #1623 and kept `maxWorkers: capVitestWorkers(process.env.CI ? 2 :
+  undefined)`; Vitest ignores `maxWorkers` without file parallelism and runs one worker, so the
+  config now says `capVitestWorkers(1)`, which is what ran. `packages/cli` went the other way in
+  #1789, to one worker in CI only, and the test now reads that form as a pin too and loads every
+  config with `CI` set.
+
 ## Frozen proofs and live-repo tests
 
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps

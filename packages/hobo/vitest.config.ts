@@ -12,9 +12,10 @@ export default mergeConfig(
 			fileParallelism: false,
 			exclude: ["e2e/**"],
 			// One worker per CPU, each with the CI 3GB heap, outgrows a shared runner
-			// box and the kernel OOM-kills the run (exit 137). Cap it in CI; the
-			// memory-derived HOBO_TEST_MAX_WORKERS cap also applies outside CI.
-			maxWorkers: capVitestWorkers(process.env.CI ? 2 : undefined),
+			// box and the kernel OOM-kills the run (exit 137). `fileParallelism: false`
+			// already makes Vitest ignore `maxWorkers` and run one worker, so the pin
+			// says one too, here and under any HOBO_TEST_MAX_WORKERS.
+			maxWorkers: capVitestWorkers(1),
 			// Each concurrent case in the four `describe.concurrent` suites spawns a
 			// CLI child of ~450 MB (tsx from source, `codegen`, a served `up`). At the
 			// default of 5 per worker, two workers held ~14 of them and the run peaked

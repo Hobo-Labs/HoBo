@@ -16,7 +16,7 @@ export const DEPS_LAYOUT_RECIPE_PATHS = [
 export const DEPS_LAYOUT = {
 	version: 1,
 	recipeSha256:
-		"3119b39e30e012710d3dc0e4a706866a4395a235fa5ea99ba7e31c04bf29e6c0",
+		"3d7a0a528edcc5e1ff69e409a0b0a9b380e81ffc0db26c782b7ab02546f4ff5b",
 } as const;
 
 export type DepsKeyInputs = Readonly<{

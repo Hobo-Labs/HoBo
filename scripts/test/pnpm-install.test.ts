@@ -178,9 +178,28 @@ describe("bounded pnpm install", () => {
 		assert.equal(parseInstallTimeoutSeconds("240"), 240);
 	});
 
-	it("routes all six workflow installs through the bounded wrapper", () => {
-		const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
-		assert.equal(workflow.split("scripts/ci/pnpm-install.mts").length - 1, 6);
-		assert.doesNotMatch(workflow, /^\s*pnpm install --frozen-lockfile/mu);
+	it("routes every workflow install but the image job's through the bounded wrapper", () => {
+		// No count: a job added with a wrapped install changes nothing here, and
+		// a bare install in any step but the one named below fails by name.
+		const lines = readFileSync(".github/workflows/hobo-ci.yml", "utf8").split(
+			"\n",
+		);
+		const bare: string[] = [];
+		let step = "";
+		let wrapped = 0;
+		for (const line of lines) {
+			const name = /^\s*- name: (.+)$/u.exec(line);
+			if (name) step = name[1] ?? "";
+			if (/^\s*#/u.test(line)) continue;
+			if (line.includes("scripts/ci/pnpm-install.mts")) wrapped += 1;
+			else if (/\bpnpm install\b/u.test(line) && !/\becho\b/u.test(line))
+				bare.push(`${step}: ${line.trim()}`);
+		}
+		assert.ok(wrapped > 0);
+		// The runner image job's `--ignore-scripts` install for shell lint was
+		// bare when the wrapper was introduced and is the one exception.
+		assert.deepEqual(bare, [
+			"Install root deps for shell lint: run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
+		]);
 	});
 });

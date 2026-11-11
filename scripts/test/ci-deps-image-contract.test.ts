@@ -420,8 +420,14 @@ describe("CI deps workflow contract", () => {
 	});
 
 	it("does not put the deps image on Main full gate's critical path", () => {
-		const mainStart = workflow.indexOf("  main-gate:");
-		const mainEnd = workflow.indexOf("  artifact-trust:", mainStart);
+		// The S0 job alone, up to the next job. The slice once ran to
+		// `artifact-trust:`, and took in the workspace shard jobs when they were
+		// added after `main-gate`; those link the deps layer and do need the image
+		// job (scripts/test/main-gate-workspace-shards.test.ts pins that).
+		const mainStart = workflow.indexOf("\n  main-gate:\n");
+		const mainEnd = workflow.indexOf("\n  main_workspace_tests:\n", mainStart);
+		assert.ok(mainStart > -1);
+		assert.ok(mainEnd > mainStart);
 		const main = workflow.slice(mainStart, mainEnd);
 		includes(main, "needs: [route, ci-runner-image]");
 		assert.ok(!main.includes("ci-deps-image"));

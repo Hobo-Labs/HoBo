@@ -55,37 +55,45 @@ describe("job memory environment", () => {
 			exclude: ["**/node_modules/**", "**/dist/**", "external/**"],
 		});
 		const pinned: string[] = [];
-		const previousMemoryCap = process.env.HOBO_TEST_MAX_WORKERS;
-		const previousVitestCap = process.env.VITEST_MAX_WORKERS;
-		process.env.HOBO_TEST_MAX_WORKERS = "8";
-		process.env.VITEST_MAX_WORKERS = "8";
+		// A pin through the cap helper: always one, or one where CI is set
+		// (packages/cli spreads across the cores elsewhere).
+		const cappedPin =
+			/capVitestWorkers\((?:1|process\.env\.CI \? 1 : undefined)\)/u;
+		const environment = {
+			CI: "true",
+			HOBO_TEST_MAX_WORKERS: "8",
+			VITEST_MAX_WORKERS: "8",
+		};
+		const previous = Object.keys(environment).map(
+			(name) => [name, process.env[name]] as const,
+		);
+		Object.assign(process.env, environment);
 		try {
 			for (const config of configs) {
 				const source = readFileSync(join(root, config), "utf8");
 				if (
-					!/maxWorkers:\s*(?:1|capVitestWorkers\(1\))/u.test(source) &&
+					!/maxWorkers:\s*1\b/u.test(source) &&
+					!new RegExp(`maxWorkers:\\s*${cappedPin.source}`, "u").test(source) &&
 					!/fileParallelism:\s*false/u.test(source)
 				)
 					continue;
 				pinned.push(config);
-				expect(source, config).toContain("capVitestWorkers(1");
+				expect(source, config).toMatch(cappedPin);
 				const loaded: { default: { test?: { maxWorkers?: number } } } =
 					await import(pathToFileURL(join(root, config)).href);
 				expect(loaded.default.test?.maxWorkers, config).toBe(1);
 			}
 		} finally {
-			if (previousMemoryCap === undefined)
-				delete process.env.HOBO_TEST_MAX_WORKERS;
-			else process.env.HOBO_TEST_MAX_WORKERS = previousMemoryCap;
-			if (previousVitestCap === undefined)
-				delete process.env.VITEST_MAX_WORKERS;
-			else process.env.VITEST_MAX_WORKERS = previousVitestCap;
+			for (const [name, value] of previous)
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
 		}
 		expect(pinned).toEqual(
 			expect.arrayContaining([
 				"packages/adapters/adapter-opensesame/vitest.real.config.ts",
 				"packages/cli/vitest.config.ts",
 				"packages/hobo/vitest.ci-e2e.config.ts",
+				"packages/hobo/vitest.config.ts",
 				"src/draft/technical-proofs/hobo-componentize/vitest.config.ts",
 			]),
 		);
