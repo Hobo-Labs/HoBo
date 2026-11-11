@@ -111,6 +111,7 @@ unindexed new finding files as notices.
 - [Finding 98: main gate finish checkout guard](./findings/0098-main-gate-finish-checkout-guard.md)
 - [Finding 99: main gate job pickup latency](./findings/0099-main-gate-job-pickup-latency.md)
 - [Finding 100: inode grant idle reconcile](./findings/0100-inode-grant-idle-reconcile.md)
+- [Finding 101: shared box memory stall on shard 1](./findings/0101-shared-box-memory-stall-on-shard-1.md)
 <!-- findings-index:end -->
 
 ## Data

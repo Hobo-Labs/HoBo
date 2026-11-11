@@ -43,6 +43,7 @@ import {
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
 	createStoragePeaks,
+	createContainerStallGuard,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
@@ -64,8 +65,11 @@ import {
 	meshReliabilityResetToken,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
+	hostPressureBlocksAdmission,
+	hostResourcePressureLogFields,
 	readAvailableMemoryMb,
 	readHostHealthSample,
+	readHostResourcePressureSample,
 	readHostMemory,
 	relayTraceSinkFromEnv,
 	resolvedStorageReserve,
@@ -307,10 +311,26 @@ const hostMemMb = Math.min(
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
+const capacityVolatilityMb = Number(
+	process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
+);
+if (
+	!Number.isFinite(capacityVolatilityMb) ||
+	capacityVolatilityMb < 0 ||
+	!Number.isInteger(capacityVolatilityMb)
+)
+	throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
+let lastHostPressureLogAt = 0;
+const hostPressureSample = () => readHostResourcePressureSample(Date.now());
+const containerStallGuard = createContainerStallGuard({
+	read: hostPressureSample,
+});
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
 	availableMemoryMb: readAvailableMemoryMb,
+	volatilityMb: capacityVolatilityMb,
+	hostPressure: hostPressureSample,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -691,6 +711,7 @@ try {
 		workRoot,
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
+		containerStallGuard,
 	});
 	const firstReconciliation = await worker.reconcileLeases();
 	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
@@ -769,15 +790,6 @@ try {
 		connections: async () =>
 			(await store.configuration())?.configuration?.connections ?? [],
 	});
-	const capacityVolatilityMb = Number(
-		process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
-	);
-	if (
-		!Number.isFinite(capacityVolatilityMb) ||
-		capacityVolatilityMb < 0 ||
-		!Number.isInteger(capacityVolatilityMb)
-	)
-		throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
 	const fleetRoutes = publishFleetRoutes
 		? createFleetRoutePublisher({
 				github,
@@ -794,7 +806,9 @@ try {
 						return bad;
 					}
 					const availableMb = readAvailableMemoryMb();
+					const pressure = hostPressureSample();
 					if (
+						hostPressureBlocksAdmission(pressure) ||
 						!memoryAdmitHeadroom(
 							availableMb,
 							memoryConfig.classes.heavy,
@@ -958,7 +972,9 @@ try {
 										? budgetLeftMb
 										: Math.min(
 												budgetLeftMb,
-												availableMb - memoryConfig.reserveMb,
+												availableMb -
+													memoryConfig.reserveMb -
+													capacityVolatilityMb,
 											),
 								),
 							),
@@ -1133,6 +1149,14 @@ try {
 	const reconcileAndLaunch = singleFlight(async () => {
 		// Sampled at most every ten seconds; never fails the tick.
 		await hostHealth.observe();
+		const pressureAt = Date.now();
+		if (pressureAt - lastHostPressureLogAt >= 10_000) {
+			lastHostPressureLogAt = pressureAt;
+			log(
+				"hobo_ci_host_resource_pressure",
+				hostResourcePressureLogFields(hostPressureSample()),
+			);
+		}
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;

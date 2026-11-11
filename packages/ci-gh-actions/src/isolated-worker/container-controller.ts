@@ -71,6 +71,10 @@ import {
 } from "./memory-classes.js";
 import type { MemoryPeaks } from "./memory-peaks.js";
 import {
+	type ContainerStallGuard,
+	hostResourcePressureLogFields,
+} from "./host-resource-pressure.js";
+import {
 	createOrphanJobTracker,
 	type OrphanJobEvent,
 	orphanJobCandidateForLease,
@@ -374,7 +378,8 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
 			| "hobo_ci_git_mirror"
-			| "hobo_ci_deps_toolchain_drift",
+			| "hobo_ci_deps_toolchain_drift"
+			| "hobo_ci_container_stall_requeue",
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
 	now?: () => string;
@@ -396,6 +401,8 @@ export function createIsolatedContainerController(options: {
 	depsImage?: string;
 	/** Release inode/disk admission grant when an isolated lease finishes. */
 	onStorageGrantRelease?: (jobId: number) => void;
+	/** Cooperative stall recovery while a job container is running. */
+	containerStallGuard?: ContainerStallGuard;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
 	const runnerRegisteredAtMs = new Map<string, number>();
@@ -1852,6 +1859,26 @@ export function createIsolatedContainerController(options: {
 							}
 						} catch {
 							/* ambiguous GitHub read — keep listener until next tick */
+						}
+					}
+					if (!stop && options.containerStallGuard) {
+						const signal = options.containerStallGuard.evaluate(lease.id);
+						if (signal) {
+							options.log?.("hobo_ci_container_stall_requeue", {
+								leaseId: lease.id,
+								jobId: lease.jobId,
+								jobName: lease.jobName,
+								reason: signal.reason,
+								consecutive: signal.consecutive,
+								...hostResourcePressureLogFields(signal.sample),
+							});
+							const candidate = orphanJobCandidateForLease(
+								lease,
+								Date.parse(now()),
+							);
+							if (candidate) orphanJobs.enqueueStall(candidate);
+							options.containerStallGuard.clear(lease.id);
+							stop = true;
 						}
 					}
 					if (!stop) return;

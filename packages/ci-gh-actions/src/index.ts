@@ -158,6 +158,19 @@ export {
 } from "./isolated-worker/github-job-poller.js";
 export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export {
+	createContainerStallGuard,
+	DEFAULT_CONTAINER_STALL_THRESHOLDS,
+	DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS,
+	hostMemoryAdmitFits,
+	hostPressureBlocksAdmission,
+	hostResourcePressureLogFields,
+	parsePsiAverages,
+	type ContainerStallGuard,
+	type HostResourcePressureSample,
+	readHostResourcePressureSample,
+	stallOrphanConfirmationGraceMs,
+} from "./isolated-worker/host-resource-pressure.js";
+export {
 	classifyHostHealth,
 	createHostHealthMonitor,
 	DEFAULT_HOST_HEALTH_THRESHOLDS,

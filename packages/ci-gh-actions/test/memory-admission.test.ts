@@ -527,6 +527,28 @@ describe("worker memory admission", () => {
 		);
 	});
 
+	it("blocks admission when host PSI reports memory pressure", () => {
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(16_384), {
+			log,
+			hostPressure: () => ({
+				atMs: 0,
+				memoryPsi: { someAvg10: 40, fullAvg10: 30 },
+			}),
+			availableMemoryMb: () => 8_000,
+		});
+		expect(
+			admission.admit({
+				jobId: 1,
+				memoryClass: "light",
+				memoryMb: 1_024,
+				rank: 1,
+				activeLeases: [],
+				generalLeaseIds: new Set<string>(),
+			}),
+		).toMatchObject({ admitted: false, reason: "host-pressure" });
+	});
+
 	it("blocks admission below the live host reserve and logs host-available", () => {
 		const log = vi.fn();
 		const availableMemoryMb = vi.fn(() => 2_500);
