@@ -771,8 +771,16 @@ schema seam and the budget check. Every tick, in order:
    failed for `failoverAfterMs`, so one tick tells a blip from an outage
    without remembering anything between ticks. One success ends the wait.
 3. **Copy** the writer to every reachable standby. If a copy is refused for a
-   schema mismatch, `ensureSchema` is called for both sides and the copy is
-   tried once more; `ensureSchema` is not called otherwise.
+   schema mismatch, `ensureSchema(backend, role)` is called for both sides,
+   the standby first (`role` is `"standby"`, then `"writer"`), and the copy is
+   tried once more; `ensureSchema` is not called otherwise. The role is the
+   backend's side under the assignment the tick resolved. It is there because
+   the two sides are prepared differently: a host may bring the writer
+   forward with its application's own initialisation, and must give a standby
+   its schema without the application, which does not write to a standby. A
+   copy compares tables and columns, not indexes, so a host that needs a
+   standby's indexes current checks that itself; the relay does, from its
+   migration ledger.
 4. **Measure**: standby lag from each watermark, operations from each usage
    counter, storage from the database size.
 5. **Decide** with `decideFleet`.

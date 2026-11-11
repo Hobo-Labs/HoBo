@@ -2,7 +2,10 @@
  * `pnpm run db:<command>` for a relay package.
  *
  *   db:generate [--name <words>]  write the next migration from db/schema.ts
- *   db:check                      fail if migrations, schema or embedded DDL disagree
+ *   db:ship                       rewrite src/_generated-assets/schema-migrations.ts
+ *                                 from db/migrations (db:generate does this too)
+ *   db:check                      fail if migrations, schema, embedded DDL or the
+ *                                 shipped migrations disagree
  *   db:migrate                    apply pending migrations to HOBO_CI_MIGRATE_URL
  *   db:verify                     prove embedded DDL == migrations on HOBO_TEST_POSTGRES_URL,
  *                                 then refresh the embedded-DDL lock
@@ -19,11 +22,13 @@ import {
 	applyMigrations,
 	checkEmbeddedDdlLock,
 	checkMigrations,
+	checkShippedMigrations,
 	generateNextMigration,
 	loadMigrationSet,
 	proveEquivalence,
 	type RelaySchemaSource,
 	renderEmbeddedDdlLock,
+	renderShippedMigrations,
 } from "./index.js";
 
 interface SourceModule {
@@ -51,6 +56,15 @@ function requireUrl(variable: string): string {
 	return url;
 }
 
+/** Writes the migrations the package ships to its hosts, from db/migrations. */
+async function ship(source: RelaySchemaSource): Promise<void> {
+	const shipped = await renderShippedMigrations(source);
+	await writeFile(shipped.location, shipped.text);
+	console.log(
+		`${source.scope}: wrote src/_generated-assets/schema-migrations.ts (${shipped.migrations} migrations)`,
+	);
+}
+
 function report(title: string, lines: readonly string[]): void {
 	console.log(`${title}${lines.length === 0 ? " none" : ""}`);
 	for (const line of lines) console.log(`  - ${line}`);
@@ -75,14 +89,18 @@ if (command === "generate") {
 				(fallback) => `${fallback.statement} -> ${fallback.boundTo}`,
 			),
 		);
+		await ship(source);
 		console.log(
 			"Mirror the change in the embedded DDL, then run db:verify against a real PostgreSQL.",
 		);
 	}
+} else if (command === "ship") {
+	await ship(source);
 } else if (command === "check") {
 	const problems = [
 		...(await checkMigrations(source)),
 		...(await checkEmbeddedDdlLock(source)),
+		...(await checkShippedMigrations(source)),
 	];
 	report(`${source.scope}: problems:`, problems);
 	if (problems.length > 0) process.exitCode = 1;
@@ -136,5 +154,5 @@ if (command === "generate") {
 		console.log("equivalent; wrote db/migrations/embedded-ddl.lock.json");
 	}
 } else {
-	throw new Error("usage: cli.mts <generate|check|migrate|verify>");
+	throw new Error("usage: cli.mts <generate|ship|check|migrate|verify>");
 }

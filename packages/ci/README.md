@@ -335,6 +335,21 @@ and operations code: nothing under `src/` imports it, `drizzle-orm` and
 `drizzle-kit` are dev dependencies, and every query the relay runs is still
 hand-written SQL through `pg`.
 
+Two things cross from here into `src/`, in that direction only, because a host
+applies migrations at run time (see [Standbys](#standbys-get-their-schema-from-the-migrations)):
+
+- **The runner** is [`src/schema-migrations.ts`](src/schema-migrations.ts),
+  exported as `@hobo/ci/schema-migrations` (`applyMigrations`,
+  `readSchemaLedger`, the errors and the ledger's name). The tooling re-exports
+  it; there is one runner.
+- **The migrations a package ships.** `db/migrations/` is not part of a
+  published package or a function bundle, so each package carries a copy as a
+  module, `src/_generated-assets/schema-migrations.ts`: the loaded,
+  digest-checked migration set (`schemaMigrations`). `db:generate` writes it
+  with every new migration and `db:ship` on its own; `db:check`, the test
+  suite and the generated-files pre-commit guard fail when it is missing or is
+  not what `db/migrations/` loads to. Nobody edits it.
+
 | Migration | Package | What it does |
 |---|---|---|
 | `0000_baseline` | all three | Every table as the stores' embedded DDL creates it |
@@ -356,7 +371,8 @@ hand-written SQL through `pg`.
    host for: it pairs each statement with the plan step it implements, and the
    adapter refuses if a step is left without SQL.
 
-It writes three files into `db/migrations/`:
+It writes three files into `db/migrations/`, and the shipped module beside
+them:
 
 - `NNNN_<name>.sql`: what runs. Each statement carries a `-- step:` comment
   naming its plan step and an `IF NOT EXISTS` guard.
@@ -408,6 +424,30 @@ named constraint the SQL creates exists. Otherwise the run rolls back.
 
 The ledger is the one relay table outside the declared schema. The runner
 creates it, because it has to exist before the first migration can be recorded.
+
+A database whose ledger holds a migration the journal does not have is ahead
+of this code. The run is refused before any statement (`SchemaAheadError`) and
+the database is left as it is: there is no downgrade. Two runs at once apply
+once; the second waits at the lock and finds the ledger.
+
+### Standbys get their schema from the migrations
+
+The hosted relay can run on a [fleet of databases](../ci-vercel/README.md):
+one writer, and standbys that receive copies. The application's stores are
+only ever opened on the writer, so a standby cannot get its schema from their
+`initialize`. It gets it from these migrations instead:
+`prepareRelaySchema` in `@hobo/ci-vercel` applies the three packages' shipped
+sets (`RELAY_SCHEMA_MIGRATIONS`) with `applyMigrations`, over the fleet's
+control connection. That is the same SQL `db:migrate` applies, under the same
+locks, recorded in the same ledger; the standby's only writes are DDL and
+ledger rows. A fresh standby gets every table and index; one that is behind
+gets what it lacks; one that is ahead is refused by name and left alone.
+
+The writer keeps its own start-up path (next section), which the lock holds
+identical to the migrations. When the fleet prepares the writer's side of a
+refused copy it runs the stores' initialisers first and then the same
+migrations, which is the procedure under [Existing databases](#existing-databases)
+done for the operator, and leaves the writer's ledger saying what it holds.
 
 ### Existing databases
 
@@ -462,8 +502,11 @@ skipped otherwise.
 
 ### Not done yet
 
-- The stores do not apply migrations; `db:migrate` is an operator step, and no
-  deployment runs it automatically.
+- The stores do not apply migrations to the database they write to: their
+  embedded DDL is still the writer's start-up path, and `db:migrate` is an
+  operator step there. The one place a deployment applies migrations by
+  itself is the hosted relay's database fleet, for its standbys and for the
+  writer's side of a refused copy.
 - Generation is a development step that checks its output in. ADR-0160's
   deploy-owned generation at the plan phase, and the gated
   expand → backfill → contract saga in `@hobo/trails` with its `migration.*`

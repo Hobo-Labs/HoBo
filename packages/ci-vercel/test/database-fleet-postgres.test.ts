@@ -3,12 +3,15 @@ import { parseConfiguration } from "@hobo/ci";
 import { PostgresCiStore } from "@hobo/ci/postgres";
 import {
 	bootstrapAssignment,
+	DEFAULT_FLEET_POLICY,
 	type PostgresFleetAssignment,
+	parseFleetFinancialModel,
 	proposeAssignment,
 	readCurrentAssignment,
 	readDataDigests,
 	readSequencePositions,
 	readWatermark,
+	reconcileFleet,
 	replicateSnapshot,
 	type SqlParameter,
 	type SqlSession,
@@ -16,8 +19,10 @@ import {
 	sqlAssignmentReplica,
 	standbyLagMs,
 } from "@hobo/data-postgres";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureRelaySchema } from "../src/database-fleet.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDatabaseFleet } from "../src/database-fleet.js";
+import { parseDatabaseFleet } from "../src/database-fleet-config.js";
+import { prepareRelaySchema } from "../src/relay-schema.js";
 import { PostgresWorkerHealth } from "../src/worker-health.js";
 import {
 	backendAt,
@@ -491,8 +496,25 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 			client.release();
 		}
 	});
-	it("creates the relay's own schema on every backend and copies a real relay database", async () => {
-		for (const backend of backends) await ensureRelaySchema(backend.pool);
+	it("creates the relay's own schema on every backend from its migrations and copies a real relay database", async () => {
+		// The standby gets the checked-in migrations and no store is opened on
+		// it; the writer is brought forward as the application starts on it.
+		await prepareRelaySchema(standby.pool, standby.id, "standby");
+		await prepareRelaySchema(writer.pool, writer.id, "writer");
+		const ledgerRows = async (backend: TestBackend) =>
+			Number(
+				(
+					await backend.pool.query(
+						"SELECT count(*)::text AS rows FROM hobo_ci_schema_migrations",
+					)
+				).rows[0]?.rows,
+			);
+		expect(await ledgerRows(standby)).toBeGreaterThanOrEqual(4);
+		expect(await ledgerRows(writer)).toBe(await ledgerRows(standby));
+		// Nothing of the application's is on the standby before the copy.
+		expect(
+			(await standby.pool.query("SELECT id FROM hobo_ci_partitions")).rows,
+		).toEqual([]);
 		const tables = async (backend: TestBackend) =>
 			(
 				await backend.pool.query(
@@ -543,10 +565,14 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 		expect(outcome).toMatchObject({ status: "replicated" });
 		if (outcome.status !== "replicated") return;
 		expect(outcome.watermark.rowCount).toBeGreaterThan(0);
-		// The fleet's own tables are under the relay's prefix and never copied.
+		// The fleet's own tables are under the relay's prefix and never copied,
+		// and neither is the migration ledger: what was applied to one
+		// database says nothing about another.
 		expect(
-			outcome.watermark.tables.some((table) =>
-				table.name.startsWith("hobo_ci_fleet_"),
+			outcome.watermark.tables.some(
+				(table) =>
+					table.name.startsWith("hobo_ci_fleet_") ||
+					table.name === "hobo_ci_schema_migrations",
 			),
 		).toBe(false);
 		expect(await readDataDigests(standby, testLayout)).toEqual(
@@ -556,5 +582,213 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 		expect(
 			(await new PostgresCiStore(standby.pool).configuration())?.configuration,
 		).toEqual((await store.configuration())?.configuration);
+	});
+	it("prepares each side of a refused copy by its role, standbys from the migrations alone", async () => {
+		// The writer runs a relay; the standbys are empty databases.
+		await prepareRelaySchema(writer.pool, writer.id, "writer");
+		const store = new PostgresCiStore(writer.pool);
+		await store.configure(
+			parseConfiguration(
+				await readFile(
+					new URL(
+						"../../ci/data-models/fixtures/valid/configuration.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			),
+			0,
+			new Date().toISOString(),
+		);
+		const prepared: [string, string][] = [];
+		const tick = () =>
+			reconcileFleet({
+				backends,
+				layout: testLayout,
+				models: backends.map((backend) =>
+					parseFleetFinancialModel({
+						backend: backend.id,
+						plan: "placeholder",
+						fixedMonthlyFeeMicros: 0,
+						allowances: [
+							{
+								unit: "operations",
+								included: 1_000_000_000,
+								beyond: "hard-stop",
+								meteredMicrosPerUnit: undefined,
+							},
+						],
+						evidence: {
+							source: "placeholder for tests",
+							observedAt: "2026-11-10",
+						},
+					}),
+				),
+				policy: DEFAULT_FLEET_POLICY,
+				leaseMs: 30_000,
+				graceMs: 5000,
+				// The relay's own seam, as `createDatabaseFleet` wires it.
+				ensureSchema: async (backend, role) => {
+					prepared.push([backend.id, role]);
+					const pool = backends.find((entry) => entry.id === backend.id)?.pool;
+					if (!pool) throw new Error("unknown fleet backend");
+					await prepareRelaySchema(pool, backend.id, role);
+				},
+				checkBudget: () => ({ ok: true, code: "ok", reason: "affordable" }),
+				meter: undefined,
+				limits: undefined,
+				decidedBy: "test-reconciler",
+				now: Date.now,
+				sleep: async () => {},
+				log: () => {},
+			});
+		const report = await tick();
+		expect(report.replications).toMatchObject([
+			{ source: "b0", target: "b1", status: "replicated" },
+			{ source: "b0", target: "b2", status: "replicated" },
+		]);
+		expect(prepared).toEqual([
+			["b1", "standby"],
+			["b0", "writer"],
+			["b2", "standby"],
+			["b0", "writer"],
+		]);
+		for (const copy of [standby, third]) {
+			// The index the account read needs is on the standby: it came from
+			// the same migration the writer's ledger records.
+			expect(
+				(
+					await copy.pool.query(
+						"SELECT 1 FROM pg_indexes WHERE indexname = 'hobo_ci_events_account_seq'",
+					)
+				).rowCount,
+			).toBe(1);
+			expect(await readDataDigests(copy, testLayout)).toEqual(
+				await readDataDigests(writer, testLayout),
+			);
+			expect(
+				(
+					await copy.pool.query(
+						"SELECT scope || '/' || id AS entry FROM hobo_ci_schema_migrations ORDER BY 1",
+					)
+				).rows,
+			).toEqual(
+				(
+					await writer.pool.query(
+						"SELECT scope || '/' || id AS entry FROM hobo_ci_schema_migrations ORDER BY 1",
+					)
+				).rows,
+			);
+		}
+		// With the schemas equal the seam is not called again.
+		prepared.length = 0;
+		expect((await tick()).replications).toMatchObject([
+			{ target: "b1", status: "replicated" },
+			{ target: "b2", status: "replicated" },
+		]);
+		expect(prepared).toEqual([]);
+	});
+	it("brings a standby that only lacks an index to this release, and leaves one that is ahead alone", async () => {
+		await prepareRelaySchema(writer.pool, writer.id, "writer");
+		// One standby as the release before the events account index left it:
+		// its columns already match the writer's, so no copy is refused and
+		// the seam is never offered it.
+		await prepareRelaySchema(standby.pool, standby.id, "standby");
+		await standby.pool.query("DROP INDEX hobo_ci_events_account_seq");
+		await standby.pool.query(
+			"DELETE FROM hobo_ci_schema_migrations WHERE id = '0001_events_account'",
+		);
+		// The other was prepared by a newer relay.
+		await prepareRelaySchema(third.pool, third.id, "standby");
+		await third.pool.query(
+			"INSERT INTO hobo_ci_schema_migrations (scope, id, sql_sha256, plan_digest, engine) VALUES ('@hobo/ci', '0002_from_a_newer_release', $1, $1, 'drizzle-kit@9.9.9')",
+			["2".repeat(64)],
+		);
+		const env = {
+			HOBO_CI_PUBLIC_URL: "https://relay.example",
+			CRON_SECRET: "c".repeat(40),
+			HOBO_CI_DATABASE_BACKENDS: "b0=A_,b1=B_,b2=C_",
+			...Object.fromEntries(
+				["A_", "B_", "C_"].flatMap((prefix, index) => [
+					[`${prefix}DATABASE_URL`, backendAt(backends, index).url],
+					[`${prefix}DATABASE_URL_UNPOOLED`, backendAt(backends, index).url],
+				]),
+			),
+		};
+		const config = parseDatabaseFleet(env);
+		if (!config) throw new Error("fleet was not configured");
+		const relay = createDatabaseFleet({
+			env,
+			config,
+			scheduledRepair: async () => {},
+			build: async () => {
+				throw new Error("this test runs no application");
+			},
+		});
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const schemaEvents = () =>
+			info.mock.calls
+				.map(([line]) => JSON.parse(String(line)))
+				.filter((event) => event.event === "hobo_ci_database_fleet_schema");
+		try {
+			const first = await relay.reconcile();
+			expect(first?.status).toBe("settled");
+			expect(first?.replications).toMatchObject([
+				{ target: "b1", status: "replicated" },
+				{ target: "b2", status: "replicated" },
+			]);
+			expect(schemaEvents()).toEqual(
+				expect.arrayContaining([
+					{
+						event: "hobo_ci_database_fleet_schema",
+						backend: "b1",
+						role: "standby",
+						status: "applied",
+						migrations: ["@hobo/ci/0001_events_account"],
+					},
+					{
+						event: "hobo_ci_database_fleet_schema",
+						backend: "b2",
+						role: "standby",
+						status: "ahead",
+						scope: "@hobo/ci",
+						migrations: ["0002_from_a_newer_release"],
+					},
+				]),
+			);
+			expect(schemaEvents().length).toBe(2);
+			// Nothing a line carries says how to reach a database.
+			for (const [line] of info.mock.calls)
+				for (const backend of backends)
+					expect(String(line)).not.toContain(new URL(backend.url).host);
+			expect(
+				(
+					await standby.pool.query(
+						"SELECT 1 FROM pg_indexes WHERE indexname = 'hobo_ci_events_account_seq'",
+					)
+				).rowCount,
+			).toBe(1);
+			// The backend that is ahead keeps its record, and is asked again;
+			// the one that caught up is not.
+			info.mockClear();
+			await relay.reconcile();
+			expect(
+				schemaEvents().map((event) => [event.backend, event.status]),
+			).toEqual([["b2", "ahead"]]);
+			expect(
+				(
+					await third.pool.query(
+						"SELECT id FROM hobo_ci_schema_migrations WHERE scope = '@hobo/ci' ORDER BY id",
+					)
+				).rows.map((row) => row.id),
+			).toEqual([
+				"0000_baseline",
+				"0001_events_account",
+				"0002_from_a_newer_release",
+			]);
+		} finally {
+			info.mockRestore();
+			await relay.close();
+		}
 	});
 });

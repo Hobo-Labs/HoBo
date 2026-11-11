@@ -26,6 +26,7 @@ export const schemaSource: RelaySchemaSource = {
 	packageRoot: new URL("../", import.meta.url),
 	directory: new URL("./migrations/", import.meta.url),
 	loadSchema: () => import("./schema.js"),
+	loadShipped: () => import("../src/_generated-assets/schema-migrations.js"),
 	initializeEmbedded: async (pool) => {
 		// The encryption keys only gate construction; initialisation is DDL.
 		await new PostgresAppRegistration(pool, randomBytes(32)).initialize();

@@ -520,9 +520,40 @@ that tick finds standbys about 15 minutes old, waits out
 - **The usage count is a lower bound** (an instance stopped before it writes
   its counter loses that count), and Neon's compute-hours are not measured at
   all.
-- **The schema seam is one function.** `ensureRelaySchema` runs the stores'
-  own table initialisers. When the schema moves to versioned migrations, that
-  function is the one place to change.
+- **A standby's schema comes from the checked-in migrations.**
+  `prepareRelaySchema` (`src/relay-schema.ts`) is the fleet's schema seam. On
+  a standby it applies `RELAY_SCHEMA_MIGRATIONS`, the migration sets
+  `@hobo/ci`, `@hobo/ci-gh-actions` and this package ship from their
+  `db/migrations/`, with the one runner (`applyMigrations` in
+  `@hobo/ci/schema-migrations`), over the fleet's control connection. No
+  relay store is opened on a standby, so the application writes nothing
+  there: the runner's writes are DDL and its ledger,
+  `hobo_ci_schema_migrations`, which the fleet does not copy. There is no
+  second list of DDL: the sets are copies of the reviewed SQL, held to it by
+  `db:check`, and the same SQL the writer's embedded DDL is proven to equal.
+  - *When.* For both sides of a copy that found the standby's columns
+    different from the writer's (the standby first), and, because a standby
+    that lacks only an index would never be offered that way, once per
+    instance for each standby whose ledger is not at this release: one read
+    of the ledger, and a migration run only if it is behind.
+  - *The writer's side* runs the stores' own initialisers first, as the
+    application does when it starts there, and then the same migrations. Only
+    the initialisers can move a table from an earlier release's layout
+    forward; the migrations then record what the writer holds.
+  - *Repeating and racing.* Each set is one transaction under the migration
+    lock and the locks the stores' initialisation takes, so several
+    instances, or a writer starting meanwhile, apply once.
+  - *A backend ahead of this release* (its ledger holds a migration this
+    release does not have, because a newer relay prepared it) is refused
+    before any statement and left exactly as it is; nothing is downgraded.
+    The error names the backend by its fleet id and the migration ids, never
+    a host or a connection string. While its columns still match the writer's
+    it keeps receiving copies; once they differ, its copies fail until the
+    newer release is deployed here or the backend leaves the fleet.
+  - *A standby that cannot converge* (a table at a layout older than the
+    baseline, which the guarded `CREATE TABLE` skips) is refused the same
+    way, with nothing recorded. It holds only copies: drop that table on the
+    standby and the next tick creates and refills it.
 
 #### Structured events
 
@@ -537,6 +568,7 @@ a connection string, a host name or an error message.
 | `hobo_ci_database_fleet_decision` | Every tick: action, reasons, target, loss window, every standby ranked |
 | `hobo_ci_database_fleet_transition` | Every attempt to change the assignment and whether it was decided |
 | `hobo_ci_database_fleet_unsettled` | A tick stopped: `undecided` or `no-majority` |
+| `hobo_ci_database_fleet_schema` | A backend's schema was prepared or could not be: `backend`, `role` (`writer`/`standby`), `status` (`applied`, `ahead`, `refused`, `failed`), and migration ids (those applied, or the unknown ones of a backend that is ahead). Nothing is written when there was nothing to apply |
 | `hobo_ci_database_fleet_failure` | A tick threw |
 
 #### Admission by HoBo's own conformance suite

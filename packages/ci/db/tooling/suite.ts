@@ -17,6 +17,7 @@ import {
 	applyMigrations,
 	checkEmbeddedDdlLock,
 	checkMigrations,
+	checkShippedMigrations,
 	type EquivalenceProof,
 	embeddedTableNames,
 	loadMigrationSet,
@@ -91,6 +92,31 @@ export function defineSchemaSuite(
 
 		it("still carries the embedded DDL that was proven equivalent", async () => {
 			expect(await checkEmbeddedDdlLock(source)).toEqual([]);
+		});
+
+		it("ships its hosts exactly the checked-in migrations", async () => {
+			expect(await checkShippedMigrations(source)).toEqual([]);
+			// The comparison can fail: a set that is not the checked-in one.
+			const shipped = (await source.loadShipped()).schemaMigrations;
+			if (!shipped) throw new Error("shipped migrations missing");
+			expect(
+				await checkShippedMigrations({
+					...source,
+					loadShipped: async () => ({
+						schemaMigrations: { ...shipped, migrations: [] },
+					}),
+				}),
+			).toEqual([
+				"src/_generated-assets/schema-migrations.ts is not what db/migrations loads to; run db:ship",
+			]);
+			expect(
+				await checkShippedMigrations({
+					...source,
+					loadShipped: async () => ({}),
+				}),
+			).toEqual([
+				"src/_generated-assets/schema-migrations.ts is missing; run db:ship",
+			]);
 		});
 
 		it("plans every later migration as forward-only expand steps too", async () => {

@@ -30,6 +30,10 @@
       "types": "./dist/postgres-store.d.ts",
       "default": "./dist/postgres-store.js"
     },
+    "./schema-migrations": {
+      "types": "./dist/schema-migrations.d.ts",
+      "default": "./dist/schema-migrations.js"
+    },
     "./sqlite": {
       "types": "./dist/sqlite-store.d.ts",
       "default": "./dist/sqlite-store.js"
@@ -49,6 +53,7 @@
     "lint": "biome check .",
     "test": "vitest run",
     "db:generate": "node --import tsx db/tooling/cli.mts generate",
+    "db:ship": "node --import tsx db/tooling/cli.mts ship",
     "db:check": "node --import tsx db/tooling/cli.mts check",
     "db:migrate": "node --import tsx db/tooling/cli.mts migrate",
     "db:verify": "node --import tsx db/tooling/cli.mts verify"

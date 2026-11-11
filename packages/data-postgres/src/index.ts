@@ -227,6 +227,7 @@ export {
 	type FleetReconcileOptions,
 	type FleetReconcileReport,
 	type FleetReplicationResult,
+	type FleetSchemaRole,
 	type FleetTransition,
 	type FleetTransitionStep,
 	reconcileFleet,
