@@ -204,6 +204,16 @@ export function createCiAgent(options: {
 				});
 			}
 		const day = startOfDay();
+		// Regions resolved before, in resolutions whose checks then passed.
+		const recorded = new Map<string, string>();
+		for (const checked of await journal.recent(
+			repository,
+			"ci.agent.ResolutionChecked",
+			new Date(Date.parse(now()) - 90 * 86_400_000).toISOString(),
+		))
+			if (checked.checksState === "success")
+				for (const region of checked.resolution?.regions ?? [])
+					recorded.set(region.conflictSha256, region.resolution);
 		const result = await resolveConflicts({
 			files: merge.files,
 			policy: policy.resolution,
@@ -214,7 +224,10 @@ export function createCiAgent(options: {
 				(await journal.tokensSince(day)),
 			oursLabel: input.oursLabel,
 			theirsLabel: input.theirsLabel,
-			previous,
+			// A repair corrects what was rejected; anything else may reuse
+			// what passed before.
+			previous: repair ? previous : undefined,
+			recorded,
 		});
 		if (result.outcome !== "resolved" && result.reason === "daily-budget") {
 			const last = await journal.latest(repository, "ci.agent.BudgetExhausted");
@@ -244,7 +257,9 @@ export function createCiAgent(options: {
 							"",
 							`Hobo-Agent-Resolution: ${key}`,
 							...(repair ? [`Hobo-Agent-Repairs: ${repair.of.key}`] : []),
-							`Hobo-Agent-Engine: ${result.engineId} (${result.model})`,
+							result.engineId === "recorded"
+								? "Hobo-Agent-Engine: recorded resolutions"
+								: `Hobo-Agent-Engine: ${result.engineId} (${result.model})`,
 							"",
 						].join("\n"),
 					})
@@ -270,6 +285,7 @@ export function createCiAgent(options: {
 				outputTokens: BigInt(result.usage.outputTokens),
 			},
 			commitSha,
+			regions: files.flatMap((file) => file.recorded),
 			repairs: repair?.of.key ?? "",
 			attempt: repair ? repair.of.attempt + 1 : 0,
 		});
@@ -335,10 +351,13 @@ export function createCiAgent(options: {
 			// fail others with it, and it is not enqueued again at this commit.
 			const isolated = new Set<number>();
 			const enqueuedBefore = Date.parse(now()) - 120_000;
+			const weekAgo = new Date(
+				Date.parse(now()) - 7 * 86_400_000,
+			).toISOString();
 			const enqueuedEvents = await journal.recent(
 				repository,
 				"ci.agent.EntryEnqueued",
-				"",
+				weekAgo,
 			);
 			for (const entry of entries) {
 				if (entry.started) continue;
@@ -568,6 +587,20 @@ export function createCiAgent(options: {
 
 			// Feed the host's merge queue in planned order.
 			if (mode === "apply") {
+				// A pull request whose head is one of the agent's own merge commits
+				// waits until the required checks have passed on that commit.
+				const unproven = new Set<string>();
+				for (const event of await journal.recent(
+					repository,
+					"ci.agent.ResolutionPublished",
+					weekAgo,
+				)) {
+					const commit = event.resolution?.commitSha;
+					const key = event.resolution?.key ?? "";
+					if (!commit) continue;
+					const checked = await journal.latestChecked(key);
+					if (checked?.checksState !== "success") unproven.add(commit);
+				}
 				// Two pull requests that conflict cannot share a merge group: wait
 				// until the one ahead merges, then resolve against the base branch.
 				const verdictOf = createVerdicts(verdicts);
@@ -583,6 +616,7 @@ export function createCiAgent(options: {
 						baseConflicts.has(entry.number) ||
 						baseUnknown.has(entry.number) ||
 						isolated.has(entry.number) ||
+						unproven.has(entry.headSha) ||
 						[...queued].some((number) => {
 							const ahead = byNumber.get(number);
 							return (

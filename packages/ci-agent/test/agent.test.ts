@@ -589,6 +589,70 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		).toHaveLength(2);
 	});
 
+	it("reuses a resolution whose checks passed for the same conflict, without the model", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const pulls = [first];
+		const { agent, checks } = setup("suggest", pulls, {}, [engine]);
+		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		checks.set(original, { state: "success", failures: "" });
+		await agent.tick();
+		expect(engine.requests).toHaveLength(1);
+
+		// A second pull request makes the same change and meets the same conflict.
+		{
+			// Branched from where the first one was, before main moved.
+			const head = repos.commit(
+				"pr-2",
+				{ "a.txt": BASE.replace("two", "TWO from 1") },
+				`${first.head}^`,
+			);
+			repos.pull(2, "pr-2");
+			pulls.push({ number: 2, branch: "pr-2", head, paths: ["a.txt"] });
+		}
+		const report = await agent.tick();
+		expect(engine.requests).toHaveLength(1);
+		expect(report.resolutions).toMatchObject([
+			{ number: 2, outcome: "resolved", engineId: "recorded" },
+		]);
+		const commit = report.resolutions[0]?.commitSha ?? "";
+		expect(repos.git(repos.agent, "show", `${commit}:a.txt`)).toBe(
+			repos.git(repos.agent, "show", `${original}:a.txt`),
+		);
+		expect(
+			repos.git(repos.agent, "log", "-1", "--format=%B", commit),
+		).toContain("Hobo-Agent-Engine: recorded resolutions");
+	});
+
+	it("does not reuse a resolution whose checks failed", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const pulls = [first];
+		const { agent, checks } = setup(
+			"suggest",
+			pulls,
+			{ resolution: { maxRepairs: 0 } },
+			[engine],
+		);
+		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		checks.set(original, { state: "failure", failures: "test failed" });
+		await agent.tick();
+		{
+			// Branched from where the first one was, before main moved.
+			const head = repos.commit(
+				"pr-2",
+				{ "a.txt": BASE.replace("two", "TWO from 1") },
+				`${first.head}^`,
+			);
+			repos.pull(2, "pr-2");
+			pulls.push({ number: 2, branch: "pr-2", head, paths: ["a.txt"] });
+		}
+		await agent.tick();
+		expect(engine.requests).toHaveLength(2);
+	});
+
 	it("records passing checks once and does not repair", async () => {
 		const first = pull(1, "TWO from 1");
 		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
@@ -631,6 +695,22 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		expect(comments.some((c) => c.body.includes("will not try again"))).toBe(
 			false,
 		);
+	});
+
+	it("apply: waits for the checks on its own merge commit before enqueueing", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const { agent, checks, enqueued } = setup("apply", [first]);
+		const resolved = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		// The pull request's head is now the agent's commit, and it merges cleanly.
+		first.head = resolved;
+		repos.git(repos.remote, "update-ref", "refs/pull/1/head", resolved);
+		checks.set(resolved, { state: "pending", failures: "" });
+		expect((await agent.tick()).enqueued).toEqual([]);
+		// The pass that sees them pass records it and enqueues.
+		checks.set(resolved, { state: "success", failures: "" });
+		expect((await agent.tick()).enqueued).toEqual([1]);
+		expect(enqueued).toEqual([1]);
 	});
 
 	it("apply: isolates and does not re-add a pull request the merge queue ejected", async () => {

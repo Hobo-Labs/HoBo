@@ -37,6 +37,7 @@ describe("relay agent (real git, GraphQL served from the repository state)", () 
 		rmSync(state, { recursive: true, force: true });
 	});
 
+	const defaultBranch = { name: "main" };
 	function serve(pulls: { number: number; branch: string }[]) {
 		const comments: string[] = [];
 		const tokens: string[] = [];
@@ -58,7 +59,9 @@ describe("relay agent (real git, GraphQL served from the repository state)", () 
 			});
 			let data = {};
 			if (query.includes("HoboAgentDefaultBranch"))
-				data = { repository: { defaultBranchRef: { name: "main" } } };
+				data = {
+					repository: { defaultBranchRef: { name: defaultBranch.name } },
+				};
 			else if (query.includes("HoboAgentQueue"))
 				data = {
 					repository: {
@@ -167,6 +170,40 @@ describe("relay agent (real git, GraphQL served from the repository state)", () 
 			"ci.agent.ResolutionPublished",
 		]);
 		restarted.close();
+	});
+
+	it("follows a renamed default branch on the next pass", async () => {
+		const queried: string[] = [];
+		const { send } = serve([]);
+		const recording: typeof fetch = async (input, init) => {
+			const body = String(init?.body);
+			if (body.includes("HoboAgentQueue"))
+				queried.push(JSON.parse(body).variables.branch);
+			return send(input, init);
+		};
+		repos.git(
+			repos.remote,
+			"update-ref",
+			"refs/heads/trunk",
+			repos.remoteRef("refs/heads/main"),
+		);
+		const agent = createRelayAgent({
+			config: testConfig("observe"),
+			connections: async () => [
+				{ installationId: 42, repository: "hobo-labs/hobo" },
+			],
+			token: async () => "t",
+			stateDirectory: state,
+			engines: [takeBoth()],
+			fetch: recording,
+			remoteUrl: () => repos.remote,
+		});
+		await agent.pass();
+		defaultBranch.name = "trunk";
+		await agent.pass();
+		expect(queried).toEqual(["main", "trunk"]);
+		defaultBranch.name = "main";
+		agent.close();
 	});
 
 	it("finishes a clone setup that was cut short", async () => {

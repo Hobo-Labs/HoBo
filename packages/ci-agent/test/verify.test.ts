@@ -20,6 +20,15 @@ describe("resolved-file checks", () => {
 		expect(sides("ci.yml", "a: 1\n", "a: 2\n", "a: 1\na: 2\n")).toBe(
 			"unparseable-resolution",
 		);
+		// A stream of documents is checked as one file, document by document.
+		const manifest = (replicas: number) =>
+			`kind: Service\n---\nkind: Deployment\nspec:\n  replicas: ${replicas}\n`;
+		expect(
+			sides("k8s.yaml", manifest(1), manifest(2), manifest(3)),
+		).toBeUndefined();
+		expect(
+			sides("k8s.yaml", manifest(1), manifest(2), `${manifest(3)}  bad: [\n`),
+		).toBe("unparseable-resolution");
 		expect(
 			sides(
 				"view.tsx",

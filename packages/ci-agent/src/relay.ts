@@ -52,16 +52,21 @@ export function createRelayAgent(options: {
 	const journal = createSqliteJournal(
 		join(options.stateDirectory, "agent.sqlite"),
 	);
-	const agents = new Map<string, CiAgent>();
+	/** One agent per repository, rebuilt when its installation or default branch changes. */
+	const agents = new Map<string, { identity: string; agent: CiAgent }>();
 	const run = promisify(execFile);
 
 	async function agentFor(connection: RelayConnection): Promise<CiAgent> {
 		const { repository, installationId } = connection;
-		const existing = agents.get(repository);
-		if (existing) return existing;
 		if (!REPOSITORY.test(repository))
 			throw new Error("invalid repository name");
 		const token = () => options.token(installationId);
+		const graphql = createGithubGraphql({ token, fetch: options.fetch });
+		// Read every pass: a repository can rename its default branch.
+		const baseRef = await githubDefaultBranch(graphql, repository);
+		const identity = `${installationId}@${baseRef}`;
+		const existing = agents.get(repository);
+		if (existing?.identity === identity) return existing.agent;
 		const directory = join(
 			options.stateDirectory,
 			"repositories",
@@ -80,10 +85,9 @@ export function createRelayAgent(options: {
 			],
 			{ cwd: directory },
 		);
-		const graphql = createGithubGraphql({ token, fetch: options.fetch });
 		const queue = createGithubQueue({
 			repository,
-			baseRef: await githubDefaultBranch(graphql, repository),
+			baseRef,
 			label: agentPolicies(options.config).queue.label,
 			graphql,
 			now: options.now,
@@ -103,7 +107,7 @@ export function createRelayAgent(options: {
 			journal,
 			now: options.now,
 		});
-		agents.set(repository, agent);
+		agents.set(repository, { identity, agent });
 		return agent;
 	}
 

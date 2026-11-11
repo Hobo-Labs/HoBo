@@ -181,12 +181,55 @@ describe("git workspace (real git)", () => {
 		const first = await workspace.commit(input);
 		await new Promise((resolve) => setTimeout(resolve, 1100));
 		expect(await workspace.commit(input)).toBe(first);
+		const today = new Date().toISOString().slice(0, 10);
 		expect(
-			repos.git(repos.agent, "rev-parse", `refs/hobo-agent/commits/${first}`),
+			repos.git(
+				repos.agent,
+				"rev-parse",
+				`refs/hobo-agent/commits/${today}/${first}`,
+			),
 		).toBe(first);
 		// Dated by its newer parent.
 		expect(repos.git(repos.agent, "log", "-1", "--format=%ct", first)).toBe(
 			repos.git(repos.agent, "log", "-1", "--format=%ct", theirs),
+		);
+	});
+
+	it("fetches what still exists when a listed pull request is gone, and prunes what it no longer needs", async () => {
+		const ours = repos.commit("ours", { "a.txt": BASE.replace("one", "ONE") });
+		const workspace = await fetched({ ours: 1 });
+		// An old commit ref, from more than a week ago.
+		repos.git(
+			repos.agent,
+			"update-ref",
+			`refs/hobo-agent/commits/2020-01-01/${ours}`,
+			ours,
+		);
+		// Pull request 2 was listed but closed since: its ref no longer exists.
+		await workspace.fetch([
+			"refs/heads/main",
+			"refs/pull/1/head",
+			"refs/pull/2/head",
+		]);
+		expect(
+			repos.git(
+				repos.agent,
+				"rev-parse",
+				"refs/hobo-agent/fetched/pull/1/head",
+			),
+		).toBe(ours);
+		// A fetch that no longer lists #1 drops its ref; the stale commit ref goes too.
+		await workspace.fetch(["refs/heads/main"]);
+		const refs = repos.git(
+			repos.agent,
+			"for-each-ref",
+			"--format=%(refname)",
+			"refs/hobo-agent/",
+		);
+		expect(refs.split("\n")).toEqual(["refs/hobo-agent/fetched/heads/main"]);
+		// The base branch is required: a missing one still fails.
+		await expect(workspace.fetch(["refs/heads/gone"])).rejects.toThrow(
+			"git fetch failed",
 		);
 	});
 

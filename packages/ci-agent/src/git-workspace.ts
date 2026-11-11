@@ -51,6 +51,9 @@ const REGULAR_FILE = new Set(["100644", "100755"]);
 /** Where fetched refs are kept, and where the agent's own commits stay reachable. */
 const FETCHED = "refs/hobo-agent/fetched/";
 const MADE = "refs/hobo-agent/commits/";
+/** A UTC day as `YYYY-MM-DD`, which sorts as it reads. */
+const day = (milliseconds: number) =>
+	new Date(milliseconds).toISOString().slice(0, 10);
 
 function object(value: string): string {
 	if (!OBJECT.test(value)) throw new Error("invalid git object id");
@@ -249,12 +252,53 @@ export function createGitWorkspace(options: {
 					throw new Error("refused git ref");
 			// Store what was fetched under refs of the agent's own, so the next
 			// fetch can tell the remote what it already has.
-			const refspecs = refs.map((ref) =>
-				OBJECT.test(ref) ? ref : `+${ref}:${FETCHED}${ref.slice(5)}`,
+			const refspec = (ref: string) =>
+				OBJECT.test(ref) ? ref : `+${ref}:${FETCHED}${ref.slice(5)}`;
+			const env = await remoteAuth();
+			try {
+				await run(
+					["fetch", "--quiet", "--no-tags", remote, ...refs.map(refspec)],
+					{
+						env,
+					},
+				);
+			} catch {
+				// One pull request closed since it was listed fails the whole fetch.
+				// Fetch one at a time; a branch is required, a pull request is not.
+				for (const ref of refs)
+					try {
+						await run(["fetch", "--quiet", "--no-tags", remote, refspec(ref)], {
+							env,
+						});
+					} catch (error) {
+						if (!ref.startsWith("refs/pull/")) throw error;
+					}
+			}
+			// Keep only what this fetch asked for, and commits from the last week.
+			const wanted = new Set(
+				refs
+					.filter((ref) => !OBJECT.test(ref))
+					.map((ref) => `${FETCHED}${ref.slice(5)}`),
 			);
-			await run(["fetch", "--quiet", "--no-tags", remote, ...refspecs], {
-				env: await remoteAuth(),
-			});
+			const cutoff = day(Date.now() - 7 * 86_400_000);
+			const listed = await run([
+				"for-each-ref",
+				"--format=%(refname)",
+				"refs/hobo-agent/",
+			]);
+			const stale = listed.stdout
+				.toString("utf8")
+				.split("\n")
+				.filter(
+					(name) =>
+						(name.startsWith(FETCHED) && !wanted.has(name)) ||
+						(name.startsWith(MADE) &&
+							(name.slice(MADE.length).split("/")[0] ?? "") < cutoff),
+				);
+			if (stale.length > 0)
+				await run(["update-ref", "--stdin"], {
+					input: stale.map((name) => `delete ${name}\n`).join(""),
+				});
 		},
 		async trial(ours, theirs) {
 			const { stdout, code } = await run(
@@ -381,8 +425,9 @@ export function createGitWorkspace(options: {
 						},
 					);
 				const id = object(commit.stdout.toString("utf8").trim());
-				// Keep it reachable until it is published, whenever that is.
-				await run(["update-ref", `${MADE}${id}`, id]);
+				// Keep it reachable for a week: long enough to be published and
+				// repaired. A fetch prunes the days before that.
+				await run(["update-ref", `${MADE}${day(Date.now())}/${id}`, id]);
 				return id;
 			} finally {
 				await rm(directory, { recursive: true, force: true });

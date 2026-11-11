@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type ConflictFile, resolveConflicts } from "../src/resolver.js";
+import {
+	type ConflictFile,
+	conflictKey,
+	resolveConflicts,
+} from "../src/resolver.js";
 import { type PolicyOverrides, testPolicies } from "./fixtures/config.js";
 import { scriptedEngine, takeBoth } from "./fixtures/engine.js";
 
@@ -254,6 +258,81 @@ describe("conflict resolver", () => {
 			outcome: "abstained",
 			reason,
 		});
+	});
+
+	it("reuses recorded resolutions and asks an engine only about the rest", async () => {
+		const { resolution, budget } = testPolicies();
+		const first = conflictKey({
+			ours: "ours 1\n",
+			base: "old\n",
+			theirs: "theirs 1\n",
+		});
+		const both = conflictKey({
+			ours: "ours 2\n",
+			base: "old\n",
+			theirs: "theirs 2\n",
+		});
+		const call = (
+			recorded: Map<string, string>,
+			engines = [takeBoth()],
+			previous?: Map<
+				string,
+				{ regions: { id: number; resolution: string }[]; checkFailures: string }
+			>,
+		) =>
+			resolveConflicts({
+				files: [conflicted],
+				policy: resolution,
+				budget,
+				engines,
+				remainingTokens: 1_000_000,
+				oursLabel: "a",
+				theirsLabel: "b",
+				recorded,
+				previous,
+			});
+		// Both regions recorded: no engine is asked, nothing is spent.
+		const unused = takeBoth();
+		const all = await call(
+			new Map([
+				[first, "recorded 1\n"],
+				[both, "recorded 2\n"],
+			]),
+			[unused],
+		);
+		expect(all).toMatchObject({
+			outcome: "resolved",
+			engineId: "recorded",
+			usage: { inputTokens: 0, outputTokens: 0 },
+			files: [{ content: "head\nrecorded 1\nmiddle\nrecorded 2\ntail\n" }],
+		});
+		expect(unused.requests).toHaveLength(0);
+		// One recorded: the engine sees only the other.
+		const partial = takeBoth();
+		const some = await call(new Map([[first, "recorded 1\n"]]), [partial]);
+		expect(partial.requests[0]?.regions.map((region) => region.id)).toEqual([
+			1,
+		]);
+		expect(some).toMatchObject({
+			outcome: "resolved",
+			files: [
+				{
+					content: "head\nrecorded 1\nmiddle\nours 2\ntheirs 2\ntail\n",
+					recorded: [
+						{ conflictSha256: first, resolution: "recorded 1\n" },
+						{ conflictSha256: both, resolution: "ours 2\ntheirs 2\n" },
+					],
+				},
+			],
+		});
+		// A repair corrects what was rejected, so it asks about every region.
+		const repairing = takeBoth();
+		await call(
+			new Map([[first, "recorded 1\n"]]),
+			[repairing],
+			new Map([["src/a.ts", { regions: [], checkFailures: "x" }]]),
+		);
+		expect(repairing.requests[0]?.regions).toHaveLength(2);
 	});
 
 	it("fails when no engine answers", async () => {

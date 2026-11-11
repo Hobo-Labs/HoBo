@@ -171,6 +171,15 @@ message Resolution {
   string repairs = 14;
   // 0 for a first resolution; one more for each repair.
   uint32 attempt = 15;
+  // The text each conflict region was resolved with. Reused for the same
+  // conflict once this resolution's checks have passed.
+  repeated RecordedRegion regions = 16;
+}
+
+message RecordedRegion {
+  // SHA-256 over the region's ours, base and theirs text.
+  string conflict_sha256 = 1;
+  string resolution = 2;
 }
 
 // The agent's journal record. Replay rebuilds spent budget and attempted keys.

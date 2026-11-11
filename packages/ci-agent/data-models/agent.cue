@@ -127,6 +127,11 @@ import "list"
 	outputTokens?: =~"^[0-9]{1,19}$" | (int & >=0)
 }
 
+#RecordedRegion: {
+	conflictSha256: #Digest
+	resolution:     string
+}
+
 #ResolvedFile: {
 	path:          #Path
 	regions?:      int & >=0
@@ -148,6 +153,7 @@ import "list"
 	usage?:        #TokenUsage
 	commitSha?:    "" | #Sha
 	publishedRef?: string
+	regions?:      [...#RecordedRegion]
 	repairs?:      "" | #Digest
 	attempt?:      int & >=0 & <=3
 	// A repair is a later attempt, and a later attempt repairs something.

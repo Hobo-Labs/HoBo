@@ -195,7 +195,7 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
 		})
 		.catch((error) => {
 			process.stderr.write(
-				`HoBo CI agent could not start: ${error instanceof Error ? error.message : "unknown error"}\n`,
+				`HoBo CI agent ${once ? "pass failed" : "could not start"}: ${error instanceof Error ? error.message : "unknown error"}\n`,
 			);
 			process.exitCode = 1;
 		});

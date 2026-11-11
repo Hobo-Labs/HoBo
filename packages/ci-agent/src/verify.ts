@@ -1,5 +1,11 @@
-import ts from "typescript";
-import { parse as parseYaml } from "yaml";
+import { createRequire } from "node:module";
+import type TypeScript from "typescript";
+
+// TypeScript is a CommonJS package; requiring it directly keeps test runners
+// from transforming it and looking for a source map it does not ship.
+const ts: typeof TypeScript = createRequire(import.meta.url)("typescript");
+
+import { parseAllDocuments } from "yaml";
 
 /** Why a resolved file was refused after it was put together. Fixed codes. */
 export type VerifyRefusal = "unparseable-resolution" | "duplicate-declaration";
@@ -26,7 +32,7 @@ const SCRIPT_KINDS = new Map([
 const extension = (path: string) =>
 	/\.([A-Za-z0-9]+)$/.exec(path)?.[1]?.toLowerCase() ?? "";
 
-function scriptKind(path: string): ts.ScriptKind | undefined {
+function scriptKind(path: string): TypeScript.ScriptKind | undefined {
 	const kind = SCRIPT_KINDS.get(extension(path));
 	// A `.d.ts` file declares the same name more than once on purpose.
 	return kind !== undefined && !/\.d\.[cm]?ts$/i.test(path) ? kind : undefined;
@@ -59,9 +65,12 @@ function parses(path: string, text: string): boolean | undefined {
 			}
 		case "yaml":
 		case "yml":
+			// A stream of documents, as Kubernetes manifests are, is one file.
 			try {
-				parseYaml(text, { strict: true, uniqueKeys: true });
-				return true;
+				return parseAllDocuments(text, {
+					strict: true,
+					uniqueKeys: true,
+				}).every((document) => document.errors.length === 0);
 			} catch {
 				return false;
 			}

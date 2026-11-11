@@ -38,6 +38,8 @@ export interface AgentJournal {
 		repository: string,
 		type: AgentEventType,
 	): Promise<AgentEvent | undefined>;
+	/** The `ResolutionChecked` event for a resolution key, if its checks concluded. */
+	latestChecked(resolutionKey: string): Promise<AgentEvent | undefined>;
 	/** Events of one type for a repository at or after `since`, oldest first. */
 	recent(
 		repository: string,
@@ -117,6 +119,10 @@ export function createMemoryJournal(): AgentJournal {
 					(event) => event.repository === repository && event.type === type,
 				)
 				.at(-1);
+		},
+		async latestChecked(resolutionKey) {
+			const key = checkedKey(resolutionKey);
+			return events.filter((event) => eventKey(event) === key).at(-1);
 		},
 		async recent(repository, type, since) {
 			return events.filter(
