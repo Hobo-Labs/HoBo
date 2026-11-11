@@ -102,6 +102,16 @@ export function parseWorkerStopMode(value: string | undefined): WorkerStopMode {
 	throw new Error("invalid HOBO_CI_WORKER_STOP_MODE");
 }
 
+/** Second drain signal may exit when inventory shows no running worker containers. */
+export async function shouldForceExitDrainOnRepeatSignal(options: {
+	signalCount: number;
+	draining: boolean;
+	runningWorkerContainers: number;
+}): Promise<boolean> {
+	if (options.signalCount < 2 || !options.draining) return false;
+	return options.runningWorkerContainers === 0;
+}
+
 export async function stopIsolatedWorker(options: {
 	mode: WorkerStopMode;
 	inFlight: () => Promise<number>;
