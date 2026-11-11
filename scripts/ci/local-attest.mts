@@ -39,7 +39,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
 	ATTESTATION_BRANCH,
@@ -49,12 +49,17 @@ import {
 	type AttestationEnvelope,
 	type AttestationEvent,
 	type AttestationStatement,
+	type AttestationTools,
 	type AttestationVerdict,
 	type AttestedJobResult,
 	attestationPath,
 	canonicalJson,
 	type CoveredJob,
+	GATE_JOBS,
+	isObjectId,
 	keyIdOf,
+	MAX_TRUST_DAYS,
+	NEEDS_CONTAINER_ENGINE,
 	parseEnvelope,
 	publicKeyText,
 	sha256Digest,
@@ -142,7 +147,34 @@ type GitOptions = Readonly<{
 	input?: string;
 }>;
 
-/** One git command in `cwd`; its trimmed output, or an error carrying git's own words. */
+/**
+ * Variables that tell git which repository, index or work tree to use. Git
+ * sets them for the hooks it runs, so a command started from a hook (a test
+ * run by pre-commit, say) would act on that repository instead of the one in
+ * `cwd`. Every git command here is about `cwd`, so they are dropped.
+ */
+export const GIT_LOCATION_VARIABLES = [
+	"GIT_DIR",
+	"GIT_WORK_TREE",
+	"GIT_INDEX_FILE",
+	"GIT_COMMON_DIR",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_NAMESPACE",
+	"GIT_PREFIX",
+	"GIT_QUARANTINE_PATH",
+];
+
+/** This process's environment without the variables that point git elsewhere. */
+export function gitEnvironment(
+	extra: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+	const environment = { ...process.env };
+	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
+	return { ...environment, ...extra };
+}
+
+/** One git command about the repository at `cwd`; its trimmed output, or an error carrying git's own words. */
 export function git(
 	cwd: string,
 	args: readonly string[],
@@ -151,7 +183,7 @@ export function git(
 	return execFileSync("git", args, {
 		cwd,
 		encoding: "utf8",
-		env: { ...process.env, ...options.env },
+		env: gitEnvironment(options.env),
 		input: options.input,
 		stdio: ["pipe", "pipe", "pipe"],
 		maxBuffer: 64 * 1024 * 1024,
@@ -173,6 +205,25 @@ function gitFailure(cause: Error): string {
 	return `${cause.message}\n${stderr === undefined ? "" : String(stderr)}`;
 }
 
+/**
+ * Git's words about a remote, made safe to print: the remote's URL is replaced
+ * by its name, and credentials in any URL are removed. A push URL can carry a
+ * token, and git repeats the URL in its errors.
+ */
+export function scrubRemote(text: string, url: string, name: string): string {
+	// Git prints the URL as given, and also with its credentials taken out.
+	const forms = [
+		url,
+		url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/\s@]+@/u, "$1"),
+	].filter((form) => form !== "");
+	let scrubbed = text;
+	for (const form of new Set(forms)) scrubbed = scrubbed.replaceAll(form, name);
+	return scrubbed.replace(
+		/([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/\s@]+@/gu,
+		"$1***@",
+	);
+}
+
 /** A fixed identity for the plumbing commits this script makes; the signature names the attestor. */
 const PLUMBING_IDENTITY = {
 	GIT_AUTHOR_NAME: "hobo ci:attest",
@@ -184,20 +235,83 @@ const PLUMBING_IDENTITY = {
 export const PUBLISH_ATTEMPTS = 5;
 
 /**
+ * Whether a record would be accepted for its own tree and one of its own
+ * events, by the keys trusted at its own base commit, as that commit is in
+ * the repository at `cwd`. This is the workflow's check with nothing left to
+ * chance but the event: a record that fails it can skip no job anywhere.
+ */
+export function verifyRecord(input: {
+	cwd: string;
+	envelopeText: string;
+	nowMs: number;
+}): AttestationVerdict {
+	const { statement } = parseEnvelope(input.envelopeText);
+	let attestorsText: string;
+	let baseTree: string;
+	try {
+		attestorsText = git(input.cwd, [
+			"show",
+			`${statement.base}:${ATTESTORS_PATH}`,
+		]);
+		baseTree = git(input.cwd, ["rev-parse", `${statement.base}^{tree}`]);
+	} catch {
+		return {
+			attested: false,
+			reason: `its base commit ${statement.base} is not here, or has no ${ATTESTORS_PATH}`,
+		};
+	}
+	let verdict: AttestationVerdict = {
+		attested: false,
+		reason: "it names no event",
+	};
+	for (const event of statement.events) {
+		verdict = verifyAttestation({
+			envelopeText: input.envelopeText,
+			attestorsText,
+			tree: statement.tree,
+			baseTree,
+			event,
+			nowMs: input.nowMs,
+			head: statement.head,
+			base: statement.base,
+		});
+		if (verdict.attested) return verdict;
+	}
+	return verdict;
+}
+
+/**
  * Commits `envelopeText` as `attestations/<tree>.json` on the orphan branch
  * `ci-attestations` of `remote` and pushes it. Built with git plumbing in a
  * temporary index: the working tree, the index, HEAD, FETCH_HEAD and every
- * ref of the repository at `cwd` are left as they were. A push that loses a race (someone else
- * published first) is rebuilt on the new tip and retried.
+ * ref of the repository at `cwd` are left as they were. A push that loses a
+ * race (someone else published first) is rebuilt on the new tip and retried.
+ *
+ * Nothing is pushed unless the record verifies against the keys trusted at
+ * its base commit. The remote's URL is never printed.
  */
 export function publishAttestation(input: {
 	cwd: string;
 	remote: string;
 	envelopeText: string;
+	nowMs?: number;
 	/** Called after the commit is built and before it is pushed; for tests. */
 	beforePush?: (attempt: number) => void;
 }) {
 	const { cwd, envelopeText } = input;
+	const { tree: attestedTree } = parseEnvelope(envelopeText).statement;
+	// The tree becomes a path on the branch; it must be an object id and nothing else.
+	if (!isObjectId(attestedTree))
+		throw new AttestError("the attestation's tree is not a git object id");
+	const verdict = verifyRecord({
+		cwd,
+		envelopeText,
+		nowMs: input.nowMs ?? Date.now(),
+	});
+	if (!verdict.attested)
+		throw new AttestError(
+			`not publishing: no workflow would accept this record (${verdict.reason})`,
+		);
 	// By URL, not by name: a push to a named remote also moves that remote's
 	// tracking ref in this repository.
 	let remote = input.remote;
@@ -206,7 +320,22 @@ export function publishAttestation(input: {
 	} catch {
 		remote = input.remote;
 	}
-	const path = attestationPath(parseEnvelope(envelopeText).statement.tree);
+	const named = remote === input.remote ? "the remote" : input.remote;
+	/** A git command that talks to the remote; its errors never show the URL. */
+	const remoteGit = (args: readonly string[]) => {
+		try {
+			return git(cwd, args, { env: { GIT_TERMINAL_PROMPT: "0" } });
+		} catch (cause) {
+			throw new AttestError(
+				scrubRemote(
+					cause instanceof Error ? gitFailure(cause) : "git failed",
+					remote,
+					named,
+				),
+			);
+		}
+	};
+	const path = attestationPath(attestedTree);
 	const ref = `refs/heads/${ATTESTATION_BRANCH}`;
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-publish-"));
 	try {
@@ -215,13 +344,13 @@ export function publishAttestation(input: {
 		});
 		let lastError = "";
 		for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt++) {
-			const parent = git(cwd, ["ls-remote", remote, ref]).split(/\s+/u)[0];
+			const parent = remoteGit(["ls-remote", remote, ref]).split(/\s+/u)[0];
 			const env = {
 				...PLUMBING_IDENTITY,
 				GIT_INDEX_FILE: join(scratch, `index-${attempt}`),
 			};
 			if (parent) {
-				git(cwd, [
+				remoteGit([
 					"fetch",
 					"--no-tags",
 					"--no-write-fetch-head",
@@ -254,16 +383,16 @@ export function publishAttestation(input: {
 			);
 			input.beforePush?.(attempt);
 			try {
-				git(cwd, ["push", "--quiet", remote, `${commit}:${ref}`]);
+				remoteGit(["push", "--quiet", remote, `${commit}:${ref}`]);
 				return { commit, path, attempts: attempt, unchanged: false };
 			} catch (cause) {
-				lastError = cause instanceof Error ? gitFailure(cause) : "push failed";
+				lastError = cause instanceof Error ? cause.message : "push failed";
 				// Only a lost race is worth another try; anything else will fail again.
 				if (
 					!/rejected|non-fast-forward|fetch first|stale info/iu.test(lastError)
 				)
 					throw new AttestError(
-						`could not push the attestation to ${input.remote}: ${lastError}`,
+						`could not push the attestation to ${named}: ${lastError}`,
 					);
 			}
 		}
@@ -432,17 +561,200 @@ function runCommand(
 	});
 }
 
-/** Whether a Docker engine answers right now. Asked at run time, never assumed. */
-export function dockerEngineAnswers(): boolean {
+/**
+ * The version of the Docker engine that answers right now, or undefined when
+ * none does. Asked at run time, never assumed.
+ */
+export function dockerEngineVersion(): string | undefined {
 	try {
-		execFileSync("docker", ["info", "--format", "{{.ServerVersion}}"], {
-			stdio: ["ignore", "pipe", "ignore"],
-			timeout: 30_000,
-		});
-		return true;
+		const version = execFileSync(
+			"docker",
+			["info", "--format", "{{.ServerVersion}}"],
+			{
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 30_000,
+			},
+		).trim();
+		return version === "" ? undefined : version;
 	} catch {
-		return false;
+		return undefined;
 	}
+}
+
+/** What a tool says its version is, run the way a step would run it. */
+function toolVersion(
+	command: string,
+	args: readonly string[],
+	cwd: string,
+	env: NodeJS.ProcessEnv,
+): string {
+	try {
+		return (
+			execFileSync(command, args, {
+				cwd,
+				env,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 60_000,
+			})
+				.trim()
+				.split("\n")[0] ?? ""
+		);
+	} catch {
+		throw new AttestError(
+			`could not run ${command} ${args.join(" ")} to record its version`,
+		);
+	}
+}
+
+/** Variables a step receives from this machine, by exact name. Everything else is dropped. */
+const PASSED_NAMES = new Set([
+	"PATH",
+	"LANG",
+	"LANGUAGE",
+	"TERM",
+	"TZ",
+	"TMPDIR",
+	"USER",
+	"LOGNAME",
+	"SHELL",
+	"FORCE_COLOR",
+	"NO_COLOR",
+	// The way to the network: proxies and the certificates they need.
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"ALL_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
+	"all_proxy",
+	"npm_config_proxy",
+	"npm_config_https_proxy",
+	"npm_config_noproxy",
+	"SSL_CERT_FILE",
+	"SSL_CERT_DIR",
+	"NODE_EXTRA_CA_CERTS",
+	"CURL_CA_BUNDLE",
+	"REQUESTS_CA_BUNDLE",
+	"GIT_SSL_CAINFO",
+	// Where tools and their caches live.
+	"NODE_OPTIONS",
+	"PNPM_HOME",
+	"COREPACK_HOME",
+	"COREPACK_ENABLE_AUTO_PIN",
+	"PLAYWRIGHT_BROWSERS_PATH",
+	"PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD",
+	"CHROME_BIN",
+	"CHROME_PATH",
+	"PUPPETEER_EXECUTABLE_PATH",
+	"DOCKER_HOST",
+	"DOCKER_CONTEXT",
+	"DOCKER_TLS_VERIFY",
+	"DOCKER_CERT_PATH",
+	"JAVA_HOME",
+	"RUSTUP_HOME",
+	"CARGO_HOME",
+	"GOPATH",
+	"GOCACHE",
+	"GOMODCACHE",
+	"BUN_INSTALL",
+	"XDG_DATA_DIRS",
+	"XDG_RUNTIME_DIR",
+]);
+const PASSED_PREFIXES = ["LC_", "TURBO_", "MISE_", "TESTCONTAINERS_"];
+/** A name that says it holds a credential is never passed on, allowed prefix or not. */
+const CREDENTIAL_NAME =
+	/TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|PRIVATE|APIKEY|(^|_)PAT$|(^|_)KEY($|_)/iu;
+
+/** Tool directories under the real home that a step still needs, each named outright. */
+function toolDirectories(env: NodeJS.ProcessEnv, realHome: string) {
+	const directories = new Map<string, string>([
+		["XDG_CACHE_HOME", env.XDG_CACHE_HOME || join(realHome, ".cache")],
+		["XDG_DATA_HOME", env.XDG_DATA_HOME || join(realHome, ".local", "share")],
+		["XDG_STATE_HOME", env.XDG_STATE_HOME || join(realHome, ".local", "state")],
+	]);
+	const whenPresent = (name: string, path: string) => {
+		if (!env[name] && existsSync(path)) directories.set(name, path);
+	};
+	whenPresent("RUSTUP_HOME", join(realHome, ".rustup"));
+	whenPresent("CARGO_HOME", join(realHome, ".cargo"));
+	whenPresent("GOPATH", join(realHome, "go"));
+	whenPresent("BUN_INSTALL", join(realHome, ".bun"));
+	whenPresent("MISE_CONFIG_DIR", join(realHome, ".config", "mise"));
+	whenPresent("npm_config_cache", join(realHome, ".npm"));
+	return Object.fromEntries(directories);
+}
+
+/**
+ * The environment a step starts from: an allowlist of this machine's
+ * variables, and a home directory of its own.
+ *
+ * The code under test runs as the same user as the signing key, so it must
+ * not be handed anything it does not need. Only the names above pass, never
+ * one that says it holds a credential (GITHUB_TOKEN, GH_TOKEN, *_PAT, *_KEY,
+ * *_SECRET, registry auth); a step that needs such a variable declares it in
+ * its own `env`. HOME and XDG_CONFIG_HOME point at an empty scratch directory,
+ * so `~/.config/hobo/ci-attestor`, `~/.npmrc`, `~/.gitconfig`, `~/.ssh` and
+ * `~/.aws` are not where a tool looks. Caches stay shared through explicit
+ * paths. This is hygiene, not a sandbox: a step can still open any file this
+ * user can.
+ */
+export function stepEnvironment(machine: NodeJS.ProcessEnv, home: string) {
+	const environment = new Map<string, string>();
+	for (const [name, value] of Object.entries(machine)) {
+		if (value === undefined || CREDENTIAL_NAME.test(name)) continue;
+		if (
+			PASSED_NAMES.has(name) ||
+			PASSED_PREFIXES.some((prefix) => name.startsWith(prefix))
+		)
+			environment.set(name, value);
+	}
+	const realHome = machine.HOME || homedir();
+	for (const [name, value] of Object.entries({
+		...toolDirectories(machine, realHome),
+		HOME: home,
+		XDG_CONFIG_HOME: join(home, ".config"),
+		// Nothing a step runs may stop to ask for a password.
+		GIT_TERMINAL_PROMPT: "0",
+	}))
+		environment.set(name, value);
+	return Object.fromEntries(environment);
+}
+
+/**
+ * Refuses a signing key kept where the code under test is pointed: in the
+ * checkout, or in a tool directory a step is given.
+ */
+export function assertKeyApart(
+	keyPath: string,
+	root: string,
+	machine: NodeJS.ProcessEnv,
+): void {
+	const inside = (directory: string) =>
+		!relative(resolve(directory), resolve(keyPath)).startsWith("..");
+	const shared = Object.values(
+		toolDirectories(machine, machine.HOME || homedir()),
+	);
+	const holder = [root, ...shared].find(inside);
+	if (holder)
+		throw new AttestError(
+			`the signing key is inside ${holder}, which the commands under test are given; keep it elsewhere (HOBO_CI_ATTESTOR_KEY)`,
+		);
+}
+
+type RanTools = {
+	-readonly [Key in keyof AttestationTools]: AttestationTools[Key];
+};
+
+/** The versions of the tools the steps run, asked of the tools themselves. */
+function ranTools(root: string, env: NodeJS.ProcessEnv): RanTools {
+	return {
+		node: toolVersion("node", ["--version"], root, env),
+		pnpm: toolVersion("pnpm", ["--version"], root, env),
+		turbo: toolVersion("pnpm", ["exec", "turbo", "--version"], root, env),
+	};
 }
 
 /** The memory limits ci-runner-preflight sets on a CI machine, computed for this one. */
@@ -557,6 +869,10 @@ export async function runAttestedJobs(input: {
 	/** Run every Turbo task again instead of replaying a cached result. */
 	fresh?: boolean;
 	env?: NodeJS.ProcessEnv;
+	/** The engine's version, or undefined when none answers; asked once. For tests. */
+	engineVersion?: () => string | undefined;
+	/** The versions of the tools the steps run. For tests. */
+	toolVersions?: (root: string, env: NodeJS.ProcessEnv) => RanTools;
 }): Promise<RunOutcome> {
 	const { target, plan, events } = input;
 	const { root } = target;
@@ -564,14 +880,20 @@ export async function runAttestedJobs(input: {
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-run-"));
 	const outputDirectory = join(root, OUTPUT_DIRECTORY, target.tree);
 	mkdirSync(outputDirectory, { recursive: true });
-	const baseEnv = input.env ?? process.env;
+	// What a step starts from: an allowlist of this machine's variables and a
+	// home directory of its own, with nothing of the signer's in it.
+	const home = join(scratch, "home");
+	mkdirSync(join(home, ".config"), { recursive: true });
+	const baseEnv = stepEnvironment(input.env ?? process.env, home);
 	const machine = machineEnv(scratch);
 	// TURBO_FORCE makes Turbo run a task even when it holds a cached result.
 	const turboEnv: StepValues = {};
 	if (input.fresh) turboEnv.TURBO_FORCE = "true";
-	const dockerEngine = dockerEngineAnswers();
+	const engine = (input.engineVersion ?? dockerEngineVersion)();
+	const tools = (input.toolVersions ?? ranTools)(root, baseEnv);
+	if (engine !== undefined) tools.docker = engine;
 	console.log(
-		`ci:attest: tree ${target.tree} against base ${target.base.slice(0, 12)}; Docker engine ${dockerEngine ? "answers" : "does not answer (container-backed tests will be skipped)"}`,
+		`ci:attest: tree ${target.tree} against base ${target.base.slice(0, 12)}; Docker engine ${engine === undefined ? "does not answer" : `${engine} answers`}`,
 	);
 
 	const runs = new Map<CoveredJob, JobRun>();
@@ -582,8 +904,20 @@ export async function runAttestedJobs(input: {
 		writeFileSync(log, "");
 		logs.set(job.id, log);
 	}
+	// Jobs this run will not sign for, decided before anything runs.
 	const notAttested: Record<string, string> = {};
 	for (const id of input.skipJobs) notAttested[id] = "left out with --skip-job";
+	if (engine === undefined)
+		for (const id of NEEDS_CONTAINER_ENGINE)
+			notAttested[id] ??=
+				"its tests start containers, and no Docker engine answers here";
+	// The PR impact gate takes its jobs together or not at all.
+	const gateGap = GATE_JOBS.find((id) => notAttested[id] !== undefined);
+	if (gateGap)
+		for (const id of GATE_JOBS)
+			notAttested[id] ??=
+				`the PR impact gate's jobs are attested together, and ${gateGap} is left out`;
+	const leftOut = new Set(Object.keys(notAttested));
 
 	const restoreHead = detachHeadAt(root, target.mergeCommit);
 	const onSignal = () => {
@@ -602,7 +936,7 @@ export async function runAttestedJobs(input: {
 				const run = runs.get(job.id);
 				const log = logs.get(job.id);
 				if (!run || !log) continue;
-				if (input.skipJobs.includes(job.id) || run.uncovered) {
+				if (leftOut.has(job.id) || run.uncovered) {
 					jobResults.set(job.id, "skipped");
 					continue;
 				}
@@ -794,8 +1128,7 @@ export async function runAttestedJobs(input: {
 	for (const job of plan) {
 		const run = runs.get(job.id);
 		const log = logs.get(job.id);
-		if (!run || !log || run.uncovered || input.skipJobs.includes(job.id))
-			continue;
+		if (!run || !log || run.uncovered || leftOut.has(job.id)) continue;
 		if (run.events.length === 0) {
 			notAttested[job.id] = "it does not run on the events asked for";
 			continue;
@@ -803,11 +1136,18 @@ export async function runAttestedJobs(input: {
 		results.push({
 			id: job.id,
 			status: "passed",
+			events: run.events,
 			commands: run.commands,
 			durationMs: run.durationMs,
 			logDigest: sha256Digest(readFileSync(log)),
 		});
 	}
+	if (results.length === 0)
+		throw new AttestError(
+			`no covered job ran, so nothing was signed:\n${Object.entries(notAttested)
+				.map(([id, reason]) => `  ${id}: ${reason}`)
+				.join("\n")}`,
+		);
 	const statement: AttestationStatement = {
 		predicateType: ATTESTATION_PREDICATE_TYPE,
 		tree: target.tree,
@@ -820,14 +1160,9 @@ export async function runAttestedJobs(input: {
 		finishedAt: new Date().toISOString(),
 		attestor: keyIdOf(createPublicKey(input.privateKey)),
 		environment: {
-			node: process.version,
 			platform: `${process.platform}-${process.arch}`,
-			dockerEngine,
-			toolchainDigest: sha256Digest(
-				["mise.toml", "mise.lock"]
-					.map((name) => git(root, ["rev-parse", `${target.head}:${name}`]))
-					.join("\n"),
-			),
+			dockerEngine: engine !== undefined,
+			tools,
 		},
 		results,
 	};
@@ -866,6 +1201,8 @@ export function verifyLocally(input: {
 		baseTree: git(root, ["rev-parse", `${input.baseRef}^{tree}`]),
 		event: input.event,
 		nowMs: input.nowMs,
+		head: git(root, ["rev-parse", "HEAD"]),
+		base: git(root, ["rev-parse", `${input.baseRef}^{commit}`]),
 	});
 }
 
@@ -917,8 +1254,10 @@ export async function main(
 	if (command === "init-key") {
 		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
 		const days = Number(option(rest, "days") ?? DEFAULT_TRUST_DAYS);
-		if (!Number.isFinite(days) || days <= 0)
-			throw new AttestError("--days must be a positive number");
+		if (!Number.isFinite(days) || days <= 0 || days > MAX_TRUST_DAYS)
+			throw new AttestError(
+				`--days must be a positive number of at most ${MAX_TRUST_DAYS}`,
+			);
 		console.log(
 			JSON.stringify(
 				trustEntryFor(privateKey, {
@@ -968,6 +1307,7 @@ export async function main(
 			if (!plan.some((job) => job.id === id))
 				throw new AttestError(`--skip-job=${id} is not a covered job`);
 		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
+		assertKeyApart(keyPathFrom(env), root, env);
 		const target = resolveRunTarget({ cwd: root, baseRef });
 		const began = Date.now();
 		try {

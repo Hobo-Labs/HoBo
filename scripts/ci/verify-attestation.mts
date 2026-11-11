@@ -46,6 +46,34 @@ export function baseShaOf(
 	return sha !== undefined && isObjectId(sha) ? sha : undefined;
 }
 
+/**
+ * The head commit of the event, when it has one: the pull request's own tip.
+ * A merge group has none that a local run could have seen.
+ */
+export function headShaOf(
+	event: string,
+	payload: JsonValue,
+): string | undefined {
+	if (event !== "pull_request") return undefined;
+	const sha = asText(
+		asObject(asObject(asObject(payload)?.pull_request)?.head)?.sha,
+	);
+	return sha !== undefined && isObjectId(sha) ? sha : undefined;
+}
+
+/**
+ * One line, whatever went into it. Text from an API answer or an attestation
+ * must not be able to start a new log line, where a runner reads commands.
+ */
+export function oneLine(text: string): string {
+	return [...text]
+		.map((character) => {
+			const code = character.codePointAt(0) ?? 0;
+			return code < 0x20 || code === 0x7f ? " " : character;
+		})
+		.join("");
+}
+
 /** The text of a file the contents API returned. */
 function fileText(answer: JsonValue): string {
 	const file = asObject(answer);
@@ -69,6 +97,8 @@ export async function verifyFromApi(input: {
 	repository: string;
 	event: string;
 	baseSha: string | undefined;
+	/** The event's head commit; without it, jobs bound to commits are not reported. */
+	headSha?: string | undefined;
 	tree: string;
 	nowMs: number;
 }): Promise<AttestationVerdict> {
@@ -113,6 +143,8 @@ export async function verifyFromApi(input: {
 		baseTree,
 		event,
 		nowMs: input.nowMs,
+		head: input.headSha,
+		base: baseSha,
 	});
 }
 
@@ -146,6 +178,9 @@ export async function main(
 	let verdict: AttestationVerdict;
 	try {
 		const event = env.GITHUB_EVENT_NAME ?? "";
+		const payload = parseJson(
+			readFileSync(env.GITHUB_EVENT_PATH ?? "", "utf8"),
+		);
 		verdict = await verifyFromApi({
 			read:
 				read ??
@@ -155,10 +190,8 @@ export async function main(
 				),
 			repository: env.GITHUB_REPOSITORY ?? "",
 			event,
-			baseSha: baseShaOf(
-				event,
-				parseJson(readFileSync(env.GITHUB_EVENT_PATH ?? "", "utf8")),
-			),
+			baseSha: baseShaOf(event, payload),
+			headSha: headShaOf(event, payload),
 			tree: tree ?? checkedOutTree(),
 			nowMs: Date.now(),
 		});
@@ -168,9 +201,11 @@ export async function main(
 		);
 	}
 	const jobs = verdict.attested ? verdict.jobs : [];
-	const line = verdict.attested
-		? `attested: a local run signed by ${verdict.attestor} covers ${jobs.join(", ")}`
-		: `not attested: ${verdict.reason}`;
+	const line = oneLine(
+		verdict.attested
+			? `attested: a local run signed by ${verdict.attestor} covers ${jobs.join(", ")}`
+			: `not attested: ${verdict.reason}`,
+	);
 	console.log(line);
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(

@@ -594,5 +594,74 @@ describe("cold dev loop gate", () => {
 		const calls = run("github-hosted", true);
 		assert.match(calls, /^sudo --preserve-env unshare --net -- bash -c /mu);
 		assert.doesNotMatch(calls, /^docker run /mu);
+
+describe("release required gate", () => {
+	const release = readFileSync(".github/workflows/release-hobo.yml", "utf8");
+	const lines = release.split("\n");
+	const start = lines.indexOf("  release-pr-gate:");
+	assert.ok(start >= 0, "missing job release-pr-gate");
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex((line) => /^  [A-Za-z0-9_-]+:$/u.test(line));
+	const gate = rest.slice(0, end < 0 ? rest.length : end).join("\n");
+	const script = shellForStep(gate, "Fail closed when release contract is red");
+
+	it("uses the same attested() helper as the PR impact gate", () => {
+		const helper = (text: string) => {
+			const from = text.indexOf("attested() {");
+			assert.ok(from >= 0);
+			return text.slice(from, text.indexOf("\n}\n", from) + 2);
+		};
+		const prGate = shellForStep(
+			job("pr-gate"),
+			"Require successful validation and workspace tests",
+		);
+		assert.equal(helper(script), helper(prGate));
+		assert.match(gate, /needs: \[route, release-contract\]/u);
+	});
+
+	it("accepts a skipped contract only for a route job that succeeded and attested it", () => {
+		const results = ["success", "failure", "cancelled", "skipped", ""];
+		const routes = ["success", "failure", "skipped", ""];
+		const flags = ["true", "false", "TRUE", ""];
+		const lists = [
+			'["release-contract"]',
+			'["ci-guard","release-contract"]',
+			'["ci-guard"]',
+			'["release-contract-old"]',
+			"[]",
+			"",
+		];
+		const directory = mkdtempSync(join(tmpdir(), "hobo-release-gate-"));
+		try {
+			for (const contract of results)
+				for (const route of routes)
+					for (const flag of flags)
+						for (const list of lists) {
+							const run = spawnSync("bash", ["-c", script], {
+								env: {
+									...process.env,
+									CONTRACT_RESULT: contract,
+									ROUTE_RESULT: route,
+									ATTESTED: flag,
+									ATTESTED_JOBS: list,
+								},
+							});
+							const attested =
+								route === "success" &&
+								flag === "true" &&
+								list.includes('"release-contract"');
+							const expected =
+								route === "success" &&
+								(contract === "success" ||
+									(contract === "skipped" && attested));
+							const label = JSON.stringify({ contract, route, flag, list });
+							assert.equal(run.status === 0, expected, label);
+							// A failed or cancelled contract never passes, attested or not.
+							if (contract === "failure" || contract === "cancelled")
+								assert.notEqual(run.status, 0, label);
+						}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 });

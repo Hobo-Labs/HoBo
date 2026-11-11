@@ -148,6 +148,21 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
+	it("passes on this repository's own workflows", () => {
+		// Offline: whether a pinned action commit exists is `pnpm run actions:lint`'s
+		// question; the shape of the workflows is this one's.
+		const run = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", lint],
+			{
+				cwd: fileURLToPath(new URL("../..", import.meta.url)),
+				encoding: "utf8",
+				env: { ...process.env, HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY: "1" },
+			},
+		);
+		assert.equal(run.status, 0, run.stderr);
+	});
+
 	const skipFor = (id: string) =>
 		`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
@@ -208,13 +223,75 @@ describe("Actions runner policy", () => {
 		);
 	});
 
-	it("makes a gate that accepts an attestation need the route job and read its result", () => {
-		const gate = (needs: string, env: string) =>
-			`${attestingRoute(verifierFiles)}  gate:\n    needs: ${needs}\n    if: \${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - env:\n${env}          ATTESTED: \${{ needs.route.outputs.attested }}\n        run: echo ok\n`;
-		const routeResult = "          ROUTE_RESULT: ${{ needs.route.result }}\n";
-		assert.equal(lintJobs(gate("[route, other]", routeResult)), 0);
-		assert.notEqual(lintJobs(gate("[route, other]", "")), 0);
-		assert.notEqual(lintJobs(gate("[other]", routeResult)), 0);
+	it("makes a gate that waits on a covered job decide with the shared helper, unchanged", () => {
+		const helper = [
+			"attested() {",
+			'  [ "${ROUTE_RESULT:-}" = "success" ] || return 1',
+			'  [ "${ATTESTED:-}" = "true" ] || return 1',
+			'  case "${ATTESTED_JOBS:-}" in',
+			'    *"\\"$1\\""*) return 0 ;;',
+			"  esac",
+			"  return 1",
+			"}",
+		];
+		const environment = [
+			"ROUTE_RESULT: ${{ needs.route.result }}",
+			"ATTESTED: ${{ needs.route.outputs.attested }}",
+			"ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}",
+		];
+		const gate = (
+			needs: string,
+			env: readonly string[] = environment,
+			script: readonly string[] = helper,
+		) =>
+			`${attestingRoute(verifierFiles)}  release-pr-gate:\n    needs: ${needs}\n    if: \${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - env:\n${env.map((entry) => `          ${entry}\n`).join("")}        run: |\n${script.map((entry) => `          ${entry}\n`).join("")}          attested release-contract\n`;
+		assert.equal(lintJobs(gate("[route, release-contract]")), 0);
+		// Each line of the environment and of the helper is needed, as written.
+		for (const index of environment.keys())
+			assert.notEqual(
+				lintJobs(
+					gate(
+						"[route, release-contract]",
+						environment.filter((_entry, at) => at !== index),
+					),
+				),
+				0,
+				environment[index],
+			);
+		for (const index of helper.keys())
+			assert.notEqual(
+				lintJobs(
+					gate(
+						"[route, release-contract]",
+						environment,
+						helper.filter((_entry, at) => at !== index),
+					),
+				),
+				0,
+				helper[index],
+			);
+		// A helper that does not ask whether the route job succeeded.
+		assert.notEqual(
+			lintJobs(
+				gate(
+					"[route, release-contract]",
+					environment,
+					helper.map((entry) => entry.replace('"success"', '"skipped"')),
+				),
+			),
+			0,
+		);
+		// Reading the attestation without needing the route job.
+		assert.notEqual(lintJobs(gate("[release-contract]")), 0);
+		// A gate that waits on a covered job and does not read the attestation
+		// at all would take, or refuse, a skipped job on its own rule.
+		const blind = `${attestingRoute(verifierFiles)}  release-pr-gate:\n    needs: [route, release-contract]\n    if: \${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n`;
+		assert.notEqual(lintJobs(blind), 0);
+		// A gate that waits on no covered job has nothing to decide.
+		assert.equal(
+			lintJobs(blind.replace("[route, release-contract]", "[route]")),
+			0,
+		);
 	});
 
 	const probe = (job: string, head = "permissions: {}\n") =>

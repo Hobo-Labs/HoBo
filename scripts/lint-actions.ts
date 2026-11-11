@@ -128,6 +128,28 @@ const ATTESTATION_VERIFIER_FILES = [
 	"scripts/ci/verify-attestation.mts",
 ];
 
+/** How a gate reads the route job's answer: its own result first, then what it reported. */
+const ATTESTED_GATE_ENV = [
+	"ROUTE_RESULT: ${{ needs.route.result }}",
+	"ATTESTED: ${{ needs.route.outputs.attested }}",
+	"ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}",
+];
+
+/**
+ * The one shell helper a gate decides with. A skipped job counts only when the
+ * route job succeeded, said exactly `true`, and listed that job's quoted id.
+ */
+const ATTESTED_HELPER = [
+	"attested() {",
+	'[ "${ROUTE_RESULT:-}" = "success" ] || return 1',
+	'[ "${ATTESTED:-}" = "true" ] || return 1',
+	'case "${ATTESTED_JOBS:-}" in',
+	'*"\\"$1\\""*) return 0 ;;',
+	"esac",
+	"return 1",
+	"}",
+];
+
 /** The one condition that skips a job for a signed local run: by that job's own id. */
 function skipWhenAttested(jobId: string): string {
 	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
@@ -191,18 +213,55 @@ function lintAttestedSkips(
 				`${file}:${line}: a job skipped for a signed local run must need the route job`,
 			);
 	}
-	if (body.some((entry) => entry.includes("needs.route.outputs.attested"))) {
+	// A gate adds up other jobs' results. One that waits on a covered job will
+	// see it skipped for a signed local run, so it must decide with the one
+	// shared helper: the route job succeeded, said `true`, and named the job.
+	const needed = header
+		.slice(
+			Math.max(
+				0,
+				header.findIndex((entry) => entry.startsWith("    needs:")),
+			),
+		)
+		.filter((entry, index) => index === 0 || entry.startsWith("      - "))
+		.join(" ");
+	// A gate, as elsewhere in this file: it always runs and runs no action.
+	const isGate =
+		/\balways\(\)/.test(condition) &&
+		!body.some((entry) => /^\s*-?\s*uses:/.test(entry));
+	const waitsOnCovered =
+		isGate &&
+		header.some((entry) => entry.startsWith("    needs:")) &&
+		COVERED_JOBS.some((covered) =>
+			new RegExp(`(^|[\\s\\[,-])${covered}([\\s\\],]|$)`).test(
+				needed.replace(/^\s*needs:/, ""),
+			),
+		);
+	const readsAttestation = body.some((entry) =>
+		entry.includes("needs.route.outputs.attested"),
+	);
+	if (waitsOnCovered && !readsAttestation)
+		errors.push(
+			`${file}:${line}: a gate that waits on a job a signed local run covers must decide a skipped job with the attested() helper`,
+		);
+	if (readsAttestation) {
 		if (!needsRoute(block))
 			errors.push(
 				`${file}:${line}: a job that reads the attestation must need the route job`,
 			);
+		const trimmed = body.map((entry) => entry.trim());
+		for (const needed of ATTESTED_GATE_ENV)
+			if (!trimmed.includes(needed))
+				errors.push(
+					`${file}:${line}: a job that accepts an attestation must read it as: ${needed}`,
+				);
+		const at = trimmed.indexOf(ATTESTED_HELPER[0] ?? "");
 		if (
-			!body.some(
-				(entry) => entry.trim() === "ROUTE_RESULT: ${{ needs.route.result }}",
-			)
+			at === -1 ||
+			ATTESTED_HELPER.some((text, index) => trimmed[at + index] !== text)
 		)
 			errors.push(
-				`${file}:${line}: a job that accepts an attestation must also read the route job's result (ROUTE_RESULT: \${{ needs.route.result }})`,
+				`${file}:${line}: a job that accepts an attestation must decide with the shared attested() helper, unchanged`,
 			);
 	}
 }

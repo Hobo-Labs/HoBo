@@ -11,18 +11,28 @@ import {
 	COVERED_JOBS,
 	GATE_JOBS,
 	keyIdOf,
+	MAX_TRUST_DAYS,
 	parseAttestors,
 	parseJson,
 	publicKeyFrom,
 	publicKeyText,
 	signStatement,
 	type TrustedAttestor,
+	utcInstant,
 	verifyAttestation,
 } from "../ci/attestation.mts";
 
 const NOW = Date.parse("2026-11-11T12:00:00Z");
 const TREE = "a".repeat(40);
 const BASE_TREE = "b".repeat(40);
+const HEAD = "c".repeat(40);
+const BASE = "d".repeat(40);
+/** Jobs the workflows run on merge groups as well as pull requests. */
+const BOTH_EVENTS = [
+	"pr_gate_validation",
+	"workspace_tests",
+	"release-contract",
+];
 
 // Keys are made here, per run; none is stored in the repository.
 function attestor(expiresAt = "2026-12-01T00:00:00Z") {
@@ -45,22 +55,29 @@ function statement(
 		predicateType: ATTESTATION_PREDICATE_TYPE,
 		tree: TREE,
 		baseTree: BASE_TREE,
-		head: "c".repeat(40),
-		base: "d".repeat(40),
+		head: HEAD,
+		base: BASE,
 		jobs,
 		events: ["pull_request", "merge_group"],
 		startedAt: "2026-11-11T11:00:00.000Z",
 		finishedAt: "2026-11-11T11:30:00.000Z",
 		attestor: keyId,
 		environment: {
-			node: "v24.0.0",
 			platform: "linux-x64",
-			dockerEngine: false,
-			toolchainDigest: `sha256:${"e".repeat(64)}`,
+			dockerEngine: true,
+			tools: {
+				node: "v24.0.0",
+				pnpm: "10.0.0",
+				turbo: "2.0.0",
+				docker: "29.0.0",
+			},
 		},
 		results: jobs.map((id) => ({
 			id,
 			status: "passed" as const,
+			events: BOTH_EVENTS.includes(id)
+				? ["pull_request", "merge_group"]
+				: ["pull_request"],
 			commands: 3,
 			durationMs: 1000,
 			logDigest: `sha256:${"f".repeat(64)}`,
@@ -77,6 +94,8 @@ function verify(
 		baseTree?: string;
 		event?: string;
 		nowMs?: number;
+		head?: string | undefined;
+		base?: string | undefined;
 	} = {},
 ): AttestationVerdict {
 	return verifyAttestation({
@@ -87,6 +106,8 @@ function verify(
 		baseTree: changes.baseTree ?? BASE_TREE,
 		event: changes.event ?? "pull_request",
 		nowMs: changes.nowMs ?? NOW,
+		head: "head" in changes ? changes.head : HEAD,
+		base: "base" in changes ? changes.base : BASE,
 	});
 }
 
@@ -130,14 +151,145 @@ describe("verifying an attestation", () => {
 	const signed = signStatement(statement(signer.entry.id), signer.privateKey);
 
 	it("accepts a signed statement for this tree, this base and this event", () => {
-		for (const event of ["pull_request", "merge_group"]) {
-			const verdict = verify(signed, [signer.entry], { event });
-			assert.deepEqual(verdict, {
+		assert.deepEqual(verify(signed, [signer.entry]), {
+			attested: true,
+			jobs: [...COVERED_JOBS],
+			attestor: signer.entry.id,
+		});
+	});
+
+	it("reports for an event only the jobs that ran for it", () => {
+		// A merge group has no head commit a local run could have seen.
+		assert.deepEqual(
+			verify(signed, [signer.entry], { event: "merge_group", head: undefined }),
+			{ attested: true, jobs: BOTH_EVENTS, attestor: signer.entry.id },
+		);
+		// A record made for merge groups alone covers the merge group's jobs,
+		// and says nothing about a pull request.
+		const groupOnly = signStatement(
+			{
+				...statement(signer.entry.id, {
+					jobs: ["pr_gate_validation", "workspace_tests"],
+					events: ["merge_group"],
+				}),
+				results: ["pr_gate_validation", "workspace_tests"].map((id) => ({
+					id,
+					status: "passed" as const,
+					events: ["merge_group"],
+					commands: 1,
+					durationMs: 1,
+					logDigest: `sha256:${"f".repeat(64)}`,
+				})),
+			},
+			signer.privateKey,
+		);
+		assert.deepEqual(
+			verify(groupOnly, [signer.entry], { event: "merge_group" }),
+			{
 				attested: true,
-				jobs: [...COVERED_JOBS],
+				jobs: ["pr_gate_validation", "workspace_tests"],
 				attestor: signer.entry.id,
-			});
-		}
+			},
+		);
+		assert.match(
+			refusal(verify(groupOnly, [signer.entry])),
+			/does not cover pull_request/,
+		);
+		// The statement says both events, but a job's own result decides.
+		const claimed = signStatement(
+			{
+				...statement(signer.entry.id, { jobs: ["ci-guard", "artifact-trust"] }),
+				results: [
+					{
+						id: "ci-guard",
+						status: "passed" as const,
+						events: ["merge_group"],
+						commands: 1,
+						durationMs: 1,
+						logDigest: `sha256:${"f".repeat(64)}`,
+					},
+					{
+						id: "artifact-trust",
+						status: "passed" as const,
+						events: ["pull_request"],
+						commands: 1,
+						durationMs: 1,
+						logDigest: `sha256:${"f".repeat(64)}`,
+					},
+				],
+			},
+			signer.privateKey,
+		);
+		assert.deepEqual(verify(claimed, [signer.entry]), {
+			attested: true,
+			jobs: ["artifact-trust"],
+			attestor: signer.entry.id,
+		});
+	});
+
+	it("accepts the secret scan only for the exact commits that were scanned", () => {
+		const others = COVERED_JOBS.filter((job) => job !== "secret-scan");
+		const jobsFor = (changes: Parameters<typeof verify>[2]) => {
+			const verdict = verify(signed, [signer.entry], changes);
+			return verdict.attested ? verdict.jobs : [];
+		};
+		assert.ok(jobsFor({}).includes("secret-scan"));
+		// Another history that ends in the same tree: a secret added, then
+		// reverted. Same tree, same base tree, other commits.
+		for (const changes of [
+			{ head: "9".repeat(40) },
+			{ base: "9".repeat(40) },
+			{ head: undefined },
+			{ base: undefined },
+			{ head: "not-a-commit" },
+			{ head: BASE, base: HEAD },
+		])
+			assert.deepEqual(jobsFor(changes), others, JSON.stringify(changes));
+	});
+
+	it("does not accept a job that needs a container engine from a machine without one", () => {
+		const base = statement(signer.entry.id);
+		const noEngine = signStatement(
+			{
+				...base,
+				environment: {
+					platform: "linux-x64",
+					dockerEngine: false,
+					tools: { node: "v24.0.0", pnpm: "10.0.0", turbo: "2.0.0" },
+				},
+			},
+			signer.privateKey,
+		);
+		// The workspace tests go, and the gate's other jobs with them.
+		assert.deepEqual(verify(noEngine, [signer.entry]), {
+			attested: true,
+			jobs: COVERED_JOBS.filter((job) => !GATE_JOBS.includes(job)),
+			attestor: signer.entry.id,
+		});
+	});
+
+	it("refuses an engine version without an engine, and an engine without a version", () => {
+		const base = statement(signer.entry.id);
+		for (const environment of [
+			{
+				platform: "linux-x64",
+				dockerEngine: false,
+				tools: { node: "v24", pnpm: "10", turbo: "2", docker: "29.0.0" },
+			},
+			{
+				platform: "linux-x64",
+				dockerEngine: true,
+				tools: { node: "v24", pnpm: "10", turbo: "2" },
+			},
+		])
+			assert.match(
+				refusal(
+					verify(signStatement({ ...base, environment }, signer.privateKey), [
+						signer.entry,
+					]),
+				),
+				/malformed.*present exactly when dockerEngine is true/,
+			);
 	});
 
 	it("verifies the same after the statement's keys are reordered", () => {
@@ -165,10 +317,21 @@ describe("verifying an attestation", () => {
 		for (const tampered of [
 			{ ...signed.statement, jobs: [...signed.statement.jobs].slice(1) },
 			{ ...signed.statement, tree: "9".repeat(40) },
+			{ ...signed.statement, head: "9".repeat(40) },
 			{ ...signed.statement, finishedAt: "2026-11-11T11:31:00.000Z" },
 			{
 				...signed.statement,
-				environment: { ...signed.statement.environment, dockerEngine: true },
+				environment: {
+					...signed.statement.environment,
+					tools: { ...signed.statement.environment.tools, node: "v99.0.0" },
+				},
+			},
+			{
+				...signed.statement,
+				results: signed.statement.results.map((result) => ({
+					...result,
+					events: ["pull_request", "merge_group"],
+				})),
 			},
 			{ ...signed.statement, extra: "added" },
 		]) {
@@ -243,8 +406,72 @@ describe("verifying an attestation", () => {
 					{ ...signer.entry, publicKey: stranger.entry.publicKey },
 				]),
 			),
-			/signature does not verify/,
+			/trusted attestor list at the base is malformed.*its key's own id/,
 		);
+	});
+
+	it("refuses a list that trusts any key for more than 90 days", () => {
+		const day = 24 * 60 * 60 * 1000;
+		const until = (ms: number) => new Date(ms).toISOString();
+		const within = {
+			...signer.entry,
+			expiresAt: until(NOW + MAX_TRUST_DAYS * day),
+		};
+		assert.equal(verify(signed, [within]).attested, true);
+		const beyond = {
+			...signer.entry,
+			expiresAt: until(NOW + MAX_TRUST_DAYS * day + 1000),
+		};
+		assert.match(
+			refusal(verify(signed, [beyond])),
+			/malformed.*more than 90 days/,
+		);
+		// Another entry's lifetime counts too: the list is trusted whole or not.
+		const other = attestor(until(NOW + 400 * day));
+		assert.match(
+			refusal(verify(signed, [signer.entry, other.entry])),
+			/malformed.*more than 90 days/,
+		);
+	});
+
+	it("refuses a key id that is not the shape of one", () => {
+		for (const keyId of [
+			"a b",
+			"x\n::error::injected",
+			"",
+			"../../etc",
+			"a".repeat(65),
+		])
+			assert.match(
+				refusal(
+					verify(
+						JSON.stringify({
+							statement: { ...signed.statement, attestor: keyId },
+							signature: { ...signed.signature, keyId },
+						}),
+						[signer.entry],
+					),
+				),
+				/malformed/,
+				JSON.stringify(keyId),
+			);
+	});
+
+	it("refuses a statement whose commits or trees are not object ids", () => {
+		for (const field of ["tree", "baseTree", "head", "base"])
+			assert.match(
+				refusal(
+					verify(
+						JSON.stringify({
+							statement: { ...signed.statement, [field]: "main\n::warning::x" },
+							signature: signed.signature,
+						}),
+						[signer.entry],
+					),
+				),
+				/malformed.*not a git object id/,
+				field,
+			);
 	});
 
 	it("refuses an expired key, at the moment it expires and after", () => {
@@ -294,6 +521,15 @@ describe("verifying an attestation", () => {
 			}),
 			JSON.stringify({
 				statement: { ...signed.statement, environment: null },
+				signature: signed.signature,
+			}),
+			JSON.stringify({
+				statement: {
+					...signed.statement,
+					results: signed.statement.results.map(
+						({ events: _events, ...result }) => result,
+					),
+				},
 				signature: signed.signature,
 			}),
 		])
@@ -400,6 +636,16 @@ describe("the trusted attestor list", () => {
 			{ ...valid, publicKey: rsa },
 			{ ...valid, expiresAt: undefined },
 			{ ...valid, expiresAt: "next week" },
+			// Strict ISO-8601 UTC, and a day that exists.
+			{ ...valid, expiresAt: "2026-12-01" },
+			{ ...valid, expiresAt: "2026-12-01 00:00:00Z" },
+			{ ...valid, expiresAt: "2026-12-01T00:00:00+01:00" },
+			{ ...valid, expiresAt: "2026-12-01T00:00:00" },
+			{ ...valid, expiresAt: "2026-02-31T00:00:00Z" },
+			{ ...valid, expiresAt: "1764547200000" },
+			// The id must be the key's own.
+			{ ...valid, id: attestor().entry.id },
+			{ ...valid, id: "ed25519-0000000000000000" },
 			{ ...valid, note: undefined },
 		])
 			assert.throws(
@@ -410,21 +656,43 @@ describe("the trusted attestor list", () => {
 		assert.throws(() => parseAttestors(JSON.stringify([valid, valid])));
 	});
 
+	it("reads a strict UTC instant and nothing looser", () => {
+		assert.equal(utcInstant("2026-12-01T00:00:00Z"), Date.UTC(2026, 11, 1));
+		assert.equal(
+			utcInstant("2026-12-01T00:00:00.250Z"),
+			Date.UTC(2026, 11, 1) + 250,
+		);
+		for (const text of [
+			"2026-12-01",
+			"2026-13-01T00:00:00Z",
+			"2026-02-30T00:00:00Z",
+			" 2026-12-01T00:00:00Z",
+			"2026-12-01T00:00:00z",
+		])
+			assert.equal(utcInstant(text), undefined, text);
+	});
+
+	it("refuses an expiry more than 90 days away once it knows the time", () => {
+		const day = 24 * 60 * 60 * 1000;
+		const far = { ...valid, expiresAt: new Date(NOW + 91 * day).toISOString() };
+		// Without a clock only the shape is checked; with one, the lifetime too.
+		assert.equal(parseAttestors(JSON.stringify([far])).length, 1);
+		assert.throws(
+			() => parseAttestors(JSON.stringify([far]), NOW),
+			/more than 90 days/,
+		);
+		assert.equal(
+			parseAttestors(JSON.stringify([far]), NOW + 2 * day).length,
+			1,
+		);
+	});
+
 	it("is well formed in this repository, and no entry is trusted for more than 90 days", () => {
 		const text = readFileSync(".hobo/ci-attestors.json", "utf8");
-		const entries = parseAttestors(text);
-		for (const entry of entries) {
-			assert.equal(
-				entry.id,
-				keyIdOf(publicKeyFrom(entry.publicKey)),
-				`${entry.id} must be its key's own id`,
-			);
+		// The same reading the verifier does, with the same clock rule.
+		const entries = parseAttestors(text, Date.now());
+		for (const entry of entries)
 			assert.ok(entry.note.trim().length > 0, `${entry.id} needs a note`);
-			assert.ok(
-				Date.parse(entry.expiresAt) - Date.now() <= 90 * 24 * 60 * 60 * 1000,
-				`${entry.id} expires too far in the future`,
-			);
-		}
 		// Only public keys belong in this file.
 		assert.doesNotMatch(text, /PRIVATE KEY/u);
 	});

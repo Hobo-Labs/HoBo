@@ -26,12 +26,15 @@ import {
 import {
 	type ApiReader,
 	baseShaOf,
+	headShaOf,
 	main,
+	oneLine,
 	verifyFromApi,
 } from "../ci/verify-attestation.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
-const NOW = Date.parse("2026-11-11T12:00:00Z");
+// The script reads the real clock, so the trusted entry expires a day from it.
+const NOW = Date.now();
 const TREE = "a".repeat(40);
 const BASE_TREE = "b".repeat(40);
 const BASE_SHA = "d".repeat(40);
@@ -42,7 +45,7 @@ const trusted = [
 	{
 		id: keyIdOf(publicKey),
 		publicKey: publicKeyText(publicKey),
-		expiresAt: "2099-01-01T00:00:00Z",
+		expiresAt: new Date(NOW + 24 * 60 * 60 * 1000).toISOString(),
 		note: "made by a test",
 	},
 ];
@@ -59,14 +62,19 @@ const envelope = signStatement(
 		finishedAt: "2026-11-11T11:30:00.000Z",
 		attestor: keyIdOf(publicKey),
 		environment: {
-			node: "v24.0.0",
 			platform: "linux-x64",
 			dockerEngine: true,
-			toolchainDigest: `sha256:${"e".repeat(64)}`,
+			tools: {
+				node: "v24.0.0",
+				pnpm: "10.0.0",
+				turbo: "2.0.0",
+				docker: "29.0.0",
+			},
 		},
 		results: COVERED_JOBS.map((id) => ({
 			id,
 			status: "passed" as const,
+			events: ["pull_request", "merge_group"],
 			commands: 1,
 			durationMs: 1,
 			logDigest: `sha256:${"f".repeat(64)}`,
@@ -101,12 +109,14 @@ const published = {
 	[baseCommit]: { sha: BASE_SHA, tree: { sha: BASE_TREE } },
 };
 
-const check = (read: ApiReader, event = "pull_request") =>
+/** `head` is the event's head commit; "none" for an event that names none. */
+const check = (read: ApiReader, event = "pull_request", head = HEAD_SHA) =>
 	verifyFromApi({
 		read,
 		repository: "acme/app",
 		event,
 		baseSha: BASE_SHA,
+		headSha: head === "none" ? undefined : head,
 		tree: TREE,
 		nowMs: NOW,
 	});
@@ -139,16 +149,65 @@ describe("the base commit of an event", () => {
 	});
 });
 
+describe("the head commit of an event", () => {
+	it("is the pull request's own tip, and nothing for a merge group", () => {
+		assert.equal(
+			headShaOf("pull_request", { pull_request: { head: { sha: HEAD_SHA } } }),
+			HEAD_SHA,
+		);
+		assert.equal(
+			headShaOf("merge_group", { merge_group: { head_sha: HEAD_SHA } }),
+			undefined,
+		);
+		assert.equal(
+			headShaOf("pull_request", { pull_request: { head: { sha: "x y" } } }),
+			undefined,
+		);
+		assert.equal(headShaOf("pull_request", {}), undefined);
+	});
+});
+
+describe("what is printed", () => {
+	it("is one line, whatever went into it", () => {
+		assert.equal(
+			oneLine("not attested: a\r\n::error::b\n::set-output name=x::y\tz\u0000"),
+			"not attested: a  ::error::b ::set-output name=x::y z ",
+		);
+		assert.equal(oneLine("plain text"), "plain text");
+	});
+});
+
 describe("verifying through the API", () => {
 	it("reports the covered jobs for a valid attestation", async () => {
-		for (const event of ["pull_request", "merge_group"]) {
-			const verdict = await check(api(published).read, event);
-			assert.deepEqual(verdict, {
-				attested: true,
-				jobs: [...COVERED_JOBS],
-				attestor: trusted[0]?.id,
-			});
-		}
+		assert.deepEqual(await check(api(published).read), {
+			attested: true,
+			jobs: [...COVERED_JOBS],
+			attestor: trusted[0]?.id,
+		});
+		// A merge group names no head commit, so the commit-bound scan is not
+		// reported there (it does not run on merge groups either).
+		assert.deepEqual(await check(api(published).read, "merge_group", "none"), {
+			attested: true,
+			jobs: COVERED_JOBS.filter((job) => job !== "secret-scan"),
+			attestor: trusted[0]?.id,
+		});
+	});
+
+	it("still runs the secret scan for another history that ends in the same tree", async () => {
+		// The record is for tree T reached by commits HEAD_SHA..BASE_SHA. A
+		// history that adds a secret and then reverts it also ends in T, with a
+		// different head commit: every tree-bound job is covered, the scan is not.
+		const withoutScan = COVERED_JOBS.filter((job) => job !== "secret-scan");
+		const rewritten = await check(
+			api(published).read,
+			"pull_request",
+			"9".repeat(40),
+		);
+		assert.deepEqual(rewritten.attested && rewritten.jobs, withoutScan);
+		const unknown = await check(api(published).read, "pull_request", "none");
+		assert.deepEqual(unknown.attested && unknown.jobs, withoutScan);
+		const same = await check(api(published).read);
+		assert.deepEqual(same.attested && same.jobs, [...COVERED_JOBS]);
 	});
 
 	it("says no when there is no attestation, after one request", async () => {
@@ -362,7 +421,7 @@ describe("the script as a whole", () => {
 
 	it("writes attested=true and the job list for a valid attestation", async () => {
 		const { output } = await run(
-			{ pull_request: { base: { sha: BASE_SHA } } },
+			{ pull_request: { base: { sha: BASE_SHA }, head: { sha: HEAD_SHA } } },
 			api(published).read,
 		);
 		assert.equal(
@@ -398,6 +457,50 @@ describe("the script as a whole", () => {
 			TREE,
 		);
 		assert.equal(verdict.attested, false);
+		assert.equal(
+			readFileSync(output, "utf8"),
+			"attested=false\nattested-jobs=[]\n",
+		);
+	});
+
+	it("prints one line and writes one summary line, even for an answer made to break out", async () => {
+		// An API error whose text carries line breaks and a workflow command.
+		const hostile: ApiReader = async () => {
+			throw new Error("404\r\n::error::forged\n::add-mask::x");
+		};
+		const output = join(directory, "output-hostile");
+		const summary = join(directory, "summary-hostile");
+		const eventPath = join(directory, "event-hostile.json");
+		writeFileSync(output, "");
+		writeFileSync(summary, "");
+		writeFileSync(
+			eventPath,
+			JSON.stringify({ pull_request: { base: { sha: BASE_SHA } } }),
+		);
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (text: string) => {
+			lines.push(text);
+		};
+		try {
+			await main(
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					GITHUB_EVENT_PATH: eventPath,
+					GITHUB_REPOSITORY: "acme/app",
+					GITHUB_OUTPUT: output,
+					GITHUB_STEP_SUMMARY: summary,
+				},
+				hostile,
+				TREE,
+			);
+		} finally {
+			console.log = log;
+		}
+		assert.equal(lines.length, 1);
+		assert.doesNotMatch(lines[0] ?? "", /[\r\n]/u);
+		assert.match(lines[0] ?? "", /^not attested: /u);
+		assert.equal(readFileSync(summary, "utf8"), `${lines[0]}\n`);
 		assert.equal(
 			readFileSync(output, "utf8"),
 			"attested=false\nattested-jobs=[]\n",

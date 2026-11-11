@@ -448,7 +448,16 @@ What this does not give you:
   same-repository pull request can already edit the workflow that tests it.
   Reading keys at the base commit only stops a pull request adding its own key.
 - Whoever holds a trusted private key can make the covered checks pass without
-  running them. Keep the list short. Every entry has an expiry.
+  running them. Keep the list short. Every entry has an expiry of at most 90
+  days, which the verifier enforces, and removing an entry only affects events
+  whose base no longer lists it.
+- The commands under test run as the same user as the key. Steps get an
+  allowlisted environment and a scratch `HOME`, which is hygiene, not a
+  sandbox: never attest code you would not give the key to.
+- The secret scan is accepted only for the exact head and base commits that
+  were scanned; every other covered job is bound to the tree.
+- Protect the `ci-attestations` branch from deletion and force-push with a
+  ruleset. An unsigned or altered record is refused regardless.
 - Container-backed tests are skipped on a machine with no Docker engine. The
   record says whether there was one. Turbo still replays cached results, so
   `pnpm ci:attest run --fresh` is the way to run every task again.

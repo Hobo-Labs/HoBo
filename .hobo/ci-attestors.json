@@ -2,7 +2,7 @@
 	{
 		"id": "ed25519-3f61033a0ac0391e",
 		"publicKey": "MCowBQYDK2VwAyEAIfHDlNcoOszlXfphqyYmNTatms+7NdGs31tph86TY2U=",
-		"expiresAt": "2026-12-11T01:31:25.146Z",
-		"note": "Ephemeral session machine (a cloud agent session). Remove this entry once the session ends; it expires on its own after 30 days."
+		"expiresAt": "2026-11-14T03:12:02.947Z",
+		"note": "Ephemeral cloud session machine. Its private key exists only inside an ephemeral container that is destroyed with the session; this entry expires 72 hours after it was made and is not renewed."
 	}
 ]
