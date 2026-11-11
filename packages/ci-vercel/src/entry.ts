@@ -13,12 +13,12 @@ import {
 	QueueClient,
 	type RetryHandler,
 } from "@vercel/queue";
+import { discoverDatabases } from "./database-discovery.js";
 import {
 	forwardQueueWakeup,
 	QueueHandoffError,
 	redeliverRefusedWakeup,
 } from "./queue-forwarding.js";
-import { discoverDatabases } from "./database-discovery.js";
 import { composeRelay } from "./relay-composition.js";
 import { streamsBody } from "./relay-streams.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
