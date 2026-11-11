@@ -1175,7 +1175,15 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	}, { signal });
 
 	// Arriving on a link to a section starts at that section.
-	const hashed = location.hash ? STOPS.findIndex((s) => s.sec.id === location.hash.slice(1) || s.sec.querySelector(location.hash) !== null) : -1;
+	// The hash is the reader's text, not a selector: escape it, so `#` or `#1x`
+	// cannot stop the trail from mounting.
+	let target = location.hash.slice(1);
+	try {
+		target = decodeURIComponent(target);
+	} catch {
+		// A malformed escape is matched as written.
+	}
+	const hashed = target ? STOPS.findIndex((s) => s.sec.id === target || s.sec.querySelector(`#${CSS.escape(target)}`) !== null) : -1;
 	reset(Math.max(0, hashed));
 	bo.classList.add("is-idle");
 	stillAt = now();
