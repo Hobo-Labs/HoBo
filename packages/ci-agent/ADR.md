@@ -49,6 +49,30 @@ engine for text per region. The file is reassembled from git's settled text
 and the answers. Confining the change to conflict regions is then a property
 of the code, not a check on the model's output.
 
+## Cheapest resolution first
+
+A conflicted file goes through three layers before it is committed, and each
+layer only sees what the one before left.
+
+Recorded resolutions come first. A region is identified by the SHA-256 of
+its ours, base and theirs text; a resolution records the text it used for
+each region (`Resolution.regions`). A region whose identity appears in a
+resolution whose required checks then passed (a `ResolutionChecked` success
+in the last 90 days) is filled from that record without a model, as git's
+rerere does. Only checked resolutions are reused, so an unverified answer is
+never copied into a second pull request. A repair reuses nothing: it exists
+because the checks rejected what was there.
+
+The structured merge (mergiraf, opt-in with `resolution.structuredMerge`)
+comes second. It is deterministic, settles a whole file or nothing, and its
+result must pass the same parse and duplicate-name checks as a model's.
+Anything it cannot settle falls back to git's regions. It runs in an empty
+directory with only `PATH`, so a repository's attributes cannot steer it.
+It may change text git had already merged, which is why it is opt-in and why
+the commit names each file it merged.
+
+The model comes last, on the regions left.
+
 ## Commands, events and replay
 
 Commands: observe a queue, plan it, settle a merge, publish a resolution,
@@ -63,11 +87,13 @@ The agent is the one actor that writes its journal: it takes the commands
 above and appends events, and nothing else writes them. The journal is its
 event store, an append-only table in one SQLite file with a single writer.
 
-Four projections answer the agent's questions: the resolution recorded for
+Six projections answer the agent's questions: the resolution recorded for
 a key (which makes an attempt happen at most once), whether an event with a
 given key exists (a resolution already published, a commit already enqueued),
-tokens spent since a time (the daily budget), and the latest event of a type
-per repository (the last plan). They are materialized as columns written in the same statement as the
+tokens spent since a time (the daily budget), the latest event of a type
+per repository (the last plan), the latest check result for a resolution,
+and the events of a type since a time (resolutions to check, enqueues to
+compare against the queue, checked resolutions to reuse). They are materialized as columns written in the same statement as the
 event, and can be rebuilt from the event bodies alone. The same file is the
 read store; there is no separate one, and there are no snapshots, because
 every question is one indexed query over a journal that grows by a few rows
@@ -103,6 +129,18 @@ branch someone else has pushed to since is left alone. A repair deferred by
 the budget or the per-pass limit is tried again next pass; `ResolutionChecked`
 is written only once the outcome is acted on.
 
+Checks that failed only for infrastructure (a check run that timed out,
+failed to start, was cancelled or needs action, or a commit status in
+`error`) are not a verdict on the code. The agent records nothing, repairs
+nothing, does not enqueue, and waits for someone to re-run them. A rollup
+with more contexts than one page is never called an infrastructure failure,
+since a failure on the next page could be the code's.
+
+A repair that comes back with the same text as the failed resolution is not
+pushed: the new commit would differ only in its parent, and serve only as a
+re-run of the checks. The pull request is told the failure may be flaky or
+outside the conflict, and the agent stops there.
+
 Before any of that, a resolved file must pass deterministic checks: it must
 parse when both sides did, and must not declare a top-level name twice where
 neither side did. Research on model resolvers found a model used as judge
@@ -117,6 +155,14 @@ failing group already points at one entry and ejects it. The agent records
 at that commit, comments once, never enqueues that commit again, and batches
 the entry alone in its plan. It also never queues two pull requests whose
 trial merge conflicts, since their groups could not both be built.
+
+## An operator sees why an engine did not answer
+
+The resolver hides engine errors from journals and comments, since their
+text can carry the request. That left an unpaid account, a revoked key and a
+timeout all reported as `engine-unavailable`. Each failure is now in the tick
+report as the engine id, a fixed reason and the HTTP status, and the daemon
+and the relay log it as `agent.engine_failed`.
 
 ## The agent runs on its own as well as inside the relay
 
@@ -159,7 +205,9 @@ agent accept only those parsed types. Zod parses GitHub's GraphQL responses
 and the model's structured output once, at the edge.
 
 Pacts cover the GitHub GraphQL boundary and the engine port; both are
-consumer-side only. See [contracts](contracts/README.md).
+consumer-side only. Every GraphQL operation is also validated against
+GitHub's published schema, vendored in `contracts/`, so a field GitHub
+renames or removes fails a test here. See [contracts](contracts/README.md).
 
 ## Dependencies
 

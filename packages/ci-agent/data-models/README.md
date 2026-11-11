@@ -17,6 +17,12 @@ fixtures against. Beyond field ranges it holds the cross-field rules:
   commit can have a published ref; any other outcome carries a reason code.
 - A repair (`repairs` set) is a later attempt (`attempt` of at least 1).
 - A `ResolutionChecked` event carries the resolution and its checks' result.
+- A resolution records each region it resolved (`regions`: the SHA-256 of
+  the region's three sides and the text used), which a later merge of the
+  same conflict reuses once the checks have passed on it; a file the
+  structured merge settled is marked `structured`.
+- `resolution.structuredMerge` is a boolean switch; the command is not
+  configurable from a repository.
 - A commit signing key is a reference, never key text.
 - A `PlanProposed` event carries a plan; a settled or published one carries
   a resolution; an `EntryEnqueued` or `EntryEjected` one names its entry and

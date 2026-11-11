@@ -138,6 +138,7 @@ import "list"
 	regions?:      int & >=0
 	confidence?:   (int | float) & >=0 & <=1
 	contentSha256: #Digest
+	structured?:   bool
 }
 
 #Resolution: {

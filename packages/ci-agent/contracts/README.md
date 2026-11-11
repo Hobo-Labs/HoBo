@@ -13,7 +13,9 @@
   branch answers count as confirmed required checks (a protection rule or a
   ruleset rule that names at least one) and which do not, stacked pull
   requests depending on their parent, a commit's check rollup turned into a
-  bounded failure report, and that a
+  bounded failure report, a failure only of infrastructure (timed out, not
+  started, cancelled, a status error) told apart from a code failure, and
+  never when the rollup has more contexts than one page, and that a
   refusal or an HTTP failure produces an error with no response text in it.
 - `resolution-engine.pact.json`: the engine port as a synchronous message.
   The request is the one JSON document an engine receives for a file; the
@@ -21,7 +23,10 @@
   checks that the prompt is exactly the contract's message and runs the
   answers through the resolver, including an answer that omits a region.
 
-Both are hand-authored consumer contracts. The GitHub one is written from
-GitHub's published GraphQL schema, not from captured traffic, and no provider
-verification has been run against GitHub. The engine one is verified against
-the AI SDK's mock language model only; no live model is called.
+Both are hand-authored consumer contracts. `github-schema.test.ts` validates
+every operation in the GitHub one against GitHub's published GraphQL schema,
+vendored here as `github-schema.graphql.gz` from
+`https://docs.github.com/public/fpt/schema.docs.graphql`;
+`pnpm contracts:github-schema` refreshes it. The engine one runs against the
+AI SDK's mock language model; `test:live` runs the same engine against a real
+model.
