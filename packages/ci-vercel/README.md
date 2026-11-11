@@ -315,13 +315,22 @@ writes `hobo_ci_queue_handoff_deferred` for it (see the failure log below).
 `test/queue-redelivery.test.ts` runs the installed queue client against a
 stand-in for the queue service and checks the lease change it sends.
 
-A repair tick (`{"source": ..., "name": "hobo-ci-repair"}`) that lands while
-the store is in back-off is answered `204` and dropped, because the next tick
-does the same work. That matters for old production deployments: each keeps
-its own queue consumer and schedule, still forwards to the current relay, and
-retries a refusal at once with the code it was built from. Acknowledging the
-tick is the one thing that stops those retries from here. A webhook delivery
-wakeup is never dropped; it is held as above.
+A repair tick (`{"source": ..., "name": "hobo-ci-repair"}`) that fails, for
+any reason, is answered `204` and dropped, because the next tick does the same
+work. The reason does not matter: the first attempt after a store back-off
+fails with the store's own error, not `StoreUnavailable`. That matters for old
+production deployments: each keeps its own queue consumer and schedule, still
+forwards to the current relay, and retries a refusal at once with the code it
+was built from. Acknowledging the tick is the one thing that stops those
+retries from here. A webhook delivery wakeup is never dropped; it is held as
+above.
+
+So that the store's state cannot refuse a wakeup before this rule sees it,
+`POST /internal/queue-wakeup` is served by the outermost layer that has
+`CRON_SECRET`: the bootstrap entry, the selected relay and the database fleet
+each answer it themselves, and none of them waits for an application that a
+down store keeps from being built.
+
 Vercel's Hobby plan is limited to personal, non-commercial use. PostgreSQL,
 queue operations and Functions can incur usage charges according to the chosen
 plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
