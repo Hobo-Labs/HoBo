@@ -172,7 +172,32 @@ export function createBoxGitMirror(options: {
 		]);
 	}
 
-	async function refreshMain(): Promise<BoxGitMirrorEnsureResult | undefined> {
+	/**
+	 * Whether the mirror holds every object of the commit's tree, so a job can
+	 * check it out from here alone. Having the commit is not enough: a mirror
+	 * that began as a blobless clone keeps its commits and lacks their files,
+	 * and a job's fetch from it then dies reaching for blobs that are not there.
+	 */
+	async function servesCheckout(sha: string): Promise<boolean> {
+		const walked = await git([
+			`--git-dir=${path}`,
+			"rev-list",
+			"--objects",
+			"--no-walk",
+			"--missing=print",
+			sha,
+		]);
+		return walked.status === 0 && !/^\?/m.test(walked.stdout);
+	}
+
+	/**
+	 * `refetch` is for repairing a blobless mirror: without it the fetch is a
+	 * no-op, because the mirror already has every commit, so the server sends
+	 * nothing and the missing blobs never arrive.
+	 */
+	async function refreshMain(
+		refetch = false,
+	): Promise<BoxGitMirrorEnsureResult | undefined> {
 		const fetched = await git([
 			`--git-dir=${path}`,
 			"-c",
@@ -180,6 +205,7 @@ export function createBoxGitMirror(options: {
 			"fetch",
 			"--no-tags",
 			"--no-filter",
+			...(refetch ? ["--refetch"] : []),
 			"origin",
 			"+refs/heads/main:refs/heads/main",
 		]);
@@ -197,7 +223,7 @@ export function createBoxGitMirror(options: {
 	> {
 		if (!existsSync(path) || isCompleteGitMirror(path)) return undefined;
 		await stripPartialCloneMarkers();
-		const repaired = await refreshMain();
+		const repaired = await refreshMain(true);
 		if (repaired) return repaired;
 		if (!isCompleteGitMirror(path)) {
 			return {
@@ -308,6 +334,27 @@ export function createBoxGitMirror(options: {
 			};
 		}
 
+		if (!(await servesCheckout(sha))) {
+			// The commit is here but some of its files are not (finding 99): take
+			// the commit again, whole, rather than hand a job a checkout that fails.
+			await git([
+				`--git-dir=${path}`,
+				"-c",
+				"gc.auto=0",
+				"fetch",
+				"--no-tags",
+				"--no-filter",
+				"--refetch",
+				"origin",
+				`+${sha}:${shaRef(sha)}`,
+			]);
+			if (!(await servesCheckout(sha))) {
+				return {
+					status: "miss",
+					reason: `mirror is missing objects of the triggering commit: ${path}`,
+				};
+			}
+		}
 		await git([`--git-dir=${path}`, "update-ref", shaRef(sha), sha]);
 		return { status: "hit", mirror: path };
 	}
