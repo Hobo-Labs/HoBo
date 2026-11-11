@@ -3,21 +3,21 @@
  */
 import { z } from "zod";
 import {
-	type DepsBuildDockerReserve,
 	depsBuildDockerReserve as computeDepsBuildDockerReserve,
 	DEPS_BUILD_MEASURED_DOCKER_BYTES,
 	DEPS_BUILD_MEASURED_DOCKER_INODES,
 	DEPS_BUILD_VOLATILITY_BYTES,
 	DEPS_BUILD_VOLATILITY_INODES,
+	type DepsBuildDockerReserve,
 } from "./deps-build-docker-reserve.js";
 
+export type { DepsBuildDockerReserve } from "./deps-build-docker-reserve.js";
 export {
 	DEPS_BUILD_MEASURED_DOCKER_BYTES,
 	DEPS_BUILD_MEASURED_DOCKER_INODES,
 	DEPS_BUILD_VOLATILITY_BYTES,
 	DEPS_BUILD_VOLATILITY_INODES,
 };
-export type { DepsBuildDockerReserve } from "./deps-build-docker-reserve.js";
 
 export const DepsBuildTelemetrySchema = z
 	.object({
