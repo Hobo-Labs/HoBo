@@ -906,6 +906,7 @@ try {
 						const meshFree = meshCap?.freeSlots ?? hoboFreeSlots;
 						return {
 							hoboFreeSlots,
+							meshFreeSlots: meshFree,
 							arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
 						};
 					},

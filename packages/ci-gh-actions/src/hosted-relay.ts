@@ -22,9 +22,11 @@ import {
 import {
 	type AdmissionOrder,
 	createAdmissionOrder,
-	isMainWorkspaceShardJob,
+	isMainTrunkFleetDeferJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetCapacityWitness } from "./fleet-absorb.js";
+import { fleetPeerAbsorbSlots } from "./fleet-absorb.js";
 import type { FleetCapacityPublisher } from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
@@ -72,6 +74,7 @@ import {
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import {
 	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
+	evaluateMainTrunkFleetDefer,
 	type TrunkWaitCache,
 	type TrunkWaitReason,
 	trunkWaitKey,
@@ -234,6 +237,7 @@ export class HostedRelay {
 	private readonly mergeGroupCapWaitJobs: Set<string>;
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
 	private readonly trunkWaits: TrunkWaitCache;
+	private readonly trunkDeferDecisionSig = new Map<string, string>();
 	private readonly unlaunchedReReserveLedger = new Map<
 		string,
 		Readonly<{
@@ -300,7 +304,7 @@ export class HostedRelay {
 			fleetCapacity?: Readonly<{
 				publish: FleetCapacityPublisher["publish"];
 				snapshot: () => Promise<
-					Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
+					FleetCapacityWitness & { hoboFreeSlots: number }
 				>;
 			}>;
 			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
@@ -542,10 +546,49 @@ export class HostedRelay {
 		return configured;
 	}
 
+	private logTrunkFleetDeferDecision(
+		job: Pick<Job, "repository" | "runId" | "id" | "name" | "runAttempt">,
+		decision: ReturnType<typeof evaluateMainTrunkFleetDefer>,
+	): void {
+		const signature = [
+			decision.action,
+			decision.holdReason ?? "",
+			decision.waitReason ?? "",
+			decision.peerAbsorbSlots,
+			decision.waitedMs,
+		].join(":");
+		const key = trunkWaitKey(job);
+		if (this.trunkDeferDecisionSig.get(key) === signature) return;
+		this.trunkDeferDecisionSig.set(key, signature);
+		console.error(
+			JSON.stringify({
+				event: "hobo_ci_trunk_fleet_defer_decision",
+				repository: job.repository,
+				runId: job.runId,
+				jobId: job.id,
+				jobName: job.name,
+				action: decision.action,
+				waitReason: decision.waitReason ?? "",
+				waitedMs: decision.waitedMs,
+				holdReason: decision.holdReason ?? "",
+				hoboFreeSlots: decision.hoboFreeSlots,
+				arcFreeSlots: decision.arcFreeSlots,
+				meshFreeSlots: decision.meshFreeSlots,
+				peerAbsorbSlots: decision.peerAbsorbSlots,
+			}),
+		);
+	}
+
+	private fleetPeerSlots(
+		fleetWitness: FleetCapacityWitness | undefined,
+	): number {
+		return fleetPeerAbsorbSlots(fleetWitness);
+	}
+
 	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
 	private async releaseBlockedUnlaunchedReservations(
 		pendingDemand: number,
-		nonLocalFreeSlots: number | undefined,
+		fleetWitness: FleetCapacityWitness | undefined,
 	): Promise<void> {
 		const policy = this.options.unlaunchedReservationRelease;
 		if (!policy || policy.launchSlots <= 0) return;
@@ -567,31 +610,19 @@ export class HostedRelay {
 			liveContainerCount: countLiveBoxContainers(active),
 			backlogImmediate: policy.backlogImmediate ?? true,
 		};
-		let releases: ReturnType<typeof pickUnlaunchedReservationsToRelease>;
-		if (nonLocalFreeSlots === undefined) {
-			releases = pickUnlaunchedReservationsToRelease(
-				active,
-				nowMs,
-				releaseBase,
-			);
-		} else {
-			const releaseContext = {
-				...releaseBase,
-				nonLocalFreeSlots,
-			};
-			releases = pickUnlaunchedReservationsToRelease(
-				active,
-				nowMs,
-				releaseContext,
-			);
-		}
+		const releaseContext = fleetWitness
+			? { ...releaseBase, fleetWitness }
+			: releaseBase;
+		const releases = pickUnlaunchedReservationsToRelease(
+			active,
+			nowMs,
+			releaseContext,
+		);
+		const peerSlots = this.fleetPeerSlots(fleetWitness);
 		for (const release of releases) {
 			const lease = active.find((entry) => entry.id === release.leaseId);
 			if (!lease) continue;
-			const releaseCount = this.recordUnlaunchedRelease(
-				lease,
-				nonLocalFreeSlots,
-			);
+			const releaseCount = this.recordUnlaunchedRelease(lease, peerSlots);
 			await this.options.store.cancelAndRequeue(
 				lease.id,
 				this.queuedDemand(lease),
@@ -607,7 +638,7 @@ export class HostedRelay {
 					reason: release.reason,
 					ageMs: nowMs - Date.parse(lease.createdAt),
 					pendingDemand,
-					nonLocalFreeSlots: nonLocalFreeSlots ?? -1,
+					nonLocalFreeSlots: peerSlots,
 					releaseCount,
 				}),
 			);
@@ -616,7 +647,7 @@ export class HostedRelay {
 
 	private async releaseTrunkHeadroomFleetReservations(
 		active: readonly Lease[],
-		nonLocalFreeSlots: number | undefined,
+		fleetWitness: FleetCapacityWitness | undefined,
 	): Promise<void> {
 		const deferMs = this.headroomFleetDeferMs();
 		const nowMs = Date.parse(this.now());
@@ -624,10 +655,9 @@ export class HostedRelay {
 			this.trunkWaits,
 			active,
 			nowMs,
-			nonLocalFreeSlots === undefined
-				? { deferMs }
-				: { deferMs, nonLocalFreeSlots },
+			fleetWitness ? { deferMs, fleetWitness } : { deferMs },
 		);
+		const peerSlots = this.fleetPeerSlots(fleetWitness);
 		for (const release of releases) {
 			const lease = active.find((entry) => entry.id === release.leaseId);
 			if (!lease) continue;
@@ -639,14 +669,11 @@ export class HostedRelay {
 						id: lease.jobId,
 						runAttempt: lease.runAttempt,
 					},
-					nonLocalFreeSlots,
+					peerSlots,
 				)
 			)
 				continue;
-			const releaseCount = this.recordUnlaunchedRelease(
-				lease,
-				nonLocalFreeSlots,
-			);
+			const releaseCount = this.recordUnlaunchedRelease(lease, peerSlots);
 			await this.options.store.cancelAndRequeue(
 				lease.id,
 				this.queuedDemand(lease),
@@ -662,7 +689,10 @@ export class HostedRelay {
 					leaseId: lease.id,
 					reason: release.reason,
 					waitedMs: release.waitedMs,
-					nonLocalFreeSlots: nonLocalFreeSlots ?? -1,
+					nonLocalFreeSlots: peerSlots,
+					hoboFreeSlots: fleetWitness?.hoboFreeSlots ?? -1,
+					arcFreeSlots: fleetWitness?.arcFreeSlots ?? -1,
+					meshFreeSlots: fleetWitness?.meshFreeSlots ?? -1,
 					releaseCount,
 				}),
 			);
@@ -1339,13 +1369,13 @@ export class HostedRelay {
 		this.dispatchGithubJobCache = new Map();
 		const reservationRevision = await this.refreshConfig();
 		const queued = await this.options.store.pendingJobs();
-		let nonLocalFreeSlots: number | undefined;
+		let fleetWitness: FleetCapacityWitness | undefined;
 		try {
-			nonLocalFreeSlots = (await this.options.fleetCapacity?.snapshot())
-				?.arcFreeSlots;
+			fleetWitness = await this.options.fleetCapacity?.snapshot();
 		} catch {
-			nonLocalFreeSlots = undefined;
+			fleetWitness = undefined;
 		}
+		const fleetPeerSlots = this.fleetPeerSlots(fleetWitness);
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
 		const refOf = (job: Job) => ({
@@ -1411,7 +1441,7 @@ export class HostedRelay {
 				)
 			)
 				continue;
-			if (this.reReserveCooldownBlocks(job, nonLocalFreeSlots)) continue;
+			if (this.reReserveCooldownBlocks(job, fleetPeerSlots)) continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
@@ -1475,23 +1505,21 @@ export class HostedRelay {
 			const nowMs = Date.parse(this.now());
 			const priorWait = this.trunkWaits.get(trunkWaitKey(job));
 			const headroomFleetDeferMs = this.headroomFleetDeferMs();
-			const fleetDeferShard =
-				trunk &&
-				nonLocalFreeSlots !== undefined &&
-				nonLocalFreeSlots > 0 &&
-				isMainWorkspaceShardJob(job.name) &&
-				(this.options.trunkSlots === undefined ||
-					this.options.trunkSlots > 0) &&
-				((this.options.trunkSlots !== undefined &&
-					this.options.trunkSlots > 0 &&
-					localTrunkReserved >= this.options.trunkSlots) ||
-					(priorWait !== undefined &&
-						priorWait.reason === "headroom" &&
-						nowMs - priorWait.sinceMs >= headroomFleetDeferMs) ||
-					(priorWait !== undefined &&
-						priorWait.reason === "storage" &&
-						nowMs - priorWait.sinceMs >= headroomFleetDeferMs));
-			if (fleetDeferShard) {
+			const mainTrunk = isMainTrunkFleetDeferJob(job.name);
+			const fleetDeferDecision = evaluateMainTrunkFleetDefer({
+				jobName: job.name,
+				isMainTrunkJob: mainTrunk,
+				priorWait,
+				deferMs: headroomFleetDeferMs,
+				nowMs,
+				trunkSlots: this.options.trunkSlots,
+				localTrunkReserved,
+				fleetWitness,
+			});
+			if (mainTrunk || priorWait !== undefined) {
+				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
+			}
+			if (fleetDeferDecision.action === "defer") {
 				waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
 				continue;
 			}
@@ -1541,13 +1569,30 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
-						if (
-							trunk &&
-							(decision.reason === "host-available" ||
-								decision.reason === "host-pressure" ||
-								decision.reason === "memory-budget")
-						)
-							waitingTrunk.add(this.reportTrunkWait(job, "headroom"));
+						if (trunk && decision.reason) {
+							const waitReason: TrunkWaitReason =
+								decision.reason === "host-pressure"
+									? "host-pressure"
+									: decision.reason;
+							waitingTrunk.add(this.reportTrunkWait(job, waitReason));
+							if (mainTrunk) {
+								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
+								const postDecision = evaluateMainTrunkFleetDefer({
+									jobName: job.name,
+									isMainTrunkJob: true,
+									priorWait: afterWait,
+									deferMs: headroomFleetDeferMs,
+									nowMs,
+									trunkSlots: this.options.trunkSlots,
+									localTrunkReserved,
+									fleetWitness,
+								});
+								this.logTrunkFleetDeferDecision(job, postDecision);
+								if (postDecision.action === "defer") {
+									waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
+								}
+							}
+						}
 						continue;
 					}
 				}
@@ -1624,12 +1669,12 @@ export class HostedRelay {
 		}
 		await this.releaseBlockedUnlaunchedReservations(
 			pending.length,
-			nonLocalFreeSlots,
+			fleetWitness,
 		);
 		const postReleaseActive = await this.options.store.activeLeases();
 		await this.releaseTrunkHeadroomFleetReservations(
 			postReleaseActive,
-			nonLocalFreeSlots,
+			fleetWitness,
 		);
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(

@@ -78,6 +78,11 @@ export function isMainWorkspaceShardJob(jobName: string | undefined): boolean {
 	return mainWorkspaceShardIndex(jobName) !== undefined;
 }
 
+/** Main push / merge_group Fabric trunk jobs eligible for cooperative fleet defer. */
+export function isMainTrunkFleetDeferJob(jobName: string | undefined): boolean {
+	return mainFabricTrunkPhase(jobName) <= 2;
+}
+
 function mainFabricTrunkPhase(jobName: string | undefined): number {
 	if (jobName === MAIN_WORKSPACE_PLAN_JOB) return 0;
 	if (jobName === MAIN_FULL_GATE_JOB) return 1;

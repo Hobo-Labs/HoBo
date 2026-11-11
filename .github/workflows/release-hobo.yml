@@ -33,6 +33,9 @@ on:
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
       - "scripts/ci/push-release-git-tag.mts"
+      - "scripts/ci/create-github-release.mts"
+      - "scripts/lib/ssh-sig.mts"
+      - "scripts/test/release-git-tag.test.ts"
       - "scripts/lib/nbgv-release-version.mts"
       - "scripts/lib/release-hobo-path-filters.mts"
       - "scripts/lib/release-pages-stale.mts"
@@ -91,6 +94,9 @@ on:
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
       - "scripts/ci/push-release-git-tag.mts"
+      - "scripts/ci/create-github-release.mts"
+      - "scripts/lib/ssh-sig.mts"
+      - "scripts/test/release-git-tag.test.ts"
       - "scripts/lib/nbgv-release-version.mts"
       - "scripts/lib/release-hobo-path-filters.mts"
       - "scripts/lib/release-pages-stale.mts"
@@ -331,6 +337,7 @@ jobs:
           --label release-contract-vitest --
           pnpm exec vitest run
           scripts/test/release-contract-vitest-scope.test.ts
+          scripts/test/release-git-tag.test.ts
           scripts/test/release-oci-affected.test.ts
           scripts/test/release-oci-attest-contract.test.ts
           scripts/test/release-oci-image-contract.test.ts
@@ -475,6 +482,10 @@ jobs:
         needs.release-contract.result == 'success'
       )
     needs: [release-main-train-gate, release-contract]
+    # packages: read lets a runner without the worker image (an ARC pod) pull it.
+    permissions:
+      contents: read
+      packages: read
     env:
       HOBO_RELEASE_TURBO_BASE: ""
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
@@ -504,6 +515,10 @@ jobs:
       - uses: ./.github/actions/ci-runner-preflight
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
+        # Without a token the GHCR pull is never tried, and a runner that does not
+        # already hold the image refuses the release (run 43059319805).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Build hobo-sdk before CLI/MCP
         if: matrix.image_id == 'hobo-cli' || matrix.image_id == 'hobo-mcp'
@@ -582,6 +597,10 @@ jobs:
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
+        # Without a token the GHCR pull is never tried, and a runner that does not
+        # already hold the image refuses the release (run 43059319805).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -634,8 +653,14 @@ jobs:
 
   release-npm:
     name: npm publish train (SDK allowlist)
+    # The @hobo-labs packages have never been published, and npm trusted
+    # publishing cannot attach to a package that does not exist yet: the first
+    # publish needs the one-time bootstrap in docs/release/pipelines.md. Until the
+    # repository variable HOBO_NPM_PUBLISH is 'true' this job is skipped, not run
+    # to fail with ENEEDAUTH and take the tag and GitHub Release down with it.
     if: >-
       always() &&
+      vars.HOBO_NPM_PUBLISH == 'true' &&
       needs.release-main-train-gate.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -843,7 +868,8 @@ jobs:
       !cancelled() &&
       needs.release-main-train-gate.outputs.run == 'true' &&
       needs.release-publish.result == 'success' &&
-      needs.release-npm.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
+      (vars.HOBO_NPM_PUBLISH != 'true' || needs.release-npm.result == 'success') &&
       needs.release-attest.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
       contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)
@@ -869,21 +895,23 @@ jobs:
           tag='${{ needs.release-main-train-gate.outputs.release_ref }}'
           node --no-warnings scripts/ci/push-release-git-tag.mts --tag "$tag" --commit '${{ needs.release-main-train-gate.outputs.release_sha }}'
       - name: Create GitHub Release (prerelease)
+        # Through the REST API: the release runners have no gh CLI.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag='${{ needs.release-main-train-gate.outputs.release_ref }}'
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "GitHub Release $tag already exists"
-            exit 0
-          fi
-          args=(release create "$tag" --generate-notes --title "$tag" --prerelease)
-          gh "${args[@]}"
+          node --no-warnings scripts/ci/create-github-release.mts --tag "$tag" --prerelease
 
   release-github:
     name: GitHub Release (independent train tag)
-    if: startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v')
+    if: >-
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v')) &&
+      needs.release-publish.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
+      (vars.HOBO_NPM_PUBLISH != 'true' || startsWith(github.ref, 'refs/tags/cli-v') || needs.release-npm.result == 'success') &&
+      needs.release-attest.result == 'success'
     needs: [release-publish, release-npm, release-attest]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
@@ -895,14 +923,15 @@ jobs:
           clean: false
           fetch-depth: 1
       - name: Create or update GitHub Release
+        # Through the REST API: the release runners have no gh CLI.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           dist_tag="$(node --no-warnings scripts/ci/resolve-release-version.mts "${{ github.ref_name }}" | sed -n 's/^HOBO_RELEASE_NPM_DIST_TAG=//p')"
-          args=(release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}")
-          if [ "$dist_tag" != "latest" ]; then args+=(--prerelease); fi
-          gh "${args[@]}"
+          prerelease=()
+          if [ "$dist_tag" != "latest" ]; then prerelease=(--prerelease); fi
+          node --no-warnings scripts/ci/create-github-release.mts --tag "${{ github.ref_name }}" "${prerelease[@]}"
 
   release-pr-gate:
     name: HoBo release PR gate (required)
