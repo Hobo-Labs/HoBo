@@ -676,8 +676,7 @@ export function createIsolatedContainerController(options: {
 						...measured.inodeBreakdown,
 					});
 				}
-				const workRootInodes =
-					measured.localInodes ?? measured.entries;
+				const workRootInodes = measured.localInodes ?? measured.entries;
 				options.storagePeaks?.record(lease.jobName, {
 					workRootBytes: measured.bytes,
 					workRootInodes,
