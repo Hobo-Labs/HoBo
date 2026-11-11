@@ -161,7 +161,7 @@
 				{
 					"name": "S0 gate set",
 					"if": "github.event_name == 'merge_group'",
-					"run": "set -euo pipefail\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run check:all\nfi\n",
+					"run": "set -euo pipefail\nnode --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run check:all\nfi\n",
 					"env": {
 						"HOBO_RELEVANT_CHECK_CONCURRENCY": "1",
 						"SCOPE": "${{ steps.merge-group-base.outputs.scope }}",

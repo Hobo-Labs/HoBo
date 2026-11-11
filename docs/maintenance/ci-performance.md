@@ -440,7 +440,9 @@ key listed in `.hobo/ci-attestors.json`. The workflow reads that list at the
 pull request's base commit, never from the pull request itself. The local run
 executes the same commands as the workflow jobs, read from
 `scripts/ci/attested-jobs.json`; a test fails when that file and a workflow
-drift apart.
+drift apart. When `main` changes a covered job, that test fails on a branch
+rebased onto it until the file is updated, so a local run never signs for an
+older version of a job.
 
 What this does not give you:
 
