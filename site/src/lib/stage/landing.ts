@@ -29,6 +29,7 @@ import {
 	inStageZone,
 	type KeyPlace,
 	keyDirection,
+	moreSides,
 	pageKeepsKey,
 	readsDown,
 	scrollAmount,
@@ -749,6 +750,16 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			inner.classList.remove("is-tall");
 			inner.classList.toggle("is-tall", inner.scrollHeight > inner.clientHeight + 1);
 		}
+		for (const wrap of world.querySelectorAll<HTMLElement>(".table-wrap")) markMoreSides(wrap);
+	}
+	/**
+	 * A table on a phone sign is wider than the sign and scrolls sideways; its
+	 * `data-more` names the sides still hidden, so the edge there fades.
+	 */
+	function markMoreSides(wrap: HTMLElement): void {
+		const more = moreSides(wrap.scrollLeft, wrap.scrollWidth, wrap.clientWidth);
+		if (more) wrap.dataset.more = more;
+		else delete wrap.dataset.more;
 	}
 	/** The scroll box of the stop being read, on a desktop. */
 	const reading = () => (desk ? STOPS[active].sec : null);
@@ -1321,6 +1332,15 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	}
 	// A tall stop says there is more below it until it has been read.
 	for (const s of STOPS) s.sec.addEventListener("scroll", () => measureFit(s), { passive: true, signal });
+	// Scroll does not bubble: catch a phone sign's table scrolling sideways on
+	// the way down, and fade whichever edge still hides columns.
+	world.addEventListener(
+		"scroll",
+		(e) => {
+			if (e.target instanceof HTMLElement && e.target.matches(".table-wrap")) markMoreSides(e.target);
+		},
+		{ capture: true, passive: true, signal },
+	);
 	let resizeTimer = 0;
 	addEventListener("resize", () => {
 		cancel(resizeTimer);
@@ -1382,6 +1402,10 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		for (const s of STOPS) {
 			s.sec.classList.remove("is-on", "is-tall", "has-more");
 			s.sec.scrollTop = 0;
+			for (const wrap of s.sec.querySelectorAll<HTMLElement>(".table-wrap")) {
+				delete wrap.dataset.more;
+				wrap.scrollLeft = 0;
+			}
 		}
 		for (const p of plates) p.node.style.transform = "";
 		for (const c of clouds) c.node.style.transform = "";
