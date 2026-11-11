@@ -1,0 +1,15 @@
+{
+	"consumer": { "name": "ProviderErrorPath" },
+	"provider": { "name": "ProviderRedactionPackage" },
+	"interactions": [
+		{
+			"description": "the redactor is an in-process library with no service boundary",
+			"request": { "method": "GET", "path": "/provider-redaction/boundary" },
+			"response": {
+				"status": 200,
+				"body": { "ownsServiceBoundary": false }
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}
