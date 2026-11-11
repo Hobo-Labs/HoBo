@@ -61,6 +61,9 @@ message ResolutionPolicy {
   uint32 context_lines = 6;
   // Corrected resolutions tried after the repository's checks fail on one.
   uint32 max_repairs = 7;
+  // Try a syntax-aware merge (mergiraf) of each conflicted file before any
+  // model. The operator installs `mergiraf` beside the agent.
+  bool structured_merge = 8;
 }
 
 message AgentBudget {
@@ -145,6 +148,8 @@ message ResolvedFile {
   // The lowest confidence the engine reported for a region of this file.
   double confidence = 3;
   string content_sha256 = 4;
+  // The structured merge settled the whole file, not only its conflict regions.
+  bool structured = 5;
 }
 
 // The outcome of one attempt to merge `ours_sha` and `theirs_sha`.

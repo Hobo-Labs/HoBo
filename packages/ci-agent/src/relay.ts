@@ -14,6 +14,7 @@ import {
 import type { ResolutionEngine } from "./resolver.js";
 import type { CommitSigningKey } from "./signing.js";
 import { createSqliteJournal } from "./sqlite-journal.js";
+import type { StructuredMerger } from "./structured-merge.js";
 
 const REPOSITORY = /^(?!\.)[A-Za-z0-9_.-]+\/(?!\.)[A-Za-z0-9_.-]+$/;
 
@@ -39,6 +40,8 @@ export function createRelayAgent(options: {
 	token: (installationId: number) => Promise<string>;
 	stateDirectory: string;
 	engines: readonly ResolutionEngine[];
+	/** The syntax-aware merge tried before any engine; see `resolution.structuredMerge`. */
+	structured?: StructuredMerger | undefined;
 	/** Signs every commit the agent writes; see `commit.signingKey`. */
 	signingKey?: CommitSigningKey | undefined;
 	intervalMs?: number;
@@ -104,6 +107,7 @@ export function createRelayAgent(options: {
 				signer: options.signingKey,
 			}),
 			engines: options.engines,
+			structured: options.structured,
 			journal,
 			now: options.now,
 		});

@@ -12,6 +12,7 @@ import {
 import { agentPolicies, parseAgentConfig } from "./config.js";
 import { createRelayAgent } from "./relay.js";
 import { parseCommitSigningKey } from "./signing.js";
+import { configuredStructuredMerger } from "./structured-merge.js";
 
 /**
  * Start the relay's Node host with the agent beside it.
@@ -44,6 +45,7 @@ export async function startRelayWithAgentFromEnvironment(
 	const config = parseAgentConfig(block);
 	const credential = environmentCredentials(env);
 	const engines = await createConfiguredEngines(config, { credential });
+	const structured = await configuredStructuredMerger(config);
 	const signingReference = agentPolicies(config).commit.signingKey;
 	const signingText = signingReference
 		? credential(signingReference)
@@ -71,6 +73,7 @@ export async function startRelayWithAgentFromEnvironment(
 				token: (installationId) => github.installationToken(installationId),
 				stateDirectory,
 				engines,
+				structured,
 				signingKey,
 				intervalMs: seconds * 1000,
 			});

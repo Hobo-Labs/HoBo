@@ -45,6 +45,7 @@ import "list"
 	minConfidence?:      (int | float) & >=0 & <=1
 	contextLines?:       int & >=0 & <=200
 	maxRepairs?:         int & >=0 & <=3
+	structuredMerge?:    bool
 }
 
 #AgentBudget: {

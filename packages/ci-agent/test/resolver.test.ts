@@ -4,6 +4,7 @@ import {
 	conflictKey,
 	resolveConflicts,
 } from "../src/resolver.js";
+import type { StructuredMerger } from "../src/structured-merge.js";
 import { type PolicyOverrides, testPolicies } from "./fixtures/config.js";
 import { scriptedEngine, takeBoth } from "./fixtures/engine.js";
 
@@ -333,6 +334,110 @@ describe("conflict resolver", () => {
 			new Map([["src/a.ts", { regions: [], checkFailures: "x" }]]),
 		);
 		expect(repairing.requests[0]?.regions).toHaveLength(2);
+	});
+
+	it("uses a clean structured merge that passes the checks, and asks an engine about the rest", async () => {
+		const { resolution, budget } = testPolicies();
+		const asked: string[] = [];
+		const merger = (text: (path: string) => string | undefined) =>
+			({
+				id: "mergiraf",
+				merge: async (input) => {
+					asked.push(input.path);
+					return text(input.path);
+				},
+			}) satisfies StructuredMerger;
+		const sides = {
+			base: "const a = 1;\n",
+			ours: "const a = 2;\n",
+			theirs: "const b = 1;\n",
+		};
+		const ts = file("src/a.ts", conflicted.merged, sides);
+		const other = file("src/b.txt", conflicted.merged, sides);
+		const call = (
+			structured: StructuredMerger,
+			engines = [takeBoth()],
+			previous?: Map<
+				string,
+				{ regions: { id: number; resolution: string }[]; checkFailures: string }
+			>,
+		) =>
+			resolveConflicts({
+				files: [ts, other],
+				policy: resolution,
+				budget,
+				engines,
+				remainingTokens: 1_000_000,
+				oursLabel: "a",
+				theirsLabel: "b",
+				structured,
+				previous,
+			});
+		// Both merge cleanly: no engine is asked.
+		const unused = takeBoth();
+		expect(
+			await call(
+				merger(() => "const a = 2;\nconst b = 1;\n"),
+				[unused],
+			),
+		).toMatchObject({
+			outcome: "resolved",
+			engineId: "structured",
+			model: "mergiraf",
+			files: [
+				{
+					path: "src/a.ts",
+					content: "const a = 2;\nconst b = 1;\n",
+					regions: 0,
+					structured: true,
+				},
+				{ path: "src/b.txt", structured: true },
+			],
+		});
+		expect(unused.requests).toHaveLength(0);
+		// One is out of bounds: git's regions go to the engine.
+		const engine = takeBoth();
+		const mixed = await call(
+			merger((path) =>
+				path === "src/a.ts" ? "const a = 2;\nconst b = 1;\n" : "x".repeat(5000),
+			),
+			[engine],
+		);
+		expect(engine.requests.map((request) => request.path)).toEqual([
+			"src/b.txt",
+		]);
+		expect(mixed).toMatchObject({
+			outcome: "resolved",
+			engineId: "scripted",
+			files: [
+				{ path: "src/a.ts", structured: true },
+				{ path: "src/b.txt", regions: 2, structured: false },
+			],
+		});
+		// One fails a check (a name declared twice): the engine is asked about it.
+		const checked = takeBoth();
+		await call(
+			merger(() => "const a = 2;\nconst a = 3;\n"),
+			[checked],
+		);
+		expect(checked.requests.map((request) => request.path)).toEqual([
+			"src/a.ts",
+		]);
+		// No answer: the engine is asked, as without a structured merge.
+		const fallback = takeBoth();
+		await call(
+			merger(() => undefined),
+			[fallback],
+		);
+		expect(fallback.requests[0]?.path).toBe("src/a.ts");
+		// A repair corrects the regions the checks rejected; it does not merge again.
+		asked.length = 0;
+		await call(
+			merger(() => "x\n"),
+			[takeBoth()],
+			new Map([["src/a.ts", { regions: [], checkFailures: "x" }]]),
+		);
+		expect(asked).toEqual([]);
 	});
 
 	it("fails when no engine answers", async () => {

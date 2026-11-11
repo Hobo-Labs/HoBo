@@ -31,6 +31,7 @@ import {
 	type ResolutionEngine,
 	resolveConflicts,
 } from "./resolver.js";
+import type { StructuredMerger } from "./structured-merge.js";
 
 /** Where queued work is read from. */
 export interface QueueSource {
@@ -111,6 +112,8 @@ export function createCiAgent(options: {
 	publisher: QueuePublisher;
 	workspace: MergeWorkspace;
 	engines: readonly ResolutionEngine[];
+	/** Set when `resolution.structuredMerge` is on. */
+	structured?: StructuredMerger | undefined;
 	journal: AgentJournal;
 	now?: (() => string) | undefined;
 }) {
@@ -233,6 +236,7 @@ export function createCiAgent(options: {
 			// what passed before.
 			previous: repair ? previous : undefined,
 			recorded,
+			structured: options.structured,
 		});
 		if (result.outcome !== "resolved" && result.reason === "daily-budget") {
 			const last = await journal.latest(repository, "ci.agent.BudgetExhausted");
@@ -253,8 +257,10 @@ export function createCiAgent(options: {
 								: `Merge ${input.theirsLabel} into ${input.oursLabel}`,
 							"",
 							`Conflicts in ${files.length} file(s) were resolved by hobo-ci-agent:`,
-							...files.map(
-								(file) => `- ${file.path} (${file.regions} region(s))`,
+							...files.map((file) =>
+								file.structured
+									? `- ${file.path} (structured merge of the whole file)`
+									: `- ${file.path} (${file.regions} region(s))`,
 							),
 							"",
 							"This merge was written by an automated agent and has not been reviewed.",
@@ -264,7 +270,9 @@ export function createCiAgent(options: {
 							...(repair ? [`Hobo-Agent-Repairs: ${repair.of.key}`] : []),
 							result.engineId === "recorded"
 								? "Hobo-Agent-Engine: recorded resolutions"
-								: `Hobo-Agent-Engine: ${result.engineId} (${result.model})`,
+								: result.engineId === "structured"
+									? `Hobo-Agent-Engine: structured merge (${result.model})`
+									: `Hobo-Agent-Engine: ${result.engineId} (${result.model})`,
 							"",
 						].join("\n"),
 					})
@@ -282,6 +290,7 @@ export function createCiAgent(options: {
 				regions: file.regions,
 				confidence: file.confidence,
 				contentSha256: file.contentSha256,
+				structured: file.structured,
 			})),
 			engineId: result.engineId,
 			model: result.model,

@@ -236,6 +236,7 @@ export function createGitWorkspace(options: {
 				bytes: Math.max(...sides.map((text) => Buffer.byteLength(text ?? ""))),
 				ours: oursText,
 				theirs: theirsText,
+				base: baseText,
 			};
 		} finally {
 			await rm(directory, { recursive: true, force: true });

@@ -4,6 +4,7 @@ import type { MergeWorkspace } from "../src/git-workspace.js";
 import { createMemoryJournal } from "../src/journal.js";
 import { observeQueue } from "../src/planner.js";
 import type { ResolutionEngine } from "../src/resolver.js";
+import type { StructuredMerger } from "../src/structured-merge.js";
 import { type PolicyOverrides, testConfig } from "./fixtures/config.js";
 import { scriptedEngine, takeBoth } from "./fixtures/engine.js";
 import {
@@ -47,6 +48,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		engines: ResolutionEngine[] = [takeBoth()],
 		/** Wraps the real workspace, to fail one of its steps. */
 		wrap: (workspace: MergeWorkspace) => MergeWorkspace = (w) => w,
+		structured?: StructuredMerger,
 	) {
 		const journal = createMemoryJournal();
 		const comments: { number: number; body: string }[] = [];
@@ -96,6 +98,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			},
 			workspace: wrap(repos.workspace()),
 			engines,
+			structured,
 			journal,
 			now: () => clock,
 		});
@@ -651,6 +654,56 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		}
 		await agent.tick();
 		expect(engine.requests).toHaveLength(2);
+	});
+
+	it("commits a clean structured merge without the model, and says so", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const seen: { base: string; ours: string; theirs: string }[] = [];
+		const { agent, journal } = setup(
+			"suggest",
+			[first],
+			{ resolution: { structuredMerge: true } },
+			[engine],
+			(w) => w,
+			{
+				id: "mergiraf",
+				merge: async ({ base, ours, theirs }) => {
+					seen.push({ base, ours, theirs });
+					return BASE.replace("two", "TWO from 1 and main");
+				},
+			},
+		);
+		const report = await agent.tick();
+		expect(engine.requests).toHaveLength(0);
+		expect(seen).toEqual([
+			{
+				base: BASE,
+				ours: BASE.replace("two", "TWO from 1"),
+				theirs: BASE.replace("two", "TWO from main"),
+			},
+		]);
+		expect(report.resolutions).toMatchObject([
+			{
+				outcome: "resolved",
+				engineId: "structured",
+				model: "mergiraf",
+				files: [{ path: "a.txt", regions: 0, structured: true }],
+			},
+		]);
+		const commit = report.resolutions[0]?.commitSha ?? "";
+		expect(repos.git(repos.agent, "show", `${commit}:a.txt`)).toBe(
+			BASE.replace("two", "TWO from 1 and main").trimEnd(),
+		);
+		const message = repos.git(repos.agent, "log", "-1", "--format=%B", commit);
+		expect(message).toContain("- a.txt (structured merge of the whole file)");
+		expect(message).toContain("Hobo-Agent-Engine: structured merge (mergiraf)");
+		expect(
+			(await journal.events()).filter(
+				(event) => event.type === "ci.agent.ResolutionSettled",
+			),
+		).toHaveLength(1);
 	});
 
 	it("records passing checks once and does not repair", async () => {

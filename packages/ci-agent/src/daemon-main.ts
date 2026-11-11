@@ -11,6 +11,7 @@ import {
 import { agentPolicies, parseAgentConfig } from "./config.js";
 import { createRelayAgent, type RelayConnection } from "./relay.js";
 import { parseCommitSigningKey } from "./signing.js";
+import { configuredStructuredMerger } from "./structured-merge.js";
 
 const REPOSITORY = /^(?!\.)[A-Za-z0-9_.-]+\/(?!\.)[A-Za-z0-9_.-]+$/;
 const Installation = z.object({
@@ -72,6 +73,7 @@ export async function startAgentDaemonFromEnvironment(
 		throw new Error("invalid agent interval");
 	const credential = environmentCredentials(env);
 	const engines = await createConfiguredEngines(config, { credential });
+	const structured = await configuredStructuredMerger(config);
 	const signingReference = agentPolicies(config).commit.signingKey;
 	const signingText = signingReference
 		? credential(signingReference)
@@ -123,6 +125,7 @@ export async function startAgentDaemonFromEnvironment(
 		token: (installationId) => github.installationToken(installationId),
 		stateDirectory: required(env, "HOBO_CI_AGENT_DIR"),
 		engines,
+		structured,
 		signingKey: signingText ? parseCommitSigningKey(signingText) : undefined,
 		intervalMs: seconds * 1000,
 		fetch: ports.fetch,

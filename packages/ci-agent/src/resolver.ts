@@ -9,6 +9,7 @@ import {
 	parseMergeSegments,
 	regionContext,
 } from "./conflict.js";
+import type { StructuredMerger } from "./structured-merge.js";
 import { verifyResolvedFile } from "./verify.js";
 
 /** One path a trial merge could not settle. */
@@ -30,6 +31,8 @@ export type ConflictFile = Readonly<{
 	 */
 	ours?: string;
 	theirs?: string;
+	/** The common ancestor's text, empty when both sides added the path. */
+	base?: string;
 }>;
 
 export type EngineRegion = Readonly<{
@@ -108,6 +111,11 @@ export type ResolvedContent = Readonly<{
 	contentSha256: string;
 	/** Each region's text, by the conflict it resolved: what a later merge can reuse. */
 	recorded: readonly RecordedRegion[];
+	/**
+	 * The structured merge settled the whole file. Its text may then differ
+	 * from git's merge outside the conflict regions too.
+	 */
+	structured: boolean;
 }>;
 
 /** A conflict region (by the hash of its three sides) and the text that resolved it. */
@@ -156,6 +164,7 @@ type Prepared = Readonly<{
 	/** Regions with no recorded resolution: the ones an engine is asked about. */
 	pending: readonly EngineRegion[];
 	recorded: ReadonlyMap<string, string> | undefined;
+	structured: boolean;
 }>;
 
 /** A conservative token estimate: three characters a token, not the usual four. */
@@ -187,6 +196,12 @@ export async function resolveConflicts(input: {
 	 * rerere reuses a recorded resolution. Ignored for a repair.
 	 */
 	recorded?: ReadonlyMap<string, string> | undefined;
+	/**
+	 * A syntax-aware merge tried on each file before any engine. A file it
+	 * merges cleanly, and that passes the same checks, needs no engine.
+	 * Not used for a repair.
+	 */
+	structured?: StructuredMerger | undefined;
 }): Promise<ResolveResult> {
 	const { files, policy, budget } = input;
 	const none = { inputTokens: 0, outputTokens: 0 };
@@ -206,7 +221,9 @@ export async function resolveConflicts(input: {
 		return refuse("file-too-large");
 
 	const prepared: Prepared[] = [];
-	for (const file of files) {
+	for (const original of files) {
+		const file = await structuredMerge(original, input, budget.timeoutSeconds);
+		const structured = file !== original;
 		let segments: readonly MergeSegment[];
 		try {
 			segments = parseMergeSegments(file.merged, file.markerSize);
@@ -233,7 +250,7 @@ export async function resolveConflicts(input: {
 		const pending = regions.filter(
 			(region) => !recorded?.has(conflictKey(region)),
 		);
-		prepared.push({ file, segments, regions, pending, recorded });
+		prepared.push({ file, segments, regions, pending, recorded, structured });
 	}
 	const regionCount = prepared.reduce(
 		(total, entry) => total + entry.regions.length,
@@ -256,7 +273,11 @@ export async function resolveConflicts(input: {
 
 	const usage = { inputTokens: 0, outputTokens: 0 };
 	let last = { engineId: "", model: "" };
-	for (const engine of asking.length > 0 ? input.engines : [RECORDED_ENGINE]) {
+	const settled =
+		input.structured && prepared.some((entry) => entry.structured)
+			? { ...RECORDED_ENGINE, id: "structured", model: input.structured.id }
+			: RECORDED_ENGINE;
+	for (const engine of asking.length > 0 ? input.engines : [settled]) {
 		// A fallback engine spends again: only while today's budget still covers it.
 		if (
 			last.engineId !== "" &&
@@ -270,7 +291,16 @@ export async function resolveConflicts(input: {
 		for (const entry of prepared) {
 			if (entry.regions.length === 0) {
 				// The trial merge flagged the path, but its text merged cleanly.
-				resolved.push(content(entry.file.path, entry.file.merged, 0, 1, []));
+				resolved.push(
+					content(
+						entry.file.path,
+						entry.file.merged,
+						0,
+						1,
+						[],
+						entry.structured,
+					),
+				);
 				continue;
 			}
 			const answers = new Map<
@@ -364,6 +394,7 @@ export async function resolveConflicts(input: {
 					entry.regions.length,
 					confidence,
 					recorded,
+					false,
 				),
 			);
 		}
@@ -379,6 +410,7 @@ function content(
 	regions: number,
 	confidence: number,
 	recorded: readonly RecordedRegion[],
+	structured: boolean,
 ): ResolvedContent {
 	return {
 		path,
@@ -386,6 +418,47 @@ function content(
 		regions,
 		confidence,
 		recorded,
+		structured,
 		contentSha256: createHash("sha256").update(text).digest("hex"),
 	};
+}
+
+/**
+ * The file as the structured merge left it, when that merged it cleanly and
+ * the result passes the checks a resolved file must pass; otherwise the file
+ * as git left it.
+ */
+async function structuredMerge(
+	file: ConflictFile,
+	input: Readonly<{
+		structured?: StructuredMerger | undefined;
+		previous?: ReadonlyMap<string, PreviousAttempt> | undefined;
+	}>,
+	timeoutSeconds: number,
+): Promise<ConflictFile> {
+	const { base, ours, theirs } = file;
+	if (
+		!input.structured ||
+		input.previous ||
+		file.kind !== "content" ||
+		base === undefined ||
+		ours === undefined ||
+		theirs === undefined
+	)
+		return file;
+	const merged = await input.structured.merge({
+		path: file.path,
+		base,
+		ours,
+		theirs,
+		signal: AbortSignal.timeout(timeoutSeconds * 1000),
+	});
+	if (
+		merged === undefined ||
+		// Room for both sides, not for unrelated code.
+		merged.length > ours.length + theirs.length + 4096 ||
+		verifyResolvedFile({ path: file.path, ours, theirs, resolved: merged })
+	)
+		return file;
+	return { ...file, merged };
 }

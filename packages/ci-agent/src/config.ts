@@ -127,6 +127,7 @@ export const AgentConfigDocumentSchema = z
 				minConfidence: z.number().min(0).max(1).optional(),
 				contextLines: z.number().int().min(0).max(200).optional(),
 				maxRepairs: z.number().int().min(0).max(3).optional(),
+				structuredMerge: z.boolean().optional(),
 			})
 			.strict()
 			.optional(),
@@ -211,6 +212,7 @@ export function parseAgentConfig(json: string): ParsedAgentConfig {
 			minConfidence: resolution?.minConfidence ?? 0.8,
 			contextLines: resolution?.contextLines ?? 12,
 			maxRepairs: resolution?.maxRepairs ?? 1,
+			structuredMerge: resolution?.structuredMerge ?? false,
 		},
 		commit: {
 			name: commit?.name ?? DEFAULT_COMMIT_IDENTITY.name,

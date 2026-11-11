@@ -55,6 +55,10 @@ describe("git workspace (real git)", () => {
 			path: "a.txt",
 			kind: "content",
 			markerSize: 7,
+			// The whole file on each side, for the checks and a structured merge.
+			base: BASE,
+			ours: BASE.replace("two", "TWO ours"),
+			theirs: BASE.replace("two", "TWO theirs"),
 		});
 		expect(parseMergeSegments(file?.merged ?? "", 7)).toEqual([
 			{ kind: "text", text: "one\n" },
