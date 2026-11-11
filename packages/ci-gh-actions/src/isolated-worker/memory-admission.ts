@@ -132,9 +132,7 @@ export function createWorkerMemoryAdmission(
 			// SAFETY: MemoryLease carries reserved/sandbox fields for unlaunched detection.
 			const full = lease as Lease;
 			return (
-				full.state === "reserved" &&
-				!full.sandboxName &&
-				!full.sandboxSessionId
+				full.state === "reserved" && !full.sandboxName && !full.sandboxSessionId
 			);
 		});
 	}
