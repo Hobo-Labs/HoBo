@@ -3,8 +3,7 @@
 `@hobo/ci-agent` is an optional agent for the [HoBo CI relay](../ci-gh-actions/README.md).
 It watches the pull requests waiting to merge, plans the order they should go
 in, and resolves merge conflicts with a language model you configure. It is
-off unless a repository adds an `agent` block to `.hobo/ci.json` and the relay
-is started with it.
+off unless a repository adds an `agent` block to `.hobo/ci.json`.
 
 The agent never merges anything. A resolution is an ordinary commit, on the
 pull request's own branch or on a side branch, and it reaches the base branch
@@ -110,9 +109,18 @@ project-config parser. A referenced name that is not set stops startup.
 
 ## Run it with the relay
 
-The Node relay (`hobo ci serve`'s host and the container image) takes the
-agent as an option; it is not started by `hobo ci serve` itself yet. Start the
-relay through this package's entry instead of the relay's own:
+With an `agent` block in `.hobo/ci.json`, `hobo ci serve` starts the agent
+beside the relay. Put each referenced model credential in the environment:
+
+```sh
+ANTHROPIC_API_KEY=... hobo ci serve --environment local
+```
+
+The agent's journal and clones go under `<HOBO_HOME>/ci/serve/agent`.
+`hobo ci serve --no-agent` serves the same project without it.
+
+The container image and other hosts of the Node relay start it through this
+package's entry instead of the relay's own:
 
 ```sh
 HOBO_CI_AGENT_CONFIG=.hobo/ci.json \
@@ -194,8 +202,8 @@ trailers.
 - **No live verification.** The GitHub GraphQL queries and mutations are
   written from GitHub's published schema and pinned by a hand-authored Pact.
   They have not been run against GitHub. No live model has been called.
-- **`hobo ci serve` does not start the agent**, and the Vercel host and the
-  box worker daemon cannot run it. Only the Node relay entry above does.
+- **Only the Node relay runs the agent**: `hobo ci serve` and this package's
+  entry. The Vercel host and the box worker daemon cannot.
 - **Harness engines are a port, not an implementation.** A `harness` engine
   needs the host to supply one; `relay-main` supplies none, so a block that
   names a harness stops startup.

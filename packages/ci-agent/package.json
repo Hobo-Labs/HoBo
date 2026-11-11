@@ -37,6 +37,10 @@
     "./relay": {
       "types": "./dist/relay.d.ts",
       "default": "./dist/relay.js"
+    },
+    "./relay-main": {
+      "types": "./dist/relay-main.d.ts",
+      "default": "./dist/relay-main.js"
     }
   },
   "scripts": {

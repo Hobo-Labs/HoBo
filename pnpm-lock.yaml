@@ -1591,6 +1591,9 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@hobo/ci-agent':
+        specifier: workspace:*
+        version: link:../ci-agent
       '@hobo/ci-vercel':
         specifier: workspace:*
         version: link:../ci-vercel

@@ -116,9 +116,9 @@ The Node service can run a second worker beside its tick: the
 [CI agent](../ci-agent/README.md), which plans the merge queue and resolves
 merge conflicts with a configured model. It is off unless a host passes
 `agent` to `createRelayHost` (or `ports.agent` to `startRelayFromEnvironment`).
+`hobo ci serve` does so when `.hobo/ci.json` has an `agent` block, and
 `@hobo/ci-agent` ships an entry that does so from `HOBO_CI_AGENT_CONFIG` and
-`HOBO_CI_AGENT_DIR`; `hobo ci serve` does not start it yet, and Vercel and the
-box worker daemon cannot.
+`HOBO_CI_AGENT_DIR`. Vercel and the box worker daemon cannot run it.
 
 The relay only schedules the agent. A pass runs at most once a minute by
 default, never overlaps another, runs only while the service is ready, and
