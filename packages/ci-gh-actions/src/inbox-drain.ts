@@ -21,10 +21,7 @@ export type InboxDrainResult = Readonly<{
 
 export type InboxDrainOptions = Readonly<{
 	store: HostedInboxStore;
-	processWebhook: (
-		rawBody: Buffer,
-		event: string,
-	) => Promise<string>;
+	processWebhook: (rawBody: Buffer, event: string) => Promise<string>;
 	now: () => string;
 	deliveryTimeoutMs?: number;
 	budgetMs?: number;
@@ -32,9 +29,7 @@ export type InboxDrainOptions = Readonly<{
 	claimLeaseMs?: number;
 	onIngressOutcome?: (outcome: string) => void;
 	onDeliveryEvent?: (
-		event:
-			| "hobo_ci_inbox_delivery_failed"
-			| "hobo_ci_inbox_delivery_timed_out",
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
 		fields: Readonly<{
 			deliveryId: string;
 			webhookEvent: string;
@@ -74,7 +69,10 @@ async function runWithTimeout<T>(
 				(error) => ({ ok: false as const, timedOut: false as const, error }),
 			),
 			new Promise<{ ok: false; timedOut: true }>((resolve) => {
-				timer = setTimeout(() => resolve({ ok: false, timedOut: true }), timeoutMs);
+				timer = setTimeout(
+					() => resolve({ ok: false, timedOut: true }),
+					timeoutMs,
+				);
 			}),
 		]);
 	} finally {
@@ -109,10 +107,7 @@ export async function drainWebhookInbox(
 			budgetExhausted = true;
 			break;
 		}
-		const claim = await options.store.claimWebhook(
-			options.now(),
-			claimLeaseMs,
-		);
+		const claim = await options.store.claimWebhook(options.now(), claimLeaseMs);
 		if (!claim) break;
 		const deliveryStartedAt = Date.now();
 		const remainingBudget = budgetMs - elapsed;
@@ -142,9 +137,7 @@ export async function drainWebhookInbox(
 					webhookEvent: claim.event,
 					durationMs,
 					reason: inboxDeliveryReason(
-						result.error instanceof Error
-							? result.error
-							: new Error("unknown"),
+						result.error instanceof Error ? result.error : new Error("unknown"),
 					),
 				});
 			}

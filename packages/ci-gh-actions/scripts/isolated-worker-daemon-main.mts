@@ -1236,11 +1236,7 @@ try {
 		inboxDrainInFlight = runtime
 			.drainInbox()
 			.then((result) => {
-				if (
-					result.processed > 0 ||
-					result.failed > 0 ||
-					result.timedOut > 0
-				) {
+				if (result.processed > 0 || result.failed > 0 || result.timedOut > 0) {
 					log("hobo_ci_inbox_drain_pass", {
 						processed: result.processed,
 						failed: result.failed,

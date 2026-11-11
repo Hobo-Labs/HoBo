@@ -13,6 +13,7 @@ import {
 	type ServedRunnerLabelCache,
 	type TrunkWaitCache,
 } from "./hosted-relay.js";
+import { drainWebhookInbox, type InboxDrainOptions } from "./inbox-drain.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
@@ -26,7 +27,6 @@ import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
-import { drainWebhookInbox, type InboxDrainOptions } from "./inbox-drain.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
 export interface HostedInboxStore extends HostedRelayStore {
@@ -146,9 +146,7 @@ export function createHostedRelayRuntime(options: {
 	inboxDeliveryTimeoutMs?: number;
 	inboxDrainBudgetMs?: number;
 	onInboxDeliveryEvent?: (
-		event:
-			| "hobo_ci_inbox_delivery_failed"
-			| "hobo_ci_inbox_delivery_timed_out",
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
 		fields: Readonly<{
 			deliveryId: string;
 			webhookEvent: string;
@@ -160,9 +158,7 @@ export function createHostedRelayRuntime(options: {
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
 	const logInboxDelivery = (
-		event:
-			| "hobo_ci_inbox_delivery_failed"
-			| "hobo_ci_inbox_delivery_timed_out",
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
 		fields: Readonly<{
 			deliveryId: string;
 			webhookEvent: string;
@@ -413,9 +409,7 @@ export function createHostedRelayRuntime(options: {
 		 * With `admit: false` (a draining worker) it only inspects leases: no
 		 * delivery is taken and no pending job is reserved or launched.
 		 */
-		async drainInbox(
-			tickOptions: { maxDeliveries?: number } = {},
-		) {
+		async drainInbox(tickOptions: { maxDeliveries?: number } = {}) {
 			if (tickOptions.maxDeliveries === undefined)
 				return drainWebhookInbox(inboxDrainBase());
 			return drainWebhookInbox({
