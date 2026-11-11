@@ -309,6 +309,31 @@ describe("worker storage admission", () => {
 		await expect(fs.retireJobDirectory(job)).resolves.toBeUndefined();
 	});
 
+	it("treats only a missing entry as absent, and rethrows every other failure", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-worker-absent-"));
+		temporaryRoots.push(root);
+		// No `.retired` root yet: nothing has been retired on this host.
+		expect(
+			await createNodeWorkerStorageFileSystem().retiredDirectories(root),
+		).toEqual([]);
+
+		const denied = Object.assign(new Error("EACCES: permission denied"), {
+			code: "EACCES",
+		});
+		const fs = createNodeWorkerStorageFileSystem({
+			chown,
+			mkdir,
+			readdir: vi.fn(async () => {
+				throw denied;
+			}),
+			rename: vi.fn(async () => {
+				throw denied;
+			}),
+		});
+		await expect(fs.retiredDirectories(root)).rejects.toBe(denied);
+		await expect(fs.retireJobDirectory(join(root, LIVE))).rejects.toBe(denied);
+	});
+
 	it("deletes a retired tree bottom-up with one traversal and counts as it goes", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-worker-remove-"));
 		temporaryRoots.push(root);

@@ -442,6 +442,34 @@ late on the wall clock but not on the monotonic one prints `the host was paused 
 places the pause in the log. The run ends with the ten slowest files. If the step dies with no summary,
 the last heartbeat names what was running. If the log just stops, the box itself stopped.
 
+## Gate steps that failed for their own reasons
+
+Four steps in `hobo-ci.yml` failed runs whose change was fine. Each has a test in
+`scripts/test/merge-group-gate.test.ts` or `scripts/test/ci-deps-image-contract.test.ts` that runs the
+step's own shell or loads what the step loads.
+
+- **Cold dev loop without the worker image.** `dev-cold-loop-gate` picked the worker image or an
+  `unshare --net` namespace by `runner.environment`. An overflow runner reports itself self-hosted and
+  has no `hobo-ci-worker:local`, so `docker run` failed there. The step now asks Docker
+  (`docker image inspect`) and uses the namespace whenever the image is absent, on any runner.
+- **Main's S0 step window.** "S0 gate set" had 12 minutes on main and 20 in the merge group for the
+  same commands on the same runners, so a commit the queue had passed could time out on main. Both
+  are 20; on a push that equals the job's own limit.
+- **The deps layer job loads its test without an install.** `ci-deps-image` runs
+  `scripts/test/ci-deps-image-mount.test.ts` under `node --experimental-strip-types` with no
+  `pnpm install`. The test imported `storage-admission.ts`, which imports `zod`, so the step ended in
+  `ERR_MODULE_NOT_FOUND` before Docker ran. #1792 moved the node:fs job-directory operations to
+  `packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts` (node builtins only, re-exported
+  by `storage-admission.ts`), which the test imports. The job's path filter did not list that file, so
+  a PR that broke it skipped the job; it now does. The contract test walks the test's import graph,
+  refuses a package import anywhere in it, requires every file in it to be in the path filter, and runs
+  the test in a copy of those files with no `node_modules`.
+- **DCO check.** The step listed `origin/<base>..HEAD` including merge commits (the PR merge ref and
+  an update-branch merge are made by GitHub and carry no sign-off), and ran without
+  `set -euo pipefail`, so a `git rev-list` that failed read as zero commits and passed. It now lists
+  with `--no-merges` into a variable first, and greps a variable instead of a pipe (an early `grep -q`
+  exit under `pipefail` would read as a missing sign-off).
+
 ## The cli package's test cost
 
 `packages/cli`'s suite spends nearly all of its time compiling TypeScript inside the tests (codegen

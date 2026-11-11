@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 
 const WORKER_STORAGE_FS =
@@ -435,6 +442,83 @@ describe("CI deps workflow contract", () => {
 			"node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts",
 		);
 		assert.doesNotMatch(job, /--import tsx/);
+	});
+
+	it("loads the mount contract without an install and scopes every file it loads", () => {
+		// The job has no `pnpm install`: the mount contract is loaded by
+		// `node --experimental-strip-types` through ts-source-resolve.mts, so one
+		// package import anywhere in its graph fails the step before Docker runs.
+		const entry = "scripts/test/ci-deps-image-mount.test.ts";
+		const hook = "scripts/lib/ts-source-resolve.mts";
+		const graph = new Set<string>();
+		const packages: string[] = [];
+		const pending = [entry, hook];
+		for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+			if (graph.has(path)) continue;
+			graph.add(path);
+			const specifiers = [
+				...read(path).matchAll(
+					/(?:\bfrom\s+|\bimport\s*\(\s*|^import\s+)"([^"]+)"/gmu,
+				),
+			].map((match) => match[1] ?? "");
+			for (const specifier of specifiers) {
+				if (specifier.startsWith("node:")) continue;
+				if (!specifier.startsWith(".")) {
+					packages.push(`${path}: ${specifier}`);
+					continue;
+				}
+				// The same fallback ts-source-resolve.mts applies: a NodeNext `.js`
+				// specifier names a sibling `.ts` source.
+				const target = resolve(root, dirname(path), specifier);
+				const source = existsSync(target)
+					? target
+					: `${target.slice(0, -".js".length)}.ts`;
+				pending.push(relative(root, source));
+			}
+		}
+		assert.deepEqual(packages, [], "package imports in a no-install job");
+		assert.ok(graph.has(WORKER_STORAGE_FS));
+
+		const scopeStart = job.indexOf(
+			"- name: Limit PR builds to deps image inputs",
+		);
+		const scope = job.slice(scopeStart, job.indexOf("- name:", scopeStart + 1));
+		const scoped = [...scope.matchAll(/^\s+([\w./-]+)(?: \\|\)")$/gmu)].map(
+			(match) => match[1] ?? "",
+		);
+		assert.ok(scoped.length > 0);
+		for (const path of graph)
+			assert.ok(
+				scoped.some((entry) => path === entry || path.startsWith(`${entry}/`)),
+				`${path} is loaded by the mount contract but a PR that changes it skips the job`,
+			);
+
+		// Run it the way the job does, in a tree that holds only those files and
+		// no node_modules. Without HOBO_CI_DEPS_MOUNT_CONTRACT the Docker case is
+		// skipped, so what this proves is that every import resolves.
+		const bare = mkdtempSync(join(tmpdir(), "hobo-deps-mount-imports-"));
+		try {
+			for (const path of graph) {
+				mkdirSync(dirname(join(bare, path)), { recursive: true });
+				cpSync(join(root, path), join(bare, path));
+			}
+			const { HOBO_CI_DEPS_MOUNT_CONTRACT: _contract, ...env } = process.env;
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					"--import",
+					`./${hook}`,
+					"--test",
+					entry,
+				],
+				{ cwd: bare, env, encoding: "utf8" },
+			);
+			assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+		} finally {
+			rmSync(bare, { recursive: true, force: true });
+		}
 	});
 
 	it("does not put the deps image on Main full gate's critical path", () => {
