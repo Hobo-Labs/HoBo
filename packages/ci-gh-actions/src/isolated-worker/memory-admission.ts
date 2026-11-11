@@ -137,6 +137,15 @@ export function createWorkerMemoryAdmission(
 		});
 	}
 
+	function unlaunchedGeneralReservedMb(
+		activeLeases: readonly MemoryLease[],
+		generalLeaseIds: ReadonlySet<string>,
+	): number {
+		return unlaunchedReservedLeases(activeLeases)
+			.filter((lease) => generalLeaseIds.has(lease.id))
+			.reduce((total, lease) => total + leaseMemoryMb(lease), 0);
+	}
+
 	function inUseMb(
 		activeLeases: readonly MemoryLease[],
 		generalLeaseIds: ReadonlySet<string>,
@@ -193,7 +202,15 @@ export function createWorkerMemoryAdmission(
 		const pressure = options.hostPressure?.();
 		const pressureBlocked =
 			pressure !== undefined && hostPressureBlocksAdmission(pressure);
-		const budgetFits = inUse + request.memoryMb <= config.budgetMb;
+		const trunkBudgetBiasMb =
+			request.rank === 0
+				? unlaunchedGeneralReservedMb(
+						request.activeLeases,
+						request.generalLeaseIds,
+					)
+				: 0;
+		const budgetFits =
+			inUse - trunkBudgetBiasMb + request.memoryMb <= config.budgetMb;
 		const hostFits = hostMemoryAdmitFits(
 			availableMb,
 			request.memoryMb,

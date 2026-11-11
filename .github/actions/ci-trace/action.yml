@@ -23,6 +23,11 @@ runs:
         fi
         node --experimental-strip-types --no-warnings "$trace_script" ci-traces "${GITHUB_JOB}"
     - name: Upload trace artifact
+      # The trace is diagnostics. When GitHub's artifact service is down it answers
+      # with an HTML page, the upload retries for ten minutes and fails, and that
+      # failed the required Main full gate after every gate in it had passed (run
+      # 43094500900). A missing trace must never block main or a release.
+      continue-on-error: true
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: ci-trace-${{ github.job }}-${{ inputs.disambiguator }}-${{ github.run_attempt }}

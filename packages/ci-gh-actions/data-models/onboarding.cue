@@ -149,4 +149,25 @@ import "list"
 #MeshNodeReports: {mesh: "configured" | "not-configured" | "unreachable", nodes?: [...#MeshNodeReport], capacity?: #MeshCapacitySummary, readAt?: string, requireTrusted?: bool, truncated?: bool}
 #MeshFleetLabelState: {nodes?: int & >=0, trustedNodes?: int & >=0, freeSlots?: int & >=0}
 #MeshFleetState: {publishedAt: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$", labels: {[=~"^[A-Za-z0-9_.-]{1,80}$"]: #MeshFleetLabelState}}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState
+#RelayCacheJobKey: string & =~"^[0-9]{1,16}:[0-9]{1,16}:[0-9]{1,10}$"
+#RelayCacheLeaseId: string & =~"^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+#RelayCacheIntent: {kind: "ci.DispatchRequested" | "ci.RunnerClaimed" | "ci.SandboxCreated", at: string & !=""}
+#RelayCacheLease: {leaseJson: string & =~"^\\{", jobKey: #RelayCacheJobKey, generation?: int & >=0 & <=64, intents?: [...#RelayCacheIntent] & list.MaxItems(3), rebuiltFrom?: "runner" | "bridge-run" | "sandbox"}
+#RelayCacheAssignment: {leaseId: #RelayCacheLeaseId, version: string & =~"^[0-9a-f-]{36}$"}
+#RelayCacheJob: {
+	jobKey: #RelayCacheJobKey
+	state: "pending" | "taken" | "idle" | "terminal"
+	generation?: int & >=0 & <=64
+	leaseId?: #RelayCacheLeaseId
+	pendingJobJson?: string & =~"^\\{"
+	firstSeenAt: string & !=""
+	queueDeadlineAt?: string
+	assigned?: #RelayCacheAssignment
+	terminalReason?: "completed" | "expired"
+}
+#RelayCacheInflightEntry: {leaseId: #RelayCacheLeaseId, jobKey: string & !="", offerId: string & !="", provider: string & !="", providerAccountId?: string, reservedPaidMicros?: number & >=0, reservedFreeMinutes?: number & >=0, reservedMinutes?: number & >=0, sandboxReservedAllowanceJson?: string, createdAt: string & !=""}
+#RelayCacheInflight: {accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", entries?: [...#RelayCacheInflightEntry] & list.MaxItems(1000), recentTerminal?: [...#RelayCacheLeaseId] & list.MaxItems(50), holdsKnown?: bool, rebuiltAt?: string}
+#RelayCachePending: {jobKeys?: [...#RelayCacheJobKey] & list.MaxItems(2000)}
+#RelayCacheDelivery: {fingerprint: string & =~"^[a-f0-9]{64}$", receivedAt: string & !="", ignored?: bool}
+#RelayCacheSandboxEgress: {leaseId: #RelayCacheLeaseId, accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", maxBytes?: number & >=0}
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress

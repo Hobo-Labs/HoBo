@@ -208,6 +208,55 @@ the degradation — with no clock the run reports `incomplete`, which projects t
 Substantiated: `ttl`, `atomicIncrement`, `sortedSets`, `restTransport`,
 `redisCommandSemantics`. Not substantiated and not advertised: `maxValueBytes`.
 
+## Ephemeral state over REST
+
+`createUpstashEphemeralState` binds `EphemeralStatePort` (from `@hobo/core`)
+to an Upstash database over REST. It is the shared Redis-protocol binding from
+`@hobo/kv-redis-compatible` (the same Lua scripts a self-hosted Valkey runs
+over TCP) sent as `EVALSHA`/`EVAL` through `createUpstashRestExecutor`. It
+needs a `fetch` the host hands over and nothing else: no SDK, no socket
+client, no native module, so it bundles lean into a serverless function.
+
+```ts
+import { createUpstashEphemeralState, resolveUpstashRestEnv } from "@hobo/provider-upstash";
+import { meterExecutor } from "@hobo/kv-redis-compatible";
+
+const bound = resolveUpstashRestEnv(process.env); // undefined when no pair is set
+if (bound !== undefined) {
+  log.info("ephemeral state bound", { source: bound.source.url }); // the variable name, never its value
+  const state = createUpstashEphemeralState({
+    restEndpointUrl: bound.restEndpointUrl,
+    resolveToken: bound.resolveToken,
+    network: { fetchImpl: fetch },
+    wrap: (executor) => meterExecutor(executor, { onCommand: countCommand }),
+  });
+}
+```
+
+`resolveUpstashRestEnv` reads `UPSTASH_REDIS_REST_URL` +
+`UPSTASH_REDIS_REST_TOKEN`, then `KV_REST_API_URL` + `KV_REST_API_TOKEN`, each
+pair whole, in the order the `@upstash/redis` SDK's `fromEnv()` reads them.
+A half-set pair is an error that names the missing variable; a URL off the
+`*.upstash.io` data plane is refused without being echoed; the token is read
+at call time. Which pair the Vercel Marketplace integration injects, and how
+the relay falls back to a self-hosted Valkey, is in
+[`docs/design/relay-ephemeral-state.md`](../../../docs/design/relay-ephemeral-state.md).
+
+**Failed commands are replies.** Upstash answers a failed command with HTTP
+400 and `{"error": "..."}`. The executor returns that as an error reply rather
+than throwing, because `NOSCRIPT` must reach the binding as a reply for the
+`EVAL` fallback to work, and because the executor contract says a rejected
+command is a reply. A 400 without that envelope is still a provider error.
+
+**Tested offline.** `test/ephemeral-state.test.ts` runs the 24-case
+ephemeral-state conformance suite through the real executor, its URL and
+response guard, and a real HTTP round trip to a local server that speaks the
+REST contract (bearer token, JSON command array, `200 {result}` /
+`400 {error}`). Behind that server sits the in-memory engine (always) or a
+real Valkey/Redis over RESP when `HOBO_VALKEY_SERVER_BIN`, `valkey-server`, or
+`redis-server` is available, which executes the actual Lua scripts. It proves
+the adapter and the scripts; it does not measure Upstash.
+
 ## Maturity
 
 **Experimental surface, verified-emerging provider class.** Suitable for agents,
@@ -384,6 +433,8 @@ manualTeardownGuidance()
 // Data plane
 createUpstashRestExecutor(options)   // a KvRedisExecutor over the REST API
 parseRestReply(body)
+createUpstashEphemeralState(options) // EphemeralStatePort over the REST API
+resolveUpstashRestEnv(env) · UPSTASH_REST_ENV_PAIRS
 
 // Parsing, custody, bindings, receipts
 parseStartRedisResponse(body) · describeStartRedisDatabase(db) · parseStartRedisMetrics()
@@ -407,7 +458,7 @@ pnpm --filter @hobo/provider-upstash run build
 pnpm --filter @hobo/provider-upstash run test
 ```
 
-Fully offline; there is no live lane. Fixtures live in `test/fixtures/` and every
+Fully offline; there is no live lane. The real-server ephemeral-state lane starts a local `valkey-server`/`redis-server` and is skipped without one. Fixtures live in `test/fixtures/` and every
 credential in them is obviously fake
 (`FAKE-upstash-rest-token-DO-NOT-USE-0000`, `fake-mallard-000000.upstash.io`).
 The fake token is deliberately short and hyphenated so that a fixture leaking
@@ -422,6 +473,7 @@ because the value happened to be small.
 | `test/driver.test.ts` | provisioning, custody failure modes, the 72-hour lease fixture, claim observe/verify/attest, rotation, expiry, teardown refusal |
 | `test/contract.test.ts` | replays `contracts/*.pact.json` through the real client |
 | `test/conformance.test.ts` | the full `kv.redis-compatible/v1` suite over the real REST adapter |
+| `test/ephemeral-state.test.ts` | the ephemeral-state suite over the REST adapter and a local HTTP server (in-memory engine; real Valkey/Redis when a binary is present), 400 error envelopes, Marketplace env resolution |
 | `test/definition.test.ts` | declaration honesty, selection outcomes, `PROFILE_INCOMPATIBLE` for queue and topic |
 
 ## Layout
@@ -434,6 +486,7 @@ because the value happened to be small.
 | `src/driver.ts` | lifecycle, claim state, ownership, teardown |
 | `src/custody.ts` · `src/binding.ts` | secret deposit and the portable binding |
 | `src/rest-executor.ts` | the `KvRedisExecutor` over Upstash REST |
+| `src/ephemeral-state.ts` | `EphemeralStatePort` over REST and the Marketplace env resolver |
 | `src/compile.ts` | the pure compiler |
 | `src/receipt.ts` | receipts, facts, and the credential scanner |
 | `src/transport.ts` | the injected transport port and its guard |

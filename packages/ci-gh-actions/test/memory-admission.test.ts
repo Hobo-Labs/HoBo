@@ -332,6 +332,28 @@ describe("worker memory admission", () => {
 		expect(admission.admit(request(2)).admitted).toBe(true);
 	});
 
+	it("lets trunk rank-0 admission ignore unlaunched PR reservations in the budget", () => {
+		const admission = createWorkerMemoryAdmission(config(8_192), {
+			prCapWithTrunk: 1,
+		});
+		const activeLeases = [
+			lease("pr-reserved", 4_096, "standard", "reserved"),
+			lease("trunk-run", 4_096, "standard", "running"),
+		];
+		const general = new Set(["pr-reserved"]);
+		expect(
+			admission.admit({
+				jobId: 9,
+				memoryClass: "standard",
+				memoryMb: 4_096,
+				rank: 0,
+				activeLeases,
+				generalLeaseIds: general,
+				trunkLeaseIds: new Set(["trunk-run"]),
+			}).admitted,
+		).toBe(true);
+	});
+
 	it("can pause all new PR leases while trunk is active", () => {
 		const admission = createWorkerMemoryAdmission(config(14_336), {
 			prCapWithTrunk: 0,
