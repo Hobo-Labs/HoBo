@@ -366,6 +366,7 @@ export async function runLocalRunnerSession(options: {
 }
 
 /** The file a local runner keeps its own mesh report in, beside its other state. */
+// public-contract: `hobo ci status` and `local:runner status` read this file name from the runner's state directory.
 export const LOCAL_RUNNER_MESH_REPORT = "mesh-node.json";
 
 /**
