@@ -95,7 +95,9 @@ unindexed new finding files as notices.
 - [Finding 82: eight test shards started for plans of zero to four suites](./findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)
 - [Finding 83: main full gate paid for missing deps layer and trunk serialization](./findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)
 - [Finding 84: deps publisher missed host worker tags in job docker context](./findings/0084-deps-publisher-missed-host-worker-tags-in-job-docker-context.md)
-- [Finding 85: poll coalesce stranded queued jobs on GitHub](./findings/0085-poll-coalesce-stranded-queued-jobs-on-github.md)
+- [Finding 85: main full gate workspace shards and last-green base](./findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)
+- [Finding 86: poll readmit jit churn](./findings/0086-poll-readmit-jit-churn.md)
+- [Finding 87: poll coalesce stranded queued jobs on GitHub](./findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md)
 <!-- findings-index:end -->
 
 ## Data

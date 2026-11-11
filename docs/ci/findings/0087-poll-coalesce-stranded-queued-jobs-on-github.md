@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 85: poll coalesce stranded queued jobs on GitHub"
+title: "Finding 87: poll coalesce stranded queued jobs on GitHub"
 description: "Duplicate poll ingests backed off coalesce forever; jobs stayed queued on GitHub with waiting result coalesced."
 tags: [hobo, ci, worker, polling]
 ---
 
-# Finding 85: poll coalesce stranded queued jobs on GitHub
+# Finding 87: poll coalesce stranded queued jobs on GitHub
 
 ## Evidence
 

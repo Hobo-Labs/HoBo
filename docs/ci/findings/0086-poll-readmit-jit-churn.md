@@ -9,7 +9,7 @@ tags: [hobo, ci, worker, polling, fleet]
 
 ## Evidence
 
-After the Finding 85 coalesce fix, box workers repeated JIT registration for the same queued job every ~15–20 s (#1814 job `130022163439`: 27 pickups; #1792/#1816 Fabric runs starved). GitHub had already bound another fleet runner on the shared `hobo` label (`hobo-runner-*` on Hostinger ARC, another box's `hobo-<uuid>`, or mesh peers).
+After the Finding 87 coalesce fix, box workers repeated JIT registration for the same queued job every ~15–20 s (#1814 job `130022163439`: 27 pickups; #1792/#1816 Fabric runs starved). GitHub had already bound another fleet runner on the shared `hobo` label (`hobo-runner-*` on Hostinger ARC, another box's `hobo-<uuid>`, or mesh peers).
 
 ## Cause
 
@@ -29,7 +29,7 @@ Isolated JIT containers run `./run.sh || true`. Two fleet-mesh cases look the sa
 1. **Peer wins after registration** — job later shows a foreign `runner_name` (yield / withdraw paths).
 2. **Empty exit while job still unassigned** — `getJob` returns `queued` with **no** `runner_name`, so pre-JIT foreign yield does not run. The JIT runner still exits (mesh race, label mismatch such as `hobo-box` vs `hobo`-only JIT labels, or GitHub not yet binding). `hobo_ci_launch_yielded_foreign_runner` stays at zero in this case.
 
-Registration can succeed while GitHub never delivers the job to **this** runner. **Before custody fixes**, settle treated “job still `queued`” as **unmet demand** and `queueInside` re-admitted it; Finding 85 coalesce re-poll amplified that into ~35s pickup loops (`hobo_ci_job_pickup`).
+Registration can succeed while GitHub never delivers the job to **this** runner. **Before custody fixes**, settle treated “job still `queued`” as **unmet demand** and `queueInside` re-admitted it; Finding 87 coalesce re-poll amplified that into ~35s pickup loops (`hobo_ci_job_pickup`).
 
 Box evidence (2026-11-10): repeated pickups ~39s apart with zero `hobo_ci_launch_yielded_foreign_runner` → case (2). Runner `_diag` may show `Job request … processed succeed` while GitHub REST still reports `queued` — the mesh assigned work elsewhere or the session ended before REST bound `runner_name`. Labels matching (`jitLabels` = `jobLabels`) ruled out label skew on trunk jobs.
 
