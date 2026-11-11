@@ -42,8 +42,18 @@ describe("unlaunched reservation release", () => {
 		).toBe(false);
 	});
 
+	it("accepts mesh peer headroom when arc is zero", () => {
+		expect(
+			fleetCanAbsorbUnlaunchedRelease({
+				hoboFreeSlots: 1,
+				arcFreeSlots: 0,
+				meshFreeSlots: 3,
+			}),
+		).toBe(true);
+	});
+
 	it("refuses release when fleet witnesses report no non-local capacity", () => {
-		expect(fleetCanAbsorbUnlaunchedRelease(0)).toBe(false);
+		expect(fleetCanAbsorbUnlaunchedRelease({ arcFreeSlots: 0 })).toBe(false);
 		expect(fleetCanAbsorbUnlaunchedRelease(undefined)).toBe(false);
 		const nowMs = Date.parse("2026-11-11T12:01:00.000Z");
 		const reason = unlaunchedReleaseReason(baseLease, nowMs, {
@@ -108,32 +118,46 @@ describe("unlaunched reservation release", () => {
 			expect(entry.reason).toBe("admission-backlog");
 	});
 
-	it("releases trunk waits blocked on headroom after the fleet defer window", () => {
-		const nowMs = Date.parse("2026-11-11T12:02:00.000Z");
-		const waits = new Map([
-			[
-				"Org/Repo:42:1",
+	const deferReasons = [
+		"host-available",
+		"memory-budget",
+		"trunk-pr-cap",
+		"host-pressure",
+		"storage",
+		"headroom",
+	] as const;
+
+	for (const reason of deferReasons) {
+		it(`releases trunk waits blocked on ${reason} after the fleet defer window`, () => {
+			const nowMs = Date.parse("2026-11-11T12:02:00.000Z");
+			const waits = new Map([
+				[
+					"Org/Repo:42:1",
+					{
+						sinceMs: nowMs - 50_000,
+						logged: true,
+						reason,
+					},
+				],
+			]);
+			const releases = pickTrunkHeadroomFleetReleases(
+				waits,
+				[{ ...baseLease, id: "lease-x", jobId: 42 }],
+				nowMs,
 				{
-					sinceMs: nowMs - 50_000,
-					logged: true,
-					reason: "headroom" as const,
+					deferMs: 45_000,
+					fleetWitness: { arcFreeSlots: 2, hoboFreeSlots: 0 },
 				},
-			],
-		]);
-		const releases = pickTrunkHeadroomFleetReleases(
-			waits,
-			[{ ...baseLease, id: "lease-x", jobId: 42 }],
-			nowMs,
-			{ deferMs: 45_000, nonLocalFreeSlots: 2 },
-		);
-		expect(releases).toEqual([
-			{
-				leaseId: "lease-x",
-				jobId: 42,
-				reason: "trunk-headroom-fleet-defer",
-				waitKey: "Org/Repo:42:1",
-				waitedMs: 50_000,
-			},
-		]);
-	});
+			);
+			expect(releases).toEqual([
+				{
+					leaseId: "lease-x",
+					jobId: 42,
+					reason: `trunk-${reason}-fleet-defer`,
+					waitKey: "Org/Repo:42:1",
+					waitedMs: 50_000,
+				},
+			]);
+		});
+	}
 });

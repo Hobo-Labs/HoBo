@@ -19,8 +19,9 @@ Main Fabric runs [43055641033](https://github.com/Hobo-Labs/HoBo/actions/runs/43
 
 ## Fix
 
-- **`HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`** (default **45000**): after headroom or storage wait, skip local reserve (fleet-capacity) or **`cancelAndRequeue`** unlaunched trunk custody when mesh has room — same cooldown/min-age as [finding 106](../0106-unlaunched-release-churn.md); log **`hobo_ci_trunk_headroom_fleet_defer`**. No workflow **rerun** (retire box **`HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS`** rerun path on the main daemon).
-- **Reserved launch** passes **`jobName`** and runner label into **`admissionOrder`** so plan precedes full gate before shard launch.
+- **`HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`** (default **45000**): after any admission wait (`host-available`, `memory-budget`, `trunk-pr-cap`, `host-pressure`, `storage`, …) on a **Main Fabric trunk** job, skip local reserve or **`cancelAndRequeue`** unlaunched custody when **`peerAbsorbSlots`** (ARC + mesh peers via **`meshFreeSlots`**) &gt; 0. Log **`hobo_ci_trunk_fleet_defer_decision`** on every hold/defer (with **`hoboFreeSlots`**, **`arcFreeSlots`**, **`meshFreeSlots`**). Release events: **`hobo_ci_trunk_headroom_fleet_defer`**. No workflow **rerun**.
+- **Trunk-first memory budget**: rank-0 trunk admission ignores **unlaunched** PR reservations when computing the budget (running PR containers still count).
+- **Reserved launch** passes **`jobName`** into **`admissionOrder`** so plan precedes full gate before shard launch.
 
 ## Measure
 

@@ -168,7 +168,7 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; startup checks still apply |
 | `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same non-zero rank; feasible rank-0 waits block lower ranks immediately |
-| `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS` | `45000` | After trunk headroom or storage admission wait, cooperate with mesh (`arcFreeSlots > 0`): skip local reserve or requeue unlaunched custody; log `hobo_ci_trunk_headroom_fleet_defer` |
+| `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS` | `45000` | After any Main Fabric trunk admission wait, cooperate when mesh `peerAbsorbSlots` &gt; 0 (ARC + peers via `meshFreeSlots`); log `hobo_ci_trunk_fleet_defer_decision` and `hobo_ci_trunk_headroom_fleet_defer` on release |
 | `HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS` | `120000` | Legacy overflow helper (workflow rerun); not wired on the main box daemon — prefer `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS` |
 | `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB` | `1024` | Extra MemAvailable margin in `HOBO_CI_FLEET_CAPACITY`, worker memory admission, and route-runner admission |
 | `HOBO_CI_JOB_MEMORY_MB` | class hard limit | Per-container value exported to the runner; fallback when its cgroup limit cannot be read |
