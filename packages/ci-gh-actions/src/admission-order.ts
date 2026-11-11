@@ -169,7 +169,13 @@ export function createAdmissionOrder(
 						return ga.position - gb.position;
 					return a.jobId - b.jobId;
 				}
-				if (a.key.startedAtMs !== b.key.startedAtMs)
+				// A superseded main push still holds cancelled jobs in GitHub's queue until the
+				// workflow winds down; admit the newest push first so slots serve live trunk.
+				if (a.key.event === "push" && b.key.event === "push") {
+					const pushStart = (ms: number) => (Number.isFinite(ms) ? ms : 0);
+					if (pushStart(a.key.startedAtMs) !== pushStart(b.key.startedAtMs))
+						return pushStart(b.key.startedAtMs) - pushStart(a.key.startedAtMs);
+				} else if (a.key.startedAtMs !== b.key.startedAtMs)
 					return a.key.startedAtMs - b.key.startedAtMs;
 				if (b.expectedMs !== a.expectedMs) return b.expectedMs - a.expectedMs;
 				return a.jobId - b.jobId;

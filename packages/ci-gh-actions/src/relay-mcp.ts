@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { ControlAuthenticator } from "./control-auth.js";
 import { reportRelayFailure } from "./failure-log.js";
 import type { HostedRelay } from "./hosted-relay.js";
+import type { MeshNodesReader } from "./mesh-nodes-reader.js";
 import { createCursorCodecs } from "./relay-mcp-cursor.js";
 import {
 	createRelayMcpServer,
@@ -32,6 +33,8 @@ export type RelayMcpOptions = Readonly<{
 	authenticate: ControlAuthenticator;
 	/** The relay's readiness, as `/readyz` reports it. */
 	ready: () => Promise<boolean>;
+	/** What the relay mesh looks like from this host; absent when it has none. */
+	meshNodes?: MeshNodesReader | undefined;
 	/** The relay's public origin: the only `Origin` a browser may send. */
 	publicOrigin: string;
 	sessions: RelayMcpSessions;
@@ -386,6 +389,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		store: options.store,
 		relay: options.relay,
 		ready: options.ready,
+		meshNodes: options.meshNodes,
 		engineId: options.engineId ?? "gh-actions",
 		waitDefaultMs,
 		waitMaxMs,

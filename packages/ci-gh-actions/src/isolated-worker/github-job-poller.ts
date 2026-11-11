@@ -4,7 +4,7 @@ import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
 import { runnerCustody } from "../job-runner-custody.js";
-import { servedRunnerLabel } from "../runner-labels.js";
+import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
@@ -36,6 +36,11 @@ export interface GithubJobPollerOptions {
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
 	/** Runs before each poll (merge queue positions, etc.). */
 	beforePoll?: () => Promise<void>;
+	/**
+	 * Once per poll when a queued trunk job belongs to the newest main Fabric push.
+	 * Used to pre-warm a spare container without cancelling other work.
+	 */
+	onMainFabricTrunkQueued?: (repository: string) => void;
 	ingestCoalesce?: PollIngestCoalesce;
 	/**
 	 * Asked once per poll for each queued job before it is taken in. False
@@ -108,12 +113,70 @@ const Runs = z.object({
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
 			event: z.string().optional(),
+			head_branch: z.string().nullable().optional(),
 			head_sha: z.string().optional(),
+			path: z.string().optional(),
 			run_started_at: z.string().nullable().optional(),
 		}),
 	),
 });
 type Run = z.infer<typeof Runs>["workflow_runs"][number];
+
+/** Workflow file path for {@link HOBO_CI_FABRIC_WORKFLOW_BASENAME}. */
+// public-contract: shared workflow basename for superseded main-push poll filtering.
+export const HOBO_CI_FABRIC_WORKFLOW_BASENAME = "hobo-ci.yml";
+
+function runStartedAtMs(run: Run): number {
+	const parsed = Date.parse(run.run_started_at ?? "");
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Older in-flight main pushes superseded by GitHub `cancel-in-progress` on HoBo
+ * CI Fabric. Their queued jobs must not hold fleet slots behind the live SHA.
+ */
+/** Newest in-flight HoBo CI Fabric push to `main`, if any. */
+export function newestMainFabricPushRunId(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): number | undefined {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length === 0) return undefined;
+	const sorted = [...mainPush].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	);
+	return sorted[0]?.id;
+}
+
+export function supersededMainFabricPushRunIds(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): ReadonlySet<number> {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length <= 1) return new Set();
+	const sorted = [...mainPush].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	);
+	const newest = sorted[0]?.id;
+	if (newest === undefined) return new Set();
+	return new Set(
+		sorted.filter((run) => run.id !== newest).map((run) => run.id),
+	);
+}
 const Jobs = z.object({
 	jobs: z.array(
 		z.object({
@@ -254,6 +317,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				seen.add(connection.repositoryId);
 				summary.repositories++;
 				const runIds = new Set<number>();
+				const activeRuns: Run[] = [];
 				for (const status of RUN_STATUSES) {
 					const runs = await getJson(
 						connection.installationId,
@@ -262,7 +326,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						summary,
 					);
 					primeRuns(runs?.workflow_runs);
-					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
+					for (const run of runs?.workflow_runs ?? []) {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				const newest = await getJson(
 					connection.installationId,
@@ -274,7 +341,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				const newestCompleted: Run[] = [];
 				for (const run of newest?.workflow_runs ?? []) {
 					if (run.status === "completed") newestCompleted.push(run);
-					else runIds.add(run.id);
+					else {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
@@ -314,8 +384,12 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					if (key !== undefined && run.run_attempt !== undefined)
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
+				const supersededRuns = supersededMainFabricPushRunIds(activeRuns);
+				const newestMainPush = newestMainFabricPushRunId(activeRuns);
+				let mainFabricPrewarmHinted = false;
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
+					if (supersededRuns.has(runId)) continue;
 					const jobs = await getJson(
 						connection.installationId,
 						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
@@ -339,10 +413,28 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						if (
+							!mainFabricPrewarmHinted &&
+							status.data === "queued" &&
+							servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL &&
+							newestMainPush !== undefined &&
+							job.run_id === newestMainPush
+						) {
+							mainFabricPrewarmHinted = true;
+							options.onMainFabricTrunkQueued?.(connection.repository);
+						}
 						const queuedSinceMs =
 							job.created_at !== undefined
 								? Date.parse(job.created_at)
 								: undefined;
+						if (supersededRuns.has(job.run_id)) {
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result: "superseded-main-push",
+							});
+							continue;
+						}
 						if (
 							status.data === "queued" &&
 							options.ingestCoalesce?.shouldSkip(

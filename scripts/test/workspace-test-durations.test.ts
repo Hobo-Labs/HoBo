@@ -5,13 +5,42 @@ import {
 	partitionUnitsByWeight,
 	planDependentTests,
 	planShardCountBalanced,
+	planUnitLoadSeconds,
+	MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
 	readRepo,
-	testWorkspaceUnits,
+	shardLoadSpreadSeconds,
 	type TestPlan,
+	testWorkspaceUnits,
 } from "../ci/dependent-tests.mts";
 import { loadWorkspaceDurations } from "../ci/workspace-test-durations.mts";
 
 describe("workspace test duration balancing", () => {
+	it("weights subset packages by selected test files", () => {
+		const repo = readRepo();
+		const plan = planDependentTests(
+			["packages/redaction-test-harness/test/linear-time.test.ts"],
+			repo,
+		);
+		assert.equal(plan.mode, "scoped");
+		if (plan.mode !== "scoped") return;
+		const durations = loadWorkspaceDurations();
+		const subsetDir = "packages/hobo";
+		assert.ok(plan.subsets.has(subsetDir));
+		const whole = planUnitLoadSeconds(
+			{
+				mode: "scoped",
+				full: [subsetDir],
+				subsets: new Map(),
+				skipped: [],
+			},
+			subsetDir,
+			repo,
+			durations,
+		);
+		const partial = planUnitLoadSeconds(plan, subsetDir, repo, durations);
+		assert.ok(partial < whole);
+	});
+
 	it("keeps the slowest shard under the target for a scoped plan", () => {
 		const plan: TestPlan = {
 			mode: "scoped",
@@ -72,8 +101,34 @@ describe("workspace test duration balancing", () => {
 		);
 		const spread = Math.max(...loads) - Math.min(...loads);
 		assert.ok(
-			spread <= 5,
+			spread <= MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
 			`repo-wide shard loads diverged by ${spread}s: ${loads.join(", ")}`,
 		);
+	});
+
+	it("adds shards until scoped loads spread within the main cap", () => {
+		const durations = loadWorkspaceDurations();
+		const repo = readRepo();
+		const plan = planDependentTests(
+			["docs/maintenance/ci-performance.md"],
+			repo,
+		);
+		if (plan.mode !== "scoped") return;
+		const units = testWorkspaceUnits(plan, repo.workspaces);
+		if (units.length < 2) return;
+		const count = planShardCountBalanced(
+			plan,
+			repo.workspaces,
+			8,
+			180,
+			durations,
+			undefined,
+			repo,
+			MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
+		);
+		const spread = shardLoadSpreadSeconds(units, durations, count, (unit) =>
+			planUnitLoadSeconds(plan, unit, repo, durations),
+		);
+		assert.ok(spread <= MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS);
 	});
 });

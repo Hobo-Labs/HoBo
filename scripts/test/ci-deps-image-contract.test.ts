@@ -570,7 +570,7 @@ describe("CI deps workflow contract", () => {
 				!waitsFor(id).has("ci-deps-image"),
 				`${id} waits for the deps image`,
 			);
-		assert.deepEqual(job("main-gate").needs, ["route", "ci-runner-image"]);
+		assert.deepEqual(job("main-gate").needs, ["ci-runner-image"]);
 		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
 		includes(job("main-gate").block, "Check deps layer match");
 
@@ -582,11 +582,13 @@ describe("CI deps workflow contract", () => {
 			[...jobs]
 				.filter(([, { needs }]) => needs.includes("ci-deps-image"))
 				.map(([id]) => id),
-			["main-gate-plan", "main_workspace_tests"],
+			["main_workspace_tests"],
 		);
-		// A failed or skipped deps job must not take them with it: both run
+		// Plan is install-free and runs beside the deps image job; only shards wait for it.
+		assert.deepEqual(job("main-gate-plan").needs, ["ci-runner-image"]);
+		// A failed or skipped deps job must not take shards with it: they run
 		// unless the run is cancelled, and a shard installs on a layer miss.
-		for (const id of ["main-gate-plan", "main_workspace_tests"]) {
+		for (const id of ["main_workspace_tests"]) {
 			assert.match(job(id).block, /^ {4}if: >-\n {6}!cancelled\(\) && /mu, id);
 			assert.doesNotMatch(
 				job(id).block,

@@ -3,12 +3,19 @@
  * Used by main-gate-plan so shards start before Main full gate S0 finishes.
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import {
+	appendFileSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { cliRootFileReader, mainGateScope } from "./affected-lanes.mts";
 import {
 	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 	planDependentTests,
+	planDependentTestsForTurboAffected,
 	planMainWorkspaceShardCount,
 	readRepo,
 } from "./dependent-tests.mts";
@@ -19,6 +26,13 @@ import {
 } from "./resolve-main-test-base.mts";
 
 const GITHUB_OUTPUT = process.env.GITHUB_OUTPUT?.trim();
+const CACHE_DIR = process.env.MAIN_GATE_PLAN_CACHE_DIR?.trim();
+
+function formatOutputs(entries: Record<string, string>): string {
+	return Object.entries(entries)
+		.map(([name, value]) => `${name}=${value}\n`)
+		.join("");
+}
 
 function setOutput(name: string, value: string): void {
 	if (GITHUB_OUTPUT) {
@@ -28,10 +42,40 @@ function setOutput(name: string, value: string): void {
 	console.log(`${name}=${value}`);
 }
 
+function tryRestorePlanCache(head: string): boolean {
+	if (!CACHE_DIR || !GITHUB_OUTPUT) return false;
+	const manifest = join(CACHE_DIR, "manifest.json");
+	try {
+		// SAFETY: manifest.json is written by savePlanCache in this script as { head: string }.
+		const parsed = JSON.parse(readFileSync(manifest, "utf8")) as {
+			head?: string;
+		};
+		if (parsed.head !== head) return false;
+		appendFileSync(
+			GITHUB_OUTPUT,
+			readFileSync(join(CACHE_DIR, "outputs.env"), "utf8"),
+		);
+		console.error(`main gate plan: restored cache for ${head}`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function savePlanCache(head: string, outputs: Record<string, string>): void {
+	if (!CACHE_DIR) return;
+	mkdirSync(CACHE_DIR, { recursive: true });
+	writeFileSync(join(CACHE_DIR, "outputs.env"), formatOutputs(outputs));
+	writeFileSync(join(CACHE_DIR, "manifest.json"), JSON.stringify({ head }));
+}
+
 async function main(): Promise<void> {
+	// Install-free on the worker: turbo via mise, no pnpm install for planning.
+	process.env.HOBO_TURBO_INVOKER ??= "mise";
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
+	if (head && tryRestorePlanCache(head)) return;
 	const repository = process.env.GITHUB_REPOSITORY ?? "";
 	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
 	let base = "";
@@ -85,7 +129,20 @@ async function main(): Promise<void> {
 					encoding: "utf8",
 				}).stdout
 			: "";
-	const plan = planDependentTests(input.split("\n"), repo);
+	if (base) process.env.TURBO_SCM_BASE = base;
+	const plan =
+		tests === "affected" && base
+			? planDependentTestsForTurboAffected(
+					input.split("\n"),
+					repo,
+					base,
+					cliRootFileReader(base),
+				)
+			: planDependentTests(
+					input.split("\n"),
+					repo,
+					base ? cliRootFileReader(base) : undefined,
+				);
 	const parallelCap = await resolveMainWorkspaceParallelCap({
 		repository,
 		token,
@@ -100,16 +157,21 @@ async function main(): Promise<void> {
 				? targetSeconds
 				: MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 		workspaces: repo.workspaces,
+		repo,
 	});
 	const count = shardPlan.count;
 	const shards = `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
 	console.error(
 		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
 	);
-	setOutput("main_base", base);
-	setOutput("main_tests", tests);
-	setOutput("main_scope", scope);
-	setOutput("shards", shards);
+	const outputs = {
+		main_base: base,
+		main_tests: tests,
+		main_scope: scope,
+		shards,
+	};
+	for (const [name, value] of Object.entries(outputs)) setOutput(name, value);
+	if (head) savePlanCache(head, outputs);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

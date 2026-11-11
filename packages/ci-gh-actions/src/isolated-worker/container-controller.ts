@@ -68,6 +68,7 @@ import {
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
+import type { StoragePeaks } from "./storage-peaks.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 const WORK_TARGET = "/opt/actions-runner/_hobo_work";
@@ -329,6 +330,7 @@ export function createIsolatedContainerController(options: {
 	prewarmMemoryMb?: number;
 	memoryClasses?: WorkerMemoryClasses;
 	memoryPeaks?: MemoryPeaks;
+	storagePeaks?: StoragePeaks;
 	memoryAdmission?: WorkerMemoryAdmission;
 	generalLeaseIds?: (
 		activeLeases: readonly Lease[],
@@ -605,6 +607,17 @@ export function createIsolatedContainerController(options: {
 			} catch {
 				// Fall through when assignment cannot be resolved.
 			}
+		}
+		try {
+			if (options.workFs.measureJobDirectory && lease.jobName) {
+				const measured = await options.workFs.measureJobDirectory(directory);
+				options.storagePeaks?.record(lease.jobName, {
+					workRootBytes: measured.bytes,
+					workRootInodes: measured.entries,
+				});
+			}
+		} catch {
+			// Peak measurement must not block teardown.
 		}
 		const startedAt = Date.now();
 		try {

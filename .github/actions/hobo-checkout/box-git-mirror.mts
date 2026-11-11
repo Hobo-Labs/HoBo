@@ -77,6 +77,7 @@ function mirrorCandidates(
 		return [...(configured ? [configured] : []), ...(fromRoot ? [fromRoot] : [])];
 	}
 	return [
+		`/home/box/.cache/hobo-ci/git/${repository}.git`,
 		`/var/lib/hobo-ci/git/${repository}.git`,
 		`/opt/hobo/ci/git/${repository}.git`,
 	];

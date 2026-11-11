@@ -110,9 +110,10 @@ describe("CI deps image push scope", () => {
 	});
 
 	it("does not make either gate wait for the deps image", () => {
-		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
+		expect(mainGate.needs).toEqual(["ci-runner-image"]);
 		expect(prValidation.needs).toEqual(["route", "ci-runner-image"]);
 		expect(prGate.needs).toEqual([
+			"route",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",

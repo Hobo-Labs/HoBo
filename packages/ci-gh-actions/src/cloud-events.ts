@@ -60,6 +60,9 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_mesh_node_lost", "ci.MeshNodeLost"],
 	["hobo_ci_mesh_node_unhealthy", "ci.MeshNodeDegraded"],
 	["hobo_ci_mesh_node_recovered", "ci.MeshNodeRecovered"],
+	// Trust: an advertisement whose signature failed, and a changed trusted-key set
+	["hobo_ci_mesh_node_invalid", "ci.MeshNodeRejected"],
+	["hobo_ci_mesh_trust_changed", "ci.MeshTrustChanged"],
 	["hobo_ci_mesh_capacity_exhausted", "ci.MeshCapacityExhausted"],
 	["hobo_ci_mesh_capacity_restored", "ci.MeshCapacityRestored"],
 	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],

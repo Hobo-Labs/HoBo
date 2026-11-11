@@ -100,6 +100,7 @@ export type ResolutionReason =
 	| "low-confidence"
 	| "conflict-marker"
 	| "oversized-resolution"
+	| "repeated-context"
 	| "unparseable-resolution"
 	| "duplicate-declaration"
 	| "engine-unavailable";
@@ -386,7 +387,7 @@ export async function resolveConflicts(input: {
 			const texts = new Map<number, string>();
 			const recorded: RecordedRegion[] = [];
 			let confidence = 1;
-			for (const segment of entry.segments) {
+			for (const [index, segment] of entry.segments.entries()) {
 				if (segment.kind !== "conflict") continue;
 				const region = answers.get(segment.id);
 				if (
@@ -400,7 +401,11 @@ export async function resolveConflicts(input: {
 						usage,
 						...last,
 					};
-				const fitted = fitRegionResolution(segment, region.resolution);
+				const fitted = fitRegionResolution(
+					segment,
+					region.resolution,
+					regionContext(entry.segments, index, 3),
+				);
 				if ("refusal" in fitted)
 					return {
 						outcome: "abstained",

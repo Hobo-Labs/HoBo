@@ -13,6 +13,14 @@
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
  *
+ * One more signal is used when it is there: the snapshot a worker of the
+ * relay mesh publishes to the `HOBO_CI_FLEET_STATE` repository variable (per
+ * label, the nodes it ranks and their free slots). A fresh snapshot that
+ * shows a label with no node or no free slot counts as that backend refusing
+ * jobs, at once and without queue evidence. A snapshot that is missing,
+ * unreadable or more than five minutes old changes nothing: the queue is
+ * read exactly as before.
+ *
  * Runs that start together would each read the same queue before any of them
  * had added to it, so a run waits its turn: while a run that started just
  * ahead has not chosen, this one leaves the self-hosted runners to it.
@@ -87,6 +95,15 @@ export const SLOW_PICKUP_MEMORY_SECONDS = 60 * 60;
  * among the unfinished runs this reads.
  */
 export const MAX_FINISHED_LOOKUPS = 3;
+
+/**
+ * How old the mesh's snapshot may be and still count. A worker rewrites it
+ * every two minutes while it is up, so an older one is from a worker that
+ * has stopped, and says nothing about now.
+ */
+export const FLEET_STATE_MAX_AGE_SECONDS = 5 * 60;
+/** How far ahead of this machine's clock a snapshot's timestamp may be. */
+export const FLEET_STATE_MAX_SKEW_SECONDS = 60;
 
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
@@ -182,6 +199,91 @@ export function takingJobs(load: LabelLoad, limits: RouteLimits): boolean {
 	return load.recentPickups > 0 && !refusingJobs(load, limits);
 }
 
+/** What a fresh mesh snapshot says about one label. */
+export type FleetLabelState = Readonly<{ nodes: number; freeSlots: number }>;
+
+/** A mesh snapshot that is fresh enough to use. */
+export type FleetState = Readonly<{
+	ageSeconds: number;
+	labels: ReadonlyMap<string, FleetLabelState>;
+}>;
+
+/**
+ * The mesh snapshot in the `HOBO_CI_FLEET_STATE` variable, or `undefined`
+ * when there is nothing to go on: no value, not the expected JSON, no
+ * timestamp, or one that is older than the limit or from the future. A
+ * snapshot is advice from a worker that may have stopped; only a fresh one
+ * is believed.
+ */
+export function parseFleetState(
+	value: string | undefined,
+	nowMs: number,
+): FleetState | undefined {
+	if (!value?.trim()) return undefined;
+	let document: JsonValue;
+	try {
+		// SAFETY: a JSON document is a JsonValue by construction.
+		document = JSON.parse(value) as JsonValue;
+	} catch {
+		return undefined;
+	}
+	const state = asObject(document);
+	const publishedAtMs = Date.parse(asText(state?.publishedAt) ?? "");
+	const labels = asObject(state?.labels);
+	if (!state || !labels || Number.isNaN(publishedAtMs)) return undefined;
+	const ageMs = nowMs - publishedAtMs;
+	if (
+		ageMs > FLEET_STATE_MAX_AGE_SECONDS * 1000 ||
+		ageMs < -FLEET_STATE_MAX_SKEW_SECONDS * 1000
+	)
+		return undefined;
+	// A count that is there and a number; anything else is not a count.
+	const count = (entry: JsonObject | undefined, name: string) => {
+		const number = asNumber(entry?.[name]);
+		return number !== undefined && Number.isFinite(number)
+			? Math.max(0, Math.floor(number))
+			: undefined;
+	};
+	return {
+		ageSeconds: Math.max(0, Math.floor(ageMs / 1000)),
+		// A label whose entry does not carry both counts says nothing, so it
+		// is left out and is as unknown as a label not listed at all.
+		labels: new Map(
+			Object.entries(labels).flatMap(([label, value]) => {
+				const entry = asObject(value);
+				const nodes = count(entry, "nodes");
+				const freeSlots = count(entry, "freeSlots");
+				return nodes === undefined || freeSlots === undefined
+					? []
+					: [[label.toLowerCase(), { nodes, freeSlots }] as const];
+			}),
+		),
+	};
+}
+
+/**
+ * Why the mesh snapshot says a label is refusing jobs, or `undefined` when
+ * it does not: no snapshot, the label has a node with a free slot, or the
+ * snapshot does not list the label.
+ *
+ * The worker that publishes the snapshot lists exactly the fleet labels it
+ * serves, with zeros when nobody serves them. A label it does not list is
+ * one it does not speak for (another worker's label, or the local box), so
+ * its absence is unknown, never a refusal.
+ */
+export function fleetStateRefusal(
+	state: FleetState | undefined,
+	label: string,
+): string | undefined {
+	const entry = state?.labels.get(label.toLowerCase());
+	if (!state || !entry) return undefined;
+	if (entry.nodes === 0)
+		return `the mesh snapshot (${state.ageSeconds} s old) shows no live node for ${label}`;
+	if (entry.freeSlots === 0)
+		return `the mesh snapshot (${state.ageSeconds} s old) shows no free slot on ${entry.nodes} node(s) for ${label}`;
+	return undefined;
+}
+
 export function parseRouteMode(value: string | undefined): RouteMode {
 	const mode = ROUTE_MODES.find((candidate) => candidate === value?.trim());
 	return mode ?? "auto";
@@ -212,6 +314,8 @@ export function routeRunner(input: {
 	undecidedAhead: number;
 	/** Live box headroom from `HOBO_CI_FLEET_CAPACITY`, when published. */
 	fleetCapacity?: FleetLabelCapacity;
+	/** The mesh's snapshot, when one was published recently; see `parseFleetState`. */
+	fleetState?: FleetState | undefined;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	if (mode === "fleet")
@@ -240,6 +344,13 @@ export function routeRunner(input: {
 	const fleetAdmits = capacity === undefined || capacity.admit;
 	const fleetSlots =
 		capacity === undefined ? 1 : Math.min(1, Math.max(0, capacity.freeSlots));
+	// What the nodes themselves report, when they reported recently: a label
+	// with no node or no free slot is refusing, whatever the queue shows.
+	const fleetRefusal = fleetStateRefusal(input.fleetState, fleetLabel);
+	const localRefusal = fleetStateRefusal(
+		input.fleetState,
+		LOCAL_HOST_RUNNER_LABEL,
+	);
 	const members = [
 		{
 			id: "fleet",
@@ -247,7 +358,7 @@ export function routeRunner(input: {
 			enabled: true,
 			runsOn: fleetLabel,
 			freeSlots:
-				first && fleetAdmits && takingJobs(input.fleet, limits)
+				first && fleetAdmits && !fleetRefusal && takingJobs(input.fleet, limits)
 					? fleetSlots
 					: 0,
 		},
@@ -256,7 +367,8 @@ export function routeRunner(input: {
 			backend: "local",
 			enabled: input.localEnrolled,
 			runsOn: LOCAL_HOST_RUNNER_LABEL,
-			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
+			freeSlots:
+				first && !localRefusal && takingJobs(input.local, limits) ? 1 : 0,
 		},
 		{
 			id: "github",
@@ -284,6 +396,8 @@ export function routeRunner(input: {
 			: [
 					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
 				]),
+		...(fleetRefusal ? [fleetRefusal] : []),
+		...(input.localEnrolled && localRefusal ? [localRefusal] : []),
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
 		return { tier: "fleet", runner: fleetLabel, reason: loads };
@@ -579,6 +693,11 @@ export async function chooseRunner(input: {
 	localEnrolled: boolean;
 	limits: RouteLimits;
 	readCapacity?: () => Promise<FleetLabelCapacity | undefined>;
+	/**
+	 * The mesh's snapshot as of a moment, when one is fresh then. Asked again
+	 * on every pass, since a wait for the probe can outlast its freshness.
+	 */
+	fleetState?: (nowMs: number) => FleetState | undefined;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const startMs = input.now();
@@ -590,6 +709,7 @@ export async function chooseRunner(input: {
 		const fleetCapacity = input.readCapacity
 			? await input.readCapacity()
 			: undefined;
+		const fleetState = input.fleetState?.(nowMs);
 		const routed = {
 			mode: input.mode,
 			fleetLabel,
@@ -598,18 +718,27 @@ export async function chooseRunner(input: {
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
+			fleetState,
 		};
 		const decision =
 			fleetCapacity === undefined
 				? routeRunner(routed)
 				: routeRunner({ ...routed, fleetCapacity });
-		const unseen = (load: LabelLoad) =>
-			load.recentPickups === 0 && !refusingJobs(load, limits);
+		// A backend the mesh says is refusing is not waited for: a probe being
+		// picked up would not change what its nodes report.
+		const unseen = (load: LabelLoad, refusal: string | undefined) =>
+			load.recentPickups === 0 && !refusingJobs(load, limits) && !refusal;
 		const probeMayHelp =
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
-			((decision.tier !== "fleet" && unseen(fleet)) ||
-				(decision.tier === "github" && localEnrolled && unseen(local)));
+			((decision.tier !== "fleet" &&
+				unseen(fleet, fleetStateRefusal(fleetState, fleetLabel))) ||
+				(decision.tier === "github" &&
+					localEnrolled &&
+					unseen(
+						local,
+						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL),
+					)));
 		const waitedSeconds = seconds(startMs, nowMs);
 		if (!probeMayHelp) return decision;
 		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
@@ -679,6 +808,19 @@ export async function main(
 		),
 	};
 	let decision: RouteDecision;
+	// A signed local run was verified for this tree, so the jobs it covers are
+	// skipped and only a few short ones are left. They go where a job is known
+	// to start, without reading the queue. A pinned tier is an operator's own
+	// override and still wins.
+	if (mode === "auto" && env.HOBO_CI_ATTESTED === "true") {
+		decision = {
+			tier: "github",
+			runner: DEFAULT_GITHUB_MACHINE_TYPE,
+			reason:
+				"a signed local run covers this tree, so the jobs left do not wait for a fleet",
+		};
+		return report(decision, env);
+	}
 	try {
 		const read = githubReader(
 			env.GITHUB_API_URL ?? "https://api.github.com",
@@ -710,6 +852,7 @@ export async function main(
 			localEnrolled,
 			limits,
 			readCapacity: () => readFleetCapacity(read, repository, fleetLabel),
+			fleetState: (nowMs) => parseFleetState(env.HOBO_CI_FLEET_STATE, nowMs),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known
@@ -720,6 +863,13 @@ export async function main(
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
 		};
 	}
+	return report(decision, env);
+}
+
+function report(
+	decision: RouteDecision,
+	env: NodeJS.ProcessEnv,
+): RouteDecision {
 	const line = `runner: ${decision.runner} (${decision.tier}): ${decision.reason}`;
 	console.log(line);
 	if (env.GITHUB_OUTPUT)

@@ -116,7 +116,7 @@ it("serves the account REST Pact over real HTTP, with exact isolation, CAS and r
 	const exercised = new Set<string>();
 	let negativeControl = false;
 	try {
-		expect(pact.interactions).toHaveLength(18);
+		expect(pact.interactions).toHaveLength(20);
 		for (const interaction of pact.interactions) {
 			for (const state of interaction.providerStates ?? []) {
 				expect(state.name).toBe("tenant has a server-owned reviewed setup");

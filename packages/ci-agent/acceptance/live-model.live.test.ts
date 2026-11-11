@@ -1,6 +1,10 @@
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCiAgent } from "../src/agent.js";
-import { createConfiguredEngines } from "../src/ai-sdk-engine.js";
+import {
+	createAiSdkEngine,
+	createConfiguredEngines,
+} from "../src/ai-sdk-engine.js";
 import { parseAgentConfig } from "../src/config.js";
 import { createMemoryJournal } from "../src/journal.js";
 import { observeQueue } from "../src/planner.js";
@@ -34,9 +38,18 @@ const THEIRS = BASE.replace(
 	"	amount: number;\n	discount?: number;\n",
 ).replace("sum + price.amount", "sum + price.amount - (price.discount ?? 0)");
 
-describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
-	"live model through the AI Gateway",
-	{ timeout: 180_000 },
+/**
+ * Where the model is: an OpenAI-compatible server at
+ * HOBO_CI_AGENT_LIVE_BASE_URL (a local llama.cpp or Ollama server with an
+ * open-weights model, which costs nothing), or else the AI Gateway.
+ */
+const local = process.env.HOBO_CI_AGENT_LIVE_BASE_URL;
+const gateway = process.env.AI_GATEWAY_API_KEY;
+
+describe.skipIf(!local && !gateway)(
+	`live model (${local ? "OpenAI-compatible server" : "AI Gateway"})`,
+	// A small model on a CPU answers in minutes, not seconds.
+	{ timeout: 900_000 },
 	() => {
 		let repos: Repositories;
 		beforeEach(() => {
@@ -61,6 +74,13 @@ describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 								"anthropic/claude-sonnet-5.5",
 						},
 					],
+					// Room for a small model on a CPU.
+					budget: { timeoutSeconds: 600 },
+					// A small local model rates itself unevenly; under the default
+					// 0.8 it abstains on some runs, which is the guardrail working.
+					// The content assertions below still decide whether it merged
+					// correctly.
+					resolution: { minConfidence: local ? 0.5 : 0.8 },
 				}),
 			);
 			const comments: string[] = [];
@@ -97,18 +117,42 @@ describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 					enqueue: async () => {},
 				},
 				workspace: repos.workspace(),
-				engines: await createConfiguredEngines(config, {
-					credential: () => undefined,
-				}),
+				// The configuration allows only an https base URL; a local server is
+				// plain http, so its engine is built from the model directly.
+				engines: local
+					? [
+							createAiSdkEngine({
+								id: "live",
+								modelName: process.env.HOBO_CI_AGENT_LIVE_MODEL ?? "local",
+								model: createOpenAICompatible({
+									name: "local",
+									baseURL: local,
+									supportsStructuredOutputs: false,
+								})(process.env.HOBO_CI_AGENT_LIVE_MODEL ?? "local"),
+							}),
+						]
+					: await createConfiguredEngines(config, {
+							credential: () => undefined,
+						}),
 				journal: createMemoryJournal(),
 			});
 
 			const report = await agent.tick();
 			const [resolution] = report.resolutions;
-			expect(resolution).toMatchObject({
+			// The reason and any engine failure are in the comparison, so a failed
+			// run says why.
+			expect({
+				number: resolution?.number,
+				outcome: resolution?.outcome,
+				reason: resolution?.reason,
+				engineId: resolution?.engineId,
+				engineFailures: report.engineFailures,
+			}).toEqual({
 				number: 1,
 				outcome: "resolved",
+				reason: "",
 				engineId: "live",
+				engineFailures: [],
 			});
 			expect(Number(resolution?.usage?.inputTokens)).toBeGreaterThan(0);
 			const merged = repos.git(
@@ -116,9 +160,14 @@ describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 				"show",
 				`${resolution?.commitSha}:src/price.ts`,
 			);
-			expect(merged).toContain("currency: string;");
-			expect(merged).toContain("discount?: number;");
-			expect(merged).toContain("price.discount ?? 0");
+			// Both sides' lines, each exactly once, and nothing repeated.
+			const count = (line: string) => merged.split(line).length - 1;
+			expect({
+				amount: count("\tamount: number;\n"),
+				currency: count("\tcurrency: string;\n"),
+				discount: count("\tdiscount?: number;\n"),
+				total: count("price.amount - (price.discount ?? 0)"),
+			}).toEqual({ amount: 1, currency: 1, discount: 1, total: 1 });
 			expect(merged).not.toMatch(/^(<{7}|={7}|>{7})/m);
 			expect(comments).toHaveLength(1);
 			// The record of the run, for the pull request that lands this test.

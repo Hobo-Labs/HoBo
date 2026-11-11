@@ -25,6 +25,8 @@ export type WorkerFileSystemStats = Readonly<{
 	bfree: number;
 	files: number;
 	ffree: number;
+	/** Fundamental file-system block size in bytes (`statfs.bsize`). */
+	bsize: number;
 }>;
 
 export type WorkerWorkDirectoryRemoval = Readonly<{
@@ -40,6 +42,7 @@ export type WorkerStorageFileSystem = Readonly<{
 	prepareJobDirectory(path: string): Promise<void>;
 	retireJobDirectory(path: string): Promise<string | undefined>;
 	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
+	measureJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
 }>;
 
 export function createNodeWorkerStorageFileSystem(
@@ -68,7 +71,35 @@ export function createNodeWorkerStorageFileSystem(
 				bfree: stats.bfree,
 				files: stats.files,
 				ffree: stats.ffree,
+				bsize: stats.bsize,
 			};
+		},
+		async measureJobDirectory(
+			path: string,
+		): Promise<WorkerWorkDirectoryRemoval> {
+			const name = basename(path);
+			const valid =
+				basename(dirname(path)) === RETIRED_ROOT
+					? RETIRED_JOB_DIRECTORY.test(name)
+					: JOB_DIRECTORY.test(name);
+			if (!valid) throw new Error("invalid worker job directory");
+			const measure = async (
+				entryPath: string,
+			): Promise<WorkerWorkDirectoryRemoval> => {
+				const metadata = await io.lstat(entryPath);
+				if (!metadata.isDirectory()) {
+					return { bytes: metadata.size, entries: 1 };
+				}
+				let bytes = 0;
+				let entries = 1;
+				for (const entry of await io.readdir(entryPath)) {
+					const child = await measure(join(entryPath, entry));
+					bytes += child.bytes;
+					entries += child.entries;
+				}
+				return { bytes, entries };
+			};
+			return measure(path);
 		},
 		async device(path) {
 			return (await stat(path)).dev;

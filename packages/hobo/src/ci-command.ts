@@ -22,6 +22,11 @@ import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
 import {
+	localMeshReport,
+	meshNodesData,
+	meshNodesTable,
+} from "./ci-mesh-status.js";
+import {
 	CI_DEPLOY_ONLY_OPTIONS,
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
@@ -46,6 +51,24 @@ export const CI_HELP = verbHelpText("ci", { implemented: true });
 
 function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
+}
+
+/**
+ * `hobo ci status` with no relay to ask: this machine's own mesh report,
+ * when its local runner keeps one. Nothing when it does not, so the caller
+ * gives its usual answer.
+ */
+async function offlineStatus(
+	repositoryRoot: string,
+	env: NodeJS.ProcessEnv,
+	why: string,
+): Promise<CommandResult | undefined> {
+	const report = await localMeshReport(repositoryRoot, env);
+	if (!report) return undefined;
+	return {
+		message: `${why} Showing this machine's own report.\n${meshNodesTable(report)}`,
+		data: { source: "local", mesh: meshNodesData(report) },
+	};
 }
 
 function trustedOrigin(value: string): string {
@@ -714,8 +737,13 @@ export function createCiCommand(
 				if (!relay && interactive && setup)
 					relay = (await ask("HoBo CI relay HTTPS origin: ")).trim();
 				if (!relay)
-					return usage(
-						"Select your CI relay with --relay, HOBO_CI_RELAY_URL, or .hobo/ci.json (see hobo ci --help).",
+					return (
+						(command === "status"
+							? await offlineStatus(root, env, "No CI relay is selected.")
+							: undefined) ??
+						usage(
+							"Select your CI relay with --relay, HOBO_CI_RELAY_URL, or .hobo/ci.json (see hobo ci --help).",
+						)
 					);
 				const origin = allowInsecureLoopback
 					? relayOriginFromProject(relay, true)
@@ -727,13 +755,21 @@ export function createCiCommand(
 						"Choose one CI credential source: a token file or HOBO_CI_ACCOUNT_TOKEN.",
 					);
 				if (!tokenFile && !env.HOBO_CI_ACCOUNT_TOKEN)
-					return {
-						ok: false,
-						status: "authentication-required",
-						code: "HOBO_CI_AUTH_REQUIRED",
-						message:
-							"Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.",
-					};
+					return (
+						(command === "status"
+							? await offlineStatus(
+									root,
+									env,
+									"No CI account credential is set, so the relay was not asked.",
+								)
+							: undefined) ?? {
+							ok: false,
+							status: "authentication-required",
+							code: "HOBO_CI_AUTH_REQUIRED",
+							message:
+								"Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.",
+						}
+					);
 				// Pin authority for the invocation. A mounted token file may rotate
 				// between policy read and write; it must not silently select another account.
 				const credential = tokenFile
@@ -760,7 +796,25 @@ export function createCiCommand(
 					});
 					if (!result.ok) return result;
 				}
-				const state = await client.getPolicy();
+				let state: Awaited<ReturnType<typeof client.getPolicy>>;
+				try {
+					state = await client.getPolicy();
+				} catch (error) {
+					// The relay could not be reached at all (status 0): offline,
+					// `status` still says what this machine knows of itself.
+					const offline =
+						command === "status" &&
+						error instanceof CiRelayClientError &&
+						error.status === 0
+							? await offlineStatus(
+									root,
+									env,
+									"The CI relay could not be reached.",
+								)
+							: undefined;
+					if (offline) return offline;
+					throw error;
+				}
 				if (
 					!state.account?.id ||
 					!/^[A-Za-z0-9_-]{1,80}$/.test(state.account.id)
@@ -783,23 +837,32 @@ export function createCiCommand(
 					(connection) =>
 						connection.repository.toLowerCase() === repository.toLowerCase(),
 				);
-				if (command === "status")
-					return {
-						message: existing
-							? `CI connected for ${repository} at ${origin}.`
-							: `CI is not connected for ${repository}. Run hobo ci enable.`,
-						data: {
-							repository,
-							relayOrigin: origin,
-							accountId: state.account.id,
-							connected: Boolean(existing),
-							revision: state.revision,
-							isolated: existing?.isolatedOnly ?? false,
-							installationId: existing?.installationId,
-							environment: selectedEnvironment,
-							jobAdmission,
-						},
+				if (command === "status") {
+					// The runner nodes behind the relay: availability, capacity
+					// and trust. A relay too old to have the route, or one that
+					// refuses it, leaves the connection status as the answer.
+					const mesh = await client.getMeshNodes().catch(() => undefined);
+					const connection = existing
+						? `CI connected for ${repository} at ${origin}.`
+						: `CI is not connected for ${repository}. Run hobo ci enable.`;
+					const status = {
+						repository,
+						relayOrigin: origin,
+						accountId: state.account.id,
+						connected: Boolean(existing),
+						revision: state.revision,
+						isolated: existing?.isolatedOnly ?? false,
+						installationId: existing?.installationId,
+						environment: selectedEnvironment,
+						jobAdmission,
 					};
+					return mesh
+						? {
+								message: `${connection}\n${meshNodesTable(mesh)}`,
+								data: { ...status, mesh: meshNodesData(mesh) },
+							}
+						: { message: connection, data: status };
+				}
 				if (existing) {
 					if (
 						!existing.isolatedOnly ||
