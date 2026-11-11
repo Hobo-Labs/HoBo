@@ -13,6 +13,12 @@ export const KV_REDIS_ERROR_CODES = [
 	"INVALID_CONFORMANCE_CASE",
 	"CONFORMANCE_EXECUTOR_FAILED",
 	"QUEUE_TOPIC_IMPLICATION",
+	/** The store answered an ephemeral-state command with an error reply. */
+	"EPHEMERAL_BACKEND_REJECTED",
+	/** The store answered with a reply shape the ephemeral-state scripts never produce. */
+	"EPHEMERAL_BACKEND_CONTRACT",
+	/** A Redis-protocol connection could not be configured from its environment. */
+	"EPHEMERAL_BINDING_UNAVAILABLE",
 ] as const;
 
 export type KvRedisErrorCode = (typeof KV_REDIS_ERROR_CODES)[number];
