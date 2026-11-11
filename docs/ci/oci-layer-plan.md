@@ -16,6 +16,9 @@ Related: [`performance.md`](./performance.md) (where wall time goes),
 [`packages/ci-gh-actions/deploy/ci-runner/README.md`](../../packages/ci-gh-actions/deploy/ci-runner/README.md)
 (runner image), and the release images in
 [#1674](https://github.com/Hobo-Labs/HoBo/pull/1674) (`docs/release/pipelines.md` on that branch).
+`release/oci-images.json` is the manifest of record for shipped release OCI image ids;
+`RELEASE_OCI_STAGE_SPECS` must list the same ids (enforced by
+`scripts/test/stage-release-oci-app.test.ts`).
 
 ## Principle: hermetic builds, cached by content
 
