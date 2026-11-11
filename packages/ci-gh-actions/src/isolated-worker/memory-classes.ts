@@ -240,14 +240,32 @@ export function resolveWorkerMemoryConfig(
 }
 
 export function memoryClassForJob(name: string): WorkerMemoryClassName {
+	if (/^Main workspace test shard \d+$/u.test(name)) return "standard";
 	if (/^Workspace test shard [0-7](?: \([0-7]\))?$/u.test(name)) return "heavy";
 	return JOB_CLASS_MAP.get(name) ?? "standard";
+}
+
+function mainWorkspaceShardMemoryRequest(
+	name: string,
+	config: WorkerMemoryConfig,
+): JobMemoryRequest {
+	const floorMb = config.classes.standard;
+	const ceilingMb = config.classes.heavy;
+	const reserved = config.learn
+		? learnedReservationMb(config.memoryPeaks?.[name], ceilingMb, floorMb)
+		: floorMb;
+	const memoryMb = Math.max(floorMb, reserved);
+	const memoryClass: WorkerMemoryClassName =
+		memoryMb > floorMb ? "heavy" : "standard";
+	return { memoryClass, memoryMb };
 }
 
 export function memoryRequestForJob(
 	name: string,
 	config: WorkerMemoryConfig,
 ): JobMemoryRequest {
+	if (/^Main workspace test shard \d+$/u.test(name))
+		return mainWorkspaceShardMemoryRequest(name, config);
 	const memoryClass = memoryClassForJob(name);
 	const classMb = config.classes[memoryClass];
 	return {

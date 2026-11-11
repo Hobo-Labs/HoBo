@@ -3,6 +3,7 @@ import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
+import type { FleetCapacityPublisher } from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
@@ -115,6 +116,13 @@ export function createHostedRelayRuntime(options: {
 	headroomTrunkOverflow?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["headroomTrunkOverflow"];
+	/** See `HostedRelay`: publishes fleet slot headroom after each pass. */
+	fleetCapacity?: Readonly<{
+		publish: FleetCapacityPublisher["publish"];
+		snapshot: () => Promise<
+			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
+		>;
+	}>;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -171,6 +179,8 @@ export function createHostedRelayRuntime(options: {
 		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		if (options.headroomTrunkOverflow)
 			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
+		if (options.fleetCapacity)
+			relayOptions.fleetCapacity = options.fleetCapacity;
 		return new HostedRelay(relayOptions);
 	}
 	return {

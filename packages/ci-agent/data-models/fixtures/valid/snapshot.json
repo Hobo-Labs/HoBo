@@ -1,0 +1,7 @@
+{
+  "repository": "hobo-labs/hobo", "baseRef": "main", "baseSha": "1111111111111111111111111111111111111111", "observedAt": "2026-11-10T12:00:00.000Z",
+  "entries": [
+    { "number": 41, "headSha": "2222222222222222222222222222222222222222", "headRef": "feat/a", "baseRef": "main", "position": 0, "enqueuedAt": "2026-11-10T11:00:00.000Z", "labels": ["hotfix"], "changedPaths": ["src/a.ts"] },
+    { "number": 42, "headSha": "3333333333333333333333333333333333333333", "headRef": "feat/b", "baseRef": "main", "position": 1, "enqueuedAt": "2026-11-10T11:05:00.000Z", "dependsOn": [41], "changedPaths": ["src/a.ts", "src/b.ts"], "fork": true }
+  ]
+}

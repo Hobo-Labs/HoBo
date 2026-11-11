@@ -1,0 +1,86 @@
+{
+  "name": "@hobo/ci-agent",
+  "version": "0.0.1",
+  "description": "HoBo CI agent: an optional merge-queue planner and model-backed conflict resolver for the relay",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "files": [
+    "LICENSE",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk-engine.d.ts",
+      "default": "./dist/ai-sdk-engine.js"
+    },
+    "./git": {
+      "types": "./dist/git-workspace.d.ts",
+      "default": "./dist/git-workspace.js"
+    },
+    "./github": {
+      "types": "./dist/github-queue.d.ts",
+      "default": "./dist/github-queue.js"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite-journal.d.ts",
+      "default": "./dist/sqlite-journal.js"
+    },
+    "./relay": {
+      "types": "./dist/relay.d.ts",
+      "default": "./dist/relay.js"
+    },
+    "./relay-main": {
+      "types": "./dist/relay-main.d.ts",
+      "default": "./dist/relay-main.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+    "start": "node dist/relay-main.js"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@hobo/ci-gh-actions": "workspace:*",
+    "ai": "7.0.169",
+    "zod": "^4.1.13"
+  },
+  "peerDependencies": {
+    "@ai-sdk/anthropic": "^4.0.102",
+    "@ai-sdk/google": "^4.0.117",
+    "@ai-sdk/openai": "^4.0.114",
+    "@ai-sdk/openai-compatible": "^3.0.90"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/anthropic": {
+      "optional": true
+    },
+    "@ai-sdk/google": {
+      "optional": true
+    },
+    "@ai-sdk/openai": {
+      "optional": true
+    },
+    "@ai-sdk/openai-compatible": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "4.0.102",
+    "@ai-sdk/google": "4.0.117",
+    "@ai-sdk/openai": "4.0.114",
+    "@ai-sdk/openai-compatible": "3.0.90"
+  }
+}

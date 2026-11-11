@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
 import {
-	buildFleetCapacitySnapshot,
 	ConfigurationSchema,
 	type Lease,
 	memoryAdmitHeadroom,
@@ -767,7 +766,7 @@ try {
 				},
 			})
 		: undefined;
-	const fleetCapacityPublisher = publishFleetRoutes
+	const fleetCapacity = publishFleetRoutes
 		? createFleetCapacityPublisher({ github, log })
 		: undefined;
 	const trunkHeadroomOverflowMs = Number(
@@ -788,6 +787,7 @@ try {
 		now: () => Date.now(),
 		log,
 	});
+	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -806,6 +806,20 @@ try {
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
 		headroomTrunkOverflow,
+		fleetCapacity: fleetCapacity
+			? {
+					publish: (input) => fleetCapacity.publish(input),
+					snapshot: async () => {
+						const hoboFreeSlots = Math.max(0, slots - liveWorkerLeaseIds.size);
+						const meshCap = await mesh?.observe();
+						const meshFree = meshCap?.freeSlots ?? hoboFreeSlots;
+						return {
+							hoboFreeSlots,
+							arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
+						};
+					},
+				}
+			: undefined,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -832,7 +846,7 @@ try {
 			})
 		: undefined;
 	let meshDraining = false;
-	const mesh =
+	mesh =
 		meshSettings && natsMesh
 			? createWorkerMesh({
 					settings: meshSettings,
@@ -998,35 +1012,6 @@ try {
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
 		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
-		if (fleetCapacityPublisher) {
-			const configuration = (await store.configuration())?.configuration;
-			const availableMb = readAvailableMemoryMb();
-			const freeSlots = Math.max(0, slots - liveWorkerLeaseIds.size);
-			const snapshot = buildFleetCapacitySnapshot({
-				atMs: Date.now(),
-				availableMb,
-				reserveMb: memoryConfig.reserveMb,
-				volatilityMb: capacityVolatilityMb,
-				freeSlotsHobo: freeSlots,
-				freeSlotsTrunk: Math.min(freeSlots, trunkSlots),
-				requiredMbHobo: memoryConfig.classes.standard,
-				requiredMbTrunk: memoryConfig.classes.heavy,
-			});
-			for (const connection of configuration?.connections ?? []) {
-				try {
-					await fleetCapacityPublisher.publish({
-						installationId: connection.installationId,
-						repository: connection.repository,
-						snapshot,
-					});
-				} catch (error) {
-					log("hobo_ci_fleet_capacity_error", {
-						repository: connection.repository,
-						message: error instanceof Error ? error.message : "unknown",
-					});
-				}
-			}
-		}
 	});
 
 	function runTick(): Promise<void> {

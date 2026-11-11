@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 86: poll readmit jit churn"
+title: "Finding 88: poll readmit jit churn"
 description: "Coalesce without fleet custody dedupe re-ingested jobs another hobo runner already held, repeating isolated reservations."
 tags: [hobo, ci, worker, polling, fleet]
 ---
 
-# Finding 86: poll readmit jit churn
+# Finding 88: poll readmit jit churn
 
 ## Evidence
 

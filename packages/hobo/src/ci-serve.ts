@@ -22,6 +22,7 @@ import {
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
 } from "@hobo/ci-gh-actions/cli-serve";
+import { parseCiAgentBlock } from "@hobo/ci-gh-actions/project-config";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
 import { githubKeyEnvironment } from "./ci-github-keys.js";
@@ -56,6 +57,7 @@ interface ServeLogEntry {
 	readonly admission?: CiJobAdmission;
 	readonly trustProxy?: boolean;
 	readonly engines?: readonly string[];
+	readonly agent?: boolean;
 }
 
 export interface CiServeOptions {
@@ -71,6 +73,8 @@ export interface CiServeOptions {
 	readonly admission?: string;
 	readonly allowInsecure?: boolean;
 	readonly withWorker?: boolean;
+	/** Serve without the CI agent even when the project configures one. */
+	readonly noAgent?: boolean;
 	readonly printConfig?: boolean;
 	readonly repo?: string;
 	readonly remote?: string;
@@ -134,6 +138,28 @@ export function ciWorkerEnvironment(input: {
 }
 
 type RunningRelay = Awaited<ReturnType<typeof startRelayFromEnvironment>>;
+
+/**
+ * The relay's startup with the CI agent beside it, from `@hobo/ci-agent`. The
+ * agent and its model SDK are not part of the `hobo` CLI; they are loaded
+ * only when a project's `.hobo/ci.json` has an `agent` block.
+ */
+async function loadAgentRelay() {
+	try {
+		return (await import("@hobo/ci-agent/relay-main"))
+			.startRelayWithAgentFromEnvironment;
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			"code" in error &&
+			error.code === "ERR_MODULE_NOT_FOUND"
+		)
+			throw new Error(
+				"This project configures a CI agent (the agent block of .hobo/ci.json), which needs the @hobo/ci-agent package. Install it next to hobo, or pass --no-agent to serve without the agent.",
+			);
+		throw error;
+	}
+}
 
 /**
  * Pull admission for a relay with no public webhook URL: the same GitHub job
@@ -685,6 +711,18 @@ export async function startCiServe(input: {
 		throw new Error(
 			"gh-actions engine is required for local relay serve today",
 		);
+	// The agent is part of the project's configuration: an `agent` block turns
+	// it on. It keeps its journal and clones under this serve's state.
+	const agentBlock = input.options.noAgent
+		? undefined
+		: parseCiAgentBlock(await readFile(plan.configPath, "utf8"));
+	let startRelay: (env: NodeJS.ProcessEnv) => Promise<RunningRelay> =
+		startRelayFromEnvironment;
+	if (agentBlock !== undefined) {
+		relayEnv.HOBO_CI_AGENT_CONFIG = plan.configPath;
+		relayEnv.HOBO_CI_AGENT_DIR = join(stateDir, "agent");
+		startRelay = await loadAgentRelay();
+	}
 	serveLog(input.emitProgress, {
 		ts: new Date().toISOString(),
 		level: "info",
@@ -695,8 +733,9 @@ export async function startCiServe(input: {
 		admission: plan.admission,
 		trustProxy: plan.trustProxy,
 		engines: plan.engines,
+		agent: agentBlock !== undefined,
 	});
-	const running = await startRelayFromEnvironment(relayEnv);
+	const running = await startRelay(relayEnv);
 	let pollStop: (() => void) | undefined;
 	let worker: ChildProcess | undefined;
 	if (plan.admission === "pull") {

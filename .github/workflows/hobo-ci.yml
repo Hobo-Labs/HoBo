@@ -767,6 +767,51 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-trace
 
+  main-gate-plan:
+    name: Main workspace plan
+    needs: [route, ci-runner-image, ci-deps-image]
+    if: >-
+      !cancelled() && (
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch')
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    outputs:
+      main_base: ${{ steps.plan.outputs.main_base }}
+      main_tests: ${{ steps.plan.outputs.main_tests }}
+      main_scope: ${{ steps.plan.outputs.main_scope }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Plan workspace shards
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAIN_SHARD_TARGET_SECONDS: "180"
+        run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
+
   main-gate:
     name: Main full gate
     # Not a required check and not run on merge_group: merge_group now runs the same
@@ -790,7 +835,6 @@ jobs:
       main_base: ${{ steps.main-base.outputs.base }}
       main_tests: ${{ steps.main-base.outputs.tests }}
       main_scope: ${{ steps.main-base.outputs.scope }}
-      shards: ${{ steps.shard-plan.outputs.shards }}
     # At most one Main full gate holds a box slot, whatever event started it, so the other slot
     # stays free for the short required jobs. A newer waiting gate replaces an older waiting one.
     concurrency:
@@ -958,25 +1002,6 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
-      - name: Plan main workspace test shards
-        id: shard-plan
-        env:
-          TESTS: ${{ steps.main-base.outputs.tests }}
-          BASE: ${{ steps.main-base.outputs.base }}
-        run: |
-          set -euo pipefail
-          shards='[0, 1, 2, 3, 4, 5, 6, 7]'
-          if [ "$TESTS" = "affected" ] && [ -n "$BASE" ] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            planned="$(git diff --name-only "$BASE" HEAD |
-              node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --base="$BASE" --plan-shards=8)" || planned=""
-            if [[ "$planned" =~ ^\[[0-7](,\ [0-7])*\]$ ]]; then shards="$planned"; fi
-          elif [ "$TESTS" = "all" ]; then
-            planned="$(printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts --plan-shards=8)" || planned=""
-            if [[ "$planned" =~ ^\[[0-7](,\ [0-7])*\]$ ]]; then shards="$planned"; fi
-          fi
-          echo "main workspace test shards: ${shards}"
-          echo "shards=${shards}" >> "$GITHUB_OUTPUT"
       - name: S0 gate set
         timeout-minutes: 12
         env:
@@ -1015,44 +1040,55 @@ jobs:
 
   main_workspace_tests:
     name: Main workspace test shard ${{ matrix.shard }}
-    needs: [route, main-gate]
+    needs: [route, ci-runner-image, ci-deps-image, main-gate-plan]
     if: >-
-      !cancelled() && needs.main-gate.result == 'success' && (
+      !cancelled() && needs.main-gate-plan.result == 'success' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.main-gate.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
+        shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
           clean: false
           fetch-depth: 0
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - uses: ./.github/actions/ci-runner-preflight
-        with:
-          browser: "true"
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
           turbo-token: ${{ secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: remote:rw
-          preferred-job: main-gate
+          preferred-job: main-gate-plan
       - name: Check the sibling pins (gitlink against checkout, offline)
+        if: steps.deps-layer.outputs.match != 'true'
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
-      - uses: ./.github/actions/pnpm-store
-      - name: Link deps layer
-        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
-      - name: Check deps layer match
-        id: deps-layer
-        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Restore pnpm store
+        if: steps.deps-layer.outputs.match != 'true'
+        uses: ./.github/actions/pnpm-store
       - name: Verify deps layer sibling links
         if: steps.deps-layer.outputs.match == 'true'
         run: node --import tsx scripts/ensure-ts-autocode-links.mts
@@ -1062,8 +1098,8 @@ jobs:
       - name: Workspace tests
         timeout-minutes: 19
         env:
-          TESTS: ${{ needs.main-gate.outputs.main_tests }}
-          BASE: ${{ needs.main-gate.outputs.main_base }}
+          TESTS: ${{ needs.main-gate-plan.outputs.main_tests }}
+          BASE: ${{ needs.main-gate-plan.outputs.main_base }}
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
           HOBO_TURBO_CONCURRENCY: "1"

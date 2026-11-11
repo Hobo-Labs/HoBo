@@ -1,0 +1,1 @@
+{ "repository": "hobo-labs/hobo", "baseSha": "1111111111111111111111111111111111111111", "order": [41, 42], "batches": [{ "numbers": [41] }, { "numbers": [42] }], "resolutions": [{ "number": 42, "against": [41], "paths": ["src/a.ts"] }], "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }

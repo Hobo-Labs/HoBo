@@ -1,0 +1,21 @@
+{
+	"_comment": "Seconds per workspace dir for balanced main/PR shards; refresh from ci-trace/turbo profiles on green main",
+	"measuredAt": "2026-11-11",
+	"sourceRun": "https://github.com/Hobo-Labs/HoBo/actions/runs/42939177874",
+	"defaultSeconds": 28,
+	"packages/hobo": 120,
+	"packages/code": 95,
+	"packages/core": 45,
+	"packages/ci-gh-actions": 55,
+	"packages/schema-tools": 40,
+	"packages/mcp": 35,
+	"packages/runtime-local": 32,
+	"packages/contracts": 30,
+	"packages/ci": 28,
+	"packages/connectivity": 27,
+	"packages/bindles": 26,
+	"site": 38,
+	"examples/self-host-yard": 45,
+	"test": 25,
+	"src/draft/technical-proofs/hobo-componentize": 50
+}

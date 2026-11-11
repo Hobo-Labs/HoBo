@@ -60,13 +60,14 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
-- **Main full gate workspace sharding.** Main push no longer runs workspace tests inside the S0 job.
-  `resolve-main-test-base.mts` picks last-green Fabric `main` when reachable, then `main_workspace_tests`
-  runs the same eight-shard plan as PR validation in parallel on fleet runners; S0 uses
-  `--external-workspace-tests` when affected. S0 prunes stray `packages/*` directories without
-  `package.json` before konsistent (`scripts/ci/prune-stray-workspace-packages.mts`). Gitleaks runs
-  in `main_gate_finish` after shards; that job sparse-checks `.github/actions` at `${{ github.sha }}`
-  first so `ci-trace` resolves when an earlier step fails
+- **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
+- **Main full gate workspace sharding.** `main-gate-plan` (route + deps image) resolves the last-green
+  base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
+  parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
+  Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
+  slowest shard when slots allow) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
+  links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
+  `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
@@ -217,8 +218,21 @@ package used to skip that test. Only a concrete reach counts there.
 A bare `"./"` or `"../"` string literal is an edge to its directory only where it can be a path.
 `entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of
 `@hobo/core`, so any core change ran 53 whole suites and 53 subsets; a change to
-`packages/core/src/_generated/actor_host_port_pb.ts` now plans 13 whole suites and 14 subsets and
-skips 106 dependents (10 and 13 of them without the wider bystander check above). The edge is dropped
+`packages/core/src/_generated/actor_host_port_pb.ts`, which no module of core imports, planned 13 whole
+suites and 14 subsets when the edge was dropped. Those figures are a measurement of that day's
+workspace, not something a test holds: `scripts/test/dependent-tests.test.ts` pinned the three counts
+and went red on main when three packages the file does not reach were added. The case now counts no
+package. It asserts that no module of `packages/core/src` reaches the generated file (with the `./`
+edge back, `plugin-manifest.ts` and `index.ts` do, and the failure names them), that `packages/core`
+runs whole, and that `packages/broker`, `packages/contracts` and `packages/events`, which import
+`@hobo/core` and name nothing wider, are skipped. Adding a package changes none of that. The same
+file's root-config cases list by name the packages whose vitest config merges the root one
+(`packages/cli`, `packages/hobo`); that list changes when such a package is added, and the failure
+says which list to edit. Nothing in CI runs this test file: `test:root` runs only `test/`, the unit
+lanes skip `node:test` files, `scripts/relevant-check-policy.ts` selects `read-stdin.test.ts` and
+`job-scope.test.ts` for a planner change but not this file, and `test:scripts` is in no workflow. Run
+it by hand after changing the planner: `node --test scripts/test/dependent-tests.test.ts`, with
+`turbo` on `PATH` for the one case that reads the real turbo graph. The edge is dropped
 only where the literal is provably a string test: the first argument of `startsWith`, `endsWith`,
 `includes`, `replace` or `replaceAll` (what is searched for), an operand of `===`, `!==`, `==` or
 `!=`, or a `case` label. Everywhere else it stays (`new URL("../", import.meta.url)` with or without a
@@ -277,9 +291,8 @@ workspace package by name reaches that package's `package.json` and `tsconfig.js
 directories and data files a test reads, spawned programs and a tsconfig only a script names are edges
 of the planner that `--check` does not check; `scripts/test/dependent-tests.test.ts` pins those on a
 fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph. The
-real-tree pins count packages, so a change that adds or removes one re-pins them: #1803 added three
-packages a generated `@hobo/core` leaf does not reach and left that plan's skipped count at 103, where
-the planner gives 106.
+real-tree cases name packages and count none, so adding a package the change does not reach leaves
+them alone (the Planner section above says what each asserts).
 
 ## Frozen proofs and live-repo tests
 

@@ -337,3 +337,23 @@ package ci
  if periodKind == "manual" {periodStartsAtMs?: _|_, periodEndsAtMs?: _|_}
  constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
 }
+
+// The HOBO_CI_FLEET_ROUTES repository variable: job class to runs-on label.
+// The three classes the relay publishes are always present; a workflow indexes
+// the value directly, so it is a flat object and not a wrapped message.
+#FleetRouteLabel: string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"^(?i)ubuntu-latest$"
+#FleetRoutes: {
+ pr: #FleetRouteLabel
+ fork: #FleetRouteLabel
+ trunk: #FleetRouteLabel
+ [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
+}
+
+// HOBO_CI_FLEET_CAPACITY repository variable: admitted parallel trunk slots.
+#FleetCapacityPublished: {
+	version: 1
+	admittedParallel: int & >=0 & <=8
+	hobo?: {freeSlots: int & >=0}
+	arc?: {freeSlots: int & >=0}
+	publishedAt?: string
+}
