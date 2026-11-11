@@ -22,6 +22,7 @@ import {
 	MAX_REPEAT,
 	MissingCpuClockError,
 	measureGrowth,
+	medianCpuMs,
 	OperationHangError,
 	repeatedTo,
 } from "../src/linear-time.js";
@@ -84,6 +85,40 @@ describe("measureGrowth", () => {
 		expect(growth).toMatchObject({ calibrated: true, smallMs: 12 });
 		expect(growth.ratio).toBeCloseTo(16);
 		expect(grewLinearly(growth)).toBe(false);
+	});
+
+	it("uses the median of samples so one inflated CPU reading does not fail linear work", () => {
+		let cpu = 0;
+		let largeMeasures = 0;
+		vi.spyOn(process, "threadCpuUsage").mockImplementation(() => ({
+			user: cpu * 1000,
+			system: 0,
+		}));
+		const smallCost = 40;
+		const largeCost = 160;
+		const linear = (text: string): void => {
+			const isLarge = text.length > 8192;
+			if (isLarge) {
+				largeMeasures += 1;
+				// One measured large at 9×; median of five larges stays at 4×.
+				cpu += largeMeasures === 3 ? largeCost * 2.25 : largeCost;
+				return;
+			}
+			cpu += smallCost;
+		};
+		const growth = measureGrowth(linear, repeatedTo("a"), {
+			startLength: 4096,
+			maxLength: 4096,
+			minMs: 1,
+			runs: 5,
+			warmupRuns: 1,
+		});
+		expect(growth.ratio).toBeLessThan(8);
+		expect(grewLinearly(growth)).toBe(true);
+	});
+
+	it("medianCpuMs ignores a single outlier", () => {
+		expect(medianCpuMs([10, 11, 12, 13, 90])).toBe(12);
 	});
 
 	it("stops at the first run past the backstop", () => {

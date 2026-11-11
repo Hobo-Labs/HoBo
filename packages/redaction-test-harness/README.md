@@ -21,9 +21,10 @@ redactor keeps on purpose, are passed in.
 ## Linear time
 
 `linear-time` proves an operation linear without a wall-clock bound that a slow
-or loaded machine fails. `measureGrowth(run, input)` times `input(n)` and
-`input(4n)` in the CPU time of the thread that runs them (so other processes on
-a loaded machine do not count), the better of two runs each, taking turns. n
+or loaded machine fails. `measureGrowth(run, input)` warms each size up once,
+then times `input(n)` and `input(4n)` in the CPU time of the thread that runs
+them (so other processes on a loaded machine do not count), five alternations by
+default, and compares the **medians** at each size. n
 doubles from 4096 (to at most 2^18) until a run takes 30 ms of CPU time, long
 against Linux's few-millisecond CPU-time ticks; an operation too quick for that
 is repeated within each timed run, the same number of times at both sizes. A
