@@ -127,6 +127,7 @@ export {
 	boxGitMirrorPath,
 	createBoxGitMirror,
 	defaultGitMirrorFallbackRoot,
+	defaultGitMirrorPreferredRoot,
 	resolveGitMirrorRoot,
 } from "./isolated-worker/git-mirror.js";
 export {
