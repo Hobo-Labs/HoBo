@@ -32,6 +32,7 @@ on:
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
+      - "scripts/test/release-relevant-push.test.ts"
       - "scripts/ci/push-release-git-tag.mts"
       - "scripts/ci/create-github-release.mts"
       - "scripts/lib/ssh-sig.mts"
@@ -93,6 +94,7 @@ on:
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
+      - "scripts/test/release-relevant-push.test.ts"
       - "scripts/ci/push-release-git-tag.mts"
       - "scripts/ci/create-github-release.mts"
       - "scripts/lib/ssh-sig.mts"
@@ -141,8 +143,14 @@ on:
 permissions:
   contents: read
 
+# Main-train runs (workflow_run after a green main push) share one queue: one runs, the
+# newest waits, and GitHub drops any older waiting run. The gate measures from the last
+# release tag, so the run that goes next releases everything the dropped ones would have,
+# and it asks after the running release has tagged, not before (two releases of
+# overlapping changes, or an older one finishing last). Keyed by the CI run's event so a
+# scheduled or dispatched CI completion, which the gate skips, never displaces a push.
 concurrency:
-  group: hobo-release-${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}', github.event.workflow_run.event) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -261,7 +269,10 @@ jobs:
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push'
         run: node --no-warnings scripts/ci/ensure-nbgv-toolchain.mts
-      - name: Skip when push did not touch release paths
+      # Measured from the last release tag, not from head^: a commit whose own CI
+      # run was cancelled by the next push, or that landed behind another in one
+      # merge-queue batch, still ships with the next green run on main.
+      - name: Skip when nothing on a release path changed since the last release
         id: scope
         if: >-
           github.event_name == 'workflow_run' &&
@@ -271,7 +282,7 @@ jobs:
           set -euo pipefail
           head_sha='${{ github.event.workflow_run.head_sha }}'
           node --no-warnings scripts/ci/check-release-relevant-push.mts \
-            --from "${head_sha}^" \
+            --since-last-release \
             --to "${head_sha}" \
             --github-output "$GITHUB_OUTPUT"
       - name: Resolve fixed alpha train version
@@ -342,6 +353,7 @@ jobs:
           scripts/test/release-oci-attest-contract.test.ts
           scripts/test/release-oci-image-contract.test.ts
           scripts/test/release-pages-stale.test.ts
+          scripts/test/release-relevant-push.test.ts
           scripts/test/release-sparse-cone.test.ts
           scripts/test/release-version.test.ts
           scripts/test/stage-release-oci-app.test.ts
