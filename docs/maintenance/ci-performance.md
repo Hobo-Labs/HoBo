@@ -401,3 +401,7 @@ CPU (545 tests, load 16.5 → 12.5); after these changes 316 s wall, 303 s CPU (
 8.4). Both runs fail the same 2 tests and one file, all because of this host: no `cue` v0.14.0 on
 `PATH` (`codegen-schema-contract`), and a `/tmp/.hobo` marker above `os.tmpdir()` that `ci.test.ts` and
 `shell.test.ts` read as a project root.
+
+- **Release sparse cones.** `scripts/test/release-sparse-cone.test.ts` pins the exports in
+  `scripts/lib/release-sparse-cone.mts` (for example `hoboReleaseSparseCones` and
+  `filePathsRequiredByReleaseOciContractTests`) so release workflows do not drift from the cone list.
