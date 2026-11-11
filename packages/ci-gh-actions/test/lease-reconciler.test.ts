@@ -16,6 +16,7 @@ import {
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
+import * as githubModule from "../src/github.js";
 import { waitForIsolatedWorkerDrain } from "../src/isolated-worker/daemon-shutdown.js";
 import type { DockerContainer } from "../src/isolated-worker/docker-driver.js";
 import {
@@ -895,6 +896,134 @@ describe("worker lease reconciliation", () => {
 		expect(result).toEqual({ drained: false, remaining: 1 });
 		expect(sleep).toHaveBeenCalled();
 		expect(active).toEqual([lease]);
+	});
+
+	it("drops a reserved unlaunched lease when GitHub already finished the run", async () => {
+		const lease = staleLease(
+			"00000000-0000-4000-8000-000000000010",
+			130_580_539_807,
+		);
+		lease.state = "reserved";
+		lease.sandboxName = "";
+		lease.sandboxSessionId = "";
+		lease.runnerId = 42;
+		lease.runnerName = `hobo-${lease.id}`;
+		const active = [lease];
+		const store = storeWith(active);
+		const cancelStaleGithubLease = vi.fn(async (l: Lease) => {
+			const index = active.findIndex((row) => row.id === l.id);
+			if (index >= 0) active.splice(index, 1);
+			return true;
+		});
+		vi.spyOn(githubModule, "getRun").mockResolvedValue({
+			id: lease.originalRunId,
+			run_attempt: 1,
+			event: "pull_request",
+			head_sha: "abc",
+			head_branch: "cursor/plan-shard-fleet-admission-2c7b",
+			path: ".github/workflows/ci.yml",
+			display_title: "test",
+			status: "completed",
+			conclusion: "cancelled",
+			updated_at: "2026-11-11T14:00:00.000Z",
+			actor: { id: 1 },
+			repository: { id: 101, private: true },
+			head_repository: { id: 101 },
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: lease.jobId,
+			run_id: lease.originalRunId,
+			status: "completed",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			run_attempt: 1,
+		});
+		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(),
+				remove: vi.fn(),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			github: {} as GithubTransport,
+			cancelStaleGithubLease,
+			now: () => NOW,
+		});
+		const result = await reconciler.reconcile();
+		expect(result.liveLeaseIds.has(lease.id)).toBe(false);
+		expect(cancelStaleGithubLease).toHaveBeenCalledWith(lease, "run-cancelled");
+		expect(active).toEqual([]);
+	});
+
+	it("releases reserved drain holds after the no-container cap", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000011", 2);
+		lease.state = "reserved";
+		lease.sandboxName = "";
+		lease.sandboxSessionId = "";
+		lease.runnerId = 99;
+		const active = [lease];
+		const store = storeWith(active);
+		const cancelStaleGithubLease = vi.fn(async (l: Lease) => {
+			const index = active.findIndex((row) => row.id === l.id);
+			if (index >= 0) active.splice(index, 1);
+			return true;
+		});
+		vi.spyOn(githubModule, "getRun").mockResolvedValue({
+			id: lease.originalRunId,
+			run_attempt: 1,
+			event: "pull_request",
+			head_sha: "abc",
+			head_branch: "main",
+			path: ".github/workflows/ci.yml",
+			display_title: "test",
+			status: "in_progress",
+			conclusion: null,
+			updated_at: "2026-11-11T14:00:00.000Z",
+			actor: { id: 1 },
+			repository: { id: 101, private: true },
+			head_repository: { id: 101 },
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: lease.jobId,
+			run_id: lease.originalRunId,
+			status: "queued",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			run_attempt: 1,
+		});
+		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(),
+				remove: vi.fn(),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			github: {} as GithubTransport,
+			cancelStaleGithubLease,
+			noContainerDrainMaxMs: 60_000,
+			now: () => NOW,
+		});
+		const early = await reconciler.reconcile({
+			draining: true,
+			drainStartedAtMs: NOW,
+		});
+		expect(early.liveLeaseIds.has(lease.id)).toBe(true);
+		const late = await reconciler.reconcile({
+			draining: true,
+			drainStartedAtMs: NOW - 61_000,
+		});
+		expect(late.liveLeaseIds.has(lease.id)).toBe(false);
+		expect(cancelStaleGithubLease).toHaveBeenCalledWith(
+			lease,
+			"drain-no-container-cap",
+		);
+		expect(active).toEqual([]);
 	});
 
 	it("does not release a running lease with a missing container while draining", async () => {

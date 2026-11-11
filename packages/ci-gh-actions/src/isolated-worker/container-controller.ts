@@ -396,6 +396,8 @@ export function createIsolatedContainerController(options: {
 	now?: () => string;
 	/** Grace for a reservation between its journal write and `docker create`. */
 	orphanGraceMs?: number;
+	/** Drain cap for leases that never reach a live container (default 60s). */
+	noContainerDrainMaxMs?: number;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
 	/** Max job containers alive at once on this host (default 1: the old serial behaviour). */
@@ -2095,12 +2097,36 @@ export function createIsolatedContainerController(options: {
 			return true;
 		}
 	};
+	const cancelStaleGithubLease = async (
+		lease: Lease,
+		_reason: string,
+	): Promise<boolean> => {
+		const at = now();
+		const auth = await options.store.configuration();
+		const updated = await options.store.transition(
+			lease.id,
+			[...ACTIVE_STATES],
+			(entry) => {
+				entry.state = "cancelled";
+			},
+			"ci.LeaseCancelled",
+			at,
+			auth?.revision ?? 0,
+		);
+		if (!updated) return false;
+		await cleanupWorkDirectory(lease);
+		const orphan = orphanJobCandidateForLease(lease, Date.parse(at));
+		if (orphan) orphanJobs.enqueue(orphan);
+		return true;
+	};
 	const reconcilerOptions: Parameters<typeof createWorkerLeaseReconciler>[0] = {
 		store: options.store,
 		docker: options.docker,
 		workerAccountId: options.workerAccountId,
 		workerMemoryMb,
 		now: () => Date.parse(now()),
+		github: options.github,
+		cancelStaleGithubLease,
 		settleExited: async (lease) => host.reconcile(lease.id, true),
 		afterRelease: cleanupWorkDirectory,
 		onOrphanJob: orphanJobs.enqueue,
@@ -2108,6 +2134,8 @@ export function createIsolatedContainerController(options: {
 		protectedLeaseIds: () => inFlightLaunchIds,
 		containerCustody,
 	};
+	if (options.noContainerDrainMaxMs !== undefined)
+		reconcilerOptions.noContainerDrainMaxMs = options.noContainerDrainMaxMs;
 	if (options.orphanGraceMs !== undefined)
 		reconcilerOptions.orphanGraceMs = options.orphanGraceMs;
 	if (options.log) reconcilerOptions.log = options.log;
