@@ -510,7 +510,10 @@ checks failed on main before anyone saw them:
 
 - **`actions:lint` on the real workflows.** `main_gate_finish`'s second checkout lacked
   `clean: false` (a box checkout at the default path must set it). The lint's tests only linted
-  fixtures; `lint-actions-runner.test.ts` now also runs it on the repository.
+  fixtures; `lint-actions-runner.test.ts` now also runs it on the repository. The lint also refuses a
+  checkout that sets `clean: false` twice: two branches that each add the line to the same checkout
+  merge without a git conflict into a duplicate YAML key, which GitHub cannot parse, so the workflow
+  does not run at all.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads

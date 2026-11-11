@@ -1178,7 +1178,6 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           fetch-tags: false
-          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Secret scan (full history)
         env:
