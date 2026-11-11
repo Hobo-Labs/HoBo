@@ -340,17 +340,27 @@ not on this list is a bug:
 |---|---|---|
 | `boing` / `boing-sm` | 550ms / 450ms | The signature bounce. Overshoot needs the settle; clipped to 420ms it reads as a twitch, not a squash. |
 | `postcard-sway` | 2.2s | Loop — homepage postcard drift |
-| `plx-cloud-squash` | 3.1s | Loop — parallax cloud |
-| `plx-scroll` on the cloud track | 190s | Loop — the weather. The one thing in the band that keeps moving when the page is at rest |
-| `plx-bob` / `plx-sway` | 5.2s / 4.1s | Loop — a landmark that floats bobs, one that is afloat rocks. Planted things stay planted |
-| `plx-bo-hop` | 950ms | Bo's idle hop: ten drawn frames at the strip's own cadence. A sprite cycle is as long as its drawing |
-| `troupe-doze` | 2.6s | Loop — a napping hobit breathing, for as long as he is out |
+| `tst-loop` / `tst-walk-x` / `tst-walk-y` | per plate / 0.3s / 1.8s | Loop — the band with no script: the plates and Bo's 36-frame walk on a timer |
+| `tst-squash` / `tst-pow` | 0.5s / 0.9s | A clicked cloud squashing, a clicked prop's word rising and fading |
 | `lost-bob` | 3.6s | Loop — Bo idling on the 404 |
 | `blink` | 7.3s | Loop — Bo's eyes |
+| `tst-idle` / `tst-pump` / `tst-nudge` | 2.4s / 0.5s / 1.1s | Loop — Bo standing about, Cog pumping the handcar, the Next arrow's nudge until the reader first moves |
+| `tst-dash` | 1.7s | Pip crossing the band once, end to end: a gag, not a wait |
 
 `boing` is the honest one to watch: it is response motion that exceeds the cap
 on purpose. Two named exceptions is a style; a third would mean the cap is
 fiction and the table should be rewritten instead of extended.
+
+**The trail's travel is the other honest exception, and it is one rule, not a
+list.** Moving between stops on the landing page is *travel*, and travel that
+lands in 420ms is a jump cut — the thing the owner rejected as abrupt and
+clunky. So a move is timed as a journey: the section hand-over (420ms out,
+760ms in, staggered 60ms), the camera's 1.6s glide, a sign standing up (0.6s)
+or a stop's set unfolding (0.7s, 90ms apart), the handcar rolling off (2.8s)
+and the iris on a long phone jump (1.2s). None of it blocks: the next section's
+text is readable from its first frame, a second request mid-move bends the move
+instead of queueing behind it, and under `prefers-reduced-motion` every one of
+them is zero.
 
 ### MA (間) — the interval is the animation
 
@@ -418,82 +428,87 @@ anything is missing, the motion was load-bearing and the layout is wrong.
 
 ### The trail
 
-The trail band is docked to the bottom of the viewport on the landing page and
-the page scrolls over it. It is the one place scroll drives motion, and here
-the scroll relationship *is* the meaning: reading down the page walks Bo down
-the trail.
+The landing page is a row of **stops**, not a long scroll. Each section is one
+stop, and the trail band at the foot of the screen is where the reader travels
+between them. Here the movement *is* the meaning: going on is walking Bo to the
+next stop.
 
-- **The ground moves a little slower than the page** (85% of the distance). Every other layer moves a
-  fraction of that — the same slot speeds the plates always declared. Nothing
-  moves faster than scroll itself, which reads as a glitch rather than depth.
-- **His stride comes from the ground covered,** so a planted foot stays
-  planted. Past the pace at which a stride is readable he is simply running.
-- **Scrolling back up runs the reel backwards:** the same frames in reverse
-  order. He is never mirrored — Bo is not symmetric.
-- **Each section is a stop.** Its landmarks ride the ground, spread through
-  that section's own stretch of trail, so the first is beside him as the
-  heading reaches the reading line and the rest go by as the section is read.
-  A small flat marker names the stretch. A landmark is the section it stands for: clicking
-  one goes there.
-- **The world follows the scroll; it does not track it.** A wheel notch would
-  arrive as a jump cut. Easing toward it turns the distance into a short walk
-  that ends in a slow last step.
-- **When the page stops, he stops,** lands with the small boing, and stands
-  about until it moves again.
+- **One stop per gesture.** The wheel, the arrow keys, Page Up/Down, a swipe and
+  the Previous/Next buttons each move exactly one stop, however hard the wheel
+  was spun. Speed is never coupled to input: the reader decides *where*, never
+  *how fast*.
+- **A move is a timed glide.** The camera follows a minimum-jerk curve — it starts
+  from rest without a lurch and arrives without a stop. Asked to go somewhere new
+  mid-glide, it bends toward the new place from the speed it already has, so
+  nothing ever cuts.
+- **Desktop keeps the page.** The current section sits above the band in the
+  page's own layout. Moving on hands it over: the old section drifts back the way
+  Bo came and goes out of focus while the next is already arriving, so there is
+  never a frame with nothing arriving. Then the band follows: the old stop folds
+  flat, Bo walks on, and the new stop's props stand up around him — one under
+  each card, scaled against Bo so big things stand big — with a road sign over
+  his head naming the stop.
+- **A phone is the trail.** There is not room for both, so the trail fills the
+  screen and the sections stand beside it on signs. A jump too far to walk closes
+  an iris on Bo and opens it on the new place.
+- **He turns round.** Heading back he walks on his other side, `bo-walk-left.png`,
+  a drawing of its own. He is never mirrored and never walks backwards. His stride
+  comes from the ground covered, so a planted foot stays planted; when he stops he
+  lands with the small boing and stands about.
+- **A trail marker shows where you are.** A dotted line of stops, the current one
+  in spark, Bo's head riding along it. Every stop is a button: the marker is the
+  navigation, not a decoration of it.
+- **The page lets go at the end.** Past the last stop the wheel and the Next
+  button scroll on to the footer like any page.
+- **Nothing is ever clipped.** A stop that does not fit the screen (a laptop, a
+  zoomed page) reads from its top and scrolls inside its own box before the
+  trail moves on, with its foot fading while there is more below. Content never
+  hides under the header or the band.
 
-**The band never takes the page's own controls.** It covers the foot of the
-viewport, so three things are part of it, not optional extras:
+**Signs are drawn, everything else is supplied.** A road sign's words have to be
+text, so the signs are the one thing drawn in CSS: an ink line that wobbles
+(an SVG displacement filter), heavier on the under and right edges, nail heads,
+plank seams, grained posts planted in the road, and a slight lean. Plates, props,
+clouds and the cast are artwork, used as given.
 
-- `scroll-padding-bottom` on the page equals the band at that size, so keyboard
-  focus and anchor jumps come to rest above it, the same promise
-  `scroll-padding-top` makes about the header.
-- The band steps down with the viewport (204 → 168 → 132 → 108px) and the hero
-  gives back its top margin on a laptop-height screen, so the hero's calls to
-  action are above the band on arrival.
-- Under 420px of height (a zoomed page, a phone on its side) it stops being
-  sticky and sits at the foot of the page.
-
-A visitor's click target is the figure, not his sprite cell: the air around him
-must not swallow a click meant for the page.
-
-It is **ambient by definition**: it carries no information the page does not
-already carry in its headings, so every part of it survives being removed.
-With no script the band falls back to walking itself on a timer, exactly as it
-used to. Under reduced motion nothing travels at all — the band holds still
-and the current section's landmarks are simply *in place* beside Bo, swapped
-without movement when the section changes. State by position, not by motion.
-
-The one arrival the page is allowed on load is his: Bo walks the last few
-steps into frame.
+**It is ambient by definition.** It carries no information the sections do not
+already carry: with no script the sections read top to bottom as an ordinary
+page and the band walks Bo along on a timer, docked to the foot of the viewport.
+Under reduced motion nothing travels — the stops swap in place and the props are
+simply standing. State by position, not by motion.
 
 ### The troupe
 
-A still page should not be a dead one. When the reader has stopped scrolling
-for a few seconds, one of the cast turns up, does one small thing, and leaves.
+A still page should not be a dead one. Four hobits turn up along the trail, each
+doing one small thing, and meeting one stamps it on the last stop's "Hobits met
+along the way" card — the page's hidden joy, and a reason to walk all of it.
+
+| Who | Where | What |
+|---|---|---|
+| Tuck | asleep by the road at the second stop | wakes as Bo arrives and waves |
+| Cog | on a handcar at the third stop | waves and rolls off down the line |
+| Mags | behind a card, once the page is still | peeks over its top edge, looks round, waves, ducks |
+| Pip | on the trail, every third step | races past |
 
 **The Margin Rule.** A visitor may appear in exactly two places: on the trail,
-which is the page's margin by construction, or rising from *behind* a box's
-top edge into the gap above it. Before every appearance that gap is measured
-for real — structure is fine, a line of text or another box is not — and if
-anything a reader could be looking at is there, that box is skipped. Nobody
-ever stands in the reading column. This is the "ambient motion belongs in the
-margins" rule below, enforced at runtime instead of trusted.
+which is the page's margin by construction, or rising from *behind* a card's top
+edge into the gap above it. Before every peek that gap is measured for real; if
+anything a reader could be looking at is there, the card is skipped. Nobody ever
+stands in the reading column.
 
-**The One Guest Rule.** One visitor at a time, a rest of 8–16 seconds between
-them, and after six in one sitting they leave the reader alone until the page
-moves again. A visitor who keeps arriving is a notification.
+**The One Guest Rule.** One visitor at a time, 9–15 seconds between peeks, and
+at most five in one sitting.
 
-**The Exit Rule.** The moment the page scrolls, whoever is out gets out of the
-way — a startle, then gone in under a quarter second, faster than he arrived.
-Attention the reader just spent on scrolling is not ours to compete for.
+**The Exit Rule.** The moment the reader moves on, whoever is out gets out of
+the way — a startle, then gone faster than he arrived.
 
-**The Whole Sheet Rule.** A character looks around by moving his pupils, not
-his outline: look-left, look-right and blink are derived from the standing
-pose by changing colour only, so the silhouette cannot boil between them.
+**The Whole Sheet Rule.** A character looks around by moving his pupils, not his
+outline: look-left, look-right and blink are derived from the standing pose by
+changing colour only, so the silhouette cannot boil between them.
 
-None of it carries information and none of it loops. The pause button on the
-trail stops the trail and the troupe together and is remembered; under
-`prefers-reduced-motion` the troupe does not run at all.
+None of it carries information. The pause button on the trail stops everything
+that moves on its own and is remembered; under `prefers-reduced-motion` nobody
+peeks or races, and Tuck and Cog simply wave.
 
 ### What motion may not do
 

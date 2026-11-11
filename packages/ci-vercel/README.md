@@ -217,6 +217,20 @@ relay's environment bypasses the broker. And its schema is created by statements
 the plan is a Drizzle schema with generated migrations (see
 [CI Relay Mesh](../../docs/design/ci-relay-mesh.md)).
 
+## Config service
+
+ADR-0179 (phase 3) moves the relay's configuration and secrets to a config
+service: Infisical Cloud, read with the relay's Vercel OIDC token, no secret in
+its environment. `src/relay-runtime-config.ts` loads the whole configuration
+(the config document and every secret, App credentials included) in one call,
+parses it into `RelayRuntimeConfig` with the schema moved from the Neon broker
+(`src/relay-runtime-config-schema.ts`), and caches it in memory for a minute;
+`envRelayConfigSource` gives the same type from the environment for local runs
+and tests. It is not wired into `entry.ts` yet. Owner setup, the variables the
+deployment declares and the folder's entries are in
+[Config service](CONFIG-SERVICE.md); the client is
+[`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md).
+
 ## Hosted relay
 
 > The Postgres store, the inbox table and the Neon broker named in this section are superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179): webhook intake becomes a Vercel Queue keyed by the delivery id, per-lease steps become delayed queue messages, in-flight state moves to a cache it may lose, and config and secrets are read from a config service. See [Hosted CI Relay Without Durable State](../../docs/design/hosted-relay-stateless.md).

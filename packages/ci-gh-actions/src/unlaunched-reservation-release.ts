@@ -1,4 +1,10 @@
 import type { Job, Lease } from "@hobo/ci";
+import {
+	type TrunkWaitCache,
+	type TrunkWaitState,
+	trunkWaitFleetDeferEligible,
+	trunkWaitKey,
+} from "./trunk-wait.js";
 
 export const DEFAULT_UNLAUNCHED_RESERVE_MS = 25_000;
 export const DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS = 25_000;
@@ -136,4 +142,80 @@ export function pickUnlaunchedReservationsToRelease(
 		unlaunchedLeft -= 1;
 	}
 	return releases;
+}
+
+export function pickTrunkHeadroomFleetReleases(
+	trunkWaits: TrunkWaitCache,
+	leases: readonly UnlaunchedReservationLease[],
+	nowMs: number,
+	context: Readonly<{
+		deferMs: number;
+		nonLocalFreeSlots?: number;
+	}>,
+): ReadonlyArray<
+	Readonly<{
+		leaseId: string;
+		jobId: number;
+		reason: string;
+		waitKey: string;
+		waitedMs: number;
+	}>
+> {
+	if (!fleetCanAbsorbUnlaunchedRelease(context.nonLocalFreeSlots)) return [];
+	const releases: {
+		leaseId: string;
+		jobId: number;
+		reason: string;
+		waitKey: string;
+		waitedMs: number;
+	}[] = [];
+	for (const [waitKey, wait] of trunkWaits) {
+		if (!trunkWaitFleetDeferEligible(wait, context.deferMs, nowMs)) continue;
+		const parts = waitKey.split(":");
+		if (parts.length !== 3) continue;
+		const repository = parts[0];
+		const jobId = Number(parts[1]);
+		const runAttempt = Number(parts[2]);
+		if (
+			!repository ||
+			!Number.isInteger(jobId) ||
+			jobId <= 0 ||
+			!Number.isInteger(runAttempt) ||
+			runAttempt <= 0
+		)
+			continue;
+		const lease = leases.find(
+			(entry) =>
+				entry.repository === repository &&
+				entry.jobId === jobId &&
+				entry.runAttempt === runAttempt &&
+				isUnlaunchedReservation(entry),
+		);
+		if (!lease) continue;
+		const waitedMs = Math.max(0, nowMs - wait.sinceMs);
+		releases.push({
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			reason: `trunk-${wait.reason}-fleet-defer`,
+			waitKey,
+			waitedMs,
+		});
+	}
+	return releases;
+}
+
+export function rememberTrunkWait(
+	cache: TrunkWaitCache,
+	job: Pick<Job, "repository" | "id" | "runAttempt">,
+	reason: TrunkWaitState["reason"],
+	nowMs: number,
+): TrunkWaitState {
+	const key = trunkWaitKey(job);
+	const existing = cache.get(key);
+	const wait: TrunkWaitState =
+		existing?.reason === reason
+			? existing
+			: { sinceMs: nowMs, logged: false, reason };
+	cache.set(key, wait);
+	return wait;
 }

@@ -6,7 +6,7 @@
  * numbers rather than from a screenshot of the animation.
  *
  * The numbers are not decoration: they are copied from the consumers
- * (`site/src/components/BoIdle.astro`, `site/src/components/ParallaxTrail.astro`)
+ * (`site/src/components/BoIdle.astro`, `site/src/components/TrailStage.astro`)
  * and if they drift, the preview here stops matching what the site plays.
  */
 
@@ -216,8 +216,8 @@ export const SCENE_PROPS: Reference[] = [
 	{ key: "signpost", title: "Signpost", file: "reference/scene-props/signpost.webp", note: "→ landmark at the crossroads stop (“Two bad landlords, and the open road”)." },
 	{ key: "train", title: "Locomotive", file: "reference/scene-props/train.webp", note: "→ landmark at the main-line stop (“Deployment is not a destination”)." },
 	{ key: "depot", title: "Depot", file: "reference/scene-props/depot.webp", note: "→ landmark at the depot stop (“Four words for traveling light”)." },
-	{ key: "blimp", title: "Blimp", file: "reference/scene-props/blimp.webp", note: "→ landmark at the airfield stop (the agents section). Floats at half ground speed and bobs." },
-	{ key: "steamboat", title: "Steamboat", file: "reference/scene-props/steamboat.webp", note: "→ landmark at the river stop (the landscape table). Sits behind the path and rocks; the lettered “toot” is erased at build." },
+	{ key: "blimp", title: "Blimp", file: "reference/scene-props/blimp.webp", note: "Cut for scale with the approved set, but no landing-page card stands for it, so it is not shipped." },
+	{ key: "steamboat", title: "Steamboat", file: "reference/scene-props/steamboat.webp", note: "Cut for scale with the approved set (the lettered “toot” is erased at build), but no landing-page card stands for it, so it is not shipped." },
 ];
 
 /**

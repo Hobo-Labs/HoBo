@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package hobo.adapter_infisical.v1;
+
+// Where a deployment reads its configuration and secrets: the Infisical site,
+// one project, one environment and one folder. Every field is a non-secret
+// identifier the deployment declares (INFISICAL_SITE_URL, INFISICAL_PROJECT_ID,
+// INFISICAL_ENVIRONMENT, INFISICAL_SECRET_PATH).
+message InfisicalBinding {
+  string site_url = 1;
+  string project_id = 2;
+  string environment = 3;
+  string secret_path = 4;
+}
+
+// The answer of POST /api/v1/auth/oidc-auth/login and
+// POST /api/v1/auth/universal-auth/login. The access token is held in memory
+// until expires_in elapses and is never logged.
+message InfisicalLoginResponse {
+  string access_token = 1;
+  uint32 expires_in = 2;
+  uint32 access_token_max_ttl = 3 [json_name = "accessTokenMaxTTL"];
+  string token_type = 4;
+}
+
+// One secret as the v4 secrets endpoints return it. Only the fields the
+// adapter reads; the rest of Infisical's object is ignored.
+message InfisicalSecret {
+  string secret_key = 1;
+  string secret_value = 2;
+  uint32 version = 3;
+  bool secret_value_hidden = 4;
+}
+
+// GET /api/v4/secrets.
+message InfisicalSecretList {
+  repeated InfisicalSecret secrets = 1;
+}
+
+// The pending approval a secret-protection policy turns a write into.
+message InfisicalApproval {
+  string id = 1;
+}
+
+// GET, POST and PATCH /api/v4/secrets/{secretName}. A write held for approval
+// carries `approval` instead of `secret`.
+message InfisicalSecretEnvelope {
+  InfisicalSecret secret = 1;
+  InfisicalApproval approval = 2;
+}
+
+// Infisical's error answer. Only the request id is read; the message may echo
+// input and is never kept.
+message InfisicalErrorEnvelope {
+  string req_id = 1;
+  uint32 status_code = 2;
+  string error = 3;
+}
+
+// POST /api/v1/auth/oidc-auth/login.
+message InfisicalOidcLoginRequest {
+  string identity_id = 1;
+  string jwt = 2;
+}
+
+// POST /api/v1/auth/universal-auth/login.
+message InfisicalUniversalAuthLoginRequest {
+  string client_id = 1;
+  string client_secret = 2;
+}
+
+// POST and PATCH /api/v4/secrets/{secretName}.
+message InfisicalSecretWriteRequest {
+  string project_id = 1;
+  string environment = 2;
+  string secret_path = 3;
+  string secret_value = 4;
+  string type = 5;
+}
+
+// GitHub's answer to the Actions OIDC token request: `{ "value": "<jwt>" }`.
+message GithubActionsIdToken {
+  string value = 1;
+}
