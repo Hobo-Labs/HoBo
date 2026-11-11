@@ -1,7 +1,80 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
-import { resolveMainTestBase } from "../ci/resolve-main-test-base.mts";
+import {
+	fetchLastGreenMainSha,
+	resolveMainTestBase,
+} from "../ci/resolve-main-test-base.mts";
+
+const rev = (name: string) =>
+	spawnSync("git", ["rev-parse", name], { encoding: "utf8" }).stdout.trim();
+
+/** A fetch that records the URL it was asked for and answers with `runs`. */
+function runsApi(runs: readonly object[]) {
+	const urls: string[] = [];
+	const fetch = async (url: string, _init: RequestInit) => {
+		urls.push(url);
+		return new Response(JSON.stringify({ workflow_runs: runs }), {
+			status: 200,
+		});
+	};
+	return { urls, fetch };
+}
+
+const green = (sha: string) => ({
+	head_sha: sha,
+	conclusion: "success",
+	event: "push",
+	path: ".github/workflows/hobo-ci.yml",
+});
+
+describe("fetchLastGreenMainSha", () => {
+	const lookup = {
+		repository: "Hobo-Labs/HoBo",
+		token: "t",
+		workflowBasename: "hobo-ci.yml",
+	};
+
+	it("asks for main's pushes when no branch is given", async () => {
+		const api = runsApi([green(rev("HEAD~1"))]);
+		const sha = await fetchLastGreenMainSha({
+			...lookup,
+			head: rev("HEAD"),
+			fetch: api.fetch,
+		});
+		assert.equal(sha, rev("HEAD~1"));
+		assert.deepEqual(api.urls, [
+			"https://api.github.com/repos/Hobo-Labs/HoBo/actions/runs?branch=main&event=push&status=completed&per_page=30",
+		]);
+	});
+
+	it("asks for the pushed branch's own runs, not main's", async () => {
+		// After main is merged into a long-lived branch, main's last green commit
+		// is an ancestor of the branch head. Asked for main's runs, the lookup
+		// returned it, and the branch's tests were scoped against main.
+		const api = runsApi([green(rev("HEAD~1"))]);
+		await fetchLastGreenMainSha({
+			...lookup,
+			head: rev("HEAD"),
+			branch: "feature/hobo-code",
+			fetch: api.fetch,
+		});
+		assert.deepEqual(api.urls, [
+			"https://api.github.com/repos/Hobo-Labs/HoBo/actions/runs?branch=feature%2Fhobo-code&event=push&status=completed&per_page=30",
+		]);
+	});
+
+	it("finds nothing when the branch has no green run, so the caller falls back", async () => {
+		const api = runsApi([]);
+		const sha = await fetchLastGreenMainSha({
+			...lookup,
+			head: rev("HEAD"),
+			branch: "feature/hobo-code",
+			fetch: api.fetch,
+		});
+		assert.equal(sha, undefined);
+	});
+});
 
 describe("resolveMainTestBase", () => {
 	it("prefers last green over push before", () => {

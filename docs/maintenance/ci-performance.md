@@ -61,7 +61,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Main full gate workspace sharding.** Main push no longer runs workspace tests inside the S0 job.
-  `resolve-main-test-base.mts` picks last-green Fabric `main` when reachable, then `main_workspace_tests`
+  `resolve-main-test-base.mts` picks the pushed branch's last-green Fabric run (`main` for a push to main) when reachable, then `main_workspace_tests`
   runs the same eight-shard plan as PR validation in parallel on fleet runners; S0 uses
   `--external-workspace-tests` when affected. S0 prunes stray `packages/*` directories without
   `package.json` before konsistent (`scripts/ci/prune-stray-workspace-packages.mts`). Gitleaks runs
