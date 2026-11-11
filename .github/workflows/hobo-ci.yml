@@ -1401,9 +1401,13 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         env:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # The token is for the GHCR pull only. The cold loop refuses to boot with a
+          # credential in its environment, so it never reaches either isolated run.
+          pull_token="${HOBO_GHCR_PULL_TOKEN:-}"
+          unset HOBO_GHCR_PULL_TOKEN
           image="hobo-ci-worker:local"
           # Three kinds of runner pick this job up. A fleet box has the worker image in its
           # Docker context. An ARC pod (hobo-runner-*) has Docker but neither the image nor
@@ -1413,7 +1417,7 @@ jobs:
           if [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
             if ! docker image inspect "$image" >/dev/null 2>&1; then
               echo "${image} is not on this runner; materializing it from the host cache or GHCR"
-              node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only || true
+              GITHUB_TOKEN="$pull_token" node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only || true
             fi
             if docker image inspect "$image" >/dev/null 2>&1; then
               tar -c --exclude=./.git . | docker run -i --rm --network=none \

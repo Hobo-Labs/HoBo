@@ -137,6 +137,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   pull had never run anywhere: `ensure-ci-worker-image.mts` probed GHCR with the raw `GITHUB_TOKEN`
   as a bearer, which the registry refuses, so every probe read "absent" (run 43043419831 logged that
   two seconds before `docker pull` fetched the same tag). It now asks `docker manifest inspect`.
+  The pull's token reaches only the pull: the cold loop refuses to boot with `GITHUB_TOKEN` set, so
+  the step takes it as `HOBO_GHCR_PULL_TOKEN` and unsets it before either isolated run.
 - **Slot budget.** The box has two runner slots, so a job that gates nothing still delays every other
   run. Main full gate does not run on `merge_group` (it is not a required check, and the push to `main`
   re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when

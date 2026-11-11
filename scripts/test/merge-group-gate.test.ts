@@ -581,6 +581,7 @@ describe("cold dev loop gate", () => {
 				[
 					"#!/bin/sh",
 					'echo "node $*" >> "$CALLS"',
+					'echo "node-token ${GITHUB_TOKEN:-}" >> "$CALLS"',
 					'if [ "$PULLABLE" = 1 ]; then touch "$IMAGE"; exit 0; fi',
 					"exit 2",
 					"",
@@ -590,7 +591,7 @@ describe("cold dev loop gate", () => {
 			if (runner.sudo) {
 				writeFileSync(
 					join(bin, "sudo"),
-					'#!/bin/sh\necho "sudo $*" >> "$CALLS"\n',
+					'#!/bin/sh\necho "sudo $*" >> "$CALLS"\necho "sudo-env ${HOBO_GHCR_PULL_TOKEN:-}${GITHUB_TOKEN:-}" >> "$CALLS"\n',
 					{ mode: 0o755 },
 				);
 			}
@@ -603,6 +604,7 @@ describe("cold dev loop gate", () => {
 					CALLS: calls,
 					IMAGE: image,
 					PULLABLE: runner.pullable ? "1" : "0",
+					HOBO_GHCR_PULL_TOKEN: "pull-secret",
 					RUNNER_ENVIRONMENT: runner.environment,
 				},
 				encoding: "utf8",
@@ -645,6 +647,7 @@ describe("cold dev loop gate", () => {
 		});
 		assert.equal(status, 0, output);
 		assert.match(calls, materialize);
+		assert.match(calls, /^node-token pull-secret$/mu);
 		assert.match(calls, dockerRun);
 	});
 
@@ -688,6 +691,8 @@ describe("cold dev loop gate", () => {
 		assert.match(calls, sudoNamespace);
 		assert.doesNotMatch(calls, /^docker /mu);
 		assert.doesNotMatch(calls, materialize);
+		// The cold loop exits when it finds a credential in its environment.
+		assert.match(calls, /^sudo-env $/mu);
 	});
 });
 
