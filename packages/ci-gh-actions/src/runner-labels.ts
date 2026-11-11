@@ -15,6 +15,7 @@ export const TRUNK_RUNNER_LABEL = "hobo-trunk";
  * Optional box fleet identity some workflows use alongside the shared `hobo` mesh
  * label. JIT registration must include every fleet label the job asks for.
  */
+// public-contract: optional box fleet runner label paired with the shared hobo mesh label.
 export const BOX_ISOLATED_RUNNER_LABEL = "hobo-box";
 
 export type RunnerLabel =

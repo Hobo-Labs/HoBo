@@ -69,7 +69,9 @@ const WORK_TARGET = "/opt/actions-runner/_hobo_work";
 /** Written when the one-job JIT runner exits; the container itself keeps running. */
 // public-contract: in-container marker path the start script writes and reconcile probes.
 export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
+// public-contract: exit code file the JIT runner writes for lease reconciliation.
 export const RUNNER_EXIT_CODE_PATH = "/tmp/hobo-ci-runner-exit-code";
+// public-contract: human-readable exit summary the JIT runner writes for logs.
 export const RUNNER_EXIT_SUMMARY_PATH = "/tmp/hobo-ci-runner-exit-summary";
 
 /** Start the runner with its JIT config delivered over stdin to a 0600 file
