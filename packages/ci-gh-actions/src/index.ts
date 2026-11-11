@@ -35,6 +35,13 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
+	createFleetCapacityPublisher,
+	type FleetCapacityEvent,
+	type FleetCapacityLog,
+	type FleetCapacityPublisher,
+	type FleetCapacityPublishInput,
+} from "./fleet-capacity.js";
+export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,

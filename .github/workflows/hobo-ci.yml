@@ -808,8 +808,7 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MAIN_SHARD_CAP: "64"
-          MAIN_SHARD_TARGET_SECONDS: "90"
+          MAIN_SHARD_TARGET_SECONDS: "180"
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
 
   main-gate:

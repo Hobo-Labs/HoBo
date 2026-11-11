@@ -62,8 +62,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
 - **Main full gate workspace sharding.** `main-gate-plan` (route + deps image) resolves the last-green
-  base and prints a duration-balanced shard matrix (`scripts/ci/workspace-test-durations.json`,
-  target 90s per shard) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
+  base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
+  parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
+  Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
+  slowest shard when slots allow) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
   links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).

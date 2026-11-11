@@ -16,6 +16,7 @@ import {
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
+	createFleetCapacityPublisher,
 	createFleetRoutePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
@@ -694,6 +695,10 @@ try {
 						: NO_OFFERS,
 			})
 		: undefined;
+	const fleetCapacity = publishFleetRoutes
+		? createFleetCapacityPublisher({ github, log })
+		: undefined;
+	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -710,6 +715,20 @@ try {
 		memoryAdmission,
 		storageAdmission,
 		fleetRoutes,
+		fleetCapacity: fleetCapacity
+			? {
+					publish: (input) => fleetCapacity.publish(input),
+					snapshot: async () => {
+						const hoboFreeSlots = Math.max(0, slots - liveWorkerLeaseIds.size);
+						const meshCap = await mesh?.observe();
+						const meshFree = meshCap?.freeSlots ?? hoboFreeSlots;
+						return {
+							hoboFreeSlots,
+							arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
+						};
+					},
+				}
+			: undefined,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -736,7 +755,7 @@ try {
 			})
 		: undefined;
 	let meshDraining = false;
-	const mesh =
+	mesh =
 		meshSettings && natsMesh
 			? createWorkerMesh({
 					settings: meshSettings,
