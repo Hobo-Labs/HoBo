@@ -38,16 +38,15 @@ describe("job memory environment", () => {
 			"HOBO_TEST_MAX_WORKERS=2",
 		]);
 		const root = fileURLToPath(new URL("../..", import.meta.url));
-		for (const workflow of [
-			"hobo-ci.yml",
-			"pricing-ci.yml",
-			"release-code.yml",
-			"release-pricing.yml",
-		])
-			expect(
-				readFileSync(join(root, ".github/workflows", workflow), "utf8"),
-				workflow,
-			).not.toMatch(/^\s+NODE_OPTIONS:/mu);
+		// Every workflow, read from disk: a hand-kept list named release-code.yml
+		// after #1772 deleted it, and the case failed on a missing file instead
+		// of checking anything.
+		const workflows = globSync(".github/workflows/*.yml", { cwd: root });
+		expect(workflows).toContain(".github/workflows/hobo-ci.yml");
+		for (const workflow of workflows)
+			expect(readFileSync(join(root, workflow), "utf8"), workflow).not.toMatch(
+				/^\s+NODE_OPTIONS:/mu,
+			);
 	});
 
 	it("keeps every single-worker Vitest pin at one under the CI environment", async () => {
@@ -101,8 +100,7 @@ describe("job memory environment", () => {
 			]),
 		);
 		for (const path of [
-			".github/workflows/hobo-ci.yml",
-			".github/workflows/pricing-ci.yml",
+			...globSync(".github/workflows/*.yml", { cwd: root }),
 			"scripts/ci/memory-env.mts",
 			"scripts/run-tests.ts",
 		])

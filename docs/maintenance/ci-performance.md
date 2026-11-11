@@ -156,9 +156,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   the live tests skip themselves when their variable is missing, so the step ends with
   `data-live-servers.mts verify`, which reads the run's output and fails unless each of the five
   packages printed a summary and no test in it was skipped, failed or left todo. The start step
-  prints the server versions and addresses the run was against. These packages read the root vitest
-  config, which does not apply `HOBO_TEST_MAX_WORKERS`, so the step passes the cap to vitest as
-  `VITEST_MAX_WORKERS`. The job is scoped like `artifact-trust` (below) to the live test files, so a
+  prints the server versions and addresses the run was against. Four of these packages run under the root
+  vitest config and `packages/trails` under its own; both apply `HOBO_TEST_MAX_WORKERS` through
+  `capVitestWorkers`. The step used to export the cap as `VITEST_MAX_WORKERS`, which Vitest lets
+  override every config (single-worker pins included) and which `scripts/test/memory-env.test.ts`
+  forbids in any workflow. The job is scoped like `artifact-trust` (below) to the live test files, so a
   pull request that cannot reach the data engines frees the slot after checkout
   (`scripts/test/job-scope.test.ts` pins the entry list and checks it against the repository, so
   changing the entries means changing that test); the nightly schedule
@@ -502,7 +504,7 @@ with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four
 
 ## Checks that went stale on main
 
-No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so four
+No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these
 checks failed on main before anyone saw them:
 
 - **`actions:lint` on the real workflows.** `main_gate_finish`'s second checkout lacked
@@ -514,9 +516,10 @@ checks failed on main before anyone saw them:
   each job's `needs`: the required PR jobs and `main-gate` must not wait for the image even through
   another job, exactly `main-gate-plan` and `main_workspace_tests` do, and neither is gated on the
   deps job's result, so a failed deps job leaves the shards to install for themselves.
-- **Deps layout recipe digest.** `DEPS_LAYOUT.recipeSha256` was last right at #1741. #1740, #1747
-  and #1816 edited `build-deps.sh` only: disk and inode headroom checks before a rebuild, and
-  resolving the toolchain image when it is not in the Docker context. The Dockerfile and the bucket
+- **Deps layout recipe digest.** `DEPS_LAYOUT.recipeSha256` was last right at #1741. #1740, #1747,
+  #1816 and #1792 edited `build-deps.sh` only: disk and inode headroom checks before a rebuild, an
+  unused-image GC when headroom is short, and resolving the toolchain image when it is not in the
+  Docker context. The Dockerfile and the bucket
   script are unchanged, so image contents and paths are too: the digest is updated and
   `DEPS_LAYOUT.version` stays 1, which leaves the deps key and every existing layer as they were.
 - **Repo-wide shard plan.** #1840 made `shardTestPlan` read the real `turbo run test --dry=json`
@@ -524,6 +527,12 @@ checks failed on main before anyone saw them:
   real graph's packages were all "undiscovered". The graph is now a parameter (`TestGraph`, as
   `planCommands` already takes), defaulting to turbo. The test gives the fixture tree its own graph,
   and a second case partitions the real workspace list against the real graph.
+- **Two memory-env checks after #1792 and #1833.** `scripts/test/memory-env.test.ts` read a
+  hand-kept workflow list that still named `release-code.yml`, which #1772 deleted; it now checks
+  every file in `.github/workflows/`. And #1833's live data lane exported `VITEST_MAX_WORKERS`, which
+  Vitest lets override every config and the same test forbids in a workflow. The root vitest config
+  and `packages/trails`'s now apply `HOBO_TEST_MAX_WORKERS` through `capVitestWorkers` themselves, so
+  the lane no longer exports anything.
 
 ## The cli package's test cost
 

@@ -1395,9 +1395,10 @@ jobs:
           set -euo pipefail
           [ -n "${HOBO_TEST_POSTGRES_URL:-}" ] || { echo "::error::the start step set no PostgreSQL URL"; exit 1; }
           [ -n "${HOBO_TEST_MONGODB_URL:-}" ] || { echo "::error::the start step set no MongoDB URL"; exit 1; }
-          # These packages read the root vitest config, which does not apply
-          # the job's memory-derived worker cap; vitest reads this one itself.
-          export VITEST_MAX_WORKERS="${HOBO_TEST_MAX_WORKERS:-1}"
+          # Their vitest configs (the root one, and packages/trails's) apply the
+          # job's HOBO_TEST_MAX_WORKERS cap. Nothing exports VITEST_MAX_WORKERS
+          # here, since vitest lets it override every config, single-worker pins
+          # included.
           pnpm run test:data-live 2>&1 | tee "${RUNNER_TEMP}/data-live.log"
           node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts verify "${RUNNER_TEMP}/data-live.log"
       - name: Server logs
