@@ -175,7 +175,12 @@ A wheel gesture ends when the wheel goes quiet (140ms), or when a stream that wa
 dying away rises again — a second flick — so two deliberate flicks are two steps
 and one long burst is one (`startsGesture` in `src/lib/stage/trail-logic.ts`). A
 gesture that begins down at the footer only brings the trail back to the stop the
-reader left; it never steps on past it.
+reader left; it never steps on past it. A flick that arrives while a stop is still
+being handed over steps on, even if that stop is taller than its box: it is read
+once it has arrived. The window only watches the wheel (a passive listener, so it
+never holds up scrolling elsewhere); the trail's own listener calls
+`preventDefault` only for an event it takes, and both exist only while the trail
+is staged.
 
 **He turns round.** Heading back, Bo walks on `bo-walk-left.png`, his other side
 drawn as its own sheet. He is never mirrored and never walks backwards: Bo is not
@@ -229,8 +234,13 @@ Next, the wheel and a swipe all go on to the footer.
 **Checked as built.** `pnpm run landing:verify-dist` serves `dist/` and checks every
 stop at 900×560, 1024×600, 1280×620, 1366×657 and 1440×900 (nothing above its box,
 every link reachable and uncovered when focused), every phone sign at 390×844,
-focus on moving on, the URL and hash, the footer past the last stop, and teardown.
-`scripts/deploy-site.mts` runs it with `examples:verify-dist` before publishing. The
+focus on moving on, the URL and hash, wheel gestures and swipes, the footer past
+the last stop, and teardown. It never guesses how long a move takes: the trail
+page carries `data-travel="moving|still"`, and each check waits for "still" (and
+for the stop's sign to stand up) before it looks. Wheel gestures are dispatched
+inside the page, each burst in one task and bursts spaced by the page's own
+timer, so a loaded runner can only lengthen a gap, never squeeze two gestures
+into one. `scripts/deploy-site.mts` runs it with `examples:verify-dist` before publishing. The
 decisions behind the trail (which stop a hash names, where a step lands, which keys
 are the page's) live in `src/lib/stage/trail-logic.ts`, unit-tested beside it.
 

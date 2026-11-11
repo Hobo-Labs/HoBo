@@ -69,16 +69,83 @@ function check(label: string, ok: boolean, detail = ""): void {
 	if (!ok) failures.push(label);
 }
 
+/**
+ * Wait until the trail has stopped: it says it is still, one stop is on (and
+ * it is `at`, when given), the stop's sign has stood up and nothing finite is
+ * still animating. A state, not a guessed duration, so a loaded runner only
+ * makes the wait longer. On timeout the checks that follow report what is wrong.
+ * The trail writes `data-travel` once a frame, so two frames pass first: a move
+ * the last action began is on record before "still" is believed.
+ */
+async function settle(page: Page, at = ""): Promise<void> {
+	await frames(page);
+	await page
+		.waitForFunction(
+			(want) => {
+				const trail = document.querySelector<HTMLElement>("[data-trail-page]");
+				const on = document.querySelectorAll("[data-trail-stop].is-on");
+				if (trail?.dataset.travel !== "still" || on.length !== 1 || (want !== "" && on[0].id !== want)) return false;
+				if (trail.dataset.mode === "desk" && !document.querySelector(".tst-set.is-live")) return false;
+				return document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().endTime === Number.POSITIVE_INFINITY);
+			},
+			at,
+			{ polling: 50, timeout: 15_000 },
+		)
+		.catch(() => console.log(`     (the trail did not settle${at ? ` at ${at}` : ""} within 15s)`));
+}
+
+/** Wait for a page condition; on timeout the check that follows reports it. */
+async function until(page: Page, test: () => boolean): Promise<void> {
+	await page.waitForFunction(test, undefined, { polling: 50, timeout: 15_000 }).catch(() => undefined);
+}
+
+/** Two animation frames: the page has seen a scroll or a style change. */
+async function frames(page: Page): Promise<void> {
+	await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+}
+
+/**
+ * Wheel gestures dispatched inside the page. Each group's events go back to
+ * back in one task (zero gap, so they are one stream whatever the runner's
+ * load); groups are `gapMs` apart by the page's own timer, and load can only
+ * lengthen that gap. Synthetic events have no default action, so an event no
+ * listener takes scrolls the way the browser would: the nearest box under the
+ * pointer that can scroll that way, else the window.
+ */
+async function wheel(page: Page, x: number, y: number, groups: readonly (readonly number[])[], gapMs = 0): Promise<void> {
+	// No named functions inside: the runner's transform would wrap them in a
+	// helper the page does not have.
+	await page.evaluate(
+		async (arg) => {
+			for (const [i, group] of arg.groups.entries()) {
+				if (i > 0 && arg.gapMs > 0) await new Promise((done) => setTimeout(done, arg.gapMs));
+				for (const dy of group) {
+					const at = document.elementFromPoint(arg.x, arg.y) ?? document.body;
+					const init = { deltaY: dy, clientX: arg.x, clientY: arg.y, bubbles: true, cancelable: true, composed: true };
+					if (!at.dispatchEvent(new WheelEvent("wheel", init))) continue;
+					let box: Element | null = at;
+					for (; box && box !== document.documentElement; box = box.parentElement) {
+						const flow = getComputedStyle(box).overflowY;
+						if ((flow === "auto" || flow === "scroll") && (dy > 0 ? box.scrollTop + box.clientHeight < box.scrollHeight - 1 : box.scrollTop > 0)) break;
+					}
+					if (box && box !== document.documentElement) box.scrollTop += dy;
+					else scrollBy({ top: dy, behavior: "instant" });
+				}
+			}
+		},
+		{ x, y, groups, gapMs },
+	);
+}
+
 /** Every stop at this size: what does not fit its box, and what focus cannot reach. */
 async function fitAt(page: Page, origin: string, width: number, height: number): Promise<void> {
 	await page.setViewportSize({ width, height });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(500);
+	await settle(page);
 	const count = await page.locator(".tst-mark").count();
 	for (let i = 0; i < count; i++) {
 		await page.locator(".tst-mark").nth(i).click();
-		// Long enough for the stop's sign to stand up.
-		await page.waitForTimeout(1600);
+		await settle(page);
 		const report = await page.evaluate(() => {
 			const sec = document.querySelector<HTMLElement>("[data-trail-stop].is-on");
 			const header = document.querySelector(".site-header")?.getBoundingClientRect();
@@ -120,11 +187,11 @@ async function fitAt(page: Page, origin: string, width: number, height: number):
 async function phone(page: Page, origin: string): Promise<void> {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(500);
+	await settle(page);
 	const count = await page.locator(".tst-mark").count();
 	for (let i = 0; i < count; i++) {
 		await page.locator(".tst-mark").nth(i).click();
-		await page.waitForTimeout(2600);
+		await settle(page);
 		const report = await page.evaluate(() => {
 			const route = document.querySelector(".tst-route")?.getBoundingClientRect();
 			const problems: string[] = [];
@@ -139,7 +206,11 @@ async function phone(page: Page, origin: string): Promise<void> {
 	}
 }
 
-/** A finger dragged from (x, from) to (x, to), through the browser's own touch handling. */
+/**
+ * A finger dragged from (x, from) to (x, to), through the browser's own touch
+ * handling. The trail judges a swipe by distance alone; the moves are spaced
+ * like a finger's so the browser reads a drag, and load can only slow it.
+ */
 async function swipe(page: Page, x: number, from: number, to: number): Promise<void> {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: from }] });
@@ -155,7 +226,7 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 	const page = await context.newPage();
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(1200);
+	await settle(page);
 	// Find a stop whose sign in view is short: a tall one keeps swipes, by design.
 	const shortSign = () =>
 		page.evaluate(() => {
@@ -169,7 +240,7 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	let y = await shortSign();
 	for (let i = 1; y < 0 && i < 7; i++) {
 		await page.locator(".tst-mark").nth(i).click();
-		await page.waitForTimeout(2600);
+		await settle(page);
 		y = await shortSign();
 	}
 	// A swipe steps to the next sign, which may belong to the same stop: what
@@ -177,16 +248,16 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	const where = () => page.evaluate(() => document.querySelector<HTMLElement>("[data-world]")?.style.transform ?? "");
 	const before = await where();
 	await swipe(page, 200, y, y - 260);
-	await page.waitForTimeout(2600);
+	await settle(page);
 	const after = await where();
 	check("phone: a swipe over a short sign moves the trail", y > 0 && after !== before, `sign at y ${y}, ${before} → ${after}`);
 
 	// The code sign scrolls sideways, but an up-or-down swipe on it is the trail's.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(1200);
+	await settle(page);
 	await page.keyboard.press("ArrowRight");
-	await page.waitForTimeout(2600);
+	await settle(page);
 	const code = await page.evaluate(() => {
 		for (const pre of document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up pre")) {
 			const r = pre.getBoundingClientRect();
@@ -196,22 +267,22 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	});
 	const onCode = await where();
 	await swipe(page, 200, code, code - 220);
-	await page.waitForTimeout(2600);
+	await settle(page);
 	const offCode = await where();
 	check("phone: a swipe that starts on the code sign moves the trail", code > 0 && offCode !== onCode, `code at y ${code}, ${onCode} → ${offCode}`);
 
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(1500);
+	await settle(page, "get-started");
 	await page.locator("[data-next]").click({ force: true });
-	await page.waitForTimeout(1500);
+	await until(page, () => scrollY > 100 && (document.querySelector(".site-footer")?.getBoundingClientRect().top ?? 9999) < innerHeight);
 	const viaNext = await page.evaluate(() => ({ y: scrollY, footer: Math.round(document.querySelector(".site-footer")?.getBoundingClientRect().top ?? 9999) }));
 	check("phone: Next at the last stop reaches the footer", viaNext.y > 100 && viaNext.footer < 844, JSON.stringify(viaNext));
 
-	await page.evaluate(() => scrollTo(0, 0));
-	await page.waitForTimeout(300);
+	await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
+	await frames(page);
 	await swipe(page, 200, 600, 250);
-	await page.waitForTimeout(1500);
+	await until(page, () => scrollY > 100);
 	const viaSwipe = await page.evaluate(() => scrollY);
 	check("phone: a swipe up at the last stop reaches the footer", viaSwipe > 100, `scrollY ${viaSwipe}`);
 	await context.close();
@@ -220,16 +291,16 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(500);
+	await settle(page);
 	await page.locator("#trailhead .btn-primary").focus();
 	await page.keyboard.press("ArrowRight");
-	await page.waitForTimeout(1500);
+	await settle(page);
 	const moved = await page.evaluate(() => document.activeElement?.id ?? document.activeElement?.tagName);
 	check("focus: the keyboard carries focus to the next stop's heading", moved === "why-title", `focus on ${moved}`);
 	const spoken = await page.evaluate(() => document.querySelector("[data-stage-said]")?.textContent ?? "");
 	check("focus: a heading that takes focus is not announced twice", !spoken.includes("Why"), `live region: "${spoken}"`);
 	await page.locator(".tst-mark").nth(3).click();
-	await page.waitForTimeout(1500);
+	await settle(page);
 	const stayed = await page.evaluate(() => document.activeElement?.className ?? "");
 	check("focus: a marker click leaves focus on the marker", stayed.includes("tst-mark"), `focus on ${stayed}`);
 	check("links: moving on records the stop in the URL", new URL(page.url()).hash === "#vocabulary", page.url());
@@ -237,25 +308,26 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	// Arrival is a fresh load, not a hash change on the page already open.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#roles`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(800);
+	await settle(page);
 	const arrived = await page.evaluate(() => document.querySelector("[data-trail-stop].is-on")?.id);
 	check("links: a hash names the stop on arrival", arrived === "roles", `at ${arrived}`);
 	await page.evaluate(() => {
 		location.hash = "#compare";
 	});
-	// Long enough for the hand-over to finish: until then both stops are on.
-	await page.waitForTimeout(2500);
+	// The hashchange event comes in its own task: wait for the stop it names.
+	await settle(page, "compare");
 	const followed = await page.evaluate(() => document.querySelector("[data-trail-stop].is-on")?.id);
 	check("links: a hashchange goes to the stop it names", followed === "compare", `at ${followed}`);
 
 	// A nudged window (a rotated phone, a key that scrolled it) is still the trail.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(500);
-	await page.evaluate(() => scrollTo(0, 40));
+	await settle(page);
+	await page.evaluate(() => scrollTo({ top: 40, behavior: "instant" }));
+	await frames(page);
 	await page.mouse.click(700, 200);
 	await page.keyboard.press("ArrowRight");
-	await page.waitForTimeout(2000);
+	await settle(page);
 	const nudged = await page.evaluate(() => [...document.querySelectorAll("[data-trail-stop].is-on")].map((s) => s.id).join(","));
 	check("keys: a small scroll does not leave the trail inert", nudged === "why", `at ${nudged}`);
 
@@ -263,17 +335,13 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.setViewportSize({ width: 1280, height: 620 });
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#how`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(800);
-	await page.mouse.move(640, 300);
+	await settle(page, "how");
 	await page.evaluate(() => {
 		const sec = document.querySelector<HTMLElement>("[data-trail-stop].is-on");
 		if (sec) sec.scrollTop = sec.scrollHeight;
 	});
-	for (let i = 0; i < 14; i++) {
-		await page.mouse.wheel(0, 120);
-		await page.waitForTimeout(25);
-	}
-	await page.waitForTimeout(1800);
+	await wheel(page, 640, 300, [Array.from({ length: 14 }, () => 120)]);
+	await settle(page);
 	const burst = await page.evaluate(() => {
 		const on = [...document.querySelectorAll<HTMLElement>("[data-trail-stop].is-on")];
 		const sec = on[on.length - 1];
@@ -284,67 +352,67 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	check("wheel: a fast burst is one step and lands at the new stop's heading", burst.at === "vocabulary" && burst.inView, JSON.stringify(burst));
 	await page.setViewportSize({ width: 1440, height: 900 });
 
-	// Two deliberate flicks a quarter second apart are two steps.
-	await page.goto("about:blank");
-	await page.goto(`${origin}/HoBo/#why`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(800);
-	await page.mouse.move(700, 300);
-	const flick = async () => {
-		for (const delta of [40, 90, 120, 100, 70, 45, 25, 10]) {
-			await page.mouse.wheel(0, delta);
-			await page.waitForTimeout(14);
-		}
-	};
-	const t0 = Date.now();
-	await flick();
-	await page.waitForTimeout(Math.max(0, 250 - (Date.now() - t0)));
-	await flick();
-	await page.waitForTimeout(3200);
-	const flicked = await page.evaluate(() => [...document.querySelectorAll("[data-trail-stop].is-on")].map((n) => n.id).join(","));
-	check("wheel: two flicks a quarter second apart are two steps", flicked === "vocabulary", `at ${flicked}`);
+	// Two deliberate flicks are two steps. A quarter second apart, the quiet
+	// gap ends the first; the stop between (roles) fits at this size, so it
+	// makes no difference whether load stretches the gap past the hand-over.
+	// Back to back with no gap at all, the second's rise out of the first's
+	// tail ends it, and it lands mid hand-over on a stop (how) that is taller
+	// than its box here: a flick then steps on rather than reading it.
+	const flick = [40, 90, 120, 100, 70, 45, 25, 10];
+	for (const [gapMs, label, from, to] of [
+		[250, "a quarter second apart", "vocabulary", "ai-native"],
+		[0, "back to back", "why", "vocabulary"],
+	] as const) {
+		await page.goto("about:blank");
+		await page.goto(`${origin}/HoBo/#${from}`, { waitUntil: "networkidle" });
+		await settle(page, from);
+		await wheel(page, 700, 300, [flick, flick], gapMs);
+		await settle(page);
+		const flicked = await page.evaluate(() => [...document.querySelectorAll("[data-trail-stop].is-on")].map((n) => n.id).join(","));
+		check(`wheel: two flicks ${label} are two steps`, flicked === to, `${from} → ${flicked}`);
+	}
 
 	// A wheel-up gesture from the footer brings the trail back to its last stop
 	// and never steps on past it, however long it runs.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(800);
-	await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
-	await page.waitForTimeout(300);
-	await page.mouse.move(700, 450);
-	for (let i = 0; i < 20; i++) {
-		await page.mouse.wheel(0, -120);
-		await page.waitForTimeout(20);
-	}
-	await page.waitForTimeout(2200);
+	await settle(page, "get-started");
+	await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }));
+	await frames(page);
+	await wheel(page, 700, 450, [Array.from({ length: 20 }, () => -120)]);
+	await settle(page);
 	const back = await page.evaluate(() => ({ at: [...document.querySelectorAll("[data-trail-stop].is-on")].map((n) => n.id).join(","), y: scrollY }));
 	check("wheel: a burst up from the footer lands on the last stop", back.at === "get-started" && back.y === 0, JSON.stringify(back));
 
 	// The last stop's Next goes on to the footer.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
-	await page.waitForTimeout(800);
+	await settle(page, "get-started");
 	await page.locator("[data-next]").click({ force: true });
-	await page.waitForTimeout(1500);
+	await until(page, () => scrollY > 100 && (document.querySelector(".site-footer")?.getBoundingClientRect().top ?? 9999) < innerHeight);
 	const nextFooter = await page.evaluate(() => ({ y: scrollY, footer: Math.round(document.querySelector(".site-footer")?.getBoundingClientRect().top ?? 9999) }));
 	check("desktop: Next at the last stop reaches the footer", nextFooter.y > 100 && nextFooter.footer < 900, JSON.stringify(nextFooter));
-	await page.evaluate(() => scrollTo(0, 0));
+	await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
+	await frames(page);
 
-	// Past the last stop the page lets go: the footer is a scroll away.
+	// Past the last stop the page lets go: the footer is a scroll away. One
+	// real wheel event, so the browser's own scrolling is what is checked.
 	await page.keyboard.press("End");
-	await page.waitForTimeout(2200);
+	await settle(page, "get-started");
 	await page.mouse.move(700, 250);
 	await page.mouse.wheel(0, 400);
-	await page.waitForTimeout(800);
+	await until(page, () => scrollY > 100);
 	const below = await page.evaluate(() => scrollY);
 	check("scroll: past the last stop the wheel reaches the footer", below > 100, `scrollY ${below}`);
-	await page.evaluate(() => scrollTo(0, 0));
+	await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
 
 	// Leaving the trail (another design) leaves nothing of it behind.
 	await page.evaluate(() => {
 		document.documentElement.dataset.design = "broadsheet";
 	});
-	await page.waitForTimeout(300);
+	await until(page, () => !document.querySelector("[data-trail-page]")?.classList.contains("is-staged"));
 	await page.evaluate(() => document.dispatchEvent(new CustomEvent("hobo:motion")));
+	await frames(page);
 	const leftover = await page.evaluate(() => ({
 		pause: document.querySelector<HTMLElement>("[data-pause]")?.hidden,
 		staged: document.querySelector("[data-trail-page]")?.classList.contains("is-staged"),

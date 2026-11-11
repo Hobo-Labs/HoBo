@@ -865,30 +865,34 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 
 	// One gesture is one move, however long it runs on. A gesture ends when the
 	// wheel goes quiet, or when a dying stream rises again: a second flick.
-	// Listened for on the window, so a gesture that starts down at the footer
-	// is known for what it is when it reaches the trail.
+	//
+	// Two listeners. The window's only *watches* (passive, in the capture
+	// phase, so it sees a gesture that starts down at the footer before it
+	// reaches the trail) and never holds up the page's own scrolling. The
+	// trail's acts, and calls preventDefault only for an event it takes.
 	let lastWheel = Number.NEGATIVE_INFINITY;
 	let gesture = { acc: 0, fired: false, stepped: false, fromPage: false, peak: 0, last: 0 };
+	const wheelDelta = (e: WheelEvent) => (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 32 : 1);
 	addEventListener("wheel", (e) => {
-		const d = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 32 : 1);
-		const dir = Math.sign(d);
+		const d = Math.abs(wheelDelta(e));
 		const n = now();
-		if (startsGesture(n - lastWheel, Math.abs(d), gesture.last, gesture.peak)) {
+		if (startsGesture(n - lastWheel, d, gesture.last, gesture.peak)) {
 			gesture = { acc: 0, fired: false, stepped: false, fromPage: !atTop(), peak: 0, last: 0 };
 		}
 		lastWheel = n;
-		gesture.peak = Math.max(gesture.peak, Math.abs(d));
-		gesture.last = Math.abs(d);
-		const inside = e.target instanceof Node && page.contains(e.target);
+		gesture.peak = Math.max(gesture.peak, d);
+		gesture.last = d;
+	}, { capture: true, passive: true, signal });
+	page.addEventListener("wheel", (e) => {
+		const d = wheelDelta(e);
+		const dir = Math.sign(d);
 		// A gesture that began down at the footer only brings the trail back to
 		// where the reader left it. It never steps; the next gesture can.
 		if (gesture.fromPage) {
-			if (!inside) return;
 			e.preventDefault();
 			if (scrollY > 0) scrollBy({ top: d, behavior: "instant" });
 			return;
 		}
-		if (!inside) return;
 		// The rest of a gesture that already stepped belongs to that step.
 		if (gesture.stepped) {
 			e.preventDefault();
@@ -898,9 +902,10 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		const sign = e.target instanceof Element ? e.target.closest(".tst-world .tst-inner") : null;
 		if (sign && canScroll(dir, sign.scrollTop, sign.scrollHeight, sign.clientHeight)) return;
 		// A stop taller than its area is read first: the wheel scrolls it, and
-		// only a new gesture at its edge moves on.
+		// only a new gesture at its edge moves on. Not while it is still being
+		// handed over: a gesture then is a second flick, and steps on.
 		const box = reading();
-		if (atTop() && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
+		if (atTop() && !pageBusy && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
 			e.preventDefault();
 			box.scrollTop += d;
 			gesture.fired = true;
@@ -1278,6 +1283,10 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			c.node.style.transform = `translate3d(${cx}px,0,0)`;
 		}
 		routeDraw(dt);
+		// Whether the trail is travelling: a check waits for "still" instead of
+		// guessing how long a move takes on a loaded machine.
+		const travel = cam.moving || trip !== null || pageBusy ? "moving" : "still";
+		if (page.dataset.travel !== travel) page.dataset.travel = travel;
 		const end = atEnd();
 		if (end !== wasEnd) {
 			wasEnd = end;
@@ -1378,6 +1387,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		for (const c of clouds) c.node.style.transform = "";
 		page.classList.remove("is-staged");
 		delete page.dataset.mode;
+		delete page.dataset.travel;
 		route.hidden = true;
 		help.hidden = true;
 		pauseBtn.hidden = true;
