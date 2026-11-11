@@ -10,6 +10,7 @@ import {
 	type LabelLoad,
 	labelLoad,
 	lookupOrder,
+	MAX_FINISHED_LOOKUPS,
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
 	main,
@@ -25,8 +26,10 @@ import {
 	routeRunner,
 	runsJustAhead,
 	type SeenJob,
+	SLOW_PICKUP_MEMORY_SECONDS,
 	STALE_WAIT_SECONDS,
 	seenJobs,
+	slowestFinishedRunIds,
 	takingJobs,
 	unfinishedRunIds,
 } from "../ci/route-runner.mts";
@@ -113,7 +116,7 @@ describe("the load on a label", () => {
 		const jobs = [
 			taken("hobo", 20, 60),
 			taken("hobo", 1500, 300),
-			taken("hobo", 9000, RECENT_PICKUP_SECONDS + 1),
+			taken("hobo", 9000, SLOW_PICKUP_MEMORY_SECONDS + 1),
 			taken("hobo-trunk", 4000, 10),
 		];
 		assert.deepEqual(labelLoad(jobs, "hobo", NOW), {
@@ -122,6 +125,40 @@ describe("the load on a label", () => {
 			recentPickups: 2,
 			slowestRecentPickupSeconds: 1500,
 		});
+	});
+
+	// What happened: a probe was picked up at once, a run was sent to the
+	// fleet on that, and its jobs waited 17 minutes for runners.
+	it("holds a slow pickup against a label for longer than a pickup counts for it", () => {
+		const jobs = [
+			taken("hobo", 1020, RECENT_PICKUP_SECONDS + 600),
+			taken("hobo", 3, 30),
+		];
+		const load = labelLoad(jobs, "hobo", NOW);
+		assert.deepEqual(load, {
+			queued: 0,
+			oldestWaitSeconds: 0,
+			recentPickups: 1,
+			slowestRecentPickupSeconds: 1020,
+		});
+		assert.equal(takingJobs(load, limits), false);
+		// Once the slow pickup is past the memory, the quick one stands alone.
+		const later = NOW + SLOW_PICKUP_MEMORY_SECONDS * 1000;
+		assert.equal(
+			labelLoad(
+				[
+					...jobs,
+					{
+						...taken("hobo", 2, 0),
+						createdAtMs: later - 2000,
+						startedAtMs: later,
+					},
+				],
+				"hobo",
+				later,
+			).slowestRecentPickupSeconds,
+			2,
+		);
 	});
 });
 
@@ -199,7 +236,10 @@ describe("the routing decision", () => {
 			fleet: { ...up, slowestRecentPickupSeconds: 1500 },
 		});
 		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /recently took up to 1500 s to pick a job up/);
+		assert.match(
+			routed.reason,
+			/in the last 60 minutes took up to 1500 s to pick a job up/,
+		);
 	});
 
 	it("goes to GitHub-hosted, and says why, when no runner has been seen on the fleet", () => {
@@ -450,6 +490,92 @@ describe("reading GitHub's queue", () => {
 		assert.deepEqual(runsJustAhead(probePage, 51, NOW), [50, 49]);
 		// A run missing from the page is measured from now.
 		assert.deepEqual(runsJustAhead(probePage, 52, NOW), [51, 50, 49]);
+	});
+
+	it("picks the finished runs that took longest, within the slow-pickup memory", () => {
+		const finished = (id: number, started: number, ended: number) => ({
+			id,
+			status: "completed",
+			created_at: at(started),
+			updated_at: at(ended),
+		});
+		const page = {
+			workflow_runs: [
+				finished(1, 600, 120), // 8 minutes
+				finished(2, 2400, 300), // 35 minutes: a run something held up
+				finished(3, 700, 100), // 10 minutes
+				finished(4, 900, 60), // 14 minutes
+				finished(5, 500, 400), // short
+				// Finished before the memory began, however long it took.
+				finished(
+					6,
+					3 * SLOW_PICKUP_MEMORY_SECONDS,
+					SLOW_PICKUP_MEMORY_SECONDS + 5,
+				),
+				{ ...finished(7, 5000, 10), path: PROBE_WORKFLOW_PATH },
+				{
+					id: 8,
+					status: "in_progress",
+					created_at: at(4000),
+					updated_at: at(5),
+				},
+				{ id: 9, status: "completed", created_at: at(4000) },
+			],
+		};
+		assert.equal(MAX_FINISHED_LOOKUPS, 3);
+		assert.deepEqual(slowestFinishedRunIds(page, 99, NOW), [2, 4, 3]);
+		assert.deepEqual(slowestFinishedRunIds(page, 2, NOW), [4, 3, 1]);
+		assert.deepEqual(
+			slowestFinishedRunIds({ message: "Not Found" }, 1, NOW),
+			[],
+		);
+	});
+
+	it("finds a slow pickup in a run that has already finished", async () => {
+		const read: number[] = [];
+		const view = await observeQueue({
+			read: async (path) => {
+				const runId = Number(/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+				if (Number.isNaN(runId))
+					return {
+						workflow_runs: [
+							{
+								id: 20,
+								status: "completed",
+								created_at: at(2400),
+								updated_at: at(600),
+							},
+							{ id: 30, status: "completed", path: PROBE_WORKFLOW_PATH },
+						],
+					};
+				read.push(runId);
+				// The probe was taken at once; the real run's job waited 17 minutes.
+				const waited = runId === 30 ? 3 : 1020;
+				const ago = runId === 30 ? 30 : 1200;
+				return {
+					jobs: [
+						{
+							run_id: runId,
+							status: "completed",
+							labels: ["hobo"],
+							runner_name: "hobo-1",
+							created_at: at(ago + waited),
+							started_at: at(ago),
+						},
+					],
+				};
+			},
+			repository: "acme/app",
+			ownRunId: 40,
+			labels: ["hobo"],
+			limits,
+			nowMs: NOW,
+		});
+		assert.deepEqual(read, [30, 20]);
+		const load = labelLoad(view.jobs, "hobo", NOW);
+		assert.equal(load.recentPickups, 1);
+		assert.equal(load.slowestRecentPickupSeconds, 1020);
+		assert.equal(takingJobs(load, limits), false);
 	});
 
 	it("takes a run to have chosen once one of its jobs has finished", () => {

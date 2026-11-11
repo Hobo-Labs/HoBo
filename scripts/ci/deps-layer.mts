@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import {
 	access,
-	mkdir,
 	readdir,
 	readFile,
 	readlink,
@@ -85,7 +84,11 @@ async function linkPayload(): Promise<void> {
 	process.env.HOBO_CI_DEPS_LAYER = layer;
 	for (const source of await payloadNodeModules()) {
 		const destination = join(root, relative(payload, source));
-		await mkdir(dirname(destination), { recursive: true });
+		// A package the layer has and this checkout does not was dropped from
+		// the tree after the layer was built. Its directory is not brought
+		// back: one holding only `node_modules` is a package directory with
+		// none of a package's files, and the layout check fails on it.
+		if (!(await exists(dirname(destination)))) continue;
 		await rm(destination, { recursive: true, force: true });
 		await symlink(source, destination, "dir");
 	}

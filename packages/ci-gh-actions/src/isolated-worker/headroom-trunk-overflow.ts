@@ -1,4 +1,4 @@
-import { type Job, memoryAdmitHeadroom } from "@hobo/ci";
+import { type Job, type Lease, memoryAdmitHeadroom } from "@hobo/ci";
 import type { GithubTransport } from "../github.js";
 import { getJob, rerunWorkflowRun } from "../github.js";
 import { TRUNK_RUNNER_LABEL, servedRunnerLabel } from "../runner-labels.js";
@@ -32,7 +32,7 @@ export type HeadroomTrunkOverflowStore = Readonly<{
 		event: string,
 		at: string,
 		revision: number,
-	): Promise<void>;
+	): Promise<Lease | undefined>;
 	withdrawQueuedJob?(
 		job: Job,
 		at: string,
