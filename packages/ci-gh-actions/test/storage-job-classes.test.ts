@@ -21,6 +21,19 @@ describe("storage job classes", () => {
 		);
 	});
 
+	it("scales unmeasured inode budgets below class caps", () => {
+		const reserve = learnedStorageReserve(
+			undefined,
+			storageReserveForClass("heavy"),
+		);
+		expect(reserve.workRoot).toBeLessThan(
+			storageReserveForClass("heavy").workRoot,
+		);
+		expect(reserve.dockerDataRoot).toBeLessThan(
+			storageReserveForClass("heavy").dockerDataRoot,
+		);
+	});
+
 	it("waits when learned peaks exceed free bytes", () => {
 		const history = {
 			workRootBytes: [14e9, 15e9, 16e9],

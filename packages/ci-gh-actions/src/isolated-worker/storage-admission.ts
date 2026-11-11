@@ -17,7 +17,7 @@ export {
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
-const INODE_GRANT_GRACE_MS = 60_000;
+const INODE_GRANT_GRACE_MS = 15_000;
 
 export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
@@ -105,11 +105,45 @@ type StorageSample = Pressure &
 		index: number;
 	}>;
 
+type DeviceReserve = Readonly<{
+	device: number;
+	index: number;
+	root: string;
+	inodes: number;
+	bytes: number;
+}>;
+
 type StorageGrant = Readonly<{
 	grantedAtMs: number;
 	ffree: readonly number[];
 	bfree: readonly number[];
+	perDevice: readonly DeviceReserve[];
 }>;
+
+/** Shared-root stores: one device pool gets the max slice, not the sum of paths. */
+export function deviceReservesForSamples(
+	samples: readonly StorageSample[],
+): readonly DeviceReserve[] {
+	const groups = new Map<number, StorageSample[]>();
+	for (const entry of samples) {
+		const group = groups.get(entry.device) ?? [];
+		group.push(entry);
+		groups.set(entry.device, group);
+	}
+	const reserves: DeviceReserve[] = [];
+	for (const group of groups.values()) {
+		const first = group[0];
+		if (!first) continue;
+		reserves.push({
+			device: first.device,
+			index: first.index,
+			root: first.root,
+			inodes: Math.max(0, ...group.map((entry) => entry.reserveInodes)),
+			bytes: Math.max(0, ...group.map((entry) => entry.reserveBytes)),
+		});
+	}
+	return reserves;
+}
 
 type StorageReserveWait = Readonly<{
 	kind: "inode" | "disk";
@@ -224,57 +258,50 @@ export function createWorkerStorageAdmission(options: {
 	}
 
 	function reserveShortage(samples: readonly StorageSample[]) {
-		const groups = new Map<number, StorageSample[]>();
-		for (const entry of samples) {
-			const group = groups.get(entry.device) ?? [];
-			group.push(entry);
-			groups.set(entry.device, group);
-		}
+		const newReserves = deviceReservesForSamples(samples);
 		let oldest: StorageGrant | undefined;
 		for (const grant of grants.values())
 			if (!oldest || grant.grantedAtMs < oldest.grantedAtMs) oldest = grant;
-		for (const group of groups.values()) {
-			const first = group[0];
-			if (!first) continue;
-			const requiredInodes = group.reduce(
-				(total, entry) => total + entry.reserveInodes,
-				0,
-			);
-			const baselineInodes = oldest?.ffree[first.index] ?? first.ffree;
-			const outstandingInodes = Math.max(
-				0,
-				requiredInodes * grants.size - (baselineInodes - first.ffree),
-			);
-			if (
-				requiredInodes > 0 &&
-				first.ffree - outstandingInodes < requiredInodes
-			)
+		for (const required of newReserves) {
+			let committedInodes = 0;
+			let committedBytes = 0;
+			for (const grant of grants.values()) {
+				for (const slice of grant.perDevice) {
+					if (slice.device !== required.device) continue;
+					committedInodes += slice.inodes;
+					committedBytes += slice.bytes;
+				}
+			}
+			const sample = samples.find((entry) => entry.device === required.device);
+			if (!sample) continue;
+			const baselineInodes = oldest?.ffree[sample.index] ?? sample.ffree;
+			const inodeConsumption = Math.max(0, baselineInodes - sample.ffree);
+			const netReservedInodes = Math.max(0, committedInodes - inodeConsumption);
+			const headroomInodes = sample.ffree - netReservedInodes;
+			if (required.inodes > 0 && headroomInodes < required.inodes)
 				return {
 					kind: "inode",
-					root: first.root,
-					free: first.ffree,
-					outstanding: outstandingInodes,
-					required: requiredInodes,
+					root: required.root,
+					free: sample.ffree,
+					outstanding: netReservedInodes,
+					required: required.inodes,
 					activeGrants: grants.size,
 				} satisfies StorageReserveWait;
-			const requiredBytes = group.reduce(
-				(total, entry) => total + entry.reserveBytes,
+			const freeBytes = sample.bfree * sample.bsize;
+			const baselineBlocks = oldest?.bfree[sample.index] ?? sample.bfree;
+			const byteConsumption = Math.max(
 				0,
+				(baselineBlocks - sample.bfree) * sample.bsize,
 			);
-			const freeBytes = first.bfree * first.bsize;
-			const baselineBlocks = oldest?.bfree[first.index] ?? first.bfree;
-			const outstandingBytes = Math.max(
-				0,
-				requiredBytes * grants.size -
-					(baselineBlocks - first.bfree) * first.bsize,
-			);
-			if (requiredBytes > 0 && freeBytes - outstandingBytes < requiredBytes)
+			const netReservedBytes = Math.max(0, committedBytes - byteConsumption);
+			const headroomBytes = freeBytes - netReservedBytes;
+			if (required.bytes > 0 && headroomBytes < required.bytes)
 				return {
 					kind: "disk",
-					root: first.root,
+					root: required.root,
 					free: freeBytes,
-					outstanding: outstandingBytes,
-					required: requiredBytes,
+					outstanding: netReservedBytes,
+					required: required.bytes,
 					activeGrants: grants.size,
 				} satisfies StorageReserveWait;
 		}
@@ -286,6 +313,7 @@ export function createWorkerStorageAdmission(options: {
 			grantedAtMs: now(),
 			ffree: samples.map((entry) => entry.ffree),
 			bfree: samples.map((entry) => entry.bfree),
+			perDevice: deviceReservesForSamples(samples),
 		});
 		reserveEpisode = false;
 		return true;

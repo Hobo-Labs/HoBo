@@ -156,27 +156,25 @@ function freeInodes(ffree: number): WorkerFileSystemStats {
 }
 
 describe("worker storage admission", () => {
-	it("reserves both roots' inode growth on a shared device", async () => {
+	it("dedupes shared-device inode reserves and bins packs concurrent jobs", async () => {
 		const log = vi.fn();
 		const h = harness({
-			before: freeInodes(500_000),
+			before: freeInodes(497_710),
 			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
 			log,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
-		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
-		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
-		const waits = log.mock.calls.filter(
-			([event]) => event === "hobo_ci_inode_reserve_wait",
-		);
-		expect(waits).toHaveLength(1);
-		expect(waits[0]?.[1]).toEqual({
-			root: DOCKER_ROOT,
-			freeInodes: 500_000,
-			outstandingInodes: 370_000,
-			requiredInodes: 370_000,
-			activeGrants: 1,
-		});
+		await expect(
+			h.admission.admit(
+				[{ id: "lease-1", sandboxName: "", jobId: "job-1" }],
+				"job-2",
+			),
+		).resolves.toBe(true);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_inode_reserve_wait",
+			),
+		).toHaveLength(0);
 	});
 
 	it("subtracts consumption since the oldest grant from outstanding growth", async () => {
@@ -222,24 +220,29 @@ describe("worker storage admission", () => {
 	it("expires a grant without an active lease after the grace period", async () => {
 		let nowMs = 0;
 		const h = harness({
-			before: freeInodes(500_000),
+			before: freeInodes(380_000),
 			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
 			now: () => nowMs,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
-		nowMs = 60_000;
+		nowMs = 15_000;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
-		nowMs = 60_001;
+		nowMs = 15_001;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
 	});
 
 	it("refuses a second release job when byte headroom is short", async () => {
 		const log = vi.fn();
 		const releaseReserve = storageReserveForJob("Publish GitHub Pages (site/)");
+		const neededBytes = Math.max(
+			releaseReserve.workRootBytes,
+			releaseReserve.dockerDataRootBytes,
+		);
+		const bfree = Math.floor(neededBytes / 4096) + 500_000;
 		const h = harness({
 			before: {
-				blocks: 20_000_000,
-				bfree: 12_000_000,
+				blocks: bfree + 1_000_000,
+				bfree,
 				files: 2_000_000,
 				ffree: 1_500_000,
 				bsize: 4096,

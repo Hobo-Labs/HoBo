@@ -360,7 +360,7 @@ which GitHub Pages serves ("Deploy from a branch"). Two things push it:
   next green run; it never publishes a commit older than the one already live. To
   publish `main` without waiting for a push, run the **HoBo release** workflow from
   `main` with **`publish_pages`** ticked. See
-  [finding 100](../docs/ci/findings/0100-a-failed-pages-deploy-was-never-retried.md)
+  [finding 101](../docs/ci/findings/0101-a-failed-pages-deploy-was-never-retried.md)
   for why it works this way.
 - **`pnpm run site:deploy`**, by hand, below.
 

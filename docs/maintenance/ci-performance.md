@@ -9,7 +9,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   13941 MiB, so three mixed classes can fit but three heavy jobs cannot. Job preflight derives the Node heap,
   serial turbo and `HOBO_TEST_MAX_WORKERS` from the admitted container limit; CI never exports
   `VITEST_MAX_WORKERS`, preserving single-worker config pins. Byte or inode usage above 85% triggers safe
-  pruning before admission, and usage above 95% after pruning leaves the job queued.
+  pruning before admission, and usage above 95% after pruning leaves the job queued. Inode and byte
+  grants bin-pack against live `statfs` headroom (shared-root dedupe, measured peaks, 15s grant release);
+  idle JIT listeners release after three minutes when the fleet mesh already holds the
+  job, or after ten minutes when GitHub never assigns work
+  ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
