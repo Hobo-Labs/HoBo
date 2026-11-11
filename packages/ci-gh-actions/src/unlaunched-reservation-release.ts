@@ -71,10 +71,7 @@ export function unlaunchedReservationAgeMs(
 }
 
 function fleetWitnessFromReleaseContext(
-	context: Pick<
-		UnlaunchedReleaseContext,
-		"fleetWitness" | "nonLocalFreeSlots"
-	>,
+	context: Pick<UnlaunchedReleaseContext, "fleetWitness" | "nonLocalFreeSlots">,
 ): FleetCapacityWitness | undefined {
 	if (context.fleetWitness) return context.fleetWitness;
 	if (context.nonLocalFreeSlots === undefined) return undefined;

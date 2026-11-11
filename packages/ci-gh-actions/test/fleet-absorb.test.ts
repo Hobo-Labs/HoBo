@@ -6,9 +6,7 @@ import {
 
 describe("fleet absorb", () => {
 	it("treats arc slots as peer capacity", () => {
-		expect(
-			fleetPeerAbsorbSlots({ hoboFreeSlots: 0, arcFreeSlots: 2 }),
-		).toBe(2);
+		expect(fleetPeerAbsorbSlots({ hoboFreeSlots: 0, arcFreeSlots: 2 })).toBe(2);
 		expect(fleetCanAbsorbUnlaunchedRelease({ arcFreeSlots: 1 })).toBe(true);
 	});
 

@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
 	evaluateMainTrunkFleetDefer,
-	trunkWaitFleetDeferEligible,
 	type TrunkWaitState,
+	trunkWaitFleetDeferEligible,
 } from "../src/trunk-wait.js";
 
 const deferMs = 45_000;
 const nowMs = 100_000;
 
-const wait = (reason: TrunkWaitState["reason"], ageMs: number): TrunkWaitState => ({
+const wait = (
+	reason: TrunkWaitState["reason"],
+	ageMs: number,
+): TrunkWaitState => ({
 	sinceMs: nowMs - ageMs,
 	logged: true,
 	reason,

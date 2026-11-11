@@ -47,18 +47,21 @@ export type TrunkFleetDeferDecision = Readonly<{
 	waitReason?: TrunkWaitReason;
 	waitedMs: number;
 	holdReason?: string;
-}> & FleetWitnessFields;
+}> &
+	FleetWitnessFields;
 
-export function evaluateMainTrunkFleetDefer(input: Readonly<{
-	jobName: string | undefined;
-	isMainTrunkJob: boolean;
-	priorWait: TrunkWaitState | undefined;
-	deferMs: number;
-	nowMs: number;
-	trunkSlots: number | undefined;
-	localTrunkReserved: number;
-	fleetWitness: FleetCapacityWitness | undefined;
-}>): TrunkFleetDeferDecision {
+export function evaluateMainTrunkFleetDefer(
+	input: Readonly<{
+		jobName: string | undefined;
+		isMainTrunkJob: boolean;
+		priorWait: TrunkWaitState | undefined;
+		deferMs: number;
+		nowMs: number;
+		trunkSlots: number | undefined;
+		localTrunkReserved: number;
+		fleetWitness: FleetCapacityWitness | undefined;
+	}>,
+): TrunkFleetDeferDecision {
 	const fields = fleetWitnessFields(input.fleetWitness);
 	const waitedMs = input.priorWait
 		? Math.max(0, input.nowMs - input.priorWait.sinceMs)

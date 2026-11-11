@@ -303,7 +303,9 @@ export class HostedRelay {
 			headroomFleetDeferMs?: number;
 			fleetCapacity?: Readonly<{
 				publish: FleetCapacityPublisher["publish"];
-				snapshot: () => Promise<FleetCapacityWitness & { hoboFreeSlots: number }>;
+				snapshot: () => Promise<
+					FleetCapacityWitness & { hoboFreeSlots: number }
+				>;
 			}>;
 			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
 			offlineJitRecovery?: OfflineJitJobRecovery;
@@ -1587,9 +1589,7 @@ export class HostedRelay {
 								});
 								this.logTrunkFleetDeferDecision(job, postDecision);
 								if (postDecision.action === "defer") {
-									waitingTrunk.add(
-										this.reportTrunkWait(job, "fleet-capacity"),
-									);
+									waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
 								}
 							}
 						}
