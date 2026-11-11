@@ -1,3 +1,4 @@
+import pg from "pg";
 import { describe, expect, it, vi } from "vitest";
 import {
 	databaseConnection,
@@ -179,9 +180,6 @@ describe("repair PostgreSQL connections", () => {
 
 	it("verifies against a configured certificate authority and never disables verification", () => {
 		const url = "postgres://u:p%40ss@db.example:6543/app?sslmode=require&x=1";
-		expect(databaseConnection(url, undefined)).toEqual({
-			connectionString: url,
-		});
 		const ca = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----";
 		const settings = databaseConnection(url, ca);
 		// sslmode in the string would replace the ssl object, so it is removed.
@@ -196,6 +194,116 @@ describe("repair PostgreSQL connections", () => {
 		expect(() => databaseConnection("not a url", ca)).toThrow(
 			"invalid database URL",
 		);
+	});
+
+	describe("without a configured certificate authority", () => {
+		const base = "postgres://u:p%40ss@db.example:6543/app";
+		/** What `pg` itself makes of the settings: its own parse, its own client. */
+		const effective = (url: string) => {
+			const settings = databaseConnection(url, undefined);
+			const client = new pg.Client(settings);
+			return {
+				connectionString: settings.connectionString,
+				ssl: client.connectionParameters.ssl,
+				host: client.connectionParameters.host,
+				password: client.connectionParameters.password,
+			};
+		};
+		/** TLS against the system trust store with the hostname checked: no
+		 * `rejectUnauthorized: false`, no replaced identity check, no pinned CA. */
+		const verifyFull = {};
+
+		for (const mode of ["prefer", "require", "verify-ca"])
+			it(`gives sslmode=${mode} verify-full semantics instead of passing it to pg`, () => {
+				expect(effective(`${base}?sslmode=${mode}&x=1`)).toEqual({
+					connectionString: `${base}?sslmode=verify-full&x=1`,
+					ssl: verifyFull,
+					host: "db.example",
+					password: "p@ss",
+				});
+				// libpq compatibility is how pg gives these modes their weaker
+				// meaning today: `require` and `prefer` accept any certificate, and
+				// `verify-ca` skips the hostname (and refuses to start without a CA).
+				for (const query of [
+					`sslmode=${mode}&uselibpqcompat=true`,
+					`uselibpqcompat=true&sslmode=${mode}`,
+				])
+					expect(effective(`${base}?${query}`)).toMatchObject({
+						connectionString: `${base}?sslmode=verify-full`,
+						ssl: verifyFull,
+					});
+			});
+
+		it("shows what the unchanged string would have meant to pg", () => {
+			// The control for the cases above: the same strings, handed to pg as
+			// they are, switch verification off.
+			for (const query of [
+				"sslmode=require&uselibpqcompat=true",
+				"sslmode=prefer&uselibpqcompat=true",
+				"sslmode=no-verify",
+				"ssl=no-verify",
+			])
+				expect(
+					new pg.Client({ connectionString: `${base}?${query}` })
+						.connectionParameters.ssl,
+					query,
+				).toEqual({ rejectUnauthorized: false });
+		});
+
+		it("never lets a string switch verification off", () => {
+			for (const query of [
+				"sslmode=no-verify",
+				"ssl=no-verify",
+				"ssl=no-verify&sslmode=disable",
+				"sslmode=allow",
+				"sslmode=REQUIRE",
+				// pg takes the last of a repeated parameter.
+				"sslmode=verify-full&sslmode=require&uselibpqcompat=true",
+				"sslmode=require&sslmode=verify-full&uselibpqcompat=true",
+				"sslmode=disable&sslmode=prefer&uselibpqcompat=true",
+				"ssl=true&ssl=no-verify",
+			]) {
+				const { connectionString, ssl } = effective(`${base}?${query}`);
+				expect(ssl, query).toEqual(verifyFull);
+				expect(connectionString, query).toBe(`${base}?sslmode=verify-full`);
+			}
+			// `ssl=true` is already TLS with full verification in pg; only the
+			// compatibility switch goes.
+			expect(effective(`${base}?ssl=true&uselibpqcompat=true`)).toMatchObject({
+				connectionString: `${base}?ssl=true`,
+				ssl: true,
+			});
+		});
+
+		it("leaves a string that is already strict, or asks for no TLS, exactly as it was", () => {
+			for (const query of [
+				"",
+				"?x=1",
+				"?sslmode=verify-full",
+				"?sslmode=verify-full&application_name=hobo%20ci",
+				"?sslmode=disable",
+				"?ssl=true",
+			]) {
+				const url = `${base}${query}`;
+				expect(databaseConnection(url, undefined), query).toEqual({
+					connectionString: url,
+				});
+			}
+			expect(effective(`${base}?sslmode=verify-full`).ssl).toEqual(verifyFull);
+			expect(effective(`${base}?sslmode=disable`).ssl).toBe(false);
+			expect(effective(base).ssl).toBe(false);
+		});
+
+		it("refuses a string it cannot inspect", () => {
+			for (const value of [
+				"not a url",
+				"",
+				"//db.example/app?sslmode=no-verify",
+			])
+				expect(() => databaseConnection(value, undefined), value).toThrow(
+					"invalid database URL",
+				);
+		});
 	});
 
 	it("commits a unique marker and removes it after confirming the same database and role", async () => {

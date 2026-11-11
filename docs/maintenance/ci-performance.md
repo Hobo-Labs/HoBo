@@ -156,9 +156,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   the live tests skip themselves when their variable is missing, so the step ends with
   `data-live-servers.mts verify`, which reads the run's output and fails unless each of the five
   packages printed a summary and no test in it was skipped, failed or left todo. The start step
-  prints the server versions and addresses the run was against. These packages read the root vitest
-  config, which does not apply `HOBO_TEST_MAX_WORKERS`, so the step passes the cap to vitest as
-  `VITEST_MAX_WORKERS`. The job is scoped like `artifact-trust` (below) to the live test files, so a
+  prints the server versions and addresses the run was against. Four of these packages run under the root
+  vitest config and `packages/trails` under its own; both apply `HOBO_TEST_MAX_WORKERS` through
+  `capVitestWorkers`. The step used to export the cap as `VITEST_MAX_WORKERS`, which Vitest lets
+  override every config (single-worker pins included) and which `scripts/test/memory-env.test.ts`
+  forbids in any workflow. The job is scoped like `artifact-trust` (below) to the live test files, so a
   pull request that cannot reach the data engines frees the slot after checkout
   (`scripts/test/job-scope.test.ts` pins the entry list and checks it against the repository, so
   changing the entries means changing that test); the nightly schedule
@@ -278,8 +280,9 @@ file's root-config cases list by name the packages whose vitest config merges th
 says which list to edit. Nothing in CI runs this test file: `test:root` runs only `test/`, the unit
 lanes skip `node:test` files, `scripts/relevant-check-policy.ts` selects `read-stdin.test.ts` and
 `job-scope.test.ts` for a planner change but not this file, and `test:scripts` is in no workflow. Run
-it by hand after changing the planner: `node --test scripts/test/dependent-tests.test.ts`, with
-`turbo` on `PATH` for the one case that reads the real turbo graph. The edge is dropped
+it by hand after changing the planner: `node --import tsx --test scripts/test/dependent-tests.test.ts`
+(or `pnpm run test:scripts` for the whole directory), with `turbo` on `PATH` for the two cases that
+read the real turbo graph. The edge is dropped
 only where the literal is provably a string test: the first argument of `startsWith`, `endsWith`,
 `includes`, `replace` or `replaceAll` (what is searched for), an operand of `===`, `!==`, `==` or
 `!=`, or a `case` label. Everywhere else it stays (`new URL("../", import.meta.url)` with or without a
@@ -441,6 +444,95 @@ done; running: <file> (<age>s)`, so a stuck file is named while it is stuck. A h
 late on the wall clock but not on the monotonic one prints `the host was paused for about Ns`, which
 places the pause in the log. The run ends with the ten slowest files. If the step dies with no summary,
 the last heartbeat names what was running. If the log just stops, the box itself stopped.
+
+## Gate steps that failed for their own reasons
+
+Four steps in `hobo-ci.yml` failed runs whose change was fine. Each has a test in
+`scripts/test/merge-group-gate.test.ts` or `scripts/test/ci-deps-image-contract.test.ts` that runs the
+step's own shell or loads what the step loads.
+
+- **Cold dev loop without the worker image.** `dev-cold-loop-gate` picked the worker image or an
+  `unshare --net` namespace by `runner.environment`. An overflow runner reports itself self-hosted and
+  has no `hobo-ci-worker:local`, so `docker run` failed there. The step now asks Docker
+  (`docker image inspect`) and uses the namespace whenever the image is absent, on any runner.
+- **Main's S0 step window.** "S0 gate set" had 12 minutes on main and 20 in the merge group for the
+  same commands on the same runners, so a commit the queue had passed could time out on main. Both
+  are 20; on a push that equals the job's own limit.
+- **The deps layer job loads its test without an install.** `ci-deps-image` runs
+  `scripts/test/ci-deps-image-mount.test.ts` under `node --experimental-strip-types` with no
+  `pnpm install`. The test imported `storage-admission.ts`, which imports `zod`, so the step ended in
+  `ERR_MODULE_NOT_FOUND` before Docker ran. #1792 moved the node:fs job-directory operations to
+  `packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts` (node builtins only, re-exported
+  by `storage-admission.ts`), which the test imports. The job's path filter did not list that file, so
+  a PR that broke it skipped the job; it now does. The contract test walks the test's import graph,
+  refuses a package import anywhere in it, requires every file in it to be in the path filter, and runs
+  the test in a copy of those files with no `node_modules`.
+- **DCO check.** The step listed `origin/<base>..HEAD` including merge commits (the PR merge ref and
+  an update-branch merge are made by GitHub and carry no sign-off), and ran without
+  `set -euo pipefail`, so a `git rev-list` that failed read as zero commits and passed. It now lists
+  with `--no-merges` into a variable first, and greps a variable instead of a pipe (an early `grep -q`
+  exit under `pipefail` would read as a missing sign-off).
+
+Two script tests were wrong about the tree they guard:
+
+- **Single-worker pins are read under `CI`.** `scripts/test/memory-env.test.ts` holds every Vitest
+  config that pins one worker to `capVitestWorkers(1)`. `packages/hobo/vitest.config.ts` set
+  `fileParallelism: false` (one worker, whatever `maxWorkers` says) next to
+  `capVitestWorkers(process.env.CI ? 2 : undefined)`, which never took effect; it now says
+  `capVitestWorkers(1)`. `packages/cli/vitest.config.ts` pins one worker in CI only, a form the test
+  did not recognise while still listing that config as required, so it failed behind the first
+  failure. The test now loads the configs with `CI` set and accepts both forms.
+- **Git-fixture cases get 30 s.** Three cases in `scripts/test/stage-release-oci-app.test.ts` only
+  spawn git against a fresh repository (no remote, no network), and such cases passed the 10 s default
+  on a loaded runner.
+
+## Running the scripts tests
+
+`pnpm run test:scripts` runs every `scripts/test/*.test.ts` file and exits 0 on a healthy tree. It
+is `scripts/run-tests.ts --category=scripts`: the Vitest-style files run in one Vitest process, then
+the `node:test`-style files run under `node --import tsx --test`, and a failure in the first no longer
+skips the second. A file is `node:test`-style when it imports `node:test` (`isNodeTestFile`), whatever
+else it imports. The script used to hand the whole directory to `node --test`, which cannot load a
+Vitest-style file, so it reported one failure per such file (25 of them) on any tree and nobody could
+use it as a gate.
+
+No workflow and no commit hook runs that lane. CI names single files instead: `hobo-ci.yml` runs a
+few `node:test` files with `node --import tsx --test`, `release-hobo.yml` runs its Vitest-style files
+with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four sets by changed path.
+`scripts/test/script-test-runners.test.ts` holds each of those invocations to the runner
+`test:scripts` gives the same file.
+
+## Checks that went stale on main
+
+No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these
+checks failed on main before anyone saw them:
+
+- **`actions:lint` on the real workflows.** `main_gate_finish`'s second checkout lacked
+  `clean: false` (a box checkout at the default path must set it). The lint's tests only linted
+  fixtures; `lint-actions-runner.test.ts` now also runs it on the repository.
+- **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
+  `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
+  `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads
+  each job's `needs`: the required PR jobs and `main-gate` must not wait for the image even through
+  another job, exactly `main-gate-plan` and `main_workspace_tests` do, and neither is gated on the
+  deps job's result, so a failed deps job leaves the shards to install for themselves.
+- **Deps layout recipe digest.** `DEPS_LAYOUT.recipeSha256` was last right at #1741. #1740, #1747,
+  #1816 and #1792 edited `build-deps.sh` only: disk and inode headroom checks before a rebuild, an
+  unused-image GC when headroom is short, and resolving the toolchain image when it is not in the
+  Docker context. The Dockerfile and the bucket
+  script are unchanged, so image contents and paths are too: the digest is updated and
+  `DEPS_LAYOUT.version` stays 1, which leaves the deps key and every existing layer as they were.
+- **Repo-wide shard plan.** #1840 made `shardTestPlan` read the real `turbo run test --dry=json`
+  graph for a repo-wide plan, while its test passes an in-memory tree of five fixture packages, so the
+  real graph's packages were all "undiscovered". The graph is now a parameter (`TestGraph`, as
+  `planCommands` already takes), defaulting to turbo. The test gives the fixture tree its own graph,
+  and a second case partitions the real workspace list against the real graph.
+- **Two memory-env checks after #1792 and #1833.** `scripts/test/memory-env.test.ts` read a
+  hand-kept workflow list that still named `release-code.yml`, which #1772 deleted; it now checks
+  every file in `.github/workflows/`. And #1833's live data lane exported `VITEST_MAX_WORKERS`, which
+  Vitest lets override every config and the same test forbids in a workflow. The root vitest config
+  and `packages/trails`'s now apply `HOBO_TEST_MAX_WORKERS` through `capVitestWorkers` themselves, so
+  the lane no longer exports anything.
 
 ## The cli package's test cost
 

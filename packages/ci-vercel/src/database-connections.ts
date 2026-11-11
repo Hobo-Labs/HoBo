@@ -75,13 +75,24 @@ const TLS_PARAMETERS = [
 	"uselibpqcompat",
 ];
 
-/** Pool settings for one connection string. A provider whose server
- * certificate chains to its own root (Supabase, Amazon RDS) needs that root:
- * `HOBO_CI_DATABASE_CA_CERT` carries the PEM and the certificate is then
- * verified against it. Verification is never switched off. */
+/** Pool settings for one connection string. Verification is never switched
+ * off, with or without a configured certificate authority.
+ *
+ * A provider whose server certificate chains to its own root (Supabase, Amazon
+ * RDS) needs that root: `HOBO_CI_DATABASE_CA_CERT` carries the PEM, the
+ * string's own TLS parameters are dropped, and the certificate is verified
+ * against it.
+ *
+ * Without one, a string that asks for TLS gets `verify-full`: the system trust
+ * store and a hostname check. `sslmode=prefer`, `require` and `verify-ca` mean
+ * less than that in libpq, and `pg` gives them the libpq meaning under
+ * `uselibpqcompat=true` today and by default from its next major, where
+ * `require` accepts any certificate. `sslmode=no-verify` and `ssl=no-verify`
+ * say so outright. None of them reaches `pg`: the mode is rewritten to
+ * `verify-full` and `uselibpqcompat` is dropped. `sslmode=disable` and a
+ * string with no TLS parameter still mean a connection without TLS. */
 export function databaseConnection(url: string, ca: string | undefined) {
-	if (!ca) return { connectionString: url };
-	if (!ca.includes("-----BEGIN CERTIFICATE-----"))
+	if (ca && !ca.includes("-----BEGIN CERTIFICATE-----"))
 		throw new Error("HOBO_CI_DATABASE_CA_CERT is not a PEM certificate");
 	let parsed: URL;
 	try {
@@ -89,8 +100,28 @@ export function databaseConnection(url: string, ca: string | undefined) {
 	} catch {
 		throw new Error("invalid database URL");
 	}
-	for (const name of TLS_PARAMETERS) parsed.searchParams.delete(name);
-	return { connectionString: parsed.toString(), ssl: { ca } };
+	const query = parsed.searchParams;
+	if (ca) {
+		for (const name of TLS_PARAMETERS) query.delete(name);
+		return { connectionString: parsed.toString(), ssl: { ca } };
+	}
+	// `pg` takes the last of a repeated parameter, so every occurrence counts.
+	const modes = query.getAll("sslmode");
+	const unverified = query.getAll("ssl").includes("no-verify");
+	const strict = modes.every((mode) => mode === "disable")
+		? "disable"
+		: "verify-full";
+	if (
+		!unverified &&
+		!query.has("uselibpqcompat") &&
+		(modes.length === 0 || (modes.length === 1 && modes[0] === strict))
+	)
+		return { connectionString: url };
+	query.delete("uselibpqcompat");
+	if (unverified) query.delete("ssl");
+	if (unverified || modes.length > 0)
+		query.set("sslmode", unverified ? "verify-full" : strict);
+	return { connectionString: parsed.toString() };
 }
 
 /** One address pattern that identifies a transaction-mode pooler. Every field

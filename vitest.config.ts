@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { capVitestWorkers } from "./scripts/ci/vitest-max-workers.mts";
 
 export default defineConfig({
   test: {
@@ -7,6 +8,11 @@ export default defineConfig({
     isolate: false,
     fileParallelism: true,
     pool: "threads",
+    // The CI job's memory-derived cap (HOBO_TEST_MAX_WORKERS); unset, Vitest's
+    // default. A package with no config of its own runs under this one, so this
+    // is how it honours the cap. CI never exports VITEST_MAX_WORKERS: Vitest
+    // lets that override every config, single-worker pins included.
+    maxWorkers: capVitestWorkers(undefined),
     // Warm the shared wasmtime toolchain cache once per run so wasm tests on
     // throwaway HOBO_HOME dirs don't each re-download under parallel load.
     // Absolute: vitest resolves globalSetup against the project root (cwd),
