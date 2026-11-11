@@ -228,12 +228,19 @@ move on, and its foot fades while there is more below. On a short desktop the ba
 gives back height first, and the stop's road sign stands beside Bo instead of over
 his head, clear of the trail marker's labels. A phone sign never rises under the
 trail marker; one taller than the sky scrolls inside its frame and keeps vertical
-swipes for that, while a short one passes them to the trail. Past the last stop,
-Next, the wheel and a swipe all go on to the footer.
+swipes for that, while a short one passes them to the trail. The comparison on
+the Compare stop keeps all four columns on a phone sign: the table scrolls sideways
+inside the sign with the product names held in place, its right edge fades while
+columns are still hidden (`data-more`, from `moreSides` in `trail-logic.ts`), and
+an up-or-down swipe that starts on it still moves the trail (`touch-action: pan-x`,
+as on the code sign). Past the last stop, Next, the wheel and a swipe all go on to
+the footer.
 
 **Checked as built.** `pnpm run landing:verify-dist` serves `dist/` and checks every
 stop at 900×560, 1024×600, 1280×620, 1366×657 and 1440×900 (nothing above its box,
 every link reachable and uncovered when focused), every phone sign at 390×844,
+every header and cell of the comparison reachable and uncovered on a phone sign at
+390×844 and 360×740 with no sideways page scroll,
 focus on moving on, the URL and hash, wheel gestures and swipes, the footer past
 the last stop, and teardown. It never guesses how long a move takes: the trail
 page carries `data-travel="moving|still"`, and each check waits for "still" (and
