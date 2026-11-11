@@ -195,7 +195,9 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(ran.stdout).toContain(
 			`to Vercel project hobo-ci, scope ${TEAM}, target preview`,
 		);
-		expect(ran.stdout).toContain("CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256,");
+		expect(ran.stdout).toContain(
+			"CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256,",
+		);
 		expect(ran.stdout).toContain(`3. POST /v13/deployments?teamId=${TEAM}`);
 		expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
 	});
