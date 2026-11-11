@@ -1572,10 +1572,13 @@ describe("relay MCP journal bounds", () => {
 		expect(types(recent)).toEqual(seeded);
 		expect(recent.truncated).toBe(false);
 
-		// Far more of a neighbour's rows than a bounded look along the journal
-		// ever covered (10,000) now lie between the account's first events and
-		// its next one.
-		await neighbourWrites(h, 20_000);
+		// More of a neighbour's rows than a bounded look along the journal ever
+		// covered (10,000) now lie between the account's first events and its
+		// next one: 1,500 above plus 8,600 here. Just past the bound is enough
+		// to catch a bounded scan coming back; each write commits on its own,
+		// so seeding twice that many made this test mostly setup and pushed it
+		// past its timeout when every package's tests ran at once.
+		await neighbourWrites(h, 8_600);
 		await h.store.queue(job(9), LATER, h.revision);
 		const newest = Events.parse(
 			(await a.call("list_events")).structuredContent,
