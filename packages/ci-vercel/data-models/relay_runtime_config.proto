@@ -28,4 +28,8 @@ message RelayRuntimeConfig {
   string hobo_ci_webhook_secret = 18 [json_name = "HOBO_CI_WEBHOOK_SECRET"];
   string hobo_ci_github_app_client_id = 19 [json_name = "HOBO_CI_GITHUB_APP_CLIENT_ID"];
   string hobo_ci_github_app_client_secret = 20 [json_name = "HOBO_CI_GITHUB_APP_CLIENT_SECRET"];
+  // The key the hosted relay derives each Sandbox proxy session token from
+  // (an HMAC of the lease id): 32 random bytes, base64url. Required when
+  // HOBO_CI_SANDBOX_ENABLED is set; nothing about a token is stored.
+  optional string hobo_ci_sandbox_proxy_token_key = 21 [json_name = "HOBO_CI_SANDBOX_PROXY_TOKEN_KEY"];
 }

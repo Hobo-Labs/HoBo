@@ -10,14 +10,20 @@ tags: [hobo, design, ci, relay, twelve-factor]
 
 **Status:** design accepted as
 [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179), amended on 2026-11-11
-with [Options routed by budget](#options-routed-by-budget). Phase 1 of the
-[delivery plan](#delivery-plan) is this document; phases 2 and 2b (the cache
-port and its Upstash, Valkey, in-memory and Turso bindings) are implemented,
-and the relay does not use them yet; phase 6 (deployment from a Yard, and the
-deploy workflow on `main`) is implemented and exercised against fakes only
-([status](#deployment-through-hobo)). Until phase 7 lands, the relay still runs on PostgreSQL as
-[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) describes, and those
-sections are marked superseded.
+with [Options routed by budget](#options-routed-by-budget). Implemented so far
+([delivery plan](#delivery-plan)): the cache port and its Upstash, Valkey,
+in-memory and Turso bindings (phases 2 and 2b), the config-service
+client (phase 3), the relay store on the cache (phase 4a) and, in phase 4b, the
+relay composed on them with no database: config and secrets from the config
+service, per-job state in the cache, webhook intake and per-lease steps on
+Vercel Queues ([The stateless relay](../../packages/ci-vercel/README.md#the-stateless-relay)),
+and phase 6, deployment from a Yard with the deploy workflow on `main`
+([status](#deployment-through-hobo)).
+None of it has been deployed or run against Vercel, Upstash, Infisical or
+GitHub. The PostgreSQL code stays in the tree, off the relay's path, until
+phase 7 removes it; the sections of
+[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) that describe it are
+marked superseded.
 
 ## Why
 
@@ -731,8 +737,8 @@ repository variables it ends with a notice. One step stays with the owner:
 installing the Upstash integration on the team, because Vercel accepts an
 integration's terms only from a person
 ([owner steps](../../packages/ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)).
-The Bindle's `data` resource is still declared until phase 7 rewrites
-`src/bindle.ts`.
+The Bindle declares the cache (`kv`) and the config service (`secret`) in
+place of the database since phase 4b.
 
 **Pay only for what is used.** The relay's deployment includes only what it
 uses. Neon and its Vercel integration and the Neon-hosted config broker are
@@ -754,9 +760,27 @@ on its free plan.
 | 4d | The Workflows lifecycle driver on Vercel's managed World (exactly-once starts by hook token, `resumeHook` from verified webhooks, `sleep()` timeouts), built through a Nitro entry in `@hobo/ci-vercel` or a custom `BaseBuilder`; `workflow` ≥ 5.4.0 (pinnable from 2026-11-18) and `zod` ≥ 4.5; driver chosen per job at admission. Not before 2026-11-18 | A job runs end to end on each driver; switching drivers leaves in-flight jobs on theirs; a repeated start for one job attempt yields one run |
 | 4e | The degraded GitHub-only floor | Duplicate JIT runner names verified against the real API (409 or not); with every cache unreachable, a duplicated delivery still provisions once |
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision |
-| 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository. **Yard, Camps, planning, workflow and provisioning implemented ([status](#deployment-through-hobo)); not yet run live, and the Bindle's rewrite is phase 7's** |
+| 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository. **Yard, Camps, planning, workflow and provisioning implemented ([status](#deployment-through-hobo)); not yet run live** |
 | 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
+
+**Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
+4b: `composeStatelessRelay` in `@hobo/ci-vercel`: the cache backend chosen from
+the deployment's bindings (Upstash REST, then Valkey; in memory only off Vercel)
+behind one seam, `selectCacheBackend`, with every command metered against a
+monthly allowance; intake on the `hobo-ci-intake` topic keyed by delivery id;
+per-lease steps on `hobo-ci-lease-steps` keyed `${leaseId}:${step}:${n}`, each
+rung at a fixed offset from the lease's creation so chains of one lease
+collapse; the 15-minute repair tick as backstop with a rebuild pass for lost
+holds; the control plane's configuration writes answering 410. End-to-end tests
+on the in-memory cache cover a Sandbox job from webhook to settlement,
+duplicate deliveries provisioning once, and the cache wiped mid-job (the lease
+rebuilt by name, the running job adopted rather than stopped). Still open:
+policy-driven cache selection (4c); settling a rebuilt Sandbox lease, whose
+proxy meters were in the lost cache (it stays `uncertain` until its record
+lapses); name uniqueness at GitHub and Vercel verified live. A Sandbox job
+costs 99 cache commands through the whole composition, against the estimate of
+about 45 above; the store's own path dropped from 62 to 43.
 
 ### Phase 7 removals
 

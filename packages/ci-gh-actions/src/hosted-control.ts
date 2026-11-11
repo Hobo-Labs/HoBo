@@ -188,6 +188,31 @@ function policyState(state: ConfigurationState, accountId: string): string {
 // public-contract: the relay route that lists the mesh's nodes.
 export const MESH_NODES_PATH = "/v1/mesh/nodes";
 
+/**
+ * The control routes that write configuration, or keep records a relay with
+ * a read-only config source has no place for (ADR-0179 §8): policy and
+ * provider writes, budget signals and usage observations, the inbox
+ * quarantine, and repository setup with its operation records. On such a
+ * relay each answers 410 (`readOnlyConfig`).
+ */
+export function isConfigWriteRoute(method: string, path: string): boolean {
+	if (path.startsWith("/v2/accounts/self/inbox/")) return true;
+	if (path.startsWith("/v1/accounts/self/repositories/")) return true;
+	if (method === "PUT")
+		return (
+			path === "/v1/accounts/self/policy" ||
+			path === "/v2/accounts/self/policy" ||
+			path === "/v2/accounts/self/providers"
+		);
+	if (method === "POST")
+		return (
+			path === "/v2/accounts/self/signals" ||
+			path === "/v2/accounts/self/observations" ||
+			path === "/v2/accounts/self/rate-observations"
+		);
+	return false;
+}
+
 /** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
@@ -214,6 +239,13 @@ export function createHostedControlPlane(options: {
 	 * `mesh: "not-configured"`: an answer, not an error.
 	 */
 	meshNodes?: MeshNodesReader | undefined;
+	/**
+	 * The relay reads its configuration from a config service and never
+	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
+	 * answers 410 naming where configuration is written instead. Read
+	 * routes are unchanged.
+	 */
+	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
 }) {
 	const { store, relay } = options;
 	const meshNodes = options.meshNodes ?? createMeshNodesReader();
@@ -265,6 +297,15 @@ export function createHostedControlPlane(options: {
 			path !== MESH_NODES_PATH
 		)
 			return undefined;
+		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
+			return response(
+				410,
+				JSON.stringify({
+					error:
+						"configuration is read-only on this relay: write it with `hobo ci`, which updates the config service",
+					configService: options.readOnlyConfig.configService,
+				}),
+			);
 		try {
 			const principal = await options.authenticate(
 				request.headers.get("authorization") ?? undefined,

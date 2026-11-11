@@ -28,7 +28,9 @@ export {
 	type RelayGithubJobView,
 	type RelayRebuildOptions,
 	type RelayRebuildOutcome,
+	type RelayRebuildPassResult,
 	type RelayResolveOutcome,
+	rebuildInflight,
 	rebuildLease,
 	resolveUncertainLease,
 } from "./rebuild.js";
@@ -55,6 +57,7 @@ export {
 	RelayConfigReadOnlyError,
 	type RelayConfigSnapshot,
 	type RelayConfigSource,
+	type RelayLeaseChange,
 	type RelayWebhookIntake,
 	staticRelayConfig,
 } from "./store.js";

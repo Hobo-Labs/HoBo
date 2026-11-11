@@ -30,4 +30,5 @@ package vercel
 	HOBO_CI_WEBHOOK_SECRET:            string & =~"^.{32,1024}$"
 	HOBO_CI_GITHUB_APP_CLIENT_ID:      string & =~"^[A-Za-z0-9._-]{1,100}$"
 	HOBO_CI_GITHUB_APP_CLIENT_SECRET:  string & =~"^[!-~]{20,256}$"
+	HOBO_CI_SANDBOX_PROXY_TOKEN_KEY?:  #canonicalKey
 }

@@ -7,10 +7,11 @@ the free plan, through [`@hobo/adapter-infisical`](../adapters/adapter-infisical
 
 What exists now: the loader (`src/relay-runtime-config.ts`), the adapter,
 `hobo ci app create`, and (phase 6) the relay's Yard and the deploy workflow on
-`main` ([below](#the-deploy-workflow-on-main)). Not yet: `entry.ts` still loads
-its configuration as before; a later phase switches it to this loader. Nothing
-here has been run against Infisical, GitHub or Vercel; the tests use local
-stand-ins.
+`main` ([below](#the-deploy-workflow-on-main)). Since phase 4b `entry.ts` loads the relay's configuration
+through this loader (see [The stateless relay](README.md#the-stateless-relay)),
+and the queue consumers read the handoff origin and `CRON_SECRET` from it.
+Nothing here has been run against Infisical, GitHub or Vercel; the tests use
+local stand-ins.
 
 ## How the relay signs in
 
@@ -197,6 +198,7 @@ refuses a folder holding any other key, and names it (never its value).
 |---|---|---|
 | `HOBO_CI_PUBLIC_URL`, `HOBO_CI_SESSION_KEY`, `HOBO_CI_BOOTSTRAP_ACCOUNT_ID`, `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`, `HOBO_CI_CONTROL_TOKENS_JSON`, `HOBO_CI_CONFIG_JSON` (the config document), `CRON_SECRET` | yes | owner, later `hobo ci` |
 | `HOBO_CI_INVITATION_EXPIRES_AT`, `HOBO_CI_ONBOARDING_CONTROL_TOKEN`, `HOBO_CI_SANDBOX_ENABLED`, `HOBO_CI_SANDBOX_TEAM_ID`, `HOBO_CI_SANDBOX_PROJECT_ID`, `HOBO_CI_SANDBOX_ISSUER`, `HOBO_CI_SANDBOX_PLAN`, `HOBO_CI_SANDBOX_DOMAINS_JSON` | no | owner |
+| `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url: each Sandbox proxy session token is derived from it, so none is stored) | with `HOBO_CI_SANDBOX_ENABLED` | owner |
 | `HOBO_CI_GITHUB_APP_ID`, `HOBO_CI_GITHUB_APP_CLIENT_ID`, `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`, `HOBO_CI_GITHUB_APP_CLIENT_SECRET` | yes | `hobo ci app create` |
 
 The constraints are those of the moved `RuntimeBrokerConfig` schema

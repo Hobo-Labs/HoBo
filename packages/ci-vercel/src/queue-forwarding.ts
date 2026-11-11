@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { JsonValue } from "@bufbuild/protobuf";
 import type { RetryHandler } from "@vercel/queue";
 import { z } from "zod";
 import { StoreUnavailable } from "./store-unavailable.js";
@@ -155,15 +156,32 @@ export async function forwardQueueWakeup(options: {
 	/** Clock for an HTTP-date `Retry-After`; injectable for tests. */
 	now?: () => number;
 }): Promise<void> {
+	const { message, ...transport } = options;
+	return forwardQueueHandoff({
+		...transport,
+		body: normalizeQueueWakeup(QueueMessageSchema.parse(message)),
+	});
+}
+
+/**
+ * The handoff itself, for a body already in its wire form: the stateless
+ * relay's messages (`relay-queue.ts`), or the pre-4b wakeup above.
+ */
+export async function forwardQueueHandoff(options: {
+	origin: string;
+	secret: string;
+	body: JsonValue;
+	fetch?: typeof fetch;
+	timeoutMs?: number;
+	now?: () => number;
+}): Promise<void> {
 	const origin = relayOrigin(options.origin);
 	if (Buffer.byteLength(options.secret) < 32)
 		throw new Error("invalid queue handoff secret");
 	const timeoutMs = options.timeoutMs ?? 120_000;
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000)
 		throw new Error("invalid queue handoff timeout");
-	const message = normalizeQueueWakeup(
-		QueueMessageSchema.parse(options.message),
-	);
+	const message = options.body;
 	let response: Response;
 	try {
 		response = await (options.fetch ?? fetch)(
@@ -198,12 +216,43 @@ function isRepairTick(message: z.infer<typeof Wakeup>): boolean {
 	return message !== null && "name" in message;
 }
 
+/** How the handoff reads and classifies the messages it carries. */
+export type QueueHandoffCodec<Message> = Readonly<{
+	/** Parse the JSON body; throw for anything that is not a message. */
+	parse(value: JsonValue): Message;
+	/** A periodic repair tick: acknowledged even when it fails. */
+	isRepairTick(message: Message): boolean;
+	/** The largest body read, in bytes. */
+	maxBodyBytes: number;
+}>;
+
+/** The pre-4b handoff: wakeups and repairs, a few bytes each. */
+const WAKEUP_CODEC: QueueHandoffCodec<z.infer<typeof Wakeup>> = {
+	parse: (value) => Wakeup.parse(value),
+	isRepairTick,
+	maxBodyBytes: MAX_BODY,
+};
+
 /** Authenticate before reading a bounded payload and run only the active worker. */
 export function createQueueWakeupHandler(options: {
 	origin: string;
 	secret: string;
-	run(message: QueueMessage): Promise<void>;
+	run(message: z.infer<typeof Wakeup>): Promise<void>;
+}): (request: Request) => Promise<Response> {
+	return createQueueHandoffHandler({ ...options, codec: WAKEUP_CODEC });
+}
+
+/**
+ * The handoff's receiving side for any message kind the codec parses: the
+ * stateless relay passes its own (`parseRelayQueueMessage`).
+ */
+export function createQueueHandoffHandler<Message>(options: {
+	origin: string;
+	secret: string;
+	run(message: Message): Promise<void>;
+	codec: QueueHandoffCodec<Message>;
 }) {
+	const { codec } = options;
 	const origin = relayOrigin(options.origin);
 	if (Buffer.byteLength(options.secret) < 32)
 		throw new Error("invalid queue handoff secret");
@@ -229,7 +278,10 @@ export function createQueueWakeupHandler(options: {
 		)
 			return new Response(null, { status: 415, headers });
 		const declared = request.headers.get("content-length");
-		if (declared && (!/^\d+$/.test(declared) || Number(declared) > MAX_BODY))
+		if (
+			declared &&
+			(!/^\d+$/.test(declared) || Number(declared) > codec.maxBodyBytes)
+		)
 			return new Response(null, { status: 413, headers });
 		if (!request.body) return new Response(null, { status: 400, headers });
 		const reader = request.body.getReader();
@@ -247,18 +299,22 @@ export function createQueueWakeupHandler(options: {
 				const part = await Promise.race([reader.read(), timeout]);
 				if (part.done) break;
 				total += part.value.byteLength;
-				if (total > MAX_BODY)
+				if (total > codec.maxBodyBytes)
 					return new Response(null, { status: 413, headers });
 				chunks.push(part.value);
 			}
-			const parsed = Wakeup.safeParse(
-				JSON.parse(Buffer.concat(chunks).toString("utf8")),
-			);
-			if (!parsed.success) return new Response(null, { status: 400, headers });
+			let message: Message;
+			try {
+				message = codec.parse(
+					JSON.parse(Buffer.concat(chunks).toString("utf8")),
+				);
+			} catch {
+				return new Response(null, { status: 400, headers });
+			}
 			if (timer) clearTimeout(timer);
 			timer = undefined;
 			try {
-				await options.run(parsed.data);
+				await options.run(message);
 				return new Response(null, { status: 204, headers });
 			} catch (error) {
 				// A repair tick is periodic and only re-reads the store, so one that
@@ -268,7 +324,7 @@ export function createQueueWakeupHandler(options: {
 				// schedules) retrying against this relay. Whatever the failure: the
 				// first attempt after a store back-off fails with the store's own
 				// error, not `StoreUnavailable`, and is no more worth repeating.
-				if (isRepairTick(parsed.data))
+				if (codec.isRepairTick(message))
 					return new Response(null, { status: 204, headers });
 				// The store back-off knows when it will look again; say so, and the
 				// queue consumer holds the message until then.

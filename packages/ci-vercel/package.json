@@ -25,6 +25,8 @@
     "@hobo/ci-gh-actions": "workspace:*",
     "@hobo/core": "workspace:*",
     "@hobo/data-postgres": "workspace:*",
+    "@hobo/kv-redis-compatible": "workspace:*",
+    "@hobo/provider-upstash": "workspace:*",
     "@neon/functions": "0.11.0",
     "@vercel/oidc": "4.0.0",
     "@vercel/queue": "0.10.0",

@@ -122,7 +122,17 @@ export interface HostedRelayStore {
 		expectedRevision: number,
 	): Promise<boolean>;
 	observe(job: Job, at: string, expectedRevision?: number): Promise<void>;
-	queue(job: Job, at: string, expectedRevision?: number): Promise<void>;
+	/**
+	 * `githubCreatedAt` is GitHub's `created_at` for the job, when the caller
+	 * has it: a store that pins the queue deadline pins it from when GitHub
+	 * queued the job, not from when the relay first saw it.
+	 */
+	queue(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		githubCreatedAt?: string,
+	): Promise<void>;
 	expireQueued?(
 		job: Job,
 		at: string,
@@ -133,6 +143,7 @@ export interface HostedRelayStore {
 		job: Job,
 		at: string,
 		expectedRevision?: number,
+		githubCreatedAt?: string,
 	): Promise<Lease | undefined>;
 	transition(
 		id: string,
@@ -1059,13 +1070,21 @@ export class HostedRelay {
 			(account) => account.id === admitted.accountId,
 		);
 		if (!account) throw new Error("account missing");
-		await this.options.store.queue(job, this.now(), admittedRevision);
+		const githubCreatedAt =
+			currentJob.created_at ?? payload.workflow_job.created_at;
+		await this.options.store.queue(
+			job,
+			this.now(),
+			admittedRevision,
+			githubCreatedAt,
+		);
 		if (this.options.deferReservation) return "queued";
 		const lease = await this.options.store.reserve(
 			account,
 			job,
 			this.now(),
 			admittedRevision,
+			githubCreatedAt,
 		);
 		if (lease)
 			this.servedRunnerLabels.set(
@@ -1607,11 +1626,16 @@ export class HostedRelay {
 					)
 				)
 					continue;
+				// GitHub's `created_at`, as the job's webhook recorded it.
+				const githubCreatedAt = this.options.jobPickupMetadata?.get(
+					jobPickupMetadataKey(job),
+				)?.jobCreatedAt;
 				lease = await this.options.store.reserve(
 					account,
 					job,
 					this.now(),
 					reservationRevision,
+					githubCreatedAt,
 				);
 				if (!lease && trunk && (await this.reclaimUnlaunchedGeneralLease()))
 					lease = await this.options.store.reserve(
@@ -1619,6 +1643,7 @@ export class HostedRelay {
 						job,
 						this.now(),
 						reservationRevision,
+						githubCreatedAt,
 					);
 			} finally {
 				if (!lease) storageAdmission?.release(storageJobId);
