@@ -115,6 +115,7 @@ export {
 	countInFlightWorkerLeases,
 	mergeDrainInFlightCount,
 	parseWorkerStopMode,
+	shouldForceExitDrainOnRepeatSignal,
 	stopIsolatedWorker,
 	type WorkerStopMode,
 	waitForIsolatedWorkerDrain,
