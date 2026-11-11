@@ -113,7 +113,8 @@ ensure_deps_build_headroom() {
   if [[ -f "$root/scripts/ci-runner-image-gc.mts" ]]; then
     keep_tag="${HOBO_CI_DEPS_GC_KEEP_TAG:-hobo-ci-deps:local}"
     echo "deps rebuild evicting unused hobo-ci-deps images (keep=${keep_tag})"
-    node --import tsx "$root/scripts/ci-runner-image-gc.mts" "$keep_tag" || true
+    node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
+      "$root/scripts/ci-runner-image-gc.mts" "$keep_tag" || true
     read -r iavail avail < <(sample_docker_headroom "$sample_path")
     if (( iavail >= inode_headroom && avail >= byte_headroom )); then
       echo "deps rebuild headroom recovered after deps image gc (inodes=${iavail} bytes=${avail})"

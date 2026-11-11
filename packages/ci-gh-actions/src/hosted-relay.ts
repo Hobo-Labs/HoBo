@@ -25,7 +25,6 @@ import {
 	TRUNK_RANK,
 } from "./admission-order.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
-import { runnerHoldsActiveJob } from "./jit-runner-correlation.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,

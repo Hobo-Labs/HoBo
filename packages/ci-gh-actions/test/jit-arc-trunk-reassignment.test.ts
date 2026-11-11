@@ -47,6 +47,7 @@ describe("arc takes reserved trunk job", () => {
 			state: "running",
 			createdAt: "2026-11-10T19:30:00.000Z",
 		});
+		// SAFETY: reconcile touches only get, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
