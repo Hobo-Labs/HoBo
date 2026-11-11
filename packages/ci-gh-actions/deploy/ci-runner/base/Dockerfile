@@ -27,7 +27,7 @@ RUN case "${TARGETARCH:-amd64}" in \
     esac \
   && archive="actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" \
   && url="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${archive}" \
-  && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "$url" -o "/tmp/${archive}" \
+  && curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 --connect-timeout 15 --max-time 120 "$url" -o "/tmp/${archive}" \
   && echo "${digest}  /tmp/${archive}" | sha256sum -c - \
   && mkdir -p /opt/actions-runner \
   && tar -xzf "/tmp/${archive}" -C /opt/actions-runner \
