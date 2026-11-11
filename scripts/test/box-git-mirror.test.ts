@@ -129,6 +129,22 @@ describe("resolveBoxGitMirror", () => {
 		}
 	});
 
+	it("misses a blobless mirror that has the commit but not its files", () => {
+		// What the box built (finding 110): the commit is there, so the probe
+		// used to say hit, and the checkout then died asking the mirror for blobs.
+		git(source, ["config", "uploadpack.allowFilter", "true"]);
+		const blobless = join(temp, "blobless.git");
+		execFileSync("git", [
+			"clone",
+			"--bare",
+			"--filter=blob:none",
+			`file://${source}`,
+			blobless,
+		]);
+		const result = resolveBoxGitMirror(env(sha, blobless));
+		expect(result.status).toBe("miss");
+	});
+
 	it("never treats a missing SHA as a hit", () => {
 		expect(resolveBoxGitMirror(env("0".repeat(40))).status).not.toBe("hit");
 		expect(resolveBoxGitMirror(env("")).status).toBe("miss");

@@ -650,7 +650,7 @@
 				{
 					"name": "npm scope map + OCI manifest contract",
 					"id": "release_contract_tests",
-					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts",
+					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts",
 					"local": "run"
 				},
 				{
