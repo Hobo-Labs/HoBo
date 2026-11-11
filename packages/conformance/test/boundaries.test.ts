@@ -269,6 +269,7 @@ describe("secrets-port implementers may import the port vocabulary and nothing e
 	it.each([
 		"packages/adapters/adapter-openbao",
 		"packages/adapters/adapter-opensesame",
+		"packages/adapters/adapter-infisical",
 	])("%s -> @hobo/identity is permitted", (from) => {
 		expect(
 			validateBoundaryImports([parseWorkspaceEdge({ from, to: IDENTITY })])
@@ -309,6 +310,12 @@ describe("secrets-port implementers may import the port vocabulary and nothing e
 		[
 			"packages/adapters/adapter-opensesame",
 			"packages/providers/provider-vercel",
+		],
+		["packages/adapters/adapter-infisical", "packages/ci-vercel"],
+		["packages/adapters/adapter-infisical", "packages/hobo"],
+		[
+			"packages/adapters/adapter-infisical",
+			"packages/adapters/adapter-openbao",
 		],
 	])("%s -> %s is still refused", (from, to) => {
 		expect(

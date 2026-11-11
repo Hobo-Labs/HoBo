@@ -127,6 +127,11 @@ export const relayConfig = config({
 	HOBO_CI_EVENTS_TENANT: env
 		.string()
 		.docs("The tenant those events carry; `hobo-ci` if unset."),
+	HOBO_CI_CONFIG_SERVICE: env
+		.string()
+		.docs(
+			"Where runtime config and secrets come from: `infisical`, or `env` (the default). The config service's own coordinates are its binding's settings, declared at Camp scope, not here.",
+		),
 
 	DATABASE_URL: secret
 		.string()

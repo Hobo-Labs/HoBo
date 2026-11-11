@@ -449,6 +449,10 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// is one exact, named line; it admits no other adapter, runtime or provider,
 	// and boundaries.test.ts pins the neighbours that stay refused.
 	"packages/adapters/adapter-opensesame->packages/identity",
+	// The Infisical adapter (ADR-0179) is the third implementer of the same
+	// port, for the same reason; one exact, named line, pinned beside the others
+	// in boundaries.test.ts.
+	"packages/adapters/adapter-infisical->packages/identity",
 	// Connector packages (#1052) are AUTHORING-side declarations, not runtime
 	// adapters: they export an opaque symbol built with @hobo/bindles'
 	// defineConnector so b.connector() can resolve it. The edge points at the

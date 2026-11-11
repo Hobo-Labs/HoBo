@@ -362,3 +362,46 @@ declares (`--set NAME=value`), never a secret, and provisions no storage. See
 [the README](README.md) for the options, the plan record and its gates. It has
 been exercised against a fake transport only.
 
+
+## Create the hosted relay's GitHub App
+
+`hobo ci app create` creates the hosted relay's GitHub App with GitHub's
+[manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+and stores its credentials straight in the relay's config service, Infisical
+(ADR-0179, phase 3). Nothing is written to disk or printed.
+
+```sh
+export INFISICAL_PROJECT_ID=<project id> INFISICAL_ENVIRONMENT=prod \
+  INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<id>
+read -rs INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
+hobo ci app create --relay https://<relay-host> --owner-id "$(gh api user --jq .id)"
+```
+
+1. It signs in to Infisical first, with Universal Auth credentials from the
+   environment (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, the names the
+   Infisical CLI reads) or an access token in `INFISICAL_TOKEN`, and lists the
+   folder's names. If App credentials are already there it stops unless `--yes`.
+2. It serves a page on `127.0.0.1` and opens it (the URL is also printed). The
+   page posts the manifest (`createGithubAppManifest`, the reviewed permissions
+   and events, webhook `<relay>/github/webhooks`) to GitHub; GitHub sends the
+   browser back to `http://127.0.0.1:<port>/callback` with a one-time code and
+   the random `state`, which must match.
+3. It converts the code (`POST /app-manifests/{code}/conversions`) and checks
+   the App against the reviewed configuration and `--owner-id`
+   (`verifyConvertedGithubApp`, which also proves the key with `GET /app`).
+4. It writes `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
+   `HOBO_CI_GITHUB_APP_CLIENT_SECRET`, `HOBO_CI_GITHUB_APP_CLIENT_ID` and, last,
+   `HOBO_CI_GITHUB_APP_ID` to the folder, and prints their `infisical://`
+   references and the App's install link.
+
+GitHub returns the credentials once: the conversion cannot be repeated. If a
+write fails, the credentials stay in this process's memory only and the write
+is retried: at a terminal, after you fix Infisical access and press Enter (or
+type `discard`); without one, up to five times with backoff. If it cannot
+succeed, the command says which entries were stored, discards the rest, and
+tells you to delete the App (`https://github.com/settings/apps/<slug>/advanced`)
+and run it again. The same applies when the converted App fails verification.
+
+Owner setup (projects, identities, roles) is in
+[the relay's config service](../ci-vercel/CONFIG-SERVICE.md). Tested with
+local fakes of GitHub and Infisical only (`test/ci-app-create.test.ts`).

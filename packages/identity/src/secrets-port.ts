@@ -27,7 +27,9 @@ export type SecretsAccessResult =
  * (not shipped with default identity installs); `opensesame` for the optional
  * `@hobo/adapter-opensesame` package, whose `access` returns the run's `osr_`
  * surrogate (never the credential it stands for) and whose `put` is read-only
- * (ADR-0170).
+ * (ADR-0170); `infisical` for the optional `@hobo/adapter-infisical` package,
+ * which signs in with a workload OIDC token (no secret zero) and reads the
+ * hosted CI relay's config and secrets (ADR-0179).
  */
 export interface SecretsPort {
 	readonly id: string;
@@ -35,6 +37,7 @@ export interface SecretsPort {
 		| "vault-jwt"
 		| "openbao"
 		| "opensesame"
+		| "infisical"
 		| "aws-sm"
 		| "azure-kv"
 		| "memory-fixture";

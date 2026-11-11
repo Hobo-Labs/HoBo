@@ -65,6 +65,7 @@ export {
 	getRun,
 	githubApiUrl,
 } from "./github.js";
+export { verifyConvertedGithubApp } from "./github-app-manifest-validation.js";
 export { withGithubReadCache } from "./github-read-cache.js";
 export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
