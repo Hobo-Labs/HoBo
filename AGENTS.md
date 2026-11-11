@@ -95,7 +95,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 - Stations also host the **traffic-routing plane** (ADR-0143): the per-resource-class **offering registry**, the **closed routing control loop** (budget/health signal → re-dispatch → re-synthesize → re-apply, with StabilityPolicy cooldown/hysteresis/flip limit), and the **progressive cutover saga** (fail-closed preconditions, rollback hysteresis, refusal + `TtlLowered` ladder). The picker is `@hobo/dispatcher` (ADR-0071, deterministic credit/budget selection; `dispatch.Decided`/`dispatch.Reservation*`); budget signals (`budget.ThresholdCrossed`/`Recovered`, exactly-once) come from `@hobo/broker`.
 - CLI: `hobo station init|up|down|status|rails *` is **ops/setup**, not a lifecycle verb. Missing Station fails closed (`hobo station init`).
 - Profile: `defaultStation` / `activeRail` required for control-plane work; `defaultBrokerUri` is only a remote Conductor HTTP endpoint, not a setup path.
-- **Station capabilities + localhost discovery (ADR-0155):** `StationCapability` (`hobo.station-capability/v1`, closed kind vocabulary, provenance `default|discovered|declared`) formalizes the "PAM/Replay/sidecars are Station capabilities" prose; matching against host evidence is fail-closed and persists `HOBO_HOME/stations/<id>/capabilities.json`. `hobo-code init` is the discovery-gated dev seed (probes Node/git/isolation matrix/ollama/devenv/harnesses; required-missing refuses to write). hobo-code dev scenarios dogfood `station()` declarations (`codeDevStation` in `packages/code/src/dev-stations.ts`) — never re-introduce ad-hoc init literals. Narrative: `docs/design/stations.md`.
+- **Station capabilities + localhost discovery (ADR-0155):** `StationCapability` (`hobo.station-capability/v1`, closed kind vocabulary, provenance `default|discovered|declared`) formalizes the "PAM/Replay/sidecars are Station capabilities" prose; matching against host evidence is fail-closed and persists `HOBO_HOME/stations/<id>/capabilities.json`. Never re-introduce ad-hoc Station init literals. Narrative: `docs/design/stations.md`.
 
 ### Portable SQLite EventStore / durable actor journal (ADR-0135)
 
@@ -233,25 +233,24 @@ Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/tec
 
 Visual work is a first-class gate, same as typecheck and PACT. **Do not wait for the user to say “run design lint” or “use /impeccable.”** If you touch a visual surface, apply the design system while editing and run the linters before you claim the work is done.
 
-A change is visual when it touches any of: `site/`, `packages/code` TUI/dashboard/Evidence HTML, `packages/control-yard`, a package `DESIGN.md`, CSS/HTML chrome, `tui-*.ts(x)`, `interactive-shell.ts`, `session-dashboard.ts`, `evidence-chrome.ts`, or rendered copy/color/layout/motion.
+A change is visual when it touches any of: `site/`, `packages/control-yard`, `packages/status-page` rendered HTML, a package `DESIGN.md`, CSS/HTML chrome, or rendered copy/color/layout/motion.
 
 ### Authority
 
 | Surface | Binding DESIGN.md | Implementation |
 |---|---|---|
 | Public site | [`site/DESIGN.md`](site/DESIGN.md) | `site/src/styles/` |
-| `hobo-code` TUI + occupancy dashboard + Evidence | [`packages/code/DESIGN.md`](packages/code/DESIGN.md) | `tui-tokens.ts`, `tui-components.tsx`, `evidence-chrome.ts` |
+| Status page | [`packages/status-page/DESIGN.md`](packages/status-page/DESIGN.md) | that package only |
 | Control-yard | [`packages/control-yard/DESIGN.md`](packages/control-yard/DESIGN.md) | that package only |
 
-`site/DESIGN.md` is the product identity (ADR-0149). Do not run `/impeccable document` at the repo root. Do not invent a fourth identity.
+`site/DESIGN.md` is the product identity (ADR-0149). Do not run `/impeccable document` at the repo root. Do not invent another identity.
 
 ### While editing
 
 1. Read the owning `DESIGN.md` **before** the first visual edit.
-2. Use the package design system: `TUI_TOKENS` / `DESIGN_COLOR_TOKENS`, Evidence chrome helpers, and React-style TUI components (`ShellChrome`, `BroadcastFrame`, `InkTable`, `WelcomeSurface`, `AgentPanes`, `TextPane`, …). Do not hand-roll hex, SaaS blues, extra accents, or ANSI color outside `rubberhose.ts` `ACCENT`.
-3. New TUI chrome is a component in `tui-components.tsx` (or a sibling `tui-*.tsx`), then composed. Do not assemble the main screen from raw `h()` strings or `TextPane` dumps when a component exists.
-4. Spark (`#c5301c`) and go (`#14672c`) stay rare. Never paint a whole frame, hover-every-control, or night-collapse cards into the ground.
-5. After visual edits, run impeccable `critique` then `audit` (and `polish` if they find P0/P1) on the files you changed. That is part of the implementation loop, not a later favor.
+2. Use the owning package's tokens and shared components. Do not hand-roll hex, SaaS blues or extra accents.
+3. Spark (`#c5301c`) and go (`#14672c`) stay rare. Never paint a whole frame, hover-every-control, or night-collapse cards into the ground.
+4. After visual edits, run impeccable `critique` then `audit` (and `polish` if they find P0/P1) on the files you changed. That is part of the implementation loop, not a later favor.
 
 ### Before you say done
 
@@ -261,9 +260,7 @@ pnpm run design:lint
 
 Plus the package lints that actually cover the files you touched:
 
-- `@hobo/code` TUI: `packages/code/test/tui-design-lint.test.ts` (includes `interactive-shell.ts`)
-- Evidence + dashboard HTML: `packages/code/test/evidence-design-lint.test.ts`
-- Visual fixtures: `packages/code/test/tui-visual.test.ts` / `lookfeel.test.ts` when chrome geometry changed
+- Status page HTML: `packages/status-page/test/status-page-design-lint.test.ts`
 
 `pnpm agent:check -- --staged` already selects `design:lint` when UI/`DESIGN.md` files change. That is not a reason to skip the explicit lint or to skip impeccable on a visual diff. A change that fails `design:lint` or the package design-lint tests is not complete.
 
@@ -345,10 +342,10 @@ do not fit in 16 GB. Percentage rather than a fixed number so the cap scales wit
 whatever machine it lands on.
 
 
-Generated output belongs to exactly one generator. `packages/code/src/_generated`
-is the protobuf codegen pipeline's; TUI art from `gen-logo-tui.mts` /
-`gen-bo-idle-tui.mts` lives in `_generated-art`. Two generators sharing a
-directory makes the drift check report the other's output as unexpected.
+Generated output belongs to exactly one generator. A package's `src/_generated`
+is the protobuf codegen pipeline's; any other generator writes to its own
+directory. Two generators sharing a directory makes the drift check report the
+other's output as unexpected.
 
 ## JavaScript-family implementation file policy
 

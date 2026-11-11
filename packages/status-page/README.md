@@ -68,9 +68,9 @@ const app = bindle("shop", (b) => ({
 }));
 ```
 
-Station-side, the status page is a default sidecar (`kind: "sidecar"`,
-`provenance: "default"` — present unless observed absent) served by
-`@hobo/code`'s occupancy fleet; `HOBO_CODE_SIDECARS=0` disables the fleet.
+Hosting the page as a Station sidecar (`kind: "sidecar"`,
+`provenance: "default"` — present unless observed absent) is the composing
+host's job; this package projects and renders.
 
 ## Edge cases handled (and tested)
 

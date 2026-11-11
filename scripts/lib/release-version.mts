@@ -1,6 +1,6 @@
-/** Parse HoBo release git refs (v*, sdk-v*, cli-v*, code-v*) into semver + npm dist-tag. */
+/** Parse HoBo release git refs (v*, sdk-v*, cli-v*) into semver + npm dist-tag. */
 
-export type ReleaseTrain = "full" | "sdk" | "cli" | "code";
+export type ReleaseTrain = "full" | "sdk" | "cli";
 
 export type ParsedReleaseRef = {
 	/** Original git tag or dispatch input (e.g. v0.0.0-alpha.0). */
@@ -17,7 +17,6 @@ export type ParsedReleaseRef = {
 const TRAIN_PREFIXES: { prefix: string; train: ReleaseTrain }[] = [
 	{ prefix: "sdk-v", train: "sdk" },
 	{ prefix: "cli-v", train: "cli" },
-	{ prefix: "code-v", train: "code" },
 	{ prefix: "v", train: "full" },
 ];
 
@@ -152,8 +151,6 @@ export function releaseImageIdsForTrain(
 			return ["hobo-sdk"];
 		case "cli":
 			return ["hobo-cli", "hobo-mcp"];
-		case "code":
-			return ["hobo-code"];
 		default:
 			return FULL_RELEASE_IMAGE_IDS;
 	}

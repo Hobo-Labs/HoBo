@@ -384,7 +384,6 @@ test("every trunk-capable CI and release job requests the trunk label by default
 		"examples-e2e.yml",
 		"dev-env-smoke.yml",
 		"release-hobo.yml",
-		"release-code.yml",
 		"pricing-ci.yml",
 		"release-pricing.yml",
 	]) {

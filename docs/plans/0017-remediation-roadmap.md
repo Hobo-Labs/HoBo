@@ -52,10 +52,13 @@ traceability rows; grep-fix inbound `#adr-0135` links that meant the game
 section; leave a one-line tombstone note at the old location.
 **Acceptance.** `lint:docs` ADR-reference gate green; exactly one ADR-0135.
 
-### A3 · OKF frontmatter warners (S)
+### A3 · OKF frontmatter warners (S) — obsolete
 Add frontmatter to `docs/plans/hobo-code-optimizexp-surfaces/sdlc-state.md`
 and `docs/plans/hobo-code-tui-optimizexp-finish/sdlc-state.md` (the two
 `check-okf-docs` warners).
+
+**Obsolete (2026-11-08):** both files left `main` with hobo-code; they live
+on the `feature/hobo-code` branch.
 
 ### A4 · gap-analysis §6 re-score (M)
 **Problem.** §6 re-scores 14 captures; the corpus is 35.
