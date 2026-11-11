@@ -25,7 +25,8 @@ turn.
 
 - The worker publishes `HOBO_CI_FLEET_CAPACITY` (hobo + ARC free slots,
   `admittedParallel`) on the same cadence as fleet routes (`fleet-capacity.ts`).
-- `plan-main-workspace-shards.mts` reads that variable (default parallel cap **4**)
+- `plan-main-workspace-shards.mts` reads that variable via `load-fleet-capacity.mts`
+  (Node builtins only; default parallel cap **4** when unset or invalid)
   and calls `planMainWorkspaceShardCount`, which packs several duration-balanced
   workspace groups into each of at most `admittedParallel` shard jobs
   (target **180s** slowest shard when capacity allows).
@@ -36,4 +37,5 @@ turn.
 
 - `packages/ci/test/fleet-capacity-input.test.ts`
 - `scripts/test/main-workspace-shard-capacity.test.ts`
+- `scripts/test/main-gate-plan-install-free.test.ts`
 - `packages/ci-gh-actions/test/fleet-capacity.test.ts`
