@@ -32,6 +32,17 @@ key, that a report's trust level is one of three, and that the routing
 snapshot names labels and counts only, never a node. `src/mesh-records.ts` is
 the only place these are parsed and written.
 
+`relay_cache.proto` owns the records the hosted relay keeps in its cache
+(ADR-0179): the lease record (the `hobo.ci.v1.Lease` as JSON, its job key,
+requeue generation and latest intents), the job record (taken marker, pending
+demand, assignment fence and terminal tombstone in one value), the per-account
+in-flight index, the pending set, the webhook dedupe marker and the sandbox
+egress binding. `onboarding.cue` constrains them; the `relay-cache-*`
+fixtures pin that a job record's lease id is a UUIDv5 (deterministic, never
+random), that a job state is one of four, and that a delivery marker never
+holds the body. `src/relay-cache/` is the only place they are read and
+written; the key and TTL of each is in the package README.
+
 The shared account, connection, revisioned policy, setup request, control-token
 binding, job, lease, and audit-event messages belong to
 [`@hobo/ci`](../../ci/data-models/ci.proto). Account policy includes durable Broker
