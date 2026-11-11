@@ -401,6 +401,8 @@ gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
 in its Route runners log was sent there for one of those reasons, and the same
 line says which.
 
+The deps image publisher samples Docker headroom with bind-mount and host-root
+fallbacks ([finding 94](../ci/findings/0094-deps-publisher-docker-headroom.md)).
 One job in `hobo-ci.yml` is never routed: **CI deps layer (pnpm)** always asks
 for the fleet, because it builds the deps image in the box's own Docker
 context. No gate waits for it.

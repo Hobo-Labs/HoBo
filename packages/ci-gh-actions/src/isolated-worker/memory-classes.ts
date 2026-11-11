@@ -242,6 +242,32 @@ export function resolveWorkerMemoryConfig(
 	return config;
 }
 
+// public-contract: workflow job title used for deps-layer learned memory admission.
+export const CI_DEPS_LAYER_JOB_NAME = "CI deps layer (pnpm)";
+/** Class floor; learned peaks may raise the container limit above this. */
+export const CI_DEPS_LAYER_MEMORY_FLOOR_MB = 4096;
+/** Minimum reservation before three samples exist (4097 MiB peak observed on main). */
+export const CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB = 4352;
+
+function ciDepsLayerMemoryRequest(
+	config: WorkerMemoryConfig,
+): JobMemoryRequest {
+	const floorMb = CI_DEPS_LAYER_MEMORY_FLOOR_MB;
+	const ceilingMb = config.classes.heavy;
+	const learnedMinMb = CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB;
+	const history = config.memoryPeaks?.[CI_DEPS_LAYER_JOB_NAME];
+	const memoryMb = Math.min(
+		ceilingMb,
+		Math.max(
+			floorMb,
+			config.learn
+				? learnedReservationMb(history, ceilingMb, learnedMinMb)
+				: ceilingMb,
+		),
+	);
+	return { memoryClass: "heavy", memoryMb };
+}
+
 export function memoryClassForJob(name: string): WorkerMemoryClassName {
 	if (/^Main workspace test shard \d+$/u.test(name)) return "standard";
 	if (/^Workspace test shard [0-7](?: \([0-7]\))?$/u.test(name)) return "heavy";
@@ -267,6 +293,7 @@ export function memoryRequestForJob(
 	name: string,
 	config: WorkerMemoryConfig,
 ): JobMemoryRequest {
+	if (name === CI_DEPS_LAYER_JOB_NAME) return ciDepsLayerMemoryRequest(config);
 	if (/^Main workspace test shard \d+$/u.test(name))
 		return mainWorkspaceShardMemoryRequest(name, config);
 	const memoryClass = memoryClassForJob(name);

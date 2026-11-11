@@ -263,14 +263,9 @@ describe("CI deps image build contract", () => {
 	});
 
 	it("guards Docker inode and disk headroom before a deps rebuild", () => {
-		includes(
-			build,
-			'inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"',
-		);
-		includes(
-			build,
-			'byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"',
-		);
+		includes(build, "deps-build-headroom-defaults.mts");
+		includes(build, "HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-");
+		includes(build, "HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
 		includes(build, "df --output=iavail");
@@ -286,6 +281,9 @@ describe("CI deps image build contract", () => {
 			"refusing deps rebuild: Docker data root still below headroom after builder prune",
 		);
 		includes(build, "cannot sample Docker data root for deps build headroom");
+		includes(build, "sample_docker_headroom_via_host");
+		includes(build, "host:");
+		includes(build, "no device-matched bind mount");
 		assert.ok(!build.includes("docker image prune -af"));
 		assert.ok(!build.includes("docker image prune -a"));
 		const guard = build.indexOf("ensure_deps_build_headroom");
