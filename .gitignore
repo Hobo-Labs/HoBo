@@ -53,6 +53,7 @@ packages/ci-gh-actions/deploy/ci-runner/oci-layout/
 .hobo/*
 !.hobo/dagger.json
 !.hobo/ci.json
+!.hobo/ci-attestors.json
 .hobo/ci.local.json
 # OS-released codegen/build lock database, sidecars and interrupted staging trees.
 .hobo-codegen.lock

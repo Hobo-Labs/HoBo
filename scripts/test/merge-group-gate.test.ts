@@ -85,7 +85,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			gate,
-			/needs: \[pr_gate_validation, workspace_tests, pr_affected\]/u,
+			/needs: \[route, pr_gate_validation, workspace_tests, pr_affected\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
@@ -157,6 +157,145 @@ describe("merge-group required gate", () => {
 				}
 			}
 		}
+	});
+
+	// With a verified signed local run, the covered jobs are skipped, not run.
+	// The gate takes a skipped job only then, and a failed job never.
+	it("accepts a skipped job only when the route job succeeded and reported it attested", () => {
+		const script = shellForStep(
+			gate,
+			"Require successful validation and workspace tests",
+		);
+		const statuses = ["success", "failure", "cancelled", "skipped"];
+		const routes = ["success", "failure", "skipped", ""];
+		const flags = ["true", "false", ""];
+		const lists = [
+			'["pr_gate_validation","workspace_tests","pr_affected","ci-guard"]',
+			'["pr_gate_validation"]',
+			'["ci-guard","secret-scan"]',
+			// Ids that only contain a gate job's id are other jobs.
+			'["pr_gate_validation_2","xworkspace_tests","pr_affected-old"]',
+			"[]",
+			"",
+		];
+		type Case = Readonly<{
+			event: string;
+			validation: string;
+			workspace: string;
+			affected: string;
+			route: string;
+			flag: string;
+			list: string;
+		}>;
+		const cases: Case[] = [];
+		for (const event of ["pull_request", "merge_group", "push"])
+			for (const validation of statuses)
+				for (const workspace of statuses)
+					for (const affected of statuses)
+						for (const route of routes)
+							for (const flag of flags)
+								for (const list of lists)
+									cases.push({
+										event,
+										validation,
+										workspace,
+										affected,
+										route,
+										flag,
+										list,
+									});
+		// One shell for the whole table: each case runs the gate's own script
+		// in a subshell and prints its exit status.
+		const quote = (text: string) => `'${text}'`;
+		const driver = [
+			"gate() {",
+			'  ( export EVENT_NAME="$1" VALIDATION_RESULT="$2" WORKSPACE_RESULT="$3"',
+			'    export AFFECTED_RESULT="$4" ROUTE_RESULT="$5" ATTESTED="$6" ATTESTED_JOBS="$7"',
+			script,
+			"  ) >/dev/null 2>&1",
+			"  echo $?",
+			"}",
+			...cases.map(
+				(entry) =>
+					`gate ${[entry.event, entry.validation, entry.workspace, entry.affected, entry.route, entry.flag, entry.list].map(quote).join(" ")}`,
+			),
+		].join("\n");
+		// From a file: the table is too long for one argument.
+		const directory = mkdtempSync(join(tmpdir(), "hobo-gate-table-"));
+		writeFileSync(join(directory, "table.sh"), driver);
+		const run = spawnSync("bash", [join(directory, "table.sh")], {
+			encoding: "utf8",
+			maxBuffer: 64 * 1024 * 1024,
+		});
+		rmSync(directory, { recursive: true, force: true });
+		assert.equal(run.status, 0, run.stderr);
+		const exits = run.stdout.trim().split("\n");
+		assert.equal(exits.length, cases.length);
+		let acceptedSkips = 0;
+		for (const [index, entry] of cases.entries()) {
+			const jobs: string[] = entry.list === "" ? [] : JSON.parse(entry.list);
+			const attested = (job: string) =>
+				entry.route === "success" &&
+				entry.flag === "true" &&
+				jobs.includes(job);
+			const passed = (result: string, job: string) =>
+				result === "success" || (result === "skipped" && attested(job));
+			const expected =
+				passed(entry.validation, "pr_gate_validation") &&
+				passed(entry.workspace, "workspace_tests") &&
+				((entry.event === "pull_request" &&
+					passed(entry.affected, "pr_affected")) ||
+					(entry.event === "merge_group" && entry.affected === "skipped"));
+			const accepted = exits[index] === "0";
+			assert.equal(accepted, expected, JSON.stringify(entry));
+			const results = [entry.validation, entry.workspace, entry.affected];
+			// A failed or cancelled job never passes, attested or not.
+			if (
+				results.some((result) => result === "failure" || result === "cancelled")
+			)
+				assert.equal(accepted, false, JSON.stringify(entry));
+			// Without a route job that succeeded and said `true`, nothing changes:
+			// a skipped validation or workspace job is refused as before.
+			if (
+				(entry.route !== "success" || entry.flag !== "true") &&
+				(entry.validation !== "success" || entry.workspace !== "success")
+			)
+				assert.equal(accepted, false, JSON.stringify(entry));
+			if (
+				accepted &&
+				results.includes("skipped") &&
+				entry.event === "pull_request"
+			)
+				acceptedSkips += 1;
+		}
+		// The table does reach the new case: skipped jobs accepted for an attestation.
+		assert.ok(acceptedSkips > 0);
+	});
+
+	it("skips each of the gate's jobs for an attestation that names it, and nothing else", () => {
+		for (const [block, id] of [
+			[validation, "pr_gate_validation"],
+			[workspace, "workspace_tests"],
+			[affected, "pr_affected"],
+		] as const) {
+			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
+			assert.ok(
+				condition.endsWith(
+					`&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"')) }}`,
+				),
+				id,
+			);
+		}
+		// The gate still always runs, and reads the route job's own result.
+		assert.match(gate, /ROUTE_RESULT: \$\{\{ needs\.route\.result \}\}/u);
+		assert.match(
+			gate,
+			/ATTESTED: \$\{\{ needs\.route\.outputs\.attested \}\}/u,
+		);
+		assert.match(
+			gate,
+			/ATTESTED_JOBS: \$\{\{ needs\.route\.outputs\.attested-jobs \}\}/u,
+		);
 	});
 
 	it("rejects a missing scope or an unreachable affected base", () => {

@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
+import { COVERED_JOBS } from "./ci/attestation.mts";
 import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
@@ -119,6 +120,91 @@ function needsRoute(block: readonly string[]): boolean {
 		.filter((line, index) => index === 0 || line.startsWith("      - "))
 		.join(" ");
 	return /(^|[\s[,-])route([\s\],]|$)/.test(list.replace(/^\s*needs:/, ""));
+}
+
+/** What the route job must check out to verify a signed local run. */
+const ATTESTATION_VERIFIER_FILES = [
+	"scripts/ci/attestation.mts",
+	"scripts/ci/verify-attestation.mts",
+];
+
+/** The one condition that skips a job for a signed local run: by that job's own id. */
+function skipWhenAttested(jobId: string): string {
+	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+}
+
+/**
+ * A signed local run (scripts/ci/local-attest.mts) may stand in for a covered
+ * job and for nothing else. The route job verifies the signature, so a job
+ * skipped for one must need the route job and name only itself, and the route
+ * job must check the verifier out. A gate that accepts a skipped job must read
+ * the route job's own result, so a route job that failed vouches for nothing.
+ */
+function lintAttestedSkips(
+	errors: string[],
+	file: string,
+	jobLine: string,
+	block: readonly string[],
+	line: number,
+): void {
+	const jobId = /^  ([A-Za-z0-9_-]+):$/.exec(jobLine)?.[1] ?? "";
+	const stepsAt = block.findIndex((entry) => entry === "    steps:");
+	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
+	const body = stepsAt === -1 ? [] : block.slice(stepsAt);
+	if (jobId === "route") {
+		const declares = header.some((entry) =>
+			/^      attested(-jobs)?:/.test(entry),
+		);
+		if (!declares) return;
+		for (const needed of ATTESTATION_VERIFIER_FILES)
+			if (!body.some((entry) => entry.trim() === needed))
+				errors.push(
+					`${file}:${line}: a route job that reports an attestation must sparse-checkout ${needed}`,
+				);
+		return;
+	}
+	const ifAt = header.findIndex((entry) => entry.startsWith("    if:"));
+	const condition =
+		ifAt === -1
+			? ""
+			: header
+					.slice(ifAt)
+					.filter((entry, index) => index === 0 || entry.startsWith("      "))
+					.join(" ");
+	if (condition.includes("attested")) {
+		// SAFETY: widening the covered ids to plain strings to look one up.
+		const covered = (COVERED_JOBS as readonly string[]).includes(jobId);
+		if (!covered)
+			errors.push(
+				`${file}:${line}: ${jobId} is not a job a signed local run covers (scripts/ci/attestation.mts), so it must not be skipped for one`,
+			);
+		else if (
+			!condition.includes(skipWhenAttested(jobId)) ||
+			condition.split("attested-jobs").length !== 2 ||
+			condition.split("needs.route.outputs.attested ").length !== 2
+		)
+			errors.push(
+				`${file}:${line}: ${jobId} must be skipped for a signed local run by exactly: ${skipWhenAttested(jobId)}`,
+			);
+		if (!needsRoute(block))
+			errors.push(
+				`${file}:${line}: a job skipped for a signed local run must need the route job`,
+			);
+	}
+	if (body.some((entry) => entry.includes("needs.route.outputs.attested"))) {
+		if (!needsRoute(block))
+			errors.push(
+				`${file}:${line}: a job that reads the attestation must need the route job`,
+			);
+		if (
+			!body.some(
+				(entry) => entry.trim() === "ROUTE_RESULT: ${{ needs.route.result }}",
+			)
+		)
+			errors.push(
+				`${file}:${line}: a job that accepts an attestation must also read the route job's result (ROUTE_RESULT: \${{ needs.route.result }})`,
+			);
+	}
 }
 
 /** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
@@ -393,6 +479,8 @@ function lintWorkflowYaml(
 			}
 		}
 		lintLocalActionsNeedCheckoutFirst(errors, file, block, start + 1);
+		if (!requireDisabledJobs)
+			lintAttestedSkips(errors, file, jobLine, block, start + 1);
 	}
 	const firstCheckout = lines.findIndex((line) =>
 		line.includes("actions/checkout@"),

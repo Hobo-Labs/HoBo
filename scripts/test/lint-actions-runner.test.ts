@@ -148,6 +148,75 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
+	const skipFor = (id: string) =>
+		`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
+	const attestingRoute = (sparse: string) =>
+		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
+	const verifierFiles =
+		"            scripts/ci/attestation.mts\n            scripts/ci/verify-attestation.mts\n";
+	const skippable = (id: string, condition: string, needs = "route") =>
+		`  ${id}:\n    needs: ${needs}\n    if: \${{ github.event_name == 'pull_request' && ${condition} }}\n    runs-on: ${routed}\n    steps:\n      - run: echo ok\n`;
+
+	it("lets a signed local run skip a covered job that names itself and needs the route job", () => {
+		for (const id of ["ci-guard", "secret-scan", "pr_gate_validation"])
+			assert.equal(
+				lintJobs(
+					`${attestingRoute(verifierFiles)}${skippable(id, skipFor(id))}`,
+				),
+				0,
+				id,
+			);
+	});
+
+	it("rejects skipping a job that is not covered, or by another job's id, or by a looser condition", () => {
+		// The image build and the gates are never covered.
+		for (const id of [
+			"ci-runner-image",
+			"ci-deps-image",
+			"dev-cold-loop-gate",
+			"build",
+		])
+			assert.notEqual(
+				lintJobs(
+					`${attestingRoute(verifierFiles)}${skippable(id, skipFor(id))}`,
+				),
+				0,
+				id,
+			);
+		for (const condition of [
+			skipFor("secret-scan"),
+			`${skipFor("ci-guard")} && ${skipFor("secret-scan")}`,
+			"needs.route.outputs.attested != 'true'",
+			"!contains(needs.route.outputs.attested-jobs, 'ci-guard')",
+			`(${skipFor("ci-guard")} || needs.route.outputs.attested == 'true')`,
+		])
+			assert.notEqual(
+				lintJobs(
+					`${attestingRoute(verifierFiles)}${skippable("ci-guard", condition)}`,
+				),
+				0,
+				condition,
+			);
+	});
+
+	it("rejects a route job that reports an attestation without checking the verifier out", () => {
+		assert.equal(lintJobs(attestingRoute(verifierFiles)), 0);
+		assert.notEqual(lintJobs(attestingRoute("")), 0);
+		assert.notEqual(
+			lintJobs(attestingRoute("            scripts/ci/attestation.mts\n")),
+			0,
+		);
+	});
+
+	it("makes a gate that accepts an attestation need the route job and read its result", () => {
+		const gate = (needs: string, env: string) =>
+			`${attestingRoute(verifierFiles)}  gate:\n    needs: ${needs}\n    if: \${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - env:\n${env}          ATTESTED: \${{ needs.route.outputs.attested }}\n        run: echo ok\n`;
+		const routeResult = "          ROUTE_RESULT: ${{ needs.route.result }}\n";
+		assert.equal(lintJobs(gate("[route, other]", routeResult)), 0);
+		assert.notEqual(lintJobs(gate("[route, other]", "")), 0);
+		assert.notEqual(lintJobs(gate("[other]", routeResult)), 0);
+	});
+
 	const probe = (job: string, head = "permissions: {}\n") =>
 		lintFile(
 			"fleet-probe.yml",

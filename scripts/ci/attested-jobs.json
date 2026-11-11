@@ -1,0 +1,741 @@
+{
+	"jobs": [
+		{
+			"id": "pr_gate_validation",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {
+				"GITHUB_EVENT_MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
+			},
+			"outputs": {
+				"merge_base": "${{ steps.merge-group-base.outputs.base }}",
+				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
+				"pr_base": "${{ steps.scm-base.outputs.base }}",
+				"shards": "${{ steps.shard-plan.outputs.shards }}"
+			},
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Turbo cache",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "Check the sibling pins (gitlink against checkout, offline)",
+					"run": "node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline",
+					"local": "run"
+				},
+				{
+					"uses": "./.github/actions/pnpm-store",
+					"local": "skip",
+					"reason": "restores a CI package store; a local run uses the developer's own store"
+				},
+				{
+					"name": "Link deps layer",
+					"run": "node --experimental-strip-types scripts/ci/deps-layer.mts link",
+					"local": "run"
+				},
+				{
+					"name": "Check deps layer match",
+					"id": "deps-layer",
+					"run": "node --experimental-strip-types scripts/ci/deps-layer.mts check",
+					"local": "run"
+				},
+				{
+					"name": "Verify deps layer sibling links",
+					"if": "steps.deps-layer.outputs.match == 'true'",
+					"run": "node --import tsx scripts/ensure-ts-autocode-links.mts",
+					"local": "run"
+				},
+				{
+					"name": "Install dependencies",
+					"if": "steps.deps-layer.outputs.match != 'true'",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
+					"local": "run"
+				},
+				{
+					"name": "CI runner image contract (manifest)",
+					"if": "github.event_name == 'merge_group'",
+					"run": "node --import tsx --test scripts/test/ci-runner-image-contract.test.ts",
+					"local": "run"
+				},
+				{
+					"name": "Assert CI fabric contract",
+					"if": "github.event_name == 'merge_group'",
+					"run": "node --import tsx packages/ci-guard/bin/assert-ci-contract.ts",
+					"local": "run"
+				},
+				{
+					"name": "Resolve Turbo SCM base",
+					"id": "scm-base",
+					"if": "github.event_name == 'pull_request'",
+					"run": "set -euo pipefail\nif [[ ! \"$PR_BASE_SHA\" =~ ^[0-9a-f]{40}$ ]]; then\n  echo \"PR base SHA is missing or invalid\" >&2; exit 1\nfi\ngit cat-file -e \"${PR_BASE_SHA}^{commit}\" || git fetch --no-tags origin \"$PR_BASE_SHA\"\nBASE=\"$(git merge-base \"$PR_BASE_SHA\" HEAD)\"\necho \"base=${BASE}\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Impact classification (shadow)",
+					"if": "github.event_name == 'pull_request' && vars.HOBO_IMPACT_GATE != 'off'",
+					"run": "set -euo pipefail\ngit diff --name-only \"${TURBO_SCM_BASE}\"...HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"${TURBO_SCM_BASE}\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
+					"env": {
+						"TURBO_SCM_BASE": "${{ steps.scm-base.outputs.base }}",
+						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
+					},
+					"continueOnError": true,
+					"local": "run"
+				},
+				{
+					"name": "DCO sign-off check",
+					"if": "github.event_name == 'pull_request'",
+					"run": "missing=0\nwhile read -r sha; do\n  [ -z \"$sha\" ] && continue\n  author=\"$(git show -s --format='%an <%ae>' \"$sha\")\"\n  if ! git show -s --format='%B' \"$sha\" | grep -qiF \"Signed-off-by: $author\"; then\n    echo \"::warning::missing or mismatched DCO sign-off on $(git show -s --format='%h %s' \"$sha\") (expected 'Signed-off-by: $author')\"\n    missing=$((missing + 1))\n  fi\ndone < <(git rev-list \"${DCO_BASE}..HEAD\")\nif [ \"$missing\" -gt 0 ]; then\n  echo \"$missing commit(s) without a matching DCO sign-off. Fix with: git rebase --signoff ${DCO_BASE}\"\n  exit 1\nfi\necho \"All commits carry a matching DCO sign-off.\"\n",
+					"env": {
+						"DCO_BASE": "origin/${{ github.base_ref }}"
+					},
+					"continueOnError": true,
+					"local": "run"
+				},
+				{
+					"name": "Code format gate",
+					"if": "github.event_name == 'pull_request'",
+					"run": "pnpm run lint:code",
+					"local": "run"
+				},
+				{
+					"name": "Relevant checks only",
+					"if": "github.event_name == 'pull_request'",
+					"run": "pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests",
+					"env": {
+						"BASE": "${{ steps.scm-base.outputs.base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Resolve the merge group base and gate scope",
+					"id": "merge-group-base",
+					"if": "github.event_name == 'merge_group'",
+					"run": "set -euo pipefail\n# An unreachable merge-group base runs repo-wide; otherwise\n# scripts/ci/affected-lanes.mts --main-gate decides. Root scripts and\n# //# tasks stay scoped; globalDependencies and other shared inputs widen.\nbase=\"$GITHUB_EVENT_MERGE_GROUP_BASE_SHA\"\nif [ -n \"$base\" ] && ! git cat-file -e \"${base}^{commit}\" 2>/dev/null; then base=\"\"; fi\n# A workflow edit cannot change a package's test result.\nscope=\"repo-wide\"\ntests=\"all\"\nif [ -n \"$base\" ]; then\n  changed=\"$(git diff --name-only \"$base\" HEAD)\"\n  scope=\"$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base=\"$base\" <<<\"$changed\")\"\n  lanes=\"$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$base\" <<<\"$changed\")\"\n  if [ \"$lanes\" != \"--filter=*\" ]; then tests=\"affected\"; fi\nfi\necho \"merge group gate: ${scope}, workspace tests: ${tests} (base ${base:-none})\"\n{\n  echo \"base=${base}\"\n  echo \"scope=${scope}\"\n  echo \"tests=${tests}\"\n} >> \"$GITHUB_OUTPUT\"\n",
+					"local": "run"
+				},
+				{
+					"name": "Plan workspace test shards",
+					"id": "shard-plan",
+					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  *) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\nesac\nshards='[0, 1, 2, 3, 4, 5, 6, 7]'\nif [ \"$TESTS\" = \"affected\" ] && [ -n \"$BASE\" ] && git cat-file -e \"${BASE}^{commit}\" 2>/dev/null; then\n  planned=\"$(git diff --name-only \"$BASE\" HEAD |\n    node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --base=\"$BASE\" --plan-shards=8)\" || planned=\"\"\n  if [[ \"$planned\" =~ ^\\[[0-7](,\\ [0-7])*\\]$ ]]; then shards=\"$planned\"; fi\nfi\necho \"workspace test shards: ${shards}\"\necho \"shards=${shards}\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"EVENT_NAME": "${{ github.event_name }}",
+						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
+						"MERGE_TESTS": "${{ steps.merge-group-base.outputs.tests }}",
+						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Impact classification (shadow)",
+					"if": "github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'",
+					"run": "set -euo pipefail\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"$BASE\" --meaningful-out=\"$RUNNER_TEMP/impact-meaningful.txt\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
+					"env": {
+						"BASE": "${{ steps.merge-group-base.outputs.base }}",
+						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
+					},
+					"continueOnError": true,
+					"local": "run"
+				},
+				{
+					"name": "S0 gate set",
+					"if": "github.event_name == 'merge_group'",
+					"run": "set -euo pipefail\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run check:all\nfi\n",
+					"env": {
+						"HOBO_RELEVANT_CHECK_CONCURRENCY": "1",
+						"SCOPE": "${{ steps.merge-group-base.outputs.scope }}",
+						"BASE": "${{ steps.merge-group-base.outputs.base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "CI trace",
+					"if": "always()",
+					"uses": "./.github/actions/ci-trace",
+					"local": "skip",
+					"reason": "exports CI timing spans; it checks nothing"
+				}
+			]
+		},
+		{
+			"id": "workspace_tests",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
+			"matrix": "${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Turbo cache",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "Check the sibling pins (gitlink against checkout, offline)",
+					"run": "node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline",
+					"local": "run"
+				},
+				{
+					"uses": "./.github/actions/pnpm-store",
+					"local": "skip",
+					"reason": "restores a CI package store; a local run uses the developer's own store"
+				},
+				{
+					"name": "Link deps layer",
+					"run": "node --experimental-strip-types scripts/ci/deps-layer.mts link",
+					"local": "run"
+				},
+				{
+					"name": "Check deps layer match",
+					"id": "deps-layer",
+					"run": "node --experimental-strip-types scripts/ci/deps-layer.mts check",
+					"local": "run"
+				},
+				{
+					"name": "Verify deps layer sibling links",
+					"if": "steps.deps-layer.outputs.match == 'true'",
+					"run": "node --import tsx scripts/ensure-ts-autocode-links.mts",
+					"local": "run"
+				},
+				{
+					"name": "Install dependencies",
+					"if": "steps.deps-layer.outputs.match != 'true'",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
+					"local": "run"
+				},
+				{
+					"name": "Workspace tests",
+					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
+					"env": {
+						"EVENT_NAME": "${{ github.event_name }}",
+						"PR_BASE": "${{ needs.pr_gate_validation.outputs.pr_base }}",
+						"MERGE_TESTS": "${{ needs.pr_gate_validation.outputs.merge_tests }}",
+						"MERGE_BASE": "${{ needs.pr_gate_validation.outputs.merge_base }}",
+						"SHARD": "${{ strategy.job-index }}",
+						"SHARD_TOTAL": "${{ strategy.job-total }}",
+						"HOBO_TURBO_CONCURRENCY": "1"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "CI trace",
+					"if": "always()",
+					"uses": "./.github/actions/ci-trace",
+					"local": "skip",
+					"reason": "exports CI timing spans; it checks nothing"
+				}
+			]
+		},
+		{
+			"id": "pr_affected",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Turbo cache",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "Check the sibling pins (gitlink against checkout, offline)",
+					"run": "node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline",
+					"local": "run"
+				},
+				{
+					"uses": "./.github/actions/pnpm-store",
+					"local": "skip",
+					"reason": "restores a CI package store; a local run uses the developer's own store"
+				},
+				{
+					"name": "Link deps layer",
+					"run": "node --experimental-strip-types scripts/ci/deps-layer.mts link",
+					"local": "run"
+				},
+				{
+					"name": "Check deps layer match",
+					"id": "deps-layer",
+					"run": "node --experimental-strip-types scripts/ci/deps-layer.mts check",
+					"local": "run"
+				},
+				{
+					"name": "Verify deps layer sibling links",
+					"if": "steps.deps-layer.outputs.match == 'true'",
+					"run": "node --import tsx scripts/ensure-ts-autocode-links.mts",
+					"local": "run"
+				},
+				{
+					"name": "Install dependencies",
+					"if": "steps.deps-layer.outputs.match != 'true'",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
+					"local": "run"
+				},
+				{
+					"name": "Dagger checks plan (native CI parity)",
+					"run": "pnpm exec turbo run build --filter=@hobo/ci-dagger --output-logs=new-only --concurrency=1\npnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json\n",
+					"local": "run"
+				},
+				{
+					"name": "Affected package lanes",
+					"run": "set -euo pipefail\nif [ -z \"$TURBO_SCM_BASE\" ] || ! git cat-file -e \"${TURBO_SCM_BASE}^{commit}\"; then\n  echo \"PR base is missing or unreachable\" >&2; exit 1\nfi\ngit diff --name-only \"${TURBO_SCM_BASE}\"...HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"${TURBO_SCM_BASE}\" \\\n    > \"$RUNNER_TEMP/hobo-affected-lanes\"\nmapfile -t FILTERS < \"$RUNNER_TEMP/hobo-affected-lanes\"\nif [ \"${#FILTERS[@]}\" -eq 0 ]; then\n  echo \"Only inert paths changed; skipping turbo impact lanes\"\n  exit 0\nfi\npnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \\\n  \"${FILTERS[@]}\" \\\n  --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \\\n  --anon-profile=turbo-profile.json\n",
+					"env": {
+						"TURBO_SCM_BASE": "${{ needs.pr_gate_validation.outputs.pr_base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "CI trace",
+					"if": "always()",
+					"uses": "./.github/actions/ci-trace",
+					"local": "skip",
+					"reason": "exports CI timing spans; it checks nothing"
+				}
+			]
+		},
+		{
+			"id": "pr-offpath",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr-offpath\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Decide whether the diff reaches packages, pins or submodules",
+					"id": "scope",
+					"run": "set -euo pipefail\nif ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then\n  echo \"HEAD is not a PR merge commit; running every check\"\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\n# Read root config at HEAD^1 too, so root-only edits stay off-path.\nCHANGED=\"$(git diff --name-only HEAD^1 HEAD)\"\nLANES=\"$(printf '%s\\n' \"$CHANGED\" | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=HEAD^1)\"\n# ts-autocode surface and package-boundary inputs that live outside packages/.\nPINS=\"$(printf '%s\\n' \"$CHANGED\" | grep -E '^(external/|tools/pins/|\\.gitmodules$|scripts/test/ts-autocode-|scripts/bootstrap-siblings\\.mts$|scripts/check-package-boundaries)' || true)\"\nif [ -z \"$LANES\" ] && [ -z \"$PINS\" ]; then\n  echo \"Only inert paths changed; skipping install, ts-autocode surface and production packages gate\"\n  echo \"run=false\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+					"local": "run"
+				},
+				{
+					"name": "Turbo cache",
+					"if": "steps.scope.outputs.run == 'true'",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"if": "steps.scope.outputs.run == 'true'",
+					"uses": "./.github/actions/pnpm-store",
+					"local": "skip",
+					"reason": "restores a CI package store; a local run uses the developer's own store"
+				},
+				{
+					"if": "steps.scope.outputs.run == 'true'",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
+					"local": "run"
+				},
+				{
+					"name": "Every name HoBo imports from ts-autocode exists at the pin, and its grounding fields are still checked",
+					"if": "steps.scope.outputs.run == 'true'",
+					"run": "node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts",
+					"local": "run"
+				},
+				{
+					"name": "Production packages gate",
+					"if": "steps.scope.outputs.run == 'true'",
+					"run": "pnpm run build:packages",
+					"local": "run"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "CI trace",
+					"if": "always()",
+					"uses": "./.github/actions/ci-trace",
+					"local": "skip",
+					"reason": "exports CI timing spans; it checks nothing"
+				}
+			]
+		},
+		{
+			"id": "artifact-trust",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"artifact-trust\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Decide whether the diff reaches the artifact trust proof",
+					"id": "scope",
+					"run": "set -euo pipefail\nif ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then\n  echo \"HEAD is not a PR merge commit; running the check\"\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\ngit diff --name-only HEAD^1 HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \\\n    vitest.config.ts \\\n    src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts \\\n    >> \"$GITHUB_OUTPUT\"\n",
+					"local": "run"
+				},
+				{
+					"if": "steps.scope.outputs.run == 'true'",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
+					"local": "run"
+				},
+				{
+					"name": "Verify signed hello-bindle and refuse stripped signatures",
+					"if": "steps.scope.outputs.run == 'true'",
+					"run": "pnpm test:file src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts",
+					"local": "run"
+				}
+			]
+		},
+		{
+			"id": "ci-guard",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
+					"local": "run"
+				},
+				{
+					"name": "CI runner image contract (manifest)",
+					"run": "node --import tsx --test scripts/test/ci-runner-image-contract.test.ts",
+					"local": "run"
+				},
+				{
+					"name": "Assert CI fabric contract",
+					"run": "node --import tsx packages/ci-guard/bin/assert-ci-contract.ts",
+					"local": "run"
+				}
+			]
+		},
+		{
+			"id": "secret-scan",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"secret-scan\"')) }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
+			"steps": [
+				{
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Scan git history for secrets",
+					"run": "set -euo pipefail\ngitleaks git --config .gitleaks.toml --redact --exit-code 1 \\\n  --log-opts=\"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"\n",
+					"local": "run"
+				}
+			]
+		},
+		{
+			"id": "release-contract",
+			"workflow": ".github/workflows/release-hobo.yml",
+			"if": "${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"')) }}",
+			"workflowEnv": {
+				"RELEASE_SPARSE_PATHS": ".github\nscripts\ntest/setup\npackages\nrelease\ndeploy\nsite\nexternal\nmedia\nexamples\nsrc\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n",
+				"HOBO_RELEASE_TURBO_BASE": "origin/main",
+				"RELEASE_PAGES_SPARSE_PATHS": ".github\nscripts\nsite\npackages\ndocs\nrelease\nexternal\nexamples\nmedia\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n"
+			},
+			"env": {},
+			"outputs": {},
+			"steps": [
+				{
+					"name": "Bootstrap repo-local composite actions",
+					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/hobo-checkout",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "./.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Fetch pinned ts-autocode",
+					"run": "pnpm run pins:fetch ts-autocode",
+					"local": "run"
+				},
+				{
+					"uses": "./.github/actions/pnpm-store",
+					"local": "skip",
+					"reason": "restores a CI package store; a local run uses the developer's own store"
+				},
+				{
+					"name": "Link deps layer or install",
+					"run": "set -euo pipefail\nif [ -n \"${HOBO_CI_DEPS_LAYER:-}\" ] \\\n  && node --experimental-strip-types scripts/ci/deps-layer.mts link \\\n  && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then\n  echo \"reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install\"\nelse\n  pnpm install --frozen-lockfile --config.confirmModulesPurge=false\nfi\n",
+					"local": "run"
+				},
+				{
+					"name": "Shell syntax (changed scripts)",
+					"if": "github.event_name != 'push'",
+					"run": "pnpm run lint:shell:changed -- --base=HEAD^1",
+					"local": "run"
+				},
+				{
+					"name": "npm scope map + OCI manifest contract",
+					"id": "release_contract_tests",
+					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts",
+					"local": "run"
+				},
+				{
+					"name": "Upload release contract vitest log",
+					"if": "failure() && steps.release_contract_tests.outcome == 'failure'",
+					"uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+					"local": "skip",
+					"reason": "uploads a log from a failed CI step; a local run keeps its logs on disk"
+				},
+				{
+					"name": "npm pack dry-run (allowlist staging)",
+					"run": "set -euo pipefail\nmkdir -p /tmp/hobo-release-staging\nnode --no-warnings scripts/ci/npm-publish-scope.mts packages/core/package.json /tmp/hobo-release-staging/package.json\ngrep -q '@hobo-labs/core' /tmp/hobo-release-staging/package.json\n",
+					"local": "run"
+				},
+				{
+					"name": "Detect affected images",
+					"id": "affected",
+					"if": "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'",
+					"run": "set -euo pipefail\n# Editing this workflow edits how every image is built, so it builds them all.\nif [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ] \\\n  || ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release-hobo.yml; then\n  images=\"$(node --no-warnings scripts/ci/release-oci-affected.mts --all)\"\nelse\n  images=\"$(node --no-warnings scripts/ci/release-oci-affected.mts --explain)\"\nfi\necho \"affected: ${images}\"\necho \"image_ids=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(\" \"))' \"$images\")\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"HOBO_CHECK_BASE": "HEAD^1"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Turbo cache",
+					"if": "steps.affected.outputs.image_ids != ''",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
+					"name": "Ensure worker toolchain image",
+					"if": "steps.affected.outputs.image_ids != ''",
+					"run": "set -euo pipefail\nbash packages/ci-gh-actions/deploy/ci-runner/build.sh\n",
+					"local": "skip",
+					"reason": "runs only when a release image is affected, and then a local run does not cover this job"
+				},
+				{
+					"name": "Build affected images + live OCI config contract",
+					"if": "steps.affected.outputs.image_ids != ''",
+					"run": "set -uo pipefail\nbuild() { node --no-warnings scripts/ci/build-release-oci-image.mts \"$@\"; }\nbuild_one() {\n  local id=\"$1\"\n  echo \"::group::${id}\"\n  local ok=1\n  if [ \"$id\" = \"hobo-cli\" ] || [ \"$id\" = \"hobo-mcp\" ]; then\n    # Prerequisite base image: allow staging it even when only the\n    # dependent image is affected (stage guard checks this list).\n    HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS=\"${HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS} hobo-sdk\" \\\n      build hobo-sdk --keep-candidate || ok=0\n  fi\n  if [ \"$id\" = \"hobo-mcp\" ] && ! docker image inspect hobo-cli:candidate >/dev/null 2>&1; then\n    HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS=\"${HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS} hobo-cli\" \\\n      build hobo-cli --keep-candidate || ok=0\n  fi\n  if [ \"$ok\" = 1 ]; then build \"$id\" --keep-candidate || ok=0; fi\n  if [ \"$ok\" = 1 ]; then\n    HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=\"$id\" \\\n      pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts || ok=0\n  fi\n  if [ \"$id\" != \"hobo-cli\" ] || [[ \" $IMAGE_IDS \" != *\" hobo-mcp \"* ]]; then\n    build \"$id\" --cleanup-only\n  fi\n  echo \"::endgroup::\"\n  if [ \"$ok\" = 0 ]; then\n    echo \"::error::release image ${id} failed\"\n    return 1\n  fi\n}\nfailed=()\nfor id in $IMAGE_IDS; do\n  if [ \"$id\" = \"hobo-mcp\" ] || [ \"$id\" = \"hobo-cli\" ]; then continue; fi\n  if ! build_one \"$id\"; then failed+=(\"$id\"); fi\ndone\nif [[ \" $IMAGE_IDS \" == *\" hobo-cli \"* ]]; then\n  if ! build_one hobo-cli; then failed+=(\"hobo-cli\"); fi\nfi\nif [[ \" $IMAGE_IDS \" == *\" hobo-mcp \"* ]]; then\n  if ! build_one hobo-mcp; then failed+=(\"hobo-mcp\"); fi\nfi\nif [ \"${#failed[@]}\" -gt 0 ]; then\n  echo \"failed images: ${failed[*]}\"\n  exit 1\nfi\n",
+					"env": {
+						"IMAGE_IDS": "${{ steps.affected.outputs.image_ids }}",
+						"HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS": "${{ steps.affected.outputs.image_ids }}",
+						"HOBO_RELEASE_TURBO_BASE": "HEAD^1",
+						"HOBO_RELEASE_VERSION": "pr-${{ github.event.pull_request.number || 'manual' }}",
+						"HOBO_RELEASE_REVISION": "${{ github.sha }}",
+						"HOBO_CI_WORKER_IMAGE": "hobo-ci-worker:local",
+						"HOBO_TURBO_CONCURRENCY": "1"
+					},
+					"local": "skip",
+					"reason": "runs only when a release image is affected, and then a local run does not cover this job"
+				},
+				{
+					"name": "Clean up OCI build artifacts",
+					"if": "always() && steps.affected.outputs.image_ids != ''",
+					"run": "for id in $IMAGE_IDS hobo-cli; do\n  node --no-warnings scripts/ci/build-release-oci-image.mts \"$id\" --cleanup-only || true\ndone\n",
+					"env": {
+						"IMAGE_IDS": "${{ steps.affected.outputs.image_ids }}"
+					},
+					"local": "skip",
+					"reason": "runs only when a release image is affected, and then a local run does not cover this job"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && steps.affected.outputs.image_ids != '' && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && steps.affected.outputs.image_ids != '' && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				}
+			],
+			"uncoveredWhen": {
+				"step": "affected",
+				"output": "image_ids",
+				"reason": "a release image is affected, and building it needs the CI image pipeline"
+			}
+		}
+	]
+}

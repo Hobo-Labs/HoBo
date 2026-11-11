@@ -420,6 +420,45 @@ image, it runs in a network namespace whose only interface is loopback.
 Repository variable `HOBO_CI_ROUTE=fleet` turns routing off. The runbook is
 "Runner routing" in [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
 
+## Running a pull request's CI on your own machine
+
+The slowest part of a pull request is often not the tests but the wait for a
+runner. `pnpm ci:attest run` runs the covered CI jobs on the machine you are
+sitting at, signs the result, and `pnpm ci:attest publish` pushes that record
+to the `ci-attestations` branch. The **Route runners** job of the next CI run
+verifies the record and the covered jobs are skipped: they need no runner, and
+the few jobs left go to GitHub-hosted machines.
+
+Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `pr-offpath`,
+`artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
+`release-contract` in `release-hobo.yml` when no release image is affected. Not
+covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route
+job and the gates.
+
+The record is bound to one git tree and one base tree, and it is signed with a
+key listed in `.hobo/ci-attestors.json`. The workflow reads that list at the
+pull request's base commit, never from the pull request itself. The local run
+executes the same commands as the workflow jobs, read from
+`scripts/ci/attested-jobs.json`; a test fails when that file and a workflow
+drift apart.
+
+What this does not give you:
+
+- It does not make a pull request more trustworthy than before. A
+  same-repository pull request can already edit the workflow that tests it.
+  Reading keys at the base commit only stops a pull request adding its own key.
+- Whoever holds a trusted private key can make the covered checks pass without
+  running them. Keep the list short. Every entry has an expiry.
+- Container-backed tests are skipped on a machine with no Docker engine. The
+  record says whether there was one.
+- A merge-group run matches the record only when the queue builds the same
+  tree. When it does not, the merge group runs in CI as before.
+- If `main` moves after the local run, the trees no longer match and CI runs
+  normally.
+
+The full procedure and every limit are under "Signed local runs" in
+[`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+
 ## Reading a main failure
 
 `gh run view --log` and the web viewer can drop the tail of a long step, so a step can look as if it

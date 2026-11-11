@@ -188,6 +188,10 @@ jobs:
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
+      # A signed local run verified for this tree (scripts/ci/verify-attestation.mts):
+      # the jobs it covers are skipped. `false` and `[]` when there is none.
+      attested: ${{ steps.route.outputs.attested }}
+      attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -197,6 +201,8 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
@@ -273,6 +279,9 @@ jobs:
   release-contract:
     name: Release contract + affected OCI images
     needs: route
+    # Skipped when the route job verified a signed local run of this job for this
+    # tree. A local run signs for this job only when no OCI image is affected.
+    if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     steps:
