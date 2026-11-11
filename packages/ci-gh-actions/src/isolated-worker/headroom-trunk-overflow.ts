@@ -4,6 +4,7 @@ import { getJob, rerunWorkflowRun } from "../github.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
 import { memoryRequestForStoredJob } from "./memory-classes.js";
+import { type TrunkWaitCache, trunkWaitKey } from "../trunk-wait.js";
 
 export type HeadroomTrunkOverflowLog = (
 	event: "hobo_ci_trunk_headroom_overflow",
@@ -40,7 +41,7 @@ export type HeadroomTrunkOverflowStore = Readonly<{
 	): Promise<boolean | undefined>;
 }>;
 
-export type TrunkWaitCache = Map<string, { sinceMs: number; logged: boolean }>;
+export type { TrunkWaitCache } from "../trunk-wait.js";
 
 const DEFAULT_OVERFLOW_AFTER_MS = 120_000;
 const OVERFLOW_COOLDOWN_MS = 15 * 60_000;
@@ -64,10 +65,6 @@ export function createHeadroomTrunkOverflow(options: {
 		overflowAfterMs > 900_000
 	)
 		throw new Error("invalid trunk headroom overflow window");
-
-	function trunkWaitKey(job: Pick<Job, "repository" | "id" | "runAttempt">) {
-		return `${job.repository}:${job.id}:${job.runAttempt}`;
-	}
 
 	async function overflowTrunkJobsWaitingForHeadroom(
 		store: HeadroomTrunkOverflowStore,
