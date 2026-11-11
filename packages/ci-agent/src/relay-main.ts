@@ -9,8 +9,9 @@ import {
 	createConfiguredEngines,
 	environmentCredentials,
 } from "./ai-sdk-engine.js";
-import { parseAgentConfig } from "./config.js";
+import { agentPolicies, parseAgentConfig } from "./config.js";
 import { createRelayAgent } from "./relay.js";
+import { parseCommitSigningKey } from "./signing.js";
 
 /**
  * Start the relay's Node host with the agent beside it.
@@ -41,9 +42,17 @@ export async function startRelayWithAgentFromEnvironment(
 	if (!Number.isInteger(seconds) || seconds < 10 || seconds > 86_400)
 		throw new Error("invalid agent interval");
 	const config = parseAgentConfig(block);
-	const engines = await createConfiguredEngines(config, {
-		credential: environmentCredentials(env),
-	});
+	const credential = environmentCredentials(env);
+	const engines = await createConfiguredEngines(config, { credential });
+	const signingReference = agentPolicies(config).commit.signingKey;
+	const signingText = signingReference
+		? credential(signingReference)
+		: undefined;
+	if (signingReference && !signingText)
+		throw new Error(`CI agent credential is not set: ${signingReference}`);
+	const signingKey = signingText
+		? parseCommitSigningKey(signingText)
+		: undefined;
 	const appId = env.HOBO_CI_GITHUB_APP_ID;
 	const keyFile = env.HOBO_CI_GITHUB_APP_KEY_FILE;
 	if (!appId || !keyFile)
@@ -62,6 +71,7 @@ export async function startRelayWithAgentFromEnvironment(
 				token: (installationId) => github.installationToken(installationId),
 				stateDirectory,
 				engines,
+				signingKey,
 				intervalMs: seconds * 1000,
 			});
 			close = () => agent.close();

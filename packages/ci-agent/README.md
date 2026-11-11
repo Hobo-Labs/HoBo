@@ -21,7 +21,8 @@ Each pass (once a minute by default), per connected repository:
 
 1. **Observes the queue.** Entries already in GitHub's merge queue, followed
    by open, non-draft pull requests that carry the queue label (`hobo-queue`
-   by default), in the order the label was applied.
+   by default), in the order the label was applied. A labelled pull request
+   based on another one's head branch is part of a stack and depends on it.
 2. **Trial-merges** each entry against the base branch, and each pair of
    entries that changed a common path, with `git merge-tree`. Nothing is
    checked out and no ref moves.
@@ -30,12 +31,19 @@ Each pass (once a minute by default), per connected repository:
    `maxWaitMinutes` is taken before any younger one. Within those limits a
    priority label comes first, then the entry that conflicts with the fewest
    others, then the oldest. Entries that merge cleanly together are grouped
-   into batches of up to `maxBatchSize`.
+   into batches of up to `maxBatchSize`. An entry the merge queue ejected at
+   its current commit is batched alone.
 4. **Resolves conflicts with the base branch.** For a pull request that no
    longer merges, the configured engine is asked for replacement text for
    each conflict region, and the result is committed as a merge of the base
-   branch into the pull request.
+   branch into the pull request. The resolved file must still parse and must
+   not declare a name twice before it is committed.
 5. **Publishes**, as far as its mode allows.
+6. **Reads the checks on what it published.** When the required checks fail
+   on a resolution, the engine is asked once more (by default) with its
+   earlier answer and what the checks reported, and the correction is pushed
+   on top. Past that, it tells the pull request to resolve the conflict by
+   hand.
 
 | Mode | Plans and resolves | Pushes | Enqueues |
 | --- | --- | --- | --- |
@@ -43,12 +51,16 @@ Each pass (once a minute by default), per connected repository:
 | `suggest` | Yes | The merge commit to `hobo-agent/resolve/<pr>-<sha>`, plus a comment on the pull request. The pull request branch is not touched. | Nothing |
 | `apply` | Yes | The merge commit to the pull request's own branch (a fast-forward), plus a comment. A fork's branch is never pushed to; it gets the `suggest` treatment. | Labelled pull requests that merge cleanly, in planned order, up to `maxBatchSize` per pass. A commit is enqueued once: if the queue ejects it, a person re-enqueues it or pushes a new commit |
 
-`apply` acts only when GitHub confirms that the base branch has a branch
-protection rule naming at least one required status check. Without that
-confirmation (no rule, no named checks, or a failed lookup) the pass behaves
-as `suggest`, and records `ci.agent.ApplyWithheld` once a day. Required checks
-set only through repository rulesets are not read, so such a branch is
-treated as unconfirmed.
+`apply` acts only when GitHub confirms that the base branch requires at least
+one named status check, through a branch protection rule or an active
+repository or organization ruleset. Without that confirmation (no rule, no
+named checks, or a failed lookup) the pass behaves as `suggest`, and records
+`ci.agent.ApplyWithheld` once a day.
+
+In `apply`, two pull requests that conflict are never in the queue together:
+the second waits until the first merges, then conflicts with the base branch
+and is resolved there. A stacked pull request is neither resolved nor
+enqueued until GitHub retargets it to the base branch.
 
 With `queue.rollup: true` in `suggest` mode, the agent also merges the first
 batch of waiting pull requests together onto `hobo-agent/rollup/<id>`,
@@ -84,10 +96,15 @@ fails to answer. They are built on the [Vercel AI SDK](https://ai-sdk.dev)
 | `anthropic` | An Anthropic model id | `@ai-sdk/anthropic` |
 | `google` | A Google model id | `@ai-sdk/google` |
 | `openai-compatible` | Any id; requires an `https` `baseUrl` | `@ai-sdk/openai-compatible` |
-| `harness` | `claude-code`, `codex`, `pi`, `opencode` or `grok-build` | None; the host supplies the engine |
+| `harness` | `claude-code`, `codex`, `pi`, `opencode` or `grok-build` | `@ai-sdk/harness`, `@ai-sdk/sandbox-just-bash` and the runtime's adapter, such as `@ai-sdk/harness-claude-code` |
 
 The provider packages are optional peer dependencies and are imported only
-when an engine names them. `credential` is a reference, `env:NAME` or
+when an engine names them. A `harness` engine runs a coding-agent runtime
+through the AI SDK harness agent with all of the runtime's built-in tools
+switched off and an empty in-memory sandbox, so it sees the conflict text
+and nothing else, like a model engine. The runtime must be installed on the
+host and signs in on its own (Claude Code with `ANTHROPIC_API_KEY`, for
+example); a harness entry takes no `credential`. `credential` is a reference, `env:NAME` or
 `github-secret:NAME`, resolved from the relay process's environment. A key
 written into the file is rejected, by this package and by the relay's
 project-config parser. A referenced name that is not set stops startup.
@@ -108,11 +125,27 @@ project-config parser. A referenced name that is not set stops startup.
 | `resolution.maxFileBytes` | 262144 | A larger conflicted file abstains |
 | `resolution.minConfidence` | 0.8 | A region answered below this abstains |
 | `resolution.contextLines` | 12 | Unconflicted lines shown around each region |
+| `resolution.maxRepairs` | 1 | Corrected resolutions after the required checks fail on one (0 to 3) |
+| `commit.name`, `commit.email` | `hobo-ci-agent`, `hobo-ci-agent@users.noreply.github.com` | Author and committer of the agent's commits |
+| `commit.signingKey` | none | A reference (`env:NAME`) to an unencrypted ed25519 key that signs every commit |
 | `budget.maxInputTokens` | 60000 | Estimated prompt size above this abstains |
 | `budget.maxOutputTokens` | 8000 | Output limit per file |
 | `budget.maxTokensPerDay` | 2000000 | Tokens per UTC day, across repositories |
 | `budget.timeoutSeconds` | 120 | Per engine call |
 | `budget.maxResolutionsPerTick` | 2 | Model-backed resolutions started per pass |
+
+## Sign its commits
+
+With `commit.signingKey`, every commit the agent writes carries an SSH
+signature, so a branch that requires signed commits accepts its pushes. The
+key is an unencrypted ed25519 key, PKCS#8 PEM (`openssl genpkey -algorithm
+ed25519`) or OpenSSH (`ssh-keygen -t ed25519 -N ""`), in the environment
+variable the reference names. Ed25519 signatures are deterministic, so a
+signed merge keeps the same commit id from pass to pass.
+
+GitHub shows a commit as verified when the public key is registered as an SSH
+signing key on the account whose email is `commit.email`. A GitHub App's bot
+account cannot hold one, so use a machine user's email and key.
 
 ## Run it with the relay
 
@@ -151,6 +184,33 @@ The relay's GitHub App needs `contents: write` and `pull_requests: write` for
 requests both), and `apply` needs the merge queue enabled on the base branch.
 Git reaches GitHub with a short-lived installation token sent as a header on
 each fetch and push; it is never written to the clone.
+
+## Run it on its own
+
+The agent also runs as a process of its own, beside any relay host: the box
+worker, a container, or a machine next to a relay on Vercel. It needs the
+GitHub App's credentials and the repositories to watch, not the relay's
+store:
+
+```sh
+HOBO_CI_AGENT_CONFIG=.hobo/ci.json \
+HOBO_CI_AGENT_DIR=/var/lib/hobo-ci/agent \
+HOBO_CI_AGENT_REPOSITORIES=acme/api,acme/web \
+HOBO_CI_GITHUB_APP_ID=123456 \
+HOBO_CI_GITHUB_APP_KEY_FILE=/run/secrets/app.pem \
+ANTHROPIC_API_KEY=... \
+pnpm --filter @hobo/ci-agent agent
+```
+
+It looks up each repository's App installation, skips one the App is not
+installed on, and drains a pass in flight on SIGTERM.
+
+To check a real installation before trusting it, run one pass and exit:
+`pnpm --filter @hobo/ci-agent acceptance:live` with the same settings and
+`mode: "observe"`. It reads the queue and plans it, writes nothing to
+GitHub, and exits non-zero if the pass fails.
+
+## Embed it
 
 To embed the agent in your own host, build it from parts:
 
@@ -191,6 +251,15 @@ What the agent will not do, and where that is enforced:
 - **`apply` needs required checks.** Unreviewed model output only enters a
   pull request branch or the merge queue when the base branch is confirmed to
   require status checks; otherwise the pass only suggests.
+- **A resolved file must still be well-formed.** A TypeScript, JavaScript,
+  JSON or YAML file that parsed on both sides must parse after resolution,
+  and a script must not declare a top-level name twice where neither side
+  did. Otherwise the merge abstains. These are deterministic checks: a
+  resolution that passes them can still be wrong.
+- **A failed resolution is repaired at most `maxRepairs` times.** Check
+  output reaches the engine as data, bounded and stripped of control
+  characters, beside its earlier answer. A pull request branch someone else
+  has pushed to since is never repaired.
 - **It abstains rather than guesses.** Binary files, a delete against a
   modify, renames, mode changes, oversized files, too many files or regions,
   an answer below `minConfidence`, and replacement text that contains conflict
@@ -214,34 +283,29 @@ trailers.
 
 ## What is not done
 
-- **No live verification.** The GitHub GraphQL queries and mutations are
-  written from GitHub's published schema and pinned by a hand-authored Pact.
-  They have not been run against GitHub. No live model has been called.
-- **Only the Node relay runs the agent**: `hobo ci serve` and this package's
-  entry. The Vercel host and the box worker daemon cannot.
-- **Harness engines are a port, not an implementation.** A `harness` engine
-  needs the host to supply one; `relay-main` supplies none, so a block that
-  names a harness stops startup.
-- **No check that the resolved code is right beyond CI.** There is no parse
-  check, no duplicate-declaration check, and no loop that feeds a failing
-  build back to the model. A wrong but plausible resolution is caught by the
-  repository's required checks and by review, or not at all.
-- **Rulesets are not read.** `apply` recognises required checks from a branch
-  protection rule only. A base branch whose checks are required through
-  repository rulesets alone is treated as unprotected, and `apply` only
-  suggests there. The agent also does not check that the required checks are
-  the right ones.
-- **Commits are not signed.** A branch that requires signed commits will
-  refuse the push.
-- **Stacked pull requests are not detected** by the GitHub queue adapter;
-  the planner honours dependencies when a queue source supplies them.
-- **Nothing reorders entries already in GitHub's merge queue**, by design:
-  moving one rebuilds every merge group behind it.
-- **No batch bisection.** The agent does not read CI results, so it cannot
-  split a failed batch.
+- **No live verification yet.** The GitHub GraphQL queries and mutations are
+  written from GitHub's published schema and pinned by a hand-authored Pact,
+  and no live model has been called. `acceptance:live` (above) is the first
+  run to make against a real installation.
+- **Not inside Vercel Functions.** The agent needs `git` and a disk, which
+  Vercel Functions do not have. Beside a relay on Vercel, run it on its own.
+- **The checks are structural.** Parsing and duplicate names are checked, not
+  types or tests; the repository's required checks remain the verification.
+  A repair sees check-run titles, summaries and annotations, not full logs.
+- **Which checks are required is not judged.** `apply` confirms that at least
+  one named check is required, not that the checks cover the change.
+
+## Design decisions
+
+- **Entries already in GitHub's merge queue are never reordered.** Moving
+  one rebuilds every merge group behind it.
 - **Peer conflicts wait.** A pull request that conflicts with one ahead of it
-  is planned behind it and resolved only after that one merges, when the
-  conflict is with the base branch. Rollup is the exception.
+  is not queued with it; it is resolved against the base branch once that one
+  merges. Rollup is the exception, on a branch of its own.
+- **Batches are split by GitHub, not by the agent.** Each entry in GitHub's
+  merge queue gets its own cumulative merge group, so a failure is attributed
+  to one entry and ejects it. The agent's part is to notice the ejection,
+  never re-add that commit, and batch the entry alone in its plan.
 
 [PRIOR-ART.md](PRIOR-ART.md) sets these against what other merge queues and
 conflict resolvers do. [ADR.md](ADR.md) records the design decisions.
@@ -255,10 +319,14 @@ conflict resolvers do. [ADR.md](ADR.md) records the design decisions.
 | `src/resolver.ts` | Eligibility, budgets, engine fallback, answer checks |
 | `src/agent.ts` | One pass: observe, plan, resolve, publish |
 | `src/ai-sdk-engine.ts` | Engines over AI SDK models (`./ai-sdk`) |
+| `src/harness-engine.ts` | Engines over coding-agent runtimes |
+| `src/verify.ts` | Parse and duplicate-declaration checks of a resolved file |
+| `src/signing.ts` | SSH commit signatures |
 | `src/git-workspace.ts` | Trial merge, commit and push with git plumbing (`./git`) |
 | `src/github-queue.ts` | GitHub merge queue over GraphQL (`./github`) |
 | `src/sqlite-journal.ts` | The durable journal (`./sqlite`) |
 | `src/relay.ts`, `src/relay-main.ts` | Composition with the relay (`./relay`) |
+| `src/daemon-main.ts` | The agent on its own (`./daemon`) |
 | [`data-models/`](data-models/README.md) | Protobuf and CUE for every record |
 | [`contracts/`](contracts/README.md) | Pacts for the GitHub and engine boundaries |
 
@@ -269,6 +337,6 @@ pnpm exec turbo run build --filter=@hobo/ci-agent...
 pnpm --filter @hobo/ci-agent test
 ```
 
-The workspace, agent and relay suites create real repositories under the
-system temp directory and run real `git` (2.38 or newer). No test uses the
-network.
+The workspace, agent, relay, daemon and signing suites create real
+repositories under the system temp directory and run real `git` (2.38 or
+newer). No test uses the network.

@@ -15,9 +15,12 @@ fixtures against. Beyond field ranges it holds the cross-field rules:
 - `apply` mode cannot enable `rollup`.
 - A resolution has a commit only when its outcome is `resolved`, and only a
   commit can have a published ref; any other outcome carries a reason code.
+- A repair (`repairs` set) is a later attempt (`attempt` of at least 1).
+- A `ResolutionChecked` event carries the resolution and its checks' result.
+- A commit signing key is a reference, never key text.
 - A `PlanProposed` event carries a plan; a settled or published one carries
-  a resolution; an `EntryEnqueued` one names its entry and the commit it
-  enqueued.
+  a resolution; an `EntryEnqueued` or `EntryEjected` one names its entry and
+  the commit.
 
 `fixtures/valid` and `fixtures/invalid` exercise those rules.
 `test/config.test.ts` runs every `config-*` fixture through `parseAgentConfig`

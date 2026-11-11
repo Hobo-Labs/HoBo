@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agent.proto.
  */
 export const file_agent: GenFile = /*@__PURE__*/
-  fileDesc("CgthZ2VudC5wcm90bxIQaG9iby5jaS5hZ2VudC52MSLgAQoLQWdlbnRDb25maWcSDAoEbW9kZRgBIAEoCRIuCgdlbmdpbmVzGAIgAygLMh0uaG9iby5jaS5hZ2VudC52MS5BZ2VudEVuZ2luZRIsCgVxdWV1ZRgDIAEoCzIdLmhvYm8uY2kuYWdlbnQudjEuUXVldWVQb2xpY3kSNgoKcmVzb2x1dGlvbhgEIAEoCzIiLmhvYm8uY2kuYWdlbnQudjEuUmVzb2x1dGlvblBvbGljeRItCgZidWRnZXQYBSABKAsyHS5ob2JvLmNpLmFnZW50LnYxLkFnZW50QnVkZ2V0IlwKC0FnZW50RW5naW5lEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSDQoFbW9kZWwYAyABKAkSEgoKY3JlZGVudGlhbBgEIAEoCRIQCghiYXNlX3VybBgFIAEoCSKKAQoLUXVldWVQb2xpY3kSEQoJbWF4X2RlcHRoGAEgASgNEhYKDm1heF9iYXRjaF9zaXplGAIgASgNEhgKEG1heF93YWl0X21pbnV0ZXMYAyABKA0SFwoPcHJpb3JpdHlfbGFiZWxzGAQgAygJEg4KBnJvbGx1cBgFIAEoCBINCgVsYWJlbBgGIAEoCSLDAQoQUmVzb2x1dGlvblBvbGljeRIXCg9wcm90ZWN0ZWRfcGF0aHMYASADKAkSHAoUbWF4X2NvbmZsaWN0ZWRfZmlsZXMYAiABKA0SHAoUbWF4X2NvbmZsaWN0X3JlZ2lvbnMYAyABKA0SFgoObWF4X2ZpbGVfYnl0ZXMYBCABKA0SFgoObWluX2NvbmZpZGVuY2UYBSABKAESFQoNY29udGV4dF9saW5lcxgGIAEoDRITCgttYXhfcmVwYWlycxgHIAEoDSKZAQoLQWdlbnRCdWRnZXQSGAoQbWF4X2lucHV0X3Rva2VucxgBIAEoDRIZChFtYXhfb3V0cHV0X3Rva2VucxgCIAEoDRIaChJtYXhfdG9rZW5zX3Blcl9kYXkYAyABKAQSFwoPdGltZW91dF9zZWNvbmRzGAQgASgNEiAKGG1heF9yZXNvbHV0aW9uc19wZXJfdGljaxgFIAEoDSLTAQoKUXVldWVFbnRyeRIOCgZudW1iZXIYASABKA0SEAoIaGVhZF9zaGEYAiABKAkSEAoIaGVhZF9yZWYYAyABKAkSEAoIYmFzZV9yZWYYBCABKAkSEAoIcG9zaXRpb24YBSABKA0SEwoLZW5xdWV1ZWRfYXQYBiABKAkSDgoGbGFiZWxzGAcgAygJEhIKCmRlcGVuZHNfb24YCCADKA0SFQoNY2hhbmdlZF9wYXRocxgJIAMoCRIMCgRmb3JrGAogASgIEg8KB3N0YXJ0ZWQYCyABKAgiiwEKDVF1ZXVlU25hcHNob3QSEgoKcmVwb3NpdG9yeRgBIAEoCRIQCghiYXNlX3JlZhgCIAEoCRIQCghiYXNlX3NoYRgDIAEoCRITCgtvYnNlcnZlZF9hdBgEIAEoCRItCgdlbnRyaWVzGAUgAygLMhwuaG9iby5jaS5hZ2VudC52MS5RdWV1ZUVudHJ5IkwKC1BhaXJWZXJkaWN0Eg0KBWZpcnN0GAEgASgNEg4KBnNlY29uZBgCIAEoDRIPCgd2ZXJkaWN0GAMgASgJEg0KBXBhdGhzGAQgAygJIhwKCVBsYW5CYXRjaBIPCgdudW1iZXJzGAEgAygNIkAKDlBsYW5SZXNvbHV0aW9uEg4KBm51bWJlchgBIAEoDRIPCgdhZ2FpbnN0GAIgAygNEg0KBXBhdGhzGAMgAygJIsQBCglRdWV1ZVBsYW4SEgoKcmVwb3NpdG9yeRgBIAEoCRIQCghiYXNlX3NoYRgCIAEoCRINCgVvcmRlchgDIAMoDRIsCgdiYXRjaGVzGAQgAygLMhsuaG9iby5jaS5hZ2VudC52MS5QbGFuQmF0Y2gSNQoLcmVzb2x1dGlvbnMYBSADKAsyIC5ob2JvLmNpLmFnZW50LnYxLlBsYW5SZXNvbHV0aW9uEg0KBW1vdmVkGAYgAygNEg4KBmRpZ2VzdBgHIAEoCSI5CgpUb2tlblVzYWdlEhQKDGlucHV0X3Rva2VucxgBIAEoBBIVCg1vdXRwdXRfdG9rZW5zGAIgASgEIlkKDFJlc29sdmVkRmlsZRIMCgRwYXRoGAEgASgJEg8KB3JlZ2lvbnMYAiABKA0SEgoKY29uZmlkZW5jZRgDIAEoARIWCg5jb250ZW50X3NoYTI1NhgEIAEoCSLPAgoKUmVzb2x1dGlvbhILCgNrZXkYASABKAkSEgoKcmVwb3NpdG9yeRgCIAEoCRIOCgZudW1iZXIYAyABKA0SEAoIb3Vyc19zaGEYBCABKAkSEgoKdGhlaXJzX3NoYRgFIAEoCRIPCgdvdXRjb21lGAYgASgJEg4KBnJlYXNvbhgHIAEoCRItCgVmaWxlcxgIIAMoCzIeLmhvYm8uY2kuYWdlbnQudjEuUmVzb2x2ZWRGaWxlEhEKCWVuZ2luZV9pZBgJIAEoCRINCgVtb2RlbBgKIAEoCRIrCgV1c2FnZRgLIAEoCzIcLmhvYm8uY2kuYWdlbnQudjEuVG9rZW5Vc2FnZRISCgpjb21taXRfc2hhGAwgASgJEhUKDXB1Ymxpc2hlZF9yZWYYDSABKAkSDwoHcmVwYWlycxgOIAEoCRIPCgdhdHRlbXB0GA8gASgNItwBCgpBZ2VudEV2ZW50EgoKAmlkGAEgASgJEgwKBHR5cGUYAiABKAkSCgoCYXQYAyABKAkSEgoKcmVwb3NpdG9yeRgEIAEoCRIpCgRwbGFuGAUgASgLMhsuaG9iby5jaS5hZ2VudC52MS5RdWV1ZVBsYW4SMAoKcmVzb2x1dGlvbhgGIAEoCzIcLmhvYm8uY2kuYWdlbnQudjEuUmVzb2x1dGlvbhIPCgdudW1iZXJzGAcgAygNEhAKCGhlYWRfc2hhGAggASgJEhQKDGNoZWNrc19zdGF0ZRgJIAEoCWIGcHJvdG8z");
+  fileDesc("CgthZ2VudC5wcm90bxIQaG9iby5jaS5hZ2VudC52MSKQAgoLQWdlbnRDb25maWcSDAoEbW9kZRgBIAEoCRIuCgdlbmdpbmVzGAIgAygLMh0uaG9iby5jaS5hZ2VudC52MS5BZ2VudEVuZ2luZRIsCgVxdWV1ZRgDIAEoCzIdLmhvYm8uY2kuYWdlbnQudjEuUXVldWVQb2xpY3kSNgoKcmVzb2x1dGlvbhgEIAEoCzIiLmhvYm8uY2kuYWdlbnQudjEuUmVzb2x1dGlvblBvbGljeRItCgZidWRnZXQYBSABKAsyHS5ob2JvLmNpLmFnZW50LnYxLkFnZW50QnVkZ2V0Ei4KBmNvbW1pdBgGIAEoCzIeLmhvYm8uY2kuYWdlbnQudjEuQ29tbWl0UG9saWN5IkAKDENvbW1pdFBvbGljeRIMCgRuYW1lGAEgASgJEg0KBWVtYWlsGAIgASgJEhMKC3NpZ25pbmdfa2V5GAMgASgJIlwKC0FnZW50RW5naW5lEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSDQoFbW9kZWwYAyABKAkSEgoKY3JlZGVudGlhbBgEIAEoCRIQCghiYXNlX3VybBgFIAEoCSKKAQoLUXVldWVQb2xpY3kSEQoJbWF4X2RlcHRoGAEgASgNEhYKDm1heF9iYXRjaF9zaXplGAIgASgNEhgKEG1heF93YWl0X21pbnV0ZXMYAyABKA0SFwoPcHJpb3JpdHlfbGFiZWxzGAQgAygJEg4KBnJvbGx1cBgFIAEoCBINCgVsYWJlbBgGIAEoCSLDAQoQUmVzb2x1dGlvblBvbGljeRIXCg9wcm90ZWN0ZWRfcGF0aHMYASADKAkSHAoUbWF4X2NvbmZsaWN0ZWRfZmlsZXMYAiABKA0SHAoUbWF4X2NvbmZsaWN0X3JlZ2lvbnMYAyABKA0SFgoObWF4X2ZpbGVfYnl0ZXMYBCABKA0SFgoObWluX2NvbmZpZGVuY2UYBSABKAESFQoNY29udGV4dF9saW5lcxgGIAEoDRITCgttYXhfcmVwYWlycxgHIAEoDSKZAQoLQWdlbnRCdWRnZXQSGAoQbWF4X2lucHV0X3Rva2VucxgBIAEoDRIZChFtYXhfb3V0cHV0X3Rva2VucxgCIAEoDRIaChJtYXhfdG9rZW5zX3Blcl9kYXkYAyABKAQSFwoPdGltZW91dF9zZWNvbmRzGAQgASgNEiAKGG1heF9yZXNvbHV0aW9uc19wZXJfdGljaxgFIAEoDSLTAQoKUXVldWVFbnRyeRIOCgZudW1iZXIYASABKA0SEAoIaGVhZF9zaGEYAiABKAkSEAoIaGVhZF9yZWYYAyABKAkSEAoIYmFzZV9yZWYYBCABKAkSEAoIcG9zaXRpb24YBSABKA0SEwoLZW5xdWV1ZWRfYXQYBiABKAkSDgoGbGFiZWxzGAcgAygJEhIKCmRlcGVuZHNfb24YCCADKA0SFQoNY2hhbmdlZF9wYXRocxgJIAMoCRIMCgRmb3JrGAogASgIEg8KB3N0YXJ0ZWQYCyABKAgiiwEKDVF1ZXVlU25hcHNob3QSEgoKcmVwb3NpdG9yeRgBIAEoCRIQCghiYXNlX3JlZhgCIAEoCRIQCghiYXNlX3NoYRgDIAEoCRITCgtvYnNlcnZlZF9hdBgEIAEoCRItCgdlbnRyaWVzGAUgAygLMhwuaG9iby5jaS5hZ2VudC52MS5RdWV1ZUVudHJ5IkwKC1BhaXJWZXJkaWN0Eg0KBWZpcnN0GAEgASgNEg4KBnNlY29uZBgCIAEoDRIPCgd2ZXJkaWN0GAMgASgJEg0KBXBhdGhzGAQgAygJIhwKCVBsYW5CYXRjaBIPCgdudW1iZXJzGAEgAygNIkAKDlBsYW5SZXNvbHV0aW9uEg4KBm51bWJlchgBIAEoDRIPCgdhZ2FpbnN0GAIgAygNEg0KBXBhdGhzGAMgAygJIsQBCglRdWV1ZVBsYW4SEgoKcmVwb3NpdG9yeRgBIAEoCRIQCghiYXNlX3NoYRgCIAEoCRINCgVvcmRlchgDIAMoDRIsCgdiYXRjaGVzGAQgAygLMhsuaG9iby5jaS5hZ2VudC52MS5QbGFuQmF0Y2gSNQoLcmVzb2x1dGlvbnMYBSADKAsyIC5ob2JvLmNpLmFnZW50LnYxLlBsYW5SZXNvbHV0aW9uEg0KBW1vdmVkGAYgAygNEg4KBmRpZ2VzdBgHIAEoCSI5CgpUb2tlblVzYWdlEhQKDGlucHV0X3Rva2VucxgBIAEoBBIVCg1vdXRwdXRfdG9rZW5zGAIgASgEIlkKDFJlc29sdmVkRmlsZRIMCgRwYXRoGAEgASgJEg8KB3JlZ2lvbnMYAiABKA0SEgoKY29uZmlkZW5jZRgDIAEoARIWCg5jb250ZW50X3NoYTI1NhgEIAEoCSLPAgoKUmVzb2x1dGlvbhILCgNrZXkYASABKAkSEgoKcmVwb3NpdG9yeRgCIAEoCRIOCgZudW1iZXIYAyABKA0SEAoIb3Vyc19zaGEYBCABKAkSEgoKdGhlaXJzX3NoYRgFIAEoCRIPCgdvdXRjb21lGAYgASgJEg4KBnJlYXNvbhgHIAEoCRItCgVmaWxlcxgIIAMoCzIeLmhvYm8uY2kuYWdlbnQudjEuUmVzb2x2ZWRGaWxlEhEKCWVuZ2luZV9pZBgJIAEoCRINCgVtb2RlbBgKIAEoCRIrCgV1c2FnZRgLIAEoCzIcLmhvYm8uY2kuYWdlbnQudjEuVG9rZW5Vc2FnZRISCgpjb21taXRfc2hhGAwgASgJEhUKDXB1Ymxpc2hlZF9yZWYYDSABKAkSDwoHcmVwYWlycxgOIAEoCRIPCgdhdHRlbXB0GA8gASgNItwBCgpBZ2VudEV2ZW50EgoKAmlkGAEgASgJEgwKBHR5cGUYAiABKAkSCgoCYXQYAyABKAkSEgoKcmVwb3NpdG9yeRgEIAEoCRIpCgRwbGFuGAUgASgLMhsuaG9iby5jaS5hZ2VudC52MS5RdWV1ZVBsYW4SMAoKcmVzb2x1dGlvbhgGIAEoCzIcLmhvYm8uY2kuYWdlbnQudjEuUmVzb2x1dGlvbhIPCgdudW1iZXJzGAcgAygNEhAKCGhlYWRfc2hhGAggASgJEhQKDGNoZWNrc19zdGF0ZRgJIAEoCWIGcHJvdG8z");
 
 /**
  * The authored `agent` block of `.hobo/ci.json`. It holds references only: a
@@ -48,6 +48,11 @@ export type AgentConfig = Message<"hobo.ci.agent.v1.AgentConfig"> & {
    * @generated from field: hobo.ci.agent.v1.AgentBudget budget = 5;
    */
   budget?: AgentBudget | undefined;
+
+  /**
+   * @generated from field: hobo.ci.agent.v1.CommitPolicy commit = 6;
+   */
+  commit?: CommitPolicy | undefined;
 };
 
 /**
@@ -56,6 +61,38 @@ export type AgentConfig = Message<"hobo.ci.agent.v1.AgentConfig"> & {
  */
 export const AgentConfigSchema: GenMessage<AgentConfig> = /*@__PURE__*/
   messageDesc(file_agent, 0);
+
+/**
+ * Who the agent's commits are by, and the key that signs them.
+ *
+ * @generated from message hobo.ci.agent.v1.CommitPolicy
+ */
+export type CommitPolicy = Message<"hobo.ci.agent.v1.CommitPolicy"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string email = 2;
+   */
+  email: string;
+
+  /**
+   * A reference ("env:NAME", "github-secret:NAME") to an unencrypted ed25519
+   * key; empty leaves commits unsigned.
+   *
+   * @generated from field: string signing_key = 3;
+   */
+  signingKey: string;
+};
+
+/**
+ * Describes the message hobo.ci.agent.v1.CommitPolicy.
+ * Use `create(CommitPolicySchema)` to create a new message.
+ */
+export const CommitPolicySchema: GenMessage<CommitPolicy> = /*@__PURE__*/
+  messageDesc(file_agent, 1);
 
 /**
  * @generated from message hobo.ci.agent.v1.AgentEngine
@@ -100,7 +137,7 @@ export type AgentEngine = Message<"hobo.ci.agent.v1.AgentEngine"> & {
  * Use `create(AgentEngineSchema)` to create a new message.
  */
 export const AgentEngineSchema: GenMessage<AgentEngine> = /*@__PURE__*/
-  messageDesc(file_agent, 1);
+  messageDesc(file_agent, 2);
 
 /**
  * @generated from message hobo.ci.agent.v1.QueuePolicy
@@ -150,7 +187,7 @@ export type QueuePolicy = Message<"hobo.ci.agent.v1.QueuePolicy"> & {
  * Use `create(QueuePolicySchema)` to create a new message.
  */
 export const QueuePolicySchema: GenMessage<QueuePolicy> = /*@__PURE__*/
-  messageDesc(file_agent, 2);
+  messageDesc(file_agent, 3);
 
 /**
  * @generated from message hobo.ci.agent.v1.ResolutionPolicy
@@ -205,7 +242,7 @@ export type ResolutionPolicy = Message<"hobo.ci.agent.v1.ResolutionPolicy"> & {
  * Use `create(ResolutionPolicySchema)` to create a new message.
  */
 export const ResolutionPolicySchema: GenMessage<ResolutionPolicy> = /*@__PURE__*/
-  messageDesc(file_agent, 3);
+  messageDesc(file_agent, 4);
 
 /**
  * @generated from message hobo.ci.agent.v1.AgentBudget
@@ -244,7 +281,7 @@ export type AgentBudget = Message<"hobo.ci.agent.v1.AgentBudget"> & {
  * Use `create(AgentBudgetSchema)` to create a new message.
  */
 export const AgentBudgetSchema: GenMessage<AgentBudget> = /*@__PURE__*/
-  messageDesc(file_agent, 4);
+  messageDesc(file_agent, 5);
 
 /**
  * One pull request waiting to merge, as observed at `QueueSnapshot.observed_at`.
@@ -322,7 +359,7 @@ export type QueueEntry = Message<"hobo.ci.agent.v1.QueueEntry"> & {
  * Use `create(QueueEntrySchema)` to create a new message.
  */
 export const QueueEntrySchema: GenMessage<QueueEntry> = /*@__PURE__*/
-  messageDesc(file_agent, 5);
+  messageDesc(file_agent, 6);
 
 /**
  * @generated from message hobo.ci.agent.v1.QueueSnapshot
@@ -359,7 +396,7 @@ export type QueueSnapshot = Message<"hobo.ci.agent.v1.QueueSnapshot"> & {
  * Use `create(QueueSnapshotSchema)` to create a new message.
  */
 export const QueueSnapshotSchema: GenMessage<QueueSnapshot> = /*@__PURE__*/
-  messageDesc(file_agent, 6);
+  messageDesc(file_agent, 7);
 
 /**
  * Whether two entries merge together. "unknown" is planned as a conflict.
@@ -395,7 +432,7 @@ export type PairVerdict = Message<"hobo.ci.agent.v1.PairVerdict"> & {
  * Use `create(PairVerdictSchema)` to create a new message.
  */
 export const PairVerdictSchema: GenMessage<PairVerdict> = /*@__PURE__*/
-  messageDesc(file_agent, 7);
+  messageDesc(file_agent, 8);
 
 /**
  * @generated from message hobo.ci.agent.v1.PlanBatch
@@ -412,7 +449,7 @@ export type PlanBatch = Message<"hobo.ci.agent.v1.PlanBatch"> & {
  * Use `create(PlanBatchSchema)` to create a new message.
  */
 export const PlanBatchSchema: GenMessage<PlanBatch> = /*@__PURE__*/
-  messageDesc(file_agent, 8);
+  messageDesc(file_agent, 9);
 
 /**
  * An entry that cannot merge on top of what is planned ahead of it as it stands.
@@ -443,7 +480,7 @@ export type PlanResolution = Message<"hobo.ci.agent.v1.PlanResolution"> & {
  * Use `create(PlanResolutionSchema)` to create a new message.
  */
 export const PlanResolutionSchema: GenMessage<PlanResolution> = /*@__PURE__*/
-  messageDesc(file_agent, 9);
+  messageDesc(file_agent, 10);
 
 /**
  * @generated from message hobo.ci.agent.v1.QueuePlan
@@ -496,7 +533,7 @@ export type QueuePlan = Message<"hobo.ci.agent.v1.QueuePlan"> & {
  * Use `create(QueuePlanSchema)` to create a new message.
  */
 export const QueuePlanSchema: GenMessage<QueuePlan> = /*@__PURE__*/
-  messageDesc(file_agent, 10);
+  messageDesc(file_agent, 11);
 
 /**
  * @generated from message hobo.ci.agent.v1.TokenUsage
@@ -518,7 +555,7 @@ export type TokenUsage = Message<"hobo.ci.agent.v1.TokenUsage"> & {
  * Use `create(TokenUsageSchema)` to create a new message.
  */
 export const TokenUsageSchema: GenMessage<TokenUsage> = /*@__PURE__*/
-  messageDesc(file_agent, 11);
+  messageDesc(file_agent, 12);
 
 /**
  * @generated from message hobo.ci.agent.v1.ResolvedFile
@@ -552,7 +589,7 @@ export type ResolvedFile = Message<"hobo.ci.agent.v1.ResolvedFile"> & {
  * Use `create(ResolvedFileSchema)` to create a new message.
  */
 export const ResolvedFileSchema: GenMessage<ResolvedFile> = /*@__PURE__*/
-  messageDesc(file_agent, 12);
+  messageDesc(file_agent, 13);
 
 /**
  * The outcome of one attempt to merge `ours_sha` and `theirs_sha`.
@@ -655,7 +692,7 @@ export type Resolution = Message<"hobo.ci.agent.v1.Resolution"> & {
  * Use `create(ResolutionSchema)` to create a new message.
  */
 export const ResolutionSchema: GenMessage<Resolution> = /*@__PURE__*/
-  messageDesc(file_agent, 13);
+  messageDesc(file_agent, 14);
 
 /**
  * The agent's journal record. Replay rebuilds spent budget and attempted keys.
@@ -726,5 +763,5 @@ export type AgentEvent = Message<"hobo.ci.agent.v1.AgentEvent"> & {
  * Use `create(AgentEventSchema)` to create a new message.
  */
 export const AgentEventSchema: GenMessage<AgentEvent> = /*@__PURE__*/
-  messageDesc(file_agent, 14);
+  messageDesc(file_agent, 15);
 

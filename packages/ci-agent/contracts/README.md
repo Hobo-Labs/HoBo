@@ -2,16 +2,18 @@
 
 - `github-merge-queue.pact.json`: the GitHub GraphQL boundary. Each
   interaction names an operation (`HoboAgentQueue`, `HoboAgentEnqueue`,
-  `HoboAgentComment`, `HoboAgentDefaultBranch`, `HoboAgentBaseProtection`) and
-  its variables.
+  `HoboAgentComment`, `HoboAgentDefaultBranch`, `HoboAgentBaseProtection`,
+  `HoboAgentCommitChecks`) and its variables.
   `github-merge-queue.consumer.test.ts` drives the real adapter and transport
   through every interaction and checks the URL, method, headers, the exact
   query text exported by `src/github-queue.ts`, and the variables. It covers
   queue ordering (queued entries first, then labelled work by label time),
   drafts and duplicates being left out, the missing-merge-queue case,
   mutations addressed by node id only for observed pull requests, which base
-  branch answers count as confirmed required checks (a rule that requires
-  checks and names at least one) and which do not, and that a
+  branch answers count as confirmed required checks (a protection rule or a
+  ruleset rule that names at least one) and which do not, stacked pull
+  requests depending on their parent, a commit's check rollup turned into a
+  bounded failure report, and that a
   refusal or an HTTP failure produces an error with no response text in it.
 - `resolution-engine.pact.json`: the engine port as a synchronous message.
   The request is the one JSON document an engine receives for a file; the

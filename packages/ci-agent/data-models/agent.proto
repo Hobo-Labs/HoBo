@@ -12,6 +12,16 @@ message AgentConfig {
   QueuePolicy queue = 3;
   ResolutionPolicy resolution = 4;
   AgentBudget budget = 5;
+  CommitPolicy commit = 6;
+}
+
+// Who the agent's commits are by, and the key that signs them.
+message CommitPolicy {
+  string name = 1;
+  string email = 2;
+  // A reference ("env:NAME", "github-secret:NAME") to an unencrypted ed25519
+  // key; empty leaves commits unsigned.
+  string signing_key = 3;
 }
 
 message AgentEngine {

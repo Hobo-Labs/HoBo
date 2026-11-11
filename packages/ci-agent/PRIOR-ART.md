@@ -64,16 +64,16 @@ Ordered by how much each matters.
 | # | Practice | This agent |
 | --- | --- | --- |
 | 1 | Never write to queue-owned refs; resolve on the pull request branch or a side branch | **Done.** Enforced in the git workspace and tested. |
-| 2 | Run the full required CI on the exact resolved tree; model output is never a merge condition | **Done by construction**: the agent never merges, and `apply` only acts when the base branch is confirmed to require status checks (branch protection rules; rulesets are not read). |
-| 3 | Deterministic checks before any model judgement | **Partly.** No leftover markers, and the change is confined to conflict regions by construction. No parse or duplicate-declaration check. |
+| 2 | Run the full required CI on the exact resolved tree; model output is never a merge condition | **Done by construction**: the agent never merges, and `apply` only acts when the base branch is confirmed to require named status checks, by branch protection or by an active ruleset. |
+| 3 | Deterministic checks before any model judgement | **Done.** No leftover markers; the change is confined to conflict regions by construction; a TypeScript, JavaScript, JSON or YAML file that parsed on both sides must still parse; no new duplicate top-level declarations. Types and tests are left to CI. |
 | 4 | Layered resolution: recorded resolutions, then structured merge, then a model on the residue | **Partly.** Git's own merge (zdiff3, with the common base) runs first and the model sees only the residue. No rerere, no structured merge. |
 | 5 | Abstain on ineligible files and protected paths; suggest by default | **Done.** `mode` has no default and `observe` writes nothing. |
 | 6 | Prompt-injection posture: only code hunks in the prompt, no tools, short-lived scoped token | **Done.** The queue label is the trigger; applying a label needs triage access. |
-| 7 | Provenance: signed commits, an agent trailer, a summary comment, an audit log; cannot approve or merge | **Partly.** Trailers, comment and journal. Commits are unsigned. |
-| 8 | Feed build failures on the merged tree back to the model | **Not done.** |
+| 7 | Provenance: signed commits, an agent trailer, a summary comment, an audit log; cannot approve or merge | **Done.** Trailers, comments and the journal; SSH-signed commits with `commit.signingKey`. GitHub marks them verified only when the key is registered on the account named by `commit.email`. |
+| 8 | Feed build failures on the merged tree back to the model | **Done.** A published resolution whose required checks fail is repaired with the earlier answer and the bounded check output (titles, summaries, annotations), up to `maxRepairs` times, then handed to a person. |
 | 9 | Idempotent attempts and spend caps | **Done.** One attempt per pair of commits and policy; per-call, per-pass and per-day limits. There is no per-pull-request cap: each new base commit is a new attempt, bounded by the daily budget. |
-| 10 | Reorder only what has not started; respect stacks and priority; age waiting work | **Done.** |
-| 11 | Conflict-aware batching from trial merges, with bisection on failure | **Partly.** Trial merges and batching. No bisection: the agent does not read CI results. |
-| 12 | Tolerate flaky failures | **Not applicable**: the agent does not act on CI failures. |
+| 10 | Reorder only what has not started; respect stacks and priority; age waiting work | **Done.** Stacks are read from GitHub: a labelled pull request based on another one's head branch depends on it. |
+| 11 | Conflict-aware batching from trial merges, with bisection on failure | **Done, with GitHub doing the split.** Trial merges and batching in the plan; two conflicting pull requests are never queued together. GitHub's queue gives each entry its own cumulative group, so a failure ejects one entry; the agent notices, never re-adds that commit, and batches it alone. |
+| 12 | Tolerate flaky failures | **Partly.** A failure is taken at face value: a flaky one costs at most `maxRepairs` model calls and a comment. Re-running checks is left to CI. |
 | 13 | Adaptive speculation window and success-probability ordering | **Not done.** Only SubmitQueue does this. |
 | 14 | Forward-only commits; dequeue and revert after a post-merge failure | **Partly.** Commits are forward-only and never forced. No automatic revert. |

@@ -56,7 +56,8 @@ publish a rollup, enqueue an entry.
 
 Events (`AgentEvent`): `ci.agent.PlanProposed`, `ci.agent.ResolutionSettled`,
 `ci.agent.ResolutionPublished`, `ci.agent.RollupPublished`,
-`ci.agent.EntryEnqueued`, `ci.agent.BudgetExhausted`, `ci.agent.ApplyWithheld`.
+`ci.agent.EntryEnqueued`, `ci.agent.BudgetExhausted`, `ci.agent.ApplyWithheld`,
+`ci.agent.ResolutionChecked`, `ci.agent.EntryEjected`.
 
 The agent is the one actor that writes its journal: it takes the commands
 above and appends events, and nothing else writes them. The journal is its
@@ -87,6 +88,50 @@ the same failing checks every few minutes.
 The trial-merge cache and the cool-down after a refused enqueue are in memory
 only. Losing them on restart costs git work and at most one repeated enqueue
 request per waiting entry.
+
+## Repair from the checks, not from a model's opinion
+
+A resolution is only known to be wrong when the repository's required checks
+fail on it. The agent reads the check rollup of each commit it published in
+the last day. A failure becomes a `ResolutionChecked` event and, while
+attempts remain (`maxRepairs`, 1 by default), a repair: the same regions,
+the engine's earlier answer recovered from the committed file, and the check
+output, which is bounded, stripped of control characters and labelled as
+data in the prompt. The repair is a commit on top of the failed one, so the
+branch moves forward and keeps the history of both attempts. A pull request
+branch someone else has pushed to since is left alone. A repair deferred by
+the budget or the per-pass limit is tried again next pass; `ResolutionChecked`
+is written only once the outcome is acted on.
+
+Before any of that, a resolved file must pass deterministic checks: it must
+parse when both sides did, and must not declare a top-level name twice where
+neither side did. Research on model resolvers found a model used as judge
+accepted most structurally invalid resolutions, so structure is checked by a
+parser, not by a model.
+
+## Ejection is the agent's bisection
+
+GitHub's merge queue gives each entry its own cumulative merge group, so a
+failing group already points at one entry and ejects it. The agent records
+`EntryEjected` when a pull request it enqueued at a commit is waiting again
+at that commit, comments once, never enqueues that commit again, and batches
+the entry alone in its plan. It also never queues two pull requests whose
+trial merge conflicts, since their groups could not both be built.
+
+## The agent runs on its own as well as inside the relay
+
+The relay host owns its store with one writer, so the agent does not open
+it. Run on its own (`daemon-main`), it takes the repositories to watch from
+its settings and finds each one's App installation itself. That is how it
+runs beside the box worker daemon or a relay on Vercel, whose Functions have
+no `git`.
+
+## Signatures in-process
+
+Commits are signed in the SSH signature format with ed25519, written as
+commit objects with a `gpgsig` header, without `ssh-keygen` or `gpg` on the
+host. Ed25519 signatures are deterministic, which keeps signed merge commits
+content-addressed.
 
 ## Merge commits are content-addressed
 

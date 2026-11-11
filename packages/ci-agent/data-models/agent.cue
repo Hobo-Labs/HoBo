@@ -55,8 +55,15 @@ import "list"
 	maxResolutionsPerTick?:  int & >=1 & <=20
 }
 
+#CommitPolicy: {
+	name?:       string & =~"^[^<>\\n\\x00]{1,100}$"
+	email?:      string & =~"^[^<>\\s\\x00]+@[^<>\\s\\x00]+$"
+	signingKey?: #CredentialRef
+}
+
 #AgentConfig: {
 	mode:        "observe" | "suggest" | "apply"
+	commit?:     #CommitPolicy
 	engines:     [#AgentEngine, ...#AgentEngine] & list.MaxItems(8)
 	queue?:      #QueuePolicy
 	resolution?: #ResolutionPolicy

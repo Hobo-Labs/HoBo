@@ -12,6 +12,7 @@ import {
 	githubDefaultBranch,
 } from "./github-queue.js";
 import type { ResolutionEngine } from "./resolver.js";
+import type { CommitSigningKey } from "./signing.js";
 import { createSqliteJournal } from "./sqlite-journal.js";
 
 const REPOSITORY = /^(?!\.)[A-Za-z0-9_.-]+\/(?!\.)[A-Za-z0-9_.-]+$/;
@@ -38,11 +39,13 @@ export function createRelayAgent(options: {
 	token: (installationId: number) => Promise<string>;
 	stateDirectory: string;
 	engines: readonly ResolutionEngine[];
+	/** Signs every commit the agent writes; see `commit.signingKey`. */
+	signingKey?: CommitSigningKey | undefined;
 	intervalMs?: number;
-	fetch?: typeof fetch;
+	fetch?: typeof fetch | undefined;
 	git?: string;
 	/** Where a repository is fetched from and pushed to; GitHub over HTTPS by default. */
-	remoteUrl?: (repository: string) => string;
+	remoteUrl?: ((repository: string) => string) | undefined;
 	now?: () => string;
 }) {
 	mkdirSync(join(options.stateDirectory, "repositories"), { recursive: true });
@@ -93,6 +96,8 @@ export function createRelayAgent(options: {
 				directory,
 				auth: token,
 				git: options.git,
+				identity: agentPolicies(options.config).commit,
+				signer: options.signingKey,
 			}),
 			engines: options.engines,
 			journal,

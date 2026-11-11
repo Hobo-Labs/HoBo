@@ -198,8 +198,8 @@ const REPORT_LIMIT = 4000;
 
 /** CI text with control characters removed and a length cap. */
 function clip(text: string | null | undefined, limit: number): string {
-	// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed.
-	const clean = (text ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+	// Control characters other than newline and tab.
+	const clean = (text ?? "").replace(/[^\P{Cc}\n\t]/gu, "");
 	return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
 }
 

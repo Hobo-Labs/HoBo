@@ -452,8 +452,7 @@ export function createCiAgent(options: {
 				// A resolution settled on an earlier pass is published now if its
 				// push never succeeded (or the mode then was observe).
 				if (
-					!resolution ||
-					resolution.outcome !== "resolved" ||
+					resolution?.outcome !== "resolved" ||
 					mode === "observe" ||
 					(await journal.has(publishedKey(resolution.key)))
 				)

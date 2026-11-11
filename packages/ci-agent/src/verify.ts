@@ -12,22 +12,22 @@ export type ResolvedSides = Readonly<{
 	resolved: string;
 }>;
 
-const SCRIPT_KINDS: Readonly<Record<string, ts.ScriptKind>> = {
-	ts: ts.ScriptKind.TS,
-	mts: ts.ScriptKind.TS,
-	cts: ts.ScriptKind.TS,
-	tsx: ts.ScriptKind.TSX,
-	js: ts.ScriptKind.JS,
-	mjs: ts.ScriptKind.JS,
-	cjs: ts.ScriptKind.JS,
-	jsx: ts.ScriptKind.JSX,
-};
+const SCRIPT_KINDS = new Map([
+	["ts", ts.ScriptKind.TS],
+	["mts", ts.ScriptKind.TS],
+	["cts", ts.ScriptKind.TS],
+	["tsx", ts.ScriptKind.TSX],
+	["js", ts.ScriptKind.JS],
+	["mjs", ts.ScriptKind.JS],
+	["cjs", ts.ScriptKind.JS],
+	["jsx", ts.ScriptKind.JSX],
+]);
 
 const extension = (path: string) =>
 	/\.([A-Za-z0-9]+)$/.exec(path)?.[1]?.toLowerCase() ?? "";
 
 function scriptKind(path: string): ts.ScriptKind | undefined {
-	const kind = SCRIPT_KINDS[extension(path)];
+	const kind = SCRIPT_KINDS.get(extension(path));
 	// A `.d.ts` file declares the same name more than once on purpose.
 	return kind !== undefined && !/\.d\.[cm]?ts$/i.test(path) ? kind : undefined;
 }
