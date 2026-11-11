@@ -450,7 +450,10 @@ What this does not give you:
 - Whoever holds a trusted private key can make the covered checks pass without
   running them. Keep the list short. Every entry has an expiry.
 - Container-backed tests are skipped on a machine with no Docker engine. The
-  record says whether there was one.
+  record says whether there was one. Turbo still replays cached results, so
+  `pnpm ci:attest run --fresh` is the way to run every task again.
+- The pull request that adds a machine's key cannot be attested with that key:
+  the key has to be on the base first.
 - A merge-group run matches the record only when the queue builds the same
   tree. When it does not, the merge group runs in CI as before.
 - If `main` moves after the local run, the trees no longer match and CI runs

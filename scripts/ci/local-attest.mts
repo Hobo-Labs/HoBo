@@ -6,7 +6,7 @@
  *
  *   pnpm ci:attest init-key [--days=30] [--note=TEXT]
  *   pnpm ci:attest run [--base=origin/main] [--events=pull_request,merge_group]
- *                      [--skip-job=ID]... [--no-fetch]
+ *                      [--skip-job=ID]... [--no-fetch] [--fresh]
  *   pnpm ci:attest publish [--remote=origin] [--file=PATH]
  *   pnpm ci:attest verify [--base=origin/main] [--event=pull_request] [--file=PATH]
  *
@@ -530,6 +530,8 @@ export type RunOutcome = Readonly<{
 	file: string;
 	/** Covered jobs that are not in the attestation, and why. */
 	notAttested: Readonly<Record<string, string>>;
+	/** Untracked files the commands left in the checkout, as `git status` lists them. */
+	leftBehind: readonly string[];
 }>;
 
 type StepFailure = Readonly<{ job: string; step: string; log: string }>;
@@ -552,6 +554,8 @@ export async function runAttestedJobs(input: {
 	events: readonly AttestationEvent[];
 	skipJobs: readonly string[];
 	privateKey: KeyObject;
+	/** Run every Turbo task again instead of replaying a cached result. */
+	fresh?: boolean;
 	env?: NodeJS.ProcessEnv;
 }): Promise<RunOutcome> {
 	const { target, plan, events } = input;
@@ -562,6 +566,9 @@ export async function runAttestedJobs(input: {
 	mkdirSync(outputDirectory, { recursive: true });
 	const baseEnv = input.env ?? process.env;
 	const machine = machineEnv(scratch);
+	// TURBO_FORCE makes Turbo run a task even when it holds a cached result.
+	const turboEnv: StepValues = {};
+	if (input.fresh) turboEnv.TURBO_FORCE = "true";
 	const dockerEngine = dockerEngineAnswers();
 	console.log(
 		`ci:attest: tree ${target.tree} against base ${target.base.slice(0, 12)}; Docker engine ${dockerEngine ? "answers" : "does not answer (container-backed tests will be skipped)"}`,
@@ -701,6 +708,7 @@ export async function runAttestedJobs(input: {
 									GITHUB_WORKSPACE: root,
 									RUNNER_TEMP: scratch,
 									GITHUB_STEP_SUMMARY: join(scratch, "summary"),
+									...turboEnv,
 									...declared,
 									GITHUB_OUTPUT: outputFile,
 									GITHUB_ENV: envFile,
@@ -767,6 +775,21 @@ export async function runAttestedJobs(input: {
 		rmSync(scratch, { recursive: true, force: true });
 	}
 
+	// A command that rewrote a tracked file passed on something other than the
+	// committed tree, and the tree is what the attestation names.
+	const rewritten = git(root, [
+		"status",
+		"--porcelain",
+		"--untracked-files=no",
+	]);
+	if (rewritten)
+		throw new AttestError(
+			`the commands changed tracked files, so what passed is not the committed tree. Nothing was signed.\n${rewritten}`,
+		);
+	const leftBehind = git(root, ["status", "--porcelain"])
+		.split("\n")
+		.filter((line) => line !== "");
+
 	const results: AttestedJobResult[] = [];
 	for (const job of plan) {
 		const run = runs.get(job.id);
@@ -811,7 +834,7 @@ export async function runAttestedJobs(input: {
 	const envelope = signStatement(statement, input.privateKey);
 	const file = join(root, OUTPUT_DIRECTORY, `${target.tree}.json`);
 	writeFileSync(file, `${JSON.stringify(envelope, null, "\t")}\n`);
-	return { envelope, file, notAttested };
+	return { envelope, file, notAttested, leftBehind };
 }
 
 /**
@@ -863,8 +886,9 @@ const USAGE = `usage: pnpm ci:attest <command>
   init-key [--days=${DEFAULT_TRUST_DAYS}] [--note=TEXT]
       Create this machine's signing key if it has none, and print the public
       entry to add to ${ATTESTORS_PATH} on main.
-  run [--base=origin/main] [--events=pull_request,merge_group] [--skip-job=ID]... [--no-fetch]
-      Run the covered CI jobs on HEAD and sign the result.
+  run [--base=origin/main] [--events=pull_request,merge_group] [--skip-job=ID]... [--no-fetch] [--fresh]
+      Run the covered CI jobs on HEAD and sign the result. --fresh runs every
+      Turbo task again instead of replaying a cached result.
   publish [--remote=origin] [--file=PATH]
       Push the signed attestation to the ${ATTESTATION_BRANCH} branch.
   verify [--base=origin/main] [--event=pull_request] [--file=PATH]
@@ -953,6 +977,7 @@ export async function main(
 				events,
 				skipJobs,
 				privateKey,
+				fresh: rest.includes("--fresh"),
 				env,
 			});
 			const { statement } = outcome.envelope;
@@ -961,6 +986,10 @@ export async function main(
 			);
 			for (const [id, reason] of Object.entries(outcome.notAttested))
 				console.log(`  not attested: ${id}: ${reason}`);
+			if (outcome.leftBehind.length > 0)
+				console.log(
+					`  the commands left untracked files; remove them before the next run:\n${outcome.leftBehind.map((line) => `    ${line}`).join("\n")}`,
+				);
 			console.log(
 				"Publish it before you push the branch: pnpm ci:attest publish",
 			);

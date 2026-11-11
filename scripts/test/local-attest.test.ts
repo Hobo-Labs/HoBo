@@ -377,6 +377,7 @@ async function runIn(
 	plan: readonly PlannedJob[],
 	events: readonly AttestationEvent[] = ["pull_request", "merge_group"],
 	skipJobs: readonly string[] = [],
+	fresh = false,
 ) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const entry = trustEntryFor(privateKey, {
@@ -400,7 +401,8 @@ async function runIn(
 		events,
 		skipJobs,
 		privateKey,
-		env: { ...process.env, RECORD: record },
+		fresh,
+		env: { ...process.env, RECORD: record, TURBO_FORCE: "" },
 	});
 	return {
 		repo,
@@ -539,6 +541,73 @@ describe("a local run", () => {
 		);
 		assert.equal(git(run.repo, ["symbolic-ref", "HEAD"]), "refs/heads/main");
 		assert.equal(git(run.repo, ["rev-parse", "HEAD"]), run.head);
+	});
+
+	it("signs nothing when a command rewrites a tracked file", async () => {
+		// A formatter that fixes a file in place would pass on content that is
+		// not the committed tree.
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							name: "Fixes in place",
+							run: "echo fixed >> change.txt",
+							local: "run",
+						},
+					],
+				},
+			]),
+		);
+		await assert.rejects(
+			run.outcome,
+			/changed tracked files[\s\S]*Nothing was signed[\s\S]*change\.txt/u,
+		);
+		assert.deepEqual(
+			readdirSync(join(run.repo, OUTPUT_DIRECTORY)).filter((name) =>
+				name.endsWith(".json"),
+			),
+			[],
+		);
+		assert.equal(git(run.repo, ["rev-parse", "HEAD"]), run.head);
+	});
+
+	it("reports untracked files the commands left, and still signs", async () => {
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					steps: [
+						{ name: "Profile", run: "echo {} > profile.json", local: "run" },
+					],
+				},
+			]),
+		);
+		const { envelope, leftBehind } = await run.outcome;
+		assert.deepEqual(envelope.statement.jobs, ["ci-guard"]);
+		assert.deepEqual(leftBehind, ["?? profile.json"]);
+	});
+
+	it("replays Turbo's cache unless asked for a fresh run", async () => {
+		const plan = planOf([
+			{
+				id: "ci-guard",
+				steps: [
+					{
+						name: "Force",
+						run: 'echo "force:${TURBO_FORCE:-unset}" >> "$RECORD"',
+						local: "run",
+					},
+				],
+			},
+		]);
+		const cached = await runIn(plan, ["pull_request"]);
+		await cached.outcome;
+		assert.deepEqual(cached.lines(), ["force:unset"]);
+		const fresh = await runIn(plan, ["pull_request"], [], true);
+		await fresh.outcome;
+		assert.deepEqual(fresh.lines(), ["force:true"]);
 	});
 
 	it("stops on an expression it cannot give a value, rather than guess", async () => {

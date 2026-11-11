@@ -370,7 +370,7 @@ git push                                         # only now: the run that starts
 | Step | What it does |
 |---|---|
 | `pnpm ci:attest init-key` | Creates this machine's ed25519 key at `$HOBO_CI_ATTESTOR_KEY` (default `~/.config/hobo/ci-attestor/ed25519.pem`, directory `0700`, file `0600`) if there is none, and prints only the **public** trust entry. The private key is never printed. |
-| `pnpm ci:attest run` | Refuses a dirty tree. Fetches the base (`origin/main`, or `--base=`). Refuses a head that does not contain the base tip and says how to fix it. Runs each covered job's commands and writes the signed record to `.hobo/attestations-out/<tree>.json`, with each job's log beside it. If any command fails it exits non-zero and signs nothing. |
+| `pnpm ci:attest run` | Refuses a dirty tree. Fetches the base (`origin/main`, or `--base=`). Refuses a head that does not contain the base tip and says how to fix it. Runs each covered job's commands and writes the signed record to `.hobo/attestations-out/<tree>.json`, with each job's log beside it. If any command fails, or a command rewrote a tracked file, it exits non-zero and signs nothing. `--fresh` makes Turbo run every task again instead of replaying its cache. |
 | `pnpm ci:attest publish` | Commits the record as `attestations/<tree>.json` on the orphan branch `ci-attestations` and pushes it. It uses git plumbing in a temporary index: your checkout, index, HEAD and refs are not touched. A push that loses a race is rebuilt on the new tip and retried, five times at most. |
 | `pnpm ci:attest verify` | The same check the workflows make, with git in place of the GitHub API. |
 
@@ -386,14 +386,15 @@ git push                                         # only now: the run that starts
 - **Routing.** An attested run sends what is left to `ubuntu-24.04` without reading the queue. A pinned `HOBO_CI_ROUTE` still wins, so with `fleet` pinned the uncovered jobs wait for the fleet.
 - **Merge groups.** The record matches a merge-group run only when the queue's group commit has the same tree: the pull request is first in the queue and its head already contains the queue's base. Otherwise the tree differs, verification says `attested=false`, and the merge group runs in CI as it does today. Nothing tries to predict a queue tree.
 - **Timing.** A run reads the record when it starts. Publish before you push. A record published later is picked up by re-running the workflow.
-- **Adding a machine.** Run `pnpm ci:attest init-key --note="whose machine"`, add the printed entry to `.hobo/ci-attestors.json`, and merge that change to `main`. Every entry needs an `expiresAt`; the default is 30 days out and a test refuses more than 90. Remove an entry to revoke it.
+- **Adding a machine.** Run `pnpm ci:attest init-key --note="whose machine"`, add the printed entry to `.hobo/ci-attestors.json`, and merge that change to `main`. The key works only for pull requests whose base already has the entry, so the pull request that adds a key cannot itself be attested with it. Every entry needs an `expiresAt`; the default is 30 days out and a test refuses more than 90. Remove an entry to revoke it.
 
 **Limits. Read these before relying on it.**
 
 - **It does not strengthen the pull-request boundary, and does not weaken it.** A same-repository pull request can already edit the workflow it is tested by, including the verify step and the gate. This change adds no new way around that and closes none.
 - **Reading keys at the base commit stops one thing:** a pull request adding its own key to `.hobo/ci-attestors.json` and signing with it. Nothing more.
 - **Whoever holds an attestor's private key can make the covered checks pass without running them.** The record says what a machine claims it ran. Treat a key like merge rights on the covered checks: few entries, short expiry, removed when the machine goes away.
-- **Container-backed tests are skipped where no Docker engine answers.** The runner asks the engine at run time and records the answer in `environment.dockerEngine`. A record made without an engine did not run the Postgres container tests.
+- **Container-backed tests are skipped where no Docker engine answers.** The runner asks the engine once, when the run starts, and records the answer in `environment.dockerEngine`. A record made without an engine did not run the Postgres container tests.
+- **Turbo replays cached results, as it does in CI.** A task whose inputs are unchanged is not run again, and its cached result may come from a run with no Docker engine. So `dockerEngine: true` says an engine answered, not that every container test ran in this run. `pnpm ci:attest run --fresh` runs every task again.
 - **Every trust entry expires.** An expired entry is refused even if the signature is good.
 - **Not everything a CI machine has is reproduced.** Repository variables and secrets are empty locally, so there is no remote Turbo cache. Step and job timeouts are not enforced. The pinned headless browser is used if this machine already has it and is not downloaded.
 - **The pull request's base in the event must be the base the run tested against.** If `main` moved after the run, the trees differ and CI runs normally. Merge `main` in and run again.

@@ -54,6 +54,9 @@ packages/ci-gh-actions/deploy/ci-runner/oci-layout/
 !.hobo/dagger.json
 !.hobo/ci.json
 !.hobo/ci-attestors.json
+# Turbo's --anon-profile output from the workspace-test commands (CI and pnpm ci:attest).
+/turbo-profile.json
+/turbo-profile.json.md
 .hobo/ci.local.json
 # OS-released codegen/build lock database, sidecars and interrupted staging trees.
 .hobo-codegen.lock

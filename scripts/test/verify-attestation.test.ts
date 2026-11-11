@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	copyFileSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	ATTESTATION_PREDICATE_TYPE,
+	asList,
+	asObject,
+	asText,
 	COVERED_JOBS,
 	type JsonValue,
 	keyIdOf,
@@ -18,6 +29,7 @@ import {
 	main,
 	verifyFromApi,
 } from "../ci/verify-attestation.mts";
+import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 const NOW = Date.parse("2026-11-11T12:00:00Z");
 const TREE = "a".repeat(40);
@@ -230,6 +242,98 @@ describe("verifying through the API", () => {
 		assert.equal(verdict.attested, false);
 		assert.deepEqual(asked, []);
 	});
+});
+
+describe("the route action's attestation step", () => {
+	const action = workflowDocument(
+		readFileSync(".github/actions/route-runner/action.yml", "utf8"),
+	);
+	const steps = asList(asObject(action.runs)?.steps) ?? [];
+	const step = asObject(steps[0]);
+	const shell = asText(step?.run) ?? "";
+	const workspace = mkdtempSync(join(tmpdir(), "hobo-attest-step-"));
+	const runStep = (env: NodeJS.ProcessEnv) => {
+		const output = join(workspace, `output-${Math.random()}`);
+		writeFileSync(output, "runner=preset\n");
+		const run = spawnSync("bash", ["-c", shell], {
+			cwd: workspace,
+			encoding: "utf8",
+			env: { ...process.env, ...env, GITHUB_OUTPUT: output },
+		});
+		return { status: run.status, output: readFileSync(output, "utf8") };
+	};
+
+	it("runs first, before the runner is chosen, and hands the route step its answer", () => {
+		assert.equal(asText(step?.id), "attest");
+		assert.equal(asText(asObject(steps[1])?.id), "route");
+		assert.equal(
+			asText(asObject(asObject(steps[1])?.env)?.HOBO_CI_ATTESTED),
+			"${{ steps.attest.outputs.attested }}",
+		);
+		const outputs = asObject(action.outputs);
+		assert.equal(
+			asText(asObject(outputs?.attested)?.value),
+			"${{ steps.attest.outputs.attested || 'false' }}",
+		);
+		assert.equal(
+			asText(asObject(outputs?.["attested-jobs"])?.value),
+			"${{ steps.attest.outputs.attested-jobs || '[]' }}",
+		);
+	});
+
+	it("says no, and succeeds, in a workflow that did not check the verifier out", () => {
+		const { status, output } = runStep({});
+		assert.equal(status, 0);
+		assert.equal(output, "runner=preset\nattested=false\nattested-jobs=[]\n");
+	});
+
+	it("says no, and succeeds, when the verifier cannot reach the API or dies", () => {
+		mkdirSync(join(workspace, "scripts", "ci"), { recursive: true });
+		for (const name of ["attestation.mts", "verify-attestation.mts"])
+			copyFileSync(
+				join("scripts", "ci", name),
+				join(workspace, "scripts", "ci", name),
+			);
+		const eventPath = join(workspace, "event.json");
+		writeFileSync(
+			eventPath,
+			JSON.stringify({ pull_request: { base: { sha: BASE_SHA } } }),
+		);
+		// Not a git checkout, an API that refuses connections: still an answer.
+		const unreachable = runStep({
+			GITHUB_EVENT_NAME: "pull_request",
+			GITHUB_EVENT_PATH: eventPath,
+			GITHUB_REPOSITORY: "acme/app",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+		});
+		assert.equal(unreachable.status, 0);
+		assert.equal(
+			unreachable.output,
+			"runner=preset\nattested=false\nattested-jobs=[]\n",
+		);
+		// A verifier that dies before it answers.
+		writeFileSync(
+			join(workspace, "scripts", "ci", "verify-attestation.mts"),
+			"process.exit(7);\n",
+		);
+		const died = runStep({ GITHUB_EVENT_NAME: "pull_request" });
+		assert.equal(died.status, 0);
+		assert.equal(
+			died.output,
+			"runner=preset\nattested=false\nattested-jobs=[]\n",
+		);
+		// One that claims an attestation and then fails is not believed.
+		writeFileSync(
+			join(workspace, "scripts", "ci", "verify-attestation.mts"),
+			'import { appendFileSync } from "node:fs";\nappendFileSync(process.env.GITHUB_OUTPUT ?? "", "attested=true\\nattested-jobs=[\\"ci-guard\\"]\\n");\nprocess.exit(1);\n',
+		);
+		const lied = runStep({ GITHUB_EVENT_NAME: "pull_request" });
+		assert.equal(lied.status, 0);
+		// The last value written wins, as it does for GitHub.
+		assert.ok(lied.output.endsWith("attested=false\nattested-jobs=[]\n"));
+	});
+
+	it("cleans up", () => rmSync(workspace, { recursive: true, force: true }));
 });
 
 describe("the script as a whole", () => {
