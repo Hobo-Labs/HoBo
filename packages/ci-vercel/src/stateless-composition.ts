@@ -6,7 +6,10 @@
  *   once and refreshed at most once a minute. The relay never writes it: the
  *   control plane's configuration routes answer 410.
  * - Per-job state: `RelayCacheStore` over `EphemeralStatePort`, on the cache
- *   the deployment binds (`cache-backend.ts`), every command metered.
+ *   fleet (`cache-fleet.ts`): every cache the deployment binds is a member,
+ *   the active one is read from the fleet's assignment register and chosen
+ *   by budget on the repair tick (phase 4c), and every member is metered in
+ *   the units it bills.
  * - Work: webhook intake and per-lease steps as Vercel Queue messages
  *   (`relay-queue.ts`); the 15-minute repair tick scans what is in flight as
  *   a backstop and restores holds a lost cache forgot.
@@ -45,13 +48,18 @@ import {
 } from "@hobo/ci-gh-actions/relay-cache";
 import { bootstrap, workflow } from "./_generated-assets/relay-assets.js";
 import {
-	type CacheCommandReport,
-	createCacheCommandMeter,
+	cacheBindingEnv,
+	discoverCacheBackends,
 	monthlyCommandAllowance,
-	type OpenedCache,
-	openCacheBackend,
-	selectCacheBackend,
+	type OpenedCacheBackend,
+	openCacheBackends,
 } from "./cache-backend.js";
+import {
+	type CacheFleetOptions,
+	type CacheFleetTick,
+	createCacheFleet,
+} from "./cache-fleet.js";
+import { parseCacheOffers } from "./cache-offers.js";
 import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
@@ -110,8 +118,13 @@ export type StatelessRelayOptions = Readonly<{
 	/** The config service's last failed refresh, if the last one failed. */
 	configStaleSince?: () => number | undefined;
 	send: RelayQueueSend;
-	/** Tests inject the cache, GitHub, OIDC and Sandbox stand-ins. */
-	cache?: OpenedCache;
+	/** Tests inject the cache backends, GitHub, OIDC and Sandbox stand-ins. */
+	cacheBackends?: readonly OpenedCacheBackend[];
+	/** Tests shorten the fleet's clocks and waits. */
+	cacheFleet?: Pick<
+		CacheFleetOptions,
+		"assignmentTtlMs" | "sealWaitMs" | "sleep" | "flushIntervalMs"
+	>;
 	github?: GithubAppTransport;
 	identity?: IdentityVerifier;
 	sandboxDrivers?: typeof VERCEL_SANDBOX_DRIVERS;
@@ -239,39 +252,68 @@ export async function composeStatelessRelay(
 	const authenticate: ControlAuthenticator = async (header) =>
 		(await current()).authenticator(header);
 
-	const choice = options.cache?.choice ?? selectCacheBackend(env);
-	log({
-		event: "hobo_ci_cache_backend",
-		backend: choice.kind,
-		names: [...choice.names],
-		candidates: [...choice.candidates],
-	});
-	const cache =
-		options.cache ??
-		(await openCacheBackend(
-			choice,
-			env,
+	// Cache bindings: the deployment's environment, then what the config
+	// service holds for names the environment does not set. Names only leave.
+	const bindingEnv = cacheBindingEnv(env, initial);
+	const bindings = discoverCacheBackends(bindingEnv.env);
+	const backends =
+		options.cacheBackends ??
+		(await openCacheBackends(
+			bindings,
+			bindingEnv.env,
 			options.fetch ? { fetch: options.fetch } : {},
 		));
-	const environment = cacheEnvironment(env);
-	const meter = createCacheCommandMeter({
-		cache,
-		environment,
-		allowance: monthlyCommandAllowance(env),
-		log: (report: CacheCommandReport) => log(report),
+	log({
+		event: "hobo_ci_cache_fleet",
+		members: backends.map((backend) => backend.binding.id),
+		kinds: backends.map((backend) => backend.binding.kind),
+		names: backends.flatMap((backend) => [...backend.binding.names]),
+		candidates: [...bindings.candidates],
+		fromConfigService: [...bindingEnv.fromConfig],
 	});
-
+	const environment = cacheEnvironment(env);
 	const scheduler = createLeaseStepScheduler({
 		send: options.send,
 		now: () => Date.parse(now()),
 	});
+	const fleet = createCacheFleet({
+		backends,
+		environment,
+		offers: parseCacheOffers(
+			initial.HOBO_CI_CACHE_OFFERS_JSON ?? env.HOBO_CI_CACHE_OFFERS_JSON,
+			monthlyCommandAllowance(env),
+		),
+		now: () => Date.parse(now()),
+		log: (line) => log(line),
+		decidedBy: `relay:${env.VERCEL_DEPLOYMENT_ID ?? environment}`.replace(
+			/[^A-Za-z0-9:._-]/gu,
+			"-",
+		),
+		// A sealed move activates on a delayed repair tick, keyed by its epoch.
+		scheduleActivation: (delaySeconds, epoch) =>
+			options.send(
+				RELAY_QUEUE_TOPICS.repair,
+				encodeRelayQueueMessage({
+					kind: "repair",
+					source: "static",
+					platformSchedule: false,
+				}),
+				{
+					delaySeconds,
+					idempotencyKey: `cache-fleet-activate-${epoch}`,
+					retentionSeconds: 3600,
+				},
+			),
+		...options.cacheFleet,
+	});
+
 	const proxyTokenKey = initial.HOBO_CI_SANDBOX_PROXY_TOKEN_KEY
 		? parseProxyTokenKey(
 				Buffer.from(initial.HOBO_CI_SANDBOX_PROXY_TOKEN_KEY, "base64url"),
 			)
 		: undefined;
 	const store = new RelayCacheStore({
-		state: cache.state,
+		state: fleet.state,
 		config: { read: async () => (await current()).snapshot },
 		environment,
 		intake: {
@@ -439,6 +481,19 @@ export async function composeStatelessRelay(
 		await runtime.step(lease, step.step);
 	}
 
+	async function fleetTick(): Promise<CacheFleetTick | undefined> {
+		try {
+			return await fleet.tick();
+		} catch (error) {
+			reportRelayFailure(
+				"hobo_ci_cache_fleet_tick_failed",
+				{},
+				error instanceof Error ? error : undefined,
+			);
+			return undefined;
+		}
+	}
+
 	async function repair() {
 		try {
 			const rebuilt = await rebuildInflight(store, discovery, github, now());
@@ -471,8 +526,10 @@ export async function composeStatelessRelay(
 					// on a timer, and a preview acknowledges the run unworked.
 					if (message.platformSchedule && env.VERCEL_ENV !== "production")
 						return;
+					// The fleet first: a sealed move activates before the rebuild
+					// pass runs on the new backend.
+					await fleetTick();
 					await repair();
-					await meter.flush();
 					return;
 				case "manual":
 					await repair();
@@ -483,7 +540,7 @@ export async function composeStatelessRelay(
 					return;
 			}
 		} finally {
-			await meter.maybeFlush().catch(() => undefined);
+			await fleet.flushUsage().catch(() => undefined);
 		}
 	}
 
@@ -520,7 +577,7 @@ export async function composeStatelessRelay(
 		store,
 		run,
 		readiness,
-		close: () => cache.close(),
+		close: () => fleet.close(),
 		async handle(request: Request): Promise<Response> {
 			const pathname = new URL(request.url).pathname;
 			if (request.method === "GET" && pathname === "/readyz") {
@@ -552,7 +609,7 @@ export async function composeStatelessRelay(
 			try {
 				return await handler(request);
 			} finally {
-				await meter.maybeFlush().catch(() => undefined);
+				await fleet.flushUsage().catch(() => undefined);
 			}
 		},
 	});

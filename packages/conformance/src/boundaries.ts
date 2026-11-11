@@ -87,6 +87,7 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/bindings",
 	"packages/claims",
 	"packages/trust",
+	"packages/backend-fleet",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	// The data engine family (ADR-0177). `data-core` is the engine-neutral
@@ -171,6 +172,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/capability-profiles",
 	"packages/claims",
 	"packages/convex",
+	"packages/backend-fleet",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/packs/pack-framework",

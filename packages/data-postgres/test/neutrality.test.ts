@@ -123,7 +123,7 @@ describe("provider neutrality", () => {
 		expect(offences).toEqual([]);
 	});
 
-	it("depends only on the capability vocabulary and the engine-neutral data contract at runtime", () => {
+	it("depends only on the capability vocabulary, the engine-neutral data contract and the engine-neutral fleet register at runtime", () => {
 		const manifestPath = fileURLToPath(
 			new URL("../package.json", import.meta.url),
 		);
@@ -133,7 +133,11 @@ describe("provider neutrality", () => {
 			readFileSync(manifestPath, "utf8"),
 		) as PackageManifest;
 		const names = Object.keys(manifest.dependencies ?? {});
-		expect(names).toEqual(["@hobo/capability-profiles", "@hobo/data-core"]);
+		expect(names).toEqual([
+			"@hobo/backend-fleet",
+			"@hobo/capability-profiles",
+			"@hobo/data-core",
+		]);
 	});
 
 	it("exports no symbol whose name carries a provider", () => {

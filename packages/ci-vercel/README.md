@@ -315,24 +315,29 @@ earlier deployment.
    `hobo_ci_config_refresh_failed`. The config document (`HOBO_CI_CONFIG_JSON`)
    and the control tokens follow each refresh; the App key, webhook secret and
    cron secret are the ones the instance started with.
-2. **The cache** (`src/cache-backend.ts`): `selectCacheBackend` takes the first
-   binding present: an Upstash REST pair (`UPSTASH_REDIS_REST_URL` +
-   `UPSTASH_REDIS_REST_TOKEN`, then `KV_REST_API_URL` + `KV_REST_API_TOKEN`),
-   then `VALKEY_URL`, then `REDIS_URL` (RESP over TCP, `ioredis` loaded only
-   then). With none, the in-memory engine, and only off Vercel: a production
-   or preview deployment with no cache refuses to start. Start-up logs
-   `hobo_ci_cache_backend` with the chosen backend and the variable *names*
-   present; no value is ever logged. Several bindings at once is a fixed order
-   for now; phase 4c makes `selectCacheBackend` policy-driven.
+2. **The cache fleet** (`src/cache-backend.ts`, `src/cache-fleet.ts`,
+   phase 4c; [The cache fleet](#the-cache-fleet) below): every cache the
+   deployment binds is a member, in a fixed configured order — an Upstash REST
+   pair (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, then
+   `KV_REST_API_URL` + `KV_REST_API_TOKEN`), `VALKEY_URL`, `REDIS_URL` (RESP
+   over TCP, `ioredis` loaded only then), the Turso pair
+   (`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`) and `BLOB_STORE_ID` (Vercel Blob
+   by OIDC). `VALKEY_URL` and the Turso and Blob names may also come from the
+   config service, for names the deployment's environment does not set. With
+   none, the in-memory engine, and only off Vercel: a production or preview
+   deployment with no cache refuses to start. Exactly one member is active;
+   every port call goes to it. Start-up logs `hobo_ci_cache_fleet` with the
+   member ids, their kinds and the variable *names* (and which came from the
+   config service); no value is ever logged.
 3. **The store**: `RelayCacheStore` over that cache, keys under
    `hobo-ci:<VERCEL_ENV>:` (`local` off Vercel), the config document as its
    read-only config source, the Sandbox proxy token key from the config service,
-   and the step scheduler as its `onLeaseChange` hook. Every command goes through
-   `meterExecutor`; at most once a minute per instance the delta is added to a
-   monthly counter in the cache and logged as `hobo_ci_cache_commands` (`used`,
-   `projected` for the month, `allowance`, `overBudget`, commands by verb), the
-   allowance being `HOBO_CI_CACHE_MONTHLY_COMMANDS` (default 500,000, the
-   Upstash free tier as the vendor states it).
+   and the step scheduler as its `onLeaseChange` hook. Every member is metered
+   in the units it bills (commands, rows read and written, or simple and
+   advanced Blob operations, counted at its client); at most once a minute per
+   instance, and on every repair tick, the delta is added to a monthly counter
+   kept on that member and logged as `hobo_ci_cache_usage` (`used`,
+   `projected` for the month and `allowance`, per unit, and `overBudget`).
 4. **Rebuild**: `githubRelayDiscovery` (GitHub runners, bridge runs, jobs) and
    the Sandbox host's lookup by name are the discovery ports; a lease step that
    finds no record rebuilds the lease by name, and each repair tick runs
@@ -379,8 +384,11 @@ earlier deployment.
   its host (a `reserved` lease at its dispatch check admits pending work
   instead). A step whose lease the cache lost rebuilds it by name from the job
   the message carries. Past the last rung, the repair tick covers it.
-- **Repair tick** (backstop): `rebuildInflight`, then the runtime's full tick
-  over every in-flight lease. The repair scanners that redeliver failed GitHub
+- **Repair tick** (backstop): the cache fleet's tick (usage, register upkeep,
+  the budget decision; [below](#the-cache-fleet)), then `rebuildInflight`,
+  then the runtime's full tick over every in-flight lease. A sealed cache move
+  schedules a delayed repair message (idempotency key
+  `cache-fleet-activate-<epoch>`) for when its seal is over. The repair scanners that redeliver failed GitHub
   deliveries and find queued jobs whose delivery never came are not run here
   yet: their claims and cursors move onto the cache in phase 5.
 - **The handoff.** In production each consumer hands its message to the current
@@ -406,12 +414,14 @@ route 503.
 |---|---|---|
 | `HOBO_CI_CONFIG_SERVICE` | project env | `infisical` in production |
 | `INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH` | project env (the config-service binding) | [Config service](CONFIG-SERVICE.md) |
-| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` + `KV_REST_API_TOKEN` | injected by the cache's Marketplace integration | the cache (or `VALKEY_URL` / `REDIS_URL` for a self-hosted Valkey) |
-| `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | the allowance the meter reports against |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` + `KV_REST_API_TOKEN`; `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`; `BLOB_STORE_ID` | injected by each cache's Marketplace integration or store connection | cache-fleet members (or `VALKEY_URL` / `REDIS_URL` for Aiven or a self-hosted Valkey) |
+| `VALKEY_URL`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | the config service, optional | members the environment does not bind (an Aiven Valkey URL is stored here) |
+| `HOBO_CI_CACHE_OFFERS_JSON` | the config service or project env, optional | the declared offers, budget caps and switch marks ([below](#the-cache-fleet)) |
+| `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | Upstash's allowance in the default offers |
 | `HOBO_CI_EVENTS_URL`, `HOBO_CI_EVENTS_TENANT` | project env, optional | relay failures as CloudEvents |
 | Every `RelayRuntimeConfig` key | the config service | [Config service](CONFIG-SERVICE.md#what-the-folder-holds); `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url) is required with `HOBO_CI_SANDBOX_ENABLED` |
 
-No `DATABASE_URL*`, Neon or Turso variable is read.
+No `DATABASE_URL*` or Neon variable is read.
 
 **Cache commands per job.** `test/stateless-relay.test.ts` pins them for one
 Sandbox job through the whole composition (in-memory engine, scripts cached):
@@ -420,7 +430,9 @@ reserves and launches it (a launch is ten lease transitions, each a
 compare-and-set plus the routing check a held state takes, four ring appends
 and the egress and proxy bindings), 6 and 2 for the in-progress and completed
 deliveries, 4 for the first three step rungs, 20 for the step that stops both
-VMs and settles, and 1 for the step that ends the chain: **99**. The store's own
+VMs and settles, and 1 for the step that ends the chain: **99**, plus one
+command for the usage counter in each relay-clock minute the relay did work
+(four in the test's hour, so it pins **103**). The store's own
 per-step cost on a workflow-bridge path is in
 [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#command-cost) (62 before
 phase 4b, 43 after).
@@ -433,12 +445,78 @@ twice, the intake message delivered twice, GitHub's redelivery under a new id)
 giving one lease, one Sandbox and one runner; the cache wiped mid-job and the
 lease rebuilt by name, the running job adopted rather than stopped and nothing
 provisioned twice; every configuration write refused with 410; and `/readyz`
-and `/healthz`. `test/cache-backend.test.ts` and `test/relay-queue.test.ts`
-cover backend selection, the meter, the messages, the step ladder and the
-handoff. The handoff's bodies and answers are a PACT
+and `/healthz`. `test/cache-backend.test.ts`, `test/cache-fleet.test.ts` and
+`test/relay-queue.test.ts` cover the cache bindings and offers, the cache
+fleet (one member; several, bootstrapped and cached; failing closed; a
+planned move sealed, refused everywhere once cached answers lapse, then
+activated; no move back within the month; a failover after probing; usage
+per member), the messages, the step ladder and the handoff. The handoff's bodies and answers are a PACT
 ([`contracts/queue-handoff.pact.json`](contracts/queue-handoff.pact.json)),
 executed by `contracts/queue-handoff.consumer.test.ts` against both sides.
 Nothing here has run against Vercel, Upstash, Infisical or GitHub.
+
+### The cache fleet
+
+ADR-0179 phase 4c ([Options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
+`createCacheFleet` ([`src/cache-fleet.ts`](src/cache-fleet.ts)) puts every
+bound cache behind one `EphemeralStatePort`.
+
+- **One active member, from the register.** The fleet's assignment log is kept
+  on every member in `hobo-ci:<env>:fleet:assignment`
+  (`ephemeralAssignmentReplica` in [`@hobo/backend-fleet`](../backend-fleet/README.md))
+  and the active member is the majority-decided current entry. An instance
+  caches the answer for a minute, counted from when its read started. With a
+  single member there is no register and nothing is read. An empty register
+  is bootstrapped with the first configured member, the same bytes from every
+  instance.
+- **Failing closed.** With no majority, an epoch completion cannot settle, or
+  a sealed fleet, every cache call fails with `CacheFleetUnavailableError`
+  (`retryable`): a queue message is redelivered, a webhook is answered 503
+  (as when the cache is down), `/readyz` reports `cache: false`. The relay
+  never guesses a backend. With two members, losing either leaves no
+  majority: a failover needs three or more.
+- **A move seals first.** A tick that decides to move writes a sealed entry
+  (nobody may write), sends the delayed activation tick, and returns. After
+  2.5 minutes (`DEFAULT_SEAL_WAIT_MS`, more than twice the minute an instance
+  caches its answer, so every cached answer has lapsed and every call made
+  under it has ended) a tick writes the target as active. No two instances
+  write to different members. A planned switch seals with the old member
+  still named (it takes the entry first); a failover seals with none. A target
+  that goes away while sealed is replaced by the failover choice. The new
+  member starts cold and the relay rebuilds leases by name, as after any
+  cache loss.
+- **Budget routing on the repair tick.** Usage is flushed; the register is
+  completed, repaired, rejoined and its TTL refreshed on every member; each
+  member's spend this month is read from its own counters
+  (`hobo-ci:<env>:fleet:usage:<member>:<unit>:<YYYY-MM>`); the month's
+  workload is converted into every member's units with the bindings' cost
+  tables (`EPHEMERAL_STATE_COMMAND_COST`, `LIBSQL_EPHEMERAL_COST`,
+  `VERCEL_BLOB_EPHEMERAL_COST`) by the mix of port calls this instance
+  routed; and `routeFleetByBudget` decides: free, then prepaid, then the
+  cheapest pay-as-you-go; leave the active member at **90%** projected of an
+  allowance it would stop at, take another only below **80%**, so a member
+  left for its allowance is not taken back until the next month; a move for
+  preference alone only to a cheaper tier or month, after an hour on the
+  current one; a failover when the active member has failed for 10 seconds
+  (the tick probes it three times, five seconds apart). Each decision is one
+  `hobo_ci_cache_fleet_decision` line: action, epoch, active, target,
+  reasons, eligible members and each member's projected percentage and cost.
+- **Offers.** Defaults ([`src/cache-offers.ts`](src/cache-offers.ts)) are the
+  vendor free tiers recorded in the ADR on 2026-11-11: Upstash 500,000
+  commands a month then blocked; Valkey (Aiven free or self-hosted) no
+  command cap; Turso 500 million rows read and 10 million written then
+  blocked; Blob pay-as-you-go at $0.40 a million simple and $5 a million
+  advanced operations (Pro rates via `@hobo/provider-vercel-blob`, not
+  verified for this store) with a cap of zero; `REDIS_URL` no model, so it is
+  only ever a failover target. `HOBO_CI_CACHE_OFFERS_JSON` (`RelayCacheOffers`,
+  [`data-models/cache_offers.proto`](data-models/cache_offers.proto),
+  constrained by `data-models/cache-offers/cache_offers.cue`) replaces an
+  offer per member and sets the caps and marks; an invalid document fails
+  start-up naming the key.
+
+What it costs: with two or more members, each busy instance reads the
+register once a minute on every member (about 43,000 reads a month per
+instance per member), and each repair tick about four commands per member.
 
 **Not yet.** Settling a rebuilt Sandbox lease: its proxy meters were in the
 lost cache, so after GitHub reports the job finished both VMs are stopped but

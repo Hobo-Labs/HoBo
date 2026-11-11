@@ -122,7 +122,12 @@ export const relayConfig = config({
 	HOBO_CI_CACHE_MONTHLY_COMMANDS: env
 		.string()
 		.docs(
-			"The cache's monthly command allowance the relay reports against; 500000 if unset.",
+			"The monthly command allowance of the cache fleet's command-billed default offer; 500000 if unset.",
+		),
+	HOBO_CI_CACHE_OFFERS_JSON: env
+		.string()
+		.docs(
+			"The cache fleet's declared offers and switch marks (`RelayCacheOffers` in data-models/cache_offers.proto, as JSON): what each cache backend costs and allows and its budget cap. Defaults are the vendor free tiers; the config service's value wins over this one.",
 		),
 	HOBO_CI_CONFIG_SERVICE: env
 		.string()
