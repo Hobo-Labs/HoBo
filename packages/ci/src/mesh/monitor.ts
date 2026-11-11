@@ -29,14 +29,21 @@ export type MeshCapacity = Readonly<{
 	freeMemoryMb: number;
 	/** The most free memory on any one healthy node: the largest job that fits. */
 	largestFreeMemoryMb: number;
+	/** Free disk across the healthy nodes that report it. */
+	freeDiskMb: number;
 }>;
 
-/** What the board says the mesh can do right now. */
+/**
+ * What the board says the mesh can do right now. An advertisement whose
+ * signature failed says nothing about any node and is not counted.
+ */
 export function meshCapacity(
 	nodes: readonly MeshNode[],
 	nowMs: number,
 ): MeshCapacity {
-	const live = nodes.filter((node) => node.validUntilMs > nowMs);
+	const live = nodes.filter(
+		(node) => node.validUntilMs > nowMs && node.trust !== "invalid",
+	);
 	const healthy = live.filter((node) => node.healthy);
 	return {
 		nodes: live.length,
@@ -55,6 +62,10 @@ export function meshCapacity(
 			(most, node) => Math.max(most, node.free?.memoryMb ?? 0),
 			0,
 		),
+		freeDiskMb: healthy.reduce(
+			(sum, node) => sum + (node.free?.diskMb ?? 0),
+			0,
+		),
 	};
 }
 
@@ -63,6 +74,7 @@ export type MeshMonitorEvent =
 	| "hobo_ci_mesh_node_lost"
 	| "hobo_ci_mesh_node_unhealthy"
 	| "hobo_ci_mesh_node_recovered"
+	| "hobo_ci_mesh_node_invalid"
 	| "hobo_ci_mesh_capacity_exhausted"
 	| "hobo_ci_mesh_capacity_restored"
 	| "hobo_ci_mesh_capacity";
@@ -82,6 +94,8 @@ export function createMeshMonitor(options: {
 	const now = options.now ?? Date.now;
 	const summaryEveryMs = options.summaryEveryMs ?? 60_000;
 	let previous: ReadonlyMap<string, MeshNode> | undefined;
+	/** Node ids whose advertisement failed its signature, already reported. */
+	let rejected: ReadonlySet<string> = new Set();
 	let exhausted = false;
 	let summarizedAt = Number.NEGATIVE_INFINITY;
 
@@ -99,10 +113,18 @@ export function createMeshMonitor(options: {
 				return undefined;
 			}
 			const nowMs = now();
+			const current = nodes.filter((node) => node.validUntilMs > nowMs);
+			// An advertisement whose signature failed is not a node: it does not
+			// join, is not counted, and cannot be the one that reports.
 			const live = new Map(
-				nodes
-					.filter((node) => node.validUntilMs > nowMs)
+				current
+					.filter((node) => node.trust !== "invalid")
 					.map((node) => [node.id, node]),
+			);
+			const invalid = new Set(
+				current
+					.filter((node) => node.trust === "invalid")
+					.map((node) => node.id),
 			);
 			const capacity = meshCapacity(nodes, nowMs);
 			// One reporter: the lowest live id. A node always reports for itself
@@ -120,6 +142,7 @@ export function createMeshMonitor(options: {
 							freeSlots: node.freeSlots,
 							totalSlots: node.totalSlots ?? node.freeSlots,
 							healthy: node.healthy,
+							trust: node.trust ?? "unverified",
 						});
 					} else if (before.healthy !== node.healthy) {
 						changed = true;
@@ -136,6 +159,13 @@ export function createMeshMonitor(options: {
 						changed = true;
 						options.log("hobo_ci_mesh_node_lost", { nodeId: id });
 					}
+			}
+			if (reports) {
+				// Once per node for as long as its advertisement keeps failing.
+				for (const id of invalid)
+					if (!rejected.has(id))
+						options.log("hobo_ci_mesh_node_invalid", { nodeId: id });
+				rejected = invalid;
 			}
 			if (reports) {
 				// "Exhausted" is the mesh having nodes and none with room: a job

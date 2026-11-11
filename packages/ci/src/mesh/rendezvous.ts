@@ -29,6 +29,7 @@
  */
 import { createHash } from "node:crypto";
 import { meshReliabilityWeight } from "./reliability.js";
+import type { MeshIdentityProof, MeshTrust } from "./trust.js";
 
 /** One relay node as another node sees it. */
 export type MeshNode = Readonly<{
@@ -57,6 +58,48 @@ export type MeshNode = Readonly<{
 	 * `./reliability.ts`. Absent means it does not say, and is full trust.
 	 */
 	reliability?: number | undefined;
+	/**
+	 * The decayed counts the score was computed from, so a reader can tell a
+	 * score of 1 over no jobs from one over forty.
+	 */
+	samples?: MeshReliabilitySamples | undefined;
+	/**
+	 * Since when the node has been in its current health state (epoch ms): the
+	 * moment it started, drained or recovered. Absent means it does not say.
+	 */
+	sinceMs?: number | undefined;
+	/**
+	 * The node's identity key and its signature over this advertisement; see
+	 * `./trust.ts`. Absent on a node that does not sign (an older version).
+	 */
+	identity?: MeshIdentityProof | undefined;
+	/**
+	 * What the reader made of the signature. Never sent: each reader computes
+	 * it from its own trusted-key set, and a value a node sends about itself
+	 * is discarded. Absent means nobody has checked.
+	 */
+	trust?: MeshTrust | undefined;
+	/**
+	 * When the board last received this advertisement (epoch ms), by the
+	 * board's clock. Set by the board on a read; never sent by the node.
+	 */
+	seenAtMs?: number | undefined;
+}>;
+
+/** What became of the jobs a node took, decayed; see `./reliability.ts`. */
+export type MeshReliabilitySamples = Readonly<{
+	delivered: number;
+	dropped: number;
+}>;
+
+/** Whose advertisements a node ranks by. */
+export type MeshRankPolicy = Readonly<{
+	/**
+	 * Rank only nodes whose key is in the trusted set. Off, a node whose
+	 * signature is absent or unknown is still ranked, as every node was before
+	 * signatures existed. An advertisement whose signature fails is never ranked.
+	 */
+	requireTrusted?: boolean | undefined;
 }>;
 
 /** Free capacity a job can be sized against. */
@@ -91,6 +134,7 @@ export type MeshJob = Readonly<{
 /** Why a node cannot take a job, most basic reason first. */
 export type MeshLack =
 	| "stale"
+	| "trust"
 	| "unhealthy"
 	| "label"
 	| "platform"
@@ -122,8 +166,20 @@ function copiesWithin(
  * thing that would have to change: a node that is the wrong platform is not
  * reported as short of memory.
  */
-export function fitJob(job: MeshJob, node: MeshNode, nowMs: number): MeshFit {
+export function fitJob(
+	job: MeshJob,
+	node: MeshNode,
+	nowMs: number,
+	policy: MeshRankPolicy = {},
+): MeshFit {
 	if (node.validUntilMs <= nowMs) return { copies: 0, lacking: "stale" };
+	// A forged or altered advertisement says nothing about any node, so it is
+	// never deferred to; an unknown key is, unless the mesh requires trust.
+	if (
+		node.trust === "invalid" ||
+		(policy.requireTrusted === true && node.trust !== "trusted")
+	)
+		return { copies: 0, lacking: "trust" };
 	if (!node.healthy) return { copies: 0, lacking: "unhealthy" };
 	if (!node.labels.includes(job.label)) return { copies: 0, lacking: "label" };
 	const needs = job.needs;
@@ -165,6 +221,7 @@ export function rankNodes(
 	job: MeshJob,
 	nodes: readonly MeshNode[],
 	nowMs: number,
+	policy: MeshRankPolicy = {},
 ): readonly MeshNode[] {
 	const seen = new Set<string>();
 	return nodes
@@ -173,7 +230,7 @@ export function rankNodes(
 			seen.add(node.id);
 			return true;
 		})
-		.map((node) => ({ node, copies: fitJob(job, node, nowMs).copies }))
+		.map((node) => ({ node, copies: fitJob(job, node, nowMs, policy).copies }))
 		.filter((entry) => entry.copies > 0)
 		.map(({ node, copies }) => ({
 			node,
@@ -226,17 +283,26 @@ export function claimTurn(input: {
 	/** The wait per rank. Longer means fewer duplicate starts and slower failover. */
 	stepMs: number;
 	maxRank?: number;
+	/** Rank only peers whose key this node trusts; see `MeshRankPolicy`. */
+	requireTrusted?: boolean | undefined;
 }): ClaimTurn {
 	const { job, self, nowMs } = input;
-	const own = { ...self, validUntilMs: Number.POSITIVE_INFINITY };
+	const policy: MeshRankPolicy = { requireTrusted: input.requireTrusted };
+	// A node needs nobody's signature to believe its own state.
+	const own: MeshNode = {
+		...self,
+		validUntilMs: Number.POSITIVE_INFINITY,
+		trust: "trusted",
+	};
 	const order = rankNodes(
 		job,
 		[own, ...input.peers.filter((peer) => peer.id !== self.id)],
 		nowMs,
+		policy,
 	);
 	const position = order.findIndex((node) => node.id === self.id);
 	if (position < 0) {
-		const fit = fitJob(job, own, nowMs);
+		const fit = fitJob(job, own, nowMs, policy);
 		return {
 			start: false,
 			rank: -1,
