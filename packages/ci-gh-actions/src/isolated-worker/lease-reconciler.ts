@@ -139,6 +139,12 @@ export function createWorkerLeaseReconciler(options: {
 	if (!Number.isInteger(orphanGraceMs) || orphanGraceMs < 0)
 		throw new Error("invalid orphan grace");
 
+	const orphanRemovalsInFlight = new Set<string>();
+
+	function orphanContainerKey(container: DockerContainer): string {
+		return container.containerId || container.name;
+	}
+
 	/** Memory reserved by leases that are launching or running. */
 	function reservedMemoryMb(owned: readonly Lease[]): number {
 		return owned
@@ -440,9 +446,12 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
-			if (container.state === "running") {
+			if (container.state === "running" || container.state === "removing") {
+				if (container.state === "removing") continue;
 				if (reconcileOptions.draining) continue;
 				if (container.createdAtMs === undefined) continue;
+				const removalKey = orphanContainerKey(container);
+				if (orphanRemovalsInFlight.has(removalKey)) continue;
 				const leaseId = leaseIdFromBoxRunnerName(container.name);
 				if (options.containerCustody) {
 					const custodyInput =
@@ -453,10 +462,12 @@ export function createWorkerLeaseReconciler(options: {
 				}
 				const ageMs = Math.max(0, now() - container.createdAtMs);
 				if (ageMs < orphanGraceMs) continue;
+				orphanRemovalsInFlight.add(removalKey);
 				try {
 					if (options.docker.stop)
 						await options.docker.stop(container.name, container.containerId);
 					await options.docker.remove(container.name, container.containerId);
+					orphanRemovalsInFlight.delete(removalKey);
 					options.log?.("hobo_ci_container_orphan_removed", {
 						name: container.name,
 						containerId: container.containerId,
@@ -465,16 +476,23 @@ export function createWorkerLeaseReconciler(options: {
 						ageMs,
 					});
 				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (!/already in progress/i.test(message))
+						orphanRemovalsInFlight.delete(removalKey);
 					options.log?.("hobo_ci_container_orphan_remove_failed", {
 						name: container.name,
 						containerId: container.containerId,
-						message: error instanceof Error ? error.message : "unknown",
+						message,
 					});
 				}
 				continue;
 			}
+			const staleKey = orphanContainerKey(container);
+			if (orphanRemovalsInFlight.has(staleKey)) continue;
+			orphanRemovalsInFlight.add(staleKey);
 			try {
 				await options.docker.remove(container.name, container.containerId);
+				orphanRemovalsInFlight.delete(staleKey);
 				const event = "hobo_ci_container_orphan_removed";
 				if (container.timeoutMs !== undefined) {
 					options.log?.(event, {
@@ -491,10 +509,13 @@ export function createWorkerLeaseReconciler(options: {
 					});
 				}
 			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (!/already in progress/i.test(message))
+					orphanRemovalsInFlight.delete(staleKey);
 				options.log?.("hobo_ci_container_orphan_remove_failed", {
 					name: container.name,
 					containerId: container.containerId,
-					message: error instanceof Error ? error.message : "unknown",
+					message,
 				});
 			}
 		}
