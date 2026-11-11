@@ -478,6 +478,11 @@ What this does not give you:
 The full procedure and every limit are under "Signed local runs" in
 [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
 
+`pnpm ci:attest publish` pushes from a scratch bare repository that borrows the checkout's
+objects. Newer git (2.56 on GitHub's runners) moves a remote's tracking ref when a push names
+that remote's URL, so a push by URL from the checkout itself would leave a new
+`origin/ci-attestations` behind.
+
 ## Reading a main failure
 
 `gh run view --log` and the web viewer can drop the tail of a long step, so a step can look as if it

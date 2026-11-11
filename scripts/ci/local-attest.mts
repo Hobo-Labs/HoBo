@@ -19,7 +19,7 @@
  * The private key stays in one file (mode 0600). It is never printed, logged,
  * or passed to a command this script runs.
  */
-import { type SpawnOptions, execFileSync, spawn } from "node:child_process";
+import { execFileSync, type SpawnOptions, spawn } from "node:child_process";
 import {
 	createHash,
 	createPrivateKey,
@@ -53,8 +53,8 @@ import {
 	type AttestationVerdict,
 	type AttestedJobResult,
 	attestationPath,
-	canonicalJson,
 	type CoveredJob,
+	canonicalJson,
 	GATE_JOBS,
 	isObjectId,
 	keyIdOf,
@@ -70,9 +70,9 @@ import {
 import {
 	type ContextLookup,
 	conditionHolds,
-	evaluateExpression,
-	type ExprValue,
 	ExpressionError,
+	type ExprValue,
+	evaluateExpression,
 	loadPlan,
 	type PlannedJob,
 	substituteExpressions,
@@ -321,10 +321,12 @@ export function publishAttestation(input: {
 		remote = input.remote;
 	}
 	const named = remote === input.remote ? "the remote" : input.remote;
-	/** A git command that talks to the remote; its errors never show the URL. */
-	const remoteGit = (args: readonly string[]) => {
+	/** A git command that talks to the remote; its errors never show the URL.
+	 * `from` is the repository it runs in: the checkout, or the push-only
+	 * repository below. */
+	const remoteGit = (args: readonly string[], from = cwd) => {
 		try {
-			return git(cwd, args, { env: { GIT_TERMINAL_PROMPT: "0" } });
+			return git(from, args, { env: { GIT_TERMINAL_PROMPT: "0" } });
 		} catch (cause) {
 			throw new AttestError(
 				scrubRemote(
@@ -339,6 +341,17 @@ export function publishAttestation(input: {
 	const ref = `refs/heads/${ATTESTATION_BRANCH}`;
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-publish-"));
 	try {
+		// Pushed from a bare repository of its own that borrows the checkout's
+		// objects and has no remotes configured. Newer git (seen with 2.56 on
+		// GitHub's runners) also moves a remote's tracking ref when the push
+		// names that remote's URL, so a push by URL from the checkout is not
+		// enough to leave its refs as they were.
+		const pushOnly = join(scratch, "push.git");
+		git(scratch, ["init", "--quiet", "--bare", pushOnly]);
+		writeFileSync(
+			join(pushOnly, "objects", "info", "alternates"),
+			`${resolve(cwd, git(cwd, ["rev-parse", "--git-path", "objects"]))}\n`,
+		);
 		const blob = git(cwd, ["hash-object", "-w", "--stdin"], {
 			input: envelopeText,
 		});
@@ -383,7 +396,7 @@ export function publishAttestation(input: {
 			);
 			input.beforePush?.(attempt);
 			try {
-				remoteGit(["push", "--quiet", remote, `${commit}:${ref}`]);
+				remoteGit(["push", "--quiet", remote, `${commit}:${ref}`], pushOnly);
 				return { commit, path, attempts: attempt, unchanged: false };
 			} catch (cause) {
 				lastError = cause instanceof Error ? cause.message : "push failed";
