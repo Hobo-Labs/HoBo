@@ -4,6 +4,7 @@ import type { HostedRelayStore } from "../hosted-relay.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
 import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
+import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import {
 	type OrphanJobCandidate,
 	orphanJobCandidateForLease,
@@ -429,7 +430,35 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
-			if (container.state === "running") continue;
+			if (container.state === "running") {
+				if (reconcileOptions.draining) continue;
+				const leaseId = leaseIdFromBoxRunnerName(container.name);
+				if (!leaseId) continue;
+				const ageMs =
+					container.createdAtMs !== undefined
+						? Math.max(0, now() - container.createdAtMs)
+						: orphanGraceMs + 1;
+				if (ageMs < orphanGraceMs) continue;
+				try {
+					if (options.docker.stop)
+						await options.docker.stop(container.name, container.containerId);
+					await options.docker.remove(container.name, container.containerId);
+					options.log?.("hobo_ci_container_orphan_removed", {
+						name: container.name,
+						containerId: container.containerId,
+						state: container.state,
+						running: true,
+						ageMs,
+					});
+				} catch (error) {
+					options.log?.("hobo_ci_container_orphan_remove_failed", {
+						name: container.name,
+						containerId: container.containerId,
+						message: error instanceof Error ? error.message : "unknown",
+					});
+				}
+				continue;
+			}
 			try {
 				await options.docker.remove(container.name, container.containerId);
 				const event = "hobo_ci_container_orphan_removed";

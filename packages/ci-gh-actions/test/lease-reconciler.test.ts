@@ -696,6 +696,7 @@ describe("worker lease reconciliation", () => {
 						name: "hobo-00000000-0000-4000-8000-000000000099",
 						containerId: "c".repeat(64),
 						state: "running" as const,
+						createdAtMs: NOW,
 					},
 				]),
 				stop,
@@ -919,6 +920,33 @@ describe("worker lease reconciliation", () => {
 		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
 		expect(afterRelease).not.toHaveBeenCalled();
 		expect(active).toEqual([lease]);
+	});
+
+	it("stops unleased running containers after the orphan grace", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const clock = NOW - 3 * 60_000;
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-00000000-0000-4000-8000-000000000099",
+						containerId: "cid",
+						state: "running" as const,
+						createdAtMs: clock,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+		await reconciler.reconcile();
+		expect(stop).toHaveBeenCalled();
+		expect(remove).toHaveBeenCalled();
 	});
 
 	it("does not stop unleased running containers while draining", async () => {

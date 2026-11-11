@@ -41,6 +41,19 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
+	createFleetRoutePublisher,
+	type FleetRouteEvent,
+	type FleetRouteLog,
+	type FleetRoutePublication,
+	type FleetRoutePublisher,
+	type FleetRoutePublishInput,
+} from "./fleet-routes.js";
+export {
+	createFleetCapacityPublisher,
+	type FleetCapacityPublication,
+	type FleetCapacityPublisher,
+} from "./fleet-capacity-publisher.js";
+export {
 	createGithubAppTransport,
 	type GithubAppTransport,
 	type GithubTransport,
@@ -126,6 +139,18 @@ export {
 	type GithubReadFailure,
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
+export {
+	classifyHostHealth,
+	createHostHealthMonitor,
+	DEFAULT_HOST_HEALTH_THRESHOLDS,
+	type HostHealthMonitor,
+	type HostHealthReason,
+	type HostHealthSample,
+	type HostHealthState,
+	type HostHealthThresholds,
+	type HostHealthVerdict,
+	readHostHealthSample,
+} from "./isolated-worker/host-health.js";
 export {
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
