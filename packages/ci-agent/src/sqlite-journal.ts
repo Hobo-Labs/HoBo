@@ -4,6 +4,7 @@ import { z } from "zod";
 import { type AgentEvent, AgentEventSchema } from "./_generated/agent_pb.js";
 import {
 	type AgentJournal,
+	checkedKey,
 	eventKey,
 	eventTokens,
 	SETTLING_EVENT_TYPES,
@@ -86,6 +87,20 @@ export function createSqliteJournal(
 				repository,
 				type,
 			);
+		},
+		async latestChecked(resolutionKey) {
+			return one(
+				"SELECT body FROM agent_events WHERE key = ? ORDER BY position DESC LIMIT 1",
+				checkedKey(resolutionKey),
+			);
+		},
+		async recent(repository, type, since) {
+			return db
+				.prepare(
+					"SELECT body FROM agent_events WHERE repository = ? AND type = ? AND at >= ? ORDER BY position",
+				)
+				.all(repository, type, since)
+				.map((row) => decode(Row.parse(row)));
 		},
 		async events() {
 			return db

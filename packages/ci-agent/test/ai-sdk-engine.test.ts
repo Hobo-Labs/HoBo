@@ -190,27 +190,30 @@ describe("AI SDK engine", () => {
 		).rejects.toThrow("CI agent credential is not set: env:OPENAI_KEY");
 	});
 
-	it("takes a harness engine from the host, and refuses when the host has none", async () => {
+	it("builds a harness engine over the runner for its adapter", async () => {
 		const harness = config([
 			{ id: "cc", kind: "harness", model: "claude-code" },
 		]);
-		const supplied = {
-			id: "cc",
-			model: "claude-code",
-			resolve: async () => ({
-				regions: [],
-				usage: { inputTokens: 0, outputTokens: 0 },
-			}),
-		};
-		expect(
-			await createConfiguredEngines(harness, {
-				credential: () => undefined,
-				harness: (adapter) =>
-					adapter === "claude-code" ? supplied : undefined,
-			}),
-		).toEqual([supplied]);
-		await expect(
-			createConfiguredEngines(harness, { credential: () => undefined }),
-		).rejects.toThrow("CI agent harness is not available: claude-code");
+		const asked: string[] = [];
+		const [engine] = await createConfiguredEngines(harness, {
+			credential: () => undefined,
+			harnessRunner: async (adapter) => {
+				asked.push(adapter);
+				return {
+					run: async () => ({
+						text: JSON.stringify({
+							regions: [{ id: 0, resolution: "x\n", confidence: 0.9 }],
+						}),
+						usage: { inputTokens: 7, outputTokens: 3 },
+					}),
+				};
+			},
+		});
+		expect(asked).toEqual(["claude-code"]);
+		expect(engine).toMatchObject({ id: "cc", model: "claude-code" });
+		expect(await engine?.resolve(request())).toEqual({
+			regions: [{ id: 0, resolution: "x\n", confidence: 0.9 }],
+			usage: { inputTokens: 7, outputTokens: 3 },
+		});
 	});
 });

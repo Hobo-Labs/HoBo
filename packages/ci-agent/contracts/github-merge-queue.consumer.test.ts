@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
 	BASE_PROTECTION_QUERY,
 	COMMENT_MUTATION,
+	COMMIT_CHECKS_QUERY,
 	createGithubGraphql,
 	createGithubQueue,
 	DEFAULT_BRANCH_QUERY,
@@ -25,6 +26,7 @@ const Interaction = z.object({
 				"HoboAgentComment",
 				"HoboAgentDefaultBranch",
 				"HoboAgentBaseProtection",
+				"HoboAgentCommitChecks",
 			]),
 			variables: z.record(z.string(), z.string()),
 		}),
@@ -38,6 +40,9 @@ const Interaction = z.object({
 		.optional(),
 	expectedError: z.string().optional(),
 	expectedProtected: z.boolean().optional(),
+	expectedChecks: z
+		.object({ state: z.string(), failures: z.string() })
+		.optional(),
 });
 const pact = z
 	.object({
@@ -62,6 +67,7 @@ const QUERIES = {
 	HoboAgentComment: COMMENT_MUTATION,
 	HoboAgentDefaultBranch: DEFAULT_BRANCH_QUERY,
 	HoboAgentBaseProtection: BASE_PROTECTION_QUERY,
+	HoboAgentCommitChecks: COMMIT_CHECKS_QUERY,
 };
 const Sent = z.object({
 	query: z.string(),
@@ -157,6 +163,32 @@ describe("GitHub merge queue consumer contract", () => {
 			interaction.expectedProtected,
 		);
 		expect(served).toHaveLength(1);
+	});
+
+	it.each(
+		pact.interactions.filter(
+			(interaction) => interaction.expectedChecks !== undefined,
+		),
+	)("$description", async (interaction) => {
+		const { queue, served } = queueServing([interaction.description]);
+		expect(await queue.commitChecks("4".repeat(40))).toEqual(
+			interaction.expectedChecks,
+		);
+		expect(served).toHaveLength(1);
+	});
+
+	it("orders a stack after its parents and leaves other branches out", async () => {
+		const description =
+			"a stacked pull request depends on the one whose head branch it targets";
+		const { queue } = queueServing([description]);
+		const snapshot = await queue.snapshot();
+		expect(snapshot.entries.map((entry) => entry.number).sort()).toEqual([
+			21, 22, 23,
+		]);
+		for (const expectedEntry of expected(description)?.entries ?? [])
+			expect(
+				snapshot.entries.find((entry) => entry.number === expectedEntry.number),
+			).toMatchObject(expectedEntry);
 	});
 
 	it("reads a branch that has no merge queue", async () => {

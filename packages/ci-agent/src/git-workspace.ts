@@ -2,8 +2,10 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_COMMIT_IDENTITY } from "./config.js";
 import { markerSizeFor } from "./conflict.js";
 import type { ConflictFile } from "./resolver.js";
+import { type CommitSigningKey, signCommitObject } from "./signing.js";
 
 /** The result of merging two commits without touching a working tree. */
 export type TrialMerge = Readonly<{
@@ -23,10 +25,13 @@ export interface MergeWorkspace {
 	trial(ours: string, theirs: string): Promise<TrialMerge>;
 	commit(input: {
 		tree: string;
-		parents: readonly [string, string];
+		/** One parent for a repair on top of an earlier commit, two for a merge. */
+		parents: readonly [string] | readonly [string, string];
 		files: ReadonlyMap<string, string>;
 		message: string;
 	}): Promise<string>;
+	/** A text file at a commit, or nothing when it is absent or not text. */
+	read(commit: string, path: string): Promise<string | undefined>;
 	/** Create or fast-forward `ref`. A push that would rewrite history fails. */
 	push(commit: string, ref: string): Promise<void>;
 }
@@ -35,12 +40,7 @@ const OBJECT = /^[a-f0-9]{40,64}$/;
 /** Branch prefixes owned by a merge queue. Writing to one corrupts its speculation. */
 export const QUEUE_OWNED_BRANCH =
 	/^(?:gh-readonly-queue\/|mergify\/merge-queue\/|gtmq_)/;
-const AGENT_IDENTITY = {
-	GIT_AUTHOR_NAME: "hobo-ci-agent",
-	GIT_AUTHOR_EMAIL: "hobo-ci-agent@users.noreply.github.com",
-	GIT_COMMITTER_NAME: "hobo-ci-agent",
-	GIT_COMMITTER_EMAIL: "hobo-ci-agent@users.noreply.github.com",
-};
+export type CommitIdentity = Readonly<{ name: string; email: string }>;
 /** Message types of a trial merge that leave a plain text conflict, or none. */
 const TEXT_CONFLICTS = new Set([
 	"Auto-merging",
@@ -51,6 +51,9 @@ const REGULAR_FILE = new Set(["100644", "100755"]);
 /** Where fetched refs are kept, and where the agent's own commits stay reachable. */
 const FETCHED = "refs/hobo-agent/fetched/";
 const MADE = "refs/hobo-agent/commits/";
+/** A UTC day as `YYYY-MM-DD`, which sorts as it reads. */
+const day = (milliseconds: number) =>
+	new Date(milliseconds).toISOString().slice(0, 10);
 
 function object(value: string): string {
 	if (!OBJECT.test(value)) throw new Error("invalid git object id");
@@ -86,12 +89,25 @@ export function createGitWorkspace(options: {
 	 */
 	auth?: () => Promise<string>;
 	authHost?: string;
+	/** Author and committer of the agent's commits. */
+	identity?: CommitIdentity | undefined;
+	/** When set, every commit the agent writes carries an SSH signature by this key. */
+	signer?: CommitSigningKey | undefined;
 }): MergeWorkspace {
+	const identity = options.identity ?? DEFAULT_COMMIT_IDENTITY;
+	if (
+		/[<>\n\0]/.test(identity.name) ||
+		!/^[^<>\s\0]+@[^<>\s\0]+$/.test(identity.email)
+	)
+		throw new Error("invalid commit identity");
 	const remote = options.remote ?? "origin";
 	const maxBlobBytes = options.maxBlobBytes ?? 4 * 1024 * 1024;
 	const environment = {
 		...process.env,
-		...AGENT_IDENTITY,
+		GIT_AUTHOR_NAME: identity.name,
+		GIT_AUTHOR_EMAIL: identity.email,
+		GIT_COMMITTER_NAME: identity.name,
+		GIT_COMMITTER_EMAIL: identity.email,
 		GIT_TERMINAL_PROMPT: "0",
 		GIT_CONFIG_NOSYSTEM: "1",
 		// A path is a path: `a[1].ts` must not match `a1.ts` as a glob.
@@ -218,6 +234,9 @@ export function createGitWorkspace(options: {
 				merged: stdout.toString("utf8"),
 				markerSize,
 				bytes: Math.max(...sides.map((text) => Buffer.byteLength(text ?? ""))),
+				ours: oursText,
+				theirs: theirsText,
+				base: baseText,
 			};
 		} finally {
 			await rm(directory, { recursive: true, force: true });
@@ -234,12 +253,53 @@ export function createGitWorkspace(options: {
 					throw new Error("refused git ref");
 			// Store what was fetched under refs of the agent's own, so the next
 			// fetch can tell the remote what it already has.
-			const refspecs = refs.map((ref) =>
-				OBJECT.test(ref) ? ref : `+${ref}:${FETCHED}${ref.slice(5)}`,
+			const refspec = (ref: string) =>
+				OBJECT.test(ref) ? ref : `+${ref}:${FETCHED}${ref.slice(5)}`;
+			const env = await remoteAuth();
+			try {
+				await run(
+					["fetch", "--quiet", "--no-tags", remote, ...refs.map(refspec)],
+					{
+						env,
+					},
+				);
+			} catch {
+				// One pull request closed since it was listed fails the whole fetch.
+				// Fetch one at a time; a branch is required, a pull request is not.
+				for (const ref of refs)
+					try {
+						await run(["fetch", "--quiet", "--no-tags", remote, refspec(ref)], {
+							env,
+						});
+					} catch (error) {
+						if (!ref.startsWith("refs/pull/")) throw error;
+					}
+			}
+			// Keep only what this fetch asked for, and commits from the last week.
+			const wanted = new Set(
+				refs
+					.filter((ref) => !OBJECT.test(ref))
+					.map((ref) => `${FETCHED}${ref.slice(5)}`),
 			);
-			await run(["fetch", "--quiet", "--no-tags", remote, ...refspecs], {
-				env: await remoteAuth(),
-			});
+			const cutoff = day(Date.now() - 7 * 86_400_000);
+			const listed = await run([
+				"for-each-ref",
+				"--format=%(refname)",
+				"refs/hobo-agent/",
+			]);
+			const stale = listed.stdout
+				.toString("utf8")
+				.split("\n")
+				.filter(
+					(name) =>
+						(name.startsWith(FETCHED) && !wanted.has(name)) ||
+						(name.startsWith(MADE) &&
+							(name.slice(MADE.length).split("/")[0] ?? "") < cutoff),
+				);
+			if (stale.length > 0)
+				await run(["update-ref", "--stdin"], {
+					input: stale.map((name) => `delete ${name}\n`).join(""),
+				});
 		},
 		async trial(ours, theirs) {
 			const { stdout, code } = await run(
@@ -336,23 +396,53 @@ export function createGitWorkspace(options: {
 				if (!Number.isSafeInteger(seconds))
 					throw new Error("unreadable parent commit date");
 				const date = `@${seconds} +0000`;
-				const commit = await run(
-					[
-						"commit-tree",
-						tree.stdout.toString("utf8").trim(),
-						...input.parents.flatMap((parent) => ["-p", object(parent)]),
-					],
-					{
-						input: input.message,
-						env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
-					},
-				);
+				const treeId = object(tree.stdout.toString("utf8").trim());
+				let commit: { stdout: Buffer };
+				if (options.signer) {
+					// Written as an object so the signature covers exactly what git
+					// would have written, and is stored inside it.
+					const person = `${identity.name} <${identity.email}> ${seconds} +0000`;
+					const unsigned = [
+						`tree ${treeId}`,
+						...input.parents.map((parent) => `parent ${object(parent)}`),
+						`author ${person}`,
+						`committer ${person}`,
+						"",
+						input.message,
+					].join("\n");
+					commit = await run(["hash-object", "-t", "commit", "-w", "--stdin"], {
+						input: signCommitObject(options.signer, unsigned),
+					});
+				} else
+					commit = await run(
+						[
+							"commit-tree",
+							treeId,
+							...input.parents.flatMap((parent) => ["-p", object(parent)]),
+						],
+						{
+							input: input.message,
+							env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+						},
+					);
 				const id = object(commit.stdout.toString("utf8").trim());
-				// Keep it reachable until it is published, whenever that is.
-				await run(["update-ref", `${MADE}${id}`, id]);
+				// Keep it reachable for a week: long enough to be published and
+				// repaired. A fetch prunes the days before that.
+				await run(["update-ref", `${MADE}${day(Date.now())}/${id}`, id]);
 				return id;
 			} finally {
 				await rm(directory, { recursive: true, force: true });
+			}
+		},
+		async read(commit, path) {
+			try {
+				const { stdout } = await run(
+					["cat-file", "blob", `${object(commit)}:${path}`],
+					{ maxBuffer: maxBlobBytes },
+				);
+				return new TextDecoder("utf-8", { fatal: true }).decode(stdout);
+			} catch {
+				return undefined;
 			}
 		},
 		async push(commit, ref) {

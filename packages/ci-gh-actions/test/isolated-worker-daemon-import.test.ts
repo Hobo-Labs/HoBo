@@ -9,7 +9,11 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(packageRoot, "../..");
 const daemon = join(packageRoot, "scripts/isolated-worker-daemon.mts");
 
-describe("isolated-worker-daemon.mts startup imports", () => {
+// Each case starts a Node process that loads the daemon's import graph from
+// source; under a full parallel test run that takes longer than the default.
+describe("isolated-worker-daemon.mts startup imports", {
+	timeout: 60_000,
+}, () => {
 	function run(env: Readonly<Record<string, string>>) {
 		const inherited = Object.fromEntries(
 			Object.entries(process.env).filter(

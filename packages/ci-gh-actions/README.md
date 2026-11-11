@@ -118,7 +118,9 @@ merge conflicts with a configured model. It is off unless a host passes
 `agent` to `createRelayHost` (or `ports.agent` to `startRelayFromEnvironment`).
 `hobo ci serve` does so when `.hobo/ci.json` has an `agent` block, and
 `@hobo/ci-agent` ships an entry that does so from `HOBO_CI_AGENT_CONFIG` and
-`HOBO_CI_AGENT_DIR`. Vercel and the box worker daemon cannot run it.
+`HOBO_CI_AGENT_DIR`. Beside the box worker daemon or a relay on Vercel, the
+agent runs as a process of its own (see its README); it does not open the
+relay's store.
 
 The relay only schedules the agent. A pass runs at most once a minute by
 default, never overlaps another, runs only while the service is ready, and

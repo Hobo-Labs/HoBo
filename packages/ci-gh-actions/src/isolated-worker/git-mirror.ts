@@ -25,13 +25,16 @@ export type GitRunner = (
 export function resolveGitMirrorRoot(
 	preferred: string,
 	fallback: string,
+	/** Creates a root; a test passes one that fails as an unprivileged user's would. */
+	mkdir: (root: string) => void = (root) =>
+		mkdirSync(root, { recursive: true, mode: 0o755 }),
 ): string {
 	const tryRoot = (root: string) => {
 		if (!isAbsolute(root) || root.split(/[\\/]+/).includes(".."))
 			throw new Error(
 				"git mirror root must be absolute and contain no '..' segments",
 			);
-		mkdirSync(root, { recursive: true, mode: 0o755 });
+		mkdir(root);
 		return root;
 	};
 	try {

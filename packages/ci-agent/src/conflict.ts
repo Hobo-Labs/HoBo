@@ -172,3 +172,30 @@ export function composeMerged(
 		})
 		.join("");
 }
+
+/**
+ * The text each region had in a file built from these segments, found by
+ * matching the settled text around it. Undefined when the file no longer
+ * has that shape, or when two regions touch and cannot be told apart.
+ */
+export function regionTexts(
+	segments: readonly MergeSegment[],
+	file: string,
+): ReadonlyMap<number, string> | undefined {
+	const texts = new Map<number, string>();
+	let position = 0;
+	for (const [index, segment] of segments.entries()) {
+		if (segment.kind === "text") {
+			if (!file.startsWith(segment.text, position)) return undefined;
+			position += segment.text.length;
+			continue;
+		}
+		const next = segments[index + 1];
+		if (next?.kind === "conflict") return undefined;
+		const end = next ? file.indexOf(next.text, position) : file.length;
+		if (end < 0) return undefined;
+		texts.set(segment.id, file.slice(position, end));
+		position = end;
+	}
+	return position === file.length ? texts : undefined;
+}

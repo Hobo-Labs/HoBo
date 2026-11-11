@@ -10,15 +10,29 @@ import {
 	ResolutionSchema,
 } from "./_generated/agent_pb.js";
 import { agentPolicies, type ParsedAgentConfig } from "./config.js";
+import { parseMergeSegments, regionTexts } from "./conflict.js";
 import type { MergeWorkspace, TrialMerge } from "./git-workspace.js";
 import {
 	type AgentEventType,
 	type AgentJournal,
+	checkedKey,
+	ejectedKey,
 	enqueuedKey,
 	publishedKey,
 } from "./journal.js";
-import { type ObservedQueue, overlappingPairs, planQueue } from "./planner.js";
-import { type ResolutionEngine, resolveConflicts } from "./resolver.js";
+import {
+	createVerdicts,
+	type ObservedQueue,
+	overlappingPairs,
+	planQueue,
+} from "./planner.js";
+import {
+	type EngineFailure,
+	type PreviousAttempt,
+	type ResolutionEngine,
+	resolveConflicts,
+} from "./resolver.js";
+import type { StructuredMerger } from "./structured-merge.js";
 
 /** Where queued work is read from. */
 export interface QueueSource {
@@ -29,7 +43,20 @@ export interface QueueSource {
 	 * yes, including a failed lookup, is treated as no.
 	 */
 	baseRequiresChecks(): Promise<boolean>;
+	/** The repository's checks on a commit the agent published. */
+	commitChecks(sha: string): Promise<CommitChecks>;
 }
+
+/**
+ * Where a commit's checks stand. `failures` is bounded CI output, for a
+ * prompt. `infrastructure` is a failure no change to the code can fix (a
+ * timeout, a runner that did not start, a cancelled run): the agent waits for
+ * a re-run instead of repairing.
+ */
+export type CommitChecks = Readonly<{
+	state: "pending" | "success" | "failure" | "infrastructure" | "none";
+	failures: string;
+}>;
 
 /** The agent's only writes to the code host besides pushing a branch. */
 export interface QueuePublisher {
@@ -50,8 +77,12 @@ export type AgentTickReport = Readonly<{
 	 * require status checks, so this pass only suggested.
 	 */
 	applyWithheld: boolean;
+	/** Entries the merge queue ejected at their current commit, noticed this pass. */
+	ejected: readonly number[];
 	/** Steps that failed and were skipped; the tick itself still completed. */
 	failures: number;
+	/** Each time an engine gave no usable answer, and why. */
+	engineFailures: readonly EngineFailure[];
 }>;
 
 /** A report while its tick is still running. */
@@ -61,11 +92,24 @@ type TickProgress = {
 	enqueued: number[];
 	rollupRef: string | undefined;
 	applyWithheld: boolean;
+	ejected: number[];
 	failures: number;
+	engineFailures: EngineFailure[];
 };
 
 const sha256 = (value: readonly (string | number)[]) =>
 	createHash("sha256").update(JSON.stringify(value)).digest("hex");
+/** Whether two resolutions wrote the same content to the same paths. */
+function sameFiles(
+	a: readonly Readonly<{ path: string; contentSha256: string }>[],
+	b: readonly Readonly<{ path: string; contentSha256: string }>[],
+): boolean {
+	const content = new Map(b.map((file) => [file.path, file.contentSha256]));
+	return (
+		a.length === b.length &&
+		a.every((file) => content.get(file.path) === file.contentSha256)
+	);
+}
 const quoted = (path: string) => `\`${path.replace(/[`\r\n]/g, "'")}\``;
 
 /**
@@ -83,6 +127,8 @@ export function createCiAgent(options: {
 	publisher: QueuePublisher;
 	workspace: MergeWorkspace;
 	engines: readonly ResolutionEngine[];
+	/** Set when `resolution.structuredMerge` is on. */
+	structured?: StructuredMerger | undefined;
 	journal: AgentJournal;
 	now?: (() => string) | undefined;
 }) {
@@ -118,6 +164,7 @@ export function createCiAgent(options: {
 			resolution?: Resolution;
 			numbers?: number[];
 			headSha?: string;
+			checksState?: string;
 		},
 	) {
 		await journal.append(
@@ -136,6 +183,9 @@ export function createCiAgent(options: {
 	 * commits and policy. Returns nothing when today's budget is spent, so the
 	 * merge is tried again tomorrow instead of being recorded as declined.
 	 */
+	/** Engine failures of the tick in progress; ticks never overlap. */
+	let engineFailures: EngineFailure[] = [];
+
 	async function settle(input: {
 		repository: string;
 		number: number;
@@ -143,13 +193,53 @@ export function createCiAgent(options: {
 		theirs: string;
 		oursLabel: string;
 		theirsLabel: string;
+		/** Correct an earlier resolution whose checks failed, on top of its commit. */
+		repair?: { of: Resolution; failures: string } | undefined;
 	}): Promise<{ resolution: Resolution; fresh: boolean } | undefined> {
-		const { repository, ours, theirs } = input;
-		const key = sha256([repository, ours, theirs, policyDigest]);
+		const { repository, ours, theirs, repair } = input;
+		const key = repair
+			? sha256([repair.of.key, "repair", policyDigest])
+			: sha256([repository, ours, theirs, policyDigest]);
 		const existing = await journal.settled(key);
 		if (existing) return { resolution: existing, fresh: false };
 		const merge = await trial(ours, theirs);
+		// What the failed attempt put in each region, recovered from its commit.
+		const previous = new Map<string, PreviousAttempt>();
+		if (repair)
+			for (const file of merge.files) {
+				if (file.kind !== "content") continue;
+				const committed = await workspace.read(repair.of.commitSha, file.path);
+				let texts: ReadonlyMap<number, string> | undefined;
+				try {
+					texts =
+						committed === undefined
+							? undefined
+							: regionTexts(
+									parseMergeSegments(file.merged, file.markerSize),
+									committed,
+								);
+				} catch {
+					texts = undefined;
+				}
+				previous.set(file.path, {
+					regions: [...(texts ?? [])].map(([id, resolution]) => ({
+						id,
+						resolution,
+					})),
+					checkFailures: repair.failures,
+				});
+			}
 		const day = startOfDay();
+		// Regions resolved before, in resolutions whose checks then passed.
+		const recorded = new Map<string, string>();
+		for (const checked of await journal.recent(
+			repository,
+			"ci.agent.ResolutionChecked",
+			new Date(Date.parse(now()) - 90 * 86_400_000).toISOString(),
+		))
+			if (checked.checksState === "success")
+				for (const region of checked.resolution?.regions ?? [])
+					recorded.set(region.conflictSha256, region.resolution);
 		const result = await resolveConflicts({
 			files: merge.files,
 			policy: policy.resolution,
@@ -160,6 +250,12 @@ export function createCiAgent(options: {
 				(await journal.tokensSince(day)),
 			oursLabel: input.oursLabel,
 			theirsLabel: input.theirsLabel,
+			// A repair corrects what was rejected; anything else may reuse
+			// what passed before.
+			previous: repair ? previous : undefined,
+			recorded,
+			structured: options.structured,
+			onEngineFailure: (failure) => engineFailures.push(failure),
 		});
 		if (result.outcome !== "resolved" && result.reason === "daily-budget") {
 			const last = await journal.latest(repository, "ci.agent.BudgetExhausted");
@@ -172,21 +268,30 @@ export function createCiAgent(options: {
 			result.outcome === "resolved"
 				? await workspace.commit({
 						tree: merge.tree,
-						parents: [ours, theirs],
+						parents: repair ? [repair.of.commitSha] : [ours, theirs],
 						files: new Map(files.map((file) => [file.path, file.content])),
 						message: [
-							`Merge ${input.theirsLabel} into ${input.oursLabel}`,
+							repair
+								? `Repair the merge of ${input.theirsLabel} into ${input.oursLabel} after its checks failed`
+								: `Merge ${input.theirsLabel} into ${input.oursLabel}`,
 							"",
 							`Conflicts in ${files.length} file(s) were resolved by hobo-ci-agent:`,
-							...files.map(
-								(file) => `- ${file.path} (${file.regions} region(s))`,
+							...files.map((file) =>
+								file.structured
+									? `- ${file.path} (structured merge of the whole file)`
+									: `- ${file.path} (${file.regions} region(s))`,
 							),
 							"",
 							"This merge was written by an automated agent and has not been reviewed.",
 							"The required checks on this commit are its verification.",
 							"",
 							`Hobo-Agent-Resolution: ${key}`,
-							`Hobo-Agent-Engine: ${result.engineId} (${result.model})`,
+							...(repair ? [`Hobo-Agent-Repairs: ${repair.of.key}`] : []),
+							result.engineId === "recorded"
+								? "Hobo-Agent-Engine: recorded resolutions"
+								: result.engineId === "structured"
+									? `Hobo-Agent-Engine: structured merge (${result.model})`
+									: `Hobo-Agent-Engine: ${result.engineId} (${result.model})`,
 							"",
 						].join("\n"),
 					})
@@ -204,6 +309,7 @@ export function createCiAgent(options: {
 				regions: file.regions,
 				confidence: file.confidence,
 				contentSha256: file.contentSha256,
+				structured: file.structured,
 			})),
 			engineId: result.engineId,
 			model: result.model,
@@ -212,6 +318,9 @@ export function createCiAgent(options: {
 				outputTokens: BigInt(result.usage.outputTokens),
 			},
 			commitSha,
+			regions: files.flatMap((file) => file.recorded),
+			repairs: repair?.of.key ?? "",
+			attempt: repair ? repair.of.attempt + 1 : 0,
 		});
 		await record(repository, "ci.agent.ResolutionSettled", { resolution });
 		return { resolution, fresh: true };
@@ -228,8 +337,11 @@ export function createCiAgent(options: {
 				enqueued: [],
 				rollupRef: undefined,
 				applyWithheld: false,
+				ejected: [],
 				failures: 0,
+				engineFailures: [],
 			};
+			engineFailures = report.engineFailures;
 			if (entries.length === 0) return report;
 			const attempt = async <T>(step: () => Promise<T>) => {
 				try {
@@ -268,11 +380,55 @@ export function createCiAgent(options: {
 					}),
 				);
 			}
+			// A pull request the agent enqueued at this commit that is waiting
+			// again was ejected by the merge queue: its checks failed in a merge
+			// group. It is batched alone from now on, so whatever failed it cannot
+			// fail others with it, and it is not enqueued again at this commit.
+			const isolated = new Set<number>();
+			const enqueuedBefore = Date.parse(now()) - 120_000;
+			const weekAgo = new Date(
+				Date.parse(now()) - 7 * 86_400_000,
+			).toISOString();
+			const enqueuedEvents = await journal.recent(
+				repository,
+				"ci.agent.EntryEnqueued",
+				weekAgo,
+			);
+			for (const entry of entries) {
+				if (entry.started) continue;
+				if (
+					!enqueuedEvents.some(
+						(event) =>
+							event.numbers[0] === entry.number &&
+							event.headSha === entry.headSha &&
+							Date.parse(event.at) <= enqueuedBefore,
+					)
+				)
+					continue;
+				isolated.add(entry.number);
+				if (
+					await journal.has(ejectedKey(repository, entry.number, entry.headSha))
+				)
+					continue;
+				await record(repository, "ci.agent.EntryEjected", {
+					numbers: [entry.number],
+					headSha: entry.headSha,
+				});
+				report.ejected.push(entry.number);
+				if (config.mode !== "observe")
+					await attempt(() =>
+						publisher.comment(
+							entry.number,
+							`**hobo-ci-agent** added this pull request to the merge queue at ${entry.headSha}, and the queue removed it. The agent will not add this commit again; push a new commit, or add it to the queue by hand.`,
+						),
+					);
+			}
 			const plan = planQueue({
 				snapshot,
 				verdicts,
 				baseConflicts,
 				policy: policy.queue,
+				isolated,
 			});
 			report.plan = plan;
 			const proposed = await journal.latest(
@@ -333,9 +489,11 @@ export function createCiAgent(options: {
 					await record(repository, "ci.agent.ApplyWithheld", {});
 			}
 
-			// A pull request that no longer merges onto its base branch.
+			// A pull request that no longer merges onto its base branch. A stacked
+			// one waits: its parent's resolution is part of its own history.
 			for (const entry of ordered) {
-				if (!baseConflicts.has(entry.number)) continue;
+				if (!baseConflicts.has(entry.number) || entry.baseRef !== baseRef)
+					continue;
 				const settled = await settleFresh({
 					repository,
 					number: entry.number,
@@ -348,8 +506,7 @@ export function createCiAgent(options: {
 				// A resolution settled on an earlier pass is published now if its
 				// push never succeeded (or the mode then was observe).
 				if (
-					!resolution ||
-					resolution.outcome !== "resolved" ||
+					resolution?.outcome !== "resolved" ||
 					mode === "observe" ||
 					(await journal.has(publishedKey(resolution.key)))
 				)
@@ -377,8 +534,131 @@ export function createCiAgent(options: {
 				);
 			}
 
+			// Read the checks on resolutions published in the last day. A failed
+			// one is repaired on top of its own commit, at most maxRepairs times;
+			// past that, or when it cannot be repaired, a person is told.
+			if (mode !== "observe") {
+				const since = new Date(Date.parse(now()) - 86_400_000).toISOString();
+				for (const event of await journal.recent(
+					repository,
+					"ci.agent.ResolutionPublished",
+					since,
+				)) {
+					const published = event.resolution;
+					if (!published || (await journal.has(checkedKey(published.key))))
+						continue;
+					const checks = await attempt(() =>
+						options.queue.commitChecks(published.commitSha),
+					);
+					if (
+						!checks ||
+						checks.state === "pending" ||
+						checks.state === "none" ||
+						checks.state === "infrastructure"
+					)
+						continue;
+					const concluded = (state: "success" | "failure") =>
+						record(repository, "ci.agent.ResolutionChecked", {
+							resolution: published,
+							checksState: state,
+						});
+					if (checks.state === "success") {
+						await concluded("success");
+						continue;
+					}
+					const entry = byNumber.get(published.number);
+					const direct = !published.publishedRef.startsWith(
+						"refs/heads/hobo-agent/",
+					);
+					// A pull request that left, or whose branch moved on, is its
+					// author's again.
+					if (
+						!entry ||
+						(direct &&
+							(mode !== "apply" || entry.headSha !== published.commitSha))
+					) {
+						await concluded("failure");
+						continue;
+					}
+					const canRepair = published.attempt < policy.resolution.maxRepairs;
+					const repaired = canRepair
+						? await settleFresh({
+								repository,
+								number: published.number,
+								ours: published.oursSha,
+								theirs: published.theirsSha,
+								oursLabel: `pull request #${published.number}`,
+								theirsLabel: baseRef,
+								repair: { of: published, failures: checks.failures },
+							})
+						: undefined;
+					// Deferred by the budget, the per-pass limit or an error: next pass.
+					if (canRepair && repaired === undefined) continue;
+					const resolution = repaired?.resolution;
+					// The same text again: the model sees nothing to correct in the
+					// regions it resolved. Pushing it would only re-run the checks.
+					const unchanged =
+						resolution?.outcome === "resolved" &&
+						sameFiles(resolution.files, published.files);
+					if (unchanged) {
+						await concluded("failure");
+						await attempt(() =>
+							publisher.comment(
+								entry.number,
+								`**hobo-ci-agent**: the required checks failed on its merge commit ${published.commitSha}. Asked again with what the checks reported, the model kept the same resolution, so the failure may be outside the conflicts it resolved, or flaky. Re-run the checks, or resolve the conflict by hand. It will not try again.`,
+							),
+						);
+						continue;
+					}
+					if (resolution?.outcome === "resolved") {
+						const pushed = await attempt(() =>
+							publish(
+								entry,
+								resolution,
+								published.publishedRef,
+								"ci.agent.ResolutionPublished",
+								[
+									`**hobo-ci-agent**: the required checks failed on its merge commit ${published.commitSha}.`,
+									"",
+									`It pushed a corrected merge commit, ${resolution.commitSha}, to ${quoted(published.publishedRef.slice(11))}, written by a model (${quoted(resolution.model)}) from what the checks reported. It has not been reviewed.`,
+								].join("\n"),
+								[entry.number],
+							),
+						);
+						// An unpublished repair is pushed again next pass.
+						if (pushed) await concluded("failure");
+						continue;
+					}
+					// Out of attempts, or the repair abstained: a person resolves it.
+					await concluded("failure");
+					await attempt(() =>
+						publisher.comment(
+							entry.number,
+							`**hobo-ci-agent**: the required checks failed on its merge commit ${published.commitSha}, and it will not try again. Resolve the conflict by hand${direct ? ", or revert that commit" : ""}.`,
+						),
+					);
+				}
+			}
+
 			// Feed the host's merge queue in planned order.
 			if (mode === "apply") {
+				// A pull request whose head is one of the agent's own merge commits
+				// waits until the required checks have passed on that commit.
+				const unproven = new Set<string>();
+				for (const event of await journal.recent(
+					repository,
+					"ci.agent.ResolutionPublished",
+					weekAgo,
+				)) {
+					const commit = event.resolution?.commitSha;
+					const key = event.resolution?.key ?? "";
+					if (!commit) continue;
+					const checked = await journal.latestChecked(key);
+					if (checked?.checksState !== "success") unproven.add(commit);
+				}
+				// Two pull requests that conflict cannot share a merge group: wait
+				// until the one ahead merges, then resolve against the base branch.
+				const verdictOf = createVerdicts(verdicts);
 				const queued = new Set(
 					entries.filter((entry) => entry.started).map((entry) => entry.number),
 				);
@@ -387,8 +667,18 @@ export function createCiAgent(options: {
 					const key = `${entry.number}:${entry.headSha}`;
 					if (
 						entry.started ||
+						entry.baseRef !== baseRef ||
 						baseConflicts.has(entry.number) ||
 						baseUnknown.has(entry.number) ||
+						isolated.has(entry.number) ||
+						unproven.has(entry.headSha) ||
+						[...queued].some((number) => {
+							const ahead = byNumber.get(number);
+							return (
+								ahead !== undefined &&
+								verdictOf(ahead, entry).verdict !== "clean"
+							);
+						}) ||
 						entry.dependsOn.some((parent) => !queued.has(parent)) ||
 						Date.parse(now()) - (enqueueAskedAt.get(key) ?? 0) < 600_000 ||
 						// Enqueued once at this commit already. If the queue ejected it

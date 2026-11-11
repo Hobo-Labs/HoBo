@@ -97,7 +97,7 @@ from this process's environment by the name the block references; a name that
 is not set stops the serve. **`--no-agent`** serves without it. The agent is a
 separate package, `@hobo/ci-agent`, loaded only when a block is present; a
 `hobo` install without it refuses to serve such a project unless `--no-agent`
-is passed. It has not yet been run against GitHub or a live model.
+is passed.
 
 Alternatively, import a self-hosted App's key and webhook secret from files:
 
