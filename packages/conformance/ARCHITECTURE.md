@@ -25,6 +25,13 @@ validation runs. CUE constraints on `WorkspaceEdgeRecord` and
 - **Actor** — conformance harness actor applies validation commands.
 - **Event store** — validation events append to the platform event store.
 - **Materialized view / projection** — boundary violation list is the projection.
+  Each violation carries the rule that raised it, from the closed
+  `BOUNDARY_RULES` list (`#BoundaryRule` in the CUE). A refusal and its record
+  are made together, so the list is every refusal the gate printed — including
+  the three engine-neutrality rules (an orchestrator imports no data engine,
+  no database driver and no engine-specific storage at runtime; engines do not
+  import each other at runtime; test-only edges are allowed). See the README's
+  "The workspace boundary gate".
 - **Snapshot** — latest validated workspace rev is the read snapshot.
 - **Read store** — CI and adapters query the read store for boundary status.
 

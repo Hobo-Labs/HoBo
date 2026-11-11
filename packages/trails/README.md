@@ -81,3 +81,63 @@ hobo trails inspect <id>
 2. App Trails = versioned schema/data/junction steps composed with platform recipes.
 3. Progressive ramp via existing Harness `FeatureFlagStore`.
 4. Fail-closed dual oracles + compensation; history is durable and idempotent.
+
+## Data migrations (ADR-0177)
+
+Trails composes data migrations; it does not implement a storage engine.
+
+- **No engine is imported.** The schema-apply and dual-run ports are declared
+  here as shapes. `@hobo/data-sqlite` satisfies them today; any other
+  `@hobo/data-<engine>` package can. The package-boundary gate
+  (`pnpm run lint:boundaries`) refuses, anywhere under `src/`, an import of an
+  engine package, of a database driver (`node:sqlite`, `pg`, `mongodb`, …), or
+  of `@hobo/storage-sqlite` — static, dynamic `import()`, or `require()`, and
+  whether or not the package is listed only under `devDependencies`. Tests may
+  import any of them.
+- **One executor.** `executeDataMigration` is `@hobo/data-core`'s
+  `in-place-evolve` pattern behind Trails' own types. It accepts a `policy`
+  callback — recomputed before every phase, a negative verdict holds the
+  migration at its last safe state — and a `replayErasures` callback, called
+  after every restore so a rollback cannot resurrect an erased subject.
+- **Every phase is write-ahead.** The fact ladder is `Planned`,
+  `SnapshotTaken`, then for each of expand, backfill and contract a
+  `PhaseIntended` followed by its `PhaseApplied`, with `Verified` after
+  backfill and after contract, and `CutOver`. `PhaseIntended` is journaled
+  before the statements run. A run that finds an intent with no
+  `PhaseApplied` after it — the process died in between, and the application
+  has been writing since — neither runs the statements again on a guess nor
+  restores the snapshot. It asks the plan's probe for that phase
+  (`DataMigrationPlan.probes`: a violations query that returns no rows
+  exactly when the phase is in effect) and records the phase as applied or
+  applies it; with no probe it holds with `PHASE_OUTCOME_UNKNOWN`, and a
+  re-applied phase that fails holds with `PHASE_REAPPLY_FAILED`. Neither is
+  ever answered by a restore.
+- **Evidence, not rows.** A dual-run port that offers `evidence()` is judged on
+  counts and digests; no row leaves the store. `snapshot()` remains for the
+  simulated-fixture oracle.
+- **A computed gate.** `evaluateCanTrail` accepts a `policyVerdict` computed by
+  `@hobo/data-core` over the migration's custody path. A dump file, a relaying
+  runner, or a rollback snapshot in the wrong place blocks the trail and is
+  named in the reason. The gate is a conjunction and fails closed: the trail is
+  denied when `policyAllows` is `false`, or `residencyConflict` is `true`, or
+  the verdict is negative or carries a finding. A passing verdict does not lift
+  a denial stated beside it, and the booleans alone still work when no verdict
+  is supplied. A verdict that is not the record
+  `data-models/migration.cue` pins (`ok`, a `findings` list, a `sha256:`
+  `custodyDigest`) blocks the trail with a `policy-denied` reason; it neither
+  throws nor passes. Each reason code appears once, with every cause in its
+  message.
+- **Patterns.** A data step may name the migration pattern it realizes
+  (`data.pattern`), from the closed catalog in `@hobo/data-core`.
+
+```ts
+import { evaluateCustodyPath, parseCustodyPath } from "@hobo/data-core";
+import { createSqliteDataDualPort } from "@hobo/data-sqlite";
+import { evaluateCanTrail, TrailRunner } from "@hobo/trails";
+
+const verdict = evaluateCustodyPath({ path: parseCustodyPath(custody), policy, now });
+const gate = evaluateCanTrail({ trail, policyVerdict: verdict });
+
+const dual = createSqliteDataDualPort({ sourcePath, targetPath, tenant: "acme" });
+const result = new TrailRunner({ tenant: "acme", target: "silo-a", dataDual: dual }).run(trail);
+```

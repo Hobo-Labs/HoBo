@@ -1,0 +1,178 @@
+{
+	"consumer": {
+		"name": "HoboMigrationPlanner"
+	},
+	"provider": {
+		"name": "HoboDataCoreSelector"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The selection boundary. A planner asks which migration pattern is legal for an authority and a kind of change between two declared engines; the selector answers with exactly one pattern or with a rejection that names a reason for every candidate. There is no third answer: a pattern is never substituted silently for one that failed a gate. test/pact.test.ts replays every interaction against selectMigrationPattern."
+	},
+	"interactions": [
+		{
+			"description": "an online cross-engine move of an authoritative store selects snapshot-and-tail with a lossless soak",
+			"providerState": "engines alpha and beta are declared with every port and fresh passing conformance evidence",
+			"request": {
+				"method": "POST",
+				"path": "/data-migrations/select",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"authority": "authoritative",
+					"change": "engine",
+					"source": "alpha",
+					"target": "beta",
+					"constraints": {
+						"maxWriteFreezeMs": 5000,
+						"requiredRollback": "lossless"
+					},
+					"estimates": {
+						"flipMs": 1000,
+						"copyMs": 600000
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"selected": {
+						"pattern": "snapshot-and-tail",
+						"realization": "hub",
+						"writeFreeze": "bounded",
+						"rollbackInSoak": "lossless"
+					},
+					"rejected": {
+						"in-place-evolve": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"rebuild-and-swap": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"offline-copy": [
+							"FREEZE_EXCEEDS_BUDGET"
+						],
+						"log-pivot": [
+							"ROLLBACK_INSUFFICIENT"
+						],
+						"stream-handoff": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "a zero write-freeze budget rejects every pattern for an authoritative store instead of downgrading to downtime",
+			"providerState": "engines alpha and beta are declared with every port and fresh passing conformance evidence",
+			"request": {
+				"method": "POST",
+				"path": "/data-migrations/select",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"authority": "authoritative",
+					"change": "engine",
+					"source": "alpha",
+					"target": "beta",
+					"constraints": {
+						"maxWriteFreezeMs": 0,
+						"requiredRollback": "none"
+					},
+					"estimates": {
+						"flipMs": 1000,
+						"copyMs": 600000
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"selected": null,
+					"rejected": {
+						"in-place-evolve": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"rebuild-and-swap": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"offline-copy": [
+							"FREEZE_EXCEEDS_BUDGET"
+						],
+						"snapshot-and-tail": [
+							"FREEZE_EXCEEDS_BUDGET"
+						],
+						"log-pivot": [
+							"FREEZE_EXCEEDS_BUDGET"
+						],
+						"stream-handoff": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "projected data moves by replay across paradigms with no write freeze at all",
+			"providerState": "engine beta is declared with every port and fresh passing conformance evidence",
+			"request": {
+				"method": "POST",
+				"path": "/data-migrations/select",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"authority": "projected",
+					"change": "paradigm",
+					"target": "beta",
+					"constraints": {
+						"maxWriteFreezeMs": 0,
+						"requiredRollback": "lossless"
+					},
+					"estimates": {}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"selected": {
+						"pattern": "rebuild-and-swap",
+						"realization": "hub",
+						"writeFreeze": "none",
+						"rollbackInSoak": "lossless"
+					},
+					"rejected": {
+						"in-place-evolve": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"offline-copy": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"snapshot-and-tail": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"log-pivot": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						],
+						"stream-handoff": [
+							"PATTERN_ILLEGAL_FOR_CELL"
+						]
+					}
+				}
+			}
+		}
+	]
+}

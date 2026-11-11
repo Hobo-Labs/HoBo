@@ -80,6 +80,7 @@
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",
     "@hobo/provider-redaction": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/kv": "3.4.0",
     "@nats-io/transport-node": "3.4.0",

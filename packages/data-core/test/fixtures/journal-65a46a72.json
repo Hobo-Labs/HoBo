@@ -1,0 +1,203 @@
+{
+	"recordedFrom": "65a46a72",
+	"note": "Bodies exactly as the 65a46a72 executors appended them, every one at v:1. Recorded, never edited.",
+	"snapshotAndTail": {
+		"migrationId": "m",
+		"status": "held",
+		"phase": "fence-and-flip",
+		"facts": [
+			{
+				"type": "migration.Planned",
+				"data": {
+					"migrationId": "m",
+					"pattern": "snapshot-and-tail",
+					"phases": [
+						"plan",
+						"gate",
+						"prepare",
+						"seed",
+						"converge",
+						"verify",
+						"shift-reads",
+						"fence-and-flip",
+						"soak",
+						"finalize"
+					],
+					"decisionDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+					"custodyDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					"source": "src",
+					"target": "tgt",
+					"dataset": "orders",
+					"plannedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "gate",
+					"checkpoint": {},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "prepare",
+					"checkpoint": {
+						"startPosition": "3"
+					},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "seed",
+					"checkpoint": {
+						"seeded": 3
+					},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "converge",
+					"checkpoint": {
+						"position": "3",
+						"applied": 0
+					},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.Verified",
+				"data": {
+					"migrationId": "m",
+					"point": "pre-flip",
+					"count": 3,
+					"digest": "9d97301592dcb87bcb7d57f003c02d9da7e766814a9d8abc27c8d8c3b5e6661c",
+					"verifiedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "verify",
+					"checkpoint": {
+						"count": 3,
+						"digest": "9d97301592dcb87bcb7d57f003c02d9da7e766814a9d8abc27c8d8c3b5e6661c"
+					},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "shift-reads",
+					"checkpoint": {
+						"percent": 100
+					},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.CutOver",
+				"data": {
+					"migrationId": "m",
+					"fenceToken": "fence:orders::1",
+					"count": 3,
+					"digest": "9d97301592dcb87bcb7d57f003c02d9da7e766814a9d8abc27c8d8c3b5e6661c",
+					"reverseTail": true,
+					"reversePosition": "3",
+					"cutOverAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "m",
+					"phase": "fence-and-flip",
+					"checkpoint": {
+						"migrationId": "m",
+						"fenceToken": "fence:orders::1",
+						"count": 3,
+						"digest": "9d97301592dcb87bcb7d57f003c02d9da7e766814a9d8abc27c8d8c3b5e6661c",
+						"reverseTail": true,
+						"reversePosition": "3",
+						"cutOverAt": "2026-01-01T00:00:00Z"
+					},
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.Held",
+				"data": {
+					"migrationId": "m",
+					"phase": "soak",
+					"reason": "soak window left open",
+					"heldAt": "2026-01-01T00:00:00Z"
+				}
+			}
+		]
+	},
+	"inPlaceEvolve": {
+		"migrationId": "evolve",
+		"status": "contract-blocked",
+		"facts": [
+			{
+				"type": "migration.Planned",
+				"data": {
+					"migrationId": "evolve",
+					"phases": [
+						"expand",
+						"backfill",
+						"contract"
+					],
+					"plannedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.SnapshotTaken",
+				"data": {
+					"migrationId": "evolve",
+					"snapshotRef": "snap-1",
+					"takenAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "evolve",
+					"phase": "expand",
+					"statements": 1,
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.PhaseApplied",
+				"data": {
+					"migrationId": "evolve",
+					"phase": "backfill",
+					"statements": 1,
+					"changes": 2,
+					"appliedAt": "2026-01-01T00:00:00Z"
+				}
+			},
+			{
+				"type": "migration.Verified",
+				"data": {
+					"migrationId": "evolve",
+					"point": "after-backfill",
+					"verifiedAt": "2026-01-01T00:00:00Z"
+				}
+			}
+		]
+	}
+}

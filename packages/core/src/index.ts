@@ -327,6 +327,7 @@ export {
 	parseDataStoreClaimSource,
 } from "./ports/data-store-catalog.js";
 export type {
+	DataStoreEngine,
 	DataStoreMatch,
 	DataStoreOffering,
 	DataStoreOfferingId,
@@ -336,6 +337,7 @@ export type {
 	DataStoreResolveResult,
 } from "./ports/data-store-offerings.js";
 export {
+	DATA_STORE_ENGINES,
 	DATA_STORE_OFFERING_IDS,
 	DATA_STORE_PROVIDER_FAMILIES,
 	DATA_STORE_PROVIDERS,
@@ -343,6 +345,7 @@ export {
 	DataStoreOfferingParseError,
 	DEFAULT_DATA_STORE_FALLBACKS,
 	dataStoreOffering,
+	engineOfDataStoreProvider,
 	matchDataStoreOfferings,
 	parseDataStoreFeatures,
 	parseDataStoreFidelity,

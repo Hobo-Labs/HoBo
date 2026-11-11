@@ -78,6 +78,65 @@ export type DataStoreProvider =
 	| "self-hosted-postgres"
 	| "other";
 
+/**
+ * The storage engine behind a data store (ADR-0177).
+ *
+ * `DataStoreProvider` above names *products*. An engine is a different fact
+ * with a different owner: wire protocol, type system, DDL semantics, and
+ * replication mechanism are properties of the engine, shared by every product
+ * of it. The migration patterns a store can take part in are decided by its
+ * engine; what a particular product then disables is a narrowing on top.
+ */
+export const DATA_STORE_ENGINES = Object.freeze([
+	"sqlite",
+	"postgres",
+	"sqlserver",
+	"mysql",
+	"mongodb",
+	"other",
+] as const);
+
+export type DataStoreEngine = (typeof DATA_STORE_ENGINES)[number];
+
+/** Which engine each known product is. `other` is honest: nothing is assumed. */
+const PROVIDER_ENGINES: Readonly<Record<DataStoreProvider, DataStoreEngine>> =
+	Object.freeze({
+		"sqlite-local": "sqlite",
+		// D1 speaks the SQLite dialect; it is not a Postgres and never satisfies one.
+		"cloudflare-d1": "sqlite",
+		"supabase-postgres": "postgres",
+		// These two family ids name a managed *service* that hosts more than one
+		// engine, so the id alone does not determine the engine.
+		"aws-rds": "other",
+		"gcp-cloudsql": "other",
+		"azure-sql": "sqlserver",
+		// Each product-level id names one PostgreSQL product (see
+		// `DataStoreProvider`), including the PostgreSQL-compatible services.
+		"neon-postgres": "postgres",
+		"prisma-postgres": "postgres",
+		"pgedge-cloud": "postgres",
+		"planetscale-postgres": "postgres",
+		"azure-postgres-flexible": "postgres",
+		"azure-horizondb": "postgres",
+		"aws-rds-postgres": "postgres",
+		"aws-aurora-postgres": "postgres",
+		"gcp-cloudsql-postgres": "postgres",
+		"gcp-alloydb": "postgres",
+		"self-hosted-postgres": "postgres",
+		other: "other",
+	});
+
+/**
+ * The engine a product is, when the product id determines it. Returns `other`
+ * for a product that hosts several engines — the caller must then read the
+ * engine from the product's declaration rather than guess.
+ */
+export function engineOfDataStoreProvider(
+	provider: DataStoreProvider,
+): DataStoreEngine {
+	return PROVIDER_ENGINES[provider];
+}
+
 export type DataStoreOffering = ResourceOffering<DataStoreOfferingId>;
 
 export type DataStoreProviderProfile = ResourceOfferingProfile<
