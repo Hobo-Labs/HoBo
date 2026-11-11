@@ -659,19 +659,39 @@ function withoutTokenInJson(value: JsonValue, secrets: TokenSearch): JsonValue {
 	return copy;
 }
 
+// The deepest JSON body `bodyText` writes back out. `JSON.stringify` checks
+// each container against every one it is inside, so its cost grows with the
+// square of the depth until the stack runs out and it throws, which is a
+// different depth on every runtime and thread. Vercel's errors are a few
+// levels deep; a deeper body is searched as text instead.
+const BODY_JSON_DEPTH_LIMIT = 64;
+
+// Whether no container in `value` is nested more than `limit` deep, found
+// without recursion and without walking past the first one that is.
+function nestedAtMost(value: JsonValue, limit: number): boolean {
+	const pending: { value: JsonValue; depth: number }[] = [{ value, depth: 0 }];
+	for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+		if (!isJsonArray(next.value) && !isJsonObject(next.value)) continue;
+		if (next.depth >= limit) return false;
+		for (const item of Object.values(next.value))
+			pending.push({ value: item, depth: next.depth + 1 });
+	}
+	return true;
+}
+
 // A body as `message` shows it, the token taken out: a JSON body as `json`,
 // that body parsed (which undoes its escapes) with the token taken out of its
 // strings, written back out with `JSON.stringify`; any other body as sent,
 // searched as text. Writing a body back out only escapes what its strings
-// hold, so it brings back no token the walk took out. A body too deep to write
-// back out (`JSON.stringify` throws RangeError some thousands of levels down)
-// is searched as text too.
+// hold, so it brings back no token the walk took out. A body nested deeper
+// than BODY_JSON_DEPTH_LIMIT is searched as text too, as is one that cannot be
+// written back out.
 function bodyText(
 	detail: string,
 	json: JsonValue | undefined,
 	secrets: TokenSearch,
 ): string {
-	if (json !== undefined) {
+	if (json !== undefined && nestedAtMost(json, BODY_JSON_DEPTH_LIMIT)) {
 		try {
 			return JSON.stringify(json);
 		} catch {
