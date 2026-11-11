@@ -212,7 +212,7 @@ describe("hobo-checkout mirror and partial clone contract", () => {
 
 	it("leaves the box mirror after the first failed attempt", () => {
 		// Three attempts through a mirror that cannot serve the fetch are one
-		// failure three times (finding 107). The later attempts go to GitHub.
+		// failure three times (finding 108). The later attempts go to GitHub.
 		const drop = action.indexOf(
 			"Disable box git mirror after transport errors",
 		);

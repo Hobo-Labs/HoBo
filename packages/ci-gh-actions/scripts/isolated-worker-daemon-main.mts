@@ -886,6 +886,7 @@ try {
 		mergeGroupLeaseLimit: mergeGroupLeases,
 		jobPickupMetadata,
 		lendTrunkSlots,
+		trunkSlots,
 		memoryAdmission,
 		storageAdmission,
 		storageJobReserve,

@@ -756,6 +756,7 @@ describe("pull-mode box worker over SQLite", () => {
 			fleetCapacity?: Parameters<
 				typeof createHostedRelayRuntime
 			>[0]["fleetCapacity"];
+			trunkSlots?: number;
 			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
@@ -806,6 +807,7 @@ describe("pull-mode box worker over SQLite", () => {
 		if (trunk?.unlaunchedReservationRelease)
 			options.unlaunchedReservationRelease = trunk.unlaunchedReservationRelease;
 		if (trunk?.fleetCapacity) options.fleetCapacity = trunk.fleetCapacity;
+		if (trunk?.trunkSlots !== undefined) options.trunkSlots = trunk.trunkSlots;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -1876,6 +1878,55 @@ describe("pull-mode box worker over SQLite", () => {
 		expect((await store.get(reserved?.id ?? ""))?.state).toBe("cancelled");
 		expect((await store.pendingJobs()).map((job) => job.id)).toContain(1);
 		expect(launched).toEqual([]);
+		store.close();
+	});
+
+	it("defers extra main workspace shards when local trunk slots are full but mesh has room", async () => {
+		const store = await configuredStore(4);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 0",
+					},
+					{
+						id: 2,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 1",
+					},
+				],
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T14:00:00Z" });
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			trunkSlots: 1,
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 2 }),
+			},
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const leases = (await store.activeLeases()).filter(
+			(lease) => lease.state !== "cancelled",
+		);
+		expect(leases.length).toBeLessThanOrEqual(1);
+		if (leases.length === 1) expect(leases[0]?.jobId).toBe(1);
 		store.close();
 	});
 

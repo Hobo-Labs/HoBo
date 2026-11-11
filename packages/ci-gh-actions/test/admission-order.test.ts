@@ -110,6 +110,36 @@ it("ranks the trunk-only label ahead of pull requests when run lookups fail", as
 	expect(await order.rank(general)).toBe(1);
 });
 
+it("admits Main workspace plan before Main full gate on the same push run", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const expected = new Map([
+		[10, 120_000],
+		[11, 600_000],
+		[12, 90_000],
+	]);
+	const order = createAdmissionOrder(github, {
+		expectedMs: (_repository, jobId) => expected.get(jobId) ?? 0,
+	});
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(11, "Main full gate"),
+					fabric(12, "Main workspace test shard 1"),
+					fabric(10, "Main workspace plan"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([10, 11, 12]);
+});
+
 it("orders main workspace shards by index within a run before duration ties", async () => {
 	const { github } = transport(
 		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
