@@ -23,6 +23,7 @@ Commit **both** `mise.toml` and `mise.lock`. CI and agents run `mise install` (n
 
 - **Reproducibility** — same bytes on Linux/macOS/Windows CI and devcontainers.
 - **Reviewability** — version bumps show up as lockfile diffs alongside `mise.toml`.
+- **Flaky networks** — installing mise itself (`scripts/lib/mise-path.sh`, used by `bootstrap-dev.sh` and the hosted-runner preflight) retries the whole install up to `MISE_INSTALL_ATTEMPTS` times (default 4) with doubling back-off from `MISE_INSTALL_RETRY_DELAY` seconds (default 2). The mise installer downloads the release and its checksum without retries of its own, so one reset connection used to fail a CI job.
 - **Offline / airgap** — after one online `mise install`, tools live under `~/.local/share/mise` (or `MISE_DATA_DIR`). With no network, mise uses the cache; pre-seed the cache or vendor tarballs for fully offline lanes. Lockfile URLs are still required for cold installs.
 - **Regenerate** — after editing `[tools]`, run `mise lock` and commit.
 

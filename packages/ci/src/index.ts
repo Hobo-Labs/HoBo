@@ -1,5 +1,6 @@
 export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
+export { allocationQuote } from "./accounting.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
 	accountEventPage,
@@ -44,6 +45,7 @@ export {
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
+export { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {
 	ciBudgetIdentity,
@@ -89,3 +91,10 @@ export {
 	createCiAsyncSharedBudgetHooks,
 	createCiSharedBudgetHooks,
 } from "./shared-budget.js";
+export {
+	isWebhookDeliveryId,
+	MAX_WEBHOOKS_PER_INSTALLATION_WINDOW,
+	parseWebhookEnvelope,
+	type WebhookEnvelope,
+	type WebhookInput,
+} from "./webhook-inbox.js";

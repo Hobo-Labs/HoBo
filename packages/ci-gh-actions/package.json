@@ -43,6 +43,10 @@
       "types": "./dist/node-http.d.ts",
       "default": "./dist/node-http.js"
     },
+    "./relay-cache": {
+      "types": "./dist/relay-cache/index.d.ts",
+      "default": "./dist/relay-cache/index.js"
+    },
     "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
     "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
   },
@@ -95,6 +99,7 @@
     "@hobo/adapter-drizzle": "workspace:*",
     "@hobo/ci-cf": "workspace:*",
     "@hobo/ci-dagger": "workspace:*",
+    "@hobo/kv-redis-compatible": "workspace:*",
     "@hobo/redaction-test-harness": "workspace:*",
     "@hobo/stations": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
