@@ -1455,7 +1455,8 @@ jobs:
             # namespace either (an ARC pod), build the image here instead of failing.
             if ! docker image inspect "$image" >/dev/null 2>&1 && ! command -v sudo >/dev/null 2>&1; then
               echo "${image} could not be pulled; building it on this runner"
-              GITHUB_TOKEN="$pull_token" node --no-warnings scripts/ci/ensure-ci-worker-image.mts || true
+              # The pull was just tried; go straight to build.sh rather than retry it.
+              HOBO_CI_SKIP_GHCR_PULL=1 node --no-warnings scripts/ci/ensure-ci-worker-image.mts || true
             fi
             if docker image inspect "$image" >/dev/null 2>&1; then
               tar -c --exclude=./.git . | docker run -i --rm --network=none \

@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	ensureGitHubRelease,
@@ -213,5 +215,76 @@ describe("GitHub Release", () => {
 			ensureGitHubRelease({ ...base, prerelease: true, request }),
 		).rejects.toThrow(/GET release: HTTP 502/);
 		expect(calls).toHaveLength(3);
+	});
+});
+
+describe("as the release job runs them", () => {
+	// release-tag runs these with plain `node` (type stripping only, no tsx). A
+	// non-erasable construct passes vitest, which transpiles, and crashes there.
+	const root = join(import.meta.dirname, "..", "..");
+	const plainNode = (args: readonly string[]) =>
+		spawnSync(process.execPath, ["--no-warnings", ...args], {
+			cwd: root,
+			encoding: "utf8",
+		});
+
+	it("loads push-release-git-tag with plain node", () => {
+		const run = plainNode([
+			"scripts/ci/push-release-git-tag.mts",
+			"--tag",
+			"v0.0.0-alpha.987654",
+			"--dry-run",
+		]);
+		expect(run.stderr).not.toMatch(/ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX/);
+		expect(run.status, run.stderr).toBe(0);
+		expect(run.stdout).toMatch(
+			/would create signed tag v0\.0\.0-alpha\.987654/,
+		);
+	});
+
+	it("signs and verifies with plain node", () => {
+		const { pem } = openSshKey();
+		const run = spawnSync(
+			process.execPath,
+			[
+				"--no-warnings",
+				"--input-type=module",
+				"-e",
+				[
+					`import { parseOpenSshEd25519PrivateKey, sshSign, sshVerify } from ${JSON.stringify(join(root, "scripts/lib/ssh-sig.mts"))};`,
+					"const key = parseOpenSshEd25519PrivateKey(process.env.KEY);",
+					'const message = Buffer.from("payload\\n");',
+					"sshVerify(message, sshSign(message, key));",
+					'console.log("ok");',
+				].join("\n"),
+			],
+			{ cwd: root, encoding: "utf8", env: { ...process.env, KEY: pem } },
+		);
+		expect(run.stderr).toBe("");
+		expect(run.stdout.trim()).toBe("ok");
+	});
+
+	it("loads create-github-release with plain node", () => {
+		const run = plainNode(["scripts/ci/create-github-release.mts"]);
+		expect(run.stderr).toMatch(/usage: create-github-release\.mts/);
+		expect(run.status).toBe(2);
+	});
+});
+
+describe("signature checks", () => {
+	it("refuses a signature made for another namespace", () => {
+		expect(() =>
+			sshVerify(Buffer.from(ALPHA_2_PAYLOAD), ALPHA_2_SIGNATURE, "file"),
+		).toThrow(/namespace git, expected file/);
+	});
+
+	it("refuses a published signing key it cannot read", () => {
+		const { pem } = openSshKey();
+		expect(() =>
+			releaseSigningKey({
+				HOBO_RELEASE_TAG_SSH_PRIVATE_KEY: pem,
+				HOBO_RELEASE_TAG_SSH_SIGNING_KEY: "ssh-rsa AAAAB3Nza release@test",
+			}),
+		).toThrow(/expected "ssh-ed25519 <base64>"/);
 	});
 });

@@ -584,6 +584,7 @@ describe("cold dev loop gate", () => {
 					"#!/bin/sh",
 					'echo "node $*" >> "$CALLS"',
 					'echo "node-token ${GITHUB_TOKEN:-}" >> "$CALLS"',
+					'echo "node-skip-ghcr ${HOBO_CI_SKIP_GHCR_PULL:-0}" >> "$CALLS"',
 					'case " $* " in *" --materialize-only "*) ok="$PULLABLE" ;; *) ok="$BUILDABLE" ;; esac',
 					'if [ "$ok" = 1 ]; then touch "$IMAGE"; exit 0; fi',
 					"exit 2",
@@ -683,6 +684,8 @@ describe("cold dev loop gate", () => {
 		assert.equal(status, 0, output);
 		assert.match(calls, materialize);
 		assert.match(calls, build);
+		// The build call does not retry the pull that just failed.
+		assert.match(calls, /^node-skip-ghcr 1$/mu);
 		assert.match(calls, dockerRun);
 	});
 

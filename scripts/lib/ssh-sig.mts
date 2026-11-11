@@ -46,12 +46,20 @@ function uint32(value: number): Buffer {
 }
 
 /** Reads SSH wire-format fields in order, failing on any short read. */
+// Plain fields, not constructor parameter properties: release-tag runs this file
+// with plain `node`, whose type stripping refuses anything that is not erasable.
 class Reader {
 	private offset = 0;
-	constructor(
-		private readonly bytes: Buffer,
-		private readonly what: string,
-	) {}
+	private readonly bytes: Buffer;
+	private readonly what: string;
+	constructor(bytes: Buffer, what: string) {
+		this.bytes = bytes;
+		this.what = what;
+	}
+
+	done(): boolean {
+		return this.offset === this.bytes.length;
+	}
 
 	take(count: number): Buffer {
 		if (this.offset + count > this.bytes.length) {
@@ -107,7 +115,7 @@ export function parseOpenSshEd25519PrivateKey(pem: string): Ed25519Key {
 	}
 	if (reader.uint32() !== 1)
 		throw new Error("ssh key: expected exactly one key");
-	reader.string();
+	const outerBlob = Buffer.from(reader.string());
 	const secret = new Reader(reader.string(), "ssh key private section");
 	if (secret.uint32() !== secret.uint32()) {
 		throw new Error("ssh key: check words differ (corrupt or encrypted)");
@@ -123,6 +131,9 @@ export function parseOpenSshEd25519PrivateKey(pem: string): Ed25519Key {
 	}
 	if (!secretKey.subarray(32).equals(publicKey)) {
 		throw new Error("ssh key: private and public halves do not match");
+	}
+	if (!outerBlob.equals(ed25519PublicBlob(publicKey))) {
+		throw new Error("ssh key: public key block does not match the private key");
 	}
 	return { publicKey, seed: Buffer.from(secretKey.subarray(0, 32)) };
 }
@@ -197,7 +208,11 @@ export interface VerifiedSignature {
 }
 
 /** Checks an armored sshsig over `message`; throws unless it is a valid Ed25519 signature. */
-export function sshVerify(message: Buffer, armored: string): VerifiedSignature {
+export function sshVerify(
+	message: Buffer,
+	armored: string,
+	namespace = "git",
+): VerifiedSignature {
 	const start = armored.indexOf(ARMOR_BEGIN);
 	const end = armored.indexOf(ARMOR_END);
 	if (start === -1 || end === -1 || end < start) {
@@ -215,8 +230,16 @@ export function sshVerify(message: Buffer, armored: string): VerifiedSignature {
 		throw new Error(`ssh signature: only ${KEY_TYPE} is supported`);
 	}
 	const publicKey = Buffer.from(keyBlob.string());
-	const namespace = reader.text();
-	reader.string();
+	if (!keyBlob.done()) throw new Error("ssh signature: trailing key bytes");
+	const signedNamespace = reader.text();
+	if (signedNamespace !== namespace) {
+		throw new Error(
+			`ssh signature: namespace ${signedNamespace}, expected ${namespace}`,
+		);
+	}
+	if (reader.string().length !== 0) {
+		throw new Error("ssh signature: reserved field is not empty");
+	}
 	const hash = reader.text();
 	if (hash !== HASH && hash !== "sha256") {
 		throw new Error(`ssh signature: unsupported hash ${hash}`);
@@ -226,9 +249,12 @@ export function sshVerify(message: Buffer, armored: string): VerifiedSignature {
 		throw new Error("ssh signature: signature is not ed25519");
 	}
 	const raw = signature.string();
+	if (!signature.done() || !reader.done()) {
+		throw new Error("ssh signature: trailing bytes");
+	}
 	const data = Buffer.concat([
 		MAGIC,
-		sshString(namespace),
+		sshString(signedNamespace),
 		sshString(""),
 		sshString(hash),
 		sshString(createHash(hash).update(message).digest()),
@@ -240,5 +266,5 @@ export function sshVerify(message: Buffer, armored: string): VerifiedSignature {
 	if (!verify(null, data, key, raw)) {
 		throw new Error("ssh signature: does not verify");
 	}
-	return { publicKey, namespace };
+	return { publicKey, namespace: signedNamespace };
 }

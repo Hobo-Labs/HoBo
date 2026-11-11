@@ -72,7 +72,8 @@ export function releaseSigningKey(env: NodeJS.ProcessEnv): Ed25519Key {
 	}
 	const key = parseOpenSshEd25519PrivateKey(keyMaterial);
 	const published = env.HOBO_RELEASE_TAG_SSH_SIGNING_KEY?.trim();
-	if (published?.includes("ssh-ed25519")) {
+	if (published) {
+		// Throws, naming the problem, unless it reads as an ssh-ed25519 public key.
 		const expected = parseEd25519PublicLine(published);
 		if (!expected.equals(key.publicKey)) {
 			throw new Error(
