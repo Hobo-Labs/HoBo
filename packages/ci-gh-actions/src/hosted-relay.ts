@@ -70,8 +70,12 @@ import {
 } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import {
+	DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS,
+	DEFAULT_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS,
 	DEFAULT_UNLAUNCHED_RESERVE_MS,
 	pickUnlaunchedReservationsToRelease,
+	unlaunchedJobCoopKey,
+	unlaunchedJobCoopKeyFromPending,
 } from "./unlaunched-reservation-release.js";
 import { verifyWebhookSignature } from "./webhook-signature.js";
 
@@ -221,6 +225,14 @@ export class HostedRelay {
 	private readonly mergeGroupCapWaitJobs: Set<string>;
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
 	private readonly trunkWaits: TrunkWaitCache;
+	private readonly unlaunchedReReserveLedger = new Map<
+		string,
+		Readonly<{
+			releasedAtMs: number;
+			releaseCount: number;
+			lastNonLocalFreeSlots: number;
+		}>
+	>();
 	private dispatchGithubJobCache?: Map<
 		string,
 		Awaited<ReturnType<typeof getJob>>
@@ -282,6 +294,8 @@ export class HostedRelay {
 			offlineJitRecovery?: OfflineJitJobRecovery;
 			unlaunchedReservationRelease?: Readonly<{
 				boundMs?: number;
+				backlogMinAgeMs?: number;
+				reReserveCooldownMs?: number;
 				launchSlots: number;
 				backlogImmediate?: boolean;
 			}>;
@@ -448,16 +462,57 @@ export class HostedRelay {
 		return bound;
 	}
 
-	/** Drop reservations that never reached dispatch so fleet runners are not starved. */
+	private reReserveCooldownBlocks(
+		job: Pick<Job, "installationId" | "repository" | "id" | "runAttempt">,
+		nonLocalFreeSlots: number | undefined,
+	): boolean {
+		const policy = this.options.unlaunchedReservationRelease;
+		const cooldownMs =
+			policy?.reReserveCooldownMs ?? DEFAULT_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS;
+		const key = unlaunchedJobCoopKeyFromPending(job);
+		const ledger = this.unlaunchedReReserveLedger.get(key);
+		if (!ledger) return false;
+		const nowMs = Date.parse(this.now());
+		const headroomImproved =
+			nonLocalFreeSlots !== undefined &&
+			nonLocalFreeSlots > ledger.lastNonLocalFreeSlots;
+		if (headroomImproved) return false;
+		return nowMs - ledger.releasedAtMs < cooldownMs;
+	}
+
+	private recordUnlaunchedRelease(
+		lease: Pick<
+			Lease,
+			"installationId" | "repository" | "jobId" | "runAttempt"
+		>,
+		nonLocalFreeSlots: number | undefined,
+	): number {
+		const key = unlaunchedJobCoopKey(lease);
+		const nowMs = Date.parse(this.now());
+		const prior = this.unlaunchedReReserveLedger.get(key);
+		const releaseCount = (prior?.releaseCount ?? 0) + 1;
+		this.unlaunchedReReserveLedger.set(key, {
+			releasedAtMs: nowMs,
+			releaseCount,
+			lastNonLocalFreeSlots: nonLocalFreeSlots ?? 0,
+		});
+		return releaseCount;
+	}
+
+	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
 	private async releaseBlockedUnlaunchedReservations(
 		pendingDemand: number,
+		nonLocalFreeSlots: number | undefined,
 	): Promise<void> {
 		const policy = this.options.unlaunchedReservationRelease;
 		if (!policy || policy.launchSlots <= 0) return;
 		const active = await this.options.store.activeLeases();
 		const nowMs = Date.parse(this.now());
-		const releases = pickUnlaunchedReservationsToRelease(active, nowMs, {
-			boundMs: policy.boundMs ?? DEFAULT_UNLAUNCHED_RESERVE_MS,
+		const boundMs = policy.boundMs ?? DEFAULT_UNLAUNCHED_RESERVE_MS;
+		const releaseBase = {
+			boundMs,
+			backlogMinAgeMs:
+				policy.backlogMinAgeMs ?? DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS,
 			pendingDemand,
 			unlaunchedCount: active.filter(
 				(lease) =>
@@ -468,10 +523,32 @@ export class HostedRelay {
 			launchSlots: policy.launchSlots,
 			liveContainerCount: countLiveBoxContainers(active),
 			backlogImmediate: policy.backlogImmediate ?? true,
-		});
+		};
+		let releases: ReturnType<typeof pickUnlaunchedReservationsToRelease>;
+		if (nonLocalFreeSlots === undefined) {
+			releases = pickUnlaunchedReservationsToRelease(
+				active,
+				nowMs,
+				releaseBase,
+			);
+		} else {
+			const releaseContext = {
+				...releaseBase,
+				nonLocalFreeSlots,
+			};
+			releases = pickUnlaunchedReservationsToRelease(
+				active,
+				nowMs,
+				releaseContext,
+			);
+		}
 		for (const release of releases) {
 			const lease = active.find((entry) => entry.id === release.leaseId);
 			if (!lease) continue;
+			const releaseCount = this.recordUnlaunchedRelease(
+				lease,
+				nonLocalFreeSlots,
+			);
 			await this.options.store.cancelAndRequeue(
 				lease.id,
 				this.queuedDemand(lease),
@@ -487,6 +564,8 @@ export class HostedRelay {
 					reason: release.reason,
 					ageMs: nowMs - Date.parse(lease.createdAt),
 					pendingDemand,
+					nonLocalFreeSlots: nonLocalFreeSlots ?? -1,
+					releaseCount,
 				}),
 			);
 		}
@@ -1172,7 +1251,13 @@ export class HostedRelay {
 		this.dispatchGithubJobCache = new Map();
 		const reservationRevision = await this.refreshConfig();
 		const queued = await this.options.store.pendingJobs();
-		await this.releaseBlockedUnlaunchedReservations(queued.length);
+		let nonLocalFreeSlots: number | undefined;
+		try {
+			nonLocalFreeSlots = (await this.options.fleetCapacity?.snapshot())
+				?.arcFreeSlots;
+		} catch {
+			nonLocalFreeSlots = undefined;
+		}
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
 		const refOf = (job: Job) => ({
@@ -1234,6 +1319,7 @@ export class HostedRelay {
 				)
 			)
 				continue;
+			if (this.reReserveCooldownBlocks(job, nonLocalFreeSlots)) continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
@@ -1415,7 +1501,10 @@ export class HostedRelay {
 				if (mergeGroupKey !== undefined) activeMergeGroups.add(mergeGroupKey);
 			}
 		}
-		await this.releaseBlockedUnlaunchedReservations(pending.length);
+		await this.releaseBlockedUnlaunchedReservations(
+			pending.length,
+			nonLocalFreeSlots,
+		);
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
 				(lease) => lease.state === "reserved",
