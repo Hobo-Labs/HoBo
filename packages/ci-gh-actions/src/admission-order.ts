@@ -57,7 +57,18 @@ export type AdmissionRef = Readonly<{
 	runId: number;
 	jobId: number;
 	labels?: readonly string[];
+	jobName?: string | undefined;
 }>;
+
+const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
+
+function mainWorkspaceShardIndex(
+	jobName: string | undefined,
+): number | undefined {
+	if (!jobName) return undefined;
+	const match = MAIN_WORKSPACE_SHARD.exec(jobName);
+	return match ? Number(match[1]) : undefined;
+}
 
 /**
  * Orders demand for a host. A run's event and start time never change for an
@@ -140,6 +151,7 @@ export function createAdmissionOrder(
 	): Promise<T[]> {
 		const keyed: {
 			item: T;
+			ref: AdmissionRef;
 			key: AdmissionKey;
 			expectedMs: number;
 			jobId: number;
@@ -148,6 +160,7 @@ export function createAdmissionOrder(
 			const ref = refOf(item);
 			keyed.push({
 				item,
+				ref,
 				key: await keyFor(ref),
 				expectedMs: durations?.expectedMs(ref.repository, ref.jobId) ?? 0,
 				jobId: ref.jobId,
@@ -177,6 +190,12 @@ export function createAdmissionOrder(
 						return pushStart(b.key.startedAtMs) - pushStart(a.key.startedAtMs);
 				} else if (a.key.startedAtMs !== b.key.startedAtMs)
 					return a.key.startedAtMs - b.key.startedAtMs;
+				if (a.ref.runId === b.ref.runId) {
+					const shardA = mainWorkspaceShardIndex(a.ref.jobName);
+					const shardB = mainWorkspaceShardIndex(b.ref.jobName);
+					if (shardA !== undefined && shardB !== undefined && shardA !== shardB)
+						return shardA - shardB;
+				}
 				if (b.expectedMs !== a.expectedMs) return b.expectedMs - a.expectedMs;
 				return a.jobId - b.jobId;
 			})
