@@ -76,6 +76,12 @@ export type PackageClassification = {
 // makes that legal by construction instead of by a growing exception list.
 // ADR-0156 records the longer-term move of these contracts into `@hobo/core`.
 const CONTRACT_PACKAGE_PATHS = new Set([
+	// `@hobo/provider-redaction`: the one redactor for provider text, which
+	// every provider and pack redacts its errors through, and the linear-time
+	// test harness that holds it. A leaf (it imports no HoBo package) that the
+	// adapters depend on, like the vocabulary packages below; it lives outside
+	// `@hobo/core` so a change to it does not run every core dependent's suite.
+	"packages/provider-redaction",
 	"packages/wit",
 	"packages/capability-profiles",
 	"packages/bindings",
@@ -151,6 +157,9 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-vercel",
 	"packages/core",
 	"packages/contract-harness",
+	// Test-only harness for code that reads hostile text, reached only from
+	// tests, the way contract-harness is (`isDevOnlyTestHarnessEdge`).
+	"packages/redaction-test-harness",
 	"packages/wit",
 	// `@hobo/bindings` shipped without an entry here, which is worse than it
 	// sounds: an unclassified workspace path makes `parseWorkspaceEdge` *throw*
@@ -485,13 +494,24 @@ function isPackTierBaseEdge(from: string, to: string): boolean {
  * beats blessing each package as it grows a test — the allowlist was accruing
  * entries that all had the same reason.
  *
- * Still deliberately narrow: only this one package, and only when the edge is
+ * Still deliberately narrow: only the test harnesses, and only when the edge is
  * dev-only. A runtime dependency on the harness is a real layering break and
  * keeps failing.
  */
 function isDevOnlyTestHarnessEdge(edge: WorkspaceEdge): boolean {
-	return edge.dev === true && edge.to === "packages/contract-harness";
+	return edge.dev === true && TEST_HARNESS_PATHS.has(edge.to);
 }
+
+/**
+ * The test harnesses: `@hobo/contract-harness`, and
+ * `@hobo/redaction-test-harness` (the linear-time measure, sweep and
+ * differential), kept apart so that a change to it plans only the suites that
+ * redact rather than every package that tests a pact.
+ */
+const TEST_HARNESS_PATHS: ReadonlySet<string> = new Set([
+	"packages/contract-harness",
+	"packages/redaction-test-harness",
+]);
 
 function isAcceptedAdapterPackageEdge(from: string, to: string): boolean {
 	return (
@@ -599,7 +619,7 @@ export function classifyPackage(path: string): PackageClassification {
 		return { kind: "core", layer: 0 };
 	}
 
-	if (path === "packages/contract-harness") {
+	if (TEST_HARNESS_PATHS.has(path)) {
 		return { kind: "package", layer: 0 };
 	}
 

@@ -88,6 +88,11 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import {
+	createProviderRedactor,
+	LONG_TOKEN_RUN_PROFILE,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
 
 import {
 	isJsonArray,
@@ -335,8 +340,18 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9_.-]{16,}$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule. The length rule is searched
+ * last, so it cannot split a JWT or a key the shared shapes redact whole.
+ */
+/** The provider's own patterns, on top of the shared ones. */
+export const AZURE_REDACTION_PROFILE: ProviderRedactionProfile =
+	LONG_TOKEN_RUN_PROFILE;
+
+const redactTokenText = createProviderRedactor(AZURE_REDACTION_PROFILE);
 
 // ---------------------------------------------------------------------------
 // Small pure helpers
@@ -406,8 +421,7 @@ function headerValue(
  * every segment is long and token-shaped, so this catches it too.
  */
 export function redactAzureText(text: string, limit = 400): string {
-	const scrubbed = text.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(text, limit);
 }
 
 /**
@@ -2553,7 +2567,7 @@ function containerAppOutputs(
 		ready &&
 		fqdn &&
 		fqdn.length <= 253 &&
-		/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+azurecontainerapps\.io$/iu.test(
+		/^(?:[\u017F\u212Aa-z0-9](?:[\u017F\u212Aa-z0-9-]{0,61}[\u017F\u212Aa-z0-9])?\.)+azurecontainerapps\.io$/i.test(
 			fqdn,
 		)
 	)
