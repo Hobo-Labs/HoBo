@@ -278,8 +278,9 @@ file's root-config cases list by name the packages whose vitest config merges th
 says which list to edit. Nothing in CI runs this test file: `test:root` runs only `test/`, the unit
 lanes skip `node:test` files, `scripts/relevant-check-policy.ts` selects `read-stdin.test.ts` and
 `job-scope.test.ts` for a planner change but not this file, and `test:scripts` is in no workflow. Run
-it by hand after changing the planner: `node --test scripts/test/dependent-tests.test.ts`, with
-`turbo` on `PATH` for the one case that reads the real turbo graph. The edge is dropped
+it by hand after changing the planner: `node --import tsx --test scripts/test/dependent-tests.test.ts`
+(or `pnpm run test:scripts` for the whole directory), with `turbo` on `PATH` for the two cases that
+read the real turbo graph. The edge is dropped
 only where the literal is provably a string test: the first argument of `startsWith`, `endsWith`,
 `includes`, `replace` or `replaceAll` (what is searched for), an operand of `===`, `!==`, `==` or
 `!=`, or a `case` label. Everywhere else it stays (`new URL("../", import.meta.url)` with or without a
@@ -479,9 +480,34 @@ Two script tests were wrong about the tree they guard:
   `capVitestWorkers(1)`. `packages/cli/vitest.config.ts` pins one worker in CI only, a form the test
   did not recognise while still listing that config as required, so it failed behind the first
   failure. The test now loads the configs with `CI` set and accepts both forms.
-- **Git-fixture cases get 30 s.** Two cases in `scripts/test/stage-release-oci-app.test.ts` only spawn
-  git against a fresh repository (no remote, no network) and passed the 10 s default on a loaded
-  runner.
+- **Git-fixture cases get 30 s.** Three cases in `scripts/test/stage-release-oci-app.test.ts` only
+  spawn git against a fresh repository (no remote, no network), and such cases passed the 10 s default
+  on a loaded runner.
+
+## Checks that went stale on main
+
+No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so four
+checks failed on main before anyone saw them:
+
+- **`actions:lint` on the real workflows.** `main_gate_finish`'s second checkout lacked
+  `clean: false` (a box checkout at the default path must set it). The lint's tests only linted
+  fixtures; `lint-actions-runner.test.ts` now also runs it on the repository.
+- **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
+  `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
+  `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads
+  each job's `needs`: the required PR jobs and `main-gate` must not wait for the image even through
+  another job, exactly `main-gate-plan` and `main_workspace_tests` do, and neither is gated on the
+  deps job's result, so a failed deps job leaves the shards to install for themselves.
+- **Deps layout recipe digest.** `DEPS_LAYOUT.recipeSha256` was last right at #1741. #1740, #1747
+  and #1816 edited `build-deps.sh` only: disk and inode headroom checks before a rebuild, and
+  resolving the toolchain image when it is not in the Docker context. The Dockerfile and the bucket
+  script are unchanged, so image contents and paths are too: the digest is updated and
+  `DEPS_LAYOUT.version` stays 1, which leaves the deps key and every existing layer as they were.
+- **Repo-wide shard plan.** #1840 made `shardTestPlan` read the real `turbo run test --dry=json`
+  graph for a repo-wide plan, while its test passes an in-memory tree of five fixture packages, so the
+  real graph's packages were all "undiscovered". The graph is now a parameter (`TestGraph`, as
+  `planCommands` already takes), defaulting to turbo. The test gives the fixture tree its own graph,
+  and a second case partitions the real workspace list against the real graph.
 
 ## The cli package's test cost
 

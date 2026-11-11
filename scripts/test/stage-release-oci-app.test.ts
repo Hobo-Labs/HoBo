@@ -27,7 +27,7 @@ import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
-// The two cases that take this do nothing but spawn git, some ten processes
+// The three cases that take this do nothing but spawn git, some ten processes
 // each against a fresh repository, and on a loaded runner those spawns alone
 // have passed the 10 s default. No network is involved: the repositories have
 // no remote.
@@ -106,7 +106,9 @@ describe("release OCI app staging", () => {
 		}
 	});
 
-	it("combines SCM-affected and requested image filters", () => {
+	it("combines SCM-affected and requested image filters", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-filters-"));
 		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
 		const git = (...args: string[]): void => {

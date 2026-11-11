@@ -106,14 +106,21 @@ export function planUnits(
 	return [...new Set([...full, ...subsets.keys()])].sort();
 }
 
-/** Workspaces Turbo would run for this plan (test tasks only for repo-wide plans). */
+/**
+ * Workspaces Turbo would run for this plan (test tasks only for repo-wide plans).
+ *
+ * A repo-wide plan reads the test task graph. `graph` is injectable like the
+ * workspace list beside it, so a caller that describes a tree in memory
+ * describes its graph too instead of being compared with this repository's.
+ */
 export function testWorkspaceUnits(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
+	graph: TestGraph = turboTestGraph,
 ): string[] {
 	if (plan.mode !== "all") return planUnits(plan, workspaces);
 	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
-	const tests = turboTestGraph([]).filter((task) => task.task === "test");
+	const tests = graph([]).filter((task) => task.task === "test");
 	const dirs = tests
 		.map((task) => task.directory)
 		.filter((dir) => workspaceDirs.has(dir));
@@ -180,6 +187,7 @@ export function shardTestPlan(
 	index: number,
 	count: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
 ): TestPlan {
 	if (
 		!Number.isSafeInteger(index) ||
@@ -190,11 +198,11 @@ export function shardTestPlan(
 		index >= count
 	)
 		throw new Error("invalid workspace test shard");
-	const full =
-		plan.mode === "all" ? testWorkspaceUnits(plan, workspaces) : [...plan.full];
+	// Read once: for a repo-wide plan this is a `turbo --dry=json` run.
+	const dirs = testWorkspaceUnits(plan, workspaces, graph);
+	const full = plan.mode === "all" ? dirs : [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
-	const dirs = testWorkspaceUnits(plan, workspaces);
 	const selected = new Set(
 		partitionUnitsByWeight(dirs, durations, count)[index],
 	);
@@ -220,11 +228,12 @@ export function planShardCountBalanced(
 	max: number,
 	targetSeconds: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
 ): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
 		throw new Error("invalid workspace test shard");
 	if (!(targetSeconds > 0)) throw new Error("invalid workspace shard target");
-	const units = testWorkspaceUnits(plan, workspaces);
+	const units = testWorkspaceUnits(plan, workspaces, graph);
 	if (units.length === 0) return 1;
 	let count = 1;
 	while (count < max) {

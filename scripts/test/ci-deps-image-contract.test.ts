@@ -521,13 +521,87 @@ describe("CI deps workflow contract", () => {
 		}
 	});
 
-	it("does not put the deps image on Main full gate's critical path", () => {
-		const mainStart = workflow.indexOf("  main-gate:");
-		const mainEnd = workflow.indexOf("  artifact-trust:", mainStart);
-		const main = workflow.slice(mainStart, mainEnd);
-		includes(main, "needs: [route, ci-runner-image]");
-		assert.ok(!main.includes("ci-deps-image"));
-		includes(workflow, "Check deps layer match");
+	it("keeps the deps image off the required PR gate and Main's S0 job, and names the jobs that do wait for it", () => {
+		const jobs = new Map<string, { needs: string[]; block: string }>();
+		const lines = workflow.slice(workflow.indexOf("\njobs:\n")).split("\n");
+		const starts = lines.flatMap((line, index) =>
+			/^ {2}[A-Za-z0-9_-]+:$/u.test(line) ? [index] : [],
+		);
+		for (const [position, startIndex] of starts.entries()) {
+			const block = lines.slice(startIndex, starts[position + 1]).join("\n");
+			const declared = block.match(/^ {4}needs: (.+)$/mu)?.[1] ?? "";
+			jobs.set((lines[startIndex] ?? "").trim().slice(0, -1), {
+				needs: declared
+					.replace(/^\[|\]$/gu, "")
+					.split(",")
+					.map((name) => name.trim())
+					.filter((name) => name !== ""),
+				block,
+			});
+		}
+		const job = (id: string) => {
+			const found = jobs.get(id);
+			assert.ok(found, `missing job ${id}`);
+			return found;
+		};
+		/** Every job `id` waits for, directly or through another job. */
+		const waitsFor = (id: string): Set<string> => {
+			const seen = new Set<string>();
+			const pending = [...job(id).needs];
+			for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+				if (seen.has(next)) continue;
+				seen.add(next);
+				pending.push(...job(next).needs);
+			}
+			return seen;
+		};
+
+		// The required PR check and Main full gate's S0 job never wait for the
+		// deps image, not even through another job: a PR that changes the image's
+		// inputs builds it for minutes, and S0 installs for itself on a layer miss.
+		for (const id of [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+			"pr-gate",
+			"main-gate",
+		])
+			assert.ok(
+				!waitsFor(id).has("ci-deps-image"),
+				`${id} waits for the deps image`,
+			);
+		assert.deepEqual(job("main-gate").needs, ["route", "ci-runner-image"]);
+		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
+		includes(job("main-gate").block, "Check deps layer match");
+
+		// Main's workspace plan and its shards wait for it on purpose (#1840):
+		// they start from the deps layer, and on main the deps job never builds
+		// (it reuses or pulls an image, or defers a miss). Any other job that
+		// starts to wait for the image has to be added here deliberately.
+		assert.deepEqual(
+			[...jobs]
+				.filter(([, { needs }]) => needs.includes("ci-deps-image"))
+				.map(([id]) => id),
+			["main-gate-plan", "main_workspace_tests"],
+		);
+		// A failed or skipped deps job must not take them with it: both run
+		// unless the run is cancelled, and a shard installs on a layer miss.
+		for (const id of ["main-gate-plan", "main_workspace_tests"]) {
+			assert.match(job(id).block, /^ {4}if: >-\n {6}!cancelled\(\) && /mu, id);
+			assert.doesNotMatch(
+				job(id).block,
+				/needs\.ci-deps-image\.result/u,
+				`${id} is gated on the deps job's result`,
+			);
+		}
+		includes(job("main_workspace_tests").block, "Check deps layer match");
+		includes(
+			job("main_workspace_tests").block,
+			"steps.deps-layer.outputs.match != 'true'",
+		);
+		// The finish job therefore waits for the image only through the shards.
+		assert.ok(!job("main_gate_finish").needs.includes("ci-deps-image"));
+		assert.ok(waitsFor("main_gate_finish").has("ci-deps-image"));
 	});
 });
 
