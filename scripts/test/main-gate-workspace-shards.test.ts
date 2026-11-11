@@ -9,16 +9,22 @@ const workflow = readFileSync(
 );
 
 describe("main full gate workspace sharding", () => {
-	it("plans shards and runs them outside the S0 job", () => {
-		const mainStart = workflow.indexOf("  main-gate:");
-		const mainEnd = workflow.indexOf("  main_workspace_tests:", mainStart);
-		assert.ok(mainStart > -1);
-		assert.ok(mainEnd > mainStart);
-		const main = workflow.slice(mainStart, mainEnd);
+	it("plans shards in main-gate-plan and runs them outside the S0 job", () => {
+		const planStart = workflow.indexOf("  main-gate-plan:");
+		const mainStart = workflow.indexOf("  main-gate:", planStart);
+		assert.ok(planStart > -1);
+		assert.ok(mainStart > planStart);
+		const plan = workflow.slice(planStart, mainStart);
+		const main = workflow.slice(
+			mainStart,
+			workflow.indexOf("  main_workspace_tests:", mainStart),
+		);
+		assert.match(plan, /plan-main-workspace-shards\.mts/u);
+		assert.match(plan, /needs: \[route, ci-runner-image, ci-deps-image\]/u);
 		assert.match(main, /resolve-main-test-base\.mts/u);
-		assert.match(main, /Plan main workspace test shards/u);
 		assert.match(main, /--external-workspace-tests/u);
 		assert.doesNotMatch(main, /name: Workspace tests/u);
+		assert.doesNotMatch(main, /Plan main workspace test shards/u);
 	});
 
 	it("shards workspace tests across fleet runners", () => {
@@ -28,7 +34,11 @@ describe("main full gate workspace sharding", () => {
 		assert.ok(finishStart > shardStart);
 		const block = workflow.slice(shardStart, finishStart);
 		assert.match(block, /Main workspace test shard \$\{\{ matrix\.shard \}\}/u);
-		assert.match(block, /needs\.main-gate\.outputs\.shards/u);
+		assert.match(block, /needs\.main-gate-plan\.outputs\.shards/u);
+		assert.match(
+			block,
+			/needs: \[route, ci-runner-image, ci-deps-image, main-gate-plan\]/u,
+		);
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
 	});
 
