@@ -1836,7 +1836,7 @@ export function createIsolatedContainerController(options: {
 				} catch {
 					throw new Error("container stop uncertain");
 				}
-					await settleStopped(lease);
+				await settleStopped(lease);
 				if (containerFailed && !deadWhileRunning) detectOrphanJob(lease);
 			} finally {
 				if (removed) await cleanupWorkDirectory(lease);
