@@ -265,6 +265,47 @@ export function planShardCount(
 	return Math.min(max, Math.max(1, Math.ceil(units / SUITES_PER_SHARD)));
 }
 
+/** Slowest-shard wall budget the main train targets when slots are available. */
+export const MAIN_WORKSPACE_SHARD_TARGET_SECONDS = 180;
+
+export type MainWorkspaceShardPlan = Readonly<{
+	count: number;
+	parallelCap: number;
+	peakShardSeconds: number;
+}>;
+
+/**
+ * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
+ * several duration-balanced workspace groups, targeting roughly
+ * `targetSeconds` on the slowest shard when capacity allows.
+ */
+export function planMainWorkspaceShardCount(
+	plan: TestPlan,
+	parallelCap: number,
+	options?: Readonly<{
+		targetSeconds?: number;
+		workspaces?: readonly Workspace[];
+		durations?: WorkspaceDurationTable;
+	}>,
+): MainWorkspaceShardPlan {
+	if (!Number.isSafeInteger(parallelCap) || parallelCap < 1 || parallelCap > 64)
+		throw new Error("invalid main workspace parallel cap");
+	const workspaces = options?.workspaces ?? readWorkspaces();
+	const durations = options?.durations ?? loadWorkspaceDurations();
+	const targetSeconds =
+		options?.targetSeconds ?? MAIN_WORKSPACE_SHARD_TARGET_SECONDS;
+	const count = planShardCountBalanced(
+		plan,
+		workspaces,
+		parallelCap,
+		targetSeconds,
+		durations,
+	);
+	const units = testWorkspaceUnits(plan, workspaces);
+	const peakShardSeconds = maxShardLoadSeconds(units, durations, count);
+	return { count, parallelCap, peakShardSeconds };
+}
+
 type Json =
 	| string
 	| number
