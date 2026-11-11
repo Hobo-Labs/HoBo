@@ -1163,6 +1163,7 @@ try {
 		jobPollInFlight = poller
 			.poll()
 			.then((summary) => {
+				if (summary.accepted > 0) void runTick().catch(() => undefined);
 				if (!pollWorthLogging(summary, Date.now())) return;
 				const { waiting, ...counts } = summary;
 				log("hobo_ci_isolated_worker_jobs_polled", {

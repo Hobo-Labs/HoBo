@@ -415,7 +415,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						summary.hoboJobs++;
 						if (
 							!mainFabricPrewarmHinted &&
-							status.data === "queued" &&
+							(status.data === "queued" || status.data === "completed") &&
 							servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL &&
 							newestMainPush !== undefined &&
 							job.run_id === newestMainPush

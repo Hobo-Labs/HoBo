@@ -44,6 +44,7 @@ import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
+	jobPickupMetadataKey,
 	observeJobPickupMetadata,
 } from "./job-pickup.js";
 import {
@@ -960,6 +961,7 @@ export class HostedRelay {
 			runId: job.runId,
 			jobId: job.id,
 			labels: job.labels,
+			jobName: job.name,
 		});
 		const active = await this.options.store.activeLeases();
 		const memoryActive = active.filter((lease) =>
@@ -1140,6 +1142,23 @@ export class HostedRelay {
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
 				);
+				const pickupMeta = this.options.jobPickupMetadata?.get(
+					jobPickupMetadataKey(job),
+				);
+				const jobCreatedMs = Date.parse(pickupMeta?.jobCreatedAt ?? "");
+				const reservedMs = Date.parse(this.now());
+				if (Number.isFinite(jobCreatedMs) && Number.isFinite(reservedMs)) {
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_job_reserved",
+							repository: job.repository,
+							runId: job.runId,
+							jobId: job.id,
+							jobName: job.name,
+							queuedToReservedMs: reservedMs - jobCreatedMs,
+						}),
+					);
+				}
 				if (!active.some((entry) => entry.id === lease.id)) {
 					active.push(lease);
 					memoryActive.push({ ...lease, state: "dispatching" });

@@ -396,14 +396,24 @@ export function createHostedRelayRuntime(options: {
 				);
 			}
 			let deliveryFailed = false;
+			let ingressWantsDispatch = false;
+			const ingressRequestsDispatch = (outcome: string) => {
+				if (
+					outcome === "queued" ||
+					outcome === "requeued" ||
+					outcome.startsWith("reserved:")
+				)
+					ingressWantsDispatch = true;
+			};
 			for (let processed = 0; processed < limit; processed++) {
 				const claim = await options.store.claimWebhook(now(), 120_000);
 				if (!claim) break;
 				try {
-					await (await relay()).processWebhook(
+					const outcome = await (await relay()).processWebhook(
 						Buffer.from(claim.rawBody),
 						claim.event,
 					);
+					ingressRequestsDispatch(outcome);
 					if (!(await options.store.ackWebhook(claim.deliveryId, claim.token)))
 						throw new Error("inbox claim lost");
 				} catch {
@@ -422,8 +432,12 @@ export function createHostedRelayRuntime(options: {
 			}
 			const deliveriesMs = Date.now() - tickStartedAt;
 			const controller = await relay();
+			let earlyDispatchCount = 0;
+			if (admit && ingressWantsDispatch)
+				earlyDispatchCount = await controller.dispatchPending();
 			const leaseReconcileStartedAt = Date.now();
 			const activeLeases = await options.store.activeLeases();
+			let reconcileDispatched = false;
 			for (const entry of activeLeases) {
 				let lease = entry;
 				if (
@@ -437,6 +451,7 @@ export function createHostedRelayRuntime(options: {
 					)
 				)
 					continue;
+				reconcileDispatched = true;
 				try {
 					if (
 						(lease.provider === "vercel" ||
@@ -538,7 +553,10 @@ export function createHostedRelayRuntime(options: {
 			}
 			const leaseReconcileMs = Date.now() - leaseReconcileStartedAt;
 			const dispatchStartedAt = Date.now();
-			const pendingCount = admit ? await controller.dispatchPending() : 0;
+			let lateDispatchCount = 0;
+			if (admit && (!ingressWantsDispatch || reconcileDispatched))
+				lateDispatchCount = await controller.dispatchPending();
+			const pendingCount = admit ? earlyDispatchCount + lateDispatchCount : 0;
 			const dispatchMs = Date.now() - dispatchStartedAt;
 			const totalMs = Date.now() - tickStartedAt;
 			if (totalMs > 5_000)
