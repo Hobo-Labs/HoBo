@@ -1095,9 +1095,7 @@ it("never acknowledges an inbox delivery if policy verification fails", async ()
 		control: async () => undefined,
 		now: () => NOW,
 	});
-	await expect(runtime.tick()).rejects.toThrow(
-		/one or more inbox deliveries failed/,
-	);
+	await runtime.tick();
 	expect(acked).toBe(false);
 	expect(released).toBe(true);
 	expect(h.store.all()).toEqual([]);
@@ -1326,11 +1324,51 @@ it("backs off a failed delivery and still processes subsequent accounts", async 
 		control: async () => undefined,
 		now: () => NOW,
 	});
-	await expect(runtime.tick()).rejects.toThrow(
-		"one or more inbox deliveries failed",
-	);
+	await runtime.tick();
 	expect(failed).toEqual(["poison"]);
 	expect(acknowledged).toEqual(["valid"]);
+});
+
+it("does not claim inbox deliveries when maxDeliveries is zero", async () => {
+	const h = setup();
+	let claims = 0;
+	const store: HostedInboxStore = {
+		...h.asyncStore,
+		async acceptIgnoredWebhook() {
+			return { duplicate: false };
+		},
+		async ready() {
+			return true;
+		},
+		async latestLeaseIntents() {
+			return [];
+		},
+		async acceptWebhook() {
+			return { duplicate: false };
+		},
+		async claimWebhook() {
+			claims += 1;
+			return undefined;
+		},
+		async ackWebhook() {
+			throw new Error("unexpected ack");
+		},
+		async failWebhook() {
+			throw new Error("unexpected fail");
+		},
+	};
+	const runtime = createHostedRelayRuntime({
+		store,
+		github: h.api,
+		identity: h.relay.options.identity,
+		webhookSecret: SECRET,
+		control: async () => undefined,
+		now: () => NOW,
+	});
+	const startedAt = Date.now();
+	await runtime.tick({ maxDeliveries: 0 });
+	expect(claims).toBe(0);
+	expect(Date.now() - startedAt).toBeLessThan(2_000);
 });
 
 function withPullRequestRun(h: ReturnType<typeof setup>, jobCalls: number[]) {
