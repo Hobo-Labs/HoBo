@@ -364,7 +364,8 @@ store cannot `docker load` an OCI layout), and retags
 depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
 The optional GHCR push step calls `scripts/ci/push-ci-runner-image-ghcr.mts`, which retags
 `hobo-ci-worker:local`, pulls, or rebuilds on the runner executing the push and emits a notice
-instead of failing when the version tag is absent on that box.
+instead of failing when the version tag is absent on that box. The script and its tests stay
+Biome-formatted (`pnpm run lint:code`).
 
 ## Which runner a run uses
 

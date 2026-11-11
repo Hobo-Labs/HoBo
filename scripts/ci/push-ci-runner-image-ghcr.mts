@@ -27,16 +27,12 @@ function run(cmd: string, args: string[]): number {
 
 function dockerLogin(actor: string, token: string): number {
 	return (
-		spawnSync(
-			"docker",
-			["login", "ghcr.io", "-u", actor, "--password-stdin"],
-			{
-				cwd: root,
-				env: process.env,
-				input: token,
-				stdio: ["pipe", "inherit", "inherit"],
-			},
-		).status ?? 1
+		spawnSync("docker", ["login", "ghcr.io", "-u", actor, "--password-stdin"], {
+			cwd: root,
+			env: process.env,
+			input: token,
+			stdio: ["pipe", "inherit", "inherit"],
+		}).status ?? 1
 	);
 }
 

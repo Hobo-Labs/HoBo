@@ -1,10 +1,10 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 /**
  * Resolve a digest-pinned hobo-ci-worker image for release OCI builds.
  * Prefers ghcr.io/hobo-ci-worker:${ciRunnerImageVersion}; falls back to build.sh.
  */
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 
@@ -79,7 +79,10 @@ export function ensureCiWorkerImage(): string {
 	}
 
 	run("bash", ["packages/ci-gh-actions/deploy/ci-runner/build.sh"]);
-	if (!dockerImagePresent(candidate) && !dockerImagePresent("hobo-ci-worker:local")) {
+	if (
+		!dockerImagePresent(candidate) &&
+		!dockerImagePresent("hobo-ci-worker:local")
+	) {
 		throw new Error("worker image build did not produce hobo-ci-worker:local");
 	}
 	if (dockerImagePresent(candidate)) {

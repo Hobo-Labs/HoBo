@@ -21,10 +21,7 @@ describe("push-ci-runner-image-ghcr", () => {
 		assert.ok(step > -1);
 		const block = workflow.slice(step, step + 600);
 		assert.match(block, /push-ci-runner-image-ghcr\.mts/u);
-		assert.doesNotMatch(
-			block,
-			/docker tag "hobo-ci-worker:\$\{version\}"/u,
-		);
+		assert.doesNotMatch(block, /docker tag "hobo-ci-worker:\$\{version\}"/u);
 	});
 
 	it("materializeWorkerImageVersionTag retags :local when the version tag is missing", () => {
