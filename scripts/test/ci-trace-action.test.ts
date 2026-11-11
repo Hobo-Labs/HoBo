@@ -31,6 +31,11 @@ function traceArtifactName(
 }
 
 describe("ci-trace action artifact names", () => {
+	it("skips export when the trace script is absent", () => {
+		expect(ACTION).toMatch(/CI trace skipped/u);
+		expect(ACTION).toMatch(/scripts\/ci\/ci-trace\.mts/u);
+	});
+
 	it("includes the disambiguator between job id and run attempt", () => {
 		expect(ACTION).toMatch(
 			/name: ci-trace-\$\{\{ github\.job \}\}-\$\{\{ inputs\.disambiguator \}\}-\$\{\{ github\.run_attempt \}\}/,
