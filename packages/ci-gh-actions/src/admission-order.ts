@@ -63,8 +63,8 @@ export type AdmissionRef = Readonly<{
 const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 
 /** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
-export const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
-export const MAIN_FULL_GATE_JOB = "Main full gate";
+const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
+const MAIN_FULL_GATE_JOB = "Main full gate";
 
 function mainWorkspaceShardIndex(
 	jobName: string | undefined,
