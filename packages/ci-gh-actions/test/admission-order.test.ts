@@ -127,8 +127,9 @@ it("orders main workspace shards by index within a run before duration ties", as
 		jobName: `Main workspace test shard ${index}`,
 	});
 	expect(
-		(await order([shard(100, 2), shard(101, 0), shard(102, 1)], (item) => item))
-			.map((item) => item.jobId),
+		(
+			await order([shard(100, 2), shard(101, 0), shard(102, 1)], (item) => item)
+		).map((item) => item.jobId),
 	).toEqual([101, 102, 100]);
 });
 

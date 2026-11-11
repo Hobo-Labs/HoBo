@@ -193,11 +193,7 @@ export function createAdmissionOrder(
 				if (a.ref.runId === b.ref.runId) {
 					const shardA = mainWorkspaceShardIndex(a.ref.jobName);
 					const shardB = mainWorkspaceShardIndex(b.ref.jobName);
-					if (
-						shardA !== undefined &&
-						shardB !== undefined &&
-						shardA !== shardB
-					)
+					if (shardA !== undefined && shardB !== undefined && shardA !== shardB)
 						return shardA - shardB;
 				}
 				if (b.expectedMs !== a.expectedMs) return b.expectedMs - a.expectedMs;
