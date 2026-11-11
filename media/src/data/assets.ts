@@ -6,7 +6,7 @@
  * numbers rather than from a screenshot of the animation.
  *
  * The numbers are not decoration: they are copied from the consumers
- * (`site/src/components/BoIdle.astro`, `site/src/components/ParallaxTrail.astro`)
+ * (`site/src/components/BoIdle.astro`, `site/src/components/TrailStage.astro`)
  * and if they drift, the preview here stops matching what the site plays.
  */
 

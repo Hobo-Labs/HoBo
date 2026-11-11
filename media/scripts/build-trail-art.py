@@ -12,11 +12,11 @@ and normalizes it into what the site ships:
       Everything that stands beside the trail: the five approved scene props
       and the props cut from the reviewed prop boards. Paper to alpha, one
       line weight across the set, the same grayscale + alpha the plates use.
-      Placed by site/src/lib/trail-landmarks.ts.
+      Stood on the trail by site/src/lib/trail-props.ts.
 
   site/public/cast/<name>.png
       One sheet per hobit, cut from that character's reviewed pose board and
-      packed to the contract in site/src/lib/stage/cast.ts: a 6x2 grid of
+      packed to the contract in site/public/cast/cast.json: a 6x2 grid of
       256px cells, the same pose in the same cell on every sheet, feet on one
       baseline and the body on one centre column.
 
@@ -62,9 +62,9 @@ CAST_OUT = ROOT / "site" / "public" / "cast"
 
 LEVELS = 8  # posterization steps for both channels, as the plates use
 
-# Stored height of the tallest landmark. The band draws them at well under
-# half this, so the surplus is what keeps the linework crisp on a 2x display.
-LANDMARK_H = 420
+# Stored height of the tallest landmark. The desktop band draws a tall prop at
+# up to ~300px, so this is what keeps the linework crisp on a 2x display.
+LANDMARK_H = 1100
 
 # ----------------------------------------------------------- approved props
 

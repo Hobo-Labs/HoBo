@@ -1,9 +1,10 @@
 # Landmarks
 
-What stands beside the trail. A plate loops forever; a landmark is *somewhere*
-— each one belongs to a stop (a section of the landing page) and pulls alongside
-Bo as that section arrives. Where each one stands is declared in
-`src/lib/trail-landmarks.ts`; this folder only holds the artwork.
+What stands on the trail. A plate loops forever; a prop is *somewhere* — each
+one stands for a card of the landing page and stands up beside Bo when he
+reaches that card's stop. Which card names which prop is in the page
+(`data-prop`), and how tall each stands is in `src/lib/trail-props.ts`; this
+folder only holds the artwork.
 
 Same rule as the plates: **supplied art, used as given, nothing drawn here.** A
 landmark whose file is missing simply does not render.
@@ -58,25 +59,36 @@ Either way, every board is then reduced to exactly two inks — black, white,
 clear — at source resolution, and antialiased only by the downscale. See
 `../../cast/README.md` for why.
 
-## Which landmark stands where
+## Which prop stands where
 
-| Stop (section) | Landmarks |
+Each card of the landing page names its prop with `data-prop`, and
+`src/lib/trail-props.ts` says how tall each stands. Props are scaled against Bo
+in tile units of the 300-unit scene (he stands 128), so big things stand big: a
+depot or a cottage is taller than he is, a toolbox comes up to his knee.
+
+| Stop | Cards and their props |
 |---|---|
-| trailhead — "Pack your bindle and hitch a ride" | mile marker and bindle, timber arch |
-| crossroads — "Two bad landlords, and the open road" | company-town gatehouse, fixer-upper shack, signpost |
-| main line — "Deployment is not a destination" | trunk and crates, tent and campfire, locomotive, water tower |
-| depot — "Four words for traveling light" | handcar, switch stand, depot |
-| crew camp — "Who writes what" | toolbox, drafting table, boom barrier, padlocked gate post |
-| airfield — the agents section | telephone switchboard, airship, radio mast |
-| river — "Other roofs over your head" | rooftops, steamboat, lighthouse |
-| home stretch — the closing card | cottage |
+| Why — "Two bad landlords, and the open road" | Closed PaaS: company-town gatehouse · Raw cloud: fixer-upper shack · HoBo: signpost |
+| How — "Deployment is not a destination" | Bindle: trunk · Camp: tent · Migration: locomotive (and Cog's handcar) |
+| Vocabulary — "Four words for traveling light" | Bindle and Camp: mile marker · Yard and Junction: switch stand · Station and Trail: depot |
+| Roles — "Who writes what" | Developers: drafting table · Platform engineers: toolbox · DevSecOps: boom barrier |
+| AI-native — "Built for humans, and the agents…" | Principals: padlocked gate post · Operators: switchboard · Agents: radio mast |
+| Compare — "Other roofs over your head" | the comparison: rooftops |
+| Get started — the closing card | cottage |
 
-Each stands a fraction of the way through its section (`along` in
-`src/lib/trail-landmarks.ts`), so a section's props are spread through it at
-every screen size instead of bunching at its start.
+The arch, airship, lighthouse, water tower and steamboat are still built and
+shipped here, but no card uses them: a prop has to stand for something on the
+page, and those stood for nothing.
+
+On a desktop each prop stands in the band under its own card; on a phone it
+stands beside the card's sign.
 
 ## Night
 
-Landmarks are line art, so they take the plates' `invert` treatment and become
-chalk on the night band, graded by `tone` the same way: the further back a
-landmark stands, the dimmer it is.
+Props are line art, so at night they invert and become chalk on the dark band.
+
+## Resolution
+
+Props are stored 1100px tall (`LANDMARK_H` in the build script), because the
+desktop band draws a tall one at up to ~300px and the linework has to stay
+crisp on a 2x display.
