@@ -10,6 +10,7 @@ import {
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
 	createRelayHandler,
+	createRelayMcp,
 	createWebhookRepair,
 	HostedRelay,
 	type HostedRelayApplication,
@@ -28,6 +29,10 @@ import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
+import {
+	mcpWaitCeilingMs,
+	RELAY_FUNCTION_MAX_DURATION_SECONDS,
+} from "./function-limits.js";
 import { createOwnerControlDelegation } from "./owner-control.js";
 import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
@@ -307,10 +312,30 @@ export async function createVercelApplication(options: {
 			secret: required(env, "CRON_SECRET"),
 			run: (message) => worker.run(message),
 		});
+		// A function instance does not outlive its request: MCP runs without
+		// sessions here, and `wait_for_events` is the change feed.
+		const mcp = createRelayMcp({
+			// An observer's reads: they never take the partition lock, so an
+			// agent's questions are not queued in front of webhook admission.
+			store: {
+				...store.observer(),
+				retryQuarantinedWebhook: (accountId, revision, deliveryId) =>
+					store.retryQuarantinedWebhook(accountId, revision, deliveryId),
+			},
+			relay,
+			authenticate,
+			ready: () => execution.ready(runtime.ready, () => health.ready()),
+			publicOrigin: url.origin,
+			sessions: "none",
+			cursorSecret: secret,
+			// The function's own duration limit decides how long a wait may be.
+			waitMaxMs: mcpWaitCeilingMs(RELAY_FUNCTION_MAX_DURATION_SECONDS),
+		});
 		const handler = createRelayHandler({
 			application: withWakeup(
 				{
 					...runtime,
+					mcp: mcp.handle,
 					// A configured host and fresh worker health are required in addition
 					// to the database and configuration checks in the runtime.
 					ready: () => execution.ready(runtime.ready, () => health.ready()),
