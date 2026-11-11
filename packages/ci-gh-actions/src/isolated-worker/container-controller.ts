@@ -3,6 +3,7 @@ import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
+	ACTIVE_STATES,
 	effectiveCiAccount,
 	type Job,
 	JobSchema,
@@ -1738,6 +1739,46 @@ export function createIsolatedContainerController(options: {
 			}
 		},
 	};
+	const containerCustody: Parameters<
+		typeof createWorkerLeaseReconciler
+	>[0]["containerCustody"] = async ({ container, leaseId }) => {
+		const leases = await options.store.activeLeases();
+		if (leaseId) {
+			const byId = await options.store.get(leaseId);
+			if (byId && ACTIVE_STATES.has(byId.state)) return true;
+		}
+		for (const lease of leases) {
+			if (!ACTIVE_STATES.has(lease.state)) continue;
+			if (
+				lease.sandboxName === container.name ||
+				lease.runnerName === container.name
+			)
+				return true;
+		}
+		const runnerLease = leases.find(
+			(lease) =>
+				ACTIVE_STATES.has(lease.state) &&
+				lease.runnerName === container.name &&
+				lease.runnerId > 0,
+		);
+		if (!runnerLease) return false;
+		try {
+			const job = await getJob(
+				options.github,
+				runnerLease.installationId,
+				runnerLease.repository,
+				runnerLease.actualJobId > 0
+					? runnerLease.actualJobId
+					: runnerLease.jobId,
+			);
+			return (
+				(job.status === "queued" || job.status === "in_progress") &&
+				job.runner_name === container.name
+			);
+		} catch {
+			return true;
+		}
+	};
 	const reconcilerOptions: Parameters<typeof createWorkerLeaseReconciler>[0] = {
 		store: options.store,
 		docker: options.docker,
@@ -1749,6 +1790,7 @@ export function createIsolatedContainerController(options: {
 		onOrphanJob: orphanJobs.enqueue,
 		protectedContainerNames: () => protectedWarmNames,
 		protectedLeaseIds: () => inFlightLaunchIds,
+		containerCustody,
 	};
 	if (options.orphanGraceMs !== undefined)
 		reconcilerOptions.orphanGraceMs = options.orphanGraceMs;

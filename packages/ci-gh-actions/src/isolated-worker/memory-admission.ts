@@ -35,9 +35,15 @@ type MemoryAdmissionWaitFields = {
 	activeGeneral: number;
 	prCapWithTrunk: number;
 };
+export type MemoryAdmissionRejectReason =
+	| "trunk-pr-cap"
+	| "memory-budget"
+	| "host-available";
+
 export type MemoryAdmissionDecision = Readonly<{
 	admitted: boolean;
 	blockRank: boolean;
+	reason?: MemoryAdmissionRejectReason;
 }>;
 export type MemoryAdmissionRequest = Readonly<{
 	jobId: number;
@@ -204,7 +210,7 @@ export function createWorkerMemoryAdmission(
 			if (availableMb !== undefined) fields.availableMb = availableMb;
 			options.log?.("hobo_ci_memory_admission_wait", fields);
 		}
-		return { admitted: false, blockRank };
+		return { admitted: false, blockRank, reason };
 	}
 
 	function releaseWarm(requestMb: number) {

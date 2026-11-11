@@ -111,7 +111,10 @@ export function leaseHoldDuringWorkerDrain(lease: Lease): boolean {
 
 export function createWorkerLeaseReconciler(options: {
 	store: WorkerLeaseReconciliationStore;
-	docker: Pick<DockerDriver, "list" | "stop" | "remove">;
+	docker: Pick<
+		DockerDriver,
+		"list" | "listWorkerContainers" | "stop" | "remove"
+	>;
 	workerAccountId: string;
 	workerMemoryMb: number;
 	orphanGraceMs?: number;
@@ -122,6 +125,14 @@ export function createWorkerLeaseReconciler(options: {
 	onOrphanJob?: (candidate: OrphanJobCandidate) => void;
 	protectedContainerNames?: () => ReadonlySet<string>;
 	protectedLeaseIds?: () => ReadonlySet<string>;
+	/**
+	 * When this returns true, a running container must not be stopped even if it
+	 * is not on the active lease name/id sets (custody record or GitHub job).
+	 */
+	containerCustody?: (input: {
+		container: DockerContainer;
+		leaseId?: string;
+	}) => Promise<boolean>;
 }) {
 	const now = options.now ?? Date.now;
 	const orphanGraceMs = options.orphanGraceMs ?? 2 * 60_000;
@@ -157,9 +168,11 @@ export function createWorkerLeaseReconciler(options: {
 		);
 		let containers: readonly DockerContainer[];
 		try {
-			if (!options.docker.list)
-				throw new Error("docker container listing unavailable");
-			containers = await options.docker.list("hobo.ci/isolated=1");
+			if (options.docker.listWorkerContainers)
+				containers = await options.docker.listWorkerContainers();
+			else if (options.docker.list)
+				containers = await options.docker.list("hobo.ci/isolated=1");
+			else throw new Error("docker container listing unavailable");
 		} catch (error) {
 			options.log?.("hobo_ci_lease_reconciliation_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -413,9 +426,12 @@ export function createWorkerLeaseReconciler(options: {
 					lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb,
 			});
 		}
-		const leasedNames = new Set(
-			leases.map((lease) => lease.sandboxName || `hobo-${lease.id}`),
-		);
+		const leasedNames = new Set<string>();
+		for (const lease of leases) {
+			if (lease.sandboxName) leasedNames.add(lease.sandboxName);
+			if (lease.runnerName) leasedNames.add(lease.runnerName);
+			leasedNames.add(lease.sandboxName || `hobo-${lease.id}`);
+		}
 		const leasedContainerIds = new Set(
 			leases
 				.map((lease) => lease.sandboxSessionId)
@@ -432,12 +448,18 @@ export function createWorkerLeaseReconciler(options: {
 				continue;
 			if (container.state === "running") {
 				if (reconcileOptions.draining) continue;
+				if (container.createdAtMs === undefined) continue;
 				const leaseId = leaseIdFromBoxRunnerName(container.name);
-				if (!leaseId) continue;
-				const ageMs =
-					container.createdAtMs !== undefined
-						? Math.max(0, now() - container.createdAtMs)
-						: orphanGraceMs + 1;
+				if (options.containerCustody) {
+					const custodyInput =
+						leaseId === undefined
+							? { container }
+							: { container, leaseId };
+					if (await options.containerCustody(custodyInput)) continue;
+				} else if (!leaseId) {
+					continue;
+				}
+				const ageMs = Math.max(0, now() - container.createdAtMs);
 				if (ageMs < orphanGraceMs) continue;
 				try {
 					if (options.docker.stop)

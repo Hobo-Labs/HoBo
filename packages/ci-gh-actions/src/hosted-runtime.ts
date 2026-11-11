@@ -108,6 +108,9 @@ export function createHostedRelayRuntime(options: {
 	mergeQueuePositions?: MergeQueuePositionSource;
 	/** See `HostedRelay`: publishes the fleet route table after each pass. */
 	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
+	headroomTrunkOverflow?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["headroomTrunkOverflow"];
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -162,6 +165,8 @@ export function createHostedRelayRuntime(options: {
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
 		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
+		if (options.headroomTrunkOverflow)
+			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
 		return new HostedRelay(relayOptions);
 	}
 	return {

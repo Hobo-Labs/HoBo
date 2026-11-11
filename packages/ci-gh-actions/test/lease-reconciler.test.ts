@@ -922,6 +922,91 @@ describe("worker lease reconciliation", () => {
 		expect(active).toEqual([lease]);
 	});
 
+	it("does not stop a running container with no createdAtMs", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-00000000-0000-4000-8000-000000000099",
+						containerId: "cid",
+						state: "running" as const,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+		await reconciler.reconcile();
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("does not stop a running container while custody reports in-flight work", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const clock = NOW - 3 * 60_000;
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-00000000-0000-4000-8000-000000000099",
+						containerId: "cid",
+						state: "running" as const,
+						createdAtMs: clock,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			containerCustody: async () => true,
+		});
+		await reconciler.reconcile();
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("protects a legacy adopted container name tied to an active lease", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000099", 1);
+		lease.sandboxName = "hobo-90c3a3e3";
+		lease.runnerName = "hobo-90c3a3e3";
+		lease.state = "running";
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([lease]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-90c3a3e3",
+						containerId: "legacy",
+						state: "running" as const,
+						createdAtMs: NOW - 3 * 60_000,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			containerCustody: async ({ container }) =>
+				container.name === "hobo-90c3a3e3",
+		});
+		await reconciler.reconcile();
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
 	it("stops unleased running containers after the orphan grace", async () => {
 		const stop = vi.fn(async () => undefined);
 		const remove = vi.fn(async () => undefined);

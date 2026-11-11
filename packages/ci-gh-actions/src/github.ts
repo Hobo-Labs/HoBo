@@ -116,6 +116,19 @@ export async function listRunWorkflowJobs(
 	return result.jobs;
 }
 
+export async function rerunWorkflowRun(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<Response> {
+	return api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}/rerun`,
+		"POST",
+	);
+}
+
 export async function getJob(
 	api: GithubTransport,
 	installationId: number,

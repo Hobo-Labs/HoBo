@@ -24,6 +24,7 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -37,6 +38,7 @@ import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
+import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
@@ -244,6 +246,13 @@ export class HostedRelay {
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			/**
+			 * Publishes the fleet route table after each dispatch pass. Unset: the
+			 * relay balances nothing ahead of the queue and every job stays on its
+			 * hobo label.
+			 */
+			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
+			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			now?: () => string;
 		},
 	) {
@@ -886,7 +895,7 @@ export class HostedRelay {
 	}
 	private reportTrunkWait(
 		job: Job,
-		reason: "lease-capacity" | "storage",
+		reason: "lease-capacity" | "storage" | "headroom",
 	): string {
 		const key = this.trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
@@ -1069,6 +1078,11 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
+						if (
+							trunk &&
+							decision.reason === "host-available"
+						)
+							waitingTrunk.add(this.reportTrunkWait(job, "headroom"));
 						continue;
 					}
 				}
@@ -1292,7 +1306,40 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
+		const overflow = this.options.headroomTrunkOverflow;
+		if (overflow) {
+			await overflow.overflowTrunkJobsWaitingForHeadroom(
+				this.options.store,
+				this.trunkWaits,
+				reservationRevision,
+				this.now(),
+			);
+		}
+		await this.publishFleetRoutes();
 		return pending.length;
+	}
+	/** One table per connected repository, from the state this pass just left. */
+	private async publishFleetRoutes(): Promise<void> {
+		const publisher = this.options.fleetRoutes;
+		if (!publisher) return;
+		for (const connection of this.options.config.connections) {
+			const account = this.options.config.accounts.find(
+				(entry) => entry.id === connection.accountId,
+			);
+			if (!account) continue;
+			try {
+				await publisher.publish({
+					installationId: connection.installationId,
+					repository: connection.repository,
+					account,
+					leases: () => this.options.store.accountLeases(account.id),
+					isolatedOnly: connection.isolatedOnly,
+					at: this.now(),
+				});
+			} catch {
+				/* Routing ahead of the queue is advisory; admission already ran. */
+			}
+		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);

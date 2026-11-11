@@ -41,6 +41,7 @@ import {
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createHeadroomTrunkOverflow,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
@@ -309,7 +310,6 @@ const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
 if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
 	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
 const publishFleetRoutes = fleetRoutesFlag === "1";
-const NO_OFFERS: ReadonlySet<string> = new Set();
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -769,6 +769,24 @@ try {
 	const fleetCapacityPublisher = publishFleetRoutes
 		? createFleetCapacityPublisher({ github, log })
 		: undefined;
+	const trunkHeadroomOverflowMs = Number(
+		process.env.HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS ?? "120000",
+	);
+	if (
+		!Number.isFinite(trunkHeadroomOverflowMs) ||
+		trunkHeadroomOverflowMs < 0 ||
+		!Number.isInteger(trunkHeadroomOverflowMs)
+	)
+		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS");
+	const headroomTrunkOverflow = createHeadroomTrunkOverflow({
+		github,
+		memoryAdmission,
+		availableMemoryMb: readAvailableMemoryMb,
+		volatilityMb: capacityVolatilityMb,
+		overflowAfterMs: trunkHeadroomOverflowMs,
+		now: () => Date.now(),
+		log,
+	});
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -786,6 +804,7 @@ try {
 		storageAdmission,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
+		headroomTrunkOverflow,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {

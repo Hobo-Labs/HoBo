@@ -190,6 +190,7 @@ export {
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
+export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,
