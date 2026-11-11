@@ -240,7 +240,9 @@ the footer.
 stop at 900×560, 1024×600, 1280×620, 1366×657 and 1440×900 (nothing above its box,
 every link reachable and uncovered when focused), every phone sign at 390×844,
 every header and cell of the comparison reachable and uncovered on a phone sign at
-390×844 and 360×740 with no sideways page scroll,
+390×844 and 360×740 with no sideways page scroll, the desktop comparison inside its
+card with no sideways scroll at 900×560, 1024×600, 1280×620, 1280×800, 1366×657 and
+1440×900,
 focus on moving on, the URL and hash, wheel gestures and swipes, the footer past
 the last stop, and teardown. It never guesses how long a move takes: the trail
 page carries `data-travel="moving|still"`, and each check waits for "still" (and

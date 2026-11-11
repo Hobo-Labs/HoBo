@@ -1093,7 +1093,11 @@ html:has(.trail-page:not(.is-staged)) {
 	box-shadow: none;
 }
 
+/* The card, not the page's 720px table floor, sets the width: cells wrap
+   instead of pushing the table past the card. */
 .is-staged[data-mode="desk"] .stop-card-wide table.compare {
+	width: 100%;
+	min-width: 0;
 	font-size: 0.88em;
 }
 

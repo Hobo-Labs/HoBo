@@ -184,6 +184,31 @@ async function fitAt(page: Page, origin: string, width: number, height: number):
 	}
 }
 
+/**
+ * The comparison on a desktop: the card is its frame, so the table fits the
+ * card with no sideways scroll and every cell's text inside its cell.
+ */
+async function deskTable(page: Page, origin: string, width: number, height: number): Promise<void> {
+	await page.setViewportSize({ width, height });
+	await page.goto(`${origin}/HoBo/#compare`, { waitUntil: "networkidle" });
+	await settle(page);
+	const report = await page.evaluate(() => {
+		const card = document.querySelector<HTMLElement>("[data-trail-stop].is-on .stop-card-wide");
+		const wrap = card?.querySelector<HTMLElement>(".table-wrap");
+		const table = wrap?.querySelector<HTMLElement>("table.compare");
+		if (!card || !wrap || !table) return { ok: false, detail: "no comparison card on the active stop" };
+		const clipped = [...table.querySelectorAll<HTMLElement>("th, td")]
+			.filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+			.map((cell) => cell.textContent?.trim() ?? "");
+		const ok = table.scrollWidth <= card.clientWidth + 1 && wrap.scrollWidth <= wrap.clientWidth + 1 && clipped.length === 0;
+		return {
+			ok,
+			detail: `table ${table.scrollWidth}px, wrap ${wrap.scrollWidth}/${wrap.clientWidth}px, card ${card.clientWidth}px${clipped.length ? `, clipped: ${clipped.slice(0, 3).join(" · ")}` : ""}`,
+		};
+	});
+	check(`desk ${width}x${height}: the comparison fits its card`, report.ok, report.detail);
+}
+
 async function phone(page: Page, origin: string): Promise<void> {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
@@ -522,6 +547,16 @@ try {
 		[1440, 900],
 	]) {
 		await fitAt(page, origin, w, h);
+	}
+	for (const [w, h] of [
+		[900, 560],
+		[1024, 600],
+		[1280, 620],
+		[1280, 800],
+		[1366, 657],
+		[1440, 900],
+	]) {
+		await deskTable(page, origin, w, h);
 	}
 	await phone(page, origin);
 	await phoneTouch(browser, origin);
