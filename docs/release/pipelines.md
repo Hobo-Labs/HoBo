@@ -231,22 +231,22 @@ The sparse cone remains limited to the workspace members declared by HoBo's sibl
 
 ## Syncing `main` into `feature/hobo-code`
 
-This branch keeps hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary); `main` removes it in #1772, once that lands. `main` is merged in from time to time so the branch keeps up with the platform.
+This branch keeps hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary); `main` removed it in #1772 (squash commit `930d37a34`). `main` is merged in from time to time so the branch keeps up with the platform.
 
-The first sync after #1772 lands on `main` must record the removal as merged without applying it. A plain merge would delete hobo-code from this branch too. `R` is #1772's squash commit on `main`:
+The first sync is done, and it recorded the removal as merged without applying it. A plain merge would have deleted hobo-code from this branch too. With `R` = `930d37a34`, it was:
 
 ```bash
 git switch feature/hobo-code
 git fetch origin
-R=<squash commit of #1772 on main>
 git merge --no-ff "$R^"                    # main up to just before the removal
-git merge -s ours "$R" -m "merge: keep hobo-code across main's removal of it"
-git merge origin/main                      # everything after the removal, as usual
+git merge -s ours --no-ff "$R"             # the removal: recorded as merged, not applied
 ```
 
-Every later sync is `git merge origin/main`. When a `main` change touches a file the removal rewrote (an ADR, these release docs, `@hobo/patterns`), resolve the conflict so this branch keeps its hobo-code content.
+Every later sync is `git merge origin/main`. Check it with `git merge-base --is-ancestor 930d37a34 HEAD`: if that fails, the `-s ours` merge is not in this branch's history and an ordinary merge would delete hobo-code. When a `main` change touches a file the removal rewrote (an ADR, these release docs, `@hobo/patterns`), resolve the conflict so this branch keeps its hobo-code content.
 
 **A sync is pushed as merge commits, or landed from a pull request with "Create a merge commit". It is never squash-merged or rebased.** A squash turns the `-s ours` merge into an ordinary commit, so git no longer records `R` as merged, and the next ordinary sync applies it and deletes hobo-code: a simulated squashed first sync left 1 of the 925 `packages/code` files. A rebase drops the merge commits the same way.
+
+**This branch is never merged back into `main` wholesale.** `main` has no hobo-code, and a merge of this branch would bring all of it back. hobo-code changes go to this branch only; a platform change made here that `main` also needs goes to `main` as its own pull request and comes back with the next sync.
 
 ## Related references
 
