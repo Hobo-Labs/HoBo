@@ -492,7 +492,9 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
-      - run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 5
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Build hobo-sdk before CLI/MCP
         if: matrix.image_id == 'hobo-cli' || matrix.image_id == 'hobo-mcp'
         env:
@@ -569,6 +571,7 @@ jobs:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 5
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
