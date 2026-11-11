@@ -123,6 +123,8 @@ project:
 | `state` | `data` | the PostgreSQL event store, inbox and projections |
 | `secrets` | `secret` | where the relay's secrets are held |
 
+Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the `state` resource is replaced by a `kv` resource requiring `kv.redis-compatible/v1` (TTL, compare-and-set, increment), `secrets` is bound to the config service, and `hobo ci deploy` plans from a Yard and Camp instead of hardcoding Vercel (phase 6).
+
 The Bindle names no provider (`assertNoBindleProviderSelection` holds, and the
 test below also scans the declaration for provider names): the target is chosen
 where the deploy is run. Two facts the Bindle model cannot carry yet are
@@ -189,6 +191,8 @@ relay was made from this repository by this change.**
 
 ## Database
 
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay is moving to keep no durable state ([design](../../docs/design/hosted-relay-stateless.md)): no PostgreSQL, no `DATABASE_URL`, and no Neon runtime-config broker; config and secrets come from a config service read with the relay's Vercel OIDC token, and in-flight job state from a Redis-protocol cache. This section describes the code as it stands until phase 7 of that plan removes it; do not build on it.
+
 The relay speaks plain Postgres through `pg` and creates its own tables on first start. Nothing in
 its store depends on a particular host. Point it at any Postgres with two variables, which are the
 same URL when no pooler sits in front of the database:
@@ -214,6 +218,8 @@ the plan is a Drizzle schema with generated migrations (see
 [CI Relay Mesh](../../docs/design/ci-relay-mesh.md)).
 
 ## Hosted relay
+
+> The Postgres store, the inbox table and the Neon broker named in this section are superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179): webhook intake becomes a Vercel Queue keyed by the delivery id, per-lease steps become delayed queue messages, in-flight state moves to a cache it may lose, and config and secrets are read from a config service. See [Hosted CI Relay Without Durable State](../../docs/design/hosted-relay-stateless.md).
 
 The relay's HTTP surface is not this package's: `createRelayHandler` (Fetch),
 `createNodeRelayHandler` (Node adapter) and the failure log live in
@@ -337,6 +343,8 @@ plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
 endpoint.
 
 ## Hosting the relay and its database on Vercel
+
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay is moving to keep no durable state ([design](../../docs/design/hosted-relay-stateless.md)): there is no database to host, so store choice, the second attached store, the one-time import and the relay database fleet below all go away. The cache is the Upstash Redis Marketplace integration on its free tier; Neon and Turso are disconnected. This section describes the code as it stands until phase 7 of that plan removes it; do not build on it.
 
 The relay is a Vercel Function plus a private queue consumer and a schedule; all
 three are declared in `vercel.json` and need nothing outside Vercel. Its
@@ -1059,6 +1067,8 @@ error or its cause is a database refusal, the line also carries its five-charact
 `sqlstate` (for example `28P01` for a rejected password).
 
 ## Postgres schema
+
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay is moving to keep no durable state ([design](../../docs/design/hosted-relay-stateless.md)): the three tables below, and the Drizzle relay schema and migrations, are removed with the database. This section describes the code as it stands until phase 7 of that plan removes it; do not build on it.
 
 The three PostgreSQL tables this package owns (`hobo_ci_database_probes`,
 `hobo_ci_worker_health` and `hobo_ci_store_selection`) are declared in

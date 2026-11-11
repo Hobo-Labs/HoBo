@@ -102,6 +102,9 @@ This is the canonical glossary for HoBo design terms. `docs:design-lint` treats 
 | Projection Sink | Optional queryable cache materialized through Matching; the event log remains authoritative. |
 | Provider | Adapter implementing cloud, IaC, build, or capability ports for a backend. |
 | Relay | Outbound-only proxy inside a private network so a hosted Yard can deploy without inbound access. |
+| Hosted CI relay | The CI relay deployed on Vercel from `@hobo/ci-vercel` (a function, a queue consumer, a schedule); not the outbound-only Relay above. It keeps no durable state: config and secrets come from a separate service, in-flight job state from a cache it may lose, and GitHub is the record of every job ([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)). |
+| Relay database fleet | The machinery that ran the hosted CI relay on several PostgreSQL databases (store selection, writer register, replication, failover). Superseded and removed by [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179); always distinct from the compute fleet. |
+| Compute fleet | The machines that run CI jobs, and the mesh, capacity, routing and balancing that place jobs on them (`packages/ci/src/fleet/`, the relay mesh); unchanged by [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179). |
 | Resolution Receipt | Broker-issued evidence artifact proving a Contract Manifest was resolved against a specific Broker Environment and catalog snapshot. |
 | Resolution Rejection | Broker-issued evidence artifact naming why resolution failed, such as stale, incompatible, ambiguous, or unsupported mapping state. |
 | Resource Definition | Rule for realizing a port in a context, including provider, driver, and options. |

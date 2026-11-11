@@ -102,6 +102,8 @@ With pull admission, `hobo ci serve` feeds the Node service's inbox from
 `createGithubJobPoller` (`src/isolated-worker/github-job-poller.ts`), the same
 poller the box worker runs; there is no second poller.
 
+Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the Vercel row changes: its store becomes a cache store over `kv.redis-compatible/v1` (TTL, compare-and-set, increment), intake a Vercel Queue keyed by the delivery id, and lease steps delayed queue messages; config and secrets are read-only from a config service ([design](../../docs/design/hosted-relay-stateless.md)). The box worker's `PostgresCiStore` option is removed. The Node service and `SqliteCiStore` are unchanged.
+
 The Node service adds two things of its own to the shared handler: a cached
 readiness probe that also gates admission (`admitWhenReady`: while the probe
 fails or the service drains, a delivery answers 503 for GitHub to redeliver and
@@ -1070,6 +1072,8 @@ backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
 GitHub relay, runner authorization and account routing remain in this package.
 
 ## Postgres schema
+
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** These tables move to the cache, the config service or signed cookies, or go away ([design](../../docs/design/hosted-relay-stateless.md), "Former tables and their replacements"). This section describes the code as it stands until phase 7.
 
 The 13 PostgreSQL tables this package owns (App registration, OAuth sessions,
 the platform-App bootstrap fence, and the webhook and queued-job repair state)
