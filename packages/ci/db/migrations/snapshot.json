@@ -90,6 +90,13 @@
 				"name": "hobo_ci_events",
 				"columns": [
 					{
+						"name": "account_id",
+						"type": "text",
+						"nullable": true,
+						"primaryKey": false,
+						"unique": false
+					},
+					{
 						"name": "body",
 						"type": "text",
 						"nullable": false,
@@ -112,6 +119,15 @@
 					}
 				],
 				"indexes": [
+					{
+						"name": "hobo_ci_events_account_seq",
+						"columns": [
+							"partition_id",
+							"account_id",
+							"seq"
+						],
+						"unique": false
+					},
 					{
 						"name": "hobo_ci_events_partition_seq",
 						"columns": [
@@ -738,6 +754,12 @@
 						"type": "text",
 						"primaryKey": false,
 						"notNull": true
+					},
+					"account_id": {
+						"name": "account_id",
+						"type": "text",
+						"primaryKey": false,
+						"notNull": false
 					}
 				},
 				"indexes": {
@@ -746,6 +768,33 @@
 						"columns": [
 							{
 								"expression": "partition_id",
+								"isExpression": false,
+								"asc": true,
+								"nulls": "last"
+							},
+							{
+								"expression": "seq",
+								"isExpression": false,
+								"asc": true,
+								"nulls": "last"
+							}
+						],
+						"isUnique": false,
+						"concurrently": false,
+						"method": "btree",
+						"with": {}
+					},
+					"hobo_ci_events_account_seq": {
+						"name": "hobo_ci_events_account_seq",
+						"columns": [
+							{
+								"expression": "partition_id",
+								"isExpression": false,
+								"asc": true,
+								"nulls": "last"
+							},
+							{
+								"expression": "account_id",
 								"isExpression": false,
 								"asc": true,
 								"nulls": "last"

@@ -59,14 +59,26 @@ reads one lease's newest events by the lease's id, through the lease index
 (`hobo_ci_events_lease_type_seq` on Postgres; `events_lease_type` on SQLite,
 which the statement names, so the read fails if the index is missing and
 never walks the journal instead).
-Both are projections over the journal, not a second bus: nothing is written
-to serve them, and no schema changed.
+Both are projections over the journal, not a second bus.
 
+- **Exact.** A read returns exactly the account's events, whatever other
+  accounts, or other partitions sharing the table's sequence, have journalled.
+  It goes through an index on the account each event names, so it touches the
+  account's own rows and none of anybody else's:
+  `hobo_ci_events_account_seq (partition_id, account_id, seq)` on Postgres,
+  `events_account_seq (json_extract(body,'$.accountId'), seq)` on SQLite. The
+  SQLite statement names its index, as the lease read does: without it the
+  read fails and never walks the journal, which would stop a single-threaded
+  host for as long as the journal is long. The Postgres statement orders each
+  half of its read by the index's own key and bounds it by a range on that
+  key, which leaves the account index as the only ordered path the planner
+  has: it cannot choose to walk the journal's primary key past every other
+  account's rows, whatever its statistics say.
 - **Order.** The position is the journal's own key (`seq`). A partition has one
   writer at a time (SQLite) or serializes its transactions at the partition
   lock row (Postgres), so `seq` order is commit order and a cursor never skips
-  an event. The Postgres read fixes the journal's head first and scans up to
-  it, so a row committed while it runs is left whole for the next read.
+  an event. The Postgres read is one statement, so it sees one committed
+  state: a row committed while it runs is left whole for the next read.
 - **Scope.** An event belongs to the account it names, and the query selects
   by that name. A job event recorded before or apart from a lease
   (`ci.JobQueued`, `ci.JobExpired`, `ci.JobCompleted`,
@@ -76,20 +88,64 @@ to serve them, and no schema changed.
   moves later. Writing the owner costs the Postgres admission path no extra
   read: it comes from the configuration the transaction has already read.
   Job events journalled before this was recorded name no account and are in
-  nobody's feed. `isJobEvent` tells them apart for a reader, such as the
-  account API's snapshot, that lists lease events only. Partition events such as `ci.ConfigurationChanged`
-  name no account and are never returned.
-- **Bounds.** A page holds at most 500 events. One read looks along at most
-  10,000 of the partition's journal rows (`EVENT_SCAN_SPAN`), by the journal's
-  own index, so its cost does not depend on how much other accounts, or other
-  partitions sharing the table's sequence, have written. The page
-  says when that cut it short: `more` when a cursor read stopped before the
-  end of the journal (an empty page is then not "caught up"; read again from
-  `cursor`), `truncated` when a read of the newest events did not fill the
-  page and did not look back to the journal's start. Reading an account's
-  events by an index on the account would lift the bound; the events table has
-  none, and the generator refuses an expression index on an existing table, so
-  that is a hand-written migration and has not been done.
+  nobody's feed: nothing guesses an owner for them. `isJobEvent` tells them
+  apart for a reader, such as the account API's snapshot, that lists lease
+  events only. Partition events such as `ci.ConfigurationChanged` name no
+  account and are never returned.
+- **Bounds.** The only bound is the page: at most 500 events, and never more
+  than `limit`. `more` is set when a cursor read filled its page and the
+  account has events after it; `truncated` when a read of the newest events
+  filled its page and the account has events older than it. Neither is ever
+  set because of what another account wrote.
+- **Cursor.** A page's `cursor` is the position of its last event. A read that
+  finds nothing hands back the position it was given (zero for a read of the
+  newest events). So a cursor is always a position of the account's own, and
+  it does not move while only other accounts journal.
+
+**The account column on Postgres, and rows from before it.** Migration
+`0001_events_account` adds `hobo_ci_events.account_id` and the index. The
+column has three states: the account the event names; `''` for an event that
+names none; `NULL` for a row that has not been stamped.
+
+- *Writes.* This release stamps the account in the statement that inserts the
+  event, so every row it writes is in the account's range of the index from
+  its commit.
+- *Rows written before the column, or by a release that does not stamp.* They
+  are `NULL`. A read is exact with them there: it is one statement over both
+  halves of the index, the account's stamped rows and the unstamped rows whose
+  body names the account, merged in `seq` order. So the page is the same
+  before, during and after the fill-in, and while an old and a new release
+  write side by side. What unstamped rows cost is time, not correctness: the
+  read filters them by their body, as every read did before.
+- *The fill-in* (`stampEventAccounts`). Each store starts one when its schema
+  is in place and does not wait for it: start-up, admission and reads never
+  do. A batch is one statement in its own transaction over at most 1,000 rows
+  found through the index's `NULL` range, newest first. It locks only the
+  rows it stamps, which no writer touches again, skips rows another instance
+  is stamping (`FOR UPDATE SKIP LOCKED`), takes no table lock and never the
+  partition's lock row, so webhook admission is not queued behind it. It keeps
+  no progress of its own: what is left is whatever is still `NULL`, so a run
+  that was cut off (a frozen function instance, a restart) is resumed by the
+  next store to start, and rows an old release adds meanwhile are picked up
+  the same way. A stamped row is a new row version; autovacuum reclaims the
+  old one, batch by batch.
+- *Who a row is given to.* The account its own body names, and nothing else.
+  A job event from before owners were recorded names none: it is stamped `''`
+  and stays in nobody's feed, although its repository may be connected to an
+  account today.
+- *What does take a table lock.* Adding the column is a catalog change. The
+  index is built by a plain `CREATE INDEX IF NOT EXISTS` inside the store's
+  start-up transaction (and the migration's), which holds a `SHARE` lock on
+  `hobo_ci_events` for one build over the existing rows, once per database;
+  writers wait for it. That is the same lock every earlier index on this
+  table was added under. Neither runner can use `CREATE INDEX CONCURRENTLY`,
+  because both run in a transaction; on a journal large enough for that build
+  to matter, create the index concurrently by hand first and both find it
+  there.
+
+SQLite needs no column: the index is on the expression, built once when the
+store first opens an existing journal, and an event that names no account has
+no key in it.
 
 **Observers.** `PostgresCiStore.observer()` is the store as something that
 only watches reads it (`CiObserver`): configuration, a lease, an account's
@@ -101,10 +157,17 @@ front of webhook admission or the worker, nor behind a long mutation.
 `SqliteCiStore` satisfies the same port directly.
 
 The shared store contract (`packages/ci-gh-actions/test/ci-store-contract.test.ts`)
-holds both engines to this behaviour, and on Postgres also proves an observer
-reads while the partition lock is held and that a read says when a neighbour's
-volume cut it short; `test/event-log.test.ts` covers the page arithmetic and
-ownership at write time. The relay's MCP server is the consumer: see
+holds both engines to this behaviour: exact pages and a cursor that stands
+still while a neighbour journals. On SQLite it reads the plan of both event
+reads and drops the index to show the read fails without it. On Postgres it
+also proves an observer reads while the partition lock is held; reads an
+account's two events from behind 50,000 rows of other tenants and checks, with
+the statements planned without their parameters, that both halves use the
+account index and nothing scans the table or walks its primary key; and runs
+the fill-in in batches while the partition lock is held, from two instances at
+once, with the reads compared before, during and after.
+`test/event-log.test.ts` covers the page arithmetic, ownership at write time
+and a SQLite journal written before the index existed. The relay's MCP server is the consumer: see
 [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#mcp-server).
 
 ## PostgreSQL hosting adapter
@@ -272,6 +335,26 @@ and operations code: nothing under `src/` imports it, `drizzle-orm` and
 `drizzle-kit` are dev dependencies, and every query the relay runs is still
 hand-written SQL through `pg`.
 
+Two things cross from here into `src/`, in that direction only, because a host
+applies migrations at run time (see [Standbys](#standbys-get-their-schema-from-the-migrations)):
+
+- **The runner** is [`src/schema-migrations.ts`](src/schema-migrations.ts),
+  exported as `@hobo/ci/schema-migrations` (`applyMigrations`,
+  `readSchemaLedger`, the errors and the ledger's name). The tooling re-exports
+  it; there is one runner.
+- **The migrations a package ships.** `db/migrations/` is not part of a
+  published package or a function bundle, so each package carries a copy as a
+  module, `src/_generated-assets/schema-migrations.ts`: the loaded,
+  digest-checked migration set (`schemaMigrations`). `db:generate` writes it
+  with every new migration and `db:ship` on its own; `db:check`, the test
+  suite and the generated-files pre-commit guard fail when it is missing or is
+  not what `db/migrations/` loads to. Nobody edits it.
+
+| Migration | Package | What it does |
+|---|---|---|
+| `0000_baseline` | all three | Every table as the stores' embedded DDL creates it |
+| `0001_events_account` | `@hobo/ci` | `hobo_ci_events.account_id` (nullable `text`) and `hobo_ci_events_account_seq (partition_id, account_id, seq)`, for the [exact per-account event read](#event-cursor). Two additive statements; it rewrites and fills in no row |
+
 ### How a migration is produced
 
 `pnpm --filter <package> run db:generate` follows
@@ -288,7 +371,8 @@ hand-written SQL through `pg`.
    host for: it pairs each statement with the plan step it implements, and the
    adapter refuses if a step is left without SQL.
 
-It writes three files into `db/migrations/`:
+It writes three files into `db/migrations/`, and the shipped module beside
+them:
 
 - `NNNN_<name>.sql`: what runs. Each statement carries a `-- step:` comment
   naming its plan step and an `IF NOT EXISTS` guard.
@@ -341,6 +425,30 @@ named constraint the SQL creates exists. Otherwise the run rolls back.
 The ledger is the one relay table outside the declared schema. The runner
 creates it, because it has to exist before the first migration can be recorded.
 
+A database whose ledger holds a migration the journal does not have is ahead
+of this code. The run is refused before any statement (`SchemaAheadError`) and
+the database is left as it is: there is no downgrade. Two runs at once apply
+once; the second waits at the lock and finds the ledger.
+
+### Standbys get their schema from the migrations
+
+The hosted relay can run on a [fleet of databases](../ci-vercel/README.md):
+one writer, and standbys that receive copies. The application's stores are
+only ever opened on the writer, so a standby cannot get its schema from their
+`initialize`. It gets it from these migrations instead:
+`prepareRelaySchema` in `@hobo/ci-vercel` applies the three packages' shipped
+sets (`RELAY_SCHEMA_MIGRATIONS`) with `applyMigrations`, over the fleet's
+control connection. That is the same SQL `db:migrate` applies, under the same
+locks, recorded in the same ledger; the standby's only writes are DDL and
+ledger rows. A fresh standby gets every table and index; one that is behind
+gets what it lacks; one that is ahead is refused by name and left alone.
+
+The writer keeps its own start-up path (next section), which the lock holds
+identical to the migrations. When the fleet prepares the writer's side of a
+refused copy it runs the stores' initialisers first and then the same
+migrations, which is the procedure under [Existing databases](#existing-databases)
+done for the operator, and leaves the writer's ledger saying what it holds.
+
 ### Existing databases
 
 The baseline is safe to apply to a database the relay has already been running
@@ -382,7 +490,7 @@ two checks keep them identical:
   migrates a seeded copy of the embedded-DDL database and requires that neither
   its catalog nor any row changes, and that a second run applies nothing.
 
-To change the schema: edit `db/schema.ts`, run `db:generate -- --name <words>`,
+To change the schema: edit `db/schema.ts`, run `db:generate --name <words>`,
 make the same change in the store's embedded DDL, then run
 `HOBO_TEST_POSTGRES_URL=postgres://… pnpm --filter <package> run db:verify`
 against a disposable PostgreSQL whose role may create databases. `db:check` runs
@@ -394,8 +502,11 @@ skipped otherwise.
 
 ### Not done yet
 
-- The stores do not apply migrations; `db:migrate` is an operator step, and no
-  deployment runs it automatically.
+- The stores do not apply migrations to the database they write to: their
+  embedded DDL is still the writer's start-up path, and `db:migrate` is an
+  operator step there. The one place a deployment applies migrations by
+  itself is the hosted relay's database fleet, for its standbys and for the
+  writer's side of a refused copy.
 - Generation is a development step that checks its output in. ADR-0160's
   deploy-owned generation at the plan phase, and the gated
   expand → backfill → contract saga in `@hobo/trails` with its `migration.*`
@@ -409,7 +520,11 @@ skipped otherwise.
   was generated with; `db:check` re-renders the baseline with the installed
   toolchain and fails if the SQL comes out different, which then needs a
   decision, not a regeneration, because applied migrations are never rewritten.
-- SQLite stores (`store.ts`, `sqlite-store.ts`) are out of scope and unchanged.
+- The runner is one transaction, so a migration cannot build an index
+  `CONCURRENTLY`; an index on a large existing table blocks its writers for
+  the build.
+- SQLite stores (`store.ts`, `sqlite-store.ts`) are out of scope: they create
+  their own tables and indexes when they open a file.
 
 ## Local development machines
 

@@ -65,9 +65,17 @@ export const events = pgTable(
 		seq: bigserial("seq", { mode: "number" }).primaryKey(),
 		partitionId: text("partition_id").notNull(),
 		body: text("body").notNull(),
+		// The account the event names, beside its body so an index can key on
+		// it. NULL until a row is stamped; '' for an event that names none.
+		accountId: text("account_id"),
 	},
 	(table) => [
 		index("hobo_ci_events_partition_seq").on(table.partitionId, table.seq),
+		index("hobo_ci_events_account_seq").on(
+			table.partitionId,
+			table.accountId,
+			table.seq,
+		),
 		index("hobo_ci_events_lease_type_seq").on(
 			table.partitionId,
 			sql`(${table.body}::jsonb ->> 'leaseId')`,

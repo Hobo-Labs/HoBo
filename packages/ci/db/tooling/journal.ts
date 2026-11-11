@@ -23,17 +23,17 @@ import { readFile } from "node:fs/promises";
 import { type MigrationPlan, parseSchemaIr, type SchemaIr } from "@hobo/core";
 import type { DrizzleSnapshotJSON } from "drizzle-kit/api";
 import { z } from "zod";
+import {
+	type SchemaMigration,
+	SchemaMigrationError,
+	type SchemaMigrationSet,
+} from "../../src/schema-migrations.js";
 
 export const SCHEMA_JOURNAL_CONTRACT = "hobo.ci.schema-journal/v1";
 export const SCHEMA_SNAPSHOT_CONTRACT = "hobo.ci.schema-snapshot/v1";
 export const STATEMENT_BREAKPOINT = "--> statement-breakpoint";
 
-export class SchemaMigrationError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "SchemaMigrationError";
-	}
-}
+export { SchemaMigrationError };
 
 const MigrationId = z.string().regex(/^\d{4}_[a-z0-9_]+$/u);
 const Sha256 = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -120,20 +120,9 @@ export interface SchemaSnapshot {
 }
 
 /** One migration, loaded and digest-checked: exactly what the runner applies. */
-export interface LoadedMigration {
-	readonly id: string;
-	readonly statements: readonly string[];
-	readonly sqlSha256: string;
-	readonly planDigest: string;
-	readonly engine: string;
-	readonly violationsQuery: string;
-}
+export type LoadedMigration = SchemaMigration;
 
-export interface MigrationSet {
-	readonly scope: string;
-	readonly advisoryLocks: readonly string[];
-	readonly migrations: readonly LoadedMigration[];
-}
+export type MigrationSet = SchemaMigrationSet;
 
 export function sha256Hex(text: string): string {
 	return createHash("sha256").update(text).digest("hex");

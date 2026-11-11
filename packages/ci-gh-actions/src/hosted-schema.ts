@@ -5,10 +5,18 @@ import { PostgresAppBootstrapStore } from "./hosted-app-bootstrap.js";
 import { PostgresQueuedJobRepairClaims } from "./queued-job-repair.js";
 import { PostgresWebhookRepairClaims } from "./webhook-repair.js";
 
-/** Create every table the hosted relay's GitHub stores use, without storing
- * anything. Each store creates its own tables on first use; this runs those
- * same initialisers up front, so a database that is not serving traffic (a
- * standby that receives copies) has the schema the serving one has.
+/** `@hobo/ci-gh-actions`'s checked-in migrations: the tables of the hosted
+ * relay's GitHub stores. A host applies them, with `applyMigrations` from
+ * `@hobo/ci/schema-migrations`, to a database the stores themselves never
+ * initialise: a standby that only receives copies. */
+export { schemaMigrations as hostedRelaySchemaMigrations } from "./_generated-assets/schema-migrations.js";
+
+/** Create every table the hosted relay's GitHub stores use, by running the
+ * stores' own initialisers. Each store creates its own tables on first use;
+ * this runs them up front on the database the relay writes to, and it is how
+ * a database from an earlier release is brought forward to today's layout.
+ * It is not for a standby: the initialisers are the application's, and a
+ * standby gets its schema from `hostedRelaySchemaMigrations`.
  *
  * The stores that encrypt take a key and the scanner takes an App id, but
  * creating tables uses neither, so placeholders are passed and never used. */

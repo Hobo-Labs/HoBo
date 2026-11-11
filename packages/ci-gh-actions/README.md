@@ -241,7 +241,7 @@ account API's `/v2/accounts/self/inbox/…` routes do.
 | --- | --- |
 | `hobo-ci://leases` | The account's 100 newest leases |
 | `hobo-ci://leases/{leaseId}` | One lease and its latest 20 events, read by the lease's id |
-| `hobo-ci://events` | The account's 100 newest events, the cursor to read on from, and `truncated` when older ones went unread |
+| `hobo-ci://events` | The account's 100 newest events, the cursor to read on from, and `truncated` when the account has older ones |
 
 Results are protobuf JSON of the `RelayMcp*` messages in
 [`data-models/relay_mcp.proto`](data-models/relay_mcp.proto), written with zero
@@ -289,19 +289,23 @@ account's journal. Anything else, another account's cursor included, is
 refused as invalid input. Changing the secret invalidates issued cursors; a
 client then starts again from `list_events`.
 
-**`more` and `truncated`.** The journal holds every account's events, so one
-read looks along a bounded stretch of it (10,000 of its rows) and says when
-that cut it short:
+**`more` and `truncated`.** A read returns exactly the account's events: the
+store finds them through an index on the account, so what other accounts
+journal neither hides them nor cuts a read short. The only bounds are the
+page a caller asks for (`limit`, at most 200) and the window of the account's
+own events one read looks through for the ones that match its filters (500):
 
 | Field | Meaning | What to do |
 | --- | --- | --- |
-| `more: true` | The read stopped before the end of the journal, so an empty `events` is not "caught up" | Read again from `cursor` at once |
-| `timedOut: true` | A wait reached the end of the journal and nothing matched before its timeout | Wait again from `cursor` |
-| `truncated: true` | A read of the newest events (no cursor) did not fill the page and did not look back to the journal's start | Older events may exist; read from `"0"` or an earlier cursor for them |
+| `more: true` | The account has more events after the ones this read returned or looked through. With filters, `events` can be empty: none of the 500 it looked through matched | Read again from `cursor` at once |
+| `timedOut: true` | A wait reached the end of the account's events and nothing matched before its timeout | Wait again from `cursor` |
+| `truncated: true` | A read of the newest events (no cursor) left older events of the account unread: more matched than `limit`, or the account has more than the 500 it looked through | Read from `"0"` or an earlier cursor for them |
 
-`wait_for_events` keeps reading while there is `more`; if it is still behind
-after eight reads it returns the cursor with `more: true` and
-`timedOut: false`, so that no call works without end.
+Without filters `more` and `truncated` mean only that the page was full.
+`wait_for_events` keeps reading while there is `more`; if it has looked
+through eight windows of the account's events without a match it returns the
+cursor with `more: true` and `timedOut: false`, so that no call works without
+end.
 
 ### Limits
 
@@ -418,18 +422,22 @@ fails if the declared duration and the one the code assumes differ.
   window. Job events are served here.
 - **Nothing about other accounts from a cursor.** A cursor is not a journal
   position: two cursors cannot be subtracted, and two accounts at the same
-  place in the journal hold different tokens. A cursor moves only with the
-  account's own events: it stands for the newest of them the read saw, so
-  while other accounts journal and this one does not, every read and every
-  wait that times out hands back the same cursor. The relay itself reads on
-  from the journal's end between passes of a wait; that position is never
-  handed out.
-- **Residual.** A read that is cut short (`more: true`, or `truncated: true`
-  on the newest read) hands back how far it got, because the caller could
-  otherwise never get past that stretch. That happens only when more than
-  10,000 journal rows lie between the account's events, and it tells the
-  account that the shared journal grew by at least that much, in steps of
-  that size.
+  place in the journal hold different tokens. And the position it stands for
+  is always one of the account's own events (or the journal's start): the last
+  one a read returned or looked at. While other accounts journal and this one
+  does not, every read and every wait that times out hands back the same
+  cursor. No read is cut short by other accounts' volume, so there is no case
+  in which a cursor reports how far a read got through rows that are not the
+  account's; the relay hands out no position that depends on them.
+- **Nothing about other accounts from `more` or `truncated`.** Both are set by
+  the account's own events and the page or window alone.
+- **What remains.** How long a read takes is not hidden. A read costs what the
+  account's own events cost, through its index, except in one window: on
+  Postgres, until journal rows written before the account column are stamped
+  (see [`@hobo/ci`](../ci/README.md#event-cursor)), a read also passes over
+  the unstamped rows of the partition, whoever they belong to. During that
+  fill-in a caller could see reads get faster as it proceeds. It ends by
+  itself and reveals no count.
 
 ### Client configuration
 
