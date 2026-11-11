@@ -16,18 +16,17 @@ swaps the image and changes nothing else. The difference is register: idle's
 cycle is a hop, stand's is a breath anchored at the feet, for places where Bo
 should be present without performing.
 
-The trail band loads `bo-walk.png` and `bo-idle.png` only. It is driven by the
-page's scroll position, and scrolling back up plays the east sheet's frames in
-reverse — the reel runs backwards — rather than turning him around. So the band
-no longer needs a west sheet at all, and the `facing` prop that used to select
-one (and fail the build when it was missing) is gone. `bo-walk-left.png` stays
-here as art and in the media catalogue; nothing on the site loads it. The reason
-a west walk was never a flip still stands, and still applies to anything drawn
-from these sheets — see below.
+The trail loads all three walking and idling sheets. Going on, Bo walks on
+`bo-walk.png`; heading back to an earlier stop he turns round and walks on
+`bo-walk-left.png`, his other side drawn as its own sheet. He is never mirrored
+and never walks backwards: the trail moves one stop at a time on a timed glide,
+not with the scrollbar, so there is no "scrolling back up" reel to run in
+reverse. The reason a west walk was never a flip still stands, and still applies
+to anything drawn from these sheets — see below.
 
 Two folders sit beside these sheets and follow the same "supplied, used as
 given" rule: `plates/` (the looping scenery) and `landmarks/` (the props that
-stand beside the trail at each stop). Each has its own README.
+stand on the trail, one for each card of the landing page). Each has its own README.
 
 ## The west sheet cannot be a mirror
 
@@ -123,10 +122,10 @@ poses did contain a cycle; they were simply shuffled.
 foot gliding at a measurable −1.33px per frame, which is where the band's whole
 speed derivation comes from. The west poses do not carry a consistent ground
 contact — the feet-band drift stays noisy in any ordering, with swings of ±12px
-— so his feet would not plant against scrolling ground the way they do going
-east. That is one of the reasons the band stopped using it: reversing the east
-sheet keeps the plant exact in both directions, where this sheet could not
-offer it in one.
+— so his feet do not plant against moving ground as exactly as they do going
+east. The band used to run the east sheet backwards for that reason. It uses
+this sheet again because walking backwards read as wrong to everyone who saw
+it, and a turn is worth a foot that slides a little on the way back.
 
 ## What the site does to a sheet once it is here
 

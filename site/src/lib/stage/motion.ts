@@ -48,10 +48,17 @@ export function setPaused(on: boolean): void {
 	document.dispatchEvent(new CustomEvent(EVENT));
 }
 
-/** Called once the stored choice is known and again whenever it changes. */
-export function onMotionChange(listener: () => void): void {
+/**
+ * Called whenever the choice changes. Returns the way to stop listening, so
+ * whatever subscribed can leave without a listener outliving it.
+ */
+export function onMotionChange(listener: () => void): () => void {
 	document.addEventListener(EVENT, listener);
 	reduced.addEventListener("change", listener);
+	return () => {
+		document.removeEventListener(EVENT, listener);
+		reduced.removeEventListener("change", listener);
+	};
 }
 
 /** Apply the remembered choice. Safe to call more than once. */

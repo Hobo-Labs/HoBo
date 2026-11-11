@@ -30,6 +30,7 @@
 	"dependencies": {
 		"@bytecodealliance/jco": "1.24.3",
 		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/adapter-infisical": "workspace:*",
 		"@hobo/adapter-opensesame": "workspace:*",
 		"@hobo/auth-md": "workspace:*",
 		"@hobo/bindings": "workspace:*",
