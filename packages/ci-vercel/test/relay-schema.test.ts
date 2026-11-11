@@ -231,11 +231,18 @@ describe.skipIf(!TEST_POSTGRES_URL)(
 					expect(refusal?.message).toMatch(/fleet backend b2 /u);
 					expect(refusal?.message).toMatch(/0002_from_a_newer_release/u);
 					expect(refusal?.message).not.toMatch(/postgres|:\/\/|@1|127\.0/iu);
-					for (const part of [
-						new URL(url).password,
-						new URL(url).host,
+					// Only the parts the URL has: a URL without a password has an
+					// empty one, and every string contains the empty string.
+					const address = new URL(url);
+					const parts = [
+						decodeURIComponent(address.password),
+						decodeURIComponent(address.username),
+						address.host,
+						address.hostname,
 						standby.name,
-					])
+					].filter((part) => part !== "");
+					expect(parts.length).toBeGreaterThanOrEqual(3);
+					for (const part of parts)
 						expect(refusal?.message).not.toContain(part);
 				}
 				// Not downgraded, not touched: the future column and its ledger
