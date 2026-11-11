@@ -15,13 +15,10 @@ import {
 	jitEmptyExitKey,
 	jitEmptyExitLaunchBlocked,
 } from "../src/jit-empty-exit-backoff.js";
+import { jitRunnerDeregisterGithub } from "./github-deregister-mock.js";
 
 function deniedGithub(): GithubTransport {
-	return {
-		async request() {
-			throw new Error("unexpected GitHub request");
-		},
-	};
+	return jitRunnerDeregisterGithub();
 }
 
 function transitionFor(lease: Lease) {

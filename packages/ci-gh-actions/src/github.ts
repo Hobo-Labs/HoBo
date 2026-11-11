@@ -25,6 +25,7 @@ const Run = z.object({
 	display_title: z.string(),
 	status: z.string(),
 	conclusion: z.string().nullable(),
+	created_at: z.string().optional(),
 	run_started_at: z.string().nullable(),
 	updated_at: z.string(),
 	actor: z.object({ id: z.number().int().positive() }),
@@ -165,6 +166,20 @@ export async function rerunWorkflowRun(
 	);
 }
 
+/** Re-run one workflow job without cancelling the rest of the run. */
+export async function rerunWorkflowJob(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	jobId: number,
+): Promise<Response> {
+	return api.request(
+		installationId,
+		`/repos/${repository}/actions/jobs/${jobId}/rerun`,
+		"POST",
+	);
+}
+
 export async function getJob(
 	api: GithubTransport,
 	installationId: number,
@@ -185,6 +200,7 @@ export async function getJob(
 			labels: z.array(z.string()),
 			name: z.string().optional(),
 			runner_name: z.string().nullable().optional(),
+			runner_id: z.number().int().positive().nullable().optional(),
 			run_attempt: z.number().int().positive().optional(),
 			created_at: z.string().optional(),
 		})
