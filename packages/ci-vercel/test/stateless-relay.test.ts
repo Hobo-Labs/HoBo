@@ -427,18 +427,22 @@ describe("the stateless relay's cache commands per Sandbox job", () => {
 		// Every delivery costs its markers (3); the launch is a run of lease
 		// transitions, each one compare-and-set plus the routing check a held
 		// state takes, with a ring append per state change; a step reads one
-		// lease.
+		// lease. The usage counter adds one command per relay-clock minute in
+		// which a call was made (the fleet's flush follows the relay's clock),
+		// so a phase that crosses a minute carries one more.
 		expect(cost).toEqual({
-			"webhook queued": 3,
+			"webhook queued": 4,
 			"intake: queue, reserve, launch": 57,
 			"webhook in_progress": 3,
 			"intake: in_progress": 6,
-			"steps: three first rungs": 4,
+			"steps: three first rungs": 5,
 			"webhook completed": 3,
 			"intake: completed": 2,
-			"step: stop and settle": 20,
-			"step: chain end": 1,
+			"step: stop and settle": 21,
+			"step: chain end": 2,
 		});
-		expect(Object.values(cost).reduce((sum, value) => sum + value, 0)).toBe(99);
+		expect(Object.values(cost).reduce((sum, value) => sum + value, 0)).toBe(
+			103,
+		);
 	});
 });

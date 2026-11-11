@@ -13,10 +13,13 @@ tags: [hobo, design, ci, relay, twelve-factor]
 with [Options routed by budget](#options-routed-by-budget). Implemented so far
 ([delivery plan](#delivery-plan)): the cache port and its Upstash, Valkey,
 in-memory and Turso bindings (phases 2 and 2b), the config-service
-client (phase 3), the relay store on the cache (phase 4a) and, in phase 4b, the
+client (phase 3), the relay store on the cache (phase 4a), in phase 4b the
 relay composed on them with no database: config and secrets from the config
 service, per-job state in the cache, webhook intake and per-lease steps on
-Vercel Queues ([The stateless relay](../../packages/ci-vercel/README.md#the-stateless-relay)).
+Vercel Queues ([The stateless relay](../../packages/ci-vercel/README.md#the-stateless-relay)),
+and in phase 4c the cache fleet: every bound cache a member, exactly one
+active by a majority-decided register, moved by budget
+([The cache fleet](../../packages/ci-vercel/README.md#the-cache-fleet)).
 None of it has been deployed or run against Vercel, Upstash, Infisical or
 GitHub. The PostgreSQL code stays in the tree, off the relay's path, until
 phase 7 removes it; the sections of
@@ -532,21 +535,57 @@ fleet's policy in `@hobo/data-postgres` (`src/fleet/`):
   allowance or is no longer affordable under the budget, and a *failover* when
   it is quota-exhausted or unreachable past a threshold.
 
-Those pieces never mention SQL. Phase 4c proposes moving them, with
-`fleetMajority`, the failure classes and the billing-period helpers, from
-`@hobo/data-postgres` into an engine-neutral package that `@hobo/data-postgres`
-re-exports; this amendment moves no code.
+Those pieces never mention SQL. Phase 4c moved them, with `fleetMajority`,
+the failure classes and the billing-period helpers, from `@hobo/data-postgres`
+into [`@hobo/backend-fleet`](../../packages/backend-fleet/README.md), which
+`@hobo/data-postgres` re-exports; a new package rather than `@hobo/core`,
+because it is a policy with its own records and pact, not a port. Next to
+`decideFleet`, which moves only when the writer is in trouble and judges a
+standby by copy lag, it adds `routeFleetByBudget` for a fleet whose state may
+be lost: it also moves to a cheaper member, and has no lag to judge.
+
+**As built (phase 4c).** The log lives in `hobo-ci:<env>:fleet:assignment` on
+every member, one `FleetAssignmentLog` value of the newest 32 entries;
+`accept` is a read, the register's rules, and `putIfAbsent` or
+`compareAndSet` on the version read, so it is atomic per backend; every write
+and every repair tick resets the 30-day TTL. A lost or expired log reads as
+empty. Safety holds while every decided entry stays on a majority, which the
+repair tick ensures by copying the current entry onto every member; an
+emptied member is rejoined only when a majority of the others prove the
+current entry. An instance caches the active member for a minute from the
+start of its read. With no majority, an unsettled epoch or a sealed fleet the
+cache port refuses every call with a retryable error, so a queue message is
+redelivered; with two members, losing either leaves no majority, so a
+failover needs three. With one member there is no register.
+
+**Switch protocol.** A move is two entries: a sealed one (a planned switch
+keeps the old member named, a failover names none), and after 2.5 minutes —
+more than twice the one-minute answer cache, so every instance has dropped
+its old answer and finished the calls made under it — the target as active.
+The wait is a delayed repair message keyed by the sealed epoch, with the
+15-minute tick as backstop. **No two instances write to different backends**,
+which replaces the window this design first allowed.
+
+**Budget routing**, on each repair tick: each member's monthly counters, kept
+on the member in the units it bills (commands; rows read and written; simple
+and advanced Blob operations), give its spend; the month's workload is
+converted into every member's units through the bindings' cost tables by
+this instance's mix of port calls; `routeFleetByBudget` prefers free, then
+prepaid, then the cheapest pay-as-you-go, leaves the active member at 90%
+projected of an allowance it would stop at, and takes a member only below
+80% (so not back within the month). Pay-as-you-go needs a declared cap.
+Defaults are the vendor free tiers above; `HOBO_CI_CACHE_OFFERS_JSON`
+overrides them. Each decision is one structured log line.
 
 **Switching is safe because cache loss is tolerated.** The new backend starts
 cold. The relay rebuilds in-flight leases from GitHub and Vercel by
 deterministic names ([GitHub is the system of record](#github-is-the-system-of-record-for-jobs)),
 and nothing is copied between caches — unlike the database fleet, which had to
 copy because its state was the only copy. While instances learn the new epoch
-(at most one assignment refresh), two instances may write different caches;
-during that window double-provisioning is prevented by the same name lookup
-that protects the [degraded floor](#degraded-floor-no-cache-reachable). Priced
-offers pause until the rebuild has restored the in-flight holds, as after any
-cache loss.
+(at most one assignment refresh), two instances could write different
+caches; phase 4c closes that window by sealing first (above). Priced offers
+pause until the rebuild has restored the in-flight holds, as after any cache
+loss.
 
 ### Lifecycle driver options
 
@@ -728,7 +767,7 @@ on its free plan.
 | 3 | The config-service client (Infisical OIDC Auth with the Vercel token; GCP Secret Manager behind the same port), and GitHub App creation from `hobo ci` that writes the App's credentials straight into the config service | The relay starts from Infisical with no secret in its environment; App creation lands credentials in custody without passing through the terminal |
 | 4 | A relay store on the cache: deterministic lease ids, per-key compare-and-set, the in-flight index, intent timestamps; Queue intake with delivery-id idempotency; per-lease step messages; rebuild by name | The relay's store contract tests pass on the cache store; killing the cache mid-job loses no job; a duplicated delivery provisions once; GitHub and Vercel name uniqueness verified live |
 | 4b | `RelayCacheStore` wired into `@hobo/ci-vercel` with the Queue lifecycle driver behind the `LeaseLifecycleDriver` port | The hosted relay runs a job end to end on the cache store in a preview deployment |
-| 4c | Cache-fleet selection: the assignment log on every cache backend through the port's compare-and-set, `resolveAssignment` and `decideFleet` moved from `@hobo/data-postgres` to an engine-neutral package (which also keeps `@hobo/data-postgres` out of the relay bundle for phase 7), shared usage metering (commands, rows), budget-policy switching with hysteresis | A projected exhaustion switches backends before the allowance runs out; a lost backend fails over; the relay rebuilds on the new backend with no lost job |
+| 4c | Cache-fleet selection: the assignment log on every cache backend through the port's compare-and-set, `resolveAssignment` and `decideFleet` moved from `@hobo/data-postgres` to an engine-neutral package (which also keeps `@hobo/data-postgres` out of the relay bundle for phase 7), shared usage metering (commands, rows), budget-policy switching with hysteresis | A projected exhaustion switches backends before the allowance runs out; a lost backend fails over; the relay rebuilds on the new backend with no lost job. **Done** (in-memory tests; not deployed) |
 | 4d | The Workflows lifecycle driver on Vercel's managed World (exactly-once starts by hook token, `resumeHook` from verified webhooks, `sleep()` timeouts), built through a Nitro entry in `@hobo/ci-vercel` or a custom `BaseBuilder`; `workflow` ≥ 5.4.0 (pinnable from 2026-11-18) and `zod` ≥ 4.5; driver chosen per job at admission. Not before 2026-11-18 | A job runs end to end on each driver; switching drivers leaves in-flight jobs on theirs; a repeated start for one job attempt yields one run |
 | 4e | The degraded GitHub-only floor | Duplicate JIT runner names verified against the real API (409 or not); with every cache unreachable, a duplicated delivery still provisions once |
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision |
@@ -749,11 +788,14 @@ holds; the control plane's configuration writes answering 410. End-to-end tests
 on the in-memory cache cover a Sandbox job from webhook to settlement,
 duplicate deliveries provisioning once, and the cache wiped mid-job (the lease
 rebuilt by name, the running job adopted rather than stopped). Still open:
-policy-driven cache selection (4c); settling a rebuilt Sandbox lease, whose
+settling a rebuilt Sandbox lease, whose
 proxy meters were in the lost cache (it stays `uncertain` until its record
 lapses); name uniqueness at GitHub and Vercel verified live. A Sandbox job
 costs 99 cache commands through the whole composition, against the estimate of
-about 45 above; the store's own path dropped from 62 to 43.
+about 45 above; the store's own path dropped from 62 to 43. 4c: the cache
+fleet ([Exactly one cache at a time](#exactly-one-cache-at-a-time)), in
+`@hobo/backend-fleet` and `@hobo/ci-vercel`'s `cache-fleet.ts`; tested on
+in-memory members only.
 
 ### Phase 7 removals
 

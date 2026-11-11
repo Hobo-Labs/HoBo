@@ -1,0 +1,148 @@
+{
+	"consumer": {
+		"name": "@hobo/backend-fleet ephemeral assignment replica"
+	},
+	"provider": {
+		"name": "EphemeralStatePort binding (hobo.core.ephemeral-state/v1): in-memory, Valkey/Redis over RESP, Upstash REST, libSQL, Vercel Blob"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The port calls ephemeralAssignmentReplica makes against one backend's ephemeral-state store, in order, with the stored value (a FleetAssignmentLog in protobuf JSON) and the port's answers. Pinned on purpose: the read-check-conditional-write sequence (get, then putIfAbsent on an absent key or compareAndSet on the version read) is the replica's atomicity argument, and the TTL is the port's 30-day cap. Versions are opaque tokens; the provider side runs on the in-memory binding with a fixed incarnation (inc-1) and clock (1800000000000)."
+	},
+	"interactions": [
+		{
+			"description": "read of a backend that holds no log: one get of the log key, absent",
+			"providerState": "the log key does not exist",
+			"request": {
+				"operation": "get",
+				"key": "hobo-ci:production:fleet:assignment"
+			},
+			"response": {
+				"entry": null
+			}
+		},
+		{
+			"description": "accept epoch 1 on an empty log: read the key first",
+			"providerState": "the log key does not exist",
+			"request": {
+				"operation": "get",
+				"key": "hobo-ci:production:fleet:assignment"
+			},
+			"response": {
+				"entry": null
+			}
+		},
+		{
+			"description": "accept epoch 1 on an empty log: a create-only write of the one-entry log with the 30-day TTL",
+			"providerState": "the log key does not exist",
+			"request": {
+				"operation": "putIfAbsent",
+				"key": "hobo-ci:production:fleet:assignment",
+				"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"}]}",
+				"ttlMs": 2592000000
+			},
+			"response": {
+				"applied": true,
+				"version": "inc-1:1"
+			}
+		},
+		{
+			"description": "accept epoch 2: read the log and its version",
+			"providerState": "the log holds epoch 1 at version inc-1:1",
+			"request": {
+				"operation": "get",
+				"key": "hobo-ci:production:fleet:assignment"
+			},
+			"response": {
+				"entry": {
+					"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"}]}",
+					"version": "inc-1:1"
+				}
+			}
+		},
+		{
+			"description": "accept epoch 2: compare-and-set on the version read, appending the entry and resetting the TTL",
+			"providerState": "the log holds epoch 1 at version inc-1:1",
+			"request": {
+				"operation": "compareAndSet",
+				"key": "hobo-ci:production:fleet:assignment",
+				"expected": "inc-1:1",
+				"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"},{\"epoch\":\"2\",\"active\":\"upstash\",\"sealed\":true,\"target\":\"turso\",\"reason\":\"switch:commands-projected\",\"decidedAtMs\":\"1800000000000\",\"decidedBy\":\"hobo-ci-relay\"}]}",
+				"ttlMs": 2592000000
+			},
+			"response": {
+				"applied": true,
+				"version": "inc-1:2"
+			}
+		},
+		{
+			"description": "accept the same epoch 2 entry again: one read, no write (duplicate)",
+			"providerState": "the log holds epochs 1 and 2 at version inc-1:2",
+			"request": {
+				"operation": "get",
+				"key": "hobo-ci:production:fleet:assignment"
+			},
+			"response": {
+				"entry": {
+					"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"},{\"epoch\":\"2\",\"active\":\"upstash\",\"sealed\":true,\"target\":\"turso\",\"reason\":\"switch:commands-projected\",\"decidedAtMs\":\"1800000000000\",\"decidedBy\":\"hobo-ci-relay\"}]}",
+					"version": "inc-1:2"
+				}
+			}
+		},
+		{
+			"description": "accept epoch 4: one read, no write (gap)",
+			"providerState": "the log holds epochs 1 and 2 at version inc-1:2",
+			"request": {
+				"operation": "get",
+				"key": "hobo-ci:production:fleet:assignment"
+			},
+			"response": {
+				"entry": {
+					"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"},{\"epoch\":\"2\",\"active\":\"upstash\",\"sealed\":true,\"target\":\"turso\",\"reason\":\"switch:commands-projected\",\"decidedAtMs\":\"1800000000000\",\"decidedBy\":\"hobo-ci-relay\"}]}",
+					"version": "inc-1:2"
+				}
+			}
+		},
+		{
+			"description": "read the newest entry: one get",
+			"providerState": "the log holds epochs 1 and 2 at version inc-1:2",
+			"request": {
+				"operation": "get",
+				"key": "hobo-ci:production:fleet:assignment"
+			},
+			"response": {
+				"entry": {
+					"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"},{\"epoch\":\"2\",\"active\":\"upstash\",\"sealed\":true,\"target\":\"turso\",\"reason\":\"switch:commands-projected\",\"decidedAtMs\":\"1800000000000\",\"decidedBy\":\"hobo-ci-relay\"}]}",
+					"version": "inc-1:2"
+				}
+			}
+		},
+		{
+			"description": "refresh: reset the log's TTL without writing it",
+			"providerState": "the log holds epochs 1 and 2 at version inc-1:2",
+			"request": {
+				"operation": "expire",
+				"key": "hobo-ci:production:fleet:assignment",
+				"ttlMs": 2592000000
+			},
+			"response": {
+				"present": true
+			}
+		},
+		{
+			"description": "seed a log that is not empty: the create-only write is refused",
+			"providerState": "the log holds epochs 1 and 2 at version inc-1:2",
+			"request": {
+				"operation": "putIfAbsent",
+				"key": "hobo-ci:production:fleet:assignment",
+				"value": "{\"format\":1,\"entries\":[{\"epoch\":\"1\",\"active\":\"upstash\",\"reason\":\"bootstrap\",\"decidedBy\":\"bootstrap\"}]}",
+				"ttlMs": 2592000000
+			},
+			"response": {
+				"applied": false
+			}
+		}
+	]
+}
