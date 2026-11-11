@@ -135,16 +135,24 @@ way:
 The settings that would tie a worker to the hosted database are
 `HOBO_CI_STORE=postgres` and `HOBO_CI_JOB_ADMISSION=push`. Neither is a
 default, and a mesh needs neither; the mesh gate applies only to `pull`.
+`HOBO_CI_STORE=postgres` is removed under
+[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179): the hosted relay keeps
+no database for a worker to share.
 
 ## The hosted relay stays; the mesh does not depend on it
 
 **Decision:** the hosted relay keeps running. The PWA and the account API
 behind `hobo ci` depend on it. What changes is that the path from a queued job
-to a running runner no longer goes through it, and that its database moves off
-Neon to a self-hosted Postgres.
+to a running runner no longer goes through it, and that the hosted relay keeps
+no durable state of its own
+([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179); design in
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md)). An
+earlier version of this section moved its database off Neon to a self-hosted
+Postgres; that plan is superseded.
 
 What nodes must agree on lives in JetStream; what one node needs stays on that
-node; what the hosted relay serves stays in its Postgres.
+node; what the hosted relay serves comes from its config service, from GitHub,
+and from a cache whose loss it tolerates.
 
 | State | Where | Why there |
 |---|---|---|
@@ -155,7 +163,8 @@ node; what the hosted relay serves stays in its Postgres.
 | Lease journal, budget ledger and the node's reliability record | Each node's SQLite file (ADR-0135: one partition, one writer) | One writer |
 | A node's identity key (Ed25519, private half) | A file beside that node's journal, mode `0600`, made on first start | The private key never leaves the node |
 | GitHub App credentials | Files on each node (`HOBO_CI_GITHUB_APP_ID`, `…_PRIVATE_KEY_FILE`) | Private keys are never written to NATS |
-| Accounts, App registration, sessions, the webhook inbox | The hosted relay's Postgres | What the PWA and the account API read |
+| Accounts, policy and the hosted relay's App credentials | The hosted relay's config service, read-only at runtime ([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)) | What the PWA and the account API read; written by `hobo ci`, not over HTTP |
+| The hosted relay's sessions, in-flight leases and webhook intake | Encrypted cookies, a cache it may lose, and a Vercel Queue | Rebuilt from GitHub and Vercel by deterministic names; see [Hosted CI Relay Without Durable State](./hosted-relay-stateless.md) |
 
 **Configuration.** A node with its own file runs that file and is never
 overwritten. The first node to connect publishes its configuration if the mesh
@@ -165,24 +174,20 @@ right. A node with no configuration of its own reads the mesh's at start, so
 adding a box takes a NATS address and App credentials. A changed configuration
 takes effect at the next start.
 
-**The hosted relay's database.** The relay speaks plain Postgres through
-`DATABASE_URL` and creates its own tables; nothing in its store is specific to
-Neon. Against a self-hosted PostgreSQL 16.15 the store's 68 real-database tests
-pass, and the relay starts, creates its 18 tables and reports that it is
-waiting for the GitHub App. `packages/ci-vercel/deploy/postgres/compose.yaml`
-runs one. Two things still tie a production relay to Neon, and are the work
-that remains:
-
-- Its production start-up reads credentials from a runtime-config broker whose
-  Neon address is fixed in `packages/ci-vercel/src/entry.ts`. Setting the App
-  credentials or the bootstrap token directly in the relay's environment
-  bypasses the broker today; removing the broker is a code change.
-- Its schema is 26 `CREATE TABLE IF NOT EXISTS` statements inside the store. The
-  plan is to make that schema a Drizzle definition with generated migrations
-  (`packages/adapters/adapter-drizzle` is the repository's Drizzle home), so a
-  self-hosted database is created and upgraded the same way everywhere.
-
-Neither is done in this change.
+**The hosted relay's database: superseded.** The plan recorded here was to
+keep the relay on plain Postgres, move it to a self-hosted server, replace the
+Neon runtime-config broker and turn its embedded schema into a Drizzle
+definition with migrations. [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)
+replaces that plan: the hosted relay keeps no database at all. Its config and
+secrets move to a separate config service it reads with its Vercel OIDC token
+(which also removes the broker), its in-flight job state moves to a
+Redis-protocol cache with TTL and compare-and-set, its webhook intake and
+per-lease steps move to Vercel Queues, and GitHub remains the record of every
+job. The PostgreSQL store, the relay database fleet, store selection and the
+Drizzle relay schema are removed in phase 7 of
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md#delivery-plan).
+Until then the relay still runs on Postgres as
+[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md#database) describes.
 
 **A shared budget across nodes** is not solved either: each node meters its own
 spend, so priced offers belong on one node until per-node allowances exist
@@ -542,7 +547,7 @@ interface.
 | 2 | Board and claim ports, a coordinator that falls back to ranking when they fail, an in-memory adapter, and a NATS key-value adapter (`@hobo/ci-gh-actions/mesh-nats`) | Done |
 | 3 | The worker asks the mesh before it takes a queued job, advertises its free slots, and says so when it drains; settings in the runbook | Done; needs a second box to run for real |
 | 4 | Shared configuration in JetStream and a monitor for node capacity and availability; the hosted relay out of the job path | Done; wake-up hints on a NATS subject not started |
-| 7 | The hosted relay's database on self-hosted Postgres with a Drizzle schema and migrations; the Neon config broker removed | Not started |
+| 7 | ~~The hosted relay's database on self-hosted Postgres with a Drizzle schema and migrations; the Neon config broker removed~~ | Superseded by [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179): the hosted relay keeps no durable state; see [its delivery plan](./hosted-relay-stateless.md#delivery-plan) |
 | 5 | Per-node budget allowances so priced offers survive a partition | Not started |
 | 6 | The advertisement as a protobuf and CUE record (`MeshAdvert`), read as protobuf JSON at the NATS boundary; an older node's advertisement still parses | Done |
 | 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
@@ -673,6 +678,7 @@ the queue's alone; a pinned tier does not move.
 
 ## Related
 
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md) ·
 [Runner queue runbook](../../packages/ci/RUNNER-QUEUE.md) ·
 [CI runner balancing example](./ci-runner-balancing-example.md) ·
 [Shared budget policy](./shared-budget-policy.md)
