@@ -209,15 +209,33 @@ jobs:
         with:
           submodules: recursive
           clean: false
-          fetch-depth: 1
+          # Two deep: the PR merge commit and both its parents.
+          fetch-depth: 2
       - name: Limit PR builds to deps image inputs
         id: scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           run=true
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base="${{ github.event.pull_request.base.sha }}"
-            git fetch --depth=1 origin "$base"
+            # The PR's own changes: against the merge commit's first parent, the
+            # base it was merged into. The event's base SHA can be older than
+            # that, and then main's later changes to these inputs read as the
+            # PR's, so every open PR built a deps image of several GB on the
+            # fleet and ran its Docker disk out. Only GitHub's merge commit,
+            # whose second parent is the PR head, has that first parent.
+            second="$(git rev-parse -q --verify 'HEAD^2' || true)"
+            if [[ -n "$second" && "$second" == "${PR_HEAD_SHA:-}" ]]; then
+              base="$(git rev-parse 'HEAD^1')"
+            else
+              if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "PR base SHA is missing or invalid" >&2; exit 1
+              fi
+              base="$PR_BASE_SHA"
+              git fetch --depth=1 origin "$base"
+            fi
             changed="$(git diff --name-only "$base" HEAD -- \
               packages/ci-gh-actions/deploy/ci-runner/deps \
               scripts/ci/deps-key.mts \
@@ -226,6 +244,8 @@ jobs:
               scripts/lib/deps-key.mts \
               scripts/lib/ts-source-resolve.mts \
               packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts \
+              packages/ci-gh-actions/src/isolated-worker/work-dir-inode-breakdown.ts \
+              packages/ci-gh-actions/src/isolated-worker/work-dir-local-inodes.ts \
               scripts/test/ci-deps-image-mount.test.ts)"
             if [ -z "$changed" ]; then run=false; fi
           fi
@@ -351,13 +371,23 @@ jobs:
         id: scm-base
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "PR base SHA is missing or invalid" >&2; exit 1
           fi
-          git cat-file -e "${PR_BASE_SHA}^{commit}" || git fetch --no-tags origin "$PR_BASE_SHA"
-          BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
+          # On GitHub's PR merge commit (second parent: the PR head), the base
+          # it was merged into is its first parent. The event's base SHA can be
+          # older, and then main's later changes count as the PR's and widen
+          # the affected set.
+          second="$(git rev-parse -q --verify 'HEAD^2' || true)"
+          if [[ -n "$second" && "$second" == "${PR_HEAD_SHA:-}" ]]; then
+            BASE="$(git rev-parse 'HEAD^1')"
+          else
+            git cat-file -e "${PR_BASE_SHA}^{commit}" || git fetch --no-tags origin "$PR_BASE_SHA"
+            BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
+          fi
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
       # Shadow only: classifies non-meaningful (inert) paths and reports
       # the lanes they would drop. Execution below is unchanged in every
@@ -1359,7 +1389,12 @@ jobs:
     needs: route
     if: github.event_name == 'pull_request'
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 5
+    # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image.
+    timeout-minutes: 10
+    # packages: read lets an ARC pod pull the worker image from GHCR.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -1396,33 +1431,49 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         env:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          HOBO_GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # The token is for the GHCR pull only. The cold loop refuses to boot with a
+          # credential in its environment, so it never reaches either isolated run.
+          pull_token="${HOBO_GHCR_PULL_TOKEN:-}"
+          unset HOBO_GHCR_PULL_TOKEN
           image="hobo-ci-worker:local"
-          # The worker image exists only in a fleet box's Docker context. A GitHub-hosted
-          # machine never has it, and neither does an overflow runner that reports itself
-          # self-hosted, so the image is probed instead of inferred from the runner kind.
-          if [ "${RUNNER_ENVIRONMENT}" = "github-hosted" ] || ! docker image inspect "$image" >/dev/null 2>&1; then
-            # No worker image here, and the toolchain is already on PATH: the same
-            # commands on a copy of the tree, in a network namespace whose only
-            # interface is loopback.
-            echo "${image} is not on this runner (${RUNNER_ENVIRONMENT:-unknown}); using an unshare --net namespace"
-            work="$(mktemp -d)"
-            tar -c --exclude=./.git . | tar -x -C "$work"
-            sudo --preserve-env unshare --net -- bash -c \
-              'ip link set lo up && cd "$1" && exec sudo --preserve-env -u "#$2" env "PATH=$3" bash -c "$4"' \
-              cold "$work" "$(id -u)" "$PATH" \
-              'set -euo pipefail; pnpm --filter "ts-autocode-*" run build; node --import tsx scripts/ci/dev-cold-loop-timing.mts'
-            exit 0
-          fi
-          tar -c --exclude=./.git . | docker run -i --rm --network=none \
-            "$image" \
-            bash -c 'set -euo pipefail
+          # Three kinds of runner pick this job up. A fleet box has the worker image in its
+          # Docker context. An ARC pod (hobo-runner-*) has Docker but neither the image nor
+          # sudo, so it pulls the content-keyed image from GHCR first. A GitHub-hosted
+          # machine never has the image but always has sudo, and blocks unprivileged user
+          # namespaces, so it uses a sudo network namespace instead of a 2 GB pull.
+          if [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
+            if ! docker image inspect "$image" >/dev/null 2>&1; then
+              echo "${image} is not on this runner; materializing it from the host cache or GHCR"
+              GITHUB_TOKEN="$pull_token" node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only || true
+            fi
+            if docker image inspect "$image" >/dev/null 2>&1; then
+              tar -c --exclude=./.git . | docker run -i --rm --network=none \
+                "$image" \
+                bash -c 'set -euo pipefail
           work="$(mktemp -d)"
           cd "$work"
           tar -x
           pnpm --filter "ts-autocode-*" run build
           node --import tsx scripts/ci/dev-cold-loop-timing.mts'
+              exit 0
+            fi
+          fi
+          if ! command -v sudo >/dev/null 2>&1; then
+            echo "::error title=Cold dev loop cannot isolate the network::${image} is not on this ${RUNNER_ENVIRONMENT:-unknown} runner, could not be pulled from GHCR, and there is no sudo for an unshare --net namespace."
+            exit 1
+          fi
+          # The toolchain is already on PATH: the same commands on a copy of the tree, in a
+          # network namespace whose only interface is loopback.
+          echo "using an unshare --net namespace on this ${RUNNER_ENVIRONMENT:-unknown} runner"
+          work="$(mktemp -d)"
+          tar -c --exclude=./.git . | tar -x -C "$work"
+          sudo --preserve-env unshare --net -- bash -c \
+            'ip link set lo up && cd "$1" && exec sudo --preserve-env -u "#$2" env "PATH=$3" bash -c "$4"' \
+            cold "$work" "$(id -u)" "$PATH" \
+            'set -euo pipefail; pnpm --filter "ts-autocode-*" run build; node --import tsx scripts/ci/dev-cold-loop-timing.mts'
 
   data-live:
     # The data engines against real servers: the conformance kit, change

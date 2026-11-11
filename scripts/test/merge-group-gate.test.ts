@@ -6,6 +6,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -532,74 +533,166 @@ describe("cold dev loop gate", () => {
 		"Cold hobo dev gate (network disabled)",
 	);
 
-	// Stub `docker` and `sudo` record their arguments; `docker image inspect`
-	// answers with the status under test and `docker run` drains the tree.
-	function run(runnerEnvironment: string, imagePresent: boolean): string {
+	type Runner = {
+		environment: string;
+		/** The worker image is already in the runner's Docker context. */
+		image: boolean;
+		/** `ensure-ci-worker-image.mts --materialize-only` can pull it from GHCR. */
+		pullable: boolean;
+		/** The runner has `sudo` (an ARC pod does not). */
+		sudo: boolean;
+	};
+
+	// Stubs record their arguments. `docker image inspect` answers from a marker
+	// file that the `node` stub (standing in for the GHCR pull) creates, and
+	// `docker run` drains the tree. Only these stubs and a few real tools are on
+	// PATH, so a runner without `sudo` really has none.
+	function run(runner: Runner) {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-cold-loop-"));
 		try {
 			const bin = join(directory, "bin");
 			const tree = join(directory, "tree");
 			const calls = join(directory, "calls");
+			const image = join(directory, "image");
 			mkdirSync(bin);
 			mkdirSync(tree);
 			mkdirSync(join(directory, "tmp"));
 			writeFileSync(join(tree, "package.json"), "{}\n");
+			if (runner.image) writeFileSync(image, "");
+			for (const tool of ["sh", "bash", "tar", "mktemp", "cat", "touch"]) {
+				const found = spawnSync("bash", ["-c", `command -v ${tool}`], {
+					encoding: "utf8",
+				}).stdout.trim();
+				symlinkSync(found, join(bin, tool));
+			}
 			writeFileSync(
 				join(bin, "docker"),
 				[
 					"#!/bin/sh",
 					'echo "docker $*" >> "$CALLS"',
-					'if [ "$1 $2" = "image inspect" ]; then exit "$INSPECT_STATUS"; fi',
+					'if [ "$1 $2" = "image inspect" ]; then [ -e "$IMAGE" ]; exit $?; fi',
 					"cat > /dev/null",
 					"",
 				].join("\n"),
 				{ mode: 0o755 },
 			);
 			writeFileSync(
-				join(bin, "sudo"),
-				'#!/bin/sh\necho "sudo $*" >> "$CALLS"\n',
+				join(bin, "node"),
+				[
+					"#!/bin/sh",
+					'echo "node $*" >> "$CALLS"',
+					'echo "node-token ${GITHUB_TOKEN:-}" >> "$CALLS"',
+					'if [ "$PULLABLE" = 1 ]; then touch "$IMAGE"; exit 0; fi',
+					"exit 2",
+					"",
+				].join("\n"),
 				{ mode: 0o755 },
 			);
-			const result = spawnSync("bash", ["-c", script], {
+			if (runner.sudo) {
+				writeFileSync(
+					join(bin, "sudo"),
+					'#!/bin/sh\necho "sudo $*" >> "$CALLS"\necho "sudo-env ${HOBO_GHCR_PULL_TOKEN:-}${GITHUB_TOKEN:-}" >> "$CALLS"\n',
+					{ mode: 0o755 },
+				);
+			}
+			const result = spawnSync(join(bin, "bash"), ["-c", script], {
 				cwd: tree,
 				env: {
-					...process.env,
-					PATH: `${bin}:${process.env.PATH ?? ""}`,
+					PATH: bin,
+					HOME: directory,
 					TMPDIR: join(directory, "tmp"),
 					CALLS: calls,
-					INSPECT_STATUS: imagePresent ? "0" : "1",
-					RUNNER_ENVIRONMENT: runnerEnvironment,
+					IMAGE: image,
+					PULLABLE: runner.pullable ? "1" : "0",
+					HOBO_GHCR_PULL_TOKEN: "pull-secret",
+					RUNNER_ENVIRONMENT: runner.environment,
 				},
 				encoding: "utf8",
 			});
-			assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
-			return existsSync(calls) ? readFileSync(calls, "utf8") : "";
+			return {
+				status: result.status,
+				calls: existsSync(calls) ? readFileSync(calls, "utf8") : "",
+				output: `${result.stdout}${result.stderr}`,
+			};
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	}
 
-	it("runs in the worker image when the runner has it", () => {
-		const calls = run("self-hosted", true);
-		assert.match(
-			calls,
-			/^docker run -i --rm --network=none hobo-ci-worker:local bash -c /mu,
-		);
+	const dockerRun =
+		/^docker run -i --rm --network=none hobo-ci-worker:local bash -c /mu;
+	const sudoNamespace = /^sudo --preserve-env unshare --net -- bash -c /mu;
+	const materialize =
+		/^node --no-warnings scripts\/ci\/ensure-ci-worker-image\.mts --materialize-only$/mu;
+
+	it("runs in the worker image when a fleet box has it", () => {
+		const { status, calls, output } = run({
+			environment: "self-hosted",
+			image: true,
+			pullable: false,
+			sudo: true,
+		});
+		assert.equal(status, 0, output);
+		assert.match(calls, dockerRun);
+		assert.doesNotMatch(calls, materialize);
 		assert.doesNotMatch(calls, /^sudo /mu);
 	});
 
-	it("falls back to an unshare --net namespace when the worker image is absent", () => {
-		// An overflow runner reports itself self-hosted and has no fleet image.
-		const calls = run("self-hosted", false);
-		assert.match(calls, /^docker image inspect hobo-ci-worker:local$/mu);
-		assert.match(calls, /^sudo --preserve-env unshare --net -- bash -c /mu);
+	it("pulls the worker image on an ARC pod, which has Docker but no sudo", () => {
+		const { status, calls, output } = run({
+			environment: "self-hosted",
+			image: false,
+			pullable: true,
+			sudo: false,
+		});
+		assert.equal(status, 0, output);
+		assert.match(calls, materialize);
+		assert.match(calls, /^node-token pull-secret$/mu);
+		assert.match(calls, dockerRun);
+	});
+
+	it("falls back to a sudo namespace when the image cannot be pulled", () => {
+		const { status, calls, output } = run({
+			environment: "self-hosted",
+			image: false,
+			pullable: false,
+			sudo: true,
+		});
+		assert.equal(status, 0, output);
+		assert.match(calls, materialize);
+		assert.match(calls, sudoNamespace);
 		assert.doesNotMatch(calls, /^docker run /mu);
 	});
 
-	it("uses the namespace on a GitHub-hosted runner whatever Docker holds", () => {
-		const calls = run("github-hosted", true);
-		assert.match(calls, /^sudo --preserve-env unshare --net -- bash -c /mu);
+	it("fails with the reason when there is no image, no pull and no sudo", () => {
+		const { status, calls, output } = run({
+			environment: "self-hosted",
+			image: false,
+			pullable: false,
+			sudo: false,
+		});
+		assert.equal(status, 1, output);
+		assert.match(
+			output,
+			/::error title=Cold dev loop cannot isolate the network::/u,
+		);
 		assert.doesNotMatch(calls, /^docker run /mu);
+		assert.doesNotMatch(output, /command not found/u);
+	});
+
+	it("uses the sudo namespace on a GitHub-hosted runner without pulling", () => {
+		const { status, calls, output } = run({
+			environment: "github-hosted",
+			image: true,
+			pullable: true,
+			sudo: true,
+		});
+		assert.equal(status, 0, output);
+		assert.match(calls, sudoNamespace);
+		assert.doesNotMatch(calls, /^docker /mu);
+		assert.doesNotMatch(calls, materialize);
+		// The cold loop exits when it finds a credential in its environment.
+		assert.match(calls, /^sudo-env $/mu);
 	});
 });
 

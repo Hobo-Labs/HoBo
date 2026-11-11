@@ -221,9 +221,10 @@ describe("deps layer linking", () => {
 				join(payload, "node_modules", ".modules.yaml"),
 				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
 			);
+			// payload/packages/ci-gh-actions/node_modules -> payload/node_modules.
 			link(
 				join(payload, "packages", "ci-gh-actions", "node_modules"),
-				"../../../node_modules",
+				"../../node_modules",
 			);
 			const env = {
 				...process.env,

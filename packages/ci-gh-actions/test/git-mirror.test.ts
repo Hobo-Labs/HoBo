@@ -199,6 +199,137 @@ describe("createBoxGitMirror", () => {
 		expect(isCompleteGitMirror(mirror.path)).toBe(true);
 	});
 
+	/** Objects of the commit's tree the mirror does not hold. */
+	function missingObjects(mirrorPath: string, sha: string): string[] {
+		return git(mirrorPath, [
+			"rev-list",
+			"--objects",
+			"--no-walk",
+			"--missing=print",
+			sha,
+		])
+			.split("\n")
+			.filter((line) => line.startsWith("?"));
+	}
+
+	/** A job's checkout: one commit, from the mirror alone, GitHub out of reach. */
+	function checkoutFromMirrorAlone(
+		root: string,
+		mirrorPath: string,
+		sha: string,
+	): string {
+		git(mirrorPath, [
+			"config",
+			"remote.origin.url",
+			`file://${join(root, "unreachable.git")}`,
+		]);
+		const work = join(root, `work-${sha.slice(0, 8)}`);
+		mkdirSync(work);
+		git(work, ["init", "-b", "main"]);
+		git(work, [
+			"fetch",
+			"--no-tags",
+			"--filter=blob:none",
+			"--depth=1",
+			`file://${mirrorPath}`,
+			sha,
+		]);
+		git(work, ["checkout", "FETCH_HEAD"]);
+		return git(work, ["show", "HEAD:README.md"]);
+	}
+
+	function filteringSource(root: string): CommitSource & { url: string } {
+		const made = commitSource(root);
+		// GitHub honours blob:none; a bare path does not, and would hide the bug.
+		git(made.source, ["config", "uploadpack.allowFilter", "true"]);
+		git(made.source, ["config", "uploadpack.allowAnySHA1InWant", "true"]);
+		return { ...made, url: `file://${made.source}` };
+	}
+
+	it("builds a mirror a job can check out from alone", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
+	it("completes a blobless mirror made before the backfill fetched anything", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		expect(missingObjects(mirror.path, second)).not.toEqual([]);
+
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
+	it("takes the commit again when a mirror with no promisor marker lacks its files", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		// A repair that dropped the markers without fetching the blobs: the
+		// mirror now reads as complete, so only the whole-tree check catches it.
+		git(mirror.path, ["config", "--unset", "remote.origin.promisor"]);
+		git(mirror.path, ["config", "--unset", "remote.origin.partialclonefilter"]);
+		expect(isCompleteGitMirror(mirror.path)).toBe(true);
+		expect(missingObjects(mirror.path, second)).not.toEqual([]);
+
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
+	it("misses rather than hand a job a mirror it cannot complete", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		git(mirror.path, [
+			"config",
+			"remote.origin.url",
+			`file://${join(root, "unreachable.git")}`,
+		]);
+		const result = await mirror.ensure(second);
+		expect(result.status).toBe("miss");
+	});
+
 	it("misses a commit the origin does not have", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
 		roots.push(root);

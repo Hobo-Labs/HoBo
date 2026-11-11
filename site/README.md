@@ -280,13 +280,27 @@ The `#` is hidden until the heading is hovered or the anchor is focused, and it
 occupies no layout when hidden — the heading's silhouette never shifts. It is
 never `display: none`, so a keyboard user can still reach it.
 
-## Publishing (no Actions)
+## Publishing
 
 The site is published by pushing the built output to the **`gh-pages` branch**,
-which GitHub Pages serves ("Deploy from a branch"). Local publish is
-`pnpm run site:deploy` — no in-repo workflow, and **agents must not** wait on,
-cancel, or re-request Action runners for gates or promote. Checkin gates stay
-local: `.githooks` + `pnpm agent:check`.
+which GitHub Pages serves ("Deploy from a branch"). Two things push it:
+
+- **The release workflow**, after every green `main` push. Its `release-pages-gate`
+  job compares the commit `gh-pages` names (`deploy: <sha>`) with the commit under
+  release and publishes when the site is behind and a release path (`site/**` among
+  them) changed in between. Because it asks what is *published* rather than what the
+  triggering commit touched, a deploy that failed or was skipped is retried by the
+  next green run; it never publishes a commit older than the one already live. To
+  publish `main` without waiting for a push, run the **HoBo release** workflow from
+  `main` with **`publish_pages`** ticked. See
+  [finding 110](../docs/ci/findings/0110-a-failed-pages-deploy-was-never-retried.md)
+  for why it works this way.
+- **`pnpm run site:deploy`**, by hand, below.
+
+"Merged" is not "live": check the `gh-pages` commit message for the sha it was built
+from before saying a site change has shipped. **Agents must not** wait on, cancel, or
+re-request Action runners for gates or promote. Checkin gates stay local: `.githooks`
++ `pnpm agent:check`.
 
 ```sh
 pnpm run site:deploy              # build deps + site, verify dist, publish

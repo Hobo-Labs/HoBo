@@ -213,6 +213,7 @@ describe("expressions in the description", () => {
 			target: {
 				mergeCommit: "c".repeat(40),
 				base: "b".repeat(40),
+				head: "d".repeat(40),
 				baseBranch: "main",
 			},
 			steps: new Map([["scope", values]]),

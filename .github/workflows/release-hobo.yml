@@ -35,6 +35,8 @@ on:
       - "scripts/ci/push-release-git-tag.mts"
       - "scripts/lib/nbgv-release-version.mts"
       - "scripts/lib/release-hobo-path-filters.mts"
+      - "scripts/lib/release-pages-stale.mts"
+      - "scripts/test/release-pages-stale.test.ts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
       - "scripts/lib/docker-registry-push.mts"
@@ -91,6 +93,8 @@ on:
       - "scripts/ci/push-release-git-tag.mts"
       - "scripts/lib/nbgv-release-version.mts"
       - "scripts/lib/release-hobo-path-filters.mts"
+      - "scripts/lib/release-pages-stale.mts"
+      - "scripts/test/release-pages-stale.test.ts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
       - "scripts/lib/docker-registry-push.mts"
@@ -123,6 +127,10 @@ on:
         description: "Release tag (e.g. v0.0.0-alpha.0, sdk-v0.0.0-alpha.0) when push_images is true"
         type: string
         required: false
+      publish_pages:
+        description: "Publish site/ to GitHub Pages from main now (run from main only; never puts an older commit back)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -326,6 +334,7 @@ jobs:
           scripts/test/release-oci-affected.test.ts
           scripts/test/release-oci-attest-contract.test.ts
           scripts/test/release-oci-image-contract.test.ts
+          scripts/test/release-pages-stale.test.ts
           scripts/test/release-sparse-cone.test.ts
           scripts/test/release-version.test.ts
           scripts/test/stage-release-oci-app.test.ts
@@ -677,18 +686,81 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release
 
+  # The site is published from what gh-pages holds, not from the push that
+  # triggered this run: a deploy that failed, a run that was cancelled, or a
+  # commit that reached main in a merge-queue batch behind another is picked up
+  # by the next green run. Apart from the train gate on purpose: it is two API
+  # calls, and the site must not wait on dotnet and vitest to learn whether it
+  # is stale.
+  release-pages-gate:
+    name: Pages freshness gate
+    if: >-
+      github.repository == 'Hobo-Labs/HoBo' &&
+      (
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push') ||
+        (github.event_name == 'workflow_dispatch' && inputs.publish_pages &&
+          github.ref == 'refs/heads/main')
+      )
+    needs: [route]
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.stale.outputs.deploy }}
+    env:
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          persist-credentials: false
+          clean: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/release-hobo.yml
+            .github/actions/ci-runner-preflight/hosted-toolchain.sh
+            scripts/ci/check-release-pages-stale.mts
+            scripts/lib/release-pages-stale.mts
+            scripts/lib/release-hobo-path-filters.mts
+            scripts/lib/pins-json.ts
+            scripts/lib/pins-error.ts
+      - name: Node that runs TypeScript as written
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash .github/actions/ci-runner-preflight/hosted-toolchain.sh
+      - name: Is gh-pages behind this commit?
+        id: stale
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAGES_FORCE: ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086 # PAGES_FORCE is one flag or nothing
+          node --no-warnings scripts/ci/check-release-pages-stale.mts \
+            --head "$HOBO_RELEASE_CHECKOUT_REF" $PAGES_FORCE \
+            --github-output "$GITHUB_OUTPUT"
+
   release-pages:
     name: Publish GitHub Pages (site/)
     if: >-
       always() &&
-      needs.release-main-train-gate.result == 'success' &&
-      needs.release-main-train-gate.outputs.run == 'true'
-    needs: [release-main-train-gate]
+      needs.release-pages-gate.result == 'success' &&
+      needs.release-pages-gate.outputs.deploy == 'true'
+    needs: [release-pages-gate]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
+    # One publish at a time. Two runs for different commits used to be free to
+    # push gh-pages in either order.
+    concurrency:
+      group: hobo-release-pages
+      cancel-in-progress: false
     env:
       HOBO_RELEASE_TURBO_BASE: origin/main
-      HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha }}
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
     permissions:
       contents: write
       pages: write
@@ -709,24 +781,73 @@ jobs:
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
-      - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      # The gate answered before this job waited for a runner and for the
+      # publish slot; another run may have published a newer commit since.
+      - name: Is gh-pages still behind this commit?
+        id: fresh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAGES_FORCE: ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086 # PAGES_FORCE is one flag or nothing
+          node --no-warnings scripts/ci/check-release-pages-stale.mts \
+            --head "$HOBO_RELEASE_CHECKOUT_REF" $PAGES_FORCE \
+            --github-output "$GITHUB_OUTPUT"
+      - if: steps.fresh.outputs.deploy == 'true'
+        run: pnpm run pins:fetch ts-autocode
+      - if: steps.fresh.outputs.deploy == 'true'
+        uses: ./.github/actions/pnpm-store
+      - if: steps.fresh.outputs.deploy == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build hobo-site workspace deps for prebuild
+        if: steps.fresh.outputs.deploy == 'true'
         run: node --no-warnings scripts/ci/build-release-site-prebuild.mts
       - name: Build Astro site
+        if: steps.fresh.outputs.deploy == 'true'
         run: pnpm --filter hobo-site run build
+      # The same tree scripts/deploy-site.mts publishes: the art catalogue is a
+      # second Astro build (base /HoBo/media) nested under the site, so one
+      # commit describes everything served. Without it a workflow deploy
+      # deleted /media/ from under a manual one.
+      - name: Build the art catalogue
+        if: steps.fresh.outputs.deploy == 'true'
+        run: pnpm --filter hobo-media run build
+      - name: Nest the art catalogue under /media/
+        if: steps.fresh.outputs.deploy == 'true'
+        run: |
+          set -euo pipefail
+          test -f media/dist/index.html
+          test -f site/dist/.nojekyll
+          mkdir -p site/dist/media
+          cp -a media/dist/. site/dist/media/
       - name: Deploy to gh-pages branch
+        if: steps.fresh.outputs.deploy == 'true'
         uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: site/dist
           force_orphan: true
+          # The default message names github.sha, which on a workflow_run event
+          # is the tip of main when the event fired, not the commit built here.
+          # The freshness gate reads this back, so it has to be the truth.
+          full_commit_message: "deploy: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}"
 
   release-tag:
     name: Signed git tag + GitHub Release (main train)
-    if: needs.release-main-train-gate.outputs.run == 'true'
-    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages]
+    # Pages has its own gate now. The tag must not wait on this run's publish:
+    # it is skipped when gh-pages already holds a newer commit, and cancelled
+    # when a newer run's publish takes its place in the hobo-release-pages
+    # queue. A failed publish, or a gate that failed to decide, still blocks it.
+    if: >-
+      !cancelled() &&
+      needs.release-main-train-gate.outputs.run == 'true' &&
+      needs.release-publish.result == 'success' &&
+      needs.release-npm.result == 'success' &&
+      needs.release-attest.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
+      contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)
+    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
     timeout-minutes: 10

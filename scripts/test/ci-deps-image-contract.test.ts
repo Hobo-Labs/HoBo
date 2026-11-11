@@ -614,11 +614,14 @@ describe("CI deps mount probe contract", () => {
 		);
 	});
 
-	it("worker-storage-fs imports only node built-ins", () => {
+	it("worker-storage-fs imports only node built-ins and its own siblings", () => {
+		// A sibling module is loaded from the checkout like this file; the graph
+		// test above holds every file it reaches to node built-ins and to the
+		// job's scope. A package import would need an install the job lacks.
 		for (const specifier of importSpecifiers(read(WORKER_STORAGE_FS))) {
 			assert.match(
 				specifier,
-				/^node:/u,
+				/^(?:node:|\.\/[\w-]+\.js$)/u,
 				`worker-storage-fs must not import ${specifier}`,
 			);
 		}
