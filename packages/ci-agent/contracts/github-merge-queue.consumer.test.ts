@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+	BASE_PROTECTION_QUERY,
 	COMMENT_MUTATION,
 	createGithubGraphql,
 	createGithubQueue,
@@ -23,6 +24,7 @@ const Interaction = z.object({
 				"HoboAgentEnqueue",
 				"HoboAgentComment",
 				"HoboAgentDefaultBranch",
+				"HoboAgentBaseProtection",
 			]),
 			variables: z.record(z.string(), z.string()),
 		}),
@@ -35,6 +37,7 @@ const Interaction = z.object({
 		})
 		.optional(),
 	expectedError: z.string().optional(),
+	expectedProtected: z.boolean().optional(),
 });
 const pact = z
 	.object({
@@ -58,6 +61,7 @@ const QUERIES = {
 	HoboAgentEnqueue: ENQUEUE_MUTATION,
 	HoboAgentComment: COMMENT_MUTATION,
 	HoboAgentDefaultBranch: DEFAULT_BRANCH_QUERY,
+	HoboAgentBaseProtection: BASE_PROTECTION_QUERY,
 };
 const Sent = z.object({
 	query: z.string(),
@@ -139,6 +143,18 @@ describe("GitHub merge queue consumer contract", () => {
 		]);
 		expect(await githubDefaultBranch(graphql, fixtures.repository)).toBe(
 			"main",
+		);
+		expect(served).toHaveLength(1);
+	});
+
+	it.each(
+		pact.interactions.filter(
+			(interaction) => interaction.expectedProtected !== undefined,
+		),
+	)("$description", async (interaction) => {
+		const { queue, served } = queueServing([interaction.description]);
+		expect(await queue.baseRequiresChecks()).toBe(
+			interaction.expectedProtected,
 		);
 		expect(served).toHaveLength(1);
 	});

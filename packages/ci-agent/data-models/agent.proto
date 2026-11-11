@@ -162,7 +162,8 @@ message AgentEvent {
   string id = 1;
   // "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" |
   // "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" |
-  // "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted"
+  // "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" |
+  // "ci.agent.ApplyWithheld"
   string type = 2;
   string at = 3;
   string repository = 4;

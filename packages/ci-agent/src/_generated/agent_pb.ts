@@ -650,7 +650,8 @@ export type AgentEvent = Message<"hobo.ci.agent.v1.AgentEvent"> & {
   /**
    * "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" |
    * "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" |
-   * "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted"
+   * "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" |
+   * "ci.agent.ApplyWithheld"
    *
    * @generated from field: string type = 2;
    */

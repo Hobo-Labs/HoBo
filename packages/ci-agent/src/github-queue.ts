@@ -81,6 +81,25 @@ query HoboAgentQueue($owner: String!, $name: String!, $branch: String!, $ref: St
   }
 }${PULL_REQUEST}`;
 // public-contract: GraphQL operation pinned by contracts/github-merge-queue.pact.json.
+export const BASE_PROTECTION_QUERY = `
+query HoboAgentBaseProtection($owner: String!, $name: String!, $ref: String!) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $ref) {
+      branchProtectionRule { requiresStatusChecks requiredStatusCheckContexts }
+    }
+  }
+}`;
+const BaseProtection = z.object({
+	repository: z.object({
+		ref: z.object({
+			branchProtectionRule: z.object({
+				requiresStatusChecks: z.literal(true),
+				requiredStatusCheckContexts: z.array(z.string()).min(1),
+			}),
+		}),
+	}),
+});
+// public-contract: GraphQL operation pinned by contracts/github-merge-queue.pact.json.
 export const ENQUEUE_MUTATION = `
 mutation HoboAgentEnqueue($pullRequest: ID!, $head: GitObjectID!) {
   enqueuePullRequest(input: { pullRequestId: $pullRequest, expectedHeadOid: $head }) {
@@ -106,6 +125,10 @@ mutation HoboAgentComment($subject: ID!, $body: String!) {
  * paths, which makes the planner trial-merge it against every other entry.
  * Stacked pull requests target their parent branch, not this one, so they do
  * not appear here until their parent merges.
+ *
+ * The base branch counts as requiring checks only when a branch protection
+ * rule names at least one required status check. Checks required through
+ * repository rulesets alone are not read, and answer no.
  */
 export function createGithubQueue(options: {
 	/** `owner/name`. */
@@ -177,6 +200,18 @@ export function createGithubQueue(options: {
 					started,
 				})),
 			});
+		},
+		async baseRequiresChecks() {
+			// A branch protection rule that requires at least one named check.
+			// Requirements set only through repository rulesets are not read,
+			// so such a branch answers no.
+			return BaseProtection.safeParse(
+				await options.graphql(BASE_PROTECTION_QUERY, {
+					owner,
+					name,
+					ref: `refs/heads/${options.baseRef}`,
+				}),
+			).success;
 		},
 		async comment(number, body) {
 			await options.graphql(COMMENT_MUTATION, {

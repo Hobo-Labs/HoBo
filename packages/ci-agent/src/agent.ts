@@ -18,6 +18,12 @@ import { type ResolutionEngine, resolveConflicts } from "./resolver.js";
 /** Where queued work is read from. */
 export interface QueueSource {
 	snapshot(): Promise<ObservedQueue>;
+	/**
+	 * Whether the host confirms that the base branch requires status checks
+	 * before a merge. Only asked in apply mode. Anything short of a confirmed
+	 * yes, including a failed lookup, is treated as no.
+	 */
+	baseRequiresChecks(): Promise<boolean>;
 }
 
 /** The agent's only writes to the code host besides pushing a branch. */
@@ -34,6 +40,11 @@ export type AgentTickReport = Readonly<{
 	enqueued: readonly number[];
 	/** The branch a combined candidate was pushed to, if one was. */
 	rollupRef: string | undefined;
+	/**
+	 * Apply mode was configured, but the base branch was not confirmed to
+	 * require status checks, so this pass only suggested.
+	 */
+	applyWithheld: boolean;
 	/** Steps that failed and were skipped; the tick itself still completed. */
 	failures: number;
 }>;
@@ -44,6 +55,7 @@ type TickProgress = {
 	resolutions: Resolution[];
 	enqueued: number[];
 	rollupRef: string | undefined;
+	applyWithheld: boolean;
 	failures: number;
 };
 
@@ -92,6 +104,7 @@ export function createCiAgent(options: {
 		trials.set(key, result);
 		return result;
 	}
+	const startOfDay = () => `${now().slice(0, 10)}T00:00:00.000Z`;
 	async function record(
 		repository: string,
 		type: AgentEventType,
@@ -126,7 +139,7 @@ export function createCiAgent(options: {
 		const existing = await journal.settled(key);
 		if (existing) return { resolution: existing, fresh: false };
 		const merge = await trial(ours, theirs);
-		const day = `${now().slice(0, 10)}T00:00:00.000Z`;
+		const day = startOfDay();
 		const result = await resolveConflicts({
 			files: merge.files,
 			policy: policy.resolution,
@@ -204,6 +217,7 @@ export function createCiAgent(options: {
 				resolutions: [],
 				enqueued: [],
 				rollupRef: undefined,
+				applyWithheld: false,
 				failures: 0,
 			};
 			if (entries.length === 0) return report;
@@ -290,6 +304,22 @@ export function createCiAgent(options: {
 				return entry;
 			};
 
+			// In apply mode, text no person has read can enter the merge queue. The
+			// only thing standing between it and the base branch is then the
+			// repository's required checks, so apply acts only when the host
+			// confirms the base branch has them. Otherwise this pass suggests.
+			let mode = config.mode;
+			if (
+				mode === "apply" &&
+				(await attempt(() => options.queue.baseRequiresChecks())) !== true
+			) {
+				mode = "suggest";
+				report.applyWithheld = true;
+				const last = await journal.latest(repository, "ci.agent.ApplyWithheld");
+				if (!last || last.at < startOfDay())
+					await record(repository, "ci.agent.ApplyWithheld", {});
+			}
+
 			// A pull request that no longer merges onto its base branch.
 			for (const entry of ordered) {
 				if (!baseConflicts.has(entry.number)) continue;
@@ -305,10 +335,10 @@ export function createCiAgent(options: {
 				if (
 					!settled?.fresh ||
 					resolution?.outcome !== "resolved" ||
-					config.mode === "observe"
+					mode === "observe"
 				)
 					continue;
-				const direct = config.mode === "apply" && !entry.fork;
+				const direct = mode === "apply" && !entry.fork;
 				const ref = direct
 					? `refs/heads/${entry.headRef}`
 					: `refs/heads/hobo-agent/resolve/${entry.number}-${entry.headSha.slice(0, 8)}`;
@@ -332,7 +362,7 @@ export function createCiAgent(options: {
 			}
 
 			// Feed the host's merge queue in planned order.
-			if (config.mode === "apply") {
+			if (mode === "apply") {
 				const queued = new Set(
 					entries.filter((entry) => entry.started).map((entry) => entry.number),
 				);

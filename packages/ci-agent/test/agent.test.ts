@@ -47,9 +47,14 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const comments: { number: number; body: string }[] = [];
 		const enqueued: number[] = [];
 		const refuseEnqueue = new Set<number>();
+		const base = { requiresChecks: true, lookupFails: false };
 		const agent = createCiAgent({
 			config: testConfig(mode, overrides),
 			queue: {
+				baseRequiresChecks: async () => {
+					if (base.lookupFails) throw new Error("lookup failed");
+					return base.requiresChecks;
+				},
 				snapshot: async () =>
 					observeQueue({
 						repository: "hobo-labs/hobo",
@@ -87,7 +92,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		});
 		const types = async () =>
 			(await journal.events()).map((event) => event.type);
-		return { agent, journal, comments, enqueued, refuseEnqueue, types };
+		return { agent, journal, comments, enqueued, refuseEnqueue, base, types };
 	}
 	const branches = () =>
 		repos
@@ -201,6 +206,65 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			"ci.agent.ResolutionPublished",
 			"ci.agent.EntryEnqueued",
 		]);
+	});
+
+	it.each([
+		["the base branch has no required checks", { requiresChecks: false }],
+		["the lookup fails", { lookupFails: true }],
+	])("apply: only suggests when %s", async (_name, state) => {
+		const conflicted = pull(1, "TWO from 1");
+		const clean = pull(2, "two", { paths: ["x.txt"] });
+		const main = repos.commit("main", {
+			"a.txt": BASE.replace("two", "TWO from main"),
+		});
+		const { agent, comments, enqueued, base, types } = setup("apply", [
+			conflicted,
+			clean,
+		]);
+		Object.assign(base, state);
+		const report = await agent.tick();
+
+		expect(report.applyWithheld).toBe(true);
+		// Nothing a model wrote reached a pull request branch or the merge queue.
+		expect(repos.remoteRef("refs/heads/pr-1")).toBe(conflicted.head);
+		expect(repos.remoteRef("refs/heads/main")).toBe(main);
+		expect(enqueued).toEqual([]);
+		expect(report.enqueued).toEqual([]);
+		// The resolution is still offered, on a side branch.
+		expect(
+			repos.remoteRef(
+				`refs/heads/hobo-agent/resolve/1-${conflicted.head.slice(0, 8)}`,
+			),
+		).toBe(report.resolutions[0]?.commitSha);
+		expect(comments[0]?.body).toContain("Nothing on this branch was changed");
+		expect(await types()).toEqual([
+			"ci.agent.PlanProposed",
+			"ci.agent.ApplyWithheld",
+			"ci.agent.ResolutionSettled",
+			"ci.agent.ResolutionPublished",
+		]);
+
+		// Recorded once a day, not once a pass; and apply resumes once confirmed.
+		await agent.tick();
+		expect(
+			(await types()).filter((type) => type === "ci.agent.ApplyWithheld"),
+		).toHaveLength(1);
+		Object.assign(base, { requiresChecks: true, lookupFails: false });
+		const confirmed = await agent.tick();
+		expect(confirmed.applyWithheld).toBe(false);
+		expect(confirmed.enqueued).toEqual([2]);
+	});
+
+	it("observe and suggest never ask whether the base branch is protected", async () => {
+		for (const mode of ["observe", "suggest"] as const) {
+			const { agent, base } = setup(mode, [
+				pull(mode === "observe" ? 1 : 2, "two"),
+			]);
+			base.lookupFails = true;
+			const report = await agent.tick();
+			expect(report.applyWithheld).toBe(false);
+			expect(report.failures).toBe(0);
+		}
 	});
 
 	it("apply: never pushes to a fork's branch; it falls back to a candidate branch", async () => {

@@ -7,6 +7,7 @@ export const AGENT_EVENT_TYPES = [
 	"ci.agent.RollupPublished",
 	"ci.agent.EntryEnqueued",
 	"ci.agent.BudgetExhausted",
+	"ci.agent.ApplyWithheld",
 ] as const;
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number];
 

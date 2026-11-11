@@ -30,6 +30,17 @@ The entry is planned behind its neighbour and resolved when the conflict
 becomes one with the base branch. Rollup is the one place peer conflicts are
 resolved, on a branch of its own, and it is never applied unattended.
 
+## Apply is conditional on required checks
+
+In apply mode, text no person has read can reach a pull request branch and
+the merge queue. The repository's required checks are then the only thing
+between it and the base branch, so the agent asks the host whether the base
+branch has them and acts only on a confirmed yes. No rule, a rule with no
+named checks, and a failed lookup all mean the pass suggests instead, and
+`ApplyWithheld` is journalled once a day so an operator can see why. The
+lookup is its own query, separate from the queue snapshot, so that a host
+that cannot answer it loses only apply, not the pass.
+
 ## The model fills regions; it does not edit files
 
 The agent asks git for the merge with `zdiff3` markers of a length no line of
@@ -45,7 +56,7 @@ publish a rollup, enqueue an entry.
 
 Events (`AgentEvent`): `ci.agent.PlanProposed`, `ci.agent.ResolutionSettled`,
 `ci.agent.ResolutionPublished`, `ci.agent.RollupPublished`,
-`ci.agent.EntryEnqueued`, `ci.agent.BudgetExhausted`.
+`ci.agent.EntryEnqueued`, `ci.agent.BudgetExhausted`, `ci.agent.ApplyWithheld`.
 
 The agent is the one actor that writes its journal: it takes the commands
 above and appends events, and nothing else writes them. The journal is its

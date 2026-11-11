@@ -43,6 +43,13 @@ Each pass (once a minute by default), per connected repository:
 | `suggest` | Yes | The merge commit to `hobo-agent/resolve/<pr>-<sha>`, plus a comment on the pull request. The pull request branch is not touched. | Nothing |
 | `apply` | Yes | The merge commit to the pull request's own branch (a fast-forward), plus a comment. A fork's branch is never pushed to; it gets the `suggest` treatment. | Labelled pull requests that merge cleanly, in planned order, up to `maxBatchSize` per pass |
 
+`apply` acts only when GitHub confirms that the base branch has a branch
+protection rule naming at least one required status check. Without that
+confirmation (no rule, no named checks, or a failed lookup) the pass behaves
+as `suggest`, and records `ci.agent.ApplyWithheld` once a day. Required checks
+set only through repository rulesets are not read, so such a branch is
+treated as unconfirmed.
+
 With `queue.rollup: true` in `suggest` mode, the agent also merges the first
 batch of waiting pull requests together onto `hobo-agent/rollup/<id>`,
 resolving conflicts between them, and comments on each. It does not open a
@@ -181,6 +188,9 @@ What the agent will not do, and where that is enforced:
 - **Some paths are never resolved**, whatever a repository configures:
   `.github/**`, `.hobo/**`, `CODEOWNERS`, and package-manager lockfiles. A
   conflict in one hands the whole merge to a person.
+- **`apply` needs required checks.** Unreviewed model output only enters a
+  pull request branch or the merge queue when the base branch is confirmed to
+  require status checks; otherwise the pass only suggests.
 - **It abstains rather than guesses.** Binary files, a delete against a
   modify, renames, mode changes, oversized files, too many files or regions,
   an answer below `minConfidence`, and replacement text that contains conflict
@@ -211,9 +221,11 @@ trailers.
   check, no duplicate-declaration check, and no loop that feeds a failing
   build back to the model. A wrong but plausible resolution is caught by the
   repository's required checks and by review, or not at all.
-- **The agent does not verify that required checks exist.** In `apply` mode
-  on a branch with no required checks, a resolved pull request can be
-  enqueued and merged with nothing having tested the resolution.
+- **Rulesets are not read.** `apply` recognises required checks from a branch
+  protection rule only. A base branch whose checks are required through
+  repository rulesets alone is treated as unprotected, and `apply` only
+  suggests there. The agent also does not check that the required checks are
+  the right ones.
 - **Commits are not signed.** A branch that requires signed commits will
   refuse the push.
 - **Stacked pull requests are not detected** by the GitHub queue adapter;

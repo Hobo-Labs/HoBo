@@ -574,6 +574,182 @@
      }
     }
    }
+  },
+  {
+   "description": "a base branch whose protection rule names required checks is confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": {
+         "requiresStatusChecks": true,
+         "requiredStatusCheckContexts": [
+          "PR impact gate"
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": true
+  },
+  {
+   "description": "a protection rule that requires checks but names none is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": {
+         "requiresStatusChecks": true,
+         "requiredStatusCheckContexts": []
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a protection rule without required checks is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": {
+         "requiresStatusChecks": false,
+         "requiredStatusCheckContexts": [
+          "PR impact gate"
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a base branch with no protection rule is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": null
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a base branch that cannot be read is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": null
+      }
+     }
+    }
+   },
+   "expectedProtected": false
   }
  ]
 }

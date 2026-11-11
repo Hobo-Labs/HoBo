@@ -151,7 +151,7 @@ import "list"
 
 #AgentEvent: {
 	id:          string & !=""
-	type:        "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" | "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" | "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted"
+	type:        "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" | "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" | "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" | "ci.agent.ApplyWithheld"
 	at:          string & =~"^\\d{4}-\\d{2}-\\d{2}T"
 	repository:  #Repository
 	plan?:       #QueuePlan

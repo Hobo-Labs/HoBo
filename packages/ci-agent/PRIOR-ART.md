@@ -64,7 +64,7 @@ Ordered by how much each matters.
 | # | Practice | This agent |
 | --- | --- | --- |
 | 1 | Never write to queue-owned refs; resolve on the pull request branch or a side branch | **Done.** Enforced in the git workspace and tested. |
-| 2 | Run the full required CI on the exact resolved tree; model output is never a merge condition | **Done by construction**: the agent never merges. It does not check that the repository has required checks. |
+| 2 | Run the full required CI on the exact resolved tree; model output is never a merge condition | **Done by construction**: the agent never merges, and `apply` only acts when the base branch is confirmed to require status checks (branch protection rules; rulesets are not read). |
 | 3 | Deterministic checks before any model judgement | **Partly.** No leftover markers, and the change is confined to conflict regions by construction. No parse or duplicate-declaration check. |
 | 4 | Layered resolution: recorded resolutions, then structured merge, then a model on the residue | **Partly.** Git's own merge (zdiff3, with the common base) runs first and the model sees only the residue. No rerere, no structured merge. |
 | 5 | Abstain on ineligible files and protected paths; suggest by default | **Done.** `mode` has no default and `observe` writes nothing. |
