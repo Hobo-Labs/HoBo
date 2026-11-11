@@ -229,7 +229,8 @@ Node adapter already resolves every request against the configured origin.
 | `list_pending_jobs` | `policy:read` | Jobs queued for the account's repositories that have no lease yet. Filter: `repository` |
 | `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types`. Returns `{events, cursor, more, truncated}` |
 | `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut, more}` |
-| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, and the per-account and per-request limits |
+| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, the per-account and per-request limits, and whether this host reads a relay mesh |
+| `list_mesh_nodes` | `policy:read` | The relay mesh's nodes: state and since when, free and total slots, memory, disk, platform, labels, reliability, trust, and a capacity summary. The relay's own, not one account's. `mesh: "not-configured"` on a host with no mesh |
 | `reconcile_lease` | `operations:write` | `POST /v1/accounts/self/leases/{id}/reconcile`: settle a lease against a verified `hostRunId` |
 | `list_quarantined_webhooks` | `operations:write` | The account's quarantined deliveries (identity and attempts, never the body) |
 | `retry_quarantined_webhook` | `operations:write` | Put one quarantined delivery back in the inbox |
@@ -244,9 +245,11 @@ account API's `/v2/accounts/self/inbox/…` routes do.
 | `hobo-ci://leases` | The account's 100 newest leases |
 | `hobo-ci://leases/{leaseId}` | One lease and its latest 20 events, read by the lease's id |
 | `hobo-ci://events` | The account's 100 newest events, the cursor to read on from, and `truncated` when the account has older ones |
+| `hobo-ci://mesh/nodes` | The relay mesh's nodes and capacity summary: the same answer as `list_mesh_nodes`. Not subscribable: it changes with the board, not the journal |
 
 Results are protobuf JSON of the `RelayMcp*` messages in
-[`data-models/relay_mcp.proto`](data-models/relay_mcp.proto), written with zero
+[`data-models/relay_mcp.proto`](data-models/relay_mcp.proto) (and, for the mesh's
+nodes, `MeshNodeReports` in [`data-models/mesh.proto`](data-models/mesh.proto)), written with zero
 and empty fields present. Each view is assembled field by field: a lease view
 carries no sandbox identity or budget digest, an event view carries the
 event's type, time, lease, repository and job and never its stored detail,
@@ -929,6 +932,47 @@ queues again. It prints who took what; every job is taken once.
 HOBO_CI_NATS_SERVER_BIN="$(command -v nats-server)" \
   pnpm --filter @hobo/ci-gh-actions exec vitest run test/mesh-nats.e2e.test.ts
 ```
+
+**See the mesh.** Every node reports its availability, capacity and trust, and a relay host that is
+in the mesh serves one list of them:
+
+| Where | How |
+|---|---|
+| HTTP | `GET /v1/mesh/nodes` on the relay, with an account credential holding `policy:read` |
+| MCP | the `list_mesh_nodes` tool and the `hobo-ci://mesh/nodes` resource |
+| CLI | `hobo ci status`: node, state, free/total slots, memory, disk, reliability, trust |
+
+- **Who is on it:** box workers; a relay host started with `HOBO_CI_NATS_URL` (no slots, its health is
+  its readiness); and a machine running `local:runner`, which advertises one slot under
+  `hobo-local-host`. Without `HOBO_CI_NATS_URL` a local runner still writes its own report to
+  `mesh-node.json` in its state directory, so `local:runner status` and `hobo ci status` answer offline.
+- **States:** `live`, `unhealthy` (draining or under pressure) and `lost` (its advertisement expired;
+  the relay keeps listing it for an hour).
+- **No mesh:** a relay without `HOBO_CI_NATS_URL` (the hosted relay on Vercel) answers
+  `mesh: "not-configured"`, not an error.
+
+**Trust.** Each node makes an Ed25519 key on first start (`mesh-node.key` beside its SQLite journal,
+mode `0600`, never published) and signs what it advertises. A reader calls a node `trusted` when its
+key is in the mesh's trusted set, `unverified` when it is not or the node does not sign, and `invalid`
+when the signature fails; an `invalid` node is never ranked. With no set, each node trusts only
+itself and ranking is unchanged.
+
+```sh
+export HOBO_CI_NATS_URL=nats://127.0.0.1:4222
+pnpm --filter @hobo/ci-gh-actions run mesh:trust list                 # nodes, their keys, the set
+pnpm --filter @hobo/ci-gh-actions run mesh:trust add <publicKey> --node <nodeId>
+pnpm --filter @hobo/ci-gh-actions run mesh:trust require on           # rank listed keys only
+```
+
+A signature shows which key wrote an advertisement. It does not attest what software the node runs,
+and a node's figures remain its own word. Whoever can write the mesh's NATS config bucket decides
+whom the mesh trusts. The limits are in
+[the design](../../docs/design/ci-relay-mesh.md#trust-whose-advertisement-is-this).
+
+**Records.** The advertisement (`MeshAdvert`), the trusted set, a node's reliability record, the node
+report and the routing snapshot are protobuf messages in `data-models/mesh.proto`, constrained in
+`data-models/onboarding.cue`. An advertisement from a node on an older version still parses and is
+`unverified`.
 
 **Join a worker to a mesh.** Set `HOBO_CI_NATS_URL` on each worker and restart it. One server with
 `HOBO_CI_NATS_REPLICAS=1` is enough for two boxes on a LAN. For more, run three NATS servers as a

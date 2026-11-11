@@ -21,6 +21,7 @@ import {
 	UnsubscribeRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	type RelayMcpEvent,
 	RelayMcpEventsSchema,
@@ -43,6 +44,10 @@ import {
 } from "./account-operations.js";
 import { reportRelayFailure } from "./failure-log.js";
 import type { HostedRelay } from "./hosted-relay.js";
+import {
+	createMeshNodesReader,
+	type MeshNodesReader,
+} from "./mesh-nodes-reader.js";
 import { CURSOR_START, type CursorCodec } from "./relay-mcp-cursor.js";
 import {
 	eventView,
@@ -57,6 +62,8 @@ export const RELAY_MCP_LEASES_URI = "hobo-ci://leases";
 export const RELAY_MCP_EVENTS_URI = "hobo-ci://events";
 // public-contract: the MCP resource URI template of one lease.
 export const RELAY_MCP_LEASE_URI_TEMPLATE = "hobo-ci://leases/{leaseId}";
+// public-contract: the MCP resource URI of the relay mesh's nodes.
+export const RELAY_MCP_MESH_NODES_URI = "hobo-ci://mesh/nodes";
 
 const LEASE_ID =
 	/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -103,6 +110,11 @@ export type RelayMcpServices = Readonly<{
 	/** The relay over the current configuration, for a reconciliation. */
 	relay: () => Promise<Pick<HostedRelay, "reconcile">>;
 	ready: () => Promise<boolean>;
+	/**
+	 * What the relay mesh looks like from this host. Absent on a host with no
+	 * mesh: `list_mesh_nodes` then answers `mesh: "not-configured"`.
+	 */
+	meshNodes?: MeshNodesReader | undefined;
 	engineId: string;
 	waitDefaultMs: number;
 	waitMaxMs: number;
@@ -528,6 +540,7 @@ const INSTRUCTIONS = [
 	"The HoBo CI relay: leases (a runner reserved for one GitHub Actions job), queued jobs and the journal of every change to them, for the authenticated account only.",
 	"To follow job state without polling, call wait_for_events with the cursor of your last result; it returns as soon as something changes, or with timedOut true. Start from list_events or list_leases.",
 	"On a host that keeps sessions (get_relay_status reports subscriptions: true) you can instead subscribe to hobo-ci://events, hobo-ci://leases or hobo-ci://leases/{leaseId} and read the resource when notified.",
+	"list_mesh_nodes (or the hobo-ci://mesh/nodes resource) shows the runner nodes behind the relay: which are live, their free capacity and how far each is trusted. It belongs to the relay, not to one account, and a relay with no mesh answers mesh: not-configured.",
 ].join(" ");
 
 /**
@@ -537,6 +550,9 @@ const INSTRUCTIONS = [
  */
 export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	const { store } = services;
+	// The same reader the HTTP route uses; a host without a mesh has the one
+	// that answers "not-configured".
+	const meshNodes = services.meshNodes ?? createMeshNodesReader();
 	const server = new McpServer(
 		{ name: "hobo-ci-relay", version: "1.0.0" },
 		{
@@ -761,9 +777,27 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 						accountCalls: services.accountCalls,
 						accountWaits: services.accountWaits,
 						requestMessages: services.requestMessages,
+						mesh:
+							services.meshNodes === undefined
+								? "not-configured"
+								: "configured",
 					}),
 				);
 			}),
+	);
+
+	server.registerTool(
+		"list_mesh_nodes",
+		{
+			title: "List the relay mesh's nodes",
+			description:
+				'Every node of the relay mesh as this relay sees it: its state (live, unhealthy, or lost once it stops advertising) and since when, total and free runner slots, free memory and disk, platform, labels, the share of recent jobs it delivered, and its trust level. `trusted` means its signing key is in the mesh\'s trusted set, `unverified` that the key is not, `invalid` that its signature failed (such a node is never ranked). A signature shows which key wrote an advertisement, not what software the node runs. `mesh: "not-configured"` means this relay has no mesh; that is an answer, not a failure.',
+			annotations: readOnly,
+		},
+		(extra) =>
+			asTool(services, "list_mesh_nodes", READ_SCOPE, extra, async () =>
+				result(MeshNodeReportsSchema, await meshNodes()),
+			),
 	);
 
 	server.registerTool(
@@ -948,6 +982,21 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 					}),
 				);
 			}),
+	);
+
+	server.registerResource(
+		"mesh-nodes",
+		RELAY_MCP_MESH_NODES_URI,
+		{
+			title: "Mesh nodes",
+			description:
+				"The relay mesh's nodes: availability, capacity and trust, with a capacity summary. The same answer as list_mesh_nodes.",
+			mimeType: "application/json",
+		},
+		(uri, extra) =>
+			asResource(services, extra, async () =>
+				resource(uri, MeshNodeReportsSchema, await meshNodes()),
+			),
 	);
 
 	const subscriptions = services.subscriptions;

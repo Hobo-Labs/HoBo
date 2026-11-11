@@ -121,6 +121,10 @@ describe("createWorkerMesh", () => {
 				labels: ["hobo", "hobo-trunk"],
 				validUntilMs: NOW + 45_000,
 				reliability: 1,
+				// No job taken yet: the score of 1 stands on no samples.
+				samples: { delivered: 0, dropped: 0 },
+				// Healthy since it started.
+				sinceMs: NOW,
 			},
 		]);
 		// A lease count above the slot count never advertises negative capacity.

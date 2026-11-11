@@ -17,10 +17,18 @@ import {
 	RepositorySetupRequestSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
+import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
+
+export {
+	type MeshNodeReport,
+	type MeshNodeReports,
+	MeshNodeReportsSchema,
+} from "./_generated/mesh_pb.js";
+export { parseMeshNodeReports } from "./mesh-records.js";
 
 type ProtobufInput<Desc extends DescMessage> = NonNullable<
 	Parameters<typeof create<Desc>>[1]
@@ -138,6 +146,9 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
+		// The account's own routes, or the relay's (its mesh), which no
+		// account owns.
+		root: "accounts/self" | "mesh" = "accounts/self",
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
 		if (options.ownerSession) {
@@ -165,7 +176,7 @@ export function createCiRelayClient(
 		if (body !== undefined) init.body = body;
 		let response: Response;
 		try {
-			response = await send(`${base}/${version}/accounts/self/${path}`, init);
+			response = await send(`${base}/${version}/${root}/${path}`, init);
 		} catch {
 			throw new CiRelayClientError(
 				0,
@@ -337,6 +348,22 @@ export function createCiRelayClient(
 		},
 		getLeases() {
 			return request("leases", "GET", SnapshotSchema);
+		},
+		/**
+		 * The relay mesh's nodes as the relay sees them: availability,
+		 * capacity and trust, with a capacity summary. A relay with no mesh
+		 * answers `mesh: "not-configured"`. Needs the `policy:read` scope.
+		 */
+		getMeshNodes() {
+			return request(
+				"nodes",
+				"GET",
+				MeshNodeReportsSchema,
+				undefined,
+				undefined,
+				"v1",
+				"mesh",
+			);
 		},
 		getLease(id: string) {
 			uuid(id);

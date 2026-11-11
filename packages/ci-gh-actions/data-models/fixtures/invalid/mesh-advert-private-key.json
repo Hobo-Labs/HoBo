@@ -1,0 +1,12 @@
+{
+  "id": "box-a",
+  "freeSlots": 2,
+  "healthy": true,
+  "labels": ["hobo"],
+  "validUntilMs": 1794268845000,
+  "identity": {
+    "publicKey": "VSNn3iuVbd1OfiTuvGUqGt-LkNsAzEKJHjEWjlFjb3M",
+    "signature": "p8RV3N-LMH2URVVaX_l2yVA41ONUEi8heqEKSTUzsUor4IomYz4n8W7iq2VU2MsIt61VDC7Xocd7Hkps-n5fDg",
+    "privateKey": "not-a-key-and-never-a-field"
+  }
+}

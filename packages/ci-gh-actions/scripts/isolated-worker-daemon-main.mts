@@ -12,6 +12,7 @@ import {
 	memoryAdmitHeadroom,
 	parseConfiguration,
 } from "@hobo/ci";
+import { createTrustedMeshBoard } from "@hobo/ci/mesh";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
@@ -23,6 +24,7 @@ import {
 	createDepsImageEnsurer,
 	createFleetCapacityPublisher,
 	createFleetRoutePublisher,
+	createFleetStatePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -33,6 +35,7 @@ import {
 	createJobDurations,
 	createMemoryPeaks,
 	createMergeQueuePositionCache,
+	createMeshTrust,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
@@ -46,12 +49,16 @@ import {
 	defaultDepsRoot,
 	defaultGitMirrorFallbackRoot,
 	describeWaitingJobs,
+	freeDiskMb,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	loadMeshIdentity,
+	type MeshJournal,
 	memoryRequestForJob,
 	mergeDrainInFlightCount,
+	meshReliabilityJournal,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
@@ -343,6 +350,9 @@ if (
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
+// The worker's own SQLite journal, when it has one: where its mesh
+// reliability record is kept, and beside which its identity key lives.
+let meshJournal: MeshJournal | undefined;
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -359,6 +369,7 @@ try {
 		);
 		store = sqlite;
 		closeStore = async () => sqlite.close();
+		meshJournal = sqlite;
 		// This worker owns its journal, so the operator's config file is the policy
 		// source: apply it when it changed. A refused change (for example an active
 		// lease pinning a provider identity) keeps the stored policy and says why.
@@ -860,12 +871,57 @@ try {
 			})
 		: undefined;
 	let meshDraining = false;
+	// The worker's identity: an Ed25519 key made on first start and kept
+	// beside its journal, readable by its owner only. The private half never
+	// leaves this file; the public half travels with every advertisement.
+	const meshIdentity = meshSettings
+		? await loadMeshIdentity(
+				process.env.HOBO_CI_MESH_KEY_FILE ??
+					join(
+						plan.store.kind === "sqlite" ? dirname(plan.store.path) : workRoot,
+						"mesh-node.key",
+					),
+			)
+		: undefined;
+	// Which keys the mesh's operator vouches for, read from the mesh on every
+	// beat. With none listed this worker trusts only its own key.
+	const meshTrust = createMeshTrust({
+		store: natsMesh?.trust,
+		selfPublicKey: meshIdentity?.publicKey,
+		log,
+	});
+	// Signs what this worker advertises, and says of every advertisement it
+	// reads how far it is trusted. One whose signature fails is never ranked.
+	const meshBoard = natsMesh
+		? createTrustedMeshBoard({
+				board: natsMesh.board,
+				identity: meshIdentity,
+				policy: meshTrust.policy,
+			})
+		: undefined;
+	// The record of the jobs this worker took, kept in its journal so a
+	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=1 starts it
+	// again, for an operator who has repaired the box.
+	const meshReliability =
+		meshSettings && meshJournal
+			? meshReliabilityJournal(meshJournal, meshSettings.nodeId, (message) =>
+					log("hobo_ci_mesh_reliability_journal_failed", { message }),
+				)
+			: undefined;
+	const reliabilityReset = process.env.HOBO_CI_MESH_RELIABILITY_RESET ?? "0";
+	if (reliabilityReset !== "0" && reliabilityReset !== "1")
+		throw new Error("invalid HOBO_CI_MESH_RELIABILITY_RESET");
+	const storedReliability =
+		reliabilityReset === "1" ? undefined : await meshReliability?.load();
 	mesh =
-		meshSettings && natsMesh
+		meshSettings && natsMesh && meshBoard
 			? createWorkerMesh({
 					settings: meshSettings,
-					board: natsMesh.board,
+					board: meshBoard,
 					claims: natsMesh.claims,
+					requireTrusted: meshTrust.requireTrusted,
+					initialReliability: storedReliability,
+					persistReliability: (record) => void meshReliability?.save(record),
 					freeSlots: () => slots - liveWorkerLeaseIds.size,
 					totalSlots: slots,
 					healthy: () => !meshDraining,
@@ -887,6 +943,8 @@ try {
 											),
 								),
 							),
+							// Measured on the filesystem jobs check out and build on.
+							diskMb: freeDiskMb(workRoot),
 						};
 					},
 					platform: { os: process.platform, arch: process.arch },
@@ -908,14 +966,45 @@ try {
 					? "mesh"
 					: "none",
 		nodeId: meshSettings?.nodeId ?? "",
+		// The public half of the identity key, to list in the trusted set.
+		publicKey: meshIdentity?.publicKey ?? "",
+		reliabilityRestored: storedReliability !== undefined,
 		namespace: meshSettings?.namespace ?? "",
 		servers: meshSettings?.servers.length ?? 0,
 		stepMs: meshSettings?.stepMs ?? 0,
 	});
-	// Every 10 s: say what this worker can take, then read what the mesh can.
+	// The snapshot runner routing reads: per label, the nodes this worker
+	// ranks and their free slots. Published with the route table's flag, to
+	// each connected repository; see src/fleet-state.ts.
+	const fleetState =
+		publishFleetRoutes && mesh && meshBoard
+			? createFleetStatePublisher({
+					github,
+					board: meshBoard,
+					self: mesh.self,
+					labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+					requireTrusted: meshTrust.requireTrusted,
+					log,
+				})
+			: undefined;
+	// Every 10 s: read the trust settings, say what this worker can take,
+	// read what the mesh can, and keep the routing snapshot fresh.
+	const publishFleetState = async (timing: { now?: boolean } = {}) => {
+		if (!fleetState) return;
+		const state = await store.configuration().catch(() => undefined);
+		await fleetState.publish(
+			(state?.configuration?.connections ?? []).map((connection) => ({
+				installationId: connection.installationId,
+				repository: connection.repository,
+			})),
+			timing,
+		);
+	};
 	const meshBeat = async () => {
+		await meshTrust.refresh();
 		await mesh?.advertise();
 		await mesh?.observe();
+		await publishFleetState();
 	};
 	const meshAdvertTimer = mesh
 		? setInterval(() => void meshBeat(), 10_000)
@@ -1172,6 +1261,8 @@ try {
 			meshDraining = true;
 			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
 			await mesh?.advertise();
+			// And tell routing: this worker no longer counts towards its labels.
+			await publishFleetState({ now: true }).catch(() => undefined);
 			await jobPollInFlight;
 			await orphanReconcileInFlight;
 			await gcInFlight;

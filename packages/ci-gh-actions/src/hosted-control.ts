@@ -47,6 +47,11 @@ import {
 	prepareIsolatedConnection,
 } from "./isolated-onboarding.js";
 import {
+	createMeshNodesReader,
+	type MeshNodesReader,
+} from "./mesh-nodes-reader.js";
+import { meshNodeReportsJson } from "./mesh-records.js";
+import {
 	applyOnboarding,
 	connectRepository,
 	type OnboardingGithubPort,
@@ -177,6 +182,9 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
+// public-contract: the relay route that lists the mesh's nodes.
+export const MESH_NODES_PATH = "/v1/mesh/nodes";
+
 /** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
@@ -197,8 +205,15 @@ export function createHostedControlPlane(options: {
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
+	/**
+	 * What the relay mesh looks like from this host, for `GET /v1/mesh/nodes`.
+	 * A host with no mesh leaves it out, and the route then answers
+	 * `mesh: "not-configured"`: an answer, not an error.
+	 */
+	meshNodes?: MeshNodesReader | undefined;
 }) {
 	const { store, relay } = options;
+	const meshNodes = options.meshNodes ?? createMeshNodesReader();
 	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
@@ -243,7 +258,8 @@ export function createHostedControlPlane(options: {
 		const path = new URL(request.url).pathname;
 		if (
 			!path.startsWith("/v1/accounts/self/") &&
-			!path.startsWith("/v2/accounts/self/")
+			!path.startsWith("/v2/accounts/self/") &&
+			path !== MESH_NODES_PATH
 		)
 			return undefined;
 		try {
@@ -269,6 +285,14 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
+			// The mesh is the relay's own infrastructure, not one account's: any
+			// account credential that may read (`policy:read`) may see it. The
+			// answer names nodes, capacity and public keys, never a secret.
+			if (path === MESH_NODES_PATH) {
+				if (request.method !== "GET")
+					throw new ControlError(405, "method not allowed");
+				return response(200, meshNodeReportsJson(await meshNodes()));
+			}
 			if (path === "/v2/accounts/self/runtime" && request.method === "GET") {
 				if (!options.runtimeDiagnostic)
 					throw new ControlError(404, "runtime diagnostic unavailable");

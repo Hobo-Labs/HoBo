@@ -219,6 +219,9 @@
                 "name": "get_relay_status"
               },
               {
+                "name": "list_mesh_nodes"
+              },
+              {
                 "name": "reconcile_lease"
               },
               {
@@ -267,6 +270,11 @@
               {
                 "uri": "hobo-ci://events",
                 "name": "events",
+                "mimeType": "application/json"
+              },
+              {
+                "uri": "hobo-ci://mesh/nodes",
+                "name": "mesh-nodes",
                 "mimeType": "application/json"
               }
             ]
@@ -465,7 +473,8 @@
               "waitMaxSeconds": 50,
               "accountCalls": 8,
               "accountWaits": 8,
-              "requestMessages": 8
+              "requestMessages": 8,
+              "mesh": "not-configured"
             }
           }
         }
@@ -698,6 +707,86 @@
         },
         "body": {
           "error": "too many JSON-RPC messages in one request; at most 8"
+        }
+      }
+    },
+    {
+      "description": "list the relay mesh's nodes on a host with no mesh as not configured, not as an error",
+      "request": {
+        "method": "POST",
+        "path": "/mcp",
+        "headers": {
+          "Accept": "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer mcp-reader-credential-not-a-real-secret"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 17,
+          "method": "tools/call",
+          "params": {
+            "name": "list_mesh_nodes",
+            "arguments": {}
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 17,
+          "result": {
+            "structuredContent": {
+              "mesh": "not-configured",
+              "nodes": [],
+              "readAt": "",
+              "requireTrusted": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "read the mesh nodes resource",
+      "request": {
+        "method": "POST",
+        "path": "/mcp",
+        "headers": {
+          "Accept": "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer mcp-reader-credential-not-a-real-secret"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 18,
+          "method": "resources/read",
+          "params": {
+            "uri": "hobo-ci://mesh/nodes"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 18,
+          "result": {
+            "contents": [
+              {
+                "uri": "hobo-ci://mesh/nodes",
+                "mimeType": "application/json",
+                "text": "{\"mesh\":\"not-configured\",\"nodes\":[],\"readAt\":\"\",\"requireTrusted\":false}"
+              }
+            ]
+          }
         }
       }
     }

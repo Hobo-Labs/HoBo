@@ -14,12 +14,17 @@ import { join } from "node:path";
 import {
 	createMeshCoordinator,
 	createMeshMonitor,
+	createTrustedMeshBoard,
+	generateMeshIdentity,
 	type MeshEvent,
 	type MeshJob,
 	type MeshNode,
+	verifyMeshAdvert,
 } from "@hobo/ci/mesh";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createNatsMesh, type NatsMesh } from "../src/mesh-nats.js";
+import { createMeshTrust } from "../src/mesh-node.js";
+import { meshTrustConfigJson } from "../src/mesh-records.js";
 
 const binary =
 	process.env.HOBO_CI_NATS_SERVER_BIN ??
@@ -163,6 +168,111 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		await expect(
 			a.board.advertise({ ...node("box-a", 3), reliability: 1.5 }),
 		).rejects.toThrow();
+	});
+
+	it("carries signed advertisements, and each reader trusts them by the mesh's key set", async () => {
+		const a = await connect("trust");
+		const b = await connect("trust");
+		const keyA = generateMeshIdentity().identity;
+		const keyB = generateMeshIdentity().identity;
+		const trustA = createMeshTrust({
+			store: a.trust,
+			selfPublicKey: keyA.publicKey,
+		});
+		const trustB = createMeshTrust({
+			store: b.trust,
+			selfPublicKey: keyB.publicKey,
+		});
+		const boardA = createTrustedMeshBoard({
+			board: a.board,
+			identity: keyA,
+			policy: trustA.policy,
+		});
+		const boardB = createTrustedMeshBoard({
+			board: b.board,
+			identity: keyB,
+			policy: trustB.policy,
+		});
+		const wrote = Date.now();
+		await boardA.advertise({
+			...node("box-a", 3),
+			totalSlots: 4,
+			free: { memoryMb: 12_288, diskMb: 204_800 },
+			samples: { delivered: 7, dropped: 1 },
+			sinceMs: START,
+		});
+		await boardB.advertise(node("box-b", 5));
+		// An older node on the same board: it does not sign.
+		await a.board.advertise(node("box-old", 1));
+
+		// What the server stores verifies, and says when it was stored.
+		const stored = await b.board.nodes();
+		expect(
+			Object.fromEntries(
+				stored.map((each) => [each.id, verifyMeshAdvert(each)]),
+			),
+		).toEqual({ "box-a": "valid", "box-b": "valid", "box-old": "unsigned" });
+		const boxA = stored.find((each) => each.id === "box-a");
+		expect(boxA).toMatchObject({
+			free: { memoryMb: 12_288, diskMb: 204_800 },
+			samples: { delivered: 7, dropped: 1 },
+			sinceMs: START,
+			identity: { publicKey: keyA.publicKey },
+		});
+		expect(boxA?.seenAtMs).toBeGreaterThanOrEqual(wrote - 5_000);
+		expect(boxA?.seenAtMs).toBeLessThanOrEqual(Date.now() + 5_000);
+
+		const trustOf = async (board: typeof boardA) =>
+			Object.fromEntries(
+				(await board.nodes()).map((each) => [each.id, each.trust]),
+			);
+		// No keys listed: each node trusts only itself.
+		await trustA.refresh();
+		await trustB.refresh();
+		expect(await trustOf(boardA)).toEqual({
+			"box-a": "trusted",
+			"box-b": "unverified",
+			"box-old": "unverified",
+		});
+		expect(await trustOf(boardB)).toEqual({
+			"box-a": "unverified",
+			"box-b": "trusted",
+			"box-old": "unverified",
+		});
+
+		// The operator lists both keys, in the mesh's shared configuration.
+		expect(await a.trust.read()).toBeUndefined();
+		const published = await a.trust.publish(
+			meshTrustConfigJson({
+				trustedKeys: [
+					{ publicKey: keyA.publicKey, nodeId: "box-a" },
+					{ publicKey: keyB.publicKey },
+				],
+				requireTrusted: true,
+			}),
+		);
+		expect(published).not.toBe("conflict");
+		// It is its own key of the config bucket: the configuration is untouched.
+		expect(await a.config.read()).toBeUndefined();
+		await trustA.refresh();
+		await trustB.refresh();
+		for (const board of [boardA, boardB])
+			expect(await trustOf(board)).toEqual({
+				"box-a": "trusted",
+				"box-b": "trusted",
+				"box-old": "unverified",
+			});
+		expect(trustB.requireTrusted()).toBe(true);
+
+		// Someone with write access to the bucket overwrites box-a's entry with
+		// altered figures: every reader sees it as invalid.
+		const forged = stored.find((each) => each.id === "box-a");
+		if (!forged) throw new Error("box-a was not stored");
+		await b.board.advertise({ ...forged, freeSlots: 64 });
+		expect((await trustOf(boardB))["box-a"]).toBe("invalid");
+		// And box-a's next advertisement puts it right.
+		await boardA.advertise(node("box-a", 3));
+		expect((await trustOf(boardB))["box-a"]).toBe("trusted");
 	});
 
 	it("keeps a shared configuration that only its current revision can replace", async () => {

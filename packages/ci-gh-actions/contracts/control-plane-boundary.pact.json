@@ -523,6 +523,47 @@
           ]
         }
       }
+    },
+    {
+      "description": "refuse the relay mesh's node list without account authentication",
+      "request": {
+        "method": "GET",
+        "path": "/v1/mesh/nodes",
+        "headers": {}
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account authentication required"
+        }
+      }
+    },
+    {
+      "description": "answer the relay mesh's node list as not configured on a relay with no mesh",
+      "request": {
+        "method": "GET",
+        "path": "/v1/mesh/nodes",
+        "headers": {
+          "Authorization": "Bearer control-readonly-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "mesh": "not-configured",
+          "nodes": [],
+          "readAt": "",
+          "requireTrusted": false
+        }
+      }
     }
   ]
 }

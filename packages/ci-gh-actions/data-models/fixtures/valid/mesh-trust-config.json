@@ -1,0 +1,7 @@
+{
+  "trustedKeys": [
+    { "publicKey": "VSNn3iuVbd1OfiTuvGUqGt-LkNsAzEKJHjEWjlFjb3M", "nodeId": "box-a" },
+    { "publicKey": "q0yB3J8C8nN0zE2r1m4p5s6t7u8v9w0x1y2z3A4B5C6" }
+  ],
+  "requireTrusted": true
+}

@@ -48,7 +48,15 @@ export {
 	type FleetRoutePublication,
 	type FleetRoutePublisher,
 	type FleetRoutePublishInput,
+	writeRepositoryVariable,
 } from "./fleet-routes.js";
+export {
+	createFleetStatePublisher,
+	FLEET_STATE_MAX_AGE_MS,
+	FLEET_STATE_VARIABLE,
+	type FleetStateEvent,
+	type FleetStatePublisher,
+} from "./fleet-state.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -59,7 +67,10 @@ export {
 } from "./github.js";
 export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
-export { createHostedControlPlane } from "./hosted-control.js";
+export {
+	createHostedControlPlane,
+	MESH_NODES_PATH,
+} from "./hosted-control.js";
 export {
 	generalLeaseIdsFor,
 	HostedRelay,
@@ -208,6 +219,11 @@ export {
 	type JobDurations,
 	type JobObservation,
 } from "./job-durations.js";
+export {
+	createLocalRunnerMeshNode,
+	LOCAL_RUNNER_MESH_REPORT,
+	type LocalRunnerSessionObserver,
+} from "./local-runner.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
 	createMergeQueuePositionCache,
@@ -215,6 +231,44 @@ export {
 	type MergeQueuePositionSource,
 	type MergeQueuePositions,
 } from "./merge-queue-order.js";
+export {
+	type JoinedMesh,
+	joinMeshFromEnv,
+	meshNodeIdFromEnv,
+	natsCredentialsFromEnv,
+} from "./mesh-join.js";
+export {
+	changeMeshTrust,
+	createHealthSince,
+	createMeshNode,
+	createMeshNodesReader,
+	createMeshReliabilityLedger,
+	createMeshTrust,
+	freeDiskMb,
+	loadMeshIdentity,
+	type MeshJournal,
+	type MeshNodeEvent,
+	type MeshNodeHandle,
+	type MeshNodeDescription,
+	type MeshNodesReader,
+	type MeshTrustChange,
+	type MeshTrustSettings,
+	meshReliabilityJournal,
+} from "./mesh-node.js";
+export {
+	MESH_NODE_ID,
+	type MeshReading,
+	meshAdvertJson,
+	meshFleetStateJson,
+	meshNodeReportsJson,
+	meshNodeReportsMessage,
+	meshReliabilityRecordJson,
+	meshTrustConfigJson,
+	parseMeshAdvert,
+	parseMeshNodeReports,
+	parseMeshReliabilityRecord,
+	parseMeshTrustConfig,
+} from "./mesh-records.js";
 export {
 	createWorkerMesh,
 	type MeshSettings,
