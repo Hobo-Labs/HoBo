@@ -493,6 +493,21 @@ html:has(.trail-page:not(.is-staged)) {
 	border-radius: 7px 10px 5px 9px;
 }
 
+/* A phone sign never grows up under the trail marker: one taller than the
+   sky above the trail scrolls inside its own frame. */
+.tst-world .tst-board {
+	display: flex;
+	flex-direction: column;
+	max-height: calc(100% - var(--b) - 5rem);
+}
+
+.tst-world .tst-inner {
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	touch-action: pan-y;
+}
+
 /* The desktop band carries one road sign a stop: its name, over Bo's head. */
 .tst-sign {
 	--b: calc(var(--feet) + var(--u) * 128 + 2px);
@@ -962,26 +977,42 @@ html:has(.trail-page:not(.is-staged)) {
 
 /* ================================================= staged: on a desktop */
 
+/* The band takes what the page can spare: its full 30vh on a tall screen,
+   less on a laptop, so the section above keeps room to be read. */
 .is-staged[data-mode="desk"] {
-	--H: clamp(200px, 30vh, 300px);
+	--H: clamp(150px, min(30vh, 100vh - 600px), 300px);
 }
 
 .is-staged[data-mode="desk"] .trail-stops {
 	position: absolute;
 	inset: 0 0 calc(var(--H) + 2.6rem) 0;
-	font-size: clamp(13px, 1.95vh, 16.5px);
+	font-size: clamp(12.5px, 1.9vh, 16.5px);
 }
 
+/* A stop is its own scroll box between the header and the band. Its content
+   is centred while it fits; once it does not, the auto margins give way, it
+   reads from the top, and the rest is a scroll away — never under the header,
+   never under the band. */
 .is-staged[data-mode="desk"] .stop {
 	position: absolute;
 	inset: 0;
 	display: flex;
-	align-items: center;
+	flex-direction: column;
 	margin: 0;
 	padding: 0;
 	border: 0;
+	overflow-x: hidden;
+	overflow-y: auto;
+	/* No overscroll containment: past the last stop the wheel has to carry on
+	   to the page, so the footer is a scroll away. */
 	visibility: hidden;
 	pointer-events: none;
+}
+
+/* While there is more of a tall stop below, its foot fades out. */
+.is-staged[data-mode="desk"] .stop.has-more {
+	-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
+	mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
 }
 
 .is-staged[data-mode="desk"] .stop.is-on {
@@ -991,6 +1022,9 @@ html:has(.trail-page:not(.is-staged)) {
 
 .is-staged[data-mode="desk"] .stop > .container {
 	width: 100%;
+	margin-block: auto;
+	padding-block: 1.25rem;
+	box-sizing: border-box;
 }
 
 .is-staged .stop .card,

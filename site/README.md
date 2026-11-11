@@ -190,8 +190,9 @@ plate keeps its own aspect and tiles at its own speed; a prop is scaled against
 Bo in tile units of the 300-unit scene, so a cottage stands taller than a
 toolbox. Night is per plate: `invert` for line art, `keep` for art whose own ink is
 the point, `rim` for silhouettes that stay dark and take an outline, each graded by
-a `tone` that tracks depth. The props were rebuilt at 1100px so they stay crisp at
-the size the desktop band draws them.
+a `tone` that tracks depth. Props are stored 640px tall, about twice the size the
+desktop band draws a tall one, and each stop's art is fetched when the reader
+is at or next to it (the rest once the page is idle).
 
 **How it stops.** One button at the bottom right of the band pauses everything
 that moves on its own — the clouds, the cast, Bo's idling — and is remembered
@@ -203,6 +204,26 @@ Travelling between stops is not ambient, so it still works. Under
 per stop, with the current one marked `aria-current="step"`; arriving at a stop is
 announced in a polite live region, and a hidden note explains how the page moves.
 The scenery itself is `aria-hidden`: it carries nothing the sections do not.
+Moving on from the keyboard or the Previous/Next buttons while reading a stop takes
+focus to the next stop's heading, so it never falls back to the page; a marker click
+leaves it on the marker. Each stop is recorded in the URL (`history.replaceState`, so
+a reload or a shared link lands on it without a history entry per step), and a hash
+change goes to the stop it names.
+
+**No stop is ever clipped.** A desktop stop is its own scroll box between the header
+and the band: its content is centred while it fits, and once it does not (a laptop, a
+zoomed page) it reads from the top, the wheel and the down keys scroll it before they
+move on, and its foot fades while there is more below. On a short desktop the band
+gives back height first. A phone sign never rises under the trail marker; one taller
+than the sky scrolls inside its frame.
+
+**Checked as built.** `pnpm run landing:verify-dist` serves `dist/` and checks every
+stop at 900×560, 1024×600, 1280×620, 1366×657 and 1440×900 (nothing above its box,
+every link reachable and uncovered when focused), every phone sign at 390×844,
+focus on moving on, the URL and hash, the footer past the last stop, and teardown.
+`scripts/deploy-site.mts` runs it with `examples:verify-dist` before publishing. The
+decisions behind the trail (which stop a hash names, where a step lands, which keys
+are the page's) live in `src/lib/stage/trail-logic.ts`, unit-tested beside it.
 
 ## The troupe
 

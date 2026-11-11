@@ -460,6 +460,10 @@ next stop.
   navigation, not a decoration of it.
 - **The page lets go at the end.** Past the last stop the wheel and the Next
   button scroll on to the footer like any page.
+- **Nothing is ever clipped.** A stop that does not fit the screen (a laptop, a
+  zoomed page) reads from its top and scrolls inside its own box before the
+  trail moves on, with its foot fading while there is more below. Content never
+  hides under the header or the band.
 
 **Signs are drawn, everything else is supplied.** A road sign's words have to be
 text, so the signs are the one thing drawn in CSS: an ink line that wobbles

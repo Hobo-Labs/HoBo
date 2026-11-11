@@ -22,6 +22,20 @@
 
 import contract from "../../../public/cast/cast.json";
 import { isPaused, isStill, onMotionChange, prefersStill, restoreMotion, setPaused } from "./motion";
+import {
+	canScroll,
+	clampStop,
+	hashForStop,
+	inStageZone,
+	type KeyPlace,
+	keyDirection,
+	pageKeepsKey,
+	readsDown,
+	scrollAmount,
+	stopFromHash,
+	trailTakes,
+	fits,
+} from "./trail-logic";
 
 type PropArt = { key: string; src: string; aspect: number; units: number; say: string };
 
@@ -116,12 +130,12 @@ function extraOf(value: string | undefined): ExtraKind | null {
 	return value === "hint" || value === "tuck" || value === "cog" ? value : null;
 }
 
-/** Where a key or a gesture belongs to the page rather than to the trail. */
-function ownsKeys(target: EventTarget | null): boolean {
-	return (
-		target instanceof Element &&
-		target.closest("input, textarea, select, [contenteditable], .table-wrap, pre, .palette-picker, .site-nav") !== null
-	);
+/** Where a key was pressed, as far as the trail cares (see pageKeepsKey). */
+function keyPlace(target: EventTarget | null): KeyPlace {
+	if (!(target instanceof Element)) return "page";
+	if (target.closest("input, textarea, select, [contenteditable], .palette-picker, .site-nav")) return "editable";
+	if (target.closest(".table-wrap, pre")) return "sideways";
+	return "page";
 }
 
 export function mountLanding(page: HTMLElement, stage: HTMLElement): void {
@@ -208,6 +222,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		timers.add(id);
 		return id;
 	};
+	const intervals = new Set<number>();
 	const cancel = (id: number) => {
 		clearTimeout(id);
 		timers.delete(id);
@@ -251,12 +266,23 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	// ---------- build ----------
 	let tilts = 0;
 	const tilt = () => [-1.1, 0.8, -0.6, 1.2, -0.9, 0.5][tilts++ % 6];
-	const prop = (art: PropArt, host: HTMLElement): HTMLElement => {
+	// A prop's art is fetched when the reader is at its stop or next to it, and
+	// the rest once the page is idle: eighteen drawings are not the first paint.
+	const waiting = new Map<number, HTMLImageElement[]>();
+	const fetchStop = (i: number) => {
+		for (const img of waiting.get(i) ?? []) img.src = img.dataset.src ?? "";
+		waiting.delete(i);
+	};
+	const fetchNear = (i: number) => {
+		for (const j of [i, i + 1, i - 1]) fetchStop(j);
+	};
+	const prop = (art: PropArt, host: HTMLElement, stop: number): HTMLElement => {
 		const b = make("span", "tst-prop");
 		b.setAttribute("aria-hidden", "true");
 		b.style.setProperty("--h", String(art.units));
 		const img = new Image();
-		img.src = art.src;
+		img.dataset.src = art.src;
+		waiting.set(stop, [...(waiting.get(stop) ?? []), img]);
 		img.alt = "";
 		img.draggable = false;
 		b.appendChild(img);
@@ -289,7 +315,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	};
 
 	const pops: Pop[] = [];
-	const STOPS: Stop[] = [...page.querySelectorAll<HTMLElement>("[data-trail-stop]")].map((sec) => {
+	const STOPS: Stop[] = [...page.querySelectorAll<HTMLElement>("[data-trail-stop]")].map((sec, index) => {
 		const head = sec.querySelector<HTMLElement>(".stop-head");
 		const badge = head?.querySelector(".badge")?.textContent?.trim() ?? "";
 		const name = sec.dataset.stopName ?? badge;
@@ -309,7 +335,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		let n = 1;
 		for (const it of items) {
 			if (!it.art) continue;
-			it.dprop = prop(it.art, set);
+			it.dprop = prop(it.art, set, index);
 			it.dprop.classList.add("tst-fold");
 			it.dprop.style.setProperty("--n", String(n++));
 		}
@@ -337,7 +363,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 					it.board = node;
 					pops.push({ node, x: 0, w: 0, want: it.want, on: false });
 				}
-				if (it.art) it.pnode = prop(it.art, world);
+				if (it.art) it.pnode = prop(it.art, world, STOPS.indexOf(s));
 			}
 		}
 	}
@@ -349,12 +375,12 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	const road: RoadExtra[] = [];
 	const stagedTuck: { node: HTMLElement; stop: Stop; fits: boolean }[] = [];
 	const stagedCog: { cart: Cart; stop: Stop; fits: boolean }[] = [];
-	const cartOf = (host: HTMLElement): Cart | null => {
+	const cartOf = (host: HTMLElement, stop: number): Cart | null => {
 		const art = ART.get("handcar");
 		if (!art) return null;
 		const node = make("div", "tst-cart");
 		node.setAttribute("aria-hidden", "true");
-		const car = prop(art, node);
+		const car = prop(art, node, stop);
 		car.style.left = "0px";
 		const rider = hobit("cog", "stand", "tst-rider");
 		rider.style.zIndex = "2";
@@ -382,7 +408,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 				stagedTuck.push({ node, stop: s, fits: false });
 			}
 		} else if (s.extra === "cog") {
-			const cart = cartOf(desk ? s.set : world);
+			const cart = cartOf(desk ? s.set : world, STOPS.indexOf(s));
 			if (cart) {
 				if (!desk) road.push({ stop: s, kind: "cog", at: 0.4, node: cart.node, w: 0, x: 0, cart });
 				else {
@@ -659,7 +685,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			if (pending !== null) {
 				const p = pending;
 				pending = null;
-				goStop(p);
+				goStop(p, pendingFocus);
 			}
 		};
 		if (last) last.finished.then(done, () => (pageBusy = false));
@@ -694,12 +720,33 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	function announce(i: number): void {
 		const s = STOPS[i];
 		said.textContent = `${i + 1} of ${STOPS.length}, ${s.name}: ${s.title}`;
+		// A reload or a shared link lands on the same stop, without a history
+		// entry per step.
+		const url = `${location.pathname}${location.search}${hashForStop(i, s.sec.id)}`;
+		if (url !== `${location.pathname}${location.search}${location.hash}`) history.replaceState(history.state, "", url);
 	}
-	function goStop(want: number): void {
-		const j = clamp(want, 0, STOPS.length - 1);
+	/** Mark a stop that is taller than its area, so it reads top-down and shows there is more. */
+	function measureFit(s: Stop): void {
+		const inner = s.sec.querySelector<HTMLElement>(":scope > .container");
+		const tall = desk && inner !== null && !fits(inner.scrollHeight, s.sec.clientHeight);
+		s.sec.classList.toggle("is-tall", tall);
+		s.sec.classList.toggle("has-more", tall && canScroll(1, s.sec.scrollTop, s.sec.scrollHeight, s.sec.clientHeight));
+	}
+	/** The scroll box of the stop being read, on a desktop. */
+	const reading = () => (desk ? STOPS[active].sec : null);
+	let pendingFocus = false;
+	/**
+	 * Go to a stop. `carry` is true when the reader moved with the keyboard or
+	 * the Previous/Next buttons: if focus was inside the stop being left, it
+	 * goes to the new stop's heading instead of falling back to the page.
+	 */
+	function goStop(want: number, carry = false): void {
+		const j = clampStop(want, STOPS.length);
 		if (j === active) return;
+		const focusIn = carry && STOPS[active].sec.contains(document.activeElement);
 		if (pageBusy) {
 			pending = j;
+			pendingFocus = pendingFocus || focusIn;
 			return;
 		}
 		hintOff();
@@ -708,11 +755,23 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		const dir = j > from ? 1 : -1;
 		active = j;
 		announce(j);
+		fetchNear(j);
+		STOPS[j].sec.scrollTop = 0;
+		const land = () => {
+			measureFit(STOPS[j]);
+			if (!focusIn && !pendingFocus) return;
+			pendingFocus = false;
+			const h = STOPS[j].sec.querySelector<HTMLElement>("h1, h2");
+			if (!h) return;
+			h.tabIndex = -1;
+			h.focus({ preventScroll: true });
+		};
 		if (rm) {
 			leave(STOPS[from]);
 			STOPS[from].set.classList.remove("is-alive");
 			enter(STOPS[j], cam.x, 0);
 			handOver(from, j, dir);
+			land();
 			return;
 		}
 		const anchor = heading() + D * dir;
@@ -720,6 +779,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		enter(STOPS[j], anchor, 520);
 		glide(anchor, 1.6);
 		handOver(from, j, dir);
+		land();
 		if (dir > 0 && ++steps % 3 === 2) race();
 	}
 
@@ -753,12 +813,18 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	// ---------- input ----------
 	// One gesture is one step, however hard the wheel was spun. Past the last
 	// stop the page lets go, so the footer is a normal scroll away.
-	const atTop = () => scrollY <= 1;
+	/** Is the trail on screen? A small scroll (a rotated phone, a nudged window) still is. */
+	const atTop = () => inStageZone(scrollY, page.offsetHeight);
+	/** The trail is about to take a step: bring it fully back into view first. */
+	const settle = () => {
+		if (scrollY > 0) scrollTo({ top: 0, behavior: "auto" });
+	};
 	const atEnd = () => (desk ? (pending ?? active) >= STOPS.length - 1 : heading() >= maxPos - 1);
 	const atStart = () => (desk ? (pending ?? active) <= 0 : heading() <= 1);
-	function step(dir: number): void {
+	function step(dir: number, carry = false): void {
+		settle();
 		if (desk) {
-			goStop((pending ?? active) + dir);
+			goStop((pending ?? active) + dir, carry);
 			return;
 		}
 		const from = heading();
@@ -770,16 +836,31 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	}
 	const goSection = (i: number) => (desk ? goStop(i) : walkTo(STOPS[i].pos));
 	/** May the trail take this step, or does it belong to the page's own scroll? */
-	const takes = (dir: number) => atTop() && !(dir > 0 && atEnd()) && !(dir < 0 && atStart());
+	const takes = (dir: number) => trailTakes(atTop(), dir, atStart(), atEnd());
 
 	let lastWheel = 0;
 	let gesture = { acc: 0, fired: true };
 	page.addEventListener("wheel", (e) => {
 		const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-		if (!takes(Math.sign(d))) return;
-		e.preventDefault();
+		const dir = Math.sign(d);
 		const n = now();
-		if (n - lastWheel > 160) gesture = { acc: 0, fired: false };
+		const fresh = n - lastWheel > 160;
+		// A stop taller than its area is read first: the wheel scrolls it, and
+		// only a fresh gesture at its edge moves on.
+		// A phone sign taller than the sky scrolls itself.
+		const sign = e.target instanceof Element ? e.target.closest(".tst-world .tst-inner") : null;
+		if (sign && canScroll(dir, sign.scrollTop, sign.scrollHeight, sign.clientHeight)) return;
+		const box = reading();
+		if (atTop() && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
+			e.preventDefault();
+			box.scrollTop += d * (e.deltaMode === 1 ? 32 : 1);
+			lastWheel = n;
+			gesture = { acc: 0, fired: true };
+			return;
+		}
+		if (!takes(dir)) return;
+		e.preventDefault();
+		if (fresh) gesture = { acc: 0, fired: false };
 		lastWheel = n;
 		if (gesture.fired) return;
 		gesture.acc += d * (e.deltaMode === 1 ? 32 : 1);
@@ -790,15 +871,21 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	}, { passive: false, signal });
 
 	addEventListener("keydown", (e) => {
-		if (e.altKey || e.ctrlKey || e.metaKey || ownsKeys(e.target)) return;
 		const k = e.key;
+		if (e.altKey || e.ctrlKey || e.metaKey || pageKeepsKey(keyPlace(e.target), k)) return;
 		const free = e.target === document.body || e.target === page;
-		let dir = 0;
-		if (k === "ArrowRight" || k === "ArrowDown" || k === "PageDown" || (k === " " && !e.shiftKey && free)) dir = 1;
-		else if (k === "ArrowLeft" || k === "ArrowUp" || k === "PageUp" || (k === " " && e.shiftKey && free)) dir = -1;
+		const dir = keyDirection(k, e.shiftKey, free);
 		if (dir !== 0) {
+			if (!atTop()) return;
+			// Down reads the rest of a tall stop before it moves on.
+			const box = reading();
+			if (readsDown(k) && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
+				box.scrollBy({ top: dir * scrollAmount(k, box.clientHeight), behavior: rm ? "auto" : "smooth" });
+				e.preventDefault();
+				return;
+			}
 			if (!takes(dir)) return;
-			step(dir);
+			step(dir, true);
 			e.preventDefault();
 		} else if ((k === "Home" || k === "End") && atTop()) {
 			goSection(k === "Home" ? 0 : STOPS.length - 1);
@@ -879,8 +966,8 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		return { li, b };
 	});
 	routeList.appendChild(you);
-	const prev = () => step(-1);
-	const next = () => (atEnd() ? page.nextElementSibling?.scrollIntoView({ behavior: rm ? "auto" : "smooth" }) : step(1));
+	const prev = () => step(-1, true);
+	const next = () => (atEnd() ? page.nextElementSibling?.scrollIntoView({ behavior: rm ? "auto" : "smooth" }) : step(1, true));
 	prevBtn.addEventListener("click", prev, { signal });
 	nextBtn.addEventListener("click", next, { signal });
 	let hinted = true;
@@ -910,6 +997,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		if (prevBtn) prevBtn.disabled = at <= 0 && (desk || heading() <= 0);
 		if (at === routeAt) return;
 		if (!desk && routeAt !== -1) announce(at);
+		if (!desk) fetchNear(at);
 		routeAt = at;
 		marks.forEach((m, n) => {
 			m.b.classList.toggle("is-past", n < at);
@@ -1027,11 +1115,16 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		scene?.appendChild(n);
 		let f = 0;
 		const t = window.setInterval(() => pose(n, ++f % 2 ? "runB" : "run"), 90);
-		n.addEventListener("animationend", () => {
+		intervals.add(t);
+		const stop = () => {
 			clearInterval(t);
+			intervals.delete(t);
+		};
+		n.addEventListener("animationend", () => {
+			stop();
 			n.remove();
 		});
-		later(2000, () => clearInterval(t));
+		later(2000, stop);
 	}
 
 	// ---------- pause ----------
@@ -1043,7 +1136,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	};
 	const togglePause = () => setPaused(!isPaused());
 	pauseBtn.addEventListener("click", togglePause, { signal });
-	onMotionChange(syncPause);
+	undo.push(onMotionChange(syncPause));
 	syncPause();
 
 	// ---------- frame ----------
@@ -1162,29 +1255,41 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		active = i;
 		youAt = i;
 		STOPS[i].sec.classList.add("is-on");
+		fetchNear(i);
+		for (const s of STOPS) measureFit(s);
 		if (desk) {
 			camSet(cam.x);
 			enter(STOPS[i], cam.x, 0);
 		} else camSet(STOPS[i].pos);
 		lastX = cam.x;
 	}
+	// A tall stop says there is more below it until it has been read.
+	for (const s of STOPS) s.sec.addEventListener("scroll", () => measureFit(s), { passive: true, signal });
 	let resizeTimer = 0;
 	addEventListener("resize", () => {
 		cancel(resizeTimer);
 		resizeTimer = later(80, () => reset(desk ? active : stopAt(cam.x)));
 	}, { signal });
 
-	// Arriving on a link to a section starts at that section.
-	// The hash is the reader's text, not a selector: escape it, so `#` or `#1x`
-	// cannot stop the trail from mounting.
-	let target = location.hash.slice(1);
-	try {
-		target = decodeURIComponent(target);
-	} catch {
-		// A malformed escape is matched as written.
-	}
-	const hashed = target ? STOPS.findIndex((s) => s.sec.id === target || s.sec.querySelector(`#${CSS.escape(target)}`) !== null) : -1;
+	// Arriving on a link to a section starts at that section, and following one
+	// later (Back, an in-page link) goes there.
+	const named = STOPS.map((s) => ({ id: s.sec.id, inner: [...s.sec.querySelectorAll("[id]")].map((n) => n.id) }));
+	const hashed = stopFromHash(location.hash, named);
+	addEventListener("hashchange", () => {
+		const i = stopFromHash(location.hash, named);
+		if (i < 0) return;
+		settle();
+		goSection(i);
+	}, { signal });
 	reset(Math.max(0, hashed));
+	settle();
+	// Everything else once the page has nothing better to do.
+	const idle = () => {
+		// Deleting the key being visited is safe while iterating a Map.
+		for (const i of waiting.keys()) fetchStop(i);
+	};
+	if ("requestIdleCallback" in window) requestIdleCallback(idle, { timeout: 4000 });
+	else later(2500, idle);
 	bo.classList.add("is-idle");
 	stillAt = now();
 	document.fonts?.ready.then(() => {
@@ -1211,12 +1316,17 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		cancelAnimationFrame(raf);
 		for (const id of timers) clearTimeout(id);
 		timers.clear();
+		for (const id of intervals) clearInterval(id);
+		intervals.clear();
 		for (const fn of undo) fn();
 		for (const s of STOPS) for (const p of s.parts) for (const a of p.getAnimations()) a.cancel();
 		for (const { node, parent, next } of moved.reverse()) parent.insertBefore(node, next);
 		for (const n of made) n.remove();
 		for (const n of [...world.children, ...sets.children]) n.remove();
-		for (const s of STOPS) s.sec.classList.remove("is-on");
+		for (const s of STOPS) {
+			s.sec.classList.remove("is-on", "is-tall", "has-more");
+			s.sec.scrollTop = 0;
+		}
 		for (const p of plates) p.node.style.transform = "";
 		for (const c of clouds) c.node.style.transform = "";
 		page.classList.remove("is-staged");

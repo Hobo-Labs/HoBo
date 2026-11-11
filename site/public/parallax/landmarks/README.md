@@ -76,9 +76,10 @@ depot or a cottage is taller than he is, a toolbox comes up to his knee.
 | Compare — "Other roofs over your head" | the comparison: rooftops |
 | Get started — the closing card | cottage |
 
-The arch, airship, lighthouse, water tower and steamboat are still built and
-shipped here, but no card uses them: a prop has to stand for something on the
-page, and those stood for nothing.
+The arch, airship, lighthouse, water tower and steamboat are still cut (so the
+approved set keeps one shared scale) but no longer shipped (`UNPLACED` in the
+build script): a prop has to stand for something on the page, and those stood
+for nothing.
 
 On a desktop each prop stands in the band under its own card; on a phone it
 stands beside the card's sign.
@@ -89,6 +90,7 @@ Props are line art, so at night they invert and become chalk on the dark band.
 
 ## Resolution
 
-Props are stored 1100px tall (`LANDMARK_H` in the build script), because the
-desktop band draws a tall one at up to ~300px and the linework has to stay
-crisp on a 2x display.
+Props are stored 640px tall (`LANDMARK_H` in the build script): about twice the
+~300px the desktop band draws a tall one at, enough for a 2x display and no more.
+The page fetches a stop's props when the reader is at or next to that stop, and
+the rest once it is idle.

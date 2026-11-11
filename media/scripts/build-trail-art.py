@@ -62,9 +62,14 @@ CAST_OUT = ROOT / "site" / "public" / "cast"
 
 LEVELS = 8  # posterization steps for both channels, as the plates use
 
-# Stored height of the tallest landmark. The desktop band draws a tall prop at
-# up to ~300px, so this is what keeps the linework crisp on a 2x display.
-LANDMARK_H = 1100
+# Stored height of the tallest landmark: about twice the ~300px the desktop
+# band draws a tall prop at, which keeps the linework crisp on a 2x display
+# without shipping more than that.
+LANDMARK_H = 640
+
+# Cut, so the approved set keeps one shared scale, but not shipped: no card on
+# the landing page stands for them (site/src/lib/trail-props.ts).
+UNPLACED = {"arch", "blimp", "lighthouse", "steamboat", "water-tower"}
 
 # ----------------------------------------------------------- approved props
 
@@ -325,6 +330,9 @@ def build_landmarks() -> None:
 					sized[name] = resize_la(piece, board.get("height", LANDMARK_H) / top)
 
 	for name, la in sized.items():
+		if name in UNPLACED:
+			(LANDMARKS_OUT / f"{name}.png").unlink(missing_ok=True)
+			continue
 		Image.fromarray(la, "LA").save(LANDMARKS_OUT / f"{name}.png", optimize=True)
 		print(f"landmarks/{name}.png  {la.shape[1]}x{la.shape[0]}")
 
