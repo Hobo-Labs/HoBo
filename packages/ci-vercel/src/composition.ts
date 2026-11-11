@@ -1,4 +1,4 @@
-import { createPrivateKey } from "node:crypto";
+import { createHash, createPrivateKey } from "node:crypto";
 import { parseConfiguration } from "@hobo/ci";
 import { PostgresCiStore } from "@hobo/ci/postgres";
 import {
@@ -196,8 +196,16 @@ export async function createVercelApplication(options: {
 			github,
 		});
 		const execution = isolatedExecutionWiring(sandbox?.host);
+		// This store keeps token digests: hash the presented token for it.
 		const sandboxQuota = sandbox
-			? createSandboxProxyQuotaHandler(store)
+			? createSandboxProxyQuotaHandler({
+					authenticateSandboxProxy: (token) =>
+						store.authenticateSandboxProxy(
+							createHash("sha256").update(token).digest("hex"),
+						),
+					reserveSandboxProxyEgress: (...args) =>
+						store.reserveSandboxProxyEgress(...args),
+				})
 			: undefined;
 		// The control plane and the queued-job repair read the same relay; only the
 		// runtime's own relay differs, because it defers reservation to its tick.

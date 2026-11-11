@@ -1080,9 +1080,10 @@ the hosted relay needs from its store (`HostedRelayStore`, `HostedInboxStore`,
 the read paths of `HostedControlStore`, `IsolatedWorkerStore`, the MCP
 `RelayMcpStore`, and `@hobo/ci-vercel`'s sandbox lease and proxy-quota paths),
 kept as short-lived state behind `EphemeralStatePort` from `@hobo/core`
-([Relay ephemeral state](../../docs/design/relay-ephemeral-state.md)). It is
-not wired into `@hobo/ci-vercel` yet (phase 4b); `PostgresCiStore` stays the
-hosted relay's store until then.
+([Relay ephemeral state](../../docs/design/relay-ephemeral-state.md)). Since
+phase 4b it is the hosted relay's store: `@hobo/ci-vercel`'s stateless
+composition builds it ([The stateless relay](../ci-vercel/README.md#the-stateless-relay));
+`PostgresCiStore` is off the hosted relay's path and removed in phase 7.
 
 ```ts
 import { createMemoryEphemeralState } from "@hobo/kv-redis-compatible";
@@ -1092,10 +1093,24 @@ const store = new RelayCacheStore({
   state: createMemoryEphemeralState(), // Upstash REST or Valkey in a deployment
   config: staticRelayConfig(snapshotFromConfigService), // read-only
   environment: "production", // keys are under hobo-ci:production:
-  intake, // where verified deliveries go (Vercel Queue in 4b)
+  intake, // where verified deliveries go (the hosted relay's intake queue)
   proxyTokenKey, // from the config service; sandbox proxy paths refuse without it
+  onLeaseChange, // after every lease write: the hosted relay schedules lease steps
 });
 ```
+
+**What the host is told.** `onLeaseChange({ lease, type, at, previousState })`
+runs after every lease record the store writes (`previousState` is absent for a
+new record); the hosted relay starts a lease-step chain from it. A hook that
+throws is reported (`hobo_ci_relay_lease_hook_failed`), never propagated: the
+write has happened.
+
+**One write, no read before it.** The store remembers the lease records this
+instance wrote last (bounded); the next write of the same lease (a launch is a
+run of transitions) compares-and-sets against that version without reading
+first. If another instance wrote in between, the compare-and-set fails and the
+write is decided again on a fresh read; a remembered record is never served to
+a plain read.
 
 **No partition lock.** Every write is a compare-and-set on one key, and each
 keeps the expected-state checks `PostgresCiStore` makes. A lost race re-reads
@@ -1117,7 +1132,9 @@ record; `latestLeaseIntents` reads them back, so the tick's crash recovery
 
 **Queue deadline.** Pinned from the earliest of when the relay first saw the
 job and, where the caller passes it (`queue` and `reserve` take an optional
-`githubCreatedAt`; rebuild always has it), GitHub's `created_at`.
+`githubCreatedAt`; rebuild always has it), GitHub's `created_at`. `HostedRelay`
+passes the job's REST `created_at` to `queue` and, from the pickup metadata the
+webhook recorded, to `reserve`.
 
 **Budgets without history.** Routing counts every account's in-flight holds
 from the in-flight indexes plus the spend a `ProviderUsagePort` reports
@@ -1138,13 +1155,29 @@ first 16 bytes of HMAC-SHA256 of the lease id under `proxyTokenKey`
 `authenticateSandboxProxy` takes the raw token, reads the lease id from it and
 checks the MAC. Caps are atomic counters with the sandbox's lifetime as TTL.
 
+**Rebuild pass.** `rebuildInflight(store, discovery, github, at)` restores the
+holds of every account `accountsAwaitingRebuild()` names (its in-flight index is
+missing or was recreated without a rebuild; one read when none is): for each of
+the account's connections it lists the queued and in-progress workflow runs
+(one page each), their jobs, and runs `rebuildLease` for every live job HoBo
+serves; an account whose listings all answered is marked holds-known. The
+hosted relay runs it on each repair tick. A rebuilt Sandbox lease also names
+its proxy VM (`hobo-proxy-<id>`), so cleanup finds it.
+
+**An uncertain lease whose job is running is adopted.** The hosted runtime does
+not stop an `uncertain` isolated lease whose runner GitHub assigned the job to
+and still shows running it (a rebuilt lease is the usual case): it waits until
+GitHub reports the job finished, then stops and settles. An unanswered GitHub
+read counts as running.
+
 **Rebuild by name.** `rebuildLease(store, discovery, job, at)` turns what
 GitHub and Vercel show under a job's candidate names (generations 0..3, or the
 job record's generation) back into a lease record, always `uncertain`;
 `resolveUncertainLease` re-admits the next generation only when nothing exists
 under the lease's names and GitHub still shows the job queued.
 `githubRelayDiscovery` is the GitHub side (`getJob`, runners by name, bridge
-runs by title); the Vercel side is `discoverIsolatedSandbox` in 4b.
+runs by title); the Vercel side is the Sandbox host's lookup by name
+(`@hobo/ci-vercel`), where not found is a 404.
 
 ### Keys, values and TTLs
 
@@ -1158,7 +1191,7 @@ the port's 30-day cap.
 | `lease:<leaseId>` | `RelayCacheLease` (lease as `hobo.ci.v1.Lease` JSON, job key, generation, latest intent per kind, rebuild evidence) | Active: max(24 h, reserved minutes + proxy VM time) + 1 h, refreshed per transition. Ended: 24 h | `reserve` (putIfAbsent), every transition (CAS), rebuild |
 | `job:<repositoryId>:<jobId>:<runAttempt>` | `RelayCacheJob`: state (`pending`, `taken`, `idle`, `terminal`), generation, current lease id, pending job JSON, first-seen time, queue deadline, assignment fence | Terminal: 24 h. Taken: its lease's TTL. Otherwise 25 h | `queue`, `reserve`, `observe`, `expireQueued`, `withdrawQueuedJob`, `clearAssignedJob`, rebuild |
 | `inflight:<accountId>` | `RelayCacheInflight`: in-flight entries (offer, provider account, holds, allowance), the last 50 ended lease ids, `holdsKnown` | The longest entry's lease TTL | Admission, retirement, pruning, `markHoldsKnown` |
-| `pending` | `RelayCachePending`: job keys waiting for capacity, oldest first, at most 2000 | 25 h, refreshed | `queue`, `reserve`, `observe`, pruning in `pendingJobs` |
+| `pending` | `RelayCachePending`: job keys waiting for capacity, oldest first, at most 2000 | 25 h, refreshed | `queue` adds; `pendingJobs` prunes keys whose record left `pending`, by compare-and-set on the set it read |
 | `delivery:<deliveryId>` | `RelayCacheDelivery`: fingerprint, received time, ignored | 24 h | `acceptWebhook`, `acceptIgnoredWebhook` |
 | `delivery-body:<installationId>:<sha256>` | delivery id | 24 h | Same: a signed body under a new id is a replay |
 | `webhook-rate:<installationId>:<windowStart>` | counter, at most 600 | 1 min from first hit | Same |
@@ -1168,30 +1201,33 @@ the port's 30-day cap.
 | `sbx:proxy-requests:<leaseId>` | counter (accepted forwards) | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` |
 | `sbx:proxy-rate:<leaseId>:<windowStart>` | counter, at most 600 | 1 min from first hit | `reserveSandboxProxyEgress` |
 | `sbx:proxy-req:<leaseId>:<requestId>` | `1` | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` (a replayed request id fails closed) |
-| `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | Every lease and job change |
+| `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
 
 ### Command cost
 
 Measured with `meterExecutor` over the in-memory engine
 (`test/relay-cache-store.test.ts`, pinned there), scripts cached:
 
-| Step | Commands |
-|---|---|
-| Intake: delivery marker, body marker, rate window | 3 |
-| Queue | 6 |
-| Reserve | 11 |
-| Dispatch intent / outcome | 5 / 4 |
-| Claim | 5 |
-| Intent check on the tick | 1 |
-| In progress (observe, assign) | 8 |
-| Running | 5 |
-| Completed (observe) | 8 |
-| Settle | 6 |
-| **Job on the workflow bridge** | **62** |
-| Sandbox proxy: authenticate / one forwarded request | 2 / 6 |
+| Step | Phase 4a | Phase 4b | What changed |
+|---|---|---|---|
+| Intake: delivery marker, body marker, rate window | 3 | 3 | |
+| Queue | 6 | 6 | |
+| Reserve | 11 | 8 | the pending set is pruned by `pendingJobs`, not on every take |
+| Dispatch intent / outcome | 5 / 4 | 4 / 3 | no read before writing a lease this instance just wrote |
+| Claim | 5 | 4 | same |
+| Intent check on the tick | 1 | 1 | |
+| In progress (observe, assign) | 8 | 3 | job and lease read in one round trip; no ring append for the observed job id or the assignment |
+| Running | 5 | 4 | no read before the write |
+| Completed (observe) | 8 | 2 | the lease already carries the job id: no write; no `ci.JobCompleted` for a job a lease held |
+| Settle | 6 | 5 | no read before the write |
+| **Job on the workflow bridge** | **62** | **43** | |
+| Sandbox proxy: authenticate / one forwarded request | 2 / 6 | 2 / 6 | |
 
-Eleven of those are change-ring appends at 2 commands each; once an account's
-ring has filled, an append costs 3, so a steady-state job is 73. The design's
+The ring takes seven appends on this path (one per state change, 2 commands
+each until an account's ring first fills, 3 after), so a steady-state job is 50
+(73 in phase 4a). The hosted relay's whole-composition cost for a Sandbox job,
+reads of the relay itself included, is pinned in `@hobo/ci-vercel`
+([The stateless relay](../ci-vercel/README.md#the-stateless-relay)). The design's
 estimate of about 25 assumed one command per ring append and no routing reads.
 
 ### What the cache store does not do

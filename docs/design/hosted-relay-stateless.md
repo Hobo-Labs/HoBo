@@ -9,11 +9,17 @@ tags: [hobo, design, ci, relay, twelve-factor]
 # Hosted CI Relay Without Durable State
 
 **Status:** design accepted as
-[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179); nothing in this document
-is implemented yet. Phase 1 of the [delivery plan](#delivery-plan) is this
-document. Until phase 7 lands, the relay still runs on PostgreSQL as
-[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) describes, and those
-sections are marked superseded.
+[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179). Implemented so far
+([delivery plan](#delivery-plan)): the cache port (phase 2), the config-service
+client (phase 3), the relay store on the cache (phase 4a) and, in phase 4b, the
+relay composed on them with no database: config and secrets from the config
+service, per-job state in the cache, webhook intake and per-lease steps on
+Vercel Queues ([The stateless relay](../../packages/ci-vercel/README.md#the-stateless-relay)).
+None of it has been deployed or run against Vercel, Upstash, Infisical or
+GitHub. The PostgreSQL code stays in the tree, off the relay's path, until
+phase 7 removes it; the sections of
+[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) that describe it are
+marked superseded.
 
 ## Why
 
@@ -429,6 +435,24 @@ Turso (attached to the project but never used) are disconnected.
 | 2 | The relay's cache port over `@hobo/kv-redis-compatible` (TTL, compare-and-set, increment), an in-memory implementation and an Upstash REST implementation, each passing the kv conformance suite; a Valkey implementation over RESP | The suite passes for all three; the in-memory one runs in every relay test |
 | 3 | The config-service client (Infisical OIDC Auth with the Vercel token; GCP Secret Manager behind the same port), and GitHub App creation from `hobo ci` that writes the App's credentials straight into the config service | The relay starts from Infisical with no secret in its environment; App creation lands credentials in custody without passing through the terminal |
 | 4 | A relay store on the cache: deterministic lease ids, per-key compare-and-set, the in-flight index, intent timestamps; Queue intake with delivery-id idempotency; per-lease step messages; rebuild by name | The relay's store contract tests pass on the cache store; killing the cache mid-job loses no job; a duplicated delivery provisions once; GitHub and Vercel name uniqueness verified live |
+
+**Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
+4b: `composeStatelessRelay` in `@hobo/ci-vercel`: the cache backend chosen from
+the deployment's bindings (Upstash REST, then Valkey; in memory only off Vercel)
+behind one seam, `selectCacheBackend`, with every command metered against a
+monthly allowance; intake on the `hobo-ci-intake` topic keyed by delivery id;
+per-lease steps on `hobo-ci-lease-steps` keyed `${leaseId}:${step}:${n}`, each
+rung at a fixed offset from the lease's creation so chains of one lease
+collapse; the 15-minute repair tick as backstop with a rebuild pass for lost
+holds; the control plane's configuration writes answering 410. End-to-end tests
+on the in-memory cache cover a Sandbox job from webhook to settlement,
+duplicate deliveries provisioning once, and the cache wiped mid-job (the lease
+rebuilt by name, the running job adopted rather than stopped). Still open:
+policy-driven cache selection (4c); settling a rebuilt Sandbox lease, whose
+proxy meters were in the lost cache (it stays `uncertain` until its record
+lapses); name uniqueness at GitHub and Vercel verified live. A Sandbox job
+costs 99 cache commands through the whole composition, against the estimate of
+about 45 above; the store's own path dropped from 62 to 43.
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay |
 | 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository |
 | 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |

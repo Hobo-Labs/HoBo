@@ -858,6 +858,12 @@ importers:
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
+      '@hobo/kv-redis-compatible':
+        specifier: workspace:*
+        version: link:../kv-redis-compatible
+      '@hobo/provider-upstash':
+        specifier: workspace:*
+        version: link:../providers/provider-upstash
       '@neon/functions':
         specifier: 0.11.0
         version: 0.11.0(hono@4.12.27)

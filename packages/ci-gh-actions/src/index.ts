@@ -71,6 +71,7 @@ export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export {
 	createHostedControlPlane,
+	isConfigWriteRoute,
 	MESH_NODES_PATH,
 } from "./hosted-control.js";
 export {
@@ -82,7 +83,9 @@ export {
 export {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
+	type HostedLeaseStepKind,
 	type HostedRelayTickTiming,
+	intentCutoffMs,
 } from "./hosted-runtime.js";
 export {
 	hostedRelaySchemaMigrations,

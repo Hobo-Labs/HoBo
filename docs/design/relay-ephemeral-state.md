@@ -8,8 +8,11 @@ tags: [hobo, design, ci, data-plane]
 # Relay Ephemeral State
 
 **Status:** the port, its three bindings and their conformance suite are
-implemented. The relay does not use it yet; moving the relay's lease records,
-markers and counters onto it is a later phase.
+implemented. The hosted relay's store runs on it (ADR-0179 phase 4a), and the
+relay deployed from `@hobo/ci-vercel` is composed on it with no database
+(phase 4b): the binding is chosen from the deployment's environment as below,
+and every command is metered against a monthly allowance
+([The stateless relay](../../packages/ci-vercel/README.md#the-stateless-relay)).
 
 ## Why
 

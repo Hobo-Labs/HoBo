@@ -90,6 +90,15 @@ const appSettings = {
 	HOBO_CI_GITHUB_APP_CLIENT_SECRET: z.string().regex(/^[!-~]{20,256}$/),
 };
 
+/**
+ * Secrets only the stateless relay reads; the Neon broker never carried
+ * them. The Sandbox proxy token key: each proxy session token is derived
+ * from it (an HMAC of the lease id), so no token is stored anywhere.
+ */
+const relaySecrets = {
+	HOBO_CI_SANDBOX_PROXY_TOKEN_KEY: canonicalKey.optional(),
+};
+
 /** The onboarding token must be one of the owner's control tokens. */
 function onboardingBinding(
 	value: z.infer<typeof brokerFields>,
@@ -143,6 +152,7 @@ export type RuntimeBrokerConfig = z.infer<typeof RuntimeBrokerConfig>;
 export const RELAY_RUNTIME_CONFIG_SETTINGS = Object.freeze({
 	...brokerSettings,
 	...appSettings,
+	...relaySecrets,
 });
 
 /** The relay's whole runtime configuration as the config service holds it. */

@@ -8,8 +8,10 @@ const token = randomBytes(32).toString("base64url");
 const digest = createHash("sha256").update(token).digest("hex");
 function setup() {
 	const store = {
-		authenticateSandboxProxy: vi.fn(async (hash: string) =>
-			hash === digest
+		// The store is handed the raw bearer token: the relay cache store
+		// checks a derived token's MAC, and a digest-keyed store hashes it.
+		authenticateSandboxProxy: vi.fn(async (presented: string) =>
+			presented === token
 				? { accountId: "tenant", leaseId, proxySessionId: "sbx_proxy" }
 				: undefined,
 		),
@@ -36,6 +38,7 @@ describe("scoped sandbox proxy quota", () => {
 		const f = setup();
 		const response = await f.handle(request(envelope));
 		expect(response.status).toBe(204);
+		expect(f.store.authenticateSandboxProxy).toHaveBeenCalledWith(token);
 		expect(f.store.reserveSandboxProxyEgress).toHaveBeenCalledWith(
 			leaseId,
 			"sbx_proxy",
