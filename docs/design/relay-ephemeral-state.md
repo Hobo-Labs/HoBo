@@ -7,8 +7,9 @@ tags: [hobo, design, ci, data-plane]
 
 # Relay Ephemeral State
 
-**Status:** the port, its four bindings (in-memory, Valkey/Redis over RESP,
-Upstash REST, Turso/libSQL) and their conformance suite are implemented. The
+**Status:** the port, its five bindings (in-memory, Valkey/Redis over RESP,
+Upstash REST, Turso/libSQL, Vercel Blob) and their conformance suite are
+implemented. The
 hosted relay's store runs on it (ADR-0179 phase 4a), and the
 relay deployed from `@hobo/ci-vercel` is composed on it with no database
 (phase 4b): the binding is chosen from the deployment's environment as below,
@@ -99,6 +100,29 @@ uses REST, and `REDIS_URL` binds TCP only where no REST pair is set. Sources:
 Confirm the names on the project itself before relying on them; this was not
 read from a live project.
 
+### Vercel Blob
+
+`@hobo/provider-vercel-blob` binds the port to a private Vercel Blob store
+connected to the relay's own project, with no stored secret: the SDK
+(`@vercel/blob`, pinned 2.8.2) authenticates with the deployment's OIDC token
+and the store's `BLOB_STORE_ID`. It is not a Redis-protocol store, so it has
+its own implementation with the same semantics, checked by the same 24-case
+suite. One blob per key holds a record with the value, incarnation, revision
+and expiry; the version is `<incarnation>:<revision>`, and every write is a
+`get` (an origin read, `useCache: false`) followed by an upload or delete
+conditional on the ETag it read (`ifMatch`), or a create-only upload for a
+new key. Expiry is lazy, with a bounded list-and-purge for a scheduled job.
+
+A port call costs one or two Blob operations instead of one command, and a
+contended key costs one more read and upload per lost race. At the reference
+load below (1,000 leases a day) that is about 120,000 simple and 120,000
+advanced operations a month: about $0.65 of Pro's included credit, and far
+over Hobby's 2,000 advanced operations. The store must be created and
+connected by the project owner or the CI deploy step. Method mapping,
+contention behaviour, the cost table with its sources, and what is not yet
+verified against a real store:
+[`@hobo/provider-vercel-blob`](../../packages/providers/provider-vercel-blob/README.md).
+
 ### Self-hosted Valkey
 
 Set `VALKEY_URL=redis://:<password>@host:6379` (or `rediss://` for TLS) and
@@ -130,7 +154,7 @@ offer in HoBo's pricing catalog, and budget policy picks exactly one active
 backend: Upstash (500,000 commands a month free, then pay-as-you-go), Aiven for
 Valkey free (no command cap), Turso free (500 million rows read, 10 million
 written; blocked when exhausted), self-hosted Valkey (no provider cost), and
-later Vercel Blob (first-party, conditional writes by ETag; not built). The
+Vercel Blob (first-party, conditional writes by ETag). The
 assignment log that names the active backend is itself kept on the backends
 through this port's compare-and-set, by majority. A switch starts the new
 backend cold, which is safe because everything here may be lost. Sources, the
