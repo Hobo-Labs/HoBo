@@ -20,9 +20,9 @@ import {
 	grewLinearly,
 	HANG_BACKSTOP_MS,
 	MAX_REPEAT,
+	MissingCpuClockError,
 	measureGrowth,
 	medianCpuMs,
-	MissingCpuClockError,
 	OperationHangError,
 	repeatedTo,
 } from "../src/linear-time.js";
