@@ -8,6 +8,7 @@ import {
 	lstat,
 	mkdir,
 	readdir,
+	readlink,
 	rename,
 	rm,
 	rmdir,
@@ -15,6 +16,8 @@ import {
 	statfs,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { measureWorkDirInodeBreakdown } from "./work-dir-inode-breakdown.js";
+import { workDirLocalInodeEstimate } from "./work-dir-local-inodes.js";
 
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
 const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
@@ -32,6 +35,8 @@ export type WorkerFileSystemStats = Readonly<{
 export type WorkerWorkDirectoryRemoval = Readonly<{
 	bytes: number;
 	entries: number;
+	localInodes?: number;
+	inodeBreakdown?: Awaited<ReturnType<typeof measureWorkDirInodeBreakdown>>;
 }>;
 
 export type WorkerStorageFileSystem = Readonly<{
@@ -99,7 +104,17 @@ export function createNodeWorkerStorageFileSystem(
 				}
 				return { bytes, entries };
 			};
-			return measure(path);
+			const sizes = await measure(path);
+			const breakdown = await measureWorkDirInodeBreakdown(path, {
+				lstat: io.lstat,
+				readdir: async (entryPath) => io.readdir(entryPath),
+				readlink,
+			});
+			return {
+				...sizes,
+				localInodes: workDirLocalInodeEstimate(breakdown),
+				inodeBreakdown: breakdown,
+			};
 		},
 		async device(path) {
 			return (await stat(path)).dev;
