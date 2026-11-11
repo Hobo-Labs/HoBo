@@ -117,15 +117,7 @@ export type EngineFailure = Readonly<{
 
 const HttpError = z.object({ statusCode: z.number().int().min(100).max(599) });
 
-function engineFailure(engineId: string, error: unknown): EngineFailure {
-	const http = HttpError.safeParse(error);
-	if (http.success)
-		return { engineId, reason: "http", status: http.data.statusCode };
-	const timedOut =
-		error instanceof Error &&
-		(error.name === "TimeoutError" || error.name === "AbortError");
-	return { engineId, reason: timedOut ? "timeout" : "error", status: 0 };
-}
+const TIMEOUT_ERRORS = new Set(["TimeoutError", "AbortError"]);
 
 export type ResolvedContent = Readonly<{
 	path: string;
@@ -351,7 +343,24 @@ export async function resolveConflicts(input: {
 						signal: AbortSignal.timeout(budget.timeoutSeconds * 1000),
 					});
 				} catch (error) {
-					input.onEngineFailure?.(engineFailure(engine.id, error));
+					// The error is parsed here, at the engine boundary, for its status only.
+					const http = HttpError.safeParse(error);
+					input.onEngineFailure?.(
+						http.success
+							? {
+									engineId: engine.id,
+									reason: "http",
+									status: http.data.statusCode,
+								}
+							: {
+									engineId: engine.id,
+									reason:
+										error instanceof Error && TIMEOUT_ERRORS.has(error.name)
+											? "timeout"
+											: "error",
+									status: 0,
+								},
+					);
 					unavailable = true;
 					break;
 				}
