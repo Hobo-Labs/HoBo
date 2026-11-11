@@ -208,8 +208,21 @@ package used to skip that test. Only a concrete reach counts there.
 A bare `"./"` or `"../"` string literal is an edge to its directory only where it can be a path.
 `entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of
 `@hobo/core`, so any core change ran 53 whole suites and 53 subsets; a change to
-`packages/core/src/_generated/actor_host_port_pb.ts` now plans 13 whole suites and 14 subsets and
-skips 106 dependents (10 and 13 of them without the wider bystander check above). The edge is dropped
+`packages/core/src/_generated/actor_host_port_pb.ts`, which no module of core imports, planned 13 whole
+suites and 14 subsets when the edge was dropped. Those figures are a measurement of that day's
+workspace, not something a test holds: `scripts/test/dependent-tests.test.ts` pinned the three counts
+and went red on main when three packages the file does not reach were added. The case now counts no
+package. It asserts that no module of `packages/core/src` reaches the generated file (with the `./`
+edge back, `plugin-manifest.ts` and `index.ts` do, and the failure names them), that `packages/core`
+runs whole, and that `packages/broker`, `packages/contracts` and `packages/events`, which import
+`@hobo/core` and name nothing wider, are skipped. Adding a package changes none of that. The same
+file's root-config cases list by name the packages whose vitest config merges the root one
+(`packages/cli`, `packages/hobo`); that list changes when such a package is added, and the failure
+says which list to edit. Nothing in CI runs this test file: `test:root` runs only `test/`, the unit
+lanes skip `node:test` files, `scripts/relevant-check-policy.ts` selects `read-stdin.test.ts` and
+`job-scope.test.ts` for a planner change but not this file, and `test:scripts` is in no workflow. Run
+it by hand after changing the planner: `node --test scripts/test/dependent-tests.test.ts`, with
+`turbo` on `PATH` for the one case that reads the real turbo graph. The edge is dropped
 only where the literal is provably a string test: the first argument of `startsWith`, `endsWith`,
 `includes`, `replace` or `replaceAll` (what is searched for), an operand of `===`, `!==`, `==` or
 `!=`, or a `case` label. Everywhere else it stays (`new URL("../", import.meta.url)` with or without a
