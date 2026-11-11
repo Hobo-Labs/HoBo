@@ -38,16 +38,15 @@ describe("job memory environment", () => {
 			"HOBO_TEST_MAX_WORKERS=2",
 		]);
 		const root = fileURLToPath(new URL("../..", import.meta.url));
-		for (const workflow of [
-			"hobo-ci.yml",
-			"pricing-ci.yml",
-			"release-code.yml",
-			"release-pricing.yml",
-		])
-			expect(
-				readFileSync(join(root, ".github/workflows", workflow), "utf8"),
-				workflow,
-			).not.toMatch(/^\s+NODE_OPTIONS:/mu);
+		// Every workflow, read from disk: a hand-kept list named release-code.yml
+		// after #1772 deleted it, and the case failed on a missing file instead
+		// of checking anything.
+		const workflows = globSync(".github/workflows/*.yml", { cwd: root });
+		expect(workflows).toContain(".github/workflows/hobo-ci.yml");
+		for (const workflow of workflows)
+			expect(readFileSync(join(root, workflow), "utf8"), workflow).not.toMatch(
+				/^\s+NODE_OPTIONS:/mu,
+			);
 	});
 
 	it("keeps every single-worker Vitest pin at one under the CI environment", async () => {
@@ -57,31 +56,40 @@ describe("job memory environment", () => {
 			exclude: ["**/node_modules/**", "**/dist/**", "external/**"],
 		});
 		const pinned: string[] = [];
-		const previousMemoryCap = process.env.HOBO_TEST_MAX_WORKERS;
-		const previousVitestCap = process.env.VITEST_MAX_WORKERS;
+		// A pin is one worker always, or one worker in CI only (packages/cli
+		// spreads files across the cores on a developer machine). Both go through
+		// the cap, and both are loaded here with CI set, so either form must come
+		// out at one worker however high the memory-derived cap is.
+		const capped =
+			/capVitestWorkers\((?:1|process\.env\.CI \? 1 : undefined)\)/u;
+		const previous = {
+			CI: process.env.CI,
+			HOBO_TEST_MAX_WORKERS: process.env.HOBO_TEST_MAX_WORKERS,
+			VITEST_MAX_WORKERS: process.env.VITEST_MAX_WORKERS,
+		};
+		process.env.CI = "true";
 		process.env.HOBO_TEST_MAX_WORKERS = "8";
 		process.env.VITEST_MAX_WORKERS = "8";
 		try {
 			for (const config of configs) {
 				const source = readFileSync(join(root, config), "utf8");
 				if (
-					!/maxWorkers:\s*(?:1|capVitestWorkers\(1\))/u.test(source) &&
+					!/maxWorkers:\s*1\b/u.test(source) &&
+					!capped.test(source) &&
 					!/fileParallelism:\s*false/u.test(source)
 				)
 					continue;
 				pinned.push(config);
-				expect(source, config).toContain("capVitestWorkers(1");
+				expect(source, config).toMatch(capped);
 				const loaded: { default: { test?: { maxWorkers?: number } } } =
 					await import(pathToFileURL(join(root, config)).href);
 				expect(loaded.default.test?.maxWorkers, config).toBe(1);
 			}
 		} finally {
-			if (previousMemoryCap === undefined)
-				delete process.env.HOBO_TEST_MAX_WORKERS;
-			else process.env.HOBO_TEST_MAX_WORKERS = previousMemoryCap;
-			if (previousVitestCap === undefined)
-				delete process.env.VITEST_MAX_WORKERS;
-			else process.env.VITEST_MAX_WORKERS = previousVitestCap;
+			for (const [name, value] of Object.entries(previous)) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
 		}
 		expect(pinned).toEqual(
 			expect.arrayContaining([
@@ -92,8 +100,7 @@ describe("job memory environment", () => {
 			]),
 		);
 		for (const path of [
-			".github/workflows/hobo-ci.yml",
-			".github/workflows/pricing-ci.yml",
+			...globSync(".github/workflows/*.yml", { cwd: root }),
 			"scripts/ci/memory-env.mts",
 			"scripts/run-tests.ts",
 		])

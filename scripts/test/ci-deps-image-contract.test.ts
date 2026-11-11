@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 
 const WORKER_STORAGE_FS =
@@ -437,13 +444,164 @@ describe("CI deps workflow contract", () => {
 		assert.doesNotMatch(job, /--import tsx/);
 	});
 
-	it("does not put the deps image on Main full gate's critical path", () => {
-		const mainStart = workflow.indexOf("  main-gate:");
-		const mainEnd = workflow.indexOf("  artifact-trust:", mainStart);
-		const main = workflow.slice(mainStart, mainEnd);
-		includes(main, "needs: [route, ci-runner-image]");
-		assert.ok(!main.includes("ci-deps-image"));
-		includes(workflow, "Check deps layer match");
+	it("loads the mount contract without an install and scopes every file it loads", () => {
+		// The job has no `pnpm install`: the mount contract is loaded by
+		// `node --experimental-strip-types` through ts-source-resolve.mts, so one
+		// package import anywhere in its graph fails the step before Docker runs.
+		const entry = "scripts/test/ci-deps-image-mount.test.ts";
+		const hook = "scripts/lib/ts-source-resolve.mts";
+		const graph = new Set<string>();
+		const packages: string[] = [];
+		const pending = [entry, hook];
+		for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+			if (graph.has(path)) continue;
+			graph.add(path);
+			const specifiers = [
+				...read(path).matchAll(
+					/(?:\bfrom\s+|\bimport\s*\(\s*|^import\s+)"([^"]+)"/gmu,
+				),
+			].map((match) => match[1] ?? "");
+			for (const specifier of specifiers) {
+				if (specifier.startsWith("node:")) continue;
+				if (!specifier.startsWith(".")) {
+					packages.push(`${path}: ${specifier}`);
+					continue;
+				}
+				// The same fallback ts-source-resolve.mts applies: a NodeNext `.js`
+				// specifier names a sibling `.ts` source.
+				const target = resolve(root, dirname(path), specifier);
+				const source = existsSync(target)
+					? target
+					: `${target.slice(0, -".js".length)}.ts`;
+				pending.push(relative(root, source));
+			}
+		}
+		assert.deepEqual(packages, [], "package imports in a no-install job");
+		assert.ok(graph.has(WORKER_STORAGE_FS));
+
+		const scopeStart = job.indexOf(
+			"- name: Limit PR builds to deps image inputs",
+		);
+		const scope = job.slice(scopeStart, job.indexOf("- name:", scopeStart + 1));
+		const scoped = [...scope.matchAll(/^\s+([\w./-]+)(?: \\|\)")$/gmu)].map(
+			(match) => match[1] ?? "",
+		);
+		assert.ok(scoped.length > 0);
+		for (const path of graph)
+			assert.ok(
+				scoped.some((entry) => path === entry || path.startsWith(`${entry}/`)),
+				`${path} is loaded by the mount contract but a PR that changes it skips the job`,
+			);
+
+		// Run it the way the job does, in a tree that holds only those files and
+		// no node_modules. Without HOBO_CI_DEPS_MOUNT_CONTRACT the Docker case is
+		// skipped, so what this proves is that every import resolves.
+		const bare = mkdtempSync(join(tmpdir(), "hobo-deps-mount-imports-"));
+		try {
+			for (const path of graph) {
+				mkdirSync(dirname(join(bare, path)), { recursive: true });
+				cpSync(join(root, path), join(bare, path));
+			}
+			const { HOBO_CI_DEPS_MOUNT_CONTRACT: _contract, ...env } = process.env;
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					"--import",
+					`./${hook}`,
+					"--test",
+					entry,
+				],
+				{ cwd: bare, env, encoding: "utf8" },
+			);
+			assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+		} finally {
+			rmSync(bare, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps the deps image off the required PR gate and Main's S0 job, and names the jobs that do wait for it", () => {
+		const jobs = new Map<string, { needs: string[]; block: string }>();
+		const lines = workflow.slice(workflow.indexOf("\njobs:\n")).split("\n");
+		const starts = lines.flatMap((line, index) =>
+			/^ {2}[A-Za-z0-9_-]+:$/u.test(line) ? [index] : [],
+		);
+		for (const [position, startIndex] of starts.entries()) {
+			const block = lines.slice(startIndex, starts[position + 1]).join("\n");
+			const declared = block.match(/^ {4}needs: (.+)$/mu)?.[1] ?? "";
+			jobs.set((lines[startIndex] ?? "").trim().slice(0, -1), {
+				needs: declared
+					.replace(/^\[|\]$/gu, "")
+					.split(",")
+					.map((name) => name.trim())
+					.filter((name) => name !== ""),
+				block,
+			});
+		}
+		const job = (id: string) => {
+			const found = jobs.get(id);
+			assert.ok(found, `missing job ${id}`);
+			return found;
+		};
+		/** Every job `id` waits for, directly or through another job. */
+		const waitsFor = (id: string): Set<string> => {
+			const seen = new Set<string>();
+			const pending = [...job(id).needs];
+			for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+				if (seen.has(next)) continue;
+				seen.add(next);
+				pending.push(...job(next).needs);
+			}
+			return seen;
+		};
+
+		// The required PR check and Main full gate's S0 job never wait for the
+		// deps image, not even through another job: a PR that changes the image's
+		// inputs builds it for minutes, and S0 installs for itself on a layer miss.
+		for (const id of [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+			"pr-gate",
+			"main-gate",
+		])
+			assert.ok(
+				!waitsFor(id).has("ci-deps-image"),
+				`${id} waits for the deps image`,
+			);
+		assert.deepEqual(job("main-gate").needs, ["route", "ci-runner-image"]);
+		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
+		includes(job("main-gate").block, "Check deps layer match");
+
+		// Main's workspace plan and its shards wait for it on purpose (#1840):
+		// they start from the deps layer, and on main the deps job never builds
+		// (it reuses or pulls an image, or defers a miss). Any other job that
+		// starts to wait for the image has to be added here deliberately.
+		assert.deepEqual(
+			[...jobs]
+				.filter(([, { needs }]) => needs.includes("ci-deps-image"))
+				.map(([id]) => id),
+			["main-gate-plan", "main_workspace_tests"],
+		);
+		// A failed or skipped deps job must not take them with it: both run
+		// unless the run is cancelled, and a shard installs on a layer miss.
+		for (const id of ["main-gate-plan", "main_workspace_tests"]) {
+			assert.match(job(id).block, /^ {4}if: >-\n {6}!cancelled\(\) && /mu, id);
+			assert.doesNotMatch(
+				job(id).block,
+				/needs\.ci-deps-image\.result/u,
+				`${id} is gated on the deps job's result`,
+			);
+		}
+		includes(job("main_workspace_tests").block, "Check deps layer match");
+		includes(
+			job("main_workspace_tests").block,
+			"steps.deps-layer.outputs.match != 'true'",
+		);
+		// The finish job therefore waits for the image only through the shards.
+		assert.ok(!job("main_gate_finish").needs.includes("ci-deps-image"));
+		assert.ok(waitsFor("main_gate_finish").has("ci-deps-image"));
 	});
 });
 

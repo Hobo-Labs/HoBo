@@ -190,4 +190,19 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
+
+	it("passes on this repository's own workflows", () => {
+		// The cases above lint fixtures. Nothing else in the commit or PR gates
+		// runs the lint on the real files, so a workflow edit that broke a rule
+		// (a box checkout without `clean: false`) reached main unnoticed.
+		const result = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", lint],
+			{
+				cwd: fileURLToPath(new URL("../..", import.meta.url)),
+				encoding: "utf8",
+			},
+		);
+		assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+	});
 });
