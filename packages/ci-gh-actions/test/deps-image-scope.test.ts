@@ -120,8 +120,12 @@ describe("CI deps image push scope", () => {
 		]);
 		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
 		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);
-		// The deps job is not routed: it builds in the box's Docker context.
-		expect(depsJob.needs).toEqual(["ci-runner-image"]);
+		expect(mainGate.needs).not.toContain("ci-deps-image");
+		expect(prValidation.needs).not.toContain("ci-deps-image");
+		expect(prGate.needs).not.toContain("ci-deps-image");
+		// The deps job is not routed: it builds in the box's Docker context and
+		// starts from route so it can overlap runner image materialize (#1872).
+		expect(depsJob.needs).toEqual(["route"]);
 	});
 });
 
