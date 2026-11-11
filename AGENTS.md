@@ -780,6 +780,79 @@ includes `HEAD`, without which a registry transport cannot be expressed at all
 target — bounded and stripped of control characters, because that value is
 chosen by the peer and ends up in logs.
 
+Provider error text is redacted the same way: one implementation in
+`@hobo/provider-redaction` (`redactProviderText`, or
+`createProviderRedactor` with a profile of the provider's own structured
+shapes, its generic `fallbacks` such as a long-opaque-run rule (searched last,
+so one cannot split a JWT and leave its payload), a kept span such as ttl.sh's
+digests, percent-decoding, or whitespace collapsing).
+Every pattern in it is linear in the text and has an adversarial test, the
+search is bounded by `REDACTION_WINDOW`, and a provider pattern goes in its
+profile, never in a local copy of the redactor. Guards that refuse a payload
+rather than redact it use its `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR`, and a
+scrubber that must keep line breaks and length (auth-md's `redactText`) uses
+its `PRIVATE_KEY_PATTERN` and `JWT_PATTERN` through `redactMatches`. A redactor
+with shapes of its own searches them all over the same text and merges the
+spans (`redactMatches`), never replaces them in turn: a shape that ran first cut
+a run short, or ate another shape's name or a key's END line, and part of a
+credential survived. A new pattern must be linear: one that can start again
+inside a run it already scanned to the end (`\bey…` inside `-ey-ey…`,
+`[\s\S]*?END` from every BEGIN, `\S*` before a literal from every `http`,
+`\b[…]+@` from every boundary inside `a.a.a.…`, a variable-length look-back
+placed first, which runs at every position, decoding the whole text again until
+it stops changing) is quadratic on a hostile body. So is one with two optional
+quantifiers next to each other that read the same character (`\s*["']?\s*`,
+`\s*:?\s*`: write `\s*(?:["']\s*)?`), a look-back with a starred class that
+overlaps the character after it (`(?<=(?:^|[^…])[._%+-]*[A-Za-z0-9_])` on a run
+of `_`), and a value that may chain on to the end and is then read again from
+the next run. Do not set `i` and `u` together on a redaction pattern: Unicode case
+folding puts `ſ` and `K` (U+017F, U+212A) in `[A-Za-z]` and `\w`, so a
+look-behind that refuses a start after a letter refuses one after them too,
+and the credential after them is kept. Use `i` alone, list those two in a body
+class that should hold them, and spell words with `anyCase` where `u` is
+needed. A look-behind that says where a run starts holds exactly the run's
+own class: one narrower than the body (ASCII before a `[ſK…]` body) lets every
+position inside a run of the missing characters start a match.
+
+Sweep every pattern with `@hobo/redaction-test-harness/linear-sweep` (`assertSweepLinear`, or
+`assertPatternSweepLinear` for one pattern, through the caller's own search),
+which reads the pattern's alphabet from its own classes and builds runs of every
+class and every pair of them, runs between the pattern's own literal fragments
+ended by each terminator, each fragment over and over, and periodic texts, so
+neither a class nobody listed, a look-ahead for a later literal
+(`\S*(?=…-----END)` read again from every place it could give a character
+back), a repeated literal nor a long period can hide a quadratic case. Give a
+whole-function sweep a whole sample as a word and the literals it looks for as
+fragments. Structure a regular expression can only find by looking ahead from
+every position (a private key's last END line) is found in code instead. A redactor or guard that replaces another is held to it with
+`@hobo/redaction-test-harness/redaction-differential` (`assertRevealsNoMore`,
+`assertFindsNoLess`), the old one vendored under the package's
+`test/fixtures`: it may redact more, never less.
+
+Tier those tests. `test` is the fast tier, run on every change: unit cases,
+every leak and hostile input a review found as a fixed input (screened once
+with `assertInputLinear`, not swept), and a differential at 5k texts (20k for a
+detector). Sweeps,
+growth measurements and full-size differentials go in `*.deep.test.ts`, which
+the package's `vitest.config.ts` (extending the root config) excludes and
+`test:deep` runs (`vitest.deep.config.ts`, a turbo task, `pnpm run test:deep`).
+The shared shapes are swept once, in `@hobo/provider-redaction`; a caller
+sweeps only what it adds (`ownPatterns(…, SHARED_PATTERNS)`), and callers that
+share a profile (`LONG_TOKEN_RUN_PROFILE`) test it once, where it is defined,
+and only their own wrapper themselves. The deep tier runs the full-size
+differentials at 50k texts on three seeds (`DEEP_SEEDS`).
+
+Prove it with `assertGrowsLinearly` from `@hobo/redaction-test-harness/linear-time`, never with a
+wall-clock bound such as "1 MB in under a second": CI runs on single-CPU
+runners, and a loaded machine fails an absolute bound that a linear pattern
+meets. It times n and 4n characters in the thread's CPU time, not wall time, the
+better of two runs each, taking turns; n doubles from 4096 until a run takes 30
+ms of CPU, so a quadratic pattern is caught at a size it still finishes at, and
+an operation too quick for that is repeated within each run. It fails at a ratio
+of 8, where linear work gives about 4 and quadratic about 16. Its only absolute
+bound is a 20 s backstop on one call, which only a hang reaches. Show the old
+pattern fails the same measure.
+
 Credentials are **not** passed through, and the provider tests do not need them
 to be: `CLOUDFLARE_API_TOKEN`, `VERCEL_TOKEN` and friends are saved, set, and
 restored by the tests themselves rather than read from the ambient environment.

@@ -1006,11 +1006,39 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	const plan = (path: string) =>
 		scoped(planDependentTests([path], (tree ??= readRepo())));
 
+	// The packages whose `vitest.config.ts` merges the root config to leave the
+	// `*.deep.test.ts` tier out of `test` (docs/design/provider-redaction.md).
+	const tiered = [
+		"packages/auth-md",
+		"packages/claims",
+		"packages/conformance",
+		"packages/packs/pack-framework",
+		"packages/provider-redaction",
+		"packages/providers/provider-aws",
+		"packages/providers/provider-browser-wasm",
+		"packages/providers/provider-kubernetes",
+		"packages/providers/provider-neon",
+		"packages/providers/provider-netlify",
+		"packages/providers/provider-prisma-postgres",
+		"packages/providers/provider-ttl-sh",
+		"packages/providers/provider-upstash",
+		"packages/providers/provider-vercel",
+		"packages/recipes",
+		"packages/redaction-test-harness",
+	];
+	const withTiered = (...others: string[]) => [...tiered, ...others].sort();
+
 	// `packages/cli` merges the root config but its script builds first.
 	for (const [path, full] of [
-		["vitest.config.ts", ["packages/cli", "packages/hobo"]],
-		["test/setup/hobo-test-homes.ts", ["packages/cli", "packages/hobo"]],
-		["test/setup/isolate-hobo-home.ts", ["packages/cli", "packages/hobo"]],
+		["vitest.config.ts", withTiered("packages/cli", "packages/hobo")],
+		[
+			"test/setup/hobo-test-homes.ts",
+			withTiered("packages/cli", "packages/hobo"),
+		],
+		[
+			"test/setup/isolate-hobo-home.ts",
+			withTiered("packages/cli", "packages/hobo"),
+		],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
 			const planned = plan(path);
