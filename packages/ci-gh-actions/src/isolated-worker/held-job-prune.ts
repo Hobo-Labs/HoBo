@@ -1,10 +1,10 @@
 import { create } from "@bufbuild/protobuf";
 import { type Job, JobSchema, type Lease } from "@hobo/ci";
+import { TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import {
 	isUnlaunchedReservation,
 	type UnlaunchedReservationLease,
 } from "../unlaunched-reservation-release.js";
-import { TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 export type HeldJobPruneReason =
@@ -37,8 +37,7 @@ export type HeldJobPruneStore = Readonly<{
 		expectedRevision?: number,
 	): Promise<boolean | undefined> | boolean;
 	configuration(): Promise<
-		| undefined
-		| Readonly<{ revision: number; configuration: unknown }>
+		undefined | Readonly<{ revision: number; configuration: unknown }>
 	>;
 }>;
 
@@ -93,7 +92,9 @@ function resolvePruneReason(
 	runAttempt: number,
 	index: ReturnType<typeof buildWitnessIndex>,
 ): HeldJobPruneReason | undefined {
-	const jobReason = index.jobs.get(jobPruneKey(repositoryId, jobId, runAttempt));
+	const jobReason = index.jobs.get(
+		jobPruneKey(repositoryId, jobId, runAttempt),
+	);
 	if (jobReason) return jobReason;
 	return index.runs.get(runPruneKey(repositoryId, runId));
 }

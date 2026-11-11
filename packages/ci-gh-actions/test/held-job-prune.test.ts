@@ -161,9 +161,7 @@ it("clears ingest coalesce after a prune", async () => {
 		at: NOW,
 		coalesce,
 		witness: {
-			terminalRuns: [
-				{ repositoryId: 101, runId: 55, reason: "run-completed" },
-			],
+			terminalRuns: [{ repositoryId: 101, runId: 55, reason: "run-completed" }],
 			terminalJobs: [],
 		},
 	});
