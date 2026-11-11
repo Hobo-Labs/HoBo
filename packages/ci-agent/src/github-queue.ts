@@ -138,6 +138,7 @@ query HoboAgentCommitChecks($owner: String!, $name: String!, $oid: GitObjectID!)
         statusCheckRollup {
           state
           contexts(first: 50) {
+            pageInfo { hasNextPage }
             nodes {
               __typename
               ... on CheckRun {
@@ -185,7 +186,10 @@ const CommitRollup = z.object({
 				statusCheckRollup: z
 					.object({
 						state: z.string(),
-						contexts: z.object({ nodes: z.array(CheckContext) }),
+						contexts: z.object({
+							pageInfo: z.object({ hasNextPage: z.boolean() }),
+							nodes: z.array(CheckContext),
+						}),
 					})
 					.nullable()
 					.optional(),
@@ -194,6 +198,43 @@ const CommitRollup = z.object({
 	}),
 });
 const FAILED_CONCLUSIONS = new Set(["FAILURE", "TIMED_OUT", "STARTUP_FAILURE"]);
+/**
+ * Conclusions that say the CI did not run the code to an end, not that the
+ * code failed: a change to the code cannot fix them, a re-run can.
+ */
+const INFRASTRUCTURE_CONCLUSIONS = new Set([
+	"TIMED_OUT",
+	"STARTUP_FAILURE",
+	"CANCELLED",
+	"ACTION_REQUIRED",
+]);
+
+/**
+ * Whether a failed rollup failed only for infrastructure reasons: every
+ * context was read, and none is a check that failed or a status that
+ * reported failure (a status `ERROR` is the CI's own error, by convention).
+ */
+function infrastructureOnly(
+	contexts: z.infer<typeof CommitRollup>["repository"]["object"],
+): boolean {
+	const rollup = contexts?.statusCheckRollup;
+	if (!rollup || rollup.contexts.pageInfo.hasNextPage) return false;
+	const failed = rollup.contexts.nodes.filter((context) =>
+		context.__typename === "StatusContext"
+			? context.state === "FAILURE" || context.state === "ERROR"
+			: context.conclusion !== null &&
+				(FAILED_CONCLUSIONS.has(context.conclusion) ||
+					INFRASTRUCTURE_CONCLUSIONS.has(context.conclusion)),
+	);
+	return (
+		failed.length > 0 &&
+		failed.every((context) =>
+			context.__typename === "StatusContext"
+				? context.state === "ERROR"
+				: INFRASTRUCTURE_CONCLUSIONS.has(context.conclusion ?? ""),
+		)
+	);
+}
 const REPORT_LIMIT = 4000;
 
 /** CI text with control characters removed and a length cap. */
@@ -390,12 +431,15 @@ export function createGithubQueue(options: {
 			const rollup = data.repository.object?.statusCheckRollup;
 			if (!rollup)
 				return { state: "none", failures: "" } satisfies CommitChecks;
+			const failed = rollup.state === "FAILURE" || rollup.state === "ERROR";
 			const state =
 				rollup.state === "SUCCESS"
 					? "success"
-					: rollup.state === "FAILURE" || rollup.state === "ERROR"
-						? "failure"
-						: "pending";
+					: !failed
+						? "pending"
+						: infrastructureOnly(data.repository.object)
+							? "infrastructure"
+							: "failure";
 			return {
 				state,
 				failures:

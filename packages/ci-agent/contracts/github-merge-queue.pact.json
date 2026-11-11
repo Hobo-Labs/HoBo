@@ -885,6 +885,9 @@
         "statusCheckRollup": {
          "state": "FAILURE",
          "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
           "nodes": [
            {
             "__typename": "CheckRun",
@@ -936,6 +939,188 @@
    }
   },
   {
+   "description": "a commit whose checks only timed out, failed to start or errored is an infrastructure failure",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "FAILURE",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "test",
+            "conclusion": "TIMED_OUT",
+            "title": "runner timed out",
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "e2e",
+            "conclusion": "STARTUP_FAILURE",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "lint",
+            "conclusion": "CANCELLED",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "ci/legacy",
+            "state": "ERROR",
+            "description": "agent lost"
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "typecheck",
+            "conclusion": "SUCCESS",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "infrastructure",
+    "failures": ""
+   }
+  },
+  {
+   "description": "a commit with more checks than one page is not called an infrastructure failure",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "FAILURE",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": true
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "test",
+            "conclusion": "TIMED_OUT",
+            "title": "runner timed out",
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "e2e",
+            "conclusion": "STARTUP_FAILURE",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "lint",
+            "conclusion": "CANCELLED",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "ci/legacy",
+            "state": "ERROR",
+            "description": "agent lost"
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "typecheck",
+            "conclusion": "SUCCESS",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "failure",
+    "failures": "check test (TIMED_OUT): runner timed out\ncheck e2e (STARTUP_FAILURE): \nstatus ci/legacy: agent lost"
+   }
+  },
+  {
    "description": "a commit whose checks passed reports success",
    "request": {
     "method": "POST",
@@ -963,6 +1148,9 @@
         "statusCheckRollup": {
          "state": "SUCCESS",
          "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
           "nodes": []
          }
         }
@@ -1004,6 +1192,9 @@
         "statusCheckRollup": {
          "state": "PENDING",
          "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
           "nodes": []
          }
         }

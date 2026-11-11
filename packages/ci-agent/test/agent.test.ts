@@ -697,6 +697,32 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		);
 	});
 
+	it("apply: waits for a re-run, without repairing, when checks failed only for infrastructure", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const { agent, checks, enqueued, journal } = setup("apply", [first], {}, [
+			engine,
+		]);
+		const resolved = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		first.head = resolved;
+		repos.git(repos.remote, "update-ref", "refs/pull/1/head", resolved);
+		checks.set(resolved, { state: "infrastructure", failures: "" });
+		await agent.tick();
+		await agent.tick();
+		expect(engine.requests).toHaveLength(1);
+		expect(enqueued).toEqual([]);
+		expect(
+			(await journal.events()).some(
+				(event) => event.type === "ci.agent.ResolutionChecked",
+			),
+		).toBe(false);
+		// Someone re-ran the checks and they passed.
+		checks.set(resolved, { state: "success", failures: "" });
+		expect((await agent.tick()).enqueued).toEqual([1]);
+		expect(engine.requests).toHaveLength(1);
+	});
+
 	it("apply: waits for the checks on its own merge commit before enqueueing", async () => {
 		const first = pull(1, "TWO from 1");
 		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });

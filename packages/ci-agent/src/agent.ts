@@ -45,9 +45,14 @@ export interface QueueSource {
 	commitChecks(sha: string): Promise<CommitChecks>;
 }
 
-/** Where a commit's checks stand. `failures` is bounded CI output, for a prompt. */
+/**
+ * Where a commit's checks stand. `failures` is bounded CI output, for a
+ * prompt. `infrastructure` is a failure no change to the code can fix (a
+ * timeout, a runner that did not start, a cancelled run): the agent waits for
+ * a re-run instead of repairing.
+ */
 export type CommitChecks = Readonly<{
-	state: "pending" | "success" | "failure" | "none";
+	state: "pending" | "success" | "failure" | "infrastructure" | "none";
 	failures: string;
 }>;
 
@@ -515,7 +520,12 @@ export function createCiAgent(options: {
 					const checks = await attempt(() =>
 						options.queue.commitChecks(published.commitSha),
 					);
-					if (!checks || checks.state === "pending" || checks.state === "none")
+					if (
+						!checks ||
+						checks.state === "pending" ||
+						checks.state === "none" ||
+						checks.state === "infrastructure"
+					)
 						continue;
 					const concluded = (state: "success" | "failure") =>
 						record(repository, "ci.agent.ResolutionChecked", {
