@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/adapter-infisical": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/ci-gh-actions": "workspace:*",
     "@hobo/core": "workspace:*",

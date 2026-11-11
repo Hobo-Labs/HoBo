@@ -107,7 +107,14 @@ it("re-runs a trunk job still queued after headroom wait, without re-queuing on 
 		now: () => Date.now(),
 	});
 	const trunkWaits = new Map([
-		["org/repo:1:1", { sinceMs: Date.now() - 130_000, logged: true }],
+		[
+			"org/repo:1:1",
+			{
+				sinceMs: Date.now() - 130_000,
+				logged: true,
+				reason: "headroom" as const,
+			},
+		],
 	]);
 	const count = await overflow.overflowTrunkJobsWaitingForHeadroom(
 		store,
@@ -152,7 +159,14 @@ it("does not overflow while memory headroom still admits the trunk job", async (
 	const count = await overflow.overflowTrunkJobsWaitingForHeadroom(
 		store,
 		new Map([
-			["org/repo:1:1", { sinceMs: Date.now() - 200_000, logged: true }],
+			[
+				"org/repo:1:1",
+				{
+					sinceMs: Date.now() - 200_000,
+					logged: true,
+					reason: "headroom" as const,
+				},
+			],
 		]),
 		1,
 		NOW,

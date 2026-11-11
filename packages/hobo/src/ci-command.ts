@@ -18,6 +18,7 @@ import {
 } from "@hobo/cli";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
+import { runCiAppCreate } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
@@ -48,6 +49,18 @@ import { CiSetupUsage } from "./ci-command-errors.js";
 class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
+
+async function promptOnTerminal(question: string): Promise<string> {
+	const terminal = createInterface({
+		input: process.stdin,
+		output: process.stderr,
+	});
+	try {
+		return await terminal.question(question);
+	} finally {
+		terminal.close();
+	}
+}
 
 function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
@@ -261,6 +274,8 @@ function parseCiArgs(args: readonly string[]) {
 			set: { type: "string", multiple: true },
 			"root-directory": { type: "string" },
 			"create-project": { type: "boolean" },
+			"owner-id": { type: "string" },
+			name: { type: "string" },
 		},
 	});
 }
@@ -351,6 +366,7 @@ export function createCiCommand(
 					"serve",
 					"github",
 					"deploy",
+					"app",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
@@ -379,6 +395,49 @@ export function createCiCommand(
 				);
 				if (misplaced)
 					return usage(`--${misplaced} only applies to hobo ci deploy.`);
+			}
+			if (command === "app") {
+				if (positionals.length !== 2 || positionals[1] !== "create")
+					return usage("Use hobo ci app create.");
+				const allowed = new Set([
+					"relay",
+					"owner-id",
+					"name",
+					"yes",
+					"non-interactive",
+				]);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(
+						`--${unsupported[0]} does not apply to hobo ci app create.`,
+					);
+				const interactive =
+					(deps.interactive ??
+						Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
+					!flags.json &&
+					!values["non-interactive"];
+				return runCiAppCreate({
+					relay: values.relay === undefined ? undefined : String(values.relay),
+					ownerId:
+						values["owner-id"] === undefined
+							? undefined
+							: String(values["owner-id"]),
+					name: values.name === undefined ? undefined : String(values.name),
+					replace: values.yes === true,
+					interactive,
+					env: deps.env ?? process.env,
+					emitProgress,
+					fetch: deps.fetch,
+					openBrowser: deps.openBrowser,
+					prompt: deps.prompt ?? promptOnTerminal,
+					sleep: deps.sleep,
+				});
+			}
+			for (const key of ["owner-id", "name"] as const) {
+				if (values[key] !== undefined)
+					return usage(`--${key} only applies to hobo ci app create.`);
 			}
 			if (command === "github") {
 				if (
