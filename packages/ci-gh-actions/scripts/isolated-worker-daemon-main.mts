@@ -45,6 +45,7 @@ import {
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
 	defaultGitMirrorFallbackRoot,
+	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
@@ -573,8 +574,7 @@ try {
 		string,
 		{ event?: string; jobCreatedAt?: string }
 	>();
-	const preferredGitMirrorRoot =
-		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+	const preferredGitMirrorRoot = defaultGitMirrorPreferredRoot();
 	const gitMirrorRoot = resolveGitMirrorRoot(
 		preferredGitMirrorRoot,
 		defaultGitMirrorFallbackRoot(),

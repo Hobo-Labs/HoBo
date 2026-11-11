@@ -7,6 +7,7 @@ import {
 	boxGitMirrorPath,
 	createBoxGitMirror,
 	defaultGitMirrorFallbackRoot,
+	defaultGitMirrorPreferredRoot,
 	resolveGitMirrorRoot,
 	shaRef,
 } from "../src/isolated-worker/git-mirror.js";
@@ -78,6 +79,27 @@ describe("resolveGitMirrorRoot", () => {
 
 	it("defaultGitMirrorFallbackRoot is absolute", () => {
 		expect(defaultGitMirrorFallbackRoot()).toMatch(/^\//);
+	});
+
+	it("defaultGitMirrorPreferredRoot uses box cache without HOBO_CI_GIT_MIRROR_ROOT", () => {
+		const priorUser = process.env.USER;
+		const priorHome = process.env.HOME;
+		const priorRoot = process.env.HOBO_CI_GIT_MIRROR_ROOT;
+		delete process.env.HOBO_CI_GIT_MIRROR_ROOT;
+		process.env.USER = "box";
+		process.env.HOME = "/home/box";
+		try {
+			expect(defaultGitMirrorPreferredRoot()).toBe(
+				"/home/box/.cache/hobo-ci/git",
+			);
+		} finally {
+			if (priorRoot === undefined) delete process.env.HOBO_CI_GIT_MIRROR_ROOT;
+			else process.env.HOBO_CI_GIT_MIRROR_ROOT = priorRoot;
+			if (priorUser === undefined) delete process.env.USER;
+			else process.env.USER = priorUser;
+			if (priorHome === undefined) delete process.env.HOME;
+			else process.env.HOME = priorHome;
+		}
 	});
 });
 
