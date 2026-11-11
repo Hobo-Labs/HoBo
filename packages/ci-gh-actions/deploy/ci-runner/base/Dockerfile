@@ -27,7 +27,7 @@ RUN case "${TARGETARCH:-amd64}" in \
     esac \
   && archive="actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" \
   && url="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${archive}" \
-  && curl -fsSL "$url" -o "/tmp/${archive}" \
+  && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "$url" -o "/tmp/${archive}" \
   && echo "${digest}  /tmp/${archive}" | sha256sum -c - \
   && mkdir -p /opt/actions-runner \
   && tar -xzf "/tmp/${archive}" -C /opt/actions-runner \
@@ -49,7 +49,7 @@ RUN case "${TARGETARCH:-amd64}" in \
       amd64) url="https://cdn.playwright.dev/builds/cft/${PLAYWRIGHT_CHROMIUM_VERSION}/linux64/chrome-headless-shell-linux64.zip"; digest="${PLAYWRIGHT_HEADLESS_SHELL_SHA256_X64}" ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
-  && curl -fsSL "$url" -o /tmp/headless-shell.zip \
+  && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "$url" -o /tmp/headless-shell.zip \
   && echo "${digest}  /tmp/headless-shell.zip" | sha256sum -c - \
   && dir="${PLAYWRIGHT_BROWSERS_PATH}/chromium_headless_shell-${PLAYWRIGHT_CHROMIUM_REVISION}" \
   && mkdir -p "$dir" \

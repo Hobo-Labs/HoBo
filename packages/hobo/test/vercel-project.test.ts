@@ -801,6 +801,25 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		);
 	});
 
+	// Writing a body back out costs the square of its depth (JSON.stringify
+	// checks each container against all it is inside), so past 64 levels the
+	// body is shown as sent, searched as text, and stays linear.
+	it.each([
+		[64, "written back out"],
+		[65, "shown as sent"],
+	])("a body %i levels deep is %s, its token taken out", async (levels, how) => {
+		const deep = `${"[ ".repeat(levels - 1)}"${TOKEN}"${" ]".repeat(levels - 1)}`;
+		const body = `{ "echo" : "you sent ${TOKEN}", "trace" : ${deep} }`;
+		const error = await refusedBy(() => plainReply(403, body));
+
+		expectNoToken(error, TOKEN, []);
+		expect(error.message).toMatch(
+			how === "written back out"
+				? /\(HTTP 403\): \{"echo":"you sent \[redacted\]","trace":\[\[/u
+				: /\(HTTP 403\): \{ "echo" : "you sent \[redacted\]", "trace" : \[ \[/u,
+		);
+	});
+
 	it("keeps a __proto__ key in the body as a key, its token taken out", async () => {
 		const body = `{"__proto__":{"echo":"you sent ${TOKEN}"},"error":{"code":"forbidden","message":"Not authorized"}}`;
 		const error = await refusedBy(() => plainReply(403, body));

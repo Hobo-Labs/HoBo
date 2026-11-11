@@ -3,7 +3,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { mainGateScope } from "../ci/affected-lanes.mts";
-import { planCommands } from "../ci/dependent-tests.mts";
+import {
+	intersectScopedPlanWithTurboAffected,
+	planCommands,
+	planDependentTests,
+	planUnits,
+	readRepo,
+} from "../ci/dependent-tests.mts";
 
 const workflow = readFileSync(
 	join(import.meta.dirname, "..", "..", ".github/workflows/hobo-ci.yml"),
@@ -34,6 +40,47 @@ describe("main workspace affected-only", () => {
 			if (prior === undefined) delete process.env.HOBO_TURBO_USE_AFFECTED;
 			else process.env.HOBO_TURBO_USE_AFFECTED = prior;
 		}
+	});
+
+	it("intersects a fat planner closure with turbo affected directories", () => {
+		const repo = readRepo();
+		const fat = planDependentTests(
+			["packages/redaction-test-harness/test/linear-time.test.ts"],
+			repo,
+		);
+		assert.equal(fat.mode, "scoped");
+		const narrow = intersectScopedPlanWithTurboAffected(
+			fat,
+			new Set(["packages/redaction-test-harness", "packages/hobo"]),
+			repo.workspaces,
+		);
+		assert.ok(
+			planUnits(narrow, repo.workspaces).length <
+				planUnits(fat, repo.workspaces).length,
+		);
+		assert.equal(narrow.mode, "scoped");
+		if (narrow.mode !== "scoped") return;
+		assert.deepEqual(narrow.full, ["packages/redaction-test-harness"]);
+		assert.ok(narrow.subsets.has("packages/hobo"));
+	});
+
+	it("plans one package and turbo dependents for a single-package test edit", () => {
+		const repo = readRepo();
+		const path = "packages/ci-agent/test/daemon-config.test.ts";
+		const raw = planDependentTests([path], repo);
+		assert.equal(raw.mode, "scoped");
+		if (raw.mode !== "scoped") return;
+		assert.ok(raw.full.includes("packages/ci-agent"));
+		const affected = new Set(["packages/ci-agent", "packages/hobo"]);
+		const aligned = intersectScopedPlanWithTurboAffected(
+			raw,
+			affected,
+			repo.workspaces,
+		);
+		assert.deepEqual(
+			[...planUnits(aligned, repo.workspaces)].sort(),
+			["packages/ci-agent", "packages/hobo"].sort(),
+		);
 	});
 
 	it("wires TURBO_SCM_BASE and HOBO_TURBO_USE_AFFECTED on main workspace shards", () => {

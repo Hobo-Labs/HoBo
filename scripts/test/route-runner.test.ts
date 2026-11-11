@@ -1105,4 +1105,32 @@ describe("the script as a whole", () => {
 		});
 		assert.deepEqual([pinned.tier, pinned.runner], ["fleet", "hobo"]);
 	});
+
+	it("sends what is left of an attested run to GitHub-hosted without reading the queue", async () => {
+		const attested = await main({
+			GITHUB_EVENT_NAME: "merge_group",
+			HOBO_CI_ATTESTED: "true",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+		});
+		assert.equal(attested.runner, "ubuntu-24.04");
+		assert.equal(attested.tier, "github");
+		assert.match(attested.reason, /signed local run/);
+		// A pin is an operator's override: it still wins.
+		const pinned = await main({
+			GITHUB_EVENT_NAME: "merge_group",
+			HOBO_CI_ATTESTED: "true",
+			HOBO_CI_ROUTE: "fleet",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+		});
+		assert.equal(pinned.runner, "hobo-trunk");
+		// Anything but the literal `true` is not an attestation.
+		const unattested = await main({
+			GITHUB_EVENT_NAME: "pull_request",
+			HOBO_CI_ATTESTED: "false",
+			GITHUB_REPOSITORY: "acme/app",
+			GITHUB_RUN_ID: "1",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+		});
+		assert.match(unattested.reason, /could not be read/);
+	});
 });

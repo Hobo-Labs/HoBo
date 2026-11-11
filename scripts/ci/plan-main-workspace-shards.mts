@@ -9,6 +9,7 @@ import { cliRootFileReader, mainGateScope } from "./affected-lanes.mts";
 import {
 	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 	planDependentTests,
+	planDependentTestsForTurboAffected,
 	planMainWorkspaceShardCount,
 	readRepo,
 } from "./dependent-tests.mts";
@@ -85,7 +86,19 @@ async function main(): Promise<void> {
 					encoding: "utf8",
 				}).stdout
 			: "";
-	const plan = planDependentTests(input.split("\n"), repo);
+	const plan =
+		tests === "affected" && base
+			? planDependentTestsForTurboAffected(
+					input.split("\n"),
+					repo,
+					base,
+					cliRootFileReader(base),
+				)
+			: planDependentTests(
+					input.split("\n"),
+					repo,
+					base ? cliRootFileReader(base) : undefined,
+				);
 	const parallelCap = await resolveMainWorkspaceParallelCap({
 		repository,
 		token,

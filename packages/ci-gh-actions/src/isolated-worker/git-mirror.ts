@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { isCompleteGitMirror } from "./git-mirror-usability.js";
@@ -53,6 +53,25 @@ export function resolveGitMirrorRoot(
 export function defaultGitMirrorFallbackRoot(): string {
 	const base = process.env.HOBO_HOME?.trim() || homedir();
 	return join(resolve(base), ".cache", "hobo-ci", "git");
+}
+
+/** Default mirror root on HoBo box workers (writable without `/var/lib`). */
+export function defaultGitMirrorPreferredRoot(): string {
+	const configured = process.env.HOBO_CI_GIT_MIRROR_ROOT?.trim();
+	if (configured) return configured;
+	const home = process.env.HOME?.trim() || homedir();
+	const user = process.env.USER?.trim() || process.env.LOGNAME?.trim() || "";
+	if (home === "/home/box" || user === "box") {
+		return join(home, ".cache", "hobo-ci", "git");
+	}
+	return "/var/lib/hobo-ci/git";
+}
+
+const CORRUPT_PACK =
+	/unresolved delta|index-pack failed|recoverable delta|bad packed object/i;
+
+function isCorruptPackError(stderr: string): boolean {
+	return CORRUPT_PACK.test(stderr);
 }
 
 export function boxGitMirrorPath(root: string, repository: string): string {
@@ -189,11 +208,7 @@ export function createBoxGitMirror(options: {
 		return undefined;
 	}
 
-	async function ensureMirror(): Promise<BoxGitMirrorEnsureResult | undefined> {
-		if (existsSync(path)) {
-			await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
-			return ensureCompleteMirror();
-		}
+	async function cloneBare(): Promise<BoxGitMirrorEnsureResult | undefined> {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
 		const cloned = await git([
 			"clone",
@@ -213,11 +228,38 @@ export function createBoxGitMirror(options: {
 		return refreshMain();
 	}
 
+	async function recloneMirror(
+		reason: string,
+	): Promise<BoxGitMirrorEnsureResult | undefined> {
+		try {
+			rmSync(path, { recursive: true, force: true });
+		} catch {
+			return {
+				status: "miss",
+				reason: `re-clone failed after ${reason}: could not remove ${path}`,
+			};
+		}
+		return cloneBare();
+	}
+
+	async function ensureMirror(): Promise<BoxGitMirrorEnsureResult | undefined> {
+		if (existsSync(path)) {
+			await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
+			return ensureCompleteMirror();
+		}
+		return cloneBare();
+	}
+
 	async function fetchSha(sha: string): Promise<BoxGitMirrorEnsureResult> {
 		const prepared = await ensureMirror();
 		if (prepared?.status === "miss") return prepared;
 
-		const refreshed = await refreshMain();
+		let refreshed = await refreshMain();
+		if (refreshed?.status === "miss" && isCorruptPackError(refreshed.reason)) {
+			const recloned = await recloneMirror("main ref refresh");
+			if (recloned?.status === "miss") return recloned;
+			refreshed = await refreshMain();
+		}
 		if (refreshed) return refreshed;
 
 		if (!(await hasCommit(sha))) {
@@ -232,10 +274,31 @@ export function createBoxGitMirror(options: {
 				`${sha}:${shaRef(sha)}`,
 			]);
 			if (fetched.status !== 0) {
-				return {
-					status: "miss",
-					reason: `fetch failed: ${formatGitFailure(fetched.stderr)}`,
-				};
+				if (isCorruptPackError(fetched.stderr)) {
+					const recloned = await recloneMirror("pack fetch");
+					if (recloned?.status === "miss") return recloned;
+					const retry = await git([
+						`--git-dir=${path}`,
+						"-c",
+						"gc.auto=0",
+						"fetch",
+						"--no-tags",
+						"--no-filter",
+						"origin",
+						`${sha}:${shaRef(sha)}`,
+					]);
+					if (retry.status !== 0) {
+						return {
+							status: "miss",
+							reason: `fetch failed after re-clone: ${formatGitFailure(retry.stderr)}`,
+						};
+					}
+				} else {
+					return {
+						status: "miss",
+						reason: `fetch failed: ${formatGitFailure(fetched.stderr)}`,
+					};
+				}
 			}
 		}
 		if (!(await hasCommit(sha))) {

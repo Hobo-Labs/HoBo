@@ -49,6 +49,18 @@ engine for text per region. The file is reassembled from git's settled text
 and the answers. Confining the change to conflict regions is then a property
 of the code, not a check on the model's output.
 
+`zdiff3` moves lines both sides share out of a region, into the settled text
+around it. A live run with a small model showed the failure that invites:
+the model wrote the shared line again, and the file had it twice. A
+resolution whose first or last line repeats the settled line next to its
+region, where neither side starts or ends with that line, is refused
+(`repeated-context`).
+
+The instructions state the answer's JSON shape as well as the schema doing
+so: an OpenAI-compatible server without schema-constrained output, such as
+llama.cpp, never receives the schema, and a model there answered with keys
+of its own.
+
 ## Cheapest resolution first
 
 A conflicted file goes through three layers before it is committed, and each

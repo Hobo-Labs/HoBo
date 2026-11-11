@@ -193,6 +193,11 @@ export async function forwardQueueWakeup(options: {
 		);
 }
 
+/** A scheduled or self-continued repair, as opposed to a webhook delivery. */
+function isRepairTick(message: z.infer<typeof Wakeup>): boolean {
+	return message !== null && "name" in message;
+}
+
 /** Authenticate before reading a bounded payload and run only the active worker. */
 export function createQueueWakeupHandler(options: {
 	origin: string;
@@ -256,6 +261,13 @@ export function createQueueWakeupHandler(options: {
 				await options.run(parsed.data);
 				return new Response(null, { status: 204, headers });
 			} catch (error) {
+				// A repair tick is periodic and only re-reads the store, so one that
+				// lands while the store is down is acknowledged and dropped: the next
+				// tick does the same work. Holding it would keep every deployment
+				// that ever scheduled it (old production deployments keep their
+				// queue consumers and schedules) retrying against this relay.
+				if (error instanceof StoreUnavailable && isRepairTick(parsed.data))
+					return new Response(null, { status: 204, headers });
 				// The store back-off knows when it will look again; say so, and the
 				// queue consumer holds the message until then.
 				return new Response(null, {

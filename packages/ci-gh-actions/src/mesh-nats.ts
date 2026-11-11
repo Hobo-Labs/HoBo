@@ -216,7 +216,7 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 					// Someone else wrote first. If they wrote the same thing there is
 					// nothing to reconcile; otherwise the caller must read and decide.
 					const entry = await config.get(key);
-					if (!entry || entry.operation !== "PUT") throw error;
+					if (entry?.operation !== "PUT") throw error;
 					return entry.string() === value
 						? { revision: entry.revision }
 						: "conflict";
@@ -245,7 +245,7 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 					}
 					read += 1;
 					const entry = await nodes.get(key);
-					if (!entry || entry.operation !== "PUT") continue;
+					if (entry?.operation !== "PUT") continue;
 					// An advertisement this version cannot read is a node it cannot rank.
 					const advert = parseMeshAdvert(entry.string());
 					if (advert?.id === key)

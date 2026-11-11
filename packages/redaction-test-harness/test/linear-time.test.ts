@@ -17,12 +17,18 @@ import {
 	sweepInputs,
 } from "../src/linear-sweep.js";
 import {
+	assertGrowsLinearly,
+	type Growth,
 	grewLinearly,
 	HANG_BACKSTOP_MS,
+	logLogSlope,
 	MAX_REPEAT,
 	MissingCpuClockError,
 	measureGrowth,
 	medianCpuMs,
+	minCpuMs,
+	NEGATIVE_CONTROL,
+	NonLinearGrowthError,
 	OperationHangError,
 	repeatedTo,
 } from "../src/linear-time.js";
@@ -57,9 +63,24 @@ describe("measureGrowth", () => {
 			largeMs: 4,
 			ratio: 4000,
 		};
-		expect(grewLinearly(uncalibrated)).toBe(true);
-		expect(grewLinearly({ ...uncalibrated, largeMs: 400 })).toBe(false);
-		expect(grewLinearly({ ...uncalibrated, calibrated: true })).toBe(false);
+		const uncalibratedGrowth: Growth = {
+			...uncalibrated,
+			points: [
+				{ length: uncalibrated.length, minMs: uncalibrated.smallMs },
+				{
+					length: 4 * uncalibrated.length,
+					minMs: uncalibrated.largeMs,
+				},
+			],
+			logLogSlope: 2,
+		};
+		expect(grewLinearly(uncalibratedGrowth, 30)).toBe(true);
+		expect(grewLinearly({ ...uncalibratedGrowth, largeMs: 400 }, 30)).toBe(
+			false,
+		);
+		expect(grewLinearly({ ...uncalibratedGrowth, calibrated: true }, 30)).toBe(
+			false,
+		);
 	});
 
 	it("calls an operation calibrated by its calibrating run, not its best", () => {
@@ -79,15 +100,16 @@ describe("measureGrowth", () => {
 		};
 		const growth = measureGrowth(quadratic, repeatedTo("a"), {
 			startLength: 4096,
-			maxLength: 4096,
+			maxLength: 16_384,
 			minMs: 20,
+			ladderSteps: 2,
 		});
 		expect(growth).toMatchObject({ calibrated: true, smallMs: 12 });
 		expect(growth.ratio).toBeCloseTo(16);
 		expect(grewLinearly(growth)).toBe(false);
 	});
 
-	it("uses the median of samples so one inflated CPU reading does not fail linear work", () => {
+	it("uses the minimum of interleaved samples so one inflated CPU reading does not fail linear work", () => {
 		let cpu = 0;
 		let largeMeasures = 0;
 		vi.spyOn(process, "threadCpuUsage").mockImplementation(() => ({
@@ -95,30 +117,97 @@ describe("measureGrowth", () => {
 			system: 0,
 		}));
 		const smallCost = 40;
-		const largeCost = 160;
 		const linear = (text: string): void => {
-			const isLarge = text.length > 8192;
-			if (isLarge) {
-				largeMeasures += 1;
-				// One measured large at 9×; median of five larges stays at 4×.
-				cpu += largeMeasures === 3 ? largeCost * 2.25 : largeCost;
+			if (text.length <= 4096) {
+				cpu += smallCost;
 				return;
 			}
-			cpu += smallCost;
+			const scale = text.length / 4096;
+			largeMeasures += 1;
+			// One doubled size at 2.25×; minimum samples keep doubling near 2×.
+			cpu += largeMeasures === 3 ? smallCost * scale * 2.25 : smallCost * scale;
 		};
 		const growth = measureGrowth(linear, repeatedTo("a"), {
 			startLength: 4096,
-			maxLength: 4096,
+			maxLength: 16_384,
 			minMs: 1,
 			runs: 5,
 			warmupRuns: 1,
+			ladderSteps: 2,
 		});
 		expect(growth.ratio).toBeLessThan(8);
-		expect(grewLinearly(growth)).toBe(true);
+		expect(grewLinearly(growth, 1)).toBe(true);
+		expect(growth.points.length).toBeGreaterThanOrEqual(3);
 	});
 
-	it("medianCpuMs ignores a single outlier", () => {
+	it("rejects deliberately quadratic work", () => {
+		let cpu = 0;
+		vi.spyOn(process, "threadCpuUsage").mockImplementation(() => ({
+			user: cpu * 1000,
+			system: 0,
+		}));
+		const quadratic = (text: string): void => {
+			const units = text.length / 1024;
+			cpu += units * units;
+		};
+		const growth = measureGrowth(quadratic, repeatedTo("a"), NEGATIVE_CONTROL);
+		expect(grewLinearly(growth, NEGATIVE_CONTROL.minMs)).toBe(false);
+		expect(growth.logLogSlope).toBeGreaterThan(1.6);
+		expect(() =>
+			assertGrowsLinearly(quadratic, repeatedTo("a"), NEGATIVE_CONTROL),
+		).toThrow(NonLinearGrowthError);
+	});
+
+	it("passes linear work under noisy CPU even when one 4× ratio would exceed the cap", () => {
+		let cpu = 0;
+		let largeMeasures = 0;
+		vi.spyOn(process, "threadCpuUsage").mockImplementation(() => ({
+			user: cpu * 1000,
+			system: 0,
+		}));
+		const base = 100;
+		const linear = (text: string): void => {
+			const scale = text.length / 4096;
+			if (text.length <= 4096) {
+				cpu += base;
+				return;
+			}
+			largeMeasures += 1;
+			cpu += largeMeasures === 2 ? base * scale * 2.2 : base * scale;
+		};
+		const growth = measureGrowth(linear, repeatedTo("a"), {
+			startLength: 4096,
+			maxLength: 16_384,
+			minMs: 1,
+			runs: 7,
+			warmupRuns: 1,
+			ladderSteps: 2,
+		});
+		expect(growth.ratio).toBeGreaterThanOrEqual(4);
+		expect(grewLinearly(growth, 1)).toBe(true);
+		expect(growth.logLogSlope).toBeLessThan(1.55);
+	});
+
+	it("medianCpuMs and minCpuMs summarize samples", () => {
 		expect(medianCpuMs([10, 11, 12, 13, 90])).toBe(12);
+		expect(minCpuMs([10, 11, 12, 13, 90])).toBe(10);
+	});
+
+	it("logLogSlope is about 1 for linear points and about 2 for quadratic", () => {
+		expect(
+			logLogSlope([
+				{ length: 1000, minMs: 10 },
+				{ length: 2000, minMs: 20 },
+				{ length: 4000, minMs: 40 },
+			]),
+		).toBeCloseTo(1, 5);
+		expect(
+			logLogSlope([
+				{ length: 1000, minMs: 1 },
+				{ length: 2000, minMs: 4 },
+				{ length: 4000, minMs: 16 },
+			]),
+		).toBeCloseTo(2, 5);
 	});
 
 	it("stops at the first run past the backstop", () => {

@@ -294,7 +294,8 @@ What the agent will not do, and where that is enforced:
 - **It abstains rather than guesses.** Binary files, a delete against a
   modify, renames, mode changes, oversized files, too many files or regions,
   an answer below `minConfidence`, and replacement text that contains conflict
-  markers or is far larger than the region all end the attempt. A second
+  markers, is far larger than the region, or repeats the settled line just
+  before or after it all end the attempt. A second
   engine is never asked for a more confident answer to the same question.
 - **One attempt per merge.** An attempt is keyed by the two commits and the
   policy. Its outcome is journalled, and the same pair is not tried again,
@@ -372,7 +373,7 @@ conflict resolvers do. [ADR.md](ADR.md) records the design decisions.
 | `contracts/github-schema.test.ts` | Every GraphQL operation the agent sends, validated against GitHub's published schema (vendored in `contracts/github-schema.graphql.gz`; `pnpm contracts:github-schema` refreshes it) |
 | `contracts/*.consumer.test.ts` | The GitHub adapter and the engine prompt against their Pacts |
 | `test/ai-sdk-engine.test.ts`, `test/harness-engine.test.ts` | The engines over the AI SDK's mock model and harness |
-| `acceptance/` (`test:live`) | One pass with a real model through the AI Gateway, against real `git`; needs `AI_GATEWAY_API_KEY`, and `HOBO_CI_AGENT_LIVE_MODEL` picks the model |
+| `acceptance/` (`test:live`) | One pass with a real model against real `git`: an OpenAI-compatible server at `HOBO_CI_AGENT_LIVE_BASE_URL` (a local llama.cpp or Ollama server with an open-weights model costs nothing), or else the AI Gateway with `AI_GATEWAY_API_KEY`; `HOBO_CI_AGENT_LIVE_MODEL` picks the model |
 | `acceptance:live` | One `observe` pass against a real GitHub installation |
 
 ## Test it
@@ -387,4 +388,6 @@ calls the model:
 
 ```sh
 AI_GATEWAY_API_KEY=... pnpm --filter @hobo/ci-agent test:live
+HOBO_CI_AGENT_LIVE_BASE_URL=http://127.0.0.1:8080/v1 HOBO_CI_AGENT_LIVE_MODEL=qwen2.5-coder-3b \
+  pnpm --filter @hobo/ci-agent test:live
 ```

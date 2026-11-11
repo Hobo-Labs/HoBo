@@ -52,6 +52,10 @@ jobs:
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
+      # A signed local run verified for this tree (scripts/ci/verify-attestation.mts):
+      # the jobs it covers are skipped. `false` and `[]` when there is none.
+      attested: ${{ steps.route.outputs.attested }}
+      attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -61,6 +65,8 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
@@ -282,7 +288,8 @@ jobs:
     # validation running, never skipped, when the image build fails. The
     # required PR impact gate below combines this result with merge-group tests.
     needs: [route, ci-runner-image]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    # Skipped when the route job verified a signed local run of this job for this tree.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
     timeout-minutes: 20
@@ -497,7 +504,7 @@ jobs:
     name: Workspace test shard ${{ matrix.shard }}
     # The required gate accepts validation only when every shard succeeds.
     needs: [route, pr_gate_validation]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"workspace_tests"')) }}
     # The shard list is the planner's; each job splits by its own position in
     # that list (strategy.job-index of strategy.job-total), so whatever list
     # arrives, every planned suite lands in exactly one job.
@@ -593,7 +600,7 @@ jobs:
   pr_affected:
     name: PR affected package lanes
     needs: [route, pr_gate_validation]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' }}
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_affected"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -669,8 +676,10 @@ jobs:
   pr-gate:
     name: PR impact gate
     # This is the required check. It runs even if a prerequisite was skipped,
-    # failed, or cancelled, and accepts only the event's complete validation.
-    needs: [pr_gate_validation, workspace_tests, pr_affected]
+    # failed, or cancelled, and accepts only the event's complete validation:
+    # each job succeeded, or the route job succeeded, reported a verified signed
+    # local run covering that job, and the job was skipped for it.
+    needs: [route, pr_gate_validation, workspace_tests, pr_affected]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
@@ -685,18 +694,41 @@ jobs:
           VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
           AFFECTED_RESULT: ${{ needs.pr_affected.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+          ATTESTED: ${{ needs.route.outputs.attested }}
+          ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
         run: |
           set -euo pipefail
-          if [ "$VALIDATION_RESULT" != "success" ]; then
+          # A skipped job counts only when the route job itself succeeded and
+          # reported a verified signed local run that covers that job by id.
+          attested() {
+            [ "${ROUTE_RESULT:-}" = "success" ] || return 1
+            [ "${ATTESTED:-}" = "true" ] || return 1
+            case "${ATTESTED_JOBS:-}" in
+              *"\"$1\""*) return 0 ;;
+            esac
+            return 1
+          }
+          passed() {
+            [ "$1" = "success" ] && return 0
+            [ "$1" = "skipped" ] && attested "$2"
+          }
+          if ! passed "$VALIDATION_RESULT" pr_gate_validation; then
             echo "PR impact validation did not succeed: $VALIDATION_RESULT" >&2
             exit 1
           fi
-          if [ "$WORKSPACE_RESULT" != "success" ]; then
+          if ! passed "$WORKSPACE_RESULT" workspace_tests; then
             echo "Workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi
           case "$EVENT_NAME:$AFFECTED_RESULT" in
             pull_request:success|merge_group:skipped) ;;
+            pull_request:skipped)
+              if ! attested pr_affected; then
+                echo "Affected lanes were skipped without a verified local run" >&2
+                exit 1
+              fi
+              ;;
             *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
           esac
 
@@ -704,7 +736,7 @@ jobs:
     # Off the critical path: these used to run inside the PR impact gate.
     name: PR off-path checks (ts-autocode surface, production packages)
     needs: route
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -1203,7 +1235,7 @@ jobs:
   artifact-trust:
     name: artifact signing and install verification
     needs: route
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"artifact-trust"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 10
     permissions:
@@ -1310,13 +1342,14 @@ jobs:
     # The data engines against real servers: the conformance kit, change
     # capture, the write fence under load and the native logical-copy path only
     # mean something on a real PostgreSQL and a real MongoDB replica set. On a
-    # pull request it runs when the diff can reach those suites; the nightly and
-    # manual runs always do. Not on merge_group: the merge queue's required set
+    # pull request it runs when the diff can reach those suites; a manual run
+    # always does. Never on a schedule: the job depends on a runner that can
+    # start containers, which is not always the case. Not on merge_group: the merge queue's required set
     # does not include it, and it would hold a box slot there for nothing.
     # The name is also a key in the worker's memory classes (`heavy`).
     name: Live data engines (PostgreSQL 16, MongoDB 8)
     needs: route
-    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -1333,8 +1366,8 @@ jobs:
         id: scope
         run: |
           set -euo pipefail
-          # Only a pull request is scoped by its diff. A nightly or a manual run
-          # whose tip happens to be a merge commit must not take that path.
+          # Only a pull request is scoped by its diff. A manual run whose tip
+          # happens to be a merge commit must not take that path.
           if [ "$GITHUB_EVENT_NAME" != "pull_request" ] || ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             echo "not a pull request's merge commit; running the lane"
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -1426,7 +1459,7 @@ jobs:
     name: CI fabric contract guard
     needs: route
     # On other events, these steps run inside Main full gate or PR impact gate.
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"ci-guard"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 10
     permissions:
@@ -1448,7 +1481,7 @@ jobs:
     needs: route
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside Main full gate in parallel with its checks.
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"secret-scan"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 10
     permissions:

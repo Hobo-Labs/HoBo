@@ -279,6 +279,25 @@ describe("refused queue handoff", () => {
 		}
 	});
 
+	it("drops a repair tick while the store is down, but holds a delivery", async () => {
+		const run = vi.fn(async () => {});
+		const handle = createQueueWakeupHandler({ origin, secret, run });
+		for (const source of ["static", "hobo-ci"]) {
+			run.mockRejectedValueOnce(new StoreUnavailable(34_001));
+			const tick = await handle(
+				wakeup(JSON.stringify({ source, name: "hobo-ci-repair" })),
+			);
+			expect(tick.status, source).toBe(204);
+		}
+		run.mockRejectedValueOnce(new Error("repair failed"));
+		const failed = await handle(
+			wakeup('{"source":"static","name":"hobo-ci-repair"}'),
+		);
+		expect(failed.status).toBe(503);
+		run.mockRejectedValueOnce(new StoreUnavailable(34_001));
+		expect((await handle(wakeup('{"deliveryId":"one"}'))).status).toBe(503);
+	});
+
 	it("tells the caller when the store will be tried again, and only then", async () => {
 		const run = vi.fn(async () => {});
 		const handle = createQueueWakeupHandler({ origin, secret, run });
