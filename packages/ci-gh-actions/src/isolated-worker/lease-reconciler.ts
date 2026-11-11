@@ -4,7 +4,11 @@ import type { GithubTransport } from "../github.js";
 import type { HostedRelayStore } from "../hosted-relay.js";
 import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
-import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
+import {
+	mergeDrainInFlightCount,
+	workerOfferKey,
+	workerOfferKeys,
+} from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
 import {
 	leaseHasLiveContainer,
@@ -31,7 +35,7 @@ export type WorkerLeaseReconciliationEvent =
 
 /** Max drain wait for leases that never got a live worker container. */
 // public-contract: caps redeploy stall when reservations outlive GitHub or launch.
-export const DEFAULT_NO_CONTAINER_DRAIN_MAX_MS = 60_000;
+export const DEFAULT_NO_CONTAINER_DRAIN_MAX_MS = 30_000;
 
 export type WorkerLeaseReconciliationLog = (
 	event: WorkerLeaseReconciliationEvent,
@@ -41,6 +45,8 @@ export type WorkerLeaseReconciliationLog = (
 export type WorkerLeaseReconciliationResult = Readonly<{
 	inventoryKnown: boolean;
 	liveLeaseIds: ReadonlySet<string>;
+	/** Jobs still on a live worker container or in-flight launch this worker owns. */
+	drainJobInFlight: number;
 	/** Memory reserved by the leases that are launching or running. */
 	inUseMemoryMb: number;
 }>;
@@ -268,6 +274,7 @@ export function createWorkerLeaseReconciler(options: {
 			return {
 				inventoryKnown: false,
 				liveLeaseIds: new Set(owned.map((lease) => lease.id)),
+				drainJobInFlight: owned.length,
 				inUseMemoryMb: reservedMemoryMb(owned),
 			};
 		}
@@ -303,6 +310,7 @@ export function createWorkerLeaseReconciler(options: {
 				activeLeaseCount: launching.length,
 			});
 		const liveLeaseIds = new Set<string>();
+		const drainJobLeaseIds = new Set<string>();
 		const protectedLeaseIds =
 			options.protectedLeaseIds?.() ?? new Set<string>();
 		for (const lease of owned) {
@@ -320,8 +328,10 @@ export function createWorkerLeaseReconciler(options: {
 			)
 				continue;
 			if (lease.state === "reserved") {
-				liveLeaseIds.add(lease.id);
-				continue;
+				if (leaseHasLiveContainer(container)) liveLeaseIds.add(lease.id);
+				else if (!reconcileOptions.draining) liveLeaseIds.add(lease.id);
+				if (leaseHasLiveContainer(container) || !reconcileOptions.draining)
+					continue;
 			}
 			const createdMs = Date.parse(lease.createdAt);
 			const dispatchingMs = Date.parse(lease.dispatchingAt);
@@ -614,9 +624,25 @@ export function createWorkerLeaseReconciler(options: {
 				});
 			}
 		}
+		for (const lease of owned) {
+			if (!liveLeaseIds.has(lease.id)) continue;
+			const container = containerFor(lease);
+			if (protectedLeaseIds.has(lease.id) || leaseHasLiveContainer(container))
+				drainJobLeaseIds.add(lease.id);
+		}
+		const runningWorkerContainers = containers.filter(
+			(container) =>
+				container.state === "running" &&
+				(container.name.startsWith("hobo-") ||
+					container.name.startsWith("hobo-warm-")),
+		).length;
 		return {
 			inventoryKnown: true,
 			liveLeaseIds,
+			drainJobInFlight: mergeDrainInFlightCount(
+				drainJobLeaseIds.size,
+				runningWorkerContainers,
+			),
 			inUseMemoryMb: journalInUseMb,
 		};
 	}
