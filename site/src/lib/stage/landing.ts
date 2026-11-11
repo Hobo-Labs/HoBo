@@ -525,8 +525,14 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		D = Math.round(clamp(w * 0.4, 480, 640));
 		for (const s of STOPS) {
 			const sw = s.signNode.offsetWidth;
-			s.signNode.style.left = `${boX - sw / 2}px`;
-			let floor = boX + Math.max(sw / 2, 60) + 34; // nothing stands on Bo or his sign
+			// Over his head the sign would reach the marker's labels on a short
+			// band, so there it stands beside him instead.
+			const beside = H < 200;
+			const reach = u * 128 * (554 / 542) * 0.42;
+			s.signNode.classList.toggle("is-beside", beside);
+			s.signNode.style.left = `${beside ? boX + reach : boX - sw / 2}px`;
+			// Nothing stands on Bo or his sign.
+			let floor = beside ? boX + reach + sw + 30 : boX + Math.max(sw / 2, 60) + 34;
 			s.items.forEach((it, n) => {
 				if (!it.art || !it.dprop) return;
 				const [pw] = size(it.art, u);
@@ -615,6 +621,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		}
 		beats = raw.map(Math.round).filter((b, i, a) => i === 0 || b - a[i - 1] > 140);
 		maxPos = beats[beats.length - 1] ?? 0;
+		markTallSigns();
 	}
 
 	const clouds = [...stage.querySelectorAll<HTMLElement>("[data-cloud]")].map((node, i) => {
@@ -717,9 +724,9 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			for (const g of stagedCog) if (g.stop === s && g.fits) rideOff(g.cart);
 		});
 	}
-	function announce(i: number): void {
+	function announce(i: number, aloud = true): void {
 		const s = STOPS[i];
-		said.textContent = `${i + 1} of ${STOPS.length}, ${s.name}: ${s.title}`;
+		if (aloud) said.textContent = `${i + 1} of ${STOPS.length}, ${s.name}: ${s.title}`;
 		// A reload or a shared link lands on the same stop, without a history
 		// entry per step.
 		const url = `${location.pathname}${location.search}${hashForStop(i, s.sec.id)}`;
@@ -731,6 +738,16 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		const tall = desk && inner !== null && !fits(inner.scrollHeight, s.sec.clientHeight);
 		s.sec.classList.toggle("is-tall", tall);
 		s.sec.classList.toggle("has-more", tall && canScroll(1, s.sec.scrollTop, s.sec.scrollHeight, s.sec.clientHeight));
+	}
+	/**
+	 * A phone sign taller than the sky scrolls inside its frame and keeps
+	 * vertical swipes for that; every other sign lets them through to the trail.
+	 */
+	function markTallSigns(): void {
+		for (const inner of world.querySelectorAll<HTMLElement>(".tst-inner")) {
+			inner.classList.remove("is-tall");
+			inner.classList.toggle("is-tall", inner.scrollHeight > inner.clientHeight + 1);
+		}
 	}
 	/** The scroll box of the stop being read, on a desktop. */
 	const reading = () => (desk ? STOPS[active].sec : null);
@@ -754,12 +771,15 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		const from = active;
 		const dir = j > from ? 1 : -1;
 		active = j;
-		announce(j);
+		const carried = focusIn || pendingFocus;
+		// A heading that takes focus is read out by itself; the live region
+		// would only say it twice.
+		announce(j, !carried);
 		fetchNear(j);
 		STOPS[j].sec.scrollTop = 0;
 		const land = () => {
 			measureFit(STOPS[j]);
-			if (!focusIn && !pendingFocus) return;
+			if (!carried) return;
 			pendingFocus = false;
 			const h = STOPS[j].sec.querySelector<HTMLElement>("h1, h2");
 			if (!h) return;
@@ -835,16 +855,28 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		}
 	}
 	const goSection = (i: number) => (desk ? goStop(i) : walkTo(STOPS[i].pos));
+	/** Past the last stop, the page's own footer. */
+	const toFooter = () => {
+		document.querySelector(".site-footer, footer")?.scrollIntoView({ behavior: rm ? "auto" : "smooth", block: "start" });
+	};
 	/** May the trail take this step, or does it belong to the page's own scroll? */
 	const takes = (dir: number) => trailTakes(atTop(), dir, atStart(), atEnd());
 
 	let lastWheel = 0;
-	let gesture = { acc: 0, fired: true };
+	let lastStep = -Infinity;
+	let gesture = { acc: 0, fired: true, stepped: false };
 	page.addEventListener("wheel", (e) => {
 		const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
 		const dir = Math.sign(d);
 		const n = now();
 		const fresh = n - lastWheel > 160;
+		if (fresh) gesture = { acc: 0, fired: false, stepped: false };
+		// The rest of a burst that already stepped belongs to that step.
+		if (gesture.stepped || n - lastStep < 400) {
+			e.preventDefault();
+			lastWheel = n;
+			return;
+		}
 		// A stop taller than its area is read first: the wheel scrolls it, and
 		// only a fresh gesture at its edge moves on.
 		// A phone sign taller than the sky scrolls itself.
@@ -855,17 +887,18 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			e.preventDefault();
 			box.scrollTop += d * (e.deltaMode === 1 ? 32 : 1);
 			lastWheel = n;
-			gesture = { acc: 0, fired: true };
+			gesture = { acc: 0, fired: true, stepped: false };
 			return;
 		}
 		if (!takes(dir)) return;
 		e.preventDefault();
-		if (fresh) gesture = { acc: 0, fired: false };
 		lastWheel = n;
 		if (gesture.fired) return;
 		gesture.acc += d * (e.deltaMode === 1 ? 32 : 1);
 		if (Math.abs(gesture.acc) > 20) {
 			gesture.fired = true;
+			gesture.stepped = true;
+			lastStep = n;
 			step(Math.sign(gesture.acc));
 		}
 	}, { passive: false, signal });
@@ -917,7 +950,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		if (!atTop()) {
 			if (dir < 0) scrollTo({ top: 0, behavior: rm ? "auto" : "smooth" });
 		} else if (takes(dir)) step(dir);
-		else if (dir > 0) page.nextElementSibling?.scrollIntoView({ behavior: rm ? "auto" : "smooth" });
+		else if (dir > 0) toFooter();
 	};
 	page.addEventListener("pointerup", lift, { signal });
 	page.addEventListener("pointercancel", lift, { signal });
@@ -967,7 +1000,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	});
 	routeList.appendChild(you);
 	const prev = () => step(-1, true);
-	const next = () => (atEnd() ? page.nextElementSibling?.scrollIntoView({ behavior: rm ? "auto" : "smooth" }) : step(1, true));
+	const next = () => (atEnd() ? toFooter() : step(1, true));
 	prevBtn.addEventListener("click", prev, { signal });
 	nextBtn.addEventListener("click", next, { signal });
 	let hinted = true;

@@ -77,7 +77,8 @@ async function fitAt(page: Page, origin: string, width: number, height: number):
 	const count = await page.locator(".tst-mark").count();
 	for (let i = 0; i < count; i++) {
 		await page.locator(".tst-mark").nth(i).click();
-		await page.waitForTimeout(1400);
+		// Long enough for the stop's sign to stand up.
+		await page.waitForTimeout(1600);
 		const report = await page.evaluate(() => {
 			const sec = document.querySelector<HTMLElement>("[data-trail-stop].is-on");
 			const header = document.querySelector(".site-header")?.getBoundingClientRect();
@@ -103,6 +104,13 @@ async function fitAt(page: Page, origin: string, width: number, height: number):
 					problems.push(`focused ${el.tagName} "${el.textContent?.trim().slice(0, 24)}" is hidden or covered`);
 			}
 			sec.scrollTop = 0;
+			const sign = document.querySelector(".tst-set.is-alive .tst-sign")?.getBoundingClientRect();
+			for (const label of document.querySelectorAll(".tst-route li span")) {
+				const l = label.getBoundingClientRect();
+				if (!sign || l.width === 0 || getComputedStyle(label).display === "none") continue;
+				if (l.left < sign.right && l.right > sign.left && l.top < sign.bottom && l.bottom > sign.top)
+					problems.push(`the "${label.textContent}" marker label overlaps the stop's sign`);
+			}
 			return { id: sec.id, problems };
 		});
 		check(`fit ${width}x${height} ${report.id}`, report.problems.length === 0, report.problems.slice(0, 3).join(" · "));
@@ -131,6 +139,65 @@ async function phone(page: Page, origin: string): Promise<void> {
 	}
 }
 
+/** A finger dragged from (x, from) to (x, to), through the browser's own touch handling. */
+async function swipe(page: Page, x: number, from: number, to: number): Promise<void> {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: from }] });
+	for (let i = 1; i <= 8; i++) {
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: from + ((to - from) * i) / 8 }] });
+		await page.waitForTimeout(16);
+	}
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	await cdp.detach();
+}
+
+async function phoneTouch(browser: Browser, origin: string): Promise<void> {
+	const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+	const page = await context.newPage();
+	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(1200);
+	// Find a stop whose sign in view is short: a tall one keeps swipes, by design.
+	const shortSign = () =>
+		page.evaluate(() => {
+			for (const b of document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up")) {
+				const r = b.getBoundingClientRect();
+				if (r.left >= 0 && r.right <= innerWidth && !b.querySelector(".tst-inner")?.classList.contains("is-tall"))
+					return Math.round(r.top + r.height / 2);
+			}
+			return -1;
+		});
+	let y = await shortSign();
+	for (let i = 1; y < 0 && i < 7; i++) {
+		await page.locator(".tst-mark").nth(i).click();
+		await page.waitForTimeout(2600);
+		y = await shortSign();
+	}
+	// A swipe steps to the next sign, which may belong to the same stop: what
+	// has to change is where the trail is, not which stop is marked.
+	const where = () => page.evaluate(() => document.querySelector<HTMLElement>("[data-world]")?.style.transform ?? "");
+	const before = await where();
+	await swipe(page, 200, y, y - 260);
+	await page.waitForTimeout(2600);
+	const after = await where();
+	check("phone: a swipe over a short sign moves the trail", y > 0 && after !== before, `sign at y ${y}, ${before} → ${after}`);
+
+	await page.goto("about:blank");
+	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(1500);
+	await page.locator("[data-next]").click({ force: true });
+	await page.waitForTimeout(1500);
+	const viaNext = await page.evaluate(() => ({ y: scrollY, footer: Math.round(document.querySelector(".site-footer")?.getBoundingClientRect().top ?? 9999) }));
+	check("phone: Next at the last stop reaches the footer", viaNext.y > 100 && viaNext.footer < 844, JSON.stringify(viaNext));
+
+	await page.evaluate(() => scrollTo(0, 0));
+	await page.waitForTimeout(300);
+	await swipe(page, 200, 600, 250);
+	await page.waitForTimeout(1500);
+	const viaSwipe = await page.evaluate(() => scrollY);
+	check("phone: a swipe up at the last stop reaches the footer", viaSwipe > 100, `scrollY ${viaSwipe}`);
+	await context.close();
+}
+
 async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
@@ -140,6 +207,8 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.waitForTimeout(1500);
 	const moved = await page.evaluate(() => document.activeElement?.id ?? document.activeElement?.tagName);
 	check("focus: the keyboard carries focus to the next stop's heading", moved === "why-title", `focus on ${moved}`);
+	const spoken = await page.evaluate(() => document.querySelector("[data-stage-said]")?.textContent ?? "");
+	check("focus: a heading that takes focus is not announced twice", !spoken.includes("Why"), `live region: "${spoken}"`);
 	await page.locator(".tst-mark").nth(3).click();
 	await page.waitForTimeout(1500);
 	const stayed = await page.evaluate(() => document.activeElement?.className ?? "");
@@ -170,6 +239,41 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.waitForTimeout(2000);
 	const nudged = await page.evaluate(() => [...document.querySelectorAll("[data-trail-stop].is-on")].map((s) => s.id).join(","));
 	check("keys: a small scroll does not leave the trail inert", nudged === "why", `at ${nudged}`);
+
+	// One fast wheel burst is one step, and the stop it lands on starts at its heading.
+	await page.setViewportSize({ width: 1280, height: 620 });
+	await page.goto("about:blank");
+	await page.goto(`${origin}/HoBo/#how`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(800);
+	await page.mouse.move(640, 300);
+	await page.evaluate(() => {
+		const sec = document.querySelector<HTMLElement>("[data-trail-stop].is-on");
+		if (sec) sec.scrollTop = sec.scrollHeight;
+	});
+	for (let i = 0; i < 14; i++) {
+		await page.mouse.wheel(0, 120);
+		await page.waitForTimeout(25);
+	}
+	await page.waitForTimeout(1800);
+	const burst = await page.evaluate(() => {
+		const on = [...document.querySelectorAll<HTMLElement>("[data-trail-stop].is-on")];
+		const sec = on[on.length - 1];
+		const h = sec?.querySelector("h1, h2")?.getBoundingClientRect();
+		const box = sec?.getBoundingClientRect();
+		return { at: sec?.id, top: sec?.scrollTop, inView: Boolean(h && box && h.top >= box.top - 1 && h.bottom <= box.bottom + 1) };
+	});
+	check("wheel: a fast burst is one step and lands at the new stop's heading", burst.at === "vocabulary" && burst.inView, JSON.stringify(burst));
+	await page.setViewportSize({ width: 1440, height: 900 });
+
+	// The last stop's Next goes on to the footer.
+	await page.goto("about:blank");
+	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(800);
+	await page.locator("[data-next]").click({ force: true });
+	await page.waitForTimeout(1500);
+	const nextFooter = await page.evaluate(() => ({ y: scrollY, footer: Math.round(document.querySelector(".site-footer")?.getBoundingClientRect().top ?? 9999) }));
+	check("desktop: Next at the last stop reaches the footer", nextFooter.y > 100 && nextFooter.footer < 900, JSON.stringify(nextFooter));
+	await page.evaluate(() => scrollTo(0, 0));
 
 	// Past the last stop the page lets go: the footer is a scroll away.
 	await page.keyboard.press("End");
@@ -215,6 +319,7 @@ try {
 		await fitAt(page, origin, w, h);
 	}
 	await phone(page, origin);
+	await phoneTouch(browser, origin);
 	await focusAndLinks(page, origin);
 	check("page: no uncaught errors", errors.length === 0, errors.slice(0, 3).join(" · "));
 } finally {

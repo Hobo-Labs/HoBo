@@ -501,8 +501,14 @@ html:has(.trail-page:not(.is-staged)) {
 	max-height: calc(100% - var(--b) - 5rem);
 }
 
+/* A sign is not a scroll box unless it has to be: a scroll box claims the
+   swipes that start on it, and a short sign must pass them to the trail. */
 .tst-world .tst-inner {
 	min-height: 0;
+	overflow-y: clip;
+}
+
+.tst-world .tst-inner.is-tall {
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	touch-action: pan-y;
@@ -513,6 +519,12 @@ html:has(.trail-page:not(.is-staged)) {
 	--b: calc(var(--feet) + var(--u) * 128 + 2px);
 	white-space: nowrap;
 	z-index: 1;
+}
+
+/* On a short band, over his head is where the marker's labels are: the sign
+   stands beside him at shoulder height instead. */
+.tst-sign.is-beside {
+	--b: calc(var(--feet) + var(--u) * 64);
 }
 
 .tst-sign .tst-inner {

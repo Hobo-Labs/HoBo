@@ -214,8 +214,11 @@ change goes to the stop it names.
 and the band: its content is centred while it fits, and once it does not (a laptop, a
 zoomed page) it reads from the top, the wheel and the down keys scroll it before they
 move on, and its foot fades while there is more below. On a short desktop the band
-gives back height first. A phone sign never rises under the trail marker; one taller
-than the sky scrolls inside its frame.
+gives back height first, and the stop's road sign stands beside Bo instead of over
+his head, clear of the trail marker's labels. A phone sign never rises under the
+trail marker; one taller than the sky scrolls inside its frame and keeps vertical
+swipes for that, while a short one passes them to the trail. Past the last stop,
+Next, the wheel and a swipe all go on to the footer.
 
 **Checked as built.** `pnpm run landing:verify-dist` serves `dist/` and checks every
 stop at 900×560, 1024×600, 1280×620, 1366×657 and 1440×900 (nothing above its box,
