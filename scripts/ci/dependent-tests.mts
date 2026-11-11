@@ -995,20 +995,35 @@ export function planCommands(
 	return commands;
 }
 
+export type TurboGraphOptions = Readonly<{
+	/** When true, plan with `turbo run test --affected --dry=json`. */
+	affected?: boolean;
+	/** Sets `TURBO_SCM_BASE` for the dry run (required with `affected`). */
+	scmBase?: string;
+}>;
+
 /** Reads the `test` task graph from `turbo run test --dry=json`. */
-export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
-	const dry = spawnSync(
-		"pnpm",
-		[
-			"exec",
-			"turbo",
-			"run",
-			"test",
-			...dirs.map((dir) => `--filter=./${dir}`),
-			"--dry=json",
-		],
-		{ encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
-	);
+export function turboTestGraph(
+	dirs: readonly string[],
+	options?: TurboGraphOptions,
+): readonly GraphTask[] {
+	const turboArgs = [
+		"exec",
+		"turbo",
+		"run",
+		"test",
+		...(options?.affected
+			? ["--affected"]
+			: dirs.map((dir) => `--filter=./${dir}`)),
+		"--dry=json",
+	];
+	const env = { ...process.env };
+	if (options?.scmBase) env.TURBO_SCM_BASE = options.scmBase;
+	const dry = spawnSync("pnpm", turboArgs, {
+		encoding: "utf8",
+		maxBuffer: 256 * 1024 * 1024,
+		env,
+	});
 	if (dry.status !== 0)
 		throw new Error(`turbo --dry=json failed:\n${dry.stderr}`);
 	const parsed: Json = JSON.parse(dry.stdout);
@@ -1030,6 +1045,74 @@ export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
 		});
 	}
 	return tasks;
+}
+
+/** Package dirs Turbo would schedule a `test` task for under `--affected`. */
+export function turboAffectedTestDirectories(
+	scmBase: string,
+): ReadonlySet<string> {
+	const tasks = turboTestGraph([], { affected: true, scmBase });
+	return new Set(
+		tasks.filter((task) => task.task === "test").map((task) => task.directory),
+	);
+}
+
+/**
+ * Drop planner units Turbo's affected graph would not run; add Turbo-only
+ * workspaces the import walk skipped.
+ */
+export function intersectScopedPlanWithTurboAffected(
+	plan: TestPlan,
+	affected: ReadonlySet<string>,
+	workspaces: readonly Workspace[],
+): TestPlan {
+	if (plan.mode === "all") return plan;
+	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
+	const keep = (dir: string) => affected.has(dir) && workspaceDirs.has(dir);
+	const full = plan.full.filter(keep);
+	const subsets = new Map([...plan.subsets].filter(([dir]) => keep(dir)));
+	for (const dir of affected) {
+		if (!workspaceDirs.has(dir) || full.includes(dir) || subsets.has(dir))
+			continue;
+		full.push(dir);
+	}
+	full.sort();
+	return {
+		mode: "scoped",
+		full,
+		subsets,
+		skipped: plan.skipped.filter((dir) => !keep(dir)),
+	};
+}
+
+/** Plan workspace tests for a main push, narrowed to Turbo `--affected`. */
+export function planDependentTestsForTurboAffected(
+	changedPaths: readonly string[],
+	repo: Repo,
+	scmBase: string,
+	readRootFile?: ReadRootFile,
+): TestPlan {
+	const plan = planDependentTests(changedPaths, repo, readRootFile);
+	if (plan.mode === "all") return plan;
+	const affected = turboAffectedTestDirectories(scmBase);
+	if (affected.size === 0)
+		return { mode: "scoped", full: [], subsets: new Map(), skipped: [] };
+	return intersectScopedPlanWithTurboAffected(plan, affected, repo.workspaces);
+}
+
+function alignPlanWithTurboAffectedFromEnv(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+): TestPlan {
+	if (plan.mode === "all" || process.env.HOBO_TURBO_USE_AFFECTED !== "1")
+		return plan;
+	const scmBase = process.env.TURBO_SCM_BASE?.trim();
+	if (!scmBase) return plan;
+	return intersectScopedPlanWithTurboAffected(
+		plan,
+		turboAffectedTestDirectories(scmBase),
+		workspaces,
+	);
 }
 
 /** Runs the plan. Every part runs, so one failure hides no other. */
@@ -1129,6 +1212,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			? undefined
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
+	plan = alignPlanWithTurboAffectedFromEnv(plan, repo.workspaces);
 	if (planShards !== undefined) {
 		const count = planShardCount(
 			plan,
