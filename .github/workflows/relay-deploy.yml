@@ -1,0 +1,151 @@
+name: HoBo relay deploy
+
+# The hosted CI relay deploys from HoBo configuration on every merge to main
+# that changes it, and never by hand (ADR-0179 phase 6;
+# docs/design/hosted-relay-stateless.md). The relay's Yard
+# (packages/ci-vercel/deploy/yard.ts) places it on Vercel and names its
+# bindings; `hobo ci deploy --target production` plans from it.
+#
+# No Vercel secret lives in this repository: the job signs in to Infisical with
+# its own GitHub Actions OIDC token as the `hobo-ci-deploy` machine identity
+# and reads the deploy token from the `hobo-ci-deploy` project. The
+# coordinates are repository variables (ids, not secrets). Until the owner has
+# set them (packages/ci-vercel/CONFIG-SERVICE.md) the job ends with a notice
+# and succeeds.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time: a newer push waits for the deploy in flight instead of
+# cancelling it halfway.
+concurrency:
+  group: relay-deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy the hosted CI relay (production)
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Where the deploy credential is read: the `hobo-ci-deploy` identity and project.
+      HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID: ${{ vars.HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID }}
+      HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID: ${{ vars.HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID }}
+      HOBO_CI_DEPLOY_INFISICAL_ENVIRONMENT: ${{ vars.HOBO_CI_DEPLOY_INFISICAL_ENVIRONMENT }}
+      HOBO_CI_DEPLOY_INFISICAL_SECRET_PATH: ${{ vars.HOBO_CI_DEPLOY_INFISICAL_SECRET_PATH }}
+      HOBO_CI_INFISICAL_SITE_URL: ${{ vars.HOBO_CI_INFISICAL_SITE_URL }}
+      # What the relay's config-service binding asks the deploy for: the
+      # `hobo-ci-relay` identity and the `hobo-ci` project.
+      HOBO_CI_RELAY_INFISICAL_IDENTITY_ID: ${{ vars.HOBO_CI_RELAY_INFISICAL_IDENTITY_ID }}
+      HOBO_CI_RELAY_INFISICAL_PROJECT_ID: ${{ vars.HOBO_CI_RELAY_INFISICAL_PROJECT_ID }}
+      HOBO_CI_RELAY_VERCEL_TEAM_ID: ${{ vars.HOBO_CI_RELAY_VERCEL_TEAM_ID }}
+      # The relay's production origin, for the smoke check (optional).
+      HOBO_CI_RELAY_URL: ${{ vars.HOBO_CI_RELAY_URL }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 2
+      - name: Decide whether to deploy
+        id: gate
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "${BEFORE:-}" ] \
+            && ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BEFORE" || true
+          fi
+          node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-gate.mts \
+            --event "$GITHUB_EVENT_NAME" --from "${BEFORE:-}" --to "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.run == 'true'
+        uses: ./.github/actions/ci-runner-preflight
+      - if: steps.gate.outputs.run == 'true'
+        uses: ./.github/actions/pnpm-store
+      - if: steps.gate.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build the deploy tool and the relay's declarations
+        if: steps.gate.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          pnpm exec turbo run build \
+            --filter=@hobo/hobo... --filter=@hobo/ci-vercel^... \
+            --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Read the Vercel deploy token (Infisical, GitHub OIDC)
+        if: steps.gate.outputs.run == 'true'
+        run: node --import tsx scripts/ci/relay-deploy-credential.mts
+      - name: Install the pinned Vercel CLI for Marketplace provisioning
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          pnpm --dir "$RUNNER_TEMP/vercel-cli" add vercel@65.2.0 >/dev/null
+          echo "HOBO_VERCEL_CLI=$RUNNER_TEMP/vercel-cli/node_modules/.bin/vercel" >> "$GITHUB_ENV"
+      - name: Deploy the relay to production from its Yard
+        id: deploy
+        if: steps.gate.outputs.run == 'true'
+        timeout-minutes: 17
+        run: |
+          set -uo pipefail
+          node packages/hobo/dist/bin/hobo.js ci deploy \
+            --cwd packages/ci-vercel \
+            --target production \
+            --ref "$GITHUB_REF_NAME" --sha "$GITHUB_SHA" \
+            --team "$HOBO_CI_RELAY_VERCEL_TEAM_ID" \
+            --set "INFISICAL_IDENTITY_ID=$HOBO_CI_RELAY_INFISICAL_IDENTITY_ID" \
+            --set "INFISICAL_PROJECT_ID=$HOBO_CI_RELAY_INFISICAL_PROJECT_ID" \
+            --provision --wait --json > "$RUNNER_TEMP/relay-deploy.json"
+          status=$?
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const result = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            const outputs = result.data?.outputs ?? {};
+            appendFileSync(process.env.GITHUB_OUTPUT, `url=${outputs.url ?? ""}\n`);
+            const lines = [
+              "### Hosted CI relay deploy",
+              "",
+              `- result: ${result.code ?? ""}`,
+              `- Camp: ${outputs.camp ?? ""}`,
+              `- deployment: ${outputs.url ?? ""} (${outputs.readyState ?? ""})`,
+              `- Marketplace: ${outputs.provisioned ?? "nothing to attach"}`,
+            ];
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+            console.log(result.message ?? "");
+          ' "$RUNNER_TEMP/relay-deploy.json" || true
+          exit "$status"
+      - name: Smoke-check /healthz and /readyz
+        if: steps.gate.outputs.run == 'true'
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -uo pipefail
+          base="${HOBO_CI_RELAY_URL:-$DEPLOYMENT_URL}"
+          base="${base%/}"
+          probe() {
+            curl -sS -o "$RUNNER_TEMP/probe.json" -w '%{http_code}' --max-time 20 \
+              --retry 3 --retry-delay 5 --retry-all-errors "$base$1" || echo 000
+          }
+          health="$(probe /healthz)"
+          echo "/healthz answered $health"
+          case "$health" in
+            5??) echo "::error title=Relay smoke check::/healthz answered $health"; exit 1 ;;
+            200) ;;
+            *) echo "::warning title=Relay smoke check::/healthz answered $health (a protected deployment URL answers 401; set vars.HOBO_CI_RELAY_URL to the relay's production origin)" ;;
+          esac
+          ready="$(probe /readyz)"
+          state="$(node -e 'try { const body = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(String(body.status ?? body.state ?? "")); } catch { console.log(""); }' "$RUNNER_TEMP/probe.json")"
+          echo "/readyz answered $ready ${state}"
+          echo "- /healthz: $health; /readyz: $ready ${state}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ready" != "200" ]; then
+            echo "::notice title=Relay readiness::/readyz answered $ready ${state}; before the owner's config-service setup the relay reports config-unavailable"
+          fi

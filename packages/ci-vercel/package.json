@@ -41,6 +41,9 @@
   "devDependencies": {
     "@hobo/adapter-drizzle": "workspace:*",
     "@hobo/bindles": "workspace:*",
+    "@hobo/camps": "workspace:*",
+    "@hobo/provider-vercel": "workspace:*",
+    "@hobo/yards": "workspace:*",
     "@types/pg": "8.15.5",
     "drizzle-orm": "0.45.4",
     "esbuild": "0.28.1"

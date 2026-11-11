@@ -51,5 +51,87 @@
     "HOBO_CI_SESSION_KEY",
     "HOBO_CI_WEBHOOK_SECRET"
   ],
-  "requests": []
+  "requests": [],
+  "placement": {
+    "yard": "hobo-ci-relay",
+    "camp": "hobo-ci-relay/preview",
+    "provider": "vercel",
+    "regions": [
+      "iad1"
+    ]
+  },
+  "bindings": [
+    {
+      "profile": "api.http/v1",
+      "productId": "vercel.function/v1",
+      "selected": true
+    },
+    {
+      "profile": "bucket.object/v1",
+      "productId": "vercel.blob/v1",
+      "connectivityId": "vercel.oidc/v1"
+    },
+    {
+      "profile": "data.sqlite/v1",
+      "productId": "turso.database/v1",
+      "connectivityId": "vercel.marketplace/v1",
+      "provisioning": "marketplace:tursocloud"
+    },
+    {
+      "profile": "kv.redis-compatible/v1",
+      "productId": "upstash.redis/v1",
+      "connectivityId": "vercel.marketplace/v1",
+      "selected": true,
+      "provisioning": "marketplace:upstash/upstash-kv"
+    },
+    {
+      "profile": "kv.valkey/v1",
+      "productId": "aiven.valkey/v1",
+      "connectivityId": "config-service.url/v1"
+    },
+    {
+      "profile": "kv.valkey/v1",
+      "productId": "valkey.self-hosted/v1",
+      "connectivityId": "config-service.url/v1"
+    },
+    {
+      "profile": "provider.project/v1",
+      "productId": "vercel.project/v1",
+      "selected": true
+    },
+    {
+      "profile": "queue.at-least-once/v1",
+      "productId": "vercel.queues/v1",
+      "selected": true
+    },
+    {
+      "profile": "queue.delay/v1",
+      "productId": "vercel.queues/v1",
+      "selected": true
+    },
+    {
+      "profile": "secret-ref.runtime-projection/v1",
+      "productId": "infisical.secrets/v1",
+      "connectivityId": "infisical.oidc-auth/v1",
+      "settings": [
+        "HOBO_CI_CONFIG_SERVICE",
+        "INFISICAL_SECRET_PATH",
+        "INFISICAL_SITE_URL"
+      ],
+      "inputs": [
+        "INFISICAL_IDENTITY_ID",
+        "INFISICAL_PROJECT_ID"
+      ]
+    },
+    {
+      "profile": "service.queue-consumer/v1",
+      "productId": "vercel.function/v1",
+      "selected": true
+    },
+    {
+      "profile": "service.scheduled/v1",
+      "productId": "vercel.schedules/v1",
+      "selected": true
+    }
+  ]
 }

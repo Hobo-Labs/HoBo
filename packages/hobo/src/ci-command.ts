@@ -32,6 +32,7 @@ import {
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
+import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRuns } from "./ci-runs.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 import type { VercelFetch } from "./vercel-client.js";
@@ -274,6 +275,7 @@ function parseCiArgs(args: readonly string[]) {
 			set: { type: "string", multiple: true },
 			"root-directory": { type: "string" },
 			"create-project": { type: "boolean" },
+			provision: { type: "boolean" },
 			"owner-id": { type: "string" },
 			name: { type: "string" },
 		},
@@ -326,6 +328,8 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
+		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
+		vercelCli?: VercelCliRunner;
 	} = {},
 ): CommandModule {
 	return {
@@ -386,6 +390,11 @@ export function createCiCommand(
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),
+					...(deps.vercelCli !== undefined
+						? { runVercelCli: deps.vercelCli }
+						: undefined),
+					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					emitProgress,
 				});
 			}
