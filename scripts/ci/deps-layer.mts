@@ -92,7 +92,8 @@ async function collapsePackageNodeModules(): Promise<number> {
 				const payloadPath = join(payload, relativePath);
 				if (!(await exists(payloadPath))) continue;
 				const payloadStat = await lstat(payloadPath);
-				if (!payloadStat.isSymbolicLink() && !payloadStat.isDirectory()) continue;
+				if (!payloadStat.isSymbolicLink() && !payloadStat.isDirectory())
+					continue;
 				await rm(path, { recursive: true, force: true });
 				const target = await realpath(payloadPath);
 				await symlink(target, path, "dir");

@@ -21,6 +21,8 @@ Admission peaks counted total workdir entries, including a real **`node_modules/
 - **Storage peaks** use **`localInodes`** (total minus symlinked deps roots and in-work `.pnpm`) so admission learns job-local growth, not shared store or layer content.
 - **`deps-layer.mts link`** collapses real **`packages/**/node_modules`** trees back to payload symlinks after a miss install.
 
+**Regression:** `scripts/test/deps-layer.test.ts` asserts `collapsePackageNodeModules` leaves package `node_modules` as symlinks into the payload.
+
 ## Measure
 
 On the next multi-shard main Fabric push: breakdown logs show falling **`pnpmVirtualStoreInWork`** when the layer hits; concurrent shard count rises before **`hobo_ci_inode_pressure`** without lowering `HOBO_CI_WORKER_WORKDIR_INODES` caps by hand.

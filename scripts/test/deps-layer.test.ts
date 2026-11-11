@@ -238,8 +238,9 @@ describe("deps layer linking", () => {
 			);
 			assert.equal(linked.status, 0, `${linked.stderr}\n${linked.stdout}`);
 			assert.equal(
-				lstatSync(join(checkout, "packages", "ci-gh-actions", "node_modules"))
-					.isSymbolicLink(),
+				lstatSync(
+					join(checkout, "packages", "ci-gh-actions", "node_modules"),
+				).isSymbolicLink(),
 				true,
 			);
 		} finally {
