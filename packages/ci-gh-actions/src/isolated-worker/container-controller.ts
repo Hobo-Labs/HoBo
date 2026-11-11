@@ -70,6 +70,11 @@ import {
 	type OrphanJobEvent,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
+import {
+	capIsolatedContainerTimeoutMs,
+	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
+	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
+} from "./container-timeout.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
 import type { StoragePeaks } from "./storage-peaks.js";
 
@@ -364,6 +369,7 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_jit_empty_exit_backoff"
 			| "hobo_ci_jit_runner_served_other_job"
 			| "hobo_ci_jit_runner_custody_transferred"
+			| "hobo_ci_jit_idle_listener_release"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
@@ -388,8 +394,11 @@ export function createIsolatedContainerController(options: {
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
 	depsImage?: string;
+	/** Release inode/disk admission grant when an isolated lease finishes. */
+	onStorageGrantRelease?: (jobId: number) => void;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
+	const runnerRegisteredAtMs = new Map<string, number>();
 	const orphanJobs = createOrphanJobTracker({
 		github: options.github,
 		now: () => Date.parse(now()),
@@ -567,7 +576,7 @@ export function createIsolatedContainerController(options: {
 		return {
 			name,
 			image: selection.image,
-			timeoutMs,
+			timeoutMs: capIsolatedContainerTimeoutMs(timeoutMs),
 			runAsUser: "1000:1000",
 			memoryMb,
 			...containerResourceWeightsForRank(rank),
@@ -1141,6 +1150,7 @@ export function createIsolatedContainerController(options: {
 			unmet,
 			completedAt,
 		);
+		options.onStorageGrantRelease?.(lease.jobId);
 	};
 
 	const host: IsolatedRunnerHost = {
@@ -1490,6 +1500,7 @@ export function createIsolatedContainerController(options: {
 						runnerRegisteredAt,
 					);
 					if (!registered) throw new Error("registration revoked");
+					runnerRegisteredAtMs.set(id, Date.parse(runnerRegisteredAt));
 					assertQueueDeadline(planned, now());
 					const fields: JobPickupLogFields = {
 						jobId: registered.jobId,
@@ -1596,6 +1607,10 @@ export function createIsolatedContainerController(options: {
 		async reconcile(id: string, forceStop?: boolean) {
 			let lease = await options.store.get(id);
 			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
+			let runnerCustodyHoldsActive = false;
+			let runnerAssignment:
+				| Awaited<ReturnType<typeof resolveRunnerAssignedJob>>
+				| undefined;
 			if (lease.runnerName) {
 				const custody = await adoptRunnerAssignment(
 					options.store,
@@ -1605,6 +1620,8 @@ export function createIsolatedContainerController(options: {
 					options.log,
 				);
 				lease = custody.lease;
+				runnerAssignment = custody.assignment;
+				runnerCustodyHoldsActive = custody.holdsActive;
 				if (custody.holdsActive && forceStop) return;
 			}
 			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
@@ -1793,7 +1810,54 @@ export function createIsolatedContainerController(options: {
 						),
 					);
 					stop = true;
-				} else if (running) return;
+				} else if (running) {
+					if (
+						!runnerCustodyHoldsActive &&
+						lease.runnerId > 0 &&
+						lease.state === "running"
+					) {
+						const registeredMs =
+							runnerRegisteredAtMs.get(lease.id) ??
+							Date.parse(lease.createdAt);
+						const idleMs = Number.isFinite(registeredMs)
+							? Date.parse(now()) - registeredMs
+							: 0;
+						try {
+							const reserved = await getJob(
+								options.github,
+								lease.installationId,
+								lease.repository,
+								lease.jobId,
+							);
+							const foreignMesh =
+								reserved.status === "queued" &&
+								runnerCustody(reserved.runner_name) === "foreign";
+							const unassignedIdle =
+								reserved.status === "queued" &&
+								!reserved.runner_name?.trim() &&
+								!runnerAssignment;
+							const releaseForeign =
+								foreignMesh && idleMs >= ISOLATED_JIT_FOREIGN_MESH_IDLE_MS;
+							const releaseUnassigned =
+								unassignedIdle &&
+								idleMs >= ISOLATED_JIT_UNASSIGNED_IDLE_MS;
+							if (releaseForeign || releaseUnassigned) {
+								options.log?.("hobo_ci_jit_idle_listener_release", {
+									leaseId: lease.id,
+									jobId: lease.jobId,
+									runnerName: lease.runnerName,
+									idleMs,
+									foreignMesh,
+									unassignedIdle,
+								});
+								stop = true;
+							}
+						} catch {
+							/* ambiguous GitHub read — keep listener until next tick */
+						}
+					}
+					if (!stop) return;
+				}
 			}
 			if (running && stop) await measureMemoryPeak(lease);
 			const deadWhileRunning = !stop && lease.state === "running" && !running;

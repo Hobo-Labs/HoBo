@@ -12,6 +12,10 @@ const jobPeaksSchema = z
 			.array(z.number().int().nonnegative())
 			.max(MAX_SAMPLES)
 			.optional(),
+		dockerDataRootInodes: z
+			.array(z.number().int().nonnegative())
+			.max(MAX_SAMPLES)
+			.optional(),
 	})
 	.strict();
 const storagePeaksFileSchema = z.record(z.string().min(1), jobPeaksSchema);
@@ -20,6 +24,7 @@ export type StoragePeakHistory = Readonly<{
 	workRootBytes: readonly number[];
 	workRootInodes: readonly number[];
 	dockerDataRootBytes?: readonly number[];
+	dockerDataRootInodes?: readonly number[];
 }>;
 export type StoragePeakHistories = Readonly<Record<string, StoragePeakHistory>>;
 
@@ -46,8 +51,8 @@ export function learnedStorageReserve(
 ): WorkerStorageReserve {
 	if (!history || history.workRootBytes.length < 3) {
 		return {
-			workRoot: classReserve.workRoot,
-			dockerDataRoot: classReserve.dockerDataRoot,
+			workRoot: Math.ceil(classReserve.workRoot * unmeasuredScale),
+			dockerDataRoot: Math.ceil(classReserve.dockerDataRoot * unmeasuredScale),
 			workRootBytes: Math.ceil(classReserve.workRootBytes * unmeasuredScale),
 			dockerDataRootBytes: Math.ceil(
 				classReserve.dockerDataRootBytes * unmeasuredScale,
@@ -65,6 +70,7 @@ export function learnedStorageReserve(
 		Math.ceil(peakWorkInodes * 1.2),
 	);
 	let dockerDataRootBytes = classReserve.dockerDataRootBytes;
+	let dockerDataRoot = classReserve.dockerDataRoot;
 	if (history.dockerDataRootBytes && history.dockerDataRootBytes.length >= 3) {
 		const peakDocker = Math.max(...history.dockerDataRootBytes);
 		dockerDataRootBytes = Math.min(
@@ -72,9 +78,19 @@ export function learnedStorageReserve(
 			ceilWithMargin(peakDocker, 1.15),
 		);
 	}
+	if (
+		history.dockerDataRootInodes &&
+		history.dockerDataRootInodes.length >= 3
+	) {
+		const peakDockerInodes = Math.max(...history.dockerDataRootInodes);
+		dockerDataRoot = Math.min(
+			classReserve.dockerDataRoot,
+			Math.ceil(peakDockerInodes * 1.2),
+		);
+	}
 	return {
 		workRoot: workRootInodes,
-		dockerDataRoot: classReserve.dockerDataRoot,
+		dockerDataRoot,
 		workRootBytes,
 		dockerDataRootBytes,
 	};
@@ -119,6 +135,7 @@ export function createStoragePeaks(options: {
 				workRootBytes: number;
 				workRootInodes: number;
 				dockerDataRootBytes?: number;
+				dockerDataRootInodes?: number;
 			}>,
 		): void {
 			if (!jobName) throw new Error("invalid storage peak job name");
@@ -126,6 +143,7 @@ export function createStoragePeaks(options: {
 				sample.workRootBytes,
 				sample.workRootInodes,
 				sample.dockerDataRootBytes ?? 0,
+				sample.dockerDataRootInodes ?? 0,
 			]) {
 				if (!Number.isInteger(value) || value < 0)
 					throw new Error("invalid storage peak sample");
@@ -141,20 +159,33 @@ export function createStoragePeaks(options: {
 					sample.workRootInodes,
 				].slice(-MAX_SAMPLES),
 			};
-			if (sample.dockerDataRootBytes !== undefined) {
-				history[jobName] = {
-					...next,
-					dockerDataRootBytes: [
-						...(previous?.dockerDataRootBytes ?? []),
-						sample.dockerDataRootBytes,
-					].slice(-MAX_SAMPLES),
-				};
-			} else {
-				history[jobName] =
-					previous?.dockerDataRootBytes === undefined
-						? next
-						: { ...next, dockerDataRootBytes: previous.dockerDataRootBytes };
-			}
+			const recorded = {
+				workRootBytes: [...next.workRootBytes],
+				workRootInodes: [...next.workRootInodes],
+				...(sample.dockerDataRootBytes !== undefined
+					? {
+							dockerDataRootBytes: [
+								...(previous?.dockerDataRootBytes ?? []),
+								sample.dockerDataRootBytes,
+							].slice(-MAX_SAMPLES),
+						}
+					: previous?.dockerDataRootBytes === undefined
+						? {}
+						: { dockerDataRootBytes: [...previous.dockerDataRootBytes] }),
+				...(sample.dockerDataRootInodes !== undefined
+					? {
+							dockerDataRootInodes: [
+								...(previous?.dockerDataRootInodes ?? []),
+								sample.dockerDataRootInodes,
+							].slice(-MAX_SAMPLES),
+						}
+					: previous?.dockerDataRootInodes === undefined
+						? {}
+						: {
+								dockerDataRootInodes: [...previous.dockerDataRootInodes],
+							}),
+			} satisfies StoragePeakHistory;
+			history[jobName] = recorded;
 			persist();
 		},
 	};

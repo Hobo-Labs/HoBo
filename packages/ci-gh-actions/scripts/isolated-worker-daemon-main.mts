@@ -78,6 +78,7 @@ import {
 	storageReserveForClass,
 	storageReserveForJob,
 	traceGithubTransport,
+	withGithubReadCache,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -469,7 +470,7 @@ try {
 		target: eventExport.target,
 	});
 	const github = traceGithubTransport(
-		createGithubAppTransport({ appId, privateKey }),
+		withGithubReadCache(createGithubAppTransport({ appId, privateKey })),
 		relayTrace,
 	);
 	// The poller learns job durations from the jobs lists it already reads; the
@@ -637,6 +638,7 @@ try {
 	const worker = createIsolatedContainerController({
 		store,
 		github,
+		onStorageGrantRelease: (jobId) => storageAdmission.release(String(jobId)),
 		publicOrigin,
 		docker,
 		workerAccountId,
