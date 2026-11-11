@@ -141,7 +141,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   prints the server versions and addresses the run was against. These packages read the root vitest
   config, which does not apply `HOBO_TEST_MAX_WORKERS`, so the step passes the cap to vitest as
   `VITEST_MAX_WORKERS`. The job is scoped like `artifact-trust` (below) to the live test files, so a
-  pull request that cannot reach the data engines frees the slot after checkout; the nightly schedule
+  pull request that cannot reach the data engines frees the slot after checkout
+  (`scripts/test/job-scope.test.ts` pins the entry list and checks it against the repository, so
+  changing the entries means changing that test); the nightly schedule
   and a manual dispatch always run it, whatever their tip commit is, and `merge_group` never does.
   On a GitHub-hosted runner the servers are up in under half a minute and the suites take about a
   minute and a half.
