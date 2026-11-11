@@ -241,6 +241,13 @@ export {
 } from "./queued-job-repair.js";
 export { createRelayHost } from "./relay-host.js";
 export {
+	createRelayMcp,
+	isRelayMcpPath,
+	type RelayMcp,
+	type RelayMcpOptions,
+	type RelayMcpSessions,
+} from "./relay-mcp.js";
+export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
 	type CiJobAdmission,

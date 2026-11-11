@@ -305,8 +305,11 @@ machine. The run's jobs ask for the label it chose: the fleet (`hobo`, or
 `hobo-trunk` for trunk events) while it is taking jobs, an enrolled local box
 (`hobo-local-host`) when it is not, and `ubuntu-24.04` when neither is. A
 backend is taking jobs when a runner took a job for its label in the last 15
-minutes, no such job has waited 120 seconds, none it took in that time had,
-and fewer than 4 are waiting. The **Fleet probe** workflow, started by each CI
+minutes, no such job has waited 120 seconds, none it took in the last hour
+had, and fewer than 4 are waiting. The hour is deliberate: the probe is one
+small job, and a run sent to the fleet because a runner took the probe at once
+waited 17 minutes for runners. The route job reads the three longest finished
+runs of the last hour to find such waits after their run has ended. The **Fleet probe** workflow, started by each CI
 run, keeps a pickup on record for every label that has a runner behind it. A
 label that is down holds one probe job that goes on waiting, which reads as a
 label past its limit; it has its own concurrency group, so it does not hold
@@ -316,6 +319,12 @@ after another that has not chosen yet goes to GitHub-hosted. The two required
 gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
 in its Route runners log was sent there for one of those reasons, and the same
 line says which.
+
+On the fleet, the deps layer is linked only into package directories the
+checkout still has. A layer built before a package was removed from the tree
+used to recreate that package's directory with only `node_modules` in it, and
+the package-layout check (`konsistent`) then failed for a package that no
+longer exists.
 
 On a GitHub-hosted machine a job runs the same steps with no deps layer and a
 cold pnpm store unless main has saved one, so installs are slower and the

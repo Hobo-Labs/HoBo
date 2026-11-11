@@ -11,6 +11,8 @@ import {
 } from "./hosted-runtime.js";
 import { createRelayHandler, type StubEngine } from "./http-handler.js";
 import type { IdentityVerifier } from "./oidc.js";
+import { createRelayMcp, isRelayMcpPath } from "./relay-mcp.js";
+import type { RelayMcpStore } from "./relay-mcp-server.js";
 import {
 	admitWhenReady,
 	createRelayService,
@@ -24,7 +26,15 @@ import {
  * listener, the tick timer, the readiness probe and the drain.
  */
 export function createRelayHost(options: {
-	store: HostedInboxStore & HostedControlStore & { close(): void };
+	store: HostedInboxStore &
+		HostedControlStore &
+		RelayMcpStore & { close(): void };
+	/**
+	 * What the MCP server reads through, when the store's own reads take a
+	 * lock that admission also takes: that store's observer. Defaults to the
+	 * store itself, which is right for a single-writer SQLite file.
+	 */
+	mcpStore?: RelayMcpStore;
 	github: GithubAppTransport;
 	identity: IdentityVerifier;
 	webhookSecret: string;
@@ -87,6 +97,17 @@ export function createRelayHost(options: {
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
 		now,
 	});
+	// This process outlives a request, so it holds MCP sessions and pushes
+	// resource updates to their subscribers.
+	const mcp = createRelayMcp({
+		store: options.mcpStore ?? store,
+		relay,
+		authenticate: options.authenticate,
+		ready: async () => service.ready(),
+		publicOrigin: options.publicOrigin,
+		sessions: "memory",
+		cursorSecret: webhookSecret,
+	});
 	const service = createRelayService({
 		origin: options.publicOrigin,
 		allowLoopbackHttp: options.allowLoopbackHttp === true,
@@ -98,7 +119,7 @@ export function createRelayHost(options: {
 		drainTimeoutMs: options.drainTimeoutMs ?? 30_000,
 		handle: (ready) =>
 			createRelayHandler({
-				application: admitWhenReady(runtime, ready),
+				application: admitWhenReady({ ...runtime, mcp: mcp.handle }, ready),
 				webhookSecret,
 				ingressForwardSecret: options.ingressForwardSecret,
 				engineId: "gh-actions",
@@ -108,6 +129,8 @@ export function createRelayHost(options: {
 			}),
 		tick: () => runtime.tick(),
 		close: () => store.close(),
+		streams: isRelayMcpPath,
+		quiesce: () => mcp.close(),
 		// Deployment readiness is local partition integrity. A real runner acceptance
 		// workflow separately verifies external installation permissions and execution.
 		readinessProbe: async (signal) => {
