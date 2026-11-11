@@ -85,3 +85,39 @@ old/replayed facts cannot regress watermarks. Empty profiles pause admission,
 recovery restores the applicable profile, and existing leases retain identity.
 This composes the existing Broker budget plane with CI without importing Station
 or Broker runtime dependencies into the relay deployment.
+
+
+## Amended by ADR-0179 (2026-11-11): the hosted relay keeps no durable state
+
+[ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) changes
+the hosted (Vercel) host of this relay. The text above is kept as the record of
+what was decided; for that host it is now read with these changes
+([design](../../docs/design/hosted-relay-stateless.md)):
+
+- "A host supplies a store (`SqliteCiStore` or `PostgresCiStore`, one port)":
+  the hosted relay's store becomes a cache store over
+  `kv.redis-compatible/v1`. `PostgresCiStore` and the pg-bound helper stores
+  (App registration, OAuth sessions, platform-App bootstrap, webhook and
+  queued-job repair state) are removed in phase 7, and so is the box worker's
+  `HOBO_CI_STORE=postgres` option.
+- "The durable webhook inbox": on the hosted relay, intake is a Vercel Queue
+  keyed by the GitHub delivery id, acknowledged to GitHub after enqueue.
+- "Intent is persisted before dispatch/JIT creation. An ambiguous result
+  remains held and is never automatically retried": kept. Intent becomes a
+  timestamp on the lease record instead of a journal event; an uncertain lease
+  is resolved by looking up its deterministic names (lease ids are UUIDv5 of
+  `repositoryId:jobId:runAttempt`), never by a blind retry.
+- "Replay reconstructs leases, pending jobs and terminal tombstones": on the
+  hosted relay, GitHub's REST view and the deterministic names reconstruct
+  in-flight leases; there is no journal to replay.
+- "Account policy and server-created onboarding operations survive
+  restart/rebuild. CAS prevents lost updates": on the hosted relay
+  configuration is read-only at runtime, held in a config service, and written
+  by `hobo ci`; repository prepare and isolated-connect move to the CLI.
+- "HoBo platform budget facts reach CI through the Station budget-routing
+  bridge": the hosted relay no longer accepts budget signals; it pulls provider
+  usage instead.
+
+Unchanged: the single relay core, the Node service and its `SqliteCiStore`,
+the box worker's SQLite journal and pull admission, the mesh and the compute
+fleet, and the trust limits above.
