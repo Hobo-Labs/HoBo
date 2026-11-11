@@ -118,6 +118,7 @@ const Runs = z.object({
 type Run = z.infer<typeof Runs>["workflow_runs"][number];
 
 /** Workflow file path for {@link HOBO_CI_FABRIC_WORKFLOW_BASENAME}. */
+// public-contract: shared workflow basename for superseded main-push poll filtering.
 export const HOBO_CI_FABRIC_WORKFLOW_BASENAME = "hobo-ci.yml";
 
 function runStartedAtMs(run: Run): number {
