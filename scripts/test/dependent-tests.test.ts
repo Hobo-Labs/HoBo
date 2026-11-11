@@ -130,19 +130,45 @@ describe("workspace test shards", () => {
 		assert.equal(new Set(subsets.map(([dir]) => dir)).size, subsets.length);
 	});
 
-	it("partitions every workspace for a repo-wide plan and rejects invalid shards", () => {
+	it("partitions every workspace that has a test task for a repo-wide plan and rejects invalid shards", () => {
 		const plan: TestPlan = { mode: "all", reason: "global input" };
+		// The fixture tree's own task graph. A repo-wide plan is partitioned
+		// from the graph, not from the workspace list: packages/none has no
+		// test task here, so no shard carries it.
+		const tested = repo.workspaces
+			.map((ws) => ws.dir)
+			.filter((dir) => dir !== "packages/none");
+		const graph: TestGraph = () => [
+			...tested.map((directory) => ({
+				taskId: `${directory}#test`,
+				task: "test",
+				directory,
+			})),
+			{ taskId: "@t/lib#build", task: "build", directory: "packages/lib" },
+		];
+		const durations = { defaultSeconds: 1, seconds: new Map<string, number>() };
 		const shards = [0, 1, 2, 3].map((index) =>
-			shardTestPlan(plan, repo.workspaces, index, 4),
+			shardTestPlan(plan, repo.workspaces, index, 4, durations, graph),
 		);
 		const full = shards.flatMap((part) =>
 			part.mode === "scoped" ? part.full : [],
 		);
-		assert.deepEqual(
-			[...full].sort(),
-			repo.workspaces.map((ws) => ws.dir).sort(),
-		);
+		assert.deepEqual([...full].sort(), [...tested].sort());
 		assert.equal(new Set(full).size, full.length);
+		// A test task in a directory the workspace list does not know would be
+		// dropped from every shard; the plan is refused instead. So is a graph
+		// with no test task at all.
+		for (const broken of [
+			() => [
+				...graph([]),
+				{ taskId: "@t/new#test", task: "test", directory: "packages/new" },
+			],
+			() => [],
+		] satisfies TestGraph[])
+			assert.throws(
+				() => shardTestPlan(plan, repo.workspaces, 0, 4, durations, broken),
+				/repo-wide test graph includes an undiscovered workspace/u,
+			);
 		for (const [index, count] of [
 			[-1, 4],
 			[4, 4],
@@ -169,6 +195,37 @@ describe("workspace test shards", () => {
 				),
 			/both a whole suite and a subset/u,
 		);
+	});
+});
+
+describe("workspace test shards on this repository", () => {
+	it("carries every workspace turbo would test in exactly one shard", () => {
+		// The real workspace list against the real task graph: the pair main's
+		// repo-wide shards are planned from. A package whose test task turbo
+		// knows but workspace discovery does not would fail the plan on main.
+		const tasks = turboTestGraph([]);
+		const tested = [
+			...new Set(
+				tasks
+					.filter((task) => task.task === "test")
+					.map((task) => task.directory),
+			),
+		].sort();
+		assert.ok(tested.length > 0);
+		const workspaces = readRepo().workspaces;
+		const full = [0, 1, 2, 3]
+			.map((index) =>
+				shardTestPlan(
+					{ mode: "all", reason: "global input" },
+					workspaces,
+					index,
+					4,
+					undefined,
+					() => tasks,
+				),
+			)
+			.flatMap((part) => (part.mode === "scoped" ? part.full : []));
+		assert.deepEqual([...full].sort(), tested);
 	});
 });
 

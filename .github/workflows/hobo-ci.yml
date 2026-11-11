@@ -176,8 +176,10 @@ jobs:
       github.event_name == 'pull_request')
     # Always the fleet, never routed: this job checks and builds the deps image in the box's
     # own Docker context. On a GitHub-hosted machine there is no such context and no worker
-    # image, so a routed run failed here before it reached the build. Neither gate needs
-    # this job, so a fleet that is slow delays only this check.
+    # image, so a routed run failed here before it reached the build. The required PR
+    # gate and Main full gate's S0 job do not need this job, so a slow fleet does not
+    # delay them. Main's workspace plan and shards do, to start from the deps layer;
+    # on main this job never builds: it reuses or pulls an image, or defers a miss.
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
@@ -207,6 +209,7 @@ jobs:
               scripts/ci/deps-layer.mts \
               scripts/lib/deps-key.mts \
               scripts/lib/ts-source-resolve.mts \
+              packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts \
               scripts/test/ci-deps-image-mount.test.ts)"
             if [ -z "$changed" ]; then run=false; fi
           fi
@@ -360,15 +363,24 @@ jobs:
         env:
           DCO_BASE: origin/${{ github.base_ref }}
         run: |
+          set -euo pipefail
+          # Merge commits carry no sign-off of their own: the checked-out PR merge
+          # ref and an update-branch merge are made by GitHub. Only the commits a
+          # contributor wrote are checked. The list is read into a variable first so
+          # a failing rev-list fails the step instead of reading as zero commits.
+          commits="$(git rev-list --no-merges "${DCO_BASE}..HEAD")"
           missing=0
           while read -r sha; do
             [ -z "$sha" ] && continue
             author="$(git show -s --format='%an <%ae>' "$sha")"
-            if ! git show -s --format='%B' "$sha" | grep -qiF "Signed-off-by: $author"; then
+            # On a variable rather than a pipe: an early `grep -q` exit would fail the
+            # pipeline under pipefail and read as a missing sign-off.
+            message="$(git show -s --format='%B' "$sha")"
+            if ! grep -qiF "Signed-off-by: $author" <<<"$message"; then
               echo "::warning::missing or mismatched DCO sign-off on $(git show -s --format='%h %s' "$sha") (expected 'Signed-off-by: $author')"
               missing=$((missing + 1))
             fi
-          done < <(git rev-list "${DCO_BASE}..HEAD")
+          done <<<"$commits"
           if [ "$missing" -gt 0 ]; then
             echo "$missing commit(s) without a matching DCO sign-off. Fix with: git rebase --signoff ${DCO_BASE}"
             exit 1
@@ -991,7 +1003,7 @@ jobs:
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
       - name: S0 gate set
-        timeout-minutes: 12
+        timeout-minutes: 20
         env:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
@@ -1162,6 +1174,7 @@ jobs:
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          clean: false
           fetch-depth: 0
           filter: blob:none
           fetch-tags: false
@@ -1266,10 +1279,15 @@ jobs:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          if [ "${RUNNER_ENVIRONMENT}" = "github-hosted" ]; then
-            # No worker image on a GitHub-hosted machine, and the toolchain is already on
-            # PATH: the same commands on a copy of the tree, in a network namespace whose
-            # only interface is loopback.
+          image="hobo-ci-worker:local"
+          # The worker image exists only in a fleet box's Docker context. A GitHub-hosted
+          # machine never has it, and neither does an overflow runner that reports itself
+          # self-hosted, so the image is probed instead of inferred from the runner kind.
+          if [ "${RUNNER_ENVIRONMENT}" = "github-hosted" ] || ! docker image inspect "$image" >/dev/null 2>&1; then
+            # No worker image here, and the toolchain is already on PATH: the same
+            # commands on a copy of the tree, in a network namespace whose only
+            # interface is loopback.
+            echo "${image} is not on this runner (${RUNNER_ENVIRONMENT:-unknown}); using an unshare --net namespace"
             work="$(mktemp -d)"
             tar -c --exclude=./.git . | tar -x -C "$work"
             sudo --preserve-env unshare --net -- bash -c \
@@ -1278,7 +1296,6 @@ jobs:
               'set -euo pipefail; pnpm --filter "ts-autocode-*" run build; node --import tsx scripts/ci/dev-cold-loop-timing.mts'
             exit 0
           fi
-          image="hobo-ci-worker:local"
           tar -c --exclude=./.git . | docker run -i --rm --network=none \
             "$image" \
             bash -c 'set -euo pipefail
@@ -1378,9 +1395,10 @@ jobs:
           set -euo pipefail
           [ -n "${HOBO_TEST_POSTGRES_URL:-}" ] || { echo "::error::the start step set no PostgreSQL URL"; exit 1; }
           [ -n "${HOBO_TEST_MONGODB_URL:-}" ] || { echo "::error::the start step set no MongoDB URL"; exit 1; }
-          # These packages read the root vitest config, which does not apply
-          # the job's memory-derived worker cap; vitest reads this one itself.
-          export VITEST_MAX_WORKERS="${HOBO_TEST_MAX_WORKERS:-1}"
+          # Their vitest configs (the root one, and packages/trails's) apply the
+          # job's HOBO_TEST_MAX_WORKERS cap. Nothing exports VITEST_MAX_WORKERS
+          # here, since vitest lets it override every config, single-worker pins
+          # included.
           pnpm run test:data-live 2>&1 | tee "${RUNNER_TEMP}/data-live.log"
           node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts verify "${RUNNER_TEMP}/data-live.log"
       - name: Server logs

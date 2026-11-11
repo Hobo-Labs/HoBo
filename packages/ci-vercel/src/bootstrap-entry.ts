@@ -6,6 +6,7 @@ import {
 	type RelayDatabase,
 	resolveDatabaseUrls,
 } from "./database-connections.js";
+import { StoreUnavailable } from "./store-unavailable.js";
 import type { QueueMessage } from "./worker.js";
 
 type App = Awaited<ReturnType<typeof createVercelApplication>>;
@@ -26,14 +27,6 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 	if (!value) throw new Error(`missing configuration: ${name}`);
 	return value;
 }
-/** Serve first-App setup before the relay exists, then load the encrypted App into the runtime. */
-/** The store failed recently and is being left alone; `retryAfterMs` says for how long. */
-export class StoreUnavailable extends Error {
-	constructor(readonly retryAfterMs: number) {
-		super("store unavailable; not retried yet");
-		this.name = "StoreUnavailable";
-	}
-}
 
 /** How long a store that has failed `failures` times in a row is left alone:
  * 5 s, doubling to a minute. */
@@ -41,6 +34,9 @@ export function storeBackoffMs(failures: number): number {
 	return Math.min(60_000, 5_000 * 2 ** (failures - 1));
 }
 
+export { StoreUnavailable };
+
+/** Serve first-App setup before the relay exists, then load the encrypted App into the runtime. */
 export function createBootstrapEntry(options: {
 	env: NodeJS.ProcessEnv;
 	notify: (deliveryId: string) => Promise<void>;

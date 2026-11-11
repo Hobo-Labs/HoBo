@@ -293,6 +293,27 @@ broker-held `CRON_SECRET` stable while those messages can be retried. The
 handoff does not change callbacks from deployments predating this mechanism;
 retire or drain those separately. Messages expire after one hour, while the
 database inbox remains the source of truth for recovery.
+
+The handoff is one request, never retried inside the function. Any answer but
+`204` fails with `queue handoff failed: status <code>`, plus
+`, retry-after <n>s` when the relay stated one: two numbers, never the response
+body, a header's text or the secret. What happens next is the queue's job, set
+by the consumer's `retry` policy (`@vercel/queue`'s `handleNodeCallback`
+option; `redeliverRefusedWakeup` in `src/queue-forwarding.ts`):
+
+| The callback failed with | The queue is told | Next delivery |
+| --- | --- | --- |
+| `503` from the relay, or the store back-off in-process | `{ afterSeconds }`: the message's lease is moved out and the callback answers `200` | After the larger of the relay's `Retry-After` and 5 s doubling per delivery of that message (5, 10, 20, 40, 80, 160), never more than 300 s |
+| Any other status, a network failure, a timeout, missing configuration | Nothing: the error propagates and the callback answers `500` | The queue's default interval |
+
+Before this, every failure was thrown straight back, and while the relay's
+store was down each wakeup came round again about every 15 seconds until it
+expired. The doubling is there because the relay's generic 503 says
+`Retry-After: 5`: honoured alone, that would be a five-second loop. A
+rescheduled message leaves no error in the queue's own log, so the consumer
+writes `hobo_ci_queue_handoff_deferred` for it (see the failure log below).
+`test/queue-redelivery.test.ts` runs the installed queue client against a
+stand-in for the queue service and checks the lease change it sends.
 Vercel's Hobby plan is limited to personal, non-commercial use. PostgreSQL,
 queue operations and Functions can incur usage charges according to the chosen
 plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
@@ -848,6 +869,18 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
   `unable to verify the first certificate`. When the relay chooses between
   attached stores, this one applies to the store without a prefix and a
   prefixed store reads `<PREFIX>HOBO_CI_DATABASE_CA_CERT`.
+
+  Without it, a connection string that asks for TLS is held to `verify-full`:
+  the system trust store and a hostname check. `sslmode=prefer`, `require` and
+  `verify-ca` are rewritten to `verify-full` before `pg` sees them, as are
+  `sslmode=no-verify` and `ssl=no-verify`, and `uselibpqcompat` is dropped.
+  `pg` 8 already reads the first three as `verify-full` unless
+  `uselibpqcompat=true` is set, in which case `require` and `prefer` accept any
+  certificate and `verify-ca` skips the hostname check; `pg` 9 is announced to
+  make that the default. `sslmode=disable` and a string with no TLS parameter still connect
+  without TLS, and a string that is not a URL is refused, since it cannot be
+  inspected. `PGSSLMODE` in the environment is not covered: `pg` reads it only
+  when the string names no TLS setting.
 - `HOBO_CI_PUBLIC_URL`: the stable HTTPS origin used by GitHub.
 - `HOBO_CI_SESSION_KEY`: a canonical, unpadded base64url encoding of 32 random bytes.
 - `HOBO_CI_BOOTSTRAP_ACCOUNT_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`: the owner
@@ -965,7 +998,10 @@ embedded hosted bridge still supplies and enforces its lease timeout.
   bootstrap store cannot be reached, `bootstrap-required` when no App is registered yet.
 - After the store fails it is left alone before the next attempt: 5 s, doubling to a minute. Every
   request used to dial it again.
-- A 503 for an unavailable store carries `Retry-After: 5`.
+- A 503 for a store in back-off carries the time left in `Retry-After` (whole seconds, 1 to 300),
+  on `POST /internal/queue-wakeup` as on any other route. A request that fails for another reason,
+  including the attempt that found the store down, carries `Retry-After: 5`, as does the bootstrap
+  entry's `/readyz`.
 - Once per instance, start-up logs `hobo_ci_database_candidates`: every distinct PostgreSQL database
   the environment names, as variable names plus a 12-character digest of host, port and database. No
   connection string, host or credential is logged. It shows whether a second store is attached to
@@ -992,6 +1028,7 @@ start looked like a relay nobody was calling.
 | `hobo_ci_webhook_ingest_failed` | A signed delivery could not be committed (GitHub redelivers) | `event` |
 | `hobo_ci_control_failed` | An account or registration API call threw | `method`, `route` |
 | `hobo_ci_ready_check_failed` | The readiness check itself threw | none |
+| `hobo_ci_queue_handoff_deferred` | The queue consumer could not hand a wakeup over (relay `503`, or store back-off) and asked the queue to redeliver it later | `status` (0 when the back-off was raised in-process), `afterSeconds`, `deliveryCount` |
 
 The GitHub App bootstrap store reports `bootstrap store initialization failed` with the database
 error as its cause, so the line shows why the store could not be reached.

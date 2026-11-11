@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -34,6 +35,16 @@ function shellForStep(block: string, name: string): string {
 	const body = match?.[1];
 	assert.ok(body !== undefined, `missing shell for ${name}`);
 	return body.replace(/^ {10}/gmu, "");
+}
+
+function stepTimeoutMinutes(block: string, name: string): number {
+	const start = block.indexOf(`      - name: ${name}\n`);
+	assert.ok(start >= 0, `missing step ${name}`);
+	const next = block.indexOf("\n      - ", start + 1);
+	const step = block.slice(start, next < 0 ? block.length : next);
+	const minutes = step.match(/^ {8}timeout-minutes: (\d+)$/mu)?.[1];
+	assert.ok(minutes !== undefined, `step ${name} has no timeout-minutes`);
+	return Number(minutes);
 }
 
 describe("merge-group required gate", () => {
@@ -278,5 +289,171 @@ describe("merge-group required gate", () => {
 			cacheAction,
 			/steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
 		);
+	});
+});
+
+describe("main S0 gate set", () => {
+	it("gets the same step window on main as in the merge group", () => {
+		// Same commands on the same runners: a window that passes a commit in
+		// the merge queue and then times it out on main fails main, not the PR.
+		assert.equal(
+			stepTimeoutMinutes(job("main-gate"), "S0 gate set"),
+			stepTimeoutMinutes(job("pr_gate_validation"), "S0 gate set"),
+		);
+	});
+});
+
+describe("DCO sign-off check", () => {
+	const script = shellForStep(job("pr_gate_validation"), "DCO sign-off check");
+	const author = { name: "Dana Contributor", email: "dana@example.com" };
+
+	function repository() {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-dco-"));
+		const env = {
+			...process.env,
+			GIT_CONFIG_GLOBAL: "/dev/null",
+			GIT_CONFIG_SYSTEM: "/dev/null",
+			GIT_AUTHOR_NAME: author.name,
+			GIT_AUTHOR_EMAIL: author.email,
+			GIT_COMMITTER_NAME: author.name,
+			GIT_COMMITTER_EMAIL: author.email,
+		};
+		const git = (...args: string[]): void => {
+			const run = spawnSync("git", args, { cwd: directory, env });
+			assert.equal(run.status, 0, `git ${args.join(" ")}: ${run.stderr}`);
+		};
+		git("init", "--quiet", "--initial-branch=main");
+		git("commit", "--quiet", "--allow-empty", "-m", "base");
+		git("update-ref", "refs/remotes/origin/main", "HEAD");
+		git("checkout", "--quiet", "-b", "feature");
+		return {
+			directory,
+			git,
+			check: (base = "origin/main") =>
+				spawnSync("bash", ["-c", script], {
+					cwd: directory,
+					env: { ...env, DCO_BASE: base },
+					encoding: "utf8",
+				}),
+		};
+	}
+
+	it("checks the commits a contributor wrote and skips merge commits", () => {
+		const repo = repository();
+		try {
+			repo.git("commit", "--quiet", "--allow-empty", "-s", "-m", "feature");
+			repo.git("checkout", "--quiet", "-b", "side", "main");
+			repo.git("commit", "--quiet", "--allow-empty", "-s", "-m", "side");
+			repo.git("checkout", "--quiet", "feature");
+			// What GitHub's update-branch and the PR merge ref produce: a merge
+			// commit with no sign-off trailer.
+			repo.git("merge", "--quiet", "--no-ff", "-m", "Merge side", "side");
+			const signed = repo.check();
+			assert.equal(signed.status, 0, `${signed.stdout}${signed.stderr}`);
+			assert.match(
+				signed.stdout,
+				/All commits carry a matching DCO sign-off\./u,
+			);
+
+			repo.git("commit", "--quiet", "--allow-empty", "-m", "unsigned");
+			const unsigned = repo.check();
+			assert.equal(unsigned.status, 1);
+			assert.match(
+				unsigned.stdout,
+				/::warning::missing or mismatched DCO sign-off on [0-9a-f]+ unsigned /u,
+			);
+			assert.match(unsigned.stdout, /^1 commit\(s\) without/mu);
+		} finally {
+			rmSync(repo.directory, { recursive: true, force: true });
+		}
+	});
+
+	it("fails rather than passing when the commit range cannot be listed", () => {
+		const repo = repository();
+		try {
+			repo.git("commit", "--quiet", "--allow-empty", "-m", "unsigned");
+			const run = repo.check("origin/missing");
+			assert.notEqual(run.status, 0);
+			assert.doesNotMatch(run.stdout, /All commits carry/u);
+		} finally {
+			rmSync(repo.directory, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("cold dev loop gate", () => {
+	const script = shellForStep(
+		job("dev-cold-loop-gate"),
+		"Cold hobo dev gate (network disabled)",
+	);
+
+	// Stub `docker` and `sudo` record their arguments; `docker image inspect`
+	// answers with the status under test and `docker run` drains the tree.
+	function run(runnerEnvironment: string, imagePresent: boolean): string {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-cold-loop-"));
+		try {
+			const bin = join(directory, "bin");
+			const tree = join(directory, "tree");
+			const calls = join(directory, "calls");
+			mkdirSync(bin);
+			mkdirSync(tree);
+			mkdirSync(join(directory, "tmp"));
+			writeFileSync(join(tree, "package.json"), "{}\n");
+			writeFileSync(
+				join(bin, "docker"),
+				[
+					"#!/bin/sh",
+					'echo "docker $*" >> "$CALLS"',
+					'if [ "$1 $2" = "image inspect" ]; then exit "$INSPECT_STATUS"; fi',
+					"cat > /dev/null",
+					"",
+				].join("\n"),
+				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "sudo"),
+				'#!/bin/sh\necho "sudo $*" >> "$CALLS"\n',
+				{ mode: 0o755 },
+			);
+			const result = spawnSync("bash", ["-c", script], {
+				cwd: tree,
+				env: {
+					...process.env,
+					PATH: `${bin}:${process.env.PATH ?? ""}`,
+					TMPDIR: join(directory, "tmp"),
+					CALLS: calls,
+					INSPECT_STATUS: imagePresent ? "0" : "1",
+					RUNNER_ENVIRONMENT: runnerEnvironment,
+				},
+				encoding: "utf8",
+			});
+			assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+			return existsSync(calls) ? readFileSync(calls, "utf8") : "";
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	}
+
+	it("runs in the worker image when the runner has it", () => {
+		const calls = run("self-hosted", true);
+		assert.match(
+			calls,
+			/^docker run -i --rm --network=none hobo-ci-worker:local bash -c /mu,
+		);
+		assert.doesNotMatch(calls, /^sudo /mu);
+	});
+
+	it("falls back to an unshare --net namespace when the worker image is absent", () => {
+		// An overflow runner reports itself self-hosted and has no fleet image.
+		const calls = run("self-hosted", false);
+		assert.match(calls, /^docker image inspect hobo-ci-worker:local$/mu);
+		assert.match(calls, /^sudo --preserve-env unshare --net -- bash -c /mu);
+		assert.doesNotMatch(calls, /^docker run /mu);
+	});
+
+	it("uses the namespace on a GitHub-hosted runner whatever Docker holds", () => {
+		const calls = run("github-hosted", true);
+		assert.match(calls, /^sudo --preserve-env unshare --net -- bash -c /mu);
+		assert.doesNotMatch(calls, /^docker run /mu);
 	});
 });
