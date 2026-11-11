@@ -484,6 +484,22 @@ Two script tests were wrong about the tree they guard:
   spawn git against a fresh repository (no remote, no network), and such cases passed the 10 s default
   on a loaded runner.
 
+## Running the scripts tests
+
+`pnpm run test:scripts` runs every `scripts/test/*.test.ts` file and exits 0 on a healthy tree. It
+is `scripts/run-tests.ts --category=scripts`: the Vitest-style files run in one Vitest process, then
+the `node:test`-style files run under `node --import tsx --test`, and a failure in the first no longer
+skips the second. A file is `node:test`-style when it imports `node:test` (`isNodeTestFile`), whatever
+else it imports. The script used to hand the whole directory to `node --test`, which cannot load a
+Vitest-style file, so it reported one failure per such file (25 of them) on any tree and nobody could
+use it as a gate.
+
+No workflow and no commit hook runs that lane. CI names single files instead: `hobo-ci.yml` runs a
+few `node:test` files with `node --import tsx --test`, `release-hobo.yml` runs its Vitest-style files
+with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four sets by changed path.
+`scripts/test/script-test-runners.test.ts` holds each of those invocations to the runner
+`test:scripts` gives the same file.
+
 ## Checks that went stale on main
 
 No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so four
