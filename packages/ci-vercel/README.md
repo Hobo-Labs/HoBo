@@ -314,6 +314,14 @@ rescheduled message leaves no error in the queue's own log, so the consumer
 writes `hobo_ci_queue_handoff_deferred` for it (see the failure log below).
 `test/queue-redelivery.test.ts` runs the installed queue client against a
 stand-in for the queue service and checks the lease change it sends.
+
+A repair tick (`{"source": ..., "name": "hobo-ci-repair"}`) that lands while
+the store is in back-off is answered `204` and dropped, because the next tick
+does the same work. That matters for old production deployments: each keeps
+its own queue consumer and schedule, still forwards to the current relay, and
+retries a refusal at once with the code it was built from. Acknowledging the
+tick is the one thing that stops those retries from here. A webhook delivery
+wakeup is never dropped; it is held as above.
 Vercel's Hobby plan is limited to personal, non-commercial use. PostgreSQL,
 queue operations and Functions can incur usage charges according to the chosen
 plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
