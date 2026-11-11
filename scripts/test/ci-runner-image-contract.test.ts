@@ -19,6 +19,7 @@ import {
 	assertTurboLockSidecarsPresent,
 	CI_RUNNER_BASE_DOCKERFILE,
 	CI_RUNNER_BUILD_SCRIPT,
+	CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 	CI_RUNNER_PLAYWRIGHT_CHROMIUM,
 	CI_RUNNER_PREFLIGHT_NODE_ARGS,
 	CI_RUNNER_SYSTEM_PACKAGES,
@@ -609,6 +610,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 			MISE_TOML,
 			CI_RUNNER_SYSTEM_PACKAGES,
 			CI_RUNNER_BASE_DOCKERFILE,
+			CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 			CI_RUNNER_BUILD_SCRIPT,
 		];
 		const copy = mkdtempSync(join(tmpdir(), "ci-runner-version-"));

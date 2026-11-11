@@ -27,3 +27,4 @@ tags: [hobo, ci, performance, release, playwright, ghcr]
 
 - `scripts/test/playwright-headless-shell-archive.test.ts`
 - `scripts/test/ensure-ci-worker-image.test.ts`
+- `scripts/test/ci-runner-image-contract.test.ts` (version-input sweep includes `install-playwright-headless-shell.sh`)
