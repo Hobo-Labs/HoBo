@@ -90,6 +90,7 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@hobo/ci-agent": "workspace:*",
 		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",
