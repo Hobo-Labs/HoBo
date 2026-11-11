@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	fleetCanAbsorbUnlaunchedRelease,
 	isUnlaunchedReservation,
 	pickUnlaunchedReservationsToRelease,
 	unlaunchedReleaseReason,
@@ -13,7 +14,21 @@ const baseLease = {
 	runnerId: 0,
 	createdAt: "2026-11-11T12:00:00.000Z",
 	jobId: 1,
+	installationId: 1,
+	repository: "Org/Repo",
+	runAttempt: 1,
 };
+
+const baseContext = {
+	boundMs: 60_000,
+	backlogMinAgeMs: 25_000,
+	pendingDemand: 0,
+	unlaunchedCount: 1,
+	launchSlots: 4,
+	liveContainerCount: 0,
+	backlogImmediate: true,
+	nonLocalFreeSlots: 1,
+} as const;
 
 describe("unlaunched reservation release", () => {
 	it("detects reserved leases with no sandbox or runner", () => {
@@ -26,21 +41,42 @@ describe("unlaunched reservation release", () => {
 		).toBe(false);
 	});
 
-	it("releases when age exceeds the launch bound", () => {
-		const nowMs = Date.parse("2026-11-11T12:00:30.000Z");
+	it("refuses release when fleet witnesses report no non-local capacity", () => {
+		expect(fleetCanAbsorbUnlaunchedRelease(0)).toBe(false);
+		expect(fleetCanAbsorbUnlaunchedRelease(undefined)).toBe(false);
+		const nowMs = Date.parse("2026-11-11T12:01:00.000Z");
 		const reason = unlaunchedReleaseReason(baseLease, nowMs, {
+			...baseContext,
+			nonLocalFreeSlots: 0,
+		});
+		expect(reason).toBeUndefined();
+	});
+
+	it("releases when age exceeds the launch bound and fleet can absorb", () => {
+		const nowMs = Date.parse("2026-11-11T12:01:30.000Z");
+		const reason = unlaunchedReleaseReason(baseLease, nowMs, {
+			...baseContext,
 			boundMs: 25_000,
-			pendingDemand: 0,
-			unlaunchedCount: 1,
-			launchSlots: 4,
-			liveContainerCount: 0,
-			backlogImmediate: true,
 		});
 		expect(reason).toBe("launch-bound-exceeded");
 	});
 
-	it("releases oldest unlaunched leases when pending demand exceeds launch capacity", () => {
+	it("does not backlog-release before backlogMinAgeMs", () => {
 		const nowMs = Date.parse("2026-11-11T12:00:05.000Z");
+		const reason = unlaunchedReleaseReason(baseLease, nowMs, {
+			...baseContext,
+			boundMs: 60_000,
+			backlogMinAgeMs: 25_000,
+			pendingDemand: 4,
+			unlaunchedCount: 2,
+			launchSlots: 1,
+			liveContainerCount: 1,
+		});
+		expect(reason).toBeUndefined();
+	});
+
+	it("releases oldest unlaunched leases when backlog age and fleet capacity allow", () => {
+		const nowMs = Date.parse("2026-11-11T12:00:30.000Z");
 		const releases = pickUnlaunchedReservationsToRelease(
 			[
 				baseLease,
@@ -54,11 +90,13 @@ describe("unlaunched reservation release", () => {
 			nowMs,
 			{
 				boundMs: 60_000,
+				backlogMinAgeMs: 25_000,
 				pendingDemand: 4,
 				unlaunchedCount: 2,
 				launchSlots: 1,
 				liveContainerCount: 1,
 				backlogImmediate: true,
+				nonLocalFreeSlots: 2,
 			},
 		);
 		expect(releases.map((entry) => entry.leaseId)).toEqual([

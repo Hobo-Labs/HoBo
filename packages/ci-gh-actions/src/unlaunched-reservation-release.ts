@@ -1,6 +1,8 @@
-import type { Lease } from "@hobo/ci";
+import type { Job, Lease } from "@hobo/ci";
 
 export const DEFAULT_UNLAUNCHED_RESERVE_MS = 25_000;
+export const DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS = 25_000;
+export const DEFAULT_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS = 30_000;
 
 export type UnlaunchedReservationLease = Readonly<
 	Pick<
@@ -12,8 +14,27 @@ export type UnlaunchedReservationLease = Readonly<
 		| "runnerId"
 		| "createdAt"
 		| "jobId"
+		| "installationId"
+		| "repository"
+		| "runAttempt"
 	>
 >;
+
+export function unlaunchedJobCoopKey(
+	ref: Pick<
+		UnlaunchedReservationLease,
+		"installationId" | "repository" | "runAttempt"
+	> &
+		Readonly<{ jobId: number }>,
+): string {
+	return `${ref.installationId}:${ref.repository}:${ref.jobId}:${ref.runAttempt}`;
+}
+
+export function unlaunchedJobCoopKeyFromPending(
+	job: Pick<Job, "installationId" | "repository" | "id" | "runAttempt">,
+): string {
+	return `${job.installationId}:${job.repository}:${job.id}:${job.runAttempt}`;
+}
 
 export function isUnlaunchedReservation(
 	lease: UnlaunchedReservationLease,
@@ -34,13 +55,24 @@ export function unlaunchedReservationAgeMs(
 	return Number.isFinite(created) ? Math.max(0, nowMs - created) : 0;
 }
 
+/** Non-local mesh capacity (peer box slots and ARC) must absorb released custody. */
+export function fleetCanAbsorbUnlaunchedRelease(
+	nonLocalFreeSlots: number | undefined,
+): boolean {
+	return nonLocalFreeSlots !== undefined && nonLocalFreeSlots > 0;
+}
+
 export type UnlaunchedReleaseContext = Readonly<{
 	boundMs: number;
+	backlogMinAgeMs: number;
 	pendingDemand: number;
 	unlaunchedCount: number;
 	launchSlots: number;
 	liveContainerCount: number;
+	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
+	/** Peer/ARC slots reported on mesh; release fail-closed when absent. */
+	nonLocalFreeSlots?: number;
 }>;
 
 export function unlaunchedReleaseReason(
@@ -49,9 +81,12 @@ export function unlaunchedReleaseReason(
 	context: UnlaunchedReleaseContext,
 ): string | undefined {
 	if (!isUnlaunchedReservation(lease)) return undefined;
+	if (!fleetCanAbsorbUnlaunchedRelease(context.nonLocalFreeSlots))
+		return undefined;
 	const ageMs = unlaunchedReservationAgeMs(lease, nowMs);
 	if (ageMs >= context.boundMs) return "launch-bound-exceeded";
-	if (!context.backlogImmediate || ageMs === 0) return undefined;
+	if (!context.backlogImmediate) return undefined;
+	if (ageMs < context.backlogMinAgeMs) return undefined;
 	const outstanding = context.unlaunchedCount + context.pendingDemand;
 	const capacity = Math.max(
 		0,
@@ -67,6 +102,10 @@ export function pickUnlaunchedReservationsToRelease(
 	nowMs: number,
 	context: UnlaunchedReleaseContext,
 ): ReadonlyArray<Readonly<{ leaseId: string; jobId: number; reason: string }>> {
+	const canFleetAbsorb = fleetCanAbsorbUnlaunchedRelease(
+		context.nonLocalFreeSlots,
+	);
+	if (!canFleetAbsorb) return [];
 	const unlaunched = leases
 		.filter(isUnlaunchedReservation)
 		.sort(
@@ -88,7 +127,7 @@ export function pickUnlaunchedReservationsToRelease(
 		if (ageMs >= context.boundMs) reason = "launch-bound-exceeded";
 		else if (
 			context.backlogImmediate &&
-			ageMs > 0 &&
+			ageMs >= context.backlogMinAgeMs &&
 			context.pendingDemand + unlaunchedLeft > capacity
 		)
 			reason = "admission-backlog";
