@@ -470,6 +470,19 @@ step's own shell or loads what the step loads.
   with `--no-merges` into a variable first, and greps a variable instead of a pipe (an early `grep -q`
   exit under `pipefail` would read as a missing sign-off).
 
+Two script tests were wrong about the tree they guard:
+
+- **Single-worker pins are read under `CI`.** `scripts/test/memory-env.test.ts` holds every Vitest
+  config that pins one worker to `capVitestWorkers(1)`. `packages/hobo/vitest.config.ts` set
+  `fileParallelism: false` (one worker, whatever `maxWorkers` says) next to
+  `capVitestWorkers(process.env.CI ? 2 : undefined)`, which never took effect; it now says
+  `capVitestWorkers(1)`. `packages/cli/vitest.config.ts` pins one worker in CI only, a form the test
+  did not recognise while still listing that config as required, so it failed behind the first
+  failure. The test now loads the configs with `CI` set and accepts both forms.
+- **Git-fixture cases get 30 s.** Two cases in `scripts/test/stage-release-oci-app.test.ts` only spawn
+  git against a fresh repository (no remote, no network) and passed the 10 s default on a loaded
+  runner.
+
 ## The cli package's test cost
 
 `packages/cli`'s suite spends nearly all of its time compiling TypeScript inside the tests (codegen
