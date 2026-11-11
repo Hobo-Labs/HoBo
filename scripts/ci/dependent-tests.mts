@@ -106,14 +106,23 @@ export function planUnits(
 	return [...new Set([...full, ...subsets.keys()])].sort();
 }
 
-/** Workspaces Turbo would run for this plan (test tasks only for repo-wide plans). */
+/**
+ * Workspaces Turbo would run for this plan (test tasks only for repo-wide plans).
+ *
+ * A repo-wide plan asks `graph` which packages have a `test` task and refuses
+ * a graph that names a package `workspaces` does not: a shard built from the
+ * discovered list alone would drop that package's suite without a word. The
+ * graph is a parameter, defaulting to turbo in the working directory, so the
+ * check runs against a repository described in memory too.
+ */
 export function testWorkspaceUnits(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
+	graph: TestGraph = turboTestGraph,
 ): string[] {
 	if (plan.mode !== "all") return planUnits(plan, workspaces);
 	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
-	const tests = turboTestGraph([]).filter((task) => task.task === "test");
+	const tests = graph([]).filter((task) => task.task === "test");
 	const dirs = tests
 		.map((task) => task.directory)
 		.filter((dir) => workspaceDirs.has(dir));
@@ -180,6 +189,7 @@ export function shardTestPlan(
 	index: number,
 	count: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
 ): TestPlan {
 	if (
 		!Number.isSafeInteger(index) ||
@@ -190,11 +200,11 @@ export function shardTestPlan(
 		index >= count
 	)
 		throw new Error("invalid workspace test shard");
-	const full =
-		plan.mode === "all" ? testWorkspaceUnits(plan, workspaces) : [...plan.full];
+	// One graph read: a repo-wide plan's whole suites are its units.
+	const dirs = testWorkspaceUnits(plan, workspaces, graph);
+	const full = plan.mode === "all" ? dirs : [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
-	const dirs = testWorkspaceUnits(plan, workspaces);
 	const selected = new Set(
 		partitionUnitsByWeight(dirs, durations, count)[index],
 	);
@@ -220,11 +230,12 @@ export function planShardCountBalanced(
 	max: number,
 	targetSeconds: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
 ): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
 		throw new Error("invalid workspace test shard");
 	if (!(targetSeconds > 0)) throw new Error("invalid workspace shard target");
-	const units = testWorkspaceUnits(plan, workspaces);
+	const units = testWorkspaceUnits(plan, workspaces, graph);
 	if (units.length === 0) return 1;
 	let count = 1;
 	while (count < max) {
@@ -246,6 +257,7 @@ export function planShardCount(
 		targetSeconds?: number;
 		workspaces?: readonly Workspace[];
 		durations?: WorkspaceDurationTable;
+		graph?: TestGraph;
 	}>,
 ): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
@@ -258,6 +270,7 @@ export function planShardCount(
 			max,
 			target,
 			options?.durations,
+			options?.graph,
 		);
 	}
 	if (plan.mode === "all") return max;
@@ -1091,17 +1104,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	if (shardArgs.length === 1) {
 		const match = /^--shard=(\d+)\/(\d+)$/u.exec(shardArgs[0] ?? "");
 		if (!match) throw new Error("invalid workspace test shard");
-		if (plan.mode === "all") {
-			const workspaceDirs = new Set(repo.workspaces.map((ws) => ws.dir));
-			const tests = turboTestGraph([]).filter((task) => task.task === "test");
-			if (
-				tests.length === 0 ||
-				tests.some((task) => !workspaceDirs.has(task.directory))
-			)
-				throw new Error(
-					"repo-wide test graph includes an undiscovered workspace",
-				);
-		}
+		// A repo-wide plan is checked against turbo's graph in there
+		// (testWorkspaceUnits), and throws on an undiscovered workspace.
 		plan = shardTestPlan(
 			plan,
 			repo.workspaces,

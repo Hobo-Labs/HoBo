@@ -259,6 +259,20 @@ change under that directory selects the reader). Before this, nothing led from a
 `packages/cli/package.json` change 6 and 3, and a `packages/policy/package.json` change 25 and 13
 (5 and 8 before, when its importers were never selected).
 
+A repo-wide plan is sharded over the packages turbo has a `test` task for, and
+`testWorkspaceUnits` refuses a graph that names a package workspace discovery did not find
+(`repo-wide test graph includes an undiscovered workspace`): shards built from the discovered list
+alone would leave that package's suite in none of them. #1840 made that function read
+`turbo run test --dry=json` in the working directory, so the shard case in
+`scripts/test/dependent-tests.test.ts`, which describes a five-package repository in memory, was
+checked against this checkout's graph and failed. The graph is now a parameter (`TestGraph`, the type
+`planCommands` already takes) of `testWorkspaceUnits`, `shardTestPlan`, `planShardCountBalanced` and
+`planShardCount`, defaulting to turbo. The cases pass the graph of the repository they describe; one
+gives a graph with a sixth package and must get the refusal, and one calls the default against this
+checkout with `packages/core` left out of the discovered list and must get it from turbo's own graph.
+`shardTestPlan` reads the graph once per call, not twice, and `--shard` no longer repeats the check
+before calling it, so a repo-wide shard job runs one `turbo --dry=json` where it ran three.
+
 The planner's own time matters: `scripts/test/read-stdin.test.ts` runs it behind a late writer under
 a 20 s guard, in the same step as the root type-check and the root tests. On an idle runner that step
 took 12 s in all; on a busy one the planner alone passed 20 s, was killed (`null !== 0`) and failed

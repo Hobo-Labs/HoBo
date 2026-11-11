@@ -13,6 +13,7 @@ import {
 	shardTestPlan,
 	type TestGraph,
 	type TestPlan,
+	testWorkspaceUnits,
 	turboTestGraph,
 } from "../ci/dependent-tests.mts";
 
@@ -130,10 +131,26 @@ describe("workspace test shards", () => {
 		assert.equal(new Set(subsets.map(([dir]) => dir)).size, subsets.length);
 	});
 
+	// What `turbo run test --dry=json` would list for `repo`: a build and a
+	// test task per workspace. The planner reads turbo in the working directory
+	// by default, which is this checkout, not the tree described above.
+	const graphOf =
+		(dirs: readonly string[]): TestGraph =>
+		() =>
+			dirs.flatMap((directory) =>
+				["build", "test"].map((task) => ({
+					taskId: `${directory}#${task}`,
+					task,
+					directory,
+				})),
+			);
+	const repoGraph = graphOf(repo.workspaces.map((ws) => ws.dir));
+	const all: TestPlan = { mode: "all", reason: "global input" };
+
 	it("partitions every workspace for a repo-wide plan and rejects invalid shards", () => {
-		const plan: TestPlan = { mode: "all", reason: "global input" };
+		const plan = all;
 		const shards = [0, 1, 2, 3].map((index) =>
-			shardTestPlan(plan, repo.workspaces, index, 4),
+			shardTestPlan(plan, repo.workspaces, index, 4, undefined, repoGraph),
 		);
 		const full = shards.flatMap((part) =>
 			part.mode === "scoped" ? part.full : [],
@@ -168,6 +185,85 @@ describe("workspace test shards", () => {
 					4,
 				),
 			/both a whole suite and a subset/u,
+		);
+	});
+
+	it("shards only the packages turbo has a test task for", () => {
+		// `packages/none` builds and has no `test` script: turbo lists no test
+		// task for it, so no shard carries it.
+		const graph: TestGraph = () =>
+			repoGraph([]).filter(
+				(task) => task.directory !== "packages/none" || task.task !== "test",
+			);
+		assert.deepEqual(
+			testWorkspaceUnits(all, repo.workspaces, graph),
+			repo.workspaces
+				.map((ws) => ws.dir)
+				.filter((dir) => dir !== "packages/none")
+				.sort(),
+		);
+	});
+
+	it("refuses a repo-wide plan when turbo runs a package discovery missed", () => {
+		// Sharding the discovered list alone would leave `packages/extra` in no
+		// shard, and its suite would never run.
+		const graph = graphOf([
+			...repo.workspaces.map((ws) => ws.dir),
+			"packages/extra",
+		]);
+		const undiscovered = /includes an undiscovered workspace/u;
+		assert.throws(
+			() => testWorkspaceUnits(all, repo.workspaces, graph),
+			undiscovered,
+		);
+		assert.throws(
+			() => shardTestPlan(all, repo.workspaces, 0, 4, undefined, graph),
+			undiscovered,
+		);
+		assert.throws(
+			() =>
+				planShardCount(all, 8, {
+					targetSeconds: 90,
+					workspaces: repo.workspaces,
+					graph,
+				}),
+			undiscovered,
+		);
+		// A graph with no test task at all is a broken read, not an empty plan.
+		assert.throws(
+			() => testWorkspaceUnits(all, repo.workspaces, graphOf([])),
+			undiscovered,
+		);
+		// A scoped plan names its own packages and reads no graph.
+		assert.deepEqual(
+			testWorkspaceUnits(
+				{
+					mode: "scoped",
+					full: ["packages/lib"],
+					subsets: new Map(),
+					skipped: [],
+				},
+				repo.workspaces,
+				() => {
+					throw new Error("a scoped plan read the graph");
+				},
+			),
+			["packages/lib"],
+		);
+	});
+
+	it("checks this checkout against turbo's own graph when none is given", () => {
+		// The default the CLI uses: `turbo run test --dry=json` here. With one
+		// tested package left out of the discovered list, the check must fire.
+		const discovered = readRepo().workspaces;
+		assert.ok(discovered.some((ws) => ws.dir === "packages/core"));
+		assert.throws(
+			() =>
+				testWorkspaceUnits(
+					all,
+					discovered.filter((ws) => ws.dir !== "packages/core"),
+				),
+			/includes an undiscovered workspace/u,
 		);
 	});
 });
