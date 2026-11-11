@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -596,6 +596,11 @@ try {
 		return created;
 	}
 	const containerEnv: Record<string, string> = {};
+	const memoryPeaksPath = join(workRoot, "memory-peaks.json");
+	const memoryPeaksTarget = "/run/hobo-ci/memory-peaks.json";
+	if (existsSync(memoryPeaksPath)) {
+		containerEnv.HOBO_CI_MEMORY_PEAKS_PATH = memoryPeaksTarget;
+	}
 	if (pnpmStore) {
 		containerEnv.npm_config_store_dir = PNPM_STORE_TARGET;
 		containerEnv.npm_config_package_import_method = "hardlink";
@@ -642,9 +647,18 @@ try {
 			}),
 		log,
 		slots,
-		volumes: pnpmStore
-			? [{ source: pnpmStore, target: PNPM_STORE_TARGET }]
-			: [],
+		volumes: [
+			...(pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : []),
+			...(existsSync(memoryPeaksPath)
+				? [
+						{
+							source: memoryPeaksPath,
+							target: memoryPeaksTarget,
+							readonly: true,
+						},
+					]
+				: []),
+		],
 		containerEnv,
 		workRoot,
 		workFs,

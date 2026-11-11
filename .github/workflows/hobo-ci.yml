@@ -1102,7 +1102,8 @@ jobs:
           BASE: ${{ needs.main-gate-plan.outputs.main_base }}
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
-          HOBO_TURBO_CONCURRENCY: "1"
+          TURBO_SCM_BASE: ${{ needs.main-gate-plan.outputs.main_base }}
+          HOBO_TURBO_USE_AFFECTED: ${{ needs.main-gate-plan.outputs.main_tests == 'affected' && '1' || '' }}
         run: |
           set -euo pipefail
           case "$TESTS" in
