@@ -199,6 +199,7 @@ jobs:
         id: scope
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           run=true
@@ -207,8 +208,10 @@ jobs:
             # base it was merged into. The event's base SHA can be older than
             # that, and then main's later changes to these inputs read as the
             # PR's, so every open PR built a deps image of several GB on the
-            # fleet and ran its Docker disk out.
-            if git rev-parse -q --verify 'HEAD^2' >/dev/null; then
+            # fleet and ran its Docker disk out. Only GitHub's merge commit,
+            # whose second parent is the PR head, has that first parent.
+            second="$(git rev-parse -q --verify 'HEAD^2' || true)"
+            if [[ -n "$second" && "$second" == "${PR_HEAD_SHA:-}" ]]; then
               base="$(git rev-parse 'HEAD^1')"
             else
               if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -349,15 +352,18 @@ jobs:
         id: scm-base
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "PR base SHA is missing or invalid" >&2; exit 1
           fi
-          # On GitHub's PR merge commit, the base it was merged into is its
-          # first parent. The event's base SHA can be older, and then main's
-          # later changes count as the PR's and widen the affected set.
-          if git rev-parse -q --verify 'HEAD^2' >/dev/null; then
+          # On GitHub's PR merge commit (second parent: the PR head), the base
+          # it was merged into is its first parent. The event's base SHA can be
+          # older, and then main's later changes count as the PR's and widen
+          # the affected set.
+          second="$(git rev-parse -q --verify 'HEAD^2' || true)"
+          if [[ -n "$second" && "$second" == "${PR_HEAD_SHA:-}" ]]; then
             BASE="$(git rev-parse 'HEAD^1')"
           else
             git cat-file -e "${PR_BASE_SHA}^{commit}" || git fetch --no-tags origin "$PR_BASE_SHA"

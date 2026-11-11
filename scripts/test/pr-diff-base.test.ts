@@ -54,11 +54,11 @@ describe("a PR's own changes, against the base its merge commit was made on", ()
 	const mergeRef = (path: string) => {
 		const eventBase = commit("README.md", "base\n");
 		git("checkout", "-q", "-b", "pr");
-		commit(path, "the pull request's change\n");
+		const prHead = commit(path, "the pull request's change\n");
 		git("checkout", "-q", "main");
 		const mainTip = commit("scripts/lib/deps-key.mts", "main's later change\n");
 		git("merge", "-q", "--no-ff", "--no-edit", "pr");
-		return { eventBase, mainTip };
+		return { eventBase, mainTip, prHead };
 	};
 	const run = (step: string, env: Record<string, string>) => {
 		const output = join(repo, ".output");
@@ -80,29 +80,57 @@ describe("a PR's own changes, against the base its merge commit was made on", ()
 	afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
 	it("does not build the deps image for a PR that left its inputs alone", () => {
-		const { eventBase } = mergeRef("packages/ci-agent/src/agent.ts");
+		const { eventBase, prHead } = mergeRef("packages/ci-agent/src/agent.ts");
 		const scope = shellForStep(
 			job("ci-deps-image"),
 			"Limit PR builds to deps image inputs",
 		);
-		assert.equal(run(scope, { PR_BASE_SHA: eventBase }), "run=false\n");
+		assert.equal(
+			run(scope, { PR_BASE_SHA: eventBase, PR_HEAD_SHA: prHead }),
+			"run=false\n",
+		);
 	});
 
 	it("builds it for a PR that changed one", () => {
-		const { eventBase } = mergeRef("scripts/ci/deps-layer.mts");
+		const { eventBase, prHead } = mergeRef("scripts/ci/deps-layer.mts");
 		const scope = shellForStep(
 			job("ci-deps-image"),
 			"Limit PR builds to deps image inputs",
 		);
-		assert.equal(run(scope, { PR_BASE_SHA: eventBase }), "run=true\n");
+		assert.equal(
+			run(scope, { PR_BASE_SHA: eventBase, PR_HEAD_SHA: prHead }),
+			"run=true\n",
+		);
 	});
 
 	it("bases the affected set on the merge commit's first parent", () => {
-		const { eventBase, mainTip } = mergeRef("packages/ci-agent/src/agent.ts");
+		const { eventBase, mainTip, prHead } = mergeRef(
+			"packages/ci-agent/src/agent.ts",
+		);
 		const base = shellForStep(
 			job("pr_gate_validation"),
 			"Resolve Turbo SCM base",
 		);
-		assert.equal(run(base, { PR_BASE_SHA: eventBase }), `base=${mainTip}\n`);
+		assert.equal(
+			run(base, { PR_BASE_SHA: eventBase, PR_HEAD_SHA: prHead }),
+			`base=${mainTip}\n`,
+		);
+	});
+
+	it("falls back to the event's base for any other merge commit at HEAD", () => {
+		// A merge whose second parent is not the PR head: here a head that
+		// itself merged main in, checked out directly. Its first parent is the
+		// PR's own previous commit, not a base.
+		const { eventBase, prHead } = mergeRef("packages/ci-agent/src/agent.ts");
+		git("checkout", "-q", "pr");
+		git("merge", "-q", "--no-ff", "--no-edit", "main");
+		const base = shellForStep(
+			job("pr_gate_validation"),
+			"Resolve Turbo SCM base",
+		);
+		assert.equal(
+			run(base, { PR_BASE_SHA: eventBase, PR_HEAD_SHA: prHead }),
+			`base=${eventBase}\n`,
+		);
 	});
 });
