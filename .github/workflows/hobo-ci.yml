@@ -89,19 +89,11 @@ jobs:
     # Skipped (which satisfies the required check) on merge_group: the PR run already evaluated
     # these inputs, and building here would retag the box's hobo-ci-worker:local from an unmerged
     # group commit. The push to main covers the merged tree.
-    # A push whose per-commit file lists contain no image input also skips, satisfying needs at
-    # once so Main full gate does not wait for a no-op. Missing file lists and forced pushes build.
-    if: >-
-      github.event_name != 'merge_group' && (
-      github.event_name != 'push' ||
-      github.event.commits[0] == null ||
-      github.event.forced == true ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.toml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.lock') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"packages/ci-gh-actions/deploy/ci-runner/') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/lib/ci-runner-contract.mts') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/ci-runner-preflight.mts') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/test/ci-runner-image-contract.test.ts'))
+    # A main push always runs it, and asks whether this tree's image (by content key) is on the
+    # box and in GHCR rather than whether its own commits touched an image input: a push that
+    # waited behind a running one and was dropped carried changes no later push lists, and an
+    # image a pull request built on the box was never published (finding 113).
+    if: github.event_name != 'merge_group'
     # The route job picks the label: the fleet while it takes jobs, else an enrolled local box,
     # else GitHub-hosted. On the fleet, trunk runs ask for their own label by default;
     # HOBO_CI_TRUNK_RUNNER=false is the kill switch for a box daemon too old to serve it. GitHub
@@ -122,10 +114,17 @@ jobs:
           fetch-depth: 2
       - name: Detect runner image inputs changed
         id: rebuild
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Main: build or publish whatever this tree's image is missing.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            GITHUB_TOKEN="${GHCR_TOKEN}" node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status
             exit 0
           fi
           # grep, not rg (the worker image ships no rg), and on a variable rather than a pipe,
@@ -175,9 +174,10 @@ jobs:
           name: ci-runner-oci-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/ci-runner-oci-build.log
           if-no-files-found: ignore
-      # Published from main only; a pull request's image is tried on the box, not shipped.
+      # Published from main only; a pull request's image is tried on the box, not shipped. A main
+      # push publishes whenever GHCR lacks this tree's image, even one the box already had.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
+        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request' && (github.event_name == 'push' && steps.rebuild.outputs.ghcr != 'true' || github.event_name != 'push' && steps.materialize.outcome != 'success')
         env:
           MISE_EXPERIMENTAL: "1"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1236,6 +1236,7 @@ jobs:
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Bootstrap repo-local composite actions
@@ -1336,6 +1337,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BEFORE: ${{ github.event.before }}
           SCAN_SHA: ${{ github.sha }}
+          # Read-only: lists completed runs to find the last green main commit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail

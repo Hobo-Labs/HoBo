@@ -10,8 +10,10 @@ on:
 permissions:
   contents: read
 
+# Keyed by the CI run's conclusion: a dropped or failed main run completes too, and the job
+# skips it, so it must not cancel a publish that a green run started.
 concurrency:
-  group: ci-deps-publish-${{ github.repository }}
+  group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
   cancel-in-progress: true
 
 jobs:

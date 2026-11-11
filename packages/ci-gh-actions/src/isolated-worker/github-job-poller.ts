@@ -145,7 +145,10 @@ export function newestMainFabricPushRunId(
 		return status === "queued" || status === "in_progress";
 	});
 	if (mainPush.length === 0) return undefined;
-	const sorted = [...mainPush].sort(
+	// A newer push waiting on the concurrency group has no jobs yet; prefer a
+	// started run so the prewarm hint goes to the run that holds trunk jobs.
+	const started = mainPush.filter((run) => run.status === "in_progress");
+	const sorted = [...(started.length > 0 ? started : mainPush)].sort(
 		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
 	);
 	return sorted[0]?.id;
@@ -153,9 +156,12 @@ export function newestMainFabricPushRunId(
 
 /**
  * Older in-flight main pushes that a newer, started main push has replaced (a
- * re-run, or a run still winding down after a cancel). Only an `in_progress`
- * run replaces another: main pushes queue on one concurrency group, so a newer
- * run that is still waiting for the running one must not starve it of slots.
+ * re-run, or a run still winding down after a manual cancel). Only a run GitHub
+ * reports `in_progress` replaces another: main pushes queue on one concurrency
+ * group, so a newer run still waiting for the running one must never starve it.
+ * GitHub can report a run that already has jobs running as `queued`, so this
+ * misses some replacements rather than inventing one; admission order (newest
+ * push first) covers what it misses.
  */
 export function supersededMainFabricPushRunIds(
 	runs: readonly Run[],

@@ -21,7 +21,7 @@ it("names the newest in-flight main Fabric push", () => {
 			event: "push",
 			head_branch: "main",
 			path: fabric,
-			status: "queued",
+			status: "in_progress",
 			run_started_at: "2026-11-11T03:55:00Z",
 		},
 	]);
@@ -116,4 +116,26 @@ it("still drops a queued older run once a newer one has started", () => {
 		},
 	]);
 	expect([...superseded]).toEqual([400]);
+});
+
+it("hints prewarm at the started main push, not a newer one still waiting", () => {
+	const newest = newestMainFabricPushRunId([
+		{
+			id: 500,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "in_progress",
+			run_started_at: "2026-11-11T22:00:00Z",
+		},
+		{
+			id: 501,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "queued",
+			run_started_at: "2026-11-11T22:05:00Z",
+		},
+	]);
+	expect(newest).toBe(500);
 });

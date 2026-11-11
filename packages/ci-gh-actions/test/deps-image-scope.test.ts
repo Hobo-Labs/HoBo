@@ -87,7 +87,10 @@ describe("CI deps image push scope", () => {
 		});
 		expect(publisher.on.workflow_dispatch).toBeNull();
 		expect(publisher.concurrency).toEqual({
-			group: "ci-deps-publish-${{ github.repository }}",
+			// Keyed by the CI run's conclusion (finding 113): a skipped completion
+			// must not cancel a publish a green run started.
+			group:
+				"ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}",
 			"cancel-in-progress": true,
 		});
 		const job = publisher.jobs.publish;

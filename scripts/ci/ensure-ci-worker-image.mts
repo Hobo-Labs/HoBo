@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
  * Resolve a digest-pinned hobo-ci-worker image for release OCI builds.
  * Prefers ghcr.io/hobo-ci-worker:${ciRunnerImageVersion}; avoids build.sh on release.
  */
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 
@@ -208,7 +208,50 @@ export function ensureCiWorkerImage(): string {
 	return candidate;
 }
 
+/**
+ * Whether this tree's worker image (by content key) is on this host and in GHCR.
+ * A main push asks this instead of diffing its own commits: a push that waited
+ * behind a running one and was dropped carried image-input changes no later
+ * push lists, and an image a pull request built on this box was never
+ * published. Either way the image this tree needs would be missing.
+ */
+/** Where this tree's worker image is present. */
+export interface CiWorkerImagePresence {
+	readonly version: string;
+	readonly host: boolean;
+	readonly ghcr: boolean;
+}
+
+export function ciWorkerImagePublished(): CiWorkerImagePresence {
+	const version = ciRunnerImageVersion(root);
+	const host = dockerImagePresent(`hobo-ci-worker:${version}`);
+	const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
+	const token = ghcrAuthToken();
+	let ghcr = false;
+	if (repo && token) {
+		const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+		ghcr =
+			dockerLoginGhcr(actor, token) &&
+			ghcrWorkerManifestReachable(repo, version, token);
+	}
+	return { version, host, ghcr };
+}
+
 function main(): void {
+	if (process.argv.includes("--published-status")) {
+		const status = ciWorkerImagePublished();
+		console.log(
+			`worker ${status.version}: host=${status.host} ghcr=${status.ghcr}`,
+		);
+		const out = process.env.GITHUB_OUTPUT;
+		if (out) {
+			appendFileSync(
+				out,
+				`needed=${status.host && status.ghcr ? "false" : "true"}\nghcr=${status.ghcr}\n`,
+			);
+		}
+		return;
+	}
 	if (process.argv.includes("--materialize-only")) {
 		const image = materializeCiWorkerImageOnly();
 		if (!image) {
