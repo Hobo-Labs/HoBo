@@ -981,17 +981,18 @@ Engines:
 
 Evidence:
 
-- **The live PostgreSQL and MongoDB lanes run in CI, on a schedule and where a diff can reach them —
-  not on every push.** The `Live data engines` job in `.github/workflows/hobo-ci.yml` starts a
+- **The live PostgreSQL and MongoDB lanes run in CI where a diff can reach them — not on every push,
+  and not on a schedule.** The `Live data engines` job in `.github/workflows/hobo-ci.yml` starts a
   digest-pinned PostgreSQL 16 and a one-member MongoDB 8 replica set as sibling containers
   (`scripts/ci/data-live-servers.mts`) and runs `pnpm run test:data-live` against them. It runs on a
   pull request when `scripts/ci/job-scope.mts` finds that the diff reaches the live suites — the data
-  packages, `@hobo/trails`, anything they import, or CI configuration — and every night on `main`.
+  packages, `@hobo/trails`, anything they import, or CI configuration — and on a manual dispatch.
   A green run is checked, not assumed: the job fails unless each of the five packages reported and
   no test was skipped, since a live test without its server skips rather than fails.
   What that leaves open: it does not run in the merge queue; it blocks a merge only if the branch
   ruleset names it as a required check, which is a repository setting, not something this change can
-  set; a pull request whose diff does not reach the suites relies on the nightly run; it covers
+  set; nothing runs the suites against a change whose diff does not reach them, short of a manual
+  dispatch; it covers
   the two pinned server versions only; and it has so far run only on GitHub-hosted runners, not on
   the self-hosted fleet, where the job is a container beside the two servers. The always-on lanes cover the contract logic, the decoder
   against recorded bytes, MongoDB over its in-memory executor, and SQLite for real.

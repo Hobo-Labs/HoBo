@@ -67,10 +67,10 @@ CI provides both servers in one job. `Live data engines` in `.github/workflows/h
 digest-pinned PostgreSQL 16 (`wal_level=logical`) and a one-member MongoDB 8 replica set as sibling
 containers — the images are pinned in `packages/data-core/deploy/live-engine-images.json`, the same
 ones the compose file runs — and runs `pnpm run test:data-live` against them. It runs on a pull
-request whose diff reaches the live suites, and nightly on `main`; it does not run in the merge
+request whose diff reaches the live suites, and on a manual dispatch; never on a schedule, and not in the merge
 queue, and it blocks a merge only if the branch ruleset lists it as required. A regression in live
 change capture, in the fence under real concurrency, or in the native path is therefore caught on
-the pull request that touches those packages, or by the next nightly run otherwise. The intermittent failure seen in the live PostgreSQL lane at `85ae5267` was traced to a
+the pull request that touches those packages, and not otherwise. The intermittent failure seen in the live PostgreSQL lane at `85ae5267` was traced to a
 replication slot created at a bad moment and is fixed by proving a slot decodable before use; the
 residual is the table-sync slots PostgreSQL creates itself
 ([honest limits](./data-engines-continuous-migration.md#10-honest-limits)).

@@ -522,7 +522,7 @@ from PostgreSQL 16.
 
 The live lane is gated on `HOBO_TEST_POSTGRES_URL` and skipped without it. CI's
 `Live data engines` job starts a PostgreSQL 16 for it on pull requests whose diff
-reaches these suites, and nightly. To run it yourself:
+reaches these suites, or on a manual dispatch. To run it yourself:
 
 ```bash
 HOBO_TEST_POSTGRES_URL=postgres://postgres@127.0.0.1:5432/postgres \

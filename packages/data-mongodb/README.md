@@ -522,8 +522,8 @@ pnpm --filter @hobo/data-mongodb run test
 
 The live lanes are skipped cleanly without their variables. CI's
 `Live data engines` job sets both, against a one-member MongoDB 8 replica set and
-a PostgreSQL 16, on pull requests whose diff reaches these suites and nightly. To
-run them yourself:
+a PostgreSQL 16, on pull requests whose diff reaches these suites or on a manual
+dispatch. To run them yourself:
 
 ```bash
 HOBO_TEST_MONGODB_URL='mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true' \

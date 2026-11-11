@@ -153,8 +153,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `VITEST_MAX_WORKERS`. The job is scoped like `artifact-trust` (below) to the live test files, so a
   pull request that cannot reach the data engines frees the slot after checkout
   (`scripts/test/job-scope.test.ts` pins the entry list and checks it against the repository, so
-  changing the entries means changing that test); the nightly schedule
-  and a manual dispatch always run it, whatever their tip commit is, and `merge_group` never does.
+  changing the entries means changing that test); a manual dispatch always runs it, whatever its tip
+  commit is. It never runs on the schedule or on `merge_group`: it needs a runner that can start
+  containers, and a scheduled run would fail on its own whenever none is available.
   On a GitHub-hosted runner the servers are up in under half a minute and the suites take about a
   minute and a half.
 - **PR jobs skip what the diff cannot reach.** `artifact-trust` and `dev-cold-loop-gate` each test a
