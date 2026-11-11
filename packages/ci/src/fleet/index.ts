@@ -10,6 +10,16 @@ export {
 	type FleetRefusalCode,
 } from "./balance.js";
 export {
+	buildFleetCapacitySnapshot,
+	FLEET_CAPACITY_VARIABLE,
+	type FleetCapacitySnapshot,
+	type FleetLabelCapacity,
+	fleetCapacityVariableValue,
+	fleetLabelCapacity,
+	memoryAdmitHeadroom,
+	parseFleetCapacityVariable,
+} from "./capacity.js";
+export {
 	FLEET_PROVIDER_KINDS,
 	type FleetBinding,
 	type FleetRole,
@@ -44,13 +54,3 @@ export {
 	fleetRoutesVariableValue,
 	fleetRouteTable,
 } from "./route-table.js";
-export {
-	FLEET_CAPACITY_VARIABLE,
-	type FleetCapacitySnapshot,
-	type FleetLabelCapacity,
-	buildFleetCapacitySnapshot,
-	fleetCapacityVariableValue,
-	fleetLabelCapacity,
-	memoryAdmitHeadroom,
-	parseFleetCapacityVariable,
-} from "./capacity.js";

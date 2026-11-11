@@ -402,6 +402,7 @@ CPU (545 tests, load 16.5 → 12.5); after these changes 316 s wall, 303 s CPU (
 `PATH` (`codegen-schema-contract`), and a `/tmp/.hobo` marker above `os.tmpdir()` that `ci.test.ts` and
 `shell.test.ts` read as a project root.
 
+- **Worker image on PR deps rebuilds.** `ensure-ci-worker-image.mts` may pull `ghcr.io/.../hobo-ci-worker` on same-repo pull requests (not forks) so deps layer builds avoid a host `build.sh` when the runner lacks mise.
 - **Release sparse cones.** `scripts/test/release-sparse-cone.test.ts` pins the exports in
   `scripts/lib/release-sparse-cone.mts` (for example `hoboReleaseSparseCones` and
   `filePathsRequiredByReleaseOciContractTests`) so release workflows do not drift from the cone list.

@@ -1645,7 +1645,9 @@ export class PostgresCiStore {
 				if (
 					!shouldAbortIsolatedFleetLease(
 						lease.provider,
-						offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
+						offer
+							? { backend: offer.backend, runsOn: offer.runsOn }
+							: undefined,
 					)
 				)
 					continue;

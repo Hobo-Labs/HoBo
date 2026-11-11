@@ -41,7 +41,9 @@ type JsonValue =
 
 const tagOf = Object.prototype.toString;
 
-function asObject(value: JsonValue | undefined): { readonly [key: string]: JsonValue } | undefined {
+function asObject(
+	value: JsonValue | undefined,
+): { readonly [key: string]: JsonValue } | undefined {
 	// SAFETY: the tag check proves a plain object from JSON.parse.
 	return tagOf.call(value) === "[object Object]"
 		? (value as { readonly [key: string]: JsonValue })
@@ -62,7 +64,9 @@ function asBoolean(value: JsonValue | undefined): boolean | undefined {
 		: undefined;
 }
 
-function parseLabelCapacity(value: JsonValue | undefined): FleetLabelCapacity | undefined {
+function parseLabelCapacity(
+	value: JsonValue | undefined,
+): FleetLabelCapacity | undefined {
 	const row = asObject(value);
 	if (!row) return undefined;
 	const freeSlots = asNumber(row.freeSlots);
@@ -110,10 +114,7 @@ export function buildFleetCapacitySnapshot(input: {
 	requiredMbHobo: number;
 	requiredMbTrunk: number;
 }): FleetCapacitySnapshot {
-	const label = (
-		freeSlots: number,
-		requiredMb: number,
-	): FleetLabelCapacity => {
+	const label = (freeSlots: number, requiredMb: number): FleetLabelCapacity => {
 		const admit =
 			freeSlots > 0 &&
 			memoryAdmitHeadroom(
@@ -139,7 +140,9 @@ export function buildFleetCapacitySnapshot(input: {
 	};
 }
 
-export function fleetCapacityVariableValue(snapshot: FleetCapacitySnapshot): string {
+export function fleetCapacityVariableValue(
+	snapshot: FleetCapacitySnapshot,
+): string {
 	return JSON.stringify(snapshot);
 }
 
