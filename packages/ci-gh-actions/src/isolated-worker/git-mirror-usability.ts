@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 // public-contract: refusal reason when a bare mirror is not a full clone for CI checkout.
+// Keep in sync with scripts/ci/git-mirror-usability.mts (sparse release checkout).
 export const INCOMPLETE_MIRROR_REASON =
 	"mirror is a partial or promisor clone (blob:none)";
 
