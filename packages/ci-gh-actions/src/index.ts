@@ -98,6 +98,7 @@ export {
 } from "./isolated-worker/container-timeout.js";
 export {
 	countInFlightWorkerLeases,
+	mergeDrainInFlightCount,
 	parseWorkerStopMode,
 	stopIsolatedWorker,
 	type WorkerStopMode,
@@ -122,6 +123,8 @@ export {
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
 	createBoxGitMirror,
+	defaultGitMirrorFallbackRoot,
+	resolveGitMirrorRoot,
 } from "./isolated-worker/git-mirror.js";
 export {
 	createGithubJobPoller,
@@ -132,6 +135,7 @@ export {
 	type GithubReadFailure,
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
+export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export {
 	classifyHostHealth,
 	createHostHealthMonitor,
@@ -202,6 +206,12 @@ export {
 	type JobObservation,
 } from "./job-durations.js";
 export { startRelayFromEnvironment } from "./main.js";
+export {
+	createMergeQueuePositionCache,
+	fetchMergeQueuePositions,
+	type MergeQueuePositionSource,
+	type MergeQueuePositions,
+} from "./merge-queue-order.js";
 export {
 	createWorkerMesh,
 	type MeshSettings,

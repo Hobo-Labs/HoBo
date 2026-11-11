@@ -2003,6 +2003,56 @@ export class LeaseStore {
 			this.queueInside(job, at);
 		});
 	}
+	/** Drop box demand when GitHub assigned the job elsewhere; never re-queue. */
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	): boolean {
+		return this.transaction(() => {
+			if (
+				expectedRevision !== undefined &&
+				this.configuration()?.revision !== expectedRevision
+			)
+				throw new Error("configuration revision conflict");
+			const configuration = this.configuration()?.configuration;
+			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			let changed = false;
+			for (const lease of this.all()) {
+				if (
+					lease.repositoryId !== job.repositoryId ||
+					lease.jobId !== job.id ||
+					lease.runAttempt !== job.runAttempt ||
+					!ACTIVE_STATES.has(lease.state)
+				)
+					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
+				const offer = configuration?.accounts
+					.find((account) => account.id === lease.accountId)
+					?.offers.find((candidate) => candidate.id === lease.offerId);
+				if (
+					!shouldAbortIsolatedFleetLease(
+						lease.provider,
+						offer
+							? { backend: offer.backend, runsOn: offer.runsOn }
+							: undefined,
+					)
+				)
+					continue;
+				lease.state = "cancelled";
+				this.append(lease, "ci.LeaseCancelled", at);
+				changed = true;
+			}
+			if (
+				this.db.prepare("SELECT 1 FROM pending_jobs WHERE job_key=?").get(key)
+			) {
+				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
+				changed = true;
+			}
+			return changed;
+		});
+	}
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): void {
 		const recoverable = new Set([
 			"reserved",

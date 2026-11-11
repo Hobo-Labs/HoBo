@@ -2,6 +2,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+	INCOMPLETE_MIRROR_REASON,
+	isCompleteGitMirror,
+} from "./git-mirror-usability.mts";
 
 export type BoxGitMirrorResolution =
 	| {
@@ -35,6 +39,7 @@ function usableMirror(path: string, sha: string): boolean {
 	} catch {
 		return false;
 	}
+	if (!isCompleteGitMirror(path)) return false;
 	const bareCheck = spawnSync(
 		"git",
 		[`--git-dir=${path}`, "rev-parse", "--is-bare-repository"],
@@ -61,6 +66,22 @@ export function boxGitMirrorInsteadOfConfig(
 	return `[url "${mirrorUrl}"]\n    insteadOf = https://github.com/${repository}\n    insteadOf = https://github.com/${repository}.git\n`;
 }
 
+function mirrorCandidates(
+	env: NodeJS.ProcessEnv,
+	repository: string,
+): readonly string[] {
+	const configured = env.HOBO_CI_GIT_MIRROR?.trim();
+	const root = env.HOBO_CI_GIT_MIRROR_ROOT?.trim();
+	const fromRoot = root ? join(root, `${repository}.git`) : undefined;
+	if (configured || fromRoot) {
+		return [...(configured ? [configured] : []), ...(fromRoot ? [fromRoot] : [])];
+	}
+	return [
+		`/var/lib/hobo-ci/git/${repository}.git`,
+		`/opt/hobo/ci/git/${repository}.git`,
+	];
+}
+
 export function resolveBoxGitMirror(
 	env: NodeJS.ProcessEnv = process.env,
 	extraSearchPaths: readonly string[] = [],
@@ -81,12 +102,7 @@ export function resolveBoxGitMirror(
 			reason: "HOBO_CI_GIT_MIRROR must be absolute and contain no '..' segments",
 		};
 	}
-	const candidates = [
-		...(configured ? [configured] : []),
-		`/var/lib/hobo-ci/git/${repository}.git`,
-		`/opt/hobo/ci/git/${repository}.git`,
-		...extraSearchPaths,
-	];
+	const candidates = [...mirrorCandidates(env, repository), ...extraSearchPaths];
 	let lastReason = "no candidate mirror exists";
 	for (const candidate of candidates) {
 		const absolute = absoluteCandidate(candidate);
@@ -100,6 +116,10 @@ export function resolveBoxGitMirror(
 			canonical = realpathSync(absolute);
 		} catch {
 			lastReason = `cannot resolve mirror ${absolute}`;
+			continue;
+		}
+		if (!isCompleteGitMirror(canonical)) {
+			lastReason = `${INCOMPLETE_MIRROR_REASON}: ${canonical}`;
 			continue;
 		}
 		if (!usableMirror(canonical, sha)) {

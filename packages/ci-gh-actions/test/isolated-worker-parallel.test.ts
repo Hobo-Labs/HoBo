@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { LeaseSchema } from "@hobo/ci";
 import type { PostgresCiStore } from "@hobo/ci/postgres";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createCliDockerDriver } from "../src/isolated-worker/cli-docker-driver.js";
@@ -223,7 +223,6 @@ describe("isolated worker parallel slots", () => {
 describe("cli docker driver parallel helpers", () => {
 	function fakeBinary() {
 		const dir = mkdtempSync(join(tmpdir(), "fake-docker-"));
-		onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
 		const log = join(dir, "log");
 		const bin = join(dir, "docker");
 		writeFileSync(
@@ -502,7 +501,6 @@ describe("cli docker driver parallel helpers", () => {
 
 	it("CLI driver writes secrets through stdin, not argv", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-docker-"));
-		onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
 		const bin = join(dir, "docker");
 		writeFileSync(
 			bin,

@@ -469,6 +469,7 @@ jobs:
           BASE: ${{ steps.merge-group-base.outputs.base }}
         run: |
           set -euo pipefail
+          node --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts
           if [ "$SCOPE" = "affected" ]; then
             pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else

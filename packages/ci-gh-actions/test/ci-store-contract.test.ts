@@ -642,6 +642,28 @@ function storeContract(
 			expect(await store.pendingJobs()).toEqual([]);
 		});
 
+		it("withdraws isolated demand without re-queueing when a foreign runner wins", async () => {
+			const account = configuration().accounts[0];
+			if (!account) throw new Error("fixture account");
+			await store.queue(job(1), NOW, revision);
+			const lease = await store.reserve(account, job(1), NOW, revision);
+			if (!lease) throw new Error("reservation");
+			await store.transition(
+				lease.id,
+				["reserved"],
+				(entry) => {
+					entry.state = "dispatching";
+				},
+				"ci.DispatchRequested",
+				NOW,
+				revision,
+			);
+			expect(await store.withdrawQueuedJob(job(1), NOW, revision)).toBe(true);
+			expect((await store.get(lease.id))?.state).toBe("cancelled");
+			expect(await store.pendingJobs()).toEqual([]);
+			expect(await store.activeLeases()).toEqual([]);
+		});
+
 		it("requeues aborted isolated leases and settles box leases", async () => {
 			const account = configuration().accounts[0];
 			if (!account) throw new Error("fixture account");

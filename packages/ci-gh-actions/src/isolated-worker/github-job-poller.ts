@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
+import { runnerCustody } from "../job-runner-custody.js";
 import { servedRunnerLabel } from "../runner-labels.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
@@ -33,6 +34,8 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	/** Runs before each poll (merge queue positions, etc.). */
+	beforePoll?: () => Promise<void>;
 	ingestCoalesce?: PollIngestCoalesce;
 	/**
 	 * Asked once per poll for each queued job before it is taken in. False
@@ -245,6 +248,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		readThisPoll = new Map();
 		const stillSettled = new Set<string>();
 		try {
+			await options.beforePoll?.();
 			for (const connection of await options.connections()) {
 				if (seen.has(connection.repositoryId)) continue;
 				seen.add(connection.repositoryId);
@@ -335,12 +339,17 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						const queuedSinceMs =
+							job.created_at !== undefined
+								? Date.parse(job.created_at)
+								: undefined;
 						if (
 							status.data === "queued" &&
 							options.ingestCoalesce?.shouldSkip(
 								connection.repositoryId,
 								job.id,
 								job.run_attempt,
+								queuedSinceMs,
 							)
 						) {
 							summary.waiting.push({
@@ -393,9 +402,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// The runner name is part of the body, so it is part of the id: a job
 						// GitHub reassigns to another runner is a new observation, not a
 						// conflicting replay of the old one.
-						const runnerKey = job.runner_name
-							? `-${createHash("sha256").update(job.runner_name).digest("hex").slice(0, 12)}`
-							: "";
+						const runnerKey =
+							runnerCustody(job.runner_name) === "foreign"
+								? `-${createHash("sha256")
+										.update(job.runner_name ?? "")
+										.digest("hex")
+										.slice(0, 12)}`
+								: "";
 						let result: Awaited<ReturnType<typeof options.ingest>>;
 						try {
 							result = await options.ingest({

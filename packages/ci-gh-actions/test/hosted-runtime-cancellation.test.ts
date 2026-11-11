@@ -106,7 +106,27 @@ function fixture(options: {
 							: options.responseRunner,
 				});
 			}
-			throw new Error("unexpected GitHub request");
+			if (
+				path ===
+				"/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100"
+			)
+				return Response.json({
+					jobs: [
+						{
+							id: 1,
+							run_id: 11,
+							status: options.status ?? "completed",
+							runner_name:
+								options.responseRunner === undefined
+									? name
+									: options.responseRunner,
+							runner_id: 1,
+						},
+					],
+				});
+			if (path.startsWith("/repos/org/repo/actions/runs?status=in_progress"))
+				return Response.json({ workflow_runs: [] });
+			throw new Error(`unexpected GitHub request: ${path}`);
 		},
 	);
 	const reconcile = vi.fn(async (_id: string, _forceStop?: boolean) => {});

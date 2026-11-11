@@ -597,57 +597,6 @@ const policy = defineCiPolicy({
 
 Optional fleet overflow stays disabled in [`.hobo/ci.json`](../../.hobo/ci.json). Enable `github-hosted` (`ubuntu-24.04`) or `hostinger-arc` (kubernetes scale set, `runsOn: hobo-arc`) only when a full hobo fleet should spill. The default machine type is `ubuntu-24.04`. Policy and `#CiPolicyProvider` CUE both reject `ubuntu-latest` (invalid fixture `desired-policy-github-latest.json`). Bound overflow labels are not re-relayed to hobo, and ARC leases are not aborted as isolated hosts. See [RUNNER-QUEUE.md](./RUNNER-QUEUE.md).
 
-### Balance a fleet
-
-`balanceFleet` chooses a runner provider for a job from `RUNNER_FINANCIAL_MODELS`,
-one model per provider machine class with its rate, rounding, plan fee, included
-minutes, limits and source. Each candidate is rated by the `@hobo/pricing` quote
-engine through dispatcher v2 and then admitted or refused by
-`evaluateBudgetPolicy`; the result lists every admitted member, best first, and
-a coded refusal for each of the others.
-
-```ts
-import {
-  balanceFleet,
-  fleetAccountExposure,
-  fleetBudgetPolicy,
-  fleetMembersFromAccount,
-} from "@hobo/ci";
-
-const decision = balanceFleet({
-  members: fleetMembersFromAccount(account, leases, { poolLabel: "hobo" }),
-  demand: {
-    id: "Hobo-Labs/HoBo:42:7:1",
-    minutes: 20,
-    repository: { visibility: "public", ownerType: "organization" },
-    forkPullRequest: false,
-    needsDocker: true,
-  },
-  policy: fleetBudgetPolicy(account),
-  ...fleetAccountExposure(account, leases),
-  now: new Date().toISOString(),
-  allowNewProviderAgreements: false,
-});
-decision.selected?.runsOn; // label a new job should ask for
-decision.refusals; // [{ memberId, code: "fleet.capacity" | "pricing.…" | "budget.…", reason }]
-```
-
-`fleetRouteTable` runs the same decision per job class and yields the value the
-relay publishes to the `HOBO_CI_FLEET_ROUTES` repository variable. The models
-are published list prices read by hand, each with a source and an expiry; they
-are not live provider billing. See
-[CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
-
-The docs site's **HoBo CI** section (`site/src/pages/ci/`) shows these decisions
-as worked examples. Its provider tables and rankings, and the CI fleet codes in
-the site's errors reference, are generated from this module by
-`scripts/fleet-docs.ts` and checked by `test/fleet-docs.test.ts`;
-after changing a model or a rule, regenerate them:
-
-```sh
-node --import tsx packages/ci/scripts/fleet-docs.ts
-```
-
 Authoring does not itself create provider Connections or publish policy. A
 managed host must authorize each Connection, store operator intent separately
 from dynamic budget/health eligibility, and expose a server-side desired-policy

@@ -97,6 +97,8 @@ unindexed new finding files as notices.
 - [Finding 84: deps publisher missed host worker tags in job docker context](./findings/0084-deps-publisher-missed-host-worker-tags-in-job-docker-context.md)
 - [Finding 85: main full gate workspace shards and last-green base](./findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)
 - [Finding 86: main workspace shards fleet parallel cap](./findings/0086-main-workspace-shards-fleet-parallel-cap.md)
+- [Finding 87: poll coalesce stranded queued jobs on GitHub](./findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md)
+- [Finding 88: poll readmit jit churn](./findings/0088-poll-readmit-jit-churn.md)
 <!-- findings-index:end -->
 
 ## Data

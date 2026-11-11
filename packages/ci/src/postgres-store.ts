@@ -1615,6 +1615,60 @@ export class PostgresCiStore {
 			await this.queueInside(c, job, at);
 		});
 	}
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	) {
+		return this.tx(async (c) => {
+			if (
+				expectedRevision !== undefined &&
+				(await this.readConfiguration(c))?.revision !== expectedRevision
+			)
+				throw new Error("configuration revision conflict");
+			const configuration = (await this.readConfiguration(c))?.configuration;
+			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			let changed = false;
+			for (const lease of await this.readLeases(c)) {
+				if (
+					lease.repositoryId !== job.repositoryId ||
+					lease.jobId !== job.id ||
+					lease.runAttempt !== job.runAttempt ||
+					!ACTIVE_STATES.has(lease.state)
+				)
+					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
+				const offer = configuration?.accounts
+					.find((account) => account.id === lease.accountId)
+					?.offers.find((candidate) => candidate.id === lease.offerId);
+				if (
+					!shouldAbortIsolatedFleetLease(
+						lease.provider,
+						offer
+							? { backend: offer.backend, runsOn: offer.runsOn }
+							: undefined,
+					)
+				)
+					continue;
+				lease.state = "cancelled";
+				await this.append(c, lease, "ci.LeaseCancelled", at);
+				changed = true;
+			}
+			const pending = await c.query(
+				"SELECT 1 FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+				[this.partition, key],
+			);
+			if (pending.rowCount) {
+				await c.query(
+					"DELETE FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+					[this.partition, key],
+				);
+				changed = true;
+			}
+			return changed;
+		});
+	}
 	abortIsolatedAndRequeue(id: string, job: Job, at: string) {
 		const recoverable = new Set([
 			"reserved",

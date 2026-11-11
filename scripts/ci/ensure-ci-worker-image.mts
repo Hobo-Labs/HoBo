@@ -3,6 +3,7 @@
  * Resolve a digest-pinned hobo-ci-worker image for release OCI builds.
  * Prefers ghcr.io/hobo-ci-worker:${ciRunnerImageVersion}; falls back to build.sh.
  */
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
@@ -30,6 +31,26 @@ function dockerInspect(ref: string): boolean {
 	);
 }
 
+export function sameRepositoryPullRequest(): boolean {
+	if (process.env.GITHUB_EVENT_NAME !== "pull_request") return false;
+	const path = process.env.GITHUB_EVENT_PATH;
+	if (!path) return false;
+	try {
+		// SAFETY: GitHub Actions event payload is JSON with optional pull_request head/base repos.
+		const payload = JSON.parse(readFileSync(path, "utf8")) as {
+			pull_request?: {
+				head?: { repo?: { full_name?: string } };
+				base?: { repo?: { full_name?: string } };
+			};
+		};
+		const head = payload.pull_request?.head?.repo?.full_name;
+		const base = payload.pull_request?.base?.repo?.full_name;
+		return Boolean(head && base && head === base);
+	} catch {
+		return false;
+	}
+}
+
 export function ensureCiWorkerImage(): string {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
@@ -45,7 +66,7 @@ export function ensureCiWorkerImage(): string {
 	const mayPullFromGhcr =
 		Boolean(repo) &&
 		Boolean(token) &&
-		event !== "pull_request" &&
+		(event !== "pull_request" || sameRepositoryPullRequest()) &&
 		process.env.HOBO_CI_SKIP_GHCR_PULL !== "1";
 	if (mayPullFromGhcr) {
 		const remote = `ghcr.io/${repo}/hobo-ci-worker:${version}`;

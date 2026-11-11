@@ -40,6 +40,7 @@ describe("job memory environment", () => {
 		for (const workflow of [
 			"hobo-ci.yml",
 			"pricing-ci.yml",
+			"release-code.yml",
 			"release-pricing.yml",
 		])
 			expect(
