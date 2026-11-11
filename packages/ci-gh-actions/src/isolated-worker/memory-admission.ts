@@ -1,5 +1,8 @@
 import type { Lease } from "@hobo/ci";
-import { leaseOccupiesWorkerResources } from "../lease-resource-occupancy.js";
+import {
+	leaseOccupiesWorkerMemory,
+	leaseOccupiesWorkerResources,
+} from "../lease-resource-occupancy.js";
 import {
 	type HostResourcePressureSample,
 	hostMemoryAdmitFits,
@@ -116,13 +119,36 @@ export function createWorkerMemoryAdmission(
 		});
 	}
 
+	function admittedMemoryLeases(activeLeases: readonly MemoryLease[]) {
+		return activeLeases.filter((lease) => {
+			const full = lease as Lease;
+			return leaseOccupiesWorkerMemory(full);
+		});
+	}
+
+	function unlaunchedReservedLeases(activeLeases: readonly MemoryLease[]) {
+		return activeLeases.filter((lease) => {
+			const full = lease as Lease;
+			return (
+				full.state === "reserved" &&
+				!full.sandboxName &&
+				!full.sandboxSessionId
+			);
+		});
+	}
+
 	function inUseMb(
 		activeLeases: readonly MemoryLease[],
 		generalLeaseIds: ReadonlySet<string>,
 		includeTrunkReservation = true,
 	): number {
 		const launching = launchingLeases(activeLeases);
+		const reserved = unlaunchedReservedLeases(activeLeases);
 		const leasesMb = launching.reduce(
+			(total, lease) => total + leaseMemoryMb(lease),
+			0,
+		);
+		const reservedMb = reserved.reduce(
 			(total, lease) => total + leaseMemoryMb(lease),
 			0,
 		);
@@ -131,6 +157,7 @@ export function createWorkerMemoryAdmission(
 			.reduce((total, lease) => total + leaseMemoryMb(lease), 0);
 		return (
 			leasesMb +
+			reservedMb +
 			warmMb +
 			(includeTrunkReservation
 				? Math.max(0, trunkReservationMb() - trunkMb)
@@ -139,23 +166,23 @@ export function createWorkerMemoryAdmission(
 	}
 
 	function admit(request: MemoryAdmissionRequest): MemoryAdmissionDecision {
-		const activeLeases = launchingLeases(request.activeLeases);
+		const admittedLeases = admittedMemoryLeases(request.activeLeases);
 		const inUse = inUseMb(
-			activeLeases,
+			request.activeLeases,
 			request.generalLeaseIds,
 			request.rank !== 0,
 		);
 		const trunkLeaseIds =
 			request.trunkLeaseIds ??
 			new Set(
-				activeLeases
+				admittedLeases
 					.filter((lease) => !request.generalLeaseIds.has(lease.id))
 					.map((lease) => lease.id),
 			);
-		const trunkActive = activeLeases.some((lease) =>
+		const trunkActive = admittedLeases.some((lease) =>
 			trunkLeaseIds.has(lease.id),
 		);
-		const activeNonTrunk = activeLeases.filter(
+		const activeNonTrunk = admittedLeases.filter(
 			(lease) => !trunkLeaseIds.has(lease.id),
 		).length;
 		const capBlocked =

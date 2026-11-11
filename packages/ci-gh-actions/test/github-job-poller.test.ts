@@ -750,6 +750,9 @@ describe("pull-mode box worker over SQLite", () => {
 			skipLaunchFor?: readonly number[];
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			unlaunchedReservationRelease?: Parameters<
+				typeof createHostedRelayRuntime
+			>[0]["unlaunchedReservationRelease"];
 			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
@@ -797,6 +800,8 @@ describe("pull-mode box worker over SQLite", () => {
 		if (trunk?.memoryAdmission) options.memoryAdmission = trunk.memoryAdmission;
 		if (trunk?.storageAdmission)
 			options.storageAdmission = trunk.storageAdmission;
+		if (trunk?.unlaunchedReservationRelease)
+			options.unlaunchedReservationRelease = trunk.unlaunchedReservationRelease;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -1821,6 +1826,48 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(
 			(await store.activeLeases()).some((lease) => lease.jobId === 4),
 		).toBe(false);
+		store.close();
+	});
+
+	it("releases a stuck unlaunched reservation after the launch bound", async () => {
+		let nowMs = NOW;
+		const store = await configuredStore(1);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{ 800: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }] },
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T12:00:00Z" });
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			skipLaunchFor: [1],
+			unlaunchedReservationRelease: {
+				launchSlots: 1,
+				boundMs: 1_000,
+				backlogImmediate: true,
+			},
+			now: () => new Date(nowMs).toISOString(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => nowMs,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const reserved = (await store.activeLeases()).find(
+			(lease) => lease.jobId === 1,
+		);
+		expect(reserved?.state).toBe("reserved");
+		expect(launched).toEqual([]);
+		nowMs += 2_000;
+		await runtime.tick({ maxDeliveries: 10 });
+		expect((await store.get(reserved?.id ?? ""))?.state).toBe("cancelled");
+		expect((await store.pendingJobs()).map((job) => job.id)).toContain(1);
+		expect(launched).toEqual([]);
 		store.close();
 	});
 

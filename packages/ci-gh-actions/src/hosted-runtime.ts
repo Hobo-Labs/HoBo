@@ -127,6 +127,10 @@ export function createHostedRelayRuntime(options: {
 			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
 		>;
 	}>;
+	/** Release reservations that never launch within policy bounds. */
+	unlaunchedReservationRelease?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["unlaunchedReservationRelease"];
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -192,6 +196,9 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
 		if (options.fleetCapacity)
 			relayOptions.fleetCapacity = options.fleetCapacity;
+		if (options.unlaunchedReservationRelease)
+			relayOptions.unlaunchedReservationRelease =
+				options.unlaunchedReservationRelease;
 		return new HostedRelay(relayOptions);
 	}
 	return {

@@ -604,7 +604,7 @@ describe("worker memory admission", () => {
 		expect(availableMemoryMb).toHaveBeenCalledTimes(2);
 	});
 
-	it("does not reserve memory for a lease waiting for a launch slot", () => {
+	it("counts an unlaunched reserved lease toward the memory budget", () => {
 		const admission = createWorkerMemoryAdmission(config(6_144));
 		const reserved = { ...lease("reserved", 6_144), state: "reserved" };
 
@@ -617,6 +617,6 @@ describe("worker memory admission", () => {
 				activeLeases: [reserved],
 				generalLeaseIds: new Set(["reserved"]),
 			}),
-		).toMatchObject({ admitted: true });
+		).toMatchObject({ admitted: false, reason: "memory-budget" });
 	});
 });

@@ -3,6 +3,7 @@ import { LeaseSchema } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
 import {
 	leaseOccupiesMergeGroupCap,
+	leaseOccupiesWorkerMemory,
 	leaseOccupiesWorkerResources,
 } from "../src/lease-resource-occupancy.js";
 
@@ -46,5 +47,6 @@ describe("lease resource occupancy", () => {
 			sandboxSessionId: "",
 		});
 		expect(leaseOccupiesWorkerResources(reserved)).toBe(false);
+		expect(leaseOccupiesWorkerMemory(reserved)).toBe(true);
 	});
 });

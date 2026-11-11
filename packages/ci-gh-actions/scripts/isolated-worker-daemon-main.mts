@@ -835,6 +835,15 @@ try {
 		!Number.isInteger(trunkHeadroomOverflowMs)
 	)
 		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS");
+	const unlaunchedReserveMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
+	);
+	if (
+		!Number.isFinite(unlaunchedReserveMs) ||
+		unlaunchedReserveMs < 0 ||
+		!Number.isInteger(unlaunchedReserveMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_RESERVE_MS");
 	const headroomTrunkOverflow = createHeadroomTrunkOverflow({
 		github,
 		memoryAdmission,
@@ -864,6 +873,12 @@ try {
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
 		headroomTrunkOverflow,
+		unlaunchedReservationRelease: {
+			boundMs: unlaunchedReserveMs,
+			launchSlots: slots,
+			backlogImmediate:
+				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",
+		},
 		fleetCapacity: fleetCapacity
 			? {
 					publish: (input) => fleetCapacity.publish(input),
