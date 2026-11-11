@@ -294,7 +294,8 @@ What the agent will not do, and where that is enforced:
 - **It abstains rather than guesses.** Binary files, a delete against a
   modify, renames, mode changes, oversized files, too many files or regions,
   an answer below `minConfidence`, and replacement text that contains conflict
-  markers or is far larger than the region all end the attempt. A second
+  markers, is far larger than the region, or repeats the settled line just
+  before or after it all end the attempt. A second
   engine is never asked for a more confident answer to the same question.
 - **One attempt per merge.** An attempt is keyed by the two commits and the
   policy. Its outcome is journalled, and the same pair is not tried again,

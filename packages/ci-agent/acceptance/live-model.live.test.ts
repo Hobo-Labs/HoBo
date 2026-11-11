@@ -76,6 +76,11 @@ describe.skipIf(!local && !gateway)(
 					],
 					// Room for a small model on a CPU.
 					budget: { timeoutSeconds: 600 },
+					// A small local model rates itself unevenly; under the default
+					// 0.8 it abstains on some runs, which is the guardrail working.
+					// The content assertions below still decide whether it merged
+					// correctly.
+					resolution: { minConfidence: local ? 0.5 : 0.8 },
 				}),
 			);
 			const comments: string[] = [];
@@ -122,7 +127,7 @@ describe.skipIf(!local && !gateway)(
 								model: createOpenAICompatible({
 									name: "local",
 									baseURL: local,
-									supportsStructuredOutputs: true,
+									supportsStructuredOutputs: false,
 								})(process.env.HOBO_CI_AGENT_LIVE_MODEL ?? "local"),
 							}),
 						]
@@ -134,10 +139,20 @@ describe.skipIf(!local && !gateway)(
 
 			const report = await agent.tick();
 			const [resolution] = report.resolutions;
-			expect(resolution).toMatchObject({
+			// The reason and any engine failure are in the comparison, so a failed
+			// run says why.
+			expect({
+				number: resolution?.number,
+				outcome: resolution?.outcome,
+				reason: resolution?.reason,
+				engineId: resolution?.engineId,
+				engineFailures: report.engineFailures,
+			}).toEqual({
 				number: 1,
 				outcome: "resolved",
+				reason: "",
 				engineId: "live",
+				engineFailures: [],
 			});
 			expect(Number(resolution?.usage?.inputTokens)).toBeGreaterThan(0);
 			const merged = repos.git(
@@ -145,9 +160,14 @@ describe.skipIf(!local && !gateway)(
 				"show",
 				`${resolution?.commitSha}:src/price.ts`,
 			);
-			expect(merged).toContain("currency: string;");
-			expect(merged).toContain("discount?: number;");
-			expect(merged).toContain("price.discount ?? 0");
+			// Both sides' lines, each exactly once, and nothing repeated.
+			const count = (line: string) => merged.split(line).length - 1;
+			expect({
+				amount: count("\tamount: number;\n"),
+				currency: count("\tcurrency: string;\n"),
+				discount: count("\tdiscount?: number;\n"),
+				total: count("price.amount - (price.discount ?? 0)"),
+			}).toEqual({ amount: 1, currency: 1, discount: 1, total: 1 });
 			expect(merged).not.toMatch(/^(<{7}|={7}|>{7})/m);
 			expect(comments).toHaveLength(1);
 			// The record of the run, for the pull request that lands this test.
