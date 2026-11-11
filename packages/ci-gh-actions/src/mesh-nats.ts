@@ -197,7 +197,7 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 				const found: MeshNode[] = [];
 				for await (const key of await nodes.keys()) {
 					const entry = await nodes.get(key);
-					if (!entry || entry.operation !== "PUT") continue;
+					if (entry?.operation !== "PUT") continue;
 					let value: unknown;
 					try {
 						value = JSON.parse(entry.string());
@@ -251,7 +251,7 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 					// Someone else wrote first. If they wrote the same thing there is
 					// nothing to reconcile; otherwise the caller must read and decide.
 					const entry = await config.get(CONFIG_KEY);
-					if (!entry || entry.operation !== "PUT") throw error;
+					if (entry?.operation !== "PUT") throw error;
 					return entry.string() === value
 						? { revision: entry.revision }
 						: "conflict";

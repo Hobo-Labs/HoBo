@@ -67,7 +67,8 @@ export function defaultGitMirrorPreferredRoot(): string {
 	return "/var/lib/hobo-ci/git";
 }
 
-const CORRUPT_PACK = /unresolved delta|index-pack failed|recoverable delta|bad packed object/i;
+const CORRUPT_PACK =
+	/unresolved delta|index-pack failed|recoverable delta|bad packed object/i;
 
 function isCorruptPackError(stderr: string): boolean {
 	return CORRUPT_PACK.test(stderr);
@@ -254,10 +255,7 @@ export function createBoxGitMirror(options: {
 		if (prepared?.status === "miss") return prepared;
 
 		let refreshed = await refreshMain();
-		if (
-			refreshed?.status === "miss" &&
-			isCorruptPackError(refreshed.reason)
-		) {
+		if (refreshed?.status === "miss" && isCorruptPackError(refreshed.reason)) {
 			const recloned = await recloneMirror("main ref refresh");
 			if (recloned?.status === "miss") return recloned;
 			refreshed = await refreshMain();
