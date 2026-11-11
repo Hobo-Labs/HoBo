@@ -68,6 +68,32 @@ function text(value: JsonValue | undefined): string {
 		: String(value);
 }
 
+/**
+ * Descriptive text from a spec ends up in tool descriptions and search results
+ * a model reads, so it is untrusted input: one line, no control characters, and
+ * bounded, so a spec cannot smuggle paragraphs of instructions through a title.
+ */
+export const MAX_TITLE = 80;
+export const MAX_SUMMARY = 160;
+
+function isControl(code: number): boolean {
+	return (
+		code <= 0x1f ||
+		(code >= 0x7f && code <= 0x9f) ||
+		code === 0x2028 ||
+		code === 0x2029
+	);
+}
+
+function clean(value: string, max: number): string {
+	const line = [...value]
+		.map((char) => (isControl(char.codePointAt(0) ?? 0) ? " " : char))
+		.join("")
+		.replace(/\s+/gu, " ")
+		.trim();
+	return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
+}
+
 /** `listPets`, `get /pets/{id}` -> a legal, readable identifier. */
 function identifier(raw: string): string {
 	const words = raw.split(/[^A-Za-z0-9]+/u).filter((word) => word !== "");
@@ -194,7 +220,10 @@ export function parseOpenApiJson(value: JsonValue | undefined): ApiSpecResult {
 				id,
 				method: method.toUpperCase(),
 				path,
-				summary: text(operation.summary) || text(operation.description),
+				summary: clean(
+					text(operation.summary) || text(operation.description),
+					MAX_SUMMARY,
+				),
 				parameters: merged,
 				body: !isObject(requestBody)
 					? "none"
@@ -209,7 +238,7 @@ export function parseOpenApiJson(value: JsonValue | undefined): ApiSpecResult {
 	}
 	if (issues.length > 0) return { ok: false, issues };
 	const description: ApiDescription = {
-		title: text(info.title) || "API",
+		title: clean(text(info.title), MAX_TITLE) || "API",
 		version: text(info.version),
 		baseUrl: isObject(firstServer) ? text(firstServer.url) : "",
 		operations,

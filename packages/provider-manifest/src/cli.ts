@@ -131,7 +131,9 @@ function generate(file: string, text: string, outDir: string, out: Out) {
 			const server = `${id}.mcp-server.mjs`;
 			writeFileSync(join(outDir, server), generateCodeModeServer(id, api));
 			generatedServers.set(id, server);
-			out(`${file}: wrote ${server} (code-mode MCP server)`);
+			out(
+				`${file}: wrote ${server} (code-mode MCP server; API_TOKEN goes to ${api.baseUrl === "" ? "API_BASE_URL, which you must set" : `${api.baseUrl} unless you set API_BASE_URL`})`,
+			);
 		}
 	}
 	const config = generateMcpClientConfig(

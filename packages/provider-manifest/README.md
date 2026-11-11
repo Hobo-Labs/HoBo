@@ -42,7 +42,10 @@ the same append as the registration. Running it again with edited prices appends
 the new catalog (and re-registers, so the ranking price follows) while keeping
 approval; an unchanged manifest writes nothing. The command refuses a manifest with issues (whole, listing each
 one), one with no capability mappings, and one whose `provider.id` belongs to
-a provider compiled into the runtime.
+a provider compiled into the runtime **or installed by another route**
+(`hobo add`, `hobo generate`). Only a registration this command made — it stamps
+`source: "provider-manifest/v1"` on it — is ever refreshed, so a manifest cannot
+overwrite another provider's definitions and inherit its approval.
 
 The registry catalog keys a provider's definitions by port. When several
 mappings share a port the first is registered and the others are reported as
@@ -98,7 +101,17 @@ How model code is contained, and where that stops:
 - It never holds the credential. `api.*` calls are messages to the parent,
   which builds each request from the operation table, pins it to the
   configured server, and adds the auth header.
-- Each run is killed at the timeout.
+- Each run is killed at the timeout, and so is each request the parent makes.
+- Path parameters of `.` or `..` are refused (URL parsing would resolve them and
+  climb out of the operation's path, credential attached), here and in the
+  generated client. Slashes are percent-encoded and stay inside one segment.
+- `API_TOKEN` is sent only over https, or to this machine; the server refuses
+  anything else. It goes to `API_BASE_URL`, or else to the server URL the API
+  description declares, so **set `API_BASE_URL` yourself when you did not write
+  that description**. `generate` prints where the token will go.
+- Text from the spec (title, operation summaries) reaches the model through tool
+  descriptions and `search`, so it is treated as untrusted: one line, no control
+  characters, capped at 80 and 160 characters.
 - **It is not a network sandbox.** Node's permission model does not restrict
   outbound connections here, so code can send what the API returned to another
   host. Run the server where that egress is acceptable or blocked.

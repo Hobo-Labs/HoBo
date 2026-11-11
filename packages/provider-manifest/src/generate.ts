@@ -25,7 +25,7 @@ function pathExpression(path: string): string {
 		.map((part, index) =>
 			index % 2 === 0
 				? literal(part)
-				: `\${encodeURIComponent(String(args[${JSON.stringify(part)}]))}`,
+				: `\${segment(args[${JSON.stringify(part)}])}`,
 		)
 		.join("")}\``;
 }
@@ -90,6 +90,19 @@ export type ClientOptions = {
 	fetch?: typeof fetch;
 };
 
+/**
+ * One path segment. \`encodeURIComponent\` leaves "." and ".." alone, and a
+ * dot segment is resolved away by URL parsing, which would climb out of the
+ * operation's path; so those two are refused.
+ */
+function segment(value: Scalar): string {
+	const text = String(value);
+	if (text === "." || text === "..") {
+		throw new Error("a path parameter cannot be a dot segment");
+	}
+	return encodeURIComponent(text);
+}
+
 export class ApiError extends Error {
 	constructor(
 		readonly status: number,
@@ -152,6 +165,7 @@ const TOKEN = process.env.API_TOKEN || "";
 const AUTH_HEADER = process.env.API_AUTH_HEADER || "Authorization";
 const AUTH_PREFIX = process.env.API_AUTH_PREFIX === undefined ? "Bearer " : process.env.API_AUTH_PREFIX;
 const TIMEOUT_MS = Number(process.env.CODE_TIMEOUT_MS || 30000);
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const OPERATIONS = new Map(API.operations.map((operation) => [operation.id, operation]));
 
 // The request is built here, in the parent, from the operation table: model
@@ -170,13 +184,26 @@ async function callOperation(id, args) {
 			if (parameter.required) throw new Error(id + " requires " + parameter.name);
 			continue;
 		}
-		if (parameter.in === "path") path = path.split("{" + parameter.name + "}").join(encodeURIComponent(String(value)));
-		else if (parameter.in === "query") url.searchParams.set(parameter.name, String(value));
-		else headers[parameter.name] = String(value);
+		if (parameter.in === "path") {
+			// encodeURIComponent leaves "." and ".." alone, and URL parsing resolves
+			// them, which would climb out of the operation's path (with the token).
+			const text = String(value);
+			if (text === "." || text === "..") throw new Error(id + ": " + parameter.name + " cannot be a dot segment");
+			path = path.split("{" + parameter.name + "}").join(encodeURIComponent(text));
+		} else if (parameter.in === "query") url.searchParams.set(parameter.name, String(value));
+		// Header names are case-insensitive; one key per name, or "Authorization"
+		// and "authorization" would be sent together.
+		else headers[parameter.name.toLowerCase()] = String(value);
 	}
 	url.pathname = url.pathname.replace(/\/+$/, "") + path;
-	if (TOKEN) headers[AUTH_HEADER] = AUTH_PREFIX + TOKEN;
-	const init = { method: operation.method, headers };
+	if (TOKEN) {
+		// The credential goes only over https, or to this machine.
+		if (url.protocol !== "https:" && !LOOPBACK.has(url.hostname)) {
+			throw new Error("refusing to send API_TOKEN over " + url.protocol + " to " + url.hostname);
+		}
+		headers[AUTH_HEADER.toLowerCase()] = AUTH_PREFIX + TOKEN;
+	}
+	const init = { method: operation.method, headers, signal: AbortSignal.timeout(TIMEOUT_MS) };
 	if (operation.body !== "none" && input.body !== undefined) {
 		headers["content-type"] = "application/json";
 		init.body = JSON.stringify(input.body);
@@ -334,6 +361,9 @@ export function generateCodeModeServer(id: string, api: ParsedApiSpec): string {
 // ${GENERATED_BY}
 // Code-mode MCP server for ${comment(api.title)} ${comment(api.version)}.
 // Configure with API_TOKEN (and API_BASE_URL, API_AUTH_HEADER, API_AUTH_PREFIX).
+// API_TOKEN is sent to API_BASE_URL, or else to the server URL the API
+// description declared (${comment(api.baseUrl) || "none"}). Set API_BASE_URL
+// yourself when you did not write that description.
 
 const API = ${JSON.stringify(table, null, "\t")};
 ${CODE_MODE_RUNTIME}`;

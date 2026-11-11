@@ -348,6 +348,14 @@ describe("refusals", () => {
 			"api: needs at least one spec or MCP server",
 		],
 		[
+			"effective window that ends exactly when it starts",
+			(doc) => {
+				at(doc, "billing").effectiveFrom = "2026-11-01T00:00:00Z";
+				at(doc, "billing").effectiveUntil = "2026-11-01T00:00:00Z";
+			},
+			"billing.effectiveUntil: must be after effectiveFrom",
+		],
+		[
 			"effective window that ends before it starts",
 			(doc) => {
 				at(doc, "billing").effectiveUntil = "2026-01-01T00:00:00Z";
@@ -360,6 +368,13 @@ describe("refusals", () => {
 		const doc = exampleJson();
 		mutate(doc);
 		expect(issuesOf(doc).join("\n")).toContain(fragment);
+	});
+
+	it("accepts a window whose end is a fraction of a second after its start", () => {
+		const doc = exampleJson();
+		at(doc, "billing").effectiveFrom = "2026-11-01T00:00:00Z";
+		at(doc, "billing").effectiveUntil = "2026-11-01T00:00:00.5Z";
+		expect(issuesOf(doc)).toEqual([]);
 	});
 
 	it("starts from a document with no issues", () => {

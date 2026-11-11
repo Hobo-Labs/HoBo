@@ -501,7 +501,10 @@ function checkBilling(c: Checker, billing: BillingSection): void {
 			UTC_TIMESTAMP,
 			"a UTC timestamp",
 		);
-		if (billing.effectiveUntil <= billing.effectiveFrom) {
+		// Instants, not strings: "…:00.5Z" sorts before "…:00Z" lexically.
+		if (
+			Date.parse(billing.effectiveUntil) <= Date.parse(billing.effectiveFrom)
+		) {
 			c.fail("billing.effectiveUntil", "must be after effectiveFrom");
 		}
 	}

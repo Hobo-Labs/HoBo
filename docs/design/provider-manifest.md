@@ -234,7 +234,12 @@ filesystem, child processes, or workers) with an empty environment and a
 timeout. It never holds the credential: the parent builds every request from
 the operation table, pinned to the configured server. It is **not** a network
 sandbox — the child can still open outbound connections, so data the API
-returned can be sent elsewhere. Deploy it where that egress is acceptable or
+returned can be sent elsewhere. Around that boundary: path parameters of `.` or
+`..` are refused (a dot segment would climb out of the operation's path with the
+credential attached); `API_TOKEN` is sent only over https or to loopback, to
+`API_BASE_URL` or else the spec's declared server, so set `API_BASE_URL` for a
+spec you did not write; and spec text that reaches the model (title, summaries) is
+one bounded line. Deploy it where that egress is acceptable or
 blocked.
 
 ## Registration
@@ -244,8 +249,12 @@ provider (`providerFromManifest`), and appends `provider.Registered` to the
 registry stream. Because a manifest declares capabilities without being able to
 provision them, the provider is registered **held** — listed, never matched.
 Running the command a second time appends `provider.Approved`. A manifest with
-issues, with no capability mappings, or claiming a built-in provider's id is
-refused without writing anything.
+issues, with no capability mappings, or claiming the id of a built-in provider
+or of one installed by another route (`hobo add`, `hobo generate`) is refused
+without writing anything. Every registration this command appends is stamped
+`source: "provider-manifest/v1"`, and only such a registration is ever refreshed:
+without that, a manifest reusing an installed provider's id would overwrite its
+definitions while inheriting its approval.
 
 When the manifest declares billing, the derived `PricingCatalog` is persisted
 as a `pricing.CatalogRegistered` fact appended **in the same append** as

@@ -549,3 +549,59 @@ describe("hobo registry add: refreshing when the manifest's prices change", () =
 		expect(await catalogFacts(runtime)).toHaveLength(1);
 	});
 });
+
+describe("hobo registry add: only manifest registrations are refreshable", () => {
+	function manifestFor(id: string): string {
+		return tempManifest(
+			`${id}.yaml`,
+			`schema: hobo.provider-manifest/v1\nprovider: { id: ${id}, displayName: X }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: x.kv }\n`,
+		);
+	}
+
+	it("refuses to replace a provider installed with `hobo add`", async () => {
+		const { run, runtime } = cli();
+		const added = await run("add", "local");
+		expect(added.status).toBe("installed");
+		const ports = (id: string) =>
+			runtime.registry
+				.definitions()
+				.filter((definition) => definition.providerId === id)
+				.map((definition) => definition.port)
+				.sort();
+		const before = ports("local");
+		expect(before.length).toBeGreaterThan(1);
+
+		const result = await run("registry", "add", manifestFor("local"));
+		expect(result.ok).toBe(false);
+		expect(result.code).toBe("HOBO_REGISTRY_ADD_CONFLICT");
+		expect(result.message).toContain("another route");
+		// Untouched: same definitions, same stream.
+		expect(ports("local")).toEqual(before);
+		expect(
+			(await collectStream(runtime.store, REGISTRY_STREAM)).filter(
+				(event) => event.type === "provider.Registered",
+			),
+		).toHaveLength(1);
+	});
+
+	it("still refreshes its own registrations", async () => {
+		const { run } = cli();
+		const file = manifestFor("mine");
+		await run("registry", "add", file);
+		await run("registry", "add", file);
+		const again = await run("registry", "add", file);
+		expect(again.status).toBe("already_installed");
+	});
+
+	it("stamps the registration with its source", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", manifestFor("stamped"));
+		const registered = (
+			await collectStream(runtime.store, REGISTRY_STREAM)
+		).find((event) => event.type === "provider.Registered");
+		if (registered === undefined) throw new Error("no registration fact");
+		// SAFETY: registration bodies are JSON objects.
+		const body = registered.data as { source?: string };
+		expect(body.source).toBe("provider-manifest/v1");
+	});
+});

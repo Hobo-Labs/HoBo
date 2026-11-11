@@ -9,7 +9,7 @@ import {
 	registerProviderFact,
 	registryCatalogProjection,
 } from "@hobo/cloud";
-import type { PrincipalRef } from "@hobo/core";
+import type { JsonValue, PrincipalRef } from "@hobo/core";
 import {
 	parseProviderManifest,
 	providerFromManifest,
@@ -18,12 +18,39 @@ import {
 } from "@hobo/provider-manifest";
 
 import { REGISTRY_STREAM } from "./add-command.js";
+import { isJsonObject, isJsonString } from "./json.js";
 import {
 	catalogRegisteredFact,
 	storedCatalogs,
 } from "./pricing-catalog-store.js";
 
 const REGISTRY_ACTOR: PrincipalRef = { kind: "system", id: "yard/registry" };
+
+// Stamped on every `provider.Registered` this command appends. A provider id is
+// only ever refreshed from a manifest when its registration carries this: a
+// provider installed by `hobo add` or `hobo generate` has none, so a manifest
+// that reuses its id cannot overwrite it (and inherit its approval).
+const MANIFEST_SOURCE = "provider-manifest/v1";
+
+/** The `source` stamped on the latest registration of a provider, if any. */
+function registrationSource(
+	events: readonly { readonly type: string; readonly data: unknown }[],
+	providerId: string,
+): string | undefined {
+	let source: string | undefined;
+	for (const event of events) {
+		// SAFETY: the event store persists JSON; the guards below refine it.
+		const data = event.data as JsonValue;
+		if (
+			event.type === "provider.Registered" &&
+			isJsonObject(data) &&
+			data.providerId === providerId
+		) {
+			source = isJsonString(data.source) ? data.source : undefined;
+		}
+	}
+	return source;
+}
 
 export interface RegistryAddInput {
 	readonly runtime: YardRuntime;
@@ -111,13 +138,21 @@ export async function runRegistryAdd(
 	const fold = foldRegistryStream(events);
 	const installed = fold.installed.has(provider.id);
 	const approved = fold.approved.has(provider.id);
-	if (!installed && runtime.registry.providers().includes(provider.id)) {
-		// A data file must not take the id of a provider compiled into the runtime.
+	// A data file must not take the id of a provider that came from somewhere
+	// else: one compiled into the runtime, or one installed with `hobo add` /
+	// `hobo generate`. Only a registration this command made may be refreshed.
+	const builtIn =
+		!installed && runtime.registry.providers().includes(provider.id);
+	const installedElsewhere =
+		installed && registrationSource(events, provider.id) !== MANIFEST_SOURCE;
+	if (builtIn || installedElsewhere) {
 		return {
 			ok: false,
 			status: "conflict",
 			code: "HOBO_REGISTRY_ADD_CONFLICT",
-			message: `hobo registry add: provider id "${provider.id}" belongs to a built-in provider.`,
+			message: builtIn
+				? `hobo registry add: provider id "${provider.id}" belongs to a built-in provider.`
+				: `hobo registry add: provider id "${provider.id}" is already installed by another route (hobo add or hobo generate); a manifest cannot replace it.`,
 			remediation: ["Choose a different provider.id in the manifest."],
 			data: { command: "registry add", file, provider: provider.id },
 		};
@@ -173,12 +208,17 @@ export async function runRegistryAdd(
 					),
 				]
 			: [];
-	const registered = registerProviderFact(provider);
+	const base = registerProviderFact(provider);
+	const registered = {
+		...base,
+		// SAFETY: registerProviderFact builds an object body; the stamp is added.
+		data: { ...(base.data as object), source: MANIFEST_SOURCE },
+	};
 	const storedRow = registryCatalogProjection
 		.query(registryCatalogProjection.fold(events))
 		.find((row) => row.providerId === provider.id);
 	// SAFETY: registerProviderFact builds this body with a manifestIndexDigest.
-	const newDigest = (registered.data as { manifestIndexDigest: string })
+	const newDigest = (base.data as { manifestIndexDigest: string })
 		.manifestIndexDigest;
 	const registrationChanged =
 		installed && storedRow?.manifestIndexDigest !== newDigest;
