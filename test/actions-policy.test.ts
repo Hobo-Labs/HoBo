@@ -448,12 +448,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
-			// Everything in hobo-ci.yml is routed except the job that builds the
-			// deps image in the box's own Docker context.
+			// Everything in hobo-ci.yml is routed except deps-image (box Docker) and
+			// main trunk jobs that pin hobo-trunk to skip the route pickup gate.
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",
-					/^  ci-deps-image:$/,
+					/^  (ci-deps-image|main-gate-plan|main-gate|main_workspace_tests|main_gate_finish):$/,
 					`${file}:${lines[start]} is not routed`,
 				);
 			const prOnly =

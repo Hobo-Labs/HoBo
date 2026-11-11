@@ -802,13 +802,13 @@ jobs:
 
   main-gate-plan:
     name: Main workspace plan
-    needs: [route, ci-runner-image]
+    needs: [ci-runner-image]
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 12
     permissions:
       contents: read
@@ -833,21 +833,15 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
-      - name: Link deps layer
-        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
-      - name: Check deps layer match
-        id: deps-layer
-        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - uses: ./.github/actions/ci-runner-preflight
-      - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+      - name: Restore main workspace plan cache
+        id: plan-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
-          turbo-token: ${{ secrets.TURBO_TOKEN }}
-          turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: remote:rw
-      - name: Install dependencies
-        if: steps.deps-layer.outputs.match != 'true'
-        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+          path: ${{ runner.temp }}/hobo-main-gate-plan
+          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+          restore-keys: |
+            main-gate-plan-${{ github.sha }}-
       - name: Plan workspace shards
         id: plan
         env:
@@ -857,17 +851,15 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAIN_SHARD_TARGET_SECONDS: "180"
+          HOBO_TURBO_INVOKER: mise
+          MAIN_GATE_PLAN_CACHE_DIR: ${{ runner.temp }}/hobo-main-gate-plan
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
-      - name: Prune Turbo cache
-        id: turbo-prune
-        if: always() && env.TURBO_TOKEN == ''
-        continue-on-error: true
-        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
-      - name: Save Turbo cache
-        if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+      - name: Save main workspace plan cache
+        if: always() && steps.plan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
-          mode: save
+          path: ${{ runner.temp }}/hobo-main-gate-plan
+          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
 
   main-gate:
     name: Main full gate
@@ -876,13 +868,13 @@ jobs:
     # Those jobs mirror this job's main-base, S0 gate set and Workspace tests steps.
     # A push that changes the image inputs tests on the image it built; an unchanged push skips
     # the image job, which satisfies this dependency immediately.
-    needs: [route, ci-runner-image]
+    needs: [ci-runner-image]
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
     # The daily schedule is the one whole-workspace sweep and gets an hour.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
@@ -1097,7 +1089,7 @@ jobs:
 
   main_workspace_tests:
     name: Main workspace test shard ${{ matrix.shard }}
-    needs: [route, ci-runner-image, ci-deps-image, main-gate-plan]
+    needs: [ci-runner-image, ci-deps-image, main-gate-plan]
     if: >-
       !cancelled() && needs.main-gate-plan.result == 'success' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -1107,7 +1099,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1197,9 +1189,9 @@ jobs:
 
   main_gate_finish:
     name: Main full gate (finish)
-    needs: [route, main-gate, main_workspace_tests]
+    needs: [main-gate, main_workspace_tests]
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read

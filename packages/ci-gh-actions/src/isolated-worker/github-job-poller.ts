@@ -4,7 +4,7 @@ import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
 import { runnerCustody } from "../job-runner-custody.js";
-import { servedRunnerLabel } from "../runner-labels.js";
+import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
@@ -36,6 +36,11 @@ export interface GithubJobPollerOptions {
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
 	/** Runs before each poll (merge queue positions, etc.). */
 	beforePoll?: () => Promise<void>;
+	/**
+	 * Once per poll when a queued trunk job belongs to the newest main Fabric push.
+	 * Used to pre-warm a spare container without cancelling other work.
+	 */
+	onMainFabricTrunkQueued?: (repository: string) => void;
 	ingestCoalesce?: PollIngestCoalesce;
 	/**
 	 * Asked once per poll for each queued job before it is taken in. False
@@ -130,6 +135,26 @@ function runStartedAtMs(run: Run): number {
  * Older in-flight main pushes superseded by GitHub `cancel-in-progress` on HoBo
  * CI Fabric. Their queued jobs must not hold fleet slots behind the live SHA.
  */
+/** Newest in-flight HoBo CI Fabric push to `main`, if any. */
+export function newestMainFabricPushRunId(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): number | undefined {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length === 0) return undefined;
+	const sorted = [...mainPush].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	);
+	return sorted[0]?.id;
+}
+
 export function supersededMainFabricPushRunIds(
 	runs: readonly Run[],
 	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
@@ -360,6 +385,8 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
 				const supersededRuns = supersededMainFabricPushRunIds(activeRuns);
+				const newestMainPush = newestMainFabricPushRunId(activeRuns);
+				let mainFabricPrewarmHinted = false;
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
 					if (supersededRuns.has(runId)) continue;
@@ -386,6 +413,16 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						if (
+							!mainFabricPrewarmHinted &&
+							status.data === "queued" &&
+							servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL &&
+							newestMainPush !== undefined &&
+							job.run_id === newestMainPush
+						) {
+							mainFabricPrewarmHinted = true;
+							options.onMainFabricTrunkQueued?.(connection.repository);
+						}
 						const queuedSinceMs =
 							job.created_at !== undefined
 								? Date.parse(job.created_at)
