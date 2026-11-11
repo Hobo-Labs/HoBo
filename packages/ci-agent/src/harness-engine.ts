@@ -16,6 +16,7 @@ export interface HarnessRunner {
 }
 
 /** Appended to the standing instructions: a runtime answers in text, not a schema. */
+// public-contract: the answer format harness engines are held to; parseHarnessAnswer reads it.
 export const HARNESS_ANSWER_FORMAT =
 	'Do not use any tool. Reply with one JSON object and nothing else, of the form {"regions":[{"id":0,"resolution":"...","confidence":0.9}]}.';
 
