@@ -16,6 +16,19 @@ const workflow = readFileSync(
 );
 
 describe("push-ci-runner-image-ghcr", () => {
+	it("materializes runner image from GHCR before native build", () => {
+		const workflow = readFileSync(
+			join(root, ".github/workflows/hobo-ci.yml"),
+			"utf8",
+		);
+		const job = workflow.slice(
+			workflow.indexOf("\n  ci-runner-image:"),
+			workflow.indexOf("\n  ci-deps-image:"),
+		);
+		assert.match(job, /ensure-ci-worker-image\.mts --materialize-only/u);
+		assert.match(job, /steps\.materialize\.outcome != 'success'/u);
+	});
+
 	it("workflow delegates optional push to push-ci-runner-image-ghcr.mts", () => {
 		const step = workflow.indexOf("Push runner image to GHCR (optional)");
 		assert.ok(step > -1);

@@ -136,7 +136,7 @@ export function ghcrWorkerManifestReachable(
 	return result.status === 0;
 }
 
-export function ensureCiWorkerImage(): string {
+export function materializeCiWorkerImageOnly(): string | null {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
 	if (dockerImagePresent(candidate)) {
@@ -159,9 +159,11 @@ export function ensureCiWorkerImage(): string {
 		dockerLoginGhcr(actor, token);
 		const remote = remoteWorkerTag(repo, version);
 		const manifestOk = ghcrWorkerManifestReachable(repo, version, token);
-		if (manifestOk) {
-			console.log(`GHCR manifest present for ${remote}`);
+		if (!manifestOk) {
+			console.log(`GHCR manifest absent for ${remote}`);
+			return null;
 		}
+		console.log(`GHCR manifest present for ${remote}`);
 		if (pullWorkerFromGhcr(remote)) {
 			run("docker", ["tag", remote, candidate]);
 			run("docker", ["tag", remote, "hobo-ci-worker:local"]);
@@ -170,6 +172,17 @@ export function ensureCiWorkerImage(): string {
 		}
 		console.error(`GHCR pull failed for ${remote}`);
 	}
+	return null;
+}
+
+export function ensureCiWorkerImage(): string {
+	const materialized = materializeCiWorkerImageOnly();
+	if (materialized) {
+		return materialized;
+	}
+
+	const version = ciRunnerImageVersion(root);
+	const candidate = `hobo-ci-worker:${version}`;
 
 	if (releaseWorkerEnsurePath()) {
 		throw new Error(
@@ -207,6 +220,14 @@ export function ensureCiWorkerImage(): string {
 }
 
 function main(): void {
+	if (process.argv.includes("--materialize-only")) {
+		const image = materializeCiWorkerImageOnly();
+		if (!image) {
+			process.exit(2);
+		}
+		console.log(image);
+		return;
+	}
 	const image = ensureCiWorkerImage();
 	console.log(image);
 }

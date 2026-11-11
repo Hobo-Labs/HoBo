@@ -13,17 +13,21 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { cliRootFileReader, mainGateScope } from "./affected-lanes.mts";
 import {
+	MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE,
+	MAIN_WORKSPACE_COLD_CACHE_PATH_THRESHOLD,
 	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 	planDependentTests,
 	planDependentTestsForTurboAffected,
 	planMainWorkspaceShardCount,
 	readRepo,
+	scaleWorkspaceDurations,
 } from "./dependent-tests.mts";
 import { resolveMainWorkspaceParallelCap } from "./load-fleet-capacity.mts";
 import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
 } from "./resolve-main-test-base.mts";
+import { loadWorkspaceDurations } from "./workspace-test-durations.mts";
 
 const GITHUB_OUTPUT = process.env.GITHUB_OUTPUT?.trim();
 const CACHE_DIR = process.env.MAIN_GATE_PLAN_CACHE_DIR?.trim();
@@ -151,12 +155,26 @@ async function main(): Promise<void> {
 		process.env.MAIN_SHARD_TARGET_SECONDS ??
 			String(MAIN_WORKSPACE_SHARD_TARGET_SECONDS),
 	);
+	const changedCount = input
+		.split("\n")
+		.filter((line) => line.trim() !== "").length;
+	let durations = loadWorkspaceDurations();
+	if (
+		tests === "affected" &&
+		changedCount >= MAIN_WORKSPACE_COLD_CACHE_PATH_THRESHOLD
+	) {
+		durations = scaleWorkspaceDurations(
+			durations,
+			MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE,
+		);
+	}
 	const shardPlan = planMainWorkspaceShardCount(plan, parallelCap, {
 		targetSeconds:
 			Number.isFinite(targetSeconds) && targetSeconds > 0
 				? targetSeconds
 				: MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 		workspaces: repo.workspaces,
+		durations,
 		repo,
 	});
 	const count = shardPlan.count;

@@ -106,6 +106,7 @@ unindexed new finding files as notices.
 - [Finding 93: main sub3m plan pickup shards](./findings/0093-main-sub3m-plan-pickup-shards.md)
 - [Finding 94: deps publisher docker headroom](./findings/0094-deps-publisher-docker-headroom.md)
 - [Finding 95: worker custody orphan live shards](./findings/0095-worker-custody-orphan-live-shards.md)
+- [Finding 97: ci runner image ghcr materialize](./findings/0097-ci-runner-image-ghcr-materialize.md)
 - [Finding 98: main gate finish checkout guard](./findings/0098-main-gate-finish-checkout-guard.md)
 <!-- findings-index:end -->
 

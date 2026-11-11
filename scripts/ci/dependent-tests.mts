@@ -353,6 +353,20 @@ export function planShardCount(
 /** Slowest-shard wall budget the main train targets when slots are available. */
 export const MAIN_WORKSPACE_SHARD_TARGET_SECONDS = 180;
 
+/** Many changed paths on main usually mean a cold turbo graph; plan wider shards. */
+export const MAIN_WORKSPACE_COLD_CACHE_PATH_THRESHOLD = 40;
+export const MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE = 2;
+
+export function scaleWorkspaceDurations(
+	table: WorkspaceDurationTable,
+	factor: number,
+): WorkspaceDurationTable {
+	if (!(factor > 1)) return table;
+	const seconds = new Map<string, number>();
+	for (const [dir, value] of table.seconds) seconds.set(dir, value * factor);
+	return { defaultSeconds: table.defaultSeconds * factor, seconds };
+}
+
 /** Target gap between slowest and fastest main workspace shard loads. */
 export const MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS = 10;
 
@@ -361,6 +375,20 @@ export type MainWorkspaceShardPlan = Readonly<{
 	parallelCap: number;
 	peakShardSeconds: number;
 }>;
+
+/**
+ * When several whole suites are in scope, use enough shards that each runner
+ * does not replay a multi-minute cold turbo graph alone.
+ */
+export function minimumScopedShardCount(
+	plan: TestPlan,
+	parallelCap: number,
+): number {
+	if (plan.mode !== "scoped") return 1;
+	const units = plan.full.length + plan.subsets.size;
+	if (units <= 3) return 1;
+	return Math.min(parallelCap, Math.max(2, Math.ceil(units / 2)));
+}
 
 /**
  * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
@@ -387,7 +415,7 @@ export function planMainWorkspaceShardCount(
 		options?.targetSeconds ?? MAIN_WORKSPACE_SHARD_TARGET_SECONDS;
 	const maxSpreadSeconds =
 		options?.maxSpreadSeconds ?? MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS;
-	const count = planShardCountBalanced(
+	let count = planShardCountBalanced(
 		plan,
 		workspaces,
 		parallelCap,
@@ -397,6 +425,7 @@ export function planMainWorkspaceShardCount(
 		repo,
 		maxSpreadSeconds,
 	);
+	count = Math.max(count, minimumScopedShardCount(plan, parallelCap));
 	const units = testWorkspaceUnits(plan, workspaces);
 	const weightFor = (unit: string) =>
 		planUnitLoadSeconds(plan, unit, repo, durations);
