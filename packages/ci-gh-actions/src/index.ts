@@ -410,6 +410,11 @@ export {
 	type RelayServiceLog,
 	type RelayServiceOptions,
 } from "./service.js";
+export {
+	createStatelessAppOnboarding,
+	type StatelessAppOnboardingOptions,
+	type StatelessOwnerInvitation,
+} from "./stateless-app-onboarding.js";
 export { LeaseStore } from "./store.js";
 export {
 	type CiProjectContentFetcher,

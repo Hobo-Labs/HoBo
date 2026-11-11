@@ -44,9 +44,11 @@ const schema = files.some((file) => /\.(proto|cue|wit)$/.test(file));
 const generator = files.some(
 	(file) =>
 		/(^|\/)buf(\.gen)?\.yaml$/.test(file) ||
-		/^packages\/ci-vercel\/scripts\/generate-(assets|proxy-bundle)\.mts$/.test(
+		/^packages\/ci-vercel\/scripts\/generate-(assets|proxy-bundle|offers)\.mts$/.test(
 			file,
 		) ||
+		// The relay's offer manifests: `generate-offers.mts` lowers them.
+		/^packages\/ci-vercel\/offers\/[^/]+\.provider\.yaml$/.test(file) ||
 		/^src\/draft\/technical-proofs\/s0-04-protobuf-cue-codegen\/packages\/schema-tools\/(src\/(?!_generated\/)|package\.json)/.test(
 			file,
 		) ||

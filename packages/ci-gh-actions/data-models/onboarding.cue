@@ -170,4 +170,17 @@ import "list"
 #RelayCachePending: {jobKeys?: [...#RelayCacheJobKey] & list.MaxItems(2000)}
 #RelayCacheDelivery: {fingerprint: string & =~"^[a-f0-9]{64}$", receivedAt: string & !="", ignored?: bool}
 #RelayCacheSandboxEgress: {leaseId: #RelayCacheLeaseId, accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", maxBytes?: number & >=0}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress
+#RelayCacheAccountId: string & =~"^[A-Za-z0-9_-]{1,80}$"
+#RelayCacheWebhookScan: {cursorUrl?: string & =~"^https://api\\.github\\.com/app/hook/deliveries\\?", checkpointAt: string & !=""}
+#RelayCacheQueuedCursor: {page?: int & >=1 & <=1000, runs?: [...(int & >0)] & list.MaxItems(100), loaded?: bool, hasNext?: bool, runIndex?: int & >=0 & <=100, jobPage?: int & >=1 & <=1000, jobIndex?: int & >=0 & <=100}
+#RelayCacheQueuedScan: {cursor: #RelayCacheQueuedCursor, dueMs?: number & >=0, touchedMs?: number & >=0}
+// Sealed records carry ciphertext only: no account, token or verifier field.
+#RelayCacheSealed: close({keyId: string & =~"^[a-f0-9]{16}$", nonce: string & !="", ciphertext: string & !=""})
+// Sealed payloads: never stored in the clear, so outside the stored union.
+#RelayCacheOAuthState: {browserDigest: string & =~"^[a-f0-9]{64}$", accountId: #RelayCacheAccountId, verifier: string & !="", controlToken: string & !="", expiresAtMs: number & >0}
+#RelayCacheOAuthSession: {accountId: #RelayCacheAccountId, githubId: number & >0, githubToken: string & !="", controlToken: string & !="", expiresAtMs: number & >0}
+#RelayCacheOwnerSession: {accountId: #RelayCacheAccountId, expiresAtMs: number & >0}
+#RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
+#RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
+#RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter

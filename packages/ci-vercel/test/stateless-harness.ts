@@ -124,6 +124,9 @@ function configuration(nowMs: number): string {
 	);
 }
 
+/** The owner's onboarding invitation the harness's config service holds. */
+export const INVITATION = "invitation-".padEnd(43, "x");
+
 /** The relay's configuration, as the `env` config source reads it. */
 export function relayEntries(nowMs: number, token: string) {
 	const key = (bytes: number) => randomBytes(bytes).toString("base64url");
@@ -132,8 +135,10 @@ export function relayEntries(nowMs: number, token: string) {
 		HOBO_CI_SESSION_KEY: key(32),
 		HOBO_CI_BOOTSTRAP_ACCOUNT_ID: "hobo-labs",
 		HOBO_CI_BOOTSTRAP_TOKEN_SHA256: createHash("sha256")
-			.update("bootstrap")
+			.update(INVITATION)
 			.digest("hex"),
+		HOBO_CI_INVITATION_EXPIRES_AT: String(nowMs + 24 * 3_600_000),
+		HOBO_CI_ONBOARDING_CONTROL_TOKEN: token,
 		HOBO_CI_CONTROL_TOKENS_JSON: JSON.stringify({
 			tokens: [
 				{
@@ -347,7 +352,17 @@ export async function openStatelessRelay(
 		{ sessionId: string; exitCode: number | null; stopped: boolean }
 	>();
 	const quotaTokens: string[] = [];
-	const sandbox = { creates: 0, stops: 0, quotaTokens };
+	/** What each proxy VM counted itself, by name: its meter (ADR-0179 §10). */
+	const proxyMeters = new Map<string, { bytes: number; calls: number }>();
+	const sandbox = {
+		creates: 0,
+		stops: 0,
+		quotaTokens,
+		proxyMeters,
+		meterReads: 0,
+		/** False: the proxy VM does not answer its meter (it is already gone). */
+		proxyMeterAnswers: true,
+	};
 	const usage = (vcpus: number): SandboxUsage => ({
 		cpuMs: 500,
 		durationMs: 60_000,
@@ -416,6 +431,26 @@ export async function openStatelessRelay(
 			if (!vm) throw notFound();
 			return { sessionId: vm.sessionId };
 		},
+		async meter(name: string, sessionId: string, token: string) {
+			const vm = vms.get(name);
+			if (
+				!sandbox.proxyMeterAnswers ||
+				!vm ||
+				vm.stopped ||
+				vm.sessionId !== sessionId
+			)
+				throw new Error("proxy meter unavailable");
+			const leaseId = name.slice("hobo-proxy-".length);
+			// The VM holds the lease's derived token; it answers only to it.
+			if (token !== relay.store.sandboxProxyToken(leaseId))
+				throw new Error("proxy meter refused");
+			sandbox.meterReads += 1;
+			return {
+				leaseId,
+				proxySessionId: sessionId,
+				...(proxyMeters.get(name) ?? { bytes: 0, calls: 0 }),
+			};
+		},
 		async stop(name: string) {
 			const vm = vms.get(name);
 			if (vm) vm.stopped = true;
@@ -423,7 +458,37 @@ export async function openStatelessRelay(
 		},
 	};
 
-	const token = randomBytes(24).toString("base64url");
+	// GitHub's App endpoints the relay calls with its App JWT (the delivery
+	// history and redelivery) and OAuth: nothing leaves the test.
+	const deliveries: {
+		id: number;
+		guid: string;
+		event: string;
+		status_code: number;
+		delivered_at: string;
+	}[] = [];
+	const redeliveries: number[] = [];
+	/** GitHub's App delivery history answers 500 while set. */
+	const appApi = { down: false };
+	const fetch = async (input: string | URL | Request): Promise<Response> => {
+		const url = new URL(input instanceof Request ? input.url : String(input));
+		if (url.origin !== "https://api.github.com")
+			throw new Error(`unexpected fetch to ${url.origin}`);
+		if (url.pathname === "/app/hook/deliveries")
+			return appApi.down
+				? new Response(null, { status: 500 })
+				: Response.json(deliveries);
+		const attempt = /^\/app\/hook\/deliveries\/(\d+)\/attempts$/u.exec(
+			url.pathname,
+		);
+		if (attempt?.[1]) {
+			redeliveries.push(Number(attempt[1]));
+			return new Response(null, { status: 202 });
+		}
+		return new Response(null, { status: 404 });
+	};
+
+	const token = randomBytes(32).toString("base64url");
 	const entries = relayEntries(nowMs, token);
 	const lines: StatelessRelayLogLine[] = [];
 	const loader = createRelayRuntimeConfigLoader({
@@ -443,6 +508,7 @@ export async function openStatelessRelay(
 			},
 		},
 		sandboxDrivers: { driver, proxyDriver },
+		fetch,
 		now: clock.now,
 		log: (line) => lines.push({ ...line }),
 	});
@@ -533,6 +599,9 @@ export async function openStatelessRelay(
 		jobs,
 		sandbox,
 		vms,
+		deliveries,
+		redeliveries,
+		appApi,
 		webhook,
 		drain,
 		/** Deliver a message again, as an at-least-once queue may. */

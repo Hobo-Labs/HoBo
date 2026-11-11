@@ -9,8 +9,9 @@ tags: [hobo, design, adr, ci, relay, twelve-factor]
 
 **Status:** Accepted (design; implementation phased); amended 2026-11-11 with
 [options routed by budget](#amendment-options-routed-by-budget). Implemented:
-phases 2, 2b, 3, 4a, 4b and 4c (cache-fleet selection by budget); not yet
-deployed
+phases 2, 2b, 3, 4a, 4b, 4c (cache-fleet selection by budget) and 5 (the
+relay's helpers on the cache, offers as provider manifests), provider usage
+pulls deferred; not yet deployed
 **Date:** 2026-11-11
 **Supersedes, for the hosted relay:** the PostgreSQL store (`PostgresCiStore`)
 as the relay's store, the relay database fleet and store selection, the Drizzle
@@ -165,6 +166,27 @@ an instance caches that answer before the target is activated, and the
 repair tick routes by budget (`routeFleetByBudget`: switch at 90% projected,
 back only below 80%). With no majority the relay refuses admissions
 retryably. Details: [Exactly one cache at a time](../hosted-relay-stateless.md#exactly-one-cache-at-a-time).
+
+*Phase 5, implemented.* The repair scanners (missed deliveries, queued jobs)
+run on the cache with a lock per scanner and App, cursors and minute
+windows; worker health is TTL'd evidence in the cache that reads as
+"starting" when missing; OAuth state, sessions and App-installation state
+are cache records named by an HMAC under the session key and, where they
+hold a credential, sealed under a key derived from it (the browser keeps an
+opaque cookie: the session holds a GitHub user token, which §6's signed
+cookie would have put in the browser); the owner redeems the invitation in
+the config service once and the relay creates no App. The proxy VM is the
+authority for its meter: the Sandbox host reads it before stopping the VM,
+so a lease rebuilt after a cache loss settles. Every cache backend and
+lifecycle driver is a provider manifest in `packages/ci-vercel/offers/`,
+lowered into the `@hobo/pricing` catalog, with the `kv.ephemeral-state/v1`
+and `lifecycle.lease-driver/v1` profiles; the cache fleet's default offers
+come from that catalog, and the start-up log records the driver choice
+(Vercel Queues; Workflows not built and not pinnable before 2026-11-18).
+**Deferred:** provider usage pulls for budgets (no client for Vercel's usage
+API or GitHub's billing usage API exists in the repository), so exposure
+stays configured spend plus in-flight holds; Vercel Blob and Queues prices
+are unverified. Details: [Phase 5](../hosted-relay-stateless.md#phase-5).
 
 ## Alternatives considered
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createHttpEntry } from "../src/entry.js";
 import { RELAY_QUEUE_TOPICS } from "../src/relay-queue.js";
-import { ORIGIN, openStatelessRelay } from "./stateless-harness.js";
+import { INVITATION, ORIGIN, openStatelessRelay } from "./stateless-harness.js";
 
 const JOB = 4001;
 const MINUTE = 60_000;
@@ -267,8 +267,13 @@ describe("the stateless relay, end to end on the in-memory cache", () => {
 		expect(h.failures).toEqual([]);
 
 		// Once GitHub reports the job finished, both VMs are stopped (the proxy
-		// found by its name). Settlement needs the proxy meters the cache lost,
-		// so the lease stays uncertain, holding its capacity until its TTL.
+		// found by its name). The relay's proxy counters went with the cache,
+		// but the proxy VM kept its own: it is read back before the VM stops,
+		// the runner GitHub assigned is deleted, and the lease settles.
+		h.sandbox.proxyMeters.set(`hobo-proxy-${lease.id}`, {
+			bytes: 262_144,
+			calls: 4,
+		});
 		github.status = "completed";
 		const guest = h.vms.get(`hobo-${lease.id}`);
 		if (!guest) throw new Error("no guest vm");
@@ -276,11 +281,83 @@ describe("the stateless relay, end to end on the in-memory cache", () => {
 		await h.after(15 * MINUTE);
 		expect(guest.stopped).toBe(true);
 		expect(h.vms.get(`hobo-proxy-${lease.id}`)?.stopped).toBe(true);
+		expect(h.sandbox.meterReads).toBe(1);
+		const settled = await h.relay.store.get(lease.id);
+		expect(settled?.state).toBe("completed");
+		expect(settled?.runnerId).toBe(31);
+		expect(settled?.runnerDeletionConfirmed).toBe(true);
+		expect(h.github.requests).toContain(
+			"DELETE /repos/Org/Repo/actions/runners/31",
+		);
+		expect(h.failures).toEqual([]);
+		expect(h.sandbox.creates).toBe(1);
+	});
+
+	it("charges a rebuilt Sandbox lease what its proxy VM counted, never less", async () => {
+		const settle = async (meter: { bytes: number; calls: number }) => {
+			const h = await openStatelessRelay();
+			await warm(h);
+			h.jobs.set(JOB, {
+				id: JOB,
+				status: "queued",
+				runnerName: null,
+				runnerId: null,
+			});
+			await h.webhook("queued", JOB);
+			await h.drain(RELAY_QUEUE_TOPICS.intake);
+			const [lease] = await leases(h);
+			if (!lease) throw new Error("no lease");
+			const github = h.github.job(JOB);
+			github.status = "in_progress";
+			github.runnerName = lease.runnerName;
+			github.runnerId = 31;
+			h.wipeCache();
+			await h.after(MINUTE);
+			h.sandbox.proxyMeters.set(`hobo-proxy-${lease.id}`, meter);
+			github.status = "completed";
+			const guest = h.vms.get(`hobo-${lease.id}`);
+			if (guest) guest.exitCode = 0;
+			await h.after(15 * MINUTE);
+			return h.relay.store.get(lease.id);
+		};
+		const idle = await settle({ bytes: 0, calls: 0 });
+		const busy = await settle({ bytes: 500_000, calls: 40 });
+		expect(idle?.state).toBe("completed");
+		expect(busy?.state).toBe("completed");
+		// The proxy's bytes and calls are priced in: more traffic, a larger charge.
+		expect(busy?.paidMicros ?? 0).toBeGreaterThan(idle?.paidMicros ?? 0);
+	});
+
+	it("leaves a rebuilt Sandbox lease unsettled when neither the cache nor the proxy VM has its meter", async () => {
+		const h = await openStatelessRelay();
+		await warm(h);
+		h.jobs.set(JOB, {
+			id: JOB,
+			status: "queued",
+			runnerName: null,
+			runnerId: null,
+		});
+		await h.webhook("queued", JOB);
+		await h.drain(RELAY_QUEUE_TOPICS.intake);
+		const [lease] = await leases(h);
+		if (!lease) throw new Error("no lease");
+		const github = h.github.job(JOB);
+		github.status = "in_progress";
+		github.runnerName = lease.runnerName;
+		github.runnerId = 31;
+		h.wipeCache();
+		await h.after(MINUTE);
+		h.sandbox.proxyMeterAnswers = false;
+		github.status = "completed";
+		const guest = h.vms.get(`hobo-${lease.id}`);
+		if (guest) guest.exitCode = 0;
+		await h.after(15 * MINUTE);
+		expect(h.vms.get(`hobo-proxy-${lease.id}`)?.stopped).toBe(true);
+		// Fail closed for money: it holds its capacity until its record lapses.
 		expect((await h.relay.store.get(lease.id))?.state).toBe("uncertain");
 		expect(h.failures.map((failure) => failure.message)).toContain(
 			"sandbox proxy meter missing",
 		);
-		expect(h.sandbox.creates).toBe(1);
 	});
 });
 
@@ -337,6 +414,7 @@ describe("the stateless relay's probes", () => {
 			configStale: false,
 			cache: true,
 			executionHost: true,
+			workers: "starting",
 		});
 	});
 
@@ -430,19 +508,208 @@ describe("the stateless relay's cache commands per Sandbox job", () => {
 		// lease. The usage counter adds one command per relay-clock minute in
 		// which a call was made (the fleet's flush follows the relay's clock),
 		// so a phase that crosses a minute carries one more.
+		// Settling reads the proxy VM's own meter before stopping it and keeps
+		// it (3: the lease, the meter, its write).
 		expect(cost).toEqual({
-			"webhook queued": 4,
-			"intake: queue, reserve, launch": 57,
+			"webhook queued": 3,
+			"intake: queue, reserve, launch": 56,
 			"webhook in_progress": 3,
 			"intake: in_progress": 6,
 			"steps: three first rungs": 5,
 			"webhook completed": 3,
 			"intake: completed": 2,
-			"step: stop and settle": 21,
+			"step: stop and settle": 24,
 			"step: chain end": 2,
 		});
 		expect(Object.values(cost).reduce((sum, value) => sum + value, 0)).toBe(
-			103,
+			104,
 		);
+	});
+});
+
+describe("the stateless relay's repair scanners, on the cache", () => {
+	it("redelivers a delivery GitHub failed to deliver, once per cooldown", async () => {
+		const h = await openStatelessRelay();
+		const delivered = new Date(h.clock.nowMs() - 5 * MINUTE).toISOString();
+		h.deliveries.push(
+			{
+				id: 71,
+				guid: "missed",
+				event: "workflow_job",
+				status_code: 502,
+				delivered_at: delivered,
+			},
+			{
+				id: 72,
+				guid: "fine",
+				event: "workflow_job",
+				status_code: 200,
+				delivered_at: delivered,
+			},
+		);
+		await warm(h);
+		expect(h.redeliveries).toEqual([71]);
+		await h.relay.run({
+			kind: "repair",
+			source: "static",
+			platformSchedule: false,
+		});
+		expect(h.redeliveries).toEqual([71]);
+		// After the 15-minute cooldown GitHub's history still shows it failed.
+		h.clock.advance(16 * MINUTE);
+		await h.relay.run({
+			kind: "repair",
+			source: "static",
+			platformSchedule: false,
+		});
+		expect(h.redeliveries).toEqual([71, 71]);
+	});
+
+	it("does not redeliver a delivery the relay already took in", async () => {
+		const h = await openStatelessRelay();
+		await warm(h);
+		h.jobs.set(JOB, {
+			id: JOB,
+			status: "queued",
+			runnerName: null,
+			runnerId: null,
+		});
+		const { deliveryId } = await h.webhook("queued", JOB, "taken-in");
+		h.deliveries.push({
+			id: 73,
+			guid: deliveryId,
+			event: "workflow_job",
+			status_code: 502,
+			delivered_at: new Date(h.clock.nowMs() - 5 * MINUTE).toISOString(),
+		});
+		await h.relay.run({
+			kind: "repair",
+			source: "static",
+			platformSchedule: false,
+		});
+		expect(h.redeliveries).toEqual([]);
+	});
+
+	it("admits a queued job whose delivery never came, and after a cache loss replaces its idle runner, never two at once", async () => {
+		const h = await openStatelessRelay();
+		await warm(h);
+		h.jobs.set(JOB, {
+			id: JOB,
+			status: "queued",
+			runnerName: null,
+			runnerId: null,
+		});
+		// No webhook: the queued scan finds the job at GitHub within a few ticks.
+		for (let tick = 0; tick < 4 && (await leases(h)).length === 0; tick++) {
+			h.clock.advance(15 * MINUTE);
+			await h.relay.run({
+				kind: "repair",
+				source: "static",
+				platformSchedule: false,
+			});
+		}
+		const [lease] = await leases(h);
+		expect(lease?.jobId).toBe(JOB);
+		expect(h.sandbox.creates).toBe(1);
+		// The cache is lost before GitHub assigned the job. The rebuild pass
+		// finds the Sandbox by name; the host cannot tell an idle runner from a
+		// busy one without the lost record, so it stops both VMs, deletes the
+		// runner and settles from the proxy VM's meter; the job, still queued,
+		// is admitted once more under the next generation. Never two live VMs.
+		if (!lease) throw new Error("no lease");
+		h.wipeCache();
+		for (let tick = 0; tick < 2; tick++) {
+			h.clock.advance(MINUTE);
+			await h.relay.run({
+				kind: "repair",
+				source: "static",
+				platformSchedule: false,
+			});
+		}
+		expect((await h.relay.store.get(lease.id))?.state).toBe("completed");
+		expect(h.vms.get(`hobo-${lease.id}`)?.stopped).toBe(true);
+		const live = (await leases(h)).filter((entry) =>
+			ACTIVE_STATES.has(entry.state),
+		);
+		expect(live).toHaveLength(1);
+		expect(live[0]?.id).not.toBe(lease.id);
+		expect(h.sandbox.creates).toBe(2);
+		expect(
+			[...h.vms.entries()].filter(
+				([name, vm]) =>
+					name.startsWith("hobo-") &&
+					!name.startsWith("hobo-proxy-") &&
+					!vm.stopped,
+			),
+		).toHaveLength(1);
+	});
+
+	it("reports worker health from the cache: starting, then ok, then failing", async () => {
+		const h = await openStatelessRelay();
+		const ready = async () =>
+			z
+				.object({ ready: z.boolean(), workers: z.string() })
+				.parse(
+					await (await h.relay.handle(new Request(`${ORIGIN}/readyz`))).json(),
+				);
+		expect(await ready()).toEqual({ ready: true, workers: "starting" });
+		for (let tick = 0; tick < 2; tick++) {
+			h.clock.advance(15 * MINUTE);
+			await h.relay.run({
+				kind: "repair",
+				source: "static",
+				platformSchedule: false,
+			});
+		}
+		expect(await ready()).toEqual({ ready: true, workers: "ok" });
+		h.appApi.down = true;
+		h.clock.advance(15 * MINUTE);
+		await h.relay.run({
+			kind: "repair",
+			source: "static",
+			platformSchedule: false,
+		});
+		expect(await ready()).toEqual({ ready: false, workers: "failing" });
+		// A lost cache forgets the failure too: no evidence reads as starting.
+		h.wipeCache();
+		expect((await ready()).workers).toBe("starting");
+	});
+});
+
+describe("the stateless relay's onboarding, on the cache", () => {
+	it("redeems the owner's invitation once and serves the owner's policy view", async () => {
+		const h = await openStatelessRelay();
+		const start = () =>
+			h.relay.handle(
+				new Request(`${ORIGIN}/v1/app-bootstrap/start`, {
+					method: "POST",
+					headers: { authorization: `Bearer ${INVITATION}`, origin: ORIGIN },
+				}),
+			);
+		const first = await start();
+		expect(first.status).toBe(200);
+		const owner =
+			first.headers
+				.getSetCookie()
+				.find((entry) => entry.startsWith("__Host-hobo_ci_bootstrap="))
+				?.split(";")[0] ?? "";
+		expect((await start()).status).toBe(403);
+		// The owner session stands for the onboarding control token on the
+		// same-origin owner routes; nothing reaches the browser.
+		const policy = await h.relay.handle(
+			new Request(`${ORIGIN}/v1/accounts/self/policy`, {
+				headers: {
+					cookie: owner,
+					origin: ORIGIN,
+					"x-hobo-owner-control": "1",
+				},
+			}),
+		);
+		expect(policy.status).toBe(200);
+		// App creation in the relay is gone: `hobo ci` creates the App.
+		const create = await h.relay.handle(
+			new Request(`${ORIGIN}/v1/app-bootstrap/callback?state=x&code=y`),
+		);
+		expect(create.status).toBe(410);
 	});
 });

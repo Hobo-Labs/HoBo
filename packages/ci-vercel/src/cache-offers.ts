@@ -1,7 +1,11 @@
 /**
  * What each cache backend costs and allows, and the marks the relay switches
- * at: declared configuration, with defaults equal to the vendor free tiers the
- * ADR-0179 amendment records (read 2026-11-11; re-check at provisioning).
+ * at: declared configuration, with defaults derived from the relay's offer
+ * catalog (phase 5): each backend's offer is a provider manifest in
+ * `offers/*.provider.yaml`, lowered into an `@hobo/pricing` catalog by
+ * `scripts/generate-offers.mts` (`src/_generated-assets/relay-offers.ts`).
+ * The figures are the vendor tiers the ADR-0179 amendment records (read
+ * 2026-11-11; re-check at provisioning).
  *
  * The record is `RelayCacheOffers` in `data-models/cache_offers.proto`
  * (constrained by `data-models/cache-offers/cache_offers.cue`); it arrives as
@@ -32,6 +36,7 @@ import {
 	parseFleetRoutingMarks,
 } from "@hobo/backend-fleet";
 import { z } from "zod";
+import { RELAY_CACHE_OFFER_DEFAULTS } from "./_generated-assets/relay-offers.js";
 import {
 	CACHE_BACKEND_IDS,
 	type CacheBackendId,
@@ -39,98 +44,76 @@ import {
 	DEFAULT_MONTHLY_CACHE_COMMANDS,
 } from "./cache-backend.js";
 
-/** The day the default figures were read. */
-const RECORDED = "2026-11-11";
-
-function allowance(
-	unit: FleetAllowance["unit"],
-	included: number,
-): FleetAllowance {
-	return {
-		unit,
-		included,
-		beyond: "hard-stop",
-		meteredMicrosPerUnit: undefined,
-	};
-}
-
-function metered(
-	unit: FleetAllowance["unit"],
-	microsPerUnit: number,
-): FleetAllowance {
-	return {
-		unit,
-		included: 0,
-		beyond: "metered",
-		meteredMicrosPerUnit: microsPerUnit,
-	};
-}
-
-function offer(
-	backend: CacheBackendId,
-	tier: FleetOffer["tier"],
-	allowances: readonly FleetAllowance[],
-	source: string,
+/** A default offer from the catalog; Upstash's command allowance may be overridden. */
+function catalogOffer(
+	entry: (typeof RELAY_CACHE_OFFER_DEFAULTS)[number],
+	commands: number,
 ): FleetOffer {
 	return parseFleetOffer({
-		tier,
+		tier: entry.tier,
 		capMicros: undefined,
 		model: parseFleetFinancialModel({
-			backend,
-			plan: tier,
+			backend: entry.backend,
+			plan: entry.plan,
 			fixedMonthlyFeeMicros: 0,
-			allowances,
-			evidence: { source, observedAt: RECORDED },
+			allowances: entry.allowances.map(
+				(allowance): FleetAllowance => ({
+					unit: allowance.unit,
+					included:
+						entry.backend === "upstash" && allowance.unit === "commands"
+							? commands
+							: allowance.included,
+					beyond: allowance.beyond,
+					meteredMicrosPerUnit:
+						"meteredMicrosPerUnit" in allowance
+							? allowance.meteredMicrosPerUnit
+							: undefined,
+				}),
+			),
+			evidence: entry.evidence,
 		}),
 	});
 }
 
-/** The defaults, per backend; `commands` overrides Upstash's allowance. */
+/**
+ * The defaults, per backend, from the offer catalog; `commands` overrides
+ * Upstash's allowance. `redis` (`REDIS_URL`) has no offer: nobody has said
+ * what it is, so it is never moved to for budget reasons. `memory` is free.
+ */
 export function defaultCacheOffers(
 	commands = DEFAULT_MONTHLY_CACHE_COMMANDS,
 ): ReadonlyMap<CacheBackendId, FleetOffer> {
-	return new Map<CacheBackendId, FleetOffer>([
-		[
-			"upstash",
-			offer(
-				"upstash",
-				"free",
-				[allowance("commands", commands)],
-				"https://upstash.com/pricing/redis (free tier, ADR-0179 amendment)",
-			),
-		],
-		[
-			"valkey",
-			offer(
-				"valkey",
-				"free",
-				[],
-				"https://aiven.io/docs/products/valkey/concepts/valkey-free-tier (no command cap)",
-			),
-		],
-		[
-			"turso",
-			offer(
-				"turso",
-				"free",
-				[
-					allowance("rows-read", 500_000_000),
-					allowance("rows-written", 10_000_000),
-				],
-				"https://turso.tech/pricing (free plan, ADR-0179 amendment)",
-			),
-		],
-		[
-			"blob",
-			offer(
-				"blob",
-				"payg",
-				[metered("simple-operations", 0.4), metered("advanced-operations", 5)],
-				"https://vercel.com/pricing Pro rates via @hobo/provider-vercel-blob; unverified for this store",
-			),
-		],
-		["memory", offer("memory", "free", [], "in-memory engine, no provider")],
-	]);
+	const offers = new Map<CacheBackendId, FleetOffer>(
+		RELAY_CACHE_OFFER_DEFAULTS.map((entry) => [
+			entry.backend,
+			catalogOffer(entry, commands),
+		]),
+	);
+	offers.set(
+		"memory",
+		parseFleetOffer({
+			tier: "free",
+			capMicros: undefined,
+			model: parseFleetFinancialModel({
+				backend: "memory",
+				plan: "free",
+				fixedMonthlyFeeMicros: 0,
+				allowances: [],
+				evidence: {
+					source: "in-memory engine, no provider",
+					observedAt: "2026-11-11",
+				},
+			}),
+		}),
+	);
+	return offers;
+}
+
+/** Each backend's catalog rate card (`<backend>=<rate card id>`), for the start-up log. */
+export function cacheOfferRateCards(): readonly string[] {
+	return RELAY_CACHE_OFFER_DEFAULTS.map(
+		(entry) => `${entry.backend}=${entry.rateCardId}`,
+	);
 }
 
 const Allowance = z

@@ -16,6 +16,13 @@ relay deployed from `@hobo/ci-vercel` is composed on it with no database
 the config service) names is a member of the relay's cache fleet: exactly one
 is active, chosen by budget, and each is metered in the units it bills
 ([The cache fleet](../../packages/ci-vercel/README.md#the-cache-fleet)).
+Since phase 5 the relay's helpers live on it too: the repair scanners'
+locks, cursors and rate windows, worker health, sealed operator sessions and
+single-use OAuth and App `state`, the owner's consumed invitation, and the
+proxy VM's meter
+([Helpers on the cache](../../packages/ci-vercel/README.md#helpers-on-the-cache)).
+Each backend is a priced offer whose manifest declares
+`kv.ephemeral-state/v1` (`KV_EPHEMERAL_STATE_PROFILE`).
 
 ## Why
 
@@ -29,6 +36,8 @@ still needs between requests is small and rebuildable from GitHub and Vercel:
 | Per-account in-flight index | a small JSON value updated by `compareAndSet` |
 | Rate counter | `increment(..., "on-create")`: the window starts at the first hit and lapses on schedule |
 | Scanner lock | `acquireEphemeralLock` / `renewEphemeralLock` / `releaseEphemeralLock` |
+| Scanner cursor, redelivery claim, seen-marker | `get` then `compareAndSet` or `putIfAbsent`; a claim is `putIfAbsent` with the cooldown as TTL |
+| Session, OAuth `state` | `putIfAbsent` with the session's lifetime; `state` consumed by a read and a versioned `delete` |
 | MCP change feed | `createEphemeralRing`: capped, ordered by a monotonic sequence |
 
 Losing any of it costs a rebuild, not correctness, so a cache with TTL is the

@@ -1138,7 +1138,8 @@ webhook recorded, to `reserve`.
 
 **Budgets without history.** Routing counts every account's in-flight holds
 from the in-flight indexes plus the spend a `ProviderUsagePort` reports
-(`NO_PROVIDER_USAGE` until phase 4b pulls it); finished leases count nothing.
+(`NO_PROVIDER_USAGE`: no provider usage API is bound in the repository yet, so
+exposure is configured spend plus holds); finished leases count nothing.
 An index the cache lost comes back with `holdsKnown: false`, and priced offers
 (a per-minute price, or any Sandbox offer) stay paused until the rebuild pass
 calls `markHoldsKnown`; free capacity keeps admitting. Broker budget-policy
@@ -1201,7 +1202,55 @@ the port's 30-day cap.
 | `sbx:proxy-requests:<leaseId>` | counter (accepted forwards) | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` |
 | `sbx:proxy-rate:<leaseId>:<windowStart>` | counter, at most 600 | 1 min from first hit | `reserveSandboxProxyEgress` |
 | `sbx:proxy-req:<leaseId>:<requestId>` | `1` | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` (a replayed request id fails closed) |
+| `sbx:proxy-meter:<leaseId>` | `RelayCacheProxyMeter`: what the proxy VM reported it reserved (bytes) and its quota calls, the largest report kept | Sandbox lifetime + 1 h | `recordSandboxProxyMeter` (the Sandbox host, before it stops the proxy VM) |
+| `repair:webhook:<appId>:lock`, `repair:queued:<appId>:lock` | lock owner token | 5 min, renewed at each checkpoint | `CacheWebhookRepairClaims.startScan`, `CacheQueuedJobRepairClaims.start` |
+| `repair:webhook:<appId>:cursor` | `RelayCacheWebhookScan`: next page of `GET /app/hook/deliveries` | 3 days | the delivery scan's checkpoint |
+| `repair:webhook:<appId>:claim:<guid>` | claim time | 15 min (the redelivery cooldown) | `claim` |
+| `repair:webhook:<appId>:ok:<guid>` | seen time | 4 days | `recordSuccesses` (only guids not already known) |
+| `repair:webhook:<appId>:rate:<windowStart>` | counter, at most 20 | 1 min from first hit | `claim` (a claim over the window is given back) |
+| `repair:queued:<appId>:scan:<account>:<installation>:<repository>:<status>` | `RelayCacheQueuedScan`: cursor, due and touched times | 24 h | the queued scan's checkpoint |
+| `repair:queued:<appId>:budget:<windowStart>` | counter, at most 10 (GitHub REST calls) | 1 min from first hit | `take` |
+| `oauth-state:<mac>`, `oauth-session:<mac>` | `RelayCacheSealed` holding `RelayCacheOAuthState` / `RelayCacheOAuthSession` | until the state (10 min) or session (15 min) expires | `CacheGithubOAuthSessionStore` |
+| `app-state:<mac>` | `RelayCacheAppState` | 10 min, consumed once | `CacheAppRegistrationStates` |
+| `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
+| `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
+| `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
 | `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
+
+### Helpers on the cache (phase 5)
+
+What the hosted relay kept in `hobo_ci_*` tables besides the store moves onto
+the same port, each record short-lived:
+
+- **Repair scanners** (`repair-claims.ts`): `CacheWebhookRepairClaims` and
+  `CacheQueuedJobRepairClaims` implement the claim ports of the unchanged
+  `createWebhookRepair` and `createQueuedJobRepair`. One lock per scanner and
+  App, renewed at each checkpoint: a scanner that stalled past its lock throws
+  at the checkpoint instead of overwriting the new holder's cursor, and its
+  release cannot free the new holder's lock. Losing the cache restarts a scan
+  from the newest page or page one; redeliveries collapse on the delivery id
+  and admissions on the job key.
+- **Sessions and state** (`sessions.ts`): every record is named by an HMAC of
+  the digest the flow already computes, under a key derived from the session
+  key in the config service, so no key names a token. Records holding a
+  credential (the control token an OAuth flow is bound to, the GitHub user
+  token, the PKCE verifier) are sealed with AES-256-GCM under a second derived
+  key, the record kind as associated data; a rotated session key reads them as
+  absent. `state` is single-use: a read, then a delete conditional on the
+  version read. The browser still carries only an opaque cookie: the session
+  holds a GitHub user token, which stays out of the browser.
+- **Onboarding** (`stateless-app-onboarding.ts`):
+  `createStatelessAppOnboarding` composes the OAuth session flow and the
+  installation flow on those stores, and an owner bootstrap that creates
+  nothing: the owner redeems the invitation in the config service once and
+  gets a ten-minute owner session that stands for the onboarding control
+  token. App registration (the manifest flow) answers 410; `hobo ci` creates
+  the App. A verified installation is usable for a day and logged by id for
+  `hobo ci` to write into the config service.
+- **Proxy VM meter**: `recordSandboxProxyMeter` keeps what the proxy VM
+  counted; settlement charges the larger of it and the store's own counters,
+  and uses it alone when the cache lost them, so a lease rebuilt after a cache
+  loss settles.
 
 ### Command cost
 

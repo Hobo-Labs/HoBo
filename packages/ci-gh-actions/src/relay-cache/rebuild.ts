@@ -43,6 +43,8 @@ import type { RelayCacheStore } from "./store.js";
 export type RelayGithubJobView = Readonly<{
 	status: string;
 	runnerName?: string | null | undefined;
+	/** GitHub's id for the runner the job was assigned to, when it was. */
+	runnerId?: number | null | undefined;
 	createdAt?: string | undefined;
 }>;
 
@@ -62,6 +64,8 @@ export type RelayEvidence = Readonly<{
 	leaseId: string;
 	from: "runner" | "bridge-run" | "sandbox";
 	runnerAssigned: boolean;
+	/** The registered runner's id, from GitHub's assignment or the name lookup; 0 when unknown. */
+	runnerId: number;
 	hostRunId: number;
 	sandboxSessionId: string;
 }>;
@@ -110,7 +114,7 @@ async function gatherEvidence(
 		const runnerAssigned = assignedLease === leaseId;
 		const [runner, bridge, sandbox] = await Promise.all([
 			runnerAssigned
-				? Promise.resolve({ id: 0 })
+				? Promise.resolve({ id: github.runnerId ?? 0 })
 				: discovery.runner(job, names.runner),
 			discovery.bridgeRun(job, names.bridgeRunTitle),
 			discovery.sandbox(names.sandbox),
@@ -121,6 +125,7 @@ async function gatherEvidence(
 			leaseId,
 			from: sandbox ? "sandbox" : bridge ? "bridge-run" : "runner",
 			runnerAssigned,
+			runnerId: runner?.id ?? 0,
 			hostRunId: bridge?.id ?? 0,
 			sandboxSessionId: sandbox?.sessionId ?? "",
 		});
@@ -278,6 +283,8 @@ export async function rebuildLease(
 		actualJobId: chosen.runnerAssigned ? job.id : 0,
 		sandboxName: chosen.from === "sandbox" ? names.sandbox : "",
 		sandboxSessionId: chosen.sandboxSessionId,
+		// A Sandbox host deletes the runner it registered before it settles.
+		runnerId: chosen.from === "sandbox" ? chosen.runnerId : 0,
 		createdAt: at,
 	});
 	// The proxy VM is found by its name when the lease is cleaned up.
@@ -500,6 +507,7 @@ export function githubRelayDiscovery(
 			return {
 				status: view.status,
 				runnerName: view.runner_name,
+				runnerId: view.runner_id,
 				createdAt: view.created_at,
 			};
 		},

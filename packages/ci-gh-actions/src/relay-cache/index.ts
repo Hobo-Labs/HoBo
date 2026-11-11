@@ -48,6 +48,20 @@ export {
 	relaySandboxCounterTtl,
 } from "./records.js";
 export {
+	CacheQueuedJobRepairClaims,
+	CacheWebhookRepairClaims,
+	type RelayRepairClaimsOptions,
+} from "./repair-claims.js";
+export {
+	CacheAppRegistrationStates,
+	CacheGithubOAuthSessionStore,
+	CacheOwnerBootstrap,
+	CacheVerifiedInstallations,
+	parseRelaySessionKey,
+	type RelaySessionKey,
+	type RelaySessionStoreOptions,
+} from "./sessions.js";
+export {
 	NO_PROVIDER_USAGE,
 	type ProviderUsageObservation,
 	type ProviderUsagePort,

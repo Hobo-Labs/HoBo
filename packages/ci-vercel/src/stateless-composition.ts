@@ -12,7 +12,11 @@
  *   the units it bills.
  * - Work: webhook intake and per-lease steps as Vercel Queue messages
  *   (`relay-queue.ts`); the 15-minute repair tick scans what is in flight as
- *   a backstop and restores holds a lost cache forgot.
+ *   a backstop, restores holds a lost cache forgot, and runs the repair
+ *   scanners (missed deliveries, queued jobs) on the cache (phase 5).
+ * - Onboarding: OAuth sessions, App-installation state and the owner's
+ *   invitation on the cache (`createStatelessAppOnboarding`); worker-health
+ *   evidence on the cache (`worker-health-cache.ts`).
  *
  * The PostgreSQL composition (`relay-composition.ts`, `composition.ts`) stays
  * in the tree until phase 7 and is off the production path.
@@ -31,16 +35,22 @@ import {
 	createGithubOidcVerifier,
 	createHostedControlPlane,
 	createHostedRelayRuntime,
+	createQueuedJobRepair,
 	createRelayHandler,
 	createRelayMcp,
+	createStatelessAppOnboarding,
+	createWebhookRepair,
 	type GithubAppTransport,
 	HostedRelay,
 	type IdentityVerifier,
 	reportRelayFailure,
 } from "@hobo/ci-gh-actions";
 import {
+	CacheQueuedJobRepairClaims,
+	CacheWebhookRepairClaims,
 	githubRelayDiscovery,
 	parseProxyTokenKey,
+	parseRelaySessionKey,
 	RelayCacheStore,
 	type RelayConfigSnapshot,
 	rebuildInflight,
@@ -59,7 +69,7 @@ import {
 	type CacheFleetTick,
 	createCacheFleet,
 } from "./cache-fleet.js";
-import { parseCacheOffers } from "./cache-offers.js";
+import { cacheOfferRateCards, parseCacheOffers } from "./cache-offers.js";
 import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
@@ -68,6 +78,11 @@ import {
 	mcpWaitCeilingMs,
 	RELAY_FUNCTION_MAX_DURATION_SECONDS,
 } from "./function-limits.js";
+import {
+	chooseLifecycleDriver,
+	type LeaseLifecycleDriver,
+} from "./lifecycle-driver.js";
+import { createOwnerControlDelegation } from "./owner-control.js";
 import { createQueueHandoffHandler } from "./queue-forwarding.js";
 import {
 	createLeaseStepScheduler,
@@ -94,8 +109,19 @@ import {
 } from "./sandbox-composition.js";
 import { createSandboxProxyQuotaHandler } from "./sandbox-proxy-quota.js";
 import { createScheduledRepairHandler } from "./scheduled-repair.js";
+import { runRepairs } from "./worker.js";
+import {
+	CacheWorkerHealth,
+	type RelayWorkerStatus,
+} from "./worker-health-cache.js";
 
 type Env = Readonly<Record<string, string | undefined>>;
+
+/**
+ * Extra steps the queued-job scan may take in one repair tick: with the
+ * first, ten, the App's REST budget for the scan per minute.
+ */
+const QUEUED_SCAN_PASSES = 9;
 
 /** What a log line may carry: names, counts and kinds, never a value. */
 export type StatelessRelayLogValue =
@@ -141,6 +167,12 @@ export type StatelessRelayReadiness = Readonly<{
 	cache: boolean;
 	/** An execution host (the Sandbox controller) is configured. */
 	executionHost: boolean;
+	/**
+	 * Repair evidence in the cache: `starting` while there is none yet (a new
+	 * deployment, or after a cache loss), `failing` when a scanner or the
+	 * repair tick last failed or has not succeeded for 45 minutes.
+	 */
+	workers: RelayWorkerStatus;
 }>;
 
 export type StatelessRelay = Readonly<{
@@ -249,7 +281,7 @@ export async function composeStatelessRelay(
 		return { snapshot, authenticator };
 	}
 	await current();
-	const authenticate: ControlAuthenticator = async (header) =>
+	const configured: ControlAuthenticator = async (header) =>
 		(await current()).authenticator(header);
 
 	// Cache bindings: the deployment's environment, then what the config
@@ -272,7 +304,16 @@ export async function composeStatelessRelay(
 		fromConfigService: [...bindingEnv.fromConfig],
 	});
 	const environment = cacheEnvironment(env);
-	const scheduler = createLeaseStepScheduler({
+	// Offers are priced in the relay's catalog (`offers/`); which of them the
+	// relay uses is a logged policy decision. Only the Queue driver is built.
+	const lifecycle = chooseLifecycleDriver(now());
+	log({
+		event: "hobo_ci_offer_selection",
+		lifecycleDriver: lifecycle.driver,
+		lifecycleConsidered: [...lifecycle.considered],
+		cacheRateCards: [...cacheOfferRateCards()],
+	});
+	const scheduler: LeaseLifecycleDriver = createLeaseStepScheduler({
 		send: options.send,
 		now: () => Date.parse(now()),
 	});
@@ -341,6 +382,73 @@ export async function composeStatelessRelay(
 			privateKey: initial.HOBO_CI_GITHUB_APP_PRIVATE_KEY,
 		});
 	const identity = options.identity ?? createGithubOidcVerifier(origin);
+	const nowMs = () => Date.parse(now());
+
+	// GitHub onboarding on the cache: sealed sessions, single-use state, the
+	// owner's invitation. Nothing it records is configuration.
+	const invitationExpiry = initial.HOBO_CI_INVITATION_EXPIRES_AT
+		? Number(initial.HOBO_CI_INVITATION_EXPIRES_AT)
+		: undefined;
+	const onboarding = createStatelessAppOnboarding({
+		state: fleet.state,
+		environment,
+		sessionKey: parseRelaySessionKey(
+			Buffer.from(initial.HOBO_CI_SESSION_KEY, "base64url"),
+		),
+		publicOrigin: origin,
+		appId: Number(initial.HOBO_CI_GITHUB_APP_ID),
+		clientId: initial.HOBO_CI_GITHUB_APP_CLIENT_ID,
+		clientSecret: initial.HOBO_CI_GITHUB_APP_CLIENT_SECRET,
+		github,
+		authenticate: configured,
+		owner: {
+			accountId: initial.HOBO_CI_BOOTSTRAP_ACCOUNT_ID,
+			tokenSha256: initial.HOBO_CI_BOOTSTRAP_TOKEN_SHA256,
+			expiresAt: invitationExpiry,
+			controlToken: initial.HOBO_CI_ONBOARDING_CONTROL_TOKEN,
+		},
+		// Ids only: the operator writes the installation into the config
+		// service with `hobo ci`; until then it is usable for a day.
+		onVerified: (accountId, installationId) =>
+			log({
+				event: "hobo_ci_installation_verified",
+				accountId,
+				installationId,
+			}),
+		fetch: options.fetch ?? fetch,
+		now: nowMs,
+	});
+	const authenticate: ControlAuthenticator = (header) =>
+		onboarding.authenticate(header);
+	const delegateOwnerControl = createOwnerControlDelegation({
+		publicOrigin: origin,
+		resolve: onboarding.trustedBootstrapControl,
+	});
+	const health = new CacheWorkerHealth({
+		state: fleet.state,
+		environment,
+		deploymentId: env.VERCEL_DEPLOYMENT_ID,
+		now: nowMs,
+	});
+	const webhookRepair = createWebhookRepair({
+		appId: initial.HOBO_CI_GITHUB_APP_ID,
+		privateKey: initial.HOBO_CI_GITHUB_APP_PRIVATE_KEY,
+		claims: new CacheWebhookRepairClaims({
+			state: fleet.state,
+			environment,
+			now: nowMs,
+		}),
+		// A delivery the relay already took in is not redelivered.
+		isAccepted: (deliveryId) => store.hasWebhook(deliveryId),
+		fetch: options.fetch ?? fetch,
+		now: nowMs,
+	});
+	const queuedClaims = new CacheQueuedJobRepairClaims({
+		state: fleet.state,
+		environment,
+		appId: initial.HOBO_CI_GITHUB_APP_ID,
+		now: nowMs,
+	});
 	const sandbox = createSandboxComposition({
 		env: { ...initial },
 		publicOrigin: origin,
@@ -373,8 +481,10 @@ export async function composeStatelessRelay(
 			...execution.relay,
 		});
 	};
-	const control = async (request: Request) =>
-		createHostedControlPlane({
+	const control = async (request: Request) => {
+		const onboarded = await onboarding.handle(request);
+		if (onboarded) return onboarded;
+		return createHostedControlPlane({
 			relay: await relay(),
 			store,
 			github,
@@ -384,7 +494,8 @@ export async function composeStatelessRelay(
 			runtimeDiagnostic: () =>
 				runtimeDiagnostic({ deploymentId: env.VERCEL_DEPLOYMENT_ID, sandbox }),
 			readOnlyConfig: { configService: options.configService },
-		})(request);
+		})(await delegateOwnerControl(request));
+	};
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -405,12 +516,17 @@ export async function composeStatelessRelay(
 		const cacheReady = await store.ready();
 		const configStale = options.configStaleSince?.() !== undefined;
 		const executionHost = !!sandbox;
+		const workers: RelayWorkerStatus = cacheReady
+			? await health.summary().catch(() => "starting" as const)
+			: "starting";
 		return {
-			ready: configService && cacheReady && executionHost,
+			ready:
+				configService && cacheReady && executionHost && workers !== "failing",
 			configService,
 			configStale,
 			cache: cacheReady,
 			executionHost,
+			workers,
 		};
 	}
 
@@ -494,6 +610,41 @@ export async function composeStatelessRelay(
 		}
 	}
 
+	/**
+	 * The repair scanners on the cache: GitHub deliveries that never reached
+	 * the relay are redelivered, and queued jobs whose delivery was lost are
+	 * admitted (by job key, so a job admitted already is a no-op). Each
+	 * scanner's outcome is worker-health evidence. No continuation messages:
+	 * the queued scan takes up to `QUEUED_SCAN_PASSES` more steps within the
+	 * tick and resumes from its cursors on the next one, so a tick's cache
+	 * commands stay bounded (ADR-0179: work is driven by messages, not polling).
+	 */
+	async function scanners() {
+		const queuedRepair = createQueuedJobRepair({
+			store,
+			github,
+			claims: queuedClaims,
+			idleComplete: () => health.repairComplete(1),
+			relay,
+		});
+		const evidence = {
+			start: () => health.startRepair(),
+			finish: (index: number, ok: boolean, startedAt: string) =>
+				health.finishRepair(index, ok, startedAt),
+		};
+		const first = await runRepairs([webhookRepair, queuedRepair], evidence);
+		let { failed, more } = first;
+		for (let pass = 0; more && !failed && pass < QUEUED_SCAN_PASSES; pass++) {
+			const next = await runRepairs([queuedRepair], {
+				start: evidence.start,
+				finish: (_index, ok, startedAt) => evidence.finish(1, ok, startedAt),
+			});
+			failed ||= next.failed;
+			more = next.more;
+		}
+		await health.mark("repair", !failed).catch(() => undefined);
+	}
+
 	async function repair() {
 		try {
 			const rebuilt = await rebuildInflight(store, discovery, github, now());
@@ -511,6 +662,9 @@ export async function composeStatelessRelay(
 				error instanceof Error ? error : undefined,
 			);
 		}
+		// The scanners first: a job the queued scan finds is admitted by the
+		// runtime's pass in the same tick.
+		await scanners();
 		await runtime.tick({ maxDeliveries: 0 });
 	}
 
@@ -591,6 +745,7 @@ export async function composeStatelessRelay(
 						configStale: false,
 						cache: false,
 						executionHost: !!sandbox,
+						workers: "starting",
 					};
 				}
 				return Response.json(report, {
@@ -606,6 +761,16 @@ export async function composeStatelessRelay(
 			const deniedEgress = denyDirectSandboxEgress(request);
 			if (deniedEgress) return deniedEgress;
 			if (pathname === "/internal/tick") return scheduledRepair(request);
+			// The owner's invitation; the relay's handler routes no such path.
+			if (pathname.startsWith("/v1/app-bootstrap/"))
+				try {
+					return (
+						(await onboarding.handle(request)) ??
+						Response.json({ error: "not found" }, { status: 404 })
+					);
+				} finally {
+					await fleet.flushUsage().catch(() => undefined);
+				}
 			try {
 				return await handler(request);
 			} finally {

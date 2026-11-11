@@ -920,6 +920,12 @@ importers:
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
+      '@hobo/pricing':
+        specifier: workspace:*
+        version: link:../pricing
+      '@hobo/provider-manifest':
+        specifier: workspace:*
+        version: link:../provider-manifest
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5

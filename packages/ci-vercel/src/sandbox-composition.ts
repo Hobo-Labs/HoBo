@@ -27,6 +27,7 @@ import {
 	bindProxySandbox,
 	createProxySandbox,
 	discoverProxySandbox,
+	meterProxySandbox,
 	startProxySandbox,
 	stopProxySandbox,
 } from "./proxy-sandbox.js";
@@ -60,6 +61,9 @@ export interface SandboxCompositionStore
 	): Promise<{ bytes: number; calls: number } | undefined>;
 }
 
+/** The port the proxy VM listens on, exposed through the Sandbox gateway. */
+const PROXY_PORT = 3000;
+
 /** The Vercel Sandbox drivers; tests pass stand-ins. */
 export const VERCEL_SANDBOX_DRIVERS: Readonly<{
 	driver: IsolatedSandboxDriver;
@@ -78,6 +82,8 @@ export const VERCEL_SANDBOX_DRIVERS: Readonly<{
 		start: startProxySandbox,
 		bind: bindProxySandbox,
 		discover: discoverProxySandbox,
+		meter: (name: string, sessionId: string, token: string) =>
+			meterProxySandbox(name, sessionId, PROXY_PORT, token),
 		stop: stopProxySandbox,
 	},
 });
@@ -222,7 +228,7 @@ export function createSandboxComposition(options: {
 						plan,
 						region: offer.sandboxPricing.region,
 						vcpus: offer.sandboxPricing.proxyVmVcpus,
-						port: 3000,
+						port: PROXY_PORT,
 						relayOrigin: options.publicOrigin,
 						domains,
 					},
@@ -234,7 +240,7 @@ export function createSandboxComposition(options: {
 						hosts: domains,
 						maxEgressBytes: offer.sandboxPricing.maxEgressBytes,
 						maxControlCalls: offer.sandboxPricing.proxyControlMaxCalls,
-						port: 3000,
+						port: PROXY_PORT,
 						maxRequestBytes: Math.min(
 							offer.sandboxPricing.maxEgressBytes,
 							1024 * 1024 * 1024,

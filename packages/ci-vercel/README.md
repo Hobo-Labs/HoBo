@@ -287,8 +287,9 @@ earlier deployment.
    answer **410**: the body's `error` says configuration is read-only on this
    relay and is written with `hobo ci` through the config service, and its
    `configService` names the binding's kind. Read routes are unchanged. MCP's change feed is the store's
-   change ring. GitHub onboarding (the OAuth session flow and owner bootstrap)
-   is not served here: it moves onto the cache and cookies in phase 5.
+   change ring. GitHub onboarding (the OAuth session flow, App installation
+   and the owner's invitation) runs on the cache since phase 5
+   ([Helpers on the cache](#helpers-on-the-cache)).
 
 **Queue topics** ([`src/relay-queue.ts`](src/relay-queue.ts); records
 `HostedQueueDelivery` and `HostedLeaseStep` in
@@ -323,11 +324,11 @@ earlier deployment.
   the message carries. Past the last rung, the repair tick covers it.
 - **Repair tick** (backstop): the cache fleet's tick (usage, register upkeep,
   the budget decision; [below](#the-cache-fleet)), then `rebuildInflight`,
+  then the repair scanners on the cache (GitHub deliveries that failed are
+  redelivered; queued jobs whose delivery never came are admitted; phase 5),
   then the runtime's full tick over every in-flight lease. A sealed cache move
   schedules a delayed repair message (idempotency key
-  `cache-fleet-activate-<epoch>`) for when its seal is over. The repair scanners that redeliver failed GitHub
-  deliveries and find queued jobs whose delivery never came are not run here
-  yet: their claims and cursors move onto the cache in phase 5.
+  `cache-fleet-activate-<epoch>`) for when its seal is over.
 - **The handoff.** In production each consumer hands its message to the current
   production deployment's `POST /internal/queue-wakeup` (authenticated with
   `CRON_SECRET`, from the config service), as since PR #1881: a repair tick that
@@ -338,9 +339,11 @@ earlier deployment.
 
 **Probes.** `/healthz` answers 200 always, before the relay is composed.
 `/readyz` answers 200 or 503 with `{ready, configService, configStale, cache,
-executionHost}`: the config service loads, the cache answers a read (one
-command), and an execution host (the Sandbox controller) is configured; a stale
-config copy is reported but still ready. While the relay cannot start (the
+executionHost, workers}`: the config service loads, the cache answers a read
+(one command), an execution host (the Sandbox controller) is configured, and
+the repair evidence in the cache is not `failing`; a stale config copy is
+reported but still ready, and `workers: "starting"` (no evidence yet: a new
+deployment, or a lost cache) is ready too. While the relay cannot start (the
 config service unreachable on a cold start, an invalid configuration or cache
 binding) `/readyz` answers 503 `{ready: false, started: false}` and every other
 route 503.
@@ -369,7 +372,10 @@ and the egress and proxy bindings), 6 and 2 for the in-progress and completed
 deliveries, 4 for the first three step rungs, 20 for the step that stops both
 VMs and settles, and 1 for the step that ends the chain: **99**, plus one
 command for the usage counter in each relay-clock minute the relay did work
-(four in the test's hour, so it pins **103**). The store's own
+(four in the test's hour, so it pinned **103** in phase 4b). Phase 5 pins
+**104**: settling reads the proxy VM's own meter into the cache before the VM
+is stopped (3 commands), and the warm-up repair tick, which now runs the
+scanners, moves one usage-counter flush out of the measured phases. The store's own
 per-step cost on a workflow-bridge path is in
 [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#command-cost) (62 before
 phase 4b, 43 after).
@@ -382,7 +388,12 @@ twice, the intake message delivered twice, GitHub's redelivery under a new id)
 giving one lease, one Sandbox and one runner; the cache wiped mid-job and the
 lease rebuilt by name, the running job adopted rather than stopped and nothing
 provisioned twice; every configuration write refused with 410; and `/readyz`
-and `/healthz`. `test/cache-backend.test.ts`, `test/cache-fleet.test.ts` and
+and `/healthz`; and, since phase 5, a lease rebuilt after a cache loss
+settling from its proxy VM's meter (and staying unsettled when neither the
+cache nor the VM has one), the delivery and queued-job scanners on the cache,
+worker health reported as starting, ok and failing, and the owner's
+invitation redeemed once. `test/relay-offers.test.ts` lowers every manifest in
+`offers/` and checks the defaults against the catalog. `test/cache-backend.test.ts`, `test/cache-fleet.test.ts` and
 `test/relay-queue.test.ts` cover the cache bindings and offers, the cache
 fleet (one member; several, bootstrapped and cached; failing closed; a
 planned move sealed, refused everywhere once cached answers lapse, then
@@ -455,13 +466,83 @@ What it costs: with two or more members, each busy instance reads the
 register once a minute on every member (about 43,000 reads a month per
 instance per member), and each repair tick about four commands per member.
 
-**Not yet.** Settling a rebuilt Sandbox lease: its proxy meters were in the
-lost cache, so after GitHub reports the job finished both VMs are stopped but
-the lease stays `uncertain`, holding its capacity until its record lapses
-(ADR-0179 §10 moves the authoritative counters into the proxy VM). Worker
-health evidence (`hobo_ci_worker_health`) and the repair scanners move to the
-cache in phase 5. That a Vercel Sandbox lookup by an unknown name answers 404
-is assumed from the SDK's error shape, not observed.
+**Not yet.** That a Vercel Sandbox lookup by an unknown name answers 404 is
+assumed from the SDK's error shape, not observed. Provider usage pulls for
+budgets (Vercel's usage API for Sandbox, GitHub's billing usage API) need
+clients the repository does not have; exposure stays configured spend plus
+in-flight holds, and each cache member is metered at its own client.
+
+### Helpers on the cache
+
+ADR-0179 phase 5. What the PostgreSQL composition kept in its own tables now
+lives in the cache fleet's active member, each record with a TTL; the key
+table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-ttls).
+
+- **Repair scanners.** `createWebhookRepair` and `createQueuedJobRepair`, as
+  before, over `CacheWebhookRepairClaims` and `CacheQueuedJobRepairClaims`:
+  one lock per scanner and App, cursors in the cache, the 20-a-minute
+  redelivery window and the 10-a-minute REST budget as minute counters. A
+  delivery the relay already took in (its 24-hour delivery marker) is not
+  redelivered. Each repair tick runs both once and the queued scan up to nine
+  more steps (its REST budget's worth), then resumes from its cursors on the
+  next tick: no continuation messages. A queued job the scan finds is
+  admitted under its deterministic lease id, so one already admitted, or
+  rebuilt by name after a cache loss, is a no-op.
+- **Worker health** (`src/worker-health-cache.ts`, record
+  `RelayWorkerHealth` in [`data-models/worker_health.proto`](data-models/worker_health.proto)):
+  the last success and failure of the repair tick and each scanner, per
+  deployment, 24 hours. Missing is `starting`; a failure newer than the last
+  success, or no success for 45 minutes, is `failing`, and `/readyz` answers
+  503.
+- **Sessions, OAuth `state`, App installation**: `createStatelessAppOnboarding`
+  from `@hobo/ci-gh-actions`. Records are named by an HMAC under a key derived
+  from `HOBO_CI_SESSION_KEY` and, where they hold a credential, sealed with
+  AES-256-GCM under another; the browser carries only an opaque cookie. A
+  verified installation is usable for a day and logged as
+  `hobo_ci_installation_verified` (ids only) for `hobo ci` to write into the
+  config service. Registering an App answers 410.
+- **Owner bootstrap.** `POST /v1/app-bootstrap/start` with
+  `Authorization: Bearer <invitation>` redeems the invitation the config
+  service holds (`HOBO_CI_BOOTSTRAP_TOKEN_SHA256`, expiring at
+  `HOBO_CI_INVITATION_EXPIRES_AT`) once (a consumed marker in the cache until
+  it expires) and sets a ten-minute `__Host-hobo_ci_bootstrap` cookie that
+  stands for `HOBO_CI_ONBOARDING_CONTROL_TOKEN` on the same-origin owner
+  routes and the OAuth start. Every other `/v1/app-bootstrap/` route answers
+  410: `hobo ci` creates the App. `hobo ci` rotates the invitation after use.
+- **Sandbox meters.** The proxy VM counts what it reserved and the quota calls
+  it made, and answers `GET /internal/meter` to the lease's derived token.
+  The Sandbox host reads it before stopping the VM and keeps it in the cache
+  (`sbx:proxy-meter:<leaseId>`); settlement charges the larger of it and the
+  relay's own counters, and uses it alone after a cache loss, so a rebuilt
+  Sandbox lease settles (its runner, GitHub's `runner_id`, is deleted first).
+  A VM that no longer answers leaves the relay's counters; with neither, the
+  lease stays `uncertain` until its record lapses.
+
+### Offers as provider manifests
+
+Each cache-fleet backend and lifecycle driver is a provider manifest in
+[`offers/`](offers/) (`hobo.provider-manifest/v1`, ADR-0178): Upstash Redis
+(free and pay-as-you-go), Aiven for Valkey free, Turso free, self-hosted
+Valkey, Vercel Blob (prices **unverified**), Vercel Queues (price
+**unverified**: an external charge model, so the catalog reports it unrated,
+never free) and Vercel Workflows on the managed World. Cache offers declare
+`kv.ephemeral-state/v1` (`KV_EPHEMERAL_STATE_PROFILE` in
+`@hobo/kv-redis-compatible`), drivers `lifecycle.lease-driver/v1`
+(`LIFECYCLE_LEASE_DRIVER_PROFILE`, `src/lifecycle-driver.ts`).
+`scripts/generate-offers.mts` lowers them with `@hobo/provider-manifest` into
+`@hobo/pricing` catalogs and writes `src/_generated-assets/relay-offers.ts`
+(`pnpm test` fails when it is stale): the catalogs, each cache backend's
+default offer derived from its rate card, and the drivers' offers. What a
+catalog cannot say is in the generator's binding table, with its reason: that
+a free plan is blocked, not billed, when spent, and when a driver may be
+chosen. `defaultCacheOffers` reads those defaults;
+`HOBO_CI_CACHE_OFFERS_JSON` still overrides them, and
+`HOBO_CI_CACHE_MONTHLY_COMMANDS` Upstash's allowance. At start-up one
+`hobo_ci_offer_selection` line logs the policy decision: the driver chosen
+(Vercel Queues), why each other driver was not (Workflows: not built, and not
+pinnable before 2026-11-18), and each cache backend's rate card. The
+catalogs are registered by the phase 6 deploy (`hobo registry add`), not by
+the relay.
 
 ## Hosted relay
 
