@@ -172,8 +172,7 @@ export function createAdmissionOrder(
 				// A superseded main push still holds cancelled jobs in GitHub's queue until the
 				// workflow winds down; admit the newest push first so slots serve live trunk.
 				if (a.key.event === "push" && b.key.event === "push") {
-					const pushStart = (ms: number) =>
-						Number.isFinite(ms) ? ms : 0;
+					const pushStart = (ms: number) => (Number.isFinite(ms) ? ms : 0);
 					if (pushStart(a.key.startedAtMs) !== pushStart(b.key.startedAtMs))
 						return pushStart(b.key.startedAtMs) - pushStart(a.key.startedAtMs);
 				} else if (a.key.startedAtMs !== b.key.startedAtMs)
