@@ -209,4 +209,16 @@ describe("hobo-checkout mirror and partial clone contract", () => {
 		expect(probe).toBeLessThan(checkout);
 		expect(action).toContain('echo "GIT_CONFIG_SYSTEM=$cfg" >> "$GITHUB_ENV"');
 	});
+
+	it("leaves the box mirror after the first failed attempt", () => {
+		// Three attempts through a mirror that cannot serve the fetch are one
+		// failure three times (finding 98). The later attempts go to GitHub.
+		const drop = action.indexOf(
+			"Disable box git mirror after transport errors",
+		);
+		const second = action.indexOf("Sparse checkout (attempt 2)");
+		expect(drop).toBeGreaterThan(action.indexOf("Sparse checkout (attempt 1)"));
+		expect(drop).toBeLessThan(second);
+		expect(action).toContain('echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"');
+	});
 });
