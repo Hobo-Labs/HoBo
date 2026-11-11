@@ -1389,8 +1389,9 @@ jobs:
     needs: route
     if: github.event_name == 'pull_request'
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image.
-    timeout-minutes: 10
+    # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image,
+    # or builds it (build.sh has a 600 s budget) when GHCR has none for this key.
+    timeout-minutes: 20
     # packages: read lets an ARC pod pull the worker image from GHCR.
     permissions:
       contents: read
@@ -1449,6 +1450,13 @@ jobs:
               echo "${image} is not on this runner; materializing it from the host cache or GHCR"
               GITHUB_TOKEN="$pull_token" node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only || true
             fi
+            # GHCR has no image for this content key when the PR changes the runner
+            # image's inputs, and a fork PR may not pull at all. With no sudo for a
+            # namespace either (an ARC pod), build the image here instead of failing.
+            if ! docker image inspect "$image" >/dev/null 2>&1 && ! command -v sudo >/dev/null 2>&1; then
+              echo "${image} could not be pulled; building it on this runner"
+              GITHUB_TOKEN="$pull_token" node --no-warnings scripts/ci/ensure-ci-worker-image.mts || true
+            fi
             if docker image inspect "$image" >/dev/null 2>&1; then
               tar -c --exclude=./.git . | docker run -i --rm --network=none \
                 "$image" \
@@ -1462,7 +1470,7 @@ jobs:
             fi
           fi
           if ! command -v sudo >/dev/null 2>&1; then
-            echo "::error title=Cold dev loop cannot isolate the network::${image} is not on this ${RUNNER_ENVIRONMENT:-unknown} runner, could not be pulled from GHCR, and there is no sudo for an unshare --net namespace."
+            echo "::error title=Cold dev loop cannot isolate the network::${image} is not on this ${RUNNER_ENVIRONMENT:-unknown} runner, could not be pulled from GHCR or built here, and there is no sudo for an unshare --net namespace."
             exit 1
           fi
           # The toolchain is already on PATH: the same commands on a copy of the tree, in a

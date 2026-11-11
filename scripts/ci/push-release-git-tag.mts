@@ -1,11 +1,27 @@
 #!/usr/bin/env node
-/** Create a signed release tag at a commit when absent (never moves/deletes tags). */
+/**
+ * Create a signed release tag at a commit when absent (never moves/deletes tags).
+ *
+ * The tag object is written and signed here, not by `git tag -s`: the release
+ * runners have no OpenSSH client for git to sign with (the runner image
+ * installs packages without recommends), and no git identity either. The
+ * signature is the same sshsig git writes for `gpg.format = ssh`, so
+ * `git verify-tag` with an allowed_signers file checks it as usual.
+ */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseReleaseRef } from "../lib/release-version.mts";
+import {
+	type Ed25519Key,
+	parseEd25519PublicLine,
+	parseOpenSshEd25519PrivateKey,
+	sshSign,
+} from "../lib/ssh-sig.mts";
+
+/** Who the release tag names as its tagger. */
+export const RELEASE_TAGGER =
+	"github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -46,29 +62,62 @@ function tagExists(tag: string): boolean {
 	return result.status === 0;
 }
 
-function configureSshTagSigning(env: NodeJS.ProcessEnv): void {
+/** The release signing key, checked against the published signing key when one is given. */
+export function releaseSigningKey(env: NodeJS.ProcessEnv): Ed25519Key {
 	const keyMaterial = env.HOBO_RELEASE_TAG_SSH_PRIVATE_KEY?.trim();
-	const signingKey = env.HOBO_RELEASE_TAG_SSH_SIGNING_KEY?.trim();
-	if (!keyMaterial || !signingKey) {
+	if (!keyMaterial) {
 		throw new Error(
-			"HOBO_RELEASE_TAG_SSH_PRIVATE_KEY and HOBO_RELEASE_TAG_SSH_SIGNING_KEY are required",
+			"HOBO_RELEASE_TAG_SSH_PRIVATE_KEY is required (an unencrypted OpenSSH ed25519 private key)",
 		);
 	}
-	const dir = mkdtempSync(join(tmpdir(), "hobo-release-tag-sign-"));
-	const keyPath = join(dir, "id_ed25519");
-	writeFileSync(keyPath, `${keyMaterial}\n`, { mode: 0o600 });
-	spawnSync("git", ["config", "gpg.format", "ssh"], { cwd: root });
-	spawnSync("git", ["config", "user.signingkey", signingKey], { cwd: root });
-	spawnSync("git", ["config", "tag.gpgSign", "true"], { cwd: root });
-	spawnSync(
-		"git",
-		[
-			"config",
-			"core.sshCommand",
-			`ssh -i ${keyPath} -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`,
-		],
-		{ cwd: root },
-	);
+	const key = parseOpenSshEd25519PrivateKey(keyMaterial);
+	const published = env.HOBO_RELEASE_TAG_SSH_SIGNING_KEY?.trim();
+	if (published?.includes("ssh-ed25519")) {
+		const expected = parseEd25519PublicLine(published);
+		if (!expected.equals(key.publicKey)) {
+			throw new Error(
+				"HOBO_RELEASE_TAG_SSH_SIGNING_KEY is not the public half of HOBO_RELEASE_TAG_SSH_PRIVATE_KEY",
+			);
+		}
+	}
+	return key;
+}
+
+/** The unsigned body of an annotated tag object (what the signature covers). */
+export function tagPayload(options: {
+	readonly commit: string;
+	readonly tag: string;
+	readonly tagger: string;
+	readonly epochSeconds: number;
+	readonly message: string;
+}): string {
+	return [
+		`object ${options.commit}`,
+		"type commit",
+		`tag ${options.tag}`,
+		`tagger ${options.tagger} ${options.epochSeconds} +0000`,
+		"",
+		`${options.message.replace(/\n*$/u, "")}\n`,
+	].join("\n");
+}
+
+/** A signed tag object: the payload with its sshsig appended, as git writes it. */
+export function signedTagObject(payload: string, key: Ed25519Key): string {
+	return `${payload}${sshSign(Buffer.from(payload, "utf8"), key)}`;
+}
+
+function writeTag(tag: string, object: string): string {
+	const made = spawnSync("git", ["mktag"], {
+		cwd: root,
+		input: object,
+		encoding: "utf8",
+	});
+	if (made.status !== 0) {
+		throw new Error(`git mktag failed: ${made.stderr || made.stdout}`);
+	}
+	const sha = (made.stdout ?? "").trim();
+	runGit(["update-ref", `refs/tags/${tag}`, sha, ""]);
+	return sha;
 }
 
 function pushTagOverHttps(tag: string, env: NodeJS.ProcessEnv): void {
@@ -104,7 +153,8 @@ function main(): void {
 	}
 	const commitSha = runGit(["rev-parse", commit]).trim();
 	if (tagExists(tag)) {
-		const existing = runGit(["rev-parse", tag]).trim();
+		// An annotated tag resolves to its tag object; the commit is what has to match.
+		const existing = runGit(["rev-parse", `${tag}^{commit}`]).trim();
 		if (existing !== commitSha) {
 			throw new Error(
 				`tag ${tag} already points at ${existing}; refusing to move to ${commitSha}`,
@@ -117,15 +167,15 @@ function main(): void {
 		console.log(`would create signed tag ${tag} at ${commitSha}`);
 		return;
 	}
-	configureSshTagSigning(process.env);
-	const message = `HoBo release ${tag}`;
-	const sign = spawnSync("git", ["tag", "-s", tag, "-m", message, commitSha], {
-		cwd: root,
-		encoding: "utf8",
+	const key = releaseSigningKey(process.env);
+	const payload = tagPayload({
+		commit: commitSha,
+		tag,
+		tagger: process.env.HOBO_RELEASE_TAGGER?.trim() || RELEASE_TAGGER,
+		epochSeconds: Math.floor(Date.now() / 1000),
+		message: `HoBo release ${tag}`,
 	});
-	if (sign.status !== 0) {
-		throw new Error(`git tag failed: ${sign.stderr || sign.stdout}`);
-	}
+	writeTag(tag, signedTagObject(payload, key));
 	pushTagOverHttps(tag, process.env);
 	console.log(`pushed signed tag ${tag} -> ${commitSha} (HTTPS)`);
 }
