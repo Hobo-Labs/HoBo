@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import {
 	copyFileSync,
 	mkdirSync,
@@ -23,6 +23,7 @@ import {
 	publicKeyText,
 	signStatement,
 } from "../ci/attestation.mts";
+import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
 import {
 	type ApiReader,
 	baseShaOf,
@@ -32,6 +33,11 @@ import {
 	verifyFromApi,
 } from "../ci/verify-attestation.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
+
+// Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These
+// tests run from pre-commit too, and every git command they start (their own
+// or a script's) must act on its own repository, never the one being committed.
+for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
 
 // The script reads the real clock, so the trusted entry expires a day from it.
 const NOW = Date.now();

@@ -442,7 +442,9 @@ executes the same commands as the workflow jobs, read from
 `scripts/ci/attested-jobs.json`; a test fails when that file and a workflow
 drift apart. When `main` changes a covered job, that test fails on a branch
 rebased onto it until the file is updated, so a local run never signs for an
-older version of a job.
+older version of a job. It has caught two such changes already: the stray-package
+prune added to the S0 gate set, and the DCO check that now skips merge
+commits.
 
 What this does not give you:
 

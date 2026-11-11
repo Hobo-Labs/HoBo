@@ -11,6 +11,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+
+// Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These
+// tests run from pre-commit too, and every git command they start (their own
+// or a script's) must act on its own repository, never the one being committed.
+for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
 
 const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
 const cacheAction = readFileSync(
@@ -594,6 +600,8 @@ describe("cold dev loop gate", () => {
 		const calls = run("github-hosted", true);
 		assert.match(calls, /^sudo --preserve-env unshare --net -- bash -c /mu);
 		assert.doesNotMatch(calls, /^docker run /mu);
+	});
+});
 
 describe("release required gate", () => {
 	const release = readFileSync(".github/workflows/release-hobo.yml", "utf8");
