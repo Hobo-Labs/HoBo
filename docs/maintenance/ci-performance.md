@@ -222,6 +222,14 @@ runs the same pinned image), stalls 1 s less in the bootstrap shutdown case, sta
 turbo, removes the fake docker directories it made, and declares `@hobo/stations`, so a change there
 now selects the two ci-gh-actions tests that load it.
 
+A later merge (#1792) brought the pnpm case back, and with it the pre-commit timeouts: `pnpm --filter
+@hobo/ci-gh-actions project inspect` costs about 1.1 CPU-seconds for two cold node starts, and with
+the hook's turbo run sharing the CPUs it reached the 10 s default (10.1 s and 10.2 s at a load of ~30
+on 4 CPUs) and left its pnpm process running in the shared worker. It is the two cases above again.
+The built CLI's start is a third of that CPU (3-4 s at that load, 9 s once at a load of 44), so its
+case's budget now covers the child's own 30 s bound instead of the 10 s default, and the case's
+`signal` stops the child if the case is cancelled anyway.
+
 Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `TURBO_HASH` set
 as under turbo, TMPDIR on disk) on a shared host: 145.6 s wall and 73.3 s CPU before (load 28.0 →
 34.1), 44.9 s wall and 28.2 s CPU after (load 33.2 → 32.4).
@@ -653,6 +661,14 @@ passes over real projects), not sleeping, spawning or waiting on a network. What
   file needs is still reported), which gives back much of that saving, and a project with
   `skipLibCheck` gains about nothing from it because the compiler skips declarations anyway. `typescript-app-build`'s fixture uses real
   `@types/node` (with `skipLibCheck`) only in the case that packages and runs the app.
+- **Generated declarations checked on their own.** `codegen-app-compilation`'s three compile cases
+  used to type-check all ~320 files of each program (TypeScript's libs, `@types/node`, the built
+  `@hobo/core` and `@hobo/runtime` declarations), 2-5 s a case on a quiet machine and past the 10 s
+  default with the pre-commit hook's turbo run sharing the CPUs. They now ask for the generated
+  files' diagnostics only, from programs that share the dependencies' parsed source files, and a
+  `beforeAll` pays the once-per-worker costs (the training stack's import, the first parse): 0.3-2 s
+  a case and 1.5-6 s for the `beforeAll` under 8 busy loops on 4 CPUs, which timed out the first
+  case (and at times all three, at 11-20 s) before.
 - **Cheap refusals first, on authoritative inputs only.** `hobo build` refuses an explicit empty
   `services` list, or an explicit runtime for a Node app whose imprint's recorded inputs all still
   match, before its freshness gate regenerates the project. A project codegen has not generated (just
