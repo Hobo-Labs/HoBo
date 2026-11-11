@@ -217,6 +217,14 @@ runs the same pinned image), stalls 1 s less in the bootstrap shutdown case, sta
 turbo, removes the fake docker directories it made, and declares `@hobo/stations`, so a change there
 now selects the two ci-gh-actions tests that load it.
 
+A later merge (#1792) brought the pnpm case back, and with it the pre-commit timeouts: `pnpm --filter
+@hobo/ci-gh-actions project inspect` costs about 1.1 CPU-seconds for two cold node starts, and with
+the hook's turbo run sharing the CPUs it reached the 10 s default (10.1 s and 10.2 s at a load of ~30
+on 4 CPUs) and left its pnpm process running in the shared worker. It is the two cases above again.
+The built CLI's start is a third of that CPU (3-4 s at that load, 9 s once at a load of 44), so its
+case's budget now covers the child's own 30 s bound instead of the 10 s default, and the case's
+`signal` stops the child if the case is cancelled anyway.
+
 Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `TURBO_HASH` set
 as under turbo, TMPDIR on disk) on a shared host: 145.6 s wall and 73.3 s CPU before (load 28.0 →
 34.1), 44.9 s wall and 28.2 s CPU after (load 33.2 → 32.4).
