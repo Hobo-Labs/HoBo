@@ -5,11 +5,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import {
-	affectedLanes,
-	cliRootFileReader,
-	mainGateScope,
-} from "./affected-lanes.mts";
+import { cliRootFileReader, mainGateScope } from "./affected-lanes.mts";
 import {
 	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 	planDependentTests,
@@ -76,14 +72,11 @@ async function main(): Promise<void> {
 		}).stdout;
 		const changedPaths = changed.split("\n");
 		const readRootFile = cliRootFileReader(base);
-		scope = mainGateScope(changedPaths, undefined, readRootFile).mode;
-		const lanes = affectedLanes(
-			changedPaths,
-			undefined,
-			undefined,
-			readRootFile,
-		);
-		if (lanes.mode !== "all") tests = "affected";
+		const gateScope = mainGateScope(changedPaths, undefined, readRootFile);
+		scope = gateScope.mode;
+		// Repo-wide workspace tests only when root config or the lockfile widens
+		// the main gate; every other push runs turbo against last-green main.
+		tests = gateScope.mode === "repo-wide" ? "all" : "affected";
 	}
 	const repo = readRepo();
 	const input =
