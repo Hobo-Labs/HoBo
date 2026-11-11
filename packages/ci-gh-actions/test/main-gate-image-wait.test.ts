@@ -10,6 +10,7 @@ const workflow = parse(
 );
 const imageJob = workflow.jobs["ci-runner-image"];
 const mainGate = workflow.jobs["main-gate"];
+const mainFinish = workflow.jobs["main_gate_finish"];
 const imageInputPrefixes = [
 	"mise.toml",
 	"mise.lock",
@@ -65,11 +66,11 @@ describe("Main full gate image dependency", () => {
 		}
 	});
 
-	it("runs full-history secret scans in main-gate, never the image job", () => {
+	it("runs full-history secret scans in main_gate_finish, never the image job", () => {
 		const mainNames = mainGate.steps.map((step) => step.name);
+		const finishNames = mainFinish.steps.map((step) => step.name);
 		const imageNames = imageJob.steps.map((step) => step.name);
 		const checkout = "Checkout (sparse S0, full history)";
-		const start = "Start secret scan (full history, background)";
 		const wait = "Secret scan (full history)";
 		const checkoutIndex = mainGate.steps.findIndex(
 			(step) =>
@@ -81,19 +82,13 @@ describe("Main full gate image dependency", () => {
 		);
 		expect(checkoutIndex).toBeGreaterThanOrEqual(0);
 		expect(preflightIndex).toBe(checkoutIndex + 1);
-		expect(mainNames).toContain(start);
-		expect(mainNames).toContain(wait);
-		expect(mainNames.indexOf(start)).toBe(preflightIndex + 1);
-		expect(mainGate.steps[preflightIndex + 1].run).toContain(
-			"gitleaks-main-scan.mts --background",
-		);
-		expect(imageNames).not.toContain(start);
+		expect(mainNames).not.toContain(wait);
+		expect(mainNames).not.toContain("Workspace tests");
+		expect(finishNames).toContain(wait);
+		const waitStep = mainFinish.steps.find((step) => step.name === wait);
+		expect(waitStep?.run).toContain("gitleaks-main-scan.mts --background");
+		expect(waitStep?.run).toContain("gitleaks-main-scan.mts --wait");
 		expect(imageNames).not.toContain(wait);
-
-		const waitIndex = mainNames.indexOf(wait);
-		expect(waitIndex).toBe(mainNames.indexOf("Workspace tests") + 1);
-		expect(waitIndex).toBe(mainNames.indexOf("Prune Turbo cache") - 1);
-		expect(mainGate.steps[waitIndex].if).toBe("always()");
 		expect(imageJob.steps[0].with["fetch-depth"]).toBe(2);
 	});
 
