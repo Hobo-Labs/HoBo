@@ -29,7 +29,6 @@ import {
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
-	createHeadroomTrunkOverflow,
 	createHostedRelayRuntime,
 	createHostHealthMonitor,
 	createIsolatedContainerController,
@@ -832,15 +831,15 @@ try {
 	const fleetCapacity = publishFleetRoutes
 		? createFleetCapacityPublisher({ github, log })
 		: undefined;
-	const trunkHeadroomOverflowMs = Number(
-		process.env.HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS ?? "120000",
+	const headroomFleetDeferMs = Number(
+		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
 	);
 	if (
-		!Number.isFinite(trunkHeadroomOverflowMs) ||
-		trunkHeadroomOverflowMs < 0 ||
-		!Number.isInteger(trunkHeadroomOverflowMs)
+		!Number.isFinite(headroomFleetDeferMs) ||
+		headroomFleetDeferMs < 1_000 ||
+		!Number.isInteger(headroomFleetDeferMs)
 	)
-		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS");
+		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS");
 	const unlaunchedReserveMs = Number(
 		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
 	);
@@ -869,15 +868,6 @@ try {
 		!Number.isInteger(unlaunchedReReserveCooldownMs)
 	)
 		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
-	const headroomTrunkOverflow = createHeadroomTrunkOverflow({
-		github,
-		memoryAdmission,
-		availableMemoryMb: readAvailableMemoryMb,
-		volatilityMb: capacityVolatilityMb,
-		overflowAfterMs: trunkHeadroomOverflowMs,
-		now: () => Date.now(),
-		log,
-	});
 	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
@@ -898,7 +888,7 @@ try {
 		storageJobReserve,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
-		headroomTrunkOverflow,
+		headroomFleetDeferMs,
 		unlaunchedReservationRelease: {
 			boundMs: unlaunchedReserveMs,
 			backlogMinAgeMs: unlaunchedBacklogMinAgeMs,

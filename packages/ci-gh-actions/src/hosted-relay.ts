@@ -71,10 +71,18 @@ import {
 } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import {
+	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
+	type TrunkWaitCache,
+	type TrunkWaitReason,
+	trunkWaitKey,
+} from "./trunk-wait.js";
+import {
 	DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS,
 	DEFAULT_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS,
 	DEFAULT_UNLAUNCHED_RESERVE_MS,
+	pickTrunkHeadroomFleetReleases,
 	pickUnlaunchedReservationsToRelease,
+	rememberTrunkWait,
 	unlaunchedJobCoopKey,
 	unlaunchedJobCoopKeyFromPending,
 } from "./unlaunched-reservation-release.js";
@@ -181,7 +189,7 @@ const RunWebhook = z.object({
 });
 
 export type ServedRunnerLabelCache = Map<string, RunnerLabel | undefined>;
-export type TrunkWaitCache = Map<string, { sinceMs: number; logged: boolean }>;
+export type { TrunkWaitCache } from "./trunk-wait.js";
 
 /** Active leases whose runners GitHub can assign to shared-label jobs. */
 export async function generalLeaseIdsFor(
@@ -287,6 +295,8 @@ export class HostedRelay {
 			 */
 			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
+			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
+			headroomFleetDeferMs?: number;
 			fleetCapacity?: Readonly<{
 				publish: FleetCapacityPublisher["publish"];
 				snapshot: () => Promise<
@@ -523,6 +533,15 @@ export class HostedRelay {
 		return releaseCount;
 	}
 
+	private headroomFleetDeferMs(): number {
+		const configured = this.options.headroomFleetDeferMs;
+		if (configured === undefined) return DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS;
+		if (!Number.isInteger(configured) || configured < 1_000) {
+			throw new Error("invalid headroom fleet defer ms");
+		}
+		return configured;
+	}
+
 	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
 	private async releaseBlockedUnlaunchedReservations(
 		pendingDemand: number,
@@ -588,6 +607,61 @@ export class HostedRelay {
 					reason: release.reason,
 					ageMs: nowMs - Date.parse(lease.createdAt),
 					pendingDemand,
+					nonLocalFreeSlots: nonLocalFreeSlots ?? -1,
+					releaseCount,
+				}),
+			);
+		}
+	}
+
+	private async releaseTrunkHeadroomFleetReservations(
+		active: readonly Lease[],
+		nonLocalFreeSlots: number | undefined,
+	): Promise<void> {
+		const deferMs = this.headroomFleetDeferMs();
+		const nowMs = Date.parse(this.now());
+		const releases = pickTrunkHeadroomFleetReleases(
+			this.trunkWaits,
+			active,
+			nowMs,
+			nonLocalFreeSlots === undefined
+				? { deferMs }
+				: { deferMs, nonLocalFreeSlots },
+		);
+		for (const release of releases) {
+			const lease = active.find((entry) => entry.id === release.leaseId);
+			if (!lease) continue;
+			if (
+				this.reReserveCooldownBlocks(
+					{
+						installationId: lease.installationId,
+						repository: lease.repository,
+						id: lease.jobId,
+						runAttempt: lease.runAttempt,
+					},
+					nonLocalFreeSlots,
+				)
+			)
+				continue;
+			const releaseCount = this.recordUnlaunchedRelease(
+				lease,
+				nonLocalFreeSlots,
+			);
+			await this.options.store.cancelAndRequeue(
+				lease.id,
+				this.queuedDemand(lease),
+				this.now(),
+			);
+			this.trunkWaits.delete(release.waitKey);
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_trunk_headroom_fleet_defer",
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+					leaseId: lease.id,
+					reason: release.reason,
+					waitedMs: release.waitedMs,
 					nonLocalFreeSlots: nonLocalFreeSlots ?? -1,
 					releaseCount,
 				}),
@@ -1240,23 +1314,13 @@ export class HostedRelay {
 		);
 		return true;
 	}
-	private trunkWaitKey(job: Pick<Job, "repository" | "id" | "runAttempt">) {
-		return `${job.repository}:${job.id}:${job.runAttempt}`;
-	}
-	private reportTrunkWait(
-		job: Job,
-		reason: "lease-capacity" | "storage" | "headroom" | "fleet-capacity",
-	): string {
-		const key = this.trunkWaitKey(job);
+	private reportTrunkWait(job: Job, reason: TrunkWaitReason): string {
+		const key = trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
-		const wait = this.trunkWaits.get(key) ?? {
-			sinceMs: nowMs,
-			logged: false,
-		};
-		this.trunkWaits.set(key, wait);
+		const wait = rememberTrunkWait(this.trunkWaits, job, reason, nowMs);
 		const waitedMs = nowMs - wait.sinceMs;
 		if (waitedMs > 10_000 && !wait.logged) {
-			wait.logged = true;
+			this.trunkWaits.set(key, { ...wait, logged: true });
 			console.error(
 				JSON.stringify({
 					event: "hobo_ci_trunk_wait",
@@ -1408,15 +1472,26 @@ export class HostedRelay {
 				)
 			)
 				continue;
-			if (
+			const nowMs = Date.parse(this.now());
+			const priorWait = this.trunkWaits.get(trunkWaitKey(job));
+			const headroomFleetDeferMs = this.headroomFleetDeferMs();
+			const fleetDeferShard =
 				trunk &&
-				this.options.trunkSlots !== undefined &&
-				this.options.trunkSlots > 0 &&
 				nonLocalFreeSlots !== undefined &&
 				nonLocalFreeSlots > 0 &&
-				localTrunkReserved >= this.options.trunkSlots &&
-				isMainWorkspaceShardJob(job.name)
-			) {
+				isMainWorkspaceShardJob(job.name) &&
+				(this.options.trunkSlots === undefined ||
+					this.options.trunkSlots > 0) &&
+				((this.options.trunkSlots !== undefined &&
+					this.options.trunkSlots > 0 &&
+					localTrunkReserved >= this.options.trunkSlots) ||
+					(priorWait !== undefined &&
+						priorWait.reason === "headroom" &&
+						nowMs - priorWait.sinceMs >= headroomFleetDeferMs) ||
+					(priorWait !== undefined &&
+						priorWait.reason === "storage" &&
+						nowMs - priorWait.sinceMs >= headroomFleetDeferMs));
+			if (fleetDeferShard) {
 				waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
 				continue;
 			}
@@ -1466,7 +1541,12 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
-						if (trunk && decision.reason === "host-available")
+						if (
+							trunk &&
+							(decision.reason === "host-available" ||
+								decision.reason === "host-pressure" ||
+								decision.reason === "memory-budget")
+						)
 							waitingTrunk.add(this.reportTrunkWait(job, "headroom"));
 						continue;
 					}
@@ -1546,16 +1626,29 @@ export class HostedRelay {
 			pending.length,
 			nonLocalFreeSlots,
 		);
+		const postReleaseActive = await this.options.store.activeLeases();
+		await this.releaseTrunkHeadroomFleetReservations(
+			postReleaseActive,
+			nonLocalFreeSlots,
+		);
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
 				(lease) => lease.state === "reserved",
 			),
-			(lease) => ({
-				installationId: lease.installationId,
-				repository: lease.repository,
-				runId: lease.originalRunId,
-				jobId: lease.jobId,
-			}),
+			(lease) => {
+				const label = this.servedRunnerLabels.get(
+					`${lease.repository}:${lease.jobId}`,
+				);
+				const ref = {
+					installationId: lease.installationId,
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+					jobName: lease.jobName,
+				};
+				if (label) return { ...ref, labels: [label] as const };
+				return ref;
+			},
 		);
 		for (const candidate of reserved) {
 			try {
@@ -1727,15 +1820,6 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
-		const overflow = this.options.headroomTrunkOverflow;
-		if (overflow) {
-			await overflow.overflowTrunkJobsWaitingForHeadroom(
-				this.options.store,
-				this.trunkWaits,
-				reservationRevision,
-				this.now(),
-			);
-		}
 		await this.publishFleetRoutes();
 		await this.publishFleetCapacity();
 		return pending.length;

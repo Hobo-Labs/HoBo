@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	fleetCanAbsorbUnlaunchedRelease,
 	isUnlaunchedReservation,
+	pickTrunkHeadroomFleetReleases,
 	pickUnlaunchedReservationsToRelease,
 	unlaunchedReleaseReason,
 } from "../src/unlaunched-reservation-release.js";
@@ -105,5 +106,34 @@ describe("unlaunched reservation release", () => {
 		]);
 		for (const entry of releases)
 			expect(entry.reason).toBe("admission-backlog");
+	});
+
+	it("releases trunk waits blocked on headroom after the fleet defer window", () => {
+		const nowMs = Date.parse("2026-11-11T12:02:00.000Z");
+		const waits = new Map([
+			[
+				"Org/Repo:42:1",
+				{
+					sinceMs: nowMs - 50_000,
+					logged: true,
+					reason: "headroom" as const,
+				},
+			],
+		]);
+		const releases = pickTrunkHeadroomFleetReleases(
+			waits,
+			[{ ...baseLease, id: "lease-x", jobId: 42 }],
+			nowMs,
+			{ deferMs: 45_000, nonLocalFreeSlots: 2 },
+		);
+		expect(releases).toEqual([
+			{
+				leaseId: "lease-x",
+				jobId: 42,
+				reason: "trunk-headroom-fleet-defer",
+				waitKey: "Org/Repo:42:1",
+				waitedMs: 50_000,
+			},
+		]);
 	});
 });
