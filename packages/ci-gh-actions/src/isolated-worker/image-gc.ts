@@ -38,6 +38,22 @@ export function selectWorkerImageTagsForDeletion(
 		.map((image) => image.tag);
 }
 
+/** Map `hobo-ci-deps:local` keep hint to a keyed tag when the label is present. */
+export function depsGcKeepTag(
+	requested: string | undefined,
+	localDepsKey: string | undefined,
+): string | undefined {
+	if (requested === undefined) return undefined;
+	if (
+		requested.startsWith("hobo-ci-deps:") &&
+		requested !== "hobo-ci-deps:local"
+	)
+		return requested;
+	if (requested === "hobo-ci-deps:local" && localDepsKey)
+		return `hobo-ci-deps:${localDepsKey}`;
+	return undefined;
+}
+
 export function selectWorkerImagesForDeletion(
 	images: readonly WorkerImage[],
 	currentDepsTag?: string,

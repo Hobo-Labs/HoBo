@@ -65,7 +65,15 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
   parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
-  slowest shard when slots allow) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
+  slowest shard when slots allow; weights refreshed from turbo build+test seconds in
+  [run 42951579615](https://github.com/Hobo-Labs/HoBo/actions/runs/42951579615) so
+  `packages/cli`, `packages/hobo`, and `packages/ci-gh-actions` land on different shards).
+  While `main-gate` runs S0, unless the push widens the gate (lockfile or root config), workspace
+  shards run `dependent-tests` against the last-green main SHA with `turbo run test --affected`,
+  `TURBO_SCM_BASE`, and the box-local shared `hobo-turbo-cache` directory (`TURBO_CACHE=local:rw`
+  when no remote token). `ci-runner-preflight` sizes `HOBO_TURBO_CONCURRENCY` from cgroup headroom
+  and learned peaks for `Main workspace test shard *` (4096 MiB standard floor).
+  `main_workspace_tests` starts after the plan job only,
   links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
@@ -363,6 +371,10 @@ registry with `mise oci push --image-dir` and has the daemon `docker pull` it (t
 store cannot `docker load` an OCI layout), and retags
 `hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
 depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
+The optional GHCR push step calls `scripts/ci/push-ci-runner-image-ghcr.mts`, which retags
+`hobo-ci-worker:local`, pulls, or rebuilds on the runner executing the push and emits a notice
+instead of failing when the version tag is absent on that box. The script and its tests stay
+Biome-formatted (`pnpm run lint:code`).
 
 ## Which runner a run uses
 
@@ -474,3 +486,8 @@ CPU (545 tests, load 16.5 → 12.5); after these changes 316 s wall, 303 s CPU (
 8.4). Both runs fail the same 2 tests and one file, all because of this host: no `cue` v0.14.0 on
 `PATH` (`codegen-schema-contract`), and a `/tmp/.hobo` marker above `os.tmpdir()` that `ci.test.ts` and
 `shell.test.ts` read as a project root.
+
+- **Worker image on PR deps rebuilds.** `ensure-ci-worker-image.mts` may pull `ghcr.io/.../hobo-ci-worker` on same-repo pull requests (not forks) so deps layer builds avoid a host `build.sh` when the runner lacks mise.
+- **Release sparse cones.** `scripts/test/release-sparse-cone.test.ts` pins the exports in
+  `scripts/lib/release-sparse-cone.mts` (for example `hoboReleaseSparseCones` and
+  `filePathsRequiredByReleaseOciContractTests`) so release workflows do not drift from the cone list.

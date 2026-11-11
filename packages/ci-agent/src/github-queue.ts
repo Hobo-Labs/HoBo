@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { QueuePublisher, QueueSource } from "./agent.js";
+import type { CommitChecks, QueuePublisher, QueueSource } from "./agent.js";
 import { observeQueue } from "./planner.js";
 
 type Json = z.infer<ReturnType<typeof z.json>>;
@@ -75,7 +75,7 @@ query HoboAgentQueue($owner: String!, $name: String!, $branch: String!, $ref: St
     mergeQueue(branch: $branch) {
       entries(first: 50) { nodes { position enqueuedAt pullRequest { ...queued } } }
     }
-    pullRequests(states: OPEN, labels: [$label], baseRefName: $branch, first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
+    pullRequests(states: OPEN, labels: [$label], first: 50, orderBy: { field: CREATED_AT, direction: ASC }) {
       nodes { ...queued }
     }
   }
@@ -86,19 +86,189 @@ query HoboAgentBaseProtection($owner: String!, $name: String!, $ref: String!) {
   repository(owner: $owner, name: $name) {
     ref(qualifiedName: $ref) {
       branchProtectionRule { requiresStatusChecks requiredStatusCheckContexts }
+      rules(first: 50) {
+        nodes {
+          type
+          parameters {
+            ... on RequiredStatusChecksParameters { requiredStatusChecks { context } }
+          }
+        }
+      }
     }
   }
 }`;
 const BaseProtection = z.object({
 	repository: z.object({
-		ref: z.object({
-			branchProtectionRule: z.object({
-				requiresStatusChecks: z.literal(true),
-				requiredStatusCheckContexts: z.array(z.string()).min(1),
-			}),
-		}),
+		ref: z
+			.object({
+				branchProtectionRule: z
+					.object({
+						requiresStatusChecks: z.boolean(),
+						requiredStatusCheckContexts: z.array(z.string()).nullable(),
+					})
+					.nullable(),
+				rules: z
+					.object({
+						nodes: z.array(
+							z.object({
+								type: z.string(),
+								parameters: z
+									.object({
+										requiredStatusChecks: z
+											.array(z.object({ context: z.string() }))
+											.optional(),
+									})
+									.nullable(),
+							}),
+						),
+					})
+					.nullable()
+					.optional(),
+			})
+			.nullable(),
 	}),
 });
+
+// public-contract: GraphQL operation pinned by contracts/github-merge-queue.pact.json.
+export const COMMIT_CHECKS_QUERY = `
+query HoboAgentCommitChecks($owner: String!, $name: String!, $oid: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit {
+        statusCheckRollup {
+          state
+          contexts(first: 50) {
+            pageInfo { hasNextPage }
+            nodes {
+              __typename
+              ... on CheckRun {
+                name conclusion title summary
+                annotations(first: 10) { nodes { path message location { start { line } } } }
+              }
+              ... on StatusContext { context state description }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+const CheckContext = z.discriminatedUnion("__typename", [
+	z.object({
+		__typename: z.literal("CheckRun"),
+		name: z.string(),
+		conclusion: z.string().nullable(),
+		title: z.string().nullable(),
+		summary: z.string().nullable(),
+		annotations: z
+			.object({
+				nodes: z.array(
+					z.object({
+						path: z.string(),
+						message: z.string(),
+						location: z.object({ start: z.object({ line: z.number() }) }),
+					}),
+				),
+			})
+			.nullable(),
+	}),
+	z.object({
+		__typename: z.literal("StatusContext"),
+		context: z.string(),
+		state: z.string(),
+		description: z.string().nullable(),
+	}),
+]);
+const CommitRollup = z.object({
+	repository: z.object({
+		object: z
+			.object({
+				statusCheckRollup: z
+					.object({
+						state: z.string(),
+						contexts: z.object({
+							pageInfo: z.object({ hasNextPage: z.boolean() }),
+							nodes: z.array(CheckContext),
+						}),
+					})
+					.nullable()
+					.optional(),
+			})
+			.nullable(),
+	}),
+});
+const FAILED_CONCLUSIONS = new Set(["FAILURE", "TIMED_OUT", "STARTUP_FAILURE"]);
+/**
+ * Conclusions that say the CI did not run the code to an end, not that the
+ * code failed: a change to the code cannot fix them, a re-run can.
+ */
+const INFRASTRUCTURE_CONCLUSIONS = new Set([
+	"TIMED_OUT",
+	"STARTUP_FAILURE",
+	"CANCELLED",
+	"ACTION_REQUIRED",
+]);
+
+/**
+ * Whether a failed rollup failed only for infrastructure reasons: every
+ * context was read, and none is a check that failed or a status that
+ * reported failure (a status `ERROR` is the CI's own error, by convention).
+ */
+function infrastructureOnly(
+	contexts: z.infer<typeof CommitRollup>["repository"]["object"],
+): boolean {
+	const rollup = contexts?.statusCheckRollup;
+	if (!rollup || rollup.contexts.pageInfo.hasNextPage) return false;
+	const failed = rollup.contexts.nodes.filter((context) =>
+		context.__typename === "StatusContext"
+			? context.state === "FAILURE" || context.state === "ERROR"
+			: context.conclusion !== null &&
+				(FAILED_CONCLUSIONS.has(context.conclusion) ||
+					INFRASTRUCTURE_CONCLUSIONS.has(context.conclusion)),
+	);
+	return (
+		failed.length > 0 &&
+		failed.every((context) =>
+			context.__typename === "StatusContext"
+				? context.state === "ERROR"
+				: INFRASTRUCTURE_CONCLUSIONS.has(context.conclusion ?? ""),
+		)
+	);
+}
+const REPORT_LIMIT = 4000;
+
+/** CI text with control characters removed and a length cap. */
+function clip(text: string | null | undefined, limit: number): string {
+	// Control characters other than newline and tab.
+	const clean = (text ?? "").replace(/[^\P{Cc}\n\t]/gu, "");
+	return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
+}
+
+/** What the failed checks of a commit reported, bounded for a prompt. */
+export function checkFailureReport(
+	contexts: readonly z.infer<typeof CheckContext>[],
+): string {
+	const lines: string[] = [];
+	for (const context of contexts) {
+		if (context.__typename === "StatusContext") {
+			if (context.state === "FAILURE" || context.state === "ERROR")
+				lines.push(
+					`status ${clip(context.context, 100)}: ${clip(context.description, 300)}`,
+				);
+			continue;
+		}
+		if (!FAILED_CONCLUSIONS.has(context.conclusion ?? "")) continue;
+		lines.push(
+			`check ${clip(context.name, 100)} (${context.conclusion}): ${clip(context.title, 200)}`,
+		);
+		if (context.summary) lines.push(clip(context.summary, 500));
+		for (const annotation of context.annotations?.nodes ?? [])
+			lines.push(
+				`  ${clip(annotation.path, 200)}:${annotation.location.start.line} ${clip(annotation.message, 300)}`,
+			);
+	}
+	return clip(lines.join("\n"), REPORT_LIMIT);
+}
 // public-contract: GraphQL operation pinned by contracts/github-merge-queue.pact.json.
 export const ENQUEUE_MUTATION = `
 mutation HoboAgentEnqueue($pullRequest: ID!, $head: GitObjectID!) {
@@ -123,12 +293,13 @@ mutation HoboAgentComment($subject: ID!, $body: String!) {
  *
  * A pull request that changes more than one hundred files reports no changed
  * paths, which makes the planner trial-merge it against every other entry.
- * Stacked pull requests target their parent branch, not this one, so they do
- * not appear here until their parent merges.
+ * A stacked pull request (its base is another labelled pull request's head
+ * branch) is included and depends on that one. It is planned after it, and
+ * is neither resolved nor enqueued until GitHub retargets it to this branch.
  *
- * The base branch counts as requiring checks only when a branch protection
- * rule names at least one required status check. Checks required through
- * repository rulesets alone are not read, and answer no.
+ * The base branch counts as requiring checks when a branch protection rule,
+ * or an active repository or organization ruleset, names at least one
+ * required status check.
  */
 export function createGithubQueue(options: {
 	/** `owner/name`. */
@@ -163,8 +334,34 @@ export function createGithubQueue(options: {
 				pull.timelineItems.nodes
 					.filter((item) => item.label?.name === options.label)
 					.at(-1)?.createdAt ?? pull.createdAt;
-			const waiting = data.pullRequests.nodes
-				.filter((pull) => !pull.isDraft && !inQueue.has(pull.number))
+			// Labelled pull requests on this branch, and stacks on top of them:
+			// a pull request whose base is another one's head branch in this
+			// repository waits for that one. Anything else is for another branch.
+			const candidates = data.pullRequests.nodes.filter(
+				(pull) => !pull.isDraft && !inQueue.has(pull.number),
+			);
+			const parentOf = new Map<number, number>();
+			const included = new Set<number>();
+			const heads = new Map<string, number>();
+			for (const entry of queued)
+				if (!entry.pullRequest.isCrossRepository)
+					heads.set(entry.pullRequest.headRefName, entry.pullRequest.number);
+			for (let grew = true; grew; ) {
+				grew = false;
+				for (const pull of candidates) {
+					if (included.has(pull.number)) continue;
+					const parent = heads.get(pull.baseRefName);
+					if (pull.baseRefName !== options.baseRef && parent === undefined)
+						continue;
+					if (parent !== undefined && parent !== pull.number)
+						parentOf.set(pull.number, parent);
+					included.add(pull.number);
+					if (!pull.isCrossRepository) heads.set(pull.headRefName, pull.number);
+					grew = true;
+				}
+			}
+			const waiting = candidates
+				.filter((pull) => included.has(pull.number))
 				.map((pull) => ({ pull, at: labelledAt(pull) }))
 				.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 			const all = [
@@ -197,21 +394,57 @@ export function createGithubQueue(options: {
 							? pull.files.nodes.map((file) => file.path)
 							: [],
 					fork: pull.isCrossRepository,
+					dependsOn: [parentOf.get(pull.number)].filter(
+						(parent): parent is number => parent !== undefined,
+					),
 					started,
 				})),
 			});
 		},
 		async baseRequiresChecks() {
-			// A branch protection rule that requires at least one named check.
-			// Requirements set only through repository rulesets are not read,
-			// so such a branch answers no.
-			return BaseProtection.safeParse(
+			// A branch protection rule, or an active ruleset rule, that requires
+			// at least one named check. Anything else, including an answer that
+			// does not parse, is no.
+			const parsed = BaseProtection.safeParse(
 				await options.graphql(BASE_PROTECTION_QUERY, {
 					owner,
 					name,
 					ref: `refs/heads/${options.baseRef}`,
 				}),
-			).success;
+			);
+			const ref = parsed.success ? parsed.data.repository.ref : null;
+			const protection = ref?.branchProtectionRule;
+			return (
+				(protection?.requiresStatusChecks === true &&
+					(protection.requiredStatusCheckContexts ?? []).length > 0) ||
+				(ref?.rules?.nodes ?? []).some(
+					(rule) =>
+						rule.type === "REQUIRED_STATUS_CHECKS" &&
+						(rule.parameters?.requiredStatusChecks ?? []).length > 0,
+				)
+			);
+		},
+		async commitChecks(sha) {
+			const data = CommitRollup.parse(
+				await options.graphql(COMMIT_CHECKS_QUERY, { owner, name, oid: sha }),
+			);
+			const rollup = data.repository.object?.statusCheckRollup;
+			if (!rollup)
+				return { state: "none", failures: "" } satisfies CommitChecks;
+			const failed = rollup.state === "FAILURE" || rollup.state === "ERROR";
+			const state =
+				rollup.state === "SUCCESS"
+					? "success"
+					: !failed
+						? "pending"
+						: infrastructureOnly(data.repository.object)
+							? "infrastructure"
+							: "failure";
+			return {
+				state,
+				failures:
+					state === "failure" ? checkFailureReport(rollup.contexts.nodes) : "",
+			} satisfies CommitChecks;
 		},
 		async comment(number, body) {
 			await options.graphql(COMMENT_MUTATION, {

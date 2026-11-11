@@ -21,6 +21,12 @@ import { appendFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
+	FLEET_CAPACITY_VARIABLE,
+	type FleetLabelCapacity,
+	fleetLabelCapacity,
+	parseFleetCapacityVariable,
+} from "../../packages/ci/src/fleet/capacity.ts";
+import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
 	LOCAL_HOST_RUNNER_LABEL,
@@ -204,6 +210,8 @@ export function routeRunner(input: {
 	local: LabelLoad;
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
+	/** Live box headroom from `HOBO_CI_FLEET_CAPACITY`, when published. */
+	fleetCapacity?: FleetLabelCapacity;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	if (mode === "fleet")
@@ -228,13 +236,20 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.undecidedAhead === 0;
+	const capacity = input.fleetCapacity;
+	const fleetAdmits = capacity === undefined || capacity.admit;
+	const fleetSlots =
+		capacity === undefined ? 1 : Math.min(1, Math.max(0, capacity.freeSlots));
 	const members = [
 		{
 			id: "fleet",
 			backend: "hobo",
 			enabled: true,
 			runsOn: fleetLabel,
-			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
+			freeSlots:
+				first && fleetAdmits && takingJobs(input.fleet, limits)
+					? fleetSlots
+					: 0,
 		},
 		{
 			id: "local",
@@ -252,8 +267,15 @@ export function routeRunner(input: {
 		},
 	] satisfies FleetMember[];
 	const selected = selectFleetBackend({ members, currentLabels: [] });
+	const capacityNote =
+		capacity === undefined
+			? "fleet capacity unset"
+			: capacity.admit
+				? `fleet admits ${capacity.requiredMb} MiB jobs (${capacity.freeSlots} slot(s))`
+				: `fleet cannot admit ${capacity.requiredMb} MiB (available ${capacity.availableMb ?? "unknown"} MiB, reserve ${capacity.reserveMb}, volatility ${capacity.volatilityMb})`;
 	const loads = [
 		describeLoad("the fleet", input.fleet),
+		capacityNote,
 		input.localEnrolled
 			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
@@ -523,6 +545,31 @@ export async function observeQueue(input: {
  * while a probe is under way and no run ahead has yet to choose. Every other
  * case is decided at once.
  */
+async function readFleetCapacity(
+	read: QueueReader,
+	repository: string,
+	fleetLabel: string,
+): Promise<FleetLabelCapacity | undefined> {
+	try {
+		const page = await read(
+			`/repos/${repository}/actions/variables/${FLEET_CAPACITY_VARIABLE}`,
+		);
+		const raw = asObject(page)?.value;
+		let value: string | undefined;
+		if (tagOf.call(raw) === "[object String]") {
+			// SAFETY: the tag check proves a string primitive.
+			value = raw as string;
+		} else {
+			value = asText(raw) ?? undefined;
+		}
+		const snapshot = parseFleetCapacityVariable(value);
+		if (!snapshot) return undefined;
+		return fleetLabelCapacity(snapshot, fleetLabel);
+	} catch {
+		return undefined;
+	}
+}
+
 export async function chooseRunner(input: {
 	observe: (nowMs: number) => Promise<QueueView>;
 	now: () => number;
@@ -531,6 +578,7 @@ export async function chooseRunner(input: {
 	fleetLabel: string;
 	localEnrolled: boolean;
 	limits: RouteLimits;
+	readCapacity?: () => Promise<FleetLabelCapacity | undefined>;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const startMs = input.now();
@@ -539,7 +587,10 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, LOCAL_HOST_RUNNER_LABEL, nowMs);
-		const decision = routeRunner({
+		const fleetCapacity = input.readCapacity
+			? await input.readCapacity()
+			: undefined;
+		const routed = {
 			mode: input.mode,
 			fleetLabel,
 			localEnrolled,
@@ -547,7 +598,11 @@ export async function chooseRunner(input: {
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
-		});
+		};
+		const decision =
+			fleetCapacity === undefined
+				? routeRunner(routed)
+				: routeRunner({ ...routed, fleetCapacity });
 		const unseen = (load: LabelLoad) =>
 			load.recentPickups === 0 && !refusingJobs(load, limits);
 		const probeMayHelp =
@@ -629,12 +684,13 @@ export async function main(
 			env.GITHUB_API_URL ?? "https://api.github.com",
 			env.GITHUB_TOKEN ?? "",
 		);
+		const repository = env.GITHUB_REPOSITORY ?? "";
 		decision = await chooseRunner({
 			observe: (nowMs) =>
 				mode === "auto"
 					? observeQueue({
 							read,
-							repository: env.GITHUB_REPOSITORY ?? "",
+							repository,
 							ownRunId: Number(env.GITHUB_RUN_ID),
 							labels: localEnrolled
 								? [fleetLabel, LOCAL_HOST_RUNNER_LABEL]
@@ -653,6 +709,7 @@ export async function main(
 			fleetLabel,
 			localEnrolled,
 			limits,
+			readCapacity: () => readFleetCapacity(read, repository, fleetLabel),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known

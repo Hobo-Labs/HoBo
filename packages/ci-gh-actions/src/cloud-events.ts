@@ -34,6 +34,10 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	// Jobs and runners
 	["hobo_ci_job_pickup", "ci.JobPickedUp"],
 	["hobo_ci_launch_failed", "ci.RunnerLaunchFailed"],
+	["hobo_ci_launch_yielded_foreign_runner", "ci.RunnerLaunchYieldedForeign"],
+	["hobo_ci_jit_empty_exit", "ci.JitRunnerExitedWithoutJob"],
+	["hobo_ci_jit_empty_exit_backoff", "ci.JitEmptyExitBackoff"],
+	["hobo_ci_jit_runner_served_other_job", "ci.JitRunnerServedOtherJob"],
 	["hobo_ci_container_oom", "ci.ContainerOomKilled"],
 	["hobo_ci_container_timeout_enforced", "ci.ContainerTimedOut"],
 	// Runs the worker interfered with

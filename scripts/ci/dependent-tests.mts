@@ -841,7 +841,7 @@ export function planDependentTests(
 	// A package that declares no dependency can still reach a change: a path
 	// outside every package (the root vitest config, a shared setup file, a doc
 	// a test reads), or another package's file it imports by relative path
-	// (`packages/stations` importing `../../broker/src/budget-signals.js`). Only a
+	// (`packages/code` importing `../../cli/src/cloud/loader.js`). Only a
 	// closure that actually reaches it counts: walking every package strictly
 	// would run all of them for a docs edit.
 	const bystanders = repo.workspaces
@@ -929,6 +929,10 @@ export type TestGraph = (dirs: readonly string[]) => readonly GraphTask[];
  * (`--only`) with its files passed through to the package's `vitest run`.
  * `turboArgs` go to the first call only.
  */
+function turboAffectedArgs(): readonly string[] {
+	return process.env.HOBO_TURBO_USE_AFFECTED === "1" ? ["--affected"] : [];
+}
+
 export function planCommands(
 	plan: TestPlan,
 	turboArgs: readonly string[],
@@ -937,12 +941,15 @@ export function planCommands(
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
-	if (plan.mode === "all") return [[...test, parallel, ...turboArgs]];
+	const affected = turboAffectedArgs();
+	if (plan.mode === "all")
+		return [[...test, ...affected, parallel, ...turboArgs]];
 	const commands: string[][] = [];
 	if (plan.subsets.size === 0) {
 		if (plan.full.length > 0)
 			commands.push([
 				...test,
+				...affected,
 				...plan.full.map((dir) => `--filter=./${dir}`),
 				"--continue",
 				parallel,
@@ -1018,6 +1025,14 @@ export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
 
 /** Runs the plan. Every part runs, so one failure hides no other. */
 function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
+	if (
+		plan.mode === "scoped" &&
+		plan.full.length === 0 &&
+		plan.subsets.size === 0
+	) {
+		console.error("dependent-tests: no workspace tests selected");
+		return 0;
+	}
 	let status = 0;
 	for (const args of planCommands(
 		plan,

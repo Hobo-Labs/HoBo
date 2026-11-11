@@ -174,11 +174,6 @@ it.each([
 		else await operation;
 	}));
 
-// The stall below must outlast the grace and the confirmation window together.
-// Production confirms for 2 s; 1 s still leaves the killed group far more time
-// than it takes to go, and stalls 1 s less.
-const STALL_SHUTDOWN = { graceMs: 300, confirmMs: 1000 };
-
 it("confirms the killed group even when the event loop stalls across SIGKILL", () =>
 	withTermIgnoringGroup(async (marker, directory) => {
 		const cancel = new AbortController();
@@ -189,18 +184,14 @@ it("confirms the killed group even when the event loop stalls across SIGKILL", (
 			runnerEnvironment(process.env),
 			undefined,
 			cancel.signal,
-			STALL_SHUTDOWN,
+			TEST_SHUTDOWN,
 		);
 		const settled = expect(operation).rejects.toThrow(/timed out/);
 		while (!existsSync(marker)) await sleep(10);
 		cancel.abort(new Error("cancelled"));
 		// A CPU-starved or paused host: no timer runs until both the SIGKILL and
 		// the confirmation window have expired, so they come due in one turn.
-		const stalledUntil =
-			performance.now() +
-			STALL_SHUTDOWN.graceMs +
-			STALL_SHUTDOWN.confirmMs +
-			500;
+		const stalledUntil = performance.now() + TEST_SHUTDOWN.graceMs + 2500;
 		while (performance.now() < stalledUntil) {
 			/* Block the event loop. */
 		}

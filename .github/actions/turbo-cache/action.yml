@@ -57,6 +57,7 @@ runs:
             {
               echo "TURBO_CACHE_DIR=${shared}"
               echo "HOBO_TURBO_CACHE_SHARED=1"
+              echo "TURBO_CACHE=local:rw"
             } >> "$GITHUB_ENV"
             echo "Turbo local cache: shared host directory ${shared}"
           else

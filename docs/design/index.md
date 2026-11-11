@@ -230,6 +230,5 @@ is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
 [Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
-and model-backed conflict resolution beside the Node relay; not yet run against
-GitHub or a live model), and
+and model-backed conflict resolution beside the Node relay), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).

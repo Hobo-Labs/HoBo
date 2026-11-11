@@ -2,6 +2,12 @@ import { create } from "@bufbuild/protobuf";
 import { z } from "zod";
 import { type AgentConfig, AgentConfigSchema } from "./_generated/agent_pb.js";
 
+/** Who the agent's commits are by, unless the configuration says otherwise. */
+export const DEFAULT_COMMIT_IDENTITY = Object.freeze({
+	name: "hobo-ci-agent",
+	email: "hobo-ci-agent@users.noreply.github.com",
+});
+
 /** The agent's write authority. Each mode includes the one before it. */
 export const AGENT_MODES = ["observe", "suggest", "apply"] as const;
 export type AgentMode = (typeof AGENT_MODES)[number];
@@ -120,6 +126,23 @@ export const AgentConfigDocumentSchema = z
 				maxFileBytes: count(1_048_576).optional(),
 				minConfidence: z.number().min(0).max(1).optional(),
 				contextLines: z.number().int().min(0).max(200).optional(),
+				maxRepairs: z.number().int().min(0).max(3).optional(),
+				structuredMerge: z.boolean().optional(),
+			})
+			.strict()
+			.optional(),
+		commit: z
+			.object({
+				name: z
+					.string()
+					.regex(/^[^<>\n\0]{1,100}$/)
+					.optional(),
+				email: z
+					.string()
+					.regex(/^[^<>\s\0]+@[^<>\s\0]+$/)
+					.max(200)
+					.optional(),
+				signingKey: CredentialRef.optional(),
 			})
 			.strict()
 			.optional(),
@@ -158,7 +181,7 @@ export function parseAgentConfig(json: string): ParsedAgentConfig {
 		// Repository input can contain arbitrary text. Never put it in an error.
 		throw new Error("invalid CI agent configuration");
 	}
-	const { queue, resolution, budget } = document;
+	const { queue, resolution, budget, commit } = document;
 	const config = create(AgentConfigSchema, {
 		mode: document.mode,
 		engines: document.engines.map((engine) => ({
@@ -188,6 +211,13 @@ export function parseAgentConfig(json: string): ParsedAgentConfig {
 			maxFileBytes: resolution?.maxFileBytes ?? 262_144,
 			minConfidence: resolution?.minConfidence ?? 0.8,
 			contextLines: resolution?.contextLines ?? 12,
+			maxRepairs: resolution?.maxRepairs ?? 1,
+			structuredMerge: resolution?.structuredMerge ?? false,
+		},
+		commit: {
+			name: commit?.name ?? DEFAULT_COMMIT_IDENTITY.name,
+			email: commit?.email ?? DEFAULT_COMMIT_IDENTITY.email,
+			signingKey: commit?.signingKey ?? "",
 		},
 		budget: {
 			maxInputTokens: budget?.maxInputTokens ?? 60_000,
@@ -203,10 +233,10 @@ export function parseAgentConfig(json: string): ParsedAgentConfig {
 
 /** The policy blocks of a parsed configuration; a parsed configuration always has them. */
 export function agentPolicies(config: ParsedAgentConfig) {
-	const { queue, resolution, budget } = config;
-	if (!queue || !resolution || !budget)
+	const { queue, resolution, budget, commit } = config;
+	if (!queue || !resolution || !budget || !commit)
 		throw new Error("invalid CI agent configuration");
-	return { queue, resolution, budget };
+	return { queue, resolution, budget, commit };
 }
 
 function globPattern(glob: string): RegExp {

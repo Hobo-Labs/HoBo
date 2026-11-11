@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { PostgresCiStore } from "@hobo/ci/postgres";
-import { initializeHostedRelaySchema } from "@hobo/ci-gh-actions";
 import {
 	type AssignmentRegister,
 	billingPeriod,
@@ -19,10 +17,7 @@ import {
 	sqlAssignmentRegister,
 } from "@hobo/data-postgres";
 import pg from "pg";
-import {
-	DATABASE_PROBE_TABLE,
-	type RelayDatabase,
-} from "./database-connections.js";
+import type { RelayDatabase } from "./database-connections.js";
 import {
 	createFleetBudgetCheck,
 	type DatabaseFleetBackend,
@@ -35,19 +30,14 @@ import {
 	pgExecutor,
 } from "./database-fleet-executor.js";
 import { createQueueWakeupHandler } from "./queue-forwarding.js";
+import {
+	prepareRelaySchema,
+	RelaySchemaError,
+	type RelaySchemaRole,
+	relaySchemaState,
+} from "./relay-schema.js";
 import { createScheduledRepairHandler } from "./scheduled-repair.js";
 import type { QueueMessage } from "./worker.js";
-import { PostgresWorkerHealth } from "./worker-health.js";
-
-/** Create every table the relay uses on one database, by running the same
- * initialisers the relay's stores run on first use. This is the single seam to
- * replace when the schema moves to versioned migrations. */
-export async function ensureRelaySchema(pool: pg.Pool): Promise<void> {
-	await new PostgresCiStore(pool).initialize();
-	await initializeHostedRelaySchema(pool);
-	await new PostgresWorkerHealth(pool).initialize();
-	await pool.query(DATABASE_PROBE_TABLE);
-}
 
 /** The relay application the fleet runs on whichever backend is the writer. */
 export type FleetApplication = {
@@ -86,6 +76,18 @@ type FleetLogRecord =
 			event: "hobo_ci_database_fleet_application";
 			status: "started";
 			backend: string;
+	  }
+	| {
+			event: "hobo_ci_database_fleet_schema";
+			backend: string;
+			role: RelaySchemaRole;
+			/** `applied`: migrations ran. `ahead`: the backend records ones this
+			 * release does not have, and was left alone. `refused`: a migration
+			 * was rolled back. `failed`: the backend could not be asked. */
+			status: "applied" | "ahead" | "refused" | "failed";
+			scope: string | undefined;
+			/** Migration ids: applied as `scope/id`, or the unknown ones. */
+			migrations: readonly string[];
 	  }
 	| { event: "hobo_ci_database_fleet_failure"; stage: "reconcile" };
 
@@ -358,24 +360,86 @@ export function createDatabaseFleet(options: {
 	const notReady = () =>
 		Response.json({ ready: false, reason: "store-unavailable" }, refusal());
 
+	/** Backends this instance has seen holding every migration of this release. */
+	const schemaCurrent = new Set<string>();
+	/** The schema seam: bring one backend to this release's checked-in
+	 * migrations, over its control connection, and say what happened. */
+	async function prepareSchema(
+		backendId: string,
+		role: RelaySchemaRole,
+	): Promise<void> {
+		const pool = controlPools.get(backendId);
+		if (!pool) throw new Error("unknown fleet backend");
+		try {
+			const { applied } = await prepareRelaySchema(pool, backendId, role);
+			schemaCurrent.add(backendId);
+			if (applied.length > 0)
+				report({
+					event: "hobo_ci_database_fleet_schema",
+					backend: backendId,
+					role,
+					status: "applied",
+					scope: undefined,
+					migrations: applied,
+				});
+		} catch (error) {
+			schemaCurrent.delete(backendId);
+			const known = error instanceof RelaySchemaError ? error : undefined;
+			report({
+				event: "hobo_ci_database_fleet_schema",
+				backend: backendId,
+				role,
+				status: known?.failure ?? "failed",
+				scope: known?.scope,
+				migrations: known?.migrations ?? [],
+			});
+			throw error;
+		}
+	}
+	/** A copy only offers a standby to the seam when its columns differ from
+	 * the writer's. A standby that lacks only an index would never be offered,
+	 * so each standby's ledger is read once per instance (one statement) and a
+	 * standby behind this release is migrated here. One that is ahead, or
+	 * cannot be asked, is reported and asked again on the next tick. */
+	async function prepareStandbys(
+		assignment: PostgresFleetAssignment | undefined,
+	): Promise<void> {
+		if (!assignment || assignment.sealed) return;
+		await Promise.all(
+			control
+				.filter(
+					(backend) =>
+						backend.id !== assignment.active && !schemaCurrent.has(backend.id),
+				)
+				.map(async (backend) => {
+					const pool = controlPools.get(backend.id);
+					if (!pool) return;
+					try {
+						if ((await relaySchemaState(pool)) === "current")
+							schemaCurrent.add(backend.id);
+						else await prepareSchema(backend.id, "standby");
+					} catch {
+						// Reported by the seam, or the backend is down, which the
+						// tick's own probe has already said.
+					}
+				}),
+		);
+	}
+
 	let reconciling: Promise<FleetReconcileReport | undefined> | undefined;
 	/** One reconcile tick. A failure is reported and never stops the relay. */
 	function reconcile(): Promise<FleetReconcileReport | undefined> {
 		reconciling ??= (async () => {
 			try {
 				const models = config.backends.map((backend) => backend.model);
-				return await reconcileFleet({
+				const tick = await reconcileFleet({
 					backends: control,
 					layout: RELAY_FLEET_LAYOUT,
 					models,
 					policy: config.policy,
 					leaseMs: config.leaseMs,
 					graceMs: config.graceMs,
-					ensureSchema: async (backend) => {
-						const pool = controlPools.get(backend.id);
-						if (!pool) throw new Error("unknown fleet backend");
-						await ensureRelaySchema(pool);
-					},
+					ensureSchema: (backend, role) => prepareSchema(backend.id, role),
 					checkBudget: (request) =>
 						createFleetBudgetCheck({
 							limitMicros: config.budgetLimitMicros,
@@ -389,6 +453,8 @@ export function createDatabaseFleet(options: {
 					sleep: options.sleep ?? sleep,
 					log: reportFleetEvent,
 				});
+				await prepareStandbys(tick.assignment);
+				return tick;
 			} catch {
 				report({ event: "hobo_ci_database_fleet_failure", stage: "reconcile" });
 				return undefined;

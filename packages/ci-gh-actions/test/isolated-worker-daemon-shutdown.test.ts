@@ -3,6 +3,7 @@ import { ConfigurationSchema } from "@hobo/ci";
 import { describe, expect, it, vi } from "vitest";
 import {
 	countInFlightWorkerLeases,
+	mergeDrainInFlightCount,
 	parseWorkerStopMode,
 	stopIsolatedWorker,
 	waitForIsolatedWorkerDrain,
@@ -47,6 +48,11 @@ describe("isolated worker daemon shutdown", () => {
 			].sort(),
 		);
 		expect(workerOfferKeys(undefined, "worker-a").size).toBe(0);
+	});
+
+	it("counts drain in-flight as the max of live leases and running worker containers", () => {
+		expect(mergeDrainInFlightCount(0, 2)).toBe(2);
+		expect(mergeDrainInFlightCount(3, 1)).toBe(3);
 	});
 
 	it("counts in-flight leases on this worker's offers, whatever customer account owns them", () => {

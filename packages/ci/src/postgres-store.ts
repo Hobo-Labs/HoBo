@@ -35,9 +35,7 @@ import {
 import { allocationQuote } from "./accounting.js";
 import {
 	accountEventPage,
-	EVENT_SCAN_SPAN,
 	type EventCursor,
-	type EventScan,
 	eventCursorBounds,
 	jobAccountId,
 	type LeaseEventsQuery,
@@ -149,9 +147,58 @@ function sequenced(row: { seq: string; body: string }) {
 	});
 }
 
+/** The account an event's body names, as `account_id` stores it; '' for none. */
+const EVENT_ACCOUNT_OF = (body: string) =>
+	`coalesce(${body}::jsonb ->> 'accountId','')`;
+
+/** How many journal rows one fill-in statement stamps. */
+const EVENT_ACCOUNT_BATCH = 1000;
+
+/**
+ * One batch of the account fill-in, newest rows first so that reads near the
+ * journal's end stop meeting unstamped rows soonest. The rows are found by
+ * the account index (its NULL range is exactly what is left to do), locked
+ * one by one, and passed over when another instance holds them.
+ */
+const STAMP_EVENT_ACCOUNTS = `UPDATE hobo_ci_events SET account_id=${EVENT_ACCOUNT_OF("body")}
+	WHERE account_id IS NULL AND seq = ANY(ARRAY(
+		SELECT seq FROM hobo_ci_events WHERE partition_id=$1 AND account_id IS NULL
+		ORDER BY account_id DESC, seq DESC LIMIT $2 FOR UPDATE SKIP LOCKED))`;
+
+/**
+ * One account's events, read through `hobo_ci_events_account_seq`
+ * (`partition_id, account_id, seq`) in both of its halves:
+ *
+ * - rows stamped with the account, which is every row once the fill-in has
+ *   run and no release that does not stamp is writing;
+ * - rows not stamped yet (`account_id IS NULL`), matched on the account the
+ *   body names. That range of the index is empty when the fill-in is done.
+ *
+ * Each half is ordered by the index's own key (`account_id, seq`) and bounded
+ * by a range on it, never by an equality the planner could fold away: that
+ * leaves the account index as the only ordered path, so the read cannot be
+ * planned as a walk of the journal's primary key past every other account's
+ * rows, whatever the statistics say. `(account_id, seq) > ($2, $4)` with
+ * `account_id <= $2` is `account_id = $2 AND seq > $4`, as an index boundary.
+ */
+const STAMPED_EVENTS =
+	"SELECT seq,body FROM hobo_ci_events WHERE partition_id=$1";
+const UNSTAMPED_EVENTS = `${STAMPED_EVENTS} AND account_id IS NULL AND body::jsonb ->> 'accountId'=$2`;
+const ACCOUNT_EVENTS_AFTER = `SELECT mine.seq::text AS seq,mine.body FROM (
+	(${STAMPED_EVENTS} AND (account_id,seq)>($2,$4) AND account_id<=$2 ORDER BY account_id,seq LIMIT $3)
+	UNION ALL
+	(${UNSTAMPED_EVENTS} AND seq>$4 ORDER BY account_id,seq LIMIT $3)
+) AS mine ORDER BY mine.seq LIMIT $3`;
+const NEWEST_ACCOUNT_EVENTS = `SELECT mine.seq::text AS seq,mine.body FROM (
+	(${STAMPED_EVENTS} AND account_id>=$2 AND account_id<=$2 ORDER BY account_id DESC,seq DESC LIMIT $3)
+	UNION ALL
+	(${UNSTAMPED_EVENTS} ORDER BY account_id DESC,seq DESC LIMIT $3)
+) AS mine ORDER BY mine.seq DESC LIMIT $3`;
+
 /** Native PostgreSQL journal. Each partition's mutations serialize at its lock row. */
 export class PostgresCiStore {
 	private initialization: Promise<void> | undefined;
+	private accountFillIn: Promise<void> | undefined;
 	constructor(
 		private readonly pool: Pool,
 		private readonly partition = "default",
@@ -168,6 +215,17 @@ export class PostgresCiStore {
 			this.initialization = undefined;
 			throw error;
 		}
+		// Once per store, after its schema is in place, and never awaited here:
+		// start-up, admission and reads do not wait for old rows to be stamped.
+		// A failure ends this run only; whatever is left is still unstamped and
+		// the next instance to start takes it up.
+		this.accountFillIn ??= this.stampBatches(
+			EVENT_ACCOUNT_BATCH,
+			Number.POSITIVE_INFINITY,
+		).then(
+			() => undefined,
+			() => undefined,
+		);
 	}
 	private async initializeOnce(): Promise<void> {
 		const client = await this.pool.connect();
@@ -193,6 +251,15 @@ export class PostgresCiStore {
 			);
 			await client.query(
 				`CREATE INDEX IF NOT EXISTS hobo_ci_events_lease_type_seq ON hobo_ci_events(partition_id, (body::jsonb ->> 'leaseId'), (body::jsonb ->> 'type'), seq DESC)`,
+			);
+			// The account each event names, as a column the account index keys
+			// on. NULL is "not stamped yet" (a row from before the column, or
+			// from a release that does not write it); '' is "names no account".
+			await client.query(
+				"ALTER TABLE hobo_ci_events ADD COLUMN IF NOT EXISTS account_id text",
+			);
+			await client.query(
+				"CREATE INDEX IF NOT EXISTS hobo_ci_events_account_seq ON hobo_ci_events(partition_id,account_id,seq)",
 			);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_leases (partition_id text NOT NULL, id text NOT NULL, job_key text NOT NULL, body text NOT NULL, PRIMARY KEY(partition_id,id))`,
@@ -339,7 +406,7 @@ export class PostgresCiStore {
 				[
 					"events",
 					"SELECT body FROM events ORDER BY seq",
-					"INSERT INTO hobo_ci_events(partition_id,body) VALUES($1,$2)",
+					`INSERT INTO hobo_ci_events(partition_id,body,account_id) VALUES($1,$2,${EVENT_ACCOUNT_OF("($2::text)")})`,
 					["body"],
 				],
 				[
@@ -556,10 +623,13 @@ export class PostgresCiStore {
 		accountId = "",
 		leaseId = "",
 	) {
+		// The account is stamped beside the event in the same statement, so the
+		// account index holds every event this release writes from its commit.
 		await client.query(
-			"INSERT INTO hobo_ci_events(partition_id,body) VALUES($1,$2)",
+			"INSERT INTO hobo_ci_events(partition_id,account_id,body) VALUES($1,$2,$3)",
 			[
 				this.partition,
+				accountId,
 				toJsonString(
 					CiEventSchema,
 					create(CiEventSchema, { type, at, detail, accountId, leaseId }),
@@ -790,56 +860,90 @@ export class PostgresCiStore {
 	 * position, its newest ones. A partition's transactions serialize at its
 	 * lock row, so `seq` order is commit order and a position handed back as
 	 * `after` never skips an event. The read itself takes no partition lock: a
-	 * caller waiting for news polls it, and must not stall admission. It looks
-	 * along a bounded number of the partition's journal rows, by the
-	 * `(partition_id, seq)` index, and the page says when that cut it short.
+	 * caller waiting for news polls it, and must not stall admission.
+	 *
+	 * It is one statement over the account index, so it sees one committed
+	 * state and touches the account's own events, however much other accounts
+	 * or other partitions have journalled. Rows whose account is not stamped
+	 * yet are read through the same index and matched on the account their
+	 * body names, so the page is exact before the fill-in has finished and
+	 * while a release that does not stamp is still writing.
 	 */
 	async eventsSince(cursor: EventCursor): Promise<CiEventPage> {
 		const { accountId, after, limit } = eventCursorBounds(cursor);
-		// The head is read first and bounds the scan, so a row committed while
-		// this read runs is left for the next one, not half seen.
-		const head = await this.journalHead();
-		// `seq` is one sequence for every partition of the table, so the span is
-		// counted in this partition's rows, by its index, not in positions: the
-		// row that many past the cursor, or that many back from the head.
-		const edge = Number(
-			(
-				await this.pool.query<{ seq: string }>(
-					after === undefined
-						? "SELECT seq::text AS seq FROM hobo_ci_events WHERE partition_id=$1 AND seq<=$2 ORDER BY seq DESC OFFSET $3 LIMIT 1"
-						: "SELECT seq::text AS seq FROM hobo_ci_events WHERE partition_id=$1 AND seq>$2 ORDER BY seq OFFSET $3 LIMIT 1",
-					[this.partition, after ?? head, EVENT_SCAN_SPAN - 1],
-				)
-			).rows[0]?.seq ?? "NaN",
+		await this.initialize();
+		// One more than the page holds, to say whether the account has more.
+		const { rows } = await this.pool.query<{ seq: string; body: string }>(
+			after === undefined ? NEWEST_ACCOUNT_EVENTS : ACCOUNT_EVENTS_AFTER,
+			after === undefined
+				? [this.partition, accountId, limit + 1]
+				: [this.partition, accountId, limit + 1, after],
 		);
-		const scan: EventScan =
-			after === undefined
-				? { from: Number.isSafeInteger(edge) ? edge - 1 : 0, to: head, head }
-				: {
-						from: after,
-						to: Math.max(
-							after,
-							Number.isSafeInteger(edge) ? Math.min(edge, head) : head,
-						),
-						head,
-					};
-		const mine =
-			"SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND seq>$2 AND seq<=$3 AND body::jsonb ->> 'accountId'=$4 ORDER BY seq";
-		const rows =
-			after === undefined
-				? (
-						await this.pool.query<{ seq: string; body: string }>(
-							`${mine} DESC LIMIT $5`,
-							[this.partition, scan.from, scan.to, accountId, limit],
-						)
-					).rows.reverse()
-				: (
-						await this.pool.query<{ seq: string; body: string }>(
-							`${mine} LIMIT $5`,
-							[this.partition, scan.from, scan.to, accountId, limit + 1],
-						)
-					).rows;
-		return accountEventPage(rows.map(sequenced), cursor, scan);
+		return accountEventPage(
+			(after === undefined ? rows.reverse() : rows).map(sequenced),
+			cursor,
+		);
+	}
+	/**
+	 * Stamp the account on journal rows that do not carry it yet: rows written
+	 * before the `account_id` column existed, and rows a release that does not
+	 * write it adds while both releases run. The value is the account the
+	 * event's own body names and nothing else: an event that names none (a
+	 * partition event, or a job event journalled before its owner was
+	 * recorded) is stamped as naming none, and stays in nobody's feed.
+	 *
+	 * Reads never wait for this: they are exact with rows unstamped, and only
+	 * cheaper once there are none. So it is safe to stop anywhere and to run
+	 * from several instances at once.
+	 *
+	 * - Each batch is one statement in its own transaction, over at most
+	 *   `batchSize` rows found through the account index.
+	 * - It locks only the rows it stamps, which no writer touches again, and
+	 *   skips rows another instance is stamping. It takes no table lock and
+	 *   never the partition's lock row, so admission is not queued behind it.
+	 * - It keeps no progress of its own: what is left is whatever still has no
+	 *   account, so a run that was cut off is resumed by the next one.
+	 *
+	 * Every store starts one such run by itself once its schema is in place
+	 * and does not wait for it. Calling this joins that run and then stamps
+	 * whatever is still left, so an operator, or a test, can wait for the
+	 * journal to be fully stamped. Resolves with the rows this call stamped
+	 * and whether it stopped because it found no more to take (`complete`),
+	 * not because it reached `maxBatches`.
+	 */
+	async stampEventAccounts(
+		options: { batchSize?: number; maxBatches?: number } = {},
+	): Promise<{ stamped: number; complete: boolean }> {
+		const batchSize = options.batchSize ?? EVENT_ACCOUNT_BATCH;
+		const maxBatches = options.maxBatches ?? Number.POSITIVE_INFINITY;
+		if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 10_000)
+			throw new Error("invalid event account batch size");
+		if (
+			maxBatches !== Number.POSITIVE_INFINITY &&
+			(!Number.isInteger(maxBatches) || maxBatches < 1)
+		)
+			throw new Error("invalid event account batch count");
+		await this.initialize();
+		await this.accountFillIn;
+		return this.stampBatches(batchSize, maxBatches);
+	}
+	private async stampBatches(
+		batchSize: number,
+		maxBatches: number,
+	): Promise<{ stamped: number; complete: boolean }> {
+		let stamped = 0;
+		for (let batch = 0; batch < maxBatches; batch += 1) {
+			const count =
+				(
+					await this.pool.query(STAMP_EVENT_ACCOUNTS, [
+						this.partition,
+						batchSize,
+					])
+				).rowCount ?? 0;
+			stamped += count;
+			if (count < batchSize) return { stamped, complete: true };
+		}
+		return { stamped, complete: false };
 	}
 	/**
 	 * The journal's newest position, by the `(partition_id, seq)` index; zero
@@ -868,7 +972,9 @@ export class PostgresCiStore {
 		await this.initialize();
 		return (
 			await this.pool.query<{ seq: string; body: string }>(
-				"SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND body::jsonb ->> 'leaseId'=$2 AND body::jsonb ->> 'accountId'=$3 ORDER BY seq DESC LIMIT $4",
+				// Ordered by the column, not by the `seq` the statement returns,
+				// which is its text: as text, position 9 sorts after position 10.
+				"SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND body::jsonb ->> 'leaseId'=$2 AND body::jsonb ->> 'accountId'=$3 ORDER BY hobo_ci_events.seq DESC LIMIT $4",
 				[this.partition, leaseId, accountId, limit],
 			)
 		).rows
@@ -1613,6 +1719,60 @@ export class PostgresCiStore {
 			lease.state = "cancelled";
 			await this.append(c, lease, "ci.LeaseCancelled", at);
 			await this.queueInside(c, job, at);
+		});
+	}
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	) {
+		return this.tx(async (c) => {
+			if (
+				expectedRevision !== undefined &&
+				(await this.readConfiguration(c))?.revision !== expectedRevision
+			)
+				throw new Error("configuration revision conflict");
+			const configuration = (await this.readConfiguration(c))?.configuration;
+			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			let changed = false;
+			for (const lease of await this.readLeases(c)) {
+				if (
+					lease.repositoryId !== job.repositoryId ||
+					lease.jobId !== job.id ||
+					lease.runAttempt !== job.runAttempt ||
+					!ACTIVE_STATES.has(lease.state)
+				)
+					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
+				const offer = configuration?.accounts
+					.find((account) => account.id === lease.accountId)
+					?.offers.find((candidate) => candidate.id === lease.offerId);
+				if (
+					!shouldAbortIsolatedFleetLease(
+						lease.provider,
+						offer
+							? { backend: offer.backend, runsOn: offer.runsOn }
+							: undefined,
+					)
+				)
+					continue;
+				lease.state = "cancelled";
+				await this.append(c, lease, "ci.LeaseCancelled", at);
+				changed = true;
+			}
+			const pending = await c.query(
+				"SELECT 1 FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+				[this.partition, key],
+			);
+			if (pending.rowCount) {
+				await c.query(
+					"DELETE FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+					[this.partition, key],
+				);
+				changed = true;
+			}
+			return changed;
 		});
 	}
 	abortIsolatedAndRequeue(id: string, job: Job, at: string) {

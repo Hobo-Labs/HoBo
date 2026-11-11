@@ -4,9 +4,11 @@
  * loaded the machine is.
  *
  * `measureGrowth` times the operation on an input of length n and on one of
- * length 4n, the better of two runs each, the two sizes taking turns, in the
- * CPU time of the thread that runs it (a runtime without that clock is
- * refused). Linear work grows about 4×, and quadratic work about 16×;
+ * length 4n. Each size is warmed up once, then measured several times with the
+ * two sizes alternating; the **median** CPU time at each size feeds the ratio,
+ * so one noisy sample on a loaded box cannot push a linear operation just over
+ * the limit. Default five measured alternations (a runtime without per-thread
+ * CPU time is refused). Linear work grows about 4×, and quadratic work about 16×;
  * LINEAR_GROWTH_LIMIT (8) sits between them with a factor of two either side.
  *
  * Each timed run must be long against the clock's tick (Linux counts a
@@ -58,8 +60,10 @@ export type GrowthOptions = {
 	 * larger texts add garbage-collection costs that grow faster than the work).
 	 */
 	readonly maxLength?: number;
-	/** Runs per size once calibrated; the fastest counts (default 2). */
+	/** Measured alternations per size once calibrated; median counts (default 5). */
 	readonly runs?: number;
+	/** Discarded warmup alternations per size before measuring (default 1). */
+	readonly warmupRuns?: number;
 };
 
 export class OperationHangError extends Error {
@@ -105,6 +109,18 @@ export class MissingCpuClockError extends Error {
 /** The most times one timed run repeats the operation. */
 export const MAX_REPEAT = 1024;
 
+/** Middle value; even-length inputs use the mean of the two central samples. */
+export function medianCpuMs(samples: readonly number[]): number {
+	if (samples.length === 0) return 0;
+	const sorted = [...samples].sort((left, right) => left - right);
+	const mid = Math.floor(sorted.length / 2);
+	if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+	const lower = sorted[mid - 1];
+	const upper = sorted[mid];
+	if (lower === undefined || upper === undefined) return 0;
+	return (lower + upper) / 2;
+}
+
 /**
  * One timed run, `repeat` calls of the operation: its CPU time. Each call's
  * wall time is held to the hang backstop.
@@ -143,7 +159,12 @@ async function onceAsync(
 }
 
 /** One timed run the measurement asks for. */
-type TimedRun = { readonly input: string; readonly repeat: number };
+type TimedRun = {
+	readonly input: string;
+	readonly repeat: number;
+	/** When true the caller records no sample from this run. */
+	readonly warmup?: boolean;
+};
 
 /**
  * The measurement, written once for both kinds of operation: it yields each
@@ -155,7 +176,8 @@ function* growthPlan(
 ): Generator<TimedRun, Growth, number> {
 	const minMs = options.minMs ?? 30;
 	const maxLength = options.maxLength ?? 262_144;
-	const runs = options.runs ?? 2;
+	const runs = options.runs ?? 5;
+	const warmupRuns = options.warmupRuns ?? 1;
 	let length = options.startLength ?? 4096;
 	let repeat = 1;
 	// Calibrating takes one run a step: only the final sizes need the best of
@@ -177,11 +199,18 @@ function* growthPlan(
 	// The two sizes take turns, so anything that slows the machine for a while
 	// slows both rather than one.
 	const large = input(4 * length);
-	let largeMs = Number.POSITIVE_INFINITY;
-	for (let attempt = 0; attempt < runs; attempt++) {
-		largeMs = Math.min(largeMs, yield { input: large, repeat });
-		smallMs = Math.min(smallMs, yield { input: small, repeat });
+	for (let attempt = 0; attempt < warmupRuns; attempt++) {
+		yield { input: large, repeat, warmup: true };
+		yield { input: small, repeat, warmup: true };
 	}
+	const smallSamples: number[] = [];
+	const largeSamples: number[] = [];
+	for (let attempt = 0; attempt < runs; attempt++) {
+		largeSamples.push(yield { input: large, repeat });
+		smallSamples.push(yield { input: small, repeat });
+	}
+	const largeMs = medianCpuMs(largeSamples);
+	smallMs = medianCpuMs(smallSamples);
 	return {
 		length,
 		repeat,
@@ -201,8 +230,10 @@ export function measureGrowth(
 ): Growth {
 	const plan = growthPlan(input, options);
 	let step = plan.next();
-	while (step.done !== true)
-		step = plan.next(once(run, step.value.input, step.value.repeat));
+	while (step.done !== true) {
+		const ms = once(run, step.value.input, step.value.repeat);
+		step = step.value.warmup ? plan.next() : plan.next(ms);
+	}
 	return step.value;
 }
 
@@ -214,8 +245,10 @@ export async function measureGrowthAsync(
 ): Promise<Growth> {
 	const plan = growthPlan(input, options);
 	let step = plan.next();
-	while (step.done !== true)
-		step = plan.next(await onceAsync(run, step.value.input, step.value.repeat));
+	while (step.done !== true) {
+		const ms = await onceAsync(run, step.value.input, step.value.repeat);
+		step = step.value.warmup ? plan.next() : plan.next(ms);
+	}
 	return step.value;
 }
 

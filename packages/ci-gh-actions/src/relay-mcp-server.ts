@@ -64,9 +64,10 @@ const LEASE_URI = /^hobo-ci:\/\/leases\/([a-f0-9-]{36})$/;
 /** How many of the account's events one read looks through for the ones a caller asked for. */
 const EVENT_WINDOW = 500;
 /**
- * How many reads in a row one `wait_for_events` call makes while it is still
- * behind the end of the journal. Past that it hands the cursor back and says
- * there is more, so that no call works without end.
+ * How many reads in a row one `wait_for_events` call makes while the account
+ * has more events after the ones it looked through and none of them matched.
+ * Past that it hands the cursor back and says there is more, so that no call
+ * works without end.
  */
 const WAIT_CATCH_UP_READS = 8;
 /** How many of a lease's latest events `get_lease` returns. */
@@ -318,19 +319,16 @@ function matches(event: RelayMcpEvent, filter: EventFilter): boolean {
 /** What one read of the account's journal found, and where the next one starts. */
 type EventRead = Readonly<{
 	events: RelayMcpEvent[];
-	/** How far the journal has been examined: where this server reads from next. */
-	position: number;
 	/**
-	 * The position to hand the caller as its cursor, when this read moved it:
-	 * the last of the account's own events it saw, or, when the read was cut
-	 * short, how far it got. Undefined when it reached the end of the journal
-	 * and saw nothing of the account's: the caller's cursor then stays where
-	 * it was, however much other accounts journalled meanwhile.
+	 * Where the next read starts, and the position the caller's cursor stands
+	 * for: the last of the account's own events this read looked at, or the
+	 * position it was given when it saw none. It is never a position of
+	 * another account's, so it does not move while only others journal.
 	 */
-	resume: number | undefined;
-	/** The read stopped before the end of the journal. */
+	position: number;
+	/** The account has events after the ones this read looked at or returned. */
 	more: boolean;
-	/** A read of the newest events left older ones unread. */
+	/** A read of the newest events left older ones of the account unread. */
 	truncated: boolean;
 }>;
 
@@ -368,22 +366,15 @@ async function readEvents(
 			view: eventView(entry, codec),
 		}))
 		.filter((entry) => matches(entry.view, filter));
-	// The newest of the account's own events this read saw, matched or not:
-	// nothing of the account's lies between it and the end of what was read.
-	const own = page.events.at(-1)?.seq;
 	if (after === undefined)
 		return {
 			events: found.slice(-limit).map((entry) => entry.view),
+			// The account's newest event, matched or not; zero when it has none.
 			position: page.cursor,
-			// With none of its own in sight the cursor is the journal's start,
-			// unless older events went unread: then it is where the read ended.
-			resume: own ?? (page.truncated ? page.cursor : 0),
 			more: false,
-			// Older events went unread when the store stopped looking back, or
-			// when a full window held fewer matches than were asked for.
-			truncated:
-				page.truncated ||
-				(page.events.length === EVENT_WINDOW && found.length < limit),
+			// Older events went unread: matches that did not fit, or events
+			// beyond the window that were never looked at.
+			truncated: found.length > limit || page.truncated,
 		};
 	// More matched than fit: resume after the last one returned, not after
 	// the ones left behind.
@@ -392,16 +383,12 @@ async function readEvents(
 		return {
 			events: found.slice(0, limit).map((entry) => entry.view),
 			position: last.position,
-			resume: last.position,
 			more: true,
 			truncated: false,
 		};
 	return {
 		events: found.map((entry) => entry.view),
 		position: page.cursor,
-		// Cut short, the caller must be told how far the read got, or it would
-		// read the same stretch for ever.
-		resume: page.more ? page.cursor : own,
 		more: page.more,
 		truncated: false,
 	};
@@ -412,14 +399,13 @@ function eventsResult(
 	services: RelayMcpServices,
 	accountId: string,
 	read: EventRead,
-	resume: number,
 	timedOut: boolean,
 ): CallToolResult {
 	return result(
 		RelayMcpEventsSchema,
 		create(RelayMcpEventsSchema, {
 			events: read.events,
-			cursor: services.cursors(accountId).encode(resume),
+			cursor: services.cursors(accountId).encode(read.position),
 			timedOut,
 			more: read.more,
 			truncated: read.truncated,
@@ -435,12 +421,13 @@ function eventsResult(
  * Every pass begins by handing the event loop back, so a store that answers
  * in the same turn cannot keep webhooks, health checks, the worker or this
  * caller's own cancellation waiting while the wait catches up. A pass reads
- * one bounded span of the journal, and a call that is still behind after
- * `WAIT_CATCH_UP_READS` of them returns the cursor with `more` set.
+ * the account's own events after the last one it looked at, through the
+ * account's index, so its cost does not depend on what other accounts have
+ * journalled. A call that has looked through `WAIT_CATCH_UP_READS` windows
+ * of the account's events without a match returns the cursor with `more`.
  *
- * The server reads on from wherever the journal has got to; the cursor it
- * hands back moves only with the account's own events (or with a read that
- * was cut short), so it does not tick with other accounts' activity.
+ * Every position here is one of the account's own events, so the cursor
+ * handed back does not tick with other accounts' activity.
  */
 async function waitForEvents(
 	services: RelayMcpServices,
@@ -455,17 +442,11 @@ async function waitForEvents(
 	const { now, sleep, pollMs, pause } = services;
 	const { accountId, signal } = caller;
 	const deadline = now() + wait.timeoutMs;
-	// Without a cursor the wait starts now: only what happens next counts.
-	// What it hands back then is the account's own newest event, after which
-	// nothing of the account's has been skipped.
-	const newest =
-		wait.after === undefined
-			? await services.store.eventsSince({ accountId, limit: 1 })
-			: undefined;
-	let after = newest?.cursor ?? wait.after ?? 0;
-	let resume = newest
-		? (newest.events.at(-1)?.seq ?? (newest.truncated ? newest.cursor : 0))
-		: after;
+	// Without a cursor the wait starts now: only what happens next counts, so
+	// it starts after the account's own newest event (zero when it has none).
+	let after =
+		wait.after ??
+		(await services.store.eventsSince({ accountId, limit: 1 })).cursor;
 	let behind = 0;
 	for (;;) {
 		await pause();
@@ -478,20 +459,19 @@ async function waitForEvents(
 			wait.limit,
 		);
 		after = read.position;
-		if (read.resume !== undefined) resume = read.resume;
 		if (read.events.length > 0)
-			return eventsResult(services, accountId, read, resume, false);
+			return eventsResult(services, accountId, read, false);
 		const remaining = deadline - now();
 		if (read.more) {
-			// Not at the end of the journal yet, so not a timeout either: read
-			// on, within this call's share of work and time.
+			// The account has more events than this pass looked through, so
+			// this is not a timeout either: read on, within this call's share
+			// of work and time.
 			behind += 1;
 			if (behind >= WAIT_CATCH_UP_READS || remaining <= 0)
-				return eventsResult(services, accountId, read, resume, false);
+				return eventsResult(services, accountId, read, false);
 			continue;
 		}
-		if (remaining <= 0)
-			return eventsResult(services, accountId, read, resume, true);
+		if (remaining <= 0) return eventsResult(services, accountId, read, true);
 		await sleep(Math.min(pollMs, remaining), signal);
 	}
 }
@@ -684,7 +664,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 		{
 			title: "List journal events",
 			description:
-				"The account's events after a cursor, oldest first; without a cursor, its newest ones. The returned cursor is where to read from next. `more: true` means the read stopped before the end of the journal (read again at once, even if `events` is empty); `truncated: true` means a read of the newest events left older ones unread.",
+				"The account's events after a cursor, oldest first; without a cursor, its newest ones. The returned cursor is where to read from next. `more: true` means the account has more events after these (read again at once, even if `events` is empty because none of the ones looked through matched the filters); `truncated: true` means a read of the newest events left older ones unread.",
 			inputSchema: {
 				cursor: Cursor.optional(),
 				leaseId: LeaseId.optional(),
@@ -707,14 +687,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 					input,
 					input.limit ?? 50,
 				);
-				return eventsResult(
-					services,
-					caller.accountId,
-					read,
-					// Nothing of the account's since its cursor: the cursor stands.
-					read.resume ?? after ?? 0,
-					false,
-				);
+				return eventsResult(services, caller.accountId, read, false);
 			}),
 	);
 
@@ -723,7 +696,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 		{
 			title: "Wait for the next events",
 			description:
-				"Blocks until the account has an event after the cursor that matches the filters, or the timeout passes (timedOut: true). Call it again with the returned cursor to keep following; no polling or reminder is needed. Without a cursor it waits for what happens next. An empty result with `more: true` is neither: the journal is longer than one call reads, so call again at once.",
+				"Blocks until the account has an event after the cursor that matches the filters, or the timeout passes (timedOut: true). Call it again with the returned cursor to keep following; no polling or reminder is needed. Without a cursor it waits for what happens next. An empty result with `more: true` is neither: the account has more events after the cursor than one call looks through and none of those matched yet, so call again at once.",
 			inputSchema: {
 				cursor: Cursor.optional(),
 				timeoutSeconds: z
@@ -970,7 +943,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 					RelayMcpEventsSchema,
 					create(RelayMcpEventsSchema, {
 						events: read.events,
-						cursor: services.cursors(caller.accountId).encode(read.resume ?? 0),
+						cursor: services.cursors(caller.accountId).encode(read.position),
 						truncated: read.truncated,
 					}),
 				);

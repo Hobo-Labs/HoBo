@@ -4,5 +4,5 @@
     "rootDir": "../..",
     "noEmit": true
   },
-  "include": ["db", "test/postgres-schema*.test.ts", "test/schema-tooling.test.ts"]
+  "include": ["db", "test/postgres-schema*.test.ts", "test/relay-schema.test.ts", "test/schema-tooling.test.ts"]
 }

@@ -46,6 +46,7 @@
     "lint": "biome check .",
     "test": "node --import tsx scripts/generate-proxy-bundle.mts --check && vitest run",
     "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",
+    "db:ship": "node --import tsx ../ci/db/tooling/cli.mts ship",
     "db:check": "node --import tsx ../ci/db/tooling/cli.mts check",
     "db:migrate": "node --import tsx ../ci/db/tooling/cli.mts migrate",
     "db:verify": "node --import tsx ../ci/db/tooling/cli.mts verify"

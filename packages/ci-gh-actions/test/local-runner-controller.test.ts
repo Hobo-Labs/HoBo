@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { z } from "zod";
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(
@@ -34,25 +33,6 @@ function controller() {
 	);
 	return { state, command, socket };
 }
-/**
- * Stop a controller a case may have left running. One whose recorded status is
- * already stopped or blocked has exited, and `stop` would only read that back
- * in another cold-started process.
- */
-async function stopIfRunning(
-	state: string,
-	command: ReturnType<typeof controller>["command"],
-) {
-	try {
-		const recorded = z
-			.object({ status: z.string() })
-			.parse(JSON.parse(readFileSync(join(state, "status.json"), "utf8")));
-		if (["stopped", "blocked"].includes(recorded.status)) return;
-	} catch {
-		// No readable status: ask the controller itself.
-	}
-	await command("stop").catch(() => {});
-}
 afterEach(() => {
 	for (const directory of directories.splice(0))
 		rmSync(directory, { recursive: true, force: true });
@@ -74,7 +54,7 @@ describe("local runner controller lifecycle", { timeout: 60_000 }, () => {
 				JSON.parse(readFileSync(join(state, "status.json"), "utf8")).status,
 			).toBe("stopped");
 		} finally {
-			await stopIfRunning(state, command);
+			await command("stop");
 		}
 	});
 	it("preserves a blocked recovery status when the controller has exited", async () => {
@@ -107,7 +87,7 @@ describe("local runner controller lifecycle", { timeout: 60_000 }, () => {
 				JSON.parse(readFileSync(join(state, "registration.json"), "utf8")),
 			).toEqual(registration);
 		} finally {
-			await stopIfRunning(state, command);
+			await command("stop").catch(() => {});
 		}
 	});
 	it("does not claim shutdown when an existing controller returns an invalid response", async () => {

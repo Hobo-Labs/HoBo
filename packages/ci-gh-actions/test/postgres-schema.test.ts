@@ -2,6 +2,7 @@ import { defineSchemaSuite } from "../../ci/db/tooling/suite.js";
 import { schemaSource } from "../db/source.js";
 
 defineSchemaSuite(schemaSource, {
+	migrations: ["0000_baseline"],
 	tables: [
 		"hobo_ci_app_credentials",
 		"hobo_ci_app_installations",

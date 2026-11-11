@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import pg from "pg";
-import { expect, it, onTestFinished, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
 	createHostedAppBootstrap,
 	PostgresAppBootstrapStore,
@@ -113,12 +113,6 @@ it("issues browser-bound registration states without reserving a global App slot
 
 it("times out and cancels a slow registration request body", async () => {
 	vi.useFakeTimers();
-	// Registered first, so the clock is real again even if the setup below
-	// throws before the `try`: files share a worker, and a fake clock left
-	// behind would stall the next file's timers.
-	onTestFinished(() => {
-		vi.useRealTimers();
-	});
 	const readyApp = vi
 		.spyOn(PostgresAppBootstrapStore.prototype, "readyAppId")
 		.mockResolvedValue(undefined);
@@ -159,6 +153,7 @@ it("times out and cancels a slow registration request body", async () => {
 		expect(cancelled).toBe(true);
 	} finally {
 		readyApp.mockRestore();
+		vi.useRealTimers();
 		await pool.end();
 	}
 });
