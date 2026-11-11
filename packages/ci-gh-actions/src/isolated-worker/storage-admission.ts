@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
+import type { WorkerStorageReserve } from "./storage-job-classes.js";
 import {
 	createNodeWorkerStorageFileSystem,
 	type WorkerFileSystemStats,
@@ -55,6 +56,7 @@ export type WorkerStorageLog = (
 	event:
 		| "hobo_ci_inode_pressure"
 		| "hobo_ci_inode_reserve_wait"
+		| "hobo_ci_disk_reserve_wait"
 		| "hobo_ci_pnpm_store_prune"
 		| "hobo_ci_storage_admission_wait"
 		| "hobo_ci_storage_prune_failed",
@@ -93,18 +95,28 @@ function percent(value: number): number {
 }
 
 type StorageSample = Pressure &
-	Readonly<{ device: number; ffree: number; reserve: number; index: number }>;
+	Readonly<{
+		device: number;
+		ffree: number;
+		bfree: number;
+		bsize: number;
+		reserveInodes: number;
+		reserveBytes: number;
+		index: number;
+	}>;
 
-type InodeGrant = Readonly<{
+type StorageGrant = Readonly<{
 	grantedAtMs: number;
 	ffree: readonly number[];
+	bfree: readonly number[];
 }>;
 
-type InodeReserveWait = Readonly<{
+type StorageReserveWait = Readonly<{
+	kind: "inode" | "disk";
 	root: string;
-	freeInodes: number;
-	outstandingInodes: number;
-	requiredInodes: number;
+	free: number;
+	outstanding: number;
+	required: number;
 	activeGrants: number;
 }>;
 
@@ -120,6 +132,7 @@ export function createWorkerStorageAdmission(options: {
 	softLimit?: number;
 	hardLimit?: number;
 	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+	defaultJobReserve?: WorkerStorageReserve;
 	admitMaintainIntervalMs?: number;
 	scheduleRetiredSweep?: () => void;
 	now?: () => number;
@@ -129,20 +142,23 @@ export function createWorkerStorageAdmission(options: {
 	const hardLimit = options.hardLimit ?? HARD_LIMIT;
 	if (!(softLimit > 0) || !(hardLimit > softLimit) || !(hardLimit < 1))
 		throw new Error("invalid worker storage thresholds");
-	const jobInodes = options.jobInodes ?? {
-		workRoot: 200_000,
-		dockerDataRoot: 170_000,
+	const defaultJobReserve = options.defaultJobReserve ?? {
+		workRoot: options.jobInodes?.workRoot ?? 200_000,
+		dockerDataRoot: options.jobInodes?.dockerDataRoot ?? 170_000,
+		workRootBytes: 8 * 1024 * 1024 * 1024,
+		dockerDataRootBytes: 6 * 1024 * 1024 * 1024,
 	};
-	for (const reserve of [jobInodes.workRoot, jobInodes.dockerDataRoot])
+	for (const reserve of [
+		defaultJobReserve.workRoot,
+		defaultJobReserve.dockerDataRoot,
+		defaultJobReserve.workRootBytes,
+		defaultJobReserve.dockerDataRootBytes,
+	])
 		if (!Number.isSafeInteger(reserve) || reserve < 0)
-			throw new Error("invalid worker job inode reservation");
-	const reservations = [
-		{ root: options.dockerDataRoot, reserve: jobInodes.dockerDataRoot },
-		{ root: options.workRoot, reserve: jobInodes.workRoot },
-	];
+			throw new Error("invalid worker job storage reservation");
 	const now = options.now ?? Date.now;
 	const admitMaintainIntervalMs = options.admitMaintainIntervalMs ?? 60_000;
-	const grants = new Map<string, InodeGrant>();
+	const grants = new Map<string, StorageGrant>();
 	let lastAdmitMaintainMs: number | undefined;
 	let hardEpisode = false;
 	let reserveEpisode = false;
@@ -150,19 +166,47 @@ export function createWorkerStorageAdmission(options: {
 	let pnpmPruneInFlight = false;
 	let pnpmPruneWaitLogged = false;
 
-	async function sample(): Promise<StorageSample[]> {
+	function reservationsFor(jobReserve: WorkerStorageReserve): readonly {
+		root: string;
+		reserveInodes: number;
+		reserveBytes: number;
+		index: number;
+	}[] {
+		return [
+			{
+				root: options.dockerDataRoot,
+				reserveInodes: jobReserve.dockerDataRoot,
+				reserveBytes: jobReserve.dockerDataRootBytes,
+				index: 0,
+			},
+			{
+				root: options.workRoot,
+				reserveInodes: jobReserve.workRoot,
+				reserveBytes: jobReserve.workRootBytes,
+				index: 1,
+			},
+		];
+	}
+
+	async function sample(
+		jobReserve: WorkerStorageReserve,
+	): Promise<StorageSample[]> {
 		return Promise.all(
-			reservations.map(async (reservation, index) => {
+			reservationsFor(jobReserve).map(async (reservation) => {
 				const [stats, device] = await Promise.all([
 					options.fs.statfs(reservation.root),
 					options.fs.device(reservation.root),
 				]);
+				const bsize = stats.bsize > 0 ? stats.bsize : 4096;
 				return {
 					...pressure(reservation.root, stats),
 					device,
 					ffree: stats.ffree,
-					reserve: reservation.reserve,
-					index,
+					bfree: stats.bfree,
+					bsize,
+					reserveInodes: reservation.reserveInodes,
+					reserveBytes: reservation.reserveBytes,
+					index: reservation.index,
 				};
 			}),
 		);
@@ -186,33 +230,53 @@ export function createWorkerStorageAdmission(options: {
 			group.push(entry);
 			groups.set(entry.device, group);
 		}
-		let oldest: InodeGrant | undefined;
+		let oldest: StorageGrant | undefined;
 		for (const grant of grants.values())
 			if (!oldest || grant.grantedAtMs < oldest.grantedAtMs) oldest = grant;
 		for (const group of groups.values()) {
 			const first = group[0];
 			if (!first) continue;
 			const requiredInodes = group.reduce(
-				(total, entry) => total + entry.reserve,
+				(total, entry) => total + entry.reserveInodes,
 				0,
 			);
-			const baseline = oldest?.ffree[first.index] ?? first.ffree;
-			// Consumption since the oldest grant belongs to all grants; freed inodes only increase conservatism.
+			const baselineInodes = oldest?.ffree[first.index] ?? first.ffree;
 			const outstandingInodes = Math.max(
 				0,
-				requiredInodes * grants.size - (baseline - first.ffree),
+				requiredInodes * grants.size - (baselineInodes - first.ffree),
 			);
 			if (
 				requiredInodes > 0 &&
 				first.ffree - outstandingInodes < requiredInodes
 			)
 				return {
+					kind: "inode",
 					root: first.root,
-					freeInodes: first.ffree,
-					outstandingInodes,
-					requiredInodes,
+					free: first.ffree,
+					outstanding: outstandingInodes,
+					required: requiredInodes,
 					activeGrants: grants.size,
-				} satisfies InodeReserveWait;
+				} satisfies StorageReserveWait;
+			const requiredBytes = group.reduce(
+				(total, entry) => total + entry.reserveBytes,
+				0,
+			);
+			const freeBytes = first.bfree * first.bsize;
+			const baselineBlocks = oldest?.bfree[first.index] ?? first.bfree;
+			const outstandingBytes = Math.max(
+				0,
+				requiredBytes * grants.size -
+					(baselineBlocks - first.bfree) * first.bsize,
+			);
+			if (requiredBytes > 0 && freeBytes - outstandingBytes < requiredBytes)
+				return {
+					kind: "disk",
+					root: first.root,
+					free: freeBytes,
+					outstanding: outstandingBytes,
+					required: requiredBytes,
+					activeGrants: grants.size,
+				} satisfies StorageReserveWait;
 		}
 		return undefined;
 	}
@@ -221,6 +285,7 @@ export function createWorkerStorageAdmission(options: {
 		grants.set(jobId, {
 			grantedAtMs: now(),
 			ffree: samples.map((entry) => entry.ffree),
+			bfree: samples.map((entry) => entry.bfree),
 		});
 		reserveEpisode = false;
 		return true;
@@ -335,6 +400,7 @@ export function createWorkerStorageAdmission(options: {
 		async admit(
 			activeLeases: readonly WorkerStorageLease[],
 			jobId: string,
+			jobReserve: WorkerStorageReserve = defaultJobReserve,
 		): Promise<boolean> {
 			if (pnpmPruneInFlight) {
 				if (!pnpmPruneWaitLogged)
@@ -347,7 +413,7 @@ export function createWorkerStorageAdmission(options: {
 			reconcile(activeLeases);
 			let before: StorageSample[];
 			try {
-				before = await sample();
+				before = await sample(jobReserve);
 				unavailable = false;
 			} catch (error) {
 				if (!unavailable) {
@@ -375,7 +441,7 @@ export function createWorkerStorageAdmission(options: {
 			}
 			let after: StorageSample[];
 			try {
-				after = await sample();
+				after = await sample(jobReserve);
 			} catch (error) {
 				options.log?.("hobo_ci_storage_admission_wait", {
 					message: error instanceof Error ? error.message : "unknown",
@@ -404,8 +470,24 @@ export function createWorkerStorageAdmission(options: {
 			}
 			const shortage = reserveShortage(after);
 			if (shortage) {
-				if (!reserveEpisode)
-					options.log?.("hobo_ci_inode_reserve_wait", shortage);
+				if (!reserveEpisode) {
+					if (shortage.kind === "inode")
+						options.log?.("hobo_ci_inode_reserve_wait", {
+							root: shortage.root,
+							freeInodes: shortage.free,
+							outstandingInodes: shortage.outstanding,
+							requiredInodes: shortage.required,
+							activeGrants: shortage.activeGrants,
+						});
+					else
+						options.log?.("hobo_ci_disk_reserve_wait", {
+							root: shortage.root,
+							freeBytes: shortage.free,
+							outstandingBytes: shortage.outstanding,
+							requiredBytes: shortage.required,
+							activeGrants: shortage.activeGrants,
+						});
+				}
 				reserveEpisode = true;
 				return false;
 			}

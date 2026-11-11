@@ -39,6 +39,7 @@ import {
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
@@ -59,12 +60,15 @@ import {
 	readHostHealthSample,
 	readHostMemory,
 	relayTraceSinkFromEnv,
+	resolvedStorageReserve,
 	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	singleFlight,
 	stopIsolatedWorker,
+	storageReserveForClass,
+	storageReserveForJob,
 	traceGithubTransport,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
@@ -486,6 +490,8 @@ try {
 	});
 	retiredSweep.trigger();
 	const dockerDataRoot = await docker.dataRoot();
+	const storagePeaksPath = join(workRoot, "storage-peaks.json");
+	const storagePeaks = createStoragePeaks({ path: storagePeaksPath, log });
 	const storageAdmission = createWorkerStorageAdmission({
 		dockerDataRoot,
 		workRoot,
@@ -493,6 +499,7 @@ try {
 		docker,
 		activeLeases: async () => storageLeases(await store.activeLeases()),
 		scheduleRetiredSweep: retiredSweep.trigger,
+		defaultJobReserve: storageReserveForClass("standard"),
 		pnpmStore: pnpmStore
 			? createPnpmStoreMaintenance({
 					path: pnpmStore,
@@ -519,6 +526,12 @@ try {
 		},
 		log,
 	});
+	const storageJobReserve = (jobName: string) =>
+		resolvedStorageReserve(
+			jobName,
+			storagePeaks.history[jobName],
+			storageReserveForJob(jobName),
+		);
 	const listWorkerContainers = () => {
 		if (docker.listWorkerContainers) return docker.listWorkerContainers();
 		if (!docker.list) throw new Error("docker driver missing list");
@@ -622,6 +635,7 @@ try {
 		prewarmMemoryMb: memoryConfig.classes.standard,
 		memoryClasses: memoryConfig.classes,
 		memoryPeaks,
+		storagePeaks,
 		memoryAdmission,
 		generalLeaseIds: (activeLeases) =>
 			generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
@@ -817,6 +831,7 @@ try {
 		lendTrunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		storageJobReserve,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
 		headroomTrunkOverflow,

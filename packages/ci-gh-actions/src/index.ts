@@ -109,6 +109,11 @@ export {
 	workerOfferKeys,
 } from "./isolated-worker/daemon-shutdown.js";
 export {
+	DEPS_BUILD_MEASURED_DOCKER_BYTES,
+	DEPS_BUILD_MEASURED_DOCKER_INODES,
+	depsBuildDockerReserve,
+} from "./isolated-worker/deps-build-budget.js";
+export {
 	createDepsImageEnsurer,
 	type DepsImageAction,
 	type DepsImageDockerPort,
@@ -197,6 +202,22 @@ export {
 	createWorkerStorageAdmission,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
+export {
+	DEPS_BUILD_ADMISSION_ID,
+	STORAGE_CLASS_RESERVES,
+	storageClassForJob,
+	storageReserveForClass,
+	storageReserveForDepsBuild,
+	storageReserveForJob,
+	type WorkerStorageClassName,
+	type WorkerStorageReserve,
+} from "./isolated-worker/storage-job-classes.js";
+export {
+	createStoragePeaks,
+	learnedStorageReserve,
+	resolvedStorageReserve,
+	type StoragePeaks,
+} from "./isolated-worker/storage-peaks.js";
 export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,

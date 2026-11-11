@@ -110,6 +110,9 @@ export function createHostedRelayRuntime(options: {
 	lendTrunkSlots?: boolean;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
+	storageJobReserve?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["storageJobReserve"];
 	mergeQueuePositions?: MergeQueuePositionSource;
 	/** See `HostedRelay`: publishes the fleet route table after each pass. */
 	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
@@ -176,6 +179,8 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.memoryAdmission = options.memoryAdmission;
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
+		if (options.storageJobReserve)
+			relayOptions.storageJobReserve = options.storageJobReserve;
 		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		if (options.headroomTrunkOverflow)
 			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
