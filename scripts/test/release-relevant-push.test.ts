@@ -103,7 +103,7 @@ describe("main train release scope", () => {
 		});
 	});
 
-	it("releases when no release tag is in the history (tags left on rewritten history)", () => {
+	it("releases when no release tag is in the history, even if tags exist elsewhere", () => {
 		const { dir, git, commit } = repo();
 		commit("README.md");
 		git("checkout", "-q", "--orphan", "old");
