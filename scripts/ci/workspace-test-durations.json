@@ -8,7 +8,7 @@
 	"packages/ci-gh-actions": 51,
 	"packages/code": 95,
 	"packages/schema-tools": 40,
-	"packages/ci-vercel": 17,
+	"packages/ci-vercel": 48,
 	"packages/ci-ado": 21,
 	"packages/ci-agent": 12,
 	"packages/ci": 12,

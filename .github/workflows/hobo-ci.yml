@@ -68,6 +68,7 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
+            packages/ci/src/fleet/capacity.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
