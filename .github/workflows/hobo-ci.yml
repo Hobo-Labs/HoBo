@@ -29,14 +29,17 @@ env:
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
 
-# A newer push to main supersedes the in-progress one: its secret scan covers the landed
-# range (schedule still does full history after a blob backfill) and its gates test the
-# newer tree, while the older run would hold box slots the merge queue is waiting for.
-# The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
-# push never cancels them; merge_group runs are never cancelled.
+# Pushes to main queue: the running one finishes, the newest waits, and GitHub drops any
+# older waiting run (its commits are in the newest tree, and the gate tests from the last
+# green main). They used to cancel the running one, and with the merge queue landing a
+# commit every few minutes and a main run taking longer than that, no main run finished
+# for hours; the release train and the deps publish run only after a green main run.
+# A newer pull_request push still cancels its PR's older run. The event name keeps
+# schedule and workflow_dispatch on main out of the pushes' group; merge_group runs are
+# never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   route:
