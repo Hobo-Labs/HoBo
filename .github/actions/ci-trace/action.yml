@@ -16,7 +16,12 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        node --experimental-strip-types --no-warnings scripts/ci/ci-trace.mts ci-traces "${GITHUB_JOB}"
+        trace_script="scripts/ci/ci-trace.mts"
+        if [[ ! -f "$trace_script" ]]; then
+          echo "::notice title=CI trace skipped::${trace_script} is absent (checkout or bootstrap did not populate the workspace)."
+          exit 0
+        fi
+        node --experimental-strip-types --no-warnings "$trace_script" ci-traces "${GITHUB_JOB}"
     - name: Upload trace artifact
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:

@@ -1206,7 +1206,9 @@ jobs:
       contents: read
     steps:
       - name: Bootstrap repo-local composite actions
+        id: bootstrap_actions
         if: always()
+        continue-on-error: true
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
@@ -1216,6 +1218,20 @@ jobs:
           fetch-tags: false
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
+      - name: Bootstrap composite actions (git fallback)
+        id: bootstrap_actions_git
+        if: always() && steps.bootstrap_actions.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          rm -rf .git
+          git init -q
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 --filter=blob:none origin "${GITHUB_SHA}"
+          git sparse-checkout init --cone
+          git sparse-checkout set .github/actions
+          git checkout FETCH_HEAD
       - name: Require main gate and workspace shards
         env:
           MAIN_RESULT: ${{ needs.main-gate.result }}
@@ -1231,11 +1247,56 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        id: repo_checkout
+        continue-on-error: true
         with:
           clean: false
           fetch-depth: 0
           filter: blob:none
           fetch-tags: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        id: repo_checkout_retry
+        if: steps.repo_checkout.outcome != 'success'
+        continue-on-error: true
+        with:
+          clean: false
+          fetch-depth: 0
+          filter: blob:none
+          fetch-tags: false
+      - name: Ensure finish workspace checkout
+        id: workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="scripts/ci/gitleaks-main-scan.mts"
+          if [ -f "$marker" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cd "${GITHUB_WORKSPACE}"
+          repo="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          for attempt in 1 2 3 4; do
+            rm -rf .git
+            git init -q
+            if git remote get-url origin >/dev/null 2>&1; then
+              git remote set-url origin "$repo"
+            else
+              git remote add origin "$repo"
+            fi
+            if git -c protocol.version=2 fetch --no-tags --prune origin "${GITHUB_SHA}" \
+              && git checkout -f FETCH_HEAD; then
+              if [ -f "$marker" ]; then
+                echo "ready=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "finish workspace checkout retry ${attempt}/4 (git fallback)"
+              sleep $(( attempt * 4 ))
+            fi
+          done
+          echo "::error title=Finish workspace checkout failed::${marker} is still missing after actions/checkout retries and git fallback (metadata download timeout or fetch failure)."
+          exit 1
       - uses: ./.github/actions/ci-runner-preflight
       - name: Secret scan (full history)
         env:
