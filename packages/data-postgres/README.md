@@ -674,6 +674,20 @@ Step 2 is what makes it impossible to overwrite the writer. A backend that is
 the writer, or has been offered the entry that makes it one, holds that entry
 (rule 3 above), so it refuses however stale the caller's view is.
 
+**The copy on its own.** `copySnapshot({ source, target, layout, admit, record })`
+is the same copy without the fleet's rule about who may be overwritten: the
+source transaction, the row and byte limits, and steps 3 to 6. The caller
+supplies `admit`, which runs on the target inside its transaction before any
+copied table is read or changed, and `record`, which runs after the digests
+matched and commits with the copied rows. A refusal is thrown as
+`ReplicationRefused` (`oversized`, `schema-mismatch`, `digest-mismatch`), and
+anything thrown rolls both transactions back. `replicateSnapshot` is
+`copySnapshot` with steps 1 and 2 as `admit` and step 7 as `record`. It exists
+for a one-off copy between two databases that are not a fleet and so have no
+assignment log to consult; the CI relay's one-time import into a newly
+selected store is that case, and its `admit` is "this store holds no
+registration and no account".
+
 **Why text and not JSON values.** `row_to_json` writes an SQL `NULL` and a
 `json` column containing `null` identically, and `json_populate_recordset`
 reads both back as SQL `NULL`. Sending each column as the text PostgreSQL
