@@ -1,6 +1,10 @@
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCiAgent } from "../src/agent.js";
-import { createConfiguredEngines } from "../src/ai-sdk-engine.js";
+import {
+	createAiSdkEngine,
+	createConfiguredEngines,
+} from "../src/ai-sdk-engine.js";
 import { parseAgentConfig } from "../src/config.js";
 import { createMemoryJournal } from "../src/journal.js";
 import { observeQueue } from "../src/planner.js";
@@ -34,9 +38,18 @@ const THEIRS = BASE.replace(
 	"	amount: number;\n	discount?: number;\n",
 ).replace("sum + price.amount", "sum + price.amount - (price.discount ?? 0)");
 
-describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
-	"live model through the AI Gateway",
-	{ timeout: 180_000 },
+/**
+ * Where the model is: an OpenAI-compatible server at
+ * HOBO_CI_AGENT_LIVE_BASE_URL (a local llama.cpp or Ollama server with an
+ * open-weights model, which costs nothing), or else the AI Gateway.
+ */
+const local = process.env.HOBO_CI_AGENT_LIVE_BASE_URL;
+const gateway = process.env.AI_GATEWAY_API_KEY;
+
+describe.skipIf(!local && !gateway)(
+	`live model (${local ? "OpenAI-compatible server" : "AI Gateway"})`,
+	// A small model on a CPU answers in minutes, not seconds.
+	{ timeout: 900_000 },
 	() => {
 		let repos: Repositories;
 		beforeEach(() => {
@@ -61,6 +74,8 @@ describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 								"anthropic/claude-sonnet-5.5",
 						},
 					],
+					// Room for a small model on a CPU.
+					budget: { timeoutSeconds: 600 },
 				}),
 			);
 			const comments: string[] = [];
@@ -97,9 +112,23 @@ describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 					enqueue: async () => {},
 				},
 				workspace: repos.workspace(),
-				engines: await createConfiguredEngines(config, {
-					credential: () => undefined,
-				}),
+				// The configuration allows only an https base URL; a local server is
+				// plain http, so its engine is built from the model directly.
+				engines: local
+					? [
+							createAiSdkEngine({
+								id: "live",
+								modelName: process.env.HOBO_CI_AGENT_LIVE_MODEL ?? "local",
+								model: createOpenAICompatible({
+									name: "local",
+									baseURL: local,
+									supportsStructuredOutputs: true,
+								})(process.env.HOBO_CI_AGENT_LIVE_MODEL ?? "local"),
+							}),
+						]
+					: await createConfiguredEngines(config, {
+							credential: () => undefined,
+						}),
 				journal: createMemoryJournal(),
 			});
 
