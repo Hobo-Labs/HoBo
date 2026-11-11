@@ -108,12 +108,49 @@ const Runs = z.object({
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
 			event: z.string().optional(),
+			head_branch: z.string().nullable().optional(),
 			head_sha: z.string().optional(),
+			path: z.string().optional(),
 			run_started_at: z.string().nullable().optional(),
 		}),
 	),
 });
 type Run = z.infer<typeof Runs>["workflow_runs"][number];
+
+/** Workflow file path for {@link HOBO_CI_FABRIC_WORKFLOW_BASENAME}. */
+export const HOBO_CI_FABRIC_WORKFLOW_BASENAME = "hobo-ci.yml";
+
+function runStartedAtMs(run: Run): number {
+	const parsed = Date.parse(run.run_started_at ?? "");
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Older in-flight main pushes superseded by GitHub `cancel-in-progress` on HoBo
+ * CI Fabric. Their queued jobs must not hold fleet slots behind the live SHA.
+ */
+export function supersededMainFabricPushRunIds(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): ReadonlySet<number> {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length <= 1) return new Set();
+	const sorted = [...mainPush].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	);
+	const newest = sorted[0]?.id;
+	if (newest === undefined) return new Set();
+	return new Set(
+		sorted.filter((run) => run.id !== newest).map((run) => run.id),
+	);
+}
 const Jobs = z.object({
 	jobs: z.array(
 		z.object({
@@ -254,6 +291,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				seen.add(connection.repositoryId);
 				summary.repositories++;
 				const runIds = new Set<number>();
+				const activeRuns: Run[] = [];
 				for (const status of RUN_STATUSES) {
 					const runs = await getJson(
 						connection.installationId,
@@ -262,7 +300,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						summary,
 					);
 					primeRuns(runs?.workflow_runs);
-					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
+					for (const run of runs?.workflow_runs ?? []) {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				const newest = await getJson(
 					connection.installationId,
@@ -274,7 +315,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				const newestCompleted: Run[] = [];
 				for (const run of newest?.workflow_runs ?? []) {
 					if (run.status === "completed") newestCompleted.push(run);
-					else runIds.add(run.id);
+					else {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
@@ -314,8 +358,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					if (key !== undefined && run.run_attempt !== undefined)
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
+				const supersededRuns = supersededMainFabricPushRunIds(activeRuns);
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
+					if (supersededRuns.has(runId)) continue;
 					const jobs = await getJson(
 						connection.installationId,
 						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
@@ -343,6 +389,14 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 							job.created_at !== undefined
 								? Date.parse(job.created_at)
 								: undefined;
+						if (supersededRuns.has(job.run_id)) {
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result: "superseded-main-push",
+							});
+							continue;
+						}
 						if (
 							status.data === "queued" &&
 							options.ingestCoalesce?.shouldSkip(
