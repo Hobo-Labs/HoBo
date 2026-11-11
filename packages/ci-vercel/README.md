@@ -320,13 +320,21 @@ To move the relay onto one:
 
 1. In the Vercel project, open Storage, create the store and connect it to the
    project's Production environment. If the old store is still connected, give
-   the new one a prefix and set `HOBO_CI_DATABASE_ENV_PREFIX` to it.
+   the new one a prefix. The relay then chooses between the two by itself; see
+   [A second store attached to the project](#a-second-store-attached-to-the-project).
+   Setting `HOBO_CI_DATABASE_ENV_PREFIX` to the prefix names the store by hand
+   instead and turns the choosing off.
 2. If the provider's certificates chain to its own root, add that root
-   certificate as `HOBO_CI_DATABASE_CA_CERT`.
+   certificate: as `HOBO_CI_DATABASE_CA_CERT` for a store without a prefix or
+   one named by `HOBO_CI_DATABASE_ENV_PREFIX`, as
+   `<PREFIX>HOBO_CI_DATABASE_CA_CERT` for a prefixed store the relay chooses
+   by itself.
 3. Redeploy. The relay creates its tables on first use. A new database has no
    GitHub App record, so the relay starts in bootstrap mode; complete
    [GitHub onboarding](../ci-gh-actions/ONBOARDING.md) again, or restore the old
-   database into the new one first to keep the existing App.
+   database into the new one first to keep the existing App. If the old store
+   is left connected and answers again while the new one is still empty, the
+   relay copies the old store's tables across once.
 4. Confirm `GET /readyz` and disconnect the old store.
 
 `scripts/bootstrap-postgres-contract.ts` runs the whole relay flow against a
@@ -335,6 +343,179 @@ real PostgreSQL. `HOBO_CI_TEST_POSTGRES_BINDING` (`supabase`,
 `HOBO_CI_TEST_POSTGRES_CA_FILE` a private certificate authority; it passes
 under all three bindings against a TLS-only PostgreSQL 16. It has not been run
 against a hosted Supabase or Prisma Postgres database.
+
+### A second store attached to the project
+
+A store that is over its quota refuses every connection, and the only repair
+available from the Vercel dashboard is to attach another one. With the old
+store's variables still present, the relay used to keep dialling the old store
+until someone set `HOBO_CI_DATABASE_ENV_PREFIX`. Now it chooses.
+
+**When it applies.** The candidates are the databases
+`hobo_ci_database_candidates` lists whose pooled and session-scoped connection
+strings both resolve, and whose session-scoped one is not a known pooler. The
+relay chooses only when there are two or more of them and neither
+`HOBO_CI_DATABASE_ENV_PREFIX` nor `HOBO_CI_DATABASE_BACKENDS` is set. In every
+other case nothing here runs: no probe, no marker table, the same relay as
+before.
+
+**Probe.** When the first request of a function instance needs the store, each
+candidate gets one connection attempt on its session-scoped connection, five
+seconds to connect and five per statement, all candidates at once.
+
+| Class | Meaning | What counts |
+| --- | --- | --- |
+| `serving` | Connected, and its marker was read | |
+| `refusing` | The server answered, with a refusal that asking again will not change | SQLSTATE `53000` (what Neon sends once a project is over its plan quota), class `28` (a wrong or revoked credential), `3D000` (the database is gone). The list is `STORE_REFUSAL_SQLSTATES` in `src/database-selection.ts` |
+| `unknown` | Anything else | A timeout, a failed name lookup, a TLS failure, a reset connection, `57P03`, `53300`, any other `53xxx` |
+
+**If any candidate is `unknown`, the relay does not choose.** It reports the
+store as unavailable exactly as a single store that is down: `GET /readyz`
+answers 503 `store-unavailable`, other requests get the fixed 503, and the next
+attempt waits 5 s, doubling to a minute. A store that did not answer may be the
+one in use, and two instances that reach different subsets of the stores must
+never pick different ones. The consequence is deliberate and worth knowing: a
+second store that is attached but misconfigured (a missing certificate
+authority, a wrong host) takes the relay to 503 until it answers, is detached,
+or `HOBO_CI_DATABASE_ENV_PREFIX` names the store to use.
+
+**The rule.** Each store the relay has run on holds one row in
+`hobo_ci_store_selection`: `generation`, `selected_at`, `reason`, and the
+record of the import described below. Among the `serving` candidates the
+relay runs on the one with the highest generation. Equal generations go to
+discovery order, the store without a prefix first, then by prefix; that covers
+the first run, when no store holds a row.
+
+A new generation is written on the chosen store when it holds none, and also
+whenever another candidate is `refusing`. A refusing store cannot be read, so
+it may hold any generation; the store used instead has to outrank it when it
+answers again, or the relay would go back to it. That is why a generation is
+not a counter but a clock reading: the larger of the highest generation seen
+plus one and the store's own time in milliseconds since 1970. The write is one
+transaction under an advisory lock; the store is read again under the lock,
+so instances promoting at the same moment leave one row. A store that answers
+again later with an older generation is not returned to. A store that is only
+looked at is never written to.
+
+The chosen store is handed to the same application through the same two
+connections; repair uses the session-scoped connection of that store.
+
+**After start-up.** Selection runs once per function instance. If the chosen
+store later refuses a connection with one of the codes above, the application
+built on it is closed, the store back-off applies, and the next request after
+it runs selection again. A store that refused once and answers the new probe is
+chosen again; otherwise the relay moves to the other store and marks it.
+
+**Certificate authorities.** A store without a prefix takes
+`HOBO_CI_DATABASE_CA_CERT`. A prefixed store takes
+`<PREFIX>HOBO_CI_DATABASE_CA_CERT` and nothing else, so one provider's private
+root is never imposed on another provider's store.
+
+#### The one-time import
+
+A store the relay moves to is empty: no GitHub App, no accounts. When the old
+store answers again (a quota that resets with the month) and the new one is
+still **pristine**, the relay copies the old store's tables into it, once, so
+the App registration comes across instead of being made again.
+
+Pristine means all four of: no row in `hobo_ci_platform_app` other than a
+`pending` claim, no row in `hobo_ci_app_credentials`, no row in
+`hobo_ci_app_installations`, and no account in the stored configuration
+(`hobo_ci_configuration`).
+
+After selection, if the chosen store records no import and another candidate
+is `serving` with a lower generation (or none) and is not pristine, then:
+
+1. Both stores are brought to this release's schema with `prepareRelaySchema`,
+   each as its role calls for. The chosen store is the one the relay runs on,
+   so it gets what a fleet writer gets: the stores' own initialisers, then the
+   checked-in migrations. The old store is only read, so it gets what a fleet
+   standby gets: the checked-in migrations and nothing else. That is guarded,
+   additive DDL (a table it never needed, a column a later release added, an
+   empty marker table, which reads as no generation) plus the migration
+   ledger, which is never copied; no row of its own is
+   changed, because the initialisers, which move rows, are not run there. An
+   old store whose tables are at an older layout than the migrations can bring
+   forward is refused as `schema-refused`, and one that records migrations this
+   release does not have as `schema-ahead`; both are left as they were.
+2. In one transaction on the chosen store, under the selection lock: the marker
+   row must record no import; the four tables above are locked against writers
+   and the store must still be pristine.
+3. The copy is the fleet's snapshot copy (`copySnapshot` in
+   `@hobo/data-postgres`): the same table set, everything under `hobo_ci_`
+   except the fleet's control tables, the migration ledger and the marker
+   table; one consistent snapshot of the source; the target replaced and then
+   digested against the source.
+4. The marker row records the source's digest and the time, in the same
+   transaction.
+
+It never runs twice into one store and never into a store that is not
+pristine. It is refused, and the chosen store left as step 1 made it, when the
+schemas still differ (`schema-mismatch`, naming the table or column), when the
+source holds more than 500,000 rows or 128 MiB of row text (`oversized`; the
+limits are lower than the fleet's because this runs while an instance starts),
+when the copy does not digest to the source (`digest-mismatch`), or when
+another instance is importing (`busy`). A refused or failed import never stops
+the relay: it runs on the chosen store, and the next instance that starts
+tries again.
+
+#### Log lines
+
+One JSON line each. Variable-name prefixes, 12-character database digests,
+numbers and fixed tokens only: never a connection string, a host name or an
+error message.
+
+| Event | When | Fields |
+| --- | --- | --- |
+| `hobo_ci_database_selected` | A store was chosen | `prefix`, `binding`, `database`, `generation`, `reason`, and `candidates`: each one's `prefix`, `database`, `class`, plus `generation` when serving, `sqlstate` when refusing, the driver's `code` when unknown |
+| `hobo_ci_database_selection_undecided` | No store was chosen | `cause` (`unclassified-candidate`, `no-serving-candidate`) and the same `candidates` |
+| `hobo_ci_database_import` | An import was considered | `source`, `target`, `status`: `imported` with `tables`, `rows`, `bytes`; `refused` with `refusal` and `detail`; `failed` with the SQLSTATE or driver `code` |
+
+`reason` is `first-run` (no store held a generation), `marker` (the chosen
+store holds the highest generation and every candidate answered),
+`previous-refusing` (a candidate is refusing, so the chosen store's generation
+was written or renewed) or `only-candidate`.
+
+While an old store that holds data stays attached next to a new store that is
+in use, every instance that starts logs `hobo_ci_database_import` with
+`refused` and `not-pristine`. Detaching the old store ends that.
+
+#### Limits
+
+- **It is not replication.** Writes made to the old store after the relay left
+  it are not merged, and nothing is copied after the one import. For standbys
+  that are kept current, use the fleet below.
+- **It is not consensus.** The rule is deterministic given what the probes see.
+  If a store changes between refusing and serving while instances are
+  starting, two instances can run on different stores until they are
+  replaced; later instances all follow the newest generation, and what the
+  other store received in between stays there.
+- **Discovery order decides the first run.** With two stores that both answer
+  and no generation anywhere, the store without a prefix is used. A deployment
+  that relied on `HOBO_CI_DATABASE_ENV_PREFIX` should keep it.
+- **Generations compare clocks of different servers.** A store promoted while
+  another could not be read outranks it only if its clock is not behind the
+  time the other was last promoted.
+- **A renewal is a write.** While a candidate is refusing, each instance that
+  starts writes one small transaction to the chosen store.
+- **The import replaces, it does not merge,** which is why it is confined to a
+  pristine store, and it holds locks on the chosen store's tables while it
+  runs.
+
+#### Tests
+
+`test/database-selection.test.ts` covers the classification and the rule
+without a database. `test/database-selection-postgres.test.ts` runs selection,
+promotion under concurrency, the import and its refusals, re-selection after
+a refusal and the composed relay against real PostgreSQL; refusals are real
+(`28000` from a role the server does not have, `3D000` from a database it does
+not have). It is skipped unless `HOBO_TEST_POSTGRES_URL` names a disposable
+server whose role may create databases:
+
+```bash
+HOBO_TEST_POSTGRES_URL=postgres://hobo_ci@127.0.0.1:5432/postgres \
+  pnpm --filter @hobo/ci-vercel exec vitest run test/database-selection-postgres.test.ts
+```
 
 ### Running on several databases: the database fleet
 
@@ -632,7 +813,12 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
 
 - The database, as one pooled and one session-scoped connection string to the
   same PostgreSQL database and role. The relay reads the names a Vercel storage
-  integration injects, so connecting a store needs no hand-copied value:
+  integration injects, so connecting a store needs no hand-copied value. That
+  is the whole story when the store is the only one attached. A store attached
+  next to another one has to carry a prefix, and which of the two the relay
+  then uses is decided by
+  [the rule for a second store](#a-second-store-attached-to-the-project), not
+  by the order of this table:
 
   | Store | Pooled (HTTP traffic) | Session-scoped (repair) |
   | --- | --- | --- |
@@ -653,13 +839,15 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
   concurrency cap, so database connection limits constrain scale.
 - `HOBO_CI_DATABASE_ENV_PREFIX` (optional): read the names above under this
   prefix, for a store connected with one (`RELAY_` reads `RELAY_POSTGRES_URL`).
-  This is how a new store is attached and selected while the old one is still
-  connected.
+  It names the store by hand. Without it, and with more than one store
+  attached, the relay chooses by itself.
 - `HOBO_CI_DATABASE_CA_CERT` (optional): the PEM certificate authority of a
   database whose server certificate chains to the provider's own root, as
   Supabase's and Amazon RDS's do. The certificate is verified against it;
   verification is never switched off. Without it such a connection fails with
-  `unable to verify the first certificate`.
+  `unable to verify the first certificate`. When the relay chooses between
+  attached stores, this one applies to the store without a prefix and a
+  prefixed store reads `<PREFIX>HOBO_CI_DATABASE_CA_CERT`.
 - `HOBO_CI_PUBLIC_URL`: the stable HTTPS origin used by GitHub.
 - `HOBO_CI_SESSION_KEY`: a canonical, unpadded base64url encoding of 32 random bytes.
 - `HOBO_CI_BOOTSTRAP_ACCOUNT_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`: the owner
@@ -782,6 +970,10 @@ embedded hosted bridge still supplies and enforces its lease timeout.
   the environment names, as variable names plus a 12-character digest of host, port and database. No
   connection string, host or credential is logged. It shows whether a second store is attached to
   the project (and under which prefix) when the one in use is down.
+- With two or more stores attached and none named by hand, the store is the one the relay chose:
+  `hobo_ci_database_selected` says which and why, and `hobo_ci_database_selection_undecided` says
+  why none could be chosen, which is reported as `store-unavailable` with the same back-off. See
+  [A second store attached to the project](#a-second-store-attached-to-the-project).
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
@@ -814,11 +1006,12 @@ error or its cause is a database refusal, the line also carries its five-charact
 
 ## Postgres schema
 
-The two PostgreSQL tables this package owns (`hobo_ci_database_probes` and
-`hobo_ci_worker_health`) are declared in [`db/schema.ts`](db/schema.ts), with
-migrations in `db/migrations/`. `pnpm --filter @hobo/ci-vercel run db:generate`,
+The three PostgreSQL tables this package owns (`hobo_ci_database_probes`,
+`hobo_ci_worker_health` and `hobo_ci_store_selection`) are declared in
+[`db/schema.ts`](db/schema.ts), with migrations in `db/migrations/`: the
+baseline and `0001_store_selection`. `pnpm --filter @hobo/ci-vercel run db:generate`, `db:ship`,
 `db:check`, `db:migrate` and `db:verify` run the tooling `@hobo/ci` provides.
-The code still creates both tables from the DDL embedded in `src/`;
+The code still creates all three tables from the DDL embedded in `src/`;
 `db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to the
 declared schema. The full description, including how to migrate a database the
 relay is already using, is in

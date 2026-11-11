@@ -23,13 +23,15 @@ import {
 } from "./database-connections.js";
 
 /** The relay's tables. Everything under `hobo_ci_` is copied to standbys,
- * except the fleet's own control tables and the schema migration ledger
- * (`hobo_ci_schema_migrations`, written by the migration runner): what has
- * been applied to one database says nothing about another. */
+ * except the fleet's own control tables, the schema migration ledger
+ * (`hobo_ci_schema_migrations`, written by the migration runner) and the
+ * store selection marker (`hobo_ci_store_selection`, written when the relay
+ * chooses between attached stores): what has been applied to one database, or
+ * which generation it holds, says nothing about another. */
 export const RELAY_FLEET_LAYOUT = parseFleetLayout({
 	dataPrefix: "hobo_ci_",
 	controlPrefix: "hobo_ci_fleet_",
-	excludedTables: ["hobo_ci_schema_migrations"],
+	excludedTables: ["hobo_ci_schema_migrations", "hobo_ci_store_selection"],
 });
 
 /** Find one backend's connections in the environment, under its prefix. The

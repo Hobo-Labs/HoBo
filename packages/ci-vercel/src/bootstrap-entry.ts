@@ -35,6 +35,12 @@ export class StoreUnavailable extends Error {
 	}
 }
 
+/** How long a store that has failed `failures` times in a row is left alone:
+ * 5 s, doubling to a minute. */
+export function storeBackoffMs(failures: number): number {
+	return Math.min(60_000, 5_000 * 2 ** (failures - 1));
+}
+
 export function createBootstrapEntry(options: {
 	env: NodeJS.ProcessEnv;
 	notify: (deliveryId: string) => Promise<void>;
@@ -169,8 +175,7 @@ export function createBootstrapEntry(options: {
 		} catch (error) {
 			if (started === pending) started = undefined;
 			storeFailures += 1;
-			storeRetryAt =
-				clock() + Math.min(60_000, 5_000 * 2 ** (storeFailures - 1));
+			storeRetryAt = clock() + storeBackoffMs(storeFailures);
 			throw error;
 		}
 	}

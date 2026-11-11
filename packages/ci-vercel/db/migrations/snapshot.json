@@ -25,6 +25,47 @@
 				"indexes": []
 			},
 			{
+				"name": "hobo_ci_store_selection",
+				"columns": [
+					{
+						"name": "generation",
+						"type": "bigint",
+						"nullable": false,
+						"primaryKey": true,
+						"unique": false
+					},
+					{
+						"name": "imported_at",
+						"type": "timestamp with time zone",
+						"nullable": true,
+						"primaryKey": false,
+						"unique": false
+					},
+					{
+						"name": "imported_from",
+						"type": "text",
+						"nullable": true,
+						"primaryKey": false,
+						"unique": false
+					},
+					{
+						"name": "reason",
+						"type": "text",
+						"nullable": false,
+						"primaryKey": false,
+						"unique": false
+					},
+					{
+						"name": "selected_at",
+						"type": "timestamp with time zone",
+						"nullable": false,
+						"primaryKey": false,
+						"unique": false
+					}
+				],
+				"indexes": []
+			},
+			{
 				"name": "hobo_ci_worker_health",
 				"columns": [
 					{
@@ -73,6 +114,49 @@
 						"primaryKey": false,
 						"notNull": true,
 						"default": "now()"
+					}
+				},
+				"indexes": {},
+				"foreignKeys": {},
+				"compositePrimaryKeys": {},
+				"uniqueConstraints": {},
+				"policies": {},
+				"checkConstraints": {},
+				"isRLSEnabled": false
+			},
+			"public.hobo_ci_store_selection": {
+				"name": "hobo_ci_store_selection",
+				"schema": "",
+				"columns": {
+					"generation": {
+						"name": "generation",
+						"type": "bigint",
+						"primaryKey": true,
+						"notNull": true
+					},
+					"selected_at": {
+						"name": "selected_at",
+						"type": "timestamp with time zone",
+						"primaryKey": false,
+						"notNull": true
+					},
+					"reason": {
+						"name": "reason",
+						"type": "text",
+						"primaryKey": false,
+						"notNull": true
+					},
+					"imported_from": {
+						"name": "imported_from",
+						"type": "text",
+						"primaryKey": false,
+						"notNull": false
+					},
+					"imported_at": {
+						"name": "imported_at",
+						"type": "timestamp with time zone",
+						"primaryKey": false,
+						"notNull": false
 					}
 				},
 				"indexes": {},
