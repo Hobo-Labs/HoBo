@@ -136,12 +136,11 @@ it("admits a run's longest expected job first, inside the rank and run order", a
 		ref(1, 13),
 		ref(1, 12),
 	];
-	// Run 1 is older than run 2, and both are trunk runs ahead of the PR run,
-	// however long their jobs are. Inside run 1, the 85 s job leads and the
-	// job with no history (14) goes last.
+	// Newer push run 2 leads the older run 1; both outrank the pull request.
+	// Inside run 1, the 85 s job leads and the job with no history (14) goes last.
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
-	).toEqual([12, 13, 11, 14, 21, 31]);
+	).toEqual([21, 12, 13, 11, 14, 31]);
 });
 
 it("puts a run with no start time behind started runs of the same rank", async () => {

@@ -99,6 +99,7 @@ unindexed new finding files as notices.
 - [Finding 86: main workspace shards fleet parallel cap](./findings/0086-main-workspace-shards-fleet-parallel-cap.md)
 - [Finding 87: poll coalesce stranded queued jobs on GitHub](./findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md)
 - [Finding 88: poll readmit jit churn](./findings/0088-poll-readmit-jit-churn.md)
+- [Finding 89: superseded main push held trunk slots](./findings/0089-superseded-main-push-held-trunk-slots.md)
 <!-- findings-index:end -->
 
 ## Data
