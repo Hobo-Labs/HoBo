@@ -48,6 +48,11 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	// Host pressure
 	["hobo_ci_inode_pressure", "ci.HostInodePressureDetected"],
 	["hobo_ci_memory_admission_wait", "ci.MemoryAdmissionDelayed"],
+	["hobo_ci_host_resource_pressure", "ci.HostResourcePressureReported"],
+	["hobo_ci_container_stall_requeue", "ci.ContainerStallRequeue"],
+	["hobo_ci_stall_job_annotated", "ci.StallJobAnnotated"],
+	["hobo_ci_stall_job_rerun", "ci.StallJobRerunRequested"],
+	["hobo_ci_stall_job_rerun_skipped", "ci.StallJobRerunSkipped"],
 	["hobo_ci_storage_admission_wait", "ci.StorageAdmissionDelayed"],
 	// Relay mesh
 	["hobo_ci_mesh_job_taken", "ci.MeshJobTaken"],

@@ -170,6 +170,18 @@ export {
 	readHostHealthSample,
 } from "./isolated-worker/host-health.js";
 export {
+	type ContainerStallGuard,
+	createContainerStallGuard,
+	DEFAULT_CONTAINER_STALL_THRESHOLDS,
+	DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS,
+	type HostResourcePressureSample,
+	hostMemoryAdmitFits,
+	hostPressureBlocksAdmission,
+	hostResourcePressureLogFields,
+	parsePsiAverages,
+	readHostResourcePressureSample,
+} from "./isolated-worker/host-resource-pressure.js";
+export {
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
@@ -209,6 +221,12 @@ export {
 } from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
+export {
+	createStallJobRecovery,
+	type StallJobRecovery,
+	stallJobRerunAllowed,
+	stallRecoveryRecordForLease,
+} from "./isolated-worker/stall-job-recovery.js";
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
