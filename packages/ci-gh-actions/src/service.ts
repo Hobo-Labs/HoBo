@@ -40,6 +40,13 @@ export type RelayServiceOptions = {
 	agentIntervalMs?: number;
 	/** Releases the store once every accepted request and the worker are done. */
 	close: () => void;
+	/** Paths whose responses stream; see `createNodeRelayHandler`. */
+	streams?: (pathname: string) => boolean;
+	/**
+	 * Ends what would otherwise hold a connection open through the drain: an
+	 * event stream has no last byte to wait for.
+	 */
+	quiesce?: () => Promise<void>;
 	host?: string;
 	port: number;
 	tickIntervalMs?: number;
@@ -143,6 +150,7 @@ export function createRelayService(options: RelayServiceOptions) {
 	const handler = createNodeRelayHandler({
 		origin: options.origin,
 		allowLoopbackHttp: options.allowLoopbackHttp === true,
+		streams: (pathname) => options.streams?.(pathname) === true,
 		async handle(request) {
 			try {
 				return await handle(request);
@@ -276,6 +284,7 @@ export function createRelayService(options: RelayServiceOptions) {
 			const drained = (async () => {
 				// A concurrent start must finish listening before close is called.
 				await started?.catch(() => undefined);
+				await options.quiesce?.().catch(() => undefined);
 				const closed = new Promise<void>((resolve) => {
 					server.close(() => resolve());
 				});

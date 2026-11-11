@@ -1,16 +1,37 @@
 /**
  * Live data-migration executor (ADR-0032 §3-4): expand → backfill → contract
  * as gated saga steps over a real store, emitting the `migration.*` event
- * family. Only the contract phase is destructive; it is blocked while a
+ * family.
+ *
+ * The executor itself is `@hobo/data-core`'s `in-place-evolve` pattern
+ * (ADR-0177): this module is the Trails-owned surface over it, so the sealed
+ * public types stay Trails' own while there is exactly one implementation. Only the contract phase is destructive; it is blocked while a
  * compatibility gate reports consumers still reading the old shape (Plan 29 /
  * PACT — a drop that would break a still-running consumer never executes).
  * Failure compensates by restoring the pre-migration snapshot (forward-only
  * recovery: snapshot + redeploy last-good Set; no `.down` scripts).
+ *
+ * Given a `journal`, a migration is resumable: run again after a hold, it
+ * skips the phases already applied and never re-applies `expand`, and the
+ * snapshot it restores on failure is the first one taken.
+ *
+ * Every phase is write-ahead: `migration.PhaseIntended` is journaled before
+ * its statements run. A run that finds an intent with no `PhaseApplied` after
+ * it — the process died in between — does not know whether the statements
+ * committed. It neither runs them again nor restores the snapshot: it asks
+ * the plan's probe for that phase, and without one it holds
+ * (`PHASE_OUTCOME_UNKNOWN`).
  */
 
+import {
+	type MigrationJournal as EngineMigrationJournal,
+	type SchemaApplyPort as EngineSchemaApplyPort,
+	runInPlaceEvolve,
+} from "@hobo/data-core";
 import type { JsonObject } from "./json.js";
 import type {
 	SchemaApplyPort,
+	SchemaPhase,
 	SchemaPhaseResult,
 	SchemaSnapshotRef,
 } from "./schema-apply-port.js";
@@ -28,6 +49,13 @@ export const MIGRATION_EVENTS = Object.freeze({
 	Failed: "migration.Failed",
 	Exported: "migration.Exported",
 	Imported: "migration.Imported",
+	Held: "migration.Held",
+	Resumed: "migration.Resumed",
+	Completed: "migration.Completed",
+	FenceRequested: "migration.FenceRequested",
+	RollbackDecided: "migration.RollbackDecided",
+	FenceRaised: "migration.FenceRaised",
+	PhaseIntended: "migration.PhaseIntended",
 } as const);
 
 export interface MigrationFact {
@@ -60,13 +88,64 @@ export interface DataMigrationPlan {
 		readonly afterBackfill: string;
 		readonly afterContract?: string;
 	};
+	/**
+	 * One probe per phase: a violations query that returns no rows exactly
+	 * when the phase's statements are fully in effect. Asked only when a run
+	 * cannot know whether a phase committed — an earlier run died between the
+	 * statements and their fact. No rows: the phase is recorded as applied
+	 * and not run again. Rows: it is applied. Without a probe such a run
+	 * holds; it never re-applies on a guess and never restores for it.
+	 */
+	readonly probes?: DataMigrationProbes;
+}
+
+export interface DataMigrationProbes {
+	readonly expand?: string;
+	readonly backfill?: string;
+	readonly contract?: string;
 }
 
 export type DataMigrationStatus =
 	| "completed"
 	| "contract-blocked"
+	| "held"
 	| "rolled-back"
 	| "failed";
+
+/** A policy verdict as Trails sees it: the outcome and the finding codes. */
+export interface DataMigrationPolicyVerdict {
+	readonly ok: boolean;
+	readonly findings: readonly { readonly code: string }[];
+	/**
+	 * The custody roles the path behind the verdict named. The migration keeps
+	 * data in the store (`source`) and in the snapshot it rolls back to
+	 * (`rollback-snapshot`); a verdict that names neither, or only one, does
+	 * not cover it and the migration holds. Absent names none.
+	 */
+	readonly roles?: readonly string[];
+}
+
+/**
+ * Where a migration's facts are kept between runs. Structurally the
+ * `@hobo/data-core` migration journal, declared here so the sealed Trails
+ * surface stays its own.
+ */
+export interface DataMigrationJournal {
+	load(
+		migrationId: string,
+	): readonly MigrationFact[] | Promise<readonly MigrationFact[]>;
+	/**
+	 * Append one fact, on the condition that the journal holds exactly
+	 * `expectedCount` facts for this migration; refuse otherwise. That
+	 * compare-and-set is what stops two runs of one migration from both
+	 * acting on a view only one of them still has.
+	 */
+	append(
+		migrationId: string,
+		fact: MigrationFact,
+		expectedCount: number,
+	): void | Promise<void>;
+}
 
 export interface DataMigrationResult {
 	readonly schemaVersion: typeof MIGRATION_EXECUTOR_SCHEMA;
@@ -87,168 +166,66 @@ export interface ExecuteDataMigrationOptions {
 	readonly compatGate: () => CompatGateEvidence | Promise<CompatGateEvidence>;
 	readonly clock?: () => string;
 	readonly onFact?: (fact: MigrationFact) => void;
+	/**
+	 * Recomputed before each phase. A negative verdict holds the migration at
+	 * its last safe state instead of running the phase (ADR-0177 decision 9).
+	 */
+	readonly policy?: (
+		phase: SchemaPhase,
+	) => DataMigrationPolicyVerdict | Promise<DataMigrationPolicyVerdict>;
+	/**
+	 * Re-apply erasures recorded since the snapshot. Called after every
+	 * successful restore so a rollback cannot resurrect an erased subject.
+	 *
+	 * A rollback needs it: without the hook a failed phase does not restore
+	 * the snapshot — the migration holds instead, because a restore with
+	 * nothing to replay would bring back every subject erased since. A caller
+	 * with no erasures to replay says so by returning zero.
+	 */
+	readonly replayErasures?: (
+		snapshot: SchemaSnapshotRef,
+	) => number | Promise<number>;
+	/**
+	 * Where the migration's facts are kept. With a journal, running the same
+	 * plan again resumes it — phases already applied are skipped, `expand` is
+	 * never applied twice, and a failure restores the first snapshot. Without
+	 * one every call starts from nothing, so a held migration must not simply
+	 * be run again.
+	 */
+	readonly journal?: DataMigrationJournal;
 }
 
 export async function executeDataMigration(
 	options: ExecuteDataMigrationOptions,
 ): Promise<DataMigrationResult> {
-	const clock = options.clock ?? (() => new Date().toISOString());
-	const { plan, port } = options;
-	const facts: MigrationFact[] = [];
-	const phases: SchemaPhaseResult[] = [];
-	const emit = (type: string, data: JsonObject) => {
-		const fact = Object.freeze({ type, data: Object.freeze({ ...data }) });
-		facts.push(fact);
-		options.onFact?.(fact);
-	};
-	const finish = (input: {
-		status: DataMigrationStatus;
-		dualWindowOpen: boolean;
-		snapshot?: SchemaSnapshotRef;
-		blockedReasons?: readonly string[];
-		violations?: readonly JsonObject[];
-	}): DataMigrationResult =>
-		Object.freeze({
-			schemaVersion: MIGRATION_EXECUTOR_SCHEMA,
-			migrationId: plan.migrationId,
-			status: input.status,
-			dualWindowOpen: input.dualWindowOpen,
-			...(input.snapshot !== undefined
-				? { snapshot: input.snapshot }
-				: undefined),
-			phases: Object.freeze([...phases]),
-			blockedReasons: Object.freeze([...(input.blockedReasons ?? [])]),
-			violations: Object.freeze([...(input.violations ?? [])]),
-			facts: Object.freeze([...facts]),
-		});
-
-	emit(MIGRATION_EVENTS.Planned, {
-		migrationId: plan.migrationId,
-		phases: ["expand", "backfill", "contract"],
-		plannedAt: clock(),
+	const { policy, replayErasures, journal } = options;
+	const result = await runInPlaceEvolve({
+		// SAFETY: the two port shapes are identical except that Trails' JSON type also admits `undefined`, which a JSON evidence row never contains.
+		port: options.port as EngineSchemaApplyPort,
+		plan: options.plan,
+		compatGate: options.compatGate,
+		...(options.clock === undefined ? undefined : { clock: options.clock }),
+		...(options.onFact === undefined ? undefined : { onFact: options.onFact }),
+		...(policy === undefined ? undefined : { policy }),
+		...(replayErasures === undefined ? undefined : { replayErasures }),
+		...(journal === undefined
+			? undefined
+			: {
+					// SAFETY: the two journals differ only in that Trails' JSON type also admits `undefined`, which a journaled fact never contains.
+					journal: journal as EngineMigrationJournal,
+				}),
 	});
-
-	// Snapshot BEFORE any mutation: rollback is snapshot-restore, so a
-	// migration without a snapshot must never touch the store.
-	const snapshot = port.snapshot();
-	emit(MIGRATION_EVENTS.SnapshotTaken, {
-		migrationId: plan.migrationId,
-		snapshotRef: snapshot.ref,
-		takenAt: snapshot.takenAt,
+	return Object.freeze({
+		schemaVersion: MIGRATION_EXECUTOR_SCHEMA,
+		migrationId: result.migrationId,
+		status: result.status,
+		dualWindowOpen: result.dualWindowOpen,
+		...(result.snapshot === undefined
+			? undefined
+			: { snapshot: result.snapshot }),
+		phases: result.phases,
+		blockedReasons: result.blockedReasons,
+		violations: result.violations,
+		facts: result.facts,
 	});
-
-	const rollback = (
-		reason: string,
-		violations: readonly JsonObject[] = [],
-	): DataMigrationResult => {
-		try {
-			port.restore(snapshot);
-		} catch (restoreError) {
-			emit(MIGRATION_EVENTS.Failed, {
-				migrationId: plan.migrationId,
-				reason: `restore failed after ${reason}: ${String(restoreError)}`,
-				failedAt: clock(),
-			});
-			return finish({
-				status: "failed",
-				dualWindowOpen: false,
-				snapshot,
-				blockedReasons: [reason],
-				violations,
-			});
-		}
-		emit(MIGRATION_EVENTS.RolledBack, {
-			migrationId: plan.migrationId,
-			reason,
-			snapshotRef: snapshot.ref,
-			rolledBackAt: clock(),
-		});
-		return finish({
-			status: "rolled-back",
-			dualWindowOpen: false,
-			snapshot,
-			blockedReasons: [reason],
-			violations,
-		});
-	};
-
-	try {
-		// Expand: additive, never destructive.
-		phases.push(port.applyPhase("expand", plan.expand));
-		emit(MIGRATION_EVENTS.PhaseApplied, {
-			migrationId: plan.migrationId,
-			phase: "expand",
-			statements: plan.expand.length,
-			appliedAt: clock(),
-		});
-
-		// Backfill: fill the new shape from the old.
-		const backfillResult = port.applyPhase("backfill", plan.backfill);
-		phases.push(backfillResult);
-		emit(MIGRATION_EVENTS.PhaseApplied, {
-			migrationId: plan.migrationId,
-			phase: "backfill",
-			statements: plan.backfill.length,
-			changes: backfillResult.changes,
-			appliedAt: clock(),
-		});
-	} catch (error) {
-		return rollback(`phase execution failed: ${String(error)}`);
-	}
-
-	// Verify the dual window before anything destructive.
-	const backfillViolations = port.verify(plan.verify.afterBackfill);
-	if (backfillViolations.length > 0) {
-		return rollback("backfill verification failed", backfillViolations);
-	}
-	emit(MIGRATION_EVENTS.Verified, {
-		migrationId: plan.migrationId,
-		point: "after-backfill",
-		verifiedAt: clock(),
-	});
-
-	// Gate the destructive contract phase: consumers still reading the old
-	// shape BLOCK the drop. Blocked is not failure — the dual window stays
-	// open (expand + backfill retained) until consumers move.
-	const gate = await options.compatGate();
-	if (gate.consumersOnLegacySchema.length > 0) {
-		return finish({
-			status: "contract-blocked",
-			dualWindowOpen: true,
-			snapshot,
-			blockedReasons: [
-				`compat gate ${gate.gateId}: ${gate.consumersOnLegacySchema.join(", ")} still read the old shape`,
-			],
-		});
-	}
-
-	try {
-		phases.push(port.applyPhase("contract", plan.contract));
-		emit(MIGRATION_EVENTS.PhaseApplied, {
-			migrationId: plan.migrationId,
-			phase: "contract",
-			statements: plan.contract.length,
-			appliedAt: clock(),
-		});
-	} catch (error) {
-		return rollback(`contract phase failed: ${String(error)}`);
-	}
-
-	if (plan.verify.afterContract) {
-		const contractViolations = port.verify(plan.verify.afterContract);
-		if (contractViolations.length > 0) {
-			return rollback("contract verification failed", contractViolations);
-		}
-		emit(MIGRATION_EVENTS.Verified, {
-			migrationId: plan.migrationId,
-			point: "after-contract",
-			verifiedAt: clock(),
-		});
-	}
-
-	emit(MIGRATION_EVENTS.CutOver, {
-		migrationId: plan.migrationId,
-		cutOverAt: clock(),
-	});
-	return finish({ status: "completed", dualWindowOpen: false, snapshot });
 }

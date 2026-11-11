@@ -85,7 +85,10 @@ export function compareCiRoutingCandidates(
 // Timestamp-only snapshots cannot prove that a later completion at the same
 // clock tick was included. Count equality (and unknown timestamps) until a
 // strictly newer observation establishes coverage.
-function shouldCountLocalUsage(lease: Lease, observedAt: string): boolean {
+export function shouldCountLocalUsage(
+	lease: Lease,
+	observedAt: string,
+): boolean {
 	const completed = Date.parse(lease.usageCompletedAt || lease.settledAt);
 	return !Number.isFinite(completed) || completed >= Date.parse(observedAt);
 }

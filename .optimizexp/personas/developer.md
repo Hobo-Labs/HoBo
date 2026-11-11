@@ -14,7 +14,7 @@ marketPriority: 5
 
 ## Who I am
 
-Application developer shipping Bindles and packages in this monorepo. Comfortable with TypeScript, git, and CLIs. Not a platform engineer; I want the happy path without memorizing every gate. I expect standard CLI conventions on product binaries (including **`hobo-code`**): `<cmd> --help` documents that command.
+Application developer shipping Bindles and packages in this monorepo. Comfortable with TypeScript, git, and CLIs. Not a platform engineer; I want the happy path without memorizing every gate. I expect standard CLI conventions on product binaries (including **`hobo`**): `<cmd> --help` documents that command.
 
 Demographic/psychographic models below are synthetic segment attributes, not a real person.
 
@@ -22,7 +22,7 @@ Demographic/psychographic models below are synthetic segment attributes, not a r
 
 - segmentIds: app-developer, monorepo-dx
 - primary job: ship package changes with narrow local gates
-- secondary jobs: use product CLIs (`hobo-code`, package scripts) with predictable help/errors
+- secondary jobs: use product CLIs (`hobo`, package scripts) with predictable help/errors
 - non-jobs: memorizing glyph idioms; inventing monorepo-wide Nix IaC
 
 ## Demographic model
@@ -65,7 +65,7 @@ Demographic/psychographic models below are synthetic segment attributes, not a r
 - Change one package and get a green signal in seconds–minutes, not a full CI simulation.
 - Know the next command when something fails.
 - Trust that local checks match what PR CI will enforce.
-- **CLI convention:** `hobo-code <verb> --help` and `hobo-code help <verb>` show **verb-scoped** help (not top-level only).
+- **CLI convention:** `hobo <verb> --help` shows **verb-scoped** help (not top-level only).
 
 ## Constraints
 
@@ -84,7 +84,7 @@ Demographic/psychographic models below are synthetic segment attributes, not a r
 - `pnpm agent:check -- --staged` after a focused edit selects a small gate set and exits with clear errors.
 - Docs name the same commands as `package.json` scripts.
 - Generated files are never a surprise; regen path is one command.
-- `hobo-code platform --help` documents platform flags/examples only.
+- `hobo station --help` documents station flags/examples only.
 
 ## Failure modes I hate
 

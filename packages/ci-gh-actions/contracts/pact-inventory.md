@@ -54,3 +54,16 @@ Relay HTTP provider boundary: `relay-boundary.pact.json` is exercised by
 ports, through the shared HTTP handler and Node adapter. It verifies all
 declared interactions, then that the worker tick reserves and dispatches the
 committed delivery, JIT authorization and single-use claims. This is local provider verification against mocks, not a live integration.
+
+Relay MCP provider boundary: `mcp-boundary.pact.json` is exercised by
+`mcp-boundary.provider.test.ts` over real loopback HTTP, through the shared
+HTTP handler and Node adapter, against `SqliteCiStore` with one account and
+one queued job. It is a hand-authored consumer expectation of 16 interactions
+in the sessionless JSON form every host serves; the provider may answer more
+than a consumer names, so bodies are matched as subsets. A cursor's value is
+not pinned, since it is a token issued per account; the provider test checks
+that every cursor in an answer has a token's form and is not a number. Its two bearer values
+are fixture strings the test binds to a test account; they are not credentials
+for anything. Sessions, streams and resource subscriptions are covered by
+`../test/relay-mcp.test.ts` with the SDK's client, not by this artifact, and no
+third-party MCP client is claimed as verified.

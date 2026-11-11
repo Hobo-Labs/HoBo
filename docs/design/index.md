@@ -32,9 +32,9 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`adr/yard-first-placement.md`](./adr/yard-first-placement.md) | Yard-first placement: Yard owns provider selection; Camp provider-neutral until attached; Camps movable via Trails | — |
 | [`devx-devenv-nix.md`](./devx-devenv-nix.md) | DevX: devenv-first local shells; Nix optional IaC only — never default multi-cloud path ([ADR-0006](./adr/01-architecture-core.md#adr-0006)) | — |
 | [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0131) | **ADR-0131** — Station occupancy (hard control-plane isolation; Rails; pure Conductor) | — |
-| [`stations.md`](./stations.md) | Station narrative home: occupancy, capabilities (`hobo.station-capability/v1`), localhost discovery (`hobo-code init`), dev-scenario dogfooding (ADR-0131/0155) | — |
+| [`stations.md`](./stations.md) | Station narrative home: occupancy, capabilities (`hobo.station-capability/v1`), localhost capability discovery (ADR-0131/0155) | — |
 | [`yard-bindings.md`](./yard-bindings.md) | Yard bindings narrative home: the Yard as capability→product binding authority, the seeded localhost Yard on Station init, `plan`/`init`/`handle` phases, the OOB test harness + CI preview lanes, and the drizzle-kit/Better Auth defaults (ADR-0157–0161; Alchemy-informed) | — |
-| [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0155) | **ADR-0155** — Station capabilities typed manifest; discovery-gated `hobo-code init`; dogfooded dev-scenario `station()` declarations | — |
+| [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0155) | **ADR-0155** — Station capabilities typed manifest; localhost capability discovery | — |
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0132) | **ADR-0132** — Continuous identity migration (dual-path; zero Bindle config) | — |
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0134) | **ADR-0134** — HoBo Trails (app-owned continuous migration recipes; composes `identity.continuous`) | — |
 | [`adr/07-portability-extensibility.md`](./adr/07-portability-extensibility.md#adr-0130) | **ADR-0130** — Hierarchical DNS-valid naming (`.hobo.localhost` / `.hobo.test`; never bare `.hobo`) | — |
@@ -52,23 +52,24 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`ai-native-agent-auth.md`](./ai-native-agent-auth.md#plan-06) | AI-native platform, agent auth & end-user auth | 06 |
 | [`stage-3-agent-autonomy-acceptance.md`](./stage-3-agent-autonomy-acceptance.md) | Stage-3 (Agent Autonomy) acceptance record: scope in/out, promoted epic proofs, resolved stage-3 hooks, runnable stage gate | 06 |
 | [`data-plane.md`](./data-plane.md#plan-32) | Event model & the data plane: sourcing/replay, reactivity, projections, migrations, search | 11, 32 |
+| [`data-engines-continuous-migration.md`](./data-engines-continuous-migration.md) | Data engine package family (`@hobo/data-core` + `@hobo/data-sqlite` / `-postgres` / `-mongodb`) and continuous data migration: pattern catalog, deterministic selection, custody-path policy verdict, the conformance kit, and honest limits (ADR-0177) | — |
 | [`reliability-observability-cost.md`](./reliability-observability-cost.md#plan-05) | Reliability/HA, observability & cost/FinOps | 05 |
 | [`finops-budget-routing-control-plane.md`](./finops-budget-routing-control-plane.md) | Post-core standards-first FinOps budget routing control plane: resource intent, metric contracts, Pareto routing, stability, decision graph, feedback governance, and DX/OpsX/FinX surfaces | — |
 | [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) | Provider commercial terms and deterministic fail-closed quotes in `@hobo/pricing`; dispatcher v1 unchanged (ADR-0176) | — |
 | [`provider-pricing-scorecard.md`](./provider-pricing-scorecard.md) | Acceptance scorecard for provider pricing design (§1, §10, §12–§14); CI-enforced via `@hobo/pricing` design-scorecard eval | — |
 | [`hosting-budget-transitions.md`](./hosting-budget-transitions.md) | Budgeted hosting placement and movement: effects, financial reservations, durable reconciliation, observed recovery and settlement | — |
+| [`ci-fleet-balancing.md`](./ci-fleet-balancing.md) | CI fleet balancing: per-provider runner financial models rated by `@hobo/pricing`, admission through the shared budget policy, and the `HOBO_CI_FLEET_ROUTES` route table for label providers (`packages/ci/src/fleet/`) | — |
 | [`ci-runner-balancing-example.md`](./ci-runner-balancing-example.md) | CI runner balancing reference example + dogfood record: credit-aware dispatch of this repo's CI across GitHub-hosted, self-hosted, and third-party runner providers (`examples/ci-runner-balancing/`) | — |
 | [`ci-relay-mesh.md`](./ci-relay-mesh.md) | Proposal: the CI relay as a mesh of equal nodes. Each node reads GitHub's queue and starts its own runners; nodes agree on who starts a job by weighted rendezvous ranking and a per-rank delay, so no relay is a single point of failure. Claiming core implemented in `@hobo/ci/mesh`; not yet wired | — |
 | [`security-networking.md`](./security-networking.md#plan-12) | Security, networking & multi-tenant applications | 12, 50 |
 | [`developer-experience.md`](./developer-experience.md#plan-07) | Developer experience: dashboards, CLI, status pages & availability | 07, 49 |
 | [`cli-spec.md`](./cli-spec.md) | Canonical CLI verb surface + lifecycle semantics | — |
-| [`hobo-code-isolation-runbook.md`](./hobo-code-isolation-runbook.md) | HoBo Code isolation platform matrix, promotion, and mandatory cleanup runbook (`hobo-code` binary / `@hobo/code`, ADR-0139) | — |
 | [`deployment-dashboard-topology-explorer.md`](./deployment-dashboard-topology-explorer.md) | Productization M0 scope and acceptance for Deployment Dashboard & Topology Explorer | — |
 | [`plan-diff-viewer.md`](./plan-diff-viewer.md) | Productization M0 scope and acceptance for Plan/Diff Viewer | — |
 | [`security-verification.md`](./security-verification.md) | V1 vulnerability disclosure and security launch-blocker process | — |
 | [`threat-model-security-review.md`](./threat-model-security-review.md) | Productization M0 scope and acceptance for v1 threat-model and security-review gates | — |
 | [`anonymous-claim-threat-model.md`](./anonymous-claim-threat-model.md) | Threat boundaries and required controls for guest leases, claim bundles, sponsor-backed deployment, and migrate-on-claim (ADR-0151) | — |
-| [`adr/03-data-plane.md`](./adr/03-data-plane.md#adr-0153) | **ADR-0153** — `@hobo/patterns` catalog, ontology-vector retrieval, explicit `hobo-code template` / `/template` zero-LLM route | — |
+| [`adr/03-data-plane.md`](./adr/03-data-plane.md#adr-0153) | **ADR-0153** — `@hobo/patterns` catalog, ontology-vector retrieval, zero-LLM receipts | — |
 | [`pre-launch-outcome-contract.md`](./pre-launch-outcome-contract.md) | Productization M0 contract for pre-launch outcome baselines and v1 value evidence | — |
 | [`ai-generation-launch-posture.md`](./ai-generation-launch-posture.md) | Productization M0 launch posture for AI-generation safety claims, limitations, and review routing | — |
 | [`launch-blocker-taxonomy.md`](./launch-blocker-taxonomy.md) | Productization M0 launch-blocker severity taxonomy and go/no-go exception posture | — |
@@ -105,6 +106,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`artifact-store.md`](./artifact-store.md) | Productization M0 scope and acceptance for artifact classes, custody states, access evidence, retention handoffs, yanks, and support-safe artifact evidence | — |
 | [`package-cache.md`](./package-cache.md) | Productization M0 scope and acceptance for package cache subjects, digest evidence, invalidation, offline availability, and support handoffs | — |
 | [`npm-publish-allowlist.md`](./npm-publish-allowlist.md) | First-publish npm allowlist, `0.1.0-alpha.x` prerelease policy, dual-bin (`@hobo/hobo` only), manual `workflow_dispatch` publish dry-run | — |
+| [`postgres-backend-catalog.md`](./postgres-backend-catalog.md) | PostgreSQL backend catalog: managed offerings plus self-hosted, a cited vendor source per claim, the product-level `DataStoreProvider` naming decision, and which registered compute providers could host a self-managed PostgreSQL (cited claims only; nothing provisioned) | — |
 | [`live-provider-matrix.md`](./live-provider-matrix.md) | Honest matrix: provider/IaC realize vs cred-gated live apply vs in-memory/stub (H-E5) | — |
 | [`marketplace-publisher-trust-evidence.md`](./marketplace-publisher-trust-evidence.md) | Productization M0 evidence contract for marketplace publisher trust tiers, review evidence, and launch limitations | — |
 | [`marketplace-payout-hooks.md`](./marketplace-payout-hooks.md) | Productization M0 scope and acceptance for publisher payout-readiness states, tax/identity handoffs, billing reconciliation, and payout launch limitations | — |
@@ -220,7 +222,10 @@ When a draft package, validation script, workflow, or public contract changes, u
 [HoBo.CI contracts and routing](../../packages/ci/README.md),
 [GitHub Actions relay](../../packages/ci-gh-actions/README.md) (one core; hosted
 as a Node service by `hobo ci serve` and the container image, on
-[Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon),
+[Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon; it
+is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
+`/mcp`, whose `wait_for_events` tool and resource subscriptions are a
+projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
 [Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
 and model-backed conflict resolution beside the Node relay; not yet run against

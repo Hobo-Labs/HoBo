@@ -34,6 +34,11 @@ package trails
 	contract: [...string & !=""]
 	verify_after_backfill: string & !=""
 	verify_after_contract?: string
+	// Per phase, a violations query that returns no rows exactly when the
+	// phase's statements are in effect.
+	probe_expand?:   string & !=""
+	probe_backfill?: string & !=""
+	probe_contract?: string & !=""
 }
 
 #CompatGateEvidenceRecord: {
@@ -60,6 +65,17 @@ package trails
 	statements:   uint32
 	changes?:     uint32
 	applied_at:   string & !=""
+	recovered?:   bool
+}
+
+// Written before a phase runs its statements, as a compare-and-set on the
+// journal head.
+#MigrationPhaseIntendedEventData: {
+	migrationId: string & !=""
+	phase:       "expand" | "backfill" | "contract"
+	statements:  uint32
+	intendedAt:  string & !=""
+	retry?:      bool
 }
 
 #MigrationVerifiedEventData: {
@@ -101,3 +117,54 @@ package trails
 	stream_count:      uint32
 	imported_at:       string & !=""
 }
+
+// ── ADR-0177 additions ──────────────────────────────────────────────────────
+
+#MigrationHeldEventData: {
+	migrationId: string & !=""
+	// A migration holds only in a safe-hold phase; the cutover step completes
+	// or compensates.
+	phase:  "plan" | "gate" | "prepare" | "seed" | "converge" | "verify" | "shift-reads" | "soak"
+	reason: string & !=""
+	heldAt: string & !=""
+	// The phase whose statements the port reported as failed.
+	failedPhase?: "expand" | "backfill" | "contract"
+}
+
+#MigrationResumedEventData: {
+	migrationId: string & !=""
+	phase:       string & !=""
+	resumedAt:   string & !=""
+}
+
+#MigrationCompletedEventData: {
+	migrationId: string & !=""
+	pattern:     "in-place-evolve" | "rebuild-and-swap" | "offline-copy" | "snapshot-and-tail" | "log-pivot" | "stream-handoff"
+	completedAt: string & !=""
+}
+
+#DataDualEvidenceRecord: {
+	sourceCount:  int & >=0
+	sourceDigest: =~"^[0-9a-f]{64}$"
+	targetCount:  int & >=0
+	targetDigest: =~"^[0-9a-f]{64}$"
+	fidelity:     "live"
+}
+
+#CanTrailPolicyFindingRecord: {
+	code:   string & !=""
+	point:  string & !=""
+	detail: string
+}
+
+#CanTrailPolicyVerdictRecord: {
+	ok:            bool
+	findings:      [...#CanTrailPolicyFindingRecord]
+	custodyDigest: =~"^sha256:[0-9a-f]{64}$"
+	// A verdict is ok exactly when it has no findings.
+	ok: len(findings) == 0
+	// The custody roles the path behind the verdict named. A verdict without
+	// the member names none, and so covers no migration pattern.
+	roles?: [...string & !=""]
+}
+

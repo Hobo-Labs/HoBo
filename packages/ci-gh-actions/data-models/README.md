@@ -10,6 +10,13 @@ and plan, setup operation and pull-request result, and GitHub App manifest.
 invalid fixtures run through schema-tools. Generated TypeScript lives under
 `src/_generated/` and is regenerated from protobuf.
 
+`relay_mcp.proto` owns what the relay's MCP server returns: the lease, queued
+job and event views, their lists, the relay status and the quarantine views.
+Each is a deliberate subset built field by field; `onboarding.cue` closes them,
+and the `relay-mcp-*` fixtures pin that an event's stored `detail` or a lease's
+sandbox identity does not fit a view, and that a cursor is an opaque token,
+never a journal position.
+
 The shared account, connection, revisioned policy, setup request, control-token
 binding, job, lease, and audit-event messages belong to
 [`@hobo/ci`](../../ci/data-models/ci.proto). Account policy includes durable Broker

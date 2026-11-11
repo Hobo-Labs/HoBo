@@ -66,6 +66,21 @@ export const RECENT_PICKUP_SECONDS = 15 * 60;
 export const STALE_WAIT_SECONDS = 24 * 60 * 60;
 /** Job lists read per decision, split between the oldest and the newest unfinished runs. */
 export const MAX_RUN_LOOKUPS = 8;
+/**
+ * How long a slow pickup counts against a backend. Longer than the window a
+ * pickup counts for it: the probe is one small job, and a runner taking it at
+ * once says the label is alive, not that it can take a run. A run sent to the
+ * fleet on that alone waited 17 minutes for runners. A real job that waited
+ * past the limit keeps the backend out for this long, so a fleet that cannot
+ * keep up is tried once in the hour, not by every run that finds it idle.
+ */
+export const SLOW_PICKUP_MEMORY_SECONDS = 60 * 60;
+/**
+ * Finished runs read per decision, the longest-running first. A slow backend
+ * shows in the runs it slowed down, and once those finish they are no longer
+ * among the unfinished runs this reads.
+ */
+export const MAX_FINISHED_LOOKUPS = 3;
 
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
@@ -114,26 +129,28 @@ export function labelLoad(
 		.filter((job) => job.startedAtMs === undefined)
 		.map((job) => seconds(job.createdAtMs, nowMs))
 		.filter((wait) => wait < STALE_WAIT_SECONDS);
-	const pickups = asking.flatMap((job) =>
-		job.startedAtMs !== undefined &&
-		seconds(job.startedAtMs, nowMs) <= RECENT_PICKUP_SECONDS
-			? [seconds(job.createdAtMs, job.startedAtMs)]
-			: [],
-	);
+	const pickedUpWithin = (window: number) =>
+		asking.flatMap((job) =>
+			job.startedAtMs !== undefined && seconds(job.startedAtMs, nowMs) <= window
+				? [seconds(job.createdAtMs, job.startedAtMs)]
+				: [],
+		);
 	const longest = (values: readonly number[]) =>
 		values.reduce((most, value) => Math.max(most, value), 0);
 	return {
 		queued: waits.length,
 		oldestWaitSeconds: longest(waits),
-		recentPickups: pickups.length,
-		slowestRecentPickupSeconds: longest(pickups),
+		recentPickups: pickedUpWithin(RECENT_PICKUP_SECONDS).length,
+		slowestRecentPickupSeconds: longest(
+			pickedUpWithin(SLOW_PICKUP_MEMORY_SECONDS),
+		),
 	};
 }
 
 /**
  * A backend is refusing jobs when one has waited for it past the limit, it was
- * slow to pick up what it took recently, or as many jobs as the limit are
- * already waiting. The last is what a wait alone misses: a queue that was just
+ * slow to pick one up within the slow-pickup memory, or as many jobs as the
+ * limit are already waiting. The last is what a wait alone misses: a queue that was just
  * emptied and refilled is full long before its oldest job is old.
  */
 export function refusingJobs(load: LabelLoad, limits: RouteLimits): boolean {
@@ -171,7 +188,7 @@ function describeLoad(name: string, load: LabelLoad): string {
 			: `${name} has ${load.queued} waiting, the oldest for ${load.oldestWaitSeconds} s`;
 	return load.recentPickups === 0
 		? `${waiting}, and has not been seen to pick a job up in the last ${RECENT_PICKUP_SECONDS / 60} minutes`
-		: `${waiting}, and recently took up to ${load.slowestRecentPickupSeconds} s to pick a job up`;
+		: `${waiting}, and in the last ${SLOW_PICKUP_MEMORY_SECONDS / 60} minutes took up to ${load.slowestRecentPickupSeconds} s to pick a job up`;
 }
 
 /**
@@ -293,6 +310,8 @@ function asList(value: JsonValue | undefined): readonly JsonValue[] {
 type ListedRun = Readonly<{
 	id: number;
 	createdAtMs: number;
+	/** When the run last changed; for a finished run, when it finished. */
+	updatedAtMs: number;
 	finished: boolean;
 	probe: boolean;
 }>;
@@ -306,6 +325,7 @@ function listedRuns(runsPage: JsonValue): ListedRun[] {
 			{
 				id,
 				createdAtMs: Date.parse(asText(run.created_at) ?? ""),
+				updatedAtMs: Date.parse(asText(run.updated_at) ?? ""),
 				finished: asText(run.status) === "completed",
 				probe: asText(run.path) === PROBE_WORKFLOW_PATH,
 			},
@@ -334,6 +354,35 @@ export function probeRunIds(runsPage: JsonValue): number[] {
 		.map((run) => run.id)
 		.sort((left, right) => right - left)
 		.slice(0, MAX_PROBE_LOOKUPS);
+}
+
+/**
+ * Runs that finished within the slow-pickup memory, the longest-running
+ * first. Which runner a run used is not in the run list, but a run a slow
+ * backend held up is one that took long.
+ */
+export function slowestFinishedRunIds(
+	runsPage: JsonValue,
+	ownRunId: number,
+	nowMs: number,
+): number[] {
+	return listedRuns(runsPage)
+		.filter(
+			(run) =>
+				run.finished &&
+				!run.probe &&
+				run.id !== ownRunId &&
+				nowMs - run.updatedAtMs <= SLOW_PICKUP_MEMORY_SECONDS * 1000 &&
+				run.updatedAtMs >= run.createdAtMs,
+		)
+		.sort(
+			(left, right) =>
+				right.updatedAtMs -
+				right.createdAtMs -
+				(left.updatedAtMs - left.createdAtMs),
+		)
+		.map((run) => run.id)
+		.slice(0, MAX_FINISHED_LOOKUPS);
 }
 
 /**
@@ -413,8 +462,9 @@ export type QueueView = Readonly<{
 }>;
 
 /**
- * Reads the queue: the newest probe runs, then the runs that started just
- * ahead of this one, then the rest of the unfinished runs until every label
+ * Reads the queue: the newest probe runs, the finished runs that took
+ * longest, then the runs that started just ahead of this one, then the rest
+ * of the unfinished runs until every label
  * is seen refusing jobs or the lookups run out. The unfiltered run list is
  * used because the status-filtered one has gone on reporting no runs while
  * runs were queued.
@@ -435,7 +485,10 @@ export async function observeQueue(input: {
 			`/repos/${input.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
 		);
 	const seen: SeenJob[] = [];
-	for (const runId of probeRunIds(runsPage))
+	for (const runId of [
+		...probeRunIds(runsPage),
+		...slowestFinishedRunIds(runsPage, input.ownRunId, input.nowMs),
+	])
 		seen.push(...seenJobs(await jobsOf(runId)));
 	const ahead = runsJustAhead(runsPage, input.ownRunId, input.nowMs);
 	const rest = lookupOrder(

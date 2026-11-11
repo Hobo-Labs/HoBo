@@ -63,6 +63,21 @@ in-process projections cross no integration or persistence boundary, they have
 no protobuf parity record or CUE wire schema; their hand-written TypeScript
 interfaces duplicate no wire contract.
 
+## PostgreSQL backend catalog and self-host read model
+
+`src/postgres-backends.ts` holds the PostgreSQL backend catalog as data and
+`src/self-hosted-postgres.ts` derives which registered providers could host a
+self-managed PostgreSQL. Both follow the rule above: this package decides
+nothing. The catalog is parsed by `@hobo/core`'s `parseDataStoreCatalogEntry`,
+whose records are `data_store_catalog.proto` and `self_hosted_data_store.proto`
+in `packages/core/data-models/` with CUE beside them, so this package adds no
+wire schema of its own. The parser refuses an asserted claim with no dated
+vendor source; `unknown` is the only unsourced realization. The self-host
+verdict is `@hobo/core`'s `assessSelfHostedDataStore` applied to each provider
+package's own `EQUIVALENCE_CLASSES` and parsed Yard rows. Vendor facts live
+here, not in `@hobo/core`, because they are dated observations and nothing
+depends on this package: refreshing one rebuilds this package alone.
+
 ## Determinism
 
 No clock, no randomness, no environment reads. Two calls with equal options

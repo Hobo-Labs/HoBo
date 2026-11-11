@@ -3,7 +3,7 @@ import { posix } from "node:path";
 
 import { create } from "@bufbuild/protobuf";
 import { generateDeclaredRegistrations } from "ts-autocode-grounding";
-import { discoverInSource } from "ts-autocode-training";
+import type { discoverInSource } from "ts-autocode-training";
 import type { AmbientTrainableClass } from "./ambient-trainables.js";
 import type {
 	SourceModel,
@@ -47,6 +47,8 @@ export interface DirectiveFunction {
 	readonly emitted: string;
 }
 
+type DiscoverInSource = typeof discoverInSource;
+
 /**
  * The directive is a prologue (first statement of the function body).
  * Discovery delegates to ts-autocode-training's AST walk (ADR-0128):
@@ -54,9 +56,12 @@ export interface DirectiveFunction {
  * string literal — robust against brace-bearing parameter/return type
  * annotations, comments, and directive-like strings elsewhere.
  */
-function directiveFunctionNames(source: string): readonly string[] {
+function directiveFunctionNames(
+	discover: DiscoverInSource,
+	source: string,
+): readonly string[] {
 	const names = new Set<string>();
-	for (const target of discoverInSource(source)) {
+	for (const target of discover(source)) {
 		if (target.className === undefined && target.exported) {
 			names.add(target.methodName);
 		}
@@ -76,8 +81,14 @@ export async function scanTrainableDirectives(
 ): Promise<readonly DirectiveFunction[]> {
 	const found: DirectiveFunction[] = [];
 	let preserveJsx: boolean | undefined;
+	let discover: DiscoverInSource | undefined;
 	for (const path of await scannedSources(projectRoot, layout)) {
-		const names = directiveFunctionNames(await readFile(path, "utf8"));
+		const source = await readFile(path, "utf8");
+		// The training stack (~1,300 modules, ~1.4 s) loads on the first file a
+		// scan reads, not when @hobo/cli is imported: every `hobo` process imports
+		// the CLI, and only codegen, build and stub reach this scan.
+		discover ??= (await import("ts-autocode-training")).discoverInSource;
+		const names = directiveFunctionNames(discover, source);
 		if (names.length === 0) continue;
 		if (path.endsWith(".tsx")) preserveJsx ??= preservesJsx(projectRoot);
 		const file = projectPath(projectRoot, path);

@@ -2,7 +2,7 @@
 	"name": "@hobo/cli",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo CLI shell with canonical verbs (up, down, dev, new, plan, doctor, codegen, build, inspect, logs, verify, sandbox, test, and more) and offline project scaffolds. Coding harness is the separate hobo-code binary.",
+	"description": "HoBo CLI shell with canonical verbs (up, down, dev, new, plan, doctor, codegen, build, inspect, logs, verify, sandbox, test, and more) and offline project scaffolds.",
 	"type": "module",
 	"files": [
 		"LICENSE",
@@ -12,6 +12,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./argv": {
+			"types": "./dist/argv.d.ts",
+			"default": "./dist/argv.js"
 		}
 	},
 	"publishConfig": {

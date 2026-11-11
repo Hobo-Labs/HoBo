@@ -48,6 +48,9 @@ function harness(outputs: readonly (string | Error)[]) {
 				args,
 				options,
 				execFile: execute,
+				// The waits are between scripted replies: nothing changes while
+				// they pass, so a real 1–3 s sleep only adds time.
+				sleep: async () => {},
 			});
 		},
 	};
