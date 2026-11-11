@@ -4,7 +4,9 @@
   "description": "HoBo CI GitHub Actions webhook relay and ephemeral runner providers",
   "license": "MIT",
   "type": "module",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "LICENSE",
     "dist",
@@ -29,18 +31,31 @@
       "types": "./dist/runner-integrations.d.ts",
       "default": "./dist/runner-integrations.js"
     },
+    "./mesh-nats": {
+      "types": "./dist/mesh-nats.d.ts",
+      "default": "./dist/mesh-nats.js"
+    },
     "./cli-serve": {
       "types": "./dist/cli-serve-entry.d.ts",
       "default": "./dist/cli-serve-entry.js"
+    },
+    "./node-http": {
+      "types": "./dist/node-http.d.ts",
+      "default": "./dist/node-http.js"
     },
     "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
     "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.db.json",
     "lint": "biome check .",
+    "mesh:demo": "node --experimental-strip-types --no-warnings scripts/mesh-demo.mts",
     "test": "vitest run",
+    "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",
+    "db:check": "node --import tsx ../ci/db/tooling/cli.mts check",
+    "db:migrate": "node --import tsx ../ci/db/tooling/cli.mts migrate",
+    "db:verify": "node --import tsx ../ci/db/tooling/cli.mts verify",
     "start": "node dist/main.js",
     "test:act": "node --import tsx scripts/act-harness.ts",
     "act:install": "node --import tsx scripts/act-install.ts",
@@ -63,16 +78,23 @@
     "@hobo/broker": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/kv": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260730.1",
     "@dagger.io/dagger": "0.21.11",
+    "@hobo/adapter-drizzle": "workspace:*",
     "@hobo/ci-cf": "workspace:*",
     "@hobo/ci-dagger": "workspace:*",
+    "@hobo/stations": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
+    "drizzle-orm": "0.45.4",
     "testcontainers": "11.8.1",
     "yaml": "2.9.0"
   }

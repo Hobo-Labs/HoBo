@@ -36,6 +36,7 @@ export {
 	type SagaOutcome,
 } from "./saga.js";
 export {
+	boolField,
 	CORPUS_BASELINE_SCHEMA,
 	CORPUS_ENTRY_SCHEMA,
 	type CorpusBaseline,
@@ -48,18 +49,24 @@ export {
 	type EventBody,
 	type EventBodySchema,
 	type EventBodyUpcaster,
+	type EventBodyValue,
 	type EventEvolutionContract,
 	type EventFieldSpec,
 	type EventFieldType,
+	type EventJsonObject,
+	type EventJsonValue,
 	encodeEventBody,
 	eventSchema,
+	jsonField,
 	runCanDeployUpcasterGate,
 	stringField,
+	stringsField,
 	type UpcasterGateReport,
 	u32Field,
 	validateEventBody,
 } from "./upcaster.js";
 export {
+	currentMigrationEventSchema,
 	MIGRATION_EVENT_CONTRACTS,
 	migrationCorpusBaseline,
 } from "./upcaster-corpus.js";

@@ -175,10 +175,44 @@ env:
     tsconfig.base.json
 
 jobs:
+  route:
+    name: Route runners
+    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
+    # it is choosing against. The fleet while it takes jobs, an enrolled local
+    # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.route.outputs.runner }}
+      tier: ${{ steps.route.outputs.tier }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/route-runner.mts
+            packages/ci/src/fleet-overflow.ts
+      - id: route
+        uses: ./.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+          mode: ${{ vars.HOBO_CI_ROUTE }}
+          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
+          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
+          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
+          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+
   release-main-train-gate:
     name: Main train release gate (nbgv)
+    needs: route
     if: github.repository == 'Hobo-Labs/HoBo'
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 15
     outputs:
       run: ${{ steps.version.outputs.run == 'true' }}
@@ -194,11 +228,18 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
+      - uses: ./.github/actions/ci-runner-preflight
         if: >-
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push'
+      - name: Prepare nbgv dotnet (release mise)
+        timeout-minutes: 5
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push'
+        run: node --no-warnings scripts/ci/ensure-nbgv-toolchain.mts
       - name: Skip when push did not touch release paths
         id: scope
         if: >-
@@ -228,11 +269,11 @@ jobs:
           node --no-warnings scripts/ci/compute-release-version.mts "$head_sha" --github-env --github-output "$GITHUB_OUTPUT"
 
   # One job, not three: on the shared two-slot box every extra job pays its own
-  # checkout and install (~2 min) and its own wait for a slot. hobo-code is
-  # built by release-code.yml, never here.
+  # checkout and install (~2 min) and its own wait for a slot.
   release-contract:
     name: Release contract + affected OCI images
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    needs: route
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     steps:
       - name: Bootstrap repo-local composite actions
@@ -271,6 +312,7 @@ jobs:
           node --no-warnings scripts/ci/run-job-command-report.mts
           --label release-contract-vitest --
           pnpm exec vitest run
+          scripts/test/release-contract-vitest-scope.test.ts
           scripts/test/release-oci-affected.test.ts
           scripts/test/release-oci-attest-contract.test.ts
           scripts/test/release-oci-image-contract.test.ts
@@ -305,9 +347,9 @@ jobs:
           # Editing this workflow edits how every image is built, so it builds them all.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
             || ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release-hobo.yml; then
-            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all --exclude=hobo-code)"
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all)"
           else
-            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --exclude=hobo-code --explain)"
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --explain)"
           fi
           echo "affected: ${images}"
           echo "image_ids=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" "))' "$images")" >> "$GITHUB_OUTPUT"
@@ -731,13 +773,20 @@ jobs:
   release-pr-gate:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [release-contract]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    needs: [route, release-contract]
+    # GitHub-hosted: it runs no repository code, and on the fleet a superseded
+    # run's gate held the next run until a runner was free.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Fail closed when release contract is red
         run: |
           set -euo pipefail
+          # A contract skipped because routing failed was never evaluated.
+          if [ "${{ needs.route.result }}" != "success" ]; then
+            echo "::error::Runner routing did not succeed (result=${{ needs.route.result }})"
+            exit 1
+          fi
           case "${{ needs.release-contract.result }}" in
             success) exit 0 ;;
             skipped)

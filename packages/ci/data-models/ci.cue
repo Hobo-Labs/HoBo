@@ -44,7 +44,7 @@ package ci
 }
 #Offer: {
  id: string & !=""
- provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
+ provider: "github" | "blacksmith" | "depot" | "warpbuild" | "jog" | "boat" | "lizard" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
  providerAccountId: string & !=""
  enabled: bool
  runsOn: string & !=""
@@ -215,8 +215,10 @@ package ci
 #CiEvent: {type: string & !="", accountId: string, leaseId: string, at: string & !="", detail: string}
 #CiRoutingRefusal: {code: string & !="", reason: string & !="", offerId: string}
 #Snapshot: {leases: [...#Lease], events: [...#CiEvent]}
+#SequencedCiEvent: {seq: int & >0, event: #CiEvent}
+#CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0, more?: bool, truncated?: bool}
 
-#Ci: #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult | #FleetV2Record
+#Ci: #FleetRoutes | #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult | #FleetV2Record
 
 #PipelineStep: {id: string & !="", argv: [string & !="", ...string], cwd: string, env: [string & !="__proto__"]: string}
 #Pipeline: {
@@ -278,7 +280,7 @@ package ci
 // Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
- kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
+ kind: "github" | "blacksmith" | "depot" | "warpbuild" | "jog" | "boat" | "lizard" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
  connectionRef: string & !=""
  runsOn: string & =~"^[A-Za-z0-9_.-]{1,100}$"
  enabled?: bool
@@ -334,4 +336,15 @@ package ci
  if periodKind == "fixed-window" {periodStartsAtMs: int & >=0, periodEndsAtMs: int & >periodStartsAtMs}
  if periodKind == "manual" {periodStartsAtMs?: _|_, periodEndsAtMs?: _|_}
  constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
+}
+
+// The HOBO_CI_FLEET_ROUTES repository variable: job class to runs-on label.
+// The three classes the relay publishes are always present; a workflow indexes
+// the value directly, so it is a flat object and not a wrapped message.
+#FleetRouteLabel: string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"^(?i)ubuntu-latest$"
+#FleetRoutes: {
+ pr: #FleetRouteLabel
+ fork: #FleetRouteLabel
+ trunk: #FleetRouteLabel
+ [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
 }

@@ -12,6 +12,7 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export { AWS_HOST_FORMS } from "./host-forms.js";
 export {
 	AWS_IAC_PROVIDER,
 	assertLocalIacProgram,
@@ -89,7 +90,9 @@ export {
 	type DynamodbOptions,
 	dynamodb,
 	dynamodbDocument,
+	type EbsVolumeOptions,
 	ECS_LAUNCH_TYPES,
+	type Ec2InstanceOptions,
 	type EcsLaunchType,
 	type EcsServiceOptions,
 	type EcsTaskOptions,
@@ -100,6 +103,8 @@ export {
 	ELASTICACHE_ENGINES,
 	type ElasticacheEngine,
 	type ElasticacheRedisOptions,
+	ebsVolume,
+	ec2Instance,
 	ecs,
 	eks,
 	elasticacheRedis,

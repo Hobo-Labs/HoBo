@@ -32,15 +32,94 @@ const activeCiFiles = new Set([
 	"dev-env-smoke.yml",
 	"pricing-ci.yml",
 	"release-hobo.yml",
-	"release-code.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
-const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
+/**
+ * The probe: one job per self-hosted label, there only to be picked up, so the
+ * route job can tell which labels have a runner behind them.
+ */
+const probeFile = "fleet-probe.yml";
+const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
+const allowedEnabled = new Set([acceptanceFile, probeFile, ...activeCiFiles]);
+
+/**
+ * The probe asks for each label by name, which no other workflow may, so it
+ * may do nothing else: no action, no checkout, no repository code.
+ */
+function lintProbeWorkflow(errors: string[], text: string): void {
+	const lines = text.split("\n");
+	for (const [index, line] of lines.entries()) {
+		const runsOn = /^\s*runs-on:\s*(.*?)\s*$/.exec(line)?.[1];
+		if (runsOn !== undefined && !PROBE_RUNS_ON.has(runsOn))
+			errors.push(
+				`${probeFile}:${index + 1}: a probe job must ask for one self-hosted label by name (${[...PROBE_RUNS_ON].join(", ")})`,
+			);
+		if (/^\s*-?\s*uses:/.test(line))
+			errors.push(
+				`${probeFile}:${index + 1}: the probe must not use an action or check anything out`,
+			);
+		const run = /^\s*-?\s*run:\s*(.*?)\s*$/.exec(line)?.[1];
+		if (run !== undefined && run !== '"true"')
+			errors.push(
+				`${probeFile}:${index + 1}: a probe step must do nothing (run: "true")`,
+			);
+	}
+	if (!/^permissions: \{\}$/m.test(text))
+		errors.push(`${probeFile}: the probe must hold no permissions`);
+}
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+
+/**
+ * What a routed job asks for: the label the `route` job chose (the fleet, an
+ * enrolled local box, or GitHub-hosted when neither is taking jobs), and the
+ * fleet's own label when that job did not run.
+ */
+const ROUTED_RUNS_ON =
+	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+/** The one GitHub-hosted machine type; never `ubuntu-latest`. */
+const HOSTED_RUNS_ON = "ubuntu-24.04";
+
+/**
+ * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
+ * chooses the runner, so it cannot wait on one. An `always()` job with no
+ * `uses:` step is a gate: it runs no repository code, only adds up other
+ * jobs' results, and on the fleet a superseded run's gate held the next run
+ * until a runner was free.
+ */
+function isAlwaysHostedJob(
+	jobLine: string,
+	block: readonly string[],
+	runsOn: string | undefined,
+): boolean {
+	if (runsOn !== HOSTED_RUNS_ON) return false;
+	if (/^  route:$/.test(jobLine))
+		return block.some(
+			(line) => line.trim() === "uses: ./.github/actions/route-runner",
+		);
+	return (
+		block.some((line) => /^    if:.*\balways\(\)/.test(line)) &&
+		!block.some((line) => /^\s*-?\s*uses:/.test(line))
+	);
+}
+
+function needsRoute(block: readonly string[]): boolean {
+	const header = block.slice(
+		0,
+		block.findIndex((line) => line === "    steps:"),
+	);
+	const at = header.findIndex((line) => line.startsWith("    needs:"));
+	if (at === -1) return false;
+	const list = header
+		.slice(at)
+		.filter((line, index) => index === 0 || line.startsWith("      - "))
+		.join(" ");
+	return /(^|[\s[,-])route([\s\],]|$)/.test(list.replace(/^\s*needs:/, ""));
+}
 
 /** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
 function isNpmOidcHostedReleaseJob(
@@ -203,6 +282,10 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
+	if (file === probeFile && !requireDisabledJobs) {
+		lintProbeWorkflow(errors, text);
+		return;
+	}
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
@@ -239,18 +322,30 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		if (
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
-			!npmOidcHosted
+			runsOn !== ROUTED_RUNS_ON &&
+			!npmOidcHosted &&
+			!alwaysHosted
 		) {
 			errors.push(
-				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression`,
+				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed label expression`,
 			);
 		}
-		if (runsOn === "hobo" || runsOn === TRUNK_RUNS_ON) {
+		if (runsOn === ROUTED_RUNS_ON && !needsRoute(block)) {
+			errors.push(
+				`${file}:${start + 1}: a job on the routed label must need the route job`,
+			);
+		}
+		if (
+			runsOn === "hobo" ||
+			runsOn === TRUNK_RUNS_ON ||
+			runsOn === ROUTED_RUNS_ON
+		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
 				const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
@@ -285,6 +380,7 @@ function lintWorkflowYaml(
 		}
 		if (allowedEnabled.has(file)) {
 			const prOnly = isPullRequestOnlyJob(block, workflowHasTrunkEvent);
+			// The routed expression resolves the trunk label itself, so it suits both.
 			if (!npmOidcHosted && !prOnly && runsOn === "hobo") {
 				errors.push(
 					`${file}:${start + 1}: trunk-label-routing: push/merge_group/workflow_dispatch-capable jobs must use the trunk label expression`,
@@ -333,7 +429,8 @@ function lintWorkflowYaml(
 	if (
 		activeCiFiles.has(file) &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
-		!text.includes(TRUNK_RUNS_ON)
+		!text.includes(TRUNK_RUNS_ON) &&
+		!text.includes(ROUTED_RUNS_ON)
 	) {
 		errors.push(
 			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,

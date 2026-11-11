@@ -18,11 +18,15 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/capability-profiles": "workspace:*"
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/data-core": "workspace:*"
 	},
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/data-sqlite": "workspace:*",
 		"@types/node": "^22.15.29",
+		"@types/pg": "8.15.5",
+		"pg": "8.22.0",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {

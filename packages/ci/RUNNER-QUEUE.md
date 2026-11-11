@@ -11,7 +11,7 @@ A successful acceptance run on `main` or a feature branch only proves the relay 
 
 ### Fork pull requests (untrusted code)
 
-Release workflows (`release-hobo`, `release-code`, and related) **skip Docker socket work and secret-backed publish** when `github.event.pull_request.head.repo.fork` is true. A lightweight `fork-policy` job documents the skip; contract/static jobs may still run on `hobo` without pushing images or uploading build artifacts that carry workspace `dist/` trees. Require human approval for fork workflows in GitHub branch protection if your org policy demands it.
+Release workflows (`release-hobo` and related) **skip Docker socket work and secret-backed publish** when `github.event.pull_request.head.repo.fork` is true. A lightweight `fork-policy` job documents the skip; contract/static jobs may still run on `hobo` without pushing images or uploading build artifacts that carry workspace `dist/` trees. Require human approval for fork workflows in GitHub branch protection if your org policy demands it.
 
 ## Root cause checklist (operator)
 
@@ -21,7 +21,7 @@ Work through these on **Hobo-Labs/HoBo** after an org/repo transfer:
 
 - HoBo CI GitHub App must be **installed on the Hobo-Labs org** (or updated) with access to **Hobo-Labs/HoBo**.
 - App webhooks must target the **ingress front door** HTTPS origin (`workflow_job`, `workflow_run`), not a relay URL baked into the App settings. The front door reads **`.hobo/ci.json` at the event’s config ref** and forwards signed webhooks to the selected environment’s `relayOrigin`.
-- For **local dev and agents behind NAT**, set `jobAdmission: "pull"` on the `local` environment (or rely on default pull inference for loopback relays). Run `hobo ci enable` against `.hobo/ci.json`, then **`hobo ci serve --environment local --installation-id <id>`** (or `createJobPollAdmissionWorker` in custom hosts) — no public URL on your laptop.
+- For **local dev and agents behind NAT**, set `jobAdmission: "pull"` on the `local` environment (or rely on default pull inference for loopback relays). Run `hobo ci enable` against `.hobo/ci.json`, then **`hobo ci serve --environment local --installation-id <id>`** (or `createGithubJobPoller` in custom hosts) — no public URL on your laptop. `hobo ci serve` runs the same poller as the box worker below, every 15 seconds, for the repository it was started for once the relay holds a connection for it; a polled job goes into the relay's inbox and the relay's own tick admits it, so `hobo-trunk` jobs are admitted the same way as `hobo` ones.
 - **Fork pull requests** never choose a contributor-controlled relay: routing uses the **base-branch** config ref and `selection.forkPullRequestEnvironment` when set.
 - Webhook deliveries should be **200/202** in the GitHub App settings; repeated **401/503** means wrong secret or ingress/relay down.
 
@@ -77,6 +77,8 @@ Each job runs in a **fresh Docker container** with the official Actions runner J
 
 ### Rebuild the runner image (box worker)
 
+`build.sh` reads tool pins from the checkout only (`MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`). The job container it runs in carries the pins of whichever commit last built `hobo-ci-worker:local`; without this, a pull request that pinned a new tool and rebuilt the image made `mise install --locked` fail on every other branch with `<tool> is not in the lockfile` (release run 42741596338, after an image built with `syft` pinned).
+
 Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker** and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
 
 ```sh
@@ -104,7 +106,7 @@ Version tag: `node --no-warnings scripts/ci-runner-image-version.mts` (hash of `
 
 **Deps layer:** `CI deps layer (pnpm)` builds `hobo-ci-deps:<toolchain>-<depsKey>` from the staged lockfile, workspace and dependency-field manifest data, optional npm/pnpm configuration, patches, platform, toolchain version, and an explicit deps-layout version. Layout recipe edits do not change the key unless that version is deliberately bumped; the job-side link/check script is staged into the deps context so mount verify can run `link`, but it is not hashed into the key. Node and pnpm mise entries are already covered by the toolchain version. The build verifies an offline up-to-date install, then proves the candidate under a real uid-1000 job-directory mount before promoting `hobo-ci-deps:local`. Fetch and install reuse the persistent host pnpm store through BuildKit's `hobo-pnpm-store` cache mount. The final image holds repo-relative `node_modules` trees and a key marker under `/opt/hobo-deps`, with no `.git` or files under `_hobo_work`. `scripts/ci/deps-layer-buckets.mts` partitions `.pnpm` entries into 64 reproducible `COPY --link` layers plus one residual layer. Every event first compares the computed key with the `hobo.ci.deps-key` label on `hobo-ci-deps:local`; an exact match skips resolution, verification, promotion, and build. After a read-only GHCR login, a miss checks the exact keyed local tag and then GHCR, skipping the build on either hit; a remaining non-PR miss defers to the publisher and daemon ensure loop instead of rebuilding on Fabric. A PR or publisher rebuild samples free inodes and bytes on Docker's data root before `pnpm install`/`mv` into `/opt/hobo-deps`; below **400000** inodes (`HOBO_CI_DEPS_BUILD_INODE_HEADROOM`) or **8 GiB** (`HOBO_CI_DEPS_BUILD_BYTE_HEADROOM`) it prunes only the BuildKit cache and refuses the rebuild if still short, so a key miss cannot `ENOSPC` main. Never `docker image prune -af`. See [finding 71](../../docs/ci/findings/0071-a-deps-key-miss-rebuilt-without-inode-headroom.md). PRs touching deps-build inputs run with `--no-promote` and never push. Neither Main full gate nor PR impact gate depends on this job. **CI deps image publisher** is a separate `workflow_run`/`workflow_dispatch` workflow that builds the key if no local candidate exists before pushing it; its failure never changes the fabric run's result.
 
-The worker selects the deps image only when the lease repository matches **`HOBO_CI_DEPS_REPOSITORY`** case-insensitively (default **`Hobo-Labs/HoBo`**), **`HOBO_CI_DEPS_IMAGE`** (default **`hobo-ci-deps:local`**) exists, and its `hobo.ci.toolchain` label equals the `hobo-ci-worker:<version>` tag on the current worker image. A once-per-image-id probe checks payload readability and runner-directory writability; failure logs `hobo_ci_deps_image_fallback` with `reason=unwritable-workdir` and falls back. `prepareJobDirectory` creates and chowns the job root, `HoBo`, and `HoBo/HoBo` to uid/gid 1000 so `actions/checkout` can write `.git` inside the bind mount. After checkout, `scripts/ci/deps-layer.mts link` links `/opt/hobo-deps` into the checkout, including for mounted jobs. `Check deps layer match` additionally requires payload key metadata, `.modules.yaml`, the virtual store, root/workspace `tsx` resolution, and `pnpm exec`; every miss installs. The worker exports **`HOBO_CI_DEPS_LAYER`** only on successful selection, so mounted jobs claim the layer because the payload remains visible outside their mount. A pre-warmed container is reused only when image and deps key match the lease. Default-path box checkouts use `clean: false`, and exact-match gates verify the ts-autocode links. The daily scheduled Main full gate always installs as the correctness verifier, and other jobs retain their frozen install.
+The worker selects the deps image only when the lease repository matches **`HOBO_CI_DEPS_REPOSITORY`** case-insensitively (default **`Hobo-Labs/HoBo`**), **`HOBO_CI_DEPS_IMAGE`** (default **`hobo-ci-deps:local`**) exists, and its `hobo.ci.toolchain` label equals the `hobo-ci-worker:<version>` tag on the current worker image. A once-per-image-id probe checks payload readability and runner-directory writability; failure logs `hobo_ci_deps_image_fallback` with `reason=unwritable-workdir` and falls back. `prepareJobDirectory` creates and chowns the job root, `HoBo`, and `HoBo/HoBo` to uid/gid 1000 so `actions/checkout` can write `.git` inside the bind mount. After checkout, `scripts/ci/deps-layer.mts link` links `/opt/hobo-deps` into the checkout, including for mounted jobs. It links only into package directories the checkout has: a layer built before a package left the tree would otherwise bring that package's directory back holding nothing but `node_modules`, which failed the package-layout check on the first pull request after `packages/code` was removed. `Check deps layer match` additionally requires payload key metadata, `.modules.yaml`, the virtual store, root/workspace `tsx` resolution, and `pnpm exec`; every miss installs. The worker exports **`HOBO_CI_DEPS_LAYER`** only on successful selection, so mounted jobs claim the layer because the payload remains visible outside their mount. A pre-warmed container is reused only when image and deps key match the lease. Default-path box checkouts use `clean: false`, and exact-match gates verify the ts-autocode links. The daily scheduled Main full gate always installs as the correctness verifier, and other jobs retain their frozen install.
 
 For immediate recovery from an unwritable promoted image, stop the daemon, run **`docker rmi hobo-ci-deps:local`**, and restart. Alternatively set **`HOBO_CI_DEPS_IMAGE=`** (empty) and restart to disable selection and the ensure loop. Setting `HOBO_CI_DEPS_REPOSITORY` to a non-HoBo name also disables HoBo selection. Redeploy the fixed daemon and rebuild the image before re-enabling it.
 
@@ -175,6 +177,21 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cap independent of age; deprecated alias `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` |
 | `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_NATS_URL` | unset | One or more `nats://host:port` servers, comma-separated. Set, the worker joins the relay mesh; unset, it takes every job it polls, as before. Must not carry credentials |
+| `HOBO_CI_NATS_TOKEN`, `HOBO_CI_NATS_USER`, `HOBO_CI_NATS_PASSWORD` | unset | NATS credentials; each also reads `<NAME>_FILE` |
+| `HOBO_CI_NATS_REPLICAS` | `1` | JetStream replicas for the mesh buckets: 1 for a single server, 3 for a cluster |
+| `HOBO_CI_MESH_NODE_ID` | host name | This worker's id in the mesh (letters, digits, `-`, `_`). Two workers on one host need different ids |
+| `HOBO_CI_MESH_NAMESPACE` | `hobo-ci` | Prefix of the two bucket names; workers sharing a namespace form one mesh |
+| `HOBO_CI_MESH_STEP_MS` | `20000` | How long each rank waits before taking a job the node ahead of it has not started; 1000 to 300000 |
+| `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS` | `1800000` | How long until a job this worker took counts for half as much in its reliability score; 60000 to 86400000 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/HTTP base URL; the worker posts traces as JSON to `<base>/v1/traces`. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used as given instead. Unset means no export |
+| `OTEL_EXPORTER_OTLP_HEADERS` | unset | `key=value,key=value` request headers for the export (values percent-encoded); `OTEL_EXPORTER_OTLP_TRACES_HEADERS` wins |
+| `OTEL_SERVICE_NAME` | `hobo-ci-worker` | `service.name` on every span |
+| `OTEL_SDK_DISABLED` | unset | `true` turns tracing off whatever else is set |
+| `HOBO_CI_EVENTS_URL` | unset | CloudEvents receiver. Infrastructure events are POSTed there as `application/cloudevents-batch+json`; unset means none are sent |
+| `HOBO_CI_EVENTS_HEADERS` | unset | `key=value,key=value` request headers for that receiver (values percent-encoded) |
+| `HOBO_CI_EVENTS_TENANT` | `hobo-ci` | The authority in each event's `source` (`hobo://<tenant>/<stream>`) |
+| `HOBO_CI_TRACE_FILE` | unset | Also append each export as one line of OTLP/JSON to this file (mode 0600); rotated to `<file>.1` past 64 MiB |
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
@@ -192,6 +209,43 @@ Configs resolve the smaller of their own cap and this value; CI does not export 
 
 **Disk and inode admission:** before each reservation, the daemon samples bytes and inodes on Docker's data root and the work root. Above 85% for either resource it runs the full non-pnpm GC described above at most once per 60 seconds, then samples again; decisions within that interval still use a fresh sample. Above 95% after pruning, the job waits and `hobo_ci_inode_pressure` is logged once per episode. A dispatch pass stops calling storage admission after its first refusal because pressure is host-wide. A trunk-label storage refusal blocks lower ranks and records `hobo_ci_trunk_wait` with `reason: "storage"`. Each admitted job also reserves its expected inode growth, defaulting to **200000** workdir plus **170000** container inodes. Reservations on the same device add together; consumption since the oldest live grant reduces the outstanding estimate. If free inodes minus outstanding growth cannot fit the new job, the same rate-limited GC/recheck runs before the daemon waits and logs `hobo_ci_inode_reserve_wait` once per episode. Grants without an active lease expire after a 60-second grace, and failed lease reservations release immediately. A live job's directory is never retired or deleted. See [finding 25](../../docs/ci/findings/0025-inode-exhaustion-made-pr-installs-fail-with-enospc.md), [finding 58](../../docs/ci/findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md) and [finding 68](../../docs/ci/findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md).
 
+**Relay mesh:** with `HOBO_CI_NATS_URL` set and pull admission, several workers share one queue with no central relay ([design](../../docs/design/ci-relay-mesh.md)). Each worker advertises its free slots every 10 s and, before it takes a queued job from a poll, asks whether it is its turn. Startup logs `hobo_ci_mesh` with whether it is on.
+
+- **Who takes a job.** Workers rank themselves by how many copies of that job they could start, the same way everywhere: a worker with a free slot but too little free memory for the job is not a candidate for it, and logs `hobo_ci_mesh_job_unfit` with what it lacks. The first-ranked worker claims the job in NATS at once; each later rank waits one step (`HOBO_CI_MESH_STEP_MS`) and claims only if the job is still queued. The claim is an atomic put-if-absent, so one worker wins. `hobo_ci_mesh_job_taken` records the job, the rank and the reason.
+- **A worker that is full or draining** advertises no free slots and drops out of the ranking; a drain says so immediately.
+- **A worker that dies** stops advertising and is forgotten after a minute. Jobs it was first for start one step later on the next worker. A claim it held ages out after two minutes.
+- **NATS down or unreachable** never stops the queue. The worker logs `hobo_ci_mesh_claims_unreachable` and takes its turn by ranking alone on the last view it had; when that view expires it takes everything, as a single worker does. The cost is that two workers can start a runner for one job; GitHub gives the job to one and the other runner exits.
+- **Startup does not wait for NATS.** The connection is made in the background and re-made for the life of the process (`hobo_ci_mesh_nats` logs each change).
+
+Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_polled` as `mesh-deferred`.
+
+**Reliability.** Each worker advertises the share of its recent jobs it delivered, and its place in the ranking is its capacity for the job times that share: a worker that has been dropping jobs is first for fewer.
+
+- **Delivered:** one of its runners picked the job up, whatever the job's result.
+- **Dropped:** the job is still queued ten minutes after the worker claimed it (`never-started`), the launch was given up (`launch-failed`), the container was killed for memory (`out-of-memory`), or the runner was lost mid-job (`runner-lost`). `hobo_ci_mesh_job_dropped` logs each with its reason and the score it left.
+- **Not counted:** a job that was cancelled or started elsewhere, and any job the worker did not claim.
+- **Recovery:** the record halves every `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS`, so a worker that stops dropping jobs is trusted again without anyone resetting it, and sooner if it delivers jobs meanwhile. After ten drops in a row it is ranked with 0.29 of its capacity; an hour after the cause is fixed, 0.62 with nothing delivered; six hours, above 0.99. It never falls below 0.05, so it always gets enough work to prove itself.
+- **After a repair:** restarting the worker clears the record at once. `hobo_ci_mesh_reliability` logs the score each time it moves a twentieth.
+
+**Capacity and availability.** On the same 10-second beat each worker reads the board and reports what changed: `hobo_ci_mesh_node_joined`, `hobo_ci_mesh_node_lost` (an advertisement aged out), `hobo_ci_mesh_node_unhealthy` and `hobo_ci_mesh_node_recovered`, `hobo_ci_mesh_capacity_exhausted` and `hobo_ci_mesh_capacity_restored` (no healthy worker has a free slot), and `hobo_ci_mesh_capacity` with live, healthy and available workers and total and free slots, on every change and once a minute. Only the live worker with the lowest id reports about the others, so each fact appears once.
+
+**Shared configuration.** The mesh keeps one configuration in `<namespace>-mesh-config`. A worker with `HOBO_CI_CONFIG` or `HOBO_CI_CONFIG_JSON` runs its own and publishes it if the mesh has none; if the two differ it logs `hobo_ci_mesh_config_drift` and keeps its own. A worker with neither reads the mesh's at start (`hobo_ci_mesh` logs `configuration: mesh`), so a new box needs only the NATS address and App credentials. Replacing the stored configuration requires naming its current revision.
+
+**No hosted database needed.** A worker with `HOBO_CI_STORE` unset keeps its lease journal in SQLite on the box and polls GitHub itself, so neither the hosted relay nor its Postgres is in the path from a queued job to a running runner. `HOBO_CI_STORE=postgres` or `HOBO_CI_JOB_ADMISSION=push` puts them back in it; the mesh needs neither.
+
+**Tracing:** with an OTLP endpoint or a trace file set, the daemon exports OpenTelemetry spans (`packages/ci-gh-actions/src/relay-trace.ts`; no SDK, no collector of its own). Startup logs `hobo_ci_trace_export` with what is enabled. Two things become spans:
+
+- **Every GitHub call that changes something**, and every call GitHub refused or never answered: `POST …/actions/runners/generate-jitconfig`, `DELETE …/actions/runners/{runner_id}`, `POST …/actions/runs/{run_id}/force-cancel`, `POST …/actions/runs/{run_id}/rerun-failed-jobs`. Each carries the method, the route with ids replaced, the status, the repository and the run, job and runner ids. Successful reads are left out: the worker polls.
+- **Every log event in this document.** An event that names a run joins that run's trace. `hobo_ci_job_pickup` becomes a span over the whole wait with three children: `ci.job.queue` (job created to admitted), `ci.job.container_start` and `ci.job.runner_register`.
+
+A run's trace id is derived from its run id alone, and each job's Turbo trace (`scripts/ci/ci-trace.mts`, uploaded as the `ci-trace-*` artifact) uses the same id. Load both into one backend and a run reads top to bottom: queued, admitted, runner registered, Turbo tasks, runner deleted.
+
+To answer "who cancelled this run?", open the run's trace. The only code that cancels a run is the lost-runner path, and it leaves `hobo_ci_orphan_job_confirmed`, a `DELETE` on the runner and a `POST …/force-cancel` span. A cancelled run with no `force-cancel` span was cancelled by someone else: a newer push, a person, or another tool using a token with `actions: write`.
+
+**Events:** traces and logs are for reading; CloudEvents are for reacting. With `HOBO_CI_EVENTS_URL` set, the daemon also delivers the infrastructure facts among its log events as CloudEvents 1.0, mapped from the platform's event envelope as ADR-0046 prescribes. Each has a past-tense type, for example `ci.RunForceCancelled`, `ci.ContainerOomKilled`, `ci.RunnerLaunchFailed`, `ci.JobPickedUp`, `ci.WorkerDrainStarted` and `ci.HostInodePressureDetected`; the full table is `CI_INFRA_EVENT_TYPES` in `packages/ci-gh-actions/src/cloud-events.ts`. A worker in a relay mesh also emits its capacity and availability: `ci.MeshNodeJoined`, `ci.MeshNodeLost`, `ci.MeshNodeDegraded`, `ci.MeshNodeRecovered`, `ci.MeshCapacityExhausted`, `ci.MeshCapacityRestored` and a periodic `ci.MeshCapacityReported`, and what became of the jobs it took: `ci.MeshJobDropped` with the reason, and `ci.MeshReliabilityChanged` each time its score moves a twentieth. `source` is `hobo://<tenant>/ci-worker/<host>/<start>`, `hoboseq` orders one worker start, and an event about a workflow run carries `hobocorrelationid: github-actions-run:<run id>`. Delivery is the CloudEvents HTTP binding in batched structured mode, best effort: a bounded queue, no retry, and `hobo_ci_events_export_problem` when batches fail. The hosted relay emits `ci.RelayStartFailed`, `ci.RelayRequestFailed`, `ci.WebhookIngestFailed`, `ci.ControlRequestFailed` and `ci.ReadinessCheckFailed` the same way.
+
+No request body, response body, header or query string is recorded; JIT runner configs and tokens travel in those. Spans do carry repository names, run and job ids, runner names and job names, so point the endpoint at a backend that may hold them. A slow or dead endpoint cannot stall the worker: spans queue up to 4096, the oldest are dropped past that, a failed batch is not retried, and `hobo_ci_trace_export_problem` reports the counts at most once a minute. Shutdown waits at most 3 s for the last export.
+
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
 This preserves PR isolation without Sandbox spend.
@@ -204,8 +258,8 @@ PR CI (**HoBo CI Fabric** on `pull_request`) is always in this bucket for a publ
 
 ### 4. JIT label contract
 
-- Workflows must use exactly one runner label: **`hobo`**, or **`hobo-trunk`** for the jobs of `push`, `workflow_dispatch` and `merge_group` runs. The relay rejects jobs with extra runner labels. Each JIT runner registers with the one label its lease's job asked for (`packages/ci-gh-actions/src/runner-labels.ts`).
-- Trunk-capable jobs in every enabled box workflow, including `hobo-ci.yml`, `release-hobo.yml` and `release-code.yml`, ask for **`hobo-trunk` by default** through `${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}`. This includes **PR impact gate** on `merge_group`; its `pull_request` runs use `hobo`. Setting repository variable **`HOBO_CI_TRUNK_RUNNER=false`** is the kill switch that returns trunk runs to `hobo`; pull-request-only jobs always use `hobo`. PR-only jobs, including Secret scan (trunk events scan history inside Main full gate), request plain `hobo`.
+- Workflows must use exactly one runner label. On the fleet that is **`hobo`**, or **`hobo-trunk`** for the jobs of `push`, `workflow_dispatch` and `merge_group` runs; a routed job asks for whichever label the route job chose (see "Runner routing" below). The relay rejects jobs with extra runner labels. Each JIT runner registers with the one label its lease's job asked for (`packages/ci-gh-actions/src/runner-labels.ts`).
+- Trunk-capable jobs in every enabled box workflow, including `hobo-ci.yml` and `release-hobo.yml`, ask for **`hobo-trunk` by default** through `${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}`. This includes **PR impact gate** on `merge_group`; its `pull_request` runs use `hobo`. Setting repository variable **`HOBO_CI_TRUNK_RUNNER=false`** is the kill switch that returns trunk runs to `hobo`; pull-request-only jobs always use `hobo`. PR-only jobs, including Secret scan (trunk events scan history inside Main full gate), request plain `hobo`.
 - `scripts/lint-actions.ts` allows only that expression and `runs-on: hobo`. Its **`trunk-label-routing`** rule also fails a push/merge-group/dispatch-capable job on plain `hobo` and a PR-only job on the expression. Other repositories served by the same box must use the expression for their push, merge-group, and manual-dispatch jobs too: event rank alone does not reserve trunk capacity, and a shared-label runner can be assigned to an older PR job.
 - A trunk-event job still requesting `hobo` logs **`hobo_ci_trunk_job_on_shared_label`** once per job, with `repository`, `workflow`, `runId`, and `jobId`. Treat that event as a workflow misconfiguration; it remains capped with shared-label demand.
 - **Rollout:** the box daemon must run a main at or after **#1678**, which serves `hobo-trunk`. The default trunk slot and label-based capacity fixes also need a daemon redeploy. Until both are deployed, set **`HOBO_CI_TRUNK_RUNNER=false`** on an older box; otherwise trunk jobs would wait for a runner nobody launches.
@@ -213,7 +267,7 @@ PR CI (**HoBo CI Fabric** on `pull_request`) is always in this bucket for a publ
 
 ### 5. Budget and concurrency
 
-Relay returns **`waiting-for-budget-or-capacity`** when account/provider budget or concurrency is exhausted. Check relay logs and policy API; queued GitHub jobs will not start until a reservation succeeds.
+The relay acknowledges a signed delivery as **`accepted`** once it is in its inbox; admission happens on the worker tick, on every host. When account/provider budget or concurrency is exhausted the job stays in the pending queue with no lease. Check `GET /v1/accounts/self/leases`, relay logs and the policy API; queued GitHub jobs will not start until a reservation succeeds.
 
 Capacity goes out in admission order, not arrival order: `merge_group`, `push` and `workflow_dispatch` jobs first, then pull-request jobs, then `schedule`, and within each the run that started first. A pending job whose single label is `hobo-trunk` keeps trunk rank even if its run lookup fails; a `hobo` job takes its rank from the run event. The poller primes each run's event and start time from the run lists it already reads, without another GitHub request; a later lookup failure retains that rank. Within a run, the box daemon admits the job expected to take longest first: the median of that job name's last five successful durations, which the job poller learns from the jobs lists it already reads. A job with no history counts as 0, and the job id breaks any remaining tie. The history lives in memory and is re-learned from the two-hour completed-runs lookback after a restart. Reservations and reserved-lease launches both use this order. Deferred reservation applies it to the poller's accepted batch regardless of delivery order, and a swapped job re-enters it with the labels read from GitHub.
 
@@ -239,6 +293,62 @@ Overflow is off until you enable it. While the hobo fleet has a free slot, jobs 
 - `hostinger-arc`: `kind: kubernetes`, `connectionRef: hostinger-arc`, `runsOn: hobo-arc`, `enabled: false`, and `scaleSet` with `name`, `namespace`, `minRunners`, and `maxRunners`. The runtime offer uses backend `gh-actions`. `isolated-container` stays paired with `runsOn: hobo-isolated-worker` on the box worker.
 
 Anti-loop: a job already labeled `ubuntu-24.04` or `hobo-arc` stays on that member and is not sent back to hobo. Queued demand for a GitHub-hosted or ARC offer keeps that concrete label instead of `hobo`. Isolated abort covers Vercel Sandbox, `hobo-box-worker`, and kubernetes `isolated-container` on `hobo-isolated-worker`. It does not cancel kubernetes `gh-actions` ARC leases, and it skips kubernetes when the offer backend is unknown.
+
+#### Host health
+
+Memory and storage admission answer for one job at a time. The daemon also watches the machine as a whole and logs **`hobo_ci_host_health`** with `state`, `previous`, `reasons`, `loadPerCpu`, `memoryAvailableFraction`, `storageFreeBytesFraction` and `storageFreeInodesFraction` (the worst of Docker's data root and the work root). It samples at most every 10 s from the dispatch tick.
+
+| State | When (defaults) | What the daemon does |
+| --- | --- | --- |
+| `ok` | below every threshold | nothing |
+| `pressured` | 1-minute load ≥ 1.5 per CPU, available memory ≤ 15%, or free bytes or inodes ≤ 15% | runs storage collection as soon as the current tick ends when the reason is storage, instead of at the next `gcIntervalMs` |
+| `critical` | load ≥ 3 per CPU, available memory ≤ 7%, or free bytes or inodes ≤ 5% | also marks the box's offers unhealthy for the fleet route table, so new jobs are routed elsewhere when another member is admitted |
+
+The state rises only after three consecutive samples worse than the held level and falls only after six better than it, so a single spike or a single quiet sample does not move it; a run that moves between two bad levels settles on the milder one. Load is divided by the host's logical CPUs, not the daemon's cgroup share. A sample that takes longer than two seconds counts as unread, so a stalled disk cannot hold up the dispatch tick. A lasting `pressured` or `critical` state is logged again every five minutes; a sample that cannot be read logs **`hobo_ci_host_health_sample_failed`** and leaves the state as it was. A job that was assigned a runner and then failed in **Set up job** with no log, minutes later, is the signature to check this record against: the runner died with the job, and a dead runner's run is force-cancelled and re-run ([finding 63](../../docs/ci/findings/0063-a-dead-runner-left-its-github-job-in-progress.md)).
+
+Host health does not stop admission by itself: memory and storage admission still decide whether a job launches. It changes where the fleet sends work that has not been queued yet, and that only takes effect once a workflow reads the route table.
+
+#### Fleet balancing and the route table
+
+The fixed box → ARC → GitHub order above is what admission applies to a job that is already queued. Ahead of the queue, the relay can balance every connected offer through the budget policy and publish which label a new job should ask for; see [CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
+
+- Set **`HOBO_CI_FLEET_ROUTES=1`** on the box daemon (`0` or unset is off; any other value refuses to start). After each dispatch pass it writes the repository variable **`HOBO_CI_FLEET_ROUTES`**, for example `{"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}`. The daemon's startup record reports `publishFleetRoutes`.
+- The HoBo CI GitHub App needs repository **Variables: write**. Without it a refused write logs **`hobo_ci_fleet_routes_error`** with the HTTP `status` and is not attempted again for ten minutes; admission is unaffected.
+- The variable outlives the daemon. A `drain` stop puts every class back on its hobo label (logged with `reset: true`); a `handoff` leaves the table for the successor. **To turn publishing off, delete the variable** (or drain first): a daemon restarted with `HOBO_CI_FLEET_ROUTES=0` does not touch it, and a crash leaves the last table in force.
+- A successful write logs **`hobo_ci_fleet_routes_published`** with `repository`, `variable` and `value`. The variable changes only when the table does, and at most once a minute.
+- **No workflow reads the variable yet**, so turning this on changes no job's runner. It is safe to enable for observing what the fleet would choose.
+- `.hobo/ci.json` accepts provider kinds **`jog`** and **`boat`** from a relay built at or after this change. Do not add them to the file an older deployed relay reads: an unknown kind fails policy parsing.
+
+### Runner routing: the fleet, then a local box, then GitHub-hosted
+
+A workflow run no longer waits on a fleet that is not taking jobs. Every routed workflow starts with a **Route runners** job on `ubuntu-24.04`, and every other job asks for the label that job chose.
+
+| Tier | Label | Chosen when |
+|---|---|---|
+| Fleet | `hobo`, or `hobo-trunk` for trunk events | It is taking jobs (below) |
+| Local box | `hobo-local-host` | The fleet is not taking jobs, a local box is enrolled, and it is |
+| GitHub-hosted | `ubuntu-24.04` | Neither of the above |
+
+- **How availability is read.** From GitHub's queue, which every backend shares, looking only at jobs whose one label is the tier's label. A backend is taking jobs when all four hold: a runner took such a job in the last 15 minutes; no such job has waited 120 seconds; no job it took in the last 15 minutes had waited that long; and fewer than 4 are already waiting. A fleet that is down, full, or cut off from its relay looks the same there, and nothing has to be asked of it. A job queued for more than a day is treated as abandoned and ignored.
+- **Why a pickup has to be seen.** The wait alone was the first rule, with a 300 second limit. After a round of cancelled runs emptied the queue, it refilled with eleven jobs, the oldest 283 seconds old, and the next run joined them: a queue that was just emptied is full long before its oldest job is old. The count and the recent-pickup limits fixed that, and then the merge queue was rebuilt, ten runs chose in the same second, each saw nothing waiting for a fleet that was taking minutes to pick a job up, and all ten were sent to it. An empty queue says nothing, so a label is sent work only after a runner has been seen taking a job for it.
+- **The probe keeps a pickup on record.** `fleet-probe.yml` has one job per self-hosted label (`hobo`, `hobo-trunk`, and `hobo-local-host` when a box is enrolled), each doing nothing but being picked up. Every **HoBo CI Fabric** run starts one, and nothing runs while the repository is quiet. Each label has its own concurrency group and a probe job waiting for a runner is never cancelled, so a label that is down holds one job that goes on waiting (which reads as refusing after 120 seconds) and at most one behind it, and does not hold up the probe of another label. The probe holds no permissions and `scripts/lint-actions.ts` rejects any step in it but `run: "true"`.
+- **A slow pickup is remembered for an hour.** The probe is one small job: a runner taking it at once says the label is alive, not that it can take a run. A run sent to the fleet on that alone waited 17 minutes for runners. So a job that waited past the limit counts against its label for 60 minutes, while a pickup counts for it for 15. To find such jobs after their run has finished, the route job also reads the three finished runs of the last hour that took longest: the run list does not say which runner a run used, but a run a slow backend held up is one that took long. A fleet that cannot keep up is therefore tried by one run in the hour, not by every run that finds it idle.
+- **After a quiet spell** nothing has been seen on any label. A run in that position waits up to 60 seconds for the probe its own start set off, looking every 10 seconds, and uses the fleet if a runner picks the probe up. It waits only when the probe could change the answer: the label has no pickup on record, nothing says it is refusing jobs, and a probe is under way.
+- **Runs that start together take turns.** Each would read the same queue before any of them had added to it. So while a run that started in the 60 seconds before this one has not finished its route job, this one leaves the self-hosted runners to it and goes to GitHub-hosted. A push that starts five workflows sends the first to the fleet and the rest to GitHub-hosted; the next push reads a queue that has the first one's jobs in it.
+- **Limits.** Repository variables **`HOBO_CI_ROUTE_MAX_WAIT_SECONDS`** (120) and **`HOBO_CI_ROUTE_MAX_QUEUED`** (4; the box has two slots, so four waiting is two rounds).
+- **The local box.** Set repository variable **`HOBO_CI_LOCAL_RUNNER=true`** once a box is registered under `hobo-local-host` (the `local` provider kind's label, see `packages/ci-gh-actions/LOCAL-DEVELOPMENT.md`). The variable says a box is enrolled, not that it is connected: a box that is enrolled and offline never picks its probe up, so it is never sent work.
+- **Pinning.** Repository variable **`HOBO_CI_ROUTE`**: `fleet` restores the behaviour before routing (the kill switch), `github` or `local` sends everything to that tier, and unset or `auto` falls back as above.
+- **It cannot fail a run.** If the queue cannot be read, or the script cannot run, GitHub-hosted is chosen: the route job is running there, so it is the one tier known to be up. Pinned to the fleet, the run stays on the fleet. If the route job itself does not succeed, jobs ask for the fleet's label and both required gates fail closed.
+- **The decision is made once per run**, when it starts. A run routed to the fleet that then stalls stays there; re-running the workflow routes it again.
+- **On a GitHub-hosted machine** the job runs the same steps. `ci-runner-preflight` installs the pinned mise and the tools in `mise.lock` first (`.github/actions/ci-runner-preflight/hosted-toolchain.sh`); the pnpm store and Turbo cache use their `actions/cache` paths; there is no deps layer, so dependencies are installed from the lockfile.
+- **Browser tests there** use the same pinned headless shell the image bakes in: jobs that run package tests pass `browser: "true"` to `ci-runner-preflight`, which downloads it to `/opt/pw-browsers` and checks its digest against the image's Dockerfile.
+- **One test does not run there:** `storage-admission.test.ts` gives a directory to the image's user (uid 1000), which only that user and root may do. A GitHub-hosted machine runs as another user, so that test is skipped there and runs on the fleet.
+- **Container tests run there.** A GitHub-hosted machine has a Docker engine, so the two Postgres container tests in `@hobo/ci-gh-actions` run instead of being skipped. They start in separate processes and share one Testcontainers reaper; `test/fixtures/start-container.ts` starts again when a reaper another file left behind is still listed but no longer answering.
+- **The one job that differs there** is the cold dev loop. On the fleet it runs in the worker image with the network disabled; a GitHub-hosted machine has no worker image, so it runs the same commands on a copy of the tree in a network namespace whose only interface is loopback.
+- **Always GitHub-hosted:** the route job, and the two required gates (**PR impact gate**, **HoBo release PR gate**). The gates run no repository code and only add up other jobs' results. On the fleet, a superseded run's gate had to find a runner before the next run could start, which held one pull request for 30 minutes.
+- **Not routed:** tag, publish and attest jobs in the release workflows, `ci-deps-publish.yml`, and **CI deps layer (pnpm)** in `hobo-ci.yml`. They build or push the fleet's own images. The deps layer job was routed at first; on a GitHub-hosted machine it has no worker image and no box Docker context, and failed before it reached the build for every pull request that touched a deps-image input. Neither gate needs it, so on a slow fleet only that check waits.
+- **It does not read `HOBO_CI_FLEET_ROUTES`.** The route table the relay can publish (above) says what the fleet would choose when the relay is up; this job has to decide when it is not, so it reads the queue. Feeding the table in as a second input is the next step.
+- **Where it lives:** `scripts/ci/route-runner.mts` (decision and queue reading), `.github/actions/route-runner` (the step), `.github/workflows/fleet-probe.yml` (the probe), `selectFleetBackend` in `packages/ci/src/fleet-overflow.ts` (the order: fleet, ARC, local box, GitHub-hosted), and `scripts/lint-actions.ts` (which labels a workflow may ask for).
 
 ### 7. Merge queue (landing, not pickup)
 
@@ -266,6 +376,17 @@ Without them, a box job's Turbo local cache is **`hobo-turbo-cache`** inside the
    node --import tsx packages/ci-gh-actions/scripts/acceptance.ts --live-verify --repository Hobo-Labs/HoBo
    ```
 
+## Follow a job from an agent (MCP)
+
+An agent with an account token does not need to poll these endpoints. The
+relay is an MCP server at `https://<relay-origin>/mcp` (`hobo ci serve`:
+`http://127.0.0.1:8787/mcp`): `list_pending_jobs` shows what is queued without
+a lease, `list_leases` and `get_lease` show where a lease is stuck, and
+`wait_for_events` returns the moment a job is queued, reserved, claimed,
+settled, cancelled or expired. Setup, the tool list and the client
+configuration are in
+[`packages/ci-gh-actions/README.md`](../ci-gh-actions/README.md#mcp-server).
+
 ## What repo CI cannot fix
 
 These require org admin / platform operator action, not a workflow edit:
@@ -275,7 +396,7 @@ These require org admin / platform operator action, not a workflow edit:
 - Re-onboarding **Hobo-Labs/HoBo** in relay policy.
 - Org/repo **Actions** permissions for fork PRs if you expect fork contributions to run CI.
 
-Workflow YAML in this repository requests exactly **`hobo`** or **`hobo-trunk`**; a permanently **`queued`** run means **no matching JIT runner registered**, almost always because the relay did not admit or launch the job.
+Workflow YAML in this repository requests **`hobo`** or **`hobo-trunk`** unless the route job sent the run elsewhere; a permanently **`queued`** run on those labels means **no matching JIT runner registered**, almost always because the relay did not admit or launch the job.
 
 ## Quick probe (repo script)
 

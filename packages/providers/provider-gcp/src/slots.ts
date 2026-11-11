@@ -353,6 +353,8 @@ export function secretManager(options?: SecretManagerOptions): SlotBinding {
 }
 
 type AnySlotOptions =
+	| ComputeEngineInstanceOptions
+	| PersistentDiskOptions
 	| CloudRunOptions
 	| AppEngineOptions
 	| CloudStorageSiteOptions
@@ -367,3 +369,49 @@ type AnySlotOptions =
 	| CloudTasksOptions
 	| PubsubOptions
 	| SecretManagerOptions;
+
+export interface ComputeEngineInstanceOptions {
+	/** A machine type such as `e2-small`. Types ending in `-metal` are bare metal, not VMs. */
+	readonly machineType?: string;
+	readonly image?: string;
+	readonly zone?: string;
+	readonly network?: string;
+}
+
+/**
+ * Compute Engine VM instance — slot `service`, profile `service.worker/v1`: a long-running
+ * virtual machine. Catalog only: this package ships no resolver for it. It is
+ * deliberately not also listed under `web.hosted/v1`; a VM can host a web
+ * origin, but that row is left for the change that models its public address.
+ */
+export function computeEngineInstance(
+	options?: ComputeEngineInstanceOptions,
+): SlotBinding {
+	return slotBinding({
+		slot: "service",
+		profile: capability.service.worker,
+		productId: "gcp.compute-engine-instance/v1",
+		properties: present(options ?? {}),
+	});
+}
+
+export interface PersistentDiskOptions {
+	readonly sizeGb?: number;
+	/** A disk type such as `pd-balanced`. */
+	readonly diskType?: string;
+}
+
+/**
+ * Compute Engine Persistent Disk — slot `bucket`, profile `bucket.filesystem/v1`. A block
+ * device formatted and attached to one virtual machine has hierarchical path
+ * semantics, which is `bucket.filesystem/v1`. Catalog only: this package ships
+ * no resolver for it.
+ */
+export function persistentDisk(options?: PersistentDiskOptions): SlotBinding {
+	return slotBinding({
+		slot: "bucket",
+		profile: capability.bucket.filesystem,
+		productId: "gcp.persistent-disk/v1",
+		properties: present(options ?? {}),
+	});
+}

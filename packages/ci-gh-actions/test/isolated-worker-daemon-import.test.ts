@@ -22,7 +22,14 @@ describe("isolated-worker-daemon.mts startup imports", () => {
 			{
 				cwd: repoRoot,
 				encoding: "utf8",
-				env: { ...inherited, NODE_OPTIONS: "", ...env },
+				// The build this suite's turbo task already ran; outside turbo the
+				// daemon would otherwise run one first. The last case covers that path.
+				env: {
+					...inherited,
+					NODE_OPTIONS: "",
+					HOBO_CI_WORKER_BUILD: "0",
+					...env,
+				},
 			},
 		);
 		return `${result.stdout}\n${result.stderr}`;

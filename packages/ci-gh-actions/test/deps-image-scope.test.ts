@@ -92,7 +92,11 @@ describe("CI deps image push scope", () => {
 		});
 		const job = publisher.jobs.publish;
 		expect(job["timeout-minutes"]).toBe(20);
-		expect(job["runs-on"]).toBe(depsJob["runs-on"]);
+		// The publisher pushes the fleet's own image and the deps job builds
+		// it in the box's Docker context, so neither is routed: both ask for
+		// the fleet's label.
+		expect(depsJob["runs-on"]).toBe(job["runs-on"]);
+		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
 			"github.event.workflow_run.conclusion == 'success'",
@@ -106,16 +110,17 @@ describe("CI deps image push scope", () => {
 	});
 
 	it("does not make either gate wait for the deps image", () => {
-		expect(mainGate.needs).toBe("ci-runner-image");
-		expect(prValidation.needs).toBe("ci-runner-image");
+		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
+		expect(prValidation.needs).toEqual(["route", "ci-runner-image"]);
 		expect(prGate.needs).toEqual([
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
 		]);
-		expect(workspaceTests.needs).toBe("pr_gate_validation");
-		expect(prAffected.needs).toBe("pr_gate_validation");
-		expect(depsJob.needs).toBe("ci-runner-image");
+		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
+		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);
+		// The deps job is not routed: it builds in the box's Docker context.
+		expect(depsJob.needs).toEqual(["ci-runner-image"]);
 	});
 });
 

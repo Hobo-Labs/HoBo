@@ -12,10 +12,10 @@ import {
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
 } from "@hobo/ci";
+import { createHostedCiBudgetRoutingBridge } from "@hobo/stations";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { foldBudgetSignals } from "../../broker/src/budget-signals.js";
-import { createHostedCiBudgetRoutingBridge } from "../../stations/src/hosted-ci-routing.js";
 import { createCiRelayClient } from "../src/client.js";
 import { createHostedControlPlane } from "../src/hosted-control.js";
 import { HostedRelay } from "../src/hosted-relay.js";
@@ -966,6 +966,22 @@ describe("hosted asynchronous account control", () => {
 			(await t.request("/v2/accounts/self/policy", "PUT", "admin", bad, 2))
 				.status,
 		).toBe(409);
+		// A relay with no Sandbox host refuses the provider instead of storing it inert.
+		const unavailable = await t.request(
+			"/v2/accounts/self/policy",
+			"PUT",
+			"admin",
+			policy,
+			2,
+		);
+		expect(unavailable.status).toBe(409);
+		expect(await unavailable.json()).toEqual({
+			error: "sandbox providers are unavailable on this relay",
+		});
+		t.relay.options.isolatedHost = {
+			launch: async () => {},
+			reconcile: async () => {},
+		};
 		expect(
 			(await t.request("/v2/accounts/self/policy", "PUT", "admin", policy, 2))
 				.status,

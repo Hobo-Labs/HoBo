@@ -7,6 +7,11 @@ message WorkspaceEdgeRecord {
 }
 
 message BoundaryViolationRecord {
+  // One of: core-imports-hobo | adapter-imports-adapter |
+  // adapter-imports-non-core | outward-dependency | workspace-cycle |
+  // unknown-package | orchestrator-imports-engine |
+  // orchestrator-imports-engine-storage | engine-imports-engine.
+  // The closed list is #BoundaryRule in conformance.cue.
   string rule = 1;
   string from_path = 2;
   string to_path = 3;

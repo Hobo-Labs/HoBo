@@ -27,6 +27,8 @@
 		"@hobo/provider-hetzner": "workspace:*",
 		"@hobo/provider-hostinger": "workspace:*",
 		"@hobo/provider-kubernetes": "workspace:*",
+		"@hobo/provider-netlify": "workspace:*",
+		"@hobo/provider-railway": "workspace:*",
 		"@hobo/provider-vercel": "workspace:*",
 		"@hobo/yards": "workspace:*"
 	},
