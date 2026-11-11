@@ -19,8 +19,12 @@ if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
   echo "invalid BuildKit cache cap: ${cap}" >&2
   exit 1
 fi
-inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"
-byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"
+read -r _default_inode_headroom _default_byte_headroom < <(
+  node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
+    "$root/scripts/ci/deps-build-headroom-defaults.mts"
+)
+inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-$_default_inode_headroom}"
+byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-$_default_byte_headroom}"
 if [[ ! "$inode_headroom" =~ ^[0-9]+$ ]]; then
   echo "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM" >&2
   exit 1

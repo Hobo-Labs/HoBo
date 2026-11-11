@@ -28,9 +28,11 @@ Deps-layer jobs reused the heavy unmeasured reservation (**4096 MiB**) until thr
 1. `build-deps.sh` — device-matched candidates first, then any sampleable bind mount, then host `DockerRootDir` via `sample_docker_headroom_via_host`; `host:` prefix paths for repeated samples.
 2. `deps-docker-headroom.ts` + tests — document the resolution order for regression.
 3. `memory-classes.ts` — `CI deps layer (pnpm)` uses `CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB` (**4352**) before learned peaks apply.
+4. `deps-build-headroom-defaults.mts` — `build-deps.sh` defaults align with `depsBuildDockerReserve()` (210000 free inodes, not legacy 400000).
 
 ## Proof
 
 - `packages/ci-gh-actions/test/deps-docker-headroom.test.ts`
 - `packages/ci-gh-actions/test/memory-classes.test.ts`
 - `scripts/test/ci-deps-image-contract.test.ts`
+- `scripts/test/deps-build-headroom-defaults.test.ts`
