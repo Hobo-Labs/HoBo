@@ -386,6 +386,7 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
+			| "hobo_ci_work_dir_inode_breakdown"
 			| "hobo_ci_git_mirror"
 			| "hobo_ci_deps_toolchain_drift"
 			| "hobo_ci_container_stall_requeue"
@@ -667,9 +668,19 @@ export function createIsolatedContainerController(options: {
 		try {
 			if (options.workFs.measureJobDirectory && lease.jobName) {
 				const measured = await options.workFs.measureJobDirectory(directory);
+				if (measured.inodeBreakdown) {
+					options.log?.("hobo_ci_work_dir_inode_breakdown", {
+						jobId: lease.jobId,
+						leaseId: lease.id,
+						jobName: lease.jobName,
+						...measured.inodeBreakdown,
+					});
+				}
+				const workRootInodes =
+					measured.localInodes ?? measured.entries;
 				options.storagePeaks?.record(lease.jobName, {
 					workRootBytes: measured.bytes,
-					workRootInodes: measured.entries,
+					workRootInodes,
 				});
 			}
 		} catch {
