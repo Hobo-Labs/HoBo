@@ -130,7 +130,7 @@ describe("arc takes reserved trunk job", () => {
 		expect(stop).not.toHaveBeenCalled();
 		expect(remove).not.toHaveBeenCalled();
 		expect(lease.actualJobId).toBe(130234722114);
-		expect(lease.originalRunId).toBe(42932527285);
+		expect(lease.originalRunId).toBe(42932519565);
 		expect(log).toHaveBeenCalledWith(
 			"hobo_ci_jit_runner_custody_transferred",
 			expect.objectContaining({ servedJobId: 130234722114 }),

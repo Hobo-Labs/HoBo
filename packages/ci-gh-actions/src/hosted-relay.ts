@@ -415,11 +415,7 @@ export class HostedRelay {
 					lease,
 					at,
 				);
-				if (
-					custody.holdsActive &&
-					custody.assignment &&
-					custody.assignment.jobId !== job.id
-				) {
+				if (custody.holdsActive && custody.assignment) {
 					retainedLeaseId = lease.id;
 					continue;
 				}

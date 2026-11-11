@@ -37,7 +37,10 @@ import {
 	type JobPickupMetadataCache,
 	jobPickupMetadataKey,
 } from "../job-pickup.js";
-import { runnerCustody } from "../job-runner-custody.js";
+import {
+	leaseIdFromBoxRunnerName,
+	runnerCustody,
+} from "../job-runner-custody.js";
 import {
 	jitRunnerRegistrationLabels,
 	RUNNER_LABEL,
@@ -1859,10 +1862,35 @@ export function createIsolatedContainerController(options: {
 	const containerCustody: Parameters<
 		typeof createWorkerLeaseReconciler
 	>[0]["containerCustody"] = async ({ container, leaseId }) => {
+		if (container.state === "removing") return true;
+		const resolvedLeaseId =
+			leaseId ?? leaseIdFromBoxRunnerName(container.name) ?? undefined;
 		const leases = await options.store.activeLeases();
-		if (leaseId) {
-			const byId = await options.store.get(leaseId);
+		if (resolvedLeaseId) {
+			const byId = await options.store.get(resolvedLeaseId);
 			if (byId && ACTIVE_STATES.has(byId.state)) return true;
+			if (
+				byId?.runnerName &&
+				(byId.runnerName === container.name ||
+					byId.sandboxName === container.name)
+			) {
+				try {
+					const assignment = await resolveRunnerAssignedJob(
+						options.github,
+						byId.installationId,
+						byId.repository,
+						byId.runnerName,
+						byId.runnerId,
+						{
+							reservedJobId: byId.jobId,
+							preferRunIds: [byId.originalRunId],
+						},
+					);
+					if (runnerHoldsActiveJob(assignment)) return true;
+				} catch {
+					return true;
+				}
+			}
 		}
 		for (const lease of leases) {
 			if (!ACTIVE_STATES.has(lease.state)) continue;
@@ -1878,17 +1906,21 @@ export function createIsolatedContainerController(options: {
 				lease.runnerName === container.name &&
 				lease.runnerId > 0,
 		);
-		if (!runnerLease) return false;
+		const custodyLease =
+			runnerLease ??
+			(resolvedLeaseId ? await options.store.get(resolvedLeaseId) : undefined);
+		if (!custodyLease?.runnerName || custodyLease.runnerName !== container.name)
+			return false;
 		try {
 			const assignment = await resolveRunnerAssignedJob(
 				options.github,
-				runnerLease.installationId,
-				runnerLease.repository,
+				custodyLease.installationId,
+				custodyLease.repository,
 				container.name,
-				runnerLease.runnerId,
+				custodyLease.runnerId,
 				{
-					reservedJobId: runnerLease.jobId,
-					preferRunIds: [runnerLease.originalRunId],
+					reservedJobId: custodyLease.jobId,
+					preferRunIds: [custodyLease.originalRunId],
 				},
 			);
 			return runnerHoldsActiveJob(assignment);

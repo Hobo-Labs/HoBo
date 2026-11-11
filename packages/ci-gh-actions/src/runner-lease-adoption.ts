@@ -57,6 +57,8 @@ export async function adoptRunnerAssignment(
 				if (entry.actualJobId > 0 && entry.actualJobId !== servedJobId)
 					throw new Error("runner job assignment conflict");
 				entry.actualJobId = servedJobId;
+				if (assignment.runId > 0 && entry.originalRunId !== assignment.runId)
+					entry.originalRunId = assignment.runId;
 			},
 			"ci.JobObserved",
 			at,
