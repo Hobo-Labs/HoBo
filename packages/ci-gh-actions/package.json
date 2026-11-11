@@ -51,6 +51,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.db.json",
     "lint": "biome check .",
     "mesh:demo": "node --experimental-strip-types --no-warnings scripts/mesh-demo.mts",
+    "mesh:trust": "node --experimental-strip-types --no-warnings scripts/mesh-trust.mts",
     "test": "vitest run",
     "test:deep": "vitest run --config vitest.deep.config.ts",
     "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",

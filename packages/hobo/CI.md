@@ -220,6 +220,16 @@ hobo ci rerun 123456789
 hobo ci status
 ```
 
+`hobo ci status` reports the relay connection and, under it, the relay mesh's
+nodes as a table: node, state (`live`, `unhealthy`, `lost`), free/total slots,
+free memory and disk, reliability and trust (`trusted`, `unverified`,
+`invalid`). `--json` carries the same list as `data.mesh`. A relay with no
+mesh answers `mesh: "not-configured"`; a relay too old to have the route
+leaves the connection status as the whole answer. With no relay to ask (none
+selected, no credential, or no network), `status` shows the report this
+machine's local runner keeps in `.hobo/ci-local/mesh-node.json`
+(`HOBO_CI_LOCAL_STATE_DIRECTORY`), when there is one.
+
 List defaults to the current branch. Inspect/logs default to the current commit.
 Rerun without an ID selects a failed run for that commit; retrying a successful
 run requires an explicit ID. `--wait` follows one pinned attempt for up to ten

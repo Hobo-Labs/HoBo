@@ -60,6 +60,27 @@ on first configured use, is SHA-256 checked on reuse, and is extracted into a
 fresh workspace/HOME for every host job. Only Linux x64 can host the current
 HoBo bridge; Linux/macOS x64/arm64 can install act for offline workflows.
 
+**This machine as a mesh node.** The service keeps an identity key
+(`mesh-node.key`, mode `0600`), a small SQLite journal for its reliability
+record (`mesh-node.sqlite`) and its own node report (`mesh-node.json`) in the
+same directory. The report says what `status` shows under `mesh`: one slot
+under `hobo-local-host` (free while a runner waits for a job), free memory and
+disk, and the share of its sessions whose runner ran to its own exit. With
+`HOBO_CI_NATS_URL` set it also advertises that, signed, to the
+[relay mesh](../../docs/design/ci-relay-mesh.md), where the relay's node list
+and `hobo ci status` show it beside the box workers; `HOBO_CI_MESH_NODE_ID`
+names it (default `local-<host name>`). Without `HOBO_CI_NATS_URL` nothing is
+sent anywhere, and `status` and `hobo ci status` still answer from the file,
+with no relay or network. A mesh that cannot be reached never stops the runner.
+The machine advertises `HOBO_CI_LOCAL_REPOSITORY`, so the relay shows it in
+full only to the account that owns that repository.
+
+The key is inside the repository's checkout, where every job that runs on this
+machine can read it. If the mesh's operator lists it, it must be bound to this
+machine's node id (`mesh:trust add <key> --node local-<host>`), never added
+with `--any-node`. `HOBO_CI_MESH_RELIABILITY_RESET=<token>` clears this
+machine's reliability record once, as for a box worker.
+
 Status/logs and the verified archive live under ignored `.hobo/ci-local/`.
 `registered` means GitHub issued the registration; check `runner.log` for the
 runner's actual GitHub connection. An OS lock makes repeated/concurrent starts

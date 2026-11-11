@@ -69,6 +69,36 @@ const REFUSED_WRITE_BACKOFF_MS = 10 * 60_000;
 /** The dispatch pass runs every couple of seconds; a table need not. */
 const DEFAULT_MIN_COMPUTE_INTERVAL_MS = 15_000;
 
+/**
+ * Sets one repository variable, creating it when it does not exist yet.
+ * Resolves to GitHub's status: 204 for an update, 201 for a creation.
+ */
+export async function writeRepositoryVariable(
+	github: GithubTransport,
+	target: Readonly<{
+		installationId: number;
+		repository: string;
+		name: string;
+		value: string;
+	}>,
+): Promise<number> {
+	const body = JSON.stringify({ name: target.name, value: target.value });
+	const updated = await github.request(
+		target.installationId,
+		`/repos/${target.repository}/actions/variables/${target.name}`,
+		"PATCH",
+		body,
+	);
+	if (updated.status !== 404) return updated.status;
+	const created = await github.request(
+		target.installationId,
+		`/repos/${target.repository}/actions/variables`,
+		"POST",
+		body,
+	);
+	return created.status;
+}
+
 export function createFleetRoutePublisher(options: {
 	github: GithubTransport;
 	variable?: string;
@@ -121,27 +151,13 @@ export function createFleetRoutePublisher(options: {
 		return fresh;
 	}
 
-	async function write(
-		installationId: number,
-		repository: string,
-		value: string,
-	): Promise<number> {
-		const body = JSON.stringify({ name: variable, value });
-		const updated = await options.github.request(
+	const write = (installationId: number, repository: string, value: string) =>
+		writeRepositoryVariable(options.github, {
 			installationId,
-			`/repos/${repository}/actions/variables/${variable}`,
-			"PATCH",
-			body,
-		);
-		if (updated.status !== 404) return updated.status;
-		const created = await options.github.request(
-			installationId,
-			`/repos/${repository}/actions/variables`,
-			"POST",
-			body,
-		);
-		return created.status;
-	}
+			repository,
+			name: variable,
+			value,
+		});
 
 	/**
 	 * Resolves to undefined when the repository was computed too recently, or,

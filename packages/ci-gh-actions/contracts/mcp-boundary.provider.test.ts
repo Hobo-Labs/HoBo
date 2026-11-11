@@ -51,7 +51,7 @@ const pact = z
 	);
 
 it("executes every declared MCP interaction over the Node HTTP boundary", async () => {
-	expect(pact.interactions).toHaveLength(16);
+	expect(pact.interactions).toHaveLength(18);
 	const { credentials } = pact.metadata.consumerFixtures;
 	const store = new SqliteCiStore(":memory:");
 	// One account with one queued job: the journal holds exactly one event of its own.
@@ -135,7 +135,7 @@ it("executes every declared MCP interaction over the Node HTTP boundary", async 
 				expect(answered, interaction.description).toContain("cursor");
 			matched++;
 		}
-		expect(matched).toBe(16);
+		expect(matched).toBe(18);
 	} finally {
 		server.close();
 		await once(server, "close");

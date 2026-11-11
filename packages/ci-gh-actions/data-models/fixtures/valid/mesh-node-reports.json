@@ -1,0 +1,49 @@
+{
+  "mesh": "configured",
+  "nodes": [
+    {
+      "id": "box-a",
+      "state": "live",
+      "since": "2026-11-10T02:26:40.000Z",
+      "healthy": true,
+      "lastSeenAt": "2026-11-10T02:40:00.000Z",
+      "validUntil": "2026-11-10T02:40:45.000Z",
+      "totalSlots": 4,
+      "freeSlots": 2,
+      "freeMemoryMb": 12288,
+      "freeDiskMb": 204800,
+      "platform": { "os": "linux", "arch": "x64" },
+      "labels": ["hobo", "hobo-trunk"],
+      "trust": "trusted",
+      "publicKey": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
+      "reliability": 0.875,
+      "delivered": 10,
+      "dropped": 2
+    },
+    {
+      "id": "relay-host",
+      "state": "lost",
+      "since": "2026-11-10T02:39:00.000Z",
+      "healthy": true,
+      "lastSeenAt": "",
+      "validUntil": "2026-11-10T02:39:00.000Z",
+      "totalSlots": 0,
+      "freeSlots": 0,
+      "labels": [],
+      "trust": "unverified",
+      "publicKey": ""
+    }
+  ],
+  "capacity": {
+    "nodes": 1,
+    "healthy": 1,
+    "available": 1,
+    "totalSlots": 4,
+    "freeSlots": 2,
+    "freeMemoryMb": 12288,
+    "largestFreeMemoryMb": 12288,
+    "freeDiskMb": 204800
+  },
+  "readAt": "2026-11-10T02:40:05.000Z",
+  "requireTrusted": false
+}

@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
 	BURST_SECONDS,
 	chooseRunner,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
+	FLEET_STATE_MAX_AGE_SECONDS,
+	FLEET_STATE_MAX_SKEW_SECONDS,
+	type FleetState,
 	fleetLabelFor,
+	fleetStateRefusal,
 	hasChosen,
 	type LabelLoad,
 	labelLoad,
@@ -18,6 +23,7 @@ import {
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
+	parseFleetState,
 	parseRouteMode,
 	probeRunIds,
 	type QueueView,
@@ -311,6 +317,284 @@ describe("the routing decision", () => {
 		assert.equal(parseRouteMode(""), "auto");
 		assert.equal(parseRouteMode("hosted"), "auto");
 		assert.equal(parseRouteMode(" github "), "github");
+	});
+});
+
+/** A snapshot published `ageSeconds` ago with these labels. */
+const snapshot = (
+	labels: Record<string, { nodes: number; freeSlots: number }>,
+	ageSeconds = 30,
+) =>
+	JSON.stringify({
+		publishedAt: new Date(NOW - ageSeconds * 1000).toISOString(),
+		labels: Object.fromEntries(
+			Object.entries(labels).map(([label, state]) => [
+				label,
+				{ ...state, trustedNodes: state.nodes },
+			]),
+		),
+	});
+const fresh = (
+	labels: Record<string, { nodes: number; freeSlots: number }>,
+): FleetState => {
+	const state = parseFleetState(snapshot(labels), NOW);
+	assert.ok(state);
+	return state;
+};
+const ROOM = { nodes: 2, freeSlots: 3 };
+const FULL = { nodes: 2, freeSlots: 0 };
+const NOBODY = { nodes: 0, freeSlots: 0 };
+
+describe("the mesh's snapshot", () => {
+	it("is read while it is fresh, with how old it is", () => {
+		const state = parseFleetState(
+			snapshot({ hobo: ROOM, "hobo-trunk": NOBODY }, 45),
+			NOW,
+		);
+		assert.equal(state?.ageSeconds, 45);
+		assert.deepEqual(
+			[...(state?.labels ?? [])],
+			[
+				["hobo", { nodes: 2, freeSlots: 3 }],
+				["hobo-trunk", { nodes: 0, freeSlots: 0 }],
+			],
+		);
+	});
+
+	it("is the record the workers publish", () => {
+		// The contract fixture of `MeshFleetState`, as a worker writes it.
+		const value = readFileSync(
+			new URL(
+				"../../packages/ci-gh-actions/data-models/fixtures/valid/mesh-fleet-state.json",
+				import.meta.url,
+			),
+			"utf8",
+		);
+		const state = parseFleetState(
+			value,
+			Date.parse("2026-11-10T02:41:05.000Z"),
+		);
+		assert.equal(state?.ageSeconds, 60);
+		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 3 });
+		assert.deepEqual(state?.labels.get("hobo-trunk"), {
+			nodes: 0,
+			freeSlots: 0,
+		});
+	});
+
+	it("is ignored once it is more than five minutes old", () => {
+		assert.equal(FLEET_STATE_MAX_AGE_SECONDS, 300);
+		assert.ok(parseFleetState(snapshot({ hobo: FULL }, 300), NOW));
+		assert.equal(
+			parseFleetState(snapshot({ hobo: FULL }, 301), NOW),
+			undefined,
+		);
+		assert.equal(
+			parseFleetState(snapshot({ hobo: FULL }, 86_400), NOW),
+			undefined,
+		);
+	});
+
+	it("allows for a little clock skew, and ignores a timestamp from the future", () => {
+		const ahead = (seconds: number) =>
+			parseFleetState(snapshot({ hobo: FULL }, -seconds), NOW);
+		assert.equal(ahead(FLEET_STATE_MAX_SKEW_SECONDS)?.ageSeconds, 0);
+		assert.equal(ahead(FLEET_STATE_MAX_SKEW_SECONDS + 1), undefined);
+	});
+
+	it("is ignored when it is missing or is not the record", () => {
+		for (const value of [
+			undefined,
+			"",
+			"   ",
+			"not json",
+			"[]",
+			"null",
+			'"text"',
+			"{}",
+			'{"labels":{"hobo":{"nodes":0}}}',
+			'{"publishedAt":"yesterday","labels":{}}',
+			`{"publishedAt":"${new Date(NOW).toISOString()}"}`,
+			`{"publishedAt":"${new Date(NOW).toISOString()}","labels":[]}`,
+			`{"publishedAt":${NOW},"labels":{}}`,
+		])
+			assert.equal(parseFleetState(value, NOW), undefined, String(value));
+	});
+
+	it("reads a label without both counts as unknown, not as refusing", () => {
+		const state = parseFleetState(
+			JSON.stringify({
+				publishedAt: new Date(NOW).toISOString(),
+				labels: {
+					HOBO: { nodes: 2.9, freeSlots: -1 },
+					"hobo-trunk": { nodes: 0 },
+					partial: { freeSlots: 0 },
+					text: { nodes: "many", freeSlots: "none" },
+					odd: 7,
+				},
+			}),
+			NOW,
+		);
+		// Counts that are numbers are read, whole and not below zero.
+		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 0 });
+		// The rest say nothing: left out, so nothing is refused on them.
+		for (const label of ["hobo-trunk", "partial", "text", "odd"]) {
+			assert.equal(state?.labels.has(label), false, label);
+			assert.equal(fleetStateRefusal(state, label), undefined, label);
+		}
+		assert.equal(
+			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
+			"fleet",
+		);
+	});
+
+	it("says a label is refusing when it has no node or no free slot", () => {
+		const state = fresh({ hobo: FULL, "hobo-trunk": NOBODY, spare: ROOM });
+		assert.match(
+			fleetStateRefusal(state, "hobo") ?? "",
+			/mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
+		);
+		assert.match(
+			fleetStateRefusal(state, "hobo-trunk") ?? "",
+			/shows no live node for hobo-trunk/,
+		);
+		assert.equal(fleetStateRefusal(state, "spare"), undefined);
+		assert.equal(fleetStateRefusal(state, "SPARE"), undefined);
+	});
+
+	it("reads a label the snapshot does not list as unknown: the publisher does not speak for it", () => {
+		const state = fresh({ hobo: ROOM });
+		assert.equal(fleetStateRefusal(state, "hobo-trunk"), undefined);
+		assert.equal(fleetStateRefusal(state, "hobo-local-host"), undefined);
+		assert.equal(fleetStateRefusal(undefined, "hobo"), undefined);
+	});
+});
+
+describe("the routing decision with the mesh's snapshot", () => {
+	it("leaves a fleet with no free slot at once, though the queue shows it taking jobs", () => {
+		assert.equal(decide().tier, "fleet");
+		const routed = decide({ fleetState: fresh({ hobo: FULL }) });
+		assert.equal(routed.tier, "github");
+		assert.equal(routed.runner, "ubuntu-24.04");
+		assert.match(routed.reason, /the fleet has nothing waiting/);
+		assert.match(
+			routed.reason,
+			/the mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
+		);
+	});
+
+	it("leaves a fleet with no live node at once", () => {
+		const routed = decide({ fleetState: fresh({ hobo: NOBODY }) });
+		assert.equal(routed.tier, "github");
+		assert.match(routed.reason, /shows no live node for hobo/);
+	});
+
+	it("judges the label this run would ask for", () => {
+		const state = fresh({ hobo: ROOM, "hobo-trunk": FULL });
+		assert.equal(decide({ fleetState: state }).tier, "fleet");
+		assert.equal(
+			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
+			"github",
+		);
+		// A trunk label the publisher does not list is not its to refuse: the
+		// queue decides, as without a snapshot.
+		assert.deepEqual(
+			decide({ fleetLabel: "hobo-trunk", fleetState: fresh({ hobo: ROOM }) }),
+			decide({ fleetLabel: "hobo-trunk" }),
+		);
+	});
+
+	it("stays on the fleet when the snapshot shows room, as the queue alone would", () => {
+		const state = fresh({ hobo: ROOM });
+		assert.deepEqual(decide({ fleetState: state }), decide());
+	});
+
+	it("never makes a fleet look available: room in the snapshot does not outvote the queue", () => {
+		const state = fresh({ hobo: { nodes: 9, freeSlots: 40 } });
+		for (const fleet of [
+			idle,
+			{ ...idle, queued: 38, oldestWaitSeconds: 3600 },
+			{ ...up, slowestRecentPickupSeconds: 1500 },
+			{ ...up, queued: DEFAULT_MAX_QUEUED },
+		])
+			assert.deepEqual(decide({ fleet, fleetState: state }), decide({ fleet }));
+		assert.deepEqual(
+			decide({ undecidedAhead: 2, fleetState: state }),
+			decide({ undecidedAhead: 2 }),
+		);
+	});
+
+	it("changes nothing when the snapshot is stale or missing", () => {
+		const loads: Partial<Parameters<typeof routeRunner>[0]>[] = [
+			{},
+			{ fleet: idle },
+			{ fleet: { ...idle, queued: 38, oldestWaitSeconds: 3600 } },
+			{ localEnrolled: true, fleet: { ...idle, queued: 4 } },
+			{ localEnrolled: true, undecidedAhead: 1 },
+			{ fleetLabel: "hobo-trunk" },
+		];
+		for (const value of [
+			// Says the fleet is full, but is six minutes old.
+			snapshot({ hobo: NOBODY, "hobo-trunk": NOBODY }, 360),
+			undefined,
+			"",
+			"not json",
+		]) {
+			const fleetState = parseFleetState(value, NOW);
+			assert.equal(fleetState, undefined);
+			for (const load of loads)
+				assert.deepEqual(decide({ ...load, fleetState }), decide(load));
+		}
+	});
+
+	it("passes over a local box the snapshot shows busy, and one it does not list is judged by the queue", () => {
+		const fleetDown = { ...idle, queued: 4, oldestWaitSeconds: 900 };
+		const local = { localEnrolled: true, fleet: fleetDown };
+		assert.equal(decide(local).tier, "local");
+		// Not in the mesh: nothing is known of it but the queue.
+		assert.equal(
+			decide({ ...local, fleetState: fresh({ hobo: ROOM }) }).tier,
+			"local",
+		);
+		const busy = decide({
+			...local,
+			fleetState: fresh({
+				hobo: ROOM,
+				"hobo-local-host": { nodes: 1, freeSlots: 0 },
+			}),
+		});
+		assert.equal(busy.tier, "github");
+		assert.match(
+			busy.reason,
+			/no free slot on 1 node\(s\) for hobo-local-host/,
+		);
+		assert.equal(
+			decide({
+				...local,
+				fleetState: fresh({
+					hobo: ROOM,
+					"hobo-local-host": { nodes: 1, freeSlots: 1 },
+				}),
+			}).tier,
+			"local",
+		);
+	});
+
+	it("goes to the local box when the snapshot shows the fleet full", () => {
+		const routed = decide({
+			localEnrolled: true,
+			fleetState: fresh({ hobo: FULL }),
+		});
+		assert.equal(routed.tier, "local");
+	});
+
+	it("does not move a pinned tier", () => {
+		const state = fresh({ hobo: NOBODY });
+		assert.equal(decide({ mode: "fleet", fleetState: state }).runner, "hobo");
+		assert.equal(
+			decide({ mode: "local", fleetState: state }).runner,
+			"hobo-local-host",
+		);
 	});
 });
 
@@ -650,7 +934,7 @@ describe("waiting for the probe", () => {
 	/** Plays out a list of queue views, one per look, on a clock only `sleep` moves. */
 	const choose = async (
 		views: readonly QueueView[],
-		overrides: { localEnrolled?: boolean } = {},
+		overrides: { localEnrolled?: boolean; fleetState?: string } = {},
 	) => {
 		let clock = NOW;
 		let looks = 0;
@@ -669,6 +953,7 @@ describe("waiting for the probe", () => {
 			fleetLabel: "hobo",
 			localEnrolled: overrides.localEnrolled ?? false,
 			limits,
+			fleetState: (nowMs) => parseFleetState(overrides.fleetState, nowMs),
 		});
 		return { decision, looks, waited: (clock - NOW) / 1000 };
 	};
@@ -733,6 +1018,43 @@ describe("waiting for the probe", () => {
 		);
 	});
 
+	it("does not wait for the probe on a fleet the mesh snapshot shows full", async () => {
+		const waitedFor = await choose([probing]);
+		assert.equal(waitedFor.waited, PROBE_WAIT_SECONDS);
+		const seen = await choose([probing, probing, answered], {
+			fleetState: snapshot({ hobo: FULL }),
+		});
+		assert.deepEqual(
+			[seen.decision.tier, seen.looks, seen.waited],
+			["github", 1, 0],
+		);
+		assert.match(seen.decision.reason, /shows no free slot/);
+	});
+
+	it("waits for the probe as before when the snapshot shows room, or is stale", async () => {
+		for (const fleetState of [
+			snapshot({ hobo: ROOM }),
+			snapshot({ hobo: FULL }, 600),
+		]) {
+			const seen = await choose([probing, probing, answered], { fleetState });
+			assert.equal(seen.decision.tier, "fleet");
+			assert.equal(seen.waited, 2 * PROBE_POLL_SECONDS);
+		}
+	});
+
+	it("reads the snapshot afresh on every look, not once", async () => {
+		// Stamped too far ahead of this clock to believe at the first look, and
+		// within its skew ten seconds later: the second look goes by it.
+		const seen = await choose([probing, probing, answered], {
+			fleetState: snapshot({ hobo: FULL }, -(FLEET_STATE_MAX_SKEW_SECONDS + 5)),
+		});
+		assert.deepEqual(
+			[seen.decision.tier, seen.looks, seen.waited],
+			["github", 2, PROBE_POLL_SECONDS],
+		);
+		assert.match(seen.decision.reason, /shows no free slot/);
+	});
+
 	it("falls back to the local box when the probe finds only that", async () => {
 		const seen = await choose(
 			[probing, { ...probing, jobs: [taken("hobo-local-host", 8, -5)] }],
@@ -769,6 +1091,19 @@ describe("the script as a whole", () => {
 			GITHUB_API_URL: "http://127.0.0.1:9",
 		});
 		assert.equal(hosted.runner, "ubuntu-24.04");
+	});
+
+	it("keeps a pinned fleet on the fleet whatever the mesh snapshot says", async () => {
+		const pinned = await main({
+			GITHUB_EVENT_NAME: "pull_request",
+			HOBO_CI_ROUTE: "fleet",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			HOBO_CI_FLEET_STATE: JSON.stringify({
+				publishedAt: new Date().toISOString(),
+				labels: { hobo: { nodes: 0, trustedNodes: 0, freeSlots: 0 } },
+			}),
+		});
+		assert.deepEqual([pinned.tier, pinned.runner], ["fleet", "hobo"]);
 	});
 
 	it("sends what is left of an attested run to GitHub-hosted without reading the queue", async () => {
