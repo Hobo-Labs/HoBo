@@ -2,6 +2,7 @@ import { defineSchemaSuite } from "../../ci/db/tooling/suite.js";
 import { schemaSource } from "../db/source.js";
 
 defineSchemaSuite(schemaSource, {
+	migrations: ["0000_baseline"],
 	tables: ["hobo_ci_database_probes", "hobo_ci_worker_health"],
 	impedance: {
 		// `created_at DEFAULT now()`.

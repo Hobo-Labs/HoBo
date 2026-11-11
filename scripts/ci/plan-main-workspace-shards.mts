@@ -11,10 +11,12 @@ import {
 	mainGateScope,
 } from "./affected-lanes.mts";
 import {
+	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 	planDependentTests,
-	planShardCount,
+	planMainWorkspaceShardCount,
 	readRepo,
 } from "./dependent-tests.mts";
+import { resolveMainWorkspaceParallelCap } from "./load-fleet-capacity.mts";
 import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
@@ -91,15 +93,25 @@ async function main(): Promise<void> {
 				}).stdout
 			: "";
 	const plan = planDependentTests(input.split("\n"), repo);
-	const shardCap = Number(process.env.MAIN_SHARD_CAP ?? "64");
-	const targetSeconds = Number(process.env.MAIN_SHARD_TARGET_SECONDS ?? "90");
-	const count = planShardCount(plan, shardCap, {
-		targetSeconds,
+	const parallelCap = await resolveMainWorkspaceParallelCap({
+		repository,
+		token,
+	});
+	const targetSeconds = Number(
+		process.env.MAIN_SHARD_TARGET_SECONDS ??
+			String(MAIN_WORKSPACE_SHARD_TARGET_SECONDS),
+	);
+	const shardPlan = planMainWorkspaceShardCount(plan, parallelCap, {
+		targetSeconds:
+			Number.isFinite(targetSeconds) && targetSeconds > 0
+				? targetSeconds
+				: MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 		workspaces: repo.workspaces,
 	});
+	const count = shardPlan.count;
 	const shards = `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
 	console.error(
-		`main gate plan: scope=${scope}, tests=${tests}, shards=${shards}`,
+		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
 	);
 	setOutput("main_base", base);
 	setOutput("main_tests", tests);

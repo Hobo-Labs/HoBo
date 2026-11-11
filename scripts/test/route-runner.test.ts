@@ -72,6 +72,15 @@ const decide = (overrides: Partial<Parameters<typeof routeRunner>[0]> = {}) =>
 		...overrides,
 	});
 
+const trunkCapacity = {
+	freeSlots: 1,
+	requiredMb: 4096,
+	reserveMb: 2048,
+	volatilityMb: 1024,
+	availableMb: 2400,
+	admit: false,
+};
+
 describe("the load on a label", () => {
 	it("counts jobs asking for exactly that label and takes the oldest wait", () => {
 		const jobs = [
@@ -279,6 +288,15 @@ describe("the routing decision", () => {
 
 	it("asks the fleet for the trunk label on trunk events", () => {
 		assert.equal(decide({ fleetLabel: "hobo-trunk" }).runner, "hobo-trunk");
+	});
+
+	it("overflows to GitHub-hosted when live capacity refuses trunk jobs", () => {
+		const routed = decide({
+			fleetLabel: "hobo-trunk",
+			fleetCapacity: trunkCapacity,
+		});
+		assert.equal(routed.tier, "github");
+		assert.match(routed.reason, /cannot admit/);
 	});
 
 	it("honours a pinned tier without looking at the queue", () => {

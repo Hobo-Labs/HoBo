@@ -18,7 +18,6 @@ import {
 	accountEventPage,
 	type EventCursor,
 	eventCursorBounds,
-	eventScan,
 	jobAccountId,
 } from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
@@ -274,6 +273,15 @@ function sequenced(row: Record<string, SQLOutputValue>): SequencedCiEvent {
 	});
 }
 
+/**
+ * One account's events, through the index on the account each event names.
+ * An event that names no account (a partition event, or a job event
+ * journalled before its owner was recorded) has no key there and is in no
+ * account's range.
+ */
+const ACCOUNT_EVENTS =
+	"SELECT seq, body FROM events INDEXED BY events_account_seq WHERE json_extract(body,'$.accountId')=?";
+
 /** Single-writer partition. Events and their materialized lease view commit together. */
 export class LeaseStore {
 	private readonly db: DatabaseSync;
@@ -287,6 +295,7 @@ export class LeaseStore {
 		this.db = database ?? new DatabaseSync(path);
 		this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
    CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, body TEXT NOT NULL);
+   CREATE INDEX IF NOT EXISTS events_account_seq ON events(json_extract(body,'$.accountId'), seq);
    CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, job_key TEXT NOT NULL, body TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS terminal_jobs (job_key TEXT PRIMARY KEY);
    CREATE TABLE IF NOT EXISTS assigned_jobs (job_key TEXT PRIMARY KEY, lease_id TEXT NOT NULL, version TEXT NOT NULL DEFAULT '');
@@ -354,25 +363,27 @@ export class LeaseStore {
 	/**
 	 * An account's events after a journal position, oldest first; without a
 	 * position, its newest ones. `seq` is the journal's own key, so a position
-	 * handed back as `after` never skips or repeats an event. One read looks
-	 * along a bounded span of the journal and the page says when that cut it
-	 * short.
+	 * handed back as `after` never skips or repeats an event.
+	 *
+	 * The statement names the account index it reads through, so the read
+	 * touches the account's own events and nothing of any other account's,
+	 * however long the journal is. Left to choose, SQLite could walk the whole
+	 * journal, which stops this single-threaded store, and its host, for as
+	 * long as the journal is long; without the index the read fails instead.
 	 */
 	eventsSince(cursor: EventCursor): CiEventPage {
 		const { accountId, after, limit } = eventCursorBounds(cursor);
-		const scan = eventScan(cursor, this.journalHead());
-		const mine =
-			"seq>? AND seq<=? AND json_extract(body,'$.accountId')=? ORDER BY seq";
+		// One more than the page holds, to say whether the account has more.
 		const rows =
 			after === undefined
 				? this.db
-						.prepare(`SELECT seq, body FROM events WHERE ${mine} DESC LIMIT ?`)
-						.all(scan.from, scan.to, accountId, limit)
+						.prepare(`${ACCOUNT_EVENTS} ORDER BY seq DESC LIMIT ?`)
+						.all(accountId, limit + 1)
 						.reverse()
 				: this.db
-						.prepare(`SELECT seq, body FROM events WHERE ${mine} LIMIT ?`)
-						.all(scan.from, scan.to, accountId, limit + 1);
-		return accountEventPage(rows.map(sequenced), cursor, scan);
+						.prepare(`${ACCOUNT_EVENTS} AND seq>? ORDER BY seq LIMIT ?`)
+						.all(accountId, after, limit + 1);
+		return accountEventPage(rows.map(sequenced), cursor);
 	}
 	/** The journal's newest position; zero while it is empty. */
 	journalHead(): number {
@@ -2001,6 +2012,56 @@ export class LeaseStore {
 			lease.state = "cancelled";
 			this.append(lease, "ci.LeaseCancelled", at);
 			this.queueInside(job, at);
+		});
+	}
+	/** Drop box demand when GitHub assigned the job elsewhere; never re-queue. */
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	): boolean {
+		return this.transaction(() => {
+			if (
+				expectedRevision !== undefined &&
+				this.configuration()?.revision !== expectedRevision
+			)
+				throw new Error("configuration revision conflict");
+			const configuration = this.configuration()?.configuration;
+			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			let changed = false;
+			for (const lease of this.all()) {
+				if (
+					lease.repositoryId !== job.repositoryId ||
+					lease.jobId !== job.id ||
+					lease.runAttempt !== job.runAttempt ||
+					!ACTIVE_STATES.has(lease.state)
+				)
+					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
+				const offer = configuration?.accounts
+					.find((account) => account.id === lease.accountId)
+					?.offers.find((candidate) => candidate.id === lease.offerId);
+				if (
+					!shouldAbortIsolatedFleetLease(
+						lease.provider,
+						offer
+							? { backend: offer.backend, runsOn: offer.runsOn }
+							: undefined,
+					)
+				)
+					continue;
+				lease.state = "cancelled";
+				this.append(lease, "ci.LeaseCancelled", at);
+				changed = true;
+			}
+			if (
+				this.db.prepare("SELECT 1 FROM pending_jobs WHERE job_key=?").get(key)
+			) {
+				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
+				changed = true;
+			}
+			return changed;
 		});
 	}
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): void {

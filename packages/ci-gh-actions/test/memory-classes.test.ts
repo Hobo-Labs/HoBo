@@ -42,10 +42,29 @@ describe("worker memory config", () => {
 		expect(memoryClassForJob("PR impact gate")).toBe("light");
 		expect(memoryClassForJob("PR impact validation")).toBe("heavy");
 		expect(memoryClassForJob("PR affected package lanes")).toBe("heavy");
+		expect(
+			memoryClassForJob("Live data engines (PostgreSQL 16, MongoDB 8)"),
+		).toBe("heavy");
 		for (let shard = 0; shard < 8; shard++)
 			expect(memoryClassForJob(`Workspace test shard ${shard}`)).toBe("heavy");
 		expect(memoryClassForJob("Workspace test shard 0 (0)")).toBe("heavy");
 		expect(memoryClassForJob("Workspace test shard 8")).toBe("standard");
+		for (let shard = 0; shard < 4; shard++)
+			expect(memoryClassForJob(`Main workspace test shard ${shard}`)).toBe(
+				"standard",
+			);
+		expect(
+			memoryRequestForJob("Main workspace test shard 0", {
+				budgetMb: 14_000,
+				reserveMb: 2_048,
+				classes: { light: 3_072, standard: 4_096, heavy: 6_144 },
+				unmeasured: { light: 1_024, standard: 4_096, heavy: 4_096 },
+				defaultClass: "standard",
+				trunkReservationMb: 4_096,
+				holMs: 60_000,
+				learn: false,
+			}).memoryMb,
+		).toBe(4_096);
 		expect(memoryClassForJob("CI fabric contract guard (retry)")).toBe(
 			"standard",
 		);

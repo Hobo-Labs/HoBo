@@ -787,9 +787,9 @@ What runs where:
 | SQLite ↔ SQLite, SQLite ↔ reference (both directions) | yes | the kit against real files, including `in-place-evolve` over real DDL |
 | Event-log patterns on the real SQLite event store + SQLite engines | yes (`packages/trails/test/data-patterns-e2e.test.ts`) | `rebuild-and-swap`, `log-pivot`, `stream-handoff` on disk; the migration journal on the event store |
 | MongoDB over its in-memory executor | yes | the binding's logic without a server; the executor interleaves transactions, so the fence race case can fail offline |
-| PostgreSQL, live | opt-in: `HOBO_TEST_POSTGRES_URL` | the kit against a real server, including logical-decoding capture and the native logical-copy cases |
-| MongoDB, live | opt-in: `HOBO_TEST_MONGODB_URL` | the kit against a real replica set, including change streams |
-| Cross-engine among SQLite, PostgreSQL, and MongoDB, live | opt-in: both variables | real records moving between real engines of different paradigms |
+| PostgreSQL, live | CI job `Live data engines`; locally with `HOBO_TEST_POSTGRES_URL` | the kit against a real server, including logical-decoding capture and the native logical-copy cases |
+| MongoDB, live | CI job `Live data engines`; locally with `HOBO_TEST_MONGODB_URL` | the kit against a real replica set, including change streams |
+| Cross-engine among SQLite, PostgreSQL, and MongoDB, live | CI job `Live data engines`; locally with both variables | real records moving between real engines of different paradigms |
 
 To run the live lanes locally, start the two servers from the compose file and run the one command
 (details in [live-provider-matrix](./live-provider-matrix.md#data-engines-packagesdata--adr-0177)):
@@ -981,11 +981,20 @@ Engines:
 
 Evidence:
 
-- **The live PostgreSQL and MongoDB lanes are opt-in and not in CI.** They need a server, no workflow
-  provides one, and nothing sets the two variables there. A regression in live capture, in the fence
-  under real concurrency, or in the native path is caught by whoever runs `pnpm run test:data-live`,
-  not by every push. The always-on lanes cover the contract logic, the decoder against recorded
-  bytes, MongoDB over its in-memory executor, and SQLite for real.
+- **The live PostgreSQL and MongoDB lanes run in CI, on a schedule and where a diff can reach them —
+  not on every push.** The `Live data engines` job in `.github/workflows/hobo-ci.yml` starts a
+  digest-pinned PostgreSQL 16 and a one-member MongoDB 8 replica set as sibling containers
+  (`scripts/ci/data-live-servers.mts`) and runs `pnpm run test:data-live` against them. It runs on a
+  pull request when `scripts/ci/job-scope.mts` finds that the diff reaches the live suites — the data
+  packages, `@hobo/trails`, anything they import, or CI configuration — and every night on `main`.
+  A green run is checked, not assumed: the job fails unless each of the five packages reported and
+  no test was skipped, since a live test without its server skips rather than fails.
+  What that leaves open: it does not run in the merge queue; it blocks a merge only if the branch
+  ruleset names it as a required check, which is a repository setting, not something this change can
+  set; a pull request whose diff does not reach the suites relies on the nightly run; it covers
+  the two pinned server versions only; and it has so far run only on GitHub-hosted runners, not on
+  the self-hosted fleet, where the job is a container beside the two servers. The always-on lanes cover the contract logic, the decoder
+  against recorded bytes, MongoDB over its in-memory executor, and SQLite for real.
 - **The intermittent live PostgreSQL failure seen at `85ae5267` is explained and fixed; a residual
   remains.** Root cause: a logical replication slot created while another session creates a table and
   writes to it can be poisoned — every decode from it then fails with SQLSTATE `XX000`, "could not

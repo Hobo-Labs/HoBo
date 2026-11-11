@@ -5,9 +5,9 @@ events and snapshots. `ci.cue` constrains every message; valid/invalid fixtures 
 executed by schema-tools. Generated records live under `src/_generated`.
 `SequencedCiEvent` pairs a stored event with its position in the partition's
 journal and `CiEventPage` is one cursor read of an account's events; the
-position orders a catch-up read and is not part of the stored event. A page's
-`more` and `truncated` say when the read's bounded scan stopped short of the
-journal's end or start.
+position orders a catch-up read and is not part of the stored event. A page
+holds exactly the account's events; its `more` and `truncated` say when the
+page was full and the account has events after it, or older than it.
 
 Lease prices and free-allocation validity are pinned when capacity is reserved.
 Settled free consumption is recorded separately from reserved free minutes so a

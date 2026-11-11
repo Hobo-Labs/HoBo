@@ -352,16 +352,18 @@ export type RelayMcpEvents = Message<"hobo.ci.gh_actions.v1.RelayMcpEvents"> & {
   timedOut: boolean;
 
   /**
-   * The read stopped before the end of the journal: an empty `events` is not
-   * "caught up". Read again from `cursor` at once.
+   * The account has more events after the ones this read looked through or
+   * returned: an empty `events` is not "caught up". Read again from `cursor`
+   * at once.
    *
    * @generated from field: bool more = 4;
    */
   more: boolean;
 
   /**
-   * A read of the newest events did not look back to the start of the journal
-   * and did not fill the page: older events may exist.
+   * A read of the newest events left older events of the account unread:
+   * more matched than were returned, or the account has more than the read
+   * looked through.
    *
    * @generated from field: bool truncated = 5;
    */

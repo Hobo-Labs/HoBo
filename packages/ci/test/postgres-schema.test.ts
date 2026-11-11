@@ -2,6 +2,7 @@ import { schemaSource } from "../db/source.js";
 import { defineSchemaSuite } from "../db/tooling/suite.js";
 
 defineSchemaSuite(schemaSource, {
+	migrations: ["0000_baseline", "0001_events_account"],
 	tables: [
 		"hobo_ci_assigned_jobs",
 		"hobo_ci_configuration",

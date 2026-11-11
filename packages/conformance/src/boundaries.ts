@@ -193,6 +193,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/stage-gate",
 	"packages/policy",
 	"packages/pricing",
+	"packages/provider-manifest",
 	"packages/data",
 	"packages/events",
 	"packages/identity",

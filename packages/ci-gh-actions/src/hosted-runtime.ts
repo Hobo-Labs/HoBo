@@ -3,6 +3,7 @@ import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
+import type { FleetCapacityPublisher } from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
@@ -16,8 +17,14 @@ import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.j
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import type { JobPickupMetadataCache } from "./job-pickup.js";
+import {
+	hasOutstandingBoxCustody,
+	runnerCustody,
+} from "./job-runner-custody.js";
+import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
 export interface HostedInboxStore extends HostedRelayStore {
@@ -103,8 +110,19 @@ export function createHostedRelayRuntime(options: {
 	lendTrunkSlots?: boolean;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
+	mergeQueuePositions?: MergeQueuePositionSource;
 	/** See `HostedRelay`: publishes the fleet route table after each pass. */
 	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
+	headroomTrunkOverflow?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["headroomTrunkOverflow"];
+	/** See `HostedRelay`: publishes fleet slot headroom after each pass. */
+	fleetCapacity?: Readonly<{
+		publish: FleetCapacityPublisher["publish"];
+		snapshot: () => Promise<
+			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
+		>;
+	}>;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -124,6 +142,7 @@ export function createHostedRelayRuntime(options: {
 	const admissionOrder = createAdmissionOrder(
 		options.github,
 		options.jobDurations,
+		options.mergeQueuePositions,
 	);
 	async function relay() {
 		const state = await options.store.configuration();
@@ -158,6 +177,10 @@ export function createHostedRelayRuntime(options: {
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
 		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
+		if (options.headroomTrunkOverflow)
+			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
+		if (options.fleetCapacity)
+			relayOptions.fleetCapacity = options.fleetCapacity;
 		return new HostedRelay(relayOptions);
 	}
 	return {
@@ -221,17 +244,25 @@ export function createHostedRelayRuntime(options: {
 							lease.actualJobId === jobId),
 				);
 			if (covered) return "duplicate" as const;
+			if (
+				leases.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						identity.repository.id,
+						jobId,
+						runAttempt,
+					),
+				)
+			)
+				return "duplicate" as const;
 			const nowMs = Date.parse(now());
-			const registrationPending = leases.some(
-				(lease) =>
-					lease.repositoryId === identity.repository.id &&
-					matchesAttempt(lease.runAttempt) &&
-					(lease.jobId === jobId || lease.actualJobId === jobId) &&
-					lease.runnerId > 0 &&
-					(lease.state === "claiming" ||
-						lease.state === "running" ||
-						lease.state === "uncertain" ||
-						lease.state === "dispatched"),
+			const registrationPending = leases.some((lease) =>
+				hasOutstandingBoxCustody(
+					lease,
+					identity.repository.id,
+					jobId,
+					runAttempt,
+				),
 			);
 			const recheckMs = registrationPending ? 300_000 : 60_000;
 			const recheckKey = `${identity.repository.id}:${jobId}:${runAttempt ?? 0}`;
@@ -243,15 +274,38 @@ export function createHostedRelayRuntime(options: {
 				return "duplicate" as const;
 			lastDuplicateRecheck.set(recheckKey, nowMs);
 			try {
+				const current = await getJob(
+					options.github,
+					identity.installation.id,
+					identity.repository.full_name,
+					jobId,
+				);
+				if (
+					runnerCustody(current.runner_name) === "foreign" &&
+					(current.status === "queued" || current.status === "in_progress")
+				) {
+					const controller = await relay();
+					await controller.processWebhook(
+						Buffer.from(input.rawBody),
+						input.event,
+					);
+					return "foreign-runner" as const;
+				}
+			} catch {
+				// GitHub read failure: fall through to duplicate recheck.
+			}
+			try {
 				const recheck = await (await relay()).processWebhook(
 					Buffer.from(input.rawBody),
 					input.event,
 				);
+				if (recheck === "foreign-runner") return "foreign-runner" as const;
 				return recheck === "queued"
 					? ("requeued" as const)
 					: ("duplicate" as const);
 			} catch {
-				return "duplicate" as const;
+				// Fail-open for poll recovery: coalesce must not strand jobs on GitHub.
+				return "requeued" as const;
 			}
 		},
 		async claim(id: string, token: string): Promise<Response> {
@@ -365,7 +419,8 @@ export function createHostedRelayRuntime(options: {
 			const controller = await relay();
 			const leaseReconcileStartedAt = Date.now();
 			const activeLeases = await options.store.activeLeases();
-			for (const lease of activeLeases) {
+			for (const entry of activeLeases) {
+				let lease = entry;
 				if (
 					!["running", "dispatched", "uncertain"].includes(lease.state) &&
 					!(
@@ -390,27 +445,73 @@ export function createHostedRelayRuntime(options: {
 							if (
 								options.isolatedHost &&
 								lease.state !== "uncertain" &&
-								lease.runnerName &&
-								(lease.actualJobId > 0 ||
+								lease.runnerName
+							) {
+								const boxWorker =
+									lease.provider === "kubernetes" ||
+									lease.provider === "hobo-box-worker";
+								if (boxWorker) {
+									const at = options.now?.() ?? new Date().toISOString();
+									const custody = await adoptRunnerAssignment(
+										options.store,
+										options.github,
+										lease,
+										at,
+									);
+									lease = custody.lease;
+									if (custody.holdsActive) {
+										assignedJobCompleted = false;
+									} else if (
+										custody.assignment?.status === "completed" &&
+										custody.assignment.jobId ===
+											(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId)
+									) {
+										assignedJobCompleted = true;
+									} else if (
+										lease.actualJobId > 0 ||
+										servedRunnerLabels.get(
+											`${lease.repository}:${lease.jobId}`,
+										) === TRUNK_RUNNER_LABEL
+									) {
+										const jobId =
+											lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+										try {
+											const job = await getJob(
+												options.github,
+												lease.installationId,
+												lease.repository,
+												jobId,
+											);
+											assignedJobCompleted =
+												job.id === jobId &&
+												job.status === "completed" &&
+												job.runner_name === lease.runnerName;
+										} catch {
+											// Failed or ambiguous GitHub reads cannot authorize a stop.
+										}
+									}
+								} else if (
+									lease.actualJobId > 0 ||
 									servedRunnerLabels.get(
 										`${lease.repository}:${lease.jobId}`,
-									) === TRUNK_RUNNER_LABEL)
-							) {
-								const jobId =
-									lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
-								try {
-									const job = await getJob(
-										options.github,
-										lease.installationId,
-										lease.repository,
-										jobId,
-									);
-									assignedJobCompleted =
-										job.id === jobId &&
-										job.status === "completed" &&
-										job.runner_name === lease.runnerName;
-								} catch {
-									// Failed or ambiguous GitHub reads cannot authorize a stop.
+									) === TRUNK_RUNNER_LABEL
+								) {
+									const jobId =
+										lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+									try {
+										const job = await getJob(
+											options.github,
+											lease.installationId,
+											lease.repository,
+											jobId,
+										);
+										assignedJobCompleted =
+											job.id === jobId &&
+											job.status === "completed" &&
+											job.runner_name === lease.runnerName;
+									} catch {
+										// Failed or ambiguous GitHub reads cannot authorize a stop.
+									}
 								}
 							}
 							await host.reconcile(

@@ -3,7 +3,7 @@
 Digest-pinned container images for the Pact Broker lane live in
 [`pinned-container-images.json`](pinned-container-images.json) (shared with
 [`compose.pact.yml`](compose.pact.yml) and
-[`test/pinned-container-images.test.ts`](../test/pinned-container-images.test.ts)).
+[`test/pinned-postgres-testcontainers.test.ts`](../test/pinned-postgres-testcontainers.test.ts)).
 Production relay images are built from
 [`../deploy/Dockerfile`](../deploy/Dockerfile) (multi-stage, non-root `1000:1000`).
 
@@ -23,7 +23,7 @@ GitHub or vendor verification, a published Pact broker, or a live runner pass.
 
 | Artifact | Executed boundary |
 | --- | --- |
-| `github-app-boundary.pact.json` | Signed App JWT exchange, installation credentials, dispatch and JIT registration, the fleet route table variable (repository read, update, create, refusal), error and redirect handling |
+| `github-app-boundary.pact.json` | Signed App JWT exchange, installation credentials, dispatch and JIT registration, error and redirect handling |
 | `relay-boundary.pact.json` | Signed webhook intake into the inbox, then the tick's reservation and dispatch, and single-use authenticated JIT claims |
 | `http-boundary.pact.json` | The shared Fetch handler behind the Node adapter: committed and duplicate deliveries, an unsigned delivery, readiness with its engine map, and the JIT claim envelope. Every host of the relay serves this handler |
 | `mcp-boundary.pact.json` | The MCP server at `/mcp` without sessions, as every host serves it: credential, scope and origin refusals, initialize without subscriptions, the tool and resource lists, an event read after a cursor, a wait that ends without news, queued jobs, status with its limits, a write refused for want of `operations:write`, a lease the account does not own reported as absent, a cursor not issued to the account refused as invalid input, and a request refused for carrying too many messages |

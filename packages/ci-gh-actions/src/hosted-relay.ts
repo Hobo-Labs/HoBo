@@ -24,6 +24,7 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetCapacityPublisher } from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
@@ -35,6 +36,7 @@ import {
 import { heldRoutingOptions } from "./held-routing.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
+import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
@@ -43,12 +45,23 @@ import {
 	type JobPickupMetadataCache,
 	observeJobPickupMetadata,
 } from "./job-pickup.js";
+import {
+	activeLeaseCoversJob,
+	hasOutstandingBoxCustody,
+	leaseIdFromBoxRunnerName,
+	runnerCustody,
+} from "./job-runner-custody.js";
+import {
+	leaseOccupiesMergeGroupCap,
+	leaseOccupiesWorkerResources,
+} from "./lease-resource-occupancy.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
 	type RunnerLabel,
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
@@ -103,6 +116,12 @@ export interface HostedRelayStore {
 		expectedRevision?: number,
 	): Promise<Lease | undefined>;
 	cancelAndRequeue(id: string, job: Job, at: string): Promise<void>;
+	withdrawQueuedJob?(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	): Promise<boolean>;
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): Promise<void>;
 	settleObserved(
 		id: string,
@@ -235,6 +254,13 @@ export class HostedRelay {
 			 * hobo label.
 			 */
 			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
+			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
+			fleetCapacity?: Readonly<{
+				publish: FleetCapacityPublisher["publish"];
+				snapshot: () => Promise<
+					Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
+				>;
+			}>;
 			now?: () => string;
 		},
 	) {
@@ -363,7 +389,65 @@ export class HostedRelay {
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);
 	}
-	/** Called only after ingress authenticated and durably recorded the exact body. */
+	/**
+	 * Another fleet runner on the shared `hobo` label holds this job; release this
+	 * worker's leases and pending demand without requeueing (mesh cooperation).
+	 */
+	private async yieldForeignRunnerCustody(
+		job: Job,
+		expectedRevision: number,
+	): Promise<void> {
+		const at = this.now();
+		const active = await this.options.store.activeLeases();
+		let retainedLeaseId: string | undefined;
+		for (const lease of active) {
+			if (
+				!activeLeaseCoversJob(lease, job.repositoryId, job.id, job.runAttempt)
+			)
+				continue;
+			if (lease.runnerName) {
+				const custody = await adoptRunnerAssignment(
+					this.options.store,
+					this.options.github,
+					lease,
+					at,
+				);
+				if (
+					custody.holdsActive &&
+					custody.assignment &&
+					custody.assignment.jobId !== job.id
+				) {
+					retainedLeaseId = lease.id;
+					continue;
+				}
+			}
+			await this.options.isolatedHost?.reconcile(lease.id, true);
+			await this.options.store.transition(
+				lease.id,
+				[
+					"reserved",
+					"dispatching",
+					"claiming",
+					"dispatched",
+					"running",
+					"uncertain",
+				],
+				(entry) => {
+					entry.state = "cancelled";
+				},
+				"ci.LeaseCancelled",
+				at,
+				expectedRevision,
+			);
+		}
+		await this.options.store.withdrawQueuedJob?.(
+			job,
+			at,
+			expectedRevision,
+			retainedLeaseId,
+		);
+	}
+
 	async processWebhook(raw: Buffer, event: string): Promise<string> {
 		await this.refreshConfig();
 		if (event === "workflow_run") {
@@ -442,6 +526,36 @@ export class HostedRelay {
 		job.runAttempt = currentJob.run_attempt;
 		job.runnerName = currentJob.runner_name ?? "";
 		job.name = currentJob.name ?? job.name;
+		const custody = runnerCustody(currentJob.runner_name);
+		if (
+			custody === "foreign" &&
+			(currentJob.status === "queued" || currentJob.status === "in_progress")
+		) {
+			await this.yieldForeignRunnerCustody(job, admittedRevision);
+			return "foreign-runner";
+		}
+		if (custody === "box" && job.action === "queued") {
+			const expectedLeaseId = leaseIdFromBoxRunnerName(
+				currentJob.runner_name?.trim() ?? "",
+			);
+			const leases = await this.options.store.activeLeases();
+			if (
+				leases.some(
+					(lease) =>
+						activeLeaseCoversJob(
+							lease,
+							job.repositoryId,
+							job.id,
+							job.runAttempt,
+						) &&
+						(!expectedLeaseId ||
+							lease.id === expectedLeaseId ||
+							lease.runnerName === currentJob.runner_name?.trim()),
+				)
+			) {
+				return "duplicate";
+			}
+		}
 		if (this.options.jobPickupMetadata)
 			observeJobPickupMetadata(this.options.jobPickupMetadata, {
 				repositoryId: job.repositoryId,
@@ -811,7 +925,7 @@ export class HostedRelay {
 	}
 	private reportTrunkWait(
 		job: Job,
-		reason: "lease-capacity" | "storage",
+		reason: "lease-capacity" | "storage" | "headroom",
 	): string {
 		const key = this.trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
@@ -849,8 +963,8 @@ export class HostedRelay {
 			labels: job.labels,
 		});
 		const active = await this.options.store.activeLeases();
-		const memoryActive = active.filter(
-			(lease) => lease.state !== "reserved" || (lease.sandboxName ?? "") !== "",
+		const memoryActive = active.filter((lease) =>
+			leaseOccupiesWorkerResources(lease),
 		);
 		const memoryGeneral = this.options.memoryAdmission
 			? await this.generalLeaseIds()
@@ -867,12 +981,8 @@ export class HostedRelay {
 		const activeMergeGroups = new Set<string>();
 		if (mergeGroupLimit !== undefined)
 			for (const lease of active) {
-				const groupKey = await this.admissionOrder.mergeGroupKey({
-					installationId: lease.installationId,
-					repository: lease.repository,
-					runId: lease.originalRunId,
-					jobId: lease.jobId,
-				});
+				if (!leaseOccupiesMergeGroupCap(lease)) continue;
+				const groupKey = await this.admissionOrder.mergeGroupKeyForLease(lease);
 				if (groupKey !== undefined) activeMergeGroups.add(groupKey);
 			}
 		let general: Set<string> | undefined;
@@ -892,6 +1002,17 @@ export class HostedRelay {
 				continue;
 			}
 			if ((await this.options.isolatedHost?.isLaunchParked?.(job)) === true)
+				continue;
+			if (
+				active.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						job.repositoryId,
+						job.id,
+						job.runAttempt,
+					),
+				)
+			)
 				continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
@@ -987,6 +1108,8 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
+						if (trunk && decision.reason === "host-available")
+							waitingTrunk.add(this.reportTrunkWait(job, "headroom"));
 						continue;
 					}
 				}
@@ -1118,6 +1241,12 @@ export class HostedRelay {
 				if (isolatedHost) {
 					if (!this.options.isolatedHost)
 						throw new Error("isolated runner unavailable");
+					if (
+						(await this.options.isolatedHost.isLaunchParked?.(
+							this.queuedDemand(candidate),
+						)) === true
+					)
+						continue;
 					const rank = await this.admissionOrder.rank({
 						installationId: candidate.installationId,
 						repository: candidate.repository,
@@ -1204,7 +1333,17 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
+		const overflow = this.options.headroomTrunkOverflow;
+		if (overflow) {
+			await overflow.overflowTrunkJobsWaitingForHeadroom(
+				this.options.store,
+				this.trunkWaits,
+				reservationRevision,
+				this.now(),
+			);
+		}
 		await this.publishFleetRoutes();
+		await this.publishFleetCapacity();
 		return pending.length;
 	}
 	/** One table per connected repository, from the state this pass just left. */
@@ -1227,6 +1366,37 @@ export class HostedRelay {
 				});
 			} catch {
 				/* Routing ahead of the queue is advisory; admission already ran. */
+			}
+		}
+	}
+	private async publishFleetCapacity(): Promise<void> {
+		const publisher = this.options.fleetCapacity;
+		if (!publisher) return;
+		let snapshot: Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>;
+		try {
+			snapshot = await publisher.snapshot();
+		} catch {
+			return;
+		}
+		const at = this.now();
+		for (const connection of this.options.config.connections) {
+			try {
+				const base = {
+					installationId: connection.installationId,
+					repository: connection.repository,
+					hoboFreeSlots: snapshot.hoboFreeSlots,
+					at,
+				};
+				if (snapshot.arcFreeSlots === undefined) {
+					await publisher.publish(base);
+					continue;
+				}
+				await publisher.publish({
+					...base,
+					arcFreeSlots: snapshot.arcFreeSlots,
+				});
+			} catch {
+				/* Advisory only. */
 			}
 		}
 	}

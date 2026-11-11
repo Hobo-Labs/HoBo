@@ -15,7 +15,9 @@ export type VerifiedWebhook = Readonly<{
 export type HostedRelayApplication = Readonly<{
 	ingestWebhook(
 		input: VerifiedWebhook,
-	): Promise<"accepted" | "duplicate" | "ignored" | "requeued">;
+	): Promise<
+		"accepted" | "duplicate" | "ignored" | "requeued" | "foreign-runner"
+	>;
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;

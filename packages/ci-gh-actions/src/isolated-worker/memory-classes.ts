@@ -40,14 +40,20 @@ const JOB_CLASSES = {
 	"Secret scan": "light",
 	"Pricing release contract (static)": "light",
 	"Attest GHCR images": "light",
+	"Attest hobo-code GHCR image": "light",
 	"CI runner image (mise oci)": "heavy",
 	"PR impact gate": "light",
 	"PR impact validation": "heavy",
 	"PR affected package lanes": "heavy",
 	"PR off-path checks (ts-autocode surface, production packages)": "heavy",
+	// Installs, builds some two dozen packages and runs five suites; its two
+	// database servers sit beside the job, outside what admission counts.
+	"Live data engines (PostgreSQL 16, MongoDB 8)": "heavy",
 	"Main full gate": "heavy",
+	"HoBo Code contract, lint, test + OCI image": "heavy",
 	"Release contract + affected OCI images": "heavy",
 	"Publish npm + GHCR (tagged release)": "heavy",
+	"Stage npm package + publish hobo-code GHCR image": "heavy",
 	"Build and test @hobo/pricing (release cone)": "heavy",
 	"@hobo/pricing affected gate": "heavy",
 	"Clean container bootstrap": "heavy",
@@ -237,14 +243,32 @@ export function resolveWorkerMemoryConfig(
 }
 
 export function memoryClassForJob(name: string): WorkerMemoryClassName {
+	if (/^Main workspace test shard \d+$/u.test(name)) return "standard";
 	if (/^Workspace test shard [0-7](?: \([0-7]\))?$/u.test(name)) return "heavy";
 	return JOB_CLASS_MAP.get(name) ?? "standard";
+}
+
+function mainWorkspaceShardMemoryRequest(
+	name: string,
+	config: WorkerMemoryConfig,
+): JobMemoryRequest {
+	const floorMb = config.classes.standard;
+	const ceilingMb = config.classes.heavy;
+	const reserved = config.learn
+		? learnedReservationMb(config.memoryPeaks?.[name], ceilingMb, floorMb)
+		: floorMb;
+	const memoryMb = Math.max(floorMb, reserved);
+	const memoryClass: WorkerMemoryClassName =
+		memoryMb > floorMb ? "heavy" : "standard";
+	return { memoryClass, memoryMb };
 }
 
 export function memoryRequestForJob(
 	name: string,
 	config: WorkerMemoryConfig,
 ): JobMemoryRequest {
+	if (/^Main workspace test shard \d+$/u.test(name))
+		return mainWorkspaceShardMemoryRequest(name, config);
 	const memoryClass = memoryClassForJob(name);
 	const classMb = config.classes[memoryClass];
 	return {

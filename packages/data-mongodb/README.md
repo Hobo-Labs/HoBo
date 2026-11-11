@@ -520,7 +520,10 @@ pnpm --filter @hobo/data-mongodb run test
 | Live | `HOBO_TEST_MONGODB_URL`, a replica set (one node is enough) | `test/live.test.ts`: the same kit against real MongoDB — as engine and peer, MongoDB → reference, reference → MongoDB — the pact through the driver adapter, the in-memory executor compared with the server, and what only a server can prove | sharded clusters, failover, access control, a standalone server, a position that has left the oplog window, a transaction that outgrows its limits |
 | Live, cross-engine | the above, and `HOBO_TEST_POSTGRES_URL` for the PostgreSQL half | `test/cross-engine-live.test.ts`: SQLite ↔ MongoDB and PostgreSQL ↔ MongoDB through the hub, both directions | |
 
-The live lanes are skipped cleanly without their variables:
+The live lanes are skipped cleanly without their variables. CI's
+`Live data engines` job sets both, against a one-member MongoDB 8 replica set and
+a PostgreSQL 16, on pull requests whose diff reaches these suites and nightly. To
+run them yourself:
 
 ```bash
 HOBO_TEST_MONGODB_URL='mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true' \

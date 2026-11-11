@@ -1548,61 +1548,71 @@ describe("relay MCP bounds on one caller's work", () => {
 });
 
 describe("relay MCP journal bounds", () => {
-	it("finds an account's events behind a neighbour's volume, and says what it did not read", async () => {
+	it("reads exactly an account's events behind a neighbour's volume, cut only by the page", async () => {
 		const h = await setup({
 			sessions: "none",
 			now: () => 0,
 			sleep: async () => {
-				throw new Error("a wait that is behind reads on; it does not sleep");
+				throw new Error("a wait with an event to return does not sleep");
 			},
 		});
 		const { mine } = await seed(h);
 		const a = await h.connect(h.tokens.a.authorization);
 		const types = (text: z.infer<typeof Events>) =>
 			text.events.map((event) => event.type);
+		const seeded = ["ci.JobQueued", "ci.JobQueued", "ci.LeaseReserved"];
 
-		// A busy neighbour: more rows than the newest-events read used to see.
 		await neighbourWrites(h, 1_500);
 		const recent = Events.parse(
 			(await a.call("list_events")).structuredContent,
 		);
-		expect(types(recent)).toEqual([
-			"ci.JobQueued",
-			"ci.JobQueued",
-			"ci.LeaseReserved",
-		]);
+		expect(types(recent)).toEqual(seeded);
 		expect(recent.truncated).toBe(false);
 
-		// Now more than two scans of the journal lie between the account's
-		// first events and its next one.
+		// Far more of a neighbour's rows than a bounded look along the journal
+		// ever covered (10,000) now lie between the account's first events and
+		// its next one.
 		await neighbourWrites(h, 20_000);
 		await h.store.queue(job(9), LATER, h.revision);
 		const newest = Events.parse(
 			(await a.call("list_events")).structuredContent,
 		);
-		expect(newest.events.map((event) => event.jobId)).toEqual([9]);
-		// Older events exist; the read says it did not look that far back.
-		expect(newest.truncated).toBe(true);
+		// The newest read reaches behind them: everything the account has.
+		expect(types(newest)).toEqual([...seeded, "ci.JobQueued"]);
+		expect(newest.events.at(-1)?.jobId).toBe(9);
+		expect(newest.truncated).toBe(false);
+		expect(newest.more).toBe(false);
+		// Asked for fewer than it has, the page is what leaves the rest unread.
+		const two = Events.parse(
+			(await a.call("list_events", { limit: 2 })).structuredContent,
+		);
+		expect(types(two)).toEqual(["ci.LeaseReserved", "ci.JobQueued"]);
+		expect(two.truncated).toBe(true);
+		expect(two.cursor).toBe(newest.cursor);
 
-		const first = Events.parse(
+		// From the start, one read returns all four: no empty stretches to
+		// read through, and no "more" unless the page is full.
+		const all = Events.parse(
 			(await a.call("list_events", { cursor: "0" })).structuredContent,
 		);
-		expect(types(first).length).toBe(3);
-		expect(first.more).toBe(true);
-		// A scan that holds nothing of the account's is not "caught up".
-		const empty = Events.parse(
-			(await a.call("list_events", { cursor: first.cursor })).structuredContent,
+		expect(types(all)).toEqual([...seeded, "ci.JobQueued"]);
+		expect(all.more).toBe(false);
+		expect(all.cursor).toBe(newest.cursor);
+		const first = Events.parse(
+			(await a.call("list_events", { cursor: "0", limit: 3 }))
+				.structuredContent,
 		);
-		expect(empty.events).toEqual([]);
-		expect(empty.more).toBe(true);
-		expect(empty.timedOut).toBe(false);
+		expect(types(first)).toEqual(seeded);
+		expect(first.more).toBe(true);
 		const last = Events.parse(
-			(await a.call("list_events", { cursor: empty.cursor })).structuredContent,
+			(await a.call("list_events", { cursor: first.cursor })).structuredContent,
 		);
 		expect(last.events.map((event) => event.jobId)).toEqual([9]);
 		expect(last.more).toBe(false);
+		expect(last.timedOut).toBe(false);
+		expect(last.cursor).toBe(newest.cursor);
 
-		// A wait reads on through the empty stretch instead of timing out.
+		// A wait from before the neighbour's rows finds the event at once.
 		const waited = Events.parse(
 			(
 				await a.call("wait_for_events", {
@@ -1613,6 +1623,7 @@ describe("relay MCP journal bounds", () => {
 		);
 		expect(waited.events.map((event) => event.jobId)).toEqual([9]);
 		expect(waited.timedOut).toBe(false);
+		expect(waited.more).toBe(false);
 
 		// A lease's events are read by its id, however old they are.
 		expect(
@@ -1624,9 +1635,53 @@ describe("relay MCP journal bounds", () => {
 		expect(JSON.parse(resource.contents[0]?.text ?? "")).toMatchObject({
 			events: [{ type: "ci.LeaseReserved" }],
 		});
-		expect(
+		const feed = Events.parse(
 			JSON.parse((await a.read("hobo-ci://events")).contents[0]?.text ?? ""),
-		).toMatchObject({ truncated: true });
+		);
+		expect(types(feed)).toEqual([...seeded, "ci.JobQueued"]);
+		expect(feed.truncated).toBe(false);
+		expect(feed.cursor).toBe(newest.cursor);
+	});
+
+	it("says a filtered read left events unread only when its window was full", async () => {
+		const h = await setup({ sessions: "none" });
+		await seed(h);
+		// More of the account's own events than one read looks through (500),
+		// none of them a job event.
+		for (let index = 0; index < 520; index++)
+			await h.store.putControlRecord(`note:${index}`, "account-a", "{}", NOW);
+		const a = await h.connect(h.tokens.a.authorization);
+		const queued = { types: ["ci.JobQueued"] };
+		// The newest 500 hold no job event; the two that exist are older, and
+		// the read says there are events it did not look at.
+		const newest = Events.parse(
+			(await a.call("list_events", queued)).structuredContent,
+		);
+		expect(newest.events).toEqual([]);
+		expect(newest.truncated).toBe(true);
+		// From the start the first window holds both, and the account has more
+		// events after it.
+		const first = Events.parse(
+			(await a.call("list_events", { ...queued, cursor: "0" }))
+				.structuredContent,
+		);
+		expect(first.events.map((event) => event.type)).toEqual([
+			"ci.JobQueued",
+			"ci.JobQueued",
+		]);
+		expect(first.more).toBe(true);
+		const rest = Events.parse(
+			(await a.call("list_events", { ...queued, cursor: first.cursor }))
+				.structuredContent,
+		);
+		expect(rest.events).toEqual([]);
+		expect(rest.more).toBe(false);
+		// Unfiltered, a full page is all that is left unread.
+		const page = Events.parse(
+			(await a.call("list_events", { limit: 200 })).structuredContent,
+		);
+		expect(page.events.length).toBe(200);
+		expect(page.truncated).toBe(true);
 	});
 
 	it("moves an account's cursor only with the account's own events", async () => {
