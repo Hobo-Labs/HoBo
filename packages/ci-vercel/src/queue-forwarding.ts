@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { RetryHandler } from "@vercel/queue";
 import { z } from "zod";
+import { StoreUnavailable } from "./store-unavailable.js";
 import { type QueueMessage, QueueMessageSchema } from "./worker.js";
 
 const Wakeup = z.union([
@@ -40,13 +42,118 @@ export function normalizeQueueWakeup(
 	return Wakeup.parse({ source: message.source, name: message.name });
 }
 
-/** A callback acknowledges only after the current relay confirms processing. */
+/**
+ * The relay answered a wakeup with something other than 204.
+ *
+ * The message carries the status and, when the relay stated one, its
+ * `Retry-After` in seconds: two numbers. It never carries the response body,
+ * a header's text, the request or the handoff secret.
+ */
+export class QueueHandoffError extends Error {
+	constructor(
+		readonly status: number,
+		readonly retryAfterSeconds: number | undefined,
+	) {
+		super(
+			retryAfterSeconds === undefined
+				? `queue handoff failed: status ${status}`
+				: `queue handoff failed: status ${status}, retry-after ${retryAfterSeconds}s`,
+		);
+		this.name = "QueueHandoffError";
+	}
+}
+
+/** `Retry-After` as whole seconds from now: delta-seconds, or an HTTP date. */
+function parseRetryAfter(
+	value: string | null,
+	nowMs: number,
+): number | undefined {
+	const text = value?.trim() ?? "";
+	if (/^\d{1,9}$/.test(text)) return Number(text);
+	if (
+		!/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(
+			text,
+		)
+	)
+		return undefined;
+	const at = Date.parse(text);
+	return Number.isNaN(at)
+		? undefined
+		: Math.max(0, Math.ceil((at - nowMs) / 1000));
+}
+
+/** The longest the queue is asked to hold a refused wakeup before redelivering it. */
+export const QUEUE_REDELIVERY_MAX_SECONDS = 300;
+const QUEUE_REDELIVERY_BASE_SECONDS = 5;
+
+/**
+ * Seconds until the queue should redeliver a wakeup the relay could not take.
+ *
+ * At least what the relay stated in `Retry-After`, and at least 5 s doubling
+ * with each delivery of this message (5, 10, 20, ... by `deliveryCount`), so a
+ * relay that keeps answering "come back in 5" is not asked every 5 s for the
+ * message's whole hour. Never more than five minutes.
+ */
+export function queueRedeliveryDelaySeconds(options: {
+	retryAfterSeconds?: number | undefined;
+	deliveryCount: number;
+}): number {
+	const delivery =
+		Number.isSafeInteger(options.deliveryCount) && options.deliveryCount > 0
+			? options.deliveryCount
+			: 1;
+	const backoff =
+		QUEUE_REDELIVERY_BASE_SECONDS * 2 ** Math.min(delivery - 1, 6);
+	const stated =
+		options.retryAfterSeconds !== undefined &&
+		Number.isFinite(options.retryAfterSeconds)
+			? Math.ceil(options.retryAfterSeconds)
+			: 0;
+	return Math.min(QUEUE_REDELIVERY_MAX_SECONDS, Math.max(backoff, stated));
+}
+
+/**
+ * The queue consumer's `retry` policy (`@vercel/queue` calls it when the
+ * callback throws).
+ *
+ * A relay that is temporarily unable to take the wakeup, which is a 503 from
+ * the handoff or the store back-off raised in-process, gets the message back
+ * after {@link queueRedeliveryDelaySeconds}: the queue holds it, and no
+ * function runs meanwhile. Every other failure returns nothing, so the error
+ * propagates and the queue applies its own default: a 4xx, a redirect or a
+ * broken configuration is not something waiting a stated time repairs.
+ */
+export const redeliverRefusedWakeup: RetryHandler = (error, metadata) => {
+	let stated: number | undefined;
+	if (error instanceof QueueHandoffError) {
+		if (error.status !== 503) return undefined;
+		stated = error.retryAfterSeconds;
+	} else if (error instanceof StoreUnavailable) {
+		stated = error.retryAfterMs / 1000;
+	} else return undefined;
+	return {
+		afterSeconds: queueRedeliveryDelaySeconds({
+			retryAfterSeconds: stated,
+			deliveryCount: metadata.deliveryCount,
+		}),
+	};
+};
+
+/**
+ * A callback acknowledges only after the current relay confirms processing.
+ *
+ * One request, never retried here: any answer but 204 throws a
+ * {@link QueueHandoffError} at once, and redelivery is the queue's job
+ * ({@link redeliverRefusedWakeup}), not a loop inside a running function.
+ */
 export async function forwardQueueWakeup(options: {
 	origin: string;
 	secret: string;
 	message: unknown;
 	fetch?: typeof fetch;
 	timeoutMs?: number;
+	/** Clock for an HTTP-date `Retry-After`; injectable for tests. */
+	now?: () => number;
 }): Promise<void> {
 	const origin = relayOrigin(options.origin);
 	if (Buffer.byteLength(options.secret) < 32)
@@ -76,7 +183,14 @@ export async function forwardQueueWakeup(options: {
 		throw new Error("queue handoff unavailable");
 	}
 	void response.body?.cancel().catch(() => {});
-	if (response.status !== 204) throw new Error("queue handoff failed");
+	if (response.status !== 204)
+		throw new QueueHandoffError(
+			response.status,
+			parseRetryAfter(
+				response.headers.get("retry-after"),
+				(options.now ?? Date.now)(),
+			),
+		);
 }
 
 /** Authenticate before reading a bounded payload and run only the active worker. */
@@ -141,8 +255,24 @@ export function createQueueWakeupHandler(options: {
 			try {
 				await options.run(parsed.data);
 				return new Response(null, { status: 204, headers });
-			} catch {
-				return new Response(null, { status: 503, headers });
+			} catch (error) {
+				// The store back-off knows when it will look again; say so, and the
+				// queue consumer holds the message until then.
+				return new Response(null, {
+					status: 503,
+					headers:
+						error instanceof StoreUnavailable
+							? {
+									...headers,
+									"retry-after": String(
+										Math.min(
+											QUEUE_REDELIVERY_MAX_SECONDS,
+											Math.max(1, Math.ceil(error.retryAfterMs / 1000)),
+										),
+									),
+								}
+							: headers,
+				});
 			}
 		} catch {
 			return new Response(null, { status: 400, headers });

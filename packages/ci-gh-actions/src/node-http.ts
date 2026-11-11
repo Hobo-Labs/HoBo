@@ -29,6 +29,26 @@ function waitForDrain(response: ServerResponse): Promise<void> {
 	});
 }
 
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
+const MAX_RETRY_AFTER_SECONDS = 300;
+
+/**
+ * Seconds for the `Retry-After` of a 503 answered for `error`.
+ *
+ * An error that knows when its cause will be tried again says so in a
+ * `retryAfterMs` number (the store back-off does): that is what the caller is
+ * told, in whole seconds from 1 to 300. Any other error gets the 5 s default,
+ * so a caller that honours the header never comes back sooner than the relay
+ * will look again.
+ */
+export function unavailableRetryAfterSeconds(error: Error | undefined): number {
+	if (!error || !("retryAfterMs" in error)) return DEFAULT_RETRY_AFTER_SECONDS;
+	const milliseconds = Number(error.retryAfterMs);
+	if (!Number.isFinite(milliseconds) || milliseconds <= 0)
+		return DEFAULT_RETRY_AFTER_SECONDS;
+	return Math.min(MAX_RETRY_AFTER_SECONDS, Math.ceil(milliseconds / 1000));
+}
+
 /** Adapt a Node HTTP server or function entrypoint to the portable request handler. */
 export function createNodeRelayHandler(options: {
 	origin: string;
@@ -162,7 +182,11 @@ export function createNodeRelayHandler(options: {
 			// Tell the caller when to come back; GitHub and the worker both honour it.
 			response.writeHead(503, {
 				"Cache-Control": "no-store",
-				"Retry-After": "5",
+				"Retry-After": String(
+					unavailableRetryAfterSeconds(
+						error instanceof Error ? error : undefined,
+					),
+				),
 			});
 			response.end('{"error":"service unavailable"}');
 		}

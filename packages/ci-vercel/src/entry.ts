@@ -8,8 +8,16 @@ import {
 	setRelayFailureEvents,
 } from "@hobo/ci-gh-actions";
 import { getVercelOidcToken } from "@vercel/oidc";
-import { type MessageMetadata, QueueClient } from "@vercel/queue";
-import { forwardQueueWakeup } from "./queue-forwarding.js";
+import {
+	type MessageMetadata,
+	QueueClient,
+	type RetryHandler,
+} from "@vercel/queue";
+import {
+	forwardQueueWakeup,
+	QueueHandoffError,
+	redeliverRefusedWakeup,
+} from "./queue-forwarding.js";
 import { composeRelay } from "./relay-composition.js";
 import { streamsBody } from "./relay-streams.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
@@ -151,8 +159,35 @@ export function reportQueueBinding(metadata: MessageMetadata) {
 	}
 }
 
-/** Private Vercel queue trigger. The database remains the source of truth. */
-export const consume = queue.handleNodeCallback(async (message, metadata) => {
+/**
+ * What the queue does with a wakeup this callback failed to hand over.
+ *
+ * A relay that answered 503, or a store in back-off, gets the message again
+ * after a delay the queue itself holds (`redeliverRefusedWakeup`). Thrown
+ * straight back, production redelivered each wakeup about every 15 s for as
+ * long as the store was down. The queue client reports nothing for a
+ * rescheduled message, so the one line that names the status is written here.
+ */
+export const retryQueueWakeup: RetryHandler = (error, metadata) => {
+	const directive = redeliverRefusedWakeup(error, metadata);
+	if (directive && "afterSeconds" in directive)
+		reportRelayFailure(
+			"hobo_ci_queue_handoff_deferred",
+			{
+				status: error instanceof QueueHandoffError ? error.status : 0,
+				afterSeconds: directive.afterSeconds,
+				deliveryCount: metadata.deliveryCount,
+			},
+			error instanceof Error ? error : undefined,
+		);
+	return directive;
+};
+
+/** One queue delivery. The database remains the source of truth. */
+const queueCallback: Parameters<QueueClient["handleNodeCallback"]>[0] = async (
+	message,
+	metadata,
+) => {
 	reportQueueBinding(metadata);
 	if (process.env.VERCEL_ENV !== "production") {
 		const parsed = QueueMessageSchema.parse(message);
@@ -181,4 +216,17 @@ export const consume = queue.handleNodeCallback(async (message, metadata) => {
 	if (!origin || !secret)
 		throw new Error("queue handoff configuration unavailable");
 	await forwardQueueWakeup({ origin, secret, message });
-});
+};
+
+/**
+ * Register the queue callback on `client` together with its redelivery
+ * policy. A function of the client so a test can see what is registered.
+ */
+export function registerQueueConsumer(
+	client: Pick<QueueClient, "handleNodeCallback">,
+) {
+	return client.handleNodeCallback(queueCallback, { retry: retryQueueWakeup });
+}
+
+/** Private Vercel queue trigger. */
+export const consume = registerQueueConsumer(queue);
