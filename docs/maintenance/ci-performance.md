@@ -522,6 +522,10 @@ checks failed on main before anyone saw them:
   Docker context. The Dockerfile and the bucket
   script are unchanged, so image contents and paths are too: the digest is updated and
   `DEPS_LAYOUT.version` stays 1, which leaves the deps key and every existing layer as they were.
+- **Main shard planning vs Turbo affected.** The import-walk planner can list dependents Turbo
+  would not schedule under `--affected`. `plan-main-workspace-shards.mts` and the shard CLI now
+  intersect scoped plans with `turbo run test --affected --dry=json` at `TURBO_SCM_BASE` before
+  balancing shards, so partition counts and weights match what each shard runs.
 - **Repo-wide shard plan.** #1840 made `shardTestPlan` read the real `turbo run test --dry=json`
   graph for a repo-wide plan, while its test passes an in-memory tree of five fixture packages, so the
   real graph's packages were all "undiscovered". The graph is now a parameter (`TestGraph`, as
