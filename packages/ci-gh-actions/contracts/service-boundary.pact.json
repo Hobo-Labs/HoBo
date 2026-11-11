@@ -26,8 +26,17 @@
     {
       "description": "unready webhook intake is retriable and receives no payload",
       "providerStates": [{ "name": "provider readiness unavailable" }],
-      "request": { "method": "POST", "path": "/github/webhooks", "body": {} },
-      "response": { "status": 503, "body": { "error": "service unavailable" } }
+      "request": {
+        "method": "POST",
+        "path": "/github/webhooks",
+        "headers": {
+          "x-github-event": "workflow_job",
+          "x-github-delivery": "service-boundary-1",
+          "x-hub-signature-256": "sha256=03130823635a4efe2391a0a4964e2083d1208d4f0eb21b0a0d3a5a1e5b710451"
+        },
+        "body": { "workflow_job": {} }
+      },
+      "response": { "status": 503, "body": { "error": "webhook rejected" } }
     },
     {
       "description": "readiness succeeds only after the injected permissions probe",

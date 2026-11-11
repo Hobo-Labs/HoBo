@@ -35,16 +35,6 @@ export function defaultAtomsRoot(): string {
 	return join(dirname(fileURLToPath(import.meta.url)), "..", "atoms");
 }
 
-export function openUiStarterRoot(): string {
-	return join(
-		defaultCatalogRoot(),
-		"starter",
-		"code",
-		"openui-astryx-bindle",
-		"project",
-	);
-}
-
 function finalizePattern(
 	file: string,
 	parsed: PatternManifest,

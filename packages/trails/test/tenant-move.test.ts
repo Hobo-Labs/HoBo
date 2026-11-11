@@ -7,15 +7,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createSqliteDataDualPort, FencedTenantError } from "@hobo/data-sqlite";
 import { runSpectrumIdentityCutover } from "@hobo/identity";
 import { afterEach, test } from "vitest";
-
-import {
-	createSqliteDataDualPort,
-	FencedTenantError,
-} from "../src/data-dual-port.js";
 import { MIGRATION_EVENTS } from "../src/migration-executor.js";
-import { createSqliteTenantMovePorts } from "../src/tenant-move-port.js";
+import { createTenantMovePorts } from "../src/tenant-move-port.js";
 
 const cleanups: (() => void)[] = [];
 
@@ -50,7 +46,7 @@ test("milestone: spectrum cutover over real ports is zero-loss (quiescent seq ==
 		tenant: "tenant-a",
 	});
 	cleanups.push(() => dual.close());
-	const move = createSqliteTenantMovePorts({
+	const move = createTenantMovePorts({
 		dual,
 		tenant: "tenant-a",
 		clock: () => "2026-08-03T00:00:00.000Z",
@@ -104,7 +100,7 @@ test("milestone: fenced tenant writes are refused; other tenants keep writing", 
 	cleanups.push(() => dual.close());
 	dual.writeSource([{ id: "order-1", doc: { total: 10 } }]);
 
-	const move = createSqliteTenantMovePorts({ dual, tenant: "tenant-a" });
+	const move = createTenantMovePorts({ dual, tenant: "tenant-a" });
 	move.fence.raiseFence({
 		tenant: "tenant-a",
 		streamIds: ["records:tenant-a"],
@@ -131,7 +127,7 @@ test("milestone: reap deletes the pooled copy only after a proven move", () => {
 		{ id: "order-1", doc: { total: 10 } },
 		{ id: "order-2", doc: { total: 20 } },
 	]);
-	const move = createSqliteTenantMovePorts({ dual, tenant: "tenant-a" });
+	const move = createTenantMovePorts({ dual, tenant: "tenant-a" });
 
 	// Unproven: not fenced yet → refuse.
 	assert.throws(() => move.reap(), /not fenced/u);

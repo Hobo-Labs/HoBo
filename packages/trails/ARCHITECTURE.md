@@ -44,3 +44,38 @@ not import or re-export foreign packages. Consumers receive Trails-owned DTOs
 (`IdentityTrailHandle`, `TrailIdentityProgress`, `TrailCanMigrateEvidence`,
 `ProgressiveFlagPort` internals). Encapsulation is gated by
 `test/public-surface.test.ts`.
+
+## Engine neutrality (ADR-0177)
+
+Trails is the runbook engine and holds no storage-engine code. The live
+schema-apply and dual-run bindings that once imported `node:sqlite` from this
+package now live in `@hobo/data-sqlite`; this package keeps only the port
+shapes (`SchemaApplyPort`, `DataDualPort`, `LiveDataDualPort`), declared
+locally so the sealed public surface re-exports no foreign type. The
+package-boundary gate holds that line: nothing under `src/` may import a
+`@hobo/data-<engine>` package, a database driver, or `@hobo/storage-sqlite`,
+by any import form; only tests may.
+
+`executeDataMigration` delegates to the `in-place-evolve` pattern executor in
+`@hobo/data-core`, so there is one implementation of expand → backfill →
+contract. The **command** is still "run this migration"; the **events** are
+still the `migration.*` family, now including `migration.Held`,
+`migration.Resumed`, and `migration.Completed`; the migration aggregate is the
+single-writer **actor**; its facts are appended to the **event store**; status
+is a **projection** over them; and each phase's fact is the **snapshot** a
+resumed run continues from. Resuming needs the facts to be kept:
+`executeDataMigration` takes a `journal`, and a migration run again with the
+same journal skips the phases already applied (it never re-applies `expand`)
+and restores, on failure, the first snapshot taken. Without a journal each
+call starts from nothing. A restore also needs `replayErasures`; without it a
+failed phase holds instead of restoring, and no fact or result carries the
+store's error text — only the error's class name.
+
+The dual oracle prefers digest evidence over a row view, and `can-trail`
+accepts a policy verdict computed over the migration's custody path alongside
+the caller-supplied `policyAllows` and `residencyConflict` booleans. The three
+are combined, not ranked: any one of them denying denies the trail, so a
+passing verdict cannot erase an explicit denial, and a verdict that does not
+parse as its record is itself a denial rather than an exception. Both the
+evidence and the verdict are structural mirrors of `@hobo/data-core` records,
+pinned in `data-models/migration.proto`.

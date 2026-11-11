@@ -42,7 +42,6 @@
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/cloud": "workspace:*",
-		"@hobo/code": "workspace:*",
 		"@hobo/conformance": "workspace:*",
 		"@hobo/connectivity": "workspace:*",
 		"@hobo/contracts": "workspace:*",
@@ -90,7 +89,9 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
 		"pg": "8.22.0"
@@ -99,6 +100,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.types.json",
 		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
 		"pretest:ci-e2e": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:ci-e2e": "vitest run --config vitest.ci-e2e.config.ts"

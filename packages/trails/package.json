@@ -17,9 +17,12 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@hobo/data-core": "workspace:*",
 		"@hobo/identity": "workspace:*"
 	},
 	"devDependencies": {
+		"@hobo/data-sqlite": "workspace:*",
+		"@hobo/runtime-local": "workspace:*",
 		"@types/node": "^22.15.29",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"

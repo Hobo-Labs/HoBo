@@ -67,7 +67,7 @@ would decode all sixty descriptors' absent `enumValues` as `[]` and move the
 digest:
 
 ```
-with StringList (correct)  sha256:34d2dba5a7e4f8808307e26150b4291a62b76181c9964e911500de50e7ddced1
+with StringList (correct)  sha256:4ad6cb0f734c95599f3863736d8da56eae97f43534e257af11f9ed7beb1480ca
 with bare repeated         sha256:f9bc1245949ca12f026dda5677f16168f36903cf3349bfe3e89a09aada87a636
 ```
 

@@ -2,8 +2,15 @@ import { createHmac, generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { toJsonString } from "@bufbuild/protobuf";
-import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
+import { create, toJsonString } from "@bufbuild/protobuf";
+import {
+	ConfigurationSchema,
+	ConfigurationStateSchema,
+	ConnectionSchema,
+	DesiredCiPolicySchema,
+	defineCiPolicy,
+} from "@hobo/ci";
+import { createAdmissionOrder } from "@hobo/ci-gh-actions";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { importGithubKey } from "../src/ci-github-keys.js";
@@ -11,6 +18,7 @@ import {
 	ciWorkerEnvironment,
 	resolveCiServePlan,
 	startCiServe,
+	startPullAdmission,
 } from "../src/ci-serve.js";
 
 const ListenAddress = z.object({
@@ -293,6 +301,123 @@ describe("hobo ci serve multi-engine", () => {
 			).toBe(401);
 		} finally {
 			await handle.stop();
+		}
+	});
+});
+
+describe("hobo ci serve pull admission", () => {
+	const connection = (repository: string, installationId: number) =>
+		create(ConnectionSchema, {
+			accountId: "local-dev",
+			repository,
+			repositoryId: installationId * 100,
+			installationId,
+		});
+	function setup(connections: ReturnType<typeof connection>[]) {
+		const reads: string[] = [];
+		const github = {
+			async request(installationId: number, path: string) {
+				reads.push(`${installationId} ${path}`);
+				if (path.includes("/jobs?"))
+					return Response.json({
+						jobs: [
+							{
+								id: 70,
+								run_id: 7,
+								run_attempt: 1,
+								status: "queued",
+								labels: ["hobo-trunk"],
+								name: "build",
+							},
+							{
+								id: 71,
+								run_id: 7,
+								run_attempt: 1,
+								status: "queued",
+								labels: ["ubuntu-latest"],
+								name: "lint",
+							},
+						],
+					});
+				return Response.json({
+					workflow_runs: path.includes("status=queued")
+						? [{ id: 7, run_attempt: 1, status: "queued", event: "push" }]
+						: [],
+				});
+			},
+		};
+		const deliveries: { deliveryId: string; body: string }[] = [];
+		const progress: string[] = [];
+		const admission = startPullAdmission({
+			github,
+			relay: {
+				runtime: {
+					admissionOrder: createAdmissionOrder(github),
+					async ingestWebhook(delivery) {
+						deliveries.push({
+							deliveryId: delivery.deliveryId,
+							body: Buffer.from(delivery.rawBody).toString("utf8"),
+						});
+						return "accepted";
+					},
+				},
+				store: {
+					configuration: async () =>
+						create(ConfigurationStateSchema, {
+							revision: 1,
+							configuration: create(ConfigurationSchema, { connections }),
+						}),
+				},
+			},
+			repository: "Example/Project",
+			installationId: 1,
+			// The test drives each poll itself.
+			intervalMs: 3_600_000,
+			emitProgress: (line) => progress.push(line),
+		});
+		return { admission, reads, deliveries, progress };
+	}
+
+	it("hands the served repository's queued hobo and hobo-trunk jobs to the relay inbox", async () => {
+		const h = setup([
+			connection("example/project", 1),
+			connection("example/other", 1),
+			connection("example/project", 2),
+		]);
+		try {
+			await h.admission.poll();
+			// Only the repository and installation this serve was started for are read.
+			expect(h.reads.length).toBeGreaterThan(0);
+			expect(
+				h.reads.every((read) =>
+					read.startsWith("1 /repos/example/project/actions/runs"),
+				),
+			).toBe(true);
+			expect(h.deliveries).toHaveLength(1);
+			expect(h.deliveries[0]?.deliveryId).toBe("poll-70-1-q");
+			expect(JSON.parse(h.deliveries[0]?.body ?? "null")).toMatchObject({
+				action: "queued",
+				installation: { id: 1 },
+				repository: { id: 100, full_name: "example/project" },
+				workflow_job: { id: 70, run_id: 7, labels: ["hobo-trunk"] },
+			});
+			expect(h.progress).toEqual([
+				"poll-admission: 1 accepted, 0 refused, 0 GitHub read errors",
+			]);
+		} finally {
+			h.admission.stop();
+		}
+	});
+
+	it("reads nothing from GitHub until the relay holds a connection for the repository", async () => {
+		const h = setup([connection("example/other", 1)]);
+		try {
+			await h.admission.poll();
+			expect(h.reads).toEqual([]);
+			expect(h.deliveries).toEqual([]);
+			expect(h.progress).toEqual([]);
+		} finally {
+			h.admission.stop();
 		}
 	});
 });

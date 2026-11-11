@@ -60,6 +60,8 @@ export {
 	functions,
 	type KeyVaultOptions,
 	keyVault,
+	type ManagedDiskOptions,
+	managedDisk,
 	type PostgresFlexibleOptions,
 	postgresFlexible,
 	type RedisCacheOptions,
@@ -76,6 +78,8 @@ export {
 	sqlDatabase,
 	staticWebApps,
 	storageQueue,
+	type VirtualMachineOptions,
+	virtualMachine,
 } from "@hobo/provider-azure";
 
 /**

@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { createComposedHoboCli } from "../src/cli.js";
 import { createDoctorCommand } from "../src/doctor-command.js";
 
 // A minimal CommandRunInput: `doctor` only reads `emitProgress`, so the rest is
@@ -33,14 +37,6 @@ describe("createDoctorCommand", () => {
 			command: "doctor",
 			backend: "cloudflare",
 			live: true,
-			codeHarness: {
-				present: true,
-				adr: "ADR-0139",
-				monetizationDefault: "on",
-				distributedDefault: "on",
-				binary: "hobo-code",
-				defaultVerb: "dispatch",
-			},
 			identityMigration: {
 				continuousDefault: true,
 				bindleConfigRequired: false,
@@ -106,6 +102,34 @@ describe("createDoctorCommand", () => {
 				identityContinuous: { bindleConfigRequired: false, handsOff: true },
 			},
 		});
+	});
+
+	it("reports no code-harness section, since hobo-code is not part of main", async () => {
+		// `toMatchObject` above ignores extra keys, so it cannot see a
+		// section coming back. Assert the key is absent outright.
+		const result = await createDoctorCommand({ env: {} }).run(
+			runInput(() => {}),
+		);
+
+		expect(result.data).not.toHaveProperty("codeHarness");
+		for (const line of result.remediation ?? []) {
+			expect(line).not.toMatch(/hobo-code|code harness/iu);
+		}
+	});
+
+	it("prints no codeHarness key from `hobo doctor --json`", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "hobo-doctor-json-"));
+		try {
+			const result = await createComposedHoboCli().run(["doctor", "--json"], {
+				cwd,
+			});
+			const envelope: { readonly data?: object } = JSON.parse(result.stdout);
+
+			expect(envelope.data).toBeDefined();
+			expect(envelope.data).not.toHaveProperty("codeHarness");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
 	});
 
 	it("names the single missing Cloudflare var when only one of the pair is set", async () => {

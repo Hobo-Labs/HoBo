@@ -174,6 +174,8 @@ jobs:
 });
 const trunkRunsOn =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+const routedRunsOn =
+	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -382,7 +384,6 @@ test("every trunk-capable CI and release job requests the trunk label by default
 		"examples-e2e.yml",
 		"dev-env-smoke.yml",
 		"release-hobo.yml",
-		"release-code.yml",
 		"pricing-ci.yml",
 		"release-pricing.yml",
 	]) {
@@ -420,6 +421,36 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
+			// The route job chooses the runner, so it cannot wait on one.
+			if ((lines[start] ?? "") === "  route:") {
+				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
+				assert.match(block, /uses: \.\/\.github\/actions\/route-runner$/m);
+				continue;
+			}
+			// A required gate runs no action and always runs: GitHub-hosted too.
+			if (runsOn === "ubuntu-24.04") {
+				assert.match(condition, /always\(\)/, `${file}:${lines[start]}`);
+				assert.doesNotMatch(block, /uses:/, `${file}:${lines[start]}`);
+				continue;
+			}
+			// A routed job asks for the label the route job chose, which is the
+			// trunk label for trunk events when the fleet is taking jobs.
+			if (runsOn === routedRunsOn) {
+				assert.match(
+					block,
+					/^    needs: (route|\[route[,\]])/m,
+					`${file}:${lines[start]} must need route`,
+				);
+				continue;
+			}
+			// Everything in hobo-ci.yml is routed except the job that builds the
+			// deps image in the box's own Docker context.
+			if (file === "hobo-ci.yml")
+				assert.match(
+					lines[start] ?? "",
+					/^  ci-deps-image:$/,
+					`${file}:${lines[start]} is not routed`,
+				);
 			const prOnly =
 				/github\.event_name == 'pull_request'/.test(condition) &&
 				!condition.includes("||");

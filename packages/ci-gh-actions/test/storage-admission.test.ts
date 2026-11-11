@@ -239,25 +239,34 @@ describe("worker storage admission", () => {
 		).toThrow("invalid worker job inode reservation");
 	});
 
-	it("prepares owned checkout directories inside each job mount", async () => {
-		const root = mkdtempSync(join(tmpdir(), "hobo-worker-prepare-"));
-		try {
-			const job = join(root, LIVE);
-			await createNodeWorkerStorageFileSystem().prepareJobDirectory(job);
-			for (const directory of [
-				job,
-				join(job, "HoBo"),
-				join(job, "HoBo", "HoBo"),
-			]) {
-				const metadata = statSync(directory);
-				expect(metadata.uid).toBe(1000);
-				expect(metadata.gid).toBe(1000);
-				expect(metadata.mode & 0o200).not.toBe(0);
+	// The job mount belongs to the runner image's user, 1000. Only that user
+	// and root may give a directory to it, so this runs on the fleet's image and
+	// as root; on a machine with another user (a GitHub-hosted one is 1001) the
+	// chown is refused before anything is asserted. The next test covers the
+	// same preparation with the file system injected.
+	const mayOwnAsRunner = [0, 1000].includes(process.getuid?.() ?? -1);
+	it.runIf(mayOwnAsRunner)(
+		"prepares owned checkout directories inside each job mount",
+		async () => {
+			const root = mkdtempSync(join(tmpdir(), "hobo-worker-prepare-"));
+			try {
+				const job = join(root, LIVE);
+				await createNodeWorkerStorageFileSystem().prepareJobDirectory(job);
+				for (const directory of [
+					job,
+					join(job, "HoBo"),
+					join(job, "HoBo", "HoBo"),
+				]) {
+					const metadata = statSync(directory);
+					expect(metadata.uid).toBe(1000);
+					expect(metadata.gid).toBe(1000);
+					expect(metadata.mode & 0o200).not.toBe(0);
+				}
+			} finally {
+				rmSync(root, { recursive: true, force: true });
 			}
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
+		},
+	);
 
 	it("prepares a job-owned checkout directory inside the lease root", async () => {
 		nodeFs.mkdir.mockResolvedValue(undefined);

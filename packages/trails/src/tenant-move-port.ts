@@ -1,7 +1,11 @@
 /**
- * Pooled → siloed tenant move over real SQLite stores (ADR-0080 §2).
+ * Pooled → siloed tenant move over real stores (ADR-0080 §2).
  *
- * Adapts the live data-dual port to the identity spectrum-cutover protocol's
+ * Engine-neutral: it drives any `LiveDataDualPort` — `@hobo/data-sqlite`'s is
+ * the one with a live lane today — and Trails itself imports no engine
+ * (ADR-0177 decision 3).
+ *
+ * Adapts the live dual-run port to the identity spectrum-cutover protocol's
  * `FencePort` / `TenantExportImportPort` shapes, replacing the memory stubs:
  * suspend/fence refuses tenant writes at the store's single write entry
  * point, drain replicates the CDC tail to lag 0 (the quiescent seq), export
@@ -9,7 +13,7 @@
  * zero-loss conformance is `source quiescent seq == silo head`. Reap deletes
  * the pooled copy only after fence + zero lag + checksum equality.
  */
-import type { SqliteDataDualPort } from "./data-dual-port.js";
+import type { LiveDataDualPort } from "./data-dual-port.js";
 import type { JsonObject } from "./json.js";
 import { MIGRATION_EVENTS, type MigrationFact } from "./migration-executor.js";
 
@@ -41,7 +45,7 @@ export type TenantTransferPort = Readonly<{
 	}) => { readonly importedHeadSeq: number; readonly streamCount: number };
 }>;
 
-export interface SqliteTenantMovePorts {
+export interface TenantMovePorts {
 	readonly fence: TenantFencePort;
 	readonly transfer: TenantTransferPort;
 	/** Replicate until lag()===0; returns the quiescent CDC head seq. */
@@ -51,9 +55,9 @@ export interface SqliteTenantMovePorts {
 	readonly facts: readonly MigrationFact[];
 }
 
-export interface CreateSqliteTenantMovePortsOptions {
+export interface CreateTenantMovePortsOptions {
 	/** Tenant-scoped dual port (`tenant` option set) — pooled source, silo target. */
-	readonly dual: SqliteDataDualPort;
+	readonly dual: LiveDataDualPort;
 	readonly tenant: string;
 	readonly clock?: () => string;
 	readonly onFact?: (fact: MigrationFact) => void;
@@ -61,11 +65,11 @@ export interface CreateSqliteTenantMovePortsOptions {
 
 /**
  * Real (non-stub) fence + export/import ports for
- * `runSpectrumIdentityCutover`, backed by the SQLite dual port.
+ * `runSpectrumIdentityCutover`, backed by a live dual-run port.
  */
-export function createSqliteTenantMovePorts(
-	options: CreateSqliteTenantMovePortsOptions,
-): SqliteTenantMovePorts {
+export function createTenantMovePorts(
+	options: CreateTenantMovePortsOptions,
+): TenantMovePorts {
 	const { dual, tenant } = options;
 	const clock = options.clock ?? (() => new Date().toISOString());
 	const facts: MigrationFact[] = [];
@@ -73,6 +77,17 @@ export function createSqliteTenantMovePorts(
 		const fact = Object.freeze({ type, data: Object.freeze({ ...data }) });
 		facts.push(fact);
 		options.onFact?.(fact);
+	};
+
+	// Counts come from digest evidence when the port offers it, so the move is
+	// verified without a row leaving either store.
+	const counts = () => {
+		const evidence = dual.evidence?.();
+		if (evidence !== undefined) {
+			return { source: evidence.source.count, target: evidence.target.count };
+		}
+		const view = dual.snapshot();
+		return { source: view.sourceRows.length, target: view.targetRows.length };
 	};
 
 	// exportId → the quiescent head seq it was cut at.
@@ -115,25 +130,18 @@ export function createSqliteTenantMovePorts(
 				// Export is only meaningful at quiescence: drain first so the
 				// exported head IS the quiescent seq.
 				const headSeq = drain();
-				const view = dual.snapshot();
+				const streamCount = counts().source;
 				exportCounter += 1;
 				const exportId = `export:${tenant}:${exportCounter}`;
-				exports.set(exportId, {
-					headSeq,
-					streamCount: view.sourceRows.length,
-				});
+				exports.set(exportId, { headSeq, streamCount });
 				emit(MIGRATION_EVENTS.Exported, {
 					tenant,
 					exportId,
 					headSeq,
-					streamCount: view.sourceRows.length,
+					streamCount,
 					exportedAt: clock(),
 				});
-				return {
-					exportId,
-					streamCount: view.sourceRows.length,
-					headSeq,
-				};
+				return { exportId, streamCount, headSeq };
 			},
 			importTenant(input: {
 				readonly tenant: string;
@@ -159,10 +167,10 @@ export function createSqliteTenantMovePorts(
 						`import refused: ${remaining} un-replicated change(s) behind export ${input.exportId}`,
 					);
 				}
-				const view = dual.snapshot();
-				if (view.targetRows.length !== record.streamCount) {
+				const landed = counts().target;
+				if (landed !== record.streamCount) {
 					throw new Error(
-						`import verification failed: silo holds ${view.targetRows.length} row(s), export had ${record.streamCount}`,
+						`import verification failed: silo holds ${landed} row(s), export had ${record.streamCount}`,
 					);
 				}
 				const importedHeadSeq = dual.appliedWatermark();
@@ -170,13 +178,10 @@ export function createSqliteTenantMovePorts(
 					tenant,
 					exportId: input.exportId,
 					importedHeadSeq,
-					streamCount: view.targetRows.length,
+					streamCount: landed,
 					importedAt: clock(),
 				});
-				return {
-					importedHeadSeq,
-					streamCount: view.targetRows.length,
-				};
+				return { importedHeadSeq, streamCount: landed };
 			},
 		}),
 		reap() {

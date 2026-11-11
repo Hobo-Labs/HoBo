@@ -9,10 +9,10 @@ import {
 	parseCiPolicy,
 } from "@hobo/ci";
 import { LeaseStore } from "@hobo/ci/store";
+import { createCiBudgetRoutingBridge } from "@hobo/stations";
 import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 import { foldBudgetSignals } from "../../broker/src/budget-signals.js";
-import { createCiBudgetRoutingBridge } from "../../stations/src/ci-routing.js";
 import { createCiRelayClient } from "../src/client.js";
 import {
 	applyCiEnvironmentPolicy,
@@ -46,7 +46,7 @@ async function setup(budget = commonBudget()) {
 		],
 	});
 	const http = await controlHttp({
-		relay: h.relay,
+		relay: h,
 		configuration: h.configuration,
 		credentialJson: credentials,
 		github: strictGithub([]).github,

@@ -21,7 +21,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"description": "HoBo Azure CloudProvider: Container Apps/Cosmos/Blob/Flexible Server/Service Bus/Cache for Redis behind the agnostic ports (HOBO-712)."
 }

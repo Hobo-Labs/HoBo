@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import {
 	access,
-	mkdir,
 	readdir,
 	readFile,
 	readlink,
@@ -67,11 +66,29 @@ async function repairWorkspaceLinks(directory: string): Promise<void> {
 	}
 }
 
+async function payloadLayerKey(): Promise<string | undefined> {
+	const marker = join(payload, ".hobo-ci-deps-key");
+	if (!(await exists(marker))) return undefined;
+	return (await readFile(marker, "utf8")).trim() || undefined;
+}
+
+async function resolveLayerKey(): Promise<string | undefined> {
+	const fromEnv = process.env.HOBO_CI_DEPS_LAYER?.trim();
+	if (fromEnv) return fromEnv;
+	return payloadLayerKey();
+}
+
 async function linkPayload(): Promise<void> {
-	if (!process.env.HOBO_CI_DEPS_LAYER) return;
+	const layer = await resolveLayerKey();
+	if (!layer) return;
+	process.env.HOBO_CI_DEPS_LAYER = layer;
 	for (const source of await payloadNodeModules()) {
 		const destination = join(root, relative(payload, source));
-		await mkdir(dirname(destination), { recursive: true });
+		// A package the layer has and this checkout does not was dropped from
+		// the tree after the layer was built. Its directory is not brought
+		// back: one holding only `node_modules` is a package directory with
+		// none of a package's files, and the layout check fails on it.
+		if (!(await exists(dirname(destination)))) continue;
 		await rm(destination, { recursive: true, force: true });
 		await symlink(source, destination, "dir");
 	}
@@ -98,8 +115,9 @@ function miss(reason: string): Match {
 const PNPM_VIRTUAL_STORE = /"virtualStoreDir"\s*:\s*"\.pnpm"/;
 
 async function matches(expected: string): Promise<Match> {
-	const actual = process.env.HOBO_CI_DEPS_LAYER;
+	const actual = await resolveLayerKey();
 	if (!actual || actual !== expected) return miss("job-key-mismatch");
+	process.env.HOBO_CI_DEPS_LAYER = actual;
 	const step = async <T,>(reason: string, run: () => Promise<T> | T) => {
 		try {
 			return { ok: true as const, value: await run() };

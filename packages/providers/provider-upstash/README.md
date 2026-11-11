@@ -85,7 +85,8 @@ nothing downstream ever sees the value.
   `SECRET_CUSTODY_UNAVAILABLE`; one that hands back something that is not a
   valid reference raises `SECRET_REFERENCE_INVALID`. Neither degrades to a
   plaintext field.
-- `redactProviderText` runs on every error message and every string-valued error
+- `redactProviderText` (the shared `@hobo/provider-redaction` redactor
+  with Upstash's shapes, after full percent-decoding) runs on every error message and every string-valued error
   detail **at construction time**, not when someone remembers to call it. The
   structural rule is the load-bearing one: an Upstash token is a long base64url
   string with no prefix to match, so any unbroken run of 40+ token characters is

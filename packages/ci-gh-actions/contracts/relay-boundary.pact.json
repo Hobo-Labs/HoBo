@@ -15,7 +15,12 @@
       "response": {
         "status": 200,
         "body": {
-          "ok": true
+          "ok": true,
+          "engines": {
+            "gh-actions": {
+              "ok": true
+            }
+          }
         }
       }
     },
@@ -26,7 +31,8 @@
         "path": "/github/webhooks",
         "headers": {
           "x-github-event": "workflow_job",
-          "x-hub-signature-256": "sha256=7d0d9bc0f9b3205eb41c403af93abb24d1257b256774f25a3dd418a8c93a8db5"
+          "x-hub-signature-256": "sha256=7d0d9bc0f9b3205eb41c403af93abb24d1257b256774f25a3dd418a8c93a8db5",
+          "x-github-delivery": "relay-boundary-1"
         },
         "body": {
           "action": "queued",
@@ -49,7 +55,10 @@
         }
       },
       "response": {
-        "status": 202
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
       }
     },
     {

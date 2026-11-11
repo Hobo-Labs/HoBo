@@ -27,7 +27,7 @@ RUN mise trust ./mise.toml \
   && mise exec -- cue version \
   && mise exec -- gitleaks version \
   && mise exec -- shellcheck --version \
-  && mise exec -- syft --version \
+  && mise exec -- syft version \
   && mise exec -- turbo --version
 
 RUN case "${TARGETARCH:-amd64}" in \

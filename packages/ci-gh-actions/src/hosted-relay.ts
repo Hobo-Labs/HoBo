@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import type { Account, ConfigurationState } from "@hobo/ci";
 import {
@@ -25,6 +24,7 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -49,6 +49,7 @@ import {
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
@@ -228,6 +229,12 @@ export class HostedRelay {
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			/**
+			 * Publishes the fleet route table after each dispatch pass. Unset: the
+			 * relay balances nothing ahead of the queue and every job stays on its
+			 * hobo label.
+			 */
+			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			now?: () => string;
 		},
 	) {
@@ -349,12 +356,9 @@ export class HostedRelay {
 			)
 		)
 			return this.processWebhook(raw, event);
-		const expected = createHmac("sha256", this.options.webhookSecret)
-			.update(raw)
-			.digest();
 		if (
-			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"))
+			verifyWebhookSignature(this.options.webhookSecret, raw, signature) !==
+			"valid"
 		)
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);
@@ -1200,7 +1204,31 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
+		await this.publishFleetRoutes();
 		return pending.length;
+	}
+	/** One table per connected repository, from the state this pass just left. */
+	private async publishFleetRoutes(): Promise<void> {
+		const publisher = this.options.fleetRoutes;
+		if (!publisher) return;
+		for (const connection of this.options.config.connections) {
+			const account = this.options.config.accounts.find(
+				(entry) => entry.id === connection.accountId,
+			);
+			if (!account) continue;
+			try {
+				await publisher.publish({
+					installationId: connection.installationId,
+					repository: connection.repository,
+					account,
+					leases: () => this.options.store.accountLeases(account.id),
+					isolatedOnly: connection.isolatedOnly,
+					at: this.now(),
+				});
+			} catch {
+				/* Routing ahead of the queue is advisory; admission already ran. */
+			}
+		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);

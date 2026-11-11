@@ -9,15 +9,19 @@ import {
 	createHostedControlPlane,
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
+	createRelayHandler,
+	createRelayMcp,
 	createWebhookRepair,
 	HostedRelay,
+	type HostedRelayApplication,
 	PostgresQueuedJobRepairClaims,
 	PostgresWebhookRepairClaims,
 } from "@hobo/ci-gh-actions";
 import pg from "pg";
 import { bootstrap, workflow } from "./_generated-assets/relay-assets.js";
 import {
-	validateDirectDatabaseUrl,
+	type RelayDatabase,
+	relayDatabase,
 	verifyRepairDatabase,
 	withRepairPool,
 } from "./database-connections.js";
@@ -26,9 +30,9 @@ import {
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
 import {
-	createVercelRelayHandler,
-	type HostedRelayApplication,
-} from "./handler.js";
+	mcpWaitCeilingMs,
+	RELAY_FUNCTION_MAX_DURATION_SECONDS,
+} from "./function-limits.js";
 import { createOwnerControlDelegation } from "./owner-control.js";
 import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
@@ -87,6 +91,8 @@ export async function createVercelApplication(options: {
 	continueRepair: () => Promise<void>;
 	scheduledRepair: () => Promise<void>;
 	trustedBootstrapControl?: (request: Request) => Promise<string | undefined>;
+	/** The database to run on. Defaults to the one the environment names. */
+	database?: RelayDatabase;
 }) {
 	const { env } = options;
 	const url = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
@@ -115,13 +121,16 @@ export async function createVercelApplication(options: {
 		required(env, "HOBO_CI_CONTROL_TOKENS_JSON"),
 	);
 	const seed = parseConfiguration(required(env, "HOBO_CI_CONFIG_JSON"));
-	const repairUrl = validateDirectDatabaseUrl(env.DATABASE_URL_UNPOOLED);
+	const database = options.database ?? relayDatabase(env);
 	const pool = new pg.Pool({
-		connectionString: required(env, "DATABASE_URL"),
+		...database.primary,
 		max: 2,
 		connectionTimeoutMillis: 5000,
 		idleTimeoutMillis: 10000,
 	});
+	// On a fleet a backend going away is an expected event: an idle connection
+	// that breaks must not take the process down with it.
+	if (options.database) pool.on("error", () => {});
 	try {
 		const store = new PostgresCiStore(pool);
 		if (!(await store.configuration())) {
@@ -190,9 +199,9 @@ export async function createVercelApplication(options: {
 		const sandboxQuota = sandbox
 			? createSandboxProxyQuotaHandler(store)
 			: undefined;
-		const control = async (request: Request) => {
-			const registration = await onboarding?.handle(request);
-			if (registration) return registration;
+		// The control plane and the queued-job repair read the same relay; only the
+		// runtime's own relay differs, because it defers reservation to its tick.
+		const relay = async () => {
 			const state = await store.configuration();
 			if (!state?.configuration) throw new Error("configuration unavailable");
 			const relayOptions: ConstructorParameters<typeof HostedRelay>[0] = {
@@ -203,9 +212,13 @@ export async function createVercelApplication(options: {
 				webhookSecret: secret,
 				...execution.relay,
 			};
-			const relay = new HostedRelay(relayOptions);
+			return new HostedRelay(relayOptions);
+		};
+		const control = async (request: Request) => {
+			const registration = await onboarding?.handle(request);
+			if (registration) return registration;
 			return createHostedControlPlane({
-				relay,
+				relay: await relay(),
 				store,
 				github,
 				authenticate,
@@ -240,11 +253,12 @@ export async function createVercelApplication(options: {
 			// Direct sessions exist only while a repair invocation is active. The
 			// primary pool remains pooled for HTTP traffic and ordinary queries.
 			const repairPool = new pg.Pool({
-				connectionString: repairUrl,
+				...database.direct,
 				max: 1,
 				connectionTimeoutMillis: 5000,
 				idleTimeoutMillis: 10000,
 			});
+			if (options.database) repairPool.on("error", () => {});
 			try {
 				return await withRepairPool(repairPool, async (direct) => {
 					await withRepairStage("repair-database", () =>
@@ -273,22 +287,7 @@ export async function createVercelApplication(options: {
 								github,
 								claims: queuedClaims,
 								idleComplete: () => health.repairComplete(1),
-								relay: async () => {
-									const state = await store.configuration();
-									if (!state?.configuration)
-										throw new Error("configuration unavailable");
-									const relayOptions: ConstructorParameters<
-										typeof HostedRelay
-									>[0] = {
-										config: state.configuration,
-										store,
-										github,
-										identity,
-										webhookSecret: secret,
-										...execution.relay,
-									};
-									return new HostedRelay(relayOptions);
-								},
+								relay,
 							}),
 						],
 						{
@@ -313,10 +312,30 @@ export async function createVercelApplication(options: {
 			secret: required(env, "CRON_SECRET"),
 			run: (message) => worker.run(message),
 		});
-		const handler = createVercelRelayHandler({
+		// A function instance does not outlive its request: MCP runs without
+		// sessions here, and `wait_for_events` is the change feed.
+		const mcp = createRelayMcp({
+			// An observer's reads: they never take the partition lock, so an
+			// agent's questions are not queued in front of webhook admission.
+			store: {
+				...store.observer(),
+				retryQuarantinedWebhook: (accountId, revision, deliveryId) =>
+					store.retryQuarantinedWebhook(accountId, revision, deliveryId),
+			},
+			relay,
+			authenticate,
+			ready: () => execution.ready(runtime.ready, () => health.ready()),
+			publicOrigin: url.origin,
+			sessions: "none",
+			cursorSecret: secret,
+			// The function's own duration limit decides how long a wait may be.
+			waitMaxMs: mcpWaitCeilingMs(RELAY_FUNCTION_MAX_DURATION_SECONDS),
+		});
+		const handler = createRelayHandler({
 			application: withWakeup(
 				{
 					...runtime,
+					mcp: mcp.handle,
 					// A configured host and fresh worker health are required in addition
 					// to the database and configuration checks in the runtime.
 					ready: () => execution.ready(runtime.ready, () => health.ready()),

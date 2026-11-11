@@ -1,5 +1,6 @@
+import { resetTrainables } from "@hobo/runtime";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	exampleSchemaValue,
 	parseFieldSchema,
@@ -8,6 +9,12 @@ import {
 	serializedSchema,
 } from "../src/codegen/schema.js";
 import type { JsonValue } from "../src/json.js";
+
+// Generated code imported in-process registers trainables in the shared
+// registry; with files sharing a worker (isolate: false), clear it after each test.
+afterEach(() => {
+	resetTrainables();
+});
 
 type Validator = {
 	parseValue(

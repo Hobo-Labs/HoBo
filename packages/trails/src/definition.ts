@@ -20,6 +20,17 @@ export type TrailStepKind =
 	| "compose"
 	| "custom";
 
+/** The closed pattern catalog, mirrored structurally from `@hobo/data-core`. */
+export const TRAIL_DATA_PATTERNS = Object.freeze([
+	"in-place-evolve",
+	"rebuild-and-swap",
+	"offline-copy",
+	"snapshot-and-tail",
+	"log-pivot",
+	"stream-handoff",
+] as const);
+export type TrailDataPattern = (typeof TRAIL_DATA_PATTERNS)[number];
+
 export type TrailStep = Readonly<{
 	id: string;
 	kind: TrailStepKind;
@@ -42,6 +53,11 @@ export type TrailStep = Readonly<{
 		mode: "bulk" | "delta" | "cdc-dual";
 		transformId: string;
 		checksum: `sha256:${string}`;
+		/**
+		 * The migration pattern this step realizes (ADR-0177 pattern catalog).
+		 * Optional so existing definitions keep their content hash.
+		 */
+		pattern?: TrailDataPattern;
 	}>;
 	/** Identity continuous — zero app fields required; platform derives MappingSpec. */
 	identity?: Readonly<{
@@ -144,6 +160,15 @@ function parseStep(s: TrailStep): TrailStep {
 		throw Object.assign(new TypeError("step id and kind required"), {
 			code: "trail-step-invalid",
 		});
+	}
+	if (
+		s.data?.pattern !== undefined &&
+		!TRAIL_DATA_PATTERNS.includes(s.data.pattern)
+	) {
+		throw Object.assign(
+			new TypeError(`step ${s.id} names an unknown migration pattern`),
+			{ code: "trail-step-pattern-unknown" },
+		);
 	}
 	// Fail closed: no plaintext secrets in definitions.
 	const blob = JSON.stringify(s);

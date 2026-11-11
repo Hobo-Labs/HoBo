@@ -210,3 +210,4 @@ export {
 
 // public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_KUBERNETES_PACKAGE = "@hobo/provider-kubernetes";
+export { KUBERNETES_HOST_FORMS } from "./host-forms.js";
