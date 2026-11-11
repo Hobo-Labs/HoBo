@@ -5,8 +5,10 @@ CloudEvents conversion via `toCloudEvent`/`fromCloudEvent`), capability grants a
 enforcement (`parseCapabilityGrant`, `evaluateCapabilityGrants`, `inferCapabilityUsage`),
 the capability-manifest bundle parser, a minimal port container (`createContainer`), and
 the typed **port contracts** other packages implement: `EventStore`, `Queue`, `Streamer`,
-`VirtualClock`, `ComponentHostPort`, `WrpcLinkPort`, `BindingResolverPort`, and
-`TrainingEnginePort`.
+`VirtualClock`, `ComponentHostPort`, `WrpcLinkPort`, `BindingResolverPort`,
+`TrainingEnginePort`, and `EphemeralStatePort` (short-lived TTL/CAS state with
+lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
+`@hobo/provider-upstash`).
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
