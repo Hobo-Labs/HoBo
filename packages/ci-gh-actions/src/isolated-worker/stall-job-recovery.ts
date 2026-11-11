@@ -71,7 +71,7 @@ function recordFields(record: StallRecoveryRecord) {
 	};
 }
 
-function parseRunCreatedAtMs(run: {
+export function parseRunCreatedAtMs(run: {
 	created_at?: string | undefined;
 	run_started_at: string | null;
 }): number | undefined {

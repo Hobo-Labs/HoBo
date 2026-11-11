@@ -22,6 +22,7 @@ import {
 	runnerCustody,
 } from "./job-runner-custody.js";
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
+import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
@@ -147,6 +148,10 @@ export function createHostedRelayRuntime(options: {
 		options.jobDurations,
 		options.mergeQueuePositions,
 	);
+	const offlineJitRecovery = createOfflineJitJobRecovery({
+		github: options.github,
+		now: () => Date.parse(now()),
+	});
 	async function relay() {
 		const state = await options.store.configuration();
 		if (!state?.configuration) throw new Error("configuration unavailable");
@@ -164,6 +169,7 @@ export function createHostedRelayRuntime(options: {
 			servedRunnerLabels,
 			trunkWaits,
 			jobPickupMetadata,
+			offlineJitRecovery,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
@@ -556,6 +562,7 @@ export function createHostedRelayRuntime(options: {
 			let lateDispatchCount = 0;
 			if (admit && (!ingressWantsDispatch || reconcileDispatched))
 				lateDispatchCount = await controller.dispatchPending();
+			await offlineJitRecovery.reconcile();
 			const pendingCount = admit ? earlyDispatchCount + lateDispatchCount : 0;
 			const dispatchMs = Date.now() - dispatchStartedAt;
 			const totalMs = Date.now() - tickStartedAt;

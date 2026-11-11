@@ -328,6 +328,8 @@ Host health does not stop admission by itself: memory and storage admission stil
 
 **Dead JIT registration:** before reserving demand, the relay refuses a duplicate lease for a job that already has box custody and deregisters a **`hobo-<lease-uuid>`** runner when GitHub shows `in_progress` without a live local lease (`hobo_ci_jit_runner_ghost_binding_cleared`). Isolated settle always deregisters the runner name it registered. See [finding 102](../../docs/ci/findings/0102-dead-jit-runner-shard-two-checkout.md).
 
+**Fleet witness (peer host offline):** the minting host owns deregister when its shared relay lease is still active and the container exits. Any other box worker may act as a **fleet witness** when GitHub reports the assigned peer **`hobo-<lease-uuid>`** runner **offline** — witness release runs before storage/memory admission and on `in_progress` webhooks, never while the peer runner is still `online`, and never for ARC (`hobo-runner-*`) or GitHub-hosted runners. Main-gate witness reruns follow the stall policy (single job `rerun`, no workflow cancel). See [finding 103](../../docs/ci/findings/0103-offline-peer-jit-shard-two.md).
+
 #### Fleet balancing and the route table
 
 The fixed box → ARC → GitHub order above is what admission applies to a job that is already queued. Ahead of the queue, the relay can balance every connected offer through the budget policy and publish which label a new job should ask for; see [CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
