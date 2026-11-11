@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-	startContainer,
 	type StartContainerOptions,
+	startContainer,
 } from "./fixtures/start-container.js";
 
 const definition = <Started>(start: () => Promise<Started>) => ({ start });

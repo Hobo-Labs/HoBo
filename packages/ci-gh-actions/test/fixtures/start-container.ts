@@ -31,8 +31,7 @@ export async function startContainer<Started>(
 	build: () => { start(): Promise<Started> },
 	options?: StartContainerOptions,
 ): Promise<Started> {
-	const betweenAttemptsMs =
-		options?.betweenAttemptsMs ?? BETWEEN_ATTEMPTS_MS;
+	const betweenAttemptsMs = options?.betweenAttemptsMs ?? BETWEEN_ATTEMPTS_MS;
 	for (let attempt = 1; ; attempt++) {
 		try {
 			return await build().start();
