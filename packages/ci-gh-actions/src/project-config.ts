@@ -298,8 +298,11 @@ export function parseCiProjectConfig(
 		const authored = CiProjectDocumentSchema.parse(
 			parseBudgetPolicyDocumentJson(json),
 		);
-		if (findRawSecrets(authored.integrations ?? []).length)
-			throw new Error("integrations must hold references, never secrets");
+		if (
+			findRawSecrets(authored.integrations ?? []).length ||
+			findRawSecrets(authored.agent ?? {}).length
+		)
+			throw new Error("configuration must hold references, never secrets");
 		const { selection: _ignoredSelection, ...documentBody } = authored;
 		const input = ProjectInput.parse(resolveCiProjectReferences(documentBody));
 		const entries = Object.entries(input.environments ?? {});
@@ -562,6 +565,29 @@ export function parseCiRunnerIntegrations(
 	} catch {
 		throw new Error(
 			"invalid CI runner integrations (references only; see hobo ci connect --help)",
+		);
+	}
+}
+
+/**
+ * The `agent` block of `.hobo/ci.json` as JSON text for `@hobo/ci-agent` to
+ * parse, or nothing when the repository does not configure an agent. A
+ * credential-shaped value anywhere in the block rejects it with an error that
+ * never contains repository text.
+ */
+export function parseCiAgentBlock(json: string): string | undefined {
+	try {
+		const { agent } = z
+			.object({ agent: z.record(z.string(), z.json()).optional() })
+			.loose()
+			.parse(JSON.parse(json));
+		if (agent === undefined) return undefined;
+		if (findRawSecrets(agent).length)
+			throw new Error("agent must hold references, never secrets");
+		return JSON.stringify(agent);
+	} catch {
+		throw new Error(
+			"invalid CI agent block (credentials are references such as env:NAME)",
 		);
 	}
 }

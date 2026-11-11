@@ -1,0 +1,10 @@
+{
+  "mode": "observe",
+  "engines": [
+    { "id": "primary", "kind": "gateway", "model": "anthropic/claude-sonnet-4.5", "credential": "env:AI_GATEWAY_API_KEY" },
+    { "id": "fallback", "kind": "openai-compatible", "model": "qwen3-coder", "baseUrl": "https://models.internal.example/v1", "credential": "github-secret:MODEL_TOKEN" }
+  ],
+  "queue": { "maxDepth": 20, "maxBatchSize": 4, "maxWaitMinutes": 120, "priorityLabels": ["hotfix", "release"] },
+  "resolution": { "protectedPaths": ["pnpm-lock.yaml", "**/migrations/**"], "maxConflictedFiles": 5, "maxConflictRegions": 20, "maxFileBytes": 262144, "minConfidence": 0.8, "contextLines": 12 },
+  "budget": { "maxInputTokens": 60000, "maxOutputTokens": 8000, "maxTokensPerDay": 2000000, "timeoutSeconds": 120, "maxResolutionsPerTick": 2 }
+}

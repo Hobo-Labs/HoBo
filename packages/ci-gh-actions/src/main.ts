@@ -9,7 +9,7 @@ import { createControlAuthenticator } from "./control-auth.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
-import { createRelayHost } from "./relay-host.js";
+import { createRelayHost, type RelayAgent } from "./relay-host.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
@@ -29,7 +29,18 @@ function secret(env: NodeJS.ProcessEnv, name: string): string {
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
 	/** A host embedding the relay may supply its own GitHub App transport. */
-	ports: { github?: GithubAppTransport } = {},
+	ports: {
+		github?: GithubAppTransport;
+		/**
+		 * Builds the optional CI agent once the store is open. It is handed the
+		 * repositories this relay is connected to, read fresh on every call.
+		 */
+		agent?: (relay: {
+			connections(): Promise<
+				readonly { installationId: number; repository: string }[]
+			>;
+		}) => RelayAgent | Promise<RelayAgent>;
+	} = {},
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
 	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
@@ -89,8 +100,18 @@ export async function startRelayFromEnvironment(
 				0,
 				new Date().toISOString(),
 			);
+		const agent = await ports.agent?.({
+			connections: async () =>
+				((await store.configuration())?.configuration?.connections ?? []).map(
+					(connection) => ({
+						installationId: connection.installationId,
+						repository: connection.repository,
+					}),
+				),
+		});
 		const { service, runtime } = createRelayHost({
 			store,
+			agent,
 			github:
 				ports.github ??
 				createGithubAppTransport({

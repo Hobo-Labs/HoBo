@@ -20,6 +20,8 @@
 	"dependencies": {},
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
@@ -29,6 +31,7 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:deep": "vitest run --config vitest.deep.config.ts"
 	}
 }

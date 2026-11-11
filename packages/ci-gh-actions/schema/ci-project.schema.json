@@ -50,6 +50,15 @@
         "$ref": "#/$defs/__schema90"
       },
       "maxProperties": 32
+    },
+    "agent": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema94"
+      }
     }
   },
   "additionalProperties": false,
@@ -1140,6 +1149,37 @@
             "$ref"
           ],
           "additionalProperties": false
+        }
+      ]
+    },
+    "__schema94": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema94"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema94"
+          }
         }
       ]
     }

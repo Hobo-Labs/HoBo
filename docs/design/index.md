@@ -22,6 +22,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`build-s1-stage-gate-acceptance.md`](./build-s1-stage-gate-acceptance.md) | S1 stage gate acceptance: production runtime-port/component-host/sdk-parity conformance, offline `hobo dev` on hello-bindle, and replay==live re-pointed onto `@hobo/conformance`/`@hobo/cli`/`@hobo/runtime-local`; runnable signal is `.github/workflows/s1-stage-gate.yml` | — |
 | [`dx-sdk-resilience-semantics.md`](./dx-sdk-resilience-semantics.md) | DX SDK resilience semantics vocabulary, acceptance matrix, and proof sequencing for retry/cancel/deadline/lifecycle behavior; contract-surface visibility via ADR-0136 | — |
 | [`package-namespaces.md`](./package-namespaces.md) | Canonical package/import ownership for `@hobo/*` namespaces (incl. `@hobo/storage-sqlite`, `@hobo/runtime-browser`/`-wasm`/`-oci`/`-cloud-native`, `@hobo/stations`, `@hobo/trails`, `@hobo/connectivity`, EffectSpec ownership) | 02, 10, 21 |
+| [`provider-redaction.md`](./provider-redaction.md) | `@hobo/provider-redaction`: the one redactor for provider text, why it is a leaf outside `@hobo/core`, and how its patterns are proved linear and never weaker than what they replaced | — |
 | [`package-decomposition.md`](./package-decomposition.md) | Target package topology: request/declaration/capability manifests as independently maintained contracts (protobuf+CUE documents, WIT interfaces), broker/resolver separation, provider families, station core + CLI + the `station-local` runtime-discovery boundary, and one `@hobo/host` composition root | — |
 | [`extension-points.md`](./extension-points.md) | **ADR-0156** normative extension-point catalog: every plug-in seam's id, owner, registration semantics, discovery, and gate; `hobo.plugin/v1` packaging rules for external providers; recorded follow-ups | — |
 | [`adr/03-data-plane-sqlite-default.md`](./adr/03-data-plane-sqlite-default.md) | **ADR-0135** — SQLite default EventStore/runtime journal behind ports; single-owner partitions | — |
@@ -227,5 +228,8 @@ as a Node service by `hobo ci serve` and the container image, on
 is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 `/mcp`, whose `wait_for_events` tool and resource subscriptions are a
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
-[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
+[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
+the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
+and model-backed conflict resolution beside the Node relay; not yet run against
+GitHub or a live model), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).

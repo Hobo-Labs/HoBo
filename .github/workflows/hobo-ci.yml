@@ -179,14 +179,18 @@ jobs:
 
   ci-deps-image:
     name: CI deps layer (pnpm)
-    needs: [route, ci-runner-image]
+    needs: [ci-runner-image]
     if: >-
       !cancelled() && needs.ci-runner-image.result != 'failure' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    # Always the fleet, never routed: this job checks and builds the deps image in the box's
+    # own Docker context. On a GitHub-hosted machine there is no such context and no worker
+    # image, so a routed run failed here before it reached the build. Neither gate needs
+    # this job, so a fleet that is slow delays only this check.
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
     # and run the contract; non-PR misses defer to the publisher and daemon.
@@ -762,6 +766,52 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-trace
 
+  main-gate-plan:
+    name: Main workspace plan
+    needs: [route, ci-runner-image, ci-deps-image]
+    if: >-
+      !cancelled() && (
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch')
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    outputs:
+      main_base: ${{ steps.plan.outputs.main_base }}
+      main_tests: ${{ steps.plan.outputs.main_tests }}
+      main_scope: ${{ steps.plan.outputs.main_scope }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Plan workspace shards
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAIN_SHARD_CAP: "64"
+          MAIN_SHARD_TARGET_SECONDS: "90"
+        run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
+
   main-gate:
     name: Main full gate
     # Not a required check and not run on merge_group: merge_group now runs the same
@@ -781,6 +831,10 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
+    outputs:
+      main_base: ${{ steps.main-base.outputs.base }}
+      main_tests: ${{ steps.main-base.outputs.tests }}
+      main_scope: ${{ steps.main-base.outputs.scope }}
     # At most one Main full gate holds a box slot, whatever event started it, so the other slot
     # stays free for the short required jobs. A newer waiting gate replaces an older waiting one.
     concurrency:
@@ -876,21 +930,6 @@ jobs:
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
-      - name: Start secret scan (full history, background)
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          SCAN_SHA: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/gitleaks"
-          : > "$RUNNER_TEMP/gitleaks/log"
-          nohup node --experimental-strip-types --no-warnings \
-            scripts/ci/gitleaks-main-scan.mts --background \
-            --dir "$RUNNER_TEMP/gitleaks" \
-            </dev/null >/dev/null 2>&1 &
-          echo "$!" > "$RUNNER_TEMP/gitleaks/nohup.pid"
       - name: Fetch pinned ts-autocode
         run: |
           set -euo pipefail
@@ -935,17 +974,20 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # The push's `before`, or HEAD~1 for a dispatch. The daily schedule and an
-          # unreachable base run repo-wide; otherwise scripts/ci/affected-lanes.mts
-          # compares root config at that base. Root scripts and //# tasks stay
-          # affected-only; globalDependencies and other shared inputs widen.
+          # Last green main (Fabric push), else the push parent, else HEAD~1. Schedule and
+          # workflow_dispatch with no base run repo-wide. Scripts/ci/affected-lanes.mts compares
+          # root config at that base. A workflow edit cannot change a package's test result.
           base=""
-          if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
+          if [ "$EVENT_NAME" = "push" ]; then
+            base="$(node --experimental-strip-types --no-warnings scripts/ci/resolve-main-test-base.mts | tr -d '\n')"
+          fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi
           if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
-          # A workflow edit cannot change a package's test result.
           scope="repo-wide"
           tests="all"
           if [ -n "$base" ]; then
@@ -970,8 +1012,9 @@ jobs:
           BASE: ${{ steps.main-base.outputs.base }}
         run: |
           set -euo pipefail
+          node --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts
           if [ "$SCOPE" = "affected" ]; then
-            pnpm agent:check -- --base="$BASE"
+            pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else
             pnpm run check:all
           fi
@@ -981,34 +1024,6 @@ jobs:
         run: >-
           pnpm run codegen:check:affected &&
           pnpm exec turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen --concurrency=100%
-      - name: Workspace tests
-        # Weekly schedule gets the hour-long job budget; push/dispatch repo-wide sweeps stay ≤20.
-        timeout-minutes: ${{ github.event_name == 'schedule' && (steps.main-base.outputs.tests == 'affected' && 10 || 55) || (steps.main-base.outputs.tests == 'affected' && 10 || 20) }}
-        env:
-          TESTS: ${{ steps.main-base.outputs.tests }}
-          BASE: ${{ steps.main-base.outputs.base }}
-        run: |
-          set -euo pipefail
-          if [ "$TESTS" = "affected" ]; then
-            # Changed packages run whole; their dependents run only the test files whose
-            # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
-            # --base keeps the planner's root-config scoping identical to the
-            # lane decision above.
-            git diff --name-only "$BASE" HEAD |
-              node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --base="$BASE" --run --anon-profile=turbo-profile.json
-          else
-            pnpm exec turbo run test \
-              --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
-          fi
-      - name: Secret scan (full history)
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --experimental-strip-types --no-warnings \
-            scripts/ci/gitleaks-main-scan.mts --wait \
-            --dir "$RUNNER_TEMP/gitleaks"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && env.TURBO_TOKEN == ''
@@ -1022,6 +1037,165 @@ jobs:
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
+
+  main_workspace_tests:
+    name: Main workspace test shard ${{ matrix.shard }}
+    needs: [route, ci-runner-image, ci-deps-image, main-gate-plan]
+    if: >-
+      !cancelled() && needs.main-gate-plan.result == 'success' && (
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: remote:rw
+          preferred-job: main-gate-plan
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - name: Restore pnpm store
+        if: steps.deps-layer.outputs.match != 'true'
+        uses: ./.github/actions/pnpm-store
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true' || github.event_name == 'schedule'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Workspace tests
+        timeout-minutes: 19
+        env:
+          TESTS: ${{ needs.main-gate-plan.outputs.main_tests }}
+          BASE: ${{ needs.main-gate-plan.outputs.main_base }}
+          SHARD: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+          HOBO_TURBO_CONCURRENCY: "1"
+        run: |
+          set -euo pipefail
+          case "$TESTS" in
+            affected)
+              if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}"; then
+                echo "Main test base is missing or unreachable" >&2
+                exit 1
+              fi
+              git diff --name-only "$BASE" HEAD |
+                node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                  --base="$BASE" --shard="$SHARD/$SHARD_TOTAL" --run --anon-profile=turbo-profile.json
+              ;;
+            all)
+              printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                --shard="$SHARD/$SHARD_TOTAL" --run --anon-profile=turbo-profile.json
+              ;;
+            *) echo "Invalid main workspace test scope: $TESTS" >&2; exit 1 ;;
+          esac
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+        with:
+          disambiguator: ${{ matrix.shard }}
+
+  main_gate_finish:
+    name: Main full gate (finish)
+    needs: [route, main-gate, main_workspace_tests]
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap repo-local composite actions
+        if: always()
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - name: Require main gate and workspace shards
+        env:
+          MAIN_RESULT: ${{ needs.main-gate.result }}
+          WORKSPACE_RESULT: ${{ needs.main_workspace_tests.result }}
+        run: |
+          set -euo pipefail
+          if [ "$MAIN_RESULT" != "success" ]; then
+            echo "Main full gate did not succeed: $MAIN_RESULT" >&2
+            exit 1
+          fi
+          if [ "$WORKSPACE_RESULT" != "success" ]; then
+            echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          fetch-tags: false
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Secret scan (full history)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          SCAN_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/gitleaks"
+          mkdir -p "$dir"
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --background --dir "$dir"
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --wait --dir "$dir"
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+        with:
+          disambiguator: finish
 
   artifact-trust:
     name: artifact signing and install verification

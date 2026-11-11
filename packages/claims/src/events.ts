@@ -7,6 +7,7 @@
  * identity assertions, or raw environment variables — {@link assertNoSecrets}
  * is the enforcement point, not a convention.
  */
+import { JWT_DETECTOR, PRIVATE_KEY_DETECTOR } from "@hobo/provider-redaction";
 import type {
 	ClaimAtomicity,
 	ClaimBundle,
@@ -240,30 +241,37 @@ export type ClaimEvent =
 	  };
 
 /** Patterns that must never reach a durable event payload. */
-const FORBIDDEN_IN_EVENTS: readonly {
+export const FORBIDDEN_IN_EVENTS: readonly {
 	readonly label: string;
 	readonly pattern: RegExp;
 }[] = [
 	{
 		label: "connection string",
 		pattern:
-			/\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?|amqps?):\/\//iu,
+			/\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?|amqps?):\/\//i,
 	},
-	{ label: "bearer token", pattern: /\bBearer\s+[A-Za-z0-9._-]{8,}/iu },
-	{ label: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/u },
-	{ label: "jwt", pattern: /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u },
+	{
+		label: "bearer token",
+		pattern: /\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
+	},
+	{ label: "private key", pattern: PRIVATE_KEY_DETECTOR },
+	{ label: "jwt", pattern: JWT_DETECTOR },
 	{
 		label: "api key",
 		pattern: /\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{12,}/u,
 	},
 	{
 		label: "password assignment",
-		pattern: /\b(?:password|passwd|secret|admin_key|adminKey)\s*[:=]\s*\S/iu,
+		pattern: /\b(?:password|passwd|secret|admin_key|adminKey)\s*[:=]\s*\S/i,
 	},
 	{
 		label: "claim url",
+		// The first `http(s)://` in a run, the first `claim`/`transfer` word after
+		// it, the first `?`/`#` after that, and a credential parameter after
+		// that: each part stops at its first occurrence, so the search is linear
+		// where `\S*` before each part was not.
 		pattern:
-			/https?:\/\/\S*\b(?:claim|transfer)\b\S*[?#]\S*(?:token|code|key)=/iu,
+			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!\b(?:claim|transfer)\b)\S)*\b(?:claim|transfer)\b[^\s?#]*[?#](?:(?!(?:token|code|key)=)\S)*(?:token|code|key)=/i,
 	},
 ];
 

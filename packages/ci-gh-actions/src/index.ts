@@ -223,6 +223,7 @@ export {
 	ciEnvironmentSecretsSha256,
 	createConfiguredCiRelayClient,
 	defineCiProjectConfig,
+	parseCiAgentBlock,
 	parseCiProjectConfig,
 	requiredCiSecrets,
 	selectCiEnvironment,
@@ -239,7 +240,7 @@ export {
 	createQueuedJobRepair,
 	PostgresQueuedJobRepairClaims,
 } from "./queued-job-repair.js";
-export { createRelayHost } from "./relay-host.js";
+export { createRelayHost, type RelayAgent } from "./relay-host.js";
 export {
 	createRelayMcp,
 	isRelayMcpPath,
