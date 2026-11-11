@@ -1359,7 +1359,12 @@ jobs:
     needs: route
     if: github.event_name == 'pull_request'
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 5
+    # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image.
+    timeout-minutes: 10
+    # packages: read lets an ARC pod pull the worker image from GHCR.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -1396,33 +1401,45 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         env:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           image="hobo-ci-worker:local"
-          # The worker image exists only in a fleet box's Docker context. A GitHub-hosted
-          # machine never has it, and neither does an overflow runner that reports itself
-          # self-hosted, so the image is probed instead of inferred from the runner kind.
-          if [ "${RUNNER_ENVIRONMENT}" = "github-hosted" ] || ! docker image inspect "$image" >/dev/null 2>&1; then
-            # No worker image here, and the toolchain is already on PATH: the same
-            # commands on a copy of the tree, in a network namespace whose only
-            # interface is loopback.
-            echo "${image} is not on this runner (${RUNNER_ENVIRONMENT:-unknown}); using an unshare --net namespace"
-            work="$(mktemp -d)"
-            tar -c --exclude=./.git . | tar -x -C "$work"
-            sudo --preserve-env unshare --net -- bash -c \
-              'ip link set lo up && cd "$1" && exec sudo --preserve-env -u "#$2" env "PATH=$3" bash -c "$4"' \
-              cold "$work" "$(id -u)" "$PATH" \
-              'set -euo pipefail; pnpm --filter "ts-autocode-*" run build; node --import tsx scripts/ci/dev-cold-loop-timing.mts'
-            exit 0
-          fi
-          tar -c --exclude=./.git . | docker run -i --rm --network=none \
-            "$image" \
-            bash -c 'set -euo pipefail
+          # Three kinds of runner pick this job up. A fleet box has the worker image in its
+          # Docker context. An ARC pod (hobo-runner-*) has Docker but neither the image nor
+          # sudo, so it pulls the content-keyed image from GHCR first. A GitHub-hosted
+          # machine never has the image but always has sudo, and blocks unprivileged user
+          # namespaces, so it uses a sudo network namespace instead of a 2 GB pull.
+          if [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
+            if ! docker image inspect "$image" >/dev/null 2>&1; then
+              echo "${image} is not on this runner; materializing it from the host cache or GHCR"
+              node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only || true
+            fi
+            if docker image inspect "$image" >/dev/null 2>&1; then
+              tar -c --exclude=./.git . | docker run -i --rm --network=none \
+                "$image" \
+                bash -c 'set -euo pipefail
           work="$(mktemp -d)"
           cd "$work"
           tar -x
           pnpm --filter "ts-autocode-*" run build
           node --import tsx scripts/ci/dev-cold-loop-timing.mts'
+              exit 0
+            fi
+          fi
+          if ! command -v sudo >/dev/null 2>&1; then
+            echo "::error title=Cold dev loop cannot isolate the network::${image} is not on this ${RUNNER_ENVIRONMENT:-unknown} runner, could not be pulled from GHCR, and there is no sudo for an unshare --net namespace."
+            exit 1
+          fi
+          # The toolchain is already on PATH: the same commands on a copy of the tree, in a
+          # network namespace whose only interface is loopback.
+          echo "using an unshare --net namespace on this ${RUNNER_ENVIRONMENT:-unknown} runner"
+          work="$(mktemp -d)"
+          tar -c --exclude=./.git . | tar -x -C "$work"
+          sudo --preserve-env unshare --net -- bash -c \
+            'ip link set lo up && cd "$1" && exec sudo --preserve-env -u "#$2" env "PATH=$3" bash -c "$4"' \
+            cold "$work" "$(id -u)" "$PATH" \
+            'set -euo pipefail; pnpm --filter "ts-autocode-*" run build; node --import tsx scripts/ci/dev-cold-loop-timing.mts'
 
   data-live:
     # The data engines against real servers: the conformance kit, change

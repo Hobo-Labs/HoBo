@@ -128,6 +128,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
   `secret-scan` skip the ts-autocode submodule checkout because neither installs packages.
+- **The cold dev loop runs on every runner kind.** Its fallback for a runner without
+  `hobo-ci-worker:local` was `sudo unshare --net`, and ARC pods (`hobo-runner-*`) have Docker but no
+  `sudo`, so the job died with `sudo: command not found` before any test ran (runs 43019469092 and
+  43036897317), depending only on which runner picked it up. Self-hosted runners now pull the
+  content-keyed worker image from GHCR first and run it with `--network=none`; GitHub-hosted runners
+  keep the `sudo` namespace; a runner that can do neither fails with an `::error` naming why.
 - **Slot budget.** The box has two runner slots, so a job that gates nothing still delays every other
   run. Main full gate does not run on `merge_group` (it is not a required check, and the push to `main`
   re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
