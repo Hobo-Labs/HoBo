@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createNodeWorkerStorageFileSystem } from "../../packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts";
 
@@ -22,8 +22,10 @@ describe("CI deps image mounted-job contract", () => {
 		assert.ok(image, "HOBO_CI_DEPS_IMAGE is required for the Docker lane");
 		assert.ok(key, "HOBO_CI_DEPS_LAYER is required for the Docker lane");
 		const hostCurrentJob = process.env.HOBO_CI_HOST_JOB_DIRECTORY;
+		// Nested docker needs the host bind path: in job containers _hobo_work may
+		// not be the same directory as HOBO_CI_HOST_JOB_DIRECTORY on the host.
 		const temporary = mkdtempSync(
-			join(hostCurrentJob ? workTarget : tmpdir(), "hobo-deps-mount-"),
+			join(hostCurrentJob ?? tmpdir(), "hobo-deps-mount-"),
 		);
 		try {
 			const stage = join(temporary, "stage");
@@ -35,9 +37,7 @@ describe("CI deps image mounted-job contract", () => {
 			);
 			const job = join(temporary, `hobo-${randomUUID()}`);
 			await createNodeWorkerStorageFileSystem().prepareJobDirectory(job);
-			const hostJob = hostCurrentJob
-				? join(hostCurrentJob, basename(temporary), basename(job))
-				: job;
+			const hostJob = job;
 			const archive = execFileSync("tar", ["-C", stage, "-cf", "-", "."], {
 				maxBuffer: 64 * 1024 * 1024,
 			});

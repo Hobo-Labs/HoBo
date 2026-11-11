@@ -30,6 +30,7 @@ Deps-layer jobs reused the heavy unmeasured reservation (**4096 MiB**) until thr
 3. `memory-classes.ts` — `CI deps layer (pnpm)` uses `CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB` (**4352**) before learned peaks apply.
 4. `deps-build-headroom-defaults.mts` — `build-deps.sh` defaults align with `depsBuildDockerReserve()` (210000 free inodes, not legacy 400000).
 5. `deps-build-docker-reserve.ts` — zod-free reserve math so `build-deps.sh` can `node --import ts-source-resolve` before `pnpm install` (no `ERR_MODULE_NOT_FOUND: zod`).
+6. `ci-deps-image-mount.test.ts` — stage the synthetic job on `HOBO_CI_HOST_JOB_DIRECTORY` when set, not under `_hobo_work` inside the job container (nested `docker -v` must see `HoBo/HoBo` on the host path).
 
 ## Proof
 
