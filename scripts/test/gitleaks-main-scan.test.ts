@@ -21,6 +21,10 @@ const workflow = readFileSync(
 );
 const mainGate = workflow.slice(
 	workflow.indexOf("\n  main-gate:"),
+	workflow.indexOf("\n  main_workspace_tests:"),
+);
+const mainGateFinish = workflow.slice(
+	workflow.indexOf("\n  main_gate_finish:"),
 	workflow.indexOf("\n  artifact-trust:"),
 );
 
@@ -150,22 +154,25 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 });
 
 describe("main-gate wiring", () => {
-	it("starts and waits through gitleaks-main-scan, not raw unbounded gitleaks", () => {
-		assert.ok(
+	it("runs gitleaks through gitleaks-main-scan in the finish job, not inside S0", () => {
+		assert.equal(
 			mainGate.includes("scripts/ci/gitleaks-main-scan.mts --background"),
+			false,
 		);
-		assert.ok(mainGate.includes("scripts/ci/gitleaks-main-scan.mts --wait"));
+		assert.ok(
+			mainGateFinish.includes("scripts/ci/gitleaks-main-scan.mts --background"),
+		);
+		assert.ok(
+			mainGateFinish.includes("scripts/ci/gitleaks-main-scan.mts --wait"),
+		);
 		assert.equal(
 			/nohup bash -c '\s*gitleaks git --config \.gitleaks\.toml --redact --exit-code 1 >/u.test(
-				mainGate,
+				mainGateFinish,
 			),
 			false,
 		);
-		const start = mainGate.indexOf("name: Start secret scan");
-		const wait = mainGate.indexOf("name: Secret scan (full history)");
-		const workspace = mainGate.indexOf("name: Workspace tests");
-		assert.ok(start > -1);
-		assert.ok(wait > workspace);
+		const wait = mainGateFinish.indexOf("name: Secret scan (full history)");
+		assert.ok(wait > -1);
 		assert.ok(FULL_WAIT_SECONDS <= 720);
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
 	});

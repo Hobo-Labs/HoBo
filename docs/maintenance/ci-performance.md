@@ -16,6 +16,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Postgres quota or webhook relay does. `HOBO_CI_STORE=postgres` (or `"store": {"kind": "postgres",
   "urlEnv": …}` in the CI project config) keeps the shared-relay path. `ci-store-contract.test.ts` runs
   one suite against both stores; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
+- **Pinned SBOM scanner.** `syft@1.56.0` is pinned through mise for the hermetic runner image, so runner and release SBOM generation use the same reproducible scanner version.
 - **Shared pnpm store.** The box worker bind-mounts one content-addressed store into every job container
   and sets `HOBO_CI_PNPM_STORE_MOUNTED=1`; `.github/actions/pnpm-store` reads that from the process env
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
@@ -59,6 +60,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
+- **Main full gate workspace sharding.** Main push no longer runs workspace tests inside the S0 job.
+  `resolve-main-test-base.mts` picks last-green Fabric `main` when reachable, then `main_workspace_tests`
+  runs the same eight-shard plan as PR validation in parallel on fleet runners; S0 uses
+  `--external-workspace-tests` when affected. Gitleaks runs in `main_gate_finish` after shards
+  ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
@@ -285,7 +291,11 @@ drift; `packages/schema-tools` already handles them, and the frozen proof cannot
 `docker-content-digest` header). `docker manifest inspect` from the worker image's Debian `docker.io` CLI
 rejects that OCI index because its attestation children are OCI manifests, which failed the
 `CI runner image (mise oci)` job on every dispatch. `scripts/test/ci-runner-image-contract.test.ts` pins
-the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live.
+the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live. The same
+contract file expects every `mise.lock` tool (including `syft`) to be installed and version-probed in
+`Dockerfile.monolithic` when the OCI path is not used. Until every box worker retags a syft-era image,
+`ci-runner-preflight` also exports checkout `mise bin-paths` onto `PATH` when an older tag already ran
+`mise install` but did not ship the new tool directory.
 
 The same job runs inside a `--network bridge` container, where `127.0.0.1:5000` is the container's own
 loopback rather than the host's local registry, so `mise oci build` failed after six seconds. `build.sh`
