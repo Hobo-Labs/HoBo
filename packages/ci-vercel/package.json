@@ -30,12 +30,14 @@
     "@vercel/sandbox": "3.9.0",
     "jose": "6.2.4",
     "pg": "8.22.0",
+    "workflow": "5.2.3",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@hobo/adapter-drizzle": "workspace:*",
     "@hobo/bindles": "workspace:*",
     "@types/pg": "8.15.5",
+    "@workflow/vitest": "5.0.6",
     "drizzle-orm": "0.45.4",
     "esbuild": "0.28.1"
   },
@@ -45,6 +47,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.check.json && tsc --noEmit -p tsconfig.db.json",
     "lint": "biome check .",
     "test": "node --import tsx scripts/generate-proxy-bundle.mts --check && vitest run",
+    "test:workflow-spike": "vitest run -c vitest.workflow-spike.config.ts",
     "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",
     "db:ship": "node --import tsx ../ci/db/tooling/cli.mts ship",
     "db:check": "node --import tsx ../ci/db/tooling/cli.mts check",

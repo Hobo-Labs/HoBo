@@ -1082,3 +1082,10 @@ relay is already using, is in
 [`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations). A deployed relay
 needs all three packages' migrations: `@hobo/ci`, `@hobo/ci-gh-actions` and this
 one.
+
+## Workflow SDK spike
+
+[`src/workflow-spike/`](src/workflow-spike/README.md) tests whether a Vercel
+Workflow run could hold one CI job's lifecycle. It is a throwaway spike that
+nothing in the relay imports. Its tests run with
+`pnpm --filter @hobo/ci-vercel test:workflow-spike`.
