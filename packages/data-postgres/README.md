@@ -555,6 +555,20 @@ It opens no connection. A host gives it one `SqlExecutor` per backend (a
 opaque id for each. Nothing in it knows how many backends there are or what any
 of them is called.
 
+The engine-neutral parts — the assignment entry and its rules, majority,
+`resolveAssignment`, `readCurrentAssignment`, `proposeAssignment`,
+`bootstrapAssignment`, `completeAssignment`, `overrideAssignment`, the backend
+id and failure classes, billing periods and usage units, and `decideFleet` with
+its models and policy — live in
+[`@hobo/backend-fleet`](../backend-fleet/README.md) since ADR-0179 phase 4c, so
+the hosted relay's cache fleet can use them without this package. This package
+re-exports them under the names below (`PostgresFleetAssignment` is
+`FleetAssignment`, and so on) and keeps what is PostgreSQL's: the SQL replica
+(`sqlAssignmentReplica`, whose register classifies failures with
+`classifyFleetFailure`), control tables, usage rows, replication and
+reconcile. A parse failure in a moved part is a `BackendFleetError` with the
+same code and message it had as a `PostgresDataError`.
+
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
 

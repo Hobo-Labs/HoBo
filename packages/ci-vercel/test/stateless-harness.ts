@@ -27,7 +27,7 @@ import {
 } from "@hobo/kv-redis-compatible";
 import { APIError } from "@vercel/sandbox";
 import { z } from "zod";
-import type { OpenedCache } from "../src/cache-backend.js";
+import type { OpenedCacheBackend } from "../src/cache-backend.js";
 import {
 	parseRelayQueueMessage,
 	type RelayQueueSendOptions,
@@ -209,12 +209,14 @@ export async function openStatelessRelay(
 			return engine.execute(command);
 		},
 	});
-	const cache: OpenedCache = {
-		choice: { kind: "memory", names: [], candidates: [] },
+	const backend: OpenedCacheBackend = {
+		binding: { id: "memory", kind: "memory", names: [] },
 		state: createRedisEphemeralState({ executor: meter }),
-		meter,
+		units: ["commands"],
+		usage: () => ({ commands: meter.usage().total }),
 		close: async () => {},
 	};
+	const cache = { backend, meter };
 
 	// The queue: idempotency keys are kept for the dedupe window, delays held.
 	const queued: QueuedMessage[] = [];
@@ -433,7 +435,7 @@ export async function openStatelessRelay(
 		config: loader,
 		configService: "env",
 		send,
-		cache,
+		cacheBackends: [backend],
 		github: transport,
 		identity: {
 			verify: async () => {

@@ -93,6 +93,26 @@ describe("parseRelayRuntimeConfig", () => {
 		expect(Object.isFrozen(config)).toBe(true);
 	});
 
+	it("accepts cache bindings and offers by name, and names a bad one without its value", () => {
+		const config = parseRelayRuntimeConfig({
+			...entries,
+			VALKEY_URL: "rediss://:valkey-password@valkey.example:6379",
+			TURSO_DATABASE_URL: "libsql://relay-cache.turso.io",
+			TURSO_AUTH_TOKEN: "turso-token-value",
+			BLOB_STORE_ID: "store_abc123",
+			HOBO_CI_CACHE_OFFERS_JSON: "{}",
+		});
+		expect(config.BLOB_STORE_ID).toBe("store_abc123");
+		const error = errorOf(() =>
+			parseRelayRuntimeConfig({
+				...entries,
+				VALKEY_URL: "https://valkey-password@valkey.example",
+			}),
+		);
+		expect(error.keys).toEqual(["VALKEY_URL"]);
+		expect(error.message).not.toContain("valkey-password");
+	});
+
 	it("treats an empty entry as unset", () => {
 		expect(
 			parseRelayRuntimeConfig({ ...entries, HOBO_CI_SANDBOX_PLAN: "" })

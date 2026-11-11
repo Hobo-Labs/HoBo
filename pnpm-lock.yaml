@@ -491,6 +491,25 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/backend-fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@hobo/kv-redis-compatible':
+        specifier: workspace:*
+        version: link:../kv-redis-compatible
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/bindings:
     dependencies:
       '@hobo/core':
@@ -846,6 +865,9 @@ importers:
       '@hobo/adapter-infisical':
         specifier: workspace:*
         version: link:../adapters/adapter-infisical
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
@@ -861,9 +883,15 @@ importers:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
+      '@hobo/provider-turso':
+        specifier: workspace:*
+        version: link:../providers/provider-turso
       '@hobo/provider-upstash':
         specifier: workspace:*
         version: link:../providers/provider-upstash
+      '@hobo/provider-vercel-blob':
+        specifier: workspace:*
+        version: link:../providers/provider-vercel-blob
       '@neon/functions':
         specifier: 0.11.0
         version: 0.11.0(hono@4.12.27)
@@ -1403,6 +1431,9 @@ importers:
 
   packages/data-postgres:
     dependencies:
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../capability-profiles

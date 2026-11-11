@@ -32,4 +32,14 @@ message RelayRuntimeConfig {
   // (an HMAC of the lease id): 32 random bytes, base64url. Required when
   // HOBO_CI_SANDBOX_ENABLED is set; nothing about a token is stored.
   optional string hobo_ci_sandbox_proxy_token_key = 21 [json_name = "HOBO_CI_SANDBOX_PROXY_TOKEN_KEY"];
+  // Cache bindings the config service may hold, read only when the
+  // deployment's environment does not set the same name (ADR-0179 phase 4c).
+  // Values are secrets or identifiers; only the names are ever logged.
+  optional string valkey_url = 22 [json_name = "VALKEY_URL"];
+  optional string turso_database_url = 23 [json_name = "TURSO_DATABASE_URL"];
+  optional string turso_auth_token = 24 [json_name = "TURSO_AUTH_TOKEN"];
+  optional string blob_store_id = 25 [json_name = "BLOB_STORE_ID"];
+  // A RelayCacheOffers record (cache_offers.proto) as JSON: what each cache
+  // backend costs and allows, its budget cap, and the switch marks.
+  optional string hobo_ci_cache_offers_json = 26 [json_name = "HOBO_CI_CACHE_OFFERS_JSON"];
 }
