@@ -286,6 +286,9 @@ describe("CI deps image build contract", () => {
 			"refusing deps rebuild: Docker data root still below headroom after builder prune",
 		);
 		includes(build, "cannot sample Docker data root for deps build headroom");
+		includes(build, "sample_docker_headroom_via_host");
+		includes(build, "host:");
+		includes(build, "no device-matched bind mount");
 		assert.ok(!build.includes("docker image prune -af"));
 		assert.ok(!build.includes("docker image prune -a"));
 		const guard = build.indexOf("ensure_deps_build_headroom");

@@ -10,7 +10,7 @@ const workflow = parse(
 );
 const imageJob = workflow.jobs["ci-runner-image"];
 const mainGate = workflow.jobs["main-gate"];
-const mainFinish = workflow.jobs["main_gate_finish"];
+const mainFinish = workflow.jobs.main_gate_finish;
 const imageInputPrefixes = [
 	"mise.toml",
 	"mise.lock",
