@@ -690,6 +690,9 @@ importers:
       '@ai-sdk/sandbox-just-bash':
         specifier: 1.0.180
         version: 1.0.180(ws@8.21.0)(zod@4.4.3)
+      graphql:
+        specifier: 16.14.2
+        version: 16.14.2
 
   packages/ci-cf:
     dependencies:

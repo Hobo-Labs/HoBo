@@ -55,7 +55,8 @@
     "pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
     "start": "node dist/relay-main.js",
     "agent": "node dist/daemon-main.js",
-    "acceptance:live": "node dist/daemon-main.js --once"
+    "acceptance:live": "node dist/daemon-main.js --once",
+    "contracts:github-schema": "curl -fsSL https://docs.github.com/public/fpt/schema.docs.graphql | gzip -9n > contracts/github-schema.graphql.gz"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
@@ -116,6 +117,7 @@
     "@ai-sdk/harness-claude-code": "1.0.184",
     "@ai-sdk/openai": "4.0.114",
     "@ai-sdk/openai-compatible": "3.0.90",
-    "@ai-sdk/sandbox-just-bash": "1.0.180"
+    "@ai-sdk/sandbox-just-bash": "1.0.180",
+    "graphql": "16.14.2"
   }
 }
