@@ -176,4 +176,18 @@ describe("main-gate wiring", () => {
 		assert.ok(FULL_WAIT_SECONDS <= 720);
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
 	});
+
+	it("guards finish post-steps when checkout never populated scripts", () => {
+		assert.ok(
+			mainGateFinish.includes("id: workspace"),
+			"finish records workspace availability",
+		);
+		assert.ok(
+			mainGateFinish.includes("steps.workspace.outputs.ready == 'true'"),
+		);
+		assert.ok(
+			mainGateFinish.includes("Bootstrap composite actions (git fallback)"),
+		);
+		assert.ok(mainGateFinish.includes("Checkout repository (git fallback)"));
+	});
 });
