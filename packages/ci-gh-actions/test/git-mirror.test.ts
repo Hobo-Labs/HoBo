@@ -284,6 +284,32 @@ describe("createBoxGitMirror", () => {
 		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
 	});
 
+	it("takes the commit again when a mirror with no promisor marker lacks its files", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		// A repair that dropped the markers without fetching the blobs: the
+		// mirror now reads as complete, so only the whole-tree check catches it.
+		git(mirror.path, ["config", "--unset", "remote.origin.promisor"]);
+		git(mirror.path, ["config", "--unset", "remote.origin.partialclonefilter"]);
+		expect(isCompleteGitMirror(mirror.path)).toBe(true);
+		expect(missingObjects(mirror.path, second)).not.toEqual([]);
+
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
 	it("misses rather than hand a job a mirror it cannot complete", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
 		roots.push(root);

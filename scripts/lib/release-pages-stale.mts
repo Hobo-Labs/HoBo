@@ -10,7 +10,13 @@
  * earlier one missed.
  */
 import { setTimeout as delay } from "node:timers/promises";
-import { z } from "zod";
+import {
+	isArray,
+	isObject,
+	isString,
+	type Json,
+	parseUnknownJson,
+} from "./pins-json.ts";
 import { anyPathMatchesReleaseHoboFilters } from "./release-hobo-path-filters.mts";
 
 /** GitHub's compare endpoint returns at most this many files. */
@@ -146,21 +152,60 @@ export type PagesApiRequest = (
 	},
 ) => Promise<{ readonly status: number; readonly text: string }>;
 
-const BranchSchema = z.object({
-	commit: z.object({ commit: z.object({ message: z.string() }) }),
-});
+// The gate runs on a sparse checkout before any `pnpm install`, so it reads the
+// two answers it needs with the built-in JSON readers in pins-json.ts.
+function child(value: Json | undefined, key: string, at: string): Json {
+	const found = isObject(value) ? value[key] : undefined;
+	if (found === undefined) throw new Error(`${at}: missing ${key}`);
+	return found;
+}
 
-const CompareSchema = z.object({
-	status: z.enum(["ahead", "behind", "identical", "diverged"]),
-	files: z
-		.array(
-			z.object({
-				filename: z.string(),
-				previous_filename: z.string().optional(),
-			}),
-		)
-		.optional(),
-});
+function stringAt(value: Json | undefined, at: string): string {
+	if (!isString(value)) throw new Error(`${at}: expected a string`);
+	return value;
+}
+
+/** `GET /repos/{repo}/branches/{branch}`: the message of the commit it points at. */
+export function parseBranchMessage(json: Json | undefined): string {
+	const commit = child(
+		child(json, "commit", "branch"),
+		"commit",
+		"branch.commit",
+	);
+	return stringAt(child(commit, "message", "branch.commit.commit"), "message");
+}
+
+const COMPARE_STATUSES = ["ahead", "behind", "identical", "diverged"] as const;
+type CompareStatus = (typeof COMPARE_STATUSES)[number];
+
+/** `GET /repos/{repo}/compare/{base}...{head}`: the status and every path listed, renames twice. */
+/** What a compare answer says, renames listed under both paths. */
+export interface Comparison {
+	readonly status: CompareStatus;
+	readonly listed: number;
+	readonly paths: readonly string[];
+}
+
+export function parseComparison(json: Json | undefined): Comparison {
+	const reported = child(json, "status", "compare");
+	const status = COMPARE_STATUSES.find((known) => known === reported);
+	if (!status)
+		throw new Error(`compare: unknown status ${JSON.stringify(reported)}`);
+	const files = isObject(json) && "files" in json ? json.files : [];
+	if (!isArray(files)) throw new Error("compare: files is not a list");
+	// A rename moves content out of one path and into another; both count.
+	const paths = files.flatMap((file, index) => {
+		const filename = stringAt(
+			child(file, "filename", `files[${index}]`),
+			"filename",
+		);
+		const previous = isObject(file) ? file.previous_filename : undefined;
+		return previous === undefined || previous === null
+			? [filename]
+			: [filename, stringAt(previous, `files[${index}].previous_filename`)];
+	});
+	return { status, listed: files.length, paths };
+}
 
 const requestOverHttp: PagesApiRequest = async (url, headers) => {
 	const response = await fetch(url, {
@@ -197,7 +242,7 @@ export function githubPagesSource(options: {
 	/** The parsed answer, or undefined for 404. Anything else is retried, then thrown. */
 	async function get<T>(
 		path: string,
-		schema: z.ZodType<T>,
+		parse: (json: Json | undefined) => T,
 	): Promise<T | undefined> {
 		let failure = "";
 		for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -205,7 +250,7 @@ export function githubPagesSource(options: {
 				const response = await request(`${api}${path}`, headers);
 				if (response.status === 404) return undefined;
 				if (response.status >= 200 && response.status < 300) {
-					return schema.parse(JSON.parse(response.text));
+					return parse(parseUnknownJson(JSON.parse(response.text)));
 				}
 				failure = `HTTP ${response.status}`;
 			} catch (error) {
@@ -218,30 +263,22 @@ export function githubPagesSource(options: {
 
 	return {
 		async deployedMessage() {
-			const found = await get(
+			return get(
 				`/repos/${options.repository}/branches/${encodeURIComponent(branch)}`,
-				BranchSchema,
+				parseBranchMessage,
 			);
-			return found?.commit.commit.message;
 		},
 		async compare(base, head) {
 			const found = await get(
 				`/repos/${options.repository}/compare/${base}...${head}?per_page=1`,
-				CompareSchema,
+				parseComparison,
 			);
 			if (!found) return undefined;
 			if (found.status !== "ahead") return { status: found.status };
-			const listed = found.files ?? [];
-			// A rename moves content out of one path and into another; both count.
-			const files = listed.flatMap((file) =>
-				file.previous_filename
-					? [file.filename, file.previous_filename]
-					: [file.filename],
-			);
 			return {
 				status: "ahead",
-				files,
-				truncated: listed.length >= COMPARE_FILE_LIMIT,
+				files: found.paths,
+				truncated: found.listed >= COMPARE_FILE_LIMIT,
 			};
 		},
 	};

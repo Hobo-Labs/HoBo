@@ -1,5 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+	copyFileSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -325,6 +332,36 @@ describe("release-hobo pages jobs", () => {
 		}
 	});
 
+	it("runs from those files alone, before any pnpm install", () => {
+		// The gate and the re-check in release-pages run on a sparse checkout with
+		// no node_modules; a package import there fails and Pages never publishes.
+		const after =
+			job("release-pages-gate").split("sparse-checkout: |\n")[1] ?? "";
+		const block = after.split("\n");
+		const end = block.findIndex((line) => !/^ {12}\S/.test(line));
+		const sparse = block
+			.slice(0, end < 0 ? block.length : end)
+			.map((line) => line.trim());
+		expect(sparse.length).toBeGreaterThan(0);
+		const copy = mkdtempSync(join(tmpdir(), "release-pages-gate-"));
+		try {
+			for (const path of sparse) {
+				mkdirSync(dirname(join(copy, path)), { recursive: true });
+				copyFileSync(join(root, path), join(copy, path));
+			}
+			const run = spawnSync(
+				process.execPath,
+				["--no-warnings", "scripts/ci/check-release-pages-stale.mts"],
+				{ cwd: copy, encoding: "utf8" },
+			);
+			// Exit 2 is the usage error: every import resolved and the script ran.
+			expect(run.stderr).not.toMatch(/ERR_MODULE_NOT_FOUND|Cannot find/);
+			expect(run.status, run.stderr).toBe(2);
+		} finally {
+			rmSync(copy, { recursive: true, force: true });
+		}
+	});
+
 	it("publishes one commit at a time and asks again once it holds the slot", () => {
 		const pages = job("release-pages");
 		expect(pages).toMatch(
@@ -334,6 +371,21 @@ describe("release-hobo pages jobs", () => {
 		const build = pages.indexOf("pnpm --filter hobo-site run build");
 		expect(recheck).toBeGreaterThan(-1);
 		expect(recheck).toBeLessThan(build);
+	});
+
+	it("tags whatever this run's publish did, unless it or its gate failed", () => {
+		const tag = job("release-tag");
+		expect(tag).toContain("!cancelled() &&");
+		expect(tag).not.toContain("always()");
+		expect(tag).toMatch(/needs: \[[^\]]*release-pages-gate, release-pages\]/);
+		// A failed gate skips the publish; that skip must not read as "nothing to do".
+		expect(tag).toContain(
+			`contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result)`,
+		);
+		// A newer run's publish cancels this one while it waits for the slot.
+		expect(tag).toContain(
+			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)`,
+		);
 	});
 
 	it("records the commit it built, not the branch tip the event fired on", () => {

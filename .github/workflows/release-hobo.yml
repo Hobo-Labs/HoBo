@@ -726,6 +726,8 @@ jobs:
             scripts/ci/check-release-pages-stale.mts
             scripts/lib/release-pages-stale.mts
             scripts/lib/release-hobo-path-filters.mts
+            scripts/lib/pins-json.ts
+            scripts/lib/pins-error.ts
       - name: Node that runs TypeScript as written
         env:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
@@ -833,16 +835,19 @@ jobs:
 
   release-tag:
     name: Signed git tag + GitHub Release (main train)
-    # Pages has its own gate now and may be skipped (gh-pages already holds a
-    # newer commit); a skipped publish must not skip the tag, a failed one still does.
+    # Pages has its own gate now. The tag must not wait on this run's publish:
+    # it is skipped when gh-pages already holds a newer commit, and cancelled
+    # when a newer run's publish takes its place in the hobo-release-pages
+    # queue. A failed publish, or a gate that failed to decide, still blocks it.
     if: >-
-      always() &&
+      !cancelled() &&
       needs.release-main-train-gate.outputs.run == 'true' &&
       needs.release-publish.result == 'success' &&
       needs.release-npm.result == 'success' &&
       needs.release-attest.result == 'success' &&
-      contains(fromJSON('["success","skipped"]'), needs.release-pages.result)
-    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages]
+      contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
+      contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)
+    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
     timeout-minutes: 10
