@@ -100,6 +100,8 @@ unindexed new finding files as notices.
 - [Finding 87: poll coalesce stranded queued jobs on GitHub](./findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md)
 - [Finding 88: poll readmit jit churn](./findings/0088-poll-readmit-jit-churn.md)
 - [Finding 89: superseded main push held trunk slots](./findings/0089-superseded-main-push-held-trunk-slots.md)
+- [Finding 90: release ENOSPC byte admission](./findings/0090-release-enospc-byte-admission.md)
+- [Finding 92: main plan parallel deps affected shards](./findings/0092-main-plan-parallel-deps-affected-shards.md)
 <!-- findings-index:end -->
 
 ## Data

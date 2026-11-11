@@ -6,8 +6,8 @@ import {
 	planDependentTests,
 	planShardCountBalanced,
 	readRepo,
-	testWorkspaceUnits,
 	type TestPlan,
+	testWorkspaceUnits,
 } from "../ci/dependent-tests.mts";
 import { loadWorkspaceDurations } from "../ci/workspace-test-durations.mts";
 

@@ -83,6 +83,33 @@ describe("main workspace affected-only", () => {
 		);
 	});
 
+	it("intersects import-walk plans with turbo --affected before main sharding", () => {
+		const planner = readFileSync(
+			join(import.meta.dirname, "..", "ci", "plan-main-workspace-shards.mts"),
+			"utf8",
+		);
+		const dependent = readFileSync(
+			join(import.meta.dirname, "..", "ci", "dependent-tests.mts"),
+			"utf8",
+		);
+		assert.match(planner, /planDependentTestsForTurboAffected/u);
+		assert.match(planner, /TURBO_SCM_BASE/u);
+		assert.match(dependent, /planDependentTestsForTurboAffected/u);
+		assert.match(dependent, /intersectScopedPlanWithTurboAffected/u);
+	});
+
+	it("runs the plan job beside the deps image job", () => {
+		const planStart = workflow.indexOf("  main-gate-plan:");
+		const mainStart = workflow.indexOf("  main-gate:", planStart);
+		const plan = workflow.slice(planStart, mainStart);
+		assert.match(plan, /plan-main-workspace-shards\.mts/u);
+		assert.doesNotMatch(
+			plan,
+			/needs: \[route, ci-runner-image, ci-deps-image\]/u,
+		);
+		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
+	});
+
 	it("wires TURBO_SCM_BASE and HOBO_TURBO_USE_AFFECTED on main workspace shards", () => {
 		const start = workflow.indexOf("  main_workspace_tests:");
 		const finish = workflow.indexOf("  main_gate_finish:", start);
