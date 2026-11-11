@@ -9,6 +9,7 @@ import {
 } from "@hobo/ci-gh-actions";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
+import { discoverDatabases } from "./database-discovery.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
 import { composeRelay } from "./relay-composition.js";
 import { streamsBody } from "./relay-streams.js";
@@ -37,6 +38,24 @@ setRelayFailureEvents(
 	}),
 );
 let startup: Promise<Awaited<ReturnType<typeof composeRelay>>> | undefined;
+let databasesReported = false;
+/** Say once per instance which databases the environment names: variable
+ * names and a digest only, so an operator can see that a second store is
+ * attached without any connection string reaching the log. */
+export function reportDatabases(env: NodeJS.ProcessEnv) {
+	if (databasesReported) return;
+	databasesReported = true;
+	try {
+		console.info(
+			JSON.stringify({
+				event: "hobo_ci_database_candidates",
+				candidates: discoverDatabases(env),
+			}),
+		);
+	} catch {
+		// A failed log line never changes startup.
+	}
+}
 function application() {
 	const options = {
 		env: process.env,
@@ -67,6 +86,7 @@ function application() {
 	startup ??= Promise.resolve()
 		.then(async () => {
 			let env = process.env;
+			reportDatabases(env);
 			let ownerVerifiedBootstrap = false;
 			if (
 				env.VERCEL_ENV === "production" &&

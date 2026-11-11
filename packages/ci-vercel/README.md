@@ -778,6 +778,10 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 - After the store fails it is left alone before the next attempt: 5 s, doubling to a minute. Every
   request used to dial it again.
 - A 503 for an unavailable store carries `Retry-After: 5`.
+- Once per instance, start-up logs `hobo_ci_database_candidates`: every distinct PostgreSQL database
+  the environment names, as variable names plus a 12-character digest of host, port and database. No
+  connection string, host or credential is logged. It shows whether a second store is attached to
+  the project (and under which prefix) when the one in use is down.
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
