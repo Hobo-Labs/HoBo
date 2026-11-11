@@ -103,11 +103,9 @@ describe("main workspace affected-only", () => {
 		const mainStart = workflow.indexOf("  main-gate:", planStart);
 		const plan = workflow.slice(planStart, mainStart);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
-		assert.doesNotMatch(
-			plan,
-			/needs: \[route, ci-runner-image, ci-deps-image\]/u,
-		);
-		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
+		assert.match(plan, /needs: \[ci-runner-image\]/u);
+		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
+		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
 	});
 
 	it("wires TURBO_SCM_BASE and HOBO_TURBO_USE_AFFECTED on main workspace shards", () => {

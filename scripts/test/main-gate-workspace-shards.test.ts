@@ -20,13 +20,10 @@ describe("main full gate workspace sharding", () => {
 			workflow.indexOf("  main_workspace_tests:", mainStart),
 		);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
-		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
-		assert.doesNotMatch(
-			plan,
-			/needs: \[route, ci-runner-image, ci-deps-image\]/u,
-		);
-		assert.match(plan, /deps-layer\.mts link/u);
-		assert.match(plan, /turbo-cache/u);
+		assert.match(plan, /needs: \[ci-runner-image\]/u);
+		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
+		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
+		assert.match(plan, /main-gate-plan-\$\{\{ github\.sha \}\}/u);
 		assert.match(main, /resolve-main-test-base\.mts/u);
 		assert.match(main, /--external-workspace-tests/u);
 		assert.doesNotMatch(main, /name: Workspace tests/u);
@@ -43,8 +40,9 @@ describe("main full gate workspace sharding", () => {
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards/u);
 		assert.match(
 			block,
-			/needs: \[route, ci-runner-image, ci-deps-image, main-gate-plan\]/u,
+			/needs: \[ci-runner-image, ci-deps-image, main-gate-plan\]/u,
 		);
+		assert.doesNotMatch(block, /needs: \[route,/u);
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
 	});
 
@@ -52,7 +50,7 @@ describe("main full gate workspace sharding", () => {
 		const finishStart = workflow.indexOf("  main_gate_finish:");
 		const artifact = workflow.indexOf("  artifact-trust:", finishStart);
 		const finish = workflow.slice(finishStart, artifact);
-		assert.match(finish, /needs: \[route, main-gate, main_workspace_tests\]/u);
+		assert.match(finish, /needs: \[main-gate, main_workspace_tests\]/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
 	});

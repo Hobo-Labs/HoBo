@@ -101,7 +101,9 @@ unindexed new finding files as notices.
 - [Finding 88: poll readmit jit churn](./findings/0088-poll-readmit-jit-churn.md)
 - [Finding 89: superseded main push held trunk slots](./findings/0089-superseded-main-push-held-trunk-slots.md)
 - [Finding 90: release ENOSPC byte admission](./findings/0090-release-enospc-byte-admission.md)
+- [Finding 91: release playwright CDN stalls GHCR](./findings/0091-release-playwright-cdn-stalls-ghcr.md)
 - [Finding 92: main plan parallel deps affected shards](./findings/0092-main-plan-parallel-deps-affected-shards.md)
+- [Finding 93: main sub3m plan pickup shards](./findings/0093-main-sub3m-plan-pickup-shards.md)
 <!-- findings-index:end -->
 
 ## Data

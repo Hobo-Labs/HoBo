@@ -994,6 +994,15 @@ try {
 					onGithubError: (failure) =>
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
 					beforePoll: () => mergeQueueCache.refresh(),
+					onMainFabricTrunkQueued: (repository) => {
+						void worker.prewarm(repository).catch((error) =>
+							log("hobo_ci_main_fabric_prewarm_failed", {
+								repository,
+								message:
+									error instanceof Error ? error.message : "unknown",
+							}),
+						);
+					},
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();

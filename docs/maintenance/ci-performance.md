@@ -61,7 +61,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
-- **Main full gate workspace sharding.** `main-gate-plan` (route + runner image; [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
+- **Main full gate workspace sharding.** `main-gate-plan` (runner image only; install-free mise turbo — [finding 93](../ci/findings/0093-main-sub3m-plan-pickup-shards.md), [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
   base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
   parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
