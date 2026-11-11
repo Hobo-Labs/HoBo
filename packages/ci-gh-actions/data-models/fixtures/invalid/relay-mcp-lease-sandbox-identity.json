@@ -1,0 +1,7 @@
+{
+  "lease": {
+    "id": "01234567-89ab-4cde-8fab-0123456789ab",
+    "state": "running",
+    "sandboxSessionId": "session-1"
+  }
+}

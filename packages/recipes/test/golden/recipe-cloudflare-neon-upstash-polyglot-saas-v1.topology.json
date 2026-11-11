@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.cloudflare-neon-upstash.polyglot-saas/v1",
 	"topologyDigest": "sha256:f409462fbff86e714727a760782a3a301a6ea7853139592e4bbf2788cf0355a1",
-	"resolutionDigest": "sha256:069aa236edb7efc8803d81a4ed9b1ebfb6a3f582a6e133258572331c7a23a0c2",
+	"resolutionDigest": "sha256:43fd76f8378515ae9d3a1acde7e319775229ccc12acdb015ec3f9d962728d850",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.cloudflare-neon-upstash.polyglot-saas/v1",
