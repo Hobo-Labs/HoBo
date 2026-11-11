@@ -878,22 +878,29 @@ describe("relay cache store: command cost", () => {
 		await step("settle", () => harness.store.settle(leaseId, 0, 3, LATER));
 		const total = Object.values(cost).reduce((sum, value) => sum + value, 0);
 		// Pinned so a change in cost is a reviewed change. Each change-ring
-		// append is 2 commands until the account's ring first fills, 3 after
-		// (11 appends on this path); the rest is records, index and pending set.
+		// append is 2 commands until the account's ring first fills, 3 after;
+		// the ring takes only state changes and job lifecycle events (7 on
+		// this path: queued, reserved, dispatching, dispatched, claiming,
+		// running, settled). The rest is records and the in-flight index:
+		// observations read the job and lease records in one round trip and
+		// skip writes that change nothing, a lease this instance just wrote is
+		// compared-and-set without reading it again, and the pending set is
+		// pruned by `pendingJobs` rather than on every take. Before (phase
+		// 4a): 3, 6, 11, 5, 4, 5, 1, 8, 5, 8, 6 = 62.
 		expect(cost).toEqual({
 			"intake (dedupe)": 3,
 			queue: 6,
-			reserve: 11,
-			"dispatch intent": 5,
-			"dispatch outcome": 4,
-			claim: 5,
+			reserve: 8,
+			"dispatch intent": 4,
+			"dispatch outcome": 3,
+			claim: 4,
 			"intent check (tick)": 1,
-			"in progress": 8,
-			running: 5,
-			completed: 8,
-			settle: 6,
+			"in progress": 3,
+			running: 4,
+			completed: 2,
+			settle: 5,
 		});
-		expect(total).toBe(62);
+		expect(total).toBe(43);
 	});
 
 	it("meters one proxied sandbox request", async () => {

@@ -190,12 +190,14 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			"Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.",
 		);
 		expect(ran.stdout).toContain(
-			"Deploy hobo-ci-relay (queue hobo-ci, schedule hobo-ci-repair, api relay, secret secrets, data state)",
+			"Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)",
 		);
 		expect(ran.stdout).toContain(
 			`to Vercel project hobo-ci, scope ${TEAM}, target preview`,
 		);
-		expect(ran.stdout).toContain("CRON_SECRET, DATABASE_URL,");
+		expect(ran.stdout).toContain(
+			"CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256,",
+		);
 		expect(ran.stdout).toContain(`3. POST /v13/deployments?teamId=${TEAM}`);
 		expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
 	});

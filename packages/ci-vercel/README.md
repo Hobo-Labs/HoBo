@@ -113,47 +113,48 @@ independent.
 HoBo deploys its own relay, so the relay is declared in HoBo's own app model.
 [`src/bindle.ts`](src/bindle.ts) is the Bindle (`hobo-ci-relay`), at the path the
 CLI's project loader looks for (`src/bindle.ts`), so this directory is a HoBo
-project:
+project. Since ADR-0179 phase 4b it declares no database:
 
 | Resource | Kind | What it is here |
 |---|---|---|
 | `relay` | `api` | the HTTP entry, `api/relay.ts`, which every route is rewritten to |
-| `hobo-ci` | `queue` | the private queue topic `api/queue.ts` consumes |
-| `hobo-ci-repair` | `schedule` | the repair tick, every 15 minutes, onto that queue |
-| `state` | `data` | the PostgreSQL event store, inbox and projections |
-| `secrets` | `secret` | where the relay's secrets are held |
-
-Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the `state` resource is replaced by a `kv` resource requiring `kv.redis-compatible/v1` (TTL, compare-and-set, increment), `secrets` is bound to the config service, and `hobo ci deploy` plans from a Yard and Camp instead of hardcoding Vercel (phase 6).
+| `hobo-ci` | `queue` | repair ticks, consumed by `api/queue.ts` |
+| `hobo-ci-intake` | `queue` | verified webhook deliveries, consumed by `api/intake.ts` |
+| `hobo-ci-lease-steps` | `queue` | delayed per-lease steps, consumed by `api/lease-steps.ts` |
+| `hobo-ci-repair` | `schedule` | the repair tick, every 15 minutes, onto `hobo-ci` |
+| `cache` | `kv` | short-lived job state the relay may lose and rebuild (`get`, `set`, `delete`) |
+| `config` | `secret` | the config service: the config document and the relay's secrets, read only (`access`) |
 
 The Bindle names no provider (`assertNoBindleProviderSelection` holds, and the
-test below also scans the declaration for provider names): the target is chosen
-where the deploy is run. Two facts the Bindle model cannot carry yet are
-exported beside it, keyed by its resource names: `RELAY_REPAIR_SCHEDULE` (the
-cadence `*/15 * * * *`; `b.schedule()` takes none) and `relayState`
-(`postgres.database({ jsonb, pooling, connectivity: ["tls-tcp"] })` from
-`@hobo/data-postgres`, a `data.postgres/v1` capability requirement; `b.data()`
-takes none). `relayConfig` is the relay's `config()` schema: every setting the
-source reads, by name and with no value. Its `env.*` fields are the non-secret
-configuration a deploy may set; its `secret.*` fields (`DATABASE_URL`,
-`DATABASE_URL_UNPOOLED`, `CRON_SECRET`, the session key, tokens, the GitHub App
-key and secrets) are named only: the operator, the storage integration or the
-relay's own vault holds them.
+test below also scans the declaration for provider and product names): the
+target is chosen where the deploy is run. Facts the Bindle model cannot carry
+yet are exported beside it, keyed by its resource names: `RELAY_REPAIR_SCHEDULE`
+(the cadence `*/15 * * * *`; `b.schedule()` takes none), `relayCache`
+(`redisCompatible.store({ ttl, atomicIncrement, atomicCompareAndSet })` from
+`@hobo/kv-redis-compatible`, a `kv.redis-compatible/v1` capability requirement;
+`b.kv()` takes none) and `relayConfigService` (read-only, workload identity, a
+config document and secrets, refreshed at most once a minute). `relayConfig`
+is the relay's `config()` schema: every setting the deployed code reads, by
+name and with no value. Its `env.*` fields are the non-secret configuration a
+deploy may set; its `secret.*` fields (`CRON_SECRET`, the session key, tokens,
+the GitHub App key and secrets, the Sandbox proxy token key) are named only:
+the config service holds them. The cache's coordinates are its binding's
+(below), not settings here. Phase 6 binds these resources in a Yard and Camp.
 
 The declaration is not deployed code. No entry file and no other source imports
 it, and the package's build (`tsconfig.json`) leaves it out, so what Vercel
 compiles and bundles for the relay is unchanged and needs neither
-`@hobo/bindles` nor `@hobo/data-postgres` (devDependencies); `tsconfig.check.json`
+`@hobo/bindles` nor its requirement builders at run time; `tsconfig.check.json`
 type-checks it.
 
 `test/relay-bindle.test.ts` ties the declaration to the relay so it cannot
-drift: the queue topic and its consumer file equal `vercel.json`'s queue
-trigger, the route destination equals the HTTP entry, every `queue.send` topic
-and repair name in `src/entry.ts` equals the declared ones, and the declared
-settings are exactly the `HOBO_CI_*`, `CRON_SECRET` and `DATABASE_URL*` names
-the source reads. `vercel.json` declares no schedule on this branch (the hosted
-relay is ticked by an external trigger, which `test/scheduled-repair.test.ts`
-pins), so the schedule's name, cadence and topic are compared with
-`vercel.json` only once it declares one, and then must match exactly.
+drift: each queue topic and its consumer file equal `vercel.json`'s queue
+triggers, the topics equal `RELAY_QUEUE_TOPICS` (no source sends to a literal
+topic), the route destination equals the HTTP entry, the repair name equals
+the schedule's, and the declared settings are exactly the `HOBO_CI_*` and
+`CRON_SECRET` names the deployed code reads: the sources the entry files reach
+through their imports. The PostgreSQL composition, which nothing deployed
+imports any more, declares nothing (phase 7 deletes it).
 
 ### Deploying the relay with HoBo
 
@@ -226,10 +227,163 @@ its environment. `src/relay-runtime-config.ts` loads the whole configuration
 parses it into `RelayRuntimeConfig` with the schema moved from the Neon broker
 (`src/relay-runtime-config-schema.ts`), and caches it in memory for a minute;
 `envRelayConfigSource` gives the same type from the environment for local runs
-and tests. It is not wired into `entry.ts` yet. Owner setup, the variables the
-deployment declares and the folder's entries are in
+and tests. `entry.ts` loads it (phase 4b, [below](#the-stateless-relay)). Owner
+setup, the variables the deployment declares and the folder's entries are in
 [Config service](CONFIG-SERVICE.md); the client is
 [`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md).
+
+## The stateless relay
+
+ADR-0179 phase 4b. What `api/relay.ts` and the three queue entries run is
+`composeStatelessRelay` ([`src/stateless-composition.ts`](src/stateless-composition.ts)):
+no database, no Neon broker, no address of either in the source. The
+PostgreSQL composition (`relay-composition.ts`, `composition.ts`,
+`bootstrap-entry.ts`, the database modules) stays in the tree, imported by
+nothing deployed, until phase 7 deletes it. Rolling back means promoting an
+earlier deployment.
+
+**How it is composed.**
+
+1. **Config and secrets**: `RelayRuntimeConfig` from the config service the
+   deployment names (`HOBO_CI_CONFIG_SERVICE=infisical`, or `env`, the default,
+   which reads the same keys from the environment for local runs and tests),
+   loaded once per instance and refreshed at most once a minute; a failed
+   refresh keeps the last good copy and is logged as
+   `hobo_ci_config_refresh_failed`. The config document (`HOBO_CI_CONFIG_JSON`)
+   and the control tokens follow each refresh; the App key, webhook secret and
+   cron secret are the ones the instance started with.
+2. **The cache** (`src/cache-backend.ts`): `selectCacheBackend` takes the first
+   binding present: an Upstash REST pair (`UPSTASH_REDIS_REST_URL` +
+   `UPSTASH_REDIS_REST_TOKEN`, then `KV_REST_API_URL` + `KV_REST_API_TOKEN`),
+   then `VALKEY_URL`, then `REDIS_URL` (RESP over TCP, `ioredis` loaded only
+   then). With none, the in-memory engine, and only off Vercel: a production
+   or preview deployment with no cache refuses to start. Start-up logs
+   `hobo_ci_cache_backend` with the chosen backend and the variable *names*
+   present; no value is ever logged. Several bindings at once is a fixed order
+   for now; phase 4c makes `selectCacheBackend` policy-driven.
+3. **The store**: `RelayCacheStore` over that cache, keys under
+   `hobo-ci:<VERCEL_ENV>:` (`local` off Vercel), the config document as its
+   read-only config source, the Sandbox proxy token key from the config service,
+   and the step scheduler as its `onLeaseChange` hook. Every command goes through
+   `meterExecutor`; at most once a minute per instance the delta is added to a
+   monthly counter in the cache and logged as `hobo_ci_cache_commands` (`used`,
+   `projected` for the month, `allowance`, `overBudget`, commands by verb), the
+   allowance being `HOBO_CI_CACHE_MONTHLY_COMMANDS` (default 500,000, the
+   Upstash free tier as the vendor states it).
+4. **Rebuild**: `githubRelayDiscovery` (GitHub runners, bridge runs, jobs) and
+   the Sandbox host's lookup by name are the discovery ports; a lease step that
+   finds no record rebuilds the lease by name, and each repair tick runs
+   `rebuildInflight` for accounts whose in-flight holds the cache lost.
+5. **The hosted runtime, control plane, MCP and Sandbox host**, as before, on
+   the cache store. The control plane is read-only: the routes that wrote
+   configuration (`PUT /v1|v2/accounts/self/policy`, `PUT …/providers`,
+   `POST …/signals`, `…/observations`, `…/rate-observations`, the inbox
+   quarantine and retry, and every `/v1/accounts/self/repositories/…` route)
+   answer **410**: the body's `error` says configuration is read-only on this
+   relay and is written with `hobo ci` through the config service, and its
+   `configService` names the binding's kind. Read routes are unchanged. MCP's change feed is the store's
+   change ring. GitHub onboarding (the OAuth session flow and owner bootstrap)
+   is not served here: it moves onto the cache and cookies in phase 5.
+
+**Queue topics** ([`src/relay-queue.ts`](src/relay-queue.ts); records
+`HostedQueueDelivery` and `HostedLeaseStep` in
+[`data-models/queue.proto`](data-models/queue.proto), constrained by
+[`queue.cue`](data-models/queue.cue)):
+
+| Topic | Consumer | Message | Idempotency key |
+|---|---|---|---|
+| `hobo-ci-intake` | `api/intake.ts` | a verified delivery (body base64, retained up to 7 days) | the GitHub delivery id |
+| `hobo-ci-lease-steps` | `api/lease-steps.ts` | one lease step, delayed until due | `${leaseId}:${step}:${n}` |
+| `hobo-ci` | `api/queue.ts` | the repair tick (schedule `hobo-ci-repair`, every 15 minutes) | none |
+
+- **Intake.** `POST /github/webhooks` checks the signature, records the
+  delivery's dedupe markers in the cache (3 commands), sends the delivery to
+  `hobo-ci-intake` and only then answers 202. If the send fails the markers are
+  undone and GitHub gets a 503. The consumer processes the delivery
+  (`runtime.processDelivery`: GitHub REST re-reads, queue, reserve, launch). A
+  body that is not JSON is acknowledged and logged as
+  `hobo_ci_webhook_quarantined`; any other failure is thrown, so the queue
+  redelivers it.
+- **Lease steps** replace the scan over every in-flight lease. When a lease
+  enters a chain (`reserved`/`dispatching`: `dispatch-check`;
+  `dispatched`/`claiming`: `claim-timeout`; `running`/`uncertain`:
+  `reconcile`), the store's hook sends that chain's next rung. Rung `n` is due at
+  the lease's `createdAt` plus 1, 2.5, 5, 10, 20, 30, 45, 60, 90, 120, 180, 240,
+  360, 480, 720, 1080, 1440 minutes, so two chains of one lease and step use the
+  same keys and the queue keeps one. A step reads its lease; if the lease left
+  the chain it stops; otherwise it sends the next rung, then recovers a stale
+  intent (2 minutes, 17 for a Sandbox operation) or reconciles the lease with
+  its host (a `reserved` lease at its dispatch check admits pending work
+  instead). A step whose lease the cache lost rebuilds it by name from the job
+  the message carries. Past the last rung, the repair tick covers it.
+- **Repair tick** (backstop): `rebuildInflight`, then the runtime's full tick
+  over every in-flight lease. The repair scanners that redeliver failed GitHub
+  deliveries and find queued jobs whose delivery never came are not run here
+  yet: their claims and cursors move onto the cache in phase 5.
+- **The handoff.** In production each consumer hands its message to the current
+  production deployment's `POST /internal/queue-wakeup` (authenticated with
+  `CRON_SECRET`, from the config service), as since PR #1881: a repair tick that
+  fails there is acknowledged and dropped, a delivery or lease step is answered
+  503 and held for redelivery. A pre-4b inbox wakeup (`{deliveryId}`) is
+  acknowledged and ignored: this relay has no inbox. Off production the message
+  runs in the consumer itself.
+
+**Probes.** `/healthz` answers 200 always, before the relay is composed.
+`/readyz` answers 200 or 503 with `{ready, configService, configStale, cache,
+executionHost}`: the config service loads, the cache answers a read (one
+command), and an execution host (the Sandbox controller) is configured; a stale
+config copy is reported but still ready. While the relay cannot start (the
+config service unreachable on a cold start, an invalid configuration or cache
+binding) `/readyz` answers 503 `{ready: false, started: false}` and every other
+route 503.
+
+**What the deployment needs.**
+
+| Name | Where | What |
+|---|---|---|
+| `HOBO_CI_CONFIG_SERVICE` | project env | `infisical` in production |
+| `INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH` | project env (the config-service binding) | [Config service](CONFIG-SERVICE.md) |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` + `KV_REST_API_TOKEN` | injected by the cache's Marketplace integration | the cache (or `VALKEY_URL` / `REDIS_URL` for a self-hosted Valkey) |
+| `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | the allowance the meter reports against |
+| `HOBO_CI_EVENTS_URL`, `HOBO_CI_EVENTS_TENANT` | project env, optional | relay failures as CloudEvents |
+| Every `RelayRuntimeConfig` key | the config service | [Config service](CONFIG-SERVICE.md#what-the-folder-holds); `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url) is required with `HOBO_CI_SANDBOX_ENABLED` |
+
+No `DATABASE_URL*`, Neon or Turso variable is read.
+
+**Cache commands per job.** `test/stateless-relay.test.ts` pins them for one
+Sandbox job through the whole composition (in-memory engine, scripts cached):
+3 per webhook delivery (three deliveries), 57 for the intake that queues,
+reserves and launches it (a launch is ten lease transitions, each a
+compare-and-set plus the routing check a held state takes, four ring appends
+and the egress and proxy bindings), 6 and 2 for the in-progress and completed
+deliveries, 4 for the first three step rungs, 20 for the step that stops both
+VMs and settles, and 1 for the step that ends the chain: **99**. The store's own
+per-step cost on a workflow-bridge path is in
+[`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#command-cost) (62 before
+phase 4b, 43 after).
+
+**Tests.** `test/stateless-relay.test.ts` composes the relay over the in-memory
+cache, an `env` config source, an in-memory queue with the platform's
+idempotency and delays, a GitHub stand-in and Sandbox drivers that keep VMs in
+a map: a job from webhook to settlement; duplicate deliveries (the same id
+twice, the intake message delivered twice, GitHub's redelivery under a new id)
+giving one lease, one Sandbox and one runner; the cache wiped mid-job and the
+lease rebuilt by name, the running job adopted rather than stopped and nothing
+provisioned twice; every configuration write refused with 410; and `/readyz`
+and `/healthz`. `test/cache-backend.test.ts` and `test/relay-queue.test.ts`
+cover backend selection, the meter, the messages, the step ladder and the
+handoff. The handoff's bodies and answers are a PACT
+([`contracts/queue-handoff.pact.json`](contracts/queue-handoff.pact.json)),
+executed by `contracts/queue-handoff.consumer.test.ts` against both sides.
+Nothing here has run against Vercel, Upstash, Infisical or GitHub.
+
+**Not yet.** Settling a rebuilt Sandbox lease: its proxy meters were in the
+lost cache, so after GitHub reports the job finished both VMs are stopped but
+the lease stays `uncertain`, holding its capacity until its record lapses
+(ADR-0179 §10 moves the authoritative counters into the proxy VM). Worker
+health evidence (`hobo_ci_worker_health`) and the repair scanners move to the
+cache in phase 5. That a Vercel Sandbox lookup by an unknown name answers 404
+is assumed from the SDK's error shape, not observed.
 
 ## Hosted relay
 

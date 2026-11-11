@@ -176,7 +176,7 @@ export type RelayCacheStoreOptions = Readonly<{
 	intake?: RelayWebhookIntake;
 	usage?: ProviderUsagePort;
 	/** Key for derived sandbox proxy tokens; sandbox proxy paths refuse without it. */
-	proxyTokenKey?: ProxyTokenKey;
+	proxyTokenKey?: ProxyTokenKey | undefined;
 	/** Called with a fixed event name and counts only; never values. */
 	onDiagnostic?: (
 		event: string,
@@ -184,7 +184,35 @@ export type RelayCacheStoreOptions = Readonly<{
 	) => void;
 	/** Wall clock for sandbox proxy rate windows. */
 	nowMs?: () => number;
+	/**
+	 * Called after every lease record this store writes, with the state the
+	 * lease had before (absent for a new record). The hosted relay schedules
+	 * its per-lease queue steps from it. A hook that throws is reported, not
+	 * propagated: the write it follows has already happened.
+	 */
+	onLeaseChange?: (change: RelayLeaseChange) => Promise<void> | void;
 }>;
+
+/** One lease write, as `onLeaseChange` sees it. */
+export type RelayLeaseChange = Readonly<{
+	lease: Lease;
+	type: string;
+	at: string;
+	previousState: string | undefined;
+}>;
+
+/**
+ * Lease events the change ring keeps although the lease's state did not
+ * change: each says something a state cannot. Every other lease write that
+ * leaves the state alone (an observed job id, a sandbox sub-stage, a proxy
+ * binding) stays out of the ring: MCP follows job state, and a reader that
+ * wants a lease's detail reads the lease.
+ */
+const FEED_SAME_STATE_EVENTS = new Set([
+	"ci.BudgetOverrun",
+	"ci.AssignmentUnknown",
+	"ci.LeaseRebuilt",
+]);
 
 const MAX_CAS_ATTEMPTS = 16;
 const RETRY = Symbol("retry");
@@ -303,6 +331,14 @@ export class RelayCacheStore {
 	private readonly rings = new Map<string, EphemeralRing>();
 	private readonly nowMs: () => number;
 	private casLosses = 0;
+	/**
+	 * The lease records this instance wrote last, by id, so the next write
+	 * of the same lease (a launch is a run of transitions) can compare-and-set
+	 * without reading first. A slot is taken out when used: if another
+	 * instance wrote in between, the compare-and-set fails and the write is
+	 * redone from a fresh read. Bounded; never served to a plain read.
+	 */
+	private readonly written = new Map<string, LeaseSlot>();
 
 	constructor(private readonly options: RelayCacheStoreOptions) {
 		this.state = options.state;
@@ -372,6 +408,27 @@ export class RelayCacheStore {
 		return found.map((entry) => this.parseLease(entry));
 	}
 
+	private remember(slot: LeaseSlot): void {
+		this.written.delete(slot.lease.id);
+		this.written.set(slot.lease.id, slot);
+		if (this.written.size > 256) {
+			const oldest = this.written.keys().next().value;
+			if (oldest !== undefined) this.written.delete(oldest);
+		}
+	}
+
+	/** The lease to write next: this instance's last write of it, else a read. */
+	private async leaseForWrite(
+		id: string,
+	): Promise<{ slot: LeaseSlot | undefined; remembered: boolean }> {
+		const slot = this.written.get(id);
+		if (slot) {
+			this.written.delete(id);
+			return { slot, remembered: true };
+		}
+		return { slot: await this.readLease(id), remembered: false };
+	}
+
 	private leaseTtl(lease: Lease): EphemeralTtlMs {
 		return TERMINAL.has(lease.state)
 			? RELAY_TTL.terminal
@@ -393,22 +450,30 @@ export class RelayCacheStore {
 				create(RelayCacheIntentSchema, { kind: type, at }),
 			];
 		}
-		return this.write(
+		const version = await this.write(
 			this.keys.lease(lease.id),
 			slot.version,
 			encodeRecord(RelayCacheLeaseSchema, record),
 			this.leaseTtl(lease),
 		);
+		if (version)
+			this.remember({ version, record, lease: clone(LeaseSchema, lease) });
+		return version;
 	}
 
-	private async readJob(key: string): Promise<Slot<RelayCacheJob> | undefined> {
-		const entry = await this.state.get(this.keys.job(key));
+	private parseJob(
+		entry: { value: string; version: EphemeralVersion } | undefined,
+	): Slot<RelayCacheJob> | undefined {
 		return entry
 			? {
 					version: entry.version,
 					record: decodeRecord(RelayCacheJobSchema, entry.value),
 				}
 			: undefined;
+	}
+
+	private async readJob(key: string): Promise<Slot<RelayCacheJob> | undefined> {
+		return this.parseJob(await this.state.get(this.keys.job(key)));
 	}
 
 	private jobTtl(record: RelayCacheJob, lease?: Lease): EphemeralTtlMs {
@@ -477,8 +542,24 @@ export class RelayCacheStore {
 		}
 	}
 
-	private emitLease(lease: Lease, type: string, at: string): Promise<void> {
-		return this.emit(
+	/**
+	 * After a lease write: tell the host, then append to the change ring when
+	 * the lease's state changed or the event is one MCP needs regardless.
+	 */
+	private async emitLease(
+		lease: Lease,
+		type: string,
+		at: string,
+		previousState: string | undefined,
+	): Promise<void> {
+		try {
+			await this.options.onLeaseChange?.({ lease, type, at, previousState });
+		} catch {
+			this.options.onDiagnostic?.("hobo_ci_relay_lease_hook_failed", { type });
+		}
+		if (previousState === lease.state && !FEED_SAME_STATE_EVENTS.has(type))
+			return;
+		await this.emit(
 			type,
 			at,
 			encodeRecord(LeaseSchema, lease),
@@ -715,6 +796,20 @@ export class RelayCacheStore {
 		});
 	}
 
+	/**
+	 * Configured accounts whose in-flight holds are not known: their index is
+	 * missing (a new or emptied cache) or was recreated without a rebuild. One
+	 * read. Priced offers stay paused for these until `markHoldsKnown`.
+	 */
+	async accountsAwaitingRebuild(): Promise<string[]> {
+		const indexes = await this.readIndexes(
+			this.accountIds(await this.snapshot()),
+		);
+		return [...indexes]
+			.filter(([, { record }]) => !record.holdsKnown)
+			.map(([id]) => id);
+	}
+
 	/** A rebuild pass restored this account's holds: priced offers may admit again. */
 	async markHoldsKnown(accountId: string, at: string): Promise<void> {
 		await this.mutateIndex(accountId, (record) => {
@@ -727,9 +822,12 @@ export class RelayCacheStore {
 
 	private async mutatePending(
 		change: (keys: string[]) => string[] | undefined,
+		read?: { value: string; version: EphemeralVersion },
 	): Promise<void> {
+		let first = read;
 		await this.retry("pending set", async () => {
-			const entry = await this.state.get(this.keys.pending());
+			const entry = first ?? (await this.state.get(this.keys.pending()));
+			first = undefined;
 			const current = entry
 				? decodeRecord(RelayCachePendingSchema, entry.value).jobKeys
 				: [];
@@ -758,12 +856,6 @@ export class RelayCacheStore {
 	private addPending(key: string): Promise<void> {
 		return this.mutatePending((keys) =>
 			keys.includes(key) ? undefined : [...keys, key],
-		);
-	}
-
-	private removePending(key: string): Promise<void> {
-		return this.mutatePending((keys) =>
-			keys.includes(key) ? keys.filter((entry) => entry !== key) : undefined,
 		);
 	}
 
@@ -859,12 +951,16 @@ export class RelayCacheStore {
 				jobs.push(decodeRecord(JobSchema, record.pendingJobJson));
 			else stale.add(keys[index] ?? "");
 		}
-		// A key whose record left `pending` (or lapsed) is pruned here, once.
+		// A key whose record left `pending` (or lapsed) is pruned here, once,
+		// by compare-and-set on the set as just read: nothing else removes a
+		// key, so taking, expiring or completing a job costs the set nothing.
 		if (stale.size > 0)
-			await this.mutatePending((current) =>
-				current.some((key) => stale.has(key))
-					? current.filter((key) => !stale.has(key))
-					: undefined,
+			await this.mutatePending(
+				(current) =>
+					current.some((key) => stale.has(key))
+						? current.filter((key) => !stale.has(key))
+						: undefined,
+				entry,
 			);
 		return jobs;
 	}
@@ -1011,9 +1107,13 @@ export class RelayCacheStore {
 	private async settleJobRecord(
 		key: string,
 		change: (record: RelayCacheJob | undefined) => RelayCacheJob | undefined,
+		read: () => Promise<Slot<RelayCacheJob> | undefined> = () =>
+			this.readJob(key),
 	): Promise<RelayCacheJob | undefined> {
+		let first = true;
 		return this.retry("job record", async () => {
-			const slot = await this.readJob(key);
+			const slot = first ? await read() : await this.readJob(key);
+			first = false;
 			const next = change(
 				slot ? clone(RelayCacheJobSchema, slot.record) : undefined,
 			);
@@ -1058,9 +1158,7 @@ export class RelayCacheStore {
 				"ci.LeaseExpired",
 				at,
 			);
-		let wasPending = false;
 		const changed = await this.settleJobRecord(key, (record) => {
-			wasPending = record?.state === "pending";
 			if (record?.state === "terminal") return undefined;
 			const next =
 				record ?? create(RelayCacheJobSchema, { jobKey: key, firstSeenAt: at });
@@ -1069,7 +1167,6 @@ export class RelayCacheStore {
 			next.terminalReason = "expired";
 			return next;
 		});
-		if (wasPending) await this.removePending(key);
 		if (changed)
 			await this.emit(
 				"ci.JobExpired",
@@ -1221,6 +1318,16 @@ export class RelayCacheStore {
 				),
 				relayLeaseTtl(admitted),
 			);
+			if (created)
+				this.remember({
+					version: created,
+					record: create(RelayCacheLeaseSchema, {
+						leaseJson: encodeRecord(LeaseSchema, admitted),
+						jobKey: key,
+						generation,
+					}),
+					lease: clone(LeaseSchema, admitted),
+				});
 			const lease = created ? admitted : (await this.readLease(id))?.lease;
 			if (!lease || !ACTIVE_STATES.has(lease.state)) {
 				// This generation's id is spent (its record outlived a lost job
@@ -1262,13 +1369,14 @@ export class RelayCacheStore {
 				);
 				return undefined;
 			}
-			if (created) await this.emitLease(lease, "ci.LeaseReserved", at);
+			if (created)
+				await this.emitLease(lease, "ci.LeaseReserved", at, undefined);
 			return lease;
 		}
 		throw new Error("reserve: compare-and-set kept losing; retry later");
 	}
 
-	/** Point the job record at the lease and drop it from pending. */
+	/** Point the job record at the lease; `pendingJobs` prunes its pending key. */
 	private async takeJob(
 		key: string,
 		lease: Lease,
@@ -1277,13 +1385,11 @@ export class RelayCacheStore {
 		generation?: number,
 		read?: Slot<RelayCacheJob>,
 	): Promise<"taken" | "lost"> {
-		let wasPending = false;
 		let first = read;
-		const outcome = await this.retry("take job", async () => {
+		return this.retry("take job", async () => {
 			const slot = first ?? (await this.readJob(key));
 			first = undefined;
 			const record = slot?.record;
-			wasPending = record?.state === "pending";
 			if (
 				record?.state === "terminal" ||
 				(record?.assigned && record.assigned.leaseId !== lease.id)
@@ -1305,8 +1411,6 @@ export class RelayCacheStore {
 				? ("taken" as const)
 				: RETRY;
 		});
-		if (wasPending) await this.removePending(key);
-		return outcome;
 	}
 
 	/** Route against every in-flight hold and add this lease to its account's index by CAS. */
@@ -1411,30 +1515,38 @@ export class RelayCacheStore {
 	): Promise<Lease | undefined> {
 		const snapshot = await this.checkRevision(expectedRevision);
 		const result = await this.retry("transition", async () => {
-			const slot = await this.readLease(id);
-			if (!slot || !expected.includes(slot.lease.state)) return undefined;
+			const { slot, remembered } = await this.leaseForWrite(id);
+			// A remembered slot is only a guess at the current record: whatever
+			// it rejects is decided again on a fresh read.
+			if (!slot || !expected.includes(slot.lease.state))
+				return remembered ? RETRY : undefined;
 			const before = clone(LeaseSchema, slot.lease);
 			const lease = clone(LeaseSchema, slot.lease);
-			const identity = leaseFinancialIdentity(lease);
-			update(lease);
-			if (lease.state === "dispatching" && !lease.dispatchingAt)
-				lease.dispatchingAt = at;
-			if (leaseFinancialIdentity(lease) !== identity)
-				throw new Error("lease financial identity is immutable");
-			const retirement = isIsolatedRetirementTransition(
-				before,
-				lease,
-				type,
-				at,
-			);
-			if (
-				!retirement &&
-				["dispatching", "claiming", "running"].includes(lease.state)
-			) {
-				if (!(await this.authorizeHeldEffect(snapshot, lease, at)))
-					throw new Error("durable policy revoked lease execution");
-				if (lease.budgetId)
-					throw new Error("shared CI budget authority unavailable");
+			try {
+				const identity = leaseFinancialIdentity(lease);
+				update(lease);
+				if (lease.state === "dispatching" && !lease.dispatchingAt)
+					lease.dispatchingAt = at;
+				if (leaseFinancialIdentity(lease) !== identity)
+					throw new Error("lease financial identity is immutable");
+				const retirement = isIsolatedRetirementTransition(
+					before,
+					lease,
+					type,
+					at,
+				);
+				if (
+					!retirement &&
+					["dispatching", "claiming", "running"].includes(lease.state)
+				) {
+					if (!(await this.authorizeHeldEffect(snapshot, lease, at)))
+						throw new Error("durable policy revoked lease execution");
+					if (lease.budgetId)
+						throw new Error("shared CI budget authority unavailable");
+				}
+			} catch (error) {
+				if (remembered) return RETRY;
+				throw error;
 			}
 			return (await this.writeLease(slot, lease, type, at))
 				? { lease, before }
@@ -1444,7 +1556,7 @@ export class RelayCacheStore {
 		const { lease, before } = result;
 		if (TERMINAL.has(lease.state) && !TERMINAL.has(before.state))
 			await this.retireFromIndex(lease.accountId, [lease.id]);
-		await this.emitLease(lease, type, at);
+		await this.emitLease(lease, type, at, before.state);
 		return lease;
 	}
 
@@ -1583,7 +1695,6 @@ export class RelayCacheStore {
 			record.pendingJobJson = "";
 			return record;
 		});
-		if (withdrawn) await this.removePending(key);
 		return changed || !!withdrawn;
 	}
 
@@ -1634,32 +1745,64 @@ export class RelayCacheStore {
 			runAttempt: job.runAttempt,
 		};
 		const key = relayJobKey(identity);
+		const leaseId = job.runnerName
+			? leaseIdFromBoxRunnerName(job.runnerName)
+			: undefined;
+		const needsJob =
+			job.action === "completed" || (!!leaseId && job.action === "in_progress");
+		if (!needsJob && !leaseId) return;
+		// One round trip for the records this observation reads first; each
+		// read serves its record's first compare-and-set attempt only.
+		const found = await this.state.getMany([
+			...(needsJob ? [this.keys.job(key)] : []),
+			...(leaseId ? [this.keys.lease(leaseId)] : []),
+		]);
+		let jobRead: Slot<RelayCacheJob> | undefined = needsJob
+			? this.parseJob(found[0])
+			: undefined;
+		let jobReadUsed = !needsJob;
+		let leaseRead: LeaseSlot | undefined = leaseId
+			? this.parseLease(found[needsJob ? 1 : 0])
+			: undefined;
+		let leaseReadUsed = !leaseId;
+		const firstJob = async () => {
+			if (jobReadUsed) return this.readJob(key);
+			jobReadUsed = true;
+			const slot = jobRead;
+			jobRead = undefined;
+			return slot;
+		};
 		// The job record as last written here: tells which follow-up writes are needed.
 		let known: RelayCacheJob | undefined;
-		let wasPending = false;
 		if (job.action === "completed") {
-			const changed = await this.settleJobRecord(key, (record) => {
-				wasPending = record?.state === "pending";
-				known = record;
-				if (
-					record?.state === "terminal" &&
-					!record.assigned &&
-					!record.pendingJobJson
-				)
-					return undefined;
-				known = create(RelayCacheJobSchema, {
-					jobKey: key,
-					state: "terminal",
-					generation: record?.generation ?? 0,
-					leaseId: record?.leaseId ?? "",
-					firstSeenAt: record?.firstSeenAt || at,
-					queueDeadlineAt: record?.queueDeadlineAt ?? "",
-					terminalReason: "completed",
-				});
-				return known;
-			});
-			if (wasPending) await this.removePending(key);
-			if (changed)
+			let taken = false;
+			const changed = await this.settleJobRecord(
+				key,
+				(record) => {
+					known = record;
+					taken = record?.state === "taken";
+					if (
+						record?.state === "terminal" &&
+						!record.assigned &&
+						!record.pendingJobJson
+					)
+						return undefined;
+					known = create(RelayCacheJobSchema, {
+						jobKey: key,
+						state: "terminal",
+						generation: record?.generation ?? 0,
+						leaseId: record?.leaseId ?? "",
+						firstSeenAt: record?.firstSeenAt || at,
+						queueDeadlineAt: record?.queueDeadlineAt ?? "",
+						terminalReason: "completed",
+					});
+					return known;
+				},
+				firstJob,
+			);
+			// A job a lease held is followed through that lease's settlement;
+			// the ring records completion only for a job no lease took.
+			if (changed && !taken)
 				await this.emit(
 					"ci.JobCompleted",
 					at,
@@ -1667,8 +1810,6 @@ export class RelayCacheStore {
 					this.owner(snapshot, job),
 				);
 		}
-		if (!job.runnerName) return;
-		const leaseId = leaseIdFromBoxRunnerName(job.runnerName);
 		if (!leaseId) return;
 		const settledSandbox = (lease: Lease) =>
 			lease.state === "completed" &&
@@ -1677,7 +1818,13 @@ export class RelayCacheStore {
 			lease.runnerDeletionConfirmed &&
 			!!lease.settledAt;
 		const observed = await this.retry("observe", async () => {
-			const slot = await this.readLease(leaseId);
+			let slot: LeaseSlot | undefined;
+			if (leaseReadUsed) slot = await this.readLease(leaseId);
+			else {
+				leaseReadUsed = true;
+				slot = leaseRead;
+				leaseRead = undefined;
+			}
 			const lease = slot?.lease;
 			if (
 				!slot ||
@@ -1689,33 +1836,40 @@ export class RelayCacheStore {
 				return undefined;
 			if (lease.actualJobId && lease.actualJobId !== job.id)
 				throw new Error("runner job assignment conflict");
-			const next = clone(LeaseSchema, lease);
-			next.actualJobId = job.id;
 			const type = settledSandbox(lease)
 				? "ci.LateJobObserved"
 				: "ci.JobObserved";
+			// Already recorded (a redelivery, or completion after the
+			// in-progress observation set it): nothing to write.
+			if (lease.actualJobId === job.id && type === "ci.JobObserved")
+				return { lease, type, written: false };
+			const next = clone(LeaseSchema, lease);
+			next.actualJobId = job.id;
 			return (await this.writeLease(slot, next, type, at))
-				? { lease: next, type }
+				? { lease: next, type, written: true }
 				: RETRY;
 		});
 		if (!observed) return;
 		const { lease } = observed;
-		await this.emitLease(lease, observed.type, at);
+		if (observed.written)
+			await this.emitLease(lease, observed.type, at, lease.state);
 		if (settledSandbox(lease) && job.action !== "completed") return;
 		if (job.action !== "in_progress" && job.action !== "completed") return;
 		if (job.action === "in_progress") {
 			const assigned = await this.retry("assign job", async () => {
-				const slot = await this.readJob(key);
+				const slot = await firstJob();
 				const record = slot?.record;
 				// Terminal observations win over delayed in-progress deliveries.
 				if (record?.state === "terminal") return "terminal" as const;
 				if (record?.assigned && record.assigned.leaseId !== lease.id)
 					throw new Error("job assigned to another runner");
-				wasPending = record?.state === "pending";
+				known = record;
+				// A redelivered in-progress observation keeps the assignment it made.
+				if (record?.assigned) return record.assigned.version;
 				const version = randomUUID();
 				known = create(RelayCacheJobSchema, {
 					jobKey: key,
-					state: wasPending ? "idle" : record?.state || "idle",
+					state: record?.state === "pending" ? "idle" : record?.state || "idle",
 					generation: record?.generation ?? 0,
 					leaseId: record?.leaseId ?? "",
 					firstSeenAt: record?.firstSeenAt || at,
@@ -1728,17 +1882,6 @@ export class RelayCacheStore {
 				return (await this.writeJob(slot, known, lease)) ? version : RETRY;
 			});
 			if (assigned === "terminal") return;
-			if (wasPending) await this.removePending(key);
-			await this.emit(
-				"ci.JobAssigned",
-				at,
-				JSON.stringify({
-					job: JSON.parse(encodeRecord(JobSchema, job)),
-					version: assigned,
-				}),
-				lease.accountId,
-				lease.id,
-			);
 		}
 		// Other generations' reservations for this job lose to the runner GitHub chose.
 		const generation = known?.generation ?? 0;
@@ -1800,18 +1943,20 @@ export class RelayCacheStore {
 		completedAt: string,
 		observed?: Pick<Lease, "state" | "hostRunId" | "runnerId">,
 	): Promise<Lease | undefined> {
+		let previous: string | undefined;
 		const settled = await this.retry("settle", async () => {
-			const slot = await this.readLease(id);
+			const { slot, remembered } = await this.leaseForWrite(id);
 			const current = slot?.lease;
 			if (!slot || !current || !ACTIVE_STATES.has(current.state))
-				return undefined;
+				return remembered ? RETRY : undefined;
+			previous = current.state;
 			if (
 				observed &&
 				(current.state !== observed.state ||
 					current.hostRunId !== observed.hostRunId ||
 					current.runnerId !== observed.runnerId)
 			)
-				return undefined;
+				return remembered ? RETRY : undefined;
 			if (current.provider === "vercel")
 				throw new Error("sandbox requires native cost settlement");
 			if (current.hostRunId !== 0 && current.hostRunId !== hostRunId)
@@ -1850,9 +1995,9 @@ export class RelayCacheStore {
 		});
 		if (!settled) return undefined;
 		await this.retireFromIndex(settled.accountId, [settled.id]);
-		await this.emitLease(settled, "ci.HostSettled", at);
+		await this.emitLease(settled, "ci.HostSettled", at, previous);
 		if (settled.paidMicros > settled.reservedPaidMicros)
-			await this.emitLease(settled, "ci.BudgetOverrun", at);
+			await this.emitLease(settled, "ci.BudgetOverrun", at, settled.state);
 		if (unmet) await this.queueInside(await this.snapshot(), unmet, at);
 		return settled;
 	}
@@ -2276,9 +2421,11 @@ export class RelayCacheStore {
 			!Number.isFinite(Date.parse(completedAt))
 		)
 			throw new Error("invalid sandbox settlement");
+		let previous: string | undefined;
 		const settled = await this.retry("sandbox settlement", async () => {
-			const slot = await this.readLease(id);
+			const { slot, remembered } = await this.leaseForWrite(id);
 			const current = slot?.lease;
+			previous = current?.state;
 			if (
 				!slot ||
 				!current ||
@@ -2290,16 +2437,21 @@ export class RelayCacheStore {
 				current.sandboxCommandId !== observed.sandboxCommandId ||
 				current.sandboxStage !== observed.sandboxStage
 			)
-				return undefined;
+				return remembered ? RETRY : undefined;
 			const lease = clone(LeaseSchema, current);
-			await this.checkSandboxSettlement(
-				lease,
-				at,
-				completedAt,
-				observed,
-				chargedMicros,
-				usedAllowance,
-			);
+			try {
+				await this.checkSandboxSettlement(
+					lease,
+					at,
+					completedAt,
+					observed,
+					chargedMicros,
+					usedAllowance,
+				);
+			} catch (error) {
+				if (remembered) return RETRY;
+				throw error;
+			}
 			const used = usedAllowance ?? create(SandboxAllowanceSchema);
 			lease.sandboxUsedAllowance = clone(SandboxAllowanceSchema, used);
 			lease.state = "completed";
@@ -2317,15 +2469,15 @@ export class RelayCacheStore {
 		});
 		if (!settled) return undefined;
 		await this.retireFromIndex(settled.accountId, [settled.id]);
-		await this.emitLease(settled, "ci.HostSettled", at);
+		await this.emitLease(settled, "ci.HostSettled", at, previous);
 		if (
 			settled.runnerId &&
 			!settled.actualJobId &&
 			settled.sandboxStopFromStage !== "registering"
 		)
-			await this.emitLease(settled, "ci.AssignmentUnknown", at);
+			await this.emitLease(settled, "ci.AssignmentUnknown", at, settled.state);
 		if (chargedMicros > settled.reservedPaidMicros)
-			await this.emitLease(settled, "ci.BudgetOverrun", at);
+			await this.emitLease(settled, "ci.BudgetOverrun", at, settled.state);
 		if (unmet) await this.queueInside(await this.snapshot(), unmet, at);
 		return settled;
 	}
@@ -2747,7 +2899,12 @@ export class RelayCacheStore {
 				);
 				if (!created) return false;
 				await this.holdInIndex(lease);
-				await this.emitLease(lease, "ci.LeaseRebuilt", lease.createdAt);
+				await this.emitLease(
+					lease,
+					"ci.LeaseRebuilt",
+					lease.createdAt,
+					undefined,
+				);
 				return true;
 			},
 			/** Point the job record at a lease (or mark it terminal) after a rebuild. */
