@@ -40,6 +40,7 @@ import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-tru
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
+import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
@@ -248,6 +249,8 @@ export class HostedRelay {
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
+			storageJobReserve?: (jobName: string) => WorkerStorageReserve;
 			/**
 			 * Publishes the fleet route table after each dispatch pass. Unset: the
 			 * relay balances nothing ahead of the queue and every job stays on its
@@ -1072,6 +1075,7 @@ export class HostedRelay {
 			if (storageAdmission) {
 				if (storageRefused) continue;
 				const storageLeases = await this.options.store.activeLeases();
+				const reserve = this.options.storageJobReserve?.(job.name) ?? undefined;
 				const admitted = await storageAdmission.admit(
 					storageLeases.map((lease) => ({
 						id: lease.id,
@@ -1079,6 +1083,7 @@ export class HostedRelay {
 						jobId: String(lease.jobId),
 					})),
 					storageJobId,
+					reserve,
 				);
 				if (!admitted) {
 					storageRefused = true;
