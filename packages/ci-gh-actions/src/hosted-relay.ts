@@ -59,7 +59,6 @@ import {
 import {
 	leaseOccupiesMergeGroupCap,
 	leaseOccupiesWorkerMemory,
-	leaseOccupiesWorkerResources,
 } from "./lease-resource-occupancy.js";
 import { countLiveBoxContainers } from "./live-container-count.js";
 import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
