@@ -32,7 +32,13 @@ export const sections: NavSection[] = [
 	{
 		label: "Operate",
 		slug: "/operations/",
-		groups: ["Operations", "Observability", "Security", "Troubleshooting"],
+		groups: [
+			"Operations",
+			"HoBo CI",
+			"Observability",
+			"Security",
+			"Troubleshooting",
+		],
 	},
 	{ label: "Reference", slug: "/reference/", groups: ["Reference"] },
 	{ label: "Agents", slug: "/agents/", groups: ["The Crew"] },
@@ -103,7 +109,6 @@ export const nav: NavGroup[] = [
 			{ label: "Getting started", slug: "/guide/getting-started/" },
 			{ label: "Core concepts", slug: "/guide/concepts/" },
 			{ label: "The hobo CLI", slug: "/guide/cli/" },
-			{ label: "hobo-code", slug: "/guide/hobo-code/" },
 			{ label: "The trail map", slug: "/guide/status/" },
 			{ label: "Search", slug: "/search/" },
 		],
@@ -138,6 +143,18 @@ export const nav: NavGroup[] = [
 			{ label: "Continuous migration", slug: "/cicd/migration/" },
 			{ label: "Progressive delivery", slug: "/cicd/progressive-delivery/" },
 			{ label: "Generation pipeline", slug: "/cicd/generation/" },
+		],
+	},
+	{
+		// Where CI jobs run, as opposed to CI/CD above: how HoBo ships an app.
+		label: "HoBo CI",
+		slug: "/ci/",
+		items: [
+			{ label: "HoBo CI overview", slug: "/ci/" },
+			{ label: "Providers", slug: "/ci/providers/" },
+			{ label: "Fleet balancing", slug: "/ci/fleet-balancing/" },
+			{ label: "Route table", slug: "/ci/route-table/" },
+			{ label: "Host health", slug: "/ci/host-health/" },
 		],
 	},
 	{

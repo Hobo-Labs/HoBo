@@ -324,6 +324,7 @@ Usage:
   hobo ci rerun [run]              Retry a completed run
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
+  hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
 
 Role: ${verb.role}
 ${statusLine}
@@ -375,6 +376,19 @@ Serve options (hobo ci serve):
   --db <path>                 SQLite relay store path
   --engine <name>             Serve only this engine (repeatable; default: profile + repo inventory)
   --home <path>               HOBO_HOME for serve state (credentials, db)
+
+Deploy options (hobo ci deploy; run in the relay's project directory, or pass --cwd):
+  --repo <owner/repository>   The GitHub repository Vercel builds
+  --ref <branch|tag|sha>      The git ref to deploy
+  --sha <commit>              Pin the full commit sha the ref names
+  --project <name>            The Vercel project
+  --target preview|production Deployment target (default: preview)
+  --team <team_id>            Vercel team id (default: VERCEL_TEAM_ID)
+  --set <NAME=value>          Non-secret setting to apply first (repeatable); secrets are refused
+  --root-directory <dir>      Project root directory to save on the project
+  --create-project            Create the project when Vercel has none by that name
+  --dry-run                   Print what would be sent; reads no token, sends nothing
+                              A real run reads VERCEL_TOKEN from the environment.
 
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch

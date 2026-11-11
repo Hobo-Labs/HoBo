@@ -5,7 +5,7 @@ description: "Provider auth flows, capability mappings, and billing models are o
 tags: [hobo, design, adr, providers, pricing, auth, registry]
 ---
 
-# ADR-0177 — Provider Manifest as Data {#adr-0177}
+# ADR-0178 — Provider Manifest as Data {#adr-0178}
 
 **Status:** Accepted
 **Date:** 2026-11-10

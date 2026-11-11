@@ -1,10 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createVercelTrafficRouting } from "@hobo/connectivity";
 import { loadPactDirectory } from "@hobo/contract-harness";
 import { parseRoutingPlan } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
+import { createVercelTrafficRouting } from "../../src/index.js";
 import { createPactFetch } from "../helpers/pact-fetch.js";
 
 const contractsDir = path.resolve(

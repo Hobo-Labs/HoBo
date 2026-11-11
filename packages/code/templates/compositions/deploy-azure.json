@@ -1,7 +1,0 @@
-{
-	"id": "deploy-azure",
-	"description": "Azure Yard for a Bindle app. Provider lives on the Yard.",
-	"tags": ["azure", "yard", "deploy"],
-	"queries": ["deploy to azure", "azure yard"],
-	"atoms": ["arch.konsistent-layout", "pkg.bindle-app", "yard.azure"]
-}

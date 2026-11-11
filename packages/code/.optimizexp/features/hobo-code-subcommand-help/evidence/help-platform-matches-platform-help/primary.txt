@@ -1,5 +1,0 @@
-{
-  "equal": true,
-  "promoteTopic": "promote",
-  "promoteHasRunId": true
-}

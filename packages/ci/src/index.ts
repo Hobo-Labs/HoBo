@@ -2,6 +2,20 @@ export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
+	accountEventPage,
+	accountOwnsJob,
+	EVENT_SCAN_SPAN,
+	type EventCursor,
+	type EventScan,
+	eventCursorBounds,
+	eventJob,
+	eventScan,
+	isJobEvent,
+	jobAccountId,
+	type LeaseEventsQuery,
+	leaseEventsBounds,
+} from "./event-log.js";
+export {
 	type BackendKind,
 	BackendUnavailableError,
 	type CloseReason,
@@ -20,6 +34,7 @@ export {
 	shellQuote,
 	supportsPipeline,
 } from "./execution.js";
+export * from "./fleet/index.js";
 export {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
@@ -32,6 +47,7 @@ export {
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
+export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {
 	ciBudgetIdentity,
 	ciBudgetPolicy,

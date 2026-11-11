@@ -64,7 +64,10 @@ throw — a finding is the answer.
 | `DRIZZLE_VIEW_UNREAD` | A view export; the IR models tables only |
 | `DRIZZLE_TABLE_SCHEMA_UNREPRESENTABLE` | The table names a non-default postgres schema; the IR has no schema qualifier |
 | `DRIZZLE_FOREIGN_KEY_UNREAD` | Inline foreign keys exist; the IR has no foreign-key concept, so they are not diffed |
-| `DRIZZLE_EXTRA_CONFIG_UNREAD` | A table's extra-config callback threw, or returned entries that are not readable index builders |
+| `DRIZZLE_EXTRA_CONFIG_UNREAD` | A table's extra-config callback threw, or returned entries that are not readable index builders (composite primary keys, table-level unique constraints and check constraints land here, named by builder class) |
+| `DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE` | An index keys on a SQL expression; the IR indexes declared columns only, so the index is **not ingested** |
+| `DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE` | A partial index; it is ingested on its columns, without the `WHERE` predicate |
+| `DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE` | An index key has a non-default sort order, nulls order or operator class; the index is ingested without it |
 | `DRIZZLE_COLUMN_UNRECOGNIZED` | A value in the column map is not a column descriptor |
 | `DRIZZLE_COLUMN_TYPE_UNREADABLE` | A column exposed no readable SQL type |
 | `DRIZZLE_NON_POSTGRES_TABLE` | A column carries a MySQL/SQLite/SingleStore type; this adapter ingests postgres only |
@@ -87,7 +90,8 @@ production database.
 ## Parse, don't validate
 
 `ingestDrizzleSchema` is this package's single parse boundary. It accepts an
-untrusted bag of module exports and returns **derived types** — a `SchemaIr` as
+untrusted bag of module exports (a plain record, or the module namespace object
+`import * as schema` yields) and returns **derived types** — a `SchemaIr` as
 parsed by core's `parseSchemaIr`, plus a frozen, sorted list of impedance
 findings — rather than handing back the caller's objects with a boolean verdict
 attached. Downstream code holds a checked `SchemaIr`, so there is no way to pass
@@ -127,11 +131,25 @@ exactly which engine version produced the SQL that ran.
   `DRIZZLE_EXPORT_UNRECOGNIZED` findings rather than as a crash. That is the
   intended failure mode, but it is a failure mode.
 - **The IR is narrower than Drizzle.** Foreign keys, check constraints,
-  composite primary keys, generated columns, enums, views, sequences,
-  partitioning, and non-default postgres schemas have no representation in
-  `SchemaIr` and therefore are **not diffed**. They appear as impedance findings
-  when detected. A plan from this engine is not a complete description of a
-  schema change involving those constructs.
+  composite primary keys, table-level unique constraints, expression indexes,
+  partial-index predicates, index key ordering, generated columns, enums, views,
+  sequences, partitioning, and non-default postgres schemas have no
+  representation in `SchemaIr` and therefore are **not diffed**. They appear as
+  impedance findings when detected. A plan from this engine is not a complete
+  description of a schema change involving those constructs.
+- **An index is ingested in one of three ways, and each is disclosed.** Plain
+  columns only: carried whole. Plain columns plus a `WHERE` predicate or a
+  non-default key order: carried on its columns, with a finding naming what was
+  left behind, so adding, dropping or re-keying it is still diffed but a change
+  to only the predicate or the order is not. Any SQL-expression key: not carried
+  at all, with a finding, because an index on `(a, lower(b))` recorded as an
+  index on `(a)` would be a false statement about the schema. A host that emits
+  SQL for such an index has no plan step to bind it to and must say where it put
+  it; `@hobo/ci` binds it to the owning table's `create-table` step and records
+  that in its migration journal.
+- **Index access method, storage parameters and `CONCURRENTLY` are not read.**
+  An index declared `USING gin` is ingested as an index on its columns with no
+  finding. That is a silent loss this package still has.
 - **Column ordinal position is not represented.** Columns are sorted by name for
   determinism, so a plan says nothing about physical column order.
 - **Postgres only.** `dialect` accepts `"postgres"`; anything else is refused

@@ -30,6 +30,8 @@ export type WorkerLeaseReconciliationLog = (
 export type WorkerLeaseReconciliationResult = Readonly<{
 	inventoryKnown: boolean;
 	liveLeaseIds: ReadonlySet<string>;
+	/** Memory reserved by the leases that are launching or running. */
+	inUseMemoryMb: number;
 }>;
 
 function requeueJob(lease: Lease) {
@@ -112,6 +114,18 @@ export function createWorkerLeaseReconciler(options: {
 	if (!Number.isInteger(orphanGraceMs) || orphanGraceMs < 0)
 		throw new Error("invalid orphan grace");
 
+	/** Memory reserved by leases that are launching or running. */
+	function reservedMemoryMb(owned: readonly Lease[]): number {
+		return owned
+			.filter((lease) => lease.state !== "reserved" || lease.sandboxName !== "")
+			.reduce(
+				(total, lease) =>
+					total +
+					(lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb),
+				0,
+			);
+	}
+
 	async function reconcile(
 		reconcileOptions: { draining?: boolean } = {},
 	): Promise<WorkerLeaseReconciliationResult> {
@@ -139,6 +153,7 @@ export function createWorkerLeaseReconciler(options: {
 			return {
 				inventoryKnown: false,
 				liveLeaseIds: new Set(owned.map((lease) => lease.id)),
+				inUseMemoryMb: reservedMemoryMb(owned),
 			};
 		}
 		const containerFor = (lease: Lease) => {
@@ -166,12 +181,7 @@ export function createWorkerLeaseReconciler(options: {
 		const launching = owned.filter(
 			(lease) => lease.state !== "reserved" || lease.sandboxName !== "",
 		);
-		const journalInUseMb = launching.reduce(
-			(total, lease) =>
-				total +
-				(lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb),
-			0,
-		);
+		const journalInUseMb = reservedMemoryMb(owned);
 		if (containers.length === 0 && journalInUseMb > 0)
 			options.log?.("hobo_ci_memory_without_containers", {
 				inUseMb: journalInUseMb,
@@ -433,7 +443,11 @@ export function createWorkerLeaseReconciler(options: {
 				});
 			}
 		}
-		return { inventoryKnown: true, liveLeaseIds };
+		return {
+			inventoryKnown: true,
+			liveLeaseIds,
+			inUseMemoryMb: journalInUseMb,
+		};
 	}
 
 	return { reconcile };

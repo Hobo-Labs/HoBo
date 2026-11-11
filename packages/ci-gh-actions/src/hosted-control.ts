@@ -19,6 +19,7 @@ import {
 	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
 	effectiveCiAccount,
+	isJobEvent,
 	LeaseSchema,
 	OfferSchema,
 	parseCiPolicy,
@@ -30,10 +31,16 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import { z } from "zod";
-import type {
-	ControlAuthenticator,
-	ControlPrincipal,
-} from "./control-plane.js";
+import {
+	accountLease,
+	ControlError,
+	configurationState,
+	type QuarantinedDelivery,
+	quarantinedDeliveries,
+	reconcileAccountLease,
+	retryQuarantinedDelivery,
+} from "./account-operations.js";
+import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
 	IsolatedOnboardingError,
@@ -52,7 +59,8 @@ import {
 	prepareOnboarding,
 } from "./onboarding.js";
 
-interface HostedControlStore extends HostedRelayStore {
+/** What the account control plane needs from a store beyond the relay's own port. */
+export interface HostedControlStore extends HostedRelayStore {
 	reattestRate(
 		input: {
 			accountId: string;
@@ -89,29 +97,12 @@ interface HostedControlStore extends HostedRelayStore {
 	quarantinedWebhooks(
 		accountId: string,
 		expectedRevision: number,
-	): Promise<
-		Array<{
-			deliveryId: string;
-			event: string;
-			installationId: number;
-			repositoryId: number;
-			receivedAt: string;
-			attempts: number;
-		}>
-	>;
+	): Promise<QuarantinedDelivery[]>;
 	retryQuarantinedWebhook(
 		accountId: string,
 		expectedRevision: number,
 		deliveryId: string,
 	): Promise<boolean>;
-}
-class ControlError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
-	}
 }
 function response(status: number, value: string, revision?: number): Response {
 	const headers = new Headers({
@@ -194,6 +185,13 @@ export function createHostedControlPlane(options: {
 	authenticate: ControlAuthenticator;
 	publicOrigin: string;
 	assets: { workflow: string; bootstrap: string };
+	/**
+	 * Let an account replace its whole policy, offers included, through
+	 * `PUT /v1/accounts/self/policy`. For a relay whose operator owns the
+	 * provider inventory. Off, that route answers 410 and an account can only
+	 * change its v2 desired policy.
+	 */
+	fullAccountUpdates?: boolean;
 	runtimeDiagnostic?: () => {
 		sandboxEnabled: boolean;
 		allowedDomains: readonly string[];
@@ -201,12 +199,7 @@ export function createHostedControlPlane(options: {
 	};
 }) {
 	const { store, relay } = options;
-	async function state(): Promise<ConfigurationState> {
-		const result = await store.configuration();
-		if (!result?.configuration)
-			throw new ControlError(503, "configuration unavailable");
-		return result;
-	}
+	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
 		repositoryId: number,
@@ -310,14 +303,57 @@ export function createHostedControlPlane(options: {
 					current.revision,
 				);
 			}
-			if (path === "/v1/accounts/self/policy" && request.method === "PUT")
-				throw new ControlError(
-					410,
-					"use v2 desired policy; full account updates are disabled",
+			if (path === "/v1/accounts/self/policy" && request.method === "PUT") {
+				if (!options.fullAccountUpdates)
+					throw new ControlError(
+						410,
+						"use v2 desired policy; full account updates are disabled",
+					);
+				const expected = revision(request);
+				const account = fromJsonString(AccountSchema, await readBody(request));
+				if (account.id !== principal.accountId)
+					throw new ControlError(
+						403,
+						"account policy belongs to another account",
+					);
+				const latest = (await state()).configuration;
+				if (
+					(await store.controlRecord(`ci-policy:${principal.accountId}`)) ||
+					latest?.accounts.find((entry) => entry.id === principal.accountId)
+						?.budgetPolicy
+				)
+					throw new ControlError(410, "use v2 desired policy for this account");
+				const next = create(ConfigurationSchema, {
+					accounts: [
+						...(latest?.accounts ?? []).filter(
+							(entry) => entry.id !== principal.accountId,
+						),
+						account,
+					],
+					connections: latest?.connections ?? [],
+				});
+				try {
+					parseConfiguration(toJsonString(ConfigurationSchema, next));
+				} catch {
+					throw new ControlError(400, "invalid account policy");
+				}
+				const saved = await store.configure(next, expected, relay.now());
+				return response(
+					200,
+					policyState(saved, principal.accountId),
+					saved.revision,
 				);
+			}
 			if (path === "/v2/accounts/self/policy" && request.method === "PUT") {
 				const expected = revision(request);
-				const desired = parseCiPolicy(await readBody(request));
+				const input = await readBody(request);
+				let desired: ReturnType<typeof parseCiPolicy>;
+				try {
+					desired = parseCiPolicy(input);
+				} catch {
+					// A policy the parser refuses is the caller's to fix, not to retry.
+					throw new ControlError(400, "invalid desired CI policy");
+				}
 				if (desired.accountId !== principal.accountId)
 					throw new ControlError(
 						403,
@@ -353,6 +389,11 @@ export function createHostedControlPlane(options: {
 						throw new ControlError(
 							409,
 							"provider binding requires trusted provisioning",
+						);
+					if (offer.backend === "sandbox" && !relay.options.isolatedHost)
+						throw new ControlError(
+							409,
+							"sandbox providers are unavailable on this relay",
 						);
 				}
 				if (!desired.budget) throw new ControlError(400, "budget required");
@@ -682,12 +723,11 @@ export function createHostedControlPlane(options: {
 				path === "/v2/accounts/self/inbox/quarantined" &&
 				request.method === "GET"
 			) {
-				const current = await state();
-				const deliveries = await store.quarantinedWebhooks(
+				const { revision: current, deliveries } = await quarantinedDeliveries(
+					store,
 					principal.accountId,
-					current.revision,
 				);
-				return response(200, JSON.stringify({ deliveries }), current.revision);
+				return response(200, JSON.stringify({ deliveries }), current);
 			}
 			const retry =
 				/^\/v2\/accounts\/self\/inbox\/([A-Za-z0-9-]{1,100})\/retry$/.exec(
@@ -697,21 +737,27 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(400, "retry request must have an empty body");
 				const expected = revision(request);
-				const done = await store.retryQuarantinedWebhook(
+				await retryQuarantinedDelivery(
+					store,
 					principal.accountId,
 					expected,
 					retry[1],
 				);
-				if (!done)
-					throw new ControlError(404, "quarantined delivery not found");
 				return response(200, JSON.stringify({ status: "queued" }), expected);
 			}
 			if (path === "/v1/accounts/self/leases" && request.method === "GET") {
 				const leases = (await store.all())
 					.filter((entry) => entry.accountId === principal.accountId)
 					.slice(-100);
+				// The account's lease and record events, as this route has always
+				// returned them. A job's own events (queued, completed, expired)
+				// now name their account too; they are served by the relay's MCP
+				// server and must not crowd the lease events out of this window.
 				const events = (await store.events())
-					.filter((entry) => entry.accountId === principal.accountId)
+					.filter(
+						(entry) =>
+							entry.accountId === principal.accountId && !isJobEvent(entry),
+					)
 					.slice(-100);
 				return response(
 					200,
@@ -955,7 +1001,7 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(
 						400,
-						"setup actions use the stored reviewed plan",
+						"setup actions use the stored reviewed plan, not request JSON",
 					);
 				if (!op.plan) throw new Error("setup plan missing");
 				const plan = parseOnboardingPlan(
@@ -1113,9 +1159,7 @@ export function createHostedControlPlane(options: {
 				);
 			}
 			if (lease?.[1]) {
-				const found = await store.get(lease[1]);
-				if (!found || found.accountId !== principal.accountId)
-					throw new ControlError(404, "lease not found");
+				const found = await accountLease(store, principal.accountId, lease[1]);
 				if (request.method === "GET" && !lease[2])
 					return response(200, toJsonString(LeaseSchema, found));
 				if (request.method === "POST" && lease[2] === "reconcile") {
@@ -1123,12 +1167,18 @@ export function createHostedControlPlane(options: {
 						ReconcileRequestSchema,
 						await readBody(request),
 					);
-					if (!Number.isSafeInteger(input.hostRunId) || input.hostRunId < 1)
-						throw new ControlError(400, "positive host run id required");
-					await relay.reconcile(found.id, input.hostRunId);
 					return response(
 						200,
-						toJsonString(LeaseSchema, (await store.get(found.id)) ?? found),
+						toJsonString(
+							LeaseSchema,
+							await reconcileAccountLease(
+								relay,
+								store,
+								principal.accountId,
+								found.id,
+								input.hostRunId,
+							),
+						),
 					);
 				}
 				throw new ControlError(405, "method not allowed");

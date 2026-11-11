@@ -1,0 +1,203 @@
+// Wire records for the PostgreSQL engine binding (src/engine).
+//
+// Three groups. The options and capture-object records are what a caller
+// hands the binding and what it derives from them. The executor records are
+// the one service boundary the binding has: a statement goes out, text rows
+// come back. The remaining records are the rows the binding keeps in its own
+// metadata tables beside the dataset tables — they are durable, and they are
+// what a second binding on the same namespace reads to find the first one's
+// datasets, fences, watermarks and subscriptions.
+//
+// No record here carries a connection string or a credential. The executor
+// is injected already connected; how it authenticates is not this package's
+// to know. No record carries a dataset row either: record payload crosses the
+// executor as statement parameters and result cells, and is never written to
+// a metadata table, an event, or evidence.
+
+syntax = "proto3";
+
+package hobo.data.postgres.v1;
+
+// Options a binding is created with. The executor itself is a live object
+// and is not part of the record.
+message PostgresEngineOptions {
+  // Server-side schema holding the dataset tables. Defaults to "public".
+  optional string namespace = 1;
+  // False omits the capture port, and the declaration says so.
+  optional bool capture = 2;
+  // Tables in the namespace the schema port snapshots and restores.
+  repeated string schema_tables = 3;
+  // Rows per keyset page when digesting. Defaults to 1000.
+  optional uint32 page_size = 4;
+  // True makes close() drop the namespace, its subscriptions and their
+  // replication slots, and its schema snapshots.
+  optional bool ephemeral = 5;
+  // How long a native-transfer progress question waits before answering
+  // "not yet", in milliseconds. Defaults to 50.
+  optional uint32 native_poll_interval_ms = 6;
+  // The connection string a native transfer's target reaches the source with
+  // is, like the executor, not part of the record: it is a credential, given
+  // to the binding as a function and resolved only when it is used.
+}
+
+// A closed list: an engine may only report impedance it has declared.
+enum PostgresImpedanceCode {
+  POSTGRES_IMPEDANCE_CODE_UNSPECIFIED = 0;
+  POSTGRES_IMPEDANCE_CODE_RESERVED_COLUMN_NAMES = 1;
+  POSTGRES_IMPEDANCE_CODE_TEXT_REFUSES_NUL_AND_LONE_SURROGATES = 2;
+  POSTGRES_IMPEDANCE_CODE_JSONB_NUMBERS_READ_AS_FLOAT64 = 3;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_VALUES_BEYOND_CANONICAL_RANGE = 4;
+  POSTGRES_IMPEDANCE_CODE_SNAPSHOT_IS_FUZZY = 5;
+  POSTGRES_IMPEDANCE_CODE_FENCE_TRIGGER_OWNER_CAN_DISABLE = 6;
+  POSTGRES_IMPEDANCE_CODE_TRUNCATE_REFUSED_ON_DATASETS = 7;
+  POSTGRES_IMPEDANCE_CODE_CAPTURE_NEEDS_LOGICAL_DECODING = 8;
+  POSTGRES_IMPEDANCE_CODE_CAPTURE_SLOT_PINS_LOG = 9;
+  POSTGRES_IMPEDANCE_CODE_CAPTURE_WHOLE_TRANSACTIONS = 10;
+  POSTGRES_IMPEDANCE_CODE_CAPTURE_UNCHANGED_TOAST_REREAD = 11;
+  POSTGRES_IMPEDANCE_CODE_CAPTURE_SLOT_NOT_FAILOVER_SAFE = 12;
+  POSTGRES_IMPEDANCE_CODE_SCHEMA_SNAPSHOT_IS_A_COPY = 13;
+  POSTGRES_IMPEDANCE_CODE_SCHEMA_SNAPSHOT_REFUSES_DEPENDENT_OBJECTS = 14;
+  POSTGRES_IMPEDANCE_CODE_SCHEMA_RESTORE_RECREATES_TABLE = 15;
+  POSTGRES_IMPEDANCE_CODE_RETIRE_IS_LOGGED_AS_DELETES = 16;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_WHOLE_DATASET_SAME_NAME = 17;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_NO_REVERSE_TAIL = 18;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION = 19;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY = 20;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_REFUSED_WHERE_CONNECTION_WOULD_BE_LOGGED = 21;
+}
+
+// ── the executor boundary ───────────────────────────────────────────────────
+
+// One statement parameter. Unset text is SQL NULL; every parameter is cast
+// by the statement, so no type travels with it.
+message PostgresExecutorParameter {
+  optional string text = 1;
+  // True when the parameter is a credential: the connection string a native
+  // transfer hands the target server. A recorded contract, a log, or a trace
+  // carries this flag in place of the text, never the text.
+  optional bool secret = 2;
+}
+
+// One statement for the injected executor to run.
+message PostgresExecutorRequest {
+  string sql = 1;
+  repeated PostgresExecutorParameter parameters = 2;
+  // True when the statement belongs to a transaction the executor opened:
+  // it must reach the same session as the statements before it, in order.
+  bool in_transaction = 3;
+}
+
+// One result cell. Unset text is SQL NULL; every selected column is cast to
+// text by the statement, so a driver never reinterprets a value.
+message PostgresExecutorCell {
+  string column = 1;
+  optional string text = 2;
+}
+
+message PostgresExecutorRow {
+  repeated PostgresExecutorCell cells = 1;
+}
+
+message PostgresExecutorResponse {
+  repeated PostgresExecutorRow rows = 1;
+  // Rows affected by a write; zero when the server reports none.
+  uint64 row_count = 2;
+}
+
+// What a refused statement carries back: the five-character SQLSTATE and
+// nothing else. The server's message text can quote a value or a host, so it
+// is not part of the record.
+message PostgresExecutorFailure {
+  string sql_state = 1;
+}
+
+// ── capture ─────────────────────────────────────────────────────────────────
+
+// The server objects behind one subscription. Both names are derived by
+// hashing the database, the namespace and the subscription name.
+message PostgresCaptureObjects {
+  // Replication slot name: cluster-wide.
+  string slot = 1;
+  // Publication name: database-wide.
+  string publication = 2;
+}
+
+// A row of hobo_data_subscriptions: a durable capture reader.
+message PostgresSubscription {
+  string subscription = 1;
+  string dataset = 2;
+  // Empty string spans every tenant.
+  string tenant = 3;
+  PostgresCaptureObjects objects = 4;
+  // The write-ahead-log location every not-yet-captured change sits after.
+  string start_position = 5;
+}
+
+// ── native transfer (logical-copy) ──────────────────────────────────────────
+
+// What the source side of a logical-copy answers and the target side
+// subscribes with. It is journaled with the migration, so it names server
+// objects and nothing else: no connection string, no credential, no row.
+message PostgresNativeTicket {
+  string profile = 1; // migration.postgres.logical-copy/v1
+  // Publication on the source database covering the one dataset table.
+  string publication = 2;
+  // Replication slot on the source cluster, created before any subscription.
+  string slot = 3;
+  // Server-side schema the table is published under; the target must use
+  // the same name, because logical replication maps tables by name.
+  string namespace = 4;
+  string dataset = 5;
+  // Always empty: logical-copy moves a whole dataset, never one tenant.
+  string tenant = 6;
+  // A digest naming the source cluster and database, so that a database is
+  // never subscribed to itself.
+  string origin = 7;
+}
+
+// ── metadata rows ───────────────────────────────────────────────────────────
+
+// A row of hobo_data_datasets: the schema a dataset table was created from.
+message PostgresDatasetRegistration {
+  string dataset = 1;
+  // The canonical DatasetSchema, as JSON.
+  string schema_json = 2;
+  // sha256 digest of that schema; what a differing ensure is refused on.
+  string schema_digest = 3;
+  // Bumped each time a fence is raised; the row every writer share-locks.
+  uint64 fence_epoch = 4;
+}
+
+// A row of hobo_data_fences. The token is a capability: whoever presents it
+// in the session setting hobo.fence_token writes through the fence.
+message PostgresFence {
+  string dataset = 1;
+  // Empty string fences every tenant of the dataset.
+  string tenant = 2;
+  string token = 3;
+  string reason = 4;
+}
+
+// A row of hobo_data_watermarks: how far one source has been applied.
+message PostgresWatermark {
+  string dataset = 1;
+  string source = 2;
+  // Opaque to this engine: a position minted by the source's engine.
+  string log_position = 3;
+}
+
+message PostgresSnapshotTable {
+  string name = 1;
+  // False when the table did not exist when the snapshot was taken; a
+  // restore then drops it.
+  bool present = 2;
+}
+
+// A row of hobo_data_schema_snapshots: one schema-port snapshot.
+message PostgresSchemaSnapshot {
+  // Also the name of the server-side schema holding the table copies.
+  string snapshot_ref = 1;
+  // Injected instant, RFC 3339.
+  string taken_at = 2;
+  repeated PostgresSnapshotTable tables = 3;
+}

@@ -20,7 +20,7 @@ anyone in the community — declares four things as data:
 
 `@hobo/provider-manifest` parses it and deserializes it into types that already
 exist. No provider package is written and no new runtime type is generated
-([ADR-0177](./adr/provider-manifest.md#adr-0177)).
+([ADR-0178](./adr/provider-manifest.md#adr-0178)).
 
 ```mermaid
 flowchart LR

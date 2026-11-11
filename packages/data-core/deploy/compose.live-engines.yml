@@ -1,0 +1,55 @@
+# Local servers for the live data-engine lanes (`pnpm run test:data-live`).
+#
+#   docker compose -f packages/data-core/deploy/compose.live-engines.yml up -d --wait
+#   pnpm run test:data-live
+#   docker compose -f packages/data-core/deploy/compose.live-engines.yml down -v
+#
+# Test fixtures only: both servers listen on loopback, PostgreSQL trusts every
+# local connection, and MongoDB runs without access control. Never point these
+# settings at data you care about.
+name: hobo-data-engines-live
+
+services:
+  postgres:
+    image: postgres:16
+    # Logical decoding (change capture) and the logical-copy fast path need
+    # wal_level=logical; every capture subscription holds a replication slot.
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=20
+      - -c
+      - max_wal_senders=20
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mongodb:
+    image: mongo:8.0
+    # Transactions and change streams need a replica set; one member is enough.
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "127.0.0.1:57017:27017"
+    healthcheck:
+      # Initiates the set on first start, then reports healthy once this
+      # member is the writable primary.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { rs.status() } catch (e) {
+          rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) }
+          if (!db.hello().isWritablePrimary) quit(1)
+      interval: 2s
+      timeout: 10s
+      retries: 30

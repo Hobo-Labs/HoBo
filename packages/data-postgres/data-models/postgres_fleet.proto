@@ -1,0 +1,238 @@
+// Wire records for a fleet of interchangeable PostgreSQL backends.
+//
+// A fleet keeps one writer and any number of standbys. These are the records
+// it persists on the backends themselves and exchanges between its steps. The
+// parsed TypeScript values under `src/fleet/` are narrowings of these records.
+//
+// A backend id is an opaque token. Nothing here names a product, a host, or a
+// credential, so every record is safe to log and to replay.
+
+syntax = "proto3";
+
+package hobo.data.postgres.fleet.v1;
+
+// One entry of the assignment log: who the writer is for one epoch.
+//
+// An epoch is decided when a majority of the configured backends hold the same
+// entry for it. The current assignment is the highest decided epoch.
+message PostgresFleetAssignment {
+  // Starts at 1 and increases by exactly one per entry on every backend.
+  uint64 epoch = 1;
+  // The writer. Unset means the fleet deliberately has no writer.
+  optional string active = 2;
+  // True while a planned move is in flight. Nobody may write.
+  bool sealed = 3;
+  // Where a sealed fleet is moving to. Set exactly when `sealed` is true.
+  optional string target = 4;
+  // A short fixed token, e.g. "bootstrap" or "failover:unreachable".
+  string reason = 5;
+  // Upper bound on the writes an unplanned move lost. Unset for a planned one.
+  optional uint64 loss_window_ms = 6;
+  // The proposer's clock. Zero for the bootstrap entry, which must be the same
+  // bytes whoever writes it.
+  uint64 decided_at_ms = 7;
+  // Which process proposed the entry. Never a person's name or a credential.
+  string decided_by = 8;
+}
+
+// One copied table of a standby: how many rows, and what they hash to.
+message PostgresFleetReplicatedTable {
+  string name = 1;
+  uint64 rows = 2;
+  // Order-independent SHA-256 over every row in text form, lower-case hex.
+  string digest = 3;
+}
+
+// What a standby holds: which writer it was copied from, under which
+// assignment, and as of when. A standby's lag is the time since `snapshot_at_ms`.
+message PostgresFleetWatermark {
+  // The backend the standby was copied from.
+  string source = 1;
+  // The assignment epoch the copy was made under.
+  uint64 source_epoch = 2;
+  // When the snapshot was taken, on the source's clock.
+  uint64 snapshot_at_ms = 3;
+  repeated PostgresFleetReplicatedTable tables = 4;
+  uint64 row_count = 5;
+  uint64 byte_count = 6;
+  // SHA-256 over every table's name, row count and digest, lower-case hex.
+  string digest = 7;
+}
+
+// The units an allowance, and therefore a measurement, is stated in.
+enum PostgresFleetUsageUnit {
+  POSTGRES_FLEET_USAGE_UNIT_UNSPECIFIED = 0;
+  // One statement sent to the backend.
+  POSTGRES_FLEET_USAGE_UNIT_OPERATIONS = 1;
+  POSTGRES_FLEET_USAGE_UNIT_COMPUTE_HOURS = 2;
+  POSTGRES_FLEET_USAGE_UNIT_STORAGE_BYTES = 3;
+}
+
+// One backend's counter for one billing period, kept on that backend.
+message PostgresFleetUsage {
+  // YYYY-MM of the UTC calendar month.
+  string period = 1;
+  PostgresFleetUsageUnit unit = 2;
+  uint64 used = 3;
+}
+
+// A measured quantity: this period's total for a rate, the size for a level.
+message PostgresFleetUsageMeasurement {
+  PostgresFleetUsageUnit unit = 1;
+  uint64 used = 2;
+}
+
+enum PostgresFleetBackendHealth {
+  POSTGRES_FLEET_BACKEND_HEALTH_UNSPECIFIED = 0;
+  POSTGRES_FLEET_BACKEND_HEALTH_REACHABLE = 1;
+  POSTGRES_FLEET_BACKEND_HEALTH_UNREACHABLE = 2;
+  // The server answered that a plan quota is spent.
+  POSTGRES_FLEET_BACKEND_HEALTH_QUOTA_EXHAUSTED = 3;
+  POSTGRES_FLEET_BACKEND_HEALTH_AUTH = 4;
+  // A failure nobody has classified. Never treated as healthy.
+  POSTGRES_FLEET_BACKEND_HEALTH_UNKNOWN = 5;
+}
+
+// What one tick saw of one backend.
+message PostgresFleetObservation {
+  string backend = 1;
+  PostgresFleetBackendHealth health = 2;
+  optional uint64 probe_latency_ms = 3;
+  // How long it has been failing without a success. Zero when reachable.
+  uint64 failing_for_ms = 4;
+  // The copied tables exist with the writer's columns and types.
+  bool schema_current = 5;
+  // Time since the standby's snapshot. Unset when it was never copied.
+  optional uint64 standby_lag_ms = 6;
+  repeated PostgresFleetUsageMeasurement usage = 7;
+}
+
+// What happens beyond an allowance.
+enum PostgresFleetOverageKind {
+  POSTGRES_FLEET_OVERAGE_KIND_UNSPECIFIED = 0;
+  // The service stops until the period ends or the plan changes.
+  POSTGRES_FLEET_OVERAGE_KIND_HARD_STOP = 1;
+  // Use beyond the allowance is billed per unit.
+  POSTGRES_FLEET_OVERAGE_KIND_METERED = 2;
+  // Nobody has verified it. Treated as not provably affordable.
+  POSTGRES_FLEET_OVERAGE_KIND_UNKNOWN = 3;
+}
+
+message PostgresFleetAllowance {
+  PostgresFleetUsageUnit unit = 1;
+  // Included per period, or in total for storage. Unset means unknown.
+  optional uint64 included = 2;
+  PostgresFleetOverageKind beyond = 3;
+  // Millionths of a US dollar per unit. Set exactly when `beyond` is METERED.
+  optional uint64 metered_micros_per_unit = 4;
+}
+
+// Where a financial model's numbers came from.
+message PostgresFleetEvidence {
+  string source = 1;
+  // YYYY-MM-DD: the day somebody read the source.
+  string observed_at = 2;
+}
+
+// What running on one backend costs and how much it allows.
+message PostgresFleetFinancialModel {
+  string backend = 1;
+  string plan = 2;
+  // Millionths of a US dollar per month. Unset means unknown.
+  optional uint64 fixed_monthly_fee_micros = 3;
+  repeated PostgresFleetAllowance allowances = 4;
+  PostgresFleetEvidence evidence = 5;
+}
+
+enum PostgresFleetFeasibility {
+  POSTGRES_FLEET_FEASIBILITY_UNSPECIFIED = 0;
+  POSTGRES_FLEET_FEASIBILITY_FEASIBLE = 1;
+  // A needed fact is missing. Never chosen for a planned switch.
+  POSTGRES_FLEET_FEASIBILITY_UNKNOWN = 2;
+  POSTGRES_FLEET_FEASIBILITY_INFEASIBLE = 3;
+}
+
+// One standby as the policy ranked it.
+message PostgresFleetCandidate {
+  string backend = 1;
+  bool eligible = 2;
+  PostgresFleetFeasibility feasibility = 3;
+  optional uint64 lag_ms = 4;
+  // Time until its first hard allowance runs out under the fleet's workload.
+  optional uint64 exhausts_in_ms = 5;
+  repeated string reasons = 6;
+}
+
+enum PostgresFleetAction {
+  POSTGRES_FLEET_ACTION_UNSPECIFIED = 0;
+  POSTGRES_FLEET_ACTION_KEEP = 1;
+  // Something is wrong and no move is allowed.
+  POSTGRES_FLEET_ACTION_HOLD = 2;
+  // Planned move. Nothing is lost.
+  POSTGRES_FLEET_ACTION_SWITCH = 3;
+  // Unplanned promotion. Up to `loss_window_ms` of writes are lost.
+  POSTGRES_FLEET_ACTION_FAILOVER = 4;
+}
+
+// The policy's answer for one tick.
+message PostgresFleetDecision {
+  PostgresFleetAction action = 1;
+  // The epoch of the assignment the decision was made about.
+  uint64 epoch = 2;
+  optional string writer = 3;
+  // Set exactly for SWITCH and FAILOVER.
+  optional string target = 4;
+  // Set exactly for FAILOVER: the promoted standby's lag.
+  optional uint64 loss_window_ms = 5;
+  repeated string reasons = 6;
+  // Every standby, best first.
+  repeated PostgresFleetCandidate candidates = 7;
+  uint64 decided_at_ms = 8;
+}
+
+enum PostgresFleetReplicationStatus {
+  POSTGRES_FLEET_REPLICATION_STATUS_UNSPECIFIED = 0;
+  POSTGRES_FLEET_REPLICATION_STATUS_REPLICATED = 1;
+  // A check refused the copy; `refusal` names which.
+  POSTGRES_FLEET_REPLICATION_STATUS_REFUSED = 2;
+  // A connection or statement failed; `failure` classifies it.
+  POSTGRES_FLEET_REPLICATION_STATUS_FAILED = 3;
+}
+
+// What one copy from the writer to one standby did. Logged per tick.
+message PostgresFleetReplicationResult {
+  string source = 1;
+  string target = 2;
+  uint64 epoch = 3;
+  PostgresFleetReplicationStatus status = 4;
+  // e.g. target-is-writer, schema-mismatch, oversized, busy.
+  optional string refusal = 5;
+  optional PostgresFleetBackendHealth failure = 6;
+  optional uint64 rows = 7;
+  // Row text rewritten. Zero when nothing had changed.
+  optional uint64 bytes = 8;
+  uint64 duration_ms = 9;
+}
+
+enum PostgresFleetTransitionStep {
+  POSTGRES_FLEET_TRANSITION_STEP_UNSPECIFIED = 0;
+  POSTGRES_FLEET_TRANSITION_STEP_BOOTSTRAP = 1;
+  // Planned move, first half: nobody may write.
+  POSTGRES_FLEET_TRANSITION_STEP_SEAL = 2;
+  // Planned move, second half: the target is the writer.
+  POSTGRES_FLEET_TRANSITION_STEP_ACTIVATE = 3;
+  // Planned move undone: the old writer writes again.
+  POSTGRES_FLEET_TRANSITION_STEP_UNSEAL = 4;
+  POSTGRES_FLEET_TRANSITION_STEP_FAILOVER = 5;
+}
+
+// One attempt to change the assignment. Only status "decided" changed it.
+message PostgresFleetTransition {
+  PostgresFleetTransitionStep step = 1;
+  // decided, undecided, stale, unavailable or refused.
+  string status = 2;
+  optional uint64 epoch = 3;
+  optional string active = 4;
+  optional string target = 5;
+  string reason = 6;
+}

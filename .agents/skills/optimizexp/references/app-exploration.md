@@ -10,11 +10,11 @@ timestamp: 2026-07-31T00:00:00Z
 
 ## Product binaries vs source (critical)
 
-When the project ships a **compiled CLI** (e.g. `@hobo/code` → `hobo-code` → `dist/`):
+When the project ships a **compiled CLI** (e.g. `@hobo/hobo` → `hobo` → `dist/`):
 
-1. **Build before capture** — `pnpm --filter @hobo/code build` (or the package's `pnpm run build`).
-2. **Exercise the installed binary** — `hobo-code help`, not only `node --import tsx packages/code/src/bin/…`.
-3. **Link the package bin launcher** — `@hobo/code` uses `bin/hobo-code.mjs`, which auto-rebuilds when `src/` is newer than `dist/`. Prefer that over a symlink straight at `dist/bin/*.js`.
+1. **Build before capture** — `pnpm --filter @hobo/hobo build` (or the package's `pnpm run build`).
+2. **Exercise the installed binary** — `hobo --help`, not only `node --import tsx packages/hobo/src/bin/…`.
+3. **Link the package's declared bin** rather than a symlink you made yourself, so a rebuild reaches it.
 
 Scoring `tsx src` while the user runs stale `dist` is a false green. Evidence commands should match the persona's real entrypoint.
 
@@ -26,14 +26,14 @@ Exploration produces a machine-readable **surface map** that **feeds** the exper
 Before generating features for a project (init, bare optimizexp, or explicit):
 
 ```bash
-node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project code
-node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode validate --project code
+node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project hobo
+node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode validate --project hobo
 ```
 
 ## Output
 
 ```text
-packages/code/.optimizexp/surface-map.json
+packages/hobo/.optimizexp/surface-map.json
 # or global:
 .optimizexp/surface-map.json
 ```

@@ -51,3 +51,4 @@ export type {
 
 // public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_RAILWAY_PACKAGE = "@hobo/provider-railway";
+export { RAILWAY_HOST_FORMS } from "./host-forms.js";

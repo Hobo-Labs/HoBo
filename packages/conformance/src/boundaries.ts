@@ -22,6 +22,37 @@ export type WorkspaceEdge = {
 	readonly dev?: boolean;
 };
 
+/**
+ * The rule a refusal is filed under in the gate's machine-readable event.
+ *
+ * Closed, and the same list as `rule` in `data-models/conformance.cue`. A
+ * refusal cannot be raised without one of these names (`refuse` below takes
+ * it), so every line the gate prints on stderr is also a record in the event's
+ * `violations`. It was not always so: the three engine-neutrality rules had no
+ * name, the script that built the event matched on message text, and a
+ * refusal it did not recognise was printed and then left out of the JSON.
+ */
+export const BOUNDARY_RULES = [
+	"core-imports-hobo",
+	"adapter-imports-adapter",
+	"adapter-imports-non-core",
+	"outward-dependency",
+	"workspace-cycle",
+	"unknown-package",
+	"orchestrator-imports-engine",
+	"orchestrator-imports-engine-storage",
+	"engine-imports-engine",
+] as const;
+export type BoundaryRule = (typeof BOUNDARY_RULES)[number];
+
+/** One refusal, as `BoundaryViolationRecord` in `data-models/conformance.proto` carries it. */
+export type BoundaryViolation = {
+	readonly rule: BoundaryRule;
+	readonly from_path: string;
+	readonly to_path: string;
+	readonly effect: "deny";
+};
+
 export type PackageKind =
 	| "core"
 	| "contract"
@@ -52,6 +83,17 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/trust",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
+	// The data engine family (ADR-0177). `data-core` is the engine-neutral
+	// contract and imports only `@hobo/core`; each `data-<engine>` package
+	// implements that contract for one storage engine and meets the other
+	// engines only through it — `validateBoundaryImports` refuses a runtime
+	// engine -> engine edge, which the layering rules alone never did, since
+	// every engine sits on the same layer.
+	// They are contracts for the same reason `data-postgres` already was: an
+	// engine binding is implementable vocabulary a provider declares against.
+	"packages/data-core",
+	"packages/data-sqlite",
+	"packages/data-mongodb",
 	// The four manifest packages (decomposition of `CapabilityRequirement` /
 	// `SelectionCandidate` out of `@hobo/capability-profiles` and of
 	// `ResourceIntent` / `ResourcePlan` out of `@hobo/cloud`).
@@ -150,7 +192,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/broker",
 	"packages/mcp",
 	"packages/training-pipeline",
-	"packages/code",
 	"packages/ci-guard",
 	"packages/control-api",
 	"packages/control-yard",
@@ -191,11 +232,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// projects station/project/bindle state into a page and reaches nothing
 	// below core.
 	"packages/status-page",
-	// Example Bindles vendored under the hobo-code harness. They consume
-	// adapters and bindles like any application would, so they classify as
-	// ordinary workspace packages rather than a new tier.
-	"packages/code/examples/barebones",
-	"packages/code/examples/hello-world",
 	// Pre-registered before the directories exist. This set is never asserted
 	// against the filesystem, and registering ahead of creation is the point:
 	// an unclassified workspace path makes `parseWorkspaceEdge` *throw*, which
@@ -208,7 +244,131 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/manifest-request",
 	"packages/manifest-declaration",
 	"packages/manifest-plan",
+	// Data engine family (ADR-0177); kind decided in `CONTRACT_PACKAGE_PATHS`.
+	"packages/data-core",
+	"packages/data-sqlite",
+	"packages/data-mongodb",
 ]);
+
+// Directories whose packages are adapters. One list, because two rules read
+// it: the classifier, and the data engine name rule below.
+const ADAPTER_TIER_PREFIXES = [
+	"packages/providers/",
+	"packages/iac/",
+	"packages/build/",
+	"packages/runtimes/",
+	"packages/connectors/",
+	"packages/adapters/",
+	// ADR-0151 implementation packs are signed deployables that satisfy a
+	// capability profile on generic compute. They sit at the adapter tier
+	// for the same reason providers do: they implement a core contract and
+	// must not reach sideways into layer-3 packages.
+	"packages/packs/",
+] as const;
+
+/**
+ * The directory name of a data engine package: `data-<engine>`, where
+ * `<engine>` is one or more lowercase words and the first is not `core`.
+ *
+ * `data-core` is the engine-neutral contract, and `data-core-<anything>` is a
+ * companion of the contract (a testing kit, say), not an engine named
+ * "core-<anything>". The earlier pattern excluded only the exact name
+ * `data-core`, so `data-core-testing` was an engine by accident. `data`, the
+ * app-authoring kernel, has no `-<engine>` and never matched.
+ */
+const DATA_ENGINE_DIRECTORY = /^data-(?!core(?:-|$))[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
+/**
+ * A data engine package, decided by where it is and what it is called:
+ *
+ * - `packages/data-<engine>` — the family as ADR-0177 lays it out; or
+ * - `packages/<adapter tier>/data-<engine>` — the same name directly under an
+ *   adapter tier directory (`packages/adapters/data-mysql`). An engine filed
+ *   there is still an engine, and it must not be the way an orchestrator
+ *   reaches a driver the top-level rule would have refused.
+ *
+ * Nothing else is: not a deeper path, not a `data-models/` folder inside some
+ * package, not an example that happens to be called `data-<something>`. The
+ * rule keys on a name, so it is kept to the two places where the name is a
+ * statement about the package. A new engine is covered the day its directory
+ * exists; nothing has to be registered for the rule to see it.
+ */
+export function isDataEnginePackage(path: string): boolean {
+	const tier = ["packages/", ...ADAPTER_TIER_PREFIXES].find(
+		(prefix) =>
+			path.startsWith(prefix) && !path.slice(prefix.length).includes("/"),
+	);
+	return (
+		tier !== undefined && DATA_ENGINE_DIRECTORY.test(path.slice(tier.length))
+	);
+}
+
+/**
+ * Packages that orchestrate migrations and must stay engine-neutral
+ * (ADR-0177 decision 3). The runbook engine once held `node:sqlite` bindings
+ * directly, which made it the place every engine's driver would accumulate;
+ * this is the rule that keeps that from recurring. A test may still import an
+ * engine to exercise a live lane — the rule is about runtime edges.
+ */
+const ENGINE_NEUTRAL_ORCHESTRATORS = new Set(["packages/trails"]);
+
+/**
+ * Modules that speak one database's protocol or open one database's files.
+ *
+ * The orchestrator rule above only knew `@hobo/*` engine packages, and the
+ * defect it was written for was `import { DatabaseSync } from "node:sqlite"`:
+ * a builtin, so never a workspace edge, so the original import would have
+ * passed the gate again. A driver is named here as the specifier a source file
+ * writes, and the scanner turns a sighting into an edge whose `to` is that
+ * name.
+ *
+ * This is a list, so a driver that is not on it passes. It carries the drivers
+ * of the engines the family has (SQLite, PostgreSQL, MongoDB) and the ones the
+ * workspace lockfile already resolves; a new engine adds its driver here in
+ * the change that adds the engine.
+ */
+const DATABASE_DRIVER_MODULES = new Set([
+	"node:sqlite",
+	"better-sqlite3",
+	"sqlite3",
+	"pg",
+	"pg-native",
+	"pg-pool",
+	"postgres",
+	"@electric-sql/pglite",
+	"mongodb",
+	"mysql2",
+]);
+
+/**
+ * The database driver a module specifier loads, or `undefined` when it loads
+ * none. A subpath belongs to its package: `pg/lib/native` is `pg`. A
+ * neighbouring name does not: `pgvector` and `pg-connection-string` are not
+ * `pg`.
+ */
+export function databaseDriverOf(specifier: string): string | undefined {
+	for (const driver of DATABASE_DRIVER_MODULES) {
+		if (specifier === driver || specifier.startsWith(`${driver}/`)) {
+			return driver;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Workspace packages that are one engine's storage without being part of the
+ * `data-<engine>` family. `@hobo/storage-sqlite` is the durable EventStore's
+ * SQLite binding (ADR-0135): reaching it from an orchestrator is reaching
+ * SQLite, whichever package the import names.
+ */
+const ENGINE_SPECIFIC_STORAGE_PACKAGES = new Set(["packages/storage-sqlite"]);
+
+function isEngineSpecificStorage(target: string): boolean {
+	return (
+		DATABASE_DRIVER_MODULES.has(target) ||
+		ENGINE_SPECIFIC_STORAGE_PACKAGES.has(target)
+	);
+}
 
 // Documented, narrowly-scoped exceptions. The AI training/eval providers
 // (provider-agentv, provider-ax) legitimately COMPOSE the SDK training/runtime
@@ -446,19 +606,7 @@ export function classifyPackage(path: string): PackageClassification {
 		return { kind: "contract", layer: 1 };
 	}
 
-	if (
-		path.startsWith("packages/providers/") ||
-		path.startsWith("packages/iac/") ||
-		path.startsWith("packages/build/") ||
-		path.startsWith("packages/runtimes/") ||
-		path.startsWith("packages/connectors/") ||
-		path.startsWith("packages/adapters/") ||
-		// ADR-0151 implementation packs are signed deployables that satisfy a
-		// capability profile on generic compute. They sit at the adapter tier
-		// for the same reason providers do: they implement a core contract and
-		// must not reach sideways into layer-3 packages.
-		path.startsWith("packages/packs/")
-	) {
+	if (ADAPTER_TIER_PREFIXES.some((prefix) => path.startsWith(prefix))) {
 		return { kind: "adapter", layer: 2 };
 	}
 
@@ -473,11 +621,42 @@ export function classifyPackage(path: string): PackageClassification {
 	return { kind: "unknown", layer: Number.POSITIVE_INFINITY };
 }
 
+/**
+ * Record one refusal: the line for stderr and the record for the event, made
+ * together so neither can exist without the other.
+ */
+function refuse(
+	issues: WorkspaceIssues,
+	rule: BoundaryRule,
+	message: string,
+	from_path: string,
+	to_path: string,
+): void {
+	issues.errors.push(message);
+	issues.violations.push({ rule, from_path, to_path, effect: "deny" });
+}
+
+/** Refuse an edge: `<sentence>: <from> -> <to>`. */
+function refuseEdge(
+	issues: WorkspaceIssues,
+	rule: BoundaryRule,
+	sentence: string,
+	edge: WorkspaceEdge,
+): void {
+	refuse(
+		issues,
+		rule,
+		`${sentence}: ${edge.from} -> ${edge.to}`,
+		edge.from,
+		edge.to,
+	);
+}
+
 export function validateBoundaryImports(
 	edges: readonly WorkspaceEdge[],
 	extra: readonly WorkspaceEdge[] = [],
 ): WorkspaceIssues {
-	const errors: string[] = [];
+	const issues: WorkspaceIssues = { errors: [], violations: [] };
 	const imports = [...edges, ...extra];
 
 	for (const edge of imports) {
@@ -485,21 +664,78 @@ export function validateBoundaryImports(
 		const to = classifyPackage(edge.to);
 
 		if (from.kind === "unknown") {
-			errors.push(`unknown import source ${edge.from}`);
+			refuse(
+				issues,
+				"unknown-package",
+				`unknown import source ${edge.from}`,
+				edge.from,
+				edge.from,
+			);
 			continue;
 		}
 
 		if (to.kind === "unknown") {
-			errors.push(`unknown import target ${edge.to}`);
+			refuse(
+				issues,
+				"unknown-package",
+				`unknown import target ${edge.to}`,
+				edge.to,
+				edge.to,
+			);
 			continue;
+		}
+
+		// The engine rules judge runtime edges only: a test may import a real
+		// engine or driver to exercise a live lane. "Runtime" is anything not
+		// marked `dev`, and `mergeWorkspaceEdges` withdraws that marker on the
+		// first sighting under `src/`, so listing the dependency under
+		// `devDependencies` does not make a source import test-only.
+		const runtime = edge.dev !== true;
+
+		if (runtime && ENGINE_NEUTRAL_ORCHESTRATORS.has(edge.from)) {
+			if (isDataEnginePackage(edge.to)) {
+				refuseEdge(
+					issues,
+					"orchestrator-imports-engine",
+					"orchestrators must not import a data engine at runtime",
+					edge,
+				);
+			}
+			if (isEngineSpecificStorage(edge.to)) {
+				refuseEdge(
+					issues,
+					"orchestrator-imports-engine-storage",
+					"orchestrators must not import a database driver or engine-specific storage at runtime",
+					edge,
+				);
+			}
+		}
+
+		// Engines meet only through `@hobo/data-core`. They all sit on layer 1,
+		// so no layering rule ever stood between two of them.
+		if (
+			runtime &&
+			edge.from !== edge.to &&
+			isDataEnginePackage(edge.from) &&
+			isDataEnginePackage(edge.to)
+		) {
+			refuseEdge(
+				issues,
+				"engine-imports-engine",
+				"data engines must not import each other at runtime",
+				edge,
+			);
 		}
 
 		if (from.kind === "core" && to.kind !== "external") {
 			if (isDevOnlyTestHarnessEdge(edge)) {
 				continue;
 			}
-			errors.push(
-				`core must not import HoBo packages: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"core-imports-hobo",
+				"core must not import HoBo packages",
+				edge,
 			);
 		}
 
@@ -509,8 +745,11 @@ export function validateBoundaryImports(
 			edge.from !== edge.to &&
 			!isAcceptedAdapterPackageEdge(edge.from, edge.to)
 		) {
-			errors.push(
-				`adapters must not import each other: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"adapter-imports-adapter",
+				"adapters must not import each other",
+				edge,
 			);
 		}
 
@@ -522,13 +761,21 @@ export function validateBoundaryImports(
 			// or emitting a portable binding is depending on a contract, not on
 			// another implementation.
 			to.kind !== "contract" &&
+			// A module outside the workspace is not a HoBo layering edge. None
+			// reached this rule until the scanner began reporting database
+			// drivers as edges; an adapter importing the driver it adapts is
+			// the adapter's job, and only the engine rules above read it.
+			to.kind !== "external" &&
 			edge.from !== edge.to &&
 			edge.to !== "packages/conformance" &&
 			!isDevOnlyTestHarnessEdge(edge) &&
 			!isAcceptedAdapterPackageEdge(edge.from, edge.to)
 		) {
-			errors.push(
-				`adapters may import only core ports: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"adapter-imports-non-core",
+				"adapters may import only core ports",
+				edge,
 			);
 		}
 
@@ -537,22 +784,33 @@ export function validateBoundaryImports(
 			edge.to !== "packages/conformance" &&
 			!isAcceptedAdapterPackageEdge(edge.from, edge.to)
 		) {
-			errors.push(`dependency points outward: ${edge.from} -> ${edge.to}`);
+			refuseEdge(
+				issues,
+				"outward-dependency",
+				"dependency points outward",
+				edge,
+			);
 		}
 	}
 
-	return { errors };
+	return issues;
 }
 
 export interface WorkspaceIssues {
+	/** One line per refusal, as the gate prints it on stderr. */
 	errors: string[];
+	/**
+	 * The same refusals as records, one per line of `errors` and in the same
+	 * order, each under the rule that refused it.
+	 */
+	violations: BoundaryViolation[];
 }
 
 export function detectWorkspaceCycles(
 	edges: readonly WorkspaceEdge[],
 ): WorkspaceIssues {
 	const graph = new Map<string, string[]>();
-	const errors: string[] = [];
+	const issues: WorkspaceIssues = { errors: [], violations: [] };
 
 	for (const { from, to } of edges) {
 		const next = graph.get(from) ?? [];
@@ -565,8 +823,16 @@ export function detectWorkspaceCycles(
 
 	const visit = (node: string, trail: string[]): void => {
 		if (visiting.has(node)) {
-			const cycle = trail.slice(trail.indexOf(node)).join(" -> ");
-			errors.push(`workspace dependency cycle: ${cycle}`);
+			const cycle = trail.slice(trail.indexOf(node));
+			// The record names the edge that closes the cycle: the last package
+			// on the trail, importing the one the trail started from.
+			refuse(
+				issues,
+				"workspace-cycle",
+				`workspace dependency cycle: ${cycle.join(" -> ")}`,
+				cycle[cycle.length - 2] ?? node,
+				node,
+			);
 			return;
 		}
 
@@ -586,7 +852,7 @@ export function detectWorkspaceCycles(
 		visit(node, [node]);
 	}
 
-	return { errors };
+	return issues;
 }
 
 export const canonicalWorkspaceEdges: readonly WorkspaceEdge[] = [

@@ -14,7 +14,7 @@ deserialized into types HoBo already runs on:
 | `api` | a TypeScript API client, a code-mode MCP server, MCP client config | `generateApiClient`, `generateCodeModeServer`, `generateMcpClientConfig` |
 
 Design: [`docs/design/provider-manifest.md`](../../docs/design/provider-manifest.md),
-ADR-0177. A complete worked example is
+ADR-0178. A complete worked example is
 [`examples/acme-cloud.provider.yaml`](./examples/acme-cloud.provider.yaml).
 
 ```bash
