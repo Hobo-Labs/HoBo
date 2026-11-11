@@ -7,7 +7,8 @@ tags: [hobo, design, adr, ci, relay, twelve-factor]
 
 # ADR-0179 — The Hosted CI Relay Keeps No Durable State {#adr-0179}
 
-**Status:** Accepted (design; implementation phased)
+**Status:** Accepted (design; implementation phased); amended 2026-11-11 with
+[options routed by budget](#amendment-options-routed-by-budget)
 **Date:** 2026-11-11
 **Supersedes, for the hosted relay:** the PostgreSQL store (`PostgresCiStore`)
 as the relay's store, the relay database fleet and store selection, the Drizzle
@@ -52,7 +53,10 @@ The hosted relay keeps no durable state. In twelve-factor terms:
    Valkey-protocol cache with TTL, compare-and-set and increment: the
    `@hobo/kv-redis-compatible` requirement (`ttl`, `atomicIncrement`,
    `atomicCompareAndSet`). First binding: Upstash Redis free tier through the
-   Vercel Marketplace; self-hosted Valkey binds to the same port. Loss of the
+   Vercel Marketplace; self-hosted Valkey binds to the same port. As amended
+   below, the cache is one of several backends — Upstash, Aiven for Valkey,
+   Turso (libSQL), self-hosted Valkey, later Vercel Blob — chosen by budget
+   policy, exactly one active at a time. Loss of the
    cache is tolerated: state is rebuilt from GitHub and Vercel by deterministic
    names. The cache command budget is a design constraint, so work is driven by
    queue messages, not polling.
@@ -90,10 +94,11 @@ The hosted relay keeps no durable state. In twelve-factor terms:
     plans from them; a workflow on `main` deploys, authenticating to Infisical
     with GitHub OIDC. No manual deploys.
 12. **Pay only for what is used.** Neon and its integration, the Neon broker,
-    Turso (attached, unused), the relay database fleet, store selection, the
+    the relay database fleet, store selection, the
     Drizzle relay schema and migrations, `PostgresCiStore` and its pg-bound
     helper stores, and the box worker's `HOBO_CI_STORE=postgres` option are
-    removed.
+    removed. Turso, attached and unused when this was decided, stays as a
+    cache-fleet option (amendment below).
 
 Unchanged and out of scope: the compute fleet (mesh, capacity, runner routing
 and balancing, NATS mesh state), `SqliteCiStore` for box workers and
@@ -103,6 +108,51 @@ Broker budget ledger library.
 The full design, the table-by-table mapping, the hazards, the cost model and
 the eight-phase delivery plan are in
 [Hosted CI Relay Without Durable State](../hosted-relay-stateless.md).
+
+## Amendment: options routed by budget
+
+*2026-11-11.* Every option is supported, and HoBo's own capability matching and
+budget policy choose among them; the relay dogfoods the routing it sells. Two
+independent choices:
+
+1. **Cache fleet** (the relay's state fleet, behind `EphemeralStatePort`; the
+   compute fleet is untouched): Upstash Redis (500,000 commands a month free,
+   then $0.20 per 100,000), Aiven for Valkey free (no command cap, single node,
+   powered off when idle), Turso free (500 million rows read and 10 million
+   written a month, blocked when exhausted; bound by `@hobo/provider-turso`),
+   self-hosted Valkey (no provider cost), and Vercel Blob (first-party,
+   OIDC, compare-and-set through ETags; not built, pricing unverified).
+   Vercel Runtime Cache may sit in front as a read-through layer, never for
+   exclusion. Exactly one backend is active, because compare-and-set is
+   correct only within one; the choice reuses the engine-neutral parts of the
+   relay database fleet's policy (`AssignmentReplica`, `resolveAssignment`,
+   `decideFleet`), with the assignment log replicated across the cache
+   backends through the port's compare-and-set, and those parts move to an
+   engine-neutral package. Switching is safe because cache loss is
+   tolerated: the new backend starts cold and the relay rebuilds by
+   deterministic names.
+2. **Lifecycle driver**, a `LeaseLifecycleDriver` port: Vercel Queues
+   (delayed messages per lease step), then Vercel Workflows on Vercel's
+   managed World (one durable run per job, exactly-once starts by hook token;
+   $20 per million events on Pro, about 22 events a job, so about $49 a month
+   at 3,700 jobs a day). Chosen per job at admission and sticky for that job,
+   so switching never strands work. A self-hosted World is not viable on
+   Vercel today (the Postgres World needs a long-lived worker; community
+   Worlds do not support `workflow` 5) and stays a future option. The
+   Workflows driver needs a Nitro entry or a custom builder in
+   `@hobo/ci-vercel` and `workflow` 5.4.0 or later, pinnable from 2026-11-18.
+
+Each option is a provider manifest whose billing lowers into the
+`@hobo/pricing` catalog, registered by the deploy; preference is free, then
+prepaid, then the cheapest pay-as-you-go; usage is metered per backend and
+driver against its allowance; the relay switches before exhaustion, with
+hysteresis, under budget caps declared in config. With no cache reachable the
+relay keeps serving on a GitHub-only floor that looks a runner up by its
+deterministic name before creating one; GitHub's duplicate-name behaviour is
+unverified and is tested before the floor relies on it. One more owner action:
+create an Aiven free Valkey service and store its connection URL in the config
+service. Details, sources, the cost table at measured volume and the phases
+(2b, 4b–4e, 5): [Options routed by budget](../hosted-relay-stateless.md#options-routed-by-budget).
 
 ## Alternatives considered
 
@@ -114,8 +164,19 @@ the eight-phase delivery plan are in
 - **NATS JetStream as the relay's store.** The compute fleet's mesh uses it;
   for a Vercel function it means hosting a quorum cluster, which is neither
   free nor infrastructure-free.
-- **Vercel Blob or Edge Config.** No compare-and-set with TTL suited to
-  per-job exclusion.
+- **Vercel Edge Config (now Global Config).** Read-optimised configuration
+  written through the API with a Vercel token; no runtime writes, so no
+  per-job exclusion. It remains an optional configuration source.
+- **Vercel Blob as the only store.** Superseded by the amendment: Blob's
+  conditional writes (`ifMatch`, non-overwriting `put`) make it a feasible
+  cache-fleet backend, once built and passing the conformance suite, but not
+  the sole one.
+- **Redis Cloud free.** 30 MB and 100 operations a second, and TLS on the free
+  database unclear.
+- **Valkey hosted on Vercel.** Daemons accept no inbound HTTP or TCP;
+  container services are HTTP-only, autoscaled and scale to zero after five
+  idle minutes; a daemon's memory alone would cost about $15.50 a month for
+  1 GiB.
 
 ## Consequences
 
