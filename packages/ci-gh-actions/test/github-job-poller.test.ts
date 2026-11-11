@@ -753,6 +753,9 @@ describe("pull-mode box worker over SQLite", () => {
 			unlaunchedReservationRelease?: Parameters<
 				typeof createHostedRelayRuntime
 			>[0]["unlaunchedReservationRelease"];
+			fleetCapacity?: Parameters<
+				typeof createHostedRelayRuntime
+			>[0]["fleetCapacity"];
 			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
@@ -802,6 +805,7 @@ describe("pull-mode box worker over SQLite", () => {
 			options.storageAdmission = trunk.storageAdmission;
 		if (trunk?.unlaunchedReservationRelease)
 			options.unlaunchedReservationRelease = trunk.unlaunchedReservationRelease;
+		if (trunk?.fleetCapacity) options.fleetCapacity = trunk.fleetCapacity;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -1846,6 +1850,10 @@ describe("pull-mode box worker over SQLite", () => {
 				boundMs: 1_000,
 				backlogImmediate: true,
 			},
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 1 }),
+			},
 			now: () => new Date(nowMs).toISOString(),
 		});
 		const poller = createGithubJobPoller({
@@ -1868,6 +1876,81 @@ describe("pull-mode box worker over SQLite", () => {
 		expect((await store.get(reserved?.id ?? ""))?.state).toBe("cancelled");
 		expect((await store.pendingJobs()).map((job) => job.id)).toContain(1);
 		expect(launched).toEqual([]);
+		store.close();
+	});
+
+	it("does not churn release and re-reserve under memory wait without mesh headroom", async () => {
+		const store = await configuredStore(4);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [1, 2, 3, 4, 5].map((id) => ({
+					id,
+					status: "queued",
+					labels: ["hobo-trunk"],
+					name: `Workspace test shard ${id - 1}`,
+				})),
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T13:34:57Z" });
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+				{ totalMemoryMb: 16_384, trunkSlots: 1 },
+			),
+			{
+				availableMemoryMb: () => 256,
+				now: () => NOW,
+			},
+		);
+		const releaseEvents: { jobId?: number; releaseCount?: number }[] = [];
+		const UnlaunchedReleased = z
+			.object({
+				event: z.literal("hobo_ci_unlaunched_reservation_released"),
+				jobId: z.number().optional(),
+				releaseCount: z.number().optional(),
+			})
+			.passthrough();
+		const prevError = console.error;
+		console.error = (...args: unknown[]) => {
+			for (const arg of args) {
+				if (!z.string().safeParse(arg).success) continue;
+				const text = z.string().parse(arg);
+				const parsed = UnlaunchedReleased.safeParse(JSON.parse(text));
+				if (parsed.success) releaseEvents.push(parsed.data);
+			}
+			prevError(...args);
+		};
+		try {
+			const runtime = boxRuntime(store, github, [], undefined, {
+				labels: new Map(),
+				memoryAdmission,
+				unlaunchedReservationRelease: {
+					launchSlots: 4,
+					boundMs: 25_000,
+					backlogMinAgeMs: 25_000,
+					reReserveCooldownMs: 30_000,
+					backlogImmediate: true,
+				},
+				fleetCapacity: {
+					publish: async () => {},
+					snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 0 }),
+				},
+			});
+			const poller = createGithubJobPoller({
+				github,
+				admissionOrder: runtime.admissionOrder,
+				connections: async () =>
+					(await store.configuration())?.configuration?.connections ?? [],
+				ingest: (delivery) => runtime.ingestWebhook(delivery),
+				now: () => NOW,
+			});
+			await poller.poll();
+			for (let i = 0; i < 12; i += 1) await runtime.tick({ maxDeliveries: 10 });
+			expect(releaseEvents).toEqual([]);
+		} finally {
+			console.error = prevError;
+		}
 		store.close();
 	});
 

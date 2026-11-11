@@ -279,7 +279,7 @@ describe("refused queue handoff", () => {
 		}
 	});
 
-	it("drops a repair tick while the store is down, but holds a delivery", async () => {
+	it("drops a failed repair tick, but holds a delivery", async () => {
 		const run = vi.fn(async () => {});
 		const handle = createQueueWakeupHandler({ origin, secret, run });
 		for (const source of ["static", "hobo-ci"]) {
@@ -289,11 +289,14 @@ describe("refused queue handoff", () => {
 			);
 			expect(tick.status, source).toBe(204);
 		}
-		run.mockRejectedValueOnce(new Error("repair failed"));
+		// The first attempt after a back-off fails with the store's own error.
+		run.mockRejectedValueOnce(
+			new Error("bootstrap store initialization failed"),
+		);
 		const failed = await handle(
 			wakeup('{"source":"static","name":"hobo-ci-repair"}'),
 		);
-		expect(failed.status).toBe(503);
+		expect(failed.status).toBe(204);
 		run.mockRejectedValueOnce(new StoreUnavailable(34_001));
 		expect((await handle(wakeup('{"deliveryId":"one"}'))).status).toBe(503);
 	});

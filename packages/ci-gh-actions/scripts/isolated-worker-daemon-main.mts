@@ -844,6 +844,25 @@ try {
 		!Number.isInteger(unlaunchedReserveMs)
 	)
 		throw new Error("invalid HOBO_CI_UNLAUNCHED_RESERVE_MS");
+	const unlaunchedBacklogMinAgeMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS ??
+			String(unlaunchedReserveMs),
+	);
+	if (
+		!Number.isFinite(unlaunchedBacklogMinAgeMs) ||
+		unlaunchedBacklogMinAgeMs < 0 ||
+		!Number.isInteger(unlaunchedBacklogMinAgeMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS");
+	const unlaunchedReReserveCooldownMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS ?? "30000",
+	);
+	if (
+		!Number.isFinite(unlaunchedReReserveCooldownMs) ||
+		unlaunchedReReserveCooldownMs < 0 ||
+		!Number.isInteger(unlaunchedReReserveCooldownMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
 	const headroomTrunkOverflow = createHeadroomTrunkOverflow({
 		github,
 		memoryAdmission,
@@ -875,6 +894,8 @@ try {
 		headroomTrunkOverflow,
 		unlaunchedReservationRelease: {
 			boundMs: unlaunchedReserveMs,
+			backlogMinAgeMs: unlaunchedBacklogMinAgeMs,
+			reReserveCooldownMs: unlaunchedReReserveCooldownMs,
 			launchSlots: slots,
 			backlogImmediate:
 				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",

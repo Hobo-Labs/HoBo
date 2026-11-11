@@ -114,7 +114,7 @@ unindexed new finding files as notices.
 - [Finding 101: shared box memory stall on shard 1](./findings/0101-shared-box-memory-stall-on-shard-1.md)
 - [Finding 102: dead JIT runner shard two checkout](./findings/0102-dead-jit-runner-shard-two-checkout.md)
 - [Finding 103: offline peer JIT shard two](./findings/0103-offline-peer-jit-shard-two.md)
-- [Finding 105: a failed Pages deploy was never retried](./findings/0105-a-failed-pages-deploy-was-never-retried.md)
+- [Finding 107: a failed Pages deploy was never retried](./findings/0107-a-failed-pages-deploy-was-never-retried.md)
 <!-- findings-index:end -->
 
 ## Data

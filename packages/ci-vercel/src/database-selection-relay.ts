@@ -36,6 +36,7 @@ import {
 	readStoreMarker,
 	type StoreMarker,
 } from "./database-selection-marker.js";
+import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import type { QueueMessage } from "./worker.js";
 
 /** A discovered database the relay could run on: both of its connections
@@ -469,9 +470,23 @@ export function createSelectedRelay(options: {
 		return starting;
 	}
 
+	async function tick(message: QueueMessage): Promise<void> {
+		await (await application()).tick(message);
+	}
+	// Served here for the same reason the bootstrap entry serves it: with no
+	// store chosen there is no application to hand the wakeup to.
+	const cronSecret = options.env.CRON_SECRET;
+	const queueWakeup = cronSecret
+		? createQueueWakeupHandler({ origin, secret: cronSecret, run: tick })
+		: undefined;
 	return {
 		origin,
 		async handle(request: Request): Promise<Response> {
+			if (
+				queueWakeup &&
+				new URL(request.url).pathname === "/internal/queue-wakeup"
+			)
+				return queueWakeup(request);
 			const probe =
 				request.method === "GET" ? new URL(request.url).pathname : "";
 			// Liveness is about this process, not its stores: a probe must be
@@ -497,9 +512,7 @@ export function createSelectedRelay(options: {
 			}
 			return current.handle(request);
 		},
-		async tick(message: QueueMessage): Promise<void> {
-			await (await application()).tick(message);
-		},
+		tick,
 		async close(): Promise<void> {
 			closed = true;
 			await starting?.catch(() => {});

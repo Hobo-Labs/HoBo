@@ -23,7 +23,7 @@ Main push run [43017688406](https://github.com/Hobo-Labs/HoBo/actions/runs/43017
 
 ## Fix
 
-- Bounded **unlaunched reservation release** on each dispatch pass (`hobo_ci_unlaunched_reservation_released`): default **`HOBO_CI_UNLAUNCHED_RESERVE_MS=25000`**, plus immediate release when **pending + unlaunched > launchSlots − liveContainers** (after one tick of age).
+- Bounded **unlaunched reservation release** after the reserve pass (`hobo_ci_unlaunched_reservation_released`): default **`HOBO_CI_UNLAUNCHED_RESERVE_MS=25000`**, plus backlog release when **pending + unlaunched > launchSlots − liveContainers** after **`HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS`**, only when **`arcFreeSlots > 0`**. Follow-up in [finding 106](0106-unlaunched-release-churn.md).
 - Stop inflating `memoryActive` for `reserved`-only leases.
 - `cancelAndRequeue` returns work to the inbox; fleet runners may adopt without workflow cancel or relabeling.
 
