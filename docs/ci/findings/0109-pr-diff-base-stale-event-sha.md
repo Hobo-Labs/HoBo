@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 108: pr diff base stale event sha"
+title: "Finding 109: pr diff base stale event sha"
 description: "PR jobs diffed against the event's base SHA, so main's later changes read as the PR's: unrelated PRs built multi-GB deps images and filled the fleet's Docker disk."
 tags: [hobo, ci, fleet, docker, disk, pull-request]
 ---
 
-# Finding 108: pr diff base stale event sha
+# Finding 109: pr diff base stale event sha
 
 ## Evidence
 
