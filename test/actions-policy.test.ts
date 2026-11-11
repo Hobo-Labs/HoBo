@@ -503,11 +503,14 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
-			assert.notEqual(
-				file,
-				"hobo-ci.yml",
-				`${file}:${lines[start]} is not routed`,
-			);
+			// Everything in hobo-ci.yml is routed except the job that builds the
+			// deps image in the box's own Docker context.
+			if (file === "hobo-ci.yml")
+				assert.match(
+					lines[start] ?? "",
+					/^  ci-deps-image:$/,
+					`${file}:${lines[start]} is not routed`,
+				);
 			const prOnly =
 				/github\.event_name == 'pull_request'/.test(condition) &&
 				!condition.includes("||");

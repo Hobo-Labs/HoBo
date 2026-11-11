@@ -185,14 +185,18 @@ jobs:
 
   ci-deps-image:
     name: CI deps layer (pnpm)
-    needs: [route, ci-runner-image]
+    needs: [ci-runner-image]
     if: >-
       !cancelled() && needs.ci-runner-image.result != 'failure' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    # Always the fleet, never routed: this job checks and builds the deps image in the box's
+    # own Docker context. On a GitHub-hosted machine there is no such context and no worker
+    # image, so a routed run failed here before it reached the build. Neither gate needs
+    # this job, so a fleet that is slow delays only this check.
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
     # and run the contract; non-PR misses defer to the publisher and daemon.
