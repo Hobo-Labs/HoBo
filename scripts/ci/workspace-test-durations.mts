@@ -16,11 +16,10 @@ const tagOf = Object.prototype.toString;
 let cached: WorkspaceDurationTable | undefined;
 
 function isPositiveSeconds(value: Json | undefined): value is number {
-	return (
-		tagOf.call(value) === "[object Number]" &&
-		Number.isFinite(value) &&
-		value > 0
-	);
+	if (tagOf.call(value) !== "[object Number]") return false;
+	// SAFETY: prior tag check pins a JSON number leaf.
+	const seconds = value as number;
+	return Number.isFinite(seconds) && seconds > 0;
 }
 
 function parseDurationTable(text: string): WorkspaceDurationTable {
