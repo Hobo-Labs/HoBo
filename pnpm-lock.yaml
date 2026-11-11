@@ -1509,6 +1509,9 @@ importers:
       '@hobo/policy':
         specifier: workspace:*
         version: link:../policy
+      '@hobo/pricing':
+        specifier: workspace:*
+        version: link:../pricing
       '@hobo/provider-aws':
         specifier: workspace:*
         version: link:../providers/provider-aws
@@ -1539,6 +1542,9 @@ importers:
       '@hobo/provider-lakebed':
         specifier: workspace:*
         version: link:../providers/provider-lakebed
+      '@hobo/provider-manifest':
+        specifier: workspace:*
+        version: link:../provider-manifest
       '@hobo/provider-neon':
         specifier: workspace:*
         version: link:../providers/provider-neon
@@ -1621,6 +1627,9 @@ importers:
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness
+      '@hobo/events':
+        specifier: workspace:*
+        version: link:../events
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../redaction-test-harness
@@ -1923,6 +1932,37 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/provider-manifest:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/auth-md':
+        specifier: workspace:*
+        version: link:../auth-md
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/manifest-capability':
+        specifier: workspace:*
+        version: link:../manifest-capability
+      '@hobo/pricing':
+        specifier: workspace:*
+        version: link:../pricing
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.15.29

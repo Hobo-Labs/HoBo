@@ -163,6 +163,27 @@ export const PRICING_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				quoteHash: SAMPLE_HASH,
 			},
 		),
+		// Appended last: the pinned baseline is append-only and order-checked.
+		pricingV1Contract(
+			"pricing.CatalogRegistered",
+			[
+				stringField("eventId", 1),
+				stringField("occurredAt", 2),
+				stringField("providerId", 3),
+				stringField("catalogHash", 4),
+				// The whole PricingCatalog as canonical protobuf-JSON, so the
+				// fact alone rebuilds the catalog; `catalogHash` lets a reader
+				// prove the body was not altered.
+				stringField("catalogJson", 5),
+			],
+			{
+				eventId: "evt-pricing-catalog-1",
+				occurredAt: SAMPLE_AT,
+				providerId: "provider-example",
+				catalogHash: SAMPLE_HASH,
+				catalogJson: '{"schema":"hobo.pricing.catalog/v1"}',
+			},
+		),
 	]);
 
 export function pricingCorpusBaseline() {
