@@ -9,7 +9,7 @@ tags: [hobo, ci, performance, main-gate, sharding]
 
 ## Evidence
 
-Run [42928788703](https://github.com/Hobo-Labs/HoBo/actions/runs/42928788703) (`e2fbbbae`, 2026-11-11):
+**Before serial workspace tests** — run [42928788703](https://github.com/Hobo-Labs/HoBo/actions/runs/42928788703) (`e2fbbbae`, 2026-11-11):
 
 | Step | Wall time |
 | --- | --- |
@@ -19,6 +19,10 @@ Run [42928788703](https://github.com/Hobo-Labs/HoBo/actions/runs/42928788703) (`
 | Workspace tests | 3m21s |
 | Workflow run (billable wall) | **6m09s** |
 
+**After sharding without parallel plan** — run [42939177874](https://github.com/Hobo-Labs/HoBo/actions/runs/42939177874) (`112bbc7d`, 2026-11-11): **8m30s** wall. Shards waited on Main full gate (~2m33s); slowest shard workspace step ~4m17s.
+
+**Target after parallel plan + balanced shards:** critical path ≈ `main-gate-plan` + `max(main-gate S0, slowest shard ≤90s budget)` + `main_gate_finish` gitleaks, aiming for **<3m** on typical affected pushes.
+
 ## Symptom
 
 One `Main full gate` job held a trunk slot for the full serial stack above. Workspace tests dominated; gitleaks overlapped earlier steps but still blocked the job tail.
@@ -26,7 +30,9 @@ One `Main full gate` job held a trunk slot for the full serial stack above. Work
 ## Change
 
 - `scripts/ci/resolve-main-test-base.mts` — last green successful Fabric push on `main`, else `event.before`, else `HEAD~1`.
-- `main_workspace_tests` — eight-shard `dependent-tests.mts` matrix on fleet runners (same machinery as PR validation).
+- `main-gate-plan` + `scripts/ci/plan-main-workspace-shards.mts` — plan shards while S0 runs; depends on `ci-deps-image`.
+- `scripts/ci/workspace-test-durations.json` — persisted per-package seconds; balanced via `dependent-tests.mts`.
+- `main_workspace_tests` — matrix from the plan job; deps-layer-first bootstrap; pnpm store/install only on layer miss.
 - S0 on `main-gate` uses `--external-workspace-tests` when scope is affected.
 - `main_gate_finish` — gitleaks after all shards succeed.
 

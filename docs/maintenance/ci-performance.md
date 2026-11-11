@@ -60,13 +60,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
-- **Main full gate workspace sharding.** Main push no longer runs workspace tests inside the S0 job.
-  `resolve-main-test-base.mts` picks last-green Fabric `main` when reachable, then `main_workspace_tests`
-  runs the same eight-shard plan as PR validation in parallel on fleet runners; S0 uses
-  `--external-workspace-tests` when affected. S0 prunes stray `packages/*` directories without
-  `package.json` before konsistent (`scripts/ci/prune-stray-workspace-packages.mts`). Gitleaks runs
-  in `main_gate_finish` after shards; that job sparse-checks `.github/actions` at `${{ github.sha }}`
-  first so `ci-trace` resolves when an earlier step fails
+- **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
+- **Main full gate workspace sharding.** `main-gate-plan` (route + deps image) resolves the last-green
+  base and prints a duration-balanced shard matrix (`scripts/ci/workspace-test-durations.json`,
+  target 90s per shard) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
+  links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
+  `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
