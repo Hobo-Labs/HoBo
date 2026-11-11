@@ -1,10 +1,15 @@
 import { create } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
+import type { GithubTransport } from "../github.js";
 import type { HostedRelayStore } from "../hosted-relay.js";
 import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
 import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
+import {
+	leaseHasLiveContainer,
+	resolveGithubLeaseFate,
+} from "./github-lease-terminal.js";
 import {
 	type OrphanJobCandidate,
 	orphanJobCandidateForLease,
@@ -19,9 +24,14 @@ export type WorkerLeaseReconciliationEvent =
 	| "hobo_ci_container_orphan_removed"
 	| "hobo_ci_container_orphan_remove_failed"
 	| "hobo_ci_container_timeout_enforced"
+	| "hobo_ci_lease_github_terminal_dropped"
 	| "hobo_ci_lease_orphan_released"
 	| "hobo_ci_lease_reconciliation_failed"
 	| "hobo_ci_memory_without_containers";
+
+/** Max drain wait for leases that never got a live worker container. */
+// public-contract: caps redeploy stall when reservations outlive GitHub or launch.
+export const DEFAULT_NO_CONTAINER_DRAIN_MAX_MS = 60_000;
 
 export type WorkerLeaseReconciliationLog = (
 	event: WorkerLeaseReconciliationEvent,
@@ -125,6 +135,9 @@ export function createWorkerLeaseReconciler(options: {
 	onOrphanJob?: (candidate: OrphanJobCandidate) => void;
 	protectedContainerNames?: () => ReadonlySet<string>;
 	protectedLeaseIds?: () => ReadonlySet<string>;
+	github?: GithubTransport;
+	cancelStaleGithubLease?: (lease: Lease, reason: string) => Promise<boolean>;
+	noContainerDrainMaxMs?: number;
 	/**
 	 * When this returns true, a running container must not be stopped even if it
 	 * is not on the active lease name/id sets (custody record or GitHub job).
@@ -140,6 +153,75 @@ export function createWorkerLeaseReconciler(options: {
 		throw new Error("invalid orphan grace");
 
 	const orphanRemovalsInFlight = new Set<string>();
+	const noContainerDrainMaxMs =
+		options.noContainerDrainMaxMs ?? DEFAULT_NO_CONTAINER_DRAIN_MAX_MS;
+	if (!Number.isInteger(noContainerDrainMaxMs) || noContainerDrainMaxMs < 1_000)
+		throw new Error("invalid no-container drain cap");
+
+	async function releaseStaleLeaseWithoutContainer(
+		lease: Lease,
+		reason: string,
+		reconcileOptions: { draining?: boolean; drainStartedAtMs?: number },
+	): Promise<boolean> {
+		if (options.cancelStaleGithubLease) {
+			const dropped = await options.cancelStaleGithubLease(lease, reason);
+			if (dropped) {
+				options.log?.("hobo_ci_lease_github_terminal_dropped", {
+					leaseId: lease.id,
+					jobId: lease.jobId,
+					runId: lease.originalRunId,
+					reason,
+					draining: reconcileOptions.draining === true,
+				});
+			}
+			return dropped;
+		}
+		if (reconcileOptions.draining && leaseHoldDuringWorkerDrain(lease))
+			return false;
+		await options.store.abortIsolatedAndRequeue(
+			lease.id,
+			requeueJob(lease),
+			new Date(now()).toISOString(),
+		);
+		options.log?.("hobo_ci_lease_orphan_released", {
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			runId: lease.originalRunId,
+			state: lease.state,
+			reason,
+			ageMs: 0,
+			memoryMb: lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb,
+		});
+		return true;
+	}
+
+	async function maybeDropLeaseWithoutLiveContainer(
+		lease: Lease,
+		container: DockerContainer | undefined,
+		reconcileOptions: { draining?: boolean; drainStartedAtMs?: number },
+	): Promise<boolean> {
+		if (leaseHasLiveContainer(container)) return false;
+		if (options.github) {
+			const fate = await resolveGithubLeaseFate(options.github, lease);
+			if (fate.kind === "terminal") {
+				return releaseStaleLeaseWithoutContainer(
+					lease,
+					fate.reason,
+					reconcileOptions,
+				);
+			}
+		}
+		if (!reconcileOptions.draining) return false;
+		const drainStartedAtMs = reconcileOptions.drainStartedAtMs;
+		if (drainStartedAtMs === undefined) return false;
+		const drainAgeMs = Math.max(0, now() - drainStartedAtMs);
+		if (drainAgeMs < noContainerDrainMaxMs) return false;
+		return releaseStaleLeaseWithoutContainer(
+			lease,
+			"drain-no-container-cap",
+			reconcileOptions,
+		);
+	}
 
 	function orphanContainerKey(container: DockerContainer): string {
 		return container.containerId || container.name;
@@ -158,7 +240,7 @@ export function createWorkerLeaseReconciler(options: {
 	}
 
 	async function reconcile(
-		reconcileOptions: { draining?: boolean } = {},
+		reconcileOptions: { draining?: boolean; drainStartedAtMs?: number } = {},
 	): Promise<WorkerLeaseReconciliationResult> {
 		const leases = await options.store.activeLeases();
 		const configuration = (await options.store.configuration())?.configuration;
@@ -224,11 +306,23 @@ export function createWorkerLeaseReconciler(options: {
 		const protectedLeaseIds =
 			options.protectedLeaseIds?.() ?? new Set<string>();
 		for (const lease of owned) {
-			if (lease.state === "reserved" || protectedLeaseIds.has(lease.id)) {
+			const container = containerFor(lease);
+			if (protectedLeaseIds.has(lease.id)) {
 				liveLeaseIds.add(lease.id);
 				continue;
 			}
-			const container = containerFor(lease);
+			if (
+				await maybeDropLeaseWithoutLiveContainer(
+					lease,
+					container,
+					reconcileOptions,
+				)
+			)
+				continue;
+			if (lease.state === "reserved") {
+				liveLeaseIds.add(lease.id);
+				continue;
+			}
 			const createdMs = Date.parse(lease.createdAt);
 			const dispatchingMs = Date.parse(lease.dispatchingAt);
 			const ageBaseMs =

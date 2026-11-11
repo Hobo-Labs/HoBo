@@ -351,6 +351,11 @@ const drainTimeoutMs = Number(
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+const noContainerDrainMaxMs = Number(
+	process.env.HOBO_CI_WORKER_DRAIN_NO_CONTAINER_MS ?? "60000",
+);
+if (!Number.isFinite(noContainerDrainMaxMs) || noContainerDrainMaxMs < 1_000)
+	throw new Error("invalid HOBO_CI_WORKER_DRAIN_NO_CONTAINER_MS");
 const stopMode = parseWorkerStopMode(process.env.HOBO_CI_WORKER_STOP_MODE);
 const depsPollMs = Number(process.env.HOBO_CI_DEPS_POLL_MS ?? "300000");
 if (!Number.isFinite(depsPollMs) || depsPollMs < 1_000)
@@ -712,6 +717,7 @@ try {
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
 		containerStallGuard,
+		noContainerDrainMaxMs,
 	});
 	const firstReconciliation = await worker.reconcileLeases();
 	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
@@ -1155,6 +1161,9 @@ try {
 	const pollWorthLogging = createPollLogFilter();
 
 	let draining = false;
+	let workerDrainStartedAtMs: number | undefined;
+	let shutdownSignalCount = 0;
+	let shutdownForceExitInFlight = false;
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 	let jobPollTimer: ReturnType<typeof setInterval> | undefined;
 	let gcTimer: ReturnType<typeof setInterval> | undefined;
@@ -1343,6 +1352,7 @@ try {
 		if (shutdownOnce) return shutdownOnce;
 		shutdownOnce = (async () => {
 			draining = true;
+			workerDrainStartedAtMs = Date.now();
 			if (pollTimer) clearInterval(pollTimer);
 			if (jobPollTimer) clearInterval(jobPollTimer);
 			if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
@@ -1363,7 +1373,10 @@ try {
 			}
 			const reconcileDrain = async () => {
 				const workerReconcileStartedAt = Date.now();
-				const reconciliation = await worker.reconcileLeases({ draining: true });
+				const reconciliation = await worker.reconcileLeases({
+					draining: true,
+					drainStartedAtMs: workerDrainStartedAtMs,
+				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
@@ -1447,6 +1460,44 @@ try {
 	// with no listener would kill the drain.
 	for (const signal of ["SIGTERM", "SIGINT"] as const)
 		process.on(signal, () => {
+			shutdownSignalCount += 1;
+			void (async () => {
+				if (
+					!shutdownForceExitInFlight &&
+					draining &&
+					shutdownSignalCount >= 2
+				) {
+					let running = runningWorkerContainers;
+					try {
+						const listed = await listWorkerContainers();
+						running = listed.filter(
+							(c) => c.state === "running" && c.name.startsWith("hobo-"),
+						).length;
+					} catch {
+						/* keep last runningWorkerContainers */
+					}
+					const { shouldForceExitDrainOnRepeatSignal } = await import(
+						"../src/isolated-worker/daemon-shutdown.js"
+					);
+					if (
+						await shouldForceExitDrainOnRepeatSignal({
+							signalCount: shutdownSignalCount,
+							draining: true,
+							runningWorkerContainers: running,
+						})
+					) {
+						shutdownForceExitInFlight = true;
+						log("hobo_ci_isolated_worker_drain_force_exit", {
+							signal,
+							signals: shutdownSignalCount,
+							running,
+						});
+						await closeStore().catch(() => undefined);
+						await closeTrace();
+						process.exit(0);
+					}
+				}
+			})();
 			void shutdown(signal);
 		});
 } catch (error) {

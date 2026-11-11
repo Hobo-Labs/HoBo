@@ -335,7 +335,7 @@ export function createBoxGitMirror(options: {
 		}
 
 		if (!(await servesCheckout(sha))) {
-			// The commit is here but some of its files are not (finding 108): take
+			// The commit is here but some of its files are not (finding 109): take
 			// the commit again, whole, rather than hand a job a checkout that fails.
 			await git([
 				`--git-dir=${path}`,

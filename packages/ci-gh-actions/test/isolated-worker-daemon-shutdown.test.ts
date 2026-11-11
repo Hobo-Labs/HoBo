@@ -5,6 +5,7 @@ import {
 	countInFlightWorkerLeases,
 	mergeDrainInFlightCount,
 	parseWorkerStopMode,
+	shouldForceExitDrainOnRepeatSignal,
 	stopIsolatedWorker,
 	waitForIsolatedWorkerDrain,
 	workerOfferKey,
@@ -215,6 +216,30 @@ describe("isolated worker daemon shutdown", () => {
 		});
 		expect(result).toEqual({ mode: "drain", drained: true, remaining: 0 });
 		expect(sleep).toHaveBeenCalledTimes(1);
+	});
+
+	it("forces exit on a repeat drain signal when no worker container is running", async () => {
+		expect(
+			await shouldForceExitDrainOnRepeatSignal({
+				signalCount: 1,
+				draining: true,
+				runningWorkerContainers: 0,
+			}),
+		).toBe(false);
+		expect(
+			await shouldForceExitDrainOnRepeatSignal({
+				signalCount: 2,
+				draining: true,
+				runningWorkerContainers: 0,
+			}),
+		).toBe(true);
+		expect(
+			await shouldForceExitDrainOnRepeatSignal({
+				signalCount: 3,
+				draining: true,
+				runningWorkerContainers: 1,
+			}),
+		).toBe(false);
 	});
 
 	it("drain mode reports the remaining work on timeout", async () => {
