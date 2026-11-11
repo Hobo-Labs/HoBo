@@ -58,6 +58,7 @@ pays GitHub once.
 
 `packages/ci-gh-actions/test/git-mirror.test.ts` — hit, miss, SHA-only refs, serialized writers.
 `scripts/ci/git-mirror-usability.mts` — mirror in sparse release checkouts for `hobo-checkout` (kept in sync with the package copy).
+`.github/actions/hobo-checkout/git-mirror-usability.mts` — same logic colocated for `box-git-mirror.mts` before `scripts/` is checked out.
 `test/isolated-worker-parallel.test.ts` — `:ro` mount and `HOBO_CI_GIT_MIRROR`.
 `test/isolated-worker-launch-thrash.test.ts` — ensure-before-create.
 Expected Main full gate checkout: **~1–2 s** on a hit (`hobo_ci_git_mirror=hit`).

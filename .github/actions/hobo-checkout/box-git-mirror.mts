@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	INCOMPLETE_MIRROR_REASON,
 	isCompleteGitMirror,
-} from "../../../scripts/ci/git-mirror-usability.mts";
+} from "./git-mirror-usability.mts";
 
 export type BoxGitMirrorResolution =
 	| {

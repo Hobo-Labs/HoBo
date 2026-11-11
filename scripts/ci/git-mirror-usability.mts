@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-// Keep in sync with packages/ci-gh-actions/src/isolated-worker/git-mirror-usability.ts
+// Keep in sync with .github/actions/hobo-checkout/git-mirror-usability.mts and packages/ci-gh-actions/src/isolated-worker/git-mirror-usability.ts
 
 /** Refusal reason when a bare mirror is not a full clone for CI checkout. */
 export const INCOMPLETE_MIRROR_REASON =
