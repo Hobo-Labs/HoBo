@@ -1136,6 +1136,7 @@ jobs:
     # pull request it runs when the diff can reach those suites; the nightly and
     # manual runs always do. Not on merge_group: the merge queue's required set
     # does not include it, and it would hold a box slot there for nothing.
+    # The name is also a key in the worker's memory classes (`heavy`).
     name: Live data engines (PostgreSQL 16, MongoDB 8)
     needs: route
     if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -1155,14 +1156,18 @@ jobs:
         id: scope
         run: |
           set -euo pipefail
-          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
-            echo "HEAD is not a PR merge commit; running the lane"
+          # Only a pull request is scoped by its diff. A nightly or a manual run
+          # whose tip happens to be a merge commit must not take that path.
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ] || ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "not a pull request's merge commit; running the lane"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git diff --name-only HEAD^1 HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
               scripts/ci/data-live-servers.mts \
+              scripts/ensure-built.mts \
+              vitest.config.ts \
               packages/data-core/test/conformance.test.ts \
               packages/data-sqlite/test/conformance.test.ts \
               packages/data-postgres/test/engine-live.test.ts \
@@ -1186,6 +1191,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build the data packages and what they import
         if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 4
         run: >-
           pnpm exec turbo run build
           --filter=@hobo/data-core...
@@ -1199,17 +1205,25 @@ jobs:
       # suites read.
       - name: Start PostgreSQL and MongoDB
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 6
+        timeout-minutes: 5
         run: node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts up >> "$GITHUB_ENV"
       # Not through turbo: it passes HOBO_* through without keying its cache on
       # them, so a cached run without servers would replay as a live pass.
+      # The live tests skip themselves when their variable is missing, so a
+      # green exit is not enough: `verify` reads the output and fails unless
+      # every package ran and no test was skipped.
       - name: Live data-engine suites
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 10
+        timeout-minutes: 8
         run: |
           set -euo pipefail
-          test -n "${HOBO_TEST_POSTGRES_URL:-}" && test -n "${HOBO_TEST_MONGODB_URL:-}"
-          pnpm run test:data-live
+          [ -n "${HOBO_TEST_POSTGRES_URL:-}" ] || { echo "::error::the start step set no PostgreSQL URL"; exit 1; }
+          [ -n "${HOBO_TEST_MONGODB_URL:-}" ] || { echo "::error::the start step set no MongoDB URL"; exit 1; }
+          # These packages read the root vitest config, which does not apply
+          # the job's memory-derived worker cap; vitest reads this one itself.
+          export VITEST_MAX_WORKERS="${HOBO_TEST_MAX_WORKERS:-1}"
+          pnpm run test:data-live 2>&1 | tee "${RUNNER_TEMP}/data-live.log"
+          node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts verify "${RUNNER_TEMP}/data-live.log"
       - name: Server logs
         if: failure() && steps.scope.outputs.run == 'true'
         run: node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts logs

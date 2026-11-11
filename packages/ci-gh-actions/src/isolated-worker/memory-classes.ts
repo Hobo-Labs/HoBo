@@ -45,6 +45,9 @@ const JOB_CLASSES = {
 	"PR impact validation": "heavy",
 	"PR affected package lanes": "heavy",
 	"PR off-path checks (ts-autocode surface, production packages)": "heavy",
+	// Installs, builds some two dozen packages and runs five suites; its two
+	// database servers sit beside the job, outside what admission counts.
+	"Live data engines (PostgreSQL 16, MongoDB 8)": "heavy",
 	"Main full gate": "heavy",
 	"Release contract + affected OCI images": "heavy",
 	"Publish npm + GHCR (tagged release)": "heavy",

@@ -987,10 +987,13 @@ Evidence:
   (`scripts/ci/data-live-servers.mts`) and runs `pnpm run test:data-live` against them. It runs on a
   pull request when `scripts/ci/job-scope.mts` finds that the diff reaches the live suites — the data
   packages, `@hobo/trails`, anything they import, or CI configuration — and every night on `main`.
+  A green run is checked, not assumed: the job fails unless each of the five packages reported and
+  no test was skipped, since a live test without its server skips rather than fails.
   What that leaves open: it does not run in the merge queue; it blocks a merge only if the branch
   ruleset names it as a required check, which is a repository setting, not something this change can
-  set; a pull request whose diff does not reach the suites relies on the nightly run; and it covers
-  the two pinned server versions only. The always-on lanes cover the contract logic, the decoder
+  set; a pull request whose diff does not reach the suites relies on the nightly run; it covers
+  the two pinned server versions only; and it has so far run only on GitHub-hosted runners, not on
+  the self-hosted fleet, where the job is a container beside the two servers. The always-on lanes cover the contract logic, the decoder
   against recorded bytes, MongoDB over its in-memory executor, and SQLite for real.
 - **The intermittent live PostgreSQL failure seen at `85ae5267` is explained and fixed; a residual
   remains.** Root cause: a logical replication slot created while another session creates a table and

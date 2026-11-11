@@ -30,7 +30,7 @@ import {
 
 export const NOW = "2026-11-10T00:00:00.000Z";
 
-/** The live lane's connection string; absent in CI, which has no database. */
+/** The live lane's connection string; absent where no lane provides a database. */
 export const LIVE_URL = process.env.HOBO_TEST_POSTGRES_URL;
 
 export function failures(results: readonly EngineConformanceResult[]): string {
