@@ -439,6 +439,8 @@ export function keyVault(options?: KeyVaultOptions): SlotBinding {
 }
 
 type AnySlotOptions =
+	| VirtualMachineOptions
+	| ManagedDiskOptions
 	| StaticWebAppsOptions
 	| AppServiceOptions
 	| ContainerAppsOptions
@@ -457,3 +459,46 @@ type AnySlotOptions =
 	| ServiceBusQueueOptions
 	| ServiceBusTopicOptions
 	| KeyVaultOptions;
+
+export interface VirtualMachineOptions {
+	/** A VM size such as `Standard_B2s`. */
+	readonly size?: string;
+	readonly image?: string;
+	readonly subnet?: string;
+}
+
+/**
+ * Azure Virtual Machine — slot `service`, profile `service.worker/v1`: a long-running
+ * virtual machine. Catalog only: this package ships no resolver for it. It is
+ * deliberately not also listed under `web.hosted/v1`; a VM can host a web
+ * origin, but that row is left for the change that models its public address.
+ */
+export function virtualMachine(options?: VirtualMachineOptions): SlotBinding {
+	return slotBinding({
+		slot: "service",
+		profile: capability.service.worker,
+		productId: "azure.virtual-machine/v1",
+		properties: present(options ?? {}),
+	});
+}
+
+export interface ManagedDiskOptions {
+	readonly sizeGb?: number;
+	/** A disk SKU such as `Premium_LRS`. */
+	readonly sku?: string;
+}
+
+/**
+ * Azure managed disk — slot `bucket`, profile `bucket.filesystem/v1`. A block
+ * device formatted and attached to one virtual machine has hierarchical path
+ * semantics, which is `bucket.filesystem/v1`. Catalog only: this package ships
+ * no resolver for it.
+ */
+export function managedDisk(options?: ManagedDiskOptions): SlotBinding {
+	return slotBinding({
+		slot: "bucket",
+		profile: capability.bucket.filesystem,
+		productId: "azure.managed-disk/v1",
+		properties: present(options ?? {}),
+	});
+}

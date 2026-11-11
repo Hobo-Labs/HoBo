@@ -237,6 +237,54 @@ The mandatory lanes are offline and deterministic. The live lane is opt-in and
 never runs as part of them. Suite, report, and SDK-parity artifacts carry the
 exported versioned schema identifiers so consumers can reject unknown versions.
 
+## The workspace boundary gate
+
+`pnpm run lint:boundaries` (`scripts/check-package-boundaries.mts`) reads every
+workspace package's manifest and source imports and judges each edge with
+`validateBoundaryImports` and `detectWorkspaceCycles` from `src/boundaries.ts`.
+It prints one line per refusal on stderr, exits non-zero if there is one, and
+prints a `WorkspaceSkeletonValidatedEvent` on stdout whose `violations` holds
+one record per refusal: `{ rule, from_path, to_path, effect: "deny" }`.
+
+A refusal is raised together with its rule, so a line on stderr cannot exist
+without its record. `rule` is closed — `BOUNDARY_RULES` in `src/boundaries.ts`,
+`#BoundaryRule` in `data-models/conformance.cue`:
+
+| `rule` | Refuses |
+|---|---|
+| `core-imports-hobo` | `@hobo/core` importing a HoBo package |
+| `adapter-imports-adapter` | one adapter importing another |
+| `adapter-imports-non-core` | an adapter importing anything but core ports and contract vocabulary |
+| `outward-dependency` | an import from a lower layer to a higher one |
+| `workspace-cycle` | a dependency cycle; the record is the edge that closes it |
+| `unknown-package` | an edge from or to a workspace path nobody classified |
+| `orchestrator-imports-engine` | an orchestrator importing a data engine at runtime |
+| `orchestrator-imports-engine-storage` | an orchestrator importing a database driver or engine-specific storage at runtime |
+| `engine-imports-engine` | one data engine importing another at runtime |
+
+### Engine neutrality
+
+The last three rules keep migration orchestration engine-neutral (ADR-0177):
+
+- **Orchestrators import no data engine at runtime.** An orchestrator
+  (`packages/trails`) reaches storage through the `@hobo/data-core` ports. A
+  data engine is any `packages/data-<engine>` package, or one of that name
+  directly under an adapter tier; `data-core` and its companions are not
+  engines.
+- **Orchestrators import no database driver and no engine-specific storage at
+  runtime.** A driver is named by the specifier a source file writes
+  (`node:sqlite`, `pg`, `mongodb`, …, and their subpaths), so a builtin is
+  caught although it is never a workspace edge. `@hobo/storage-sqlite` is one
+  engine's storage and is refused the same way.
+- **Engines do not import each other at runtime.** They meet only through
+  `@hobo/data-core`. Every engine sits on the same layer, so no layering rule
+  stands between two of them.
+- **Test-only edges are allowed.** A test may import a real engine or driver
+  to exercise a live lane. An edge is test-only when the dependency is declared
+  under `devDependencies` *and* no file under `src/` imports it: one sighting
+  under `src/` makes it a runtime edge, whatever the manifest says. A type-only
+  import in `src/` is still a runtime edge.
+
 ## Boundaries
 
 The package is generic over WIT ports and adapters. It does not import runtime,

@@ -110,6 +110,7 @@ import {
 	cosmosTable,
 	functions,
 	keyVault,
+	managedDisk,
 	postgresFlexible,
 	redisCache,
 	serviceBusQueue,
@@ -117,6 +118,7 @@ import {
 	sqlDatabase,
 	staticWebApps,
 	storageQueue,
+	virtualMachine,
 } from "./slots.js";
 import {
 	AZURE_ARM_BASE_PATH,
@@ -258,10 +260,15 @@ export const AZURE_RESOLVED_PRODUCT_IDS = Object.freeze(
  * surface is convergent, but a Static Web App created without a repository and
  * repository token is an empty site, which is a half-truth this package would
  * rather not ship than ship silently.
+ * `azure.virtual-machine/v1`, `azure.managed-disk/v1`: catalog and declaration
+ * only. A virtual machine needs a virtual network, a subnet, a network
+ * interface and an image that no Yard binding names. No resolver is shipped.
  */
 export const AZURE_UNRESOLVED_PRODUCT_IDS = Object.freeze(
 	[
 		productIdOf(aks(), "aks"),
+		productIdOf(managedDisk(), "managedDisk"),
+		productIdOf(virtualMachine(), "virtualMachine"),
 		productIdOf(apiManagement(), "apiManagement"),
 		productIdOf(appService(), "appService"),
 		productIdOf(functions(), "functions"),

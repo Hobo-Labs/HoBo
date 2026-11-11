@@ -120,6 +120,29 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 
+## The ci-gh-actions test suite
+
+`packages/ci-gh-actions/vitest.config.ts` runs its test files in two projects. `shared` (everything
+but five files) sets `isolate: false`, so the files share their worker's module graph instead of each
+re-importing the `@hobo/*` graph; `restoreMocks: true` undoes a spy a test leaves, and
+`test/setup/no-leaked-handles.ts` fails a file that leaves a timer, server, socket or child process
+running in the shared worker. `isolated` keeps per-file isolation for the files that load Docker, Pact
+or Dagger tooling, which could not be run in a shared worker where this was measured. A globalSetup
+(`test/setup/tmpfs-tmpdir.ts`, declared once at the root, so it runs once) moves the tests' `TMPDIR` to
+`/dev/shm` when it has at least 512 MiB free and can run a file from there, because every SQLite store
+the tests open waits on an fsync per commit; `HOBO_CI_TEST_TMPFS=0` keeps the disk.
+
+The suite also no longer runs pnpm (the `project` script is checked statically and its built CLI
+started once), no longer starts a Postgres container only for `SELECT 1` (`ci-store-contract.test.ts`
+runs the same pinned image), stalls 1 s less in the bootstrap shutdown case, starts no cleanup
+`stop` for a local runner already stopped, keeps the daemon import cases from running a build outside
+turbo, removes the fake docker directories it made, and declares `@hobo/stations`, so a change there
+now selects the two ci-gh-actions tests that load it.
+
+Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `TURBO_HASH` set
+as under turbo, TMPDIR on disk) on a shared host: 145.6 s wall and 73.3 s CPU before (load 28.0 →
+34.1), 44.9 s wall and 28.2 s CPU after (load 33.2 → 32.4).
+
 ## The hobo package's child-process tests
 
 About 80% of `@hobo/hobo`'s test time went to four files that start the `hobo` binary as child
@@ -177,9 +200,10 @@ It used to skip any package whose `test` script is not plain `vitest run` before
 (`pnpm run build && vitest run`), whose config merges the root one; `test/setup/*` had the same gap.
 Such a package is now asked like any other and runs whole when it is reached, since its script cannot
 take a file list. The same question is now asked of every package that neither changed nor depends on
-one, not only when a path outside every package changed: `packages/code` imports
-`../../cli/src/cloud/loader.js` without depending on `@hobo/cli`, and 3317dcc2 changed `packages/cli`
-without running `packages/code/test/happy-path-run.test.ts`. Only a concrete reach counts there.
+one, not only when a path outside every package changed: a package can import another's source by
+relative path without depending on it, as `packages/stations/test/ci-routing.test.ts` imports
+`../../broker/src/budget-signals.js` without depending on `@hobo/broker`, and a change to the imported
+package used to skip that test. Only a concrete reach counts there.
 
 A bare `"./"` or `"../"` string literal is an edge to its directory only where it can be a path.
 `entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of

@@ -42,7 +42,6 @@
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/cloud": "workspace:*",
-		"@hobo/code": "workspace:*",
 		"@hobo/conformance": "workspace:*",
 		"@hobo/connectivity": "workspace:*",
 		"@hobo/contracts": "workspace:*",
@@ -90,6 +89,7 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",

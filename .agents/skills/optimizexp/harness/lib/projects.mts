@@ -106,8 +106,8 @@ export function listProjects(root = repoRoot()): ProjectRef[] {
 		}
 	}
 
-	// Product-ish packages (code = hobo-code / @hobo/code harness)
-	const productPkgs = ["cli", "hobo", "mcp", "broker", "cloud", "code"];
+	// Product-ish packages
+	const productPkgs = ["cli", "hobo", "mcp", "broker", "cloud"];
 	for (const name of productPkgs) {
 		const rel = path.join("packages", name);
 		if (existsSync(path.join(root, rel, "package.json"))) {

@@ -1,7 +1,7 @@
 /**
  * Design-lint gate for the rendered status-page surface (DESIGN.md).
- * Mirrors packages/code/test/evidence-design-lint.test.ts: token-only hexes,
- * no SaaS palette, no soft elevation, sticker shadows on pressables only.
+ * Token-only hexes, no SaaS palette, no soft elevation, sticker shadows on
+ * pressables only.
  */
 import { describe, expect, it } from "vitest";
 

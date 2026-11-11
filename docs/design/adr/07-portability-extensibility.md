@@ -823,6 +823,10 @@ An audit of the implemented extension surface found twenty-one distinct mechanis
 - **(−)** `@hobo/core`'s public surface grows (two ports, a registry primitive, a manifest parser) and its API snapshot must be maintained accordingly.
 - **(−)** Existing registries are not force-migrated onto the primitive in one step; until each migrates, the catalog documents divergent duplicate-id semantics instead of eliminating them.
 
+### Amendment (2026-11-08: hobo-code leaves main)
+
+Decision 6 (the `hobo.code.harness-spec/v1` record in `packages/code/data-models/`) describes the `feature/hobo-code` branch; `@hobo/code` is not part of `main`, so the harness-spec extension point is not in the `main` catalog.
+
 ## ADR-0157
 **Yard bindings: the Yard is the binding authority — a capability→product mapping surface on the Yard, bindings-are-the-SDK across the membrane, and the seeded localhost Yard.**
 

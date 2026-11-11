@@ -75,8 +75,8 @@ import { createVerifyCommand } from "./verify-command.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 import { createYardCommand } from "./yard-command.js";
 
-// For an entry point that composes this CLI in its own process (hobo-code
-// loads this module from its sibling package): the directories the
+// For an entry point that composes this CLI in its own process (a shell that
+// loads this module from another package): the directories the
 // composition owns are removed on SIGTERM, SIGHUP, SIGINT and SIGQUIT too. A
 // no-op in a worker thread; a library never calls it.
 export { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";

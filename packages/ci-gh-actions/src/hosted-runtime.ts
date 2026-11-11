@@ -3,6 +3,7 @@ import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
+import type { FleetRoutePublisher } from "./fleet-routes.js";
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
@@ -105,6 +106,8 @@ export function createHostedRelayRuntime(options: {
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
 	mergeQueuePositions?: MergeQueuePositionSource;
+	/** See `HostedRelay`: publishes the fleet route table after each pass. */
+	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -158,6 +161,7 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.memoryAdmission = options.memoryAdmission;
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
+		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		return new HostedRelay(relayOptions);
 	}
 	return {

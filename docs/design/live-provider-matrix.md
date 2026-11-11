@@ -21,6 +21,10 @@ tags: [hobo, design, providers, honesty]
 | **In-memory** | Deterministic offline stand-in (default for plan/up) |
 | **Stub** | Explicit unimplemented refuse |
 
+> **Not a readiness claim:** the [PostgreSQL backend catalog](./postgres-backend-catalog.md)
+> names managed and self-hosted PostgreSQL offerings from cited vendor
+> documentation only. It provisions nothing and adds no row to this matrix.
+
 ## Cloud providers (`packages/providers/`)
 
 | Adapter | Realize IR | Live apply | Notes |
@@ -43,6 +47,56 @@ tags: [hobo, design, providers, honesty]
 | `@hobo/provider-ax` / `agentv` | Eval | N/A | AI-eval adapters |
 
 Shared temp contract: `hobo.temporary-environment-station/v1` in `@hobo/core` (`temporaryStationToAnonymousSessionShape` aligns with broker `AnonymousSessionResult`).
+
+## Data engines (`packages/data-*`, ADR-0177)
+
+Each engine implements the `@hobo/data-core` SPI and is run against one conformance kit
+([data-engines-continuous-migration](./data-engines-continuous-migration.md#9-verification)). "Live"
+here means the kit ran against a real server. The kit grows as defects are found, so this section
+does not repeat a case count per engine: the one dated table of kit and test numbers is
+[§9 "Last recorded run"](./data-engines-continuous-migration.md#last-recorded-run) (recorded
+2026-11-10 at commit `45102736`). What follows states which cases each engine skips and why.
+
+| Engine package | Default lane | Live lane | Notes |
+|---|---|---|---|
+| `@hobo/data-sqlite` | **Real** — every test opens SQLite files | same | Last recorded run: SQLite ↔ SQLite passes every case that applies and skips only the native cases (SQLite declares no native profile) and the size case (it states no `maxRecordBytes`); the kit also passes cross-engine with the reference engine in both directions. Capture is a transactional outbox; the fence is entry-point |
+| `@hobo/data-postgres` | Offline: decoder against recorded `pgoutput` bytes, statement and type tests, the executor Pact | **Cred-gated**: `HOBO_TEST_POSTGRES_URL` (needs `wal_level=logical`) | Last live run 2026-11-10, PostgreSQL 16.15: PostgreSQL ↔ PostgreSQL passes every case that applies, the native and crash-window cases included, and skips only the size case (it states no `maxRecordBytes`). The live package total also covers the kit against the reference engine and the cross-engine files with SQLite and MongoDB, both directions; per-pair kit counts were not recorded separately. Only PostgreSQL 16.15 was run; the SQL needs 14+. No driver dependency — an injected executor |
+| `@hobo/data-mongodb` | Offline: the whole kit over an in-memory executor | **Cred-gated**: `HOBO_TEST_MONGODB_URL` (needs a replica set) | Last live run 2026-11-10, MongoDB 8.0.4 single-node replica set: MongoDB ↔ MongoDB passes every case that applies and skips the native cases and the cases that need the `schema` port (MongoDB declares neither). One case is reported `declared-limit`, not passed: `capture.acknowledged-positions-are-final`, under `MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING`. The live package total also covers the cross-engine files with SQLite and PostgreSQL, both directions. Sharded clusters and failover are untested. No driver dependency — an injected executor |
+
+The default CI lane does not provide either server and no workflow sets the two variables, so the
+live lanes run only where someone supplies a server. A regression in live change capture, in the
+fence under real concurrency, or in the native path is therefore caught by that run, not by every
+push. The intermittent failure seen in the live PostgreSQL lane at `85ae5267` was traced to a
+replication slot created at a bad moment and is fixed by proving a slot decodable before use; the
+residual is the table-sync slots PostgreSQL creates itself
+([honest limits](./data-engines-continuous-migration.md#10-honest-limits)).
+
+**Native logical-copy, live.** `migration.postgres.logical-copy/v1` is the one native realization
+any engine declares. Its live proof is `packages/data-postgres/test/native-live.test.ts`, which
+creates one extra database on the server it is given and moves a dataset between the two databases
+under concurrent writers: digest-equal, fenced, flipped once, nothing left behind. It passed in the
+live run recorded at `45102736` (2026-11-10, PostgreSQL 16.15); the figures it prints were last noted
+at `85ae5267` — 3398 records digest-equal after 488 concurrent transactions, 309 of which landed
+while racing the fence. That proof is **one cluster, two databases, PostgreSQL 16.15 only**. The
+target role must also be able to turn statement logging off for its own transaction on a server that
+logs statements, or the subscription is refused rather than have the source connection string
+logged. Not tested: two separate clusters; any other PostgreSQL version;
+a subscription owner that is not a superuser; an initial copy longer than the poll budget on a real
+server; cleanup when the source is unreachable, against a real server; open-schema datasets
+natively; a network failure mid-copy; a native `offline-copy` on a real engine (none declares one).
+
+To run both live lanes locally:
+
+```bash
+docker compose -f packages/data-core/deploy/compose.live-engines.yml up -d --wait
+pnpm run test:data-live
+docker compose -f packages/data-core/deploy/compose.live-engines.yml down -v
+```
+
+`test:data-live` defaults the two URLs to the compose ports and honours values already set, so it also
+works against servers started another way. It calls `pnpm --filter … test` rather than turbo on
+purpose: turbo passes `HOBO_*` through without keying its cache on them, so a cached offline result
+could be replayed as if it were a live one.
 
 ## IaC engines (`packages/iac/`)
 

@@ -1,12 +1,18 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
-import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
+import {
+	ConfigurationSchema,
+	type Lease,
+	buildFleetCapacitySnapshot,
+	memoryAdmitHeadroom,
+	parseConfiguration,
+} from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
@@ -18,10 +24,13 @@ import {
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
+	createFleetCapacityPublisher,
+	createFleetRoutePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
 	createHostedRelayRuntime,
+	createHostHealthMonitor,
 	createIsolatedContainerController,
 	createMergeQueuePositionCache,
 	createJobDurations,
@@ -46,6 +55,7 @@ import {
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
+	readHostHealthSample,
 	readHostMemory,
 	relayTraceSinkFromEnv,
 	resolveWorkerMemoryConfig,
@@ -292,6 +302,14 @@ const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
 const lendTrunkSlots = trunkLend === "1";
+// Off unless set: the relay then keeps HOBO_CI_FLEET_ROUTES current so new jobs
+// can ask a label provider for a runner while the box is full. The App needs
+// repository "Variables: write" for it; a refused write is logged and ignored.
+const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
+if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
+	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
+const publishFleetRoutes = fleetRoutesFlag === "1";
+const NO_OFFERS: ReadonlySet<string> = new Set();
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -467,8 +485,9 @@ try {
 		log,
 	});
 	retiredSweep.trigger();
+	const dockerDataRoot = await docker.dataRoot();
 	const storageAdmission = createWorkerStorageAdmission({
-		dockerDataRoot: await docker.dataRoot(),
+		dockerDataRoot,
 		workRoot,
 		fs: workFs,
 		docker,
@@ -518,6 +537,37 @@ try {
 			message: error instanceof Error ? error.message : "unknown",
 		});
 	}
+	const hostHealthPaths = [dockerDataRoot, workRoot];
+	// Collection cannot start inside the tick that noticed the pressure; it is
+	// asked for here and started when that tick ends.
+	let gcRequested = false;
+	const hostHealth = createHostHealthMonitor({
+		sample: () => {
+			const availableMb = readAvailableMemoryMb();
+			return readHostHealthSample({
+				loadAverage1m: loadavg()[0] ?? 0,
+				// Load average is the whole host's, so the divisor is too: not the
+				// daemon's own cgroup share.
+				cpus: cpus().length,
+				memory:
+					availableMb === undefined
+						? undefined
+						: { availableMb, totalMb: hostMemorySample.totalMemoryMb },
+				paths: hostHealthPaths,
+				statfs: workFs.statfs,
+			});
+		},
+		log,
+		// Collect now, not at the next interval: a job is about to need the room.
+		onPressure: (verdict) => {
+			if (
+				verdict.state === "pressured" ||
+				verdict.state === "critical" ||
+				verdict.reasons.some((reason) => reason.startsWith("storage"))
+			)
+				gcRequested = true;
+		},
+	});
 	await storageAdmission.reap();
 	const jobPickupMetadata = new Map<
 		string,
@@ -677,6 +727,48 @@ try {
 		connections: async () =>
 			(await store.configuration())?.configuration?.connections ?? [],
 	});
+	const capacityVolatilityMb = Number(
+		process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
+	);
+	if (
+		!Number.isFinite(capacityVolatilityMb) ||
+		capacityVolatilityMb < 0 ||
+		!Number.isInteger(capacityVolatilityMb)
+	)
+		throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
+	const fleetRoutes = publishFleetRoutes
+		? createFleetRoutePublisher({
+				github,
+				log,
+				unhealthyOfferIds: (account) => {
+					const bad = new Set<string>();
+					const isolated = account.offers.filter(
+						(offer) =>
+							isIsolatedContainerOffer(offer) &&
+							offer.providerAccountId === workerAccountId,
+					);
+					if (hostHealth.current().state === "critical") {
+						for (const offer of isolated) bad.add(offer.id);
+						return bad;
+					}
+					const availableMb = readAvailableMemoryMb();
+					if (
+						!memoryAdmitHeadroom(
+							availableMb,
+							memoryConfig.classes.heavy,
+							memoryConfig.reserveMb,
+							capacityVolatilityMb,
+						)
+					) {
+						for (const offer of isolated) bad.add(offer.id);
+					}
+					return bad;
+				},
+			})
+		: undefined;
+	const fleetCapacityPublisher = publishFleetRoutes
+		? createFleetCapacityPublisher({ github, log })
+		: undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -693,6 +785,7 @@ try {
 		memoryAdmission,
 		storageAdmission,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
+		fleetRoutes,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -873,6 +966,8 @@ try {
 	}
 
 	const reconcileAndLaunch = singleFlight(async () => {
+		// Sampled at most every ten seconds; never fails the tick.
+		await hostHealth.observe();
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
@@ -883,6 +978,35 @@ try {
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
 		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+		if (fleetCapacityPublisher) {
+			const configuration = (await store.configuration())?.configuration;
+			const availableMb = readAvailableMemoryMb();
+			const freeSlots = Math.max(0, slots - liveWorkerLeaseIds.size);
+			const snapshot = buildFleetCapacitySnapshot({
+				atMs: Date.now(),
+				availableMb,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+				freeSlotsHobo: freeSlots,
+				freeSlotsTrunk: Math.min(freeSlots, trunkSlots),
+				requiredMbHobo: memoryConfig.classes.standard,
+				requiredMbTrunk: memoryConfig.classes.heavy,
+			});
+			for (const connection of configuration?.connections ?? []) {
+				try {
+					await fleetCapacityPublisher.publish({
+						installationId: connection.installationId,
+						repository: connection.repository,
+						snapshot,
+					});
+				} catch (error) {
+					log("hobo_ci_fleet_capacity_error", {
+						repository: connection.repository,
+						message: error instanceof Error ? error.message : "unknown",
+					});
+				}
+			}
+		}
 	});
 
 	function runTick(): Promise<void> {
@@ -891,6 +1015,10 @@ try {
 		const current = reconcileAndLaunch();
 		const tracked = current.finally(() => {
 			if (tickInFlight === tracked) tickInFlight = undefined;
+			if (gcRequested) {
+				gcRequested = false;
+				runGc();
+			}
 		});
 		tickInFlight = tracked;
 		return tracked;
@@ -982,6 +1110,7 @@ try {
 		trunkSlots,
 		mergeGroupLeases,
 		lendTrunkSlots,
+		publishFleetRoutes,
 		workRoot,
 		pnpmStoreMounted: pnpmStore !== "",
 		pnpmStorePruneIntervalMs,
@@ -1081,6 +1210,17 @@ try {
 				});
 			}
 			if (stopMode === "drain") await retiredSweep.drain();
+			if (stopMode === "drain" && fleetRoutes) {
+				// Leaving for good: nobody will keep the route table current, so
+				// every class goes back to its hobo label. A handoff leaves it,
+				// because the successor takes over within seconds.
+				const state = await store.configuration().catch(() => undefined);
+				for (const connection of state?.configuration?.connections ?? [])
+					await fleetRoutes.reset({
+						installationId: connection.installationId,
+						repository: connection.repository,
+					});
+			}
 			await closeStore();
 			await Promise.race([
 				natsMesh?.close().catch(() => undefined),
