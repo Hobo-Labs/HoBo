@@ -13,12 +13,18 @@ permissions:
 jobs:
   publish:
     name: Publish local deps image (non-blocking)
+    # The deps key includes the worker image's, so a new worker key means a new deps image,
+    # and building one builds the worker image it sits on when GHCR lacks it. Wait for the
+    # runner-image job so that build pulls the image instead of racing a second build.sh
+    # (both use the box's fixed staging registry container).
+    needs: [runner-image]
     # Keyed by the CI run's conclusion: a dropped or failed main run completes too, and the
     # job skips it, so it must not cancel a publish that a green run started.
     concurrency:
       group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
       cancel-in-progress: true
     if: >-
+      always() &&
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
@@ -57,7 +63,7 @@ jobs:
       group: ci-runner-image-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
       cancel-in-progress: false
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -79,13 +85,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_EXPERIMENTAL: "1"
           VERSION: ${{ steps.status.outputs.version }}
+          # A cold build takes about 15 minutes; ensure-ci-worker-image's default is 10.
+          HOBO_CI_WORKER_BUILD_BUDGET_SEC: "1500"
         run: |
           set -euo pipefail
-          # Drop any image under this tag first: a pull request's job may have built one on this
-          # box, and build.sh would reuse it as is.
-          docker image rm "hobo-ci-worker:${VERSION}" >/dev/null 2>&1 || true
+          tag="hobo-ci-worker:${VERSION}"
+          # A pull request's job may have built an image under this tag on the box, and build.sh
+          # reuses whatever the tag names. Untag it, even if a container still uses it.
+          docker image rm -f "$tag" >/dev/null 2>&1 || true
+          if docker image inspect "$tag" >/dev/null 2>&1; then
+            echo "::error title=Worker image tag still present::could not remove ${tag} before building"
+            exit 1
+          fi
+          # build.sh moves the box's :local, which the daemon starts job containers from. Put it
+          # back afterwards unless another build moved it meanwhile (a newer main commit's).
+          before="$(docker image inspect -f '{{.Id}}' hobo-ci-worker:local 2>/dev/null || true)"
           HOBO_CI_SKIP_GHCR_PULL=1 node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+          built="$(docker image inspect -f '{{.Id}}' "$tag")"
           node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts
+          now="$(docker image inspect -f '{{.Id}}' hobo-ci-worker:local 2>/dev/null || true)"
+          if [ -n "$before" ] && [ "$now" = "$built" ] && [ "$before" != "$built" ]; then
+            docker tag "$before" hobo-ci-worker:local
+          fi
       - name: Fail unless GHCR now has it
         if: steps.status.outputs.ghcr != 'true'
         env:

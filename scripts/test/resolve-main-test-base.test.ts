@@ -75,4 +75,25 @@ describe("fetchLastGreenMainSha", () => {
 		);
 		assert.ok(seen[0]?.signal instanceof AbortSignal);
 	});
+
+	it("reads a timed-out or unreadable answer as no last green commit", async () => {
+		const base = {
+			repository: "Hobo-Labs/HoBo",
+			token: "t",
+			workflowBasename: "hobo-ci.yml",
+			head: "f".repeat(40),
+		};
+		const timedOut = await fetchLastGreenMainSha({
+			...base,
+			fetch: async () => {
+				throw new DOMException("The operation timed out.", "TimeoutError");
+			},
+		});
+		assert.equal(timedOut, undefined);
+		const garbled = await fetchLastGreenMainSha({
+			...base,
+			fetch: async () => new Response("<html>", { status: 200 }),
+		});
+		assert.equal(garbled, undefined);
+	});
 });

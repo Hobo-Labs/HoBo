@@ -141,6 +141,10 @@ jobs:
       - name: Materialize runner image (host cache or GHCR)
         id: materialize
         if: steps.rebuild.outputs.needed == 'true'
+        # --materialize-only exits 2 when neither the box nor GHCR has this content key, which
+        # is every change to an image input; the build steps below then run. Without this the
+        # job failed there and the build never ran.
+        continue-on-error: true
         timeout-minutes: 5
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
