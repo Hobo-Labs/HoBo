@@ -33,7 +33,12 @@ import {
 	jitEmptyExitLaunchBlocked,
 	recordJitEmptyExit,
 } from "../jit-empty-exit-backoff.js";
-import { correlateRunnerOnRun } from "../jit-runner-correlation.js";
+import {
+	correlateRunnerOnRun,
+	resolveRunnerAssignedJob,
+	runnerHoldsActiveJob,
+} from "../jit-runner-correlation.js";
+import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
 import {
 	jitRunnerRegistrationLabels,
 	RUNNER_LABEL,
@@ -353,6 +358,7 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_jit_empty_exit"
 			| "hobo_ci_jit_empty_exit_backoff"
 			| "hobo_ci_jit_runner_served_other_job"
+			| "hobo_ci_jit_runner_custody_transferred"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
@@ -582,6 +588,24 @@ export function createIsolatedContainerController(options: {
 			(await options.docker.containerExists(containerName))
 		)
 			return;
+		if (lease.runnerName) {
+			try {
+				const assignment = await resolveRunnerAssignedJob(
+					options.github,
+					lease.installationId,
+					lease.repository,
+					lease.runnerName,
+					lease.runnerId,
+					{
+						reservedJobId: lease.jobId,
+						preferRunIds: [lease.originalRunId],
+					},
+				);
+				if (runnerHoldsActiveJob(assignment)) return;
+			} catch {
+				return;
+			}
+		}
 		const startedAt = Date.now();
 		try {
 			const retired = await options.workFs.retireJobDirectory(directory);
@@ -985,11 +1009,31 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
+		if (lease.runnerName) {
+			try {
+				const assignment = await resolveRunnerAssignedJob(
+					options.github,
+					lease.installationId,
+					lease.repository,
+					lease.runnerName,
+					lease.runnerId,
+					{
+						reservedJobId: lease.jobId,
+						preferRunIds: [lease.originalRunId],
+					},
+				);
+				if (runnerHoldsActiveJob(assignment)) return;
+			} catch {
+				return;
+			}
+		}
+		const servedJobId =
+			lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 		const original = await getJob(
 			options.github,
 			lease.installationId,
 			lease.repository,
-			lease.jobId,
+			servedJobId,
 		);
 		const custody = runnerCustody(original.runner_name);
 		const emptyKey = jitEmptyExitKey(
@@ -1539,6 +1583,17 @@ export function createIsolatedContainerController(options: {
 		async reconcile(id: string, forceStop?: boolean) {
 			let lease = await options.store.get(id);
 			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
+			if (lease.runnerName) {
+				const custody = await adoptRunnerAssignment(
+					options.store,
+					options.github,
+					lease,
+					now(),
+					options.log,
+				);
+				lease = custody.lease;
+				if (custody.holdsActive && forceStop) return;
+			}
 			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
 				// The durable state change fences a late create reply: its normal
 				// continuation can no longer register a runner for this lease.
@@ -1588,6 +1643,24 @@ export function createIsolatedContainerController(options: {
 				lease = attached;
 			}
 			if (hasIsolatedStopIntent(lease)) {
+				if (lease.runnerName) {
+					try {
+						const assignment = await resolveRunnerAssignedJob(
+							options.github,
+							lease.installationId,
+							lease.repository,
+							lease.runnerName,
+							lease.runnerId,
+							{
+								reservedJobId: lease.jobId,
+								preferRunIds: [lease.originalRunId],
+							},
+						);
+						if (runnerHoldsActiveJob(assignment)) return;
+					} catch {
+						return;
+					}
+				}
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
 					lease = await markStopped(lease, true);
@@ -1666,6 +1739,24 @@ export function createIsolatedContainerController(options: {
 					if (running) return;
 				}
 				if (exited) {
+					if (lease.runnerName) {
+						try {
+							const assignment = await resolveRunnerAssignedJob(
+								options.github,
+								lease.installationId,
+								lease.repository,
+								lease.runnerName,
+								lease.runnerId,
+								{
+									reservedJobId: lease.jobId,
+									preferRunIds: [lease.originalRunId],
+								},
+							);
+							if (runnerHoldsActiveJob(assignment)) return;
+						} catch {
+							return;
+						}
+					}
 					const emptyKey = jitEmptyExitKey(
 						lease.repositoryId,
 						lease.jobId,
@@ -1704,6 +1795,24 @@ export function createIsolatedContainerController(options: {
 			// Dispatch may still be registering or starting this session. A normal
 			// reconciliation cannot retire it until there is a reason to stop.
 			if (!stop) return;
+			if (lease.runnerName) {
+				try {
+					const assignment = await resolveRunnerAssignedJob(
+						options.github,
+						lease.installationId,
+						lease.repository,
+						lease.runnerName,
+						lease.runnerId,
+						{
+							reservedJobId: lease.jobId,
+							preferRunIds: [lease.originalRunId],
+						},
+					);
+					if (runnerHoldsActiveJob(assignment)) return;
+				} catch {
+					return;
+				}
+			}
 			let removed = false;
 			try {
 				try {
@@ -1765,18 +1874,18 @@ export function createIsolatedContainerController(options: {
 		);
 		if (!runnerLease) return false;
 		try {
-			const job = await getJob(
+			const assignment = await resolveRunnerAssignedJob(
 				options.github,
 				runnerLease.installationId,
 				runnerLease.repository,
-				runnerLease.actualJobId > 0
-					? runnerLease.actualJobId
-					: runnerLease.jobId,
+				container.name,
+				runnerLease.runnerId,
+				{
+					reservedJobId: runnerLease.jobId,
+					preferRunIds: [runnerLease.originalRunId],
+				},
 			);
-			return (
-				(job.status === "queued" || job.status === "in_progress") &&
-				job.runner_name === container.name
-			);
+			return runnerHoldsActiveJob(assignment);
 		} catch {
 			return true;
 		}

@@ -100,6 +100,40 @@ const RunWorkflowJob = z.object({
 
 export type GithubRunWorkflowJob = z.infer<typeof RunWorkflowJob>;
 
+const WorkflowRunPage = z.object({
+	workflow_runs: z.array(
+		z.object({
+			id: z.number().int().positive(),
+		}),
+	),
+});
+
+/** Recent in-progress workflow runs for cross-run runner assignment lookup. */
+export async function listInProgressWorkflowRunIds(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	limit = 25,
+): Promise<readonly number[]> {
+	const ids: number[] = [];
+	for (let page = 1; page <= 3 && ids.length < limit; page++) {
+		const perPage = Math.min(100, limit);
+		const response = await api.request(
+			installationId,
+			`/repos/${repository}/actions/runs?status=in_progress&per_page=${perPage}&page=${page}`,
+		);
+		if (!response.ok)
+			throw new Error(`GitHub run listing failed (${response.status})`);
+		const parsed = WorkflowRunPage.parse(await response.json());
+		for (const run of parsed.workflow_runs) {
+			ids.push(run.id);
+			if (ids.length >= limit) break;
+		}
+		if (parsed.workflow_runs.length < perPage) break;
+	}
+	return ids;
+}
+
 export async function listRunWorkflowJobs(
 	api: GithubTransport,
 	installationId: number,

@@ -117,6 +117,84 @@ it("yields box custody when GitHub queued job names another fleet runner", async
 	expect(await store.pendingJobs()).toEqual([]);
 });
 
+it("does not yield custody while the JIT runner is serving another active job", async () => {
+	const github = {
+		request: async (_installation: number, path: string) => {
+			if (path === "/repos/org/repo/actions/runs/11")
+				return Response.json(run());
+			if (path === "/repos/org/repo/actions/jobs/1")
+				return Response.json({
+					id: 1,
+					run_id: 11,
+					run_attempt: 1,
+					status: "queued",
+					labels: ["hobo"],
+					runner_name: "hobo-runner-arc",
+				});
+			if (path.startsWith("/repos/org/repo/actions/runs?status=in_progress"))
+				return Response.json({ workflow_runs: [{ id: 22 }] });
+			if (path === "/repos/org/repo/actions/runs/22/jobs?filter=latest&per_page=100")
+				return Response.json({
+					jobs: [
+						{
+							id: 2,
+							run_id: 22,
+							status: "in_progress",
+							runner_name: runner,
+							runner_id: 9,
+						},
+					],
+				});
+			if (path === "/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100")
+				return Response.json({
+					jobs: [
+						{
+							id: 1,
+							run_id: 11,
+							status: "queued",
+							runner_name: "hobo-runner-arc",
+							runner_id: 1,
+						},
+					],
+				});
+			throw new Error(`unexpected: ${path}`);
+		},
+	} satisfies GithubTransport;
+	const { store, relay, reconcile } = await isolatedRelay(github);
+	const account = (await store.configuration())?.configuration?.accounts[0];
+	if (!account) throw new Error("fixture account");
+	const demand = job();
+	await store.queue(demand, NOW, 1);
+	const lease = await store.reserve(account, demand, NOW, 1);
+	if (!lease) throw new Error("fixture lease");
+	const runner = `hobo-${lease.id}`;
+	await store.transition(
+		lease.id,
+		["reserved"],
+		(entry) => {
+			entry.jobId = 1;
+			entry.originalRunId = 11;
+			entry.runnerName = runner;
+			entry.runnerId = 9;
+			entry.sandboxName = runner;
+			entry.sandboxSessionId = "cid";
+		},
+		"ci.RunnerRegistered",
+		NOW,
+		1,
+	);
+	const body = queued();
+	body.workflow_job.runner_name = "hobo-runner-arc";
+	const result = await relay.processWebhook(
+		Buffer.from(JSON.stringify(body)),
+		"workflow_job",
+	);
+	expect(result).toBe("foreign-runner");
+	expect(reconcile).not.toHaveBeenCalled();
+	expect(await store.activeLeases()).toHaveLength(1);
+	vi.restoreAllMocks();
+});
+
 it("does not queue again when dispatching lease already owns the JIT runner", async () => {
 	const store = new SqliteCiStore(":memory:");
 	stores.push(store);

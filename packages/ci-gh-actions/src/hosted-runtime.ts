@@ -19,6 +19,7 @@ import type { JobDurations } from "./job-durations.js";
 import type { JobPickupMetadataCache } from "./job-pickup.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { hasOutstandingBoxCustody, runnerCustody } from "./job-runner-custody.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
@@ -406,7 +407,8 @@ export function createHostedRelayRuntime(options: {
 			const controller = await relay();
 			const leaseReconcileStartedAt = Date.now();
 			const activeLeases = await options.store.activeLeases();
-			for (const lease of activeLeases) {
+			for (const entry of activeLeases) {
+				let lease = entry;
 				if (
 					!["running", "dispatched", "uncertain"].includes(lease.state) &&
 					!(
@@ -431,27 +433,78 @@ export function createHostedRelayRuntime(options: {
 							if (
 								options.isolatedHost &&
 								lease.state !== "uncertain" &&
-								lease.runnerName &&
-								(lease.actualJobId > 0 ||
+								lease.runnerName
+							) {
+								const boxWorker =
+									lease.provider === "kubernetes" ||
+									lease.provider === "hobo-box-worker";
+								if (boxWorker) {
+									const at =
+										options.now?.() ?? new Date().toISOString();
+									const custody = await adoptRunnerAssignment(
+										options.store,
+										options.github,
+										lease,
+										at,
+									);
+									lease = custody.lease;
+									if (custody.holdsActive) {
+										assignedJobCompleted = false;
+									} else if (
+										custody.assignment?.status === "completed" &&
+										custody.assignment.jobId ===
+											(lease.actualJobId > 0
+												? lease.actualJobId
+												: lease.jobId)
+									) {
+										assignedJobCompleted = true;
+									} else if (
+										lease.actualJobId > 0 ||
+										servedRunnerLabels.get(
+											`${lease.repository}:${lease.jobId}`,
+										) === TRUNK_RUNNER_LABEL
+									) {
+										const jobId =
+											lease.actualJobId > 0
+												? lease.actualJobId
+												: lease.jobId;
+										try {
+											const job = await getJob(
+												options.github,
+												lease.installationId,
+												lease.repository,
+												jobId,
+											);
+											assignedJobCompleted =
+												job.id === jobId &&
+												job.status === "completed" &&
+												job.runner_name === lease.runnerName;
+										} catch {
+											// Failed or ambiguous GitHub reads cannot authorize a stop.
+										}
+									}
+								} else if (
+									lease.actualJobId > 0 ||
 									servedRunnerLabels.get(
 										`${lease.repository}:${lease.jobId}`,
-									) === TRUNK_RUNNER_LABEL)
-							) {
-								const jobId =
-									lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
-								try {
-									const job = await getJob(
-										options.github,
-										lease.installationId,
-										lease.repository,
-										jobId,
-									);
-									assignedJobCompleted =
-										job.id === jobId &&
-										job.status === "completed" &&
-										job.runner_name === lease.runnerName;
-								} catch {
-									// Failed or ambiguous GitHub reads cannot authorize a stop.
+									) === TRUNK_RUNNER_LABEL
+								) {
+									const jobId =
+										lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+									try {
+										const job = await getJob(
+											options.github,
+											lease.installationId,
+											lease.repository,
+											jobId,
+										);
+										assignedJobCompleted =
+											job.id === jobId &&
+											job.status === "completed" &&
+											job.runner_name === lease.runnerName;
+									} catch {
+										// Failed or ambiguous GitHub reads cannot authorize a stop.
+									}
 								}
 							}
 							await host.reconcile(

@@ -24,6 +24,8 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
+import { runnerHoldsActiveJob } from "./jit-runner-correlation.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
@@ -391,11 +393,28 @@ export class HostedRelay {
 	): Promise<void> {
 		const at = this.now();
 		const active = await this.options.store.activeLeases();
+		let retainedLeaseId: string | undefined;
 		for (const lease of active) {
 			if (
 				!activeLeaseCoversJob(lease, job.repositoryId, job.id, job.runAttempt)
 			)
 				continue;
+			if (lease.runnerName) {
+				const custody = await adoptRunnerAssignment(
+					this.options.store,
+					this.options.github,
+					lease,
+					at,
+				);
+				if (
+					custody.holdsActive &&
+					custody.assignment &&
+					custody.assignment.jobId !== job.id
+				) {
+					retainedLeaseId = lease.id;
+					continue;
+				}
+			}
 			await this.options.isolatedHost?.reconcile(lease.id, true);
 			await this.options.store.transition(
 				lease.id,
@@ -415,7 +434,12 @@ export class HostedRelay {
 				expectedRevision,
 			);
 		}
-		await this.options.store.withdrawQueuedJob?.(job, at, expectedRevision);
+		await this.options.store.withdrawQueuedJob?.(
+			job,
+			at,
+			expectedRevision,
+			retainedLeaseId,
+		);
 	}
 
 	async processWebhook(raw: Buffer, event: string): Promise<string> {
