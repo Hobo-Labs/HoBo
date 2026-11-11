@@ -99,6 +99,18 @@ export function canScroll(dir: number, scrollTop: number, scrollHeight: number, 
 	return false;
 }
 
+/**
+ * Which sides of a sideways scroll box still hide content, as the value for
+ * its `data-more` attribute: "left", "right", "left right", or "" when it all
+ * shows. Tolerates sub-pixel rounding.
+ */
+export function moreSides(scrollLeft: number, scrollWidth: number, clientWidth: number): string {
+	const sides: string[] = [];
+	if (canScroll(-1, scrollLeft, scrollWidth, clientWidth)) sides.push("left");
+	if (canScroll(1, scrollLeft, scrollWidth, clientWidth)) sides.push("right");
+	return sides.join(" ");
+}
+
 /** Does a stop's content fit the area it is given? */
 export function fits(contentHeight: number, available: number): boolean {
 	return contentHeight <= available + 1;

@@ -13,6 +13,7 @@ import {
 	type ServedRunnerLabelCache,
 	type TrunkWaitCache,
 } from "./hosted-relay.js";
+import { drainWebhookInbox, type InboxDrainOptions } from "./inbox-drain.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
@@ -187,9 +188,61 @@ export function createHostedRelayRuntime(options: {
 	onTickTiming?: (timing: HostedRelayTickTiming) => void;
 	/** A lease whose reconciliation threw this tick; the lease is retained and retried. */
 	onLeaseFailure?: (leaseId: string) => void;
+	inboxDeliveryTimeoutMs?: number;
+	inboxDrainBudgetMs?: number;
+	onInboxDeliveryEvent?: (
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
+		fields: Readonly<{
+			deliveryId: string;
+			webhookEvent: string;
+			durationMs: number;
+			reason: string;
+		}>,
+	) => void;
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
+	const logInboxDelivery = (
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
+		fields: Readonly<{
+			deliveryId: string;
+			webhookEvent: string;
+			durationMs: number;
+			reason: string;
+		}>,
+	) => {
+		if (options.onInboxDeliveryEvent) {
+			options.onInboxDeliveryEvent(event, fields);
+			return;
+		}
+		console.error(JSON.stringify({ event, ...fields }));
+	};
+	const inboxDrainBase = (): InboxDrainOptions => {
+		const shared = {
+			store: options.store,
+			processWebhook: async (rawBody: Buffer, event: string) =>
+				(await relay()).processWebhook(rawBody, event),
+			now,
+			onDeliveryEvent: logInboxDelivery,
+		};
+		if (
+			options.inboxDeliveryTimeoutMs !== undefined &&
+			options.inboxDrainBudgetMs !== undefined
+		)
+			return {
+				...shared,
+				deliveryTimeoutMs: options.inboxDeliveryTimeoutMs,
+				budgetMs: options.inboxDrainBudgetMs,
+			};
+		if (options.inboxDeliveryTimeoutMs !== undefined)
+			return {
+				...shared,
+				deliveryTimeoutMs: options.inboxDeliveryTimeoutMs,
+			};
+		if (options.inboxDrainBudgetMs !== undefined)
+			return { ...shared, budgetMs: options.inboxDrainBudgetMs };
+		return shared;
+	};
 	const lastDuplicateRecheck = new Map<string, number>();
 	const sharedLabelTrunkJobs = new Set<string>();
 	const mergeGroupCapWaitJobs = new Set<string>();
@@ -622,41 +675,36 @@ export function createHostedRelayRuntime(options: {
 		 * With `admit: false` (a draining worker) it only inspects leases: no
 		 * delivery is taken and no pending job is reserved or launched.
 		 */
+		async drainInbox(tickOptions: { maxDeliveries?: number } = {}) {
+			if (tickOptions.maxDeliveries === undefined)
+				return drainWebhookInbox(inboxDrainBase());
+			return drainWebhookInbox({
+				...inboxDrainBase(),
+				maxDeliveries: tickOptions.maxDeliveries,
+			});
+		},
 		async tick(tickOptions: { maxDeliveries?: number; admit?: boolean } = {}) {
 			const tickStartedAt = Date.now();
 			const admit = tickOptions.admit ?? true;
 			const limit = admit ? (tickOptions.maxDeliveries ?? 10) : 0;
 			if (!Number.isInteger(limit) || limit < 0 || limit > 50)
 				throw new Error("invalid delivery batch size");
+			// A function can die after committing intent and before recording the
+			// external response. Old in-flight intent becomes uncertain, never retried.
 			await recoverStaleIntents(await options.store.activeLeases());
-			let deliveryFailed = false;
 			let ingressWantsDispatch = false;
-			for (let processed = 0; processed < limit; processed++) {
-				const claim = await options.store.claimWebhook(now(), 120_000);
-				if (!claim) break;
-				try {
-					const outcome = await (await relay()).processWebhook(
-						Buffer.from(claim.rawBody),
-						claim.event,
-					);
-					if (wantsDispatch(outcome)) ingressWantsDispatch = true;
-					if (!(await options.store.ackWebhook(claim.deliveryId, claim.token)))
-						throw new Error("inbox claim lost");
-				} catch {
-					// Retain failed evidence with a backoff (and eventual quarantine), so
-					// a poison delivery cannot block other accounts in the shared inbox.
-					if (
-						(await options.store.failWebhook(
-							claim.deliveryId,
-							claim.token,
-							now(),
-						)) === "stale"
-					)
-						throw new Error("inbox claim lost");
-					deliveryFailed = true;
-				}
+			let deliveriesMs = 0;
+			if (limit > 0) {
+				const drain = await drainWebhookInbox({
+					...inboxDrainBase(),
+					maxDeliveries: limit,
+					onIngressOutcome: (outcome) => {
+						if (wantsDispatch(outcome)) ingressWantsDispatch = true;
+					},
+				});
+				deliveriesMs = drain.deliveriesMs;
+				ingressWantsDispatch = drain.ingressWantsDispatch;
 			}
-			const deliveriesMs = Date.now() - tickStartedAt;
 			const controller = await relay();
 			let earlyDispatchCount = 0;
 			if (admit && ingressWantsDispatch)
@@ -691,8 +739,6 @@ export function createHostedRelayRuntime(options: {
 					leaseCount: activeLeases.length,
 					pendingCount,
 				});
-			if (deliveryFailed)
-				throw new Error("one or more inbox deliveries failed");
 		},
 	};
 }

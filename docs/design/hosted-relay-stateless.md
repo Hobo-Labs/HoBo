@@ -9,8 +9,10 @@ tags: [hobo, design, ci, relay, twelve-factor]
 # Hosted CI Relay Without Durable State
 
 **Status:** design accepted as
-[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179). Implemented so far
-([delivery plan](#delivery-plan)): the cache port (phase 2), the config-service
+[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179), amended on 2026-11-11
+with [Options routed by budget](#options-routed-by-budget). Implemented so far
+([delivery plan](#delivery-plan)): the cache port and its Upstash, Valkey,
+in-memory and Turso bindings (phases 2 and 2b), the config-service
 client (phase 3), the relay store on the cache (phase 4a) and, in phase 4b, the
 relay composed on them with no database: config and secrets from the config
 service, per-job state in the cache, webhook intake and per-lease steps on
@@ -50,7 +52,9 @@ and its short-lived state in a cache whose loss it tolerates.
 | **Hosted relay** | The relay deployed on Vercel from `@hobo/ci-vercel`: one function, a queue consumer and a schedule |
 | **Relay database fleet** | The machinery that runs the hosted relay on several PostgreSQL databases: store selection, the writer register, replication, failover (`packages/ci-vercel/src/database-*.ts` over `@hobo/data-postgres`'s fleet module). Removed by this design |
 | **Compute fleet** | The machines that run jobs: the mesh, capacity, runner routing and balancing, NATS mesh state (`packages/ci/src/fleet/`, `packages/ci-gh-actions/src/fleet-*.ts`, `mesh-nats.ts`). Unchanged |
-| **Cache** | A Redis- or Valkey-protocol store reached through the `kv.redis-compatible/v1` port. Holds state that may be lost |
+| **Cache** | A store reached through the ephemeral-state port (`EphemeralStatePort`): Redis- or Valkey-protocol, or libSQL. Holds state that may be lost |
+| **Cache fleet** | The cache backends the relay may use, of which exactly one is active, chosen by budget policy ([options](#options-routed-by-budget)). The relay's *state* fleet; not the compute fleet |
+| **Lifecycle driver** | What advances a job's lifecycle steps: Vercel Queues or Vercel Workflows, chosen per job at admission |
 | **Config service** | The service that holds the relay's configuration and secrets. First binding: Infisical Cloud |
 
 "Fleet" alone is ambiguous in this repository and is not used below.
@@ -142,6 +146,11 @@ store that passes that package's conformance suite can serve it.
   `upstash.temporary-redis/v1` provider in
   [`@hobo/provider-upstash`](../../packages/providers/provider-upstash/README.md).
 - **Self-hosted Valkey binds to the same port** with no relay code change.
+- **Turso (libSQL) binds to the same port** through
+  [`@hobo/provider-turso`](../../packages/providers/provider-turso/README.md),
+  with the same semantics and the same conformance suite. Which of these
+  serves at a given time is chosen by budget policy, not fixed here: see
+  [Options routed by budget](#options-routed-by-budget).
 - **Loss is tolerated.** Every key has a TTL, and everything in the cache can
   be rebuilt from GitHub and Vercel by deterministic names
   ([below](#github-is-the-system-of-record-for-jobs)). An empty cache costs a
@@ -392,6 +401,281 @@ At 100 jobs a day on the workflow bridge (about 75,000 commands), plus repair
 ticks (about 50,000) and one agent waiting continuously (about 45,000 to
 70,000), a month is about 200,000 commands: under half the free allowance.
 
+## Options routed by budget
+
+*Amendment of 2026-11-11 to [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179).*
+
+The relay makes two choices that money decides, and it makes both the way
+HoBo asks users to make them: each option is a priced offer with a declared
+capability, and HoBo's capability matching plus budget policy picks one. The
+relay dogfoods the routing it sells. Every option is supported; none is
+hard-wired.
+
+The two choices are independent:
+
+1. **Cache fleet** — which backend holds the relay's cross-job state, the
+   `EphemeralStatePort`. This is the relay's *state* fleet. It is not the
+   [compute fleet](#words-used-here), which this amendment does not touch.
+2. **Lifecycle driver** — what advances each job's lifecycle (dispatch check,
+   claim timeout, reconcile, Sandbox steps).
+
+### Where each offer is recorded
+
+Each option is a provider manifest (`hobo.provider-manifest/v1`, ADR-0178,
+[`@hobo/provider-manifest`](../../packages/provider-manifest/README.md)) whose
+`billing` section lowers through `toPricingCatalog` to an `@hobo/pricing`
+`PricingCatalog` — one `ProviderProduct` with its meters, a `RateCard`, the
+free allowance as included usage — and whose `capabilities.mappings` name the
+profile the option satisfies. `hobo registry add` registers it, appending
+`provider.Registered` and, for the catalog, `pricing.CatalogRegistered`
+(`packages/hobo/src/pricing-catalog-store.ts`) to the registry stream. The
+manifests live together, owned by the relay's deployment, in
+`packages/ci-vercel/offers/`, and the phase 6 deploy registers them:
+
+| Offer | Manifest | Product id | Meter (unit) | Capability profile |
+|---|---|---|---|---|
+| Upstash Redis free | `upstash-redis.provider.yaml` | `upstash.redis.free` | `commands` (command) | `kv.redis-compatible/v1` |
+| Upstash Redis pay-as-you-go | same | `upstash.redis.payg` | `commands` (command) | `kv.redis-compatible/v1` |
+| Aiven for Valkey free | `aiven-valkey.provider.yaml` | `aiven.valkey.free` | none (no command cap) | `kv.valkey/v1` |
+| Turso free | `turso.provider.yaml` | `turso.libsql.free` | `rows-read`, `rows-written` (row) | `kv.ephemeral-state/v1` |
+| Self-hosted Valkey | `self-hosted-valkey.provider.yaml` | `self-hosted.valkey` | none (zero provider cost) | `kv.valkey/v1` |
+| Vercel Blob (private) | `vercel-blob.provider.yaml` | `vercel.blob.private` | TODO: unverified | `kv.ephemeral-state/v1` |
+| Vercel Queues lifecycle driver | `vercel-queues.provider.yaml` | `vercel.queues` | `messages` (message) | `lifecycle.lease-driver/v1` |
+| Vercel Workflows, managed World | `vercel-workflows.provider.yaml` | `vercel.workflows.managed` | `events` (event) | `lifecycle.lease-driver/v1` |
+
+`kv.ephemeral-state/v1` (refining `kv.key-value/v1`) and
+`lifecycle.lease-driver/v1` are new profiles, proposed here and defined in
+phase 5: the first next to `KV_REDIS_COMPATIBLE_PROFILE` in
+`@hobo/kv-redis-compatible` (`src/requirement.ts`), satisfied by any binding
+that passes `EPHEMERAL_STATE_CONFORMANCE_CASES`; the second with the
+`LeaseLifecycleDriver` port. The Redis-protocol offers satisfy
+`kv.ephemeral-state/v1` through the shared Lua binding, so the relay requires
+only that profile. Budget caps are declared per offer in the config service,
+as compute offers' caps already are ([Budgets and cost](#budgets-and-cost)).
+
+### Cache fleet options
+
+All prices and limits below are as the vendor stated them on 2026-11-11 and
+must be re-checked at provisioning.
+
+| Backend | Free allowance | When exhausted | Beyond free | Reach from `iad1` | Binding |
+|---|---|---|---|---|---|
+| **Upstash Redis** ([pricing](https://upstash.com/pricing/redis)) | 500,000 commands a month, 256 MB | Blocked | Pay-as-you-go plan: $0.20 per 100,000 commands | REST; pick region `us-east-1`, next to `iad1` | `@hobo/provider-upstash` |
+| **Aiven for Valkey** ([free tier](https://aiven.io/docs/products/valkey/concepts/valkey-free-tier), [free plan](https://aiven.io/docs/platform/concepts/free-plan)) | 1 GB RAM (about 512 MB usable), single node, no command cap | — | Paid plans not modelled here | TCP; region not selectable on the free plan; powered off when idle | `@hobo/kv-redis-compatible/resp`; connection URL from the config service |
+| **Turso** ([pricing](https://turso.tech/pricing)) | 500 million rows read, 10 million rows written a month | Blocked | Paid plans not modelled here | HTTPS from a function | `@hobo/provider-turso`; already attached to the project |
+| **Self-hosted Valkey** | Whatever the host has | — | Zero provider cost | Any reachable host | `@hobo/kv-redis-compatible/resp` |
+| **Vercel Blob, private** ([Blob](https://vercel.com/docs/vercel-blob), [SDK](https://vercel.com/docs/vercel-blob/using-blob-sdk), [private storage](https://vercel.com/docs/vercel-blob/private-storage)) | TODO: pricing not verified | TODO | TODO | First-party; OIDC (`VERCEL_OIDC_TOKEN` + `BLOB_STORE_ID`), no stored token | Not built (below) |
+
+**Vercel Blob is a feasible first-party backend.** Its SDK documents
+conditional writes: `put` without `allowOverwrite` fails when the blob exists
+(putIfAbsent); `put(..., { allowOverwrite: true, ifMatch: etag })` and
+`ifMatch` on rename and delete throw `BlobPreconditionFailedError` on a
+mismatch (compareAndSet, versioned delete); and a private read with
+`get(pathname, { access: "private", useCache: false })` bypasses the CDN for
+read-after-write. So an `EphemeralStatePort` over private Blob maps
+`putIfAbsent` to a non-overwriting put, `compareAndSet` to `ifMatch`,
+`increment` to a compare-and-set loop, and TTL to an expiry stored in the
+object with lazy deletion. It is not built yet and must pass the conformance
+suite like any binding. The Blob store must be created and connected by the
+owner or by the CI deploy step: the Vercel MCP connector's identity is refused
+(403). It is not a candidate store for a custom Workflow World: a World
+needs an append-only log with dense ids and transactions
+([below](#lifecycle-driver-options)).
+([below](#lifecycle-driver-options)).
+
+**Vercel Runtime Cache is an L1, never the authority.** `getCache()` from
+`@vercel/functions` is a first-party regional key-value cache with `get`,
+`set`, `delete`, TTLs and tags; `expireTag` invalidates globally in about
+300 ms, and entries survive deployments
+([Runtime Cache](https://vercel.com/docs/caching/runtime-cache),
+[`@vercel/functions`](https://vercel.com/docs/functions/functions-api-reference/vercel-functions-package)).
+It is documented as regional and ephemeral, with no compare-and-set or atomic
+increment. The relay may put it in front of the active backend as a
+read-through layer for values that tolerate staleness, to cut billed commands
+and rows on a paid tier; it is never used for exclusion, versions or counters.
+
+**Excluded, with reasons:**
+
+- **Redis Cloud free:** 30 MB and 100 operations a second, and whether the
+  free database offers TLS is unclear.
+- **Valkey hosted on Vercel.** A daemon does not accept inbound HTTP or TCP
+  ([daemon limits](https://vercel.com/docs/daemons/limits)). A container
+  service is HTTP-only, autoscaled with no documented single-instance cap, and
+  scales to zero after five idle minutes
+  ([container runtime](https://vercel.com/docs/functions/runtimes/container)),
+  which a single-writer cache cannot survive. A daemon would also cost about
+  $0.0212 per GB-hour, about $15.50 a month for 1 GiB of memory alone
+  ([pricing](https://vercel.com/pricing)), more than every option above.
+
+**Global Config** (formerly Edge Config) is first-party, read-optimised
+configuration: written through the API or CLI with a Vercel token and read by
+apps with a read token ([Global Config](https://vercel.com/docs/global-config)).
+It is an optional first-party source for the relay's *configuration*, next to
+the config service. It is not a runtime store: the relay never writes it.
+
+### Exactly one cache at a time
+
+Compare-and-set is correct only within one backend, so exactly one cache is
+active. Selection reuses the engine-neutral parts of the relay database
+fleet's policy in `@hobo/data-postgres` (`src/fleet/`):
+
+- **`AssignmentReplica` and `resolveAssignment`** (`assignment.ts`): an
+  assignment log — epoch, active backend, sealed flag, reason — replicated on
+  every configured cache backend, and current only when a majority of the
+  configured backends hold the same entry for the highest epoch. A cache-side
+  replica implements `read` as a `get` of one key and `accept` as a
+  `compareAndSet` that appends the entry, so the log needs nothing but the
+  port. The key carries a TTL (at most 30 days) and is rewritten on each
+  decision and on a schedule well inside it.
+- **`decideFleet`** (`policy.ts`), with its usage periods (`usage.ts`): a
+  *planned switch* when the active backend is projected to exhaust a hard
+  allowance or is no longer affordable under the budget, and a *failover* when
+  it is quota-exhausted or unreachable past a threshold.
+
+Those pieces never mention SQL. Phase 4c proposes moving them, with
+`fleetMajority`, the failure classes and the billing-period helpers, from
+`@hobo/data-postgres` into an engine-neutral package that `@hobo/data-postgres`
+re-exports; this amendment moves no code.
+
+**Switching is safe because cache loss is tolerated.** The new backend starts
+cold. The relay rebuilds in-flight leases from GitHub and Vercel by
+deterministic names ([GitHub is the system of record](#github-is-the-system-of-record-for-jobs)),
+and nothing is copied between caches — unlike the database fleet, which had to
+copy because its state was the only copy. While instances learn the new epoch
+(at most one assignment refresh), two instances may write different caches;
+during that window double-provisioning is prevented by the same name lookup
+that protects the [degraded floor](#degraded-floor-no-cache-reachable). Priced
+offers pause until the rebuild has restored the in-flight holds, as after any
+cache loss.
+
+### Lifecycle driver options
+
+A `LeaseLifecycleDriver` port, with two implementations that call the same
+relay transition logic against the same store. The driver is chosen **per job
+at admission** and is sticky for that job, recorded on its lease, so switching
+drivers never strands in-flight work: running jobs finish on the driver they
+started with, and new jobs take the new one.
+
+- **Vercel Queues** (the driver ADR-0179 already describes): each lease step is
+  a delayed message with idempotency key `${leaseId}:${step}:${n}`.
+- **Vercel Workflows**: one durable run per job, started with
+  `experimental_hook: { token: "job:<repo>:<job>:<attempt>" }` so that a
+  second start for the same job attempt resolves to the existing run
+  (exactly-once starts). Verified GitHub webhooks resume it through
+  `resumeHook`; timeouts are `sleep()`; steps are retried durably; the run
+  dedupes redelivered events itself. Sources:
+  [Workflows](https://vercel.com/docs/workflows),
+  [pricing](https://vercel.com/docs/workflows/pricing),
+  [idempotency](https://workflow-sdk.dev/docs/foundations/idempotency),
+  [hooks](https://workflow-sdk.dev/docs/foundations/hooks).
+  A run is pinned to the deployment that started it, so a deployment with
+  in-flight runs is never deleted.
+
+**What the Workflow SDK spike found** (branch `claude/relay-workflow-spike`,
+`packages/ci-vercel/src/workflow-spike/README.md`):
+
+- **Build.** Plain `api/` Vercel Functions have no documented Workflows build
+  integration; frameworks do, and Express, Hono and Fastify build through
+  Nitro. Production needs a Nitro entry in `@hobo/ci-vercel`, or a custom
+  `BaseBuilder` that emits one flow function on `__wkf_workflow_*`.
+- **Versions.** The atomic `start({ experimental_hook })` needs `workflow`
+  5.4.0 or later (released 2026-11-04, so usable under the repository's
+  two-week pin rule from 2026-11-18); 5.2.x silently ignores the option, which
+  would lose the exactly-once start without an error. `@hobo/ci-vercel` also
+  needs `zod` 4.5 or later.
+- **Platform.** "Enable access to System Environment Variables" must be on;
+  runs are pinned to their deployment; a step runs for at most about 800 s.
+- **Events.** About 20 events a relay job on the happy path, planned at 22,
+  by the counting rule on the [pricing page](https://vercel.com/docs/workflows/pricing);
+  15–19 measured on the Local World.
+
+Workflows run on a **World**, the backend that stores runs and delivers steps:
+
+- **Vercel's managed World** bills events: $20 per million ($0.02 per
+  thousand) on Pro ([pricing](https://vercel.com/docs/workflows/pricing)),
+  plus data written (about $1–3 a month at these volumes), queue operations
+  and compute.
+- **A self-hosted World is not viable on Vercel today.** "The Postgres World
+  needs a long-lived process to run its worker, so it does not work on
+  serverless platforms" and "is not compatible with Vercel deployments"
+  ([Postgres World](https://workflow-sdk.dev/worlds/postgres)); the
+  agent-harness self-hosting guide
+  ([self-hosting](https://vercel.com/docs/agent-harnesses/self-hosting)) is
+  for running outside Vercel. Community Redis, Upstash and Turso Worlds exist
+  but pin `@workflow/world` 4.x and do not work with `workflow` 5
+  ([Worlds](https://workflow-sdk.dev/worlds)). A custom World needs an
+  append-only durable log with dense ids, unique hook tokens and transactions
+  ([building a World](https://workflow-sdk.dev/worlds/building-a-world)): a
+  loss-tolerant `EphemeralStatePort` cannot back it. libSQL plus Vercel Queues
+  or QStash could, at an estimated 2–4 engineer-weeks plus tracking the spec.
+  It is a future option, not a current one.
+
+So the lifecycle-driver offers, in budget order: the Queue driver (with a
+free-tier cache), then Workflows on Vercel's managed World, paid per event. A
+self-hosted World joins the order only once one runs on the relay's platform.
+
+### Preference, metering and switching
+
+- **Order:** free, then prepaid, then the cheapest pay-as-you-go offer, per
+  provider — the routing rule compute offers already follow.
+- **Metering per backend and driver, against its own allowance:** the command
+  meter (`meterExecutor`, `commandBudgetStatus` in
+  `@hobo/kv-redis-compatible`) for Redis-protocol caches; the request and rows
+  meter (`meterLibsqlClient`, `createLibsqlUsageMeter` in
+  `@hobo/provider-turso`) for libSQL; an event estimate per run for
+  Workflows (planned at 22 a job); message counts for Queues.
+- **Switch before exhaustion, with hysteresis:** `decideFleet` switches on a
+  *projected* exhaustion inside the period, and the relay does not switch back
+  until the previous backend's projection is comfortably inside its allowance
+  (for example below 80 % for the rest of the period) or a new period starts,
+  so it does not flap at a boundary.
+- **Budget caps are declared in config,** per offer, in the config service; a
+  pay-as-you-go offer is admitted only while its exposure stays under its cap.
+
+### Cost at measured volume
+
+GitHub Actions history sampled on 2026-11-11 showed about 155 jobs an hour in a
+busy window, an upper range of 1,800–3,700 relay jobs a day. The cache store
+measured 62–73 commands a job (the meter in PR #1890). The Workflows driver
+costs about 20 events a job on the happy path, planned at 22 (the spike). Months are 30 days;
+cache figures use 73 commands a job plus about 120,000 a month of repair ticks
+and one continuously waiting MCP client ([cost model](#cost-model)).
+
+| Jobs a day | 100 | 1,000 | 3,700 |
+|---|---|---|---|
+| Jobs a month | 3,000 | 30,000 | 111,000 |
+| Cache commands a month | about 339,000 | about 2.31 million | about 8.22 million |
+| Upstash Redis | $0 (free) | free blocked at 500,000; pay-as-you-go ≤ $4.62 | free blocked; pay-as-you-go ≤ $16.45 |
+| Aiven for Valkey free | $0 | $0 | $0 |
+| Turso free: rows written ≤ commands, plus purges | $0 (≤ 0.34 M of 10 M) | $0 (≤ 2.3 M of 10 M) | $0 while ≤ 10 M: 8.2 M plus purges, near the cap; measure |
+| Self-hosted Valkey | $0 provider cost | $0 | $0 |
+| Vercel Blob | TODO: pricing unverified | TODO | TODO |
+| Workflows, managed World, 22 events a job (events only) | about $1.32 | about $13.20 | about $48.84 |
+| Queue driver (about 8 messages a job) | Queues pricing not re-verified in this amendment (TODO) | TODO | TODO |
+
+Workflows figures are events only; data written adds about $1–3 a month, plus
+queue operations and compute. The pay-as-you-go figures bill every command, an upper bound: whether
+Upstash's pay-as-you-go plan includes the free allowance is not verified.
+Turso's rows read (at most one per command, plus ring windows) stay far below
+500 million at every volume; rows written are the constraint, and the
+per-operation rows are upper bounds derived from Turso's definitions, not
+measured ([`@hobo/provider-turso`](../../packages/providers/provider-turso/README.md#rows-read-and-written)).
+At 3,700 jobs a day the free plans that hold are Aiven, self-hosted Valkey and
+probably Turso; Upstash needs its pay-as-you-go plan.
+
+### Degraded floor: no cache reachable
+
+When no cache backend is reachable the relay keeps serving rather than
+answering 503. Without the job-taken marker it relies on GitHub: before
+creating a JIT runner it lists the repository's or organization's runners and
+looks for the deterministic name `hobo-<leaseId>`; if one exists it adopts it
+instead of creating another. GitHub documents `409 Conflict` for the
+generate-jitconfig endpoint
+([self-hosted runners REST API](https://docs.github.com/en/rest/actions/self-hosted-runners)),
+but whether a duplicate runner name is what returns it is **unverified** and
+must be tested against the real API (phase 4e) before the floor relies on it.
+In the floor, priced offers stay paused, as whenever holds are unknown.
+
 ## One-time owner actions
 
 1. Create an Infisical organization on the free plan and one machine identity
@@ -405,6 +689,10 @@ ticks (about 50,000) and one agent waiting continuously (about 45,000 to
 3. Re-create the GitHub App once through the HoBo CLI, so its private key,
    webhook secret and client secret go straight into Infisical and are never
    copied by hand.
+4. Create an Aiven for Valkey service on the free plan and store its
+   connection URL in the config service, so the cache fleet has a free
+   backend with no command cap ([options](#cache-fleet-options)). The URL is
+   a secret; it never passes through the repository or a terminal log.
 
 Everything else, including attaching the cache through the Marketplace, is done
 by the deployment.
@@ -414,8 +702,9 @@ by the deployment.
 The relay's deployment config is HoBo's own app model: the Bindle in
 [`src/bindle.ts`](../../packages/ci-vercel/src/bindle.ts) plus a Yard and Camp
 that target Vercel. It declares bindings for the cache
-(`kv.redis-compatible/v1`, bound to the Upstash Marketplace integration), the
-queue, the schedule, and the config service; the `data` resource for
+(`kv.ephemeral-state/v1`, served by whichever cache-fleet backend the budget
+policy assigns: the Upstash and Turso Marketplace integrations, Aiven, or a
+self-hosted Valkey), the queue, the schedule, and the config service; the `data` resource for
 PostgreSQL goes away. `hobo ci deploy` plans from that declaration instead of
 hardcoding Vercel in `programFor`
 ([`ci-relay-deploy.ts`](../../packages/hobo/src/ci-relay-deploy.ts)). A
@@ -424,8 +713,10 @@ reads the Vercel deploy credential, and deploys the commit it was triggered
 by. There are no manual deploys.
 
 **Pay only for what is used.** The relay's deployment includes only what it
-uses. Neon and its Vercel integration, the Neon-hosted config broker and
-Turso (attached to the project but never used) are disconnected.
+uses. Neon and its Vercel integration and the Neon-hosted config broker are
+disconnected. Turso, attached to the project and unused when ADR-0179 was
+accepted, stays: it is one of the [cache-fleet options](#options-routed-by-budget),
+on its free plan.
 
 ## Delivery plan
 
@@ -433,8 +724,17 @@ Turso (attached to the project but never used) are disconnected.
 |---|---|---|
 | 1 | This design and ADR-0179 | Merged |
 | 2 | The relay's cache port over `@hobo/kv-redis-compatible` (TTL, compare-and-set, increment), an in-memory implementation and an Upstash REST implementation, each passing the kv conformance suite; a Valkey implementation over RESP | The suite passes for all three; the in-memory one runs in every relay test |
+| 2b | A libSQL (Turso) implementation of the port in `@hobo/provider-turso`, and the [Options routed by budget](#options-routed-by-budget) amendment | The 24 conformance cases pass on `file:` and `:memory:` databases, including clients in separate threads on one file; rows read and written per operation documented |
 | 3 | The config-service client (Infisical OIDC Auth with the Vercel token; GCP Secret Manager behind the same port), and GitHub App creation from `hobo ci` that writes the App's credentials straight into the config service | The relay starts from Infisical with no secret in its environment; App creation lands credentials in custody without passing through the terminal |
 | 4 | A relay store on the cache: deterministic lease ids, per-key compare-and-set, the in-flight index, intent timestamps; Queue intake with delivery-id idempotency; per-lease step messages; rebuild by name | The relay's store contract tests pass on the cache store; killing the cache mid-job loses no job; a duplicated delivery provisions once; GitHub and Vercel name uniqueness verified live |
+| 4b | `RelayCacheStore` wired into `@hobo/ci-vercel` with the Queue lifecycle driver behind the `LeaseLifecycleDriver` port | The hosted relay runs a job end to end on the cache store in a preview deployment |
+| 4c | Cache-fleet selection: the assignment log on every cache backend through the port's compare-and-set, `resolveAssignment` and `decideFleet` moved from `@hobo/data-postgres` to an engine-neutral package (which also keeps `@hobo/data-postgres` out of the relay bundle for phase 7), shared usage metering (commands, rows), budget-policy switching with hysteresis | A projected exhaustion switches backends before the allowance runs out; a lost backend fails over; the relay rebuilds on the new backend with no lost job |
+| 4d | The Workflows lifecycle driver on Vercel's managed World (exactly-once starts by hook token, `resumeHook` from verified webhooks, `sleep()` timeouts), built through a Nitro entry in `@hobo/ci-vercel` or a custom `BaseBuilder`; `workflow` ≥ 5.4.0 (pinnable from 2026-11-18) and `zod` ≥ 4.5; driver chosen per job at admission. Not before 2026-11-18 | A job runs end to end on each driver; switching drivers leaves in-flight jobs on theirs; a repeated start for one job attempt yields one run |
+| 4e | The degraded GitHub-only floor | Duplicate JIT runner names verified against the real API (409 or not); with every cache unreachable, a duplicated delivery still provisions once |
+| 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision |
+| 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository |
+| 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
+| 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
 
 **Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
 4b: `composeStatelessRelay` in `@hobo/ci-vercel`: the cache backend chosen from
@@ -453,10 +753,6 @@ proxy meters were in the lost cache (it stays `uncertain` until its record
 lapses); name uniqueness at GitHub and Vercel verified live. A Sandbox job
 costs 99 cache commands through the whole composition, against the estimate of
 about 45 above; the store's own path dropped from 62 to 43.
-| 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay |
-| 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository |
-| 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
-| 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon, the broker and Turso are disconnected |
 
 ### Phase 7 removals
 
@@ -532,8 +828,8 @@ Documentation: the superseded sections in `packages/ci-vercel/README.md`,
 3. Point the GitHub App's webhook at the new production deployment. Old
    deployments' queue consumers already forward to the canonical URL.
 4. Run a `runs-on: hobo` job on `main` through the new relay.
-5. Disconnect Neon and its Vercel integration, delete the Neon broker project,
-   disconnect Turso.
+5. Disconnect Neon and its Vercel integration and delete the Neon broker
+   project. Turso stays as a cache-fleet option.
 
 ## Former tables and their replacements
 

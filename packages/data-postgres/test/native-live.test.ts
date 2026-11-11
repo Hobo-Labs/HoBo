@@ -324,6 +324,7 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 		const acknowledged: string[] = [];
 		const problems: string[] = [];
 		let quiet = false;
+		let racingWriteLanded: (() => void) | undefined;
 		const writer = async (name: string): Promise<void> => {
 			for (let round = 0; round < 2_000 && !quiet; round += 1) {
 				const mutations: RecordMutation[] = [
@@ -340,6 +341,7 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 				try {
 					await source.records.write({ dataset: ITEMS.name, mutations });
 					acknowledged.push(`${name}-${round}`);
+					if (name.startsWith("r")) racingWriteLanded?.();
 				} catch (cause) {
 					if (cause instanceof FencedWriteError) return;
 					problems.push(`${name}-${round}: ${String(cause)}`);
@@ -393,7 +395,16 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 						}
 						if (phase === "converge") await settle();
 						if (phase === "shift-reads") {
+							const landed = new Promise<void>((resolve) => {
+								racingWriteLanded = resolve;
+							});
 							start(["r0", "r1", "r2", "r3", "r4", "r5"]);
+							// The fence must meet writes already in flight. Started and
+							// left alone, a loaded machine can fence before the first
+							// one commits, and nothing races the fence at all; so hold
+							// the fence until one has landed (or every writer stopped,
+							// which the assertions below then report).
+							await Promise.race([landed, Promise.all(writers)]);
 						}
 					},
 				}),

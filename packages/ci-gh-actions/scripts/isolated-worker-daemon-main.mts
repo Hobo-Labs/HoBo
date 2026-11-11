@@ -345,6 +345,24 @@ const publishFleetRoutes = fleetRoutesFlag === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
+const inboxDeliveryTimeoutMs = Number(
+	process.env.HOBO_CI_INBOX_DELIVERY_TIMEOUT_MS ?? "5000",
+);
+if (
+	!Number.isFinite(inboxDeliveryTimeoutMs) ||
+	inboxDeliveryTimeoutMs < 500 ||
+	!Number.isInteger(inboxDeliveryTimeoutMs)
+)
+	throw new Error("invalid HOBO_CI_INBOX_DELIVERY_TIMEOUT_MS");
+const inboxDrainBudgetMs = Number(
+	process.env.HOBO_CI_INBOX_DRAIN_BUDGET_MS ?? "30000",
+);
+if (
+	!Number.isFinite(inboxDrainBudgetMs) ||
+	inboxDrainBudgetMs < 1_000 ||
+	!Number.isInteger(inboxDrainBudgetMs)
+)
+	throw new Error("invalid HOBO_CI_INBOX_DRAIN_BUDGET_MS");
 const drainTimeoutMs = Number(
 	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "1800000",
 );
@@ -918,6 +936,9 @@ try {
 				...timing,
 				workerReconcileMs,
 			}),
+		inboxDeliveryTimeoutMs,
+		inboxDrainBudgetMs,
+		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
 	// Relay mesh: off unless HOBO_CI_NATS_URL names a server. With it, this
 	// worker advertises its free slots and takes a queued job only on its turn
@@ -1157,8 +1178,10 @@ try {
 	let shutdownForceExitInFlight = false;
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 	let jobPollTimer: ReturnType<typeof setInterval> | undefined;
+	let inboxDrainTimer: ReturnType<typeof setInterval> | undefined;
 	let gcTimer: ReturnType<typeof setInterval> | undefined;
 	let tickInFlight: Promise<void> | undefined;
+	let inboxDrainInFlight: Promise<void> | undefined;
 	let jobPollInFlight: Promise<void> | undefined;
 	let gcInFlight: Promise<void> | undefined;
 	let orphanReconcileInFlight: Promise<void> | undefined;
@@ -1203,10 +1226,36 @@ try {
 		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		runOrphanJobReconcile();
 		if (!reconciliation.inventoryKnown) return;
-		// In push mode the hosted relay drains the shared inbox; in pull mode
-		// this worker is the only consumer of its own.
-		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+		// Pull workers drain the inbox on a separate timer so admission ticks stay
+		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
+		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
 	});
+
+	function runInboxDrain(): void {
+		if (draining || !poller || inboxDrainInFlight) return;
+		inboxDrainInFlight = runtime
+			.drainInbox()
+			.then((result) => {
+				if (result.processed > 0 || result.failed > 0 || result.timedOut > 0) {
+					log("hobo_ci_inbox_drain_pass", {
+						processed: result.processed,
+						failed: result.failed,
+						timedOut: result.timedOut,
+						deliveriesMs: result.deliveriesMs,
+						budgetExhausted: result.budgetExhausted,
+					});
+				}
+				if (result.ingressWantsDispatch) void runTick();
+			})
+			.catch((error) => {
+				log("hobo_ci_inbox_drain_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			})
+			.finally(() => {
+				inboxDrainInFlight = undefined;
+			});
+	}
 
 	function runTick(): Promise<void> {
 		if (tickInFlight) return tickInFlight;
@@ -1298,6 +1347,8 @@ try {
 		publicOrigin,
 		pollMs: intervalMs,
 		jobPollMs: plan.jobPollMs,
+		inboxDeliveryTimeoutMs,
+		inboxDrainBudgetMs,
 		hostMemMb,
 		workerMemoryMb,
 		memoryBudgetMb: memoryConfig.budgetMb,
@@ -1328,6 +1379,9 @@ try {
 		});
 	}, intervalMs);
 	if (poller) {
+		const inboxDrainIntervalMs = Math.min(intervalMs, 5_000);
+		runInboxDrain();
+		inboxDrainTimer = setInterval(runInboxDrain, inboxDrainIntervalMs);
 		runJobPoll();
 		jobPollTimer = setInterval(() => {
 			runJobPoll();
@@ -1346,6 +1400,7 @@ try {
 			workerDrainStartedAtMs = Date.now();
 			if (pollTimer) clearInterval(pollTimer);
 			if (jobPollTimer) clearInterval(jobPollTimer);
+			if (inboxDrainTimer) clearInterval(inboxDrainTimer);
 			if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
@@ -1357,6 +1412,7 @@ try {
 			// And tell routing: this worker no longer counts towards its labels.
 			await publishFleetState({ now: true }).catch(() => undefined);
 			await jobPollInFlight;
+			await inboxDrainInFlight;
 			await orphanReconcileInFlight;
 			await gcInFlight;
 			if (tickInFlight) {
