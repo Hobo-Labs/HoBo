@@ -808,7 +808,9 @@ Each line carries the error's class, its message and its cause's message, with U
 anything shaped like a token removed and the text capped at 300 characters. A route has its
 identifiers replaced. One line per event name is written every 10 seconds per instance; `suppressed`
 counts the ones held back since the last line. No request body, header or credential is logged, and
-a failing logger never changes the response.
+a failing logger never changes the response. When the
+error or its cause is a database refusal, the line also carries its five-character SQLSTATE as
+`sqlstate` (for example `28P01` for a rejected password).
 
 ## Postgres schema
 
