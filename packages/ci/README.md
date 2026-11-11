@@ -236,6 +236,12 @@ units. An observation is only as reliable as its publisher; this accounting
 alone does not verify vendor entitlements or billed usage. Exact decimal
 allocation helpers (`allocationQuote`, `divideDecimalAtMost`) are implemented in
 `@hobo/pricing/legacy` and re-exported from this package for compatibility.
+The package root also exports `allocationQuote`, the isolated-retirement
+transition check (`isIsolatedRetirementTransition`) and the webhook envelope
+parser (`parseWebhookEnvelope`, `isWebhookDeliveryId`), so a store outside this
+package, such as the hosted relay's
+[cache store](../ci-gh-actions/README.md#relay-cache-store), applies the same
+rules as `PostgresCiStore` and `SqliteCiStore`.
 
 Run the real PostgreSQL integration contract against a disposable local database
 by setting `HOBO_CI_TEST_POSTGRES` and executing

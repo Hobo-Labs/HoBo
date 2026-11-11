@@ -1069,6 +1069,143 @@ backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
 [`@hobo/ci-ado`](../ci-ado/README.md) uses that same execution implementation;
 GitHub relay, runner authorization and account routing remain in this package.
 
+## Relay cache store
+
+`@hobo/ci-gh-actions/relay-cache` is the hosted relay's store without a
+database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179),
+[design](../../docs/design/hosted-relay-stateless.md)), phase 4a: everything
+the hosted relay needs from its store (`HostedRelayStore`, `HostedInboxStore`,
+the read paths of `HostedControlStore`, `IsolatedWorkerStore`, the MCP
+`RelayMcpStore`, and `@hobo/ci-vercel`'s sandbox lease and proxy-quota paths),
+kept as short-lived state behind `EphemeralStatePort` from `@hobo/core`
+([Relay ephemeral state](../../docs/design/relay-ephemeral-state.md)). It is
+not wired into `@hobo/ci-vercel` yet (phase 4b); `PostgresCiStore` stays the
+hosted relay's store until then.
+
+```ts
+import { createMemoryEphemeralState } from "@hobo/kv-redis-compatible";
+import { RelayCacheStore, staticRelayConfig } from "@hobo/ci-gh-actions/relay-cache";
+
+const store = new RelayCacheStore({
+  state: createMemoryEphemeralState(), // Upstash REST or Valkey in a deployment
+  config: staticRelayConfig(snapshotFromConfigService), // read-only
+  environment: "production", // keys are under hobo-ci:production:
+  intake, // where verified deliveries go (Vercel Queue in 4b)
+  proxyTokenKey, // from the config service; sandbox proxy paths refuse without it
+});
+```
+
+**No partition lock.** Every write is a compare-and-set on one key, and each
+keeps the expected-state checks `PostgresCiStore` makes. A lost race re-reads
+and re-decides (`casRetries()` counts them).
+
+**Deterministic lease ids.** `relayLeaseId` is a UUIDv5, under
+`RELAY_LEASE_NAMESPACE`, of `repositoryId:jobId:runAttempt`, with `:g<n>`
+appended for requeue generation `n > 0`. A job whose lease was cancelled,
+aborted or settled with unmet demand is re-admitted under the next
+generation. Names are unchanged: runner and sandbox `hobo-<id>`, proxy sandbox
+`hobo-proxy-<id>`, bridge run title `HoBo lease <id>`. Concurrent reservers of
+one job derive the same id, so `putIfAbsent` on the lease key admits exactly
+one.
+
+**Intent timestamps.** A transition whose event is `ci.DispatchRequested`,
+`ci.RunnerClaimed` or `ci.SandboxCreated` records `{kind, at}` on the lease
+record; `latestLeaseIntents` reads them back, so the tick's crash recovery
+(`hosted-runtime.ts`) needs no journal.
+
+**Queue deadline.** Pinned from the earliest of when the relay first saw the
+job and, where the caller passes it (`queue` and `reserve` take an optional
+`githubCreatedAt`; rebuild always has it), GitHub's `created_at`.
+
+**Budgets without history.** Routing counts every account's in-flight holds
+from the in-flight indexes plus the spend a `ProviderUsagePort` reports
+(`NO_PROVIDER_USAGE` until phase 4b pulls it); finished leases count nothing.
+An index the cache lost comes back with `holdsKnown: false`, and priced offers
+(a per-minute price, or any Sandbox offer) stay paused until the rebuild pass
+calls `markHoldsKnown`; free capacity keeps admitting. Broker budget-policy
+accounts are refused, as they always were on Vercel. Concurrency is checked
+across every account's index and committed by compare-and-set on the
+reserving account's own: two accounts that share one provider account can
+each pass the check in the same instant, so a cross-account shared offer can
+briefly exceed its concurrency by the number of racing accounts.
+
+**Sandbox proxy token.** Derived, not stored: 16 bytes of lease id then the
+first 16 bytes of HMAC-SHA256 of the lease id under `proxyTokenKey`
+(43 base64url characters, the shape the quota endpoint accepts).
+`configureSandboxProxy` accepts only the digest of that token;
+`authenticateSandboxProxy` takes the raw token, reads the lease id from it and
+checks the MAC. Caps are atomic counters with the sandbox's lifetime as TTL.
+
+**Rebuild by name.** `rebuildLease(store, discovery, job, at)` turns what
+GitHub and Vercel show under a job's candidate names (generations 0..3, or the
+job record's generation) back into a lease record, always `uncertain`;
+`resolveUncertainLease` re-admits the next generation only when nothing exists
+under the lease's names and GitHub still shows the job queued.
+`githubRelayDiscovery` is the GitHub side (`getJob`, runners by name, bridge
+runs by title); the Vercel side is `discoverIsolatedSandbox` in 4b.
+
+### Keys, values and TTLs
+
+Every key is under `hobo-ci:<environment>:`. Values are protobuf JSON of the
+messages in [`data-models/relay_cache.proto`](data-models/relay_cache.proto)
+(constrained in `onboarding.cue`) or a decimal counter. Every TTL is within
+the port's 30-day cap.
+
+| Key | Value | TTL | Written by |
+|---|---|---|---|
+| `lease:<leaseId>` | `RelayCacheLease` (lease as `hobo.ci.v1.Lease` JSON, job key, generation, latest intent per kind, rebuild evidence) | Active: max(24 h, reserved minutes + proxy VM time) + 1 h, refreshed per transition. Ended: 24 h | `reserve` (putIfAbsent), every transition (CAS), rebuild |
+| `job:<repositoryId>:<jobId>:<runAttempt>` | `RelayCacheJob`: state (`pending`, `taken`, `idle`, `terminal`), generation, current lease id, pending job JSON, first-seen time, queue deadline, assignment fence | Terminal: 24 h. Taken: its lease's TTL. Otherwise 25 h | `queue`, `reserve`, `observe`, `expireQueued`, `withdrawQueuedJob`, `clearAssignedJob`, rebuild |
+| `inflight:<accountId>` | `RelayCacheInflight`: in-flight entries (offer, provider account, holds, allowance), the last 50 ended lease ids, `holdsKnown` | The longest entry's lease TTL | Admission, retirement, pruning, `markHoldsKnown` |
+| `pending` | `RelayCachePending`: job keys waiting for capacity, oldest first, at most 2000 | 25 h, refreshed | `queue`, `reserve`, `observe`, pruning in `pendingJobs` |
+| `delivery:<deliveryId>` | `RelayCacheDelivery`: fingerprint, received time, ignored | 24 h | `acceptWebhook`, `acceptIgnoredWebhook` |
+| `delivery-body:<installationId>:<sha256>` | delivery id | 24 h | Same: a signed body under a new id is a replay |
+| `webhook-rate:<installationId>:<windowStart>` | counter, at most 600 | 1 min from first hit | Same |
+| `sbx:egress:<sandboxId>` | `RelayCacheSandboxEgress`: lease, account, byte cap | Sandbox lifetime + 1 h | `configureSandboxEgress` |
+| `sbx:egress-used:<sandboxId>` | counter (bytes) | Sandbox lifetime + 1 h | `reserveSandboxEgress`, `reserveSandboxProxyEgress` |
+| `sbx:proxy-calls:<leaseId>` | counter (authenticated attempts) | Sandbox lifetime + 1 h | `configureSandboxProxy` (creates at 0), `authenticateSandboxProxy` |
+| `sbx:proxy-requests:<leaseId>` | counter (accepted forwards) | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` |
+| `sbx:proxy-rate:<leaseId>:<windowStart>` | counter, at most 600 | 1 min from first hit | `reserveSandboxProxyEgress` |
+| `sbx:proxy-req:<leaseId>:<requestId>` | `1` | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` (a replayed request id fails closed) |
+| `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | Every lease and job change |
+
+### Command cost
+
+Measured with `meterExecutor` over the in-memory engine
+(`test/relay-cache-store.test.ts`, pinned there), scripts cached:
+
+| Step | Commands |
+|---|---|
+| Intake: delivery marker, body marker, rate window | 3 |
+| Queue | 6 |
+| Reserve | 11 |
+| Dispatch intent / outcome | 5 / 4 |
+| Claim | 5 |
+| Intent check on the tick | 1 |
+| In progress (observe, assign) | 8 |
+| Running | 5 |
+| Completed (observe) | 8 |
+| Settle | 6 |
+| **Job on the workflow bridge** | **62** |
+| Sandbox proxy: authenticate / one forwarded request | 2 / 6 |
+
+Eleven of those are change-ring appends at 2 commands each; once an account's
+ring has filled, an append costs 3, so a steady-state job is 73. The design's
+estimate of about 25 assumed one command per ring append and no routing reads.
+
+### What the cache store does not do
+
+- Write configuration: `configure`, `configureWithRecord`, `reattestRate`,
+  `putControlRecord(Monotonic)` reject with `RelayConfigReadOnlyError`.
+  `controlRecord` serves `ci-policy:<accountId>` from config only.
+- Keep an inbox: `claimWebhook` finds nothing, `ackWebhook` is false,
+  `failWebhook` is `stale`, there is no quarantine. Intake is pushed.
+- Keep history: `events()` and `eventsSince` read the change ring (a cursor
+  the ring no longer covers answers the newest changes with `truncated`);
+  `journalHead()` is 0 because rings are per account; `all()` is in-flight
+  plus the last 50 ended leases per account.
+- Shared-budget settlement (`reconcileSharedBudget`,
+  `releaseUnusedSharedBudget`): budget-policy accounts are never admitted.
+
 ## Postgres schema
 
 The 13 PostgreSQL tables this package owns (App registration, OAuth sessions,

@@ -779,6 +779,9 @@ importers:
       '@hobo/ci-dagger':
         specifier: workspace:*
         version: link:../ci-dagger
+      '@hobo/kv-redis-compatible':
+        specifier: workspace:*
+        version: link:../kv-redis-compatible
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../redaction-test-harness
