@@ -39,8 +39,8 @@ describe("GitHub read cache", () => {
 	});
 
 	it("does not cache non-GET or unrelated paths", async () => {
-		const request = vi.fn<GithubTransport["request"]>(async () =>
-			new Response("{}", { status: 200 }),
+		const request = vi.fn<GithubTransport["request"]>(
+			async () => new Response("{}", { status: 200 }),
 		);
 		const api = withGithubReadCache({ request });
 		await api.request(1, "/repos/a/b", "POST", "{}");

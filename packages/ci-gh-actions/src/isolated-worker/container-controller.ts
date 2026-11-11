@@ -48,6 +48,11 @@ import {
 } from "../runner-labels.js";
 import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
 import {
+	capIsolatedContainerTimeoutMs,
+	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
+	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
+} from "./container-timeout.js";
+import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
 } from "./docker-driver.js";
@@ -70,11 +75,6 @@ import {
 	type OrphanJobEvent,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
-import {
-	capIsolatedContainerTimeoutMs,
-	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
-	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
-} from "./container-timeout.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
 import type { StoragePeaks } from "./storage-peaks.js";
 
@@ -1817,8 +1817,7 @@ export function createIsolatedContainerController(options: {
 						lease.state === "running"
 					) {
 						const registeredMs =
-							runnerRegisteredAtMs.get(lease.id) ??
-							Date.parse(lease.createdAt);
+							runnerRegisteredAtMs.get(lease.id) ?? Date.parse(lease.createdAt);
 						const idleMs = Number.isFinite(registeredMs)
 							? Date.parse(now()) - registeredMs
 							: 0;
@@ -1839,8 +1838,7 @@ export function createIsolatedContainerController(options: {
 							const releaseForeign =
 								foreignMesh && idleMs >= ISOLATED_JIT_FOREIGN_MESH_IDLE_MS;
 							const releaseUnassigned =
-								unassignedIdle &&
-								idleMs >= ISOLATED_JIT_UNASSIGNED_IDLE_MS;
+								unassignedIdle && idleMs >= ISOLATED_JIT_UNASSIGNED_IDLE_MS;
 							if (releaseForeign || releaseUnassigned) {
 								options.log?.("hobo_ci_jit_idle_listener_release", {
 									leaseId: lease.id,
