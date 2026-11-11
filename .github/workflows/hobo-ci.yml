@@ -1309,13 +1309,14 @@ jobs:
     # The data engines against real servers: the conformance kit, change
     # capture, the write fence under load and the native logical-copy path only
     # mean something on a real PostgreSQL and a real MongoDB replica set. On a
-    # pull request it runs when the diff can reach those suites; the nightly and
-    # manual runs always do. Not on merge_group: the merge queue's required set
+    # pull request it runs when the diff can reach those suites; a manual run
+    # always does. Never on a schedule: the job depends on a runner that can
+    # start containers, which is not always the case. Not on merge_group: the merge queue's required set
     # does not include it, and it would hold a box slot there for nothing.
     # The name is also a key in the worker's memory classes (`heavy`).
     name: Live data engines (PostgreSQL 16, MongoDB 8)
     needs: route
-    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -1332,8 +1333,8 @@ jobs:
         id: scope
         run: |
           set -euo pipefail
-          # Only a pull request is scoped by its diff. A nightly or a manual run
-          # whose tip happens to be a merge commit must not take that path.
+          # Only a pull request is scoped by its diff. A manual run whose tip
+          # happens to be a merge commit must not take that path.
           if [ "$GITHUB_EVENT_NAME" != "pull_request" ] || ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             echo "not a pull request's merge commit; running the lane"
             echo "run=true" >> "$GITHUB_OUTPUT"

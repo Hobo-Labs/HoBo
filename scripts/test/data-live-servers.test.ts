@@ -540,8 +540,16 @@ describe("the workflow job and the script agree", () => {
 			job,
 			/if: always\(\) && steps\.scope\.outputs\.run == 'true'\n +run: .*data-live-servers\.mts down/u,
 		);
-		// The nightly and a manual run never take the diff's word for it.
+		// A manual run never takes the diff's word for it.
 		assert.match(job, /"\$GITHUB_EVENT_NAME" != "pull_request"/u);
+	});
+
+	it("runs on pull requests and manual dispatch only, never on a schedule", () => {
+		const condition = /^    if: (.+)$/mu.exec(job)?.[1] ?? "";
+		assert.equal(
+			condition,
+			"github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'",
+		);
 	});
 
 	it("runs exactly the packages the proof expects", () => {
