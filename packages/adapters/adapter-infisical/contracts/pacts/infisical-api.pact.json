@@ -1,0 +1,360 @@
+{
+	"consumer": {
+		"name": "HoboInfisicalAdapter"
+	},
+	"provider": {
+		"name": "InfisicalApi"
+	},
+	"interactions": [
+		{
+			"description": "OIDC Auth login exchanges a workload JWT for a short-lived access token",
+			"providerState": "machine identity relay-identity trusts the fixture JWT",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/auth/oidc-auth/login",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityId": "relay-identity",
+					"jwt": "fixture-header.fixture-payload.fixture-signature"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"accessToken": "fixture-access-token",
+					"expiresIn": 7200,
+					"accessTokenMaxTTL": 7200,
+					"tokenType": "Bearer"
+				}
+			}
+		},
+		{
+			"description": "OIDC Auth login is refused for an identity that does not trust the JWT",
+			"providerState": "no machine identity named unknown-identity",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/auth/oidc-auth/login",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityId": "unknown-identity",
+					"jwt": "fixture-header.fixture-payload.fixture-signature"
+				}
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"statusCode": 401,
+					"error": "UnauthorizedError"
+				}
+			}
+		},
+		{
+			"description": "Universal Auth login exchanges an owner's client credentials for an access token",
+			"providerState": "machine identity owner-client has a Universal Auth client secret",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/auth/universal-auth/login",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"clientId": "owner-client",
+					"clientSecret": "fixture-client-secret"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"accessToken": "fixture-owner-token",
+					"expiresIn": 7200,
+					"tokenType": "Bearer"
+				}
+			}
+		},
+		{
+			"description": "list secrets returns every literal value in the bound folder in one request",
+			"providerState": "folder /hobo-ci-relay of proj-1/prod holds HOBO_CI_PUBLIC_URL",
+			"request": {
+				"method": "GET",
+				"path": "/api/v4/secrets?projectId=proj-1&environment=prod&secretPath=%2Fhobo-ci-relay&viewSecretValue=true&recursive=false&expandSecretReferences=false&includeImports=false",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"secrets": [
+						{
+							"secretKey": "HOBO_CI_PUBLIC_URL",
+							"secretValue": "https://ci.example.com",
+							"version": 1,
+							"type": "shared",
+							"secretValueHidden": false
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "list secret names without values for a preflight",
+			"providerState": "folder /hobo-ci-relay of proj-1/prod holds HOBO_CI_PUBLIC_URL",
+			"request": {
+				"method": "GET",
+				"path": "/api/v4/secrets?projectId=proj-1&environment=prod&secretPath=%2Fhobo-ci-relay&viewSecretValue=false&recursive=false&expandSecretReferences=false&includeImports=false",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"secrets": [
+						{
+							"secretKey": "HOBO_CI_PUBLIC_URL",
+							"version": 1,
+							"secretValueHidden": true
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "read one secret by name",
+			"providerState": "folder /hobo-ci-relay of proj-1/prod holds HOBO_CI_PUBLIC_URL",
+			"request": {
+				"method": "GET",
+				"path": "/api/v4/secrets/HOBO_CI_PUBLIC_URL?projectId=proj-1&environment=prod&secretPath=%2Fhobo-ci-relay&type=shared&viewSecretValue=true&expandSecretReferences=false&includeImports=false",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"secret": {
+						"secretKey": "HOBO_CI_PUBLIC_URL",
+						"secretValue": "https://ci.example.com",
+						"version": 1,
+						"type": "shared",
+						"secretValueHidden": false,
+						"secretPath": "/hobo-ci-relay",
+						"environment": "prod",
+						"workspace": "proj-1"
+					}
+				}
+			}
+		},
+		{
+			"description": "read a secret that does not exist",
+			"providerState": "folder /hobo-ci-relay has no MISSING",
+			"request": {
+				"method": "GET",
+				"path": "/api/v4/secrets/MISSING?projectId=proj-1&environment=prod&secretPath=%2Fhobo-ci-relay&type=shared&viewSecretValue=true&expandSecretReferences=false&includeImports=false",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"statusCode": 404,
+					"error": "NotFound"
+				}
+			}
+		},
+		{
+			"description": "update an existing secret",
+			"providerState": "HOBO_CI_GITHUB_APP_ID exists at version 1 and the token may write",
+			"request": {
+				"method": "PATCH",
+				"path": "/api/v4/secrets/HOBO_CI_GITHUB_APP_ID",
+				"headers": {
+					"content-type": "application/json",
+					"authorization": "Bearer fixture-access-token"
+				},
+				"body": {
+					"projectId": "proj-1",
+					"environment": "prod",
+					"secretPath": "/hobo-ci-relay",
+					"secretValue": "123456",
+					"type": "shared"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"secret": {
+						"secretKey": "HOBO_CI_GITHUB_APP_ID",
+						"version": 2,
+						"type": "shared"
+					}
+				}
+			}
+		},
+		{
+			"description": "update answers 404 for a secret that does not exist yet",
+			"providerState": "HOBO_CI_WEBHOOK_SECRET does not exist",
+			"request": {
+				"method": "PATCH",
+				"path": "/api/v4/secrets/HOBO_CI_WEBHOOK_SECRET",
+				"headers": {
+					"content-type": "application/json",
+					"authorization": "Bearer fixture-access-token"
+				},
+				"body": {
+					"projectId": "proj-1",
+					"environment": "prod",
+					"secretPath": "/hobo-ci-relay",
+					"secretValue": "fixture-webhook-value",
+					"type": "shared"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"statusCode": 404
+				}
+			}
+		},
+		{
+			"description": "create a secret that does not exist yet",
+			"providerState": "HOBO_CI_WEBHOOK_SECRET does not exist",
+			"request": {
+				"method": "POST",
+				"path": "/api/v4/secrets/HOBO_CI_WEBHOOK_SECRET",
+				"headers": {
+					"content-type": "application/json",
+					"authorization": "Bearer fixture-access-token"
+				},
+				"body": {
+					"projectId": "proj-1",
+					"environment": "prod",
+					"secretPath": "/hobo-ci-relay",
+					"secretValue": "fixture-webhook-value",
+					"type": "shared"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"secret": {
+						"secretKey": "HOBO_CI_WEBHOOK_SECRET",
+						"version": 1,
+						"type": "shared"
+					}
+				}
+			}
+		},
+		{
+			"description": "a write the identity's role does not allow is refused with 403",
+			"providerState": "the token may only read",
+			"request": {
+				"method": "PATCH",
+				"path": "/api/v4/secrets/READ_ONLY_DENIED",
+				"headers": {
+					"content-type": "application/json",
+					"authorization": "Bearer fixture-access-token"
+				},
+				"body": {
+					"projectId": "proj-1",
+					"environment": "prod",
+					"secretPath": "/hobo-ci-relay",
+					"secretValue": "fixture-value",
+					"type": "shared"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"statusCode": 403,
+					"error": "PermissionDenied"
+				}
+			}
+		},
+		{
+			"description": "a rate-limited read answers 429 with Retry-After",
+			"providerState": "the organization exceeded its request rate",
+			"request": {
+				"method": "GET",
+				"path": "/api/v4/secrets?projectId=proj-1&environment=prod&secretPath=%2Frate-limited&viewSecretValue=true&recursive=false&expandSecretReferences=false&includeImports=false",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 429,
+				"headers": {
+					"content-type": "application/json",
+					"retry-after": "1"
+				},
+				"body": {
+					"statusCode": 429
+				}
+			}
+		},
+		{
+			"description": "an outage answers 503",
+			"providerState": "Infisical is unavailable",
+			"request": {
+				"method": "GET",
+				"path": "/api/v4/secrets?projectId=proj-1&environment=prod&secretPath=%2Funavailable&viewSecretValue=true&recursive=false&expandSecretReferences=false&includeImports=false",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 503,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"statusCode": 503
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"documentation": "Endpoints and shapes from the Infisical API reference: https://infisical.com/docs/api-reference/endpoints/oidc-auth/login, https://infisical.com/docs/api-reference/endpoints/universal-auth/login, https://infisical.com/docs/api-reference/endpoints/secrets/list, https://infisical.com/docs/api-reference/endpoints/secrets/read, https://infisical.com/docs/api-reference/endpoints/secrets/create, https://infisical.com/docs/api-reference/endpoints/secrets/update. Verified against the local fake in test/support/fake-infisical.ts, not against Infisical itself; that a PATCH of a missing secret answers 404 is assumed from the reference's documented 404, not observed."
+	}
+}

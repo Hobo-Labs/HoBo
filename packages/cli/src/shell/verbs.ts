@@ -317,6 +317,7 @@ Usage:
   hobo ci connect <provider>       Add a runner integration: blacksmith, depot, jog (usejog), boat
   hobo ci github import-key        Import or rotate a self-hosted GitHub App key
   hobo ci github key-status        Check the self-hosted App key configuration
+  hobo ci app create               Create the hosted relay's GitHub App; credentials go straight to Infisical
   hobo ci list|ls                  List GitHub Actions runs
   hobo ci inspect [run]            Inspect a run
   hobo ci logs [run]               Read run logs
@@ -348,6 +349,14 @@ Self-hosted App key import (hobo ci github import-key):
   --key-file <path>           Read the App private key from a file
   --webhook-secret-file <path> Read the webhook secret from a file
   --home <path>               Private HoBo home outside the repository
+
+Hosted App creation (hobo ci app create):
+  --relay <https-origin>      The hosted relay's public URL
+  --owner-id <id>             Your numeric GitHub user id (gh api user --jq .id)
+  --name <name>               App name (default: HoBo CI)
+  -y, --yes                   Replace App credentials already in the config service
+  Reads INFISICAL_PROJECT_ID, INFISICAL_ENVIRONMENT, INFISICAL_SECRET_PATH and
+  INFISICAL_UNIVERSAL_AUTH_CLIENT_ID/_SECRET (or INFISICAL_TOKEN) from the environment.
 
 Integration options (hobo ci connect <provider>):
   --auth <method>             github-app | oidc | device | secret-ref (default: safest supported)
