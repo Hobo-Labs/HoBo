@@ -1,5 +1,5 @@
 import { toJsonString } from "@bufbuild/protobuf";
-import type { CiEvent } from "@hobo/ci";
+import type { CiEvent, Job } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
@@ -634,6 +634,9 @@ export function createHostedRelayRuntime(options: {
 					leaseCount: activeLeases.length,
 					pendingCount,
 				});
+		},
+		clearTrunkWait(job: Pick<Job, "repository" | "id" | "runAttempt">) {
+			trunkWaits.delete(`${job.repository}:${job.id}:${job.runAttempt}`);
 		},
 	};
 }

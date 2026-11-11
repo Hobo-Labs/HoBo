@@ -213,6 +213,12 @@ export {
 } from "./isolated-worker/memory-peaks.js";
 export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
 export {
+	createHeldJobPruner,
+	type HeldJobPollWitness,
+	type HeldJobPruneReason,
+	pruneHeldJobs,
+} from "./isolated-worker/held-job-prune.js";
+export {
 	createPollIngestCoalesce,
 	type PollIngestCoalesce,
 } from "./isolated-worker/poll-ingest-coalesce.js";

@@ -47,6 +47,14 @@ describe("poll ingest coalesce", () => {
 		expect(coalesce.shouldSkip(1, 501, 1)).toBe(true);
 	});
 
+	it("forget clears a quiet backoff without another ingest observe", () => {
+		const coalesce = createPollIngestCoalesce({ now: () => 0 });
+		coalesce.observe(1, 600, 1, "waiting-for-budget-or-capacity");
+		expect(coalesce.shouldSkip(1, 600, 1)).toBe(true);
+		coalesce.forget(1, 600, 1);
+		expect(coalesce.shouldSkip(1, 600, 1)).toBe(false);
+	});
+
 	it("forces ingest when the job has been queued longer than maxMs", () => {
 		const maxMs = 50_000;
 		const nowMs = 1_000_000;

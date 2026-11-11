@@ -79,6 +79,8 @@ class FakeGithub implements GithubTransport {
 	attempts = new Map<number, number>();
 	/** Event, start time and head SHA per run id; a pull request when absent. */
 	started = new Map<number, { event: string; at: string; headSha?: string }>();
+	/** Completed-run conclusion when not `success`. */
+	conclusions = new Map<number, string>();
 	constructor(
 		readonly runs: Record<"queued" | "in_progress", number[]> & {
 			completed?: number[];
@@ -147,7 +149,12 @@ class FakeGithub implements GithubTransport {
 						...listed(this.runs.unlisted, "queued"),
 						...listed(this.runs.queued, "queued"),
 						...listed(this.runs.in_progress, "in_progress"),
-						...listed(this.runs.completed, "completed"),
+						...listed(this.runs.completed, "completed").map((run) => ({
+							...run,
+							conclusion:
+								this.conclusions.get(run.id) ??
+								(run.status === "completed" ? "success" : null),
+						})),
 					],
 				},
 				{ headers },
@@ -177,6 +184,8 @@ class FakeGithub implements GithubTransport {
 					workflow_runs: (this.runs.completed ?? []).map((id) => ({
 						id,
 						run_attempt: this.attempt(id),
+						status: "completed",
+						conclusion: this.conclusions.get(id) ?? "success",
 					})),
 				},
 				{ headers },
@@ -352,6 +361,17 @@ describe("GitHub job poller", () => {
 			notModified: 0,
 			githubErrors: 0,
 			waiting: [],
+			heldPruneWitness: {
+				terminalRuns: [],
+				terminalJobs: [
+					{
+						repositoryId: CONNECTION.repositoryId,
+						jobId: 6,
+						runAttempt: 1,
+						reason: "job-completed",
+					},
+				],
+			},
 			rateLimitRemaining: 4000,
 		});
 		const ids = Object.keys(bodies).sort();
@@ -457,6 +477,47 @@ describe("GitHub job poller", () => {
 		expect(github.counted).toEqual([
 			"GET /repos/Org/Repo/actions/runs/900/jobs?filter=latest&per_page=100",
 		]);
+	});
+
+	it("records held-prune witness from completed poll reads", async () => {
+		const github = new FakeGithub(
+			{ queued: [], in_progress: [], completed: [43107920330] },
+			{
+				43107920330: [
+					{
+						id: 1,
+						status: "completed",
+						labels: ["hobo"],
+						conclusion: "cancelled",
+					},
+				],
+			},
+		);
+		github.conclusions.set(43107920330, "cancelled");
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async () => "ignored",
+			now: () => NOW,
+		});
+		const summary = await poller.poll();
+		expect(summary.heldPruneWitness).toEqual({
+			terminalRuns: [
+				{
+					repositoryId: CONNECTION.repositoryId,
+					runId: 43107920330,
+					reason: "run-cancelled",
+				},
+			],
+			terminalJobs: [
+				{
+					repositoryId: CONNECTION.repositoryId,
+					jobId: 1,
+					runAttempt: 1,
+					reason: "job-cancelled",
+				},
+			],
+		});
 	});
 
 	it("keeps the completed-runs URL still between polls in one ten-minute step", async () => {

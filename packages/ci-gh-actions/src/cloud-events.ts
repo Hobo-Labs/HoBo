@@ -32,6 +32,7 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_isolated_worker_drain_timeout", "ci.WorkerDrainTimedOut"],
 	["hobo_ci_isolated_worker_drain_force_exit", "ci.WorkerDrainForceExited"],
 	["hobo_ci_lease_github_terminal_dropped", "ci.LeaseGithubTerminalDropped"],
+	["hobo_ci_held_job_pruned", "ci.HeldJobPruned"],
 	["hobo_ci_trunk_headroom_fleet_defer", "ci.TrunkHeadroomFleetDeferred"],
 	["hobo_ci_trunk_fleet_defer_decision", "ci.TrunkFleetDeferDecision"],
 	["hobo_ci_inbox_delivery_failed", "ci.InboxDeliveryFailed"],
