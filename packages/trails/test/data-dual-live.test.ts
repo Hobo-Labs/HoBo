@@ -6,9 +6,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createSqliteDataDualPort } from "@hobo/data-sqlite";
 import { afterEach, test } from "vitest";
-
-import { createSqliteDataDualPort } from "../src/data-dual-port.js";
 import { defineTrail } from "../src/definition.js";
 import { TrailRunner } from "../src/runner.js";
 

@@ -37,6 +37,12 @@ message MigrationPlanRecord {
   repeated string contract = 4;
   string verify_after_backfill = 5;
   string verify_after_contract = 6;
+  // Per phase, a violations query that returns no rows exactly when the
+  // phase's statements are in effect. Asked when a run cannot know whether a
+  // phase committed; without one such a run holds.
+  string probe_expand = 7;
+  string probe_backfill = 8;
+  string probe_contract = 9;
 }
 
 message CompatGateEvidenceRecord {
@@ -63,6 +69,20 @@ message MigrationPhaseAppliedEventData {
   uint32 statements = 3;
   uint32 changes = 4;
   string applied_at = 5;
+  // The plan's probe found the phase already in effect after an unanswered
+  // intent; this run did not run its statements.
+  bool recovered = 6;
+}
+
+// Written before a phase runs its statements, as a compare-and-set on the
+// journal head. An intent with no PhaseApplied after it means the statements
+// may have committed.
+message MigrationPhaseIntendedEventData {
+  string migration_id = 1;
+  string phase = 2; // expand | backfill | contract
+  uint32 statements = 3;
+  string intended_at = 4;
+  bool retry = 5;
 }
 
 message MigrationVerifiedEventData {
@@ -103,4 +123,59 @@ message MigrationImportedEventData {
   uint32 imported_head_seq = 3;
   uint32 stream_count = 4;
   string imported_at = 5;
+}
+
+// ── ADR-0177 additions ─────────────────────────────────────────────────────
+//
+// The executor behind `executeDataMigration` is now the `@hobo/data-core`
+// in-place-evolve pattern. It can hold on a negative policy verdict and it
+// re-applies erasures after a restore; the uniform phase model's bodies are
+// defined in packages/data-core/data-models/data_core.proto.
+
+message MigrationHeldEventData {
+  string migration_id = 1;
+  string phase = 2; // the safe-hold phase the migration is sitting in
+  string reason = 3;
+  string held_at = 4;
+  // The phase whose statements the port reported as failed, when that is why
+  // the migration holds.
+  string failed_phase = 5; // expand | backfill | contract
+}
+
+message MigrationResumedEventData {
+  string migration_id = 1;
+  string phase = 2;
+  string resumed_at = 3;
+}
+
+message MigrationCompletedEventData {
+  string migration_id = 1;
+  string pattern = 2;
+  string completed_at = 3;
+}
+
+// Digest evidence over a source/target dual: counts and digests computed where
+// the data lives. The dual oracle prefers it to a row view.
+message DataDualEvidenceRecord {
+  uint64 source_count = 1;
+  string source_digest = 2;
+  uint64 target_count = 3;
+  string target_digest = 4;
+  string fidelity = 5; // always "live"
+}
+
+message CanTrailPolicyFindingRecord {
+  string code = 1;
+  string point = 2;
+  string detail = 3;
+}
+
+// A policy verdict computed over a migration's custody path, as can-trail
+// consumes it. Structural mirror of the @hobo/data-core PolicyVerdict.
+message CanTrailPolicyVerdictRecord {
+  bool ok = 1;
+  repeated CanTrailPolicyFindingRecord findings = 2;
+  string custody_digest = 3;
+  // The custody roles the path behind the verdict named; none when absent.
+  repeated string roles = 4;
 }

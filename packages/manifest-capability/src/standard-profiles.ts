@@ -41,10 +41,10 @@ function profile(seed: ProfileSeed): CapabilityProfileDescriptor {
 		displayName: seed.displayName,
 		description: seed.description,
 		refines: seed.refines ?? [],
-		...(seed.requires !== undefined ? { requires: seed.requires } : {}),
+		...(seed.requires !== undefined ? { requires: seed.requires } : undefined),
 		...(seed.conflictsWith !== undefined
 			? { conflictsWith: seed.conflictsWith }
-			: {}),
+			: undefined),
 		requirementSchemaRef: `hobo.capability-requirement/${slug}`,
 		conformanceSuiteRef: `conformance.${seed.id}`,
 		features: seed.features ?? [],
@@ -262,6 +262,36 @@ const DATA: readonly CapabilityProfileDescriptor[] = [
 		description: "Schemaless or schema-flexible document persistence.",
 		refines: ["data.nosql/v1"],
 		features: [bool("secondaryIndexes", "Supports secondary indexes.")],
+	}),
+	profile({
+		id: "data.mongodb/v1",
+		primitive: "data",
+		displayName: "MongoDB",
+		description:
+			"The MongoDB wire protocol and document model: BSON documents addressed by `_id`, the CRUD and aggregation command surface, and — on a replica set — multi-document transactions and change streams. The engine-level node `@hobo/data-mongodb` implements (ADR-0177). A document store that merely looks similar does not satisfy it.",
+		refines: ["data.document/v1"],
+		features: [
+			bool(
+				"changeStreams",
+				"Change streams are available (requires a replica set or sharded cluster).",
+			),
+			bool(
+				"multiDocumentTransactions",
+				"Multi-document ACID transactions are available.",
+			),
+		],
+		guarantees: [
+			bool(
+				"mongodbWireProtocol",
+				"Speaks the MongoDB wire protocol to unmodified drivers.",
+			),
+		],
+		sourceRefs: [
+			{
+				url: "https://www.mongodb.com/docs/manual/changeStreams/",
+				checkedAt: CHECKED,
+			},
+		],
 	}),
 	profile({
 		id: "data.graph/v1",

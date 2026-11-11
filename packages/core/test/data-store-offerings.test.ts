@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import {
+	DATA_STORE_ENGINES,
 	DATA_STORE_OFFERING_IDS,
 	DATA_STORE_PROVIDER_FAMILIES,
 	DATA_STORE_PROVIDERS,
 	type DataStoreProviderProfile,
 	dataStoreOffering,
+	engineOfDataStoreProvider,
 	matchDataStoreOfferings,
 	parseDataStoreOfferingId,
 	parseDataStoreProvider,
@@ -109,6 +111,42 @@ test("dataStoreOffering helper defaults to stable + real", () => {
 	assert.equal(entry.fidelity, "real");
 });
 
+test("an engine is a different fact from a product (ADR-0177)", () => {
+	assert.equal(engineOfDataStoreProvider("sqlite-local"), "sqlite");
+	// D1 speaks SQLite: it must never be mistaken for a Postgres.
+	assert.equal(engineOfDataStoreProvider("cloudflare-d1"), "sqlite");
+	assert.equal(engineOfDataStoreProvider("supabase-postgres"), "postgres");
+	assert.equal(engineOfDataStoreProvider("azure-sql"), "sqlserver");
+});
+
+test("a product that hosts several engines does not get one guessed for it", () => {
+	assert.equal(engineOfDataStoreProvider("aws-rds"), "other");
+	assert.equal(engineOfDataStoreProvider("gcp-cloudsql"), "other");
+	assert.equal(engineOfDataStoreProvider("other"), "other");
+});
+
+test("every product-level PostgreSQL id is the postgres engine; a family id stays undetermined", () => {
+	for (const provider of DATA_STORE_PROVIDERS) {
+		const family = provider === "aws-rds" || provider === "gcp-cloudsql";
+		const product =
+			provider.includes("postgres") ||
+			provider === "pgedge-cloud" ||
+			provider === "azure-horizondb" ||
+			provider === "gcp-alloydb";
+		if (family) assert.equal(engineOfDataStoreProvider(provider), "other");
+		if (product) assert.equal(engineOfDataStoreProvider(provider), "postgres");
+	}
+	// A product refines its family; the engine is known for the product only.
+	assert.equal(engineOfDataStoreProvider("aws-rds-postgres"), "postgres");
+	assert.equal(engineOfDataStoreProvider("aws-rds"), "other");
+});
+
+test("the engine vocabulary is closed", () => {
+	assert.deepEqual(
+		[...DATA_STORE_ENGINES],
+		["sqlite", "postgres", "sqlserver", "mysql", "mongodb", "other"],
+	);
+});
 // --- vocabulary extension: product-level PostgreSQL ids + connection facts ---
 
 const ORIGINAL_PROVIDERS = [
