@@ -36,7 +36,7 @@ const astro = `---
 //
 // Night rule (same as the mascot): prop ink never inverts — it lifts to soot
 // and gains a light rim; board whites stay white. The plates invert to chalk
-// and the clouds keep their own ink, matching ParallaxTrail's layer policy.
+// and the clouds keep their own ink, matching the trail band's layer policy (site/src/lib/trail-plates.ts).
 import BoIdle from "../BoIdle.astro";
 import { href } from "../../lib/url";
 const plate = (f: string) => \`--img: url("\${href(\`/parallax/plates/\${f}\`)}")\`;

@@ -1,4 +1,19 @@
 import type { Job, Lease } from "@hobo/ci";
+import {
+	type FleetCapacityWitness,
+	fleetCanAbsorbUnlaunchedRelease,
+} from "./fleet-absorb.js";
+import {
+	type TrunkWaitCache,
+	type TrunkWaitState,
+	trunkWaitFleetDeferEligible,
+	trunkWaitKey,
+} from "./trunk-wait.js";
+
+export {
+	type FleetCapacityWitness,
+	fleetCanAbsorbUnlaunchedRelease,
+} from "./fleet-absorb.js";
 
 export const DEFAULT_UNLAUNCHED_RESERVE_MS = 25_000;
 export const DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS = 25_000;
@@ -55,11 +70,12 @@ export function unlaunchedReservationAgeMs(
 	return Number.isFinite(created) ? Math.max(0, nowMs - created) : 0;
 }
 
-/** Non-local mesh capacity (peer box slots and ARC) must absorb released custody. */
-export function fleetCanAbsorbUnlaunchedRelease(
-	nonLocalFreeSlots: number | undefined,
-): boolean {
-	return nonLocalFreeSlots !== undefined && nonLocalFreeSlots > 0;
+function fleetWitnessFromReleaseContext(
+	context: Pick<UnlaunchedReleaseContext, "fleetWitness" | "nonLocalFreeSlots">,
+): FleetCapacityWitness | undefined {
+	if (context.fleetWitness) return context.fleetWitness;
+	if (context.nonLocalFreeSlots === undefined) return undefined;
+	return { arcFreeSlots: context.nonLocalFreeSlots };
 }
 
 export type UnlaunchedReleaseContext = Readonly<{
@@ -71,7 +87,9 @@ export type UnlaunchedReleaseContext = Readonly<{
 	liveContainerCount: number;
 	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
-	/** Peer/ARC slots reported on mesh; release fail-closed when absent. */
+	/** Mesh witness; release fail-closed when no peer absorb capacity. */
+	fleetWitness?: FleetCapacityWitness;
+	/** @deprecated use fleetWitness */
 	nonLocalFreeSlots?: number;
 }>;
 
@@ -81,7 +99,7 @@ export function unlaunchedReleaseReason(
 	context: UnlaunchedReleaseContext,
 ): string | undefined {
 	if (!isUnlaunchedReservation(lease)) return undefined;
-	if (!fleetCanAbsorbUnlaunchedRelease(context.nonLocalFreeSlots))
+	if (!fleetCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
 		return undefined;
 	const ageMs = unlaunchedReservationAgeMs(lease, nowMs);
 	if (ageMs >= context.boundMs) return "launch-bound-exceeded";
@@ -103,7 +121,7 @@ export function pickUnlaunchedReservationsToRelease(
 	context: UnlaunchedReleaseContext,
 ): ReadonlyArray<Readonly<{ leaseId: string; jobId: number; reason: string }>> {
 	const canFleetAbsorb = fleetCanAbsorbUnlaunchedRelease(
-		context.nonLocalFreeSlots,
+		fleetWitnessFromReleaseContext(context),
 	);
 	if (!canFleetAbsorb) return [];
 	const unlaunched = leases
@@ -136,4 +154,82 @@ export function pickUnlaunchedReservationsToRelease(
 		unlaunchedLeft -= 1;
 	}
 	return releases;
+}
+
+export function pickTrunkHeadroomFleetReleases(
+	trunkWaits: TrunkWaitCache,
+	leases: readonly UnlaunchedReservationLease[],
+	nowMs: number,
+	context: Readonly<{
+		deferMs: number;
+		fleetWitness?: FleetCapacityWitness;
+		nonLocalFreeSlots?: number;
+	}>,
+): ReadonlyArray<
+	Readonly<{
+		leaseId: string;
+		jobId: number;
+		reason: string;
+		waitKey: string;
+		waitedMs: number;
+	}>
+> {
+	if (!fleetCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
+		return [];
+	const releases: {
+		leaseId: string;
+		jobId: number;
+		reason: string;
+		waitKey: string;
+		waitedMs: number;
+	}[] = [];
+	for (const [waitKey, wait] of trunkWaits) {
+		if (!trunkWaitFleetDeferEligible(wait, context.deferMs, nowMs)) continue;
+		const parts = waitKey.split(":");
+		if (parts.length !== 3) continue;
+		const repository = parts[0];
+		const jobId = Number(parts[1]);
+		const runAttempt = Number(parts[2]);
+		if (
+			!repository ||
+			!Number.isInteger(jobId) ||
+			jobId <= 0 ||
+			!Number.isInteger(runAttempt) ||
+			runAttempt <= 0
+		)
+			continue;
+		const lease = leases.find(
+			(entry) =>
+				entry.repository === repository &&
+				entry.jobId === jobId &&
+				entry.runAttempt === runAttempt &&
+				isUnlaunchedReservation(entry),
+		);
+		if (!lease) continue;
+		const waitedMs = Math.max(0, nowMs - wait.sinceMs);
+		releases.push({
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			reason: `trunk-${wait.reason}-fleet-defer`,
+			waitKey,
+			waitedMs,
+		});
+	}
+	return releases;
+}
+
+export function rememberTrunkWait(
+	cache: TrunkWaitCache,
+	job: Pick<Job, "repository" | "id" | "runAttempt">,
+	reason: TrunkWaitState["reason"],
+	nowMs: number,
+): TrunkWaitState {
+	const key = trunkWaitKey(job);
+	const existing = cache.get(key);
+	const wait: TrunkWaitState =
+		existing?.reason === reason
+			? existing
+			: { sinceMs: nowMs, logged: false, reason };
+	cache.set(key, wait);
+	return wait;
 }

@@ -20,6 +20,7 @@ Main push run [43033874249](https://github.com/Hobo-Labs/HoBo/actions/runs/43033
 
 - **`mainFabricTrunkPhase`** in `admission-order.ts`: plan → full gate → workspace shards on the same Fabric run (before duration ties).
 - **`HostedRelay` fleet deferral**: when `trunkReserved >= trunkSlots`, `arcFreeSlots > 0`, and the job is a workspace shard, skip local reserve (`hobo_ci_trunk_wait` `reason=fleet-capacity`). Wire `trunkSlots` from the daemon.
+- **Headroom/storage defer** ([finding 111](0111-trunk-headroom-fleet-defer.md)): same cooperative path after **`HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`**; reserved launch uses `jobName` for fabric phase ordering.
 
 ## Measure
 

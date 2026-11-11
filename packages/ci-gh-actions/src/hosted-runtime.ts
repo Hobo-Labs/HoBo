@@ -122,6 +122,9 @@ export function createHostedRelayRuntime(options: {
 	headroomTrunkOverflow?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["headroomTrunkOverflow"];
+	headroomFleetDeferMs?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["headroomFleetDeferMs"];
 	/** See `HostedRelay`: publishes fleet slot headroom after each pass. */
 	fleetCapacity?: Readonly<{
 		publish: FleetCapacityPublisher["publish"];
@@ -198,6 +201,8 @@ export function createHostedRelayRuntime(options: {
 		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		if (options.headroomTrunkOverflow)
 			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
+		if (options.headroomFleetDeferMs !== undefined)
+			relayOptions.headroomFleetDeferMs = options.headroomFleetDeferMs;
 		if (options.fleetCapacity)
 			relayOptions.fleetCapacity = options.fleetCapacity;
 		if (options.unlaunchedReservationRelease)

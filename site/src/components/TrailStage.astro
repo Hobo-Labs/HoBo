@@ -1,0 +1,133 @@
+---
+// ==========================================================================
+// The trail: the band Bo walks, and the controls that move him.
+//
+// The landing page is a row of stops, not a long scroll. Each <section> on it
+// is one stop (`data-trail-stop`), and this band is where the reader travels
+// between them. ../lib/stage/landing.ts does the travelling.
+//
+//   on a desktop  The page keeps its own layout: the current section sits
+//                 above the band, and moving on hands it over to the next one
+//                 while Bo walks to that section's stop. Each stop is a set of
+//                 props, one under each card, with a road sign naming it.
+//   on a phone    There is not room for both, so the trail fills the screen
+//                 and each section stands beside it on signs.
+//
+// Either way a trail marker shows where you are and jumps anywhere, and the
+// arrows, the keyboard, the wheel and a swipe each move exactly one stop.
+//
+// With no script none of that happens: the sections read top to bottom like
+// any page, and this band walks Bo along on a timer, docked to the foot of the
+// viewport, as scenery.
+//
+// Everything here is supplied artwork: the plates (../lib/trail-plates.ts),
+// the props (../lib/trail-props.ts), the clouds and the cast. The only things
+// drawn here are the road signs, in ink, because their words have to be text.
+// ==========================================================================
+
+import { href } from "../lib/url";
+import { plates } from "../lib/trail-plates";
+import { props } from "../lib/trail-props";
+
+// Bo's walk sheet is 6x6 frames of 554x542, and the band is a 300-unit scene.
+// The ground moves 13 units a frame at 50ms a frame (the cadence the sheet was
+// drawn at), so a plate's timer loop covers one tile in this many seconds.
+const UNITS_PER_SECOND = 13 / 0.05;
+const loopSeconds = (aspect: number, speed: number) =>
+	Math.round(((aspect * 300) / (UNITS_PER_SECOND * speed)) * 100) / 100;
+
+// Depth, back to front. Clouds sit at 2, the props and signs at 20, Bo at 30.
+const DEPTH: Record<string, number> = { sky: 1, hills: 3, poles: 5, trail: 10, "trail-front": 40 };
+
+const scene = plates().map((p) => ({
+	...p,
+	src: href(`/parallax/plates/${p.file}`),
+	style: [
+		`--plate:url("${href(`/parallax/plates/${p.file}`)}")`,
+		`--aspect:${p.aspect}`,
+		`--speed:${p.speed}`,
+		`--loop:${loopSeconds(p.aspect, p.speed)}s`,
+		`--tone:${p.tone}`,
+		`z-index:${DEPTH[p.key] ?? 10}`,
+		`opacity:${p.opacity}`,
+	].join(";"),
+}));
+const behind = scene.filter((p) => !p.front);
+const inFront = scene.filter((p) => p.front);
+
+const art = props();
+const cast = ["tuck", "cog", "mags", "pip"];
+---
+
+<link rel="preload" as="image" href={href("/parallax/bo-walk.png")} />
+<div
+	class="tst"
+	data-trail-stage
+	data-base={import.meta.env.BASE_URL}
+	style={`--bo-walk:url("${href("/parallax/bo-walk.png")}");--bo-left:url("${href("/parallax/bo-walk-left.png")}");--bo-idle:url("${href("/parallax/bo-idle.png")}")`}
+>
+	{/* The road signs' ink: a wobble on the line, so they sit beside the
+	    supplied drawings instead of looking typeset onto them. */}
+	<svg class="tst-defs" width="0" height="0" aria-hidden="true" focusable="false">
+		<filter id="tst-ink" x="-4%" y="-8%" width="108%" height="116%">
+			<feTurbulence type="fractalNoise" baseFrequency=".028" numOctaves="2" seed="7" result="n"></feTurbulence>
+			<feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+		</filter>
+	</svg>
+
+	<div class="tst-scene" aria-hidden="true">
+		{behind.map((p) => <div class:list={["tst-plate", `tst-plate-${p.key}`, `is-${p.night}`]} style={p.style} data-plate data-speed={p.speed} data-aspect={p.aspect}></div>)}
+		<div class="tst-clouds" data-clouds>
+			{[1, 3, 2, 4, 1, 3, 2].map((n) => (
+				<span class="tst-cloud" data-cloud><img src={href(`/parallax/clouds/cloud-${n}.png`)} alt="" draggable="false" /></span>
+			))}
+		</div>
+		<div class="tst-sets" data-sets></div>
+		<div class="tst-bo" data-bo>
+			<span class="tst-bo-walk" data-bo-walk></span>
+			<span class="tst-bo-walk tst-bo-left" data-bo-left></span>
+			<span class="tst-bo-idle"></span>
+		</div>
+		{inFront.map((p) => <div class:list={["tst-plate", `tst-plate-${p.key}`, `is-${p.night}`]} style={p.style} data-plate data-speed={p.speed} data-aspect={p.aspect}></div>)}
+		<div class="tst-iris" data-iris hidden></div>
+	</div>
+
+	{/* On a phone the sections stand here, on signs beside the trail. */}
+	<div class="tst-world" data-world></div>
+
+	<nav class="tst-route" aria-label="Sections" data-route hidden>
+		<button class="tst-arrow" type="button" data-prev aria-label="Previous section">←</button>
+		<ol data-marks></ol>
+		<button class="tst-arrow is-nudging" type="button" data-next aria-label="Next section">→</button>
+	</nav>
+
+	<button class="tst-pause" type="button" aria-pressed="false" data-pause hidden>
+		<span class="tst-pause-icon" aria-hidden="true"></span>
+		<span class="tst-pause-label">Pause the trail and its travelers</span>
+	</button>
+
+	<p class="tst-sr" data-stage-help hidden>
+		This page moves one section at a time. Use the section list, the Previous
+		and Next buttons, or the arrow keys.
+	</p>
+	<p class="tst-sr" aria-live="polite" data-stage-said></p>
+	<div class="tst-toast" role="status" aria-live="polite" data-toast></div>
+
+	{/* What the controller needs to know about the art, as plain data. */}
+	<ul class="tst-catalog" hidden data-props>
+		{art.map((p) => (
+			<li data-key={p.key} data-src={href(`/parallax/landmarks/${p.file}`)} data-aspect={p.aspect} data-units={p.units} data-say={p.say}></li>
+		))}
+	</ul>
+	<ul class="tst-catalog" hidden data-cast>
+		{cast.map((who) => <li data-key={who} data-src={href(`/cast/${who}.png`)}></li>)}
+	</ul>
+</div>
+
+<script>
+	import { mountLanding } from "../lib/stage/landing";
+
+	const stage = document.querySelector<HTMLElement>("[data-trail-stage]");
+	const page = document.querySelector<HTMLElement>("[data-trail-page]");
+	if (stage && page) mountLanding(page, stage);
+</script>

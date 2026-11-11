@@ -7,7 +7,7 @@ import fs from "node:fs";
 //
 // The slot name is the file name. `plates/clouds.png` fills the cloud layer,
 // `plates/sky.png` the distant one, and so on. An empty slot renders nothing,
-// so the band is whatever artwork is present plus the one thing it draws.
+// so the band is whatever artwork is present.
 //
 // A plate must repeat cleanly left-to-right; the band tiles it, it does not
 // mirror or blend the join. The whole image height maps onto the band height,
@@ -42,10 +42,8 @@ export type Night = "invert" | "keep" | "rim";
 export type Tone = number;
 
 /**
- * Every slot, back to front. `order` interleaves these with the drawn layers
- * (see ./trail-art.ts) and the clouds (./trail-clouds.ts); `front` marks the
- * ones that go on Bo's side of the sprite, so the nearest grass passes in
- * front of his feet.
+ * Every slot, back to front. `order` is depth; `front` marks the ones that go
+ * on Bo's side of the sprite, so the nearest grass passes in front of his feet.
  */
 export const PLATE_SLOTS = [
 	{ key: "sky", speed: 0.12, opacity: 0.55, order: 10, front: false, night: "invert", tone: 0.42 },
