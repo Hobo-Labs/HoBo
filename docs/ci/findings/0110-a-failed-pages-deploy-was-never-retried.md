@@ -128,9 +128,9 @@ it:
 - The box worker has to be redeployed for the mirror fix to reach a box. Until then the probe and the
   checkout fallback carry it: an incomplete mirror is a miss, and the job fetches from GitHub as it did
   before the mirror existed.
-- The release train (npm, GHCR, tag) still decides from the triggering commit alone. It has the same
-  blind spot for batched and cancelled commits; "the next green run gets a higher height" covers a failed
-  publish but not a commit that was never asked about.
+- The release train (npm, GHCR, tag) still decided from the triggering commit alone when this landed. It
+  had the same blind spot for batched and cancelled commits, and it bit the fix for the train itself
+  (#1894). The train gate now measures from the last release tag; see `docs/release/pipelines.md`.
 - `scripts/deploy-site.mts` drives the built site in a real browser (`examples:verify-dist`) before it
   publishes. The release job does not; that check has never run on a fleet runner, and a gate that fails
   there would stop the site deploying, which is the fault this finding is about.

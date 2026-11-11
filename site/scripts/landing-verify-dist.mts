@@ -184,6 +184,31 @@ async function fitAt(page: Page, origin: string, width: number, height: number):
 	}
 }
 
+/**
+ * The comparison on a desktop: the card is its frame, so the table fits the
+ * card with no sideways scroll and every cell's text inside its cell.
+ */
+async function deskTable(page: Page, origin: string, width: number, height: number): Promise<void> {
+	await page.setViewportSize({ width, height });
+	await page.goto(`${origin}/HoBo/#compare`, { waitUntil: "networkidle" });
+	await settle(page);
+	const report = await page.evaluate(() => {
+		const card = document.querySelector<HTMLElement>("[data-trail-stop].is-on .stop-card-wide");
+		const wrap = card?.querySelector<HTMLElement>(".table-wrap");
+		const table = wrap?.querySelector<HTMLElement>("table.compare");
+		if (!card || !wrap || !table) return { ok: false, detail: "no comparison card on the active stop" };
+		const clipped = [...table.querySelectorAll<HTMLElement>("th, td")]
+			.filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+			.map((cell) => cell.textContent?.trim() ?? "");
+		const ok = table.scrollWidth <= card.clientWidth + 1 && wrap.scrollWidth <= wrap.clientWidth + 1 && clipped.length === 0;
+		return {
+			ok,
+			detail: `table ${table.scrollWidth}px, wrap ${wrap.scrollWidth}/${wrap.clientWidth}px, card ${card.clientWidth}px${clipped.length ? `, clipped: ${clipped.slice(0, 3).join(" · ")}` : ""}`,
+		};
+	});
+	check(`desk ${width}x${height}: the comparison fits its card`, report.ok, report.detail);
+}
+
 async function phone(page: Page, origin: string): Promise<void> {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
@@ -285,6 +310,89 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	await until(page, () => scrollY > 100);
 	const viaSwipe = await page.evaluate(() => scrollY);
 	check("phone: a swipe up at the last stop reaches the footer", viaSwipe > 100, `scrollY ${viaSwipe}`);
+	await context.close();
+}
+
+/**
+ * The comparison on a phone sign: every column there, every header and cell
+ * reachable by scrolling the table sideways inside its sign, no page-level
+ * sideways scroll, and an up-or-down swipe that starts on it still the trail's.
+ */
+async function phoneTable(browser: Browser, origin: string, width: number, height: number): Promise<void> {
+	const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true });
+	const page = await context.newPage();
+	await page.goto(`${origin}/HoBo/#compare`, { waitUntil: "networkidle" });
+	await settle(page);
+	const at = `${width}x${height}`;
+	// The sign holding the table, brought into view the way a reader would.
+	const table = () =>
+		page.evaluate(() => {
+			for (const wrap of document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up .table-wrap")) {
+				const r = wrap.getBoundingClientRect();
+				if (r.width > 0 && r.left >= -1 && r.right <= innerWidth + 1 && r.top > 0 && r.bottom < innerHeight) {
+					return { y: Math.round(r.top + Math.min(r.height, 120) / 2), x: Math.round(r.left + r.width / 2) };
+				}
+			}
+			return null;
+		});
+	let spot = await table();
+	for (let i = 0; !spot && i < 4; i++) {
+		await swipe(page, Math.round(width / 2), Math.round(height * 0.7), Math.round(height * 0.7) - 260);
+		await settle(page);
+		spot = await table();
+	}
+	check(`phone ${at}: the comparison sign is in view`, spot !== null);
+	if (!spot) {
+		await context.close();
+		return;
+	}
+	const reach = await page.evaluate(() => {
+		const wrap = [...document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up .table-wrap")].find((w) => {
+			const r = w.getBoundingClientRect();
+			return r.width > 0 && r.left >= -1 && r.right <= innerWidth + 1;
+		});
+		const problems: string[] = [];
+		if (!wrap) return { columns: 0, cells: 0, problems: ["no table on a sign in view"], pageWide: 0 };
+		const head = [...wrap.querySelectorAll<HTMLElement>("thead th")].filter((th) => getComputedStyle(th).display !== "none");
+		const cells = [...wrap.querySelectorAll<HTMLElement>("th, td")];
+		// The product column stays put; every other column scrolls in beside it.
+		const lead = wrap.querySelector<HTMLElement>("tr > :first-child")?.offsetWidth ?? 0;
+		for (const cell of cells) {
+			if (getComputedStyle(cell).display === "none" || cell.getBoundingClientRect().width === 0) {
+				problems.push(`hidden: ${cell.textContent?.trim()}`);
+				continue;
+			}
+			// Scroll the table, not the page, until this cell is inside it and
+			// nothing (the product column included) lies over it.
+			wrap.scrollLeft = cell.cellIndex === 0 ? 0 : Math.max(0, cell.offsetLeft - lead - 4);
+			const w = wrap.getBoundingClientRect();
+			const c = cell.getBoundingClientRect();
+			if (c.left < w.left - 1 || c.right > w.right + 1) problems.push(`out of reach: ${cell.textContent?.trim()}`);
+			if (c.left < -1 || c.right > innerWidth + 1) problems.push(`off screen: ${cell.textContent?.trim()}`);
+			const hit = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2)?.closest("th, td");
+			if (hit !== cell) problems.push(`covered: ${cell.textContent?.trim()}`);
+		}
+		wrap.scrollLeft = 0;
+		return {
+			columns: head.length,
+			cells: cells.length,
+			problems,
+			pageWide: document.documentElement.scrollWidth - innerWidth,
+		};
+	});
+	check(`phone ${at}: the comparison keeps all four columns`, reach.columns === 4, `${reach.columns} header cells`);
+	check(
+		`phone ${at}: every header and cell is reachable by scrolling the table`,
+		reach.cells > 0 && reach.problems.length === 0,
+		reach.problems.slice(0, 3).join(" · "),
+	);
+	check(`phone ${at}: no sideways page scroll`, reach.pageWide <= 0, `${reach.pageWide}px too wide`);
+	const where = () => page.evaluate(() => document.querySelector<HTMLElement>("[data-world]")?.style.transform ?? "");
+	const before = await where();
+	await swipe(page, spot.x, spot.y, spot.y - 220);
+	await settle(page);
+	const after = await where();
+	check(`phone ${at}: a swipe that starts on the table moves the trail`, after !== before, `table at y ${spot.y}, ${before} → ${after}`);
 	await context.close();
 }
 
@@ -440,8 +548,20 @@ try {
 	]) {
 		await fitAt(page, origin, w, h);
 	}
+	for (const [w, h] of [
+		[900, 560],
+		[1024, 600],
+		[1280, 620],
+		[1280, 800],
+		[1366, 657],
+		[1440, 900],
+	]) {
+		await deskTable(page, origin, w, h);
+	}
 	await phone(page, origin);
 	await phoneTouch(browser, origin);
+	await phoneTable(browser, origin, 390, 844);
+	await phoneTable(browser, origin, 360, 740);
 	await focusAndLinks(page, origin);
 	check("page: no uncaught errors", errors.length === 0, errors.slice(0, 3).join(" · "));
 } finally {

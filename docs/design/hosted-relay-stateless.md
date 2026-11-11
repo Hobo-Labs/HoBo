@@ -771,7 +771,6 @@ on its free plan.
 | 4d | The Workflows lifecycle driver on Vercel's managed World (exactly-once starts by hook token, `resumeHook` from verified webhooks, `sleep()` timeouts), built through a Nitro entry in `@hobo/ci-vercel` or a custom `BaseBuilder`; `workflow` ≥ 5.4.0 (pinnable from 2026-11-18) and `zod` ≥ 4.5; driver chosen per job at admission. Not before 2026-11-18 | A job runs end to end on each driver; switching drivers leaves in-flight jobs on theirs; a repeated start for one job attempt yields one run |
 | 4e | The degraded GitHub-only floor | Duplicate JIT runner names verified against the real API (409 or not); with every cache unreachable, a duplicated delivery still provisions once |
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision |
-
 | 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository |
 | 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
@@ -779,7 +778,7 @@ on its free plan.
 **Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
 4b: `composeStatelessRelay` in `@hobo/ci-vercel`: the cache backend chosen from
 the deployment's bindings (Upstash REST, then Valkey; in memory only off Vercel)
-behind one seam, `selectCacheBackend`, with every command metered against a
+behind one seam, `selectCacheBackend` (replaced in 4c by the cache fleet), with every command metered against a
 monthly allowance; intake on the `hobo-ci-intake` topic keyed by delivery id;
 per-lease steps on `hobo-ci-lease-steps` keyed `${leaseId}:${step}:${n}`, each
 rung at a fixed offset from the lease's creation so chains of one lease

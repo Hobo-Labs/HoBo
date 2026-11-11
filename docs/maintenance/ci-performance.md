@@ -124,6 +124,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (`syft@1.56.0 is not in the lockfile`, release run 42741596338). The script now ignores the image's
   baked `/etc/mise/config.toml`, and `scripts/test/ci-runner-image-contract.test.ts` pins that it does
   so before its first mise call.
+- **A trace upload never fails a gate.** The `ci-trace` action's artifact upload is diagnostics. When
+  GitHub's artifact service answered with an HTML error page, the upload retried for ten minutes and
+  failed Main full gate after every gate in it had passed (run 43094500900), which also held back the
+  release. The upload step is `continue-on-error`; the trace export, which is this repo's code, still
+  fails loudly.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and

@@ -1023,8 +1023,8 @@ html:has(.trail-page:not(.is-staged)) {
 
 /* While there is more of a tall stop below, its foot fades out. */
 .is-staged[data-mode="desk"] .stop.has-more {
-	-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
-	mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
+	-webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 1.5rem), transparent);
+	mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 1.5rem), transparent);
 }
 
 .is-staged[data-mode="desk"] .stop.is-on {
@@ -1093,7 +1093,11 @@ html:has(.trail-page:not(.is-staged)) {
 	box-shadow: none;
 }
 
+/* The card, not the page's 720px table floor, sets the width: cells wrap
+   instead of pushing the table past the card. */
 .is-staged[data-mode="desk"] .stop-card-wide table.compare {
+	width: 100%;
+	min-width: 0;
 	font-size: 0.88em;
 }
 
@@ -1268,28 +1272,55 @@ html:has(.trail-page:not(.is-staged)) {
 	touch-action: pan-x;
 }
 
-/* A sign is too narrow for the whole comparison: it keeps the two columns
-   the argument rests on, and the page keeps the rest. */
+/* A sign is narrower than the comparison: the table scrolls sideways inside
+   it, every column still there, and the edge that hides more fades out. An
+   up-or-down swipe that starts on it still belongs to the trail. */
 .tst-board .table-wrap {
 	margin: 0;
 	border: 0;
+	border-radius: 0;
 	box-shadow: none;
 	background: transparent;
-	overflow: visible;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	touch-action: pan-x;
+	scrollbar-width: thin;
+}
+
+/* The product names stay put while the columns slide under them, so only
+   the right edge fades: that is where the columns still hidden wait. */
+.tst-board .table-wrap[data-more~="right"] {
+	-webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 2.5rem), transparent);
+	mask-image: linear-gradient(to right, var(--ink) calc(100% - 2.5rem), transparent);
+}
+
+.tst-board table.compare tr > :first-child {
+	position: sticky;
+	left: 0;
+	z-index: 1;
+	background: var(--bg-raised);
+	box-shadow: inset -1px 0 0 var(--border);
+}
+
+.tst-board table.compare thead tr > :first-child {
+	background: var(--bg-inset);
+}
+
+.tst-board table.compare tr.hobo-row > :first-child {
+	background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg-raised);
 }
 
 .tst-board table.compare {
-	min-width: 0;
+	width: max-content;
+	min-width: 100%;
 	font-size: 0.88em;
 }
 
 .tst-board table.compare th,
 .tst-board table.compare td {
 	padding: 0.34em 0.6em;
-}
-
-.tst-board table.compare tr > :nth-child(4) {
-	display: none;
+	white-space: nowrap;
 }
 
 .tst-board .stop-foot {

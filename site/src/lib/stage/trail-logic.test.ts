@@ -6,6 +6,7 @@ import {
 	hashForStop,
 	hashTarget,
 	inStageZone,
+	moreSides,
 	keyDirection,
 	pageKeepsKey,
 	readsDown,
@@ -132,5 +133,19 @@ describe("startsGesture", () => {
 	it("keeps a steady mouse wheel and an inertia tail's jitter as one gesture", () => {
 		expect(startsGesture(30, 100, 100, 100)).toBe(false);
 		expect(startsGesture(16, 9, 5, 120)).toBe(false);
+	});
+});
+
+describe("moreSides", () => {
+	it("names the sides a sideways scroll box still hides", () => {
+		expect(moreSides(0, 600, 300)).toBe("right");
+		expect(moreSides(150, 600, 300)).toBe("left right");
+		expect(moreSides(300, 600, 300)).toBe("left");
+		expect(moreSides(299.5, 600, 300)).toBe("left");
+	});
+
+	it("is empty when everything shows", () => {
+		expect(moreSides(0, 300, 300)).toBe("");
+		expect(moreSides(0, 300.6, 300)).toBe("");
 	});
 });
