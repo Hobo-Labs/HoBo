@@ -302,8 +302,11 @@ machine. The run's jobs ask for the label it chose: the fleet (`hobo`, or
 `hobo-trunk` for trunk events) while it is taking jobs, an enrolled local box
 (`hobo-local-host`) when it is not, and `ubuntu-24.04` when neither is. A
 backend is taking jobs when a runner took a job for its label in the last 15
-minutes, no such job has waited 120 seconds, none it took in that time had,
-and fewer than 4 are waiting. The **Fleet probe** workflow, started by each CI
+minutes, no such job has waited 120 seconds, none it took in the last hour
+had, and fewer than 4 are waiting. The hour is deliberate: the probe is one
+small job, and a run sent to the fleet because a runner took the probe at once
+waited 17 minutes for runners. The route job reads the three longest finished
+runs of the last hour to find such waits after their run has ended. The **Fleet probe** workflow, started by each CI
 run, keeps a pickup on record for every label that has a runner behind it. A
 label that is down holds one probe job that goes on waiting, which reads as a
 label past its limit; it has its own concurrency group, so it does not hold
