@@ -96,4 +96,6 @@ export function createFleetCapacityPublisher(options: {
 	};
 }
 
-export type FleetCapacityPublisher = ReturnType<typeof createFleetCapacityPublisher>;
+export type FleetCapacityPublisher = ReturnType<
+	typeof createFleetCapacityPublisher
+>;

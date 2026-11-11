@@ -1,11 +1,5 @@
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
-export {
-	createMergeQueuePositionCache,
-	fetchMergeQueuePositions,
-	type MergeQueuePositionSource,
-	type MergeQueuePositions,
-} from "./merge-queue-order.js";
 export { relayInstallAssets } from "./assets.js";
 export {
 	inventoryCiEnginesFromRepository,
@@ -41,6 +35,11 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
+	createFleetCapacityPublisher,
+	type FleetCapacityPublication,
+	type FleetCapacityPublisher,
+} from "./fleet-capacity-publisher.js";
+export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,
@@ -48,11 +47,6 @@ export {
 	type FleetRoutePublisher,
 	type FleetRoutePublishInput,
 } from "./fleet-routes.js";
-export {
-	createFleetCapacityPublisher,
-	type FleetCapacityPublication,
-	type FleetCapacityPublisher,
-} from "./fleet-capacity-publisher.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -139,6 +133,7 @@ export {
 	type GithubReadFailure,
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
+export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export {
 	classifyHostHealth,
 	createHostHealthMonitor,
@@ -190,7 +185,6 @@ export {
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
-export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,
@@ -210,6 +204,12 @@ export {
 	type JobObservation,
 } from "./job-durations.js";
 export { startRelayFromEnvironment } from "./main.js";
+export {
+	createMergeQueuePositionCache,
+	fetchMergeQueuePositions,
+	type MergeQueuePositionSource,
+	type MergeQueuePositions,
+} from "./merge-queue-order.js";
 export {
 	createWorkerMesh,
 	type MeshSettings,

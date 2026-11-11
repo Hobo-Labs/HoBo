@@ -207,15 +207,13 @@ export function createAdmissionOrder(
 							installationId: lease.installationId,
 							repository: lease.repository,
 							runId: lease.originalRunId,
-							jobId:
-								lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+							jobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
 						}
 					: {
 							installationId: lease.installationId,
 							repository: lease.repository,
 							runId: lease.originalRunId,
-							jobId:
-								lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+							jobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
 							labels: lease.labels,
 						};
 			const key = await keyFor(ref);

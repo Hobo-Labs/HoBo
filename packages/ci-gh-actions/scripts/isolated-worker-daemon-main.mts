@@ -7,9 +7,9 @@ import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
 import {
+	buildFleetCapacitySnapshot,
 	ConfigurationSchema,
 	type Lease,
-	buildFleetCapacitySnapshot,
 	memoryAdmitHeadroom,
 	parseConfiguration,
 } from "@hobo/ci";
@@ -18,8 +18,6 @@ import {
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
 	createBoxGitMirror,
-	defaultGitMirrorFallbackRoot,
-	resolveGitMirrorRoot,
 	createCiEventEmitter,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
@@ -29,41 +27,43 @@ import {
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
+	createHeadroomTrunkOverflow,
 	createHostedRelayRuntime,
 	createHostHealthMonitor,
 	createIsolatedContainerController,
-	createMergeQueuePositionCache,
 	createJobDurations,
 	createMemoryPeaks,
+	createMergeQueuePositionCache,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
-	createHeadroomTrunkOverflow,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
+	defaultGitMirrorFallbackRoot,
 	describeWaitingJobs,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
 	memoryRequestForJob,
+	mergeDrainInFlightCount,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
 	readHostMemory,
 	relayTraceSinkFromEnv,
+	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	singleFlight,
-	mergeDrainInFlightCount,
 	stopIsolatedWorker,
 	traceGithubTransport,
 } from "@hobo/ci-gh-actions";
@@ -519,10 +519,11 @@ try {
 		},
 		log,
 	});
-	const listWorkerContainers = () =>
-		docker.listWorkerContainers
-			? docker.listWorkerContainers()
-			: docker.list!("hobo.ci/isolated=1");
+	const listWorkerContainers = () => {
+		if (docker.listWorkerContainers) return docker.listWorkerContainers();
+		if (!docker.list) throw new Error("docker driver missing list");
+		return docker.list("hobo.ci/isolated=1");
+	};
 	try {
 		for (const container of await listWorkerContainers()) {
 			if (container.state !== "running" || !container.name.startsWith("hobo-"))

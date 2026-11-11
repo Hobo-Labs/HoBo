@@ -107,10 +107,7 @@ it("re-runs a trunk job still queued after headroom wait, without re-queuing on 
 		now: () => Date.now(),
 	});
 	const trunkWaits = new Map([
-		[
-			"org/repo:1:1",
-			{ sinceMs: Date.now() - 130_000, logged: true },
-		],
+		["org/repo:1:1", { sinceMs: Date.now() - 130_000, logged: true }],
 	]);
 	const count = await overflow.overflowTrunkJobsWaitingForHeadroom(
 		store,

@@ -146,7 +146,9 @@ export async function listRunWorkflowJobs(
 	);
 	if (!response.ok)
 		throw new Error(`GitHub run jobs lookup failed (${response.status})`);
-	const result = z.object({ jobs: z.array(RunWorkflowJob) }).parse(await response.json());
+	const result = z
+		.object({ jobs: z.array(RunWorkflowJob) })
+		.parse(await response.json());
 	return result.jobs;
 }
 

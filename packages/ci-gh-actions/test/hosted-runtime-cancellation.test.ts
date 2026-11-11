@@ -106,7 +106,10 @@ function fixture(options: {
 							: options.responseRunner,
 				});
 			}
-			if (path === "/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100")
+			if (
+				path ===
+				"/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100"
+			)
 				return Response.json({
 					jobs: [
 						{

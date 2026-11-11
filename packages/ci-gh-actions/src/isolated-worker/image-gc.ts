@@ -44,7 +44,10 @@ export function depsGcKeepTag(
 	localDepsKey: string | undefined,
 ): string | undefined {
 	if (requested === undefined) return undefined;
-	if (requested.startsWith("hobo-ci-deps:") && requested !== "hobo-ci-deps:local")
+	if (
+		requested.startsWith("hobo-ci-deps:") &&
+		requested !== "hobo-ci-deps:local"
+	)
 		return requested;
 	if (requested === "hobo-ci-deps:local" && localDepsKey)
 		return `hobo-ci-deps:${localDepsKey}`;

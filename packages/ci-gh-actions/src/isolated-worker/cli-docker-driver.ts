@@ -132,8 +132,7 @@ function parseDockerPsJson(stdout: string): DockerContainer[] {
 			return { name, containerId, state, timeoutMs, labels };
 		if (Number.isFinite(createdAtMs))
 			return { name, containerId, state, createdAtMs };
-		if (timeoutMs !== undefined)
-			return { name, containerId, state, timeoutMs };
+		if (timeoutMs !== undefined) return { name, containerId, state, timeoutMs };
 		if (Object.keys(labels).length > 0)
 			return { name, containerId, state, labels };
 		return { name, containerId, state };

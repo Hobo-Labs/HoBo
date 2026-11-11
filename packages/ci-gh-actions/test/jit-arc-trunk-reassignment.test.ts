@@ -1,12 +1,12 @@
 import { create } from "@bufbuild/protobuf";
 import { type Lease, LeaseSchema } from "@hobo/ci";
+import type { PostgresCiStore } from "@hobo/ci/postgres";
 import { describe, expect, it, vi } from "vitest";
+import type { GithubTransport } from "../src/github.js";
 import * as githubModule from "../src/github.js";
+import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
-import type { GithubTransport } from "../src/github.js";
-import type { HostedRelayStore } from "../src/hosted-relay.js";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
 
 function transitionFor(lease: Lease) {
 	return vi.fn(

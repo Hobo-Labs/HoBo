@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import type { GithubTransport } from "../src/github.js";
 import {
 	createMergeQueuePositionCache,
 	fetchMergeQueuePositions,
 } from "../src/merge-queue-order.js";
-import type { GithubTransport } from "../src/github.js";
 
 describe("merge queue positions", () => {
 	it("maps head sha to queue position from GraphQL", async () => {
@@ -50,9 +50,7 @@ describe("merge queue positions", () => {
 						repository: {
 							mergeQueue: {
 								entries: {
-									nodes: [
-										{ position: 1, headCommit: { oid: "c".repeat(40) } },
-									],
+									nodes: [{ position: 1, headCommit: { oid: "c".repeat(40) } }],
 								},
 							},
 						},

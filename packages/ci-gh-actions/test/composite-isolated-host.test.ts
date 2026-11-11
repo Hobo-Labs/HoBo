@@ -1,8 +1,8 @@
 import { create } from "@bufbuild/protobuf";
 import { JobSchema, LeaseSchema } from "@hobo/ci";
 import { describe, expect, it, vi } from "vitest";
-import { createCompositeIsolatedHost } from "../src/isolated-worker/composite-host.js";
 import type { IsolatedRunnerHost } from "../src/hosted-relay.js";
+import { createCompositeIsolatedHost } from "../src/isolated-worker/composite-host.js";
 
 const lease = create(LeaseSchema, {
 	id: "00000000-0000-4000-8000-000000000001",

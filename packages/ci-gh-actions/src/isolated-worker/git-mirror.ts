@@ -28,7 +28,9 @@ export function resolveGitMirrorRoot(
 ): string {
 	const tryRoot = (root: string) => {
 		if (!isAbsolute(root) || root.split(/[\\/]+/).includes(".."))
-			throw new Error("git mirror root must be absolute and contain no '..' segments");
+			throw new Error(
+				"git mirror root must be absolute and contain no '..' segments",
+			);
 		mkdirSync(root, { recursive: true, mode: 0o755 });
 		return root;
 	};
@@ -134,7 +136,12 @@ export function createBoxGitMirror(options: {
 	}
 
 	async function stripPartialCloneMarkers(): Promise<void> {
-		await git([`--git-dir=${path}`, "config", "--unset-all", "remote.origin.promisor"]);
+		await git([
+			`--git-dir=${path}`,
+			"config",
+			"--unset-all",
+			"remote.origin.promisor",
+		]);
 		await git([
 			`--git-dir=${path}`,
 			"config",

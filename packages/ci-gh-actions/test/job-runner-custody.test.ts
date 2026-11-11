@@ -19,9 +19,7 @@ describe("hasOutstandingBoxCustody", () => {
 			runAttempt: 1,
 			state: "reserved",
 		});
-		expect(
-			hasOutstandingBoxCustody(lease, 101, 100, 1),
-		).toBe(true);
+		expect(hasOutstandingBoxCustody(lease, 101, 100, 1)).toBe(true);
 	});
 
 	it("ignores completed leases", () => {
@@ -39,8 +37,6 @@ describe("hasOutstandingBoxCustody", () => {
 			runAttempt: 1,
 			state: "completed",
 		});
-		expect(
-			hasOutstandingBoxCustody(lease, 101, 100, 1),
-		).toBe(false);
+		expect(hasOutstandingBoxCustody(lease, 101, 100, 1)).toBe(false);
 	});
 });

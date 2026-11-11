@@ -658,9 +658,7 @@ function storeContract(
 				NOW,
 				revision,
 			);
-			expect(
-				await store.withdrawQueuedJob(job(1), NOW, revision),
-			).toBe(true);
+			expect(await store.withdrawQueuedJob(job(1), NOW, revision)).toBe(true);
 			expect((await store.get(lease.id))?.state).toBe("cancelled");
 			expect(await store.pendingJobs()).toEqual([]);
 			expect(await store.activeLeases()).toEqual([]);

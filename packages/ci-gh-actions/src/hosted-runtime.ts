@@ -4,7 +4,6 @@ import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
-import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -17,10 +16,14 @@ import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.j
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import type { JobPickupMetadataCache } from "./job-pickup.js";
+import {
+	hasOutstandingBoxCustody,
+	runnerCustody,
+} from "./job-runner-custody.js";
+import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import type { IdentityVerifier } from "./oidc.js";
-import { hasOutstandingBoxCustody, runnerCustody } from "./job-runner-custody.js";
-import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
 export interface HostedInboxStore extends HostedRelayStore {
@@ -261,24 +264,23 @@ export function createHostedRelayRuntime(options: {
 				return "duplicate" as const;
 			lastDuplicateRecheck.set(recheckKey, nowMs);
 			try {
-					const current = await getJob(
-						options.github,
-						identity.installation.id,
-						identity.repository.full_name,
-						jobId,
+				const current = await getJob(
+					options.github,
+					identity.installation.id,
+					identity.repository.full_name,
+					jobId,
+				);
+				if (
+					runnerCustody(current.runner_name) === "foreign" &&
+					(current.status === "queued" || current.status === "in_progress")
+				) {
+					const controller = await relay();
+					await controller.processWebhook(
+						Buffer.from(input.rawBody),
+						input.event,
 					);
-					if (
-						runnerCustody(current.runner_name) === "foreign" &&
-						(current.status === "queued" ||
-							current.status === "in_progress")
-					) {
-						const controller = await relay();
-						await controller.processWebhook(
-							Buffer.from(input.rawBody),
-							input.event,
-						);
-						return "foreign-runner" as const;
-					}
+					return "foreign-runner" as const;
+				}
 			} catch {
 				// GitHub read failure: fall through to duplicate recheck.
 			}
@@ -439,8 +441,7 @@ export function createHostedRelayRuntime(options: {
 									lease.provider === "kubernetes" ||
 									lease.provider === "hobo-box-worker";
 								if (boxWorker) {
-									const at =
-										options.now?.() ?? new Date().toISOString();
+									const at = options.now?.() ?? new Date().toISOString();
 									const custody = await adoptRunnerAssignment(
 										options.store,
 										options.github,
@@ -453,9 +454,7 @@ export function createHostedRelayRuntime(options: {
 									} else if (
 										custody.assignment?.status === "completed" &&
 										custody.assignment.jobId ===
-											(lease.actualJobId > 0
-												? lease.actualJobId
-												: lease.jobId)
+											(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId)
 									) {
 										assignedJobCompleted = true;
 									} else if (
@@ -465,9 +464,7 @@ export function createHostedRelayRuntime(options: {
 										) === TRUNK_RUNNER_LABEL
 									) {
 										const jobId =
-											lease.actualJobId > 0
-												? lease.actualJobId
-												: lease.jobId;
+											lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 										try {
 											const job = await getJob(
 												options.github,

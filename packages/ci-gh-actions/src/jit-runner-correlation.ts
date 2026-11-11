@@ -1,8 +1,5 @@
-import type { GithubTransport, GithubRunWorkflowJob } from "./github.js";
-import {
-	listInProgressWorkflowRunIds,
-	listRunWorkflowJobs,
-} from "./github.js";
+import type { GithubRunWorkflowJob, GithubTransport } from "./github.js";
+import { listInProgressWorkflowRunIds, listRunWorkflowJobs } from "./github.js";
 
 /** GitHub job statuses that keep a JIT runner registered and busy. */
 export const RUNNER_HELD_JOB_STATUSES = new Set([

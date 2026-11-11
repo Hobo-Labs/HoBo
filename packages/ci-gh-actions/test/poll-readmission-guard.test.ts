@@ -133,7 +133,10 @@ it("does not yield custody while the JIT runner is serving another active job", 
 				});
 			if (path.startsWith("/repos/org/repo/actions/runs?status=in_progress"))
 				return Response.json({ workflow_runs: [{ id: 22 }] });
-			if (path === "/repos/org/repo/actions/runs/22/jobs?filter=latest&per_page=100")
+			if (
+				path ===
+				"/repos/org/repo/actions/runs/22/jobs?filter=latest&per_page=100"
+			)
 				return Response.json({
 					jobs: [
 						{
@@ -145,7 +148,10 @@ it("does not yield custody while the JIT runner is serving another active job", 
 						},
 					],
 				});
-			if (path === "/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100")
+			if (
+				path ===
+				"/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100"
+			)
 				return Response.json({
 					jobs: [
 						{
@@ -286,7 +292,10 @@ it("does not queue again when dispatching lease already owns the JIT runner", as
 	body.workflow_job.runner_name = leaseRunner;
 	const queue = vi.spyOn(store, "queue");
 	expect(
-		await relay.processWebhook(Buffer.from(JSON.stringify(body)), "workflow_job"),
+		await relay.processWebhook(
+			Buffer.from(JSON.stringify(body)),
+			"workflow_job",
+		),
 	).toBe("duplicate");
 	expect(queue).not.toHaveBeenCalled();
 	expect(await store.activeLeases()).toHaveLength(1);

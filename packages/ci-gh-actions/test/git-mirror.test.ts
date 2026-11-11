@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -140,7 +146,10 @@ describe("createBoxGitMirror", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
 		roots.push(root);
 		const { source, first } = commitSource(root);
-		const mirrorPath = boxGitMirrorPath(join(root, "mirrors"), "Hobo-Labs/HoBo");
+		const mirrorPath = boxGitMirrorPath(
+			join(root, "mirrors"),
+			"Hobo-Labs/HoBo",
+		);
 		mkdirSync(dirname(mirrorPath), { recursive: true });
 		execFileSync("git", ["clone", "--bare", source, mirrorPath]);
 		execFileSync("git", [

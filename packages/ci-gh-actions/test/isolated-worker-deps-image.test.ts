@@ -106,6 +106,16 @@ function fakeDocker() {
 	};
 }
 
+function completedJobResponse(runnerName = "hobo-runner") {
+	return Response.json({
+		id: 1,
+		run_id: 11,
+		status: "completed",
+		labels: ["hobo"],
+		runner_name: runnerName,
+	});
+}
+
 const github: GithubTransport = {
 	request: async () =>
 		Response.json(
@@ -297,17 +307,19 @@ describe("isolated worker deps image selection", () => {
 		const lease = await reservedLease("hobo-labs/hobo", deadline);
 		const docker = fakeDocker();
 		let clock = NOW;
-		vi.spyOn(github, "request").mockImplementation(async (_installationId, path) => {
-			if (
-				stage === "registration" &&
-				path.includes("/actions/runners/generate-jitconfig")
-			)
-				clock = deadline;
-			return Response.json(
-				{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
-				{ status: 201 },
-			);
-		});
+		vi.spyOn(github, "request").mockImplementation(
+			async (_installationId, path) => {
+				if (
+					stage === "registration" &&
+					path.includes("/actions/runners/generate-jitconfig")
+				)
+					clock = deadline;
+				return Response.json(
+					{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
+					{ status: 201 },
+				);
+			},
+		);
 		vi.mocked(docker.driver.writeSecret).mockImplementation(async () => {
 			if (stage === "secret") clock = deadline;
 		});
@@ -531,14 +543,13 @@ describe("isolated worker deps image selection", () => {
 		await ctl.host.launch(lease.id);
 		expect((await store?.get(lease.id))?.state).toBe("running");
 		clock = deadline;
-		vi.spyOn(github, "request").mockResolvedValue(
-			Response.json({
-				id: 1,
-				run_id: 11,
-				status: "completed",
-				labels: ["hobo"],
-			}),
-		);
+		vi.spyOn(github, "request").mockImplementation(async (_id, path) => {
+			if (path.includes("/actions/jobs/")) return completedJobResponse();
+			return Response.json(
+				{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
+				{ status: 201 },
+			);
+		});
 		await ctl.host.reconcile(lease.id, true);
 		expect(docker.driver.stop).toHaveBeenCalledOnce();
 		expect(docker.driver.remove).toHaveBeenCalledOnce();
@@ -572,14 +583,13 @@ describe("isolated worker deps image selection", () => {
 			},
 		]);
 		const later = "2026-11-02T12:06:00Z";
-		vi.spyOn(github, "request").mockResolvedValue(
-			Response.json({
-				id: 1,
-				run_id: 11,
-				status: "completed",
-				labels: ["hobo"],
-			}),
-		);
+		vi.spyOn(github, "request").mockImplementation(async (_id, path) => {
+			if (path.includes("/actions/jobs/")) return completedJobResponse();
+			return Response.json(
+				{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
+				{ status: 201 },
+			);
+		});
 		const ctl = controller(docker.driver, undefined, () => later);
 		await ctl.reconcileLeases();
 		expect(docker.driver.stop).toHaveBeenCalledWith(

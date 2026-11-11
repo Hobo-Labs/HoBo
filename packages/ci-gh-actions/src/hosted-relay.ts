@@ -24,7 +24,6 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
-import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
@@ -36,10 +35,10 @@ import {
 import { heldRoutingOptions } from "./held-routing.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
+import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
-import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
@@ -61,6 +60,7 @@ import {
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
@@ -1101,10 +1101,7 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
-						if (
-							trunk &&
-							decision.reason === "host-available"
-						)
+						if (trunk && decision.reason === "host-available")
 							waitingTrunk.add(this.reportTrunkWait(job, "headroom"));
 						continue;
 					}

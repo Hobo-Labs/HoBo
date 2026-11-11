@@ -3,7 +3,7 @@ import { createPollIngestCoalesce } from "../src/isolated-worker/poll-ingest-coa
 
 describe("poll ingest coalesce", () => {
 	it("does not back off duplicate ingest (store may need duplicate-recheck)", () => {
-		let clock = 0;
+		const clock = 0;
 		const coalesce = createPollIngestCoalesce({
 			now: () => clock,
 			minMs: 10_000,

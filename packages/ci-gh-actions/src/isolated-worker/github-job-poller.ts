@@ -404,7 +404,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// conflicting replay of the old one.
 						const runnerKey =
 							runnerCustody(job.runner_name) === "foreign"
-								? `-${createHash("sha256").update(job.runner_name ?? "").digest("hex").slice(0, 12)}`
+								? `-${createHash("sha256")
+										.update(job.runner_name ?? "")
+										.digest("hex")
+										.slice(0, 12)}`
 								: "";
 						let result: Awaited<ReturnType<typeof options.ingest>>;
 						try {

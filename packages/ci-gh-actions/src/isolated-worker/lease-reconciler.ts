@@ -1,10 +1,10 @@
 import { create } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
 import type { HostedRelayStore } from "../hosted-relay.js";
+import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
 import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
-import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import {
 	type OrphanJobCandidate,
 	orphanJobCandidateForLease,
@@ -389,10 +389,7 @@ export function createWorkerLeaseReconciler(options: {
 				continue;
 			} else {
 				reason = "container-missing";
-				if (
-					reconcileOptions.draining &&
-					leaseHoldDuringWorkerDrain(lease)
-				) {
+				if (reconcileOptions.draining && leaseHoldDuringWorkerDrain(lease)) {
 					liveLeaseIds.add(lease.id);
 					continue;
 				}
@@ -405,10 +402,7 @@ export function createWorkerLeaseReconciler(options: {
 			}
 			const current = await options.store.get(lease.id);
 			if (current && ACTIVE_STATES.has(current.state)) continue;
-			if (
-				reason === "container-missing" &&
-				!reconcileOptions.draining
-			)
+			if (reason === "container-missing" && !reconcileOptions.draining)
 				await options.afterRelease?.(lease);
 			const orphan =
 				reason !== "container-exited" && lease.runnerName === `hobo-${lease.id}`
@@ -452,9 +446,7 @@ export function createWorkerLeaseReconciler(options: {
 				const leaseId = leaseIdFromBoxRunnerName(container.name);
 				if (options.containerCustody) {
 					const custodyInput =
-						leaseId === undefined
-							? { container }
-							: { container, leaseId };
+						leaseId === undefined ? { container } : { container, leaseId };
 					if (await options.containerCustody(custodyInput)) continue;
 				} else if (!leaseId) {
 					continue;

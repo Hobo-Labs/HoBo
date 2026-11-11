@@ -73,9 +73,7 @@ export async function fetchMergeQueuePositions(
 	if (!response.ok) return undefined;
 	const body = MergeQueueGraphql.safeParse(await response.json());
 	if (!body.success || body.data.errors?.length) return undefined;
-	const nodes =
-		body.data.data.repository?.mergeQueue?.entries.nodes ??
-		([]);
+	const nodes = body.data.data.repository?.mergeQueue?.entries.nodes ?? [];
 	const byHeadSha = new Map<string, number>();
 	for (const node of nodes) {
 		const oid = node.headCommit?.oid;

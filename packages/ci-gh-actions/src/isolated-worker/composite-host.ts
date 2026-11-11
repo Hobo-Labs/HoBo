@@ -12,8 +12,7 @@ export function createCompositeIsolatedHost(options: {
 	if (!options.sandbox && !options.worker) return undefined;
 	return {
 		async isLaunchParked(job) {
-			if (await options.worker?.isLaunchParked?.(job))
-				return true;
+			if (await options.worker?.isLaunchParked?.(job)) return true;
 			if (await options.sandbox?.isLaunchParked?.(job)) return true;
 			return false;
 		},

@@ -19,13 +19,8 @@ import {
 	listRunWorkflowJobs,
 } from "../github.js";
 import { heldRoutingOptions } from "../held-routing.js";
-import { runnerCustody } from "../job-runner-custody.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
-import {
-	type JobPickupMetadataCache,
-	jobPickupMetadataKey,
-} from "../job-pickup.js";
 import {
 	clearJitEmptyExit,
 	type JitEmptyExitState,
@@ -38,12 +33,17 @@ import {
 	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
 } from "../jit-runner-correlation.js";
-import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
+import {
+	type JobPickupMetadataCache,
+	jobPickupMetadataKey,
+} from "../job-pickup.js";
+import { runnerCustody } from "../job-runner-custody.js";
 import {
 	jitRunnerRegistrationLabels,
 	RUNNER_LABEL,
 	type RunnerLabel,
 } from "../runner-labels.js";
+import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
 import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
@@ -603,7 +603,7 @@ export function createIsolatedContainerController(options: {
 				);
 				if (runnerHoldsActiveJob(assignment)) return;
 			} catch {
-				return;
+				// Fall through when assignment cannot be resolved.
 			}
 		}
 		const startedAt = Date.now();
@@ -1024,11 +1024,10 @@ export function createIsolatedContainerController(options: {
 				);
 				if (runnerHoldsActiveJob(assignment)) return;
 			} catch {
-				return;
+				// Fall through to getJob when assignment cannot be resolved.
 			}
 		}
-		const servedJobId =
-			lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+		const servedJobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 		const original = await getJob(
 			options.github,
 			lease.installationId,
@@ -1041,11 +1040,11 @@ export function createIsolatedContainerController(options: {
 			lease.jobId,
 			lease.runAttempt,
 		);
-		if (original.status !== "queued") clearJitEmptyExit(emptyExitLoops, emptyKey);
+		if (original.status !== "queued")
+			clearJitEmptyExit(emptyExitLoops, emptyKey);
 		// Fleet mesh: another `hobo` runner may hold the job; withdraw instead of re-admitting.
 		// Empty JIT exit: job still queued on GitHub — withdraw local demand; poll re-ingest later.
-		const emptyJitExit =
-			original.status === "queued" && custody !== "foreign";
+		const emptyJitExit = original.status === "queued" && custody !== "foreign";
 		const unmet: ReturnType<typeof requeueJob> | undefined = undefined;
 		if (original.status === "queued" && custody === "foreign") {
 			await options.store.withdrawQueuedJob?.(
@@ -1359,9 +1358,7 @@ export function createIsolatedContainerController(options: {
 							options.github,
 							claiming.installationId,
 							claiming.repository,
-							claiming.actualJobId > 0
-								? claiming.actualJobId
-								: claiming.jobId,
+							claiming.actualJobId > 0 ? claiming.actualJobId : claiming.jobId,
 						);
 					} catch {
 						/* registration may still fail closed into uncertain */
@@ -1658,7 +1655,7 @@ export function createIsolatedContainerController(options: {
 						);
 						if (runnerHoldsActiveJob(assignment)) return;
 					} catch {
-						return;
+						if (!forceStop) return;
 					}
 				}
 				if (!(await isolatedSessionPresent(lease))) {
@@ -1754,7 +1751,7 @@ export function createIsolatedContainerController(options: {
 							);
 							if (runnerHoldsActiveJob(assignment)) return;
 						} catch {
-							return;
+							// Local exit marker is sufficient to retire the session; continue.
 						}
 					}
 					const emptyKey = jitEmptyExitKey(
@@ -1763,11 +1760,7 @@ export function createIsolatedContainerController(options: {
 						lease.runAttempt,
 					);
 					if (!eagerEmptyExitBackoff.has(lease.id)) {
-						recordJitEmptyExit(
-							emptyExitLoops,
-							emptyKey,
-							Date.parse(now()),
-						);
+						recordJitEmptyExit(emptyExitLoops, emptyKey, Date.parse(now()));
 						eagerEmptyExitBackoff.add(lease.id);
 					}
 					try {
@@ -1810,7 +1803,7 @@ export function createIsolatedContainerController(options: {
 					);
 					if (runnerHoldsActiveJob(assignment)) return;
 				} catch {
-					return;
+					if (!stop) return;
 				}
 			}
 			let removed = false;
@@ -1843,7 +1836,7 @@ export function createIsolatedContainerController(options: {
 				} catch {
 					throw new Error("container stop uncertain");
 				}
-				await settleStopped(lease);
+					await settleStopped(lease);
 				if (containerFailed && !deadWhileRunning) detectOrphanJob(lease);
 			} finally {
 				if (removed) await cleanupWorkDirectory(lease);

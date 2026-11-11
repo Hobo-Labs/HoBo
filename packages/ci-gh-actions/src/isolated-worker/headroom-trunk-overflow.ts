@@ -1,7 +1,7 @@
 import { type Job, type Lease, memoryAdmitHeadroom } from "@hobo/ci";
 import type { GithubTransport } from "../github.js";
 import { getJob, rerunWorkflowRun } from "../github.js";
-import { TRUNK_RUNNER_LABEL, servedRunnerLabel } from "../runner-labels.js";
+import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
 import { memoryRequestForStoredJob } from "./memory-classes.js";
 
@@ -37,13 +37,10 @@ export type HeadroomTrunkOverflowStore = Readonly<{
 		job: Job,
 		at: string,
 		revision: number,
-	): Promise<boolean | void>;
+	): Promise<boolean | undefined>;
 }>;
 
-export type TrunkWaitCache = Map<
-	string,
-	{ sinceMs: number; logged: boolean }
->;
+export type TrunkWaitCache = Map<string, { sinceMs: number; logged: boolean }>;
 
 const DEFAULT_OVERFLOW_AFTER_MS = 120_000;
 const OVERFLOW_COOLDOWN_MS = 15 * 60_000;
@@ -102,7 +99,7 @@ export function createHeadroomTrunkOverflow(options: {
 			const cooldownKey = trunkWaitKey(job);
 			const last = cooldown.get(cooldownKey);
 			if (last !== undefined && now() - last < OVERFLOW_COOLDOWN_MS) continue;
-			let current;
+			let current: Awaited<ReturnType<typeof getJob>>;
 			try {
 				current = await getJob(
 					options.github,

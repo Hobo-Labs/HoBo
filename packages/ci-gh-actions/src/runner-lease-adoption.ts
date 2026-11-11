@@ -2,9 +2,9 @@ import { ACTIVE_STATES, type Lease } from "@hobo/ci";
 import type { GithubTransport } from "./github.js";
 import type { HostedRelayStore } from "./hosted-relay.js";
 import {
+	type ResolvedRunnerAssignment,
 	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
-	type ResolvedRunnerAssignment,
 } from "./jit-runner-correlation.js";
 
 export type RunnerCustodyAdoption = Readonly<{
@@ -43,9 +43,10 @@ export async function adoptRunnerAssignment(
 	}
 	const holdsActive = runnerHoldsActiveJob(assignment);
 	if (!assignment) return { lease, holdsActive: false };
-	if (lease.actualJobId > 0 && lease.actualJobId !== assignment.jobId)
+	const servedJobId = assignment.jobId;
+	if (lease.actualJobId > 0 && lease.actualJobId !== servedJobId)
 		return { lease, assignment, holdsActive };
-	if (lease.actualJobId === assignment.jobId)
+	if (lease.actualJobId === servedJobId)
 		return { lease, assignment, holdsActive };
 	let updated: Lease | undefined;
 	try {
@@ -53,9 +54,9 @@ export async function adoptRunnerAssignment(
 			lease.id,
 			[...ACTIVE_STATES],
 			(entry) => {
-				if (entry.actualJobId > 0 && entry.actualJobId !== assignment!.jobId)
+				if (entry.actualJobId > 0 && entry.actualJobId !== servedJobId)
 					throw new Error("runner job assignment conflict");
-				entry.actualJobId = assignment!.jobId;
+				entry.actualJobId = servedJobId;
 			},
 			"ci.JobObserved",
 			at,

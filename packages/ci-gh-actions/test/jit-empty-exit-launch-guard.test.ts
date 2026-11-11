@@ -11,14 +11,14 @@ import {
 } from "@hobo/ci";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GithubTransport } from "../src/github.js";
+import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
+import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import {
 	type JitEmptyExitState,
 	jitEmptyExitKey,
 	recordJitEmptyExit,
 } from "../src/jit-empty-exit-backoff.js";
-import type { GithubTransport } from "../src/github.js";
-import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
-import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 
 function deniedGithub(): GithubTransport {
 	return {
