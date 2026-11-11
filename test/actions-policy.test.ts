@@ -122,6 +122,16 @@ test("feature/hobo-code gets the PR and push gates but publishes nothing", async
 		hoboCi,
 		/\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\)/u,
 	);
+	// Main full gate (finish) runs for every push and fails when the workspace
+	// shards were skipped, so the shards run for the feature push as well.
+	const shards = hoboCi.slice(
+		hoboCi.indexOf("\n  main_workspace_tests:\n"),
+		hoboCi.indexOf("\n  main_gate_finish:\n"),
+	);
+	assert.match(
+		shards,
+		/^ {4}if: >-\n {6}!cancelled\(\) && needs\.main-gate\.result == 'success' && \(\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\) \|\|\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\) \|\|$/mu,
+	);
 	assert.match(hoboCi, /^ {6}group: \$\{\{ github\.workflow \}\}-main-gate$/mu);
 	assert.doesNotMatch(hoboCi, /-main-gate\$\{\{/u);
 	// The deps-image GHCR push stays main-only.

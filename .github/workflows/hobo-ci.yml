@@ -1025,9 +1025,12 @@ jobs:
   main_workspace_tests:
     name: Main workspace test shard ${{ matrix.shard }}
     needs: [route, main-gate]
+    # A feature/hobo-code push runs the shards too: Main full gate (finish) runs for every
+    # push and fails when they were skipped.
     if: >-
       !cancelled() && needs.main-gate.result == 'success' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/feature/hobo-code') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
     strategy:
