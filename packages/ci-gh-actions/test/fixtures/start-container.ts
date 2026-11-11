@@ -1,8 +1,17 @@
-import { setTimeout as delay } from "node:timers/promises";
-
 const REAPER_UNREACHABLE = "Failed to connect to Reaper";
 const ATTEMPTS = 4;
 const BETWEEN_ATTEMPTS_MS = 3_000;
+
+/** `timers/promises` setTimeout does not honor Vitest fake timers; use global setTimeout. */
+const sleep = (ms: number) =>
+	new Promise<void>((resolve) => {
+		setTimeout(resolve, ms);
+	});
+
+export type StartContainerOptions = Readonly<{
+	/** Overrides reaper-retry backoff (tests use 0; live Testcontainers keeps 3s). */
+	betweenAttemptsMs?: number;
+}>;
 
 /**
  * Starts a Testcontainers container, starting again when the shared reaper
@@ -20,7 +29,10 @@ const BETWEEN_ATTEMPTS_MS = 3_000;
  */
 export async function startContainer<Started>(
 	build: () => { start(): Promise<Started> },
+	options?: StartContainerOptions,
 ): Promise<Started> {
+	const betweenAttemptsMs =
+		options?.betweenAttemptsMs ?? BETWEEN_ATTEMPTS_MS;
 	for (let attempt = 1; ; attempt++) {
 		try {
 			return await build().start();
@@ -28,7 +40,7 @@ export async function startContainer<Started>(
 			const reaperUnreachable =
 				error instanceof Error && error.message.includes(REAPER_UNREACHABLE);
 			if (!reaperUnreachable || attempt === ATTEMPTS) throw error;
-			await delay(BETWEEN_ATTEMPTS_MS);
+			if (betweenAttemptsMs > 0) await sleep(betweenAttemptsMs);
 		}
 	}
 }

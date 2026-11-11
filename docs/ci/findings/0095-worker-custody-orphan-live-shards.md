@@ -22,6 +22,10 @@ Main Fabric run [42980971675](https://github.com/Hobo-Labs/HoBo/actions/runs/429
 - Pin **`originalRunId`** when custody transfers so assignment scans prefer the served run.
 - Orphan reconcile: strengthen **`containerCustody`** GitHub liveness; skip Docker **`removing`**; dedupe in-flight removals.
 
+## Follow-up (Fabric 42985846610)
+
+Shard 0 on box `hobo-9a6eef27` failed `start-container.test.ts` (10s Vitest timeout, ~16s wall): four reaper retries used `node:timers/promises` delay, which ignores fake timers (~9s real backoff). Injectable `betweenAttemptsMs` (0 in unit tests) and global `setTimeout` for timer-driven cases.
+
 ## Proof
 
 - `packages/ci-gh-actions/test/runner-custody-live-work.test.ts`
