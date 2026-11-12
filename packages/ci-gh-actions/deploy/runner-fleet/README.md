@@ -85,12 +85,18 @@ not placed. Claims narrow, never grant.
 
 These are refused, not faked:
 
-- **No runner-host realizer.** `hobo deploy agent run` on a runner host refuses
-  with `compose-realizer-missing`: `@hobo/cd` has no realizer that applies a
-  runner image Set to a box worker, mesh node or local runner (pull the image,
-  drain, restart the controller). Until one exists the fleet records Freight
-  and fans out to nobody; hosts are upgraded the way
-  [the runner queue guide](../../../ci/RUNNER-QUEUE.md) describes.
+- **The runner-host realizer is not registered yet.** It exists
+  (`createRunnerHostResolver` in
+  [`src/runner-host-realizer.ts`](../../src/runner-host-realizer.ts): pull by
+  digest, drain, swap, verify, roll back; see the package README, "Runner-host
+  realizer"), but the `hobo` composition does not yet register it for these
+  Camps or wire the host's container driver and job ports into it, so
+  `hobo deploy agent run` on a runner host still refuses with
+  `compose-realizer-missing`. Until it does the fleet records Freight and fans
+  out to nobody; hosts are upgraded the way
+  [the runner queue guide](../../../ci/RUNNER-QUEUE.md) describes. It also
+  assumes the controller runs as a container; today's box worker daemon runs
+  as a process (`restart-worker.sh`).
 - **No ingestion of mesh conditions.** Nothing yet calls `CampInventory.observe`
   with `runnerFleetCampObservations`; there is no `hobo deploy camp observe`.
 - **Placement fails closed** with `rail-providers-unknown` until the Station's
