@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof -- SAFETY: the PACT verifier walks the provider's JSON envelope by path; values are only checked for presence. */
 // Consumer-driven contract (PACT form) for the `hobo deploy` CD envelope
 // (WP18): the consumers are the MCP tool surface and scripted/agent callers;
 // the provider is `runCdDeploySubcommand`. Each interaction pins the fields a

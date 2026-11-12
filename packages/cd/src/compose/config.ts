@@ -168,7 +168,7 @@ export function parseCdComposeConfig(
 		const region = nonEmpty(env[CD_COMPOSE_ENV.s3Region]);
 		const credentialRef = nonEmpty(env[CD_COMPOSE_ENV.s3CredentialRef]);
 		if (
-			!/^https:\/\//.test(s3Endpoint) ||
+			!s3Endpoint.startsWith("https://") ||
 			!bucket ||
 			!region ||
 			!credentialRef

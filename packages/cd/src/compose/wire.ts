@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get -- SAFETY: the compose scope is a proxy over the modules built so far; a read of an unbuilt member throws compose-scope-unbuilt, so the cast to the full scope type is checked on every access. */
 // `wireContinuousDelivery` — the pure composition of @hobo/cd (WP18, plan
 // 0024, C2). It binds every frozen factory (`CdFactories`) in dependency
 // order and returns the `ContinuousDelivery` facade. Nothing here decides

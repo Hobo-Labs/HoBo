@@ -129,7 +129,7 @@ export function createDeployCommand(
 		run: async ({ args, flags, context }) => {
 			if (args[0]?.startsWith("hosting-")) return hostingSubcommand(deps, args);
 			// SAFETY: assertion required at this I/O or test boundary.
-			const f = flags as unknown as JsonObject;
+			const f = flags as JsonObject;
 			if (args.length === 0 || args[0] === "help" || f.help === true)
 				return {
 					ok: true,

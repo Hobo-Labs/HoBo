@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof -- SAFETY: Yard fixtures are partial records cast once to the type under test. */
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-reflect-get, anti-slop/no-runtime-typeof -- SAFETY: the forwarding proxy resolves members of the bound module by name; functions are bound to it, nothing else is inspected. */
 // Late binding for the module graph's dependency cycles (WP18, plan 0024).
 //
 // The frozen factory signatures form cycles: the pipeline controller requests

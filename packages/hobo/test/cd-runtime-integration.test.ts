@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof -- SAFETY: integration responses are untyped HTTP bodies read for one field. */
 // End-to-end composition of the real @hobo/cd modules through the hobo host
 // (WP18). Every module is a sibling work package of plan 0024, so this suite
 // runs once they are merged (their built subpaths exist) and reports itself

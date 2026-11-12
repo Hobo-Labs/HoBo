@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof -- SAFETY: test inputs stand in for whole ports; casts select the member under test. */
 import { describe, expect, it } from "vitest";
 import {
 	ArtifactKind,

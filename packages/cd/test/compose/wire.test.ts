@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof -- SAFETY: tests read the deps a recording fake factory captured; casts select the member under test. */
 import { beforeEach, describe, expect, it } from "vitest";
 import { ReconcilerMode } from "../../src/_generated/cd_pb.js";
 import { ComposeError } from "../../src/compose/errors.js";

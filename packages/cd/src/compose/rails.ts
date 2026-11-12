@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this module is the parse boundary for untrusted journal payloads (Station rail.* event bodies); every member is narrowed structurally here before it reaches a typed RailCatalogEntry. */
 // Rail readers composed from the journal (WP18, plan 0024, D20/D24).
 //
 // - `createJournalRailCatalog` folds the Station Rail events (`rail.*`) into

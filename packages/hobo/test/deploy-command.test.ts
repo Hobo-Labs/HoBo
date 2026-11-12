@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof, eslint/no-unsafe-optional-chaining -- SAFETY: tests read recorded call arguments of a fake facade; casts select the member under test. */
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -645,7 +646,7 @@ describe("operator surface invariants", () => {
 
 	it("no fixture is reachable outside --simulate (source scan)", () => {
 		const dir = join(import.meta.dirname, "../src");
-		const files = readdirSync(dir).filter((f) => /\.ts$/.test(f));
+		const files = readdirSync(dir).filter((f) => f.endsWith(".ts"));
 		for (const file of files) {
 			const source = readFileSync(join(dir, file), "utf8");
 			expect(source, file).not.toMatch(

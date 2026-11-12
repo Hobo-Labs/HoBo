@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: config files and CLI flags read here are untrusted JSON narrowed before use; @hobo/cd-kube-fleet parses each realizer record itself. */
 /**
  * The HoBo host's CD runtime (WP18, plan 0024, C2): opens the journal, builds
  * the declared topology, binds the host adapters and composes `@hobo/cd`

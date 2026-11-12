@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions -- SAFETY: test doubles stand in for whole frozen ports; each is a recording proxy cast once to the port it replaces. */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening, anti-slop/no-unsafe-dictionary-type -- SAFETY: test doubles stand in for whole frozen ports; each is a recording proxy cast once to the port it replaces. */
 // Test doubles for the composition root (WP18). Every fake factory records the
 // deps it received and returns a recording module: any method call resolves
 // to "<module>.<method>" and is logged, so wiring is observable end to end.

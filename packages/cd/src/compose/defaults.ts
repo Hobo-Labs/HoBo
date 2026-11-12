@@ -148,6 +148,7 @@ const MODE_KEY: ReadonlyMap<
 
 /** The WP6/WP7/WP10 adapters bound to host inputs (binds at merge, plan 0024). */
 export function defaultCdAdapters(host: CdHostInputs): CdComposeAdapters {
+	const routing = host.routing;
 	return Object.freeze({
 		resolver: (s) =>
 			createPlanningResolver({
@@ -187,13 +188,10 @@ export function defaultCdAdapters(host: CdHostInputs): CdComposeAdapters {
 				...s.base,
 				...(host.flags !== undefined ? { flags: host.flags } : undefined),
 			}),
-		...(host.routing !== undefined
+		...(routing !== undefined
 			? {
 					traffic: (s: CdComposeScope) =>
-						createCutoverTrafficShifter({
-							routing: host.routing as NonNullable<CdHostInputs["routing"]>,
-							now: s.base.now,
-						}),
+						createCutoverTrafficShifter({ routing, now: s.base.now }),
 				}
 			: undefined),
 		drift: () => createDriftPolicy(host.drift ?? {}),

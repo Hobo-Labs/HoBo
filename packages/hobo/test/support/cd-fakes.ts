@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions -- SAFETY: a recording stand-in for the whole frozen ContinuousDelivery facade, cast once; members the tests do not stub resolve to a recorded call. */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: a recording stand-in for the whole frozen ContinuousDelivery facade, cast once; members the tests do not stub resolve to a recorded call. */
 // A recording ContinuousDelivery facade for the `hobo deploy` / `hobo
 // incident` tests (WP18). Each module is a proxy: a stubbed method returns its
 // stub, any other method records the call and returns an empty list.

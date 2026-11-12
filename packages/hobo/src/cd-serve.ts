@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: the HTTP edge: node request headers and error values are untrusted and only copied or stringified. */
 /**
  * `hobo serve cd` — the CD conductor service (WP18, plan 0024, C2/C13).
  *

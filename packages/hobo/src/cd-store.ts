@@ -36,7 +36,7 @@ function sqlite(
 	const journal = new SqliteJournal(driver, {
 		clock: { now: () => new Date(clock.now()).toISOString() },
 	});
-	// SAFETY: SqliteJournal implements the DurableEventStore surface (storage-sqlite journal.ts).
+	// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: SqliteJournal implements the DurableEventStore surface (storage-sqlite journal.ts) without declaring it.
 	return journal as unknown as DurableEventStore;
 }
 

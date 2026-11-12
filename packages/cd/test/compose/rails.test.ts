@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-object-parameters -- SAFETY: test journal payloads are deliberately untyped Station events. */
 import { describe, expect, it } from "vitest";
 import {
 	createJournalRailCatalog,

@@ -56,7 +56,7 @@ export function createIncidentCommand(
 	return {
 		run: async ({ args, flags, context, emitProgress }) => {
 			// SAFETY: assertion required at this I/O or test boundary.
-			const f = flags as unknown as JsonObject;
+			const f = flags as JsonObject;
 			const sub = args[0] ?? "status";
 			const format = parseCdFormat(f);
 			const fmt = format.ok ? format.format : "text";
