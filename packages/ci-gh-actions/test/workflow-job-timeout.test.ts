@@ -13,9 +13,9 @@ describe("workflowJobTimeoutMinutes", () => {
 
 describe("effectiveIsolatedTimeoutMs", () => {
 	it("raises routing budget when workflow timeout is longer", () => {
-		expect(
-			effectiveIsolatedTimeoutMs(10, "Main workspace test shard 3"),
-		).toBe(20 * 60_000);
+		expect(effectiveIsolatedTimeoutMs(10, "Main workspace test shard 3")).toBe(
+			20 * 60_000,
+		);
 	});
 
 	it("keeps reserved minutes when no workflow mapping exists", () => {

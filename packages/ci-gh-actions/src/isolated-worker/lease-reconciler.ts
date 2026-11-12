@@ -4,7 +4,6 @@ import type { GithubTransport } from "../github.js";
 import type { HostedRelayStore } from "../hosted-relay.js";
 import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
-import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 import {
 	mergeDrainInFlightCount,
 	workerOfferKey,
@@ -19,6 +18,7 @@ import {
 	type OrphanJobCandidate,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 export type WorkerLeaseReconciliationStore = Pick<
 	HostedRelayStore,
@@ -460,10 +460,7 @@ export function createWorkerLeaseReconciler(options: {
 					lease.reservedMinutes,
 					lease.jobName,
 				);
-				const enforcedTimeoutMs = Math.max(
-					container.timeoutMs ?? 0,
-					budgetMs,
-				);
+				const enforcedTimeoutMs = Math.max(container.timeoutMs ?? 0, budgetMs);
 				if (
 					container.state === "running" &&
 					container.createdAtMs !== undefined &&

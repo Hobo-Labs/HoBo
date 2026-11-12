@@ -53,7 +53,6 @@ import {
 	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
 	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
 } from "./container-timeout.js";
-import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
@@ -88,6 +87,7 @@ import {
 } from "./stall-job-recovery.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
 import type { StoragePeaks } from "./storage-peaks.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 const WORK_TARGET = "/opt/actions-runner/_hobo_work";
