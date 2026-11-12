@@ -1068,8 +1068,13 @@ jobs:
           remote-mode: remote:rw
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Compute deps expected key
+        id: deps-expected-key
+        run: echo "key=$(node --no-warnings scripts/ci/deps-key.mts)" >> "$GITHUB_OUTPUT"
       - name: Check deps layer match
         id: deps-layer
+        env:
+          HOBO_CI_DEPS_EXPECTED_KEY: ${{ steps.deps-expected-key.outputs.key }}
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - name: Verify deps layer sibling links
         if: steps.deps-layer.outputs.match == 'true'
@@ -1122,9 +1127,8 @@ jobs:
       - name: S0 gate set
         timeout-minutes: 20
         env:
-          # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
-          # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
-          HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
+          # Three parallel relevant-check lanes on the 4 GiB main trunk class (finding 135).
+          HOBO_RELEVANT_CHECK_CONCURRENCY: "3"
           SCOPE: ${{ steps.main-base.outputs.scope }}
           BASE: ${{ steps.main-base.outputs.base }}
         run: |
@@ -1159,7 +1163,9 @@ jobs:
     name: Main workspace test shard ${{ matrix.shard }}
     needs: [ci-runner-image, ci-deps-image, main-gate-plan]
     if: >-
-      !cancelled() && needs.main-gate-plan.result == 'success' && (
+      !cancelled() && needs.main-gate-plan.result == 'success' &&
+      needs.main-gate-plan.outputs.shards != '[]' &&
+      needs.main-gate-plan.outputs.shards != '' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
@@ -1258,7 +1264,7 @@ jobs:
 
   main_gate_finish:
     name: Main full gate (finish)
-    needs: [main-gate, main_workspace_tests]
+    needs: [main-gate, main-gate-plan, main_workspace_tests]
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
@@ -1296,12 +1302,22 @@ jobs:
       - name: Require main gate and workspace shards
         env:
           MAIN_RESULT: ${{ needs.main-gate.result }}
+          PLAN_RESULT: ${{ needs.main-gate-plan.result }}
+          PLAN_SHARDS: ${{ needs.main-gate-plan.outputs.shards }}
           WORKSPACE_RESULT: ${{ needs.main_workspace_tests.result }}
         run: |
           set -euo pipefail
           if [ "$MAIN_RESULT" != "success" ]; then
             echo "Main full gate did not succeed: $MAIN_RESULT" >&2
             exit 1
+          fi
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "Main workspace plan did not succeed: $PLAN_RESULT" >&2
+            exit 1
+          fi
+          if [ "$PLAN_SHARDS" = "[]" ] || [ -z "${PLAN_SHARDS:-}" ]; then
+            echo "No workspace test shards planned"
+            exit 0
           fi
           if [ "$WORKSPACE_RESULT" != "success" ]; then
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
