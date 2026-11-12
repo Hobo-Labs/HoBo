@@ -830,4 +830,197 @@ describe("worker memory admission", () => {
 			}),
 		).toMatchObject({ admitted: false, reason: "memory-budget" });
 	});
+
+	describe("host capacity a shared box really has (run 43207388098)", () => {
+		const startedAt = (agoMs: number, nowMs: number) =>
+			new Date(nowMs - agoMs).toISOString();
+		const NOW = Date.parse("2026-11-12T11:52:23.000Z");
+
+		function shard(jobId: number, leases: readonly MemoryLease[]) {
+			return {
+				jobId,
+				memoryClass: "standard" as const,
+				memoryMb: 4_096,
+				rank: 0,
+				activeLeases: leases,
+				generalLeaseIds: new Set<string>(),
+			};
+		}
+
+		it("checks a second shard against memory the first was just promised", () => {
+			const waits: Record<string, string | number | boolean>[] = [];
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => NOW,
+				volatilityMb: 1_024,
+				// One 4096 MiB job fits (7168 needed); two do not.
+				availableMemoryMb: () => 7_500,
+				log: (event, fields) => {
+					if (event === "hobo_ci_memory_admission_wait") waits.push(fields);
+				},
+			});
+			const active: MemoryLease[] = [];
+			expect(admission.admit(shard(3, active)).admitted).toBe(true);
+			// The relay holds the reservation before any container exists.
+			active.push({
+				id: "shard-3",
+				jobId: 3,
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "reserved",
+			});
+			expect(admission.admit(shard(6, active))).toMatchObject({
+				admitted: false,
+				reason: "memory-headroom",
+			});
+			expect(waits.at(-1)).toMatchObject({
+				availableMb: 7_500,
+				requiredMb: 7_168,
+				committedMb: 4_096,
+			});
+		});
+
+		it("keeps counting a started job's memory while it grows into it", () => {
+			let nowMs = NOW;
+			let availableMb = 9_000;
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => nowMs,
+				volatilityMb: 1_024,
+				memoryRampMs: 120_000,
+				availableMemoryMb: () => availableMb,
+			});
+			const running: MemoryLease = {
+				id: "shard-3",
+				jobId: 3,
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "running",
+				sandboxStage: "running",
+				dispatchingAt: startedAt(12_000, NOW),
+			};
+			// Twelve seconds in, as shards 3 and 6 were: 9000 - 3687 - 4096 < 3072.
+			expect(admission.admit(shard(6, [running])).admitted).toBe(false);
+			// Past the ramp, MemAvailable alone shows what the job took.
+			nowMs = NOW + 120_000;
+			availableMb = 7_200;
+			expect(admission.admit(shard(6, [running])).admitted).toBe(true);
+		});
+
+		it("does not count a job's own reservation or a container that is stopping", () => {
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => NOW,
+				volatilityMb: 1_024,
+				availableMemoryMb: () => 7_500,
+			});
+			const own: MemoryLease = {
+				id: "shard-6",
+				jobId: 6,
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "reserved",
+			};
+			const stopping: MemoryLease = {
+				id: "shard-2",
+				jobId: 2,
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "running",
+				sandboxName: "box",
+				sandboxStage: "stopping",
+				dispatchingAt: startedAt(1_000, NOW),
+			};
+			expect(admission.admit(shard(6, [own, stopping])).admitted).toBe(true);
+		});
+
+		it("applies promised memory to warm reservations too", () => {
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => NOW,
+				volatilityMb: 1_024,
+				availableMemoryMb: () => 7_500,
+			});
+			const launching: MemoryLease = {
+				id: "shard-3",
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "dispatching",
+				sandboxName: "box",
+				sandboxStage: "creating",
+			};
+			expect(admission.reserveWarm([launching], 3_072, new Set())).toBe(false);
+			expect(admission.reserveWarm([], 3_072, new Set())).toBe(true);
+		});
+
+		it("needs free memory to last, not one reading in a gap in other work", () => {
+			let nowMs = NOW;
+			let availableMb = 3_000;
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => nowMs,
+				volatilityMb: 1_024,
+				availableWindowMs: 60_000,
+				availableMemoryMb: () => availableMb,
+			});
+			expect(admission.admit(shard(0, [])).admitted).toBe(false);
+			// Other work pauses for a moment: 8000 MiB reads free ten seconds on.
+			nowMs += 10_000;
+			availableMb = 8_000;
+			expect(admission.admit(shard(0, []))).toMatchObject({
+				admitted: false,
+				reason: "memory-headroom",
+			});
+			expect(admission.availableLowWaterMb()).toBe(3_000);
+			// It stays free for the whole window, so the job may start.
+			nowMs += 61_000;
+			expect(admission.admit(shard(0, [])).admitted).toBe(true);
+		});
+
+		it("drops readings from before one of its own jobs ended", () => {
+			let nowMs = NOW;
+			let availableMb = 3_500;
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => nowMs,
+				volatilityMb: 1_024,
+				availableWindowMs: 60_000,
+				availableMemoryMb: () => availableMb,
+			});
+			const running: MemoryLease = {
+				id: "shard-7",
+				jobId: 7,
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "running",
+				sandboxStage: "running",
+			};
+			expect(admission.admit(shard(5, [running])).admitted).toBe(false);
+			// Shard 7 finishes and gives its memory back.
+			nowMs += 5_000;
+			availableMb = 7_600;
+			expect(admission.admit(shard(5, [])).admitted).toBe(true);
+		});
+
+		it("holds a started job's CPUs until the load average can show them", () => {
+			let nowMs = NOW;
+			const admission = createWorkerMemoryAdmission(config(14_336), {
+				now: () => nowMs,
+				hostCores: () => 8,
+				hostPressure: () => ({ atMs: nowMs, loadPerCpu: 0.5 / 8 }),
+				availableMemoryMb: () => 32_000,
+			});
+			const running: MemoryLease = {
+				id: "shard-3",
+				jobId: 3,
+				memoryMb: 4_096,
+				memoryClass: "standard",
+				state: "running",
+				sandboxStage: "running",
+				dispatchingAt: startedAt(12_000, NOW),
+			};
+			// 8 - 0.5 - 4 x e^(-12/60) - 1 = 3.2 CPUs, under the 4 a shard asks for.
+			expect(admission.admit(shard(6, [running]))).toMatchObject({
+				admitted: false,
+				reason: "cpu-contention",
+			});
+			// Three minutes on the load average carries the job; nothing is held twice.
+			nowMs = NOW + 180_000;
+			expect(admission.admit(shard(6, [running])).admitted).toBe(true);
+		});
+	});
 });
