@@ -30,10 +30,7 @@ function shellForStep(block: string, name: string): string {
 
 describe("main_gate_finish workspace prerequisites", () => {
 	const finish = job("main_gate_finish");
-	const script = shellForStep(
-		finish,
-		"Require main gate and workspace shards",
-	);
+	const script = shellForStep(finish, "Require main gate and workspace shards");
 
 	it("waits on main-gate-plan so a failed plan cannot hide behind skipped shards", () => {
 		assert.match(

@@ -26,7 +26,7 @@ Separate from job wall: trunk **pickup** added **~2m** before deps/plan started 
 
 ## Fix (shipped in companion PR)
 
-- Emit **`shards=[]`** when the main plan has no workspace work; accept **skipped** workspace matrix in **Main full gate (finish)**.
+- Emit **`shards=[]`** when the main plan has no workspace work; accept **skipped** workspace matrix in **Main full gate (finish)** only when **`main-gate-plan` succeeded** and **`shards=[]`** (`scripts/test/main-gate-finish.test.ts` covers plan failure + skipped shards).
 - **Skip ci-trace artifact upload** when zero Turbo runs were recorded (export still writes empty OTLP).
 - Main full gate: **`HOBO_CI_DEPS_EXPECTED_KEY`** before `deps-layer check`; **`HOBO_RELEVANT_CHECK_CONCURRENCY=3`** on affected S0.
 
@@ -38,6 +38,6 @@ On a CI-only main push after merge: **no** `Main workspace test shard *` jobs; M
 
 ## Verification
 
-- `scripts/test/dependent-tests.test.ts`, `scripts/test/ci-trace-action.test.ts`, `scripts/test/main-workspace-affected.test.ts`
+- `scripts/test/dependent-tests.test.ts`, `scripts/test/ci-trace-action.test.ts`, `scripts/test/main-workspace-affected.test.ts`, `scripts/test/main-gate-finish.test.ts`
 - `node --test scripts/test/ci-trace.test.ts`
 - **Protobuf / CUE / PACT:** not applicable.
