@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	MAIN_WORKSPACE_SHARD_BUDGET_SECONDS,
+	MAX_MAIN_WORKSPACE_SHARDS,
 	minimumScopedShardCount,
 	planMainWorkspaceShardCount,
 	type TestPlan,
@@ -15,16 +17,33 @@ describe("main workspace shard capacity", () => {
 		skipped: [],
 	});
 
-	it("never plans more shards than the fleet parallel cap", () => {
+	it("stays within the fleet parallel cap while the slowest shard fits its budget", () => {
 		const plan = scoped(40);
 		for (const cap of [1, 2, 4, 6, 8]) {
 			const planned = planMainWorkspaceShardCount(plan, cap);
-			assert.ok(
-				planned.count <= cap,
-				`planned ${planned.count} shards exceeds cap ${cap}`,
-			);
 			assert.equal(planned.parallelCap, cap);
+			if (planned.count > cap) {
+				// Over the cap only as far as the slowest shard needs to fit.
+				assert.ok(
+					planned.peakShardSeconds <= MAIN_WORKSPACE_SHARD_BUDGET_SECONDS ||
+						planned.count === MAX_MAIN_WORKSPACE_SHARDS,
+					`planned ${planned.count} shards over cap ${cap}, slowest ${planned.peakShardSeconds}s`,
+				);
+			}
 		}
+	});
+
+	it("adds shards past the cap when a repo-wide plan would outrun the 20-minute job cap", () => {
+		// Run 43130657460: repo-wide, cap 4, slowest shard planned at 1375 s,
+		// cancelled at the 19-minute step limit (finding 117).
+		const all: TestPlan = { mode: "all", reason: "lockfile changed" };
+		const planned = planMainWorkspaceShardCount(all, 4);
+		assert.ok(planned.count > 4, `planned ${planned.count} shards`);
+		assert.ok(planned.count <= MAX_MAIN_WORKSPACE_SHARDS);
+		assert.ok(
+			planned.peakShardSeconds <= MAIN_WORKSPACE_SHARD_BUDGET_SECONDS,
+			`slowest shard ${planned.peakShardSeconds}s`,
+		);
 	});
 
 	it("raises shard floor when many scoped suites are in the plan", () => {

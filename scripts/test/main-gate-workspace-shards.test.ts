@@ -62,33 +62,4 @@ describe("main full gate workspace sharding", () => {
 		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
 	});
-
-	it("sizes the shard time limits from the plan, and reads capacity from vars", () => {
-		const planStart = workflow.indexOf("  main-gate-plan:");
-		const plan = workflow.slice(
-			planStart,
-			workflow.indexOf("  main-gate:", planStart),
-		);
-		assert.match(
-			plan,
-			/shard_timeout_minutes: \$\{\{ steps\.plan\.outputs\.shard_timeout_minutes \}\}/u,
-		);
-		assert.match(
-			plan,
-			/HOBO_CI_FLEET_CAPACITY_JSON: \$\{\{ vars\.HOBO_CI_FLEET_CAPACITY \}\}/u,
-		);
-		const shardStart = workflow.indexOf("  main_workspace_tests:");
-		const shard = workflow.slice(
-			shardStart,
-			workflow.indexOf("  main_gate_finish:", shardStart),
-		);
-		assert.match(
-			shard,
-			/\n {4}timeout-minutes: \$\{\{ fromJSON\(needs\.main-gate-plan\.outputs\.shard_job_timeout_minutes \|\| '20'\) \}\}/u,
-		);
-		assert.match(
-			shard,
-			/- name: Workspace tests\n {8}timeout-minutes: \$\{\{ fromJSON\(needs\.main-gate-plan\.outputs\.shard_timeout_minutes \|\| '19'\) \}\}/u,
-		);
-	});
 });

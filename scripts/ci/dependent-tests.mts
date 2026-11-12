@@ -367,42 +367,14 @@ export function scaleWorkspaceDurations(
 	return { defaultSeconds: table.defaultSeconds * factor, seconds };
 }
 
-/** The shard step and job limits that held before they followed the plan. */
-export const MAIN_WORKSPACE_SHARD_STEP_TIMEOUT_FLOOR_MINUTES = 19;
-const MAIN_WORKSPACE_SHARD_STEP_TIMEOUT_CEILING_MINUTES = 55;
-const MAIN_WORKSPACE_SHARD_JOB_TIMEOUT_MARGIN_MINUTES = 6;
-
-/** Minutes a main workspace shard's tests step and job may run. */
-export type MainWorkspaceShardTimeouts = Readonly<{
-	stepMinutes: number;
-	jobMinutes: number;
-}>;
-
 /**
- * Time limits for a main workspace shard, from the plan's own estimate of the
- * slowest shard. A repo-wide main run (the lockfile or root config changed
- * since the last green main) plans shards of 20+ minutes when the fleet caps
- * parallelism at four, and a fixed 19-minute limit then cancelled the slowest
- * one every time, so main stayed red and the next run was repo-wide again.
- * The limit is half again the estimate plus setup, never below the old floor
- * and never above an hour for the job.
+ * The most a main workspace shard is planned to take. Its tests step stops at
+ * 19 minutes and its job at 20 (the workflow-wide job cap); this leaves room
+ * for setup and for an estimate that runs short.
  */
-export function mainWorkspaceShardTimeouts(
-	peakShardSeconds: number,
-): MainWorkspaceShardTimeouts {
-	const estimate =
-		Number.isFinite(peakShardSeconds) && peakShardSeconds > 0
-			? Math.ceil((peakShardSeconds * 1.5) / 60) + 4
-			: 0;
-	const stepMinutes = Math.min(
-		MAIN_WORKSPACE_SHARD_STEP_TIMEOUT_CEILING_MINUTES,
-		Math.max(MAIN_WORKSPACE_SHARD_STEP_TIMEOUT_FLOOR_MINUTES, estimate),
-	);
-	return {
-		stepMinutes,
-		jobMinutes: stepMinutes + MAIN_WORKSPACE_SHARD_JOB_TIMEOUT_MARGIN_MINUTES,
-	};
-}
+export const MAIN_WORKSPACE_SHARD_BUDGET_SECONDS = 12 * 60;
+/** Most shards a main run plans, however far over budget the work is. */
+export const MAX_MAIN_WORKSPACE_SHARDS = 16;
 
 /** Target gap between slowest and fastest main workspace shard loads. */
 export const MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS = 10;
@@ -430,7 +402,9 @@ export function minimumScopedShardCount(
 /**
  * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
  * several duration-balanced workspace groups, targeting roughly
- * `targetSeconds` on the slowest shard when capacity allows.
+ * `targetSeconds` on the slowest shard when capacity allows. Past the cap only
+ * when the slowest shard would otherwise exceed
+ * `MAIN_WORKSPACE_SHARD_BUDGET_SECONDS`, up to `MAX_MAIN_WORKSPACE_SHARDS`.
  */
 export function planMainWorkspaceShardCount(
 	plan: TestPlan,
@@ -466,13 +440,18 @@ export function planMainWorkspaceShardCount(
 	const units = testWorkspaceUnits(plan, workspaces);
 	const weightFor = (unit: string) =>
 		planUnitLoadSeconds(plan, unit, repo, durations);
-	const peakShardSeconds = maxShardLoadSeconds(
-		units,
-		durations,
-		count,
-		weightFor,
-	);
-	return { count, parallelCap, peakShardSeconds };
+	const peakAt = (shards: number) =>
+		maxShardLoadSeconds(units, durations, shards, weightFor);
+	// A shard job may not run past 20 minutes (the workflow cap, and the box
+	// stops an isolated container at 20 minutes plus grace), so when even
+	// `parallelCap` shards leave the slowest one over budget, plan more: the
+	// extra shards wait for a slot instead of being cancelled (finding 117).
+	while (
+		count < MAX_MAIN_WORKSPACE_SHARDS &&
+		peakAt(count) > MAIN_WORKSPACE_SHARD_BUDGET_SECONDS
+	)
+		count += 1;
+	return { count, parallelCap, peakShardSeconds: peakAt(count) };
 }
 
 type Json =

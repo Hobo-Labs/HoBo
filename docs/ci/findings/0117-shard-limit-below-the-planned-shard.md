@@ -1,7 +1,7 @@
 ---
 type: CI Performance Finding
 title: "Finding 117: shard limit below the planned shard"
-description: "Main workspace shards had a fixed 19-minute step limit while the planner estimated a repo-wide run's slowest shard at 23 minutes; the limits now follow the plan."
+description: "A repo-wide main run planned four shards whose slowest was estimated at 23 minutes, past the 19/20-minute shard limits; the planner now adds shards past the parallel cap until the slowest fits."
 tags: [hobo, ci, main-gate, shards, timeouts]
 ---
 
@@ -16,25 +16,30 @@ load-fleet-capacity: variables/HOBO_CI_FLEET_CAPACITY returned 403
 main gate plan: scope=repo-wide, tests=all, parallelCap=4, peakShardSeconds=1375, shards=[0, 1, 2, 3]
 ```
 
-The last green main was `fb259629`, many commits back, and the lockfile had changed since, so the gate went repo-wide and every workspace test ran. The planner's own estimate for the slowest of four shards was 1375 s, about 23 minutes. The shard's `Workspace tests` step had a fixed 19-minute limit and the job a fixed 20. Shard 1, on an ARC pod (`hobo-trunk-runner-vvss4`), was cancelled after 19 min 9 s in that step; shard 3 hit the job limit. Main stayed red, and the next main run is repo-wide again for the same reason, so it would fail the same way.
+The last green main was `fb259629`, many commits back, and the lockfile had changed since, so the gate went repo-wide and every workspace test ran. The planner's own estimate for the slowest of four shards was 1375 s, about 23 minutes. A shard's `Workspace tests` step stops at 19 minutes and its job at 20.
 
-[Finding 116](0116-main-shard-timeout-cpu-admission.md) covers the other half of this run: CPU contention on a shared box stretched shards that ran there. That does not explain shard 1, which ran alone on an ARC pod, and it does not change the plan: a 23-minute estimate cannot fit a 19-minute limit on an idle runner either.
+- Shard 1 ran on an ARC pod (`hobo-trunk-runner-vvss4`) and was cancelled after 19 min 9 s in `Workspace tests`.
+- Shard 3 ran on a fleet box (`hobo-9277ba53…`) and ended 25 minutes after it started, mid-step: the box stops an isolated container at 20 minutes plus 5 of grace (`packages/ci-gh-actions/src/isolated-worker/container-timeout.ts`, `lease-reconciler.ts`).
+- Shards 0 and 2 finished in 15 and 14 minutes.
+
+Main stayed red, and the next main run is repo-wide again for the same reason, so it would fail the same way. [Finding 116](0116-main-shard-timeout-cpu-admission.md) covers the CPU contention on the box during the same run. It places shard 1 on the shared box; the job's runner (`hobo-trunk-runner-vvss4`, runner group `default`) is an ARC pod.
 
 ## Cause
 
-- The shard limits were constants, while shard length depends on the plan: an affected run is a few minutes a shard, a repo-wide run at a parallel cap of four is over twenty.
-- The parallel cap fell back to its default of four because the plan job read `HOBO_CI_FLEET_CAPACITY` over the REST API, which a job's `GITHUB_TOKEN` cannot do (403).
+`planMainWorkspaceShardCount` never planned more shards than the fleet's parallel cap (four by default). Every shard job must stay under 20 minutes: the workflow caps every job there (#1754), and the box enforces it on its containers. A repo-wide plan has about 90 minutes of shard work, so four shards cannot fit both rules.
 
 ## Fix
 
-- `mainWorkspaceShardTimeouts` (`scripts/ci/dependent-tests.mts`) turns the plan's `peakShardSeconds` into a step limit of half again the estimate plus four minutes, never below the old 19 and never above 55, and a job limit six minutes longer. The plan job outputs both, and `main_workspace_tests` uses them, falling back to 19/20 when a plan has none. For run 43130657460's plan that is 39/45 minutes.
-- The plan step passes `vars.HOBO_CI_FLEET_CAPACITY` as `HOBO_CI_FLEET_CAPACITY_JSON`, which `load-fleet-capacity.mts` already reads before trying the API.
+The planner still stays within the cap when the slowest shard fits `MAIN_WORKSPACE_SHARD_BUDGET_SECONDS` (12 minutes, which leaves room in the 19-minute step for setup and an estimate that runs short). When it does not fit, it adds shards past the cap until it does, up to `MAX_MAIN_WORKSPACE_SHARDS` (16). The extra shards wait for a free runner instead of being cancelled. Run 43130657460's plan becomes eight shards with the slowest at 688 s. The shard time limits are unchanged.
+
+A first version of this fix raised the shard time limits from the plan's estimate instead. Review stopped it: it broke the 20-minute job cap, and the box would still have stopped those shards at 25 minutes.
 
 ## Verified
 
-- `scripts/test/dependent-tests.test.ts`: an ordinary plan keeps 19/25, run 43130657460's plan gets 39/45, and the step never passes 55.
-- `scripts/test/main-gate-workspace-shards.test.ts` pins the plan outputs, the vars wiring, and both limits on the shard job.
+- `scripts/test/main-workspace-shard-capacity.test.ts`: a repo-wide plan at cap 4 plans more than four shards with the slowest under budget (fails against the previous planner, which returns four), and a plan goes over the cap only as far as the slowest shard needs.
 
 ## Not changed
 
-- When `HOBO_CI_FLEET_CAPACITY` is unset the cap is still four, and a repo-wide main run still takes most of an hour of shard time. Raising the `hobo-trunk` ARC scale set's runner limit (configured in the cluster, not this repo) is what would make those runs shorter.
+- The plan job still reads `HOBO_CI_FLEET_CAPACITY` over the REST API, which a job's `GITHUB_TOKEN` cannot do (403), so the cap is four. Passing the variable through the `vars` context would make it live, but the published value counts the box's free slots only, without ARC, and the loader does not check its age, so the cap would only fall. That needs the published snapshot fixed first.
+- `scripts/ci/route-runner.mts` parses a fleet-state document with `labels` and `publishedAt`; the relay publishes `{version, admittedParallel, hobo, arc, publishedAt}`, so the route job does not see capacity either.
+- A repo-wide main run still costs about 90 minutes of shard time; how much of it runs at once depends on the `hobo-trunk` ARC scale set's runner limit, configured in the cluster.

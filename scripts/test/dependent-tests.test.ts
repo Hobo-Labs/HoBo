@@ -14,7 +14,6 @@ import {
 	type TestGraph,
 	type TestPlan,
 	turboTestGraph,
-	mainWorkspaceShardTimeouts,
 } from "../ci/dependent-tests.mts";
 
 const manifest = (name: string, test: string, extra = {}) =>
@@ -1182,34 +1181,5 @@ describe("the repository's own plans", { concurrency: true }, () => {
 				skipped.includes(dir),
 				`${dir} is not skipped for a change to ${leaf}. If one of its tests now reaches that file, or the walk gives up on one (a computed import(), a literal naming a directory that holds packages), name another dependent that only imports @hobo/core; otherwise importing @hobo/core selects every dependent again.`,
 			);
-	});
-});
-
-describe("main workspace shard timeouts", () => {
-	it("keeps the old 19/20-minute limits for an ordinary plan", () => {
-		assert.deepEqual(mainWorkspaceShardTimeouts(180), {
-			stepMinutes: 19,
-			jobMinutes: 25,
-		});
-		assert.deepEqual(mainWorkspaceShardTimeouts(Number.NaN), {
-			stepMinutes: 19,
-			jobMinutes: 25,
-		});
-	});
-
-	it("gives a repo-wide plan room past its estimated slowest shard", () => {
-		// Run 43130657460 planned peakShardSeconds=1375; its slowest shard was
-		// cancelled at the fixed 19-minute limit after 19 min 9 s.
-		const { stepMinutes, jobMinutes } = mainWorkspaceShardTimeouts(1375);
-		assert.equal(stepMinutes, 39);
-		assert.equal(jobMinutes, 45);
-		assert.ok(stepMinutes * 60 > 1375 * 1.4);
-	});
-
-	it("never lets a shard run past an hour", () => {
-		assert.deepEqual(mainWorkspaceShardTimeouts(10_000), {
-			stepMinutes: 55,
-			jobMinutes: 61,
-		});
 	});
 });
