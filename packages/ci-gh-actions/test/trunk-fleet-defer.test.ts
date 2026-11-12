@@ -127,6 +127,21 @@ describe("evaluateMainTrunkFleetDefer", () => {
 		expect(decision.holdReason).toBeUndefined();
 	});
 
+	it("defers when parallel trunk ceiling is reached", () => {
+		const decision = evaluateMainTrunkFleetDefer({
+			jobName: "Main workspace test shard 1",
+			isMainTrunkJob: true,
+			priorWait: undefined,
+			deferMs,
+			nowMs,
+			trunkSlots: 1,
+			parallelTrunkLaunchCapacity: 1,
+			localTrunkReserved: 1,
+			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 1, meshFreeSlots: 1 },
+		});
+		expect(decision.action).toBe("defer");
+	});
+
 	it("does not treat the box as slot-full while memory-parallel trunk launches remain", () => {
 		const decision = evaluateMainTrunkFleetDefer({
 			jobName: "Main workspace test shard 2",
