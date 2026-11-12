@@ -202,8 +202,9 @@ export function createAdmissionOrder(
 						return ga.position - gb.position;
 					return a.jobId - b.jobId;
 				}
-				// A superseded main push still holds cancelled jobs in GitHub's queue until the
-				// workflow winds down; admit the newest push first so slots serve live trunk.
+				// Main pushes queue (finding 113), so two push runs hold jobs at once only when
+				// one is winding down after a manual cancel or a re-run; admit the newest first
+				// so slots serve live trunk.
 				if (a.key.event === "push" && b.key.event === "push") {
 					const pushStart = (ms: number) => (Number.isFinite(ms) ? ms : 0);
 					if (pushStart(a.key.startedAtMs) !== pushStart(b.key.startedAtMs))

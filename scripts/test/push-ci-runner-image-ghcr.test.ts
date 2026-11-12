@@ -77,4 +77,13 @@ describe("push-ci-runner-image-ghcr", () => {
 		});
 		assert.equal(result.status, 0, result.stderr);
 	});
+
+	it("tags :latest from the versioned image it pushed, not the box's :local", () => {
+		const source = readFileSync(
+			join(root, "scripts/ci/push-ci-runner-image-ghcr.mts"),
+			"utf8",
+		);
+		assert.match(source, /run\("docker", \["tag", candidate, latest\]\)/u);
+		assert.doesNotMatch(source, /"hobo-ci-worker:local", latest/u);
+	});
 });

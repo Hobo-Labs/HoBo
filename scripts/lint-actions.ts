@@ -32,6 +32,8 @@ const activeCiFiles = new Set([
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
 	"pricing-ci.yml",
+	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
+	"relay-deploy.yml",
 	"release-hobo.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",

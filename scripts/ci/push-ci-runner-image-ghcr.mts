@@ -113,7 +113,8 @@ export function pushCiRunnerImageGhcr(): number {
 		return 0;
 	}
 	if (
-		run("docker", ["tag", "hobo-ci-worker:local", latest]) !== 0 ||
+		// From the image just pushed, not :local, which any job's build on the box moves.
+		run("docker", ["tag", candidate, latest]) !== 0 ||
 		run("docker", ["push", latest]) !== 0
 	) {
 		console.log(

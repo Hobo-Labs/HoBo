@@ -36,8 +36,11 @@
   },
   "devDependencies": {
     "@hobo/bindles": "workspace:*",
+    "@hobo/camps": "workspace:*",
     "@hobo/pricing": "workspace:*",
     "@hobo/provider-manifest": "workspace:*",
+    "@hobo/provider-vercel": "workspace:*",
+    "@hobo/yards": "workspace:*",
     "esbuild": "0.28.1",
     "jose": "6.2.4"
   },

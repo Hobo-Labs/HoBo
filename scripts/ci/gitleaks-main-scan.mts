@@ -16,6 +16,7 @@ import {
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { fetchLastGreenMainSha } from "./resolve-main-test-base.mts";
 
 export const ZERO_SHA = "0".repeat(40);
 export const RANGE_TIMEOUT_SECONDS = 90;
@@ -71,6 +72,8 @@ export function planMainGitleaksScan(input: {
 	sha: string;
 	commitExists: (rev: string) => boolean;
 	baselineSha?: string;
+	/** The last main commit whose Fabric push run went green. */
+	lastGreenSha?: string;
 	isAncestor?: (ancestor: string, commit: string) => boolean;
 }): GitleaksScanPlan {
 	const ancestorOk = input.isAncestor ?? isAncestor;
@@ -81,9 +84,19 @@ export function planMainGitleaksScan(input: {
 		before !== ZERO_SHA &&
 		input.commitExists(before)
 	) {
+		// A push that waited behind a running main run and was dropped never ran
+		// this scan; start from the last green main commit so its range is covered.
+		const green = input.lastGreenSha?.trim() ?? "";
+		const from =
+			green &&
+			green !== before &&
+			input.commitExists(green) &&
+			ancestorOk(green, before)
+				? green
+				: before;
 		return {
 			mode: "range",
-			logOpts: `${before}..${input.sha}`,
+			logOpts: `${from}..${input.sha}`,
 			fetchBlobs: false,
 			timeoutSeconds: RANGE_TIMEOUT_SECONDS,
 			waitSeconds: RANGE_WAIT_SECONDS,
@@ -226,6 +239,18 @@ export async function runBackgroundScan(dir: string): Promise<void> {
 		commitExists,
 	};
 	if (baselineSha !== undefined) planInput.baselineSha = baselineSha;
+	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
+	const repository = process.env.GITHUB_REPOSITORY?.trim() ?? "";
+	if (planInput.eventName === "push" && token && repository) {
+		const lastGreen = await fetchLastGreenMainSha({
+			repository,
+			token,
+			workflowBasename: "hobo-ci.yml",
+			head: planInput.sha,
+			fetch: globalThis.fetch,
+		}).catch(() => undefined);
+		if (lastGreen !== undefined) planInput.lastGreenSha = lastGreen;
+	}
 	const plan = planMainGitleaksScan(planInput);
 	writeFileSync(join(dir, "plan.json"), `${JSON.stringify(plan)}\n`);
 	writeFileSync(join(dir, "wait"), `${plan.waitSeconds}\n`);

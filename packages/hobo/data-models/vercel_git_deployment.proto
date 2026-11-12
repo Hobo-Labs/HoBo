@@ -21,6 +21,38 @@ message VercelGitDeploymentPlan {
   repeated VercelPlanSetting settings = 9;      // non-secret configuration set before deploying
   repeated string operator_secrets = 10;        // declared secret names; never set by this path
   repeated VercelPlanRequest requests = 11;     // the requests, in the order they are sent
+  VercelPlanPlacement placement = 12;           // the Yard and Camp the plan was formed from
+  repeated VercelPlanBinding bindings = 13;     // the Yard's binding rows, canonical order
+  repeated VercelPlanCliCommand provisioning = 14;  // `--provision`'s Vercel CLI commands, in order
+}
+
+// Where the relay is placed: the Yard names the provider (ADR-0157), and the
+// target names the Camp.
+message VercelPlanPlacement {
+  string yard = 1;
+  string camp = 2;               // "<yard>/<camp>"
+  string provider = 3;           // the Yard's provider id
+  repeated string regions = 4;
+}
+
+// One binding row of the Yard: the capability profile and the offering that may
+// satisfy it there. Names only, never a value of a secret.
+message VercelPlanBinding {
+  string profile = 1;
+  string product_id = 2;
+  string connectivity_id = 3;
+  bool selected = 4;             // chosen for the Camp: required, first of its profile's rows
+  repeated string settings = 5;  // names of the non-secret settings it projects
+  repeated string inputs = 6;    // names the deploy is given with --set
+  string provisioning = 7;       // "marketplace:<integration>" when the Marketplace attaches it
+}
+
+// One Vercel CLI invocation of the provisioning step: arguments after the
+// executable. The token and the project's coordinates travel in its
+// environment, never here.
+message VercelPlanCliCommand {
+  repeated string args = 1;
+  string when = 2;
 }
 
 message VercelPlanResource {
