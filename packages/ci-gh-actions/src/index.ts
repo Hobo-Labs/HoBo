@@ -212,6 +212,43 @@ export {
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
+	boxLeaseIdsOf,
+	evaluateFleetVerdict,
+	FLEET_VERDICT_POOL_FRESH_MS,
+	FLEET_VERDICT_UNACCOUNTED_WINDOW_MS,
+	type FleetExternalPool,
+	type FleetJobOnRunner,
+	type FleetLabelEvaluation,
+	type FleetLabelReason,
+	type FleetMeshPeer,
+	type FleetPollView,
+	type FleetVerdictEvaluation,
+	type FleetVerdictEvaluatorInput,
+	fleetRunnerNamePrefix,
+} from "./isolated-worker/fleet-verdict-evaluator.js";
+export {
+	createFleetVerdictReporter,
+	FLEET_VERDICT_SEND_TIMEOUT_MS,
+	type FleetVerdictReporter,
+	type FleetVerdictReporterEvent,
+	type FleetVerdictReporterLog,
+	type FleetVerdictReporterOptions,
+	type FleetVerdictReporterSettings,
+	type FleetVerdictSequenceSource,
+	parseFleetVerdictReporterSettings,
+} from "./isolated-worker/fleet-verdict-reporter.js";
+export {
+	createFleetPickupMemory,
+	createFleetVerdictHolds,
+	createFleetVerdictSchedule,
+	createFleetVerdictSequence,
+	FLEET_VERDICT_ENTER_MS,
+	FLEET_VERDICT_EXIT_MS,
+	FLEET_VERDICT_RESEND_MS,
+	FLEET_VERDICT_SAMPLE_MS,
+	FLEET_VERDICT_TTL_SECONDS,
+} from "./isolated-worker/fleet-verdict-state.js";
+export {
 	type BoxGitMirror,
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
@@ -224,6 +261,8 @@ export {
 	createGithubJobPoller,
 	createPollLogFilter,
 	describeWaitingJobs,
+	type FleetJobInProgress,
+	type FleetJobsSeen,
 	type GithubJobPollerOptions,
 	type GithubJobPollSummary,
 	type GithubReadFailure,
@@ -306,6 +345,7 @@ export {
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
+	releaseWorkerStorageGrants,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
 export {

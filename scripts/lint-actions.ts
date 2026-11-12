@@ -37,6 +37,8 @@ const activeCiFiles = new Set([
 	"release-hobo.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
+	// The fleet enrollment scorecard eval (#1688).
+	"fleet-enrollment.yml",
 ]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the
