@@ -59,13 +59,6 @@ export {
 	writeRepositoryVariable,
 } from "./fleet-routes.js";
 export {
-	createFleetStatePublisher,
-	FLEET_STATE_MAX_AGE_MS,
-	FLEET_STATE_VARIABLE,
-	type FleetStateEvent,
-	type FleetStatePublisher,
-} from "./fleet-state.js";
-export {
 	agreedFleetBlocks,
 	countFleetVerdictAllowance,
 	createFleetVerdictStore,
@@ -427,7 +420,6 @@ export {
 	MESH_REPORT_MAX_NODES,
 	type MeshReading,
 	meshAdvertJson,
-	meshFleetStateJson,
 	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,

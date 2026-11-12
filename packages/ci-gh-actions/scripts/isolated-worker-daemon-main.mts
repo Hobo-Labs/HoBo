@@ -28,7 +28,6 @@ import {
 	createFleetCapacityPublisher,
 	createFleetPickupMemory,
 	createFleetRoutePublisher,
-	createFleetStatePublisher,
 	createFleetVerdictReporter,
 	createFleetVerdictSequence,
 	createGithubAppTransport,
@@ -1100,38 +1099,12 @@ try {
 		servers: meshSettings?.servers.length ?? 0,
 		stepMs: meshSettings?.stepMs ?? 0,
 	});
-	// The snapshot runner routing reads: per label, the nodes this worker
-	// ranks and their free slots. Published with the route table's flag, to
-	// each connected repository; see src/fleet-state.ts.
-	const fleetState =
-		publishFleetRoutes && mesh && meshBoard
-			? createFleetStatePublisher({
-					github,
-					board: meshBoard,
-					self: mesh.self,
-					labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
-					requireTrusted: meshTrust.requireTrusted,
-					log,
-				})
-			: undefined;
 	// Every 10 s: read the trust settings, say what this worker can take,
-	// read what the mesh can, and keep the routing snapshot fresh.
-	const publishFleetState = async (timing: { now?: boolean } = {}) => {
-		if (!fleetState) return;
-		const state = await store.configuration().catch(() => undefined);
-		await fleetState.publish(
-			(state?.configuration?.connections ?? []).map((connection) => ({
-				installationId: connection.installationId,
-				repository: connection.repository,
-			})),
-			timing,
-		);
-	};
+	// and read what the mesh can.
 	const meshBeat = async () => {
 		await meshTrust.refresh();
 		await mesh?.advertise();
 		await mesh?.observe();
-		await publishFleetState();
 	};
 	const meshAdvertTimer = mesh
 		? setInterval(() => void meshBeat(), 10_000)
@@ -1618,8 +1591,6 @@ try {
 			meshDraining = true;
 			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
 			await mesh?.advertise();
-			// And tell routing: this worker no longer counts towards its labels.
-			await publishFleetState({ now: true }).catch(() => undefined);
 			// One last fleet verdict that blocks nothing, best effort.
 			await fleetReporter?.clear().catch(() => undefined);
 			const backgroundKinds = (): (
