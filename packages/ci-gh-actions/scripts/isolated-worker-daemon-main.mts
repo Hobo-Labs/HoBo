@@ -25,7 +25,6 @@ import {
 	createCompositeIsolatedHost,
 	createContainerStallGuard,
 	createDepsImageEnsurer,
-	createFleetCapacityPublisher,
 	createFleetPickupMemory,
 	createFleetRoutePublisher,
 	createFleetVerdictReporter,
@@ -871,9 +870,6 @@ try {
 				},
 			})
 		: undefined;
-	const fleetCapacityPublisher = publishFleetRoutes
-		? createFleetCapacityPublisher({ github, log })
-		: undefined;
 	const localFleetCapacitySnapshot = async () => {
 		const active = await store.activeLeases();
 		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
@@ -960,13 +956,7 @@ try {
 				volatilityMb: capacityVolatilityMb,
 				launchSlots: slots,
 			}),
-		fleetCapacity: {
-			publish: async (input) => {
-				if (!fleetCapacityPublisher) return undefined;
-				return fleetCapacityPublisher.publish(input);
-			},
-			snapshot: localFleetCapacitySnapshot,
-		},
+		fleetCapacity: { snapshot: localFleetCapacitySnapshot },
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
