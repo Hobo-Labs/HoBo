@@ -3,13 +3,20 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
+import {
+	assertReleaseImageMatchesBuild,
+	dockerConfigLabelsForRef,
+	imagetoolsInspectTag,
+	normalizeRepoDigestLine,
+	resolveRegistryDigestForTag,
+} from "../lib/release-ghcr-digest.mts";
 import {
 	FULL_RELEASE_IMAGE_IDS,
 	ghcrImageTags,
 	parseReleaseRef,
 	releaseImageIdsForTrain,
 } from "../lib/release-version.mts";
-import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -67,6 +74,78 @@ export function releaseImagesToPublish(
 	return images.includes(imageId) ? [imageId] : [];
 }
 
+function releaseRevisionFromEnv(): string {
+	const revision =
+		process.env.HOBO_RELEASE_REVISION?.trim() ??
+		process.env.GITHUB_SHA?.trim() ??
+		"";
+	if (!revision) {
+		throw new Error("HOBO_RELEASE_REVISION or GITHUB_SHA required to publish");
+	}
+	return revision;
+}
+
+function labelsForRegistryTag(tag: string): Record<string, string> | undefined {
+	const fromImagetools = imagetoolsInspectTag(tag)?.labels;
+	if (fromImagetools && Object.keys(fromImagetools).length > 0) {
+		return fromImagetools;
+	}
+	const pull = spawnSync("docker", ["pull", "--quiet", tag], {
+		encoding: "utf8",
+		stdio: "inherit",
+	});
+	if (pull.status !== 0) {
+		throw new Error(`docker pull ${tag} failed (${pull.status})`);
+	}
+	const labels = dockerConfigLabelsForRef(tag);
+	spawnSync("docker", ["rmi", "-f", tag], {
+		encoding: "utf8",
+		stdio: "inherit",
+	});
+	return labels;
+}
+
+function tryReusePublishedTag(options: {
+	imageId: string;
+	tag: string;
+	revision: string;
+	releaseVersion: string;
+}): string | undefined {
+	const digestRef = resolveRegistryDigestForTag(options.tag);
+	if (!digestRef) return undefined;
+	const labels = labelsForRegistryTag(options.tag);
+	assertReleaseImageMatchesBuild({
+		imageId: options.imageId,
+		tag: options.tag,
+		digestRef,
+		revision: options.revision,
+		releaseVersion: options.releaseVersion,
+		labels,
+	});
+	const line = normalizeRepoDigestLine(options.tag, digestRef, options.imageId);
+	console.log(
+		`reusing registry ${options.tag} as ${line} (revision ${options.revision})`,
+	);
+	return line;
+}
+
+function recordDigestAfterPush(imageId: string, tag: string): string {
+	const inspect = spawnSync(
+		"docker",
+		["inspect", "--format={{index .RepoDigests 0}}", tag],
+		{ encoding: "utf8" },
+	);
+	let raw = inspect.status === 0 ? inspect.stdout.trim() : "";
+	if (!raw) {
+		const remote = resolveRegistryDigestForTag(tag);
+		if (!remote) {
+			throw new Error(`docker inspect and registry lookup failed for ${tag}`);
+		}
+		raw = remote;
+	}
+	return normalizeRepoDigestLine(tag, raw, imageId);
+}
+
 export function pushReleaseGhcrImages(options: {
 	releaseRef: string;
 	repository: string;
@@ -85,12 +164,29 @@ export function pushReleaseGhcrImages(options: {
 		"HOBO_RELEASE_PUSH_BUDGET_SEC",
 		RELEASE_PUSH_BUDGET_MS,
 	);
+	const revision = releaseRevisionFromEnv();
+	const releaseVersion = parsed.semver;
 	if (images.length === 0) {
 		console.log(
 			`${options.imageId} is not part of the ${parsed.train} release train; nothing to publish`,
 		);
 	}
 	for (const id of images) {
+		const tags = ghcrImageTags(repo, id, parsed);
+		if (tags.length !== 1) {
+			throw new Error(`expected one GHCR tag for ${id}, got ${tags.length}`);
+		}
+		const tag = tags[0]!;
+		const reused = tryReusePublishedTag({
+			imageId: id,
+			tag,
+			revision,
+			releaseVersion,
+		});
+		if (reused) {
+			digests.push(reused);
+			continue;
+		}
 		if (id === "hobo-mcp") {
 			run("node", [
 				"--no-warnings",
@@ -113,11 +209,6 @@ export function pushReleaseGhcrImages(options: {
 			id,
 			"--keep-candidate",
 		]);
-		const tags = ghcrImageTags(repo, id, parsed);
-		if (tags.length !== 1) {
-			throw new Error(`expected one GHCR tag for ${id}, got ${tags.length}`);
-		}
-		const tag = tags[0]!;
 		run("docker", ["tag", `${id}:candidate`, tag]);
 		const pushStarted = Date.now();
 		console.log(`pushing ${tag}`);
@@ -125,15 +216,7 @@ export function pushReleaseGhcrImages(options: {
 		console.log(
 			`pushed ${tag} in ${Math.round((Date.now() - pushStarted) / 1000)}s`,
 		);
-		const inspect = spawnSync(
-			"docker",
-			["inspect", "--format={{index .RepoDigests 0}}", tag],
-			{ encoding: "utf8" },
-		);
-		if (inspect.status !== 0 || !inspect.stdout.trim()) {
-			throw new Error(`docker inspect digest failed for ${tag}`);
-		}
-		digests.push(inspect.stdout.trim());
+		digests.push(recordDigestAfterPush(id, tag));
 		run("docker", ["rmi", "-f", tag]);
 		run("node", [
 			"--no-warnings",
