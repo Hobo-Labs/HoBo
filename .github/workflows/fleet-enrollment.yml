@@ -30,7 +30,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          clean: false
           submodules: recursive
           clean: false
       - uses: ./.github/actions/ci-runner-preflight
@@ -53,7 +52,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          clean: false
           fetch-depth: 2
           submodules: recursive
           clean: false
