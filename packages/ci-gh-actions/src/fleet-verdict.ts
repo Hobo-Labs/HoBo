@@ -11,10 +11,15 @@
  */
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
+	FleetReporterEnrollmentsSchema,
 	type FleetVerdict,
 	FleetVerdictReportSchema,
 	FleetVerdictSchema,
 } from "./_generated/fleet_verdict_pb.js";
+import {
+	FLEET_REPORTER_ID,
+	FLEET_REPORTER_PUBLIC_KEY,
+} from "./fleet-verdict-auth.js";
 
 // public-contract: the relay route runner routing asks for a repository's fleet verdict.
 export const FLEET_VERDICTS_PATH = "/v1/fleet/verdicts/";
@@ -239,4 +244,81 @@ export function createMemoryFleetVerdicts(
 			else kept.set(verdict.repository, verdict);
 		},
 	};
+}
+
+/** At most this many reporters may be enrolled for one account. */
+export const FLEET_REPORTERS_PER_ACCOUNT = 8;
+/** Verdict-blocked minutes per label per 24-hour window, unless configured. */
+export const FLEET_VERDICT_DAILY_BLOCK_MINUTES = 240;
+const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
+
+/** One enrolled reporter after parsing: who it is, its key, and what it may block. */
+export type FleetReporter = Readonly<{
+	id: string;
+	/** The raw Ed25519 public key, base64url without padding. */
+	publicKey: string;
+	accountId: string;
+	/** Lower case, each once. */
+	labels: readonly string[];
+}>;
+
+/** How the hosted relay serves verdicts, from its runtime configuration. */
+export type FleetVerdictSettings = Readonly<{
+	/** Every enrolled reporter, whatever its account. */
+	reporters: readonly FleetReporter[];
+	/** False is the kill switch: reads block nothing, reports answer 503. */
+	serving: boolean;
+	dailyBlockMinutes: number;
+}>;
+
+function canonicalPublicKey(value: string): boolean {
+	if (!FLEET_REPORTER_PUBLIC_KEY.test(value)) return false;
+	const bytes = Buffer.from(value, "base64url");
+	return bytes.length === 32 && bytes.toString("base64url") === value;
+}
+
+/**
+ * The enrolled reporters `HOBO_CI_FLEET_REPORTERS_JSON` names, or nothing
+ * when it is not a whole enrollment: an unknown field (a private key, say),
+ * a malformed id, key, account or label, a reporter listed twice, or more
+ * than eight reporters for one account refuses all of it.
+ */
+export function parseFleetReporters(
+	text: string,
+): readonly FleetReporter[] | undefined {
+	try {
+		const enrollment = fromJsonString(FleetReporterEnrollmentsSchema, text);
+		const ids = new Set<string>();
+		const perAccount = new Map<string, number>();
+		const reporters: FleetReporter[] = [];
+		for (const entry of enrollment.reporters) {
+			const labels = entry.labels.map((label) => label.toLowerCase());
+			if (
+				!FLEET_REPORTER_ID.test(entry.id) ||
+				ids.has(entry.id) ||
+				!canonicalPublicKey(entry.publicKey) ||
+				!ACCOUNT_ID.test(entry.accountId) ||
+				labels.length === 0 ||
+				labels.length > MAX_BLOCKED_LABELS ||
+				new Set(labels).size !== labels.length ||
+				labels.some((label) => !LABEL.test(label))
+			)
+				return undefined;
+			const count = (perAccount.get(entry.accountId) ?? 0) + 1;
+			if (count > FLEET_REPORTERS_PER_ACCOUNT) return undefined;
+			perAccount.set(entry.accountId, count);
+			ids.add(entry.id);
+			reporters.push(
+				Object.freeze({
+					id: entry.id,
+					publicKey: entry.publicKey,
+					accountId: entry.accountId,
+					labels: Object.freeze([...labels].sort()),
+				}),
+			);
+		}
+		return Object.freeze(reporters);
+	} catch {
+		return undefined;
+	}
 }

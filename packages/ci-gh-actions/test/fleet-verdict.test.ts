@@ -8,6 +8,7 @@ import {
 	noFleetVerdict,
 	parseFleetVerdict,
 	parseFleetVerdictPath,
+	parseFleetReporters,
 	parseFleetVerdictReport,
 	standingFleetVerdict,
 } from "../src/fleet-verdict.js";
@@ -199,5 +200,76 @@ describe("the verdicts a relay keeps in memory", () => {
 		const verdicts = createMemoryFleetVerdicts(() => NOW);
 		await verdicts.write(standing(60, NOW));
 		expect(await verdicts.read(other)).toBeUndefined();
+	});
+});
+
+describe("the reporter enrollment", () => {
+	const reporter = (
+		overrides: Readonly<Record<string, string | readonly string[]>>,
+	) => ({
+		id: "box-1",
+		publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+		accountId: "tenant",
+		labels: ["hobo", "hobo-trunk"],
+		...overrides,
+	});
+	const enrollment = (...reporters: ReturnType<typeof reporter>[]) =>
+		JSON.stringify({ reporters });
+
+	it("is the fixture's reporters, labels in lower case and order", () => {
+		expect(
+			parseFleetReporters(fixture("valid/fleet-reporter-enrollments.json")),
+		).toEqual([
+			{
+				id: "box-1",
+				publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+				accountId: "tenant",
+				labels: ["hobo", "hobo-trunk"],
+			},
+		]);
+		expect(
+			parseFleetReporters(
+				enrollment(reporter({ labels: ["HoBo-Trunk", "hobo"] })),
+			)?.[0]?.labels,
+		).toEqual(["hobo", "hobo-trunk"]);
+		expect(parseFleetReporters('{"reporters":[]}')).toEqual([]);
+	});
+
+	it("takes eight reporters for an account and no more", () => {
+		const eight = Array.from({ length: 8 }, (_, index) =>
+			reporter({ id: `box-${index}` }),
+		);
+		expect(parseFleetReporters(enrollment(...eight))).toHaveLength(8);
+		expect(
+			parseFleetReporters(
+				enrollment(...eight, reporter({ id: "box-8", accountId: "neighbor" })),
+			),
+		).toHaveLength(9);
+		expect(
+			parseFleetReporters(enrollment(...eight, reporter({ id: "box-8" }))),
+		).toBeUndefined();
+	});
+
+	it("is refused whole when any reporter is not one", () => {
+		for (const text of [
+			"",
+			"{}x",
+			fixture("invalid/fleet-reporter-enrollment-private-key.json"),
+			enrollment(reporter({}), reporter({})),
+			enrollment(reporter({ id: "box 1" })),
+			enrollment(reporter({ id: "b".repeat(65) })),
+			enrollment(
+				reporter({ publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q" }),
+			),
+			// 43 characters whose last carries bits a 32-byte key has not.
+			enrollment(
+				reporter({ publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q9" }),
+			),
+			enrollment(reporter({ accountId: "" })),
+			enrollment(reporter({ labels: [] })),
+			enrollment(reporter({ labels: ["hobo", "HOBO"] })),
+			enrollment(reporter({ labels: ["hobo trunk"] })),
+		])
+			expect(parseFleetReporters(text), text).toBeUndefined();
 	});
 });

@@ -74,6 +74,11 @@ export {
 	parseFleetVerdictPath,
 	parseFleetVerdictReport,
 	standingFleetVerdict,
+	FLEET_REPORTERS_PER_ACCOUNT,
+	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
+	type FleetReporter,
+	type FleetVerdictSettings,
+	parseFleetReporters,
 } from "./fleet-verdict.js";
 export {
 	FLEET_REPORTER_ID,
