@@ -80,10 +80,13 @@ function labelsFromImagetoolsJson(
 
 function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	if (!isObject(parsed)) return undefined;
-	const manifest = parsed.Manifest;
+	const manifest = parsed.manifest ?? parsed.Manifest;
 	const manifestObj = isObject(manifest) ? manifest : undefined;
 	return (
-		(manifestObj && readDigestField(manifestObj)) ?? readDigestField(parsed)
+		(manifestObj && readDigestField(manifestObj)) ??
+		readStringField(parsed, "digest") ??
+		readStringField(parsed, "Digest") ??
+		undefined
 	);
 }
 

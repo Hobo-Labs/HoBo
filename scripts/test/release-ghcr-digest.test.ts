@@ -29,15 +29,18 @@ describe("release ghcr digest helpers", () => {
 		expect(inspect).toHaveBeenCalledWith(tag);
 	});
 
-	it("parses buildx imagetools JSON with capital Digest", async () => {
+	it("parses buildx imagetools JSON manifest.digest", async () => {
 		const { parseImagetoolsInspectStdout } = await import(
 			"../lib/release-ghcr-digest.mts"
 		);
 		expect(
 			parseImagetoolsInspectStdout(
 				JSON.stringify({
-					Name: "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1",
-					Digest: "sha256:deadbeef",
+					name: "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1",
+					manifest: {
+						mediaType: "application/vnd.oci.image.index.v1+json",
+						digest: "sha256:deadbeef",
+					},
 				}),
 			),
 		).toEqual({ digest: "sha256:deadbeef" });
