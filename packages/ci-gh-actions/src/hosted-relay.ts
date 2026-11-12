@@ -1771,8 +1771,19 @@ export class HostedRelay {
 				if (mergeGroupKey !== undefined) activeMergeGroups.add(mergeGroupKey);
 			}
 		}
+		const unreservedPendingDemand = pending.filter(
+			(job) =>
+				!active.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						job.repositoryId,
+						job.id,
+						job.runAttempt,
+					),
+				),
+		).length;
 		await this.releaseBlockedUnlaunchedReservations(
-			pending.length,
+			unreservedPendingDemand,
 			fleetWitness,
 		);
 		const postReleaseActive = await this.options.store.activeLeases();
