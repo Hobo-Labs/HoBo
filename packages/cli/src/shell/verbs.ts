@@ -326,6 +326,8 @@ Usage:
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
+  hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
+  hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
 
 Role: ${verb.role}
 ${statusLine}
@@ -397,7 +399,19 @@ Deploy options (hobo ci deploy; run in the relay's project directory, or pass --
   --root-directory <dir>      Project root directory to save on the project
   --create-project            Create the project when Vercel has none by that name
   --dry-run                   Print what would be sent; reads no token, sends nothing
-                              A real run reads VERCEL_TOKEN from the environment.
+                              A real run reads VERCEL_TOKEN from the environment, and
+                              the team and the config service's coordinates from
+                              deploy/secret-store.binding.json when it exists.
+
+Secret store options (hobo ci secret-store plan|provision; ADR-0179 amendment):
+  --auth-md <origin>          A store that may publish auth.md (repeatable)
+  --fleet-host <origin>       A fresh Infisical the Yard placed on a compute fleet host
+  --owner-email <address>     The admin a self-hosted store's claim hands over
+  --team <team_id>            Vercel team id the relay's identity trusts
+  --vercel-team-slug <slug>   Vercel team slug (the OIDC issuer's path)
+  --vercel-project-id <id>    The relay's Vercel project id (prj_...)
+  --allow-designed            Route to a store the relay cannot read yet
+  Writes deploy/secret-store.binding.json (coordinates only); never prints a claim link.
 
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch

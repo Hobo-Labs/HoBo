@@ -17,6 +17,7 @@ Deploy only when the user asks for deployment or the task is explicitly release-
 - Treat live service checks as manual or release-only unless the task explicitly opts in.
 - Capture command, environment, target, and result in the PR or release notes.
 - Do not bypass failed status checks to deploy or merge.
+- A deployment that needs a config/secret store (the hosted CI relay, any Yard binding `secrets.config-service/v1`) follows the `hobo-deploy` skill: HoBo chooses the store when the deployment runs and hands it to the owner by claim. Never hand the owner a setup checklist, and never put values in Vercel or GitHub secrets or variables.
 
 ## Handoff
 

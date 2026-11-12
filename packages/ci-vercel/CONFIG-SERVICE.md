@@ -1,9 +1,12 @@
-# The relay's config service (Infisical)
+# The relay's config service
 
 Phase 3 of ADR-0179 (`docs/design/adr/hosted-relay-stateless.md`, PR #1887):
 the hosted relay reads its configuration and secrets from a separate service,
-read-only, and holds no secret to do it. The first binding is Infisical Cloud on
-the free plan, through [`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md).
+read-only, and holds no secret to do it. Which service is decided when the
+HoBo deployment runs, not beforehand: HoBo routes `secrets.config-service/v1`
+to a store, provisions it and hands it to the owner by claim
+([below](#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
+The relay reads it through [`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md).
 
 What exists now: the loader (`src/relay-runtime-config.ts`), the adapter,
 `hobo ci app create`, and (phase 6) the relay's Yard and the deploy workflow on
@@ -36,128 +39,109 @@ Vercel's token claims, for team issuer mode
 Function tokens for production last two hours, and Vercel says not to cache
 them; the relay asks for one per login and caches only Infisical's token.
 
-## One-time owner setup
+## Where the store comes from: chosen at deploy, handed over by claim
 
-Do this once, in a browser, signed in to Infisical as the owner. Nothing below
-puts a secret in this repository or in a Vercel environment variable.
+There is no one-time owner setup. The ADR-0179 amendment
+[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)
+replaced the eight-step checklist that stood here: nothing is created by hand,
+nothing lives in Vercel environment secrets, and nothing lives in GitHub
+secrets or variables.
 
-1. **Organization.** Create an Infisical organization on the free plan
-   (<https://app.infisical.com>; EU Cloud is `https://eu.infisical.com`).
-2. **Projects.** Create two secret-management projects:
-   - `hobo-ci`, environment `prod`, folder `/hobo-ci-relay`: the relay's
-     configuration and secrets.
-   - `hobo-ci-deploy`, environment `prod`: the Vercel deploy token, in a project
-     of its own so that the relay's identity, a member of `hobo-ci` only, can
-     never read it (project roles on the free plan are per project; folder-scoped
-     custom roles may need a paid plan).
-3. **Relay identity `hobo-ci-relay`** (Organization → Access Control →
-   Identities → Create; then Authentication → OIDC Auth;
-   [OIDC Auth fields](https://infisical.com/docs/documentation/platform/identities/oidc-auth/general)):
+The store is the capability `secrets.config-service/v1`. When the HoBo
+deployment runs, an agent following the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md)
+skill asks HoBo to route it ([`@hobo/secret-store-claim`](../secret-store-claim/README.md)):
 
-   | Field | Value |
-   |---|---|
-   | OIDC Discovery URL | `https://oidc.vercel.com/<team-slug>` |
-   | Issuer | `https://oidc.vercel.com/<team-slug>` |
-   | Subject | `owner:<team-slug>:project:hobo-ci:environment:production` |
-   | Audiences | `https://vercel.com/<team-slug>` |
-   | Claims | `project_id` = `prj_…`, `owner_id` = `team_…` (pins the ids, so a renamed or re-created project cannot match) |
-   | Access Token TTL | `3600` |
+```sh
+hobo ci secret-store plan --json        # which offer, and why the others were passed over
+hobo ci secret-store provision --team <team_id> --vercel-team-slug <slug> \
+  --vercel-project-id <prj_id> [--fleet-host https://...] [--owner-email <address>]
+hobo claim open secret-store            # the OWNER runs this, in their own terminal
+hobo claim finalize secret-store
+```
 
-   The Vercel project must use the **team** issuer mode (Project → Settings →
-   Security → Secure backend access with OIDC federation). Add the identity to
-   project `hobo-ci` with the **Viewer** role: read-only.
-4. **Deploy identity `hobo-ci-deploy`** for the workflow on `main`
-   ([GitHub OIDC with Infisical](https://infisical.com/docs/documentation/platform/identities/oidc-auth/github),
-   [GitHub's OIDC claims](https://docs.github.com/en/actions/reference/security/oidc)):
+| Preference | Offer | How the owner takes it | Relay can read it |
+|---|---|---|---|
+| 1 | Any store that publishes auth.md with anonymous agent registration | the store's own claim page, opened through `hobo claim open` | designed |
+| 2 | HoBo's config-service Worker on a Cloudflare temporary account | Cloudflare's claim page, within 60 minutes | designed |
+| 3 | Infisical on the owner's compute fleet, bootstrapped by HoBo | a sealed sign-in, revealed once by `hobo claim open`; finalize revokes HoBo's bootstrap identity | yes |
+| 4 | An Infisical Cloud organization the owner already has (attach-only) | the owner's own `infisical login`, for one run | yes |
 
-   | Field | Value |
-   |---|---|
-   | OIDC Discovery URL | `https://token.actions.githubusercontent.com` |
-   | Issuer | `https://token.actions.githubusercontent.com` |
-   | Subject | `repo:Hobo-Labs/HoBo:ref:refs/heads/main` |
-   | Audiences | `https://github.com/Hobo-Labs` (GitHub's default `aud`, the owner's URL) |
+HoBo routes to the first offer whose evidence is present and whose runtime
+binding is built; `--allow-designed` lifts the second gate. Today that makes
+self-hosted Infisical the first store the relay can actually use; the
+Cloudflare Worker and auth.md stores are provisioned and claimed by the same
+command once their runtime binding lands (the amendment says what is built).
 
-   If the deploy job names a GitHub environment, GitHub's subject becomes
-   `repo:Hobo-Labs/HoBo:environment:<name>`; use that instead. Repositories
-   created after 2026-07-15 use an immutable subject with numeric ids: check with
-   `gh api repos/Hobo-Labs/HoBo/actions/oidc/customization/sub`. Add the identity
-   to `hobo-ci` with the **Developer** (member) role, which can write, and to
-   `hobo-ci-deploy` with **Viewer**. The job needs `permissions: id-token: write`;
-   `githubActionsJwtSource()` of the adapter reads its token.
-5. **Vercel deploy token.** Create a Vercel access token scoped to the team and
-   store it in project `hobo-ci-deploy`, environment `prod`, as `VERCEL_TOKEN`.
-   Only the deploy identity can read it.
-6. **Owner identity `hobo-ci-owner`** for `hobo ci app create` on your own
-   machine: Universal Auth
-   ([login endpoint](https://infisical.com/docs/api-reference/endpoints/universal-auth/login)),
-   member of `hobo-ci` with **Developer**. Create a client secret with a short
-   TTL (an hour) when you need it, and revoke it afterwards.
-7. **The relay's entries.** In `hobo-ci` / `prod` / `/hobo-ci-relay`, create the
-   entries below except the five App credentials, which step 8 writes.
-8. **The GitHub App.** On your machine:
+### What provisioning creates
 
-   ```sh
-   export INFISICAL_PROJECT_ID=<hobo-ci project id> INFISICAL_ENVIRONMENT=prod \
-     INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<id>
-   read -rs INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
-   hobo ci app create --relay https://<relay-host> --owner-id "$(gh api user --jq .id)"
-   ```
+Either Infisical offer ends in the same layout, which is what the relay's
+loader and the deploy workflow read:
 
-   `INFISICAL_TOKEN` (for example from
-   `infisical login --method=universal-auth --silent --plain`) works in place of
-   the client id and secret. See [`hobo ci app create`](../hobo/CI.md#create-the-hosted-relays-github-app).
+| Project | Environment / folder | Identity | Role | Trusts |
+|---|---|---|---|---|
+| `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-relay` | viewer | the Vercel team issuer: `iss`/discovery `https://oidc.vercel.com/<team-slug>`, `aud` `https://vercel.com/<team-slug>`, `sub` `owner:<team-slug>:project:hobo-ci:environment:production`, claims `owner_id` and `project_id` pinned |
+| `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy` | viewer | GitHub Actions: `iss` `https://token.actions.githubusercontent.com`, `aud` `https://github.com/<owner>`, `sub` `repo:<owner>/<repo>:ref:refs/heads/main` |
+
+The deploy credential has a project of its own so the relay's identity, a
+member of `hobo-ci` only, can never read it (Infisical project roles cover the
+whole project). Endpoints: `POST /api/v1/admin/bootstrap` (self-hosted only),
+`POST /api/v1/projects`, `POST /api/v1/folders`,
+`POST /api/v1/projects/{projectId}/identities`,
+`POST /api/v1/auth/oidc-auth/identities/{identityId}`, and at finalize
+`DELETE`/`GET /api/v1/identities/{identityId}`, from Infisical's OpenAPI
+document (read 2026-11-12), pinned by
+[`infisical-admin.pact.json`](../adapters/adapter-infisical/contracts/pacts/infisical-admin.pact.json).
+
+The coordinates (the store's origin, both project ids, both identity ids, the
+Vercel team id) are written to `deploy/secret-store.binding.json`, the
+`SecretStoreBinding` record of
+[`secret_store_claim.proto`](../secret-store-claim/data-models/secret_store_claim.proto).
+They are ids, not credentials; committing the file is how `hobo ci deploy` and
+the workflow find the store.
 
 ## What the relay deployment declares
 
 Plain configuration on the Vercel project, not secrets:
 
-| Variable | Value |
-|---|---|
-| `HOBO_CI_CONFIG_SERVICE` | `infisical` (`env`, the default, reads the environment instead) |
-| `INFISICAL_SITE_URL` | optional; `https://app.infisical.com` if unset |
-| `INFISICAL_IDENTITY_ID` | the id of `hobo-ci-relay` |
-| `INFISICAL_PROJECT_ID` | the id of `hobo-ci` |
-| `INFISICAL_ENVIRONMENT` | `prod` |
-| `INFISICAL_SECRET_PATH` | `/hobo-ci-relay` |
+| Variable | Value | From |
+|---|---|---|
+| `HOBO_CI_CONFIG_SERVICE` | `infisical` (`env`, the default, reads the environment instead) | the Yard's binding row |
+| `INFISICAL_SECRET_PATH` | `/hobo-ci-relay` | the Yard's binding row |
+| `INFISICAL_ENVIRONMENT` | `prod` | the production Camp |
+| `INFISICAL_SITE_URL` | the store's origin | `deploy/secret-store.binding.json` |
+| `INFISICAL_IDENTITY_ID` | the id of `hobo-ci-relay` | `deploy/secret-store.binding.json` |
+| `INFISICAL_PROJECT_ID` | the id of `hobo-ci` | `deploy/secret-store.binding.json` |
 
 `HOBO_CI_CONFIG_SERVICE` is a setting of the relay's Bindle
 ([`src/bindle.ts`](src/bindle.ts)); the `INFISICAL_*` coordinates belong to the
-config-service binding of the relay's Yard ([`deploy/yard.ts`](deploy/yard.ts),
-phase 6). The production Camp chooses that binding: it projects
-`HOBO_CI_CONFIG_SERVICE=infisical`, `INFISICAL_SITE_URL` and
-`INFISICAL_SECRET_PATH`, the Camp adds `INFISICAL_ENVIRONMENT=prod`, and the two
-ids are given at deploy time from repository variables. `hobo ci deploy` sets
-them on the project for production; nobody types them into Vercel.
+config-service binding of the relay's Yard ([`deploy/yard.ts`](deploy/yard.ts)),
+which names the capability and the binding file and asks the deploy for the
+three inputs. `hobo ci deploy` fills them, and the Vercel team, from the
+committed binding (a `--set` still wins), and sets them on the project for
+production; nobody types them into Vercel.
 
 ## The deploy workflow on `main`
 
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
 deploys the relay to production on every push to `main` that changes it, and on
 a manual run (Actions → HoBo relay deploy → Run workflow). It never asks anyone
-to deploy, and it holds no secret: it signs in to Infisical with the job's GitHub
-Actions OIDC token as `hobo-ci-deploy` (step 4 above) and reads `VERCEL_TOKEN`
-from the `hobo-ci-deploy` project (step 5), masked in the log.
+to deploy, holds no secret and reads no repository variable about the relay:
+its gate is the committed binding (no binding, or an unreadable one: a notice,
+and the job succeeds), and its credential step signs in to the store with the
+job's GitHub Actions OIDC token as `hobo-ci-deploy` and reads `VERCEL_TOKEN`
+from the `hobo-ci-deploy` project, masked in the log. A `route` job picks the
+runner first, as `hobo-ci.yml` does (the fleet while it takes jobs, an
+enrolled box, else GitHub-hosted), so a busy fleet no longer holds the deploy
+and every later one in its concurrency group.
 
-### Repository variables
+How `VERCEL_TOKEN` gets into the store is a claim step, designed and not built
+(the amendment's [deploy credential](../../docs/design/adr/hosted-relay-stateless.md#the-deploy-credential)
+records why): Vercel offers no flow in which an agent obtains a token for a
+team it does not own, and its claimable deployments cannot target an existing
+project. Until then the owner's own `vercel login` session is the only source,
+used once, and the token goes nowhere but the deploy project.
 
-Settings → Secrets and variables → Actions → **Variables** (not Secrets: these
-are ids and coordinates, and the job reads them as `vars.*`). Until the first
-five are set, the job ends with a notice naming the missing ones, and succeeds.
-
-| Variable | Value | Required |
-|---|---|---|
-| `HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID` | the id of the `hobo-ci-deploy` identity | yes |
-| `HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID` | the id of the `hobo-ci-deploy` project | yes |
-| `HOBO_CI_RELAY_INFISICAL_IDENTITY_ID` | the id of the `hobo-ci-relay` identity (the relay's `INFISICAL_IDENTITY_ID`) | yes |
-| `HOBO_CI_RELAY_INFISICAL_PROJECT_ID` | the id of the `hobo-ci` project (the relay's `INFISICAL_PROJECT_ID`) | yes |
-| `HOBO_CI_RELAY_VERCEL_TEAM_ID` | the Vercel team id, `team_…` | yes |
-| `HOBO_CI_DEPLOY_INFISICAL_ENVIRONMENT` | the deploy project's environment | no; `prod` |
-| `HOBO_CI_DEPLOY_INFISICAL_SECRET_PATH` | the folder holding `VERCEL_TOKEN` | no; `/` |
-| `HOBO_CI_INFISICAL_SITE_URL` | `https://eu.infisical.com` for EU Cloud | no; US Cloud |
-| `HOBO_CI_DEPLOY_INFISICAL_AUDIENCE` | the audience the deploy identity expects, if not GitHub's default | no |
-| `HOBO_CI_RELAY_URL` | the relay's production origin, for the smoke check | no; the deployment URL, which Deployment Protection may answer 401 |
-
-### What the workflow does, and what stays with the owner
+### What the workflow does, and the claim steps the skill drives
 
 Automated, on every deploy: the setting of the production Camp's non-secret
 configuration, the deployment of the pushed commit, the wait for READY, a smoke
@@ -170,22 +154,21 @@ for production or provisions one (`vercel integration add upstash/upstash-kv
 --name hobo-ci-cache --environment production --no-env-pull --non-interactive`).
 Its outcome is in the job summary; a failure there does not stop the deploy.
 
-One-time owner steps, in a browser, besides steps 1–8 above:
+Not a checklist: the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md)
+skill surfaces each of these to the owner as a claim step, at the moment it is
+needed, with what it approves. Each is a person's act by the vendor's design:
 
-1. **Install the Upstash integration on the team** (Vercel accepts an
-   integration's terms only from a person: `vercel integration accept-terms`
-   needs a terminal). Vercel dashboard → the team → **Integrations** →
-   **Browse Marketplace** → **Upstash** → **Install** → accept the terms → choose
-   the team. Stop before creating a database: the workflow provisions
-   `hobo-ci-cache` on its next run. To do it by hand instead: **Storage** →
-   **Create Database** → **Upstash for Redis** → name `hobo-ci-cache`, free plan →
-   **Connect Project** → `hobo-ci`, environments Production and Preview.
-2. **Team issuer for OIDC** on the `hobo-ci` project (step 3 above): Project →
-   Settings → Security → *Secure backend access with OIDC federation* → Team.
-3. **Disconnect what the relay no longer uses** once phase 8 has cut over:
-   Project → Settings → Integrations → Neon → Disconnect. Keep Turso: it is a
-   member of the cache fleet on its free plan
-   ([options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
+1. **The Upstash integration's terms.** Vercel accepts a Marketplace
+   integration's terms only from a person (`vercel integration accept-terms`
+   needs a terminal). One approval on the team; the workflow then provisions
+   `hobo-ci-cache` on its next run.
+2. **The team issuer for OIDC** on the relay's project, which the relay's
+   identity trusts. Designed: `hobo ci deploy` sets it through the project
+   API in the owner's claimed session; until then, one toggle (Project →
+   Settings → Security → *Secure backend access with OIDC federation* → Team).
+3. **Neon, once phase 8 has cut over**, is disconnected (Project → Settings →
+   Integrations → Neon). Turso stays: it is a member of the cache fleet on its
+   free plan ([options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
 
 Not provisioned by the workflow, by design: Turso, Vercel Blob and Valkey are
 rows of the Yard's catalog that no Camp chooses. Choosing one is a change to
@@ -204,7 +187,7 @@ refuses a folder holding any other key, and names it (never its value).
 | `HOBO_CI_PUBLIC_URL`, `HOBO_CI_SESSION_KEY`, `HOBO_CI_BOOTSTRAP_ACCOUNT_ID`, `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`, `HOBO_CI_CONTROL_TOKENS_JSON`, `HOBO_CI_CONFIG_JSON` (the config document), `CRON_SECRET` | yes | owner, later `hobo ci` |
 | `HOBO_CI_INVITATION_EXPIRES_AT`, `HOBO_CI_ONBOARDING_CONTROL_TOKEN`, `HOBO_CI_SANDBOX_ENABLED`, `HOBO_CI_SANDBOX_TEAM_ID`, `HOBO_CI_SANDBOX_PROJECT_ID`, `HOBO_CI_SANDBOX_ISSUER`, `HOBO_CI_SANDBOX_PLAN`, `HOBO_CI_SANDBOX_DOMAINS_JSON` | no | owner |
 | `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url: each Sandbox proxy session token is derived from it, so none is stored) | with `HOBO_CI_SANDBOX_ENABLED` | owner |
-| `HOBO_CI_GITHUB_APP_ID`, `HOBO_CI_GITHUB_APP_CLIENT_ID`, `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`, `HOBO_CI_GITHUB_APP_CLIENT_SECRET` | yes | `hobo ci app create` |
+| `HOBO_CI_GITHUB_APP_ID`, `HOBO_CI_GITHUB_APP_CLIENT_ID`, `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`, `HOBO_CI_GITHUB_APP_CLIENT_SECRET` | yes | `hobo ci app create` (its manifest page is the GitHub App's claim step: one browser click by GitHub's design, see [`hobo ci app create`](../hobo/CI.md#create-the-hosted-relays-github-app)) |
 | `VALKEY_URL` (`redis://` or `rediss://`, with its password), `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | no | owner: cache-fleet members the deployment's environment does not bind, typically the Aiven for Valkey URL (ADR-0179 one-time action 4). A name the environment also sets keeps the environment's value; start-up logs only which names came from here |
 | `HOBO_CI_CACHE_OFFERS_JSON` (a `RelayCacheOffers` document, [`data-models/cache_offers.proto`](data-models/cache_offers.proto)) | no | owner: the cache fleet's offers, budget caps and switch marks; defaults come from the offer catalog in [`offers/`](offers/) ([Offers as provider manifests](README.md#offers-as-provider-manifests)) |
 
@@ -233,7 +216,10 @@ to the protobuf record.
 ## Open questions
 
 - Infisical free-plan limits on projects, machine identities and API rate are
-  checked when the organization is created.
+  checked when an attach-only organization is used.
+- That a project-scoped identity (`POST /api/v1/projects/{projectId}/identities`)
+  takes OIDC Auth through `POST /api/v1/auth/oidc-auth/identities/{identityId}`
+  is read from the OpenAPI document, not observed.
 - That GitHub accepts a loopback `redirect_url` in an App manifest is assumed
   (tools such as Probot rely on it), not checked here.
 - That an Infisical `PATCH` of a missing secret answers 404 (the adapter then

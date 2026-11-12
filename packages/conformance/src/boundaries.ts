@@ -156,6 +156,10 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
+	// The secret store a deploy chooses and hands over by claim (ADR-0179
+	// amendment): a layer-3 package that composes the Infisical adapter, the
+	// Cloudflare provider and the auth.md and claim planes; `hobo` uses it.
+	"packages/secret-store-claim",
 	"packages/core",
 	"packages/contract-harness",
 	// Test-only harness for code that reads hostile text, reached only from

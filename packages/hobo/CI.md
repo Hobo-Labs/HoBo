@@ -358,15 +358,13 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 `--dry-run` prints the placement, the chosen bindings and every request it
 would send, and sends none. A real run reads `VERCEL_TOKEN` from the environment
 and deploys to **preview** unless `--target production` is given. Production
-chooses the config-service binding, which asks for the owner's two Infisical
-ids:
+chooses the config-service binding, which asks for the store's origin and two
+ids; `hobo ci deploy` reads them, and the team, from the committed
+`deploy/secret-store.binding.json`:
 
 ```sh
 hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
-  --target production --team team_… \
-  --set INFISICAL_IDENTITY_ID=<hobo-ci-relay id> \
-  --set INFISICAL_PROJECT_ID=<hobo-ci project id> \
-  --provision --wait --dry-run
+  --target production --provision --wait --dry-run
 ```
 
 | Option | Means |
@@ -380,10 +378,49 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
 every merge to `main` that changes the relay, reading the Vercel token from the
-config service with GitHub OIDC. See
+relay's secret store with GitHub OIDC. Production's config-service inputs
+(`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`) and the
+team come from `deploy/secret-store.binding.json` in the relay's project; a
+`--set` still overrides one. See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
-for the repository variables it needs, and [the README](README.md) for the plan
-record and its gates. It has been exercised against fakes only.
+and [the README](README.md) for the plan record and its gates. It has been
+exercised against fakes only.
+
+## Choose the relay's secret store (`hobo ci secret-store`)
+
+The relay's config/secret store is not set up by hand and lives in no Vercel
+or GitHub secret or variable (ADR-0179 amendment
+[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
+HoBo routes `secrets.config-service/v1` when the deployment runs, provisions
+the store, and hands it to the owner through a HoBo claim:
+
+```sh
+cd packages/ci-vercel
+hobo ci secret-store plan --json --fleet-host https://<fresh Infisical on the fleet>
+hobo ci secret-store provision --team team_… --vercel-team-slug <slug> \
+  --vercel-project-id prj_… --fleet-host https://… --owner-email <owner>
+# the owner, in their own terminal:
+hobo claim open secret-store
+hobo claim finalize secret-store
+```
+
+| Option | Means |
+|---|---|
+| `--auth-md <origin>` | A store that may publish auth.md; probed for anonymous agent registration (repeatable) |
+| `--fleet-host <origin>` | A fresh Infisical the Yard placed on a compute fleet host; HoBo bootstraps it |
+| `--owner-email <address>` | The admin user a self-hosted store's claim hands over |
+| `--team`, `--vercel-team-slug`, `--vercel-project-id` | The Vercel team and project the relay's identity trusts (OIDC issuer, subject and pinned `owner_id`/`project_id`) |
+| `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare Worker, an auth.md store) |
+
+`plan` contacts nothing but the `--auth-md` candidates. `provision` writes
+`deploy/secret-store.binding.json` (coordinates only) when the relay can read
+the store, attaches the claim bundle to the deployment's claim journal, and
+prints the owner's next steps; it never prints a claim link, a password or a
+token. `INFISICAL_TOKEN` (from the owner's own `infisical login`) selects the
+attach-only offer for an Infisical Cloud organization the owner already has.
+`hobo claim finalize secret-store` for a self-hosted store deletes HoBo's
+bootstrap identity and passes only when Infisical refuses its token.
+Agents drive this through the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md) skill.
 
 
 ## Create the hosted relay's GitHub App

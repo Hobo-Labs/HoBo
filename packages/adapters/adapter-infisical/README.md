@@ -45,6 +45,29 @@ take it explicitly.
 | Create | `POST /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/create> |
 | Update | `PATCH /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/update> |
 
+Provisioning a store HoBo created or was handed (`src/admin.ts`, ADR-0179
+amendment "Secret store chosen at deploy, provisioned by claim"), from
+Infisical's OpenAPI document (<https://app.infisical.com/api/docs/json>, read
+2026-11-12) and the
+[automated bootstrapping guide](https://infisical.com/docs/self-hosting/guides/automated-bootstrapping):
+
+| Call | Endpoint |
+|---|---|
+| Bootstrap a fresh self-hosted instance (once) | `POST /api/v1/admin/bootstrap` `{email, password, organization}` → admin user, organization, instance-admin identity with its Token Auth token |
+| Create a project | `POST /api/v1/projects` `{projectName, slug, type: "secret-manager", shouldCreateDefaultEnvs: true}` |
+| Create a folder | `POST /api/v1/folders` `{workspaceId, environment, name, path}` |
+| Create a project identity with its role | `POST /api/v1/projects/{projectId}/identities` `{name, roles: [{role}]}` |
+| Trust a workload issuer | `POST /api/v1/auth/oidc-auth/identities/{identityId}` |
+| Delete an identity / probe a token | `DELETE` / `GET /api/v1/identities/{identityId}` (401 = the token is dead) |
+
+`bootstrapInfisicalInstance` and `createInfisicalAdmin` make mutating calls
+once, never retried (a create that timed out may have happened). Infisical
+Cloud has no bootstrap and no agent or delegated way to create an
+organization or an identity, so on Cloud only the calls after the bootstrap
+apply, with the owner's own token. The boundary is pinned by
+[`contracts/pacts/infisical-admin.pact.json`](contracts/pacts/infisical-admin.pact.json)
+(consumer only: no stand-in serves the admin API).
+
 Reads ask for literal values (`expandSecretReferences=false`) from the bound
 folder only, so the relay reads exactly what was written there. A write that a
 secret-protection policy turns into an approval request is reported as

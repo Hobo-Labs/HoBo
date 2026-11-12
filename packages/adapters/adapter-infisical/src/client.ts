@@ -74,9 +74,12 @@ export interface InfisicalClient {
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
-type Answer = Readonly<{ status: number; body: JsonValue | undefined }>;
+export type Answer = Readonly<{ status: number; body: JsonValue | undefined }>;
 
-async function readBody(response: Response): Promise<JsonValue | undefined> {
+/** A bounded JSON body; undefined when empty, oversized or not JSON. */
+export async function readBody(
+	response: Response,
+): Promise<JsonValue | undefined> {
 	if (!response.body) return undefined;
 	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
@@ -112,7 +115,8 @@ function retryAfterMs(response: Response): number | undefined {
 	return Number(header) * 1000;
 }
 
-function failure(operation: string, answer: Answer): InfisicalError {
+/** The adapter error for a non-2xx answer. */
+export function failure(operation: string, answer: Answer): InfisicalError {
 	const reqId = requestIdOf(answer.body);
 	const details = { status: answer.status, reqId };
 	switch (answer.status) {

@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	decide,
-	RELAY_DEPLOY_REQUIRED_VARIABLES,
 	RELAY_EXTRA_INPUTS,
+	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
+	storeBindingState,
 	touchesRelay,
 } from "../ci/relay-deploy-gate.mts";
 import { lintActionsRepository } from "../lint-actions.ts";
@@ -20,9 +21,7 @@ const workflowPath = join(root, ".github", "workflows", "relay-deploy.yml");
 const workflow = readFileSync(workflowPath, "utf8");
 const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
-const configured = Object.fromEntries(
-	RELAY_DEPLOY_REQUIRED_VARIABLES.map((name) => [name, "configured-id"]),
-);
+const configured = "bound" as const;
 
 /** The block of one step, from its `- name:` line to the next step. */
 function step(name: string): string {
@@ -73,45 +72,64 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
-	it("ends with a notice and no deploy until the owner has set the repository variables", () => {
+	it("ends with a notice and no deploy until a secret store is bound, and names how one is", () => {
 		const decision = decide({
 			event: "push",
-			env: {},
+			store: "absent",
 			changed: ["packages/ci-vercel/src/entry.ts"],
 			inputDirs,
 		});
 		assert.equal(decision.run, false);
-		for (const name of RELAY_DEPLOY_REQUIRED_VARIABLES)
-			assert.ok(decision.reason.includes(name));
-		const partial = decide({
+		assert.ok(decision.reason.includes(RELAY_SECRET_STORE_BINDING));
+		assert.match(decision.reason, /hobo ci secret-store provision/u);
+		const broken = decide({
 			event: "workflow_dispatch",
-			env: { ...configured, HOBO_CI_RELAY_VERCEL_TEAM_ID: " " },
+			store: "unreadable",
 			inputDirs,
 		});
-		assert.equal(partial.run, false);
-		assert.match(partial.reason, /HOBO_CI_RELAY_VERCEL_TEAM_ID/u);
+		assert.equal(broken.run, false);
+	});
+
+	it("reads the binding's shape only, and only an HTTPS endpoint counts", () => {
+		assert.equal(storeBindingState(undefined), "absent");
+		assert.equal(storeBindingState("not json"), "unreadable");
+		assert.equal(
+			storeBindingState(
+				JSON.stringify({ kind: "infisical-self-hosted", endpoint: "http://x" }),
+			),
+			"unreadable",
+		);
+		assert.equal(
+			storeBindingState(
+				JSON.stringify({
+					kind: "infisical-self-hosted",
+					endpoint: "https://secrets.example",
+				}),
+			),
+			"bound",
+		);
 	});
 
 	it("deploys a manual run, and a push whose range it cannot read", () => {
 		assert.equal(
-			decide({ event: "workflow_dispatch", env: configured, inputDirs }).run,
+			decide({ event: "workflow_dispatch", store: configured, inputDirs }).run,
 			true,
 		);
 		assert.equal(
-			decide({ event: "push", env: configured, inputDirs }).run,
+			decide({ event: "push", store: configured, inputDirs }).run,
 			true,
 		);
 		assert.equal(
 			decide({
 				event: "push",
-				env: configured,
+				store: configured,
 				changed: ["README.md"],
 				inputDirs,
 			}).run,
 			false,
 		);
 		assert.equal(
-			decide({ event: "pull_request", env: configured, inputDirs }).run,
+			decide({ event: "pull_request", store: configured, inputDirs }).run,
 			false,
 		);
 	});
@@ -139,17 +157,34 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /write-all|secrets\.|\$\{\{\s*secrets/u);
 	});
 
-	it("reads its coordinates from repository variables, every one the gate requires", () => {
-		for (const name of RELAY_DEPLOY_REQUIRED_VARIABLES)
-			assert.ok(
-				workflow.includes(`${name}: \${{ vars.${name} }}`),
-				`${name} is not mapped from vars`,
-			);
+	it("reads no repository variable or secret for the relay's configuration", () => {
+		// Runner routing reads its own variables; nothing about the relay does.
+		for (const line of workflow.split("\n"))
+			if (line.includes("vars."))
+				assert.match(
+					line,
+					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER|FLEET_STATE)\b/u,
+					line,
+				);
+		assert.doesNotMatch(
+			workflow,
+			/INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u,
+		);
+	});
+
+	it("routes the deploy like hobo-ci.yml, so a busy fleet does not hold it", () => {
+		assert.match(workflow, /^ {2}route:\n/mu);
+		assert.match(workflow, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(workflow, / {4}needs: route\n/u);
+		assert.match(
+			workflow,
+			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| /u,
+		);
 	});
 
 	it("reads the deploy token through the config service, masked, before the deploy step", () => {
 		const credential = step(
-			"Read the Vercel deploy token (Infisical, GitHub OIDC)",
+			"Read the Vercel deploy token (secret store, GitHub OIDC)",
 		);
 		assert.match(
 			credential,
@@ -177,13 +212,12 @@ describe("the relay deploy workflow", () => {
 			"--cwd packages/ci-vercel",
 			"--target production",
 			'--sha "$GITHUB_SHA"',
-			'--set "INFISICAL_IDENTITY_ID=$HOBO_CI_RELAY_INFISICAL_IDENTITY_ID"',
-			'--set "INFISICAL_PROJECT_ID=$HOBO_CI_RELAY_INFISICAL_PROJECT_ID"',
 			"--provision --wait --json",
 		])
 			assert.ok(deploy.includes(part), `the deploy step lacks ${part}`);
-		// The provider and the project come from the Yard, not from here.
-		assert.doesNotMatch(deploy, /--project|--repo|vercel deploy/u);
+		// The provider and the project come from the Yard, the team and the
+		// store's coordinates from the committed binding, not from here.
+		assert.doesNotMatch(deploy, /--project|--repo|--team|--set|vercel deploy/u);
 		assert.match(
 			step("Install the pinned Vercel CLI for Marketplace provisioning"),
 			/add vercel@\d+\.\d+\.\d+ /u,

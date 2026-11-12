@@ -15,6 +15,7 @@ import {
 	type CommandModule,
 	type CommandResult,
 	verbHelpText,
+	type YardRuntime,
 } from "@hobo/cli";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
@@ -34,6 +35,11 @@ import {
 } from "./ci-relay-deploy.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRuns } from "./ci-runs.js";
+import {
+	CI_SECRET_STORE_OPTIONS,
+	runCiSecretStore,
+	SECRET_STORE_ONLY_OPTIONS,
+} from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 import type { VercelFetch } from "./vercel-client.js";
 
@@ -278,6 +284,12 @@ function parseCiArgs(args: readonly string[]) {
 			provision: { type: "boolean" },
 			"owner-id": { type: "string" },
 			name: { type: "string" },
+			"auth-md": { type: "string", multiple: true },
+			"fleet-host": { type: "string" },
+			"owner-email": { type: "string" },
+			"vercel-team-slug": { type: "string" },
+			"vercel-project-id": { type: "string" },
+			"allow-designed": { type: "boolean" },
 		},
 	});
 }
@@ -330,6 +342,8 @@ export function createCiCommand(
 		vercelFetch?: VercelFetch;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
+		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
+		runtime?: YardRuntime;
 	} = {},
 ): CommandModule {
 	return {
@@ -371,6 +385,7 @@ export function createCiCommand(
 					"github",
 					"deploy",
 					"app",
+					"secret-store",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
@@ -397,6 +412,40 @@ export function createCiCommand(
 					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					emitProgress,
 				});
+			}
+			if (command === "secret-store") {
+				if (positionals.length !== 2)
+					return usage(
+						"Use hobo ci secret-store plan or hobo ci secret-store provision.",
+					);
+				const allowed = new Set<string>(CI_SECRET_STORE_OPTIONS);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(
+						`--${unsupported[0]} does not apply to hobo ci secret-store.`,
+					);
+				return runCiSecretStore({
+					subcommand: positionals[1] ?? "",
+					cwd: flags.cwd,
+					values,
+					env: deps.env ?? process.env,
+					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					...(deps.runtime !== undefined
+						? { runtime: deps.runtime }
+						: undefined),
+					interactive:
+						(deps.interactive ??
+							Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
+						!flags.json,
+					prompt: deps.prompt ?? promptOnTerminal,
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
+				});
+			}
+			for (const key of SECRET_STORE_ONLY_OPTIONS) {
+				if (values[key] !== undefined)
+					return usage(`--${key} only applies to hobo ci secret-store.`);
 			}
 			{
 				const misplaced = CI_DEPLOY_ONLY_OPTIONS.find(

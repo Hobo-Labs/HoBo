@@ -8,7 +8,8 @@ tags: [hobo, design, adr, ci, relay, twelve-factor]
 # ADR-0179 — The Hosted CI Relay Keeps No Durable State {#adr-0179}
 
 **Status:** Accepted (design; implementation phased); amended 2026-11-11 with
-[options routed by budget](#amendment-options-routed-by-budget). Implemented:
+[options routed by budget](#amendment-options-routed-by-budget) and 2026-11-12
+with [secret store chosen at deploy, provisioned by claim](#amendment-secret-store-chosen-at-deploy-provisioned-by-claim). Implemented:
 phases 2, 2b, 3, 4a, 4b, 4c (cache-fleet selection by budget), 5 (the
 relay's helpers on the cache, offers as provider manifests; provider usage
 pulls deferred) and 7 (the PostgreSQL path removed); not yet deployed
@@ -43,6 +44,9 @@ The hosted relay keeps no durable state. In twelve-factor terms:
 
 1. **Config and secrets are a separate service.** First binding: Infisical
    Cloud (free plan; open source, so it can later run on HoBo's own compute).
+   *Amended 2026-11-12:* which service is chosen when the deployment runs and
+   handed to the owner by claim; Infisical Cloud is attach-only
+   ([amendment](#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
    The relay authenticates with its Vercel OIDC token through Infisical OIDC
    Auth (a machine identity trusting `https://oidc.vercel.com/<team>`, bound to
    project and environment): no secret zero. CI authenticates with GitHub
@@ -154,7 +158,7 @@ relay keeps serving on a GitHub-only floor that looks a runner up by its
 deterministic name before creating one; GitHub's duplicate-name behaviour is
 unverified and is tested before the floor relies on it. One more owner action:
 create an Aiven free Valkey service and store its connection URL in the config
-service. Details, sources, the cost table at measured volume and the phases
+service (an optional cache-fleet member, not a prerequisite). Details, sources, the cost table at measured volume and the phases
 (2b, 4b–4e, 5): [Options routed by budget](../hosted-relay-stateless.md#options-routed-by-budget).
 
 *Phase 4c, implemented.* The engine-neutral parts moved to
@@ -187,6 +191,163 @@ come from that catalog, and the start-up log records the driver choice
 API or GitHub's billing usage API exists in the repository), so exposure
 stays configured spend plus in-flight holds; Vercel Blob and Queues prices
 are unverified. Details: [Phase 5](../hosted-relay-stateless.md#phase-5).
+
+## Amendment: secret store chosen at deploy, provisioned by claim
+
+*2026-11-12.* Decision 1 named a config service, Infisical Cloud, that an
+owner had to set up by hand: an organization, two projects, three machine
+identities, a Vercel token and five repository variables. That checklist is
+withdrawn. Agent authentication with a claim replaces it.
+
+1. **The store is a capability, chosen when the deployment runs.** The relay
+   needs `secrets.config-service/v1`. HoBo routes it when `hobo ci deploy` (or
+   `hobo deploy` for an app whose Yard binds the capability) runs, through
+   `hobo ci secret-store plan|provision`
+   ([`@hobo/secret-store-claim`](../../../packages/secret-store-claim/README.md)):
+   hard gates on evidence gathered at that moment, then HoBo's preference
+   order. Nothing is pre-provisioned by hand. **Nothing is stored in Vercel
+   environment secrets, and nothing in GitHub secrets or variables.** The
+   chosen store's coordinates (origin, project ids, identity ids, Vercel team
+   id; no credential) are committed as `deploy/secret-store.binding.json`, the
+   `SecretStoreBinding` record, which `hobo ci deploy` and the deploy workflow
+   read. The Yard's config-service row names the capability and that file and
+   asks for three inputs (`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`,
+   `INFISICAL_PROJECT_ID`); it no longer hard-codes Infisical Cloud.
+2. **Offers, in preference order** (`DEFAULT_SECRET_STORE_OFFERS`; facts read
+   2026-11-12, ranking input only):
+
+   | # | Offer | Agent auth | Owner's claim | Cost | Availability | Relay binding |
+   |---|---|---|---|---|---|---|
+   | 1 | Any store that publishes auth.md with anonymous agent registration | `@hobo/auth-md` anonymous registration | the store's claim page, sealed, opened by `hobo claim open` | the store's | the store's | designed |
+   | 2 | HoBo's config-service Worker on a Cloudflare temporary account | Cloudflare temporary account (proof of work; the owner accepts Cloudflare's Terms and Privacy Policy first) | Cloudflare's claim URL, sealed; **within 60 minutes or Cloudflare deletes the account** | none while temporary; the owner's Workers plan after | account creation is rate-limited; the relay depends on Cloudflare | designed |
+   | 3 | HoBo-hosted Infisical (open source, self-hosted) on the owner's compute fleet | `POST /api/v1/admin/bootstrap` on a fresh instance | a sealed sign-in revealed once by `hobo claim open`; finalize revokes HoBo | no vendor fee; Infisical, PostgreSQL and Redis on the owner's hosts | **the relay's config availability becomes that host's** | built |
+   | 4 | An Infisical Cloud organization the owner already has | none: attach-only | the owner's own `infisical login`, for one run | Infisical's free plan | Infisical Cloud's | built |
+
+   The routing gate that passes over 1 and 2 today is the relay's runtime
+   binding, not preference: the relay's loader reads Infisical, so
+   `selectSecretStore` skips an offer whose binding is designed unless
+   `--allow-designed` is given, and says why in the plan. The offer table
+   does not change when the Worker lands; the gate opens.
+3. **Why this order, and the vendor evidence.** Infisical Cloud cannot be
+   created by an agent: `infisical.com/auth.md` answers its agent 404 ("There
+   is no agent-readable page"), `app.infisical.com/.well-known/*` serve the
+   SPA, there is no RFC 8414 metadata and no dynamic or client-ID-metadata
+   registration (`/api/.well-known/oauth-authorization-server` is 404); OAuth
+   applications are registered by an admin, and delegated tokens cannot create
+   organizations, machine identities or roles; every workload auth method
+   (OIDC, JWT, SPIFFE, AWS/GCP/Azure/OCI/Alibaba, Kubernetes, TLS, Universal)
+   authenticates an identity that already exists (all checked 2026-11-12). So
+   Infisical Cloud is attach-only, and an Infisical HoBo provisions is
+   self-hosted, where the
+   [automated bootstrap](https://infisical.com/docs/self-hosting/guides/automated-bootstrapping)
+   returns an admin user, an organization and an instance-admin machine
+   identity with a Token Auth token. Cloudflare temporary accounts are
+   production today and are agent authentication with a claim
+   ([Claim deployments](https://developers.cloudflare.com/workers/platform/claim-deployments/));
+   Cloudflare's own `auth.md` says auth.md registration is not live there and
+   points to them. auth.md stays first and generic: Resend, Firecrawl and
+   WorkOS publish it today; Infisical, Doppler, 1Password, Bitwarden, Akeyless,
+   Upstash, Turso and Vercel do not, and a secret manager that adopts it is
+   picked up by discovery with no change here. Neon's claimable Postgres
+   (`neon.com/auth.md`) is agent auth with a claim too, but a database, not a
+   secret manager: it is relevant only as the PostgreSQL a self-hosted
+   Infisical needs.
+4. **The Cloudflare offer, honestly against a dedicated secret manager.** A
+   temporary account holds Workers, KV, D1, Durable Objects, Queues and
+   Hyperdrive; Secrets Store and Worker secret bindings are not listed as
+   supported. The design is a small HoBo Worker: values envelope-encrypted
+   (AES-GCM) in a Durable Object; the root key a Worker secret binding, which
+   provisioning probes and, if the temporary account refuses it with an
+   authorization error, treats as the offer being unavailable (fail closed,
+   route on), never as a key stored beside the data; reads authorized by the
+   relay's Vercel OIDC token (issuer, audience, subject and pinned
+   `owner_id`/`project_id`, as Infisical's OIDC Auth does), writes by the
+   deploy workflow's GitHub OIDC token. That is agent-auth-and-claim with no
+   new vendor, and costs nothing while temporary. It is also HoBo writing a
+   secret manager: crypto, authorization, audit, rotation and versioning that
+   Infisical already has and HoBo would have to build and review. Claiming
+   gives the owner the account and its data; the platform keeps no access, so
+   later writes need the owner's own Cloudflare authorization. Built: the
+   account, its consent, proof of work and claim (`provisionCloudflareTemporaryStore`
+   over `@hobo/provider-cloudflare`'s temporary-account Yard). Designed: the
+   Worker, its upload, and the relay's loader for it; until then the temporary
+   token is destroyed when provisioning returns.
+5. **Claim, expiry and threat model** (against
+   [the anonymous-claim threat model](../anonymous-claim-threat-model.md)).
+   Every claim is a `@hobo/claims` bundle on the deployment's claim journal,
+   driven by `hobo claim status|open|finalize`; one item, `secret-store`.
+   - *Claim URL replay.* A claim URL or sign-in goes straight into the
+     owner-only, encrypted one-time action store, bound to tenant, project,
+     session and the item's provider, single-use, expiring at the provider's
+     deadline (Cloudflare's `claim.expiresAt`; auth.md's `expires_at`; 24
+     hours for a self-hosted sign-in). `provision` never prints it; the
+     owner reveals it with `hobo claim open` in their own terminal; the skill
+     forbids the agent to run that. Events, the plan, the binding and errors
+     carry references only, and `assertNoSecrets` guards the journal.
+   - *Confused deputy.* Redemption is scoped by audience: one provider's item
+     cannot redeem another's action. Completion is verified through the
+     provider, never by a redirect: for self-hosted Infisical, finalize deletes
+     HoBo's bootstrap identity with its own token and passes only on
+     Infisical's 401 for that token. Cloudflare's and auth.md's verification
+     is designed; finalize refuses those items rather than pass them.
+   - *Credentials HoBo must not keep.* Cloudflare's temporary token: destroyed
+     at once (designed: used once for the Worker upload, then destroyed).
+     Infisical's instance-admin token: sealed under a separate audience only
+     finalize redeems, and revoked there. The bootstrap admin password: sealed
+     into the claim and never printed, but HoBo generated it, so the owner is
+     asked to change it and turn on MFA; Infisical exposes no read of that to
+     an identity HoBo keeps, so this one step is asked, not observed.
+   - *Orphans and expiry.* Cloudflare deletes an unclaimed account after 60
+     minutes, so the skill leads with that deadline. A self-hosted store
+     whose claim expires keeps running on the owner's compute (their cost);
+     cleanup on a durable timer is designed. Bundles are `best-effort-saga`,
+     never called atomic.
+6. <a id="the-deploy-credential"></a>**The deploy credential.** Checked
+   2026-11-12 against Vercel's
+   [Claim Deployments](https://vercel.com/docs/deployments/claim-deployments)
+   and [deploy without logging in](https://vercel.com/docs/deployments/deploy-without-logging-in):
+   `vercel deploy --temporary` always creates a new project, always targets
+   production, refuses to run in CI or in a directory linked to a project, and
+   its claim moves the whole project to the claimer's team; the platform flow
+   (`POST /projects/:idOrName/transfer-request`, a code valid 24 hours, the
+   `vercel.com/claim-deployment?code=…` page) needs a token on the source
+   team. **Neither can deploy into an existing project in the owner's team.**
+   So: a relay with no project yet is first deployed with `--temporary` from
+   the owner's machine and its project claimed by the owner (one click); a
+   relay whose project exists keeps it. For deploys from `main`, Vercel offers
+   no way for an agent to obtain a token for a team it does not own, so the
+   token is minted once in the owner's own `vercel login` session (a claim
+   step the skill drives) and written only into the store's `hobo-ci-deploy`
+   project, which the relay's identity cannot read. Designed, not built: no
+   Vercel API write is made from this change, and the token-creation request
+   is unverified.
+7. **The GitHub App.** GitHub's manifest flow ends in one browser click by
+   design. `hobo ci app create` drives it; the skill presents it as a claim
+   step (what the owner approves, then wait), not a checklist item. Its
+   credentials go to the chosen store.
+8. **The deploy workflow** gates on the committed binding (absent: a notice,
+   success), reads no repository variable about the relay, signs in to the
+   store with GitHub OIDC as `hobo-ci-deploy`, and routes its runner through
+   the `route` job as `hobo-ci.yml` does, so a busy fleet no longer holds it
+   (its first run on `main` waited 48 minutes for a `hobo-trunk` slot).
+
+*Implemented with this amendment:* the records (`SecretStoreOffer`,
+`SecretStoreEvidence`, `SecretStoreSelection`, `SecretStoreBinding`, protobuf
+and CUE with fixtures), the routing seam, the auth.md path (discovery,
+anonymous registration, claim initiation, sealed link), the Cloudflare
+temporary-account path (consent, proof of work, sealed claim URL), the
+self-hosted Infisical path (bootstrap, project, folder, identities, OIDC
+trust, sealed sign-in, finalize that revokes HoBo), the attach-only path,
+`hobo ci secret-store plan|provision`, finalize's verifier for self-hosted
+Infisical, `hobo ci deploy` reading the binding, the workflow gate and
+routing, and the `hobo-deploy` agent skill; all against local stand-ins and
+the pact mock of Infisical's admin API. *Designed only:* the config-service
+Worker and the relay's loader for it, an auth.md store's runtime binding, the
+Yard placing Infisical with PostgreSQL and Redis on the compute fleet (the
+packs `pack-postgres-oci` and `pack-valkey-oci` exist; an Infisical image is
+not pinned by digest, so no Infisical pack is added), the Vercel deploy-token
+claim step, and verification of Cloudflare and auth.md claims. Details:
+[Secret store chosen at deploy](../hosted-relay-stateless.md#secret-store-chosen-at-deploy).
 
 ## Alternatives considered
 
@@ -226,9 +387,11 @@ are unverified. Details: [Phase 5](../hosted-relay-stateless.md#phase-5).
   config service's own versioning; the relay cannot be reconfigured over HTTP.
 - Budget enforcement is approximate by one pull interval, and priced offers
   pause while the cache is being rebuilt.
-- Operators make three one-time moves: create the Infisical organization and
-  admin identity, store a Vercel deploy token there, and re-create the GitHub
-  App through the CLI.
+- ~~Operators make three one-time moves~~ (withdrawn 2026-11-12): the owner
+  makes no setup moves. They take the store by claim when the deployment runs,
+  approve the GitHub App's manifest page, and sign in to Vercel once for the
+  deploy token; the `hobo-deploy` skill surfaces each when it is needed
+  ([amendment](#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
 - Many files and tests are deleted in phase 7 (done: the
   [itemized list](../hosted-relay-stateless.md#phase-7-removals)); the package
   READMEs' superseded sections went with them.

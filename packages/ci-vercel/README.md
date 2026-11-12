@@ -217,13 +217,19 @@ runs on every push to `main` that changes this package or a workspace package
 it is built from (its pnpm-lock closure, `scripts/ci/relay-deploy-gate.mts`),
 and on `workflow_dispatch`:
 
-1. The gate ends the job with a notice, and success, until the owner has set
-   the repository variables ([Config service](CONFIG-SERVICE.md#the-deploy-workflow-on-main)).
-2. With `permissions: id-token: write`, the job signs in to Infisical through
+0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
+   while it takes jobs, an enrolled box, else GitHub-hosted).
+1. The gate ends the job with a notice, and success, until a secret store is
+   bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
+   which `hobo ci secret-store provision` writes when the HoBo deployment
+   chooses the store and the owner claims it
+   ([Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
+   No repository variable or secret is read.
+2. With `permissions: id-token: write`, the job signs in to the store through
    OIDC Auth as `hobo-ci-deploy` (GitHub's token, `githubActionsJwtSource`),
-   reads `VERCEL_TOKEN` from the `hobo-ci-deploy` project, masks it
-   (`::add-mask::`) and hands it to the next steps through `$GITHUB_ENV`
-   (`scripts/ci/relay-deploy-credential.mts`).
+   reads `VERCEL_TOKEN` from the `hobo-ci-deploy` project the binding names,
+   masks it (`::add-mask::`) and hands it to the next steps through
+   `$GITHUB_ENV` (`scripts/ci/relay-deploy-credential.mts`).
 3. `hobo ci deploy --target production --provision --wait` attaches the
    Upstash cache through the Marketplace if the project lacks it, sets the
    production Camp's settings, deploys the pushed commit and waits for READY.
