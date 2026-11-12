@@ -118,6 +118,25 @@ could be replayed as if it were a live one.
 | `runtime-cloud-native` | **Stub** providers (`HOBO_CLOUD_NATIVE_UNIMPLEMENTED`) |
 | `runtime-dapr` / `runtime-browser` | Specialized |
 
+## HoBo's own release targets (release Freight through `@hobo/cd`)
+
+HoBo releases itself through HoBo CD
+([`release-channels.md`](./release-channels.md#hobo-releases-through-hobo-cd)).
+Every artifact family is recorded as Freight and promoted
+`hobo-release/candidate` -> `hobo-release/stable` by the `hobo deploy`
+composition. None of the three publish targets has an `@hobo/cd` realizer, so
+publication stays the existing workflow step, gated on the verdict.
+
+| Target | Freight artifact | Verified by | Realizer | Gap (typed refusal) |
+|---|---|---|---|---|
+| npm (`@hobo-labs/*`) | each tarball, `ARTIFACT_KIND_PACKAGE`, ecosystem `store` | digest in the HoBo artifact store | none (`npm publish` step) | `planning-camp-unknown`, `promotion-resolve-failed` |
+| GHCR (`ghcr.io/<owner>/hobo/*`) | each pushed image, `ARTIFACT_KIND_OCI_IMAGE`, ecosystem `oci` | registry lookup of the manifest digest (anonymous pull; live only) | none (`docker push` step) | as above |
+| GitHub Pages (`gh-pages`) | the site tree index, `ARTIFACT_KIND_STATIC_ASSETS` | digest in the HoBo artifact store | none (gh-pages push step) | as above |
+| all | release pipeline `hobo-release-<family>` | `pipeline apply` | no `hobo-release` Yard in the `hobo deploy` topology | `pipeline-unknown-camp` |
+
+A `gap` is never read as `qualified`. Any other refusal (unverified digest,
+yanked Freight, missing candidate lineage) blocks the publish.
+
 ## Traffic-routing staging cutover lane (`pnpm run staging:cutover`)
 
 The Phase-5 transparency demo: `scripts/staging-cutover-demo.mts` drives the
