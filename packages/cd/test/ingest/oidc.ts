@@ -37,7 +37,7 @@ export function signJwt(key: Key, claims: Claims, header: Claims = {}): string {
 	return `${head}.${body}.${b64url(signature)}`;
 }
 
-export function githubClaims(nowMs: number, overrides: Claims = {}): Claims {
+export function githubClaims(nowMs: number, overrides: Claims = {}) {
 	const now = Math.floor(nowMs / 1000);
 	return {
 		iss: GITHUB_ISSUER,
@@ -59,7 +59,7 @@ export function githubClaims(nowMs: number, overrides: Claims = {}): Claims {
 	};
 }
 
-export function gitlabClaims(nowMs: number, overrides: Claims = {}): Claims {
+export function gitlabClaims(nowMs: number, overrides: Claims = {}) {
 	const now = Math.floor(nowMs / 1000);
 	return {
 		iss: GITLAB_ISSUER,
