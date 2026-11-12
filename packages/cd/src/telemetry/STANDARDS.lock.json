@@ -1,0 +1,22 @@
+{
+  "standard": "OpenTelemetry semantic conventions",
+  "repository": "https://github.com/open-telemetry/semantic-conventions",
+  "tag": "v1.41.0",
+  "version": "1.41.0",
+  "schemaUrl": "https://opentelemetry.io/schemas/1.41.0",
+  "pinnedOn": "2026-11-11",
+  "pinnedBy": "WP19 (plan 0024, Part I §I.8 R8)",
+  "evidence": "Latest semantic-conventions release referenced by the newest @opentelemetry/semantic-conventions package in the workspace store (1.43.0 links registry docs at blob/v1.41.0); the dispatch container had no network route to GitHub to confirm a later tag.",
+  "groups": [
+    "cicd",
+    "deployment",
+    "error"
+  ],
+  "otlp": {
+    "protocol": "http/json",
+    "defaultEndpoint": "http://localhost:4318",
+    "tracesPath": "/v1/traces",
+    "metricsPath": "/v1/metrics"
+  },
+  "upgrade": "An upgrade is an ordinary later change: bump this file and SEMCONV in semconv.ts together, regenerate the registry snapshot in test/telemetry/semconv-registry.ts from the new tag, and keep the golden tests green."
+}

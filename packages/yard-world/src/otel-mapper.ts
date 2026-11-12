@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: this is the OTLP/JSON parse boundary; OTLP attribute maps and lookup tables are open dictionaries by the OTLP spec, and reading a value's representation is the parse. */
 /**
  * OTLP/JSON → yard-world model mappers (traces, logs, metrics).
  *
@@ -10,6 +11,9 @@
  *   hobo.station (default "default"), hobo.yard, hobo.camp (default "default"),
  *   hobo.junction (peer camp id for cross-camp spans),
  *   hobo.primitive = bindle | crew | actor (default bindle).
+ *
+ * CD spans naming a Camp in span attributes (`hobo.camp.id`) are lifted into a
+ * per-Camp resource first (`liftCdTopology`).
  *
  * Unknown services materialize stations/yards/camps/characters on demand so a
  * real OTLP exporter can point at the ingest boundary with zero provisioning.
@@ -91,6 +95,81 @@ export function attributesToRecord(
 		else if (v.doubleValue !== undefined) out[attr.key] = String(v.doubleValue);
 	}
 	return out;
+}
+
+/** A scope-spans group carrying the source group's scope, when it has one. */
+function scopeOf(source: OtlpScopeSpans, spans: OtlpSpan[]): OtlpScopeSpans {
+	const out: OtlpScopeSpans = { spans };
+	if (source.scope !== undefined) out.scope = source.scope;
+	return out;
+}
+
+function str(key: string, value: string): OtlpAttribute {
+	return { key, value: { stringValue: value } };
+}
+
+/**
+ * HoBo CD spans (plan 0024 WP19) carry topology as SPAN attributes
+ * (`hobo.camp.id`, `hobo.station.id`, `hobo.yard.id`) because one CD service
+ * delivers to many Camps. Regroup spans that name a Camp (`hobo.camp.id`) under a per-Camp resource.
+ * Spans without one stay where they were. Input order is preserved within a
+ * group; groups appear in first-seen order. Pure: returns a new payload.
+ */
+export function liftCdTopology(payload: OtlpTraceRequest): OtlpTraceRequest {
+	const out: OtlpResourceSpans[] = [];
+	for (const rs of payload.resourceSpans ?? []) {
+		const resource = attributesToRecord(rs.resource?.attributes);
+		const service = resource["service.name"] ?? "hobo-cd";
+		const keep: OtlpResourceSpans = { ...rs, scopeSpans: [] };
+		const lifted = new Map<string, OtlpResourceSpans>();
+		for (const ss of rs.scopeSpans ?? []) {
+			const stay: OtlpSpan[] = [];
+			for (const span of ss.spans ?? []) {
+				const attrs = attributesToRecord(span.attributes);
+				const campId = attrs["hobo.camp.id"];
+				if (campId === undefined || resource["hobo.camp"] !== undefined) {
+					stay.push(span);
+					continue;
+				}
+				const stationId =
+					attrs["hobo.station.id"] ?? resource["hobo.station"] ?? "default";
+				const yardId = attrs["hobo.yard.id"] ?? resource["hobo.yard"];
+				const key = `${stationId}\u0000${campId}`;
+				let group = lifted.get(key);
+				if (group === undefined) {
+					const attributes = (rs.resource?.attributes ?? []).filter(
+						(a) =>
+							![
+								"service.name",
+								"hobo.camp",
+								"hobo.station",
+								"hobo.yard",
+								"hobo.primitive",
+							].includes(a.key),
+					);
+					attributes.push(
+						str("service.name", `${service}@${campId}`),
+						str("hobo.camp", campId),
+						str("hobo.station", stationId),
+						str("hobo.primitive", "actor"),
+					);
+					if (yardId !== undefined) attributes.push(str("hobo.yard", yardId));
+					group = { resource: { attributes }, scopeSpans: [] };
+					lifted.set(key, group);
+				}
+				const scopes = group.scopeSpans ?? [];
+				const scope = scopes.find((s) => s.scope?.name === ss.scope?.name);
+				if (scope) scope.spans = [...(scope.spans ?? []), span];
+				else scopes.push(scopeOf(ss, [span]));
+				group.scopeSpans = scopes;
+			}
+			if (stay.length > 0)
+				keep.scopeSpans = [...(keep.scopeSpans ?? []), scopeOf(ss, stay)];
+		}
+		if ((keep.scopeSpans ?? []).length > 0) out.push(keep);
+		out.push(...lifted.values());
+	}
+	return { resourceSpans: out };
 }
 
 const SPAN_KINDS: Record<number, SpanKind> = {
@@ -216,7 +295,7 @@ export function mapTracePayload(
 		kind: SpanKind;
 	}
 	const flat: FlatSpan[] = [];
-	for (const rs of payload.resourceSpans ?? []) {
+	for (const rs of liftCdTopology(payload).resourceSpans ?? []) {
 		const resourceAttrs = attributesToRecord(rs.resource?.attributes);
 		const character = ensureCharacter(state, resourceAttrs, now);
 		for (const ss of rs.scopeSpans ?? []) {
@@ -236,7 +315,7 @@ export function mapTracePayload(
 
 	const events: AgentEvent[] = [];
 	for (const { span, attrs, character, yardId, startMs, endMs, kind } of flat) {
-		events.push({
+		const started: Extract<AgentEvent, { type: "span-started" }> = {
 			type: "span-started",
 			at: startMs,
 			traceId: span.traceId,
@@ -248,11 +327,11 @@ export function mapTracePayload(
 			yardId,
 			campId: character.campId,
 			characterId: character.id,
-			...(span.parentSpanId !== undefined
-				? { parentSpanId: span.parentSpanId }
-				: {}),
 			junctionId: attrs["hobo.junction"],
-		});
+		};
+		if (span.parentSpanId !== undefined)
+			started.parentSpanId = span.parentSpanId;
+		events.push(started);
 		if (span.endTimeUnixNano !== undefined) {
 			events.push({
 				type: "span-ended",
@@ -417,14 +496,15 @@ export function mapLogsPayload(
 				);
 				const message = bodyToText(record.body);
 				if (message === "") continue;
-				events.push({
+				const logged: Extract<AgentEvent, { type: "log-record" }> = {
 					type: "log-record",
 					at: nanoToMs(record.timeUnixNano) || now,
 					characterId: character.id,
 					severity,
 					message,
-					...(record.traceId !== undefined ? { traceId: record.traceId } : {}),
-				});
+				};
+				if (record.traceId !== undefined) logged.traceId = record.traceId;
+				events.push(logged);
 			}
 		}
 	}
