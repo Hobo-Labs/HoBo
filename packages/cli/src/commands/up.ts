@@ -131,7 +131,7 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				status: deployed ? "deployed" : result.status,
 				code: deployed ? "HOBO_OK" : "HOBO_UP_INCOMPLETE",
 				message: deployed
-					? `hobo up deployed ${result.provisioned.length} resources (${result.provisioned.join(", ")})`
+					? `hobo up deployed ${result.provisioned.length} resources (${result.provisioned.join(", ")})${receipt?.claimHint ? `. ${receipt.claimHint}` : ""}`
 					: `hobo up did not converge (status ${result.status})`,
 				data: {
 					command: "up",

@@ -85,9 +85,9 @@ export interface YardRuntime {
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
 	readonly hostingBudgetRequired?: boolean;
-	/** The production hosting supervisor owns provider effects and observed teardown. */
 	/** @hobo/cd desired-state delivery (D13). Composed by WP18; absent = legacy direct path. */
 	readonly delivery?: YardDelivery;
+	/** The production hosting supervisor owns provider effects and observed teardown. */
 	readonly hostingExecution?: {
 		up(request: {
 			admission: DeployResultPlanned;

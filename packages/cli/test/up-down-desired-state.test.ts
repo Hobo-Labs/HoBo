@@ -666,6 +666,18 @@ describe("hobo up --anonymous deploy-and-claim", () => {
 		});
 	});
 
+	it("tells a human how to claim the anonymous deploy", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime } = harness();
+			const run = await cliFor(runtime).run(["up", "--anonymous", "--json"], {
+				cwd,
+			});
+			const envelope = envelopeOf(run.stdout);
+			expect(envelope.status).toBe("deployed");
+			expect(String(envelope.message)).toContain("hobo claim");
+		});
+	});
+
 	it("--temporary is the same as --anonymous", async () => {
 		await withProject(HELLO_BINDLE, async (cwd) => {
 			const { runtime } = harness();
