@@ -224,6 +224,147 @@ export function imagetoolsInspectTag(
 	return { digest };
 }
 
+/**
+ * Asks the registry for a tag with one `HEAD /v2/<name>/manifests/<tag>`:
+ * the top-level digest the tag names (`Docker-Content-Digest`), or `undefined`
+ * on 404. Needs no buildx plugin; the release runners have none, and
+ * `docker buildx imagetools inspect` there exits 125 (finding 143). Runs in a
+ * child `node` so the release scripts stay synchronous.
+ *
+ * Credentials: `GITHUB_TOKEN` (or `GHCR_TOKEN`) from the environment, else the
+ * `ghcr.io` entry `docker login` wrote to the Docker config. They go only to
+ * the registry's own token endpoint and are never printed.
+ */
+const REGISTRY_HEAD_SCRIPT = `
+const { readFileSync } = await import("node:fs");
+const { homedir } = await import("node:os");
+const { join } = await import("node:path");
+const [host, name, reference] = process.argv.slice(1);
+function basicAuth() {
+	const token = process.env.GHCR_TOKEN || process.env.GITHUB_TOKEN;
+	if (token) {
+		const user = process.env.GITHUB_ACTOR || "x-access-token";
+		return Buffer.from(user + ":" + token).toString("base64");
+	}
+	try {
+		const dir = process.env.DOCKER_CONFIG || join(homedir(), ".docker");
+		const config = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
+		const entry = config.auths?.[host] ?? config.auths?.["https://" + host];
+		return typeof entry?.auth === "string" ? entry.auth : undefined;
+	} catch {
+		return undefined;
+	}
+}
+const out = (value) => process.stdout.write(JSON.stringify(value));
+try {
+	const signal = AbortSignal.timeout(30000);
+	const basic = basicAuth();
+	const tokenUrl =
+		"https://" + host + "/token?service=" + encodeURIComponent(host) +
+		"&scope=" + encodeURIComponent("repository:" + name + ":pull");
+	const tokenResponse = await fetch(tokenUrl, {
+		headers: basic ? { authorization: "Basic " + basic } : {},
+		signal,
+	});
+	if (!tokenResponse.ok) {
+		out({ status: tokenResponse.status, error: "token endpoint refused" });
+		process.exit(0);
+	}
+	const { token } = await tokenResponse.json();
+	const manifest = await fetch(
+		"https://" + host + "/v2/" + name + "/manifests/" + encodeURIComponent(reference),
+		{
+			method: "HEAD",
+			headers: {
+				authorization: "Bearer " + token,
+				accept: [
+					"application/vnd.oci.image.index.v1+json",
+					"application/vnd.docker.distribution.manifest.list.v2+json",
+					"application/vnd.oci.image.manifest.v1+json",
+					"application/vnd.docker.distribution.manifest.v2+json",
+				].join(", "),
+			},
+			signal,
+		},
+	);
+	out({
+		status: manifest.status,
+		digest: manifest.headers.get("docker-content-digest") ?? undefined,
+	});
+} catch (error) {
+	out({ status: 0, error: error instanceof Error ? error.message : String(error) });
+}
+`;
+
+export type RegistryHeadRunner = (args: readonly string[]) => {
+	status: number | null;
+	stdout?: string;
+	stderr?: string;
+};
+
+function runRegistryHead(args: readonly string[]) {
+	return spawnSync(
+		process.execPath,
+		["--input-type=module", "-e", REGISTRY_HEAD_SCRIPT, ...args],
+		{ encoding: "utf8", timeout: 60_000 },
+	);
+}
+
+/** A registry tag split for the Registry HTTP API. */
+export interface RegistryTagRef {
+	readonly host: string;
+	readonly name: string;
+	readonly reference: string;
+}
+
+/** `ghcr.io/owner/hobo/id:tag` into host, repository name and tag. */
+export function splitRegistryTag(tag: string): RegistryTagRef {
+	const slash = tag.indexOf("/");
+	const colon = tag.lastIndexOf(":");
+	if (slash <= 0 || colon <= slash) {
+		throw new Error(`registry tag ${tag}: expected <host>/<name>:<tag>`);
+	}
+	return {
+		host: tag.slice(0, slash),
+		name: tag.slice(slash + 1, colon),
+		reference: tag.slice(colon + 1),
+	};
+}
+
+export function registryInspectTag(
+	tag: string,
+	run: RegistryHeadRunner = runRegistryHead,
+): { digest?: string; labels?: Record<string, string> } | undefined {
+	const { host, name, reference } = splitRegistryTag(tag);
+	const result = run([host, name, reference]);
+	let reply: Json | undefined;
+	try {
+		reply = parseUnknownJson(JSON.parse(result.stdout?.trim() || "null"));
+	} catch {
+		reply = undefined;
+	}
+	if (result.status !== 0 || !isObject(reply)) {
+		throw new Error(
+			`registry inspect ${tag} failed (exit ${result.status ?? "?"}): ${(result.stderr ?? "").trim().split("\n").slice(-2).join(" ")}`,
+		);
+	}
+	const status = reply.status;
+	if (status === 404) return undefined;
+	if (status !== 200) {
+		const error = readStringField(reply, "error");
+		throw new Error(
+			`registry inspect ${tag} failed (HTTP ${String(status)})${error ? `: ${error}` : ""}`,
+		);
+	}
+	const digest = readStringField(reply, "digest");
+	if (digest === undefined) {
+		throw new Error(
+			`registry inspect ${tag} returned no Docker-Content-Digest`,
+		);
+	}
+	return { digest: assertSha256ImageDigest(digest, `registry inspect ${tag}`) };
+}
+
 /** Same bounded retry budget as `.github/actions/release-oci-attest` syft loop. */
 export const REGISTRY_DIGEST_RESOLVE_MAX_ATTEMPTS = 12;
 export const REGISTRY_DIGEST_RESOLVE_DELAY_MS = 10_000;
@@ -387,7 +528,7 @@ export function dockerConfigLabelsForRef(
 
 export function resolveRegistryDigestForTag(
 	tag: string,
-	inspect: ImagetoolsInspect = imagetoolsInspectTag,
+	inspect: ImagetoolsInspect = registryInspectTag,
 ): string | undefined {
 	const info = inspect(tag);
 	if (!info?.digest) return undefined;
@@ -397,7 +538,7 @@ export function resolveRegistryDigestForTag(
 
 export function resolveRegistryDigestForTagWithRetry(
 	tag: string,
-	inspect: ImagetoolsInspect = imagetoolsInspectTag,
+	inspect: ImagetoolsInspect = registryInspectTag,
 	options: {
 		readonly maxAttempts?: number;
 		readonly delayMs?: number;
