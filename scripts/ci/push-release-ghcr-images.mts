@@ -76,6 +76,37 @@ export function releaseImagesToPublish(
 	return images.includes(imageId) ? [imageId] : [];
 }
 
+/**
+ * `<registry repo>@sha256:...` for the tag just pushed. The digest comes from
+ * `docker push`'s own `digest:` line; failing that, from the `RepoDigests`
+ * entry for that repository. Never `RepoDigests[0]`: with the containerd image
+ * store (ARC pods) the first entry is the local name, `hobo-sdk@sha256:...`,
+ * which attest cannot find (finding 141).
+ */
+export function pushedDigestRef(
+	tag: string,
+	pushOutput: string,
+	repoDigestLines: string,
+): string {
+	const repository = tag.slice(0, tag.lastIndexOf(":"));
+	const pushed = /\bdigest: (sha256:[0-9a-f]{64})\b/u.exec(pushOutput)?.[1];
+	if (pushed) return `${repository}@${pushed}`;
+	const entries = repoDigestLines
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	const prefix = `${repository}@`;
+	const match = entries.find(
+		(entry) =>
+			entry.startsWith(prefix) &&
+			/^sha256:[0-9a-f]{64}$/u.test(entry.slice(prefix.length)),
+	);
+	if (match) return match;
+	throw new Error(
+		`no digest for ${tag}: docker push printed none and RepoDigests has no ${prefix} entry (${entries.join(", ") || "none"})`,
+	);
+}
+
 function releaseRevisionFromEnv(): string {
 	const revision =
 		process.env.HOBO_RELEASE_REVISION?.trim() ??
@@ -122,17 +153,28 @@ function tryReusePublishedTag(options: {
 	return line;
 }
 
-function recordDigestAfterPush(imageId: string, tag: string): string {
+function recordDigestAfterPush(
+	imageId: string,
+	tag: string,
+	pushOutput: string,
+): string {
 	const inspect = spawnSync(
 		"docker",
-		["inspect", "--format={{index .RepoDigests 0}}", tag],
+		["inspect", "--format={{range .RepoDigests}}{{println .}}{{end}}", tag],
 		{ encoding: "utf8" },
 	);
-	let raw = inspect.status === 0 ? inspect.stdout.trim() : "";
-	if (!raw) {
+	let raw: string;
+	try {
+		raw = pushedDigestRef(
+			tag,
+			pushOutput,
+			inspect.status === 0 ? inspect.stdout : "",
+		);
+	} catch (error) {
 		const remote = resolveRegistryDigestForTagWithRetry(tag);
 		if (!remote) {
-			throw new Error(`docker inspect and registry lookup failed for ${tag}`);
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(`${detail}; registry lookup also failed for ${tag}`);
 		}
 		raw = remote;
 	}
@@ -205,11 +247,15 @@ export function pushReleaseGhcrImages(options: {
 		run("docker", ["tag", `${id}:candidate`, tag]);
 		const pushStarted = Date.now();
 		console.log(`pushing ${tag}`);
-		runDockerPushWithRetry({ tag, attemptTimeoutMs, budgetMs });
+		const pushOutput = runDockerPushWithRetry({
+			tag,
+			attemptTimeoutMs,
+			budgetMs,
+		});
 		console.log(
 			`pushed ${tag} in ${Math.round((Date.now() - pushStarted) / 1000)}s`,
 		);
-		digests.push(recordDigestAfterPush(id, tag));
+		digests.push(recordDigestAfterPush(id, tag, pushOutput));
 		run("docker", ["rmi", "-f", tag]);
 		run("node", [
 			"--no-warnings",

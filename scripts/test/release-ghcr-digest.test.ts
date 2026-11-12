@@ -113,9 +113,7 @@ describe("release ghcr digest helpers", () => {
 		expect(() =>
 			imagetoolsInspectTag(
 				tag,
-				vi.fn(() =>
-					stubSpawnSync(1, `ERROR: ${tag}@${DIGEST_A}: not found`),
-				),
+				vi.fn(() => stubSpawnSync(1, `ERROR: ${tag}@${DIGEST_A}: not found`)),
 			),
 		).toThrow(/imagetools inspect/u);
 	});
@@ -159,9 +157,7 @@ describe("release ghcr digest helpers", () => {
 		expect(() =>
 			imagetoolsInspectTag(
 				tag,
-				vi.fn(() =>
-					stubSpawnSync(1, `manifest unknown: ${tag}@${DIGEST_A}`),
-				),
+				vi.fn(() => stubSpawnSync(1, `manifest unknown: ${tag}@${DIGEST_A}`)),
 			),
 		).toThrow(/imagetools inspect/u);
 		expect(() =>
