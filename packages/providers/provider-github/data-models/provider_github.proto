@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package hobo.provider.github.v1;
+
+// Design-time wire view of what @hobo/provider-github exchanges across the
+// ResourceResolver port for the `github.pages-site/v1` product: the desired
+// state a Set hands the realizer, the outputs it reports after observing
+// GitHub, the static-site tree index a Pages Freight carries, and the closed
+// vocabularies around them. The TypeScript reads each through
+// parse-don't-validate boundaries (src/resolver.ts, src/site-tree.ts); CUE
+// constraints for every type here live in provider_github.cue.
+
+// How the Freight reaches the Pages site. Declared per resource; the realizer
+// never reconfigures the Pages source to match.
+enum GithubPagesPublishMode {
+  GITHUB_PAGES_PUBLISH_MODE_UNSPECIFIED = 0;
+  // Compare-and-swap commit to the publishing branch (Git Data API).
+  GITHUB_PAGES_PUBLISH_MODE_BRANCH = 1;
+  // Pages deployments API over an Actions artifact the workflow uploaded.
+  GITHUB_PAGES_PUBLISH_MODE_PAGES_DEPLOYMENT = 2;
+}
+
+// What delete() does: unpublish the site, or release it and leave it served.
+enum GithubPagesDeleteAction {
+  GITHUB_PAGES_DELETE_ACTION_UNSPECIFIED = 0;
+  GITHUB_PAGES_DELETE_ACTION_UNPUBLISH = 1;
+  GITHUB_PAGES_DELETE_ACTION_RETAIN = 2;
+}
+
+// Why a reconcile refused. Closed: remediation branches on it.
+enum GithubPagesRefusalReason {
+  GITHUB_PAGES_REFUSAL_REASON_UNSPECIFIED = 0;
+  GITHUB_PAGES_REFUSAL_REASON_CREDENTIAL_REJECTED = 1;
+  GITHUB_PAGES_REFUSAL_REASON_PERMISSION_MISSING = 2;
+  GITHUB_PAGES_REFUSAL_REASON_RATE_LIMITED = 3;
+  GITHUB_PAGES_REFUSAL_REASON_PAGES_DISABLED = 4;
+  GITHUB_PAGES_REFUSAL_REASON_PAGES_SOURCE_MISMATCH = 5;
+  GITHUB_PAGES_REFUSAL_REASON_REF_NOT_FAST_FORWARD = 6;
+  GITHUB_PAGES_REFUSAL_REASON_PAGES_BUILD_ERRORED = 7;
+  GITHUB_PAGES_REFUSAL_REASON_PAGES_DEPLOYMENT_FAILED = 8;
+  GITHUB_PAGES_REFUSAL_REASON_PAGES_ARTIFACT_UNAVAILABLE = 9;
+}
+
+// One file of a static-site tree Freight.
+message StaticSiteFile {
+  // Relative, `/`-separated, no `.`, `..`, `.git` or empty segment.
+  string path = 1;
+  // sha256 digest of the file blob in the artifact store.
+  string digest = 2;
+  uint64 size = 3;
+  // Published with git mode 100755 instead of 100644.
+  optional bool executable = 4;
+}
+
+// The tree index blob a Pages Freight's artifactDigest names.
+message StaticSiteTree {
+  // Always "hobo.static-site-tree/v1".
+  string contract = 1;
+  repeated StaticSiteFile files = 2;
+}
+
+// ResolveRequest.desired for github.pages-site/v1. Secret-free by
+// construction: credentials travel only as the request's credentialRef.
+message GithubPagesSiteDesired {
+  string owner = 1;
+  string repo = 2;
+  // "branch" or "pages-deployment".
+  string publish_mode = 3;
+  // sha256 digest of the tree index in the artifact store.
+  string artifact_digest = 4;
+  // store://<backend>/<artifact_digest>, when the Freight records one.
+  optional string artifact_coordinate = 5;
+  // Branch mode: the branch Pages publishes from.
+  optional string branch = 6;
+  // Branch mode: "/" or "/docs".
+  optional string path = 7;
+  // Pages-deployment mode: the Actions artifact the workflow uploaded.
+  optional uint64 actions_artifact_id = 8;
+  optional string actions_artifact_digest = 9;
+  // Directive: the commit message of a branch publish.
+  optional string commit_message = 10;
+  // Directive: "unpublish" (default) or "retain".
+  optional string on_delete = 11;
+}
+
+// ResolveOutcome.outputs for github.pages-site/v1, always observed.
+message GithubPagesSiteOutputs {
+  string owner = 1;
+  string repo = 2;
+  string publish_mode = 3;
+  string artifact_digest = 4;
+  // Git tree id of the Freight, computed locally.
+  string tree_sha = 5;
+  uint32 file_count = 6;
+  optional string html_url = 7;
+  // Branch mode.
+  optional string branch = 8;
+  optional string path = 9;
+  optional string published_tree_sha = 10;
+  optional string head_commit_sha = 11;
+  optional string pages_build_status = 12;
+  optional string pages_build_commit_sha = 13;
+  optional bool content_matches = 14;
+  // Pages-deployment mode.
+  optional uint64 actions_artifact_id = 15;
+  optional string pages_build_version = 16;
+  optional string pages_deployment_id = 17;
+  optional string pages_deployment_status = 18;
+  bool ready = 19;
+  bool operation_confirmed = 20;
+  bool operation_terminal = 21;
+  bool absence_confirmed = 22;
+  // "pending", "building" or "ready".
+  string lifecycle_status = 23;
+}
