@@ -73,9 +73,10 @@ export type FreightLedgerDeps = CdBase & {
 	readonly artifacts: ArtifactVerifier;
 	readonly telemetry: TelemetrySink;
 	/**
-	 * Governs `approve` (required: without it approvals fail closed) and
-	 * `yank` (when present). Recording is governed by the ingress that calls
-	 * `record` (FreightIngest, FreightSources).
+	 * Governs `approve` and `yank` (required: without it both fail closed,
+	 * I10). Recording is governed by the ingress that calls `record`
+	 * (FreightIngest, FreightSources); the retention sweep `retire` by the
+	 * compose-owned job that schedules it (see README "Governance").
 	 */
 	readonly authorizer?: CdAuthorizer;
 };
@@ -304,25 +305,43 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		}
 	}
 
+	/**
+	 * Per-Camp desired-state histories, oldest first. A Bindle reaches a Camp
+	 * through `set.Created`; a Rail (subject RAIL, D24) through
+	 * `policy.BindingChanged`, so each Camp has a second `<camp>#rail`
+	 * history. The latest entry of each history is deployed, earlier ones
+	 * count toward rollback depth. A body naming no Freight (a binding
+	 * restore) adds nothing; a body or Camp that cannot be read aborts.
+	 */
 	async function deployments(): Promise<readonly CampDeployments[]> {
 		const byCamp = new Map<string, string[]>();
-		for await (const entry of deps.store.readAll({
-			tenant: deps.tenant,
-			filter: { type: CD_EVENTS.SetCreated },
-		})) {
-			const freightId = referencedFreightId(entry.event.data);
-			if (freightId === undefined)
-				throw new RetentionAborted(
-					`unreadable ${CD_EVENTS.SetCreated} at ${entry.position}`,
-				);
-			const streamCamp = entry.event.streamId.startsWith("cd-camp-")
-				? entry.event.streamId.slice("cd-camp-".length)
-				: "";
-			const campId =
-				stringField(entry.event.data, "campId", "camp_id") || streamCamp;
-			const history = byCamp.get(campId) ?? [];
-			history.push(freightId);
-			byCamp.set(campId, history);
+		const histories: ReadonlyArray<readonly [string, string]> = [
+			[CD_EVENTS.SetCreated, ""],
+			[CD_EVENTS.PolicyBindingChanged, "#rail"],
+		];
+		for (const [type, suffix] of histories) {
+			for await (const entry of deps.store.readAll({
+				tenant: deps.tenant,
+				filter: { type },
+			})) {
+				const freightId = referencedFreightId(entry.event.data);
+				if (freightId === undefined)
+					throw new RetentionAborted(`unreadable ${type} at ${entry.position}`);
+				const streamCamp = entry.event.streamId.startsWith("cd-camp-")
+					? entry.event.streamId.slice("cd-camp-".length)
+					: "";
+				const campId =
+					stringField(entry.event.data, "campId", "camp_id") || streamCamp;
+				if (campId === "")
+					throw new RetentionAborted(
+						`${type} at ${entry.position} names no Camp`,
+					);
+				if (freightId === "") continue;
+				const key = `${campId}${suffix}`;
+				const history = byCamp.get(key) ?? [];
+				history.push(freightId);
+				byCamp.set(key, history);
+			}
 		}
 		return [...byCamp].map(([campId, freightIds]) => ({ campId, freightIds }));
 	}
@@ -449,14 +468,12 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 						id,
 					);
 				if (state.yanked) return { ok: true, value: state.record };
-				if (deps.authorizer) {
-					const decision = await govern(
-						"freight.yank",
-						{ freightId: id, reason: text },
-						ctx,
-					);
-					if (!decision.ok) return decision;
-				}
+				const decision = await govern(
+					"freight.yank",
+					{ freightId: id, reason: text },
+					ctx,
+				);
+				if (!decision.ok) return decision;
 				const yanked = create(FreightYankedRecordSchema, {
 					freightId: id,
 					reason: text,
@@ -518,10 +535,23 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					"approve",
 				);
 			}
+			const approvedBy = principalName(ctx.principal);
+			const expiresAt = iso(input.expiresAtMs);
+			let appended = false;
 			const outcome = await mutate<FreightApprovedRecord>(
 				input.freightId,
 				ctx,
 				async (state) => {
+					// A retried approve gets a fresh decision id from the
+					// authorizer, so the same grant is matched by content (I12).
+					const prior = state.approvals.find(
+						(item) =>
+							item.campId === input.campId &&
+							item.approvedBy === approvedBy &&
+							item.reason === text &&
+							item.expiresAt === expiresAt,
+					);
+					if (prior) return { ok: true, value: prior };
 					const blocked = unusable(state, input.freightId);
 					if (blocked) return blocked;
 					const decision = await govern(
@@ -530,7 +560,7 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 							freightId: input.freightId,
 							campId: input.campId,
 							reason: text,
-							expiresAt: iso(input.expiresAtMs),
+							expiresAt,
 						},
 						ctx,
 					);
@@ -538,12 +568,13 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					const approved = create(FreightApprovedRecordSchema, {
 						freightId: input.freightId,
 						campId: input.campId,
-						approvedBy: principalName(ctx.principal),
+						approvedBy,
 						reason: text,
 						decisionId: decision.value,
 						approvedAt: iso(nowMs),
-						expiresAt: iso(input.expiresAtMs),
+						expiresAt,
 					});
+					appended = true;
 					return {
 						ok: true,
 						value: approved,
@@ -556,7 +587,7 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 				},
 			);
 			if (!outcome.ok) return refused(outcome, "approve");
-			emit(FREIGHT_METRIC.approved);
+			if (appended) emit(FREIGHT_METRIC.approved);
 			return outcome;
 		},
 

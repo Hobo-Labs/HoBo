@@ -2,6 +2,8 @@ import { create, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	FreightOrigin,
+	FreightSubject,
+	PolicyBindingRecordSchema,
 	PromotionRecordSchema,
 	PromotionState,
 	RetentionPolicyRecordSchema,
@@ -45,13 +47,26 @@ function harness() {
 		authorizer: new FakeAuthorizer(),
 	});
 	let version = 0;
-	const record = async (labels: Record<string, string> = {}) => {
+	const record = async (
+		labels: Record<string, string> = {},
+		subject = FreightSubject.BINDLE,
+	) => {
 		version += 1;
 		const item = artifact("api", `api-${version}`);
 		artifacts.register(item.coordinate, item.digest);
+		// A Rail is identified by its declaration hash and carries no artifacts.
+		const rail = subject === FreightSubject.RAIL;
 		const outcome = await ledger.record(
 			{
-				manifest: manifest({ artifacts: [item], labels, provenance: [] }),
+				manifest: manifest({
+					artifacts: rail ? [] : [item],
+					labels,
+					provenance: [],
+					subject,
+					declarationHash: digestOf(
+						rail ? `rail-${version}` : "shop-declaration-v1",
+					),
+				}),
 				origin: FreightOrigin.MANIFEST,
 			},
 			context(time.now),
@@ -81,6 +96,26 @@ function harness() {
 			},
 		);
 	};
+	const bind = async (campId: string, freightId: string, data?: unknown) => {
+		const stream = CD_STREAMS.campSpec(campId);
+		const seq = store.events(stream).length;
+		const binding = create(PolicyBindingRecordSchema, {
+			campId,
+			enforcedRailDigest: digestOf(`rail-${seq}`),
+			freightId,
+			promotionId: `p-rail-${seq}`,
+		});
+		await store.append(
+			stream,
+			[
+				{
+					type: CD_EVENTS.PolicyBindingChanged,
+					data: data ?? toJson(PolicyBindingRecordSchema, binding),
+				},
+			],
+			{ expectedSeq: seq, actor: OPERATOR, tenant: TENANT },
+		);
+	};
 	const policy = (
 		overrides: Partial<{
 			keepPerCamp: number;
@@ -95,7 +130,7 @@ function harness() {
 			legalHoldLabels: ["legal-hold"],
 			...overrides,
 		});
-	return { store, time, telemetry, ledger, record, deploy, policy };
+	return { store, time, telemetry, ledger, record, deploy, bind, policy };
 }
 
 describe("retention sweep (D18)", () => {
@@ -131,6 +166,73 @@ describe("retention sweep (D18)", () => {
 		expect(retired.map((record) => record.freightId)).toEqual([loose]);
 		for (const kept of [v1, v2, v3, v4, held])
 			expect(await h.ledger.isUsable(kept)).toBe(true);
+	});
+
+	it("retention keeps Rail Freight bound to a Camp (D18/D24)", async () => {
+		const h = harness();
+		const app = await h.record();
+		const r1 = await h.record({}, FreightSubject.RAIL);
+		const r2 = await h.record({}, FreightSubject.RAIL);
+		const r3 = await h.record({}, FreightSubject.RAIL);
+		const r4 = await h.record({}, FreightSubject.RAIL);
+		await h.deploy("prod-eu", app);
+		for (const rail of [r1, r2, r3, r4]) await h.bind("prod-eu", rail);
+		// A restore that names no Freight adds nothing to the history.
+		await h.bind("prod-eu", "");
+		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
+		const retired = await h.ledger.retire(
+			h.policy({ keepPerCamp: 2 }),
+			context(h.time.now),
+		);
+		// prod-eu#rail: r4 bound, r3 and r2 within rollback depth; the Set
+		// history (app) is separate and does not push the Rail out.
+		expect(retired.map((record) => record.freightId)).toEqual([r1]);
+		for (const kept of [app, r2, r3, r4])
+			expect(await h.ledger.isUsable(kept)).toBe(true);
+	});
+
+	it("fails closed on an unreadable binding or a Set that names no Camp", async () => {
+		const h = harness();
+		const rail = await h.record({}, FreightSubject.RAIL);
+		await h.bind("prod-eu", rail, "garbage");
+		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
+		expect(await h.ledger.retire(h.policy(), context(h.time.now))).toEqual([]);
+		expect(h.telemetry.count(FREIGHT_METRIC.retentionAborted)).toBe(1);
+
+		const g = harness();
+		const freight = await g.record();
+		await g.store.append(
+			"cd-elsewhere",
+			[
+				{
+					type: CD_EVENTS.SetCreated,
+					data: toJson(
+						SetRecordSchema,
+						create(SetRecordSchema, { setId: "s-1", freightId: freight }),
+					),
+				},
+			],
+			{ expectedSeq: 0, actor: OPERATOR, tenant: TENANT },
+		);
+		g.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
+		expect(await g.ledger.retire(g.policy(), context(g.time.now))).toEqual([]);
+		expect(await g.ledger.isUsable(freight)).toBe(true);
+		expect(g.telemetry.count(FREIGHT_METRIC.retentionAborted)).toBe(1);
+	});
+
+	it("a Set naming no Freight does not displace the deployed Freight", async () => {
+		const h = harness();
+		const v1 = await h.record();
+		const v2 = await h.record();
+		const v3 = await h.record();
+		for (const freight of [v1, v2, v3, ""]) await h.deploy("prod-eu", freight);
+		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
+		const retired = await h.ledger.retire(
+			h.policy({ keepPerCamp: 1 }),
+			context(h.time.now),
+		);
+		// v3 stays current and v2 the one rollback step; only v1 goes.
+		expect(retired.map((record) => record.freightId)).toEqual([v1]);
 	});
 
 	it("keeps Freight younger than keep_unpromoted_ms and is idempotent", async () => {
