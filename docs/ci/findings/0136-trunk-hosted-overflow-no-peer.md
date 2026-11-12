@@ -17,7 +17,7 @@ Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/431
 
 ## Fix
 
-- Worker **`HOBO_CI_FLEET_CAPACITY`** snapshots add **`trunkMemoryAdmit`** from `memoryAdmitHeadroom` with **4096 / 2048 / 1024 MiB** (heavy class unchanged).
+- Worker **`HOBO_CI_FLEET_CAPACITY`** snapshots add **`trunkMemoryAdmit`** from `memoryAdmitHeadroom` on the **standard (4096 MiB)** shard class with **2048 / 1024 MiB** reserve and volatility unchanged.
 - **`main-gate-plan`** reads the variable and emits **`shard_runner`**: **`hobo-trunk`** when **`arc.freeSlots > 0`**, else **`hobo`** when **`trunkMemoryAdmit === false`**, else **`hobo-trunk`**.
 - **`main_workspace_tests`** `runs-on` uses **`needs.main-gate-plan.outputs.shard_runner`** (no workflow rerun, no repo-wide **`HOBO_CI_FLEET_ROUTES`** flip).
 

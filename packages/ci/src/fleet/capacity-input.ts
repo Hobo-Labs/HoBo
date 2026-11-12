@@ -115,6 +115,7 @@ export function parseFleetCapacityPublished(
 			data.hobo?.freeSlots ?? 0,
 			data.arc?.freeSlots ?? 0,
 			data.publishedAt,
+			data.trunkMemoryAdmit,
 		);
 		return { ...snapshot, admittedParallel: data.admittedParallel };
 	}
@@ -124,6 +125,7 @@ export function parseFleetCapacityPublished(
 			admittedParallel: z.number().int().nonnegative().optional(),
 			hobo: MemberSchema.optional(),
 			arc: MemberSchema.optional(),
+			trunkMemoryAdmit: z.boolean().optional(),
 			publishedAt: z.string().min(1).optional(),
 		})
 		.safeParse(parsed);
@@ -133,7 +135,12 @@ export function parseFleetCapacityPublished(
 	const admitted =
 		loose.data.admittedParallel ?? Math.min(MAX_PARALLEL_CAP, hobo + arc);
 	if (admitted === 0 && hobo === 0 && arc === 0) return undefined;
-	return fleetCapacitySnapshot(hobo, arc, loose.data.publishedAt);
+	return fleetCapacitySnapshot(
+		hobo,
+		arc,
+		loose.data.publishedAt,
+		loose.data.trunkMemoryAdmit,
+	);
 }
 
 /**

@@ -841,7 +841,7 @@ try {
 		const availableMb = readAvailableMemoryMb();
 		const trunkMemoryAdmit = memoryAdmitHeadroom(
 			availableMb,
-			memoryConfig.classes.heavy,
+			memoryConfig.classes.standard,
 			memoryConfig.reserveMb,
 			capacityVolatilityMb,
 		);

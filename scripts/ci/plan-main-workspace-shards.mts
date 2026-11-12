@@ -83,7 +83,14 @@ async function main(): Promise<void> {
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
-	if (head && tryRestorePlanCache(head)) return;
+	if (head && tryRestorePlanCache(head)) {
+		const fleetOptions = { repository, token };
+		const shardRunner = resolveMainWorkspaceShardRunner(
+			await fetchFleetCapacityVariable(fleetOptions),
+		);
+		setOutput("shard_runner", shardRunner);
+		return;
+	}
 	const repository = process.env.GITHUB_REPOSITORY ?? "";
 	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
 	let base = "";
@@ -191,9 +198,9 @@ async function main(): Promise<void> {
 		main_tests: tests,
 		main_scope: scope,
 		shards,
-		shard_runner: shardRunner,
 	};
 	for (const [name, value] of Object.entries(outputs)) setOutput(name, value);
+	setOutput("shard_runner", shardRunner);
 	if (head) savePlanCache(head, outputs);
 }
 

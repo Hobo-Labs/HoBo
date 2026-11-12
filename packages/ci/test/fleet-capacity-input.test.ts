@@ -28,6 +28,15 @@ describe("fleet capacity input", () => {
 		expect(mainWorkspaceParallelCap(parsed)).toBe(3);
 	});
 
+	it("round-trips trunkMemoryAdmit through fleet capacity JSON", () => {
+		const text = fleetCapacityVariableValue(
+			fleetCapacitySnapshot(1, 0, "2026-11-12T00:00:00Z", false),
+		);
+		const parsed = parseFleetCapacityPublished(text);
+		expect(parsed?.trunkMemoryAdmit).toBe(false);
+		expect(resolveMainWorkspaceShardRunner(parsed)).toBe("hobo");
+	});
+
 	it("resolves main workspace shard runner from capacity", () => {
 		expect(
 			resolveMainWorkspaceShardRunner(
