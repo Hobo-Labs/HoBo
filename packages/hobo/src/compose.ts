@@ -651,9 +651,16 @@ export interface ProductionYardRuntimeOptions
 /** Async production composition shares one persistent event partition among
  * gateway admission, mutation journals and the execution supervisor. Verified
  * credential leases and native financial readers can be acquired in configureHosting. */
+export type ProductionYardRuntime = YardRuntime & {
+	readonly hostingController: ReturnType<
+		typeof createProductionHostingExecution
+	>;
+	readonly close: () => void;
+};
+
 export async function createProductionYardRuntime(
 	options: ProductionYardRuntimeOptions,
-) {
+): Promise<ProductionYardRuntime> {
 	if (!options.dataDir || !isAbsolute(options.dataDir))
 		throw new Error(
 			"production hosting requires an absolute persistent data directory",
