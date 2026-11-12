@@ -183,11 +183,16 @@ One-time owner steps, in a browser, besides steps 1–8 above:
 2. **Team issuer for OIDC** on the `hobo-ci` project (step 3 above): Project →
    Settings → Security → *Secure backend access with OIDC federation* → Team.
 3. **Disconnect what the relay no longer uses** once phase 8 has cut over:
-   Project → Settings → Integrations → Neon and Turso → Disconnect.
+   Project → Settings → Integrations → Neon → Disconnect. Keep Turso: it is a
+   member of the cache fleet on its free plan
+   ([options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
 
 Not provisioned by the workflow, by design: Turso, Vercel Blob and Valkey are
 rows of the Yard's catalog that no Camp chooses. Choosing one is a change to
-`deploy/yard.ts` (a Camp's `require`), reviewed like any other.
+`deploy/yard.ts` (a Camp's `require`), reviewed like any other. A cache that is
+already bound to the project (Turso through its existing integration, or
+`VALKEY_URL`/`BLOB_STORE_ID` in the config service) still joins the cache fleet
+([The cache fleet](README.md#the-cache-fleet)), which picks one by budget.
 
 ## What the folder holds
 
