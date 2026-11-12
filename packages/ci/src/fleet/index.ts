@@ -26,12 +26,12 @@ export {
 	fleetCapacitySnapshot,
 	fleetCapacityVariableValue,
 	isFleetCapacityFresh,
-	mainWorkspaceParallelCap,
 	type MainWorkspaceShardMatrixEntry,
+	type MainWorkspaceShardRunner,
+	mainWorkspaceParallelCap,
 	parseFleetCapacityPublished,
 	resolveMainWorkspaceShardRunner,
 	resolveMainWorkspaceShardRunners,
-	type MainWorkspaceShardRunner,
 } from "./capacity-input.js";
 export {
 	FLEET_PROVIDER_KINDS,

@@ -78,7 +78,7 @@ const TRUNK_RUNS_ON =
 
 /** Main workspace shards: plan-time `shard_matrix` (per-shard runner), default trunk. */
 const MAIN_WORKSPACE_SHARD_RUNS_ON =
-	'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && matrix.runner || \'hobo\' }}';
+	'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","schedule","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && matrix.runner || \'hobo\' }}';
 
 /**
  * What a routed job asks for: the label the `route` job chose (the fleet, an

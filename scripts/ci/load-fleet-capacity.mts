@@ -59,7 +59,9 @@ export function isFleetCapacityFresh(
 	if (!snapshot?.publishedAt) return false;
 	const publishedMs = Date.parse(snapshot.publishedAt);
 	if (!Number.isFinite(publishedMs)) return false;
-	return nowMs - publishedMs <= FLEET_CAPACITY_MAX_AGE_MS;
+	const ageMs = nowMs - publishedMs;
+	if (ageMs < 0) return false;
+	return ageMs <= FLEET_CAPACITY_MAX_AGE_MS;
 }
 
 export function resolveMainWorkspaceShardRunners(

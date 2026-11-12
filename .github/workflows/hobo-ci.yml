@@ -1172,7 +1172,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.main-gate-plan.outputs.shard_matrix || '[{"shard":0,"runner":"hobo-trunk"}]') }}
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && matrix.runner || 'hobo' }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","schedule","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && matrix.runner || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read

@@ -43,6 +43,8 @@ describe("fleet capacity input", () => {
 		]);
 		const stale = fleetCapacitySnapshot(0, 0, STALE_AT, false);
 		expect(isFleetCapacityFresh(stale, NOW)).toBe(false);
+		const future = fleetCapacitySnapshot(1, 1, new Date(NOW + 60_000).toISOString());
+		expect(isFleetCapacityFresh(future, NOW)).toBe(false);
 		expect(resolveMainWorkspaceShardRunners(2, stale, NOW)).toEqual([
 			{ shard: 0, runner: "hobo-trunk" },
 			{ shard: 1, runner: "hobo-trunk" },

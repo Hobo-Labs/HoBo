@@ -113,9 +113,13 @@ async function main(): Promise<void> {
 					.find((line) => line.startsWith("shards="));
 				if (shardsLine) {
 					const shardsJson = shardsLine.slice("shards=".length).trim();
-					// SAFETY: plan cache writes shards as a JSON array of shard indexes.
-					const indexes = JSON.parse(shardsJson) as number[];
-					if (Array.isArray(indexes)) shardCount = indexes.length;
+					const parsed: unknown = JSON.parse(shardsJson);
+					if (
+						Array.isArray(parsed) &&
+						parsed.every((value) => Number.isInteger(value) && value >= 0)
+					) {
+						shardCount = parsed.length;
+					}
 				}
 			} catch {
 				/* keep default */
