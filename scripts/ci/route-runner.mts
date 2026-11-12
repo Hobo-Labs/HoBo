@@ -26,6 +26,14 @@
  * Runs that start together would each read the same queue before any of them
  * had added to it, so a run waits its turn: while a run that started just
  * ahead has not chosen, this one leaves the self-hosted runners to it.
+ *
+ * A run can ask again later (`HOBO_CI_INCLUDE_OWN_RUN=true`): the main gate's
+ * plan job does, before its shards. That reading keeps the run's own jobs,
+ * which by then are the freshest evidence there is: a plan job that itself
+ * waited past the limit takes the fleet out of the decision.
+ *
+ * Every decision prints one `hobo-ci-route` notice (`routeAnnotation`) that a
+ * monitor reads from the job's check run.
  */
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -124,10 +132,17 @@ export type LabelLoad = Readonly<{
 	slowestRecentPickupSeconds: number;
 }>;
 
+/** What took the fleet out of a decision: the relay's verdict, the queue, or nothing. */
+export type RefusedBy = "relay" | "queue" | "none";
+
 export type RouteDecision = Readonly<{
 	tier: RouteTier;
 	runner: string;
 	reason: string;
+	/** Left out where nothing could have refused the fleet (a pinned tier). */
+	refusedBy?: RefusedBy | undefined;
+	/** What the relay answered for this decision; left out when it was not asked. */
+	relay?: RelayAnswer | undefined;
 }>;
 
 const seconds = (fromMs: number, toMs: number) =>
@@ -450,11 +465,17 @@ export function routeRunner(input: {
 		...unanswered,
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
-		return { tier: "fleet", runner: fleetLabel, reason: loads };
+		return {
+			tier: "fleet",
+			runner: fleetLabel,
+			reason: loads,
+			refusedBy: "none",
+		};
 	return {
 		tier: selected.backend === "local" ? "local" : "github",
 		runner: selected.runsOn,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
+		refusedBy: fleetRefusal ? "relay" : "queue",
 	};
 }
 
@@ -663,6 +684,13 @@ export async function observeQueue(input: {
 	labels: readonly string[];
 	limits: RouteLimits;
 	nowMs: number;
+	/**
+	 * Read this run's own jobs first. The route job leaves its run out: at that
+	 * moment the run has queued nothing. A job asking again later in the run
+	 * (the main gate's plan job, before its shards) has no fresher evidence
+	 * than how long the run's own jobs have waited.
+	 */
+	includeOwnRun?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -673,6 +701,7 @@ export async function observeQueue(input: {
 		);
 	const seen: SeenJob[] = [];
 	for (const runId of [
+		...(input.includeOwnRun ? [input.ownRunId] : []),
 		...probeRunIds(runsPage),
 		...slowestFinishedRunIds(runsPage, input.ownRunId, input.nowMs),
 	])
@@ -755,10 +784,11 @@ export async function chooseRunner(input: {
 					localEnrolled &&
 					unseen(local, relayRefusal(relay, LOCAL_HOST_RUNNER_LABEL))));
 		const waitedSeconds = seconds(startMs, nowMs);
-		if (!probeMayHelp) return decision;
+		if (!probeMayHelp) return { ...decision, relay };
 		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
 			return {
 				...decision,
+				relay,
 				reason: `${decision.reason}; waited ${waitedSeconds} s for the probe to be picked up`,
 			};
 		await input.sleep(PROBE_POLL_SECONDS);
@@ -842,6 +872,9 @@ export async function main(
 	const relayOrigin = parseRelayOrigin(
 		"relayConfig" in io ? io.relayConfig : readRelayConfig(env),
 	);
+	const includeOwnRun = env.HOBO_CI_INCLUDE_OWN_RUN === "true";
+	// Why the relay was not asked, when it was not.
+	let unasked: UnaskedWhy = mode === "auto" ? "no-relay" : "pinned";
 	let decision: RouteDecision;
 	// A signed local run was verified for this tree, so the jobs it covers are
 	// skipped and only a few short ones are left. They go where a job is known
@@ -853,8 +886,9 @@ export async function main(
 			runner: DEFAULT_GITHUB_MACHINE_TYPE,
 			reason:
 				"a signed local run covers this tree, so the jobs left do not wait for a fleet",
+			refusedBy: "none",
 		};
-		return report(decision, env);
+		return report(decision, env, "attested");
 	}
 	try {
 		const read = githubReader(
@@ -874,6 +908,7 @@ export async function main(
 								: [fleetLabel],
 							limits,
 							nowMs,
+							includeOwnRun,
 						})
 					: Promise.resolve({
 							jobs: [],
@@ -899,17 +934,67 @@ export async function main(
 			tier: "github",
 			runner: DEFAULT_GITHUB_MACHINE_TYPE,
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
+			refusedBy: "queue",
 		};
+		// The queue is read before the relay is asked.
+		unasked = "queue-unread";
 	}
-	return report(decision, env);
+	return report(decision, env, unasked);
+}
+
+/**
+ * Why the relay was not asked: no relay is named, the tier is pinned, a
+ * signed local run covers the tree, or the queue could not be read first.
+ */
+export type UnaskedWhy = "no-relay" | "pinned" | "attested" | "queue-unread";
+
+/** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
+export function workflowFile(env: NodeJS.ProcessEnv): string {
+	const path = env.GITHUB_WORKFLOW_REF?.split("@")[0] ?? "";
+	return path.slice(path.lastIndexOf("/") + 1) || (env.GITHUB_WORKFLOW ?? "");
+}
+
+/**
+ * The one-line record of a decision a monitor reads from the job's check run
+ * (`::notice title=hobo-ci-route::{...}`): which tier and runner, whether the
+ * relay gave a verdict, and what took the fleet out of the decision.
+ */
+export function routeAnnotation(
+	decision: RouteDecision,
+	workflow: string,
+	unasked: UnaskedWhy,
+): string {
+	const relay = decision.relay?.kind ?? "unasked";
+	const record = {
+		v: 1,
+		workflow,
+		tier: decision.tier,
+		runner: decision.runner,
+		relay,
+		why:
+			decision.relay?.kind === "unanswered"
+				? decision.relay.why
+				: relay === "unasked"
+					? unasked
+					: "",
+		refusedBy: decision.refusedBy ?? "none",
+	};
+	// A workflow command's message ends at a newline; `%` starts an escape.
+	const message = JSON.stringify(record)
+		.replaceAll("%", "%25")
+		.replaceAll("\r", "%0D")
+		.replaceAll("\n", "%0A");
+	return `::notice title=hobo-ci-route::${message}`;
 }
 
 function report(
 	decision: RouteDecision,
 	env: NodeJS.ProcessEnv,
+	unasked: UnaskedWhy,
 ): RouteDecision {
 	const line = `runner: ${decision.runner} (${decision.tier}): ${decision.reason}`;
 	console.log(line);
+	console.log(routeAnnotation(decision, workflowFile(env), unasked));
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,

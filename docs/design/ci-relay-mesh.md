@@ -406,6 +406,19 @@ three-second limit.
 | Answers and does not name it | Nothing new. The queue still decides: a verdict never makes a backend look available |
 | Is not named, does not answer in time, or answers something that is not a verdict | Nothing. The queue is read exactly as before, and the job's log says the relay gave no verdict |
 
+Every decision leaves one line a monitor reads from the job's check run:
+
+```text
+::notice title=hobo-ci-route::{"v":1,"workflow":"<file>","tier":"fleet|local|github","runner":"<label>","relay":"verdict|unanswered|unasked","why":"…","refusedBy":"relay|queue|none"}
+```
+
+`why` is empty for a verdict, the reason for an unanswered relay, and for an
+unasked one `no-relay`, `pinned`, `attested`, or `queue-unread` (the queue
+could not be read, so the relay was never reached and the run went to
+GitHub-hosted). `refusedBy` names what took the fleet out of the decision.
+When the routing step cannot run its script at all it says so in a
+`hobo-ci-route-fallback` warning and falls back as before.
+
 A label is blocked when no live healthy node serves it, or when none can admit
 a job for a reason other than its own running jobs and no other has a free
 slot. A label that is only busy is not blocked. No count of nodes, slots or
