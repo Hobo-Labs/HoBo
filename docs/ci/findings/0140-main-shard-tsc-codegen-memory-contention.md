@@ -26,7 +26,7 @@ Box was short on memory while seven workspace shards plus trunk work shared the 
 ## Fix
 
 - **`@hobo/cli`:** `beforeAll` warmup (`fixture` + codegen + `compile`) to prime the shared declaration cache and compiler path; raise packaged-execution timeout to **`slow(120_000)`** with measured clean-run note.
-- **`@hobo/auth-authoring-surface-contract`:** hoist **`tsc --noEmit`** to **`beforeAll`** (one spawn per file); package **`vitest.config.ts`** with **60s** test/hook timeouts (honours **`HOBO_TEST_TIMEOUT`** when set).
+- **`@hobo/auth-authoring-surface-contract`:** hoist **`tsc --noEmit`** to **`beforeAll`** with **`slow(60_000)`** on the hook/describe plus **`spawnSync` timeout** (root draft shards ignore package vitest config); proof **`ADR.md`** records the decision.
 
 ## Measure
 
