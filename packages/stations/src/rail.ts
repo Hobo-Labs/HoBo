@@ -102,8 +102,8 @@ function parseRailDelivery(
 	return deepFreeze(value);
 }
 
-function deepFreeze<T>(value: T): T {
-	if (value !== null && typeof value === "object") {
+function deepFreeze<T extends JsonValue>(value: T): T {
+	if (isJsonObject(value) || Array.isArray(value)) {
 		for (const item of Object.values(value)) deepFreeze(item);
 		Object.freeze(value);
 	}

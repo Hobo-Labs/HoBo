@@ -7,6 +7,7 @@ import {
 	signWebhook,
 	verifyWebhookSignature,
 	WEBHOOK_SECRET_SCOPE,
+	type WebhookSinkOptions,
 	webhookBackoffMs,
 } from "../../src/boundary/index.js";
 import { CD_DEFAULTS } from "../../src/events.js";
@@ -25,7 +26,7 @@ if (event === undefined) throw new Error("fixture");
 
 function sink(
 	http: ReturnType<typeof scriptedHttp>,
-	extra: Record<string, unknown> = {},
+	extra: Partial<WebhookSinkOptions> = {},
 ) {
 	const waits: number[] = [];
 	const deadLetter = createMemoryDeadLetter();

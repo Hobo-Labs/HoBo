@@ -6,10 +6,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
 	HttpTransport,
+	JsonObject,
+	JsonValue,
 	TransportRequest,
 	TransportResponse,
 } from "@hobo/core";
 import { expect } from "vitest";
+import { cloneAsJson } from "../../src/json.js";
 
 export type PactInteraction = {
 	description: string;
@@ -19,12 +22,12 @@ export type PactInteraction = {
 		path: string;
 		query?: string;
 		headers?: Record<string, string>;
-		body?: unknown;
+		body?: JsonObject;
 	};
 	response: {
 		status: number;
 		headers?: Record<string, string>;
-		body?: unknown;
+		body?: JsonValue;
 	};
 };
 
@@ -42,14 +45,16 @@ export function loadPact(name: string): Pact {
 	);
 }
 
-function bodyOf(request: TransportRequest): unknown {
+function bodyOf(request: TransportRequest): JsonValue | undefined {
 	const type = request.headers["content-type"] ?? "";
 	if (type.startsWith("application/x-www-form-urlencoded")) {
 		return {
 			form: Object.fromEntries(new URLSearchParams(request.body ?? "")),
 		};
 	}
-	return request.body === undefined ? undefined : JSON.parse(request.body);
+	return request.body === undefined
+		? undefined
+		: cloneAsJson(JSON.parse(request.body));
 }
 
 /** Transport that serves `interactions` strictly in order. */
@@ -80,7 +85,7 @@ export function pactTransport(
 		);
 		if (interaction.request.body !== undefined) {
 			expect(bodyOf(request), interaction.description).toMatchObject(
-				interaction.request.body as object,
+				interaction.request.body,
 			);
 		}
 		const body = interaction.response.body;

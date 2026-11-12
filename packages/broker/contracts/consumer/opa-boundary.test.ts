@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { JsonObject, JsonValue } from "../../src/json.js";
+import type { JsonValue } from "../../src/json.js";
 
 import { createOpaGatePlane } from "../../src/opa.js";
 import type { FetchLike } from "../../src/planes.js";

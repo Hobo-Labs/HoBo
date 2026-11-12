@@ -3,16 +3,22 @@ import { create } from "@bufbuild/protobuf";
 import {
 	type CdContext,
 	type CredentialResolver,
+	type PublisherPort,
 	SetOrigin,
 	type SetRecord,
 	SetRecordSchema,
 } from "@hobo/cd";
 import type {
 	HttpTransport,
+	JsonValue,
 	TransportRequest,
 	TransportResponse,
 } from "@hobo/core";
-import { type PublisherConfig, parsePublisherConfig } from "../src/index.js";
+import {
+	type PublisherConfig,
+	parsePublisherConfig,
+	type ResolvedSet,
+} from "../src/index.js";
 
 export const NOW = Date.parse("2026-11-12T12:00:00.000Z");
 
@@ -36,12 +42,25 @@ export const set: SetRecord = create(SetRecordSchema, {
 	createdAt: "2026-11-12T11:59:00.000Z",
 });
 
-export const resolved = {
+export type PublishInput = Parameters<PublisherPort["publish"]>[0];
+
+/** A JSON document standing in for a ResolvedDeploymentSet. */
+export function asResolved<T extends JsonValue>(value: T): ResolvedSet {
+	// SAFETY: the publisher only serializes the resolved set as canonical JSON.
+	return value as never;
+}
+
+/** The publish input every suite uses (fixture Set, fixture resolved set). */
+export function publishInput(): PublishInput {
+	return { set, resolved, signal: new AbortController().signal };
+}
+
+export const resolved = asResolved({
 	schemaVersion: "hobo.resolved-set/v1",
 	resources: [
 		{ name: "web", provider: "kubernetes", outputs: { replicas: "3" } },
 	],
-};
+});
 
 type Host =
 	| "GIT_HOST_GITHUB"
@@ -50,12 +69,12 @@ type Host =
 	| "GIT_HOST_BITBUCKET";
 type Engine = "GITOPS_ENGINE_ARGO_CD" | "GITOPS_ENGINE_FLUX";
 
-const API: Record<Host, string> = {
+const API = {
 	GIT_HOST_GITHUB: "https://api.github.com",
 	GIT_HOST_GITLAB: "https://gitlab.example/api/v4",
 	GIT_HOST_GITEA: "https://forge.example/api/v1",
 	GIT_HOST_BITBUCKET: "https://api.bitbucket.org/2.0",
-};
+} satisfies Record<Host, string>;
 
 export function config(
 	engine: Engine = "GITOPS_ENGINE_ARGO_CD",
@@ -104,7 +123,7 @@ export function credentials(
 
 export function json(
 	status: number,
-	body: unknown,
+	body: JsonValue,
 	headers: Record<string, string> = {},
 ): TransportResponse {
 	return {
@@ -147,9 +166,7 @@ export function fakeGitHub(options: { moveBranchOnce?: boolean } = {}) {
 	let moved = options.moveBranchOnce !== true;
 	const trees = new Map<string, Map<string, string>>();
 	const base = "/repos/acme/deploy";
-	const http = async (
-		request: TransportRequest,
-	): Promise<TransportResponse> => {
+	const http: HttpTransport = async (request) => {
 		const url = new URL(request.url);
 		const path = url.pathname;
 		if (request.method === "GET" && path === `${base}/git/ref/heads/main`)
@@ -167,7 +184,7 @@ export function fakeGitHub(options: { moveBranchOnce?: boolean } = {}) {
 		}
 		if (request.method === "GET" && path.startsWith(`${base}/git/commits/`)) {
 			return json(200, {
-				sha: path.split("/").pop(),
+				sha: path.split("/").pop() ?? "",
 				tree: { sha: `tree-of-${path.split("/").pop()}` },
 			});
 		}
@@ -205,7 +222,7 @@ export function fakeGitHub(options: { moveBranchOnce?: boolean } = {}) {
 		throw new Error(`unexpected ${request.method} ${path}`);
 	};
 	return {
-		http: http as HttpTransport,
+		http,
 		head: () => head,
 		files: (sha = head) => commits.get(sha) ?? new Map<string, string>(),
 		commitCount: () => commits.size - 1,

@@ -73,13 +73,13 @@ export function recordingTelemetry(): TelemetrySink & {
 /** A read-only journal: readAll over a fixed list, positions 1..n. */
 export function journalStore(
 	events: readonly EventEnvelope[],
-): DurableEventStore {
+): Pick<DurableEventStore, "readAll"> {
 	const positioned: PositionedEvent[] = events.map((event, i) => ({
 		// SAFETY: EventPosition is a branded bigint.
 		position: BigInt(i + 1) as EventPosition,
 		event,
 	}));
-	const store = {
+	return {
 		async *readAll(options?: { after?: EventPosition }) {
 			for (const entry of positioned) {
 				if (options?.after !== undefined && entry.position <= options.after)
@@ -88,6 +88,4 @@ export function journalStore(
 			}
 		},
 	};
-	// SAFETY: the relay only calls readAll; the rest of the port is unused here.
-	return store as unknown as DurableEventStore;
 }

@@ -43,21 +43,36 @@ export type GitopsPublisherOptions = Readonly<{
 	telemetry?: TelemetrySink;
 }>;
 
-const ENGINE_LABEL: Readonly<Record<number, string>> = {
-	[GitopsEngine.ARGO_CD]: "argo-cd",
-	[GitopsEngine.FLUX]: "flux",
-};
-const HOST_LABEL: Readonly<Record<number, string>> = {
-	[GitHost.GITHUB]: "github",
-	[GitHost.GITLAB]: "gitlab",
-	[GitHost.GITEA]: "gitea",
-	[GitHost.BITBUCKET]: "bitbucket",
-};
+function engineLabel(engine: GitopsEngine): string {
+	switch (engine) {
+		case GitopsEngine.ARGO_CD:
+			return "argo-cd";
+		case GitopsEngine.FLUX:
+			return "flux";
+		default:
+			return "engine";
+	}
+}
+
+function hostLabel(host: GitHost): string {
+	switch (host) {
+		case GitHost.GITHUB:
+			return "github";
+		case GitHost.GITLAB:
+			return "gitlab";
+		case GitHost.GITEA:
+			return "gitea";
+		case GitHost.BITBUCKET:
+			return "bitbucket";
+		default:
+			return "host";
+	}
+}
 
 /** `<engine>:<host>:<owner/repo>@<branch>/<prefix>` — what this port publishes to. */
 export function publisherTarget(config: PublisherConfig): string {
 	const r = config.repository;
-	return `${ENGINE_LABEL[config.engine] ?? "engine"}:${HOST_LABEL[r.host] ?? "host"}:${r.repository}@${r.branch}/${r.pathPrefix}`;
+	return `${engineLabel(config.engine)}:${hostLabel(r.host)}:${r.repository}@${r.branch}/${r.pathPrefix}`;
 }
 
 function reason(error: GitopsError, subject: string): ReasonRecord {
@@ -87,8 +102,8 @@ export function createGitopsPublisher(
 	const { config, http, credentials } = options;
 	const target = publisherTarget(config);
 	const labels = {
-		"hobo.gitops.engine": ENGINE_LABEL[config.engine] ?? "",
-		"hobo.gitops.host": HOST_LABEL[config.repository.host] ?? "",
+		"hobo.gitops.engine": engineLabel(config.engine),
+		"hobo.gitops.host": hostLabel(config.repository.host),
 	};
 	const gitToken = () =>
 		token(credentials, config.repository.credentialRef, GIT_CREDENTIAL_SCOPE);

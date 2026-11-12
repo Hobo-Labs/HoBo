@@ -9,6 +9,7 @@
 | `engines/` | Argo CD / Flux status → convergence verdict. |
 | `http.ts` | Bounded calls, status → typed failure, credential lookup. |
 | `errors.ts` | `GITOPS_FAILURES` with remediation. |
+| `json.ts` | Tag-based JSON guards and the JSON clone used at response boundaries. |
 | `_generated/` | protoc-gen-es output of `data-models/gitops.proto` (never hand-edited). |
 
 ## Runbook

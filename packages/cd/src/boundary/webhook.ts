@@ -235,11 +235,14 @@ export function webhookBackoffMs(
 	return Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt - 1));
 }
 
-/** Render the CloudEvents binary-mode request for one CDEvent. */
-export function cloudEventRequest(event: CdEvent): {
-	headers: Record<string, string>;
+/** Headers and body of one CloudEvents binary-mode HTTP request. */
+export type CloudEventHttpRequest = Readonly<{
+	headers: Readonly<Record<string, string>>;
 	body: string;
-} {
+}>;
+
+/** Render the CloudEvents binary-mode request for one CDEvent. */
+export function cloudEventRequest(event: CdEvent): CloudEventHttpRequest {
 	// SAFETY: CdEvent is a JSON-shaped record.
 	const body = canonicalJson(event as never);
 	return {

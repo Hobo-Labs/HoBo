@@ -12,14 +12,18 @@
 
 import { createHash } from "node:crypto";
 import { toJson } from "@bufbuild/protobuf";
-import { type SetRecord, SetRecordSchema } from "@hobo/cd";
+import { type PublisherPort, type SetRecord, SetRecordSchema } from "@hobo/cd";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import { GitopsEngine } from "./_generated/gitops_pb.js";
 import type { PublisherConfig } from "./config.js";
 import { GitopsError } from "./errors.js";
+import { cloneAsJson, isJsonObject } from "./json.js";
 
 // public-contract: largest resolved set a ConfigMap may carry (bytes).
 export const MAX_SET_DOCUMENT_BYTES = 921_600;
+
+/** The resolved deployment set a publish carries (from the frozen PublisherPort). */
+export type ResolvedSet = Parameters<PublisherPort["publish"]>[0]["resolved"];
 
 export type RenderedFile = Readonly<{ path: string; content: string }>;
 
@@ -38,7 +42,7 @@ export type RenderedPublication = Readonly<{
 
 function sortKeys(value: JsonValue): JsonValue {
 	if (Array.isArray(value)) return value.map(sortKeys);
-	if (value !== null && typeof value === "object") {
+	if (isJsonObject(value)) {
 		const out: Record<string, JsonValue> = {};
 		for (const key of Object.keys(value).sort()) {
 			const item = value[key];
@@ -82,7 +86,7 @@ function campDirectory(config: PublisherConfig, campId: string): string {
 export function renderPublication(
 	config: PublisherConfig,
 	set: SetRecord,
-	resolved: unknown,
+	resolved: ResolvedSet | null,
 ): RenderedPublication {
 	if (set.campId === "" || set.setId === "") {
 		throw new GitopsError(
@@ -93,13 +97,9 @@ export function renderPublication(
 	const dir = campDirectory(config, set.campId);
 	const name = k8sName("hobo", set.campId);
 	const destination = config.endpoint.destinationNamespace;
-	// SAFETY: the resolved set is a canonical, secret-free JSON document.
-	const resolvedJson = JSON.parse(
-		JSON.stringify(resolved ?? null),
-	) as JsonValue;
-	// SAFETY: toJson of a generated message is a JSON object.
-	const setJson = toJson(SetRecordSchema, set) as JsonObject;
-	const setBody = canonicalJson(setJson);
+	// The resolved set is a canonical, secret-free JSON document.
+	const resolvedJson = cloneAsJson(resolved);
+	const setBody = canonicalJson(cloneAsJson(toJson(SetRecordSchema, set)));
 	const resolvedBody = canonicalJson(resolvedJson);
 	if (
 		Buffer.byteLength(setBody) + Buffer.byteLength(resolvedBody) >

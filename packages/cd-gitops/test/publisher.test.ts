@@ -15,6 +15,7 @@ import {
 	fakeGitHub,
 	json,
 	NOW,
+	publishInput,
 	resolved,
 	routes,
 	set,
@@ -30,10 +31,7 @@ describe("GitOps publisher — publish", () => {
 			http: git.http,
 			credentials: credentials(),
 		});
-		const result = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const result = await port.publish(publishInput(), ctx);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect(result.value.revision).toBe(git.head());
@@ -51,14 +49,8 @@ describe("GitOps publisher — publish", () => {
 			http: git.http,
 			credentials: credentials(),
 		});
-		const first = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
-		const second = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const first = await port.publish(publishInput(), ctx);
+		const second = await port.publish(publishInput(), ctx);
 		expect(second).toEqual(first);
 		expect(git.commitCount()).toBe(1);
 	});
@@ -70,10 +62,7 @@ describe("GitOps publisher — publish", () => {
 			http: git.http,
 			credentials: credentials(),
 		});
-		const result = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const result = await port.publish(publishInput(), ctx);
 		expect(result.ok).toBe(true);
 		if (result.ok) expect(result.value.revision).toBe(git.head());
 	});
@@ -88,10 +77,7 @@ describe("GitOps publisher — publish", () => {
 			http,
 			credentials: credentials(),
 		});
-		const result = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const result = await port.publish(publishInput(), ctx);
 		expect(result).toEqual({
 			ok: false,
 			reasons: [
@@ -111,10 +97,7 @@ describe("GitOps publisher — publish", () => {
 			http,
 			credentials: credentials({}),
 		});
-		const result = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const result = await port.publish(publishInput(), ctx);
 		expect(result.ok).toBe(false);
 		if (!result.ok)
 			expect(result.reasons[0]?.code).toBe("gitops-credential-missing");
@@ -124,7 +107,7 @@ describe("GitOps publisher — publish", () => {
 			config: config(),
 			http: git.http,
 			credentials: credentials(),
-		}).publish({ set, resolved: resolved as never, signal }, ctx);
+		}).publish(publishInput(), ctx);
 		expect(JSON.stringify(ok)).not.toContain("git-token");
 		for (const content of git.files().values())
 			expect(content).not.toContain("git-token");
@@ -139,10 +122,7 @@ describe("GitOps publisher — publish", () => {
 			http,
 			credentials: credentials(),
 		});
-		const result = await port.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const result = await port.publish(publishInput(), ctx);
 		if (result.ok) throw new Error("expected refusal");
 		expect(result.reasons[0]?.code).toBe("gitops-host-unavailable");
 	});
@@ -179,7 +159,7 @@ describe("GitOps publisher — convergence only on observation", () => {
 			http: git.http,
 			credentials: credentials(),
 		});
-		await port.publish({ set, resolved: resolved as never, signal }, ctx);
+		await port.publish(publishInput(), ctx);
 		// The engine has not been observed (status API unreachable here).
 		const observation = await port.observe(
 			{ set, revision: git.head(), signal },
@@ -317,10 +297,7 @@ describe("publisher registry", () => {
 		const found = registry.get("argo-cd");
 		expect(found.ok).toBe(true);
 		if (!found.ok) return;
-		const published = await found.value.publish(
-			{ set, resolved: resolved as never, signal },
-			ctx,
-		);
+		const published = await found.value.publish(publishInput(), ctx);
 		expect(published.ok).toBe(true);
 		expect(
 			git.files().has("hobo/camps/camp-prod/argo-cd.application.json"),

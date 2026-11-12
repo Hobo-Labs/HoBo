@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { TransportResponse } from "@hobo/core";
+import type { JsonObject, TransportResponse } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	createCloudEventsWebhookSink,
@@ -30,15 +30,17 @@ type Interaction = {
 		path: string;
 		headers?: Record<string, string>;
 		requiredHeaders?: string[];
-		body?: unknown;
+		body?: JsonObject;
 	};
 	response?: TransportResponse;
 	responses?: TransportResponse[];
-	expected: Record<string, unknown>;
+	expected: JsonObject;
 };
 
 describe("CDEvents webhook boundary (consumer side of the pact)", () => {
-	for (const interaction of pact.interactions as Interaction[]) {
+	// SAFETY: the pact file is the fixture this suite owns; its shape is Interaction[].
+	const interactions: Interaction[] = pact.interactions;
+	for (const interaction of interactions) {
 		it(interaction.description, async () => {
 			const replies =
 				interaction.responses ??
@@ -65,7 +67,7 @@ describe("CDEvents webhook boundary (consumer side of the pact)", () => {
 				}
 				if (interaction.request.body !== undefined) {
 					expect(JSON.parse(request.body ?? "")).toMatchObject(
-						interaction.request.body as object,
+						interaction.request.body,
 					);
 				}
 				// The provider side verifies every request it is sent.

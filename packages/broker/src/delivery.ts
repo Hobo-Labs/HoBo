@@ -6,7 +6,7 @@
 // the receipt. Persisted v1 facts are lifted on read; replay never sees an
 // engine name. The golden corpus lives in test/fixtures/delivery-submitted.
 
-import type { JsonObject } from "./json.js";
+import { isJsonString, type JsonObject } from "./json.js";
 import type { DeliveryTicket } from "./planes.js";
 import { LEGACY_ARGO_PUBLISHER } from "./types.js";
 
@@ -38,7 +38,7 @@ export function deliverySubmittedBody(input: {
 
 function text(body: JsonObject, key: string): string | undefined {
 	const value = body[key];
-	return typeof value === "string" ? value : undefined;
+	return isJsonString(value) ? value : undefined;
 }
 
 function unknownFact(detail: string): Error {

@@ -16,6 +16,7 @@ chat tool is required to follow a delivery.
 | `webhook.ts` | `createCloudEventsWebhookSink`: CloudEvents HTTP binary mode, Standard Webhooks v1 HMAC signature, bounded retry with backoff, dead-letter. `verifyWebhookSignature` for receivers. |
 | `notification.ts` | `createNotificationPort`: the frozen `NotificationPort` as `dev.cdeventsx.hobo-notification.sent.0.1.0` events over per-channel webhook sinks. |
 | `errors.ts` | `BOUNDARY_FAILURES`: typed failure codes with remediation. |
+| `json.ts` | Tag-based JSON guards and the JSON clone used at the journal-body boundary. |
 
 ## Projection
 
@@ -46,6 +47,25 @@ chat tool is required to follow a delivery.
   trusted.
 - Custom events follow the spec's `dev.cdeventsx.<tool>-<subject>.<predicate>`
   form with tool `hobo` (plan wording: `dev.cdeventsx.hobo.*`).
+
+## Architecture
+
+- **Parse, don't validate.** Journal bodies are parsed into the generated
+  protobuf records (`fromJson` with the `@hobo/cd` schemas); only those parsed
+  derived types reach the projector, and a body that does not parse is
+  skipped. Every outgoing event is a `CdEvent` that has passed
+  `assertCdEvent`, so an event the pinned schema would refuse cannot be
+  constructed past the projector.
+- **Events, projection, event store.** The boundary issues no command and
+  appends no event. `createCdEventsRelay` is a materialized-view consumer of
+  the event store (`DurableEventStore.readAll`); the projector is its fold
+  (a projection), and its in-memory state is the snapshot rebuilt on start by
+  replaying from the beginning. The delivery cursor (`deliveredThrough`) is
+  the read store checkpoint the host persists, so a restart neither re-sends
+  nor loses events. One relay per tenant is the single actor delivering for
+  that journal; at-least-once delivery is safe because ids are deterministic.
+- **Command families it reacts to** are the journal facts in the projection
+  table; the read store for undeliverable events is the `DeadLetterSink`.
 
 ## Webhook delivery
 

@@ -5,10 +5,13 @@
 import type { CredentialResolver } from "@hobo/cd";
 import type {
 	HttpTransport,
+	JsonObject,
+	JsonValue,
 	TransportMethod,
 	TransportResponse,
 } from "@hobo/core";
 import { GitopsError } from "./errors.js";
+import { isJsonObject, isJsonString } from "./json.js";
 
 export const CALL_TIMEOUT_MS = 15_000;
 export const MAX_RESPONSE_BYTES = 4_194_304;
@@ -87,31 +90,37 @@ export function ok(response: TransportResponse): boolean {
 export function parseJson(
 	response: TransportResponse,
 	what: string,
-): Record<string, unknown> {
+): JsonObject {
+	let value: JsonValue;
 	try {
-		const value: unknown = JSON.parse(response.body);
-		if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-			// SAFETY: checked to be a non-array object above.
-			return value as Record<string, unknown>;
-		}
+		// SAFETY: JSON.parse yields a JSON value at this response boundary.
+		value = JSON.parse(response.body) as JsonValue;
 	} catch {
-		// fall through
+		throw new GitopsError(
+			"gitops-host-response-invalid",
+			`${what}: body is not JSON`,
+		);
 	}
-	throw new GitopsError(
-		"gitops-host-response-invalid",
-		`${what}: body is not a JSON object`,
-	);
+	if (!isJsonObject(value)) {
+		throw new GitopsError(
+			"gitops-host-response-invalid",
+			`${what}: body is not a JSON object`,
+		);
+	}
+	return value;
 }
 
 /** Read a string at a dotted path of a parsed JSON object. */
-export function pick(value: unknown, path: string): string | undefined {
-	let cursor: unknown = value;
+export function pick(
+	value: JsonValue | undefined,
+	path: string,
+): string | undefined {
+	let cursor = value;
 	for (const key of path.split(".")) {
-		if (cursor === null || typeof cursor !== "object") return undefined;
-		// SAFETY: walking a parsed JSON object.
-		cursor = (cursor as Record<string, unknown>)[key];
+		if (!isJsonObject(cursor)) return undefined;
+		cursor = cursor[key];
 	}
-	return typeof cursor === "string" ? cursor : undefined;
+	return isJsonString(cursor) ? cursor : undefined;
 }
 
 /** Resolve the `token` behind a credential reference for one scoped use. */

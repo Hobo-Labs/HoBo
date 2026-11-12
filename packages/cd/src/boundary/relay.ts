@@ -14,7 +14,8 @@ import { createCdEventsProjector } from "./projection.js";
 import type { CdEventSink } from "./webhook.js";
 
 export type CdEventsRelayOptions = Readonly<{
-	store: DurableEventStore;
+	/** Only catch-up reads are used; the relay never appends. */
+	store: Pick<DurableEventStore, "readAll">;
 	tenant: string;
 	source: string;
 	sinks: readonly CdEventSink[];

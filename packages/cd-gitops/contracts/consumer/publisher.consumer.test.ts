@@ -5,7 +5,7 @@ import {
 	config,
 	credentials,
 	ctx,
-	resolved,
+	publishInput,
 	set,
 } from "../../test/fixtures.js";
 import { loadPact, pactTransport } from "./pact-transport.js";
@@ -33,10 +33,7 @@ describe("Git host boundaries (consumer side of the pacts)", () => {
 				http,
 				credentials: credentials(),
 			});
-			const result = await port.publish(
-				{ set, resolved: resolved as never, signal },
-				ctx,
-			);
+			const result = await port.publish(publishInput(), ctx);
 			expect(result).toEqual({ ok: true, value: { revision: NEW } });
 			expect(http.served()).toBe(pact.interactions.length);
 		});
@@ -48,12 +45,14 @@ const ENGINES = [
 	["cd_gitops_flux", "GITOPS_ENGINE_FLUX"],
 ] as const;
 
-const EXPECTED: Record<string, ReconcileStatus> = {
-	converged: ReconcileStatus.CONVERGED,
-	converging: ReconcileStatus.CONVERGING,
-	blocked: ReconcileStatus.BLOCKED,
-	missing: ReconcileStatus.CONVERGING,
-};
+const EXPECTED = new Map<string, ReconcileStatus>(
+	Object.entries({
+		converged: ReconcileStatus.CONVERGED,
+		converging: ReconcileStatus.CONVERGING,
+		blocked: ReconcileStatus.BLOCKED,
+		missing: ReconcileStatus.CONVERGING,
+	}),
+);
 
 describe("engine status boundaries (consumer side of the pacts)", () => {
 	for (const [name, engine] of ENGINES) {
@@ -70,7 +69,7 @@ describe("engine status boundaries (consumer side of the pacts)", () => {
 					ctx,
 				);
 				expect(observation.status).toBe(
-					EXPECTED[interaction.providerState ?? ""],
+					EXPECTED.get(interaction.providerState ?? ""),
 				);
 				if (observation.status !== ReconcileStatus.CONVERGED)
 					expect(observation.reasons).toHaveLength(1);

@@ -8,7 +8,6 @@ import {
 } from "../src/broker.js";
 import { DELIVERY_SUBMITTED_SCHEMA } from "../src/delivery.js";
 import { BROKER_EVENTS } from "../src/events.js";
-import type { JsonObject } from "../src/json.js";
 import {
 	createGatekeeperGatePlane,
 	createReconcilerDeliveryPlane,

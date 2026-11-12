@@ -3,11 +3,12 @@
 // engine reports the exact revision applied and healthy (I5); anything else —
 // including an unreadable status — is CONVERGING or BLOCKED with a reason.
 
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, JsonObject, JsonValue } from "@hobo/core";
 import { GitopsEngine } from "../_generated/gitops_pb.js";
 import type { PublisherConfig } from "../config.js";
 import { GitopsError, type GitopsFailureCode } from "../errors.js";
 import { hostFailure, ok, parseJson, send } from "../http.js";
+import { isJsonNumber, isJsonObject, isJsonString } from "../json.js";
 import type { EngineDocumentRef } from "../render.js";
 
 export type EngineVerdict = Readonly<{
@@ -21,20 +22,22 @@ export type EngineVerdict = Readonly<{
 // public-contract: credential scope for engine status tokens.
 export const ENGINE_CREDENTIAL_SCOPE = "cd.gitops.engine" as const;
 
-type Json = Record<string, unknown>;
-
-function get(value: unknown, ...path: string[]): unknown {
+function get(
+	value: JsonValue | undefined,
+	...path: string[]
+): JsonValue | undefined {
 	let cursor = value;
 	for (const key of path) {
-		if (cursor === null || typeof cursor !== "object") return undefined;
-		// SAFETY: walking a parsed JSON object.
-		cursor = (cursor as Json)[key];
+		if (!isJsonObject(cursor)) return undefined;
+		cursor = cursor[key];
 	}
 	return cursor;
 }
 
-const str = (value: unknown): string =>
-	typeof value === "string" ? value : "";
+const str = (value: JsonValue | undefined): string =>
+	isJsonString(value) ? value : "";
+const num = (value: JsonValue | undefined, fallback: number): number =>
+	isJsonNumber(value) ? value : fallback;
 
 function sameRevision(reported: string, published: string): boolean {
 	if (reported === "" || published === "") return false;
@@ -46,7 +49,7 @@ function sameRevision(reported: string, published: string): boolean {
 }
 
 /** Argo CD Application status → verdict. */
-export function argoVerdict(app: unknown, revision: string): EngineVerdict {
+export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 	const sync = str(get(app, "status", "sync", "status"));
 	const applied = str(get(app, "status", "sync", "revision"));
 	const health = str(get(app, "status", "health", "status"));
@@ -96,15 +99,13 @@ export function argoVerdict(app: unknown, revision: string): EngineVerdict {
 
 /** Flux Kustomization status → verdict. */
 export function fluxVerdict(
-	kustomization: unknown,
+	kustomization: JsonObject,
 	revision: string,
 ): EngineVerdict {
 	const applied = str(get(kustomization, "status", "lastAppliedRevision"));
 	const attempted = str(get(kustomization, "status", "lastAttemptedRevision"));
-	const generation = Number(get(kustomization, "metadata", "generation") ?? 0);
-	const observed = Number(
-		get(kustomization, "status", "observedGeneration") ?? -1,
-	);
+	const generation = num(get(kustomization, "metadata", "generation"), 0);
+	const observed = num(get(kustomization, "status", "observedGeneration"), -1);
 	const conditions = get(kustomization, "status", "conditions");
 	const ready = Array.isArray(conditions)
 		? conditions.find((c) => str(get(c, "type")) === "Ready")

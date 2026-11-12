@@ -104,7 +104,7 @@ export function createNotificationPort(
 			inflight.add(delivery);
 		},
 		async drain() {
-			while (inflight.size > 0) await Promise.all([...inflight]);
+			while (inflight.size > 0) await Promise.all(inflight);
 			return [...settled];
 		},
 	};

@@ -43,6 +43,7 @@ export {
 export {
 	type CdEventSink,
 	CLOUDEVENTS_HEADERS,
+	type CloudEventHttpRequest,
 	cloudEventRequest,
 	createCloudEventsWebhookSink,
 	createMemoryDeadLetter,

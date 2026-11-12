@@ -27,6 +27,23 @@ which a `PublisherRegistry` resolves to this package's Argo CD publisher.
   `Kustomization` over `<path_prefix>`; HoBo never calls the engine's write
   API (pull, not push).
 
+## Architecture
+
+- **Parse, don't validate.** Configuration crosses one parser
+  (`parsePublisherConfig`) into the branded derived type `PublisherConfig`,
+  built from the generated `GitopsPublisherRecord` with every `gitops.cue`
+  constraint applied; host and engine responses are read through narrow
+  parsers that refuse a body they cannot read (`gitops-host-response-invalid`).
+- **Commands, events, actors.** The publisher is a stateless adapter driven by
+  the `CampReconciler` actor in publisher mode: the actor holds the Camp's
+  lease, issues the publish command, and appends the resulting
+  `deployment.StatusObserved` / `deployment.Converged` events to the
+  event store. The publisher itself appends no event and keeps no snapshot or read
+  store; Git is an external projection of the journal (a materialized view
+  the engine pulls), and convergence is read back from the engine, never
+  assumed. Replaying the journal re-renders byte-identical documents, and a
+  repeat publish of the same Set is a no-op.
+
 ## Publish and observe
 
 | Step | Behaviour |

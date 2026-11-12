@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import { BoundaryError } from "./errors.js";
+import { isJsonObject, isJsonString } from "./json.js";
 
 // public-contract: the pinned CDEvents release (Part I §I.8 R8).
 export const CDEVENTS_SPEC = Object.freeze({
@@ -78,7 +79,7 @@ export function canonicalJson(value: JsonValue): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
 	}
-	if (value !== null && typeof value === "object") {
+	if (isJsonObject(value)) {
 		const entries = Object.keys(value)
 			.sort()
 			.filter((key) => value[key] !== undefined)
@@ -155,37 +156,55 @@ type ContentRule = Readonly<{
 }>;
 
 const ENVIRONMENT_REF = ["environment"] as const;
-const CONTENT_RULES: Readonly<Record<StandardCdEventType, ContentRule>> = {
-	[CDEVENT_TYPES.artifactPublished]: {
-		allowed: ["sbom", "user"],
-		required: [],
-	},
-	[CDEVENT_TYPES.serviceDeployed]: {
-		allowed: ["environment", "artifactId"],
-		required: ["environment", "artifactId"],
-	},
-	[CDEVENT_TYPES.serviceUpgraded]: {
-		allowed: ["environment", "artifactId"],
-		required: ["environment", "artifactId"],
-	},
-	[CDEVENT_TYPES.serviceRolledback]: {
-		allowed: ["environment", "artifactId"],
-		required: ["environment", "artifactId"],
-	},
-	[CDEVENT_TYPES.serviceRemoved]: { allowed: ENVIRONMENT_REF, required: [] },
-	[CDEVENT_TYPES.environmentCreated]: {
-		allowed: ["name", "uri"],
-		required: [],
-	},
-	[CDEVENT_TYPES.environmentModified]: {
-		allowed: ["name", "uri"],
-		required: [],
-	},
-	[CDEVENT_TYPES.environmentDeleted]: { allowed: ["name"], required: [] },
-};
+const CONTENT_RULES = new Map<string, ContentRule>([
+	[
+		CDEVENT_TYPES.artifactPublished,
+		{
+			allowed: ["sbom", "user"],
+			required: [],
+		},
+	],
+	[
+		CDEVENT_TYPES.serviceDeployed,
+		{
+			allowed: ["environment", "artifactId"],
+			required: ["environment", "artifactId"],
+		},
+	],
+	[
+		CDEVENT_TYPES.serviceUpgraded,
+		{
+			allowed: ["environment", "artifactId"],
+			required: ["environment", "artifactId"],
+		},
+	],
+	[
+		CDEVENT_TYPES.serviceRolledback,
+		{
+			allowed: ["environment", "artifactId"],
+			required: ["environment", "artifactId"],
+		},
+	],
+	[CDEVENT_TYPES.serviceRemoved, { allowed: ENVIRONMENT_REF, required: [] }],
+	[
+		CDEVENT_TYPES.environmentCreated,
+		{
+			allowed: ["name", "uri"],
+			required: [],
+		},
+	],
+	[
+		CDEVENT_TYPES.environmentModified,
+		{
+			allowed: ["name", "uri"],
+			required: [],
+		},
+	],
+	[CDEVENT_TYPES.environmentDeleted, { allowed: ["name"], required: [] }],
+]);
 
 function nonEmpty(value: JsonValue | undefined): value is string {
-	return typeof value === "string" && value.length > 0;
+	return isJsonString(value) && value.length > 0;
 }
 
 function fail(detail: string): never {
@@ -194,9 +213,7 @@ function fail(detail: string): never {
 
 /** Refuse any event the pinned spec would refuse. Returns the event. */
 export function assertCdEvent(event: CdEvent): CdEvent {
-	// SAFETY: CdEvent is a JSON-shaped record; widen for the structural walk.
-	const raw = event as unknown as Readonly<Record<string, JsonValue>>;
-	for (const key of Object.keys(raw)) {
+	for (const key of Object.keys(event)) {
 		if (!EVENT_KEYS.has(key)) fail(`unknown top-level key ${key}`);
 	}
 	const { context, subject } = event;
@@ -224,7 +241,7 @@ export function assertCdEvent(event: CdEvent): CdEvent {
 		if (!SUBJECT_KEYS.has(key)) fail(`unknown subject key ${key}`);
 	}
 	if (!nonEmpty(subject.id)) fail("subject.id is required");
-	if (subject.content === null || typeof subject.content !== "object") {
+	if (!isJsonObject(subject.content)) {
 		fail("subject.content is required");
 	}
 	if (context.type.startsWith(HOBO_CUSTOM_EVENT_PREFIX)) return event;
@@ -233,7 +250,7 @@ export function assertCdEvent(event: CdEvent): CdEvent {
 			`context.type ${context.type} is neither dev.cdevents nor dev.cdeventsx.hobo-`,
 		);
 	}
-	const rule = CONTENT_RULES[context.type as StandardCdEventType];
+	const rule = CONTENT_RULES.get(context.type);
 	if (rule === undefined) fail(`context.type ${context.type} is not pinned`);
 	for (const key of Object.keys(subject.content)) {
 		if (!rule.allowed.includes(key))
@@ -245,13 +262,8 @@ export function assertCdEvent(event: CdEvent): CdEvent {
 	}
 	const environment = subject.content.environment;
 	if (environment !== undefined) {
-		if (
-			environment === null ||
-			typeof environment !== "object" ||
-			Array.isArray(environment)
-		) {
+		if (!isJsonObject(environment))
 			fail("content.environment must be an object");
-		}
 		if (!nonEmpty(environment.id)) fail("content.environment.id is required");
 		for (const key of Object.keys(environment)) {
 			if (key !== "id" && key !== "source")

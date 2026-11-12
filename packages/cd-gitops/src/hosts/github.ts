@@ -6,7 +6,7 @@
 //          POST  /repos/{o}/{r}/git/commits
 //          PATCH /repos/{o}/{r}/git/refs/heads/{branch}    (force: false)
 
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, JsonObject } from "@hobo/core";
 import type { GitRepositoryRecord } from "../_generated/gitops_pb.js";
 import { GitopsError } from "../errors.js";
 import { encodePath, hostFailure, ok, parseJson, pick, send } from "../http.js";
@@ -28,7 +28,7 @@ export function createGitHubClient(
 		method: "GET" | "POST" | "PATCH",
 		path: string,
 		what: string,
-		body?: unknown,
+		body?: JsonObject,
 	) => {
 		const response = await send(http, {
 			method,
@@ -39,7 +39,7 @@ export function createGitHubClient(
 		if (!ok(response)) throw hostFailure(response, what);
 		return parseJson(response, what);
 	};
-	const sha = (value: unknown, path: string, what: string): string => {
+	const sha = (value: JsonObject, path: string, what: string): string => {
 		const found = pick(value, path);
 		if (found === undefined)
 			throw new GitopsError(

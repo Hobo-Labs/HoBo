@@ -7,12 +7,7 @@
 // not parse is counted and skipped, never trusted. Deterministic: ids are
 // hashes of the source event id, timestamps are recorded event times (I8).
 
-import {
-	type DescMessage,
-	fromJson,
-	type MessageShape,
-	toJson,
-} from "@bufbuild/protobuf";
+import { type DescMessage, fromJson, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, JsonObject, JsonValue } from "@hobo/core";
 import {
 	type ArtifactRef,
@@ -44,6 +39,7 @@ import {
 	freightPurl,
 	hoboEventType,
 } from "./cdevents.js";
+import { cloneAsJson, isJsonObject, isJsonString } from "./json.js";
 
 export type CdEventsProjectorOptions = Readonly<{
 	/** CDEvents `context.source` (URI-reference), e.g. `/hobo/cd/acme`. */
@@ -80,10 +76,10 @@ type CustomRule = Readonly<{
 
 const text = (record: JsonObject, key: string): string => {
 	const value = record[key];
-	return typeof value === "string" ? value : "";
+	return isJsonString(value) ? value : "";
 };
 
-const CUSTOM_RULES: Readonly<Record<string, CustomRule>> = {
+const CUSTOM_RULES = {
 	[CD_EVENTS.FreightYanked]: {
 		schema: FreightYankedRecordSchema,
 		subject: "freight",
@@ -174,7 +170,10 @@ const CUSTOM_RULES: Readonly<Record<string, CustomRule>> = {
 		predicate: "bound",
 		subjectId: (r) => text(r, "campId"),
 	},
-};
+} satisfies Readonly<Record<string, CustomRule>>;
+const CUSTOM_RULE_BY_TYPE = new Map<string, CustomRule>(
+	Object.entries(CUSTOM_RULES),
+);
 
 // Origins whose convergence removes every service from the Camp.
 const REMOVAL_ORIGINS = new Set<SetOrigin>([
@@ -187,26 +186,23 @@ const MODIFY_ORIGINS = new Set<SetOrigin>([
 	SetOrigin.TOPOLOGY,
 ]);
 
-function parse<D extends DescMessage>(
-	schema: D,
-	event: EventEnvelope,
-): MessageShape<D> | undefined {
+/** The event body as a JSON value (journal bodies are JSON documents). */
+function bodyOf(event: EventEnvelope): JsonValue {
+	return cloneAsJson(event.data);
+}
+
+function parse<D extends DescMessage>(schema: D, event: EventEnvelope) {
 	try {
-		// SAFETY: event-store bodies are JSON; fromJson parses or throws.
-		return fromJson(schema, event.data as JsonValue, {
-			ignoreUnknownFields: true,
-		});
+		return fromJson(schema, bodyOf(event), { ignoreUnknownFields: true });
 	} catch {
 		return undefined;
 	}
 }
 
-function campIdOf(data: unknown): string | undefined {
-	if (data === null || typeof data !== "object") return undefined;
-	// SAFETY: lenient read of a single id field from a JSON body.
-	const record = data as Readonly<Record<string, unknown>>;
-	const value = record.campId ?? record.camp_id;
-	return typeof value === "string" && value.length > 0 ? value : undefined;
+function campIdOf(body: JsonValue): string | undefined {
+	if (!isJsonObject(body)) return undefined;
+	const value = body.campId ?? body.camp_id;
+	return isJsonString(value) && value.length > 0 ? value : undefined;
 }
 
 export function createCdEventsProjector(
@@ -597,9 +593,9 @@ export function createCdEventsProjector(
 					return onEnvironmentDeleted(event, record?.campId || undefined);
 				}
 				case CD_EVENTS.CampDeparted:
-					return onEnvironmentDeleted(event, campIdOf(event.data));
+					return onEnvironmentDeleted(event, campIdOf(bodyOf(event)));
 				default: {
-					const rule = CUSTOM_RULES[event.type];
+					const rule = CUSTOM_RULE_BY_TYPE.get(event.type);
 					return rule === undefined ? [] : onCustom(event, rule);
 				}
 			}

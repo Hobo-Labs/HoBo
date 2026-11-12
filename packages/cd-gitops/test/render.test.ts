@@ -10,7 +10,7 @@ import {
 	MAX_SET_DOCUMENT_BYTES,
 	renderPublication,
 } from "../src/index.js";
-import { config, resolved, set } from "./fixtures.js";
+import { asResolved, config, resolved, set } from "./fixtures.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const golden = (name: string) =>
@@ -55,14 +55,22 @@ describe("renderPublication", () => {
 	});
 
 	it("is independent of key order in the resolved set and identical across runs", () => {
-		const a = renderPublication(config(), set, {
-			resources: [{ b: 1, a: 2 }],
-			schemaVersion: "x",
-		});
-		const b = renderPublication(config(), set, {
-			schemaVersion: "x",
-			resources: [{ a: 2, b: 1 }],
-		});
+		const a = renderPublication(
+			config(),
+			set,
+			asResolved({
+				resources: [{ b: 1, a: 2 }],
+				schemaVersion: "x",
+			}),
+		);
+		const b = renderPublication(
+			config(),
+			set,
+			asResolved({
+				schemaVersion: "x",
+				resources: [{ a: 2, b: 1 }],
+			}),
+		);
 		expect(a).toEqual(b);
 		expect(JSON.stringify(renderPublication(config(), set, resolved))).toBe(
 			JSON.stringify(renderPublication(config(), set, resolved)),
@@ -78,7 +86,7 @@ describe("renderPublication", () => {
 	});
 
 	it("refuses a resolved set larger than a ConfigMap can carry", () => {
-		const big = { blob: "x".repeat(MAX_SET_DOCUMENT_BYTES) };
+		const big = asResolved({ blob: "x".repeat(MAX_SET_DOCUMENT_BYTES) });
 		expect(() => renderPublication(config(), set, big)).toThrow(GitopsError);
 		expect(() => renderPublication(config(), set, big)).toThrow(
 			/gitops-set-too-large/,

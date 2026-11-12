@@ -44,6 +44,7 @@ export {
 	MAX_SET_DOCUMENT_BYTES,
 	type RenderedFile,
 	type RenderedPublication,
+	type ResolvedSet,
 	renderPublication,
 	sha256Digest,
 	stableDocument,

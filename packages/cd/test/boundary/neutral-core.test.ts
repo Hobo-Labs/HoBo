@@ -51,6 +51,8 @@ const VENDOR_WORDS = [
 	"crio",
 ] as const;
 
+const VENDOR_SET = new Set<string>(VENDOR_WORDS);
+
 function sourceFiles(dir: string): string[] {
 	const out: string[] = [];
 	for (const name of readdirSync(dir)) {
@@ -127,9 +129,7 @@ export function vendorIdentifiers(text: string): string[] {
 			...words,
 			...words.slice(1).map((w, i) => `${words[i]}${w}`),
 		];
-		if (
-			candidates.some((w) => (VENDOR_WORDS as readonly string[]).includes(w))
-		) {
+		if (candidates.some((w) => VENDOR_SET.has(w))) {
 			found.push(id);
 		}
 	}
