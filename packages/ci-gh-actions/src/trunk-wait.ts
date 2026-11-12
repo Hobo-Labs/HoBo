@@ -11,6 +11,7 @@ export type TrunkWaitReason =
 	| "headroom"
 	| "fleet-capacity"
 	| "host-available"
+	| "memory-headroom"
 	| "memory-budget"
 	| "trunk-pr-cap"
 	| "host-pressure"

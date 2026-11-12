@@ -266,6 +266,10 @@ export {
 	type JobObservation,
 } from "./job-durations.js";
 export {
+	countLiveBoxContainers,
+	localWorkerFreeSlots,
+} from "./live-container-count.js";
+export {
 	createLocalRunnerMeshNode,
 	LOCAL_RUNNER_MESH_REPORT,
 	type LocalRunnerSessionObserver,

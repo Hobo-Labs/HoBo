@@ -574,25 +574,29 @@ export class HostedRelay {
 		const key = trunkWaitKey(job);
 		if (this.trunkDeferDecisionSig.get(key) === signature) return;
 		this.trunkDeferDecisionSig.set(key, signature);
-		console.error(
-			JSON.stringify({
-				event: "hobo_ci_trunk_fleet_defer_decision",
-				repository: job.repository,
-				runId: job.runId,
-				jobId: job.id,
-				jobName: job.name,
-				action: decision.action,
-				waitReason: decision.waitReason ?? "",
-				waitedMs: decision.waitedMs,
-				holdReason: decision.holdReason ?? "",
-				deferMs: decision.deferMs,
-				shardIndex: decision.shardIndex,
-				hoboFreeSlots: decision.hoboFreeSlots,
-				arcFreeSlots: decision.arcFreeSlots,
-				meshFreeSlots: decision.meshFreeSlots,
-				peerAbsorbSlots: decision.peerAbsorbSlots,
-			}),
-		);
+		const coreLog = {
+			event: "hobo_ci_trunk_fleet_defer_decision" as const,
+			repository: job.repository,
+			runId: job.runId,
+			jobId: job.id,
+			jobName: job.name,
+			action: decision.action,
+			waitReason: decision.waitReason ?? "",
+			waitedMs: decision.waitedMs,
+			holdReason: decision.holdReason ?? "",
+			deferMs: decision.deferMs,
+			shardIndex: decision.shardIndex,
+			arcFreeSlots: decision.arcFreeSlots,
+			meshFreeSlots: decision.meshFreeSlots,
+			peerAbsorbSlots: decision.peerAbsorbSlots,
+		};
+		if (decision.hoboFreeSlots !== undefined) {
+			console.error(
+				JSON.stringify({ ...coreLog, hoboFreeSlots: decision.hoboFreeSlots }),
+			);
+			return;
+		}
+		console.error(JSON.stringify(coreLog));
 	}
 
 	private fleetPeerSlots(

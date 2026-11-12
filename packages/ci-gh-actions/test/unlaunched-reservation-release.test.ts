@@ -120,6 +120,7 @@ describe("unlaunched reservation release", () => {
 
 	const deferReasons = [
 		"host-available",
+		"memory-headroom",
 		"memory-budget",
 		"trunk-pr-cap",
 		"host-pressure",

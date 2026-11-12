@@ -240,6 +240,14 @@ export function hostPressureBlocksAdmission(
 	return false;
 }
 
+export function hostMemoryAdmitRequiredMb(
+	requestMb: number,
+	reserveMb: number,
+	volatilityMb: number,
+): number {
+	return requestMb + reserveMb + volatilityMb;
+}
+
 export function hostMemoryAdmitFits(
 	availableMb: number | undefined,
 	requestMb: number,
