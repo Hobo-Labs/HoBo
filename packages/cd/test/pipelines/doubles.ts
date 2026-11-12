@@ -23,6 +23,7 @@ import {
 	PromotionRecordSchema,
 	PromotionState,
 } from "../../src/_generated/cd_pb.js";
+import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import type {
 	CampId,
 	CampTopology,
@@ -37,7 +38,6 @@ import type {
 	PromotionService,
 	TopologyReader,
 } from "../../src/ports.js";
-import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import { camp, fid, type MemoryEventStore } from "./fakes.js";
 
 const notUsed = (): never => {
@@ -50,28 +50,66 @@ export class FakeFreightLedger {
 	readonly approvalsBy = new Map<string, FreightApprovedRecord[]>();
 	readonly unusable = new Set<string>();
 
-	add(id: string, recordedAtMs: number, fields: Readonly<{ bindle?: string; sourceName?: string; origin?: FreightOrigin; subject?: FreightSubject }> = {}): FreightRecord {
+	add(
+		id: string,
+		recordedAtMs: number,
+		fields: Readonly<{
+			bindle?: string;
+			sourceName?: string;
+			origin?: FreightOrigin;
+			subject?: FreightSubject;
+		}> = {},
+	): FreightRecord {
 		const record = create(FreightRecordSchema, {
 			freightId: id,
 			alias: `alias-${id}`,
 			origin: fields.origin ?? FreightOrigin.SOURCE_DISCOVERY,
 			sourceName: fields.sourceName ?? "images",
 			recordedAt: new Date(recordedAtMs).toISOString(),
-			manifest: { bindle: fields.bindle ?? "acme/shop", subject: fields.subject ?? FreightSubject.BINDLE, declarationHash: `sha256:${id}` },
+			manifest: {
+				bindle: fields.bindle ?? "acme/shop",
+				subject: fields.subject ?? FreightSubject.BINDLE,
+				declarationHash: `sha256:${id}`,
+			},
 		});
 		this.freight.set(id, record);
 		return record;
 	}
 
-	qualify(id: string, campId: string, pipeline: string, node: string, atMs: number): void {
+	qualify(
+		id: string,
+		campId: string,
+		pipeline: string,
+		node: string,
+		atMs: number,
+	): void {
 		const list = this.quals.get(id) ?? [];
-		list.push(create(FreightQualifiedRecordSchema, { freightId: id, campId, pipeline, node, verificationId: `v-${id}-${campId}`, qualifiedAt: new Date(atMs).toISOString() }));
+		list.push(
+			create(FreightQualifiedRecordSchema, {
+				freightId: id,
+				campId,
+				pipeline,
+				node,
+				verificationId: `v-${id}-${campId}`,
+				qualifiedAt: new Date(atMs).toISOString(),
+			}),
+		);
 		this.quals.set(id, list);
 	}
 
 	approveFor(id: string, campId: string, expiresAtMs: number): void {
 		const list = this.approvalsBy.get(id) ?? [];
-		list.push(create(FreightApprovedRecordSchema, { freightId: id, campId, approvedBy: "user:ops", reason: "hotfix", decisionId: "dec-a", approvedAt: new Date(expiresAtMs - 3_600_000).toISOString(), expiresAt: new Date(expiresAtMs).toISOString() }));
+		list.push(
+			create(FreightApprovedRecordSchema, {
+				freightId: id,
+				campId,
+				approvedBy: "user:ops",
+				reason: "hotfix",
+				decisionId: "dec-a",
+				approvedAt: new Date(expiresAtMs - 3_600_000).toISOString(),
+				expiresAt: new Date(expiresAtMs).toISOString(),
+			}),
+		);
 		this.approvalsBy.set(id, list);
 	}
 
@@ -88,7 +126,9 @@ export class FakeFreightLedger {
 		return this.approvalsBy.get(id) ?? [];
 	}
 	async list(query?: Readonly<{ bindle?: string; limit?: number }>) {
-		return [...this.freight.values()].filter((f) => !query?.bindle || f.manifest?.bindle === query.bindle);
+		return [...this.freight.values()].filter(
+			(f) => !query?.bindle || f.manifest?.bindle === query.bindle,
+		);
 	}
 }
 
@@ -138,16 +178,30 @@ export class FakePromotions implements PromotionService {
 			idempotencyKey: request.idempotencyKey,
 		});
 		this.records.set(request.idempotencyKey, record);
-		await this.store?.seed(CD_STREAMS.promotion(record.promotionId), CD_EVENTS.EnvPromoteRequested, toJson(PromotionRecordSchema, record));
+		await this.store?.seed(
+			CD_STREAMS.promotion(record.promotionId),
+			CD_EVENTS.EnvPromoteRequested,
+			toJson(PromotionRecordSchema, record),
+		);
 		return { ok: true, value: record };
 	}
 
 	arrange(freightId: string, campId: string, state: PromotionState): void {
-		this.history.push(create(PromotionRecordSchema, { promotionId: `hist-${this.history.length}`, freightId, targetCampIds: [campId], state, requestedAt: new Date(0).toISOString() }));
+		this.history.push(
+			create(PromotionRecordSchema, {
+				promotionId: `hist-${this.history.length}`,
+				freightId,
+				targetCampIds: [campId],
+				state,
+				requestedAt: new Date(0).toISOString(),
+			}),
+		);
 	}
 
 	async list(query?: Readonly<{ campId?: CampId; limit?: number }>) {
-		return [...this.history, ...this.records.values()].filter((p) => !query?.campId || p.targetCampIds.includes(query.campId));
+		return [...this.history, ...this.records.values()].filter(
+			(p) => !query?.campId || p.targetCampIds.includes(query.campId),
+		);
 	}
 	async get(id: PromotionId) {
 		return [...this.records.values()].find((p) => p.promotionId === id);
@@ -168,9 +222,18 @@ export class FakePlacement implements PlacementEngine {
 		return this.placements.get(name);
 	}
 	add(name: string, groups: readonly string[] = []): void {
-		this.placements.set(name, create(PlacementRecordSchema, { name, campSets: ["fleet"], groups: groups.map((g) => ({ name: g })) }));
+		this.placements.set(
+			name,
+			create(PlacementRecordSchema, {
+				name,
+				campSets: ["fleet"],
+				groups: groups.map((g) => ({ name: g })),
+			}),
+		);
 	}
-	async decide(input: Readonly<{ placement: string; pipeline: string; node: string }>): Promise<Outcome<PlacementDecisionRecord>> {
+	async decide(
+		input: Readonly<{ placement: string; pipeline: string; node: string }>,
+	): Promise<Outcome<PlacementDecisionRecord>> {
 		const decision = create(PlacementDecisionRecordSchema, {
 			...(this.nextDecision ?? decisionOf(["fleet-1"], [])),
 			decisionId: `decision-${this.decisions.length + 1}`,
@@ -187,13 +250,30 @@ export class FakePlacement implements PlacementEngine {
 }
 
 /** A decision whose groups hold `camps` (first `mandatory` camps form the mandatory "pilot" group). */
-export function decisionOf(camps: readonly string[], mandatory: readonly string[]): PlacementDecisionRecord {
+export function decisionOf(
+	camps: readonly string[],
+	mandatory: readonly string[],
+): PlacementDecisionRecord {
 	const rest = camps.filter((c) => !mandatory.includes(c));
 	return create(PlacementDecisionRecordSchema, {
 		decisionId: "decision-0",
 		groups: [
-			...(mandatory.length > 0 ? [create(PlacementGroupDecisionRecordSchema, { name: "pilot", index: 0, campIds: [...mandatory], mandatory: true })] : []),
-			create(PlacementGroupDecisionRecordSchema, { name: "rest", index: mandatory.length > 0 ? 1 : 0, campIds: rest, mandatory: false }),
+			...(mandatory.length > 0
+				? [
+						create(PlacementGroupDecisionRecordSchema, {
+							name: "pilot",
+							index: 0,
+							campIds: [...mandatory],
+							mandatory: true,
+						}),
+					]
+				: []),
+			create(PlacementGroupDecisionRecordSchema, {
+				name: "rest",
+				index: mandatory.length > 0 ? 1 : 0,
+				campIds: rest,
+				mandatory: false,
+			}),
 		],
 		candidates: camps.map((campId) => ({ campId, selected: true })),
 	});
@@ -202,11 +282,23 @@ export function decisionOf(camps: readonly string[], mandatory: readonly string[
 export class FakeFanout implements FanoutController {
 	readonly started: Parameters<FanoutController["start"]>[0][] = [];
 	readonly statuses: FanoutStatusRecord[] = [];
-	readonly qualifiedBy = new Map<string, Awaited<ReturnType<FanoutController["qualified"]>>>();
+	readonly qualifiedBy = new Map<
+		string,
+		Awaited<ReturnType<FanoutController["qualified"]>>
+	>();
 
-	async start(input: Parameters<FanoutController["start"]>[0]): Promise<Outcome<FanoutStatusRecord>> {
+	async start(
+		input: Parameters<FanoutController["start"]>[0],
+	): Promise<Outcome<FanoutStatusRecord>> {
 		this.started.push(input);
-		const status = create(FanoutStatusRecordSchema, { fanoutId: `fanout-${this.started.length}`, pipeline: input.pipeline, node: input.node, freightId: input.freightId, decisionId: input.decision.decisionId, state: 1 });
+		const status = create(FanoutStatusRecordSchema, {
+			fanoutId: `fanout-${this.started.length}`,
+			pipeline: input.pipeline,
+			node: input.node,
+			freightId: input.freightId,
+			decisionId: input.decision.decisionId,
+			state: 1,
+		});
 		this.statuses.push(status);
 		return { ok: true, value: status };
 	}
@@ -214,17 +306,33 @@ export class FakeFanout implements FanoutController {
 		return this.statuses.find((s) => s.fanoutId === id);
 	}
 	async list(query?: Readonly<{ pipeline?: string; node?: string }>) {
-		return this.statuses.filter((s) => (!query?.pipeline || s.pipeline === query.pipeline) && (!query?.node || s.node === query.node));
+		return this.statuses.filter(
+			(s) =>
+				(!query?.pipeline || s.pipeline === query.pipeline) &&
+				(!query?.node || s.node === query.node),
+		);
 	}
 	async qualified(input: Readonly<{ pipeline: string; node: string }>) {
-		return this.qualifiedBy.get(`${input.pipeline}/${input.node}`) ?? { qualifiedCampIds: [] };
+		return (
+			this.qualifiedBy.get(`${input.pipeline}/${input.node}`) ?? {
+				qualifiedCampIds: [],
+			}
+		);
 	}
-	setQualified(pipeline: string, node: string, decision: PlacementDecisionRecord, qualifiedCampIds: readonly string[], stableFreightId?: string): void {
-		this.qualifiedBy.set(`${pipeline}/${node}`, {
-			decision,
-			qualifiedCampIds: qualifiedCampIds.map(camp),
-			...(stableFreightId ? { stableFreightId: fid(stableFreightId) } : {}),
-		});
+	setQualified(
+		pipeline: string,
+		node: string,
+		decision: PlacementDecisionRecord,
+		qualifiedCampIds: readonly string[],
+		stableFreightId?: string,
+	): void {
+		const base = { decision, qualifiedCampIds: qualifiedCampIds.map(camp) };
+		this.qualifiedBy.set(
+			`${pipeline}/${node}`,
+			stableFreightId
+				? { ...base, stableFreightId: fid(stableFreightId) }
+				: base,
+		);
 	}
 	halt = notUsed;
 	resume = notUsed;

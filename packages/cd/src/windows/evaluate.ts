@@ -48,7 +48,7 @@ export type CompiledWindow = Readonly<{
 	series: Series;
 	durationMs: number;
 	rollbackAllowed: boolean;
-	selector?: SelectorRecord;
+	selector?: SelectorRecord | undefined;
 }>;
 
 /** An override in force: lifts `window` for `campIds` until `expiresAtMs`. */
@@ -80,19 +80,30 @@ export function parseTimestamp(value: string): number | undefined {
  * starts_at + duration_ms); recurring windows use duration_ms, else the
  * length of the first occurrence (ends_at − starts_at).
  */
-export function compileWindow(record: ChangeWindowRecord): Outcome<CompiledWindow> {
+export function compileWindow(
+	record: ChangeWindowRecord,
+): Outcome<CompiledWindow> {
 	const problems: ReasonRecord[] = [];
 	const problem = (field: string, message: string, remediation: string) =>
 		problems.push(reason(WINDOW_REASON.invalid, message, remediation, field));
 	if (!SLUG.test(record.name))
-		problem("name", `window name "${record.name}" is not a slug`, "Use 1–63 lowercase letters, digits and hyphens.");
+		problem(
+			"name",
+			`window name "${record.name}" is not a slug`,
+			"Use 1–63 lowercase letters, digits and hyphens.",
+		);
 	const kind =
 		record.kind === WindowKind.ALLOW
 			? "ALLOW"
 			: record.kind === WindowKind.FREEZE
 				? "FREEZE"
 				: undefined;
-	if (!kind) problem("kind", "window kind is unspecified", "Set kind to ALLOW or FREEZE.");
+	if (!kind)
+		problem(
+			"kind",
+			"window kind is unspecified",
+			"Set kind to ALLOW or FREEZE.",
+		);
 	if (!isTimeZone(record.timezone))
 		problems.push(
 			reason(
@@ -104,10 +115,19 @@ export function compileWindow(record: ChangeWindowRecord): Outcome<CompiledWindo
 		);
 	const startMs = parseTimestamp(record.startsAt);
 	if (startMs === undefined)
-		problem("startsAt", "starts_at is not an RFC 3339 timestamp", "Set starts_at, e.g. 2026-11-12T09:00:00Z.");
-	const endMs = record.endsAt === "" ? undefined : parseTimestamp(record.endsAt);
+		problem(
+			"startsAt",
+			"starts_at is not an RFC 3339 timestamp",
+			"Set starts_at, e.g. 2026-11-12T09:00:00Z.",
+		);
+	const endMs =
+		record.endsAt === "" ? undefined : parseTimestamp(record.endsAt);
 	if (record.endsAt !== "" && endMs === undefined)
-		problem("endsAt", "ends_at is not an RFC 3339 timestamp", "Set ends_at, e.g. 2026-11-12T17:00:00Z, or leave it empty.");
+		problem(
+			"endsAt",
+			"ends_at is not an RFC 3339 timestamp",
+			"Set ends_at, e.g. 2026-11-12T17:00:00Z, or leave it empty.",
+		);
 	const declared = Number(record.durationMs);
 	let durationMs = 0;
 	if (startMs !== undefined) {
@@ -115,12 +135,29 @@ export function compileWindow(record: ChangeWindowRecord): Outcome<CompiledWindo
 		else if (endMs !== undefined) durationMs = endMs - startMs;
 	}
 	if (startMs !== undefined) {
-		if (declared > 0 && endMs !== undefined && record.rrule === "" && endMs - startMs !== declared)
-			problem("durationMs", "duration_ms disagrees with ends_at − starts_at", "Set one of duration_ms or ends_at for a single-occurrence window.");
+		if (
+			declared > 0 &&
+			endMs !== undefined &&
+			record.rrule === "" &&
+			endMs - startMs !== declared
+		)
+			problem(
+				"durationMs",
+				"duration_ms disagrees with ends_at − starts_at",
+				"Set one of duration_ms or ends_at for a single-occurrence window.",
+			);
 		if (durationMs <= 0)
-			problem("durationMs", "the window has no length", "Set duration_ms > 0, or ends_at after starts_at.");
+			problem(
+				"durationMs",
+				"the window has no length",
+				"Set duration_ms > 0, or ends_at after starts_at.",
+			);
 		if (durationMs > WINDOW_LIMITS.maxDurationMs)
-			problem("durationMs", "an occurrence may last at most 366 days", "Split the window, or use a recurring rule.");
+			problem(
+				"durationMs",
+				"an occurrence may last at most 366 days",
+				"Split the window, or use a recurring rule.",
+			);
 	}
 	let rule: Series["rule"];
 	if (record.rrule !== "") {
@@ -134,18 +171,24 @@ export function compileWindow(record: ChangeWindowRecord): Outcome<CompiledWindo
 		record,
 		name: record.name,
 		kind,
-		series: { startMs, timeZone: record.timezone, ...(rule ? { rule } : {}) },
+		series: { startMs, timeZone: record.timezone, rule },
 		durationMs,
 		rollbackAllowed: record.rollbackAllowed,
-		...(record.selector ? { selector: record.selector } : {}),
+		selector: record.selector,
 	};
 	return { ok: true, value: compiled };
 }
 
 /** End of an occurrence containing `atMs`, or undefined when none does. */
-export function activeUntil(window: CompiledWindow, atMs: number): number | undefined {
+export function activeUntil(
+	window: CompiledWindow,
+	atMs: number,
+): number | undefined {
 	let end: number | undefined;
-	for (const start of occurrenceStarts(window.series, atMs - window.durationMs + 1)) {
+	for (const start of occurrenceStarts(
+		window.series,
+		atMs - window.durationMs + 1,
+	)) {
 		if (start > atMs) break;
 		end = start + window.durationMs;
 	}
@@ -170,7 +213,10 @@ export function selectorCovers(
 	}
 	if (selector.campIds.length > 0 && !selector.campIds.includes(input.campId))
 		return false;
-	if (selector.envTypes.length > 0 && !selector.envTypes.includes(input.envType))
+	if (
+		selector.envTypes.length > 0 &&
+		!selector.envTypes.includes(input.envType)
+	)
 		return false;
 	const labelled = (values: readonly string[], key: string): boolean => {
 		if (values.length === 0) return true;
@@ -199,19 +245,28 @@ function isEmptySelector(selector: SelectorRecord | undefined): boolean {
  * selector), plus any window with a non-empty selector that covers the Camp.
  * A window with an empty selector applies only where it is named.
  */
+export type ApplicableWindows = Readonly<{
+	applicable: readonly CompiledWindow[];
+	/** Named windows with no definition: treated as closed. */
+	unknown: readonly string[];
+}>;
+
 export function applicableWindows(
 	windows: ReadonlyMap<string, CompiledWindow>,
 	input: EvaluationInput,
-): Readonly<{ applicable: readonly CompiledWindow[]; unknown: readonly string[] }> {
+): ApplicableWindows {
 	const applicable: CompiledWindow[] = [];
 	const unknown: string[] = [];
 	for (const name of [...new Set(input.windowNames)].sort()) {
 		if (!windows.has(name)) unknown.push(name);
 	}
-	for (const window of [...windows.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+	for (const window of [...windows.values()].sort((a, b) =>
+		a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+	)) {
 		const named = input.windowNames.includes(window.name);
 		if (!named && isEmptySelector(window.selector)) continue;
-		if (selectorCovers(window.selector, window.kind, input)) applicable.push(window);
+		if (selectorCovers(window.selector, window.kind, input))
+			applicable.push(window);
 	}
 	return { applicable, unknown };
 }
@@ -277,11 +332,16 @@ function boundaries(
 	for (const window of applicable) {
 		let seen = 0;
 		try {
-			for (const start of occurrenceStarts(window.series, atMs - window.durationMs + 1)) {
-				if (start > horizon || seen >= WINDOW_LIMITS.maxBoundaryOccurrences) break;
+			for (const start of occurrenceStarts(
+				window.series,
+				atMs - window.durationMs + 1,
+			)) {
+				if (start > horizon || seen >= WINDOW_LIMITS.maxBoundaryOccurrences)
+					break;
 				seen += 1;
 				if (start > atMs) out.add(start);
-				if (start + window.durationMs > atMs) out.add(start + window.durationMs);
+				if (start + window.durationMs > atMs)
+					out.add(start + window.durationMs);
 			}
 		} catch (error) {
 			if (!(error instanceof RecurrenceLimitError)) throw error;
@@ -300,7 +360,9 @@ export function evaluateWindows(
 ): WindowEvaluation {
 	const applicableSet = applicableWindows(windows, input);
 	const applicable = applicableSet.applicable;
-	const unknown = [...new Set([...applicableSet.unknown, ...unreadable])].sort();
+	const unknown = [
+		...new Set([...applicableSet.unknown, ...unreadable]),
+	].sort();
 	const now = stateAt(applicable, unknown, overrides, input, input.atMs);
 	const open = input.intent === "rollback" ? now.rollbackAllowed : now.open;
 	const evaluation: WindowEvaluation = {

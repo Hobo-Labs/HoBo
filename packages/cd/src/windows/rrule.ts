@@ -8,8 +8,8 @@ import { refuse, WINDOW_REASON } from "./reasons.js";
 import {
 	type CivilDate,
 	civilOf,
-	daysInMonth,
 	dayNumber,
+	daysInMonth,
 	fromLocal,
 	type LocalDateTime,
 	toLocal,
@@ -29,8 +29,8 @@ export type Until =
 export type RecurrenceRule = Readonly<{
 	freq: Frequency;
 	interval: number;
-	count?: number;
-	until?: Until;
+	count?: number | undefined;
+	until?: Until | undefined;
 	byDay: readonly WeekdaySpec[];
 	byMonthDay: readonly number[];
 	byMonth: readonly number[];
@@ -40,7 +40,7 @@ export type RecurrenceRule = Readonly<{
 
 /** One recurring (or single) series of occurrence starts. */
 export type Series = Readonly<{
-	rule?: RecurrenceRule;
+	rule?: RecurrenceRule | undefined;
 	startMs: number;
 	timeZone: string;
 }>;
@@ -181,11 +181,7 @@ export function parseRrule(text: string): Outcome<RecurrenceRule> {
 	const countText = parts.get("COUNT");
 	if (countText !== undefined) {
 		count = Number(countText);
-		if (
-			!/^\d+$/.test(countText) ||
-			count < 1 ||
-			count > RRULE_LIMITS.maxCount
-		)
+		if (!/^\d+$/.test(countText) || count < 1 || count > RRULE_LIMITS.maxCount)
 			problems.push(`COUNT must be 1–${RRULE_LIMITS.maxCount}`);
 	}
 	let until: Until | undefined;
@@ -227,7 +223,11 @@ export function parseRrule(text: string): Outcome<RecurrenceRule> {
 	const ordinals = byDay.some((spec) => spec.ordinal !== 0);
 	if (ordinals && (freq === "DAILY" || freq === "WEEKLY"))
 		problems.push("BYDAY ordinals (e.g. 1MO) need FREQ=MONTHLY or YEARLY");
-	if (ordinals && freq === "MONTHLY" && byDay.some((s) => Math.abs(s.ordinal) > 5))
+	if (
+		ordinals &&
+		freq === "MONTHLY" &&
+		byDay.some((s) => Math.abs(s.ordinal) > 5)
+	)
 		problems.push("monthly BYDAY ordinals must be within ±5");
 	if (ordinals && byMonthDay.length > 0)
 		problems.push("BYDAY ordinals cannot be combined with BYMONTHDAY");
@@ -250,13 +250,16 @@ export function parseRrule(text: string): Outcome<RecurrenceRule> {
 		byMonth,
 		byHour,
 		byMinute,
-		...(count === undefined ? {} : { count }),
-		...(until === undefined ? {} : { until }),
+		count,
+		until,
 	};
 	return { ok: true, value: rule };
 }
 
-function monthDayMatches(date: CivilDate, byMonthDay: readonly number[]): boolean {
+function monthDayMatches(
+	date: CivilDate,
+	byMonthDay: readonly number[],
+): boolean {
 	const length = daysInMonth(date.year, date.month);
 	return byMonthDay.some((value) =>
 		value > 0 ? value === date.day : length + value + 1 === date.day,
@@ -317,7 +320,11 @@ function mondayOf(date: CivilDate): number {
 }
 
 /** Candidate civil dates of period k (k counts periods, not intervals). */
-function periodDates(rule: RecurrenceRule, period: number, start: CivilDate): CivilDate[] {
+function periodDates(
+	rule: RecurrenceRule,
+	period: number,
+	start: CivilDate,
+): CivilDate[] {
 	switch (rule.freq) {
 		case "DAILY": {
 			const date = civilOf(dayNumber(start) + period);
@@ -375,7 +382,11 @@ function periodDates(rule: RecurrenceRule, period: number, start: CivilDate): Ci
 	}
 }
 
-function periodOf(rule: RecurrenceRule, start: CivilDate, local: CivilDate): number {
+function periodOf(
+	rule: RecurrenceRule,
+	start: CivilDate,
+	local: CivilDate,
+): number {
 	switch (rule.freq) {
 		case "DAILY":
 			return dayNumber(local) - dayNumber(start);
@@ -390,7 +401,10 @@ function periodOf(rule: RecurrenceRule, start: CivilDate, local: CivilDate): num
 
 function untilMs(until: Until, timeZone: string): number {
 	if (until.kind === "instant") return until.ms;
-	return fromLocal({ ...until.date, hour: 23, minute: 59, second: 59 }, timeZone);
+	return fromLocal(
+		{ ...until.date, hour: 23, minute: 59, second: 59 },
+		timeZone,
+	);
 }
 
 /**
@@ -400,17 +414,26 @@ function untilMs(until: Until, timeZone: string): number {
  * Throws RecurrenceLimitError when `maxEmptyPeriods` consecutive periods
  * produce nothing (a rule such as BYMONTH=2;BYMONTHDAY=30 that never fires).
  */
-export function* occurrenceStarts(series: Series, fromMs: number): Generator<number> {
+export function* occurrenceStarts(
+	series: Series,
+	fromMs: number,
+): Generator<number> {
 	const { rule, startMs, timeZone } = series;
 	if (!rule) {
 		if (startMs >= fromMs) yield startMs;
 		return;
 	}
 	const local: LocalDateTime = toLocal(startMs, timeZone);
-	const startDate: CivilDate = { year: local.year, month: local.month, day: local.day };
+	const startDate: CivilDate = {
+		year: local.year,
+		month: local.month,
+		day: local.day,
+	};
 	const hours = rule.byHour.length > 0 ? rule.byHour : [local.hour];
 	const minutes = rule.byMinute.length > 0 ? rule.byMinute : [local.minute];
-	const limit = rule.until ? untilMs(rule.until, timeZone) : Number.POSITIVE_INFINITY;
+	const limit = rule.until
+		? untilMs(rule.until, timeZone)
+		: Number.POSITIVE_INFINITY;
 	let emitted = 0;
 	let step = 0;
 	if (rule.count === undefined && fromMs > startMs) {
@@ -427,7 +450,10 @@ export function* occurrenceStarts(series: Series, fromMs: number): Generator<num
 			for (const hour of hours) {
 				for (const minute of minutes) {
 					starts.push(
-						fromLocal({ ...date, hour, minute, second: local.second }, timeZone),
+						fromLocal(
+							{ ...date, hour, minute, second: local.second },
+							timeZone,
+						),
 					);
 				}
 			}

@@ -11,6 +11,7 @@ import type {
 	EventInput,
 	EventPosition,
 	JsonObject,
+	JsonValue,
 	PositionedEvent,
 	PrincipalRef,
 	ReadAllOptions,
@@ -18,7 +19,6 @@ import type {
 	StreamFilter,
 	Subscription,
 } from "@hobo/core";
-import { isJsonString } from "../../src/windows/journal.js";
 import type {
 	CampId,
 	CdAction,
@@ -30,6 +30,7 @@ import type {
 	Outcome,
 	TelemetrySink,
 } from "../../src/ports.js";
+import { isJsonString } from "../../src/windows/journal.js";
 
 export const TENANT = "acme";
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
@@ -52,7 +53,11 @@ export function fid(id: string): FreightId {
 	return id as FreightId;
 }
 
-export type Clock = { now: () => number; advance: (ms: number) => void; set: (ms: number) => void };
+export type Clock = {
+	now: () => number;
+	advance: (ms: number) => void;
+	set: (ms: number) => void;
+};
 
 export function clock(start = T0): Clock {
 	let current = start;
@@ -67,7 +72,10 @@ export function clock(start = T0): Clock {
 	};
 }
 
-export function context(now: () => number, principal: PrincipalRef = OPERATOR): CdContext {
+export function context(
+	now: () => number,
+	principal: PrincipalRef = OPERATOR,
+): CdContext {
 	return { tenant: TENANT, principal, now };
 }
 
@@ -86,10 +94,16 @@ export class MemoryEventStore implements DurableEventStore {
 	/** When set, the next append throws as a concurrent writer would. */
 	failNextAppend = 0;
 
-	async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
+	async append(
+		streamId: string,
+		events: EventInput[],
+		opts: AppendOptions,
+	): Promise<AppendResult> {
 		if (this.failNextAppend > 0) {
 			this.failNextAppend -= 1;
-			throw new Error(`expected seq ${opts.expectedSeq} lost a race on ${streamId}`);
+			throw new Error(
+				`expected seq ${opts.expectedSeq} lost a race on ${streamId}`,
+			);
 		}
 		const stream = this.streams.get(streamId) ?? [];
 		const deduped: EventEnvelope[] = [];
@@ -104,7 +118,9 @@ export class MemoryEventStore implements DurableEventStore {
 		}
 		if (fresh.length === 0) return { streamId, appended: [], deduped };
 		if (opts.expectedSeq !== stream.length)
-			throw new Error(`expected seq ${opts.expectedSeq} but ${streamId} is at ${stream.length}`);
+			throw new Error(
+				`expected seq ${opts.expectedSeq} but ${streamId} is at ${stream.length}`,
+			);
 		const appended: EventEnvelope[] = [];
 		let firstPosition: EventPosition | undefined;
 		let lastPosition: EventPosition | undefined;
@@ -131,20 +147,30 @@ export class MemoryEventStore implements DurableEventStore {
 			lastPosition = position;
 		}
 		this.streams.set(streamId, stream);
-		return { streamId, appended, deduped, firstPosition, lastPosition };
+		const result: AppendResult = { streamId, appended, deduped };
+		if (firstPosition !== undefined) result.firstPosition = firstPosition;
+		if (lastPosition !== undefined) result.lastPosition = lastPosition;
+		return result;
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {
-		for (const event of this.streams.get(streamId) ?? []) if (event.seq > fromSeq) yield event;
+		for (const event of this.streams.get(streamId) ?? [])
+			if (event.seq > fromSeq) yield event;
 	}
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		let count = 0;
-		for (const item of [...this.all]) {
-			if (options.after !== undefined && item.position <= options.after) continue;
+		for (const item of this.all.slice()) {
+			if (options.after !== undefined && item.position <= options.after)
+				continue;
 			if (options.tenant && item.event.tenant !== options.tenant) continue;
-			if (options.filter?.type && item.event.type !== options.filter.type) continue;
-			if (options.filter?.streamId && item.event.streamId !== options.filter.streamId) continue;
+			if (options.filter?.type && item.event.type !== options.filter.type)
+				continue;
+			if (
+				options.filter?.streamId &&
+				item.event.streamId !== options.filter.streamId
+			)
+				continue;
 			if (options.limit !== undefined && count >= options.limit) return;
 			count += 1;
 			yield item;
@@ -152,32 +178,58 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	/** Append a raw event body (other work packages' facts, corrupt rows). */
-	async seed(streamId: string, type: string, data: JsonObject | string, actor: PrincipalRef = OPERATOR): Promise<void> {
+	async seed(
+		streamId: string,
+		type: string,
+		data: JsonValue,
+		actor: PrincipalRef = OPERATOR,
+	): Promise<void> {
 		const stream = this.streams.get(streamId) ?? [];
-		await this.append(streamId, [{ type, data }], { expectedSeq: stream.length, actor, tenant: TENANT });
+		await this.append(streamId, [{ type, data }], {
+			expectedSeq: stream.length,
+			actor,
+			tenant: TENANT,
+		});
 	}
 
 	events(type: string): EventEnvelope[] {
-		return this.all.filter((item) => item.event.type === type).map((item) => item.event);
+		return this.all
+			.filter((item) => item.event.type === type)
+			.map((item) => item.event);
 	}
 
-	subscribe(_filter: StreamFilter, _handler: (event: EventEnvelope) => void): Subscription {
+	subscribe(
+		_filter: StreamFilter,
+		_handler: (event: EventEnvelope) => void,
+	): Subscription {
 		return { unsubscribe: () => undefined };
 	}
 
-	async snapshot(streamId: string, state: SnapshotRecord["state"], seq: number): Promise<SnapshotRecord> {
+	async snapshot(
+		streamId: string,
+		state: SnapshotRecord["state"],
+		seq: number,
+	): Promise<SnapshotRecord> {
 		return { streamId, seq, state, savedAt: new Date(T0).toISOString() };
 	}
 
 	async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-		const result = await this.append(request.streamId, [...request.events], request.append);
+		const result = await this.append(
+			request.streamId,
+			[...request.events],
+			request.append,
+		);
 		return { ...result, effects: [] };
 	}
 }
 
 /** Authorizer that records each call; deny or proposal-only per action. */
 export class RecordingAuthorizer implements CdAuthorizer {
-	readonly calls: { action: CdAction; subject: JsonObject; principal: PrincipalRef }[] = [];
+	readonly calls: {
+		action: CdAction;
+		subject: JsonObject;
+		principal: PrincipalRef;
+	}[] = [];
 	readonly deny = new Set<CdAction>();
 	private decisions = 0;
 
@@ -187,12 +239,14 @@ export class RecordingAuthorizer implements CdAuthorizer {
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ decisionId: string; proposalOnly: boolean }>>> {
 		this.calls.push({ action, subject, principal: ctx.principal });
-		if (this.deny.has(action))
-			return { ok: false, reasons: [] };
+		if (this.deny.has(action)) return { ok: false, reasons: [] };
 		this.decisions += 1;
 		return {
 			ok: true,
-			value: { decisionId: `dec-${this.decisions}`, proposalOnly: ctx.principal.kind === "agent" },
+			value: {
+				decisionId: `dec-${this.decisions}`,
+				proposalOnly: ctx.principal.kind === "agent",
+			},
 		};
 	}
 }

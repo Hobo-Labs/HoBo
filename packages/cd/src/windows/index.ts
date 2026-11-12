@@ -3,6 +3,7 @@ export type { ChangeWindowsDeps } from "./change-windows.js";
 export { createChangeWindows, windowDigest } from "./change-windows.js";
 export type {
 	ActiveOverride,
+	ApplicableWindows,
 	CompiledWindow,
 	EvaluationInput,
 } from "./evaluate.js";

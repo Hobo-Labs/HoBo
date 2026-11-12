@@ -73,7 +73,9 @@ import { PIPELINE_METRIC, PIPELINE_REASON } from "./reasons.js";
 /** Station and data subject a placed node's Placement decides for (composed by WP18). */
 export type PlacementContextResolver = (
 	input: Readonly<{ pipeline: PipelineRecord; node: PipelineNodeRecord }>,
-) => Promise<Readonly<{ stationId: string; subject: PlacementSubject }> | undefined>;
+) => Promise<
+	Readonly<{ stationId: string; subject: PlacementSubject }> | undefined
+>;
 
 export type PipelineControllerDeps = CdBase & {
 	readonly freight: FreightLedger;
@@ -87,15 +89,19 @@ export type PipelineControllerDeps = CdBase & {
 	 * tick blocks the requests after it. Without it the promotion gate (which
 	 * always evaluates windows, D10) is the only check.
 	 */
-	readonly windows?: ChangeWindows;
+	readonly windows?: ChangeWindows | undefined;
 	/** Optional: metrics. Telemetry is advisory; the journal is the record. */
-	readonly telemetry?: TelemetrySink;
+	readonly telemetry?: TelemetrySink | undefined;
 	/** Required to start fan-outs; without it placed nodes never auto-promote (fail closed). */
-	readonly placementContext?: PlacementContextResolver;
+	readonly placementContext?: PlacementContextResolver | undefined;
 };
 
 // public-contract: the idempotency key of an auto-promotion request.
-export function pipelineKey(pipeline: string, node: string, freightId: string): string {
+export function pipelineKey(
+	pipeline: string,
+	node: string,
+	freightId: string,
+): string {
 	return `pipeline:${pipeline}:${node}:${freightId}`;
 }
 
@@ -144,18 +150,27 @@ function newestFirst(a: FreightRecord, b: FreightRecord): number {
 export function fanoutWithDefaults(node: PipelineNodeRecord): FanoutRecord {
 	const declared = node.fanout;
 	const out = create(FanoutRecordSchema, declared ?? {});
-	if (out.strategy === FanoutStrategy.UNSPECIFIED) out.strategy = FanoutStrategy.PROGRESSIVE_PER_GROUP;
-	if (out.minSuccessMs === 0n) out.minSuccessMs = BigInt(CD_DEFAULTS.fanoutMinSuccessMs);
-	if (out.progressDeadlineMs === 0n) out.progressDeadlineMs = BigInt(CD_DEFAULTS.fanoutProgressDeadlineMs);
-	if (out.maxFailures === 0 && out.maxFailuresPercent === 0) out.maxFailuresPercent = CD_DEFAULTS.fanoutMaxFailuresPercent;
+	if (out.strategy === FanoutStrategy.UNSPECIFIED)
+		out.strategy = FanoutStrategy.PROGRESSIVE_PER_GROUP;
+	if (out.minSuccessMs === 0n)
+		out.minSuccessMs = BigInt(CD_DEFAULTS.fanoutMinSuccessMs);
+	if (out.progressDeadlineMs === 0n)
+		out.progressDeadlineMs = BigInt(CD_DEFAULTS.fanoutProgressDeadlineMs);
+	if (out.maxFailures === 0 && out.maxFailuresPercent === 0)
+		out.maxFailuresPercent = CD_DEFAULTS.fanoutMaxFailuresPercent;
 	// proto3 cannot tell an unset bool from false; the safe default (D21) applies.
 	out.rollbackOnHalt = out.rollbackOnHalt || CD_DEFAULTS.fanoutRollbackOnHalt;
 	return out;
 }
 
-type Candidate = Readonly<{ freight: FreightRecord; availability: NodeAvailability }>;
+type Candidate = Readonly<{
+	freight: FreightRecord;
+	availability: NodeAvailability;
+}>;
 
-export function createPipelineController(deps: PipelineControllerDeps): PipelineController {
+export function createPipelineController(
+	deps: PipelineControllerDeps,
+): PipelineController {
 	const pipelines = new Map<string, PipelineRecord>();
 	const unreadable = new Set<string>();
 	const recordedAvailability = new Set<string>();
@@ -166,8 +181,16 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 	/** `${pipeline}|${node}` → Freight of the latest env.Promoted. */
 	const currentByNode = new Map<string, string>();
 
-	const metric = (name: string, atMs: number, attributes: Readonly<Record<string, string>>) =>
-		emitCounter(deps.telemetry, { name, atMs, attributes: { tenant: deps.tenant, ...attributes } });
+	const metric = (
+		name: string,
+		atMs: number,
+		attributes: Readonly<Record<string, string>>,
+	) =>
+		emitCounter(deps.telemetry, {
+			name,
+			atMs,
+			attributes: { tenant: deps.tenant, ...attributes },
+		});
 
 	const projection = new CatchUpProjection(deps.store, deps.tenant, {
 		[CD_EVENTS.PipelineApplied]: (event) => {
@@ -184,7 +207,10 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 		},
 		[CD_EVENTS.PipelineFreightAvailable]: (event) => {
 			const record = decode(FreightAvailabilityRecordSchema, event.data);
-			if (record) recordedAvailability.add(`${record.pipeline}|${record.node}|${record.freightId}`);
+			if (record)
+				recordedAvailability.add(
+					`${record.pipeline}|${record.node}|${record.freightId}`,
+				);
 		},
 		[CD_EVENTS.SourceDefined]: (event) => {
 			const name = SOURCE_STREAM.exec(event.streamId)?.[1];
@@ -203,41 +229,60 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 				promotedAt.set(key, Math.max(promotedAt.get(key) ?? 0, at));
 			}
 			if (record.pipeline !== "" && record.node !== "")
-				currentByNode.set(`${record.pipeline}|${record.node}`, record.freightId);
+				currentByNode.set(
+					`${record.pipeline}|${record.node}`,
+					record.freightId,
+				);
 		},
 	});
 
-	async function placedViews(pipeline: PipelineRecord): Promise<Map<string, PlacedView>> {
+	async function placedViews(
+		pipeline: PipelineRecord,
+	): Promise<Map<string, PlacedView>> {
 		const out = new Map<string, PlacedView>();
 		for (const node of pipeline.nodes) {
 			if (!isPlaced(node)) continue;
-			const qualified = await deps.fanout.qualified({ pipeline: pipeline.name, node: node.name });
+			const qualified = await deps.fanout.qualified({
+				pipeline: pipeline.name,
+				node: node.name,
+			});
 			const decision = qualified.decision;
 			if (!decision) continue;
 			const declared = new Set(node.fanout?.mandatoryGroups ?? []);
-			const campIds = decision.groups.length > 0
-				? decision.groups.flatMap((group) => group.campIds)
-				: decision.candidates.filter((c) => c.selected).map((c) => c.campId);
+			const campIds =
+				decision.groups.length > 0
+					? decision.groups.flatMap((group) => group.campIds)
+					: decision.candidates.filter((c) => c.selected).map((c) => c.campId);
 			const mandatoryCampIds = decision.groups
 				.filter((group) => group.mandatory || declared.has(group.name))
 				.flatMap((group) => group.campIds);
-			out.set(node.name, { campIds: [...new Set(campIds)].sort(), mandatoryCampIds: [...new Set(mandatoryCampIds)].sort() });
+			out.set(node.name, {
+				campIds: [...new Set(campIds)].sort(),
+				mandatoryCampIds: [...new Set(mandatoryCampIds)].sort(),
+			});
 		}
 		return out;
 	}
 
-	async function freightFacts(pipeline: PipelineRecord): Promise<FreightFacts[]> {
+	async function freightFacts(
+		pipeline: PipelineRecord,
+	): Promise<FreightFacts[]> {
 		const all = await deps.freight.list({ bindle: pipeline.bindle });
 		const subject = subjectOf(pipeline.subject);
 		const out: FreightFacts[] = [];
 		for (const freight of [...all].sort(newestFirst)) {
-			if (freight.manifest?.bindle !== pipeline.bindle || subjectOf(freight.manifest.subject) !== subject) continue;
+			if (
+				freight.manifest?.bindle !== pipeline.bindle ||
+				subjectOf(freight.manifest.subject) !== subject
+			)
+				continue;
 			// SAFETY: ids in FreightRecord are recorded `sha256:` Freight ids (FreightLedger).
 			const id = freight.freightId as FreightId;
 			const promoted = new Map<string, number>();
 			for (const [key, at] of promotedAt) {
 				const [freightId, campId] = key.split("|");
-				if (freightId === freight.freightId && campId !== undefined) promoted.set(campId, at);
+				if (freightId === freight.freightId && campId !== undefined)
+					promoted.set(campId, at);
 			}
 			out.push({
 				freight,
@@ -250,17 +295,34 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 		return out;
 	}
 
-	function candidates(pipeline: PipelineRecord, node: PipelineNodeRecord, facts: readonly FreightFacts[], placed: ReadonlyMap<string, PlacedView>, nowMs: number): Candidate[] {
+	function candidates(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		facts: readonly FreightFacts[],
+		placed: ReadonlyMap<string, PlacedView>,
+		nowMs: number,
+	): Candidate[] {
 		const nodes = new Map(pipeline.nodes.map((n) => [n.name, n]));
 		const out: Candidate[] = [];
 		for (const fact of facts) {
-			const availability = freightAvailability({ pipeline, nodes, node, nowMs, facts: fact, placed });
+			const availability = freightAvailability({
+				pipeline,
+				nodes,
+				node,
+				nowMs,
+				facts: fact,
+				placed,
+			});
 			if (availability) out.push({ freight: fact.freight, availability });
 		}
 		return out;
 	}
 
-	function availabilityRecord(pipeline: string, node: string, candidate: Candidate): FreightAvailabilityRecord {
+	function availabilityRecord(
+		pipeline: string,
+		node: string,
+		candidate: Candidate,
+	): FreightAvailabilityRecord {
 		return create(FreightAvailabilityRecordSchema, {
 			pipeline,
 			node,
@@ -270,7 +332,11 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 		});
 	}
 
-	async function windowsOpen(node: PipelineNodeRecord, targets: readonly string[], ctx: CdContext): Promise<boolean> {
+	async function windowsOpen(
+		node: PipelineNodeRecord,
+		targets: readonly string[],
+		ctx: CdContext,
+	): Promise<boolean> {
 		if (!deps.windows) return true;
 		for (const target of targets) {
 			// SAFETY: targets are Camp ids from the applied pipeline or a placement decision.
@@ -289,11 +355,21 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 		return true;
 	}
 
-	async function request(pipeline: PipelineRecord, node: PipelineNodeRecord, freightId: string, targets: readonly string[], key: string, ctx: CdContext): Promise<void> {
+	async function request(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		freightId: string,
+		targets: readonly string[],
+		key: string,
+		ctx: CdContext,
+	): Promise<void> {
 		if (requestedKeys.has(key) || targets.length === 0) return;
 		const attributes = { pipeline: pipeline.name, node: node.name };
 		if (!(await windowsOpen(node, targets, ctx))) {
-			metric(PIPELINE_METRIC.blocked, ctx.now(), { ...attributes, reason: "window-closed" });
+			metric(PIPELINE_METRIC.blocked, ctx.now(), {
+				...attributes,
+				reason: "window-closed",
+			});
 			return;
 		}
 		const promote: PromoteRequest = {
@@ -305,32 +381,58 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 			pipeline: pipeline.name,
 			node: node.name,
 			intent: "promote",
-			...(node.strategy === RolloutStrategy.UNSPECIFIED ? {} : { strategy: node.strategy }),
 		};
-		const result = await deps.promotions.promote(promote, ctx);
+		const withStrategy: PromoteRequest =
+			node.strategy === RolloutStrategy.UNSPECIFIED
+				? promote
+				: { ...promote, strategy: node.strategy };
+		const result = await deps.promotions.promote(withStrategy, ctx);
 		if (result.ok) {
 			requestedKeys.add(key);
 			metric(PIPELINE_METRIC.promotionRequested, ctx.now(), attributes);
 		} else {
-			metric(PIPELINE_METRIC.promotionRefused, ctx.now(), { ...attributes, code: result.reasons[0]?.code ?? "" });
+			metric(PIPELINE_METRIC.promotionRefused, ctx.now(), {
+				...attributes,
+				code: result.reasons[0]?.code ?? "",
+			});
 		}
 	}
 
-	async function startFanout(pipeline: PipelineRecord, node: PipelineNodeRecord, freightId: string, ctx: CdContext): Promise<void> {
+	async function startFanout(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		freightId: string,
+		ctx: CdContext,
+	): Promise<void> {
 		const attributes = { pipeline: pipeline.name, node: node.name };
-		const existing = await deps.fanout.list({ pipeline: pipeline.name, node: node.name });
+		const existing = await deps.fanout.list({
+			pipeline: pipeline.name,
+			node: node.name,
+		});
 		if (existing.some((status) => status.freightId === freightId)) return;
 		const context = await deps.placementContext?.({ pipeline, node });
 		if (!context) {
-			metric(PIPELINE_METRIC.blocked, ctx.now(), { ...attributes, reason: "placement-context-missing" });
+			metric(PIPELINE_METRIC.blocked, ctx.now(), {
+				...attributes,
+				reason: "placement-context-missing",
+			});
 			return;
 		}
 		const decision = await deps.placement.decide(
-			{ placement: node.placement, pipeline: pipeline.name, node: node.name, stationId: context.stationId, subject: context.subject },
+			{
+				placement: node.placement,
+				pipeline: pipeline.name,
+				node: node.name,
+				stationId: context.stationId,
+				subject: context.subject,
+			},
 			ctx,
 		);
 		if (!decision.ok) {
-			metric(PIPELINE_METRIC.blocked, ctx.now(), { ...attributes, reason: decision.reasons[0]?.code ?? "placement-refused" });
+			metric(PIPELINE_METRIC.blocked, ctx.now(), {
+				...attributes,
+				reason: decision.reasons[0]?.code ?? "placement-refused",
+			});
 			return;
 		}
 		const started = await deps.fanout.start(
@@ -341,16 +443,29 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 				freightId: freightId as FreightId,
 				decision: decision.value,
 				fanout: fanoutWithDefaults(node),
-				departure: node.departure === DepartureAction.UNSPECIFIED ? DepartureAction.ORPHAN_DATA : node.departure,
+				departure:
+					node.departure === DepartureAction.UNSPECIFIED
+						? DepartureAction.ORPHAN_DATA
+						: node.departure,
 				idempotencyKey: pipelineKey(pipeline.name, node.name, freightId),
 			},
 			ctx,
 		);
-		if (started.ok) metric(PIPELINE_METRIC.fanoutStarted, ctx.now(), attributes);
-		else metric(PIPELINE_METRIC.blocked, ctx.now(), { ...attributes, reason: started.reasons[0]?.code ?? "fanout-refused" });
+		if (started.ok)
+			metric(PIPELINE_METRIC.fanoutStarted, ctx.now(), attributes);
+		else
+			metric(PIPELINE_METRIC.blocked, ctx.now(), {
+				...attributes,
+				reason: started.reasons[0]?.code ?? "fanout-refused",
+			});
 	}
 
-	async function promoteCandidate(pipeline: PipelineRecord, node: PipelineNodeRecord, candidate: Candidate, ctx: CdContext): Promise<void> {
+	async function promoteCandidate(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		candidate: Candidate,
+		ctx: CdContext,
+	): Promise<void> {
 		const freightId = candidate.freight.freightId;
 		const key = pipelineKey(pipeline.name, node.name, freightId);
 		if (candidate.availability.lineage) {
@@ -360,16 +475,31 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 		}
 		// Approval only: the bypass covers each approved Camp, one request per Camp.
 		for (const campId of candidate.availability.approvedCampIds)
-			await request(pipeline, node, freightId, [campId], `${key}:approval:${campId}`, ctx);
+			await request(
+				pipeline,
+				node,
+				freightId,
+				[campId],
+				`${key}:approval:${campId}`,
+				ctx,
+			);
 	}
 
-	async function matchNode(pipeline: PipelineRecord, node: PipelineNodeRecord, facts: readonly FreightFacts[], ctx: CdContext): Promise<void> {
+	async function matchNode(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		facts: readonly FreightFacts[],
+		ctx: CdContext,
+	): Promise<void> {
 		const attributes = { pipeline: pipeline.name, node: node.name };
 		let stable: string | undefined;
 		let domain: readonly string[];
 		let settled: ReadonlySet<string>;
 		if (isPlaced(node)) {
-			const qualified = await deps.fanout.qualified({ pipeline: pipeline.name, node: node.name });
+			const qualified = await deps.fanout.qualified({
+				pipeline: pipeline.name,
+				node: node.name,
+			});
 			stable = qualified.stableFreightId;
 			const decision = qualified.decision;
 			domain = decision
@@ -379,34 +509,72 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 				: [];
 			settled = new Set<string>(qualified.qualifiedCampIds);
 		} else {
-			const newest = facts.find((fact) => fact.usable && fact.qualifications.some((q) => q.pipeline === pipeline.name && q.node === node.name));
+			const newest = facts.find(
+				(fact) =>
+					fact.usable &&
+					fact.qualifications.some(
+						(q) => q.pipeline === pipeline.name && q.node === node.name,
+					),
+			);
 			stable = newest?.freight.freightId;
 			domain = node.campIds;
-			settled = new Set(newest?.qualifications.filter((q) => q.pipeline === pipeline.name && q.node === node.name).map((q) => q.campId) ?? []);
+			settled = new Set(
+				newest?.qualifications
+					.filter((q) => q.pipeline === pipeline.name && q.node === node.name)
+					.map((q) => q.campId) ?? [],
+			);
 		}
 		if (!stable) return;
 		// SAFETY: stable is a Freight id the ledger or fan-out controller recorded.
 		if (!(await deps.freight.isUsable(stable as FreightId))) return;
-		const fanouts = isPlaced(node) ? await deps.fanout.list({ pipeline: pipeline.name, node: node.name }) : [];
+		const fanouts = isPlaced(node)
+			? await deps.fanout.list({ pipeline: pipeline.name, node: node.name })
+			: [];
 		if (fanouts.some((status) => status.state === FanoutState.HALTED)) {
-			metric(PIPELINE_METRIC.blocked, ctx.now(), { ...attributes, reason: "fanout-halted" });
+			metric(PIPELINE_METRIC.blocked, ctx.now(), {
+				...attributes,
+				reason: "fanout-halted",
+			});
 			return;
 		}
-		const running = fanouts.filter((status) => status.state === FanoutState.RUNNING);
+		const running = fanouts.filter(
+			(status) => status.state === FanoutState.RUNNING,
+		);
 		// Never converge late entrants onto Freight that is still rolling out.
 		if (running.some((status) => status.freightId === stable)) return;
-		const busy = new Set(running.flatMap((status) => [...status.pending, ...status.inFlight]));
+		const busy = new Set(
+			running.flatMap((status) => [...status.pending, ...status.inFlight]),
+		);
 		for (const campId of [...new Set(domain)].sort()) {
 			if (settled.has(campId) || busy.has(campId)) continue;
 			// SAFETY: campId comes from the applied pipeline or a recorded placement decision.
 			const history = await deps.promotions.list({ campId: campId as CampId });
 			if (history.some((promotion) => !TERMINAL.has(promotion.state))) continue;
-			if (history.some((promotion) => promotion.freightId === stable && promotion.state !== PromotionState.SUPERSEDED)) continue;
-			await request(pipeline, node, stable, [campId], `${pipelineKey(pipeline.name, node.name, stable)}:match:${campId}`, ctx);
+			if (
+				history.some(
+					(promotion) =>
+						promotion.freightId === stable &&
+						promotion.state !== PromotionState.SUPERSEDED,
+				)
+			)
+				continue;
+			await request(
+				pipeline,
+				node,
+				stable,
+				[campId],
+				`${pipelineKey(pipeline.name, node.name, stable)}:match:${campId}`,
+				ctx,
+			);
 		}
 	}
 
-	async function recordAvailable(pipeline: PipelineRecord, node: PipelineNodeRecord, list: readonly Candidate[], ctx: CdContext): Promise<void> {
+	async function recordAvailable(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		list: readonly Candidate[],
+		ctx: CdContext,
+	): Promise<void> {
 		for (const candidate of list) {
 			const marker = `${pipeline.name}|${node.name}|${candidate.freight.freightId}`;
 			if (recordedAvailability.has(marker)) continue;
@@ -414,14 +582,21 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 				store: deps.store,
 				streamId: CD_STREAMS.pipeline(pipeline.name),
 				type: CD_EVENTS.PipelineFreightAvailable,
-				data: body(FreightAvailabilityRecordSchema, availabilityRecord(pipeline.name, node.name, candidate)),
+				data: body(
+					FreightAvailabilityRecordSchema,
+					availabilityRecord(pipeline.name, node.name, candidate),
+				),
 				idempotencyKey: `available:${node.name}:${candidate.freight.freightId}`,
 				tenant: deps.tenant,
 				actor: ctx.principal,
 			});
 			if (event) {
 				recordedAvailability.add(marker);
-				metric(PIPELINE_METRIC.freightAvailable, ctx.now(), { pipeline: pipeline.name, node: node.name, via: candidate.availability.via.join(",") });
+				metric(PIPELINE_METRIC.freightAvailable, ctx.now(), {
+					pipeline: pipeline.name,
+					node: node.name,
+					via: candidate.availability.via.join(","),
+				});
 			}
 		}
 	}
@@ -430,11 +605,19 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 		async apply(record, ctx) {
 			const atMs = ctx.now();
 			const refused = (outcome: Extract<Outcome<never>, { ok: false }>) => {
-				metric(PIPELINE_METRIC.refused, atMs, { pipeline: record.name, code: outcome.reasons[0]?.code ?? "" });
+				metric(PIPELINE_METRIC.refused, atMs, {
+					pipeline: record.name,
+					code: outcome.reasons[0]?.code ?? "",
+				});
 				return outcome;
 			};
 			await projection.catchUp();
-			const camps = new Map((await deps.topology.camps()).map((camp) => [String(camp.campId), camp]));
+			const camps = new Map(
+				(await deps.topology.camps()).map((camp) => [
+					String(camp.campId),
+					camp,
+				]),
+			);
 			const placements = new Map();
 			for (const node of record.nodes) {
 				if (!isPlaced(node)) continue;
@@ -442,26 +625,56 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 				if (placement) placements.set(node.placement, placement);
 			}
 			const subject = subjectOf(record.subject);
-			const owner = [...pipelines.values()].find((p) => p.bindle === record.bindle && subjectOf(p.subject) === subject && p.name !== record.name);
-			const problems = validatePipeline(record, { camps, sources, placements, ...(owner ? { bindleOwner: owner.name } : {}) });
+			const owner = [...pipelines.values()].find(
+				(p) =>
+					p.bindle === record.bindle &&
+					subjectOf(p.subject) === subject &&
+					p.name !== record.name,
+			);
+			const problems = validatePipeline(record, {
+				camps,
+				sources,
+				placements,
+				bindleOwner: owner?.name,
+			});
 			if (problems.length > 0) return refused({ ok: false, reasons: problems });
 
-			const decision = await deps.authorizer.authorize("pipeline.apply", { pipeline: record.name, bindle: record.bindle }, ctx);
+			const decision = await deps.authorizer.authorize(
+				"pipeline.apply",
+				{ pipeline: record.name, bindle: record.bindle },
+				ctx,
+			);
 			if (!decision.ok)
 				return refused({
 					ok: false,
 					reasons: [
-						...refuse(PIPELINE_REASON.unauthorized, "pipeline.apply was not authorized", "Ask a principal holding pipeline.apply, or adjust the delivery policy pack.", record.name).reasons,
+						...refuse(
+							PIPELINE_REASON.unauthorized,
+							"pipeline.apply was not authorized",
+							"Ask a principal holding pipeline.apply, or adjust the delivery policy pack.",
+							record.name,
+						).reasons,
 						...decision.reasons,
 					],
 				});
 			if (decision.value.proposalOnly)
-				return refused(refuse(PIPELINE_REASON.proposalOnly, `${principalName(ctx.principal)} may only propose pipeline.apply`, "A granted principal must apply the proposal (ADR-0094).", record.name));
+				return refused(
+					refuse(
+						PIPELINE_REASON.proposalOnly,
+						`${principalName(ctx.principal)} may only propose pipeline.apply`,
+						"A granted principal must apply the proposal (ADR-0094).",
+						record.name,
+					),
+				);
 
-			const normalized = normalizePipeline(record, principalName(ctx.principal));
+			const normalized = normalizePipeline(
+				record,
+				principalName(ctx.principal),
+			);
 			const digest = pipelineDigest(normalized);
 			const current = pipelines.get(record.name);
-			if (current && pipelineDigest(current) === digest) return { ok: true, value: current };
+			if (current && pipelineDigest(current) === digest)
+				return { ok: true, value: current };
 			const event = await appendOnce({
 				store: deps.store,
 				streamId: CD_STREAMS.pipeline(record.name),
@@ -472,7 +685,14 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 				actor: ctx.principal,
 			});
 			if (!event)
-				return refused(refuse(PIPELINE_REASON.conflict, `could not append to ${CD_STREAMS.pipeline(record.name)} (concurrent writer or store unavailable)`, "Retry the command; it is idempotent.", record.name));
+				return refused(
+					refuse(
+						PIPELINE_REASON.conflict,
+						`could not append to ${CD_STREAMS.pipeline(record.name)} (concurrent writer or store unavailable)`,
+						"Retry the command; it is idempotent.",
+						record.name,
+					),
+				);
 			await projection.catchUp();
 			metric(PIPELINE_METRIC.applied, atMs, { pipeline: record.name });
 			return { ok: true, value: pipelines.get(record.name) ?? normalized };
@@ -485,7 +705,9 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 
 		async list() {
 			await projection.catchUp();
-			return [...pipelines.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+			return [...pipelines.values()].sort((a, b) =>
+				a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+			);
 		},
 
 		async available(input) {
@@ -495,7 +717,9 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 			if (!pipeline || !node) return [];
 			const facts = await freightFacts(pipeline);
 			const placed = await placedViews(pipeline);
-			return candidates(pipeline, node, facts, placed, deps.now()).map((candidate) => availabilityRecord(pipeline.name, node.name, candidate));
+			return candidates(pipeline, node, facts, placed, deps.now()).map(
+				(candidate) => availabilityRecord(pipeline.name, node.name, candidate),
+			);
 		},
 
 		async tick(ctx) {
@@ -520,8 +744,14 @@ export function createPipelineController(deps: PipelineControllerDeps): Pipeline
 						}
 						case AutoPromotion.MATCH_UPSTREAM: {
 							const upstream = node.fromNodes[0];
-							const current = upstream ? currentByNode.get(`${pipeline.name}|${upstream}`) : undefined;
-							const match = list.find((candidate) => candidate.freight.freightId === current && candidate.availability.lineage);
+							const current = upstream
+								? currentByNode.get(`${pipeline.name}|${upstream}`)
+								: undefined;
+							const match = list.find(
+								(candidate) =>
+									candidate.freight.freightId === current &&
+									candidate.availability.lineage,
+							);
 							if (match) await promoteCandidate(pipeline, node, match, ctx);
 							break;
 						}

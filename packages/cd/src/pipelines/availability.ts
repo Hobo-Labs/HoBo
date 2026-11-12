@@ -57,7 +57,10 @@ export type AvailabilityInput = Readonly<{
  * `min_qualified_percent` of the decision (default 95%, rounded up). Never
  * below one, so an empty decision qualifies nothing.
  */
-export function quorumThreshold(quorum: QuorumRecord | undefined, total: number): number {
+export function quorumThreshold(
+	quorum: QuorumRecord | undefined,
+	total: number,
+): number {
 	const percent =
 		quorum && (quorum.minQualified > 0 || quorum.minQualifiedPercent > 0)
 			? quorum.minQualifiedPercent
@@ -72,12 +75,21 @@ function ms(value: string): number | undefined {
 }
 
 /** Each Camp of `upstream` whose qualification (plus soak) is complete, with the time it completed. */
-function readyTimes(input: AvailabilityInput, upstream: PipelineNodeRecord, domain: readonly string[]): Map<string, number> {
+function readyTimes(
+	input: AvailabilityInput,
+	upstream: PipelineNodeRecord,
+	domain: readonly string[],
+): Map<string, number> {
 	const soak = Number(input.node.requiredSoakMs);
 	const inDomain = new Set(domain);
 	const ready = new Map<string, number>();
 	for (const q of input.facts.qualifications) {
-		if (q.pipeline !== input.pipeline.name || q.node !== upstream.name || !inDomain.has(q.campId)) continue;
+		if (
+			q.pipeline !== input.pipeline.name ||
+			q.node !== upstream.name ||
+			!inDomain.has(q.campId)
+		)
+			continue;
 		const qualifiedAt = ms(q.qualifiedAt);
 		if (qualifiedAt === undefined) continue;
 		const promoted = input.facts.promotedAt.get(q.campId) ?? qualifiedAt;
@@ -90,8 +102,14 @@ function readyTimes(input: AvailabilityInput, upstream: PipelineNodeRecord, doma
 }
 
 /** When `upstream` admits the Freight under `strategy`, or undefined. */
-function admitted(input: AvailabilityInput, upstream: PipelineNodeRecord, strategy: Availability): number | undefined {
-	const view = isPlaced(upstream) ? input.placed.get(upstream.name) : { campIds: upstream.campIds, mandatoryCampIds: [] };
+function admitted(
+	input: AvailabilityInput,
+	upstream: PipelineNodeRecord,
+	strategy: Availability,
+): number | undefined {
+	const view = isPlaced(upstream)
+		? input.placed.get(upstream.name)
+		: { campIds: upstream.campIds, mandatoryCampIds: [] };
 	if (!view || view.campIds.length === 0) return undefined;
 	const ready = readyTimes(input, upstream, view.campIds);
 	const times = [...ready.values()].sort((a, b) => a - b);
@@ -114,7 +132,9 @@ function admitted(input: AvailabilityInput, upstream: PipelineNodeRecord, strate
 }
 
 function nodeDomain(input: AvailabilityInput): readonly string[] {
-	return isPlaced(input.node) ? (input.placed.get(input.node.name)?.campIds ?? []) : input.node.campIds;
+	return isPlaced(input.node)
+		? (input.placed.get(input.node.name)?.campIds ?? [])
+		: input.node.campIds;
 }
 
 /**
@@ -123,28 +143,40 @@ function nodeDomain(input: AvailabilityInput): readonly string[] {
  * qualification per the node's strategy plus soak. An unexpired approval
  * makes it available to the approved Camps of the node only.
  */
-export function freightAvailability(input: AvailabilityInput): NodeAvailability | undefined {
+export function freightAvailability(
+	input: AvailabilityInput,
+): NodeAvailability | undefined {
 	const { freight } = input.facts;
 	if (!input.facts.usable) return undefined;
 	if (freight.manifest?.bindle !== input.pipeline.bindle) return undefined;
-	if (subjectOf(freight.manifest.subject) !== subjectOf(input.pipeline.subject)) return undefined;
+	if (subjectOf(freight.manifest.subject) !== subjectOf(input.pipeline.subject))
+		return undefined;
 
 	const paths: { via: string; at: number }[] = [];
 	const recordedAt = ms(freight.recordedAt) ?? input.nowMs;
 	for (const source of input.node.fromSources) {
 		const origin = ORIGIN_SOURCES.get(source);
-		const matches = origin === undefined ? freight.sourceName === source : freight.origin === origin;
-		if (matches && recordedAt <= input.nowMs) paths.push({ via: source, at: recordedAt });
+		const matches =
+			origin === undefined
+				? freight.sourceName === source
+				: freight.origin === origin;
+		if (matches && recordedAt <= input.nowMs)
+			paths.push({ via: source, at: recordedAt });
 	}
 
 	if (input.node.fromNodes.length > 0) {
 		const strategy = effectiveAvailability(input.node, input.nodes);
 		const results = input.node.fromNodes.map((name) => {
 			const upstream = input.nodes.get(name);
-			return { name, at: upstream ? admitted(input, upstream, strategy) : undefined };
+			return {
+				name,
+				at: upstream ? admitted(input, upstream, strategy) : undefined,
+			};
 		});
 		if (strategy === Availability.ONE_OF) {
-			for (const result of results) if (result.at !== undefined) paths.push({ via: result.name, at: result.at });
+			for (const result of results)
+				if (result.at !== undefined)
+					paths.push({ via: result.name, at: result.at });
 		} else if (results.every((result) => result.at !== undefined)) {
 			const at = Math.max(...results.map((result) => result.at ?? input.nowMs));
 			for (const result of results) paths.push({ via: result.name, at });
@@ -154,18 +186,28 @@ export function freightAvailability(input: AvailabilityInput): NodeAvailability 
 	const domain = new Set(nodeDomain(input));
 	const approvals = input.facts.approvals.filter((approval) => {
 		const expires = ms(approval.expiresAt);
-		return domain.has(approval.campId) && expires !== undefined && expires > input.nowMs;
+		return (
+			domain.has(approval.campId) &&
+			expires !== undefined &&
+			expires > input.nowMs
+		);
 	});
-	const approvedCampIds = [...new Set(approvals.map((approval) => approval.campId))].sort();
+	const approvedCampIds = [
+		...new Set(approvals.map((approval) => approval.campId)),
+	].sort();
 	if (approvals.length > 0) {
-		const at = Math.min(...approvals.map((approval) => ms(approval.approvedAt) ?? input.nowMs));
+		const at = Math.min(
+			...approvals.map((approval) => ms(approval.approvedAt) ?? input.nowMs),
+		);
 		paths.push({ via: VIA_APPROVAL, at });
 	}
 
 	if (paths.length === 0) return undefined;
 	const lineage = paths.some((path) => path.via !== VIA_APPROVAL);
 	const via = [...new Set(paths.map((path) => path.via))].sort();
-	const relevant = lineage ? paths.filter((path) => path.via !== VIA_APPROVAL) : paths;
+	const relevant = lineage
+		? paths.filter((path) => path.via !== VIA_APPROVAL)
+		: paths;
 	return {
 		via,
 		availableAtMs: Math.min(...relevant.map((path) => path.at)),

@@ -5,9 +5,9 @@ import { clone, create, type JsonValue } from "@bufbuild/protobuf";
 import {
 	type ChangeWindowRecord,
 	ChangeWindowRecordSchema,
+	WindowKind,
 	type WindowOverrideRecord,
 	WindowOverrideRecordSchema,
-	WindowKind,
 } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
 import type {
@@ -41,7 +41,7 @@ import { refuse, WINDOW_METRIC, WINDOW_REASON } from "./reasons.js";
 export type ChangeWindowsDeps = CdBase & {
 	readonly authorizer: CdAuthorizer;
 	/** Optional: metrics. Telemetry is advisory; the journal is the record. */
-	readonly telemetry?: TelemetrySink;
+	readonly telemetry?: TelemetrySink | undefined;
 };
 
 /** Digest of what a definition says, independent of who defined it. */
@@ -106,7 +106,11 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 		subject: Readonly<Record<string, JsonValue>>,
 		ctx: CdContext,
 	): Promise<Outcome<string>> {
-		const decision = await deps.authorizer.authorize(action, { ...subject }, ctx);
+		const decision = await deps.authorizer.authorize(
+			action,
+			{ ...subject },
+			ctx,
+		);
 		if (!decision.ok)
 			return {
 				ok: false,
@@ -136,7 +140,11 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 			for (const record of list) {
 				const expiresAtMs = parseTimestamp(record.expiresAt);
 				if (expiresAtMs === undefined) continue;
-				out.push({ window: record.window, campIds: record.campIds, expiresAtMs });
+				out.push({
+					window: record.window,
+					campIds: record.campIds,
+					expiresAtMs,
+				});
 			}
 		}
 		return out;
@@ -184,7 +192,10 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 			emitCounter(deps.telemetry, {
 				name: WINDOW_METRIC.defined,
 				atMs,
-				attributes: { tenant: deps.tenant, kind: WindowKind[window.kind] ?? "" },
+				attributes: {
+					tenant: deps.tenant,
+					kind: WindowKind[window.kind] ?? "",
+				},
 			});
 			return { ok: true, value: windows.get(window.name)?.record ?? record };
 		},
@@ -216,8 +227,10 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 			if (campIds.length === 0 || campIds.some((id) => id === ""))
 				problems.push("name the Camps the override lifts the window for");
 			const expiresAtMs = parseTimestamp(input.expiresAt);
-			if (expiresAtMs === undefined) problems.push("expires_at must be an RFC 3339 timestamp");
-			else if (expiresAtMs <= atMs) problems.push("expires_at must be in the future");
+			if (expiresAtMs === undefined)
+				problems.push("expires_at must be an RFC 3339 timestamp");
+			else if (expiresAtMs <= atMs)
+				problems.push("expires_at must be in the future");
 			if (problems.length > 0)
 				return refused(
 					"override",
@@ -229,7 +242,10 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 					),
 					atMs,
 				);
-			if (expiresAtMs !== undefined && expiresAtMs - atMs > CD_DEFAULTS.windowOverrideMaxMs)
+			if (
+				expiresAtMs !== undefined &&
+				expiresAtMs - atMs > CD_DEFAULTS.windowOverrideMaxMs
+			)
 				return refused(
 					"override",
 					refuse(
@@ -242,7 +258,12 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 				);
 			const governed = await govern(
 				"window.override",
-				{ window: input.window, campIds, expiresAt: input.expiresAt, reason: input.reason },
+				{
+					window: input.window,
+					campIds,
+					expiresAt: input.expiresAt,
+					reason: input.reason,
+				},
 				ctx,
 			);
 			if (!governed.ok) return refused("override", governed, atMs);
@@ -286,7 +307,10 @@ export function createChangeWindows(deps: ChangeWindowsDeps): ChangeWindows {
 				atMs,
 				attributes: { tenant: deps.tenant, window: input.window },
 			});
-			return { ok: true, value: decode(WindowOverrideRecordSchema, event.data) ?? record };
+			return {
+				ok: true,
+				value: decode(WindowOverrideRecordSchema, event.data) ?? record,
+			};
 		},
 
 		async evaluate(input): Promise<WindowEvaluation> {

@@ -5,6 +5,7 @@ import type {
 	DurableEventStore,
 	EventEnvelope,
 	EventPosition,
+	ReadAllOptions,
 } from "@hobo/core";
 
 export type Fold = (event: EventEnvelope, position: EventPosition) => void;
@@ -28,21 +29,32 @@ export class CatchUpProjection {
 	}
 
 	private async pass(): Promise<void> {
-		const pending: { position: EventPosition; event: EventEnvelope; type: string }[] = [];
+		const pending: {
+			position: EventPosition;
+			event: EventEnvelope;
+			type: string;
+		}[] = [];
 		for (const type of Object.keys(this.folds).sort()) {
 			const after = this.cursors.get(type);
 			let last = after;
-			for await (const positioned of this.store.readAll({
-				filter: { type },
-				tenant: this.tenant,
-				...(after === undefined ? {} : { after }),
-			})) {
-				pending.push({ position: positioned.position, event: positioned.event, type });
+			const options: ReadAllOptions =
+				after === undefined
+					? { filter: { type }, tenant: this.tenant }
+					: { filter: { type }, tenant: this.tenant, after };
+			for await (const positioned of this.store.readAll(options)) {
+				pending.push({
+					position: positioned.position,
+					event: positioned.event,
+					type,
+				});
 				last = positioned.position;
 			}
 			this.cursors.set(type, last);
 		}
-		pending.sort((a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0));
-		for (const item of pending) this.folds[item.type]?.(item.event, item.position);
+		pending.sort((a, b) =>
+			a.position < b.position ? -1 : a.position > b.position ? 1 : 0,
+		);
+		for (const item of pending)
+			this.folds[item.type]?.(item.event, item.position);
 	}
 }

@@ -39,7 +39,10 @@ export function jsonOf<T>(data: T): JsonValue | undefined {
 }
 
 /** Event body for a generated record: its canonical protobuf JSON. */
-export function body<T extends Message>(schema: GenMessage<T>, record: T): JsonValue {
+export function body<T extends Message>(
+	schema: GenMessage<T>,
+	record: T,
+): JsonValue {
 	return toJson(schema, record);
 }
 
@@ -63,7 +66,9 @@ export function canonicalJson(value: JsonValue): string {
 	if (isJsonObject(value)) {
 		const keys = Object.keys(value).sort();
 		return `{${keys
-			.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`)
+			.map(
+				(key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`,
+			)
 			.join(",")}}`;
 	}
 	return JSON.stringify(value);
@@ -109,7 +114,9 @@ export type AppendOne = Readonly<{
  * the event already recorded. Returns undefined only when both attempts lose
  * the race, which the caller reports as a journal conflict.
  */
-export async function appendOnce(input: AppendOne): Promise<EventEnvelope | undefined> {
+export async function appendOnce(
+	input: AppendOne,
+): Promise<EventEnvelope | undefined> {
 	for (let attempt = 0; attempt < 2; attempt += 1) {
 		const expectedSeq = await streamRevision(input.store, input.streamId);
 		try {
