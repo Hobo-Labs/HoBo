@@ -2,15 +2,15 @@
 // journal written by this release must fold identically in every later one.
 // Changing a body shape needs an upcaster plus a new corpus entry, never an
 // edit here.
+import type { JsonObject } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import { createFreightLedger } from "../../src/freight/index.js";
-import type { FreightId } from "../../src/ports.js";
-import { clock, MapArtifactVerifier, MemoryEventStore, OPERATOR, RecordingTelemetry, TENANT } from "./fakes.js";
+import { clock, fid, MapArtifactVerifier, MemoryEventStore, OPERATOR, RecordingTelemetry, TENANT } from "./fakes.js";
 
 const ID = "sha256:ae0f98fdeeb128cba56de1013e09f0ee0f0e1939c05ab04da41293807b9c5a69";
 
-const CORPUS: readonly Readonly<{ type: string; v: 1; data: Record<string, unknown> }>[] = [
+const CORPUS: readonly Readonly<{ type: string; v: 1; data: JsonObject }>[] = [
 	{
 		type: CD_EVENTS.FreightRecorded,
 		v: 1,
@@ -86,7 +86,7 @@ describe("golden Freight journal corpus (v1 bodies)", () => {
 		);
 		const time = clock();
 		const ledger = createFreightLedger({ store, tenant: TENANT, now: time.now, artifacts: new MapArtifactVerifier(), telemetry: new RecordingTelemetry() });
-		const id = ID as FreightId;
+		const id = fid(ID);
 		const record = await ledger.get(id);
 		expect(record?.alias).toBe("juicy-geyser");
 		expect(record?.manifest?.artifacts[0]?.sizeBytes).toBe(1024n);
@@ -109,7 +109,7 @@ describe("golden Freight journal corpus (v1 bodies)", () => {
 		});
 		const time = clock();
 		const ledger = createFreightLedger({ store, tenant: TENANT, now: time.now, artifacts: new MapArtifactVerifier(), telemetry: new RecordingTelemetry() });
-		expect(await ledger.isUsable(ID as FreightId)).toBe(true);
+		expect(await ledger.isUsable(fid(ID))).toBe(true);
 	});
 
 	it("an unreadable body makes the Freight unusable (fail closed)", async () => {
@@ -126,6 +126,6 @@ describe("golden Freight journal corpus (v1 bodies)", () => {
 		);
 		const time = clock();
 		const ledger = createFreightLedger({ store, tenant: TENANT, now: time.now, artifacts: new MapArtifactVerifier(), telemetry: new RecordingTelemetry() });
-		expect(await ledger.isUsable(ID as FreightId)).toBe(false);
+		expect(await ledger.isUsable(fid(ID))).toBe(false);
 	});
 });

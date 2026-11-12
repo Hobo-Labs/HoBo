@@ -11,6 +11,7 @@ import type {
 	EventEnvelope,
 	EventInput,
 	EventPosition,
+	JsonObject,
 	PositionedEvent,
 	PrincipalRef,
 	ReadAllOptions,
@@ -18,14 +19,17 @@ import type {
 	StreamFilter,
 	Subscription,
 } from "@hobo/core";
+import { isJsonString } from "../../src/freight/json.js";
 import type { FreightManifestRecord, FreightSourceRecord, ReasonRecord } from "../../src/_generated/cd_pb.js";
 import type {
 	ArtifactVerifier,
+	CampId,
 	CdAction,
 	CdAuthorizer,
 	CdContext,
 	FeedRequest,
 	FeedResponse,
+	FreightId,
 	FreightSources,
 	OtelMetricPoint,
 	OtelSpan,
@@ -46,10 +50,22 @@ export function digestOf(seed: string): `sha256:${string}` {
 	return `sha256:${hex64(seed)}`;
 }
 
+/** Brand a Camp id in a test. */
+export function camp(id: string): CampId {
+	// SAFETY: test fixture ids are literal Camp ids.
+	return id as CampId;
+}
+
+/** Brand a Freight id in a test (ids come from recorded Freight or the golden corpus). */
+export function fid(id: string): FreightId {
+	// SAFETY: test fixture ids are recorded or golden `sha256:` Freight ids.
+	return id as FreightId;
+}
+
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
-export function clock(start = T0): { now: () => number; advance: (ms: number) => void } {
+export function clock(start = T0) {
 	let current = start;
 	return {
 		now: () => current,
@@ -81,8 +97,7 @@ export class MemoryEventStore implements DurableEventStore {
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing =
-				typeof key === "string" ? stream.find((event) => event.meta?.idempotencyKey === key) : undefined;
+			const existing = isJsonString(key) ? stream.find((event) => event.meta?.idempotencyKey === key) : undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
@@ -104,8 +119,8 @@ export class MemoryEventStore implements DurableEventStore {
 				actor: opts.actor,
 				tenant: opts.tenant,
 				data: structuredClone(input.data),
-				...(input.meta ? { meta: input.meta } : {}),
 			};
+			if (input.meta) envelope.meta = input.meta;
 			// SAFETY: test double; positions are minted here from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
@@ -116,13 +131,9 @@ export class MemoryEventStore implements DurableEventStore {
 			lastPosition = position;
 		}
 		this.streams.set(streamId, stream);
-		return {
-			streamId,
-			appended,
-			deduped,
-			...(firstPosition !== undefined ? { firstPosition } : {}),
-			...(lastPosition !== undefined ? { lastPosition } : {}),
-		};
+		const result: AppendResult = { streamId, appended, deduped };
+		if (firstPosition !== undefined && lastPosition !== undefined) return { ...result, firstPosition, lastPosition };
+		return result;
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {
@@ -133,7 +144,7 @@ export class MemoryEventStore implements DurableEventStore {
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		let yielded = 0;
-		for (const entry of [...this.all]) {
+		for (const entry of this.all) {
 			if (options.after !== undefined && entry.position <= options.after) continue;
 			if (options.tenant !== undefined && entry.event.tenant !== options.tenant) continue;
 			if (options.filter?.type !== undefined && entry.event.type !== options.filter.type) continue;
@@ -212,7 +223,7 @@ export class FakeAuthorizer implements CdAuthorizer {
 	readonly denied = new Set<CdAction>();
 	async authorize(
 		action: CdAction,
-		_subject: unknown,
+		_subject: JsonObject,
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ decisionId: string; proposalOnly: boolean }>>> {
 		this.calls.push({ action, principal: ctx.principal });

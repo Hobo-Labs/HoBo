@@ -11,7 +11,7 @@
 //
 // Every path authorizes `freight.record` for the effective principal before
 // the ledger records anything.
-import { clone, create, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { clone, create, type JsonObject } from "@bufbuild/protobuf";
 import type { PrincipalRef } from "@hobo/core";
 import { parseProvenanceStatement } from "@hobo/registry";
 import {
@@ -75,10 +75,9 @@ function forRegistryParser(raw: JsonObject): JsonObject {
 	const predicate = objectAt(raw, "predicate");
 	const runBuilder = objectAt(objectAt(predicate, "runDetails"), "builder");
 	if (!predicate || predicate.builder !== undefined || !runBuilder) return raw;
-	const adapted: { [key: string]: JsonValue } = { ...predicate, builder: runBuilder };
+	const withBuilder = { ...predicate, builder: runBuilder };
 	const buildType = stringAt(objectAt(predicate, "buildDefinition"), "buildType");
-	if (buildType !== undefined) adapted.buildType = buildType;
-	return { ...raw, predicate: adapted };
+	return { ...raw, predicate: buildType === undefined ? withBuilder : { ...withBuilder, buildType } };
 }
 
 type AttestationInput = Readonly<{ bindle: string; statement: Uint8Array; bundle: Uint8Array | undefined; publisherToken: string | undefined }>;

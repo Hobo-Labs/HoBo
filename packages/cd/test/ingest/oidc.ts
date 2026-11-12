@@ -2,7 +2,7 @@
 // with throwaway RS256 keys, plus an HttpTransport that serves each issuer's
 // discovery document and JWKS.
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { create } from "@bufbuild/protobuf";
+import { create, type JsonValue } from "@bufbuild/protobuf";
 import type { HttpTransport, TransportRequest, TransportResponse } from "@hobo/core";
 import { type TrustedPublisherRecord, TrustedPublisherRecordSchema } from "../../src/_generated/cd_pb.js";
 
@@ -22,14 +22,22 @@ function b64url(value: string | Buffer): string {
 	return Buffer.from(value).toString("base64url");
 }
 
-export function signJwt(key: Key, claims: Record<string, unknown>, header: Record<string, unknown> = {}): string {
+/** JWT claims or header members, as JSON. */
+export type Claims = { readonly [key: string]: JsonValue };
+
+/** The same claims without one member (for "missing claim" cases). */
+export function withoutClaim(claims: Claims, name: string): Claims {
+	return Object.fromEntries(Object.entries(claims).filter(([key]) => key !== name));
+}
+
+export function signJwt(key: Key, claims: Claims, header: Claims = {}): string {
 	const head = b64url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: key.kid, ...header }));
 	const body = b64url(JSON.stringify(claims));
 	const signature = createSign("RSA-SHA256").update(`${head}.${body}`).end().sign(key.privateKey);
 	return `${head}.${body}.${b64url(signature)}`;
 }
 
-export function githubClaims(nowMs: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function githubClaims(nowMs: number, overrides: Claims = {}): Claims {
 	const now = Math.floor(nowMs / 1000);
 	return {
 		iss: GITHUB_ISSUER,
@@ -51,7 +59,7 @@ export function githubClaims(nowMs: number, overrides: Record<string, unknown> =
 	};
 }
 
-export function gitlabClaims(nowMs: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function gitlabClaims(nowMs: number, overrides: Claims = {}): Claims {
 	const now = Math.floor(nowMs / 1000);
 	return {
 		iss: GITLAB_ISSUER,

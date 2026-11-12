@@ -3,7 +3,6 @@ import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import { createTrustedPublisherVerifier, INGEST_METRIC, INGEST_REASON } from "../../src/ingest/index.js";
 import { AGENT, clock, context, FakeAuthorizer, MemoryEventStore, RecordingTelemetry, TENANT } from "../freight/fakes.js";
 import {
-	AUDIENCE,
 	GITHUB_ISSUER,
 	GITLAB_ISSUER,
 	githubClaims,
@@ -13,6 +12,7 @@ import {
 	OidcTransport,
 	rsaKey,
 	signJwt,
+	withoutClaim,
 } from "./oidc.js";
 
 const githubKey = rsaKey("gh-1");
@@ -78,8 +78,7 @@ describe("createTrustedPublisherVerifier: OIDC trusted publishing (D3)", () => {
 
 	it("a missing or different required claim is refused", async () => {
 		const { publishers, ctx } = await harness();
-		const missing = githubClaims(ctx.now());
-		delete missing.environment;
+		const missing = withoutClaim(githubClaims(ctx.now()), "environment");
 		const outcome = await publishers.verify(signJwt(githubKey, missing), ctx);
 		expect(code(outcome)).toBe(INGEST_REASON.publisherClaims);
 		expect(!outcome.ok && outcome.reasons[0]?.message).toContain("environment");
@@ -109,8 +108,7 @@ describe("createTrustedPublisherVerifier: OIDC trusted publishing (D3)", () => {
 		expect((await publishers.verify(early, ctx)).ok).toBe(true);
 		const future = signJwt(githubKey, githubClaims(ctx.now(), { nbf: now + 600, exp: now + 900 }));
 		expect(code(await publishers.verify(future, ctx))).toBe(INGEST_REASON.publisherExpired);
-		const noNbf = githubClaims(ctx.now());
-		delete noNbf.nbf;
+		const noNbf = withoutClaim(githubClaims(ctx.now()), "nbf");
 		expect(code(await publishers.verify(signJwt(githubKey, noNbf), ctx))).toBe(INGEST_REASON.publisherToken);
 	});
 

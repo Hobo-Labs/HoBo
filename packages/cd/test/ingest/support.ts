@@ -10,6 +10,7 @@ import {
 	SubscriptionRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { createFreightLedger } from "../../src/freight/index.js";
+import { isJsonArray, isJsonObject, objectAt, parseJsonText, stringAt } from "../../src/freight/json.js";
 import { createFreightIngest, createTrustedPublisherVerifier } from "../../src/ingest/index.js";
 import type { CdContext, Outcome, ProvenanceVerifier } from "../../src/ports.js";
 import { manifest } from "../freight/builders.js";
@@ -36,10 +37,11 @@ export function statement(
 	subjects: readonly Readonly<{ name: string; seed: string }>[],
 	options: { declarationHash?: string | null; predicateType?: string } = {},
 ): Uint8Array {
-	const externalParameters: Record<string, unknown> = { workflow: { ref: "refs/heads/main", path: ".github/workflows/release.yml" } };
-	if (options.declarationHash !== null) {
-		externalParameters["hobo.cd/declaration-hash"] = options.declarationHash ?? digestOf("shop-declaration-v1");
-	}
+	const workflow = { ref: "refs/heads/main", path: ".github/workflows/release.yml" };
+	const externalParameters =
+		options.declarationHash === null
+			? { workflow }
+			: { workflow, "hobo.cd/declaration-hash": options.declarationHash ?? digestOf("shop-declaration-v1") };
 	return new TextEncoder().encode(
 		JSON.stringify({
 			_type: "https://in-toto.io/Statement/v1",
@@ -77,8 +79,9 @@ export class FakeProvenanceVerifier implements ProvenanceVerifier {
 				reasons: [create(ReasonRecordSchema, { code: "provenance-signature-invalid", message: "bundle does not sign the statement", remediation: "re-sign" })],
 			};
 		}
-		const parsed = JSON.parse(new TextDecoder().decode(input.statement)) as { subject: { digest: { sha256: string } }[] };
-		const signed = parsed.subject.map((subject) => `sha256:${subject.digest.sha256}`).sort();
+		const parsed = parseJsonText(new TextDecoder().decode(input.statement));
+		const subjects = isJsonObject(parsed) && isJsonArray(parsed.subject) ? parsed.subject : [];
+		const signed = subjects.map((subject) => `sha256:${stringAt(objectAt(isJsonObject(subject) ? subject : undefined, "digest"), "sha256")}`).sort();
 		const claimed = input.subjects.map((subject) => subject.digest).sort();
 		if (JSON.stringify(signed) !== JSON.stringify(claimed)) {
 			return {

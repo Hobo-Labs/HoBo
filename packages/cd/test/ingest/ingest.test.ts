@@ -3,9 +3,8 @@ import { ArtifactKind, FreightOrigin } from "../../src/_generated/cd_pb.js";
 import { UNVERIFIED_TRIGGER } from "../../src/events.js";
 import { freightIdentity, parseFreightManifest } from "../../src/freight/index.js";
 import { INGEST_METRIC, INGEST_REASON, parsePurl } from "../../src/ingest/index.js";
-import type { FreightId } from "../../src/ports.js";
 import { manifest } from "../freight/builders.js";
-import { AGENT, context, digestOf, hex64 } from "../freight/fakes.js";
+import { AGENT, context, digestOf, fid, hex64 } from "../freight/fakes.js";
 import { githubClaims, signJwt } from "./oidc.js";
 import { API_PURL, BUILDER, bundleFor, githubKey, ingestHarness, statement, WEB_PURL } from "./support.js";
 
@@ -14,30 +13,28 @@ const SUBJECTS = [
 	{ name: WEB_PURL, seed: "web" },
 ];
 
-function cdevent(type: string, subjectId: string, customData?: unknown): Uint8Array {
-	return new TextEncoder().encode(
-		JSON.stringify({
-			context: {
-				specversion: "0.4.1",
-				id: "271069a8-fc18-44f1-b38f-9d70a1695819",
-				source: "/ci/acme/shop",
-				type,
-				timestamp: "2026-11-12T12:00:00Z",
-			},
-			subject: { id: subjectId, source: "/ci/acme/shop", type: "artifact", content: {} },
-			...(customData === undefined ? {} : { customData, customDataContentType: "application/json" }),
-		}),
-	);
+type CarriedAttestationData = Readonly<{
+	"hobo.cd/attestation": Readonly<{ bindle: string; statement: string; bundle?: string }>;
+}>;
+
+function cdevent(type: string, subjectId: string, customData?: CarriedAttestationData): Uint8Array {
+	const event = {
+		context: {
+			specversion: "0.4.1",
+			id: "271069a8-fc18-44f1-b38f-9d70a1695819",
+			source: "/ci/acme/shop",
+			type,
+			timestamp: "2026-11-12T12:00:00Z",
+		},
+		subject: { id: subjectId, source: "/ci/acme/shop", type: "artifact", content: {} },
+	};
+	const body = customData === undefined ? event : { ...event, customData, customDataContentType: "application/json" };
+	return new TextEncoder().encode(JSON.stringify(body));
 }
 
-function attestationData(bytes: Uint8Array, bundle?: Uint8Array) {
-	return {
-		"hobo.cd/attestation": {
-			bindle: "shop",
-			statement: Buffer.from(bytes).toString("base64"),
-			...(bundle ? { bundle: Buffer.from(bundle).toString("base64") } : {}),
-		},
-	};
+function attestationData(bytes: Uint8Array, bundle?: Uint8Array): CarriedAttestationData {
+	const carried = { bindle: "shop", statement: Buffer.from(bytes).toString("base64") };
+	return { "hobo.cd/attestation": bundle ? { ...carried, bundle: Buffer.from(bundle).toString("base64") } : carried };
 }
 
 function code(outcome: { ok: boolean; reasons?: readonly { code: string }[] }): string | undefined {
@@ -212,7 +209,7 @@ describe("FreightIngest.cdevent (webhooks only nudge, I15)", () => {
 		if (!outcome.ok) return;
 		expect(outcome.value.scheduledPolls).toEqual(["shop-images"]);
 		expect(outcome.value.freight?.origin).toBe(FreightOrigin.CDEVENT);
-		expect(await h.ledger.isUsable(outcome.value.freight?.freightId as FreightId)).toBe(true);
+		expect(await h.ledger.isUsable(fid(outcome.value.freight?.freightId ?? ""))).toBe(true);
 	});
 
 	it("an unverifiable attestation still nudges but is refused as an unverified trigger", async () => {

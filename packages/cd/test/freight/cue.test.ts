@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { FreightOrigin, FreightRecordSchema, FreightSubject, TrustedPublisherRecordSchema } from "../../src/_generated/cd_pb.js";
 import { createFreightLedger, parseFreightManifest, writeFreightManifest } from "../../src/freight/index.js";
@@ -42,7 +42,7 @@ const cue = findCue();
 const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-freight-cue-"));
 let written = 0;
 
-function vets(definition: string, value: unknown): boolean {
+function vets(definition: string, value: JsonValue): boolean {
 	if (!cue) throw new Error("cue binary not found");
 	written += 1;
 	const file = join(scratch, `value-${written}.json`);

@@ -10,14 +10,15 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import { createFreightLedger, FREIGHT_METRIC, planRetention } from "../../src/freight/index.js";
-import type { CampId, FreightId } from "../../src/ports.js";
 import { artifact, manifest } from "./builders.js";
 import {
+	camp,
 	clock,
 	context,
 	DAY,
 	digestOf,
 	FakeAuthorizer,
+	fid,
 	HOUR,
 	MapArtifactVerifier,
 	MemoryEventStore,
@@ -49,7 +50,7 @@ function harness() {
 			context(time.now),
 		);
 		if (!outcome.ok) throw new Error(JSON.stringify(outcome.reasons));
-		return outcome.value.freightId as FreightId;
+		return fid(outcome.value.freightId);
 	};
 	const deploy = async (campId: string, freightId: string) => {
 		const stream = CD_STREAMS.campSpec(campId);
@@ -146,7 +147,7 @@ describe("retention sweep (D18)", () => {
 		);
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
 		const ctx = context(h.time.now);
-		const approval = await h.ledger.approve({ freightId: approved, campId: "prod-eu" as CampId, reason: "hold", expiresAtMs: ctx.now() + HOUR }, ctx);
+		const approval = await h.ledger.approve({ freightId: approved, campId: camp("prod-eu"), reason: "hold", expiresAtMs: ctx.now() + HOUR }, ctx);
 		expect(approval.ok).toBe(true);
 		expect(await h.ledger.retire(h.policy(), ctx)).toEqual([]);
 		await h.store.append(

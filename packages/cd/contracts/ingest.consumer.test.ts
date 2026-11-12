@@ -1,13 +1,14 @@
 // PACT consumer verification for the push-ingress boundaries
 // (contracts/ingest.pact.json) and the OIDC issuer HTTP boundary
 // (contracts/ingest.oidc.pact.json).
+import type { JsonValue } from "@bufbuild/protobuf";
 import type { TransportRequest, TransportResponse } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { ArtifactKind, FreightOrigin } from "../src/_generated/cd_pb.js";
 import { createTrustedPublisherVerifier } from "../src/ingest/index.js";
 import { manifest } from "../test/freight/builders.js";
 import { clock, context, FakeAuthorizer, MemoryEventStore, TENANT } from "../test/freight/fakes.js";
-import { githubClaims, githubPublisher, gitlabClaims, gitlabPublisher, rsaKey, signJwt } from "../test/ingest/oidc.js";
+import { GITLAB_ISSUER, githubClaims, githubPublisher, gitlabClaims, gitlabPublisher, rsaKey, signJwt } from "../test/ingest/oidc.js";
 import { bundleFor, githubKey, ingestHarness } from "../test/ingest/support.js";
 import oidcPact from "./ingest.oidc.pact.json" with { type: "json" };
 import pact from "./ingest.pact.json" with { type: "json" };
@@ -18,13 +19,15 @@ function message(description: string) {
 	return found;
 }
 
+const githubContractKey = rsaKey("gh-contract");
+const gitlabContractKey = rsaKey("gl-contract");
+
 function issuerOf(item: (typeof oidcPact.interactions)[number]): string {
 	return (item.providerStates[0]?.name ?? "").replace(/^issuer /, "");
 }
 
 describe("OIDC issuer HTTP contract", () => {
 	it("requests exactly the contracted discovery and JWKS resources and accepts their shape", async () => {
-		const keys = { "https://token.actions.githubusercontent.com": rsaKey("gh-contract"), "https://gitlab.com": rsaKey("gl-contract") };
 		const seen = new Set<string>();
 		const http = async (request: TransportRequest): Promise<TransportResponse> => {
 			const item = oidcPact.interactions.find((candidate) => `${issuerOf(candidate)}${candidate.request.path}` === request.url);
@@ -33,12 +36,12 @@ describe("OIDC issuer HTTP contract", () => {
 			expect(request.headers).toEqual(item.request.headers);
 			seen.add(item.description);
 			const issuer = issuerOf(item);
-			const body: Record<string, unknown> = { ...item.response.body };
+			let body: JsonValue = item.response.body;
 			if ("keys" in item.response.body) {
-				const key = keys[issuer as keyof typeof keys];
+				const key = issuer === GITLAB_ISSUER ? gitlabContractKey : githubContractKey;
 				const contracted = item.response.body.keys[0] ?? {};
 				expect(Object.keys(key.jwk).sort()).toEqual(Object.keys(contracted).sort());
-				body.keys = [key.jwk];
+				body = { ...item.response.body, keys: [key.jwk] };
 			}
 			return { status: item.response.status, headers: item.response.headers, body: JSON.stringify(body) };
 		};
@@ -46,8 +49,8 @@ describe("OIDC issuer HTTP contract", () => {
 		const ctx = context(time.now);
 		const publishers = createTrustedPublisherVerifier({ store: new MemoryEventStore(), tenant: TENANT, now: time.now, http, authorizer: new FakeAuthorizer() });
 		for (const record of [githubPublisher(), gitlabPublisher()]) expect((await publishers.trust(record, ctx)).ok).toBe(true);
-		const github = await publishers.verify(signJwt(keys["https://token.actions.githubusercontent.com"], githubClaims(ctx.now())), ctx);
-		const gitlab = await publishers.verify(signJwt(keys["https://gitlab.com"], gitlabClaims(ctx.now())), ctx);
+		const github = await publishers.verify(signJwt(githubContractKey, githubClaims(ctx.now())), ctx);
+		const gitlab = await publishers.verify(signJwt(gitlabContractKey, gitlabClaims(ctx.now())), ctx);
 		expect(github.ok && gitlab.ok).toBe(true);
 		expect([...seen].sort()).toEqual(oidcPact.interactions.map((item) => item.description).sort());
 	});

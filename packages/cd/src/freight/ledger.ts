@@ -26,12 +26,10 @@ import {
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS, FREIGHT_SCHEMA } from "../events.js";
 import type {
 	ArtifactVerifier,
-	CampId,
 	CdAction,
 	CdAuthorizer,
 	CdBase,
 	CdContext,
-	FreightId,
 	FreightLedger,
 	Outcome,
 	Refusal,
