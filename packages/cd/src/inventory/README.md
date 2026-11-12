@@ -73,6 +73,16 @@ Only from:
 
 An agent principal may only `observe` as `RECONCILER`.
 
+- **Event store / read store:** the durable event store (`DurableEventStore`,
+  SQLite or Postgres) is the only record; the in-memory projection is the
+  read store, rebuilt from the journal on start. `snapshot` is a derived,
+  digest-addressed read, not a persisted snapshot; no store snapshot is
+  needed because each per-Camp stream is short (one event per status change).
+- **Parse, don't validate:** commands pass through `parseCampSet`,
+  `parseTaint`, `parseClaims`, `parseConditions` and `parseSelector`, which
+  return derived types (`ParsedCampSet`, `ParsedTaint`, `ParsedClaim`,
+  `ParsedSelector`, brands over the generated records) or typed refusals.
+
 ## Telemetry
 
 `hobo.cd.inventory.status_changes` (counter), `hobo.cd.inventory.taints`

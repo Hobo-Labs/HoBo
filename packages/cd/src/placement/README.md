@@ -17,6 +17,15 @@ a stream. Commands: `define` (`placement.define`), `reportScores`
 (`placement.scores`), `decide`. Read model: `get`, `decision` (cached; cold
 lookups scan `placement.Decided`).
 
+- **Actor, event store, read store:** the engine is a command handler over
+  the durable event store; `get`/`decision` are projections over the
+  placement streams (read store = the in-memory decision cache, rebuilt from
+  `placement.Decided`). Its input `snapshot` is the inventory's canonical,
+  digest-addressed view.
+- **Parse, don't validate:** `parsePlacement` and `parseScoreSnapshot`
+  return derived types (`ParsedPlacement`, `ParsedScoreSnapshot`) or typed
+  refusals; `decide` only ever sees recorded, parsed records.
+
 ## `decide` (`decide.ts`, pure)
 
 `decidePlacement(placement, snapshot, scores, subject, railDelivery,
