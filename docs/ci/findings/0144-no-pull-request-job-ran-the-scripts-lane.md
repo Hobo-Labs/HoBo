@@ -45,3 +45,8 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 - `test/relevant-check-policy.test.ts` — *a change to scripts, root tests or .github selects the scripts lane once*; *the scripts lane is not selected for other paths, a staged commit, or CI* (both fail on the previous policy).
 - `scripts/test/scripts-tests-job.test.ts` — *the scripts lane is a pull-request gate*: the job's runner, events and step order; its scope step run in temporary repositories (a merge group, a pull request's merge commit, no base); and the gate's step run for every scripts-job result, with the other jobs passing and with them attested (fails before the job existed).
 - `pnpm run actions:lint`: the job needs `route` and uses the routed `runs-on` expression.
+- `mise exec -- pnpm run test:scripts` (Node 24.22.2, the toolchain `ci-runner-preflight` installs): exit 0; 1346 of 1347 node:test tests pass, 1 skipped; 327 Vitest tests pass, 12 skipped. Under the container's Node 22.23.4 the same tree fails only the four turbo tests of cause 4.
+
+## Not yet seen
+
+- The job on a pull request, and a pull request that breaks one script test showing it red: this change was not run on GitHub.
