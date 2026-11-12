@@ -17,6 +17,14 @@ import (
 #Slug:      =~"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
 #Text:      string & strings.MaxRunes(1024)
 
+// Every refusal the Freight ledger and ingest return carries a remediation.
+#ReasonRecord: {
+	code:        string & !=""
+	message?:    #Text
+	remediation: string & !="" & #Text
+	subject?:    #Text
+}
+
 #ArtifactKind: "ARTIFACT_KIND_WASM_COMPONENT" | "ARTIFACT_KIND_FUNCTION_BUNDLE" | "ARTIFACT_KIND_STATIC_ASSETS" | "ARTIFACT_KIND_OCI_IMAGE" | "ARTIFACT_KIND_VM_IMAGE" | "ARTIFACT_KIND_PACKAGE" | "ARTIFACT_KIND_SOURCE_TREE"
 
 #ArtifactRef: {
