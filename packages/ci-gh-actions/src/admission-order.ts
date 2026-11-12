@@ -124,6 +124,7 @@ export function isMainTrunkFleetDeferJob(
 	jobName: string | undefined,
 	runEvent?: string | undefined,
 ): boolean {
+	if (jobName === MAIN_FULL_GATE_FINISH_JOB) return true;
 	return trunkAdmissionPhase(jobName, runEvent) <= 3;
 }
 

@@ -372,6 +372,15 @@ it("admits workflow_run release jobs ahead of pull requests", async () => {
 	expect(await order.rank(release)).toBe(TRUNK_RANK);
 });
 
+it("includes main gate finish in trunk fleet defer eligibility", () => {
+	expect(isMainTrunkFleetDeferJob("Main full gate (finish)", "push")).toBe(
+		true,
+	);
+	expect(isMainTrunkFleetDeferJob("Unrelated diagnostics job", "push")).toBe(
+		false,
+	);
+});
+
 it("orders main-train release phases within one workflow_run", async () => {
 	const { github } = transport(
 		new Map([
