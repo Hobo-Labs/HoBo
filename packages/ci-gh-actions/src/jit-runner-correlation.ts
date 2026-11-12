@@ -146,6 +146,11 @@ export async function evaluateRunnerTeardownGuard(
 		nowMs: number;
 	}>,
 	opts?: Readonly<{
+		/**
+		 * When true and GitHub cannot be read, defer teardown (`runnerId > 0`).
+		 * When false (`forceStop` paths), unreadable GitHub does not block — a
+		 * **confirmed** executing assignment still blocks via `assignmentBlocksRunnerTeardown`.
+		 */
 		failClosed?: boolean;
 		queuedBoundGraceMs?: number;
 		/** When false, defer only on resolved assignment (no served-job getJob). */

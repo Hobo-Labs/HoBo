@@ -23,6 +23,8 @@ Poll coalescing (#1819) and lease cancel grant release (#1797) were not the prim
 
 `packages/ci-gh-actions`: pin `actualJobId` / `originalRunId` to GitHub’s served job (including run-id-only drift), withdraw the reserved queued job once on custody transfer, refuse stop/deregister while the served job is **executing** (`RUNNER_EXECUTING_JOB_STATUSES`), bound a **queued-but-never-started** runner with `ISOLATED_JIT_QUEUED_BOUND_GRACE_MS` then release cooperatively, fall through correlation errors to `getJob` (fail-closed when GitHub is unreadable and `runnerId > 0`), settle/deregister/release grants once work completes, treat durable `usageCompletedAt` as stop intent, resolve orphan run ids from GitHub, and follow `actualJobId` for storage grant maintain/release.
 
+**`forceStop` contract:** administrative forced reconcile does **not** hard-bypass teardown guards. It only turns off fail-closed defer when GitHub is temporarily unreadable on pre-kill / stop-intent checks (`failClosed: false`, or skip the pre-kill guard entirely). A **confirmed executing** assignment (`runnerCustodyHoldsActive` / `assignmentBlocksRunnerTeardown`) still defers stop and deregister — including when `forceStop` is true (shard-0 kill regression).
+
 ## Gates
 
 - `packages/ci-gh-actions/test/jit-hobo-label-reassignment.test.ts`

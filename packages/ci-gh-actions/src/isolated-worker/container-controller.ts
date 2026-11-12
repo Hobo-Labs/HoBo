@@ -1145,6 +1145,8 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
+		// `opts.force` (`forceStop`) skips fail-closed settlement defer only; confirmed
+		// executing custody still deferred when `jitRunnerBlocksSettlement` runs without force.
 		if (
 			!opts?.force &&
 			(await jitRunnerBlocksSettlement(lease, { failClosed: true }))
@@ -1738,6 +1740,7 @@ export function createIsolatedContainerController(options: {
 				runnerCustodyHoldsActive = custody.holdsActive;
 				if (lease.actualJobId > 0 && lease.actualJobId !== reservedJobId)
 					options.onStorageGrantRelease?.(reservedJobId);
+				// `forceStop` never overrides a confirmed executing assignment (shard-0 kill).
 				if (custody.holdsActive && forceStop) return;
 			}
 			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
@@ -1789,6 +1792,8 @@ export function createIsolatedContainerController(options: {
 				lease = attached;
 			}
 			if (hasIsolatedStopIntent(lease)) {
+				// `forceStop` only disables fail-closed on unreadable GitHub here; executing
+				// assignments still block via `evaluateRunnerTeardownGuard`.
 				if (
 					await runnerTeardownBlocked(lease, forceStop !== true)
 				)
@@ -1984,6 +1989,8 @@ export function createIsolatedContainerController(options: {
 			// reconciliation cannot retire it until there is a reason to stop.
 			if (!stop) return;
 			if (runnerCustodyHoldsActive) return;
+			// Pre-kill: `forceStop` skips fail-closed unreadable-GitHub defer only — not
+			// `runnerCustodyHoldsActive` above.
 			if (
 				!forceStop &&
 				(await runnerTeardownBlocked(lease, true))
