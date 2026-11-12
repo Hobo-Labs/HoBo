@@ -30,7 +30,7 @@ These are the per-class reserves admission uses today. They live in `packages/ci
 
 - **Per-class reserves before a lease is reserved.** `storageReserveForJob(name)`, scaled by learned peaks in `storage-peaks.ts`, is passed to `admit(leases, jobId, reserve)`.
 - **Per-device inode and byte grants.** `storage-admission.ts` keeps one grant per job and device, nets out what the jobs have already consumed, and counts a shared device once ([finding 90](./0090-release-enospc-byte-admission.md), [finding 100](./0100-inode-grant-idle-reconcile.md), [finding 105](./0105-per-job-workdir-inodes.md)).
-- **Grant release.** The controller releases a job's grant when its lease settles.
+- **Grant release.** The relay and the controller release a job's grants on every path that ends its lease, a reservation cancelled at pre-flight included.
 - **Host pressure.** Memory, PSI and load are read by `host-health.ts`, `host-resource-pressure.ts` and memory admission ([finding 142](./0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md)); new work waits and running jobs are not killed.
 
 The branch's own admission rewrite (a safety margin from observed volatility, refusing before pruning, a bin-packed launch cap, a host-capacity tracker blocking on memory PSI) is not part of this change. `host-capacity.ts` is kept as a module with its tests and is not called by the daemon.
@@ -39,8 +39,7 @@ The branch's own admission rewrite (a safety margin from observed volatility, re
 
 1. **The daemon's deps build waits for an idle box.** `createDepsImageEnsurer` takes `idleForBuild`; the daemon answers true only with no active lease. A busy box backs the build off for `idleBuildRetryMs` (60 s) instead of building beside jobs.
 2. **The build holds a storage grant.** `onBuildSlot.acquire` asks main's admission for `storageReserveForDepsBuild()` under `DEPS_BUILD_ADMISSION_ID`, and `release` runs in a `finally`. The build has no lease, so `reconcile` leaves that one grant alone until it is released; a job admitted while the build runs is measured against the build's remaining reserve.
-3. **A cancelled reservation frees its grant at once.** When pre-flight cancels a reserved lease, the relay calls `storageAdmission.release(jobId)` rather than waiting out the reconcile grace.
-4. **Hard links in the install stage.** The deps Dockerfile installs with `npm_config_package_import_method=hardlink` from the BuildKit store mount; the final image keeps `copy` for the offline contract check.
+3. **Hard links in the install stage.** The deps Dockerfile installs with `npm_config_package_import_method=hardlink` from the BuildKit store mount; the final image keeps `copy` for the offline contract check.
 
 ## Verification
 
