@@ -11,7 +11,7 @@
 //
 // Every path authorizes `freight.record` for the effective principal before
 // the ledger records anything.
-import { clone, create } from "@bufbuild/protobuf";
+import { clone, create, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import type { PrincipalRef } from "@hobo/core";
 import { parseProvenanceStatement } from "@hobo/registry";
 import {
@@ -24,6 +24,7 @@ import {
 } from "../_generated/cd_pb.js";
 import { FREIGHT_MANIFEST_SCHEMA } from "../events.js";
 import { emitCounter, principalName } from "../freight/journal.js";
+import { isJsonObject, objectAt, parseJsonText, stringAt } from "../freight/json.js";
 import { DIGEST_PATTERN, parseFreightManifest } from "../freight/manifest.js";
 import { reason } from "../freight/reasons.js";
 import type {
@@ -57,13 +58,6 @@ export type FreightIngestDeps = CdBase & {
 // declaration hash on an attestation-only push.
 export const DECLARATION_HASH_PARAMETER = "hobo.cd/declaration-hash" as const;
 
-type Json = { readonly [key: string]: unknown };
-
-function object(value: unknown): Json | undefined {
-	// SAFETY: a non-null, non-array object from JSON.parse is a string-keyed record.
-	return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : undefined;
-}
-
 function refuse(code: string, message: string, remediation: string, subject = ""): Refusal {
 	return { ok: false, reasons: [reason(code, message, remediation, subject)] };
 }
@@ -77,13 +71,17 @@ function unique(values: readonly string[]): string[] {
  * @hobo/registry parser reads `predicate.builder`. Present the v1 location to
  * the parser without changing the bytes that are verified.
  */
-function forRegistryParser(raw: Json): Json {
-	const predicate = object(raw.predicate);
-	const runBuilder = object(object(predicate?.runDetails)?.builder);
+function forRegistryParser(raw: JsonObject): JsonObject {
+	const predicate = objectAt(raw, "predicate");
+	const runBuilder = objectAt(objectAt(predicate, "runDetails"), "builder");
 	if (!predicate || predicate.builder !== undefined || !runBuilder) return raw;
-	const buildType = object(predicate.buildDefinition)?.buildType;
-	return { ...raw, predicate: { ...predicate, builder: runBuilder, ...(typeof buildType === "string" ? { buildType } : {}) } };
+	const adapted: { [key: string]: JsonValue } = { ...predicate, builder: runBuilder };
+	const buildType = stringAt(objectAt(predicate, "buildDefinition"), "buildType");
+	if (buildType !== undefined) adapted.buildType = buildType;
+	return { ...raw, predicate: adapted };
 }
+
+type AttestationInput = Readonly<{ bindle: string; statement: Uint8Array; bundle: Uint8Array | undefined; publisherToken: string | undefined }>;
 
 export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 	function emit(name: string, attributes: Readonly<Record<string, string>>, value = 1): void {
@@ -132,19 +130,19 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 	}
 
 	async function fromAttestation(
-		input: Readonly<{ bindle: string; statement: Uint8Array; bundle?: Uint8Array; publisherToken?: string }>,
+		input: AttestationInput,
 		origin: FreightOrigin,
 		ctx: CdContext,
 	): Promise<Outcome<FreightRecord>> {
-		let raw: Json | undefined;
+		let text: string | undefined;
 		try {
-			raw = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input.statement)));
+			text = new TextDecoder("utf-8", { fatal: true }).decode(input.statement);
 		} catch {
-			raw = undefined;
+			text = undefined;
 		}
-		if (!raw) return refuse(INGEST_REASON.attestationInvalid, "statement is not a JSON object", "send the in-toto Statement v1 bytes", input.bindle);
-		// SAFETY: forRegistryParser returns the parsed JSON object (plus a copied builder), which is JSON.
-		const parsed = parseProvenanceStatement(forRegistryParser(raw) as Parameters<typeof parseProvenanceStatement>[0]);
+		const raw = text === undefined ? undefined : parseJsonText(text);
+		if (!isJsonObject(raw)) return refuse(INGEST_REASON.attestationInvalid, "statement is not a JSON object", "send the in-toto Statement v1 bytes", input.bindle);
+		const parsed = parseProvenanceStatement(forRegistryParser(raw));
 		if (!parsed.ok) {
 			return {
 				ok: false,
@@ -153,8 +151,8 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 				),
 			};
 		}
-		const declaration = object(object(object(raw.predicate)?.buildDefinition)?.externalParameters)?.[DECLARATION_HASH_PARAMETER];
-		if (typeof declaration !== "string" || !DIGEST_PATTERN.test(declaration)) {
+		const declaration = stringAt(objectAt(objectAt(objectAt(raw, "predicate"), "buildDefinition"), "externalParameters"), DECLARATION_HASH_PARAMETER);
+		if (declaration === undefined || !DIGEST_PATTERN.test(declaration)) {
 			return refuse(
 				INGEST_REASON.declarationMissing,
 				`externalParameters["${DECLARATION_HASH_PARAMETER}"] must carry the Bindle declaration hash`,
@@ -167,16 +165,13 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 		const actx: CdContext = { ...ctx, principal: principal.value };
 		const artifacts = parsed.statement.subject.map((subject) => artifactFromSubject(subject.name, subject.sha256));
 		const pinned = (await deps.sources.list()).filter((source) => source.bindle === input.bindle);
-		const verified = await deps.provenance.verify(
-			{
-				statement: input.statement,
-				...(input.bundle ? { bundle: input.bundle } : {}),
-				subjects: artifacts,
-				trustedBuilderIds: unique(pinned.flatMap((source) => source.subscriptions.flatMap((sub) => sub.trustedBuilderIds))),
-				trustedSignerIdentities: unique(pinned.flatMap((source) => source.subscriptions.flatMap((sub) => sub.trustedSignerIdentities))),
-			},
-			actx,
-		);
+		const request: Parameters<ProvenanceVerifier["verify"]>[0] = {
+			statement: input.statement,
+			subjects: artifacts,
+			trustedBuilderIds: unique(pinned.flatMap((source) => source.subscriptions.flatMap((sub) => sub.trustedBuilderIds))),
+			trustedSignerIdentities: unique(pinned.flatMap((source) => source.subscriptions.flatMap((sub) => sub.trustedSignerIdentities))),
+		};
+		const verified = await deps.provenance.verify(input.bundle ? { ...request, bundle: input.bundle } : request, actx);
 		const unverifiedHead = reason(
 			INGEST_REASON.provenanceUnverified,
 			"the attestation did not verify for every subject",
@@ -221,7 +216,13 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 		},
 
 		async attestation(input, ctx) {
-			return finish("attestation", await fromAttestation(input, FreightOrigin.ATTESTATION, ctx));
+			const request: AttestationInput = {
+				bindle: input.bindle,
+				statement: input.statement,
+				bundle: input.bundle,
+				publisherToken: input.publisherToken,
+			};
+			return finish("attestation", await fromAttestation(request, FreightOrigin.ATTESTATION, ctx));
 		},
 
 		async cdevent(input, ctx) {
@@ -249,7 +250,11 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 			if (bindle === "") return { ok: false, reasons: [trigger, reason(INGEST_REASON.attestationInvalid, "the attestation names no Bindle", "set bindle in the carried attestation", "")] };
 			const recorded = finish(
 				"cdevent",
-				await fromAttestation({ bindle, statement: carried.statement, ...(carried.bundle ? { bundle: carried.bundle } : {}) }, FreightOrigin.CDEVENT, ctx),
+				await fromAttestation(
+					{ bindle, statement: carried.statement, bundle: carried.bundle, publisherToken: undefined },
+					FreightOrigin.CDEVENT,
+					ctx,
+				),
 			);
 			if (!recorded.ok) return { ok: false, reasons: [trigger, ...recorded.reasons] };
 			return { ok: true, value: { freight: recorded.value, scheduledPolls } };

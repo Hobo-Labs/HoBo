@@ -1,37 +1,32 @@
 // Journal helpers shared by the Freight ledger and ingest: protobuf-JSON event
 // bodies, tolerant decoding of bodies other work packages own, and principal
 // rendering for the `*_by` fields.
-import { type DescMessage, fromJson, type JsonValue, type MessageShape, toJson } from "@bufbuild/protobuf";
+import { fromJson, type JsonValue, type Message, toJson } from "@bufbuild/protobuf";
+import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import type { PrincipalRef } from "@hobo/core";
 import type { TelemetrySink } from "../ports.js";
-import { isPlainObject } from "./canonical.js";
+import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 
 /** Event body for a generated record: its canonical protobuf JSON. */
-export function body<Desc extends DescMessage>(schema: Desc, record: MessageShape<Desc>): JsonValue {
+export function body<T extends Message>(schema: GenMessage<T>, record: T): JsonValue {
 	return toJson(schema, record);
 }
 
-/** Decode a persisted body; undefined when the bytes are not that record (never throws). */
-export function decode<Desc extends DescMessage>(schema: Desc, data: unknown): MessageShape<Desc> | undefined {
-	if (!isPlainObject(toJsonValue(data))) return undefined;
+/** Decode a persisted body; undefined when it is not that record (never throws). */
+export function decode<T extends Message, D>(schema: GenMessage<T>, data: D): T | undefined {
+	const json = jsonOf(data);
+	if (!isJsonObject(json)) return undefined;
 	try {
-		return fromJson(schema, toJsonValue(data), { ignoreUnknownFields: true });
+		return fromJson(schema, json, { ignoreUnknownFields: true });
 	} catch {
 		return undefined;
 	}
 }
 
-function toJsonValue(data: unknown): JsonValue {
-	if (data === null || typeof data === "string" || typeof data === "number" || typeof data === "boolean") return data;
-	if (Array.isArray(data)) return data.map(toJsonValue);
-	if (typeof data === "object") {
-		const out: { [key: string]: JsonValue } = {};
-		for (const [key, value] of Object.entries(data)) {
-			if (value !== undefined) out[key] = toJsonValue(value);
-		}
-		return out;
-	}
-	return null;
+function freightIdIn(json: JsonValue | undefined): string | undefined {
+	if (!isJsonObject(json)) return undefined;
+	const direct = json.freightId ?? json.freight_id;
+	return isJsonString(direct) ? direct : undefined;
 }
 
 /**
@@ -40,26 +35,25 @@ function toJsonValue(data: unknown): JsonValue {
  * one level down. `undefined` means the body is not an object at all, which
  * callers treat as unreadable; `""` means it names no Freight.
  */
-export function referencedFreightId(data: unknown): string | undefined {
-	const json = toJsonValue(data);
-	if (!isPlainObject(json)) return undefined;
-	const direct = json.freightId ?? json.freight_id;
-	if (typeof direct === "string") return direct;
+export function referencedFreightId<D>(data: D): string | undefined {
+	const json = jsonOf(data);
+	if (!isJsonObject(json)) return undefined;
+	const direct = freightIdIn(json);
+	if (direct !== undefined) return direct;
 	for (const value of Object.values(json)) {
-		if (!isPlainObject(value)) continue;
-		const nested = value.freightId ?? value.freight_id;
-		if (typeof nested === "string") return nested;
+		const nested = freightIdIn(value);
+		if (nested !== undefined) return nested;
 	}
 	return "";
 }
 
-/** A field of a structurally read body, as a string ("" when absent). */
-export function stringField(data: unknown, ...names: readonly string[]): string {
-	const json = toJsonValue(data);
-	if (!isPlainObject(json)) return "";
+/** The first string field of a structurally read body ("" when none). */
+export function stringField<D>(data: D, ...names: readonly string[]): string {
+	const json = jsonOf(data);
+	if (!isJsonObject(json)) return "";
 	for (const name of names) {
 		const value = json[name];
-		if (typeof value === "string") return value;
+		if (isJsonString(value)) return value;
 	}
 	return "";
 }

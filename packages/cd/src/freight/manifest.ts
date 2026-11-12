@@ -4,7 +4,7 @@
 // artifacts and provenance in canonical order) or a typed refusal. Any build
 // system writes the same document with `writeFreightManifest`.
 import { createHash } from "node:crypto";
-import { clone, fromJson, type JsonValue, toJson } from "@bufbuild/protobuf";
+import { clone, fromJson, isMessage, toJson } from "@bufbuild/protobuf";
 import {
 	type ArtifactRef,
 	ArtifactKind,
@@ -16,7 +16,8 @@ import {
 import { FREIGHT_MANIFEST_SCHEMA } from "../events.js";
 import type { FreightId, Outcome } from "../ports.js";
 import { freightAlias } from "./alias.js";
-import { canonicalJson, isPlainObject } from "./canonical.js";
+import { canonicalJson } from "./canonical.js";
+import { isJsonObject, parseJsonText } from "./json.js";
 import { FREIGHT_REASON, reason } from "./reasons.js";
 
 export const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -37,6 +38,7 @@ export const ARTIFACT_ECOSYSTEMS = Object.freeze([
 	"http",
 	"store",
 ] as const);
+const ECOSYSTEMS: ReadonlySet<string> = new Set(ARTIFACT_ECOSYSTEMS);
 const MAX_ARTIFACTS = 256;
 const MAX_LABELS = 64;
 const MAX_TEXT = 1024;
@@ -83,18 +85,13 @@ function secret(subject: string): ReasonRecord {
 	);
 }
 
-function decode(input: Uint8Array | string): Outcome<FreightManifestRecord> {
-	const text = typeof input === "string" ? input : new TextDecoder("utf-8", { fatal: false }).decode(input);
+function decode(text: string): Outcome<FreightManifestRecord> {
 	if (text.length > MAX_MANIFEST_BYTES) {
 		return { ok: false, reasons: [invalid("manifest", `manifest exceeds ${MAX_MANIFEST_BYTES} bytes`)] };
 	}
-	let json: JsonValue;
-	try {
-		json = JSON.parse(text);
-	} catch {
-		return { ok: false, reasons: [invalid("manifest", "manifest is not JSON")] };
-	}
-	if (!isPlainObject(json)) return { ok: false, reasons: [invalid("manifest", "manifest must be a JSON object")] };
+	const json = parseJsonText(text);
+	if (json === undefined) return { ok: false, reasons: [invalid("manifest", "manifest is not JSON")] };
+	if (!isJsonObject(json)) return { ok: false, reasons: [invalid("manifest", "manifest must be a JSON object")] };
 	try {
 		return { ok: true, value: fromJson(FreightManifestRecordSchema, json) };
 	} catch (error) {
@@ -116,7 +113,7 @@ function checkArtifact(item: ArtifactRef, index: number, seen: Set<string>, reas
 	else if (item.kind === ArtifactKind.UNSPECIFIED || ArtifactKind[item.kind] === undefined) {
 		reasons.push(invalid(`${at}.kind`, "artifact kind must be specified"));
 	} else if (item.coordinate.trim() === "") reasons.push(invalid(`${at}.coordinate`, "artifact coordinate is required"));
-	else if (item.ecosystem !== "" && !(ARTIFACT_ECOSYSTEMS as readonly string[]).includes(item.ecosystem)) {
+	else if (item.ecosystem !== "" && !ECOSYSTEMS.has(item.ecosystem)) {
 		reasons.push(invalid(`${at}.ecosystem`, `ecosystem must be one of ${ARTIFACT_ECOSYSTEMS.join(", ")}`));
 	} else {
 		checkText(`${at}.name`, item.name, reasons);
@@ -196,13 +193,16 @@ function normalize(manifest: FreightManifestRecord): FreightManifestRecord {
 	return copy;
 }
 
+function checked(manifest: FreightManifestRecord): Outcome<FreightManifestRecord> {
+	const reasons = check(manifest);
+	return reasons.length > 0 ? { ok: false, reasons } : { ok: true, value: normalize(manifest) };
+}
+
 /** Parse an untrusted manifest (bytes, JSON text, or a record) into the canonical form, or refuse. */
 export function parseFreightManifest(input: FreightManifestInput): Outcome<FreightManifestRecord> {
-	const decoded = typeof input === "string" || input instanceof Uint8Array ? decode(input) : { ok: true as const, value: input };
-	if (!decoded.ok) return decoded;
-	const reasons = check(decoded.value);
-	if (reasons.length > 0) return { ok: false, reasons };
-	return { ok: true, value: normalize(decoded.value) };
+	if (isMessage(input, FreightManifestRecordSchema)) return checked(input);
+	const decoded = decode(input instanceof Uint8Array ? new TextDecoder().decode(input) : input);
+	return decoded.ok ? checked(decoded.value) : decoded;
 }
 
 /** The canonical `hobo.freight-manifest/v1` document (sorted keys, no whitespace). */

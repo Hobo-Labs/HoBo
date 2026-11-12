@@ -7,7 +7,7 @@
 // catches up from its last journal position and is rebuilt from the journal
 // on start.
 import { create } from "@bufbuild/protobuf";
-import type { EventPosition } from "@hobo/core";
+import type { EventPosition, ReadAllOptions } from "@hobo/core";
 import {
 	type FreightApprovedRecord,
 	FreightApprovedRecordSchema,
@@ -214,11 +214,8 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 	}
 
 	async function catchUp(): Promise<void> {
-		for await (const entry of deps.store.readAll({
-			tenant: deps.tenant,
-			filter: { type: CD_EVENTS.FreightRecorded },
-			...(indexedTo !== undefined ? { after: indexedTo } : {}),
-		})) {
+		const options: ReadAllOptions = { tenant: deps.tenant, filter: { type: CD_EVENTS.FreightRecorded } };
+		for await (const entry of deps.store.readAll(indexedTo === undefined ? options : { ...options, after: indexedTo })) {
 			indexedTo = entry.position;
 			const record = decode(FreightRecordSchema, entry.event.data);
 			if (record && !index.has(record.freightId)) index.set(record.freightId, record);

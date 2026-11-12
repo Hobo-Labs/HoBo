@@ -7,12 +7,14 @@
 // injected clock skew, its audience is the publisher's, and every required
 // claim is equal. The result is a workload principal; nothing else is trusted.
 import { create, equals } from "@bufbuild/protobuf";
-import type { EventPosition, HttpTransport, JsonObject, PrincipalRef } from "@hobo/core";
+import type { JsonObject } from "@bufbuild/protobuf";
+import type { EventPosition, HttpTransport, PrincipalRef, ReadAllOptions } from "@hobo/core";
 import { verifyJwtWithJwks } from "@hobo/identity";
 import { type TrustedPublisherRecord, TrustedPublisherRecordSchema } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
 import type { CdAuthorizer, CdBase, Outcome, Refusal, TelemetrySink, TrustedPublisherVerifier, VerifiedPublisher } from "../ports.js";
 import { body, decode, emitCounter, principalName } from "../freight/journal.js";
+import { isJsonArray, isJsonNumber, isJsonObject, isJsonString, parseJsonText, stringAt } from "../freight/json.js";
 import { reason } from "../freight/reasons.js";
 import { INGEST_METRIC, INGEST_REASON } from "./reasons.js";
 
@@ -30,10 +32,6 @@ const BINDLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$/;
 const MAX_TOKEN_BYTES = 16_384;
 const MAX_DOCUMENT_BYTES = 1_048_576;
 const MAX_CACHE_MS = 86_400_000;
-
-function isJsonObject(value: unknown): value is JsonObject {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function refuse(code: string, message: string, remediation: string, subject = ""): Refusal {
 	return { ok: false, reasons: [reason(code, message, remediation, subject)] };
@@ -99,8 +97,8 @@ function decodeSegments(token: string): Decoded | undefined {
 	const parts = token.split(".");
 	if (parts.length !== 3 || parts.some((part) => part === "")) return undefined;
 	try {
-		const head = JSON.parse(Buffer.from(parts[0] ?? "", "base64url").toString("utf8"));
-		const claims = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
+		const head = parseJsonText(Buffer.from(parts[0] ?? "", "base64url").toString("utf8"));
+		const claims = parseJsonText(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
 		return isJsonObject(head) && isJsonObject(claims) ? { header: head, claims } : undefined;
 	} catch {
 		return undefined;
@@ -109,8 +107,8 @@ function decodeSegments(token: string): Decoded | undefined {
 
 function audiences(claims: JsonObject): readonly string[] {
 	const aud = claims.aud;
-	if (typeof aud === "string") return [aud];
-	if (Array.isArray(aud)) return aud.filter((item): item is string => typeof item === "string");
+	if (isJsonString(aud)) return [aud];
+	if (isJsonArray(aud)) return aud.filter(isJsonString);
 	return [];
 }
 
@@ -130,11 +128,8 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 	}
 
 	async function catchUp(): Promise<void> {
-		for await (const entry of deps.store.readAll({
-			tenant: deps.tenant,
-			filter: { type: CD_EVENTS.PublisherTrusted },
-			...(indexedTo !== undefined ? { after: indexedTo } : {}),
-		})) {
+		const options: ReadAllOptions = { tenant: deps.tenant, filter: { type: CD_EVENTS.PublisherTrusted } };
+		for await (const entry of deps.store.readAll(indexedTo === undefined ? options : { ...options, after: indexedTo })) {
 			indexedTo = entry.position;
 			const record = decode(TrustedPublisherRecordSchema, entry.event.data);
 			if (record && parseTrustedPublisher(record).ok) publishers.set(record.name, record);
@@ -154,14 +149,8 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 			maxResponseBytes: MAX_DOCUMENT_BYTES,
 		});
 		if (response.status !== 200) return undefined;
-		let json: unknown;
-		try {
-			json = JSON.parse(response.body);
-		} catch {
-			return undefined;
-		}
-		if (!isJsonObject(json)) return undefined;
-		const document = json;
+		const document = parseJsonText(response.body);
+		if (!isJsonObject(document)) return undefined;
 		const lifetime = cacheLifetimeMs(header(response.headers, "cache-control"));
 		if (lifetime !== undefined) cache.set(url, { expiresAtMs: nowMs + lifetime, json: document });
 		else cache.delete(url);
@@ -174,7 +163,7 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 		let jwks: JsonObject | undefined;
 		try {
 			discovery = await fetchJson(discoveryUrl, false);
-			const jwksUri = typeof discovery?.jwks_uri === "string" ? discovery.jwks_uri : "";
+			const jwksUri = stringAt(discovery, "jwks_uri") ?? "";
 			if (discovery?.issuer !== issuer || !httpsUrl(jwksUri)) {
 				return refuse(
 					INGEST_REASON.publisherDiscovery,
@@ -192,7 +181,8 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 				issuer,
 			);
 		}
-		const keys = Array.isArray(jwks?.keys) ? jwks.keys.filter(isJsonObject) : undefined;
+		const listed = jwks?.keys;
+		const keys = isJsonArray(listed) ? listed.filter(isJsonObject) : undefined;
 		if (!keys) {
 			return refuse(INGEST_REASON.publisherDiscovery, `JWKS for ${issuer} is unreadable`, "retry; check the issuer's jwks_uri", issuer);
 		}
@@ -253,7 +243,7 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 				return refused(refuse(INGEST_REASON.publisherToken, "token is not a compact JWT", "send the CI's OIDC ID token unchanged"));
 			}
 			const { claims } = decoded;
-			const issuer = typeof claims.iss === "string" ? claims.iss : "";
+			const issuer = stringAt(claims, "iss") ?? "";
 			await catchUp();
 			const candidates = [...publishers.values()]
 				.filter((publisher) => publisher.issuer === issuer)
@@ -263,12 +253,12 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 					refuse(INGEST_REASON.publisherIssuer, `no trusted publisher for issuer ${issuer || "(none)"}`, "trust a publisher for this issuer first", issuer),
 				);
 			}
-			if (decoded.header.alg !== "RS256" || typeof decoded.header.kid !== "string") {
+			if (decoded.header.alg !== "RS256" || stringAt(decoded.header, "kid") === undefined) {
 				return refused(refuse(INGEST_REASON.publisherToken, "token must be RS256 with a kid", "use the issuer's standard ID token", issuer));
 			}
 			const exp = claims.exp;
 			const nbf = claims.nbf;
-			if (typeof exp !== "number" || typeof nbf !== "number" || nbf >= exp) {
+			if (!isJsonNumber(exp) || !isJsonNumber(nbf) || nbf >= exp) {
 				return refused(refuse(INGEST_REASON.publisherToken, "token needs numeric nbf < exp", "use the issuer's standard ID token", issuer));
 			}
 			const nowSeconds = ctx.now() / 1000;
@@ -313,7 +303,7 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 					.map(([key]) => key)
 					.sort();
 				if (missing.length === 0) {
-					const subject = typeof claims.sub === "string" ? claims.sub : "";
+					const subject = stringAt(claims, "sub") ?? "";
 					const principal: PrincipalRef = { kind: "service", id: `workload:${publisher.name}:${subject}` };
 					emit(INGEST_METRIC.publisherVerified, { publisher: publisher.name });
 					const value: VerifiedPublisher = { principal, publisher: publisher.name, claims };

@@ -3,8 +3,10 @@
 // names a purl, and the only way it can carry Freight is an in-toto statement
 // plus a signature bundle under `customData["hobo.cd/attestation"]`, which the
 // ingest verifies exactly like a pushed attestation (I15).
-import type { Outcome } from "../ports.js";
+import type { JsonObject } from "@bufbuild/protobuf";
+import { isJsonObject, objectAt, parseJsonText, stringAt } from "../freight/json.js";
 import { reason } from "../freight/reasons.js";
+import type { Outcome } from "../ports.js";
 import { type Purl, parsePurl } from "./purl.js";
 import { INGEST_REASON } from "./reasons.js";
 
@@ -14,49 +16,49 @@ export const CDEVENT_ATTESTATION_KEY = "hobo.cd/attestation" as const;
 export const CDEVENT_MAX_BYTES = 1_048_576 as const;
 
 const ARTIFACT_EVENT = /^dev\.cdevents\.artifact\.(published|packaged)\.0\.\d+\.\d+$/;
+const BASE64 = /^[A-Za-z0-9+/=_-]+$/;
 
-export type CarriedAttestation = Readonly<{ bindle: string; statement: Uint8Array; bundle?: Uint8Array }>;
+export type CarriedAttestation = Readonly<{ bindle: string; statement: Uint8Array; bundle: Uint8Array | undefined }>;
 
 export type ArtifactCdEvent = Readonly<{
 	id: string;
 	type: string;
 	purl: Purl;
 	subjectId: string;
-	attestation?: CarriedAttestation;
+	attestation: CarriedAttestation | undefined;
 }>;
-
-type Json = { readonly [key: string]: unknown };
-
-function object(value: unknown): Json | undefined {
-	// SAFETY: a non-null, non-array object from JSON.parse is a string-keyed record.
-	return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : undefined;
-}
 
 function invalid(message: string): Outcome<never> {
 	return { ok: false, reasons: [reason(INGEST_REASON.cdeventInvalid, message, "send a CDEvents v0.4 artifact event as JSON", "cdevent")] };
 }
 
-function base64(value: unknown): Uint8Array | undefined {
-	if (typeof value !== "string" || !/^[A-Za-z0-9+/=_-]+$/.test(value)) return undefined;
-	const bytes = Buffer.from(value, value.includes("-") || value.includes("_") ? "base64url" : "base64");
+function base64(text: string | undefined): Uint8Array | undefined {
+	if (text === undefined || !BASE64.test(text)) return undefined;
+	const bytes = Buffer.from(text, text.includes("-") || text.includes("_") ? "base64url" : "base64");
 	return bytes.length > 0 ? new Uint8Array(bytes) : undefined;
+}
+
+/** The CDEvent itself: the body, or the `data` of a CloudEvents 1.0 envelope. */
+function unwrap(raw: JsonObject): JsonObject {
+	return stringAt(raw, "specversion") === "1.0" ? (objectAt(raw, "data") ?? raw) : raw;
 }
 
 export function parseArtifactCdEvent(body: Uint8Array): Outcome<ArtifactCdEvent> {
 	if (body.byteLength > CDEVENT_MAX_BYTES) return invalid(`CDEvent exceeds ${CDEVENT_MAX_BYTES} bytes`);
-	let raw: unknown;
+	let text: string;
 	try {
-		raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+		text = new TextDecoder("utf-8", { fatal: true }).decode(body);
 	} catch {
-		return invalid("CDEvent body is not UTF-8 JSON");
+		return invalid("CDEvent body is not UTF-8");
 	}
-	let event = object(raw);
-	if (event?.specversion === "1.0" && object(event.data)) event = object(event.data);
-	const context = object(event?.context);
-	const subject = object(event?.subject);
-	if (!event || !context || !subject) return invalid("CDEvent needs context and subject objects");
-	const type = typeof context.type === "string" ? context.type : "";
-	const id = typeof context.id === "string" ? context.id : "";
+	const raw = parseJsonText(text);
+	if (!isJsonObject(raw)) return invalid("CDEvent body is not a JSON object");
+	const event = unwrap(raw);
+	const context = objectAt(event, "context");
+	const subject = objectAt(event, "subject");
+	if (!context || !subject) return invalid("CDEvent needs context and subject objects");
+	const type = stringAt(context, "type") ?? "";
+	const id = stringAt(context, "id") ?? "";
 	if (!ARTIFACT_EVENT.test(type)) {
 		return {
 			ok: false,
@@ -71,19 +73,16 @@ export function parseArtifactCdEvent(body: Uint8Array): Outcome<ArtifactCdEvent>
 		};
 	}
 	if (id === "") return invalid("CDEvent context.id is required");
-	const subjectId = typeof subject.id === "string" ? subject.id : "";
+	const subjectId = stringAt(subject, "id") ?? "";
 	const purl = parsePurl(subjectId);
 	if (!purl) return invalid("artifact CDEvent subject.id must be a purl");
-	const carried = object(object(event.customData)?.[CDEVENT_ATTESTATION_KEY]);
-	if (!carried) return { ok: true, value: { id, type, purl, subjectId } };
-	const statement = base64(carried.statement);
+	const carried = objectAt(objectAt(event, "customData"), CDEVENT_ATTESTATION_KEY);
+	if (!carried) return { ok: true, value: { id, type, purl, subjectId, attestation: undefined } };
+	const statement = base64(stringAt(carried, "statement"));
 	if (!statement) return invalid(`customData["${CDEVENT_ATTESTATION_KEY}"].statement must be base64`);
-	const bundle = carried.bundle === undefined ? undefined : base64(carried.bundle);
+	const bundleText = stringAt(carried, "bundle");
+	const bundle = base64(bundleText);
 	if (carried.bundle !== undefined && !bundle) return invalid(`customData["${CDEVENT_ATTESTATION_KEY}"].bundle must be base64`);
-	const attestation: CarriedAttestation = {
-		bindle: typeof carried.bindle === "string" ? carried.bindle : "",
-		statement,
-		...(bundle ? { bundle } : {}),
-	};
+	const attestation: CarriedAttestation = { bindle: stringAt(carried, "bindle") ?? "", statement, bundle };
 	return { ok: true, value: { id, type, purl, subjectId, attestation } };
 }
