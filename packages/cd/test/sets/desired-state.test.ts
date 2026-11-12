@@ -526,7 +526,34 @@ describe("apply", () => {
 		expect(await desired.current(PROD)).toBeUndefined();
 	});
 
-	it("concurrent applies: exactly one wins, the loser is refused with a typed reason", async () => {
+	it("refuses when the artifact store reports a different size than the canonical bytes", async () => {
+		const { desired, artifacts } = setup();
+		artifacts.lieAboutSize = 0n;
+		unwrap(
+			await desired.open(
+				delta("d1", {
+					changes: diffResolvedSets(
+						undefined,
+						resolvedFor("prod-aws", SHOP_V1),
+					),
+				}),
+				ctxAt(T0),
+			),
+		);
+		const outcome = await desired.apply(
+			{
+				deltaId: deltaId("d1"),
+				gateDecisionId: "g",
+				resolved: resolvedFor("prod-aws", SHOP_V1),
+				origin: SetOrigin.PROMOTION,
+			},
+			ctxAt(T0),
+		);
+		expect(codes(outcome)).toEqual(["blob-digest-mismatch"]);
+		expect(await desired.current(PROD)).toBeUndefined();
+	});
+
+	it("same-Delta concurrent applies: one set.Created; the loser observes the winner's Set", async () => {
 		const { desired, store, artifacts } = setup();
 		const set = await applyResources(desired, "d1", SHOP_V1);
 		// Two Deltas against the same base race to apply. The second open would
@@ -582,6 +609,7 @@ describe("apply", () => {
 			),
 		]);
 		store.beforeAppend = undefined;
+		expect(store.conflicts).toBeGreaterThan(0); // the race really happened
 		const winners = [a, b].filter((o) => o.ok);
 		expect(winners).toHaveLength(2); // same Delta: the loser observes the winner's Set (idempotent)
 		expect(
@@ -590,7 +618,7 @@ describe("apply", () => {
 		expect(a.ok && b.ok && a.value.setId === b.value.setId).toBe(true);
 	});
 
-	it("concurrent applies of competing Deltas: one wins, the other is refused concurrent-apply", async () => {
+	it("racing apply and reject on the same Delta: exactly one lands; a losing apply is refused concurrent-apply", async () => {
 		const { desired, store } = setup();
 		const set = await applyResources(desired, "d1", SHOP_V1);
 		// A peer process opened a competing Delta on a stale read; simulate by
@@ -771,6 +799,46 @@ describe("status() and the spec/status split", () => {
 		const status = await desired.status(PROD);
 		expect(status?.status).toBe(ReconcileStatus.CONVERGED);
 		expect(status?.fenceToken).toBe("2");
+	});
+
+	it("ignores observations whose fence token is not a decimal FenceToken (I4 fail-closed)", async () => {
+		const { desired, store } = setup();
+		const set = await applyResources(desired, "d1", SHOP_V1);
+		const stream = CD_STREAMS.campStatus("prod-aws");
+		const actor = { kind: "agent" as const, id: "rec-1" };
+		await store.append(
+			stream,
+			[
+				{
+					type: CD_EVENTS.StatusObserved,
+					data: observation(
+						set.setId,
+						"not-a-fence",
+						ReconcileStatus.DRIFTED,
+						T0,
+					),
+				},
+			],
+			{ expectedSeq: 0, actor, tenant: "acme" },
+		);
+		expect(await desired.status(PROD)).toBeUndefined();
+		await store.append(
+			stream,
+			[
+				{
+					type: CD_EVENTS.Converged,
+					data: observation(set.setId, "3", ReconcileStatus.CONVERGED, T0 + 1),
+				},
+				{
+					type: CD_EVENTS.StatusObserved,
+					data: observation(set.setId, "", ReconcileStatus.DRIFTED, T0 + 2),
+				},
+			],
+			{ expectedSeq: 1, actor, tenant: "acme" },
+		);
+		const status = await desired.status(PROD);
+		expect(status?.status).toBe(ReconcileStatus.CONVERGED);
+		expect(status?.fenceToken).toBe("3");
 	});
 
 	it("§10 observations under heavy apply load: no spec-stream conflicts", async () => {

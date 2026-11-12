@@ -201,15 +201,18 @@ const STATUS_TYPES: ReadonlySet<string> = new Set([
 	CD_EVENTS.ReconcileBlocked,
 ]);
 
-function fenceOf(observation: ReconcileObservationRecord): bigint {
+/** The decimal FenceToken (cd.proto), or undefined when it is malformed. */
+function fenceOf(observation: ReconcileObservationRecord): bigint | undefined {
 	return /^(0|[1-9]\d*)$/.test(observation.fenceToken)
 		? BigInt(observation.fenceToken)
-		: 0n;
+		: undefined;
 }
 
 /**
  * Latest observation on a status stream. An observation carrying a fence lower
  * than one already seen came from a superseded lease holder and is ignored (I4).
+ * An observation whose fence is not a decimal FenceToken is ignored too
+ * (fail-closed): it cannot prove it holds the lease.
  */
 export function foldCampStatus(
 	events: Iterable<EventEnvelope>,
@@ -220,7 +223,7 @@ export function foldCampStatus(
 		if (!STATUS_TYPES.has(event.type)) continue;
 		const observation = parseObservation(event.data);
 		const token = fenceOf(observation);
-		if (token < fence) continue;
+		if (token === undefined || token < fence) continue;
 		fence = token;
 		latest = observation;
 	}
