@@ -159,6 +159,14 @@ describe("release ghcr digest helpers", () => {
 		expect(() =>
 			imagetoolsInspectTag(
 				tag,
+				vi.fn(() =>
+					stubSpawnSync(1, `manifest unknown: ${tag}@${DIGEST_A}`),
+				),
+			),
+		).toThrow(/imagetools inspect/u);
+		expect(() =>
+			imagetoolsInspectTag(
+				tag,
 				vi.fn(() => stubSpawnSync(1, "name unknown")),
 			),
 		).toThrow(/imagetools inspect/u);

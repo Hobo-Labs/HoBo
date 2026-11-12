@@ -28,5 +28,5 @@ Release run [43176733275](https://github.com/Hobo-Labs/HoBo/actions/runs/4317673
 
 - **TypeScript (Vitest):** `pnpm run test:smoke scripts/test/release-ghcr-digest.test.ts`, `push-release-ghcr-images.test.ts`
 - **PACT / contract:** `pnpm run test:smoke scripts/test/release-oci-attest-contract.test.ts` (attest matrix + digest artifact handoff). **Gap:** GHCR `imagetools inspect` boundary is Vitest-mocked only — no executable consumer PACT against registry JSON/digest shape yet (follow-up).
-- **Protobuf / CUE:** unchanged release image contracts (`release-oci-attest-contract` still pins protobuf train shape)
+- **Protobuf / CUE:** unchanged release image protobuf contracts; buildx imagetools JSON remains Vitest-mocked (tracked gap above), not protobuf/CUE-authored.
 - `pnpm run lint:code` (biome format on `scripts/lib/release-ghcr-digest.mts`)

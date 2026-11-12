@@ -247,6 +247,10 @@ export function stderrReferencesExactTag(stderr: string, tag: string): boolean {
 			continue;
 		}
 		const after = stderr[idx + tag.length];
+		if (after === "@") {
+			start = idx + 1;
+			continue;
+		}
 		if (after === undefined || !TAG_REF_SUFFIX.test(after)) return true;
 		start = idx + 1;
 	}
