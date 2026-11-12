@@ -41,6 +41,15 @@ import {
 	retryQuarantinedDelivery,
 } from "./account-operations.js";
 import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
+import {
+	FLEET_VERDICTS_PATH,
+	type FleetVerdictStore,
+	fleetVerdictJson,
+	noFleetVerdict,
+	parseFleetVerdictPath,
+	parseFleetVerdictReport,
+	standingFleetVerdict,
+} from "./fleet-verdict.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
 	IsolatedOnboardingError,
@@ -246,6 +255,13 @@ export function createHostedControlPlane(options: {
 	 * routes are unchanged.
 	 */
 	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
+	/**
+	 * Where this relay keeps fleet verdicts, for `/v1/fleet/verdicts/…`
+	 * (ADR-0180). A host that keeps none leaves it out: a read then answers
+	 * that nothing is blocked, which is all that no verdict means, and a
+	 * report is refused.
+	 */
+	fleetVerdicts?: FleetVerdictStore | undefined;
 }) {
 	const { store, relay } = options;
 	const meshNodes = options.meshNodes ?? createMeshNodesReader();
@@ -294,9 +310,37 @@ export function createHostedControlPlane(options: {
 		if (
 			!path.startsWith("/v1/accounts/self/") &&
 			!path.startsWith("/v2/accounts/self/") &&
+			!path.startsWith(FLEET_VERDICTS_PATH) &&
 			path !== MESH_NODES_PATH
 		)
 			return undefined;
+		// A fleet verdict is read without a credential: runner routing asks from
+		// a job that has none to give, and the answer names labels and nothing
+		// else. A repository this relay has never heard of gets the same answer
+		// as one with nothing blocked, so the route tells no one what exists.
+		const verdictRoute = path.startsWith(FLEET_VERDICTS_PATH);
+		const verdictRepository = verdictRoute
+			? parseFleetVerdictPath(path)
+			: undefined;
+		if (verdictRoute && !verdictRepository)
+			return response(404, '{"error":"not found"}');
+		if (verdictRepository && request.method === "GET") {
+			// Only a connected repository can have a verdict, so only one is
+			// looked up: a made-up name costs the relay no read of its store.
+			const connected = (
+				(await store.configuration())?.configuration?.connections ?? []
+			).some((entry) => entry.repository.toLowerCase() === verdictRepository);
+			return response(
+				200,
+				fleetVerdictJson(
+					(connected
+						? await options.fleetVerdicts?.read(verdictRepository)
+						: undefined) ?? noFleetVerdict(verdictRepository),
+				),
+			);
+		}
+		if (verdictRepository && request.method !== "PUT")
+			return response(405, '{"error":"method not allowed"}');
 		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
 			return response(
 				410,
@@ -312,23 +356,50 @@ export function createHostedControlPlane(options: {
 			);
 			if (!principal)
 				throw new ControlError(401, "account authentication required");
-			const required = path.startsWith("/v2/accounts/self/inbox/")
-				? "operations:write"
-				: request.method === "GET"
-					? path === "/v2/accounts/self/signals"
-						? "observations:write"
-						: "policy:read"
-					: path.endsWith("/observations") ||
-							path.endsWith("/rate-observations") ||
-							path.endsWith("/signals")
-						? "observations:write"
-						: path.includes("/repositories/")
-							? "repositories:write"
-							: path.includes("/leases/")
-								? "operations:write"
-								: "policy:write";
+			const required =
+				verdictRepository || path.startsWith("/v2/accounts/self/inbox/")
+					? "operations:write"
+					: request.method === "GET"
+						? path === "/v2/accounts/self/signals"
+							? "observations:write"
+							: "policy:read"
+						: path.endsWith("/observations") ||
+								path.endsWith("/rate-observations") ||
+								path.endsWith("/signals")
+							? "observations:write"
+							: path.includes("/repositories/")
+								? "repositories:write"
+								: path.includes("/leases/")
+									? "operations:write"
+									: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
+			if (verdictRepository) {
+				// A verdict moves a repository's runs between runners, so only the
+				// account that repository is connected under may report one. Any
+				// other caller learns no more than that there is nothing here.
+				const connections =
+					(await store.configuration())?.configuration?.connections ?? [];
+				const connected = connections.some(
+					(entry) =>
+						entry.accountId === principal.accountId &&
+						entry.repository.toLowerCase() === verdictRepository,
+				);
+				if (!connected) throw new ControlError(404, "not found");
+				if (!options.fleetVerdicts)
+					throw new ControlError(503, "this relay keeps no fleet verdicts");
+				const report = parseFleetVerdictReport(await readBody(request));
+				if (!report)
+					throw new ControlError(400, "invalid fleet verdict report");
+				// Stamped by this relay's clock, never the reporter's.
+				const verdict = standingFleetVerdict(
+					verdictRepository,
+					report,
+					Date.parse(relay.now()),
+				);
+				await options.fleetVerdicts.write(verdict);
+				return response(200, fleetVerdictJson(verdict));
+			}
 			// The mesh is the relay's own infrastructure, not one account's: any
 			// account credential that may read (`policy:read`) may see it. The
 			// answer names nodes, capacity and public keys, never a secret.
