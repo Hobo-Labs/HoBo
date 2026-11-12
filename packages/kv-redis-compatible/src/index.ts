@@ -74,6 +74,7 @@ export {
 	type ReferenceStoreOptions,
 } from "./reference-store.js";
 export {
+	KV_EPHEMERAL_STATE_PROFILE,
 	KV_KEY_VALUE_PROFILE,
 	KV_REDIS_COMPATIBLE_PROFILE,
 	KV_VALKEY_PROFILE,

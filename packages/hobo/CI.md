@@ -59,9 +59,9 @@ overrides belong in gitignored **`.hobo/ci.local.json`** or `HOBO_CI_ENVIRONMENT
 `hobo ci serve` runs the same relay as the hosted one: the same core, account
 API and HTTP routes, over a local SQLite file. It adds the listener, a
 5-second worker tick and, with pull admission, the same GitHub job poller the
-box worker runs. It does not have the GitHub App bootstrap and OAuth
-onboarding or the delivery repair, which are Postgres-only today. See [one
-relay, thin hosts](../ci-gh-actions/README.md#one-relay-thin-hosts).
+box worker runs. It does not have the OAuth onboarding or the delivery
+repair, which only the hosted relay runs (on its cache). See [one relay, thin
+hosts](../ci-gh-actions/README.md#one-relay-thin-hosts).
 
 When the `local` environment (or any profile with loopback `relayOrigin` and
 `jobAdmission: "pull"`) should admit jobs without a public webhook URL, run the
@@ -83,11 +83,10 @@ verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
 plan with secrets redacted. **`--with-worker`** starts the isolated-container
 sidecar with its own lease journal: local SQLite at
 `<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
-GitHub for `runs-on: hobo` jobs, unless the environment's
-`"store": { "kind": "postgres", "urlEnv": "<ENV_NAME>" }` points it at a shared
-relay partition (the config holds the env var name, never the URL). Graceful
-shutdown on SIGINT/SIGTERM.
-The `postgres` store kind is superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) (the hosted relay keeps no database) and is removed in phase 7 of its [delivery plan](../../docs/design/hosted-relay-stateless.md#delivery-plan).
+GitHub for `runs-on: hobo` jobs. `"store": { "kind": "sqlite" }` is the only
+store kind; the shared Postgres store was removed with the hosted relay's
+database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)).
+Graceful shutdown on SIGINT/SIGTERM.
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
 [CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
@@ -289,20 +288,18 @@ private credential homes, and uses version-probe stand-ins for Yard argument
 tests so those checks neither touch a developer's credentials nor download tools.
 
 `e2e/ci.test.ts` launches the built product binary against the production HTTPS
-control plane and native PostgreSQL store. It covers consent and authentication
-refusal, credential-free link persistence, restart recovery, idempotency and a
-response lost after the connection commits. Only GitHub App identity calls are
-emulated; this lane does not launch a provider runner. With Node 24, Git, OpenSSL
-and a disposable local PostgreSQL instance:
+control plane and the relay's SQLite store (`SqliteCiStore`, the store `hobo ci
+serve` uses). It covers consent and authentication refusal, credential-free link
+persistence, restart recovery, idempotency and a response lost after the
+connection commits. Only GitHub App identity calls are emulated; this lane does
+not launch a provider runner. With Node 24, Git and OpenSSL:
 
 ```sh
 pnpm exec turbo run build --filter=@hobo/hobo
-HOBO_CI_TEST_POSTGRES=postgresql://user:password@127.0.0.1:5432/test \
-  pnpm --filter @hobo/hobo test:ci-e2e
+pnpm --filter @hobo/hobo test:ci-e2e
 ```
 
-The test uses a unique partition and removes its records afterward. Its explicit
-configuration keeps the service requirement out of ordinary unit tests. The
+The store is a file in the test's temporary directory, removed afterward. The
 repository's existing manual, budgeted runner acceptance workflow remains the
 live-provider check; general hosted Actions stay disabled by repository policy.
 

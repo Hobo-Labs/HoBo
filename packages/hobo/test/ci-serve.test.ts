@@ -165,34 +165,18 @@ describe("hobo ci serve multi-engine", () => {
 		expect(env.HOBO_CI_STORE_URL_ENV).toBeUndefined();
 	});
 
-	it("takes a Postgres worker store from the config by env var name", async () => {
+	it("refuses a Postgres worker store in the config: the worker's journal is SQLite", async () => {
 		const cwd = await projectRoot(
 			withStore({ kind: "postgres", urlEnv: "HOBO_CI_SHARED_DB" }),
 		);
-		const plan = await resolveCiServePlan({
-			cwd,
-			options: { environment: "local" },
-			env: {},
-			git,
-		});
-		expect(plan.workerStore).toEqual({
-			kind: "postgres",
-			urlEnv: "HOBO_CI_SHARED_DB",
-		});
-		expect(() =>
-			ciWorkerEnvironment({
-				relayEnv: {},
-				store: plan.workerStore,
-				stateDir: "/s",
+		await expect(
+			resolveCiServePlan({
+				cwd,
+				options: { environment: "local" },
+				env: {},
+				git,
 			}),
-		).toThrow("--with-worker postgres store requires HOBO_CI_SHARED_DB");
-		const env = ciWorkerEnvironment({
-			relayEnv: { HOBO_CI_SHARED_DB: "postgres://synthetic.invalid/db" },
-			store: plan.workerStore,
-			stateDir: "/s",
-		});
-		expect(env.HOBO_CI_STORE).toBe("postgres");
-		expect(env.HOBO_CI_STORE_URL_ENV).toBe("HOBO_CI_SHARED_DB");
+		).rejects.toThrow();
 	});
 
 	it("refuses a connection string written into the config", async () => {

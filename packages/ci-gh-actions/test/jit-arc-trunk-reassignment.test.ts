@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { type Lease, LeaseSchema } from "@hobo/ci";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
+import type { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import * as githubModule from "../src/github.js";
@@ -54,7 +54,7 @@ describe("arc takes reserved trunk job", () => {
 			transition: transitionFor(lease),
 			settle: vi.fn(),
 			withdrawQueuedJob: vi.fn(async () => true),
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const probeRunJobs = [
 			{
 				id: 130234532217,

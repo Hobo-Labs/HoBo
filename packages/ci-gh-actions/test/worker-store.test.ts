@@ -36,33 +36,24 @@ describe("worker store plan", () => {
 		).toEqual({ kind: "sqlite", path: "/w.sqlite" });
 	});
 
-	it("opts into Postgres by env var name and defaults it to push admission", () => {
+	it("keeps its journal in SQLite whatever else is set, and admits by push only when asked", () => {
 		expect(() =>
 			resolveWorkerStorePlan({ HOBO_CI_STORE: "postgres" }, "/h"),
-		).toThrow("missing DATABASE_URL");
+		).toThrow("HOBO_CI_STORE must be sqlite");
 		expect(
 			resolveWorkerStorePlan(
 				{
-					HOBO_CI_STORE: "postgres",
-					HOBO_CI_STORE_URL_ENV: "SHARED_DB",
-					SHARED_DB: "postgres://synthetic.invalid/db",
+					HOBO_CI_STORE: "sqlite",
+					HOBO_CI_WORKER_DB: "/w.sqlite",
+					HOBO_CI_JOB_ADMISSION: "push",
 				},
 				"/h",
 			),
 		).toEqual({
-			store: { kind: "postgres", urlEnv: "SHARED_DB" },
+			store: { kind: "sqlite", path: "/w.sqlite" },
 			admission: "push",
 			jobPollMs: 5_000,
 		});
-		expect(() =>
-			resolveWorkerStorePlan(
-				{
-					HOBO_CI_STORE: "postgres",
-					HOBO_CI_STORE_URL_ENV: "postgres://inline",
-				},
-				"/h",
-			),
-		).toThrow("invalid HOBO_CI_STORE_URL_ENV");
 	});
 
 	it("rejects unknown stores, admissions and poll intervals", () => {

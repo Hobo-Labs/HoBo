@@ -234,7 +234,7 @@ const LIVE_CONTAINER_STATES = new Set([
 	"uncertain",
 ]);
 
-/** What the box worker needs from a lease store; `PostgresCiStore` and `SqliteCiStore` both qualify. */
+/** What the box worker needs from a lease store; `SqliteCiStore` qualifies. */
 export interface IsolatedWorkerStore extends HostedRelayStore {
 	settle(
 		id: string,

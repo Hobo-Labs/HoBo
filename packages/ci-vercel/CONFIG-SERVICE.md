@@ -183,11 +183,16 @@ One-time owner steps, in a browser, besides steps 1–8 above:
 2. **Team issuer for OIDC** on the `hobo-ci` project (step 3 above): Project →
    Settings → Security → *Secure backend access with OIDC federation* → Team.
 3. **Disconnect what the relay no longer uses** once phase 8 has cut over:
-   Project → Settings → Integrations → Neon and Turso → Disconnect.
+   Project → Settings → Integrations → Neon → Disconnect. Keep Turso: it is a
+   member of the cache fleet on its free plan
+   ([options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
 
 Not provisioned by the workflow, by design: Turso, Vercel Blob and Valkey are
 rows of the Yard's catalog that no Camp chooses. Choosing one is a change to
-`deploy/yard.ts` (a Camp's `require`), reviewed like any other.
+`deploy/yard.ts` (a Camp's `require`), reviewed like any other. A cache that is
+already bound to the project (Turso through its existing integration, or
+`VALKEY_URL`/`BLOB_STORE_ID` in the config service) still joins the cache fleet
+([The cache fleet](README.md#the-cache-fleet)), which picks one by budget.
 
 ## What the folder holds
 
@@ -201,9 +206,21 @@ refuses a folder holding any other key, and names it (never its value).
 | `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url: each Sandbox proxy session token is derived from it, so none is stored) | with `HOBO_CI_SANDBOX_ENABLED` | owner |
 | `HOBO_CI_GITHUB_APP_ID`, `HOBO_CI_GITHUB_APP_CLIENT_ID`, `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`, `HOBO_CI_GITHUB_APP_CLIENT_SECRET` | yes | `hobo ci app create` |
 | `VALKEY_URL` (`redis://` or `rediss://`, with its password), `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | no | owner: cache-fleet members the deployment's environment does not bind, typically the Aiven for Valkey URL (ADR-0179 one-time action 4). A name the environment also sets keeps the environment's value; start-up logs only which names came from here |
-| `HOBO_CI_CACHE_OFFERS_JSON` (a `RelayCacheOffers` document, [`data-models/cache_offers.proto`](data-models/cache_offers.proto)) | no | owner: the cache fleet's offers, budget caps and switch marks; defaults are the vendor free tiers ([The cache fleet](README.md#the-cache-fleet)) |
+| `HOBO_CI_CACHE_OFFERS_JSON` (a `RelayCacheOffers` document, [`data-models/cache_offers.proto`](data-models/cache_offers.proto)) | no | owner: the cache fleet's offers, budget caps and switch marks; defaults come from the offer catalog in [`offers/`](offers/) ([Offers as provider manifests](README.md#offers-as-provider-manifests)) |
 
-The constraints are those of the moved `RuntimeBrokerConfig` schema
+**What the relay does with the onboarding entries** (phase 5,
+[Helpers on the cache](README.md#helpers-on-the-cache)). It only reads them.
+`HOBO_CI_SESSION_KEY` keys the cache's session records (an HMAC names each)
+and seals the ones that hold a credential; rotating it signs every operator
+out. `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` and `HOBO_CI_INVITATION_EXPIRES_AT` are
+the owner's invitation: without an expiry it is never accepted, and once
+redeemed the cache holds a consumed marker until it expires, so `hobo ci`
+writes a new one for the next owner. `HOBO_CI_ONBOARDING_CONTROL_TOKEN` is what
+the owner's ten-minute session stands for. An installation an operator
+verifies is not written here by the relay: it is usable for a day and logged
+by id, for `hobo ci` to add to `HOBO_CI_CONFIG_JSON`.
+
+The constraints are those of the relay runtime configuration schema
 ([`src/relay-runtime-config-schema.ts`](src/relay-runtime-config-schema.ts)) plus
 the App's: an RSA key of 2048 bits or more, a webhook secret of 32 bytes or
 more. The record is `RelayRuntimeConfig` in

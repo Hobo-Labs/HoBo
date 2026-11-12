@@ -71,6 +71,21 @@ export interface SandboxProxyDriver {
 	): Promise<{ commandId: string }>;
 	bind(origin: string, token: string, guestSessionId: string): Promise<void>;
 	discover(name: string): Promise<{ sessionId: string }>;
+	/**
+	 * The proxy VM's own meter, read through its port with the lease's token
+	 * before the VM is stopped. Optional: a host without it settles from the
+	 * store's counters alone.
+	 */
+	meter?(
+		name: string,
+		sessionId: string,
+		token: string,
+	): Promise<{
+		leaseId: string;
+		proxySessionId: string;
+		bytes: number;
+		calls: number;
+	}>;
 	stop(name: string, sessionId: string): Promise<SandboxUsage>;
 }
 export interface SandboxLeaseStore extends HostedRelayStore {
@@ -80,6 +95,17 @@ export interface SandboxLeaseStore extends HostedRelayStore {
 	 * service). Without it the controller draws a random token.
 	 */
 	sandboxProxyToken?(leaseId: string): string;
+	/**
+	 * Keep what the proxy VM reported (the relay cache store: the VM is the
+	 * authority for its meter, so a lease rebuilt after a cache loss can
+	 * still settle). Without it the report is not read.
+	 */
+	recordSandboxProxyMeter?(
+		leaseId: string,
+		proxySessionId: string,
+		meter: { bytes: number; calls: number },
+		at: string,
+	): Promise<void>;
 	configureSandboxProxy(
 		accountId: string,
 		leaseId: string,
@@ -254,6 +280,43 @@ export function createSandboxController(options: {
 			now(),
 		);
 	}
+	/**
+	 * Read the proxy VM's meter into the store before the VM stops. Best
+	 * effort: a VM that no longer answers leaves settlement to the store's
+	 * own counters, and a lease with neither stays unsettled.
+	 */
+	async function readProxyMeter(lease: Lease): Promise<void> {
+		const store = options.store;
+		const driver = options.proxyDriver;
+		const token = store.sandboxProxyToken?.(lease.id);
+		if (
+			!store.recordSandboxProxyMeter ||
+			!driver?.meter ||
+			!token ||
+			!lease.proxySandboxSessionId
+		)
+			return;
+		try {
+			const report = await driver.meter(
+				lease.proxySandboxName,
+				lease.proxySandboxSessionId,
+				token,
+			);
+			if (
+				report.leaseId !== lease.id ||
+				report.proxySessionId !== lease.proxySandboxSessionId
+			)
+				return;
+			await store.recordSandboxProxyMeter(
+				lease.id,
+				lease.proxySandboxSessionId,
+				{ bytes: report.bytes, calls: report.calls },
+				now(),
+			);
+		} catch {
+			// The VM may already be gone; the store's counters still apply.
+		}
+	}
 	async function stopProxy(
 		id: string,
 		input: Lease,
@@ -307,6 +370,7 @@ export function createSandboxController(options: {
 					if (!stopping) return;
 					lease = stopping;
 				}
+				await readProxyMeter(lease);
 				const usage = await options.proxyDriver.stop(
 					lease.proxySandboxName,
 					lease.proxySandboxSessionId,

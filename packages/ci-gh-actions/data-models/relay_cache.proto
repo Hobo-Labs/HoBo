@@ -111,3 +111,101 @@ message RelayCacheSandboxEgress {
   string account_id = 2;
   double max_bytes = 3;
 }
+
+// ---------------------------------------------------------------------------
+// Relay helpers on the cache (ADR-0179 phase 5). Each replaces a former
+// `hobo_ci_*` table; every key has a TTL and losing it costs a rescan, a new
+// sign-in or a conservative settlement, never correctness.
+// ---------------------------------------------------------------------------
+
+// `repair:webhook:<appId>:cursor`. Where the App's delivery-history scan
+// resumes (the next page URL of `GET /app/hook/deliveries`). Lost: the scan
+// restarts from the newest page.
+message RelayCacheWebhookScan {
+  string cursor_url = 1;
+  string checkpoint_at = 2;
+}
+
+// The queued-job scan's position in one repository and run status.
+message RelayCacheQueuedCursor {
+  uint32 page = 1;
+  repeated double runs = 2;
+  bool loaded = 3;
+  bool has_next = 4;
+  uint32 run_index = 5;
+  uint32 job_page = 6;
+  uint32 job_index = 7;
+}
+
+// `repair:queued:<appId>:scan:<accountId>:<installationId>:<repositoryId>:<status>`.
+// Replaces a `hobo_ci_queued_scans` row: the cursor, when it is next due and
+// when it was last advanced (oldest first). Lost: that key starts over.
+message RelayCacheQueuedScan {
+  RelayCacheQueuedCursor cursor = 1;
+  double due_ms = 2;
+  double touched_ms = 3;
+}
+
+// A value sealed with AES-256-GCM under a key derived from the session key
+// in the config service. `key_id` names the derived key, so a rotated session
+// key reads old records as absent (a new sign-in), never as garbage.
+message RelayCacheSealed {
+  string key_id = 1;
+  bytes nonce = 2;
+  // Ciphertext with the 16-byte authentication tag appended.
+  bytes ciphertext = 3;
+}
+
+// Sealed in `oauth:state:<hmac>`: one GitHub OAuth `state`, consumed once.
+message RelayCacheOAuthState {
+  string browser_digest = 1;
+  string account_id = 2;
+  string verifier = 3;
+  string control_token = 4;
+  double expires_at_ms = 5;
+}
+
+// Sealed in `oauth:session:<hmac>`: one operator session for fifteen minutes.
+message RelayCacheOAuthSession {
+  string account_id = 1;
+  double github_id = 2;
+  string github_token = 3;
+  string control_token = 4;
+  double expires_at_ms = 5;
+}
+
+// `app:state:<hmac>`: one App-installation `state`, consumed once.
+message RelayCacheAppState {
+  string purpose = 1;
+  string account_id = 2;
+  string subject = 3;
+  double expires_at_ms = 4;
+}
+
+// `app:installations:<accountId>`. Installations an operator proved they
+// administer in the last day, usable until `hobo ci` writes them into the
+// config service. Never a source of configuration.
+message RelayCacheVerifiedInstallations {
+  string account_id = 1;
+  double app_id = 2;
+  repeated double verified_ids = 3;
+}
+
+// `owner:session:<hmac>`: an owner who redeemed the onboarding invitation,
+// for ten minutes.
+message RelayCacheOwnerSession {
+  string account_id = 1;
+  double expires_at_ms = 2;
+}
+
+// `sbx:proxy-meter:<leaseId>`. What the lease's proxy VM reported it
+// reserved (bytes) and how many quota calls it made, read from the VM before
+// it was stopped. The VM is the authority; settlement charges the larger of
+// this and the relay's own counters.
+message RelayCacheProxyMeter {
+  string lease_id = 1;
+  string proxy_session_id = 2;
+  double bytes = 3;
+  double calls = 4;
+  string read_at = 5;
+}

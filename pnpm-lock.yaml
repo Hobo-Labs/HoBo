@@ -641,25 +641,16 @@ importers:
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
-      pg:
-        specifier: 8.22.0
-        version: 8.22.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
-      '@hobo/adapter-drizzle':
-        specifier: workspace:*
-        version: link:../adapters/adapter-drizzle
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
-      drizzle-kit:
-        specifier: 0.31.11
-        version: 0.31.11
-      drizzle-orm:
-        specifier: 0.45.4
-        version: 0.45.4(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
 
   packages/ci-ado:
     dependencies:
@@ -801,9 +792,6 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
-      pg:
-        specifier: 8.22.0
-        version: 8.22.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -814,9 +802,6 @@ importers:
       '@dagger.io/dagger':
         specifier: 0.21.11
         version: 0.21.11
-      '@hobo/adapter-drizzle':
-        specifier: workspace:*
-        version: link:../adapters/adapter-drizzle
       '@hobo/ci-cf':
         specifier: workspace:*
         version: link:../ci-cf
@@ -838,9 +823,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
-      drizzle-orm:
-        specifier: 0.45.4
-        version: 0.45.4(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       testcontainers:
         specifier: 11.8.1
         version: 11.8.1
@@ -877,9 +862,6 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
-      '@hobo/data-postgres':
-        specifier: workspace:*
-        version: link:../data-postgres
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
@@ -892,9 +874,6 @@ importers:
       '@hobo/provider-vercel-blob':
         specifier: workspace:*
         version: link:../providers/provider-vercel-blob
-      '@neon/functions':
-        specifier: 0.11.0
-        version: 0.11.0(hono@4.12.27)
       '@vercel/oidc':
         specifier: 4.0.0
         version: 4.0.0
@@ -904,40 +883,34 @@ importers:
       '@vercel/sandbox':
         specifier: 3.9.0
         version: 3.9.0
-      jose:
-        specifier: 6.2.4
-        version: 6.2.4
-      pg:
-        specifier: 8.22.0
-        version: 8.22.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
-      '@hobo/adapter-drizzle':
-        specifier: workspace:*
-        version: link:../adapters/adapter-drizzle
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
       '@hobo/camps':
         specifier: workspace:*
         version: link:../camps
+      '@hobo/pricing':
+        specifier: workspace:*
+        version: link:../pricing
+      '@hobo/provider-manifest':
+        specifier: workspace:*
+        version: link:../provider-manifest
       '@hobo/provider-vercel':
         specifier: workspace:*
         version: link:../providers/provider-vercel
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
-      '@types/pg':
-        specifier: 8.15.5
-        version: 8.15.5
-      drizzle-orm:
-        specifier: 0.45.4
-        version: 0.45.4(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
+      jose:
+        specifier: 6.2.4
+        version: 6.2.4
 
   packages/claims:
     dependencies:
@@ -7535,15 +7508,6 @@ packages:
   '@neon-rs/load@0.0.4':
     resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
 
-  '@neon/functions@0.11.0':
-    resolution: {integrity: sha512-xyIEk9aULR2nBTzyTgxljkM8aS+Ppe9oVw/t5mdqYOlY/mLFppHSZHq8hiWVDWy6Ca8oLd3loTtfVz+cZQQjsA==}
-    engines: {node: '>=20.19.0'}
-    peerDependencies:
-      hono: ^4.7.8
-    peerDependenciesMeta:
-      hono:
-        optional: true
-
   '@nodable/entities@3.1.0':
     resolution: {integrity: sha512-LsS/DjHr+uDM647Gru/cA8+J3a3HfhttwCKLyuoyN7yXTFCxKBtSgMQBvrW9yNPa2/zDRUNuGPaH5QUFoa4arQ==}
 
@@ -10580,101 +10544,6 @@ packages:
       '@libsql/client-wasm':
         optional: true
       '@neondatabase/serverless':
-        optional: true
-      '@op-engineering/op-sqlite':
-        optional: true
-      '@opentelemetry/api':
-        optional: true
-      '@planetscale/database':
-        optional: true
-      '@prisma/client':
-        optional: true
-      '@tidbcloud/serverless':
-        optional: true
-      '@types/better-sqlite3':
-        optional: true
-      '@types/pg':
-        optional: true
-      '@types/sql.js':
-        optional: true
-      '@upstash/redis':
-        optional: true
-      '@vercel/postgres':
-        optional: true
-      '@xata.io/client':
-        optional: true
-      better-sqlite3:
-        optional: true
-      bun-types:
-        optional: true
-      expo-sqlite:
-        optional: true
-      gel:
-        optional: true
-      knex:
-        optional: true
-      kysely:
-        optional: true
-      mysql2:
-        optional: true
-      pg:
-        optional: true
-      postgres:
-        optional: true
-      prisma:
-        optional: true
-      sql.js:
-        optional: true
-      sqlite3:
-        optional: true
-
-  drizzle-orm@0.45.4:
-    resolution: {integrity: sha512-NiM1YZpJ2UxyeE67DpDDZ+Tsw4YLX3trSlkNT7Tm9eKoUNb1LvaAaQzXgYQsWs+AQ9TUmmwMmBOCXuqqxUWKKQ==}
-    peerDependencies:
-      '@aws-sdk/client-rds-data': '>=3'
-      '@cloudflare/workers-types': '>=4'
-      '@electric-sql/pglite': '>=0.2.0'
-      '@libsql/client': '>=0.10.0'
-      '@libsql/client-wasm': '>=0.10.0'
-      '@neondatabase/serverless': '>=0.10.0'
-      '@netlify/db': '>=0.4.0'
-      '@op-engineering/op-sqlite': '>=2'
-      '@opentelemetry/api': ^1.4.1
-      '@planetscale/database': '>=1.13'
-      '@prisma/client': '*'
-      '@tidbcloud/serverless': '*'
-      '@types/better-sqlite3': '*'
-      '@types/pg': '*'
-      '@types/sql.js': '*'
-      '@upstash/redis': '>=1.34.7'
-      '@vercel/postgres': '>=0.8.0'
-      '@xata.io/client': '*'
-      better-sqlite3: '>=7'
-      bun-types: '*'
-      expo-sqlite: '>=14.0.0'
-      gel: '>=2'
-      knex: '*'
-      kysely: '*'
-      mysql2: '>=2'
-      pg: '>=8'
-      postgres: '>=3'
-      prisma: '*'
-      sql.js: '>=1'
-      sqlite3: '>=5'
-    peerDependenciesMeta:
-      '@aws-sdk/client-rds-data':
-        optional: true
-      '@cloudflare/workers-types':
-        optional: true
-      '@electric-sql/pglite':
-        optional: true
-      '@libsql/client':
-        optional: true
-      '@libsql/client-wasm':
-        optional: true
-      '@neondatabase/serverless':
-        optional: true
-      '@netlify/db':
         optional: true
       '@op-engineering/op-sqlite':
         optional: true
@@ -16491,9 +16360,30 @@ snapshots:
       es-module-lexer: 1.7.0
       oxc-parser: 0.76.0
 
-  '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+    dependencies:
+      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@bytecodealliance/wizer': 10.0.0
+      es-module-lexer: 1.7.0
+      oxc-parser: 0.76.0
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+
+  '@bytecodealliance/componentize-js@0.21.0':
     dependencies:
       '@bytecodealliance/jco': 1.24.3
+      '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@bytecodealliance/wizer': 10.0.0
+      es-module-lexer: 1.7.0
+      oxc-parser: 0.76.0
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+
+  '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+    dependencies:
+      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
       '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
       '@bytecodealliance/wizer': 10.0.0
       es-module-lexer: 1.7.0
@@ -16510,8 +16400,24 @@ snapshots:
 
   '@bytecodealliance/jco@1.24.3':
     dependencies:
-      '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@bytecodealliance/componentize-js': 0.21.0
       '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
+      '@bytecodealliance/jco-transpile': 0.3.9
+      '@bytecodealliance/preview2-shim': 0.17.9
+      '@bytecodealliance/preview3-shim': 0.1.2
+      binaryen: 130.0.0
+      commander: 14.0.3
+      mkdirp: 3.0.1
+      ora: 8.2.0
+      terser: 5.48.0
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+
+  '@bytecodealliance/jco@1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+    dependencies:
+      '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)'
       '@bytecodealliance/jco-transpile': 0.3.9
       '@bytecodealliance/preview2-shim': 0.17.9
       '@bytecodealliance/preview3-shim': 0.1.2
@@ -16953,7 +16859,8 @@ snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
-  '@drizzle-team/brocli@0.10.2': {}
+  '@drizzle-team/brocli@0.10.2':
+    optional: true
 
   '@earendil-works/pi-agent-core@1.5.2(@aws-sdk/credential-provider-node@3.972.96)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
@@ -17114,11 +17021,13 @@ snapshots:
     dependencies:
       esbuild: 0.18.20
       source-map-support: 0.5.21
+    optional: true
 
   '@esbuild-kit/esm-loader@2.6.5':
     dependencies:
       '@esbuild-kit/core-utils': 3.3.2
       get-tsconfig: 4.14.1
+    optional: true
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
@@ -18436,10 +18345,6 @@ snapshots:
       '@nats-io/nuid': 3.0.0
 
   '@neon-rs/load@0.0.4': {}
-
-  '@neon/functions@0.11.0(hono@4.12.27)':
-    optionalDependencies:
-      hono: 4.12.27
 
   '@nodable/entities@3.1.0': {}
 
@@ -21711,18 +21616,9 @@ snapshots:
       '@esbuild-kit/esm-loader': 2.6.5
       esbuild: 0.25.12
       tsx: 4.22.4
+    optional: true
 
   drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1):
-    optionalDependencies:
-      '@cloudflare/workers-types': 5.20260730.1
-      '@libsql/client': 0.18.0
-      '@opentelemetry/api': 1.9.1
-      '@types/pg': 8.15.5
-      better-sqlite3: 12.11.1
-      pg: 8.22.0
-      sql.js: 1.14.1
-
-  drizzle-orm@0.45.4(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260730.1
       '@libsql/client': 0.18.0
@@ -21946,6 +21842,7 @@ snapshots:
       '@esbuild/win32-arm64': 0.18.20
       '@esbuild/win32-ia32': 0.18.20
       '@esbuild/win32-x64': 0.18.20
+    optional: true
 
   esbuild@0.25.12:
     optionalDependencies:

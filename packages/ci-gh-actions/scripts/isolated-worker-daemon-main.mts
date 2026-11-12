@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-/** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
+/** Box worker: launch isolated-container leases from its own SQLite journal. */
 import { toJsonString } from "@bufbuild/protobuf";
 import {
 	ConfigurationSchema,
@@ -14,7 +14,6 @@ import {
 } from "@hobo/ci";
 import { createTrustedMeshBoard } from "@hobo/ci/mesh";
 import {
-	attachPostgresPoolErrorHandler,
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
@@ -409,62 +408,40 @@ const budgetAdapter = await loadWorkerBudgetAdapter(
 	plan.store.kind,
 );
 try {
-	if (plan.store.kind === "sqlite") {
-		const { SqliteCiStore } = await import("@hobo/ci/sqlite");
-		mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
-		const sqlite = new SqliteCiStore(
-			plan.store.path,
-			budgetAdapter?.kind === "sqlite"
-				? { sharedBudget: budgetAdapter.hooks }
-				: {},
-		);
-		store = sqlite;
-		closeStore = async () => sqlite.close();
-		meshJournal = sqlite;
-		// This worker owns its journal, so the operator's config file is the policy
-		// source: apply it when it changed. A refused change (for example an active
-		// lease pinning a provider identity) keeps the stored policy and says why.
-		const current = await sqlite.configuration();
-		const desired = toJsonString(ConfigurationSchema, configuration);
-		if (
-			!current?.configuration ||
-			toJsonString(ConfigurationSchema, current.configuration) !== desired
-		) {
-			try {
-				const applied = await sqlite.configure(
-					configuration,
-					current?.revision ?? 0,
-					new Date().toISOString(),
-				);
-				log("hobo_ci_isolated_worker_configured", {
-					revision: applied.revision,
-				});
-			} catch (error) {
-				if (!current?.configuration) throw error;
-				log("hobo_ci_isolated_worker_configuration_kept", {
-					revision: current.revision,
-					message: error instanceof Error ? error.message : "unknown",
-				});
-			}
+	const { SqliteCiStore } = await import("@hobo/ci/sqlite");
+	mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
+	const sqlite = new SqliteCiStore(
+		plan.store.path,
+		budgetAdapter ? { sharedBudget: budgetAdapter.hooks } : {},
+	);
+	store = sqlite;
+	closeStore = async () => sqlite.close();
+	meshJournal = sqlite;
+	// This worker owns its journal, so the operator's config file is the policy
+	// source: apply it when it changed. A refused change (for example an active
+	// lease pinning a provider identity) keeps the stored policy and says why.
+	const current = await sqlite.configuration();
+	const desired = toJsonString(ConfigurationSchema, configuration);
+	if (
+		!current?.configuration ||
+		toJsonString(ConfigurationSchema, current.configuration) !== desired
+	) {
+		try {
+			const applied = await sqlite.configure(
+				configuration,
+				current?.revision ?? 0,
+				new Date().toISOString(),
+			);
+			log("hobo_ci_isolated_worker_configured", {
+				revision: applied.revision,
+			});
+		} catch (error) {
+			if (!current?.configuration) throw error;
+			log("hobo_ci_isolated_worker_configuration_kept", {
+				revision: current.revision,
+				message: error instanceof Error ? error.message : "unknown",
+			});
 		}
-	} else {
-		const [{ PostgresCiStore }, { default: pg }] = await Promise.all([
-			import("@hobo/ci/postgres"),
-			import("pg"),
-		]);
-		const pool = new pg.Pool({
-			connectionString: required(plan.store.urlEnv),
-			max: 2,
-		});
-		attachPostgresPoolErrorHandler(pool);
-		closeStore = () => pool.end();
-		store = new PostgresCiStore(
-			pool,
-			"default",
-			budgetAdapter?.kind === "postgres"
-				? { sharedBudget: budgetAdapter.hooks }
-				: {},
-		);
 	}
 } catch (error) {
 	try {
@@ -969,10 +946,7 @@ try {
 	const meshIdentity = meshSettings
 		? await loadMeshIdentity(
 				process.env.HOBO_CI_MESH_KEY_FILE ??
-					join(
-						plan.store.kind === "sqlite" ? dirname(plan.store.path) : workRoot,
-						"mesh-node.key",
-					),
+					join(dirname(plan.store.path), "mesh-node.key"),
 			)
 		: undefined;
 	// Which keys the mesh's operator vouches for, read from the mesh on every

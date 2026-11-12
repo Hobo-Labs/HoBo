@@ -21,12 +21,11 @@ and in phase 4c the cache fleet: every bound cache a member, exactly one
 active by a majority-decided register, moved by budget
 ([The cache fleet](../../packages/ci-vercel/README.md#the-cache-fleet)); and
 phase 6, deployment from a Yard with the deploy workflow on `main`
-([status](#deployment-through-hobo)).
-None of it has been deployed or run against Vercel, Upstash, Infisical or
-GitHub. The PostgreSQL code stays in the tree, off the relay's path, until
-phase 7 removes it; the sections of
-[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) that describe it are
-marked superseded.
+([status](#deployment-through-hobo)). Phase 7 removed the PostgreSQL path: the
+relay's store, the relay database fleet and store selection, the Drizzle relay
+schema and its migrations, the Neon broker, and the box worker's shared
+Postgres store ([Phase 7 removals](#phase-7-removals)). None of it has been
+deployed or run against Vercel, Upstash, Infisical or GitHub.
 
 ## Why
 
@@ -222,10 +221,10 @@ taken, exits, and is cancelled by reconcile.
 
 ## Mutual exclusion without a partition lock
 
-Today every write takes one PostgreSQL row lock on the partition
-([`postgres-store.ts`](../../packages/ci/src/postgres-store.ts), the
-`SELECT … FOR UPDATE` on `hobo_ci_partitions` around lines 516–538), which
-serializes the whole relay. It is replaced by per-key compare-and-set:
+Every write of the PostgreSQL store took one row lock on the partition (the
+`SELECT … FOR UPDATE` on `hobo_ci_partitions` in `postgres-store.ts`, removed
+in phase 7), which serialized the whole relay. It is replaced by per-key
+compare-and-set:
 
 | Need | Key | Operation |
 |---|---|---|
@@ -252,11 +251,15 @@ job says it is completed.
 
 ## Sessions and OAuth state
 
-Operator sessions become encrypted, authenticated cookies sealed with
-`HOBO_CI_SESSION_KEY` (AES-GCM, with a key id so the key can rotate). The
-cookie carries what `hobo_ci_oauth_sessions` holds today. OAuth `state` is
-written with `SET NX` and a ten-minute TTL and consumed with a get-and-delete,
-so it is single-use. A lost cache costs a sign-in that has to start again.
+Operator sessions are sealed with a key derived from `HOBO_CI_SESSION_KEY`
+(AES-GCM, with a key id so the key can rotate). As built in phase 5 the
+sealed record is kept in the cache for its fifteen minutes and the browser
+carries an opaque cookie: the session holds the operator's GitHub user token,
+which stays out of the browser. Each record is named by an HMAC under the
+session key, never by a token or its digest. OAuth `state` is written with
+`SET NX` and a ten-minute TTL and consumed with a read and a versioned
+delete, so it is single-use. A lost cache costs a sign-in that has to start
+again.
 
 ## Budgets and cost
 
@@ -277,8 +280,8 @@ so it is single-use. A lost cache costs a sign-in that has to start again.
   pass has restored the holds; free and self-hosted offers keep admitting, as
   the [mesh](./ci-relay-mesh.md#what-stays-consistent) does.
 - **Broker budget-policy accounts are not supported by the hosted relay.**
-  They never were on Vercel: `composition.ts` builds `PostgresCiStore` without
-  the shared-budget hooks, so such an account is refused there today. The
+  They never were on Vercel: the PostgreSQL composition built its store without
+  the shared-budget hooks, so such an account was refused there too. The
   Broker budget ledger library is unchanged.
 
 ## Config is read-only at runtime
@@ -798,9 +801,9 @@ on its free plan.
 | 4c | Cache-fleet selection: the assignment log on every cache backend through the port's compare-and-set, `resolveAssignment` and `decideFleet` moved from `@hobo/data-postgres` to an engine-neutral package (which also keeps `@hobo/data-postgres` out of the relay bundle for phase 7), shared usage metering (commands, rows), budget-policy switching with hysteresis | A projected exhaustion switches backends before the allowance runs out; a lost backend fails over; the relay rebuilds on the new backend with no lost job. **Done** (in-memory tests; not deployed) |
 | 4d | The Workflows lifecycle driver on Vercel's managed World (exactly-once starts by hook token, `resumeHook` from verified webhooks, `sleep()` timeouts), built through a Nitro entry in `@hobo/ci-vercel` or a custom `BaseBuilder`; `workflow` ≥ 5.4.0 (pinnable from 2026-11-18) and `zod` ≥ 4.5; driver chosen per job at admission. Not before 2026-11-18 | A job runs end to end on each driver; switching drivers leaves in-flight jobs on theirs; a repeated start for one job attempt yields one run |
 | 4e | The degraded GitHub-only floor | Duplicate JIT runner names verified against the real API (409 or not); with every cache unreachable, a duplicated delivery still provisions once |
-| 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision |
+| 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision. **Done** except provider usage pulls ([Phase 5](#phase-5); in-memory tests; not deployed) |
 | 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository. **Yard, Camps, planning, workflow and provisioning implemented ([status](#deployment-through-hobo)); not yet run live** |
-| 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
+| 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone. **Done** (`test/relay-bundle.test.ts` bundles the relay's entries and checks) |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
 
 **Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
@@ -824,7 +827,67 @@ fleet ([Exactly one cache at a time](#exactly-one-cache-at-a-time)), in
 `@hobo/backend-fleet` and `@hobo/ci-vercel`'s `cache-fleet.ts`; tested on
 in-memory members only.
 
+### Phase 5
+
+What phases 4a–4c already covered, and was not rebuilt: the MCP change ring
+(4a), settlement rebalancing and budget switching of the cache fleet (4c).
+What phase 5 added, all tested on the in-memory cache only:
+
+- **Repair scanners on the cache.** `createWebhookRepair` and
+  `createQueuedJobRepair` are unchanged; their claims are
+  `CacheWebhookRepairClaims` and `CacheQueuedJobRepairClaims`
+  (`@hobo/ci-gh-actions/relay-cache`): a lock per scanner and App with a
+  five-minute TTL, renewed at each checkpoint (a scanner that stalled past
+  it throws instead of writing); cursors with TTLs; the 20-a-minute
+  redelivery window and the 10-a-minute REST budget as minute counters; a
+  15-minute claim per delivery and a four-day seen-marker written only for
+  deliveries not already known. The repair tick runs them after the rebuild
+  pass, before the runtime's tick, the queued scan for at most ten steps,
+  with no continuation messages. Admission is by deterministic lease id, so
+  a rescan after a cache loss is idempotent.
+- **Worker health** as one key per deployment and component (24 hours);
+  missing is `starting`, which `/readyz` reports and does not fail on.
+- **Sessions, OAuth state, App installation and owner bootstrap** on the
+  cache ([above](#sessions-and-oauth-state)); the relay reads the
+  invitation, its expiry and the onboarding control token from the config
+  service, redeems the invitation once (a consumed marker until it expires),
+  and creates no App: those routes answer 410. A verified installation is a
+  day-long cache record and a log line for `hobo ci`; configuration stays
+  read-only to the relay.
+- **Proxy-VM-authoritative Sandbox meters.** The proxy VM answers its own
+  meter (bytes reserved, quota calls) to the lease's derived token; the host
+  reads it before stopping the VM, and settlement charges the larger of it
+  and the relay's counters. A lease rebuilt after a cache loss now settles
+  (rebuild takes the runner id from GitHub's assignment, so the runner is
+  deleted first). If the cache was lost before GitHub assigned the job, the
+  host cannot tell the idle runner from a busy one, so it stops and settles
+  that lease and the job is admitted again: one replaced VM, never two live.
+- **Offers as provider manifests**
+  ([where each offer is recorded](#where-each-offer-is-recorded)): seven
+  manifests in `packages/ci-vercel/offers/`, lowered by
+  `scripts/generate-offers.mts` into `@hobo/pricing` catalogs; the cache
+  fleet's default offers are derived from them (`HOBO_CI_CACHE_OFFERS_JSON`
+  still overrides). The profiles are `KV_EPHEMERAL_STATE_PROFILE` in
+  `@hobo/kv-redis-compatible` and `LIFECYCLE_LEASE_DRIVER_PROFILE` with the
+  `LeaseLifecycleDriver` port in `@hobo/ci-vercel`; the profile parser reads
+  the `lifecycle` family as a queue. Registration in the HoBo registry is
+  the phase 6 deploy's.
+
+**Deferred or unverified.** Provider usage pulls: the repository has no
+client for Vercel's usage API or GitHub's billing usage API, so budget
+exposure stays configured spend plus in-flight holds, and the open question
+on usage latency stays open. Vercel Blob's operation prices are Pro rates not
+verified for this store; Vercel Queues' price is unverified and declared
+unrated. The removed control endpoints answer 410, not 404, as in phase 4b.
+
 ### Phase 7 removals
+
+**Done.** Everything below is deleted; what was not, and why, follows the
+list. `test/relay-bundle.test.ts` in `@hobo/ci-vercel` bundles the relay's
+entries with esbuild, through the workspace packages' built output and into
+`node_modules`, and fails if the bundle reaches `pg`, `pg-pool`,
+`@neon/functions`, `@neondatabase/serverless`, `@hobo/data-postgres` or
+`drizzle-orm`.
 
 `packages/ci-vercel`:
 
@@ -834,10 +897,12 @@ in-memory members only.
   `database-selection.ts`, `database-selection-import.ts`,
   `database-selection-marker.ts`, `database-selection-relay.ts`,
   `relay-schema.ts`, `neon-secret-broker.ts`, `neon-broker-entry.ts`,
-  `neon-trigger.ts`, `runtime-config-client.ts`; the Postgres read store in
-  `worker-health.ts` (moves to the cache); the Postgres wiring in
-  `composition.ts`, `bootstrap-entry.ts`, `sandbox-composition.ts` and
-  `entry.ts` (rewired, not deleted).
+  `neon-trigger.ts`, `runtime-config-client.ts`; `worker-health.ts` (its
+  cache replacement is `worker-health-cache.ts`); the PostgreSQL composition
+  `composition.ts`, `relay-composition.ts` and `bootstrap-entry.ts`, which
+  `entry.ts` had stopped importing in phase 4b (the package root now exports
+  `composeStatelessRelay`); the `RuntimeBrokerConfig` export of
+  `relay-runtime-config-schema.ts`.
 - `db/` (schema, source, migrations, the embedded-DDL lock), `tsconfig.db.json`,
   `deploy/postgres/`.
 - `scripts/`: `bootstrap-postgres-contract.ts`,
@@ -847,10 +912,13 @@ in-memory members only.
   `database-fleet*.test.ts`, `database-fleet-harness.ts`,
   `database-selection*.test.ts`, `neon-secret-broker.test.ts`,
   `neon-trigger.test.ts`, `postgres-schema.test.ts`, `relay-schema.test.ts`,
-  `runtime-config-client.test.ts`; the Postgres cases of
-  `worker-health.test.ts`.
+  `runtime-config-client.test.ts`, and the tests of the deleted composition
+  (`bootstrap-entry.test.ts`, `relay-composition.test.ts`,
+  `relay-mcp-composition.test.ts`, `wakeup.test.ts`); `worker-health.test.ts`
+  now holds the cache evidence to the same deployment scoping.
 - `package.json`: `pg`, `@types/pg`, `@neon/functions`, `@hobo/data-postgres`,
-  the Drizzle dev dependencies and the `db:*` scripts.
+  the Drizzle dev dependencies and the `db:*` scripts; `jose` moved to the
+  dev dependencies (only a test uses it now).
 
 `packages/ci`:
 
@@ -861,7 +929,8 @@ in-memory members only.
 - `test/`: `postgres-authoritative-admission.test.ts`,
   `postgres-schema.test.ts`, `postgres-schema-lineage.test.ts`,
   `schema-tooling.test.ts`.
-- `package.json`: `pg`, `@types/pg`, Drizzle dev dependencies, `db:*` scripts.
+- `package.json`: Drizzle dev dependencies, `db:*` scripts; `pg` moved to the
+  dev dependencies (the Broker ledger's Postgres tests use it).
 
 `packages/ci-gh-actions`:
 
@@ -876,17 +945,40 @@ in-memory members only.
   `owner-bootstrap-postgres-contract.ts`,
   `queued-job-repair-postgres-contract.ts`.
 - `test/`: `app-registration-postgres.test.ts`, `hosted-schema.test.ts`,
-  `pinned-postgres-testcontainers.test.ts`, `postgres-schema.test.ts`,
-  `postgres-schema-lineage.test.ts`, `postgres-session-lock.test.ts`; the
-  Postgres leg of `ci-store-contract.test.ts` (its SQLite leg stays).
-- `package.json`: `pg`, `@types/pg`, Drizzle dev dependencies, `db:*` scripts.
+  `postgres-schema.test.ts`, `postgres-schema-lineage.test.ts`,
+  `postgres-session-lock.test.ts`, and the tests of the deleted modules
+  (`owner-bootstrap.test.ts`, `isolated-worker-pool.test.ts`); the Postgres
+  leg of `ci-store-contract.test.ts` (its SQLite leg stays).
+- The box worker's `postgres` budget-adapter kind (asynchronous hooks), which
+  paired only with the Postgres store; the `postgres` worker store in the CI
+  project config and its JSON Schema.
+- `package.json`: Drizzle dev dependencies, `db:*` scripts; `pg` moved to the
+  dev dependencies.
 
 `packages/hobo`: the `store: { kind: "postgres" }` option of `hobo ci serve`
-(`src/ci-serve.ts`) and its documentation in `CI.md`.
+(`src/ci-serve.ts`) and its documentation in `CI.md`. The CLI's end-to-end lane
+(`e2e/ci.test.ts`) runs on `SqliteCiStore` instead of `PostgresCiStore`, so it
+needs no database.
+
+`scripts/no-hand-edited-generated-files.mts`: the shipped-migrations case,
+with no relay package shipping migrations.
+
+**Kept.** `test/pinned-postgres-testcontainers.test.ts` in
+`@hobo/ci-gh-actions`, which the first draft of this list named, starts the
+pinned Postgres image of the Pact broker (`contracts/compose.pact.yml`), not
+the relay's store, so it stays with `pg` as a dev dependency.
+`@hobo/data-postgres` (ADR-0177) and `@hobo/backend-fleet` stay as packages;
+the relay imports only `@hobo/backend-fleet`, for its cache fleet. The compute
+fleet is untouched. `StoreUnavailable` and the store back-off in the queue
+handoff (`queue-forwarding.ts`) and `createHostedWorker` (`worker.ts`) are
+generic and tested, so they stay although the deleted composition was their
+main user.
 
 Documentation: the superseded sections in `packages/ci-vercel/README.md`,
 `packages/ci/README.md`, `packages/ci-gh-actions/README.md` and
-`packages/ci/RUNNER-QUEUE.md` are deleted rather than kept with a banner.
+`packages/ci/RUNNER-QUEUE.md` are deleted rather than kept with a banner;
+`ONBOARDING.md` and `WEBHOOK-REPAIR.md` in `@hobo/ci-gh-actions` describe the
+cache-backed flows.
 
 ### Phase 8 cutover
 
@@ -958,7 +1050,8 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
   same name in every scope the relay uses, and whether Vercel refuses a second
   named Sandbox, is checked in phase 4 before double-provisioning relies on it.
 - **Provider usage latency.** How far behind Vercel's and GitHub's usage APIs
-  run sets the real overrun bound; phase 5 measures it.
+  run sets the real overrun bound. Not measured: phase 5 deferred the pulls,
+  as no client for either API exists yet.
 - **Infisical free-plan limits** on machine identities and API rate are
   checked when the organization is created.
 - **Preview deployments.** Whether the Marketplace integration gives preview a

@@ -7,11 +7,11 @@
  * index, a pending-demand set, webhook dedupe markers, sandbox counters and a
  * per-account change ring. Configuration is read-only, supplied by the config
  * service. There is no partition lock: every write is a compare-and-set on
- * one key, and the expected-state checks of `PostgresCiStore` are kept on
- * each of them. Lease ids are deterministic (`lease-id.ts`), so a lost record
+ * one key, and the expected-state checks of the lease stores (`SqliteCiStore`)
+ * are kept on each of them. Lease ids are deterministic (`lease-id.ts`), so a lost record
  * is found again by name (`rebuild.ts`).
  *
- * What the Postgres store kept as durable history is gone by design: no event
+ * What the removed Postgres store kept as durable history is gone by design: no event
  * journal, no completed-lease ledger, no inbox. Budget exposure is what
  * providers report plus the holds of in-flight leases.
  */
@@ -83,6 +83,8 @@ import {
 	type RelayCacheLease,
 	RelayCacheLeaseSchema,
 	RelayCachePendingSchema,
+	type RelayCacheProxyMeter,
+	RelayCacheProxyMeterSchema,
 	RelayCacheSandboxEgressSchema,
 } from "../_generated/relay_cache_pb.js";
 import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
@@ -136,8 +138,9 @@ export function staticRelayConfig(
 }
 
 /**
- * Spend a provider reports for an account (phase 4b pulls it from Vercel's
- * and GitHub's usage APIs). Budget exposure is this plus in-flight holds.
+ * Spend a provider reports for an account, from Vercel's and GitHub's usage
+ * APIs once a client for them exists (none is in the repository; ADR-0179
+ * phase 5 defers it). Budget exposure is this plus in-flight holds.
  */
 export type ProviderUsageObservation = Readonly<{
 	observedAt: string;
@@ -148,7 +151,7 @@ export type ProviderUsageObservation = Readonly<{
 export interface ProviderUsagePort {
 	observed(accountId: string): Promise<ProviderUsageObservation | undefined>;
 }
-/** Phase 4a stub: no pulled usage, so exposure is configured spend plus holds. */
+/** No pulled usage: exposure is configured spend plus holds. */
 export const NO_PROVIDER_USAGE: ProviderUsagePort = {
 	observed: async () => undefined,
 };
@@ -2319,11 +2322,64 @@ export class RelayCacheStore {
 		return this.addEgress(sandboxId, byteCount, binding.maxBytes, ttl);
 	}
 
+	/**
+	 * Record what the lease's proxy VM reports it reserved and how many quota
+	 * calls it made, read from the VM before it is stopped (ADR-0179 §10: the
+	 * VM is the authority). Kept as the largest report seen, so a late or
+	 * repeated read never lowers it. Settlement charges the larger of this
+	 * and the relay's own counters, and uses it alone when the cache lost
+	 * them (a rebuilt lease).
+	 */
+	async recordSandboxProxyMeter(
+		leaseId: string,
+		proxySessionId: string,
+		meter: { bytes: number; calls: number },
+		at: string,
+	): Promise<void> {
+		if (
+			!Number.isSafeInteger(meter.bytes) ||
+			meter.bytes < 0 ||
+			!Number.isSafeInteger(meter.calls) ||
+			meter.calls < 0 ||
+			!proxySessionId
+		)
+			throw new Error("invalid proxy meter");
+		const lease = await this.get(leaseId);
+		if (
+			!lease?.sandboxPricing?.proxyVmRequired ||
+			lease.proxySandboxSessionId !== proxySessionId
+		)
+			throw new Error("proxy meter does not match its lease");
+		const key = this.keys.proxyMeter(leaseId);
+		const ttl = relaySandboxCounterTtl(lease);
+		for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+			const current = await this.state.get(key);
+			const previous = current
+				? decodeRecord(RelayCacheProxyMeterSchema, current.value)
+				: undefined;
+			const same = previous?.proxySessionId === proxySessionId;
+			const next = create(RelayCacheProxyMeterSchema, {
+				leaseId,
+				proxySessionId,
+				bytes: Math.max(meter.bytes, same ? (previous?.bytes ?? 0) : 0),
+				calls: Math.max(meter.calls, same ? (previous?.calls ?? 0) : 0),
+				readAt: at,
+			});
+			const value = encodeRecord(RelayCacheProxyMeterSchema, next);
+			const write = current
+				? await this.state.compareAndSet(key, current.version, value, ttl)
+				: await this.state.putIfAbsent(key, value, ttl);
+			if (write.applied) return;
+		}
+		throw new Error("proxy meter contended");
+	}
+
 	private async meters(leaseId: string, sandboxId: string) {
-		const [calls, binding, used] = await this.state.getMany([
+		const [calls, binding, used, proxy] = await this.state.getMany([
 			this.keys.proxyCalls(leaseId),
 			this.keys.sandboxEgress(sandboxId || "none"),
 			this.keys.sandboxEgressUsed(sandboxId || "none"),
+			this.keys.proxyMeter(leaseId),
 		]);
 		return {
 			calls: calls ? counterValue(calls.value) : undefined,
@@ -2331,7 +2387,27 @@ export class RelayCacheStore {
 				? decodeRecord(RelayCacheSandboxEgressSchema, binding.value)
 				: undefined,
 			used: used ? counterValue(used.value) : undefined,
+			proxy: proxy
+				? decodeRecord(RelayCacheProxyMeterSchema, proxy.value)
+				: undefined,
 		};
+	}
+
+	/** The proxy VM's own report for this proxy session, if one was read. */
+	private proxyReport(
+		meters: { proxy: RelayCacheProxyMeter | undefined },
+		leaseId: string,
+		proxySessionId: string,
+	): RelayCacheProxyMeter | undefined {
+		const report = meters.proxy;
+		return report &&
+			report.leaseId === leaseId &&
+			report.proxySessionId === proxySessionId &&
+			proxySessionId &&
+			Number.isSafeInteger(report.bytes) &&
+			Number.isSafeInteger(report.calls)
+			? report
+			: undefined;
 	}
 
 	/** Trusted accounting reads byte and call totals after the proxy has stopped. */
@@ -2352,12 +2428,14 @@ export class RelayCacheStore {
 		)
 			return undefined;
 		const meters = await this.meters(leaseId, sandboxId);
+		const report = this.proxyReport(meters, leaseId, proxySessionId);
 		const preJit =
 			lease.runnerId === 0 &&
 			!lease.sandboxCommandId &&
 			["created", "creating"].includes(lease.sandboxStopFromStage);
 		if (
 			meters.calls === undefined &&
+			!report &&
 			((sandboxId && !preJit) ||
 				(!sandboxId && lease.sandboxStage !== "pending"))
 		)
@@ -2367,10 +2445,14 @@ export class RelayCacheStore {
 			const bound =
 				meters.binding?.leaseId === leaseId &&
 				meters.binding.accountId === accountId;
-			if (!bound && !preJit) return undefined;
+			if (!bound && !preJit && !report) return undefined;
 			bytes = bound ? (meters.used ?? 0) : 0;
 		} else if (lease.sandboxStage !== "pending") return undefined;
-		return { bytes, calls: meters.calls ?? 0 };
+		// The proxy VM is the authority; never charge less than either count.
+		return {
+			bytes: Math.max(bytes, report?.bytes ?? 0),
+			calls: Math.max(meters.calls ?? 0, report?.calls ?? 0),
+		};
 	}
 
 	/** Read proxy bytes only for the exact authenticated account, lease and VM. */
@@ -2575,17 +2657,22 @@ export class RelayCacheStore {
 				lease.id,
 				guest ? lease.sandboxSessionId : "",
 			);
+			const report = this.proxyReport(
+				meters,
+				lease.id,
+				lease.proxySandboxSessionId,
+			);
 			const preJit =
 				lease.runnerId === 0 &&
 				!lease.sandboxCommandId &&
 				["created", "creating"].includes(lease.sandboxStopFromStage);
-			if (meters.calls === undefined && guest && !preJit)
+			if (meters.calls === undefined && guest && !preJit && !report)
 				throw new Error("sandbox proxy meter unavailable");
-			const calls = meters.calls ?? 0;
+			const calls = Math.max(meters.calls ?? 0, report?.calls ?? 0);
 			let bytes = 0;
 			if (guest) {
 				if (
-					(!meters.binding && !preJit) ||
+					(!meters.binding && !preJit && !report) ||
 					(meters.binding &&
 						(meters.binding.accountId !== lease.accountId ||
 							meters.binding.leaseId !== lease.id))
@@ -2593,6 +2680,7 @@ export class RelayCacheStore {
 					throw new Error("sandbox egress meter unavailable");
 				bytes = meters.binding ? (meters.used ?? 0) : 0;
 			}
+			bytes = Math.max(bytes, report?.bytes ?? 0);
 			const free =
 				Date.parse(completedAt) <= Date.parse(lease.freeValidUntil)
 					? lease.sandboxReservedAllowance

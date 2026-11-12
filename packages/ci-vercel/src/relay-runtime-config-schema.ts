@@ -1,7 +1,6 @@
 /**
- * The hosted relay's runtime configuration: one schema, used by the Neon
- * broker (until phase 7 removes it) and by the config-service loader. Its
- * record is `RelayRuntimeConfig` in `data-models/relay_runtime_config.proto`,
+ * The hosted relay's runtime configuration, as the config-service loader
+ * parses it. Its record is `RelayRuntimeConfig` in `data-models/relay_runtime_config.proto`,
  * whose JSON names are these keys, with CUE constraints in
  * `data-models/relay-runtime-config/relay_runtime_config.cue`.
  */
@@ -33,8 +32,8 @@ const origin = z
 		}
 	});
 
-/** Configuration owned by HoBo; database and platform credentials stay out. */
-const brokerSettings = {
+/** Configuration owned by HoBo; platform credentials stay out. */
+const hoboSettings = {
 	HOBO_CI_PUBLIC_URL: origin,
 	HOBO_CI_SESSION_KEY: canonicalKey,
 	HOBO_CI_BOOTSTRAP_ACCOUNT_ID: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
@@ -60,7 +59,7 @@ const brokerSettings = {
 	HOBO_CI_SANDBOX_PLAN: z.enum(["hobby", "pro", "enterprise"]).optional(),
 	HOBO_CI_SANDBOX_DOMAINS_JSON: z.string().min(2).max(16_384).optional(),
 };
-const brokerFields = z.object(brokerSettings);
+const hoboFields = z.object(hoboSettings);
 
 function rsaKey(value: string): boolean {
 	try {
@@ -91,8 +90,7 @@ const appSettings = {
 };
 
 /**
- * Secrets only the stateless relay reads; the Neon broker never carried
- * them. The Sandbox proxy token key: each proxy session token is derived
+ * Secrets of the relay itself. The Sandbox proxy token key: each proxy session token is derived
  * from it (an HMAC of the lease id), so no token is stored anywhere.
  */
 const relaySecrets = {
@@ -130,7 +128,7 @@ const cacheSettings = {
 
 /** The onboarding token must be one of the owner's control tokens. */
 function onboardingBinding(
-	value: z.infer<typeof brokerFields>,
+	value: z.infer<typeof hoboFields>,
 	context: z.RefinementCtx,
 ): void {
 	if (!value.HOBO_CI_ONBOARDING_CONTROL_TOKEN) return;
@@ -171,15 +169,9 @@ function onboardingBinding(
 	});
 }
 
-/** Only configuration owned by HoBo may cross the Neon broker boundary. */
-export const RuntimeBrokerConfig = brokerFields
-	.strict()
-	.superRefine(onboardingBinding);
-export type RuntimeBrokerConfig = z.infer<typeof RuntimeBrokerConfig>;
-
 /** Each setting the config service holds for the relay, with its parser. */
 export const RELAY_RUNTIME_CONFIG_SETTINGS = Object.freeze({
-	...brokerSettings,
+	...hoboSettings,
 	...appSettings,
 	...relaySecrets,
 	...cacheSettings,

@@ -80,6 +80,25 @@ export function relaySandboxCounterTtl(lease: {
 	return ttl(runMs + RELAY_TTL_MARGIN_MS);
 }
 
+/** A scanner's lock outlives one scan pass (at most five pages and twenty redeliveries). */
+export const RELAY_SCAN_LOCK_TTL_MS = 5 * MINUTE;
+/** GitHub keeps three days of delivery history; a cursor is useless after it. */
+export const RELAY_WEBHOOK_CURSOR_TTL_MS = 3 * 24 * HOUR;
+/** A delivery is not redelivered again within this cooldown. */
+export const RELAY_WEBHOOK_CLAIM_TTL_MS = 15 * MINUTE;
+/** A delivery GitHub reported delivered is remembered this long. */
+export const RELAY_WEBHOOK_SUCCESS_TTL_MS = 4 * 24 * HOUR;
+/** Redeliveries an App may request per minute, as the Postgres claims allowed. */
+export const RELAY_WEBHOOK_REDELIVERIES_PER_MINUTE = 20;
+/** GitHub REST calls the queued-job scan may spend per minute and App. */
+export const RELAY_QUEUED_API_PER_MINUTE = 10;
+/** A queued-scan cursor is due within 15 minutes; a day covers any pause. */
+export const RELAY_QUEUED_SCAN_TTL_MS = 24 * HOUR;
+/** Installations an operator verified, usable until the config service lists them. */
+export const RELAY_VERIFIED_INSTALLATION_TTL_MS = 24 * HOUR;
+/** Worker-health evidence; a missing key reads as "starting". */
+export const RELAY_WORKER_HEALTH_TTL_MS = 24 * HOUR;
+
 export const RELAY_TTL = Object.freeze({
 	terminal: ttl(RELAY_TERMINAL_TTL_MS),
 	delivery: ttl(RELAY_DELIVERY_TTL_MS),
@@ -88,7 +107,23 @@ export const RELAY_TTL = Object.freeze({
 	jobPending: ttl(RELAY_JOB_QUEUE_LIMIT_MS + RELAY_TTL_MARGIN_MS),
 	proxyRate: ttl(RELAY_PROXY_RATE_WINDOW_MS),
 	webhookRate: ttl(RELAY_WEBHOOK_RATE_WINDOW_MS),
+	scanLock: ttl(RELAY_SCAN_LOCK_TTL_MS),
+	webhookCursor: ttl(RELAY_WEBHOOK_CURSOR_TTL_MS),
+	webhookClaim: ttl(RELAY_WEBHOOK_CLAIM_TTL_MS),
+	webhookSuccess: ttl(RELAY_WEBHOOK_SUCCESS_TTL_MS),
+	minuteWindow: ttl(MINUTE),
+	queuedScan: ttl(RELAY_QUEUED_SCAN_TTL_MS),
+	verifiedInstallations: ttl(RELAY_VERIFIED_INSTALLATION_TTL_MS),
+	workerHealth: ttl(RELAY_WORKER_HEALTH_TTL_MS),
 });
+
+/** A TTL for a record that must lapse at `expiresAtMs`: at least a second, at most 30 days. */
+export function relayTtlUntil(
+	expiresAtMs: number,
+	nowMs: number,
+): EphemeralTtlMs {
+	return ttl(Math.max(1000, expiresAtMs - nowMs));
+}
 
 const SEGMENT = /^[\x21-\x7e]{1,200}$/u;
 function segment(value: string, name: string): string {
@@ -129,6 +164,47 @@ export function relayCacheKeys(environment: string) {
 		proxyRequest: (leaseId: string, requestId: string) =>
 			key(
 				`sbx:proxy-req:${segment(leaseId, "lease id")}:${segment(requestId, "request id")}`,
+			),
+		proxyMeter: (leaseId: string) =>
+			key(`sbx:proxy-meter:${segment(leaseId, "lease id")}`),
+		repairLock: (scanner: "webhook" | "queued", appId: string) =>
+			key(`repair:${scanner}:${segment(appId, "App id")}:lock`),
+		webhookCursor: (appId: string) =>
+			key(`repair:webhook:${segment(appId, "App id")}:cursor`),
+		webhookClaim: (appId: string, guid: string) =>
+			key(
+				`repair:webhook:${segment(appId, "App id")}:claim:${segment(guid, "delivery guid")}`,
+			),
+		webhookSuccess: (appId: string, guid: string) =>
+			key(
+				`repair:webhook:${segment(appId, "App id")}:ok:${segment(guid, "delivery guid")}`,
+			),
+		webhookRedeliveries: (appId: string, windowStart: number) =>
+			key(`repair:webhook:${segment(appId, "App id")}:rate:${windowStart}`),
+		queuedScan: (appId: string, scanKey: string) =>
+			key(
+				`repair:queued:${segment(appId, "App id")}:scan:${segment(scanKey, "scan key")}`,
+			),
+		queuedBudget: (appId: string, windowStart: number) =>
+			key(`repair:queued:${segment(appId, "App id")}:budget:${windowStart}`),
+		/** Session-bound records: named by an HMAC under the session key, never by a token or its digest. */
+		sealed: (
+			kind:
+				| "oauth-state"
+				| "oauth-session"
+				| "app-state"
+				| "owner-session"
+				| "invitation",
+			mac: string,
+		) => key(`${kind}:${segment(mac, "record mac")}`),
+		verifiedInstallations: (accountId: string) =>
+			key(`app:installations:${segment(accountId, "account id")}`),
+		/** Which account verified an installation first: one owner per installation. */
+		installationOwner: (installationId: number) =>
+			key(`app:installation-owner:${installationId}`),
+		workerHealth: (scope: string, component: string) =>
+			key(
+				`worker-health:${segment(scope, "health scope")}:${segment(component, "component")}`,
 			),
 		/** Ring name (not a key): the ring helper builds `ring:{<name>}:…`. */
 		feedRing: (accountId: string) =>

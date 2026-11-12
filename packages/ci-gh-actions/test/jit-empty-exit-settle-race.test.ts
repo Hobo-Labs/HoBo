@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { JobSchema, type Lease, LeaseSchema } from "@hobo/ci";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
+import type { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import * as githubModule from "../src/github.js";
@@ -68,7 +68,7 @@ describe("jit empty exit settle race", () => {
 			transition: transitionFor(lease),
 			settle,
 			withdrawQueuedJob,
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		let resolveGetJob!: (
 			value: Awaited<ReturnType<typeof githubModule.getJob>>,
 		) => void;
@@ -166,7 +166,7 @@ describe("jit empty exit settle race", () => {
 			transition: transitionFor(lease),
 			settle,
 			withdrawQueuedJob: vi.fn(async () => true),
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		vi.spyOn(githubModule, "getJob").mockResolvedValue({
 			id: 100,
 			run_id: 900,

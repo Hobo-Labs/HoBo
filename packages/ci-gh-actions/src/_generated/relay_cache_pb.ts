@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file relay_cache.proto.
  */
 export const file_relay_cache: GenFile = /*@__PURE__*/
-  fileDesc("ChFyZWxheV9jYWNoZS5wcm90bxIVaG9iby5jaS5naF9hY3Rpb25zLnYxIiwKEFJlbGF5Q2FjaGVJbnRlbnQSDAoEa2luZBgBIAEoCRIKCgJhdBgCIAEoCSKaAQoPUmVsYXlDYWNoZUxlYXNlEhIKCmxlYXNlX2pzb24YASABKAkSDwoHam9iX2tleRgCIAEoCRISCgpnZW5lcmF0aW9uGAMgASgNEjgKB2ludGVudHMYBCADKAsyJy5ob2JvLmNpLmdoX2FjdGlvbnMudjEuUmVsYXlDYWNoZUludGVudBIUCgxyZWJ1aWx0X2Zyb20YBSABKAkiOQoUUmVsYXlDYWNoZUFzc2lnbm1lbnQSEAoIbGVhc2VfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoCSL5AQoNUmVsYXlDYWNoZUpvYhIPCgdqb2Jfa2V5GAEgASgJEg0KBXN0YXRlGAIgASgJEhIKCmdlbmVyYXRpb24YAyABKA0SEAoIbGVhc2VfaWQYBCABKAkSGAoQcGVuZGluZ19qb2JfanNvbhgFIAEoCRIVCg1maXJzdF9zZWVuX2F0GAYgASgJEhkKEXF1ZXVlX2RlYWRsaW5lX2F0GAcgASgJEj0KCGFzc2lnbmVkGAggASgLMisuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5Q2FjaGVBc3NpZ25tZW50EhcKD3Rlcm1pbmFsX3JlYXNvbhgJIAEoCSKRAgoXUmVsYXlDYWNoZUluZmxpZ2h0RW50cnkSEAoIbGVhc2VfaWQYASABKAkSDwoHam9iX2tleRgCIAEoCRIQCghvZmZlcl9pZBgDIAEoCRIQCghwcm92aWRlchgEIAEoCRIbChNwcm92aWRlcl9hY2NvdW50X2lkGAUgASgJEhwKFHJlc2VydmVkX3BhaWRfbWljcm9zGAYgASgBEh0KFXJlc2VydmVkX2ZyZWVfbWludXRlcxgHIAEoARIYChByZXNlcnZlZF9taW51dGVzGAggASgBEicKH3NhbmRib3hfcmVzZXJ2ZWRfYWxsb3dhbmNlX2pzb24YCSABKAkSEgoKY3JlYXRlZF9hdBgKIAEoCSKrAQoSUmVsYXlDYWNoZUluZmxpZ2h0EhIKCmFjY291bnRfaWQYASABKAkSPwoHZW50cmllcxgCIAMoCzIuLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheUNhY2hlSW5mbGlnaHRFbnRyeRIXCg9yZWNlbnRfdGVybWluYWwYAyADKAkSEwoLaG9sZHNfa25vd24YBCABKAgSEgoKcmVidWlsdF9hdBgFIAEoCSIlChFSZWxheUNhY2hlUGVuZGluZxIQCghqb2Jfa2V5cxgBIAMoCSJPChJSZWxheUNhY2hlRGVsaXZlcnkSEwoLZmluZ2VycHJpbnQYASABKAkSEwoLcmVjZWl2ZWRfYXQYAiABKAkSDwoHaWdub3JlZBgDIAEoCCJSChdSZWxheUNhY2hlU2FuZGJveEVncmVzcxIQCghsZWFzZV9pZBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhEKCW1heF9ieXRlcxgDIAEoAWIGcHJvdG8z");
+  fileDesc("ChFyZWxheV9jYWNoZS5wcm90bxIVaG9iby5jaS5naF9hY3Rpb25zLnYxIiwKEFJlbGF5Q2FjaGVJbnRlbnQSDAoEa2luZBgBIAEoCRIKCgJhdBgCIAEoCSKaAQoPUmVsYXlDYWNoZUxlYXNlEhIKCmxlYXNlX2pzb24YASABKAkSDwoHam9iX2tleRgCIAEoCRISCgpnZW5lcmF0aW9uGAMgASgNEjgKB2ludGVudHMYBCADKAsyJy5ob2JvLmNpLmdoX2FjdGlvbnMudjEuUmVsYXlDYWNoZUludGVudBIUCgxyZWJ1aWx0X2Zyb20YBSABKAkiOQoUUmVsYXlDYWNoZUFzc2lnbm1lbnQSEAoIbGVhc2VfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoCSL5AQoNUmVsYXlDYWNoZUpvYhIPCgdqb2Jfa2V5GAEgASgJEg0KBXN0YXRlGAIgASgJEhIKCmdlbmVyYXRpb24YAyABKA0SEAoIbGVhc2VfaWQYBCABKAkSGAoQcGVuZGluZ19qb2JfanNvbhgFIAEoCRIVCg1maXJzdF9zZWVuX2F0GAYgASgJEhkKEXF1ZXVlX2RlYWRsaW5lX2F0GAcgASgJEj0KCGFzc2lnbmVkGAggASgLMisuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5Q2FjaGVBc3NpZ25tZW50EhcKD3Rlcm1pbmFsX3JlYXNvbhgJIAEoCSKRAgoXUmVsYXlDYWNoZUluZmxpZ2h0RW50cnkSEAoIbGVhc2VfaWQYASABKAkSDwoHam9iX2tleRgCIAEoCRIQCghvZmZlcl9pZBgDIAEoCRIQCghwcm92aWRlchgEIAEoCRIbChNwcm92aWRlcl9hY2NvdW50X2lkGAUgASgJEhwKFHJlc2VydmVkX3BhaWRfbWljcm9zGAYgASgBEh0KFXJlc2VydmVkX2ZyZWVfbWludXRlcxgHIAEoARIYChByZXNlcnZlZF9taW51dGVzGAggASgBEicKH3NhbmRib3hfcmVzZXJ2ZWRfYWxsb3dhbmNlX2pzb24YCSABKAkSEgoKY3JlYXRlZF9hdBgKIAEoCSKrAQoSUmVsYXlDYWNoZUluZmxpZ2h0EhIKCmFjY291bnRfaWQYASABKAkSPwoHZW50cmllcxgCIAMoCzIuLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheUNhY2hlSW5mbGlnaHRFbnRyeRIXCg9yZWNlbnRfdGVybWluYWwYAyADKAkSEwoLaG9sZHNfa25vd24YBCABKAgSEgoKcmVidWlsdF9hdBgFIAEoCSIlChFSZWxheUNhY2hlUGVuZGluZxIQCghqb2Jfa2V5cxgBIAMoCSJPChJSZWxheUNhY2hlRGVsaXZlcnkSEwoLZmluZ2VycHJpbnQYASABKAkSEwoLcmVjZWl2ZWRfYXQYAiABKAkSDwoHaWdub3JlZBgDIAEoCCJSChdSZWxheUNhY2hlU2FuZGJveEVncmVzcxIQCghsZWFzZV9pZBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhEKCW1heF9ieXRlcxgDIAEoASJCChVSZWxheUNhY2hlV2ViaG9va1NjYW4SEgoKY3Vyc29yX3VybBgBIAEoCRIVCg1jaGVja3BvaW50X2F0GAIgASgJIo4BChZSZWxheUNhY2hlUXVldWVkQ3Vyc29yEgwKBHBhZ2UYASABKA0SDAoEcnVucxgCIAMoARIOCgZsb2FkZWQYAyABKAgSEAoIaGFzX25leHQYBCABKAgSEQoJcnVuX2luZGV4GAUgASgNEhAKCGpvYl9wYWdlGAYgASgNEhEKCWpvYl9pbmRleBgHIAEoDSJ5ChRSZWxheUNhY2hlUXVldWVkU2NhbhI9CgZjdXJzb3IYASABKAsyLS5ob2JvLmNpLmdoX2FjdGlvbnMudjEuUmVsYXlDYWNoZVF1ZXVlZEN1cnNvchIOCgZkdWVfbXMYAiABKAESEgoKdG91Y2hlZF9tcxgDIAEoASJFChBSZWxheUNhY2hlU2VhbGVkEg4KBmtleV9pZBgBIAEoCRINCgVub25jZRgCIAEoDBISCgpjaXBoZXJ0ZXh0GAMgASgMIoIBChRSZWxheUNhY2hlT0F1dGhTdGF0ZRIWCg5icm93c2VyX2RpZ2VzdBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhAKCHZlcmlmaWVyGAMgASgJEhUKDWNvbnRyb2xfdG9rZW4YBCABKAkSFQoNZXhwaXJlc19hdF9tcxgFIAEoASKDAQoWUmVsYXlDYWNoZU9BdXRoU2Vzc2lvbhISCgphY2NvdW50X2lkGAEgASgJEhEKCWdpdGh1Yl9pZBgCIAEoARIUCgxnaXRodWJfdG9rZW4YAyABKAkSFQoNY29udHJvbF90b2tlbhgEIAEoCRIVCg1leHBpcmVzX2F0X21zGAUgASgBImEKElJlbGF5Q2FjaGVBcHBTdGF0ZRIPCgdwdXJwb3NlGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSDwoHc3ViamVjdBgDIAEoCRIVCg1leHBpcmVzX2F0X21zGAQgASgBIlsKH1JlbGF5Q2FjaGVWZXJpZmllZEluc3RhbGxhdGlvbnMSEgoKYWNjb3VudF9pZBgBIAEoCRIOCgZhcHBfaWQYAiABKAESFAoMdmVyaWZpZWRfaWRzGAMgAygBIkMKFlJlbGF5Q2FjaGVPd25lclNlc3Npb24SEgoKYWNjb3VudF9pZBgBIAEoCRIVCg1leHBpcmVzX2F0X21zGAIgASgBInEKFFJlbGF5Q2FjaGVQcm94eU1ldGVyEhAKCGxlYXNlX2lkGAEgASgJEhgKEHByb3h5X3Nlc3Npb25faWQYAiABKAkSDQoFYnl0ZXMYAyABKAESDQoFY2FsbHMYBCABKAESDwoHcmVhZF9hdBgFIAEoCWIGcHJvdG8z");
 
 /**
  * An intent recorded on the lease before an external call: the event type
@@ -374,4 +374,353 @@ export type RelayCacheSandboxEgress = Message<"hobo.ci.gh_actions.v1.RelayCacheS
  */
 export const RelayCacheSandboxEgressSchema: GenMessage<RelayCacheSandboxEgress> = /*@__PURE__*/
   messageDesc(file_relay_cache, 8);
+
+/**
+ * `repair:webhook:<appId>:cursor`. Where the App's delivery-history scan
+ * resumes (the next page URL of `GET /app/hook/deliveries`). Lost: the scan
+ * restarts from the newest page.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheWebhookScan
+ */
+export type RelayCacheWebhookScan = Message<"hobo.ci.gh_actions.v1.RelayCacheWebhookScan"> & {
+  /**
+   * @generated from field: string cursor_url = 1;
+   */
+  cursorUrl: string;
+
+  /**
+   * @generated from field: string checkpoint_at = 2;
+   */
+  checkpointAt: string;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheWebhookScan.
+ * Use `create(RelayCacheWebhookScanSchema)` to create a new message.
+ */
+export const RelayCacheWebhookScanSchema: GenMessage<RelayCacheWebhookScan> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 9);
+
+/**
+ * The queued-job scan's position in one repository and run status.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheQueuedCursor
+ */
+export type RelayCacheQueuedCursor = Message<"hobo.ci.gh_actions.v1.RelayCacheQueuedCursor"> & {
+  /**
+   * @generated from field: uint32 page = 1;
+   */
+  page: number;
+
+  /**
+   * @generated from field: repeated double runs = 2;
+   */
+  runs: number[];
+
+  /**
+   * @generated from field: bool loaded = 3;
+   */
+  loaded: boolean;
+
+  /**
+   * @generated from field: bool has_next = 4;
+   */
+  hasNext: boolean;
+
+  /**
+   * @generated from field: uint32 run_index = 5;
+   */
+  runIndex: number;
+
+  /**
+   * @generated from field: uint32 job_page = 6;
+   */
+  jobPage: number;
+
+  /**
+   * @generated from field: uint32 job_index = 7;
+   */
+  jobIndex: number;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheQueuedCursor.
+ * Use `create(RelayCacheQueuedCursorSchema)` to create a new message.
+ */
+export const RelayCacheQueuedCursorSchema: GenMessage<RelayCacheQueuedCursor> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 10);
+
+/**
+ * `repair:queued:<appId>:scan:<accountId>:<installationId>:<repositoryId>:<status>`.
+ * Replaces a `hobo_ci_queued_scans` row: the cursor, when it is next due and
+ * when it was last advanced (oldest first). Lost: that key starts over.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheQueuedScan
+ */
+export type RelayCacheQueuedScan = Message<"hobo.ci.gh_actions.v1.RelayCacheQueuedScan"> & {
+  /**
+   * @generated from field: hobo.ci.gh_actions.v1.RelayCacheQueuedCursor cursor = 1;
+   */
+  cursor?: RelayCacheQueuedCursor | undefined;
+
+  /**
+   * @generated from field: double due_ms = 2;
+   */
+  dueMs: number;
+
+  /**
+   * @generated from field: double touched_ms = 3;
+   */
+  touchedMs: number;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheQueuedScan.
+ * Use `create(RelayCacheQueuedScanSchema)` to create a new message.
+ */
+export const RelayCacheQueuedScanSchema: GenMessage<RelayCacheQueuedScan> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 11);
+
+/**
+ * A value sealed with AES-256-GCM under a key derived from the session key
+ * in the config service. `key_id` names the derived key, so a rotated session
+ * key reads old records as absent (a new sign-in), never as garbage.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheSealed
+ */
+export type RelayCacheSealed = Message<"hobo.ci.gh_actions.v1.RelayCacheSealed"> & {
+  /**
+   * @generated from field: string key_id = 1;
+   */
+  keyId: string;
+
+  /**
+   * @generated from field: bytes nonce = 2;
+   */
+  nonce: Uint8Array;
+
+  /**
+   * Ciphertext with the 16-byte authentication tag appended.
+   *
+   * @generated from field: bytes ciphertext = 3;
+   */
+  ciphertext: Uint8Array;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheSealed.
+ * Use `create(RelayCacheSealedSchema)` to create a new message.
+ */
+export const RelayCacheSealedSchema: GenMessage<RelayCacheSealed> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 12);
+
+/**
+ * Sealed in `oauth:state:<hmac>`: one GitHub OAuth `state`, consumed once.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheOAuthState
+ */
+export type RelayCacheOAuthState = Message<"hobo.ci.gh_actions.v1.RelayCacheOAuthState"> & {
+  /**
+   * @generated from field: string browser_digest = 1;
+   */
+  browserDigest: string;
+
+  /**
+   * @generated from field: string account_id = 2;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string verifier = 3;
+   */
+  verifier: string;
+
+  /**
+   * @generated from field: string control_token = 4;
+   */
+  controlToken: string;
+
+  /**
+   * @generated from field: double expires_at_ms = 5;
+   */
+  expiresAtMs: number;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheOAuthState.
+ * Use `create(RelayCacheOAuthStateSchema)` to create a new message.
+ */
+export const RelayCacheOAuthStateSchema: GenMessage<RelayCacheOAuthState> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 13);
+
+/**
+ * Sealed in `oauth:session:<hmac>`: one operator session for fifteen minutes.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheOAuthSession
+ */
+export type RelayCacheOAuthSession = Message<"hobo.ci.gh_actions.v1.RelayCacheOAuthSession"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: double github_id = 2;
+   */
+  githubId: number;
+
+  /**
+   * @generated from field: string github_token = 3;
+   */
+  githubToken: string;
+
+  /**
+   * @generated from field: string control_token = 4;
+   */
+  controlToken: string;
+
+  /**
+   * @generated from field: double expires_at_ms = 5;
+   */
+  expiresAtMs: number;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheOAuthSession.
+ * Use `create(RelayCacheOAuthSessionSchema)` to create a new message.
+ */
+export const RelayCacheOAuthSessionSchema: GenMessage<RelayCacheOAuthSession> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 14);
+
+/**
+ * `app:state:<hmac>`: one App-installation `state`, consumed once.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheAppState
+ */
+export type RelayCacheAppState = Message<"hobo.ci.gh_actions.v1.RelayCacheAppState"> & {
+  /**
+   * @generated from field: string purpose = 1;
+   */
+  purpose: string;
+
+  /**
+   * @generated from field: string account_id = 2;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string subject = 3;
+   */
+  subject: string;
+
+  /**
+   * @generated from field: double expires_at_ms = 4;
+   */
+  expiresAtMs: number;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheAppState.
+ * Use `create(RelayCacheAppStateSchema)` to create a new message.
+ */
+export const RelayCacheAppStateSchema: GenMessage<RelayCacheAppState> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 15);
+
+/**
+ * `app:installations:<accountId>`. Installations an operator proved they
+ * administer in the last day, usable until `hobo ci` writes them into the
+ * config service. Never a source of configuration.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheVerifiedInstallations
+ */
+export type RelayCacheVerifiedInstallations = Message<"hobo.ci.gh_actions.v1.RelayCacheVerifiedInstallations"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: double app_id = 2;
+   */
+  appId: number;
+
+  /**
+   * @generated from field: repeated double verified_ids = 3;
+   */
+  verifiedIds: number[];
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheVerifiedInstallations.
+ * Use `create(RelayCacheVerifiedInstallationsSchema)` to create a new message.
+ */
+export const RelayCacheVerifiedInstallationsSchema: GenMessage<RelayCacheVerifiedInstallations> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 16);
+
+/**
+ * `owner:session:<hmac>`: an owner who redeemed the onboarding invitation,
+ * for ten minutes.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheOwnerSession
+ */
+export type RelayCacheOwnerSession = Message<"hobo.ci.gh_actions.v1.RelayCacheOwnerSession"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: double expires_at_ms = 2;
+   */
+  expiresAtMs: number;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheOwnerSession.
+ * Use `create(RelayCacheOwnerSessionSchema)` to create a new message.
+ */
+export const RelayCacheOwnerSessionSchema: GenMessage<RelayCacheOwnerSession> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 17);
+
+/**
+ * `sbx:proxy-meter:<leaseId>`. What the lease's proxy VM reported it
+ * reserved (bytes) and how many quota calls it made, read from the VM before
+ * it was stopped. The VM is the authority; settlement charges the larger of
+ * this and the relay's own counters.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.RelayCacheProxyMeter
+ */
+export type RelayCacheProxyMeter = Message<"hobo.ci.gh_actions.v1.RelayCacheProxyMeter"> & {
+  /**
+   * @generated from field: string lease_id = 1;
+   */
+  leaseId: string;
+
+  /**
+   * @generated from field: string proxy_session_id = 2;
+   */
+  proxySessionId: string;
+
+  /**
+   * @generated from field: double bytes = 3;
+   */
+  bytes: number;
+
+  /**
+   * @generated from field: double calls = 4;
+   */
+  calls: number;
+
+  /**
+   * @generated from field: string read_at = 5;
+   */
+  readAt: string;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayCacheProxyMeter.
+ * Use `create(RelayCacheProxyMeterSchema)` to create a new message.
+ */
+export const RelayCacheProxyMeterSchema: GenMessage<RelayCacheProxyMeter> = /*@__PURE__*/
+  messageDesc(file_relay_cache, 18);
 

@@ -225,9 +225,7 @@ describe("the declaration and the platform configuration agree", () => {
 
 describe("the declared settings and the deployed code agree", () => {
 	// Every HOBO_CI_* and CRON_SECRET name the deployed code mentions: the
-	// sources the queue and HTTP entries reach through their imports. Code
-	// off that path (the PostgreSQL composition and the Neon broker, removed
-	// in phase 7) is not deployed and declares nothing here.
+	// sources the queue and HTTP entries reach through their imports.
 	const SETTING =
 		/\b(?:HOBO_CI_[A-Z0-9_]+|CRON_SECRET|DATABASE_URL(?:_UNPOOLED)?)\b/gu;
 	const reached = new Set<string>();
@@ -251,11 +249,8 @@ describe("the declared settings and the deployed code agree", () => {
 		[...reached].flatMap((file) => text(file).match(SETTING) ?? []),
 	);
 
-	it("reaches the stateless composition and not the PostgreSQL one", () => {
+	it("reaches the stateless composition and reads no database URL", () => {
 		expect(reached).toContain("src/stateless-composition.ts");
-		expect(reached).not.toContain("src/composition.ts");
-		expect(reached).not.toContain("src/relay-composition.ts");
-		expect(reached).not.toContain("src/runtime-config-client.ts");
 		expect([...read].filter((name) => name.startsWith("DATABASE_URL"))).toEqual(
 			[],
 		);

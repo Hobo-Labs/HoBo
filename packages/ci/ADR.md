@@ -85,7 +85,7 @@ these changes ([design](../../docs/design/hosted-relay-stateless.md)):
   state lives in a Redis-protocol cache with TTL and compare-and-set, rebuilt
   from GitHub and Vercel by deterministic lease names when lost. The event
   journal, terminal tombstones and the partition lock are not kept there.
-  `PostgresCiStore`, its schema and migrations are removed in phase 7.
+  `PostgresCiStore`, its schema and migrations were removed in phase 7.
 - "Production control-plane policy and setup operations": on the hosted relay
   configuration is read-only, held in a separate config service and written by
   `hobo ci`, not by a configuration CAS in the relay's store. Each lease keeps

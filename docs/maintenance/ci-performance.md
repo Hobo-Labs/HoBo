@@ -17,9 +17,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
-  Postgres quota or webhook relay does. `HOBO_CI_STORE=postgres` (or `"store": {"kind": "postgres",
-  "urlEnv": …}` in the CI project config) keeps the shared-relay path. `ci-store-contract.test.ts` runs
-  one suite against both stores; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
+  Postgres quota or webhook relay does. SQLite is the only store: the shared-Postgres option was removed
+  with the hosted relay's database (ADR-0179 phase 7). `ci-store-contract.test.ts` runs the store
+  contract against it; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
 - **Pinned SBOM scanner.** `syft@1.56.0` is pinned through mise for the hermetic runner image, so runner and release SBOM generation use the same reproducible scanner version.
 - **Shared pnpm store.** The box worker bind-mounts one content-addressed store into every job container
   and sets `HOBO_CI_PNPM_STORE_MOUNTED=1`; `.github/actions/pnpm-store` reads that from the process env

@@ -67,8 +67,6 @@ export {
 } from "./github.js";
 export { verifyConvertedGithubApp } from "./github-app-manifest-validation.js";
 export { withGithubReadCache } from "./github-read-cache.js";
-export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
-export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export {
 	createHostedControlPlane,
 	isConfigWriteRoute,
@@ -87,10 +85,6 @@ export {
 	type HostedRelayTickTiming,
 	intentCutoffMs,
 } from "./hosted-runtime.js";
-export {
-	hostedRelaySchemaMigrations,
-	initializeHostedRelaySchema,
-} from "./hosted-schema.js";
 export {
 	createRelayHandler,
 	type HostedRelayApplication,
@@ -228,11 +222,6 @@ export {
 	createPollIngestCoalesce,
 	type PollIngestCoalesce,
 } from "./isolated-worker/poll-ingest-coalesce.js";
-export {
-	attachPostgresPoolErrorHandler,
-	formatPoolErrorLog,
-	redactPoolErrorMessage,
-} from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
@@ -370,10 +359,7 @@ export {
 	createCiSecretDirectoryResolver,
 	resolveCiSecrets,
 } from "./project-secrets.js";
-export {
-	createQueuedJobRepair,
-	PostgresQueuedJobRepairClaims,
-} from "./queued-job-repair.js";
+export { createQueuedJobRepair } from "./queued-job-repair.js";
 export { createRelayHost, type RelayAgent } from "./relay-host.js";
 export {
 	createRelayMcp,
@@ -419,13 +405,15 @@ export {
 	type RelayServiceLog,
 	type RelayServiceOptions,
 } from "./service.js";
+export {
+	createStatelessAppOnboarding,
+	type StatelessAppOnboardingOptions,
+	type StatelessOwnerInvitation,
+} from "./stateless-app-onboarding.js";
 export { LeaseStore } from "./store.js";
 export {
 	type CiProjectContentFetcher,
 	createGithubCiProjectFetcher,
 	createWebhookIngressHandler,
 } from "./webhook-ingress.js";
-export {
-	createWebhookRepair,
-	PostgresWebhookRepairClaims,
-} from "./webhook-repair.js";
+export { createWebhookRepair } from "./webhook-repair.js";

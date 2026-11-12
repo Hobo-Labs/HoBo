@@ -144,7 +144,7 @@ Avoid shared/global files unless the task explicitly requires them:
 
 Do not hand-edit generated files. Avoid manual barrel-file edits; prefer direct imports or generated barrels. Split shared fixtures into scenario/domain-local files when a task needs fixture changes. Change `package.json` or lockfiles only for dependency-related tasks.
 
-The generated-files pre-commit guard (`scripts/no-hand-edited-generated-files.mts`) accepts generated-output changes only when the same commit also touches their driving sources: protobuf/CUE schemas, WIT interfaces, or a recognized generator (schema-tools, `packages/wit` codegen + `wit-lock.json`). Regenerate with the owning codegen command (`pnpm run codegen`, `pnpm --filter @hobo/wit run wit:gen`) rather than editing outputs. A relay package's shipped migrations (`src/_generated-assets/schema-migrations.ts`, the copy of its `db/migrations/` a host applies at run time) are accepted when the relay schema tooling's database-free check says the module is exactly what `db/migrations/` loads to; regenerate them with `pnpm --filter <package> run db:ship` (`db:generate` does it too).
+The generated-files pre-commit guard (`scripts/no-hand-edited-generated-files.mts`) accepts generated-output changes only when the same commit also touches their driving sources: protobuf/CUE schemas, WIT interfaces, or a recognized generator (schema-tools, `packages/wit` codegen + `wit-lock.json`). Regenerate with the owning codegen command (`pnpm run codegen`, `pnpm --filter @hobo/wit run wit:gen`) rather than editing outputs.
 
 ## Generated-art rules (Spriterrific, Higgsfield, any image/video model)
 

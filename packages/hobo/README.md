@@ -416,12 +416,12 @@ change.**
 
 ```text
 Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.
-Deploy hobo-ci-relay (queue hobo-ci, schedule hobo-ci-repair, api relay, secret secrets, data state)
+Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)
   to Vercel project hobo-ci, scope team_hobo, target preview
   from github example/hobo@main
   into a project that must already exist (pass --create-project to create it)
 Settings set for preview first (non-secret): HOBO_CI_PUBLIC_URL=https://ci.example.test
-Not set by this command (the operator or a storage integration holds them): CRON_SECRET, DATABASE_URL, …
+Not set by this command (the operator or a storage integration holds them): CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256, …
 Requests to https://api.vercel.com:
   1. GET /v10/projects/hobo-ci/env?teamId=team_hobo
      always: read what the project holds, before any write

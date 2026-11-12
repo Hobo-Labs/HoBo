@@ -126,16 +126,16 @@ way:
 
 | Piece | In this topology | Needs |
 |---|---|---|
-| Lease journal | SQLite file on the box (`HOBO_CI_STORE` unset; the default) | Local disk |
+| Lease journal | SQLite file on the box (the only store) | Local disk |
 | Finding jobs | The worker polls GitHub (`pull` admission; the default with SQLite) | GitHub |
 | Starting runners | The worker mints just-in-time runners with its own App credentials | GitHub |
 | Sharing a queue between workers | Relay mesh | NATS, or nothing: ranking alone still works |
 | Hosted relay on Vercel | Not involved | — |
 
-The settings that would tie a worker to the hosted database are
-`HOBO_CI_STORE=postgres` and `HOBO_CI_JOB_ADMISSION=push`. Neither is a
-default, and a mesh needs neither; the mesh gate applies only to `pull`.
-`HOBO_CI_STORE=postgres` is removed under
+The one setting that would tie a worker to the hosted relay is
+`HOBO_CI_JOB_ADMISSION=push`. It is not a default, and a mesh does not need
+it; the mesh gate applies only to `pull`. The shared Postgres store
+(`HOBO_CI_STORE=postgres`) was removed in phase 7 of
 [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179): the hosted relay keeps
 no database for a worker to share.
 
@@ -184,10 +184,10 @@ secrets move to a separate config service it reads with its Vercel OIDC token
 Redis-protocol cache with TTL and compare-and-set, its webhook intake and
 per-lease steps move to Vercel Queues, and GitHub remains the record of every
 job. The PostgreSQL store, the relay database fleet, store selection and the
-Drizzle relay schema are removed in phase 7 of
-[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md#delivery-plan).
-Until then the relay still runs on Postgres as
-[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md#database) describes.
+Drizzle relay schema were removed in phase 7 of
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md#delivery-plan);
+the relay runs as [`@hobo/ci-vercel`](../../packages/ci-vercel/README.md#the-stateless-relay)
+describes.
 
 **A shared budget across nodes** is not solved either: each node meters its own
 spend, so priced offers belong on one node until per-node allowances exist
