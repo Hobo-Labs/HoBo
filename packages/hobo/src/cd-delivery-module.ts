@@ -47,6 +47,17 @@ export const DELIVERY_MODULE_EXPORTS = Object.freeze({
 	publishers: TrustedPublisherRecordSchema,
 } as const);
 
+/**
+ * Topology a delivery module may also declare: `yards` (@hobo/yards Yards)
+ * and `camps` (CdTopologyCamp records). They are not applied: the topology
+ * loader (cd-topology.ts) parses them when the module is a topology file.
+ */
+// public-contract: the delivery module's topology export names.
+export const DELIVERY_MODULE_TOPOLOGY_EXPORTS = Object.freeze([
+	"yards",
+	"camps",
+] as const);
+
 // domain-view: parsed delivery module (arrays of generated records).
 export type DeliveryModule = Readonly<{
 	sources: readonly FreightSourceRecord[];
@@ -103,6 +114,7 @@ export function parseDeliveryModule(
 			: exports;
 	const known = new Set<string>([
 		...Object.keys(DELIVERY_MODULE_EXPORTS),
+		...DELIVERY_MODULE_TOPOLOGY_EXPORTS,
 		"default",
 	]);
 	const unknown = Object.keys(root).filter((key) => !known.has(key));
@@ -159,13 +171,26 @@ export type ModuleImporter = (
 	path: string,
 ) => Promise<Readonly<Record<string, unknown>>>;
 
+// One tsx loader for the process. `tsImport` registers a new loader chain per
+// call, and every later import pays for all of them: a long-lived process
+// (`serve cd`, a test run) loading several delivery/topology modules slowed
+// to seconds per import.
+let tsLoader: Promise<(specifier: string, parent: string) => Promise<unknown>>;
+
+function typescriptImport(): typeof tsLoader {
+	tsLoader ??= import("tsx/esm/api").then(
+		({ register }) => register({ namespace: "hobo-cd-delivery" }).import,
+	);
+	return tsLoader;
+}
+
 /** Load a `.ts`/`.mts` module through tsx, any other module natively. */
 export const defaultModuleImporter: ModuleImporter = async (path) => {
 	const url = pathToFileURL(path).href;
 	if (/\.(c|m)?ts$/.test(path)) {
-		const { tsImport } = await import("tsx/esm/api");
+		const load = await typescriptImport();
 		// SAFETY: a module namespace object.
-		return (await tsImport(url, import.meta.url)) as Record<string, unknown>;
+		return (await load(url, import.meta.url)) as Record<string, unknown>;
 	}
 	// SAFETY: a module namespace object.
 	return (await import(url)) as Record<string, unknown>;

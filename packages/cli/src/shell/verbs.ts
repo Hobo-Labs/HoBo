@@ -249,6 +249,11 @@ export const projectScopedVerbs = new Set(
 				"yard",
 				"station",
 				"replay",
+				// CD runs against the Station's journal and declared topology
+				// (`--yard`), never the Bindle in cwd (packages/hobo/CD.md).
+				"deploy",
+				"incident",
+				"serve",
 			].includes(verb),
 	),
 );
@@ -430,7 +435,12 @@ IDs do not apply.
 		return `HoBo deploy
 
 Usage:
-  hobo deploy <subcommand> [--format json|text] [--simulate]
+  hobo deploy <subcommand> [--format json|text] [--simulate] [--yard <file,...>]
+
+Each subcommand takes exactly the flags its usage line names, plus --format,
+--simulate and --yard (Yard/Camp topology: a yard.ts module, or a delivery
+module exporting yards/camps; also HOBO_CD_TOPOLOGY). Any other flag is
+refused with Unknown option. No Bindle is needed in the working directory.
 
 Freight:
   hobo deploy freight record --file <freight-manifest.json>

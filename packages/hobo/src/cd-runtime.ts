@@ -22,6 +22,7 @@ import {
 	ReasonRecordSchema,
 	type ReconcilerId,
 	ReconcilerMode,
+	type TelemetrySink,
 	type TopologyReader,
 } from "@hobo/cd";
 // binds at merge (plan 0024): the authz baseline pack is WP19.
@@ -54,8 +55,10 @@ import type { Yard } from "@hobo/yards";
 import type { CdDeployHost } from "./cd-deploy.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import {
+	loadTopologyFiles,
 	mergeTopologyReaders,
 	staticTopologyReader,
+	TopologyConflictError,
 	yardTopology,
 } from "./cd-topology.js";
 
@@ -72,6 +75,11 @@ export type CdRuntimeOptions = Readonly<{
 	store?: DurableEventStore;
 	openStore?: CdStoreOpener;
 	yards?: readonly Yard[];
+	/**
+	 * Topology files (`--yard`, HOBO_CD_TOPOLOGY): Yard modules or delivery
+	 * modules exporting `yards`/`camps`, parsed once (cd-topology.ts).
+	 */
+	topologyFiles?: readonly string[];
 	/** Extra topology sources (e.g. an imported ClusterProfile inventory). */
 	topology?: readonly TopologyReader[];
 	http?: HttpTransport;
@@ -131,6 +139,12 @@ export function envCredentials(
 	};
 }
 
+/** Telemetry when no OTLP endpoint is configured: nothing leaves the process. */
+export const DISABLED_TELEMETRY: TelemetrySink = Object.freeze({
+	spans: async () => {},
+	metrics: async () => {},
+});
+
 function refusal(code: string, message: string, remediation: string) {
 	return {
 		ok: false as const,
@@ -149,6 +163,25 @@ export async function openCdRuntime(
 	});
 	if (!parsed.ok) return parsed;
 	const config = parsed.value;
+	// Declared topology is read before the journal opens: a malformed file
+	// refuses the command with nothing opened.
+	const declared = await loadTopologyFiles(options.topologyFiles ?? [], {
+		cwd: options.cwd,
+		stationId: config.stationId,
+	});
+	if (!declared.ok)
+		return refusal(declared.code, declared.message, declared.remediation);
+	let declaredTopology: TopologyReader;
+	try {
+		declaredTopology = staticTopologyReader([
+			...yardTopology(options.yards ?? [], config.stationId),
+			...declared.value,
+		]);
+	} catch (error) {
+		if (error instanceof TopologyConflictError)
+			return refusal(error.code, error.message, error.remediation);
+		throw error;
+	}
 	const now = options.now ?? (() => Date.now());
 	const principal = options.principal ?? cdPrincipal(options.env);
 	let opened: Awaited<ReturnType<CdStoreOpener>> | undefined;
@@ -184,7 +217,7 @@ export async function openCdRuntime(
 		return kube;
 	}
 	const topology = mergeTopologyReaders([
-		staticTopologyReader(yardTopology(options.yards ?? [], config.stationId)),
+		declaredTopology,
 		...(kube?.value.topology ? [kube.value.topology] : []),
 		...(options.topology ?? []),
 	]);
@@ -267,9 +300,11 @@ export async function openCdRuntime(
 		...(options.readCiArtifact
 			? { readCiArtifact: options.readCiArtifact }
 			: undefined),
+		// Telemetry is opt-in (CD.md): without an OTLP endpoint nothing is
+		// exported, rather than the sink's localhost default being retried.
 		...(config.telemetryEndpoint
 			? { telemetryEndpoint: config.telemetryEndpoint }
-			: undefined),
+			: { telemetry: DISABLED_TELEMETRY }),
 	});
 	const ctx: CdContext = { tenant: config.tenant, principal, now };
 	const conductor = (
@@ -364,12 +399,12 @@ export function agentReconciler(
 		transport,
 		realizer: input.realizer,
 		drift: createDriftPolicy(),
-		telemetry: defaultCdFactories.createTelemetrySink({
-			http,
-			...(input.telemetryEndpoint
-				? { endpoint: input.telemetryEndpoint }
-				: undefined),
-		}),
+		telemetry: input.telemetryEndpoint
+			? defaultCdFactories.createTelemetrySink({
+					http,
+					endpoint: input.telemetryEndpoint,
+				})
+			: DISABLED_TELEMETRY,
 	});
 }
 
