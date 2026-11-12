@@ -30,9 +30,9 @@ import {
 } from "../jit-empty-exit-backoff.js";
 import {
 	correlateRunnerOnRun,
-	RUNNER_HELD_JOB_STATUSES,
 	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
+	servedGitHubJobBlocksSettlement,
 } from "../jit-runner-correlation.js";
 import { deregisterGithubRunner } from "../jit-runner-deregister.js";
 import {
@@ -386,6 +386,7 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_jit_empty_exit_backoff"
 			| "hobo_ci_jit_runner_served_other_job"
 			| "hobo_ci_jit_runner_custody_transferred"
+			| "hobo_ci_jit_settle_deferred_active_custody"
 			| "hobo_ci_jit_idle_listener_release"
 			| "hobo_ci_jit_runner_deregistered"
 			| "hobo_ci_jit_runner_ghost_released"
@@ -1080,9 +1081,8 @@ export function createIsolatedContainerController(options: {
 				)
 					throw new Error("isolated session changed during stop");
 				if (entry.sandboxStage !== "stopped") {
-					if (removalConfirmed) throw new Error("stop was not recorded");
-					if (entry.usageCompletedAt)
-						throw new Error("existing usage completion cannot be replaced");
+					if (removalConfirmed && !entry.usageCompletedAt)
+						throw new Error("stop was not recorded");
 					entry.sandboxStage = "stopped";
 				}
 				if (removalConfirmed && !entry.usageCompletedAt)
@@ -1095,7 +1095,46 @@ export function createIsolatedContainerController(options: {
 		return updated;
 	};
 
-	const settleStopped = async (lease: Lease): Promise<void> => {
+	const jitRunnerBlocksSettlement = async (lease: Lease): Promise<boolean> => {
+		if (!lease.runnerName) return false;
+		try {
+			const assignment = await resolveRunnerAssignedJob(
+				options.github,
+				lease.installationId,
+				lease.repository,
+				lease.runnerName,
+				lease.runnerId,
+				{
+					reservedJobId: lease.jobId,
+					preferRunIds: [lease.originalRunId],
+				},
+			);
+			if (runnerHoldsActiveJob(assignment)) return true;
+		} catch {
+			// Fall through to getJob when assignment cannot be resolved.
+		}
+		const servedJobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+		try {
+			const job = await getJob(
+				options.github,
+				lease.installationId,
+				lease.repository,
+				servedJobId,
+			);
+			return servedGitHubJobBlocksSettlement(lease, {
+				status: job.status,
+				runner_id: job.runner_id ?? null,
+				runner_name: job.runner_name ?? null,
+			});
+		} catch {
+			return false;
+		}
+	};
+
+	const settleStopped = async (
+		lease: Lease,
+		opts?: Readonly<{ force?: boolean }>,
+	): Promise<void> => {
 		// Shared-budget settlement without final provider evidence deliberately
 		// leaves an estimated liability uncertain. Do not repeatedly settle and
 		// requeue it while waiting for the separate evidence reconciliation.
@@ -1120,23 +1159,15 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
-		if (lease.runnerName) {
-			try {
-				const assignment = await resolveRunnerAssignedJob(
-					options.github,
-					lease.installationId,
-					lease.repository,
-					lease.runnerName,
-					lease.runnerId,
-					{
-						reservedJobId: lease.jobId,
-						preferRunIds: [lease.originalRunId],
-					},
-				);
-				if (runnerHoldsActiveJob(assignment)) return;
-			} catch {
-				// Fall through to getJob when assignment cannot be resolved.
-			}
+		if (!opts?.force && (await jitRunnerBlocksSettlement(lease))) {
+			options.log?.("hobo_ci_jit_settle_deferred_active_custody", {
+				leaseId: lease.id,
+				reservedJobId: lease.jobId,
+				servedJobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+				runnerName: lease.runnerName,
+				runnerId: lease.runnerId,
+			});
+			return;
 		}
 		const servedJobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 		const original = await getJob(
@@ -1145,13 +1176,6 @@ export function createIsolatedContainerController(options: {
 			lease.repository,
 			servedJobId,
 		);
-		if (
-			RUNNER_HELD_JOB_STATUSES.has(original.status) &&
-			(lease.runnerId > 0
-				? original.runner_id === lease.runnerId
-				: original.runner_name?.trim() === lease.runnerName.trim())
-		)
-			return;
 		const custody = runnerCustody(original.runner_name);
 		const emptyKey = jitEmptyExitKey(
 			lease.repositoryId,
@@ -1705,6 +1729,7 @@ export function createIsolatedContainerController(options: {
 			}
 		},
 		async reconcile(id: string, forceStop?: boolean) {
+			const deferStopForActiveCustody = forceStop !== true;
 			let lease = await options.store.get(id);
 			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
 			const reservedJobId = lease.jobId;
@@ -1797,7 +1822,7 @@ export function createIsolatedContainerController(options: {
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
 					lease = await markStopped(lease, true);
-					await settleStopped(lease);
+					await settleStopped(lease, { force: forceStop === true });
 					await cleanupWorkDirectory(lease);
 					return;
 				}
@@ -2016,6 +2041,12 @@ export function createIsolatedContainerController(options: {
 					if (!stop) return;
 				}
 			}
+			if (
+				stop &&
+				deferStopForActiveCustody &&
+				(await jitRunnerBlocksSettlement(lease))
+			)
+				return;
 			let removed = false;
 			try {
 				try {
@@ -2046,7 +2077,7 @@ export function createIsolatedContainerController(options: {
 				} catch {
 					throw new Error("container stop uncertain");
 				}
-				await settleStopped(lease);
+				await settleStopped(lease, { force: forceStop === true });
 				if (
 					containerFailed &&
 					!deadWhileRunning &&

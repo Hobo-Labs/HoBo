@@ -21,7 +21,7 @@ Poll coalescing (#1819) and lease cancel grant release (#1797) were not the prim
 
 ## Fix
 
-`packages/ci-gh-actions`: pin `actualJobId` / `originalRunId` to GitHub’s served job (including run-id-only drift), withdraw the reserved queued job once on custody transfer, refuse stop/deregister while active custody holds, resolve orphan run ids from GitHub, and follow `actualJobId` for storage grant maintain/release.
+`packages/ci-gh-actions`: pin `actualJobId` / `originalRunId` to GitHub’s served job (including run-id-only drift), withdraw the reserved queued job once on custody transfer, refuse stop/deregister while the served job is executing (not merely queued), settle/deregister/release grants once it completes, treat durable `usageCompletedAt` as stop intent, resolve orphan run ids from GitHub, and follow `actualJobId` for storage grant maintain/release.
 
 ## Gates
 

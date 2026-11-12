@@ -3,6 +3,8 @@ import * as githubModule from "../src/github.js";
 import {
 	correlateRunnerOnRun,
 	resolveRunnerAssignedJob,
+	runnerMatchesGitHubJob,
+	servedGitHubJobBlocksSettlement,
 } from "../src/jit-runner-correlation.js";
 
 describe("correlateRunnerOnRun", () => {
@@ -99,5 +101,39 @@ describe("correlateRunnerOnRun", () => {
 			}),
 		).resolves.toEqual({ jobId: 200, runId: 901, status: "in_progress" });
 		vi.restoreAllMocks();
+	});
+});
+
+describe("settlement custody helpers", () => {
+	const runnerName = "hobo-237f4d7d-0700-466a-9140-8cbc4d241cc7";
+	const lease = { runnerId: 99, runnerName };
+
+	it("matches by runner name when runner_id is missing", () => {
+		expect(
+			runnerMatchesGitHubJob(lease, {
+				runner_id: null,
+				runner_name: runnerName,
+			}),
+		).toBe(true);
+	});
+
+	it("does not block settlement for a queued reserved job on another runner", () => {
+		expect(
+			servedGitHubJobBlocksSettlement(lease, {
+				status: "queued",
+				runner_id: null,
+				runner_name: null,
+			}),
+		).toBe(false);
+	});
+
+	it("blocks settlement while the served job is in progress on this runner", () => {
+		expect(
+			servedGitHubJobBlocksSettlement(lease, {
+				status: "in_progress",
+				runner_id: null,
+				runner_name: runnerName,
+			}),
+		).toBe(true);
 	});
 });

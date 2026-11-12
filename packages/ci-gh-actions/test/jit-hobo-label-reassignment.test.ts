@@ -156,6 +156,144 @@ describe("shared hobo label JIT reassignment", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("defers settle while the cross job runs, then deregisters and settles when it completes", async () => {
+		const leaseId = "237f4d7d-0700-466a-9140-8cbc4d241cc7";
+		let shardStatus = "in_progress";
+		const lease = create(LeaseSchema, {
+			id: leaseId,
+			accountId: "a",
+			offerId: "box",
+			provider: "hobo-box-worker",
+			jobId: GHCR_JOB,
+			actualJobId: SHARD_JOB,
+			originalRunId: MAIN_RUN,
+			runAttempt: 1,
+			repositoryId: 101,
+			repository: "Hobo-Labs/HoBo",
+			installationId: 10,
+			runnerName: `hobo-${leaseId}`,
+			runnerId: 99,
+			sandboxName: `hobo-${leaseId}`,
+			sandboxSessionId: "cid-release",
+			sandboxStage: "running",
+			state: "running",
+			usageCompletedAt: "2026-11-12T12:18:00.000Z",
+			createdAt: "2026-11-12T12:00:00.000Z",
+		});
+		const settle = vi.fn();
+		// SAFETY: reconcile touches only get, transition, settle, withdrawQueuedJob.
+		const store = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			activeLeases: async () => [lease],
+			transition: transitionFor(lease),
+			settle,
+			withdrawQueuedJob: vi.fn(async () => true),
+		} as SqliteCiStore & HostedRelayStore;
+		vi.spyOn(githubModule, "getJob").mockImplementation(
+			async (_api, _i, _r, jobId) => {
+				if (jobId === GHCR_JOB)
+					return {
+						id: jobId,
+						run_id: RELEASE_RUN,
+						status: "queued",
+						labels: ["hobo"],
+						runner_name: null,
+						run_attempt: 1,
+					};
+				return {
+					id: jobId,
+					run_id: MAIN_RUN,
+					status: shardStatus,
+					labels: ["hobo"],
+					runner_name: lease.runnerName,
+					runner_id: null,
+					run_attempt: 1,
+				};
+			},
+		);
+		vi.spyOn(githubModule, "listRunWorkflowJobs").mockImplementation(
+			async (_api, _i, _r, runId) => {
+				if (runId === MAIN_RUN)
+					return [
+						{
+							id: SHARD_JOB,
+							run_id: MAIN_RUN,
+							status: shardStatus,
+							runner_name: lease.runnerName,
+							runner_id: lease.runnerId,
+						},
+					];
+				return [
+					{
+						id: GHCR_JOB,
+						run_id: RELEASE_RUN,
+						status: "queued",
+						runner_name: null,
+						runner_id: null,
+					},
+				];
+			},
+		);
+		vi.spyOn(githubModule, "listInProgressWorkflowRunIds").mockImplementation(
+			async () => (shardStatus === "in_progress" ? [MAIN_RUN] : []),
+		);
+		vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockImplementation(
+			async () => ({
+				jobId: SHARD_JOB,
+				runId: MAIN_RUN,
+				status: shardStatus,
+			}),
+		);
+		const remove = vi.fn(async () => undefined);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(async () => undefined),
+			remove,
+			list: vi.fn(async () => [
+				{ name: lease.sandboxName, containerId: lease.sandboxSessionId },
+			]),
+			isRunning: vi.fn(async () => false),
+			exists: vi.fn(async () => false),
+		};
+		const onStorageGrantRelease = vi.fn();
+		const log = vi.fn();
+		const controller = createIsolatedContainerController({
+			store,
+			github: githubAllowRunnerDeregister(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "worker-a",
+			workerImage: "hobo-ci-worker:local",
+			onStorageGrantRelease,
+			now: () => "2026-11-12T12:19:00.000Z",
+			log,
+		});
+		await controller.host.reconcile(lease.id);
+		expect(settle).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+		expect(log).not.toHaveBeenCalledWith(
+			"hobo_ci_jit_runner_deregistered",
+			expect.anything(),
+		);
+
+		shardStatus = "completed";
+		vi.mocked(docker.exists).mockImplementation(
+			async (_n, _id, path) => path === RUNNER_EXITED_PATH,
+		);
+		await controller.host.reconcile(lease.id);
+		expect(remove).toHaveBeenCalled();
+		expect(settle).toHaveBeenCalled();
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_jit_runner_deregistered",
+			expect.objectContaining({ leaseId, runnerId: 99 }),
+		);
+		expect(onStorageGrantRelease).toHaveBeenCalledWith(GHCR_JOB);
+		expect(onStorageGrantRelease).toHaveBeenCalledWith(SHARD_JOB);
+		vi.restoreAllMocks();
+	});
+
 	it("lets the cross-assigned job finish then settles without killing an active job", async () => {
 		const leaseId = "237f4d7d-0700-466a-9140-8cbc4d241cc7";
 		const lease = create(LeaseSchema, {

@@ -80,6 +80,38 @@ export function runnerHoldsActiveJob(
 	return !!assignment && RUNNER_HELD_JOB_STATUSES.has(assignment.status);
 }
 
+/** GitHub statuses that mean the runner is executing work, not merely registered. */
+export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
+	"in_progress",
+	"waiting",
+	"pending",
+	"requested",
+]);
+
+export function runnerMatchesGitHubJob(
+	lease: Readonly<{ runnerId: number; runnerName: string }>,
+	job: Readonly<{
+		runner_id?: number | null;
+		runner_name?: string | null;
+	}>,
+): boolean {
+	if (lease.runnerId > 0 && job.runner_id === lease.runnerId) return true;
+	const name = job.runner_name?.trim();
+	return name !== undefined && name !== "" && name === lease.runnerName.trim();
+}
+
+export function servedGitHubJobBlocksSettlement(
+	lease: Readonly<{ runnerId: number; runnerName: string }>,
+	job: Readonly<{
+		status: string;
+		runner_id?: number | null;
+		runner_name?: string | null;
+	}>,
+): boolean {
+	if (!RUNNER_EXECUTING_JOB_STATUSES.has(job.status)) return false;
+	return runnerMatchesGitHubJob(lease, job);
+}
+
 /**
  * Resolve which workflow job GitHub assigned to a box JIT runner, including when
  * the job is on another workflow run than the lease's reserved job.
