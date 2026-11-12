@@ -68,6 +68,7 @@ import {
 	bodies,
 	type CampStageState,
 	foldRollout,
+	ledgerSpellings,
 	loweredBody,
 	ROLLOUT_LEDGER,
 	type RolloutLedgerState,
@@ -1445,15 +1446,16 @@ export function createRolloutOrchestrator(
 
 		async tick(ctx) {
 			const ids = new Set<RolloutId>();
-			for await (const entry of d.store.readAll({
-				tenant: d.tenant,
-				filter: { type: ROLLOUT_LEDGER.started },
-			})) {
-				const prefix = ROLLOUT_LEDGER.stream("");
-				if (entry.event.streamId.startsWith(prefix))
-					// SAFETY: the stream id is `cd-rollout-<rolloutId>` by construction.
-					ids.add(entry.event.streamId.slice(prefix.length) as RolloutId);
-			}
+			const prefix = ROLLOUT_LEDGER.stream("");
+			// Legacy spellings too, so a rollout started before the rename still ticks.
+			for (const type of ledgerSpellings(ROLLOUT_LEDGER.started))
+				for await (const entry of d.store.readAll({
+					tenant: d.tenant,
+					filter: { type },
+				}))
+					if (entry.event.streamId.startsWith(prefix))
+						// SAFETY: the stream id is `cd-rollout-<rolloutId>` by construction.
+						ids.add(entry.event.streamId.slice(prefix.length) as RolloutId);
 			for (const rolloutId of [...ids].sort()) {
 				if (terminal.has(rolloutId)) continue;
 				try {

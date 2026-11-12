@@ -72,6 +72,22 @@ Progressive exposure for one promotion, Camp by Camp and stage by stage
 - **Streams.** `cd-rollout-<rolloutId>` (orchestrator ledger) and
   `cd-rollout-engine-<rolloutId>` (engine command ledger). Both ids are local
   to this module; the frozen `CD_STREAMS` has no rollout entry.
+- **Event types.** Every ledger type is `rollout.<PastTenseFact>` beside the
+  frozen `rollout.Lowered` / `rollout.EvidenceObserved`, so a durable journal
+  (`@hobo/storage-sqlite`, `@hobo/storage-postgres`) accepts it:
+  `rollout.RampStarted`, `CapacityReserved`, `ShiftRequested`, `Shifted`,
+  `TrafficObserved`, `VerificationStarted`, `StageVerified`,
+  `StageApprovalRequested`, `Held`, `Released`, `Advanced`, `RollbackStarted`,
+  `RollbackDeltaOpened`, `Finished`, and `rollout.EngineCommanded` on the
+  engine stream. (`rollout.Started` / `rollout.ApprovalRequested` belong to
+  the OpenDelivery port in `@hobo/identity` with other bodies, hence
+  `RampStarted` / `StageApprovalRequested`.) The ledger's first names
+  (`cd.rollout.<Fact>`, refused by every durable journal) and the interim
+  `cdrollout.<Fact>` storage encoding are upcast on read by `ledgerType`;
+  bodies are unchanged. `test/rollout/golden/rollout-journal.legacy-cd-rollout.json`
+  pins the legacy corpus, and `test/rollout/durable-journal.test.ts` runs
+  plan, run and rollback on a real SQLite journal with the real desired state
+  and reconcile transport.
 - **PACT.** `test/rollout/pacts/analysis-webhook.pact.json` (verified by
   `test/rollout/analysis.test.ts`). The Station cutover boundary is exercised
   against the real `executeRoutingCutover` in `test/rollout/traffic.test.ts`.
