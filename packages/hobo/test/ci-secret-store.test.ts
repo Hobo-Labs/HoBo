@@ -265,6 +265,32 @@ describe("the Cloudflare claim-link experiment (--offer cloudflare-temporary)", 
 		expect(data.selection.selected).toBe("infisical-self-hosted");
 	});
 
+	it("refuses before creating an account when no Yard runtime is wired", async () => {
+		// Found live: the account was created first, so its claim was sealed but
+		// attached to nothing and `hobo claim open` could not find it.
+		const api = cloudflareApi();
+		let asked = false;
+		const result = await runCiSecretStore({
+			subcommand: "provision",
+			cwd: await tempDir("hobo-secret-store-"),
+			values: {
+				offer: "cloudflare-temporary",
+				home: await tempDir("hobo-home-"),
+			},
+			env: {},
+			fetch: api.send,
+			interactive: true,
+			prompt: async () => {
+				asked = true;
+				return "accept";
+			},
+			now: () => NOW,
+		});
+		expect(result).toMatchObject({ ok: false, code: "HOBO_NO_RUNTIME" });
+		expect(asked).toBe(false);
+		expect(api.urls).toHaveLength(0);
+	});
+
 	it("creates nothing unless the owner types the word", async () => {
 		const runtime = createDefaultYardRuntime();
 		// SAFETY: the default Yard runtime's store is the runtime-local SQLite one.

@@ -56,7 +56,9 @@ async function runComposed(
 	} catch {
 		return writeResult(await createHoboCli().run(args));
 	}
-	if (verb === "ci")
+	// `ci secret-store` records its claim in the Yard runtime, so it takes the
+	// composed path below; every other `ci` verb stays on this fast path.
+	if (verb === "ci" && !args.includes("secret-store"))
 		return writeResult(
 			await createHoboCli({ commands: { ci: createCiCommand() } }).run(args),
 		);

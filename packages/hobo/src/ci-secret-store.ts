@@ -470,6 +470,13 @@ export async function runCiSecretStore(
 		};
 
 	// provision
+	// Refuse before anything is created: a provider account made without a Yard
+	// runtime would leave its claim sealed but attached to nothing.
+	if (input.runtime === undefined)
+		return refused(
+			"HOBO_NO_RUNTIME",
+			"hobo ci secret-store provision has no Yard runtime wired — run it from the composed hobo binary.",
+		);
 	const deploymentRef = deploymentIdFor(input.cwd);
 	const home = text(input.values, "home") ?? defaultHoboHome({ ...input.env });
 	const store = createFileOneTimeActionStore({ home });
