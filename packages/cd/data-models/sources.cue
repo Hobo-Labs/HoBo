@@ -37,37 +37,40 @@ import (
 #SourceLocator: #SourceText & =~"^[^\\s]+$" & !~"://[^/@\\s]+:[^/@\\s]+@" & !~"gh[pousr]_[A-Za-z0-9]{30,}" & !~"glpat-[A-Za-z0-9_-]{20,}"
 
 #SourceSubscription: {
-	name:                       #SourceSlug
-	kind:                       #SourceKind
-	locator:                    #SourceLocator
-	ecosystem?:                 "npm" | "pypi" | "maven" | "nuget" | "cargo" | "rubygems"
-	selection:                  #SourceSelection
-	semverRange?:               string & strings.MaxRunes(256)
-	allowPattern?:              string & strings.MaxRunes(256)
-	ignorePatterns?:            [...(string & strings.MaxRunes(256))]
-	includePaths?:              [...#SourcePath]
-	excludePaths?:              [...#SourcePath]
-	branch?:                    =~"^[A-Za-z0-9._/-]{1,200}$"
-	discoveryLimit:             int & >=1 & <=100
-	credentialRef?:             =~"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
-	requireProvenance?:         bool
-	trustedBuilderIds?:         [...#SourceText]
-	trustedSignerIdentities?:   [...#SourceText]
-	artifactName?:              #SourceText
-	artifactKind?:              #SourceArtifactKind
+	name:          #SourceSlug
+	kind:          #SourceKind
+	locator:       #SourceLocator
+	ecosystem?:    "npm" | "pypi" | "maven" | "nuget" | "cargo" | "rubygems"
+	selection:     #SourceSelection
+	semverRange?:  string & strings.MaxRunes(256)
+	allowPattern?: string & strings.MaxRunes(256)
+	ignorePatterns?: [...(string & strings.MaxRunes(256))]
+	includePaths?: [...#SourcePath]
+	excludePaths?: [...#SourcePath]
+	branch?:            =~"^[A-Za-z0-9._/-]{1,200}$"
+	discoveryLimit:     int & >=1 & <=100
+	credentialRef?:     =~"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+	requireProvenance?: bool
+	trustedBuilderIds?: [...#SourceText]
+	trustedSignerIdentities?: [...#SourceText]
+	artifactName?: #SourceText
+	artifactKind?: #SourceArtifactKind
 
 	// Package registries name their ecosystem.
 	if kind == "SUBSCRIPTION_KIND_PACKAGE_REGISTRY" {
 		ecosystem: _
 	}
+
 	// Builder/signer pins are enforced only under requireProvenance.
 	if trustedBuilderIds != _|_ || trustedSignerIdentities != _|_ {
 		requireProvenance: true
 	}
+
 	// Only OCI referrers carry attestations a source can verify.
 	if requireProvenance != _|_ if requireProvenance {
 		kind: "SUBSCRIPTION_KIND_OCI_REPOSITORY"
 	}
+
 	// HTTP indexes and CI outputs declare what they deliver.
 	if kind == "SUBSCRIPTION_KIND_HTTP_INDEX" {
 		artifactKind: _
@@ -77,6 +80,7 @@ import (
 		artifactName: _
 		selection:    "SELECTION_STRATEGY_NEWEST_BUILD"
 	}
+
 	// A branch is a Git concept and is tracked by newest commit.
 	if branch != _|_ {
 		kind:      "SUBSCRIPTION_KIND_GIT_REPOSITORY"
@@ -89,23 +93,24 @@ import (
 
 // hobo.cd.source/v1: the record `source.Defined` carries.
 #SourceFreightSource: {
-	schemaVersion:   "hobo.cd.source/v1"
-	name:            #SourceSlug
-	bindle:          #SourceBindle
-	subscriptions:   [#SourceSubscription, ...#SourceSubscription] & list.MaxItems(16)
-	assembly:        #SourceAssembly
-	automatic?:      bool
-	pollIntervalMs:  #SourceUint64
-	definedBy:       string & !="" & #SourceText
+	schemaVersion: "hobo.cd.source/v1"
+	name:          #SourceSlug
+	bindle:        #SourceBindle
+	subscriptions: [#SourceSubscription, ...#SourceSubscription] & list.MaxItems(16)
+	assembly:       #SourceAssembly
+	automatic?:     bool
+	pollIntervalMs: #SourceUint64
+	definedBy:      string & !="" & #SourceText
 
 	// Pairing rules need something to pair.
 	if assembly != "ASSEMBLY_RULE_INDEPENDENT" {
 		subscriptions: list.MinItems(2)
 	}
+
 	// A Rail source has exactly one HOBO_RAIL subscription naming the Rail (D24).
 	if list.Contains([for s in subscriptions {s.kind}], "SUBSCRIPTION_KIND_HOBO_RAIL") {
 		subscriptions: [{locator: bindle}]
-		assembly:      "ASSEMBLY_RULE_INDEPENDENT"
+		assembly: "ASSEMBLY_RULE_INDEPENDENT"
 	}
 }
 
@@ -138,8 +143,16 @@ import (
 	version:      string & !="" & strings.MaxRunes(256)
 	commit?:      =~"^[0-9a-f]{7,64}$"
 	discoveredAt: #SourceTimestamp
-	provenance?:  [...#SourceProvenanceRef]
+	provenance?: [...#SourceProvenanceRef]
 }
+
+// The cd.proto types this file constrains, under their protobuf names.
+#SubscriptionKind:         #SourceKind
+#SelectionStrategy:        #SourceSelection
+#AssemblyRule:             #SourceAssembly
+#SubscriptionRecord:       #SourceSubscription
+#FreightSourceRecord:      #SourceFreightSource
+#DiscoveredArtifactRecord: #SourceDiscoveredArtifact
 
 #SourceReasonCode: "source-invalid" | "source-unknown" | "source-unauthorized" | "source-driver-unavailable" | "source-provenance-unsupported" | "source-provenance-missing" | "source-provenance-rejected" | "source-rate-limited" | "source-unreachable" | "source-upstream-invalid" | "source-auth-failed" | "source-not-found" | "source-older-than-high-water" | "source-filtered" | "source-rail-retired" | "source-freight-refused" | "source-transport-not-binary-safe" | "source-git-capability-missing" | "unverified-trigger"
 
@@ -157,9 +170,9 @@ import (
 	idempotencyKey: =~"^discovered:[0-9a-f]{64}$"
 	cursor:         string & strings.MaxRunes(4096)
 	outcome:        "recorded" | "skipped" | "deferred" | "refused"
-	reasons:        [...#SourceReason]
-	freightIds:     [...#SourceDigest]
-	decisionId:     string & !=""
+	reasons: [...#SourceReason]
+	freightIds: [...#SourceDigest]
+	decisionId: string & !=""
 
 	if outcome == "recorded" {
 		freightIds: [_, ...]
