@@ -17,6 +17,7 @@ export {
 	type InfisicalAuth,
 	type JwtSource,
 	oidcAuth,
+	jwtOidcClaimHints,
 	ownerAuthFromEnv,
 	parseJwt,
 } from "./auth.js";

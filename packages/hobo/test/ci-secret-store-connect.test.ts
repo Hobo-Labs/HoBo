@@ -182,6 +182,7 @@ describe("hobo ci secret-store verify", () => {
 		expect(denied.message).toMatch(
 			/hobo-ci-writer \(GitHub Actions OIDC\): fail — infisical login-denied/u,
 		);
+		expect(denied.message).toMatch(/oidc_sub=repo/u);
 	});
 
 	it("checks hobo-ci-relay where Vercel's OIDC token is present", async () => {
