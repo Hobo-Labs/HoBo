@@ -27,7 +27,14 @@
  * and refuses without touching the controller, and a rollback that would
  * stop a controller holding a job leaves it serving and refuses instead. On a
  * failed verification it restores the previous digest; the rollback itself is
- * a Delta CD records, this only leaves the host serving.
+ * a Delta CD records, this only leaves the host serving. Admission is closed
+ * only inside `withAdmissionClosed`, which reopens it on every exit, so no
+ * port error or failed swap leaves the host refusing work.
+ *
+ * A rollback relaunches the previous digest with the spec this agent last
+ * launched it with. When this agent never launched it (a restarted agent, a
+ * hand-started controller) the container driver cannot read a spec back, so
+ * the rollback uses this release's repository and config and says so.
  *
  * `read` (observe): the controller digest, in-flight jobs and runner
  * presence (retained fields: they change with load, never drift), and the
@@ -315,6 +322,12 @@ function volumeOf(volume: z.infer<typeof Volume>): ControllerVolume {
 type DesiredController = z.infer<typeof Desired> &
 	Readonly<{ repository: string; digest: string }>;
 
+/** What a controller was launched with: the image reference and its config. */
+type LaunchedSpec = Readonly<{
+	image: string;
+	config: DesiredController["config"];
+}>;
+
 function rejected(message: string): never {
 	throw new ResolverError(
 		"RESOLVER_PROVIDER_REJECTED",
@@ -483,6 +496,8 @@ type RunnerHostOutputs = {
 	inFlightJobs: number;
 	busyRunners: number;
 	onlineRunners: number;
+	/** Observed serving at `controllerDigest` (no serving gaps). */
+	serving: boolean;
 	claims: RunnerHostClaims;
 	retained: string[];
 	freeSlots?: number;
@@ -495,6 +510,7 @@ function outcome(
 	desired: Pick<DesiredController, "repository">,
 	controller: Controller,
 	snap: HostSnapshot,
+	serving: boolean,
 	diagnostics: readonly string[],
 ): ResolveOutcome {
 	const advert = snap.advert;
@@ -508,6 +524,7 @@ function outcome(
 		inFlightJobs: snap.inFlightJobs,
 		busyRunners: snap.busyRunners,
 		onlineRunners: snap.onlineRunners,
+		serving,
 		claims,
 		retained: [...RUNNER_HOST_RETAINED_FIELDS],
 	};
@@ -574,20 +591,42 @@ export function createRunnerHostResolver(
 		}
 	}
 
-	/** Close admission and wait for in-flight jobs; reopen and refuse at the deadline. */
-	async function drain(host: WiredHost, deadlineMs: number): Promise<void> {
+	/** Run `work` with admission closed; admission reopens on every exit. */
+	async function withAdmissionClosed<T>(
+		host: WiredHost,
+		work: () => Promise<T>,
+	): Promise<T> {
 		await host.jobs.pauseAdmission();
+		let result: T;
+		try {
+			result = await work();
+		} catch (error) {
+			// The work's error is the one to report; a failed reopen must not hide it.
+			await host.jobs.resumeAdmission().catch(() => undefined);
+			throw error;
+		}
+		await host.jobs.resumeAdmission();
+		return result;
+	}
+
+	/** With admission closed: wait for in-flight jobs; refuse at the deadline. */
+	async function waitForDrain(
+		host: WiredHost,
+		deadlineMs: number,
+	): Promise<void> {
 		const drained = await until(deadlineMs, async () => {
 			const snap = await snapshot(host);
 			return snap.inFlightJobs === 0 ? snap : undefined;
 		});
 		if (drained) return;
 		const left = (await snapshot(host)).inFlightJobs;
-		await host.jobs.resumeAdmission();
 		rejected(
 			`runner-host-drain-deadline: ${left} job(s) still in flight after ${deadlineMs} ms; admission is reopened and the controller is unchanged (no job is cancelled); a later pass retries`,
 		);
 	}
+
+	/** Specs this agent launched, by digest, so a rollback restores what ran. */
+	const launched = new Map<string, LaunchedSpec>();
 
 	/** Stop and remove a controller; observe that it is gone. */
 	async function retire(host: WiredHost, controller: Controller) {
@@ -632,6 +671,7 @@ export function createRunnerHostResolver(
 		const startedAtMs = now();
 		const handle = await host.containers.create(spec);
 		await host.containers.start(handle.name, handle.containerId);
+		launched.set(digest, { image, config });
 		return startedAtMs;
 	}
 
@@ -667,50 +707,83 @@ export function createRunnerHostResolver(
 		return snap ? { snap, gaps: [] } : { gaps };
 	}
 
-	/** Undo a failed swap without cancelling anything; always throws. */
-	async function rollback(
+	/**
+	 * With admission closed: retire the failed controller and relaunch the
+	 * previous digest. Returns when it was started; refuses when it must not
+	 * or could not be.
+	 */
+	async function restorePrevious(
 		host: WiredHost,
 		desired: DesiredController,
 		previous: Controller | undefined,
 		why: string,
-	): Promise<never> {
-		await host.jobs.pauseAdmission();
+	): Promise<Readonly<{ startedAtMs: number; source: string }>> {
 		const snap = await snapshot(host);
-		if (snap.inFlightJobs > 0) {
-			await host.jobs.resumeAdmission();
+		if (snap.inFlightJobs > 0)
 			rejected(
 				`runner-host-verify-failed: ${why}; the new controller already holds ${snap.inFlightJobs} job(s), so it is left serving rather than stopped; a later pass re-verifies`,
 			);
-		}
 		for (const controller of snap.controllers)
 			if (controller.digest === desired.digest) await retire(host, controller);
 		if (
 			previous &&
 			snap.running.some((controller) => controller.digest === previous.digest)
-		) {
-			await host.jobs.resumeAdmission();
+		)
 			rejected(
 				`runner-host-swap-failed: ${why}; the previous controller ${previous.digest} never stopped and is still serving`,
 			);
-		}
-		if (!previous) {
-			await host.jobs.resumeAdmission();
+		if (!previous)
 			rejected(
 				`runner-host-verify-failed: ${why}; there was no previous controller to restore, so the host has none`,
 			);
+		const known = launched.get(previous.digest);
+		const spec: LaunchedSpec = known ?? {
+			image: `${desired.repository}@${previous.digest}`,
+			config: desired.config,
+		};
+		const source = known
+			? "the spec this agent last launched it with"
+			: "this release's repository and config (this agent never launched it, so its own spec is unknown)";
+		try {
+			const startedAtMs = await launch(
+				host,
+				spec.image,
+				previous.digest,
+				spec.config,
+			);
+			return { startedAtMs, source };
+		} catch (error) {
+			return rejected(
+				`runner-host-rollback-failed: ${why}; relaunching the previous controller ${previous.digest} with ${source} failed (${error instanceof Error ? error.message : "unknown"}), so the host has no controller; admission is reopened; restore it by hand or run a later pass`,
+			);
 		}
-		const startedAtMs = await launch(
-			host,
-			`${desired.repository}@${previous.digest}`,
-			previous.digest,
-			desired.config,
-		);
-		await host.jobs.resumeAdmission();
-		const restored = await verify(host, previous.digest, startedAtMs);
-		rejected(
+	}
+
+	/**
+	 * Undo a failed swap without cancelling anything; always throws. `held`
+	 * is a restore already done while the caller had admission closed;
+	 * otherwise it is done here under a closed admission. Verification runs
+	 * with admission open: a controller that admits nothing never advertises
+	 * healthy.
+	 */
+	async function rollback(
+		host: WiredHost,
+		desired: DesiredController,
+		previous: Controller | undefined,
+		why: string,
+		held?: Readonly<{ startedAtMs: number; source: string }>,
+	): Promise<never> {
+		const { startedAtMs, source } =
+			held ??
+			(await withAdmissionClosed(host, () =>
+				restorePrevious(host, desired, previous, why),
+			));
+		const digest = previous?.digest ?? desired.digest;
+		const restored = await verify(host, digest, startedAtMs);
+		return rejected(
 			restored.snap
-				? `runner-host-verify-failed: ${why}; restored and observed the previous controller ${previous.digest}`
-				: `runner-host-rollback-unobserved: ${why}; restored the previous controller ${previous.digest} but it is not yet observed serving (${restored.gaps.join("; ")})`,
+				? `runner-host-verify-failed: ${why}; restored and observed the previous controller ${digest} (relaunched with ${source})`
+				: `runner-host-rollback-unobserved: ${why}; restored the previous controller ${digest} with ${source} but it is not yet observed serving (${restored.gaps.join("; ")})`,
 		);
 	}
 
@@ -735,7 +808,7 @@ export function createRunnerHostResolver(
 					rejected(
 						`runner-host-target-unobserved: the controller runs ${desired.digest} but is not observed serving (${observed.gaps.join("; ")})`,
 					);
-				return outcome("noop", hostId, desired, previous, observed.snap, [
+				return outcome("noop", hostId, desired, previous, observed.snap, true, [
 					`controller already at ${desired.digest}; observed serving`,
 				]);
 			}
@@ -749,33 +822,34 @@ export function createRunnerHostResolver(
 				);
 			}
 
-			await drain(
-				host,
+			const drainMs =
 				desired.drainDeadlineMs ??
-					options.drainDeadlineMs ??
-					DEFAULT_DRAIN_DEADLINE_MS,
-			);
-
-			let startedAtMs: number;
-			try {
-				// Stopped controllers left behind by an earlier pass go too.
-				for (const controller of (await snapshot(host)).controllers)
-					await retire(host, controller);
-				startedAtMs = await launch(
-					host,
-					desired.image,
-					desired.digest,
-					desired.config,
-				);
-			} catch (error) {
-				return rollback(
-					host,
-					desired,
-					previous,
-					`the swap to ${desired.digest} failed (${error instanceof Error ? error.message : "unknown"})`,
-				);
-			}
-			await host.jobs.resumeAdmission();
+				options.drainDeadlineMs ??
+				DEFAULT_DRAIN_DEADLINE_MS;
+			// Drain, swap and (on a failed swap) restore all run with admission
+			// closed; it reopens on every exit, refusals and port errors included.
+			const swap = await withAdmissionClosed(host, async () => {
+				await waitForDrain(host, drainMs);
+				try {
+					// Stopped controllers left behind by an earlier pass go too.
+					for (const controller of (await snapshot(host)).controllers)
+						await retire(host, controller);
+					const startedAtMs = await launch(
+						host,
+						desired.image,
+						desired.digest,
+						desired.config,
+					);
+					return { swapped: true, startedAtMs } as const;
+				} catch (error) {
+					const why = `the swap to ${desired.digest} failed (${error instanceof Error ? error.message : "unknown"})`;
+					const restored = await restorePrevious(host, desired, previous, why);
+					return { swapped: false, why, restored } as const;
+				}
+			});
+			if (!swap.swapped)
+				return rollback(host, desired, previous, swap.why, swap.restored);
+			const { startedAtMs } = swap;
 			const observed = await verify(host, desired.digest, startedAtMs);
 			if (!observed.snap)
 				return rollback(
@@ -794,6 +868,7 @@ export function createRunnerHostResolver(
 				desired,
 				live,
 				observed.snap,
+				true,
 				[
 					previous
 						? `controller ${previous.digest} -> ${desired.digest}; drained, swapped, observed serving`
@@ -814,7 +889,7 @@ export function createRunnerHostResolver(
 				digest: live.digest,
 				nowMs: now(),
 			});
-			return outcome("noop", hostId, desired, live, snap, [
+			return outcome("noop", hostId, desired, live, snap, gaps.length === 0, [
 				...(snap.running.length > 1
 					? [`${snap.running.length} controllers are running`]
 					: []),
@@ -827,15 +902,16 @@ export function createRunnerHostResolver(
 		async delete(raw: ResolveRequest, _transport: HttpTransport) {
 			const desired = parseRequest(raw, hostId);
 			const host = wired(options.host);
-			await drain(
-				host,
-				desired.drainDeadlineMs ??
-					options.drainDeadlineMs ??
-					DEFAULT_DRAIN_DEADLINE_MS,
-			);
-			for (const controller of (await snapshot(host)).controllers)
-				await retire(host, controller);
-			await host.jobs.resumeAdmission();
+			await withAdmissionClosed(host, async () => {
+				await waitForDrain(
+					host,
+					desired.drainDeadlineMs ??
+						options.drainDeadlineMs ??
+						DEFAULT_DRAIN_DEADLINE_MS,
+				);
+				for (const controller of (await snapshot(host)).controllers)
+					await retire(host, controller);
+			});
 		},
 	};
 	return Object.freeze(resolver);
@@ -964,14 +1040,13 @@ export function runnerHostCampReport(
 			? Object.entries(claimBag)
 			: [];
 	const observedAt = new Date(nowMs).toISOString();
-	const notServing = outcome.diagnostics.some((line) =>
-		line.includes("not serving"),
-	);
+	// Typed, never parsed from diagnostic text: absent or not `true` is unhealthy.
+	const serving = outputs.serving === true;
 	return Object.freeze({
 		resource: Object.freeze({
 			resource: RUNNER_HOST_REALIZER_BINDING.logicalId,
 			physicalId: outcome.physicalId,
-			healthy: !notServing,
+			healthy: serving,
 			kind: RUNNER_HOST_PRODUCT_ID,
 			attributes: Object.freeze({
 				controllerDigest: attribute("controllerDigest"),

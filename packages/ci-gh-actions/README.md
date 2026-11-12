@@ -1099,12 +1099,23 @@ What a pass does:
 6. **Roll back** on a failed swap or verification: restore the previous digest
    and refuse with `runner-host-verify-failed` (CD records the rollback as a
    Delta). If the new controller already holds a job it is left serving and
-   the pass refuses instead; a later pass re-verifies.
+   the pass refuses instead; a later pass re-verifies. The previous digest is
+   relaunched with the image and config this agent last launched it with; if
+   this agent never launched it (agent restarted, controller started by
+   hand) the driver cannot read a spec back, so it uses this release's
+   repository and config and the refusal says which. If that relaunch fails
+   the pass refuses `runner-host-rollback-failed ... the host has no
+   controller`.
+
+Admission is closed only inside one helper that reopens it on every exit:
+a drain deadline, a port error mid-drain, a failed swap or a failed rollback
+all leave admission open.
 
 `read` reports the controller digest, `inFlightJobs`, `busyRunners`,
 `onlineRunners`, `freeSlots` (retained fields: they change with load and are
-never drift) and the claims `platform` and `capacity` from the advert.
-`runnerHostCampReport(outcome, now)` turns an outcome into the
+never drift), a typed `serving` flag and the claims `platform` and `capacity`
+from the advert. `runnerHostCampReport(outcome, now)` derives `healthy` from
+`serving` (never from diagnostic text) and turns an outcome into the
 `ResourceObservation` and `CampClaimRecord` JSON a CD reconcile observation
 carries. Traffic routing: none (`RUNNER_HOST_TRAFFIC_ROUTING_PROFILE`, kind
 `other`, every offering declared absent): jobs are routed by the relay.
@@ -1119,6 +1130,10 @@ carries. Traffic routing: none (`RUNNER_HOST_TRAFFIC_ROUTING_PROFILE`, kind
   serving; the host is back on the previous digest. The failed container was
   created with `--rm`, so its logs went with it: reproduce on the pilot host
   and read the refusal's gap list (which observation was missing).
+- **`runner-host-rollback-failed`.** The new image failed and the previous
+  one could not be relaunched; the host has no controller but admission is
+  open. Start the previous image by hand (the refusal names the digest and
+  which spec was used) or run a later pass to a known-good digest.
 - **`... left serving rather than stopped`.** The new controller took a job
   before verification failed. It is serving; the next pass re-verifies and,
   if still failing, rolls back once the job is done.

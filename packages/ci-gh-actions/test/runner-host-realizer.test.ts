@@ -58,6 +58,8 @@ type FakeOptions = Readonly<{
 	unhealthy?: readonly string[];
 	/** Images whose pull fails. */
 	unpullable?: readonly string[];
+	/** Images whose container create fails (the engine refuses it). */
+	uncreatable?: readonly string[];
 	leases?: Lease[];
 	/** Called on every sleep with the fake clock: lets jobs finish. */
 	onTick?: (host: FakeHost) => void;
@@ -85,6 +87,10 @@ class FakeHost {
 	leases: Lease[];
 	admission = true;
 	nextId = 1;
+	/** Every spec the realizer asked the engine to create. */
+	readonly specs: IsolatedContainerSpec[] = [];
+	/** When set, the lease store fails (a port error). */
+	leasesFail = false;
 
 	constructor(readonly options: FakeOptions = {}) {
 		this.nowMs = options.startMs ?? recordedAdvert?.sinceMs ?? 0;
@@ -159,6 +165,9 @@ function portsOf(host: FakeHost): RunnerHostPorts {
 			},
 			async create(spec: IsolatedContainerSpec) {
 				host.calls.push(`create ${spec.name}`);
+				host.specs.push(spec);
+				if (host.options.uncreatable?.includes(spec.image))
+					throw new Error("OCI runtime create failed");
 				if (!host.images.has(spec.image)) throw new Error("No such image");
 				for (const container of host.containers.values())
 					if (container.name === spec.name)
@@ -198,6 +207,7 @@ function portsOf(host: FakeHost): RunnerHostPorts {
 		},
 		jobs: {
 			async leases() {
+				if (host.leasesFail) throw new Error("lease store unavailable");
 				return host.leases;
 			},
 			async runners() {
@@ -364,6 +374,110 @@ describe("runner-host realizer: converge", () => {
 		expect(host.admission).toBe(true);
 	});
 
+	it("reopens admission and says the host has no controller when the rollback's create of the previous digest fails", async () => {
+		const host = new FakeHost({
+			running: PREVIOUS,
+			unhealthy: [TARGET],
+			uncreatable: [PREVIOUS],
+		});
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		const error = await refusal(resolver.reconcile(request(TARGET), transport));
+		expect(error.code).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(error.message).toMatch(/^runner-host-rollback-failed: /u);
+		expect(error.message).toContain("so the host has no controller");
+		expect(error.message).toContain("OCI runtime create failed");
+		expect(host.runningController()).toBeUndefined();
+		expect(host.admission).toBe(true);
+		expect(host.calls.at(-1)).toBe("resume");
+	});
+
+	it("reopens admission when the swap's create fails and so does the rollback's", async () => {
+		const host = new FakeHost({
+			running: PREVIOUS,
+			uncreatable: [TARGET, PREVIOUS],
+		});
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		const error = await refusal(resolver.reconcile(request(TARGET), transport));
+		expect(error.message).toMatch(
+			/^runner-host-rollback-failed: the swap to /u,
+		);
+		expect(host.admission).toBe(true);
+	});
+
+	it("reopens admission when the lease store fails mid-drain, and cancels nothing", async () => {
+		const host = new FakeHost({
+			running: PREVIOUS,
+			leases: [lease("0f8fad5b-d9cb-469f-a165-70867728950e", "running")],
+			onTick: (fake) => {
+				fake.leasesFail = true;
+			},
+		});
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		await expect(
+			resolver.reconcile(request(TARGET), transport),
+		).rejects.toThrow("lease store unavailable");
+		expect(host.admission).toBe(true);
+		expect(host.calls.some((call) => call.startsWith("stop"))).toBe(false);
+		expect(host.runningController()?.image).toBe(PREVIOUS);
+	});
+
+	it("reopens admission when the lease store fails during delete's drain", async () => {
+		const host = new FakeHost({
+			running: PREVIOUS,
+			leases: [lease("0f8fad5b-d9cb-469f-a165-70867728950e", "running")],
+			onTick: (fake) => {
+				fake.leasesFail = true;
+			},
+		});
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		await expect(resolver.delete(request(PREVIOUS), transport)).rejects.toThrow(
+			"lease store unavailable",
+		);
+		expect(host.admission).toBe(true);
+		expect(host.runningController()?.image).toBe(PREVIOUS);
+	});
+
+	it("rolls back to the spec this agent last launched the previous digest with, not the new config", async () => {
+		const host = new FakeHost({ unhealthy: [TARGET] });
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		const config = (mode: string) => ({
+			command: ["hobo-ci", "worker"],
+			env: { HOBO_CI_MODE: mode },
+			volumes: [],
+		});
+		await resolver.reconcile(
+			request(PREVIOUS, { config: config("old") }),
+			transport,
+		);
+		const error = await refusal(
+			resolver.reconcile(request(TARGET, { config: config("new") }), transport),
+		);
+		expect(error.message).toContain(
+			"relaunched with the spec this agent last launched it with",
+		);
+		const relaunch = host.specs.at(-1);
+		expect(relaunch?.image).toBe(PREVIOUS);
+		expect(relaunch?.env).toEqual({ HOBO_CI_MODE: "old" });
+		expect(host.runningController()?.image).toBe(PREVIOUS);
+	});
+
+	it("rolls back with this release's config, and says so, when this agent never launched the previous digest", async () => {
+		const host = new FakeHost({ running: PREVIOUS, unhealthy: [TARGET] });
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		const error = await refusal(
+			resolver.reconcile(
+				request(TARGET, {
+					config: { command: [], env: { HOBO_CI_MODE: "new" }, volumes: [] },
+				}),
+				transport,
+			),
+		);
+		expect(error.message).toContain(
+			"relaunched with this release's repository and config",
+		);
+		expect(host.specs.at(-1)?.env).toEqual({ HOBO_CI_MODE: "new" });
+	});
+
 	it("refuses a failed pull before draining, so the host keeps serving", async () => {
 		const host = new FakeHost({ running: PREVIOUS, unpullable: [TARGET] });
 		const resolver = createRunnerHostResolver(host.resolverOptions());
@@ -423,6 +537,24 @@ describe("runner-host realizer: observe and delete", () => {
 			["capacity", "4"],
 			["platform", "linux/x64"],
 		]);
+	});
+
+	it("reports health from the typed serving output, never from diagnostic wording", async () => {
+		const host = new FakeHost({ running: PREVIOUS, unhealthy: [PREVIOUS] });
+		const resolver = createRunnerHostResolver(host.resolverOptions());
+		const observed =
+			(await resolver.read?.(request(TARGET), transport)) ??
+			expect.fail("no outcome");
+		expect(observed.outputs.serving).toBe(false);
+		const reworded = { ...observed, diagnostics: ["controller is degraded"] };
+		expect(runnerHostCampReport(reworded, host.nowMs).resource.healthy).toBe(
+			false,
+		);
+		const { serving: _serving, ...untyped } = observed.outputs;
+		expect(
+			runnerHostCampReport({ ...observed, outputs: untyped }, host.nowMs)
+				.resource.healthy,
+		).toBe(false);
 	});
 
 	it("reads nothing on a host with no controller", async () => {

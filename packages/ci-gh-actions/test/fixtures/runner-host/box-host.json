@@ -1,5 +1,5 @@
 {
-	"_comment": "Recorded shapes from a box worker host: the mesh advert as meshAdvertJson emits it, a GitHub GET /repos/{owner}/{repo}/actions/runners/{id} response, and the controller container as listWorkerContainers reports it. Digests are the two release images the tests move between.",
+	"_comment": "Recorded shapes from a box worker host: the mesh advert as meshAdvertJson emits it, the body of a GitHub GET /repos/{owner}/{repo}/actions/runners/{id} 200 response, and the controller container as listWorkerContainers reports it. Digests are the two release images the tests move between. The realizer has no HTTP surface: it reads runner presence only through the typed jobs.runners() port (status and busy), whose adapter owns the GitHub call, its status, headers and auth, so only body shapes are recorded here; the transport the tests pass throws on any call.",
 	"previousImage": "ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:1111111111111111111111111111111111111111111111111111111111111111",
 	"targetImage": "ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:2222222222222222222222222222222222222222222222222222222222222222",
 	"meshAdvert": "{\"id\":\"box\",\"freeSlots\":3,\"healthy\":true,\"labels\":[\"hobo\",\"hobo-trunk\"],\"validUntilMs\":\"1767225660000\",\"totalSlots\":4,\"platform\":{\"os\":\"linux\",\"arch\":\"x64\"},\"sinceMs\":\"1767225600000\"}",
