@@ -16,8 +16,8 @@ export {
 	githubActionsJwtSource,
 	type InfisicalAuth,
 	type JwtSource,
-	oidcAuth,
 	jwtOidcClaimHints,
+	oidcAuth,
 	ownerAuthFromEnv,
 	parseJwt,
 } from "./auth.js";
