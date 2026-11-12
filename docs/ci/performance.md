@@ -95,9 +95,6 @@ unindexed new finding files as notices.
 - [Finding 82: eight test shards started for plans of zero to four suites](./findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)
 - [Finding 83: main full gate paid for missing deps layer and trunk serialization](./findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)
 - [Finding 84: deps publisher missed host worker tags in job docker context](./findings/0084-deps-publisher-missed-host-worker-tags-in-job-docker-context.md)
-- [Finding 85: proactive inode admission and box packing](./findings/0085-proactive-inode-admission-and-box-packing.md)
-- [Finding 86: storage overflow, byte floors, imminent preemption, queue pickup](./findings/0086-storage-overflow-byte-floors-imminent-preemption-queue-pickup.md)
-- [Finding 87: deps rebuild measured headroom, registry GC, and publisher overflow](./findings/0087-deps-rebuild-measured-headroom-registry-gc-and-publisher-overflow.md)
 - [Finding 85: main full gate workspace shards and last-green base](./findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)
 - [Finding 86: main workspace shards fleet parallel cap](./findings/0086-main-workspace-shards-fleet-parallel-cap.md)
 - [Finding 87: poll coalesce stranded queued jobs on GitHub](./findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md)
@@ -150,6 +147,9 @@ unindexed new finding files as notices.
 - [Finding 141: release digest read the local name](./findings/0141-release-digest-read-the-local-name.md)
 - [Finding 142: box admission counted neither promised memory nor lasting headroom](./findings/0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md)
 - [Finding 143: release publish needed buildx the runners lack](./findings/0143-release-publish-needed-buildx-the-runners-lack.md)
+- [Finding 151: deps image builds take a storage grant on an idle box](./findings/0151-deps-image-builds-take-a-storage-grant-on-an-idle-box.md)
+- [Finding 152: two-second job poll and hard-linked deps staging](./findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)
+- [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
 <!-- findings-index:end -->
 
 ## Data

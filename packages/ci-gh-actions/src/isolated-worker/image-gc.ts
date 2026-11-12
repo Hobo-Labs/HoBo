@@ -6,25 +6,36 @@ export type WorkerImage = Readonly<{
 }>;
 
 const WORKER_VERSION_TAG = /^hobo-ci-worker:(v[0-9a-f]{12})$/u;
-const RELEASE_CANDIDATE_TAG = /^([^:/]+):candidate$/u;
+const RELEASE_CANDIDATE_TAG = /^[^:/]+:candidate$/u;
 const GHCR_HOBO_RELEASE =
 	/^ghcr\.io\/hobo-labs\/hobo\/(hobo(?:-[a-z-]+)?):[^:]+$/u;
 
-function releaseImageStem(tag: string): string | undefined {
-	const candidate = RELEASE_CANDIDATE_TAG.exec(tag);
-	if (candidate) return candidate[1];
-	const ghcr = GHCR_HOBO_RELEASE.exec(tag);
-	if (ghcr) return ghcr[1];
-	return undefined;
-}
+/**
+ * A release image this young may still be mid-flow: built, tagged for GHCR,
+ * pushed and attested by separate steps and jobs (20-minute job rule, finding 121).
+ */
+export const RELEASE_IMAGE_GC_GRACE_MS = 60 * 60_000;
 
+/**
+ * Superseded GHCR-tagged release images, oldest per image name first to go.
+ * Never a `:candidate` tag (the name the release flow reads), never an image a
+ * container uses or a candidate still names, and never one inside the grace.
+ */
 export function selectReleaseImageTagsForDeletion(
 	images: readonly WorkerImage[],
+	options: Readonly<{ nowMs?: number; graceMs?: number }> = {},
 ): readonly string[] {
+	const nowMs = options.nowMs ?? Date.now();
+	const graceMs = options.graceMs ?? RELEASE_IMAGE_GC_GRACE_MS;
+	const heldIds = new Set(
+		images
+			.filter((image) => image.inUse || RELEASE_CANDIDATE_TAG.test(image.tag))
+			.map((image) => image.id),
+	);
 	const groups = new Map<string, WorkerImage[]>();
 	for (const image of images) {
-		const stem = releaseImageStem(image.tag);
-		if (stem === undefined || image.inUse) continue;
+		const stem = GHCR_HOBO_RELEASE.exec(image.tag)?.[1];
+		if (stem === undefined || image.inUse || heldIds.has(image.id)) continue;
 		const group = groups.get(stem) ?? [];
 		group.push(image);
 		groups.set(stem, group);
@@ -32,7 +43,12 @@ export function selectReleaseImageTagsForDeletion(
 	const stale: string[] = [];
 	for (const group of groups.values()) {
 		const sorted = [...group].sort(newestFirst);
-		for (const image of sorted.slice(1)) stale.push(image.tag);
+		for (const image of sorted.slice(1)) {
+			const createdMs = Date.parse(image.created);
+			// An unreadable age is treated as young.
+			if (!Number.isFinite(createdMs) || nowMs - createdMs < graceMs) continue;
+			stale.push(image.tag);
+		}
 	}
 	return stale.sort((a, b) => a.localeCompare(b));
 }
@@ -87,6 +103,7 @@ export function depsGcKeepTag(
 export function selectWorkerImagesForDeletion(
 	images: readonly WorkerImage[],
 	currentDepsTag?: string,
+	options: Readonly<{ nowMs?: number }> = {},
 ): readonly string[] {
 	const staleFetchImages = images
 		.filter(
@@ -114,6 +131,6 @@ export function selectWorkerImagesForDeletion(
 			.filter((image) => !retainedDepsTags.has(image.tag))
 			.map((image) => image.tag),
 		...selectWorkerImageTagsForDeletion(images),
-		...selectReleaseImageTagsForDeletion(images),
+		...selectReleaseImageTagsForDeletion(images, options),
 	];
 }

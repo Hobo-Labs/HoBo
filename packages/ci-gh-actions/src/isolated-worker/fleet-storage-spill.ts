@@ -1,3 +1,10 @@
+/**
+ * Not wired into the relay yet: nothing outside this module's tests calls it.
+ * A caller would be `HostedRelay`'s reserve pass, when box storage admission
+ * refuses a job whose connection is not isolated-only: pick an ARC or
+ * GitHub-hosted offer here and reserve the job on it. Today a job the box
+ * cannot start waits or is deferred to the fleet mesh (finding 152).
+ */
 import type { Account, Job, Lease } from "@hobo/ci";
 import {
 	type FleetMember,

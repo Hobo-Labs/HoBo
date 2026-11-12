@@ -16,7 +16,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
-  GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
+  GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
   Postgres quota or webhook relay does. SQLite is the only store: the shared-Postgres option was removed
   with the hosted relay's database (ADR-0179 phase 7). `ci-store-contract.test.ts` runs the store
   contract against it; see `packages/ci/RUNNER-QUEUE.md` for the env vars.

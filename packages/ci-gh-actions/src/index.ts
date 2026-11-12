@@ -141,10 +141,6 @@ export {
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
-	accountForStorageOverflowReserve,
-	selectStorageSpillBackend,
-} from "./isolated-worker/fleet-storage-spill.js";
-export {
 	type BoxGitMirror,
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
@@ -171,12 +167,6 @@ export {
 	pruneHeldJobs,
 	refreshHeldPruneWitnessFromStore,
 } from "./isolated-worker/held-job-prune.js";
-export {
-	createHostCapacityTracker,
-	type HostCapacitySnapshot,
-	type HostCapacityTracker,
-	readHostCapacitySignals,
-} from "./isolated-worker/host-capacity.js";
 export {
 	classifyHostHealth,
 	createHostHealthMonitor,

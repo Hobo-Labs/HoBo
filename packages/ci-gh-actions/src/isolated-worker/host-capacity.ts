@@ -1,3 +1,12 @@
+/**
+ * Not wired into the daemon yet: nothing outside this module's tests calls it.
+ * A caller would be the worker daemon's reconcile tick, recording one sample of
+ * free inodes, free bytes, MemAvailable and memory PSI per tick and handing the
+ * tracker to storage admission as an extra inode margin and a hold on new
+ * leases. Today admission takes its margins from per-device grants
+ * (`storage-admission.ts`) and host pressure from `host-health.ts` and
+ * `host-resource-pressure.ts` (finding 151).
+ */
 import { readFileSync } from "node:fs";
 
 export type HostCapacitySample = Readonly<{
