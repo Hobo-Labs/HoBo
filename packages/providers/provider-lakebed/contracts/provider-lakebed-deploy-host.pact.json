@@ -1,0 +1,108 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-lakebed capsule resolver"
+	},
+	"provider": {
+		"name": "lakebed-deploy driver host"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"plan": "0024 WP14 (I14, D6)"
+	},
+	"interactions": [
+		{
+			"description": "describe an unknown deployment id",
+			"providerState": "Lakebed has never seen shop-prod",
+			"request": {
+				"method": "POST",
+				"path": "/describe",
+				"body": {
+					"deploymentId": "shop-prod"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": null
+			}
+		},
+		{
+			"description": "deploy one lakebed-deploy driver program",
+			"providerState": "Lakebed has never seen shop-prod",
+			"request": {
+				"method": "POST",
+				"path": "/deploy",
+				"body": {
+					"artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"program": {
+						"apiVersion": "hobo.driver-program/v1",
+						"kind": "driver-program",
+						"driver": "lakebed-deploy",
+						"deploymentId": "shop-prod",
+						"capsule": "capsule/shop-prod"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"deploymentId": "shop-prod"
+				}
+			}
+		},
+		{
+			"description": "describe a live capsule",
+			"providerState": "shop-prod is live",
+			"request": {
+				"method": "POST",
+				"path": "/describe",
+				"body": {
+					"deploymentId": "shop-prod"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"state": "live",
+					"deploymentId": "shop-prod",
+					"url": "https://shop-prod.lakebed.app",
+					"artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+				}
+			}
+		},
+		{
+			"description": "retire a live capsule",
+			"providerState": "shop-prod is live",
+			"request": {
+				"method": "POST",
+				"path": "/retire",
+				"body": {
+					"deploymentId": "shop-prod"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": null
+			}
+		},
+		{
+			"description": "describe a retired capsule",
+			"providerState": "shop-prod was retired",
+			"request": {
+				"method": "POST",
+				"path": "/describe",
+				"body": {
+					"deploymentId": "shop-prod"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"state": "retired",
+					"deploymentId": "shop-prod"
+				}
+			}
+		}
+	]
+}
