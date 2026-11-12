@@ -18,12 +18,13 @@ import {
 import { createMemoryBackend } from "../../src/artifacts/memory.js";
 import { cratesIndexPath } from "../../src/artifacts/registries.js";
 import { createStoreOver } from "../../src/artifacts/store.js";
-import type { ArtifactStore, Digest } from "../../src/ports.js";
+import type { ArtifactStore } from "../../src/ports.js";
 import {
 	bytesOf,
 	context,
 	json,
 	MemoryEventStore,
+	pinned,
 	RecordingTelemetry,
 	ScriptedTransport,
 	T0,
@@ -37,8 +38,8 @@ const b64 = (algorithm: string, bytes: Uint8Array) =>
 const digestOf = (bytes: Uint8Array) => `sha256:${hex("sha256", bytes)}`;
 
 function artifact(
-	fields: Partial<ArtifactRef> &
-		Pick<ArtifactRef, "digest" | "coordinate" | "ecosystem">,
+	fields: Pick<ArtifactRef, "digest" | "coordinate" | "ecosystem"> &
+		Partial<Pick<ArtifactRef, "name" | "kind" | "sizeBytes">>,
 ): ArtifactRef {
 	return create(ArtifactRefSchema, {
 		name: "app",
@@ -893,7 +894,7 @@ describe("plan 0024 §10 (WP3 rows)", () => {
 			},
 			context(),
 		);
-		const stored = backend.blobs.get(ref.digest as Digest);
+		const stored = backend.blobs.get(pinned(ref.digest));
 		if (stored) stored[0] = (stored[0] ?? 0) ^ 0xff;
 		const verifier = createArtifactVerifier({
 			...deps,

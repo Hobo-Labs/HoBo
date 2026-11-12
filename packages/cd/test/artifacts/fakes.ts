@@ -20,9 +20,12 @@ import type {
 	TransportRequest,
 	TransportResponse,
 } from "@hobo/core";
+import { parseDigest } from "../../src/artifacts/digest.js";
+import { isJsonString, type JsonValue } from "../../src/artifacts/json.js";
 import type {
 	CdContext,
 	CredentialResolver,
+	Digest,
 	OtelMetricPoint,
 	OtelSpan,
 	TelemetrySink,
@@ -34,6 +37,13 @@ export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 
 export function context(now: () => number = () => T0): CdContext {
 	return { tenant: TENANT, principal: OPERATOR, now };
+}
+
+/** A digest the test knows is well-formed, parsed (never asserted) into the brand. */
+export function pinned(value: string): Digest {
+	const digest = parseDigest(value);
+	if (digest === undefined) throw new Error(`not a sha256 digest: ${value}`);
+	return digest;
 }
 
 export function bytesOf(text: string): Uint8Array {
@@ -60,10 +70,9 @@ export class MemoryEventStore implements DurableEventStore {
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing =
-				typeof key === "string"
-					? stream.find((event) => event.meta?.idempotencyKey === key)
-					: undefined;
+			const existing = isJsonString(key)
+				? stream.find((event) => event.meta?.idempotencyKey === key)
+				: undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
@@ -197,7 +206,7 @@ export class ScriptedTransport {
 	};
 }
 
-export function json(status: number, value: object): TransportResponse {
+export function json(status: number, value: JsonValue): TransportResponse {
 	return {
 		status,
 		headers: { "content-type": "application/json" },

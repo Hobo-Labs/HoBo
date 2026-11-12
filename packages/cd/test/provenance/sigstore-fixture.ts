@@ -13,6 +13,12 @@ import {
 	type KeyObject,
 	sign,
 } from "node:crypto";
+import {
+	isJsonArray,
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+} from "../../src/artifacts/json.js";
 
 // ── DER ────────────────────────────────────────────────────────────────────
 function length(n: number): Buffer {
@@ -80,15 +86,13 @@ function certificate(tbs: Buffer, issuerKey: KeyObject): Buffer {
 	return seq(tbs, ECDSA_SHA256, bitString(sign("sha256", tbs, issuerKey)));
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-	if (value !== null && typeof value === "object")
-		return `{${Object.keys(value)
-			.sort()
-			.map(
-				(key) =>
-					`${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`,
-			)
+/** Sorted-key JSON, the canonical form Rekor bodies and SET payloads use. */
+function canonical(value: JsonValue): string {
+	if (isJsonArray(value)) return `[${value.map(canonical).join(",")}]`;
+	if (isJsonObject(value))
+		return `{${Object.entries(value)
+			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+			.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
 			.join(",")}}`;
 	return JSON.stringify(value);
 }
@@ -148,7 +152,7 @@ export function actionsAttestStatement(
 }
 
 export type TestTrustRoot = Readonly<{
-	trustedRoot: Record<string, unknown>;
+	trustedRoot: JsonObject;
 	ca: Readonly<{ key: KeyObject; cert: Buffer; name: Buffer }>;
 	ctlog: KeyObject;
 	rekor: KeyObject;
@@ -239,7 +243,7 @@ export type BundleOptions = Readonly<{
 export function actionsAttestBundle(
 	root: TestTrustRoot,
 	options: BundleOptions,
-): Record<string, unknown> {
+) {
 	const san = options.san ?? RELEASE_WORKFLOW;
 	const issuer = options.issuer ?? GITHUB_ISSUER;
 	const leaf = generateKeyPairSync("ec", { namedCurve: "P-256" });

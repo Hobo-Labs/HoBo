@@ -28,13 +28,14 @@ import {
 	createArtifactStore,
 	createArtifactVerifier,
 } from "../src/artifacts/index.js";
+import { isJsonObject, isJsonString, jsonOf } from "../src/artifacts/json.js";
 import { createS3Backend } from "../src/artifacts/s3.js";
 import { createStoreOver } from "../src/artifacts/store.js";
-import type { Digest } from "../src/ports.js";
 import { createProvenanceVerifier } from "../src/provenance/index.js";
 import {
 	context,
 	MemoryEventStore,
+	pinned,
 	StaticCredentials,
 	T0,
 	TENANT,
@@ -86,12 +87,16 @@ function headerRule(
 	return undefined;
 }
 
+/** A Pact body or document as a JSON object (throws when it is not one). */
+function objectOf<T>(value: T): JsonObject {
+	const json = jsonOf(value);
+	if (!isJsonObject(json)) throw new Error("expected a JSON object");
+	return json;
+}
+
 function text(content: JsonValue | undefined): string {
-	return typeof content === "string"
-		? content
-		: content === undefined
-			? ""
-			: JSON.stringify(content);
+	if (content === undefined) return "";
+	return isJsonString(content) ? content : JSON.stringify(content);
 }
 
 function mismatch(
@@ -103,7 +108,7 @@ function mismatch(
 	if (request.method !== expected.method) return "method";
 	if (url.pathname !== expected.path) return "path";
 	const query = expected.query ?? {};
-	const names = new Set([...url.searchParams.keys()]);
+	const names = new Set(url.searchParams.keys());
 	if (names.size !== Object.keys(query).length) return "query keys";
 	for (const [name, values] of Object.entries(query))
 		if (
@@ -133,7 +138,7 @@ function mismatch(
 function respond(interaction: HttpInteraction): TransportResponse {
 	return {
 		status: interaction.response.status,
-		headers: { ...(interaction.response.headers ?? {}) },
+		headers: { ...interaction.response.headers },
 		body: text(interaction.response.body?.content),
 	};
 }
@@ -170,8 +175,8 @@ function pactTransport(
 	return { http, used, failures, hosts };
 }
 
-const S3 = s3Pact.interactions as readonly HttpInteraction[];
-const REGISTRIES = registryPact.interactions as readonly HttpInteraction[];
+const S3: readonly HttpInteraction[] = s3Pact.interactions;
+const REGISTRIES: readonly HttpInteraction[] = registryPact.interactions;
 const BYTES = new TextEncoder().encode("hello artifact");
 const META = {
 	name: "api.wasm",
@@ -235,7 +240,7 @@ describe("artifact store → S3-compatible object store (artifacts.pact.json)", 
 	});
 
 	it("reads, checks, deletes and lists blobs", async () => {
-		const digest = `sha256:${S3[0]?.request.path.split("/").at(-1)}` as Digest;
+		const digest = pinned(`sha256:${S3[0]?.request.path.split("/").at(-1)}`);
 		const stored = pactTransport(S3, ["get a stored blob"]);
 		expect(await s3Store(stored.http).get(digest)).toEqual(BYTES);
 		const missing = pactTransport(S3, [
@@ -248,7 +253,7 @@ describe("artifact store → S3-compatible object store (artifacts.pact.json)", 
 		const deleting = pactTransport(S3, ["delete a blob"]);
 		await s3Store(deleting.http).delete(digest, "operator cleanup", context());
 		const listing = pactTransport(S3, ["list blobs"]);
-		const listed: Digest[] = [];
+		const listed: string[] = [];
 		for await (const item of s3Store(listing.http).list(
 			new AbortController().signal,
 		))
@@ -384,14 +389,14 @@ describe("attestation → provenance verifier (artifacts.provenance.pact.json)",
 				tenant: TENANT,
 				now: () => at,
 				http: async () => ({ status: 599, headers: {}, body: "" }),
-				trustPolicy: request.trustPolicy as JsonObject,
+				trustPolicy: objectOf(request.trustPolicy),
 			});
 			const outcome = await verifier.verify(
 				{
 					statement: Buffer.from(request.statementBase64, "base64"),
 					bundle: new TextEncoder().encode(JSON.stringify(request.bundle)),
 					subjects: request.subjects.map((subject) =>
-						fromJson(ArtifactRefSchema, subject as JsonObject),
+						fromJson(ArtifactRefSchema, objectOf(subject)),
 					),
 					trustedBuilderIds: request.trustedBuilderIds,
 					trustedSignerIdentities: request.trustedSignerIdentities,

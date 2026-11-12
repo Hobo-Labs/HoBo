@@ -180,12 +180,10 @@ export class FakeS3 {
 	}
 }
 
-function metaHeaders(
-	headers: Readonly<Record<string, string>>,
-): Record<string, string> {
-	const kept: Record<string, string> = {};
-	for (const [name, value] of Object.entries(headers))
-		if (name.startsWith("x-amz-meta-") || name === "content-type")
-			kept[name] = value;
-	return kept;
+function metaHeaders(headers: Readonly<Record<string, string>>) {
+	return Object.fromEntries(
+		Object.entries(headers).filter(
+			([name]) => name.startsWith("x-amz-meta-") || name === "content-type",
+		),
+	);
 }

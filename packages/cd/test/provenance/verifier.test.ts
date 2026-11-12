@@ -12,7 +12,12 @@ import {
 	type ArtifactRef,
 	ArtifactRefSchema,
 } from "../../src/_generated/cd_pb.js";
-import type { JsonObject } from "../../src/artifacts/json.js";
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+	parseJsonText,
+} from "../../src/artifacts/json.js";
 import {
 	createProvenanceVerifier,
 	PROVENANCE_REASON,
@@ -51,7 +56,9 @@ function ref(name: string, hex: string): ArtifactRef {
 	});
 }
 
-const SUBJECTS = [ref("api.wasm", WASM), ref("assets.tar", ASSETS)];
+const WASM_REF = ref("api.wasm", WASM);
+const ASSETS_REF = ref("assets.tar", ASSETS);
+const SUBJECTS = [WASM_REF, ASSETS_REF];
 const STATEMENT = actionsAttestStatement([
 	{ name: "api.wasm", sha256: WASM },
 	{ name: "assets.tar", sha256: ASSETS },
@@ -74,16 +81,14 @@ function verifierWith(
 	};
 }
 
-const encode = (value: object | string) =>
-	new TextEncoder().encode(
-		typeof value === "string" ? value : JSON.stringify(value),
-	);
+const encodeText = (text: string) => new TextEncoder().encode(text);
+const encode = (value: JsonValue) => encodeText(JSON.stringify(value));
 
 function sigstoreSetup() {
 	const root = createTestTrustRoot();
-	const policy = {
+	const policy: JsonObject = {
 		sigstore: { trustedRoot: root.trustedRoot, issuers: [GITHUB_ISSUER] },
-	} as JsonObject;
+	};
 	return { root, policy, ...verifierWith(policy) };
 }
 
@@ -157,9 +162,7 @@ describe("Sigstore bundles", () => {
 			),
 		).toBe(PROVENANCE_REASON.payloadMismatch);
 		// Rewriting the envelope payload too breaks the DSSE signature.
-		const forged = structuredClone(bundle) as {
-			dsseEnvelope: { payload: string };
-		};
+		const forged = structuredClone(bundle);
 		forged.dsseEnvelope.payload = tampered.toString("base64");
 		expect(
 			await code(
@@ -175,10 +178,7 @@ describe("Sigstore bundles", () => {
 			),
 		).toBe(PROVENANCE_REASON.signatureInvalid);
 		// An artifact whose digest the statement does not attest is refused.
-		const swapped = [
-			ref("api.wasm", "e".repeat(64)),
-			SUBJECTS[1] as ArtifactRef,
-		];
+		const swapped = [ref("api.wasm", "e".repeat(64)), ASSETS_REF];
 		expect(
 			await code(
 				verifier.verify(
@@ -208,7 +208,7 @@ describe("Sigstore bundles", () => {
 					{
 						statement: STATEMENT,
 						bundle,
-						subjects: [SUBJECTS[0] as ArtifactRef],
+						subjects: [WASM_REF],
 						...PINS,
 					},
 					context(() => NOW),
@@ -333,11 +333,11 @@ describe("Sigstore bundles", () => {
 				signedAtMs: SIGNED_AT,
 			}),
 		);
-		const policy = {
+		const policy: JsonObject = {
 			builderIds: [GITHUB_BUILDER],
 			signerIdentities: [RELEASE_WORKFLOW],
 			sigstore: { trustedRoot: root.trustedRoot, issuers: [GITHUB_ISSUER] },
-		} as JsonObject;
+		};
 		const { verifier } = verifierWith(policy);
 		const base = { statement: STATEMENT, bundle, subjects: SUBJECTS };
 		expect(
@@ -399,7 +399,7 @@ describe("Sigstore bundles", () => {
 				verifier.verify(
 					{
 						statement: STATEMENT,
-						bundle: encode("not a bundle"),
+						bundle: encodeText("not a bundle"),
 						subjects: SUBJECTS,
 						...PINS,
 					},
@@ -462,7 +462,7 @@ describe("Sigstore bundles", () => {
 				verifier.verify(
 					{
 						statement,
-						bundle: encode(bundleText),
+						bundle: encodeText(bundleText),
 						subjects: SUBJECTS,
 						trustedBuilderIds: [GITHUB_BUILDER],
 						trustedSignerIdentities: [signer],
@@ -476,7 +476,7 @@ describe("Sigstore bundles", () => {
 				verifier.verify(
 					{
 						statement,
-						bundle: encode(bundleText),
+						bundle: encodeText(bundleText),
 						subjects: SUBJECTS,
 						trustedBuilderIds: [GITHUB_BUILDER],
 						trustedSignerIdentities: [RELEASE_WORKFLOW],
@@ -514,13 +514,16 @@ describe("HoBo-signed attestations", () => {
 			nbf: nowSeconds - 10,
 			iat: nowSeconds - 10,
 		});
-		const policy = {
-			hoboJwt: {
-				jwks: issuer.jwks(),
-				issuer: "https://identity.hobo.test",
-				audience: "hobo-cd",
-			},
-		} as JsonObject;
+		const policy = parseJsonText(
+			JSON.stringify({
+				hoboJwt: {
+					jwks: issuer.jwks(),
+					issuer: "https://identity.hobo.test",
+					audience: "hobo-cd",
+				},
+			}),
+		);
+		if (!isJsonObject(policy)) throw new Error("policy is a JSON object");
 		return { token, policy };
 	}
 
@@ -535,7 +538,7 @@ describe("HoBo-signed attestations", () => {
 		const outcome = await verifierWith(policy).verifier.verify(
 			{
 				statement: STATEMENT,
-				bundle: encode(token),
+				bundle: encodeText(token),
 				subjects: SUBJECTS,
 				...JWT_PINS,
 			},
@@ -557,7 +560,7 @@ describe("HoBo-signed attestations", () => {
 				verifierWith(other.policy).verifier.verify(
 					{
 						statement: STATEMENT,
-						bundle: encode(other.token),
+						bundle: encodeText(other.token),
 						subjects: SUBJECTS,
 						...JWT_PINS,
 					},
@@ -574,7 +577,7 @@ describe("HoBo-signed attestations", () => {
 				verifierWith(expired.policy).verifier.verify(
 					{
 						statement: STATEMENT,
-						bundle: encode(expired.token),
+						bundle: encodeText(expired.token),
 						subjects: SUBJECTS,
 						...JWT_PINS,
 					},
@@ -591,7 +594,7 @@ describe("HoBo-signed attestations", () => {
 				verifierWith(stranger.policy).verifier.verify(
 					{
 						statement: STATEMENT,
-						bundle: encode(stranger.token),
+						bundle: encodeText(stranger.token),
 						subjects: SUBJECTS,
 						...JWT_PINS,
 					},
@@ -609,7 +612,7 @@ describe("HoBo-signed attestations", () => {
 				verifierWith(trusted.policy).verifier.verify(
 					{
 						statement: STATEMENT,
-						bundle: encode(signer.token),
+						bundle: encodeText(signer.token),
 						subjects: SUBJECTS,
 						...JWT_PINS,
 					},
@@ -636,8 +639,8 @@ describe("HoBo-signed attestations", () => {
 				verifierWith(policy).verifier.verify(
 					{
 						statement: notSlsa,
-						bundle: encode(token),
-						subjects: [SUBJECTS[0] as ArtifactRef],
+						bundle: encodeText(token),
+						subjects: [WASM_REF],
 						...JWT_PINS,
 					},
 					context(() => NOW),
@@ -674,7 +677,7 @@ describe("trust policy", () => {
 				verifier.verify(
 					{
 						statement: STATEMENT,
-						bundle: encode("a.b.c"),
+						bundle: encodeText("a.b.c"),
 						subjects: SUBJECTS,
 						...PINS,
 					},

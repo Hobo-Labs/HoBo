@@ -20,8 +20,13 @@ import {
 	createArtifactStore,
 	createArtifactVerifier,
 } from "../../src/artifacts/index.js";
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+	jsonOf,
+} from "../../src/artifacts/json.js";
 import { CD_STREAMS } from "../../src/events.js";
-import type { Digest } from "../../src/ports.js";
 import { createProvenanceVerifier } from "../../src/provenance/index.js";
 import {
 	actionsAttestBundle,
@@ -35,6 +40,7 @@ import {
 	bytesOf,
 	context,
 	MemoryEventStore,
+	pinned,
 	ScriptedTransport,
 	T0,
 	TENANT,
@@ -66,7 +72,14 @@ const cue = findCue();
 const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-artifacts-cue-"));
 let written = 0;
 
-function vets(definition: string, value: unknown): boolean {
+/** A recorded body or generated JSON as a JSON object (throws when it is not one). */
+function objectOf<T>(value: T): JsonObject {
+	const json = jsonOf(value);
+	if (!isJsonObject(json)) throw new Error("expected a JSON object");
+	return json;
+}
+
+function vets(definition: string, value: JsonValue): boolean {
 	if (cue === undefined)
 		throw new Error(
 			"cue is required for the CUE boundary tests (mise install)",
@@ -104,17 +117,16 @@ describe("artifacts.cue", () => {
 				context(),
 			);
 			await store.delete(
-				ref.digest as Digest,
+				pinned(ref.digest),
 				"retention: unreferenced past blob grace",
 				context(),
 			);
 			const [stored, deleted] = events.events(CD_STREAMS.artifact(ref.digest));
-			expect(vets("#ArtifactStoredRecord", stored?.data)).toBe(true);
-			expect(vets("#ArtifactDeletedRecord", deleted?.data)).toBe(true);
-			const data = structuredClone(stored?.data) as {
-				backend: string;
-				artifact: { coordinate: string };
-			};
+			expect(vets("#ArtifactStoredRecord", objectOf(stored?.data))).toBe(true);
+			expect(vets("#ArtifactDeletedRecord", objectOf(deleted?.data))).toBe(
+				true,
+			);
+			const data = objectOf(stored?.data);
 			expect(
 				vets("#ArtifactStoredRecord", {
 					...data,
@@ -123,7 +135,7 @@ describe("artifacts.cue", () => {
 			).toBe(false);
 			expect(
 				vets("#ArtifactDeletedRecord", {
-					...(deleted?.data as object),
+					...objectOf(deleted?.data),
 					reason: "",
 				}),
 			).toBe(false);
@@ -144,21 +156,21 @@ describe("artifacts.cue", () => {
 		expect(vets("#ArtifactRef", ok)).toBe(true);
 		expect(
 			vets("#ArtifactRef", {
-				...(ok as object),
+				...objectOf(ok),
 				digest: `sha256:${"A".repeat(64)}`,
 			}),
 		).toBe(false);
 		expect(
 			vets("#ArtifactRef", {
-				...(ok as object),
+				...objectOf(ok),
 				coordinate: "https://bot:pw@registry.example/app",
 			}),
 		).toBe(false);
-		expect(vets("#ArtifactRef", { ...(ok as object), ecosystem: "hex" })).toBe(
+		expect(vets("#ArtifactRef", { ...objectOf(ok), ecosystem: "hex" })).toBe(
 			false,
 		);
 		expect(
-			vets("#ArtifactRef", { ...(ok as object), payload: "inline bytes" }),
+			vets("#ArtifactRef", { ...objectOf(ok), payload: "inline bytes" }),
 		).toBe(false);
 	});
 
@@ -172,7 +184,7 @@ describe("artifacts.cue", () => {
 			statement,
 			signedAtMs: Date.UTC(2026, 10, 1),
 		});
-		const policy = {
+		const policy: JsonObject = {
 			sigstore: { trustedRoot: root.trustedRoot, issuers: [GITHUB_ISSUER] },
 		};
 		const verifier = createProvenanceVerifier({
@@ -199,11 +211,13 @@ describe("artifacts.cue", () => {
 		);
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
-		const ref = toJson(ProvenanceRefSchema, outcome.value[0] as never);
+		const [first] = outcome.value;
+		if (first === undefined) throw new Error("one ProvenanceRef");
+		const ref = toJson(ProvenanceRefSchema, first);
 		expect(vets("#ProvenanceRef", ref)).toBe(true);
-		expect(
-			vets("#ProvenanceRef", { ...(ref as object), verified: false }),
-		).toBe(false);
+		expect(vets("#ProvenanceRef", { ...objectOf(ref), verified: false })).toBe(
+			false,
+		);
 		expect(vets("#ProvenanceTrustPolicy", policy)).toBe(true);
 		expect(
 			vets("#ProvenanceTrustPolicy", {

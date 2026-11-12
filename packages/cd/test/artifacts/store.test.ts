@@ -24,6 +24,7 @@ import {
 	bytesOf,
 	context,
 	MemoryEventStore,
+	pinned,
 	RecordingTelemetry,
 	StaticCredentials,
 	T0,
@@ -162,7 +163,7 @@ describe.each([
 		expect(ref.ecosystem).toBe("store");
 		expect(ref.sizeBytes).toBe(BigInt(bytes.byteLength));
 		expect(ref.kind).toBe(ArtifactKind.WASM_COMPONENT);
-		const digest = ref.digest as Digest;
+		const digest = pinned(ref.digest);
 		expect(await h.store.get(digest)).toEqual(bytes);
 		expect(await h.store.has(digest)).toBe(true);
 		expect(await collect(h.store)).toEqual([digest]);
@@ -188,7 +189,7 @@ describe.each([
 	it("Corruption is detected on read", async () => {
 		const h = harness();
 		const ref = await h.store.put(bytesOf("pristine"), META, context());
-		const digest = ref.digest as Digest;
+		const digest = pinned(ref.digest);
 		h.corrupt(digest);
 		const error = await rejection(h.store.get(digest));
 		expect(error.code).toBe(ARTIFACT_REASON.corrupt);
@@ -201,15 +202,15 @@ describe.each([
 		const h = harness();
 		const bytes = bytesOf("repairable");
 		const ref = await h.store.put(bytes, META, context());
-		h.corrupt(ref.digest as Digest);
+		h.corrupt(pinned(ref.digest));
 		await h.store.put(bytes, META, context());
-		expect(await h.store.get(ref.digest as Digest)).toEqual(bytes);
+		expect(await h.store.get(pinned(ref.digest))).toEqual(bytes);
 	});
 
 	it("deletes with a recorded reason, once", async () => {
 		const h = harness();
 		const ref = await h.store.put(bytesOf("short-lived"), META, context());
-		const digest = ref.digest as Digest;
+		const digest = pinned(ref.digest);
 		await h.store.delete(
 			digest,
 			"retention: unreferenced past blob grace",
@@ -252,10 +253,12 @@ describe.each([
 		const h = harness();
 		const ref = await h.store.put(bytesOf("x"), META, context());
 		expect(
-			(await rejection(h.store.delete(ref.digest as Digest, " ", context())))
+			(await rejection(h.store.delete(pinned(ref.digest), " ", context())))
 				.code,
 		).toBe(ARTIFACT_REASON.configInvalid);
-		expect((await rejection(h.store.get("sha256:XYZ" as Digest))).code).toBe(
+		// SAFETY: deliberately unparsed text, to exercise the store's runtime digest check.
+		const unparsed = "sha256:XYZ" as Digest;
+		expect((await rejection(h.store.get(unparsed))).code).toBe(
 			ARTIFACT_REASON.digestInvalid,
 		);
 	});
@@ -308,7 +311,7 @@ describe("filesystem backend", () => {
 		const ref = await h.store.put(bytesOf("whole"), META, context());
 		writeFileSync(join(h.root, "tmp", `${"a".repeat(64)}.1.1.partial`), "half");
 		expect(await collect(h.store)).toEqual([ref.digest]);
-		expect(await h.store.has(`sha256:${"a".repeat(64)}` as Digest)).toBe(false);
+		expect(await h.store.has(pinned(`sha256:${"a".repeat(64)}`))).toBe(false);
 	});
 
 	it("lays blobs out content-addressed under blobs/sha256/<hh>/<hex>", async () => {
@@ -342,7 +345,7 @@ describe("s3-compatible backend", () => {
 	it("resolves credentials per call and scopes them to the bucket", async () => {
 		const h = s3Harness();
 		const ref = await h.store.put(bytesOf("scoped"), META, context());
-		await h.store.get(ref.digest as Digest);
+		await h.store.get(pinned(ref.digest));
 		expect(h.credentials.calls.length).toBe(h.s3.requests.length);
 		expect(
 			new Set(h.credentials.calls.map((call) => `${call.ref} ${call.scope}`)),
@@ -354,7 +357,7 @@ describe("s3-compatible backend", () => {
 	it("No credential appears in an event or error", async () => {
 		const h = s3Harness();
 		const ref = await h.store.put(bytesOf("audited"), META, context());
-		await h.store.delete(ref.digest as Digest, "operator cleanup", context());
+		await h.store.delete(pinned(ref.digest), "operator cleanup", context());
 		h.s3.failNext = {
 			when: (request) => request.method === "PUT",
 			status: 403,
@@ -363,7 +366,7 @@ describe("s3-compatible backend", () => {
 			h.store.put(bytesOf("refused"), META, context()),
 		);
 		h.s3.throwNext = { when: () => true };
-		const unknown = await rejection(h.store.get(ref.digest as Digest));
+		const unknown = await rejection(h.store.get(pinned(ref.digest)));
 		const recorded = JSON.stringify([h.events.allEvents(), h.telemetry.points]);
 		const errors = JSON.stringify([
 			refused.message,
@@ -425,7 +428,7 @@ describe("s3-compatible backend", () => {
 				request.method === "POST" && request.url.includes("uploadId="),
 		);
 		expect(complete?.headers["if-none-match"]).toBe("*");
-		expect(await store.get(ref.digest as Digest)).toEqual(bytes);
+		expect(await store.get(pinned(ref.digest))).toEqual(bytes);
 
 		s3.failNext = {
 			when: (request) => request.url.includes("partNumber=2"),
@@ -548,7 +551,7 @@ describe("s3-compatible backend", () => {
 			{ store: new MemoryEventStore(), tenant: TENANT, now: () => T0 },
 		);
 		expect(
-			(await rejection(store.has(`sha256:${"0".repeat(64)}` as Digest))).code,
+			(await rejection(store.has(pinned(`sha256:${"0".repeat(64)}`)))).code,
 		).toBe(ARTIFACT_REASON.credentialUnavailable);
 		expect(s3.requests).toEqual([]);
 	});

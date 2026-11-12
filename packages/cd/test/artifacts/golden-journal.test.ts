@@ -3,7 +3,7 @@
 // later one, and today's writer must still produce exactly these bodies.
 // Changing a body shape needs an upcaster plus a new corpus entry, never an
 // edit here.
-import { toJson } from "@bufbuild/protobuf";
+import { isMessage, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	ArtifactDeletedRecordSchema,
@@ -12,13 +12,14 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { createArtifactStore } from "../../src/artifacts/index.js";
 import { createArtifactJournal } from "../../src/artifacts/journal.js";
+import { isJsonObject, jsonOf } from "../../src/artifacts/json.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
-import type { Digest } from "../../src/ports.js";
 import {
 	bytesOf,
 	context,
 	MemoryEventStore,
 	OPERATOR,
+	pinned,
 	T0,
 	TENANT,
 } from "./fakes.js";
@@ -70,12 +71,15 @@ describe("artifact journal golden corpus (v1)", () => {
 		const history = await createArtifactJournal(
 			{ store, tenant: TENANT, now: () => T0 },
 			"filesystem",
-		).history(DIGEST as Digest);
+		).history(pinned(DIGEST));
 		expect(history).toHaveLength(2);
-		expect(toJson(ArtifactStoredRecordSchema, history[0] as never)).toEqual(
-			CORPUS[0].data,
-		);
-		expect(toJson(ArtifactDeletedRecordSchema, history[1] as never)).toEqual(
+		const [stored, deleted] = history;
+		if (!isMessage(stored, ArtifactStoredRecordSchema))
+			throw new Error("first corpus event decodes to ArtifactStoredRecord");
+		if (!isMessage(deleted, ArtifactDeletedRecordSchema))
+			throw new Error("second corpus event decodes to ArtifactDeletedRecord");
+		expect(toJson(ArtifactStoredRecordSchema, stored)).toEqual(CORPUS[0].data);
+		expect(toJson(ArtifactDeletedRecordSchema, deleted)).toEqual(
 			CORPUS[1].data,
 		);
 	});
@@ -98,11 +102,15 @@ describe("artifact journal golden corpus (v1)", () => {
 		const [stored] = events.events(CD_STREAMS.artifact(ref.digest));
 		expect(stored?.type).toBe(CD_EVENTS.ArtifactStored);
 		expect(stored?.v).toBe(1);
-		expect(Object.keys(stored?.data ?? {}).sort()).toEqual(
+		const data = jsonOf(stored?.data);
+		const artifact = isJsonObject(data) ? data.artifact : undefined;
+		if (!isJsonObject(data) || !isJsonObject(artifact))
+			throw new Error("artifact.Stored body is a JSON object with an artifact");
+		expect(Object.keys(data).sort()).toEqual(
 			Object.keys(CORPUS[0].data).sort(),
 		);
-		expect(
-			Object.keys((stored?.data as { artifact: object }).artifact).sort(),
-		).toEqual(Object.keys(CORPUS[0].data.artifact).sort());
+		expect(Object.keys(artifact).sort()).toEqual(
+			Object.keys(CORPUS[0].data.artifact).sort(),
+		);
 	});
 });

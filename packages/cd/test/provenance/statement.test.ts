@@ -1,12 +1,12 @@
 // The statement adapter over @hobo/registry parseProvenanceStatement: SLSA v1
 // puts the builder at predicate.runDetails.builder.id.
 import { describe, expect, it } from "vitest";
+import type { JsonValue } from "../../src/artifacts/json.js";
 import { parseStatement } from "../../src/provenance/statement.js";
 
-const encode = (value: object | string) =>
-	new TextEncoder().encode(
-		typeof value === "string" ? value : JSON.stringify(value),
-	);
+const encode = (value: JsonValue) =>
+	new TextEncoder().encode(JSON.stringify(value));
+const encodeText = (text: string) => new TextEncoder().encode(text);
 const subject = [{ name: "api.wasm", digest: { sha256: "a".repeat(64) } }];
 const base = {
 	_type: "https://in-toto.io/Statement/v1",
@@ -58,7 +58,7 @@ describe("provenance statement parsing", () => {
 				}),
 			).ok,
 		).toBe(false);
-		expect(parseStatement(encode("{not json")).ok).toBe(false);
+		expect(parseStatement(encodeText("{not json")).ok).toBe(false);
 		expect(parseStatement(new Uint8Array([0xff, 0xfe])).ok).toBe(false);
 		const sha512 = parseStatement(
 			encode({
