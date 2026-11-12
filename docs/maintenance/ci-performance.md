@@ -641,6 +641,12 @@ checks failed on main before anyone saw them:
   checkout that sets `clean: false` twice: two branches that each add the line to the same checkout
   merge without a git conflict into a duplicate YAML key, which GitHub cannot parse, so the workflow
   does not run at all.
+  The lint also refuses an enabled workflow file it does not know. `fleet-enrollment.yml` landed
+  without an entry in `activeCiFiles` (`scripts/lint-actions.ts`), so the lint failed on main and on
+  every pull request whose diff selects it. It is listed now, and its two jobs carry what the lint
+  then asks of any fabric workflow: the trunk label expression (the workflow can be dispatched by
+  hand) and `clean: false` on the box checkouts. A new workflow under `.github/workflows/` needs the
+  same two steps in the pull request that adds it.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads
