@@ -1,0 +1,21 @@
+{
+	"name": "@hobo/example-cd-conformance-kit",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"description": "Run the @hobo/cd conformance suites, matrices, chaos lane and load lane against reference adapters, and watch each suite catch a broken one.",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:chaos": "vitest run test/cd-chaos.test.ts",
+		"test:load": "HOBO_CD_LOAD=1 vitest run test/cd-fanout-load.test.ts",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@hobo/cd": "workspace:*",
+		"@hobo/conformance": "workspace:*",
+		"@hobo/core": "workspace:*"
+	}
+}
