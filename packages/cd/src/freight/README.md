@@ -44,17 +44,30 @@ decision. It is work package WP1 of
   facts.
 - **Fail closed.** An unreadable event makes that Freight unusable. A
   desired-state or promotion event the sweep cannot read aborts the whole
-  sweep (`hobo.cd.freight.retention.aborted`), and nothing is retired.
-- **Governance.** `approve` needs the `CdAuthorizer` (`freight.approve`). The
-  frozen factory signature does not pass one, so the ledger accepts an
-  optional `authorizer` and refuses approvals without it
-  (`freight-action-ungoverned`). `yank` is governed when an authorizer is
-  present. A proposal-only principal, such as an agent, can neither approve
-  nor yank. `record` is governed by the ingress that calls it (`FreightIngest`,
-  `FreightSources`).
+  sweep (`hobo.cd.freight.retention.aborted`), and nothing is retired. A
+  `set.Created` or `policy.BindingChanged` that names no Camp (no `camp_id`
+  and not on a `cd-camp-*` stream) aborts too. One that names no Freight (a
+  binding restore) adds nothing to the history.
+- **Governance (I10).** `approve` (`freight.approve`) and `yank`
+  (`freight.yank`) need the `CdAuthorizer`. The frozen factory signature does
+  not pass one, so the ledger accepts an optional `authorizer` and refuses
+  both without it (`freight-action-ungoverned`). A proposal-only principal,
+  such as an agent, can neither approve nor yank. `record` is governed by the
+  ingress that calls it (`FreightIngest`, `FreightSources`). `retire` is the
+  system retention sweep: the frozen `CdAction` union has no
+  `freight.retire` and `FreightRetiredRecord` has no decision-id field, so
+  the sweep is governed by the compose-owned job that schedules it (WP18),
+  and the journal records the sweep's principal as the event actor. A
+  frozen-contract follow-up could add both.
+- **Idempotency.** A retried `approve` gets a fresh decision id from the
+  authorizer, so an existing approval with the same Camp, approver, reason
+  and expiry is returned instead of a second `freight.Approved`.
 - **Retention (D18).** The sweep keeps:
   - the Freight each Camp currently runs (the latest `set.Created` per Camp);
-  - the `keep_per_camp` predecessors in each Camp's Set history;
+  - the Rail each Camp has bound (the latest `policy.BindingChanged` per
+    Camp, D24), kept as a separate `<camp>#rail` history so a Bindle Set
+    never pushes a Rail out of rollback depth or the reverse;
+  - the `keep_per_camp` predecessors in each Camp's Set and Rail history;
   - anything under a legal-hold label (a policy key `k` or pair `k=v`, plus
     the built-in `hobo.cd/legal-hold`);
   - Freight with an in-flight promotion or an unexpired approval;

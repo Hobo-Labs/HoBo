@@ -323,6 +323,33 @@ describe("approve (expiring, governed hotfix bypass)", () => {
 		expect(await ledger.approvals(id)).toEqual([outcome.value]);
 	});
 
+	it("a retried approve records one approval (I12)", async () => {
+		const { ledger, ctx, telemetry } = harness();
+		const id = fid((await recorded(ledger, ctx)).freightId);
+		const input = {
+			freightId: id,
+			campId: PROD,
+			reason: "hotfix INC-12",
+			expiresAtMs: ctx.now() + 2 * HOUR,
+		};
+		const first = await ledger.approve(input, ctx);
+		const again = await ledger.approve(input, ctx);
+		expect(first.ok && again.ok).toBe(true);
+		expect(again).toEqual(first);
+		expect(await ledger.approvals(id)).toHaveLength(1);
+		expect(telemetry.count(FREIGHT_METRIC.approved)).toBe(1);
+	});
+
+	it("yank fails closed without an authorizer (I10)", async () => {
+		const { ledger, ctx } = harness({ authorizer: null });
+		const id = fid((await recorded(ledger, ctx)).freightId);
+		const outcome = await ledger.yank(id, "CVE-2026-0001", ctx);
+		expect(!outcome.ok && outcome.reasons[0]?.code).toBe(
+			FREIGHT_REASON.ungoverned,
+		);
+		expect(await ledger.isUsable(id)).toBe(true);
+	});
+
 	it("refuses expiry in the past or beyond the hotfix maximum", async () => {
 		const { ledger, ctx } = harness();
 		const id = fid((await recorded(ledger, ctx)).freightId);
