@@ -127,17 +127,24 @@ camps: {
 **Request-level isolation (sandbox lanes) — the cheaper default for previews & branch testing ([ADR-0076](./adr/02-identity-security.md#adr-0076)).** Cloning a whole Camp per PR is the heavy option; the default is a **sandbox lane** over a **shared baseline** environment (the bridge-to-Kubernetes model): a lane = a **signed, principal/tenant-bound lane token** (not a bare header) + a set of **boundary-mode** overrides ([Plan 9](./generated-stack.md#plan-09)/[Plan 23](./generated-stack.md#plan-23)). The token is **enforced fail-closed at every membrane hop and on the `EventEnvelope.lane` for async** — requests/events carrying it route to the lane's **forked** services (a `hobo dev --fork` build via the Relay (below), or a branch deploy), everything else stays baseline, and a hop/subscriber that can't prove in-lane provenance **denies rather than leaking onto the baseline**. A fork must **satisfy the boundary contract at lane join** (a runtime check, distinct from deploy-time `can-deploy`, [Plan 29](./contracts-policy-flags.md#plan-29)); **baseline aggregates fork-on-touch** so a lane write never appends the real stream ([Plan 32](./data-plane.md#plan-32)). Concretely, fork-on-touch is **not** contending for the baseline's single-writer lease: a touched aggregate folds the baseline stream up to the fork point, then appends the lane's events to a **separate lane-scoped stream id** (`lane:<id>:<aggregateKey>`) **with its own lease** — reads are a **read-through merge** (baseline-up-to-fork-point ⊕ lane tail), and a **lane request never takes the baseline single-writer lease**, so a concurrent baseline writer is unaffected. **No fork event is ever delivered to a baseline subscriber/saga** (the `EventEnvelope.lane` deny-by-default filter, [ADR-0076](./adr/02-identity-security.md#adr-0076) R1), and a **choreography saga is lane-scoped** — a baseline saga never reacts to a lane event and vice-versa. **Real external side effects default to `mock`/`record`** (a `live` grant is itself gated, [ADR-0076](./adr/02-identity-security.md#adr-0076) R3); the lane runs under a **resource budget** + isolation tier ([ADR-0012](./adr/02-identity-security.md#adr-0012)) so a bad fork can't degrade the baseline; read-through honors data-classification ([ADR-0060](./adr/02-identity-security.md#adr-0060)). A lane is **tenant-scoped**, has a **TTL**, and reap **drains in-flight requests + fails/migrates running sagas** before discarding the overlay; lane cost is a metering dimension ([ADR-0039](./adr/02-identity-security.md#adr-0039)). A **preview environment** is then either a sandbox lane (the default) or a full ephemeral Camp, each with a preview URL; the same lanes carry **self-healing experiments** and **lane-bounded chaos** ([ADR-0076](./adr/02-identity-security.md#adr-0076)).
 
 ### Deployment Sets (immutable) + Deltas (mutable)
+> **Delivered by HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180), D2, D5).** The model below is implemented by
+> `@hobo/cd`; [continuous-delivery.md](./continuous-delivery.md) is the full
+> design.
+
 HoBo produces a **manifest IR** per deploy ([Plan 21](./authoring-resources-wiring.md#plan-21)); Sets and Deltas are the two halves of that model, as **projections over the event log** ([Plan 11](./data-plane.md#plan-11)) rather than bespoke tables — so promote/rollback/preview inherit replay + audit for free:
-- **Deployment Set** = the immutable, content-addressed resolved configuration of a Camp at a point in time. Recorded as `set.Created`. A stateful resource's **cross-Camp replication topology** (single-writer / active-active-eventual / pinned, [ADR-0040](./adr/01-architecture-core.md#adr-0040)) is part of this resolved config, selected like any other matching dimension.
-- **Deployment Delta** = a mutable, reviewable **diff** (add/update/remove resources or workloads) against the current Set. Deltas combine, preview, approve, then **apply** to produce a new Set (`delta.Opened` / `delta.Updated` / `delta.Applied`).
+- **Freight** is what moves between environments: the immutable, content-addressed promotion unit for one Bindle (declaration hash, artifact digests, source, provenance). It is discovered by pull from any registry or Git host, or ingested from any CI by OIDC trusted publishing or an in-toto/SLSA attestation (`freight.Recorded`).
+- **Deployment Set** = the immutable, content-addressed resolved configuration of one Bindle in one Camp: Freight's declaration Matched against that Camp's topology. Recorded as `set.Created`. A stateful resource's **cross-Camp replication topology** (single-writer / active-active-eventual / pinned, [ADR-0040](./adr/01-architecture-core.md#adr-0040)) is part of this resolved config, selected like any other matching dimension.
+- **Deployment Delta** = the proposed transition from a Camp's current Set to a new one, with an intent (`promote`, `rollback`, `config`, `topology`, `failover`, `depart`, `posture-remediate`, …). Deltas preview, pass the gate, then **apply** to make the new Set the Camp's desired state (`delta.Opened` / `delta.Updated` / `delta.Applied` / `delta.Rejected`).
+- **Desired state and observations are separate streams.** A Camp's spec stream holds its desired Set; a fenced per-Camp **reconciler** converges the target and reports to the Camp's status stream. The reconciler is the only delivery mutator.
 
 ```mermaid
 flowchart LR
-  SRC["Bindle + Camp(envType)"] --> D["Delta (draft diff)"]
-  D --> REV["preview / review / approve<br/>(policy gate, Plan 5/6)"]
-  REV --> APPLY["apply -> new Set (immutable)"]
-  APPLY --> DEP["deploy: reconcile only changed nodes (incremental)"]
-  DEP --> REC["record Deployment (audit)"]
+  FR["Freight (immutable)"] --> M["Matching per target Camp"]
+  M --> D["Delta (proposed transition)"]
+  D --> REV["preview / gate / approval<br/>(Gatekeeper, windows, lineage)"]
+  REV --> APPLY["apply -> new desired Set (immutable)"]
+  APPLY --> REC["reconciler converges by pull<br/>(only changed nodes)"]
+  REC --> OBS["status observations -> verification"]
 ```
 
 Because `match.Decided` (above) is part of the same record, "why did preview get the cheap DB?" is always answerable.
@@ -147,13 +154,14 @@ The M0 projection contract is pinned by the executable HOBO-50 proof in
 it folds `set.Created` + `delta.*`, verifies stable Set content addressing, computes
 add/update/remove diffs, rejects overlapping Deltas and absent-resource references, and treats an
 environment group as Yard-level orchestration over member Camps rather than a new config layer.
+`@hobo/cd` promotes that proof's semantics into its `sets` module tests.
 
 ### The `can-deploy` gate, promote, rollback, incremental
-Applying a Delta or promoting a Set runs the **Gatekeeper** ([Plan 29](./contracts-policy-flags.md#plan-29)/[Plan 29](./contracts-policy-flags.md#plan-29)) against the **versions already running in the target Camp** (read from the event log): contracts-compatible (`compat.GatePassed/Failed`) AND policy-allows — with **obligations** that can *reshape* the rollout (e.g. "allow but require canary" forces a canary) — AND evals/conformance/cost. Incompatible producer/consumer skew blocks the promote with a precise reason + suggested fixes (shim, deploy-order, migration window). **App-data schema migrations compose here:** when a Delta changes a `sql` resource's schema, its **expand/backfill/contract** phases ([Plan 32](./data-plane.md#plan-32)) are gated saga steps in *this* flow — each phase passes the same `can-deploy` check, and a **destructive contract phase that would break a still-running version is blocked** (`compat.GateFailed`). Schema migration and code rollout are gated together, not in separate pipelines.
+Applying a Delta runs the **Gatekeeper** ([Plan 29](./contracts-policy-flags.md#plan-29)) against the **versions already running in the target Camp** (read from the event log): contracts-compatible (`compat.GatePassed/Failed`) AND policy-allows — with **obligations** that can *reshape* the rollout (e.g. "allow but require canary" forces a canary) — AND evals/conformance/cost, AND the Camp's change windows. Incompatible producer/consumer skew blocks the promotion with a precise reason + suggested fixes (shim, deploy-order, migration window). **App-data schema migrations compose here:** when the Freight's declaration changes data shape, promotion runs Trails `expand` → hosting transition → soak → `contract` ([Plan 32](./data-plane.md#plan-32)); each phase passes the same gate, and a **destructive contract phase that would break a still-running version is blocked** (`compat.GateFailed`).
 
-- **Promote** = apply the Set running in one Camp as a Delta against another (e.g. staging → prod), gated.
-- **Rollback** = re-apply a previous Set; stateful resources keep state ([Plan 5](./reliability-observability-cost.md#plan-05)). **Rollback is gated against the *target revision's* schema expectations, and a completed `contract` phase is a boundary.** Because a destructive `contract` phase has already dropped the old shape, re-applying a prior Set whose code expects that shape would break — so a Set whose schema has **passed `contract` is not freely rollbackable past that boundary**: the rollback runs the **same `compat` gate** against the prior Set's schema expectations and **blocks** if they no longer hold, requiring a **compensating `expand`** (re-add the shape) first. Rollback before/within `expand`/`backfill` is safe; only the post-`contract` direction carries this constraint — stated rather than implied by "keeps state."
-- **Incremental deploy** = the Orchestrator's ResourceActors diff the new Set vs observed and reconcile **only changed nodes** ([Plan 4](./control-plane.md#plan-04)) — fast, low-blast-radius.
+- **Promote** = carry the **same Freight** into the target Camp, **re-run Matching for that Camp**, and apply the result as a Delta, gated. HoBo does not copy the source Camp's Set: the artifact bytes are identical everywhere (promote, never rebuild), while infrastructure may legitimately differ per Camp and is shown as `infrastructure_diff`. Lineage decides *whether* Freight may reach a Camp: only after upstream qualification (a PASS verification) plus soak, or an unexpired approval.
+- **Rollback** = zero exposure, then a Delta back to the predecessor Set through the same gate; stateful resources keep state ([Plan 5](./reliability-observability-cost.md#plan-05)). **A completed `contract` phase is a boundary:** because a destructive `contract` has already dropped the old shape, rollback past it is **refused**, and the refusal names the **compensating `expand`** (re-add the shape) to run first. Rollback before or within `expand`/`backfill` is safe.
+- **Incremental deploy** = the reconciler diffs the desired Set against what it observed and converges **only changed nodes** through the Orchestrator's ResourceActors ([Plan 4](./control-plane.md#plan-04)) or the hosting-transition coordinator — fast, low-blast-radius.
 
 All of these are sequences of events → time-travel, audit, and DR-as-replay for free.
 
@@ -193,15 +201,28 @@ A **Workload Profile** declares **how a service is realized** on a target — th
 **Placeholders / output references** align to Humanitec syntax and HoBo's lazy references ([Plan 21](./authoring-resources-wiring.md#plan-21)) — resource outputs `${resources.<type>.<class>#<id>.outputs.<name>}` and context `${context.app|env|envType|res.id|class|type}` — resolved at deploy from the resolved graph; unresolved refs fail planning with a precise error.
 
 ### The HoBo Relay (deploy into private networks)
-A hosted Yard can't reach a customer's private cluster/cloud. The **HoBo Relay** is a lightweight proxy inside that network:
+> **Superseded for delivery by the HoBo.CD agent ([ADR-0180](./adr/01-architecture-core.md#adr-0180), D5).** Delivery into a
+> private network no longer uses a reverse tunnel. An **agent-mode reconciler**
+> runs inside the boundary (`hobo deploy agent run`), connects **outbound over
+> HTTPS only** to the Station's delivery feed, authenticates with a key-bound
+> JWT-SVID and a DPoP proof on every request, reads its Camp's desired state,
+> converges it with credentials that never leave the network, and reports
+> observations back. The Station holds no target credential and never opens a
+> connection to the agent. Agents enroll with double opt-in (two recorded
+> grants). The reverse-tunnel design below is kept as history and for non-delivery
+> uses only.
+
+A hosted Yard can't reach a customer's private cluster/cloud. The **HoBo Relay** was designed as a lightweight proxy inside that network:
 - **Outbound-only reverse tunnel:** the Relay dials the Yard over **TCP 443** (no inbound ports, no exposed endpoints); TLS + authenticated with an SVID ([Plan 6](./ai-native-agent-auth.md#plan-06)).
 - **Executors run behind the Relay:** IaC/build/driver execution happens inside the private network; **credentials never leave it**; the Yard sends work + receives `exec.*`/outputs over the tunnel.
 - One Relay can serve multiple clusters/targets, routing by target id — enabling regulated/sovereign deploys ([Plan 12](./security-networking.md#plan-12)) and self-hosted parity.
+
+The shape was wrong for pull delivery: a tunnel lets the Yard push work in, whereas a reconciler that reads desired state needs only an outbound feed.
+
 ```mermaid
 flowchart LR
-  YARD["Yard (hosted control plane)"] -. work / results over outbound 443 .- AG["HoBo Relay<br/>(customer private network)"]
-  AG --> EX["Executors (sandboxed)"]
-  EX --> PRIV["private cluster / cloud / DB"]
+  STATION["Station (delivery feed)"] -. desired state / observations over outbound HTTPS .- AG["HoBo.CD agent<br/>(customer private network)"]
+  AG --> PRIV["private cluster / cloud / DB"]
 ```
 
 ### Air-gapped / sovereign mode (fully disconnected) ([ADR-0036](./adr/07-portability-extensibility.md#adr-0036))
@@ -243,24 +264,34 @@ flowchart TD
 > Air-gap is a **single in-boundary Yard** that may **stand alone or join a Junction** ([ADR-0036](./adr/07-portability-extensibility.md#adr-0036)); multi-Yard **federation** (multi-region/regulatory/cross-cloud) is designed first-class as the **Junction** ([ADR-0043](./adr/07-portability-extensibility.md#adr-0043), [Q20](./generated-stack.md#historical-open-question-ledger), [Plan 4](./control-plane.md#plan-04) §Yard scope & multi-Yard).
 
 ### GitOps publisher mode
-Beyond direct apply, a Camp can use a **GitOps publisher**: the Yard writes the resolved **Deployment Set** as manifests/CRs to a Git repo/branch, and **Argo CD / Flux** sync it to the cluster. It's just another **publisher** target ([Plan 21](./authoring-resources-wiring.md#plan-21)) — the resolution/matching/event-sourcing pipeline is unchanged; only the final apply step differs. Supports standalone, GitOps, or hybrid; the Relay can supply runtime data back.
+Beyond direct apply, a Camp can use a **GitOps publisher** (`@hobo/cd-gitops`, a `publisher`-mode reconciler): it renders the resolved **Deployment Set** as an Argo CD `Application` or a Flux `Kustomization`, commits it through the Git host's HTTP API, and treats the Camp as converged **only when the engine's observed status says so**. The resolution/matching/event-sourcing pipeline is unchanged; only the final apply step differs. Argo CD and Flux are optional targets, never required.
 
 ### Pipelines (rule-based automation + approval gates)
-**Pipelines** sit above the deployment sagas ([Plan 5](./reliability-observability-cost.md#plan-05)) and policy gates ([Plan 6](./ai-native-agent-auth.md#plan-06)) to automate *when* deploys happen. The same engine powers **incident-response runbooks** — the SRE sibling of deploy pipelines, with alert/SLO-burn/drift triggers and gated *fix* actions ([Plan 40](./operators-sre.md#plan-40)); StackStorm/HolmesGPT are optional engines behind that port.
-- **Triggers:** **artifact** (a new image/component version matching a rule), **deploy-request** (a Delta opened), **schedule/cron**, and **API/MCP**.
-- **Rules (if-then):** e.g. *"new component from `main` → deploy to `staging`"*; *"tag `v*` → open a prod Delta requiring approval"*. Flexible match/exclude on artifact + branch.
-- **Steps/jobs:** run in order (`needs`) or parallel; can run tests, wait for health, call external CI, notify Slack/Teams, and **gate on approval** (a `createHook` resolved in the dashboard).
-- **Where CI jobs & builds run is cost-routed.** A step's CI job runs on a **`runner`** provider and a build runs on a **`build-machine`** ([Plan 4](./control-plane.md#plan-04)) — both selected per job by the **Dispatcher** ([ADR-0071](./adr/01-architecture-core.md#adr-0071)) by **effective marginal cost** across **only the registered** providers (self-hosted/GitHub/Blacksmith/Depot), so HoBo burns free credits/budgets before paying and rotates as each is exhausted. The pick is deterministic + recorded (`dispatch.Decided`, [Plan 11](./data-plane.md#plan-11)); the default runner/build-machine is the Executors behind the Relay (above). Pin a specific provider via `.with(...)` to opt out of routing.
-- **Concurrency:** per-pipeline locks; bounded concurrent runs.
-- Every trigger/step/gate is an event (`pipeline.Triggered`/`pipeline.StepCompleted`/`pipeline.GateApproved`, [Plan 11](./data-plane.md#plan-11)) → replayable, auditable automation.
+> **Delivered by HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180), D4).** A delivery Pipeline is a graph with
+> lineage, not a step runner.
+
+A **Pipeline** is a DAG of nodes, one per Bindle (or per Rail, when policy itself is delivered). Each node names Camps, or a **Placement** over Rail-bound Camp sets for a fleet, and declares:
+- **sources:** Freight sources (pull discovery from registries, Git hosts, package registries, HTTP indexes, HoBo CI, HoBo Rails) and/or upstream nodes;
+- **availability:** `ONE_OF` or `ALL` upstream Camps qualified (`QUORUM` for placed nodes), plus `required_soak_ms`;
+- **auto-promotion:** `DISABLED`, `NEWEST` or `MATCH_UPSTREAM`;
+- strategy and stage percents, a `VerificationSpec`, change windows, typed hooks (`RUNBOOK`, `NOTIFY`, `SUITE`) and `approval_required`;
+- optionally `preview_ttl_ms`, which makes the node an ephemeral preview environment.
+
+Freight reaches a node only when upstream qualification and soak make it available, or through an audited, expiring approval (a hotfix). Each Camp runs one promotion at a time; newer Freight supersedes older. There is no expression language. Incident-response runbooks remain the SRE sibling of deploy pipelines ([Plan 40](./operators-sre.md#plan-40)) and attach as `RUNBOOK` hooks.
+
+- **Where CI jobs & builds run is cost-routed.** CI is separate from CD: a CI job runs on a **`runner`** provider and a build on a **`build-machine`** ([Plan 4](./control-plane.md#plan-04)), both selected per job by the **Dispatcher** ([ADR-0071](./adr/01-architecture-core.md#adr-0071)) by **effective marginal cost** across **only the registered** providers. The pick is deterministic + recorded (`dispatch.Decided`, [Plan 11](./data-plane.md#plan-11)). CD consumes CI's output as Freight and does not depend on which CI produced it.
+- Every promotion, verification and gate is an event (`env.PromoteRequested`, `verification.Completed`, `freight.Qualified`) → replayable, auditable automation.
+
 ```ts
-// platform/pipelines.ts (illustrative)
-definePipeline("promote-staging", {
-  on: { artifact: { component: "api", branch: "main" } },
-  steps: [
-    { run: "deploy", camp: "staging" },
-    { gate: "approval", to: "production" },     // resolves via dashboard hook
-    { run: "deploy", camp: "prod", strategy: "canary" },
-  ],
-});
+// hobo.delivery.ts — applied with `hobo deploy pipeline apply --file hobo.delivery.ts`
+export const pipelines = [
+  {
+    name: "api",
+    bindle: "api",
+    nodes: [
+      { name: "staging", campIds: ["edge/staging"], sources: ["api-ci"], autoPromotion: "AUTO_PROMOTION_NEWEST" },
+      { name: "prod", campIds: ["edge/prod"], sources: ["staging"], approvalRequired: true },
+    ],
+  },
+];
 ```

@@ -22,6 +22,28 @@ classes, custody states, required evidence fields, access boundaries, owners, an
 expectations. It is not a production blob store, registry backend, package cache, signing-key
 system, release pipeline, UI, support automation, or customer-data storage program.
 
+## HoBo.CD: the delivery artifact store
+
+The `@hobo/cd` artifacts module is the artifact store for delivery ([ADR-0180](./adr/01-architecture-core.md#adr-0180) D3,
+D18; [continuous-delivery.md](./continuous-delivery.md)):
+
+- **Content-addressed.** Artifacts and resolved-plan blobs are stored and
+  fetched by digest; a reconciler fetches the resolved plan for a Delta by
+  digest (inline on the delivery feed up to 256 KiB).
+- **Integrity.** A blob whose bytes no longer match its digest is detected and
+  blocks promotion; nothing is substituted.
+- **Provenance.** in-toto Statement v1 + SLSA provenance, parsed by
+  `@hobo/registry` and verified as a Sigstore bundle or a HoBo-signed
+  attestation, is stored with the Freight it proves.
+- **Retention.** Keep any Freight deployed anywhere, the configured number of
+  predecessors per Camp, and anything under a legal hold; retire unpromoted
+  Freight after 30 days (`freight.Retired`) and delete unreferenced blobs after
+  7 days (`artifact.Deleted`).
+- **Backends.** A filesystem store by default and an S3-compatible store when
+  configured (`packages/hobo/CD.md`). Mirrors may serve an artifact from a
+  local registry, but the digest never changes.
+- **Runbook:** [artifact store](../runbooks/cd/artifacts.md).
+
 ## User And Business Goal
 
 HoBo needs accepted M0 scope for Artifact Store so release engineers, platform engineers, security

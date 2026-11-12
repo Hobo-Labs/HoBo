@@ -25,6 +25,26 @@ It does not build an environment service runtime, provider provisioning, DNS, ga
 deployment execution, admin-console UI, RBAC enforcement, tenant quota/billing behavior,
 backup/restore runtime, cleanup sweepers, or support ticketing.
 
+## HoBo.CD: environments as delivery targets
+
+HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180); [continuous-delivery.md](./continuous-delivery.md)) is the delivery engine for the lifecycle below:
+
+- **Promotion between environments** is a pipeline node per environment: Freight
+  reaches `prod` only after qualifying in the upstream node (a PASS
+  verification) plus soak, or through an audited, expiring approval.
+- **Preview environments** are pipeline nodes with `preview_ttl_ms`: a preview
+  Camp is cloned (`env.Cloned`) and expires (`env.Expired`) through the same
+  gate, Matching and reconciler as any Camp.
+- **Freezes** are change windows (ALLOW/FREEZE with a recurrence and timezone);
+  a closed window holds promotion, and rollback is allowed by default.
+- **Management mode.** A Camp is `MANAGED` (the default) or `OBSERVE_ONLY`,
+  which reports and evaluates posture but never applies; brownfield
+  environments start observe-only.
+- **Leaving a fleet.** A Camp that leaves a placed node departs with the node's
+  departure action; the default `ORPHAN_DATA` removes compute and keeps data
+  resources, and records what it kept. `hobo down` keeps its existing teardown
+  semantics.
+
 ## User And Business Goal
 
 HoBo needs accepted M0 scope for environment lifecycle before downstream work can depend on

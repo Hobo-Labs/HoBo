@@ -26,6 +26,29 @@ It does not build provider refresh schedulers, live provider polling, ResourceAc
 autonomous remediation, real cloud mutation, destructive cleanup, support ticketing, billing
 adjustment, or customer notification implementation.
 
+## HoBo.CD: where drift runs
+
+The M0 scope below assumed a reconciler that did not exist. HoBo.CD supplies it
+([ADR-0180](./adr/01-architecture-core.md#adr-0180) D5, D22; [continuous-delivery.md](./continuous-delivery.md)):
+
+- **Detection.** Every Camp has one fenced reconciler (per-Camp lease
+  `cd:camp:<campId>`). It compares the Camp's desired Set with what it
+  observes on the target and reports to the Camp's status stream
+  (`deployment.StatusObserved`). Drift is a difference between the two, found
+  by observation only.
+- **Routing.** Drift on a field the Set owns is converged back by the same
+  reconciler; a Camp in `OBSERVE_ONLY` management reports drift and never
+  applies. Every change still goes through a Delta and the gate; nothing
+  repairs a target outside its reconciler.
+- **Retained fields are not drift.** Fields a target-side controller owns, such
+  as autoscaler replica counts or provider-managed runtime versions, are
+  declared (a resolver component's `describe`, the in-tree retained table, or
+  the Camp mapping-rule property `hobo.cd/retain`) and reported as `retained`.
+- **Posture.** A posture rule in `enforce` mode on a Set-owned field is drift
+  by definition; on an unowned field it proposes a `posture-remediate` Delta
+  ([governance-planes.md](./governance-planes.md)).
+- **Runbook:** [reconcilers and drift](../runbooks/cd/reconcile.md).
+
 ## Scope
 
 In scope:
