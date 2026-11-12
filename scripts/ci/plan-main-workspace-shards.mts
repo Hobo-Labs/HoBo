@@ -18,6 +18,7 @@ import {
 	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
 	planDependentTests,
 	planDependentTestsForTurboAffected,
+	planHasWorkspaceWork,
 	planMainWorkspaceShardCount,
 	readRepo,
 	scaleWorkspaceDurations,
@@ -168,17 +169,22 @@ async function main(): Promise<void> {
 			MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE,
 		);
 	}
-	const shardPlan = planMainWorkspaceShardCount(plan, parallelCap, {
-		targetSeconds:
-			Number.isFinite(targetSeconds) && targetSeconds > 0
-				? targetSeconds
-				: MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
-		workspaces: repo.workspaces,
-		durations,
-		repo,
-	});
+	const shardPlan = planHasWorkspaceWork(plan)
+		? planMainWorkspaceShardCount(plan, parallelCap, {
+				targetSeconds:
+					Number.isFinite(targetSeconds) && targetSeconds > 0
+						? targetSeconds
+						: MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
+				workspaces: repo.workspaces,
+				durations,
+				repo,
+			})
+		: { count: 0, parallelCap, peakShardSeconds: 0 };
 	const count = shardPlan.count;
-	const shards = `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
+	const shards =
+		count === 0
+			? "[]"
+			: `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
 	console.error(
 		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
 	);
