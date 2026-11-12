@@ -53,6 +53,7 @@ import {
 	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
 	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
 } from "./container-timeout.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
@@ -1402,7 +1403,10 @@ export function createIsolatedContainerController(options: {
 						const handle = await options.docker.create(
 							containerSpec(
 								name,
-								planned.reservedMinutes * 60_000,
+								effectiveIsolatedTimeoutMs(
+									planned.reservedMinutes,
+									planned.jobName,
+								),
 								memoryMb,
 								selection,
 								rank,

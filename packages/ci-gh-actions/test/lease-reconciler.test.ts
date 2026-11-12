@@ -604,6 +604,7 @@ describe("worker lease reconciliation", () => {
 			jobId: lease.jobId,
 			name: container.name,
 			timeoutMs: container.timeoutMs,
+			declaredTimeoutMs: container.timeoutMs,
 		});
 	});
 
