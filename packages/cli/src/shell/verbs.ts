@@ -426,6 +426,52 @@ IDs do not apply.
 `;
 	}
 
+	if (verb.name === "deploy") {
+		return `HoBo deploy
+
+Usage:
+  hobo deploy <subcommand> [--format json|text] [--simulate]
+
+Freight:
+  hobo deploy freight record --file <freight-manifest.json>
+  hobo deploy freight list [--bindle <name>] [--limit <n>]
+  hobo deploy freight show|yank|approve <freight-id|alias> [--camp <camp>] [--reason <text>]
+Sources and pipelines (also as code: hobo.delivery.ts):
+  hobo deploy source define --file <f> | list | poll <name>
+  hobo deploy pipeline apply --file <pipeline.json|hobo.delivery.ts> | show <name> | list
+  hobo deploy window define --file <f> | list | override <window> --camp <a,b> --reason <text>
+  hobo deploy publisher define --file <publisher.json>
+Promotion:
+  hobo deploy promote <freight> --camp <a,b> [--pipeline <p> --node <n>] [--strategy <s>] [--propose]
+  hobo deploy status|logs [--camp <camp>]
+  hobo deploy rollback --camp <camp> --reason <text> [--to <set-id>]
+  hobo deploy reconcile --camp <camp>
+  hobo deploy preview create <freight> --source-camp <camp> | preview list
+  hobo deploy verify show <verification-id>
+  hobo deploy metrics [--window-ms <ms>]
+Agents (double opt-in):
+  hobo deploy agent token|enroll|approve-key|accept|run|revoke
+Fleet and policy:
+  hobo deploy campset define|list
+  hobo deploy camp list|show|taint|untaint|manage
+  hobo deploy placement define|decide|show
+  hobo deploy scores report --file <snapshot.json>
+  hobo deploy fanout show|halt|resume|rollback
+  hobo deploy failover list|approve
+  hobo deploy rebalance --pipeline <p> --node <n> --reason <text>
+  hobo deploy compliance show <camp>
+  Rails promote through \`promote\` with Rail Freight.
+Hosting supervision (unchanged):
+  hobo deploy hosting-status|hosting-resume|hosting-cancel|hosting-resume-mutation <deployment-id>
+
+Role: ${verb.role}
+${statusLine}
+Every refusal carries a code and a next step. Agents (HOBO_AGENT_ID) propose
+by default. --simulate is the only fixture path and every simulated result is
+labelled. See packages/hobo/CD.md.
+`;
+	}
+
 	if (verb.name === "identity") {
 		return `HoBo identity
 

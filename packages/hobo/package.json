@@ -11,6 +11,7 @@
 	"files": [
 		"LICENSE",
 		"CI.md",
+		"CD.md",
 		"dist",
 		"wit"
 	],
@@ -38,6 +39,8 @@
 		"@hobo/broker": "workspace:*",
 		"@hobo/camps": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/cd": "workspace:*",
+		"@hobo/cd-kube-fleet": "workspace:*",
 		"@hobo/ci": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/ci-gh-actions": "workspace:*",
@@ -75,6 +78,7 @@
 		"@hobo/provider-vercel": "workspace:*",
 		"@hobo/recipes": "workspace:*",
 		"@hobo/replay": "workspace:*",
+		"@hobo/resolver-components": "workspace:*",
 		"@hobo/runner-blacksmith": "workspace:*",
 		"@hobo/runner-depot": "workspace:*",
 		"@hobo/runner-github": "workspace:*",
@@ -84,6 +88,8 @@
 		"@hobo/runtime-oci": "workspace:*",
 		"@hobo/runtime-wasm": "workspace:*",
 		"@hobo/stations": "workspace:*",
+		"@hobo/storage-postgres": "workspace:*",
+		"@hobo/storage-sqlite": "workspace:*",
 		"@hobo/trails": "workspace:*",
 		"@hobo/trust": "workspace:*",
 		"@hobo/yards": "workspace:*",
