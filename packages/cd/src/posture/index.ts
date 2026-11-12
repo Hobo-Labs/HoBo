@@ -14,6 +14,7 @@ export {
 	type RemediationPlan,
 	ruleKey,
 } from "./evaluate-camp.js";
+export { complianceOscal, toPostureComplianceInput } from "./oscal.js";
 export {
 	applyPostureFixes,
 	classifyOwnership,
