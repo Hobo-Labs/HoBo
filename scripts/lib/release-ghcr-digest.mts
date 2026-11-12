@@ -214,6 +214,18 @@ export function isImagetoolsRegistryTagNotFound(stderr: string): boolean {
 	return /(?:^|\n)error:\s*.+:\s*not found\s*$/im.test(trimmed);
 }
 
+/** Substring `tag` in stderr must not be a longer ref (`:v1` vs `:v10`). */
+export function stderrReferencesExactTag(stderr: string, tag: string): boolean {
+	let start = 0;
+	for (;;) {
+		const idx = stderr.indexOf(tag, start);
+		if (idx === -1) return false;
+		const after = stderr[idx + tag.length];
+		if (after === undefined || !/[a-zA-Z0-9]/.test(after)) return true;
+		start = idx + 1;
+	}
+}
+
 function isImagetoolsTagAbsent(
 	stderr: string,
 	status: number,
@@ -221,13 +233,16 @@ function isImagetoolsTagAbsent(
 ): boolean {
 	if (status === 0) return false;
 	if (isImagetoolsRegistryTagNotFound(stderr)) {
-		return stderr.includes(tag);
+		return stderrReferencesExactTag(stderr, tag);
 	}
 	const lower = stderr.toLowerCase();
 	return (
-		(/\bmanifest unknown\b/u.test(lower) && stderr.includes(tag)) ||
-		(/\bname unknown\b/u.test(lower) && stderr.includes(tag)) ||
-		(/\bno such manifest\b/u.test(lower) && stderr.includes(tag))
+		(/\bmanifest unknown\b/u.test(lower) &&
+			stderrReferencesExactTag(stderr, tag)) ||
+		(/\bname unknown\b/u.test(lower) &&
+			stderrReferencesExactTag(stderr, tag)) ||
+		(/\bno such manifest\b/u.test(lower) &&
+			stderrReferencesExactTag(stderr, tag))
 	);
 }
 
