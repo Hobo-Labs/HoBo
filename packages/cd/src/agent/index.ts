@@ -5,3 +5,6 @@ export * from "./errors.js";
 export * from "./events.js";
 export * from "./jose.js";
 export * from "./replay.js";
+export * from "./dpop-verifier.js";
+export * from "./enrollment.js";
+export * from "./metrics.js";
