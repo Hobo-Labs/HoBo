@@ -144,6 +144,7 @@ async function promote(
 
 /** Report the Camp CONVERGED on `set` through the real reconcile transport. */
 async function reportConverged(w: World, set: SetRecord, atMs: number) {
+	// SAFETY: test reconciler ids are opaque strings.
 	const reconcilerId = "rec-1" as ReconcilerId;
 	const claimed = await w.transport.claim({
 		reconcilerId,
@@ -223,6 +224,7 @@ describe("rollout on a durable SQLite journal", () => {
 		if (!planned.ok) throw new Error("plan refused");
 		const ran = await w.orchestrator.run(planned.value, ctx);
 		expect(ran.status).not.toBe("failed");
+		// SAFETY: the plan record carries the rollout id plan() minted.
 		const rolloutId = planned.value.rolloutId as RolloutId;
 		for (let i = 0; i < 20; i += 1) {
 			const snapshot = await w.orchestrator.get(rolloutId);

@@ -87,9 +87,8 @@ const RENAMED: Readonly<Record<string, RolloutLedgerType>> = Object.freeze({
 	ApprovalRequested: ROLLOUT_LEDGER.approvalRequested,
 });
 
-const CURRENT: ReadonlySet<string> = new Set(
-	Object.values(ROLLOUT_LEDGER).filter((v) => typeof v === "string"),
-);
+const { stream: _stream, ...LEDGER_TYPES } = ROLLOUT_LEDGER;
+const CURRENT: ReadonlySet<string> = new Set(Object.values(LEDGER_TYPES));
 
 // The ledger's first spellings, read back and never written.
 const LEGACY_PREFIXES = ["cd.rollout.", "cdrollout."] as const;
