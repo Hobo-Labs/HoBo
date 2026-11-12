@@ -20,9 +20,11 @@ import {
 } from "../src/index.js";
 import { ctx, deployment, realizeInput } from "./fixtures.js";
 
-type Lane = Readonly<{ api: string; token: string; cluster: string }>;
+type Lane =
+	| Readonly<{ available: true; api: string; token: string; cluster: string }>
+	| Readonly<{ available: false; reason: string }>;
 
-function lane(prefix: string): Lane | string {
+function lane(prefix: string): Lane {
 	const api = process.env[`${prefix}_API`];
 	const token = process.env[`${prefix}_TOKEN`];
 	const cluster =
@@ -38,8 +40,11 @@ function lane(prefix: string): Lane | string {
 		token === undefined ||
 		cluster === undefined
 	)
-		return `kind hub not available: set ${missing.join(", ")}`;
-	return { api, token, cluster };
+		return {
+			available: false,
+			reason: `kind hub not available: set ${missing.join(", ")}`,
+		};
+	return { available: true, api, token, cluster };
 }
 
 function transport(api: string): HttpTransport {
@@ -88,13 +93,13 @@ async function untilConverged(
 }
 
 const ocm = lane("HOBO_KIND_OCM");
-describe.skipIf(typeof ocm === "string")(
-	`kind lane: OCM hub${typeof ocm === "string" ? ` (skipped: ${ocm})` : ""}`,
+describe.skipIf(!ocm.available)(
+	`kind lane: OCM hub${ocm.available ? "" : ` (skipped: ${ocm.reason})`}`,
 	() => {
 		it("converges one ManifestWork on a kind-backed ManagedCluster", {
 			timeout: 180_000,
 		}, async () => {
-			if (typeof ocm === "string") return;
+			if (!ocm.available) return;
 			const realizer = ocmRealizer({
 				config: parseOcmRealizerConfig({
 					schemaVersion: "hobo.cd-kube-fleet.ocm/v1",
@@ -119,13 +124,13 @@ describe.skipIf(typeof ocm === "string")(
 );
 
 const karmada = lane("HOBO_KIND_KARMADA");
-describe.skipIf(typeof karmada === "string")(
-	`kind lane: Karmada${typeof karmada === "string" ? ` (skipped: ${karmada})` : ""}`,
+describe.skipIf(!karmada.available)(
+	`kind lane: Karmada${karmada.available ? "" : ` (skipped: ${karmada.reason})`}`,
 	() => {
 		it("converges a template pinned to one kind member", {
 			timeout: 180_000,
 		}, async () => {
-			if (typeof karmada === "string") return;
+			if (!karmada.available) return;
 			const realizer = karmadaRealizer({
 				config: parseKarmadaRealizerConfig({
 					schemaVersion: "hobo.cd-kube-fleet.karmada/v1",

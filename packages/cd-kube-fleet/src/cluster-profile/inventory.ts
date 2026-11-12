@@ -71,7 +71,7 @@ export interface ClusterProfileInventory {
 	topology(): TopologyReader;
 	/** Feed every imported Camp's conditions and claims to the inventory. */
 	publish(
-		inventory: CampInventory,
+		inventory: Pick<CampInventory, "observe">,
 		ctx: CdContext,
 	): Promise<readonly Outcome<CampStatusRecord>[]>;
 	/** An OBSERVED record posture can evaluate (attributes trimmed to `fields`). */
@@ -316,7 +316,7 @@ export function clusterProfileInventory(
 		list,
 		watch,
 		topology: () => topology,
-		async publish(inventory: CampInventory, ctx: CdContext) {
+		async publish(inventory: Pick<CampInventory, "observe">, ctx: CdContext) {
 			const out: Outcome<CampStatusRecord>[] = [];
 			for (const camp of [...state.values()].sort((a, b) =>
 				a.topology.campId.localeCompare(b.topology.campId),
@@ -397,7 +397,7 @@ export function clusterProfileInventory(
 					`Camp ${campId} is not an imported ClusterProfile`,
 				);
 			const provider = camp.access.find(
-				(p) => p.server !== undefined && p.server.startsWith("https://"),
+				(p) => p.server?.startsWith("https://") === true,
 			);
 			if (provider === undefined || provider.server === undefined)
 				throw new KubeFleetError(

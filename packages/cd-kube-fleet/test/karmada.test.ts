@@ -2,12 +2,14 @@ import { ReconcileStatus } from "@hobo/cd";
 import type { JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { karmadaRealizer } from "../src/index.js";
+import { isJsonObject, objectAt, parseJsonText } from "../src/json.js";
 import { FakeKarmada } from "./fake-hub.js";
 import {
 	credentials,
 	ctx,
 	deployment,
 	karmadaConfig,
+	nameOf,
 	type ResourceSpec,
 	realizeInput,
 	volume,
@@ -43,8 +45,7 @@ async function convergeTwice(
 }
 
 function specOf(object: JsonObject | undefined): JsonObject {
-	// SAFETY: test reads a spec the realizer wrote.
-	return (object?.spec ?? {}) as JsonObject;
+	return objectAt(object, "spec");
 }
 
 describe("karmadaRealizer", () => {
@@ -108,12 +109,15 @@ describe("karmadaRealizer", () => {
 		const resources = [deployment("web", "img@sha256:aaaa")];
 		await convergeTwice(hub, realizer, "camp-a", resources);
 		const [policy] = hub.policies();
-		const edited = JSON.parse(JSON.stringify(policy)) as JsonObject;
-		(
-			(specOf(edited).placement as JsonObject).clusterAffinity as {
-				clusterNames: string[];
-			}
-		).clusterNames = ["member-a", "member-x"];
+		const original = JSON.stringify(policy);
+		expect(original).toContain('"clusterNames":["member-a"]');
+		const edited = parseJsonText(
+			original.replace(
+				'"clusterNames":["member-a"]',
+				'"clusterNames":["member-a","member-x"]',
+			),
+		);
+		if (!isJsonObject(edited)) throw new Error("the hub holds no policy");
 		hub.objects.set(
 			"policy.karmada.io|propagationpolicies|shop|hobo-camp-a",
 			edited,
@@ -171,7 +175,7 @@ describe("karmadaRealizer", () => {
 		expect(
 			hub
 				.policies()
-				.map((p) => (p.metadata as JsonObject).name)
+				.map((p) => nameOf(p))
 				.sort(),
 		).toEqual(["hobo-camp-a", "hobo-camp-a-data"]);
 		const record = await convergeTwice(hub, realizer, "camp-a", [
@@ -179,12 +183,8 @@ describe("karmadaRealizer", () => {
 		]);
 		expect(record.status).toBe(ReconcileStatus.CONVERGED);
 		expect(hub.preserved).toEqual(["shop/db"]);
-		expect(hub.templates().map((t) => (t.metadata as JsonObject).name)).toEqual(
-			["web"],
-		);
-		expect(hub.policies().map((p) => (p.metadata as JsonObject).name)).toEqual([
-			"hobo-camp-a",
-		]);
+		expect(hub.templates().map((t) => nameOf(t))).toEqual(["web"]);
+		expect(hub.policies().map((p) => nameOf(p))).toEqual(["hobo-camp-a"]);
 	});
 
 	it("leaves a kept template in place when its policy would not preserve it", async () => {
@@ -206,7 +206,7 @@ describe("karmadaRealizer", () => {
 		expect(
 			hub
 				.templates()
-				.map((t) => (t.metadata as JsonObject).name)
+				.map((t) => nameOf(t))
 				.sort(),
 		).toEqual(["web", "worker"]);
 	});

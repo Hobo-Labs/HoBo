@@ -6,6 +6,7 @@
 // realizers are added to WP20's suite at merge.
 import { type Realizer, ReconcileStatus } from "@hobo/cd";
 import { describe, expect, it } from "vitest";
+import { isJsonBigInt } from "../src/json.js";
 import type { FakeHub } from "./fake-hub.js";
 import {
 	ctx,
@@ -190,9 +191,7 @@ export function describeRealizerConformance(
 			h.settle();
 			const record = await r.converge(realizeInput(CAMP, web), ctx);
 			expect(
-				JSON.stringify(record, (_k, v) =>
-					typeof v === "bigint" ? String(v) : v,
-				),
+				JSON.stringify(record, (_k, v) => (isJsonBigInt(v) ? String(v) : v)),
 			).not.toContain(HUB_TOKEN);
 			expect(JSON.stringify(sink.points)).not.toContain(HUB_TOKEN);
 			expect(

@@ -34,7 +34,11 @@ const profiles = (patch: JsonObject = {}): JsonObject => ({
 	...patch,
 });
 
-type Case = Readonly<[string, string, JsonObject, (v: JsonValue) => unknown]>;
+type Parsed =
+	| ReturnType<typeof parseOcmRealizerConfig>
+	| ReturnType<typeof parseKarmadaRealizerConfig>
+	| ReturnType<typeof parseClusterProfileImport>;
+type Case = Readonly<[string, string, JsonObject, (v: JsonValue) => Parsed]>;
 
 const ACCEPTED: readonly Case[] = [
 	[

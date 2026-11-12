@@ -22,6 +22,7 @@ import {
 	ctx,
 	HUB_TOKEN,
 	hub,
+	metaOf,
 	now,
 	recordingSink,
 } from "./fixtures.js";
@@ -92,12 +93,10 @@ describe("clusterProfileInventory", () => {
 		expect(await inventory.topology().camps()).toEqual(
 			snapshot.camps.map((c) => c.topology),
 		);
+		const second = snapshot.camps[1];
+		if (second === undefined) throw new Error("expected two imported Camps");
 		expect(
-			(
-				await inventory
-					.topology()
-					.camp(snapshot.camps[1]?.topology.campId ?? ("" as never))
-			)?.campId,
+			(await inventory.topology().camp(second.topology.campId))?.campId,
 		).toBe("k8s-fleet-system-edge-paris-01");
 	});
 
@@ -159,12 +158,12 @@ describe("clusterProfileInventory", () => {
 		const { inventory } = setup();
 		await inventory.list();
 		const calls: Parameters<CampInventory["observe"]>[0][] = [];
-		const fake = {
-			async observe(input: Parameters<CampInventory["observe"]>[0]) {
+		const fake: Pick<CampInventory, "observe"> = {
+			async observe(input) {
 				calls.push(input);
-				return { ok: false as const, reasons: [] };
+				return { ok: false, reasons: [] };
 			},
-		} as Partial<CampInventory> as CampInventory;
+		};
 		await inventory.publish(fake, ctx);
 		expect(calls.map((c) => [c.campId, c.source])).toEqual([
 			["k8s-fleet-system-edge-lyon-02", SignalSource.HEALTH_SOURCE],
@@ -343,7 +342,7 @@ describe("clusterProfileInventory", () => {
 					object: {
 						...paris,
 						metadata: {
-							...(paris.metadata as JsonObject),
+							...metaOf(paris),
 							resourceVersion: "50003",
 						},
 					},

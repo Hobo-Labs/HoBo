@@ -14,6 +14,7 @@ import {
 import {
 	type FenceToken,
 	type JsonObject,
+	type JsonValue,
 	type PrincipalRef,
 	stableDigest,
 } from "@hobo/core";
@@ -22,6 +23,7 @@ import {
 	parseOcmRealizerConfig,
 	type RealizerConfig,
 } from "../src/index.js";
+import { objectAt, stringAt } from "../src/json.js";
 
 export const HUB_TOKEN = "hub-token";
 export const now = (): number => Date.parse("2026-11-12T10:00:00Z");
@@ -141,7 +143,9 @@ export function resolvedSet(
 		secretRefs: [],
 		// SAFETY: stableDigest returns `sha256:<hex>`.
 		contentHash: stableDigest({ ...body, plan }) as `sha256:${string}`,
-	} satisfies Omit<RealizeInput["resolved"], "plan"> & { plan: object } as RealizeInput["resolved"];
+	} satisfies Omit<RealizeInput["resolved"], "plan"> & {
+		plan: object;
+	} as RealizeInput["resolved"];
 }
 
 export function realizeInput(
@@ -224,8 +228,11 @@ export function karmadaConfig(
 }
 
 /** `metadata` of a hub object (guarded, never cast). */
-export const metaOf = (object: JsonValue | undefined): JsonObject => objectAt(object, "metadata");
+export const metaOf = (object: JsonValue | undefined): JsonObject =>
+	objectAt(object, "metadata");
 /** `metadata.annotations` of a hub object. */
-export const annotationsOf = (object: JsonValue | undefined): JsonObject => objectAt(metaOf(object), "annotations");
+export const annotationsOf = (object: JsonValue | undefined): JsonObject =>
+	objectAt(metaOf(object), "annotations");
 /** `metadata.name` of a hub object. */
-export const nameOf = (object: JsonValue | undefined): string => stringAt(metaOf(object), "name") ?? "";
+export const nameOf = (object: JsonValue | undefined): string =>
+	stringAt(metaOf(object), "name") ?? "";

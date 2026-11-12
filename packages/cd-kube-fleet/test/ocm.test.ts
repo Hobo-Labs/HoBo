@@ -2,11 +2,15 @@ import { ReconcileStatus } from "@hobo/cd";
 import type { JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { ocmRealizer } from "../src/index.js";
+import { isJsonObject, parseJsonText, stringAt } from "../src/json.js";
 import { FakeOcmHub } from "./fake-hub.js";
 import {
+	annotationsOf,
 	credentials,
 	ctx,
 	deployment,
+	metaOf,
+	nameOf,
 	ocmConfig,
 	type ResourceSpec,
 	realizeInput,
@@ -74,11 +78,10 @@ describe("ocmRealizer", () => {
 		for (const [i, [campId, cluster]] of Object.entries(camps).entries()) {
 			const inCluster = hub.works(cluster);
 			expect(inCluster, `cluster-${i}`).toHaveLength(1);
-			const meta = inCluster[0]?.metadata as JsonObject;
-			expect(meta.name).toMatch(
+			expect(nameOf(inCluster[0])).toMatch(
 				new RegExp(`^hobo-${campId}-[0-9a-f]{8}$`, "u"),
 			);
-			expect((meta.annotations as JsonObject)["hobo.dev/camp-id"]).toBe(campId);
+			expect(annotationsOf(inCluster[0])["hobo.dev/camp-id"]).toBe(campId);
 			expect(specOf(inCluster[0] ?? {}).workload.manifests).toHaveLength(1);
 		}
 		const paths = hub.log.map((l) => l.path);
@@ -103,10 +106,10 @@ describe("ocmRealizer", () => {
 		]);
 		await realizer.converge(input, ctx);
 		const [work] = hub.works("cluster-a");
-		expect((work?.metadata as JsonObject).name).toBe(
+		expect(nameOf(work)).toBe(
 			`hobo-camp-a-${input.desired.contentHash.slice(7, 15)}`,
 		);
-		expect((work?.metadata as JsonObject).namespace).toBe("cluster-a");
+		expect(stringAt(metaOf(work), "namespace")).toBe("cluster-a");
 	});
 
 	it("generates feedback rules from observe_fields and reports the fed-back attributes", async () => {
@@ -259,11 +262,14 @@ describe("ocmRealizer", () => {
 		const resources = [deployment("web", "img@sha256:aaaa")];
 		await convergeTwice(hub, realizer, "camp-a", resources);
 		const [work] = hub.works("cluster-a");
-		const edited = JSON.parse(JSON.stringify(work)) as JsonObject;
-		const manifest = specOf(edited).workload.manifests[0] as JsonObject;
-		(manifest.spec as { replicas: number }).replicas = 9;
+		const original = JSON.stringify(work);
+		expect(original).toContain('"replicas":2');
+		const edited = parseJsonText(
+			original.replace('"replicas":2', '"replicas":9'),
+		);
+		if (!isJsonObject(edited)) throw new Error("the hub holds no work");
 		hub.objects.set(
-			`work.open-cluster-management.io|manifestworks|cluster-a|${String((work?.metadata as JsonObject).name)}`,
+			`work.open-cluster-management.io|manifestworks|cluster-a|${nameOf(work)}`,
 			edited,
 		);
 		const drift = await realizer.observe(
@@ -300,11 +306,7 @@ describe("ocmRealizer", () => {
 			ctx,
 		);
 		const after = hub.works("cluster-a")[0];
-		expect(
-			((after?.metadata as JsonObject).annotations as JsonObject)[
-				"hobo.dev/fence"
-			],
-		).toBe("8");
+		expect(annotationsOf(after)["hobo.dev/fence"]).toBe("8");
 		expect(specOf(after ?? {}).workload).toEqual(specOf(before ?? {}).workload);
 		expect(record.status).toBe(ReconcileStatus.CONVERGED);
 	});

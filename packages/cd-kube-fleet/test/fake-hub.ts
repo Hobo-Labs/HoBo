@@ -55,7 +55,12 @@ function parsePath(path: string): ParsedPath | undefined {
 		namespace = parts[i + 1] ?? "";
 		i += 2;
 	}
-	return { group, resource: parts[i] ?? "", namespace, name: parts[i + 1] ?? "" };
+	return {
+		group,
+		resource: parts[i] ?? "",
+		namespace,
+		name: parts[i + 1] ?? "",
+	};
 }
 
 function clone(value: JsonObject): JsonObject {
@@ -117,7 +122,12 @@ export class FakeHub {
 		return stored;
 	}
 
-	find(group: string, resource: string, namespace: string, name: string): JsonObject | undefined {
+	find(
+		group: string,
+		resource: string,
+		namespace: string,
+		name: string,
+	): JsonObject | undefined {
 		return this.objects.get(this.key(group, resource, namespace, name));
 	}
 
@@ -127,7 +137,8 @@ export class FakeHub {
 			const [g, r] = key.split("|");
 			if (g === group && r === resource) out.push(value);
 		}
-		const id = (o: JsonObject): string => `${text(metaOf(o), "namespace")}/${text(metaOf(o), "name")}`;
+		const id = (o: JsonObject): string =>
+			`${text(metaOf(o), "namespace")}/${text(metaOf(o), "name")}`;
 		return out.sort((a, b) => id(a).localeCompare(id(b)));
 	}
 
@@ -135,9 +146,12 @@ export class FakeHub {
 		return this.log.filter((l) => l.method !== "GET");
 	}
 
-	readonly transport = async (request: TransportRequest): Promise<TransportResponse> => {
+	readonly transport = async (
+		request: TransportRequest,
+	): Promise<TransportResponse> => {
 		const url = new URL(request.url);
-		const body = request.body === undefined ? undefined : parseJsonText(request.body);
+		const body =
+			request.body === undefined ? undefined : parseJsonText(request.body);
 		this.log.push({
 			method: request.method,
 			path: url.pathname,
@@ -152,58 +166,93 @@ export class FakeHub {
 			headers: { "content-type": "application/json" },
 			body: value === undefined ? "" : JSON.stringify(value),
 		});
-		if (this.failWith !== undefined) return respond(this.failWith, { kind: "Status", message: "injected" });
+		if (this.failWith !== undefined)
+			return respond(this.failWith, { kind: "Status", message: "injected" });
 		if (request.headers.authorization !== `Bearer ${this.token}`)
 			return respond(401, { kind: "Status", message: "Unauthorized" });
 		const p = parsePath(url.pathname);
-		if (p === undefined) return respond(404, { kind: "Status", message: "not found" });
+		if (p === undefined)
+			return respond(404, { kind: "Status", message: "not found" });
 		const { group, resource, namespace, name } = p;
 		if (request.method === "GET" && url.searchParams.get("watch") === "1") {
 			const next = this.watchQueue.shift();
 			if (next === undefined) return { status: 200, headers: {}, body: "" };
 			if (next.status !== 200)
-				return respond(next.status, { kind: "Status", code: next.status, message: "gone" });
-			return { status: 200, headers: {}, body: (next.events ?? []).map((e) => JSON.stringify(e)).join("\n") };
+				return respond(next.status, {
+					kind: "Status",
+					code: next.status,
+					message: "gone",
+				});
+			return {
+				status: 200,
+				headers: {},
+				body: (next.events ?? []).map((e) => JSON.stringify(e)).join("\n"),
+			};
 		}
 		if (request.method === "GET" && name === "") {
 			const selector = url.searchParams.get("labelSelector");
-			const want = selector === null ? [] : selector.split(",").map((s) => s.split("="));
+			const want =
+				selector === null ? [] : selector.split(",").map((s) => s.split("="));
 			const items = this.all(group, resource).filter((o) => {
 				const meta = metaOf(o);
-				if (namespace !== "" && text(meta, "namespace") !== namespace) return false;
+				if (namespace !== "" && text(meta, "namespace") !== namespace)
+					return false;
 				const labels = objectAt(meta, "labels");
 				return want.every(([k, v]) => k !== undefined && labels[k] === v);
 			});
-			return respond(200, { kind: "List", metadata: { resourceVersion: String(this.rv) }, items: items.map(clone) });
+			return respond(200, {
+				kind: "List",
+				metadata: { resourceVersion: String(this.rv) },
+				items: items.map(clone),
+			});
 		}
 		const existing = this.find(group, resource, namespace, name);
 		if (request.method === "GET")
-			return existing === undefined ? respond(404, { kind: "Status", message: "not found" }) : respond(200, clone(existing));
+			return existing === undefined
+				? respond(404, { kind: "Status", message: "not found" })
+				: respond(200, clone(existing));
 		if (request.method === "POST") {
 			if (!isJsonObject(body)) return respond(400);
-			const meta = metaOf(body);
-			if (this.find(group, resource, namespace, text(meta, "name")) !== undefined)
+			const posted: JsonObject = body;
+			const meta = metaOf(posted);
+			if (
+				this.find(group, resource, namespace, text(meta, "name")) !== undefined
+			)
 				return respond(409, { kind: "Status", message: "AlreadyExists" });
-			const stored = this.put(group, resource, { ...body, metadata: { ...meta, namespace, generation: 1 } });
+			const stored = this.put(group, resource, {
+				...posted,
+				metadata: { ...meta, namespace, generation: 1 },
+			});
 			return respond(201, clone(stored));
 		}
 		if (request.method === "PUT") {
-			if (existing === undefined) return respond(404, { kind: "Status", message: "not found" });
+			if (existing === undefined)
+				return respond(404, { kind: "Status", message: "not found" });
 			if (!isJsonObject(body)) return respond(400);
-			const meta = metaOf(body);
-			if (text(meta, "resourceVersion") !== text(metaOf(existing), "resourceVersion"))
+			const replacement: JsonObject = body;
+			const meta = metaOf(replacement);
+			if (
+				text(meta, "resourceVersion") !==
+				text(metaOf(existing), "resourceVersion")
+			)
 				return respond(409, { kind: "Status", message: "Conflict" });
-			const specChanged = JSON.stringify(body.spec ?? null) !== JSON.stringify(existing.spec ?? null);
-			const generation = (numberAt(metaOf(existing), "generation") ?? 1) + (specChanged ? 1 : 0);
+			const specChanged =
+				JSON.stringify(replacement.spec ?? null) !==
+				JSON.stringify(existing.spec ?? null);
+			const generation =
+				(numberAt(metaOf(existing), "generation") ?? 1) + (specChanged ? 1 : 0);
 			const stored = this.put(group, resource, {
-				...body,
+				...replacement,
 				metadata: { ...meta, namespace, generation },
-				...(existing.status !== undefined ? { status: existing.status } : undefined),
+				...(existing.status !== undefined
+					? { status: existing.status }
+					: undefined),
 			});
 			return respond(200, clone(stored));
 		}
 		if (request.method === "DELETE") {
-			if (existing === undefined) return respond(404, { kind: "Status", message: "not found" });
+			if (existing === undefined)
+				return respond(404, { kind: "Status", message: "not found" });
 			this.objects.delete(this.key(group, resource, namespace, name));
 			this.onDelete(group, resource, existing);
 			return respond(200, { kind: "Status", status: "Success" });
@@ -211,7 +260,11 @@ export class FakeHub {
 		return respond(405);
 	};
 
-	protected onDelete(_group: string, _resource: string, _object: JsonObject): void {}
+	protected onDelete(
+		_group: string,
+		_resource: string,
+		_object: JsonObject,
+	): void {}
 }
 
 const WORK = "work.open-cluster-management.io";
@@ -231,21 +284,38 @@ export class FakeOcmHub extends FakeHub {
 	readyReplicas: number | undefined;
 
 	works(cluster?: string): JsonObject[] {
-		return this.all(WORK, "manifestworks").filter((w) => cluster === undefined || text(metaOf(w), "namespace") === cluster);
+		return this.all(WORK, "manifestworks").filter(
+			(w) => cluster === undefined || text(metaOf(w), "namespace") === cluster,
+		);
 	}
 
-	private feedback(manifest: JsonObject, config: JsonObject | undefined): JsonObject[] {
+	private feedback(
+		manifest: JsonObject,
+		config: JsonObject | undefined,
+	): JsonObject[] {
 		const values: JsonObject[] = [];
 		for (const rule of objectsOf(arrayAt(config, "feedbackRules"))) {
 			if (rule.type === "WellKnownStatus" && manifest.kind === "Deployment") {
 				const replicas = numberAt(objectAt(manifest, "spec"), "replicas") ?? 1;
-				values.push({ name: "Replicas", fieldValue: { type: "Integer", integer: replicas } });
-				values.push({ name: "ReadyReplicas", fieldValue: { type: "Integer", integer: this.readyReplicas ?? replicas } });
+				values.push({
+					name: "Replicas",
+					fieldValue: { type: "Integer", integer: replicas },
+				});
+				values.push({
+					name: "ReadyReplicas",
+					fieldValue: {
+						type: "Integer",
+						integer: this.readyReplicas ?? replicas,
+					},
+				});
 			}
 			if (rule.type === "JSONPaths") {
 				for (const jp of objectsOf(arrayAt(rule, "jsonPaths"))) {
 					if (jp.path === ".observedGeneration")
-						values.push({ name: text(jp, "name"), fieldValue: { type: "Integer", integer: 1 } });
+						values.push({
+							name: text(jp, "name"),
+							fieldValue: { type: "Integer", integer: 1 },
+						});
 				}
 			}
 		}
@@ -260,9 +330,12 @@ export class FakeOcmHub extends FakeHub {
 			const workName = text(meta, "name");
 			const generation = numberAt(meta, "generation") ?? 1;
 			const spec = objectAt(work, "spec");
-			const manifests = objectsOf(arrayAt(objectAt(spec, "workload"), "manifests"));
+			const manifests = objectsOf(
+				arrayAt(objectAt(spec, "workload"), "manifests"),
+			);
 			const configs = objectsOf(arrayAt(spec, "manifestConfigs"));
-			const clusterApplied = this.applied.get(ns) ?? new Map<string, Set<string>>();
+			const clusterApplied =
+				this.applied.get(ns) ?? new Map<string, Set<string>>();
 			this.applied.set(ns, clusterApplied);
 			let anyFailed = false;
 			const statuses = manifests.map((manifest, ordinal) => {
@@ -278,7 +351,10 @@ export class FakeOcmHub extends FakeHub {
 				} else anyFailed = true;
 				const config = configs.find((c) => {
 					const id = objectAt(c, "resourceIdentifier");
-					return text(id, "name") === text(mm, "name") && text(id, "namespace") === text(mm, "namespace");
+					return (
+						text(id, "name") === text(mm, "name") &&
+						text(id, "namespace") === text(mm, "namespace")
+					);
 				});
 				const values = this.feedback(manifest, config);
 				const status = reject === undefined ? "True" : "False";
@@ -296,11 +372,20 @@ export class FakeOcmHub extends FakeHub {
 						{
 							type: "Applied",
 							status,
-							reason: reject === undefined ? "AppliedManifestComplete" : "AppliedManifestFailed",
+							reason:
+								reject === undefined
+									? "AppliedManifestComplete"
+									: "AppliedManifestFailed",
 							message: reject ?? "Apply manifest complete",
 							observedGeneration: generation,
 						},
-						{ type: "Available", status, reason: "ResourceAvailable", message: "", observedGeneration: generation },
+						{
+							type: "Available",
+							status,
+							reason: "ResourceAvailable",
+							message: "",
+							observedGeneration: generation,
+						},
 					],
 					...(values.length > 0 ? { statusFeedback: { values } } : undefined),
 				};
@@ -313,11 +398,19 @@ export class FakeOcmHub extends FakeHub {
 						{
 							type: "Applied",
 							status: workStatus,
-							reason: anyFailed ? "AppliedManifestWorkFailed" : "AppliedManifestWorkComplete",
+							reason: anyFailed
+								? "AppliedManifestWorkFailed"
+								: "AppliedManifestWorkComplete",
 							message: "",
 							observedGeneration: generation,
 						},
-						{ type: "Available", status: workStatus, reason: "ResourcesAvailable", message: "", observedGeneration: generation },
+						{
+							type: "Available",
+							status: workStatus,
+							reason: "ResourcesAvailable",
+							message: "",
+							observedGeneration: generation,
+						},
 					],
 					resourceStatus: { manifests: statuses },
 				},
@@ -325,7 +418,11 @@ export class FakeOcmHub extends FakeHub {
 		}
 	}
 
-	protected override onDelete(group: string, resource: string, object: JsonObject): void {
+	protected override onDelete(
+		group: string,
+		resource: string,
+		object: JsonObject,
+	): void {
 		if (group !== WORK || resource !== "manifestworks") return;
 		const meta = metaOf(object);
 		const ns = text(meta, "namespace");
@@ -333,13 +430,18 @@ export class FakeOcmHub extends FakeHub {
 		if (clusterApplied === undefined) return;
 		const option = objectAt(objectAt(object, "spec"), "deleteOption");
 		const policy = stringAt(option, "propagationPolicy") ?? "Foreground";
-		const rules = objectsOf(arrayAt(objectAt(option, "selectivelyOrphans"), "orphaningRules"));
+		const rules = objectsOf(
+			arrayAt(objectAt(option, "selectivelyOrphans"), "orphaningRules"),
+		);
 		for (const [identity, owners] of clusterApplied) {
 			if (!owners.delete(text(meta, "name")) || owners.size > 0) continue;
 			const [, , rns, rname] = identity.split("/");
 			const orphan =
 				policy === "Orphan" ||
-				(policy === "SelectivelyOrphan" && rules.some((r) => text(r, "name") === rname && text(r, "namespace") === rns));
+				(policy === "SelectivelyOrphan" &&
+					rules.some(
+						(r) => text(r, "name") === rname && text(r, "namespace") === rns,
+					));
 			clusterApplied.delete(identity);
 			if (orphan) this.orphaned.push(`${ns}:${identity}`);
 		}
@@ -383,8 +485,14 @@ export class FakeKarmada extends FakeHub {
 	schedule(): void {
 		for (const policy of this.policies()) {
 			const spec = objectAt(policy, "spec");
-			const clusters = arrayAt(objectAt(objectAt(spec, "placement"), "clusterAffinity"), "clusterNames").map(String);
-			const targets = this.extraCluster === undefined ? clusters : [...clusters, this.extraCluster];
+			const clusters = arrayAt(
+				objectAt(objectAt(spec, "placement"), "clusterAffinity"),
+				"clusterNames",
+			).map(String);
+			const targets =
+				this.extraCluster === undefined
+					? clusters
+					: [...clusters, this.extraCluster];
 			for (const selector of objectsOf(arrayAt(spec, "resourceSelectors"))) {
 				const template = this.templates().find(
 					(t) =>
@@ -396,38 +504,59 @@ export class FakeKarmada extends FakeHub {
 				const m = metaOf(template);
 				const name = `${text(m, "name")}-${text(template, "kind").toLowerCase()}`;
 				const replicas = numberAt(objectAt(template, "spec"), "replicas") ?? 1;
-				this.objects.set(this.key(BINDING, "resourcebindings", text(m, "namespace"), name), {
-					apiVersion: "work.karmada.io/v1alpha2",
-					kind: "ResourceBinding",
-					metadata: { name, namespace: text(m, "namespace"), resourceVersion: this.nextRv() },
-					spec: {
-						resource: {
-							apiVersion: text(template, "apiVersion"),
-							kind: text(template, "kind"),
+				this.objects.set(
+					this.key(BINDING, "resourcebindings", text(m, "namespace"), name),
+					{
+						apiVersion: "work.karmada.io/v1alpha2",
+						kind: "ResourceBinding",
+						metadata: {
+							name,
 							namespace: text(m, "namespace"),
-							name: text(m, "name"),
-							resourceVersion: text(m, "resourceVersion"),
+							resourceVersion: this.nextRv(),
 						},
-						clusters: targets.map((c) => ({ name: c })),
-						preserveResourcesOnDeletion: spec.preserveResourcesOnDeletion ?? false,
+						spec: {
+							resource: {
+								apiVersion: text(template, "apiVersion"),
+								kind: text(template, "kind"),
+								namespace: text(m, "namespace"),
+								name: text(m, "name"),
+								resourceVersion: text(m, "resourceVersion"),
+							},
+							clusters: targets.map((c) => ({ name: c })),
+							preserveResourcesOnDeletion:
+								spec.preserveResourcesOnDeletion ?? false,
+						},
+						status: {
+							aggregatedStatus: targets.map((c) => ({
+								clusterName: c,
+								applied: true,
+								health: this.health,
+								status: {
+									replicas,
+									readyReplicas: replicas,
+									observedGeneration: 1,
+								},
+							})),
+						},
 					},
-					status: {
-						aggregatedStatus: targets.map((c) => ({
-							clusterName: c,
-							applied: true,
-							health: this.health,
-							status: { replicas, readyReplicas: replicas, observedGeneration: 1 },
-						})),
-					},
-				});
+				);
 			}
 		}
 	}
 
-	protected override onDelete(group: string, _resource: string, object: JsonObject): void {
+	protected override onDelete(
+		group: string,
+		_resource: string,
+		object: JsonObject,
+	): void {
 		if (group === POLICY || group === BINDING) return;
 		const m = metaOf(object);
-		const key = this.key(BINDING, "resourcebindings", text(m, "namespace"), `${text(m, "name")}-${text(object, "kind").toLowerCase()}`);
+		const key = this.key(
+			BINDING,
+			"resourcebindings",
+			text(m, "namespace"),
+			`${text(m, "name")}-${text(object, "kind").toLowerCase()}`,
+		);
 		const binding = this.objects.get(key);
 		if (binding !== undefined) {
 			if (objectAt(binding, "spec").preserveResourcesOnDeletion === true)

@@ -20,6 +20,10 @@ export function isJsonBoolean<T>(value: T): value is T & boolean {
 	return tagOf.call(value) === "[object Boolean]";
 }
 
+export function isJsonBigInt<T>(value: T): value is T & bigint {
+	return tagOf.call(value) === "[object BigInt]";
+}
+
 export function isJsonObject<T>(value: T): value is T & JsonObject {
 	return (
 		value !== undefined &&
