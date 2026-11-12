@@ -950,7 +950,10 @@ describe("initStation", () => {
 		// event log — otherwise `hobo station init` would report an import that
 		// did not actually change the effective Rail.
 		expect(rail.isBootstrap).toBe(false);
-		expect(rail.deliveryPolicy.engine).toBe("argo");
+		expect(rail.deliveryPolicy).toMatchObject({
+			reconcilerMode: "publisher",
+			publisher: "argo-cd",
+		});
 		expect(rail.billingPolicy.quotaLimit).toBe(5);
 		// And the production guard is satisfied, which is the reason to import.
 		expect(client.occupancy().bootstrapActive).toBe(false);

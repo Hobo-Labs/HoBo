@@ -16,7 +16,99 @@ import {
 	RAIL_SCHEMA_VERSION,
 	type Rail,
 	type RailActivationStatus,
+	type RailDeliveryObject,
+	type RailDeliveryPolicy,
 } from "./types.js";
+
+/** Pre-WP16 wire shape of the delivery policy. Deprecated; mapped on parse. */
+export type LegacyRailDeliveryPolicy = Readonly<{
+	engine: "argo" | "in-proc";
+	syncMode: "auto" | "manual";
+	prune: boolean;
+}>;
+
+// public-contract: the publisher a legacy `argo` delivery engine maps to (D14).
+export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
+
+const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
+
+/**
+ * Parse a delivery policy into its neutral form (plan 0024, D14).
+ *
+ * - A neutral policy (`reconcilerMode`) is kept; `publisher` is required in
+ *   `publisher` mode and refused elsewhere.
+ * - A legacy policy (`engine`) is mapped: `argo` becomes the `argo-cd`
+ *   GitOps publisher, `in-proc` the in-process conductor. Any legacy
+ *   destination fields are never read.
+ */
+export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
+	const json = cloneAsJson(value);
+	if (!isJsonObject(json)) {
+		throw new TypeError(
+			"rail-delivery-policy-invalid: deliveryPolicy must be an object",
+		);
+	}
+	const syncMode = json.syncMode === "manual" ? "manual" : "auto";
+	const prune = json.prune === true;
+	if (json.reconcilerMode === undefined && json.engine !== undefined) {
+		return json.engine === "argo"
+			? Object.freeze({
+					reconcilerMode: "publisher" as const,
+					publisher: LEGACY_ARGO_PUBLISHER,
+					syncMode,
+					prune,
+				})
+			: Object.freeze({
+					reconcilerMode: "conductor" as const,
+					syncMode,
+					prune,
+				});
+	}
+	const mode = RECONCILER_MODES.find((m) => m === json.reconcilerMode);
+	if (mode === undefined) {
+		throw new TypeError(
+			`rail-delivery-policy-invalid: reconcilerMode must be one of ${RECONCILER_MODES.join("|")} (remediation: set deliveryPolicy.reconcilerMode)`,
+		);
+	}
+	const publisher = isJsonString(json.publisher) ? json.publisher : undefined;
+	if (mode === "publisher" && (publisher === undefined || publisher === "")) {
+		throw new TypeError(
+			"rail-delivery-policy-invalid: reconcilerMode publisher requires a publisher target (remediation: set deliveryPolicy.publisher, e.g. argo-cd or flux)",
+		);
+	}
+	if (mode !== "publisher" && publisher !== undefined) {
+		throw new TypeError(
+			"rail-delivery-policy-invalid: publisher is only valid in publisher mode",
+		);
+	}
+	return Object.freeze({
+		reconcilerMode: mode,
+		...(publisher !== undefined ? { publisher } : undefined),
+		syncMode,
+		prune,
+	});
+}
+
+/** Parse the opaque Rail `delivery` object: any JSON object, kept verbatim. */
+function parseRailDelivery(
+	value: JsonValue | undefined,
+): RailDeliveryObject | undefined {
+	if (value === undefined) return undefined;
+	if (!isJsonObject(value)) {
+		throw new TypeError(
+			"rail-delivery-invalid: Rail delivery must be a JSON object (remediation: publish delivery as an object, parsed by @hobo/cd as RailDeliveryRecord)",
+		);
+	}
+	return deepFreeze(value);
+}
+
+function deepFreeze<T>(value: T): T {
+	if (value !== null && typeof value === "object") {
+		for (const item of Object.values(value)) deepFreeze(item);
+		Object.freeze(value);
+	}
+	return value;
+}
 
 function canonicalize<T>(value: T): string {
 	return canonicalizeJson(cloneAsJson(value));
@@ -76,6 +168,7 @@ export function parseRail<T>(value: T): Rail {
 			? status
 			: undefined;
 	const now = isJsonString(json.publishedAt) ? json.publishedAt : undefined;
+	const delivery = parseRailDelivery(json.delivery);
 	const rail = createRail({
 		id: isJsonString(json.id) ? json.id : "",
 		name: isJsonString(json.name) ? json.name : "",
@@ -93,6 +186,7 @@ export function parseRail<T>(value: T): Rail {
 		...(catalogSnapshotPin !== undefined ? { catalogSnapshotPin } : undefined),
 		...(activationStatus !== undefined ? { activationStatus } : undefined),
 		...(now !== undefined ? { now } : undefined),
+		...(delivery !== undefined ? { delivery } : undefined),
 	});
 	const hash = json.contentHash;
 	if (isJsonString(hash) && hash.startsWith("sha256:")) {
@@ -120,7 +214,9 @@ export function createRail(input: {
 	readonly policyEngine?: Rail["policyEngine"];
 	readonly placementDefaults?: Rail["placementDefaults"];
 	readonly billingPolicy?: Rail["billingPolicy"];
-	readonly deliveryPolicy?: Rail["deliveryPolicy"];
+	readonly deliveryPolicy?: RailDeliveryPolicy | LegacyRailDeliveryPolicy;
+	/** Opaque delivery object (D20); hashed into the content digest. */
+	readonly delivery?: RailDeliveryObject;
 	readonly requiredConnectorKinds?: readonly string[];
 	readonly catalogSnapshotPin?: string;
 	readonly approvedProviders?: readonly string[];
@@ -133,6 +229,10 @@ export function createRail(input: {
 	if (!input.id || !input.name || !input.version || !input.stationId) {
 		throw new TypeError("rail requires id, name, version, stationId");
 	}
+	const delivery =
+		input.delivery !== undefined
+			? parseRailDelivery(cloneAsJson(input.delivery))
+			: undefined;
 	const body = {
 		schemaVersion: RAIL_SCHEMA_VERSION,
 		id: input.id,
@@ -160,10 +260,10 @@ export function createRail(input: {
 				spendCapUsd: 0,
 			},
 		),
-		deliveryPolicy: Object.freeze(
+		deliveryPolicy: neutralRailDeliveryPolicy(
 			input.deliveryPolicy ?? {
-				engine: "in-proc" as const,
-				syncMode: "auto" as const,
+				reconcilerMode: "conductor",
+				syncMode: "auto",
 				prune: false,
 			},
 		),
@@ -179,6 +279,8 @@ export function createRail(input: {
 		...(input.catalogSnapshotPin !== undefined
 			? { catalogSnapshotPin: input.catalogSnapshotPin }
 			: undefined),
+		// Present only when set, so a Rail without it keeps its canonical body.
+		...(delivery !== undefined ? { delivery } : undefined),
 	};
 	const contentHash = railContentHash(body);
 	return Object.freeze({
@@ -266,11 +368,13 @@ export function railFromBrokerConfig(
 			budgetUsd: isJsonNumber(billing.budgetUsd) ? billing.budgetUsd : 0,
 			spendCapUsd: isJsonNumber(billing.spendCapUsd) ? billing.spendCapUsd : 0,
 		},
-		deliveryPolicy: {
+		// Legacy `argo` maps to the argo-cd publisher; the destination
+		// namespace is deprecated and never read (D14).
+		deliveryPolicy: neutralRailDeliveryPolicy({
 			engine: delivery.engine === "argo" ? "argo" : "in-proc",
 			syncMode: delivery.syncMode === "manual" ? "manual" : "auto",
 			prune: delivery.prune === true,
-		},
+		}),
 		metadata: Object.freeze({ importedFrom: "hobo.broker.json" }),
 		activationStatus: "approved",
 		...(options?.now !== undefined ? { now: options.now } : undefined),
