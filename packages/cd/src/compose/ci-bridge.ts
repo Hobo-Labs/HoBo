@@ -1,14 +1,17 @@
-// The CI bridge and HoBo's CI dogfooding seam (WP18, plan 0024, C15).
+// The CI bridge and the seam through which HoBo delivers itself (WP18, plan
+// 0024, C15).
 //
 // HoBo CI enters CD as an ordinary pull subscription: a `HOBO_CI` Freight
 // source whose driver reads CI events structurally (the frozen CiEventReader)
 // and re-reads every output to verify its digest. A CI event triggers; the
 // read decides (I15). Nothing here creates Freight.
 //
-// The dogfooding seam: HoBo's own CI relay and runner-fleet components are
+// HoBo delivering itself: HoBo's own CI relay and runner-fleet components are
 // delivered by `hobo deploy` through exactly this path. The sources below are
-// the records `hobo deploy source define` applies for them; the pipelines that
-// promote them are defined by a later work package and reference these names.
+// the records `hobo deploy source define` applies for them. The relay's
+// pipeline (preview -> production) is delivery-as-code beside its Yard
+// (`packages/ci-vercel/deploy/delivery.ts`) and `hobo ci deploy` promotes
+// through it; both use these names.
 import { create } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -91,7 +94,7 @@ export const HOBO_CI_COMPONENTS = Object.freeze({
  * through CD. `ciPipeline` is the CI pipeline (or repository) that builds
  * HoBo; each component's outputs are read from its passing runs.
  */
-export function hoboCiDogfoodSources(
+export function hoboSelfDeliverySources(
 	input: Readonly<{
 		ciPipeline: string;
 		branch?: string;
@@ -133,3 +136,9 @@ export function hoboCiDogfoodSources(
 		}),
 	];
 }
+
+/**
+ * @deprecated Use `hoboSelfDeliverySources`; this alias keeps earlier callers
+ * compiling and will be removed once they have moved.
+ */
+export const hoboCiDogfoodSources = hoboSelfDeliverySources;
