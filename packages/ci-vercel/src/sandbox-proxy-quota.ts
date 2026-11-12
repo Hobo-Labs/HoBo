@@ -2,8 +2,13 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 export interface ProxyQuotaStore {
+	/**
+	 * The raw bearer token the proxy VM presented (43 base64url characters).
+	 * The relay cache store derives tokens from the lease id and checks the
+	 * MAC; a store that keeps token digests hashes it itself.
+	 */
 	authenticateSandboxProxy(
-		tokenHash: string,
+		token: string,
 	): Promise<
 		{ accountId: string; leaseId: string; proxySessionId: string } | undefined
 	>;
@@ -43,7 +48,7 @@ export function createSandboxProxyQuotaHandler(store: ProxyQuotaStore) {
 			return new Response(null, { status: 403 });
 		const digest = createHash("sha256").update(secret).digest("hex");
 		try {
-			const principal = await store.authenticateSandboxProxy(digest);
+			const principal = await store.authenticateSandboxProxy(secret);
 			if (!principal) return new Response(null, { status: 403 });
 			const declared = request.headers.get("content-length");
 			if (declared && (!/^\d+$/.test(declared) || Number(declared) > 1024))

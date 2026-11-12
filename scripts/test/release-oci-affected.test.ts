@@ -40,15 +40,6 @@ importers:
 
   external/ts-autocode/packages/grounding: {}
 
-  packages/code:
-    dependencies:
-      '@hobo/core':
-        specifier: workspace:*
-        version: link:../core
-      ink:
-        specifier: ^6
-        version: 6.0.0(react@19.0.0)
-
   packages/core:
     dependencies:
       ts-autocode-grounding:
@@ -60,9 +51,18 @@ importers:
 
   packages/hobo:
     dependencies:
-      '@hobo/code':
+      '@hobo/schema-tools':
         specifier: workspace:*
-        version: link:../code
+        version: link:../schema-tools
+
+  packages/schema-tools:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      ink:
+        specifier: ^6
+        version: 6.0.0(react@19.0.0)
 
   site:
     dependencies:
@@ -141,12 +141,12 @@ const MANIFEST = {
 	repositoryPrefix: "ghcr.io/hobo-labs/hobo",
 	toolchainImageEnv: "HOBO_RELEASE_TOOLCHAIN_IMAGE",
 	defaultToolchainTag: "hobo-ci-worker:local",
-	images: ["hobo-cli", "hobo-code", "hobo-mcp", "hobo-site"].map(image),
+	images: ["hobo-cli", "hobo-codegen", "hobo-mcp", "hobo-site"].map(image),
 };
 
 const PACKAGES = new Map<string, readonly string[]>([
 	["hobo-cli", ["@hobo/hobo"]],
-	["hobo-code", ["@hobo/code"]],
+	["hobo-codegen", ["@hobo/schema-tools"]],
 	["hobo-site", ["hobo-site"]],
 ]);
 
@@ -180,17 +180,17 @@ const BASE = {
 	"packages/core/src/index.ts": "export {};\n",
 	"packages/core/test/index.test.ts": "it();\n",
 	"packages/core/README.md": "# core\n",
-	"packages/code/package.json": pkg("@hobo/code"),
-	"packages/code/src/index.ts": "export {};\n",
-	"packages/code/test/index.test.ts": "it();\n",
 	"packages/hobo/package.json": pkg("@hobo/hobo"),
 	"packages/hobo/src/index.ts": "export {};\n",
+	"packages/schema-tools/package.json": pkg("@hobo/schema-tools"),
+	"packages/schema-tools/src/index.ts": "export {};\n",
+	"packages/schema-tools/test/index.test.ts": "it();\n",
 	"site/package.json": pkg("hobo-site"),
 	"site/src/index.astro": "<p/>\n",
 	"src/draft/technical-proofs/x/package.json": pkg("x"),
 	"examples/try-site/yards.json": "{}\n",
 	"deploy/release-images/hobo-cli/Dockerfile": "FROM toolchain\n",
-	"deploy/release-images/hobo-code/Dockerfile": "FROM toolchain\n",
+	"deploy/release-images/hobo-codegen/Dockerfile": "FROM toolchain\n",
 	"deploy/release-images/hobo-mcp/Dockerfile": "FROM hobo-cli\n",
 	"deploy/release-images/hobo-site/Dockerfile": "FROM toolchain\n",
 	"docs/release/pipelines.md": "# pipelines\n",
@@ -233,7 +233,7 @@ function affected(
 	).map(({ id }) => id);
 }
 
-const ALL = ["hobo-code", "hobo-cli", "hobo-mcp", "hobo-site"];
+const ALL = ["hobo-codegen", "hobo-cli", "hobo-mcp", "hobo-site"];
 
 /** One scoped git ls-tree + imageInputs; ~1–15s on CI (was 30s+ full-tree ls-tree). */
 const REPO_MANIFEST_INTEGRATION_TIMEOUT_MS = 60_000;
@@ -288,8 +288,10 @@ describe("affected release OCI images", () => {
 
 	it("follows the lockfile closure, including runtime dependents", () => {
 		expect(
-			affected({ "packages/code/src/index.ts": "export const a = 1;\n" }),
-		).toEqual(["hobo-code", "hobo-cli", "hobo-mcp"]);
+			affected({
+				"packages/schema-tools/src/index.ts": "export const a = 1;\n",
+			}),
+		).toEqual(["hobo-codegen", "hobo-cli", "hobo-mcp"]);
 		expect(
 			affected({ "packages/hobo/src/index.ts": "export const a = 1;\n" }),
 		).toEqual(["hobo-cli", "hobo-mcp"]);
@@ -309,22 +311,25 @@ describe("affected release OCI images", () => {
 		const base = {
 			...BASE,
 			"turbo.json": json({
-				tasks: { ...TURBO.tasks, "@hobo/code#build": { outputs: ["dist/**"] } },
+				tasks: {
+					...TURBO.tasks,
+					"@hobo/schema-tools#build": { outputs: ["dist/**"] },
+				},
 			}),
 		};
 		expect(
 			affected(
-				{ "packages/code/test/index.test.ts": "it(1);\n" },
+				{ "packages/schema-tools/test/index.test.ts": "it(1);\n" },
 				undefined,
 				base,
 			),
-		).toEqual(["hobo-code", "hobo-cli", "hobo-mcp"]);
+		).toEqual(["hobo-codegen", "hobo-cli", "hobo-mcp"]);
 	});
 
 	it("keys pnpm-lock.yaml by the slice each image's closure resolves", () => {
 		const transitive = LOCKFILE.replace("sha512-react", "sha512-react2");
 		expect(affected({ "pnpm-lock.yaml": transitive })).toEqual([
-			"hobo-code",
+			"hobo-codegen",
 			"hobo-cli",
 			"hobo-mcp",
 		]);
@@ -341,7 +346,7 @@ describe("affected release OCI images", () => {
 
 	it("follows a submodule package in the closure to its gitlink", () => {
 		expect(affected({}, { "external/ts-autocode": "b".repeat(40) })).toEqual([
-			"hobo-code",
+			"hobo-codegen",
 			"hobo-cli",
 			"hobo-mcp",
 		]);

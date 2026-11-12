@@ -1,9 +1,11 @@
+/** Ingest outcomes that mean re-polling the same queued job cannot help yet. */
 const QUIET_RESULTS = new Set([
-	"duplicate",
 	"ignored",
 	"waiting-for-budget-or-capacity",
 	"waiting-for-assignment-recovery",
 	"queued",
+	"requeued",
+	"foreign-runner",
 ]);
 
 export type PollIngestCoalesceOptions = Readonly<{
@@ -42,9 +44,25 @@ export function createPollIngestCoalesce(
 			repositoryId: number,
 			jobId: number,
 			runAttempt: number,
+			queuedSinceMs?: number,
 		): boolean {
-			const until = untilByKey.get(key(repositoryId, jobId, runAttempt));
+			const jobKey = key(repositoryId, jobId, runAttempt);
+			if (
+				queuedSinceMs !== undefined &&
+				Number.isFinite(queuedSinceMs) &&
+				now() - queuedSinceMs >= maxMs
+			) {
+				untilByKey.delete(jobKey);
+				streakByKey.delete(jobKey);
+				return false;
+			}
+			const until = untilByKey.get(jobKey);
 			return until !== undefined && now() < until;
+		},
+		forget(repositoryId: number, jobId: number, runAttempt: number): void {
+			const jobKey = key(repositoryId, jobId, runAttempt);
+			untilByKey.delete(jobKey);
+			streakByKey.delete(jobKey);
 		},
 		observe(
 			repositoryId: number,

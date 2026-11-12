@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import type { Account, ConfigurationState } from "@hobo/ci";
 import {
@@ -23,8 +22,14 @@ import {
 import {
 	type AdmissionOrder,
 	createAdmissionOrder,
+	isMainTrunkFleetDeferJob,
+	isMainWorkspaceShardJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetCapacityWitness } from "./fleet-absorb.js";
+import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
+import type { FleetCapacityPublisher } from "./fleet-capacity.js";
+import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -35,23 +40,66 @@ import {
 import { heldRoutingOptions } from "./held-routing.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
+import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import {
 	releaseWorkerStorageGrants,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
+import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes.js";
+import { deregisterGithubRunner } from "./jit-runner-deregister.js";
+import { decideFleetGhostRecovery } from "./jit-runner-fleet-recovery.js";
+import { fetchGithubRunnerPresence } from "./jit-runner-presence.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
+	jobPickupMetadataKey,
 	observeJobPickupMetadata,
 } from "./job-pickup.js";
+import {
+	activeLeaseCoversJob,
+	hasOutstandingBoxCustody,
+	leaseIdFromBoxRunnerName,
+	runnerCustody,
+} from "./job-runner-custody.js";
+import {
+	leaseOccupiesMergeGroupCap,
+	leaseOccupiesWorkerMemory,
+} from "./lease-resource-occupancy.js";
+import { countLiveBoxContainers } from "./live-container-count.js";
+import {
+	effectiveParallelLaunchSlots,
+	logMainShardAdmissionHold,
+	type MainShardAdmissionHoldFields,
+} from "./main-shard-parallel-admission.js";
+import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
 	type RunnerLabel,
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
+import {
+	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
+	effectiveTrunkFleetDeferMs,
+	evaluateMainTrunkFleetDefer,
+	type TrunkWaitCache,
+	type TrunkWaitReason,
+	trunkWaitKey,
+} from "./trunk-wait.js";
+import {
+	DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS,
+	DEFAULT_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS,
+	DEFAULT_UNLAUNCHED_RESERVE_MS,
+	pickTrunkHeadroomFleetReleases,
+	pickUnlaunchedReservationsToRelease,
+	rememberTrunkWait,
+	unlaunchedJobCoopKey,
+	unlaunchedJobCoopKeyFromPending,
+} from "./unlaunched-reservation-release.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
@@ -84,7 +132,17 @@ export interface HostedRelayStore {
 		expectedRevision: number,
 	): Promise<boolean>;
 	observe(job: Job, at: string, expectedRevision?: number): Promise<void>;
-	queue(job: Job, at: string, expectedRevision?: number): Promise<void>;
+	/**
+	 * `githubCreatedAt` is GitHub's `created_at` for the job, when the caller
+	 * has it: a store that pins the queue deadline pins it from when GitHub
+	 * queued the job, not from when the relay first saw it.
+	 */
+	queue(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		githubCreatedAt?: string,
+	): Promise<void>;
 	expireQueued?(
 		job: Job,
 		at: string,
@@ -95,6 +153,7 @@ export interface HostedRelayStore {
 		job: Job,
 		at: string,
 		expectedRevision?: number,
+		githubCreatedAt?: string,
 	): Promise<Lease | undefined>;
 	transition(
 		id: string,
@@ -105,6 +164,12 @@ export interface HostedRelayStore {
 		expectedRevision?: number,
 	): Promise<Lease | undefined>;
 	cancelAndRequeue(id: string, job: Job, at: string): Promise<void>;
+	withdrawQueuedJob?(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	): Promise<boolean>;
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): Promise<void>;
 	settleObserved(
 		id: string,
@@ -148,7 +213,7 @@ const RunWebhook = z.object({
 });
 
 export type ServedRunnerLabelCache = Map<string, RunnerLabel | undefined>;
-export type TrunkWaitCache = Map<string, { sinceMs: number; logged: boolean }>;
+export type { TrunkWaitCache } from "./trunk-wait.js";
 
 /** Active leases whose runners GitHub can assign to shared-label jobs. */
 export async function generalLeaseIdsFor(
@@ -193,6 +258,20 @@ export class HostedRelay {
 	private readonly mergeGroupCapWaitJobs: Set<string>;
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
 	private readonly trunkWaits: TrunkWaitCache;
+	private readonly trunkDeferDecisionSig = new Map<string, string>();
+	private shardAdmissionHoldLogged = new Set<string>();
+	private readonly unlaunchedReReserveLedger = new Map<
+		string,
+		Readonly<{
+			releasedAtMs: number;
+			releaseCount: number;
+			lastNonLocalFreeSlots: number;
+		}>
+	>();
+	private dispatchGithubJobCache?: Map<
+		string,
+		Awaited<ReturnType<typeof getJob>>
+	>;
 	constructor(
 		readonly options: {
 			config: Configuration;
@@ -229,8 +308,38 @@ export class HostedRelay {
 			jobPickupMetadata?: JobPickupMetadataCache;
 			/** Let shared-label runs exceed the limit until a trunk-label job waits. */
 			lendTrunkSlots?: boolean;
+			/** Local trunk reservations this box may hold; defers extra shards when mesh has room. */
+			trunkSlots?: number;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
+			storageJobReserve?: (jobName: string) => WorkerStorageReserve;
+			/**
+			 * Publishes the fleet route table after each dispatch pass. Unset: the
+			 * relay balances nothing ahead of the queue and every job stays on its
+			 * hobo label.
+			 */
+			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
+			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
+			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
+			headroomFleetDeferMs?: number;
+			fleetCapacity?: Readonly<{
+				publish: FleetCapacityPublisher["publish"];
+				snapshot: () => Promise<
+					FleetCapacityWitness & { hoboFreeSlots: number }
+				>;
+			}>;
+			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
+			offlineJitRecovery?: OfflineJitJobRecovery;
+			unlaunchedReservationRelease?: Readonly<{
+				boundMs?: number;
+				backlogMinAgeMs?: number;
+				reReserveCooldownMs?: number;
+				launchSlots: number;
+				backlogImmediate?: boolean;
+			}>;
+			/** OS headroom parallel cap for launch/backlog (defaults to launchSlots). */
+			parallelLaunchCapacity?: () => number;
 			now?: () => string;
 		},
 	) {
@@ -352,17 +461,443 @@ export class HostedRelay {
 			)
 		)
 			return this.processWebhook(raw, event);
-		const expected = createHmac("sha256", this.options.webhookSecret)
-			.update(raw)
-			.digest();
 		if (
-			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"))
+			verifyWebhookSignature(this.options.webhookSecret, raw, signature) !==
+			"valid"
 		)
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);
 	}
-	/** Called only after ingress authenticated and durably recorded the exact body. */
+	/**
+	 * Another fleet runner on the shared `hobo` label holds this job; release this
+	 * worker's leases and pending demand without requeueing (mesh cooperation).
+	 */
+	private githubJobCacheKey(
+		installationId: number,
+		repository: string,
+		jobId: number,
+	): string {
+		return `${installationId}:${repository}:${jobId}`;
+	}
+
+	private async cachedGithubJob(
+		installationId: number,
+		repository: string,
+		jobId: number,
+	): Promise<Awaited<ReturnType<typeof getJob>>> {
+		const key = this.githubJobCacheKey(installationId, repository, jobId);
+		let cache = this.dispatchGithubJobCache;
+		if (!cache) {
+			cache = new Map();
+			this.dispatchGithubJobCache = cache;
+		}
+		const hit = cache.get(key);
+		if (hit) return hit;
+		const bound = await getJob(
+			this.options.github,
+			installationId,
+			repository,
+			jobId,
+		);
+		cache.set(key, bound);
+		return bound;
+	}
+
+	private localTrunkReservationCount(
+		active: readonly Lease[],
+		memoryTrunk?: ReadonlySet<string>,
+	): number {
+		if (memoryTrunk) return memoryTrunk.size;
+		let count = 0;
+		for (const lease of active) {
+			const label = this.servedRunnerLabels.get(
+				`${lease.repository}:${lease.jobId}`,
+			);
+			if (label !== TRUNK_RUNNER_LABEL) continue;
+			if (
+				lease.state === "reserved" ||
+				lease.state === "dispatching" ||
+				lease.state === "running"
+			)
+				count += 1;
+		}
+		return count;
+	}
+
+	private reReserveCooldownBlocks(
+		job: Pick<Job, "installationId" | "repository" | "id" | "runAttempt">,
+		nonLocalFreeSlots: number | undefined,
+	): boolean {
+		const policy = this.options.unlaunchedReservationRelease;
+		const cooldownMs =
+			policy?.reReserveCooldownMs ?? DEFAULT_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS;
+		const key = unlaunchedJobCoopKeyFromPending(job);
+		const ledger = this.unlaunchedReReserveLedger.get(key);
+		if (!ledger) return false;
+		const nowMs = Date.parse(this.now());
+		const headroomImproved =
+			nonLocalFreeSlots !== undefined &&
+			nonLocalFreeSlots > ledger.lastNonLocalFreeSlots;
+		if (headroomImproved) return false;
+		return nowMs - ledger.releasedAtMs < cooldownMs;
+	}
+
+	private recordUnlaunchedRelease(
+		lease: Pick<
+			Lease,
+			"installationId" | "repository" | "jobId" | "runAttempt"
+		>,
+		nonLocalFreeSlots: number | undefined,
+	): number {
+		const key = unlaunchedJobCoopKey(lease);
+		const nowMs = Date.parse(this.now());
+		const prior = this.unlaunchedReReserveLedger.get(key);
+		const releaseCount = (prior?.releaseCount ?? 0) + 1;
+		this.unlaunchedReReserveLedger.set(key, {
+			releasedAtMs: nowMs,
+			releaseCount,
+			lastNonLocalFreeSlots: nonLocalFreeSlots ?? 0,
+		});
+		return releaseCount;
+	}
+
+	private headroomFleetDeferMs(): number {
+		const configured = this.options.headroomFleetDeferMs;
+		if (configured === undefined) return DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS;
+		if (!Number.isInteger(configured) || configured < 1_000) {
+			throw new Error("invalid headroom fleet defer ms");
+		}
+		return configured;
+	}
+
+	private logTrunkFleetDeferDecision(
+		job: Pick<Job, "repository" | "runId" | "id" | "name" | "runAttempt">,
+		decision: ReturnType<typeof evaluateMainTrunkFleetDefer>,
+	): void {
+		const signature = [
+			decision.action,
+			decision.holdReason ?? "",
+			decision.waitReason ?? "",
+			decision.peerAbsorbSlots,
+			decision.waitedMs,
+			decision.deferMs ?? "",
+			decision.shardIndex ?? "",
+		].join(":");
+		const key = trunkWaitKey(job);
+		if (this.trunkDeferDecisionSig.get(key) === signature) return;
+		this.trunkDeferDecisionSig.set(key, signature);
+		const coreLog = {
+			event: "hobo_ci_trunk_fleet_defer_decision" as const,
+			repository: job.repository,
+			runId: job.runId,
+			jobId: job.id,
+			jobName: job.name,
+			action: decision.action,
+			waitReason: decision.waitReason ?? "",
+			waitedMs: decision.waitedMs,
+			holdReason: decision.holdReason ?? "",
+			deferMs: decision.deferMs,
+			shardIndex: decision.shardIndex,
+			arcFreeSlots: decision.arcFreeSlots,
+			meshFreeSlots: decision.meshFreeSlots,
+			peerAbsorbSlots: decision.peerAbsorbSlots,
+		};
+		if (decision.hoboFreeSlots !== undefined) {
+			console.error(
+				JSON.stringify({ ...coreLog, hoboFreeSlots: decision.hoboFreeSlots }),
+			);
+			return;
+		}
+		console.error(JSON.stringify(coreLog));
+	}
+
+	private fleetPeerSlots(
+		fleetWitness: FleetCapacityWitness | undefined,
+	): number {
+		return fleetPeerAbsorbSlots(fleetWitness);
+	}
+
+	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
+	private async releaseBlockedUnlaunchedReservations(
+		pendingDemand: number,
+		fleetWitness: FleetCapacityWitness | undefined,
+	): Promise<void> {
+		const policy = this.options.unlaunchedReservationRelease;
+		if (!policy || policy.launchSlots <= 0) return;
+		const active = await this.options.store.activeLeases();
+		const nowMs = Date.parse(this.now());
+		const boundMs = policy.boundMs ?? DEFAULT_UNLAUNCHED_RESERVE_MS;
+		const liveContainerCount = countLiveBoxContainers(active);
+		const effectiveLaunchSlots = effectiveParallelLaunchSlots(
+			policy.launchSlots,
+			liveContainerCount,
+			this.options.parallelLaunchCapacity?.(),
+		);
+		const releaseBase = {
+			boundMs,
+			backlogMinAgeMs:
+				policy.backlogMinAgeMs ?? DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS,
+			pendingDemand,
+			unlaunchedCount: active.filter(
+				(lease) =>
+					lease.state === "reserved" &&
+					!lease.sandboxName &&
+					lease.runnerId === 0,
+			).length,
+			launchSlots: effectiveLaunchSlots,
+			liveContainerCount,
+			backlogImmediate: policy.backlogImmediate ?? true,
+		};
+		const releaseContext = fleetWitness
+			? { ...releaseBase, fleetWitness }
+			: releaseBase;
+		const releases = pickUnlaunchedReservationsToRelease(
+			active,
+			nowMs,
+			releaseContext,
+		);
+		const peerSlots = this.fleetPeerSlots(fleetWitness);
+		for (const release of releases) {
+			const lease = active.find((entry) => entry.id === release.leaseId);
+			if (!lease) continue;
+			const releaseCount = this.recordUnlaunchedRelease(lease, peerSlots);
+			await this.options.store.cancelAndRequeue(
+				lease.id,
+				this.queuedDemand(lease),
+				this.now(),
+			);
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_unlaunched_reservation_released",
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+					leaseId: lease.id,
+					reason: release.reason,
+					ageMs: nowMs - Date.parse(lease.createdAt),
+					pendingDemand,
+					nonLocalFreeSlots: peerSlots,
+					releaseCount,
+				}),
+			);
+		}
+	}
+
+	private async releaseTrunkHeadroomFleetReservations(
+		active: readonly Lease[],
+		fleetWitness: FleetCapacityWitness | undefined,
+	): Promise<void> {
+		const baseDeferMs = this.headroomFleetDeferMs();
+		const peerSlots = this.fleetPeerSlots(fleetWitness);
+		const deferMs = effectiveTrunkFleetDeferMs(baseDeferMs, peerSlots);
+		const nowMs = Date.parse(this.now());
+		const releases = pickTrunkHeadroomFleetReleases(
+			this.trunkWaits,
+			active,
+			nowMs,
+			fleetWitness ? { deferMs, fleetWitness } : { deferMs },
+		);
+		for (const release of releases) {
+			const lease = active.find((entry) => entry.id === release.leaseId);
+			if (!lease) continue;
+			if (
+				this.reReserveCooldownBlocks(
+					{
+						installationId: lease.installationId,
+						repository: lease.repository,
+						id: lease.jobId,
+						runAttempt: lease.runAttempt,
+					},
+					peerSlots,
+				)
+			)
+				continue;
+			const releaseCount = this.recordUnlaunchedRelease(lease, peerSlots);
+			await this.options.store.cancelAndRequeue(
+				lease.id,
+				this.queuedDemand(lease),
+				this.now(),
+			);
+			this.trunkWaits.delete(release.waitKey);
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_trunk_headroom_fleet_defer",
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+					leaseId: lease.id,
+					reason: release.reason,
+					waitedMs: release.waitedMs,
+					nonLocalFreeSlots: peerSlots,
+					hoboFreeSlots: fleetWitness?.hoboFreeSlots ?? -1,
+					arcFreeSlots: fleetWitness?.arcFreeSlots ?? -1,
+					meshFreeSlots: fleetWitness?.meshFreeSlots ?? -1,
+					releaseCount,
+				}),
+			);
+		}
+	}
+
+	/** Peer or local ghost box JIT: deregister offline runners so GitHub can re-offer work. */
+	private async releaseFleetGhostBinding(
+		job: Job,
+		active: readonly Lease[],
+		installationId: number,
+		localAccountId: string | undefined,
+		mode: "reserve" | "observe",
+	): Promise<boolean> {
+		try {
+			const bound = await this.cachedGithubJob(
+				installationId,
+				job.repository,
+				job.id,
+			);
+			const runnerId = bound.runner_id ?? 0;
+			const leaseId = leaseIdFromBoxRunnerName(bound.runner_name ?? "");
+			const shared = leaseId
+				? await this.options.store.get(leaseId)
+				: undefined;
+			const sharedHint = shared
+				? {
+						id: shared.id,
+						state: shared.state,
+						accountId: shared.accountId,
+					}
+				: undefined;
+			const presence =
+				Number.isInteger(runnerId) && runnerId > 0
+					? await fetchGithubRunnerPresence(
+							this.options.github,
+							installationId,
+							job.repository,
+							runnerId,
+						)
+					: undefined;
+			const decision = decideFleetGhostRecovery(
+				job,
+				bound,
+				active,
+				sharedHint,
+				presence,
+				localAccountId,
+			);
+			if (decision.kind === "none") return false;
+			if (decision.kind === "covered") {
+				if (mode === "reserve") {
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_job_reserve_duplicate_skipped",
+							repository: job.repository,
+							runId: job.runId,
+							jobId: job.id,
+							leaseId: decision.leaseId,
+						}),
+					);
+					return true;
+				}
+				return false;
+			}
+			if (decision.kind === "defer") {
+				console.error(
+					JSON.stringify({
+						event: "hobo_ci_fleet_ghost_defer",
+						repository: job.repository,
+						runId: job.runId,
+						jobId: job.id,
+						leaseId: decision.leaseId,
+						reason: decision.reason,
+						runnerPresence: presence?.status ?? "unknown",
+					}),
+				);
+				return true;
+			}
+			const outcome = await deregisterGithubRunner(
+				this.options.github,
+				installationId,
+				job.repository,
+				decision.runnerId,
+			);
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_jit_runner_ghost_binding_cleared",
+					repository: job.repository,
+					runId: job.runId,
+					jobId: job.id,
+					runnerName: decision.runnerName,
+					runnerId: decision.runnerId,
+					leaseId: decision.leaseId,
+					recoveryRole: decision.role,
+					runnerPresence: "offline",
+					outcome,
+				}),
+			);
+			this.options.offlineJitRecovery?.register({
+				repository: job.repository,
+				installationId,
+				runId: bound.run_id,
+				jobId: job.id,
+				runnerName: decision.runnerName,
+				leaseId: decision.leaseId,
+				recoveryRole: decision.role,
+				registeredAtMs: Date.parse(this.now()),
+			});
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	private async yieldForeignRunnerCustody(
+		job: Job,
+		expectedRevision: number,
+	): Promise<void> {
+		const at = this.now();
+		const active = await this.options.store.activeLeases();
+		let retainedLeaseId: string | undefined;
+		for (const lease of active) {
+			if (
+				!activeLeaseCoversJob(lease, job.repositoryId, job.id, job.runAttempt)
+			)
+				continue;
+			if (lease.runnerName) {
+				const custody = await adoptRunnerAssignment(
+					this.options.store,
+					this.options.github,
+					lease,
+					at,
+				);
+				if (custody.holdsActive && custody.assignment) {
+					retainedLeaseId = lease.id;
+					continue;
+				}
+			}
+			await this.options.isolatedHost?.reconcile(lease.id, true);
+			await this.options.store.transition(
+				lease.id,
+				[
+					"reserved",
+					"dispatching",
+					"claiming",
+					"dispatched",
+					"running",
+					"uncertain",
+				],
+				(entry) => {
+					entry.state = "cancelled";
+				},
+				"ci.LeaseCancelled",
+				at,
+				expectedRevision,
+			);
+		}
+		await this.options.store.withdrawQueuedJob?.(
+			job,
+			at,
+			expectedRevision,
+			retainedLeaseId,
+		);
+	}
+
 	async processWebhook(raw: Buffer, event: string): Promise<string> {
 		await this.refreshConfig();
 		if (event === "workflow_run") {
@@ -441,6 +976,49 @@ export class HostedRelay {
 		job.runAttempt = currentJob.run_attempt;
 		job.runnerName = currentJob.runner_name ?? "";
 		job.name = currentJob.name ?? job.name;
+		const custody = runnerCustody(currentJob.runner_name);
+		if (
+			custody === "foreign" &&
+			(currentJob.status === "queued" || currentJob.status === "in_progress")
+		) {
+			await this.yieldForeignRunnerCustody(job, admittedRevision);
+			return "foreign-runner";
+		}
+		if (custody === "box" && currentJob.status === "in_progress") {
+			const active = await this.options.store.activeLeases();
+			if (
+				await this.releaseFleetGhostBinding(
+					job,
+					active,
+					job.installationId,
+					admitted?.accountId,
+					"observe",
+				)
+			)
+				return "fleet-ghost-peer";
+		}
+		if (custody === "box" && job.action === "queued") {
+			const expectedLeaseId = leaseIdFromBoxRunnerName(
+				currentJob.runner_name?.trim() ?? "",
+			);
+			const leases = await this.options.store.activeLeases();
+			if (
+				leases.some(
+					(lease) =>
+						activeLeaseCoversJob(
+							lease,
+							job.repositoryId,
+							job.id,
+							job.runAttempt,
+						) &&
+						(!expectedLeaseId ||
+							lease.id === expectedLeaseId ||
+							lease.runnerName === currentJob.runner_name?.trim()),
+				)
+			) {
+				return "duplicate";
+			}
+		}
 		if (this.options.jobPickupMetadata)
 			observeJobPickupMetadata(this.options.jobPickupMetadata, {
 				repositoryId: job.repositoryId,
@@ -520,13 +1098,21 @@ export class HostedRelay {
 			(account) => account.id === admitted.accountId,
 		);
 		if (!account) throw new Error("account missing");
-		await this.options.store.queue(job, this.now(), admittedRevision);
+		const githubCreatedAt =
+			currentJob.created_at ?? payload.workflow_job.created_at;
+		await this.options.store.queue(
+			job,
+			this.now(),
+			admittedRevision,
+			githubCreatedAt,
+		);
 		if (this.options.deferReservation) return "queued";
 		const lease = await this.options.store.reserve(
 			account,
 			job,
 			this.now(),
 			admittedRevision,
+			githubCreatedAt,
 		);
 		if (lease)
 			this.servedRunnerLabels.set(
@@ -805,23 +1391,26 @@ export class HostedRelay {
 		);
 		return true;
 	}
-	private trunkWaitKey(job: Pick<Job, "repository" | "id" | "runAttempt">) {
-		return `${job.repository}:${job.id}:${job.runAttempt}`;
-	}
 	private reportTrunkWait(
 		job: Job,
-		reason: "lease-capacity" | "storage",
+		reason: TrunkWaitReason,
+		fields: MainShardAdmissionHoldFields = {},
 	): string {
-		const key = this.trunkWaitKey(job);
+		const key = trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
-		const wait = this.trunkWaits.get(key) ?? {
-			sinceMs: nowMs,
-			logged: false,
-		};
-		this.trunkWaits.set(key, wait);
+		const wait = rememberTrunkWait(this.trunkWaits, job, reason, nowMs);
 		const waitedMs = nowMs - wait.sinceMs;
+		if (isMainWorkspaceShardJob(job.name)) {
+			if (!this.shardAdmissionHoldLogged.has(key)) {
+				this.shardAdmissionHoldLogged.add(key);
+				logMainShardAdmissionHold(job, reason, {
+					waitedMs,
+					...fields,
+				});
+			}
+		}
 		if (waitedMs > 10_000 && !wait.logged) {
-			wait.logged = true;
+			this.trunkWaits.set(key, { ...wait, logged: true });
 			console.error(
 				JSON.stringify({
 					event: "hobo_ci_trunk_wait",
@@ -842,7 +1431,17 @@ export class HostedRelay {
 
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
+		this.dispatchGithubJobCache = new Map();
+		this.shardAdmissionHoldLogged.clear();
 		const reservationRevision = await this.refreshConfig();
+		const queued = await this.options.store.pendingJobs();
+		let fleetWitness: FleetCapacityWitness | undefined;
+		try {
+			fleetWitness = await this.options.fleetCapacity?.snapshot();
+		} catch {
+			fleetWitness = undefined;
+		}
+		const fleetPeerSlots = this.fleetPeerSlots(fleetWitness);
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
 		const refOf = (job: Job) => ({
@@ -851,10 +1450,11 @@ export class HostedRelay {
 			runId: job.runId,
 			jobId: job.id,
 			labels: job.labels,
+			jobName: job.name,
 		});
 		const active = await this.options.store.activeLeases();
-		const memoryActive = active.filter(
-			(lease) => lease.state !== "reserved" || (lease.sandboxName ?? "") !== "",
+		const memoryActive = active.filter((lease) =>
+			leaseOccupiesWorkerMemory(lease),
 		);
 		const memoryGeneral = this.options.memoryAdmission
 			? await this.generalLeaseIds()
@@ -863,7 +1463,6 @@ export class HostedRelay {
 			? await this.trunkLeaseIds(active)
 			: undefined;
 		const memoryBlockedRanks = new Set<number>();
-		const queued = await this.options.store.pendingJobs();
 		await this.requeueSwappedJobs(reservationRevision, active, queued);
 		const pending = await this.admissionOrder(queued, refOf);
 		const limit = this.options.generalLeaseLimit;
@@ -871,12 +1470,8 @@ export class HostedRelay {
 		const activeMergeGroups = new Set<string>();
 		if (mergeGroupLimit !== undefined)
 			for (const lease of active) {
-				const groupKey = await this.admissionOrder.mergeGroupKey({
-					installationId: lease.installationId,
-					repository: lease.repository,
-					runId: lease.originalRunId,
-					jobId: lease.jobId,
-				});
+				if (!leaseOccupiesMergeGroupCap(lease)) continue;
+				const groupKey = await this.admissionOrder.mergeGroupKeyForLease(lease);
 				if (groupKey !== undefined) activeMergeGroups.add(groupKey);
 			}
 		let general: Set<string> | undefined;
@@ -886,6 +1481,10 @@ export class HostedRelay {
 		let rankZeroWaiting = false;
 		let storageRefused = false;
 		const waitingTrunk = new Set<string>();
+		let localTrunkReserved = this.localTrunkReservationCount(
+			active,
+			memoryTrunk,
+		);
 		for (const job of pending) {
 			if (this.queueExpired(job.queueDeadlineAt)) {
 				await this.options.store.expireQueued?.(
@@ -897,6 +1496,18 @@ export class HostedRelay {
 			}
 			if ((await this.options.isolatedHost?.isLaunchParked?.(job)) === true)
 				continue;
+			if (
+				active.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						job.repositoryId,
+						job.id,
+						job.runAttempt,
+					),
+				)
+			)
+				continue;
+			if (this.reReserveCooldownBlocks(job, fleetPeerSlots)) continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
@@ -947,16 +1558,59 @@ export class HostedRelay {
 				(account) => account.id === connection.accountId,
 			);
 			if (!account) continue;
+			if (
+				await this.releaseFleetGhostBinding(
+					job,
+					active,
+					connection.installationId,
+					account.id,
+					"reserve",
+				)
+			)
+				continue;
+			const nowMs = Date.parse(this.now());
+			const priorWait = this.trunkWaits.get(trunkWaitKey(job));
+			const headroomFleetDeferMs = this.headroomFleetDeferMs();
+			const runEvent = await this.admissionOrder.event(refOf(job));
+			const mainTrunk = isMainTrunkFleetDeferJob(job.name, runEvent);
+			const fleetDeferDecision = evaluateMainTrunkFleetDefer({
+				jobName: job.name,
+				isMainTrunkJob: mainTrunk,
+				priorWait,
+				deferMs: headroomFleetDeferMs,
+				nowMs,
+				trunkSlots: this.options.trunkSlots,
+				localTrunkReserved,
+				fleetWitness,
+			});
+			if (mainTrunk || priorWait !== undefined) {
+				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
+			}
+			if (fleetDeferDecision.action === "defer") {
+				waitingTrunk.add(
+					this.reportTrunkWait(job, "fleet-capacity", {
+						action: "defer",
+						holdReason: fleetDeferDecision.holdReason ?? "",
+						localTrunkReserved,
+						trunkSlots: this.options.trunkSlots ?? 0,
+					}),
+				);
+				continue;
+			}
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
 			const storageAdmission = this.options.storageAdmission;
 			const storageJobId = String(job.id);
 			if (storageAdmission) {
-				if (storageRefused) continue;
+				if (storageRefused) {
+					if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
+					continue;
+				}
+				// A grant is headroom held for a job that will run; never take one for
+				// a job GitHub no longer has queued.
 				try {
-					const currentJob = await getJob(
-						this.options.github,
+					const currentJob = await this.cachedGithubJob(
 						job.installationId,
 						job.repository,
 						job.id,
@@ -972,6 +1626,7 @@ export class HostedRelay {
 					continue;
 				}
 				const storageLeases = await this.options.store.activeLeases();
+				const reserve = this.options.storageJobReserve?.(job.name) ?? undefined;
 				const admitted = await storageAdmission.admit(
 					storageLeases.map((lease) => ({
 						id: lease.id,
@@ -979,6 +1634,7 @@ export class HostedRelay {
 						jobId: String(lease.jobId),
 					})),
 					storageJobId,
+					reserve,
 				);
 				if (!admitted) {
 					storageRefused = true;
@@ -1008,14 +1664,83 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
+						if (trunk && decision.reason) {
+							const waitReason: TrunkWaitReason =
+								decision.reason === "host-pressure" ||
+								decision.reason === "cpu-contention"
+									? decision.reason
+									: decision.reason;
+							if (
+								mainTrunk &&
+								decision.reason === "cpu-contention" &&
+								this.fleetPeerSlots(fleetWitness) > 0
+							) {
+								const waitedMs = priorWait
+									? Math.max(0, nowMs - priorWait.sinceMs)
+									: 0;
+								this.logTrunkFleetDeferDecision(job, {
+									action: "defer",
+									waitedMs,
+									waitReason: "cpu-contention",
+									...fleetWitnessFields(fleetWitness),
+								});
+								waitingTrunk.add(
+									this.reportTrunkWait(job, "fleet-capacity", {
+										requestMb: memory.memoryMb,
+										memoryClass: memory.memoryClass,
+										waitReason: "cpu-contention",
+									}),
+								);
+								continue;
+							}
+							waitingTrunk.add(
+								this.reportTrunkWait(job, waitReason, {
+									requestMb: memory.memoryMb,
+									memoryClass: memory.memoryClass,
+								}),
+							);
+							if (mainTrunk) {
+								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
+								const postDecision = evaluateMainTrunkFleetDefer({
+									jobName: job.name,
+									isMainTrunkJob: true,
+									priorWait: afterWait,
+									deferMs: headroomFleetDeferMs,
+									nowMs,
+									trunkSlots: this.options.trunkSlots,
+									localTrunkReserved,
+									fleetWitness,
+								});
+								this.logTrunkFleetDeferDecision(job, postDecision);
+								if (postDecision.action === "defer") {
+									waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
+								}
+							}
+						}
 						continue;
 					}
 				}
+				if (
+					active.some((lease) =>
+						hasOutstandingBoxCustody(
+							lease,
+							job.repositoryId,
+							job.id,
+							job.runAttempt,
+						),
+					)
+				)
+					continue;
+				// GitHub's `created_at`, as the job's webhook recorded it.
+				const githubCreatedAt = this.options.jobPickupMetadata?.get(
+					jobPickupMetadataKey(job),
+				)?.jobCreatedAt;
 				lease = await this.options.store.reserve(
 					account,
 					job,
 					this.now(),
 					reservationRevision,
+					githubCreatedAt,
 				);
 				if (!lease && trunk && (await this.reclaimUnlaunchedGeneralLease()))
 					lease = await this.options.store.reserve(
@@ -1023,6 +1748,7 @@ export class HostedRelay {
 						job,
 						this.now(),
 						reservationRevision,
+						githubCreatedAt,
 					);
 			} finally {
 				if (!lease) storageAdmission?.release(storageJobId);
@@ -1038,28 +1764,78 @@ export class HostedRelay {
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
 				);
+				const pickupMeta = this.options.jobPickupMetadata?.get(
+					jobPickupMetadataKey(job),
+				);
+				const jobCreatedMs = Date.parse(pickupMeta?.jobCreatedAt ?? "");
+				const reservedMs = Date.parse(this.now());
+				if (Number.isFinite(jobCreatedMs) && Number.isFinite(reservedMs)) {
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_job_reserved",
+							repository: job.repository,
+							runId: job.runId,
+							jobId: job.id,
+							jobName: job.name,
+							queuedToReservedMs: reservedMs - jobCreatedMs,
+						}),
+					);
+				}
 				if (!active.some((entry) => entry.id === lease.id)) {
 					active.push(lease);
-					memoryActive.push({ ...lease, state: "dispatching" });
+					if (
+						!memoryActive.some((entry) => entry.id === lease.id) &&
+						leaseOccupiesWorkerMemory(lease)
+					)
+						memoryActive.push(lease);
 				}
 				if (rank === TRUNK_RANK) memoryTrunk?.add(lease.id);
 				if (!trunk) {
 					general?.add(lease.id);
 					memoryGeneral?.add(lease.id);
 				}
+				if (trunk) localTrunkReserved += 1;
 				if (mergeGroupKey !== undefined) activeMergeGroups.add(mergeGroupKey);
 			}
 		}
+		const unreservedPendingDemand = pending.filter(
+			(job) =>
+				!active.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						job.repositoryId,
+						job.id,
+						job.runAttempt,
+					),
+				),
+		).length;
+		await this.releaseBlockedUnlaunchedReservations(
+			unreservedPendingDemand,
+			fleetWitness,
+		);
+		const postReleaseActive = await this.options.store.activeLeases();
+		await this.releaseTrunkHeadroomFleetReservations(
+			postReleaseActive,
+			fleetWitness,
+		);
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
 				(lease) => lease.state === "reserved",
 			),
-			(lease) => ({
-				installationId: lease.installationId,
-				repository: lease.repository,
-				runId: lease.originalRunId,
-				jobId: lease.jobId,
-			}),
+			(lease) => {
+				const label = this.servedRunnerLabels.get(
+					`${lease.repository}:${lease.jobId}`,
+				);
+				const ref = {
+					installationId: lease.installationId,
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+					jobName: lease.jobName,
+				};
+				if (label) return { ...ref, labels: [label] as const };
+				return ref;
+			},
 		);
 		for (const candidate of reserved) {
 			try {
@@ -1073,8 +1849,7 @@ export class HostedRelay {
 				}
 				this.binding(candidate);
 				const [currentJob, originalRun] = await Promise.all([
-					getJob(
-						this.options.github,
+					this.cachedGithubJob(
 						candidate.installationId,
 						candidate.repository,
 						candidate.jobId,
@@ -1144,6 +1919,12 @@ export class HostedRelay {
 				if (isolatedHost) {
 					if (!this.options.isolatedHost)
 						throw new Error("isolated runner unavailable");
+					if (
+						(await this.options.isolatedHost.isLaunchParked?.(
+							this.queuedDemand(candidate),
+						)) === true
+					)
+						continue;
 					const rank = await this.admissionOrder.rank({
 						installationId: candidate.installationId,
 						repository: candidate.repository,
@@ -1231,7 +2012,63 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
+		await this.publishFleetRoutes();
+		await this.publishFleetCapacity();
 		return pending.length;
+	}
+	/** One table per connected repository, from the state this pass just left. */
+	private async publishFleetRoutes(): Promise<void> {
+		const publisher = this.options.fleetRoutes;
+		if (!publisher) return;
+		for (const connection of this.options.config.connections) {
+			const account = this.options.config.accounts.find(
+				(entry) => entry.id === connection.accountId,
+			);
+			if (!account) continue;
+			try {
+				await publisher.publish({
+					installationId: connection.installationId,
+					repository: connection.repository,
+					account,
+					leases: () => this.options.store.accountLeases(account.id),
+					isolatedOnly: connection.isolatedOnly,
+					at: this.now(),
+				});
+			} catch {
+				/* Routing ahead of the queue is advisory; admission already ran. */
+			}
+		}
+	}
+	private async publishFleetCapacity(): Promise<void> {
+		const publisher = this.options.fleetCapacity;
+		if (!publisher) return;
+		let snapshot: Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>;
+		try {
+			snapshot = await publisher.snapshot();
+		} catch {
+			return;
+		}
+		const at = this.now();
+		for (const connection of this.options.config.connections) {
+			try {
+				const base = {
+					installationId: connection.installationId,
+					repository: connection.repository,
+					hoboFreeSlots: snapshot.hoboFreeSlots,
+					at,
+				};
+				if (snapshot.arcFreeSlots === undefined) {
+					await publisher.publish(base);
+					continue;
+				}
+				await publisher.publish({
+					...base,
+					arcFreeSlots: snapshot.arcFreeSlots,
+				});
+			} catch {
+				/* Advisory only. */
+			}
+		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);

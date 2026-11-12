@@ -10,10 +10,11 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file queue.proto.
  */
 export const file_queue: GenFile = /*@__PURE__*/
-  fileDesc("CgtxdWV1ZS5wcm90bxIRaG9iby5jaS52ZXJjZWwudjEiKAoRSG9zdGVkUXVldWVXYWtldXASEwoLZGVsaXZlcnlfaWQYASABKAkiMQoRSG9zdGVkUXVldWVSZXBhaXISDgoGc291cmNlGAEgASgJEgwKBG5hbWUYAiABKAliBnByb3RvMw");
+  fileDesc("CgtxdWV1ZS5wcm90bxIRaG9iby5jaS52ZXJjZWwudjEiKAoRSG9zdGVkUXVldWVXYWtldXASEwoLZGVsaXZlcnlfaWQYASABKAkiMQoRSG9zdGVkUXVldWVSZXBhaXISDgoGc291cmNlGAEgASgJEgwKBG5hbWUYAiABKAkingEKE0hvc3RlZFF1ZXVlRGVsaXZlcnkSDAoEa2luZBgBIAEoCRITCgtkZWxpdmVyeV9pZBgCIAEoCRINCgVldmVudBgDIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYBCABKAESFQoNcmVwb3NpdG9yeV9pZBgFIAEoARIQCghyYXdfYm9keRgGIAEoDBITCgtyZWNlaXZlZF9hdBgHIAEoCSJ+Cg9Ib3N0ZWRMZWFzZVN0ZXASDAoEa2luZBgBIAEoCRIQCghsZWFzZV9pZBgCIAEoCRIMCgRzdGVwGAMgASgJEgkKAW4YBCABKA0SMgoDam9iGAUgASgLMiUuaG9iby5jaS52ZXJjZWwudjEuSG9zdGVkTGVhc2VTdGVwSm9iIqQBChJIb3N0ZWRMZWFzZVN0ZXBKb2ISCgoCaWQYASABKAESDgoGcnVuX2lkGAIgASgBEhMKC3J1bl9hdHRlbXB0GAMgASgNEhUKDXJlcG9zaXRvcnlfaWQYBCABKAESFwoPaW5zdGFsbGF0aW9uX2lkGAUgASgBEhIKCnJlcG9zaXRvcnkYBiABKAkSGQoRaXNvbGF0ZWRfcmVxdWlyZWQYByABKAhiBnByb3RvMw");
 
 /**
- * A GitHub delivery was committed to the inbox and may be processed.
+ * A GitHub delivery was committed to the inbox and may be processed. Sent by
+ * relays before ADR-0179 phase 4b; the stateless relay acknowledges it.
  *
  * @generated from message hobo.ci.vercel.v1.HostedQueueWakeup
  */
@@ -54,4 +55,143 @@ export type HostedQueueRepair = Message<"hobo.ci.vercel.v1.HostedQueueRepair"> &
  */
 export const HostedQueueRepairSchema: GenMessage<HostedQueueRepair> = /*@__PURE__*/
   messageDesc(file_queue, 1);
+
+/**
+ * A signature-verified GitHub delivery, carried by the intake topic in place
+ * of an inbox row (ADR-0179). The queue's idempotency key is the delivery id.
+ *
+ * @generated from message hobo.ci.vercel.v1.HostedQueueDelivery
+ */
+export type HostedQueueDelivery = Message<"hobo.ci.vercel.v1.HostedQueueDelivery"> & {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string delivery_id = 2;
+   */
+  deliveryId: string;
+
+  /**
+   * @generated from field: string event = 3;
+   */
+  event: string;
+
+  /**
+   * @generated from field: double installation_id = 4;
+   */
+  installationId: number;
+
+  /**
+   * @generated from field: double repository_id = 5;
+   */
+  repositoryId: number;
+
+  /**
+   * @generated from field: bytes raw_body = 6;
+   */
+  rawBody: Uint8Array;
+
+  /**
+   * @generated from field: string received_at = 7;
+   */
+  receivedAt: string;
+};
+
+/**
+ * Describes the message hobo.ci.vercel.v1.HostedQueueDelivery.
+ * Use `create(HostedQueueDeliverySchema)` to create a new message.
+ */
+export const HostedQueueDeliverySchema: GenMessage<HostedQueueDelivery> = /*@__PURE__*/
+  messageDesc(file_queue, 2);
+
+/**
+ * One lifecycle step of one lease, sent delayed to the lease-steps topic with
+ * idempotency key `${lease_id}:${step}:${n}`.
+ *
+ * @generated from message hobo.ci.vercel.v1.HostedLeaseStep
+ */
+export type HostedLeaseStep = Message<"hobo.ci.vercel.v1.HostedLeaseStep"> & {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string lease_id = 2;
+   */
+  leaseId: string;
+
+  /**
+   * @generated from field: string step = 3;
+   */
+  step: string;
+
+  /**
+   * @generated from field: uint32 n = 4;
+   */
+  n: number;
+
+  /**
+   * @generated from field: hobo.ci.vercel.v1.HostedLeaseStepJob job = 5;
+   */
+  job?: HostedLeaseStepJob | undefined;
+};
+
+/**
+ * Describes the message hobo.ci.vercel.v1.HostedLeaseStep.
+ * Use `create(HostedLeaseStepSchema)` to create a new message.
+ */
+export const HostedLeaseStepSchema: GenMessage<HostedLeaseStep> = /*@__PURE__*/
+  messageDesc(file_queue, 3);
+
+/**
+ * The job a lease serves: enough for a step to rebuild a lease the cache lost.
+ *
+ * @generated from message hobo.ci.vercel.v1.HostedLeaseStepJob
+ */
+export type HostedLeaseStepJob = Message<"hobo.ci.vercel.v1.HostedLeaseStepJob"> & {
+  /**
+   * @generated from field: double id = 1;
+   */
+  id: number;
+
+  /**
+   * @generated from field: double run_id = 2;
+   */
+  runId: number;
+
+  /**
+   * @generated from field: uint32 run_attempt = 3;
+   */
+  runAttempt: number;
+
+  /**
+   * @generated from field: double repository_id = 4;
+   */
+  repositoryId: number;
+
+  /**
+   * @generated from field: double installation_id = 5;
+   */
+  installationId: number;
+
+  /**
+   * @generated from field: string repository = 6;
+   */
+  repository: string;
+
+  /**
+   * @generated from field: bool isolated_required = 7;
+   */
+  isolatedRequired: boolean;
+};
+
+/**
+ * Describes the message hobo.ci.vercel.v1.HostedLeaseStepJob.
+ * Use `create(HostedLeaseStepJobSchema)` to create a new message.
+ */
+export const HostedLeaseStepJobSchema: GenMessage<HostedLeaseStepJob> = /*@__PURE__*/
+  messageDesc(file_queue, 4);
 

@@ -73,6 +73,7 @@ A machine-readable standard each Provider publishes so any agent can understand 
 }
 ```
 
+- **Authoring:** providers do not hand-write these files. A single [provider manifest](./provider-manifest.md) (YAML/JSON) declares auth flows, capability mappings, and billing, and `@hobo/provider-manifest` emits the documents ([ADR-0178](./adr/provider-manifest.md#adr-0178)).
 - **Discovery:** the Registry crawls/accepts `index.json`, verifies its signature, and indexes capabilities + auth for the Planner and agents.
 - **Preference order:** HoBo prefers **keyless** flows (`oidc-federation` > `oauth2-xaa` (Cross-App Access) > `oauth2-obo` > `device-code` > `api-key`) so static secrets are a last resort; `oauth2-xaa` is preferred for user-delegated access to an *external* app because the IdP brokers and governs it ([ADR-0084](./adr/02-identity-security.md#adr-0084)).
 - **Thematic anchor:** real hobo "signs" were a shared symbol language for finding resources & safe passage — `signs.md` is exactly that, for agents. This is the "standard like auth.md" the project calls for, and the Registry is the centralized place providers register it.

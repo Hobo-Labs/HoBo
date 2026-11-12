@@ -13,7 +13,7 @@ the file name is the slot, and the slot fixes where it sits and how fast it goes
 
 The clouds are **not** a plate — they live in `../clouds/` as individual crops,
 because each one squashes on its own and a single background image can only
-move as a whole. See `src/lib/trail-clouds.ts`.
+move as a whole. `src/lib/stage/landing.ts` places them.
 
 Also accepted: `.webp`, `.avif`, `.jpg`, `.gif`, `.svg`. An empty slot renders
 nothing.
@@ -62,9 +62,9 @@ All of them come from the reference plates. Each object was cut out, cropped to 
 rows it actually occupies, and normalized to the same 6-level grayscale + alpha
 the Bo sprite sheets use — 2.6MB of source crops became ~95KB of plates.
 
-- `poles.png` — three post crops on a 2400px tile, which is exactly 2x the
-  1200-unit drawn tile, so the generated wires line up with them. The pole
-  centres are repeated in `src/lib/trail-art.ts`; move one and move both.
+- `poles.png` — three post crops on a 2400px tile, exactly 2x the 1200-unit
+  scene tile. (The band used to string generated wires between them; it no
+  longer does.)
 - `trail.png` / `trail-front.png` — one ground strip, split at the emptiest row
   in it (0.33% ink) into the part behind Bo and the near bank in front of him,
   then each mirrored into an `A A'` tile. Mirroring is what makes an arbitrary

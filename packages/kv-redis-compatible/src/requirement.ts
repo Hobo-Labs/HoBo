@@ -23,6 +23,16 @@ export const KV_KEY_VALUE_PROFILE = "kv.key-value/v1" as const;
 export const KV_REDIS_COMPATIBLE_PROFILE = "kv.redis-compatible/v1" as const;
 // public-contract: capability profile id the registry resolves.
 export const KV_VALKEY_PROFILE = "kv.valkey/v1" as const;
+/**
+ * Short-lived, loss-tolerant state behind `EphemeralStatePort` (TTL,
+ * compare-and-set, increment, locks, a capped ring), refining
+ * `kv.key-value/v1`. Satisfied by any binding that passes
+ * `EPHEMERAL_STATE_CONFORMANCE_CASES`: every Redis-protocol store through the
+ * shared Lua binding, libSQL, and Vercel Blob. The hosted CI relay requires
+ * only this profile of its cache (ADR-0179).
+ */
+// public-contract: capability profile id the registry resolves.
+export const KV_EPHEMERAL_STATE_PROFILE = "kv.ephemeral-state/v1" as const;
 
 /** Runtime models a Bindle may ask its store to be reachable from. */
 export type KvRuntimeRequest = {

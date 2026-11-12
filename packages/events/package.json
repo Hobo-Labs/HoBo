@@ -21,6 +21,7 @@
 		"@hobo/data": "workspace:*"
 	},
 	"devDependencies": {
+		"@hobo/data-core": "workspace:*",
 		"@hobo/runtime-local": "workspace:*"
 	},
 	"scripts": {

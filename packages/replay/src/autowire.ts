@@ -1,5 +1,5 @@
 /**
- * Template / hobo-code / componentize auto-wiring for web Bindles.
+ * Template / componentize auto-wiring for web Bindles.
  * Zero required config beyond accepting defaults; HOBO_REPLAY=0 forces off.
  */
 import { REPLAY_ENV_KILL, REPLAY_FLAG_KEY } from "./policy.js";

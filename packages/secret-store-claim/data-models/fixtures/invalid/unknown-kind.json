@@ -1,0 +1,12 @@
+{
+	"kind": "vercel-env",
+	"endpoint": "https://api.vercel.com",
+	"projectId": "prj-1",
+	"environment": "production",
+	"secretPath": "/",
+	"relayIdentityId": "relay-identity",
+	"deployIdentityId": "deploy-identity",
+	"claimBundleId": "secret-store:hobo-ci-relay:3",
+	"deployProjectId": "prj-deploy",
+	"claimState": "claimed"
+}

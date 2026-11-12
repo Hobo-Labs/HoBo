@@ -17,9 +17,11 @@ const schema = files.some((file) => /\.(proto|cue|wit)$/.test(file));
 const generator = files.some(
 	(file) =>
 		/(^|\/)buf(\.gen)?\.yaml$/.test(file) ||
-		/^packages\/ci-vercel\/scripts\/generate-(assets|proxy-bundle)\.mts$/.test(
+		/^packages\/ci-vercel\/scripts\/generate-(assets|proxy-bundle|offers)\.mts$/.test(
 			file,
 		) ||
+		// The relay's offer manifests: `generate-offers.mts` lowers them.
+		/^packages\/ci-vercel\/offers\/[^/]+\.provider\.yaml$/.test(file) ||
 		/^src\/draft\/technical-proofs\/s0-04-protobuf-cue-codegen\/packages\/schema-tools\/(src\/(?!_generated\/)|package\.json)/.test(
 			file,
 		) ||
@@ -71,6 +73,28 @@ if (protobufOutputs) {
 	}
 	console.error(
 		`Generated protobuf outputs staged without a source change, and codegen reports ${status || "an unreadable result"}.`,
+	);
+}
+// The sandbox proxy bundle is built from the relay's own sources, so a source
+// change regenerates it with no generator or schema change to stage. Same
+// answer as above: check the real property. The generator's --check rebuilds
+// the bundle and fails unless the file on disk is exactly what it emits.
+const proxyBundle =
+	"packages/ci-vercel/src/_generated-assets/sandbox-proxy-bundle.ts";
+if (generated.every((file) => file === proxyBundle)) {
+	const check = spawnSync(
+		process.execPath,
+		["--import", "tsx", "scripts/generate-proxy-bundle.mts", "--check"],
+		{ cwd: "packages/ci-vercel", encoding: "utf8" },
+	);
+	if (check.status === 0) {
+		console.error(
+			"Sandbox proxy bundle staged without a generator change; the generator reports it matches its sources. Allowing.",
+		);
+		process.exit(0);
+	}
+	console.error(
+		"Sandbox proxy bundle staged without a generator change, and the generator reports drift.",
 	);
 }
 console.error(

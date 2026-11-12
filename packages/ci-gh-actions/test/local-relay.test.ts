@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema } from "@hobo/ci";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createCiRelayClient } from "../src/client.js";
 import { startRelayFromEnvironment } from "../src/main.js";
-import { config, SECRET } from "./fixtures.js";
+import { LeaseStore } from "../src/store.js";
+import { config, job, NOW, SECRET } from "./fixtures.js";
 
 async function freePort(): Promise<number> {
 	const server = createServer();
@@ -106,6 +108,69 @@ describe("local relay endpoint", () => {
 				expect(state.account?.budgetMicros).toBe(1000000);
 			} finally {
 				await running.stop();
+			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("opens a partition the LeaseStore-backed relay wrote, in place, and leaves it readable", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-ci-local-relay-"));
+		const path = join(directory, "relay.sqlite");
+		try {
+			// What the previous local relay kept on disk: the lease journal only.
+			const previous = new LeaseStore(path);
+			const configuration = config();
+			const account = configuration.accounts[0];
+			if (!account) throw new Error("fixture account missing");
+			previous.configure(configuration, 0, NOW);
+			previous.putControlRecord("operator:note", "account-a", '{"a":1}', NOW);
+			const lease = previous.reserve(account, job(1), NOW);
+			if (!lease) throw new Error("fixture lease not reserved");
+			previous.queue(job(2), NOW);
+			const events = previous.events().length;
+			previous.close();
+
+			const store = new SqliteCiStore(path);
+			try {
+				expect((await store.configuration())?.revision).toBe(1);
+				expect((await store.all()).map((entry) => entry.id)).toEqual([
+					lease.id,
+				]);
+				expect((await store.get(lease.id))?.state).toBe("reserved");
+				expect((await store.pendingJobs()).map((entry) => entry.id)).toEqual([
+					2,
+				]);
+				expect((await store.controlRecord("operator:note"))?.bodyJson).toBe(
+					'{"a":1}',
+				);
+				expect(await store.events()).toHaveLength(events);
+				// The webhook inbox is the one table the current relay adds.
+				const delivery = {
+					deliveryId: "delivery-1",
+					event: "workflow_job",
+					installationId: 10,
+					repositoryId: 101,
+					rawBody: new TextEncoder().encode('{"workflow_job":{}}'),
+					receivedAt: NOW,
+				};
+				expect(await store.acceptWebhook(delivery)).toEqual({
+					duplicate: false,
+				});
+				expect(await store.acceptWebhook(delivery)).toEqual({
+					duplicate: true,
+				});
+			} finally {
+				store.close();
+			}
+
+			const reopened = new LeaseStore(path);
+			try {
+				expect(reopened.all().map((entry) => entry.id)).toEqual([lease.id]);
+				expect(reopened.pendingJobs()).toHaveLength(1);
+				expect(reopened.events()).toHaveLength(events);
+			} finally {
+				reopened.close();
 			}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

@@ -24,6 +24,7 @@ There were three separate defects.
 ## Fix
 
 - `scripts/lib/ts-source-resolve.mts` is a builtins-only `module.registerHooks` resolve hook. When a relative `.js` import of a file-URL parent is not found and the sibling `.ts` exists, it loads the `.ts` file. The deps job, `build-deps.sh`, and the daemon's `deps-image.ts` now run `node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts`. No install is needed.
+- `worker-storage-fs.ts` holds `createNodeWorkerStorageFileSystem` with Node built-ins only; the mount verifier imports that module, not `storage-admission.ts` (which may import `zod`, `host-capacity`, and other admission graph deps after finding 85+).
 - `matches()` accepts `.modules.yaml` with any whitespace around `"virtualStoreDir": ".pnpm"`. It checks the workspace link that pnpm actually creates (`packages/ci-gh-actions/node_modules/@hobo/ci` resolves to `packages/ci`). Every miss now names its cause: `deps layer miss (<reason>): job=…, checkout=…`. The `match=` output line is unchanged.
 - The mount test's in-container check uses the same workspace link instead of `node_modules/@hobo/core`.
 - The worker probe exits 3 for an unwritable runner directory and 4 for a missing payload or key marker. The fallback log now reports `unwritable-workdir`, `missing-payload`, or `probe-failed`.

@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { loadBindleDefinition } from "../src/cloud/loader.js";
 import { httpDefinitionFromModule } from "../src/cloud/typescript-app-loader.js";
 import { createHoboCli } from "../src/index.js";
+import { copyBuiltStarter } from "./support/built-starter.js";
 
 function handler(
 	definition: NonNullable<ReturnType<typeof httpDefinitionFromModule>>,
@@ -114,17 +115,8 @@ describe("TypeScript HTTP application deployment loader", () => {
 	it("refuses tampered packaged code and stale available sources before loading a real built starter", async () => {
 		const root = await mkdtemp(join(tmpdir(), "hobo-loader-build-"));
 		try {
-			const cli = createHoboCli();
-			expect(
-				(await cli.run(["new", "app", "--json"], { cwd: root })).exitCode,
-			).toBe(0);
-			const project = join(root, "app");
-			expect(
-				(await cli.run(["codegen", "--json"], { cwd: project })).exitCode,
-			).toBe(0);
-			expect(
-				(await cli.run(["build", "--json"], { cwd: project })).exitCode,
-			).toBe(0);
+			// `hobo new` without -t scaffolds the api starter; starter-end-to-end builds the same one.
+			const project = await copyBuiltStarter("api", root);
 			await rm(join(project, "src"), { recursive: true, force: true });
 			const bundle = join(project, ".hobo/build/node-app/app.mjs");
 			const original = await readFile(bundle, "utf8");

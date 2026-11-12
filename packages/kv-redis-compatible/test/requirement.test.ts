@@ -1,6 +1,8 @@
+import { parseProfileId } from "@hobo/capability-profiles";
 import { describe, expect, it } from "vitest";
 
 import {
+	KV_EPHEMERAL_STATE_PROFILE,
 	KV_REDIS_COMPATIBLE_PROFILE,
 	KV_VALKEY_PROFILE,
 	KvRedisCompatibleError,
@@ -105,5 +107,15 @@ describe("valkey.store", () => {
 				necessity: "required",
 			},
 		]);
+	});
+});
+
+describe("the ephemeral-state profile", () => {
+	it("is a canonical kv profile id the registry can resolve", () => {
+		expect(parseProfileId(KV_EPHEMERAL_STATE_PROFILE)).toMatchObject({
+			primitive: "kv",
+			path: ["kv", "ephemeral-state"],
+			major: 1,
+		});
 	});
 });

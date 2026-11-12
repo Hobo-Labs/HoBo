@@ -5,8 +5,10 @@ CloudEvents conversion via `toCloudEvent`/`fromCloudEvent`), capability grants a
 enforcement (`parseCapabilityGrant`, `evaluateCapabilityGrants`, `inferCapabilityUsage`),
 the capability-manifest bundle parser, a minimal port container (`createContainer`), and
 the typed **port contracts** other packages implement: `EventStore`, `Queue`, `Streamer`,
-`VirtualClock`, `ComponentHostPort`, `WrpcLinkPort`, `BindingResolverPort`, and
-`TrainingEnginePort`.
+`VirtualClock`, `ComponentHostPort`, `WrpcLinkPort`, `BindingResolverPort`,
+`TrainingEnginePort`, and `EphemeralStatePort` (short-lived TTL/CAS state with
+lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
+`@hobo/provider-upstash`).
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
@@ -45,6 +47,33 @@ purpose, because calling an unknown conversion safe is how an expand phase
 loses data. Redefining an index in place (same name, different columns or
 uniqueness) yields both an `expand` add and a `contract` drop of that name; the
 differ does not model index renames, so distinct names are expected.
+
+## Data-store vocabulary, catalog records and self-hosting
+
+`ports/data-store-offerings.ts` is the portable data-store vocabulary bound to
+the generic offering resolver. Provider ids come in two grains: the original
+engine-agnostic family ids (`aws-rds`, `gcp-cloudsql`, `azure-sql`) keep
+parsing unchanged, and product ids (`aws-rds-postgres`, `aws-aurora-postgres`,
+`azure-postgres-flexible`, `neon-postgres`, …) name one PostgreSQL product
+each; `DATA_STORE_PROVIDER_FAMILIES` maps a product to the family it refines.
+Offering ids cover topology (`replica.multi-region`, `write.multi-writer`,
+`ha.failover`), logical replication by direction
+(`replicate.logical-publish`, `replicate.logical-subscribe`) and connection
+facts (`pool.transaction`, `auth.password`, `auth.identity-token`,
+`tls.public-ca`).
+
+`ports/data-store-catalog.ts` adds evidence: `parseDataStoreCatalogEntry`
+refuses an asserted claim that names no dated vendor source, `unknown` is the
+only unsourced realization, and `dataStoreProfileOf` derives the resolver
+profile from the claims. `ports/self-hosted-data-store.ts` is the pure
+`assessSelfHostedDataStore`, which reads a provider's declared compute feature
+tokens and Yard profiles and returns `can` / `cannot` / `undetermined` with
+reasons. A provider package can add cited, per-product **host forms**
+(`parseRegisteredHostForm`) about products it already declares; the assessment
+then lists every form, so one provider can show a form that qualifies beside
+one that does not. Core holds no vendor facts; the PostgreSQL catalog built from these
+is in `@hobo/cloud-providers`. See
+[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
 
 ## Commands
 

@@ -232,7 +232,8 @@ one may retire a placement from the read model.
 
 A 5xx on a create is `PROVIDER_OPERATION_AMBIGUOUS`, never a retryable error: a
 timed-out POST never proves the apiserver did nothing. Every message and detail
-passes `redactClusterText`, because a `Status` message quotes the object that
+passes `redactClusterText` (the shared `@hobo/provider-redaction` redactor
+plus kubeconfig blobs and dockerconfigjson), because a `Status` message quotes the object that
 caused it and those objects carry ServiceAccount tokens and imagePullSecrets.
 
 ## Hosting budget execution
@@ -250,3 +251,15 @@ ReplicaSet drains. Old ReplicaSet health cannot bless a new rollout. Resolver ou
 For a single-container image pinned by digest, `artifactDigest` comes from the observed
 image. Independent business health is still required before traffic moves. Namespace
 DELETE remains an acceptance; finalizers and billable volumes require observation.
+
+## Host forms for self-hosted data stores
+
+`KUBERNETES_HOST_FORMS` (`src/host-forms.ts`) states, for compute products this
+package already declares, whether each could host a self-managed, stateful,
+TCP-served data store such as PostgreSQL: a long-running VM or container, a
+persistent volume, inbound TCP, and enough control to run backups. Every facet
+is cited to the vendor's documentation with the date it was read. It adds no
+product and does not change the published Capability Manifest; it is read by
+`assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
+has been deployed onto these products from this repository. See
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).

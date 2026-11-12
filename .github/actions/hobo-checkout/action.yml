@@ -19,6 +19,13 @@ inputs:
 runs:
   using: composite
   steps:
+    # The probe below is TypeScript run as written; a GitHub-hosted machine's
+    # default Node may be too old for it. A no-op on the fleet's image.
+    - name: Node for a GitHub-hosted machine
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: bash "${GITHUB_ACTION_PATH}/../ci-runner-preflight/hosted-toolchain.sh"
     - name: Probe box git mirror
       shell: bash
       run: |
@@ -125,6 +132,17 @@ runs:
       if: steps.checkout1.outcome != 'success'
       shell: bash
       run: rm -rf .git
+    - name: Disable box git mirror after transport errors
+      if: steps.checkout1.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${GIT_CONFIG_SYSTEM:-}" ]; then
+          exit 0
+        fi
+        echo "Disabling box git mirror after checkout failure; later attempts use GitHub"
+        rm -f "${GIT_CONFIG_SYSTEM}"
+        echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"
     - name: Sparse checkout (attempt 2)
       id: checkout2
       if: steps.checkout1.outcome != 'success'

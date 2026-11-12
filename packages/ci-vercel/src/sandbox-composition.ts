@@ -8,8 +8,12 @@ import {
 	sandboxProxyOnlyUsageQuote,
 	sandboxUsageQuote,
 } from "@hobo/ci";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
-import { type GithubTransport, getJob } from "@hobo/ci-gh-actions";
+import {
+	type GithubTransport,
+	getJob,
+	type HostedRelayStore,
+} from "@hobo/ci-gh-actions";
+import { APIError } from "@vercel/sandbox";
 import { z } from "zod";
 import {
 	createIsolatedSandbox,
@@ -23,10 +27,16 @@ import {
 	bindProxySandbox,
 	createProxySandbox,
 	discoverProxySandbox,
+	meterProxySandbox,
 	startProxySandbox,
 	stopProxySandbox,
 } from "./proxy-sandbox.js";
-import { createSandboxController } from "./sandbox-controller.js";
+import {
+	createSandboxController,
+	type IsolatedSandboxDriver,
+	type SandboxLeaseStore,
+	type SandboxProxyDriver,
+} from "./sandbox-controller.js";
 import { validateSandboxDomains } from "./sandbox-domains.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -35,15 +45,61 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 	return value;
 }
 
+/**
+ * What the Sandbox host needs of the relay's store: the lease paths, the
+ * policy and in-flight reads that authorize a launch, and the proxy meters
+ * settlement reads. The relay cache store serves it.
+ */
+export interface SandboxCompositionStore
+	extends SandboxLeaseStore,
+		Pick<HostedRelayStore, "policySnapshot" | "accountLeases"> {
+	sandboxProxyUsage(
+		accountId: string,
+		leaseId: string,
+		proxySessionId: string,
+		sandboxId: string,
+	): Promise<{ bytes: number; calls: number } | undefined>;
+}
+
+/** The port the proxy VM listens on, exposed through the Sandbox gateway. */
+const PROXY_PORT = 3000;
+
+/** The Vercel Sandbox drivers; tests pass stand-ins. */
+export const VERCEL_SANDBOX_DRIVERS: Readonly<{
+	driver: IsolatedSandboxDriver;
+	proxyDriver: SandboxProxyDriver;
+}> = Object.freeze({
+	driver: {
+		create: createIsolatedSandbox,
+		discover: discoverIsolatedSandbox,
+		prepare: prepareIsolatedSandbox,
+		start: startIsolatedSandbox,
+		inspect: inspectIsolatedCommand,
+		stop: stopIsolatedSandbox,
+	},
+	proxyDriver: {
+		create: createProxySandbox,
+		start: startProxySandbox,
+		bind: bindProxySandbox,
+		discover: discoverProxySandbox,
+		meter: (name: string, sessionId: string, token: string) =>
+			meterProxySandbox(name, sessionId, PROXY_PORT, token),
+		stop: stopProxySandbox,
+	},
+});
+
 /** Sandbox execution is opt-in until deployment-specific platform limits and
  * identity claims are verified. No public PR is admitted without this host. */
 export function createSandboxComposition(options: {
 	env: NodeJS.ProcessEnv;
 	publicOrigin: string;
-	store: PostgresCiStore;
+	store: SandboxCompositionStore;
 	github: GithubTransport;
+	drivers?: typeof VERCEL_SANDBOX_DRIVERS | undefined;
+	now?: (() => string) | undefined;
 }) {
 	const { env, store, github } = options;
+	const drivers = options.drivers ?? VERCEL_SANDBOX_DRIVERS;
 	if (!env.HOBO_CI_SANDBOX_ENABLED) return undefined;
 	if (env.HOBO_CI_SANDBOX_ENABLED !== "1")
 		throw new Error("invalid sandbox enablement");
@@ -66,21 +122,9 @@ export function createSandboxComposition(options: {
 				`${JSON.stringify({ event: "hobo_ci_sandbox_launch_failure", leaseId: failure.leaseId, phase: failure.phase, status: failure.status, proxyStartupReason: failure.proxyStartupReason })}\n`,
 			);
 		},
-		proxyDriver: {
-			create: createProxySandbox,
-			start: startProxySandbox,
-			bind: bindProxySandbox,
-			discover: discoverProxySandbox,
-			stop: stopProxySandbox,
-		},
-		driver: {
-			create: createIsolatedSandbox,
-			discover: discoverIsolatedSandbox,
-			prepare: prepareIsolatedSandbox,
-			start: startIsolatedSandbox,
-			inspect: inspectIsolatedCommand,
-			stop: stopIsolatedSandbox,
-		},
+		proxyDriver: drivers.proxyDriver,
+		driver: drivers.driver,
+		now: options.now,
 		authorize: async (lease) => {
 			const snapshot = await store.policySnapshot();
 			const configuration = snapshot.state?.configuration;
@@ -142,7 +186,7 @@ export function createSandboxComposition(options: {
 				(await store.accountLeases(lease.accountId)).filter(
 					(entry) => entry.id !== lease.id,
 				),
-				new Date().toISOString(),
+				options.now?.() ?? new Date().toISOString(),
 			);
 			if (
 				!decision ||
@@ -184,7 +228,7 @@ export function createSandboxComposition(options: {
 						plan,
 						region: offer.sandboxPricing.region,
 						vcpus: offer.sandboxPricing.proxyVmVcpus,
-						port: 3000,
+						port: PROXY_PORT,
 						relayOrigin: options.publicOrigin,
 						domains,
 					},
@@ -196,7 +240,7 @@ export function createSandboxComposition(options: {
 						hosts: domains,
 						maxEgressBytes: offer.sandboxPricing.maxEgressBytes,
 						maxControlCalls: offer.sandboxPricing.proxyControlMaxCalls,
-						port: 3000,
+						port: PROXY_PORT,
 						maxRequestBytes: Math.min(
 							offer.sandboxPricing.maxEgressBytes,
 							1024 * 1024 * 1024,
@@ -298,9 +342,31 @@ export function createSandboxComposition(options: {
 	});
 	return {
 		host,
+		/** Find a guest Sandbox by name, for rebuild; undefined when there is none. */
+		findSandbox: (name: string) => findSandbox(drivers.driver, name),
 		allowedDomains: () => {
 			validateSandboxDomains(domains);
 			return [...domains];
 		},
 	};
+}
+
+/**
+ * A rebuild asks whether a sandbox exists under a name. Not found is a 404
+ * from the Sandbox API (an assumption from its error shape; not checked
+ * against the live API here). Any other failure is thrown: a lookup that
+ * failed must never read as "nothing there", or rebuild would re-admit a
+ * job that is running.
+ */
+async function findSandbox(
+	driver: IsolatedSandboxDriver,
+	name: string,
+): Promise<{ sessionId: string } | undefined> {
+	try {
+		return await driver.discover(name);
+	} catch (error) {
+		if (error instanceof APIError && error.response.status === 404)
+			return undefined;
+		throw error;
+	}
 }

@@ -22,6 +22,37 @@
 //   project resolver speaks, and `/v9/projects` is the prefix a credential
 //   binding's scope already names.
 //
+// A deployment can also be created from a git reference instead of inline
+// files (`CreateGitDeploymentInput`), which is how a workspace package that
+// Vercel must build from the repository is deployed. Same endpoint, a
+// `gitSource` in place of `files`:
+//   body: { name, project, gitSource:{type:"github",org,repo,ref,sha?}, target?, projectSettings? }
+//   (docs: vercel.com/docs/rest-api/deployments/create-a-new-deployment —
+//   gitSource "type (string) - Required - The type of git source. Possible
+//   values: `github`, `github-limited`", "ref (string) - Required - The git ref
+//   (branch, tag, or commit SHA)", "sha (string) - Optional - The commit SHA",
+//   and `org`/`repo` "Required for `github` ... when using org/repo"; target
+//   "Either not defined, `staging`, `production`, or a custom environment
+//   identifier ... If omitted, the target will be `preview`"; projectSettings
+//   "is required for the first deployment of a project and will be saved for
+//   any following deployments", so a git deployment sends none unless asked.)
+//
+// `setProjectEnv` sets NON-SECRET project configuration, create-or-update by
+// key and target, reading before it writes so a second run changes nothing:
+//   GET   https://api.vercel.com/v10/projects/{idOrName}/env
+//   (docs: vercel.com/docs/rest-api/projects/retrieve-the-environment-variables-of-a-project-by-id-or-name)
+//   POST  https://api.vercel.com/v10/projects/{idOrName}/env
+//         body: { key, value, type:"plain", target:[...] }
+//   (docs: vercel.com/docs/rest-api/projects/create-one-or-more-environment-variables —
+//   "type (string) - Required - The type of environment variable. Possible
+//   values: system, encrypted, plain, sensitive"; "target (array) - Optional -
+//   The target environment of the environment variable. Possible values:
+//   production, preview, development"; answers `{ created, failed }`)
+//   PATCH https://api.vercel.com/v9/projects/{idOrName}/env/{id}   body: { value }
+//   (docs: vercel.com/docs/rest-api/projects/edit-an-environment-variable)
+// It never asks Vercel to decrypt anything, and it refuses a secret-looking
+// name or value before any request (`vercel-env-policy.ts`).
+//
 // `fetch` is INJECTED so tests exercise the exact request formation against a
 // mocked transport with no network. HONEST SCOPE: the live call is credential-
 // gated and NOT exercised in this sandbox — only the request formation + response
@@ -41,6 +72,10 @@ import {
 	type JsonValue,
 	parseJsonValue,
 } from "./json.js";
+import {
+	refusedEnvKeyReason,
+	refusedEnvValueReason,
+} from "./vercel-env-policy.js";
 
 interface VercelFetchInit {
 	readonly method?: string;
@@ -67,6 +102,66 @@ export interface CreateDeploymentInput {
 	// zero-config static + Node-functions deploy (framework: null), matching the
 	// committed hello-bindle artifact which needs no build step.
 	readonly projectSettings?: JsonObject;
+}
+
+// A GitHub commit Vercel builds a deployment from (Vercel `gitSource`, the
+// org/repo form). `ref` is a branch, a tag or a commit sha; `sha` pins the
+// commit, so a branch that moves between the plan and the build cannot change
+// what is deployed.
+export interface VercelGitSource {
+	readonly type: "github";
+	readonly org: string;
+	readonly repo: string;
+	readonly ref: string;
+	readonly sha?: string;
+}
+
+// A deployment Vercel builds from a git reference rather than from inline
+// files: the project's own settings (root directory, build command) apply.
+export interface CreateGitDeploymentInput {
+	// The deployment name (Vercel `name`, required).
+	readonly name: string;
+	// The commit to build (Vercel `gitSource`).
+	readonly gitSource: VercelGitSource;
+	// "production", or nothing for a preview deployment: Vercel takes a request
+	// with no `target` as preview, so production is only ever asked for by name.
+	readonly target?: "production";
+	// The project name/id (Vercel `project`); defaults to `name` when omitted.
+	readonly project?: string;
+	// Project build settings (Vercel `projectSettings`), sent only when given:
+	// Vercel SAVES them for the project's following deployments, so a git
+	// deployment to an existing project sends none and leaves its settings be.
+	readonly projectSettings?: JsonObject;
+}
+
+// The environments a project variable applies to (Vercel `target`).
+export type VercelEnvTarget = "production" | "preview" | "development";
+
+export interface SetProjectEnvInput {
+	// The project name/id the variables belong to.
+	readonly project: string;
+	// The one environment they are set for.
+	readonly target: VercelEnvTarget;
+	// Non-secret configuration, by name. A secret-looking name or value is
+	// refused before any request (`VercelEnvRefusal`).
+	readonly variables: Readonly<Record<string, string>>;
+}
+
+// What `setProjectEnv` did, by variable name, each list sorted.
+export interface VercelProjectEnvResult {
+	readonly created: readonly string[];
+	readonly updated: readonly string[];
+	readonly unchanged: readonly string[];
+}
+
+// One request the Vercel client forms: its method, its path under the API base
+// (team query included) and its JSON body. `vercelGitDeploymentRequest` and
+// `vercelEnvCreateRequest` build the very requests the client sends, so a plan
+// printed from them cannot differ from what a run would post.
+export interface VercelPlannedRequest {
+	readonly method: "GET" | "POST" | "PATCH";
+	readonly path: string;
+	readonly body?: JsonObject;
 }
 
 export interface VercelProjectResult {
@@ -152,6 +247,25 @@ export class VercelTransportError extends Error {
 	}
 }
 
+// `setProjectEnv` will not set `key`: its name or its value looks like a
+// credential, or the project already holds it in a form this path does not
+// overwrite. Thrown before any write, so nothing was changed. `key` is refusal
+// text (the token and anything credential-shaped taken out) and `reason` never
+// quotes a value.
+export class VercelEnvRefusal extends Error {
+	readonly key: string;
+	readonly reason: string;
+
+	constructor(key: string, reason: string) {
+		super(
+			`vercel-client: set project env refused ${key}: it ${reason}. Nothing was changed. Secrets and connection strings are set by the operator or a storage integration, never by this path`,
+		);
+		this.name = "VercelEnvRefusal";
+		this.key = key;
+		this.reason = reason;
+	}
+}
+
 // Create Deployment's answer when the project it names does not exist: 404,
 // `{"error":{"code":"not_found","message":"Project not found"}}`.
 export function isProjectNotFound(error: Error): boolean {
@@ -181,9 +295,20 @@ export interface VercelClient {
 		deploymentId: string,
 	): Promise<VercelDeploymentResult | undefined>;
 	deleteDeployment(deploymentId: string): Promise<void>;
+	// Create a deployment from inline files, or, given a `gitSource`, from a
+	// git reference Vercel builds itself.
 	createDeployment(
-		input: CreateDeploymentInput,
+		input: CreateDeploymentInput | CreateGitDeploymentInput,
 	): Promise<VercelDeploymentResult>;
+	// Set non-secret project configuration for one environment, create-or-update
+	// by key: one read, then a create for each name the environment lacks and
+	// an edit for each plain variable of that environment alone whose value
+	// differs. A name that is already as asked is left alone, so a second run
+	// sends the read and nothing else. Refused, before any write, with a
+	// `VercelEnvRefusal`: a secret-looking name or value, a variable the project
+	// holds encrypted or sensitive (the operator's: it is never decrypted or
+	// overwritten), and one shared with another environment whose value differs.
+	setProjectEnv(input: SetProjectEnvInput): Promise<VercelProjectEnvResult>;
 	// Create the project `name`. A 409 whose `error.code` is `conflict` (the
 	// name is taken: someone made it meanwhile) answers `created: false`, with
 	// its reason, rather than failing. Any other refusal, another 409 included,
@@ -534,19 +659,39 @@ function withoutTokenInJson(value: JsonValue, secrets: TokenSearch): JsonValue {
 	return copy;
 }
 
+// The deepest JSON body `bodyText` writes back out. `JSON.stringify` checks
+// each container against every one it is inside, so its cost grows with the
+// square of the depth until the stack runs out and it throws, which is a
+// different depth on every runtime and thread. Vercel's errors are a few
+// levels deep; a deeper body is searched as text instead.
+const BODY_JSON_DEPTH_LIMIT = 64;
+
+// Whether no container in `value` is nested more than `limit` deep, found
+// without recursion and without walking past the first one that is.
+function nestedAtMost(value: JsonValue, limit: number): boolean {
+	const pending: { value: JsonValue; depth: number }[] = [{ value, depth: 0 }];
+	for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+		if (!isJsonArray(next.value) && !isJsonObject(next.value)) continue;
+		if (next.depth >= limit) return false;
+		for (const item of Object.values(next.value))
+			pending.push({ value: item, depth: next.depth + 1 });
+	}
+	return true;
+}
+
 // A body as `message` shows it, the token taken out: a JSON body as `json`,
 // that body parsed (which undoes its escapes) with the token taken out of its
 // strings, written back out with `JSON.stringify`; any other body as sent,
 // searched as text. Writing a body back out only escapes what its strings
-// hold, so it brings back no token the walk took out. A body too deep to write
-// back out (`JSON.stringify` throws RangeError some thousands of levels down)
-// is searched as text too.
+// hold, so it brings back no token the walk took out. A body nested deeper
+// than BODY_JSON_DEPTH_LIMIT is searched as text too, as is one that cannot be
+// written back out.
 function bodyText(
 	detail: string,
 	json: JsonValue | undefined,
 	secrets: TokenSearch,
 ): string {
-	if (json !== undefined) {
+	if (json !== undefined && nestedAtMost(json, BODY_JSON_DEPTH_LIMIT)) {
 		try {
 			return JSON.stringify(json);
 		} catch {
@@ -726,6 +871,186 @@ export function normalizeVercelTeamId(
 	return trimmed === undefined || trimmed === "" ? undefined : trimmed;
 }
 
+// The `?teamId=` every request in a team's scope carries, or nothing.
+function teamQuery(teamId: string | undefined): string {
+	const team = normalizeVercelTeamId(teamId);
+	return team !== undefined ? `?teamId=${encodeURIComponent(team)}` : "";
+}
+
+// A GitHub owner or repository name, a git ref (branch, tag or sha: no
+// whitespace, no `..`, nothing a URL or a shell would read), a full commit
+// sha, a project name or id, and an environment variable's id.
+const GITHUB_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/u;
+const GIT_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,249}$/u;
+const GIT_SHA = /^[0-9a-f]{40}$/u;
+const PROJECT_REF = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u;
+const ENV_ID = /^[A-Za-z0-9_-]{1,128}$/u;
+
+function projectRef(project: string): string {
+	if (!PROJECT_REF.test(project))
+		throw new TypeError(
+			"vercel-client: the project must be a project name or id (letters, digits, `.`, `_` and `-`): nothing was sent",
+		);
+	return project;
+}
+
+// The body of a git-source Create Deployment, in the order it is sent. Every
+// part of the `gitSource` is checked first: a ref that is not a ref, or a sha
+// that is not a full commit sha, is refused here, before any request.
+function gitDeploymentBody(input: CreateGitDeploymentInput): JsonObject {
+	const { gitSource } = input;
+	if (!GITHUB_NAME.test(gitSource.org) || !GITHUB_NAME.test(gitSource.repo))
+		throw new TypeError(
+			"vercel-client: gitSource.org and gitSource.repo must be a GitHub owner and repository name: nothing was sent",
+		);
+	if (!GIT_REF.test(gitSource.ref) || gitSource.ref.includes(".."))
+		throw new TypeError(
+			"vercel-client: gitSource.ref must be a branch, a tag or a commit sha: nothing was sent",
+		);
+	if (gitSource.sha !== undefined && !GIT_SHA.test(gitSource.sha))
+		throw new TypeError(
+			"vercel-client: gitSource.sha must be a full 40-character lowercase commit sha: nothing was sent",
+		);
+	return {
+		name: input.name,
+		project: projectRef(input.project ?? input.name),
+		gitSource: {
+			type: gitSource.type,
+			org: gitSource.org,
+			repo: gitSource.repo,
+			ref: gitSource.ref,
+			...(gitSource.sha !== undefined ? { sha: gitSource.sha } : undefined),
+		},
+		...(input.target !== undefined ? { target: input.target } : undefined),
+		...(input.projectSettings !== undefined
+			? { projectSettings: input.projectSettings }
+			: undefined),
+	};
+}
+
+// The request `createDeployment` sends for a git-source deployment.
+export function vercelGitDeploymentRequest(
+	input: CreateGitDeploymentInput,
+	teamId?: string,
+): VercelPlannedRequest {
+	return {
+		method: "POST",
+		path: `/v13/deployments${teamQuery(teamId)}`,
+		body: gitDeploymentBody(input),
+	};
+}
+
+// A project's environment-variable collection, as a path under the API base.
+function envPath(project: string): string {
+	return `/v10/projects/${encodeURIComponent(projectRef(project))}/env`;
+}
+
+// The request `setProjectEnv` reads a project's variables with.
+export function vercelEnvListRequest(
+	project: string,
+	teamId?: string,
+): VercelPlannedRequest {
+	return { method: "GET", path: `${envPath(project)}${teamQuery(teamId)}` };
+}
+
+// The request `setProjectEnv` creates one variable with: always `plain`, the
+// type for configuration that is not a secret, and for one environment.
+export function vercelEnvCreateRequest(
+	variable: {
+		readonly project: string;
+		readonly target: VercelEnvTarget;
+		readonly key: string;
+		readonly value: string;
+	},
+	teamId?: string,
+): VercelPlannedRequest {
+	return {
+		method: "POST",
+		path: `${envPath(variable.project)}${teamQuery(teamId)}`,
+		body: {
+			key: variable.key,
+			value: variable.value,
+			type: "plain",
+			target: [variable.target],
+		},
+	};
+}
+
+// One of a project's variables as `setProjectEnv` reads it: only what decides
+// whether a name is already as asked. `value` is kept for a `plain` variable
+// alone; an encrypted one's ciphertext is dropped where it is parsed.
+interface ListedEnv {
+	readonly id: string;
+	readonly key: string;
+	readonly type: string;
+	readonly targets: readonly string[];
+	readonly value: string | undefined;
+}
+
+// The variables named `wanted` in a project's listing that apply to a whole
+// environment: one scoped to a git branch or to a custom environment is
+// another variable, and is left out. Vercel answers `{ envs: [...] }`, or the
+// one variable itself.
+function listedEnvs(
+	payload: JsonObject,
+	wanted: ReadonlySet<string>,
+): readonly ListedEnv[] {
+	const entries = isJsonArray(payload.envs) ? payload.envs : [payload];
+	const listed: ListedEnv[] = [];
+	for (const entry of entries) {
+		if (!isJsonObject(entry) || !isJsonString(entry.key)) continue;
+		if (!wanted.has(entry.key)) continue;
+		if (isJsonString(entry.gitBranch) && entry.gitBranch !== "") continue;
+		const targets = isJsonArray(entry.target)
+			? entry.target.filter((target) => isJsonString(target))
+			: isJsonString(entry.target)
+				? [entry.target]
+				: [];
+		if (targets.length === 0) continue;
+		const type = isJsonString(entry.type) ? entry.type : "";
+		listed.push({
+			id: isJsonString(entry.id) ? entry.id : "",
+			key: entry.key,
+			type,
+			targets,
+			value:
+				type === "plain" && isJsonString(entry.value) ? entry.value : undefined,
+		});
+	}
+	return listed;
+}
+
+// What `setProjectEnv` does about one name.
+type EnvStep =
+	| { readonly key: string; readonly action: "create" }
+	| { readonly key: string; readonly action: "update"; readonly id: string }
+	| { readonly key: string; readonly action: "keep" };
+
+// What to do about `key` in the environment `target`, given what the project
+// holds, or the reason nothing may be done.
+function envStep(
+	key: string,
+	value: string,
+	target: VercelEnvTarget,
+	listed: readonly ListedEnv[],
+): EnvStep | string {
+	const held = listed.filter(
+		(entry) => entry.key === key && entry.targets.includes(target),
+	);
+	if (held.length === 0) return { key, action: "create" };
+	const [only] = held;
+	if (held.length > 1 || only === undefined)
+		return `is set more than once for ${target}`;
+	if (only.type !== "plain")
+		return `is already set for ${target} as ${REFUSAL_CODE.test(only.type) ? only.type : "another type"}, which the operator owns: it is never decrypted or overwritten here`;
+	if (only.value === value) return { key, action: "keep" };
+	if (only.targets.length !== 1)
+		return `is shared with ${only.targets.filter((other) => other !== target && REFUSAL_CODE.test(other)).join(", ")} under a different value, and changing it would change environments this call was not asked to configure`;
+	if (!ENV_ID.test(only.id))
+		return `is set for ${target} under an id this client cannot address`;
+	return { key, action: "update", id: only.id };
+}
+
 // Create the REAL Vercel deployment client. No network call happens at
 // construction; a request is formed and sent only by a method call.
 export function createVercelClient(options: VercelClientOptions): VercelClient {
@@ -742,18 +1067,18 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	const fetchImpl = options.fetch ?? globalFetch;
 	const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
 	const teamId = normalizeVercelTeamId(options.teamId);
-	const query =
-		teamId !== undefined ? `?teamId=${encodeURIComponent(teamId)}` : "";
-	// One JSON POST to `path` under the base URL, team-scoped like every other;
-	// a transport that throws is a VercelTransportError naming `what`.
-	const post = (
+	const query = teamQuery(teamId);
+	// One JSON request to `path` under the base URL, team-scoped like every
+	// other; a transport that throws is a VercelTransportError naming `what`.
+	const sendJson = (
 		what: string,
+		method: "POST" | "PATCH",
 		path: string,
 		body: string,
 	): Promise<VercelFetchResponse> =>
 		untilAnswered(`${what} got no answer`, secrets, () =>
 			fetchImpl(`${baseUrl}${path}${query}`, {
-				method: "POST",
+				method,
 				headers: {
 					Authorization: `Bearer ${token}`,
 					"Content-Type": "application/json",
@@ -761,6 +1086,11 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				body,
 			}),
 		);
+	const post = (
+		what: string,
+		path: string,
+		body: string,
+	): Promise<VercelFetchResponse> => sendJson(what, "POST", path, body);
 	// The JSON object a 2xx answer to `what` carries. A body `json()` cannot
 	// read is a VercelTransportError with a fixed reason: a runtime's JSON error
 	// quotes the start of the body, cut short where no pattern of the whole
@@ -865,20 +1195,121 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			};
 		},
 
-		async createDeployment(
-			input: CreateDeploymentInput,
-		): Promise<VercelDeploymentResult> {
-			const body = {
-				name: input.name,
-				project: input.project ?? input.name,
-				files: input.files.map((f) => ({
-					file: f.file,
-					data: f.data,
-					encoding: f.encoding ?? "base64",
-				})),
-				...(input.target !== undefined ? { target: input.target } : undefined),
-				projectSettings: input.projectSettings ?? { framework: null },
+		async setProjectEnv(
+			input: SetProjectEnvInput,
+		): Promise<VercelProjectEnvResult> {
+			const names = Object.keys(input.variables).sort();
+			// Every name and value is screened before the first request: a
+			// refusal means nothing was read and nothing was sent.
+			for (const key of names) {
+				const value = input.variables[key] ?? "";
+				const reason =
+					refusedEnvKeyReason(key) ??
+					refusedEnvValueReason(value) ??
+					(withoutToken(value, secrets) !== value ||
+					withoutToken(key, secrets) !== key
+						? "holds this client's own token"
+						: undefined);
+				if (reason !== undefined)
+					throw new VercelEnvRefusal(refusalText(key, secrets), reason);
+			}
+			const path = envPath(input.project);
+			if (names.length === 0)
+				return { created: [], updated: [], unchanged: [] };
+
+			const read = await send(
+				"list project env",
+				"GET",
+				`${baseUrl}${path}${query}`,
+			);
+			if (!read.ok) throw await failure("list project env", read, secrets);
+			const payload = await payloadFrom("list project env", read);
+			// A listing that goes on past this page cannot show a name is absent,
+			// and a create for one that exists would be refused or doubled.
+			if (
+				isJsonObject(payload.pagination) &&
+				payload.pagination.next !== undefined &&
+				payload.pagination.next !== null
+			)
+				throw new VercelTransportError(
+					"vercel-client: list project env answered with more variables than one page holds, so no name can be shown absent: nothing was changed",
+				);
+			const listed = listedEnvs(payload, new Set(names));
+			const steps: EnvStep[] = [];
+			for (const key of names) {
+				const step = envStep(
+					key,
+					input.variables[key] ?? "",
+					input.target,
+					listed,
+				);
+				if (isJsonString(step)) throw new VercelEnvRefusal(key, step);
+				steps.push(step);
+			}
+
+			for (const step of steps) {
+				const value = input.variables[step.key] ?? "";
+				if (step.action === "create") {
+					const request = vercelEnvCreateRequest({
+						project: input.project,
+						target: input.target,
+						key: step.key,
+						value,
+					});
+					const made = await post(
+						"create project env",
+						path,
+						JSON.stringify(request.body),
+					);
+					if (!made.ok)
+						throw await failure("create project env", made, secrets);
+					const answer = await payloadFrom("create project env", made);
+					// A 2xx can still report the variable as failed.
+					if (isJsonArray(answer.failed) && answer.failed.length > 0)
+						throw new VercelApiError(
+							`vercel-client: create project env answered HTTP ${made.status} and reported ${step.key} as failed`,
+							made.status,
+						);
+				}
+				if (step.action === "update") {
+					const edited = await sendJson(
+						"edit project env",
+						"PATCH",
+						`/v9/projects/${encodeURIComponent(input.project)}/env/${encodeURIComponent(step.id)}`,
+						JSON.stringify({ value }),
+					);
+					if (!edited.ok)
+						throw await failure("edit project env", edited, secrets);
+				}
+			}
+			const named = (action: EnvStep["action"]) =>
+				steps.filter((step) => step.action === action).map((step) => step.key);
+			return {
+				created: named("create"),
+				updated: named("update"),
+				unchanged: named("keep"),
 			};
+		},
+
+		async createDeployment(
+			input: CreateDeploymentInput | CreateGitDeploymentInput,
+		): Promise<VercelDeploymentResult> {
+			const body =
+				"gitSource" in input
+					? gitDeploymentBody(input)
+					: {
+							name: input.name,
+							project: input.project ?? input.name,
+							files: input.files.map((f) => ({
+								file: f.file,
+								data: f.data,
+								encoding: f.encoding ?? "base64",
+							})),
+							...(input.target !== undefined
+								? { target: input.target }
+								: undefined),
+							projectSettings: input.projectSettings ?? { framework: null },
+						};
 
 			const response = await post(
 				"create deployment",

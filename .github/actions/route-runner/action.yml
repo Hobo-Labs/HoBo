@@ -1,0 +1,138 @@
+name: Route runners
+description: >-
+  Chooses the runner label this run's jobs ask for: the hobo fleet while it is
+  taking jobs, an enrolled local box when it is not, GitHub-hosted when neither
+  is. Never fails: when the queue cannot be read, or the script cannot run,
+  GitHub-hosted is chosen (this step is running there, so it is the one tier
+  known to be up) and a warning says why. Pinned to the fleet, it stays there.
+  First it checks for a signed local run of this tree (verify-attestation.mts,
+  when the workflow checked that script out): the jobs such a run covers are
+  skipped, and what is left goes to GitHub-hosted without reading the queue.
+inputs:
+  token:
+    description: A token that can read this repository's Actions runs and jobs.
+    required: true
+  mode:
+    description: auto (default), or fleet, local, github to pin one tier.
+    required: false
+    default: ""
+  local-runner:
+    description: "`true` when a local box is enrolled under hobo-local-host."
+    required: false
+    default: ""
+  max-wait-seconds:
+    description: A job waiting this long for a label means that backend is not taking jobs.
+    required: false
+    default: ""
+  max-queued:
+    description: This many jobs already waiting for a label means that backend is not taking jobs.
+    required: false
+    default: ""
+  trunk-runner:
+    description: "`false` keeps trunk events on the shared `hobo` label."
+    required: false
+    default: ""
+  fleet-state:
+    description: >-
+      The relay mesh's snapshot (the HOBO_CI_FLEET_STATE repository variable): per
+      label, live nodes and free slots. Used only while it is under five minutes
+      old; empty, stale or unreadable, the queue is read as before.
+    required: false
+    default: ""
+outputs:
+  runner:
+    description: The runs-on label for this run's jobs.
+    value: ${{ steps.route.outputs.runner }}
+  tier:
+    description: fleet, local or github.
+    value: ${{ steps.route.outputs.tier }}
+  attested:
+    description: "`true` when a signed local run was verified for the checked-out tree, else `false`."
+    value: ${{ steps.attest.outputs.attested || 'false' }}
+  attested-jobs:
+    description: JSON array of the job ids that run covers; `[]` when there is none.
+    value: ${{ steps.attest.outputs.attested-jobs || '[]' }}
+runs:
+  using: composite
+  steps:
+    # Never fails and never blocks: anything short of a verified attestation
+    # is attested=false, and every job then runs as it always did.
+    - id: attest
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: |
+        set -uo pipefail
+        not_attested() {
+          echo "not attested: $1"
+          { echo "attested=false"; echo "attested-jobs=[]"; } >> "$GITHUB_OUTPUT"
+        }
+        if [ ! -f scripts/ci/verify-attestation.mts ]; then
+          not_attested "this workflow does not check for a signed local run"
+          exit 0
+        fi
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          not_attested "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        # The script writes both outputs itself; if it dies first, say no here.
+        outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
+        if ! "${node_bin}" --no-warnings scripts/ci/verify-attestation.mts \
+          || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
+          not_attested "the verification script failed"
+        fi
+    - id: route
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        HOBO_CI_ATTESTED: ${{ steps.attest.outputs.attested }}
+        HOBO_CI_ROUTE: ${{ inputs.mode }}
+        HOBO_CI_LOCAL_RUNNER: ${{ inputs.local-runner }}
+        HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
+        HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
+        HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
+        HOBO_CI_FLEET_STATE: ${{ inputs.fleet-state }}
+      run: |
+        set -uo pipefail
+        fleet=hobo
+        case " push workflow_dispatch merge_group workflow_run " in
+          *" ${GITHUB_EVENT_NAME} "*)
+            if [ "${HOBO_CI_TRUNK_RUNNER}" != "false" ]; then fleet=hobo-trunk; fi ;;
+        esac
+        # Without a decision, the one tier known to be up is the one this step is
+        # running on. A run pinned to the fleet stays on the fleet.
+        without_a_decision() {
+          if [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
+            echo "::warning::runner routing did not run ($1); pinned to the fleet"
+            { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::runner routing did not run ($1); using GitHub-hosted runners"
+            { echo "runner=ubuntu-24.04"; echo "tier=github"; } >> "$GITHUB_OUTPUT"
+          fi
+        }
+        # The script is TypeScript run as written, which needs Node 22.18 or later.
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          without_a_decision "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        "${node_bin}" --no-warnings scripts/ci/route-runner.mts || without_a_decision "the routing script failed"

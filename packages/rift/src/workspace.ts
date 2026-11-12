@@ -387,7 +387,7 @@ export function createWorkspace(options: CreateOptions): CreateResult {
 		// crash. "Almost certainly" is not good enough to delete: the same state
 		// arises from a lost journal (where the directory holds an agent's
 		// uncommitted work) and from a clone another process is still running.
-		// `hobo-code mux` calls create on every run, so deleting here would turn
+		// A multiplexer may call create on every run, so deleting here would turn
 		// one lost journal into silent, irreversible loss of every agent's tree.
 		// Move it aside instead — recovery stays possible and costs a rename.
 		const parked = parkDebris(base);

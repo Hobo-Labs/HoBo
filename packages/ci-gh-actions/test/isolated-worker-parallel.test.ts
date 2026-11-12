@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { LeaseSchema } from "@hobo/ci";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
+import type { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
@@ -87,7 +87,7 @@ function controller(
 ) {
 	const transition = vi.fn(async () => undefined);
 	const stub: Pick<
-		PostgresCiStore & HostedRelayStore,
+		SqliteCiStore & HostedRelayStore,
 		"get" | "activeLeases" | "abortIsolatedAndRequeue"
 	> = {
 		get: async (id: string) => active.find((entry) => entry.id === id),
@@ -99,8 +99,7 @@ function controller(
 		policySnapshot: async () => ({ state: undefined, policies: [] }),
 	};
 	// SAFETY: launch() up to authorization only calls get(), activeLeases(), policySnapshot() and abortIsolatedAndRequeue(); transition() must stay uncalled.
-	const store = Object.assign(stub, extra) as PostgresCiStore &
-		HostedRelayStore;
+	const store = Object.assign(stub, extra) as SqliteCiStore & HostedRelayStore;
 	// SAFETY: no GitHub call happens on the paths under test.
 	const github = {} as GithubTransport;
 	return {

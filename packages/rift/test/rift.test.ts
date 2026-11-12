@@ -2,8 +2,8 @@
  * Virtual worktrees on a machine upstream rift cannot serve.
  *
  * Upstream needs btrfs/XFS-reflink/APFS and ships per-platform binaries; on
- * plain ext4 arm64 it does not run, and hobo-code was falling back to giving
- * every agent the same checkout. These tests pin the ladder that replaces it,
+ * plain ext4 arm64 it does not run, and a caller falls back to giving every
+ * agent the same checkout. These tests pin the ladder that replaces it,
  * and in particular the property that matters: an agent writing in place must
  * not reach the source.
  */
@@ -385,7 +385,7 @@ describe("workspace names are parsed, not trusted", () => {
 	});
 
 	it("accepts ordinary agent ids", () => {
-		for (const good of ["claude", "codex", "hobo-code", "agent_1"]) {
+		for (const good of ["claude", "codex", "claude-code", "agent_1"]) {
 			const parsed = parseWorkspaceName(good);
 			expect(parsed.ok).toBe(true);
 			if (parsed.ok) expect(parsed.value).toBe(good);
@@ -604,7 +604,7 @@ describe("create never destroys what it cannot prove is dead", () => {
 	it("parks an unrecognised directory instead of deleting it", () => {
 		// The registry not listing a name does not prove the directory is dead:
 		// a lost journal produces the same state, and the directory then holds
-		// an agent's uncommitted work. `hobo-code mux` calls create on every
+		// an agent's uncommitted work. A multiplexer may call create on every
 		// run, so deleting here turns one lost journal into silent, permanent
 		// loss of every agent's tree.
 		const root = source();

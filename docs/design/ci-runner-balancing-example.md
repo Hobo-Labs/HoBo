@@ -10,7 +10,10 @@ tags: [hobo, design]
 Production shared-budget CI admission is described in
 [shared-budget-policy.md](./shared-budget-policy.md). This variable-rebalancing
 example remains a ranking/reference path; it does not supply transactional
-financial admission or an absolute spending guarantee.
+financial admission or an absolute spending guarantee. The relay's own
+balancing across runner providers, with per-provider financial models and the
+shared budget policy, is described in
+[ci-fleet-balancing.md](./ci-fleet-balancing.md).
 
 **Example:** [`examples/ci-runner-balancing/`](../../examples/ci-runner-balancing/README.md) ·
 **Ancestry:** [`dispatcher-maximize-credits`](./proofs/hobo-363-dispatcher-maximize-credits/index.md),

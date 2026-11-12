@@ -19,8 +19,12 @@ if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
   echo "invalid BuildKit cache cap: ${cap}" >&2
   exit 1
 fi
-inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"
-byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"
+read -r _default_inode_headroom _default_byte_headroom < <(
+  node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
+    "$root/scripts/ci/deps-build-headroom-defaults.mts"
+)
+inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-$_default_inode_headroom}"
+byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-$_default_byte_headroom}"
 if [[ ! "$inode_headroom" =~ ^[0-9]+$ ]]; then
   echo "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM" >&2
   exit 1
@@ -32,7 +36,20 @@ fi
 
 sample_docker_headroom() {
   local sample_path="$1"
+  local image="${2:-}"
   local iavail avail
+  if [[ "$sample_path" == host:* ]]; then
+    local docker_root="${sample_path#host:}"
+    if [[ -z "$image" ]]; then
+      echo "deps headroom: host sampling needs a toolchain image" >&2
+      return 1
+    fi
+    if ! read -r iavail avail < <(sample_docker_headroom_via_host "$docker_root" "$image"); then
+      return 1
+    fi
+    printf '%s %s\n' "$iavail" "$avail"
+    return 0
+  fi
   iavail="$(df --output=iavail "$sample_path" | tail -n1 | tr -d '[:space:]')"
   avail="$(df -B1 --output=avail "$sample_path" | tail -n1 | tr -d '[:space:]')"
   if [[ ! "$iavail" =~ ^[0-9]+$ || ! "$avail" =~ ^[0-9]+$ ]]; then
@@ -40,6 +57,14 @@ sample_docker_headroom() {
     exit 1
   fi
   printf '%s %s\n' "$iavail" "$avail"
+}
+
+sample_docker_headroom_via_host() {
+  local docker_root="$1"
+  local image="$2"
+  docker run --rm --network=none -v /:/host:ro "$image" \
+    sh -ec 'root="$1"; iavail=$(df --output=iavail "/host${root}" | tail -n1 | tr -d "[:space:]"); avail=$(df -B1 --output=avail "/host${root}" | tail -n1 | tr -d "[:space:]"); if [[ ! "$iavail" =~ ^[0-9]+$ || ! "$avail" =~ ^[0-9]+$ ]]; then exit 1; fi; printf "%s %s\n" "$iavail" "$avail"' \
+    _ "$docker_root"
 }
 
 docker_data_root_device() {
@@ -75,19 +100,31 @@ resolve_deps_headroom_sample_path() {
     candidates+=("/pnpm-store")
   fi
   candidates+=("/")
-  for candidate in "${candidates[@]}"; do
-    if [[ -n "$docker_dev" ]]; then
+  if [[ -n "$docker_dev" ]]; then
+    for candidate in "${candidates[@]}"; do
       cand_dev="$(stat -c '%d' "$candidate" 2>/dev/null || true)"
       if [[ -z "$cand_dev" || "$cand_dev" != "$docker_dev" ]]; then
         continue
       fi
-    fi
+      if sample_docker_headroom "$candidate" >/dev/null 2>&1; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    done
+    echo "deps headroom: no device-matched bind mount for DockerRootDir=${docker_root} (dev=${docker_dev}); trying host-visible paths" >&2
+  fi
+  for candidate in "${candidates[@]}"; do
     if sample_docker_headroom "$candidate" >/dev/null 2>&1; then
       printf '%s\n' "$candidate"
       return 0
     fi
   done
-  echo "cannot sample Docker data root for deps build headroom" >&2
+  if [[ -n "$docker_root" && -n "$image" ]] && sample_docker_headroom_via_host "$docker_root" "$image" >/dev/null 2>&1; then
+    echo "deps headroom: sampling DockerRootDir via host mount (${docker_root})" >&2
+    printf 'host:%s\n' "$docker_root"
+    return 0
+  fi
+  echo "cannot sample Docker data root for deps build headroom (dockerRoot=${docker_root:-unknown})" >&2
   return 1
 }
 
@@ -99,16 +136,27 @@ ensure_deps_build_headroom() {
   local docker_root sample_path iavail avail
   docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
   sample_path="$(resolve_deps_headroom_sample_path "$docker_root" "$base")" || exit 1
-  read -r iavail avail < <(sample_docker_headroom "$sample_path")
+  read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     return 0
   fi
   echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
   docker builder prune -f --keep-storage "$cap"
-  read -r iavail avail < <(sample_docker_headroom "$sample_path")
+  read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
     return 0
+  fi
+  if [[ -f "$root/scripts/ci-runner-image-gc.mts" ]]; then
+    keep_tag="${HOBO_CI_DEPS_GC_KEEP_TAG:-hobo-ci-deps:local}"
+    echo "deps rebuild evicting unused hobo-ci-deps images (keep=${keep_tag})"
+    node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
+      "$root/scripts/ci-runner-image-gc.mts" "$keep_tag" || true
+    read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
+    if (( iavail >= inode_headroom && avail >= byte_headroom )); then
+      echo "deps rebuild headroom recovered after deps image gc (inodes=${iavail} bytes=${avail})"
+      return 0
+    fi
   fi
   echo "refusing deps rebuild: Docker data root still below headroom after builder prune (inodes=${iavail} need ${inode_headroom}; bytes=${avail} need ${byte_headroom})" >&2
   exit 1
@@ -120,6 +168,11 @@ trap cleanup EXIT
 
 toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"
 base="hobo-ci-worker:${toolchain}"
+if ! docker image inspect "$base" >/dev/null 2>&1; then
+  export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"
+  echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
+  node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+fi
 if ! docker image inspect "$base" >/dev/null 2>&1; then
   computed_toolchain="$toolchain"
   toolchain=""

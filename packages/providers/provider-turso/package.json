@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/provider-turso",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Turso (libSQL) binding of the ephemeral-state port: opaque incarnation:revision versions, putIfAbsent, compareAndSet, versioned delete, increment with on-create/refresh TTL modes, expire and getMany as single atomic statements over @libsql/client, lazy TTL expiry with a bounded purge, a request and rows meter for Turso's rows-read/rows-written allowance, and the TURSO_DATABASE_URL/TURSO_AUTH_TOKEN environment helper.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
+		"@hobo/kv-redis-compatible": "workspace:*",
+		"@libsql/client": "0.18.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

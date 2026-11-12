@@ -1,0 +1,211 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// What the hosted relay keeps in its cache (ADR-0179): short-lived, per-key
+// records behind `EphemeralStatePort`, each with a TTL, each rebuildable from
+// GitHub and Vercel by the deterministic names a lease id implies. Values are
+// the protobuf JSON of these messages. A lease and a job travel inside them as
+// the protobuf JSON of `hobo.ci.v1.Lease` and `hobo.ci.v1.Job` (owned by
+// `@hobo/ci`), so the cache never holds a second shape of either.
+//
+// Nothing here is a credential: the sandbox proxy token is derived from the
+// lease id under a key from the config service and never stored.
+
+// An intent recorded on the lease before an external call: the event type
+// (`ci.DispatchRequested`, `ci.RunnerClaimed`, `ci.SandboxCreated`) and when.
+message RelayCacheIntent {
+  string kind = 1;
+  string at = 2;
+}
+
+// `lease:<leaseId>`. Created once with putIfAbsent; every transition is a
+// compare-and-set on the key's version.
+message RelayCacheLease {
+  // Protobuf JSON of hobo.ci.v1.Lease.
+  string lease_json = 1;
+  // `<repositoryId>:<jobId>:<runAttempt>`.
+  string job_key = 2;
+  // Requeue generation the id was derived under.
+  uint32 generation = 3;
+  // Latest intent of each kind; replaces reading intent events from a journal.
+  repeated RelayCacheIntent intents = 4;
+  // Set when the record was reconstructed from provider evidence, not admitted:
+  // `runner`, `bridge-run` or `sandbox`.
+  string rebuilt_from = 5;
+}
+
+// The job's assignment fence: which lease's runner GitHub gave the job to.
+message RelayCacheAssignment {
+  string lease_id = 1;
+  string version = 2;
+}
+
+// `job:<repositoryId>:<jobId>:<runAttempt>`. The job-taken marker, the pending
+// demand and the terminal tombstone of one job attempt, in one record so the
+// three change together under one compare-and-set.
+message RelayCacheJob {
+  string job_key = 1;
+  // `pending` (demand waiting for capacity), `taken` (lease_id holds it),
+  // `idle` (its lease ended and nothing waits) or `terminal`.
+  string state = 2;
+  uint32 generation = 3;
+  string lease_id = 4;
+  // Protobuf JSON of hobo.ci.v1.Job with its pinned queue deadline; set while pending.
+  string pending_job_json = 5;
+  // Earliest time the job is known to have been queued: GitHub's created_at
+  // where the relay has it, else when the relay first saw it.
+  string first_seen_at = 6;
+  string queue_deadline_at = 7;
+  RelayCacheAssignment assigned = 8;
+  // `completed` or `expired` once terminal.
+  string terminal_reason = 9;
+}
+
+// One lease's hold in its account's in-flight index: what routing needs to
+// count it against concurrency and budget without reading the lease.
+message RelayCacheInflightEntry {
+  string lease_id = 1;
+  string job_key = 2;
+  string offer_id = 3;
+  string provider = 4;
+  string provider_account_id = 5;
+  double reserved_paid_micros = 6;
+  double reserved_free_minutes = 7;
+  double reserved_minutes = 8;
+  // Protobuf JSON of hobo.ci.v1.SandboxAllowance; empty when none.
+  string sandbox_reserved_allowance_json = 9;
+  string created_at = 10;
+}
+
+// `inflight:<accountId>`. A small set, updated by compare-and-set; admission
+// adds an entry only if the account's limits hold.
+message RelayCacheInflight {
+  string account_id = 1;
+  repeated RelayCacheInflightEntry entries = 2;
+  // Lease ids that ended recently, newest last, bounded: what `all()` lists
+  // besides the in-flight ones. Never used for budgets.
+  repeated string recent_terminal = 3;
+  // False when the index was created empty without a rebuild (the cache was
+  // emptied): priced offers stay paused until a rebuild pass restores holds.
+  bool holds_known = 4;
+  string rebuilt_at = 5;
+}
+
+// `pending`. Job keys waiting for capacity, oldest first, bounded. Rebuildable
+// from the queued-job scan.
+message RelayCachePending {
+  repeated string job_keys = 1;
+}
+
+// `delivery:<deliveryId>`. Webhook dedupe for paths the queue's idempotency
+// does not cover.
+message RelayCacheDelivery {
+  string fingerprint = 1;
+  string received_at = 2;
+  bool ignored = 3;
+}
+
+// `sbx:egress:<sandboxId>`. Binds a guest sandbox's egress counter to its lease.
+message RelayCacheSandboxEgress {
+  string lease_id = 1;
+  string account_id = 2;
+  double max_bytes = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Relay helpers on the cache (ADR-0179 phase 5). Each replaces a former
+// `hobo_ci_*` table; every key has a TTL and losing it costs a rescan, a new
+// sign-in or a conservative settlement, never correctness.
+// ---------------------------------------------------------------------------
+
+// `repair:webhook:<appId>:cursor`. Where the App's delivery-history scan
+// resumes (the next page URL of `GET /app/hook/deliveries`). Lost: the scan
+// restarts from the newest page.
+message RelayCacheWebhookScan {
+  string cursor_url = 1;
+  string checkpoint_at = 2;
+}
+
+// The queued-job scan's position in one repository and run status.
+message RelayCacheQueuedCursor {
+  uint32 page = 1;
+  repeated double runs = 2;
+  bool loaded = 3;
+  bool has_next = 4;
+  uint32 run_index = 5;
+  uint32 job_page = 6;
+  uint32 job_index = 7;
+}
+
+// `repair:queued:<appId>:scan:<accountId>:<installationId>:<repositoryId>:<status>`.
+// Replaces a `hobo_ci_queued_scans` row: the cursor, when it is next due and
+// when it was last advanced (oldest first). Lost: that key starts over.
+message RelayCacheQueuedScan {
+  RelayCacheQueuedCursor cursor = 1;
+  double due_ms = 2;
+  double touched_ms = 3;
+}
+
+// A value sealed with AES-256-GCM under a key derived from the session key
+// in the config service. `key_id` names the derived key, so a rotated session
+// key reads old records as absent (a new sign-in), never as garbage.
+message RelayCacheSealed {
+  string key_id = 1;
+  bytes nonce = 2;
+  // Ciphertext with the 16-byte authentication tag appended.
+  bytes ciphertext = 3;
+}
+
+// Sealed in `oauth:state:<hmac>`: one GitHub OAuth `state`, consumed once.
+message RelayCacheOAuthState {
+  string browser_digest = 1;
+  string account_id = 2;
+  string verifier = 3;
+  string control_token = 4;
+  double expires_at_ms = 5;
+}
+
+// Sealed in `oauth:session:<hmac>`: one operator session for fifteen minutes.
+message RelayCacheOAuthSession {
+  string account_id = 1;
+  double github_id = 2;
+  string github_token = 3;
+  string control_token = 4;
+  double expires_at_ms = 5;
+}
+
+// `app:state:<hmac>`: one App-installation `state`, consumed once.
+message RelayCacheAppState {
+  string purpose = 1;
+  string account_id = 2;
+  string subject = 3;
+  double expires_at_ms = 4;
+}
+
+// `app:installations:<accountId>`. Installations an operator proved they
+// administer in the last day, usable until `hobo ci` writes them into the
+// config service. Never a source of configuration.
+message RelayCacheVerifiedInstallations {
+  string account_id = 1;
+  double app_id = 2;
+  repeated double verified_ids = 3;
+}
+
+// `owner:session:<hmac>`: an owner who redeemed the onboarding invitation,
+// for ten minutes.
+message RelayCacheOwnerSession {
+  string account_id = 1;
+  double expires_at_ms = 2;
+}
+
+// `sbx:proxy-meter:<leaseId>`. What the lease's proxy VM reported it
+// reserved (bytes) and how many quota calls it made, read from the VM before
+// it was stopped. The VM is the authority; settlement charges the larger of
+// this and the relay's own counters.
+message RelayCacheProxyMeter {
+  string lease_id = 1;
+  string proxy_session_id = 2;
+  double bytes = 3;
+  double calls = 4;
+  string read_at = 5;
+}

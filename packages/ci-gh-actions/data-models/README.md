@@ -10,6 +10,39 @@ and plan, setup operation and pull-request result, and GitHub App manifest.
 invalid fixtures run through schema-tools. Generated TypeScript lives under
 `src/_generated/` and is regenerated from protobuf.
 
+`relay_mcp.proto` owns what the relay's MCP server returns: the lease, queued
+job and event views, their lists, the relay status (with whether the host
+reads a mesh) and the quarantine views. `list_mesh_nodes` returns
+`MeshNodeReports` from `mesh.proto`.
+Each is a deliberate subset built field by field; `onboarding.cue` closes them,
+and the `relay-mcp-*` fixtures pin that an event's stored `detail` or a lease's
+sandbox identity does not fit a view, and that a cursor is an opaque token,
+never a journal position.
+
+`mesh.proto` owns the relay mesh's records: the advertisement a node writes
+to the board (`MeshAdvert`, with its identity key and signature), the mesh's
+trusted-key set (`MeshTrustConfig`), a node's reliability record as its
+journal keeps it, the node report every surface answers with
+(`MeshNodeReports`: availability, capacity and trust per node, and a capacity
+summary) and the routing snapshot published to `HOBO_CI_FLEET_STATE`
+(`MeshFleetState`). `onboarding.cue` constrains them. The `mesh-*` fixtures
+pin that an older node's advertisement (none of the new fields) is valid,
+that an advertisement cannot state its own trust level or carry a private
+key, that a report's trust level is one of three, and that the routing
+snapshot names labels and counts only, never a node. `src/mesh-records.ts` is
+the only place these are parsed and written.
+
+`relay_cache.proto` owns the records the hosted relay keeps in its cache
+(ADR-0179): the lease record (the `hobo.ci.v1.Lease` as JSON, its job key,
+requeue generation and latest intents), the job record (taken marker, pending
+demand, assignment fence and terminal tombstone in one value), the per-account
+in-flight index, the pending set, the webhook dedupe marker and the sandbox
+egress binding. `onboarding.cue` constrains them; the `relay-cache-*`
+fixtures pin that a job record's lease id is a UUIDv5 (deterministic, never
+random), that a job state is one of four, and that a delivery marker never
+holds the body. `src/relay-cache/` is the only place they are read and
+written; the key and TTL of each is in the package README.
+
 The shared account, connection, revisioned policy, setup request, control-token
 binding, job, lease, and audit-event messages belong to
 [`@hobo/ci`](../../ci/data-models/ci.proto). Account policy includes durable Broker
