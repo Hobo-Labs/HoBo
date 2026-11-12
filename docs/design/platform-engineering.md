@@ -127,7 +127,7 @@ camps: {
 **Request-level isolation (sandbox lanes) — the cheaper default for previews & branch testing ([ADR-0076](./adr/02-identity-security.md#adr-0076)).** Cloning a whole Camp per PR is the heavy option; the default is a **sandbox lane** over a **shared baseline** environment (the bridge-to-Kubernetes model): a lane = a **signed, principal/tenant-bound lane token** (not a bare header) + a set of **boundary-mode** overrides ([Plan 9](./generated-stack.md#plan-09)/[Plan 23](./generated-stack.md#plan-23)). The token is **enforced fail-closed at every membrane hop and on the `EventEnvelope.lane` for async** — requests/events carrying it route to the lane's **forked** services (a `hobo dev --fork` build via the Relay (below), or a branch deploy), everything else stays baseline, and a hop/subscriber that can't prove in-lane provenance **denies rather than leaking onto the baseline**. A fork must **satisfy the boundary contract at lane join** (a runtime check, distinct from deploy-time `can-deploy`, [Plan 29](./contracts-policy-flags.md#plan-29)); **baseline aggregates fork-on-touch** so a lane write never appends the real stream ([Plan 32](./data-plane.md#plan-32)). Concretely, fork-on-touch is **not** contending for the baseline's single-writer lease: a touched aggregate folds the baseline stream up to the fork point, then appends the lane's events to a **separate lane-scoped stream id** (`lane:<id>:<aggregateKey>`) **with its own lease** — reads are a **read-through merge** (baseline-up-to-fork-point ⊕ lane tail), and a **lane request never takes the baseline single-writer lease**, so a concurrent baseline writer is unaffected. **No fork event is ever delivered to a baseline subscriber/saga** (the `EventEnvelope.lane` deny-by-default filter, [ADR-0076](./adr/02-identity-security.md#adr-0076) R1), and a **choreography saga is lane-scoped** — a baseline saga never reacts to a lane event and vice-versa. **Real external side effects default to `mock`/`record`** (a `live` grant is itself gated, [ADR-0076](./adr/02-identity-security.md#adr-0076) R3); the lane runs under a **resource budget** + isolation tier ([ADR-0012](./adr/02-identity-security.md#adr-0012)) so a bad fork can't degrade the baseline; read-through honors data-classification ([ADR-0060](./adr/02-identity-security.md#adr-0060)). A lane is **tenant-scoped**, has a **TTL**, and reap **drains in-flight requests + fails/migrates running sagas** before discarding the overlay; lane cost is a metering dimension ([ADR-0039](./adr/02-identity-security.md#adr-0039)). A **preview environment** is then either a sandbox lane (the default) or a full ephemeral Camp, each with a preview URL; the same lanes carry **self-healing experiments** and **lane-bounded chaos** ([ADR-0076](./adr/02-identity-security.md#adr-0076)).
 
 ### Deployment Sets (immutable) + Deltas (mutable)
-> **Delivered by HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180), D2, D5).** The model below is implemented by
+> **Delivered by HoBo.CD ([ADR-0181](./adr/01-architecture-core.md#adr-0181), D2, D5).** The model below is implemented by
 > `@hobo/cd`; [continuous-delivery.md](./continuous-delivery.md) is the full
 > design.
 
@@ -201,7 +201,7 @@ A **Workload Profile** declares **how a service is realized** on a target — th
 **Placeholders / output references** align to Humanitec syntax and HoBo's lazy references ([Plan 21](./authoring-resources-wiring.md#plan-21)) — resource outputs `${resources.<type>.<class>#<id>.outputs.<name>}` and context `${context.app|env|envType|res.id|class|type}` — resolved at deploy from the resolved graph; unresolved refs fail planning with a precise error.
 
 ### The HoBo Relay (deploy into private networks)
-> **Superseded for delivery by the HoBo.CD agent ([ADR-0180](./adr/01-architecture-core.md#adr-0180), D5).** Delivery into a
+> **Superseded for delivery by the HoBo.CD agent ([ADR-0181](./adr/01-architecture-core.md#adr-0181), D5).** Delivery into a
 > private network no longer uses a reverse tunnel. An **agent-mode reconciler**
 > runs inside the boundary (`hobo deploy agent run`), connects **outbound over
 > HTTPS only** to the Station's delivery feed, authenticates with a key-bound
@@ -267,7 +267,7 @@ flowchart TD
 Beyond direct apply, a Camp can use a **GitOps publisher** (`@hobo/cd-gitops`, a `publisher`-mode reconciler): it renders the resolved **Deployment Set** as an Argo CD `Application` or a Flux `Kustomization`, commits it through the Git host's HTTP API, and treats the Camp as converged **only when the engine's observed status says so**. The resolution/matching/event-sourcing pipeline is unchanged; only the final apply step differs. Argo CD and Flux are optional targets, never required.
 
 ### Pipelines (rule-based automation + approval gates)
-> **Delivered by HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180), D4).** A delivery Pipeline is a graph with
+> **Delivered by HoBo.CD ([ADR-0181](./adr/01-architecture-core.md#adr-0181), D4).** A delivery Pipeline is a graph with
 > lineage, not a step runner.
 
 A **Pipeline** is a DAG of nodes, one per Bindle (or per Rail, when policy itself is delivered). Each node names Camps, or a **Placement** over Rail-bound Camp sets for a fleet, and declares:

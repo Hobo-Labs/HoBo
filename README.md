@@ -25,7 +25,7 @@ Vercel CI compute charges.
 ## HoBo.CD
 
 [HoBo.CD](./packages/cd/README.md) is the delivery sibling of HoBo.CI
-([design](./docs/design/continuous-delivery.md), [ADR-0180](./docs/design/adr/01-architecture-core.md#adr-0180)).
+([design](./docs/design/continuous-delivery.md), [ADR-0181](./docs/design/adr/01-architecture-core.md#adr-0181)).
 CI builds artifacts and can be any CI; CD moves immutable **Freight** through a
 pipeline graph of Camps under policy and makes each Camp converge by **pull**.
 

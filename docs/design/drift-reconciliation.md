@@ -29,7 +29,7 @@ adjustment, or customer notification implementation.
 ## HoBo.CD: where drift runs
 
 The M0 scope below assumed a reconciler that did not exist. HoBo.CD supplies it
-([ADR-0180](./adr/01-architecture-core.md#adr-0180) D5, D22; [continuous-delivery.md](./continuous-delivery.md)):
+([ADR-0181](./adr/01-architecture-core.md#adr-0181) D5, D22; [continuous-delivery.md](./continuous-delivery.md)):
 
 - **Detection.** Every Camp has one fenced reconciler (per-Camp lease
   `cd:camp:<campId>`). It compares the Camp's desired Set with what it

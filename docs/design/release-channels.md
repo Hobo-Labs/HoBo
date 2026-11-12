@@ -27,7 +27,7 @@ signoff workflows.
 
 ## HoBo.CD: Freight is not a release channel
 
-HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180) D2; [continuous-delivery.md](./continuous-delivery.md)) names its promotion unit **Freight** precisely to
+HoBo.CD ([ADR-0181](./adr/01-architecture-core.md#adr-0181) D2; [continuous-delivery.md](./continuous-delivery.md)) names its promotion unit **Freight** precisely to
 avoid this document's vocabulary:
 
 - A **release channel** (`stable`, `beta`, a pinned line) is a moving name

@@ -1,15 +1,13 @@
 /**
- * Publishes what the mesh can take, per fleet label, where the routing job
- * can read it without asking anyone: one repository variable.
+ * Publishes what the mesh can take, per fleet label, to one repository
+ * variable.
  *
- * `scripts/ci/route-runner.mts` runs first in every workflow and chooses the
- * fleet, a local box or GitHub-hosted. It reads GitHub's queue, which says
- * what happened to jobs already queued. This snapshot says what the nodes
- * themselves report now: a fleet label nobody serves, or with no free slot,
- * is not worth queueing behind. It is an extra signal and never the only
- * one: the snapshot carries when it was published, and the routing job
- * ignores one older than five minutes, so a mesh that stops publishing
- * changes nothing.
+ * It was written for `scripts/ci/route-runner.mts`, which read it from the
+ * workflow to see a fleet label nobody serves, or with no free slot, before
+ * queueing behind it. Routing no longer reads it: it asks the relay for a
+ * fleet verdict (`fleet-verdict.ts`, ADR-0180), which is decided by the
+ * relay and expires by itself. This publisher stays until the verdict's
+ * reporter replaces it; the snapshot still carries when it was published.
  *
  * What it lists:
  *
@@ -18,7 +16,7 @@
  *   (`MeshFleetState` in `data-models/mesh.proto`). Never `hobo-local-host`:
  *   the board is shared by every repository, and one developer's busy
  *   machine says nothing about another repository's. A label the snapshot
- *   does not list is unknown to the routing job, not refused.
+ *   does not list is unknown to a reader, not refused.
  * - Nodes the reader rejects (a failed signature, an overlong expiry) are not
  *   counted. Trust does not filter the counts, even with `requireTrusted`:
  *   that setting decides whom a worker defers to when ranking, not whether
@@ -30,7 +28,7 @@
  * flag runs this; the others stay quiet.
  *
  * How often: GitHub's variable writes are rate limited, so a write happens
- * only when what the routing job reads changes (per label, whether there is
+ * only when what a reader acts on changes (per label, whether there is
  * a node and whether there is a free slot), at most every 30 seconds, and
  * otherwise every two minutes so the snapshot never goes stale while the
  * mesh is up. A refused write backs off; every failure is logged and
@@ -47,10 +45,14 @@ import { writeRepositoryVariable } from "./fleet-routes.js";
 import type { GithubTransport } from "./github.js";
 import { meshFleetStateJson } from "./mesh-records.js";
 
-// public-contract: the repository variable runner routing reads the mesh snapshot from.
+// public-contract: the repository variable the mesh snapshot is published to.
 export const FLEET_STATE_VARIABLE = "HOBO_CI_FLEET_STATE";
 
-/** How old a snapshot may be before the routing job ignores it. */
+/**
+ * How old a snapshot may be and still describe the mesh; the heartbeat keeps
+ * it well inside this. Runner routing no longer reads the variable: it asks
+ * the relay for a fleet verdict instead (ADR-0180).
+ */
 export const FLEET_STATE_MAX_AGE_MS = 5 * 60_000;
 
 export type FleetStateEvent =

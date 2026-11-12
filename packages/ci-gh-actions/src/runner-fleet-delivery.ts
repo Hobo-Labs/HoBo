@@ -1,5 +1,5 @@
 /**
- * HoBo's own runner fleet, delivered by HoBo CD (plan 0024, ADR-0180).
+ * HoBo's own runner fleet, delivered by HoBo CD (plan 0024, ADR-0181).
  *
  * The hosts that run HoBo's self-hosted GitHub Actions runners (the box
  * worker, mesh nodes and local runners serving `hobo`, `hobo-trunk` and

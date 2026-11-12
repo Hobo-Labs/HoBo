@@ -8,7 +8,7 @@ tags: [hobo, design, cd, resolver, wasm, component, guide]
 # Authoring a `hobo:resolver` component
 
 HoBo.CD realizes every platform through a `ResourceResolver`
-([ADR-0180](./adr/01-architecture-core.md#adr-0180) D6). Platforms with an
+([ADR-0181](./adr/01-architecture-core.md#adr-0181) D6). Platforms with an
 in-tree resolver need nothing from you. For any other platform, write an
 out-of-tree **resolver component**: a WASM component exporting the
 `hobo:resolver@0.1.0` world, hosted by `@hobo/resolver-components` behind the

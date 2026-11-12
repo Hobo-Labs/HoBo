@@ -625,6 +625,13 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
   deployment, 24 hours. Missing is `starting`; a failure newer than the last
   success, or no success for 45 minutes, is `failing`, and `/readyz` answers
   503.
+- **Fleet verdicts** (`src/fleet-verdict-cache.ts`, record `FleetVerdict` from
+  `@hobo/ci-gh-actions`): what a relay with a view of the fleet last reported
+  for a repository, one key each, kept until the verdict expires (at most 300
+  seconds). The hosted relay only keeps and serves them, at
+  `/v1/fleet/verdicts/{owner}/{repo}`
+  ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)). Missing reads
+  as "nothing blocked", which is what runner routing assumes without one.
 - **Sessions, OAuth `state`, App installation**: `createStatelessAppOnboarding`
   from `@hobo/ci-gh-actions`. Records are named by an HMAC under a key derived
   from `HOBO_CI_SESSION_KEY` and, where they hold a credential, sealed with

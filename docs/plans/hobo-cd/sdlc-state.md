@@ -7,7 +7,7 @@ tags: [hobo, cd, sdlc, plans]
 
 # HoBo.CD swarm state (plan 0024)
 
-Plan: [`0024-hobo-cd-swarm-instruction.md`](../0024-hobo-cd-swarm-instruction.md). Decisions: [ADR-0180](../../design/adr/01-architecture-core.md#adr-0180). Design: [continuous-delivery.md](../../design/continuous-delivery.md). Contract commit `b633769e` on `claude/loving-allen-jry6qe`.
+Plan: [`0024-hobo-cd-swarm-instruction.md`](../0024-hobo-cd-swarm-instruction.md). Decisions: [ADR-0181](../../design/adr/01-architecture-core.md#adr-0181). Design: [continuous-delivery.md](../../design/continuous-delivery.md). Contract commit `b633769e` on `claude/loving-allen-jry6qe`.
 
 ## Status (2026-11-12)
 
@@ -22,7 +22,7 @@ The first swarm run stopped when the account's weekly agent usage limit was reac
 
 - **ADR number.** Plan 0024 R3 names the decision record ADR-0178. ADR-0178 (provider
   manifest) and ADR-0179 (stateless hosted relay) were already assigned on `main`, so the
-  record is **ADR-0180** in `docs/design/adr/01-architecture-core.md` (WP21). The plan text is
+  record is **ADR-0181** in `docs/design/adr/01-architecture-core.md` (WP21). The plan text is
   frozen and still says ADR-0178.
 - **Turbo and boundary registration** for `cd`, `cd-gitops`, `cd-kube-fleet`,
   `resolver-components` and `storage-postgres` landed before the directories merge
