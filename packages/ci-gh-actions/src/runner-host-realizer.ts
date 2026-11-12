@@ -73,6 +73,7 @@ import {
 	RUNNER_FLEET_CAMP_SET,
 	RUNNER_FLEET_YARD,
 	type RunnerHostKind,
+	servedLabelClaims,
 } from "./runner-fleet-delivery.js";
 
 // public-contract: the resolver identity the runner fleet's Camps resolve to.
@@ -483,6 +484,8 @@ type RunnerHostAdvertOutputs = {
 	validUntilMs: number;
 	sinceMs?: number;
 	controllerDigest?: string;
+	/** The runner labels the advert says this host serves. */
+	labels: string[];
 };
 /** Observed facts that only narrow placement. */
 type RunnerHostClaims = { platform?: string; capacity?: string };
@@ -537,6 +540,7 @@ function outcome(
 		const meshAdvert: RunnerHostAdvertOutputs = {
 			healthy: advert.healthy,
 			validUntilMs: advert.validUntilMs,
+			labels: [...advert.labels],
 		};
 		if (advert.sinceMs !== undefined) meshAdvert.sinceMs = advert.sinceMs;
 		if (advert.controllerDigest !== undefined)
@@ -1016,11 +1020,87 @@ export type RunnerHostCampReport = Readonly<{
 	}>[];
 }>;
 
+// public-contract: the claims a runner host's CD agent reports about its own health.
+export const RUNNER_HOST_HEALTH_CLAIMS = Object.freeze({
+	/** `fresh`, `expired` or `missing`: the host's own mesh advertisement. */
+	advert: "hobo.ci/mesh-advert",
+	/** ISO time the advertised mesh lease is valid until (absent when missing). */
+	validUntil: "hobo.ci/mesh-advert-valid-until",
+	/** `true` only when the controller is observed serving and the advert is fresh and healthy. */
+	ready: "hobo.ci/runner-host-ready",
+} as const);
+
+type AdvertState = "fresh" | "expired" | "missing";
+
+type ClaimJson = Readonly<{ name: string; value: string }>;
+
+type ParsedAdvert = Readonly<{
+	healthy: boolean;
+	validUntilMs: number;
+	labels: readonly string[];
+}>;
+
+/** The advert part of an outcome's outputs, parsed; undefined when absent or malformed. */
+function advertOutputs(value: unknown): ParsedAdvert | undefined {
+	if (value === null || Array.isArray(value) || !(value instanceof Object))
+		return undefined;
+	const healthy: unknown = Reflect.get(value, "healthy");
+	const validUntilMs: unknown = Reflect.get(value, "validUntilMs");
+	const labels: unknown = Reflect.get(value, "labels");
+	if (healthy !== true && healthy !== false) return undefined;
+	if (!Number.isFinite(validUntilMs)) return undefined;
+	return {
+		healthy,
+		validUntilMs: Number(validUntilMs),
+		labels: Array.isArray(labels)
+			? labels.flatMap((label: unknown) =>
+					typeof label === "string" ? [label] : [],
+				)
+			: [],
+	};
+}
+
+/**
+ * Health evidence as claims: what the host's own advert says (fresh, expired
+ * or missing, and until when), whether the host is ready (serving and a fresh
+ * healthy advert), and while the advert is fresh the runner labels it serves.
+ * Plain claims, so they ride the reconcile observation to the Station, which
+ * turns them into inventory conditions (`runnerHostHealthConditions`).
+ */
+function healthClaims(
+	advert: ParsedAdvert | undefined,
+	serving: boolean,
+	nowMs: number,
+): readonly ClaimJson[] {
+	const state: AdvertState =
+		advert === undefined
+			? "missing"
+			: advert.validUntilMs <= nowMs
+				? "expired"
+				: "fresh";
+	const ready = serving && state === "fresh" && advert?.healthy === true;
+	return [
+		...(state === "fresh" && advert ? servedLabelClaims(advert.labels) : []),
+		{ name: RUNNER_HOST_HEALTH_CLAIMS.advert, value: state },
+		...(advert
+			? [
+					{
+						name: RUNNER_HOST_HEALTH_CLAIMS.validUntil,
+						value: new Date(advert.validUntilMs).toISOString(),
+					},
+				]
+			: []),
+		{ name: RUNNER_HOST_HEALTH_CLAIMS.ready, value: String(ready) },
+	];
+}
+
 /**
  * What a resolver outcome says in a CD reconcile observation: one resource
- * (the controller, its digest, retained job counts) and the observed claims
- * (platform, capacity). Plain protobuf JSON, so the composition that owns
- * `@hobo/cd` builds the record; this package does not depend on it.
+ * (the controller, its digest, retained job counts), the observed claims
+ * (platform, capacity) and the host's health claims
+ * (`RUNNER_HOST_HEALTH_CLAIMS` and served labels). Plain protobuf JSON, so the
+ * composition that owns `@hobo/cd` builds the record; this package does not
+ * depend on it.
  */
 export function runnerHostCampReport(
 	outcome: ResolveOutcome,
@@ -1037,11 +1117,15 @@ export function runnerHostCampReport(
 		claimBag !== undefined &&
 		!Array.isArray(claimBag) &&
 		claimBag instanceof Object
-			? Object.entries(claimBag)
+			? Object.entries(claimBag).map(([name, value]) => ({
+					name,
+					value: String(value),
+				}))
 			: [];
 	const observedAt = new Date(nowMs).toISOString();
 	// Typed, never parsed from diagnostic text: absent or not `true` is unhealthy.
 	const serving = outputs.serving === true;
+	const reportedBy = `runner-host:${attribute("hostId")}`;
 	return Object.freeze({
 		resource: Object.freeze({
 			resource: RUNNER_HOST_REALIZER_BINDING.logicalId,
@@ -1059,14 +1143,163 @@ export function runnerHostCampReport(
 			retained: RUNNER_HOST_RETAINED_FIELDS,
 		}),
 		claims: Object.freeze(
-			claims.map(([name, value]) =>
+			[
+				...claims,
+				...healthClaims(advertOutputs(outputs.meshAdvert), serving, nowMs),
+			].map((claim) => Object.freeze({ ...claim, reportedBy, observedAt })),
+		),
+	});
+}
+
+/** The report for a host with no controller at all: nothing serving, advert missing. */
+export function runnerHostAbsentReport(
+	hostId: string,
+	nowMs: number,
+): RunnerHostCampReport {
+	const observedAt = new Date(nowMs).toISOString();
+	return Object.freeze({
+		resource: Object.freeze({
+			resource: RUNNER_HOST_REALIZER_BINDING.logicalId,
+			physicalId: `${RUNNER_FLEET_YARD}/${hostId}/controller`,
+			healthy: false,
+			kind: RUNNER_HOST_PRODUCT_ID,
+			attributes: Object.freeze({}),
+			retained: RUNNER_HOST_RETAINED_FIELDS,
+		}),
+		claims: Object.freeze(
+			healthClaims(undefined, false, nowMs).map((claim) =>
 				Object.freeze({
-					name,
-					value: String(value),
-					reportedBy: `runner-host:${attribute("hostId")}`,
+					...claim,
+					reportedBy: `runner-host:${hostId}`,
 					observedAt,
 				}),
 			),
 		),
+	});
+}
+
+type HealthConditionType =
+	| "CAMP_CONDITION_TYPE_REACHABLE"
+	| "CAMP_CONDITION_TYPE_LEASED"
+	| "CAMP_CONDITION_TYPE_READY";
+type HealthConditionStatus =
+	| "CONDITION_STATUS_TRUE"
+	| "CONDITION_STATUS_FALSE"
+	| "CONDITION_STATUS_UNKNOWN";
+
+// domain-view: CampInventory.observe conditions from the health source (protobuf JSON of cd.proto CampConditionRecord).
+export type RunnerHostHealth = Readonly<{
+	/** The advert as the Station reads it at its own clock. */
+	advert: AdvertState;
+	conditions: readonly Readonly<{
+		type: HealthConditionType;
+		status: HealthConditionStatus;
+		source: "SIGNAL_SOURCE_HEALTH_SOURCE";
+		reason: string;
+	}>[];
+}>;
+
+function healthCondition(
+	type: HealthConditionType,
+	status: HealthConditionStatus,
+	reason: string,
+) {
+	return Object.freeze({
+		type,
+		status,
+		source: "SIGNAL_SOURCE_HEALTH_SOURCE" as const,
+		reason,
+	});
+}
+
+/**
+ * The Station's reading of a runner host's health claims, as the same
+ * REACHABLE / LEASED / READY table `runnerFleetCampObservations` applies to
+ * the mesh board (deploy/runner-fleet/README.md): fresh and healthy is all
+ * TRUE; fresh but draining or pressured is READY false; an advert whose lease
+ * has lapsed at `nowMs` (the Station's clock, not the agent's) is all FALSE;
+ * no evidence is all UNKNOWN, never assumed healthy.
+ */
+export function runnerHostHealthConditions(
+	claims: readonly ClaimJson[],
+	nowMs: number,
+): RunnerHostHealth {
+	const value = (name: string) =>
+		claims.find((claim) => claim.name === name)?.value;
+	const until = Date.parse(value(RUNNER_HOST_HEALTH_CLAIMS.validUntil) ?? "");
+	const reported = value(RUNNER_HOST_HEALTH_CLAIMS.advert);
+	const advert: AdvertState =
+		reported !== "fresh" && reported !== "expired"
+			? "missing"
+			: reported === "expired" || !Number.isFinite(until) || until <= nowMs
+				? "expired"
+				: "fresh";
+	if (advert === "missing")
+		return Object.freeze({
+			advert,
+			conditions: Object.freeze([
+				healthCondition(
+					"CAMP_CONDITION_TYPE_REACHABLE",
+					"CONDITION_STATUS_UNKNOWN",
+					"mesh-advert-missing",
+				),
+				healthCondition(
+					"CAMP_CONDITION_TYPE_LEASED",
+					"CONDITION_STATUS_UNKNOWN",
+					"mesh-advert-missing",
+				),
+				healthCondition(
+					"CAMP_CONDITION_TYPE_READY",
+					"CONDITION_STATUS_UNKNOWN",
+					"mesh-advert-missing",
+				),
+			]),
+		});
+	if (advert === "expired")
+		return Object.freeze({
+			advert,
+			conditions: Object.freeze([
+				healthCondition(
+					"CAMP_CONDITION_TYPE_REACHABLE",
+					"CONDITION_STATUS_FALSE",
+					"mesh-advert-expired",
+				),
+				healthCondition(
+					"CAMP_CONDITION_TYPE_LEASED",
+					"CONDITION_STATUS_FALSE",
+					"mesh-lease-expired",
+				),
+				healthCondition(
+					"CAMP_CONDITION_TYPE_READY",
+					"CONDITION_STATUS_FALSE",
+					"mesh-advert-expired",
+				),
+			]),
+		});
+	return Object.freeze({
+		advert,
+		conditions: Object.freeze([
+			healthCondition(
+				"CAMP_CONDITION_TYPE_REACHABLE",
+				"CONDITION_STATUS_TRUE",
+				"mesh-advert-fresh",
+			),
+			healthCondition(
+				"CAMP_CONDITION_TYPE_LEASED",
+				"CONDITION_STATUS_TRUE",
+				`mesh-lease-valid-until:${new Date(until).toISOString()}`,
+			),
+			value(RUNNER_HOST_HEALTH_CLAIMS.ready) === "true"
+				? healthCondition(
+						"CAMP_CONDITION_TYPE_READY",
+						"CONDITION_STATUS_TRUE",
+						"runner-host-healthy",
+					)
+				: healthCondition(
+						"CAMP_CONDITION_TYPE_READY",
+						"CONDITION_STATUS_FALSE",
+						"runner-host-draining-or-pressured",
+					),
+		]),
 	});
 }

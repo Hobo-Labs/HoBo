@@ -536,6 +536,15 @@ describe("runner-host realizer: observe and delete", () => {
 		expect(report.claims.map((claim) => [claim.name, claim.value])).toEqual([
 			["capacity", "4"],
 			["platform", "linux/x64"],
+			["label:hobo.ci/serves-hobo", "true"],
+			["label:hobo.ci/serves-hobo-local-host", "false"],
+			["label:hobo.ci/serves-hobo-trunk", "true"],
+			["hobo.ci/mesh-advert", "fresh"],
+			[
+				"hobo.ci/mesh-advert-valid-until",
+				new Date(host.nowMs + 60_000).toISOString(),
+			],
+			["hobo.ci/runner-host-ready", "true"],
 		]);
 	});
 

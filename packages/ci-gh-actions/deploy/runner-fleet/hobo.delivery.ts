@@ -1,13 +1,15 @@
 // HoBo's runner fleet as delivery-as-code. Apply it on the CD Station with
 //   hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
 // The records come from the declared hosts (hosts.json); see README.md here.
-// `camps` declares one Camp per host; later CD commands read it as topology
-// with `--yard <this file>` or HOBO_CD_TOPOLOGY=<this file>.
+// `camps` declares one Camp per host and `rails` the Station Rail that binds
+// their Camp set and approves their provider; later CD commands read both as
+// topology with `--yard <this file>` or HOBO_CD_TOPOLOGY=<this file>.
 import { readFileSync } from "node:fs";
 
 import {
 	parseRunnerHosts,
 	runnerFleetDelivery,
+	runnerFleetRail,
 	runnerFleetTopology,
 } from "../../src/runner-fleet-delivery.js";
 
@@ -28,3 +30,5 @@ export const placements = delivery.placements;
 export const pipelines = delivery.pipelines;
 // An empty stationId is the Station the CD runtime composes (HOBO_STATION).
 export const camps = runnerFleetTopology(parsed.value, { stationId: "" });
+// The Station Rail for the fleet (empty stationId: the composed Station).
+export const rails = [runnerFleetRail()];

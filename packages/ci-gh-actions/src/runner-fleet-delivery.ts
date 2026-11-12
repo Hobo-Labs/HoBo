@@ -40,6 +40,10 @@ export const RUNNER_FLEET_YARD = "hobo-ci-runners";
 // public-contract: tags the push script publishes once per new image version, oldest first lexically.
 export const RUNNER_IMAGE_RELEASE_TAG_PATTERN =
 	"^release-[0-9]{14}-v[0-9a-f]{12}$";
+// public-contract: the provider every runner host Camp declares; the fleet's Rail approves exactly it.
+export const RUNNER_FLEET_PROVIDER = "self-hosted";
+// public-contract: the id of the runner fleet's declared Station Rail.
+export const RUNNER_FLEET_RAIL = "hobo-ci-runner-fleet";
 // public-contract: credential locator the CD Station resolves to read GHCR (never stored).
 export const RUNNER_IMAGE_CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
 
@@ -53,6 +57,23 @@ const FLEET_LABEL = "hobo.ci/runner-fleet";
 const RING_LABEL = "hobo.ci/runner-ring";
 const HOST_KIND_LABEL = "hobo.ci/runner-host";
 const servesLabel = (label: string) => `hobo.ci/serves-${label}`;
+
+/**
+ * The served-label claims for the labels a host advertises: one per label the
+ * fleet knows, `label:hobo.ci/serves-<label>` = whether it is advertised.
+ * Claims narrow, never grant: a host that stopped serving a declared label
+ * contradicts its Camp's topology and is not placed.
+ */
+export function servedLabelClaims(
+	advertised: readonly string[],
+): readonly Readonly<{ name: string; value: string }>[] {
+	return SERVED_LABELS.map((label) =>
+		Object.freeze({
+			name: `label:${servesLabel(label)}`,
+			value: String(advertised.includes(label)),
+		}),
+	);
+}
 const DEFINED_BY = "packages/ci-gh-actions/deploy/runner-fleet";
 const HOST_ID = /^[a-z0-9][a-z0-9-]{0,62}$/u;
 const HOST_KINDS = ["box-worker", "mesh-node", "local-runner"] as const;
@@ -194,13 +215,46 @@ export function runnerFleetTopology(
 			campId: campIdOf(host),
 			yardId: RUNNER_FLEET_YARD,
 			stationId: options.stationId,
-			provider: options.provider ?? "self-hosted",
+			provider: options.provider ?? RUNNER_FLEET_PROVIDER,
 			regions: [],
 			envType: "ci",
 			labels: hostLabels(host),
 			management: "CAMP_MANAGEMENT_MANAGED" as const,
 		}),
 	);
+}
+
+// domain-view: a @hobo/stations Rail declaration (createRail input) for the runner fleet.
+export type RunnerFleetRail = Readonly<{
+	id: string;
+	name: string;
+	version: string;
+	/** Empty: the Station the CD runtime composes (HOBO_STATION). */
+	stationId: string;
+	approvedProviders: readonly string[];
+	delivery: Readonly<{ campSets: readonly string[] }>;
+	metadata: Readonly<Record<string, string>>;
+}>;
+
+/**
+ * The Station Rail the runner fleet is delivered under: it binds the fleet's
+ * Camp set (so Placement sees its Camps) and approves the one provider its
+ * Camps declare (so Placement can evaluate provider approval instead of
+ * refusing `rail-providers-unknown`). A delivery module exports it as `rails`;
+ * the CD runtime reads it as declared topology for the Station it composes.
+ */
+export function runnerFleetRail(): RunnerFleetRail {
+	return Object.freeze({
+		id: RUNNER_FLEET_RAIL,
+		name: RUNNER_FLEET_RAIL,
+		version: "1",
+		stationId: "",
+		approvedProviders: Object.freeze([RUNNER_FLEET_PROVIDER]),
+		delivery: Object.freeze({
+			campSets: Object.freeze([RUNNER_FLEET_CAMP_SET]),
+		}),
+		metadata: Object.freeze({ definedBy: DEFINED_BY }),
+	});
 }
 
 type Selector = Readonly<{ labels: Readonly<Record<string, string>> }>;
@@ -489,10 +543,9 @@ export function runnerFleetCampObservations(
 			];
 		const claims =
 			node && node.validUntilMs > nowMs
-				? SERVED_LABELS.map((label) =>
+				? servedLabelClaims(node.labels).map((claim) =>
 						Object.freeze({
-							name: `label:${servesLabel(label)}`,
-							value: String(node.labels.includes(label)),
+							...claim,
 							reportedBy: `mesh:${node.id}`,
 							observedAt,
 						}),
