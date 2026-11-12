@@ -176,8 +176,8 @@ export function createPipelineController(
 	const recordedAvailability = new Set<string>();
 	const sources = new Set<string>();
 	const requestedKeys = new Set<string>();
-	/** `${freight}|${camp}` → latest env.Promoted time. */
-	const promotedAt = new Map<string, number>();
+	/** Freight id → Camp id → latest env.Promoted time. */
+	const promotedAt = new Map<string, Map<string, number>>();
 	/** `${pipeline}|${node}` → Freight of the latest env.Promoted. */
 	const currentByNode = new Map<string, string>();
 
@@ -224,10 +224,11 @@ export function createPipelineController(
 			const record = decode(PromotionRecordSchema, event.data);
 			if (!record || record.freightId === "") return;
 			const at = msOf(event.ts);
-			for (const campId of record.targetCampIds) {
-				const key = `${record.freightId}|${campId}`;
-				promotedAt.set(key, Math.max(promotedAt.get(key) ?? 0, at));
-			}
+			const byCamp =
+				promotedAt.get(record.freightId) ?? new Map<string, number>();
+			for (const campId of record.targetCampIds)
+				byCamp.set(campId, Math.max(byCamp.get(campId) ?? 0, at));
+			promotedAt.set(record.freightId, byCamp);
 			if (record.pipeline !== "" && record.node !== "")
 				currentByNode.set(
 					`${record.pipeline}|${record.node}`,
@@ -278,12 +279,7 @@ export function createPipelineController(
 				continue;
 			// SAFETY: ids in FreightRecord are recorded `sha256:` Freight ids (FreightLedger).
 			const id = freight.freightId as FreightId;
-			const promoted = new Map<string, number>();
-			for (const [key, at] of promotedAt) {
-				const [freightId, campId] = key.split("|");
-				if (freightId === freight.freightId && campId !== undefined)
-					promoted.set(campId, at);
-			}
+			const promoted = new Map(promotedAt.get(freight.freightId) ?? []);
 			out.push({
 				freight,
 				usable: await deps.freight.isUsable(id),
