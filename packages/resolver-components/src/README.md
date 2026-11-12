@@ -14,6 +14,11 @@
 | `errors.ts` | `ResolverComponentError` (extends core `ResolverError`) with `componentCode` and `remediation`. |
 | `wit.ts` | WIT package, world and interface ids. |
 
+`isComponentResolver` recognises the objects `componentResolvers` returns;
+`createResolverRegistry` hands out a delegating view for a resolver with
+directives, so keep the original object when you need `observe` or
+`instances`.
+
 Calls on one loaded component are serialized; an instance that trapped or
 tripped a limit is torn down and re-instantiated on the next call.
 
