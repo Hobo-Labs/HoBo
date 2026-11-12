@@ -9,12 +9,16 @@ const workflow = readFileSync(
 );
 
 describe("main full gate workspace sharding", () => {
-	it("sparse-checkouts fleet capacity for the route job", () => {
+	it("checks out what the route script loads, and no longer the capacity module it once read", () => {
+		// The route script stopped loading `fleet/capacity.ts` (finding 146);
+		// `route-runner.test.ts` checks every routed workflow against what the
+		// script loads today.
 		const routeStart = workflow.indexOf("  route:");
 		const runnerImage = workflow.indexOf("  ci-runner-image:", routeStart);
 		assert.ok(routeStart > -1);
 		const route = workflow.slice(routeStart, runnerImage);
-		assert.match(route, /packages\/ci\/src\/fleet\/capacity\.ts/u);
+		assert.match(route, /packages\/ci\/src\/fleet-overflow\.ts/u);
+		assert.doesNotMatch(route, /packages\/ci\/src\/fleet\/capacity\.ts/u);
 	});
 
 	it("plans shards in main-gate-plan and runs them outside the S0 job", () => {

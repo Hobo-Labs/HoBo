@@ -762,7 +762,7 @@ describe("ci-runner image contract (host smoke)", () => {
 			"utf8",
 		);
 		const install = workflow.indexOf(
-			"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
+			"run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
 		);
 		expect(install).toBeGreaterThan(-1);
 		expect(
