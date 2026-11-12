@@ -1,0 +1,22 @@
+{
+  "id": "event-1",
+  "type": 10,
+  "at": "2026-11-03T00:00:00Z",
+  "accountId": "hobo-labs",
+  "subjectType": "execution-claim",
+  "subjectId": "claim-1",
+  "executionKey": {
+    "githubJob": {
+      "kind": "github-job",
+      "accountId": "hobo-labs",
+      "engineId": "gh-actions",
+      "installationId": "10",
+      "repositoryId": "101",
+      "runId": "900",
+      "jobId": "1",
+      "runAttempt": 1
+    }
+  },
+  "incarnationId": "incarnation-1",
+  "rejectionCode": 0
+}
