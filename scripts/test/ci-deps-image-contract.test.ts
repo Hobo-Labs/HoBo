@@ -355,6 +355,24 @@ describe("CI deps workflow contract", () => {
 	const start = workflow.indexOf("  ci-deps-image:");
 	const end = workflow.indexOf("  pr_gate_validation:", start);
 	const job = workflow.slice(start, end);
+
+	// A cluster runner has no worker image. build-deps.sh then asks
+	// ensure-ci-worker-image for it, which pulls the published image only when
+	// it is handed a token; without one it rebuilds the base image from Debian
+	// and ran out its 600 s budget on a pull request.
+	it("hands the build step the token it needs to pull the published worker image", () => {
+		const step = job.slice(
+			job.indexOf("      - name: Build deps image and verify offline install"),
+		);
+		const body = step.slice(0, step.indexOf("\n      - name:", 1));
+		includes(
+			body,
+			"        env:\n          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+		);
+		includes(body, "build-deps.sh --no-promote");
+		includes(job, "      packages: read\n");
+		includes(build, 'export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"');
+	});
 	const buildCondition =
 		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'";
 	const deferCondition =

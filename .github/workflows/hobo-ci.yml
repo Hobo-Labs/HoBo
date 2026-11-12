@@ -297,6 +297,10 @@ jobs:
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
         id: build
+        # A runner without the worker image pulls the published one; without
+        # this it rebuilds the base image from Debian (read-only token).
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
       - name: Defer non-PR deps image miss
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'
