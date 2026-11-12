@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { describe, it } from "node:test";
 import {
 	asList,
@@ -78,6 +80,49 @@ const gate = job("pr-gate");
 const SCOPE = "Decide whether the change reaches scripts, tests or workflows";
 const LANE = "Scripts tests";
 const GATE_STEP = "Require successful validation and workspace tests";
+const BUILD = "Build the packages the scripts tests import";
+
+const RELATIVE_IMPORT = /(?:from|import\()\s*["'](\.{1,2}\/[^"']+)["']/gu;
+
+/**
+ * The workspace packages whose `src/` a scripts test reaches through relative
+ * imports, directly or through other files under scripts/. Their sources import
+ * other workspace packages, which resolve through those packages' built dist/.
+ */
+function packagesScriptsTestsImport(): readonly string[] {
+	const queue = readdirSync("scripts/test")
+		.filter((name) => name.endsWith(".test.ts"))
+		.map((name) => join("scripts/test", name));
+	const seen = new Set<string>();
+	const directories = new Set<string>();
+	for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
+		if (seen.has(file)) continue;
+		seen.add(file);
+		for (const [, specifier = ""] of readFileSync(file, "utf8").matchAll(
+			RELATIVE_IMPORT,
+		)) {
+			const target = normalize(join(dirname(file), specifier));
+			const owner = /^packages\/(.+?)\/src\//u.exec(target)?.[1];
+			if (owner !== undefined) directories.add(owner);
+			else if (target.startsWith("scripts/")) {
+				const source = [
+					target,
+					target.replace(/\.js$/u, ".ts"),
+					target.replace(/\.mjs$/u, ".mts"),
+				].find((candidate) => existsSync(candidate));
+				if (source !== undefined) queue.push(source);
+			}
+		}
+	}
+	return [...directories].sort().map((directory) => {
+		const parsed: JsonValue = JSON.parse(
+			readFileSync(join("packages", directory, "package.json"), "utf8"),
+		);
+		const name = asText(asObject(parsed)?.name);
+		assert.ok(name, `packages/${directory}/package.json has no name`);
+		return name;
+	});
+}
 
 function git(cwd: string, ...args: string[]): string {
 	const run = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -142,6 +187,24 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.ok(preflight >= 0, "the job runs ci-runner-preflight");
 		assert.ok(preflight < names.indexOf(LANE));
 		assert.ok(names.indexOf(SCOPE) < names.indexOf(LANE));
+	});
+
+	it("builds what every package a scripts test imports depends on, before the lane", () => {
+		// A fresh runner has no dist/: scripts/manual/hosting-anonymous-acceptance.mts
+		// imports packages/hobo/src, whose @hobo/core resolves through dist/.
+		const build = step(scripts, BUILD);
+		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
+		assert.match(build.run, /turbo run build\b/u);
+		const imported = packagesScriptsTestsImport();
+		assert.ok(imported.includes("@hobo/hobo"));
+		for (const name of imported)
+			assert.ok(
+				build.run.includes(`--filter=${name}^...`),
+				`the build step misses --filter=${name}^...`,
+			);
+		const names = scripts.steps.map((entry) => entry.uses || entry.name);
+		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
+		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
 	});
 
 	it("never waits for the deps image", () => {

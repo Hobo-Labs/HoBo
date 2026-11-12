@@ -801,10 +801,50 @@ jobs:
       - name: Install dependencies
         if: steps.scope.outputs.run == 'true' && steps.deps-layer.outputs.match != 'true'
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      # Some scripts tests import a package's src/ (scripts/manual/hosting-anonymous-acceptance.mts
+      # imports packages/hobo/src), whose own imports resolve through other packages' dist/.
+      # A fresh runner has none, so build what each such package depends on.
+      # scripts/test/scripts-tests-job.test.ts derives this list from the imports.
+      - name: Build the packages the scripts tests import
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 6
+        run: >-
+          pnpm exec turbo run build
+          --filter=@hobo/ci^...
+          --filter=@hobo/ci-gh-actions^...
+          --filter=@hobo/cli^...
+          --filter=@hobo/core^...
+          --filter=@hobo/hobo^...
+          --filter=@hobo/provider-cloudflare^...
+          --filter=@hobo/provider-lakebed^...
+          --filter=@hobo/provider-neon^...
+          --filter=@hobo/provider-netlify^...
+          --filter=@hobo/provider-prisma-postgres^...
+          --filter=@hobo/provider-upstash^...
+          --filter=@hobo/runtime-local^...
+          --filter=@hobo/schema-tools^...
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 15
         run: pnpm run test:scripts
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace

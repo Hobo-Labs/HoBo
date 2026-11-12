@@ -28,11 +28,12 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 2. **Three expectations went stale unseen.** `packages/secret-store-claim` ([#1921](https://github.com/Hobo-Labs/HoBo/pull/1921)) and `src/draft/technical-proofs/hobo-auth-authoring-surface` ([#1939](https://github.com/Hobo-Labs/HoBo/pull/1939)) began merging the root `vitest.config.ts`; the planner rightly reached them and the list in `scripts/test/dependent-tests.test.ts` did not.
 3. **One assertion read a message the workflow removed.** [#1938](https://github.com/Hobo-Labs/HoBo/pull/1938) (finding 139) replaced the finish job's `plan did not emit shards=[]` branch with an early pass on an empty plan; `scripts/test/main-workspace-affected.test.ts` still looked for the old text.
 4. **The four turbo failures are the container's Node, not the code.** `mise.toml` pins Node 24. Under Node 22 `pnpm exec turbo` prints pnpm's `Unsupported engine: wanted: {"node":"24.x"}` warning for `packages/ci-vercel` on stdout ahead of turbo's JSON, and `turboTestGraph` (`scripts/ci/dependent-tests.mts`) cannot parse it. The fleet image carries Node 24, and `ci-runner-preflight` installs the pinned toolchain from `mise.toml` on a GitHub-hosted machine, so the job never runs under Node 22. Under `mise exec -- pnpm run test:scripts` (Node 24.22.2) all four pass.
+5. **One Vitest file needs built packages.** `scripts/test/hosting-anonymous-acceptance.test.ts` imports `scripts/manual/hosting-anonymous-acceptance.mts`, which imports `packages/hobo/src` and six providers' `src/`; their own imports (`@hobo/core`, `@hobo/kv-redis-compatible`, …) resolve through `dist/`. A fresh checkout has no `dist/`, so on Node 24 the lane exits 1 with `Failed to resolve entry for package "@hobo/core"`. The first version of the job built nothing and passed only where an earlier run had left `dist/` behind.
 
 ## Fix
 
 - The two test expectations follow the code they describe: the suites that merge the root config, and the finish job's empty-plan pass.
-- **The job `scripts-tests`** in `hobo-ci.yml` runs `pnpm run test:scripts` on pull requests and merge groups when the change touches `scripts/**`, `test/**` or `.github/**`, on the routed runner after `ci-runner-preflight`. The **PR impact gate** needs it and fails unless it succeeded.
+- **The job `scripts-tests`** in `hobo-ci.yml` runs `pnpm run test:scripts` on pull requests and merge groups when the change touches `scripts/**`, `test/**` or `.github/**`, on the routed runner after `ci-runner-preflight`. Before the lane it restores the Turbo cache and builds the dependencies (`--filter=<package>^...`) of every package whose `src/` a scripts test imports, 88 build tasks. The **PR impact gate** needs it and fails unless it succeeded.
 - **`scripts/relevant-check-policy.ts`** selects `test:scripts` for the same paths in a base-ref `pnpm agent:check`, and leaves it to the job when the caller runs workspace tests externally (CI) or checks a staged commit.
 
 ## Measure
@@ -43,9 +44,9 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 ## Verified
 
 - `test/relevant-check-policy.test.ts` — *a change to scripts, root tests or .github selects the scripts lane once*; *the scripts lane is not selected for other paths, a staged commit, or CI* (both fail on the previous policy).
-- `scripts/test/scripts-tests-job.test.ts` — *the scripts lane is a pull-request gate*: the job's runner, events and step order; its scope step run in temporary repositories (a merge group, a pull request's merge commit, no base); and the gate's step run for every scripts-job result, with the other jobs passing and with them attested (fails before the job existed).
+- `scripts/test/scripts-tests-job.test.ts` — *the scripts lane is a pull-request gate*: the job's runner, events and step order; *builds what every package a scripts test imports depends on, before the lane*, which walks the scripts tests' relative imports and fails if the build step misses a package (fails before the build step existed); its scope step run in temporary repositories (a merge group, a pull request's merge commit, no base); and the gate's step run for every scripts-job result, with the other jobs passing and with them attested (fails before the job existed).
 - `pnpm run actions:lint`: the job needs `route` and uses the routed `runs-on` expression.
-- `mise exec -- pnpm run test:scripts` (Node 24.22.2, the toolchain `ci-runner-preflight` installs): exit 0; 1346 of 1347 node:test tests pass, 1 skipped; 327 Vitest tests pass, 12 skipped. Under the container's Node 22.23.4 the same tree fails only the four turbo tests of cause 4.
+- In a fresh worktree with no `dist/` (Node 24.22.2, the toolchain `ci-runner-preflight` installs), `pnpm run test:scripts` alone exits 1 on cause 5. After the job's build step, it exits 0: 1347 node:test tests pass, 1 skipped; 34 Vitest files, 327 tests pass, 12 skipped. Under Node 22.23.4 the four turbo tests of cause 4 also fail.
 
 ## Not yet seen
 
