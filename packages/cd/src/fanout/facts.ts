@@ -121,14 +121,19 @@ function statusJson(status: FanoutStatusRecord | undefined): JsonObject {
 		: { status: encode(FanoutStatusRecordSchema, status) };
 }
 
+const DEPARTURE_PREFIX = "DEPARTURE_ACTION_";
+
+/** Protobuf JSON enum name, e.g. DEPARTURE_ACTION_ORPHAN_DATA. */
 function departureName(action: DepartureAction): string {
-	return DepartureAction[action] ?? "UNSPECIFIED";
+	return `${DEPARTURE_PREFIX}${DepartureAction[action] ?? "UNSPECIFIED"}`;
 }
 
 function departureOf(value: JsonValue | undefined): DepartureAction {
 	const name = jsonString(value);
+	if (!name.startsWith(DEPARTURE_PREFIX)) return DepartureAction.UNSPECIFIED;
+	const bare = name.slice(DEPARTURE_PREFIX.length);
 	const found = Object.entries(DepartureAction).find(
-		([key, entry]) => key === name && typeof entry === "number",
+		([key, entry]) => key === bare && typeof entry === "number",
 	);
 	const action = found?.[1];
 	return typeof action === "number" ? action : DepartureAction.UNSPECIFIED;

@@ -342,7 +342,7 @@ describe("fan-out: control and lifecycle", () => {
 			.filter((e) => e.type === CD_EVENTS.CampDeparted)
 			.map((e) => e.data);
 		expect(departed).toEqual([
-			expect.objectContaining({ campId: "c003", action: "ORPHAN_DATA", kept: ["orders-db"] }),
+			expect.objectContaining({ campId: "c003", action: "DEPARTURE_ACTION_ORPHAN_DATA", kept: ["orders-db"] }),
 		]);
 		expect(DepartureAction[DepartureAction.ORPHAN_DATA]).toBe("ORPHAN_DATA");
 	});
