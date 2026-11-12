@@ -11,6 +11,7 @@ import {
 	imagetoolsInspectTag,
 	normalizeRepoDigestLine,
 	resolveRegistryDigestForTag,
+	resolveRegistryDigestForTagWithRetry,
 } from "../lib/release-ghcr-digest.mts";
 import {
 	FULL_RELEASE_IMAGE_IDS,
@@ -129,7 +130,7 @@ function recordDigestAfterPush(imageId: string, tag: string): string {
 	);
 	let raw = inspect.status === 0 ? inspect.stdout.trim() : "";
 	if (!raw) {
-		const remote = resolveRegistryDigestForTag(tag);
+		const remote = resolveRegistryDigestForTagWithRetry(tag);
 		if (!remote) {
 			throw new Error(`docker inspect and registry lookup failed for ${tag}`);
 		}

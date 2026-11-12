@@ -84,7 +84,7 @@ describe("push-release-ghcr-images wiring", () => {
 		);
 		expect(source).toMatch(/runDockerPushWithRetry/u);
 		expect(source).not.toMatch(/run\("docker", \["push"/u);
-		expect(source).toMatch(/resolveRegistryDigestForTag/u);
+		expect(source).toMatch(/resolveRegistryDigestForTagWithRetry/u);
 		expect(source).toMatch(/tryReusePublishedTag/u);
 		expect(source).toMatch(/normalizeRepoDigestLine/u);
 	});

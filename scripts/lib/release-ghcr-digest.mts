@@ -142,11 +142,15 @@ export function parseImagetoolsInspectStdout(
 	const digest = digestFromImagetoolsJson(parsed);
 	const labels = labelsFromImagetoolsJson(parsed);
 	if (digest === undefined && labels === undefined) return undefined;
+	if (digest === undefined && labels !== undefined) {
+		throw new Error(
+			"imagetools inspect returned OCI labels without a digest (fail closed)",
+		);
+	}
 	if (digest !== undefined && labels !== undefined) {
 		return { digest, labels };
 	}
 	if (digest !== undefined) return { digest };
-	if (labels !== undefined) return { labels };
 	return undefined;
 }
 
@@ -165,26 +169,65 @@ export function imagetoolsInspectTag(
 	);
 	if (result.status !== 0 || !result.stdout?.trim()) {
 		const detail = `${result.stderr ?? ""}`.trim();
-		if (isImagetoolsTagAbsent(detail, result.status ?? -1)) return undefined;
+		if (isImagetoolsTagAbsent(detail, result.status ?? -1, tag))
+			return undefined;
 		const suffix = detail ? `: ${detail.split("\n").slice(-3).join(" ")}` : "";
 		throw new Error(
 			`imagetools inspect ${tag} failed (status ${result.status ?? "?"})${suffix}`,
 		);
 	}
-	const parsed = parseImagetoolsInspectStdout(result.stdout);
+	let parsed: { digest?: string; labels?: Record<string, string> } | undefined;
+	try {
+		parsed = parseImagetoolsInspectStdout(result.stdout);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`imagetools inspect ${tag}: ${message}`);
+	}
 	if (!parsed) {
 		throw new Error(`imagetools inspect ${tag} returned unparsable JSON`);
+	}
+	if (!parsed.digest) {
+		throw new Error(`imagetools inspect ${tag} returned no digest`);
 	}
 	return parsed;
 }
 
-function isImagetoolsTagAbsent(stderr: string, status: number): boolean {
+/** Same bounded retry budget as `.github/actions/release-oci-attest` syft loop. */
+export const REGISTRY_DIGEST_RESOLVE_MAX_ATTEMPTS = 12;
+export const REGISTRY_DIGEST_RESOLVE_DELAY_MS = 10_000;
+
+function sleepSyncMs(ms: number): void {
+	const sec = Math.max(1, Math.ceil(ms / 1000));
+	const slept = spawnSync("sleep", [String(sec)]);
+	if (slept.error) {
+		throw slept.error;
+	}
+}
+
+/**
+ * Match only buildx/registry missing-tag responses (not generic "not found" text).
+ * Example: `ERROR: ghcr.io/owner/repo:tag: not found`
+ */
+export function isImagetoolsRegistryTagNotFound(stderr: string): boolean {
+	const trimmed = stderr.trim();
+	if (!trimmed) return false;
+	return /(?:^|\n)error:\s*.+:\s*not found\s*$/im.test(trimmed);
+}
+
+function isImagetoolsTagAbsent(
+	stderr: string,
+	status: number,
+	tag: string,
+): boolean {
 	if (status === 0) return false;
+	if (isImagetoolsRegistryTagNotFound(stderr)) {
+		return stderr.includes(tag) || stderr.includes(tag.split(":")[0] ?? tag);
+	}
 	const lower = stderr.toLowerCase();
 	return (
 		/\bmanifest unknown\b/u.test(lower) ||
-		/\bname unknown\b/u.test(lower) ||
-		/\bno such manifest\b/u.test(lower)
+		(/\bname unknown\b/u.test(lower) && stderr.includes(tag)) ||
+		(/\bno such manifest\b/u.test(lower) && stderr.includes(tag))
 	);
 }
 
@@ -280,4 +323,29 @@ export function resolveRegistryDigestForTag(
 	if (!info?.digest) return undefined;
 	const imageName = tag.split(":")[0] ?? tag;
 	return ghcrDigestRef(imageName, info.digest);
+}
+
+export function resolveRegistryDigestForTagWithRetry(
+	tag: string,
+	inspect: ImagetoolsInspect = imagetoolsInspectTag,
+	options: {
+		readonly maxAttempts?: number;
+		readonly delayMs?: number;
+		readonly sleepMs?: (ms: number) => void;
+	} = {},
+): string | undefined {
+	const maxAttempts =
+		options.maxAttempts ?? REGISTRY_DIGEST_RESOLVE_MAX_ATTEMPTS;
+	const delayMs = options.delayMs ?? REGISTRY_DIGEST_RESOLVE_DELAY_MS;
+	const sleepMs = options.sleepMs ?? sleepSyncMs;
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		const digest = resolveRegistryDigestForTag(tag, inspect);
+		if (digest) return digest;
+		if (attempt >= maxAttempts) break;
+		console.error(
+			`registry digest for ${tag} not visible (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms`,
+		);
+		sleepMs(delayMs);
+	}
+	return undefined;
 }
