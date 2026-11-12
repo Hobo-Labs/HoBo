@@ -1,4 +1,7 @@
 export {
+	type CdHttpMount,
+	type CdHttpRequest,
+	type CdHttpResponse,
 	type ControlApiServer,
 	type ControlApiServerOptions,
 	createControlApiServer,
