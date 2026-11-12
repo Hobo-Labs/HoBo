@@ -244,11 +244,7 @@ function parseYard(item: unknown, at: string): CdTopologyYard {
 	return parsed;
 }
 
-function parseCamp(
-	item: unknown,
-	at: string,
-	stationId: string,
-): CampTopology {
+function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 	let parsed: CdTopologyCamp;
 	try {
 		// SAFETY: fromJson parses and rejects anything that is not the schema's JSON form.

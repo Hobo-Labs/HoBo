@@ -704,7 +704,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		promote: {
 			usage:
-				"hobo deploy promote <freight-id|alias> --camp <a,b> [--pipeline <p> --node <n>] [--strategy canary|blue-green|all-at-once|experiment] [--propose]",
+				"hobo deploy promote <freight-id|alias> --camp <a,b> [--pipeline <p> --node <n>] [--source-camp <camp>] [--strategy canary|blue-green|all-at-once|experiment] [--propose] [--idempotency-key <k>]",
 			summary:
 				"Promote Freight (Rail Freight included) into Camps through the gate",
 			run: async (host, args, flags, format) => {
@@ -819,7 +819,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		rollback: {
 			usage:
-				"hobo deploy rollback --camp <camp> --reason <text> [--to <set-id>]",
+				"hobo deploy rollback --camp <camp> --reason <text> [--to <set-id>] [--idempotency-key <k>]",
 			summary:
 				"Zero exposure, then a Delta to the predecessor Set through the same gate (D12)",
 			run: async (host, _args, flags, format) => {
@@ -889,7 +889,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"preview create": {
 			usage:
-				"hobo deploy preview create <freight-id|alias> --source-camp <camp> [--ttl-ms <ms>]",
+				"hobo deploy preview create <freight-id|alias> --source-camp <camp> [--ttl-ms <ms>] [--pipeline <p> --node <n>] [--idempotency-key <k>]",
 			summary: "Create an ephemeral preview Camp",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["preview create"]?.usage ?? "";
@@ -1099,7 +1099,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent run": {
 			usage:
-				"hobo deploy agent run --feed <https://station/v1/cd/> --reconciler <id> --key-file <private.jwk.json> --camp <a,b>",
+				"hobo deploy agent run --feed <https://station/v1/cd/> --reconciler <id> --key-file <private.jwk.json> --svid-file <svid> --camp <a,b>",
 			summary:
 				"Run this process as an agent-mode reconciler (outbound HTTPS only)",
 			run: async (host, _args, flags, format) => {
@@ -1334,7 +1334,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"placement decide": {
 			usage:
-				"hobo deploy placement decide <placement> --pipeline <p> --node <n> --station <s>",
+				"hobo deploy placement decide <placement> --pipeline <p> --node <n> --station <s> [--count <n>]",
 			summary: "Decide a Placement now (deterministic, recorded)",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["placement decide"]?.usage ?? "";
@@ -1577,7 +1577,8 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			},
 		},
 		rebalance: {
-			usage: "hobo deploy rebalance --pipeline <p> --node <n> --reason <text>",
+			usage:
+				"hobo deploy rebalance --pipeline <p> --node <n> --reason <text> [--idempotency-key <k>]",
 			summary: "Explicit, governed re-placement (no automatic failback)",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS.rebalance?.usage ?? "";

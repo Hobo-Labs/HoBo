@@ -29,9 +29,9 @@ describe("subcommand-declared options", () => {
 		]);
 		expect(parsed.verb).toBe("deploy");
 		expect(parsed.args).toEqual(["freight", "record"]);
-		expect(parsed.flags.subcommandOptions["file"]).toBe("manifest.json");
-		expect(parsed.flags.subcommandOptions["format"]).toBe("json");
-		expect(parsed.flags.subcommandOptions["simulate"]).toBe(true);
+		expect(parsed.flags.subcommandOptions.file).toBe("manifest.json");
+		expect(parsed.flags.subcommandOptions.format).toBe("json");
+		expect(parsed.flags.subcommandOptions.simulate).toBe(true);
 	});
 
 	it("accepts declared flags before the subcommand words", () => {
@@ -49,14 +49,12 @@ describe("subcommand-declared options", () => {
 		expect(parsed.flags.subcommandOptions["camp-set"]).toBe(
 			"hobo-ci-runner-fleet",
 		);
-		expect(parsed.flags.subcommandOptions["camp"]).toBe(
-			"hobo-ci-runners/box",
-		);
+		expect(parsed.flags.subcommandOptions.camp).toBe("hobo-ci-runners/box");
 	});
 
 	it("accepts --name=value for a declared value flag", () => {
 		const parsed = parseArgv(["deploy", "status", "--format=json"]);
-		expect(parsed.flags.subcommandOptions["format"]).toBe("json");
+		expect(parsed.flags.subcommandOptions.format).toBe("json");
 	});
 
 	it("refuses a flag the resolved subcommand does not declare", () => {
@@ -109,7 +107,7 @@ describe("subcommand-declared options", () => {
 			"--signal",
 			"slo-burn",
 		]);
-		expect(open.flags.subcommandOptions["signal"]).toBe("slo-burn");
+		expect(open.flags.subcommandOptions.signal).toBe("slo-burn");
 		expect(() => parseArgv(["incident", "--signal", "x"])).toThrow(
 			/Unknown option "--signal"/,
 		);
@@ -125,7 +123,7 @@ describe("subcommand-declared options", () => {
 			"127.0.0.1",
 			"--simulate",
 		]);
-		expect(cd.flags.subcommandOptions["simulate"]).toBe(true);
+		expect(cd.flags.subcommandOptions.simulate).toBe(true);
 		expect(cd.flags.port).toBe("8791");
 		expect(() => parseArgv(["serve", "control", "--simulate"])).toThrow(
 			/Unknown option "--simulate"/,
@@ -158,7 +156,7 @@ describe("subcommand-declared options", () => {
 					deploy: {
 						run: async ({ args, flags }) => {
 							seen.push(
-								`${args.join(" ")} ${String(flags.subcommandOptions?.["campset"])}`,
+								`${args.join(" ")} ${String(flags.subcommandOptions?.campset)}`,
 							);
 							return { ok: true, message: "listed" };
 						},

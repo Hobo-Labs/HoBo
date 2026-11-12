@@ -39,10 +39,14 @@ export function cdFlagsOf(flags: unknown): JsonObject {
 		Array.isArray(declared)
 	)
 		return base;
-	const merged: Record<string, JsonValue> = { ...base };
-	for (const [name, value] of Object.entries(declared))
-		if (value === true || isJsonString(value)) merged[name] = value;
-	return merged;
+	return {
+		...base,
+		...Object.fromEntries(
+			Object.entries(declared).filter(
+				([, value]) => value === true || isJsonString(value),
+			),
+		),
+	};
 }
 
 /** `--format json|text`; `--json` implies json. Unknown values are a usage error. */

@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HttpTransport } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import { openCdRuntime } from "../src/cd-runtime.js";
 import { runCdDeploySubcommand } from "../src/cd-deploy.js";
+import { openCdRuntime } from "../src/cd-runtime.js";
 
 function recordingTransport(urls: string[]): HttpTransport {
 	return async (request) => {

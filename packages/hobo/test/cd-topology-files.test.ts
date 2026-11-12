@@ -1,24 +1,35 @@
 // Repo-declared topology reaches `hobo deploy` (plan 0024): Yards from a Yard
 // module and Camps from a delivery module, parsed once with the generated
 // cd_topology schemas, then resolved by `camp list`, `pipeline apply` and
-// `agent token` through the shell (so flag parsing is exercised too).
+// `agent token`.
+//
+// The parse runs in-process on real @hobo/yards Yards and runner-fleet
+// records. Loading the repository's TypeScript modules runs in the BUILT
+// binary (a child process per command): tsx loader hooks are process-wide, and
+// this file shares its worker with the rest of the suite.
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { camp } from "@hobo/camps";
 import { CampManagement } from "@hobo/cd";
-import { createHoboCli } from "@hobo/cli";
+import { parseRunnerHosts, runnerFleetTopology } from "@hobo/ci-gh-actions";
+import { yard } from "@hobo/yards";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	loadTopologyFiles,
 	parseTopologyExports,
 	topologyFilesOf,
 } from "../src/cd-topology.js";
-import { createDeployCommand } from "../src/deploy-command.js";
 
-const REPO = join(import.meta.dirname, "..", "..", "..");
+const PACKAGE = join(import.meta.dirname, "..");
+const REPO = join(PACKAGE, "..", "..");
+const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
 const RELAY_YARD = "packages/ci-vercel/deploy/yard.ts";
 const RELAY_DELIVERY = "packages/ci-vercel/deploy/delivery.ts";
-const RUNNER_FLEET = "packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts";
+const RUNNER_FLEET =
+	"packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts";
 
 const homes: string[] = [];
 afterEach(async () => {
@@ -32,62 +43,103 @@ async function freshHome(): Promise<string> {
 	return home;
 }
 
-function deployCli(home: string, env: NodeJS.ProcessEnv = {}) {
-	return createHoboCli({
-		commands: { deploy: createDeployCommand({ env, hoboHome: home }) },
+type Envelope = Readonly<{
+	ok: boolean;
+	code?: string;
+	message?: string;
+	data?: object;
+}>;
+
+/** One `hobo deploy … --json` run of the built binary from the repo root. */
+function deploy(
+	home: string,
+	argv: readonly string[],
+	env: Readonly<Record<string, string>> = {},
+): Promise<Envelope> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(process.execPath, [BIN, "deploy", ...argv, "--json"], {
+			cwd: REPO,
+			env: {
+				PATH: process.env.PATH ?? "",
+				HOME: home,
+				HOBO_HOME: home,
+				NODE_NO_WARNINGS: "1",
+				...env,
+			},
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString();
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString();
+		});
+		child.on("close", () => {
+			try {
+				// SAFETY: --json prints one envelope; the fields read here are its own.
+				resolve(JSON.parse(stdout) as Envelope);
+			} catch {
+				reject(new Error(`no JSON envelope: ${stdout}\n${stderr}`));
+			}
+		});
 	});
 }
 
-async function deployJson(
-	home: string,
-	argv: readonly string[],
-	env: NodeJS.ProcessEnv = {},
-) {
-	const result = await deployCli(home, env).run(
-		["deploy", ...argv, "--json"],
-		{ cwd: REPO, env },
-	);
-	const envelope = JSON.parse(result.stdout) as {
-		ok: boolean;
-		code?: string;
-		message?: string;
-		data?: Record<string, unknown>;
-	};
-	return { result, envelope };
-}
+const RELAY = yard("hobo-ci-relay", {
+	provider: "vercel",
+	regions: ["iad1"],
+	camps: [
+		camp("production", { envType: "production" }),
+		camp("preview", { envType: "preview" }),
+	],
+});
 
 describe("topology files (parse once with the generated schemas)", () => {
-	it("loads the relay's preview and production Camps from its Yard module", async () => {
-		const loaded = await loadTopologyFiles([RELAY_YARD], {
-			cwd: REPO,
-			stationId: "local",
-		});
-		expect(loaded.ok, loaded.ok ? "" : loaded.message).toBe(true);
-		if (!loaded.ok) return;
-		const byId = new Map(loaded.value.map((c) => [c.campId, c]));
+	it("projects a @hobo/yards Yard's Camps, Yard-scoped", () => {
+		const parsed = parseTopologyExports(
+			{ default: RELAY },
+			{ stationId: "local", source: "yard.ts" },
+		);
+		expect(parsed.ok, parsed.ok ? "" : parsed.message).toBe(true);
+		if (!parsed.ok) return;
+		const byId = new Map(parsed.value.map((c) => [c.campId, c]));
 		const preview = byId.get("hobo-ci-relay/hobo-ci-relay/preview");
 		const production = byId.get("hobo-ci-relay/hobo-ci-relay/production");
 		expect(preview?.envType).toBe("preview");
-		expect(production?.envType).toBe("production");
 		expect(production?.provider).toBe("vercel");
 		expect(production?.regions).toEqual(["iad1"]);
 		expect(production?.management).toBe(CampManagement.MANAGED);
 		expect(production?.stationId).toBe("local");
 	});
 
-	it("loads the runner Camp set from the runner fleet's delivery module", async () => {
-		const loaded = await loadTopologyFiles([RUNNER_FLEET], {
-			cwd: REPO,
-			stationId: "local",
-		});
-		expect(loaded.ok, loaded.ok ? "" : loaded.message).toBe(true);
-		if (!loaded.ok) return;
-		const box = loaded.value.find((c) => c.campId === "hobo-ci-runners/box");
+	it("parses the runner fleet's Camp records (runnerFleetTopology)", () => {
+		const hosts = parseRunnerHosts(
+			JSON.stringify([
+				{
+					id: "box",
+					kind: "box-worker",
+					runnerLabels: ["hobo"],
+					ring: "pilot",
+				},
+			]),
+		);
+		expect(hosts.ok).toBe(true);
+		if (!hosts.ok) return;
+		const parsed = parseTopologyExports(
+			{ camps: runnerFleetTopology(hosts.value, { stationId: "" }) },
+			{ stationId: "local", source: "hobo.delivery.ts" },
+		);
+		expect(parsed.ok, parsed.ok ? "" : parsed.message).toBe(true);
+		if (!parsed.ok) return;
+		const box = parsed.value.find((c) => c.campId === "hobo-ci-runners/box");
 		expect(box?.labels["hobo.ci/runner-fleet"]).toBe("true");
-		expect(box?.yardId).toBe("hobo-ci-runners");
+		expect(box?.stationId).toBe("local");
+		expect(box?.management).toBe(CampManagement.MANAGED);
 	});
 
-	it("refuses a malformed Camp record before anything is composed", () => {
+	it("refuses a malformed Camp record", () => {
 		const parsed = parseTopologyExports(
 			{ camps: [{ campId: "x/y", yardId: "x", envTyp: "ci" }] },
 			{ stationId: "local", source: "bad.ts" },
@@ -97,6 +149,19 @@ describe("topology files (parse once with the generated schemas)", () => {
 		expect(parsed.code).toBe("cd-topology-invalid");
 		expect(parsed.message).toContain("camps[0]");
 		expect(parsed.remediation).not.toBe("");
+	});
+
+	it("refuses a Camp id that is not Yard-scoped", () => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{ campId: "box", yardId: "runners", provider: "x", envType: "ci" },
+				],
+			},
+			{ stationId: "local", source: "bad.ts" },
+		);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.code).toBe("cd-topology-invalid");
 	});
 
 	it("refuses a yards export that is not a @hobo/yards Yard", () => {
@@ -127,7 +192,7 @@ describe("topology files (parse once with the generated schemas)", () => {
 		if (!parsed.ok) expect(parsed.code).toBe("cd-topology-station-mismatch");
 	});
 
-	it("names files by --yard and HOBO_CD_TOPOLOGY", () => {
+	it("names files by HOBO_CD_TOPOLOGY, then --yard", () => {
 		expect(
 			topologyFilesOf({ yard: "a.ts,b.ts" }, { HOBO_CD_TOPOLOGY: "c.ts" }),
 		).toEqual(["c.ts", "a.ts", "b.ts"]);
@@ -142,92 +207,106 @@ describe("topology files (parse once with the generated schemas)", () => {
 		expect(loaded.ok).toBe(false);
 		if (!loaded.ok) expect(loaded.code).toBe("cd-topology-unreadable");
 	});
+
+	it("loads a JSON topology file", async () => {
+		const home = await freshHome();
+		await writeFile(
+			join(home, "camps.json"),
+			JSON.stringify({ default: RELAY }),
+		);
+		const loaded = await loadTopologyFiles(["camps.json"], {
+			cwd: home,
+			stationId: "local",
+		});
+		expect(loaded.ok && loaded.value.map((c) => c.campId)).toEqual([
+			"hobo-ci-relay/hobo-ci-relay/preview",
+			"hobo-ci-relay/hobo-ci-relay/production",
+		]);
+	});
 });
 
-// Each command opens the SQLite journal and loads TypeScript modules via tsx.
-describe("hobo deploy resolves repo-declared Camps", { timeout: 30_000 }, () => {
-	it("camp list shows the relay's Camps from --yard", async () => {
-		const home = await freshHome();
-		const { envelope } = await deployJson(home, [
-			"camp",
-			"list",
-			"--yard",
-			RELAY_YARD,
-		]);
-		expect(envelope.ok, envelope.message).toBe(true);
-		const text = JSON.stringify(envelope.data);
-		expect(text).toContain("hobo-ci-relay/hobo-ci-relay/preview");
-		expect(text).toContain("hobo-ci-relay/hobo-ci-relay/production");
-	});
+describe.skipIf(!existsSync(BIN))(
+	"hobo deploy resolves repo-declared Camps (built binary)",
+	{ timeout: 120_000 },
+	() => {
+		it("camp list shows the relay's preview and production Camps from its Yard module", async () => {
+			const home = await freshHome();
+			const listed = await deploy(home, ["camp", "list", "--yard", RELAY_YARD]);
+			expect(listed.ok, listed.message).toBe(true);
+			const text = JSON.stringify(listed.data);
+			expect(text).toContain("hobo-ci-relay/hobo-ci-relay/preview");
+			expect(text).toContain("hobo-ci-relay/hobo-ci-relay/production");
+		});
 
-	it("the runner fleet's module declares its Camps; agent token resolves the Camp set", async () => {
-		const home = await freshHome();
-		const applied = await deployJson(home, [
-			"pipeline",
-			"apply",
-			"--file",
-			RUNNER_FLEET,
-		]);
-		// placements may fail closed on Rail providers; the Camp set and Camps
-		// must not be the reason.
-		expect(applied.envelope.message ?? "").not.toMatch(/unknown-camp/);
-		const env = { HOBO_CD_TOPOLOGY: RUNNER_FLEET };
-		const listed = await deployJson(
-			home,
-			["camp", "list", "--campset", "hobo-ci-runner-fleet"],
-			env,
-		);
-		expect(listed.envelope.ok, listed.envelope.message).toBe(true);
-		expect(JSON.stringify(listed.envelope.data)).toContain(
-			"hobo-ci-runners/box",
-		);
-		const token = await deployJson(
-			home,
-			[
+		it("pipeline apply of the relay's delivery resolves its Camps only with its Yard", async () => {
+			const home = await freshHome();
+			const without = await deploy(home, [
+				"pipeline",
+				"apply",
+				"--file",
+				RELAY_DELIVERY,
+			]);
+			expect(without.ok).toBe(false);
+			expect(without.code).toBe("pipeline-unknown-camp");
+			const applied = await deploy(home, [
+				"pipeline",
+				"apply",
+				"--file",
+				RELAY_DELIVERY,
+				"--yard",
+				RELAY_YARD,
+			]);
+			expect(applied.ok, applied.message).toBe(true);
+		});
+
+		it("the runner fleet's module declares its Camps; camp list and agent token resolve the Camp set", async () => {
+			const home = await freshHome();
+			const applied = await deploy(home, [
+				"pipeline",
+				"apply",
+				"--file",
+				RUNNER_FLEET,
+			]);
+			expect(applied.ok, applied.message).toBe(true);
+			const env = { HOBO_CD_TOPOLOGY: RUNNER_FLEET };
+			const listed = await deploy(
+				home,
+				["camp", "list", "--campset", "hobo-ci-runner-fleet"],
+				env,
+			);
+			expect(listed.ok, listed.message).toBe(true);
+			expect(JSON.stringify(listed.data)).toContain("hobo-ci-runners/box");
+			const token = await deploy(
+				home,
+				[
+					"agent",
+					"token",
+					"--camp-set",
+					"hobo-ci-runner-fleet",
+					"--camp",
+					"hobo-ci-runners/box",
+				],
+				env,
+			);
+			expect(token.ok, token.message).toBe(true);
+			const unscoped = await deploy(home, [
 				"agent",
 				"token",
 				"--camp-set",
 				"hobo-ci-runner-fleet",
 				"--camp",
 				"hobo-ci-runners/box",
-			],
-			env,
-		);
-		expect(token.envelope.ok, token.envelope.message).toBe(true);
-	});
+			]);
+			expect(unscoped.ok).toBe(false);
+		});
 
-	it("a malformed topology file refuses the command with its code", async () => {
-		const home = await freshHome();
-		const file = join(home, "bad.delivery.json");
-		await writeFile(file, JSON.stringify({ camps: [{ campId: 3 }] }));
-		const { envelope } = await deployJson(home, [
-			"camp",
-			"list",
-			"--yard",
-			file,
-		]);
-		expect(envelope.ok).toBe(false);
-		expect(envelope.code).toBe("cd-topology-invalid");
-	});
-
-	it("pipeline apply of the relay's delivery resolves its preview and production Camps", async () => {
-		const home = await freshHome();
-		const without = await deployJson(home, [
-			"pipeline",
-			"apply",
-			"--file",
-			RELAY_DELIVERY,
-		]);
-		expect(without.envelope.ok).toBe(false);
-		expect(without.envelope.code).toBe("pipeline-unknown-camp");
-		const applied = await deployJson(home, [
-			"pipeline",
-			"apply",
-			"--file",
-			RELAY_DELIVERY,
-			"--yard",
-			RELAY_YARD,
-		]);
-		expect(applied.envelope.ok, applied.envelope.message).toBe(true);
-	});
-});
+		it("a malformed topology file refuses the command with its code", async () => {
+			const home = await freshHome();
+			const file = join(home, "bad.delivery.json");
+			await writeFile(file, JSON.stringify({ camps: [{ campId: 3 }] }));
+			const refused = await deploy(home, ["camp", "list", "--yard", file]);
+			expect(refused.ok).toBe(false);
+			expect(refused.code).toBe("cd-topology-invalid");
+		});
+	},
+);

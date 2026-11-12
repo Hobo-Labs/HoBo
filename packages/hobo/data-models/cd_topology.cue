@@ -6,7 +6,7 @@ package hobo
 
 #CdTopologyName: string & =~"^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$"
 
-#CdCampManagement: "CAMP_MANAGEMENT_UNSPECIFIED" | "CAMP_MANAGEMENT_MANAGED" | "CAMP_MANAGEMENT_OBSERVE_ONLY"
+#CampManagement: "CAMP_MANAGEMENT_UNSPECIFIED" | "CAMP_MANAGEMENT_MANAGED" | "CAMP_MANAGEMENT_OBSERVE_ONLY"
 
 #CdTopologyCamp: {
 	// `<yard>/<camp>`: a Yard-scoped id, never a bare Camp name.
@@ -17,7 +17,7 @@ package hobo
 	regions?: [...string & !=""]
 	envType: string & !=""
 	labels?: {[string]: string}
-	management?: #CdCampManagement
+	management?: #CampManagement
 }
 
 #CdTopologyYardCamp: {
