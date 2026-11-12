@@ -122,7 +122,8 @@ export const PIPELINE_SCHEMA = "hobo.cd.pipeline/v1" as const;
 // public-contract: schema ids.
 export const PLACEMENT_SCHEMA = "hobo.cd.placement/v1" as const;
 // public-contract: media type of a stored resolved-set blob.
-export const RESOLVED_SET_MEDIA_TYPE = "application/vnd.hobo.resolved-set+json" as const;
+export const RESOLVED_SET_MEDIA_TYPE =
+	"application/vnd.hobo.resolved-set+json" as const;
 // public-contract: inline limit for resolved sets on the delivery feed.
 export const FEED_INLINE_LIMIT_BYTES = 262_144 as const;
 // public-contract: refusal codes.

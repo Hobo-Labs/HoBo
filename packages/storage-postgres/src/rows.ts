@@ -8,9 +8,13 @@ import {
 import { isJsonObject } from "./json.js";
 import { int4, optionalText, type PgRow, text } from "./pg.js";
 
+// public-contract: codec tag persisted in payload/metadata codec columns;
+// rows written under it must stay decodable.
 export const JSON_CODEC = "json-v1";
 
 /** Columns every event read selects, in this order. */
+// public-contract: the events-table projection defined by migration 0001;
+// row decoders read columns by these names.
 export const EVENT_COLUMNS = `global_position, stream_id, seq, id, type, v, ts, actor, tenant,
   project, causation_id, correlation_id, lane, payload_codec, data, metadata_codec, meta`;
 
