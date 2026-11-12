@@ -7,8 +7,8 @@ import type { JsonValue } from "@hobo/core";
 import type { FeedResponse, Refusal } from "../ports.js";
 import { statusOf } from "./errors.js";
 
-export const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
-export const SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8";
+const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+const SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8";
 
 /**
  * A value the read API serializes: JSON, plus the 64-bit integers journal

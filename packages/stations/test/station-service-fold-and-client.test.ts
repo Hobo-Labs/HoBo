@@ -19,6 +19,7 @@ import {
 	type StationEvent,
 	stationEvent,
 } from "../src/events.js";
+import { asJsonObject, isJsonString, type JsonValue } from "../src/json.js";
 import { createBootstrapRail, createRail } from "../src/rail.js";
 import {
 	assertConnectionStationAccess,
@@ -59,13 +60,14 @@ afterEach(() => {
 	}
 });
 
-function evt(
+function evt<T>(
 	type: StationEvent["type"],
 	seq: number,
-	data: Readonly<Record<string, unknown>> = {},
+	data?: T,
 	time = `2026-01-0${Math.min(seq, 9)}T00:00:00.000Z`,
 ): StationEvent {
-	return stationEvent(type, STATION_ID, seq, data, time);
+	// Event bodies cross the JSON document boundary, as they do on disk.
+	return stationEvent(type, STATION_ID, seq, asJsonObject(data ?? {}), time);
 }
 
 function created(seq = 1): StationEvent {
@@ -79,8 +81,16 @@ function created(seq = 1): StationEvent {
 	});
 }
 
+function isSha256(value: JsonValue | undefined): value is `sha256:${string}` {
+	return isJsonString(value) && value.startsWith("sha256:");
+}
+
 function bootstrapHashOf(event: StationEvent): `sha256:${string}` {
-	return event.data.bootstrapRailHash as `sha256:${string}`;
+	const hash = event.data.bootstrapRailHash;
+	if (!isSha256(hash)) {
+		throw new Error("Created event carries no sha256 bootstrapRailHash");
+	}
+	return hash;
 }
 
 describe("foldStationEvents — establishing occupancy", () => {
@@ -209,13 +219,15 @@ describe("foldStationEvents — occupancy mutations", () => {
 	});
 
 	it("ignores an event type the fold does not know", () => {
-		const state = foldStationEvents([
-			created(1),
-			{
+		// A newer writer's event as read back from its JSON line: well-formed in
+		// every field except a type outside this build's StationEventType.
+		const fromNewerWriter: StationEvent = JSON.parse(
+			JSON.stringify({
 				...evt(STATION_EVENTS.Closed, 2),
 				type: "station.Unknown",
-			} as unknown as StationEvent,
-		]);
+			}),
+		);
+		const state = foldStationEvents([created(1), fromNewerWriter]);
 		// Forward compatibility: a newer writer's event must not close the Station
 		// by falling into a neighbouring case, and must not throw.
 		expect(state?.occupancy.status).toBe("open");
@@ -450,7 +462,7 @@ describe("foldStationEvents — rail catalog", () => {
 		]);
 		// `42` is truthy, so it reaches the pointer — pin that this is what the
 		// cast-based read actually does rather than assuming a type guard exists.
-		expect(state?.occupancy.activeRailHash).toBe(42 as unknown as string);
+		expect(state?.occupancy.activeRailHash).toBe(42);
 	});
 });
 
@@ -473,7 +485,7 @@ describe("StationService", () => {
 		try {
 			svc.create({ name: "again", isolation: ISOLATION, dataDir: "/tmp/y" });
 		} catch (error) {
-			expect((error as { code?: string }).code).toBe("station-already-exists");
+			expect(error).toHaveProperty("code", "station-already-exists");
 		}
 	});
 
@@ -571,7 +583,7 @@ describe("StationService", () => {
 			svc.activateRail(rail.contentHash);
 			expect.unreachable("retired rail must not be activatable");
 		} catch (error) {
-			expect((error as { code?: string }).code).toBe("rail-retired");
+			expect(error).toHaveProperty("code", "rail-retired");
 		}
 	});
 
@@ -637,9 +649,7 @@ describe("StationService", () => {
 			svc.assertNotBootstrapOnlyInProd("production");
 			expect.unreachable("bootstrap-active production must be refused");
 		} catch (error) {
-			expect((error as { code?: string }).code).toBe(
-				"bootstrap-rail-forbidden",
-			);
+			expect(error).toHaveProperty("code", "bootstrap-rail-forbidden");
 		}
 
 		const rail = svc.publishRail({
@@ -768,7 +778,7 @@ describe("station-client paths and persistence", () => {
 });
 
 describe("createStationClient", () => {
-	function seed(): { home: string } {
+	function seed() {
 		const home = newHome();
 		const svc = new StationService({ stationId: STATION_ID });
 		svc.create({ name: "local", isolation: ISOLATION, dataDir: "/tmp/x" });
@@ -809,10 +819,8 @@ describe("createStationClient", () => {
 		} catch (error) {
 			// The CLI prints `remediation` verbatim; losing it turns a fixable
 			// first-run error into a bare stack trace.
-			expect((error as { code?: string }).code).toBe("station-missing");
-			expect((error as { remediation?: string }).remediation).toBe(
-				"hobo station init",
-			);
+			expect(error).toHaveProperty("code", "station-missing");
+			expect(error).toHaveProperty("remediation", "hobo station init");
 		}
 	});
 
@@ -840,7 +848,7 @@ describe("createStationClient", () => {
 		} catch (error) {
 			// Deploying under "whatever policy was last seen" is exactly the
 			// failure this refusal exists to prevent.
-			expect((error as { code?: string }).code).toBe("rail-inactive");
+			expect(error).toHaveProperty("code", "rail-inactive");
 		}
 	});
 
@@ -865,7 +873,7 @@ describe("createStationClient", () => {
 		} catch (error) {
 			// Distinct code from `rail-inactive`: this one means log corruption,
 			// not an operator who forgot to activate.
-			expect((error as { code?: string }).code).toBe("rail-not-found");
+			expect(error).toHaveProperty("code", "rail-not-found");
 		}
 	});
 });
@@ -1155,8 +1163,11 @@ describe("resolveStationContext", () => {
 		} catch (error) {
 			// Picking one would deploy into an arbitrary tenant. The error names
 			// all three ways to disambiguate.
-			expect((error as { code?: string }).code).toBe("station-missing");
-			expect((error as Error).message).toMatch(/--station/u);
+			expect(error).toHaveProperty("code", "station-missing");
+			expect(error).toHaveProperty(
+				"message",
+				expect.stringMatching(/--station/u),
+			);
 		}
 	});
 
@@ -1215,10 +1226,11 @@ describe("assertConnectionStationAccess", () => {
 		} catch (error) {
 			// Connections carry credentials scoped to their Station. Allowing this
 			// by default is a straightforward tenancy breach.
-			expect((error as { code?: string }).code).toBe(
-				"connection-cross-station-denied",
+			expect(error).toHaveProperty("code", "connection-cross-station-denied");
+			expect(error).toHaveProperty(
+				"message",
+				expect.stringContaining("station:a → station:b"),
 			);
-			expect((error as Error).message).toContain("station:a → station:b");
 		}
 	});
 
@@ -1232,12 +1244,14 @@ describe("assertConnectionStationAccess", () => {
 		).not.toThrow();
 		// `=== true`, not truthiness: a grant flag that arrived as a non-empty
 		// string from a config file must not authorize federation.
-		expect(() =>
-			assertConnectionStationAccess({
-				connectionStationId: "station:a",
-				requestStationId: "station:b",
-				federationGrant: "yes" as unknown as boolean,
-			}),
-		).toThrowError(/federation grant required/u);
+		// The grant is decoded from config text, as a config loader would hand it
+		// over, so the non-boolean string reaches the guard untouched.
+		const fromConfig: Parameters<typeof assertConnectionStationAccess>[0] =
+			JSON.parse(
+				'{"connectionStationId":"station:a","requestStationId":"station:b","federationGrant":"yes"}',
+			);
+		expect(() => assertConnectionStationAccess(fromConfig)).toThrowError(
+			/federation grant required/u,
+		);
 	});
 });
