@@ -147,6 +147,7 @@ unindexed new finding files as notices.
 - [Finding 141: release digest read the local name](./findings/0141-release-digest-read-the-local-name.md)
 - [Finding 142: box admission counted neither promised memory nor lasting headroom](./findings/0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md)
 - [Finding 143: release publish needed buildx the runners lack](./findings/0143-release-publish-needed-buildx-the-runners-lack.md)
+- [Finding 146: route job read a capacity record no worker wrote](./findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)
 - [Finding 151: deps image builds take a storage grant on an idle box](./findings/0151-deps-image-builds-take-a-storage-grant-on-an-idle-box.md)
 - [Finding 152: two-second job poll and hard-linked deps staging](./findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)
 - [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
