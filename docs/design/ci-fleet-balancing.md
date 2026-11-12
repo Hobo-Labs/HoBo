@@ -161,7 +161,9 @@ the relay can make
 The **Route runners** job reads neither that record nor this table. It asks the
 relay instead for a fleet verdict: which fleet labels new work should stay off
 right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). Dispatch still counts
-free slots on the box and the rest of the mesh for its own trunk defer.
+free slots on the box and the rest of the mesh for its own trunk defer, but
+`@hobo/ci` no longer defines the published record or its CUE shape: the only
+fleet record a repository variable carries is `#FleetRoutes`.
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
