@@ -6,6 +6,7 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { RetentionPolicyRecordSchema } from "../../src/_generated/cd_pb.js";
 import { CD_DEFAULTS } from "../../src/events.js";
+import type { CdFactories } from "../../src/ports.js";
 import {
 	CD_SERVICE_STEPS,
 	CdServiceError,
@@ -142,6 +143,11 @@ describe("createCdService — tick loop", () => {
 
 	it("uses the frozen default tick interval constant", () => {
 		expect(CD_DEFAULTS.serviceTickMs).toBe(1_000);
+	});
+
+	it("implements the frozen CdFactories.createCdService signature", () => {
+		const factory: CdFactories["createCdService"] = createCdService;
+		expect(factory).toBe(createCdService);
 	});
 
 	it("drives ticks on its own timer after start", async () => {
