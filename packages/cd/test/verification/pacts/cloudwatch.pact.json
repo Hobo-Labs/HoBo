@@ -1,0 +1,101 @@
+{
+  "consumer": { "name": "HoboCdVerificationEngine" },
+  "provider": { "name": "AmazonCloudWatch" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored HTTP contract for CloudWatch GetMetricData over the AWS JSON 1.0 protocol (X-Amz-Target GraniteServiceVersion20100801.GetMetricData), SigV4-signed. The authorization header is matched by regex because it depends on the signing instant; test/verification/sources/sigv4.test.ts pins the signature itself against botocore. Verified by test/verification/sources/pacts.test.ts."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "GetMetricData for the canary cohort as a dimension, two pages",
+      "providerStates": [{ "name": "ALB 5XX counts split by a track dimension" }],
+      "request": {
+        "method": "POST",
+        "path": "/",
+        "headers": {
+          "accept": "application/json",
+          "content-type": "application/x-amz-json-1.0",
+          "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+          "x-amz-date": "20261112T121000Z",
+          "authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/eu-west-1/monitoring/aws4_request, SignedHeaders=accept;content-type;host;x-amz-date;x-amz-target, Signature=0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "body": {
+          "MetricDataQueries": [
+            {
+              "Id": "q0",
+              "MetricStat": {
+                "Metric": {
+                  "Namespace": "AWS/ApplicationELB",
+                  "MetricName": "HTTPCode_Target_5XX_Count",
+                  "Dimensions": [{ "Name": "LoadBalancer", "Value": "app/web/123" }, { "Name": "track", "Value": "canary" }]
+                },
+                "Period": 60,
+                "Stat": "Sum"
+              },
+              "ReturnData": true
+            }
+          ],
+          "StartTime": 1794484800,
+          "EndTime": 1794485400,
+          "ScanBy": "TimestampAscending"
+        },
+        "matchingRules": {
+          "header": {
+            "authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/eu-west-1/monitoring/aws4_request, SignedHeaders=accept;content-type;host;x-amz-date;x-amz-target, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/x-amz-json-1.0" },
+        "body": {
+          "MetricDataResults": [{ "Id": "q0", "Label": "HTTPCode_Target_5XX_Count", "Timestamps": [1794484800, 1794484860], "Values": [3, 1], "StatusCode": "PartialData" }],
+          "NextToken": "page-2",
+          "Messages": []
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "GetMetricData second page",
+      "providerStates": [{ "name": "ALB 5XX counts split by a track dimension" }],
+      "request": {
+        "method": "POST",
+        "path": "/",
+        "headers": { "content-type": "application/x-amz-json-1.0", "x-amz-target": "GraniteServiceVersion20100801.GetMetricData" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/x-amz-json-1.0" },
+        "body": {
+          "MetricDataResults": [{ "Id": "q0", "Label": "HTTPCode_Target_5XX_Count", "Timestamps": [1794484920], "Values": [0], "StatusCode": "Complete" }],
+          "Messages": []
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "GetMetricData refused for an expired token",
+      "providerStates": [{ "name": "the session token expired" }],
+      "request": {
+        "method": "POST",
+        "path": "/",
+        "headers": { "content-type": "application/x-amz-json-1.0", "x-amz-target": "GraniteServiceVersion20100801.GetMetricData" }
+      },
+      "response": {
+        "status": 400,
+        "headers": { "content-type": "application/x-amz-json-1.0" },
+        "body": { "__type": "com.amazon.coral.service#ExpiredTokenException", "message": "The security token included in the request is expired" }
+      }
+    }
+  ]
+}
