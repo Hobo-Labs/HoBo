@@ -18,6 +18,7 @@ import {
 	type EventInput,
 	type EventPosition,
 	OptimisticSequenceConflictError,
+	type ReadAllOptions,
 } from "@hobo/core";
 import {
 	ArtifactKind,
@@ -74,6 +75,7 @@ import {
 	foldCampStatus,
 	foldManagement,
 } from "./fold.js";
+import { member, textMember } from "./json.js";
 import {
 	foldLegacyDeployment,
 	LEGACY_EVENTS,
@@ -129,6 +131,24 @@ const CHANGE_TYPES: ReadonlySet<string> = new Set([
 	CD_EVENTS.PolicyBindingChanged,
 	CD_EVENTS.CampManagementChanged,
 ]);
+
+/** Catch-up read options: after the cursor, optionally one stream. */
+function readOptions(
+	after: EventPosition | undefined,
+	streamId: string | undefined,
+): ReadAllOptions {
+	if (after !== undefined && streamId !== undefined)
+		return { after, filter: { streamId } };
+	if (after !== undefined) return { after };
+	if (streamId !== undefined) return { filter: { streamId } };
+	return {};
+}
+
+/** Camp ids are opaque, non-empty strings recorded by parsed records. */
+function asCampId(value: string): CampId {
+	// SAFETY: brand applied to a camp id taken from a parsed record.
+	return value as CampId;
+}
 
 function isoAt(ms: number): string {
 	return new Date(ms).toISOString();
@@ -191,49 +211,38 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		});
 	}
 
-	async function campOfDelta(deltaId: string): Promise<CampId | undefined> {
-		const cached = deltaCamps.get(deltaId);
+	/** The Camp a Delta or Set id was recorded on (ids are immutable, so hits are cached). */
+	async function findCamp(
+		type: string,
+		idField: "deltaId" | "setId",
+		id: string,
+		cache: Map<string, CampId>,
+	): Promise<CampId | undefined> {
+		const cached = cache.get(id);
 		if (cached !== undefined) return cached;
-		for await (const { event } of store.readAll({
-			filter: { type: CD_EVENTS.DeltaOpened },
-		})) {
-			const data = event.data as
-				| { deltaId?: unknown; campId?: unknown }
-				| undefined;
-			if (data?.deltaId === deltaId && typeof data.campId === "string") {
-				// SAFETY: campId was recorded by a parsed delta.Opened.
-				const campId = data.campId as CampId;
-				deltaCamps.set(deltaId, campId);
-				return campId;
+		for await (const { event } of store.readAll({ filter: { type } })) {
+			const campId = textMember(event.data, "campId");
+			if (member(event.data, idField) === id && campId !== undefined) {
+				cache.set(id, asCampId(campId));
+				return asCampId(campId);
 			}
 		}
 		return undefined;
 	}
 
-	async function campOfSet(setId: string): Promise<CampId | undefined> {
-		const cached = setCamps.get(setId);
-		if (cached !== undefined) return cached;
-		for await (const { event } of store.readAll({
-			filter: { type: CD_EVENTS.SetCreated },
-		})) {
-			const data = event.data as
-				| { setId?: unknown; campId?: unknown }
-				| undefined;
-			if (data?.setId === setId && typeof data.campId === "string") {
-				// SAFETY: campId was recorded by a parsed set.Created.
-				const campId = data.campId as CampId;
-				setCamps.set(setId, campId);
-				return campId;
-			}
-		}
-		return undefined;
-	}
+	const campOfDelta = (deltaId: string) =>
+		findCamp(CD_EVENTS.DeltaOpened, "deltaId", deltaId, deltaCamps);
+	const campOfSet = (setId: string) =>
+		findCamp(CD_EVENTS.SetCreated, "setId", setId, setCamps);
 
 	async function resolved(set: SetRecord): Promise<CanonicalResolvedSet> {
 		const attributes = { "hobo.cd.camp": set.campId };
 		try {
 			// SAFETY: a parsed Set carries a sha256 digest.
-			const bytes = await d.artifacts.get(set.resolvedSetDigest as Digest);
+			const bytes = await d.artifacts.get(
+				// SAFETY: a parsed Set carries a sha256:<64 hex> digest.
+				set.resolvedSetDigest as Digest,
+			);
 			if (bytes === undefined) {
 				throw new DesiredStateError(
 					"resolved-set-missing",
@@ -313,13 +322,13 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	}
 
 	function sameIntent(a: DeltaRecord, b: DeltaRecord): boolean {
-		const shape = (delta: DeltaRecord) =>
-			canonicalJson({
-				...(encodeDelta(delta) as object),
-				openedAt: "",
-				openedBy: "",
-			});
-		return shape(a) === shape(b);
+		const comparable = (delta: DeltaRecord) => {
+			const copy = cloneDelta(delta);
+			copy.openedAt = "";
+			copy.openedBy = "";
+			return canonicalJson(encodeDelta(copy));
+		};
+		return comparable(a) === comparable(b);
 	}
 
 	/** Run a spec-stream command, retrying when another writer moved the head. */
@@ -351,8 +360,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		const normalized = normalize(input, ctx);
 		if (!normalized.ok) return normalized;
 		const delta = normalized.value;
-		// SAFETY: camp ids are opaque strings at this boundary.
-		const campId = delta.campId as CampId;
+		const campId = asCampId(delta.campId);
 		const owner = await campOfDelta(delta.deltaId);
 		if (owner !== undefined && owner !== campId) {
 			return refuse(
@@ -654,12 +662,9 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		await metric(
 			outcome.ok ? "hobo.cd.sets.deltas_applied" : "hobo.cd.sets.apply_refused",
 			1,
-			{
-				...attributes,
-				...(outcome.ok
-					? {}
-					: { "hobo.cd.reason": outcome.reasons[0]?.code ?? "" }),
-			},
+			outcome.ok
+				? attributes
+				: { ...attributes, "hobo.cd.reason": outcome.reasons[0]?.code ?? "" },
 		);
 		return outcome;
 	};
@@ -714,6 +719,18 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			);
 		}
 	};
+
+	/** One function serves both ports' `get`: Set ids are always `set_<hex>`, Delta ids never are. */
+	function getById(setId: SetId): Promise<SetRecord | undefined>;
+	function getById(deltaId: DeltaId): Promise<DeltaRecord | undefined>;
+	function getById(
+		id: SetId | DeltaId,
+	): Promise<SetRecord | DeltaRecord | undefined> {
+		// SAFETY: the set_ prefix is reserved for Set ids (checkDelta refuses it for Deltas).
+		return id.startsWith("set_")
+			? getSet(id as SetId)
+			: getDelta(id as DeltaId);
+	}
 
 	async function getDelta(deltaId: DeltaId): Promise<DeltaRecord | undefined> {
 		const campId = await campOfDelta(deltaId);
@@ -770,10 +787,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 					campId: CampId;
 					event: EventEnvelope;
 				}[] = [];
-				const reads = store.readAll({
-					...(cursor !== undefined ? { after: cursor } : {}),
-					...(single !== undefined ? { filter: { streamId: single } } : {}),
-				});
+				const reads = store.readAll(readOptions(cursor, single));
 				for await (const { position, event } of reads) {
 					cursor = position;
 					const campId = byStream.get(event.streamId);
@@ -791,13 +805,17 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 					const observeFields = d.posture
 						? await d.posture.observeFields(campId)
 						: [];
-					yield Object.freeze({
+					const frame = {
 						position,
 						set: state.current,
 						observeFields: Object.freeze([...observeFields]),
 						management: await management(campId, state),
-						...(state.policy !== undefined ? { policy: state.policy } : {}),
-					});
+					};
+					const change: DesiredStateChange =
+						state.policy === undefined
+							? frame
+							: { ...frame, policy: state.policy };
+					yield Object.freeze(change);
 					if (signal.aborted) return;
 				}
 				if (dirty || signal.aborted) continue;
@@ -823,8 +841,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		legacy: LegacyDeployment,
 		ctx: CdContext,
 	): Promise<SetRecord | undefined> {
-		// SAFETY: camp ids are opaque strings at this boundary.
-		const campId = legacy.campId as CampId;
+		const campId = asCampId(legacy.campId);
 		const state = await spec(campId);
 		if (state.seq > 0) return undefined;
 		const gateDecisionId = `legacy:${legacy.streamId}@${legacy.planSeq}`;
@@ -959,11 +976,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		async current(campId: CampId) {
 			return (await spec(campId)).current;
 		},
-		// SAFETY: ids are dispatched by their disjoint prefixes (see DesiredState).
-		get: ((id: string) =>
-			id.startsWith("set_")
-				? getSet(id as SetId)
-				: getDelta(id as DeltaId)) as DesiredState["get"],
+		get: getById,
 		async history(campId: CampId, limit?: number) {
 			const sets = [...(await spec(campId)).sets].reverse();
 			return limit === undefined ? sets : sets.slice(0, Math.max(0, limit));

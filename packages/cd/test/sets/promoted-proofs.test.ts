@@ -11,7 +11,6 @@ import {
 	SetOrigin,
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
-import type { DeltaId } from "../../src/ports.js";
 import {
 	createDesiredState,
 	diffResolvedSets,
@@ -23,7 +22,9 @@ import {
 	createFakeArtifactStore,
 	createFakeEventStore,
 	ctxAt,
+	deltaId,
 	resolvedFor,
+	reverseTopLevelKeys,
 	SHOP_V1,
 	SHOP_V2,
 	T0,
@@ -68,7 +69,7 @@ async function step(
 	);
 	if (!opened.ok) throw new Error(opened.reasons[0]?.code);
 	const applied = await desired.apply(
-		{ deltaId: id as DeltaId, gateDecisionId: `gate-${id}`, resolved, origin },
+		{ deltaId: deltaId(id), gateDecisionId: `gate-${id}`, resolved, origin },
 		ctxAt(T0),
 	);
 	if (!applied.ok) throw new Error(applied.reasons[0]?.code);
@@ -177,9 +178,7 @@ describe("hobo-50-deployment-set-delta", () => {
 
 	it("Set content addresses are stable across object key order", () => {
 		const resolved = resolvedFor("prod-aws", SHOP_V2);
-		const reordered = Object.fromEntries(
-			Object.entries(resolved).reverse(),
-		) as typeof resolved;
+		const reordered = reverseTopLevelKeys(resolved);
 		expect(verifyResolvedSet(reordered).contentHash).toBe(
 			verifyResolvedSet(resolved).contentHash,
 		);

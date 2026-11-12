@@ -19,7 +19,14 @@ import {
 	stringsField,
 } from "@hobo/events";
 import { CD_EVENTS } from "../events.js";
-import { canonicalJson } from "./resolved-set.js";
+import {
+	canonicalJson,
+	isFlag,
+	isJsonObject,
+	isNumber,
+	isText,
+	toJsonValue,
+} from "./json.js";
 
 const OPTIONAL = { required: false } as const;
 
@@ -205,18 +212,14 @@ const REPEATED_MESSAGES: ReadonlySet<string> = new Set([
 ]);
 
 /** The corpus view of a journal body: repeated messages become canonical JSON strings. */
-export function toCorpusBody(_type: string, data: unknown): EventBody {
-	if (data === null || typeof data !== "object" || Array.isArray(data))
-		return {};
+export function toCorpusBody<T>(_type: string, data: T): EventBody {
+	const document = toJsonValue(data);
+	if (!isJsonObject(document)) return {};
 	const body: Record<string, EventBody[string]> = {};
-	for (const [key, value] of Object.entries(data)) {
+	for (const [key, value] of Object.entries(document)) {
 		if (REPEATED_MESSAGES.has(key) && Array.isArray(value)) {
-			body[key] = value.map((member) => canonicalJson(member));
-		} else if (
-			typeof value === "string" ||
-			typeof value === "boolean" ||
-			typeof value === "number"
-		) {
+			body[key] = value.map((item) => canonicalJson(item));
+		} else if (isText(value) || isFlag(value) || isNumber(value)) {
 			body[key] = value;
 		} else {
 			body[key] = canonicalJson(value);

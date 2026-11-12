@@ -12,10 +12,15 @@ import { create } from "@bufbuild/protobuf";
 import {
 	assertSecretFree,
 	createResolvedDeploymentSet,
+	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
+	type GatekeeperApproval,
+	type MatchSelection,
 	RESOLVED_SET_SCHEMA,
 	type ResolvedDeploymentSet,
+	type ResourcePlan,
 } from "@hobo/cloud";
+import type { JsonValue } from "@hobo/core";
 import {
 	ChangeKind,
 	type ResourceChange,
@@ -23,6 +28,19 @@ import {
 } from "../_generated/cd_pb.js";
 import type { Digest } from "../ports.js";
 import { DesiredStateError } from "./errors.js";
+import {
+	canonicalJson,
+	isFlag,
+	isJsonObject,
+	isNumber,
+	isText,
+	isTextList,
+	member,
+	sortDeep,
+	toJsonValue,
+} from "./json.js";
+
+export { canonicalJson } from "./json.js";
 
 declare const canonicalBrand: unique symbol;
 
@@ -37,53 +55,11 @@ export type ResolvedSetBlob = Readonly<{
 	size: number;
 }>;
 
-const tagOf = Object.prototype.toString;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
-
-type Json =
-	| string
-	| number
-	| boolean
-	| null
-	| readonly Json[]
-	| { readonly [key: string]: Json };
-
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-	return (
-		value !== null &&
-		value !== undefined &&
-		!Array.isArray(value) &&
-		tagOf.call(value) === "[object Object]"
-	);
-}
-
-function isString(value: unknown): value is string {
-	return tagOf.call(value) === "[object String]";
-}
-
-function isStringList(value: unknown): value is readonly string[] {
-	return Array.isArray(value) && value.every(isString);
-}
-
-/** Key-sorted at every depth (arrays keep their order); code-unit order, locale-free. */
-export function sortDeep(value: unknown): Json {
-	if (Array.isArray(value)) return value.map(sortDeep);
-	if (isObject(value)) {
-		const out: Record<string, Json> = {};
-		for (const key of Object.keys(value).sort()) {
-			const child = value[key];
-			if (child !== undefined) out[key] = sortDeep(child);
-		}
-		return out;
-	}
-	if (value === undefined) return null;
-	// SAFETY: every remaining JSON-document value is a scalar.
-	return value as Json;
-}
-
-export function canonicalJson(value: unknown): string {
-	return JSON.stringify(sortDeep(value));
-}
+const GATE_DECISIONS: ReadonlySet<string> = new Set([
+	"allow",
+	"allow-degraded",
+]);
 
 export function sha256Digest(bytes: Uint8Array | string): Digest {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -93,76 +69,148 @@ function invalid(message: string, subject = ""): DesiredStateError {
 	return new DesiredStateError("resolved-set-invalid", message, subject);
 }
 
-/** Structural parse of an untrusted resolved-set document. */
-function parseShape(value: unknown): ResolvedDeploymentSet {
-	if (!isObject(value)) throw invalid("resolved set must be a JSON object");
-	if (value.schemaVersion !== RESOLVED_SET_SCHEMA)
+function requireText(document: JsonValue, field: string): string {
+	const value = member(document, field);
+	if (!isText(value) || value === "") {
+		throw invalid(`${field} must be a non-empty string`);
+	}
+	return value;
+}
+
+function requireDigest(document: JsonValue, field: string): `sha256:${string}` {
+	const value = member(document, field);
+	if (!isText(value) || !DIGEST.test(value)) {
+		throw invalid(`${field} must be sha256:<64 hex>`);
+	}
+	return `sha256:${value.slice("sha256:".length)}`;
+}
+
+function isResourcePlan<T>(value: T): value is T & ResourcePlan {
+	const name = member(value, "name");
+	return (
+		isJsonObject(value) &&
+		isText(name) &&
+		name !== "" &&
+		isText(member(value, "port")) &&
+		isText(member(value, "provider")) &&
+		isTextList(member(value, "deps"))
+	);
+}
+
+function isDeploymentPlan<T>(value: T): value is T & DeploymentPlan {
+	const resources = member(value, "resources");
+	return (
+		isJsonObject(value) &&
+		member(value, "schema") === DEPLOYMENT_PLAN_SCHEMA &&
+		isText(member(value, "objective")) &&
+		isTextList(member(value, "dependencyOrder")) &&
+		Array.isArray(resources) &&
+		resources.every((resource) => isResourcePlan(resource))
+	);
+}
+
+function isMatchSelection<T>(value: T): value is T & MatchSelection {
+	return (
+		isText(member(value, "resource")) &&
+		isText(member(value, "providerId")) &&
+		isText(member(value, "port")) &&
+		isText(member(value, "rationale"))
+	);
+}
+
+function isGatekeeperApproval<T>(value: T): value is T & GatekeeperApproval {
+	const decision = member(value, "decision");
+	return (
+		isText(decision) &&
+		GATE_DECISIONS.has(decision) &&
+		isText(member(value, "gatekeeperDecisionId")) &&
+		isTextList(member(value, "obligations")) &&
+		isText(member(value, "decidedAt"))
+	);
+}
+
+type ProgressiveHints = NonNullable<ResolvedDeploymentSet["progressive"]>;
+
+function isProgressiveHints<T>(value: T): value is T & ProgressiveHints {
+	const flag = member(value, "flag");
+	const stages = member(value, "stages");
+	const traffic = member(value, "traffic");
+	const autoRollback = member(value, "autoRollback");
+	return (
+		isJsonObject(value) &&
+		(flag === undefined || isText(flag)) &&
+		(stages === undefined ||
+			(Array.isArray(stages) && stages.every((stage) => isNumber(stage)))) &&
+		(traffic === undefined ||
+			traffic === "flag-only" ||
+			traffic === "gateway-weighted") &&
+		(autoRollback === undefined || isFlag(autoRollback))
+	);
+}
+
+/** Parse an untrusted resolved-set document into the @hobo/cloud domain type. */
+function parseResolvedDocument(document: JsonValue): ResolvedDeploymentSet {
+	if (!isJsonObject(document))
+		throw invalid("resolved set must be a JSON object");
+	if (member(document, "schemaVersion") !== RESOLVED_SET_SCHEMA) {
 		throw invalid(`schemaVersion must be ${RESOLVED_SET_SCHEMA}`);
-	for (const field of ["setId", "tenant", "environment", "campId"] as const) {
-		if (!isString(value[field]) || value[field] === "")
-			throw invalid(`${field} must be a non-empty string`);
 	}
-	for (const field of ["planHash", "contentHash"] as const) {
-		const hash = value[field];
-		if (!isString(hash) || !DIGEST.test(hash))
-			throw invalid(`${field} must be sha256:<64 hex>`);
+	const plan = member(document, "plan");
+	if (!isDeploymentPlan(plan)) {
+		throw invalid(
+			"plan must be a DeploymentPlan (schema, objective, dependencyOrder, resources with name/port/provider/deps)",
+		);
 	}
-	const plan = value.plan;
-	if (!isObject(plan) || !isString(plan.schema) || !isString(plan.objective))
-		throw invalid("plan must be a DeploymentPlan");
-	if (!Array.isArray(plan.resources) || !isStringList(plan.dependencyOrder))
-		throw invalid("plan.resources and plan.dependencyOrder are required");
-	for (const [index, resource] of plan.resources.entries()) {
-		if (!isObject(resource) || !isString(resource.name) || resource.name === "")
-			throw invalid(`plan.resources[${index}].name is required`);
-		if (
-			!isString(resource.port) ||
-			!isString(resource.provider) ||
-			!isStringList(resource.deps)
-		) {
-			throw invalid(
-				`plan.resources[${index}] needs port, provider and deps`,
-				resource.name,
-			);
-		}
-	}
+	const matches = member(document, "matches");
 	if (
-		!Array.isArray(value.matches) ||
-		!value.matches.every(
-			(m) => isObject(m) && isString(m.resource) && isString(m.providerId),
-		)
+		!Array.isArray(matches) ||
+		!matches.every((match) => isMatchSelection(match))
 	) {
 		throw invalid("matches must be a list of Matching selections");
 	}
-	const gatekeeper = value.gatekeeper;
-	if (
-		!isObject(gatekeeper) ||
-		!isString(gatekeeper.decision) ||
-		!isString(gatekeeper.gatekeeperDecisionId)
-	) {
+	const gatekeeper = member(document, "gatekeeper");
+	if (!isGatekeeperApproval(gatekeeper))
 		throw invalid("gatekeeper approval is required");
-	}
-	if (!isStringList(value.secretRefs))
+	const secretRefs = member(document, "secretRefs");
+	if (!isTextList(secretRefs))
 		throw invalid("secretRefs must be a list of references");
-	// SAFETY: every field read above was checked against the ResolvedDeploymentSet shape.
-	return value as ResolvedDeploymentSet;
+	const parsed: ResolvedDeploymentSet = {
+		schemaVersion: RESOLVED_SET_SCHEMA,
+		setId: requireText(document, "setId"),
+		tenant: requireText(document, "tenant"),
+		environment: requireText(document, "environment"),
+		campId: requireText(document, "campId"),
+		plan,
+		planHash: requireDigest(document, "planHash"),
+		matches: matches.filter((match) => isMatchSelection(match)),
+		gatekeeper,
+		secretRefs,
+		contentHash: requireDigest(document, "contentHash"),
+	};
+	const progressive = member(document, "progressive");
+	if (progressive === undefined) return parsed;
+	if (!isProgressiveHints(progressive))
+		throw invalid("progressive hints are malformed");
+	return { ...parsed, progressive };
 }
 
 function rebuild(resolved: ResolvedDeploymentSet): ResolvedDeploymentSet {
+	const input: Parameters<typeof createResolvedDeploymentSet>[0] = {
+		tenant: resolved.tenant,
+		environment: resolved.environment,
+		campId: resolved.campId,
+		plan: resolved.plan,
+		matches: resolved.matches,
+		gatekeeper: resolved.gatekeeper,
+		secretRefs: resolved.secretRefs,
+		setId: resolved.setId,
+	};
 	try {
-		return createResolvedDeploymentSet({
-			tenant: resolved.tenant,
-			environment: resolved.environment,
-			campId: resolved.campId,
-			plan: resolved.plan,
-			matches: resolved.matches,
-			gatekeeper: resolved.gatekeeper,
-			secretRefs: resolved.secretRefs,
-			setId: resolved.setId,
-			...(resolved.progressive !== undefined
-				? { progressive: resolved.progressive }
-				: {}),
-		});
+		return createResolvedDeploymentSet(
+			resolved.progressive === undefined
+				? input
+				: { ...input, progressive: resolved.progressive },
+		);
 	} catch (error) {
 		throw invalid(
 			error instanceof Error
@@ -177,7 +225,10 @@ function checkSecretFree(resolved: ResolvedDeploymentSet): void {
 	try {
 		assertSecretFree(resolved);
 	} catch (error) {
-		const path = isObject(error) && isString(error.path) ? error.path : "$";
+		const path =
+			error instanceof Error && "path" in error && isText(error.path)
+				? error.path
+				: "$";
 		throw new DesiredStateError(
 			"secret-material",
 			`plaintext secret material at ${path}`,
@@ -189,8 +240,9 @@ function checkSecretFree(resolved: ResolvedDeploymentSet): void {
 function checkDependencies(plan: DeploymentPlan, subject: string): void {
 	const names = new Set<string>();
 	for (const resource of plan.resources) {
-		if (names.has(resource.name))
+		if (names.has(resource.name)) {
 			throw invalid(`duplicate resource ${resource.name}`, subject);
+		}
 		names.add(resource.name);
 	}
 	for (const resource of plan.resources) {
@@ -206,16 +258,23 @@ function checkDependencies(plan: DeploymentPlan, subject: string): void {
 	}
 }
 
+/** Rebuild in sorted key order so content identity is independent of key order (HOBO-50). */
+function canonicalize(document: ResolvedDeploymentSet): CanonicalResolvedSet {
+	const sorted = parseResolvedDocument(sortDeep(toJsonValue(document)));
+	// SAFETY: brand applied after verification; rebuild recomputes both hashes.
+	return Object.freeze(rebuild(sorted)) as CanonicalResolvedSet;
+}
+
 /**
  * Verify an in-memory resolved set and return it in canonical key order.
- * Order: shape → secret-free → closed dependencies → the producer's own hashes.
+ * Order: structure → secret-free → closed dependencies → the producer's own hashes.
  */
 export function verifyResolvedSet(
 	input: ResolvedDeploymentSet,
 ): CanonicalResolvedSet {
-	const shaped = parseShape(JSON.parse(JSON.stringify(input)));
-	checkSecretFree(shaped);
-	checkDependencies(shaped.plan, shaped.campId);
+	const document = parseResolvedDocument(toJsonValue(input));
+	checkSecretFree(document);
+	checkDependencies(document.plan, document.campId);
 	const recomputed = rebuild(input);
 	if (
 		recomputed.planHash !== input.planHash ||
@@ -226,14 +285,7 @@ export function verifyResolvedSet(
 			input.campId,
 		);
 	}
-	return canonicalize(shaped);
-}
-
-/** Rebuild in sorted key order so content identity is independent of key order (HOBO-50). */
-function canonicalize(shaped: ResolvedDeploymentSet): CanonicalResolvedSet {
-	const sorted = parseShape(sortDeep(shaped));
-	// SAFETY: brand applied after verification; rebuild recomputes both hashes.
-	return Object.freeze(rebuild(sorted)) as CanonicalResolvedSet;
+	return canonicalize(document);
 }
 
 export function encodeResolvedSetBlob(
@@ -247,6 +299,17 @@ export function encodeResolvedSetBlob(
 		size: bytes.byteLength,
 		resolved,
 	});
+}
+
+function parseBlobJson(bytes: Uint8Array, subject: string): JsonValue {
+	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
+		return JSON.parse(
+			new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+		) as JsonValue;
+	} catch {
+		throw invalid("blob is not UTF-8 JSON", subject);
+	}
 }
 
 /** Decode a stored blob, refusing any digest/size mismatch before parsing. */
@@ -265,21 +328,13 @@ export function decodeResolvedSetBlob(
 			expected.digest,
 		);
 	}
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(
-			new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-		);
-	} catch {
-		throw invalid("blob is not UTF-8 JSON", expected.digest);
-	}
-	const shaped = parseShape(parsed);
-	checkSecretFree(shaped);
-	checkDependencies(shaped.plan, shaped.campId);
-	const canonical = canonicalize(shaped);
+	const document = parseResolvedDocument(parseBlobJson(bytes, expected.digest));
+	checkSecretFree(document);
+	checkDependencies(document.plan, document.campId);
+	const canonical = canonicalize(document);
 	if (
-		canonical.contentHash !== shaped.contentHash ||
-		canonical.planHash !== shaped.planHash
+		canonical.contentHash !== document.contentHash ||
+		canonical.planHash !== document.planHash
 	) {
 		throw invalid("blob content hash does not verify", expected.digest);
 	}
@@ -290,6 +345,12 @@ function resourceHash(resolved: ResolvedDeploymentSet, name: string): string {
 	const resource = resolved.plan.resources.find((r) => r.name === name);
 	const matches = resolved.matches.filter((m) => m.resource === name);
 	return sha256Digest(canonicalJson({ resource, matches }));
+}
+
+function changeKind(present: { was: boolean; now: boolean }): ChangeKind {
+	if (!present.was) return ChangeKind.ADD;
+	if (!present.now) return ChangeKind.REMOVE;
+	return ChangeKind.UPDATE;
 }
 
 /**
@@ -313,11 +374,6 @@ export function diffResolvedSets(
 		const afterHash = now ? resourceHash(after, name) : "";
 		if (beforeHash === afterHash) continue;
 		const node = now ?? was;
-		const kind = !was
-			? ChangeKind.ADD
-			: !now
-				? ChangeKind.REMOVE
-				: ChangeKind.UPDATE;
 		const source = now ? after : before;
 		const provider =
 			source?.matches.find((m) => m.resource === name)?.providerId ??
@@ -326,7 +382,7 @@ export function diffResolvedSets(
 		changes.push(
 			create(ResourceChangeSchema, {
 				resource: name,
-				kind,
+				kind: changeKind({ was: was !== undefined, now: now !== undefined }),
 				provider,
 				productId: node?.productId ?? "",
 				beforeHash,

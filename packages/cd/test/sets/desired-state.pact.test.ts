@@ -1,7 +1,8 @@
 // Provider verification of the desired-state boundary (promotion → DeltaLedger,
 // reconcilers/feed → DesiredStateReader) against the consumer pact beside it.
 import { readFileSync } from "node:fs";
-import { create } from "@bufbuild/protobuf";
+import { create, fromJson } from "@bufbuild/protobuf";
+import type { JsonObject, JsonValue } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	ArtifactKind,
@@ -10,18 +11,16 @@ import {
 	SetOrigin,
 } from "../../src/_generated/cd_pb.js";
 import { CD_STREAMS } from "../../src/events.js";
-import type { DeltaId } from "../../src/ports.js";
+import { createDesiredState, diffResolvedSets } from "../../src/sets/index.js";
+import { member, toJsonValue } from "../../src/sets/json.js";
 import {
-	createDesiredState,
-	DesiredStateError,
-	diffResolvedSets,
-} from "../../src/sets/index.js";
-import {
+	asDesiredStateError,
 	camp,
 	collect,
 	createFakeArtifactStore,
 	createFakeEventStore,
 	ctxAt,
+	deltaId,
 	resolvedFor,
 	SHOP_V1,
 	T0,
@@ -29,9 +28,9 @@ import {
 
 type Interaction = {
 	description: string;
-	request: { method: string; body: Record<string, unknown> };
+	request: { method: string; body: JsonObject };
 	response: {
-		body: Record<string, unknown>;
+		body: JsonObject;
 		matchingRules?: Record<string, { match: string; regex: string }>;
 	};
 };
@@ -50,13 +49,13 @@ function interaction(method: string): Interaction {
 	return found;
 }
 
-function at(body: unknown, path: string): unknown {
+function at<T>(body: T, path: string): JsonValue | undefined {
 	return path
 		.replace(/^\$\.body\./, "")
 		.split(".")
-		.reduce<unknown>(
-			(value, key) => (value as Record<string, unknown> | undefined)?.[key],
-			body,
+		.reduce<JsonValue | undefined>(
+			(value, key) => member(value, key),
+			toJsonValue(body),
 		);
 }
 
@@ -81,7 +80,7 @@ async function withOneSet() {
 	);
 	const applied = await desired.apply(
 		{
-			deltaId: "delta-1" as DeltaId,
+			deltaId: deltaId("delta-1"),
 			gateDecisionId: "gate-1",
 			resolved,
 			origin: SetOrigin.PROMOTION,
@@ -169,7 +168,7 @@ describe(`PACT ${pact.consumer.name} → ${pact.provider.name}`, () => {
 		const { request, response } = interaction("OPEN");
 		const { desired } = await withOneSet();
 		const outcome = await desired.open(
-			create(DeltaRecordSchema, request.body as never),
+			fromJson(DeltaRecordSchema, request.body),
 			ctxAt(T0),
 		);
 		expect({
@@ -185,11 +184,12 @@ describe(`PACT ${pact.consumer.name} → ${pact.provider.name}`, () => {
 		const { desired, artifacts, applied } = await withOneSet();
 		if (!applied.ok) throw new Error("refused");
 		artifacts.corrupt(applied.value.resolvedSetDigest);
-		const error = await desired
-			.resolved(applied.value)
-			.catch((e: unknown) => e);
-		expect(error).toBeInstanceOf(DesiredStateError);
-		const typed = error as DesiredStateError;
+		const typed = asDesiredStateError(
+			await desired.resolved(applied.value).then(
+				() => undefined,
+				(e: Error) => e,
+			),
+		);
 		expect({
 			error: typed.code,
 			hasRemediation: typed.remediation.length > 0,

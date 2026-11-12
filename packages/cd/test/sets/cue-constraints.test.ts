@@ -15,12 +15,12 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { DeltaRecordSchema, SetOrigin } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
-import type { DeltaId } from "../../src/ports.js";
 import { createDesiredState, diffResolvedSets } from "../../src/sets/index.js";
 import {
 	createFakeArtifactStore,
 	createFakeEventStore,
 	ctxAt,
+	deltaId,
 	resolvedFor,
 	SHOP_V1,
 	SHOP_V2,
@@ -55,15 +55,15 @@ function findCue(): string | undefined {
 }
 
 const cue = findCue();
-const DEFINITIONS: Record<string, string> = {
-	[CD_EVENTS.SetCreated]: "#SetRecord",
-	[CD_EVENTS.DeltaOpened]: "#DeltaRecord",
-	[CD_EVENTS.DeltaUpdated]: "#DeltaRecord",
-	[CD_EVENTS.DeltaApplied]: "#DeltaDecisionRecord",
-	[CD_EVENTS.DeltaRejected]: "#DeltaDecisionRecord",
-};
+const DEFINITIONS = new Map<string, string>([
+	[CD_EVENTS.SetCreated, "#SetRecord"],
+	[CD_EVENTS.DeltaOpened, "#DeltaRecord"],
+	[CD_EVENTS.DeltaUpdated, "#DeltaRecord"],
+	[CD_EVENTS.DeltaApplied, "#DeltaDecisionRecord"],
+	[CD_EVENTS.DeltaRejected, "#DeltaDecisionRecord"],
+]);
 
-function vet(definition: string, body: unknown): string {
+function vet<T>(definition: string, body: T): string {
 	const dir = mkdtempSync(join(tmpdir(), "cd-sets-cue-"));
 	const file = join(dir, "body.json");
 	writeFileSync(file, JSON.stringify(body));
@@ -74,7 +74,9 @@ function vet(definition: string, body: unknown): string {
 		});
 		return "";
 	} catch (error) {
-		return String((error as { stderr?: string }).stderr ?? error);
+		return error instanceof Error && "stderr" in error
+			? String(error.stderr)
+			: String(error);
 	}
 }
 
@@ -110,7 +112,7 @@ describe.skipIf(cue === undefined)(
 			);
 			const applied = await desired.apply(
 				{
-					deltaId: "d1" as DeltaId,
+					deltaId: deltaId("d1"),
 					gateDecisionId: "g",
 					resolved: v1,
 					origin: SetOrigin.UP,
@@ -129,7 +131,7 @@ describe.skipIf(cue === undefined)(
 				ctxAt(T0),
 			);
 			await desired.reject(
-				"d2" as DeltaId,
+				deltaId("d2"),
 				[
 					{
 						$typeName: "hobo.cd.v1.ReasonRecord",
@@ -142,7 +144,7 @@ describe.skipIf(cue === undefined)(
 				ctxAt(T0),
 			);
 			for (const { event } of store.log) {
-				const definition = DEFINITIONS[event.type];
+				const definition = DEFINITIONS.get(event.type);
 				if (definition === undefined) continue;
 				expect(
 					vet(definition, event.data),
@@ -158,8 +160,8 @@ describe.skipIf(cue === undefined)(
 					"utf8",
 				),
 			);
-			for (const event of golden.events as { type: string; data: unknown }[]) {
-				const definition = DEFINITIONS[event.type];
+			for (const event of golden.events) {
+				const definition = DEFINITIONS.get(event.type);
 				if (definition !== undefined)
 					expect(vet(definition, event.data), event.type).toBe("");
 			}

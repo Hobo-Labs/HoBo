@@ -21,6 +21,7 @@ import {
 import { DELTA_SCHEMA, SET_SCHEMA } from "../events.js";
 import type { DeltaIntent } from "../ports.js";
 import { DesiredStateError, type SetsFailureCode } from "./errors.js";
+import { member, toJsonValue } from "./json.js";
 
 declare const parsedSet: unique symbol;
 declare const parsedDelta: unique symbol;
@@ -67,8 +68,8 @@ function decode<T>(parse: () => T, code: SetsFailureCode, subject: string): T {
 	}
 }
 
-// SAFETY: event data was written by this module (or a peer) as protobuf JSON.
-const asJson = (data: unknown): JsonValue => data as JsonValue;
+/** Event data crosses the JSON document boundary before protobuf parsing. */
+const asJson = <T>(data: T): JsonValue => toJsonValue(data);
 
 export function encodeSet(set: SetRecord): JsonValue {
 	return toJson(SetRecordSchema, set);
@@ -116,8 +117,8 @@ export function checkSet(
 	return Object.freeze(set) as ParsedSet;
 }
 
-export function parseSet(
-	data: unknown,
+export function parseSet<T>(
+	data: T,
 	code: SetsFailureCode = "journal-invalid",
 ): ParsedSet {
 	return checkSet(
@@ -165,8 +166,8 @@ export function checkDelta(
 	return Object.freeze(delta) as ParsedDelta;
 }
 
-export function parseDelta(
-	data: unknown,
+export function parseDelta<T>(
+	data: T,
 	code: SetsFailureCode = "journal-invalid",
 ): ParsedDelta {
 	return checkDelta(
@@ -179,7 +180,7 @@ export function parseDelta(
 	);
 }
 
-export function parseDecision(data: unknown): DeltaDecisionRecord {
+export function parseDecision<T>(data: T): DeltaDecisionRecord {
 	const decision = decode(
 		() => fromJson(DeltaDecisionRecordSchema, asJson(data), OPTIONS),
 		"journal-invalid",
@@ -190,7 +191,7 @@ export function parseDecision(data: unknown): DeltaDecisionRecord {
 	return Object.freeze(decision);
 }
 
-export function parsePolicyBinding(data: unknown): PolicyBindingRecord {
+export function parsePolicyBinding<T>(data: T): PolicyBindingRecord {
 	return Object.freeze(
 		decode(
 			() => fromJson(PolicyBindingRecordSchema, asJson(data), OPTIONS),
@@ -200,7 +201,7 @@ export function parsePolicyBinding(data: unknown): PolicyBindingRecord {
 	);
 }
 
-export function parseObservation(data: unknown): ReconcileObservationRecord {
+export function parseObservation<T>(data: T): ReconcileObservationRecord {
 	return Object.freeze(
 		decode(
 			() => fromJson(ReconcileObservationRecordSchema, asJson(data), OPTIONS),
@@ -211,9 +212,8 @@ export function parseObservation(data: unknown): ReconcileObservationRecord {
 }
 
 /** Management from a camp.* body (`management` as enum name or number); undefined when absent. */
-export function managementOf(data: unknown): CampManagement | undefined {
-	if (data === null || typeof data !== "object") return undefined;
-	const raw = (data as { management?: unknown }).management;
+export function managementOf<T>(data: T): CampManagement | undefined {
+	const raw = member(data, "management");
 	if (raw === "CAMP_MANAGEMENT_MANAGED" || raw === CampManagement.MANAGED)
 		return CampManagement.MANAGED;
 	if (

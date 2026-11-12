@@ -7,9 +7,15 @@ import {
 	encodeResolvedSetBlob,
 	verifyResolvedSet,
 } from "../../src/sets/index.js";
-import { resolvedFor, SHOP_V1, SHOP_V2 } from "./fakes.js";
+import {
+	resolvedFor,
+	reverseObjectKeys,
+	reverseTopLevelKeys,
+	SHOP_V1,
+	SHOP_V2,
+} from "./fakes.js";
 
-function refusalCode(fn: () => unknown): string | undefined {
+function refusalCode(fn: () => void): string | undefined {
 	try {
 		fn();
 	} catch (error) {
@@ -22,9 +28,7 @@ function refusalCode(fn: () => unknown): string | undefined {
 describe("resolved-set blob codec", () => {
 	it("encodes canonically: key order never changes the bytes or digest (HOBO-50)", () => {
 		const resolved = resolvedFor("prod-aws", SHOP_V1);
-		const reordered = Object.fromEntries(
-			Object.entries(resolved).reverse(),
-		) as typeof resolved;
+		const reordered = reverseTopLevelKeys(resolved);
 		const a = encodeResolvedSetBlob(resolved);
 		const b = encodeResolvedSetBlob(reordered);
 		expect(Buffer.from(a.bytes).equals(Buffer.from(b.bytes))).toBe(true);
@@ -66,24 +70,7 @@ describe("resolved-set blob codec", () => {
 
 	it("content identity is independent of object key order", () => {
 		const resolved = resolvedFor("prod-aws", SHOP_V1);
-		// Reverse the keys of every object that is not an array member (the
-		// producer hash in @hobo/cloud sorts object keys, not array members').
-		const reordered = JSON.parse(
-			JSON.stringify(
-				resolved,
-				function (this: unknown, _key: string, value: unknown) {
-					if (
-						value &&
-						typeof value === "object" &&
-						!Array.isArray(value) &&
-						!Array.isArray(this)
-					) {
-						return Object.fromEntries(Object.entries(value).reverse());
-					}
-					return value;
-				},
-			),
-		);
+		const reordered = reverseObjectKeys(resolved);
 		expect(Object.keys(reordered)[0]).toBe("contentHash");
 		expect(encodeResolvedSetBlob(reordered).digest).toBe(
 			encodeResolvedSetBlob(resolved).digest,

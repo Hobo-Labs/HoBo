@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { EventEnvelope } from "@hobo/core";
+import type { EventEnvelope, JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { SetOrigin } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
@@ -7,7 +7,7 @@ import { DesiredStateError, foldCampSpec } from "../../src/sets/index.js";
 
 type JournalFixture = {
 	campId: string;
-	events: { type: string; data: Record<string, unknown> }[];
+	events: { type: string; data: JsonObject }[];
 	expected: {
 		currentSetId: string;
 		history: string[];
@@ -29,7 +29,7 @@ const golden: JournalFixture = JSON.parse(
 
 function envelopes(
 	campId: string,
-	events: readonly { type: string; data: unknown }[],
+	events: readonly { type: string; data: JsonObject }[],
 ): EventEnvelope[] {
 	return events.map((event, index) => ({
 		id: `evt-${index + 1}`,
@@ -45,7 +45,7 @@ function envelopes(
 }
 
 const base = golden.events;
-const setCreated = base[2] as { type: string; data: Record<string, unknown> };
+const setCreated = base[2] ?? { type: "missing", data: {} };
 
 describe("sets fold (golden journal)", () => {
 	it("folds the pinned golden journal into the expected Camp spec projection", () => {
@@ -157,15 +157,14 @@ describe("HOBO-50 projection rules (promoted from docs/design/proofs/hobo-50-dep
 			type: CD_EVENTS.SetCreated,
 			data: { ...setCreated.data, predecessorSetId: "set_ghost" },
 		};
-		let caught: unknown;
+		let caught: DesiredStateError | undefined;
 		try {
 			foldCampSpec("prod-aws", envelopes("prod-aws", [orphan]));
 		} catch (error) {
-			caught = error;
+			if (error instanceof DesiredStateError) caught = error;
 		}
-		expect(caught).toBeInstanceOf(DesiredStateError);
-		expect((caught as DesiredStateError).code).toBe("journal-invalid");
-		expect((caught as DesiredStateError).remediation).toMatch(/journal/);
+		expect(caught?.code).toBe("journal-invalid");
+		expect(caught?.remediation).toMatch(/journal/);
 	});
 
 	it("rejects an event recorded for a different Camp", () => {

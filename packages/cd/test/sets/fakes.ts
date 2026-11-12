@@ -17,6 +17,8 @@ import {
 	type EventEnvelope,
 	type EventInput,
 	type EventPosition,
+	type JsonObject,
+	type JsonValue,
 	OptimisticSequenceConflictError,
 	type PositionedEvent,
 	type PrincipalRef,
@@ -29,19 +31,24 @@ import {
 	type ArtifactKind,
 	type ArtifactRef,
 	ArtifactRefSchema,
+	type ReasonRecord,
+	ReasonRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import type {
 	ArtifactStore,
 	CampId,
 	CdContext,
+	DeltaId,
 	Digest,
 	OtelMetricPoint,
+	SetId,
 	TelemetrySink,
 } from "../../src/ports.js";
+import { DesiredStateError } from "../../src/sets/index.js";
 
 export type FakeStore = DurableEventStore & {
 	/** Called inside append before the CAS check; lets a test interleave writers. */
-	beforeAppend?: (streamId: string) => Promise<void> | void;
+	beforeAppend?: ((streamId: string) => Promise<void> | void) | undefined;
 	readonly log: readonly PositionedEvent[];
 	conflicts: number;
 };
@@ -108,8 +115,8 @@ export function createFakeEventStore(): FakeStore {
 					actor: opts.actor,
 					tenant: opts.tenant,
 					data: structuredClone(input.data ?? {}),
-					...(input.meta !== undefined ? { meta: input.meta } : {}),
 				};
+				if (input.meta !== undefined) envelope.meta = input.meta;
 				// SAFETY: test fake mints monotonically increasing positions.
 				const at = position as EventPosition;
 				log.push({ position: at, event: envelope });
@@ -123,16 +130,13 @@ export function createFakeEventStore(): FakeStore {
 					if (matches(entry.filter, event)) void entry.handler(event);
 				}
 			}
-			return {
-				streamId,
-				appended,
-				deduped,
-				...(first !== undefined ? { firstPosition: first } : {}),
-				...(last !== undefined ? { lastPosition: last } : {}),
-			};
+			const result: AppendResult = { streamId, appended, deduped };
+			if (first !== undefined) result.firstPosition = first;
+			if (last !== undefined) result.lastPosition = last;
+			return result;
 		},
 		async *read(streamId: string, fromSeq = 1): AsyncIterable<EventEnvelope> {
-			for (const entry of [...log]) {
+			for (const entry of log.slice()) {
 				if (entry.event.streamId === streamId && entry.event.seq >= fromSeq)
 					yield entry.event;
 			}
@@ -152,7 +156,7 @@ export function createFakeEventStore(): FakeStore {
 			options: ReadAllOptions = {},
 		): AsyncIterable<PositionedEvent> {
 			let count = 0;
-			for (const entry of [...log]) {
+			for (const entry of log.slice()) {
 				if (options.after !== undefined && entry.position <= options.after)
 					continue;
 				if (options.filter && !matches(options.filter, entry.event)) continue;
@@ -176,11 +180,11 @@ export function createFakeEventStore(): FakeStore {
 	return store;
 }
 
-function idempotencyKeyOf(input: { meta?: unknown }): string | undefined {
-	const meta = input.meta;
-	if (meta === null || typeof meta !== "object") return undefined;
-	const key = (meta as { idempotencyKey?: unknown }).idempotencyKey;
-	return typeof key === "string" && key.length > 0 ? key : undefined;
+function idempotencyKeyOf(input: { meta?: JsonObject }): string | undefined {
+	const key = input.meta?.idempotencyKey;
+	return Object.prototype.toString.call(key) === "[object String]" && key !== ""
+		? String(key)
+		: undefined;
 }
 
 function matches(filter: StreamFilter, event: EventEnvelope): boolean {
@@ -233,7 +237,10 @@ export function createFakeArtifactStore(): FakeArtifactStore {
 			return blobs.has(digest);
 		},
 		async *list() {
-			for (const digest of blobs.keys()) yield digest as Digest;
+			for (const digest of blobs.keys()) {
+				// SAFETY: blob keys are sha256 digests minted by put().
+				yield digest as Digest;
+			}
 		},
 		async delete(digest: Digest) {
 			blobs.delete(digest);
@@ -264,6 +271,72 @@ export function createRecordingTelemetry(): RecordingTelemetry {
 	};
 }
 
+export function deltaId(id: string): DeltaId {
+	// SAFETY: test Delta ids are opaque strings; the ledger parses them.
+	return id as DeltaId;
+}
+
+export function setId(id: string): SetId {
+	// SAFETY: test Set ids are opaque strings; the reader looks them up.
+	return id as SetId;
+}
+
+export function reasonOf(
+	code: string,
+	message = "",
+	remediation = "",
+	subject = "",
+): ReasonRecord {
+	return create(ReasonRecordSchema, { code, message, remediation, subject });
+}
+
+/** Narrow a caught value to the module's typed error, failing the test otherwise. */
+export function asDesiredStateError(
+	value: Error | DesiredStateError | undefined,
+): DesiredStateError {
+	if (value instanceof DesiredStateError) return value;
+	throw new Error(`expected DesiredStateError, got ${String(value)}`);
+}
+
+/** The same resolved set with its top-level keys in reverse insertion order. */
+export function reverseTopLevelKeys(
+	resolved: ResolvedDeploymentSet,
+): ResolvedDeploymentSet {
+	// SAFETY: only key order changes; every member keeps its value and type.
+	return Object.fromEntries(
+		Object.entries(resolved).reverse(),
+	) as ResolvedDeploymentSet;
+}
+
+function reverseKeys(value: JsonValue, insideArray: boolean): JsonValue {
+	if (Array.isArray(value)) return value.map((item) => reverseKeys(item, true));
+	if (
+		value !== null &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	) {
+		const entries = Object.entries(value).map(
+			([key, child]) => [key, reverseKeys(child, false)] as const,
+		);
+		return Object.fromEntries(insideArray ? entries : entries.reverse());
+	}
+	return value;
+}
+
+/**
+ * Reverse the keys of every object that is not an array member (the producer
+ * hash in @hobo/cloud sorts object keys, not array members').
+ */
+export function reverseObjectKeys(
+	resolved: ResolvedDeploymentSet,
+): ResolvedDeploymentSet {
+	const document: JsonValue = JSON.parse(JSON.stringify(resolved));
+	// SAFETY: only key order changes; the JSON round trip keeps every value.
+	const reordered: ResolvedDeploymentSet = JSON.parse(
+		JSON.stringify(reverseKeys(document, false)),
+	);
+	return reordered;
+}
+
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@example.test" };
 
 export function ctxAt(
@@ -276,6 +349,7 @@ export function ctxAt(
 export const T0 = Date.parse("2026-11-12T00:00:00.000Z");
 
 export function camp(id: string): CampId {
+	// SAFETY: test Camp ids are opaque strings.
 	return id as CampId;
 }
 
@@ -289,15 +363,17 @@ export type ResourceSpec = Readonly<{
 export function planOf(resources: readonly ResourceSpec[]): DeploymentPlan {
 	return {
 		schema: "hobo.deployment-plan/v1",
-		resources: resources.map((resource) => ({
-			name: resource.name,
-			port: "hobo:runtime/workflow",
-			provider: resource.provider ?? "aws",
-			deps: [...(resource.deps ?? [])],
-			...(resource.image !== undefined
-				? { realizationParameters: { image: resource.image } }
-				: {}),
-		})),
+		resources: resources.map((resource) => {
+			const node = {
+				name: resource.name,
+				port: "hobo:runtime/workflow",
+				provider: resource.provider ?? "aws",
+				deps: [...(resource.deps ?? [])],
+			};
+			return resource.image === undefined
+				? node
+				: { ...node, realizationParameters: { image: resource.image } };
+		}),
 		dependencyOrder: resources.map((resource) => resource.name),
 		objective: "cost",
 	};

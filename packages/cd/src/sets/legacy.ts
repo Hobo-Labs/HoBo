@@ -8,6 +8,7 @@ import {
 	type MatchSelection,
 } from "@hobo/cloud";
 import type { EventEnvelope } from "@hobo/core";
+import { isJsonObject, member, textMember } from "./json.js";
 
 // public-contract: the legacy event types this module folds (owned by @hobo/cloud).
 export const LEGACY_EVENTS = Object.freeze({
@@ -33,27 +34,15 @@ export type LegacyDeployment = Readonly<{
 	deployedAtSeq?: number;
 }>;
 
-const tagOf = Object.prototype.toString;
+const field = member;
+const text = textMember;
 
-function field(data: unknown, key: string): unknown {
-	if (data === null || typeof data !== "object") return undefined;
-	return (data as Readonly<Record<string, unknown>>)[key];
-}
-
-function text(data: unknown, key: string): string | undefined {
-	const value = field(data, key);
-	return tagOf.call(value) === "[object String]" && value !== ""
-		? String(value)
-		: undefined;
-}
-
-function isPlan(value: unknown): value is DeploymentPlan {
+function isPlan<T>(value: T): value is T & DeploymentPlan {
 	return (
-		value !== null &&
-		typeof value === "object" &&
-		Array.isArray(field(value, "resources")) &&
-		Array.isArray(field(value, "dependencyOrder")) &&
-		text(value, "schema") !== undefined
+		isJsonObject(value) &&
+		Array.isArray(member(value, "resources")) &&
+		Array.isArray(member(value, "dependencyOrder")) &&
+		textMember(value, "schema") !== undefined
 	);
 }
 
@@ -122,7 +111,7 @@ export function foldLegacyDeployment(
 		const match = matches.get(resource.name);
 		return match === undefined ? [] : [match];
 	});
-	return Object.freeze({
+	const folded = {
 		streamId,
 		deploymentId,
 		tenant: tenant ?? events[0]?.tenant ?? "",
@@ -133,6 +122,8 @@ export function foldLegacyDeployment(
 		plannedAt,
 		matches: Object.freeze(ordered),
 		state,
-		...(deployedAtSeq !== undefined ? { deployedAtSeq } : {}),
-	});
+	};
+	const result: LegacyDeployment =
+		deployedAtSeq === undefined ? folded : { ...folded, deployedAtSeq };
+	return Object.freeze(result);
 }

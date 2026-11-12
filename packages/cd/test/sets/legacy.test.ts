@@ -1,3 +1,4 @@
+import type { JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { SetOrigin } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
@@ -24,7 +25,7 @@ async function legacyDeployment(
 	store: ReturnType<typeof createFakeEventStore>,
 	deploymentId: string,
 	outcome: "deployed" | "rolled-back" | "planned",
-	config: Record<string, unknown> = {},
+	config: JsonObject = {},
 ) {
 	const events = [
 		{
@@ -188,7 +189,7 @@ describe("legacy fold: deployment.Planned/Deployed/RolledBack → Sets", () => {
 	});
 
 	it("foldLegacyDeployment is a pure fold over one deployment stream", () => {
-		const envelope = (type: string, data: unknown, seq: number) => ({
+		const envelope = <T>(type: string, data: T, seq: number) => ({
 			id: `e${seq}`,
 			type,
 			v: 1,

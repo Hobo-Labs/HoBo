@@ -8,7 +8,6 @@ import {
 import { describe, expect, it } from "vitest";
 import { DeltaRecordSchema, SetOrigin } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
-import type { DeltaId } from "../../src/ports.js";
 import {
 	createDesiredState,
 	diffResolvedSets,
@@ -20,6 +19,8 @@ import {
 	createFakeArtifactStore,
 	createFakeEventStore,
 	ctxAt,
+	deltaId,
+	reasonOf,
 	resolvedFor,
 	SHOP_V1,
 	SHOP_V2,
@@ -103,7 +104,7 @@ describe("upcaster corpus for set.Created and delta.*", () => {
 		);
 		const set = await desired.apply(
 			{
-				deltaId: "d1" as DeltaId,
+				deltaId: deltaId("d1"),
 				gateDecisionId: "g1",
 				resolved: v1,
 				origin: SetOrigin.UP,
@@ -122,15 +123,8 @@ describe("upcaster corpus for set.Created and delta.*", () => {
 			ctxAt(T0),
 		);
 		await desired.reject(
-			"d2" as DeltaId,
-			[
-				{
-					code: "window-closed",
-					message: "m",
-					remediation: "r",
-					subject: "s",
-				} as never,
-			],
+			deltaId("d2"),
+			[reasonOf("window-closed", "m", "r", "s")],
 			ctxAt(T0),
 		);
 		const seen = new Set<string>();

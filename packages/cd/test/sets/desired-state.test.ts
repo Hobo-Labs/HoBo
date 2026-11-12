@@ -1,4 +1,5 @@
 import { create, toJson } from "@bufbuild/protobuf";
+import type { EventPosition } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	ArtifactKind,
@@ -8,6 +9,7 @@ import {
 	DeltaRecordSchema,
 	ReconcileObservationRecordSchema,
 	ReconcileStatus,
+	type ResourceChange,
 	SetOrigin,
 } from "../../src/_generated/cd_pb.js";
 import {
@@ -17,24 +19,29 @@ import {
 	RESOLVED_SET_MEDIA_TYPE,
 	SET_SCHEMA,
 } from "../../src/events.js";
-import type { DeltaId, Outcome, SetId } from "../../src/ports.js";
+import type { Outcome } from "../../src/ports.js";
 import {
 	createDesiredState,
 	DesiredStateError,
 	diffResolvedSets,
 	verifyResolvedSet,
 } from "../../src/sets/index.js";
+import { member, toJsonValue } from "../../src/sets/json.js";
 import {
+	asDesiredStateError,
 	camp,
 	collect,
 	createFakeArtifactStore,
 	createFakeEventStore,
 	createRecordingTelemetry,
 	ctxAt,
+	deltaId,
 	OPERATOR,
+	reasonOf,
 	resolvedFor,
 	SHOP_V1,
 	SHOP_V2,
+	setId,
 	T0,
 } from "./fakes.js";
 
@@ -54,7 +61,11 @@ function setup() {
 	return { store, artifacts, telemetry, desired };
 }
 
-function delta(id: string, fields: Partial<DeltaRecord> = {}): DeltaRecord {
+type DeltaFields = Partial<
+	Pick<DeltaRecord, "baseSetId" | "intent" | "freightId" | "campId">
+> & { changes?: ResourceChange[] };
+
+function delta(id: string, fields: DeltaFields = {}): DeltaRecord {
 	return create(DeltaRecordSchema, {
 		deltaId: id,
 		campId: "prod-aws",
@@ -99,7 +110,7 @@ async function applyResources(
 	return unwrap(
 		await desired.apply(
 			{
-				deltaId: id as DeltaId,
+				deltaId: deltaId(id),
 				gateDecisionId: `gate-${id}`,
 				resolved,
 				origin,
@@ -129,7 +140,7 @@ describe("Delta lifecycle", () => {
 		expect(store.log.map((e) => [e.event.streamId, e.event.type])).toEqual([
 			[CD_STREAMS.campSpec("prod-aws"), CD_EVENTS.DeltaOpened],
 		]);
-		expect((await desired.get("d1" as DeltaId))?.deltaId).toBe("d1");
+		expect((await desired.get(deltaId("d1")))?.deltaId).toBe("d1");
 	});
 
 	it("open is idempotent for an identical record and refuses an overlapping Delta", async () => {
@@ -204,7 +215,7 @@ describe("Delta lifecycle", () => {
 		unwrap(
 			await desired.apply(
 				{
-					deltaId: "d1" as DeltaId,
+					deltaId: deltaId("d1"),
 					gateDecisionId: "g",
 					resolved: resolvedFor("prod-aws", SHOP_V2),
 					origin: SetOrigin.UP,
@@ -224,18 +235,11 @@ describe("Delta lifecycle", () => {
 		const { desired, store, telemetry } = setup();
 		unwrap(await desired.open(delta("d1"), ctxAt(T0)));
 		await desired.reject(
-			"d1" as DeltaId,
-			[
-				{
-					code: "window-closed",
-					message: "freeze",
-					remediation: "wait",
-					subject: "prod-aws",
-				} as never,
-			],
+			deltaId("d1"),
+			[reasonOf("window-closed", "freeze", "wait", "prod-aws")],
 			ctxAt(T0 + 1),
 		);
-		await desired.reject("d1" as DeltaId, [], ctxAt(T0 + 2));
+		await desired.reject(deltaId("d1"), [], ctxAt(T0 + 2));
 		expect(
 			store.log.filter((e) => e.event.type === CD_EVENTS.DeltaRejected),
 		).toHaveLength(1);
@@ -243,7 +247,7 @@ describe("Delta lifecycle", () => {
 			codes(
 				await desired.apply(
 					{
-						deltaId: "d1" as DeltaId,
+						deltaId: deltaId("d1"),
 						gateDecisionId: "g",
 						resolved: resolvedFor("prod-aws", SHOP_V1),
 						origin: SetOrigin.PROMOTION,
@@ -262,12 +266,12 @@ describe("Delta lifecycle", () => {
 		const { desired } = setup();
 		await applyResources(desired, "d1", SHOP_V1);
 		await expect(
-			desired.reject("d1" as DeltaId, [], ctxAt(T0)),
+			desired.reject(deltaId("d1"), [], ctxAt(T0)),
 		).rejects.toMatchObject({
 			code: "delta-already-applied",
 		});
 		await expect(
-			desired.reject("missing" as DeltaId, [], ctxAt(T0)),
+			desired.reject(deltaId("missing"), [], ctxAt(T0)),
 		).rejects.toBeInstanceOf(DesiredStateError);
 	});
 });
@@ -296,9 +300,11 @@ describe("apply", () => {
 			CD_EVENTS.DeltaApplied,
 			CD_EVENTS.SetCreated,
 		]);
-		const created = store.log.at(-1)?.event.data as Record<string, unknown>;
-		expect(created.resolvedSetDigest).toBe(set.resolvedSetDigest);
-		expect(created.resolvedSetBytes).toBe(String(set.resolvedSetBytes));
+		const created = toJsonValue(store.log.at(-1)?.event.data);
+		expect(member(created, "resolvedSetDigest")).toBe(set.resolvedSetDigest);
+		expect(member(created, "resolvedSetBytes")).toBe(
+			String(set.resolvedSetBytes),
+		);
 		expect(telemetry.points.map((p) => p.name)).toEqual(
 			expect.arrayContaining([
 				"hobo.cd.sets.deltas_applied",
@@ -320,8 +326,8 @@ describe("apply", () => {
 		expect((await desired.history(PROD, 1)).map((s) => s.setId)).toEqual([
 			second.setId,
 		]);
-		expect((await desired.get(first.setId as SetId))?.setId).toBe(first.setId);
-		expect(await desired.get("set_missing" as SetId)).toBeUndefined();
+		expect((await desired.get(setId(first.setId)))?.setId).toBe(first.setId);
+		expect(await desired.get(setId("set_missing"))).toBeUndefined();
 	});
 
 	it("is idempotent: re-applying an applied Delta returns the same Set (I12)", async () => {
@@ -330,7 +336,7 @@ describe("apply", () => {
 		const again = unwrap(
 			await desired.apply(
 				{
-					deltaId: "d1" as DeltaId,
+					deltaId: deltaId("d1"),
 					gateDecisionId: "gate-d1",
 					resolved: resolvedFor("prod-aws", SHOP_V1),
 					origin: SetOrigin.PROMOTION,
@@ -357,7 +363,7 @@ describe("apply", () => {
 		const same = unwrap(
 			await desired.apply(
 				{
-					deltaId: "d2" as DeltaId,
+					deltaId: deltaId("d2"),
 					gateDecisionId: "gate-d2",
 					resolved: resolvedFor("prod-aws", SHOP_V1),
 					origin: SetOrigin.CONFIG,
@@ -370,7 +376,7 @@ describe("apply", () => {
 			CD_EVENTS.DeltaOpened,
 			CD_EVENTS.DeltaApplied,
 		]);
-		expect((await desired.get("d2" as DeltaId))?.deltaId).toBe("d2");
+		expect((await desired.get(deltaId("d2")))?.deltaId).toBe("d2");
 	});
 
 	it("refuses an apply whose resolved set does not match the Delta's declared changes", async () => {
@@ -388,7 +394,7 @@ describe("apply", () => {
 		);
 		const outcome = await desired.apply(
 			{
-				deltaId: "d1" as DeltaId,
+				deltaId: deltaId("d1"),
 				gateDecisionId: "g",
 				resolved: resolvedFor("prod-aws", SHOP_V2),
 				origin: SetOrigin.PROMOTION,
@@ -413,7 +419,7 @@ describe("apply", () => {
 		);
 		const resolved = resolvedFor("prod-aws", SHOP_V1);
 		const input = {
-			deltaId: "d1" as DeltaId,
+			deltaId: deltaId("d1"),
 			gateDecisionId: "g",
 			resolved,
 			origin: SetOrigin.PROMOTION,
@@ -458,10 +464,7 @@ describe("apply", () => {
 		).toEqual(["set-origin-invalid"]);
 		expect(
 			codes(
-				await desired.apply(
-					{ ...input, deltaId: "nope" as DeltaId },
-					ctxAt(T0),
-				),
+				await desired.apply({ ...input, deltaId: deltaId("nope") }, ctxAt(T0)),
 			),
 		).toEqual(["delta-not-found"]);
 	});
@@ -478,7 +481,7 @@ describe("apply", () => {
 			),
 		);
 		const input = {
-			deltaId: "d1" as DeltaId,
+			deltaId: deltaId("d1"),
 			gateDecisionId: "g",
 			resolved: leaky,
 			origin: SetOrigin.PROMOTION,
@@ -512,7 +515,7 @@ describe("apply", () => {
 		);
 		const outcome = await desired.apply(
 			{
-				deltaId: "d1" as DeltaId,
+				deltaId: deltaId("d1"),
 				gateDecisionId: "g",
 				resolved: resolvedFor("prod-aws", SHOP_V1),
 				origin: SetOrigin.PROMOTION,
@@ -561,7 +564,7 @@ describe("apply", () => {
 		const [a, b] = await Promise.all([
 			desired.apply(
 				{
-					deltaId: "d2" as DeltaId,
+					deltaId: deltaId("d2"),
 					gateDecisionId: "g-a",
 					resolved,
 					origin: SetOrigin.PROMOTION,
@@ -570,7 +573,7 @@ describe("apply", () => {
 			),
 			peer.apply(
 				{
-					deltaId: "d2" as DeltaId,
+					deltaId: deltaId("d2"),
 					gateDecisionId: "g-b",
 					resolved,
 					origin: SetOrigin.PROMOTION,
@@ -622,7 +625,7 @@ describe("apply", () => {
 		const [a, b] = await Promise.all([
 			desired.apply(
 				{
-					deltaId: "d2" as DeltaId,
+					deltaId: deltaId("d2"),
 					gateDecisionId: "g-a",
 					resolved,
 					origin: SetOrigin.PROMOTION,
@@ -631,20 +634,13 @@ describe("apply", () => {
 			),
 			peer
 				.reject(
-					"d2" as DeltaId,
-					[
-						{
-							code: "superseded",
-							message: "newer",
-							remediation: "",
-							subject: "",
-						} as never,
-					],
+					deltaId("d2"),
+					[reasonOf("superseded", "newer", "", "")],
 					ctxAt(T0 + 1),
 				)
 				.then(
 					() => ({ ok: true }) as const,
-					(error: unknown) => ({ ok: false, error }) as const,
+					(error: Error) => ({ ok: false, error }) as const,
 				),
 		]);
 		store.beforeAppend = undefined;
@@ -652,7 +648,7 @@ describe("apply", () => {
 		const applied = store.log.some(
 			(e) =>
 				e.event.type === CD_EVENTS.DeltaApplied &&
-				(e.event.data as { deltaId: string }).deltaId === "d2",
+				member(e.event.data, "deltaId") === "d2",
 		);
 		const rejected = store.log.some(
 			(e) => e.event.type === CD_EVENTS.DeltaRejected,
@@ -694,12 +690,15 @@ describe("resolved()", () => {
 		const { desired, artifacts } = setup();
 		const set = await applyResources(desired, "d1", SHOP_V1);
 		artifacts.blobs.clear();
-		const error = await desired.resolved(set).catch((e: unknown) => e);
-		expect(error).toBeInstanceOf(DesiredStateError);
-		expect((error as DesiredStateError).code).toBe("resolved-set-missing");
-		expect((error as DesiredStateError).remediation).toContain(
-			set.resolvedSetDigest,
+		const error = asDesiredStateError(
+			await desired.resolved(set).then(
+				() => undefined,
+				(e: Error) => e,
+			),
 		);
+		expect(error).toBeInstanceOf(DesiredStateError);
+		expect(error.code).toBe("resolved-set-missing");
+		expect(error.remediation).toContain(set.resolvedSetDigest);
 	});
 
 	it("refuses a Set record whose content hash disagrees with its blob", async () => {
@@ -799,7 +798,7 @@ describe("status() and the spec/status split", () => {
 			);
 		};
 		const conflictsBefore = store.conflicts;
-		const work: Promise<unknown>[] = [];
+		const work: Promise<void>[] = [];
 		for (let i = 1; i <= 30; i++) {
 			const resources = i % 2 === 0 ? SHOP_V1 : SHOP_V2;
 			work.push(observe(i));
@@ -842,7 +841,7 @@ describe("changes()", () => {
 		const after = await collect(
 			desired.changes({
 				campIds: [PROD],
-				after: all[0]?.position,
+				after: cursorOf(all[0]),
 				signal: controller.signal,
 			}),
 			1,
@@ -967,3 +966,10 @@ it("Set ids are deterministic for the same tenant, Camp, Delta and content", asy
 	const changes = diffResolvedSets(undefined, resolvedFor("prod-aws", SHOP_V1));
 	expect(changes.every((c) => c.kind === ChangeKind.ADD)).toBe(true);
 });
+
+function cursorOf(
+	change: { position: EventPosition } | undefined,
+): EventPosition {
+	if (change === undefined) throw new Error("no change to resume after");
+	return change.position;
+}
