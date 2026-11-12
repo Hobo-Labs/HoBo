@@ -31,3 +31,8 @@ Base job names were covered by `mainTrainReleasePhase`, but GitHub matrix titles
 On the next tagged release with tight box inodes:
 
 - `hobo_ci_trunk_fleet_defer_decision` for `Build all OCI images on tag (gate publish) (*)` shows `isMainTrunkJob=true` and defers to ARC/mesh when storage blocks, instead of `not-main-trunk` + multi-minute box hold.
+
+## Verification
+
+- **TypeScript:** `packages/ci-gh-actions` build + `admission-order.test.ts` (matrix phase + ordering).
+- **Protobuf / CUE / PACT:** not applicable (admission ordering only; no contract surface change).
