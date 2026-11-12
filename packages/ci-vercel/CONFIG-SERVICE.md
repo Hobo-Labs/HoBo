@@ -112,11 +112,10 @@ owner handles no secret value on the default path:
   audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
   `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
   Actions (subject `repo:Hobo-Labs/HoBo:ref:refs/heads/main`, audience
-  `https://github.com/Hobo-Labs`), create/edit only. (**Connected 2026-11:**
-  Infisical org on the free plan cannot define custom roles, so production
-  `hobo-ci-writer` uses the built-in **Member** (formerly Developer) role on
-  project `hobo-ci` instead. Tyler approved. `hobo ci secret-store verify`
-  still checks OIDC sign-in only, not Infisical role shape.) Then:
+  `https://github.com/Hobo-Labs`), create/edit only. (**Connected:** Tyler
+  approved using built-in project **Member** (formerly Developer) for
+  `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
+  Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). `hobo ci secret-store verify` still checks OIDC sign-in only, not Infisical role shape.) Then:
 
   ```sh
   hobo ci secret-store connect --cwd packages/ci-vercel \
