@@ -7,11 +7,11 @@
  * index, a pending-demand set, webhook dedupe markers, sandbox counters and a
  * per-account change ring. Configuration is read-only, supplied by the config
  * service. There is no partition lock: every write is a compare-and-set on
- * one key, and the expected-state checks of `PostgresCiStore` are kept on
- * each of them. Lease ids are deterministic (`lease-id.ts`), so a lost record
+ * one key, and the expected-state checks of the lease stores (`SqliteCiStore`)
+ * are kept on each of them. Lease ids are deterministic (`lease-id.ts`), so a lost record
  * is found again by name (`rebuild.ts`).
  *
- * What the Postgres store kept as durable history is gone by design: no event
+ * What the removed Postgres store kept as durable history is gone by design: no event
  * journal, no completed-lease ledger, no inbox. Budget exposure is what
  * providers report plus the holds of in-flight leases.
  */

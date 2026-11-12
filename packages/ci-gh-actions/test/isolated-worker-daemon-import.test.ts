@@ -35,13 +35,14 @@ describe("isolated-worker-daemon.mts startup imports", {
 	it("resolves @hobo/ci-gh-actions under node --experimental-strip-types", () => {
 		const combined = run({});
 		expect(combined).not.toMatch(/ERR_MODULE_NOT_FOUND/u);
-		expect(combined).not.toMatch(/postgres-pool\.js/u);
-		// SQLite is the default store, so the first missing input is the GitHub App.
+		// The store is SQLite, so the first missing input is the GitHub App.
 		expect(combined).toMatch(/missing HOBO_CI_GITHUB_APP_ID/u);
 	});
 
-	it("still requires the named connection string when Postgres is chosen", () => {
-		expect(run({ HOBO_CI_STORE: "postgres" })).toMatch(/missing DATABASE_URL/u);
+	it("refuses a shared Postgres store: the worker's journal is SQLite only", () => {
+		expect(run({ HOBO_CI_STORE: "postgres" })).toMatch(
+			/HOBO_CI_STORE must be sqlite/u,
+		);
 	});
 
 	it("refuses to start, and says why, when it cannot build what it imports", () => {

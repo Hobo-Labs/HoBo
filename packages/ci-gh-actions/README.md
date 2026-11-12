@@ -8,7 +8,7 @@ startup remains an explicit operation.
 The exported browser/Node account client bounds response bodies to 2 MiB and
 rejects invalid UTF-8 before protobuf decoding. Its executable consumer contract
 covers these limits and disposal of error/redirect response streams. Product CLI setup is also checked through the production
-HTTPS control plane and native PostgreSQL store in
+HTTPS control plane and the relay's SQLite store in
 [`packages/hobo/e2e/ci.test.ts`](../hobo/e2e/ci.test.ts).
 
 `@hobo/ci-gh-actions` provides the HoBo CI relay, account API, repository
@@ -86,8 +86,9 @@ admission, reservation, dispatch, runner claim, reconciliation), driven by
 `createHostedRelayRuntime` (`src/hosted-runtime.ts`: the durable webhook inbox
 and the worker tick), with `createHostedControlPlane` (`src/hosted-control.ts`:
 the account API) and `createRelayHandler` (the HTTP surface, below). They are
-written against the `HostedInboxStore` port, which `SqliteCiStore` and
-`PostgresCiStore` in [`@hobo/ci`](../ci/README.md) both implement.
+written against the `HostedInboxStore` port, which `SqliteCiStore` in
+[`@hobo/ci`](../ci/README.md) and the [relay cache store](#relay-cache-store)
+both implement.
 
 A host supplies a store, something that calls `runtime.tick`, and runner
 backends. Nothing else differs between them:
@@ -95,22 +96,22 @@ backends. Nothing else differs between them:
 | Host | Entry | Store | What calls the tick | Runner backends |
 | --- | --- | --- | --- | --- |
 | Node service: `hobo ci serve`, the container image | `createRelayHost` (`src/relay-host.ts`), started from `HOBO_CI_*` by `startRelayFromEnvironment` (`src/main.ts`) | `SqliteCiStore`, one file fenced by a lock file | A 5-second timer in `createRelayService` | Workflow bridge |
-| Vercel | `createVercelApplication` in [`@hobo/ci-vercel`](../ci-vercel/README.md) | `PostgresCiStore` | A queue wake-up per delivery and a 15-minute schedule | Vercel Sandbox |
-| Box worker daemon | `scripts/isolated-worker-daemon-main.mts` (no HTTP; admission by polling) | `SqliteCiStore` or `PostgresCiStore` | Its own loop | Isolated containers |
+| Vercel | `composeStatelessRelay` in [`@hobo/ci-vercel`](../ci-vercel/README.md#the-stateless-relay) | `RelayCacheStore` on the cache fleet | Vercel Queue messages (intake, lease steps) and a 15-minute schedule | Vercel Sandbox |
+| Box worker daemon | `scripts/isolated-worker-daemon-main.mts` (no HTTP; admission by polling) | `SqliteCiStore` | Its own loop | Isolated containers |
 
 With pull admission, `hobo ci serve` feeds the Node service's inbox from
 `createGithubJobPoller` (`src/isolated-worker/github-job-poller.ts`), the same
 poller the box worker runs; there is no second poller.
 
-Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the Vercel row changes: its store becomes a cache store over `kv.redis-compatible/v1` (TTL, compare-and-set, increment), intake a Vercel Queue keyed by the delivery id, and lease steps delayed queue messages; config and secrets are read-only from a config service ([design](../../docs/design/hosted-relay-stateless.md)). The box worker's `PostgresCiStore` option is removed. The Node service and `SqliteCiStore` are unchanged.
+Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the Vercel host keeps no durable state: its store is a cache store over `kv.redis-compatible/v1` (TTL, compare-and-set, increment), intake a Vercel Queue keyed by the delivery id, and lease steps delayed queue messages; config and secrets are read-only from a config service ([design](../../docs/design/hosted-relay-stateless.md)). `PostgresCiStore` and the box worker's Postgres option were removed in its phase 7.
 
 The Node service adds two things of its own to the shared handler: a cached
 readiness probe that also gates admission (`admitWhenReady`: while the probe
 fails or the service drains, a delivery answers 503 for GitHub to redeliver and
 a runner claim is refused; the account API stays reachable), and a bounded
-drain on SIGTERM. The Vercel host adds the GitHub App bootstrap and OAuth
-onboarding, the queue wake-up and the webhook and queued-job repair; those are
-Postgres-only today and the Node service does not have them.
+drain on SIGTERM. The Vercel host adds OAuth onboarding, the queue topics and
+the webhook and queued-job repair, all on its cache; the Node service does not
+have them.
 
 ### The optional CI agent
 
@@ -341,15 +342,12 @@ eight agents waiting do not keep any of them from calling a tool.
 A wait hands the event loop back before every read, so a long catch-up on a
 store that answers in the same turn (SQLite) does not hold up webhooks, health
 checks or the worker, and a caller's cancellation is seen between reads. A
-lease's events are read through the lease index on both engines; on SQLite the
-statement names the index, so it cannot fall back to walking the journal.
+lease's events are read through the lease index; on SQLite the statement
+names the index, so it cannot fall back to walking the journal.
 
-On Postgres the server reads through `PostgresCiStore.observer()`: the last
-committed state, without the partition lock the relay's own reads and writes
-take. Nothing an agent asks is queued in front of webhook admission, and a
-long mutation does not hold an agent's read. `reconcile_lease` and
-`retry_quarantined_webhook` are writes and take the lock, as the account API's
-do.
+On the hosted relay the server reads through the cache store's `observer()`.
+`reconcile_lease` and `retry_quarantined_webhook` are writes, as the account
+API's are.
 
 **Resource subscriptions on a host that keeps sessions.** With
 `sessions: "memory"` the server advertises `resources.subscribe`. Subscribe to
@@ -439,12 +437,7 @@ fails if the declared duration and the one the code assumes differ.
 - **Nothing about other accounts from `more` or `truncated`.** Both are set by
   the account's own events and the page or window alone.
 - **What remains.** How long a read takes is not hidden. A read costs what the
-  account's own events cost, through its index, except in one window: on
-  Postgres, until journal rows written before the account column are stamped
-  (see [`@hobo/ci`](../ci/README.md#event-cursor)), a read also passes over
-  the unstamped rows of the partition, whoever they belong to. During that
-  fill-in a caller could see reads get faster as it proceeds. It ends by
-  itself and reveals no count.
+  account's own events cost, through its index.
 
 ### Client configuration
 
@@ -535,16 +528,10 @@ adapter. App keys and installation tokens remain in the relay.
 
 The GitHub App needs Actions, Administration, Contents, Workflows and Pull requests
 write access, plus Metadata read. Subscribe to `workflow_job` and `workflow_run`.
-`initializeHostedRelaySchema(pool)` creates every PostgreSQL table the hosted
-relay's GitHub stores use (App registration, OAuth sessions, platform App
-bootstrap, webhook repair and queued-job repair) by running the same
-initialisers each store runs on first use, and stores nothing. The Vercel
-adapter calls it to give a standby database the schema of the serving one.
-
-The Vercel host supplies the App bootstrap and OAuth callbacks described
-below; they are Postgres-only today, so the Node service (`hobo ci serve`, the
-container image) does not serve them and takes an existing App's ID, key and
-webhook secret from its `HOBO_CI_*` bindings instead. Customer repository setup is handled by the
+The Vercel host supplies the OAuth callbacks described below, on its cache; the
+Node service (`hobo ci serve`, the container image) does not serve them and
+takes an existing App's ID, key and webhook secret from its `HOBO_CI_*`
+bindings instead. The App itself is created with `hobo ci`. Customer repository setup is handled by the
 account APIs below.
 
 [Hosted GitHub App bootstrap and account onboarding](ONBOARDING.md) describes the operator and account flows.
@@ -570,10 +557,9 @@ overlay. Fork pull requests resolve config at the **base branch** ref and honor
 `selection.forkPullRequestEnvironment` so untrusted head refs cannot aim webhooks
 at an attacker-controlled relay.
 An optional `store` picks the isolated worker's lease journal for
-`hobo ci serve --with-worker`: `{ "kind": "sqlite" }` (the default, a local file
-that polls GitHub for `runs-on: hobo` jobs) or
-`{ "kind": "postgres", "urlEnv": "DATABASE_URL" }` for a shared relay partition.
-`urlEnv` names an environment variable; the schema refuses a connection string.
+`hobo ci serve --with-worker`: `{ "kind": "sqlite" }`, a local file that polls
+GitHub for `runs-on: hobo` jobs, is the only kind (the shared Postgres
+partition was removed under ADR-0179).
 Amounts are USD microdollars. Each policy still requires separately provisioned
 providers and a repository connection on its selected relay.
 
@@ -863,13 +849,12 @@ The isolated-worker daemon accepts `HOBO_CI_TRUSTED_BUDGET_ADAPTER` as an
 operator-controlled absolute path to a local `.js` or `.mjs` module. This is
 trusted host code, never a repository or job setting. Its exported
 `createCiWorkerBudgetAdapter({ kind })` returns `{ kind, options, close? }`,
-where `kind` matches the daemon store (`sqlite` or `postgres`) and `options`
-is the corresponding `@hobo/ci` shared-budget options object. The options must
-provide the same durable Broker authority used by hosting and a trusted quote
-publisher that binds the full provider account, price and execution plan. For
-PostgreSQL workers the parent authority must be shared PostgreSQL; a local
-SQLite authority cannot coordinate distributed hosts. For SQLite workers the
-parent authority must use a separate database file from the worker journal.
+where `kind` is the daemon store (`sqlite`) and `options` is the `@hobo/ci`
+shared-budget options object. The options must provide the same durable Broker
+authority used by hosting, with synchronous hooks (an asynchronous authority is
+refused), and a trusted quote publisher that binds the full provider account,
+price and execution plan. The parent authority must use a separate database
+file from the worker journal.
 
 Strict policies additionally require a provider-native liability verifier;
 credit allocations, settlement and unused holds require their respective trusted
@@ -1082,8 +1067,8 @@ the read paths of `HostedControlStore`, `IsolatedWorkerStore`, the MCP
 kept as short-lived state behind `EphemeralStatePort` from `@hobo/core`
 ([Relay ephemeral state](../../docs/design/relay-ephemeral-state.md)). Since
 phase 4b it is the hosted relay's store: `@hobo/ci-vercel`'s stateless
-composition builds it ([The stateless relay](../ci-vercel/README.md#the-stateless-relay));
-`PostgresCiStore` is off the hosted relay's path and removed in phase 7.
+composition builds it ([The stateless relay](../ci-vercel/README.md#the-stateless-relay)).
+`PostgresCiStore`, which it replaced, was removed in phase 7.
 
 ```ts
 import { createMemoryEphemeralState } from "@hobo/kv-redis-compatible";
@@ -1113,7 +1098,7 @@ write is decided again on a fresh read; a remembered record is never served to
 a plain read.
 
 **No partition lock.** Every write is a compare-and-set on one key, and each
-keeps the expected-state checks `PostgresCiStore` makes. A lost race re-reads
+keeps the expected-state checks the lease stores make. A lost race re-reads
 and re-decides (`casRetries()` counts them).
 
 **Deterministic lease ids.** `relayLeaseId` is a UUIDv5, under
@@ -1292,18 +1277,3 @@ estimate of about 25 assumed one command per ring append and no routing reads.
   plus the last 50 ended leases per account.
 - Shared-budget settlement (`reconcileSharedBudget`,
   `releaseUnusedSharedBudget`): budget-policy accounts are never admitted.
-
-## Postgres schema
-
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** These tables move to the cache, the config service or signed cookies, or go away ([design](../../docs/design/hosted-relay-stateless.md), "Former tables and their replacements"). This section describes the code as it stands until phase 7.
-
-The 13 PostgreSQL tables this package owns (App registration, OAuth sessions,
-the platform-App bootstrap fence, and the webhook and queued-job repair state)
-are declared in [`db/schema.ts`](db/schema.ts). Their migrations are in
-`db/migrations/`, generated and applied with the tooling `@hobo/ci` provides:
-`pnpm --filter @hobo/ci-gh-actions run db:generate`, `db:check`, `db:migrate`
-and `db:verify`. The stores still create their tables from the DDL embedded in
-`src/`; `db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to
-the declared schema. How a migration is produced and applied, how an existing
-database is baselined, and what is not done yet are described once, in
-[`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations).

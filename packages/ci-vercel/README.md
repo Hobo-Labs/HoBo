@@ -105,8 +105,7 @@ directory's entire fixture corpus.
 Planning is an ephemeral query, not a new durable relay command. It does not
 write relay events or projections. Turbo persists its ordinary local task cache;
 the generated plan is printed by `--dry-run` and is not accepted as executable
-input. The existing relay command/event and PostgreSQL replay semantics remain
-independent.
+input. The relay's own commands and events are independent of it.
 
 ## The relay as a HoBo app
 
@@ -153,8 +152,9 @@ triggers, the topics equal `RELAY_QUEUE_TOPICS` (no source sends to a literal
 topic), the route destination equals the HTTP entry, the repair name equals
 the schedule's, and the declared settings are exactly the `HOBO_CI_*` and
 `CRON_SECRET` names the deployed code reads: the sources the entry files reach
-through their imports. The PostgreSQL composition, which nothing deployed
-imports any more, declares nothing (phase 7 deletes it).
+through their imports. `test/relay-bundle.test.ts` bundles the entry files the
+way a deployment does and fails if the bundle reaches `pg`, `@neon/functions`
+or `@hobo/data-postgres`.
 
 ### Deploying the relay with HoBo
 
@@ -190,41 +190,13 @@ external trigger. Those stay with the operator, as described below.
 **Status: exercised against a fake transport only. No live deployment of the
 relay was made from this repository by this change.**
 
-## Database
-
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay is moving to keep no durable state ([design](../../docs/design/hosted-relay-stateless.md)): no PostgreSQL, no `DATABASE_URL`, and no Neon runtime-config broker; config and secrets come from a config service read with the relay's Vercel OIDC token, and in-flight job state from a Redis-protocol cache. This section describes the code as it stands until phase 7 of that plan removes it; do not build on it.
-
-The relay speaks plain Postgres through `pg` and creates its own tables on first start. Nothing in
-its store depends on a particular host. Point it at any Postgres with two variables, which are the
-same URL when no pooler sits in front of the database:
-
-```sh
-DATABASE_URL=postgres://hobo_ci:<password>@<host>:5432/hobo_ci
-DATABASE_URL_UNPOOLED=postgres://hobo_ci:<password>@<host>:5432/hobo_ci
-```
-
-[`deploy/postgres/compose.yaml`](deploy/postgres/compose.yaml) runs a self-hosted Postgres 17 with a
-named volume, a password from a file and a health check. The database must be reachable from where
-the relay runs, over TLS.
-
-Checked against a self-hosted PostgreSQL 16.15: the store's real-database tests pass
-(`HOBO_TEST_POSTGRES_URL=… vitest run` in `@hobo/ci`, 68 tests), and the relay starts, creates its
-18 tables and reports that it is waiting for the GitHub App.
-
-Two things still tie a production relay to Neon. Its start-up reads credentials from a
-runtime-config broker whose address is fixed in `src/entry.ts`; setting
-`HOBO_CI_GITHUB_APP_ID` (with its key and webhook secret) or `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` in the
-relay's environment bypasses the broker. And its schema is created by statements inside the store;
-the plan is a Drizzle schema with generated migrations (see
-[CI Relay Mesh](../../docs/design/ci-relay-mesh.md)).
-
 ## Config service
 
 ADR-0179 (phase 3) moves the relay's configuration and secrets to a config
 service: Infisical Cloud, read with the relay's Vercel OIDC token, no secret in
 its environment. `src/relay-runtime-config.ts` loads the whole configuration
 (the config document and every secret, App credentials included) in one call,
-parses it into `RelayRuntimeConfig` with the schema moved from the Neon broker
+parses it into `RelayRuntimeConfig` with its schema
 (`src/relay-runtime-config-schema.ts`), and caches it in memory for a minute;
 `envRelayConfigSource` gives the same type from the environment for local runs
 and tests. `entry.ts` loads it (phase 4b, [below](#the-stateless-relay)). Owner
@@ -237,10 +209,9 @@ setup, the variables the deployment declares and the folder's entries are in
 ADR-0179 phase 4b. What `api/relay.ts` and the three queue entries run is
 `composeStatelessRelay` ([`src/stateless-composition.ts`](src/stateless-composition.ts)):
 no database, no Neon broker, no address of either in the source. The
-PostgreSQL composition (`relay-composition.ts`, `composition.ts`,
-`bootstrap-entry.ts`, the database modules) stays in the tree, imported by
-nothing deployed, until phase 7 deletes it. Rolling back means promoting an
-earlier deployment.
+PostgreSQL composition, the relay database fleet and store selection, the
+Neon broker and the Drizzle relay schema were deleted in phase 7. Rolling back
+means promoting an earlier deployment.
 
 **How it is composed.**
 
@@ -474,8 +445,8 @@ in-flight holds, and each cache member is metered at its own client.
 
 ### Helpers on the cache
 
-ADR-0179 phase 5. What the PostgreSQL composition kept in its own tables now
-lives in the cache fleet's active member, each record with a TTL; the key
+ADR-0179 phase 5. What the removed PostgreSQL composition kept in its own
+tables lives in the cache fleet's active member, each record with a TTL; the key
 table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-ttls).
 
 - **Repair scanners.** `createWebhookRepair` and `createQueuedJobRepair`, as
@@ -546,21 +517,19 @@ the relay.
 
 ## Hosted relay
 
-> The Postgres store, the inbox table and the Neon broker named in this section are superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179): webhook intake becomes a Vercel Queue keyed by the delivery id, per-lease steps become delayed queue messages, in-flight state moves to a cache it may lose, and config and secrets are read from a config service. See [Hosted CI Relay Without Durable State](../../docs/design/hosted-relay-stateless.md).
-
 The relay's HTTP surface is not this package's: `createRelayHandler` (Fetch),
 `createNodeRelayHandler` (Node adapter) and the failure log live in
 [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#one-http-layer) and are the
 same code `hobo ci serve` and the container image run. This package is the
 Vercel host around it: the function entrypoint, which paths stream
-(`src/relay-streams.ts`), the queue consumer, the scheduler, the Postgres store
+(`src/relay-streams.ts`), the queue consumers, the schedule, the cache store
 wiring and the Sandbox runner.
 
 It runs the same relay core as the Node service ([one relay, thin
 hosts](../ci-gh-actions/README.md#one-relay-thin-hosts)); what is specific to
-this host is the `PostgresCiStore`, the queue wake-up and 15-minute schedule
-that call the worker tick, the Sandbox runner backend, the GitHub App bootstrap
-and OAuth onboarding, and the webhook and queued-job repair.
+this host is the relay cache store, the queue topics and 15-minute schedule
+that drive intake, lease steps and repair, the Sandbox runner backend, OAuth
+onboarding, and the webhook and queued-job repair.
 
 The relay's [MCP server](../ci-gh-actions/README.md#mcp-server) is mounted at
 `/mcp` with `sessions: "none"`: a function instance does not outlive its
@@ -573,39 +542,27 @@ of 300 seconds (the limit the queue consumer's two-minute wait for a worker
 pass already assumes), `src/function-limits.ts` holds the same number, and
 `mcpWaitCeilingMs` keeps 30 seconds of it back and never exceeds 50, the most
 an MCP client waits by default. `test/function-limits.test.ts` fails if the
-two numbers differ. The server reads through `PostgresCiStore.observer()`, so
-an agent's reads take no partition lock and are never queued in front of
-webhook admission.
+two numbers differ. The server reads through the store's `observer()`, and
+`wait_for_events` reads the store's change ring.
 
-This package provides a Vercel Node Function entrypoint, a Postgres-backed
-relay, a private queue consumer, and an independent scheduler. Signed
-GitHub deliveries are committed before acknowledgement. Queue notifications
-wake the worker immediately; the scheduler recovers committed work whose wakeup
-was lost and asks GitHub to redeliver failed App deliveries. `/readyz` requires
-the database, queue, scheduler and GitHub repair path to have recently succeeded;
-a new deployment reports unready until its first repair scan completes. A
-successful partial scan retains the last completed-scan health while it queues
-its continuation. Actual scan failures mark the relay unready, and completed-scan
-health expires after 45 minutes. Delivery and queued-job scanners record their
-completed cycles independently, since their pagination can finish on different
-wakeups. A new deployment waits for both scanners to complete; a queued scan
-may wait for the existing ten-minute cooldown. This is scanner liveness, not a
-point-in-time guarantee that every repository is covered after inventory changes.
-The webhook intake is available during initial repair.
+Queue messages and configuration follow **parse, don't validate**:
+`parseRelayQueueMessage` parses a queue payload into the derived types
+`RelayQueuedDelivery` and `RelayQueuedStep` (records `HostedQueueDelivery` and
+`HostedLeaseStep` in [data-models](data-models/), constrained in CUE), and the
+config service's entries are parsed once into `RelayRuntimeConfig`; nothing
+downstream re-checks a raw value, and provider-supplied metadata does not
+become routing authority.
 
-The queue uses **parse, don't validate**: `QueueMessageSchema` parses provider
-input into derived types for a committed-delivery wakeup, a scheduled or
-continuation repair, or the authenticated manual-tick command. The protobuf and
-CUE definitions in [data-models](data-models/) describe the queue messages and
-their constraints; provider-supplied metadata does not become routing authority.
-
-The GitHub App and Vercel scheduler are actors that submit commands through the
-signed HTTP intake or private queue. The PostgreSQL event-store records CI events
-and the durable webhook inbox; lease and configuration projections are its
-materialized views. Worker health is a separate PostgreSQL read store recording
-the latest successful and failed processing times. The Vercel function is
-stateless: it reads the current policy snapshot from PostgreSQL on each operation,
-and never treats a process-local cache or a queue wakeup as the event-store.
+The GitHub App, the Vercel schedule and the queue topics are actors that
+submit commands to the relay: a signed delivery, a lease step, a repair tick.
+The relay keeps no event-store of its own: GitHub is the system of record for
+every job, and the relay's lifecycle events go out as structured logs and
+CloudEvents (`HOBO_CI_EVENTS_URL`). What the cache holds are projections, the
+materialized views the relay acts on: one lease record per job attempt, the
+per-account in-flight index and the job-taken markers, each rebuilt from
+GitHub and Vercel by deterministic name when lost. There is no snapshot to
+restore; a lost cache is rebuilt. The read store for MCP and the account API
+is the same cache, with the per-account change ring as its feed.
 
 A Vercel Schedule named `hobo-ci-repair`, declared in `vercel.json`, publishes a
 repair message to the private `hobo-ci` queue every 15 minutes. The target is
@@ -616,16 +573,15 @@ minutes of jitter. Every deployment declares the schedule, so a deployment
 outside production acknowledges the scheduler's run without working it. Normal
 work uses an immediate queue wakeup, and the queue schedules a delayed
 continuation for larger delivery histories. `GET /internal/tick` remains for an
-operator's own scheduler; an earlier Neon scheduled trigger used it and can be
-retired once the schedule is seen running.
+operator's own scheduler.
 
 Production queue messages stay pinned to their publishing deployment. Each
 new callback forwards a validated wakeup to the canonical relay and acknowledges
 it only after the current worker succeeds. Keep the canonical URL and the
-broker-held `CRON_SECRET` stable while those messages can be retried. The
+`CRON_SECRET` in the config service stable while those messages can be retried. The
 handoff does not change callbacks from deployments predating this mechanism;
-retire or drain those separately. Messages expire after one hour, while the
-database inbox remains the source of truth for recovery.
+retire or drain those separately. Messages expire after one hour; GitHub,
+re-read by the repair tick, remains the source of truth for recovery.
 
 The handoff is one request, never retried inside the function. Any answer but
 `204` fails with `queue handoff failed: status <code>`, plus
@@ -658,601 +614,29 @@ was built from. Acknowledging the tick is the one thing that stops those
 retries from here. A webhook delivery wakeup is never dropped; it is held as
 above.
 
-So that the store's state cannot refuse a wakeup before this rule sees it,
-`POST /internal/queue-wakeup` is served by the outermost layer that has
-`CRON_SECRET`: the bootstrap entry, the selected relay and the database fleet
-each answer it themselves, and none of them waits for an application that a
-down store keeps from being built.
-
-Vercel's Hobby plan is limited to personal, non-commercial use. PostgreSQL,
+Vercel's Hobby plan is limited to personal, non-commercial use. The cache,
 queue operations and Functions can incur usage charges according to the chosen
 plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
 endpoint.
 
-## Hosting the relay and its database on Vercel
-
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay is moving to keep no durable state ([design](../../docs/design/hosted-relay-stateless.md)): there is no database to host, so store choice, the second attached store, the one-time import and the relay database fleet below all go away. The cache is the Upstash Redis Marketplace integration on its free tier; Neon and Turso are disconnected. This section describes the code as it stands until phase 7 of that plan removes it; do not build on it.
-
-The relay is a Vercel Function plus a private queue consumer and a schedule; all
-three are declared in `vercel.json` and need nothing outside Vercel. Its
-database cannot be a container on Vercel. Vercel's container runtime and
-Daemons have no persistent disk; Vercel's own guide says "You can't run your
-own Postgres or Redis container with local disk" and that durable storage
-attached to containers "has not shipped". Vercel's first-party storage is Blob
-and Global Config, neither of which is a database. PostgreSQL on Vercel is a
-Marketplace store (Storage tab), and the ones that are not Neon are Supabase,
-Prisma Postgres and Amazon Aurora PostgreSQL.
-
-| Store | Fit | Watch for |
-| --- | --- | --- |
-| Supabase | Always-on instance; a session-mode endpoint for repair | If the connection fails with `unable to verify the first certificate`, its certificates chain to Supabase's own root: set `HOBO_CI_DATABASE_CA_CERT` |
-| Prisma Postgres | Direct and pooled strings | The free plan is metered by operations (200,000 a month); a relay that polls can exhaust it, the same kind of plan quota that stopped the Neon database |
-| Aurora PostgreSQL | Durable, billed by AWS | Authenticates with short-lived IAM tokens instead of a URL; the relay does not support that yet |
-
-To move the relay onto one:
-
-1. In the Vercel project, open Storage, create the store and connect it to the
-   project's Production environment. If the old store is still connected, give
-   the new one a prefix. The relay then chooses between the two by itself; see
-   [A second store attached to the project](#a-second-store-attached-to-the-project).
-   Setting `HOBO_CI_DATABASE_ENV_PREFIX` to the prefix names the store by hand
-   instead and turns the choosing off.
-2. If the provider's certificates chain to its own root, add that root
-   certificate: as `HOBO_CI_DATABASE_CA_CERT` for a store without a prefix or
-   one named by `HOBO_CI_DATABASE_ENV_PREFIX`, as
-   `<PREFIX>HOBO_CI_DATABASE_CA_CERT` for a prefixed store the relay chooses
-   by itself.
-3. Redeploy. The relay creates its tables on first use. A new database has no
-   GitHub App record, so the relay starts in bootstrap mode; complete
-   [GitHub onboarding](../ci-gh-actions/ONBOARDING.md) again, or restore the old
-   database into the new one first to keep the existing App. If the old store
-   is left connected and answers again while the new one is still empty, the
-   relay copies the old store's tables across once.
-4. Confirm `GET /readyz` and disconnect the old store.
-
-`scripts/bootstrap-postgres-contract.ts` runs the whole relay flow against a
-real PostgreSQL. `HOBO_CI_TEST_POSTGRES_BINDING` (`supabase`,
-`prisma-postgres`) makes it use a provider's variable names and
-`HOBO_CI_TEST_POSTGRES_CA_FILE` a private certificate authority; it passes
-under all three bindings against a TLS-only PostgreSQL 16. It has not been run
-against a hosted Supabase or Prisma Postgres database.
-
-### A second store attached to the project
-
-A store that is over its quota refuses every connection, and the only repair
-available from the Vercel dashboard is to attach another one. With the old
-store's variables still present, the relay used to keep dialling the old store
-until someone set `HOBO_CI_DATABASE_ENV_PREFIX`. Now it chooses.
-
-**When it applies.** The candidates are the databases
-`hobo_ci_database_candidates` lists whose pooled and session-scoped connection
-strings both resolve, and whose session-scoped one is not a known pooler. The
-relay chooses only when there are two or more of them and neither
-`HOBO_CI_DATABASE_ENV_PREFIX` nor `HOBO_CI_DATABASE_BACKENDS` is set. In every
-other case nothing here runs: no probe, no marker table, the same relay as
-before.
-
-**Probe.** When the first request of a function instance needs the store, each
-candidate gets one connection attempt on its session-scoped connection, five
-seconds to connect and five per statement, all candidates at once.
-
-| Class | Meaning | What counts |
-| --- | --- | --- |
-| `serving` | Connected, and its marker was read | |
-| `refusing` | The server answered, with a refusal that asking again will not change | SQLSTATE `53000` (what Neon sends once a project is over its plan quota), class `28` (a wrong or revoked credential), `3D000` (the database is gone). The list is `STORE_REFUSAL_SQLSTATES` in `src/database-selection.ts` |
-| `unknown` | Anything else | A timeout, a failed name lookup, a TLS failure, a reset connection, `57P03`, `53300`, any other `53xxx` |
-
-**If any candidate is `unknown`, the relay does not choose.** It reports the
-store as unavailable exactly as a single store that is down: `GET /readyz`
-answers 503 `store-unavailable`, other requests get the fixed 503, and the next
-attempt waits 5 s, doubling to a minute. A store that did not answer may be the
-one in use, and two instances that reach different subsets of the stores must
-never pick different ones. The consequence is deliberate and worth knowing: a
-second store that is attached but misconfigured (a missing certificate
-authority, a wrong host) takes the relay to 503 until it answers, is detached,
-or `HOBO_CI_DATABASE_ENV_PREFIX` names the store to use.
-
-**The rule.** Each store the relay has run on holds one row in
-`hobo_ci_store_selection`: `generation`, `selected_at`, `reason`, and the
-record of the import described below. Among the `serving` candidates the
-relay runs on the one with the highest generation. Equal generations go to
-discovery order, the store without a prefix first, then by prefix; that covers
-the first run, when no store holds a row.
-
-A new generation is written on the chosen store when it holds none, and also
-whenever another candidate is `refusing`. A refusing store cannot be read, so
-it may hold any generation; the store used instead has to outrank it when it
-answers again, or the relay would go back to it. That is why a generation is
-not a counter but a clock reading: the larger of the highest generation seen
-plus one and the store's own time in milliseconds since 1970. The write is one
-transaction under an advisory lock; the store is read again under the lock,
-so instances promoting at the same moment leave one row. A store that answers
-again later with an older generation is not returned to. A store that is only
-looked at is never written to.
-
-The chosen store is handed to the same application through the same two
-connections; repair uses the session-scoped connection of that store.
-
-**After start-up.** Selection runs once per function instance. If the chosen
-store later refuses a connection with one of the codes above, the application
-built on it is closed, the store back-off applies, and the next request after
-it runs selection again. A store that refused once and answers the new probe is
-chosen again; otherwise the relay moves to the other store and marks it.
-
-**Certificate authorities.** A store without a prefix takes
-`HOBO_CI_DATABASE_CA_CERT`. A prefixed store takes
-`<PREFIX>HOBO_CI_DATABASE_CA_CERT` and nothing else, so one provider's private
-root is never imposed on another provider's store.
-
-#### The one-time import
-
-A store the relay moves to is empty: no GitHub App, no accounts. When the old
-store answers again (a quota that resets with the month) and the new one is
-still **pristine**, the relay copies the old store's tables into it, once, so
-the App registration comes across instead of being made again.
-
-Pristine means all four of: no row in `hobo_ci_platform_app` other than a
-`pending` claim, no row in `hobo_ci_app_credentials`, no row in
-`hobo_ci_app_installations`, and no account in the stored configuration
-(`hobo_ci_configuration`).
-
-After selection, if the chosen store records no import and another candidate
-is `serving` with a lower generation (or none) and is not pristine, then:
-
-1. Both stores are brought to this release's schema with `prepareRelaySchema`,
-   each as its role calls for. The chosen store is the one the relay runs on,
-   so it gets what a fleet writer gets: the stores' own initialisers, then the
-   checked-in migrations. The old store is only read, so it gets what a fleet
-   standby gets: the checked-in migrations and nothing else. That is guarded,
-   additive DDL (a table it never needed, a column a later release added, an
-   empty marker table, which reads as no generation) plus the migration
-   ledger, which is never copied; no row of its own is
-   changed, because the initialisers, which move rows, are not run there. An
-   old store whose tables are at an older layout than the migrations can bring
-   forward is refused as `schema-refused`, and one that records migrations this
-   release does not have as `schema-ahead`; both are left as they were.
-2. In one transaction on the chosen store, under the selection lock: the marker
-   row must record no import; the four tables above are locked against writers
-   and the store must still be pristine.
-3. The copy is the fleet's snapshot copy (`copySnapshot` in
-   `@hobo/data-postgres`): the same table set, everything under `hobo_ci_`
-   except the fleet's control tables, the migration ledger and the marker
-   table; one consistent snapshot of the source; the target replaced and then
-   digested against the source.
-4. The marker row records the source's digest and the time, in the same
-   transaction.
-
-It never runs twice into one store and never into a store that is not
-pristine. It is refused, and the chosen store left as step 1 made it, when the
-schemas still differ (`schema-mismatch`, naming the table or column), when the
-source holds more than 500,000 rows or 128 MiB of row text (`oversized`; the
-limits are lower than the fleet's because this runs while an instance starts),
-when the copy does not digest to the source (`digest-mismatch`), or when
-another instance is importing (`busy`). A refused or failed import never stops
-the relay: it runs on the chosen store, and the next instance that starts
-tries again.
-
-#### Log lines
-
-One JSON line each. Variable-name prefixes, 12-character database digests,
-numbers and fixed tokens only: never a connection string, a host name or an
-error message.
-
-| Event | When | Fields |
-| --- | --- | --- |
-| `hobo_ci_database_selected` | A store was chosen | `prefix`, `binding`, `database`, `generation`, `reason`, and `candidates`: each one's `prefix`, `database`, `class`, plus `generation` when serving, `sqlstate` when refusing, the driver's `code` when unknown |
-| `hobo_ci_database_selection_undecided` | No store was chosen | `cause` (`unclassified-candidate`, `no-serving-candidate`) and the same `candidates` |
-| `hobo_ci_database_import` | An import was considered | `source`, `target`, `status`: `imported` with `tables`, `rows`, `bytes`; `refused` with `refusal` and `detail`; `failed` with the SQLSTATE or driver `code` |
-
-`reason` is `first-run` (no store held a generation), `marker` (the chosen
-store holds the highest generation and every candidate answered),
-`previous-refusing` (a candidate is refusing, so the chosen store's generation
-was written or renewed) or `only-candidate`.
-
-While an old store that holds data stays attached next to a new store that is
-in use, every instance that starts logs `hobo_ci_database_import` with
-`refused` and `not-pristine`. Detaching the old store ends that.
-
-#### Limits
-
-- **It is not replication.** Writes made to the old store after the relay left
-  it are not merged, and nothing is copied after the one import. For standbys
-  that are kept current, use the fleet below.
-- **It is not consensus.** The rule is deterministic given what the probes see.
-  If a store changes between refusing and serving while instances are
-  starting, two instances can run on different stores until they are
-  replaced; later instances all follow the newest generation, and what the
-  other store received in between stays there.
-- **Discovery order decides the first run.** With two stores that both answer
-  and no generation anywhere, the store without a prefix is used. A deployment
-  that relied on `HOBO_CI_DATABASE_ENV_PREFIX` should keep it.
-- **Generations compare clocks of different servers.** A store promoted while
-  another could not be read outranks it only if its clock is not behind the
-  time the other was last promoted.
-- **A renewal is a write.** While a candidate is refusing, each instance that
-  starts writes one small transaction to the chosen store.
-- **The import replaces, it does not merge,** which is why it is confined to a
-  pristine store, and it holds locks on the chosen store's tables while it
-  runs.
-
-#### Tests
-
-`test/database-selection.test.ts` covers the classification and the rule
-without a database. `test/database-selection-postgres.test.ts` runs selection,
-promotion under concurrency, the import and its refusals, re-selection after
-a refusal and the composed relay against real PostgreSQL; refusals are real
-(`28000` from a role the server does not have, `3D000` from a database it does
-not have). It is skipped unless `HOBO_TEST_POSTGRES_URL` names a disposable
-server whose role may create databases:
-
-```bash
-HOBO_TEST_POSTGRES_URL=postgres://hobo_ci@127.0.0.1:5432/postgres \
-  pnpm --filter @hobo/ci-vercel exec vitest run test/database-selection-postgres.test.ts
-```
-
-### Running on several databases: the database fleet
-
-One database on one plan is one quota away from an outage. The relay can run
-on a **fleet** instead: several PostgreSQL databases from different providers,
-exactly one of them the **writer** at any time, the others **standbys** that
-are kept current, and a policy that moves the writer before a quota runs out
-or when the writer is down. The mechanism is the provider-neutral fleet in
-[`@hobo/data-postgres`](../data-postgres/README.md#the-fleet); this package
-supplies the `pg` adapter, the provider profiles, the runtime fence and the
-schedule.
-
-With `HOBO_CI_DATABASE_BACKENDS` unset the relay is the single-database relay
-described above, unchanged. With one backend listed it is the same relay on
-that backend. Everything below applies only with two or more.
-
-#### Configure
-
-Connect each store to the project under its own prefix, then list them:
-
-```text
-HOBO_CI_DATABASE_BACKENDS=neon=NEON_,supabase=SUPABASE_,prisma=PRISMA_:prisma-postgres
-```
-
-Each entry is `id=PREFIX` or `id=PREFIX:profile`. The id is an opaque name
-used in logs and in the assignment. The prefix is how that store's variables
-are read, with the same names as above (`NEON_DATABASE_URL` and
-`NEON_DATABASE_URL_UNPOOLED`, `SUPABASE_POSTGRES_URL` and
-`SUPABASE_POSTGRES_URL_NON_POOLING`, `PRISMA_DATABASE_URL_POOLED` and
-`PRISMA_DATABASE_URL`); one backend may have an empty prefix (`main=`). Every
-backend needs both its pooled and its session-scoped connection. The profile
-defaults to the id when a profile of that name exists and to `postgres`
-otherwise. **The first backend listed is the writer of a fleet that has never
-decided anything**, so list the database that holds the data first.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `HOBO_CI_DATABASE_BACKENDS` | unset | The fleet. Mutually exclusive with `HOBO_CI_DATABASE_ENV_PREFIX` |
-| `<PREFIX>HOBO_CI_DATABASE_CA_CERT` | none | That backend's private certificate authority (Supabase). Per backend, so one provider's root is not imposed on another |
-| `HOBO_CI_DATABASE_RPO_SECONDS` | 1200 | Recovery point objective: the oldest standby a failover may promote |
-| `HOBO_CI_DATABASE_FAILOVER_AFTER_SECONDS` | 60 | How long the writer must fail before a failover |
-| `HOBO_CI_DATABASE_LEASE_SECONDS` | 30 | How long an instance trusts the assignment it last confirmed |
-| `HOBO_CI_DATABASE_MONTHLY_BUDGET_MICROS` | 0 | Monthly budget for the relay database, in millionths of a US dollar |
-
-Anything malformed (a bad pair, a repeated id or prefix, an unknown profile, a
-backend with no connection, a non-numeric setting) stops the relay at startup.
-Errors name variables, never values.
-
-Any number of backends works. A majority of them must answer for the relay to
-run: three tolerate one down, five tolerate two. An even count buys nothing
-(four tolerate one, two tolerate none), so use an odd one.
-
-#### Provider profiles
-
-`src/database-fleet-config.ts` holds what the relay knows about each kind of
-backend as data, one record per profile; no code branches on a provider.
-
-| Field | What it says |
-| --- | --- |
-| `connection` | How its connections are found: today, variables under the prefix. It is a function, so a provider whose credential is a short-lived token minted per connection can supply pool settings with an async `password`. None does yet |
-| `transactionPoolers` | Addresses of its transaction-mode poolers, refused for that backend's session connection. A pooler with its own hostname is also in `KNOWN_TRANSACTION_POOLERS`, matched against every connection; one that differs from the direct endpoint only by port (PgBouncer on 6432) is refused only for the backend whose profile names it |
-| `privateCertificateAuthority` | Whether its certificates chain to its own root |
-| `hosting` | `managed` or `self-hosted` |
-| `financial` | Plan, fixed monthly fee, allowances per unit and what happens beyond them, with the source and the date of every number |
-
-Profiles today:
-
-| Profile | Pooler refused for session work | Private certificate authority |
-| --- | --- | --- |
-| `neon` | `-pooler` hosts | no |
-| `supabase` | port 6543 on the shared pooler host and on the project host | yes |
-| `prisma-postgres` | `pooled.db.prisma.io` | no |
-| `planetscale-postgres` | port 6432 | no |
-| `azure-postgres-flexible` | port 6432 | no |
-| `gcp-cloudsql-postgres`, `gcp-alloydb` | port 6432 | depends |
-| `aws-rds-postgres`, `aws-aurora-postgres` | none by address: RDS Proxy has its own hostname and no pattern for it is recorded | yes |
-| `azure-horizondb` (preview) | none: no built-in pooler | depends |
-| `pgedge-cloud` | none recorded | depends |
-| `postgres` | none: any PostgreSQL the operator runs or rents | depends |
-
-The pooler and certificate facts come from the PostgreSQL backend catalog,
-which cites each to the provider's documentation. Every provider here is
-reached with a password connection string; identity-token authentication (AWS
-IAM, Google IAM, Microsoft Entra) is not implemented. **Only Prisma Postgres's free plan has
-recorded numbers** (200,000 operations a month and 2 GB, from the Vercel
-Marketplace page, as recorded by the project owner; what happens beyond them
-is recorded as unknown and treated as a hard stop). Every other profile's fees
-and allowances are recorded as unknown. The policy does not guess: it neither
-leaves a writer because of an unknown nor makes a planned switch to a standby
-with one. Until those numbers are recorded, the only planned switch this
-configuration can make is *onto* Prisma Postgres, and a failover is the only
-way off it.
-
-#### How it works
-
-**Who the writer is.** Each backend holds a small append-only table,
-`hobo_ci_fleet_assignments`. An entry is decided when a majority of the
-backends hold it. An instance reads the newest entry from a majority when it
-starts and again when its lease is half spent. It uses a backend only while
-the entry it confirmed names that backend, is not sealed, and is younger than
-the lease by its own wall clock. That is checked before every statement, so
-an instance that was frozen and resumed cannot write on an old assignment. In
-every other case (no majority, an undecided newest entry, a sealed fleet) it
-answers `503` with `Retry-After`. `GET /readyz` then carries
-`{"ready": false, "reason": "store-unavailable"}`, and `GET /healthz` still
-answers `200`: it reports on the process, and restarting a relay that is
-waiting for a writer would not find one. When the writer changes it closes its
-pools and builds the application again on the new writer.
-
-**Keeping standbys current.** The Vercel Schedule's repair message (every 15
-minutes) first runs one reconcile tick: it copies the writer to each standby
-in one consistent snapshot, verifies each copy by digest, and records a
-watermark. Only tables that changed are rewritten. The tick is served by the
-fleet, not by the application, so it still runs when the writer is down.
-
-**Choosing the writer.** The same tick measures each backend (reachable or
-why not, standby lag, statements sent this month, database size) and asks the
-policy. The budget question is answered by `evaluateBudgetPolicy` from
-`@hobo/core`, with each recorded allowance as a constraint.
-
-**Metering.** Every statement the relay sends to a backend is counted,
-including lease reads and copies, and added to `hobo_ci_fleet_usage` on that
-backend at most once a minute. One statement is counted as one operation.
-
-#### What the recovery point objective means with a 15-minute schedule
-
-A standby is as fresh as the last tick. If the writer dies just before a tick,
-that tick finds standbys about 15 minutes old, waits out
-`HOBO_CI_DATABASE_FAILOVER_AFTER_SECONDS`, and promotes one. So:
-
-- **What a failover can lose:** up to one schedule interval of writes, about
-  15 minutes. The promoted standby's age is recorded as `loss_window_ms`.
-- **How long the relay is down:** up to one interval plus the failover
-  threshold, about 16 minutes, because nothing looks between ticks.
-- **The objective must exceed the interval.** A standby is always about one
-  interval old when a failure is noticed. The default of 20 minutes allows
-  that. An objective below about 16 minutes means a failover never happens and
-  the relay waits for the writer or for a person.
-- **A planned switch loses nothing** and costs one lease plus a few seconds of
-  `503` (about 35 seconds by default) while writers stop and the final copy
-  runs. GitHub deliveries refused in that window are redelivered by the
-  relay's webhook repair.
-
-#### What happens on each failure
-
-| Failure | What the relay does | What is lost |
-| --- | --- | --- |
-| A standby is unreachable | Keeps running; that standby is not copied to and its lag grows | Nothing |
-| The writer is unreachable, or answers that a quota is exceeded | `503` until the next tick; the tick fails over to the freshest standby within the objective | Up to `loss_window_ms`, at most about one interval |
-| The writer is down and every standby is older than the objective | `503`; the tick logs `hold` with the reason per standby and promotes nothing | Nothing. Waits for the writer or for `overrideAssignment` |
-| The writer's metered allowance is projected to run out within 3 days | Planned switch to a standby with at least 6 days of headroom | Nothing |
-| The writer is over budget and no standby is provably better | Keeps the writer; logs `keep` with `no-feasible-standby` | Nothing, until the plan stops the writer; then it is a failover |
-| A majority of backends are unreachable (a double fault with three) | `503` everywhere, by design; nothing changes until a majority answers again | Nothing |
-| A tick is interrupted after sealing | `503` until the next tick, which finishes or undoes the switch | Nothing |
-| A proposer is interrupted mid-write | `503` (`undecided`) until the next tick completes that same entry | Nothing |
-| The old writer comes back | Its log is repaired; it is a standby and the next copy overwrites it | Its writes after the last copy were already counted as lost |
-| Two ticks run at once | One decision per epoch; the other tick stops | Nothing |
-| Every backend holds a different entry for one epoch | `503` until a person calls `overrideAssignment` | Nothing |
-| A standby's schema differs from the writer's | The tick runs the relay's table initialisers on both and copies again; if it still differs the copy is refused, naming the column | Nothing; that standby is not a failover target |
-| The database outgrows the copy limits (2,000,000 rows or 512 MiB of row text) | The copy is refused as `oversized`; standbys stop advancing | Nothing, but lag grows until the objective forbids failover |
-
-#### Limits
-
-- **Copy cost grows with the database, not with the change.** Every tick
-  digests every copied table on the writer and on each standby, and rewrites
-  each table that changed, whole. An idle tick is five statements on the
-  writer and about ten on each standby.
-- **The recovery point floor is the schedule interval.** A shorter schedule
-  buys a smaller loss and costs more statements.
-- **Statements are money on a metered plan.** Lease reads are one statement
-  per backend each time an active instance's lease is half spent (every 15
-  seconds by default), from every warm instance. On a plan that allows 200,000
-  operations a month, one continuously busy instance spends most of that on
-  lease reads alone. Raise `HOBO_CI_DATABASE_LEASE_SECONDS` to trade a longer
-  switch and a longer window of writes to an old writer for fewer reads.
-- **A double fault stops the relay by design.**
-- **A failover can lose more than `loss_window_ms`** if some instances could
-  still reach the old writer: they keep writing to it for at most one lease.
-- **A backend that returns without its `hobo_ci_fleet_assignments` table** (a
-  restore, a reset) must be removed from the list or have its log restored
-  before it rejoins. Changing the list changes what a majority is: do it one
-  backend at a time while all are healthy.
-- **The usage count is a lower bound** (an instance stopped before it writes
-  its counter loses that count), and Neon's compute-hours are not measured at
-  all.
-- **A standby's schema comes from the checked-in migrations.**
-  `prepareRelaySchema` (`src/relay-schema.ts`) is the fleet's schema seam. On
-  a standby it applies `RELAY_SCHEMA_MIGRATIONS`, the migration sets
-  `@hobo/ci`, `@hobo/ci-gh-actions` and this package ship from their
-  `db/migrations/`, with the one runner (`applyMigrations` in
-  `@hobo/ci/schema-migrations`), over the fleet's control connection. No
-  relay store is opened on a standby, so the application writes nothing
-  there: the runner's writes are DDL and its ledger,
-  `hobo_ci_schema_migrations`, which the fleet does not copy. There is no
-  second list of DDL: the sets are copies of the reviewed SQL, held to it by
-  `db:check`, and the same SQL the writer's embedded DDL is proven to equal.
-  - *When.* For both sides of a copy that found the standby's columns
-    different from the writer's (the standby first), and, because a standby
-    that lacks only an index would never be offered that way, once per
-    instance for each standby whose ledger is not at this release: one read
-    of the ledger, and a migration run only if it is behind.
-  - *The writer's side* runs the stores' own initialisers first, as the
-    application does when it starts there, and then the same migrations. Only
-    the initialisers can move a table from an earlier release's layout
-    forward; the migrations then record what the writer holds.
-  - *Repeating and racing.* Each set is one transaction under the migration
-    lock and the locks the stores' initialisation takes, so several
-    instances, or a writer starting meanwhile, apply once.
-  - *A backend ahead of this release* (its ledger holds a migration this
-    release does not have, because a newer relay prepared it) is refused
-    before any statement and left exactly as it is; nothing is downgraded.
-    The error names the backend by its fleet id and the migration ids, never
-    a host or a connection string. While its columns still match the writer's
-    it keeps receiving copies; once they differ, its copies fail until the
-    newer release is deployed here or the backend leaves the fleet.
-  - *A standby that cannot converge* (a table at a layout older than the
-    baseline, which the guarded `CREATE TABLE` skips) is refused the same
-    way, with nothing recorded. It holds only copies: drop that table on the
-    standby and the next tick creates and refills it.
-
-#### Structured events
-
-Each is one JSON line, with backend ids, numbers and fixed tokens only: never
-a connection string, a host name or an error message.
-
-| Event | When |
-| --- | --- |
-| `hobo_ci_database_fleet_fence` | An instance's view of the assignment changes |
-| `hobo_ci_database_fleet_application` | The application is built on a writer |
-| `hobo_ci_database_fleet_replication` | Every copy: status, refusal or failure class, rows, bytes rewritten, duration |
-| `hobo_ci_database_fleet_decision` | Every tick: action, reasons, target, loss window, every standby ranked |
-| `hobo_ci_database_fleet_transition` | Every attempt to change the assignment and whether it was decided |
-| `hobo_ci_database_fleet_unsettled` | A tick stopped: `undecided` or `no-majority` |
-| `hobo_ci_database_fleet_schema` | A backend's schema was prepared or could not be: `backend`, `role` (`writer`/`standby`), `status` (`applied`, `ahead`, `refused`, `failed`), and migration ids (those applied, or the unknown ones of a backend that is ahead). Nothing is written when there was nothing to apply |
-| `hobo_ci_database_fleet_failure` | A tick threw |
-
-#### Admission by HoBo's own conformance suite
-
-`src/database-fleet-conformance.ts` runs `conformance.data.postgres/v1` from
-`@hobo/data-postgres` against a backend (`qualifyBackend`), with the suite's
-`sql` cases executed verbatim on one session. The proof below runs it against
-all three servers before using them. It is not yet a gate at startup: the
-relay does not refuse a backend that was never qualified.
-
-#### Tests and proof on real PostgreSQL
-
-`test/database-fleet-postgres.test.ts` and
-`test/database-fleet-reconcile-postgres.test.ts` run the fleet's SQL, the
-reconciler and the relay's real schema against real PostgreSQL. They are
-skipped unless `HOBO_CI_TEST_FLEET_POSTGRES` names three separate servers,
-comma-separated; each test creates and drops its own databases:
-
-```bash
-export HOBO_CI_TEST_FLEET_POSTGRES="postgres://hobo_ci@127.0.0.1:15441/postgres,postgres://hobo_ci@127.0.0.1:15442/postgres,postgres://hobo_ci@127.0.0.1:15443/postgres"
-pnpm --filter @hobo/ci-vercel exec vitest run test/database-fleet-postgres.test.ts test/database-fleet-reconcile-postgres.test.ts
-```
-
-`scripts/database-fleet-proof.ts` is the end-to-end proof. It runs the real
-relay (bootstrap entry, GitHub App creation against a stubbed GitHub, signed
-webhook deliveries into the real inbox) behind the fleet on three servers and
-**stops and starts the servers**. It also needs one stop and one start shell
-command per server, in the same order, as a JSON array:
-
-```bash
-export HOBO_CI_TEST_FLEET_CONTROL='[{"stop":"…pg_ctl -D <data-a> -m fast -w stop","start":"…pg_ctl -D <data-a> -o \"-p 15441 …\" -w start"},{…},{…}]'
-node --import tsx packages/ci-vercel/scripts/database-fleet-proof.ts
-```
-
-It creates and drops its own databases, leaves every server running, prints
-no connection string, and asserts, in order:
-
-| # | Property | How it is shown |
-| --- | --- | --- |
-| 1 | Empty backends become a fleet | First assignment decided on 3 of 3 logs; the relay's tables created on every backend; deliveries committed on the writer |
-| 2 | Standbys equal the writer | Per-table digests and sequence positions equal on all three; watermark and lag recorded |
-| 3 | Planned switch on a budget signal | Usage pushed past a placeholder allowance: sealed, final copy, new writer; every acknowledged delivery present on the new writer; a second relay instance refused within one lease and serving again on the new writer; no sequence collision |
-| 5 | Recovery point guard | Writer's server stopped, objective of one second: decision `hold`, assignment unchanged |
-| 4 | Unplanned failover | Same outage, normal objective: freshest standby promoted after the threshold; `loss_window_ms` equals its lag; the missing deliveries are exactly those acknowledged after the last copy, listed by id |
-| 6 | The old writer returns | A copy into it is refused on itself until its log is repaired; then it is overwritten; a forged copy into the real writer is refused |
-| 7 | Loss of majority | Two of three servers stopped: `503` with `Retry-After` although the writer is up, while `/healthz` stays `200`; a tick changes nothing; recovery when one returns |
-| 8 | Two reconcilers at once | At most one decided entry per epoch; the three logs identical |
-
-Every plan number in the proof is a placeholder. It passed on 2026-11-10
-against three local PostgreSQL 16 clusters. It has not been run against a
-hosted Neon, Supabase or Prisma Postgres database.
-
-One dependency on Neon remains outside the database. Production reads its
-GitHub App and control secrets from a broker hosted on Neon when
-`HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` are both unset;
-setting the relay's secrets as Vercel environment variables takes that path
-out of use. The Neon scheduled trigger is replaced by the Vercel Schedule
-above.
-
-Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
-
-- The database, as one pooled and one session-scoped connection string to the
-  same PostgreSQL database and role. The relay reads the names a Vercel storage
-  integration injects, so connecting a store needs no hand-copied value. That
-  is the whole story when the store is the only one attached. A store attached
-  next to another one has to carry a prefix, and which of the two the relay
-  then uses is decided by
-  [the rule for a second store](#a-second-store-attached-to-the-project), not
-  by the order of this table:
-
-  | Store | Pooled (HTTP traffic) | Session-scoped (repair) |
-  | --- | --- | --- |
-  | Any PostgreSQL, set by hand | `DATABASE_URL` | `DATABASE_URL_UNPOOLED` |
-  | Prisma Postgres | `DATABASE_URL_POOLED` | `DATABASE_URL` |
-  | Supabase | `POSTGRES_URL` | `POSTGRES_URL_NON_POOLING` |
-
-  The first row wins when both of its names are set. The session-scoped
-  connection is required after GitHub App bootstrap: repair scanners hold
-  session advisory locks across requests, which a transaction-mode pooler
-  cannot provide. Known poolers are refused for it by address (Neon `-pooler`
-  hosts, `pooled.db.prisma.io`, and port 6543 on Supabase's pooler host and
-  project host; its port 5432 is session mode or direct). Each repair checks the two connections against a
-  committed random database marker before using it. For any other provider the
-  operator must supply a true session endpoint. A repair invocation opens at
-  most one such connection and closes it after use. Concurrent repair
-  invocations each require a separate connection; there is no global
-  concurrency cap, so database connection limits constrain scale.
-- `HOBO_CI_DATABASE_ENV_PREFIX` (optional): read the names above under this
-  prefix, for a store connected with one (`RELAY_` reads `RELAY_POSTGRES_URL`).
-  It names the store by hand. Without it, and with more than one store
-  attached, the relay chooses by itself.
-- `HOBO_CI_DATABASE_CA_CERT` (optional): the PEM certificate authority of a
-  database whose server certificate chains to the provider's own root, as
-  Supabase's and Amazon RDS's do. The certificate is verified against it;
-  verification is never switched off. Without it such a connection fails with
-  `unable to verify the first certificate`. When the relay chooses between
-  attached stores, this one applies to the store without a prefix and a
-  prefixed store reads `<PREFIX>HOBO_CI_DATABASE_CA_CERT`.
-
-  Without it, a connection string that asks for TLS is held to `verify-full`:
-  the system trust store and a hostname check. `sslmode=prefer`, `require` and
-  `verify-ca` are rewritten to `verify-full` before `pg` sees them, as are
-  `sslmode=no-verify` and `ssl=no-verify`, and `uselibpqcompat` is dropped.
-  `pg` 8 already reads the first three as `verify-full` unless
-  `uselibpqcompat=true` is set, in which case `require` and `prefer` accept any
-  certificate and `verify-ca` skips the hostname check; `pg` 9 is announced to
-  make that the default. `sslmode=disable` and a string with no TLS parameter still connect
-  without TLS, and a string that is not a URL is refused, since it cannot be
-  inspected. `PGSSLMODE` in the environment is not covered: `pg` reads it only
-  when the string names no TLS setting.
-- `HOBO_CI_PUBLIC_URL`: the stable HTTPS origin used by GitHub.
-- `HOBO_CI_SESSION_KEY`: a canonical, unpadded base64url encoding of 32 random bytes.
-- `HOBO_CI_BOOTSTRAP_ACCOUNT_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`: the owner
-  account and lowercase SHA-256 digest of its distinct bootstrap bearer token.
-- `HOBO_CI_CONTROL_TOKENS_JSON` and `HOBO_CI_CONFIG_JSON`: trusted control tokens
-  and the initial account/provider configuration. The configuration seeds only
-  an empty ledger and does not replace later changes.
+## Hosting the relay on Vercel
+
+The relay is Vercel Functions, private queue consumers and a schedule, all
+declared in `vercel.json`; its state is the cache and its configuration the
+config service ([The stateless relay](#the-stateless-relay)). Node 24 is
+required.
 
 `CRON_SECRET` is required and must be at least 32 bytes. The scheduler sends it
 as `Authorization: Bearer <secret>` to `GET /internal/tick`; the endpoint only
-queues repair, and the private consumer records schedule health after processing.
-The queue handoff uses the same server-side credential for its authenticated
-`POST /internal/queue-wakeup`; the credential never appears in the payload.
-In bootstrap mode, do not set App ID, private
-key or webhook secret: those are saved in the encrypted vault after the GitHub
-App manifest flow. See [GitHub onboarding](../ci-gh-actions/ONBOARDING.md). For an
-existing App, provide `HOBO_CI_GITHUB_APP_ID`, `HOBO_CI_GITHUB_APP_PRIVATE_KEY`,
-and `HOBO_CI_WEBHOOK_SECRET`. Adding `HOBO_CI_GITHUB_APP_CLIENT_ID`,
-`HOBO_CI_GITHUB_APP_CLIENT_SECRET` and `HOBO_CI_SESSION_KEY` enables browser
-installation; these three settings must be supplied together.
+queues repair. The queue handoff uses the same server-side credential for its
+authenticated `POST /internal/queue-wakeup`; the credential never appears in
+the payload. The GitHub App is created with `hobo ci` and its credentials
+(`HOBO_CI_GITHUB_APP_ID`, `HOBO_CI_GITHUB_APP_PRIVATE_KEY`,
+`HOBO_CI_WEBHOOK_SECRET`) are read from the config service, as are
+`HOBO_CI_GITHUB_APP_CLIENT_ID`, `HOBO_CI_GITHUB_APP_CLIENT_SECRET` and
+`HOBO_CI_SESSION_KEY`, which together enable browser installation. See
+[Config service](CONFIG-SERVICE.md) and
+[GitHub onboarding](../ci-gh-actions/ONBOARDING.md).
 
 The reviewed sibling `ci-gh-actions` workflow and bootstrap files are embedded
 into the build by `scripts/generate-assets.mts`; a contract test verifies their
@@ -1342,26 +726,11 @@ keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.
 
-### Liveness, readiness and back-off
+### Liveness and readiness
 
-- `/healthz` answers 200 from the process alone. It never touches the database, so a probe can tell
-  "restart me" from "my store is down".
-- `/readyz` answers 503 with a `reason` a probe can act on: `store-unavailable` when the GitHub App
-  bootstrap store cannot be reached, `bootstrap-required` when no App is registered yet.
-- After the store fails it is left alone before the next attempt: 5 s, doubling to a minute. Every
-  request used to dial it again.
-- A 503 for a store in back-off carries the time left in `Retry-After` (whole seconds, 1 to 300),
-  on `POST /internal/queue-wakeup` as on any other route. A request that fails for another reason,
-  including the attempt that found the store down, carries `Retry-After: 5`, as does the bootstrap
-  entry's `/readyz`.
-- Once per instance, start-up logs `hobo_ci_database_candidates`: every distinct PostgreSQL database
-  the environment names, as variable names plus a 12-character digest of host, port and database. No
-  connection string, host or credential is logged. It shows whether a second store is attached to
-  the project (and under which prefix) when the one in use is down.
-- With two or more stores attached and none named by hand, the store is the one the relay chose:
-  `hobo_ci_database_selected` says which and why, and `hobo_ci_database_selection_undecided` says
-  why none could be chosen, which is reported as `store-unavailable` with the same back-off. See
-  [A second store attached to the project](#a-second-store-attached-to-the-project).
+`/healthz` answers 200 from the process alone; `/readyz` reports the config
+service, the cache, the execution host and the repair evidence (see the probes
+in [The stateless relay](#the-stateless-relay)).
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
@@ -1375,15 +744,12 @@ start looked like a relay nobody was calling.
 
 | Event | When | Fields |
 |---|---|---|
-| `hobo_ci_relay_init_failed` | Startup failed; every request answers 503 until it succeeds | `stage`: `runtime-config` (identity token, runtime broker) or `application` |
-| `hobo_ci_relay_request_failed` | A request threw after startup, including the GitHub App bootstrap store failing to load | `method`, `route`, `headersSent` |
+| `hobo_ci_relay_init_failed` | Startup failed (the config service, the configuration or the cache binding); every request but `/healthz` answers 503 until it succeeds | `stage`: `stateless` |
+| `hobo_ci_relay_request_failed` | A request threw after startup | `method`, `route`, `headersSent` |
 | `hobo_ci_webhook_ingest_failed` | A signed delivery could not be committed (GitHub redelivers) | `event` |
 | `hobo_ci_control_failed` | An account or registration API call threw | `method`, `route` |
 | `hobo_ci_ready_check_failed` | The readiness check itself threw | none |
 | `hobo_ci_queue_handoff_deferred` | The queue consumer could not hand a wakeup over (relay `503`, or store back-off) and asked the queue to redeliver it later | `status` (0 when the back-off was raised in-process), `afterSeconds`, `deliveryCount` |
-
-The GitHub App bootstrap store reports `bootstrap store initialization failed` with the database
-error as its cause, so the line shows why the store could not be reached.
 
 Each line carries the error's class, its message and its cause's message, with URL credentials and
 anything shaped like a token removed and the text capped at 300 characters. A route has its
@@ -1392,20 +758,3 @@ counts the ones held back since the last line. No request body, header or creden
 a failing logger never changes the response. When the
 error or its cause is a database refusal, the line also carries its five-character SQLSTATE as
 `sqlstate` (for example `28P01` for a rejected password).
-
-## Postgres schema
-
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay is moving to keep no durable state ([design](../../docs/design/hosted-relay-stateless.md)): the three tables below, and the Drizzle relay schema and migrations, are removed with the database. This section describes the code as it stands until phase 7 of that plan removes it; do not build on it.
-
-The three PostgreSQL tables this package owns (`hobo_ci_database_probes`,
-`hobo_ci_worker_health` and `hobo_ci_store_selection`) are declared in
-[`db/schema.ts`](db/schema.ts), with migrations in `db/migrations/`: the
-baseline and `0001_store_selection`. `pnpm --filter @hobo/ci-vercel run db:generate`, `db:ship`,
-`db:check`, `db:migrate` and `db:verify` run the tooling `@hobo/ci` provides.
-The code still creates all three tables from the DDL embedded in `src/`;
-`db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to the
-declared schema. The full description, including how to migrate a database the
-relay is already using, is in
-[`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations). A deployed relay
-needs all three packages' migrations: `@hobo/ci`, `@hobo/ci-gh-actions` and this
-one.

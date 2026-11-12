@@ -50,43 +50,34 @@ no live Vercel inventory or price verification is built into this package.
 
 Every lease and job change is appended to the partition's event journal inside
 the transaction that makes it, so the journal is already the record of what
-changed. `eventsSince({accountId, after, limit})` on `LeaseStore`,
-`SqliteCiStore` and `PostgresCiStore` reads it as a change feed: an account's
+changed. `eventsSince({accountId, after, limit})` on `LeaseStore` and
+`SqliteCiStore` reads it as a change feed: an account's
 events after a journal position, oldest first, with the position to read after
 next (`CiEventPage`, each event a `SequencedCiEvent`). Without `after` it
 returns the account's newest events. `leaseEvents({accountId, leaseId, limit})`
 reads one lease's newest events by the lease's id, through the lease index
-(`hobo_ci_events_lease_type_seq` on Postgres; `events_lease_type` on SQLite,
-which the statement names, so the read fails if the index is missing and
-never walks the journal instead).
+(`events_lease_type`, which the statement names, so the read fails if the
+index is missing and never walks the journal instead).
 Both are projections over the journal, not a second bus.
 
 - **Exact.** A read returns exactly the account's events, whatever other
-  accounts, or other partitions sharing the table's sequence, have journalled.
-  It goes through an index on the account each event names, so it touches the
-  account's own rows and none of anybody else's:
-  `hobo_ci_events_account_seq (partition_id, account_id, seq)` on Postgres,
-  `events_account_seq (json_extract(body,'$.accountId'), seq)` on SQLite. The
-  SQLite statement names its index, as the lease read does: without it the
-  read fails and never walks the journal, which would stop a single-threaded
-  host for as long as the journal is long. The Postgres statement orders each
-  half of its read by the index's own key and bounds it by a range on that
-  key, which leaves the account index as the only ordered path the planner
-  has: it cannot choose to walk the journal's primary key past every other
-  account's rows, whatever its statistics say.
-- **Order.** The position is the journal's own key (`seq`). A partition has one
-  writer at a time (SQLite) or serializes its transactions at the partition
-  lock row (Postgres), so `seq` order is commit order and a cursor never skips
-  an event. The Postgres read is one statement, so it sees one committed
-  state: a row committed while it runs is left whole for the next read.
+  accounts have journalled. It goes through an index on the account each
+  event names, so it touches the account's own rows and none of anybody
+  else's: `events_account_seq (json_extract(body,'$.accountId'), seq)`. The
+  statement names its index, as the lease read does: without it the read
+  fails and never walks the journal, which would stop a single-threaded host
+  for as long as the journal is long.
+- **Order.** The position is the journal's own key (`seq`). A journal has one
+  writer at a time, so `seq` order is commit order and a cursor never skips
+  an event.
 - **Scope.** An event belongs to the account it names, and the query selects
   by that name. A job event recorded before or apart from a lease
   (`ci.JobQueued`, `ci.JobExpired`, `ci.JobCompleted`,
   `ci.JobAssignmentCleared`) is written with the account whose connection
   holds the job's repository and installation at that moment (`jobAccountId`
   in `src/event-log.ts`), so it stays that account's however the connection
-  moves later. Writing the owner costs the Postgres admission path no extra
-  read: it comes from the configuration the transaction has already read.
+  moves later. Writing the owner costs admission no extra read: it comes
+  from the configuration the transaction has already read.
   Job events journalled before this was recorded name no account and are in
   nobody's feed: nothing guesses an owner for them. `isJobEvent` tells them
   apart for a reader, such as the account API's snapshot, that lists lease
@@ -102,101 +93,33 @@ Both are projections over the journal, not a second bus.
   newest events). So a cursor is always a position of the account's own, and
   it does not move while only other accounts journal.
 
-**The account column on Postgres, and rows from before it.** Migration
-`0001_events_account` adds `hobo_ci_events.account_id` and the index. The
-column has three states: the account the event names; `''` for an event that
-names none; `NULL` for a row that has not been stamped.
+The index is on the expression, built once when the store first opens an
+existing journal, and an event that names no account has no key in it.
 
-- *Writes.* This release stamps the account in the statement that inserts the
-  event, so every row it writes is in the account's range of the index from
-  its commit.
-- *Rows written before the column, or by a release that does not stamp.* They
-  are `NULL`. A read is exact with them there: it is one statement over both
-  halves of the index, the account's stamped rows and the unstamped rows whose
-  body names the account, merged in `seq` order. So the page is the same
-  before, during and after the fill-in, and while an old and a new release
-  write side by side. What unstamped rows cost is time, not correctness: the
-  read filters them by their body, as every read did before.
-- *The fill-in* (`stampEventAccounts`). Each store starts one when its schema
-  is in place and does not wait for it: start-up, admission and reads never
-  do. A batch is one statement in its own transaction over at most 1,000 rows
-  found through the index's `NULL` range, newest first. It locks only the
-  rows it stamps, which no writer touches again, skips rows another instance
-  is stamping (`FOR UPDATE SKIP LOCKED`), takes no table lock and never the
-  partition's lock row, so webhook admission is not queued behind it. It keeps
-  no progress of its own: what is left is whatever is still `NULL`, so a run
-  that was cut off (a frozen function instance, a restart) is resumed by the
-  next store to start, and rows an old release adds meanwhile are picked up
-  the same way. A stamped row is a new row version; autovacuum reclaims the
-  old one, batch by batch.
-- *Who a row is given to.* The account its own body names, and nothing else.
-  A job event from before owners were recorded names none: it is stamped `''`
-  and stays in nobody's feed, although its repository may be connected to an
-  account today.
-- *What does take a table lock.* Adding the column is a catalog change. The
-  index is built by a plain `CREATE INDEX IF NOT EXISTS` inside the store's
-  start-up transaction (and the migration's), which holds a `SHARE` lock on
-  `hobo_ci_events` for one build over the existing rows, once per database;
-  writers wait for it. That is the same lock every earlier index on this
-  table was added under. Neither runner can use `CREATE INDEX CONCURRENTLY`,
-  because both run in a transaction; on a journal large enough for that build
-  to matter, create the index concurrently by hand first and both find it
-  there.
-
-SQLite needs no column: the index is on the expression, built once when the
-store first opens an existing journal, and an event that names no account has
-no key in it.
-
-**Observers.** `PostgresCiStore.observer()` is the store as something that
-only watches reads it (`CiObserver`): configuration, a lease, an account's
-leases, pending jobs, quarantined deliveries, the journal's head and the two
-event reads, each
-returning the last committed state without the partition lock every other
-method takes. An agent or a dashboard reading through it is never queued in
-front of webhook admission or the worker, nor behind a long mutation.
-`SqliteCiStore` satisfies the same port directly.
+**Observers.** `CiObserver` is a store as something that only watches reads
+it: configuration, a lease, an account's leases, pending jobs, quarantined
+deliveries, the journal's head and the two event reads. `SqliteCiStore`
+satisfies it directly; the hosted relay's
+[cache store](../ci-gh-actions/README.md#relay-cache-store) through
+`observer()`.
 
 The shared store contract (`packages/ci-gh-actions/test/ci-store-contract.test.ts`)
-holds both engines to this behaviour: exact pages and a cursor that stands
-still while a neighbour journals. On SQLite it reads the plan of both event
-reads and drops the index to show the read fails without it. On Postgres it
-also proves an observer reads while the partition lock is held; reads an
-account's two events from behind 50,000 rows of other tenants and checks, with
-the statements planned without their parameters, that both halves use the
-account index and nothing scans the table or walks its primary key; and runs
-the fill-in in batches while the partition lock is held, from two instances at
-once, with the reads compared before, during and after.
+holds the store to this behaviour: exact pages and a cursor that stands still
+while a neighbour journals. It reads the plan of both event reads and drops
+the index to show the read fails without it.
 `test/event-log.test.ts` covers the page arithmetic, ownership at write time
 and a SQLite journal written before the index existed. The relay's MCP server is the consumer: see
 [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#mcp-server).
 
-## PostgreSQL hosting adapter
+## Lease stores
 
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay stops using `PostgresCiStore`: it keeps no durable state, holding in-flight job state in a Redis-protocol cache and config in a separate service ([design](../../docs/design/hosted-relay-stateless.md)). `PostgresCiStore` and the box worker's shared Postgres partition are removed in phase 7 of that plan; until then this section describes the code as it stands.
-
-`PostgresCiStore` (`@hobo/ci/postgres`) stores journal events, leases, queued
-jobs, terminal tombstones, policy records, and verified webhook deliveries in
-PostgreSQL tables. Mutations lock a partition row, check policy revisions and
-commit all affected records together. GitHub and provider calls run outside the
-transaction. A scoped index lets recovery read active leases and their latest
-launch intents without reading historical jobs or the entire event journal.
-
-A partition's first open atomically imports an existing SQLite snapshot and
-retains that original snapshot in `hobo_ci_snapshot_backups`. The migration
-preserves event and inbox ordering, claim state, deduplication fingerprints and
-control records. A database constraint prevents an older snapshot-based relay
-from overwriting the migrated partition. **Rollback to old relay code is not
-supported:** the backup predates subsequent native writes. Drain old relay
-instances before migration, back up PostgreSQL, and restore only after reconciling
-all active runners and post-migration journal changes.
-
-The previous 28/32 MiB serialized-snapshot thresholds no longer apply. The
-partition lock still serializes all mutations for all accounts in that partition;
-account lease history is read for routing, and journal events, terminal tombstones
-and delivery fingerprints are not automatically archived. Monitor transaction
-latency and database growth and implement retention before operating at sustained
-scale. Removing completed webhook bytes from the current row does not erase
-PostgreSQL MVCC, WAL, replicas or backups; apply appropriate retention policies.
+`SqliteCiStore` (`@hobo/ci/sqlite`) is the durable lease store: one file, one
+writer, used by `hobo ci serve` and the box worker. The hosted relay keeps no
+durable state ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179));
+its store is the [cache store](../ci-gh-actions/README.md#relay-cache-store) in
+`@hobo/ci-gh-actions`. The PostgreSQL store (`PostgresCiStore`), its schema and
+migrations were removed in phase 7 of that design. The rules below hold for
+both stores.
 
 The signed webhook body is hashed independently of GitHub's unsigned delivery
 ID and event headers. Exact byte-identical bodies for one installation received
@@ -243,14 +166,7 @@ transition check (`isIsolatedRetirementTransition`) and the webhook envelope
 parser (`parseWebhookEnvelope`, `isWebhookDeliveryId`), so a store outside this
 package, such as the hosted relay's
 [cache store](../ci-gh-actions/README.md#relay-cache-store), applies the same
-rules as `PostgresCiStore` and `SqliteCiStore`.
-
-Run the real PostgreSQL integration contract against a disposable local database
-by setting `HOBO_CI_TEST_POSTGRES` and executing
-`node --import tsx packages/ci/scripts/postgres-contract.ts`. It checks concurrent
-reservations, revision and settlement fencing, quota races, webhook deduplication,
-quarantine/replay, snapshot migration, old-writer refusal, admission beyond 32 MiB,
-and adapter reopen. It does not verify deployed provider billing.
+rules as `SqliteCiStore`.
 
 The GitHub Actions target keeps the original workflow and its logs, artifacts,
 permissions, environments, dependencies and status checks. After one-time repository
@@ -327,216 +243,6 @@ Validation: `pnpm --filter @hobo/ci build`, `pnpm --filter @hobo/ci test`,
 `pnpm codegen:check --filter packages/ci`.
 
 
-## Postgres schema and migrations
-
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The relay's Drizzle schema and migrations, and the migration ledger, are removed with the relay's database ([design](../../docs/design/hosted-relay-stateless.md)). This section describes the code as it stands until phase 7.
-
-The relay's PostgreSQL tables are declared in Drizzle and migrated from that
-declaration. Three packages own tables, and each keeps its own `db/` directory:
-
-| Package | Schema | Tables |
-|---|---|---|
-| `@hobo/ci` | [`db/schema.ts`](db/schema.ts) | the 13 `PostgresCiStore` tables: partitions, snapshot backups, events, leases, terminal/assigned/pending jobs, configuration, control records, sandbox egress, sandbox proxies and their requests, inbox |
-| `@hobo/ci-gh-actions` | [`../ci-gh-actions/db/schema.ts`](../ci-gh-actions/db/schema.ts) | 13 tables: App states, credentials and installations; OAuth states and sessions; the platform-App fence, attempts and invitations; queued-scan cursors and API budget; webhook repairs, scan cursors and successes |
-| `@hobo/ci-vercel` | [`../ci-vercel/db/schema.ts`](../ci-vercel/db/schema.ts) | 3 tables: database probes, worker health, store selection marker (the last added by the package's second migration, `0001_store_selection`) |
-
-The shared tooling is in [`db/tooling/`](db/tooling/index.ts). It is development
-and operations code: nothing under `src/` imports it, `drizzle-orm` and
-`drizzle-kit` are dev dependencies, and every query the relay runs is still
-hand-written SQL through `pg`.
-
-Two things cross from here into `src/`, in that direction only, because a host
-applies migrations at run time (see [Standbys](#standbys-get-their-schema-from-the-migrations)):
-
-- **The runner** is [`src/schema-migrations.ts`](src/schema-migrations.ts),
-  exported as `@hobo/ci/schema-migrations` (`applyMigrations`,
-  `readSchemaLedger`, the errors and the ledger's name). The tooling re-exports
-  it; there is one runner.
-- **The migrations a package ships.** `db/migrations/` is not part of a
-  published package or a function bundle, so each package carries a copy as a
-  module, `src/_generated-assets/schema-migrations.ts`: the loaded,
-  digest-checked migration set (`schemaMigrations`). `db:generate` writes it
-  with every new migration and `db:ship` on its own; `db:check`, the test
-  suite and the generated-files pre-commit guard fail when it is missing or is
-  not what `db/migrations/` loads to. Nobody edits it.
-
-| Migration | Package | What it does |
-|---|---|---|
-| `0000_baseline` | all three | Every table as the stores' embedded DDL creates it |
-| `0001_events_account` | `@hobo/ci` | `hobo_ci_events.account_id` (nullable `text`) and `hobo_ci_events_account_seq (partition_id, account_id, seq)`, for the [exact per-account event read](#event-cursor). Two additive statements; it rewrites and fills in no row |
-| `0001_store_selection` | `@hobo/ci-vercel` | `hobo_ci_store_selection`, the generation a store holds when the relay [chooses between attached stores](../ci-vercel/README.md#a-second-store-attached-to-the-project). One `CREATE TABLE`; the ledger is keyed by scope and id, so it and `@hobo/ci`'s `0001_events_account` are separate rows |
-
-### How a migration is produced
-
-`pnpm --filter <package> run db:generate` follows
-[ADR-0160](../../docs/design/adr/03-data-plane.md#adr-0160):
-
-1. [`@hobo/adapter-drizzle`](../adapters/adapter-drizzle/README.md) ingests
-   `db/schema.ts` into the canonical `SchemaIr` and lists, as impedance
-   findings, every construct the IR cannot carry.
-2. The adapter's engine diffs the previous IR against it with core's canonical
-   differ. The result is a HoBo `MigrationPlan`: phased, forward-only, and
-   stamped with the installed drizzle-kit version, so a toolchain upgrade
-   changes the plan digest.
-3. drizzle-kit renders the SQL. The tooling is the emitter the adapter asks its
-   host for: it pairs each statement with the plan step it implements, and the
-   adapter refuses if a step is left without SQL.
-
-It writes three files into `db/migrations/`, and the shipped module beside
-them:
-
-- `NNNN_<name>.sql`: what runs. Each statement carries a `-- step:` comment
-  naming its plan step and an `IF NOT EXISTS` guard.
-- `journal.json`: the migrations in order, each with its plan (steps, engine,
-  digest), the SHA-256 of its SQL, its impedance findings, its fallback
-  bindings and the violations query the runner checks before recording it.
-- `snapshot.json`: the schema after the last migration, which the next diff
-  starts from.
-
-A migration is never edited after it is generated; the runner refuses SQL that
-no longer hashes to what the journal recorded.
-
-### What the canonical IR does not carry
-
-The IR models tables, columns (type, nullability, single-column primary key and
-unique, literal defaults) and indexes on plain columns. The relay's schema
-needs more, and all of it is still in the SQL because drizzle-kit renders it
-from the Drizzle definition. The journal names each case:
-
-| Construct | Where | What happens |
-|---|---|---|
-| Composite primary key | 12 tables | Rendered inside `CREATE TABLE`; not diffed |
-| Table-level `UNIQUE` | sandbox egress, sandbox proxies | Rendered inside `CREATE TABLE`; not diffed |
-| `CHECK` | partitions snapshot guard, platform-App singleton | Rendered inside `CREATE TABLE`; not diffed |
-| `DEFAULT now()` and `bigserial` sequence defaults | 5 columns | Rendered inside `CREATE TABLE`; not diffed |
-| Partial index predicate | 3 inbox indexes | Index is planned on its columns; the `WHERE` is rendered but not diffed |
-| Expression index | 4 indexes on `body::jsonb ->> '…'` | Not in the IR at all, so there is no plan step. Its `CREATE INDEX` is bound to the owning table's `create-table` step and recorded under `fallbacks` |
-
-A later change to only one of these (a new predicate, a different check) is
-invisible to the differ. The generator refuses such a change rather than emit
-SQL with no plan behind it, and that migration has to be written by hand.
-
-### Applying migrations
-
-```sh
-HOBO_CI_MIGRATE_URL=postgres://… pnpm --filter @hobo/ci run db:migrate
-HOBO_CI_MIGRATE_URL=postgres://… pnpm --filter @hobo/ci-gh-actions run db:migrate
-HOBO_CI_MIGRATE_URL=postgres://… pnpm --filter @hobo/ci-vercel run db:migrate
-```
-
-One run is one transaction. It takes an advisory lock, plus the locks the
-package's stores take when they initialise, and records each applied migration
-in `hobo_ci_schema_migrations` (`scope`, `id`, `sql_sha256`, `plan_digest`,
-`engine`, `applied_at`), keyed by package and migration. A later run skips what
-is recorded, after checking the recorded digest still matches. A migration is
-recorded only if its violations query returns no rows: every column the IR
-describes is present with the right type and nullability, and every index and
-named constraint the SQL creates exists. Otherwise the run rolls back.
-
-The ledger is the one relay table outside the declared schema. The runner
-creates it, because it has to exist before the first migration can be recorded.
-
-A database whose ledger holds a migration the journal does not have is ahead
-of this code. The run is refused before any statement (`SchemaAheadError`) and
-the database is left as it is: there is no downgrade. Two runs at once apply
-once; the second waits at the lock and finds the ledger.
-
-### Standbys get their schema from the migrations
-
-The hosted relay can run on a [fleet of databases](../ci-vercel/README.md):
-one writer, and standbys that receive copies. The application's stores are
-only ever opened on the writer, so a standby cannot get its schema from their
-`initialize`. It gets it from these migrations instead:
-`prepareRelaySchema` in `@hobo/ci-vercel` applies the three packages' shipped
-sets (`RELAY_SCHEMA_MIGRATIONS`) with `applyMigrations`, over the fleet's
-control connection. That is the same SQL `db:migrate` applies, under the same
-locks, recorded in the same ledger; the standby's only writes are DDL and
-ledger rows. A fresh standby gets every table and index; one that is behind
-gets what it lacks; one that is ahead is refused by name and left alone.
-
-The writer keeps its own start-up path (next section), which the lock holds
-identical to the migrations. When the fleet prepares the writer's side of a
-refused copy it runs the stores' initialisers first and then the same
-migrations, which is the procedure under [Existing databases](#existing-databases)
-done for the operator, and leaves the writer's ledger saying what it holds.
-
-### Existing databases
-
-The baseline is safe to apply to a database the relay has already been running
-against. Every statement is guarded, so it creates only what is missing and
-leaves existing tables and rows alone; that also covers a database where some
-stores have not initialised yet. Applying it is how such a database is
-baselined: nothing changes, and the ledger gains its first row.
-
-It is not a repair tool. A table at an older layout is skipped by the guard, and
-the run is then refused: an index on a column that is not there fails, or the
-violations query reports the gap. Start the current release against that
-database first, so the stores' own `ALTER TABLE` statements bring it forward,
-then migrate.
-
-A database with history can differ from a new one in ways the migration neither
-causes nor removes. A column that `ALTER TABLE` added to an existing table sits
-after the older columns and keeps the `DEFAULT` it was added with, where a new
-database has it in `CREATE TABLE` position without one. Today that affects
-`hobo_ci_platform_app_attempts.created_ms` only, and the test suite pins it.
-
-### The stores still run their own DDL
-
-`initialize` on each store still creates its tables with the DDL embedded in
-`src/`. That is deliberate for now: the stores interleave DDL with data
-migration (the SQLite snapshot import, the inbox hash backfill) under their own
-locks, and replacing that path changes how every deployment starts. So
-`db/schema.ts` is the declared source, the embedded DDL is the runtime path, and
-two checks keep them identical:
-
-- `db/migrations/embedded-ddl.lock.json` lists every DDL statement under
-  `src/` that names a `hobo_ci_` object, whichever file it is in. The test suite
-  re-reads the source on every run, without a database, and fails if a
-  statement was added, removed or reworded.
-- Only `db:verify` writes that lock, and only after it has built one database
-  from the embedded DDL and one from the migrations on a real PostgreSQL and
-  found their catalogs identical: tables, columns (position, type, nullability,
-  default), primary-key, unique, foreign-key and check constraints, every index
-  definition including expressions and predicates, and sequences. It also
-  migrates a seeded copy of the embedded-DDL database and requires that neither
-  its catalog nor any row changes, and that a second run applies nothing.
-
-To change the schema: edit `db/schema.ts`, run `db:generate --name <words>`,
-make the same change in the store's embedded DDL, then run
-`HOBO_TEST_POSTGRES_URL=postgres://… pnpm --filter <package> run db:verify`
-against a disposable PostgreSQL whose role may create databases. `db:check` runs
-the database-free checks on their own.
-
-The same proof runs in the test suite when `HOBO_TEST_POSTGRES_URL` is set
-(`test/postgres-schema.test.ts`, `test/postgres-schema-lineage.test.ts`) and is
-skipped otherwise.
-
-### Not done yet
-
-- The stores do not apply migrations to the database they write to: their
-  embedded DDL is still the writer's start-up path, and `db:migrate` is an
-  operator step there. The one place a deployment applies migrations by
-  itself is the hosted relay's database fleet, for its standbys and for the
-  writer's side of a refused copy.
-- Generation is a development step that checks its output in. ADR-0160's
-  deploy-owned generation at the plan phase, and the gated
-  expand → backfill → contract saga in `@hobo/trails` with its `migration.*`
-  events, are not wired to the relay.
-- The generator emits additive statements only: `CREATE TABLE`, `CREATE INDEX`
-  and `ADD COLUMN`. A drop, a type change, a `NOT NULL` column that needs a
-  backfill, or an expression index added to an existing table is refused.
-- No CI lane provides a PostgreSQL, so the equivalence proof runs only where a
-  developer or operator supplies one. The lock is what CI enforces.
-- A drizzle-kit upgrade has not been exercised. A migration keeps the version it
-  was generated with; `db:check` re-renders the baseline with the installed
-  toolchain and fails if the SQL comes out different, which then needs a
-  decision, not a regeneration, because applied migrations are never rewritten.
-- The runner is one transaction, so a migration cannot build an index
-  `CONCURRENTLY`; an index on a large existing table blocks its writers for
-  the build.
-- SQLite stores (`store.ts`, `sqlite-store.ts`) are out of scope: they create
-  their own tables and indexes when they open a file.
-
 ## Local development machines
 
 A local box is also a tier in runner routing: when the fleet is not taking
@@ -612,8 +318,8 @@ provider-specific toolchain/environment defaults are not part of this contract.
 
 The Node coordinator `PipelineScheduler` from `@hobo/ci/scheduler` uses
 `LeaseStore` from `@hobo/ci/store`. The Actions relay uses the same ledger
-(its SQLite store, `SqliteCiStore` from `@hobo/ci/sqlite`, wraps `LeaseStore`;
-`PostgresCiStore` implements the same port), so its reservations and native
+(its SQLite store, `SqliteCiStore` from `@hobo/ci/sqlite`, wraps `LeaseStore`),
+so its reservations and native
 pipelines cannot spend the same balance.
 Bind eligible account offer IDs to real, account-scoped backend contexts;
 construct `new PipelineScheduler(store, account.id, bindings)` for that account.
@@ -679,7 +385,7 @@ and must have empty event and branch filters: every matching job may run.
 Changing that isolation mode
 requires draining active leases. The local workflow-bridge store leaves such
 jobs queued rather than selecting a shared host. If isolation is required after a
-PostgreSQL runner was reserved, the store cancels the unused lease and requeues
+runner was reserved, the relay cancels the unused lease and requeues
 the demand. A shared financial hold remains in place until an independently
 verified unused-evidence reference is supplied to `releaseUnusedSharedBudget`
 after that cancellation is durable; an unknown or claimed effect cannot be

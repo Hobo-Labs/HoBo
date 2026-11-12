@@ -60,20 +60,7 @@ The daemon imports `@hobo/ci-gh-actions` and `@hobo/ci` from their built `dist`,
 
 On start the daemon applies the config to the journal when it changed (a change refused because an active lease pins the provider identity keeps the stored policy and logs `hobo_ci_isolated_worker_configuration_kept`), and logs one `hobo_ci_isolated_worker_offer` line per offer with `launchable`, `enabled`, `concurrency`, `validUntil`, and `expired`. An expired `validUntil`, or one closer than `maxRuntimeMinutes + startupMinutes`, makes routing skip the offer.
 
-> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay keeps no database, so this mode is removed in phase 7 of the [design](../../docs/design/hosted-relay-stateless.md); use the default SQLite journal with pull admission.
-
-**Shared relay mode (opt-in): Postgres + webhooks.** A worker that serves a hosted relay's partition sets **`HOBO_CI_STORE=postgres`**; the URL is read from the env var named by **`HOBO_CI_STORE_URL_ENV`** (default `DATABASE_URL`) and admission defaults to **push** (the relay ingests signed webhooks into the shared inbox):
-
-```sh
-export HOBO_CI_STORE=postgres
-export DATABASE_URL=…            # same Postgres as the hosted relay
-export HOBO_CI_PUBLIC_URL=https://hobo-ci.vercel.app
-export HOBO_CI_WEBHOOK_SECRET=…
-# plus HOBO_CI_CONFIG, App id/key and HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID as above
-node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
-```
-
-`HOBO_CI_JOB_ADMISSION=pull|push` overrides either default. `hobo ci serve --with-worker` reads the same choice from the CI project config: `"store": { "kind": "sqlite" }` (the default, at `<HOBO_HOME>/ci/serve/worker.sqlite`) or `"store": { "kind": "postgres", "urlEnv": "DATABASE_URL" }`. The config names an env var and never holds a connection string. The same contract suite (`packages/ci-gh-actions/test/ci-store-contract.test.ts`) runs against both stores.
+The journal is always SQLite: `HOBO_CI_STORE` may only be `sqlite`, and the shared Postgres partition mode was removed with the hosted relay's database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)). `HOBO_CI_JOB_ADMISSION=push` makes the worker wait for a relay to feed its inbox instead of polling. `hobo ci serve --with-worker` reads the store from the CI project config, `"store": { "kind": "sqlite" }` (the default, at `<HOBO_HOME>/ci/serve/worker.sqlite`). The contract suite (`packages/ci-gh-actions/test/ci-store-contract.test.ts`) runs against that store.
 
 Each job runs in a **fresh Docker container** with the official Actions runner JIT (`labels: [hobo]` or `labels: [hobo-trunk]`, matching the job). The container image is **hermetic**: OS + system packages + pinned Actions runner bundle in a digest-pinned base, then **one OCI layer per tool** from repo-root `mise.toml` / `mise.lock` via **`mise --locked oci build`** (experimental). Healthy jobs do not install Node, pnpm, cue, turbo, gitleaks, shellcheck, syft, or other pinned tools at runtime. As a compatibility path for an older image, preflight discovers missing checkout tools and installs only those with `mise install --locked`, logs the names and elapsed time, then reruns the contract. Whether or not anything was missing, it then resolves each `mise.toml` tool that `command -v` cannot already see with `mise which`, verifies that absolute executable, prepends its bin directory to the current process `PATH`, and appends those dirs to `$GITHUB_PATH` on GitHub Actions so `command -v` probes (for example `syft` on an image predating the syft layer) succeed after a shell-level `mise install`; tools already visible keep their existing resolution and are not resolved again.
 
@@ -252,7 +239,7 @@ Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_pol
 
 **Shared configuration.** The mesh keeps one configuration in `<namespace>-mesh-config`. A worker with `HOBO_CI_CONFIG` or `HOBO_CI_CONFIG_JSON` runs its own and publishes it if the mesh has none; if the two differ it logs `hobo_ci_mesh_config_drift` and keeps its own. A worker with neither reads the mesh's at start (`hobo_ci_mesh` logs `configuration: mesh`), so a new box needs only the NATS address and App credentials. Replacing the stored configuration requires naming its current revision.
 
-**No hosted database needed.** A worker with `HOBO_CI_STORE` unset keeps its lease journal in SQLite on the box and polls GitHub itself, so neither the hosted relay nor its Postgres is in the path from a queued job to a running runner. `HOBO_CI_STORE=postgres` or `HOBO_CI_JOB_ADMISSION=push` puts them back in it; the mesh needs neither.
+**No hosted database needed.** A worker with `HOBO_CI_STORE` unset keeps its lease journal in SQLite on the box and polls GitHub itself, so the hosted relay is not in the path from a queued job to a running runner. `HOBO_CI_JOB_ADMISSION=push` puts it back in it; the mesh does not need it.
 
 **Tracing:** with an OTLP endpoint or a trace file set, the daemon exports OpenTelemetry spans (`packages/ci-gh-actions/src/relay-trace.ts`; no SDK, no collector of its own). Startup logs `hobo_ci_trace_export` with what is enabled. Two things become spans:
 
@@ -375,7 +362,7 @@ A workflow run no longer waits on a fleet that is not taking jobs. Every routed 
 - **On a GitHub-hosted machine** the job runs the same steps. `ci-runner-preflight` installs the pinned mise and the tools in `mise.lock` first (`.github/actions/ci-runner-preflight/hosted-toolchain.sh`); the pnpm store and Turbo cache use their `actions/cache` paths; there is no deps layer, so dependencies are installed from the lockfile.
 - **Browser tests there** use the same pinned headless shell the image bakes in: jobs that run package tests pass `browser: "true"` to `ci-runner-preflight`, which downloads it to `/opt/pw-browsers` and checks its digest against the image's Dockerfile.
 - **One test does not run there:** `storage-admission.test.ts` gives a directory to the image's user (uid 1000), which only that user and root may do. A GitHub-hosted machine runs as another user, so that test is skipped there and runs on the fleet.
-- **Container tests run there.** A GitHub-hosted machine has a Docker engine, so the two Postgres container tests in `@hobo/ci-gh-actions` run instead of being skipped. They start in separate processes and share one Testcontainers reaper; `test/fixtures/start-container.ts` starts again when a reaper another file left behind is still listed but no longer answering.
+- **Container tests run there.** A GitHub-hosted machine has a Docker engine, so the container tests in `@hobo/ci-gh-actions` (the pinned Pact-broker Postgres image among them) run instead of being skipped. They start in separate processes and share one Testcontainers reaper; `test/fixtures/start-container.ts` starts again when a reaper another file left behind is still listed but no longer answering.
 - **The one job that differs there** is the cold dev loop. On the fleet it runs in the worker image with the network disabled. An ARC pod (`hobo-runner-*`) has Docker but neither the worker image nor `sudo`, so it first pulls the content-keyed image from GHCR (`ensure-ci-worker-image.mts --materialize-only`, which is why the job holds `packages: read`) and then runs the same way. A GitHub-hosted machine has no worker image but has `sudo`, so it runs the same commands on a copy of the tree in a network namespace whose only interface is loopback. When GHCR has no image for the content key (a PR that changes the runner image's inputs, or a fork PR that may not pull), a runner with no `sudo` builds the image itself (`ensure-ci-worker-image.mts`, build.sh's 600 s budget; the job allows 20 minutes). A runner that can do none of these fails with an `::error` naming why, instead of `sudo: command not found`.
 - **A signed local run changes the answer.** When the route job verifies one for the tree it checked out, the jobs it covers are skipped and the rest go to `ubuntu-24.04` without reading the queue. See "Signed local runs" below.
 - **Always GitHub-hosted:** the route job, and the two required gates (**PR impact gate**, **HoBo release PR gate**). The gates run no repository code and only add up other jobs' results. On the fleet, a superseded run's gate had to find a runner before the next run could start, which held one pull request for 30 minutes.
@@ -426,7 +413,7 @@ git push                                         # only now: the run that starts
 - **Whoever holds an attestor's private key can make the covered checks pass without running them.** The record says what a machine claims it ran. Treat a key like merge rights on the covered checks: few entries, short expiry, removed when the machine goes away.
 - **Never attest code you would not give the key to.** The commands under test run as the same user as the signing key. The allowlisted environment and scratch `HOME` keep a test from finding the key by accident; they do not stop code that looks for it, because same-user isolation is not a sandbox. Code from a pull request you have not read can read the key file by its absolute path and sign anything.
 - **Changing a guard runs the guards.** A change to either workflow, the route action, the verifier, the job description, the trusted keys or the lint selects `pnpm run test:attestation` and `pnpm run actions:lint` in `agent:check` (`scripts/relevant-check-policy.ts`), which the PR impact validation runs. Affected lanes and workspace tests select nothing for such a change, because none of these files belongs to a package.
-- **Container-backed tests are skipped where no Docker engine answers.** The runner asks the engine once, when the run starts, and records the answer in `environment.dockerEngine`. A record made without an engine did not run the Postgres container tests.
+- **Container-backed tests are skipped where no Docker engine answers.** The runner asks the engine once, when the run starts, and records the answer in `environment.dockerEngine`. A record made without an engine did not run the container tests.
 - **Turbo replays cached results, as it does in CI.** A task whose inputs are unchanged is not run again, and its cached result may come from a run with no Docker engine. So `dockerEngine: true` says an engine answered, not that every container test ran in this run. `pnpm ci:attest run --fresh` runs every task again.
 - **Every trust entry expires.** An expired entry is refused even if the signature is good, and a list with an entry that reaches more than 90 days ahead is refused whole.
 - **Not everything a CI machine has is reproduced.** Repository variables and secrets are empty locally, so there is no remote Turbo cache. Step and job timeouts are not enforced. The pinned headless browser is used if this machine already has it and is not downloaded.
@@ -481,7 +468,7 @@ configuration are in
 These require org admin / platform operator action, not a workflow edit:
 
 - Installing or re-pointing the GitHub App after org transfer.
-- Relay deploy, secrets, Postgres/SQLite partition, Vercel Sandbox credentials.
+- Relay deploy, secrets, the relay's cache, Vercel Sandbox credentials.
 - Re-onboarding **Hobo-Labs/HoBo** in relay policy.
 - Org/repo **Actions** permissions for fork PRs if you expect fork contributions to run CI.
 

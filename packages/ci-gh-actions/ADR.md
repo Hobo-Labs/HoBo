@@ -4,7 +4,7 @@ One relay core serves every host. `HostedRelay` holds admission, reservation,
 dispatch, runner claim and reconciliation; `createHostedRelayRuntime` puts the
 durable webhook inbox and the worker tick around it; `createHostedControlPlane`
 is the account API; `createRelayHandler` is the HTTP surface. A host supplies a
-store (`SqliteCiStore` or `PostgresCiStore`, one port), whatever calls the tick,
+store (`SqliteCiStore` or the hosted relay's cache store, one port), whatever calls the tick,
 and its runner backends. The earlier synchronous relay, its own HTTP handler
 and control plane, and its own poller are gone: there is nothing left to keep
 in step. See [the README](README.md#one-relay-thin-hosts) for the host table.
@@ -98,7 +98,7 @@ what was decided; for that host it is now read with these changes
   the hosted relay's store becomes a cache store over
   `kv.redis-compatible/v1`. `PostgresCiStore` and the pg-bound helper stores
   (App registration, OAuth sessions, platform-App bootstrap, webhook and
-  queued-job repair state) are removed in phase 7, and so is the box worker's
+  queued-job repair state) were removed in phase 7, and so was the box worker's
   `HOBO_CI_STORE=postgres` option.
 - "The durable webhook inbox": on the hosted relay, intake is a Vercel Queue
   keyed by the GitHub delivery id, acknowledged to GitHub after enqueue.

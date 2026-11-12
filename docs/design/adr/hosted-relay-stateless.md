@@ -9,9 +9,9 @@ tags: [hobo, design, adr, ci, relay, twelve-factor]
 
 **Status:** Accepted (design; implementation phased); amended 2026-11-11 with
 [options routed by budget](#amendment-options-routed-by-budget). Implemented:
-phases 2, 2b, 3, 4a, 4b, 4c (cache-fleet selection by budget) and 5 (the
-relay's helpers on the cache, offers as provider manifests), provider usage
-pulls deferred; not yet deployed
+phases 2, 2b, 3, 4a, 4b, 4c (cache-fleet selection by budget), 5 (the
+relay's helpers on the cache, offers as provider manifests; provider usage
+pulls deferred) and 7 (the PostgreSQL path removed); not yet deployed
 **Date:** 2026-11-11
 **Supersedes, for the hosted relay:** the PostgreSQL store (`PostgresCiStore`)
 as the relay's store, the relay database fleet and store selection, the Drizzle
@@ -229,5 +229,6 @@ are unverified. Details: [Phase 5](../hosted-relay-stateless.md#phase-5).
 - Operators make three one-time moves: create the Infisical organization and
   admin identity, store a Vercel deploy token there, and re-create the GitHub
   App through the CLI.
-- Many files and tests are deleted in phase 7; until then the superseded
-  sections of the package READMEs carry a banner pointing here.
+- Many files and tests are deleted in phase 7 (done: the
+  [itemized list](../hosted-relay-stateless.md#phase-7-removals)); the package
+  READMEs' superseded sections went with them.

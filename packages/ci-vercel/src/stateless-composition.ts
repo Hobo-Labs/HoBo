@@ -17,9 +17,6 @@
  * - Onboarding: OAuth sessions, App-installation state and the owner's
  *   invitation on the cache (`createStatelessAppOnboarding`); worker-health
  *   evidence on the cache (`worker-health-cache.ts`).
- *
- * The PostgreSQL composition (`relay-composition.ts`, `composition.ts`) stays
- * in the tree until phase 7 and is off the production path.
  */
 import { createHash, createPrivateKey } from "node:crypto";
 import { create } from "@bufbuild/protobuf";

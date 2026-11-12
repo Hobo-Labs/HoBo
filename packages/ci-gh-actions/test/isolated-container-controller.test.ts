@@ -11,7 +11,6 @@ import {
 	LeaseSchema,
 	OfferSchema,
 } from "@hobo/ci";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
@@ -678,7 +677,7 @@ describe("isolated container controller reconcile", () => {
 		const relayStore = {
 			get: async (id: string) => (id === stuck.id ? stuck : undefined),
 			abortIsolatedAndRequeue: abort,
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),
@@ -727,7 +726,7 @@ describe("isolated container controller reconcile", () => {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
 			settle,
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),
@@ -765,7 +764,7 @@ describe("isolated container controller reconcile", () => {
 			transition: transitionFor(lease),
 			settle,
 			withdrawQueuedJob,
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),
@@ -804,7 +803,7 @@ describe("isolated container controller reconcile", () => {
 			transition: transitionFor(lease),
 			settle,
 			withdrawQueuedJob,
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),
@@ -840,7 +839,7 @@ describe("isolated container controller reconcile", () => {
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			abortIsolatedAndRequeue,
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),
@@ -889,7 +888,7 @@ describe("isolated container controller reconcile", () => {
 			settle,
 			abortIsolatedAndRequeue,
 			withdrawQueuedJob: vi.fn(async () => true),
-		} as PostgresCiStore & HostedRelayStore;
+		} as SqliteCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),

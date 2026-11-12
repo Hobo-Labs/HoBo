@@ -378,9 +378,9 @@ What it deliberately does not do:
   formed (`HOBO_CI_DEPLOY_SETTING_REFUSED`), in a dry run too, and the refusal
   never echoes the value. The declared secrets are listed by name as "not set
   by this command".
-- **Provision storage.** No database, queue or storage integration is created
-  or connected; the operator or the integration supplies `DATABASE_URL` and
-  `DATABASE_URL_UNPOOLED`.
+- **Provision storage.** No cache, queue or storage integration is created or
+  connected; the relay keeps no database, and its cache binding comes from the
+  cache's integration or the config service.
 - **Create the project, or reach production, unasked.**
 - **Schedule anything.** The Bindle declares the repair schedule; this verb
   does not create a platform schedule or an external trigger for it.
@@ -401,12 +401,12 @@ change.**
 
 ```text
 Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.
-Deploy hobo-ci-relay (queue hobo-ci, schedule hobo-ci-repair, api relay, secret secrets, data state)
+Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)
   to Vercel project hobo-ci, scope team_hobo, target preview
   from github example/hobo@main
   into a project that must already exist (pass --create-project to create it)
 Settings set for preview first (non-secret): HOBO_CI_PUBLIC_URL=https://ci.example.test
-Not set by this command (the operator or a storage integration holds them): CRON_SECRET, DATABASE_URL, …
+Not set by this command (the operator or a storage integration holds them): CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256, …
 Requests to https://api.vercel.com:
   1. GET /v10/projects/hobo-ci/env?teamId=team_hobo
      always: read what the project holds, before any write

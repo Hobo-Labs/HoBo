@@ -9,36 +9,9 @@ const staged = spawnSync(
 );
 if (staged.status !== 0) process.exit(staged.status ?? 1);
 const files = staged.stdout.split(/\r?\n/).filter(Boolean);
-const stagedGenerated = files.filter((file) =>
+const generated = files.filter((file) =>
 	/(^|\/)(generated|_generated(?:-assets)?|src\/gen)(\/|$)/.test(file),
 );
-if (stagedGenerated.length === 0) process.exit(0);
-// A relay package ships its checked-in migrations as a module that is a copy
-// of its db/migrations/, written by the relay's schema tooling (db:generate,
-// db:ship). Check the real property rather than which files were staged with
-// it: the tooling's database-free check fails unless the module is exactly
-// what db/migrations loads to. A module that passes needs nothing more.
-const SHIPPED_MIGRATIONS =
-	/^(packages\/[^/]+)\/src\/_generated-assets\/schema-migrations\.ts$/;
-const generated = stagedGenerated.filter((file) => {
-	const owner = SHIPPED_MIGRATIONS.exec(file)?.[1];
-	if (owner === undefined) return true;
-	const check = spawnSync(
-		process.execPath,
-		["--import", "tsx", "../ci/db/tooling/cli.mts", "check"],
-		{ cwd: owner, encoding: "utf8" },
-	);
-	if (check.status === 0) {
-		console.error(
-			`Shipped migrations of ${owner} staged; the schema tooling reports they match db/migrations. Allowing.`,
-		);
-		return false;
-	}
-	console.error(
-		`Shipped migrations of ${owner} staged, and the schema tooling reports drift; run db:ship there.`,
-	);
-	return true;
-});
 if (generated.length === 0) process.exit(0);
 const schema = files.some((file) => /\.(proto|cue|wit)$/.test(file));
 const generator = files.some(

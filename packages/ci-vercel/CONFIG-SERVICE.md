@@ -149,7 +149,7 @@ the owner's ten-minute session stands for. An installation an operator
 verifies is not written here by the relay: it is usable for a day and logged
 by id, for `hobo ci` to add to `HOBO_CI_CONFIG_JSON`.
 
-The constraints are those of the moved `RuntimeBrokerConfig` schema
+The constraints are those of the relay runtime configuration schema
 ([`src/relay-runtime-config-schema.ts`](src/relay-runtime-config-schema.ts)) plus
 the App's: an RSA key of 2048 bits or more, a webhook secret of 32 bytes or
 more. The record is `RelayRuntimeConfig` in

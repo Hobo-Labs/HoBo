@@ -48,15 +48,7 @@ const JsonValue = z.json();
 const JsonObject = z.record(z.string(), JsonValue);
 type JsonData = z.infer<typeof JsonValue>;
 const JobAdmission = z.enum(["push", "pull"]);
-const WorkerStore = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("sqlite") }).strict(),
-	z
-		.object({
-			kind: z.literal("postgres"),
-			urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
-		})
-		.strict(),
-]);
+const WorkerStore = z.object({ kind: z.literal("sqlite") }).strict();
 const CiEngineId = z.string().regex(/^[a-z][a-z0-9-]{0,62}$/);
 const EngineRelayOverride = z
 	.object({
@@ -112,7 +104,7 @@ export interface CiProjectEnvironment {
 	readonly allowInsecureLoopback: boolean;
 	/** Push accepts signed GitHub webhooks at the relay; pull polls GitHub for queued jobs. */
 	readonly jobAdmission: "push" | "pull" | undefined;
-	/** Box worker lease journal; undefined means local SQLite. Postgres carries an env var name, never a URL. */
+	/** Box worker lease journal: local SQLite, the only store. */
 	readonly store: CiWorkerStore | undefined;
 	/** Engines served from this environment profile (defaults to repository inventory). */
 	readonly engines: readonly string[] | undefined;
@@ -125,9 +117,7 @@ export interface CiProjectEnvironment {
 	readonly policy: ParsedCiPolicy;
 }
 
-export type CiWorkerStore =
-	| { readonly kind: "sqlite" }
-	| { readonly kind: "postgres"; readonly urlEnv: string };
+export type CiWorkerStore = { readonly kind: "sqlite" };
 
 export type CiSecretPhase = "deployment" | "execution";
 export interface CiSecretRequirement {

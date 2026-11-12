@@ -48,7 +48,7 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 /**
  * What the Sandbox host needs of the relay's store: the lease paths, the
  * policy and in-flight reads that authorize a launch, and the proxy meters
- * settlement reads. `PostgresCiStore` and the relay cache store both serve it.
+ * settlement reads. The relay cache store serves it.
  */
 export interface SandboxCompositionStore
 	extends SandboxLeaseStore,

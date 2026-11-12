@@ -109,8 +109,7 @@ interface ResolvedServePlan {
 
 /**
  * Environment for the `--with-worker` sidecar. The worker keeps its own lease
- * journal: SQLite under the serve state dir unless the CI config names a
- * Postgres store, whose URL comes from the env var the config names.
+ * journal: SQLite under the serve state dir, never the relay's file.
  */
 export function ciWorkerEnvironment(input: {
 	relayEnv: NodeJS.ProcessEnv;
@@ -120,20 +119,11 @@ export function ciWorkerEnvironment(input: {
 	const env: NodeJS.ProcessEnv = { ...input.relayEnv };
 	// HOBO_CI_DB is the relay's journal; a second writer must not open it.
 	delete env.HOBO_CI_DB;
-	if (input.store.kind === "postgres") {
-		if (!env[input.store.urlEnv])
-			throw new Error(
-				`--with-worker postgres store requires ${input.store.urlEnv}`,
-			);
-		env.HOBO_CI_STORE = "postgres";
-		env.HOBO_CI_STORE_URL_ENV = input.store.urlEnv;
-		delete env.HOBO_CI_WORKER_DB;
-	} else {
-		env.HOBO_CI_STORE = "sqlite";
-		env.HOBO_CI_WORKER_DB =
-			input.relayEnv.HOBO_CI_WORKER_DB ?? join(input.stateDir, "worker.sqlite");
-		delete env.HOBO_CI_STORE_URL_ENV;
-	}
+	env.HOBO_CI_STORE = input.store.kind;
+	env.HOBO_CI_WORKER_DB =
+		input.relayEnv.HOBO_CI_WORKER_DB ?? join(input.stateDir, "worker.sqlite");
+	// A setting the removed Postgres store read; the worker reads it no more.
+	delete env.HOBO_CI_STORE_URL_ENV;
 	return env;
 }
 

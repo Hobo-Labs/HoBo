@@ -20,11 +20,11 @@ Vercel Queues ([The stateless relay](../../packages/ci-vercel/README.md#the-stat
 and in phase 4c the cache fleet: every bound cache a member, exactly one
 active by a majority-decided register, moved by budget
 ([The cache fleet](../../packages/ci-vercel/README.md#the-cache-fleet)).
-None of it has been deployed or run against Vercel, Upstash, Infisical or
-GitHub. The PostgreSQL code stays in the tree, off the relay's path, until
-phase 7 removes it; the sections of
-[`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) that describe it are
-marked superseded.
+Phase 7 removed the PostgreSQL path: the relay's store,
+the relay database fleet and store selection, the Drizzle relay schema and its
+migrations, the Neon broker, and the box worker's shared Postgres store
+([Phase 7 removals](#phase-7-removals)). None of it has been deployed or run
+against Vercel, Upstash, Infisical or GitHub.
 
 ## Why
 
@@ -776,7 +776,7 @@ on its free plan.
 | 4e | The degraded GitHub-only floor | Duplicate JIT runner names verified against the real API (409 or not); with every cache unreachable, a duplicated delivery still provisions once |
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision. **Done** except provider usage pulls ([Phase 5](#phase-5); in-memory tests; not deployed) |
 | 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository |
-| 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
+| 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone. **Done** (`test/relay-bundle.test.ts` bundles the relay's entries and checks) |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
 
 **Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
@@ -855,6 +855,13 @@ unrated. The removed control endpoints answer 410, not 404, as in phase 4b.
 
 ### Phase 7 removals
 
+**Done.** Everything below is deleted; what was not, and why, follows the
+list. `test/relay-bundle.test.ts` in `@hobo/ci-vercel` bundles the relay's
+entries with esbuild, through the workspace packages' built output and into
+`node_modules`, and fails if the bundle reaches `pg`, `pg-pool`,
+`@neon/functions`, `@neondatabase/serverless`, `@hobo/data-postgres` or
+`drizzle-orm`.
+
 `packages/ci-vercel`:
 
 - `src/`: `database-connections.ts`, `database-discovery.ts`,
@@ -863,10 +870,12 @@ unrated. The removed control endpoints answer 410, not 404, as in phase 4b.
   `database-selection.ts`, `database-selection-import.ts`,
   `database-selection-marker.ts`, `database-selection-relay.ts`,
   `relay-schema.ts`, `neon-secret-broker.ts`, `neon-broker-entry.ts`,
-  `neon-trigger.ts`, `runtime-config-client.ts`; the Postgres read store in
-  `worker-health.ts` (moves to the cache); the Postgres wiring in
-  `composition.ts`, `bootstrap-entry.ts`, `sandbox-composition.ts` and
-  `entry.ts` (rewired, not deleted).
+  `neon-trigger.ts`, `runtime-config-client.ts`; `worker-health.ts` (its
+  cache replacement is `worker-health-cache.ts`); the PostgreSQL composition
+  `composition.ts`, `relay-composition.ts` and `bootstrap-entry.ts`, which
+  `entry.ts` had stopped importing in phase 4b (the package root now exports
+  `composeStatelessRelay`); the `RuntimeBrokerConfig` export of
+  `relay-runtime-config-schema.ts`.
 - `db/` (schema, source, migrations, the embedded-DDL lock), `tsconfig.db.json`,
   `deploy/postgres/`.
 - `scripts/`: `bootstrap-postgres-contract.ts`,
@@ -876,10 +885,13 @@ unrated. The removed control endpoints answer 410, not 404, as in phase 4b.
   `database-fleet*.test.ts`, `database-fleet-harness.ts`,
   `database-selection*.test.ts`, `neon-secret-broker.test.ts`,
   `neon-trigger.test.ts`, `postgres-schema.test.ts`, `relay-schema.test.ts`,
-  `runtime-config-client.test.ts`; the Postgres cases of
-  `worker-health.test.ts`.
+  `runtime-config-client.test.ts`, and the tests of the deleted composition
+  (`bootstrap-entry.test.ts`, `relay-composition.test.ts`,
+  `relay-mcp-composition.test.ts`, `wakeup.test.ts`); `worker-health.test.ts`
+  now holds the cache evidence to the same deployment scoping.
 - `package.json`: `pg`, `@types/pg`, `@neon/functions`, `@hobo/data-postgres`,
-  the Drizzle dev dependencies and the `db:*` scripts.
+  the Drizzle dev dependencies and the `db:*` scripts; `jose` moved to the
+  dev dependencies (only a test uses it now).
 
 `packages/ci`:
 
@@ -890,7 +902,8 @@ unrated. The removed control endpoints answer 410, not 404, as in phase 4b.
 - `test/`: `postgres-authoritative-admission.test.ts`,
   `postgres-schema.test.ts`, `postgres-schema-lineage.test.ts`,
   `schema-tooling.test.ts`.
-- `package.json`: `pg`, `@types/pg`, Drizzle dev dependencies, `db:*` scripts.
+- `package.json`: Drizzle dev dependencies, `db:*` scripts; `pg` moved to the
+  dev dependencies (the Broker ledger's Postgres tests use it).
 
 `packages/ci-gh-actions`:
 
@@ -905,17 +918,40 @@ unrated. The removed control endpoints answer 410, not 404, as in phase 4b.
   `owner-bootstrap-postgres-contract.ts`,
   `queued-job-repair-postgres-contract.ts`.
 - `test/`: `app-registration-postgres.test.ts`, `hosted-schema.test.ts`,
-  `pinned-postgres-testcontainers.test.ts`, `postgres-schema.test.ts`,
-  `postgres-schema-lineage.test.ts`, `postgres-session-lock.test.ts`; the
-  Postgres leg of `ci-store-contract.test.ts` (its SQLite leg stays).
-- `package.json`: `pg`, `@types/pg`, Drizzle dev dependencies, `db:*` scripts.
+  `postgres-schema.test.ts`, `postgres-schema-lineage.test.ts`,
+  `postgres-session-lock.test.ts`, and the tests of the deleted modules
+  (`owner-bootstrap.test.ts`, `isolated-worker-pool.test.ts`); the Postgres
+  leg of `ci-store-contract.test.ts` (its SQLite leg stays).
+- The box worker's `postgres` budget-adapter kind (asynchronous hooks), which
+  paired only with the Postgres store; the `postgres` worker store in the CI
+  project config and its JSON Schema.
+- `package.json`: Drizzle dev dependencies, `db:*` scripts; `pg` moved to the
+  dev dependencies.
 
 `packages/hobo`: the `store: { kind: "postgres" }` option of `hobo ci serve`
-(`src/ci-serve.ts`) and its documentation in `CI.md`.
+(`src/ci-serve.ts`) and its documentation in `CI.md`. The CLI's end-to-end lane
+(`e2e/ci.test.ts`) runs on `SqliteCiStore` instead of `PostgresCiStore`, so it
+needs no database.
+
+`scripts/no-hand-edited-generated-files.mts`: the shipped-migrations case,
+with no relay package shipping migrations.
+
+**Kept.** `test/pinned-postgres-testcontainers.test.ts` in
+`@hobo/ci-gh-actions`, which the first draft of this list named, starts the
+pinned Postgres image of the Pact broker (`contracts/compose.pact.yml`), not
+the relay's store, so it stays with `pg` as a dev dependency.
+`@hobo/data-postgres` (ADR-0177) and `@hobo/backend-fleet` stay as packages;
+the relay imports only `@hobo/backend-fleet`, for its cache fleet. The compute
+fleet is untouched. `StoreUnavailable` and the store back-off in the queue
+handoff (`queue-forwarding.ts`) and `createHostedWorker` (`worker.ts`) are
+generic and tested, so they stay although the deleted composition was their
+main user.
 
 Documentation: the superseded sections in `packages/ci-vercel/README.md`,
 `packages/ci/README.md`, `packages/ci-gh-actions/README.md` and
-`packages/ci/RUNNER-QUEUE.md` are deleted rather than kept with a banner.
+`packages/ci/RUNNER-QUEUE.md` are deleted rather than kept with a banner;
+`ONBOARDING.md` and `WEBHOOK-REPAIR.md` in `@hobo/ci-gh-actions` describe the
+cache-backed flows.
 
 ### Phase 8 cutover
 
