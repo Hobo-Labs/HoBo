@@ -56,3 +56,5 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 ## Not yet seen
 
 - The job on a pull request, and a pull request that breaks one script test showing it red: this change was not run on GitHub.
+
+The job's own limit is 25 minutes, above its build (6) and lane (15) step limits plus checkout and install, so a slow cold build fails its own step instead of being cancelled with the job.
