@@ -95,13 +95,13 @@ function request(
 	overrides: Partial<ResolveRequest["desired"]> = {},
 	physicalId?: string,
 ): ResolveRequest {
+	const ref = {
+		slot: "service" as const,
+		productId: BROWSER_WASM_GUEST_PRODUCT_ID,
+		logicalId: "try-site",
+	};
 	return {
-		ref: {
-			slot: "service",
-			productId: BROWSER_WASM_GUEST_PRODUCT_ID,
-			logicalId: "try-site",
-			...(physicalId === undefined ? {} : { physicalId }),
-		},
+		ref: physicalId === undefined ? ref : { ...ref, physicalId },
 		desired: {
 			origin: ORIGIN,
 			guestId: "try-site",

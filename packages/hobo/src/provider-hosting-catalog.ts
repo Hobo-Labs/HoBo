@@ -302,20 +302,26 @@ function hosting(
 	extra: { readonly coverage?: boolean; readonly products?: string[] } = {},
 ): ProviderDeliveryCoverage {
 	const upper = stem.replace(/[A-Z]/gu, (c) => `_${c}`).toUpperCase();
-	return Object.freeze({
+	const base = {
 		packageName,
 		providerId,
 		realization: "resolver" as const,
 		resolverExport: `${stem}ResolverRegistry`,
-		...(extra.coverage ? { coverageExport: `${upper}_HOSTING_COVERAGE` } : {}),
-		...(extra.products
-			? { resolvedProductIds: Object.freeze([...extra.products].sort()) }
-			: {}),
 		traffic: Object.freeze({
 			kind: "profile" as const,
 			profileExport: `${upper}_TRAFFIC_ROUTING_PROFILE`,
 		}),
-	});
+	};
+	const covered = extra.coverage
+		? { ...base, coverageExport: `${upper}_HOSTING_COVERAGE` }
+		: base;
+	const row = extra.products
+		? {
+				...covered,
+				resolvedProductIds: Object.freeze([...extra.products].sort()),
+			}
+		: covered;
+	return Object.freeze(row);
 }
 
 const DATA_TRAFFIC = Object.freeze({

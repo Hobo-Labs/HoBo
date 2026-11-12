@@ -248,21 +248,21 @@ function parseCapsuleRecord(
 	const digest = value.artifactDigest;
 	if (digest !== undefined && (!isJsonString(digest) || !DIGEST.test(digest)))
 		unparseable("Lakebed capsule artifact digest is not a content address");
-	return {
-		state: "live",
-		url,
-		...(digest === undefined ? {} : { artifactDigest: digest }),
-	};
+	const live = { state: "live" as const, url };
+	return digest === undefined ? live : { ...live, artifactDigest: digest };
 }
 
 function plans(parsed: Target): ResourcePlan[] {
-	return parsed.resources.map((resource) => ({
-		name: resource.name,
-		port: resource.port,
-		provider: LAKEBED_PROVIDER_TARGET,
-		deploymentId: parsed.deploymentId,
-		...(resource.deps.length === 0 ? {} : { deps: [...resource.deps] }),
-	}));
+	return parsed.resources.map((resource) => {
+		const plan: ResourcePlan = {
+			name: resource.name,
+			port: resource.port,
+			provider: LAKEBED_PROVIDER_TARGET,
+			deploymentId: parsed.deploymentId,
+		};
+		if (resource.deps.length > 0) plan.deps = [...resource.deps];
+		return plan;
+	});
 }
 
 /** Build the Lakebed resolvers over an injected deploy-driver host. */
@@ -272,10 +272,10 @@ export function createLakebedResolvers(
 	const host = options.host;
 	if (
 		!host ||
-		typeof host.deploy !== "function" ||
-		typeof host.describe !== "function" ||
-		typeof host.retire !== "function" ||
-		typeof options.resolveCredential !== "function"
+		!(host.deploy instanceof Function) ||
+		!(host.describe instanceof Function) ||
+		!(host.retire instanceof Function) ||
+		!(options.resolveCredential instanceof Function)
 	)
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
@@ -369,25 +369,29 @@ export function createLakebedResolvers(
 			);
 		if (!artifactMatches)
 			diagnostics.push("the driver has not reported the desired artifact yet");
+		const observedOutputs = {
+			deploymentId: parsed.deploymentId,
+			capsuleUrl: observed.url,
+			resources: parsed.resources.map((resource) => resource.name),
+			probeStatus: status,
+			ready,
+			operationConfirmed: ready,
+			operationTerminal: ready,
+			absenceConfirmed: false,
+			lifecycleStatus: ready ? "ready" : "pending",
+		};
+		// Only a ready capsule names a serving endpoint (I5).
+		const serving = ready
+			? { ...observedOutputs, servingEndpoint: observed.url }
+			: observedOutputs;
 		return {
 			contract: RESOLVER_CONTRACT,
 			action,
 			physicalId: parsed.deploymentId,
-			outputs: {
-				deploymentId: parsed.deploymentId,
-				capsuleUrl: observed.url,
-				...(ready ? { servingEndpoint: observed.url } : {}),
-				...(observed.artifactDigest === undefined
-					? {}
-					: { artifactDigest: observed.artifactDigest }),
-				resources: parsed.resources.map((resource) => resource.name),
-				probeStatus: status,
-				ready,
-				operationConfirmed: ready,
-				operationTerminal: ready,
-				absenceConfirmed: false,
-				lifecycleStatus: ready ? "ready" : "pending",
-			},
+			outputs:
+				observed.artifactDigest === undefined
+					? serving
+					: { ...serving, artifactDigest: observed.artifactDigest },
 			diagnostics,
 		};
 	}

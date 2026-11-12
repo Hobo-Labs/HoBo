@@ -29,6 +29,7 @@ import {
 	RESOLVER_OPERATIONS_METRIC,
 	type ResolverMetricPoint,
 } from "../src/index.js";
+import type { JsonObject, JsonValue } from "../src/json.js";
 import { cueVet } from "./support/cue-vet.js";
 import { describeResolverConformance } from "./support/resolver-conformance.js";
 
@@ -96,13 +97,13 @@ function request(
 	overrides: Partial<ResolveRequest["desired"]> = {},
 	physicalId?: string,
 ): ResolveRequest {
+	const ref = {
+		slot: "service" as const,
+		productId: LAKEBED_CAPSULE_PRODUCT_ID,
+		logicalId: "shop",
+	};
 	return {
-		ref: {
-			slot: "service",
-			productId: LAKEBED_CAPSULE_PRODUCT_ID,
-			logicalId: "shop",
-			...(physicalId === undefined ? {} : { physicalId }),
-		},
+		ref: physicalId === undefined ? ref : { ...ref, physicalId },
 		desired: {
 			deploymentId: "shop-prod",
 			artifactDigest: DIGEST,
@@ -271,9 +272,12 @@ describe("Lakebed capsule resolver", () => {
 		fx.set({ ...LIVE, url: "https://evil.example.com" });
 		const failure = await resolver(fx)
 			.read?.(request({}, "shop-prod"), fx.transport)
-			.catch((error: unknown) => error);
+			.then(
+				() => undefined,
+				(error: Error) => error,
+			);
 		expect(failure).toBeInstanceOf(ResolverError);
-		expect(String((failure as Error).message)).not.toContain(TOKEN);
+		expect(failure?.message ?? "").not.toContain(TOKEN);
 	});
 
 	it("refuses an unresolvable credential with RESOLVER_CREDENTIAL_MISSING", async () => {
@@ -425,9 +429,9 @@ interface PactInteraction {
 	readonly providerState: string;
 	readonly request: {
 		readonly path: string;
-		readonly body: Readonly<Record<string, unknown>>;
+		readonly body: JsonObject;
 	};
-	readonly response: { readonly body: unknown };
+	readonly response: { readonly body: JsonValue };
 }
 
 describe("PACT: capsule resolver and lakebed-deploy driver host", () => {
@@ -455,9 +459,9 @@ describe("PACT: capsule resolver and lakebed-deploy driver host", () => {
 			async deploy(input) {
 				const recorded = interaction("/deploy", state);
 				expect(input.artifactDigest).toBe(recorded.request.body.artifactDigest);
-				expect(input.program).toMatchObject(
-					recorded.request.body.program as object,
-				);
+				// SAFETY: the recorded /deploy body carries the program object.
+				const program = recorded.request.body.program as JsonObject;
+				expect(input.program).toMatchObject(program);
 				state = "shop-prod is live";
 				// SAFETY: recorded pact response for /deploy.
 				return recorded.response.body as { deploymentId: string };

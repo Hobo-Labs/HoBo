@@ -104,14 +104,14 @@ function missingExports(row: ProviderDeliveryCoverage): readonly string[] {
 	);
 }
 
+/** A provider entry point's exports, read by name. */
 async function load(
 	row: ProviderDeliveryCoverage,
-): Promise<Record<string, unknown>> {
-	// SAFETY: a dynamically imported ES module namespace is a record of exports.
-	return (await import(pathToFileURL(packageFor(row).entry).href)) as Record<
-		string,
-		unknown
-	>;
+): Promise<ReadonlyMap<string, object>> {
+	const namespace: object = await import(
+		pathToFileURL(packageFor(row).entry).href
+	);
+	return new Map<string, object>(Object.entries(namespace));
 }
 
 function profileIds(profile: TrafficRoutingProviderProfile): string[] {
@@ -150,7 +150,7 @@ describe("I14: realization path plus traffic profile", () => {
 			`${row.packageName} exports ${namedExports(row).join(", ")}${pending ? ` (${PENDING_SIBLING})` : ""}`,
 			async () => {
 				const module = await load(row);
-				expect(module[row.resolverExport]).toBeInstanceOf(Function);
+				expect(module.get(row.resolverExport)).toBeInstanceOf(Function);
 				expect(providerDeliveryRefusal(row.packageName)).toBeUndefined();
 				expect(providerDeliveryRefusal(row.providerId)).toBeUndefined();
 				if (row.traffic.kind === "refused") {
@@ -159,9 +159,9 @@ describe("I14: realization path plus traffic profile", () => {
 					return;
 				}
 				// SAFETY: the named export is a TrafficRoutingProviderProfile record.
-				const profile = module[
-					row.traffic.profileExport
-				] as TrafficRoutingProviderProfile;
+				const profile = module.get(
+					row.traffic.profileExport,
+				) as TrafficRoutingProviderProfile;
 				expect(
 					parseTrafficRoutingProviderProfile(
 						JSON.parse(JSON.stringify(profile)),
@@ -169,7 +169,7 @@ describe("I14: realization path plus traffic profile", () => {
 				).toEqual(JSON.parse(JSON.stringify(profile)));
 				if (!row.coverageExport) return;
 				// SAFETY: the named export is the package's HostingCoverage document.
-				const coverage = module[row.coverageExport] as {
+				const coverage = module.get(row.coverageExport) as {
 					contract: string;
 					providerId: string;
 					resolvedProductIds: readonly string[];
