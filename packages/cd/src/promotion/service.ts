@@ -335,6 +335,19 @@ export function createPromotionService(
 		}
 	}
 
+	/** Mark `older` superseded at a Camp by `newer`, releasing its open Delta. */
+	async function supersede(older: PromotionView, campId: CampId, newer: PromotionView, ctx: CdContext): Promise<void> {
+		const progress = older.camps.get(campId);
+		if (!progress || progress.terminal !== undefined) return;
+		const deltaId = progress.steps.get(STEP.resolved)?.handle;
+		if (deltaId && older.request.subject !== FreightSubject.RAIL) {
+			const delta = await d.desired.get(asDelta(deltaId));
+			if (delta) await d.desired.reject(asDelta(deltaId), [reason(PROMOTION_REASON.superseded, `superseded by ${newer.promotionId}`, "Nothing to do; the newer Freight proceeds.", campId)], ctx);
+		}
+		await appendOutcome(older, campId, CD_EVENTS.EnvPromoteSuperseded, PromotionState.SUPERSEDED, [reason(PROMOTION_REASON.superseded, `superseded by newer promotion ${newer.promotionId} of Freight ${newer.request.freightId}`, "Nothing to do; the newer Freight proceeds.", campId)], ctx);
+		metric(PROMOTION_METRIC.superseded, ctx.now(), { camp: campId });
+	}
+
 	async function nodeOf(view: PromotionView): Promise<PipelineNodeRecord | undefined> {
 		if (view.request.pipeline === "" || view.request.node === "") return undefined;
 		const pipeline = await d.pipelines.get(view.request.pipeline);
@@ -524,11 +537,11 @@ export function createPromotionService(
 				const theirs = other.camps.get(campId);
 				if (!theirs || theirs.terminal !== undefined) continue;
 				if (order.indexOf(other.promotionId) > mine) {
-					await appendOutcome(view, campId, CD_EVENTS.EnvPromoteSuperseded, PromotionState.SUPERSEDED, [reason(PROMOTION_REASON.superseded, `superseded by newer promotion ${other.promotionId} of Freight ${other.request.freightId}`, "Nothing to do; the newer Freight proceeds.", campId)], ctx);
-					metric(PROMOTION_METRIC.superseded, ctx.now(), { camp: campId });
+					await supersede(view, campId, other, ctx);
 					return;
 				}
 				if (theirs.steps.has(STEP.applied)) held = true;
+				else await supersede(other, campId, view, ctx);
 			}
 			if (held) return;
 		}

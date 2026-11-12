@@ -295,7 +295,12 @@ export function foldPromotion(
 		if (!record) continue;
 		for (const campId of record.targetCampIds) {
 			const progress = progressOf(view, campId);
-			if (progress.terminal !== undefined && progress.terminal !== "promoted")
+			// An outcome replaces "promoted" (group compensation) and "compensated".
+			if (
+				progress.terminal !== undefined &&
+				progress.terminal !== "promoted" &&
+				progress.terminal !== "compensated"
+			)
 				continue;
 			if (event.type === CD_EVENTS.EnvPromoted) {
 				progress.terminal = "promoted";
