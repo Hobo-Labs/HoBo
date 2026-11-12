@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package hobo.provider.npm.v1;
+
+// Design-time wire view of what @hobo/provider-npm exchanges across the
+// ResourceResolver port for the `npm.package-version/v1` product: the desired
+// state a Set hands the realizer, the outputs it reports after observing the
+// registry, and the closed vocabularies around them. The TypeScript reads the
+// desired bag through parse-don't-validate boundaries in src/resolver.ts; CUE
+// constraints for every type here live in provider_npm.cue.
+
+// The npm-compatible registries this realizer binds. A host binds exactly one;
+// desired state may only name the bound origin.
+enum NpmRegistryKind {
+  NPM_REGISTRY_KIND_UNSPECIFIED = 0;
+  NPM_REGISTRY_KIND_NPMJS = 1;
+  NPM_REGISTRY_KIND_GITHUB_PACKAGES = 2;
+  NPM_REGISTRY_KIND_VERDACCIO = 3;
+}
+
+// How the credential behind credentialRef authenticates. OIDC trusted
+// publishing exchanges a CI ID token for a short-lived publish token and is
+// offered only where the registry implements the exchange (npmjs).
+enum NpmAuthMode {
+  NPM_AUTH_MODE_UNSPECIFIED = 0;
+  NPM_AUTH_MODE_TOKEN = 1;
+  NPM_AUTH_MODE_OIDC_TRUSTED_PUBLISHING = 2;
+}
+
+// Why an existing version can never converge. Versions are immutable.
+enum NpmConflictReason {
+  NPM_CONFLICT_REASON_UNSPECIFIED = 0;
+  NPM_CONFLICT_REASON_INTEGRITY_MISMATCH = 1;
+  NPM_CONFLICT_REASON_PREVIOUSLY_UNPUBLISHED = 2;
+}
+
+// ResolveRequest.desired for npm.package-version/v1. Secret-free by
+// construction: credentials travel only as the request's credentialRef.
+message NpmPackageVersionDesired {
+  // The bound registry origin plus base path, no trailing slash.
+  string registry = 1;
+  string package_name = 2;
+  // SemVer 2.0.0 without build metadata.
+  string version = 3;
+  // Set explicitly; moving it is the promotion lever.
+  string dist_tag = 4;
+  // sha256 digest of the Freight tarball in the artifact store.
+  string artifact_digest = 5;
+  // store://<backend>/<artifact_digest>, when the Freight records one.
+  optional string artifact_coordinate = 6;
+  // sha256 digest of the Sigstore bundle blob, when the Freight carries one.
+  optional string provenance_digest = 7;
+  // Directive: "public" or "restricted" at first publish.
+  optional string access = 8;
+  // Directive: the message delete() deprecates the version with.
+  optional string deprecation_message = 9;
+}
+
+// ResolveOutcome.outputs for npm.package-version/v1, always observed.
+message NpmPackageVersionOutputs {
+  string registry = 1;
+  string package_name = 2;
+  string version = 3;
+  string dist_tag = 4;
+  // The version the dist-tag points at on the registry, if any.
+  optional string dist_tag_version = 5;
+  string integrity = 6;
+  string shasum = 7;
+  optional string tarball_url = 8;
+  string artifact_digest = 9;
+  bool provenance_observed = 10;
+  bool deprecated = 11;
+  bool ready = 12;
+  bool operation_confirmed = 13;
+  bool operation_terminal = 14;
+  bool absence_confirmed = 15;
+  string lifecycle_status = 16;
+}
