@@ -1,0 +1,25 @@
+// HoBo's runner fleet as delivery-as-code. Apply it on the CD Station with
+//   hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+// The records come from the declared hosts (hosts.json); see README.md here.
+import { readFileSync } from "node:fs";
+
+import {
+	parseRunnerHosts,
+	runnerFleetDelivery,
+} from "../../src/runner-fleet-delivery.js";
+
+const parsed = parseRunnerHosts(
+	readFileSync(new URL("hosts.json", import.meta.url), "utf8"),
+);
+if (!parsed.ok)
+	throw new Error(
+		`${parsed.code}: ${parsed.problems.join("; ")}\n${parsed.remediation}`,
+	);
+const delivery = runnerFleetDelivery(parsed.value, {
+	repository: "Hobo-Labs/HoBo",
+});
+
+export const sources = delivery.sources;
+export const campSets = delivery.campSets;
+export const placements = delivery.placements;
+export const pipelines = delivery.pipelines;
