@@ -1,6 +1,8 @@
 // Golden journal corpus for every event body WP10 appends: rollout.Lowered and
-// the private cd.rollout.* ledger on cd-rollout-<id>, plus the engine command
-// ledger on cd-rollout-engine-<id>. Two guarantees: a stream recorded today
+// the rollout.* ledger on cd-rollout-<id>, plus the engine command ledger on
+// cd-rollout-engine-<id>. A second, frozen corpus holds the same streams under
+// the ledger's first type names (`cd.rollout.*`, which no durable journal
+// accepts); it must keep folding and replaying through the upcaster. Two guarantees: a stream recorded today
 // still folds and replays to its recorded outcome (old bodies stay readable),
 // and the orchestrator still writes byte-identical bodies for the same inputs
 // (no silent body drift). Refresh deliberately with UPDATE_GOLDEN=1 and review
@@ -30,6 +32,12 @@ import { rig } from "./rig.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = resolve(here, "golden/rollout-journal.json");
+const legacyCorpusPath = resolve(
+	here,
+	"golden/rollout-journal.legacy-cd-rollout.json",
+);
+// The durable journal's event-type rule (@hobo/core EVENT_TYPE_PATTERN).
+const STORABLE = /^[a-z][a-z0-9]*\.[A-Z][A-Za-z0-9]*$/;
 
 type GoldenEvent = Readonly<{
 	stream: "rollout" | "engine";
@@ -98,6 +106,35 @@ function rid(id: string): RolloutId {
 	return id as RolloutId;
 }
 
+async function replays(corpus: Corpus): Promise<void> {
+	for (const [name, recording] of Object.entries(corpus)) {
+		const store = new MemoryEventStore();
+		for (const stream of ["rollout", "engine"] as const) {
+			const streamId =
+				stream === "rollout"
+					? ROLLOUT_LEDGER.stream(recording.rolloutId)
+					: HARNESS_LEDGER.stream(recording.rolloutId);
+			const events = recording.events.filter((e) => e.stream === stream);
+			for (const event of events)
+				await store.append(streamId, [{ type: event.type, data: event.data }], {
+					expectedSeq: event.seq - 1,
+					actor: OPERATOR,
+					tenant: TENANT,
+				});
+		}
+		const folded = foldRollout(
+			rid(recording.rolloutId),
+			store.events(ROLLOUT_LEDGER.stream(recording.rolloutId)),
+		);
+		expect(folded?.finished?.status, name).toBe(recording.status);
+		const replayed = rig({ store });
+		expect(
+			(await replayed.orchestrator.get(rid(recording.rolloutId)))?.status,
+			name,
+		).toBe(recording.status);
+	}
+}
+
 describe("rollout golden journal corpus", () => {
 	it("the orchestrator writes byte-identical bodies for the same inputs", async () => {
 		const live: Record<string, Recording> = {};
@@ -110,35 +147,44 @@ describe("rollout golden journal corpus", () => {
 
 	it("recorded streams fold and replay to their recorded outcome on a fresh store", async () => {
 		const corpus: Corpus = JSON.parse(readFileSync(corpusPath, "utf8"));
-		for (const [name, recording] of Object.entries(corpus)) {
-			const store = new MemoryEventStore();
-			for (const stream of ["rollout", "engine"] as const) {
-				const streamId =
-					stream === "rollout"
-						? ROLLOUT_LEDGER.stream(recording.rolloutId)
-						: HARNESS_LEDGER.stream(recording.rolloutId);
-				const events = recording.events.filter((e) => e.stream === stream);
-				for (const event of events)
-					await store.append(
-						streamId,
-						[{ type: event.type, data: event.data }],
-						{
-							expectedSeq: event.seq - 1,
-							actor: OPERATOR,
-							tenant: TENANT,
-						},
-					);
-			}
-			const folded = foldRollout(
-				rid(recording.rolloutId),
-				store.events(ROLLOUT_LEDGER.stream(recording.rolloutId)),
-			);
-			expect(folded?.finished?.status, name).toBe(recording.status);
-			const replayed = rig({ store });
-			expect(
-				(await replayed.orchestrator.get(rid(recording.rolloutId)))?.status,
+		await replays(corpus);
+	});
+
+	it("every ledger event type is storable on a durable journal (family.PastTenseFact)", async () => {
+		const corpus: Corpus = JSON.parse(readFileSync(corpusPath, "utf8"));
+		const types = Object.values(corpus).flatMap((r) =>
+			r.events.map((e) => e.type),
+		);
+		for (const type of types) expect(type).toMatch(STORABLE);
+		for (const [key, value] of Object.entries(ROLLOUT_LEDGER))
+			if (key !== "stream") expect(value, key).toMatch(STORABLE);
+		expect(HARNESS_LEDGER.commanded).toMatch(STORABLE);
+	});
+
+	it("legacy cd.rollout.* streams still fold and replay (upcaster)", async () => {
+		const legacy: Corpus = JSON.parse(readFileSync(legacyCorpusPath, "utf8"));
+		expect(
+			Object.values(legacy).every((r) =>
+				r.events.some((e) => e.type.startsWith("cd.rollout.")),
+			),
+		).toBe(true);
+		await replays(legacy);
+	});
+
+	it("streams stored under the interim cdrollout.* encoding still fold and replay (upcaster)", async () => {
+		const legacy: Corpus = JSON.parse(readFileSync(legacyCorpusPath, "utf8"));
+		const interim: Corpus = Object.fromEntries(
+			Object.entries(legacy).map(([name, r]) => [
 				name,
-			).toBe(recording.status);
-		}
+				{
+					...r,
+					events: r.events.map((e) => ({
+						...e,
+						type: e.type.replace(/^cd\.rollout\./, "cdrollout."),
+					})),
+				},
+			]),
+		);
+		await replays(interim);
 	});
 });
