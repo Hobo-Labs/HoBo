@@ -374,7 +374,9 @@ it("admits workflow_run release jobs ahead of pull requests", async () => {
 
 it("orders main-train release phases within one workflow_run", async () => {
 	const { github } = transport(
-		new Map([[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }]]),
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
 	);
 	const order = createAdmissionOrder(github);
 	const job = (jobId: number, jobName: string) => ({
