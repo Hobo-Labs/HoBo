@@ -95,7 +95,7 @@ import {
 	vercelResolverRegistry,
 } from "@hobo/provider-vercel";
 import type { createVerifiedHostingCredentialLease } from "./hosting-credential-scope.js";
-import { isJsonString, type JsonObject } from "./json.js";
+import { isJsonString, type JsonObject, parseJsonObject } from "./json.js";
 import type {
 	HostingDesiredInput,
 	HostingOperatingLiabilityReader,
@@ -1409,7 +1409,42 @@ export const CATALOG_REALIZER_LABELS = Object.freeze({
 	githubPagesPath: "hobo.cd/github.pages.path",
 	/** Freight: the commit message of the published branch commit. */
 	githubCommitMessage: "hobo.cd/github.commit-message",
+	/**
+	 * Camp: `converge` (default) writes the Freight to the target; `observe`
+	 * only re-reads it (resolver `read`, read-only credential scope) and
+	 * reports it ready or not: a channel that qualifies what another Camp
+	 * already published never writes.
+	 */
+	realizeMode: "hobo.cd/realize-mode",
 } as const);
+
+// public-contract: the typed refusal codes of the catalog resolver realizer.
+export const CATALOG_REALIZER_REFUSAL_CODES = Object.freeze([
+	/** A Camp label or a Freight artifact does not bind a valid target: always blocks. */
+	"catalog-binding-invalid",
+	/** npm OIDC trusted publishing of a scoped package (the registry's exchange is unreachable through the transport guard). */
+	"npm-oidc-scoped-unsupported",
+	/** A provenance-required npm Camp and a Freight with no Sigstore bundle for the package. */
+	"npm-provenance-bundle-missing",
+] as const);
+export type CatalogRealizerRefusalCode =
+	(typeof CATALOG_REALIZER_REFUSAL_CODES)[number];
+
+/**
+ * A refusal of the catalog resolver realizer itself (before any resolver
+ * runs), carrying its own typed code: a misdeclared Camp is never read as a
+ * provider limit, and each provider limit is named exactly.
+ */
+export class CatalogRealizerError extends Error {
+	readonly code: CatalogRealizerRefusalCode;
+	constructor(code: CatalogRealizerRefusalCode, message: string) {
+		super(message);
+		this.name = "CatalogRealizerError";
+		this.code = code;
+	}
+}
+
+export type CatalogRealizeMode = "converge" | "observe";
 
 // public-contract: the providers the catalog resolver realizer realizes, with their one product.
 export const CATALOG_REALIZED_PRODUCTS = Object.freeze({
@@ -1448,9 +1483,16 @@ export type CatalogCampBinding = Readonly<{
 	providerId: CatalogRealizedProviderId;
 	productId: string;
 	credentialRef: string;
+	/** `observe` Camps only read the target (`hobo.cd/realize-mode`). */
+	mode: CatalogRealizeMode;
 	registry: HostingResolverRegistry;
 	/** One resolve request per Freight artifact this provider realizes. */
 	requests(freight: CatalogFreight): readonly ResolveRequest[];
+	/**
+	 * The transport the resolver calls through, given the realizer's
+	 * transport and memory the realizer keeps for this Camp across passes.
+	 */
+	transport?(http: HttpTransport, memory: Set<string>): HttpTransport;
 }>;
 
 export type CatalogCampBindingDeps = Readonly<{
@@ -1461,8 +1503,8 @@ export type CatalogCampBindingDeps = Readonly<{
 }>;
 
 function bindingRefusal(campId: string, message: string): never {
-	throw new ResolverError(
-		"RESOLVER_PRODUCT_UNSUPPORTED",
+	throw new CatalogRealizerError(
+		"catalog-binding-invalid",
 		`Camp ${campId}: ${message}. Remediation: declare the Camp's ${Object.values(
 			CATALOG_REALIZER_LABELS,
 		)
@@ -1519,6 +1561,15 @@ export function catalogCampBinding(
 	const required = (key: string) =>
 		label(key) ?? bindingRefusal(camp.campId, `label ${key} is required`);
 	const credentialRef = required(L.credentialRef);
+	const declaredMode = label(L.realizeMode) ?? "converge";
+	const mode = (["converge", "observe"] as const).find(
+		(m) => m === declaredMode,
+	);
+	if (!mode)
+		return bindingRefusal(
+			camp.campId,
+			`${L.realizeMode} must be converge or observe`,
+		);
 	// Only the declared locator: a request for any other is refused.
 	const token = async (ref: string) => {
 		if (ref !== credentialRef)
@@ -1563,6 +1614,7 @@ export function catalogCampBinding(
 				providerId,
 				productId,
 				credentialRef,
+				mode,
 				registry: npmResolverRegistry({
 					registry,
 					auth,
@@ -1584,16 +1636,24 @@ export function catalogCampBinding(
 						const bundle = freight.artifacts.find(
 							(other) => other.name === `${artifact.name}.sigstore`,
 						);
+						const packageName = artifact.name.slice(0, at);
 						if (provenanceRequired && !bundle)
-							throw new ResolverError(
-								"RESOLVER_PRODUCT_UNSUPPORTED",
+							throw new CatalogRealizerError(
+								"npm-provenance-bundle-missing",
 								`Camp ${camp.campId} requires npm provenance, and Freight ${freight.freightId} carries no Sigstore bundle for ${artifact.name}. Remediation: record the package's Sigstore provenance bundle (${artifact.name}.sigstore) in the Freight; HoBo never publishes a provenance-required package without one`,
-								productId,
+							);
+						if (
+							auth === "oidc-trusted-publishing" &&
+							packageName.startsWith("@")
+						)
+							throw new CatalogRealizerError(
+								"npm-oidc-scoped-unsupported",
+								`Camp ${camp.campId} binds npm OIDC trusted publishing, which @hobo/provider-npm refuses for the scoped package ${packageName}. Remediation: bind token auth (${L.npmAuth}=token) for scoped packages`,
 							);
 						out.push(
 							request(`npm-${artifact.name}`, {
 								registry: base,
-								packageName: artifact.name.slice(0, at),
+								packageName,
 								version: artifact.name.slice(at + 1),
 								distTag,
 								artifactDigest: artifact.digest,
@@ -1618,6 +1678,7 @@ export function catalogCampBinding(
 				providerId,
 				productId,
 				credentialRef,
+				mode,
 				registry: ociRegistryResolverRegistry({
 					registry: endpoint,
 					sourceRegistries: [],
@@ -1683,11 +1744,13 @@ export function catalogCampBinding(
 				providerId,
 				productId,
 				credentialRef,
+				mode,
 				registry: githubResolverRegistry({
 					api: { kind: "github.com" },
 					resolveCredential: token,
 					artifacts: deps.artifacts,
 				}),
+				transport: gitBlobDedupeTransport,
 				requests(freight: CatalogFreight) {
 					const message = freight.labels[L.githubCommitMessage]?.trim();
 					return freight.artifacts
@@ -1707,4 +1770,62 @@ export function catalogCampBinding(
 			});
 		}
 	}
+}
+
+const GIT_BLOBS_PATH =
+	/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/git\/blobs$/u;
+
+/** The git blob id of `bytes` (what GitHub names a blob by). */
+function gitBlobSha(bytes: Uint8Array): string {
+	return createHash("sha1")
+		.update(`blob ${bytes.byteLength}\0`)
+		.update(bytes)
+		.digest("hex");
+}
+
+/**
+ * A blob upload GitHub already holds is never repeated. Blob creation counts
+ * against GitHub's content-creation secondary limit (80 per minute): a pass
+ * the limit interrupted, or a later pass before the branch head moved, would
+ * otherwise re-POST every blob not on the observed head. `memory` holds the
+ * blob ids GitHub acknowledged across the realizer's passes for this Camp;
+ * any other blob is looked up first (a read, outside that limit) and posted
+ * only when GitHub does not hold it. Blobs are content-addressed, so the
+ * acknowledgement this returns names exactly the bytes the upload carried.
+ */
+export function gitBlobDedupeTransport(
+	inner: HttpTransport,
+	memory: Set<string>,
+): HttpTransport {
+	return async (request) => {
+		if (
+			request.method !== "POST" ||
+			!GIT_BLOBS_PATH.test(request.url) ||
+			request.body === undefined
+		)
+			return inner(request);
+		const body = parseJsonObject(request.body);
+		if (!isJsonString(body.content) || body.encoding !== "base64")
+			return inner(request);
+		const sha = gitBlobSha(Buffer.from(body.content, "base64"));
+		const held = () => ({
+			status: 201,
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sha, url: `${request.url}/${sha}` }),
+		});
+		if (memory.has(sha)) return held();
+		const { body: _body, ...rest } = request;
+		const seen = await inner({
+			...rest,
+			method: "GET",
+			url: `${request.url}/${sha}`,
+		});
+		if (seen.status === 200) {
+			memory.add(sha);
+			return held();
+		}
+		const sent = await inner(request);
+		if (sent.status === 201) memory.add(sha);
+		return sent;
+	};
 }

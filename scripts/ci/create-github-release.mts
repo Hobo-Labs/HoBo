@@ -16,9 +16,9 @@
  * A promotion is driven here the way `hobo serve cd` ticks it (promotions,
  * one conductor pass of the Camp, rollouts, verification) until it is
  * PROMOTED, refused, or the realizer reports BLOCKED. The verdict is
- * `qualified`, `impedance` (the realizer refused with a typed
- * RESOLVER_PRODUCT_UNSUPPORTED: the provider cannot realize this target as
- * declared; only npm, see live-provider-matrix.md) or `blocked`.
+ * `qualified`, `impedance` (the realizer refused only with a named npm
+ * provider limit, RELEASE_IMPEDANCE_CODES; only npm, see
+ * live-provider-matrix.md) or `blocked`.
  *
  *   create-github-release.mts promote-stable --freight-home <dir> [...]
  *   create-github-release.mts --tag <tag> [--prerelease]
@@ -99,14 +99,18 @@ const FAMILY_PRODUCT = {
 } as const satisfies Record<ReleaseFamily, string>;
 
 /**
- * Typed realizer refusals that mean "this provider cannot realize the target
- * as declared" (a resolver impedance limit), not "something is wrong". Only
- * the npm family reads them: its existing `npm publish --provenance` step stays
- * the publisher while @hobo/provider-npm refuses scoped OIDC trusted
- * publishing and carries no Sigstore bundle. Every other family is blocked.
+ * The exact realizer refusals that name an npm provider limit, not a broken
+ * release: OIDC trusted publishing of a scoped package (which
+ * @hobo/provider-npm refuses) and a provenance-required Camp whose Freight
+ * carries no Sigstore bundle (the release scripts record none yet). Only the
+ * npm family reads them: its `npm publish --provenance` step stays the
+ * publisher on exactly these codes (an unmet requirement, release-channels.md).
+ * Anything else, including RESOLVER_PRODUCT_UNSUPPORTED and
+ * catalog-binding-invalid (a misdeclared Camp or Freight), blocks.
  */
 export const RELEASE_IMPEDANCE_CODES: ReadonlySet<string> = new Set([
-	"RESOLVER_PRODUCT_UNSUPPORTED",
+	"npm-oidc-scoped-unsupported",
+	"npm-provenance-bundle-missing",
 ]);
 
 /** Families whose publisher may stay an existing workflow step on `impedance`. */

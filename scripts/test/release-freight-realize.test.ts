@@ -48,6 +48,12 @@ const REPO = "site";
 process.env.GITHUB_REPOSITORY = `${OWNER}/${REPO}`;
 
 const built = existsSync(HOBO_CLI_DIST);
+// The release-contract lane builds @hobo/hobo first and sets this: there a
+// missing build fails the lane instead of skipping the proof.
+if (!built && process.env.HOBO_RELEASE_REALIZE_REQUIRED === "1")
+	throw new Error(
+		`release-freight-realize: ${HOBO_CLI_DIST} is missing; build @hobo/hobo first`,
+	);
 
 // The providers' offline worlds load only when the built packages they import
 // exist (the suite skips visibly otherwise).
@@ -215,7 +221,28 @@ describe.skipIf(!built)(
 				fixture.mediaType,
 			);
 			const seen: TransportRequest[] = [];
-			const fixtures = seams(withProbes(world.transport, seen));
+			// Stable runs in jobs whose GITHUB_TOKEN holds no `packages: write`:
+			// from then on the token endpoint refuses any push scope outright.
+			let pullOnly = false;
+			const denied: string[] = [];
+			const ghcr: HttpTransport = async (request) => {
+				const url = new URL(request.url);
+				if (
+					pullOnly &&
+					url.host === "ghcr.io" &&
+					url.pathname === "/token" &&
+					url.searchParams.getAll("scope").some((s) => /push/u.test(s))
+				) {
+					denied.push(request.url);
+					return {
+						status: 403,
+						headers: {},
+						body: JSON.stringify({ errors: [{ code: "DENIED" }] }),
+					};
+				}
+				return world.transport(request);
+			};
+			const fixtures = seams(withProbes(ghcr, seen));
 			const home = mkdtempSync(join(tmpdir(), "hobo-release-oci-"));
 			const { verdict } = await qualifyReleaseCandidate({
 				home,
@@ -243,16 +270,82 @@ describe.skipIf(!built)(
 			expect(world.repo("ghcr.io", REPOSITORY).tags.get(VERSION)).toBe(
 				fixture.digest,
 			);
+			pullOnly = true;
 			expect(await promoteReleaseStable(home, env, fixtures)).toBe(true);
 			const report = JSON.parse(
 				readFileSync(releaseReportPath(home, "oci"), "utf8"),
 			);
 			expect(report.channels.stable.outcome).toBe("qualified");
+			// Stable observed (resolver read, pull scope): it never asked for push.
+			expect(denied).toEqual([]);
 			// Stable re-observed; it wrote nothing more.
 			expect(world.paths("PUT")).toHaveLength(1);
 			// The token reached only the registry's token endpoint, never a record.
 			expect(journalText(home)).not.toContain(GHCR_TOKEN);
 			expect(seen.some((r) => r.url === "https://ghcr.io/v2/")).toBe(true);
+		});
+
+		it("OCI: stable only observes: a drifted target blocks it, and it never asks for push scope", async () => {
+			const world = ghcrWorld();
+			const fixture = fx.image({ platform: "amd64", binary: false });
+			for (const blob of fixture.blobs)
+				world.seedBlob("ghcr.io", REPOSITORY, blob.bytes);
+			world.seedManifest(
+				"ghcr.io",
+				REPOSITORY,
+				fixture.text,
+				fixture.mediaType,
+			);
+			// GHCR answers a push-scoped token request from a token without
+			// `packages: write` (the stable jobs') with 403, not a downgrade.
+			let pullOnly = false;
+			const pushAsked: string[] = [];
+			const ghcr: HttpTransport = async (request) => {
+				const url = new URL(request.url);
+				if (
+					pullOnly &&
+					url.pathname === "/token" &&
+					url.searchParams.getAll("scope").some((s) => /push/u.test(s))
+				) {
+					pushAsked.push(request.url);
+					return { status: 403, headers: {}, body: "" };
+				}
+				return world.transport(request);
+			};
+			const fixtures = seams(withProbes(ghcr, []));
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-oci-"));
+			const { verdict } = await qualifyReleaseCandidate({
+				home,
+				family: "oci",
+				env,
+				seams: fixtures,
+				registry: [
+					{
+						name: "hobo-sdk",
+						kind: "ARTIFACT_KIND_OCI_IMAGE",
+						digest: fixture.digest,
+						coordinate: `ghcr.io/${REPOSITORY}@${fixture.digest}`,
+						ecosystem: "oci",
+						mediaType: "",
+					},
+				],
+				labels: { "hobo.cd/oci.tags": VERSION },
+			});
+			expect(verdict.outcome).toBe("qualified");
+			const writes = world.paths("PUT").length;
+			// Someone deleted the release tag between candidate and stable.
+			world.repo("ghcr.io", REPOSITORY).tags.delete(VERSION);
+			pullOnly = true;
+			expect(
+				await promoteReleaseStable(home, env, {
+					...fixtures,
+					drive: { passes: 6, intervalMs: 0 },
+				}),
+			).toBe(false);
+			// Stable re-read the target and found it drifted: it did not repair
+			// it (that is candidate's write), and never asked for push scope.
+			expect(pushAsked).toEqual([]);
+			expect(world.paths("PUT")).toHaveLength(writes);
 		});
 
 		it("OCI: a digest the registry does not hold blocks the release (no fallback)", async () => {
@@ -368,7 +461,7 @@ describe.skipIf(!built)(
 			expect(journalText(home)).not.toContain(fx.TOKEN);
 		});
 
-		it("npm: @hobo/provider-npm refuses OIDC + provenance as a typed impedance; nothing reaches the registry", async () => {
+		it("npm: the missing provenance bundle is a named impedance; nothing reaches the registry", async () => {
 			const npmCalls: TransportRequest[] = [];
 			const http = withProbes(async (request) => {
 				npmCalls.push(request);
@@ -392,12 +485,44 @@ describe.skipIf(!built)(
 				labels: { "hobo.cd/npm.dist-tag": "alpha" },
 			});
 			expect(verdict.outcome).toBe("impedance");
-			expect(verdict.codes).toEqual(["RESOLVER_PRODUCT_UNSUPPORTED"]);
+			expect(verdict.codes).toEqual(["npm-provenance-bundle-missing"]);
 			expect(verdict.message).toMatch(/provenance/);
 			expect(npmCalls).toEqual([]);
 			// No qualified candidate: stable is reported, not promoted, and does
 			// not block the tag for npm.
 			expect(await promoteReleaseStable(home, env, fixtures)).toBe(true);
+		});
+
+		it("npm: a package artifact the Camp cannot bind blocks (catalog-binding-invalid, never impedance)", async () => {
+			const npmCalls: TransportRequest[] = [];
+			const http = withProbes(async (request) => {
+				npmCalls.push(request);
+				return { status: 500, headers: {}, body: "" };
+			}, []);
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-npm-"));
+			await expect(
+				qualifyReleaseCandidate({
+					home,
+					family: "npm",
+					env,
+					seams: seams(http),
+					stored: [
+						{
+							// Not <package>@<version>: the npm Camp cannot bind it.
+							name: "hobo-labs-core.tgz",
+							kind: "ARTIFACT_KIND_PACKAGE",
+							mediaType: "application/gzip",
+							bytes: new TextEncoder().encode("tarball"),
+						},
+					],
+					labels: { "hobo.cd/npm.dist-tag": "alpha" },
+				}),
+			).rejects.toThrow(/blocked: catalog-binding-invalid/);
+			const report = JSON.parse(
+				readFileSync(releaseReportPath(home, "npm"), "utf8"),
+			);
+			expect(report.channels.candidate.outcome).toBe("blocked");
+			expect(npmCalls).toEqual([]);
 		});
 	},
 );

@@ -24,20 +24,21 @@ const RELEASE_CHANNELS = ["candidate", "stable"] as const;
 type Family = (typeof RELEASE_FAMILIES)[number];
 type Channel = (typeof RELEASE_CHANNELS)[number];
 
-const PROVIDER: Record<Family, string> = {
+const PROVIDER = {
 	npm: "@hobo/provider-npm",
 	oci: "@hobo/provider-oci-registry",
 	pages: "@hobo/provider-github",
-};
+} as const satisfies Record<Family, string>;
 
 // Where each family publishes. Shared by both channels: candidate realizes the
 // release on the target, stable re-observes the same Freight there and
 // qualifies it (promote, never rebuild).
-const BINDING: Record<Family, Record<string, string>> = {
+const BINDING = {
 	// npm trusted publishing with provenance, as release-npm runs it today.
-	// @hobo/provider-npm refuses both (scoped OIDC exchange; no Sigstore
-	// bundle in the Freight): a typed refusal, so `npm publish --provenance`
-	// stays the npm publisher (live-provider-matrix.md).
+	// The realizer refuses both with named codes (npm-provenance-bundle-missing:
+	// the release records no Sigstore bundle yet; npm-oidc-scoped-unsupported:
+	// @hobo/provider-npm's scoped OIDC exchange), so `npm publish --provenance`
+	// stays the npm publisher: an unmet requirement (release-channels.md).
 	npm: {
 		"hobo.cd/npm.registry": "npmjs",
 		"hobo.cd/npm.auth": "oidc-trusted-publishing",
@@ -58,7 +59,16 @@ const BINDING: Record<Family, Record<string, string>> = {
 		"hobo.cd/github.pages.path": "/",
 		"hobo.cd/credential-ref": "env://GITHUB_TOKEN",
 	},
-};
+} as const satisfies Record<Family, Readonly<Record<string, string>>>;
+
+// What each channel's Camp may do at the target. Candidate writes the release
+// there; stable only re-reads it (`observe`: resolver read, pull-only token
+// scope), so the stable jobs, which hold no `packages: write`, never ask a
+// registry for push scope.
+const MODE = {
+	candidate: "converge",
+	stable: "observe",
+} as const satisfies Record<Channel, "converge" | "observe">;
 
 // Verification per family: one HTTP probe of the published target, failing
 // closed on no data. The content proof is the realizer's own observation (the
@@ -70,14 +80,14 @@ const BINDING: Record<Family, Record<string, string>> = {
 //   challenged with 401: the registry is up and speaking v2);
 // - pages: the gh-pages branch serves the site entry (raw, public repo).
 const [owner, repo] = repository.split("/");
-const PROBE: Record<Family, { url: string; status: number }> = {
+const PROBE = {
 	npm: { url: "https://registry.npmjs.org/-/ping", status: 200 },
 	oci: { url: "https://ghcr.io/v2/", status: 401 },
 	pages: {
 		url: `https://raw.githubusercontent.com/${owner}/${repo}/gh-pages/index.html`,
 		status: 200,
 	},
-};
+} as const satisfies Record<Family, Readonly<{ url: string; status: number }>>;
 
 function verification(family: Family) {
 	return {
@@ -113,6 +123,7 @@ export const camps = RELEASE_FAMILIES.flatMap((family) =>
 			"hobo.release/family": family,
 			"hobo.release/channel": channel,
 			...BINDING[family],
+			"hobo.cd/realize-mode": MODE[channel],
 		},
 	})),
 );

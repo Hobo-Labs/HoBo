@@ -110,11 +110,29 @@ describe("classifyRelease", () => {
 			reasons: [],
 			observed: "RECONCILE_STATUS_BLOCKED",
 			observedReasons: [
-				{ code: "RESOLVER_PRODUCT_UNSUPPORTED", message: "scoped OIDC" },
+				{ code: "npm-provenance-bundle-missing", message: "no bundle" },
 			],
 		});
 		expect(verdict?.outcome).toBe("impedance");
-		expect(verdict?.codes).toEqual(["RESOLVER_PRODUCT_UNSUPPORTED"]);
+		expect(verdict?.codes).toEqual(["npm-provenance-bundle-missing"]);
+	});
+
+	it("blocks a misdeclared Camp or a generic unsupported refusal (never impedance)", () => {
+		for (const code of [
+			"catalog-binding-invalid",
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+		])
+			expect(
+				classifyRelease("p", {
+					state: "PROMOTION_STATE_ROLLING_OUT",
+					reasons: [],
+					observed: "RECONCILE_STATUS_BLOCKED",
+					observedReasons: [
+						{ code: "npm-provenance-bundle-missing", message: "no bundle" },
+						{ code, message: "label hobo.cd/npm.auth is required" },
+					],
+				})?.outcome,
+			).toBe("blocked");
 	});
 
 	it("blocks any other realizer refusal and any terminal failure (fail closed)", () => {
@@ -136,9 +154,10 @@ describe("classifyRelease", () => {
 		).toMatchObject({ outcome: "blocked", codes: ["planning-camp-unknown"] });
 	});
 
-	it("keeps the impedance list to the typed resolver refusal, for npm only", () => {
+	it("keeps the impedance list to the two named npm provider limits, for npm only", () => {
 		expect([...RELEASE_IMPEDANCE_CODES]).toEqual([
-			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"npm-oidc-scoped-unsupported",
+			"npm-provenance-bundle-missing",
 		]);
 		expect([...RELEASE_IMPEDANCE_FAMILIES]).toEqual(["npm"]);
 	});
@@ -147,7 +166,7 @@ describe("classifyRelease", () => {
 describe("announceVerdict", () => {
 	const impedance = {
 		outcome: "impedance" as const,
-		codes: ["RESOLVER_PRODUCT_UNSUPPORTED"],
+		codes: ["npm-provenance-bundle-missing"],
 		message: "no Sigstore bundle",
 	};
 

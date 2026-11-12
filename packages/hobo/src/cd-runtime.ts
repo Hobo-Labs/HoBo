@@ -80,6 +80,7 @@ import {
 	CATALOG_REALIZED_PRODUCTS,
 	type CatalogCampBinding,
 	type CatalogFreight,
+	CatalogRealizerError,
 	catalogCampBinding,
 	catalogRealizedProvider,
 } from "./provider-hosting-catalog.js";
@@ -256,6 +257,23 @@ export async function openCdRuntime(
 	const catalogCamps = (await declaredTopology.camps()).filter(
 		(camp) => catalogRealizedProvider(camp.provider) !== undefined,
 	);
+	// One conductor per runtime: a topology that needs both the kube fleet's
+	// realizer and the catalog's is refused, never silently resolved to one.
+	if (
+		!config.simulate &&
+		catalogCamps.length > 0 &&
+		kube?.value.realizer &&
+		!options.realizers?.conductor
+	) {
+		await opened?.close();
+		return refusal(
+			"cd-conductor-conflict",
+			`the topology declares publication Camps (${catalogCamps
+				.map((camp) => camp.campId)
+				.join(", ")}) and a Kubernetes fleet: both need the conductor realizer`,
+			"Open publication Camps (--yard) and the Kubernetes fleet (HOBO_CD_KUBE_*) in separate hobo deploy runs, or compose one conductor through options.realizers.",
+		);
+	}
 	const realizers: CdHostInputs["realizers"] = {
 		...(!config.simulate && catalogCamps.length > 0
 			? {
@@ -479,7 +497,10 @@ export function catalogPlannerProviders(
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
 function refusalOf(error: Error) {
 	return {
-		code: error instanceof ResolverError ? error.code : "realize-failed",
+		code:
+			error instanceof ResolverError || error instanceof CatalogRealizerError
+				? error.code
+				: "realize-failed",
 		message: error.message,
 	};
 }
@@ -588,9 +609,12 @@ export function createCatalogResolverRealizer(
 		});
 	}
 
+	// Per Camp, what a binding remembers across passes (acknowledged uploads).
+	const memories = new Map<string, Set<string>>();
+
 	async function pass(
 		input: RealizeInput,
-		mode: "converge" | "observe",
+		asked: "converge" | "observe",
 	): Promise<ReconcileObservationRecord> {
 		let bound: Awaited<ReturnType<typeof bindingOf>>;
 		try {
@@ -604,6 +628,14 @@ export function createCatalogResolverRealizer(
 		if (!("binding" in bound))
 			return observation(input, ReconcileStatus.BLOCKED, bound);
 		const { binding, freight } = bound;
+		// An observe-mode Camp never writes, whatever the pass asks.
+		const mode = binding.mode === "observe" ? "observe" : asked;
+		let memory = memories.get(input.campId);
+		if (!memory) {
+			memory = new Set<string>();
+			memories.set(input.campId, memory);
+		}
+		const http = binding.transport?.(deps.http, memory) ?? deps.http;
 		const resources: {
 			resource: string;
 			physicalId: string;
@@ -629,8 +661,8 @@ export function createCatalogResolverRealizer(
 			for (const request of requests) {
 				const outcome =
 					mode === "converge"
-						? await resolver.reconcile(request, deps.http)
-						: await resolver.read?.(request, deps.http);
+						? await resolver.reconcile(request, http)
+						: await resolver.read?.(request, http);
 				// Ready only as the resolver observed it: every realized product
 				// reports `outputs.ready` from its own read (digest and every tag,
 				// dist-tag, or the published tree and its build).

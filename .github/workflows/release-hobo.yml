@@ -322,7 +322,8 @@ jobs:
     # tree. A local run signs for this job only when no OCI image is affected.
     if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 20
+    # The realize proof builds @hobo/hobo (turbo-cached) before its tests.
+    timeout-minutes: 35
     # packages: read lets a runner without the worker image (an ARC pod) pull it.
     permissions:
       contents: read
@@ -385,6 +386,29 @@ jobs:
         with:
           name: vitest-release-contract-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/release-contract-vitest.log
+          if-no-files-found: ignore
+      # The offline proof of the release realizer path: the built hobo CD
+      # composition with release/hobo-release.delivery.ts as topology, against
+      # the providers' recorded registry and GitHub worlds. It needs the built
+      # @hobo/hobo, and fails (never skips) here when the build is missing.
+      - name: Build the hobo CLI (release Freight realize proof)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Release Freight realize (offline)
+        id: release_realize_tests
+        env:
+          HOBO_RELEASE_REALIZE_REQUIRED: "1"
+        run: >-
+          node --no-warnings scripts/ci/run-job-command-report.mts
+          --label release-realize-vitest --
+          pnpm exec vitest run scripts/test/release-freight-realize.test.ts
+      - name: Upload release realize vitest log
+        if: failure() && steps.release_realize_tests.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vitest-release-realize-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/hobo-ci-job-logs/release-realize-vitest.log
           if-no-files-found: ignore
       - name: npm pack dry-run (allowlist staging)
         run: |

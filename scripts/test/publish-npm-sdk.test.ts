@@ -80,7 +80,7 @@ describe("release-hobo release-npm hosted runner contract", () => {
 
 const impedance = {
 	outcome: "impedance" as const,
-	codes: ["RESOLVER_PRODUCT_UNSUPPORTED"],
+	codes: ["npm-provenance-bundle-missing"],
 	message: "no Sigstore bundle",
 };
 

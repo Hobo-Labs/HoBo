@@ -61,15 +61,19 @@ Camp's labels bind where (`CATALOG_REALIZER_LABELS` in
 
 | Provider | Camp labels | Freight |
 |---|---|---|
-| all | `hobo.cd/credential-ref`: the one locator the resolver may use (`env://NAME`); nothing else is resolved for the Camp | |
+| all | `hobo.cd/credential-ref`: the one locator the resolver may use (`env://NAME`); nothing else is resolved for the Camp. Optional `hobo.cd/realize-mode`: `converge` (default) or `observe` (resolver `read` only, never a write) | |
 | npm | `hobo.cd/npm.registry` (`npmjs`, `github-packages`, `https://` origin), `hobo.cd/npm.auth`, `hobo.cd/npm.provenance: required`, optional `hobo.cd/npm.dist-tag` | `PACKAGE` artifacts named `<package>@<version>`, optional `<name>.sigstore` bundle, label `hobo.cd/npm.dist-tag` |
 | oci-registry | `hobo.cd/oci.registry` (host), `hobo.cd/oci.auth-realm`, `hobo.cd/oci.username` (non-secret), optional `hobo.cd/oci.tags` | `OCI_IMAGE` artifacts with a `<host>/<repo>@<digest>` coordinate on that host, label `hobo.cd/oci.tags` |
 | github | `hobo.cd/github.repository` (`owner/repo`), `hobo.cd/github.pages.branch`, `hobo.cd/github.pages.path` | a `STATIC_ASSETS` `hobo.static-site-tree/v1` index (its file blobs in the store), label `hobo.cd/github.commit-message` |
 
 CONVERGED is reported only when every resolver outcome reads `ready` from its
 own observation; a resolver refusal is a BLOCKED observation carrying its
-typed code. These Camps are the conductor realizer unless `--simulate`,
-`HOBO_CD_KUBE_FLEET` or the host supplies another. Planning reads a Freight's
+typed code. A missing or invalid label, or a Freight artifact the Camp cannot
+bind, is `catalog-binding-invalid`; the npm provider limits are named
+`npm-provenance-bundle-missing` and `npm-oidc-scoped-unsupported`. These Camps
+are the conductor realizer unless `--simulate` or the host supplies another; a
+topology that also opens a Kubernetes fleet (`HOBO_CD_KUBE_FLEET`) is refused
+with `cd-conductor-conflict` instead of silently using one conductor. Planning reads a Freight's
 declaration by `canonicalManifestHash`, the digest the build records (`hobo` build verb, D13).
 
 `pipeline apply --file <module>` also reads the module it applies as topology.

@@ -5,12 +5,15 @@
  * Empty token → npm trusted publishing (GitHub-hosted runners + id-token: write only).
  * Every tarball is recorded as release Freight and promoted into
  * hobo-release/npm-candidate through `hobo deploy`, whose realizer is
- * @hobo/provider-npm. That resolver cannot realize this target as the release
- * declares it (OIDC trusted publishing of scoped @hobo-labs names, with
- * provenance): it refuses with a typed RESOLVER_PRODUCT_UNSUPPORTED, the
- * `impedance` verdict, and only then does `npm publish --provenance` below
- * publish. A qualified verdict means the realizer published; anything else
- * stops before npm.
+ * @hobo/provider-npm. That realizer cannot realize this target as the release
+ * declares it: the Freight carries no Sigstore bundle for the provenance the
+ * Camp requires (npm-provenance-bundle-missing), and @hobo/provider-npm refuses
+ * OIDC trusted publishing of scoped @hobo-labs names
+ * (npm-oidc-scoped-unsupported). Only on exactly those typed codes, the
+ * `impedance` verdict, does `npm publish --provenance` below publish: an unmet
+ * requirement (release-channels.md), not a realized publish. A qualified
+ * verdict means the realizer published; anything else, including a
+ * misdeclared npm Camp or Freight (catalog-binding-invalid), stops before npm.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
