@@ -1,0 +1,90 @@
+syntax = "proto3";
+package hobo.cd.gitops.v1;
+
+// Wire contracts for @hobo/cd-gitops (plan 0024, WP16, D14). A publisher
+// renders a Set as a GitOps engine document, commits it through a Git host's
+// HTTP API and observes the engine. Constraints live in gitops.cue.
+// Records hold credential *references* only, never secret values.
+
+enum GitopsEngine {
+  GITOPS_ENGINE_UNSPECIFIED = 0;
+  GITOPS_ENGINE_ARGO_CD = 1;
+  GITOPS_ENGINE_FLUX = 2;
+}
+
+enum GitHost {
+  GIT_HOST_UNSPECIFIED = 0;
+  GIT_HOST_GITHUB = 1;
+  GIT_HOST_GITLAB = 2;
+  // Gitea and Forgejo share one API.
+  GIT_HOST_GITEA = 3;
+  GIT_HOST_BITBUCKET = 4;
+}
+
+// The Git repository the publisher commits to.
+message GitRepositoryRecord {
+  GitHost host = 1;
+  // REST API base, e.g. https://api.github.com, https://gitlab.com/api/v4,
+  // https://forge.example/api/v1, https://api.bitbucket.org/2.0.
+  string api_base_url = 2;
+  // owner/name (GitLab: full project path; Bitbucket: workspace/repo).
+  string repository = 3;
+  string branch = 4;
+  // Directory under which one folder per Camp is written.
+  string path_prefix = 5;
+  // URL the engine pulls from (Argo CD repoURL; Flux GitRepository url).
+  string clone_url = 6;
+  // Credential locator resolved per call; never a token.
+  string credential_ref = 7;
+}
+
+// Where the engine's status API is and where its documents land.
+message EngineEndpointRecord {
+  // Argo CD server, or the Kubernetes API server Flux runs in.
+  string api_base_url = 1;
+  string credential_ref = 2;
+  // Argo CD application namespace (default argocd) or Flux namespace
+  // (default flux-system).
+  string namespace = 3;
+  // Argo CD project (default default).
+  string project = 4;
+  // Argo CD destination server (default https://kubernetes.default.svc).
+  string destination_server = 5;
+  // Namespace the Set's manifests land in (default hobo-system).
+  string destination_namespace = 6;
+  // Flux GitRepository source name (default hobo).
+  string source_ref = 7;
+}
+
+// hobo.cd-gitops.publisher/v1: one configured publisher.
+message GitopsPublisherRecord {
+  string schema_version = 1;
+  // Publisher target name, e.g. argo-cd or flux; what a DeliveryPolicy names.
+  string name = 2;
+  GitopsEngine engine = 3;
+  GitRepositoryRecord repository = 4;
+  EngineEndpointRecord endpoint = 5;
+  bool auto_sync = 6;
+  bool prune = 7;
+  // Flux reconcile interval (Go duration, default 1m).
+  string interval = 8;
+}
+
+message PublishedDocumentRecord {
+  string path = 1;
+  // sha256:<hex> of the committed bytes.
+  string digest = 2;
+  uint64 size_bytes = 3;
+}
+
+// What one publish did.
+message PublicationRecord {
+  string publisher = 1;
+  string set_id = 2;
+  string camp_id = 3;
+  // Commit the engine must report before the Set counts as converged.
+  string revision = 4;
+  repeated PublishedDocumentRecord documents = 5;
+  // True when the branch already held these exact bytes (no commit made).
+  bool unchanged = 6;
+}
