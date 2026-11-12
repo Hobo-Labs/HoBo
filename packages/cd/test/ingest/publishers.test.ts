@@ -4,6 +4,7 @@ import {
 	createTrustedPublisherVerifier,
 	INGEST_METRIC,
 	INGEST_REASON,
+	JWKS_FORCED_REFRESH_INTERVAL_MS,
 } from "../../src/ingest/index.js";
 import {
 	AGENT,
@@ -219,6 +220,36 @@ describe("createTrustedPublisherVerifier: OIDC trusted publishing (D3)", () => {
 			ctx,
 		);
 		expect(outcome.ok).toBe(true);
+		expect(oidc.count(jwks)).toBe(3);
+	});
+
+	it("refetches the JWKS for an unknown kid at most once per window", async () => {
+		const { publishers, ctx, oidc, time } = await harness({
+			cacheControl: "public, max-age=3600",
+		});
+		const jwks = `${GITHUB_ISSUER}/.well-known/jwks`;
+		await publishers.verify(signJwt(githubKey, githubClaims(ctx.now())), ctx);
+		expect(oidc.count(jwks)).toBe(1);
+		for (const kid of ["random-1", "random-2", "random-3"]) {
+			expect(
+				code(
+					await publishers.verify(
+						signJwt(rsaKey(kid), githubClaims(ctx.now())),
+						ctx,
+					),
+				),
+			).toBe(INGEST_REASON.publisherToken);
+		}
+		// One forced refresh for the first unknown kid; the rest are refused
+		// from the negative cache without contacting the issuer.
+		expect(oidc.count(jwks)).toBe(2);
+		time.advance(JWKS_FORCED_REFRESH_INTERVAL_MS);
+		const rotated = rsaKey("gh-2");
+		oidc.setJwks(jwks, [githubKey, rotated], "max-age=3600");
+		expect(
+			(await publishers.verify(signJwt(rotated, githubClaims(ctx.now())), ctx))
+				.ok,
+		).toBe(true);
 		expect(oidc.count(jwks)).toBe(3);
 	});
 

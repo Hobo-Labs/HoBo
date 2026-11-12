@@ -18,6 +18,7 @@ export {
 export {
 	cacheLifetimeMs,
 	createTrustedPublisherVerifier,
+	JWKS_FORCED_REFRESH_INTERVAL_MS,
 	parseTrustedPublisher,
 	readTrustedPublishers,
 	type TrustedPublisherVerifierDeps,

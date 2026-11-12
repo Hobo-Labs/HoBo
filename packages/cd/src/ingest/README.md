@@ -52,7 +52,11 @@ anything. A proposal-only principal is refused (`ingest-proposal-only`).
     `customData["hobo.cd/attestation"]` (`{ bindle, statement, bundle }`,
     base64), verified exactly like the `attestation` path. If that
     attestation does not verify, the polls still run, and the call returns
-    `unverified-trigger` followed by the verifier's reasons.
+    `unverified-trigger` followed by the verifier's reasons. A carried
+    attestation that cannot be read (statement or bundle not base64) is
+    treated the same way: the polls run first, then the call returns
+    `unverified-trigger` and `attestation-invalid`. A bad optional field
+    never loses a valid nudge.
 
 ## Trusted publishers
 
@@ -79,11 +83,18 @@ A later record for the same name replaces the earlier one.
 Discovery documents and the JWKS are cached for `Cache-Control: max-age`
 (capped at 24 h). Nothing is cached on `no-store`, on `no-cache`, or when the
 header is absent. An unknown `kid` refetches the JWKS once, which handles key
-rotation.
+rotation. Each issuer then has a negative-cache window of
+`JWKS_FORCED_REFRESH_INTERVAL_MS` (60 s, on the injected clock): another
+unknown `kid` inside it is refused without contacting the issuer, so tokens
+with random `kid` values cannot drive issuer load.
 
 The principal is `{ kind: "service", id: "workload:<publisher>:<sub>" }`.
-`@hobo/core` has no `workload` principal kind, so the workload is named in the
-id.
+The spec asks for a PrincipalRef of kind workload, but `@hobo/core`'s
+`PrincipalKind` has no `workload`, so the workload is named in the id. This
+is a wire contract for authorization: rules (WP19 `createCdAuthorizer`) and
+docs (WP21) that need to single out CI workloads must match the `workload:`
+id prefix, not the kind. Matching on kind `service` alone also matches
+every other service principal.
 
 ## Promoted proofs
 
