@@ -1,0 +1,37 @@
+{
+  "schema": "hobo.golden-replay-corpus-baseline/v1",
+  "entries": [
+    {
+      "key": "env.PromoteRequested@v1#env-PromoteRequested-v1",
+      "bodyDigest": "sha256:0c98cdeaf202379f69610a96c3f05139e466eae54a6bd3b40f653aeecb3983b4"
+    },
+    {
+      "key": "env.PromoteRequested@v1#env-PromoteRequested-v1-1",
+      "bodyDigest": "sha256:d67ef9501945075d3bc4d11bf76a339dccfd329874cc3917bff3daa6ea6a2e26"
+    },
+    {
+      "key": "env.Promoted@v1#env-Promoted-v1",
+      "bodyDigest": "sha256:1282ffbb136d6392098a1e7503fdcb2fa3e97ece12ba6ed512289100ea9c0085"
+    },
+    {
+      "key": "env.PromoteRejected@v1#env-PromoteRejected-v1",
+      "bodyDigest": "sha256:554de4c976b1a0c098075583c5a3661987f5dff0a97a47babbf31f2024cdb857"
+    },
+    {
+      "key": "env.PromoteSuperseded@v1#env-PromoteSuperseded-v1",
+      "bodyDigest": "sha256:e311ab730bce97422f715ea0062973a8beda4f42d42a80e8df826c50eaced4c2"
+    },
+    {
+      "key": "env.PromoteRolledBack@v1#env-PromoteRolledBack-v1",
+      "bodyDigest": "sha256:6a87f754d07b0bd3e0a32eff5304c56393a7045d55caed914f3840fd51d0bb53"
+    },
+    {
+      "key": "env.Cloned@v1#env-Cloned-v1",
+      "bodyDigest": "sha256:68c303f98ae469d6a9c4df291b763bbd4b9b395897f4458b90f3f83f194ce3f9"
+    },
+    {
+      "key": "env.Expired@v1#env-Expired-v1",
+      "bodyDigest": "sha256:68c303f98ae469d6a9c4df291b763bbd4b9b395897f4458b90f3f83f194ce3f9"
+    }
+  ]
+}
