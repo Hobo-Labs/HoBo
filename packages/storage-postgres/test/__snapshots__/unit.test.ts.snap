@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`migrations (offline) > ships a contiguous, append-only list whose checksums do not depend on the schema name 1`] = `
+[
+  "3de17e81a38276604dab9a1c370f1d3cdd55811730d128d079b038ca863f4d8c",
+]
+`;
