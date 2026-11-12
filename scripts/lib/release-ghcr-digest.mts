@@ -87,11 +87,7 @@ function readDigestField(root: JsonObject): string | undefined {
 	const raw =
 		readStringField(root, "digest") ?? readStringField(root, "Digest");
 	if (raw === undefined) return undefined;
-	try {
-		return assertSha256ImageDigest(raw, "imagetools digest");
-	} catch {
-		return undefined;
-	}
+	return assertSha256ImageDigest(raw, "imagetools digest");
 }
 
 function stringLabelsFromJson(
@@ -124,12 +120,12 @@ function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	if (!isObject(parsed)) return undefined;
 	const manifest = parsed.manifest ?? parsed.Manifest;
 	const manifestObj = isObject(manifest) ? manifest : undefined;
-	return (
-		(manifestObj && readDigestField(manifestObj)) ??
-		readStringField(parsed, "digest") ??
-		readStringField(parsed, "Digest") ??
-		undefined
-	);
+	const fromManifest = manifestObj ? readDigestField(manifestObj) : undefined;
+	if (fromManifest !== undefined) return fromManifest;
+	const top =
+		readStringField(parsed, "digest") ?? readStringField(parsed, "Digest");
+	if (top === undefined) return undefined;
+	return assertSha256ImageDigest(top, "imagetools digest");
 }
 
 /** Test and production parser for `docker buildx imagetools inspect --format '{{json .}}'`. */

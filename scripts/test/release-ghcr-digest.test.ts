@@ -92,6 +92,19 @@ describe("release ghcr digest helpers", () => {
 		expect(inspect).toHaveBeenCalledWith(tag);
 	});
 
+	it("parseImagetoolsInspectStdout rejects malformed manifest.digest", async () => {
+		const { parseImagetoolsInspectStdout } = await import(
+			"../lib/release-ghcr-digest.mts"
+		);
+		expect(() =>
+			parseImagetoolsInspectStdout(
+				JSON.stringify({
+					manifest: { digest: "sha256:bad" },
+				}),
+			),
+		).toThrow(/sha256:/u);
+	});
+
 	it("parses buildx imagetools JSON manifest.digest", async () => {
 		const { parseImagetoolsInspectStdout } = await import(
 			"../lib/release-ghcr-digest.mts"
