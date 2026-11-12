@@ -601,20 +601,26 @@ describe("require_provenance", () => {
 describe("webhooks only nudge (I15)", () => {
 	it("§10 forged registry webhook: refused, no poll scheduled", async () => {
 		const h = harness(OCI_FIXTURES);
-		await defineOk(h, source("app", "web", [image]));
+		// Manual source: only a scheduled poll can reach the driver.
+		await defineOk(h, source("app", "web", [image], { automatic: false }));
 		const response = await h.sources.nudge(harborPush("wrong-token"), h.ctx);
 		expect(response.status).toBe(401);
-		await h.sources.tick(h.ctx); // first tick polls on interval; clear that effect
-		const before = h.ledger.calls.length;
-		h.time.advance(1_000);
-		await h.sources.tick(h.ctx);
-		expect(h.ledger.calls.length).toBe(before);
 		const forgedGithub = await h.sources.nudge(
 			githubPush("https://github.com/acme/web.git", "not-the-secret"),
 			h.ctx,
 		);
 		expect(forgedGithub.status).toBe(401);
 		expect(h.telemetry.count(SOURCE_METRIC.nudges, { outcome: "401" })).toBe(2);
+		h.time.advance(1_000);
+		await h.sources.tick(h.ctx);
+		expect(h.fixture.requests).toEqual([]);
+		expect(h.ledger.calls).toEqual([]);
+		// Control: a valid nudge does reach the driver, so the check above can fail.
+		expect(
+			(await h.sources.nudge(harborPush("harbor-token"), h.ctx)).status,
+		).toBe(202);
+		await h.sources.tick(h.ctx);
+		expect(h.fixture.requests.length).toBeGreaterThan(0);
 	});
 
 	it("a valid webhook creates no Freight by itself; it schedules a poll", async () => {

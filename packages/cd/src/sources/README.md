@@ -85,7 +85,10 @@ journaled with every event.
 source scheduled by `schedule` or `nudge`. Failures back off exponentially
 from `sourceBackoffBaseMs` to `sourceBackoffMaxMs`, jittered into [50%, 100%]
 by `sha256(source, attempt)` — deterministic and replayable (I8). A
-rate-limit's `Retry-After` is a floor.
+rate-limit's `Retry-After` is a floor. Pending schedules and backoff state
+are in-process only: a restart drops a nudge already answered `202` and
+resets backoff. That is safe (nudges are hints; polling is the source of
+truth), but a manual (`automatic: false`) source waits for the next nudge.
 
 ## Metrics (`TelemetrySink`)
 
@@ -114,6 +117,7 @@ rate-limit's `Retry-After` is a floor.
 | `refused` with `source-freight-refused` | The ledger refused the manifest (e.g. digest not at its coordinate) | Read the ledger reasons in the event meta; fix the artifact and publish a newer version. |
 | `deferred` events, no Freight | Assembly is waiting for another subscription | Check the missing subscription named in the reason; for `SAME_COMMIT` make sure images carry `org.opencontainers.image.revision`. |
 | Nudges answered `401` | Sender secret differs from `webhook/<receiver>` (scope `cd:source:nudge`) | Re-share the secret with the sender. A `401` never schedules a poll. |
+| Manual source missed an update after a restart | A `202` nudge was pending when the service restarted (schedules are in-process) | Re-send the nudge, or run `poll` for the source. Automatic sources catch up on their next interval. |
 | Nudges answered `202` with `scheduled: []` | Payload names a repository no subscription matches | Compare the payload repository with the subscription locator (keys are normalized: host lowercased, `.git` dropped, Docker Hub `library/`). |
 | A retired Rail was discovered earlier | It was approved, discovered, then retired in a later poll | Yank the Freight through the ledger (`freight.yank`); a Rail retired before discovery is never discovered. |
 
