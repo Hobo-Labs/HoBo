@@ -27,7 +27,7 @@ import {
 } from "./journal.js";
 import {
 	attributeProblems,
-	METRIC_DEFINITIONS,
+	metricDefinition,
 	REGISTRY_VERSION,
 	SPAN_DEFINITIONS,
 } from "./semconv-registry.js";
@@ -77,7 +77,7 @@ describe("semantic-conventions pin (R8)", () => {
 				}).filter((p) => p.includes("not in the semconv")),
 			).toEqual([]);
 		for (const name of Object.values(CICD_METRICS))
-			expect(METRIC_DEFINITIONS[name]).toBeDefined();
+			expect(metricDefinition(name)).toBeDefined();
 		for (const name of Object.values(CD_METRICS))
 			expect(name.startsWith("hobo.cd.")).toBe(true);
 	});
@@ -204,7 +204,7 @@ describe("CD spans", () => {
 			CICD_METRICS.pipelineRunErrors,
 		]);
 		for (const point of points) {
-			const def = METRIC_DEFINITIONS[point.name];
+			const def = metricDefinition(point.name);
 			expect(def?.instrument).toBe(point.kind);
 			expect(def?.unit).toBe(point.unit);
 			for (const key of def?.required ?? [])

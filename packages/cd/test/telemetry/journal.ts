@@ -2,7 +2,7 @@
 // bodies the freight ledger (WP1), promotion saga (WP6), desired-state store
 // (WP4) and reconcilers (WP7) record, at controlled times.
 import { create, toJson } from "@bufbuild/protobuf";
-import type { JsonObject } from "@hobo/core";
+import type { JsonObject, JsonValue } from "@hobo/core";
 import {
 	FreightRecordSchema,
 	FreightSubject,
@@ -12,6 +12,7 @@ import {
 	ReconcileStatus,
 	SetRecordSchema,
 } from "../../src/_generated/cd_pb.js";
+import { isJsonObject } from "../../src/authz/json.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import {
 	type Clock,
@@ -41,9 +42,10 @@ async function append(
 	});
 }
 
-function json<T>(value: T): JsonObject {
-	// SAFETY: proto toJson of a message is always a JSON object.
-	return value as unknown as JsonObject;
+function json(value: JsonValue): JsonObject {
+	if (!isJsonObject(value))
+		throw new Error("proto toJson returned a non-object");
+	return value;
 }
 
 export async function recordFreight(

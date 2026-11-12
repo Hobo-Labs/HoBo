@@ -43,6 +43,7 @@ import {
 	isGrant,
 	parseAuthzDecision,
 } from "./events.js";
+import { isJsonObject, isText } from "./json.js";
 import {
 	agentGrantScope,
 	CD_ACTION_SPECS,
@@ -97,8 +98,8 @@ function agentClass(principal: PrincipalRef | undefined): boolean {
 
 function canonical(value: JsonValue | undefined): string {
 	if (value === undefined) return "null";
-	if (value === null || typeof value !== "object") return JSON.stringify(value);
 	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+	if (!isJsonObject(value)) return JSON.stringify(value);
 	const keys = Object.keys(value).sort();
 	return `{${keys
 		.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
@@ -109,13 +110,19 @@ function sha256Hex(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
+/** A subject with secret-looking members removed, and their paths. */
+type ScrubbedSubject = Readonly<{ clean: JsonObject; redacted: string[] }>;
+
+/** A governed resource: policy resource kind and identity. */
+type GovernedResource = Readonly<{ kind: string; id: string }>;
+
 /** Drop secret-looking members (I9); records stay secret-free. */
-function scrub(subject: JsonObject): { clean: JsonObject; redacted: string[] } {
+function scrub(subject: JsonObject): ScrubbedSubject {
 	const redacted: string[] = [];
 	const walk = (value: JsonValue, path: string): JsonValue => {
-		if (value === null || typeof value !== "object") return value;
 		if (Array.isArray(value))
 			return value.map((v, i) => walk(v, `${path}[${i}]`));
+		if (!isJsonObject(value)) return value;
 		const out: Record<string, JsonValue> = {};
 		for (const key of Object.keys(value).sort()) {
 			const member = value[key];
@@ -130,22 +137,13 @@ function scrub(subject: JsonObject): { clean: JsonObject; redacted: string[] } {
 		return out;
 	};
 	const clean = walk(subject, "");
-	return {
-		clean:
-			clean !== null && typeof clean === "object" && !Array.isArray(clean)
-				? clean
-				: {},
-		redacted,
-	};
+	return { clean: isJsonObject(clean) ? clean : {}, redacted };
 }
 
-function resourceOf(
-	s: CdActionSpec,
-	subject: JsonObject,
-): { kind: string; id: string } {
+function resourceOf(s: CdActionSpec, subject: JsonObject): GovernedResource {
 	for (const key of s.resourceKeys) {
 		const value = subject[key];
-		if (typeof value === "string" && value !== "")
+		if (isText(value) && value !== "")
 			return { kind: s.resourceKind, id: value };
 	}
 	// No identifying member: the resource is the subject itself.

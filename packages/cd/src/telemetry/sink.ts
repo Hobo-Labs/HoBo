@@ -4,7 +4,13 @@
 // failures (429, 502, 503, 504, transport errors) with capped exponential
 // backoff that honours `Retry-After`, per the OTLP/HTTP specification.
 // Backoff has no jitter so tests and replays are deterministic.
-import type { HttpTransport, TransportResponse } from "@hobo/core";
+import type { HttpTransport, JsonValue, TransportResponse } from "@hobo/core";
+import {
+	isFiniteNumber,
+	isJsonObject,
+	isText,
+	parseJsonText,
+} from "../authz/json.js";
 import type {
 	OtelAttributes,
 	OtelMetricPoint,
@@ -52,6 +58,16 @@ export type ExportStats = Readonly<{
 	droppedPoints: number;
 	lastError?: Readonly<{ code: string; message: string }>;
 }>;
+
+type MutableStats = {
+	requests: number;
+	retries: number;
+	exportedSpans: number;
+	exportedPoints: number;
+	droppedSpans: number;
+	droppedPoints: number;
+	lastError: Readonly<{ code: string; message: string }> | undefined;
+};
 
 export type OtlpTelemetrySink = TelemetrySink &
 	Readonly<{ endpoint: string; stats(): ExportStats }>;
@@ -102,26 +118,27 @@ function retryAfterMs(response: TransportResponse): number | undefined {
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : undefined;
 }
 
-function rejectedCount(body: string): { rejected: number; message: string } {
-	try {
-		const parsed: unknown = JSON.parse(body);
-		if (parsed === null || typeof parsed !== "object")
-			return { rejected: 0, message: "" };
-		const partial = Reflect.get(parsed, "partialSuccess");
-		if (partial === null || typeof partial !== "object")
-			return { rejected: 0, message: "" };
-		const spans = Number(Reflect.get(partial, "rejectedSpans") ?? 0);
-		const points = Number(Reflect.get(partial, "rejectedDataPoints") ?? 0);
-		const message = Reflect.get(partial, "errorMessage");
-		return {
-			rejected:
-				(Number.isFinite(spans) ? spans : 0) +
-				(Number.isFinite(points) ? points : 0),
-			message: typeof message === "string" ? message : "",
-		};
-	} catch {
-		return { rejected: 0, message: "" };
-	}
+/** The OTLP `partialSuccess` member of an export response, parsed. */
+type PartialSuccess = Readonly<{ rejected: number; message: string }>;
+
+const NO_PARTIAL: PartialSuccess = { rejected: 0, message: "" };
+
+/** OTLP JSON encodes int64 counts as strings or numbers. */
+function count(value: JsonValue | undefined): number {
+	const n = isText(value) ? Number(value) : isFiniteNumber(value) ? value : 0;
+	return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function parsePartialSuccess(body: string): PartialSuccess {
+	const parsed = parseJsonText(body);
+	if (!isJsonObject(parsed)) return NO_PARTIAL;
+	const partial = parsed.partialSuccess;
+	if (!isJsonObject(partial)) return NO_PARTIAL;
+	const message = partial.errorMessage;
+	return {
+		rejected: count(partial.rejectedSpans) + count(partial.rejectedDataPoints),
+		message: isText(message) ? message : "",
+	};
 }
 
 export function createTelemetrySink(
@@ -141,18 +158,18 @@ export function createTelemetrySink(
 	const resourceAttributes: OtelAttributes = options.resource ?? {
 		"service.name": "hobo-cd",
 	};
-	const headers: Readonly<Record<string, string>> = {
+	const headers = {
 		...options.headers,
 		"Content-Type": "application/json",
 	};
-	const stats = {
+	const stats: MutableStats = {
 		requests: 0,
 		retries: 0,
 		exportedSpans: 0,
 		exportedPoints: 0,
 		droppedSpans: 0,
 		droppedPoints: 0,
-		lastError: undefined as { code: string; message: string } | undefined,
+		lastError: undefined,
 	};
 
 	async function post(path: string, body: string): Promise<void> {
@@ -173,7 +190,7 @@ export function createTelemetrySink(
 				failure = error instanceof Error ? error.message : String(error);
 			}
 			if (response && response.status >= 200 && response.status < 300) {
-				const partial = rejectedCount(response.body);
+				const partial = parsePartialSuccess(response.body);
 				if (partial.rejected > 0)
 					throw new TelemetryError(
 						"otlp-partial-success",
@@ -201,9 +218,9 @@ export function createTelemetrySink(
 		}
 	}
 
-	async function exportAll<T>(
+	async function exportAll<T, B extends object>(
 		items: readonly T[],
-		encode: (batch: readonly T[]) => unknown,
+		encode: (batch: readonly T[]) => B,
 		path: string,
 		onSent: (n: number) => void,
 		onDropped: (n: number) => void,

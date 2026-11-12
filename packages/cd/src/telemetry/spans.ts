@@ -12,13 +12,9 @@ import {
 	PromotionRecordSchema,
 	PromotionState,
 } from "../_generated/cd_pb.js";
+import { isText } from "../authz/json.js";
 import { CD_EVENTS, CD_STREAMS } from "../events.js";
-import type {
-	CampId,
-	OtelAttributes,
-	OtelMetricPoint,
-	OtelSpan,
-} from "../ports.js";
+import type { CampId, OtelMetricPoint, OtelSpan } from "../ports.js";
 import {
 	CICD,
 	CICD_ACTION,
@@ -44,14 +40,19 @@ const TERMINAL: ReadonlySet<string> = new Set([
 	CD_EVENTS.EnvPromoteSuperseded,
 ]);
 
-const RESULT_RANK: Readonly<Record<CicdResult, number>> = {
-	failure: 0,
-	error: 1,
-	timeout: 2,
-	success: 3,
-	cancellation: 4,
-	skip: 5,
-};
+// Worst first: the run result is the worst task result.
+const RESULT_ORDER = Object.freeze([
+	"failure",
+	"error",
+	"timeout",
+	"success",
+	"cancellation",
+	"skip",
+] as const satisfies readonly CicdResult[]);
+
+function rank(result: CicdResult): number {
+	return RESULT_ORDER.indexOf(result);
+}
 
 function hex(seed: string, length: number): string {
 	return createHash("sha256").update(seed).digest("hex").slice(0, length);
@@ -88,12 +89,11 @@ function statusFor(result: CicdResult | undefined): OtelSpan["status"] {
 	return "unset";
 }
 
-function parse(data: unknown) {
+function parse(event: EventEnvelope) {
 	try {
-		// SAFETY: journal bodies are proto-JSON; fromJson parses or throws.
-		return fromJson(PromotionRecordSchema, data as JsonValue, {
-			ignoreUnknownFields: true,
-		});
+		// SAFETY: event-store bodies are JSON; fromJson parses or throws.
+		const data = event.data as JsonValue;
+		return fromJson(PromotionRecordSchema, data, { ignoreUnknownFields: true });
 	} catch {
 		return undefined;
 	}
@@ -107,13 +107,12 @@ function ms(ts: string): number {
 function placement(
 	locate: CampLocator | undefined,
 	campId: string,
-): OtelAttributes {
+	into: Map<string, string>,
+): void {
 	// SAFETY: the Camp id comes from a recorded PromotionRecord target.
 	const ref = locate?.(campId as CampId);
-	const out: Record<string, string> = {};
-	if (ref?.stationId) out[HOBO_ATTR.stationId] = ref.stationId;
-	if (ref?.yardId) out[HOBO_ATTR.yardId] = ref.yardId;
-	return out;
+	if (ref?.stationId) into.set(HOBO_ATTR.stationId, ref.stationId);
+	if (ref?.yardId) into.set(HOBO_ATTR.yardId, ref.yardId);
 }
 
 /**
@@ -127,7 +126,7 @@ export function promotionSpans(
 	const requested = events.find(
 		(e) => e.type === CD_EVENTS.EnvPromoteRequested,
 	);
-	const request = requested ? parse(requested.data) : undefined;
+	const request = requested ? parse(requested) : undefined;
 	if (!requested || !request) return [];
 	const promotionId = request.promotionId;
 	const pipeline = request.pipeline === "" ? "promotion" : request.pipeline;
@@ -140,7 +139,7 @@ export function promotionSpans(
 	const terminal = new Map<string, { atMs: number; result: CicdResult }>();
 	for (const event of events) {
 		if (!TERMINAL.has(event.type)) continue;
-		const record = parse(event.data);
+		const record = parse(event);
 		const campId = record?.targetCampIds[0];
 		if (!record || campId === undefined || terminal.has(campId)) continue;
 		terminal.set(campId, {
@@ -149,29 +148,29 @@ export function promotionSpans(
 		});
 	}
 
-	const common: Record<string, string> = {
-		[CICD.pipelineName]: pipeline,
-		[CICD.pipelineRunId]: promotionId,
-		[HOBO_ATTR.freightId]: request.freightId,
-		[HOBO_ATTR.promotionId]: promotionId,
-		[HOBO_ATTR.intent]:
+	const common = new Map<string, string>([
+		[CICD.pipelineName, pipeline],
+		[CICD.pipelineRunId, promotionId],
+		[HOBO_ATTR.freightId, request.freightId],
+		[HOBO_ATTR.promotionId, promotionId],
+		[
+			HOBO_ATTR.intent,
 			request.subject === FreightSubject.RAIL ? "rail" : "bindle",
-	};
-	if (request.node !== "") common[HOBO_ATTR.pipelineNode] = request.node;
+		],
+	]);
+	if (request.node !== "") common.set(HOBO_ATTR.pipelineNode, request.node);
 
 	const tasks: OtelSpan[] = [];
 	for (const campId of [...request.targetCampIds].sort()) {
 		const done = terminal.get(campId);
-		const attributes: Record<string, string> = {
-			...common,
-			...placement(locate, campId),
-			[CICD.pipelineTaskName]: `promote ${campId}`,
-			[CICD.pipelineTaskRunId]: `${promotionId}/${campId}`,
-			[CICD.pipelineTaskType]: "deploy",
-			[HOBO_ATTR.campId]: campId,
-			[DEPLOYMENT_ENVIRONMENT_NAME]: environment(campId),
-		};
-		if (done) attributes[CICD.pipelineTaskRunResult] = done.result;
+		const attributes = new Map(common);
+		placement(locate, campId, attributes);
+		attributes.set(CICD.pipelineTaskName, `promote ${campId}`);
+		attributes.set(CICD.pipelineTaskRunId, `${promotionId}/${campId}`);
+		attributes.set(CICD.pipelineTaskType, "deploy");
+		attributes.set(HOBO_ATTR.campId, campId);
+		attributes.set(DEPLOYMENT_ENVIRONMENT_NAME, environment(campId));
+		if (done) attributes.set(CICD.pipelineTaskRunResult, done.result);
 		tasks.push({
 			name: `promote ${campId}`,
 			traceId,
@@ -181,7 +180,7 @@ export function promotionSpans(
 			startMs,
 			endMs: done ? Math.max(startMs, done.atMs) : startMs,
 			status: statusFor(done?.result),
-			attributes,
+			attributes: Object.fromEntries(attributes),
 		});
 	}
 
@@ -191,24 +190,21 @@ export function promotionSpans(
 		request.targetCampIds.every((c) => terminal.has(c));
 	const rootResult = finished
 		? results.reduce<CicdResult>(
-				(worst, r) => (RESULT_RANK[r] < RESULT_RANK[worst] ? r : worst),
+				(worst, r) => (rank(r) < rank(worst) ? r : worst),
 				"skip",
 			)
 		: undefined;
-	const rootAttributes: Record<string, string> = {
-		...common,
-		[CICD.pipelineActionName]: CICD_ACTION.run,
-	};
+	const rootAttributes = new Map(common);
+	rootAttributes.set(CICD.pipelineActionName, CICD_ACTION.run);
 	if (request.targetCampIds.length === 1) {
 		const only = request.targetCampIds[0] ?? "";
-		Object.assign(rootAttributes, placement(locate, only), {
-			[HOBO_ATTR.campId]: only,
-			[DEPLOYMENT_ENVIRONMENT_NAME]: environment(only),
-		});
+		placement(locate, only, rootAttributes);
+		rootAttributes.set(HOBO_ATTR.campId, only);
+		rootAttributes.set(DEPLOYMENT_ENVIRONMENT_NAME, environment(only));
 	} else if (request.node !== "")
-		rootAttributes[DEPLOYMENT_ENVIRONMENT_NAME] = request.node;
-	if (rootResult) rootAttributes[CICD.pipelineResult] = rootResult;
-	else rootAttributes[CICD.pipelineRunState] = "executing";
+		rootAttributes.set(DEPLOYMENT_ENVIRONMENT_NAME, request.node);
+	if (rootResult) rootAttributes.set(CICD.pipelineResult, rootResult);
+	else rootAttributes.set(CICD.pipelineRunState, "executing");
 	const endMs = Math.max(startMs, ...tasks.map((t) => t.endMs));
 	const root: OtelSpan = {
 		name: `${CICD_ACTION.run} ${pipeline}`,
@@ -218,7 +214,7 @@ export function promotionSpans(
 		startMs,
 		endMs,
 		status: statusFor(rootResult),
-		attributes: rootAttributes,
+		attributes: Object.fromEntries(rootAttributes),
 	};
 	return [root, ...tasks];
 }
@@ -248,11 +244,7 @@ export function pipelineRunMetrics(
 	for (const span of spans) {
 		const result = span.attributes[CICD.pipelineResult];
 		const pipeline = span.attributes[CICD.pipelineName];
-		if (
-			span.parentSpanId !== undefined ||
-			typeof result !== "string" ||
-			typeof pipeline !== "string"
-		)
+		if (span.parentSpanId !== undefined || !isText(result) || !isText(pipeline))
 			continue;
 		points.push({
 			name: CICD_METRICS.pipelineRunDuration,

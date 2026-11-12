@@ -106,7 +106,7 @@ export interface CdSpan {
 
 function nanoToMs(value: string | number | undefined): number {
 	if (value === undefined) return 0;
-	const n = typeof value === "string" ? Number(value) : value;
+	const n = Number(value);
 	return Number.isFinite(n) ? Math.floor(n / 1_000_000) : 0;
 }
 

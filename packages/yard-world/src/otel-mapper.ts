@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: this is the OTLP/JSON parse boundary; OTLP attribute maps and lookup tables are open dictionaries by the OTLP spec, and reading a value's representation is the parse. */
 /**
  * OTLP/JSON → yard-world model mappers (traces, logs, metrics).
  *
@@ -96,6 +97,13 @@ export function attributesToRecord(
 	return out;
 }
 
+/** A scope-spans group carrying the source group's scope, when it has one. */
+function scopeOf(source: OtlpScopeSpans, spans: OtlpSpan[]): OtlpScopeSpans {
+	const out: OtlpScopeSpans = { spans };
+	if (source.scope !== undefined) out.scope = source.scope;
+	return out;
+}
+
 function str(key: string, value: string): OtlpAttribute {
 	return { key, value: { stringValue: value } };
 }
@@ -152,18 +160,11 @@ export function liftCdTopology(payload: OtlpTraceRequest): OtlpTraceRequest {
 				const scopes = group.scopeSpans ?? [];
 				const scope = scopes.find((s) => s.scope?.name === ss.scope?.name);
 				if (scope) scope.spans = [...(scope.spans ?? []), span];
-				else
-					scopes.push({
-						...(ss.scope ? { scope: ss.scope } : {}),
-						spans: [span],
-					});
+				else scopes.push(scopeOf(ss, [span]));
 				group.scopeSpans = scopes;
 			}
 			if (stay.length > 0)
-				keep.scopeSpans = [
-					...(keep.scopeSpans ?? []),
-					{ ...(ss.scope ? { scope: ss.scope } : {}), spans: stay },
-				];
+				keep.scopeSpans = [...(keep.scopeSpans ?? []), scopeOf(ss, stay)];
 		}
 		if ((keep.scopeSpans ?? []).length > 0) out.push(keep);
 		out.push(...lifted.values());
@@ -314,7 +315,7 @@ export function mapTracePayload(
 
 	const events: AgentEvent[] = [];
 	for (const { span, attrs, character, yardId, startMs, endMs, kind } of flat) {
-		events.push({
+		const started: Extract<AgentEvent, { type: "span-started" }> = {
 			type: "span-started",
 			at: startMs,
 			traceId: span.traceId,
@@ -326,11 +327,11 @@ export function mapTracePayload(
 			yardId,
 			campId: character.campId,
 			characterId: character.id,
-			...(span.parentSpanId !== undefined
-				? { parentSpanId: span.parentSpanId }
-				: {}),
 			junctionId: attrs["hobo.junction"],
-		});
+		};
+		if (span.parentSpanId !== undefined)
+			started.parentSpanId = span.parentSpanId;
+		events.push(started);
 		if (span.endTimeUnixNano !== undefined) {
 			events.push({
 				type: "span-ended",
@@ -495,14 +496,15 @@ export function mapLogsPayload(
 				);
 				const message = bodyToText(record.body);
 				if (message === "") continue;
-				events.push({
+				const logged: Extract<AgentEvent, { type: "log-record" }> = {
 					type: "log-record",
 					at: nanoToMs(record.timeUnixNano) || now,
 					characterId: character.id,
 					severity,
 					message,
-					...(record.traceId !== undefined ? { traceId: record.traceId } : {}),
-				});
+				};
+				if (record.traceId !== undefined) logged.traceId = record.traceId;
+				events.push(logged);
 			}
 		}
 	}

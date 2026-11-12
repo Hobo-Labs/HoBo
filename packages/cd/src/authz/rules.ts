@@ -19,6 +19,7 @@ import {
 	type PolicyRuleOutcome,
 } from "@hobo/contracts";
 import type { CdAction } from "../ports.js";
+import { isJsonObject, isText } from "./json.js";
 
 // public-contract: the policy-IR phases a CD action is evaluated in.
 export type CdPolicyPhase = "apply" | "promote" | "runtime" | "repair";
@@ -33,7 +34,7 @@ export type CdActionSpec = Readonly<{
 	/** Whether an ungranted agent may perform the action outright. */
 	agentMayAct: boolean;
 	/** The other half of a separation-of-duties pair, when there is one. */
-	separateFrom?: CdAction;
+	separateFrom: CdAction | undefined;
 }>;
 
 function spec(
@@ -49,9 +50,7 @@ function spec(
 		resourceKind,
 		resourceKeys: Object.freeze([...resourceKeys]),
 		agentMayAct: extra.agentMayAct ?? false,
-		...(extra.separateFrom === undefined
-			? {}
-			: { separateFrom: extra.separateFrom }),
+		separateFrom: extra.separateFrom,
 	});
 }
 
@@ -204,16 +203,13 @@ export type CdRuleContext = Readonly<{
 
 function ruleContext(request: PolicyDecisionRequest): CdRuleContext {
 	const cd = request.context?.cd;
-	const value =
-		cd !== null && typeof cd === "object" && !Array.isArray(cd) ? cd : {};
+	const value = isJsonObject(cd) ? cd : {};
 	const holders = value.counterpartHolders;
+	const principal = value.principalKey;
 	return {
 		agentClass: value.agentClass === true,
-		counterpartHolders: Array.isArray(holders)
-			? holders.filter((h): h is string => typeof h === "string")
-			: [],
-		principalKey:
-			typeof value.principalKey === "string" ? value.principalKey : "",
+		counterpartHolders: Array.isArray(holders) ? holders.filter(isText) : [],
+		principalKey: isText(principal) ? principal : "",
 		separateEnrollmentApprovers: value.separateEnrollmentApprovers !== false,
 	};
 }

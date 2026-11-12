@@ -15,12 +15,13 @@
 //     (DORA's "failed deployment recovery time").
 //   - p50 is the nearest-rank median: the ⌈n/2⌉-th smallest value. Empty
 //     samples report 0 (no deployments, nothing to measure).
-import {
-	type DescMessage,
-	fromJson,
-	type MessageShape,
-} from "@bufbuild/protobuf";
-import type { DurableEventStore, EventPosition, JsonValue } from "@hobo/core";
+import { type DescMessage, fromJson } from "@bufbuild/protobuf";
+import type {
+	DurableEventStore,
+	EventEnvelope,
+	EventPosition,
+	JsonValue,
+} from "@hobo/core";
 import {
 	FreightRecordSchema,
 	FreightSubject,
@@ -135,13 +136,11 @@ export function computeReconcileLag(
 	return Math.max(0, (done ? done.atMs : nowMs) - target.atMs);
 }
 
-function parse<D extends DescMessage>(
-	schema: D,
-	data: unknown,
-): MessageShape<D> | undefined {
+function parse<D extends DescMessage>(schema: D, event: EventEnvelope) {
 	try {
-		// SAFETY: journal bodies are proto-JSON; fromJson parses or throws.
-		return fromJson(schema, data as JsonValue, { ignoreUnknownFields: true });
+		// SAFETY: event-store bodies are JSON; fromJson parses or throws.
+		const data = event.data as JsonValue;
+		return fromJson(schema, data, { ignoreUnknownFields: true });
 	} catch {
 		return undefined;
 	}
@@ -195,13 +194,13 @@ export function createDoraProjection(
 				if (atMs === undefined) continue;
 				switch (event.type) {
 					case CD_EVENTS.FreightRecorded: {
-						const r = parse(FreightRecordSchema, event.data);
+						const r = parse(FreightRecordSchema, event);
 						if (r && r.freightId !== "" && !recordedAtMs.has(r.freightId))
 							recordedAtMs.set(r.freightId, ms(r.recordedAt) ?? atMs);
 						break;
 					}
 					case CD_EVENTS.EnvPromoted: {
-						const r = parse(PromotionRecordSchema, event.data);
+						const r = parse(PromotionRecordSchema, event);
 						if (!r || r.subject === FreightSubject.RAIL) break;
 						for (const campId of r.targetCampIds)
 							deployments.push({
@@ -213,20 +212,20 @@ export function createDoraProjection(
 						break;
 					}
 					case CD_EVENTS.EnvPromoteRolledBack: {
-						const r = parse(PromotionRecordSchema, event.data);
+						const r = parse(PromotionRecordSchema, event);
 						if (!r || r.subject === FreightSubject.RAIL) break;
 						for (const campId of r.targetCampIds)
 							rollbacks.push({ campId, atMs });
 						break;
 					}
 					case CD_EVENTS.SetCreated: {
-						const r = parse(SetRecordSchema, event.data);
+						const r = parse(SetRecordSchema, event);
 						if (r && r.campId !== "")
 							push(specs, r.campId, { setId: r.setId, atMs });
 						break;
 					}
 					case CD_EVENTS.Converged: {
-						const r = parse(ReconcileObservationRecordSchema, event.data);
+						const r = parse(ReconcileObservationRecordSchema, event);
 						if (r && r.campId !== "")
 							push(converged, r.campId, { setId: r.setId, atMs });
 						break;

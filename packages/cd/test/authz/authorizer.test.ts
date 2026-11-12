@@ -18,6 +18,7 @@ import {
 	CD_ACTION_SPECS,
 	CD_ACTIONS,
 	CD_BASELINE_PACK_ID,
+	type CdAuthorizerDeps,
 	cdBaselineRules,
 	createCdAuthorizer,
 	parseAuthzDecision,
@@ -65,17 +66,20 @@ function setup(
 ) {
 	const c = clock();
 	const store = new MemoryEventStore(c.now);
-	const authz = createCdAuthorizer({
+	let deps: CdAuthorizerDeps = {
 		store,
 		tenant: TENANT,
 		now: c.now,
 		policyPack: options.pack ?? createPermissiveDefaultPack(),
-		...(options.agentGrants ? { agentGrants: options.agentGrants } : {}),
-		...(options.separateEnrollmentApprovers === undefined
-			? {}
-			: { separateEnrollmentApprovers: options.separateEnrollmentApprovers }),
-		...(options.telemetry ? { telemetry: options.telemetry } : {}),
-	});
+	};
+	if (options.agentGrants) deps = { ...deps, agentGrants: options.agentGrants };
+	if (options.separateEnrollmentApprovers !== undefined)
+		deps = {
+			...deps,
+			separateEnrollmentApprovers: options.separateEnrollmentApprovers,
+		};
+	if (options.telemetry) deps = { ...deps, telemetry: options.telemetry };
+	const authz = createCdAuthorizer(deps);
 	return { c, store, authz };
 }
 

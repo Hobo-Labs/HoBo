@@ -2,6 +2,8 @@
 // ExportMetricsServiceRequest, JSON mapping) for the frozen OtelSpan and
 // OtelMetricPoint shapes. No SDK dependency (D17): the wire form is small and
 // stable. Encoding is pure and deterministic.
+
+import { isText } from "../authz/json.js";
 import type { OtelAttributes, OtelMetricPoint, OtelSpan } from "../ports.js";
 import { CD_INSTRUMENTATION_SCOPE, SEMCONV } from "./semconv.js";
 
@@ -33,9 +35,37 @@ export const OTLP_STATUS_CODE = Object.freeze({
 export const OTLP_DELTA_TEMPORALITY = 1 as const;
 
 function value(v: string | number | boolean): OtlpAnyValue {
-	if (typeof v === "string") return { stringValue: v };
-	if (typeof v === "boolean") return { boolValue: v };
+	if (isText(v)) return { stringValue: v };
+	if (v === true || v === false) return { boolValue: v };
 	return Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v };
+}
+
+/** One span in OTLP JSON (opentelemetry-proto trace.v1.Span). */
+export interface OtlpSpanJson {
+	traceId: string;
+	spanId: string;
+	parentSpanId?: string;
+	name: string;
+	kind: number;
+	startTimeUnixNano: string;
+	endTimeUnixNano: string;
+	attributes: OtlpKeyValue[];
+	status: Readonly<{ code: number }>;
+}
+
+function spanJson(s: OtelSpan): OtlpSpanJson {
+	const out: OtlpSpanJson = {
+		traceId: s.traceId,
+		spanId: s.spanId,
+		name: s.name,
+		kind: OTLP_SPAN_KIND[s.kind],
+		startTimeUnixNano: nanos(s.startMs),
+		endTimeUnixNano: nanos(s.endMs),
+		attributes: otlpAttributes(s.attributes),
+		status: { code: OTLP_STATUS_CODE[s.status] },
+	};
+	if (s.parentSpanId !== undefined) out.parentSpanId = s.parentSpanId;
+	return out;
 }
 
 export function otlpAttributes(attributes: OtelAttributes): OtlpKeyValue[] {
@@ -73,19 +103,7 @@ export function encodeTraces(
 					{
 						scope: SCOPE,
 						schemaUrl: SEMCONV.schemaUrl,
-						spans: spans.map((s) => ({
-							traceId: s.traceId,
-							spanId: s.spanId,
-							...(s.parentSpanId === undefined
-								? {}
-								: { parentSpanId: s.parentSpanId }),
-							name: s.name,
-							kind: OTLP_SPAN_KIND[s.kind],
-							startTimeUnixNano: nanos(s.startMs),
-							endTimeUnixNano: nanos(s.endMs),
-							attributes: otlpAttributes(s.attributes),
-							status: { code: OTLP_STATUS_CODE[s.status] },
-						})),
+						spans: spans.map(spanJson),
 					},
 				],
 			},

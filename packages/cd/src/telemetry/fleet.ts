@@ -79,15 +79,13 @@ export function fanoutCampsPoints(
 		)
 		.sort((a, b) => a.fanoutId.localeCompare(b.fanoutId));
 	return live.flatMap((s) => {
-		const counts: Readonly<
-			Record<(typeof FANOUT_SLOT_STATES)[number], number>
-		> = {
+		const counts = {
 			pending: s.pending.length,
 			in_flight: s.inFlight.length,
 			succeeded: s.succeeded.length,
 			failed: s.failed.length,
 			deferred: s.deferred.length,
-		};
+		} satisfies Readonly<Record<(typeof FANOUT_SLOT_STATES)[number], number>>;
 		return FANOUT_SLOT_STATES.map((state) =>
 			gauge(CD_METRICS.fanoutCamps, counts[state], atMs, {
 				[HOBO_ATTR.state]: state,
@@ -100,13 +98,23 @@ export function fanoutCampsPoints(
 	});
 }
 
+// public-contract: failover states reported by hobo.cd.failover.count.
+export const FAILOVER_STATES: readonly FailoverState[] = Object.freeze([
+	FailoverState.PROPOSED,
+	FailoverState.REPLACING,
+	FailoverState.VERIFYING,
+	FailoverState.SHIFTING,
+	FailoverState.PURGING,
+	FailoverState.COMPLETED,
+	FailoverState.REFUSED,
+	FailoverState.ABANDONED,
+]);
+
 export function failoverCountPoints(
 	records: readonly FailoverRecord[],
 	atMs: number,
 ): OtelMetricPoint[] {
-	const states = Object.values(FailoverState).filter(
-		(v): v is FailoverState => typeof v === "number" && v !== 0,
-	);
+	const states = FAILOVER_STATES;
 	return states.map((state) =>
 		gauge(
 			CD_METRICS.failoverCount,

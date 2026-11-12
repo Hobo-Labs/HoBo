@@ -17,6 +17,7 @@ import {
 	computeReconcileLag,
 	createDoraProjection,
 	DAY_MS,
+	type DoraQuery,
 } from "./dora.js";
 import { TelemetryError } from "./errors.js";
 import { collectFleetMetrics, type FleetSources } from "./fleet.js";
@@ -91,11 +92,12 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 	): Promise<DoraMetrics> {
 		guard(ctx);
 		await refresh();
-		return computeDora(projection.facts(), {
-			windowMs: input.windowMs,
-			nowMs: ctx.now(),
-			...(input.campIds ? { campIds: input.campIds } : {}),
-		});
+		const nowMs = ctx.now();
+		const query: DoraQuery =
+			input.campIds === undefined
+				? { windowMs: input.windowMs, nowMs }
+				: { windowMs: input.windowMs, nowMs, campIds: input.campIds };
+		return computeDora(projection.facts(), query);
 	}
 
 	async function reconcileLagMs(

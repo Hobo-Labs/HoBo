@@ -1,3 +1,5 @@
+import { isText } from "../../src/authz/json.js";
+
 // Snapshot of the OpenTelemetry semantic-conventions registry entries @hobo/cd
 // emits, pinned at the release recorded in src/telemetry/STANDARDS.lock.json
 // (v1.41.0: model/cicd, model/deployment, model/error). Golden tests validate
@@ -20,7 +22,7 @@ const RESULT = [
 	"skip",
 ];
 
-export const REGISTRY_ATTRIBUTES: Readonly<Record<string, AttributeSpec>> = {
+export const REGISTRY_ATTRIBUTES = {
 	"cicd.pipeline.name": { type: "string" },
 	"cicd.pipeline.action.name": {
 		type: "string",
@@ -54,7 +56,11 @@ export const REGISTRY_ATTRIBUTES: Readonly<Record<string, AttributeSpec>> = {
 	"deployment.name": { type: "string" },
 	"deployment.status": { type: "string", members: ["failed", "succeeded"] },
 	"error.type": { type: "string" },
-};
+} satisfies Readonly<Record<string, AttributeSpec>>;
+
+const ATTRIBUTE_SPECS = new Map<string, AttributeSpec>(
+	Object.entries(REGISTRY_ATTRIBUTES),
+);
 
 /** Registry namespaces: any key under them must be a registry attribute. */
 export const REGISTRY_NAMESPACES = ["cicd.", "deployment.", "error."];
@@ -73,16 +79,7 @@ export const SPAN_DEFINITIONS = {
 	},
 } as const;
 
-export const METRIC_DEFINITIONS: Readonly<
-	Record<
-		string,
-		Readonly<{
-			instrument: "histogram" | "counter" | "gauge";
-			unit: string;
-			required: readonly string[];
-		}>
-	>
-> = {
+export const METRIC_DEFINITIONS = {
 	"cicd.pipeline.run.duration": {
 		instrument: "histogram",
 		unit: "s",
@@ -108,7 +105,23 @@ export const METRIC_DEFINITIONS: Readonly<
 		unit: "{count}",
 		required: ["cicd.worker.state"],
 	},
-};
+} satisfies Readonly<
+	Record<
+		string,
+		Readonly<{
+			instrument: "histogram" | "counter" | "gauge";
+			unit: string;
+			required: readonly string[];
+		}>
+	>
+>;
+
+const METRIC_SPECS = new Map(Object.entries(METRIC_DEFINITIONS));
+
+/** The pinned definition of a CI/CD metric, when the registry has one. */
+export function metricDefinition(name: string) {
+	return METRIC_SPECS.get(name);
+}
 
 /** Problems with one attribute set against the snapshot (empty = valid). */
 export function attributeProblems(
@@ -116,7 +129,7 @@ export function attributeProblems(
 ): string[] {
 	const problems: string[] = [];
 	for (const [key, value] of Object.entries(attributes)) {
-		const spec = REGISTRY_ATTRIBUTES[key];
+		const spec = ATTRIBUTE_SPECS.get(key);
 		if (!spec) {
 			if (REGISTRY_NAMESPACES.some((ns) => key.startsWith(ns)))
 				problems.push(
@@ -126,12 +139,13 @@ export function attributeProblems(
 				problems.push(`${key}: neither a registry nor a hobo.* attribute`);
 			continue;
 		}
-		const actual =
-			typeof value === "number"
-				? Number.isInteger(value)
+		const actual = isText(value)
+			? "string"
+			: value === true || value === false
+				? "boolean"
+				: Number.isInteger(value)
 					? "int"
-					: "double"
-				: typeof value;
+					: "double";
 		if (actual !== spec.type)
 			problems.push(`${key}: expected ${spec.type}, got ${actual}`);
 		if (spec.members && !spec.members.includes(String(value)))

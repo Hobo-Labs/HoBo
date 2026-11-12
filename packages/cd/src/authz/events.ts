@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { POLICY_DECIDED_EVENT_TYPE } from "@hobo/contracts";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import type { CdAction } from "../ports.js";
+import { isJsonObject, isText } from "./json.js";
 import { isCdAction } from "./rules.js";
 
 // public-contract: event type of a recorded CD authorization decision.
@@ -74,23 +75,17 @@ function isEffect(value: string): value is AuthzEffect {
 }
 
 function text(value: JsonValue | undefined): string | undefined {
-	return typeof value === "string" ? value : undefined;
-}
-
-function isObject(value: JsonValue | undefined): value is JsonObject {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
+	return isText(value) ? value : undefined;
 }
 
 function texts(value: JsonValue | undefined): string[] {
-	return Array.isArray(value)
-		? value.filter((v): v is string => typeof v === "string")
-		: [];
+	return Array.isArray(value) ? value.filter(isText) : [];
 }
 
 export function parseAuthzDecision(
 	data: JsonValue | undefined,
 ): AuthzDecision | undefined {
-	if (!isObject(data)) return undefined;
+	if (!isJsonObject(data)) return undefined;
 	if (data.schemaVersion !== AUTHZ_DECISION_SCHEMA) return undefined;
 	const action = text(data.action);
 	const effect = text(data.effect);
@@ -104,7 +99,7 @@ export function parseAuthzDecision(
 		!isEffect(effect) ||
 		decisionId === undefined ||
 		principal === undefined ||
-		!isObject(resource)
+		!isJsonObject(resource)
 	)
 		return undefined;
 	return {
@@ -124,7 +119,7 @@ export function parseAuthzDecision(
 		packId: text(data.packId) ?? "",
 		packVersion: text(data.packVersion) ?? "",
 		inputHash: text(data.inputHash) ?? "",
-		subject: isObject(data.subject) ? data.subject : {},
+		subject: isJsonObject(data.subject) ? data.subject : {},
 		redacted: texts(data.redacted),
 	};
 }
