@@ -1,6 +1,8 @@
 name: HoBo Turbo cache
 description: >-
-  Vercel Turbo remote cache when configured. On the box worker the local cache
+  Turbo remote cache when configured: Vercel's, or the fleet's own cache server
+  when `turbo-api` names one (packages/ci-gh-actions/deploy/turbo-cache), which
+  every box, ARC pod and GitHub-hosted runner then shares. On the box worker the local cache
   is a host directory every same-repository job shares (inside the bind-mounted
   pnpm store, HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request
   already ran on the same tree. A pull request from another repository (a fork)
@@ -22,6 +24,12 @@ inputs:
     description: TURBO_TEAM variable
     required: false
     default: ""
+  turbo-api:
+    description: >-
+      Base URL of a self-hosted Turborepo cache server (the HOBO_CI_TURBO_API
+      repository variable). Empty uses Vercel's. Used only with a token and team.
+    required: false
+    default: ""
   remote-mode:
     description: Turbo --cache remote mode (remote:rw or remote:ro)
     required: false
@@ -39,6 +47,7 @@ runs:
       env:
         INPUT_TOKEN: ${{ inputs.turbo-token }}
         INPUT_TEAM: ${{ inputs.turbo-team }}
+        INPUT_API: ${{ inputs.turbo-api }}
         REMOTE_MODE: ${{ inputs.remote-mode }}
         # Same repository by name, not `head.repo.fork`: a deleted fork's head
         # repo is null, and null.fork reads as "not a fork".
@@ -65,12 +74,24 @@ runs:
           fi
         fi
         if [ -n "${INPUT_TOKEN}" ] && [ -n "${INPUT_TEAM}" ]; then
+          api="${INPUT_API:-}"
+          # A cache server's address is a URL and nothing else: it is written to
+          # GITHUB_ENV, where a stray newline would set another variable.
+          if [ -n "${api}" ] && ! [[ "${api}" =~ ^https?://[A-Za-z0-9._:/-]+$ ]]; then
+            echo "::error::turbo-api must be an http(s) URL" >&2
+            exit 1
+          fi
           {
             echo "TURBO_TOKEN=${INPUT_TOKEN}"
             echo "TURBO_TEAM=${INPUT_TEAM}"
+            if [ -n "${api}" ]; then echo "TURBO_API=${api}"; fi
             echo "TURBO_CACHE=local:rw,${REMOTE_MODE}"
           } >> "$GITHUB_ENV"
-          echo "Turbo remote cache enabled (${REMOTE_MODE})"
+          if [ -n "${api}" ]; then
+            echo "Turbo remote cache enabled (${REMOTE_MODE}, self-hosted)"
+          else
+            echo "Turbo remote cache enabled (${REMOTE_MODE})"
+          fi
         else
           echo "Turbo remote cache not configured"
         fi

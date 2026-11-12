@@ -375,6 +375,27 @@ For immediate recovery from an unwritable promoted image, stop the daemon, run
 `HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure
 loop. Redeploy the fixed daemon and rebuild the image before re-enabling it.
 
+## Shared Turbo cache server
+
+`turbo-cache/compose.yml` runs the open-source Turborepo remote cache server
+(`ducktors/turborepo-remote-cache`, pinned by digest) with a local volume, so
+every box job, ARC pod and GitHub-hosted runner can replay what another already
+built. It is separate from the relay and optional; nothing uses it until the
+repository has the variable `HOBO_CI_TURBO_API` (the server's URL), the variable
+`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below).
+
+```sh
+docker compose --env-file /abs/path/to/turbo-cache.env \
+  -f packages/ci-gh-actions/deploy/turbo-cache/compose.yml up -d
+```
+
+The env file sets `HOBO_CI_TURBO_CACHE_TOKEN`, and optionally
+`HOBO_CI_TURBO_CACHE_BIND` (default `127.0.0.1`), `HOBO_CI_TURBO_CACHE_PORT`
+(default `3000`) and `HOBO_CI_TURBO_CACHE_VOLUME`. Keep it outside the checkout.
+To serve ARC pods or another box, bind the private address they reach this host
+on; do not expose it publicly without TLS in front. Fork pull requests receive
+no token, so they neither read nor write the cache.
+
 ## Backup, restore and stop
 
 The SQLite database, WAL and shared-memory files live together in the persistent

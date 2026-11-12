@@ -27,6 +27,10 @@ const mainGateFinish = workflow.slice(
 	workflow.indexOf("\n  main_gate_finish:"),
 	workflow.indexOf("\n  artifact-trust:"),
 );
+const mainGatePlan = workflow.slice(
+	workflow.indexOf("\n  main-gate-plan:"),
+	workflow.indexOf("\n  main-gate:"),
+);
 
 describe("planMainGitleaksScan", () => {
 	it("bounds a main push to the landed range without fetching every blob", () => {
@@ -179,53 +183,57 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 });
 
 describe("main-gate wiring", () => {
-	it("runs gitleaks through gitleaks-main-scan in the finish job, not inside S0", () => {
-		assert.equal(
-			mainGate.includes("scripts/ci/gitleaks-main-scan.mts --background"),
-			false,
+	it("runs gitleaks through gitleaks-main-scan in the plan job, not inside S0 or finish", () => {
+		// The merge queue does not scan, and Main full gate is skipped when the
+		// merge queue passed the tree, so the scan lives in the job every main
+		// run has: Main workspace plan (finding 144).
+		for (const block of [mainGate, mainGateFinish]) {
+			assert.equal(block.includes("scripts/ci/gitleaks-main-scan.mts"), false);
+			assert.equal(block.includes("gitleaks git"), false);
+		}
+		assert.ok(
+			mainGatePlan.includes("scripts/ci/gitleaks-main-scan.mts --background"),
 		);
 		assert.ok(
-			mainGateFinish.includes("scripts/ci/gitleaks-main-scan.mts --background"),
-		);
-		assert.ok(
-			mainGateFinish.includes("scripts/ci/gitleaks-main-scan.mts --wait"),
+			mainGatePlan.includes(
+				'scripts/ci/gitleaks-main-scan.mts --wait --dir "$dir"',
+			),
 		);
 		assert.equal(
 			/nohup bash -c '\s*gitleaks git --config \.gitleaks\.toml --redact --exit-code 1 >/u.test(
-				mainGateFinish,
+				mainGatePlan,
 			),
 			false,
 		);
-		const wait = mainGateFinish.indexOf("name: Secret scan (full history)");
-		assert.ok(wait > -1);
 		assert.ok(FULL_WAIT_SECONDS <= 720);
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
+		// The job outlasts the longest scan it waits for.
+		const timeout = Number(
+			/^ {4}timeout-minutes: (\d+)$/mu.exec(mainGatePlan)?.[1],
+		);
+		assert.ok(timeout * 60 > FULL_WAIT_SECONDS + 300, String(timeout));
 	});
 
-	it("requires finish workspace checkout before gitleaks (fail closed)", () => {
-		assert.ok(
-			mainGateFinish.includes("Ensure finish workspace checkout"),
-			"finish must populate the workspace or fail",
-		);
-		assert.ok(mainGateFinish.includes("Finish workspace checkout failed"));
-		assert.ok(mainGateFinish.includes("hobo-repo-checkout"));
-		assert.equal(
-			mainGateFinish.includes("steps.workspace.outputs.ready == 'true'"),
-			false,
-			"gitleaks and preflight must not be skipped when workspace is missing",
-		);
-		assert.ok(
-			mainGateFinish.includes("Bootstrap composite actions (git fallback)"),
-		);
-		const secretScan = mainGateFinish.indexOf(
-			"name: Secret scan (full history)",
-		);
-		const preflight = mainGateFinish.indexOf(
+	it("scans a full-history checkout, after preflight, as the last and unconditional step", () => {
+		const checkout = mainGatePlan.indexOf("          fetch-depth: 0");
+		const preflight = mainGatePlan.indexOf(
 			"./.github/actions/ci-runner-preflight",
 		);
+		const plan = mainGatePlan.indexOf("name: Plan workspace shards");
+		const scan = mainGatePlan.indexOf("name: Secret scan (full history)");
+		assert.ok(checkout > -1);
+		assert.ok(preflight > checkout);
+		assert.ok(plan > preflight);
+		assert.ok(scan > plan);
+		// A reused merge-queue result skips the plan's work, never the scan.
+		const step = mainGatePlan.slice(scan);
+		assert.equal(/^\s+if:/mu.test(step), false, step);
+		assert.equal(step.includes("continue-on-error"), false, step);
+		// Last: nothing else touches the clone while a full scan backfills blobs.
+		assert.equal(step.includes("\n      - "), false, step);
 		assert.ok(
-			preflight > -1 && secretScan > -1,
-			"preflight and secret scan steps must remain unconditional after workspace ensure",
+			step.indexOf("--background") < step.indexOf("--wait"),
+			"the scan starts before it is waited for",
 		);
 	});
 });

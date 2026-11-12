@@ -39,6 +39,12 @@ inputs:
       old; empty, stale or unreadable, the queue is read as before.
     required: false
     default: ""
+  reuse-merge-queue:
+    description: >-
+      The HOBO_CI_MAIN_REUSE_MERGE_QUEUE repository variable. `false` makes a push
+      to main run its full gate even when the merge queue passed the same tree.
+    required: false
+    default: ""
 outputs:
   runner:
     description: The runs-on label for this run's jobs.
@@ -52,6 +58,12 @@ outputs:
   attested-jobs:
     description: JSON array of the job ids that run covers; `[]` when there is none.
     value: ${{ steps.attest.outputs.attested-jobs || '[]' }}
+  merge-queue-green:
+    description: >-
+      `true` on a push to main whose tree a successful merge_group run of this
+      workflow already tested (merge-queue-reuse.mts, when the workflow checked
+      that script out), else `false`.
+    value: ${{ steps.reuse.outputs.reuse || 'false' }}
 runs:
   using: composite
   steps:
@@ -136,3 +148,46 @@ runs:
           exit 0
         fi
         "${node_bin}" --no-warnings scripts/ci/route-runner.mts || without_a_decision "the routing script failed"
+    # Never fails and never blocks: anything short of a verified green
+    # merge-queue run of this tree is reuse=false, and main runs its full gate.
+    - id: reuse
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        HEAD_SHA: ${{ github.sha }}
+        HEAD_TREE: ${{ github.event.head_commit.tree_id }}
+        HOBO_CI_MAIN_REUSE_MERGE_QUEUE: ${{ inputs.reuse-merge-queue }}
+      run: |
+        set -uo pipefail
+        no_reuse() {
+          echo "merge-queue reuse: no: $1"
+          echo "reuse=false" >> "$GITHUB_OUTPUT"
+        }
+        if [ ! -f scripts/ci/merge-queue-reuse.mts ]; then
+          no_reuse "this workflow does not reuse merge-queue results"
+          exit 0
+        fi
+        if [ "${GITHUB_EVENT_NAME}" != "push" ] || [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+          no_reuse "not a push to main"
+          exit 0
+        fi
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          no_reuse "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        # The script writes the output itself; if it dies first, say no here.
+        outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
+        if ! "${node_bin}" --no-warnings scripts/ci/merge-queue-reuse.mts \
+          || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
+          no_reuse "the reuse check failed"
+        fi

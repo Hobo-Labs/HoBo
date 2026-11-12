@@ -16,18 +16,26 @@ const prValidation = workflow.jobs.pr_gate_validation;
 const workspaceTests = workflow.jobs.workspace_tests;
 const prAffected = workflow.jobs.pr_affected;
 const mainGate = workflow.jobs["main-gate"];
+const mainPlan = workflow.jobs["main-gate-plan"];
 
 describe("CI deps image push scope", () => {
-	it("runs on every main push without commit file-list filtering", () => {
-		expect(depsJob.if).toContain(
+	it("is its own job on pull requests and steps of the plan job on every main run", () => {
+		// Finding 144: on main the check takes seconds, and as a job it cost a
+		// fourth trunk pickup. Still no commit file-list filtering.
+		expect(depsJob.if).toBe(
+			"${{ !cancelled() && github.event_name == 'pull_request' }}",
+		);
+		expect(mainPlan.if).toContain(
 			"(github.event_name == 'push' && github.ref == 'refs/heads/main') ||",
 		);
-		expect(depsJob.if).not.toContain("github.event.commits");
-		expect(depsJob.if).not.toContain("contains(format(");
-		expect(depsJob.if).toContain("github.event_name == 'schedule'");
-		expect(depsJob.if).toContain("github.event_name == 'workflow_dispatch'");
-		expect(depsJob.if).toContain("github.event_name == 'pull_request'");
-		expect(depsJob.if).not.toContain("github.event_name == 'merge_group'");
+		expect(mainPlan.if).toContain("github.event_name == 'schedule'");
+		expect(mainPlan.if).toContain("github.event_name == 'workflow_dispatch'");
+		expect(mainPlan.if).not.toContain("github.event.commits");
+		expect(mainPlan.if).not.toContain("merge_group");
+		const names = mainPlan.steps.map((step) => step.name);
+		expect(names).toContain("Compute deps key");
+		expect(names).toContain("Promote verified deps image");
+		expect(JSON.stringify(mainPlan)).not.toContain("build-deps.sh");
 	});
 
 	it("skips resolution, promotion and building when the local label already matches", () => {
@@ -45,10 +53,22 @@ describe("CI deps image push scope", () => {
 			"Resolve local or GHCR deps image",
 			"Build deps image and verify offline install",
 			"Verify deps image under job mount",
-			"Promote verified deps image",
 		]) {
 			const step = depsJob.steps.find((candidate) => candidate.name === name);
 			expect(step.if).toContain("steps.current.outputs.current != 'true'");
+		}
+		const planNames = mainPlan.steps.map((step) => step.name);
+		expect(planNames.indexOf("Check current local deps image")).toBe(
+			planNames.indexOf("Compute deps key") + 1,
+		);
+		for (const name of [
+			"Login to GHCR for read-only cache",
+			"Resolve local or GHCR deps image",
+			"Verify deps image under job mount",
+			"Promote verified deps image",
+		]) {
+			const step = mainPlan.steps.find((candidate) => candidate.name === name);
+			expect(step.if).toContain("steps.deps-current.outputs.current != 'true'");
 		}
 	});
 
@@ -98,10 +118,12 @@ describe("CI deps image push scope", () => {
 		});
 		expect(job["timeout-minutes"]).toBe(20);
 		// The publisher pushes the fleet's own image and the deps job builds
-		// it in the box's Docker context, so neither is routed: both ask for
-		// the fleet's label.
-		expect(depsJob["runs-on"]).toBe(job["runs-on"]);
-		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
+		// it in the box's Docker context, so neither is routed: the PR-only deps
+		// job asks for `hobo`, main's plan job (which promotes) for the same
+		// label as the publisher.
+		expect(depsJob["runs-on"]).toBe("hobo");
+		expect(mainPlan["runs-on"]).toBe(job["runs-on"]);
+		expect(mainPlan["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
 			"github.event.workflow_run.conclusion == 'success'",
@@ -156,7 +178,7 @@ describe("CI deps image push scope", () => {
 	});
 
 	it("does not make either gate wait for the deps image", () => {
-		expect(mainGate.needs).toEqual(["ci-runner-image"]);
+		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
 		expect(prValidation.needs).toEqual(["route", "ci-runner-image"]);
 		expect(prGate.needs).toEqual([
 			"route",
