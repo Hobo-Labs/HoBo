@@ -906,9 +906,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
-          key: main-gate-plan-${{ github.sha }}-${{ hash(vars.HOBO_CI_FLEET_CAPACITY) }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
           restore-keys: |
-            main-gate-plan-${{ github.sha }}-${{ hash(vars.HOBO_CI_FLEET_CAPACITY) }}-
+            main-gate-plan-${{ github.sha }}-
       - name: Plan workspace shards
         id: plan
         env:
@@ -931,11 +931,11 @@ jobs:
           MAIN_GATE_SHARDS: ${{ steps.plan.outputs.shards }}
         run: node --experimental-strip-types --no-warnings scripts/ci/emit-main-workspace-shard-matrix.mts
       - name: Save main workspace plan cache
-        if: always() && steps.plan-cache.outputs.cache-hit != 'true'
+        if: success()
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
-          key: main-gate-plan-${{ github.sha }}-${{ hash(vars.HOBO_CI_FLEET_CAPACITY) }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
 
   main-gate:
     name: Main full gate
@@ -1181,7 +1181,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.main-gate-plan.outputs.shard_matrix || '[{"shard":0,"runner":"hobo-trunk"}]') }}
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","schedule","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && matrix.runner || 'hobo' }}
+    runs-on: ${{ matrix.runner == 'ubuntu-24.04' && matrix.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","schedule","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && matrix.runner || 'hobo') }}
     timeout-minutes: 20
     permissions:
       contents: read

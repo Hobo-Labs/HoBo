@@ -105,6 +105,7 @@ describe("main-gate-plan install-free", () => {
 						admittedParallel: 2,
 						hobo: { freeSlots: 2 },
 						arc: { freeSlots: 0 },
+						publishedAt: new Date().toISOString(),
 					}),
 				},
 				encoding: "utf8",

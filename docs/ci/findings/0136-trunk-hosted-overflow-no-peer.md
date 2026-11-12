@@ -31,4 +31,4 @@ On a memory-thin box with **ARC 0** and fresh capacity: overflow shards queue on
 - `packages/ci/test/fleet-capacity-input.test.ts`
 - `pnpm run test:smoke scripts/test/load-fleet-capacity.test.ts`
 - `pnpm run test:smoke scripts/test/main-gate-workspace-shards.test.ts`
-- Stale or malformed capacity snapshots fall back to default parallel cap; plan cache key includes `hash(vars.HOBO_CI_FLEET_CAPACITY)` plus manifest `parallelCap`.
+- Stale or malformed capacity snapshots fall back to default parallel cap; plan cache manifest pins `parallelCap` and saves after every successful plan.

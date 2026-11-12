@@ -284,7 +284,8 @@ export async function resolveMainWorkspaceParallelCap(
 /** Contiguous shard indexes `[0, …, n-1]` from plan output; `-1` when malformed. */
 export function mainGateShardCountFromIndexesJson(raw: string): number {
 	const trimmed = raw.trim();
-	if (trimmed === "[]" || trimmed.length === 0) return 0;
+	if (trimmed.length === 0) return -1;
+	if (trimmed === "[]") return 0;
 	try {
 		const parsed: unknown = JSON.parse(trimmed);
 		if (!Array.isArray(parsed)) return -1;

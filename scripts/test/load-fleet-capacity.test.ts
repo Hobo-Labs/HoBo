@@ -94,6 +94,7 @@ describe("load-fleet-capacity", () => {
 		assert.equal(mainGateShardCountFromIndexesJson("[]"), 0);
 		assert.equal(mainGateShardCountFromIndexesJson("[0, 1, 2]"), 3);
 		assert.equal(mainGateShardCountFromIndexesJson("[0,0,9]"), -1);
+		assert.equal(mainGateShardCountFromIndexesJson(""), -1);
 	});
 
 	it("parses trunkMemoryAdmit on capacity snapshots", () => {
