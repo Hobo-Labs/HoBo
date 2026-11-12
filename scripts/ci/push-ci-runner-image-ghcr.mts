@@ -3,6 +3,11 @@
  * Push the content-keyed hobo-ci-worker image to GHCR when it is present on
  * this host. Materializes the version tag from :local, pulls, or runs build.sh
  * so fleet-routed jobs do not fail when the build step ran on another box.
+ *
+ * A version GHCR did not have before also gets a release tag,
+ * `release-<UTC yyyymmddHHMMSS>-<version>`: HoBo CD's runner-fleet Freight
+ * source polls GHCR for those (packages/ci-gh-actions/deploy/runner-fleet),
+ * and their lexical order is publish order, which the content key is not.
  */
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -59,6 +64,58 @@ export function materializeWorkerImageVersionTag(
 	);
 }
 
+const CONTENT_KEY = /^v[0-9a-f]{12}$/u;
+
+/** The release tag HoBo CD's runner-fleet source selects (newest lexically). */
+export function runnerImageReleaseTag(
+	version: string,
+	publishedAt: Date,
+): string {
+	if (!CONTENT_KEY.test(version))
+		throw new Error(
+			`${version} is not a content-keyed runner image version (v + 12 hex)`,
+		);
+	const stamp = publishedAt.toISOString().replace(/[-:T]/gu, "").slice(0, 14);
+	return `release-${stamp}-${version}`;
+}
+
+export type ReleaseTagOutcome =
+	| Readonly<{ published: string }>
+	| Readonly<{ skipped: "already-released" | "push-failed" }>;
+
+/**
+ * Tag and push the release tag once per version: only when GHCR did not
+ * have the version before this push, so one version is one Freight.
+ */
+export function publishRunnerImageReleaseTag(
+	input: Readonly<{
+		image: string;
+		remoteRepository: string;
+		version: string;
+		versionWasPublished: boolean;
+		now: Date;
+		run: (cmd: string, args: string[]) => number;
+	}>,
+): ReleaseTagOutcome {
+	if (input.versionWasPublished) return { skipped: "already-released" };
+	const remote = `${input.remoteRepository}:${runnerImageReleaseTag(input.version, input.now)}`;
+	if (
+		input.run("docker", ["tag", input.image, remote]) !== 0 ||
+		input.run("docker", ["push", remote]) !== 0
+	)
+		return { skipped: "push-failed" };
+	return { published: remote };
+}
+
+function remoteTagExists(ref: string): boolean {
+	return (
+		spawnSync("docker", ["manifest", "inspect", ref], {
+			cwd: root,
+			stdio: "ignore",
+		}).status === 0
+	);
+}
+
 export function pushCiRunnerImageGhcr(): number {
 	const token =
 		process.env.GITHUB_TOKEN?.trim() ?? process.env.GHCR_TOKEN?.trim() ?? "";
@@ -72,8 +129,9 @@ export function pushCiRunnerImageGhcr(): number {
 	const actor = process.env.GITHUB_ACTOR ?? "github-actions";
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
-	const remote = `ghcr.io/${repository}/hobo-ci-worker:${version}`;
-	const latest = `ghcr.io/${repository}/hobo-ci-worker:latest`;
+	const remoteRepository = `ghcr.io/${repository}/hobo-ci-worker`;
+	const remote = `${remoteRepository}:${version}`;
+	const latest = `${remoteRepository}:latest`;
 
 	let ready = materializeWorkerImageVersionTag(version);
 	if (!ready) {
@@ -100,6 +158,8 @@ export function pushCiRunnerImageGhcr(): number {
 		console.log("::notice title=Runner image push skipped::GHCR login failed");
 		return 0;
 	}
+	// Read before the push: whether GHCR already had this version decides its release tag.
+	const versionWasPublished = remoteTagExists(remote);
 	if (run("docker", ["tag", candidate, remote]) !== 0) {
 		console.log(
 			`::notice title=Runner image push skipped::docker tag ${candidate} failed`,
@@ -123,6 +183,20 @@ export function pushCiRunnerImageGhcr(): number {
 		return 0;
 	}
 	console.log(`Published ${remote} and ${latest}`);
+	const release = publishRunnerImageReleaseTag({
+		image: candidate,
+		remoteRepository,
+		version,
+		versionWasPublished,
+		now: new Date(),
+		run,
+	});
+	if ("published" in release)
+		console.log(`Published ${release.published} for HoBo CD`);
+	else if (release.skipped === "push-failed")
+		console.log(
+			`::notice title=Runner image release tag skipped::the release tag for ${version} was not pushed; HoBo CD discovers this version only once a later version is released`,
+		);
 	return 0;
 }
 
