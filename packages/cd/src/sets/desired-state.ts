@@ -602,10 +602,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 					},
 					ctx,
 				);
-				if (
-					ref.digest !== blob.digest ||
-					(ref.sizeBytes !== 0n && ref.sizeBytes !== BigInt(blob.size))
-				) {
+				if (ref.digest !== blob.digest || ref.sizeBytes !== BigInt(blob.size)) {
 					return refuse(
 						"blob-digest-mismatch",
 						`artifact store returned ${ref.digest} (${ref.sizeBytes} bytes) for ${blob.digest} (${blob.size} bytes)`,
@@ -869,10 +866,10 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			},
 			ctx,
 		);
-		if (ref.digest !== blob.digest) {
+		if (ref.digest !== blob.digest || ref.sizeBytes !== BigInt(blob.size)) {
 			throw new DesiredStateError(
 				"blob-digest-mismatch",
-				`artifact store returned ${ref.digest} for ${blob.digest}`,
+				`artifact store returned ${ref.digest} (${ref.sizeBytes} bytes) for ${blob.digest} (${blob.size} bytes)`,
 				campId,
 			);
 		}
@@ -920,16 +917,23 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	}
 
 	async function adoptLegacy(ctx: CdContext): Promise<LegacyAdoption> {
-		const streams: string[] = [];
-		for await (const { event } of store.readAll({
-			filter: { type: LEGACY_EVENTS.planned },
+		// Per-stream seqs are not comparable across `deployment:<id>` streams,
+		// so recency is the global position of each stream's last Deployed.
+		const deployedAt = new Map<string, bigint>();
+		for await (const { event, position } of store.readAll({
+			filter: { type: LEGACY_EVENTS.deployed },
 		})) {
-			if (event.tenant === d.tenant && !streams.includes(event.streamId))
-				streams.push(event.streamId);
+			if (event.tenant !== d.tenant) continue;
+			const prior = deployedAt.get(event.streamId);
+			if (prior === undefined || prior < position)
+				deployedAt.set(event.streamId, position);
 		}
-		const latest = new Map<string, LegacyDeployment>();
+		const latest = new Map<
+			string,
+			{ legacy: LegacyDeployment; position: bigint }
+		>();
 		const skipped: ReasonRecord[] = [];
-		for (const streamId of streams) {
+		for (const [streamId, position] of deployedAt) {
 			const legacy = foldLegacyDeployment(await readStream(streamId));
 			if (
 				legacy === undefined ||
@@ -938,12 +942,12 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			)
 				continue;
 			const prior = latest.get(legacy.campId);
-			if (!prior || (prior.deployedAtSeq ?? 0) <= (legacy.deployedAtSeq ?? 0))
-				latest.set(legacy.campId, legacy);
+			if (!prior || prior.position < position)
+				latest.set(legacy.campId, { legacy, position });
 		}
 		const adopted: SetRecord[] = [];
-		for (const legacy of [...latest.values()].sort((a, b) =>
-			a.campId.localeCompare(b.campId),
+		for (const { legacy } of [...latest.values()].sort((a, b) =>
+			a.legacy.campId.localeCompare(b.legacy.campId),
 		)) {
 			try {
 				const set = await adoptOne(legacy, ctx);

@@ -174,6 +174,97 @@ describe("legacy fold: deployment.Planned/Deployed/RolledBack → Sets", () => {
 		expect(await desired.current(camp("shop"))).toBeUndefined();
 	});
 
+	it("two deployments sharing a Camp: the most recently Deployed one becomes the current Set", async () => {
+		const store = createFakeEventStore();
+		const config = { campId: "prod-aws", environment: "production" };
+		// Older deployment: three matches, so its Deployed event has the
+		// higher per-stream seq (6) than the newer one's (5).
+		await legacyDeployment(store, "older", "deployed", config);
+		await store.append(
+			"deployment:newer",
+			[
+				{
+					type: LEGACY_EVENTS.requested,
+					data: { deploymentId: "newer", tenant: "acme", config },
+				},
+				...SHOP_V1.slice(0, 2).map((resource) => ({
+					type: LEGACY_EVENTS.matchDecided,
+					data: {
+						deploymentId: "newer",
+						resource: resource.name,
+						providerId: "gcp",
+						port: "hobo:runtime/workflow",
+						rationale: "newer",
+					},
+				})),
+				{
+					type: LEGACY_EVENTS.planned,
+					data: { deploymentId: "newer", planHash: "sha256:n", plan },
+				},
+				{
+					type: LEGACY_EVENTS.deployed,
+					data: { deploymentId: "newer", setId: "newer-set", resourceIds: [] },
+				},
+			],
+			{ expectedSeq: 0, actor: OPERATOR, tenant: "acme" },
+		);
+		const desired = createDesiredState({
+			store,
+			artifacts: createFakeArtifactStore(),
+			tenant: "acme",
+			now: () => T0,
+		});
+		const { adopted } = await desired.adoptLegacy(ctxAt(T0));
+		expect(adopted).toHaveLength(1);
+		const current = await desired.current(camp("prod-aws"));
+		expect(current?.gateDecisionId).toBe("legacy:deployment:newer@4");
+	});
+
+	it("Planned(v1) → Deployed → Planned(v2) folds the deployed v1 plan, not the undeployed v2", () => {
+		const envelope = <T>(type: string, data: T, seq: number) => ({
+			id: `e${seq}`,
+			type,
+			v: 1,
+			streamId: "deployment:x",
+			seq,
+			ts: `2026-11-12T00:00:0${seq}.000Z`,
+			actor: OPERATOR,
+			tenant: "acme",
+			data,
+		});
+		const v2 = planOf(SHOP_V1.slice(0, 1));
+		const folded = foldLegacyDeployment([
+			envelope(LEGACY_EVENTS.planned, { deploymentId: "x", plan }, 1),
+			envelope(
+				LEGACY_EVENTS.deployed,
+				{ deploymentId: "x", setId: "s", resourceIds: [] },
+				2,
+			),
+			envelope(LEGACY_EVENTS.planned, { deploymentId: "x", plan: v2 }, 3),
+		]);
+		expect(folded?.state).toBe("deployed");
+		expect(folded?.planSeq).toBe(1);
+		expect(folded?.plan.resources).toHaveLength(plan.resources.length);
+		expect(folded?.plannedAt).toBe("2026-11-12T00:00:01.000Z");
+	});
+
+	it("skips a legacy deployment whose stored blob size disagrees (B4)", async () => {
+		const store = createFakeEventStore();
+		await legacyDeployment(store, "shop", "deployed");
+		const artifacts = createFakeArtifactStore();
+		artifacts.lieAboutSize = 1n;
+		const desired = createDesiredState({
+			store,
+			artifacts,
+			tenant: "acme",
+			now: () => T0,
+		});
+		const { adopted, skipped } = await desired.adoptLegacy(ctxAt(T0));
+		expect(adopted).toEqual([]);
+		expect(skipped.map((r) => r.code)).toEqual(["blob-digest-mismatch"]);
+		expect(await desired.current(camp("shop"))).toBeUndefined();
+	});
+
 	it("only adopts the caller's tenant", async () => {
 		const store = createFakeEventStore();
 		await legacyDeployment(store, "shop", "deployed");

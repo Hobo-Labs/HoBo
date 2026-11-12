@@ -59,6 +59,11 @@ export function foldLegacyDeployment(
 	let plannedAt = "";
 	let state: LegacyDeployment["state"] = "planned";
 	let deployedAtSeq: number | undefined;
+	// The plan in effect at the last Deployed: a later Planned that was never
+	// deployed must not be folded as the deployed estate.
+	let deployed:
+		| { plan: DeploymentPlan; planSeq: number; plannedAt: string }
+		| undefined;
 	const matches = new Map<string, MatchSelection>();
 	let streamId = "";
 	for (const event of events) {
@@ -95,18 +100,24 @@ export function foldLegacyDeployment(
 				break;
 			}
 			case LEGACY_EVENTS.deployed:
-				state = "deployed";
-				deployedAtSeq = event.seq;
+				if (plan !== undefined) {
+					state = "deployed";
+					deployedAtSeq = event.seq;
+					deployed = { plan, planSeq, plannedAt };
+				}
 				break;
 			case LEGACY_EVENTS.rolledBack:
 				state = "rolled-back";
 				deployedAtSeq = undefined;
+				deployed = undefined;
 				break;
 			default:
 				break;
 		}
 	}
 	if (plan === undefined || deploymentId === undefined) return undefined;
+	if (state === "deployed" && deployed !== undefined)
+		({ plan, planSeq, plannedAt } = deployed);
 	const ordered = plan.resources.flatMap((resource) => {
 		const match = matches.get(resource.name);
 		return match === undefined ? [] : [match];

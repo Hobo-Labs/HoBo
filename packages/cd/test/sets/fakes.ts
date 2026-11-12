@@ -206,6 +206,8 @@ export type FakeArtifactStore = ArtifactStore & {
 	corrupt(digest: string): void;
 	/** When set, put() reports this digest instead of the real one. */
 	lieAboutDigest?: string;
+	/** When set, put() reports this size instead of the real one. */
+	lieAboutSize?: bigint;
 };
 
 export function createFakeArtifactStore(): FakeArtifactStore {
@@ -224,7 +226,7 @@ export function createFakeArtifactStore(): FakeArtifactStore {
 				kind: meta.kind,
 				digest: artifacts.lieAboutDigest ?? digest,
 				coordinate: `store:${digest}`,
-				sizeBytes: BigInt(bytes.byteLength),
+				sizeBytes: artifacts.lieAboutSize ?? BigInt(bytes.byteLength),
 				mediaType: meta.mediaType,
 				ecosystem: "store",
 			});

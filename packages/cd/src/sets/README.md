@@ -28,7 +28,7 @@ desired-state lane every delivery path writes through.
 | `update(delta)` | `delta.Updated` |
 | `apply({deltaId, gateDecisionId, resolved, origin})` | `delta.Applied` + `set.Created` in one append; an empty Delta appends only `delta.Applied` |
 | `reject(deltaId, reasons)` | `delta.Rejected` |
-| `adoptLegacy()` | `set.Created` with `SET_ORIGIN_LEGACY_FOLD` |
+| `adoptLegacy()` | `set.Created` with `SET_ORIGIN_LEGACY_FOLD`; per Camp, the deployment whose last `deployment.Deployed` has the highest global event-store position wins, folded with the plan in effect at that Deployed |
 
 `apply` checks that the Delta's declared `changes` (resource + kind) equal
 `diffResolvedSets(base, resolved)`; an empty Delta is a no-op only when the
@@ -53,7 +53,8 @@ inventory stream `cd-camp-inventory-<id>` (WP22), defaulting to `MANAGED`.
   overlapping open Deltas, stale bases, out-of-order Delta events and broken
   predecessor chains as `journal-invalid` (HOBO-50 rules).
 - `foldCampStatus` — the latest observation; observations from a lower fence
-  than one already seen are ignored (I4).
+  than one already seen, or whose fence is not a decimal FenceToken, are
+  ignored (I4, fail-closed).
 - `changes()` — streams `DesiredStateChange` frames by event-store position
   (`set.Created`, `policy.BindingChanged`, `camp.ManagementChanged`), resumes
   after a cursor, then tails live (store subscription plus a
@@ -114,6 +115,6 @@ A failing sink never fails a command.
 | `secret-material` | A plaintext secret reached a resolved set. | Replace the value with a `secretRef:` locator at its source (declaration or Matching). Nothing was stored. |
 | `resolved-set-missing` | The blob a Set names is gone from the artifact store. | Restore the blob (the digest is in the message) from a replica or backup, or re-apply the Set with a new Delta. Retention (WP1) must never delete a referenced blob; check its referenced-set scan. |
 | `resolved-set-digest-mismatch` | The stored bytes no longer hash to the Set's digest (corruption at rest). | Promotion and reconciliation for the Camp stay blocked. Restore the blob from a replica; `hobo.cd.sets.resolved_set_verify_failures` shows the scope. |
-| `blob-digest-mismatch` | The artifact store returned a different digest for bytes it was given. | The store backend is faulty or misconfigured (wrong hashing or a proxy rewriting bodies). Fix the backend; nothing was appended. |
+| `blob-digest-mismatch` | The artifact store returned a different digest or size for bytes it was given (apply and legacy adoption both check). | The store backend is faulty or misconfigured (wrong hashing or a proxy rewriting bodies). Fix the backend; nothing was appended. |
 | `journal-invalid` | A Camp's spec stream is inconsistent (a write outside this module). | Stop writers for the Camp, export the stream, and repair it by an operator-reviewed append. Never edit events in place. |
 | Legacy estate shows no current Set | `adoptLegacy` has not run, the deployment was rolled back, or it was skipped. | Run adoption (composition does it at start); read `skipped` reasons and `hobo.cd.sets.legacy_skipped`. |
