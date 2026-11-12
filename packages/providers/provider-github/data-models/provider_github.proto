@@ -57,6 +57,9 @@ message StaticSiteTree {
   // Always "hobo.static-site-tree/v1".
   string contract = 1;
   repeated StaticSiteFile files = 2;
+  // Pages-deployment Freight: sha256 digest of the Actions Pages artifact
+  // built from this tree, binding the artifact GitHub serves to the Freight.
+  optional string pages_artifact_digest = 3;
 }
 
 // ResolveRequest.desired for github.pages-site/v1. Secret-free by
@@ -106,6 +109,9 @@ message GithubPagesSiteOutputs {
   optional string pages_build_version = 16;
   optional string pages_deployment_id = 17;
   optional string pages_deployment_status = 18;
+  // Build version of the live github-pages deployment (newest with status
+  // success), as observed on GitHub; ready only when it is tree_sha.
+  optional string pages_live_build_version = 24;
   bool ready = 19;
   bool operation_confirmed = 20;
   bool operation_terminal = 21;

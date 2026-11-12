@@ -9,8 +9,8 @@
 		"pactSpecification": {
 			"version": "3.0.0"
 		},
-		"provenance": "Consumer expectations (plan 0024, HoBo.CD GitHub Pages realizer) against the GitHub REST API (X-GitHub-Api-Version 2022-11-28): repository read, Pages site read/delete, Pages builds, the Git Data API (blobs, trees, commits, refs), Actions artifacts and Pages deployments, as documented at docs.github.com/rest. Recorded from the offline world in test/support/world.ts by HOBO_PACT_RECORD=1; not provider-verified or captured live traffic. Git object ids are real: blob and tree ids are what git computes for the fixture site.",
-		"matching": "Requests match on method, templated path ({sha}, {deployment_id}, {artifact_id}), query, the top-level request-body key set and the response status; response bodies are served verbatim by the offline world. File bytes and the OIDC token are placeholders."
+		"provenance": "Consumer expectations (plan 0024, HoBo.CD GitHub Pages realizer) against the GitHub REST API (X-GitHub-Api-Version 2022-11-28): repository read, Pages site read/delete, Pages builds, the Git Data API (blobs, trees, commits, refs), Actions artifacts, Pages deployments (by build version) and github-pages environment deployments and statuses, as documented at docs.github.com/rest. Recorded from the offline world in test/support/world.ts by HOBO_PACT_RECORD=1; not provider-verified or captured live traffic. Response headers follow GitHub's documented set (x-github-request-id, x-github-media-type, x-ratelimit-limit/remaining/used/reset/resource, x-accepted-github-permissions on a permission 403, retry-after on a secondary rate limit) and error bodies GitHub's {message, documentation_url, status}; request ids and rate-limit counters are fixture values. Git object ids are real: blob and tree ids are what git computes for the fixture site.",
+		"matching": "Requests match on method, templated path ({sha}, {deployment_id}, {artifact_id}), query, the top-level request-body key set and the response status, plus the rate-limit variant of a 403 (x-ratelimit-remaining 0 is a primary limit, retry-after a secondary one); response status, headers and bodies are served verbatim by the offline world, and every refusal interaction is replayed into the resolver. File bytes and the OIDC token are placeholders."
 	},
 	"interactions": [
 		{
@@ -27,6 +27,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000001:1A2B3D",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4999",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "1"
+				},
 				"body": {
 					"full_name": "hobo-fixtures/site",
 					"permissions": {
@@ -51,6 +62,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000002:1A2B3E",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4998",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "2"
+				},
 				"body": {
 					"status": "built",
 					"build_type": "legacy",
@@ -76,8 +98,21 @@
 			},
 			"response": {
 				"status": 404,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000003:1A2B3F",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4997",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "3"
+				},
 				"body": {
-					"message": "Not Found"
+					"message": "Not Found",
+					"documentation_url": "https://docs.github.com/rest/git/refs#get-a-reference",
+					"status": "404"
 				}
 			}
 		},
@@ -100,6 +135,17 @@
 			},
 			"response": {
 				"status": 201,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000004:1A2B40",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4996",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "4"
+				},
 				"body": {
 					"sha": "c0e1a88a7f8eff05767c7a1706cfd6583a1ed2a8",
 					"url": "https://api.github.com/repos/hobo-fixtures/site/git/blobs/c0e1a88a7f8eff05767c7a1706cfd6583a1ed2a8"
@@ -137,6 +183,17 @@
 			},
 			"response": {
 				"status": 201,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000006:1A2B42",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4994",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "6"
+				},
 				"body": {
 					"sha": "a0c9daf45e98407cb437743cec9e0da25c7744fa",
 					"tree": [],
@@ -164,6 +221,17 @@
 			},
 			"response": {
 				"status": 201,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000007:1A2B43",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4993",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "7"
+				},
 				"body": {
 					"sha": "35c00edfa4d0ffdfffc33ca95876aa0a6849c1c9",
 					"tree": {
@@ -192,6 +260,17 @@
 			},
 			"response": {
 				"status": 201,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000008:1A2B44",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4992",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "8"
+				},
 				"body": {
 					"ref": "refs/heads/gh-pages",
 					"object": {
@@ -215,6 +294,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000009:1A2B45",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4991",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "9"
+				},
 				"body": {
 					"ref": "refs/heads/gh-pages",
 					"object": {
@@ -238,6 +328,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00000A:1A2B46",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4990",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "10"
+				},
 				"body": {
 					"sha": "35c00edfa4d0ffdfffc33ca95876aa0a6849c1c9",
 					"tree": {
@@ -261,8 +362,21 @@
 			},
 			"response": {
 				"status": 404,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00000B:1A2B47",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4989",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "11"
+				},
 				"body": {
-					"message": "Not Found"
+					"message": "Not Found",
+					"documentation_url": "https://docs.github.com/rest/pages/pages#get-latest-pages-build",
+					"status": "404"
 				}
 			}
 		},
@@ -280,6 +394,17 @@
 			},
 			"response": {
 				"status": 201,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000011:1A2B4D",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4983",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "17"
+				},
 				"body": {
 					"url": "https://api.github.com/repos/hobo-fixtures/site/pages/builds/latest",
 					"status": "queued"
@@ -300,6 +425,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000012:1A2B4E",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4982",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "18"
+				},
 				"body": {
 					"status": "queued",
 					"commit": "35c00edfa4d0ffdfffc33ca95876aa0a6849c1c9",
@@ -324,6 +460,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000017:1A2B53",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4977",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "23"
+				},
 				"body": {
 					"sha": "a0c9daf45e98407cb437743cec9e0da25c7744fa",
 					"tree": [
@@ -364,6 +511,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000019:1A2B55",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4975",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "25"
+				},
 				"body": {
 					"sha": "86c62fea9b239222d371e6fea2018259d6844c99",
 					"size": 13,
@@ -391,6 +549,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00001F:1A2B5B",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4969",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "31"
+				},
 				"body": {
 					"ref": "refs/heads/gh-pages",
 					"object": {
@@ -413,7 +582,17 @@
 				}
 			},
 			"response": {
-				"status": 204
+				"status": 204,
+				"headers": {
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000024:1A2B60",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4964",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "36"
+				}
 			}
 		},
 		{
@@ -430,8 +609,21 @@
 			},
 			"response": {
 				"status": 404,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000025:1A2B61",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4963",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "37"
+				},
 				"body": {
-					"message": "Not Found"
+					"message": "Not Found",
+					"documentation_url": "https://docs.github.com/rest/pages/pages#get-a-apiname-pages-site",
+					"status": "404"
 				}
 			}
 		},
@@ -449,8 +641,21 @@
 			},
 			"response": {
 				"status": 404,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000003:1A2B3F",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4997",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "3"
+				},
 				"body": {
-					"message": "Not Found"
+					"message": "Not Found",
+					"documentation_url": "https://docs.github.com/rest/git/refs#get-a-reference",
+					"status": "404"
 				}
 			}
 		},
@@ -468,6 +673,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00000A:1A2B46",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4990",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "10"
+				},
 				"body": {
 					"ref": "refs/heads/main",
 					"object": {
@@ -491,6 +707,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00000C:1A2B48",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4988",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "12"
+				},
 				"body": {
 					"sha": "5d45960422cb7a6f96ceb4f9c955d7eebe9262ef",
 					"tree": [
@@ -531,6 +758,17 @@
 			},
 			"response": {
 				"status": 201,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000017:1A2B53",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4977",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "23"
+				},
 				"body": {
 					"sha": "168177449b1c1dcbc66d3462ddd37c1f091b0077",
 					"tree": [],
@@ -557,12 +795,84 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00001C:1A2B58",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4972",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "28"
+				},
 				"body": {
 					"ref": "refs/heads/main",
 					"object": {
 						"type": "commit",
 						"sha": "9059f01dd5d50f25516ccda9003648a52da43106"
 					}
+				}
+			}
+		},
+		{
+			"description": "list the github-pages environment deployments, newest first",
+			"providerState": "Pages builds from GitHub Actions",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site/deployments",
+				"query": "environment=github-pages&per_page=30",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000003:1A2B3F",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4997",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "3"
+				},
+				"body": []
+			}
+		},
+		{
+			"description": "look up the Pages deployment of a build version never deployed",
+			"providerState": "no Pages deployment of the build version exists",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site/pages/deployments/{sha}",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000004:1A2B40",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4996",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "4"
+				},
+				"body": {
+					"message": "Not Found",
+					"documentation_url": "https://docs.github.com/rest/pages/pages#get-the-status-of-a-github-pages-deployment",
+					"status": "404"
 				}
 			}
 		},
@@ -580,6 +890,17 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000005:1A2B41",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4995",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "5"
+				},
 				"body": {
 					"id": 42,
 					"name": "github-pages",
@@ -609,19 +930,30 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000006:1A2B42",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4994",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "6"
+				},
 				"body": {
-					"id": "00000001",
-					"status_url": "https://api.github.com/repos/hobo-fixtures/site/pages/deployments/00000001",
+					"id": "a0c9daf45e98407cb437743cec9e0da25c7744fa",
+					"status_url": "https://api.github.com/repos/hobo-fixtures/site/pages/deployments/a0c9daf45e98407cb437743cec9e0da25c7744fa",
 					"page_url": "https://hobo-fixtures.github.io/site/"
 				}
 			}
 		},
 		{
-			"description": "observe the Pages deployment status",
-			"providerState": "the deployment exists",
+			"description": "observe the Pages deployment of a build version",
+			"providerState": "a Pages deployment of the build version exists",
 			"request": {
 				"method": "GET",
-				"path": "/repos/hobo-fixtures/site/pages/deployments/{deployment_id}",
+				"path": "/repos/hobo-fixtures/site/pages/deployments/{sha}",
 				"headers": {
 					"accept": "application/vnd.github+json",
 					"authorization": "Bearer <github-token>",
@@ -630,8 +962,258 @@
 			},
 			"response": {
 				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000007:1A2B43",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4993",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "7"
+				},
 				"body": {
 					"status": "deployment_queued"
+				}
+			}
+		},
+		{
+			"description": "read the newest status of a github-pages environment deployment",
+			"providerState": "the environment deployment exists",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site/deployments/{deployment_id}/statuses",
+				"query": "per_page=1",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:00000B:1A2B47",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4989",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "11"
+				},
+				"body": [
+					{
+						"id": 700000102,
+						"state": "success",
+						"environment": "github-pages"
+					}
+				]
+			}
+		},
+		{
+			"description": "read the repository with a revoked token",
+			"providerState": "the token is revoked or invalid",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000001:1A2B3D",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4999",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "1"
+				},
+				"body": {
+					"message": "Bad credentials",
+					"documentation_url": "https://docs.github.com/rest",
+					"status": "401"
+				}
+			}
+		},
+		{
+			"description": "read a repository that is private or absent to the token",
+			"providerState": "the repository is not visible to the token",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000001:1A2B3D",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4999",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "1"
+				},
+				"body": {
+					"message": "Not Found",
+					"documentation_url": "https://docs.github.com/rest/repos/repos#get-a-repository",
+					"status": "404"
+				}
+			}
+		},
+		{
+			"description": "read the repository with the primary rate limit exhausted",
+			"providerState": "the token's core rate limit is exhausted",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000001:1A2B3D",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "0",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "5000"
+				},
+				"body": {
+					"message": "API rate limit exceeded for user ID 1.",
+					"documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api",
+					"status": "403"
+				}
+			}
+		},
+		{
+			"description": "read the repository after tripping a secondary rate limit",
+			"providerState": "the token tripped a secondary rate limit",
+			"request": {
+				"method": "GET",
+				"path": "/repos/hobo-fixtures/site",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000001:1A2B3D",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4999",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "1",
+					"retry-after": "60"
+				},
+				"body": {
+					"message": "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+					"documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits",
+					"status": "403"
+				}
+			}
+		},
+		{
+			"description": "upload a blob with a token that lacks contents: write",
+			"providerState": "the token can read but not write repository contents",
+			"request": {
+				"method": "POST",
+				"path": "/repos/hobo-fixtures/site/git/blobs",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28",
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "<base64 file bytes>",
+					"encoding": "base64"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000004:1A2B40",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4996",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "4",
+					"x-accepted-github-permissions": "contents=write"
+				},
+				"body": {
+					"message": "Resource not accessible by personal access token",
+					"documentation_url": "https://docs.github.com/rest/git/blobs#create-a-blob",
+					"status": "403"
+				}
+			}
+		},
+		{
+			"description": "fast-forward a publishing branch another writer moved",
+			"providerState": "the head moved since it was observed",
+			"request": {
+				"method": "PATCH",
+				"path": "/repos/hobo-fixtures/site/git/refs/heads/gh-pages",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"authorization": "Bearer <github-token>",
+					"x-github-api-version": "2022-11-28",
+					"content-type": "application/json"
+				},
+				"body": {
+					"sha": "4281fb71d292b675aa015a996d97585de2abdcdf",
+					"force": false
+				}
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"content-type": "application/json; charset=utf-8",
+					"x-github-api-version-selected": "2022-11-28",
+					"x-github-media-type": "github.v3; format=json",
+					"x-github-request-id": "C0DE:5EED:000017:1A2B53",
+					"x-ratelimit-limit": "5000",
+					"x-ratelimit-remaining": "4977",
+					"x-ratelimit-reset": "1767225600",
+					"x-ratelimit-resource": "core",
+					"x-ratelimit-used": "23"
+				},
+				"body": {
+					"message": "Update is not a fast forward",
+					"documentation_url": "https://docs.github.com/rest/git/refs#update-a-reference",
+					"status": "422"
 				}
 			}
 		}

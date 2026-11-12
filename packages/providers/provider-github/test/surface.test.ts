@@ -36,6 +36,7 @@ import {
 	OIDC,
 	options,
 	request,
+	SITE_DEPLOY,
 	SITE_V1,
 	siteFreight,
 } from "./support/world.js";
@@ -73,6 +74,12 @@ describe("protobuf wire view", () => {
 				JSON.parse(new TextDecoder().decode(SITE_V1.index)),
 			),
 		).not.toThrow();
+		expect(
+			fromJson(
+				StaticSiteTreeSchema,
+				JSON.parse(new TextDecoder().decode(SITE_DEPLOY.index)),
+			).pagesArtifactDigest,
+		).toMatch(/^sha256:/u);
 		const world = githubWorld();
 		const outcome = await githubResolverRegistry(
 			options(memoryStore(...SITE_V1.blobs)),
@@ -164,8 +171,12 @@ describe.skipIf(!existsSync(CUE_BIN))(
 				}),
 			).toThrow();
 
+			cueVet(
+				"#StaticSiteTree",
+				JSON.parse(new TextDecoder().decode(SITE_DEPLOY.index)),
+			);
 			const resolver = githubResolverRegistry(
-				options(memoryStore(...SITE_V1.blobs), {
+				options(memoryStore(...SITE_V1.blobs, ...SITE_DEPLOY.blobs), {
 					resolveDeploymentOidcToken: async () => OIDC,
 				}),
 			).get(GITHUB_PAGES_SITE_PRODUCT_ID);
@@ -199,6 +210,7 @@ describe.skipIf(!existsSync(CUE_BIN))(
 				publishMode: "pages-deployment",
 				branch: undefined,
 				path: undefined,
+				artifactDigest: SITE_DEPLOY.digest,
 				actionsArtifactId: 42,
 				actionsArtifactDigest: `sha256:${"a".repeat(64)}`,
 			});
@@ -208,6 +220,22 @@ describe.skipIf(!existsSync(CUE_BIN))(
 			);
 			cueVet("#GithubPagesSiteDesired", deploymentRequest.desired);
 			cueVet("#GithubPagesSiteOutputs", deployed?.outputs);
+			workflow.setDeploymentStatus(
+				deployed?.outputs.pagesBuildVersion,
+				"succeed",
+			);
+			const live = await resolver?.reconcile(
+				deploymentRequest,
+				workflow.transport,
+			);
+			expect(live?.outputs.ready).toBe(true);
+			cueVet("#GithubPagesSiteOutputs", live?.outputs);
+			expect(() =>
+				cueVet("#GithubPagesSiteOutputs", {
+					...live?.outputs,
+					pagesLiveBuildVersion: "f".repeat(40),
+				}),
+			).toThrow();
 		});
 
 		it("names every refusal reason the code can raise", () => {

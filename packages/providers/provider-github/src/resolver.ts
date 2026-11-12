@@ -24,15 +24,21 @@
  * - **`pages-deployment`** — the site builds from Actions (`build_type`
  *   workflow). The REST API has no artifact upload (that is the Actions
  *   runtime service, reachable only inside a workflow run), so the CI uploads
- *   the Pages artifact and the Freight names it; the realizer verifies it by
- *   digest, creates `POST /pages/deployments` with the locally computed tree
- *   id as `pages_build_version`, and observes the deployment status.
+ *   the Pages artifact and the Freight's tree index binds its digest; the
+ *   realizer verifies the artifact against that digest, finds the deployment
+ *   of the locally computed tree id on GitHub by build version
+ *   (`GET /pages/deployments/{tree}`), and only when there is none (or it
+ *   failed, or another deployment has since gone live) creates
+ *   `POST /pages/deployments` with the tree id as `pages_build_version`.
  *
- * Convergence is reported only from observation (I5): `ready` is true only
- * when the published tree id equals the Freight's and the Pages build for that
- * head commit is `built` (branch mode), or the deployment for that tree id is
- * `succeed` (deployment mode). A lost reply, a timeout or a 5xx is ambiguous
- * and is resolved by observing again.
+ * Convergence is reported only from observation of GitHub (I5), never from a
+ * caller's recorded outputs: `ready` is true only when the published tree id
+ * equals the Freight's and the Pages build for that head commit is `built`
+ * (branch mode), or the live `github-pages` environment deployment — the
+ * newest whose latest status is `success` — carries the Freight's tree id as
+ * its build version and its Pages deployment is `succeed` (deployment mode).
+ * A lost reply, a timeout or a 5xx is ambiguous and is resolved by observing
+ * again.
  *
  * Credentials: `credentialRef` resolves through the host to a token with
  * `contents: write` and `pages: write`; deployment mode also asks the host for
@@ -83,6 +89,7 @@ import {
 	loadSiteContent,
 	parseSha256Digest,
 	parseStaticSiteTree,
+	readSiteBlob,
 	type SiteContent,
 } from "./site-tree.js";
 
@@ -160,6 +167,10 @@ const SHA1 = /^[0-9a-f]{40}$/u;
 const TOKEN = /^[!-~]{1,8192}$/u;
 const JWT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/u;
 const DEPLOYMENT_ID = /^[A-Za-z0-9_-]{1,128}$/u;
+/** Environment deployments listed per observation; the live one is the newest `success`. */
+const ENVIRONMENT_PAGE = 30;
+/** Freight digests whose computed content a resolver keeps (no file bytes). */
+const CONTENT_CACHE_ENTRIES = 32;
 
 interface BranchTarget {
 	readonly publishMode: "branch";
@@ -189,6 +200,8 @@ interface Read {
 interface Session {
 	/** A side-effect-free GET; refusals for auth, permission and rate limit are raised here. */
 	get(path: string, query?: string): Promise<Read>;
+	/** A side-effect-free GET of a JSON array; 404 reads as empty. */
+	list(path: string, query?: string): Promise<readonly JsonValue[]>;
 	/** A mutation; `undefined` means the outcome is ambiguous (no reply). */
 	send(
 		method: TransportMethod,
@@ -213,6 +226,11 @@ interface BranchView {
 interface BuildView {
 	readonly status: string;
 	readonly commit: string | null;
+}
+
+/** The live github-pages environment deployment: the newest whose latest status is success. */
+interface LiveView {
+	readonly version: string | null;
 }
 
 interface Judged {
@@ -342,17 +360,30 @@ export function createGithubPagesResolvers(
 		);
 	}
 
+	// The Freight is content-addressed and checked on load, so its computed
+	// git ids are a pure function of its digest: cache them (no file bytes),
+	// and observation passes read nothing from the artifact store.
+	const contentCache = new Map<string, SiteContent>();
+
 	async function content(t: Target): Promise<SiteContent> {
+		const cached = contentCache.get(t.artifactDigest);
+		if (cached !== undefined) return cached;
 		const index = await options.artifacts.get(t.artifactDigest);
 		if (index === undefined)
 			reject(
 				`static-site tree index ${t.artifactDigest} is not in the artifact store`,
 				"re-put the build output into the artifact store and re-record the Freight",
 			);
-		return loadSiteContent(
+		const site = await loadSiteContent(
 			parseStaticSiteTree(index, t.artifactDigest),
 			(digest) => options.artifacts.get(digest),
 		);
+		if (contentCache.size >= CONTENT_CACHE_ENTRIES) {
+			const oldest = contentCache.keys().next().value;
+			if (oldest !== undefined) contentCache.delete(oldest);
+		}
+		contentCache.set(t.artifactDigest, site);
+		return site;
 	}
 
 	async function session(t: Target, supplied: HttpTransport): Promise<Session> {
@@ -413,26 +444,44 @@ export function createGithubPagesResolvers(
 				);
 		}
 
+		async function read(
+			path: string,
+			query: string | undefined,
+		): Promise<TransportResponse | undefined> {
+			let response: TransportResponse;
+			try {
+				response = await call("GET", path, undefined, query);
+			} catch (error) {
+				if (error instanceof ResolverError) throw error;
+				return reject(
+					"GitHub read failed in transport",
+					"retry the reconcile; reads are side-effect free",
+				);
+			}
+			screen(response, `GET ${path}`);
+			if (response.status === 404) return undefined;
+			if (response.status < 200 || response.status >= 300)
+				reject(
+					`GitHub GET ${path} returned HTTP ${response.status}`,
+					"retry the reconcile; reads are side-effect free",
+				);
+			return response;
+		}
+
 		return {
 			async get(path, query) {
-				let response: TransportResponse;
-				try {
-					response = await call("GET", path, undefined, query);
-				} catch (error) {
-					if (error instanceof ResolverError) throw error;
-					return reject(
-						"GitHub read failed in transport",
-						"retry the reconcile; reads are side-effect free",
-					);
-				}
-				screen(response, `GET ${path}`);
-				if (response.status === 404) return { status: 404 };
-				if (response.status < 200 || response.status >= 300)
-					reject(
-						`GitHub GET ${path} returned HTTP ${response.status}`,
-						"retry the reconcile; reads are side-effect free",
-					);
-				return { status: response.status, body: json(response.body) };
+				const response = await read(path, query);
+				return response === undefined
+					? { status: 404 }
+					: { status: response.status, body: json(response.body) };
+			},
+			async list(path, query) {
+				const response = await read(path, query);
+				if (response === undefined) return [];
+				const value = parse(response.body);
+				if (!isJsonArray(value))
+					unparseable(`GitHub GET ${path} did not return a list`);
+				return value;
 			},
 			async send(method, path, body) {
 				let response: TransportResponse;
@@ -653,6 +702,7 @@ export function createGithubPagesResolvers(
 		site: SiteContent,
 		published: string | null,
 	): Promise<void> {
+		const read = (digest: string) => options.artifacts.get(digest);
 		const known = new Set<string>();
 		if (published !== null) {
 			const listing = await s.get(`/git/trees/${published}`, "recursive=1");
@@ -674,8 +724,9 @@ export function createGithubPagesResolvers(
 		for (const blob of site.blobs)
 			if (!known.has(blob.sha)) pending.set(blob.sha, blob);
 		for (const blob of pending.values()) {
+			const bytes = await readSiteBlob(blob, read);
 			const sent = await mutate(s, "POST", "/git/blobs", {
-				content: Buffer.from(blob.bytes).toString("base64"),
+				content: Buffer.from(bytes).toString("base64"),
 				encoding: "base64",
 			});
 			if (sent.response && sent.response.status === 201) {
@@ -766,8 +817,18 @@ export function createGithubPagesResolvers(
 			);
 		if (!isJsonObject(commit?.tree) || commit.tree.sha !== root)
 			unparseable(`GitHub commit ${commitSha} does not carry tree ${root}`);
-		// Compare-and-swap: the commit's only parent is the observed head, so
-		// `force: false` admits the update only if the head has not moved.
+		// Compare-and-swap, as close as GitHub allows: the REST API has no
+		// update-if-old-sha, and `force: false` only refuses non-fast-forwards.
+		// A writer that rewinds the branch to an ancestor of the observed head
+		// would let our commit (parent: the observed head) fast-forward and
+		// silently restore what it dropped. So re-read the head immediately
+		// before moving the ref and refuse if it changed. The residual window is
+		// that re-read to the PATCH; GitHub offers nothing narrower.
+		if (before.headSha !== null) {
+			const current = await observeBranch(s, t);
+			if (current.headSha !== before.headSha)
+				notFastForward(t, before.headSha, current.headSha);
+		}
 		const moved =
 			before.headSha === null
 				? await mutate(s, "POST", "/git/refs", {
@@ -778,17 +839,27 @@ export function createGithubPagesResolvers(
 						sha: commitSha,
 						force: false,
 					});
+		if (moved.response?.status === 422 && nonFastForward(moved.response.body))
+			notFastForward(t, before.headSha, null);
 		const after = await observeBranch(s, t);
 		if (after.publishedTree === site.treeSha) return after;
 		if (after.headSha !== before.headSha)
-			refuse(
-				"github-ref-not-fast-forward",
-				`heads/${t.branch} moved from ${before.headSha ?? "(absent)"} to ${after.headSha ?? "(absent)"} while publishing; the update is not a fast-forward and was not forced`,
-				"reconcile again to publish on top of the new head, and stop other writers to the Pages branch",
-			);
+			notFastForward(t, before.headSha, after.headSha);
 		return reject(
 			`update of heads/${t.branch} to ${commitSha} is not observable on GitHub (${moved.why})`,
 			"check branch protection and the token's contents: write; otherwise reconcile again, the next pass adopts or republishes",
+		);
+	}
+
+	function notFastForward(
+		t: Target & BranchTarget,
+		from: string | null,
+		to: string | null,
+	): never {
+		return refuse(
+			"github-ref-not-fast-forward",
+			`heads/${t.branch} moved from ${from ?? "(absent)"}${to === null ? "" : ` to ${to}`} while publishing; the update is not a fast-forward of the observed head and was not forced`,
+			"reconcile again to publish on top of the new head, and stop other writers to the Pages branch",
 		);
 	}
 
@@ -838,10 +909,22 @@ export function createGithubPagesResolvers(
 		return outcome(action ?? steady(t), t, judged);
 	}
 
+	/**
+	 * The Actions artifact must exist, be unexpired, carry the declared digest,
+	 * and be the one the Freight's tree index binds — otherwise nothing ties
+	 * what GitHub would serve to the tree the Freight records.
+	 */
 	async function observeActionsArtifact(
 		s: Session,
 		t: Target & DeploymentTarget,
+		site: SiteContent,
 	): Promise<void> {
+		if (site.tree.pagesArtifactDigest !== t.actionsArtifactDigest)
+			refuse(
+				"github-pages-artifact-unavailable",
+				`the Freight tree index ${t.artifactDigest} does not bind Actions artifact digest ${t.actionsArtifactDigest}`,
+				"record pagesArtifactDigest (the digest actions/upload-pages-artifact reported) in the tree index the build workflow writes, and re-record the Freight",
+			);
 		const read = await s.get(`/actions/artifacts/${t.actionsArtifactId}`);
 		const body = read.body;
 		if (body === undefined || body.expired === true)
@@ -858,46 +941,63 @@ export function createGithubPagesResolvers(
 			);
 	}
 
-	function priorDeployment(t: Target, site: SiteContent): string | undefined {
-		const observed = t.request.observed;
-		if (observed === undefined) return undefined;
-		const id = observed.pagesDeploymentId;
-		return isJsonString(id) &&
-			DEPLOYMENT_ID.test(id) &&
-			observed.treeSha === site.treeSha &&
-			observed.actionsArtifactId ===
-				(t.publishMode === "pages-deployment" ? t.actionsArtifactId : undefined)
-			? id
-			: undefined;
-	}
-
+	/** Status of the newest Pages deployment of a build version (GitHub accepts the version as the id). */
 	async function deploymentStatus(
 		s: Session,
-		id: string,
-	): Promise<string | undefined> {
-		const read = await s.get(`/pages/deployments/${id}`);
-		if (read.body === undefined) return undefined;
+		version: string,
+	): Promise<string | null> {
+		const read = await s.get(`/pages/deployments/${version}`);
+		if (read.body === undefined) return null;
 		const status = read.body.status;
 		if (!isJsonString(status))
-			return unparseable(`GitHub Pages deployment ${id} has no status`);
+			return unparseable(`GitHub Pages deployment ${version} has no status`);
 		return status;
+	}
+
+	/** Which build version the site serves: the newest github-pages deployment whose latest status is success. */
+	async function observeLive(s: Session): Promise<LiveView> {
+		const listed = await s.list(
+			"/deployments",
+			`environment=github-pages&per_page=${ENVIRONMENT_PAGE}`,
+		);
+		for (const entry of listed) {
+			if (!isJsonObject(entry)) continue;
+			const id = entry.id;
+			if (!isJsonNumber(id) || !Number.isSafeInteger(id) || id <= 0)
+				return unparseable("GitHub environment deployment has no id");
+			const statuses = await s.list(
+				`/deployments/${id}/statuses`,
+				"per_page=1",
+			);
+			const latest = statuses[0];
+			if (isJsonObject(latest) && latest.state === "success")
+				return { version: isJsonString(entry.sha) ? entry.sha : null };
+		}
+		return { version: null };
 	}
 
 	function judgeDeployment(
 		t: Target & DeploymentTarget,
 		site: SiteContent,
 		pages: PagesView,
+		live: LiveView,
 		id: string | null,
 		status: string | null,
 	): Judged {
-		const ready = status === "succeed";
+		const ready = live.version === site.treeSha && status === "succeed";
 		const failed = status !== null && DEPLOYMENT_TERMINAL_FAILURE.has(status);
+		const diagnostics: string[] = [];
+		if (status === null)
+			diagnostics.push(
+				`GitHub shows no Pages deployment of build version ${site.treeSha}`,
+			);
+		else if (live.version !== site.treeSha)
+			diagnostics.push(
+				`the live github-pages deployment is ${live.version ?? "none"}, not ${site.treeSha}`,
+			);
 		return {
 			ready,
-			diagnostics:
-				id === null
-					? ["no Pages deployment of this tree is known to the reconciler"]
-					: [],
+			diagnostics,
 			...(failed ? { failure: "deployment-failed" as const } : undefined),
 			outputs: {
 				...identity(t, site, pages),
@@ -905,9 +1005,23 @@ export function createGithubPagesResolvers(
 				pagesBuildVersion: site.treeSha,
 				pagesDeploymentId: id,
 				pagesDeploymentStatus: status,
+				pagesLiveBuildVersion: live.version,
 				...lifecycle(ready, id !== null),
 			},
 		};
+	}
+
+	/** Observe the deployment of this Freight and what is live, from GitHub only. */
+	async function observeDeployment(
+		s: Session,
+		t: Target & DeploymentTarget,
+		site: SiteContent,
+	) {
+		await observeRepo(s, t);
+		const pages = requirePages(t, await observePages(s));
+		const live = await observeLive(s);
+		const status = await deploymentStatus(s, site.treeSha);
+		return { pages, live, status };
 	}
 
 	async function reconcileDeployment(
@@ -915,16 +1029,26 @@ export function createGithubPagesResolvers(
 		s: Session,
 		site: SiteContent,
 	): Promise<ResolveOutcome> {
-		await observeRepo(s, t);
-		const pages = requirePages(t, await observePages(s));
-		await observeActionsArtifact(s, t);
-		const prior = priorDeployment(t, site);
-		const priorStatus =
-			prior === undefined ? undefined : await deploymentStatus(s, prior);
-		let id = prior;
-		let status = priorStatus;
+		const { pages, live, status: prior } = await observeDeployment(s, t, site);
+		await observeActionsArtifact(s, t, site);
+		let status = prior;
+		let id: string | null = prior === null ? null : site.treeSha;
 		let action: ResolverAction = steady(t);
-		if (status === undefined || DEPLOYMENT_RETRYABLE_FAILURE.has(status)) {
+		const isLive = live.version === site.treeSha && prior === "succeed";
+		const inFlight =
+			prior !== null &&
+			prior !== "succeed" &&
+			!DEPLOYMENT_TERMINAL_FAILURE.has(prior) &&
+			!DEPLOYMENT_RETRYABLE_FAILURE.has(prior);
+		if (prior !== null && DEPLOYMENT_TERMINAL_FAILURE.has(prior))
+			refuse(
+				"github-pages-deployment-failed",
+				`Pages deployment ${site.treeSha} of ${t.physicalId} failed on its content (${prior})`,
+				"fix the site content and record new Freight",
+			);
+		// Deploy when GitHub shows no deployment of this tree, it failed
+		// retryably, or it succeeded but another deployment has since gone live.
+		if (!isLive && !inFlight) {
 			const oidc = await options.resolveDeploymentOidcToken?.(
 				t.request.credentialRef,
 			);
@@ -953,17 +1077,18 @@ export function createGithubPagesResolvers(
 			if (!isJsonString(createdId) || !DEPLOYMENT_ID.test(createdId))
 				reject(
 					`Pages deployment of ${t.physicalId} is not observable (${sent.why})`,
-					"reconcile again; redeploying the same artifact publishes identical content",
+					"reconcile again; the next pass finds the deployment by build version or redeploys the same artifact",
 				);
 			id = createdId;
-			status = (await deploymentStatus(s, createdId)) ?? "deployment_queued";
-			action = prior === undefined ? "create" : "update";
+			// Only what GitHub shows: an unobserved status is unknown, not queued.
+			status = await deploymentStatus(s, site.treeSha);
+			action = prior === null ? "create" : "update";
 		}
-		const judged = judgeDeployment(t, site, pages, id ?? null, status ?? null);
+		const judged = judgeDeployment(t, site, pages, live, id, status);
 		if (judged.failure === "deployment-failed")
 			refuse(
 				"github-pages-deployment-failed",
-				`Pages deployment ${id ?? "?"} of ${t.physicalId} failed on its content (${status ?? "?"})`,
+				`Pages deployment ${site.treeSha} of ${t.physicalId} failed on its content (${status ?? "?"})`,
 				"fix the site content and record new Freight",
 			);
 		return outcome(action, t, judged);
@@ -989,9 +1114,8 @@ export function createGithubPagesResolvers(
 					judgeBranch(t, site, pages, branch, await observeBuild(s)),
 				);
 			}
-			const prior = priorDeployment(t, site);
-			const status =
-				prior === undefined ? undefined : await deploymentStatus(s, prior);
+			const live = await observeLive(s);
+			const status = await deploymentStatus(s, site.treeSha);
 			return outcome(
 				steady(t),
 				t,
@@ -999,8 +1123,9 @@ export function createGithubPagesResolvers(
 					t,
 					site,
 					pages,
-					status === undefined ? null : (prior ?? null),
-					status ?? null,
+					live,
+					status === null ? null : site.treeSha,
+					status,
 				),
 			);
 		},
@@ -1052,14 +1177,31 @@ function rateLimited(response: TransportResponse): boolean {
 	);
 }
 
-function json(body: string): JsonObject {
-	let value: JsonValue;
+function parse(body: string): JsonValue {
 	try {
 		// SAFETY: JSON.parse yields a JSON value at this GitHub API boundary.
-		value = JSON.parse(body) as JsonValue;
+		return JSON.parse(body) as JsonValue;
 	} catch {
 		return unparseable("GitHub returned a non-JSON body");
 	}
+}
+
+/** GitHub's 422 for a ref update that is not a fast-forward of the current head. */
+function nonFastForward(body: string): boolean {
+	try {
+		const value = parse(body);
+		return (
+			isJsonObject(value) &&
+			isJsonString(value.message) &&
+			/not a fast.forward/iu.test(value.message)
+		);
+	} catch {
+		return false;
+	}
+}
+
+function json(body: string): JsonObject {
+	const value = parse(body);
 	if (!isJsonObject(value)) unparseable("GitHub returned a non-object body");
 	return value;
 }

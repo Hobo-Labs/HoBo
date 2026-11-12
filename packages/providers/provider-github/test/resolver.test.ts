@@ -15,6 +15,7 @@ import {
 	parseStaticSiteTree,
 } from "../src/index.js";
 import {
+	ARTIFACT_DIGEST,
 	digestOf,
 	githubWorld,
 	memoryStore,
@@ -23,6 +24,7 @@ import {
 	options,
 	REPO,
 	request,
+	SITE_DEPLOY,
 	SITE_V1,
 	SITE_V2,
 	TOKEN,
@@ -32,8 +34,8 @@ const PHYSICAL = `${OWNER}/${REPO}`;
 
 function resolverFor(
 	overrides: Partial<GithubPagesResolverOptions> = {},
+	store = memoryStore(...SITE_V1.blobs, ...SITE_V2.blobs, ...SITE_DEPLOY.blobs),
 ): ResourceResolver {
-	const store = memoryStore(...SITE_V1.blobs, ...SITE_V2.blobs);
 	const resolver = githubResolverRegistry(options(store, overrides)).get(
 		GITHUB_PAGES_SITE_PRODUCT_ID,
 	);
@@ -260,6 +262,82 @@ describe("branch mode: ambiguous outcomes are resolved by observation (I5)", () 
 	});
 });
 
+describe("branch mode: the ref compare-and-swap", () => {
+	it("refuses, without moving the ref, when another writer rewinds the branch between observe and update", async () => {
+		const world = githubWorld();
+		const resolver = resolverFor();
+		await resolver.reconcile(request(), world.transport);
+		await resolver.reconcile(
+			request({ artifactDigest: SITE_V2.digest }),
+			world.transport,
+		);
+		const observedHead = world.head();
+		const ancestor = world.commits.get(observedHead)?.parents[0];
+		expect(ancestor).toBeDefined();
+		// Publishing V1 again: the commit is built on the observed head, and the
+		// branch is rewound to its parent before the ref moves. A fast-forward
+		// from the rewound head would silently restore the dropped commit.
+		world.faults.rewindOnCommit = true;
+		const mark = world.requests.length;
+		const error = await refusal(resolver.reconcile(request(), world.transport));
+		expect(reasonOf(error)).toBe("github-ref-not-fast-forward");
+		expect(world.head()).toBe(ancestor);
+		expect(
+			world.requests.slice(mark).filter((entry) => entry.method === "PATCH"),
+		).toHaveLength(0);
+	});
+
+	it("refuses a 422 non-fast-forward reply as a typed refusal even when the head reads back unchanged", async () => {
+		const world = githubWorld();
+		await resolverFor().reconcile(request(), world.transport);
+		world.faults.status = {
+			prefix: "/git/refs/heads/",
+			status: 422,
+			message: "Update is not a fast forward",
+		};
+		const error = await refusal(
+			resolverFor().reconcile(
+				request({ artifactDigest: SITE_V2.digest }),
+				world.transport,
+			),
+		);
+		expect(reasonOf(error)).toBe("github-ref-not-fast-forward");
+	});
+});
+
+describe("Freight content loading", () => {
+	it("keeps no file bytes in the computed site content", async () => {
+		const site = await loadSiteContent(
+			parseStaticSiteTree(SITE_V1.index, SITE_V1.digest),
+			memoryStore(...SITE_V1.blobs).get,
+		);
+		for (const blob of site.blobs) expect(blob).not.toHaveProperty("bytes");
+	});
+
+	it("reads the Freight once per digest: steady passes and reads load no file blob", async () => {
+		const store = memoryStore(...SITE_V1.blobs, ...SITE_V2.blobs);
+		const resolver = resolverFor({}, store);
+		const world = githubWorld();
+		await resolver.reconcile(request(), world.transport);
+		world.finishBuild();
+		store.reads.length = 0;
+		const steady = parsed(
+			await resolver.reconcile(request({}, PHYSICAL), world.transport),
+		);
+		await resolver.read?.(request({}, PHYSICAL), world.transport);
+		expect(steady.outputs.ready).toBe(true);
+		expect(store.reads).toEqual([]);
+		// An update loads only the new Freight, and re-reads only blobs it uploads.
+		await resolver.reconcile(
+			request({ artifactDigest: SITE_V2.digest }, PHYSICAL),
+			world.transport,
+		);
+		const files = new Set(store.reads.filter((d) => d !== SITE_V2.digest));
+		expect(files.size).toBe(3);
+		expect(store.reads.length).toBeLessThanOrEqual(1 + 3 + 2);
+	});
+});
+
 describe("typed refusals", () => {
 	it("refuses when Pages is disabled, with zero mutations", async () => {
 		const world = githubWorld({ pages: false });
@@ -357,42 +435,42 @@ describe("typed refusals", () => {
 });
 
 describe("pages-deployment mode", () => {
-	const ARTIFACT_DIGEST = `sha256:${"a".repeat(64)}`;
-	const deployment = (
-		overrides = {},
-		physicalId?: string,
-		observed?: ResolveOutcome["outputs"],
-	) =>
+	const FOREIGN = "f".repeat(40);
+	const deployment = (overrides = {}, physicalId?: string) =>
 		request(
 			{
 				publishMode: "pages-deployment",
 				branch: undefined,
 				path: undefined,
+				artifactDigest: SITE_DEPLOY.digest,
 				actionsArtifactId: 42,
 				actionsArtifactDigest: ARTIFACT_DIGEST,
 				...overrides,
 			},
 			physicalId,
-			observed === undefined ? undefined : { ...observed },
 		);
 	const withOidc = { resolveDeploymentOidcToken: async () => OIDC };
-
-	it("deploys the verified Actions artifact with the Freight tree id as the build version, then converges on succeed", async () => {
+	const workflowWorld = () => {
 		const world = githubWorld({ buildType: "workflow" });
 		world.artifacts.set(42, { digest: ARTIFACT_DIGEST, expired: false });
+		return world;
+	};
+
+	it("deploys the verified Actions artifact with the Freight tree id as the build version, then converges once GitHub shows it live", async () => {
+		const world = workflowWorld();
 		const resolver = resolverFor(withOidc);
 		const created = parsed(
 			await resolver.reconcile(deployment(), world.transport),
 		);
-		const tree = await treeOf(SITE_V1);
+		const tree = await treeOf(SITE_DEPLOY);
 		expect(created.action).toBe("create");
 		expect(created.outputs).toMatchObject({
 			pagesBuildVersion: tree,
+			pagesDeploymentId: tree,
 			pagesDeploymentStatus: "deployment_queued",
+			pagesLiveBuildVersion: null,
 			ready: false,
 		});
-		const id = String(created.outputs.pagesDeploymentId);
-		expect(world.deployments.get(id)?.version).toBe(tree);
 		const body = world.requests.find((entry) =>
 			entry.url.endsWith("/pages/deployments"),
 		)?.body;
@@ -400,64 +478,106 @@ describe("pages-deployment mode", () => {
 			artifact_id: 42,
 			pages_build_version: tree,
 		});
-		// A reconcile that knows the deployment observes it instead of deploying again.
+		// No recorded outputs: the deployment of this tree is found on GitHub
+		// by its build version and observed, not deployed again.
 		const pending = parsed(
-			await resolver.reconcile(
-				deployment({}, PHYSICAL, created.outputs),
-				world.transport,
-			),
+			await resolver.reconcile(deployment({}, PHYSICAL), world.transport),
 		);
 		expect(pending.action).toBe("noop");
-		expect(pending.outputs.ready).toBe(false);
-		world.setDeploymentStatus(id, "succeed");
+		expect(pending.outputs).toMatchObject({
+			ready: false,
+			lifecycleStatus: "building",
+		});
+		expect(world.deployments).toHaveLength(1);
+		world.setDeploymentStatus(tree, "succeed");
+		const writes = world.mutations().length;
 		const steady = parsed(
-			await resolver.reconcile(
-				deployment({}, PHYSICAL, created.outputs),
-				world.transport,
-			),
+			await resolver.reconcile(deployment({}, PHYSICAL), world.transport),
 		);
 		expect(steady.action).toBe("noop");
 		expect(steady.outputs).toMatchObject({
 			ready: true,
-			pagesDeploymentId: id,
+			pagesDeploymentId: tree,
+			pagesLiveBuildVersion: tree,
 			lifecycleStatus: "ready",
 		});
-		expect(world.deployments.size).toBe(1);
+		const observed = parsed(
+			await resolver.read?.(deployment({}, PHYSICAL), world.transport),
+		);
+		expect(observed.outputs.ready).toBe(true);
+		expect(world.mutations().length).toBe(writes);
+		expect(world.deployments).toHaveLength(1);
+	});
+
+	it("is not converged once another deployment goes live, and redeploys the Freight", async () => {
+		const world = workflowWorld();
+		const resolver = resolverFor(withOidc);
+		const tree = await treeOf(SITE_DEPLOY);
+		await resolver.reconcile(deployment(), world.transport);
+		world.setDeploymentStatus(tree, "succeed");
+		world.foreignDeployment(FOREIGN);
+		const observed = parsed(
+			await resolver.read?.(deployment({}, PHYSICAL), world.transport),
+		);
+		expect(observed.outputs).toMatchObject({
+			ready: false,
+			pagesDeploymentStatus: "succeed",
+			pagesLiveBuildVersion: FOREIGN,
+		});
+		const redeployed = parsed(
+			await resolver.reconcile(deployment({}, PHYSICAL), world.transport),
+		);
+		expect(redeployed.action).toBe("update");
+		expect(redeployed.outputs.ready).toBe(false);
+		expect(world.deployments.map((entry) => entry.version)).toEqual([
+			tree,
+			FOREIGN,
+			tree,
+		]);
+		world.setDeploymentStatus(tree, "succeed");
+		const converged = parsed(
+			await resolver.reconcile(deployment({}, PHYSICAL), world.transport),
+		);
+		expect(converged.outputs).toMatchObject({
+			ready: true,
+			pagesLiveBuildVersion: tree,
+		});
+	});
+
+	it("reports the status of a new deployment as unknown when GitHub does not show it", async () => {
+		const world = workflowWorld();
+		// The lookup by build version before deploying, and the read after.
+		world.faults.hideDeploymentStatusReads = 2;
+		const created = parsed(
+			await resolverFor(withOidc).reconcile(deployment(), world.transport),
+		);
+		expect(created.action).toBe("create");
+		expect(created.outputs).toMatchObject({
+			pagesDeploymentStatus: null,
+			ready: false,
+		});
 	});
 
 	it("redeploys after a retryable failure and refuses a content failure", async () => {
-		const world = githubWorld({ buildType: "workflow" });
-		world.artifacts.set(42, { digest: ARTIFACT_DIGEST, expired: false });
+		const world = workflowWorld();
 		const resolver = resolverFor(withOidc);
-		const first = parsed(
-			await resolver.reconcile(deployment(), world.transport),
-		);
-		const id = String(first.outputs.pagesDeploymentId);
-		world.setDeploymentStatus(id, "deployment_lost");
+		const tree = await treeOf(SITE_DEPLOY);
+		await resolver.reconcile(deployment(), world.transport);
+		world.setDeploymentStatus(tree, "deployment_lost");
 		const again = parsed(
-			await resolver.reconcile(
-				deployment({}, PHYSICAL, first.outputs),
-				world.transport,
-			),
+			await resolver.reconcile(deployment({}, PHYSICAL), world.transport),
 		);
 		expect(again.action).toBe("update");
-		expect(again.outputs.pagesDeploymentId).not.toBe(id);
-		world.setDeploymentStatus(
-			again.outputs.pagesDeploymentId,
-			"deployment_content_failed",
-		);
+		expect(world.deployments).toHaveLength(2);
+		world.setDeploymentStatus(tree, "deployment_content_failed");
 		const error = await refusal(
-			resolver.reconcile(
-				deployment({}, PHYSICAL, again.outputs),
-				world.transport,
-			),
+			resolver.reconcile(deployment({}, PHYSICAL), world.transport),
 		);
 		expect(reasonOf(error)).toBe("github-pages-deployment-failed");
 	});
 
-	it("refuses with artifact-unavailable when no artifact is declared, it expired, its digest differs or no OIDC token is bound", async () => {
-		const world = githubWorld({ buildType: "workflow" });
-		world.artifacts.set(42, { digest: ARTIFACT_DIGEST, expired: false });
+	it("refuses with artifact-unavailable when no artifact is declared, it expired, its digest differs, the Freight does not bind it or no OIDC token is bound", async () => {
+		const world = workflowWorld();
 		world.artifacts.set(43, { digest: ARTIFACT_DIGEST, expired: true });
 		const cases: [ResourceResolver, ReturnType<typeof deployment>][] = [
 			[
@@ -472,13 +592,16 @@ describe("pages-deployment mode", () => {
 				resolverFor(withOidc),
 				deployment({ actionsArtifactDigest: `sha256:${"b".repeat(64)}` }),
 			],
+			// The Freight's tree index names no Pages artifact: nothing ties the
+			// artifact GitHub would serve to the tree the Freight records.
+			[resolverFor(withOidc), deployment({ artifactDigest: SITE_V1.digest })],
 			[resolverFor(), deployment()],
 		];
 		for (const [resolver, raw] of cases)
 			expect(
 				reasonOf(await refusal(resolver.reconcile(raw, world.transport))),
 			).toBe("github-pages-artifact-unavailable");
-		expect(world.deployments.size).toBe(0);
+		expect(world.deployments).toHaveLength(0);
 	});
 });
 

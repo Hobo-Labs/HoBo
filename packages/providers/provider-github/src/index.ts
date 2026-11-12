@@ -32,6 +32,7 @@ export {
 	gitTreeSha,
 	loadSiteContent,
 	parseStaticSiteTree,
+	readSiteBlob,
 	type SiteBlob,
 	type SiteContent,
 	STATIC_SITE_MAX_FILE_BYTES,

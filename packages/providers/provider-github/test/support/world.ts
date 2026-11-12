@@ -41,6 +41,7 @@ const text = (value: string) => new TextEncoder().encode(value);
 export function siteFreight(
 	files: Readonly<Record<string, string>>,
 	executable: readonly string[] = [],
+	extra: Readonly<Record<string, JsonValue>> = {},
 ) {
 	const blobs = Object.entries(files).map(([path, body]) => ({
 		path,
@@ -49,6 +50,7 @@ export function siteFreight(
 	const index = text(
 		JSON.stringify({
 			contract: STATIC_SITE_TREE_CONTRACT,
+			...extra,
 			files: blobs.map((blob) => ({
 				path: blob.path,
 				digest: digestOf(blob.bytes),
@@ -74,11 +76,27 @@ export const SITE_V2 = siteFreight({
 	"about/index.html": "<p>about</p>\n",
 });
 
+/** The digest the build workflow's Pages artifact carries in the fixtures. */
+export const ARTIFACT_DIGEST = `sha256:${"a".repeat(64)}`;
+/** SITE_V1 as a pages-deployment Freight: its index binds the Actions artifact. */
+export const SITE_DEPLOY = siteFreight(
+	{
+		"index.html": "<h1>v1</h1>\n",
+		"assets/site.css": "body{}\n",
+	},
+	[],
+	{ pagesArtifactDigest: ARTIFACT_DIGEST },
+);
+
+/** An artifact store that counts reads, so tests can see what a pass loads. */
 export function memoryStore(...blobs: Uint8Array[]) {
 	const map = new Map(blobs.map((bytes) => [digestOf(bytes), bytes]));
+	const reads: string[] = [];
 	return {
 		map,
+		reads,
 		async get(digest: string) {
+			reads.push(digest);
 			return map.get(digest);
 		},
 	};
@@ -125,11 +143,17 @@ function sha1(...parts: (string | Uint8Array)[]): string {
 interface Faults {
 	lostBefore: string | undefined;
 	dropReply: string | undefined;
-	status: { prefix: string; status: number } | undefined;
+	status: { prefix: string; status: number; message?: string } | undefined;
 	racingWriter: boolean;
+	rewindOnCommit: boolean;
 	rateLimitOnce: boolean;
+	secondaryRateLimitOnce: boolean;
+	hideDeploymentStatusReads: number;
 	autoBuild: boolean;
 }
+
+/** GitHub's documentation root, as error bodies carry it. */
+const DOCS = "https://docs.github.com/rest";
 
 export interface WorldOptions {
 	readonly buildType?: "legacy" | "workflow";
@@ -138,6 +162,8 @@ export interface WorldOptions {
 	readonly sourcePath?: "/" | "/docs";
 	readonly push?: boolean;
 	readonly writable?: boolean;
+	/** false: the repository is private or absent to the credential (404). */
+	readonly visible?: boolean;
 }
 
 export function githubWorld(options: WorldOptions = {}) {
@@ -147,7 +173,13 @@ export function githubWorld(options: WorldOptions = {}) {
 	const commits = new Map<string, Commit>();
 	const refs = new Map<string, string>();
 	const builds: { status: string; commit: string }[] = [];
-	const deployments = new Map<string, { status: string; version: string }>();
+	/** Pages deployments, oldest first; GitHub ids them by their build version. */
+	const deployments: {
+		status: string;
+		version: string;
+		environmentId: number;
+	}[] = [];
+	const environment: { id: number; sha: string; states: string[] }[] = [];
 	const artifacts = new Map<number, { digest: string; expired: boolean }>();
 	let pages:
 		| {
@@ -172,6 +204,7 @@ export function githubWorld(options: WorldOptions = {}) {
 				};
 	let commitCounter = 0;
 	let deploymentCounter = 0;
+	let requestCounter = 0;
 	const faults: Faults = {
 		/** Lose the next mutation matching the prefix before it reaches GitHub. */
 		lostBefore: undefined,
@@ -181,8 +214,14 @@ export function githubWorld(options: WorldOptions = {}) {
 		status: undefined,
 		/** Move the branch to a foreign commit just before the next ref update. */
 		racingWriter: false,
-		/** Answer the next request 403 with an exhausted rate limit. */
+		/** Rewind the branch to its head's parent when the next commit is created. */
+		rewindOnCommit: false,
+		/** Answer the next request 403 with an exhausted primary rate limit. */
 		rateLimitOnce: false,
+		/** Answer the next request 403 with a secondary rate limit (retry-after). */
+		secondaryRateLimitOnce: false,
+		/** Answer this many next Pages deployment status reads 404. */
+		hideDeploymentStatusReads: 0,
 		/** Whether a push to the source branch starts a Pages build. */
 		autoBuild: true,
 	};
@@ -259,25 +298,103 @@ export function githubWorld(options: WorldOptions = {}) {
 			builds.push({ status: "building", commit: sha });
 	}
 
-	function respond(status: number, body?: JsonValue): TransportResponse {
+	/** The headers every GitHub REST response carries (2022-11-28). */
+	function headers(hasBody: boolean, extra: Record<string, string> = {}) {
+		requestCounter += 1;
+		return {
+			...(hasBody
+				? { "content-type": "application/json; charset=utf-8" }
+				: undefined),
+			"x-github-api-version-selected": "2022-11-28",
+			"x-github-media-type": "github.v3; format=json",
+			"x-github-request-id": `C0DE:5EED:${requestCounter.toString(16).toUpperCase().padStart(6, "0")}:${(0x1a2b3c + requestCounter).toString(16).toUpperCase()}`,
+			"x-ratelimit-limit": "5000",
+			"x-ratelimit-remaining": String(5000 - requestCounter),
+			"x-ratelimit-reset": "1767225600",
+			"x-ratelimit-resource": "core",
+			"x-ratelimit-used": String(requestCounter),
+			...extra,
+		};
+	}
+
+	function respond(
+		status: number,
+		body?: JsonValue,
+		extra?: Record<string, string>,
+	): TransportResponse {
 		return {
 			status,
-			headers: {
-				"content-type": "application/json",
-				"x-ratelimit-remaining": "4999",
-			},
+			headers: headers(body !== undefined, extra),
 			body: body === undefined ? "" : JSON.stringify(body),
 		};
+	}
+
+	/** A GitHub error: `{message, documentation_url, status}` as the API sends it. */
+	function error(
+		status: number,
+		message: string,
+		doc: string,
+		extra?: Record<string, string>,
+	): TransportResponse {
+		return respond(
+			status,
+			{ message, documentation_url: `${DOCS}${doc}`, status: String(status) },
+			extra,
+		);
+	}
+
+	const notFound = (doc: string) => error(404, "Not Found", doc);
+
+	/** Record a Pages deployment and its github-pages environment deployment. */
+	function deploy(version: string): JsonValue {
+		const environmentId = 7_000_000 + ++deploymentCounter;
+		deployments.push({ status: "deployment_queued", version, environmentId });
+		environment.push({ id: environmentId, sha: version, states: ["queued"] });
+		// The Pages deployment id is the build version it deploys.
+		return {
+			id: version,
+			status_url: `${API}${PREFIX}/pages/deployments/${version}`,
+			page_url: pages?.html_url ?? null,
+		};
+	}
+
+	const newest = (version: string) =>
+		[...deployments].reverse().find((entry) => entry.version === version);
+
+	/** Move the newest deployment of a version to a status; success deactivates the others. */
+	function settle(version: string, status: string) {
+		const deployment = newest(version);
+		if (deployment === undefined)
+			throw new Error(`world: no deployment of ${version}`);
+		deployment.status = status;
+		const entry = environment.find((e) => e.id === deployment.environmentId);
+		if (entry === undefined) return;
+		const state =
+			status === "succeed"
+				? "success"
+				: /failed|cancelled|error|lost/u.test(status)
+					? "failure"
+					: "in_progress";
+		entry.states.push(state);
+		if (state === "success")
+			for (const other of environment)
+				if (other !== entry && other.states.at(-1) === "success")
+					other.states.push("inactive");
 	}
 
 	function apply(request: TransportRequest, path: string, query: string) {
 		const { method } = request;
 		if (request.headers.authorization !== `Bearer ${TOKEN}`)
-			return respond(401, { message: "Bad credentials" });
+			return error(401, "Bad credentials", "");
+		if (options.visible === false)
+			return notFound("/repos/repos#get-a-repository");
 		if (method !== "GET" && options.writable === false)
-			return respond(403, {
-				message: "Resource not accessible by integration",
-			});
+			return error(
+				403,
+				"Resource not accessible by personal access token",
+				"/git/blobs#create-a-blob",
+				{ "x-accepted-github-permissions": "contents=write" },
+			);
 		// SAFETY: every body is JSON the realizer serialized; the world reads the fields it models.
 		const body: Body = request.body ? JSON.parse(request.body) : {};
 		if (path === "" && method === "GET")
@@ -289,9 +406,9 @@ export function githubWorld(options: WorldOptions = {}) {
 			if (method === "GET")
 				return pages
 					? respond(200, { status: "built", ...pages })
-					: respond(404, { message: "Not Found" });
+					: notFound("/pages/pages#get-a-apiname-pages-site");
 			if (method === "DELETE") {
-				if (!pages) return respond(404, { message: "Not Found" });
+				if (!pages) return notFound("/pages/pages#delete-a-apiname-pages-site");
 				pages = undefined;
 				return respond(204);
 			}
@@ -300,12 +417,12 @@ export function githubWorld(options: WorldOptions = {}) {
 			const latest = builds[builds.length - 1];
 			return latest
 				? respond(200, { ...latest, error: { message: null } })
-				: respond(404, { message: "Not Found" });
+				: notFound("/pages/pages#get-latest-pages-build");
 		}
 		if (path === "/pages/builds" && method === "POST") {
 			const branch = pages?.source?.branch;
 			const head = branch ? refs.get(branch) : undefined;
-			if (!head) return respond(404, { message: "Not Found" });
+			if (!head) return notFound("/pages/pages#request-a-apiname-pages-build");
 			builds.push({ status: "queued", commit: head });
 			return respond(201, {
 				url: `${API}${PREFIX}/pages/builds/latest`,
@@ -328,19 +445,27 @@ export function githubWorld(options: WorldOptions = {}) {
 						encoding: "base64",
 						content: Buffer.from(bytes).toString("base64"),
 					})
-				: respond(404, { message: "Not Found" });
+				: notFound("/git/blobs#get-a-blob");
 		}
 		if (path === "/git/trees" && method === "POST") {
 			const base = body.base_tree;
 			if (base !== undefined && !trees.has(base))
-				return respond(422, { message: "base_tree not found" });
+				return error(422, "base_tree not found", "/git/trees#create-a-tree");
 			const flat = base ? flatten(base) : new Map<string, Entry>();
 			for (const entry of Array.isArray(body.tree) ? body.tree : []) {
 				if (entry.type === "blob" && !blobs.has(entry.sha))
-					return respond(422, { message: "tree.sha is not a blob" });
+					return error(
+						422,
+						"tree.sha is not a blob",
+						"/git/trees#create-a-tree",
+					);
 				if (entry.type === "tree") {
 					if (!trees.has(entry.sha))
-						return respond(422, { message: "tree.sha is not a tree" });
+						return error(
+							422,
+							"tree.sha is not a tree",
+							"/git/trees#create-a-tree",
+						);
 					for (const key of flat.keys())
 						if (key === entry.path || key.startsWith(`${entry.path}/`))
 							flat.delete(key);
@@ -358,7 +483,7 @@ export function githubWorld(options: WorldOptions = {}) {
 		}
 		if (path.startsWith("/git/trees/") && method === "GET") {
 			const sha = path.slice("/git/trees/".length);
-			if (!trees.has(sha)) return respond(404, { message: "Not Found" });
+			if (!trees.has(sha)) return notFound("/git/trees#get-a-tree");
 			const listing: JsonValue[] = [];
 			const walk = (tree: string, prefix: string) => {
 				for (const [name, entry] of trees.get(tree) ?? []) {
@@ -372,7 +497,12 @@ export function githubWorld(options: WorldOptions = {}) {
 		}
 		if (path === "/git/commits" && method === "POST") {
 			const tree = String(body.tree);
-			if (!trees.has(tree)) return respond(422, { message: "tree not found" });
+			if (!trees.has(tree))
+				return error(
+					422,
+					"Tree SHA does not exist",
+					"/git/commits#create-a-commit",
+				);
 			const parents = body.parents ?? [];
 			const sha = sha1(
 				`commit ${tree} ${parents.join(",")} ${++commitCounter}`,
@@ -393,7 +523,7 @@ export function githubWorld(options: WorldOptions = {}) {
 						tree: { sha: commit.tree },
 						message: commit.message,
 					})
-				: respond(404, { message: "Not Found" });
+				: notFound("/git/commits#get-a-commit-object");
 		}
 		if (path.startsWith("/git/ref/heads/") && method === "GET") {
 			const branch = path.slice("/git/ref/heads/".length);
@@ -403,15 +533,23 @@ export function githubWorld(options: WorldOptions = {}) {
 						ref: `refs/heads/${branch}`,
 						object: { type: "commit", sha },
 					})
-				: respond(404, { message: "Not Found" });
+				: notFound("/git/refs#get-a-reference");
 		}
 		if (path === "/git/refs" && method === "POST") {
 			const branch = String(body.ref).replace(/^refs\/heads\//u, "");
 			const sha = String(body.sha);
 			if (refs.has(branch))
-				return respond(422, { message: "Reference already exists" });
+				return error(
+					422,
+					"Reference already exists",
+					"/git/refs#create-a-reference",
+				);
 			if (!commits.has(sha))
-				return respond(422, { message: "Object does not exist" });
+				return error(
+					422,
+					"Object does not exist",
+					"/git/refs#create-a-reference",
+				);
 			setRef(branch, sha);
 			return respond(201, {
 				ref: `refs/heads/${branch}`,
@@ -423,9 +561,17 @@ export function githubWorld(options: WorldOptions = {}) {
 			const sha = String(body.sha);
 			const current = refs.get(branch);
 			if (!current)
-				return respond(422, { message: "Reference does not exist" });
+				return error(
+					422,
+					"Reference does not exist",
+					"/git/refs#update-a-reference",
+				);
 			if (body.force !== true && !descends(sha, current))
-				return respond(422, { message: "Update is not a fast forward" });
+				return error(
+					422,
+					"Update is not a fast forward",
+					"/git/refs#update-a-reference",
+				);
 			setRef(branch, sha);
 			return respond(200, {
 				ref: `refs/heads/${branch}`,
@@ -437,35 +583,68 @@ export function githubWorld(options: WorldOptions = {}) {
 			const artifact = artifacts.get(id);
 			return artifact
 				? respond(200, { id, name: "github-pages", ...artifact })
-				: respond(404, { message: "Not Found" });
+				: notFound("/actions/artifacts#get-an-artifact");
 		}
 		if (path === "/pages/deployments" && method === "POST") {
 			if (pages?.build_type !== "workflow")
-				return respond(404, { message: "Not Found" });
+				return notFound("/pages/pages#create-a-github-pages-deployment");
 			if (body.oidc_token !== OIDC)
-				return respond(401, { message: "Bad OIDC token" });
+				return error(
+					401,
+					"Bad credentials",
+					"/pages/pages#create-a-github-pages-deployment",
+				);
 			if (!artifacts.has(Number(body.artifact_id)))
-				return respond(404, { message: "Artifact not found" });
-			const id = `${++deploymentCounter}`.padStart(8, "0");
-			deployments.set(id, {
-				status: "deployment_queued",
-				version: String(body.pages_build_version),
-			});
-			return respond(200, {
-				id,
-				status_url: `${API}${PREFIX}/pages/deployments/${id}`,
-				page_url: pages.html_url,
-			});
+				return error(
+					404,
+					"Not Found",
+					"/pages/pages#create-a-github-pages-deployment",
+				);
+			const version = String(body.pages_build_version);
+			return respond(200, deploy(version));
 		}
 		if (path.startsWith("/pages/deployments/") && method === "GET") {
-			const deployment = deployments.get(
-				path.slice("/pages/deployments/".length),
-			);
-			return deployment
+			const deployment = newest(path.slice("/pages/deployments/".length));
+			const hidden = faults.hideDeploymentStatusReads > 0;
+			if (hidden) faults.hideDeploymentStatusReads -= 1;
+			return deployment && !hidden
 				? respond(200, { status: deployment.status })
-				: respond(404, { message: "Not Found" });
+				: notFound("/pages/pages#get-the-status-of-a-github-pages-deployment");
 		}
-		return respond(405, { message: `not modelled: ${method} ${path}` });
+		if (path === "/deployments" && method === "GET") {
+			const listed = query.includes("environment=github-pages")
+				? [...environment].reverse().slice(0, 10)
+				: [];
+			return respond(
+				200,
+				listed.map((entry) => ({
+					id: entry.id,
+					sha: entry.sha,
+					ref: entry.sha,
+					task: "deploy",
+					environment: "github-pages",
+					created_at: "2026-01-01T00:00:00Z",
+				})),
+			);
+		}
+		const statuses = /^\/deployments\/([0-9]+)\/statuses$/u.exec(path);
+		if (statuses && method === "GET") {
+			const entry = environment.find((e) => e.id === Number(statuses[1]));
+			if (!entry)
+				return notFound("/deployments/statuses#list-deployment-statuses");
+			return respond(
+				200,
+				[...entry.states]
+					.reverse()
+					.slice(0, 1)
+					.map((state, index) => ({
+						id: entry.id * 100 + entry.states.length - index,
+						state,
+						environment: "github-pages",
+					})),
+			);
+		}
+		return error(405, `not modelled: ${method} ${path}`, "");
 	}
 
 	const matches = (prefix: string | undefined, path: string) =>
@@ -480,11 +659,21 @@ export function githubWorld(options: WorldOptions = {}) {
 		const query = url.search.replace(/^\?/u, "");
 		if (faults.rateLimitOnce) {
 			faults.rateLimitOnce = false;
-			return {
-				status: 403,
-				headers: { "x-ratelimit-remaining": "0" },
-				body: JSON.stringify({ message: "API rate limit exceeded" }),
-			};
+			return error(
+				403,
+				"API rate limit exceeded for user ID 1.",
+				"/overview/rate-limits-for-the-rest-api",
+				{ "x-ratelimit-remaining": "0", "x-ratelimit-used": "5000" },
+			);
+		}
+		if (faults.secondaryRateLimitOnce) {
+			faults.secondaryRateLimitOnce = false;
+			return error(
+				403,
+				"You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+				"/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits",
+				{ "retry-after": "60" },
+			);
 		}
 		const mutation = request.method !== "GET";
 		if (mutation && matches(faults.lostBefore, path)) {
@@ -492,9 +681,17 @@ export function githubWorld(options: WorldOptions = {}) {
 			throw new Error("socket hang up");
 		}
 		if (mutation && faults.status && path.startsWith(faults.status.prefix)) {
-			const { status } = faults.status;
+			const { status, message } = faults.status;
 			faults.status = undefined;
-			return respond(status, { message: "injected" });
+			return error(status, message ?? "injected", "");
+		}
+		if (mutation && faults.rewindOnCommit && path === "/git/commits") {
+			// Another writer rewinds the branch to an ancestor of its head.
+			faults.rewindOnCommit = false;
+			for (const [branch, head] of refs) {
+				const parent = commits.get(head)?.parents[0];
+				if (parent !== undefined) refs.set(branch, parent);
+			}
 		}
 		if (
 			mutation &&
@@ -568,12 +765,14 @@ export function githubWorld(options: WorldOptions = {}) {
 			if (sha === undefined) throw new Error(`world: no branch ${branch}`);
 			return sha;
 		},
-		/** Move a recorded Pages deployment to a status. */
-		setDeploymentStatus(id: JsonValue | undefined, status: string) {
-			const deployment = deployments.get(String(id));
-			if (deployment === undefined)
-				throw new Error(`world: no deployment ${String(id)}`);
-			deployment.status = status;
+		/** Move the newest Pages deployment of a build version to a status. */
+		setDeploymentStatus(version: JsonValue | undefined, status: string) {
+			settle(String(version), status);
+		},
+		/** Someone else deploys another build version, and it goes live. */
+		foreignDeployment(version: string) {
+			deploy(version);
+			settle(version, "succeed");
 		},
 	};
 }

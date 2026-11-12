@@ -5,20 +5,33 @@
  * full lifecycle (`support/lifecycle.ts`) is declared by an interaction, and
  * every interaction is exercised. Paths match as templates (`{sha}`,
  * `{deployment_id}`), request bodies on their top-level key set, and the
- * recorded response bodies must equal what the offline world serves, so the
- * pact cannot drift from the fixtures the resolver tests run against.
+ * recorded responses — status, GitHub's response headers and body — must
+ * equal what the offline world serves, so the pact cannot drift from the
+ * fixtures the resolver tests run against. Every refusal the realizer types
+ * is recorded as GitHub sends it (`{message, documentation_url, status}`,
+ * rate-limit and permission headers) and replayed from the pact into the
+ * resolver to prove the typed reason.
  *
  * `HOBO_PACT_RECORD=1` rewrites the pact from the lifecycle; review the diff.
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import type { HttpTransport } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	GITHUB_PAGES_SITE_PRODUCT_ID,
+	GithubPagesRefusal,
 	githubResolverRegistry,
 } from "../src/index.js";
 import { isJsonObject, isJsonString, type JsonValue } from "../src/json.js";
 import { type Exchange, recordLifecycle } from "./support/lifecycle.js";
-import { memoryStore, options, request, SITE_V1 } from "./support/world.js";
+import {
+	githubWorld,
+	memoryStore,
+	options,
+	request,
+	SITE_V1,
+	SITE_V2,
+} from "./support/world.js";
 
 const PACT_URL = new URL(
 	"../contracts/provider-github-pages.pact.json",
@@ -35,7 +48,11 @@ interface Interaction {
 		readonly headers: Record<string, string>;
 		readonly body?: JsonValue;
 	};
-	readonly response: { readonly status: number; readonly body?: JsonValue };
+	readonly response: {
+		readonly status: number;
+		readonly headers: Record<string, string>;
+		readonly body?: JsonValue;
+	};
 }
 
 interface Pact {
@@ -49,8 +66,8 @@ function template(pathname: string): string {
 	return pathname
 		.replace(/\/[0-9a-f]{40}(?=\/|$)/gu, "/{sha}")
 		.replace(
-			/\/pages\/deployments\/[0-9]{8}$/u,
-			"/pages/deployments/{deployment_id}",
+			/\/deployments\/[0-9]+\/statuses$/u,
+			"/deployments/{deployment_id}/statuses",
 		)
 		.replace(
 			/\/actions\/artifacts\/[0-9]+$/u,
@@ -69,28 +86,88 @@ function keys(value: JsonValue | undefined): string {
 	return value === undefined ? "" : isJsonString(value) ? "string" : "other";
 }
 
+/** Two 403s differ only in headers: a rate limit is not a missing permission. */
+function variant(status: number, headers: Record<string, string>): string {
+	if (status !== 403 && status !== 429) return "";
+	if (headers["retry-after"] !== undefined) return " secondary-rate-limit";
+	if (headers["x-ratelimit-remaining"] === "0") return " primary-rate-limit";
+	return "";
+}
+
 function keyOf(exchange: Exchange): string {
 	const url = new URL(exchange.request.url);
-	return [
+	return `${[
 		exchange.request.method,
 		template(url.pathname),
 		url.search,
 		keys(bodyOf(exchange.request.body)),
 		exchange.response.status,
-	].join(" ");
+	].join(" ")}${variant(exchange.response.status, exchange.response.headers)}`;
 }
 
 function interactionKey(interaction: Interaction): string {
-	return [
+	return `${[
 		interaction.request.method,
 		interaction.request.path,
 		interaction.request.query ? `?${interaction.request.query}` : "",
 		keys(interaction.request.body),
 		interaction.response.status,
-	].join(" ");
+	].join(
+		" ",
+	)}${variant(interaction.response.status, interaction.response.headers)}`;
 }
 
 const DESCRIPTIONS: [RegExp, string, string][] = [
+	[
+		/^GET \/repos\/[^/]+\/[^/]+ .* 401$/u,
+		"read the repository with a revoked token",
+		"the token is revoked or invalid",
+	],
+	[
+		/^GET \/repos\/[^/]+\/[^/]+ .* 404$/u,
+		"read a repository that is private or absent to the token",
+		"the repository is not visible to the token",
+	],
+	[
+		/^GET \/repos\/[^/]+\/[^/]+ .* 403 primary-rate-limit$/u,
+		"read the repository with the primary rate limit exhausted",
+		"the token's core rate limit is exhausted",
+	],
+	[
+		/^GET \/repos\/[^/]+\/[^/]+ .* 403 secondary-rate-limit$/u,
+		"read the repository after tripping a secondary rate limit",
+		"the token tripped a secondary rate limit",
+	],
+	[
+		/^POST .*\/git\/blobs .* 403$/u,
+		"upload a blob with a token that lacks contents: write",
+		"the token can read but not write repository contents",
+	],
+	[
+		/^PATCH .*\/git\/refs\/heads\/[^ ]+ .* 422$/u,
+		"fast-forward a publishing branch another writer moved",
+		"the head moved since it was observed",
+	],
+	[
+		/^GET .*\/deployments \?environment=github-pages&per_page=30 .* 200$/u,
+		"list the github-pages environment deployments, newest first",
+		"Pages builds from GitHub Actions",
+	],
+	[
+		/^GET .*\/deployments\/\{deployment_id\}\/statuses \?per_page=1 .* 200$/u,
+		"read the newest status of a github-pages environment deployment",
+		"the environment deployment exists",
+	],
+	[
+		/^GET .*\/pages\/deployments\/\{sha\} .* 404$/u,
+		"look up the Pages deployment of a build version never deployed",
+		"no Pages deployment of the build version exists",
+	],
+	[
+		/^GET .*\/pages\/deployments\/\{sha\} .* 200$/u,
+		"observe the Pages deployment of a build version",
+		"a Pages deployment of the build version exists",
+	],
 	[
 		/^GET \/repos\/[^/]+\/[^/]+ .* 200$/u,
 		"read the repository and the credential's permissions",
@@ -196,11 +273,6 @@ const DESCRIPTIONS: [RegExp, string, string][] = [
 		"create a Pages deployment of the artifact",
 		"Pages builds from GitHub Actions",
 	],
-	[
-		/^GET .*\/pages\/deployments\/\{deployment_id\} .* 200$/u,
-		"observe the Pages deployment status",
-		"the deployment exists",
-	],
 ];
 
 function redact(body: JsonValue | undefined): JsonValue | undefined {
@@ -245,6 +317,7 @@ function interactionOf(exchange: Exchange): Interaction {
 		},
 		response: {
 			status: exchange.response.status,
+			headers: { ...exchange.response.headers },
 			...(responseBody === undefined ? undefined : { body: responseBody }),
 		},
 	};
@@ -332,6 +405,145 @@ describe("GitHub Pages consumer pact", () => {
 			});
 		expect(outcome?.physicalId).toBe("hobo-fixtures/site");
 		expect(outcome?.outputs.treeSha).toMatch(/^[0-9a-f]{40}$/u);
+	});
+});
+
+/** A typed refusal, by the pact interaction GitHub answers it with. */
+interface RefusalCase {
+	readonly description: string;
+	readonly reason: string;
+	/** Publish once first, so the refused call is the ref update. */
+	readonly published?: true;
+}
+
+const REFUSALS: readonly RefusalCase[] = [
+	{
+		description: "read the repository with a revoked token",
+		reason: "github-credential-rejected",
+	},
+	{
+		description: "read a repository that is private or absent to the token",
+		reason: "github-permission-missing",
+	},
+	{
+		description: "read the repository with the primary rate limit exhausted",
+		reason: "github-rate-limited",
+	},
+	{
+		description: "read the repository after tripping a secondary rate limit",
+		reason: "github-rate-limited",
+	},
+	{
+		description: "upload a blob with a token that lacks contents: write",
+		reason: "github-permission-missing",
+	},
+	{
+		description: "observe that the Pages site is unpublished",
+		reason: "github-pages-disabled",
+	},
+	{
+		description: "fast-forward a publishing branch another writer moved",
+		reason: "github-ref-not-fast-forward",
+		published: true,
+	},
+];
+
+const RATE_LIMIT_HEADERS = [
+	"x-github-request-id",
+	"x-github-media-type",
+	"x-ratelimit-limit",
+	"x-ratelimit-remaining",
+	"x-ratelimit-reset",
+	"x-ratelimit-resource",
+	"x-ratelimit-used",
+];
+
+describe("GitHub refusals, recorded as GitHub sends them", () => {
+	it("records every response with GitHub's request-id, media-type and rate-limit headers", () => {
+		for (const entry of readPact().interactions)
+			for (const name of RATE_LIMIT_HEADERS)
+				expect(
+					entry.response.headers,
+					`${entry.description} lacks ${name}`,
+				).toHaveProperty(name);
+	});
+
+	it("records each refusal with GitHub's error body and the headers that tell it apart", () => {
+		const pact = readPact();
+		for (const { description } of REFUSALS) {
+			const found = pact.interactions.find(
+				(entry) => entry.description === description,
+			);
+			expect(found, `pact lacks "${description}"`).toBeDefined();
+			const response = found?.response;
+			expect(response?.body).toEqual({
+				message: expect.any(String),
+				documentation_url: expect.stringMatching(
+					/^https:\/\/docs\.github\.com\/rest/u,
+				),
+				status: String(response?.status),
+			});
+		}
+		const headersOf = (description: string) =>
+			pact.interactions.find((entry) => entry.description === description)
+				?.response.headers ?? {};
+		expect(
+			headersOf("read the repository with the primary rate limit exhausted"),
+		).toMatchObject({ "x-ratelimit-remaining": "0" });
+		expect(
+			headersOf("read the repository after tripping a secondary rate limit"),
+		).toHaveProperty("retry-after");
+		expect(
+			headersOf("upload a blob with a token that lacks contents: write"),
+		).toMatchObject({ "x-accepted-github-permissions": "contents=write" });
+	});
+
+	it("drives each recorded refusal, replayed verbatim, to its typed reason", async () => {
+		const pact = readPact();
+		for (const expected of REFUSALS) {
+			const { description } = expected;
+			const interaction = pact.interactions.find(
+				(entry) => entry.description === description,
+			);
+			if (interaction === undefined)
+				throw new Error(`pact lacks "${description}"`);
+			const world = githubWorld();
+			const resolver = githubResolverRegistry(
+				options(memoryStore(...SITE_V1.blobs, ...SITE_V2.blobs)),
+			).get(GITHUB_PAGES_SITE_PRODUCT_ID);
+			if (resolver === undefined) throw new Error("resolver not registered");
+			if (expected.published)
+				await resolver.reconcile(request(), world.transport);
+			let replayed = false;
+			const transport: HttpTransport = async (entry) => {
+				const url = new URL(entry.url);
+				if (
+					!replayed &&
+					entry.method === interaction.request.method &&
+					template(url.pathname) === interaction.request.path
+				) {
+					replayed = true;
+					return {
+						status: interaction.response.status,
+						headers: interaction.response.headers,
+						body: JSON.stringify(interaction.response.body),
+					};
+				}
+				return world.transport(entry);
+			};
+			let reason: string | undefined;
+			try {
+				await resolver.reconcile(
+					request(expected.published ? { artifactDigest: SITE_V2.digest } : {}),
+					transport,
+				);
+			} catch (error) {
+				reason =
+					error instanceof GithubPagesRefusal ? error.reason : String(error);
+			}
+			expect(replayed, description).toBe(true);
+			expect(reason, description).toBe(expected.reason);
+		}
 	});
 });
 

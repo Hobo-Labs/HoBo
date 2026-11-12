@@ -5,7 +5,8 @@
 // rests on: Freight addressed by digest only, tree paths that cannot escape
 // the tree or touch .git, mode-specific desired keys that cannot be mixed,
 // and outputs that claim readiness only when the published content was
-// observed equal to the Freight and its Pages build or deployment finished.
+// observed equal to the Freight and its Pages build finished, or the live
+// github-pages deployment was observed to serve the Freight's tree id.
 
 package provider_github
 
@@ -33,7 +34,8 @@ package provider_github
 }
 
 #StaticSiteTree: {
-	contract: "hobo.static-site-tree/v1"
+	contract:             "hobo.static-site-tree/v1"
+	pagesArtifactDigest?: #Sha256Digest
 	files: [#StaticSiteFile, ...#StaticSiteFile]
 }
 
@@ -97,8 +99,10 @@ package provider_github
 		pagesBuildVersion:     treeSha
 		pagesDeploymentId:     string | null
 		pagesDeploymentStatus: string | null
+		pagesLiveBuildVersion: string | null
 		if ready {
 			pagesDeploymentStatus: "succeed"
+			pagesLiveBuildVersion: treeSha
 		}
 	}
 }

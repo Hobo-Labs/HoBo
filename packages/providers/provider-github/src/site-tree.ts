@@ -12,9 +12,14 @@
  *
  * Parse, don't validate: `parseStaticSiteTree` checks the index against its
  * own digest, refuses any path that could escape the tree or touch `.git`, and
- * hands back a `StaticSiteTree`. `loadSiteContent` then reads every file blob,
- * checks it against its digest and size, and computes the git object ids —
- * blob ids and the tree id — locally. That local tree id is what makes the
+ * hands back a `StaticSiteTree`. `loadSiteContent` then reads every file blob
+ * one at a time, checks it against its digest and size, and computes the git
+ * object ids — blob ids and the tree id — locally, keeping no file bytes:
+ * `readSiteBlob` re-reads (and re-checks) only the blobs a publish uploads.
+ *
+ * A pages-deployment Freight also binds the Actions Pages artifact the build
+ * workflow uploaded: its index carries `pagesArtifactDigest`, so the artifact
+ * GitHub would serve is tied to this tree by the Freight digest itself. That local tree id is what makes the
  * realizer idempotent by digest: the desired state is known *before* anything
  * is uploaded, and convergence is the observed published tree id being equal
  * to it, byte for byte, with no clock and no guesswork.
@@ -55,17 +60,22 @@ export interface StaticSiteFile {
 // domain-view: parse-time derived type of the Freight tree index.
 export interface StaticSiteTree {
 	readonly digest: string;
+	/** sha256 digest of the Actions Pages artifact built from this tree, or null. */
+	readonly pagesArtifactDigest: string | null;
 	/** Sorted by path (code unit order), unique. */
 	readonly files: readonly StaticSiteFile[];
 	readonly totalBytes: number;
 }
 
+// domain-view: one checked file of the Freight; its bytes stay in the artifact store.
 export interface SiteBlob {
 	readonly path: string;
 	readonly mode: "100644" | "100755";
 	/** Git blob object id (sha1 hex). */
 	readonly sha: string;
-	readonly bytes: Uint8Array;
+	/** sha256 digest of the file blob in the artifact store. */
+	readonly digest: string;
+	readonly size: number;
 }
 
 // domain-view: the Freight content with its git object ids computed locally.
@@ -157,7 +167,16 @@ export function parseStaticSiteTree(
 		reject(
 			`static-site tree is ${totalBytes} bytes; GitHub Pages publishes at most ${STATIC_SITE_MAX_TOTAL_BYTES}`,
 		);
-	return Object.freeze({ digest, files: Object.freeze(files), totalBytes });
+	const pagesArtifactDigest =
+		doc.pagesArtifactDigest === undefined
+			? null
+			: parseSha256Digest(doc.pagesArtifactDigest, "pagesArtifactDigest");
+	return Object.freeze({
+		digest,
+		pagesArtifactDigest,
+		files: Object.freeze(files),
+		totalBytes,
+	});
 }
 
 function parseFile(entry: JsonValue, index: number): StaticSiteFile {
@@ -199,30 +218,49 @@ function parseFile(entry: JsonValue, index: number): StaticSiteFile {
 	return Object.freeze({ path, digest, size, executable });
 }
 
-/** Read every file blob, check it, and compute the git object ids. */
+type BlobReader = (digest: string) => Promise<Uint8Array | undefined>;
+
+/** Read one file blob from the artifact store and check it against its digest and size. */
+async function readChecked(
+	file: {
+		readonly path: string;
+		readonly digest: string;
+		readonly size: number;
+	},
+	read: BlobReader,
+): Promise<Uint8Array> {
+	const bytes = await read(file.digest);
+	if (bytes === undefined)
+		reject(
+			`site file ${JSON.stringify(file.path)} (${file.digest}) is not in the artifact store`,
+			"re-put the build output into the artifact store and re-record the Freight",
+		);
+	if (bytes.byteLength !== file.size || sha256Of(bytes) !== file.digest)
+		reject(
+			`artifact store returned bytes for ${JSON.stringify(file.path)} that do not match ${file.digest}`,
+			"re-put the build output into the artifact store and re-record the Freight",
+		);
+	return bytes;
+}
+
+/**
+ * Read every file blob, one at a time, check it, and compute the git object
+ * ids. No file bytes are kept: peak memory is one file, not the site.
+ */
 export async function loadSiteContent(
 	tree: StaticSiteTree,
-	read: (digest: string) => Promise<Uint8Array | undefined>,
+	read: BlobReader,
 ): Promise<SiteContent> {
 	const blobs: SiteBlob[] = [];
 	for (const file of tree.files) {
-		const bytes = await read(file.digest);
-		if (bytes === undefined)
-			reject(
-				`site file ${JSON.stringify(file.path)} (${file.digest}) is not in the artifact store`,
-				"re-put the build output into the artifact store and re-record the Freight",
-			);
-		if (bytes.byteLength !== file.size || sha256Of(bytes) !== file.digest)
-			reject(
-				`artifact store returned bytes for ${JSON.stringify(file.path)} that do not match ${file.digest}`,
-				"re-put the build output into the artifact store and re-record the Freight",
-			);
+		const bytes = await readChecked(file, read);
 		blobs.push(
 			Object.freeze({
 				path: file.path,
 				mode: file.executable ? "100755" : "100644",
 				sha: gitBlobSha(bytes),
-				bytes,
+				digest: file.digest,
+				size: file.size,
 			}),
 		);
 	}
@@ -231,6 +269,19 @@ export async function loadSiteContent(
 		blobs: Object.freeze(blobs),
 		treeSha: gitTreeSha(blobs),
 	});
+}
+
+/** Re-read one blob for upload; it must still hash to its digest and git blob id. */
+export async function readSiteBlob(
+	blob: SiteBlob,
+	read: BlobReader,
+): Promise<Uint8Array> {
+	const bytes = await readChecked(blob, read);
+	if (gitBlobSha(bytes) !== blob.sha)
+		reject(
+			`artifact store bytes for ${JSON.stringify(blob.path)} no longer hash to git blob ${blob.sha}`,
+		);
+	return bytes;
 }
 
 interface Directory {
