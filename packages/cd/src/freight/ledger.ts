@@ -171,13 +171,13 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 	function unusable(state: FreightState, id: string): Refusal | undefined {
 		if (!state.record) return refuse(FREIGHT_REASON.notFound, `no Freight ${id}`, "record the Freight first, or check the id", id);
 		if (state.unreadable) {
-			return refuse(FREIGHT_REASON.notFound, `Freight ${id} has an unreadable journal event`, "repair the journal from backup", id);
+			return refuse(FREIGHT_REASON.journalUnreadable, `Freight ${id} has an unreadable journal event`, "repair the journal from backup", id);
 		}
 		if (state.yanked) {
 			return refuse(FREIGHT_REASON.yanked, `Freight ${id} was yanked: ${state.yanked.reason}`, "record and promote newer Freight", id);
 		}
 		if (state.retired) {
-			return refuse(FREIGHT_REASON.retired, `Freight ${id} was retired by retention`, "record the build again to re-admit it", id);
+			return refuse(FREIGHT_REASON.retired, `Freight ${id} was retired by retention`, "retirement is final: promote newer Freight (a new declaration or artifacts)", id);
 		}
 		return undefined;
 	}

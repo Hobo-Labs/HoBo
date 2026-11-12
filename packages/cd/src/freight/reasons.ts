@@ -21,6 +21,7 @@ export const FREIGHT_REASON = Object.freeze({
 	unauthorized: "freight-action-unauthorized",
 	proposalOnly: "freight-proposal-only",
 	conflict: "freight-journal-conflict",
+	journalUnreadable: "freight-journal-unreadable",
 } as const);
 
 export type FreightReasonCode = (typeof FREIGHT_REASON)[keyof typeof FREIGHT_REASON];

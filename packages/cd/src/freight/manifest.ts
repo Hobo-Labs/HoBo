@@ -165,6 +165,7 @@ function check(manifest: FreightManifestRecord): ReasonRecord[] {
 		if (ref.subjectDigests.some((digest) => !DIGEST_PATTERN.test(digest))) {
 			reasons.push(invalid(`${at}.subjectDigests`, "subject digests must be sha256"));
 		}
+		if (!["", "sigstore", "hobo-jwt"].includes(ref.verifier)) reasons.push(invalid(`${at}.verifier`, "verifier is sigstore or hobo-jwt"));
 		checkText(`${at}.builderId`, ref.builderId, reasons);
 		checkText(`${at}.signerIdentity`, ref.signerIdentity, reasons);
 	});
