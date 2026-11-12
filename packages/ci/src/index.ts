@@ -76,6 +76,7 @@ export {
 	SLSA_PROVENANCE_PREDICATE,
 	writeCiFreightManifest,
 } from "./freight.js";
+export * from "./fleet-v2/index.js";
 export { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {

@@ -234,6 +234,7 @@ When a draft package, validation script, workflow, or public contract changes, u
 ## HoBo.CI SDK family
 
 [HoBo.CI contracts and routing](../../packages/ci/README.md),
+[Fleet enrollment and at-most-once claims](./fleet-enrollment-design.md) (scorecard: [`fleet-enrollment-scorecard.md`](./fleet-enrollment-scorecard.md), operator: [`fleet-enrollment-operator.md`](./fleet-enrollment-operator.md)),
 [GitHub Actions relay](../../packages/ci-gh-actions/README.md) (one core; hosted
 as a Node service by `hobo ci serve` and the container image, on
 [Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon; it
