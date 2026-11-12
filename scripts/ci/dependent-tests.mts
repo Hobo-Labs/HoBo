@@ -1255,13 +1255,15 @@ function alignPlanWithTurboAffectedFromEnv(
 	);
 }
 
+/** Whether a plan will run any workspace test suites (whole or subset). */
+export function planHasWorkspaceWork(plan: TestPlan): boolean {
+	if (plan.mode === "all") return true;
+	return plan.full.length > 0 || plan.subsets.size > 0;
+}
+
 /** Runs the plan. Every part runs, so one failure hides no other. */
 function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
-	if (
-		plan.mode === "scoped" &&
-		plan.full.length === 0 &&
-		plan.subsets.size === 0
-	) {
+	if (!planHasWorkspaceWork(plan)) {
 		console.error("dependent-tests: no workspace tests selected");
 		return 0;
 	}
