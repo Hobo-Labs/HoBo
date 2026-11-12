@@ -9,19 +9,31 @@
  * The conversion is one-time: GitHub returns the credentials once, so a failed
  * deposit is retried from memory, and if it cannot succeed the App has to be
  * deleted and created again.
+ *
+ * Secretless first (ADR-0179 amendment): with `--via-workflow` this machine
+ * never holds the credentials or any Infisical credential. It gets GitHub's
+ * one-time manifest code from the browser's redirect and hands it, on stdin
+ * to `gh workflow run`, to the relay deploy workflow's App-credentials job,
+ * which converts it and writes the credentials straight into the relay's
+ * folder as `hobo-ci-writer` over GitHub OIDC (`hobo ci app deposit`). The
+ * one browser click on GitHub's "Create GitHub App" page stays.
  */
 
+import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
 	createInfisicalClient,
 	createInfisicalSecretsPort,
+	githubActionsJwtSource,
 	type InfisicalClient,
 	InfisicalError,
 	infisicalBindingFromEnv,
 	infisicalSecretRef,
+	oidcAuth,
 	ownerAuthFromEnv,
+	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
 import {
 	createGithubAppManifest,
@@ -32,6 +44,10 @@ import type { CommandResult } from "@hobo/cli";
 import type { SecretsPort } from "@hobo/identity";
 import { z } from "zod";
 import { openBrowser } from "./ci-github-connect.js";
+import {
+	loadSecretStoreBinding,
+	SecretStoreBindingRefusal,
+} from "./ci-secret-store.js";
 
 /** Entries in deposit order: the App id last, so its presence means complete. */
 export const APP_CREDENTIAL_KEYS = [
@@ -73,7 +89,37 @@ export type AppCreateOptions = Readonly<{
 	configService?:
 		| Readonly<{ client: InfisicalClient; port: SecretsPort }>
 		| undefined;
+	/**
+	 * Hand GitHub's one-time code to the relay deploy workflow instead of
+	 * converting here (secretless: no credential on this machine).
+	 */
+	viaWorkflow?: boolean | undefined;
+	/** Tests inject the dispatch; otherwise `gh workflow run` with the inputs on stdin. */
+	dispatchWorkflow?:
+		| ((inputs: Readonly<Record<string, string>>) => Promise<void>)
+		| undefined;
 }>;
+
+// public-contract: the workflow whose App-credentials job converts the manifest code.
+export const APP_CREDENTIALS_WORKFLOW = "relay-deploy.yml";
+
+/** `gh workflow run <workflow> --ref main --json`, the inputs on stdin, never in argv. */
+function ghWorkflowRun(
+	inputs: Readonly<Record<string, string>>,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(
+			"gh",
+			["workflow", "run", APP_CREDENTIALS_WORKFLOW, "--ref", "main", "--json"],
+			{ stdio: ["pipe", "ignore", "ignore"] },
+		);
+		child.on("error", () => reject(new Error("gh could not start")));
+		child.on("exit", (code) =>
+			code === 0 ? resolve() : reject(new Error("gh workflow run failed")),
+		);
+		child.stdin.end(JSON.stringify(inputs));
+	});
+}
 
 function failed(code: string, message: string): CommandResult {
 	return { ok: false, code, message };
@@ -194,6 +240,12 @@ async function manifestCallback(input: {
 	}
 }
 
+/** A signed-in store client and the SecretsPort over it. */
+type ConfigServiceHandle = Readonly<{
+	client: InfisicalClient;
+	port: SecretsPort;
+}>;
+
 /** The config service the command writes to, or why there is none. */
 type ConfigServiceResolution =
 	| Readonly<{
@@ -256,34 +308,38 @@ export async function runCiAppCreate(
 	const name = options.name ?? "HoBo CI";
 	if (!name.trim() || name.length > 100)
 		return usage("--name must be 1 to 100 characters.");
-	const resolution: ConfigServiceResolution = options.configService
-		? { ok: true, service: options.configService }
-		: configServiceFromEnv(options.env);
-	if (!resolution.ok)
+	const viaWorkflow = options.viaWorkflow === true;
+	const resolution: ConfigServiceResolution | undefined = viaWorkflow
+		? undefined
+		: options.configService
+			? { ok: true, service: options.configService }
+			: configServiceFromEnv(options.env);
+	if (resolution !== undefined && !resolution.ok)
 		return failed("HOBO_CI_CONFIG_SERVICE_UNCONFIGURED", resolution.message);
-	const { client, port } = resolution.service;
-	const sleep =
-		options.sleep ??
-		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const service = resolution?.ok === true ? resolution.service : undefined;
 
-	// Before GitHub: the owner can write, and no App is being replaced by accident.
-	try {
-		const existing = new Set(
-			(await client.listSecretNames()).map((secret) => secret.secretKey),
-		);
-		const present = APP_CREDENTIAL_KEYS.filter((key) => existing.has(key));
-		if (present.length && !options.replace)
-			return failed(
-				"HOBO_CI_APP_EXISTS",
-				`The config service already holds ${present.join(", ")}. Pass --yes to replace them with a new App's credentials.`,
+	// Before GitHub: the owner can write, and no App is being replaced by
+	// accident. (Through the workflow, the writer cannot read the folder;
+	// the deposit there replaces what is present.)
+	if (service !== undefined)
+		try {
+			const { client } = service;
+			const existing = new Set(
+				(await client.listSecretNames()).map((secret) => secret.secretKey),
 			);
-	} catch (error) {
-		const code = error instanceof InfisicalError ? error.code : "unavailable";
-		return failed(
-			"HOBO_CI_CONFIG_SERVICE_ERROR",
-			`Could not read the relay's folder in Infisical (${code}). Nothing was created on GitHub.`,
-		);
-	}
+			const present = APP_CREDENTIAL_KEYS.filter((key) => existing.has(key));
+			if (present.length && !options.replace)
+				return failed(
+					"HOBO_CI_APP_EXISTS",
+					`The config service already holds ${present.join(", ")}. Pass --yes to replace them with a new App's credentials.`,
+				);
+		} catch (error) {
+			const code = error instanceof InfisicalError ? error.code : "unavailable";
+			return failed(
+				"HOBO_CI_CONFIG_SERVICE_ERROR",
+				`Could not read the relay's folder in Infisical (${code}). Nothing was created on GitHub.`,
+			);
+		}
 
 	const state = randomBytes(32).toString("base64url");
 	const action = new URL("https://github.com/settings/apps/new");
@@ -320,6 +376,63 @@ export async function runCiAppCreate(
 		);
 	}
 
+	if (service === undefined) {
+		try {
+			await (options.dispatchWorkflow ?? ghWorkflowRun)({
+				manifest_code: code,
+				relay,
+				owner_id: String(ownerId),
+			});
+		} catch {
+			return failed(
+				"HOBO_CI_APP_HANDOFF_FAILED",
+				`GitHub created the App's one-time code, but \`gh workflow run ${APP_CREDENTIALS_WORKFLOW}\` did not start. The code expires within an hour; check \`gh auth status\`, then delete the App GitHub may have created (https://github.com/settings/apps) and run the command again.`,
+			);
+		}
+		return {
+			message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as hobo-ci-writer; no credential touched this machine. Watch it with \`gh run watch\`.`,
+			data: { handoff: APP_CREDENTIALS_WORKFLOW },
+		};
+	}
+	return convertAndDeposit({
+		code,
+		relay,
+		ownerId,
+		service,
+		replace: options.replace,
+		interactive: options.interactive,
+		prompt: options.prompt,
+		emitProgress: options.emitProgress,
+		fetch: options.fetch,
+		sleep: options.sleep,
+		depositAttempts: options.depositAttempts,
+	});
+}
+
+/**
+ * GitHub's one-time conversion and the deposit, wherever they run: on the
+ * owner's machine (`hobo ci app create`) or in the deploy workflow over GitHub
+ * OIDC (`hobo ci app deposit`). From the conversion on, the credentials exist
+ * only in this process's memory until the store holds them.
+ */
+async function convertAndDeposit(options: {
+	readonly code: string;
+	readonly relay: string;
+	readonly ownerId: number;
+	readonly service: Readonly<{ client: InfisicalClient; port: SecretsPort }>;
+	readonly replace: boolean;
+	readonly interactive: boolean;
+	readonly prompt?: ((question: string) => Promise<string>) | undefined;
+	readonly emitProgress: (message: string) => void;
+	readonly fetch?: typeof fetch | undefined;
+	readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+	readonly depositAttempts?: number | undefined;
+}): Promise<CommandResult> {
+	const { code, relay, ownerId } = options;
+	const { client, port } = options.service;
+	const sleep =
+		options.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	// The one-time conversion. From here the credentials exist only in memory.
 	const send = options.fetch ?? fetch;
 	let conversion: z.infer<typeof Conversion>;
@@ -431,4 +544,81 @@ export async function runCiAppCreate(
 		)}; nothing was written to disk. Install it: https://github.com/apps/${slug}/installations/new`,
 		data: { appId, slug, refs },
 	};
+}
+
+/**
+ * `hobo ci app deposit`: the App-credentials job of the relay deploy workflow.
+ * Reads GitHub's one-time manifest code from `HOBO_APP_MANIFEST_CODE`,
+ * converts it, checks the App against the reviewed configuration, and writes
+ * the credentials into the relay's folder named by the committed binding,
+ * signed in as the binding's CI identity (`hobo-ci-writer`, stored in its
+ * `deployIdentityId` field) with this job's GitHub OIDC token. No credential
+ * is configured anywhere for it.
+ */
+export async function runCiAppDeposit(options: {
+	readonly cwd: string;
+	readonly relay: string | undefined;
+	readonly ownerId: string | undefined;
+	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly emitProgress: (message: string) => void;
+	readonly fetch?: typeof fetch | undefined;
+	readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+}): Promise<CommandResult> {
+	const relay = relayOrigin(options.relay);
+	if (!relay)
+		return usage("hobo ci app deposit requires --relay <https-origin>.");
+	if (!options.ownerId || !/^[1-9]\d{0,15}$/u.test(options.ownerId))
+		return usage("hobo ci app deposit requires --owner-id <id>.");
+	const code = options.env.HOBO_APP_MANIFEST_CODE ?? "";
+	if (!/^[A-Za-z0-9_-]{1,200}$/u.test(code))
+		return usage(
+			"hobo ci app deposit reads GitHub's one-time code from HOBO_APP_MANIFEST_CODE.",
+		);
+	let service: ConfigServiceHandle;
+	try {
+		const store = loadSecretStoreBinding(options.cwd);
+		if (store === undefined)
+			return failed(
+				"HOBO_CI_SECRET_STORE_NOT_CONNECTED",
+				"No deploy/secret-store.binding.json: connect the store first (hobo ci secret-store connect).",
+			);
+		const client = createInfisicalClient({
+			binding: parseInfisicalBinding({
+				siteUrl: store.endpoint,
+				projectId: store.projectId,
+				environment: store.environment,
+				secretPath: store.secretPath,
+			}),
+			auth: oidcAuth({
+				identityId: store.deployIdentityId,
+				jwt: githubActionsJwtSource({
+					env: options.env,
+					...(options.fetch !== undefined
+						? { fetch: options.fetch }
+						: undefined),
+				}),
+			}),
+			...(options.fetch !== undefined ? { fetch: options.fetch } : undefined),
+		});
+		service = { client, port: createInfisicalSecretsPort({ client }) };
+	} catch (error) {
+		return failed(
+			"HOBO_CI_CONFIG_SERVICE_UNCONFIGURED",
+			error instanceof SecretStoreBindingRefusal
+				? error.message
+				: "The committed binding does not name a store this job can sign in to.",
+		);
+	}
+	return convertAndDeposit({
+		code,
+		relay,
+		ownerId: Number(options.ownerId),
+		service,
+		replace: true,
+		interactive: false,
+		emitProgress: options.emitProgress,
+		fetch: options.fetch,
+		sleep: options.sleep,
+		depositAttempts: 3,
+	});
 }

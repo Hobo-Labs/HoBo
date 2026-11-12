@@ -1,5 +1,6 @@
 /** Measured / budgeted inode and byte growth per CI job class (worker admission). */
 import { depsBuildDockerReserve } from "./deps-build-budget.js";
+import { lookupByJobName } from "./matrix-job-name.js";
 
 const DEPS_BUILD_RESERVE = depsBuildDockerReserve();
 
@@ -68,6 +69,7 @@ const JOB_STORAGE_CLASS = {
 	"Attest GHCR images": "light",
 	"Attest hobo-code GHCR image": "light",
 	"CI runner image (mise oci)": "runner_image",
+	"Main workspace plan": "light",
 	"CI deps layer (pnpm)": "heavy",
 	"PR impact gate": "light",
 	"PR impact validation": "heavy",
@@ -92,7 +94,10 @@ const JOB_STORAGE_CLASS_MAP = new Map(Object.entries(JOB_STORAGE_CLASS));
 
 export function storageClassForJob(name: string): WorkerStorageClassName {
 	if (/^Workspace test shard [0-7](?: \([0-7]\))?$/u.test(name)) return "heavy";
-	return JOB_STORAGE_CLASS_MAP.get(name) ?? "standard";
+	return (
+		lookupByJobName(name, (jobName) => JOB_STORAGE_CLASS_MAP.get(jobName)) ??
+		"standard"
+	);
 }
 
 export function storageReserveForJob(name: string): WorkerStorageReserve {
