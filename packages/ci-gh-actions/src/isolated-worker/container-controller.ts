@@ -30,6 +30,7 @@ import {
 } from "../jit-empty-exit-backoff.js";
 import {
 	correlateRunnerOnRun,
+	RUNNER_EXECUTING_JOB_STATUSES,
 	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
 	servedGitHubJobBlocksSettlement,
@@ -1114,7 +1115,11 @@ export function createIsolatedContainerController(options: {
 					preferRunIds: [lease.originalRunId],
 				},
 			);
-			if (runnerHoldsActiveJob(assignment)) return true;
+			if (
+				assignment &&
+				RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status)
+			)
+				return true;
 		} catch {
 			// Fall through to getJob on the served workflow job.
 		}
