@@ -3,13 +3,22 @@
  * HoBo releases itself through HoBo CD, then creates the GitHub Release.
  *
  * Release Freight: every release artifact family (npm tarballs, GHCR images by
- * digest, the Pages bundle) is recorded as Freight and promoted
- * `hobo-release/candidate` -> `hobo-release/stable` through the `hobo deploy`
- * composition of `@hobo/cd` (`openDefaultCdHost` + `runCdDeploySubcommand`
- * from the built `@hobo/hobo`, the same code the `hobo deploy` verb runs).
- * Publication steps run only on a `qualified` or `gap` verdict; `gap` means
- * `@hobo/cd` refused with a typed reason for missing topology or realizer
- * (RELEASE_GAP_CODES), which is printed and never read as qualification.
+ * digest, the Pages site tree) is recorded as Freight with its provenance (the
+ * release commit, the run and the workflow as builder) and promoted
+ * `hobo-release/<family>-candidate` -> `hobo-release/<family>-stable` through
+ * the `hobo deploy` composition of `@hobo/cd` (`openCdRuntime` and
+ * `runCdDeploySubcommand` from the built `@hobo/hobo`, the code the `hobo
+ * deploy` verb runs), with the release topology loaded from
+ * `release/hobo-release.delivery.ts` exactly as `--yard` loads it. The Camps'
+ * realizers publish: the catalogued resolvers of `@hobo/provider-oci-registry`
+ * (GHCR tags by digest) and `@hobo/provider-github` (the gh-pages branch).
+ *
+ * A promotion is driven here the way `hobo serve cd` ticks it (promotions,
+ * one conductor pass of the Camp, rollouts, verification) until it is
+ * PROMOTED, refused, or the realizer reports BLOCKED. The verdict is
+ * `qualified`, `impedance` (the realizer refused with a typed
+ * RESOLVER_PRODUCT_UNSUPPORTED: the provider cannot realize this target as
+ * declared; only npm, see live-provider-matrix.md) or `blocked`.
  *
  *   create-github-release.mts promote-stable --freight-home <dir> [...]
  *   create-github-release.mts --tag <tag> [--prerelease]
@@ -22,6 +31,7 @@ import { createHash } from "node:crypto";
 import {
 	appendFileSync,
 	existsSync,
+	lstatSync,
 	readdirSync,
 	readFileSync,
 	writeFileSync,
@@ -42,6 +52,22 @@ export const HOBO_CLI_DIST = join(
 	"dist",
 	"index.js",
 );
+const HOBO_CD_RUNTIME_DIST = join(
+	repoRoot,
+	"packages",
+	"hobo",
+	"dist",
+	"cd-runtime.js",
+);
+const CD_DIST = join(repoRoot, "packages", "cd", "dist", "index.js");
+const BINDLES_DIST = join(repoRoot, "packages", "bindles", "dist", "index.js");
+
+/** The release topology (`--yard`): the hobo-release Yard and its pipelines. */
+export const RELEASE_DELIVERY_MODULE = join(
+	repoRoot,
+	"release",
+	"hobo-release.delivery.ts",
+);
 
 export type ReleaseFamily = "npm" | "oci" | "pages";
 export type ReleaseChannel = "candidate" | "stable";
@@ -53,25 +79,39 @@ export const RELEASE_FAMILIES: readonly ReleaseFamily[] = [
 ];
 export const RELEASE_YARD = "hobo-release";
 
-/** `<yard>/<camp>`: the Camp each release channel promotes into. */
-export function releaseCampId(channel: ReleaseChannel): string {
-	return `${RELEASE_YARD}/${channel}`;
+/** `<yard>/<family>-<channel>`: the Camp a family's channel promotes into. */
+export function releaseCampId(
+	family: ReleaseFamily,
+	channel: ReleaseChannel,
+): string {
+	return `${RELEASE_YARD}/${family}-${channel}`;
 }
 
 export function releaseBindle(family: ReleaseFamily): string {
 	return `hobo-release-${family}`;
 }
 
+// The one product each family's Camp realizes (CATALOG_REALIZED_PRODUCTS).
+const FAMILY_PRODUCT = {
+	npm: "npm.package-version/v1",
+	oci: "oci-registry.image/v1",
+	pages: "github.pages-site/v1",
+} as const satisfies Record<ReleaseFamily, string>;
+
 /**
- * Typed refusals `@hobo/cd` gives when the release Camps have no topology or
- * realizer in the `hobo deploy` composition (no Yard declares them; no realizer
- * publishes to npm, GHCR or GitHub Pages). Only these make a `gap` verdict.
+ * Typed realizer refusals that mean "this provider cannot realize the target
+ * as declared" (a resolver impedance limit), not "something is wrong". Only
+ * the npm family reads them: its existing `npm publish --provenance` step stays
+ * the publisher while @hobo/provider-npm refuses scoped OIDC trusted
+ * publishing and carries no Sigstore bundle. Every other family is blocked.
  */
-export const RELEASE_GAP_CODES: ReadonlySet<string> = new Set([
-	"pipeline-unknown-camp",
-	"promotion-resolve-failed",
-	"planning-camp-unknown",
-	"compose-realizer-missing",
+export const RELEASE_IMPEDANCE_CODES: ReadonlySet<string> = new Set([
+	"RESOLVER_PRODUCT_UNSUPPORTED",
+]);
+
+/** Families whose publisher may stay an existing workflow step on `impedance`. */
+export const RELEASE_IMPEDANCE_FAMILIES: ReadonlySet<ReleaseFamily> = new Set([
+	"npm",
 ]);
 
 export type ReleaseSource = Readonly<{
@@ -150,27 +190,17 @@ export function releaseFreightManifest(input: {
 	};
 }
 
-/** The delivery record `hobo deploy pipeline apply --file` takes for one family. */
-export function releasePipelineModule(family: ReleaseFamily) {
+/**
+ * The family's declaration: a Bindle with one resource whose port names the
+ * product its Camps realize, so Matching places it only on those Camps.
+ */
+export function releaseDeclaration(family: ReleaseFamily) {
 	return {
-		pipelines: [
-			{
-				name: releaseBindle(family),
-				bindle: releaseBindle(family),
-				nodes: [
-					{
-						name: "candidate",
-						campIds: [releaseCampId("candidate")],
-						fromSources: ["origin:manifest"],
-					},
-					{
-						name: "stable",
-						campIds: [releaseCampId("stable")],
-						fromNodes: ["candidate"],
-					},
-				],
-			},
-		],
+		schema: "hobo.manifest/v1",
+		componentHost: { kind: "hobo-release", version: "1" },
+		resources: {
+			release: { type: "data.v1", port: `hobo:${FAMILY_PRODUCT[family]}` },
+		},
 	};
 }
 
@@ -191,55 +221,78 @@ export type CdResult = {
 		readonly promotion?: CdPromotion;
 		readonly freight?: { readonly freightId?: string; readonly alias?: string };
 		readonly usable?: boolean;
-		readonly camps?: readonly {
-			readonly promotions?: readonly CdPromotion[];
-		}[];
 	};
 };
 
 export type ReleaseVerdict = Readonly<{
-	outcome: "qualified" | "gap" | "blocked";
+	outcome: "qualified" | "impedance" | "blocked";
 	codes: readonly string[];
 	message: string;
 	promotionId?: string;
-	lineage?: "pipeline" | "candidate-journaled";
 }>;
 
-const gapOnly = (codes: readonly string[]) =>
-	codes.length > 0 && codes.every((code) => RELEASE_GAP_CODES.has(code));
+/** One drive pass's view of a promotion and its Camp's last observation. */
+export type ReleaseDriveState = Readonly<{
+	/** `PROMOTION_STATE_*` name. */
+	state: string;
+	reasons: readonly CdReason[];
+	/** `RECONCILE_STATUS_*` name of the Camp's last observation of this Set. */
+	observed?: string;
+	observedReasons?: readonly CdReason[];
+}>;
 
-/** Read one `hobo deploy promote` result as a release verdict (fail closed). */
-export function classifyPromotion(result: CdResult): ReleaseVerdict {
-	const promotion = result.data?.promotion;
-	if (!result.ok || !promotion) {
-		const codes = (result.data?.reasons ?? []).map((r) => r.code ?? "");
-		const all =
-			codes.length > 0 ? codes : [result.code ?? "release-promotion-refused"];
+const TERMINAL = new Set([
+	"PROMOTION_STATE_PROMOTED",
+	"PROMOTION_STATE_REJECTED",
+	"PROMOTION_STATE_FAILED",
+	"PROMOTION_STATE_ROLLED_BACK",
+	"PROMOTION_STATE_SUPERSEDED",
+]);
+
+const codesOf = (reasons: readonly CdReason[] | undefined) =>
+	(reasons ?? []).map((r) => r.code ?? "").filter((c) => c !== "");
+
+/**
+ * Read a driven promotion as a release verdict (fail closed): PROMOTED is the
+ * only qualification; a realizer refusal is `impedance` only when every code
+ * is a declared impedance code; anything else, including not finishing, blocks.
+ */
+export function classifyRelease(
+	promotionId: string,
+	at: ReleaseDriveState | undefined,
+): ReleaseVerdict | undefined {
+	if (!at) return undefined;
+	if (at.state === "PROMOTION_STATE_PROMOTED")
 		return {
-			outcome: gapOnly(all) ? "gap" : "blocked",
-			codes: all,
-			message: result.message ?? "",
+			outcome: "qualified",
+			codes: [],
+			message: "promoted and qualified",
+			promotionId,
+		};
+	if (at.observed === "RECONCILE_STATUS_BLOCKED") {
+		const codes = codesOf(at.observedReasons);
+		const impedance =
+			codes.length > 0 && codes.every((c) => RELEASE_IMPEDANCE_CODES.has(c));
+		return {
+			outcome: impedance ? "impedance" : "blocked",
+			codes,
+			message: (at.observedReasons ?? []).map((r) => r.message).join("; "),
+			promotionId,
 		};
 	}
-	const codes = (promotion.reasons ?? []).map((r) => r.code ?? "");
-	const base = { codes, promotionId: promotion.promotionId ?? "" };
-	if (promotion.state === "PROMOTION_STATE_PROMOTED")
-		return { ...base, outcome: "qualified", message: "promoted and qualified" };
-	if (promotion.state === "PROMOTION_STATE_REJECTED" && gapOnly(codes))
+	if (TERMINAL.has(at.state))
 		return {
-			...base,
-			outcome: "gap",
-			message: (promotion.reasons ?? []).map((r) => r.message).join("; "),
+			outcome: "blocked",
+			codes: codesOf(at.reasons).length
+				? codesOf(at.reasons)
+				: [at.state.toLowerCase()],
+			message: (at.reasons ?? []).map((r) => r.message).join("; "),
+			promotionId,
 		};
-	return {
-		...base,
-		outcome: "blocked",
-		codes: codes.length > 0 ? codes : ["release-promotion-pending"],
-		message: `promotion ${promotion.promotionId ?? ""} is ${promotion.state ?? "unknown"}`,
-	};
+	return undefined;
 }
 
-/** The `hobo deploy` composition opened on one HOBO_HOME. */
+/** The `hobo deploy` composition opened on one HOBO_HOME with the release topology. */
 export type ReleaseCd = Readonly<{
 	home: string;
 	run(
@@ -250,6 +303,12 @@ export type ReleaseCd = Readonly<{
 		bytes: Uint8Array,
 		meta: { name: string; kind: ArtifactKindName; mediaType: string },
 	): Promise<ReleaseArtifact>;
+	/** Canonical Bindle bytes and their `canonicalManifestHash`. */
+	declaration(
+		value: ReturnType<typeof releaseDeclaration>,
+	): Promise<{ bytes: Uint8Array; digest: string }>;
+	/** One drive pass of a promotion (the `hobo serve cd` steps for one Camp). */
+	drive(promotionId: string, campId: string): Promise<ReleaseDriveState>;
 	close(): Promise<void>;
 }>;
 
@@ -263,48 +322,74 @@ const ARTIFACT_KIND = {
 } as const;
 
 /**
+ * Test seams (recorded fixtures, offline): the `HttpTransport` the realizers,
+ * Freight verification and probes use; the CD clock; how a promotion is driven.
+ */
+export type ReleaseCdSeams = Readonly<{
+	http?: unknown;
+	now?: () => number;
+	drive?: { readonly passes: number; readonly intervalMs: number };
+}>;
+
+/**
  * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
- * store under `home`). It calls the verb's own host and dispatcher in
- * process (the same subcommands `hobo deploy freight record --file`,
- * `pipeline apply --file` and `promote --camp` run from the binary), so one
- * journal stays open across a family's record and promote; nothing else is
- * composed here.
+ * store under `home`) with `release/hobo-release.delivery.ts` as its topology,
+ * the same file `hobo deploy --yard` loads. Credentials resolve through the
+ * host's CredentialResolver (`env://NAME` locators the Camps declare), at call
+ * time, for that call only.
  */
 export async function openReleaseCd(options: {
 	readonly home: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly seams?: ReleaseCdSeams;
 }): Promise<ReleaseCd> {
-	if (!existsSync(HOBO_CLI_DIST))
-		throw new Error(
-			`release Freight needs the built hobo CLI (${HOBO_CLI_DIST}); run pnpm exec turbo run build --filter=@hobo/hobo...`,
-		);
+	for (const dist of [
+		HOBO_CLI_DIST,
+		HOBO_CD_RUNTIME_DIST,
+		CD_DIST,
+		BINDLES_DIST,
+	])
+		if (!existsSync(dist))
+			throw new Error(
+				`release Freight needs the built hobo CLI (${dist}); run pnpm exec turbo run build --filter=@hobo/hobo...`,
+			);
 	const hobo = await import(pathToFileURL(HOBO_CLI_DIST).href);
+	const runtimeModule = await import(pathToFileURL(HOBO_CD_RUNTIME_DIST).href);
+	const cdModule = await import(pathToFileURL(CD_DIST).href);
+	const bindles = await import(pathToFileURL(BINDLES_DIST).href);
 	const env = {
 		...options.env,
 		HOBO_HOME: options.home,
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
-	const opened = await hobo.openDefaultCdHost({
+	const opened = await runtimeModule.openCdRuntime({
 		simulate: false,
-		cwd: options.home,
+		cwd: repoRoot,
 		env,
 		home: options.home,
+		topologyFiles: [RELEASE_DELIVERY_MODULE],
+		...(options.seams?.http ? { http: options.seams.http } : undefined),
+		...(options.seams?.now ? { now: options.seams.now } : undefined),
 	});
 	if (!opened.ok)
 		throw new Error(
 			`hobo deploy could not open CD: ${JSON.stringify(opened.reasons)}`,
 		);
-	const host = opened.value.host;
+	const runtime = opened.value;
+	const { PromotionState, ReconcileStatus } = cdModule;
 	return {
 		home: options.home,
 		run: async (args, flags = {}) =>
-			hobo.runCdDeploySubcommand(host, args, { ...flags, format: "json" }),
+			hobo.runCdDeploySubcommand(runtime.host, args, {
+				...flags,
+				format: "json",
+			}),
 		async store(bytes, meta) {
 			const kind = ARTIFACT_KIND[meta.kind];
-			const ref = await host.cd.artifacts.put(
+			const ref = await runtime.cd.artifacts.put(
 				bytes,
 				{ name: meta.name, kind, mediaType: meta.mediaType },
-				host.ctx,
+				runtime.ctx,
 			);
 			return {
 				name: ref.name,
@@ -316,7 +401,46 @@ export async function openReleaseCd(options: {
 				sizeBytes: String(ref.sizeBytes),
 			};
 		},
-		close: () => opened.value.close(),
+		async declaration(value) {
+			const manifest = bindles.parseManifest(value);
+			return {
+				bytes: new TextEncoder().encode(bindles.serializeManifest(manifest)),
+				digest: bindles.canonicalManifestHash(manifest),
+			};
+		},
+		async drive(promotionId, campId) {
+			const ctx = runtime.ctx;
+			await runtime.cd.promotions.tick(ctx);
+			const set = await runtime.cd.desired.current(campId);
+			let observed:
+				| { status: number; setId: string; reasons: CdReason[] }
+				| undefined;
+			if (set) {
+				observed = await runtime
+					.conductor([campId], `hobo-release:${process.pid}`)
+					.reconcileOnce(campId, {
+						...ctx,
+						signal: AbortSignal.timeout(5_000),
+					});
+			}
+			await runtime.cd.rollouts.tick(ctx);
+			await runtime.cd.verification.tick(ctx);
+			const promotion = await runtime.cd.promotions.get(promotionId);
+			const ours = observed && set && observed.setId === set.setId;
+			return {
+				state: PromotionState[promotion?.state ?? 0]
+					? `PROMOTION_STATE_${PromotionState[promotion?.state ?? 0]}`
+					: "PROMOTION_STATE_UNSPECIFIED",
+				reasons: promotion?.reasons ?? [],
+				...(ours
+					? {
+							observed: `RECONCILE_STATUS_${ReconcileStatus[observed?.status ?? 0]}`,
+							observedReasons: observed?.reasons ?? [],
+						}
+					: undefined),
+			};
+		},
+		close: () => runtime.close(),
 	};
 }
 
@@ -324,7 +448,6 @@ type ReleaseReport = {
 	family: ReleaseFamily;
 	freightId: string;
 	alias: string;
-	pipeline: { applied: boolean; codes: readonly string[] };
 	channels: Partial<Record<ReleaseChannel, ReleaseVerdict>>;
 };
 
@@ -350,10 +473,12 @@ function writeReport(home: string, report: ReleaseReport): void {
 }
 
 /**
- * Record one family's release Freight through `hobo deploy freight record`.
- * `stored` bytes go into the HoBo artifact store first (verified by digest);
- * `registry` artifacts are verified by `@hobo/cd` at their registry coordinate.
- * Any refusal throws: nothing unrecorded is published.
+ * Record one family's release Freight through `hobo deploy freight record`
+ * and apply the release pipelines (`pipeline apply --file
+ * release/hobo-release.delivery.ts`). `stored` bytes go into the HoBo artifact
+ * store first (verified by digest); `registry` artifacts are verified by
+ * `@hobo/cd` at their registry coordinate. Any refusal throws: nothing
+ * unrecorded is published.
  */
 export async function recordReleaseFreight(
 	cd: ReleaseCd,
@@ -370,36 +495,36 @@ export async function recordReleaseFreight(
 			| undefined;
 		readonly registry?: readonly ReleaseArtifact[] | undefined;
 		readonly labels?: Readonly<Record<string, string>> | undefined;
+		/** Content blobs a listed artifact names by digest (a site tree's files). */
+		readonly blobs?: readonly Uint8Array[] | undefined;
 	},
 ): Promise<{ freightId: string; alias: string }> {
 	const artifacts: ReleaseArtifact[] = [...(input.registry ?? [])];
 	for (const item of input.stored ?? [])
 		artifacts.push(await cd.store(item.bytes, item));
+	for (const bytes of input.blobs ?? [])
+		await cd.store(bytes, {
+			name: `${releaseBindle(input.family)}.blob`,
+			kind: "ARTIFACT_KIND_STATIC_ASSETS",
+			mediaType: "application/octet-stream",
+		});
 	if (artifacts.length === 0)
 		throw new Error(`release Freight for ${input.family} has no artifacts`);
-	// The release declaration: which artifacts this release is, by digest.
-	const declaration = await cd.store(
-		new TextEncoder().encode(
-			JSON.stringify({
-				schema: "hobo.release-declaration/v1",
-				family: input.family,
-				source: input.source,
-				artifacts: artifacts
-					.map((a) => ({ name: a.name, digest: a.digest }))
-					.sort((a, b) => a.name.localeCompare(b.name)),
-			}),
-		),
-		{
-			name: `${releaseBindle(input.family)}.declaration`,
-			kind: "ARTIFACT_KIND_SOURCE_TREE",
-			mediaType: "application/vnd.hobo.release-declaration+json",
-		},
-	);
+	const declared = await cd.declaration(releaseDeclaration(input.family));
+	const declaration = await cd.store(declared.bytes, {
+		name: `${releaseBindle(input.family)}.declaration`,
+		kind: "ARTIFACT_KIND_SOURCE_TREE",
+		mediaType: "application/vnd.hobo.bindle+json",
+	});
+	if (declaration.digest !== declared.digest)
+		throw new Error(
+			`release declaration stored as ${declaration.digest}, not its canonical hash ${declared.digest}`,
+		);
 	const manifest = releaseFreightManifest({
 		family: input.family,
-		declarationHash: declaration.digest,
+		declarationHash: declared.digest,
 		source: input.source,
-		artifacts,
+		artifacts: [...artifacts, declaration],
 		labels: input.labels,
 	});
 	const file = join(cd.home, `release-freight-${input.family}.manifest.json`);
@@ -410,34 +535,30 @@ export async function recordReleaseFreight(
 		throw new Error(
 			`hobo deploy freight record refused ${input.family}: ${recorded.code} ${JSON.stringify(recorded.data?.reasons ?? [])}`,
 		);
-	const pipelineFile = join(cd.home, `release-pipeline-${input.family}.json`);
-	writeFileSync(
-		pipelineFile,
-		JSON.stringify(releasePipelineModule(input.family)),
-	);
-	const applied = await cd.run(["pipeline", "apply"], { file: pipelineFile });
-	const pipelineCodes = applied.ok
-		? []
-		: (applied.data?.reasons ?? []).map((r) => r.code ?? "");
-	if (!applied.ok && !gapOnly(pipelineCodes))
+	const applied = await cd.run(["pipeline", "apply"], {
+		file: RELEASE_DELIVERY_MODULE,
+	});
+	if (!applied.ok)
 		throw new Error(
-			`hobo deploy pipeline apply refused ${releaseBindle(input.family)}: ${pipelineCodes.join(", ")}`,
+			`hobo deploy pipeline apply refused ${RELEASE_DELIVERY_MODULE}: ${codesOf(applied.data?.reasons).join(", ") || applied.code}`,
 		);
 	writeReport(cd.home, {
 		family: input.family,
 		freightId: freight.freightId,
 		alias: freight.alias ?? "",
-		pipeline: { applied: applied.ok, codes: pipelineCodes },
 		channels: {},
 	});
 	return { freightId: freight.freightId, alias: freight.alias ?? "" };
 }
 
+/** How long and how often a promotion is driven before it reads as blocked. */
+export const RELEASE_DRIVE = Object.freeze({ passes: 150, intervalMs: 2_000 });
+
 /**
- * Promote recorded release Freight into one channel's Camp through
- * `hobo deploy promote`. With the release pipeline applied, `@hobo/cd`
- * enforces candidate -> stable lineage itself; without it (the topology gap),
- * stable also requires a journaled candidate promotion of the same Freight.
+ * Promote recorded release Freight into one channel's Camp through `hobo
+ * deploy promote` on the family's pipeline (`@hobo/cd` enforces candidate ->
+ * stable lineage), then drive it until it qualifies, the realizer refuses, or
+ * the passes run out (blocked: never read as qualified).
  */
 export async function promoteReleaseFreight(
 	cd: ReleaseCd,
@@ -445,54 +566,44 @@ export async function promoteReleaseFreight(
 		readonly family: ReleaseFamily;
 		readonly channel: ReleaseChannel;
 		readonly freightId: string;
+		readonly drive?: ReleaseCdSeams["drive"];
 	},
 ): Promise<ReleaseVerdict> {
-	const report = readReport(cd.home, input.family);
-	const pipelined = report?.pipeline.applied === true;
-	const shown = await cd.run(["freight", "show", input.freightId]);
-	let verdict: ReleaseVerdict;
-	if (!shown.ok || shown.data?.usable !== true) {
+	const camp = releaseCampId(input.family, input.channel);
+	const requested = await cd.run(["promote", input.freightId], {
+		camp,
+		pipeline: releaseBindle(input.family),
+		node: input.channel,
+		...(input.channel === "stable"
+			? { "source-camp": releaseCampId(input.family, "candidate") }
+			: undefined),
+	});
+	const promotionId = requested.data?.promotion?.promotionId ?? "";
+	let verdict: ReleaseVerdict | undefined;
+	if (!requested.ok || !promotionId) {
+		const codes = codesOf(requested.data?.reasons);
 		verdict = {
 			outcome: "blocked",
-			codes: ["release-freight-unusable"],
-			message: `Freight ${input.freightId} is missing, yanked or retired`,
+			codes:
+				codes.length > 0
+					? codes
+					: [requested.code ?? "release-promotion-refused"],
+			message: requested.message ?? "",
 		};
-	} else if (input.channel === "stable" && !pipelined) {
-		const candidate = await cd.run(["status"], {
-			camp: releaseCampId("candidate"),
-		});
-		const journaled = (candidate.data?.camps ?? [])
-			.flatMap((c) => c.promotions ?? [])
-			.some(
-				(p) =>
-					p.freightId === input.freightId &&
-					classifyPromotion({ ok: true, data: { promotion: p } }).outcome !==
-						"blocked",
-			);
-		verdict = journaled
-			? {
-					...classifyPromotion(
-						await cd.run(["promote", input.freightId], {
-							camp: releaseCampId("stable"),
-						}),
-					),
-					lineage: "candidate-journaled",
-				}
-			: {
-					outcome: "blocked",
-					codes: ["release-lineage-missing"],
-					message: `Freight ${input.freightId} has no candidate promotion in this journal`,
-				};
 	} else {
-		const camp = releaseCampId(input.channel);
-		const flags = pipelined
-			? { camp, pipeline: releaseBindle(input.family), node: input.channel }
-			: { camp };
-		verdict = classifyPromotion(
-			await cd.run(["promote", input.freightId], flags),
-		);
-		if (pipelined) verdict = { ...verdict, lineage: "pipeline" };
+		const drive = input.drive ?? RELEASE_DRIVE;
+		for (let pass = 0; pass < drive.passes && !verdict; pass++) {
+			verdict = classifyRelease(promotionId, await cd.drive(promotionId, camp));
+			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
+		}
+		verdict ??= {
+			outcome: "blocked",
+			codes: ["release-promotion-pending"],
+			message: `promotion ${promotionId} into ${camp} did not finish`,
+			promotionId,
+		};
 	}
+	const report = readReport(cd.home, input.family);
 	if (report) {
 		report.channels[input.channel] = verdict;
 		writeReport(cd.home, report);
@@ -500,7 +611,7 @@ export async function promoteReleaseFreight(
 	return verdict;
 }
 
-/** Print a verdict for humans (and the Actions summary); true when publishing may proceed. */
+/** Print a verdict for humans (and the Actions summary); true unless blocked. */
 export function announceVerdict(
 	family: ReleaseFamily,
 	channel: ReleaseChannel,
@@ -508,20 +619,26 @@ export function announceVerdict(
 	verdict: ReleaseVerdict,
 	env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
-	if (verdict.outcome === "blocked")
-		console.error(`::error::${line} ${verdict.message}`);
-	else if (verdict.outcome === "gap")
+	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(family, channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
+	const allowed =
+		verdict.outcome === "qualified" ||
+		(verdict.outcome === "impedance" && RELEASE_IMPEDANCE_FAMILIES.has(family));
+	if (!allowed) console.error(`::error::${line} ${verdict.message}`);
+	else if (verdict.outcome === "impedance")
 		console.log(
-			`::warning::${line}: @hobo/cd has no realizer for this target; publication stays the existing step`,
+			`::warning::${line}: the ${family} resolver cannot realize this target (${verdict.message}); its existing publish step stays the publisher`,
 		);
 	else console.log(line);
 	if (env.GITHUB_STEP_SUMMARY)
 		appendFileSync(env.GITHUB_STEP_SUMMARY, `- ${line}\n`);
-	return verdict.outcome !== "blocked";
+	return allowed;
 }
 
-/** Record one family and promote it into the candidate channel; throws when blocked. */
+/**
+ * Record one family and promote it into its candidate Camp, whose realizer
+ * publishes it; throws unless it qualified (or, for an impedance family, the
+ * resolver refused with a typed impedance code).
+ */
 export async function qualifyReleaseCandidate(input: {
 	readonly home: string;
 	readonly family: ReleaseFamily;
@@ -529,9 +646,15 @@ export async function qualifyReleaseCandidate(input: {
 	readonly stored?: Parameters<typeof recordReleaseFreight>[1]["stored"];
 	readonly registry?: readonly ReleaseArtifact[];
 	readonly labels?: Readonly<Record<string, string>>;
+	readonly blobs?: readonly Uint8Array[];
+	readonly seams?: ReleaseCdSeams;
 }): Promise<{ freightId: string; verdict: ReleaseVerdict }> {
 	const env = input.env ?? process.env;
-	const cd = await openReleaseCd({ home: input.home, env });
+	const cd = await openReleaseCd({
+		home: input.home,
+		env,
+		...(input.seams ? { seams: input.seams } : undefined),
+	});
 	try {
 		const { freightId } = await recordReleaseFreight(cd, {
 			family: input.family,
@@ -539,11 +662,13 @@ export async function qualifyReleaseCandidate(input: {
 			stored: input.stored,
 			registry: input.registry,
 			labels: input.labels,
+			blobs: input.blobs,
 		});
 		const verdict = await promoteReleaseFreight(cd, {
 			family: input.family,
 			channel: "candidate",
 			freightId,
+			...(input.seams?.drive ? { drive: input.seams.drive } : undefined),
 		});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
@@ -555,25 +680,40 @@ export async function qualifyReleaseCandidate(input: {
 	}
 }
 
-/** Promote every family recorded under `home` to stable; false when any is blocked. */
+/**
+ * Promote every family recorded under `home` to its stable Camp; false when
+ * any is blocked. A family whose candidate verdict was `impedance` has no
+ * qualified candidate to promote: it is reported, not promoted.
+ */
 export async function promoteReleaseStable(
 	home: string,
 	env: Readonly<Record<string, string | undefined>> = process.env,
+	seams: ReleaseCdSeams = {},
 ): Promise<boolean> {
 	const families = RELEASE_FAMILIES.filter((f) => readReport(home, f));
 	if (families.length === 0) {
 		console.error(`::error::no release Freight recorded under ${home}`);
 		return false;
 	}
-	const cd = await openReleaseCd({ home, env });
+	const cd = await openReleaseCd({ home, env, seams });
 	let ok = true;
 	try {
 		for (const family of families) {
-			const freightId = readReport(home, family)?.freightId ?? "";
+			const report = readReport(home, family);
+			const freightId = report?.freightId ?? "";
+			const candidate = report?.channels.candidate;
+			if (
+				candidate?.outcome === "impedance" &&
+				RELEASE_IMPEDANCE_FAMILIES.has(family)
+			) {
+				ok = announceVerdict(family, "stable", freightId, candidate, env) && ok;
+				continue;
+			}
 			const verdict = await promoteReleaseFreight(cd, {
 				family,
 				channel: "stable",
 				freightId,
+				...(seams.drive ? { drive: seams.drive } : undefined),
 			});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
@@ -583,41 +723,63 @@ export async function promoteReleaseStable(
 	return ok;
 }
 
-/**
- * A deterministic index of a published tree (sorted paths with each file's
- * sha256). Its digest names the exact bytes a static site publishes.
- */
-export type SiteTreeIndex = Readonly<{ digest: string; bytes: Uint8Array }>;
+// ── The Pages site tree (`hobo.static-site-tree/v1`) ───────────────────────
 
-export function siteTreeIndex(dir: string): SiteTreeIndex {
-	const files: { path: string; sha256: string; size: number }[] = [];
+/** One file of a published tree: its bytes go into the CD artifact store. */
+export type SiteTreeFile = Readonly<{
+	path: string;
+	digest: string;
+	size: number;
+	bytes: Uint8Array;
+}>;
+
+/**
+ * The tree index `@hobo/provider-github` realizes (sorted paths, each file's
+ * sha256 and size) plus the file blobs. Its digest names the exact bytes the
+ * site publishes; the realizer computes the git tree from it.
+ */
+export type SiteTree = Readonly<{
+	digest: string;
+	index: Uint8Array;
+	files: readonly SiteTreeFile[];
+}>;
+
+const sha256 = (bytes: Uint8Array) =>
+	`sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+
+export function siteTree(dir: string): SiteTree {
+	const files: SiteTreeFile[] = [];
 	const walk = (at: string) => {
 		for (const entry of readdirSync(at, { withFileTypes: true })) {
 			const full = join(at, entry.name);
 			// A staging clone's git metadata is not part of what publishes.
-			if (entry.isDirectory() && entry.name === ".git" && at === dir) continue;
+			if (entry.isDirectory() && entry.name === ".git") continue;
 			if (entry.isDirectory()) walk(full);
-			else if (entry.isFile()) {
-				const bytes = readFileSync(full);
+			else if (entry.isFile() && !lstatSync(full).isSymbolicLink()) {
+				const bytes = new Uint8Array(readFileSync(full));
 				files.push({
 					path: relative(dir, full).split(sep).join("/"),
-					sha256: createHash("sha256").update(bytes).digest("hex"),
+					digest: sha256(bytes),
 					size: bytes.byteLength,
+					bytes,
 				});
 			}
 		}
 	};
 	walk(dir);
 	files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-	const bytes = new TextEncoder().encode(
-		JSON.stringify({ schema: "hobo.release-tree/v1", files }),
+	const index = new TextEncoder().encode(
+		JSON.stringify({
+			contract: "hobo.static-site-tree/v1",
+			files: files.map((f) => ({
+				path: f.path,
+				digest: f.digest,
+				size: f.size,
+			})),
+		}),
 	);
-	return {
-		digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-		bytes,
-	};
+	return { digest: sha256(index), index, files };
 }
-
 // ── GitHub Release ──────────────────────────────────────────────────────────
 
 /** One API answer: the status, as it arrived. */

@@ -78,6 +78,12 @@ describe("release-hobo release-npm hosted runner contract", () => {
 	});
 });
 
+const impedance = {
+	outcome: "impedance" as const,
+	codes: ["RESOLVER_PRODUCT_UNSUPPORTED"],
+	message: "no Sigstore bundle",
+};
+
 describe("npm publish goes through release Freight first", () => {
 	const staged = {
 		version: "0.0.0-alpha.9",
@@ -94,7 +100,7 @@ describe("npm publish goes through release Freight first", () => {
 				{
 					stage: () => staged,
 					tarballs: () => ["/tmp/x/core.tgz"],
-					qualify: async () => ({ freightId: "sha256:x" }),
+					qualify: async () => ({ freightId: "sha256:x", verdict: impedance }),
 					npm: (args) => npm.push(args),
 				},
 			),
@@ -128,7 +134,30 @@ describe("npm publish goes through release Freight first", () => {
 		expect(npm).toEqual([]);
 	});
 
-	it("records every staged tarball as Freight, then publishes them in pack order", async () => {
+	it("publishes nothing itself when the npm realizer qualified the candidate", async () => {
+		const npm: string[][] = [];
+		await publishNpmSdkArtifacts(
+			{
+				stagingDir: "/tmp/x",
+				token: "",
+				releaseRef: "v0.0.0-alpha.9",
+				freightHome: "/tmp/cd",
+			},
+			{
+				stage: () => staged,
+				tarballs: () => ["/tmp/x/core.tgz"],
+				read: () => new Uint8Array([1]),
+				qualify: async () => ({
+					freightId: "sha256:x",
+					verdict: { outcome: "qualified", codes: [], message: "" },
+				}),
+				npm: (args) => npm.push(args),
+			},
+		);
+		expect(npm).toEqual([]);
+	});
+
+	it("records every staged tarball as Freight, then publishes them in pack order on the npm impedance verdict", async () => {
 		const npm: string[][] = [];
 		let recorded: readonly { name: string }[] = [];
 		await publishNpmSdkArtifacts(
@@ -144,8 +173,9 @@ describe("npm publish goes through release Freight first", () => {
 				read: () => new Uint8Array([1, 2, 3]),
 				qualify: async (input) => {
 					recorded = input.stored ?? [];
+					expect(input.labels?.["hobo.cd/npm.dist-tag"]).toBe("alpha");
 					expect(npm).toEqual([]);
-					return { freightId: "sha256:x" };
+					return { freightId: "sha256:x", verdict: impedance };
 				},
 				npm: (args) => npm.push(args),
 			},

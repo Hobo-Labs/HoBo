@@ -126,19 +126,27 @@ could be replayed as if it were a live one.
 HoBo releases itself through HoBo CD
 ([`release-channels.md`](./release-channels.md#hobo-releases-through-hobo-cd)).
 Every artifact family is recorded as Freight and promoted
-`hobo-release/candidate` -> `hobo-release/stable` by the `hobo deploy`
-composition. None of the three publish targets has an `@hobo/cd` realizer, so
-publication stays the existing workflow step, gated on the verdict.
+`hobo-release/<family>-candidate` -> `hobo-release/<family>-stable` by the
+`hobo deploy` composition, with the topology
+[`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
+(`--yard`). Each Camp is realized by the catalog resolver realizer
+(`packages/hobo/src/provider-hosting-catalog.ts`, `cd-runtime.ts`): the
+provider's shipped `ResourceResolver`, no shell, no new port method, the
+Camp's one credential locator resolved by the host at call time.
 
-| Target | Freight artifact | Verified by | Realizer | Gap (typed refusal) |
+| Target | Freight artifact | Verified by | Realizer | Status |
 |---|---|---|---|---|
-| npm (`@hobo-labs/*`) | each tarball, `ARTIFACT_KIND_PACKAGE`, ecosystem `store` | digest in the HoBo artifact store | none (`npm publish` step) | `planning-camp-unknown`, `promotion-resolve-failed` |
-| GHCR (`ghcr.io/<owner>/hobo/*`) | each pushed image, `ARTIFACT_KIND_OCI_IMAGE`, ecosystem `oci` | registry lookup of the manifest digest (anonymous pull; live only) | none (`docker push` step) | as above |
-| GitHub Pages (`gh-pages`) | the site tree index, `ARTIFACT_KIND_STATIC_ASSETS` | digest in the HoBo artifact store | none (gh-pages push step) | as above |
-| all | release pipeline `hobo-release-<family>` | `pipeline apply` | no `hobo-release` Yard in the `hobo deploy` topology | `pipeline-unknown-camp` |
+| GHCR (`ghcr.io/<owner>/hobo/*`) | each pushed image, `ARTIFACT_KIND_OCI_IMAGE`, the digest GHCR reports | registry lookup of the manifest digest at `@hobo/cd` record time | `@hobo/provider-oci-registry`, `GITHUB_TOKEN` | **realized**: release tag PUT by digest, digest and tag observed (I5); `docker push` still uploads blobs and manifest |
+| GitHub Pages (`gh-pages`) | the `hobo.static-site-tree/v1` index (`ARTIFACT_KIND_STATIC_ASSETS`) plus file blobs | digests in the HoBo artifact store; git tree id computed locally | `@hobo/provider-github` (branch mode), `GITHUB_TOKEN` | **realized**: Git Data API blobs, tree, commit `deploy: <sha>`, compare-and-swap ref move; replaces the gh-pages push action |
+| npm (`@hobo-labs/*`) | each tarball, `ARTIFACT_KIND_PACKAGE` | digest in the HoBo artifact store | `@hobo/provider-npm` | **typed refusal** `RESOLVER_PRODUCT_UNSUPPORTED` (`impedance`): OIDC trusted publishing of scoped names does not route through the transport guard, and the Freight has no Sigstore bundle; `npm publish --provenance` stays the publisher |
 
-A `gap` is never read as `qualified`. Any other refusal (unverified digest,
-yanked Freight, missing candidate lineage) blocks the publish.
+Offline proof: `scripts/test/release-freight-realize.test.ts` runs the built
+composition with the release topology against the providers' recorded
+registry and GitHub worlds (and the built binary with `--yard` for topology
+and `pipeline apply`). No live lane runs here; the providers' opt-in live
+lanes are the live evidence. Unverified live: GHCR's token endpoint with the
+non-secret user name the Camp declares (`hobo-release`) and the workflow
+token.
 
 ## Traffic-routing staging cutover lane (`pnpm run staging:cutover`)
 
