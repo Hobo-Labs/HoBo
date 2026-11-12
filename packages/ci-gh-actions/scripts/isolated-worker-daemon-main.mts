@@ -567,6 +567,7 @@ try {
 		docker,
 		activeLeases: async () => storageLeases(await store.activeLeases()),
 		scheduleRetiredSweep: retiredSweep.trigger,
+		drainRetiredSweep: retiredSweep.drain,
 		defaultJobReserve: storageReserveForClass("standard"),
 		pnpmStore: pnpmStore
 			? createPnpmStoreMaintenance({
@@ -745,6 +746,7 @@ try {
 		containerEnv,
 		workRoot,
 		workFs,
+		storageAdmission,
 		scheduleRetiredSweep: retiredSweep.trigger,
 		containerStallGuard,
 		noContainerDrainMaxMs,
