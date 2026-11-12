@@ -92,6 +92,78 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
 
+  examples/cd-airgap-agent:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-conformance-kit:
+    dependencies:
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
+  examples/cd-edge-fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-github-actions:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-gitlab:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-policy-rollout:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
   examples/ci-runner-balancing:
     dependencies:
       '@bufbuild/protobuf':
@@ -663,6 +735,30 @@ importers:
         specifier: 5.0.1
         version: 5.0.1
 
+  packages/cd-gitops:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/cd-kube-fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/ci:
     dependencies:
       '@bufbuild/protobuf':
@@ -981,6 +1077,9 @@ importers:
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
       '@hobo/cloud':
         specifier: workspace:*
         version: link:../cloud
@@ -1580,6 +1679,12 @@ importers:
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../capability-profiles
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/cd-kube-fleet':
+        specifier: workspace:*
+        version: link:../cd-kube-fleet
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
@@ -1691,6 +1796,9 @@ importers:
       '@hobo/replay':
         specifier: workspace:*
         version: link:../replay
+      '@hobo/resolver-components':
+        specifier: workspace:*
+        version: link:../resolver-components
       '@hobo/runner-blacksmith':
         specifier: workspace:*
         version: link:../providers/runner-blacksmith
@@ -1718,6 +1826,12 @@ importers:
       '@hobo/stations':
         specifier: workspace:*
         version: link:../stations
+      '@hobo/storage-postgres':
+        specifier: workspace:*
+        version: link:../storage-postgres
+      '@hobo/storage-sqlite':
+        specifier: workspace:*
+        version: link:../storage-sqlite
       '@hobo/trails':
         specifier: workspace:*
         version: link:../trails
@@ -2673,6 +2787,34 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/resolver-components:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/componentize':
+        specifier: workspace:*
+        version: link:../componentize
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/registry':
+        specifier: workspace:*
+        version: link:../registry
+    devDependencies:
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      '@types/node':
+        specifier: '>=24.0.0'
+        version: 24.13.2
+
   packages/rift:
     dependencies:
       '@bufbuild/protobuf':
@@ -2960,6 +3102,34 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/storage-postgres:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../conformance
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      '@types/pg':
+        specifier: 8.15.5
+        version: 8.15.5
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
