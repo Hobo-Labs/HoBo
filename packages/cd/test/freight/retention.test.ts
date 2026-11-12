@@ -1,4 +1,4 @@
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	FreightOrigin,
@@ -96,7 +96,7 @@ function harness() {
 			},
 		);
 	};
-	const bind = async (campId: string, freightId: string, data?: unknown) => {
+	const bind = async (campId: string, freightId: string, data?: JsonValue) => {
 		const stream = CD_STREAMS.campSpec(campId);
 		const seq = store.events(stream).length;
 		const binding = create(PolicyBindingRecordSchema, {
