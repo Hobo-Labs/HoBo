@@ -16,10 +16,16 @@ import {
 	CONNECTOR_KINDS,
 	type ConnectorKind,
 	type DeliveryPolicy,
+	type DeliveryPublisher,
+	type DeliveryRouteLabel,
+	LEGACY_ARGO_PUBLISHER,
+	LEGACY_DELIVERY_ENGINES,
 	PLACEMENT_OBJECTIVES,
 	type PlacementObjective,
 	type PlacementPolicy,
 	type PolicyHash,
+	RECONCILER_MODES,
+	type ReconcilerModeName,
 	type ResourceRequirement,
 	SCOPE_KINDS,
 	type ScopeKind,
@@ -189,17 +195,44 @@ export function parseBillingPolicy(
 	};
 }
 
+export function deliveryRouteLabel(
+	mode: ReconcilerModeName,
+	publisher: DeliveryPublisher | undefined,
+): DeliveryRouteLabel {
+	if (mode === "publisher") return `publisher:${publisher?.target ?? ""}`;
+	return mode === "agent" ? "agent" : "in-proc";
+}
+
+function parseDeliveryPublisher(
+	value: JsonValue | undefined,
+): DeliveryPublisher | undefined {
+	if (value === undefined || value === null) return undefined;
+	const raw = asRecord(value, "invalid-delivery-policy");
+	const target = optionalString(raw.target);
+	if (target === undefined) {
+		throw new BrokerParseError(
+			"publisher-required",
+			"publisher-required: publisher.target must name a cd-gitops publisher (argo-cd | flux)",
+		);
+	}
+	const repository = optionalString(raw.repository);
+	return {
+		target,
+		...(repository !== undefined ? { repository } : undefined),
+	};
+}
+
+/**
+ * Neutral delivery policy (plan 0024, D14). `reconcilerMode` and an optional
+ * `publisher` are read. The deprecated `engine` is read only when no
+ * `reconcilerMode` is present, and then only to map it: `argo` becomes the
+ * `argo-cd` publisher (its `gitops_repo` the publisher repository) and
+ * `in-proc` the in-process conductor. `destination_namespace` is never read.
+ */
 export function parseDeliveryPolicy(
 	input: JsonValue | undefined,
 ): DeliveryPolicy {
 	const raw = asRecord(input, "invalid-delivery-policy");
-	const engine = requireString(raw.engine, "invalid-delivery-policy", "engine");
-	if (engine !== "argo" && engine !== "in-proc") {
-		throw new BrokerParseError(
-			"invalid-delivery-engine",
-			`invalid-delivery-engine: ${engine} is not argo|in-proc`,
-		);
-	}
 	// SAFETY: assertion required at this I/O or test boundary.
 	const syncMode = (raw.syncMode ?? raw.sync_mode ?? "manual") as string;
 	if (syncMode !== "auto" && syncMode !== "manual") {
@@ -208,28 +241,60 @@ export function parseDeliveryPolicy(
 			`invalid-sync-mode: ${syncMode} is not auto|manual`,
 		);
 	}
-	const gitopsRepo = optionalString(raw.gitopsRepo ?? raw.gitops_repo);
-	const destinationNamespace = optionalString(
-		raw.destinationNamespace ?? raw.destination_namespace,
-	);
-	// Dependent constraint (broker.cue): argo needs a repo and a namespace.
-	if (
-		engine === "argo" &&
-		(gitopsRepo === undefined || destinationNamespace === undefined)
-	) {
-		throw new BrokerParseError(
-			"argo-destination-required",
-			"argo-destination-required: engine 'argo' requires gitopsRepo and destinationNamespace",
+	const prune = raw.prune === true;
+	const modeRaw = raw.reconcilerMode ?? raw.reconciler_mode;
+	let reconcilerMode: ReconcilerModeName;
+	let publisher: DeliveryPublisher | undefined;
+	if (modeRaw !== undefined) {
+		const mode = RECONCILER_MODES.find((m) => m === modeRaw);
+		if (mode === undefined) {
+			throw new BrokerParseError(
+				"invalid-reconciler-mode",
+				`invalid-reconciler-mode: ${String(modeRaw)} is not ${RECONCILER_MODES.join("|")}`,
+			);
+		}
+		reconcilerMode = mode;
+		publisher = parseDeliveryPublisher(raw.publisher);
+		if (mode === "publisher" && publisher === undefined) {
+			throw new BrokerParseError(
+				"publisher-required",
+				"publisher-required: reconcilerMode publisher needs publisher.target (argo-cd | flux)",
+			);
+		}
+		if (mode !== "publisher" && publisher !== undefined) {
+			throw new BrokerParseError(
+				"publisher-mode-mismatch",
+				`publisher-mode-mismatch: a publisher is only valid with reconcilerMode publisher, not ${mode}`,
+			);
+		}
+	} else {
+		const engine = requireString(
+			raw.engine ?? "in-proc",
+			"invalid-delivery-policy",
+			"engine",
 		);
+		if (engine === "argo") {
+			const repository = optionalString(raw.gitopsRepo ?? raw.gitops_repo);
+			reconcilerMode = "publisher";
+			publisher = {
+				target: LEGACY_ARGO_PUBLISHER,
+				...(repository !== undefined ? { repository } : undefined),
+			};
+		} else if (engine === "in-proc") {
+			reconcilerMode = "conductor";
+		} else {
+			throw new BrokerParseError(
+				"invalid-delivery-engine",
+				`invalid-delivery-engine: ${engine} is not ${LEGACY_DELIVERY_ENGINES.join("|")} (deprecated; use reconcilerMode)`,
+			);
+		}
 	}
 	return {
-		engine,
+		reconcilerMode,
+		...(publisher !== undefined ? { publisher } : undefined),
 		syncMode,
-		prune: raw.prune === true,
-		...(gitopsRepo !== undefined ? { gitopsRepo } : undefined),
-		...(destinationNamespace !== undefined
-			? { destinationNamespace }
-			: undefined),
+		prune,
+		engine: deliveryRouteLabel(reconcilerMode, publisher),
 	};
 }
 
@@ -285,7 +350,9 @@ export function parseBrokerPolicySet(
 		),
 		placementPolicies,
 		billing: parseBillingPolicy(raw.billing),
-		delivery: parseDeliveryPolicy(raw.delivery ?? { engine: "in-proc" }),
+		delivery: parseDeliveryPolicy(
+			raw.delivery ?? { reconcilerMode: "conductor" },
+		),
 		// SAFETY: assertion required at this I/O or test boundary.
 		requiredConnectorKinds: requiredRaw as ConnectorKind[],
 	};

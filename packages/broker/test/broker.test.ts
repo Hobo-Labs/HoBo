@@ -6,11 +6,13 @@ import {
 	restoreBrokerDecisions,
 	snapshotBrokerDecisions,
 } from "../src/broker.js";
+import { DELIVERY_SUBMITTED_SCHEMA } from "../src/delivery.js";
 import { BROKER_EVENTS } from "../src/events.js";
 import type { JsonObject } from "../src/json.js";
 import {
 	createGatekeeperGatePlane,
-	renderArgoApplication,
+	createReconcilerDeliveryPlane,
+	type DeliveryPromotionRequest,
 } from "../src/planes.js";
 import {
 	BrokerParseError,
@@ -343,40 +345,78 @@ describe("createBroker.scale — spin resources up and down", () => {
 	});
 });
 
-describe("createBroker.deliver — Argo-shaped delivery plane", () => {
-	it("renders an Argo CD Application for the receipt under an argo policy", async () => {
+describe("createBroker.deliver — delivers through CD (D14)", () => {
+	it("legacy Argo policy still delivers via the publisher", async () => {
+		const requests: DeliveryPromotionRequest[] = [];
 		const broker = createBroker({
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			deliveryPlane: createReconcilerDeliveryPlane({
+				requestPromotion: async (request) => {
+					requests.push(request);
+					return { ok: true, promotionId: "promo-1", target: "camp:prod" };
+				},
+			}),
 		});
 		const resolved = await broker.resolve(baseRequest);
-		expect(resolved.receipt).toBeDefined();
 		const receipt = resolved.receipt;
 		if (receipt === undefined) throw new Error("expected a receipt");
 
 		const { ticket, events } = await broker.deliver(receipt);
-		expect(ticket.engine).toBe("argo");
-		expect(ticket.document.kind).toBe("Application");
-		// SAFETY: assertion required at this I/O or test boundary.
-		const spec = ticket.document.spec as JsonObject;
-		// SAFETY: assertion required at this I/O or test boundary.
-		expect((spec.source as JsonObject).repoURL).toBe(
-			"https://git.example/hobo-receipts",
-		);
-		expect(events[0]?.type).toBe(BROKER_EVENTS.DeliverySubmitted);
-
-		// The pure renderer produces the same document layout.
-		const doc = renderArgoApplication(receipt, {
-			engine: "argo",
-			syncMode: "auto",
-			prune: true,
-			gitopsRepo: "https://git.example/hobo-receipts",
-			destinationNamespace: "hobo-prod",
+		expect(requests).toHaveLength(1);
+		expect(requests[0]?.delivery).toMatchObject({
+			reconcilerMode: "publisher",
+			publisher: {
+				target: "argo-cd",
+				repository: "https://git.example/hobo-receipts",
+			},
 		});
-		expect(doc.apiVersion).toBe("argoproj.io/v1alpha1");
+		expect(requests[0]?.receipt.requestId).toBe(receipt.requestId);
+		expect(ticket.reconcilerMode).toBe("publisher");
+		expect(ticket.publisher).toBe("argo-cd");
+		expect(ticket.promotionId).toBe("promo-1");
+		expect(ticket.target).toBe("camp:prod");
+		expect(events[0]?.type).toBe(BROKER_EVENTS.DeliverySubmitted);
+		expect(events[0]?.data).toMatchObject({
+			schema: DELIVERY_SUBMITTED_SCHEMA,
+			reconcilerMode: "publisher",
+			publisher: "argo-cd",
+			promotionId: "promo-1",
+		});
+		// No Kubernetes vocabulary leaves the neutral broker.
+		expect(JSON.stringify(ticket)).not.toMatch(/namespace|argoproj/u);
+	});
+
+	it("the default plane only runs the in-process conductor and refuses publisher mode", async () => {
+		const legacy = createBroker({
+			policies: basePolicies,
+			catalog,
+			stationId: "station:test",
+			railHash:
+				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		});
+		const resolved = await legacy.resolve(baseRequest);
+		const receipt = resolved.receipt;
+		if (receipt === undefined) throw new Error("expected a receipt");
+		await expect(legacy.deliver(receipt)).rejects.toMatchObject({
+			code: "delivery-plane-unwired",
+		});
+
+		const local = createBroker({
+			policies: { ...basePolicies, delivery: { reconcilerMode: "conductor" } },
+			catalog,
+			stationId: "station:test",
+			railHash:
+				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		});
+		const localReceipt = (await local.resolve(baseRequest)).receipt;
+		if (localReceipt === undefined) throw new Error("expected a receipt");
+		const { ticket } = await local.deliver(localReceipt);
+		expect(ticket.reconcilerMode).toBe("conductor");
+		expect(ticket.engine).toBe("in-proc");
 	});
 });
 

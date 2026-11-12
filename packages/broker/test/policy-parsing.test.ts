@@ -210,8 +210,11 @@ describe("billing policies", () => {
 	});
 });
 
-describe("delivery policies", () => {
-	it("refuses an unknown engine", () => {
+describe("delivery policies (neutral, D14)", () => {
+	it("refuses an unknown reconciler mode and an unknown legacy engine", () => {
+		expect(codeOf(() => parseDeliveryPolicy({ reconcilerMode: "push" }))).toBe(
+			"invalid-reconciler-mode",
+		);
 		expect(codeOf(() => parseDeliveryPolicy({ engine: "flux" }))).toBe(
 			"invalid-delivery-engine",
 		);
@@ -220,6 +223,9 @@ describe("delivery policies", () => {
 	it("defaults the sync mode to manual", () => {
 		// Manual, because automatic sync is the one that acts on its own; a
 		// missing field must not opt an operator into that.
+		expect(parseDeliveryPolicy({ reconcilerMode: "conductor" }).syncMode).toBe(
+			"manual",
+		);
 		expect(parseDeliveryPolicy({ engine: "in-proc" }).syncMode).toBe("manual");
 	});
 
@@ -227,30 +233,43 @@ describe("delivery policies", () => {
 		expect(
 			codeOf(() =>
 				parseDeliveryPolicy({
-					engine: "in-proc",
+					reconcilerMode: "conductor",
 					sync_mode: "hourly",
 				}),
 			),
 		).toBe("invalid-sync-mode");
 	});
 
-	it("requires a repo and a namespace for argo", () => {
-		// The dependent constraint: argo without a destination would parse and
-		// then fail at delivery time, far from the policy that caused it.
+	it("requires a publisher target in publisher mode, and only there", () => {
 		expect(
-			codeOf(() => parseDeliveryPolicy({ engine: "argo", gitopsRepo: "g" })),
-		).toBe("argo-destination-required");
+			codeOf(() => parseDeliveryPolicy({ reconcilerMode: "publisher" })),
+		).toBe("publisher-required");
 		expect(
 			codeOf(() =>
 				parseDeliveryPolicy({
-					engine: "argo",
-					destinationNamespace: "n",
+					reconcilerMode: "agent",
+					publisher: { target: "flux" },
 				}),
 			),
-		).toBe("argo-destination-required");
+		).toBe("publisher-mode-mismatch");
 	});
 
-	it("accepts argo with both, in either spelling", () => {
+	it("parses a neutral publisher policy in either spelling", () => {
+		const parsed = parseDeliveryPolicy({
+			reconciler_mode: "publisher",
+			publisher: { target: "flux", repository: "https://git.example/r" },
+			sync_mode: "auto",
+			prune: true,
+		});
+		expect(parsed).toMatchObject({
+			reconcilerMode: "publisher",
+			publisher: { target: "flux", repository: "https://git.example/r" },
+			syncMode: "auto",
+			prune: true,
+		});
+	});
+
+	it("maps the legacy argo engine to the argo-cd publisher; destination_namespace is never read", () => {
 		const parsed = parseDeliveryPolicy({
 			engine: "argo",
 			gitops_repo: "git://repo",
@@ -258,16 +277,35 @@ describe("delivery policies", () => {
 			sync_mode: "auto",
 			prune: true,
 		});
-		expect(parsed.gitopsRepo).toBe("git://repo");
-		expect(parsed.destinationNamespace).toBe("apps");
+		expect(parsed.reconcilerMode).toBe("publisher");
+		expect(parsed.publisher).toEqual({
+			target: "argo-cd",
+			repository: "git://repo",
+		});
+		expect(JSON.stringify(parsed)).not.toContain("apps");
 		expect(parsed.syncMode).toBe("auto");
 		expect(parsed.prune).toBe(true);
+		// A legacy argo policy without a namespace is no longer refused: the
+		// destination is deprecated and the publisher owns placement.
+		expect(parseDeliveryPolicy({ engine: "argo" }).publisher).toEqual({
+			target: "argo-cd",
+		});
 	});
 
-	it("does not demand a destination for in-proc", () => {
+	it("maps the legacy in-proc engine to the in-process conductor", () => {
 		const parsed = parseDeliveryPolicy({ engine: "in-proc" });
-		expect(parsed.gitopsRepo).toBeUndefined();
+		expect(parsed.reconcilerMode).toBe("conductor");
+		expect(parsed.publisher).toBeUndefined();
 		expect(parsed.prune).toBe(false);
+	});
+
+	it("prefers reconcilerMode when both vocabularies are present (engine is never read)", () => {
+		const parsed = parseDeliveryPolicy({
+			engine: "argo",
+			reconcilerMode: "agent",
+		});
+		expect(parsed.reconcilerMode).toBe("agent");
+		expect(parsed.publisher).toBeUndefined();
 	});
 });
 

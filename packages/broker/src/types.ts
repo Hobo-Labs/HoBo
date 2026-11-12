@@ -40,8 +40,24 @@ export type RejectionPlane = (typeof REJECTION_PLANES)[number];
 export const SCALE_DIRECTIONS = ["up", "down", "zero"] as const;
 export type ScaleDirection = (typeof SCALE_DIRECTIONS)[number];
 
-export const DELIVERY_ENGINES = ["argo", "in-proc"] as const;
-export type DeliveryEngine = (typeof DELIVERY_ENGINES)[number];
+// public-contract: how a Camp converges (plan 0024, D14). Neutral: the broker
+// names no GitOps engine, cluster or namespace.
+export const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
+export type ReconcilerModeName = (typeof RECONCILER_MODES)[number];
+
+// public-contract: deprecated wire vocabulary, accepted on parse only.
+export const LEGACY_DELIVERY_ENGINES = ["argo", "in-proc"] as const;
+export type LegacyDeliveryEngine = (typeof LEGACY_DELIVERY_ENGINES)[number];
+
+// public-contract: the cd-gitops publisher a legacy `argo` engine maps to.
+export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
+
+/**
+ * Display label for a delivery route, kept for existing readers of the
+ * pre-D14 `engine` field: `in-proc` for the in-process conductor, `agent`,
+ * or `publisher:<target>`. Derived on parse; never read for routing.
+ */
+export type DeliveryRouteLabel = "in-proc" | "agent" | `publisher:${string}`;
 
 // domain-view: branded canonical digest of a parsed BrokerPolicySet; wire form is the policy_hash field of ResolutionReceipt in data-models/broker.proto.
 export type PolicyHash = string & { readonly __brand: "PolicyHash" };
@@ -70,13 +86,23 @@ export interface BillingPolicy {
 	spendCapUnlimited?: boolean;
 }
 
+// domain-view: parsed cd-gitops publisher reference; wire form is DeliveryPublisher in data-models/broker.proto.
+export interface DeliveryPublisher {
+	/** cd-gitops publisher target, e.g. `argo-cd` or `flux`. */
+	readonly target: string;
+	/** GitOps repository the publisher commits to, when the policy names one. */
+	readonly repository?: string;
+}
+
 // domain-view: parsed delivery-plane policy; wire form is DeliveryPolicy in data-models/broker.proto.
 export interface DeliveryPolicy {
-	engine: DeliveryEngine;
-	syncMode: "auto" | "manual";
-	prune: boolean;
-	gitopsRepo?: string;
-	destinationNamespace?: string;
+	readonly reconcilerMode: ReconcilerModeName;
+	/** Present exactly when `reconcilerMode` is `publisher`. */
+	readonly publisher?: DeliveryPublisher;
+	readonly syncMode: "auto" | "manual";
+	readonly prune: boolean;
+	/** @deprecated display label only (see DeliveryRouteLabel); never read for routing. */
+	readonly engine: DeliveryRouteLabel;
 }
 
 // domain-view: parsed connector registration; wire form is ConnectorConfig in data-models/broker.proto.

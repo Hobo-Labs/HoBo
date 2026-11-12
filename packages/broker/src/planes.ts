@@ -18,13 +18,15 @@ import type {
 	BillingPolicy,
 	BrokerRequest,
 	DeliveryPolicy,
+	DeliveryRouteLabel,
+	ReconcilerModeName,
 	RejectionReason,
 	ResolutionReceipt,
 } from "./types.js";
 
 // The enforcement/execution planes the broker wraps. Each plane is a port so
 // deployments can swap engines (OPA/Rego or Cedar for the policy plane, a
-// Pact broker for the contract plane, a metering service for billing, Argo CD
+// Pact broker for the contract plane, a metering service for billing, @hobo/cd
 // for delivery) without touching the brokering pipeline. The defaults below
 // COMPOSE @hobo/contracts — the Gatekeeper (contract compatibility + policy
 // pack + obligations + quota) is imported and RUN, not reinvented.
@@ -65,13 +67,20 @@ export interface BillingPlane {
 	release?(requestId: string, confirmedUnused: true): void;
 }
 
-// Argo-shaped delivery plane: hand an accepted receipt to the rollout engine.
-// Live engines submit over the network, so submit is allowed to be async.
+// Delivery plane: hand an accepted receipt to continuous delivery. Neutral
+// (plan 0024, D14): the broker never renders a GitOps document, never names a
+// cluster or namespace, and never applies anything itself. A ticket records
+// how the receipt was routed and, through CD, which promotion carries it.
 export interface DeliveryTicket {
-	engine: string;
+	/** @deprecated display label (DeliveryRouteLabel); never read for routing. */
+	engine: DeliveryRouteLabel;
+	reconcilerMode: ReconcilerModeName;
+	/** The cd-gitops publisher target, in publisher mode. */
+	publisher?: string;
+	/** The CD promotion that carries this receipt, when delivered through CD. */
+	promotionId?: string;
 	target: string;
 	document: JsonObject;
-	response?: JsonObject;
 }
 
 export interface DeliveryPlane {
@@ -169,55 +178,140 @@ export function createBillingPlane(): BillingPlane {
 	};
 }
 
-// Render an Argo CD Application document for an accepted receipt. Pure data —
-// submission to a real Argo control plane happens behind DeliveryPlane, so
-// tests and dry runs can inspect exactly what would be applied.
-export function renderArgoApplication(
-	receipt: ResolutionReceipt,
-	policy: DeliveryPolicy,
-): JsonObject {
+// public-contract: typed delivery-plane failures with remediation.
+export const DELIVERY_FAILURES = Object.freeze({
+	"delivery-plane-unwired": {
+		remediation:
+			"This policy routes through an agent or a GitOps publisher, which only @hobo/cd can drive. Compose the broker with createReconcilerDeliveryPlane({ requestPromotion }), or set delivery.reconcilerMode to conductor for the in-process executor.",
+	},
+	"delivery-refused": {
+		remediation:
+			"CD refused the promotion; the reasons name the gate, window, lineage or policy that refused it. Resolve those and deliver again; the request is idempotent per receipt.",
+	},
+	"delivery-transport-failed": {
+		remediation:
+			"The CD control plane could not be reached. Check the CD service health and retry; nothing was applied.",
+	},
+} as const);
+
+export type DeliveryFailureCode = keyof typeof DELIVERY_FAILURES;
+
+// Live delivery fails closed: a refusal or transport error surfaces as a
+// thrown DeliverySubmissionError, never a silently dropped rollout.
+export class DeliverySubmissionError extends Error {
+	readonly code: DeliveryFailureCode;
+	readonly remediation: string;
+
+	constructor(
+		code: DeliveryFailureCode,
+		message: string,
+		remediation?: string,
+	) {
+		super(message);
+		this.name = "DeliverySubmissionError";
+		this.code = code;
+		this.remediation = remediation ?? DELIVERY_FAILURES[code].remediation;
+	}
+}
+
+/**
+ * The in-process plane used when no CD is composed. It only runs the
+ * in-process conductor; an agent or publisher policy fails closed, because
+ * only @hobo/cd can drive those (no silent downgrade).
+ */
+export function createDeliveryPlane(): DeliveryPlane {
 	return {
-		apiVersion: "argoproj.io/v1alpha1",
-		kind: "Application",
-		metadata: {
-			name: `hobo-${receipt.requestId}`,
-			labels: {
-				"hobo.dev/broker": receipt.brokerId,
-				"hobo.dev/policy-hash": receipt.policyHash,
-			},
-		},
-		spec: {
-			project: "hobo",
-			source: {
-				repoURL: policy.gitopsRepo ?? "",
-				path: `receipts/${receipt.requestId}`,
-			},
-			destination: {
-				namespace: policy.destinationNamespace ?? "hobo",
-			},
-			syncPolicy:
-				policy.syncMode === "auto"
-					? { automated: { prune: policy.prune } }
-					: {},
+		submit(receipt, policy) {
+			if (policy.reconcilerMode !== "conductor") {
+				throw new DeliverySubmissionError(
+					"delivery-plane-unwired",
+					`delivery-plane-unwired: reconcilerMode ${policy.reconcilerMode} needs the CD delivery plane`,
+				);
+			}
+			const document = cloneAsJson(receipt);
+			return {
+				engine: "in-proc",
+				reconcilerMode: "conductor",
+				target: receipt.brokerId,
+				document: { receipt: document },
+			};
 		},
 	};
 }
 
-export function createDeliveryPlane(): DeliveryPlane {
+/** What the broker asks CD to do with one accepted receipt. */
+export type DeliveryPromotionRequest = Readonly<{
+	receipt: ResolutionReceipt;
+	delivery: DeliveryPolicy;
+}>;
+
+export type DeliveryPromotionReason = Readonly<{
+	code: string;
+	message: string;
+	remediation?: string;
+}>;
+
+/** CD's answer: the promotion that carries the receipt, or a refusal. */
+export type DeliveryPromotionResult =
+	| Readonly<{ ok: true; promotionId: string; target: string }>
+	| Readonly<{ ok: false; reasons: readonly DeliveryPromotionReason[] }>;
+
+export interface ReconcilerDeliveryPlaneOptions {
+	/**
+	 * Request a promotion from @hobo/cd (composed by the host). CD records the
+	 * Freight and promotes it; a reconciler converges the target by pull, or
+	 * the named cd-gitops publisher commits it and observes the engine.
+	 */
+	requestPromotion: (
+		request: DeliveryPromotionRequest,
+	) => Promise<DeliveryPromotionResult>;
+}
+
+/**
+ * The broker delivers through CD (plan 0024, D14). Every reconciler mode —
+ * in-process conductor, pull agent, or GitOps publisher — goes through one
+ * promotion request; the broker records the returned ticket and nothing else.
+ */
+export function createReconcilerDeliveryPlane(
+	options: ReconcilerDeliveryPlaneOptions,
+): DeliveryPlane {
 	return {
-		submit(receipt, policy) {
-			if (policy.engine === "argo") {
-				return {
-					engine: "argo",
-					target: policy.gitopsRepo ?? "",
-					document: renderArgoApplication(receipt, policy),
-				};
+		async submit(receipt, policy) {
+			let result: DeliveryPromotionResult;
+			try {
+				result = await options.requestPromotion({ receipt, delivery: policy });
+			} catch (error) {
+				throw new DeliverySubmissionError(
+					"delivery-transport-failed",
+					`delivery-transport-failed: CD promotion request failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
 			}
+			if (!result.ok) {
+				const first = result.reasons[0];
+				throw new DeliverySubmissionError(
+					"delivery-refused",
+					`delivery-refused: ${result.reasons.map((r) => `${r.code}: ${r.message}`).join("; ") || "no reason given"}`,
+					first?.remediation,
+				);
+			}
+			const publisher =
+				policy.reconcilerMode === "publisher"
+					? policy.publisher?.target
+					: undefined;
 			return {
-				engine: "in-proc",
-				target: receipt.brokerId,
-				// SAFETY: assertion required at this I/O or test boundary.
-				document: { receipt: cloneAsJson(receipt) },
+				engine: policy.engine,
+				reconcilerMode: policy.reconcilerMode,
+				...(publisher !== undefined ? { publisher } : undefined),
+				promotionId: result.promotionId,
+				target: result.target,
+				document: {
+					promotionId: result.promotionId,
+					requestId: receipt.requestId,
+					stationId: receipt.stationId,
+					railHash: receipt.railHash,
+					reconcilerMode: policy.reconcilerMode,
+					...(publisher !== undefined ? { publisher } : undefined),
+				},
 			};
 		},
 	};
@@ -233,75 +327,6 @@ export type FetchLike = (
 		body: string;
 	},
 ) => Promise<{ status: number; json(): Promise<JsonValue> }>;
-
-export interface ArgoCdDeliveryPlaneOptions {
-	endpoint: string;
-	fetchFn: FetchLike;
-	// Resolves the delivery credential OUT of the token broker; the plane
-	// never holds a raw secret itself.
-	tokenProvider?: () => Promise<string> | string;
-}
-
-// Live Argo CD submission: POST the rendered Application to the Argo CD
-// applications API. Fail-closed — a non-2xx or transport error surfaces as a
-// thrown DeliverySubmissionError, never a silently-dropped rollout.
-export class DeliverySubmissionError extends Error {
-	readonly code: string;
-
-	constructor(code: string, message: string) {
-		super(message);
-		this.name = "DeliverySubmissionError";
-		this.code = code;
-	}
-}
-
-export function createArgoCdDeliveryPlane(
-	options: ArgoCdDeliveryPlaneOptions,
-): DeliveryPlane {
-	return {
-		async submit(receipt, policy) {
-			const document = renderArgoApplication(receipt, policy);
-			const token = options.tokenProvider
-				? await options.tokenProvider()
-				: undefined;
-			let response: { status: number; json(): Promise<JsonValue> };
-			try {
-				response = await options.fetchFn(
-					`${options.endpoint.replace(/\/$/u, "")}/api/v1/applications`,
-					{
-						method: "POST",
-						headers: {
-							"content-type": "application/json",
-							...(token !== undefined
-								? { authorization: `Bearer ${token}` }
-								: undefined),
-						},
-						body: JSON.stringify(document),
-					},
-				);
-			} catch (error) {
-				throw new DeliverySubmissionError(
-					"delivery-transport-failed",
-					`Argo CD submission failed in transport: ${String(error)}`,
-				);
-			}
-			if (response.status < 200 || response.status >= 300) {
-				throw new DeliverySubmissionError(
-					"delivery-rejected",
-					`Argo CD rejected the Application (HTTP ${response.status})`,
-				);
-			}
-			// SAFETY: assertion required at this I/O or test boundary.
-			const body = (await response.json()) as JsonObject;
-			return {
-				engine: "argo",
-				target: options.endpoint,
-				document,
-				response: body,
-			};
-		},
-	};
-}
 
 // Adapt a parsed BrokerRequest into the OPA-shaped policy decision request the
 // gate plane evaluates: the most specific topology id becomes the resource.

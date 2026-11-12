@@ -1,0 +1,72 @@
+{
+	"consumer": {
+		"name": "HoboBrokerDeliveryPlaneConsumer"
+	},
+	"provider": {
+		"name": "HoboCdPromotionBoundary"
+	},
+	"interactions": [
+		{
+			"description": "A legacy argo policy delivers an accepted receipt through the argo-cd publisher",
+			"request": {
+				"receipt": {
+					"schemaVersion": "hobo.broker/v1",
+					"requestId": "req-checkout-1",
+					"brokerId": "broker:yard-1",
+					"stationId": "station:prod",
+					"railHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+				},
+				"delivery": {
+					"reconcilerMode": "publisher",
+					"publisher": {
+						"target": "argo-cd",
+						"repository": "https://git.example/hobo-receipts"
+					},
+					"syncMode": "auto",
+					"prune": true
+				}
+			},
+			"response": {
+				"ok": true,
+				"promotionId": "promo-req-checkout-1",
+				"target": "camp:prod"
+			},
+			"expectedTicket": {
+				"engine": "publisher:argo-cd",
+				"reconcilerMode": "publisher",
+				"publisher": "argo-cd",
+				"promotionId": "promo-req-checkout-1",
+				"target": "camp:prod"
+			}
+		},
+		{
+			"description": "CD refuses the promotion and the broker fails closed with delivery-refused",
+			"request": {
+				"receipt": {
+					"schemaVersion": "hobo.broker/v1",
+					"requestId": "req-checkout-2",
+					"brokerId": "broker:yard-1"
+				},
+				"delivery": {
+					"reconcilerMode": "agent"
+				}
+			},
+			"response": {
+				"ok": false,
+				"reasons": [
+					{
+						"code": "window-closed",
+						"message": "change window prod-freeze is closed",
+						"remediation": "Wait for the window to open or request a recorded override."
+					}
+				]
+			},
+			"expectedErrorCode": "delivery-refused"
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}
