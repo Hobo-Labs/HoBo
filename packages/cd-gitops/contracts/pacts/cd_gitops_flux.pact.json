@@ -1,0 +1,107 @@
+{
+	"consumer": {
+		"name": "HoboCdGitopsPublisher"
+	},
+	"provider": {
+		"name": "FluxKustomizeControllerViaKubernetesApi"
+	},
+	"interactions": [
+		{
+			"description": "the Kustomization applied the published revision and is Ready",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/hobo-prod",
+				"headers": {
+					"authorization": "Bearer kube-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+					"kind": "Kustomization",
+					"metadata": {
+						"name": "hobo-prod",
+						"generation": 3
+					},
+					"status": {
+						"observedGeneration": 3,
+						"lastAppliedRevision": "main@sha1:9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5",
+						"lastAttemptedRevision": "main@sha1:9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5",
+						"conditions": [
+							{
+								"type": "Ready",
+								"status": "True",
+								"reason": "ReconciliationSucceeded",
+								"message": "Applied revision: main@sha1:9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5"
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "the Kustomization has not reconciled the new generation",
+			"providerState": "converging",
+			"request": {
+				"method": "GET",
+				"path": "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/hobo-prod"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"metadata": {
+						"generation": 4
+					},
+					"status": {
+						"observedGeneration": 3,
+						"lastAppliedRevision": "main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+						"conditions": [
+							{
+								"type": "Ready",
+								"status": "Unknown",
+								"reason": "Progressing",
+								"message": "Reconciliation in progress"
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "the published revision failed its health checks",
+			"providerState": "blocked",
+			"request": {
+				"method": "GET",
+				"path": "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/hobo-prod"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"metadata": {
+						"generation": 3
+					},
+					"status": {
+						"observedGeneration": 3,
+						"lastAppliedRevision": "main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+						"lastAttemptedRevision": "main@sha1:9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5",
+						"conditions": [
+							{
+								"type": "Ready",
+								"status": "False",
+								"reason": "HealthCheckFailed",
+								"message": "timeout waiting for: [Deployment/hobo-system/web status: 'InProgress']"
+							}
+						]
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}
