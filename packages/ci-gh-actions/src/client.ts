@@ -17,11 +17,19 @@ import {
 	RepositorySetupRequestSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
+import { FleetVerdictSchema } from "./_generated/fleet_verdict_pb.js";
 import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
+import {
+	FLEET_VERDICTS_PATH,
+	type FleetVerdictReason,
+	fleetVerdictReportJson,
+	parseFleetVerdictPath,
+	parseFleetVerdictReport,
+} from "./fleet-verdict.js";
 
 export {
 	type MeshNodeReport,
@@ -50,6 +58,12 @@ export class CiRelayClientError extends Error {
 }
 function invalid(message: string): never {
 	throw new CiRelayClientError(0, message);
+}
+/** `verdicts/<owner>/<name>`, as the repository was given, once it is a repository. */
+function verdictPath(repository: string): string {
+	if (!parseFleetVerdictPath(`${FLEET_VERDICTS_PATH}${repository}`))
+		invalid("invalid repository");
+	return `verdicts/${repository}`;
 }
 function uuid(id: string): void {
 	if (
@@ -146,9 +160,9 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
-		// The account's own routes, or the relay's (its mesh), which no
-		// account owns.
-		root: "accounts/self" | "mesh" = "accounts/self",
+		// The account's own routes, or the relay's (its mesh, its fleet
+		// verdicts), which no account owns.
+		root: "accounts/self" | "mesh" | "fleet" = "accounts/self",
 		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
 	): Promise<ProtobufMessage<Desc>> {
@@ -368,6 +382,48 @@ export function createCiRelayClient(
 				"v1",
 				"mesh",
 				// A newer relay may add fields; the nodes are still shown.
+				true,
+			);
+		},
+		/**
+		 * The fleet verdict a relay keeps for one repository (ADR-0180): the
+		 * labels new work should stay off right now. Nothing blocked is the
+		 * answer when it keeps none.
+		 */
+		getFleetVerdict(repository: string) {
+			return request(
+				verdictPath(repository),
+				"GET",
+				FleetVerdictSchema,
+				undefined,
+				undefined,
+				"v1",
+				"fleet",
+				true,
+			);
+		},
+		/**
+		 * Report one repository's fleet verdict: the labels to keep new work
+		 * off, each with its reason, standing for `ttlSeconds` unless repeated.
+		 * An empty map clears it. Needs the `operations:write` scope and an
+		 * account the repository is connected under.
+		 */
+		putFleetVerdict(
+			repository: string,
+			blocked: ReadonlyMap<string, FleetVerdictReason>,
+			ttlSeconds: number,
+		) {
+			const body = fleetVerdictReportJson(blocked, ttlSeconds);
+			if (!parseFleetVerdictReport(body))
+				invalid("invalid fleet verdict report");
+			return request(
+				verdictPath(repository),
+				"PUT",
+				FleetVerdictSchema,
+				body,
+				undefined,
+				"v1",
+				"fleet",
 				true,
 			);
 		},
