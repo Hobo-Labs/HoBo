@@ -95,9 +95,13 @@ export const KUBE_FLEET_FAILURES = Object.freeze({
 		remediation:
 			"OCM status feedback reads `.status` fields only. Posture packs should observe `status.*` attributes for OCM-backed Camps; this attribute is reported as absent (posture: unknown).",
 	},
+	"ocm-feedback-missing": {
+		remediation:
+			"The hub fed back no WellKnownStatus values for a workload kind, so readiness is unknown and HoBo does not assume it. Check that the klusterlet's status feedback is enabled (the ManifestWork's WellKnownStatus rule) and that the workload has reported status; the next observation retries.",
+	},
 	"kube-workload-not-ready": {
 		remediation:
-			"The workload reports fewer ready replicas than desired. Wait for the next observation; HoBo verification decides at the deadline.",
+			"The workload reports fewer ready replicas than desired (an omitted ready count is zero), or a Job has not succeeded / a Pod is not Ready. Wait for the next observation; HoBo verification decides at the deadline.",
 	},
 	"karmada-template-conflict": {
 		remediation:

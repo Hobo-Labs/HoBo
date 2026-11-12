@@ -68,7 +68,7 @@ through the JSON guards in `src/json.ts`.
   something nobody declared.
 - **Secrets never travel** (`kube-secret-refused`, I9).
 - **Make before break (OCM).** A new Set is a new ManifestWork; the previous
-  work is deleted only after the new one is observed Applied and Available.
+  work is deleted only after the new one is observed Applied and Available and every workload's WellKnownStatus feedback says ready (fail closed: an omitted ready count is zero, no feedback is `ocm-feedback-missing`).
   Shared ownership keeps resources both declare; the old work's
   `deleteOption` is rewritten first so removed data follows the
   `DepartureAction` and the reconciler's `keep` directive.
@@ -108,7 +108,7 @@ through the JSON guards in `src/json.ts`.
 | `BLOCKED` with `stale-fence` | `stale-fence` | This process lost the Camp lease. Stop it; the current holder owns the Camp. |
 | `BLOCKED` with `kube-cluster-unmapped` | `kube-cluster-unmapped` | Add a `CampClusterRecord` for the Camp to the realizer configuration. |
 | `BLOCKED` with `kube-object-unrenderable` / `kube-kind-unknown` / `kube-name-invalid` / `kube-secret-refused` | as named | Fix the declaration: give the resource a manifest or a known product with a spec; declare `resource` and `namespaced` for custom kinds; use DNS-1123 names; reference secrets instead of shipping them. |
-| OCM Camp stays `CONVERGING` | `ocm-work-not-applied` / `ocm-work-not-available` / `kube-workload-not-ready` | Check the ManagedCluster is joined and its work agent runs (`kubectl get manifestwork -n <cluster>`); HoBo verification decides at the deadline. |
+| OCM Camp stays `CONVERGING` | `ocm-work-not-applied` / `ocm-work-not-available` / `ocm-feedback-missing` / `kube-workload-not-ready` | Check the ManagedCluster is joined and its work agent runs (`kubectl get manifestwork -n <cluster>`); HoBo verification decides at the deadline. |
 | OCM Camp `BLOCKED` | `ocm-work-apply-failed` | Read the manifest condition message in the reason; fix the declaration and promote again, or roll back through HoBo. |
 | OCM Camp `DRIFTED` | `ocm-work-missing` / `ocm-work-modified` | Someone deleted or edited the ManifestWork on the hub. The reconciler re-applies per the drift policy. Change the declaration, not the hub. |
 | OCM Camp `CONVERGING` after a promotion | `ocm-superseded-work-pending` | The previous work is being removed; resources only it declared follow the `DepartureAction`. Wait one pass. |

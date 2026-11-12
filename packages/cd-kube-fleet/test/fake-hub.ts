@@ -282,6 +282,8 @@ export class FakeOcmHub extends FakeHub {
 	/** Resources orphaned by a deleted work (cluster/identity). */
 	readonly orphaned: string[] = [];
 	readyReplicas: number | undefined;
+	/** Simulate a hub that returns no WellKnownStatus values (feedback off). */
+	wellKnownOff = false;
 
 	works(cluster?: string): JsonObject[] {
 		return this.all(WORK, "manifestworks").filter(
@@ -295,19 +297,24 @@ export class FakeOcmHub extends FakeHub {
 	): JsonObject[] {
 		const values: JsonObject[] = [];
 		for (const rule of objectsOf(arrayAt(config, "feedbackRules"))) {
-			if (rule.type === "WellKnownStatus" && manifest.kind === "Deployment") {
+			if (
+				rule.type === "WellKnownStatus" &&
+				manifest.kind === "Deployment" &&
+				!this.wellKnownOff
+			) {
 				const replicas = numberAt(objectAt(manifest, "spec"), "replicas") ?? 1;
 				values.push({
 					name: "Replicas",
 					fieldValue: { type: "Integer", integer: replicas },
 				});
-				values.push({
-					name: "ReadyReplicas",
-					fieldValue: {
-						type: "Integer",
-						integer: this.readyReplicas ?? replicas,
-					},
-				});
+				// Kubernetes omits readyReplicas when it is 0 (omitempty) and OCM
+				// leaves out paths it cannot find, so zero ready is no value at all.
+				const ready = this.readyReplicas ?? replicas;
+				if (ready > 0)
+					values.push({
+						name: "ReadyReplicas",
+						fieldValue: { type: "Integer", integer: ready },
+					});
 			}
 			if (rule.type === "JSONPaths") {
 				for (const jp of objectsOf(arrayAt(rule, "jsonPaths"))) {

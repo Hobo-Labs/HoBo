@@ -21,6 +21,7 @@ import {
 	type KubeObject,
 } from "../kube/objects.js";
 
+// public-contract: the OCM work API path the hub serves and PACT pins.
 export const OCM_WORK_API = "/apis/work.open-cluster-management.io/v1" as const;
 
 /** Collection of ManifestWorks in one cluster namespace. */
@@ -41,7 +42,7 @@ export function feedbackPath(field: string): string | undefined {
 }
 
 // Kinds with an OCM WellKnownStatus feedback rule.
-const WELL_KNOWN = new Set([
+export const WELL_KNOWN: ReadonlySet<string> = new Set([
 	"Deployment",
 	"Job",
 	"DaemonSet",

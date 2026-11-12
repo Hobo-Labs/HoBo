@@ -3,6 +3,7 @@ import type { JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { ocmRealizer } from "../src/index.js";
 import { isJsonObject, parseJsonText, stringAt } from "../src/json.js";
+import { workloadReady } from "../src/ocm/realizer.js";
 import { FakeOcmHub } from "./fake-hub.js";
 import {
 	annotationsOf,
@@ -255,6 +256,64 @@ describe("ocmRealizer", () => {
 			"kube-workload-not-ready",
 		]);
 		expect(record.resources[0]?.healthy).toBe(false);
+	});
+
+	it("treats omitted readyReplicas as zero ready, never CONVERGED", async () => {
+		const { hub, realizer } = setup();
+		hub.readyReplicas = 0;
+		const record = await convergeTwice(hub, realizer, "camp-a", [
+			deployment("web", "img@sha256:aaaa", 3),
+		]);
+		const [work] = hub.works("cluster-a");
+		expect(JSON.stringify(work)).not.toContain("ReadyReplicas");
+		expect(record.status).toBe(ReconcileStatus.CONVERGING);
+		expect(record.resources[0]?.healthy).toBe(false);
+	});
+
+	it("never reports a workload with no status feedback as CONVERGED", async () => {
+		const { hub, realizer } = setup();
+		hub.wellKnownOff = true;
+		const record = await convergeTwice(hub, realizer, "camp-a", [
+			deployment("web", "img@sha256:aaaa"),
+		]);
+		expect(record.status).toBe(ReconcileStatus.CONVERGING);
+		expect(record.reasons.map((r) => r.code)).toEqual(["ocm-feedback-missing"]);
+		expect(record.resources[0]?.healthy).toBe(false);
+	});
+
+	it("uses the same physical id for a missing work as for an observed one", async () => {
+		const { hub, realizer } = setup();
+		const resources = [deployment("web", "img@sha256:aaaa")];
+		const observed = await convergeTwice(hub, realizer, "camp-a", resources);
+		hub.objects.clear();
+		const drift = await realizer.observe(
+			realizeInput("camp-a", resources),
+			ctx,
+		);
+		expect(drift.resources[0]?.physicalId).toBe(
+			observed.resources[0]?.physicalId,
+		);
+	});
+
+	it("reads Job and Pod well-known feedback; missing values mean not ready", () => {
+		expect(workloadReady("Job", { JobSucceeded: "true" })).toBe(true);
+		expect(workloadReady("Job", { JobComplete: "true" })).toBe(true);
+		expect(workloadReady("Job", { JobComplete: "false" })).toBe(false);
+		expect(workloadReady("Job", {})).toBe(false);
+		expect(
+			workloadReady("Pod", { PodReady: "true", PodPhase: "Running" }),
+		).toBe(true);
+		expect(workloadReady("Pod", { PodPhase: "Running" })).toBe(false);
+		expect(workloadReady("Deployment", { Replicas: "3" })).toBe(false);
+		expect(workloadReady("Deployment", {})).toBe(false);
+		expect(
+			workloadReady("DaemonSet", {
+				DesiredNumberScheduled: "2",
+				NumberReady: "2",
+			}),
+		).toBe(true);
+		expect(workloadReady("StatefulSet", { Replicas: "0" })).toBe(true);
+		expect(workloadReady("ConfigMap", {})).toBe(true);
 	});
 
 	it("detects an out-of-band edit of the work as drift and repairs it on converge", async () => {

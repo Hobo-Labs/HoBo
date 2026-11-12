@@ -27,6 +27,7 @@ import {
 	arrayAt,
 	isJsonObject,
 	isJsonString,
+	numberAt,
 	objectAt,
 	objectsOf,
 	type StringMap,
@@ -56,6 +57,7 @@ import {
 	manifestsOf,
 	parseWorkStatus,
 	renderManifestWork,
+	WELL_KNOWN,
 	type WorkStatus,
 	workName,
 	worksPath,
@@ -119,11 +121,75 @@ function withIndex(
 	};
 }
 
-function readyOf(feedback: Readonly<Record<string, string>>): boolean {
-	const ready = feedback.ReadyReplicas ?? feedback.NumberReady;
-	const want = feedback.Replicas ?? feedback.DesiredNumberScheduled;
-	if (ready === undefined || want === undefined) return true;
-	return Number(ready) >= Number(want);
+// WellKnownStatus value names OCM feeds back per kind.
+const WELL_KNOWN_FIELDS = new Map<string, readonly string[]>([
+	["Deployment", ["ReadyReplicas", "Replicas", "AvailableReplicas"]],
+	["StatefulSet", ["ReadyReplicas", "Replicas", "AvailableReplicas"]],
+	[
+		"DaemonSet",
+		[
+			"NumberReady",
+			"DesiredNumberScheduled",
+			"NumberAvailable",
+			"CurrentNumberScheduled",
+			"NumberMisscheduled",
+			"UpdatedNumberScheduled",
+		],
+	],
+	["Job", ["JobComplete", "JobSucceeded"]],
+	["Pod", ["PodPhase", "PodReady"]],
+]);
+
+type WorkloadState = "ready" | "not-ready" | "feedback-missing";
+
+/**
+ * Fail-closed readiness from OCM WellKnownStatus feedback. Kubernetes omits
+ * zero counts (omitempty) and OCM drops paths it cannot find, so a missing
+ * ready count is zero and a workload with no well-known values at all is
+ * unknown, never healthy. `desiredReplicas` is the declared spec.replicas,
+ * which lets a workload scaled to zero (no counts fed back) pass.
+ */
+export function workloadState(
+	kind: string,
+	feedback: Readonly<Record<string, string>>,
+	desiredReplicas?: number,
+): WorkloadState {
+	if (!WELL_KNOWN.has(kind)) return "ready";
+	const names = WELL_KNOWN_FIELDS.get(kind) ?? [];
+	const scaledToZero = desiredReplicas === 0;
+	if (!names.some((n) => feedback[n] !== undefined))
+		return scaledToZero ? "ready" : "feedback-missing";
+	const ok = (value: boolean): WorkloadState => (value ? "ready" : "not-ready");
+	switch (kind) {
+		case "Job":
+			return ok(
+				feedback.JobSucceeded === "true" || feedback.JobComplete === "true",
+			);
+		case "Pod":
+			return ok(feedback.PodReady === "true");
+		case "DaemonSet": {
+			const want = feedback.DesiredNumberScheduled;
+			if (want === undefined) return "not-ready";
+			return ok(Number(feedback.NumberReady ?? "0") >= Number(want));
+		}
+		default: {
+			const want = feedback.Replicas ?? (scaledToZero ? "0" : undefined);
+			if (want === undefined) return "not-ready";
+			return ok(Number(feedback.ReadyReplicas ?? "0") >= Number(want));
+		}
+	}
+}
+
+export function workloadReady(
+	kind: string,
+	feedback: Readonly<Record<string, string>>,
+	desiredReplicas?: number,
+): boolean {
+	return workloadState(kind, feedback, desiredReplicas) === "ready";
+}
+
+function desiredReplicasOf(o: KubeObject): number | undefined {
+	return numberAt(objectAt(o.body, "spec"), "replicas");
 }
 
 function attributesFor(
@@ -155,6 +221,10 @@ function unobservable(
 		);
 }
 
+function physicalIdOf(cluster: string, o: KubeObject): string {
+	return `ocm:${cluster}/${identityOf({ group: o.info.group, kind: o.info.kind, namespace: o.namespace, name: o.name })}`;
+}
+
 /** Evaluate an observed work against the desired objects. Pure. */
 export function evaluateWork(
 	input: Readonly<{
@@ -170,8 +240,7 @@ export function evaluateWork(
 	const { status, objects, cluster } = input;
 	const reasons: ReasonRecord[] = [...unobservable(input.fields, input.campId)];
 	const byIdentity = new Map(status.manifests.map((m) => [m.identity, m]));
-	const physical = (o: KubeObject): string =>
-		`ocm:${cluster}/${identityOf({ group: o.info.group, kind: o.info.kind, namespace: o.namespace, name: o.name })}`;
+	const physical = (o: KubeObject): string => physicalIdOf(cluster, o);
 	if (status.manifestsDigest !== input.desiredManifestsDigest) {
 		return {
 			status: ReconcileStatus.DRIFTED,
@@ -209,14 +278,20 @@ export function evaluateWork(
 		const applied =
 			manifest !== undefined &&
 			condition(manifest.conditions, "Applied")?.status === "True";
+		const workload = workloadState(
+			o.info.kind,
+			manifest?.feedback ?? {},
+			desiredReplicasOf(o),
+		);
 		return {
 			object: o,
 			manifest,
+			workload,
 			observation: resourceObservation({
 				object: o,
 				physicalId: physical(o),
 				outputsHash: manifest === undefined ? "" : digestOf(manifest.feedback),
-				healthy: applied && available && readyOf(manifest?.feedback ?? {}),
+				healthy: applied && available && workload === "ready",
 				attributes: attributesFor(manifest, input.fields),
 			}),
 		};
@@ -279,6 +354,23 @@ export function evaluateWork(
 				reason(
 					"ocm-work-not-available",
 					`ManifestWork ${status.name} is not Available`,
+					input.campId,
+				),
+			],
+		};
+	}
+	const blind = resources
+		.filter((r) => r.workload === "feedback-missing")
+		.map((r) => r.object.resource);
+	if (blind.length > 0) {
+		return {
+			status: ReconcileStatus.CONVERGING,
+			resources: observed,
+			reasons: [
+				...reasons,
+				reason(
+					"ocm-feedback-missing",
+					`no WellKnownStatus feedback for: ${blind.join(", ")}`,
 					input.campId,
 				),
 			],
@@ -568,7 +660,7 @@ export function ocmRealizer(deps: OcmRealizerDeps): Realizer {
 					objects.map((o) =>
 						resourceObservation({
 							object: o,
-							physicalId: `ocm:${cluster}/${o.namespace}/${o.name}`,
+							physicalId: physicalIdOf(cluster, o),
 							outputsHash: "",
 							healthy: false,
 							driftKind: "deleted",

@@ -248,4 +248,29 @@ describe("karmadaRealizer", () => {
 		expect(record.status).toBe(ReconcileStatus.CONVERGING);
 		expect(record.reasons[0]?.code).toBe("karmada-binding-pending");
 	});
+	it("treats a binding that records no template revision as not current", async () => {
+		const { hub, realizer } = setup();
+		const resources = [deployment("web", "img@sha256:aaaa")];
+		await convergeTwice(hub, realizer, "camp-a", resources);
+		const [binding] = hub.bindings();
+		if (binding === undefined) throw new Error("no binding");
+		const spec = specOf(binding);
+		const blanked: JsonObject = {
+			...binding,
+			spec: {
+				...spec,
+				resource: { ...objectAt(spec, "resource"), resourceVersion: "" },
+			},
+		};
+		hub.objects.set(
+			`work.karmada.io|resourcebindings|shop|${nameOf(binding)}`,
+			blanked,
+		);
+		const record = await realizer.observe(
+			realizeInput("camp-a", resources),
+			ctx,
+		);
+		expect(record.status).toBe(ReconcileStatus.CONVERGING);
+		expect(record.reasons[0]?.code).toBe("karmada-binding-pending");
+	});
 });

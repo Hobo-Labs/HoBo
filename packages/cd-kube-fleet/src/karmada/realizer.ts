@@ -617,8 +617,9 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 				continue;
 			}
 			const memberStatus = binding.members.find((m) => m.cluster === member);
+			// Fail closed: a binding that records no template revision is not current.
 			const current =
-				binding.resourceVersion === "" ||
+				binding.resourceVersion !== "" &&
 				binding.resourceVersion === templateVersion;
 			const healthy =
 				memberStatus?.applied === true && memberStatus.health === "Healthy";
