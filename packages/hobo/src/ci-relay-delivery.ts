@@ -45,9 +45,9 @@ import {
 import {
 	ArtifactKind,
 	type CampId,
+	CD_STREAMS,
 	type CdContext,
 	type CdFactories,
-	CD_STREAMS,
 	type FreightId,
 	FreightManifestRecordSchema,
 	FreightOrigin,
@@ -61,8 +61,8 @@ import {
 	ReasonRecordSchema,
 	type ReconcileObservationRecord,
 	ReconcileObservationRecordSchema,
-	ReconcileStatus,
 	type ReconcilerId,
+	ReconcileStatus,
 	type SetRecord,
 	type TelemetrySink,
 } from "@hobo/cd";
@@ -88,11 +88,10 @@ import {
 	type HttpTransport,
 } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
-
+import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
-import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 
 // public-contract: the relay's delivery-as-code file, relative to its project.
 export const RELAY_DELIVERY_FILE = "deploy/delivery.ts";
@@ -124,17 +123,22 @@ export const RELAY_DELIVERY_REFUSAL = Object.freeze({
 
 export type RelayTargetName = "preview" | "production";
 
-/** The commit a relay Freight pins. */
+/**
+ * The commit a relay Freight pins. A pin without `sha` names a ref only; it is
+ * accepted for preview, never for production (`hobo ci deploy` refuses).
+ */
 export type RelaySourcePin = Readonly<{
 	repository: string;
 	ref: string;
-	sha: string;
+	sha?: string;
 	rootDirectory?: string;
 }>;
 
 /** A failed realization: the command result the front returns verbatim. */
 export type RelayRealizationFailure = Readonly<{
 	ok: false;
+	/** The command status (`usage`, `rejected`); absent for a failure. */
+	status?: "usage" | "rejected";
 	code: string;
 	message: string;
 	data?: Readonly<Record<string, string | number | boolean>>;
@@ -177,6 +181,12 @@ export type RelayDeliveryInput = Readonly<{
 	intervalMs?: number;
 	/** How long one conductor pass waits for a desired-state change (real time). */
 	feedWaitMs?: number;
+	/**
+	 * Default true: drive the promotion to its end (READY, verification,
+	 * qualification). False: return once the conductor has created the
+	 * deployment; the promotion stays in flight in the journal.
+	 */
+	wait?: boolean;
 	emitProgress?: (message: string) => void;
 }>;
 
@@ -240,7 +250,9 @@ function reasonsOf(
 }
 
 function describeReasons(reasons: readonly ReasonRecord[]): string {
-	return reasons.map((reason) => `${reason.code}: ${reason.message}`).join("; ");
+	return reasons
+		.map((reason) => `${reason.code}: ${reason.message}`)
+		.join("; ");
 }
 
 /**
@@ -365,14 +377,23 @@ async function pinOf(
 	};
 	const repository = text("repository");
 	const ref = text("ref");
+	if (!repository || !ref) return undefined;
 	const sha = text("sha");
-	if (!repository || !ref || !sha) return undefined;
 	const rootDirectory = text("rootDirectory");
-	return { repository, ref, sha, ...(rootDirectory ? { rootDirectory } : {}) };
+	return {
+		repository,
+		ref,
+		...(sha ? { sha } : {}),
+		...(rootDirectory ? { rootDirectory } : {}),
+	};
 }
 
 type Realized =
-	| Readonly<{ kind: "deployed"; deploymentId: string; outputs: Readonly<Record<string, string>> }>
+	| Readonly<{
+			kind: "deployed";
+			deploymentId: string;
+			outputs: Readonly<Record<string, string>>;
+	  }>
 	| Readonly<{ kind: "failed"; failure: RelayRealizationFailure }>;
 
 /**
@@ -385,8 +406,14 @@ export function relayRealizer(
 		freight: (id: FreightId) => Promise<FreightRecord | undefined>;
 		read: (digest: `sha256:${string}`) => Promise<Uint8Array | undefined>;
 		now: () => number;
+		/** False: report CONVERGING once deployed, without reading readiness. */
+		observeReadiness?: boolean;
 	}>,
-): Realizer & Readonly<{ failure(setId: string): RelayRealizationFailure | undefined }> {
+): Realizer &
+	Readonly<{
+		failure(setId: string): RelayRealizationFailure | undefined;
+		deployed(setId: string): Readonly<Record<string, string>> | undefined;
+	}> {
 	const realized = new Map<string, Realized>();
 
 	async function observeSet(
@@ -424,6 +451,19 @@ export function relayRealizer(
 					),
 				],
 			});
+		if (input.observeReadiness === false)
+			return observation({
+				...base,
+				status: ReconcileStatus.CONVERGING,
+				handover: done.outputs,
+				reasons: [
+					reason(
+						"relay-readiness-unobserved",
+						`deployment ${done.deploymentId} was created; its readiness was not read`,
+						"Run hobo ci deploy --wait to observe it and finish the promotion.",
+					),
+				],
+			});
 		const state = await input.realization.readyState(done.deploymentId);
 		const handover = { ...done.outputs, readyState: state };
 		if (state === "READY")
@@ -456,6 +496,10 @@ export function relayRealizer(
 		failure(setId) {
 			const done = realized.get(setId);
 			return done?.kind === "failed" ? done.failure : undefined;
+		},
+		deployed(setId) {
+			const done = realized.get(setId);
+			return done?.kind === "deployed" ? done.outputs : undefined;
 		},
 		async converge(at) {
 			if (!realized.has(at.desired.setId)) {
@@ -524,7 +568,9 @@ export function withStorableRolloutTypes(
 	const events = <I extends Readonly<{ type: string }>>(input: readonly I[]) =>
 		input.map((event) => ({ ...event, type: storedType(event.type) }));
 	const filter = <F extends Readonly<{ type?: string }>>(value: F): F =>
-		value.type === undefined ? value : { ...value, type: storedType(value.type) };
+		value.type === undefined
+			? value
+			: { ...value, type: storedType(value.type) };
 	const wrapped: DurableEventStore = {
 		append: (streamId, input, opts) =>
 			store.append(streamId, events(input), opts),
@@ -635,7 +681,7 @@ async function recordFreight(
 		bindle: HOBO_CI_COMPONENTS.relay.bindle,
 		repository: input.source.repository,
 		ref: input.source.ref,
-		sha: input.source.sha,
+		...(input.source.sha ? { sha: input.source.sha } : {}),
 		...(input.source.rootDirectory
 			? { rootDirectory: input.source.rootDirectory }
 			: {}),
@@ -659,7 +705,7 @@ async function recordFreight(
 				artifacts: [declaration, source],
 				source: {
 					repository: input.source.repository,
-					commit: input.source.sha,
+					commit: input.source.sha ?? "",
 					ref: input.source.ref,
 					ciRunId: runId,
 					ciSystem: runId !== "" ? "github-actions" : "",
@@ -699,7 +745,8 @@ export async function deliverRelay(
 ): Promise<RelayDeliveryOutcome> {
 	const now = input.now ?? (() => Date.now());
 	const sleep =
-		input.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
+		input.sleep ??
+		((ms: number) => new Promise((done) => setTimeout(done, ms)));
 	const emit = input.emitProgress ?? (() => {});
 	const parsed = parseCdComposeConfig({
 		env: input.env,
@@ -739,7 +786,10 @@ export async function deliverRelay(
 
 async function deliverWith(
 	input: RelayDeliveryInput,
-	config: Extract<ReturnType<typeof parseCdComposeConfig>, { ok: true }>["value"],
+	config: Extract<
+		ReturnType<typeof parseCdComposeConfig>,
+		{ ok: true }
+	>["value"],
 	store: Awaited<ReturnType<CdStoreOpener>>["store"],
 	now: () => number,
 	sleep: (ms: number) => Promise<void>,
@@ -775,6 +825,7 @@ async function deliverWith(
 						freight: (id) => scope.freight.get(id),
 						read: (digest) => scope.artifacts.get(digest),
 						now,
+						observeReadiness: input.wait !== false,
 					});
 					return realizer;
 				},
@@ -891,14 +942,16 @@ async function deliverWith(
 		reasons: reasonsOf(promotion?.reasons ?? []),
 	});
 	emit(
-		`Freight ${freight.alias} (${freight.freightId}) records ${input.source.repository}@${input.source.sha}`,
+		`Freight ${freight.alias} (${freight.freightId}) records ${input.source.repository}@${input.source.sha ?? input.source.ref}`,
 	);
 
 	// Production takes only Freight preview qualified (the pipeline's
 	// from_nodes); refuse before anything reaches Vercel.
 	if (node === "production") {
 		const available = await cd.pipelines.available({ pipeline, node });
-		const ours = available.find((entry) => entry.freightId === freight.freightId);
+		const ours = available.find(
+			(entry) => entry.freightId === freight.freightId,
+		);
 		if (!ours) {
 			const qualified = await cd.freight.qualifications(
 				// SAFETY: the ledger's own id.
@@ -912,7 +965,7 @@ async function deliverWith(
 				code: RELAY_DELIVERY_REFUSAL.notQualified,
 				message: atPreview
 					? `Freight ${freight.alias} is qualified at ${previewCampId} but not available to ${pipeline}/production (yanked, or its soak has not elapsed).`
-					: `Freight ${freight.alias} (${input.source.sha}) has not been qualified at ${previewCampId}: production takes only Freight preview verified. Run hobo ci deploy --target preview for this commit first.`,
+					: `Freight ${freight.alias} (${input.source.sha ?? input.source.ref}) has not been qualified at ${previewCampId}: production takes only Freight preview verified. Run hobo ci deploy --target preview for this commit first.`,
 				report: report(),
 			};
 		}
@@ -946,7 +999,11 @@ async function deliverWith(
 		campIds: [campId],
 		holderId: `hobo-ci-deploy:${process.pid}`,
 	});
-	const until = now() + (input.limitMs ?? DEFAULT_LIMIT_MS);
+	const limitMs = input.limitMs ?? DEFAULT_LIMIT_MS;
+	const intervalMs = input.intervalMs ?? DEFAULT_INTERVAL_MS;
+	const until = now() + limitMs;
+	// A clock that does not move still ends: at most one pass per interval of the limit.
+	let passes = Math.ceil(limitMs / Math.max(1, intervalMs)) + 1;
 	let promotion: PromotionRecord | undefined = requested.value;
 	let last: ReconcileObservationRecord | undefined;
 	let lastState: PromotionState | undefined;
@@ -971,6 +1028,15 @@ async function deliverWith(
 					realization: failure,
 					report: report(promotion, set),
 				};
+			const outputs = realizer?.deployed(set.setId);
+			if (input.wait === false && outputs) {
+				const current = await cd.promotions.get(promotionId);
+				return {
+					ok: true,
+					report: report(current ?? promotion, set),
+					handover: outputs,
+				};
+			}
 		}
 		await cd.rollouts.tick(ctx);
 		await cd.verification.tick(ctx);
@@ -1021,7 +1087,8 @@ async function deliverWith(
 				report: report(promotion, set),
 				handover,
 			};
-		if (now() >= until)
+		passes -= 1;
+		if (now() >= until || passes <= 0)
 			return {
 				ok: false,
 				code: RELAY_DELIVERY_REFUSAL.incomplete,
@@ -1029,7 +1096,7 @@ async function deliverWith(
 				report: report(promotion, set),
 				handover,
 			};
-		await sleep(input.intervalMs ?? DEFAULT_INTERVAL_MS);
+		await sleep(intervalMs);
 	}
 }
 

@@ -5,15 +5,18 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { toJson } from "@bufbuild/protobuf";
 import type { ManifestV1 } from "@hobo/bindles";
+import { FreightSourceRecordSchema, ReconcileStatus } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import type { DurableEventStore, HttpTransport } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
-import { toJson } from "@bufbuild/protobuf";
-import { FreightSourceRecordSchema } from "@hobo/cd";
 import { beforeAll, describe, expect, it } from "vitest";
-import { type DeliveryModule, loadDeliveryFile } from "../src/cd-delivery-module.js";
+import {
+	type DeliveryModule,
+	loadDeliveryFile,
+} from "../src/cd-delivery-module.js";
 import {
 	deliverRelay,
 	RELAY_DELIVERY_FILE,
@@ -22,6 +25,8 @@ import {
 	type RelaySourcePin,
 	relayCampId,
 	relayYardRegistryProvider,
+	reportedStatus,
+	withStorableRolloutTypes,
 } from "../src/ci-relay-delivery.js";
 import { loadRelayYard } from "../src/ci-relay-yard.js";
 
@@ -122,7 +127,10 @@ function realization(
 	};
 }
 
-function probes(h: Harness, status: number | "unreachable" = 200): HttpTransport {
+function probes(
+	h: Harness,
+	status: number | "unreachable" = 200,
+): HttpTransport {
 	return async (request) => {
 		h.probed.push(request.url);
 		if (status === "unreachable") throw new Error("connect ECONNREFUSED");
@@ -200,9 +208,9 @@ describe("the relay's delivery records (deploy/delivery.ts)", () => {
 		const urls = unconfigured.pipelines[0]?.nodes.flatMap(
 			(node) => node.verification?.probes.map((probe) => probe.urlRef) ?? [],
 		);
-		expect(urls?.every((url) => new URL(url).hostname.endsWith(".invalid"))).toBe(
-			true,
-		);
+		expect(
+			urls?.every((url) => new URL(url).hostname.endsWith(".invalid")),
+		).toBe(true);
 	});
 
 	it("defines the relay source exactly as hoboSelfDeliverySources builds it", () => {
@@ -229,9 +237,9 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		]);
 		const [compute] = provider.capabilities;
 		expect(compute?.satisfies({ port: "database" }).kind).toBe("none");
-		expect(compute?.satisfies({ port: "compute", features: ["gpu"] }).kind).toBe(
-			"partial",
-		);
+		expect(
+			compute?.satisfies({ port: "compute", features: ["gpu"] }).kind,
+		).toBe("partial");
 	});
 });
 
@@ -279,7 +287,11 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		const h = await harness();
 		expect((await deliver(h, "preview")).ok).toBe(true);
 		const other = await deliver(h, "production", {
-			source: { repository: "Hobo-Labs/HoBo", ref: "main", sha: "2".repeat(40) },
+			source: {
+				repository: "Hobo-Labs/HoBo",
+				ref: "main",
+				sha: "2".repeat(40),
+			},
 		});
 		expect(other.ok).toBe(false);
 		if (other.ok) return;
@@ -329,4 +341,65 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(outcome.code).toBe("HOBO_CI_DEPLOY_NOT_READY");
 		expect(outcome.handover?.readyState).toBe("ERROR");
 	}, 60_000);
+});
+
+describe("journal compatibility for the relay's CD composition", () => {
+	it("stores the rollout ledger's two-dot types under a valid family and reads them back as declared", async () => {
+		const { createMemoryNodeSqliteDriver, SqliteJournal } = await import(
+			"@hobo/storage-sqlite"
+		);
+		const journal = new SqliteJournal(createMemoryNodeSqliteDriver(), {
+			clock: { now: () => "2026-11-12T12:00:00.000Z" },
+		}) as never as DurableEventStore;
+		const actor = { kind: "user", id: "relay-test" } as const;
+		await expect(
+			journal.append(
+				"cd-rollout-x",
+				[{ type: "cd.rollout.Started", data: {} }],
+				{
+					expectedSeq: 0,
+					actor,
+					tenant: "local",
+				},
+			),
+		).rejects.toThrow(/family\.PastTenseFact/);
+		const store = withStorableRolloutTypes(journal);
+		await store.append(
+			"cd-rollout-x",
+			[{ type: "cd.rollout.Started", data: {} }],
+			{ expectedSeq: 0, actor, tenant: "local" },
+		);
+		const read: string[] = [];
+		for await (const event of store.read("cd-rollout-x")) read.push(event.type);
+		expect(read).toEqual(["cd.rollout.Started"]);
+		const all: string[] = [];
+		for await (const entry of store.readAll({
+			tenant: "local",
+			filter: { type: "cd.rollout.Started" },
+		}))
+			all.push(entry.event.streamId);
+		expect(all).toEqual(["cd-rollout-x"]);
+	});
+
+	it("reads a reconciler's reported status from its { schema, observation } envelope, highest fence first", async () => {
+		const campId = relayCampId(yard, "preview");
+		const events = [
+			{ fence: "2", status: "RECONCILE_STATUS_CONVERGED" },
+			{ fence: "1", status: "RECONCILE_STATUS_CONVERGING" },
+		].map(({ fence, status }) => ({
+			type: "deployment.StatusObserved",
+			data: {
+				schema: "hobo.cd.reconcile-status/v1",
+				observation: { campId, setId: "set_a", fenceToken: fence, status },
+			},
+		}));
+		const store = {
+			async *read() {
+				yield* events;
+			},
+		} as never;
+		const observed = await reportedStatus(store, campId);
+		expect(observed?.fenceToken).toBe("2");
+		expect(observed?.status).toBe(ReconcileStatus.CONVERGED);
+	});
 });

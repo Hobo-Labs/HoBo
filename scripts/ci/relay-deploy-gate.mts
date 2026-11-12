@@ -36,7 +36,9 @@ export const RELAY_EXTRA_INPUTS = [
 
 /**
  * Repository variables a deploy cannot run without. Values are ids and
- * coordinates, never secrets; their meaning is in CONFIG-SERVICE.md.
+ * coordinates, never secrets; their meaning is in CONFIG-SERVICE.md. The two
+ * relay origins are where HoBo CD's verification probes reach each Camp: a
+ * delivery without them could never be verified, so it does not start.
  */
 export const RELAY_DEPLOY_REQUIRED_VARIABLES = [
 	"HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID",
@@ -44,6 +46,8 @@ export const RELAY_DEPLOY_REQUIRED_VARIABLES = [
 	"HOBO_CI_RELAY_INFISICAL_IDENTITY_ID",
 	"HOBO_CI_RELAY_INFISICAL_PROJECT_ID",
 	"HOBO_CI_RELAY_VERCEL_TEAM_ID",
+	"HOBO_CI_RELAY_URL",
+	"HOBO_CI_RELAY_PREVIEW_URL",
 ] as const;
 
 export type GateDecision = Readonly<{ run: boolean; reason: string }>;

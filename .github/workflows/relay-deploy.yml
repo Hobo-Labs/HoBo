@@ -2,9 +2,13 @@ name: HoBo relay deploy
 
 # The hosted CI relay deploys from HoBo configuration on every merge to main
 # that changes it, and never by hand (ADR-0179 phase 6;
-# docs/design/hosted-relay-stateless.md). The relay's Yard
-# (packages/ci-vercel/deploy/yard.ts) places it on Vercel and names its
-# bindings; `hobo ci deploy --target production` plans from it.
+# docs/design/hosted-relay-stateless.md). HoBo delivers itself here: each
+# `hobo ci deploy` records the commit as Freight and promotes it through the
+# relay's pipeline (packages/ci-vercel/deploy/delivery.ts) with @hobo/cd. The
+# relay's Yard (packages/ci-vercel/deploy/yard.ts) places it on Vercel and
+# names its bindings. Preview runs first; production takes only the Freight
+# preview verified (probes of /healthz and /readyz, failing closed) and
+# qualified, in the same job-scoped CD journal.
 #
 # No Vercel secret lives in this repository: the job signs in to Infisical with
 # its own GitHub Actions OIDC token as the `hobo-ci-deploy` machine identity
@@ -32,7 +36,7 @@ jobs:
     name: Deploy the hosted CI relay (production)
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main'
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 50
     permissions:
       contents: read
       id-token: write
@@ -48,8 +52,10 @@ jobs:
       HOBO_CI_RELAY_INFISICAL_IDENTITY_ID: ${{ vars.HOBO_CI_RELAY_INFISICAL_IDENTITY_ID }}
       HOBO_CI_RELAY_INFISICAL_PROJECT_ID: ${{ vars.HOBO_CI_RELAY_INFISICAL_PROJECT_ID }}
       HOBO_CI_RELAY_VERCEL_TEAM_ID: ${{ vars.HOBO_CI_RELAY_VERCEL_TEAM_ID }}
-      # The relay's production origin, for the smoke check (optional).
+      # Where CD's verification probes reach the relay, per Camp: production
+      # and a preview origin that answers without Deployment Protection.
       HOBO_CI_RELAY_URL: ${{ vars.HOBO_CI_RELAY_URL }}
+      HOBO_CI_RELAY_PREVIEW_URL: ${{ vars.HOBO_CI_RELAY_PREVIEW_URL }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -91,12 +97,26 @@ jobs:
           set -euo pipefail
           pnpm --dir "$RUNNER_TEMP/vercel-cli" add vercel@65.2.0 >/dev/null
           echo "HOBO_VERCEL_CLI=$RUNNER_TEMP/vercel-cli/node_modules/.bin/vercel" >> "$GITHUB_ENV"
-      - name: Deploy the relay to production from its Yard
+      - name: Deliver the relay to preview through HoBo CD
+        id: preview
+        if: steps.gate.outputs.run == 'true'
+        timeout-minutes: 22
+        run: |
+          set -euo pipefail
+          # One CD journal for this job: production reads preview's qualification.
+          echo "HOBO_HOME=$RUNNER_TEMP/hobo-home" >> "$GITHUB_ENV"
+          HOBO_HOME="$RUNNER_TEMP/hobo-home" node packages/hobo/dist/bin/hobo.js ci deploy \
+            --cwd packages/ci-vercel \
+            --target preview \
+            --ref "$GITHUB_REF_NAME" --sha "$GITHUB_SHA" \
+            --team "$HOBO_CI_RELAY_VERCEL_TEAM_ID" \
+            --provision --wait --json > "$RUNNER_TEMP/relay-preview.json"
+      - name: Promote the relay to production through HoBo CD
         id: deploy
         if: steps.gate.outputs.run == 'true'
-        timeout-minutes: 17
+        timeout-minutes: 22
         run: |
-          set -uo pipefail
+          set -euo pipefail
           node packages/hobo/dist/bin/hobo.js ci deploy \
             --cwd packages/ci-vercel \
             --target production \
@@ -104,48 +124,20 @@ jobs:
             --team "$HOBO_CI_RELAY_VERCEL_TEAM_ID" \
             --set "INFISICAL_IDENTITY_ID=$HOBO_CI_RELAY_INFISICAL_IDENTITY_ID" \
             --set "INFISICAL_PROJECT_ID=$HOBO_CI_RELAY_INFISICAL_PROJECT_ID" \
-            --provision --wait --json > "$RUNNER_TEMP/relay-deploy.json"
-          status=$?
-          node --input-type=module -e '
-            import { appendFileSync, readFileSync } from "node:fs";
-            const result = JSON.parse(readFileSync(process.argv[1], "utf8"));
-            const outputs = result.data?.outputs ?? {};
-            appendFileSync(process.env.GITHUB_OUTPUT, `url=${outputs.url ?? ""}\n`);
-            const lines = [
-              "### Hosted CI relay deploy",
-              "",
-              `- result: ${result.code ?? ""}`,
-              `- Camp: ${outputs.camp ?? ""}`,
-              `- deployment: ${outputs.url ?? ""} (${outputs.readyState ?? ""})`,
-              `- Marketplace: ${outputs.provisioned ?? "nothing to attach"}`,
-            ];
-            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
-            console.log(result.message ?? "");
-          ' "$RUNNER_TEMP/relay-deploy.json" || true
-          exit "$status"
-      - name: Smoke-check /healthz and /readyz
-        if: steps.gate.outputs.run == 'true'
-        env:
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+            --provision --wait --json > "$RUNNER_TEMP/relay-production.json"
+      - name: Summarize the relay delivery
+        if: always() && steps.gate.outputs.run == 'true'
         run: |
-          set -uo pipefail
-          base="${HOBO_CI_RELAY_URL:-$DEPLOYMENT_URL}"
-          base="${base%/}"
-          probe() {
-            curl -sS -o "$RUNNER_TEMP/probe.json" -w '%{http_code}' --max-time 20 \
-              --retry 3 --retry-delay 5 --retry-all-errors "$base$1" || echo 000
-          }
-          health="$(probe /healthz)"
-          echo "/healthz answered $health"
-          case "$health" in
-            5??) echo "::error title=Relay smoke check::/healthz answered $health"; exit 1 ;;
-            200) ;;
-            *) echo "::warning title=Relay smoke check::/healthz answered $health (a protected deployment URL answers 401; set vars.HOBO_CI_RELAY_URL to the relay's production origin)" ;;
-          esac
-          ready="$(probe /readyz)"
-          state="$(node -e 'try { const body = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(String(body.status ?? body.state ?? "")); } catch { console.log(""); }' "$RUNNER_TEMP/probe.json")"
-          echo "/readyz answered $ready ${state}"
-          echo "- /healthz: $health; /readyz: $ready ${state}" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$ready" != "200" ]; then
-            echo "::notice title=Relay readiness::/readyz answered $ready ${state}; before the owner's config-service setup the relay reports config-unavailable"
-          fi
+          node --input-type=module -e '
+            import { appendFileSync, existsSync, readFileSync } from "node:fs";
+            const lines = ["### Hosted CI relay delivery (HoBo CD)", ""];
+            for (const file of process.argv.slice(1)) {
+              if (!existsSync(file)) continue;
+              let result = {};
+              try { result = JSON.parse(readFileSync(file, "utf8")); } catch {}
+              const outputs = result.data?.outputs ?? {};
+              const delivery = result.data?.delivery ?? {};
+              lines.push(`- ${delivery.node ?? "?"}: ${result.code ?? ""}; Freight ${delivery.alias ?? ""} ${delivery.state ?? ""} at ${delivery.campId ?? ""}; deployment ${outputs.url ?? ""} (${outputs.readyState ?? ""}); Marketplace: ${outputs.provisioned ?? "nothing to attach"}`);
+            }
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          ' "$RUNNER_TEMP/relay-preview.json" "$RUNNER_TEMP/relay-production.json"

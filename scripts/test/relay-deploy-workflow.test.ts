@@ -170,8 +170,18 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("deploys production from the Yard, attaching the cache and waiting for READY", () => {
-		const deploy = step("Deploy the relay to production from its Yard");
+	it("delivers preview, then production, through HoBo CD from the Yard, attaching the cache and waiting", () => {
+		const preview = step("Deliver the relay to preview through HoBo CD");
+		for (const part of [
+			"node packages/hobo/dist/bin/hobo.js ci deploy",
+			"--cwd packages/ci-vercel",
+			"--target preview",
+			'--sha "$GITHUB_SHA"',
+			"--provision --wait --json",
+			'HOBO_HOME="$RUNNER_TEMP/hobo-home"',
+		])
+			assert.ok(preview.includes(part), `the preview step lacks ${part}`);
+		const production = step("Promote the relay to production through HoBo CD");
 		for (const part of [
 			"node packages/hobo/dist/bin/hobo.js ci deploy",
 			"--cwd packages/ci-vercel",
@@ -181,20 +191,33 @@ describe("the relay deploy workflow", () => {
 			'--set "INFISICAL_PROJECT_ID=$HOBO_CI_RELAY_INFISICAL_PROJECT_ID"',
 			"--provision --wait --json",
 		])
-			assert.ok(deploy.includes(part), `the deploy step lacks ${part}`);
+			assert.ok(production.includes(part), `the production step lacks ${part}`);
+		// Production after preview, in the journal preview wrote.
+		assert.ok(
+			workflow.indexOf("--target preview") <
+				workflow.indexOf("--target production"),
+		);
+		assert.match(
+			preview,
+			/echo "HOBO_HOME=\$RUNNER_TEMP\/hobo-home" >> "\$GITHUB_ENV"/u,
+		);
 		// The provider and the project come from the Yard, not from here.
-		assert.doesNotMatch(deploy, /--project|--repo|vercel deploy/u);
+		for (const deploy of [preview, production])
+			assert.doesNotMatch(deploy, /--project|--repo|vercel deploy|\|\| true/u);
 		assert.match(
 			step("Install the pinned Vercel CLI for Marketplace provisioning"),
 			/add vercel@\d+\.\d+\.\d+ /u,
 		);
 	});
 
-	it("fails the smoke check on a 5xx from /healthz only, and reports /readyz", () => {
-		const smoke = step("Smoke-check /healthz and /readyz");
-		assert.match(smoke, /5\?\?\) echo "::error/u);
-		assert.match(smoke, /probe \/readyz/u);
-		assert.doesNotMatch(smoke.slice(smoke.indexOf("probe /readyz")), /exit 1/u);
+	it("verifies through CD's probes, not an ad-hoc smoke check", () => {
+		assert.doesNotMatch(workflow, /curl /u);
+		assert.doesNotMatch(workflow, /Smoke-check/u);
+		for (const name of ["HOBO_CI_RELAY_URL", "HOBO_CI_RELAY_PREVIEW_URL"])
+			assert.ok(
+				(RELAY_DEPLOY_REQUIRED_VARIABLES as readonly string[]).includes(name),
+				`${name} is not required by the gate`,
+			);
 	});
 
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {

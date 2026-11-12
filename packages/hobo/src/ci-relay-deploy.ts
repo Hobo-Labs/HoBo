@@ -1,4 +1,5 @@
-// `hobo ci deploy` — deploy the hosted CI relay with HoBo itself.
+// `hobo ci deploy` — HoBo delivering its own hosted CI relay, a thin front
+// over @hobo/cd.
 //
 // The relay is a HoBo app (`packages/ci-vercel/src/bindle.ts`), built by Vercel
 // from the git repository. This verb loads that Bindle from the project
@@ -6,20 +7,28 @@
 // (`deploy/yard.ts`, `ci-relay-yard.ts`): the Yard names the provider, the
 // project and repository, and the binding rows; the Camp the target names
 // chooses the rows its environment requires, and those rows project the
-// non-secret settings (the config service's coordinates among them). It then
-// realizes the Bindle as one git-source deployment through
-// `createVercelDeployProvider`'s git-artifact mode: the settings first, then
-// the deployment, each of the Bindle's resources applied through the provider
-// (which deploys once). Only Vercel Yards are realized here today.
+// non-secret settings (the config service's coordinates among them). Only
+// Vercel Yards are realized here today.
+//
+// A real run does not deploy by itself: it hands the relay to CD
+// (`ci-relay-delivery.ts`). The build is recorded as Freight (the Bindle, its
+// declaration and the commit it pins), promoted through the relay's pipeline
+// (`deploy/delivery.ts`: preview, then production, which takes only Freight
+// preview qualified) and the CD gate, and realized by a conductor reconciler
+// whose realizer is `createVercelDeployProvider`'s git-artifact mode: the
+// settings first, then one deployment for the whole Bindle. `--wait` drives the
+// promotion to its end: READY, then the node's probes of `/healthz` and
+// `/readyz` (failing closed on no data), then qualification. Without `--wait`
+// the command returns once the deployment exists, unverified.
 //
 // The target is chosen HERE, where the deploy is run, not in the Bindle; and
-// it is PREVIEW unless `--target production` says otherwise. The deploy
-// workflow on `main` (`.github/workflows/relay-deploy.yml`) asks for
-// production; a deploy run by hand lands in preview.
+// it is PREVIEW unless `--target production` says otherwise. Production needs
+// `--sha`: it takes exactly the commit preview verified. The deploy workflow
+// on `main` (`.github/workflows/relay-deploy.yml`) runs preview, then
+// production, in one journal.
 //
 // `--provision` first attaches the chosen Marketplace bindings (the cache)
-// with the Vercel CLI, idempotently (`ci-relay-provision.ts`). `--wait` waits
-// for the deployment to be READY before answering.
+// with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
 //
 // What it deliberately does not do: set a secret (a `--set` must name a field
 // the app's `config()` schema declares non-secret, and pass the name and value
@@ -28,10 +37,12 @@
 //
 // `--dry-run` forms the plan (`VercelGitDeploymentPlan`,
 // data-models/vercel_git_deployment.proto) with the same functions the client
-// sends with, reads no token and opens no connection.
+// sends with, names the delivery CD would run, reads no token and opens no
+// connection.
 //
-// HONEST SCOPE: exercised against a fake transport only. No live deployment has
-// been made from this repository through this verb.
+// HONEST SCOPE: exercised against fake transports and a temporary journal
+// only. No live deployment has been made from this repository through this
+// verb.
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -44,17 +55,27 @@ import {
 	assertNoBindleProviderSelection,
 	type BindleDefinition,
 } from "@hobo/bindles";
+import { HOBO_CI_COMPONENTS } from "@hobo/cd/compose";
 import {
 	BINDLE_SOURCE_CANDIDATES,
 	type CommandResult,
+	compileProjectManifest,
 	loadBindleDefinition,
 } from "@hobo/cli";
 import type { IacOutputs, IacProgram } from "@hobo/cloud";
+import type { HttpTransport } from "@hobo/core";
+import type { Yard } from "@hobo/yards";
 
 import {
 	type VercelGitDeploymentPlan,
 	VercelGitDeploymentPlanSchema,
 } from "./_generated/vercel_git_deployment_pb.js";
+import {
+	deliverRelay,
+	type RelayRealization,
+	type RelayRealizationFailure,
+	relayCampId,
+} from "./ci-relay-delivery.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -69,6 +90,7 @@ import {
 	resolveRelayPlacement,
 } from "./ci-relay-yard.js";
 import { validRepository } from "./ci-repository.js";
+import { defaultHoboHome } from "./hobo-home.js";
 import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
 import {
 	createVercelClient,
@@ -133,11 +155,16 @@ export interface CiRelayDeployInput {
 	// `--wait`'s clock; injected in tests.
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
+	// HOBO_HOME: where the CD journal and artifact store live by default.
+	readonly home?: string;
+	// The transport the verification probes use; injected in tests.
+	readonly probe?: HttpTransport;
 	readonly emitProgress: (message: string) => void;
 }
 
-// How long `--wait` waits for READY, and how often it asks.
-const WAIT_LIMIT_MS = 15 * 60_000;
+// How long a deploy drives its promotion (READY, then verification), and how
+// often it looks.
+const WAIT_LIMIT_MS = 20 * 60_000;
 const WAIT_INTERVAL_MS = 10_000;
 
 const PLAN_SCHEMA_VERSION = "hobo.vercel-git-deployment-plan/v1";
@@ -145,6 +172,15 @@ const PLAN_SCHEMA_VERSION = "hobo.vercel-git-deployment-plan/v1";
 // A canonical Vercel team id, as `selectIacProvider` requires of
 // `VERCEL_TEAM_ID`: a slug or a name would select no team, or another.
 const TEAM_ID = /^team_[A-Za-z0-9]+$/u;
+
+// Where each target's verification probes reach the relay (deploy/delivery.ts
+// reads the same names).
+export const RELAY_VERIFY_ORIGIN = Object.freeze({
+	preview: "HOBO_CI_RELAY_PREVIEW_URL",
+	production: "HOBO_CI_RELAY_URL",
+} as const);
+
+const HTTPS_ORIGIN = /^https:\/\/[^/?#\s]+\/?$/u;
 
 // A directory of the repository: relative, and never above it.
 const ROOT_DIRECTORY = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/u;
@@ -289,6 +325,24 @@ function describePlan(plan: VercelGitDeploymentPlan): string {
 	return lines.join("\n");
 }
 
+// How a real run delivers the relay through @hobo/cd, as its dry run prints it.
+function describeDelivery(
+	yard: Yard,
+	target: "preview" | "production",
+	commit: string,
+): string {
+	return [
+		"Delivered by @hobo/cd (deploy/delivery.ts):",
+		`  records ${commit} as Freight of ${HOBO_CI_COMPONENTS.relay.bindle}`,
+		`  promotes it through pipeline ${HOBO_CI_COMPONENTS.relay.pipeline}, node ${target}, to Camp ${relayCampId(yard, target)}, through the CD gate`,
+		...(target === "production"
+			? ["  only if preview qualified the same Freight (the same commit)"]
+			: []),
+		"  a conductor reconciler realizes it as the Vercel git deployment above, converged once Vercel reports READY",
+		`  --wait verifies it with probes of /healthz and /readyz at ${RELAY_VERIFY_ORIGIN[target]} (fail closed on no data) and qualifies it`,
+	].join("\n");
+}
+
 // The provider and driver come from the Yard: it is the one place a provider is
 // named (ADR-0157).
 function programFor(
@@ -402,6 +456,7 @@ export async function runCiRelayDeploy(
 		);
 
 	let placement: RelayPlacement;
+	let relayYard: Yard;
 	try {
 		const yard = await loadRelayYard(input.cwd);
 		if (yard === undefined)
@@ -414,6 +469,7 @@ export async function runCiRelayDeploy(
 				`Yard ${yard.name} places ${definition.name} on ${yard.providerId}; hobo ci deploy realizes Vercel Yards only.`,
 			);
 		placement = resolveRelayPlacement(yard, target);
+		relayYard = yard;
 	} catch (error) {
 		if (error instanceof RelayPlacementRefusal)
 			return refused(error.code, error.message);
@@ -557,9 +613,31 @@ export async function runCiRelayDeploy(
 		return {
 			status: "dry-run",
 			code: "HOBO_CI_DEPLOY_PLANNED",
-			message: `Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.\n${describePlan(plan)}`,
-			data: { command: "ci deploy", dryRun: true, plan: planJson },
+			message: `Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.\n${describePlan(plan)}\n${describeDelivery(relayYard, target, `${org}/${repo}@${sha ?? ref}`)}`,
+			data: {
+				command: "ci deploy",
+				dryRun: true,
+				plan: planJson,
+				delivery: {
+					pipeline: HOBO_CI_COMPONENTS.relay.pipeline,
+					node: target,
+					campId: relayCampId(relayYard, target),
+					verifiedBy: RELAY_VERIFY_ORIGIN[target],
+				},
+			},
 		};
+
+	if (target === "production" && sha === undefined)
+		return usage(
+			"hobo ci deploy --target production needs --sha <commit>: production takes exactly the commit preview verified, and a ref alone names no commit.",
+		);
+	const wait = values.wait === true;
+	const origin = RELAY_VERIFY_ORIGIN[target];
+	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
+		return refused(
+			"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
+			`--wait verifies ${target} with probes of /healthz and /readyz at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
+		);
 
 	const token = env.VERCEL_TOKEN;
 	if (token === undefined || token === "")
@@ -575,95 +653,150 @@ export async function runCiRelayDeploy(
 	const withoutToken = (value: string) => value.split(token).join("[redacted]");
 
 	input.emitProgress(
-		`deploying ${definition.name} to Vercel project ${project} (${target}, Camp ${placement.camp}) from ${org}/${repo}@${sha ?? ref}`,
+		`delivering ${definition.name} to Vercel project ${project} (${target}, Camp ${placement.camp}) from ${org}/${repo}@${sha ?? ref} through @hobo/cd`,
 	);
-	try {
-		// Attach the Marketplace bindings first: their variables reach the
-		// build. One that cannot be attached is reported, not fatal: the relay
-		// reports a missing cache on /readyz.
-		let attached: readonly AttachmentResult[] = [];
-		if (provision && placement.attachments.length > 0) {
-			const team = teamId !== undefined && teamId !== "" ? teamId : undefined;
-			attached =
-				team === undefined
-					? placement.attachments.map((attachment) => ({
-							attachment,
-							outcome: "failed" as const,
-							reason: "provisioning needs the Vercel team id",
-						}))
-					: await provisionRelayAttachments({
-							attachments: placement.attachments,
-							project,
-							target,
-							run:
-								input.runVercelCli ??
-								vercelCliFrom(env, {
-									VERCEL_TOKEN: token,
-									VERCEL_ORG_ID: team,
-									VERCEL_PROJECT_ID: project,
-								}),
-						});
-			for (const result of attached)
-				input.emitProgress(
-					`${result.attachment.integration} ${result.attachment.resource}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`,
-				);
-		}
-		const provider = createVercelDeployProvider({
-			...options,
-			token,
-			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-		});
-		const deploymentId = `hobo-ci-deploy-${randomUUID()}`;
-		// The provider realizes the whole Bindle as one deployment: the first
-		// resource's apply deploys, and the rest answer with the same outputs.
-		let outputs: IacOutputs = {};
-		for (const resource of resources)
-			outputs = await provider.apply(
-				programFor(definition, placement, resource.name, deploymentId),
-			);
-		let readyState: string | undefined;
-		const deployed = outputs.deploymentId;
-		if (values.wait === true && isJsonString(deployed) && deployed !== "")
-			readyState = await waitUntilReady({
-				client: createVercelClient({
+	const client = createVercelClient({
+		token,
+		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
+	});
+	// The conductor's Vercel side: the git deployment of the commit the
+	// Freight pins, and its readiness. Failures keep the codes and messages
+	// this command always returned.
+	const realization: RelayRealization = {
+		async deploy(pin) {
+			try {
+				// Attach the Marketplace bindings first: their variables reach the
+				// build. One that cannot be attached is reported, not fatal: the
+				// relay reports a missing cache on /readyz.
+				let attached: readonly AttachmentResult[] = [];
+				if (provision && placement.attachments.length > 0) {
+					const team =
+						teamId !== undefined && teamId !== "" ? teamId : undefined;
+					attached =
+						team === undefined
+							? placement.attachments.map((attachment) => ({
+									attachment,
+									outcome: "failed" as const,
+									reason: "provisioning needs the Vercel team id",
+								}))
+							: await provisionRelayAttachments({
+									attachments: placement.attachments,
+									project,
+									target,
+									run:
+										input.runVercelCli ??
+										vercelCliFrom(env, {
+											VERCEL_TOKEN: token,
+											VERCEL_ORG_ID: team,
+											VERCEL_PROJECT_ID: project,
+										}),
+								});
+					for (const result of attached)
+						input.emitProgress(
+							`${result.attachment.integration} ${result.attachment.resource}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`,
+						);
+				}
+				const [pinOrg = org, pinRepo = repo] = pin.repository.split("/");
+				const provider = createVercelDeployProvider({
+					...options,
+					gitArtifact: {
+						...options.gitArtifact,
+						org: pinOrg,
+						repo: pinRepo,
+						ref: pin.ref,
+						...(pin.sha !== undefined ? { sha: pin.sha } : undefined),
+					},
 					token,
 					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-					...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
-				}),
-				deploymentId: deployed,
-				sleep:
-					input.sleep ??
-					((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
-				now: input.now ?? Date.now,
-				emitProgress: input.emitProgress,
-			});
+				});
+				const deploymentId = `hobo-ci-deploy-${randomUUID()}`;
+				// The provider realizes the whole Bindle as one deployment: the
+				// first resource's apply deploys, and the rest answer with the
+				// same outputs.
+				let outputs: IacOutputs = {};
+				for (const resource of resources)
+					outputs = await provider.apply(
+						programFor(definition, placement, resource.name, deploymentId),
+					);
+				return {
+					ok: true,
+					outputs: Object.fromEntries(
+						Object.entries({
+							...outputs,
+							yard: placement.yard,
+							camp: placement.camp,
+							...(attached.length > 0
+								? { provisioned: describeAttachments(attached) }
+								: undefined),
+						}).map(([key, value]) => [key, withoutToken(value)]),
+					),
+				};
+			} catch (error) {
+				return realizationFailure(error, withoutToken);
+			}
+		},
+		async readyState(deploymentId) {
+			try {
+				const deployment = await client.getDeployment(deploymentId);
+				return deployment?.readyState ?? "UNKNOWN";
+			} catch (error) {
+				// No answer is not a state: keep observing until the wait ends.
+				if (error instanceof VercelTransportError) return "UNKNOWN";
+				throw error;
+			}
+		},
+	};
+
+	const now = input.now ?? Date.now;
+	const startedAt = now();
+	const declaration = await compileProjectManifest(input.cwd);
+	if (declaration === null)
+		return usage(
+			`${definition.name} did not compile to a declaration, so there is nothing to record as Freight.`,
+		);
+	const delivered = await deliverRelay({
+		cwd: input.cwd,
+		env,
+		home: input.home ?? defaultHoboHome(env),
+		yard: relayYard,
+		declaration,
+		target,
+		source: {
+			repository: `${org}/${repo}`,
+			ref,
+			...(sha !== undefined ? { sha } : undefined),
+			...(rootDirectory !== undefined ? { rootDirectory } : undefined),
+		},
+		realization,
+		wait,
+		limitMs: WAIT_LIMIT_MS,
+		intervalMs: WAIT_INTERVAL_MS,
+		...(input.probe !== undefined ? { http: input.probe } : undefined),
+		...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
+		...(input.now !== undefined ? { now: input.now } : undefined),
+		emitProgress: input.emitProgress,
+	});
+	const delivery = delivered.ok
+		? delivered.report
+		: (delivered.report ?? undefined);
+	const deliveryData = delivery !== undefined ? { delivery } : undefined;
+	if (delivered.ok) {
 		const safe = Object.fromEntries(
 			Object.entries({
-				...outputs,
+				...delivered.handover,
 				yard: placement.yard,
 				camp: placement.camp,
-				...(attached.length > 0
-					? { provisioned: describeAttachments(attached) }
-					: undefined),
-				...(readyState !== undefined ? { readyState } : undefined),
 			}).map(([key, value]) => [key, withoutToken(value)]),
 		);
-		if (readyState !== undefined && readyState !== "READY")
-			return {
-				ok: false,
-				code: "HOBO_CI_DEPLOY_NOT_READY",
-				message: `The deployment of ${definition.name} to Vercel project ${project} (${safe.target}) ended ${readyState}, not READY: ${safe.url}`,
-				data: {
-					command: "ci deploy",
-					dryRun: false,
-					plan: planJson,
-					outputs: safe,
-				},
-			};
+		const promoted = delivered.report.state === "PROMOTED";
 		return {
 			code: "HOBO_CI_DEPLOYED",
 			message: [
 				`Deployed ${definition.name} to Vercel project ${project} (${safe.target}): ${safe.url}`,
+				promoted
+					? `  Freight ${delivered.report.alias} promoted through ${delivered.report.pipeline}/${delivered.report.node} to ${delivered.report.campId}: verified and qualified`
+					: `  Freight ${delivered.report.alias} is ${delivered.report.state ?? "in flight"} at ${delivered.report.campId}, not yet verified; run with --wait to verify and qualify it`,
 				...Object.entries(safe).map(([key, value]) => `  ${key}: ${value}`),
 			].join("\n"),
 			data: {
@@ -671,56 +804,107 @@ export async function runCiRelayDeploy(
 				dryRun: false,
 				plan: planJson,
 				outputs: safe,
+				...deliveryData,
 			},
 		};
-	} catch (error) {
-		if (error instanceof VercelEnvRefusal)
-			return refused(
-				"HOBO_CI_DEPLOY_SETTING_REFUSED",
-				withoutToken(error.message),
-			);
-		if (error instanceof VercelApiError)
-			return {
-				ok: false,
-				code: "HOBO_CI_DEPLOY_VERCEL_REFUSED",
-				message: withoutToken(
-					`Vercel refused the deploy (HTTP ${error.status}). ${error.message}`,
-				),
-				data: { status: error.status },
-			};
-		if (error instanceof VercelTransportError)
-			return {
-				ok: false,
-				code: "HOBO_CI_DEPLOY_NO_ANSWER",
-				message: withoutToken(error.message),
-			};
-		if (error instanceof TypeError) return usage(withoutToken(error.message));
+	}
+	if (delivered.realization !== undefined) {
+		const failure = delivered.realization;
 		return {
 			ok: false,
-			code: "HOBO_CI_DEPLOY_FAILED",
-			message:
-				"hobo ci deploy failed before Vercel answered. Run it with --dry-run to check the plan.",
+			...(failure.status !== undefined
+				? { status: failure.status }
+				: undefined),
+			code: failure.code,
+			message: withoutToken(failure.message),
+			data: { ...failure.data, ...deliveryData },
 		};
 	}
+	const handover = delivered.handover ?? {};
+	const readyState = handover.readyState;
+	// The deployment never became READY: the promotion ran out of time, or
+	// its rollout's deadline failed it. Said as this command always said it.
+	if (
+		delivered.code === "HOBO_CI_DEPLOY_NOT_READY" ||
+		(readyState !== undefined && readyState !== "READY")
+	) {
+		const state =
+			delivered.code === "HOBO_CI_DEPLOY_NOT_READY"
+				? (readyState ?? "UNKNOWN")
+				: `${readyState} after ${Math.round((now() - startedAt) / 60_000)} minutes`;
+		const safe = Object.fromEntries(
+			Object.entries({
+				...handover,
+				yard: placement.yard,
+				camp: placement.camp,
+				readyState: state,
+			}).map(([key, value]) => [key, withoutToken(value)]),
+		);
+		return {
+			ok: false,
+			code: "HOBO_CI_DEPLOY_NOT_READY",
+			message: `The deployment of ${definition.name} to Vercel project ${project} (${safe.target ?? target}) ended ${state}, not READY: ${safe.url ?? ""}`,
+			data: {
+				command: "ci deploy",
+				dryRun: false,
+				plan: planJson,
+				outputs: safe,
+				...deliveryData,
+			},
+		};
+	}
+	return {
+		ok: false,
+		code: delivered.code,
+		message: withoutToken(delivered.message),
+		data: {
+			command: "ci deploy",
+			dryRun: false,
+			plan: planJson,
+			...deliveryData,
+		},
+	};
 }
 
-// Ask Vercel for the deployment until it is READY, ERROR or CANCELED, or the
-// wait runs out; the state it was last in.
-async function waitUntilReady(input: {
-	readonly client: ReturnType<typeof createVercelClient>;
-	readonly deploymentId: string;
-	readonly sleep: (ms: number) => Promise<void>;
-	readonly now: () => number;
-	readonly emitProgress: (message: string) => void;
-}): Promise<string> {
-	const until = input.now() + WAIT_LIMIT_MS;
-	for (;;) {
-		const deployment = await input.client.getDeployment(input.deploymentId);
-		const state = deployment?.readyState ?? "UNKNOWN";
-		if (state === "READY" || state === "ERROR" || state === "CANCELED")
-			return state;
-		if (input.now() >= until) return `${state} after 15 minutes`;
-		input.emitProgress(`deployment ${input.deploymentId}: ${state}`);
-		await input.sleep(WAIT_INTERVAL_MS);
-	}
+// A failed realization, with the code and message this command has always
+// returned for it, and never the token.
+function realizationFailure(
+	error: unknown,
+	withoutToken: (value: string) => string,
+): RelayRealizationFailure {
+	if (error instanceof VercelEnvRefusal)
+		return {
+			ok: false,
+			status: "rejected",
+			code: "HOBO_CI_DEPLOY_SETTING_REFUSED",
+			message: withoutToken(error.message),
+		};
+	if (error instanceof VercelApiError)
+		return {
+			ok: false,
+			code: "HOBO_CI_DEPLOY_VERCEL_REFUSED",
+			message: withoutToken(
+				`Vercel refused the deploy (HTTP ${error.status}). ${error.message}`,
+			),
+			data: { status: error.status },
+		};
+	if (error instanceof VercelTransportError)
+		return {
+			ok: false,
+			code: "HOBO_CI_DEPLOY_NO_ANSWER",
+			message: withoutToken(error.message),
+		};
+	if (error instanceof TypeError)
+		return {
+			ok: false,
+			status: "usage",
+			code: "HOBO_CLI_USAGE",
+			message: withoutToken(error.message),
+		};
+	return {
+		ok: false,
+		code: "HOBO_CI_DEPLOY_FAILED",
+		message:
+			"hobo ci deploy failed before Vercel answered. Run it with --dry-run to check the plan.",
+	};
 }
