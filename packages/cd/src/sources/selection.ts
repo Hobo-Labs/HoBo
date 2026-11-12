@@ -312,7 +312,11 @@ export function versionAllowed(filter: VersionFilter, version: string): Outcome<
 		if (ignore.value.test(version)) return skip(`${version} matches ignore pattern ${pattern}`);
 	}
 	if (filter.selection === SelectionStrategy.SEMVER) {
-		if (!parseSemver(version)) return skip(`${version} is not SemVer`);
+		const parsed = parseSemver(version);
+		if (!parsed) return skip(`${version} is not SemVer`);
+		// Conservative default: a prerelease is discovered only when a range admits it.
+		if (filter.semverRange === "" && parsed.prerelease.length > 0)
+			return skip(`${version} is a prerelease and no semverRange admits prereleases`);
 		if (filter.semverRange !== "") {
 			const range = parseSemverRange(filter.semverRange);
 			if (!range.ok) return range;

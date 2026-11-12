@@ -113,8 +113,15 @@ export class FixtureTransport {
 	};
 }
 
-export function json(value: unknown): string {
+export function json<T>(value: T): string {
 	return JSON.stringify(value);
+}
+
+/** JSON text of any test value, bigint-safe (protobuf uint64 fields). */
+export function dump<T>(value: T): string {
+	return JSON.stringify(value, (_key, item) =>
+		Object.prototype.toString.call(item) === "[object BigInt]" ? String(item) : item,
+	);
 }
 
 export class StaticCredentials implements CredentialResolver {

@@ -10,8 +10,8 @@ import {
 	SelectionStrategy,
 	SubscriptionKind,
 } from "../../_generated/cd_pb.js";
-import type { SubscriptionDriver } from "../../ports.js";
-import { fetchSource, upstreamInvalid } from "../http.js";
+import type { CredentialResolver, SubscriptionDriver } from "../../ports.js";
+import { credentialHeaders, fetchSource, upstreamInvalid } from "../http.js";
 import { field, isDigest, isList, isNumeric, list, parseJson, text } from "../json.js";
 import { type Candidate, toDiscovery } from "./common.js";
 
@@ -32,14 +32,18 @@ function entriesOf(document: JsonValue | undefined): readonly JsonValue[] | unde
 	return items.length > 0 || isList(document) ? items : undefined;
 }
 
-export function createHttpIndexDriver(d: Readonly<{ http: HttpTransport }>): SubscriptionDriver {
+export function createHttpIndexDriver(
+	d: Readonly<{ http: HttpTransport; credentials?: CredentialResolver }>,
+): SubscriptionDriver {
 	return {
 		kind: SubscriptionKind.HTTP_INDEX,
 		async discover(input, ctx) {
 			const { subscription } = input;
+			const auth = await credentialHeaders(d.credentials, subscription.credentialRef);
+			if (!auth.ok) return auth;
 			const response = await fetchSource(
 				d.http,
-				{ url: subscription.locator, headers: { accept: "application/json" } },
+				{ url: subscription.locator, headers: { ...auth.value, accept: "application/json" } },
 				ctx.now(),
 			);
 			if (!response.ok) return response;

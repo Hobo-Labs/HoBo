@@ -4,7 +4,7 @@
 // exhausted quota) become `source-rate-limited` with the server's delay so the
 // source backs off instead of hammering the registry.
 import type { HttpTransport, TransportMethod, TransportResponse } from "@hobo/core";
-import type { Outcome } from "../ports.js";
+import type { CredentialResolver, Outcome } from "../ports.js";
 import { latin1Bytes } from "./json.js";
 import { rateLimited, refuse, SOURCE_REASON } from "./reasons.js";
 
@@ -129,6 +129,51 @@ export function bodyBytes(response: TransportResponse, where: string): Outcome<U
 		`${where} returned a body that is not byte-transparent`,
 		"configure the HttpTransport to return binary bodies as latin1 (one char per byte)",
 		where,
+	);
+}
+
+/** Scope string a source passes to CredentialResolver.resolve. */
+export const SOURCE_CREDENTIAL_SCOPE = "cd:source:read";
+
+/**
+ * Authorization headers for a subscription's credentialRef. The resolved
+ * secret lives only in the returned headers for one discovery; it is never
+ * logged, recorded or returned in a reason.
+ */
+export async function credentialHeaders(
+	credentials: CredentialResolver | undefined,
+	ref: string,
+): Promise<Outcome<Readonly<Record<string, string>>>> {
+	if (ref === "") return { ok: true, value: {} };
+	if (!credentials) {
+		return refuse(
+			SOURCE_REASON.authFailed,
+			`credentialRef ${ref} cannot be resolved: no CredentialResolver is configured`,
+			"compose createSubscriptionDrivers with a CredentialResolver",
+			ref,
+		);
+	}
+	let secret: Readonly<Record<string, string>>;
+	try {
+		secret = await credentials.resolve(ref, SOURCE_CREDENTIAL_SCOPE);
+	} catch {
+		return refuse(
+			SOURCE_REASON.authFailed,
+			`credentialRef ${ref} could not be resolved`,
+			"create the credential where the source runs, or fix the reference",
+			ref,
+		);
+	}
+	if (secret.token !== undefined) return { ok: true, value: { authorization: `Bearer ${secret.token}` } };
+	if (secret.username !== undefined && secret.password !== undefined) {
+		const basic = Buffer.from(`${secret.username}:${secret.password}`).toString("base64");
+		return { ok: true, value: { authorization: `Basic ${basic}` } };
+	}
+	return refuse(
+		SOURCE_REASON.authFailed,
+		`credentialRef ${ref} resolved without a token or username/password`,
+		"store the credential as {token} or {username, password}",
+		ref,
 	);
 }
 
