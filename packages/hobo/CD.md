@@ -70,7 +70,7 @@ CONVERGED is reported only when every resolver outcome reads `ready` from its
 own observation; a resolver refusal is a BLOCKED observation carrying its
 typed code. These Camps are the conductor realizer unless `--simulate`,
 `HOBO_CD_KUBE_FLEET` or the host supplies another. Planning reads a Freight's
-declaration by `canonicalManifestHash`, the digest `hobo build` records.
+declaration by `canonicalManifestHash`, the digest the build records (`hobo` build verb, D13).
 
 `pipeline apply --file <module>` also reads the module it applies as topology.
 Every export is parsed once with the generated `cd_topology.proto` schemas
