@@ -141,6 +141,8 @@ const INPUTS = [
 	"INFISICAL_IDENTITY_ID=3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c",
 	"--set",
 	"INFISICAL_PROJECT_ID=6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7",
+	"--set",
+	"INFISICAL_SITE_URL=https://app.infisical.com",
 ];
 
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
@@ -253,7 +255,11 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(bindings).toContainEqual(
 			expect.objectContaining({
 				profile: "secret-ref.runtime-projection/v1",
-				inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+				inputs: [
+					"INFISICAL_IDENTITY_ID",
+					"INFISICAL_PROJECT_ID",
+					"INFISICAL_SITE_URL",
+				],
 			}),
 		);
 		expect(bindings).not.toContainEqual(
@@ -274,7 +280,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(ran.envelope).toMatchObject({
 			code: "HOBO_CLI_USAGE",
 			message: expect.stringContaining(
-				"Camp hobo-ci-relay/production needs --set INFISICAL_IDENTITY_ID=<value> --set INFISICAL_PROJECT_ID=<value>",
+				"Camp hobo-ci-relay/production needs --set INFISICAL_IDENTITY_ID=<value> --set INFISICAL_PROJECT_ID=<value> --set INFISICAL_SITE_URL=<value>",
 			),
 		});
 		expect(sent).toEqual([]);

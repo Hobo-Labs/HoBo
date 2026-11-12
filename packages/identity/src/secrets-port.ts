@@ -29,7 +29,11 @@ export type SecretsAccessResult =
  * surrogate (never the credential it stands for) and whose `put` is read-only
  * (ADR-0170); `infisical` for the optional `@hobo/adapter-infisical` package,
  * which signs in with a workload OIDC token (no secret zero) and reads the
- * hosted CI relay's config and secrets (ADR-0179).
+ * hosted CI relay's config and secrets (ADR-0179); `1password` and
+ * `bitwarden` for `@hobo/adapter-1password` and `@hobo/adapter-bitwarden`,
+ * the other two secrets managers an owner may choose (both sign in with a
+ * stored token, so HoBo does not use them for workload reads; ADR-0179
+ * amendment "Secrets manager, not Infisical").
  */
 export interface SecretsPort {
 	readonly id: string;
@@ -38,6 +42,8 @@ export interface SecretsPort {
 		| "openbao"
 		| "opensesame"
 		| "infisical"
+		| "1password"
+		| "bitwarden"
 		| "aws-sm"
 		| "azure-kv"
 		| "memory-fixture";

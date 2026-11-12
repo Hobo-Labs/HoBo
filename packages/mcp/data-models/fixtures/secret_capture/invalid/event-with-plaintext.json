@@ -1,0 +1,8 @@
+{
+	"schemaVersion": "hobo.secret-capture/v1",
+	"type": "secret.CaptureRejected",
+	"seq": 2,
+	"time": "2026-11-12T10:01:00Z",
+	"code": "too-short",
+	"plaintext": "synthetic-should-never-be-here"
+}

@@ -9,6 +9,7 @@
  * - GET  /api/v4/secrets/{secretName}       https://infisical.com/docs/api-reference/endpoints/secrets/read
  * - POST /api/v4/secrets/{secretName}       https://infisical.com/docs/api-reference/endpoints/secrets/create
  * - PATCH /api/v4/secrets/{secretName}      https://infisical.com/docs/api-reference/endpoints/secrets/update
+ * - POST /api/v1/auth/token/revoke          https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token
  *
  * Reads ask for literal values (`expandSecretReferences=false`) from the bound
  * folder only (`includeImports=false`, `recursive=false`), so what the relay
@@ -19,6 +20,7 @@ import { create, type JsonValue, toJsonString } from "@bufbuild/protobuf";
 import {
 	InfisicalOidcLoginRequestSchema,
 	InfisicalSecretWriteRequestSchema,
+	InfisicalTokenRevokeRequestSchema,
 	InfisicalUniversalAuthLoginRequestSchema,
 } from "./_generated/adapter_infisical_pb.js";
 import type { InfisicalAuth } from "./auth.js";
@@ -69,14 +71,36 @@ export interface InfisicalClient {
 	putSecret(name: string, value: string): Promise<{ version: number }>;
 	/** Drop the cached access token; the next request logs in again. */
 	signOut(): void;
+	/**
+	 * Log in now (or reuse the cached access token) and say when the token
+	 * expires. A failed login throws `login-denied`; nothing is retried with
+	 * other credentials. Used to prove a credential works before a write.
+	 */
+	signIn(): Promise<Readonly<{ expiresAtMs: number }>>;
+	/**
+	 * End the access token this client obtained by logging in
+	 * (`POST /api/v1/auth/token/revoke`) and forget it. A client given an
+	 * access token by its owner (`access-token` auth) never revokes it: the
+	 * token is not this client's to end. Resolves when there is nothing to end.
+	 */
+	revoke(): Promise<void>;
+	/**
+	 * The same sign-in, bound to another project, environment or folder on
+	 * the same Infisical origin: one login serves both, and `revoke` on either
+	 * ends it for both. A different origin is refused (`invalid-input`).
+	 */
+	forBinding(binding: ParsedInfisicalBinding): InfisicalClient;
 }
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
-type Answer = Readonly<{ status: number; body: JsonValue | undefined }>;
+export type Answer = Readonly<{ status: number; body: JsonValue | undefined }>;
 
-async function readBody(response: Response): Promise<JsonValue | undefined> {
+/** A bounded JSON body; undefined when empty, oversized or not JSON. */
+export async function readBody(
+	response: Response,
+): Promise<JsonValue | undefined> {
 	if (!response.body) return undefined;
 	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
@@ -112,7 +136,8 @@ function retryAfterMs(response: Response): number | undefined {
 	return Number(header) * 1000;
 }
 
-function failure(operation: string, answer: Answer): InfisicalError {
+/** The adapter error for a non-2xx answer. */
+export function failure(operation: string, answer: Answer): InfisicalError {
 	const reqId = requestIdOf(answer.body);
 	const details = { status: answer.status, reqId };
 	switch (answer.status) {
@@ -154,9 +179,15 @@ export function createInfisicalClient(
 	};
 	const timeoutMs = options.timeoutMs ?? 10_000;
 
-	let cached: { token: string; refreshAtMs: number } | undefined =
+	let cached:
+		| { token: string; refreshAtMs: number; expiresAtMs: number }
+		| undefined =
 		auth.method === "access-token"
-			? { token: auth.accessToken, refreshAtMs: Number.POSITIVE_INFINITY }
+			? {
+					token: auth.accessToken,
+					refreshAtMs: Number.POSITIVE_INFINITY,
+					expiresAtMs: Number.POSITIVE_INFINITY,
+				}
 			: undefined;
 	let pendingLogin: Promise<string> | undefined;
 
@@ -256,6 +287,7 @@ export function createInfisicalClient(
 		cached = {
 			token: parsed.accessToken,
 			refreshAtMs: startedAt + lifetimeMs - Math.min(60_000, lifetimeMs / 10),
+			expiresAtMs: startedAt + lifetimeMs,
 		};
 		return parsed.accessToken;
 	}
@@ -296,111 +328,145 @@ export function createInfisicalClient(
 		}
 	}
 
-	function scope(extra: Record<string, string> = {}): string {
-		return new URLSearchParams({
-			projectId: binding.projectId,
-			environment: binding.environment,
-			secretPath: binding.secretPath,
-			...extra,
-		}).toString();
-	}
+	function build(bound: ParsedInfisicalBinding): InfisicalClient {
+		function scope(extra: Record<string, string> = {}): string {
+			return new URLSearchParams({
+				projectId: bound.projectId,
+				environment: bound.environment,
+				secretPath: bound.secretPath,
+				...extra,
+			}).toString();
+		}
 
-	const literal = {
-		expandSecretReferences: "false",
-		includeImports: "false",
-	};
+		const literal = {
+			expandSecretReferences: "false",
+			includeImports: "false",
+		};
 
-	function secretPath(name: string, query?: string): string {
-		const key = parseInfisicalSecretKey(name);
-		return `/api/v4/secrets/${encodeURIComponent(key)}${
-			query === undefined ? "" : `?${query}`
-		}`;
-	}
+		function secretPath(name: string, query?: string): string {
+			const key = parseInfisicalSecretKey(name);
+			return `/api/v4/secrets/${encodeURIComponent(key)}${
+				query === undefined ? "" : `?${query}`
+			}`;
+		}
 
-	function ok(operation: string, answer: Answer): JsonValue {
-		if (answer.status !== 200) throw failure(operation, answer);
-		if (answer.body === undefined)
-			throw new InfisicalError(operation, "invalid-response");
-		return answer.body;
-	}
+		function ok(operation: string, answer: Answer): JsonValue {
+			if (answer.status !== 200) throw failure(operation, answer);
+			if (answer.body === undefined)
+				throw new InfisicalError(operation, "invalid-response");
+			return answer.body;
+		}
 
-	return {
-		binding,
-		async listSecrets() {
-			const answer = await request(
-				"list secrets",
-				"GET",
-				`/api/v4/secrets?${scope({
-					viewSecretValue: "true",
-					recursive: "false",
-					...literal,
-				})}`,
-			);
-			return parseSecretList("list secrets", ok("list secrets", answer));
-		},
-		async listSecretNames() {
-			const answer = await request(
-				"list secret names",
-				"GET",
-				`/api/v4/secrets?${scope({
-					viewSecretValue: "false",
-					recursive: "false",
-					...literal,
-				})}`,
-			);
-			return parseSecretNames(
-				"list secret names",
-				ok("list secret names", answer),
-			);
-		},
-		async getSecret(name, version) {
-			if (
-				version !== undefined &&
-				(!Number.isSafeInteger(version) || version < 1)
-			)
-				throw new InfisicalError("read secret", "invalid-input");
-			const query = new URLSearchParams(
-				scope({ type: "shared", viewSecretValue: "true", ...literal }),
-			);
-			if (version !== undefined) query.set("version", String(version));
-			const answer = await request(
-				"read secret",
-				"GET",
-				secretPath(name, query.toString()),
-			);
-			return parseSecretEnvelope("read secret", ok("read secret", answer));
-		},
-		async putSecret(name, value) {
-			const target = secretPath(name);
-			const body = toJsonString(
-				InfisicalSecretWriteRequestSchema,
-				create(InfisicalSecretWriteRequestSchema, {
-					projectId: binding.projectId,
-					environment: binding.environment,
-					secretPath: binding.secretPath,
-					secretValue: value,
-					type: "shared",
-				}),
-				{ alwaysEmitImplicit: true },
-			);
-			const updated = await request("write secret", "PATCH", target, body);
-			if (updated.status !== 404)
+		return {
+			binding: bound,
+			async listSecrets() {
+				const answer = await request(
+					"list secrets",
+					"GET",
+					`/api/v4/secrets?${scope({
+						viewSecretValue: "true",
+						recursive: "false",
+						...literal,
+					})}`,
+				);
+				return parseSecretList("list secrets", ok("list secrets", answer));
+			},
+			async listSecretNames() {
+				const answer = await request(
+					"list secret names",
+					"GET",
+					`/api/v4/secrets?${scope({
+						viewSecretValue: "false",
+						recursive: "false",
+						...literal,
+					})}`,
+				);
+				return parseSecretNames(
+					"list secret names",
+					ok("list secret names", answer),
+				);
+			},
+			async getSecret(name, version) {
+				if (
+					version !== undefined &&
+					(!Number.isSafeInteger(version) || version < 1)
+				)
+					throw new InfisicalError("read secret", "invalid-input");
+				const query = new URLSearchParams(
+					scope({ type: "shared", viewSecretValue: "true", ...literal }),
+				);
+				if (version !== undefined) query.set("version", String(version));
+				const answer = await request(
+					"read secret",
+					"GET",
+					secretPath(name, query.toString()),
+				);
+				return parseSecretEnvelope("read secret", ok("read secret", answer));
+			},
+			async putSecret(name, value) {
+				const target = secretPath(name);
+				const body = toJsonString(
+					InfisicalSecretWriteRequestSchema,
+					create(InfisicalSecretWriteRequestSchema, {
+						projectId: bound.projectId,
+						environment: bound.environment,
+						secretPath: bound.secretPath,
+						secretValue: value,
+						type: "shared",
+					}),
+					{ alwaysEmitImplicit: true },
+				);
+				const updated = await request("write secret", "PATCH", target, body);
+				if (updated.status !== 404)
+					return {
+						version: parseWrittenVersion(
+							"write secret",
+							ok("write secret", updated),
+						),
+					};
+				const created = await request("write secret", "POST", target, body);
 				return {
 					version: parseWrittenVersion(
 						"write secret",
-						ok("write secret", updated),
+						ok("write secret", created),
 					),
 				};
-			const created = await request("write secret", "POST", target, body);
-			return {
-				version: parseWrittenVersion(
-					"write secret",
-					ok("write secret", created),
-				),
-			};
-		},
-		signOut() {
-			if (auth.method !== "access-token") cached = undefined;
-		},
-	};
+			},
+			signOut() {
+				if (auth.method !== "access-token") cached = undefined;
+			},
+			async signIn() {
+				await accessToken();
+				return Object.freeze({
+					expiresAtMs: cached?.expiresAtMs ?? now(),
+				});
+			},
+			async revoke() {
+				if (auth.method === "access-token") return;
+				const held = cached;
+				cached = undefined;
+				if (held === undefined) return;
+				const answer = await exchange(
+					"revoke token",
+					"POST",
+					"/api/v1/auth/token/revoke",
+					{},
+					toJsonString(
+						InfisicalTokenRevokeRequestSchema,
+						create(InfisicalTokenRevokeRequestSchema, {
+							accessToken: held.token,
+						}),
+					),
+				);
+				if (answer.status !== 200) throw failure("revoke token", answer);
+			},
+			forBinding(other) {
+				if (other.siteUrl !== binding.siteUrl)
+					throw new InfisicalError("bind client", "invalid-input");
+				return build(other);
+			},
+		};
+	}
+
+	return build(binding);
 }

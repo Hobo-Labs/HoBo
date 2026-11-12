@@ -102,6 +102,9 @@ writes to it.
 
 - **First binding: Infisical Cloud on the free plan.** It is open source, so
   the same service can later run on HoBo's own compute without a client change.
+  *Amended 2026-11-12:* the store is chosen when the deployment runs and
+  handed to the owner by claim; Infisical Cloud is attach-only
+  ([Secret store chosen at deploy](#secret-store-chosen-at-deploy)).
   The relay's secret references use the existing `infisical` scheme of
   `SecretRef` ([`secret-ref.ts`](../../packages/bindings/src/secret-ref.ts)).
 - **No secret zero on the relay.** The relay authenticates with the Vercel
@@ -720,26 +723,126 @@ but whether a duplicate runner name is what returns it is **unverified** and
 must be tested against the real API (phase 4e) before the floor relies on it.
 In the floor, priced offers stay paused, as whenever holds are unknown.
 
-## One-time owner actions
+## Secret store chosen at deploy
 
-1. Create an Infisical organization on the free plan and one machine identity
-   that trusts this repository's GitHub Actions OIDC, bound to the protected
-   deployment environment. The deploy workflow uses it to create the relay's
-   own read-only identity (trusting Vercel's OIDC issuer for this team and
-   project); if the free plan does not allow that through the API, the owner
-   creates the second identity by hand in the same sitting.
-2. Store a Vercel deploy token in Infisical, where only the admin identity can
-   read it.
-3. Re-create the GitHub App once through the HoBo CLI, so its private key,
-   webhook secret and client secret go straight into Infisical and are never
-   copied by hand.
-4. Create an Aiven for Valkey service on the free plan and store its
-   connection URL in the config service, so the cache fleet has a free
-   backend with no command cap ([options](#cache-fleet-options)). The URL is
-   a secret; it never passes through the repository or a terminal log.
+*Replaces the former "One-time owner actions" (ADR-0179 amendment
+[Secret store chosen at deploy, provisioned by claim](adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim),
+2026-11-12).* There are no one-time owner actions. The relay's config/secret
+store is the capability `secrets.config-service/v1`, routed when the HoBo
+deployment runs, provisioned by HoBo, and handed to the owner by claim. Nothing
+is kept in Vercel environment secrets or in GitHub secrets or variables.
 
-Everything else, including attaching the cache through the Marketplace, is done
-by the deployment.
+### Records and the routing seam
+
+[`@hobo/secret-store-claim`](../../packages/secret-store-claim/README.md) owns
+the records in
+[`secret_store_claim.proto`](../../packages/secret-store-claim/data-models/secret_store_claim.proto)
+with CUE constraints and fixtures: `SecretStoreOffer` (kind, preference, claim
+mechanism and window, runtime binding built or designed, cost, availability,
+source and date), `SecretStoreEvidence` (what the deploy observed),
+`SecretStoreSelection` (the choice and every skip with its reason), and
+`SecretStoreBinding` (the committed coordinates). `selectSecretStore` is pure:
+evidence present, evidence available, runtime binding built (unless
+`--allow-designed`), then preference. `hobo ci secret-store plan` gathers the
+evidence (an `--auth-md` candidate's metadata; an interactive terminal for
+Cloudflare's terms; a `--fleet-host`; the owner's `INFISICAL_TOKEN`) and shows
+the decision; `provision` acts on it.
+
+### What the owner sees, step by step
+
+For the store the relay can read today (self-hosted Infisical on the fleet):
+
+1. The agent, following the `hobo-deploy` skill, says which store HoBo chose,
+   what it costs, and that the relay's config availability will be that
+   host's, and asks before anything chargeable.
+2. The agent runs `hobo ci secret-store provision …`. HoBo bootstraps the
+   instance with a password it generates, creates `hobo-ci` (folder
+   `/hobo-ci-relay`, identity `hobo-ci-relay`, viewer, trusting the Vercel
+   team issuer for the relay's production deployments) and `hobo-ci-deploy`
+   (identity `hobo-ci-deploy`, viewer, trusting GitHub Actions on `main`),
+   seals the owner's sign-in into a one-time action, records the claim bundle,
+   and writes `deploy/secret-store.binding.json`. It prints the steps below
+   and no secret.
+3. The owner runs `hobo claim open secret-store` in their own terminal. It
+   shows, once, a sign-in link to their Infisical with the email and password
+   in the URL fragment (never sent to a server). The owner signs in, changes
+   the password and turns on MFA.
+4. The owner (or the agent) runs `hobo claim finalize secret-store`. HoBo
+   redeems its sealed instance-admin token, deletes its own bootstrap identity
+   with it, and passes only when Infisical answers 401 to that token.
+5. The agent commits `deploy/secret-store.binding.json` in a PR. From then on
+   `hobo ci deploy` and the workflow on `main` read it.
+
+For a Cloudflare temporary account (once its Worker is built), step 2 asks the
+owner, in their terminal, to accept Cloudflare's Terms of Service and Privacy
+Policy (HoBo records the acceptance before any request), and step 3 opens
+Cloudflare's claim page, which the owner must complete **within 60 minutes**
+or Cloudflare deletes the account. For an auth.md store, step 3 opens the
+store's own approval page before its `expires_at`. For an Infisical Cloud
+organization the owner already has, there is no claim: the owner's own
+`infisical login` provides `INFISICAL_TOKEN` for the one provisioning run.
+
+### What still needs a person, and why
+
+| Step | Why a person | Evidence (checked 2026-11-12) |
+|---|---|---|
+| Accepting Cloudflare's terms for a temporary account | Cloudflare requires `acceptTermsOfService: "yes"` only after the user accepts | Cloudflare claim-deployments docs |
+| Claiming the store (Cloudflare page, auth.md approval, or signing in to the self-hosted instance) | ownership moves to a human by definition; the claim is the authentication event | anonymous-claim threat model |
+| Creating an Infisical Cloud organization | no auth.md, no DCR/CIMD, admin-registered OAuth apps, delegated tokens cannot create organizations or identities | Infisical's `auth.md` 404, `/.well-known/*` SPA, OpenAPI |
+| The Vercel deploy token | no Vercel flow gives an agent a token for a team it does not own; claimable deployments create a new project and cannot target an existing one | Vercel Claim Deployments and deploy-without-logging-in docs |
+| The GitHub App | the manifest flow ends in a browser click by GitHub's design | GitHub App manifest docs |
+| Marketplace terms (Upstash) | Vercel accepts an integration's terms only from a person | `vercel integration accept-terms` |
+
+Each is a claim step the skill surfaces when it is needed, with what it
+approves; none is a checklist done in advance.
+
+### Placement on the compute fleet
+
+Self-hosted Infisical needs PostgreSQL and Redis. The packs exist
+(`pack-postgres-oci`, `pack-valkey-oci`); the Yard placing the three on a
+compute fleet host is designed, not built, and no Infisical pack is added
+because no Infisical image is pinned by digest (a pack pins per-platform
+manifest digests; resolving one is a reviewed pin, not a guess). Until then
+`--fleet-host` names an instance that is already running and fresh. Neon's
+claimable Postgres could stand in for the pack's database, as a second claim
+item. Cost and availability move to the owner's hosts: the relay's
+configuration is readable only while that host runs (it caches the last good
+copy for a minute and keeps it on a failed refresh).
+
+### Built and designed
+
+Built, against local stand-ins and the pact mock of Infisical's admin API:
+the records and routing; the auth.md path; the Cloudflare temporary account
+and its sealed claim; the self-hosted Infisical bootstrap, layout, sealed
+sign-in and verified revocation; attach-only; `hobo ci secret-store`;
+`hobo claim finalize` for self-hosted stores; `hobo ci deploy` reading the
+binding; the workflow's gate on the binding and its routed runner; the
+`hobo-deploy` skill. Designed: the config-service Worker and the relay's loader
+for it, an auth.md store's runtime binding, fleet placement, the Vercel token
+claim step, and the verification of Cloudflare and auth.md claims.
+
+The Aiven Valkey URL is an optional cache-fleet member an owner may add to the
+store; nothing waits on it.
+
+## Secrets captured by an MCP App
+
+[Secretless first](adr/hosted-relay-stateless.md#amendment-secretless-first)
+(ADR-0179 amendment, 2026-11-12) keeps the relay on its Vercel project
+`hobo-ci`, deployed by Vercel's Git integration with no token, and shrinks
+the secrets that exist at all: three keys derived from the App key, the App's
+credentials handed from GitHub straight to the store, Blob over OIDC, the
+store's coordinates committed. The store is a generic secrets manager
+(Infisical, 1Password, Bitwarden), ranked secretless first: only one that
+trusts the relay's Vercel OIDC token (Infisical today) holds the relay's
+runtime secrets. Whatever cannot be secretless (an optional third-party cache
+credential) is typed by the owner into the HoBo MCP App (`capture_secret` on
+`hobo-mcp`, `ui://hobo/secret-capture`, or its `127.0.0.1` fallback page),
+sealed in the form and written without entering the agent's context. The
+`hobo-deploy` skill detects which manager the agent has, suggests one when
+none is present, walks the owner through OIDC trust one step at a time, and
+reports each identity by name. Package details:
+[`@hobo/mcp`](../../packages/mcp/README.md#secret-capture-mcp-app),
+[`CONFIG-SERVICE.md`](../../packages/ci-vercel/CONFIG-SERVICE.md).
 
 ## Deployment through HoBo
 
@@ -774,11 +877,13 @@ Infisical ids given as inputs
 every push to `main` that touches the relay's pnpm-lock closure: it reads the
 Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
 the Vercel CLI when the project lacks it, deploys with `--target production
---wait`, and smoke-checks `/healthz` and `/readyz`. Until the owner sets its
-repository variables it ends with a notice. One step stays with the owner:
-installing the Upstash integration on the team, because Vercel accepts an
-integration's terms only from a person
-([owner steps](../../packages/ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)).
+--wait`, and smoke-checks `/healthz` and `/readyz`. Until a secret store is
+bound (`deploy/secret-store.binding.json`, written when the deployment
+[chooses its store](#secret-store-chosen-at-deploy)) it ends with a notice; it
+reads no repository variable. One approval stays with a person: the Upstash
+integration's terms, because Vercel accepts an integration's terms only from
+one; the `hobo-deploy` skill surfaces it as a claim step
+([claim steps](../../packages/ci-vercel/CONFIG-SERVICE.md#what-the-workflow-does-and-the-claim-steps-the-skill-drives)).
 The Bindle declares the cache (`kv`) and the config service (`secret`) in
 place of the database since phase 4b.
 
@@ -804,6 +909,8 @@ on its free plan.
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets. The cache-fleet and lifecycle-driver offers as provider manifests in `packages/ci-vercel/offers/` lowered into the HoBo pricing catalog, the `kv.ephemeral-state/v1` and `lifecycle.lease-driver/v1` profiles, selection by capability and budget, and rebalancing | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay; every option is a registered priced offer and the selection is a logged policy decision. **Done** except provider usage pulls ([Phase 5](#phase-5); in-memory tests; not deployed) |
 | 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository. **Yard, Camps, planning, workflow and provisioning implemented ([status](#deployment-through-hobo)); not yet run live** |
 | 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone. **Done** (`test/relay-bundle.test.ts` bundles the relay's entries and checks) |
+| 7b | [Secret store chosen at deploy](#secret-store-chosen-at-deploy): `@hobo/secret-store-claim` (offers, routing, auth.md, Cloudflare temporary account, self-hosted Infisical, attach-only), `hobo ci secret-store`, finalize for self-hosted stores, the deploy reading the committed binding, the workflow gated on it and routed, the `hobo-deploy` skill | A deploy chooses its store and the owner takes it by claim with no setup checklist and nothing in Vercel or GitHub secrets or variables. **Built against stand-ins**; the config-service Worker, fleet placement and the Vercel token claim step are designed |
+| 7c | [Secrets captured by an MCP App](#secrets-captured-by-an-mcp-app) under secretless first: no deploy token (Vercel's Git integration), derived keys, App credentials deposited by the workflow over GitHub OIDC, committed store coordinates, `@hobo/adapter-1password` and `@hobo/adapter-bitwarden`, `runtimeAuth` routing, `hobo ci secret-store connect` and `verify`, the `capture_secret` MCP App and its loopback fallback, the `hobo-deploy` skill | The owner handles no secret value on the default path; any secrets manager can be chosen, secretless first; each identity is verified by name. **Built against fakes and pact mocks**; no MCP Apps host has rendered the form yet |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
 
 **Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).
