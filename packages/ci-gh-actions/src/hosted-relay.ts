@@ -74,6 +74,7 @@ import {
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 import {
 	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
+	effectiveTrunkFleetDeferMs,
 	evaluateMainTrunkFleetDefer,
 	type TrunkWaitCache,
 	type TrunkWaitReason,
@@ -567,6 +568,8 @@ export class HostedRelay {
 			decision.waitReason ?? "",
 			decision.peerAbsorbSlots,
 			decision.waitedMs,
+			decision.deferMs ?? "",
+			decision.shardIndex ?? "",
 		].join(":");
 		const key = trunkWaitKey(job);
 		if (this.trunkDeferDecisionSig.get(key) === signature) return;
@@ -582,6 +585,8 @@ export class HostedRelay {
 				waitReason: decision.waitReason ?? "",
 				waitedMs: decision.waitedMs,
 				holdReason: decision.holdReason ?? "",
+				deferMs: decision.deferMs,
+				shardIndex: decision.shardIndex,
 				hoboFreeSlots: decision.hoboFreeSlots,
 				arcFreeSlots: decision.arcFreeSlots,
 				meshFreeSlots: decision.meshFreeSlots,
@@ -660,7 +665,9 @@ export class HostedRelay {
 		active: readonly Lease[],
 		fleetWitness: FleetCapacityWitness | undefined,
 	): Promise<void> {
-		const deferMs = this.headroomFleetDeferMs();
+		const baseDeferMs = this.headroomFleetDeferMs();
+		const peerSlots = this.fleetPeerSlots(fleetWitness);
+		const deferMs = effectiveTrunkFleetDeferMs(baseDeferMs, peerSlots);
 		const nowMs = Date.parse(this.now());
 		const releases = pickTrunkHeadroomFleetReleases(
 			this.trunkWaits,
@@ -668,7 +675,6 @@ export class HostedRelay {
 			nowMs,
 			fleetWitness ? { deferMs, fleetWitness } : { deferMs },
 		);
-		const peerSlots = this.fleetPeerSlots(fleetWitness);
 		for (const release of releases) {
 			const lease = active.find((entry) => entry.id === release.leaseId);
 			if (!lease) continue;
@@ -1524,7 +1530,8 @@ export class HostedRelay {
 			const nowMs = Date.parse(this.now());
 			const priorWait = this.trunkWaits.get(trunkWaitKey(job));
 			const headroomFleetDeferMs = this.headroomFleetDeferMs();
-			const mainTrunk = isMainTrunkFleetDeferJob(job.name);
+			const runEvent = await this.admissionOrder.event(refOf(job));
+			const mainTrunk = isMainTrunkFleetDeferJob(job.name, runEvent);
 			const fleetDeferDecision = evaluateMainTrunkFleetDefer({
 				jobName: job.name,
 				isMainTrunkJob: mainTrunk,

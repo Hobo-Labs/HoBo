@@ -65,8 +65,9 @@ const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 /** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
 const MAIN_FULL_GATE_JOB = "Main full gate";
+const CI_DEPS_LAYER_JOB = "CI deps layer (pnpm)";
 
-function mainWorkspaceShardIndex(
+export function mainWorkspaceShardIndex(
 	jobName: string | undefined,
 ): number | undefined {
 	if (!jobName) return undefined;
@@ -79,15 +80,26 @@ export function isMainWorkspaceShardJob(jobName: string | undefined): boolean {
 }
 
 /** Main push / merge_group Fabric trunk jobs eligible for cooperative fleet defer. */
-export function isMainTrunkFleetDeferJob(jobName: string | undefined): boolean {
-	return mainFabricTrunkPhase(jobName) <= 2;
+export function isMainTrunkFleetDeferJob(
+	jobName: string | undefined,
+	runEvent?: string | undefined,
+): boolean {
+	return mainFabricTrunkPhase(jobName, runEvent) <= 3;
 }
 
-function mainFabricTrunkPhase(jobName: string | undefined): number {
+function mainFabricTrunkPhase(
+	jobName: string | undefined,
+	runEvent?: string | undefined,
+): number {
 	if (jobName === MAIN_WORKSPACE_PLAN_JOB) return 0;
-	if (jobName === MAIN_FULL_GATE_JOB) return 1;
-	if (isMainWorkspaceShardJob(jobName)) return 2;
-	return 3;
+	if (jobName === CI_DEPS_LAYER_JOB) {
+		// PR runs also build the deps layer, but must not queue ahead of required gates.
+		if (runEvent === "pull_request") return 10;
+		return 1;
+	}
+	if (jobName === MAIN_FULL_GATE_JOB) return 2;
+	if (isMainWorkspaceShardJob(jobName)) return 3;
+	return 4;
 }
 
 /**
@@ -212,8 +224,8 @@ export function createAdmissionOrder(
 				} else if (a.key.startedAtMs !== b.key.startedAtMs)
 					return a.key.startedAtMs - b.key.startedAtMs;
 				if (a.ref.runId === b.ref.runId) {
-					const phaseA = mainFabricTrunkPhase(a.ref.jobName);
-					const phaseB = mainFabricTrunkPhase(b.ref.jobName);
+					const phaseA = mainFabricTrunkPhase(a.ref.jobName, a.key.event);
+					const phaseB = mainFabricTrunkPhase(b.ref.jobName, b.key.event);
 					if (phaseA !== phaseB) return phaseA - phaseB;
 					const shardA = mainWorkspaceShardIndex(a.ref.jobName);
 					const shardB = mainWorkspaceShardIndex(b.ref.jobName);
