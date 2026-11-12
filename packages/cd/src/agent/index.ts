@@ -8,3 +8,5 @@ export * from "./replay.js";
 export * from "./dpop-verifier.js";
 export * from "./enrollment.js";
 export * from "./metrics.js";
+export * from "./egress.js";
+export * from "./http-transport.js";
