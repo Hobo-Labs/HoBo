@@ -61,7 +61,7 @@ describe("fleet verdicts on the cache", () => {
 		if (!repository) throw new Error("no repository");
 		const { clock, verdicts } = setup();
 		const kept = verdicts();
-		await kept.write(standing("no-node", 300, clock.now));
+		await kept.write(standing("no-node", 180, clock.now));
 		await kept.write(noFleetVerdict(repository));
 		expect(await kept.read(repository)).toBeUndefined();
 	});
@@ -127,7 +127,7 @@ describe("fleet verdicts on the cache", () => {
 	it("keeps one deployment environment's verdicts from another's", async () => {
 		if (!repository) throw new Error("no repository");
 		const { clock, verdicts } = setup();
-		await verdicts("preview").write(standing("no-node", 300, clock.now));
+		await verdicts("preview").write(standing("no-node", 180, clock.now));
 		expect(await verdicts("production").read(repository)).toBeUndefined();
 		expect(await verdicts("preview").read(repository)).toBeDefined();
 	});

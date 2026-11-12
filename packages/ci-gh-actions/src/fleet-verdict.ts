@@ -28,7 +28,7 @@ export type FleetVerdictReason = (typeof FLEET_VERDICT_REASONS)[number];
  * while it holds, so one that has stopped is forgotten within this long, and
  * a single report cannot keep runs off a fleet for an afternoon.
  */
-export const FLEET_VERDICT_MAX_TTL_SECONDS = 300;
+export const FLEET_VERDICT_MAX_TTL_SECONDS = 180;
 /** Far more labels than a fleet serves; a report naming more is not one. */
 const MAX_BLOCKED_LABELS = 16;
 
