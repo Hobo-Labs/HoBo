@@ -575,6 +575,14 @@ jobs:
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
+    # One image per job, like the build matrix: all six built and pushed in one
+    # job ran past the 20-minute limit when one push stalled (run 43144784243).
+    # One at a time, because legs on one box share the `*:candidate` tags.
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
     permissions:
       contents: read
       packages: write
@@ -617,13 +625,14 @@ jobs:
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Build and push release images
-        run: node --no-warnings scripts/ci/push-release-ghcr-images.mts /tmp/hobo-release-digests.txt
-      - name: Upload digest list
+      - name: Build and push release image
+        run: node --no-warnings scripts/ci/push-release-ghcr-images.mts --image ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-release-digest.txt"
+      - name: Upload digest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: hobo-release-digests
-          path: /tmp/hobo-release-digests.txt
+          name: hobo-release-digest-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-digest.txt
+          if-no-files-found: error
 
   release-attest:
     name: Attest GHCR images
@@ -655,11 +664,26 @@ jobs:
           clean: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: hobo-release-digests
-          path: /tmp/hobo-release-digests
+          name: hobo-release-digest-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-digest
+      # The publish leg writes an empty digest file for an image this release
+      # train does not ship (an sdk-v or cli-v tag); there is nothing to attest.
+      - name: Is this image in the release
+        id: digest
+        env:
+          DIGEST_FILE: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
+        run: |
+          set -euo pipefail
+          if [ -s "${DIGEST_FILE}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::${{ matrix.image_id }} is not part of this release train; skipping attestation"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: ./.github/actions/release-oci-attest
+        if: steps.digest.outputs.present == 'true'
         with:
-          digest-list-path: /tmp/hobo-release-digests/hobo-release-digests.txt
+          digest-list-path: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
           image-id: ${{ matrix.image_id }}
           ghcr-username: ${{ github.actor }}
           ghcr-token: ${{ secrets.GITHUB_TOKEN }}

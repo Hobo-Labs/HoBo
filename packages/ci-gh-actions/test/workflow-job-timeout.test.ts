@@ -9,6 +9,20 @@ describe("workflowJobTimeoutMinutes", () => {
 	it("maps main workspace shards to twenty minutes", () => {
 		expect(workflowJobTimeoutMinutes("Main workspace test shard 3")).toBe(20);
 	});
+
+	it("maps a matrix leg to its job's limit", () => {
+		expect(
+			workflowJobTimeoutMinutes(
+				"Publish GHCR images (tagged release) (hobo-cli)",
+			),
+		).toBe(20);
+		expect(
+			workflowJobTimeoutMinutes(
+				"Build all OCI images on tag (gate publish) (hobo-site)",
+			),
+		).toBe(20);
+		expect(workflowJobTimeoutMinutes("Route runners (x)")).toBeUndefined();
+	});
 });
 
 describe("effectiveIsolatedTimeoutMs", () => {

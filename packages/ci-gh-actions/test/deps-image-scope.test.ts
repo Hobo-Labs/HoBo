@@ -143,8 +143,9 @@ describe("CI deps image push scope", () => {
 			build.run.indexOf("ensure-ci-worker-image.mts"),
 		);
 		expect(build.run).toContain("Worker image tag still present");
-		// A cold build outlasts ensure-ci-worker-image's 10-minute default.
-		expect(build.env.HOBO_CI_WORKER_BUILD_BUDGET_SEC).toBe("1500");
+		// 15 of the job's 20 minutes build; the push and the GHCR check get the rest.
+		expect(build.env.HOBO_CI_WORKER_BUILD_BUDGET_SEC).toBe("900");
+		expect(publisher.jobs["runner-image"]["timeout-minutes"]).toBe(20);
 		// The deps build waits, so it pulls the image instead of racing build.sh.
 		expect(publisher.jobs.publish.needs).toEqual(["runner-image"]);
 		expect(publisher.jobs.publish.if).toMatch(
