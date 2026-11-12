@@ -8,7 +8,7 @@ import {
 	assertReleaseImageMatchesBuild,
 	dockerConfigLabelsForDigestRef,
 	ghcrDigestRef,
-	imagetoolsInspectTag,
+	registryInspectTag,
 	normalizeRepoDigestLine,
 	resolveRegistryDigestForTag,
 	resolveRegistryDigestForTagWithRetry,
@@ -124,7 +124,7 @@ function tryReusePublishedTag(options: {
 	revision: string;
 	releaseVersion: string;
 }): string | undefined {
-	const inspected = imagetoolsInspectTag(options.tag);
+	const inspected = registryInspectTag(options.tag);
 	const digestRef =
 		inspected?.digest !== undefined
 			? normalizeRepoDigestLine(

@@ -228,8 +228,8 @@ and on `workflow_dispatch`:
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
    No repository variable or secret is read.
 2. *Verify the secret store connection*: with `permissions: id-token: write`
-   the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; it may
-   create and edit, not read), then revokes the token, and reports it pass or
+   the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
+   only — role shape not asserted), then revokes the token, and reports it pass or
    fail by name (`hobo ci secret-store verify`).
 3. *Find Vercel's Git deployment of this commit*: Vercel's Git integration
    deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API

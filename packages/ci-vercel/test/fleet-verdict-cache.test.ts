@@ -137,6 +137,44 @@ describe("fleet verdicts on the cache", () => {
 		expect(replayed).toEqual({ accepted: false, reason: "replayed" });
 	});
 
+	it("lets the cache's own expiry end a verdict, whatever this process's clock says", async () => {
+		const h = setup();
+		const cacheClock = { now: START };
+		const state = createRedisEphemeralState({
+			executor: createMemoryRedisExecutor({ now: () => cacheClock.now }),
+		});
+		// A relay whose clock never moves: only the cache can end the verdict.
+		const kept = createCacheFleetVerdicts({
+			state,
+			environment: "production",
+			now: () => START,
+		});
+		await h.report(kept, true, { ttlSeconds: 60 });
+		cacheClock.now += 59_000;
+		expect(await h.served(kept)).toBe(true);
+		cacheClock.now += 1_000;
+		expect(await h.served(kept)).toBe(false);
+	});
+
+	it("does not serve a verdict past its own expiry even while the cache still holds it", async () => {
+		const h = setup();
+		// A cache whose clock never moves: it never drops the entry itself.
+		const state = createRedisEphemeralState({
+			executor: createMemoryRedisExecutor({ now: () => START }),
+		});
+		const relayClock = { now: START };
+		const kept = createCacheFleetVerdicts({
+			state,
+			environment: "production",
+			now: () => relayClock.now,
+		});
+		await h.report(kept, true, { ttlSeconds: 60 });
+		relayClock.now += 59_000;
+		expect(await h.served(kept)).toBe(true);
+		relayClock.now += 1_000;
+		expect(await h.served(kept)).toBe(false);
+	});
+
 	it("keeps one deployment environment's verdicts from another's", async () => {
 		const h = setup();
 		await h.report(h.verdicts("preview"), true);

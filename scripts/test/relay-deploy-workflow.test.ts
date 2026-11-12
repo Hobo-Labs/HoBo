@@ -225,6 +225,8 @@ describe("the relay deploy workflow", () => {
 			verify,
 			/node packages\/hobo\/dist\/bin\/hobo\.js ci secret-store verify/u,
 		);
+		assert.match(verify, /relay-deploy-secret-store-verify-report\.mts/u);
+		assert.doesNotMatch(verify, /\|\| true/u);
 		assert.ok(
 			workflow.indexOf("ci secret-store verify") <
 				workflow.indexOf("Find Vercel's Git deployment of this commit"),

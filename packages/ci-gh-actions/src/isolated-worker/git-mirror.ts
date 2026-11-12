@@ -235,7 +235,19 @@ export function createBoxGitMirror(options: {
 	}
 
 	async function cloneBare(): Promise<BoxGitMirrorEnsureResult | undefined> {
-		mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
+		try {
+			mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const denied =
+				error instanceof Error && "code" in error && error.code === "EACCES";
+			return {
+				status: "miss",
+				reason: denied
+					? `mirror path not writable: ${dirname(path)} (${message})`
+					: `mirror path not creatable: ${dirname(path)} (${message})`,
+			};
+		}
 		const cloned = await git([
 			"clone",
 			"--bare",

@@ -10,10 +10,10 @@ const workflow = readFileSync(
 
 describe("main full gate workspace sharding", () => {
 	it("checks out what the route script loads, and no longer the capacity module it once read", () => {
-		// The route script stopped loading `fleet/capacity.ts` (finding 143);
+		// The route script stopped loading `fleet/capacity.ts` (finding 146);
 		// `route-runner.test.ts` checks every routed workflow against what the
 		// script loads today.
-		const routeStart = workflow.indexOf("  route:");
+		const routeStart = workflow.indexOf("\n  route:\n");
 		const runnerImage = workflow.indexOf("  ci-runner-image:", routeStart);
 		assert.ok(routeStart > -1);
 		const route = workflow.slice(routeStart, runnerImage);
@@ -32,7 +32,7 @@ describe("main full gate workspace sharding", () => {
 			workflow.indexOf("  main_workspace_tests:", mainStart),
 		);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
-		assert.match(plan, /needs: \[ci-runner-image\]/u);
+		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
 		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
 		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
 		assert.match(plan, /main-gate-plan-\$\{\{ github\.sha \}\}/u);
@@ -42,7 +42,7 @@ describe("main full gate workspace sharding", () => {
 		assert.doesNotMatch(main, /Plan main workspace test shards/u);
 	});
 
-	it("shards workspace tests across fleet runners", () => {
+	it("shards workspace tests across the runners the plan job chose", () => {
 		const shardStart = workflow.indexOf("  main_workspace_tests:");
 		const finishStart = workflow.indexOf("  main_gate_finish:", shardStart);
 		assert.ok(shardStart > -1);
@@ -52,9 +52,8 @@ describe("main full gate workspace sharding", () => {
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards/u);
 		assert.match(
 			block,
-			/needs: \[ci-runner-image, ci-deps-image, main-gate-plan\]/u,
+			/needs: \[route, ci-runner-image, ci-deps-image, main-gate-plan\]/u,
 		);
-		assert.doesNotMatch(block, /needs: \[route,/u);
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
 	});
 
@@ -64,7 +63,7 @@ describe("main full gate workspace sharding", () => {
 		const finish = workflow.slice(finishStart, artifact);
 		assert.match(
 			finish,
-			/needs: \[main-gate, main-gate-plan, main_workspace_tests\]/u,
+			/needs: \[route, main-gate, main-gate-plan, main_workspace_tests\]/u,
 		);
 		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
@@ -77,4 +76,111 @@ describe("main full gate workspace sharding", () => {
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != '\[\]'/u);
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != ''/u);
 	});
+
+	it("shards use the plan job's own route", () => {
+		// The plan job and the full gate follow the route job; the shards and
+		// the finish job follow the plan job's second ask, then the run's route.
+		for (const name of ["main-gate-plan", "main-gate"])
+			assert.equal(runsOn(job(name)), ROUTED, name);
+		for (const name of ["main_workspace_tests", "main_gate_finish"])
+			assert.equal(runsOn(job(name)), SHARD, name);
+		assert.match(
+			job("main-gate-plan"),
+			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.runner \|\| needs\.route\.outputs\.runner \}\}$/mu,
+		);
+		assert.match(job("main-gate"), /^    needs: \[route, ci-runner-image\]$/mu);
+	});
+
+	it("the re-ask runs after the full checkout and falls back to the run's route", () => {
+		const plan = job("main-gate-plan");
+		assert.match(
+			plan,
+			/^    permissions:\n      actions: read\n      contents: read$/mu,
+		);
+		const steps = plan.slice(plan.indexOf("    steps:"));
+		const full = steps.indexOf("          fetch-depth: 0");
+		const reroute = steps.indexOf("        id: reroute");
+		assert.ok(
+			full > -1 && reroute > full,
+			"reroute must follow the full checkout",
+		);
+		const step = steps.slice(
+			steps.lastIndexOf("      - ", reroute),
+			steps.indexOf("\n      - ", reroute),
+		);
+		assert.match(step, /if: needs\.route\.outputs\.tier == 'fleet'/u);
+		assert.match(step, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(step, /token: \$\{\{ github\.token \}\}/u);
+		assert.match(
+			step,
+			/mode: \$\{\{ inputs\.route \|\| vars\.HOBO_CI_ROUTE \}\}/u,
+		);
+		for (const input of [
+			"local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}",
+			"max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}",
+			"max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}",
+			"trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}",
+			'attest: "false"',
+			'include-own-run: "true"',
+		])
+			assert.ok(step.includes(input), input);
+		// A second ask that cannot decide outputs no runner (the action's
+		// fallback, route-runner.test.ts), so the run's route stands; a skipped
+		// or failed plan job leaves the shards on the trunk expression.
+		assert.ok(
+			SHARD.includes(
+				"needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (",
+			),
+		);
+	});
+
+	it("keeps the deps image off a main run the route sent away from the fleet", () => {
+		const deps = job("ci-deps-image");
+		assert.match(deps, /^    needs: \[route\]$/mu);
+		const condition = deps.slice(
+			deps.indexOf("    if:"),
+			deps.indexOf("    runs-on:"),
+		);
+		assert.match(condition, /github\.event_name == 'pull_request' \|\|/u);
+		assert.match(
+			condition,
+			/\(needs\.route\.outputs\.tier == 'fleet' \|\| needs\.route\.result != 'success'\)/u,
+		);
+		// A skipped deps job does not stop the shards.
+		assert.doesNotMatch(
+			job("main_workspace_tests"),
+			/needs\.ci-deps-image\.result/u,
+		);
+	});
+
+	it("can be pinned from a dispatch without touching repository variables", () => {
+		assert.match(
+			workflow,
+			/^  workflow_dispatch:\n    inputs:\n      route:\n/mu,
+		);
+		assert.match(
+			job("route"),
+			/mode: \$\{\{ inputs\.route \|\| vars\.HOBO_CI_ROUTE \}\}/u,
+		);
+	});
 });
+
+const TRUNK =
+	"(vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo')";
+const ROUTED = `\${{ needs.route.outputs.runner || ${TRUNK} }}`;
+const SHARD = `\${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || ${TRUNK} }}`;
+
+/** One job's block of the workflow, up to the next job. */
+function job(name: string): string {
+	const lines = workflow.split("\n");
+	const start = lines.indexOf(`  ${name}:`);
+	assert.ok(start > -1, name);
+	const next = lines.findIndex(
+		(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/u.test(line),
+	);
+	return lines.slice(start, next === -1 ? undefined : next).join("\n");
+}
+
+function runsOn(block: string): string | undefined {
+	return /^    runs-on: (.*)$/mu.exec(block)?.[1];
+}

@@ -157,7 +157,7 @@ published beside the table, and the mesh's routing snapshot, are retired
 ([plan 0025](../plans/0025-relay-owned-runner-routing.md), section 6.8):
 judging raw capacity in a workflow repeats, outside the relay, a decision only
 the relay can make
-([finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
+([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
 The **Route runners** job reads neither that record nor this table. It asks the
 relay instead for a fleet verdict: which fleet labels new work should stay off
 right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). Dispatch still counts

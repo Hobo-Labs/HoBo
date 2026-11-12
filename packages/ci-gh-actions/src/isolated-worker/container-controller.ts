@@ -85,7 +85,11 @@ import {
 	type StallJobRecoveryEvent,
 	stallRecoveryRecordForLease,
 } from "./stall-job-recovery.js";
-import type { WorkerStorageFileSystem } from "./storage-admission.js";
+import {
+	releaseWorkerStorageGrants,
+	type WorkerStorageAdmission,
+	type WorkerStorageFileSystem,
+} from "./storage-admission.js";
 import type { StoragePeaks } from "./storage-peaks.js";
 import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
@@ -409,6 +413,7 @@ export function createIsolatedContainerController(options: {
 	containerEnv?: Readonly<Record<string, string>>;
 	workRoot?: string;
 	workFs?: WorkerStorageFileSystem;
+	storageAdmission?: WorkerStorageAdmission;
 	scheduleRetiredSweep?: () => void;
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
@@ -960,6 +965,7 @@ export function createIsolatedContainerController(options: {
 					);
 			}
 		} finally {
+			releaseWorkerStorageGrants(options.storageAdmission, lease);
 			await cleanupWorkDirectory(lease);
 		}
 	};
@@ -1222,6 +1228,7 @@ export function createIsolatedContainerController(options: {
 			unmet,
 			completedAt,
 		);
+		releaseWorkerStorageGrants(options.storageAdmission, lease);
 		options.onStorageGrantRelease?.(lease.jobId);
 	};
 
