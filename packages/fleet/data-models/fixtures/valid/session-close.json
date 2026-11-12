@@ -1,0 +1,8 @@
+{
+  "sessionId": "ses_01",
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "transport": "p2p",
+  "bytesSent": "1024",
+  "bytesReceived": "2048",
+  "at": "2026-11-12T10:20:00.000Z"
+}

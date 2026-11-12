@@ -1,0 +1,7 @@
+{
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "name": "box-a",
+  "kind": "MEMBER_KIND_DEVICE",
+  "state": "MEMBER_STATE_ACTIVE",
+  "reliability": 0
+}

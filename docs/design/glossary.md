@@ -180,5 +180,28 @@ This is the canonical glossary for HoBo design terms. `docs:design-lint` treats 
 | Localhost Yard | The `yard:local` a Station init seeds from discovered host capabilities: provider `local`, runtime-local host, and default-provenance Yard bindings mapping the whole catalog to local implementations with fidelity labels. A real, PortabilityReport-scored Yard — dev-grade by policy, not by special-casing ([ADR-0157](./adr/07-portability-extensibility.md#adr-0157)). |
 | Deployment phase (`plan`/`init`/`handle`) | The three evaluation phases of one workload program: `plan` collects the manifest and resolves bindings with no unoffered effects; `init` runs per component activation to materialize `ctx.bindings` clients once; `handle` runs per request/event with request-scoped context. `hobo dev` is a plan+init loop with a separate dev flag — dev is not a phase ([ADR-0158](./adr/01-architecture-core.md#adr-0158)). |
 | `"use training"` | SDK directive marking an AI-rewritable semantic function optimized behind the `training-engine` port. |
+| Fleet | A named set of members inside one tenant, with one policy and one coordination mode; owned by `@hobo/fleet` ([ADR-0182](./adr/index.md)). `hobo` (the CI runners), a developer's own machines, and the hosted relay's cache backends are each a fleet. |
+| Fleet member | One thing enrolled in one or more fleets. Its kind is `DEVICE`, `BACKEND` or `TARGET`; its membership is per fleet and carries the roles it has there. |
+| Fleet device | A fleet member that runs the fleet agent and holds its own keys: a CI box, a laptop, a relay host, a delivery agent's host, a junction host. |
+| Fleet backend | A fleet member that is a service endpoint with no agent of ours on it (a database, a cache), enrolled and observed by a sponsor. |
+| Fleet target | A fleet member that is a place work is deployed to with no agent of ours on it (a cluster reached by push), sponsored like a backend. |
+| Sponsor | The principal that enrolls a fleet backend or target, holds the reference to its credential, and signs observations about it. |
+| Coordination mode | How a fleet's members work together: `MANY_ACTIVE`, where members claim units of work, or `ONE_ACTIVE`, where exactly one member is active, decided by the assignment register. |
+| Fleet registry | The record of fleets and members and their state, served by the fleet authority or held in-process in local mode. |
+| Fleet authority | The service that enrolls fleet members, keeps the fleet registry, issues credentials, answers NATS auth callouts and signs the audit log (`@hobo/fleet-authority`). |
+| Local mode | Using `@hobo/fleet` inside one process that owns its whole fleet, with an in-process registry and no authority or bus; nothing is signed because the process would only be signing to itself. |
+| Fleet agent | The fleet software running on a fleet device. A device has at most one agent at a time; a second is a clone. |
+| Fleet role | What a fleet device may do in one fleet: `EXECUTOR`, `DISPATCHER`, `OBSERVER`, `RECONCILER` or `JUNCTION`. |
+| Observation | A signed, expiring statement of a fleet member's health, capacity and usage. A device makes its own; a sponsor makes a backend's or target's. |
+| Offer, Claim, Order, Receipt | The four signed records by which a unit of work reaches a fleet device in a `MANY_ACTIVE` fleet. |
+| Assignment | The decided statement of which member of a `ONE_ACTIVE` fleet is active for one epoch, kept in the members' own logs. |
+| Grant | An authority-signed, short-lived permission for two fleet devices to open a transport session. |
+| Mesh | The coordination plane among the fleet devices of a tenant: the bus they share and the transports between them. Not a package, not the network overlay, and not the internal router. |
+| Transport | A device-to-device data path between fleet devices: direct peer-to-peer, a network overlay, or relayed over the bus. |
+| Overlay | A network-layer virtual network (Tailscale, NetBird, WireGuard); one kind of transport, owned by `@hobo/connectivity`. |
+| Sandbox | The isolation boundary fleet work runs in, with a tier from `S0` to `S3`. |
+| Routing | Choosing among providers or backends by cost and health. Never called a fleet; lives in `@hobo/ci` (runner routing) and `@hobo/backend-routing`. |
+| Camp inventory | The delivery system's record of deploy targets. Each Camp that is a machine or cluster is backed by a fleet member; its conditions are computed from that member's record and observations. |
+| Internal router | The in-process fetch interceptor for `*.hobo.internal` in `packages/hobo`; formerly called the internal mesh. |
 
 | MappingSpec | Versioned platform claim/subject mapping between source and target identity adapters; validated at can-migrate; never application claim-mapping code. Platform-derived for continuous identity Trails. |

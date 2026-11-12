@@ -1,0 +1,51 @@
+{
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "tenant": "acme",
+  "kind": "MEMBER_KIND_DEVICE",
+  "displayName": "Box A",
+  "state": "MEMBER_STATE_ACTIVE",
+  "memberships": [
+    {
+      "fleet": "ci",
+      "name": "box-a",
+      "roles": [
+        "ROLE_EXECUTOR"
+      ],
+      "joinedAt": "2026-11-12T10:00:00.000Z"
+    }
+  ],
+  "deviceClass": "DEVICE_CLASS_DEDICATED",
+  "attestationTier": "ATTESTATION_TIER_T1_HELD_KEY",
+  "attestationDigest": "sha256:abababababababababababababababababababababababababababababababab",
+  "identityJwk": "{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4\"}",
+  "identityThumbprint": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
+  "retiredThumbprints": [
+    "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20"
+  ],
+  "keyBundle": {
+    "context": "hobo-fleet/key-bundle/v1",
+    "keyId": "dev_0123456789abcdef0123456789abcdef#identity",
+    "algorithm": "KEY_ALGORITHM_EDDSA",
+    "payload": "ByZFZIOiweD/Hj1ce5q52PcWNVRzkrHQ7w4tTGuKqcjnBiVEY4KhwN/+HTxbepm4",
+    "signature": "AyJBYH+evdz7GjlYd5a11PMSMVBvjq3M6wopSGeGpcTjAiFAX36dvNv6GThXdpW00/IRME9ujazL6gkoR2aFpA=="
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "region": "eu-west",
+  "agentVersion": "0.1.0",
+  "owner": "github:1234",
+  "ownerAliases": [
+    "github:1234"
+  ],
+  "invitedBy": "github:1234",
+  "keyApprovedBy": "github:1234",
+  "acceptedBy": "github:1234",
+  "enrolledAt": "2026-11-12T10:00:00.000Z",
+  "stateChangedAt": "2026-11-12T10:00:00.000Z",
+  "recordSequence": 4,
+  "authorityIncarnation": 1,
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "notAfter": "2026-11-12T10:30:00.000Z"
+}

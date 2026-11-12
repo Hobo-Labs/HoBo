@@ -1,0 +1,7 @@
+{
+  "state": "st_9f8e7d",
+  "userCode": "BCDFGHJK",
+  "verificationUrl": "https://fleet.example.com/signin/device",
+  "expiresAt": "2026-11-12T10:20:00.000Z",
+  "intervalSeconds": 5
+}

@@ -1,0 +1,18 @@
+{
+  "fleetId": "cache",
+  "tenant": "acme",
+  "owner": "github:1234",
+  "coordination": "COORDINATION_MODE_ONE_ACTIVE",
+  "policy": {
+    "approval": "APPROVAL_MODE_AUTO_OWNER",
+    "allowedKinds": [
+      "MEMBER_KIND_BACKEND"
+    ],
+    "failoverAfterMs": 30000,
+    "recoveryPointMs": 5000,
+    "membershipEpochs": true
+  },
+  "revision": 1,
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "notAfter": "2026-11-12T10:30:00.000Z"
+}

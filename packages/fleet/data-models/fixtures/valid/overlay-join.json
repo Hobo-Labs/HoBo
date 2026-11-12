@@ -1,0 +1,8 @@
+{
+  "provider": "tailscale",
+  "credential": "tskey-auth-single-use",
+  "expiresAt": "2026-11-12T10:20:00.000Z",
+  "tags": [
+    "tag:hobo-fleet"
+  ]
+}

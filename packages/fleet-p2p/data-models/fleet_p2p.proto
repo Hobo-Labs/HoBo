@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+// Local configuration record of @hobo/fleet-p2p (ADR-0182). The fleet's
+// records, ports and signed envelopes are in @hobo/fleet; this package
+// keeps only its own settings here.
+package hobo.fleet_p2p.v1;
+
+// Where the peer-to-peer transport finds its relays.
+message FleetP2pConfig {
+  // iroh relay URLs, `https://` only.
+  repeated string relay_urls = 1;
+}

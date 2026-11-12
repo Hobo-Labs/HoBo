@@ -1,0 +1,24 @@
+{
+  "memberId": "bkd_11112222333344445555666677778888",
+  "tenant": "acme",
+  "kind": "MEMBER_KIND_BACKEND",
+  "displayName": "Upstash cache",
+  "state": "MEMBER_STATE_ACTIVE",
+  "memberships": [
+    {
+      "fleet": "cache",
+      "name": "upstash",
+      "joinedAt": "2026-11-12T10:00:00.000Z"
+    }
+  ],
+  "region": "eu-west",
+  "owner": "github:1234",
+  "sponsor": "github:1234",
+  "credentialRef": "infisical://ci/upstash",
+  "endpointDigest": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "enrolledAt": "2026-11-12T10:00:00.000Z",
+  "recordSequence": 1,
+  "authorityIncarnation": 1,
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "notAfter": "2026-11-12T10:30:00.000Z"
+}

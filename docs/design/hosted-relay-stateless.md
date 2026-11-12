@@ -545,7 +545,7 @@ fleet's policy in `@hobo/data-postgres` (`src/fleet/`):
 
 Those pieces never mention SQL. Phase 4c moved them, with `fleetMajority`,
 the failure classes and the billing-period helpers, from `@hobo/data-postgres`
-into [`@hobo/backend-fleet`](../../packages/backend-fleet/README.md), which
+into [`@hobo/backend-routing`](../../packages/backend-routing/README.md) (formerly `@hobo/backend-fleet`), which
 `@hobo/data-postgres` re-exports; a new package rather than `@hobo/core`,
 because it is a policy with its own records and pact, not a port. Next to
 `decideFleet`, which moves only when the writer is in trouble and judges a

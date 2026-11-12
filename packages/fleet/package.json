@@ -1,0 +1,81 @@
+{
+	"name": "@hobo/fleet",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Fleet: one package for every fleet (ADR-0182). Member identity, enrollment, the registry, health and capacity observation, many-active work (offers, claims, orders, receipts) and the one-active assignment register, the signed envelope, ports, in-memory adapters, local mode, the typed authority client and the conformance test kits. No I/O beyond node:crypto.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./keys": {
+			"types": "./dist/keys.d.ts",
+			"default": "./dist/keys.js"
+		},
+		"./membership": {
+			"types": "./dist/membership.d.ts",
+			"default": "./dist/membership.js"
+		},
+		"./observation": {
+			"types": "./dist/observation.d.ts",
+			"default": "./dist/observation.js"
+		},
+		"./assignment": {
+			"types": "./dist/assignment.d.ts",
+			"default": "./dist/assignment.js"
+		},
+		"./work": {
+			"types": "./dist/work.d.ts",
+			"default": "./dist/work.js"
+		},
+		"./transport": {
+			"types": "./dist/transport.d.ts",
+			"default": "./dist/transport.js"
+		},
+		"./audit": {
+			"types": "./dist/audit.d.ts",
+			"default": "./dist/audit.js"
+		},
+		"./agent": {
+			"types": "./dist/agent.d.ts",
+			"default": "./dist/agent.js"
+		},
+		"./client": {
+			"types": "./dist/client.d.ts",
+			"default": "./dist/client.js"
+		},
+		"./verdict-wire": {
+			"types": "./dist/verdict-wire.d.ts",
+			"default": "./dist/verdict-wire.js"
+		},
+		"./testing": {
+			"types": "./dist/testing.d.ts",
+			"default": "./dist/testing.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/ --passWithNoTests",
+		"test:unit": "vitest run test/ --passWithNoTests"
+	}
+}

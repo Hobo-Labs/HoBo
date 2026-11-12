@@ -1,0 +1,37 @@
+{
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "observerId": "dev_0123456789abcdef0123456789abcdef",
+  "fleets": [
+    "ci"
+  ],
+  "health": "HEALTH_REACHABLE",
+  "probeLatencyMs": 12,
+  "capacity": {
+    "freeSlots": 2,
+    "totalSlots": 4,
+    "freeMemoryMb": 12288,
+    "freeDiskMb": 204800
+  },
+  "labels": [
+    "hobo",
+    "linux-x64"
+  ],
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "sandboxTiers": [
+    "SANDBOX_TIER_S1_CONTAINER",
+    "SANDBOX_TIER_S3_MICROVM"
+  ],
+  "agentVersion": "0.1.0",
+  "transports": [
+    "p2p",
+    "bus-relay"
+  ],
+  "region": "eu-west",
+  "bundleSequence": 3,
+  "since": "2026-11-12T10:00:00.000Z",
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "validUntil": "2026-11-12T10:20:00.000Z"
+}

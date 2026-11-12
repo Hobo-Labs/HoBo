@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// Local configuration record of @hobo/fleet-agent (ADR-0182). The fleet's
+// records, ports and signed envelopes are in @hobo/fleet; this package
+// keeps only its own settings here.
+package hobo.fleet_agent.v1;
+
+// A device's local settings.
+message FleetAgentConfig {
+  // Keys, generation, pinned trust and state (HOBO_FLEET_HOME).
+  string home = 1;
+  // `file` or `external-signer:<command>` (HOBO_FLEET_KEYSTORE).
+  string keystore = 2;
+  // Fleets to serve; empty means every fleet the device is in.
+  repeated string fleets = 3;
+  // The highest sandbox tier offered, `S0` to `S3`; empty means the highest available.
+  string sandbox_cap = 4;
+  // Transport order: `p2p`, `overlay`, `bus-relay`.
+  repeated string transports = 5;
+}

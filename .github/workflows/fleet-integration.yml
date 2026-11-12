@@ -1,0 +1,148 @@
+name: Fleet integration
+
+# The HoBo Fleet integration lane (ADR-0182). It provisions the binaries the
+# fleet's `*.integration.test.ts` need and runs them: `fleet:verify` (every
+# outcome, each of which names its integration tests) and every fleet
+# integration test besides. Those tests fail when a binary is absent and `CI`
+# is set, so a missing tool here is a red job, never a skip.
+#
+# Provisioning: `nats-server` 2.15.3 through mise.toml; the iroh relay of the
+# release the pinned `@number0/iroh` binding is built against (iroh-relay 1.4.1),
+# a pinned, checksum-verified download; a rootless OCI runtime (Podman); the
+# sandbox probe image pulled once by digest. gVisor, Kata and macOS are not
+# provisioned.
+#
+# Runners: scripts/lint-actions.ts requires every enabled workflow to run on the
+# self-hosted hobo labels, so this lane cannot use the GitHub-hosted Ubuntu
+# image's preinstalled Podman that the design assumed. The hobo runner image
+# must therefore carry rootless Podman; both jobs check for it first and fail
+# with that message rather than later in a test.
+#
+# Runs on the integration branch (`fleet/**`) and on demand.
+
+on:
+  push:
+    branches:
+      - "fleet/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  HOBO_FLEET_PROBE_IMAGE: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+  IROH_RELAY_VERSION: "1.4.1"
+
+jobs:
+  fleet-verify:
+    name: Fleet outcomes (fleet:verify)
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
+        with:
+          install: true
+          cache: true
+      - name: Provision the iroh relay
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) target=x86_64-unknown-linux-musl; sum=75254641e3fad7fcbac6dee4d485556fbe06ef708340a9d8810469270ba626b8 ;;
+            aarch64) target=aarch64-unknown-linux-musl; sum=3fc0c2d67c1cd66250bf82f3e2f17a985b7081a3d272186bad9d63e3f2347b38 ;;
+            *) echo "no pinned iroh relay for $(uname -m)" >&2; exit 1 ;;
+          esac
+          archive="${RUNNER_TEMP}/iroh-relay.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/n0-computer/iroh/releases/download/v${IROH_RELAY_VERSION}/iroh-relay-v${IROH_RELAY_VERSION}-${target}.tar.gz"
+          echo "${sum}  ${archive}" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/iroh-relay/bin"
+          tar -xzf "$archive" -C "${RUNNER_TEMP}/iroh-relay/bin" ./iroh-relay
+          echo "${RUNNER_TEMP}/iroh-relay/bin" >> "$GITHUB_PATH"
+      - name: Check the binaries
+        run: |
+          set -euo pipefail
+          nats-server --version
+          iroh-relay --help > /dev/null
+          if ! command -v podman > /dev/null; then
+            echo "::error::this runner has no podman; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+            exit 1
+          fi
+          if ! podman info --format '{{.Host.Security.Rootless}}' | grep -qx true; then
+            echo "::error::podman on this runner is not rootless; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+            exit 1
+          fi
+      - name: Pull the sandbox probe image
+        run: podman pull "${HOBO_FLEET_PROBE_IMAGE}"
+      - run: pnpm run install:check
+      - run: pnpm run build
+      - name: Every fleet outcome
+        run: pnpm run fleet:verify
+      - name: Keep the verification report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fleet-verification
+          path: fleet-verification.json
+          if-no-files-found: warn
+
+  fleet-integration-tests:
+    name: Fleet integration tests
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
+        with:
+          install: true
+          cache: true
+      - name: Provision the iroh relay
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) target=x86_64-unknown-linux-musl; sum=75254641e3fad7fcbac6dee4d485556fbe06ef708340a9d8810469270ba626b8 ;;
+            aarch64) target=aarch64-unknown-linux-musl; sum=3fc0c2d67c1cd66250bf82f3e2f17a985b7081a3d272186bad9d63e3f2347b38 ;;
+            *) echo "no pinned iroh relay for $(uname -m)" >&2; exit 1 ;;
+          esac
+          archive="${RUNNER_TEMP}/iroh-relay.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/n0-computer/iroh/releases/download/v${IROH_RELAY_VERSION}/iroh-relay-v${IROH_RELAY_VERSION}-${target}.tar.gz"
+          echo "${sum}  ${archive}" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/iroh-relay/bin"
+          tar -xzf "$archive" -C "${RUNNER_TEMP}/iroh-relay/bin" ./iroh-relay
+          echo "${RUNNER_TEMP}/iroh-relay/bin" >> "$GITHUB_PATH"
+      - name: Check the binaries
+        run: |
+          set -euo pipefail
+          nats-server --version
+          iroh-relay --help > /dev/null
+          if ! command -v podman > /dev/null; then
+            echo "::error::this runner has no podman; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+            exit 1
+          fi
+          if ! podman info --format '{{.Host.Security.Rootless}}' | grep -qx true; then
+            echo "::error::podman on this runner is not rootless; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+            exit 1
+          fi
+      - name: Pull the sandbox probe image
+        run: podman pull "${HOBO_FLEET_PROBE_IMAGE}"
+      - run: pnpm run install:check
+      - run: pnpm run build
+      - name: Every fleet integration test
+        run: |
+          set -euo pipefail
+          mapfile -t tests < <(git ls-files 'packages/fleet*/**/*.integration.test.ts' 'packages/ci-gh-actions/test/fleet-*.integration.test.ts' 'packages/connectivity/**/*.integration.test.ts')
+          if [ "${#tests[@]}" -eq 0 ]; then
+            echo "no fleet integration tests yet"
+            exit 0
+          fi
+          pnpm exec vitest run "${tests[@]}"

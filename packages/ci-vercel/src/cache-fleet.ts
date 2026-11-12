@@ -3,7 +3,7 @@
  * member, exactly one is active, and every port call goes to it.
  *
  * - **Which one is active** is read from the fleet's assignment register
- *   (`@hobo/backend-fleet`), whose log is kept on every member in one key
+ *   (`@hobo/backend-routing`), whose log is kept on every member in one key
  *   (`hobo-ci:<env>:fleet:assignment`) and decided by majority. A resolution
  *   is cached in memory for `assignmentTtlMs` (a minute), measured from when
  *   the read *started*. With a single member there is no register: it is
@@ -47,7 +47,7 @@ import {
 	rejoinAssignmentReplicas,
 	resolveAssignment,
 	routeFleetByBudget,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import {
 	EPHEMERAL_STATE_COMMAND_COST,
 	EPHEMERAL_STATE_MAX_TTL_MS,

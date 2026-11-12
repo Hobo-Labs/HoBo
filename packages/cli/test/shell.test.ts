@@ -24,6 +24,7 @@ const canonicalVerbNames = [
 	"feature",
 	"deploy",
 	"ci",
+	"fleet",
 	"incident",
 	"claim",
 	"recipes",
@@ -99,6 +100,7 @@ Canonical verbs:
   feature     delivery      OpenFeature flags / canary / experiment status (list|eval|set|kill)
   deploy      delivery      Attested continuous delivery status/logs/rollback (secret-free)
   ci          delivery      Connect a repository and inspect CI runs (connect/list/inspect)
+  fleet       control plane Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)
   incident    delivery      CD failure disposition: A2H handoff or sandboxed self-heal
   claim       identity      Bind an anonymous deployment to an account
   recipes     read-only     List and inspect deployment recipes and their claim terms
@@ -191,7 +193,7 @@ describe("HoBo CLI shell", () => {
 			"forge",
 			"train",
 			"crew",
-			"fleet",
+			// "fleet" is canonical again: HoBo Fleet (ADR-0182) reinstates it.
 		]) {
 			expect(result.stdout).not.toMatch(new RegExp(`^  ${retired}\\s`, "m"));
 		}

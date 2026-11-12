@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+// Local configuration record of @hobo/fleet-nats (ADR-0182). The fleet's
+// records, ports and signed envelopes are in @hobo/fleet; this package
+// keeps only its own settings here.
+package hobo.fleet_nats.v1;
+
+// How this package reaches one tenant's NATS deployment.
+message FleetNatsConfig {
+  // NATS server URLs, `tls://` or `wss://` only.
+  repeated string servers = 1;
+  // The tenant whose account the connection uses.
+  string tenant = 2;
+  // Stream and bucket replicas: 1 (standalone) or 3 (high availability).
+  uint32 replicas = 3;
+}

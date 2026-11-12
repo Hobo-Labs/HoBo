@@ -37,6 +37,9 @@ const activeCiFiles = new Set([
 	"release-hobo.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
+	// The HoBo Fleet integration lane (ADR-0182): nats-server, the iroh relay
+	// and a rootless OCI runtime, on the integration branch and on demand.
+	"fleet-integration.yml",
 ]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the

@@ -1,0 +1,7 @@
+{
+  "issuer": "https://fleet.example.com",
+  "jwksUri": "https://fleet.example.com/.well-known/jwks.json",
+  "signInProviders": [
+    "github"
+  ]
+}

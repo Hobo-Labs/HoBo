@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// Local configuration record of @hobo/fleet-authority (ADR-0182). The fleet's
+// records, ports and signed envelopes are in @hobo/fleet; this package
+// keeps only its own settings here.
+package hobo.fleet_authority.v1;
+
+// The authority service's deployment settings.
+message FleetAuthorityConfig {
+  // The authority origin, `https://` only.
+  string issuer = 1;
+  // `standalone` or `high-availability`.
+  string profile = 2;
+  // NATS server URLs published in Discovery.
+  repeated string nats_urls = 3;
+  // Peer-to-peer relay URLs published in Discovery.
+  repeated string relay_urls = 4;
+  // The default minimum agent version published in Discovery.
+  string min_agent_version = 5;
+}

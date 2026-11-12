@@ -1,0 +1,18 @@
+{
+  "memberId": "bkd_11112222333344445555666677778888",
+  "tenant": "acme",
+  "kind": "MEMBER_KIND_BACKEND",
+  "state": "MEMBER_STATE_ACTIVE",
+  "memberships": [
+    {
+      "fleet": "cache",
+      "name": "upstash",
+      "joinedAt": "2026-11-12T10:00:00.000Z"
+    }
+  ],
+  "identityJwk": "{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4\"}",
+  "sponsor": "github:1234",
+  "credentialRef": "infisical://ci/upstash",
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "notAfter": "2026-11-12T10:30:00.000Z"
+}

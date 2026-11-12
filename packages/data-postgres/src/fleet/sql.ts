@@ -16,15 +16,15 @@
  *   `ROLLBACK` itself, which works through a transaction-mode pooler because a
  *   pooler pins a connection for exactly that span.
  */
-import type { FleetFailureClass } from "@hobo/backend-fleet";
+import type { FleetFailureClass } from "@hobo/backend-routing";
 import { PostgresDataError } from "../errors.js";
 
-// Backend ids and failure classes are engine-neutral (`@hobo/backend-fleet`).
+// Backend ids and failure classes are engine-neutral (`@hobo/backend-routing`).
 export {
 	FLEET_FAILURE_CLASSES,
 	type FleetFailureClass,
 	parseFleetBackendId,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 export type SqlParameter = string | number | boolean | null;
 

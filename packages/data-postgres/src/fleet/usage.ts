@@ -14,18 +14,18 @@ import {
 	billingPeriod,
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
 import { column, type FleetBackend, parseCount } from "./sql.js";
 
-// The billing period and the units are engine-neutral (`@hobo/backend-fleet`).
+// The billing period and the units are engine-neutral (`@hobo/backend-routing`).
 export {
 	type BillingPeriod,
 	billingPeriod,
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 // parallel-type-allowed: the parsed in-process measurement read back through readUsage; the proto PostgresFleetUsage is its wire projection.
 export type PostgresFleetUsage = {

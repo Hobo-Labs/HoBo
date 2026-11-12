@@ -1,0 +1,15 @@
+{
+	"consumer": {
+		"name": "@hobo/fleet-p2p consumer"
+	},
+	"provider": {
+		"name": "@hobo/fleet-p2p"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "Placeholder written by the fleet contract commit (ADR-0182). The owning lane replaces it with the package's real boundary interactions."
+	},
+	"interactions": []
+}

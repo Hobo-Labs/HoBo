@@ -2,7 +2,7 @@
  * The assignment register's SQL replica: one backend's log in a table.
  *
  * The register itself (entries, majority, resolve, propose, bootstrap,
- * complete, override) is engine-neutral and lives in `@hobo/backend-fleet`
+ * complete, override) is engine-neutral and lives in `@hobo/backend-routing`
  * (ADR-0179 phase 4c moved it there so a cache fleet can use it without this
  * package); it is re-exported here under the names this package always had.
  * What stays is how a PostgreSQL backend holds its log: `readAssignmentRows`
@@ -15,7 +15,7 @@ import {
 	type FleetAssignment,
 	parseAssignmentRegister,
 	parseFleetAssignment,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { PostgresDataError } from "../errors.js";
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
 import {
@@ -55,7 +55,7 @@ export {
 	readAssignmentReplies,
 	readCurrentAssignment,
 	resolveAssignment,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 /** This package's name for an assignment entry; the same parsed type. */
 export type PostgresFleetAssignment = FleetAssignment;

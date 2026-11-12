@@ -89,6 +89,39 @@ checksum = "sha256:8e3c4f7a73d79240b7184849bacec7cedef1445d0b727ee7a2c078ec50dcc
 url = "https://github.com/gitleaks/gitleaks/releases/download/v8.22.1/gitleaks_8.22.1_windows_x64.zip"
 url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/216772755"
 
+[[tools.nats-server]]
+version = "2.15.3"
+backend = "github:nats-io/nats-server"
+specifiers = ["2.15.3"]
+
+[tools.nats-server."platforms.linux-arm64"]
+checksum = "sha256:4a2088b3ec7103bf79d6484f55e80ab5d10204811d9ae6f7a33e8544d98dd45d"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-linux-arm64.tar.gz"
+
+[tools.nats-server."platforms.linux-arm64-musl"]
+checksum = "sha256:4a2088b3ec7103bf79d6484f55e80ab5d10204811d9ae6f7a33e8544d98dd45d"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-linux-arm64.tar.gz"
+
+[tools.nats-server."platforms.linux-x64"]
+checksum = "sha256:32e18c1e78d7ef4f86e483070eef3abb2647c3d4d67e29668077c7ad81da0797"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-linux-amd64.tar.gz"
+
+[tools.nats-server."platforms.linux-x64-musl"]
+checksum = "sha256:32e18c1e78d7ef4f86e483070eef3abb2647c3d4d67e29668077c7ad81da0797"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-linux-amd64.tar.gz"
+
+[tools.nats-server."platforms.macos-arm64"]
+checksum = "sha256:a7e25e32247024449e32dcb7129ff416dca3a2cd569fe3c205603ecf8fe5f810"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-darwin-arm64.tar.gz"
+
+[tools.nats-server."platforms.macos-x64"]
+checksum = "sha256:d274cfb9d6e26ffbb04007bfe744d46a8b4f4e5d218741f8ee89aa687c658bc1"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-darwin-amd64.tar.gz"
+
+[tools.nats-server."platforms.windows-x64"]
+checksum = "sha256:b202c46689a56b17e88939b6c53a25294021b000b9c7225209bcb1bbda347bad"
+url = "https://github.com/nats-io/nats-server/releases/download/v2.15.3/nats-server-v2.15.3-windows-amd64.zip"
+
 [[tools.node]]
 version = "24.22.2"
 backend = "core:node"

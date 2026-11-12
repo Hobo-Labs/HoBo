@@ -1,0 +1,36 @@
+{
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "name": "box-a",
+  "displayName": "Box A",
+  "kind": "MEMBER_KIND_DEVICE",
+  "state": "MEMBER_STATE_ACTIVE",
+  "availability": "AVAILABILITY_LIVE",
+  "health": "HEALTH_REACHABLE",
+  "capacity": {
+    "freeSlots": 2,
+    "totalSlots": 4
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "attestationTier": "ATTESTATION_TIER_T1_HELD_KEY",
+  "sandboxTiers": [
+    "SANDBOX_TIER_S3_MICROVM"
+  ],
+  "reliability": 0.875,
+  "samples": {
+    "delivered": 10,
+    "dropped": 2
+  },
+  "since": "2026-11-12T10:00:00.000Z",
+  "lastSeen": "2026-11-12T10:00:00.000Z",
+  "agentVersion": "0.1.0",
+  "labels": [
+    "hobo"
+  ],
+  "deviceClass": "DEVICE_CLASS_DEDICATED",
+  "roles": [
+    "ROLE_EXECUTOR"
+  ]
+}

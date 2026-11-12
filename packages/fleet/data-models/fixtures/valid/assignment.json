@@ -1,0 +1,10 @@
+{
+  "epoch": "4",
+  "active": "primary",
+  "sealed": true,
+  "target": "standby",
+  "reason": "failover:unreachable",
+  "lossWindowMs": "1500",
+  "decidedAtMs": "1794268845000",
+  "decidedBy": "fleet-tick:box-a"
+}

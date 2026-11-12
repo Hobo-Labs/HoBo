@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/fleet-p2p",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Fleet peer-to-peer transport: authenticated device-to-device streams dialled by key over QUIC with relay fallback (iroh). The only package with the native binding.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/fleet": "workspace:*",
+		"@number0/iroh": "1.2.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/ --passWithNoTests",
+		"test:unit": "vitest run test/ --passWithNoTests"
+	}
+}

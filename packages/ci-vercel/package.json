@@ -21,10 +21,11 @@
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/adapter-infisical": "workspace:*",
-    "@hobo/backend-fleet": "workspace:*",
+    "@hobo/backend-routing": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/ci-gh-actions": "workspace:*",
     "@hobo/core": "workspace:*",
+    "@hobo/fleet": "workspace:*",
     "@hobo/kv-redis-compatible": "workspace:*",
     "@hobo/provider-turso": "workspace:*",
     "@hobo/provider-upstash": "workspace:*",

@@ -15,7 +15,7 @@
  * bound: a deployed relay with no cache refuses to start rather than keep
  * state each instance forgets.
  */
-import type { FleetUsageUnit } from "@hobo/backend-fleet";
+import type { FleetUsageUnit } from "@hobo/backend-routing";
 import type { EphemeralStatePort } from "@hobo/core";
 import {
 	createMemoryRedisExecutor,

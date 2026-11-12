@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/backend-routing",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo engine-neutral backend fleet: the majority-decided assignment register (which one backend of a fleet is active, sealed moves, bootstrap, completion and override over any AssignmentReplica), that register kept on an EphemeralStatePort, billing periods and usage units, and the budget policies that keep, switch or fail over (decideFleet) and route by free, prepaid and pay-as-you-go preference with hysteresis (routeFleetByBudget).",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
+		"@hobo/fleet": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/kv-redis-compatible": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

@@ -17,7 +17,7 @@ export const file_cache_offers: GenFile = /*@__PURE__*/
  * marks the relay switches at (ADR-0179 phase 4c). The JSON form is the value
  * of HOBO_CI_CACHE_OFFERS_JSON, from the config service or the environment;
  * `src/cache-offers.ts` parses it into the FleetOffer and FleetRoutingMarks
- * records of @hobo/backend-fleet over defaults equal to the vendor free tiers.
+ * records of @hobo/backend-routing over defaults equal to the vendor free tiers.
  * Backends are named by fleet id, never by a URL or a credential.
  *
  * @generated from message hobo.ci.vercel.v1.RelayCacheOffers

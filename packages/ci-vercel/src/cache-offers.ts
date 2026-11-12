@@ -11,7 +11,7 @@
  * (constrained by `data-models/cache-offers/cache_offers.cue`); it arrives as
  * the JSON value of `HOBO_CI_CACHE_OFFERS_JSON`, from the config service or
  * the environment. Parse, don't validate: `parseCacheOffers` turns it into
- * the derived `FleetOffer`s and `FleetRoutingMarks` of `@hobo/backend-fleet`
+ * the derived `FleetOffer`s and `FleetRoutingMarks` of `@hobo/backend-routing`
  * once, and an invalid document is an error naming the key, never quoting it.
  *
  * | Backend | Default | Source |
@@ -34,7 +34,7 @@ import {
 	parseFleetFinancialModel,
 	parseFleetOffer,
 	parseFleetRoutingMarks,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { z } from "zod";
 import { RELAY_CACHE_OFFER_DEFAULTS } from "./_generated-assets/relay-offers.js";
 import {

@@ -1,0 +1,8 @@
+{
+  "epoch": "2",
+  "active": "primary",
+  "sealed": true,
+  "reason": "switch",
+  "decidedAtMs": "1794268000000",
+  "decidedBy": "fleet-tick"
+}

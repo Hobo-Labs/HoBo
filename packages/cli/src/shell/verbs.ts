@@ -63,6 +63,12 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 		summary: "Connect a repository and inspect CI runs (connect/list/inspect)",
 	},
 	{
+		name: "fleet",
+		role: "control plane",
+		summary:
+			"Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)",
+	},
+	{
 		name: "incident",
 		role: "delivery",
 		summary: "CD failure disposition: A2H handoff or sandboxed self-heal",
@@ -236,6 +242,7 @@ export const projectScopedVerbs = new Set(
 				"doctor",
 				"login",
 				"ci",
+				"fleet",
 				"claim",
 				"identity",
 				"trails",

@@ -4,7 +4,9 @@
   "description": "HoBo CI account-scoped allocation routing and durable lease contracts",
   "license": "MIT",
   "type": "module",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "LICENSE",
     "dist"
@@ -47,9 +49,10 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
-    "@hobo/core": "workspace:*",
     "@hobo/broker": "workspace:*",
+    "@hobo/core": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
+    "@hobo/fleet": "workspace:*",
     "@hobo/pricing": "workspace:*",
     "zod": "^4.1.13"
   },

@@ -560,7 +560,7 @@ The engine-neutral parts — the assignment entry and its rules, majority,
 `bootstrapAssignment`, `completeAssignment`, `overrideAssignment`, the backend
 id and failure classes, billing periods and usage units, and `decideFleet` with
 its models and policy — live in
-[`@hobo/backend-fleet`](../backend-fleet/README.md) since ADR-0179 phase 4c, so
+[`@hobo/backend-routing`](../backend-routing/README.md) since ADR-0179 phase 4c, so
 the hosted relay's cache fleet can use them without this package. This package
 re-exports them under the names below (`PostgresFleetAssignment` is
 `FleetAssignment`, and so on) and keeps what is PostgreSQL's: the SQL replica

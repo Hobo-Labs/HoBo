@@ -19,6 +19,7 @@
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
+		"@hobo/fleet": "workspace:*",
 		"@hobo/yards": "workspace:*"
 	},
 	"devDependencies": {

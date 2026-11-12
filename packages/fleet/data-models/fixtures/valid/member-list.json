@@ -1,0 +1,11 @@
+{
+  "members": [
+    {
+      "context": "hobo-fleet/member-record/v1",
+      "keyId": "authority#1",
+      "algorithm": "KEY_ALGORITHM_EDDSA",
+      "payload": "ByZFZIOiweD/Hj1ce5q52PcWNVRzkrHQ7w4tTGuKqcjnBiVEY4KhwN/+HTxbepm4",
+      "signature": "AyJBYH+evdz7GjlYd5a11PMSMVBvjq3M6wopSGeGpcTjAiFAX36dvNv6GThXdpW00/IRME9ujazL6gkoR2aFpA=="
+    }
+  ]
+}

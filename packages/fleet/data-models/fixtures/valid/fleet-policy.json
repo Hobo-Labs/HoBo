@@ -1,0 +1,68 @@
+{
+  "approval": "APPROVAL_MODE_SINGLE",
+  "allowedKinds": [
+    "MEMBER_KIND_DEVICE"
+  ],
+  "allowedRoles": [
+    "ROLE_EXECUTOR",
+    "ROLE_DISPATCHER"
+  ],
+  "allowedClasses": [
+    "DEVICE_CLASS_DEDICATED"
+  ],
+  "minAttestationTier": "ATTESTATION_TIER_T1_HELD_KEY",
+  "orgMinSandbox": "SANDBOX_TIER_S1_CONTAINER",
+  "workKinds": [
+    "github-job"
+  ],
+  "repositories": [
+    {
+      "repository": "acme/app",
+      "refs": [
+        "refs/heads/main"
+      ],
+      "workflowDigests": [
+        "sha256:abababababababababababababababababababababababababababababababab"
+      ]
+    }
+  ],
+  "oidcTrust": [
+    {
+      "issuer": "https://token.actions.githubusercontent.com",
+      "subjectPattern": "^repo:acme/app:ref:refs/heads/main$",
+      "requiredClaims": {
+        "repository_owner": "acme"
+      },
+      "roles": [
+        "ROLE_DISPATCHER"
+      ],
+      "sponsor": true
+    }
+  ],
+  "egressAllow": [
+    "registry.npmjs.org",
+    "github.com"
+  ],
+  "memberQuotaPerPrincipal": 5,
+  "minAgentVersion": "0.1.0",
+  "residency": {
+    "classifications": [
+      "internal"
+    ],
+    "allowedJurisdictions": [
+      "eu"
+    ],
+    "deniedJurisdictions": [
+      "us"
+    ]
+  },
+  "allowHostDocker": true,
+  "sessionPurposes": [
+    "SESSION_PURPOSE_SHELL",
+    "SESSION_PURPOSE_FORWARD"
+  ],
+  "labels": [
+    "hobo"
+  ],
+  "keyBundleHours": 24
+}

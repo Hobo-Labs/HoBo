@@ -1,0 +1,29 @@
+{
+  "fleet": "ci",
+  "image": "ghcr.io/acme/build:1",
+  "imageDigest": "sha256:abababababababababababababababababababababababababababababababab",
+  "argv": [
+    "make"
+  ],
+  "env": {
+    "CI": "1"
+  },
+  "needs": {
+    "memoryMb": 4096,
+    "diskMb": 20480,
+    "platform": {
+      "os": "linux",
+      "arch": "x64"
+    },
+    "labels": [
+      "hobo",
+      "linux-x64"
+    ],
+    "docker": true,
+    "minSandbox": "SANDBOX_TIER_S1_CONTAINER"
+  },
+  "egressAllow": [
+    "github.com"
+  ],
+  "ttlSeconds": 600
+}

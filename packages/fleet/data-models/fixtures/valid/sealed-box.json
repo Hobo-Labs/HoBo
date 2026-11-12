@@ -1,0 +1,6 @@
+{
+  "recipientKeyId": "dev_0123456789abcdef0123456789abcdef#seal",
+  "ephemeralPublicKey": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
+  "nonce": "ByZFZIOiweD/Hj1c",
+  "ciphertext": "ByZFZIOiweD/Hj1ce5q52PcWNVRzkrHQ7w4tTGuKqcjnBiVEY4KhwA=="
+}

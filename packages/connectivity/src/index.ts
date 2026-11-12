@@ -130,6 +130,12 @@ export {
 	createInMemoryMeteringSink,
 	createLogMeteringSink,
 } from "./metering/sinks.js";
+// HoBo Fleet (ADR-0182): the overlay transport and the overlay credential minters.
+export {
+	createNetbirdCredentialMinter,
+	createTailscaleCredentialMinter,
+	type OverlayMinterOptions,
+} from "./minters/index.js";
 export { createNetbirdOverlay } from "./overlay/netbird.js";
 export {
 	createNetbirdApiClient,
@@ -149,6 +155,7 @@ export {
 	type TailscaleApiOptions,
 	type TailscaleSplitDnsMap,
 } from "./overlay/tailscale-api.js";
+export { createOverlayTransport } from "./overlay-transport.js";
 // Privileged Access Gateway (optional Station capability) — full secretless brokers.
 export * from "./pam/index.js";
 export {

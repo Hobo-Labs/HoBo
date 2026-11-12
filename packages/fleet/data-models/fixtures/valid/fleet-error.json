@@ -1,0 +1,7 @@
+{
+  "code": "fleet-policy",
+  "message": "the device class is not allowed",
+  "detail": {
+    "rule": "allowed_classes"
+  }
+}

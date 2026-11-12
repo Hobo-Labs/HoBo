@@ -1,0 +1,10 @@
+{
+  "tenant": "acme",
+  "fleet": "cache",
+  "kind": "MEMBER_KIND_BACKEND",
+  "name": "upstash",
+  "displayName": "Upstash",
+  "credentialRef": "infisical://ci/upstash",
+  "endpointDigest": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "region": "eu-west"
+}

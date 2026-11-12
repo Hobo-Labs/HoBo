@@ -3,6 +3,7 @@ export {
 	type AttestationDocument,
 	type AttestationVerdict,
 	createFixtureHostAttestor,
+	type HostAttestor,
 	type LaunchMeasurement,
 	type PrincipalRef,
 	verifyWorkloadAttestation,
@@ -130,6 +131,7 @@ export {
 	gateFlagMutation,
 	ROLLOUT_START_ACTION,
 } from "./flag-policy.js";
+export { createDeviceHostAttestor, loadSecretStoreKms } from "./fleet/index.js";
 export {
 	applyRolloutToGatewayRouting,
 	composeGatewayWeightFromRollout,

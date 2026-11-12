@@ -1,0 +1,11 @@
+{
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subjectPattern": "^repo:acme/app:ref:refs/heads/main$",
+  "requiredClaims": {
+    "repository_owner": "acme"
+  },
+  "roles": [
+    "ROLE_DISPATCHER"
+  ],
+  "sponsor": true
+}

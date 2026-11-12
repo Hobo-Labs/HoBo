@@ -163,7 +163,7 @@ service (an optional cache-fleet member, not a prerequisite). Details, sources, 
 (2b, 4b–4e, 5): [Options routed by budget](../hosted-relay-stateless.md#options-routed-by-budget).
 
 *Phase 4c, implemented.* The engine-neutral parts moved to
-[`@hobo/backend-fleet`](../../../packages/backend-fleet/README.md), which
+[`@hobo/backend-routing`](../../../packages/backend-routing/README.md) (formerly `@hobo/backend-fleet`), which
 `@hobo/data-postgres` re-exports. The assignment log is kept in one key of
 every cache backend (`ephemeralAssignmentReplica`), the active backend is
 read from it by majority, a move is sealed for longer than twice the minute

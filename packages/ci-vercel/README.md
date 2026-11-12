@@ -464,7 +464,7 @@ bound cache behind one `EphemeralStatePort`.
 
 - **One active member, from the register.** The fleet's assignment log is kept
   on every member in `hobo-ci:<env>:fleet:assignment`
-  (`ephemeralAssignmentReplica` in [`@hobo/backend-fleet`](../backend-fleet/README.md))
+  (`ephemeralAssignmentReplica` in [`@hobo/backend-routing`](../backend-routing/README.md))
   and the active member is the majority-decided current entry. An instance
   caches the answer for a minute, counted from when its read started. With a
   single member there is no register and nothing is read. An empty register

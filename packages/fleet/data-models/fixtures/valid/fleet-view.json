@@ -1,0 +1,20 @@
+{
+  "fleet": "ci",
+  "members": [
+    {
+      "memberId": "dev_0123456789abcdef0123456789abcdef",
+      "name": "box-a",
+      "kind": "MEMBER_KIND_DEVICE",
+      "state": "MEMBER_STATE_ACTIVE",
+      "availability": "AVAILABILITY_LIVE"
+    }
+  ],
+  "capacity": {
+    "live": 1,
+    "healthy": 1,
+    "totalSlots": 4,
+    "freeSlots": 2
+  },
+  "asOf": "2026-11-12T10:00:00.000Z",
+  "notAfter": "2026-11-12T10:02:00.000Z"
+}

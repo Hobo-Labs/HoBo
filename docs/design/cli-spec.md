@@ -29,6 +29,7 @@ surfaces.
 | `feature` | delivery | OpenFeature flags, canary, and experiment observe (`list`, `eval`, `set`, `kill`, `canary`, `experiment`). Sole app evaluation API is OpenFeature; no vendor SDKs. | ADR-0044, ADR-0083 |
 | `deploy` | delivery | Attested continuous delivery (`status`, `logs`, `rollback`). Secret-free status; no ambient credentials. | ADR-0083, ADR-0008 |
 | `ci` | delivery | Connect a GitHub repository to isolated CI (`enable`, `connect` alias), inspect its connection (`status`), and manage Actions runs (`list`/`ls`, `inspect`, `logs`, `grep`, `rerun`). Works without a Bindle. `deploy` is the exception: it deploys the hosted relay's own Bindle to Vercel from a git ref (preview by default, `--dry-run` sends nothing). [Setup and Vercel parity](../../packages/hobo/CI.md). | ADR-0071, ADR-0083 |
+| `fleet` | control plane | HoBo Fleet: sign a person in to the fleet authority (`login`, `logout`), enroll this device (`enroll --token-file`, `--oidc` or `--fleet`), run the agent (`run`, `service install/uninstall/status`), and read or manage fleets, members, tokens, sessions (`connect`, `cp`), submitted work (`submit`, `work show/logs`), the audit chain (`audit verify/export`) and operator tasks (`ops provision/ceremony/rotate-key/backup/restore`). Works without a Bindle. | ADR-0182 |
 | `incident` | delivery | CD failure disposition (`status`, `open` for A2H or sandboxed self-heal). Default A2H; self-heal only in ADR-0076 lane. | ADR-0082, ADR-0094, ADR-0076 |
 | `claim` | identity | Bind an anonymous `npx hobo up` deployment to an account while preserving state and URL. Local: event-store rebind. Remote: `hobo claim <account> --broker <uri> --token <claimToken>` exchanges the claim token without re-provision. Provider ownership is a separate ceremony: `status` lists every claim item with its own deadline and outstanding obligations, `open <item>` redeems that item's one-time action, and `finalize <item>` verifies ownership and discharges obligations before the item may complete. | HOBO-136, HOBO-164, ADR-0151 |
 | `recipes` | read-only | List and inspect deployment recipes (`list`, `show <recipe-id>`): Yards, placements, bootstrap classes, claim terms, and required consents, before any provider login. | ADR-0151 |
@@ -136,7 +137,6 @@ authoritative source.
 | `forge` | `build` | Rejected. Build/componentization is `hobo build`. |
 | `train` | `up` | Rejected. Training is declared in code and promoted through the same gate. |
 | `crew` | `inspect` | Rejected. The Crew is SDK code plus dashboard/MCP surfaces, observed through projections. |
-| `fleet` | `inspect` | Rejected. Fleet views are dashboard projections and `hobo inspect` output. |
 
 ## Lint Contract
 

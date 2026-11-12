@@ -1,7 +1,7 @@
 /**
  * The fleet policy: keep the writer, switch to a standby, or fail over.
  *
- * Engine-neutral, so it lives in `@hobo/backend-fleet` (ADR-0179 phase 4c);
+ * Engine-neutral, so it lives in `@hobo/backend-routing` (ADR-0179 phase 4c);
  * re-exported here under the names this package always had. See `decideFleet`
  * there for the rules.
  */
@@ -11,7 +11,7 @@ import type {
 	FleetDecision,
 	FleetFinancialModel,
 	FleetObservation,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 export {
 	DEFAULT_FLEET_POLICY,
@@ -31,7 +31,7 @@ export {
 	type FleetUsageMeasurement,
 	parseFleetFinancialModel,
 	parseFleetPolicy,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 /** This package's names for the policy's records; the same parsed types. */
 export type PostgresFleetObservation = FleetObservation;

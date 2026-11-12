@@ -1,0 +1,46 @@
+{
+	"name": "@hobo/fleet-authority",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Fleet authority service: the HTTP API, sign-in providers, composition of the recorder and registry projection, operations (ceremony, rotation, backup, restore), the status feed and the witness.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/adapter-infisical": "workspace:*",
+		"@hobo/adapter-openbao": "workspace:*",
+		"@hobo/connectivity": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/fleet": "workspace:*",
+		"@hobo/fleet-nats": "workspace:*",
+		"@hobo/identity": "workspace:*",
+		"@hobo/policy": "workspace:*",
+		"@hobo/runtime-local": "workspace:*",
+		"@hobo/status-page": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/ --passWithNoTests",
+		"test:unit": "vitest run test/ --passWithNoTests"
+	}
+}

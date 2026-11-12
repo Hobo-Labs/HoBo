@@ -32,7 +32,7 @@ describe("CLI command registry pact", () => {
 		for (const command of required) {
 			expect(verbs).toContain(command);
 		}
-		expect(CANONICAL_VERBS.length).toBe(43);
+		expect(CANONICAL_VERBS.length).toBe(44);
 		expect(pact.interactions[0]?.response.body.parity).toBe("ok");
 		expect(pact.interactions[1]?.response.body.sideEffectEvents).toEqual([]);
 	});

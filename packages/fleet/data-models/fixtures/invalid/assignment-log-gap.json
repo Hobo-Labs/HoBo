@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "entries": [
+    {
+      "epoch": "1",
+      "active": "primary",
+      "reason": "bootstrap",
+      "decidedBy": "fleet-tick"
+    },
+    {
+      "epoch": "3",
+      "active": "standby",
+      "reason": "switch",
+      "decidedAtMs": "1794268000000",
+      "decidedBy": "fleet-tick"
+    }
+  ]
+}

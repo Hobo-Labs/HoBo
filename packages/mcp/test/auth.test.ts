@@ -76,7 +76,7 @@ describe("SVID scope resolved through @hobo/identity", () => {
 			nonce: "nonce-1",
 			isolationTier: "microvm",
 		};
-		const document = attestor.createDocument({
+		const document = await attestor.createDocument({
 			launchMeasurement: measurement,
 		});
 		const issued = await identity.issueSvidFromAttestation({

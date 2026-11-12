@@ -170,7 +170,7 @@ backend is itself kept on the backends through this port, by majority: one
 key per backend, `hobo-ci:<env>:fleet:assignment`, written by
 `putIfAbsent` or `compareAndSet` on the version read
 (`ephemeralAssignmentReplica` in
-[`@hobo/backend-fleet`](../../packages/backend-fleet/README.md)), with the
+[`@hobo/backend-routing`](../../packages/backend-routing/README.md) (formerly `@hobo/backend-fleet`)), with the
 30-day TTL refreshed on every write and repair tick. A log a backend loses
 reads as empty and is rejoined from the others. Usage counters live on each
 backend too, `hobo-ci:<env>:fleet:usage:<backend>:<unit>:<YYYY-MM>`. A switch starts the new

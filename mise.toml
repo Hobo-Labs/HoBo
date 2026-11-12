@@ -1,6 +1,8 @@
 [tools]
 cue = "0.14.0"
 gitleaks = "8.22.1"
+# HoBo Fleet integration tests (ADR-0182); HOBO_FLEET_NATS_SERVER_BIN overrides it.
+nats-server = "2.15.3"
 node = "24"
 pnpm = "10.33.4"
 shellcheck = "0.10.0"

@@ -57,6 +57,12 @@ export {
 	type FleetStateEvent,
 	type FleetStatePublisher,
 } from "./fleet-state.js";
+// HoBo Fleet (ADR-0182): the `github-actions-job` work kind.
+export {
+	createGithubActionsWorkRunner,
+	createGithubActionsWorkSource,
+	type GithubWorkOptions,
+} from "./fleet-work/index.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,

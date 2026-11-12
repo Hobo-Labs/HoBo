@@ -1,0 +1,43 @@
+{
+	"name": "@hobo/fleet-nats",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Fleet over NATS: operator-mode topology, per-device credentials minted by auth callout, the bus ports, the journal event store and the bus-relay transport. The only package that imports a NATS client.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
+		"@hobo/fleet": "workspace:*",
+		"@nats-io/jetstream": "3.4.0",
+		"@nats-io/jwt": "0.0.11",
+		"@nats-io/kv": "3.4.0",
+		"@nats-io/nkeys": "2.0.3",
+		"@nats-io/transport-node": "3.4.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/ --passWithNoTests",
+		"test:unit": "vitest run test/ --passWithNoTests"
+	}
+}

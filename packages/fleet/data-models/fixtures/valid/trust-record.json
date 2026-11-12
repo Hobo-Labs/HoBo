@@ -1,0 +1,24 @@
+{
+  "tenant": "acme",
+  "sequence": 1,
+  "authorityKeys": [
+    {
+      "purpose": "KEY_PURPOSE_AUTHORITY",
+      "keyId": "authority#1",
+      "algorithm": "KEY_ALGORITHM_EDDSA",
+      "value": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4"
+    }
+  ],
+  "witnessKeys": [
+    {
+      "purpose": "KEY_PURPOSE_WITNESS",
+      "keyId": "witness#1",
+      "algorithm": "KEY_ALGORITHM_EDDSA",
+      "value": "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20"
+    }
+  ],
+  "authorityIncarnation": 1,
+  "issuer": "https://fleet.example.com",
+  "jwksUri": "https://fleet.example.com/.well-known/jwks.json",
+  "issuedAt": "2026-11-12T10:00:00.000Z"
+}

@@ -1,0 +1,797 @@
+syntax = "proto3";
+package hobo.fleet.v1;
+
+// ── Keys and signatures ────────────────────────────────────────────────────
+enum KeyAlgorithm {
+  KEY_ALGORITHM_UNSPECIFIED = 0;
+  KEY_ALGORITHM_ES256 = 1;   // ECDSA P-256, IEEE P1363 signature encoding
+  KEY_ALGORITHM_EDDSA = 2;   // Ed25519
+}
+enum KeyPurpose {
+  KEY_PURPOSE_UNSPECIFIED = 0;
+  KEY_PURPOSE_IDENTITY = 1;
+  KEY_PURPOSE_SIGN = 2;
+  KEY_PURPOSE_SEAL = 3;
+  KEY_PURPOSE_TRANSPORT = 4;
+  KEY_PURPOSE_AUTHORITY = 5;
+  KEY_PURPOSE_WITNESS = 6;
+}
+// `value` encoding by purpose: IDENTITY = RFC 7517 public JWK JSON;
+// SIGN, SEAL, AUTHORITY, WITNESS = raw key, base64url, no padding;
+// TRANSPORT = the transport adapter's endpoint id.
+message PublicKeyRef {
+  KeyPurpose purpose = 1;
+  string key_id = 2;        // "<MemberId>#<purpose>", "authority#<n>", "witness#<n>"
+  KeyAlgorithm algorithm = 3;
+  string value = 4;
+}
+// §7.4. `signature` is over  utf8(context) || 0x00 || payload.
+message SignedEnvelope {
+  string context = 1;
+  string key_id = 2;
+  KeyAlgorithm algorithm = 3;
+  bytes payload = 4;
+  bytes signature = 5;
+}
+// Two signatures over the same payload bytes.
+message WitnessedEnvelope {
+  SignedEnvelope authority = 1;
+  SignedEnvelope witness = 2;
+}
+message KeyBundle {
+  string member_id = 1;
+  uint32 sequence = 2;                 // strictly increasing per member
+  repeated PublicKeyRef keys = 3;      // exactly one SIGN and one SEAL; at most one TRANSPORT
+  string issued_at = 4;
+  string not_after = 5;
+}
+// X25519 + HKDF-SHA-256 + ChaCha20-Poly1305; parameters in §7.4.
+message SealedBox {
+  string recipient_key_id = 1;
+  string ephemeral_public_key = 2;     // raw X25519, base64url
+  bytes nonce = 3;                     // 12 bytes
+  bytes ciphertext = 4;                // includes the 16-byte tag
+}
+
+// ── Members ────────────────────────────────────────────────────────────────
+enum MemberKind {
+  MEMBER_KIND_UNSPECIFIED = 0;
+  MEMBER_KIND_DEVICE = 1;
+  MEMBER_KIND_BACKEND = 2;
+  MEMBER_KIND_TARGET = 3;
+}
+enum MemberState {
+  MEMBER_STATE_UNSPECIFIED = 0;
+  MEMBER_STATE_PENDING = 1;
+  MEMBER_STATE_ACTIVE = 2;
+  MEMBER_STATE_SUSPENDED = 3;
+  MEMBER_STATE_LOCKED = 4;
+  MEMBER_STATE_REVOKED = 5;
+  MEMBER_STATE_REJECTED = 6;
+}
+enum DeviceClass {
+  DEVICE_CLASS_UNSPECIFIED = 0;        // sponsored members
+  DEVICE_CLASS_PERSONAL = 1;
+  DEVICE_CLASS_DEDICATED = 2;
+  DEVICE_CLASS_EPHEMERAL = 3;
+}
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_EXECUTOR = 1;
+  ROLE_DISPATCHER = 2;
+  ROLE_OBSERVER = 3;
+  ROLE_RECONCILER = 4;
+  ROLE_JUNCTION = 5;
+}
+enum AttestationTier {
+  ATTESTATION_TIER_UNSPECIFIED = 0;
+  ATTESTATION_TIER_T0_SOFTWARE_KEY = 1;
+  ATTESTATION_TIER_T1_HELD_KEY = 2;
+  ATTESTATION_TIER_T2_ORG_CERTIFIED = 3;
+  ATTESTATION_TIER_T3_PLATFORM_IDENTITY = 4;
+}
+enum SandboxTier {
+  SANDBOX_TIER_UNSPECIFIED = 0;
+  SANDBOX_TIER_S1_CONTAINER = 1;
+  SANDBOX_TIER_S2_USER_KERNEL = 2;
+  SANDBOX_TIER_S3_MICROVM = 3;
+}
+enum TrustClass {
+  TRUST_CLASS_UNSPECIFIED = 0;
+  TRUST_CLASS_OWN = 1;
+  TRUST_CLASS_ORG = 2;
+  TRUST_CLASS_UNTRUSTED = 3;
+}
+message Platform {
+  string os = 1;
+  string arch = 2;
+}
+message Membership {
+  string fleet = 1;
+  string name = 2;                     // unique within the fleet
+  repeated Role roles = 3;             // empty for sponsored members
+  string joined_at = 4;
+}
+// The registry value for key member.<MemberId>. Always stored inside a
+// SignedEnvelope with context hobo-fleet/member-record/v1.
+message MemberRecord {
+  string member_id = 1;
+  string tenant = 2;
+  MemberKind kind = 3;
+  string display_name = 4;
+  MemberState state = 5;
+  repeated Membership memberships = 6;
+  DeviceClass device_class = 7;
+  AttestationTier attestation_tier = 8;
+  string attestation_digest = 9;       // sha256:<hex> of the evidence, or empty
+  string identity_jwk = 10;            // devices only
+  string identity_thumbprint = 11;     // RFC 7638
+  repeated string retired_thumbprints = 12;
+  SignedEnvelope key_bundle = 13;      // context hobo-fleet/key-bundle/v1, signed by the identity key
+  Platform platform = 14;
+  string region = 15;
+  string agent_version = 16;
+  string owner = 17;                   // "<kind>:<id>" of a PrincipalRef
+  repeated string owner_aliases = 18;  // the owner's linked identities, e.g. "github:<numeric id>"
+  string sponsor = 19;                 // sponsored members: principal or MemberId
+  string credential_ref = 20;          // sponsored members: a locator, never a secret
+  string endpoint_digest = 21;         // sponsored members: sha256:<hex>
+  string invited_by = 22;
+  string key_approved_by = 23;
+  string accepted_by = 24;
+  string enrolled_at = 25;
+  string state_changed_at = 26;
+  string state_reason = 27;
+  uint32 record_sequence = 28;         // increases exactly when content other than issued_at/not_after changes; a re-sign keeps it
+  uint32 authority_incarnation = 29;
+  string issued_at = 30;
+  string not_after = 31;               // at most 30 min after issued_at
+}
+
+// ── Fleets ─────────────────────────────────────────────────────────────────
+enum CoordinationMode {
+  COORDINATION_MODE_UNSPECIFIED = 0;
+  COORDINATION_MODE_MANY_ACTIVE = 1;
+  COORDINATION_MODE_ONE_ACTIVE = 2;
+}
+enum ApprovalMode {
+  APPROVAL_MODE_UNSPECIFIED = 0;
+  APPROVAL_MODE_AUTO_OWNER = 1;
+  APPROVAL_MODE_SINGLE = 2;
+  APPROVAL_MODE_DUAL = 3;
+}
+enum SessionPurpose {
+  SESSION_PURPOSE_UNSPECIFIED = 0;
+  SESSION_PURPOSE_SHELL = 1;
+  SESSION_PURPOSE_FORWARD = 2;
+  SESSION_PURPOSE_BLOB = 3;
+}
+message RepositoryRule {
+  string repository = 1;               // "owner/name"
+  repeated string refs = 2;            // glob over refs/...; empty means none
+  repeated string workflow_digests = 3;// sha256:<hex>; empty means any workflow at an allowed ref
+}
+message OidcTrustRule {
+  string issuer = 1;
+  string subject_pattern = 2;          // anchored regular expression
+  map<string, string> required_claims = 3;
+  repeated Role roles = 4;
+  bool sponsor = 5;                    // a workload matching this rule may declare BACKEND and TARGET members
+}
+message ResidencyRule {
+  repeated string classifications = 1;
+  repeated string allowed_jurisdictions = 2;
+  repeated string denied_jurisdictions = 3;
+}
+message FleetPolicy {
+  ApprovalMode approval = 1;
+  repeated MemberKind allowed_kinds = 2;
+  repeated Role allowed_roles = 3;
+  repeated DeviceClass allowed_classes = 4;
+  AttestationTier min_attestation_tier = 5;
+  SandboxTier org_min_sandbox = 6;     // S3 when unspecified
+  repeated string work_kinds = 7;
+  repeated RepositoryRule repositories = 8;
+  repeated OidcTrustRule oidc_trust = 9;
+  repeated string device_ca_roots_pem = 10;
+  repeated string egress_allow = 11;   // exact host names
+  uint32 member_quota_per_principal = 12;
+  string min_agent_version = 13;
+  ResidencyRule residency = 14;
+  bool allow_host_docker = 15;
+  repeated SessionPurpose session_purposes = 16;
+  repeated string labels = 17;         // runner labels this fleet serves
+  uint32 key_bundle_hours = 18;        // 24 when zero; at most 720
+  uint32 failover_after_ms = 19;       // ONE_ACTIVE
+  optional uint32 recovery_point_ms = 20; // ONE_ACTIVE; unset: members hold no replicated state, lag is never considered
+  reserved 21;                         // was signed_assignments; authority-mode one-active is out of scope (D39)
+  reserved "signed_assignments";
+  bool membership_epochs = 22;         // ONE_ACTIVE: entries carry member sets and membership changes are decided epochs (§6.10)
+}
+// The registry value for key fleet.<FleetId>, inside an envelope with
+// context hobo-fleet/fleet-record/v1.
+message FleetRecord {
+  string fleet_id = 1;
+  string tenant = 2;
+  string owner = 3;
+  CoordinationMode coordination = 4;
+  FleetPolicy policy = 5;
+  uint32 revision = 6;                 // increases exactly when content other than issued_at/not_after changes; a re-sign keeps it
+  string updated_at = 7;
+  string updated_by = 8;
+  string issued_at = 9;
+  string not_after = 10;               // at most 30 min after issued_at; re-signed every 10 min
+}
+
+// ── Trust and discovery ────────────────────────────────────────────────────
+// Carried in a WitnessedEnvelope with context hobo-fleet/trust-record/v1.
+message TrustRecord {
+  string tenant = 1;
+  uint32 sequence = 2;                 // strictly increasing
+  repeated PublicKeyRef authority_keys = 3;
+  repeated PublicKeyRef witness_keys = 4;
+  uint32 authority_incarnation = 5;
+  string issuer = 6;
+  string jwks_uri = 7;
+  string issued_at = 8;
+}
+message AuthorityDiscovery {
+  string issuer = 1;
+  string jwks_uri = 2;
+  repeated string sign_in_providers = 3;
+}
+message Discovery {
+  string tenant = 1;
+  string issuer = 2;
+  repeated string nats_urls = 3;
+  string nats_sentinel_credentials = 4; // public by design; permits nothing
+  repeated string relay_urls = 5;
+  WitnessedEnvelope trust = 6;
+  string min_agent_version = 7;
+}
+
+// ── People ─────────────────────────────────────────────────────────────────
+message SignInStart {
+  string provider = 1;
+  string tenant = 2;
+  string redirect_uri = 3;             // loopback only; empty for the device flow
+  string code_challenge = 4;           // PKCE S256
+  string dpop_thumbprint = 5;          // the CLI's sign-in key
+  bool device_flow = 6;
+  string host_name = 7;                // shown on the approval page
+  string device_name = 8;              // shown on the approval page; enrollment sign-in only
+  Platform platform = 9;               // shown on the approval page; enrollment sign-in only
+}
+message SignInChallenge {
+  string state = 1;
+  string authorize_url = 2;
+  string user_code = 3;                // device flow
+  string verification_url = 4;         // device flow
+  string expires_at = 5;
+  uint32 interval_seconds = 6;
+}
+message SignInComplete {
+  string state = 1;
+  string code = 2;
+  string code_verifier = 3;
+}
+message PersonCredential {
+  string token = 1;                    // DPoP-bound JWT
+  string expires_at = 2;
+  string refresh_until = 3;
+  string principal = 4;
+  string tenant = 5;
+  repeated string tags = 6;
+}
+// GET /signin/callback query, from the sign-in provider's redirect.
+message SignInCallback {
+  string state = 1;
+  string code = 2;                     // the provider's code
+  string error = 3;                    // the provider's error, when it refused
+}
+// POST /signin/device: the code the person typed at the verification page.
+message SignInDeviceCode {
+  string user_code = 1;
+}
+// What the approval page shows before the person confirms.
+message ApprovalView {
+  string state = 1;
+  string principal = 2;                // who signed in at the provider
+  string host_name = 3;
+  string device_name = 4;
+  Platform platform = 5;
+  repeated string fingerprint_words = 6; // four words from the dpop_thumbprint of SignInStart
+  bool device_flow = 7;
+  string expires_at = 8;
+}
+message ApprovalDecision {
+  string state = 1;
+  bool approve = 2;
+}
+message ApprovalResult {
+  string redirect_uri = 1;             // the loopback URI with the one-time authority code; empty for the device flow
+}
+message SignInPoll {
+  string state = 1;
+}
+// Empty: the caller's DPoP-bound person token is the input.
+message SignInRefresh {
+}
+
+// ── Enrollment and credentials ─────────────────────────────────────────────
+message TokenCreateRequest {
+  string fleet = 1;
+  string name = 2;
+  string display_name = 3;
+  DeviceClass device_class = 4;
+  repeated Role roles = 5;
+  uint32 ttl_seconds = 6;              // 600 to 1800
+}
+message TokenCreateResponse {
+  string token = 1;                    // "hft_" + 43 base64url characters; shown once
+  string token_hash = 2;               // sha256 hex
+  string expires_at = 3;
+}
+message BootstrapTokenRecord {
+  string token_hash = 1;
+  string fleet = 2;
+  string name = 3;
+  DeviceClass device_class = 4;
+  repeated Role roles = 5;
+  string issued_by = 6;
+  string expires_at = 7;
+  string consumed_by = 8;              // MemberId, or empty
+}
+message TokenList {
+  repeated BootstrapTokenRecord tokens = 1;
+}
+message EnrollmentRequest {
+  string tenant = 1;
+  string fleet = 2;
+  string name = 3;
+  string display_name = 4;
+  string identity_jwk = 5;             // public JWK JSON: EC P-256 or OKP Ed25519
+  SignedEnvelope key_bundle = 6;
+  Platform platform = 7;
+  string region = 8;
+  string agent_version = 9;
+  DeviceClass device_class = 10;
+  repeated Role requested_roles = 11;
+  oneof proof {
+    string bootstrap_token = 12;
+    string oidc_assertion = 13;
+    string person_token = 14;          // the person signed in on this device's CLI
+  }
+  repeated string certificate_chain_pem = 15; // tier T2 evidence, leaf first
+  bool held_key = 16;                  // tier T1 self-declaration
+}
+message DeclareRequest {
+  string tenant = 1;
+  string fleet = 2;
+  MemberKind kind = 3;                 // BACKEND or TARGET
+  string name = 4;
+  string display_name = 5;
+  string credential_ref = 6;
+  string endpoint_digest = 7;
+  string region = 8;
+}
+message OverlayJoin {
+  string provider = 1;                 // "tailscale" | "netbird"
+  string credential = 2;               // single use
+  string expires_at = 3;
+  repeated string tags = 4;
+}
+message EnrollmentResponse {
+  SignedEnvelope member_record = 1;
+  repeated OverlayJoin overlay_joins = 2;
+  Discovery discovery = 3;
+}
+message LifecycleRequest {
+  string reason = 1;
+  repeated string fleets = 2;          // accept: the memberships granted
+}
+message MembershipRequest {
+  string fleet = 1;
+  string name = 2;
+  repeated Role roles = 3;
+}
+message CredentialRequest {
+  uint32 generation = 1;
+  bytes refresh_nonce = 2;             // 16 random bytes, written to disk before sending
+  repeated string audiences = 3;
+  SignedEnvelope key_bundle = 4;       // optional renewal
+  string agent_version = 5;
+}
+// Envelope context hobo-fleet/session-ticket/v1, signed by the authority.
+message SessionTicket {
+  string ticket_id = 1;
+  string member_id = 2;
+  string tenant = 3;
+  string issued_at = 4;
+  string expires_at = 5;
+  uint32 authority_incarnation = 6;
+}
+// Envelope context hobo-fleet/nats-connect/v1, signed by the device's SIGN key.
+message ConnectProof {
+  string ticket_id = 1;
+  bytes nonce = 2;                     // the nonce the NATS server sent for this connection
+}
+// The NATS connect `auth_token`: base64url of this message's binary form.
+message ConnectToken {
+  SignedEnvelope ticket = 1;
+  SignedEnvelope proof = 2;
+}
+message CredentialResponse {
+  string svid = 1;
+  string svid_expires_at = 2;
+  SignedEnvelope session_ticket = 3;
+  uint32 generation = 4;
+  SignedEnvelope member_record = 5;
+  WitnessedEnvelope trust = 6;         // set when the trust record has changed
+}
+// Envelope context hobo-fleet/rotation/v1, signed by the OLD identity key.
+message RotationStatement {
+  string member_id = 1;
+  string new_identity_jwk = 2;
+  string at = 3;
+}
+message KeyRotationRequest {
+  SignedEnvelope key_bundle = 1;       // signed by the identity key that will be current
+  SignedEnvelope rotation = 2;         // only when the identity key changes
+}
+
+// ── Observations ───────────────────────────────────────────────────────────
+enum Health {
+  HEALTH_UNSPECIFIED = 0;
+  HEALTH_REACHABLE = 1;
+  HEALTH_DRAINING = 2;
+  HEALTH_PRESSURED = 3;
+  HEALTH_UNREACHABLE = 4;
+  HEALTH_QUOTA_EXHAUSTED = 5;
+  HEALTH_AUTH = 6;
+  HEALTH_UNKNOWN = 7;
+}
+message Capacity {
+  uint32 free_slots = 1;
+  optional uint32 total_slots = 2;
+  optional uint32 free_memory_mb = 3;
+  optional uint32 free_disk_mb = 4;
+}
+message UsageMeasurement {
+  string unit = 1;                     // owned by the routing package that reads it
+  double used = 2;
+}
+message ReliabilitySamples {
+  double delivered = 1;
+  double dropped = 2;
+}
+// Envelope context hobo-fleet/observation/v1, signed by the observer's SIGN
+// key (authority mode). An absent optional is unknown, never zero.
+message Observation {
+  string member_id = 1;
+  string observer_id = 2;              // the member itself, or its sponsor
+  repeated string fleets = 3;
+  Health health = 4;
+  uint32 failing_for_ms = 5;           // 0 when REACHABLE
+  optional uint32 probe_latency_ms = 6;
+  Capacity capacity = 7;               // devices
+  optional bool ready = 8;             // standbys: prepared to become active
+  optional uint32 lag_ms = 9;          // standbys: time behind the active member
+  repeated UsageMeasurement usage = 10;
+  repeated string labels = 11;
+  Platform platform = 12;
+  repeated SandboxTier sandbox_tiers = 13;
+  string agent_version = 14;
+  repeated string transports = 15;     // "p2p" | "overlay" | "bus-relay"
+  string region = 16;
+  uint32 bundle_sequence = 17;
+  string since = 18;                   // when the current health began
+  string issued_at = 19;
+  string valid_until = 20;
+}
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_LIVE = 1;
+  AVAILABILITY_UNHEALTHY = 2;
+  AVAILABILITY_LOST = 3;
+}
+message FleetMemberView {
+  string member_id = 1;
+  string name = 2;
+  string display_name = 3;
+  MemberKind kind = 4;
+  MemberState state = 5;
+  Availability availability = 6;
+  Health health = 7;
+  Capacity capacity = 8;
+  Platform platform = 9;
+  AttestationTier attestation_tier = 10;
+  repeated SandboxTier sandbox_tiers = 11;
+  optional double reliability = 12;    // measured by the authority; (0, 1]
+  ReliabilitySamples samples = 13;
+  string since = 14;
+  string last_seen = 15;
+  string agent_version = 16;
+  repeated string labels = 17;
+  DeviceClass device_class = 18;
+  repeated Role roles = 19;
+  reserved 20;                         // was `active`: one-active fleets are local mode only and publish no view
+  reserved "active";
+}
+message FleetCapacity {
+  uint32 live = 1;
+  uint32 healthy = 2;
+  uint32 total_slots = 3;
+  uint32 free_slots = 4;
+  optional uint32 free_memory_mb = 5;
+  optional uint32 free_disk_mb = 6;
+  optional uint32 max_memory_mb = 7;
+}
+// Envelope context hobo-fleet/fleet-view/v1, signed by the authority.
+message FleetView {
+  string fleet = 1;
+  repeated FleetMemberView members = 2; // at most 256
+  FleetCapacity capacity = 3;           // covers every member, listed or not
+  bool truncated = 4;
+  string as_of = 5;
+  string not_after = 6;                 // at most 120 s after as_of
+}
+enum VerdictState {
+  VERDICT_STATE_UNSPECIFIED = 0;
+  VERDICT_STATE_OPEN = 1;
+  VERDICT_STATE_NO_MEMBER = 2;
+  VERDICT_STATE_NO_CAPACITY = 3;
+}
+message FleetVerdict {
+  string fleet = 1;
+  string label = 2;
+  VerdictState state = 3;
+  uint32 members = 4;
+  uint32 free_slots = 5;
+  string as_of = 6;
+  string expires_at = 7;               // at most 300 s after as_of
+}
+
+// ── Many-active work ───────────────────────────────────────────────────────
+enum WorkOrigin {
+  WORK_ORIGIN_UNSPECIFIED = 0;
+  WORK_ORIGIN_INTERNAL = 1;
+  WORK_ORIGIN_FORK = 2;
+  WORK_ORIGIN_UNKNOWN = 3;
+}
+message WorkNeeds {
+  optional uint32 memory_mb = 1;
+  optional uint32 disk_mb = 2;
+  Platform platform = 3;
+  repeated string labels = 4;
+  bool docker = 5;
+  SandboxTier min_sandbox = 6;
+}
+// Envelope context hobo-fleet/work-submission/v1, signed by the authority.
+message WorkSubmission {
+  string submission_id = 1;
+  string tenant = 2;
+  string fleet = 3;
+  string author = 4;                   // the authenticated submitter
+  string image = 5;
+  string image_digest = 6;             // sha256:<hex>
+  repeated string argv = 7;
+  map<string, string> env = 8;         // non-secret
+  WorkNeeds needs = 9;
+  repeated string egress_allow = 10;
+  string submitted_at = 11;
+  string expires_at = 12;
+}
+// Envelope context hobo-fleet/offer/v1, signed by a dispatcher's SIGN key.
+message WorkOffer {
+  string work_key = 1;                 // kind-defined, unique per unit of work
+  string work_digest = 2;              // first 32 hex of sha256(kind || 0x00 || work_key)
+  string kind = 3;
+  string fleet = 4;
+  string label = 5;
+  WorkNeeds needs = 6;
+  TrustClass trust_class = 7;          // the dispatcher's ceiling: ORG or UNTRUSTED, never OWN
+  string author = 8;                   // "<provider>:<id>"
+  WorkOrigin origin = 9;
+  string repository = 10;
+  string ref = 11;
+  string workflow_digest = 12;
+  string queued_at = 13;
+  string expires_at = 14;
+  string dispatcher = 15;              // MemberId
+  ResidencyRule residency = 16;
+  SignedEnvelope submission = 17;      // submitted work only
+}
+// Envelope context hobo-fleet/claim/v1, signed by the claimant's SIGN key.
+message Claim {
+  string work_digest = 1;
+  string fleet = 2;
+  string member_id = 3;
+  string dispatcher = 4;
+  string offer_expires_at = 5;
+  uint32 rank = 6;                     // as the claimant computed it
+  SandboxTier sandbox_tier = 7;
+  string claimed_at = 8;
+}
+// Envelope context hobo-fleet/order/v1, signed by the dispatcher's SIGN key.
+message WorkOrder {
+  string order_id = 1;                 // 32 random hex
+  WorkOffer offer = 2;
+  string member_id = 3;
+  SandboxTier sandbox_tier = 4;
+  repeated string egress_allow = 5;
+  map<string, string> parameters = 6;  // non-secret, kind-defined
+  SealedBox secret = 7;                // sealed with associated data order_id || 0x00 || member_id
+  string issued_at = 8;
+  string expires_at = 9;
+}
+enum ReceiptStatus {
+  RECEIPT_STATUS_UNSPECIFIED = 0;
+  RECEIPT_STATUS_STARTED = 1;
+  RECEIPT_STATUS_SUCCEEDED = 2;
+  RECEIPT_STATUS_FAILED = 3;
+  RECEIPT_STATUS_CANCELLED = 4;
+  RECEIPT_STATUS_ABANDONED = 5;
+  RECEIPT_STATUS_REFUSED = 6;
+}
+// Envelope context hobo-fleet/receipt/v1, signed by the executor's SIGN key.
+message WorkReceipt {
+  string order_id = 1;
+  string work_digest = 2;
+  string member_id = 3;
+  ReceiptStatus status = 4;
+  string reason = 5;                   // an error code from §7.6, or empty
+  string at = 6;
+  SandboxTier sandbox_tier = 7;
+  TrustClass trust_class = 8;          // as the device derived it
+  uint32 sandbox_seconds = 9;
+  string output_digest = 10;
+  string observed_work_key = 11;       // what actually ran, when it differs from the offer
+}
+// Envelope context hobo-fleet/log/v1, signed by the executor's SIGN key.
+message WorkLogChunk {
+  string order_id = 1;
+  uint32 sequence = 2;
+  bytes data = 3;                      // at most 64 KiB
+  bool last = 4;
+}
+message WorkSubmissionRequest {
+  string fleet = 1;
+  string image = 2;
+  string image_digest = 3;
+  repeated string argv = 4;
+  map<string, string> env = 5;
+  WorkNeeds needs = 6;
+  repeated string egress_allow = 7;
+  uint32 ttl_seconds = 8;
+}
+message WorkStatus {
+  string submission_id = 1;
+  string work_digest = 2;
+  string member_id = 3;                // empty until claimed
+  ReceiptStatus status = 4;            // UNSPECIFIED while waiting
+  string reason = 5;
+  string output_digest = 6;
+  string updated_at = 7;
+}
+message WorkLogs {
+  repeated WorkLogChunk chunks = 1;
+  bool complete = 2;
+}
+// What a dispatcher sends when a device's own signature proves a violation.
+message ViolationReport {
+  string kind = 1;                     // "claim-not-entitled" | "claim-early"
+  SignedEnvelope offer = 2;
+  repeated SignedEnvelope claims = 3;  // one, or the three early ones
+}
+
+// ── One-active assignment ──────────────────────────────────────────────────
+// Fields 1-8 are hobo.backend_fleet.v1.FleetAssignment exactly (names, numbers,
+// types, presence), so the protobuf JSON of a format-1 log is byte for byte
+// today's (§6.10). Unsigned: one-active fleets run in local mode only (D39).
+message Assignment {
+  uint64 epoch = 1;
+  optional string active = 2;          // member name; unset means deliberately none
+  bool sealed = 3;
+  optional string target = 4;          // set exactly when sealed
+  string reason = 5;                   // "bootstrap", "switch", "failover:<health>", "activate", "pin-members", "admit:<name>", "remove:<name>", …
+  optional uint64 loss_window_ms = 6;
+  uint64 decided_at_ms = 7;            // zero for the bootstrap entry
+  string decided_by = 8;
+  repeated string members = 9;         // format 2 only: sorted; the set that decides the next epoch
+}
+// Fields 1-2 are hobo.backend_fleet.v1.FleetAssignmentLog exactly.
+message AssignmentLog {
+  uint32 format = 1;                   // 1: no entry carries members (today's format); 2: entries may
+  repeated Assignment entries = 2;
+}
+
+// ── Transport ──────────────────────────────────────────────────────────────
+message SessionParty {
+  string member_id = 1;                // empty when the party is a person's CLI
+  string principal = 2;
+  string transport_identity = 3;
+  string seal_public_key = 4;
+}
+message SessionRequest {
+  string peer = 1;                     // MemberId to reach
+  SessionPurpose purpose = 2;
+  string order_id = 3;
+  uint32 port = 4;
+  repeated string blob_digests = 5;
+  SessionParty initiator = 6;          // transport identity and seal key of the caller
+  uint32 ttl_seconds = 7;              // at most 3600
+}
+// Envelope context hobo-fleet/session-grant/v1, signed by the authority.
+message SessionGrant {
+  string session_id = 1;
+  string tenant = 2;
+  SessionParty initiator = 3;
+  SessionParty acceptor = 4;
+  SessionPurpose purpose = 5;
+  string order_id = 6;
+  uint32 port = 7;
+  repeated string blob_digests = 8;
+  string issued_at = 9;
+  string expires_at = 10;
+}
+// Envelope context hobo-fleet/session-close/v1, signed by a device's SIGN key.
+message SessionClose {
+  string session_id = 1;
+  string member_id = 2;
+  string transport = 3;
+  uint64 bytes_sent = 4;
+  uint64 bytes_received = 5;
+  string at = 6;
+}
+
+// ── Control, audit, lists, errors ──────────────────────────────────────────
+enum ControlKind {
+  CONTROL_KIND_UNSPECIFIED = 0;
+  CONTROL_KIND_DRAIN = 1;
+  CONTROL_KIND_REFRESH_NOW = 2;
+  CONTROL_KIND_REVOKED = 3;
+  CONTROL_KIND_UPDATE_REQUIRED = 4;
+}
+// Envelope context hobo-fleet/control/v1, signed by the authority.
+message MemberControl {
+  string member_id = 1;
+  ControlKind kind = 2;
+  string reason = 3;
+  string at = 4;
+}
+message AuditEntry {
+  uint32 sequence = 1;
+  string previous_hash = 2;            // sha256 hex; 64 zeros for the first
+  string event_type = 3;
+  string event_id = 4;
+  string subject = 5;                  // the registry key the event changes ("member.<MemberId>", "fleet.<FleetId>", "trust"), else the stream id
+  string actor = 6;
+  string at = 7;
+  string data_digest = 8;              // sha256 hex of the event data
+  uint32 subject_sequence = 9;         // events that change a registry record: its record_sequence, revision or sequence after the event; 0 otherwise
+}
+// Envelope context hobo-fleet/audit-checkpoint/v1; final in a WitnessedEnvelope.
+message AuditCheckpoint {
+  uint32 sequence = 1;
+  string entry_hash = 2;
+  string at = 3;
+  uint32 authority_incarnation = 4;
+}
+message AuditEntries {
+  repeated AuditEntry entries = 1;
+}
+message AuditCheckpoints {
+  repeated WitnessedEnvelope checkpoints = 1;
+}
+message MemberList {
+  repeated SignedEnvelope members = 1;
+}
+message FleetList {
+  repeated SignedEnvelope fleets = 1;
+}
+message FleetError {
+  string code = 1;                     // §7.6
+  string message = 2;
+  map<string, string> detail = 3;
+}

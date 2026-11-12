@@ -219,7 +219,7 @@ export function createAttestedApplyWorker(
 				},
 				now: now(),
 			});
-			const document = attestor.createDocument({
+			const document = await attestor.createDocument({
 				launchMeasurement: launch,
 				claimed: {
 					tenant: set.tenant,
@@ -618,7 +618,7 @@ export function createContractAssertedApplyAttestation(input: {
 	readonly tenant: string;
 	readonly setContentHash: string;
 	readonly planHash: string;
-}): AttestationDocument {
+}): Promise<AttestationDocument> {
 	const hostId = "host-local-fixture";
 	const attestor = createFixtureHostAttestor({ hostId });
 	const launch = createLaunchMeasurement({

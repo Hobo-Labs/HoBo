@@ -535,7 +535,7 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  packages/backend-fleet:
+  packages/backend-routing:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.12.1
@@ -543,6 +543,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
@@ -682,6 +685,9 @@ importers:
       '@hobo/dispatcher':
         specifier: workspace:*
         version: link:../dispatcher
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
@@ -821,6 +827,15 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../provider-redaction
@@ -894,9 +909,9 @@ importers:
       '@hobo/adapter-infisical':
         specifier: workspace:*
         version: link:../adapters/adapter-infisical
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
@@ -906,6 +921,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
@@ -1177,6 +1195,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       '@hobo/contract-harness':
         specifier: workspace:*
@@ -1457,15 +1478,18 @@ importers:
 
   packages/data-postgres:
     dependencies:
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../capability-profiles
       '@hobo/data-core':
         specifier: workspace:*
         version: link:../data-core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       '@hobo/contract-harness':
         specifier: workspace:*
@@ -1533,6 +1557,152 @@ importers:
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local
+
+  packages/fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/fleet-agent:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/fleet-authority:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
+      '@hobo/adapter-openbao':
+        specifier: workspace:*
+        version: link:../adapters/adapter-openbao
+      '@hobo/connectivity':
+        specifier: workspace:*
+        version: link:../connectivity
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      '@hobo/status-page':
+        specifier: workspace:*
+        version: link:../status-page
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/fleet-nats:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@nats-io/jetstream':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@nats-io/jwt':
+        specifier: 0.0.11
+        version: 0.0.11
+      '@nats-io/kv':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@nats-io/nkeys':
+        specifier: 2.0.3
+        version: 2.0.3
+      '@nats-io/transport-node':
+        specifier: 3.4.0
+        version: 3.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/fleet-p2p:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@number0/iroh':
+        specifier: 1.2.0
+        version: 1.2.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/fuzz:
     dependencies:
@@ -1618,6 +1788,21 @@ importers:
       '@hobo/data':
         specifier: workspace:*
         version: link:../data
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@hobo/fleet-authority':
+        specifier: workspace:*
+        version: link:../fleet-authority
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
+      '@hobo/fleet-p2p':
+        specifier: workspace:*
+        version: link:../fleet-p2p
       '@hobo/iac-pulumi':
         specifier: workspace:*
         version: link:../iac/iac-pulumi
@@ -1796,12 +1981,18 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
 
   packages/junctions:
     dependencies:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
@@ -2753,6 +2944,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../../fleet
     devDependencies:
       '@types/node':
         specifier: '>=24.0.0'
@@ -7565,6 +7759,9 @@ packages:
   '@nats-io/jetstream@3.4.0':
     resolution: {integrity: sha512-GzHQodNJ942+R5LRb8PuZ5ugVWVWMRiufxUYLLVWkXKfwDXYN+Owo0d7L/b9O7BPyrbYD7jQWAC6+ZVuXa9Gyw==}
 
+  '@nats-io/jwt@0.0.11':
+    resolution: {integrity: sha512-olBQaTjqKgsalKKWtOA2fzQrFV2aNPKz56oadujZLrT5IsFhWw07OrYS8+XDfgh8bSAXZuMmZEZJ8QxPZwF0tw==}
+
   '@nats-io/kv@3.4.0':
     resolution: {integrity: sha512-168pcRJxWcIRHwdyczI3DaGk5r3CAj3CyKXuk4Nmx5KKj7N1znQOJPIxCoV0TPlAvoTidVb7eBv41J9imapMeQ==}
 
@@ -7658,6 +7855,80 @@ packages:
   '@npmcli/run-script@8.1.0':
     resolution: {integrity: sha512-y7efHHwghQfk28G2z3tlZ67pLG0XdfYbcVG26r7YIXALRsrVQcTq4/tdenSmdOrEsNahIYA/eh8aEVROWGFUDg==}
     engines: {node: ^16.14.0 || >=18.0.0}
+
+  '@number0/iroh-android-arm-eabi@1.2.0':
+    resolution: {integrity: sha512-T8Hp4G1ewh/7AUI8DBHi596Rlr9zZZzPA3CpN58XSSQBxUEpiqxtZoYmEa3w6QgVw1o5IQrEgAUxLN7ogBtnig==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [android]
+
+  '@number0/iroh-android-arm64@1.2.0':
+    resolution: {integrity: sha512-etoVzrsoPAij+XhD+BECISJKYUG6eW+XS43I5P4SD+nqAIJ6XnMTy/Brwayuj8ERoRaFLClL8bb++v5883TcrA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [android]
+
+  '@number0/iroh-darwin-arm64@1.2.0':
+    resolution: {integrity: sha512-91oxmPrYiCnU0APp/Ky0mgNOxaIukQDFUvxth32TDq38vJs0lDX9ppAsWrkCA+4A/kJnAt1hc7YhIKcIGD3xOA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@number0/iroh-linux-arm-gnueabihf@1.2.0':
+    resolution: {integrity: sha512-PTi5YyxjkLluzVec5Q0NJqRUaYcVT76sZ0SaM10HFGlwlTIniYO7DYUGTLs+XcByUBcE7Ph5xkyvoLmB1mOF4A==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@number0/iroh-linux-arm-musleabihf@1.2.0':
+    resolution: {integrity: sha512-IwOPvWOEyX6ZMHjctDaZyWVV2kJSXx57DRN2l5Qg/cEQjY5zWO4IMFvjw075IKrQk+VpU6RrEEI++2w2Gci1dA==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@number0/iroh-linux-arm64-gnu@1.2.0':
+    resolution: {integrity: sha512-LEenFEMMWLnlyFy8++cYq+s7/nibFgFzs1kGDk7WvFDyxT3U2z0W0+hjENzDiS1iCtH8+zesdDdFxuQtxjJHYg==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@number0/iroh-linux-arm64-musl@1.2.0':
+    resolution: {integrity: sha512-YgCWpz80VOTJRtAUsTKFgLYtd7tfWwrRCD0uk3/xG4z+AjiY5c49toeDFTJJ/3SF5Q8qmjWGjpcUk6B1E55D4w==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@number0/iroh-linux-x64-gnu@1.2.0':
+    resolution: {integrity: sha512-SkZUe/dqv7J1kY3Af0Cu07ldfdstEDOz6F3yIKwMw/EpabhaE3fvdDbiDQoiMxbwgIiJMspChHRMZeC88Td3QQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@number0/iroh-linux-x64-musl@1.2.0':
+    resolution: {integrity: sha512-UnZHStWdFZgylftmX2IHF+VKkrkbEhK+amkOf7A9Z3JPrqkbF5em3UW3uyDK3qfhcc9Ijc3nnYKxym+BkOLPjQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@number0/iroh-win32-arm64-msvc@1.2.0':
+    resolution: {integrity: sha512-2srn9OquRffLD1bQiCDRLr3T1yxmc9xc3k4oLgEMWU+lZnaMONRS2r46cTXN1b/bGsSc82TjGCO/urauXZjQcQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@number0/iroh-win32-x64-msvc@1.2.0':
+    resolution: {integrity: sha512-3ltCadoaZzrRM9OmPcfwPpqwF/DBXlzhwsOIXITtpFEFfRISgvbqyhmMCaiumpyXxFeGTCfpwvUJ40i+sE0sVQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@number0/iroh@1.2.0':
+    resolution: {integrity: sha512-pZoVnL+8nK4DQG3owF5UQ/LcIjg7m2Ue1oeEUEhLsNt9RHtEFxiASNSPopOdsRfjRimJ/e6zjQ0k3iYE6N1hZQ==}
+    engines: {node: '>= 20.3.0'}
 
   '@openai/codex-sdk@0.136.0':
     resolution: {integrity: sha512-qrSirrVxrpVHR1YIQQ4WSouneaQrQrRAAlQWJYRflvMCcruFXorsmIPeIbDqFXOa8A9H9FHHyc+2U4tdbEGGiQ==}
@@ -18400,6 +18671,10 @@ snapshots:
     dependencies:
       '@nats-io/nats-core': 3.4.0
 
+  '@nats-io/jwt@0.0.11':
+    dependencies:
+      '@nats-io/nkeys': 2.0.3
+
   '@nats-io/kv@3.4.0':
     dependencies:
       '@nats-io/jetstream': 3.4.0
@@ -18567,6 +18842,53 @@ snapshots:
     transitivePeerDependencies:
       - bluebird
       - supports-color
+
+  '@number0/iroh-android-arm-eabi@1.2.0':
+    optional: true
+
+  '@number0/iroh-android-arm64@1.2.0':
+    optional: true
+
+  '@number0/iroh-darwin-arm64@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm-gnueabihf@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm-musleabihf@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm64-gnu@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm64-musl@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-x64-gnu@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-x64-musl@1.2.0':
+    optional: true
+
+  '@number0/iroh-win32-arm64-msvc@1.2.0':
+    optional: true
+
+  '@number0/iroh-win32-x64-msvc@1.2.0':
+    optional: true
+
+  '@number0/iroh@1.2.0':
+    optionalDependencies:
+      '@number0/iroh-android-arm-eabi': 1.2.0
+      '@number0/iroh-android-arm64': 1.2.0
+      '@number0/iroh-darwin-arm64': 1.2.0
+      '@number0/iroh-linux-arm-gnueabihf': 1.2.0
+      '@number0/iroh-linux-arm-musleabihf': 1.2.0
+      '@number0/iroh-linux-arm64-gnu': 1.2.0
+      '@number0/iroh-linux-arm64-musl': 1.2.0
+      '@number0/iroh-linux-x64-gnu': 1.2.0
+      '@number0/iroh-linux-x64-musl': 1.2.0
+      '@number0/iroh-win32-arm64-msvc': 1.2.0
+      '@number0/iroh-win32-x64-msvc': 1.2.0
 
   '@openai/codex-sdk@0.136.0':
     dependencies:

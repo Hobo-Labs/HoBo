@@ -148,6 +148,18 @@
       }
     },
     {
+      "name": "fleet",
+      "role": "control plane",
+      "summary": "Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)",
+      "cli": "hobo fleet",
+      "mcpTool": "fleet",
+      "capability": {
+        "port": "hobo:mcp",
+        "resource": "tool:fleet",
+        "verb": "call"
+      }
+    },
+    {
       "name": "incident",
       "role": "delivery",
       "summary": "CD failure disposition: A2H handoff or sandboxed self-heal",

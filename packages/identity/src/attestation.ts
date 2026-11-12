@@ -6,6 +6,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: the schema id every attestation document carries and every verifier checks.
 export const ATTESTATION_SCHEMA_VERSION = "hobo.workload-attestation/v1";
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -65,21 +66,37 @@ export type AttestationVerdict =
 			reason: string;
 	  }>;
 
+/**
+ * A host that signs launch measurements into attestation documents. The fixture
+ * below signs with an HMAC for tests; `createDeviceHostAttestor` signs with a
+ * fleet device's `SIGN` key, with the member id as `hostId`.
+ */
+export type HostAttestor = Readonly<{
+	createDocument(
+		input: Readonly<{
+			launchMeasurement: LaunchMeasurement;
+			claimed?: JsonObject;
+		}>,
+	): Promise<AttestationDocument>;
+	publicKeys(): readonly Readonly<{
+		hostId: string;
+		keyId: string;
+		verificationKey: string;
+	}>[];
+}>;
+
 export function createFixtureHostAttestor(options: {
 	hostId: string;
 	keyId?: string;
-}) {
+}): HostAttestor {
 	const hostId = options.hostId;
 	const keyId = options.keyId ?? `${hostId}-key-1`;
 	const verificationKey = `fixture-host-key:${hostId}:${keyId}`;
 
 	return {
-		createDocument(input: {
-			launchMeasurement: LaunchMeasurement;
-			claimed?: JsonObject;
-		}): AttestationDocument {
+		createDocument(input) {
 			const measured = { ...input.launchMeasurement };
-			return {
+			return Promise.resolve({
 				schemaVersion: ATTESTATION_SCHEMA_VERSION,
 				runId: measured.runId,
 				claimed: input.claimed ?? {},
@@ -90,7 +107,7 @@ export function createFixtureHostAttestor(options: {
 					keyId,
 					value: signLaunchMeasurement(measured, verificationKey),
 				},
-			};
+			});
 		},
 		publicKeys() {
 			return [{ hostId, keyId, verificationKey }];
