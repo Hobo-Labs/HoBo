@@ -9,12 +9,21 @@ const workerPath = join(here, "store-worker.ts");
 
 export type WorkerReply =
 	| Readonly<{ id: number; ok: true; value: unknown }>
-	| Readonly<{ id: number; ok: false; code: string; failure?: string; message: string }>;
+	| Readonly<{
+			id: number;
+			ok: false;
+			code: string;
+			failure?: string;
+			message: string;
+	  }>;
 
 /** Handle on a store running in a separate OS process. */
 export interface StoreProcess {
 	readonly pid: number | undefined;
-	send(op: string, args?: Readonly<Record<string, unknown>>): Promise<WorkerReply>;
+	send(
+		op: string,
+		args?: Readonly<Record<string, unknown>>,
+	): Promise<WorkerReply>;
 	/** Like `send`, but throws unless the reply is ok, and returns its value. */
 	call(op: string, args?: Readonly<Record<string, unknown>>): Promise<unknown>;
 	/** SIGKILL: the process dies holding whatever it held. */
@@ -22,7 +31,10 @@ export interface StoreProcess {
 	stop(): Promise<void>;
 }
 
-export function startStoreProcess(schema: string, startIso: string): StoreProcess {
+export function startStoreProcess(
+	schema: string,
+	startIso: string,
+): StoreProcess {
 	const child: ChildProcessWithoutNullStreams = spawn(
 		process.execPath,
 		["--import", "tsx", workerPath, POSTGRES_URL, schema, startIso],
@@ -47,7 +59,9 @@ export function startStoreProcess(schema: string, startIso: string): StoreProces
 			waiting.delete(reply.id);
 		}
 	});
-	const exited = new Promise<void>((resolve) => child.on("close", () => resolve()));
+	const exited = new Promise<void>((resolve) =>
+		child.on("close", () => resolve()),
+	);
 	child.on("close", () => {
 		for (const [id, resolve] of waiting) {
 			resolve({ id, ok: false, code: "PROCESS_EXITED", message: stderr });
@@ -66,7 +80,8 @@ export function startStoreProcess(schema: string, startIso: string): StoreProces
 		},
 		async call(op, args = {}) {
 			const reply = await handle.send(op, args);
-			if (!reply.ok) throw new Error(`${op} failed: ${reply.code} ${reply.message}`);
+			if (!reply.ok)
+				throw new Error(`${op} failed: ${reply.code} ${reply.message}`);
 			return reply.value;
 		},
 		async kill() {

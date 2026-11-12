@@ -11,7 +11,13 @@
  * their name; `HOBO_STORAGE_POSTGRES_LANE=off` skips on purpose.
  */
 import { spawnSync } from "node:child_process";
-import { chownSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+	chownSync,
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -84,13 +90,19 @@ export function systemProbe(): LaneProbe {
 		localBinDir() {
 			const candidates: string[] = [];
 			for (const dir of (process.env.PATH ?? "").split(":")) {
-				if (dir !== "" && existsSync(join(dir, "initdb")) && existsSync(join(dir, "pg_ctl"))) {
+				if (
+					dir !== "" &&
+					existsSync(join(dir, "initdb")) &&
+					existsSync(join(dir, "pg_ctl"))
+				) {
 					candidates.push(dir);
 				}
 			}
 			const root = "/usr/lib/postgresql";
 			if (existsSync(root)) {
-				for (const major of readdirSync(root).sort((a, b) => Number(b) - Number(a))) {
+				for (const major of readdirSync(root).sort(
+					(a, b) => Number(b) - Number(a),
+				)) {
 					candidates.push(join(root, major, "bin"));
 				}
 			}
@@ -128,7 +140,9 @@ async function waitForServer(url: string, deadlineMs: number): Promise<void> {
 			await new Promise((resolve) => setTimeout(resolve, 250));
 		}
 	}
-	throw new Error(`postgres did not become ready: ${last?.message ?? "timeout"}`);
+	throw new Error(
+		`postgres did not become ready: ${last?.message ?? "timeout"}`,
+	);
 }
 
 function run(command: string, args: readonly string[], runAsPostgres: boolean) {
@@ -142,16 +156,27 @@ function run(command: string, args: readonly string[], runAsPostgres: boolean) {
 	return result.stdout;
 }
 
-async function startLocal(binDir: string, runAsPostgres: boolean): Promise<RunningLane> {
+async function startLocal(
+	binDir: string,
+	runAsPostgres: boolean,
+): Promise<RunningLane> {
 	const base = tmpdir().length > 60 ? "/tmp" : tmpdir();
 	const dir = mkdtempSync(join(base, "hobo-pg-"));
 	if (runAsPostgres) {
-		const uid = Number(spawnSync("id", ["-u", "postgres"], { encoding: "utf8" }).stdout.trim());
-		const gid = Number(spawnSync("id", ["-g", "postgres"], { encoding: "utf8" }).stdout.trim());
+		const uid = Number(
+			spawnSync("id", ["-u", "postgres"], { encoding: "utf8" }).stdout.trim(),
+		);
+		const gid = Number(
+			spawnSync("id", ["-g", "postgres"], { encoding: "utf8" }).stdout.trim(),
+		);
 		chownSync(dir, uid, gid);
 	}
 	const data = join(dir, "data");
-	run(join(binDir, "initdb"), ["-D", data, "-A", "trust", "-U", "hobo", "-E", "UTF8", "--no-sync"], runAsPostgres);
+	run(
+		join(binDir, "initdb"),
+		["-D", data, "-A", "trust", "-U", "hobo", "-E", "UTF8", "--no-sync"],
+		runAsPostgres,
+	);
 	run(
 		join(binDir, "pg_ctl"),
 		[
@@ -173,7 +198,11 @@ async function startLocal(binDir: string, runAsPostgres: boolean): Promise<Runni
 		description: `ephemeral local cluster (${binDir})`,
 		async stop() {
 			try {
-				run(join(binDir, "pg_ctl"), ["-D", data, "-m", "immediate", "stop"], runAsPostgres);
+				run(
+					join(binDir, "pg_ctl"),
+					["-D", data, "-m", "immediate", "stop"],
+					runAsPostgres,
+				);
 			} finally {
 				rmSync(dir, { recursive: true, force: true });
 			}
@@ -202,13 +231,16 @@ async function startContainer(image: string): Promise<RunningLane> {
 		],
 		{ encoding: "utf8" },
 	);
-	if (started.status !== 0) throw new Error(`docker run failed: ${started.stderr}`);
+	if (started.status !== 0)
+		throw new Error(`docker run failed: ${started.stderr}`);
 	const id = started.stdout.trim();
 	const stop = async () => {
 		spawnSync("docker", ["rm", "-f", id], { stdio: "ignore" });
 	};
 	try {
-		const port = spawnSync("docker", ["port", id, "5432/tcp"], { encoding: "utf8" })
+		const port = spawnSync("docker", ["port", id, "5432/tcp"], {
+			encoding: "utf8",
+		})
 			.stdout.trim()
 			.split("\n")[0];
 		const hostPort = /:(\d+)$/u.exec(port ?? "")?.[1];
@@ -230,7 +262,11 @@ export async function startLane(
 		switch (plan.kind) {
 			case "url":
 				await waitForServer(plan.url, 10_000);
-				return { url: plan.url, description: "HOBO_TEST_POSTGRES_URL", stop: async () => {} };
+				return {
+					url: plan.url,
+					description: "HOBO_TEST_POSTGRES_URL",
+					stop: async () => {},
+				};
 			case "container":
 				return await startContainer(plan.image);
 			case "local":

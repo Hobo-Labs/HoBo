@@ -7,7 +7,10 @@
  * Commands: { id, op, ...args } → { id, ok: true, value } | { id, ok: false, code, failure }
  */
 import { createInterface } from "node:readline";
-import { createPostgresEventStore, StoragePostgresError } from "../../src/index.js";
+import {
+	createPostgresEventStore,
+	StoragePostgresError,
+} from "../../src/index.js";
 
 const [url, schema, start] = process.argv.slice(2);
 if (url === undefined || schema === undefined) {
@@ -24,12 +27,14 @@ const store = createPostgresEventStore({
 type Command = Readonly<Record<string, unknown>> & { id: number; op: string };
 
 function big(value: unknown): bigint {
-	if (typeof value === "string" || typeof value === "number") return BigInt(value);
+	if (typeof value === "string" || typeof value === "number")
+		return BigInt(value);
 	throw new TypeError(`expected integer, got ${String(value)}`);
 }
 
 function str(value: unknown): string {
-	if (typeof value !== "string") throw new TypeError(`expected string, got ${String(value)}`);
+	if (typeof value !== "string")
+		throw new TypeError(`expected string, got ${String(value)}`);
 	return value;
 }
 
@@ -65,15 +70,25 @@ async function execute(command: Command): Promise<unknown> {
 		case "append": {
 			const result = await store.append(
 				str(command.streamId),
-				[{ type: "camp.Applied", data: { by: str(command.holderId ?? "anon") } }],
+				[
+					{
+						type: "camp.Applied",
+						data: { by: str(command.holderId ?? "anon") },
+					},
+				],
 				{
 					expectedSeq: Number(command.expectedSeq),
 					actor: { kind: "system", id: "worker" },
 					tenant: "t1",
-					...(command.fence !== undefined ? { fenceToken: big(command.fence) } : {}),
+					...(command.fence !== undefined
+						? { fenceToken: big(command.fence) }
+						: {}),
 				},
 			);
-			return { seq: result.appended[0]?.seq, position: result.lastPosition?.toString() };
+			return {
+				seq: result.appended[0]?.seq,
+				position: result.lastPosition?.toString(),
+			};
 		}
 		case "checkpoint": {
 			const checkpoint = await store.commitCheckpoint({
@@ -89,7 +104,9 @@ async function execute(command: Command): Promise<unknown> {
 		}
 		case "positions": {
 			const out: string[] = [];
-			for await (const item of store.readAll({ ...(command.after !== undefined ? { after: big(command.after) } : {}) })) {
+			for await (const item of store.readAll({
+				...(command.after !== undefined ? { after: big(command.after) } : {}),
+			})) {
 				out.push(item.position.toString());
 			}
 			return out;
@@ -104,10 +121,15 @@ lines.on("line", (line) => {
 	// SAFETY: the parent writes one JSON command per line.
 	const command = JSON.parse(line) as Command;
 	execute(command).then(
-		(value) => process.stdout.write(`${JSON.stringify({ id: command.id, ok: true, value })}\n`),
+		(value) =>
+			process.stdout.write(
+				`${JSON.stringify({ id: command.id, ok: true, value })}\n`,
+			),
 		(error: unknown) => {
-			const code = error instanceof Error ? Reflect.get(error, "code") : undefined;
-			const failure = error instanceof StoragePostgresError ? error.failure : undefined;
+			const code =
+				error instanceof Error ? Reflect.get(error, "code") : undefined;
+			const failure =
+				error instanceof StoragePostgresError ? error.failure : undefined;
 			process.stdout.write(
 				`${JSON.stringify({
 					id: command.id,

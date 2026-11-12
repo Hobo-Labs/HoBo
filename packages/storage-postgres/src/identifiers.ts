@@ -1,7 +1,9 @@
 import { StoragePostgresError } from "./errors.js";
 
 /** A schema name this store may create: lower-case, unquoted-safe, <= 63 bytes. */
-export type SchemaName = string & { readonly __brand: "storage-postgres.SchemaName" };
+export type SchemaName = string & {
+	readonly __brand: "storage-postgres.SchemaName";
+};
 
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/u;
 

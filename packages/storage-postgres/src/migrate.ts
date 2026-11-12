@@ -10,7 +10,7 @@ import {
 	type Migration,
 	migrationChecksum,
 } from "./migrations/index.js";
-import { type PgClientLike, int4, text } from "./pg.js";
+import { int4, type PgClientLike, text } from "./pg.js";
 
 export type MigrationReport = Readonly<{
 	serverMajorVersion: number;

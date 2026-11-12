@@ -6,7 +6,7 @@ import {
 	parseEventEnvelope,
 } from "@hobo/core";
 import { isJsonObject } from "./parse.js";
-import { optionalText, type PgRow, int4, text } from "./pg.js";
+import { int4, optionalText, type PgRow, text } from "./pg.js";
 
 export const JSON_CODEC = "json-v1";
 

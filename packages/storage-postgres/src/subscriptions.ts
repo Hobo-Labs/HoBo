@@ -132,7 +132,8 @@ export async function claimLease(
 			`lease row for ${label(key)} vanished during claim; retry`,
 		);
 	}
-	const live = !current.released && Date.parse(current.expiresAt) > Date.parse(now);
+	const live =
+		!current.released && Date.parse(current.expiresAt) > Date.parse(now);
 	if (live && current.holderId !== holderId) {
 		throw new StoragePostgresError(
 			"lease-held",
@@ -144,7 +145,13 @@ export async function claimLease(
 		`UPDATE ${s}.subscription_leases
      SET holder_id = $3, fence_token = $4, expires_at = $5, released = false
      WHERE subscription_id = $1 AND partition_id = $2`,
-		[key.subscriptionId, key.partitionId, holderId, fenceToken.toString(), expiresAt],
+		[
+			key.subscriptionId,
+			key.partitionId,
+			holderId,
+			fenceToken.toString(),
+			expiresAt,
+		],
 	);
 	return lease(key, holderId, fenceToken, expiresAt);
 }
@@ -329,7 +336,13 @@ export async function commitCheckpoint(
        position = EXCLUDED.position,
        fence_token = EXCLUDED.fence_token,
        updated_at = EXCLUDED.updated_at`,
-		[key.subscriptionId, key.partitionId, position.toString(), fence.toString(), now],
+		[
+			key.subscriptionId,
+			key.partitionId,
+			position.toString(),
+			fence.toString(),
+			now,
+		],
 	);
 	await appendLog(client, s, key, {
 		position,
@@ -375,7 +388,13 @@ export async function resetCheckpoint(
        position = EXCLUDED.position,
        fence_token = EXCLUDED.fence_token,
        updated_at = EXCLUDED.updated_at`,
-		[key.subscriptionId, key.partitionId, position.toString(), fence.toString(), now],
+		[
+			key.subscriptionId,
+			key.partitionId,
+			position.toString(),
+			fence.toString(),
+			now,
+		],
 	);
 	await appendLog(client, s, key, {
 		position,

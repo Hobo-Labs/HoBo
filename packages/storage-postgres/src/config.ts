@@ -72,7 +72,9 @@ const APPLICATION_NAME = /^[A-Za-z0-9._:-]{1,63}$/u;
 
 function refine(record: PostgresStoreConfigRecord): PostgresStoreConfig {
 	const defaults = POSTGRES_STORE_DEFAULTS;
-	const schema = parseSchemaName(record.schema === "" ? defaults.schema : record.schema);
+	const schema = parseSchemaName(
+		record.schema === "" ? defaults.schema : record.schema,
+	);
 	const partitionId =
 		record.partitionId === "" ? defaults.partitionId : record.partitionId;
 	const applicationName =

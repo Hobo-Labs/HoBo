@@ -82,7 +82,11 @@ function optionalText(value: unknown, field: string): string | undefined {
 	return value;
 }
 
-function canonicalText(value: unknown, field: string, maxBytes: number): string {
+function canonicalText(
+	value: unknown,
+	field: string,
+	maxBytes: number,
+): string {
 	let text: string | undefined;
 	try {
 		text = JSON.stringify(value ?? {});
@@ -106,7 +110,8 @@ export function parseEventInputs(
 		);
 	}
 	return events.map((event, index) => {
-		if (!isJsonObject(event)) throw invalid(`events[${index}] must be an object`);
+		if (!isJsonObject(event))
+			throw invalid(`events[${index}] must be an object`);
 		const type = requireNonEmpty(event.type, `events[${index}].type`);
 		const v: unknown = event.v ?? 1;
 		if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) {

@@ -1,6 +1,9 @@
 import { afterEach, expect, it } from "vitest";
 import { adminQuery, describeLive, freshSchema, T0 } from "./support/live.js";
-import { type StoreProcess, startStoreProcess } from "./support/worker-process.js";
+import {
+	type StoreProcess,
+	startStoreProcess,
+} from "./support/worker-process.js";
 
 /**
  * Plan 0024 WP17 Accept: "Two-process fence test". Two OS processes, each
@@ -47,35 +50,74 @@ describeLive("WP17 two-process fence", () => {
 		const key = { subscriptionId: "hobo.cd.camp", partitionId: "camp-1" };
 		const stream = "cd:camp:camp-1:status";
 
-		const leaseA = (await a.call("claim", { ...key, holderId: "replica-a", ttlMs: 30_000 })) as { fence: string };
+		const leaseA = (await a.call("claim", {
+			...key,
+			holderId: "replica-a",
+			ttlMs: 30_000,
+		})) as { fence: string };
 		expect(leaseA.fence).toBe("1");
-		await a.call("append", { streamId: stream, expectedSeq: 0, fence: leaseA.fence, holderId: "replica-a" });
+		await a.call("append", {
+			streamId: stream,
+			expectedSeq: 0,
+			fence: leaseA.fence,
+			holderId: "replica-a",
+		});
 		await a.call("checkpoint", { ...key, position: 1, fence: leaseA.fence });
 
 		// B cannot take over a live lease ...
-		expect(await b.send("claim", { ...key, holderId: "replica-b" })).toMatchObject({
+		expect(
+			await b.send("claim", { ...key, holderId: "replica-b" }),
+		).toMatchObject({
 			ok: false,
 			code: "SUBSCRIPTION_LEASE_CONFLICT",
 		});
 		// ... but can once A's lease has expired on B's clock (A is paused, not dead).
 		await b.call("clock", { at: "2026-11-12T00:00:31.000Z" });
-		const leaseB = (await b.call("claim", { ...key, holderId: "replica-b", ttlMs: 30_000 })) as { fence: string };
+		const leaseB = (await b.call("claim", {
+			...key,
+			holderId: "replica-b",
+			ttlMs: 30_000,
+		})) as { fence: string };
 		expect(leaseB.fence).toBe("2");
-		await b.call("append", { streamId: stream, expectedSeq: 1, fence: leaseB.fence, holderId: "replica-b" });
+		await b.call("append", {
+			streamId: stream,
+			expectedSeq: 1,
+			fence: leaseB.fence,
+			holderId: "replica-b",
+		});
 
 		// A wakes up and keeps going with its old fence: every write is refused.
 		expect(
-			await a.send("append", { streamId: stream, expectedSeq: 2, fence: leaseA.fence, holderId: "replica-a" }),
+			await a.send("append", {
+				streamId: stream,
+				expectedSeq: 2,
+				fence: leaseA.fence,
+				holderId: "replica-a",
+			}),
 		).toMatchObject({ ok: false, code: "STALE_FENCE" });
-		expect(await a.send("append", { streamId: stream, expectedSeq: 2, holderId: "replica-a" })).toMatchObject({
+		expect(
+			await a.send("append", {
+				streamId: stream,
+				expectedSeq: 2,
+				holderId: "replica-a",
+			}),
+		).toMatchObject({
 			ok: false,
 			code: "MISSING_FENCE",
 		});
-		expect(await a.send("checkpoint", { ...key, position: 2, fence: leaseA.fence })).toMatchObject({
+		expect(
+			await a.send("checkpoint", { ...key, position: 2, fence: leaseA.fence }),
+		).toMatchObject({
 			ok: false,
 			code: "STALE_FENCE",
 		});
-		expect(await a.send("renew", { ...key, holderId: "replica-a", fence: leaseA.fence })).toMatchObject({
+		expect(
+			await a.send("renew", {
+				...key,
+				holderId: "replica-a",
+				fence: leaseA.fence,
+			}),
+		).toMatchObject({
 			ok: false,
 			code: "STALE_FENCE",
 		});
@@ -110,10 +152,14 @@ describeLive("WP17 two-process fence", () => {
 			]);
 			const ok = replies.filter((reply) => reply.ok);
 			expect(ok).toHaveLength(1);
-			expect(replies.find((reply) => !reply.ok)).toMatchObject({ code: "OPTIMISTIC_SEQUENCE_CONFLICT" });
+			expect(replies.find((reply) => !reply.ok)).toMatchObject({
+				code: "OPTIMISTIC_SEQUENCE_CONFLICT",
+			});
 			seq += 1;
 		}
 		const positions = (await a.call("positions")) as string[];
-		expect(positions).toEqual(Array.from({ length: 10 }, (_, i) => String(i + 1)));
+		expect(positions).toEqual(
+			Array.from({ length: 10 }, (_, i) => String(i + 1)),
+		);
 	});
 });

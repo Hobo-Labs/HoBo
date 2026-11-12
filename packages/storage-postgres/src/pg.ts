@@ -8,7 +8,10 @@ export type PgParam = string | number | boolean | null | readonly string[];
 
 /** The slice of a pooled `pg` client this store uses. */
 export interface PgClientLike {
-	query(text: string, values?: readonly PgParam[]): Promise<{
+	query(
+		text: string,
+		values?: readonly PgParam[],
+	): Promise<{
 		rows: PgRow[];
 		rowCount: number | null;
 	}>;

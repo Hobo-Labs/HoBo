@@ -176,7 +176,11 @@ export function translatePgError(error: Error): Error {
 	if (error instanceof EventStoreError) return error;
 	const code = stringField(error, "code");
 	if (code === undefined) {
-		if (/timeout exceeded when trying to connect|Connection terminated/iu.test(error.message)) {
+		if (
+			/timeout exceeded when trying to connect|Connection terminated/iu.test(
+				error.message,
+			)
+		) {
 			return new StoragePostgresError("unavailable", error.message, {
 				cause: error,
 			});
