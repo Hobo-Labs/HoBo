@@ -24,6 +24,31 @@ export type CdFormat = "json" | "text";
 
 const registry = createRegistry(file_cd);
 
+/**
+ * The flags a CD command reads: the shell's flags with the options its
+ * subcommand declares (`@hobo/cli` subcommands.ts) merged by name. Callers
+ * that pass a plain flag object (tests, MCP fakes) get it unchanged.
+ */
+export function cdFlagsOf(flags: unknown): JsonObject {
+	// SAFETY: CommandRunInput flags; members are read by name and narrowed by the subcommand.
+	const base = flags as JsonObject;
+	const declared = base.subcommandOptions;
+	if (
+		declared === null ||
+		typeof declared !== "object" ||
+		Array.isArray(declared)
+	)
+		return base;
+	return {
+		...base,
+		...Object.fromEntries(
+			Object.entries(declared).filter(
+				([, value]) => value === true || isJsonString(value),
+			),
+		),
+	};
+}
+
 /** `--format json|text`; `--json` implies json. Unknown values are a usage error. */
 export function parseCdFormat(
 	flags: JsonObject,

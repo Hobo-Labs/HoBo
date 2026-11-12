@@ -21,8 +21,8 @@ new one a host at a time.
 - **Camps.** One per host, `hobo-ci-runners/<host id>`, labelled
   `hobo.ci/runner-fleet=true`, `hobo.ci/runner-ring=<ring>`,
   `hobo.ci/runner-host=<kind>` and `hobo.ci/serves-<label>=true|false`
-  (`runnerFleetTopology`). The host id is the host's mesh node id
-  (`HOBO_CI_MESH_NODE_ID`), lowercase.
+  (`runnerFleetTopology`, exported as the module's `camps`). The host id is the
+  host's mesh node id (`HOBO_CI_MESH_NODE_ID`), lowercase.
 - **Camp set** `hobo-ci-runner-fleet`, by the `hobo.ci/runner-fleet` label, for
   the `hobo-ci-runner-fleet` Bindle (`HOBO_CI_COMPONENTS.runnerFleet` in
   `@hobo/cd/compose`). Adding a host is a topology change, not a pipeline change.
@@ -62,9 +62,13 @@ not placed. Claims narrow, never grant.
 
 ## Enroll a runner host (double opt-in)
 
-1. On the Station, apply the module and mint a token scoped to the Camp set:
+1. On the Station, apply the module and mint a token scoped to the Camp set.
+   The module's `camps` export is the fleet's topology: `pipeline apply` reads
+   it, and every later command is given it with `--yard` or
+   `HOBO_CD_TOPOLOGY=packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`
+   ([`hobo deploy`](../../../hobo/CD.md#topology-from-the-repository)):
    `hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`, then
-   `hobo deploy agent token --camp-set hobo-ci-runner-fleet --camp hobo-ci-runners/<id>`.
+   `hobo deploy agent token --camp-set hobo-ci-runner-fleet --camp hobo-ci-runners/<id> --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`.
 2. On the host, make a key pair, keep the private JWK as
    `~/.config/hobo-cd-agent/agent.jwk.json` (mode 0600), and enroll the public
    half: `hobo deploy agent enroll --token <token> --jwk-file public.jwk.json`.
@@ -87,15 +91,6 @@ These are refused, not faked:
   drain, restart the controller). Until one exists the fleet records Freight
   and fans out to nobody; hosts are upgraded the way
   [the runner queue guide](../../../ci/RUNNER-QUEUE.md) describes.
-- **No topology input on the `hobo` binary.** Camps are declared by Yards passed
-  to the CD host or by `HOBO_CD_KUBE_FLEET`; the binary takes neither for these
-  hosts, so `hobo deploy camp list --campset hobo-ci-runner-fleet` is empty and
-  `agent token` refuses with `token-scope-invalid`. `runnerFleetTopology` is
-  the declaration to load once it does.
-- **The `hobo` binary rejects CD flags.** Its option parser (`@hobo/cli`)
-  refuses `--file`, `--camp-set`, `--feed` and the other `hobo deploy` flags
-  with `Unknown option`, so the commands above run through the deploy command
-  module (`createDeployCommand`) until it passes them through.
 - **No ingestion of mesh conditions.** Nothing yet calls `CampInventory.observe`
   with `runnerFleetCampObservations`; there is no `hobo deploy camp observe`.
 - **Placement fails closed** with `rail-providers-unknown` until the Station's

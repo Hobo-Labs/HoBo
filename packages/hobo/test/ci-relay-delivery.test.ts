@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { toJson } from "@bufbuild/protobuf";
 import type { ManifestV1 } from "@hobo/bindles";
-import { FreightSourceRecordSchema, ReconcileStatus } from "@hobo/cd";
+import { FreightSourceRecordSchema } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
 import type { HttpTransport } from "@hobo/core";
@@ -23,13 +23,10 @@ import {
 	deliverRelay,
 	RELAY_DELIVERY_FILE,
 	RELAY_DELIVERY_REFUSAL,
-	RELAY_JOURNAL_DIR,
 	type RelayRealization,
 	type RelaySourcePin,
 	relayCampId,
 	relayYardRegistryProvider,
-	reportedStatus,
-	withStorableRolloutTypes,
 } from "../src/ci-relay-delivery.js";
 import { loadRelayYard } from "../src/ci-relay-yard.js";
 
@@ -269,26 +266,39 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		]);
 		expect(h.probed).toContain(`${PREVIEW}/healthz`);
 		expect(h.probed).not.toContain(`${PREVIEW}/readyz`);
-		// The relay's own journal, never the shared <HOBO_HOME>/cd.
-		expect(existsSync(join(h.home, RELAY_JOURNAL_DIR, "cd"))).toBe(true);
-		expect(existsSync(join(h.home, "cd"))).toBe(false);
+		// The shared CD journal `hobo deploy` reads: no private relay journal.
+		expect(existsSync(join(h.home, "cd"))).toBe(true);
+		expect(existsSync(join(h.home, "ci-relay"))).toBe(false);
+		const types = await journalTypes({
+			backend: "sqlite",
+			path: join(h.home, "cd", "journal.sqlite"),
+		});
+		// The rollout ledger is stored under the family a durable journal
+		// accepts; no private encoding is left behind.
+		expect(types.some((type) => type.startsWith("rollout."))).toBe(true);
+		expect(
+			types.some(
+				(type) =>
+					type.startsWith("cd.rollout.") || type.startsWith("cdrollout."),
+			),
+		).toBe(false);
 	}, 60_000);
 
-	it.each([
-		["HOBO_CD_SQLITE_PATH", "/shared/cd/journal.sqlite"],
-		["HOBO_CD_POSTGRES_URL", "postgres://cd.example.test/cd"],
-	])("refuses, naming the CD gap, when %s points CD at a shared store", async (name, value) => {
+	it("delivers into the shared store HOBO_CD_SQLITE_PATH names, then production from the same journal", async () => {
 		const h = await harness();
-		const outcome = await deliver(h, "preview", {
-			env: { HOBO_USER: "relay-test", [name]: value },
-		});
-		expect(outcome.ok).toBe(false);
-		if (outcome.ok) return;
-		expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.unavailable);
-		expect(outcome.message).toContain(name);
-		expect(outcome.message).toContain("cd.rollout");
-		expect(h.deployed).toEqual([]);
-	});
+		const path = join(h.home, "shared", "journal.sqlite");
+		const env = { HOBO_USER: "relay-test", HOBO_CD_SQLITE_PATH: path };
+		const preview = await deliver(h, "preview", { env });
+		expect(preview.ok, preview.ok ? "" : preview.message).toBe(true);
+		const production = await deliver(h, "production", { env });
+		expect(production.ok, production.ok ? "" : production.message).toBe(true);
+		if (!production.ok) return;
+		expect(production.report.state).toBe("PROMOTED");
+		// The rollouts ran on the named journal, not a private one.
+		const types = await journalTypes({ backend: "sqlite", path });
+		expect(types.some((type) => type.startsWith("rollout."))).toBe(true);
+		expect(existsSync(join(h.home, "ci-relay"))).toBe(false);
+	}, 120_000);
 
 	it("refuses production before anything is deployed when preview has not qualified the commit", async () => {
 		const h = await harness();
@@ -372,67 +382,16 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 	}, 60_000);
 });
 
-describe("journal compatibility for the relay's CD composition", () => {
-	it("stores the rollout ledger's two-dot types under a valid family and reads them back as declared", async () => {
-		const journal = (
-			await openCdStore({ backend: "memory" }, { now: () => Date.now() })
-		).store;
-		const actor = { kind: "user", id: "relay-test" } as const;
-		await expect(
-			journal.append(
-				"cd-rollout-x",
-				[{ type: "cd.rollout.Started", data: {} }],
-				{
-					expectedSeq: 0,
-					actor,
-					tenant: "local",
-				},
-			),
-		).rejects.toThrow(/family\.PastTenseFact/);
-		const store = withStorableRolloutTypes(journal);
-		await store.append(
-			"cd-rollout-x",
-			[{ type: "cd.rollout.Started", data: {} }],
-			{ expectedSeq: 0, actor, tenant: "local" },
-		);
-		const read: string[] = [];
-		for await (const event of store.read("cd-rollout-x")) read.push(event.type);
-		expect(read).toEqual(["cd.rollout.Started"]);
-		const all: string[] = [];
-		for await (const entry of store.readAll({
-			tenant: "local",
-			filter: { type: "cd.rollout.Started" },
-		}))
-			all.push(entry.event.streamId);
-		expect(all).toEqual(["cd-rollout-x"]);
-	});
-
-	it("reads a reconciler's reported status from its { schema, observation } envelope, highest fence first", async () => {
-		const campId = relayCampId(yard, "preview");
-		const { store } = await openCdStore(
-			{ backend: "memory" },
-			{ now: () => Date.now() },
-		);
-		await store.append(
-			`cd-camp-status-${campId}`,
-			[
-				{ fence: "2", status: "RECONCILE_STATUS_CONVERGED" },
-				{ fence: "1", status: "RECONCILE_STATUS_CONVERGING" },
-			].map(({ fence, status }) => ({
-				type: "deployment.StatusObserved",
-				data: {
-					schema: "hobo.cd.reconcile-status/v1",
-					observation: { campId, setId: "set_a", fenceToken: fence, status },
-				},
-			})),
-			{
-				expectedSeq: 0,
-				actor: { kind: "user", id: "relay-test" },
-				tenant: "local",
-			},
-		);
-		const observed = await reportedStatus(store, campId);
-		expect(observed?.fenceToken).toBe("2");
-		expect(observed?.status).toBe(ReconcileStatus.CONVERGED);
-	});
-});
+async function journalTypes(
+	config: Parameters<typeof openCdStore>[0],
+): Promise<string[]> {
+	const opened = await openCdStore(config, { now: () => Date.now() });
+	try {
+		const types: string[] = [];
+		for await (const entry of opened.store.readAll({ tenant: "local" }))
+			types.push(entry.event.type);
+		return types;
+	} finally {
+		await opened.close();
+	}
+}

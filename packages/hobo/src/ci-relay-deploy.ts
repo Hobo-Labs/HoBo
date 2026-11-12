@@ -20,9 +20,9 @@
 // promotion to its end: READY, then the node's probes (`/healthz` for
 // preview, `/healthz` and `/readyz` for production, failing closed on no
 // data), then qualification. Without `--wait` the command returns once the
-// deployment exists, unverified. The journal is the relay's own
-// (`<HOBO_HOME>/ci-relay/cd`), never the shared one (ci-relay-delivery.ts names
-// the CD gap that requires it).
+// deployment exists, unverified. The journal is the shared CD journal
+// (`<HOBO_HOME>/cd`, or the store HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL
+// names), the one `hobo deploy` reads.
 //
 // CONTRACT CHANGE (from the direct-deploy verb; packages/ci-vercel/README.md
 // "Contract changes of hobo ci deploy"): `--wait` now verifies and qualifies,
@@ -91,7 +91,6 @@ import {
 } from "./_generated/vercel_git_deployment_pb.js";
 import {
 	deliverRelay,
-	RELAY_JOURNAL_DIR,
 	type RelayRealization,
 	type RelayRealizationFailure,
 	relayCampId,
@@ -373,7 +372,7 @@ function describeDelivery(
 			: []),
 		"  a conductor reconciler realizes it as the Vercel git deployment above, converged once Vercel reports READY",
 		`  --wait verifies it with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${RELAY_VERIFY_ORIGIN[target]} (fail closed on no data) and qualifies it`,
-		`  in the relay's own CD journal under HOBO_HOME (${RELAY_JOURNAL_DIR}/cd), never the shared one`,
+		"  in the shared CD journal (HOBO_HOME/cd, or HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL), the one hobo deploy reads",
 	].join("\n");
 }
 
