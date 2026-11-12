@@ -48,6 +48,12 @@ describe("main_gate_finish workspace prerequisites", () => {
 		}>;
 		const cases: Case[] = [
 			{ plan: "success", shards: "[]", workspace: "skipped", ok: true },
+			{
+				plan: "success",
+				shards: "",
+				workspace: "failure",
+				ok: true,
+			},
 			{ plan: "success", shards: "[0]", workspace: "success", ok: true },
 			{ plan: "failure", shards: "", workspace: "skipped", ok: false },
 			{ plan: "cancelled", shards: "", workspace: "skipped", ok: false },

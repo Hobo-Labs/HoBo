@@ -17,7 +17,7 @@ Main run [43188550050](https://github.com/Hobo-Labs/HoBo/actions/runs/4318855005
 
 ## Fix
 
-- Skip `main_workspace_tests` when `needs.main-gate-plan.outputs.shards` is `[]` or empty.
+- Skip `main_workspace_tests` when `needs.main-gate-plan.outputs.shards` is `[]` or empty (explicit plan output only).
 - Finish waits on `main-gate-plan`, requires `PLAN_RESULT == success`, and passes when `PLAN_SHARDS` is empty (including the legacy empty-matrix `failure` case) before checking shard success.
 
 ## Verified
