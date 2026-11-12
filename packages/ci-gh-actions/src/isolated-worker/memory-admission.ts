@@ -10,6 +10,9 @@ import {
 	hostCpuAdmitFits,
 	hostMemoryAdmitFits,
 	hostPressureBlocksAdmission,
+	leaseCpuLoadAccountedInLoad1,
+	pendingTrunkCpuReservationCpus,
+	trunkCpuLeaseSignal,
 	trunkWorkerCpuHeadroomFields,
 } from "./host-resource-pressure.js";
 import type {
@@ -232,8 +235,18 @@ export function createWorkerMemoryAdmission(
 		const pressure = options.hostPressure?.();
 		const pressureBlocked =
 			pressure !== undefined && hostPressureBlocksAdmission(pressure);
-		const heavyLeases = admittedLeases.filter(
-			(lease) => leaseMemoryMb(lease) >= config.classes.standard,
+		const trunkCpuSignals = admittedLeases.map((lease) =>
+			trunkCpuLeaseSignal(
+				leaseMemoryMb(lease),
+				lease.state,
+				lease.sandboxStage,
+			),
+		);
+		const standardTrunkLeases = trunkCpuSignals.filter(
+			(lease) => lease.memoryMb >= config.classes.standard,
+		);
+		const runningTrunkJobs = standardTrunkLeases.filter((lease) =>
+			leaseCpuLoadAccountedInLoad1(lease),
 		).length;
 		const cores = hostCores();
 		const load1 =
@@ -243,9 +256,14 @@ export function createWorkerMemoryAdmission(
 		const cpuInput = {
 			cores,
 			load1,
-			reservedCpus: heavyLeases * trunkJobCpuRequest,
+			reservedCpus: pendingTrunkCpuReservationCpus(
+				trunkCpuSignals,
+				config.classes.standard,
+				trunkJobCpuRequest,
+			),
 			volatilityCpus: cpuVolatilityCpus,
 			requestCpus: trunkJobCpuRequest,
+			runningTrunkJobs,
 		};
 		const trunkCpuBlocked =
 			cores >= trunkJobCpuRequest &&
