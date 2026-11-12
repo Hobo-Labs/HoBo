@@ -139,6 +139,7 @@ unindexed new finding files as notices.
 - [Finding 127: main shard parallel admission](./findings/0127-main-shard-parallel-admission.md)
 - [Finding 128: light trunk plan and immediate fleet pickup for deps](./findings/0128-light-trunk-plan-and-immediate-fleet-pickup-for-deps.md)
 - [Finding 129: cancelled release run still queued publish legs](./findings/0129-cancelled-release-run-still-queued-publish-legs.md)
+- [Finding 133: route job GitHub-hosted start latency](./findings/0133-route-job-github-hosted-start-latency.md)
 <!-- findings-index:end -->
 
 ## Data
