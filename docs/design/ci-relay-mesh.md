@@ -437,6 +437,11 @@ skipped. A dispatch can pin its own run with the `route` input, leaving
 and deps jobs, a fleet that becomes blocked still holds those two jobs; the
 monitor's stall signal reports it.
 
+The plan reads no capacity record: `scripts/ci/load-fleet-capacity.mts` is
+gone (its repository-variable read answered 403 to a job token, finding 143).
+`plan-main-workspace-shards.mts` sizes shards from `MAIN_WORKSPACE_PARALLEL_CAP`
+when set, else 4, a tuning setting of the script.
+
 Nothing about the fleet reaches a workflow any other way. `scripts/lint-actions.ts`
 rejects any workflow or action that reads a `vars.HOBO_CI_FLEET_*` variable or
 declares an input or environment variable named `fleet-state`,
