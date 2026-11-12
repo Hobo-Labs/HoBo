@@ -15,6 +15,10 @@
 		"./guardrails": {
 			"types": "./dist/agent-guardrails.d.ts",
 			"default": "./dist/agent-guardrails.js"
+		},
+		"./posture": {
+			"types": "./dist/posture/index.d.ts",
+			"default": "./dist/posture/index.js"
 		}
 	},
 	"publishConfig": {
