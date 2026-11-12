@@ -230,6 +230,12 @@ The built CLI's start is a third of that CPU (3-4 s at that load, 9 s once at a 
 case's budget now covers the child's own 30 s bound instead of the 10 s default, and the case's
 `signal` stops the child if the case is cancelled anyway.
 
+`relay-mcp.test.ts`'s journal-bounds case seeds a neighbour's rows between an account's events to
+prove a read reaches past the old 10,000-row bounded look. Each seeded write commits on its own, and
+21,500 of them were 85% of the case (1.8 of 2.2 s idle); with the hook's turbo run sharing 4 CPUs
+with 16 busy loops it took 9-17 s and passed 10 s in two of three runs. It now seeds 10,100 rows,
+just past the bound: 1.2 s idle, 4.3-6.4 s under the same load.
+
 Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `TURBO_HASH` set
 as under turbo, TMPDIR on disk) on a shared host: 145.6 s wall and 73.3 s CPU before (load 28.0 →
 34.1), 44.9 s wall and 28.2 s CPU after (load 33.2 → 32.4).

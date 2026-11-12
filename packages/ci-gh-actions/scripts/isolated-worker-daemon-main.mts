@@ -15,6 +15,7 @@ import {
 import { createTrustedMeshBoard } from "@hobo/ci/mesh";
 import {
 	attachPostgresPoolErrorHandler,
+	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
 	createBoxGitMirror,
@@ -46,6 +47,7 @@ import {
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
+	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
 	defaultGitMirrorFallbackRoot,
@@ -61,7 +63,6 @@ import {
 	loadMeshIdentity,
 	type MeshJournal,
 	memoryRequestForJob,
-	mergeDrainInFlightCount,
 	meshReliabilityJournal,
 	meshReliabilityResetToken,
 	meshSettingsFromEnv,
@@ -738,6 +739,7 @@ try {
 	});
 	const firstReconciliation = await worker.reconcileLeases();
 	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
+	let drainJobInFlight = firstReconciliation.drainJobInFlight;
 	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
 	await worker.reconcileStallRecoveries();
@@ -1223,6 +1225,7 @@ try {
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
 		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		drainJobInFlight = reconciliation.drainJobInFlight;
 		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		runOrphanJobReconcile();
 		if (!reconciliation.inventoryKnown) return;
@@ -1411,13 +1414,51 @@ try {
 			await mesh?.advertise();
 			// And tell routing: this worker no longer counts towards its labels.
 			await publishFleetState({ now: true }).catch(() => undefined);
-			await jobPollInFlight;
-			await inboxDrainInFlight;
-			await orphanReconcileInFlight;
-			await gcInFlight;
-			if (tickInFlight) {
-				await tickInFlight.catch(() => undefined);
+			const backgroundKinds = (): (
+				| "tick"
+				| "inbox"
+				| "jobPoll"
+				| "gc"
+				| "orphanReconcile"
+			)[] => {
+				const kinds: (
+					| "tick"
+					| "inbox"
+					| "jobPoll"
+					| "gc"
+					| "orphanReconcile"
+				)[] = [];
+				if (tickInFlight) kinds.push("tick");
+				if (inboxDrainInFlight) kinds.push("inbox");
+				if (jobPollInFlight) kinds.push("jobPoll");
+				if (gcInFlight) kinds.push("gc");
+				if (orphanReconcileInFlight) kinds.push("orphanReconcile");
+				return kinds;
+			};
+			const background = await awaitWorkerBackgroundDrainIdle({
+				inFlight: backgroundKinds,
+				boundMs: DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+				onProgress: ({ inFlight, elapsedMs, boundMs }) =>
+					log("hobo_ci_drain_progress", {
+						phase: "background",
+						inFlight: inFlight.join(","),
+						elapsedMs,
+						boundMs,
+					}),
+			});
+			if (background.timedOut) {
+				log("hobo_ci_drain_progress", {
+					phase: "background",
+					timedOut: true,
+					inFlight: background.inFlight.join(","),
+					boundMs: DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+				});
 			}
+			tickInFlight = undefined;
+			jobPollInFlight = undefined;
+			inboxDrainInFlight = undefined;
+			gcInFlight = undefined;
+			orphanReconcileInFlight = undefined;
 			const reconcileDrain = async () => {
 				const workerReconcileStartedAt = Date.now();
 				const reconciliation = await worker.reconcileLeases({
@@ -1426,6 +1467,7 @@ try {
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				drainJobInFlight = reconciliation.drainJobInFlight;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
 				await worker.reconcileStallRecoveries();
@@ -1439,11 +1481,7 @@ try {
 					runningWorkerContainers = 0;
 				}
 			};
-			const inFlight = async () =>
-				mergeDrainInFlightCount(
-					liveWorkerLeaseIds.size,
-					runningWorkerContainers,
-				);
+			const inFlight = async () => drainJobInFlight;
 			await reconcileDrain();
 			if (stopMode === "drain")
 				log("hobo_ci_isolated_worker_drain_started", {
@@ -1462,6 +1500,14 @@ try {
 					reported = remaining;
 					log("hobo_ci_isolated_worker_drain_waiting", { remaining });
 				},
+				onProgress: ({ remaining, elapsedMs, timeoutMs }) =>
+					log("hobo_ci_drain_progress", {
+						phase: "jobs",
+						remaining,
+						elapsedMs,
+						timeoutMs,
+						runningWorkerContainers,
+					}),
 			});
 			if (result.mode === "handoff") {
 				log("hobo_ci_isolated_worker_handoff", { running: result.remaining });

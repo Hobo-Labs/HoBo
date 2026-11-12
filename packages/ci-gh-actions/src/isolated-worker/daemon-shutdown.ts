@@ -60,6 +60,56 @@ export function mergeDrainInFlightCount(
 	return Math.max(leaseCount, runningWorkerContainers);
 }
 
+export type WorkerBackgroundDrainKind =
+	| "tick"
+	| "inbox"
+	| "jobPoll"
+	| "gc"
+	| "orphanReconcile";
+
+/** SIGTERM must not wait on poll/tick/inbox longer than this when no job runs. */
+export const DEFAULT_DRAIN_BACKGROUND_BOUND_MS = 30_000;
+
+export async function awaitWorkerBackgroundDrainIdle(options: {
+	inFlight: () => readonly WorkerBackgroundDrainKind[];
+	boundMs?: number;
+	pollMs?: number;
+	onProgress?: (
+		fields: Readonly<{
+			elapsedMs: number;
+			boundMs: number;
+			inFlight: readonly WorkerBackgroundDrainKind[];
+		}>,
+	) => void;
+	sleep?: (ms: number) => Promise<void>;
+	now?: () => number;
+}): Promise<
+	Readonly<{
+		timedOut: boolean;
+		inFlight: readonly WorkerBackgroundDrainKind[];
+	}>
+> {
+	const sleep =
+		options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+	const now = options.now ?? Date.now;
+	const boundMs = options.boundMs ?? DEFAULT_DRAIN_BACKGROUND_BOUND_MS;
+	const pollMs = Math.min(options.pollMs ?? 2_000, boundMs);
+	const startedAt = now();
+	let lastLoggedMs = Number.NEGATIVE_INFINITY;
+	while (now() - startedAt < boundMs) {
+		const active = options.inFlight();
+		if (active.length === 0) return { timedOut: false, inFlight: [] as const };
+		const elapsedMs = now() - startedAt;
+		if (elapsedMs - lastLoggedMs >= pollMs) {
+			lastLoggedMs = elapsedMs;
+			options.onProgress?.({ elapsedMs, boundMs, inFlight: active });
+		}
+		await sleep(Math.min(pollMs, boundMs - elapsedMs));
+	}
+	const inFlight = options.inFlight();
+	return { timedOut: inFlight.length > 0, inFlight };
+}
+
 /**
  * Waits until nothing this worker launched is still in flight, running jobs
  * included. A lease leaves `running` only when a reconcile sees its runner
@@ -71,13 +121,21 @@ export async function waitForIsolatedWorkerDrain(options: {
 	pollMs: number;
 	timeoutMs: number;
 	onWaiting?: (remaining: number) => void;
+	onProgress?: (
+		fields: Readonly<{
+			remaining: number;
+			elapsedMs: number;
+			timeoutMs: number;
+		}>,
+	) => void;
 	sleep?: (ms: number) => Promise<void>;
 	now?: () => number;
 }): Promise<{ drained: boolean; remaining: number }> {
 	const sleep =
 		options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 	const now = options.now ?? (() => Date.now());
-	const deadline = now() + options.timeoutMs;
+	const startedAt = now();
+	const deadline = startedAt + options.timeoutMs;
 	const count = async () => {
 		await options.reconcile().catch(() => undefined);
 		return options.inFlight();
@@ -86,6 +144,11 @@ export async function waitForIsolatedWorkerDrain(options: {
 		const remaining = await count();
 		if (remaining === 0) return { drained: true, remaining: 0 };
 		options.onWaiting?.(remaining);
+		options.onProgress?.({
+			remaining,
+			elapsedMs: now() - startedAt,
+			timeoutMs: options.timeoutMs,
+		});
 		const waitMs = Math.min(options.pollMs, Math.max(0, deadline - now()));
 		if (waitMs > 0) await sleep(waitMs);
 	}
@@ -119,6 +182,13 @@ export async function stopIsolatedWorker(options: {
 	pollMs: number;
 	timeoutMs: number;
 	onWaiting?: (remaining: number) => void;
+	onProgress?: (
+		fields: Readonly<{
+			remaining: number;
+			elapsedMs: number;
+			timeoutMs: number;
+		}>,
+	) => void;
 	sleep?: (ms: number) => Promise<void>;
 	now?: () => number;
 }): Promise<{

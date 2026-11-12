@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { spawnSync } from "node:child_process";
 import {
 	materializeCiWorkerImageOnly,
 	releaseWorkerEnsurePath,
@@ -89,6 +90,71 @@ describe("ensure-ci-worker-image", () => {
 			}
 			rmSync(bin, { recursive: true, force: true });
 		}
+	});
+
+	// The post-green publisher asks what GHCR has for this tree (finding 113).
+	function publishedStatus(stub: { host: boolean; manifest: boolean }) {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-"));
+		try {
+			writeFileSync(
+				join(bin, "docker"),
+				[
+					"#!/bin/sh",
+					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
+					'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
+					`if [ "$1 $2" = "manifest inspect" ]; then exit ${stub.manifest ? 0 : 1}; fi`,
+					"exit 0",
+					"",
+				].join("\n"),
+				{ mode: 0o755 },
+			);
+			const out = join(bin, "out");
+			writeFileSync(out, "");
+			const run = spawnSync(
+				process.execPath,
+				[
+					"--no-warnings",
+					"scripts/ci/ensure-ci-worker-image.mts",
+					"--published-status",
+				],
+				{
+					cwd: join(import.meta.dirname, "..", ".."),
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_TOKEN: "token-for-test",
+						GITHUB_OUTPUT: out,
+					},
+				},
+			);
+			assert.equal(run.status, 0, run.stderr);
+			return readFileSync(out, "utf8");
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	it("needs nothing when the box and GHCR both have this tree's image", () => {
+		assert.match(
+			publishedStatus({ host: true, manifest: true }),
+			/^version=v[0-9a-f]+\nneeded=false\nghcr=true\n$/u,
+		);
+	});
+
+	it("reports an image the box has but GHCR lacks as unpublished", () => {
+		assert.match(
+			publishedStatus({ host: true, manifest: false }),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=false\n$/u,
+		);
+	});
+
+	it("reports an image only GHCR has as published", () => {
+		assert.match(
+			publishedStatus({ host: false, manifest: true }),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
+		);
 	});
 
 	it("does not treat ordinary CI as release worker ensure", () => {

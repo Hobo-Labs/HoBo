@@ -116,11 +116,14 @@ export {
 	parseContainerTimeoutMs,
 } from "./isolated-worker/container-timeout.js";
 export {
+	awaitWorkerBackgroundDrainIdle,
 	countInFlightWorkerLeases,
+	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	mergeDrainInFlightCount,
 	parseWorkerStopMode,
 	shouldForceExitDrainOnRepeatSignal,
 	stopIsolatedWorker,
+	type WorkerBackgroundDrainKind,
 	type WorkerStopMode,
 	waitForIsolatedWorkerDrain,
 	workerOfferKeys,

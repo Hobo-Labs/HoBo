@@ -125,6 +125,8 @@ project. Since ADR-0179 phase 4b it declares no database:
 | `cache` | `kv` | short-lived job state the relay may lose and rebuild (`get`, `set`, `delete`) |
 | `config` | `secret` | the config service: the config document and the relay's secrets, read only (`access`) |
 
+`hobo ci deploy` plans from the relay's Yard and Camps ([below](#the-relays-yard-and-camps)) instead of hardcoding Vercel (phase 6).
+
 The Bindle names no provider (`assertNoBindleProviderSelection` holds, and the
 test below also scans the declaration for provider and product names): the
 target is chosen where the deploy is run. Facts the Bindle model cannot carry
@@ -156,38 +158,99 @@ the schedule's, and the declared settings are exactly the `HOBO_CI_*` and
 through their imports. The PostgreSQL composition, which nothing deployed
 imports any more, declares nothing (phase 7 deletes it).
 
+### The relay's Yard and Camps
+
+The Bindle says what the relay is; [`deploy/yard.ts`](deploy/yard.ts) says where
+it runs and what may be bound to it there
+([ADR-0157](../../docs/design/adr/07-portability-extensibility.md#adr-0157): the
+Yard is the binding authority). It is the one place the provider is named.
+
+- **Yard `hobo-ci-relay`**: provider `vercel`, region `iad1`, properties
+  `project: hobo-ci`, `repository: Hobo-Labs/HoBo`,
+  `rootDirectory: packages/ci-vercel`.
+- **Camps**: `production` (what a merge to `main` deploys) and `preview` (the
+  default of a deploy run by hand). Each lists the capability profiles its
+  environment requires; for each, the first row in canonical order is chosen
+  (ADR-0151: hard gates, then lexicographic order).
+
+| Profile | Offering | Attached by | In Camp |
+|---|---|---|---|
+| `provider.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
+| `api.http/v1` | `vercel.function/v1` (`api/relay.ts`, 300 s) | the git deployment | both |
+| `service.queue-consumer/v1` | `vercel.function/v1` (`api/queue.ts`, topic `hobo-ci`) | the git deployment | both |
+| `queue.at-least-once/v1`, `queue.delay/v1` | `vercel.queues/v1` (topic `hobo-ci`) | `vercel.json` | both |
+| `service.scheduled/v1` | `vercel.schedules/v1` (`hobo-ci-repair`, `*/15 * * * *`) | `vercel.json` | both |
+| `kv.redis-compatible/v1` | `upstash.redis/v1` via `vercel.marketplace/v1` (`upstash/upstash-kv`, resource `hobo-ci-cache`) | `hobo ci deploy --provision` | both |
+| `data.sqlite/v1` | `turso.database/v1` via `vercel.marketplace/v1` (`tursocloud`) | not chosen | catalog |
+| `bucket.object/v1` | `vercel.blob/v1` via `vercel.oidc/v1` (store `hobo-ci-cache`, private) | not chosen | catalog |
+| `kv.valkey/v1` | `aiven.valkey/v1`, `valkey.self-hosted/v1` via `config-service.url/v1` (`VALKEY_URL` in the config service) | not chosen | catalog |
+| `secret-ref.runtime-projection/v1` | `infisical.secrets/v1` via `infisical.oidc-auth/v1` | the deploy's settings | production |
+
+A row's `properties.settings` are the non-secret settings it projects onto the
+deployment, and `properties.inputs` the names the deploy must be given. The
+config-service row projects `HOBO_CI_CONFIG_SERVICE=infisical`,
+`INFISICAL_SITE_URL` and `INFISICAL_SECRET_PATH=/hobo-ci-relay`, and asks for
+`INFISICAL_IDENTITY_ID` and `INFISICAL_PROJECT_ID` (the owner's ids, from
+repository variables in CI); the production Camp adds
+`INFISICAL_ENVIRONMENT=prod`. Preview does not choose the config service: the
+relay's Infisical identity trusts production tokens only, so a preview keeps
+`HOBO_CI_CONFIG_SERVICE` at its default, `env`. The rows the Camps do not choose
+are the catalog: to move the cache to Valkey, a Camp requires `kv.valkey/v1`
+instead (the relay's config loader must then accept `VALKEY_URL`, which it does
+not yet). No row holds a credential: the Marketplace integrations write their
+own connection variables, and the config service holds the relay's secrets.
+
+Like the Bindle, the Yard is a declaration, not deployed code: nothing in `api/`
+or `src/` imports it, and the build leaves `deploy/` out.
+`test/relay-yard.test.ts` ties it to `vercel.json` and to the Bindle. Product ids
+other than `vercel.project/v1` are this Yard's; no provider package resolves
+them yet.
+
 ### Deploying the relay with HoBo
 
-`hobo ci deploy` reads this declaration and deploys the relay to Vercel from a
-git ref, through HoBo's own Vercel provider
+`hobo ci deploy` reads the Bindle and the Yard and deploys the relay to Vercel
+from a git ref, through HoBo's own Vercel provider
 ([`@hobo/hobo`](../hobo/README.md), `createVercelDeployProvider`'s git-artifact
-mode):
+mode). **Production is deployed by CI, not by hand**:
+[`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
+runs on every push to `main` that changes this package or a workspace package
+it is built from (its pnpm-lock closure, `scripts/ci/relay-deploy-gate.mts`),
+and on `workflow_dispatch`:
+
+1. The gate ends the job with a notice, and success, until the owner has set
+   the repository variables ([Config service](CONFIG-SERVICE.md#the-deploy-workflow-on-main)).
+2. With `permissions: id-token: write`, the job signs in to Infisical through
+   OIDC Auth as `hobo-ci-deploy` (GitHub's token, `githubActionsJwtSource`),
+   reads `VERCEL_TOKEN` from the `hobo-ci-deploy` project, masks it
+   (`::add-mask::`) and hands it to the next steps through `$GITHUB_ENV`
+   (`scripts/ci/relay-deploy-credential.mts`).
+3. `hobo ci deploy --target production --provision --wait` attaches the
+   Upstash cache through the Marketplace if the project lacks it, sets the
+   production Camp's settings, deploys the pushed commit and waits for READY.
+4. A smoke check fails the job on a 5xx from `/healthz` and reports `/readyz`
+   (which answers `config-unavailable` until the owner's config-service setup).
+
+By hand, for a preview or to read a plan:
 
 ```sh
 # From the repository root: print the plan; nothing is sent, no token is read.
-hobo ci deploy --cwd packages/ci-vercel \
-  --repo <owner>/<repository> --ref main --project hobo-ci \
-  --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
+hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… \
+  --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# A real run reads VERCEL_TOKEN from the environment. Preview is the default;
-# production has to be asked for, and --sha pins the commit.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel \
-  --repo <owner>/<repository> --ref main --sha <40-hex commit> \
-  --project hobo-ci --team team_… --target production
+# A real run reads VERCEL_TOKEN from the environment. Preview is the default.
+VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
 ```
 
-It needs a Vercel access token for the project's scope, the project's own
-settings to build this directory (root directory `packages/ci-vercel`, or pass
-`--root-directory`), and Vercel's GitHub integration able to read the
-repository. `--set` takes only the `env.*` fields of `relayConfig`; a
-`secret.*` field, an undeclared name or a credential-shaped value is refused
-before anything is sent. It does not set `DATABASE_URL`,
-`DATABASE_URL_UNPOOLED`, `CRON_SECRET` or any other secret, does not create or
-connect a database, queue or storage integration, does not create the project
-unless `--create-project` is given, and does not create the schedule or its
-external trigger. Those stay with the operator, as described below.
+It needs a Vercel access token for the project's scope and Vercel's GitHub
+integration able to read the repository. `--set` takes only the `env.*` fields
+of `relayConfig` and the inputs of the bindings the Camp chooses; a `secret.*`
+field, a setting the Yard already sets, an undeclared name, a storage
+integration's variable or a credential-shaped value is refused before anything
+is sent. It never sets `CRON_SECRET` or any other secret, and does not create
+the project unless `--create-project` is given.
 
-**Status: exercised against a fake transport only. No live deployment of the
+**Status: exercised against fakes only (a pact-backed Vercel transport, a fake
+Vercel CLI, fake GitHub and Infisical endpoints). No live deployment of the
 relay was made from this repository by this change.**
 
 ## Database

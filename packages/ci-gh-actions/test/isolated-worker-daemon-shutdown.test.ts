@@ -2,7 +2,9 @@ import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema } from "@hobo/ci";
 import { describe, expect, it, vi } from "vitest";
 import {
+	awaitWorkerBackgroundDrainIdle,
 	countInFlightWorkerLeases,
+	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	mergeDrainInFlightCount,
 	parseWorkerStopMode,
 	shouldForceExitDrainOnRepeatSignal,
@@ -78,6 +80,42 @@ describe("isolated worker daemon shutdown", () => {
 				new Set([workerOfferKey("worker-a", "box")]),
 			),
 		).toBe(0);
+	});
+
+	it("bounds background drain idle wait and reports in-flight kinds", async () => {
+		let clock = 0;
+		let tick = true;
+		const progress: string[] = [];
+		const result = await awaitWorkerBackgroundDrainIdle({
+			inFlight: () => (tick ? (["tick"] as const) : []),
+			boundMs: 100,
+			pollMs: 25,
+			onProgress: ({ inFlight }) => progress.push(inFlight.join(",")),
+			sleep: async (ms) => {
+				clock += ms;
+				tick = false;
+			},
+			now: () => clock,
+		});
+		expect(result.timedOut).toBe(false);
+		expect(result.inFlight).toEqual([]);
+		expect(progress.length).toBeGreaterThan(0);
+		expect(DEFAULT_DRAIN_BACKGROUND_BOUND_MS).toBe(30_000);
+	});
+
+	it("times out background drain when non-job work keeps running", async () => {
+		let clock = 0;
+		const result = await awaitWorkerBackgroundDrainIdle({
+			inFlight: () => ["inbox", "tick"] as const,
+			boundMs: 50,
+			pollMs: 10,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+			now: () => clock,
+		});
+		expect(result.timedOut).toBe(true);
+		expect(result.inFlight).toEqual(["inbox", "tick"]);
 	});
 
 	it("reconciles before every count, so a running job is waited for until its runner exits", async () => {
