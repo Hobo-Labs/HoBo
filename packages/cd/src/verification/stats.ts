@@ -24,9 +24,7 @@ export type MannWhitneyResult = Readonly<{
 /** Below this many samples in the smaller cohort (and with no ties) the exact distribution is used. */
 export const EXACT_BELOW = 8;
 
-function midranks(
-	values: readonly number[],
-): Readonly<{ ranks: number[]; tieGroups: number[] }> {
+function midranks(values: readonly number[]) {
 	const order = values
 		.map((value, index) => ({ value, index }))
 		.sort((a, b) => a.value - b.value || a.index - b.index);

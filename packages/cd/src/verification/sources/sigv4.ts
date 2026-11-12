@@ -3,9 +3,6 @@
 // against botocore's SigV4Auth in test/verification/sources/sigv4.test.ts.
 import { createHash, createHmac } from "node:crypto";
 
-/** The headers to send: the inputs lower-cased, plus x-amz-date, an optional x-amz-security-token and authorization. */
-export type SignedHeaders = Readonly<Record<string, string>>;
-
 export type AwsCredentials = Readonly<{
 	accessKeyId: string;
 	secretAccessKey: string;
@@ -36,7 +33,7 @@ export function signV4(
 		credentials: AwsCredentials;
 		atMs: number;
 	}>,
-): SignedHeaders {
+) {
 	const url = new URL(input.url);
 	const stamp = amzDate(input.atMs);
 	const day = stamp.slice(0, 8);
@@ -80,9 +77,10 @@ export function signV4(
 	const signature = createHmac("sha256", key)
 		.update(stringToSign, "utf8")
 		.digest("hex");
-	const { host: _host, ...sent } = headers;
-	return {
-		...sent,
-		authorization: `AWS4-HMAC-SHA256 Credential=${input.credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-	};
+	// The transport sets Host from the URL; every other signed header is sent.
+	const sent: Record<string, string> = {};
+	for (const name of names)
+		if (name !== "host") sent[name] = headers[name] ?? "";
+	sent.authorization = `AWS4-HMAC-SHA256 Credential=${input.credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+	return sent;
 }

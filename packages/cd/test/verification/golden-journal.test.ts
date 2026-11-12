@@ -89,13 +89,13 @@ async function record(name: string): Promise<readonly GoldenEvent[]> {
 }
 
 const SCENARIOS = ["canary-worse", "no-data", "deadline"] as const;
-const EXPECTED: Readonly<
-	Record<(typeof SCENARIOS)[number], VerificationVerdict>
-> = {
+const EXPECTED = {
 	"canary-worse": VerificationVerdict.FAIL,
 	"no-data": VerificationVerdict.FAIL,
 	deadline: VerificationVerdict.INCONCLUSIVE,
-};
+} as const satisfies Readonly<
+	Record<(typeof SCENARIOS)[number], VerificationVerdict>
+>;
 
 function envelopes(events: readonly GoldenEvent[]): EventEnvelope[] {
 	return events.map((event, index) => ({
