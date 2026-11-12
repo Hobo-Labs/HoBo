@@ -169,6 +169,7 @@ export function createWorkerStorageAdmission(options: {
 	defaultJobReserve?: WorkerStorageReserve;
 	admitMaintainIntervalMs?: number;
 	scheduleRetiredSweep?: () => void;
+	drainRetiredSweep?: () => Promise<void>;
 	now?: () => number;
 	log?: WorkerStorageLog;
 }) {
@@ -330,6 +331,11 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
+	async function sweepRetiredDirectories() {
+		options.scheduleRetiredSweep?.();
+		await options.drainRetiredSweep?.();
+	}
+
 	async function reap() {
 		let directories: readonly string[];
 		try {
@@ -377,6 +383,7 @@ export function createWorkerStorageAdmission(options: {
 		activeLeases: readonly WorkerStorageLease[],
 		maintenance: Readonly<{ pnpmStore?: boolean }> = {},
 	) {
+		await sweepRetiredDirectories();
 		await attempt("builder", () =>
 			options.docker.pruneBuilder(options.builderCacheCap ?? "4GB"),
 		);
@@ -460,6 +467,7 @@ export function createWorkerStorageAdmission(options: {
 				return grant(jobId, before);
 			}
 			const nowMs = now();
+			await sweepRetiredDirectories();
 			if (
 				lastAdmitMaintainMs === undefined ||
 				nowMs - lastAdmitMaintainMs >= admitMaintainIntervalMs
@@ -496,7 +504,19 @@ export function createWorkerStorageAdmission(options: {
 					hardLimitPercent: percent(hardLimit),
 				});
 			}
-			const shortage = reserveShortage(after);
+			let shortage = reserveShortage(after);
+			if (shortage) {
+				await sweepRetiredDirectories();
+				try {
+					after = await sample(jobReserve);
+				} catch (error) {
+					options.log?.("hobo_ci_storage_admission_wait", {
+						message: error instanceof Error ? error.message : "unknown",
+					});
+					return false;
+				}
+				shortage = reserveShortage(after);
+			}
 			if (shortage) {
 				if (!reserveEpisode) {
 					if (shortage.kind === "inode")
