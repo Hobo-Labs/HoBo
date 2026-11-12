@@ -42,6 +42,27 @@ await store.ready(); // optional: connect and migrate now instead of on first us
 cannot answer synchronously. Callers fall back to reading the stream;
 `loadStreamHead` is the asynchronous equivalent.
 
+## Architecture
+
+This is the event store under HoBo's event-sourced CQRS control plane (AGENTS.md
+architecture rules). A command handler, such as an actor that owns one Camp
+under a fenced lease, decides and appends domain events with
+`expectedSeq` and its fence token. Projections and materialized views are read
+models: they catch up through `readAll` by global position under a durable
+subscription lease, and their checkpoint is fenced. Snapshots shorten actor
+rehydration. `read`, `readAll`, `loadSnapshot` and `loadCheckpoint` are the
+read store side and never take locks. The domain event envelope stays in
+`hobo.core.v1`; this package owns only store-local records.
+
+Parse, don't validate: configuration, event inputs, append options, lease
+keys, fence tokens and positions each cross one parser (`parsePostgresStoreConfig`,
+`parseEventInputs`, `parseAppendOptions`, `parseLeaseKey`, `parseSchemaName`)
+and become parsed, derived types: the branded `PostgresStoreConfig`,
+`SchemaName`, `SubscriptionId`/`PartitionId`, `FenceToken` and
+`EventPosition`. Everything past the boundary works on those types and never
+re-checks raw input. Database rows are decoded the same way (`rowToEnvelope`
+goes through `parseEventEnvelope`).
+
 ## Defaults
 
 Mirrors `CD_DEFAULTS` (plan 0024 I.9: "PostgreSQL ≥ 16; statement timeout 5 s;

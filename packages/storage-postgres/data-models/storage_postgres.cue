@@ -45,9 +45,12 @@ package storage_postgres
 	position:        #Decimal64
 	fence_token:     #PositiveDecimal64
 	holder_id:       string & !=""
-	kind:            "CHECKPOINT_LOG_KIND_ADVANCE" | "CHECKPOINT_LOG_KIND_RESET"
+	kind:            #CheckpointLogKind
 	committed_at:    string & !=""
 }
+
+// CheckpointLogKind enum (storage_postgres.proto); UNSPECIFIED is never stored.
+#CheckpointLogKind: "CHECKPOINT_LOG_KIND_ADVANCE" | "CHECKPOINT_LOG_KIND_RESET"
 
 // StoragePostgresErrorCode enum (storage_postgres.proto).
 #StoragePostgresErrorCode: int & >=0 & <=10
