@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 126: cancelled release run still queued publish legs"
+title: "Finding 128: cancelled release run still queued publish legs"
 description: "Run 43162438966 was cancelled at 12:06 AM CST but six Publish GHCR images matrix legs stayed queued and held the main-train release concurrency group until run 43164708200 was force-cancelled at 12:27 AM CST."
 tags: [hobo, ci, release, concurrency, cancel, ghcr]
 ---
 
-# Finding 126: cancelled release run still queued publish legs
+# Finding 128: cancelled release run still queued publish legs
 
 ## Evidence
 
