@@ -31,6 +31,7 @@ import type {
 	Outcome,
 	TelemetrySink,
 } from "../ports.js";
+import { CD_METRICS } from "../telemetry/semconv.js";
 import { authzRefusal } from "./errors.js";
 import {
 	AUTHZ_DECIDED_EVENT,
@@ -54,8 +55,8 @@ import {
 
 // public-contract: authorization metric names.
 export const AUTHZ_METRICS = Object.freeze({
-	decisions: "hobo.cd.authz.decisions",
-	refusals: "hobo.cd.authz.refusals",
+	decisions: CD_METRICS.authzDecisions,
+	refusals: CD_METRICS.authzRefusals,
 });
 
 /** Agent grants: principal id → actions it may perform outright (ADR-0094). */
