@@ -23,6 +23,7 @@ import {
 	type AdmissionOrder,
 	createAdmissionOrder,
 	isMainTrunkFleetDeferJob,
+	isMainWorkspaceShardJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
 import type { FleetCapacityWitness } from "./fleet-absorb.js";
@@ -64,6 +65,10 @@ import {
 	leaseOccupiesWorkerMemory,
 } from "./lease-resource-occupancy.js";
 import { countLiveBoxContainers } from "./live-container-count.js";
+import {
+	logMainShardAdmissionHold,
+	type MainShardAdmissionHoldFields,
+} from "./main-shard-parallel-admission.js";
 import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
@@ -328,6 +333,8 @@ export class HostedRelay {
 				launchSlots: number;
 				backlogImmediate?: boolean;
 			}>;
+			/** OS headroom parallel cap for launch/backlog (defaults to launchSlots). */
+			parallelLaunchCapacity?: () => number;
 			now?: () => string;
 		},
 	) {
@@ -615,6 +622,12 @@ export class HostedRelay {
 		const active = await this.options.store.activeLeases();
 		const nowMs = Date.parse(this.now());
 		const boundMs = policy.boundMs ?? DEFAULT_UNLAUNCHED_RESERVE_MS;
+		const memoryParallelCap =
+			this.options.parallelLaunchCapacity?.() ?? policy.launchSlots;
+		const effectiveLaunchSlots = Math.min(
+			policy.launchSlots,
+			Math.max(1, memoryParallelCap),
+		);
 		const releaseBase = {
 			boundMs,
 			backlogMinAgeMs:
@@ -626,7 +639,7 @@ export class HostedRelay {
 					!lease.sandboxName &&
 					lease.runnerId === 0,
 			).length,
-			launchSlots: policy.launchSlots,
+			launchSlots: effectiveLaunchSlots,
 			liveContainerCount: countLiveBoxContainers(active),
 			backlogImmediate: policy.backlogImmediate ?? true,
 		};
@@ -1373,11 +1386,19 @@ export class HostedRelay {
 		);
 		return true;
 	}
-	private reportTrunkWait(job: Job, reason: TrunkWaitReason): string {
+	private reportTrunkWait(
+		job: Job,
+		reason: TrunkWaitReason,
+		fields: MainShardAdmissionHoldFields = {},
+	): string {
 		const key = trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
 		const wait = rememberTrunkWait(this.trunkWaits, job, reason, nowMs);
 		const waitedMs = nowMs - wait.sinceMs;
+		logMainShardAdmissionHold(job, reason, {
+			waitedMs,
+			...fields,
+		});
 		if (waitedMs > 10_000 && !wait.logged) {
 			this.trunkWaits.set(key, { ...wait, logged: true });
 			console.error(
@@ -1550,8 +1571,29 @@ export class HostedRelay {
 				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
 			}
 			if (fleetDeferDecision.action === "defer") {
+				if (isMainWorkspaceShardJob(job.name)) {
+					logMainShardAdmissionHold(job, "fleet-capacity", {
+						action: "defer",
+						holdReason: fleetDeferDecision.holdReason ?? "",
+						localTrunkReserved,
+						trunkSlots: this.options.trunkSlots ?? 0,
+					});
+				}
 				waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
 				continue;
+			}
+			if (
+				fleetDeferDecision.action === "hold" &&
+				isMainWorkspaceShardJob(job.name) &&
+				fleetDeferDecision.holdReason !== undefined &&
+				fleetDeferDecision.holdReason !== "no-wait"
+			) {
+				logMainShardAdmissionHold(job, "fleet-capacity", {
+					action: "hold",
+					holdReason: fleetDeferDecision.holdReason,
+					localTrunkReserved,
+					trunkSlots: this.options.trunkSlots ?? 0,
+				});
 			}
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
@@ -1598,6 +1640,12 @@ export class HostedRelay {
 						if (decision.blockRank) {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
+						}
+						if (decision.reason && isMainWorkspaceShardJob(job.name)) {
+							logMainShardAdmissionHold(job, decision.reason, {
+								requestMb: memory.memoryMb,
+								memoryClass: memory.memoryClass,
+							});
 						}
 						if (trunk && decision.reason) {
 							const waitReason: TrunkWaitReason =

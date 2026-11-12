@@ -594,7 +594,7 @@ describe("worker memory admission", () => {
 				atMs: 0,
 				loadPerCpu: 1.6 / 8,
 			}),
-			availableMemoryMb: () => 16_000,
+			availableMemoryMb: () => 20_000,
 		});
 		const running = (id: string) =>
 			lease(id, 4_096, "standard", "running", "running");

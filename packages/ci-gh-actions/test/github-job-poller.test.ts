@@ -819,6 +819,7 @@ describe("pull-mode box worker over SQLite", () => {
 			>[0]["fleetCapacity"];
 			trunkSlots?: number;
 			headroomFleetDeferMs?: number;
+			parallelLaunchCapacity?: () => number;
 			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
@@ -872,6 +873,8 @@ describe("pull-mode box worker over SQLite", () => {
 		if (trunk?.trunkSlots !== undefined) options.trunkSlots = trunk.trunkSlots;
 		if (trunk?.headroomFleetDeferMs !== undefined)
 			options.headroomFleetDeferMs = trunk.headroomFleetDeferMs;
+		if (trunk?.parallelLaunchCapacity)
+			options.parallelLaunchCapacity = trunk.parallelLaunchCapacity;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -1942,6 +1945,63 @@ describe("pull-mode box worker over SQLite", () => {
 		expect((await store.get(reserved?.id ?? ""))?.state).toBe("cancelled");
 		expect((await store.pendingJobs()).map((job) => job.id)).toContain(1);
 		expect(launched).toEqual([]);
+		store.close();
+	});
+
+	it("reserves main workspace shards in parallel when launch capacity allows", async () => {
+		const store = await configuredStore(4);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [0, 1, 2].map((shard) => ({
+					id: shard + 1,
+					status: "queued" as const,
+					labels: ["hobo-trunk"],
+					name: `Main workspace test shard ${shard}`,
+				})),
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T17:00:00Z" });
+		const launched: string[] = [];
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "24576" },
+				{ totalMemoryMb: 32_768, trunkSlots: 1 },
+			),
+			{
+				availableMemoryMb: () => 20_480,
+			},
+		);
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			trunkSlots: 1,
+			memoryAdmission,
+			parallelLaunchCapacity: () => 3,
+			unlaunchedReservationRelease: {
+				launchSlots: 3,
+				boundMs: 25_000,
+				backlogMinAgeMs: 25_000,
+				backlogImmediate: true,
+			},
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 3, arcFreeSlots: 0 }),
+			},
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const leases = (await store.activeLeases()).filter(
+			(lease) => lease.state !== "cancelled",
+		);
+		expect(leases.map((lease) => lease.jobId).sort()).toEqual([1, 2, 3]);
 		store.close();
 	});
 

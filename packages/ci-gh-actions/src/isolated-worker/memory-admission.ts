@@ -156,6 +156,13 @@ export function createWorkerMemoryAdmission(
 		});
 	}
 
+	function runningOsCommittedMb(activeLeases: readonly MemoryLease[]): number {
+		return launchingLeases(activeLeases).reduce(
+			(total, lease) => total + leaseMemoryMb(lease),
+			0,
+		);
+	}
+
 	function admittedMemoryLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
 			// SAFETY: MemoryLease carries the occupancy fields worker memory reads.
@@ -288,6 +295,8 @@ export function createWorkerMemoryAdmission(
 			config.reserveMb,
 			volatilityMb,
 			pressure,
+			undefined,
+			runningOsCommittedMb(request.activeLeases),
 		);
 		const admitted =
 			!capBlocked &&

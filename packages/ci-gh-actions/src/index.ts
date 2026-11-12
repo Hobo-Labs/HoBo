@@ -276,6 +276,10 @@ export {
 } from "./local-runner.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
+	logMainShardAdmissionHold,
+	mainShardParallelLaunchCapacity,
+} from "./main-shard-parallel-admission.js";
+export {
 	createMergeQueuePositionCache,
 	fetchMergeQueuePositions,
 	type MergeQueuePositionSource,
