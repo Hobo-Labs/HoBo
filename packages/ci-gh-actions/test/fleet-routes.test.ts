@@ -75,7 +75,8 @@ function github(
 					{ status: options.repositoryStatus ?? 200 },
 				);
 			if (
-				path === `/repos/${REPOSITORY}/actions/variables/HOBO_CI_FLEET_ROUTES` &&
+				path ===
+					`/repos/${REPOSITORY}/actions/variables/HOBO_CI_FLEET_ROUTES` &&
 				method === "GET"
 			)
 				return Response.json(options.variableBody ?? { value: "" }, {
