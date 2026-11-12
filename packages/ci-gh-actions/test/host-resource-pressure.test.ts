@@ -102,11 +102,7 @@ describe("host resource pressure", () => {
 			hostCpuAdmitFits({
 				cores: 8,
 				load1: 1.6,
-				reservedCpus: pendingTrunkCpuReservationCpus(
-					threeRunning,
-					4_096,
-					4,
-				),
+				reservedCpus: pendingTrunkCpuReservationCpus(threeRunning, 4_096, 4),
 				volatilityCpus: 1,
 				requestCpus: 4,
 				runningTrunkJobs: 3,
@@ -121,7 +117,35 @@ describe("host resource pressure", () => {
 				4_096,
 				4,
 			),
-		).toBe(4);
+		).toBe(0);
+	});
+
+	it("regression: one running container at load 1.9 admits another main shard (run 43152192203)", () => {
+		const running = { memoryMb: 4_096, state: "running", sandboxStage: "running" };
+		const memoryHeld = [
+			{ memoryMb: 4_096, state: "reserved" },
+			{ memoryMb: 4_096, state: "reserved" },
+			{ memoryMb: 4_096, state: "reserved" },
+		];
+		const leases = [running, ...memoryHeld];
+		expect(pendingTrunkCpuReservationCpus(leases, 4_096, 4)).toBe(0);
+		expect(
+			hostCpuAdmitFits({
+				cores: 8,
+				load1: 1.9,
+				reservedCpus: pendingTrunkCpuReservationCpus(leases, 4_096, 4),
+				volatilityCpus: 1,
+				requestCpus: 4,
+				runningTrunkJobs: 1,
+			}),
+		).toBe(true);
+		expect(hostCpuHeadroomCpus({
+			cores: 8,
+			load1: 1.9,
+			reservedCpus: 0,
+			volatilityCpus: 1,
+			requestCpus: 4,
+		})).toBeCloseTo(5.1, 5);
 	});
 
 	it("does not block when PSI is below admission thresholds", () => {

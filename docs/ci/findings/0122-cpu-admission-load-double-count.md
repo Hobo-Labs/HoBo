@@ -17,9 +17,9 @@ Main run [43149809357](https://github.com/Hobo-Labs/HoBo/actions/runs/4314980935
 
 ## Fix
 
-- Reserve CPUs only for **admitted standard+ leases not yet running** (`sandboxStage !== running`, reserved-without-sandbox).
-- Treat **running** leases as accounted in **load1** (`cpuRunningTrunkJobs` in `hobo_ci_memory_admission_wait` when blocked).
-- Headroom: `cores - load1 - pendingReserve - volatility`; admit when `cpuHeadroom >= request`.
+- Treat **running** leases as accounted in **load1** (`cpuRunningTrunkJobs` in wait logs).
+- Reserve CPUs only for **launching** standard+ containers (`creating` / `registered`); **memory-only `reserved` holds without a sandbox reserve 0 CPUs** so queued main shards do not deadlock each other.
+- Headroom: `cores - load1 - pendingLaunchReserve - volatility`; admit when `cpuHeadroom >= request`.
 
 ## Verification
 

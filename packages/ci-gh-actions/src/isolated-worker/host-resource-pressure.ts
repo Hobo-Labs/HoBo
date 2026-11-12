@@ -63,9 +63,27 @@ export function trunkCpuLeaseSignal(
 	return { memoryMb, state, sandboxStage };
 }
 
-export function leaseCpuLoadAccountedInLoad1(lease: TrunkCpuLeaseSignal): boolean {
+export function leaseCpuLoadAccountedInLoad1(
+	lease: TrunkCpuLeaseSignal,
+): boolean {
 	if (lease.sandboxStage === "running") return true;
 	return lease.state === "running" && lease.sandboxStage === undefined;
+}
+
+/**
+ * CPU reserve for standard+ work launching on the host (container coming up).
+ * Memory-only `reserved` holds (no sandbox yet) are not started work — they
+ * must not each claim four CPUs while blocked on this same admission gate.
+ */
+export function leasePendingTrunkCpuReservation(
+	lease: TrunkCpuLeaseSignal,
+	standardClassMb: number,
+): boolean {
+	if (lease.memoryMb < standardClassMb) return false;
+	if (leaseCpuLoadAccountedInLoad1(lease)) return false;
+	if (lease.state === "reserved" && lease.sandboxStage === undefined)
+		return false;
+	return true;
 }
 
 export function pendingTrunkCpuReservationCpus(
@@ -75,8 +93,7 @@ export function pendingTrunkCpuReservationCpus(
 ): number {
 	let pending = 0;
 	for (const lease of admittedLeases) {
-		if (lease.memoryMb < standardClassMb) continue;
-		if (leaseCpuLoadAccountedInLoad1(lease)) continue;
+		if (!leasePendingTrunkCpuReservation(lease, standardClassMb)) continue;
 		pending += cpusPerJob;
 	}
 	return pending;
