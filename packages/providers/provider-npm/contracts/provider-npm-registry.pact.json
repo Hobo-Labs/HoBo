@@ -1,0 +1,233 @@
+{
+	"consumer": {
+		"name": "HoBoCdReconciler"
+	},
+	"provider": {
+		"name": "NpmCompatibleRegistry"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"provenance": "Hand-authored consumer expectations (plan 0024, HoBo.CD npm realizer) against the npm registry API as implemented by registry.npmjs.org, npm.pkg.github.com and Verdaccio, and as exercised by npm-registry-fetch/libnpmpublish (publish document, dist-tag add, deprecate, OIDC trusted-publishing exchange). Not provider-verified or captured live traffic. Integrity values are those of test/fixtures/widget-1.2.3.tgz, a real `npm pack` output. Bodies marked with a <placeholder> are matched by shape, not value, by test/contract.test.ts.",
+		"matching": "Requests match on method and path; request bodies match on their top-level key set; response bodies are served verbatim by the offline registry world."
+	},
+	"interactions": [
+		{
+			"description": "observe a package that has never been published",
+			"providerState": "@hobo-fixtures/widget does not exist",
+			"request": {
+				"method": "GET",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>"
+				}
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"error": "Not found"
+				}
+			}
+		},
+		{
+			"description": "publish version 1.2.3 with an explicit dist-tag",
+			"providerState": "@hobo-fixtures/widget@1.2.3 does not exist",
+			"request": {
+				"method": "PUT",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>",
+					"content-type": "application/json"
+				},
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"name": "@hobo-fixtures/widget",
+					"description": "HoBo npm realizer fixture",
+					"dist-tags": {
+						"candidate": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"_id": "@hobo-fixtures/widget@1.2.3",
+							"name": "@hobo-fixtures/widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-/2lMF+pHLO98EvhE7UwpjN3zIWIEAHGL6Ilj/V8hyz66K/Z+HjioNeRNfj/CkOf7e8ss+P9NcTTHGAB1wyL7NQ==",
+								"shasum": "7bf7ff758708f85075d2b6c9a7bc8afdac381911",
+								"tarball": "https://registry.npmjs.org/@hobo-fixtures/widget/-/widget-1.2.3.tgz"
+							}
+						}
+					},
+					"access": null,
+					"_attachments": {
+						"@hobo-fixtures/widget-1.2.3.tgz": {
+							"content_type": "application/octet-stream",
+							"data": "<base64 tarball>",
+							"length": 257
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true
+				}
+			}
+		},
+		{
+			"description": "observe the published version and its dist-tags",
+			"providerState": "@hobo-fixtures/widget@1.2.3 is published and tagged candidate",
+			"request": {
+				"method": "GET",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"_rev": "1-0123456789abcdef",
+					"name": "@hobo-fixtures/widget",
+					"dist-tags": {
+						"candidate": "1.2.3",
+						"latest": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"name": "@hobo-fixtures/widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-/2lMF+pHLO98EvhE7UwpjN3zIWIEAHGL6Ilj/V8hyz66K/Z+HjioNeRNfj/CkOf7e8ss+P9NcTTHGAB1wyL7NQ==",
+								"shasum": "7bf7ff758708f85075d2b6c9a7bc8afdac381911",
+								"tarball": "https://registry.npmjs.org/@hobo-fixtures/widget/-/widget-1.2.3.tgz"
+							}
+						}
+					},
+					"time": {
+						"created": "2026-11-12T00:00:00.000Z",
+						"modified": "2026-11-12T00:00:00.000Z",
+						"1.2.3": "2026-11-12T00:00:00.000Z"
+					}
+				}
+			}
+		},
+		{
+			"description": "move the stable dist-tag to 1.2.3 (promotion)",
+			"providerState": "@hobo-fixtures/widget@1.2.3 is published",
+			"request": {
+				"method": "PUT",
+				"path": "/-/package/@hobo-fixtures/widget/dist-tags/stable",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>",
+					"content-type": "application/json"
+				},
+				"body": "1.2.3"
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"ok": true
+				}
+			}
+		},
+		{
+			"description": "exchange a CI OIDC ID token for a short-lived publish token (trusted publishing, npmjs only)",
+			"providerState": "a trusted publisher is configured for @hobo-fixtures/widget",
+			"request": {
+				"method": "POST",
+				"path": "/-/npm/v1/oidc/token/exchange/package/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <ci-oidc-id-token>"
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"token": "<short-lived-publish-token>"
+				}
+			}
+		},
+		{
+			"description": "read the writable packument before deprecating",
+			"providerState": "@hobo-fixtures/widget@1.2.3 is published",
+			"request": {
+				"method": "GET",
+				"path": "/@hobo-fixtures/widget",
+				"query": "write=true",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"_rev": "1-0123456789abcdef",
+					"name": "@hobo-fixtures/widget",
+					"dist-tags": {
+						"latest": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"name": "@hobo-fixtures/widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-/2lMF+pHLO98EvhE7UwpjN3zIWIEAHGL6Ilj/V8hyz66K/Z+HjioNeRNfj/CkOf7e8ss+P9NcTTHGAB1wyL7NQ==",
+								"shasum": "7bf7ff758708f85075d2b6c9a7bc8afdac381911",
+								"tarball": "https://registry.npmjs.org/@hobo-fixtures/widget/-/widget-1.2.3.tgz"
+							}
+						}
+					},
+					"time": {
+						"1.2.3": "2026-11-12T00:00:00.000Z"
+					}
+				}
+			}
+		},
+		{
+			"description": "deprecate version 1.2.3 (delete; unpublish is refused by policy)",
+			"providerState": "@hobo-fixtures/widget@1.2.3 is published",
+			"request": {
+				"method": "PUT",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>",
+					"content-type": "application/json"
+				},
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"_rev": "1-0123456789abcdef",
+					"name": "@hobo-fixtures/widget",
+					"dist-tags": {
+						"latest": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"deprecated": "This version was retired by HoBo continuous delivery."
+						}
+					},
+					"time": {
+						"1.2.3": "2026-11-12T00:00:00.000Z"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true
+				}
+			}
+		}
+	]
+}
