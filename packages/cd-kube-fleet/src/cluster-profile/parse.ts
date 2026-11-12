@@ -39,8 +39,7 @@ import {
 } from "../json.js";
 import { campSlug } from "../kube/objects.js";
 
-export const CLUSTER_PROFILE_API =
-	"/apis/multicluster.x-k8s.io/v1alpha1" as const;
+const CLUSTER_PROFILE_API = "/apis/multicluster.x-k8s.io/v1alpha1" as const;
 
 export function profilesPath(namespace: string | undefined): string {
 	return namespace === undefined
