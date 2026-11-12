@@ -48,15 +48,7 @@ const JsonValue = z.json();
 const JsonObject = z.record(z.string(), JsonValue);
 type JsonData = z.infer<typeof JsonValue>;
 const JobAdmission = z.enum(["push", "pull"]);
-const WorkerStore = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("sqlite") }).strict(),
-	z
-		.object({
-			kind: z.literal("postgres"),
-			urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
-		})
-		.strict(),
-]);
+const WorkerStore = z.object({ kind: z.literal("sqlite") }).strict();
 const CiEngineId = z.string().regex(/^[a-z][a-z0-9-]{0,62}$/);
 const EngineRelayOverride = z
 	.object({
@@ -112,7 +104,7 @@ export interface CiProjectEnvironment {
 	readonly allowInsecureLoopback: boolean;
 	/** Push accepts signed GitHub webhooks at the relay; pull polls GitHub for queued jobs. */
 	readonly jobAdmission: "push" | "pull" | undefined;
-	/** Box worker lease journal; undefined means local SQLite. Postgres carries an env var name, never a URL. */
+	/** Box worker lease journal: local SQLite, the only store. */
 	readonly store: CiWorkerStore | undefined;
 	/** Engines served from this environment profile (defaults to repository inventory). */
 	readonly engines: readonly string[] | undefined;
@@ -125,9 +117,7 @@ export interface CiProjectEnvironment {
 	readonly policy: ParsedCiPolicy;
 }
 
-export type CiWorkerStore =
-	| { readonly kind: "sqlite" }
-	| { readonly kind: "postgres"; readonly urlEnv: string };
+export type CiWorkerStore = { readonly kind: "sqlite" };
 
 export type CiSecretPhase = "deployment" | "execution";
 export interface CiSecretRequirement {
@@ -298,8 +288,11 @@ export function parseCiProjectConfig(
 		const authored = CiProjectDocumentSchema.parse(
 			parseBudgetPolicyDocumentJson(json),
 		);
-		if (findRawSecrets(authored.integrations ?? []).length)
-			throw new Error("integrations must hold references, never secrets");
+		if (
+			findRawSecrets(authored.integrations ?? []).length ||
+			findRawSecrets(authored.agent ?? {}).length
+		)
+			throw new Error("configuration must hold references, never secrets");
 		const { selection: _ignoredSelection, ...documentBody } = authored;
 		const input = ProjectInput.parse(resolveCiProjectReferences(documentBody));
 		const entries = Object.entries(input.environments ?? {});
@@ -562,6 +555,29 @@ export function parseCiRunnerIntegrations(
 	} catch {
 		throw new Error(
 			"invalid CI runner integrations (references only; see hobo ci connect --help)",
+		);
+	}
+}
+
+/**
+ * The `agent` block of `.hobo/ci.json` as JSON text for `@hobo/ci-agent` to
+ * parse, or nothing when the repository does not configure an agent. A
+ * credential-shaped value anywhere in the block rejects it with an error that
+ * never contains repository text.
+ */
+export function parseCiAgentBlock(json: string): string | undefined {
+	try {
+		const { agent } = z
+			.object({ agent: z.record(z.string(), z.json()).optional() })
+			.loose()
+			.parse(JSON.parse(json));
+		if (agent === undefined) return undefined;
+		if (findRawSecrets(agent).length)
+			throw new Error("agent must hold references, never secrets");
+		return JSON.stringify(agent);
+	} catch {
+		throw new Error(
+			"invalid CI agent block (credentials are references such as env:NAME)",
 		);
 	}
 }

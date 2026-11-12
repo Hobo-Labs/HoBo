@@ -3,6 +3,7 @@ import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
+	ACTIVE_STATES,
 	effectiveCiAccount,
 	type Job,
 	JobSchema,
@@ -12,19 +13,54 @@ import {
 } from "@hobo/ci";
 import { z } from "zod";
 import { runnerDownloadFor } from "../bootstrap.js";
-import { type GithubTransport, getJob } from "../github.js";
+import {
+	type GithubTransport,
+	getJob,
+	listRunWorkflowJobs,
+} from "../github.js";
 import { heldRoutingOptions } from "../held-routing.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import {
+	clearJitEmptyExit,
+	type JitEmptyExitState,
+	jitEmptyExitKey,
+	jitEmptyExitLaunchBlocked,
+	recordJitEmptyExit,
+} from "../jit-empty-exit-backoff.js";
+import {
+	correlateRunnerOnRun,
+	resolveRunnerAssignedJob,
+	runnerHoldsActiveJob,
+} from "../jit-runner-correlation.js";
+import { deregisterGithubRunner } from "../jit-runner-deregister.js";
+import {
 	type JobPickupMetadataCache,
 	jobPickupMetadataKey,
 } from "../job-pickup.js";
-import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
+import {
+	leaseIdFromBoxRunnerName,
+	runnerCustody,
+} from "../job-runner-custody.js";
+import {
+	jitRunnerRegistrationLabels,
+	RUNNER_LABEL,
+	type RunnerLabel,
+} from "../runner-labels.js";
+import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
+import {
+	capIsolatedContainerTimeoutMs,
+	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
+	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
+} from "./container-timeout.js";
 import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
 } from "./docker-driver.js";
+import {
+	type ContainerStallGuard,
+	hostResourcePressureLogFields,
+} from "./host-resource-pressure.js";
 import {
 	createWorkerLeaseReconciler,
 	hasIsolatedStopIntent,
@@ -44,16 +80,57 @@ import {
 	type OrphanJobEvent,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
+import {
+	createStallJobRecovery,
+	type StallJobRecoveryEvent,
+	stallRecoveryRecordForLease,
+} from "./stall-job-recovery.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
+import type { StoragePeaks } from "./storage-peaks.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 const WORK_TARGET = "/opt/actions-runner/_hobo_work";
 /** Written when the one-job JIT runner exits; the container itself keeps running. */
 // public-contract: in-container marker path the start script writes and reconcile probes.
 export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
+// public-contract: exit code file the JIT runner writes for lease reconciliation.
+export const RUNNER_EXIT_CODE_PATH = "/tmp/hobo-ci-runner-exit-code";
+// public-contract: human-readable exit summary the JIT runner writes for logs.
+export const RUNNER_EXIT_SUMMARY_PATH = "/tmp/hobo-ci-runner-exit-summary";
 
 /** Start the runner with its JIT config delivered over stdin to a 0600 file
  * and handed to the runner via env, so the credential never appears in argv. */
+async function readRunnerExitEvidence(
+	docker: DockerDriver,
+	name: string,
+	containerId: string,
+): Promise<Readonly<{ runShExit?: number; summary?: string }>> {
+	type RunnerExitEvidence = { runShExit?: number; summary?: string };
+	const evidence: RunnerExitEvidence = {};
+	if (docker.readContainerFile) {
+		const codeText = await docker.readContainerFile(
+			name,
+			containerId,
+			RUNNER_EXIT_CODE_PATH,
+			16,
+		);
+		if (codeText !== undefined) {
+			const parsed = Number.parseInt(codeText.trim(), 10);
+			if (Number.isFinite(parsed)) evidence.runShExit = parsed;
+		}
+		const summary = await docker.readContainerFile(
+			name,
+			containerId,
+			RUNNER_EXIT_SUMMARY_PATH,
+			2048,
+		);
+		if (summary !== undefined && summary.trim() !== "")
+			evidence.summary = summary.trim();
+	}
+	return evidence;
+}
+
 export async function startRunner(
 	docker: DockerDriver,
 	name: string,
@@ -85,7 +162,19 @@ fi
 ACTIONS_RUNNER_INPUT_JITCONFIG="$(cat ${JIT_PATH})"
 rm -f ${JIT_PATH}
 export ACTIONS_RUNNER_INPUT_JITCONFIG
-./run.sh || true
+RUNNER_EXIT=0
+./run.sh || RUNNER_EXIT=$?
+printf '%s\\n' "$RUNNER_EXIT" > ${RUNNER_EXIT_CODE_PATH}
+{
+  echo "run_sh_exit=$RUNNER_EXIT"
+  for d in /opt/actions-runner/_diag ./_diag; do
+    if [ -d "$d" ]; then
+      echo "diag_dir=$d"
+      tail -n 8 "$d"/Runner_*.log 2>/dev/null || true
+      break
+    fi
+  done
+} > ${RUNNER_EXIT_SUMMARY_PATH} 2>&1 || true
 : > ${RUNNER_EXITED_PATH}`,
 	]);
 	if (prep.exitCode !== 0) throw new Error("runner start failed");
@@ -96,16 +185,21 @@ const jitResponse = z.object({
 	runner: z.object({ id: z.number().int().positive() }),
 });
 
-function requeueJob(lease: {
-	jobId: number;
-	originalRunId: number;
-	runAttempt: number;
-	repositoryId: number;
-	installationId: number;
-	repository: string;
-	memoryClass: string;
-	memoryMb: number;
-}) {
+function requeueJob(
+	lease: {
+		jobId: number;
+		originalRunId: number;
+		runAttempt: number;
+		repositoryId: number;
+		installationId: number;
+		repository: string;
+		memoryClass: string;
+		memoryMb: number;
+	},
+	jobLabels?: readonly string[],
+) {
+	const labels =
+		jobLabels && jobLabels.length > 0 ? [...jobLabels] : [RUNNER_LABEL];
 	return create(JobSchema, {
 		id: lease.jobId,
 		runId: lease.originalRunId,
@@ -115,7 +209,7 @@ function requeueJob(lease: {
 		repository: lease.repository,
 		memoryClass: lease.memoryClass,
 		memoryMb: lease.memoryMb,
-		labels: ["hobo"],
+		labels,
 		action: "queued",
 		isolatedRequired: true,
 	});
@@ -125,6 +219,7 @@ export type IsolatedContainerController = {
 	host: IsolatedRunnerHost;
 	reconcileLeases: WorkerLeaseReconciler["reconcile"];
 	reconcileOrphanJobs: () => Promise<void>;
+	reconcileStallRecoveries: () => Promise<void>;
 	ready: () => Promise<boolean>;
 	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
 	prewarm: (repository?: string) => Promise<void>;
@@ -140,7 +235,7 @@ const LIVE_CONTAINER_STATES = new Set([
 	"uncertain",
 ]);
 
-/** What the box worker needs from a lease store; `PostgresCiStore` and `SqliteCiStore` both qualify. */
+/** What the box worker needs from a lease store; `SqliteCiStore` qualifies. */
 export interface IsolatedWorkerStore extends HostedRelayStore {
 	settle(
 		id: string,
@@ -212,11 +307,28 @@ type WarmContainer = Readonly<{
 	selection: JobImage;
 	mirrorPath: string;
 }>;
+type JitEmptyExitLogFields = {
+	jobId: number;
+	runId: number;
+	runAttempt: number;
+	repository: string;
+	runnerName: string;
+	emptyExitCount: number;
+	nextLaunchMs: number;
+	githubStatus: string;
+	githubRunnerName: string;
+	jobLabels: string;
+	runShExit?: number;
+	runnerDiagTail?: string;
+};
+
 type JobPickupLogFields = {
 	jobId: number;
 	runId: number;
 	runEvent?: string;
 	label?: string;
+	jitLabels?: string;
+	jobLabels?: string;
 	jobCreatedAt?: string;
 	admittedAt?: string;
 	containerStartedAt?: string;
@@ -238,11 +350,14 @@ export function createIsolatedContainerController(options: {
 	prewarmMemoryMb?: number;
 	memoryClasses?: WorkerMemoryClasses;
 	memoryPeaks?: MemoryPeaks;
+	storagePeaks?: StoragePeaks;
 	memoryAdmission?: WorkerMemoryAdmission;
 	generalLeaseIds?: (
 		activeLeases: readonly Lease[],
 	) => Promise<ReadonlySet<string>>;
 	jobPickupMetadata?: Readonly<JobPickupMetadataCache>;
+	/** @internal Test-only shared empty-exit backoff state. */
+	jitEmptyExitLoops?: Map<string, JitEmptyExitState>;
 	/** Host bare mirror mounted read-only at the same path the job-side probe uses. */
 	gitMirror?: {
 		pathFor(repository: string): string | undefined;
@@ -261,16 +376,29 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_job_pickup"
 			| "hobo_ci_launch_failed"
 			| "hobo_ci_launch_parked"
+			| "hobo_ci_launch_yielded_foreign_runner"
+			| "hobo_ci_jit_empty_exit"
+			| "hobo_ci_jit_empty_exit_backoff"
+			| "hobo_ci_jit_runner_served_other_job"
+			| "hobo_ci_jit_runner_custody_transferred"
+			| "hobo_ci_jit_idle_listener_release"
+			| "hobo_ci_jit_runner_deregistered"
+			| "hobo_ci_jit_runner_ghost_released"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
+			| "hobo_ci_work_dir_inode_breakdown"
 			| "hobo_ci_git_mirror"
-			| "hobo_ci_deps_toolchain_drift",
+			| "hobo_ci_deps_toolchain_drift"
+			| "hobo_ci_container_stall_requeue"
+			| StallJobRecoveryEvent,
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
 	now?: () => string;
 	/** Grace for a reservation between its journal write and `docker create`. */
 	orphanGraceMs?: number;
+	/** Drain cap for leases that never reach a live container (default 60s). */
+	noContainerDrainMaxMs?: number;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
 	/** Max job containers alive at once on this host (default 1: the old serial behaviour). */
@@ -285,13 +413,45 @@ export function createIsolatedContainerController(options: {
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
 	depsImage?: string;
+	/** Release inode/disk admission grant when an isolated lease finishes. */
+	onStorageGrantRelease?: (jobId: number) => void;
+	/** Cooperative stall recovery while a job container is running. */
+	containerStallGuard?: ContainerStallGuard;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
+	const runnerRegisteredAtMs = new Map<string, number>();
 	const orphanJobs = createOrphanJobTracker({
 		github: options.github,
 		now: () => Date.parse(now()),
 		log: (event, fields) => options.log?.(event, fields),
 	});
+	const stallRecovery = createStallJobRecovery({
+		github: options.github,
+		now: () => Date.parse(now()),
+		log: (event, fields) => options.log?.(event, fields),
+	});
+	const stallRecoveryLeaseIds = new Set<string>();
+	const deregisterLeaseRunner = async (
+		lease: Lease,
+		reason: string,
+	): Promise<void> => {
+		if (lease.runnerId <= 0) return;
+		const outcome = await deregisterGithubRunner(
+			options.github,
+			lease.installationId,
+			lease.repository,
+			lease.runnerId,
+		);
+		options.log?.("hobo_ci_jit_runner_deregistered", {
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			runnerId: lease.runnerId,
+			runnerName: lease.runnerName,
+			reason,
+			outcome,
+		});
+	};
+
 	const detectOrphanJob = (lease: Lease) => {
 		const candidate = orphanJobCandidateForLease(lease, Date.parse(now()));
 		if (candidate) orphanJobs.enqueue(candidate);
@@ -464,7 +624,7 @@ export function createIsolatedContainerController(options: {
 		return {
 			name,
 			image: selection.image,
-			timeoutMs,
+			timeoutMs: capIsolatedContainerTimeoutMs(timeoutMs),
 			runAsUser: "1000:1000",
 			memoryMb,
 			...containerResourceWeightsForRank(rank),
@@ -484,6 +644,50 @@ export function createIsolatedContainerController(options: {
 	const cleanupWorkDirectory = async (lease: Lease) => {
 		const directory = workDirectory(lease.id);
 		if (!directory || !options.workFs || !options.scheduleRetiredSweep) return;
+		const containerName = lease.sandboxName || `hobo-${lease.id}`;
+		if (
+			options.docker.containerExists &&
+			(await options.docker.containerExists(containerName))
+		)
+			return;
+		if (lease.runnerName) {
+			try {
+				const assignment = await resolveRunnerAssignedJob(
+					options.github,
+					lease.installationId,
+					lease.repository,
+					lease.runnerName,
+					lease.runnerId,
+					{
+						reservedJobId: lease.jobId,
+						preferRunIds: [lease.originalRunId],
+					},
+				);
+				if (runnerHoldsActiveJob(assignment)) return;
+			} catch {
+				// Fall through when assignment cannot be resolved.
+			}
+		}
+		try {
+			if (options.workFs.measureJobDirectory && lease.jobName) {
+				const measured = await options.workFs.measureJobDirectory(directory);
+				if (measured.inodeBreakdown) {
+					options.log?.("hobo_ci_work_dir_inode_breakdown", {
+						jobId: lease.jobId,
+						leaseId: lease.id,
+						jobName: lease.jobName,
+						...measured.inodeBreakdown,
+					});
+				}
+				const workRootInodes = measured.localInodes ?? measured.entries;
+				options.storagePeaks?.record(lease.jobName, {
+					workRootBytes: measured.bytes,
+					workRootInodes,
+				});
+			}
+		} catch {
+			// Peak measurement must not block teardown.
+		}
 		const startedAt = Date.now();
 		try {
 			const retired = await options.workFs.retireJobDirectory(directory);
@@ -670,6 +874,14 @@ export function createIsolatedContainerController(options: {
 		parkedAtMs?: number;
 	};
 	const launchLoops = new Map<string, LaunchLoopState>();
+	const emptyExitLoops =
+		options.jitEmptyExitLoops ?? new Map<string, JitEmptyExitState>();
+	const pendingExitEvidence = new Map<
+		string,
+		Awaited<ReturnType<typeof readRunnerExitEvidence>>
+	>();
+	/** Backoff recorded at exit-marker so settle/stop cannot release a slot first. */
+	const eagerEmptyExitBackoff = new Set<string>();
 	const launchKey = (repositoryId: number, jobId: number, runAttempt: number) =>
 		`${repositoryId}:${jobId}:${runAttempt}`;
 	const logLaunch = (
@@ -879,14 +1091,129 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
+		if (lease.runnerName) {
+			try {
+				let assignment = await resolveRunnerAssignedJob(
+					options.github,
+					lease.installationId,
+					lease.repository,
+					lease.runnerName,
+					lease.runnerId,
+					{
+						reservedJobId: lease.jobId,
+						preferRunIds: [lease.originalRunId],
+					},
+				);
+				if (runnerHoldsActiveJob(assignment)) {
+					await deregisterLeaseRunner(lease, "dead-container-active-binding");
+					assignment = await resolveRunnerAssignedJob(
+						options.github,
+						lease.installationId,
+						lease.repository,
+						lease.runnerName,
+						lease.runnerId,
+						{
+							reservedJobId: lease.jobId,
+							preferRunIds: [lease.originalRunId],
+						},
+					);
+					if (runnerHoldsActiveJob(assignment)) return;
+				}
+			} catch {
+				// Fall through to getJob when assignment cannot be resolved.
+			}
+		}
+		const servedJobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 		const original = await getJob(
 			options.github,
 			lease.installationId,
 			lease.repository,
-			lease.jobId,
+			servedJobId,
 		);
-		// GitHub can assign a different job sharing the runner label.
-		const unmet = original.status === "queued" ? requeueJob(lease) : undefined;
+		const custody = runnerCustody(original.runner_name);
+		const emptyKey = jitEmptyExitKey(
+			lease.repositoryId,
+			lease.jobId,
+			lease.runAttempt,
+		);
+		if (original.status !== "queued")
+			clearJitEmptyExit(emptyExitLoops, emptyKey);
+		// Fleet mesh: another `hobo` runner may hold the job; withdraw instead of re-admitting.
+		// Empty JIT exit: job still queued on GitHub — withdraw local demand; poll re-ingest later.
+		const emptyJitExit = original.status === "queued" && custody !== "foreign";
+		const unmet: ReturnType<typeof requeueJob> | undefined = undefined;
+		if (original.status === "queued" && custody === "foreign") {
+			await options.store.withdrawQueuedJob?.(
+				requeueJob(lease, original.labels),
+				observedAt,
+			);
+			clearJitEmptyExit(emptyExitLoops, emptyKey);
+		} else if (emptyJitExit) {
+			await options.store.withdrawQueuedJob?.(
+				requeueJob(lease, original.labels),
+				observedAt,
+				undefined,
+				lease.id,
+			);
+			let penalizeBackoff = true;
+			if (lease.runnerId > 0 || lease.runnerName) {
+				try {
+					const runJobs = await listRunWorkflowJobs(
+						options.github,
+						lease.installationId,
+						lease.repository,
+						lease.originalRunId,
+					);
+					const correlation = correlateRunnerOnRun(
+						runJobs,
+						lease.jobId,
+						lease.runnerName,
+						lease.runnerId,
+					);
+					if (correlation.kind === "served-other") {
+						penalizeBackoff = false;
+						clearJitEmptyExit(emptyExitLoops, emptyKey);
+						options.log?.("hobo_ci_jit_runner_served_other_job", {
+							reservedJobId: lease.jobId,
+							servedJobId: correlation.jobId,
+							servedStatus: correlation.status,
+							runId: lease.originalRunId,
+							runAttempt: lease.runAttempt,
+							runnerName: lease.runnerName,
+							runnerId: lease.runnerId,
+						});
+					}
+				} catch {
+					/* correlation is best-effort; empty-exit backoff stays conservative */
+				}
+			}
+			const evidence = pendingExitEvidence.get(lease.id) ?? {};
+			pendingExitEvidence.delete(lease.id);
+			eagerEmptyExitBackoff.delete(lease.id);
+			if (penalizeBackoff) {
+				const empty =
+					emptyExitLoops.get(emptyKey) ??
+					recordJitEmptyExit(emptyExitLoops, emptyKey, observedMs);
+				const emptyExitLog: JitEmptyExitLogFields = {
+					jobId: lease.jobId,
+					runId: lease.originalRunId,
+					runAttempt: lease.runAttempt,
+					repository: lease.repository,
+					runnerName: lease.runnerName,
+					emptyExitCount: empty.count,
+					nextLaunchMs: empty.nextLaunchMs,
+					githubStatus: original.status,
+					githubRunnerName: original.runner_name ?? "",
+					jobLabels: original.labels.join(","),
+				};
+				if (evidence.runShExit !== undefined)
+					emptyExitLog.runShExit = evidence.runShExit;
+				if (evidence.summary !== undefined)
+					emptyExitLog.runnerDiagTail = evidence.summary;
+				options.log?.("hobo_ci_jit_empty_exit", emptyExitLog);
+			}
+		}
+		await deregisterLeaseRunner(lease, "lease-settle");
 		await options.store.settle(
 			lease.id,
 			0,
@@ -895,11 +1222,33 @@ export function createIsolatedContainerController(options: {
 			unmet,
 			completedAt,
 		);
+		options.onStorageGrantRelease?.(lease.jobId);
 	};
 
 	const host: IsolatedRunnerHost = {
 		async isLaunchParked(job: Job) {
 			const key = launchKey(job.repositoryId, job.id, job.runAttempt);
+			const emptyKey = jitEmptyExitKey(
+				job.repositoryId,
+				job.id,
+				job.runAttempt,
+			);
+			const emptyBlocked = jitEmptyExitLaunchBlocked(
+				emptyExitLoops,
+				emptyKey,
+				Date.parse(now()),
+			);
+			if (emptyBlocked) {
+				options.log?.("hobo_ci_jit_empty_exit_backoff", {
+					jobId: job.id,
+					runId: job.runId,
+					runAttempt: job.runAttempt,
+					emptyExitCount: emptyBlocked.count,
+					nextLaunchMs: emptyBlocked.nextLaunchMs,
+					waitMs: emptyBlocked.nextLaunchMs - Date.parse(now()),
+				});
+				return true;
+			}
 			const state = launchLoops.get(key);
 			if (state?.parkedAtMs === undefined) return false;
 			if (Date.parse(now()) - state.parkedAtMs >= launchParkMs) {
@@ -932,6 +1281,27 @@ export function createIsolatedContainerController(options: {
 				const weights = containerResourceWeightsForRank(rank);
 				const initial = await options.store.get(id);
 				if (initial?.state !== "reserved") return;
+				const emptyBlocked = jitEmptyExitLaunchBlocked(
+					emptyExitLoops,
+					jitEmptyExitKey(
+						initial.repositoryId,
+						initial.jobId,
+						initial.runAttempt,
+					),
+					Date.parse(now()),
+				);
+				if (emptyBlocked) {
+					options.log?.("hobo_ci_jit_empty_exit_backoff", {
+						jobId: initial.jobId,
+						runId: initial.originalRunId,
+						runAttempt: initial.runAttempt,
+						emptyExitCount: emptyBlocked.count,
+						nextLaunchMs: emptyBlocked.nextLaunchMs,
+						waitMs: emptyBlocked.nextLaunchMs - Date.parse(now()),
+						stage: "launch",
+					});
+					return;
+				}
 				// Slot full: leave the lease reserved; the next relay tick retries it.
 				if ((await liveContainers(id)) >= slots) return;
 				let auth: Awaited<ReturnType<typeof authorize>>;
@@ -1033,7 +1403,10 @@ export function createIsolatedContainerController(options: {
 						const handle = await options.docker.create(
 							containerSpec(
 								name,
-								planned.reservedMinutes * 60_000,
+								effectiveIsolatedTimeoutMs(
+									planned.reservedMinutes,
+									planned.jobName,
+								),
 								memoryMb,
 								selection,
 								rank,
@@ -1080,9 +1453,82 @@ export function createIsolatedContainerController(options: {
 					);
 					if (!claiming)
 						throw new Error("reservation changed before runner registration");
+					let githubJob: Awaited<ReturnType<typeof getJob>> | undefined;
+					try {
+						githubJob = await getJob(
+							options.github,
+							claiming.installationId,
+							claiming.repository,
+							claiming.actualJobId > 0 ? claiming.actualJobId : claiming.jobId,
+						);
+					} catch {
+						/* registration may still fail closed into uncertain */
+					}
+					const custody = runnerCustody(githubJob?.runner_name);
+					if (
+						githubJob &&
+						(custody === "foreign" ||
+							(githubJob.status === "in_progress" &&
+								githubJob.runner_name &&
+								githubJob.runner_name !== claiming.runnerName))
+					) {
+						options.log?.("hobo_ci_launch_yielded_foreign_runner", {
+							jobId: claiming.jobId,
+							runId: claiming.originalRunId,
+							runnerName: githubJob.runner_name ?? "",
+							status: githubJob.status,
+						});
+						try {
+							await options.docker.stop(name, containerId);
+							await options.docker.remove(name, containerId);
+						} catch {
+							/* recovery tick retries */
+						}
+						await options.store.withdrawQueuedJob?.(
+							requeueJob(claiming),
+							now(),
+							auth.revision,
+						);
+						await options.store.transition(
+							id,
+							["claiming"],
+							(entry) => {
+								entry.state = "cancelled";
+							},
+							"ci.LeaseCancelled",
+							now(),
+							auth.revision,
+						);
+						launchLoops.delete(
+							launchKey(
+								claiming.repositoryId,
+								claiming.jobId,
+								claiming.runAttempt,
+							),
+						);
+						return;
+					}
 					stage = "jit";
 					assertQueueDeadline(planned, now());
 					registrationAttempted = true;
+					let jobLabels = githubJob?.labels;
+					if (!jobLabels?.length) {
+						try {
+							jobLabels = (
+								await getJob(
+									options.github,
+									claiming.installationId,
+									claiming.repository,
+									claiming.actualJobId > 0
+										? claiming.actualJobId
+										: claiming.jobId,
+								)
+							).labels;
+						} catch {
+							/* best effort */
+						}
+					}
+					const jitLabels = jitRunnerRegistrationLabels(jobLabels, label);
 					const response = await options.github.request(
 						created.installationId,
 						`/repos/${created.repository}/actions/runners/generate-jitconfig`,
@@ -1090,7 +1536,7 @@ export function createIsolatedContainerController(options: {
 						JSON.stringify({
 							name: created.runnerName,
 							runner_group_id: auth.connection.runnerGroupId,
-							labels: [label],
+							labels: jitLabels,
 							work_folder: "_hobo_work",
 						}),
 					);
@@ -1129,6 +1575,7 @@ export function createIsolatedContainerController(options: {
 						runnerRegisteredAt,
 					);
 					if (!registered) throw new Error("registration revoked");
+					runnerRegisteredAtMs.set(id, Date.parse(runnerRegisteredAt));
 					assertQueueDeadline(planned, now());
 					const fields: JobPickupLogFields = {
 						jobId: registered.jobId,
@@ -1143,6 +1590,8 @@ export function createIsolatedContainerController(options: {
 					);
 					if (metadata?.event !== undefined) fields.runEvent = metadata.event;
 					fields.label = label;
+					fields.jitLabels = jitLabels.join(",");
+					fields.jobLabels = (jobLabels ?? []).join(",");
 					if (metadata?.jobCreatedAt !== undefined)
 						fields.jobCreatedAt = metadata.jobCreatedAt;
 					fields.admittedAt = registered.createdAt;
@@ -1233,6 +1682,23 @@ export function createIsolatedContainerController(options: {
 		async reconcile(id: string, forceStop?: boolean) {
 			let lease = await options.store.get(id);
 			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
+			let runnerCustodyHoldsActive = false;
+			let runnerAssignment:
+				| Awaited<ReturnType<typeof resolveRunnerAssignedJob>>
+				| undefined;
+			if (lease.runnerName) {
+				const custody = await adoptRunnerAssignment(
+					options.store,
+					options.github,
+					lease,
+					now(),
+					options.log,
+				);
+				lease = custody.lease;
+				runnerAssignment = custody.assignment;
+				runnerCustodyHoldsActive = custody.holdsActive;
+				if (custody.holdsActive && forceStop) return;
+			}
 			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
 				// The durable state change fences a late create reply: its normal
 				// continuation can no longer register a runner for this lease.
@@ -1282,6 +1748,24 @@ export function createIsolatedContainerController(options: {
 				lease = attached;
 			}
 			if (hasIsolatedStopIntent(lease)) {
+				if (lease.runnerName) {
+					try {
+						const assignment = await resolveRunnerAssignedJob(
+							options.github,
+							lease.installationId,
+							lease.repository,
+							lease.runnerName,
+							lease.runnerId,
+							{
+								reservedJobId: lease.jobId,
+								preferRunIds: [lease.originalRunId],
+							},
+						);
+						if (runnerHoldsActiveJob(assignment)) return;
+					} catch {
+						if (!forceStop) return;
+					}
+				}
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
 					lease = await markStopped(lease, true);
@@ -1344,7 +1828,7 @@ export function createIsolatedContainerController(options: {
 				}
 			}
 			let stop = forceStop === true || hasIsolatedStopIntent(lease);
-			if (!stop && lease.state === "running" && running) {
+			if (!stop && lease.state === "running") {
 				// The runner takes one job and exits, so its marker frees the slot on this
 				// tick instead of after GitHub reports the job (a poll interval later). A
 				// runner that died without a job lands here too; settle requeues its job.
@@ -1357,20 +1841,154 @@ export function createIsolatedContainerController(options: {
 							RUNNER_EXITED_PATH,
 						)) === true;
 				} catch {
-					// Same as a failed inspect: not proof of anything, retry next tick.
+					if (running) return;
 				}
-				if (!exited) return;
-				stop = true;
+				if (exited) {
+					if (lease.runnerName) {
+						try {
+							const assignment = await resolveRunnerAssignedJob(
+								options.github,
+								lease.installationId,
+								lease.repository,
+								lease.runnerName,
+								lease.runnerId,
+								{
+									reservedJobId: lease.jobId,
+									preferRunIds: [lease.originalRunId],
+								},
+							);
+							if (runnerHoldsActiveJob(assignment)) return;
+						} catch {
+							// Local exit marker is sufficient to retire the session; continue.
+						}
+					}
+					const emptyKey = jitEmptyExitKey(
+						lease.repositoryId,
+						lease.jobId,
+						lease.runAttempt,
+					);
+					if (!eagerEmptyExitBackoff.has(lease.id)) {
+						recordJitEmptyExit(emptyExitLoops, emptyKey, Date.parse(now()));
+						eagerEmptyExitBackoff.add(lease.id);
+					}
+					try {
+						lease = await markStopRequested(lease);
+					} catch {
+						if (running) return;
+					}
+					pendingExitEvidence.set(
+						lease.id,
+						await readRunnerExitEvidence(
+							options.docker,
+							lease.sandboxName,
+							lease.sandboxSessionId,
+						),
+					);
+					stop = true;
+				} else if (running) {
+					if (
+						!runnerCustodyHoldsActive &&
+						lease.runnerId > 0 &&
+						lease.state === "running"
+					) {
+						const registeredMs =
+							runnerRegisteredAtMs.get(lease.id) ?? Date.parse(lease.createdAt);
+						const idleMs = Number.isFinite(registeredMs)
+							? Date.parse(now()) - registeredMs
+							: 0;
+						try {
+							const reserved = await getJob(
+								options.github,
+								lease.installationId,
+								lease.repository,
+								lease.jobId,
+							);
+							const foreignMesh =
+								reserved.status === "queued" &&
+								runnerCustody(reserved.runner_name) === "foreign";
+							const unassignedIdle =
+								reserved.status === "queued" &&
+								!reserved.runner_name?.trim() &&
+								!runnerAssignment;
+							const releaseForeign =
+								foreignMesh && idleMs >= ISOLATED_JIT_FOREIGN_MESH_IDLE_MS;
+							const releaseUnassigned =
+								unassignedIdle && idleMs >= ISOLATED_JIT_UNASSIGNED_IDLE_MS;
+							if (releaseForeign || releaseUnassigned) {
+								options.log?.("hobo_ci_jit_idle_listener_release", {
+									leaseId: lease.id,
+									jobId: lease.jobId,
+									runnerName: lease.runnerName,
+									idleMs,
+									foreignMesh,
+									unassignedIdle,
+								});
+								stop = true;
+							}
+						} catch {
+							/* ambiguous GitHub read — keep listener until next tick */
+						}
+					}
+					if (!stop && options.containerStallGuard) {
+						const signal = options.containerStallGuard.evaluate(lease.id);
+						if (signal) {
+							options.log?.("hobo_ci_container_stall_requeue", {
+								leaseId: lease.id,
+								jobId: lease.jobId,
+								jobName: lease.jobName,
+								reason: signal.reason,
+								consecutive: signal.consecutive,
+								...hostResourcePressureLogFields(signal.sample),
+							});
+							stallRecovery.register(
+								stallRecoveryRecordForLease(lease, signal, Date.parse(now())),
+							);
+							stallRecoveryLeaseIds.add(lease.id);
+							options.containerStallGuard.clear(lease.id);
+							stop = true;
+						}
+					}
+					if (!stop) return;
+				}
 			}
 			if (running && stop) await measureMemoryPeak(lease);
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
+			if (!stop && !running && runnerCustodyHoldsActive && lease.runnerId > 0) {
+				await deregisterLeaseRunner(lease, "ghost-runner-active-binding");
+				options.log?.("hobo_ci_jit_runner_ghost_released", {
+					leaseId: lease.id,
+					jobId: lease.jobId,
+					servedJobId: runnerAssignment?.jobId ?? lease.jobId,
+					runnerName: lease.runnerName,
+					runnerId: lease.runnerId,
+				});
+				stop = true;
+			}
 			if (deadWhileRunning) {
 				stop = true;
-				detectOrphanJob(lease);
+				if (!stallRecoveryLeaseIds.has(lease.id)) detectOrphanJob(lease);
 			}
 			// Dispatch may still be registering or starting this session. A normal
 			// reconciliation cannot retire it until there is a reason to stop.
 			if (!stop) return;
+			if (lease.runnerName) {
+				try {
+					const assignment = await resolveRunnerAssignedJob(
+						options.github,
+						lease.installationId,
+						lease.repository,
+						lease.runnerName,
+						lease.runnerId,
+						{
+							reservedJobId: lease.jobId,
+							preferRunIds: [lease.originalRunId],
+						},
+					);
+					if (runnerHoldsActiveJob(assignment)) return;
+				} catch {
+					if (!stop) return;
+				}
+			}
 			let removed = false;
 			try {
 				try {
@@ -1402,11 +2020,108 @@ export function createIsolatedContainerController(options: {
 					throw new Error("container stop uncertain");
 				}
 				await settleStopped(lease);
-				if (containerFailed && !deadWhileRunning) detectOrphanJob(lease);
+				if (
+					containerFailed &&
+					!deadWhileRunning &&
+					!stallRecoveryLeaseIds.has(lease.id)
+				)
+					detectOrphanJob(lease);
 			} finally {
+				stallRecoveryLeaseIds.delete(lease.id);
 				if (removed) await cleanupWorkDirectory(lease);
 			}
 		},
+	};
+	const containerCustody: Parameters<
+		typeof createWorkerLeaseReconciler
+	>[0]["containerCustody"] = async ({ container, leaseId }) => {
+		if (container.state === "removing") return true;
+		const resolvedLeaseId =
+			leaseId ?? leaseIdFromBoxRunnerName(container.name) ?? undefined;
+		const leases = await options.store.activeLeases();
+		if (resolvedLeaseId) {
+			const byId = await options.store.get(resolvedLeaseId);
+			if (byId && ACTIVE_STATES.has(byId.state)) return true;
+			if (
+				byId?.runnerName &&
+				(byId.runnerName === container.name ||
+					byId.sandboxName === container.name)
+			) {
+				try {
+					const assignment = await resolveRunnerAssignedJob(
+						options.github,
+						byId.installationId,
+						byId.repository,
+						byId.runnerName,
+						byId.runnerId,
+						{
+							reservedJobId: byId.jobId,
+							preferRunIds: [byId.originalRunId],
+						},
+					);
+					if (runnerHoldsActiveJob(assignment)) return true;
+				} catch {
+					return true;
+				}
+			}
+		}
+		for (const lease of leases) {
+			if (!ACTIVE_STATES.has(lease.state)) continue;
+			if (
+				lease.sandboxName === container.name ||
+				lease.runnerName === container.name
+			)
+				return true;
+		}
+		const runnerLease = leases.find(
+			(lease) =>
+				ACTIVE_STATES.has(lease.state) &&
+				lease.runnerName === container.name &&
+				lease.runnerId > 0,
+		);
+		const custodyLease =
+			runnerLease ??
+			(resolvedLeaseId ? await options.store.get(resolvedLeaseId) : undefined);
+		if (!custodyLease?.runnerName || custodyLease.runnerName !== container.name)
+			return false;
+		try {
+			const assignment = await resolveRunnerAssignedJob(
+				options.github,
+				custodyLease.installationId,
+				custodyLease.repository,
+				container.name,
+				custodyLease.runnerId,
+				{
+					reservedJobId: custodyLease.jobId,
+					preferRunIds: [custodyLease.originalRunId],
+				},
+			);
+			return runnerHoldsActiveJob(assignment);
+		} catch {
+			return true;
+		}
+	};
+	const cancelStaleGithubLease = async (
+		lease: Lease,
+		_reason: string,
+	): Promise<boolean> => {
+		const at = now();
+		const auth = await options.store.configuration();
+		const updated = await options.store.transition(
+			lease.id,
+			[...ACTIVE_STATES],
+			(entry) => {
+				entry.state = "cancelled";
+			},
+			"ci.LeaseCancelled",
+			at,
+			auth?.revision ?? 0,
+		);
+		if (!updated) return false;
+		await cleanupWorkDirectory(lease);
+		const orphan = orphanJobCandidateForLease(lease, Date.parse(at));
+		if (orphan) orphanJobs.enqueue(orphan);
+		return true;
 	};
 	const reconcilerOptions: Parameters<typeof createWorkerLeaseReconciler>[0] = {
 		store: options.store,
@@ -1414,12 +2129,17 @@ export function createIsolatedContainerController(options: {
 		workerAccountId: options.workerAccountId,
 		workerMemoryMb,
 		now: () => Date.parse(now()),
+		github: options.github,
+		cancelStaleGithubLease,
 		settleExited: async (lease) => host.reconcile(lease.id, true),
 		afterRelease: cleanupWorkDirectory,
 		onOrphanJob: orphanJobs.enqueue,
 		protectedContainerNames: () => protectedWarmNames,
 		protectedLeaseIds: () => inFlightLaunchIds,
+		containerCustody,
 	};
+	if (options.noContainerDrainMaxMs !== undefined)
+		reconcilerOptions.noContainerDrainMaxMs = options.noContainerDrainMaxMs;
 	if (options.orphanGraceMs !== undefined)
 		reconcilerOptions.orphanGraceMs = options.orphanGraceMs;
 	if (options.log) reconcilerOptions.log = options.log;
@@ -1429,6 +2149,7 @@ export function createIsolatedContainerController(options: {
 		host,
 		reconcileLeases: reconciler.reconcile,
 		reconcileOrphanJobs: orphanJobs.reconcile,
+		reconcileStallRecoveries: stallRecovery.reconcile,
 		ready: async () => !!options.workerImage && !!options.workerAccountId,
 		prewarm,
 		discardWarm: async () => {

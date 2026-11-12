@@ -17,15 +17,6 @@
       "$ref": "#/$defs/WarpbuildProvider"
     },
     {
-      "$ref": "#/$defs/JogProvider"
-    },
-    {
-      "$ref": "#/$defs/BoatProvider"
-    },
-    {
-      "$ref": "#/$defs/LizardProvider"
-    },
-    {
       "$ref": "#/$defs/KubernetesProvider"
     },
     {
@@ -206,99 +197,6 @@
       "type": "string",
       "const": "warpbuild"
     },
-    "JogProvider": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "connectionRef": {
-          "$ref": "#/$defs/__schema1"
-        },
-        "runsOn": {
-          "$ref": "#/$defs/__schema2"
-        },
-        "enabled": {
-          "$ref": "#/$defs/__schema3"
-        },
-        "kind": {
-          "$ref": "#/$defs/__schema9"
-        }
-      },
-      "required": [
-        "id",
-        "connectionRef",
-        "runsOn",
-        "kind"
-      ],
-      "additionalProperties": false
-    },
-    "__schema9": {
-      "type": "string",
-      "const": "jog"
-    },
-    "BoatProvider": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "connectionRef": {
-          "$ref": "#/$defs/__schema1"
-        },
-        "runsOn": {
-          "$ref": "#/$defs/__schema2"
-        },
-        "enabled": {
-          "$ref": "#/$defs/__schema3"
-        },
-        "kind": {
-          "$ref": "#/$defs/__schema10"
-        }
-      },
-      "required": [
-        "id",
-        "connectionRef",
-        "runsOn",
-        "kind"
-      ],
-      "additionalProperties": false
-    },
-    "__schema10": {
-      "type": "string",
-      "const": "boat"
-    },
-    "LizardProvider": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "connectionRef": {
-          "$ref": "#/$defs/__schema1"
-        },
-        "runsOn": {
-          "$ref": "#/$defs/__schema2"
-        },
-        "enabled": {
-          "$ref": "#/$defs/__schema3"
-        },
-        "kind": {
-          "$ref": "#/$defs/__schema11"
-        }
-      },
-      "required": [
-        "id",
-        "connectionRef",
-        "runsOn",
-        "kind"
-      ],
-      "additionalProperties": false
-    },
-    "__schema11": {
-      "type": "string",
-      "const": "lizard"
-    },
     "KubernetesProvider": {
       "type": "object",
       "properties": {
@@ -315,13 +213,13 @@
           "$ref": "#/$defs/__schema3"
         },
         "kind": {
-          "$ref": "#/$defs/__schema12"
+          "$ref": "#/$defs/__schema9"
         },
         "scaleSet": {
-          "$ref": "#/$defs/__schema13"
+          "$ref": "#/$defs/__schema10"
         },
         "engine": {
-          "$ref": "#/$defs/__schema16"
+          "$ref": "#/$defs/__schema13"
         }
       },
       "required": [
@@ -338,11 +236,11 @@
         ]
       }
     },
-    "__schema12": {
+    "__schema9": {
       "type": "string",
       "const": "kubernetes"
     },
-    "__schema13": {
+    "__schema10": {
       "$ref": "#/$defs/KubernetesScaleSet"
     },
     "KubernetesScaleSet": {
@@ -352,10 +250,10 @@
           "$ref": "#/$defs/KubernetesName"
         },
         "minRunners": {
-          "$ref": "#/$defs/__schema14"
+          "$ref": "#/$defs/__schema11"
         },
         "maxRunners": {
-          "$ref": "#/$defs/__schema15"
+          "$ref": "#/$defs/__schema12"
         },
         "namespace": {
           "$ref": "#/$defs/KubernetesName"
@@ -372,17 +270,17 @@
       "type": "string",
       "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
     },
-    "__schema14": {
+    "__schema11": {
       "type": "integer",
       "minimum": 0,
       "maximum": 1000
     },
-    "__schema15": {
+    "__schema12": {
       "type": "integer",
       "minimum": 1,
       "maximum": 1000
     },
-    "__schema16": {
+    "__schema13": {
       "$ref": "#/$defs/DaggerEngine"
     },
     "DaggerEngine": {
@@ -413,7 +311,7 @@
           "$ref": "#/$defs/__schema3"
         },
         "kind": {
-          "$ref": "#/$defs/__schema17"
+          "$ref": "#/$defs/__schema14"
         }
       },
       "required": [
@@ -424,7 +322,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema17": {
+    "__schema14": {
       "type": "string",
       "const": "hobo-box-worker"
     },
@@ -444,10 +342,10 @@
           "$ref": "#/$defs/__schema3"
         },
         "kind": {
-          "$ref": "#/$defs/__schema18"
+          "$ref": "#/$defs/__schema15"
         },
         "location": {
-          "$ref": "#/$defs/__schema19"
+          "$ref": "#/$defs/__schema16"
         }
       },
       "required": [
@@ -459,11 +357,11 @@
       ],
       "additionalProperties": false
     },
-    "__schema18": {
+    "__schema15": {
       "type": "string",
       "const": "vercel"
     },
-    "__schema19": {
+    "__schema16": {
       "type": "string",
       "enum": [
         "vercel",

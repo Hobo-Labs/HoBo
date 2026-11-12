@@ -21,7 +21,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"description": "HoBo Hostinger CloudProvider: VPS/Web Hosting/managed MySQL behind the agnostic ports."
 }

@@ -570,7 +570,15 @@ it("the documented pnpm script runs the built CLI", async () => {
 	expect(manifest.scripts.project).toBe("node dist/project-cli.js");
 });
 
-it("the built CLI reads the project from the directory pnpm was invoked in", async () => {
+// One cold node start of the built CLI: about 0.33 CPU-seconds, 0.25 s on an
+// idle 4-core box, but 9 s at a load of 44 there. The child's own bound is what
+// ends a hung CLI, so the case's budget covers it instead of vitest's 10 s
+// default cutting the case off first.
+const builtCliMs = 30_000;
+
+it("the built CLI reads the project from the directory pnpm was invoked in", {
+	timeout: builtCliMs + 5_000,
+}, async ({ signal }) => {
 	const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 	const directory = await mkdtemp(join(tmpdir(), "hobo-ci-project-smoke-"));
 	directories.push(directory);
@@ -596,7 +604,10 @@ it("the built CLI reads the project from the directory pnpm was invoked in", asy
 		{
 			cwd: packageRoot,
 			env: { PATH: process.env.PATH ?? "", INIT_CWD: directory },
-			timeout: 30000,
+			timeout: builtCliMs,
+			// A case cancelled anyway stops its child rather than leaving it
+			// running in the shared worker.
+			signal,
 		},
 	);
 	const line = result.stdout.trim().split("\n").at(-1);

@@ -76,11 +76,18 @@ export type PackageClassification = {
 // makes that legal by construction instead of by a growing exception list.
 // ADR-0156 records the longer-term move of these contracts into `@hobo/core`.
 const CONTRACT_PACKAGE_PATHS = new Set([
+	// `@hobo/provider-redaction`: the one redactor for provider text, which
+	// every provider and pack redacts its errors through, and the linear-time
+	// test harness that holds it. A leaf (it imports no HoBo package) that the
+	// adapters depend on, like the vocabulary packages below; it lives outside
+	// `@hobo/core` so a change to it does not run every core dependent's suite.
+	"packages/provider-redaction",
 	"packages/wit",
 	"packages/capability-profiles",
 	"packages/bindings",
 	"packages/claims",
 	"packages/trust",
+	"packages/backend-fleet",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	// The data engine family (ADR-0177). `data-core` is the engine-neutral
@@ -143,12 +150,21 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// HoBo.CI application SDKs compose the existing Dispatcher at layer 3.
 	"packages/ci",
 	"packages/ci-gh-actions",
+	// The optional relay agent composes the relay; nothing depends on it.
+	"packages/ci-agent",
 	"packages/ci-ado",
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
+	// The secret store a deploy chooses and hands over by claim (ADR-0179
+	// amendment): a layer-3 package that composes the Infisical adapter, the
+	// Cloudflare provider and the auth.md and claim planes; `hobo` uses it.
+	"packages/secret-store-claim",
 	"packages/core",
 	"packages/contract-harness",
+	// Test-only harness for code that reads hostile text, reached only from
+	// tests, the way contract-harness is (`isDevOnlyTestHarnessEdge`).
+	"packages/redaction-test-harness",
 	"packages/wit",
 	// `@hobo/bindings` shipped without an entry here, which is worse than it
 	// sounds: an unclassified workspace path makes `parseWorkspaceEdge` *throw*
@@ -160,6 +176,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/capability-profiles",
 	"packages/claims",
 	"packages/convex",
+	"packages/backend-fleet",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/packs/pack-framework",
@@ -182,6 +199,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/stage-gate",
 	"packages/policy",
 	"packages/pricing",
+	"packages/provider-manifest",
 	"packages/data",
 	"packages/events",
 	"packages/identity",
@@ -437,6 +455,16 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// is one exact, named line; it admits no other adapter, runtime or provider,
 	// and boundaries.test.ts pins the neighbours that stay refused.
 	"packages/adapters/adapter-opensesame->packages/identity",
+	// The Infisical adapter (ADR-0179) is the third implementer of the same
+	// port, for the same reason; one exact, named line, pinned beside the others
+	// in boundaries.test.ts.
+	"packages/adapters/adapter-infisical->packages/identity",
+	// The 1Password and Bitwarden Secrets Manager adapters (ADR-0179 amendment
+	// "Secrets manager, not Infisical") are the fourth and fifth implementers
+	// of the same port, for the same reason; one exact, named line each,
+	// pinned beside the others in boundaries.test.ts.
+	"packages/adapters/adapter-1password->packages/identity",
+	"packages/adapters/adapter-bitwarden->packages/identity",
 	// Connector packages (#1052) are AUTHORING-side declarations, not runtime
 	// adapters: they export an opaque symbol built with @hobo/bindles'
 	// defineConnector so b.connector() can resolve it. The edge points at the
@@ -483,13 +511,24 @@ function isPackTierBaseEdge(from: string, to: string): boolean {
  * beats blessing each package as it grows a test — the allowlist was accruing
  * entries that all had the same reason.
  *
- * Still deliberately narrow: only this one package, and only when the edge is
+ * Still deliberately narrow: only the test harnesses, and only when the edge is
  * dev-only. A runtime dependency on the harness is a real layering break and
  * keeps failing.
  */
 function isDevOnlyTestHarnessEdge(edge: WorkspaceEdge): boolean {
-	return edge.dev === true && edge.to === "packages/contract-harness";
+	return edge.dev === true && TEST_HARNESS_PATHS.has(edge.to);
 }
+
+/**
+ * The test harnesses: `@hobo/contract-harness`, and
+ * `@hobo/redaction-test-harness` (the linear-time measure, sweep and
+ * differential), kept apart so that a change to it plans only the suites that
+ * redact rather than every package that tests a pact.
+ */
+const TEST_HARNESS_PATHS: ReadonlySet<string> = new Set([
+	"packages/contract-harness",
+	"packages/redaction-test-harness",
+]);
 
 function isAcceptedAdapterPackageEdge(from: string, to: string): boolean {
 	return (
@@ -597,7 +636,7 @@ export function classifyPackage(path: string): PackageClassification {
 		return { kind: "core", layer: 0 };
 	}
 
-	if (path === "packages/contract-harness") {
+	if (TEST_HARNESS_PATHS.has(path)) {
 		return { kind: "package", layer: 0 };
 	}
 

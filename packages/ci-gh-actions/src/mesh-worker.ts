@@ -10,6 +10,7 @@
 import {
 	createMeshCoordinator,
 	createMeshMonitor,
+	decayMeshReliability,
 	type MeshBoard,
 	type MeshCapacity,
 	type MeshClaims,
@@ -17,13 +18,17 @@ import {
 	type MeshFree,
 	type MeshMonitorEvent,
 	type MeshNeeds,
+	type MeshNode,
 	type MeshPlatform,
+	type MeshReliability,
 	type MeshReliabilityOptions,
+	type MeshReliabilitySamples,
 	meshReliabilityScore,
 	newMeshReliability,
 	recordMeshOutcome,
 	retractMeshDelivery,
 } from "@hobo/ci/mesh";
+import { createHealthSince } from "./mesh-node.js";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 const NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -190,6 +195,23 @@ export function createWorkerMesh(options: {
 	startDeadlineMs?: number;
 	/** Imaginary deliveries standing behind a worker with no history. */
 	reliabilityPriorWeight?: number;
+	/**
+	 * The record this worker kept before it last stopped, read from its
+	 * journal. It is decayed by the time the worker was down, like any other
+	 * stretch. Left out, the worker starts with no history.
+	 */
+	initialReliability?: MeshReliability | undefined;
+	/**
+	 * Called with the record each time a job this worker took is counted, so
+	 * it can be written to the journal. Its failures are the caller's to log;
+	 * the worker does not wait for it.
+	 */
+	persistReliability?: (record: MeshReliability) => void;
+	/**
+	 * Rank only peers whose key the mesh's trust settings list, as they stand
+	 * right now. Off when omitted: an unknown key is ranked as before.
+	 */
+	requireTrusted?: (() => boolean) | undefined;
 	now?: () => number;
 	log?: (
 		event: WorkerMeshEvent,
@@ -206,10 +228,19 @@ export function createWorkerMesh(options: {
 		halfLifeMs: options.settings.reliabilityHalfLifeMs,
 		priorWeight: options.reliabilityPriorWeight ?? 4,
 	};
-	// What became of the jobs this worker took. Kept in memory: a restart
-	// starts the record again, which is also how an operator who has fixed the
-	// box clears it at once.
-	let record = newMeshReliability(now());
+	// What became of the jobs this worker took. It starts from what the
+	// journal kept, so a worker that crashes and restarts in a loop does not
+	// begin each time with a clean record.
+	let record = options.initialReliability ?? newMeshReliability(now());
+	const since = createHealthSince(now);
+	const persist = () => {
+		try {
+			options.persistReliability?.(record);
+		} catch {
+			// The record in memory is the one ranking uses; a failed write is
+			// retried by the next job counted.
+		}
+	};
 	/**
 	 * Jobs claimed and not yet picked up by one of this worker's runners, with
 	 * when each was claimed and when the poller last saw it queued.
@@ -221,8 +252,18 @@ export function createWorkerMesh(options: {
 	const delivered = new Map<number, number>();
 	/** Jobs already counted as dropped, so no second reason counts again. */
 	const dropped = new Set<number>();
-	let reportedScore = 1;
 	const reliability = () => meshReliabilityScore(record, now(), scoring);
+	// A record brought back from the journal is not news at start.
+	let reportedScore =
+		options.initialReliability === undefined ? 1 : reliability();
+	/** The decayed counts behind the score, to two places. */
+	const samples = (): MeshReliabilitySamples => {
+		const current = decayMeshReliability(record, now(), scoring);
+		return {
+			delivered: Math.round(current.delivered * 100) / 100,
+			dropped: Math.round(current.dropped * 100) / 100,
+		};
+	};
 	// One line when the score has moved a twentieth since the last line.
 	const reportScore = () => {
 		const score = reliability();
@@ -246,6 +287,7 @@ export function createWorkerMesh(options: {
 			deliveredAtMs === undefined
 				? recordMeshOutcome(record, "dropped", now(), scoring)
 				: retractMeshDelivery(record, deliveredAtMs, now(), scoring);
+		persist();
 		options.log?.("hobo_ci_mesh_job_dropped", {
 			jobId,
 			reason,
@@ -264,21 +306,28 @@ export function createWorkerMesh(options: {
 			if (at - deliveredAtMs >= 8 * scoring.halfLifeMs) delivered.delete(jobId);
 		reportScore();
 	};
-	const coordinator = createMeshCoordinator({
-		self: () => ({
+	const self = (): MeshNode => {
+		const healthy = options.healthy();
+		return {
 			id: options.settings.nodeId,
 			freeSlots: Math.max(0, Math.floor(options.freeSlots())),
 			totalSlots: options.totalSlots,
-			healthy: options.healthy(),
+			healthy,
 			labels,
 			validUntilMs: now() + advertTtlMs,
 			free: options.free?.(),
 			platform: options.platform,
 			reliability: reliability(),
-		}),
+			samples: samples(),
+			sinceMs: since(healthy),
+		};
+	};
+	const coordinator = createMeshCoordinator({
+		self,
 		board: options.board,
 		claims: options.claims,
 		stepMs: options.settings.stepMs,
+		requireTrusted: options.requireTrusted,
 		now,
 		log: (event, fields) => options.log?.(event, fields),
 	});
@@ -298,8 +347,12 @@ export function createWorkerMesh(options: {
 			settle();
 			return coordinator.advertise();
 		},
+		/** This worker as it advertises itself right now, unsigned. */
+		self,
 		/** The share of its recent jobs this worker delivered, in (0, 1]. */
 		reliability,
+		/** The decayed counts that share is computed from. */
+		samples,
 		/**
 		 * Feed the worker's own log events here. The ones that say what became
 		 * of a job this worker claimed move its reliability; the rest are
@@ -321,6 +374,7 @@ export function createWorkerMesh(options: {
 			if (!claimed.delete(Number(jobId))) return;
 			delivered.set(Number(jobId), now());
 			record = recordMeshOutcome(record, "delivered", now(), scoring);
+			persist();
 			reportScore();
 		},
 		/**

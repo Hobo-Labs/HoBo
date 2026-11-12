@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,9 +14,8 @@ import {
 import {
 	accountEventPage,
 	accountOwnsJob,
-	EVENT_SCAN_SPAN,
+	eventCursorBounds,
 	eventJob,
-	eventScan,
 	jobAccountId,
 } from "../src/event-log.js";
 import { LeaseStore } from "../src/store.js";
@@ -129,83 +129,49 @@ describe("account event journal", () => {
 		).toBe(undefined);
 	});
 
-	it("looks along a bounded span of the journal", () => {
-		const cursor = { accountId: "mine", limit: 2 };
-		expect(eventScan({ ...cursor, after: 5 }, 9)).toEqual({
-			from: 5,
-			to: 9,
-			head: 9,
+	it("resumes a full page after its last event and says the account has more", () => {
+		const page = accountEventPage(found(1, 3, 4), {
+			accountId: "mine",
+			after: 0,
+			limit: 2,
 		});
-		expect(eventScan({ ...cursor, after: 5 }, 5 + EVENT_SCAN_SPAN + 7)).toEqual(
-			{
-				from: 5,
-				to: 5 + EVENT_SCAN_SPAN,
-				head: 5 + EVENT_SCAN_SPAN + 7,
-			},
-		);
-		// A cursor past the head (another journal's) reads nothing and does not move back.
-		expect(eventScan({ ...cursor, after: 50 }, 9)).toEqual({
-			from: 50,
-			to: 50,
-			head: 9,
-		});
-		expect(eventScan(cursor, 9)).toEqual({ from: 0, to: 9, head: 9 });
-		expect(eventScan(cursor, EVENT_SCAN_SPAN + 9)).toEqual({
-			from: 9,
-			to: EVENT_SCAN_SPAN + 9,
-			head: EVENT_SCAN_SPAN + 9,
-		});
-	});
-
-	it("resumes a full page after its last event and says there is more", () => {
-		const page = accountEventPage(
-			found(1, 3, 4),
-			{ accountId: "mine", after: 0, limit: 2 },
-			{ from: 0, to: 9, head: 9 },
-		);
 		expect(page.events.map((entry) => entry.seq)).toEqual([1, 3]);
 		expect(page.cursor).toBe(3);
 		expect(page.more).toBe(true);
+		expect(page.truncated).toBe(false);
 	});
 
-	it("moves a short page to the end of its scan", () => {
-		const cursor = { accountId: "mine", after: 0, limit: 2 };
-		const caughtUp = accountEventPage(found(1), cursor, {
-			from: 0,
-			to: 9,
-			head: 9,
-		});
-		expect(caughtUp.events.map((entry) => entry.seq)).toEqual([1]);
+	it("leaves the cursor on the account's own last event, or where it was", () => {
+		const cursor = { accountId: "mine", after: 5, limit: 2 };
+		// Exactly a page: nothing was left behind, so there is no more.
+		const caughtUp = accountEventPage(found(7, 9), cursor);
+		expect(caughtUp.events.map((entry) => entry.seq)).toEqual([7, 9]);
 		expect(caughtUp.cursor).toBe(9);
 		expect(caughtUp.more).toBe(false);
-		// The scan stopped short of the head: an empty page is not "caught up".
-		const cut = accountEventPage([], cursor, { from: 0, to: 9, head: 30 });
-		expect(cut.events).toEqual([]);
-		expect(cut.cursor).toBe(9);
-		expect(cut.more).toBe(true);
+		// Nothing of the account's after the cursor: it does not move, wherever
+		// the journal's end has got to.
+		const idle = accountEventPage([], cursor);
+		expect(idle.events).toEqual([]);
+		expect(idle.cursor).toBe(5);
+		expect(idle.more).toBe(false);
 	});
 
-	it("returns the newest events and says when older ones went unread", () => {
+	it("returns the newest events and says when the account has older ones", () => {
 		const cursor = { accountId: "mine", limit: 2 };
-		const full = accountEventPage(found(7, 8), cursor, {
-			from: 5,
-			to: 9,
-			head: 9,
-		});
+		const all = accountEventPage(found(7, 8), cursor);
+		expect(all.events.map((entry) => entry.seq)).toEqual([7, 8]);
+		expect(all.cursor).toBe(8);
+		expect(all.truncated).toBe(false);
+		expect(all.more).toBe(false);
+		// One more than the page holds was found: the oldest stays behind.
+		const full = accountEventPage(found(3, 7, 8), cursor);
 		expect(full.events.map((entry) => entry.seq)).toEqual([7, 8]);
-		expect(full.cursor).toBe(9);
-		expect(full.truncated).toBe(false);
-		expect(full.more).toBe(false);
-		// Fewer than asked for, and the scan did not reach the journal's start.
-		expect(
-			accountEventPage(found(8), cursor, { from: 5, to: 9, head: 9 }).truncated,
-		).toBe(true);
-		expect(
-			accountEventPage(found(8), cursor, { from: 0, to: 9, head: 9 }).truncated,
-		).toBe(false);
-		expect(
-			accountEventPage([], cursor, { from: 0, to: 0, head: 0 }).cursor,
-		).toBe(0);
+		expect(full.cursor).toBe(8);
+		expect(full.truncated).toBe(true);
+		// Fewer than asked for is everything the account has.
+		expect(accountEventPage(found(8), cursor).truncated).toBe(false);
+		// An account with no events reads on from the journal's start.
+		expect(accountEventPage([], cursor).cursor).toBe(0);
 	});
 
 	it("refuses a read outside its bounds", () => {
@@ -216,8 +182,10 @@ describe("account event journal", () => {
 			{ accountId: "mine", limit: 1.5 },
 			{ accountId: "mine", limit: 1, after: -1 },
 			{ accountId: "mine", limit: 1, after: 1.5 },
-		])
-			expect(() => eventScan(cursor, 9)).toThrow();
+		]) {
+			expect(() => eventCursorBounds(cursor)).toThrow();
+			expect(() => accountEventPage([], cursor)).toThrow();
+		}
 	});
 });
 
@@ -261,55 +229,140 @@ describe("LeaseStore event journal", () => {
 		}
 	});
 
-	it("says when a read stopped short, whoever filled the journal", () => {
-		const store = new LeaseStore(":memory:");
+	it("reads exactly the account's events, whoever filled the journal", () => {
+		const database = new DatabaseSync(":memory:");
+		const store = new LeaseStore(":memory:", database);
 		try {
 			store.putControlRecord("first", "mine", "{}", at);
-			// A neighbour writes more than two scans cover.
-			const neighbour = 2 * EVENT_SCAN_SPAN + 500;
-			store.atomic(() => {
-				for (let index = 0; index < neighbour; index++)
-					store.putControlRecord(`n:${index}`, "theirs", "{}", at);
-			});
+			// A neighbour writes far more than the old bounded scan covered
+			// (10,000 rows). The store writes the neighbour's first event; the
+			// rest are copies of that row, made in one statement: writing them
+			// through the store is slow, and the read under test only needs the
+			// rows to be there.
+			const neighbour = 20_500;
+			store.putControlRecord("n", "theirs", "{}", at);
+			database
+				.prepare(
+					`WITH RECURSIVE copy(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM copy WHERE n < ?)
+					 INSERT INTO events(body) SELECT (SELECT body FROM events WHERE seq = 2) FROM copy`,
+				)
+				.run(neighbour - 1);
 			store.putControlRecord("last", "mine", "{}", at);
 			const head = neighbour + 2;
+			expect(store.journalHead()).toBe(head);
 
-			// From the start: the account's first event, and more to read.
-			const first = store.eventsSince({
+			// From the start: both of the account's events in one read, with
+			// nothing more to read, and the cursor on the account's own last.
+			const all = store.eventsSince({
 				accountId: "mine",
 				after: 0,
 				limit: 10,
 			});
-			expect(first.events.map((entry) => entry.seq)).toEqual([1]);
-			expect(first.cursor).toBe(EVENT_SCAN_SPAN);
-			expect(first.more).toBe(true);
-			// The next scan holds nothing of the account's and still is not the end.
-			const empty = store.eventsSince({
+			expect(all.events.map((entry) => entry.seq)).toEqual([1, head]);
+			expect(all.cursor).toBe(head);
+			expect(all.more).toBe(false);
+			// A page of one stops at the page, not at the neighbour's rows.
+			const first = store.eventsSince({
 				accountId: "mine",
-				after: first.cursor,
-				limit: 10,
+				after: 0,
+				limit: 1,
 			});
-			expect(empty.events).toEqual([]);
-			expect(empty.more).toBe(true);
-			expect(empty.cursor).toBe(2 * EVENT_SCAN_SPAN);
+			expect(first.events.map((entry) => entry.seq)).toEqual([1]);
+			expect(first.cursor).toBe(1);
+			expect(first.more).toBe(true);
 			const last = store.eventsSince({
 				accountId: "mine",
-				after: empty.cursor,
-				limit: 10,
+				after: first.cursor,
+				limit: 1,
 			});
 			expect(last.events.map((entry) => entry.seq)).toEqual([head]);
 			expect(last.cursor).toBe(head);
 			expect(last.more).toBe(false);
 
-			// The newest read finds the account's latest event behind the
-			// neighbour's rows, and says that older ones went unread.
+			// The newest read reaches behind the neighbour's rows for the
+			// account's older event; only the page's size leaves one unread.
 			const newest = store.eventsSince({ accountId: "mine", limit: 10 });
-			expect(newest.events.map((entry) => entry.seq)).toEqual([head]);
+			expect(newest.events.map((entry) => entry.seq)).toEqual([1, head]);
 			expect(newest.cursor).toBe(head);
-			expect(newest.truncated).toBe(true);
+			expect(newest.truncated).toBe(false);
 			const one = store.eventsSince({ accountId: "mine", limit: 1 });
 			expect(one.events.map((entry) => entry.seq)).toEqual([head]);
-			expect(one.truncated).toBe(false);
+			expect(one.truncated).toBe(true);
+
+			// The neighbour journals on; this account's cursor does not move.
+			store.putControlRecord("n2", "theirs", "{}", at);
+			const idle = store.eventsSince({
+				accountId: "mine",
+				after: all.cursor,
+				limit: 10,
+			});
+			expect(idle.events).toEqual([]);
+			expect(idle.cursor).toBe(all.cursor);
+			expect(store.eventsSince({ accountId: "mine", limit: 10 }).cursor).toBe(
+				all.cursor,
+			);
+		} finally {
+			store.close();
+		}
+	});
+
+	it("reads through the account index and fails without it, never by walking the journal", () => {
+		const database = new DatabaseSync(":memory:");
+		const store = new LeaseStore(":memory:", database);
+		try {
+			store.putControlRecord("first", "mine", "{}", at);
+			const mine =
+				"SELECT seq, body FROM events INDEXED BY events_account_seq WHERE json_extract(body,'$.accountId')=?";
+			// SQLite's own plan for both reads: a search of the account index,
+			// already in journal order, and no scan of the journal.
+			for (const [statement, values] of [
+				[`${mine} ORDER BY seq DESC LIMIT ?`, ["mine", 11]],
+				[`${mine} AND seq>? ORDER BY seq LIMIT ?`, ["mine", 0, 11]],
+			] as const) {
+				const plan = database
+					.prepare(`EXPLAIN QUERY PLAN ${statement}`)
+					.all(...values)
+					.map((step) => String(step.detail))
+					.join("\n");
+				expect(plan).toMatch(/SEARCH events USING INDEX events_account_seq/);
+				expect(plan).not.toMatch(/SCAN events|TEMP B-TREE/);
+			}
+			// Without the index the read fails. It does not quietly fall back
+			// to a walk of the whole journal, which would stop the host.
+			database.exec("DROP INDEX events_account_seq");
+			expect(() =>
+				store.eventsSince({ accountId: "mine", after: 0, limit: 10 }),
+			).toThrow(/no such index/);
+			expect(() => store.eventsSince({ accountId: "mine", limit: 10 })).toThrow(
+				/no such index/,
+			);
+		} finally {
+			store.close();
+		}
+	});
+
+	it("builds the account index on a journal written before it existed", () => {
+		const database = new DatabaseSync(":memory:");
+		// A journal as an earlier release left it: no account index, a job
+		// event from before owners were recorded, and one that names its owner.
+		database.exec(
+			"CREATE TABLE events (seq INTEGER PRIMARY KEY, body TEXT NOT NULL)",
+		);
+		const insert = database.prepare("INSERT INTO events(body) VALUES (?)");
+		insert.run(`{"type":"ci.JobQueued","at":"${at}","detail":"{}"}`);
+		insert.run(`{"type":"ci.LeaseReserved","at":"${at}","accountId":"mine"}`);
+		const store = new LeaseStore(":memory:", database);
+		try {
+			expect(
+				store
+					.eventsSince({ accountId: "mine", after: 0, limit: 10 })
+					.events.map((entry) => [entry.seq, entry.event?.type]),
+			).toEqual([[2, "ci.LeaseReserved"]]);
+			// The unowned job event is still in the journal and in nobody's feed.
+			expect(store.events().map((event) => event.type)).toEqual([
+				"ci.JobQueued",
+				"ci.LeaseReserved",
+			]);
 		} finally {
 			store.close();
 		}

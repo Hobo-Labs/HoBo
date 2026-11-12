@@ -21,10 +21,12 @@
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
 		"@hobo/trust": "workspace:*"
 	},
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},
@@ -34,6 +36,7 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run test/",
+		"test:deep": "vitest run --config vitest.deep.config.ts",
 		"test:unit": "vitest run test/"
 	}
 }

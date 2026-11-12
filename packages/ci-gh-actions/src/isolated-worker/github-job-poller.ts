@@ -3,7 +3,12 @@ import { z } from "zod";
 import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
-import { servedRunnerLabel } from "../runner-labels.js";
+import { runnerCustody } from "../job-runner-custody.js";
+import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
+import type {
+	HeldJobPollWitness,
+	HeldJobPruneReason,
+} from "./held-job-prune.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
@@ -33,6 +38,13 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	/** Runs before each poll (merge queue positions, etc.). */
+	beforePoll?: () => Promise<void>;
+	/**
+	 * Once per poll when a queued trunk job belongs to the newest main Fabric push.
+	 * Used to pre-warm a spare container without cancelling other work.
+	 */
+	onMainFabricTrunkQueued?: (repository: string) => void;
 	ingestCoalesce?: PollIngestCoalesce;
 	/**
 	 * Asked once per poll for each queued job before it is taken in. False
@@ -68,6 +80,8 @@ export interface GithubJobPollSummary {
 	readonly githubErrors: number;
 	/** Queued `hobo` jobs this poll saw but did not newly accept: already in the inbox, ignored, or refused. */
 	readonly waiting: readonly WaitingJob[];
+	/** Terminal runs/jobs already on this poll's GitHub reads; feeds held-job prune. */
+	readonly heldPruneWitness?: HeldJobPollWitness;
 	readonly pausedUntil?: string;
 	readonly rateLimitRemaining?: number;
 }
@@ -104,13 +118,97 @@ const Runs = z.object({
 			id: z.number().int().positive(),
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
+			conclusion: z.string().nullable().optional(),
 			event: z.string().optional(),
+			head_branch: z.string().nullable().optional(),
 			head_sha: z.string().optional(),
+			path: z.string().optional(),
 			run_started_at: z.string().nullable().optional(),
 		}),
 	),
 });
 type Run = z.infer<typeof Runs>["workflow_runs"][number];
+
+/** Workflow file path for {@link HOBO_CI_FABRIC_WORKFLOW_BASENAME}. */
+// public-contract: shared workflow basename for superseded main-push poll filtering.
+export const HOBO_CI_FABRIC_WORKFLOW_BASENAME = "hobo-ci.yml";
+
+function runStartedAtMs(run: Run): number {
+	const parsed = Date.parse(run.run_started_at ?? "");
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function completedRunPruneReason(
+	conclusion: string | null | undefined,
+): HeldJobPruneReason {
+	return conclusion === "cancelled" ? "run-cancelled" : "run-completed";
+}
+
+function completedJobPruneReason(
+	conclusion: string | null | undefined,
+): "job-cancelled" | "job-completed" {
+	return conclusion === "cancelled" ? "job-cancelled" : "job-completed";
+}
+
+/** Newest in-flight HoBo CI Fabric push to `main`, if any. */
+export function newestMainFabricPushRunId(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): number | undefined {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length === 0) return undefined;
+	// A newer push waiting on the concurrency group has no jobs yet; prefer a
+	// started run so the prewarm hint goes to the run that holds trunk jobs.
+	const started = mainPush.filter((run) => run.status === "in_progress");
+	const sorted = [...(started.length > 0 ? started : mainPush)].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	);
+	return sorted[0]?.id;
+}
+
+/**
+ * Older in-flight main pushes that a newer, started main push has replaced (a
+ * re-run, or a run still winding down after a manual cancel). Only a run GitHub
+ * reports `in_progress` replaces another: main pushes queue on one concurrency
+ * group, so a newer run still waiting for the running one must never starve it.
+ * GitHub can report a run that already has jobs running as `queued`, so this
+ * misses some replacements rather than inventing one; admission order (newest
+ * push first) covers what it misses.
+ */
+export function supersededMainFabricPushRunIds(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): ReadonlySet<number> {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length <= 1) return new Set();
+	const started = mainPush.filter((run) => run.status === "in_progress");
+	const newestStarted = [...started].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	)[0];
+	if (newestStarted === undefined) return new Set();
+	const since = runStartedAtMs(newestStarted);
+	return new Set(
+		mainPush
+			.filter(
+				(run) => run.id !== newestStarted.id && runStartedAtMs(run) < since,
+			)
+			.map((run) => run.id),
+	);
+}
 const Jobs = z.object({
 	jobs: z.array(
 		z.object({
@@ -225,6 +323,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 
 	async function poll(): Promise<GithubJobPollSummary> {
 		const waiting: WaitingJob[] = [];
+		const witnessTerminalRuns: HeldJobPollWitness["terminalRuns"][number][] =
+			[];
+		const witnessTerminalJobs: HeldJobPollWitness["terminalJobs"][number][] =
+			[];
 		const summary = {
 			repositories: 0,
 			runs: 0,
@@ -245,11 +347,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		readThisPoll = new Map();
 		const stillSettled = new Set<string>();
 		try {
+			await options.beforePoll?.();
 			for (const connection of await options.connections()) {
 				if (seen.has(connection.repositoryId)) continue;
 				seen.add(connection.repositoryId);
 				summary.repositories++;
 				const runIds = new Set<number>();
+				const activeRuns: Run[] = [];
 				for (const status of RUN_STATUSES) {
 					const runs = await getJson(
 						connection.installationId,
@@ -258,7 +362,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						summary,
 					);
 					primeRuns(runs?.workflow_runs);
-					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
+					for (const run of runs?.workflow_runs ?? []) {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				const newest = await getJson(
 					connection.installationId,
@@ -270,7 +377,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				const newestCompleted: Run[] = [];
 				for (const run of newest?.workflow_runs ?? []) {
 					if (run.status === "completed") newestCompleted.push(run);
-					else runIds.add(run.id);
+					else {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
@@ -310,8 +420,33 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					if (key !== undefined && run.run_attempt !== undefined)
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
+				const supersededRuns = supersededMainFabricPushRunIds(activeRuns);
+				const witnessRunsSeen = new Set<string>();
+				for (const run of completedRuns.values()) {
+					const dedupe = `${connection.repositoryId}:${run.id}`;
+					if (witnessRunsSeen.has(dedupe)) continue;
+					witnessRunsSeen.add(dedupe);
+					witnessTerminalRuns.push({
+						repositoryId: connection.repositoryId,
+						runId: run.id,
+						reason: completedRunPruneReason(run.conclusion),
+					});
+				}
+				for (const runId of supersededRuns) {
+					const dedupe = `${connection.repositoryId}:${runId}`;
+					if (witnessRunsSeen.has(dedupe)) continue;
+					witnessRunsSeen.add(dedupe);
+					witnessTerminalRuns.push({
+						repositoryId: connection.repositoryId,
+						runId,
+						reason: "run-superseded",
+					});
+				}
+				const newestMainPush = newestMainFabricPushRunId(activeRuns);
+				let mainFabricPrewarmHinted = false;
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
+					if (supersededRuns.has(runId)) continue;
 					const jobs = await getJson(
 						connection.installationId,
 						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
@@ -323,6 +458,14 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					for (const job of jobs?.jobs ?? []) {
 						const status = PolledStatus.safeParse(job.status);
 						if (!status.success || !servedRunnerLabel(job.labels)) continue;
+						if (status.data === "completed") {
+							witnessTerminalJobs.push({
+								repositoryId: connection.repositoryId,
+								jobId: job.id,
+								runAttempt: job.run_attempt,
+								reason: completedJobPruneReason(job.conclusion),
+							});
+						}
 						if (job.name !== undefined)
 							options.durations?.observe({
 								repository: connection.repository,
@@ -336,11 +479,34 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
 						if (
+							!mainFabricPrewarmHinted &&
+							(status.data === "queued" || status.data === "completed") &&
+							servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL &&
+							newestMainPush !== undefined &&
+							job.run_id === newestMainPush
+						) {
+							mainFabricPrewarmHinted = true;
+							options.onMainFabricTrunkQueued?.(connection.repository);
+						}
+						const queuedSinceMs =
+							job.created_at !== undefined
+								? Date.parse(job.created_at)
+								: undefined;
+						if (supersededRuns.has(job.run_id)) {
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result: "superseded-main-push",
+							});
+							continue;
+						}
+						if (
 							status.data === "queued" &&
 							options.ingestCoalesce?.shouldSkip(
 								connection.repositoryId,
 								job.id,
 								job.run_attempt,
+								queuedSinceMs,
 							)
 						) {
 							summary.waiting.push({
@@ -393,9 +559,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// The runner name is part of the body, so it is part of the id: a job
 						// GitHub reassigns to another runner is a new observation, not a
 						// conflicting replay of the old one.
-						const runnerKey = job.runner_name
-							? `-${createHash("sha256").update(job.runner_name).digest("hex").slice(0, 12)}`
-							: "";
+						const runnerKey =
+							runnerCustody(job.runner_name) === "foreign"
+								? `-${createHash("sha256")
+										.update(job.runner_name ?? "")
+										.digest("hex")
+										.slice(0, 12)}`
+								: "";
 						let result: Awaited<ReturnType<typeof options.ingest>>;
 						try {
 							result = await options.ingest({
@@ -451,15 +621,23 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			pausedUntilMs = error.untilMs;
 			const paused: GithubJobPollSummary = {
 				...summary,
+				heldPruneWitness: {
+					terminalRuns: witnessTerminalRuns,
+					terminalJobs: witnessTerminalJobs,
+				},
 				pausedUntil: new Date(pausedUntilMs).toISOString(),
 			};
 			return rateLimitRemaining === undefined
 				? paused
 				: { ...paused, rateLimitRemaining };
 		}
+		const heldPruneWitness: HeldJobPollWitness = {
+			terminalRuns: witnessTerminalRuns,
+			terminalJobs: witnessTerminalJobs,
+		};
 		return rateLimitRemaining === undefined
-			? summary
-			: { ...summary, rateLimitRemaining };
+			? { ...summary, heldPruneWitness }
+			: { ...summary, heldPruneWitness, rateLimitRemaining };
 	}
 
 	return { poll };

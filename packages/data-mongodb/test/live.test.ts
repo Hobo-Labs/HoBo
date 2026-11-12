@@ -1,7 +1,7 @@
 // The live lane: the same conformance kit, the same pact, and the behaviours
 // only a real server can prove, against a MongoDB replica set through the
-// reference driver adapter. Gated on HOBO_TEST_MONGODB_URL, so CI without a
-// database skips it cleanly.
+// reference driver adapter. Gated on HOBO_TEST_MONGODB_URL: a lane with no
+// database skips it cleanly, and CI's `Live data engines` job sets it.
 //
 //   HOBO_TEST_MONGODB_URL='mongodb://127.0.0.1:57017/?replicaSet=rs0&directConnection=true' \
 //     npx vitest run test/

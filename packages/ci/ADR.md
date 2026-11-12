@@ -74,14 +74,28 @@ ledger in CI. This keeps platform routing and CI admission consistent under
 replay, restart, and concurrent policy changes.
 
 
-Fleet balancing adds runner financial models and a pure balancer under
-`src/fleet/`. A model is compiled into an `@hobo/pricing` catalog and rated by
-dispatcher v2; no rate is multiplied in CI. Every ranked member is then put
-through `evaluateBudgetPolicy` with the measurements admission supplies, so a
-route planned ahead of the queue and a lease admitted from it answer to the same
-policy. Eligibility (visibility, ownership, Docker, forks, slots, label reach)
-is decided before price and reported separately from pricing and budget
-refusals. Roles tier members before cost; GitHub-hosted runners default to the
-last tier. The relay publishes the resulting route table to a repository
-variable; legacy admission ranking in `routing.ts` is unchanged. Models are
-hand-read list prices with source and expiry, not live provider billing.
+## Amended by ADR-0179 (2026-11-11): the hosted relay keeps no durable state
+
+[ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) changes
+what the hosted relay on Vercel uses from this package. The text above is kept
+as the record of what was decided; for the hosted relay it is now read with
+these changes ([design](../../docs/design/hosted-relay-stateless.md)):
+
+- The hosted relay's store is no longer `PostgresCiStore`. Its in-flight job
+  state lives in a Redis-protocol cache with TTL and compare-and-set, rebuilt
+  from GitHub and Vercel by deterministic lease names when lost. The event
+  journal, terminal tombstones and the partition lock are not kept there.
+  `PostgresCiStore`, its schema and migrations were removed in phase 7.
+- "Production control-plane policy and setup operations": on the hosted relay
+  configuration is read-only, held in a separate config service and written by
+  `hobo ci`, not by a configuration CAS in the relay's store. Each lease keeps
+  the configuration revision and identities it was admitted under.
+- "Budget routing uses shared generated Broker-fact/profile contracts": the
+  Station budget-signal bridge does not reach the hosted relay. Its budgets are
+  declared caps checked against provider usage pulled on its tick plus holds of
+  in-flight leases. Broker budget-policy accounts stay unsupported there, as
+  they already were.
+
+Unchanged: the protobuf/CUE contracts, the pure routing SDK, the SQLite actor
+and `SqliteCiStore` for box workers and `hobo ci serve`, the compute fleet in
+`src/fleet/` and the mesh, and the Broker budget ledger library.

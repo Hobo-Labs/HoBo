@@ -1,0 +1,48 @@
+{
+  "schema": "hobo.provider-manifest/v1",
+  "provider": {
+    "id": "tiny-host",
+    "displayName": "Tiny Host"
+  },
+  "billing": {
+    "currency": "USD",
+    "version": "2026.11",
+    "effectiveFrom": "2026-11-01T00:00:00Z",
+    "source": {
+      "url": "https://acme-cloud.example.com/pricing",
+      "checkedAt": "2026-11-10",
+      "note": "Fictional list prices."
+    },
+    "billables": [
+      {
+        "id": "instance",
+        "category": "hardware",
+        "unit": "instance",
+        "aggregation": "max"
+      }
+    ],
+    "products": [
+      {
+        "id": "vps",
+        "kind": "hardware",
+        "billables": [
+          "instance"
+        ],
+        "plans": [
+          {
+            "id": "monthly",
+            "charges": [
+              {
+                "id": "rent",
+                "recurring": {
+                  "interval": "monthly",
+                  "amount": "5.00"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

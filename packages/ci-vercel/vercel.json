@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/relay.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "deploy/secret-store.binding.json"
     },
     "api/queue.ts": {
       "experimentalTriggers": [
@@ -10,7 +11,26 @@
           "type": "queue/v2beta",
           "topic": "hobo-ci"
         }
-      ]
+      ],
+      "includeFiles": "deploy/secret-store.binding.json"
+    },
+    "api/intake.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "hobo-ci-intake"
+        }
+      ],
+      "includeFiles": "deploy/secret-store.binding.json"
+    },
+    "api/lease-steps.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "hobo-ci-lease-steps"
+        }
+      ],
+      "includeFiles": "deploy/secret-store.binding.json"
     }
   },
   "schedules": {

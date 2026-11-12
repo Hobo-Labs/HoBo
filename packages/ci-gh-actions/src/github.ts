@@ -25,6 +25,7 @@ const Run = z.object({
 	display_title: z.string(),
 	status: z.string(),
 	conclusion: z.string().nullable(),
+	created_at: z.string().optional(),
 	run_started_at: z.string().nullable(),
 	updated_at: z.string(),
 	actor: z.object({ id: z.number().int().positive() }),
@@ -88,6 +89,98 @@ export async function getHostJob(
 		throw new Error("unexpected host job graph");
 	return result.jobs[0];
 }
+const RunWorkflowJob = z.object({
+	id: z.number().int().positive(),
+	run_id: z.number().int().positive(),
+	run_attempt: z.number().int().positive().optional(),
+	status: z.string(),
+	labels: z.array(z.string()).optional(),
+	runner_name: z.string().nullable().optional(),
+	// Queued jobs are unassigned: GitHub may send 0 or null.
+	runner_id: z.number().int().nonnegative().nullable().optional(),
+});
+
+export type GithubRunWorkflowJob = z.infer<typeof RunWorkflowJob>;
+
+const WorkflowRunPage = z.object({
+	workflow_runs: z.array(
+		z.object({
+			id: z.number().int().positive(),
+		}),
+	),
+});
+
+/** Recent in-progress workflow runs for cross-run runner assignment lookup. */
+export async function listInProgressWorkflowRunIds(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	limit = 25,
+): Promise<readonly number[]> {
+	const ids: number[] = [];
+	for (let page = 1; page <= 3 && ids.length < limit; page++) {
+		const perPage = Math.min(100, limit);
+		const response = await api.request(
+			installationId,
+			`/repos/${repository}/actions/runs?status=in_progress&per_page=${perPage}&page=${page}`,
+		);
+		if (!response.ok)
+			throw new Error(`GitHub run listing failed (${response.status})`);
+		const parsed = WorkflowRunPage.parse(await response.json());
+		for (const run of parsed.workflow_runs) {
+			ids.push(run.id);
+			if (ids.length >= limit) break;
+		}
+		if (parsed.workflow_runs.length < perPage) break;
+	}
+	return ids;
+}
+
+export async function listRunWorkflowJobs(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<readonly GithubRunWorkflowJob[]> {
+	const response = await api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+	);
+	if (!response.ok)
+		throw new Error(`GitHub run jobs lookup failed (${response.status})`);
+	const result = z
+		.object({ jobs: z.array(RunWorkflowJob) })
+		.parse(await response.json());
+	return result.jobs;
+}
+
+export async function rerunWorkflowRun(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<Response> {
+	return api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}/rerun`,
+		"POST",
+	);
+}
+
+/** Re-run one workflow job without cancelling the rest of the run. */
+export async function rerunWorkflowJob(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	jobId: number,
+): Promise<Response> {
+	return api.request(
+		installationId,
+		`/repos/${repository}/actions/jobs/${jobId}/rerun`,
+		"POST",
+	);
+}
+
 export async function getJob(
 	api: GithubTransport,
 	installationId: number,
@@ -108,6 +201,7 @@ export async function getJob(
 			labels: z.array(z.string()),
 			name: z.string().optional(),
 			runner_name: z.string().nullable().optional(),
+			runner_id: z.number().int().nonnegative().nullable().optional(),
 			run_attempt: z.number().int().positive().optional(),
 			created_at: z.string().optional(),
 		})
@@ -124,7 +218,8 @@ export function githubApiUrl(path: string): string {
 	if (
 		!pathname ||
 		(!/^\/(?:repos|app|users)\b\/[A-Za-z0-9_.%/-]+$/.test(pathname) &&
-			pathname !== "/app")
+			pathname !== "/app" &&
+			pathname !== "/graphql")
 	)
 		throw new Error("invalid GitHub API path");
 	if (
@@ -206,7 +301,14 @@ export function createGithubAppTransport(options: {
 	privateKey: string;
 	fetch?: typeof fetch;
 	now?: () => number;
-}): GithubAppTransport {
+}): GithubAppTransport & {
+	/**
+	 * A short-lived installation token for an in-process caller that speaks a
+	 * protocol this transport does not (GraphQL, git over HTTPS). The App key
+	 * still never leaves the relay.
+	 */
+	installationToken(installationId: number): Promise<string>;
+} {
 	const send = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
 	const tokens = new Map<number, { token: string; expiresAt: number }>();
@@ -265,6 +367,7 @@ export function createGithubAppTransport(options: {
 		return task;
 	}
 	return {
+		installationToken,
 		async appRequest(path) {
 			const url = githubApiUrl(path);
 			if (

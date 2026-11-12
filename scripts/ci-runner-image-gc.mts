@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
+	depsGcKeepTag,
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
@@ -48,16 +49,36 @@ function parseDockerImage(line: string): DockerImage {
 const requested = process.argv[2];
 if (requested === "--help") {
 	console.log(
-		"Usage: node scripts/ci-runner-image-gc.mts [v<12 hex digits>|hobo-ci-deps:<key>]",
+		"Usage: node scripts/ci-runner-image-gc.mts [v<12 hex digits>|hobo-ci-deps:<key>|hobo-ci-deps:local]",
 	);
 	process.exit(0);
 }
-const currentDepsTag = requested?.startsWith("hobo-ci-deps:")
-	? requested
-	: undefined;
-const version = currentDepsTag === undefined ? requested : undefined;
-if (currentDepsTag === "hobo-ci-deps:local")
-	throw new Error("current deps image must be keyed");
+async function localDepsKey(): Promise<string | undefined> {
+	try {
+		const { stdout } = await exec(
+			"docker",
+			[
+				"image",
+				"inspect",
+				"hobo-ci-deps:local",
+				"--format",
+				'{{ index .Config.Labels "hobo.ci.deps-key" }}',
+			],
+			{ timeout: 30_000, maxBuffer: 64 * 1024 },
+		);
+		const key = stdout.trim();
+		return key === "" ? undefined : key;
+	} catch {
+		return undefined;
+	}
+}
+const localKeep = requested === "hobo-ci-deps:local";
+const localKey = localKeep ? await localDepsKey() : undefined;
+const currentDepsTag = depsGcKeepTag(requested, localKey);
+const version =
+	currentDepsTag === undefined && !requested?.startsWith("hobo-ci-deps:")
+		? requested
+		: undefined;
 if (version !== undefined && !/^v[0-9a-f]{12}$/u.test(version))
 	throw new Error("invalid runner image version");
 

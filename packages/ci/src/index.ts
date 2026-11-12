@@ -1,15 +1,13 @@
 export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
+export { allocationQuote } from "./accounting.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
 	accountEventPage,
 	accountOwnsJob,
-	EVENT_SCAN_SPAN,
 	type EventCursor,
-	type EventScan,
 	eventCursorBounds,
 	eventJob,
-	eventScan,
 	isJobEvent,
 	jobAccountId,
 	type LeaseEventsQuery,
@@ -48,6 +46,7 @@ export {
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
 export * from "./fleet-v2/index.js";
+export { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {
 	ciBudgetIdentity,
@@ -93,3 +92,10 @@ export {
 	createCiAsyncSharedBudgetHooks,
 	createCiSharedBudgetHooks,
 } from "./shared-budget.js";
+export {
+	isWebhookDeliveryId,
+	MAX_WEBHOOKS_PER_INSTALLATION_WINDOW,
+	parseWebhookEnvelope,
+	type WebhookEnvelope,
+	type WebhookInput,
+} from "./webhook-inbox.js";

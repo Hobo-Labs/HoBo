@@ -30,6 +30,7 @@
 	"dependencies": {
 		"@bytecodealliance/jco": "1.24.3",
 		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/adapter-infisical": "workspace:*",
 		"@hobo/adapter-opensesame": "workspace:*",
 		"@hobo/auth-md": "workspace:*",
 		"@hobo/bindings": "workspace:*",
@@ -53,6 +54,7 @@
 		"@hobo/management": "workspace:*",
 		"@hobo/mcp": "workspace:*",
 		"@hobo/policy": "workspace:*",
+		"@hobo/pricing": "workspace:*",
 		"@hobo/provider-aws": "workspace:*",
 		"@hobo/provider-azure": "workspace:*",
 		"@hobo/provider-cloudflare": "workspace:*",
@@ -63,6 +65,7 @@
 		"@hobo/provider-kafka": "workspace:*",
 		"@hobo/provider-kubernetes": "workspace:*",
 		"@hobo/provider-lakebed": "workspace:*",
+		"@hobo/provider-manifest": "workspace:*",
 		"@hobo/provider-neon": "workspace:*",
 		"@hobo/provider-netlify": "workspace:*",
 		"@hobo/provider-prisma-postgres": "workspace:*",
@@ -80,6 +83,7 @@
 		"@hobo/runtime-local": "workspace:*",
 		"@hobo/runtime-oci": "workspace:*",
 		"@hobo/runtime-wasm": "workspace:*",
+		"@hobo/secret-store-claim": "workspace:*",
 		"@hobo/stations": "workspace:*",
 		"@hobo/trails": "workspace:*",
 		"@hobo/trust": "workspace:*",
@@ -89,8 +93,11 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@hobo/ci-agent": "workspace:*",
 		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/events": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
 		"pg": "8.22.0"

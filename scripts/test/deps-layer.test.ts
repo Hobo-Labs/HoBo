@@ -185,6 +185,70 @@ describe("deps layer linking", () => {
 		}
 	});
 
+	it("collapses a real package node_modules tree onto the payload symlink", () => {
+		const temporary = mkdtempSync(join(tmpdir(), "hobo-deps-layer-collapse-"));
+		try {
+			const checkout = join(temporary, "checkout");
+			const payload = join(temporary, "payload");
+			mkdirSync(join(checkout, "packages", "ci-gh-actions"), {
+				recursive: true,
+			});
+			mkdirSync(
+				join(checkout, "packages", "ci-gh-actions", "node_modules", "leftover"),
+				{ recursive: true },
+			);
+			write(
+				join(
+					checkout,
+					"packages",
+					"ci-gh-actions",
+					"node_modules",
+					"leftover",
+					"package.json",
+				),
+				'{"name":"leftover"}\n',
+			);
+			write(join(checkout, "package.json"), '{"private":true}\n');
+			write(
+				join(checkout, "packages", "ci-gh-actions", "package.json"),
+				'{"name":"@hobo/ci-gh-actions","private":true}\n',
+			);
+			write(join(payload, ".hobo-ci-deps-key"), `${key}\n`);
+			mkdirSync(join(payload, "packages", "ci-gh-actions"), {
+				recursive: true,
+			});
+			write(
+				join(payload, "node_modules", ".modules.yaml"),
+				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
+			);
+			// payload/packages/ci-gh-actions/node_modules -> payload/node_modules.
+			link(
+				join(payload, "packages", "ci-gh-actions", "node_modules"),
+				"../../node_modules",
+			);
+			const env = {
+				...process.env,
+				HOBO_CI_DEPS_LAYER: key,
+				HOBO_CI_DEPS_PAYLOAD: payload,
+			};
+			const linked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "link"],
+				checkout,
+				env,
+			);
+			assert.equal(linked.status, 0, `${linked.stderr}\n${linked.stdout}`);
+			assert.equal(
+				lstatSync(
+					join(checkout, "packages", "ci-gh-actions", "node_modules"),
+				).isSymbolicLink(),
+				true,
+			);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	});
+
 	it("reads the payload key when HOBO_CI_DEPS_LAYER is unset", () => {
 		const temporary = mkdtempSync(
 			join(tmpdir(), "hobo-deps-layer-payload-key-"),

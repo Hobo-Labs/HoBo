@@ -1,1 +1,6 @@
-export { createVercelApplication, withWakeup } from "./composition.js";
+export {
+	composeStatelessRelay,
+	type StatelessRelay,
+	type StatelessRelayOptions,
+	type StatelessRelayReadiness,
+} from "./stateless-composition.js";

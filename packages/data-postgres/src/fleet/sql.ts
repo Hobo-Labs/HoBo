@@ -16,7 +16,15 @@
  *   `ROLLBACK` itself, which works through a transaction-mode pooler because a
  *   pooler pins a connection for exactly that span.
  */
+import type { FleetFailureClass } from "@hobo/backend-fleet";
 import { PostgresDataError } from "../errors.js";
+
+// Backend ids and failure classes are engine-neutral (`@hobo/backend-fleet`).
+export {
+	FLEET_FAILURE_CLASSES,
+	type FleetFailureClass,
+	parseFleetBackendId,
+} from "@hobo/backend-fleet";
 
 export type SqlParameter = string | number | boolean | null;
 
@@ -45,7 +53,6 @@ export type FleetBackend = {
 };
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/u;
-const BACKEND_ID = /^[a-z0-9][a-z0-9_-]{0,62}$/u;
 
 /**
  * A lower-case unquoted PostgreSQL identifier. Table names and prefixes are
@@ -56,17 +63,6 @@ export function parseFleetIdentifier(value: string, field: string): string {
 		throw new PostgresDataError(
 			"FLEET_CONFIGURATION_INVALID",
 			`${field} must be a lower-case PostgreSQL identifier`,
-			{ detail: { field } },
-		);
-	return value;
-}
-
-/** A backend id is opaque to the fleet; it only has to be a stable short token. */
-export function parseFleetBackendId(value: string, field = "backend"): string {
-	if (!BACKEND_ID.test(value))
-		throw new PostgresDataError(
-			"FLEET_CONFIGURATION_INVALID",
-			`${field} must be a short lower-case token`,
 			{ detail: { field } },
 		);
 	return value;
@@ -149,16 +145,6 @@ export async function inTransaction<T>(
 		}
 	});
 }
-
-/** Why a backend did not answer. `unknown` is a failure nobody has classified. */
-export const FLEET_FAILURE_CLASSES = [
-	"unreachable",
-	"quota-exhausted",
-	"auth",
-	"unknown",
-] as const;
-
-export type FleetFailureClass = (typeof FLEET_FAILURE_CLASSES)[number];
 
 const QUOTA_MESSAGE =
 	/exceeded the [a-z -]*quota|quota (?:has been |was |is )?exceeded|over (?:its |the |your )?quota|plan limit|usage limit|limit (?:has been )?(?:reached|exceeded)/iu;

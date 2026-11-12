@@ -1256,8 +1256,9 @@ export const SequencedCiEventSchema: GenMessage<SequencedCiEvent> = /*@__PURE__*
 
 /**
  * One cursor read of an account's events, oldest first. `cursor` is the
- * position to read after next; it advances past positions that held nothing
- * of the account's.
+ * position to read after next: the position of the page's last event, or the
+ * position the read was given when the page is empty (zero for a read of the
+ * newest events). It is always a position of the account's own.
  *
  * @generated from message hobo.ci.v1.CiEventPage
  */
@@ -1273,15 +1274,16 @@ export type CiEventPage = Message<"hobo.ci.v1.CiEventPage"> & {
   cursor: number;
 
   /**
-   * The read stopped before the end of the journal: read again from `cursor`.
+   * The page is full and the account has events after it: read again from
+   * `cursor`.
    *
    * @generated from field: bool more = 3;
    */
   more: boolean;
 
   /**
-   * A read of the newest events did not look back to the start of the journal
-   * and did not fill the page: older events may exist.
+   * A read of the newest events filled the page and the account has events
+   * older than it.
    *
    * @generated from field: bool truncated = 4;
    */

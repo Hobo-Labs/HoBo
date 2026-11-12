@@ -47,6 +47,14 @@ import {
 	prepareIsolatedConnection,
 } from "./isolated-onboarding.js";
 import {
+	createMeshNodesReader,
+	type MeshNodesReader,
+} from "./mesh-nodes-reader.js";
+import {
+	meshNodeReportsForAccount,
+	meshNodeReportsJson,
+} from "./mesh-records.js";
+import {
 	applyOnboarding,
 	connectRepository,
 	type OnboardingGithubPort,
@@ -177,6 +185,34 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
+// public-contract: the relay route that lists the mesh's nodes.
+export const MESH_NODES_PATH = "/v1/mesh/nodes";
+
+/**
+ * The control routes that write configuration, or keep records a relay with
+ * a read-only config source has no place for (ADR-0179 §8): policy and
+ * provider writes, budget signals and usage observations, the inbox
+ * quarantine, and repository setup with its operation records. On such a
+ * relay each answers 410 (`readOnlyConfig`).
+ */
+export function isConfigWriteRoute(method: string, path: string): boolean {
+	if (path.startsWith("/v2/accounts/self/inbox/")) return true;
+	if (path.startsWith("/v1/accounts/self/repositories/")) return true;
+	if (method === "PUT")
+		return (
+			path === "/v1/accounts/self/policy" ||
+			path === "/v2/accounts/self/policy" ||
+			path === "/v2/accounts/self/providers"
+		);
+	if (method === "POST")
+		return (
+			path === "/v2/accounts/self/signals" ||
+			path === "/v2/accounts/self/observations" ||
+			path === "/v2/accounts/self/rate-observations"
+		);
+	return false;
+}
+
 /** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
@@ -197,8 +233,22 @@ export function createHostedControlPlane(options: {
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
+	/**
+	 * What the relay mesh looks like from this host, for `GET /v1/mesh/nodes`.
+	 * A host with no mesh leaves it out, and the route then answers
+	 * `mesh: "not-configured"`: an answer, not an error.
+	 */
+	meshNodes?: MeshNodesReader | undefined;
+	/**
+	 * The relay reads its configuration from a config service and never
+	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
+	 * answers 410 naming where configuration is written instead. Read
+	 * routes are unchanged.
+	 */
+	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
 }) {
 	const { store, relay } = options;
+	const meshNodes = options.meshNodes ?? createMeshNodesReader();
 	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
@@ -243,9 +293,19 @@ export function createHostedControlPlane(options: {
 		const path = new URL(request.url).pathname;
 		if (
 			!path.startsWith("/v1/accounts/self/") &&
-			!path.startsWith("/v2/accounts/self/")
+			!path.startsWith("/v2/accounts/self/") &&
+			path !== MESH_NODES_PATH
 		)
 			return undefined;
+		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
+			return response(
+				410,
+				JSON.stringify({
+					error:
+						"configuration is read-only on this relay: write it with `hobo ci`, which updates the config service",
+					configService: options.readOnlyConfig.configService,
+				}),
+			);
 		try {
 			const principal = await options.authenticate(
 				request.headers.get("authorization") ?? undefined,
@@ -269,6 +329,30 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
+			// The mesh is the relay's own infrastructure, not one account's: any
+			// account credential that may read (`policy:read`) may see it. The
+			// answer names nodes, capacity and public keys, never a secret.
+			if (path === MESH_NODES_PATH) {
+				if (request.method !== "GET")
+					throw new ControlError(405, "method not allowed");
+				// A machine running jobs for one repository is shown in full only
+				// to the account that owns that repository.
+				const connections =
+					(await store.configuration())?.configuration?.connections ?? [];
+				return response(
+					200,
+					meshNodeReportsJson(
+						meshNodeReportsForAccount(
+							await meshNodes(),
+							new Set(
+								connections
+									.filter((entry) => entry.accountId === principal.accountId)
+									.map((entry) => entry.repository),
+							),
+						),
+					),
+				);
+			}
 			if (path === "/v2/accounts/self/runtime" && request.method === "GET") {
 				if (!options.runtimeDiagnostic)
 					throw new ControlError(404, "runtime diagnostic unavailable");

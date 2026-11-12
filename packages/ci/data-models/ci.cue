@@ -44,7 +44,7 @@ package ci
 }
 #Offer: {
  id: string & !=""
- provider: "github" | "blacksmith" | "depot" | "warpbuild" | "jog" | "boat" | "lizard" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
+ provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
  providerAccountId: string & !=""
  enabled: bool
  runsOn: string & !=""
@@ -280,7 +280,7 @@ package ci
 // Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
- kind: "github" | "blacksmith" | "depot" | "warpbuild" | "jog" | "boat" | "lizard" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
+ kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
  connectionRef: string & !=""
  runsOn: string & =~"^[A-Za-z0-9_.-]{1,100}$"
  enabled?: bool
@@ -347,4 +347,13 @@ package ci
  fork: #FleetRouteLabel
  trunk: #FleetRouteLabel
  [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
+}
+
+// HOBO_CI_FLEET_CAPACITY repository variable: admitted parallel trunk slots.
+#FleetCapacityPublished: {
+	version: 1
+	admittedParallel: int & >=0 & <=8
+	hobo?: {freeSlots: int & >=0}
+	arc?: {freeSlots: int & >=0}
+	publishedAt?: string
 }

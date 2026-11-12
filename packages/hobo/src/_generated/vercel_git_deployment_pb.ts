@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vercel_git_deployment.proto.
  */
 export const file_vercel_git_deployment: GenFile = /*@__PURE__*/
-  fileDesc("Cht2ZXJjZWxfZ2l0X2RlcGxveW1lbnQucHJvdG8SE2hvYm8uaG9iby52ZXJjZWwudjEimQMKF1ZlcmNlbEdpdERlcGxveW1lbnRQbGFuEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEg4KBmJpbmRsZRgCIAEoCRI6CglyZXNvdXJjZXMYAyADKAsyJy5ob2JvLmhvYm8udmVyY2VsLnYxLlZlcmNlbFBsYW5SZXNvdXJjZRIPCgdwcm9qZWN0GAQgASgJEg0KBXNjb3BlGAUgASgJEg4KBnRhcmdldBgGIAEoCRI8CgpnaXRfc291cmNlGAcgASgLMiguaG9iby5ob2JvLnZlcmNlbC52MS5WZXJjZWxQbGFuR2l0U291cmNlEh4KFmNyZWF0ZV9taXNzaW5nX3Byb2plY3QYCCABKAgSOAoIc2V0dGluZ3MYCSADKAsyJi5ob2JvLmhvYm8udmVyY2VsLnYxLlZlcmNlbFBsYW5TZXR0aW5nEhgKEG9wZXJhdG9yX3NlY3JldHMYCiADKAkSOAoIcmVxdWVzdHMYCyADKAsyJi5ob2JvLmhvYm8udmVyY2VsLnYxLlZlcmNlbFBsYW5SZXF1ZXN0IjAKElZlcmNlbFBsYW5SZXNvdXJjZRIMCgRraW5kGAEgASgJEgwKBG5hbWUYAiABKAkicAoTVmVyY2VsUGxhbkdpdFNvdXJjZRIMCgR0eXBlGAEgASgJEgsKA29yZxgCIAEoCRIMCgRyZXBvGAMgASgJEgsKA3JlZhgEIAEoCRILCgNzaGEYBSABKAkSFgoOcm9vdF9kaXJlY3RvcnkYBiABKAkiLwoRVmVyY2VsUGxhblNldHRpbmcSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJIk0KEVZlcmNlbFBsYW5SZXF1ZXN0Eg4KBm1ldGhvZBgBIAEoCRIMCgRwYXRoGAIgASgJEgwKBGJvZHkYAyABKAkSDAoEd2hlbhgEIAEoCWIGcHJvdG8z");
+  fileDesc("Cht2ZXJjZWxfZ2l0X2RlcGxveW1lbnQucHJvdG8SE2hvYm8uaG9iby52ZXJjZWwudjEi0QQKF1ZlcmNlbEdpdERlcGxveW1lbnRQbGFuEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEg4KBmJpbmRsZRgCIAEoCRI6CglyZXNvdXJjZXMYAyADKAsyJy5ob2JvLmhvYm8udmVyY2VsLnYxLlZlcmNlbFBsYW5SZXNvdXJjZRIPCgdwcm9qZWN0GAQgASgJEg0KBXNjb3BlGAUgASgJEg4KBnRhcmdldBgGIAEoCRI8CgpnaXRfc291cmNlGAcgASgLMiguaG9iby5ob2JvLnZlcmNlbC52MS5WZXJjZWxQbGFuR2l0U291cmNlEh4KFmNyZWF0ZV9taXNzaW5nX3Byb2plY3QYCCABKAgSOAoIc2V0dGluZ3MYCSADKAsyJi5ob2JvLmhvYm8udmVyY2VsLnYxLlZlcmNlbFBsYW5TZXR0aW5nEhgKEG9wZXJhdG9yX3NlY3JldHMYCiADKAkSOAoIcmVxdWVzdHMYCyADKAsyJi5ob2JvLmhvYm8udmVyY2VsLnYxLlZlcmNlbFBsYW5SZXF1ZXN0EjsKCXBsYWNlbWVudBgMIAEoCzIoLmhvYm8uaG9iby52ZXJjZWwudjEuVmVyY2VsUGxhblBsYWNlbWVudBI4CghiaW5kaW5ncxgNIAMoCzImLmhvYm8uaG9iby52ZXJjZWwudjEuVmVyY2VsUGxhbkJpbmRpbmcSPwoMcHJvdmlzaW9uaW5nGA4gAygLMikuaG9iby5ob2JvLnZlcmNlbC52MS5WZXJjZWxQbGFuQ2xpQ29tbWFuZCJUChNWZXJjZWxQbGFuUGxhY2VtZW50EgwKBHlhcmQYASABKAkSDAoEY2FtcBgCIAEoCRIQCghwcm92aWRlchgDIAEoCRIPCgdyZWdpb25zGAQgAygJIpsBChFWZXJjZWxQbGFuQmluZGluZxIPCgdwcm9maWxlGAEgASgJEhIKCnByb2R1Y3RfaWQYAiABKAkSFwoPY29ubmVjdGl2aXR5X2lkGAMgASgJEhAKCHNlbGVjdGVkGAQgASgIEhAKCHNldHRpbmdzGAUgAygJEg4KBmlucHV0cxgGIAMoCRIUCgxwcm92aXNpb25pbmcYByABKAkiMgoUVmVyY2VsUGxhbkNsaUNvbW1hbmQSDAoEYXJncxgBIAMoCRIMCgR3aGVuGAIgASgJIjAKElZlcmNlbFBsYW5SZXNvdXJjZRIMCgRraW5kGAEgASgJEgwKBG5hbWUYAiABKAkicAoTVmVyY2VsUGxhbkdpdFNvdXJjZRIMCgR0eXBlGAEgASgJEgsKA29yZxgCIAEoCRIMCgRyZXBvGAMgASgJEgsKA3JlZhgEIAEoCRILCgNzaGEYBSABKAkSFgoOcm9vdF9kaXJlY3RvcnkYBiABKAkiLwoRVmVyY2VsUGxhblNldHRpbmcSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJIk0KEVZlcmNlbFBsYW5SZXF1ZXN0Eg4KBm1ldGhvZBgBIAEoCRIMCgRwYXRoGAIgASgJEgwKBGJvZHkYAyABKAkSDAoEd2hlbhgEIAEoCWIGcHJvdG8z");
 
 /**
  * What `hobo ci deploy` sends to Vercel for one git-source deployment, as its
@@ -96,6 +96,27 @@ export type VercelGitDeploymentPlan = Message<"hobo.hobo.vercel.v1.VercelGitDepl
    * @generated from field: repeated hobo.hobo.vercel.v1.VercelPlanRequest requests = 11;
    */
   requests: VercelPlanRequest[];
+
+  /**
+   * the Yard and Camp the plan was formed from
+   *
+   * @generated from field: hobo.hobo.vercel.v1.VercelPlanPlacement placement = 12;
+   */
+  placement?: VercelPlanPlacement | undefined;
+
+  /**
+   * the Yard's binding rows, canonical order
+   *
+   * @generated from field: repeated hobo.hobo.vercel.v1.VercelPlanBinding bindings = 13;
+   */
+  bindings: VercelPlanBinding[];
+
+  /**
+   * `--provision`'s Vercel CLI commands, in order
+   *
+   * @generated from field: repeated hobo.hobo.vercel.v1.VercelPlanCliCommand provisioning = 14;
+   */
+  provisioning: VercelPlanCliCommand[];
 };
 
 /**
@@ -104,6 +125,129 @@ export type VercelGitDeploymentPlan = Message<"hobo.hobo.vercel.v1.VercelGitDepl
  */
 export const VercelGitDeploymentPlanSchema: GenMessage<VercelGitDeploymentPlan> = /*@__PURE__*/
   messageDesc(file_vercel_git_deployment, 0);
+
+/**
+ * Where the relay is placed: the Yard names the provider (ADR-0157), and the
+ * target names the Camp.
+ *
+ * @generated from message hobo.hobo.vercel.v1.VercelPlanPlacement
+ */
+export type VercelPlanPlacement = Message<"hobo.hobo.vercel.v1.VercelPlanPlacement"> & {
+  /**
+   * @generated from field: string yard = 1;
+   */
+  yard: string;
+
+  /**
+   * "<yard>/<camp>"
+   *
+   * @generated from field: string camp = 2;
+   */
+  camp: string;
+
+  /**
+   * the Yard's provider id
+   *
+   * @generated from field: string provider = 3;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: repeated string regions = 4;
+   */
+  regions: string[];
+};
+
+/**
+ * Describes the message hobo.hobo.vercel.v1.VercelPlanPlacement.
+ * Use `create(VercelPlanPlacementSchema)` to create a new message.
+ */
+export const VercelPlanPlacementSchema: GenMessage<VercelPlanPlacement> = /*@__PURE__*/
+  messageDesc(file_vercel_git_deployment, 1);
+
+/**
+ * One binding row of the Yard: the capability profile and the offering that may
+ * satisfy it there. Names only, never a value of a secret.
+ *
+ * @generated from message hobo.hobo.vercel.v1.VercelPlanBinding
+ */
+export type VercelPlanBinding = Message<"hobo.hobo.vercel.v1.VercelPlanBinding"> & {
+  /**
+   * @generated from field: string profile = 1;
+   */
+  profile: string;
+
+  /**
+   * @generated from field: string product_id = 2;
+   */
+  productId: string;
+
+  /**
+   * @generated from field: string connectivity_id = 3;
+   */
+  connectivityId: string;
+
+  /**
+   * chosen for the Camp: required, first of its profile's rows
+   *
+   * @generated from field: bool selected = 4;
+   */
+  selected: boolean;
+
+  /**
+   * names of the non-secret settings it projects
+   *
+   * @generated from field: repeated string settings = 5;
+   */
+  settings: string[];
+
+  /**
+   * names the deploy is given with --set
+   *
+   * @generated from field: repeated string inputs = 6;
+   */
+  inputs: string[];
+
+  /**
+   * "marketplace:<integration>" when the Marketplace attaches it
+   *
+   * @generated from field: string provisioning = 7;
+   */
+  provisioning: string;
+};
+
+/**
+ * Describes the message hobo.hobo.vercel.v1.VercelPlanBinding.
+ * Use `create(VercelPlanBindingSchema)` to create a new message.
+ */
+export const VercelPlanBindingSchema: GenMessage<VercelPlanBinding> = /*@__PURE__*/
+  messageDesc(file_vercel_git_deployment, 2);
+
+/**
+ * One Vercel CLI invocation of the provisioning step: arguments after the
+ * executable. The token and the project's coordinates travel in its
+ * environment, never here.
+ *
+ * @generated from message hobo.hobo.vercel.v1.VercelPlanCliCommand
+ */
+export type VercelPlanCliCommand = Message<"hobo.hobo.vercel.v1.VercelPlanCliCommand"> & {
+  /**
+   * @generated from field: repeated string args = 1;
+   */
+  args: string[];
+
+  /**
+   * @generated from field: string when = 2;
+   */
+  when: string;
+};
+
+/**
+ * Describes the message hobo.hobo.vercel.v1.VercelPlanCliCommand.
+ * Use `create(VercelPlanCliCommandSchema)` to create a new message.
+ */
+export const VercelPlanCliCommandSchema: GenMessage<VercelPlanCliCommand> = /*@__PURE__*/
+  messageDesc(file_vercel_git_deployment, 3);
 
 /**
  * @generated from message hobo.hobo.vercel.v1.VercelPlanResource
@@ -125,7 +269,7 @@ export type VercelPlanResource = Message<"hobo.hobo.vercel.v1.VercelPlanResource
  * Use `create(VercelPlanResourceSchema)` to create a new message.
  */
 export const VercelPlanResourceSchema: GenMessage<VercelPlanResource> = /*@__PURE__*/
-  messageDesc(file_vercel_git_deployment, 1);
+  messageDesc(file_vercel_git_deployment, 4);
 
 /**
  * @generated from message hobo.hobo.vercel.v1.VercelPlanGitSource
@@ -175,7 +319,7 @@ export type VercelPlanGitSource = Message<"hobo.hobo.vercel.v1.VercelPlanGitSour
  * Use `create(VercelPlanGitSourceSchema)` to create a new message.
  */
 export const VercelPlanGitSourceSchema: GenMessage<VercelPlanGitSource> = /*@__PURE__*/
-  messageDesc(file_vercel_git_deployment, 2);
+  messageDesc(file_vercel_git_deployment, 5);
 
 /**
  * @generated from message hobo.hobo.vercel.v1.VercelPlanSetting
@@ -197,7 +341,7 @@ export type VercelPlanSetting = Message<"hobo.hobo.vercel.v1.VercelPlanSetting">
  * Use `create(VercelPlanSettingSchema)` to create a new message.
  */
 export const VercelPlanSettingSchema: GenMessage<VercelPlanSetting> = /*@__PURE__*/
-  messageDesc(file_vercel_git_deployment, 3);
+  messageDesc(file_vercel_git_deployment, 6);
 
 /**
  * @generated from message hobo.hobo.vercel.v1.VercelPlanRequest
@@ -237,5 +381,5 @@ export type VercelPlanRequest = Message<"hobo.hobo.vercel.v1.VercelPlanRequest">
  * Use `create(VercelPlanRequestSchema)` to create a new message.
  */
 export const VercelPlanRequestSchema: GenMessage<VercelPlanRequest> = /*@__PURE__*/
-  messageDesc(file_vercel_git_deployment, 4);
+  messageDesc(file_vercel_git_deployment, 7);
 

@@ -15,18 +15,31 @@ import {
 	type CommandModule,
 	type CommandResult,
 	verbHelpText,
+	type YardRuntime,
 } from "@hobo/cli";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
+import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
+import {
+	localMeshReport,
+	meshNodesData,
+	meshNodesTable,
+} from "./ci-mesh-status.js";
 import {
 	CI_DEPLOY_ONLY_OPTIONS,
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
+import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRuns } from "./ci-runs.js";
+import {
+	CI_SECRET_STORE_OPTIONS,
+	runCiSecretStore,
+	SECRET_STORE_ONLY_OPTIONS,
+} from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 import type { VercelFetch } from "./vercel-client.js";
 
@@ -44,8 +57,38 @@ class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
 
+async function promptOnTerminal(question: string): Promise<string> {
+	const terminal = createInterface({
+		input: process.stdin,
+		output: process.stderr,
+	});
+	try {
+		return await terminal.question(question);
+	} finally {
+		terminal.close();
+	}
+}
+
 function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
+}
+
+/**
+ * `hobo ci status` with no relay to ask: this machine's own mesh report,
+ * when its local runner keeps one. Nothing when it does not, so the caller
+ * gives its usual answer.
+ */
+async function offlineStatus(
+	repositoryRoot: string,
+	env: NodeJS.ProcessEnv,
+	why: string,
+): Promise<CommandResult | undefined> {
+	const report = await localMeshReport(repositoryRoot, env);
+	if (!report) return undefined;
+	return {
+		message: `${why} Showing this machine's own report.\n${meshNodesTable(report)}`,
+		data: { source: "local", mesh: meshNodesData(report) },
+	};
 }
 
 function trustedOrigin(value: string): string {
@@ -215,6 +258,7 @@ function parseCiArgs(args: readonly string[]) {
 			admission: { type: "string" },
 			"allow-insecure": { type: "boolean" },
 			"with-worker": { type: "boolean" },
+			"no-agent": { type: "boolean" },
 			"print-config": { type: "boolean" },
 			origin: { type: "string" },
 			"base-url": { type: "string" },
@@ -237,6 +281,20 @@ function parseCiArgs(args: readonly string[]) {
 			set: { type: "string", multiple: true },
 			"root-directory": { type: "string" },
 			"create-project": { type: "boolean" },
+			provision: { type: "boolean" },
+			"owner-id": { type: "string" },
+			name: { type: "string" },
+			"auth-md": { type: "string", multiple: true },
+			"fleet-host": { type: "string" },
+			"owner-email": { type: "string" },
+			"vercel-team-slug": { type: "string" },
+			"vercel-project-id": { type: "string" },
+			"allow-designed": { type: "boolean" },
+			"deploy-project-id": { type: "string" },
+			"relay-identity-id": { type: "string" },
+			"deploy-identity-id": { type: "string" },
+			"site-url": { type: "string" },
+			"via-workflow": { type: "boolean" },
 		},
 	});
 }
@@ -262,6 +320,7 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 		options.admission = String(values.admission);
 	if (values["allow-insecure"] === true) options.allowInsecure = true;
 	if (values["with-worker"] === true) options.withWorker = true;
+	if (values["no-agent"] === true) options.noAgent = true;
 	if (values["print-config"] === true) options.printConfig = true;
 	if (values.repo !== undefined) options.repo = String(values.repo);
 	if (values.remote !== undefined) options.remote = String(values.remote);
@@ -286,6 +345,10 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
+		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
+		vercelCli?: VercelCliRunner;
+		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
+		runtime?: YardRuntime;
 	} = {},
 ): CommandModule {
 	return {
@@ -326,6 +389,8 @@ export function createCiCommand(
 					"serve",
 					"github",
 					"deploy",
+					"app",
+					"secret-store",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
@@ -345,8 +410,47 @@ export function createCiCommand(
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),
+					...(deps.vercelCli !== undefined
+						? { runVercelCli: deps.vercelCli }
+						: undefined),
+					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					emitProgress,
 				});
+			}
+			if (command === "secret-store") {
+				if (positionals.length !== 2)
+					return usage(
+						"Use hobo ci secret-store plan, provision, connect or verify.",
+					);
+				const allowed = new Set<string>(CI_SECRET_STORE_OPTIONS);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(
+						`--${unsupported[0]} does not apply to hobo ci secret-store.`,
+					);
+				return runCiSecretStore({
+					subcommand: positionals[1] ?? "",
+					cwd: flags.cwd,
+					values,
+					env: deps.env ?? process.env,
+					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					...(deps.runtime !== undefined
+						? { runtime: deps.runtime }
+						: undefined),
+					interactive:
+						(deps.interactive ??
+							Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
+						!flags.json,
+					prompt: deps.prompt ?? promptOnTerminal,
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
+				});
+			}
+			for (const key of SECRET_STORE_ONLY_OPTIONS) {
+				if (values[key] !== undefined)
+					return usage(`--${key} only applies to hobo ci secret-store.`);
 			}
 			{
 				const misplaced = CI_DEPLOY_ONLY_OPTIONS.find(
@@ -354,6 +458,68 @@ export function createCiCommand(
 				);
 				if (misplaced)
 					return usage(`--${misplaced} only applies to hobo ci deploy.`);
+			}
+			if (command === "app") {
+				if (
+					positionals.length !== 2 ||
+					(positionals[1] !== "create" && positionals[1] !== "deposit")
+				)
+					return usage("Use hobo ci app create (or deposit, in the workflow).");
+				if (positionals[1] === "deposit")
+					return runCiAppDeposit({
+						cwd: flags.cwd,
+						relay:
+							values.relay === undefined ? undefined : String(values.relay),
+						ownerId:
+							values["owner-id"] === undefined
+								? undefined
+								: String(values["owner-id"]),
+						env: deps.env ?? process.env,
+						emitProgress,
+						fetch: deps.fetch,
+						sleep: deps.sleep,
+					});
+				const allowed = new Set([
+					"relay",
+					"owner-id",
+					"name",
+					"yes",
+					"non-interactive",
+					"via-workflow",
+				]);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(
+						`--${unsupported[0]} does not apply to hobo ci app create.`,
+					);
+				const interactive =
+					(deps.interactive ??
+						Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
+					!flags.json &&
+					!values["non-interactive"];
+				return runCiAppCreate({
+					relay: values.relay === undefined ? undefined : String(values.relay),
+					ownerId:
+						values["owner-id"] === undefined
+							? undefined
+							: String(values["owner-id"]),
+					name: values.name === undefined ? undefined : String(values.name),
+					replace: values.yes === true,
+					viaWorkflow: values["via-workflow"] === true,
+					interactive,
+					env: deps.env ?? process.env,
+					emitProgress,
+					fetch: deps.fetch,
+					openBrowser: deps.openBrowser,
+					prompt: deps.prompt ?? promptOnTerminal,
+					sleep: deps.sleep,
+				});
+			}
+			for (const key of ["owner-id", "name"] as const) {
+				if (values[key] !== undefined)
+					return usage(`--${key} only applies to hobo ci app create.`);
 			}
 			if (command === "github") {
 				if (
@@ -712,8 +878,13 @@ export function createCiCommand(
 				if (!relay && interactive && setup)
 					relay = (await ask("HoBo CI relay HTTPS origin: ")).trim();
 				if (!relay)
-					return usage(
-						"Select your CI relay with --relay, HOBO_CI_RELAY_URL, or .hobo/ci.json (see hobo ci --help).",
+					return (
+						(command === "status"
+							? await offlineStatus(root, env, "No CI relay is selected.")
+							: undefined) ??
+						usage(
+							"Select your CI relay with --relay, HOBO_CI_RELAY_URL, or .hobo/ci.json (see hobo ci --help).",
+						)
 					);
 				const origin = allowInsecureLoopback
 					? relayOriginFromProject(relay, true)
@@ -725,13 +896,21 @@ export function createCiCommand(
 						"Choose one CI credential source: a token file or HOBO_CI_ACCOUNT_TOKEN.",
 					);
 				if (!tokenFile && !env.HOBO_CI_ACCOUNT_TOKEN)
-					return {
-						ok: false,
-						status: "authentication-required",
-						code: "HOBO_CI_AUTH_REQUIRED",
-						message:
-							"Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.",
-					};
+					return (
+						(command === "status"
+							? await offlineStatus(
+									root,
+									env,
+									"No CI account credential is set, so the relay was not asked.",
+								)
+							: undefined) ?? {
+							ok: false,
+							status: "authentication-required",
+							code: "HOBO_CI_AUTH_REQUIRED",
+							message:
+								"Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.",
+						}
+					);
 				// Pin authority for the invocation. A mounted token file may rotate
 				// between policy read and write; it must not silently select another account.
 				const credential = tokenFile
@@ -758,7 +937,25 @@ export function createCiCommand(
 					});
 					if (!result.ok) return result;
 				}
-				const state = await client.getPolicy();
+				let state: Awaited<ReturnType<typeof client.getPolicy>>;
+				try {
+					state = await client.getPolicy();
+				} catch (error) {
+					// The relay could not be reached at all (status 0): offline,
+					// `status` still says what this machine knows of itself.
+					const offline =
+						command === "status" &&
+						error instanceof CiRelayClientError &&
+						error.status === 0
+							? await offlineStatus(
+									root,
+									env,
+									"The CI relay could not be reached.",
+								)
+							: undefined;
+					if (offline) return offline;
+					throw error;
+				}
 				if (
 					!state.account?.id ||
 					!/^[A-Za-z0-9_-]{1,80}$/.test(state.account.id)
@@ -781,23 +978,32 @@ export function createCiCommand(
 					(connection) =>
 						connection.repository.toLowerCase() === repository.toLowerCase(),
 				);
-				if (command === "status")
-					return {
-						message: existing
-							? `CI connected for ${repository} at ${origin}.`
-							: `CI is not connected for ${repository}. Run hobo ci enable.`,
-						data: {
-							repository,
-							relayOrigin: origin,
-							accountId: state.account.id,
-							connected: Boolean(existing),
-							revision: state.revision,
-							isolated: existing?.isolatedOnly ?? false,
-							installationId: existing?.installationId,
-							environment: selectedEnvironment,
-							jobAdmission,
-						},
+				if (command === "status") {
+					// The runner nodes behind the relay: availability, capacity
+					// and trust. A relay too old to have the route, or one that
+					// refuses it, leaves the connection status as the answer.
+					const mesh = await client.getMeshNodes().catch(() => undefined);
+					const connection = existing
+						? `CI connected for ${repository} at ${origin}.`
+						: `CI is not connected for ${repository}. Run hobo ci enable.`;
+					const status = {
+						repository,
+						relayOrigin: origin,
+						accountId: state.account.id,
+						connected: Boolean(existing),
+						revision: state.revision,
+						isolated: existing?.isolatedOnly ?? false,
+						installationId: existing?.installationId,
+						environment: selectedEnvironment,
+						jobAdmission,
 					};
+					return mesh
+						? {
+								message: `${connection}\n${meshNodesTable(mesh)}`,
+								data: { ...status, mesh: meshNodesData(mesh) },
+							}
+						: { message: connection, data: status };
+				}
 				if (existing) {
 					if (
 						!existing.isolatedOnly ||

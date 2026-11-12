@@ -1,13 +1,24 @@
 import { create } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
+import type { GithubTransport } from "../github.js";
 import type { HostedRelayStore } from "../hosted-relay.js";
+import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
-import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
+import {
+	mergeDrainInFlightCount,
+	workerOfferKey,
+	workerOfferKeys,
+} from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
+import {
+	leaseHasLiveContainer,
+	resolveGithubLeaseFate,
+} from "./github-lease-terminal.js";
 import {
 	type OrphanJobCandidate,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 export type WorkerLeaseReconciliationStore = Pick<
 	HostedRelayStore,
@@ -18,9 +29,14 @@ export type WorkerLeaseReconciliationEvent =
 	| "hobo_ci_container_orphan_removed"
 	| "hobo_ci_container_orphan_remove_failed"
 	| "hobo_ci_container_timeout_enforced"
+	| "hobo_ci_lease_github_terminal_dropped"
 	| "hobo_ci_lease_orphan_released"
 	| "hobo_ci_lease_reconciliation_failed"
 	| "hobo_ci_memory_without_containers";
+
+/** Max drain wait for leases that never got a live worker container. */
+// public-contract: caps redeploy stall when reservations outlive GitHub or launch.
+export const DEFAULT_NO_CONTAINER_DRAIN_MAX_MS = 30_000;
 
 export type WorkerLeaseReconciliationLog = (
 	event: WorkerLeaseReconciliationEvent,
@@ -30,6 +46,8 @@ export type WorkerLeaseReconciliationLog = (
 export type WorkerLeaseReconciliationResult = Readonly<{
 	inventoryKnown: boolean;
 	liveLeaseIds: ReadonlySet<string>;
+	/** Jobs still on a live worker container or in-flight launch this worker owns. */
+	drainJobInFlight: number;
 	/** Memory reserved by the leases that are launching or running. */
 	inUseMemoryMb: number;
 }>;
@@ -95,9 +113,25 @@ export function hasIsolatedStopIntent(lease: Lease): boolean {
 	);
 }
 
+/** A lease that may still be executing a GitHub job; drain must not drop it. */
+export function leaseHoldDuringWorkerDrain(lease: Lease): boolean {
+	if (["running", "dispatched", "claiming"].includes(lease.state)) return true;
+	if (
+		lease.state === "reserved" &&
+		(lease.sandboxSessionId !== "" ||
+			lease.actualJobId > 0 ||
+			lease.runnerId > 0)
+	)
+		return true;
+	return false;
+}
+
 export function createWorkerLeaseReconciler(options: {
 	store: WorkerLeaseReconciliationStore;
-	docker: Pick<DockerDriver, "list" | "stop" | "remove">;
+	docker: Pick<
+		DockerDriver,
+		"list" | "listWorkerContainers" | "stop" | "remove"
+	>;
 	workerAccountId: string;
 	workerMemoryMb: number;
 	orphanGraceMs?: number;
@@ -108,11 +142,97 @@ export function createWorkerLeaseReconciler(options: {
 	onOrphanJob?: (candidate: OrphanJobCandidate) => void;
 	protectedContainerNames?: () => ReadonlySet<string>;
 	protectedLeaseIds?: () => ReadonlySet<string>;
+	github?: GithubTransport;
+	cancelStaleGithubLease?: (lease: Lease, reason: string) => Promise<boolean>;
+	noContainerDrainMaxMs?: number;
+	/**
+	 * When this returns true, a running container must not be stopped even if it
+	 * is not on the active lease name/id sets (custody record or GitHub job).
+	 */
+	containerCustody?: (input: {
+		container: DockerContainer;
+		leaseId?: string;
+	}) => Promise<boolean>;
 }) {
 	const now = options.now ?? Date.now;
 	const orphanGraceMs = options.orphanGraceMs ?? 2 * 60_000;
 	if (!Number.isInteger(orphanGraceMs) || orphanGraceMs < 0)
 		throw new Error("invalid orphan grace");
+
+	const orphanRemovalsInFlight = new Set<string>();
+	const noContainerDrainMaxMs =
+		options.noContainerDrainMaxMs ?? DEFAULT_NO_CONTAINER_DRAIN_MAX_MS;
+	if (!Number.isInteger(noContainerDrainMaxMs) || noContainerDrainMaxMs < 1_000)
+		throw new Error("invalid no-container drain cap");
+
+	async function releaseStaleLeaseWithoutContainer(
+		lease: Lease,
+		reason: string,
+		reconcileOptions: { draining?: boolean; drainStartedAtMs?: number },
+	): Promise<boolean> {
+		if (options.cancelStaleGithubLease) {
+			const dropped = await options.cancelStaleGithubLease(lease, reason);
+			if (dropped) {
+				options.log?.("hobo_ci_lease_github_terminal_dropped", {
+					leaseId: lease.id,
+					jobId: lease.jobId,
+					runId: lease.originalRunId,
+					reason,
+					draining: reconcileOptions.draining === true,
+				});
+			}
+			return dropped;
+		}
+		if (reconcileOptions.draining && leaseHoldDuringWorkerDrain(lease))
+			return false;
+		await options.store.abortIsolatedAndRequeue(
+			lease.id,
+			requeueJob(lease),
+			new Date(now()).toISOString(),
+		);
+		options.log?.("hobo_ci_lease_orphan_released", {
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			runId: lease.originalRunId,
+			state: lease.state,
+			reason,
+			ageMs: 0,
+			memoryMb: lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb,
+		});
+		return true;
+	}
+
+	async function maybeDropLeaseWithoutLiveContainer(
+		lease: Lease,
+		container: DockerContainer | undefined,
+		reconcileOptions: { draining?: boolean; drainStartedAtMs?: number },
+	): Promise<boolean> {
+		if (leaseHasLiveContainer(container)) return false;
+		if (options.github) {
+			const fate = await resolveGithubLeaseFate(options.github, lease);
+			if (fate.kind === "terminal") {
+				return releaseStaleLeaseWithoutContainer(
+					lease,
+					fate.reason,
+					reconcileOptions,
+				);
+			}
+		}
+		if (!reconcileOptions.draining) return false;
+		const drainStartedAtMs = reconcileOptions.drainStartedAtMs;
+		if (drainStartedAtMs === undefined) return false;
+		const drainAgeMs = Math.max(0, now() - drainStartedAtMs);
+		if (drainAgeMs < noContainerDrainMaxMs) return false;
+		return releaseStaleLeaseWithoutContainer(
+			lease,
+			"drain-no-container-cap",
+			reconcileOptions,
+		);
+	}
+
+	function orphanContainerKey(container: DockerContainer): string {
+		return container.containerId || container.name;
+	}
 
 	/** Memory reserved by leases that are launching or running. */
 	function reservedMemoryMb(owned: readonly Lease[]): number {
@@ -127,7 +247,7 @@ export function createWorkerLeaseReconciler(options: {
 	}
 
 	async function reconcile(
-		reconcileOptions: { draining?: boolean } = {},
+		reconcileOptions: { draining?: boolean; drainStartedAtMs?: number } = {},
 	): Promise<WorkerLeaseReconciliationResult> {
 		const leases = await options.store.activeLeases();
 		const configuration = (await options.store.configuration())?.configuration;
@@ -143,9 +263,11 @@ export function createWorkerLeaseReconciler(options: {
 		);
 		let containers: readonly DockerContainer[];
 		try {
-			if (!options.docker.list)
-				throw new Error("docker container listing unavailable");
-			containers = await options.docker.list("hobo.ci/isolated=1");
+			if (options.docker.listWorkerContainers)
+				containers = await options.docker.listWorkerContainers();
+			else if (options.docker.list)
+				containers = await options.docker.list("hobo.ci/isolated=1");
+			else throw new Error("docker container listing unavailable");
 		} catch (error) {
 			options.log?.("hobo_ci_lease_reconciliation_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -153,6 +275,7 @@ export function createWorkerLeaseReconciler(options: {
 			return {
 				inventoryKnown: false,
 				liveLeaseIds: new Set(owned.map((lease) => lease.id)),
+				drainJobInFlight: owned.length,
 				inUseMemoryMb: reservedMemoryMb(owned),
 			};
 		}
@@ -188,14 +311,29 @@ export function createWorkerLeaseReconciler(options: {
 				activeLeaseCount: launching.length,
 			});
 		const liveLeaseIds = new Set<string>();
+		const drainJobLeaseIds = new Set<string>();
 		const protectedLeaseIds =
 			options.protectedLeaseIds?.() ?? new Set<string>();
 		for (const lease of owned) {
-			if (lease.state === "reserved" || protectedLeaseIds.has(lease.id)) {
+			const container = containerFor(lease);
+			if (protectedLeaseIds.has(lease.id)) {
 				liveLeaseIds.add(lease.id);
 				continue;
 			}
-			const container = containerFor(lease);
+			if (
+				await maybeDropLeaseWithoutLiveContainer(
+					lease,
+					container,
+					reconcileOptions,
+				)
+			)
+				continue;
+			if (lease.state === "reserved") {
+				if (leaseHasLiveContainer(container)) liveLeaseIds.add(lease.id);
+				else if (!reconcileOptions.draining) liveLeaseIds.add(lease.id);
+				if (leaseHasLiveContainer(container) || !reconcileOptions.draining)
+					continue;
+			}
 			const createdMs = Date.parse(lease.createdAt);
 			const dispatchingMs = Date.parse(lease.dispatchingAt);
 			const ageBaseMs =
@@ -318,13 +456,18 @@ export function createWorkerLeaseReconciler(options: {
 					continue;
 				}
 			} else if (container) {
+				const budgetMs = effectiveIsolatedTimeoutMs(
+					lease.reservedMinutes,
+					lease.jobName,
+				);
+				const enforcedTimeoutMs = Math.max(container.timeoutMs ?? 0, budgetMs);
 				if (
 					container.state === "running" &&
-					container.timeoutMs !== undefined &&
 					container.createdAtMs !== undefined &&
+					enforcedTimeoutMs > 0 &&
 					containerPastHardTimeout(
 						container.createdAtMs,
-						container.timeoutMs,
+						enforcedTimeoutMs,
 						now(),
 					)
 				) {
@@ -335,7 +478,8 @@ export function createWorkerLeaseReconciler(options: {
 							leaseId: lease.id,
 							jobId: lease.jobId,
 							name: container.name,
-							timeoutMs: container.timeoutMs,
+							timeoutMs: enforcedTimeoutMs,
+							declaredTimeoutMs: container.timeoutMs ?? 0,
 						});
 					} catch (error) {
 						options.log?.("hobo_ci_lease_reconciliation_failed", {
@@ -362,6 +506,10 @@ export function createWorkerLeaseReconciler(options: {
 				continue;
 			} else {
 				reason = "container-missing";
+				if (reconcileOptions.draining && leaseHoldDuringWorkerDrain(lease)) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
 				if (!reconcileOptions.draining && ageMs < orphanGraceMs) continue;
 				await options.store.abortIsolatedAndRequeue(
 					lease.id,
@@ -371,7 +519,8 @@ export function createWorkerLeaseReconciler(options: {
 			}
 			const current = await options.store.get(lease.id);
 			if (current && ACTIVE_STATES.has(current.state)) continue;
-			if (reason === "container-missing") await options.afterRelease?.(lease);
+			if (reason === "container-missing" && !reconcileOptions.draining)
+				await options.afterRelease?.(lease);
 			const orphan =
 				reason !== "container-exited" && lease.runnerName === `hobo-${lease.id}`
 					? orphanJobCandidateForLease(lease, now())
@@ -388,9 +537,12 @@ export function createWorkerLeaseReconciler(options: {
 					lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb,
 			});
 		}
-		const leasedNames = new Set(
-			leases.map((lease) => lease.sandboxName || `hobo-${lease.id}`),
-		);
+		const leasedNames = new Set<string>();
+		for (const lease of leases) {
+			if (lease.sandboxName) leasedNames.add(lease.sandboxName);
+			if (lease.runnerName) leasedNames.add(lease.runnerName);
+			leasedNames.add(lease.sandboxName || `hobo-${lease.id}`);
+		}
 		const leasedContainerIds = new Set(
 			leases
 				.map((lease) => lease.sandboxSessionId)
@@ -405,22 +557,55 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
-			const staleTimedOut =
-				container.state === "running" &&
-				container.timeoutMs !== undefined &&
-				container.createdAtMs !== undefined &&
-				containerPastHardTimeout(
-					container.createdAtMs,
-					container.timeoutMs,
-					now(),
-				);
+			if (container.state === "running" || container.state === "removing") {
+				if (container.state === "removing") continue;
+				if (reconcileOptions.draining) continue;
+				if (container.createdAtMs === undefined) continue;
+				const removalKey = orphanContainerKey(container);
+				if (orphanRemovalsInFlight.has(removalKey)) continue;
+				const leaseId = leaseIdFromBoxRunnerName(container.name);
+				if (options.containerCustody) {
+					const custodyInput =
+						leaseId === undefined ? { container } : { container, leaseId };
+					if (await options.containerCustody(custodyInput)) continue;
+				} else if (!leaseId) {
+					continue;
+				}
+				const ageMs = Math.max(0, now() - container.createdAtMs);
+				if (ageMs < orphanGraceMs) continue;
+				orphanRemovalsInFlight.add(removalKey);
+				try {
+					if (options.docker.stop)
+						await options.docker.stop(container.name, container.containerId);
+					await options.docker.remove(container.name, container.containerId);
+					orphanRemovalsInFlight.delete(removalKey);
+					options.log?.("hobo_ci_container_orphan_removed", {
+						name: container.name,
+						containerId: container.containerId,
+						state: container.state,
+						running: true,
+						ageMs,
+					});
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					if (!/already in progress/i.test(message))
+						orphanRemovalsInFlight.delete(removalKey);
+					options.log?.("hobo_ci_container_orphan_remove_failed", {
+						name: container.name,
+						containerId: container.containerId,
+						message,
+					});
+				}
+				continue;
+			}
+			const staleKey = orphanContainerKey(container);
+			if (orphanRemovalsInFlight.has(staleKey)) continue;
+			orphanRemovalsInFlight.add(staleKey);
 			try {
-				if (container.state === "running")
-					await options.docker.stop(container.name, container.containerId);
 				await options.docker.remove(container.name, container.containerId);
-				const event = staleTimedOut
-					? "hobo_ci_container_timeout_enforced"
-					: "hobo_ci_container_orphan_removed";
+				orphanRemovalsInFlight.delete(staleKey);
+				const event = "hobo_ci_container_orphan_removed";
 				if (container.timeoutMs !== undefined) {
 					options.log?.(event, {
 						name: container.name,
@@ -436,16 +621,35 @@ export function createWorkerLeaseReconciler(options: {
 					});
 				}
 			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (!/already in progress/i.test(message))
+					orphanRemovalsInFlight.delete(staleKey);
 				options.log?.("hobo_ci_container_orphan_remove_failed", {
 					name: container.name,
 					containerId: container.containerId,
-					message: error instanceof Error ? error.message : "unknown",
+					message,
 				});
 			}
 		}
+		for (const lease of owned) {
+			if (!liveLeaseIds.has(lease.id)) continue;
+			const container = containerFor(lease);
+			if (protectedLeaseIds.has(lease.id) || leaseHasLiveContainer(container))
+				drainJobLeaseIds.add(lease.id);
+		}
+		const runningWorkerContainers = containers.filter(
+			(container) =>
+				container.state === "running" &&
+				(container.name.startsWith("hobo-") ||
+					container.name.startsWith("hobo-warm-")),
+		).length;
 		return {
 			inventoryKnown: true,
 			liveLeaseIds,
+			drainJobInFlight: mergeDrainInFlightCount(
+				drainJobLeaseIds.size,
+				runningWorkerContainers,
+			),
 			inUseMemoryMb: journalInUseMb,
 		};
 	}

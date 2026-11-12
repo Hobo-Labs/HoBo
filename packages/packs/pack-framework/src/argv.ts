@@ -19,10 +19,10 @@ export function containsControlChar(value: string): boolean {
 }
 
 /** Credential shapes that must never reach a command line. */
-const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/postgres(?:ql)?:\/\//iu,
-	/rediss?:\/\//iu,
-	/(?:^|[=\s])(?:--)?(?:password|requirepass|pgpassword)[=\s]/iu,
+export const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
+	/postgres(?:ql)?:\/\//i,
+	/rediss?:\/\//i,
+	/(?:^|[=\s])(?:--)?(?:password|requirepass|pgpassword)[=\s]/i,
 	/\/\/[^/\s:@]+:[^/\s:@]+@/u,
 	/-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
 ];

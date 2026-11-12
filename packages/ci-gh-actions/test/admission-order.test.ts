@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import {
 	admissionRank,
 	createAdmissionOrder,
+	isMainTrunkFleetDeferJob,
+	mainTrainReleasePhase,
 	TRUNK_RANK,
 } from "../src/admission-order.js";
 import type { GithubTransport } from "../src/github.js";
@@ -39,6 +41,7 @@ const ref = (runId: number, jobId = runId) => ({
 it("ranks merge-queue and trunk runs ahead of pull requests and sweeps", () => {
 	expect(admissionRank("merge_group")).toBe(0);
 	expect(admissionRank("push")).toBe(0);
+	expect(admissionRank("workflow_run")).toBe(0);
 	expect(admissionRank("workflow_dispatch")).toBe(0);
 	expect(admissionRank("pull_request")).toBe(1);
 	expect(admissionRank("pull_request_target")).toBe(1);
@@ -110,6 +113,106 @@ it("ranks the trunk-only label ahead of pull requests when run lookups fail", as
 	expect(await order.rank(general)).toBe(1);
 });
 
+it("admits Main workspace plan before Main full gate on the same push run", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const expected = new Map([
+		[10, 120_000],
+		[11, 600_000],
+		[12, 90_000],
+	]);
+	const order = createAdmissionOrder(github, {
+		expectedMs: (_repository, jobId) => expected.get(jobId) ?? 0,
+	});
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(11, "Main full gate"),
+					fabric(12, "Main workspace test shard 1"),
+					fabric(10, "Main workspace plan"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([10, 11, 12]);
+});
+
+it("admits CI deps layer after plan and before full gate on the same push", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const order = createAdmissionOrder(github);
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(14, "Main full gate"),
+					fabric(13, "CI deps layer (pnpm)"),
+					fabric(12, "Main workspace plan"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([12, 13, 14]);
+});
+
+it("does not prioritize CI deps layer ahead of PR impact validation on pull requests", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(20, "CI deps layer (pnpm)"),
+					fabric(21, "PR impact validation"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([21, 20]);
+});
+
+it("orders main workspace shards by index within a run before duration ties", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const expected = new Map([
+		[100, 200_000],
+		[101, 50_000],
+		[102, 150_000],
+	]);
+	const order = createAdmissionOrder(github, {
+		expectedMs: (_repository, jobId) => expected.get(jobId) ?? 0,
+	});
+	const shard = (jobId: number, index: number) => ({
+		...ref(1, jobId),
+		jobName: `Main workspace test shard ${index}`,
+	});
+	expect(
+		(
+			await order([shard(100, 2), shard(101, 0), shard(102, 1)], (item) => item)
+		).map((item) => item.jobId),
+	).toEqual([101, 102, 100]);
+});
+
 it("admits a run's longest expected job first, inside the rank and run order", async () => {
 	const { github } = transport(
 		new Map([
@@ -136,12 +239,11 @@ it("admits a run's longest expected job first, inside the rank and run order", a
 		ref(1, 13),
 		ref(1, 12),
 	];
-	// Run 1 is older than run 2, and both are trunk runs ahead of the PR run,
-	// however long their jobs are. Inside run 1, the 85 s job leads and the
-	// job with no history (14) goes last.
+	// Newer push run 2 leads the older run 1; both outrank the pull request.
+	// Inside run 1, the 85 s job leads and the job with no history (14) goes last.
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
-	).toEqual([12, 13, 11, 14, 21, 31]);
+	).toEqual([21, 12, 13, 11, 14, 31]);
 });
 
 it("puts a run with no start time behind started runs of the same rank", async () => {
@@ -184,6 +286,56 @@ it("keeps a seen trunk rank when the next lookup fails", async () => {
 	).toEqual([1, 2]);
 });
 
+it("does not sort merge_group jobs by run started time before queue positions exist", async () => {
+	const runs = new Map([
+		[1, { event: "merge_group", startedAt: "2026-10-26T14:00:00Z" }],
+		[2, { event: "merge_group", startedAt: "2026-10-26T11:00:00Z" }],
+	]);
+	const { github } = transport(runs);
+	const order = createAdmissionOrder(github, undefined, () => undefined);
+	expect(
+		(await order([ref(1), ref(2)], (item) => item)).map((item) => item.runId),
+	).toEqual([1, 2]);
+});
+
+it("orders merge_group jobs by merge queue position and deprioritizes stale heads", async () => {
+	const runs = new Map([
+		[10, { event: "merge_group", startedAt: "2026-10-26T14:00:00Z" }],
+		[20, { event: "merge_group", startedAt: "2026-10-26T12:00:00Z" }],
+		[30, { event: "merge_group", startedAt: "2026-10-26T11:00:00Z" }],
+	]);
+	const { github } = transport(runs);
+	const order = createAdmissionOrder(github, undefined, () => ({
+		byHeadSha: new Map([
+			["a".repeat(40), 1],
+			["b".repeat(40), 2],
+		]),
+		fetchedAtMs: Date.now(),
+	}));
+	order.prime({
+		runId: 10,
+		event: "merge_group",
+		runStartedAt: "2026-10-26T14:00:00Z",
+		headSha: "a".repeat(40),
+	});
+	order.prime({
+		runId: 20,
+		event: "merge_group",
+		runStartedAt: "2026-10-26T12:00:00Z",
+		headSha: "b".repeat(40),
+	});
+	order.prime({
+		runId: 30,
+		event: "merge_group",
+		runStartedAt: "2026-10-26T11:00:00Z",
+		headSha: "c".repeat(40),
+	});
+	const items = [ref(30), ref(10, 101), ref(20), ref(10, 100)];
+	expect(
+		(await order(items, (item) => item)).map((item) => item.jobId),
+	).toEqual([100, 101, 20, 30]);
+});
+
 it("uses primed run data without another GitHub request", async () => {
 	const { github, calls } = transport(
 		new Map([
@@ -200,4 +352,93 @@ it("uses primed run data without another GitHub request", async () => {
 		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
 	).toEqual([1, 2]);
 	expect(calls).toEqual([2]);
+});
+
+it("admits workflow_run release jobs ahead of pull requests", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+			[2, { event: "pull_request", startedAt: "2026-10-26T11:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const release = {
+		...ref(1, 50),
+		jobName: "Build all OCI images on tag (gate publish)",
+	};
+	expect(
+		(await order([ref(2), release], (item) => item)).map((item) => item.jobId),
+	).toEqual([50, 2]);
+	expect(await order.rank(release)).toBe(TRUNK_RANK);
+});
+
+it("orders main-train release phases within one workflow_run", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const job = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		mainTrainReleasePhase("Build all OCI images on tag (gate publish)"),
+	).toBe(2);
+	expect(
+		mainTrainReleasePhase(
+			"Build all OCI images on tag (gate publish) (hobo-ci-serve)",
+		),
+	).toBe(2);
+	expect(
+		isMainTrunkFleetDeferJob(
+			"Build all OCI images on tag (gate publish)",
+			"workflow_run",
+		),
+	).toBe(true);
+	expect(
+		isMainTrunkFleetDeferJob(
+			"Build all OCI images on tag (gate publish) (hobo-ci-serve)",
+			"workflow_run",
+		),
+	).toBe(true);
+	expect(
+		(
+			await order(
+				[
+					job(30, "Publish GHCR images (tagged release)"),
+					job(10, "Main train release gate (nbgv)"),
+					job(20, "Release contract + affected OCI images"),
+					job(25, "Build all OCI images on tag (gate publish)"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([10, 20, 25, 30]);
+});
+
+it("orders release matrix legs with their non-matrix phase", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const job = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					job(30, "Publish GHCR images (tagged release) (hobo-cli)"),
+					job(25, "Build all OCI images on tag (gate publish) (hobo-mcp)"),
+					job(20, "Release contract + affected OCI images"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([20, 25, 30]);
 });

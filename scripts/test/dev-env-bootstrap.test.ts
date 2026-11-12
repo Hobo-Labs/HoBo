@@ -2,8 +2,8 @@
  * Dev environment bootstrap contract: mise.toml, bootstrap script, and optional Docker smoke.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { REPO_ROOT } from "./support/pins-support.ts";

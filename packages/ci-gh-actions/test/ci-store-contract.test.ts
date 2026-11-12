@@ -1,6 +1,5 @@
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -11,7 +10,6 @@ import {
 	type Configuration,
 	ConfigurationSchema,
 	ConnectionSchema,
-	EVENT_SCAN_SPAN,
 	type EventCursor,
 	eventJob,
 	type Job,
@@ -20,14 +18,7 @@ import {
 	OfferSchema,
 	type SequencedCiEvent,
 } from "@hobo/ci";
-import { PostgresCiStore } from "@hobo/ci/postgres";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
-import pg from "pg";
-import {
-	GenericContainer,
-	type StartedTestContainer,
-	Wait,
-} from "testcontainers";
 import {
 	afterAll,
 	beforeAll,
@@ -37,17 +28,12 @@ import {
 	it,
 	vi,
 } from "vitest";
-import {
-	parsePinnedImage,
-	pinnedContainerImages,
-} from "../contracts/pinned-container-images.js";
 import type { HostedInboxStore } from "../src/hosted-runtime.js";
 import {
 	createIsolatedContainerController,
 	type IsolatedWorkerStore,
 } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
-import { startContainer } from "./fixtures/start-container.js";
 
 /** One behavioural contract for every engine behind the box worker and hosted runtime. */
 type ContractStore = HostedInboxStore &
@@ -624,6 +610,90 @@ function storeContract(
 			expect(stranger.events).toEqual([]);
 		});
 
+		it("reads exactly an account's events, whatever another account journals", async () => {
+			// Two of the account's events with a neighbour's between and after
+			// them, and the partition's own (configuration) before them all.
+			await store.putControlRecord("mine-1", "hobo-labs", "{}", NOW);
+			for (let index = 0; index < 25; index += 1)
+				await store.putControlRecord(`theirs-${index}`, "other-co", "{}", NOW);
+			await store.putControlRecord("mine-2", "hobo-labs", "{}", NOW);
+			await store.putControlRecord("theirs-last", "other-co", "{}", NOW);
+			const head = await store.journalHead();
+
+			// Everything of the account's in one read, and no "more": the only
+			// bound is the page.
+			const all = await store.eventsSince({
+				accountId: "hobo-labs",
+				after: 0,
+				limit: 10,
+			});
+			expect(all.events.map((entry) => entry.event?.accountId)).toEqual([
+				"hobo-labs",
+				"hobo-labs",
+			]);
+			expect(all.more).toBe(false);
+			expect(all.truncated).toBe(false);
+			// The cursor is the account's own last event, not the journal's end.
+			const [first, second] = all.events.map((entry) => entry.seq);
+			expect(all.cursor).toBe(second);
+			expect(all.cursor).toBeLessThan(head);
+
+			// A page of one is cut by its size and resumes after its event.
+			const page = await store.eventsSince({
+				accountId: "hobo-labs",
+				after: 0,
+				limit: 1,
+			});
+			expect(page.events.map((entry) => entry.seq)).toEqual([first]);
+			expect(page.cursor).toBe(first);
+			expect(page.more).toBe(true);
+			const rest = await store.eventsSince({
+				accountId: "hobo-labs",
+				after: page.cursor,
+				limit: 1,
+			});
+			expect(rest.events.map((entry) => entry.seq)).toEqual([second]);
+			expect(rest.more).toBe(false);
+
+			// The newest read holds both; asked for one, it says an older one
+			// is left, and hands back the same cursor either way.
+			const newest = await store.eventsSince({
+				accountId: "hobo-labs",
+				limit: 10,
+			});
+			expect(newest.events).toEqual(all.events);
+			expect(newest.truncated).toBe(false);
+			expect(newest.cursor).toBe(second);
+			const one = await store.eventsSince({ accountId: "hobo-labs", limit: 1 });
+			expect(one.events.map((entry) => entry.seq)).toEqual([second]);
+			expect(one.truncated).toBe(true);
+			expect(one.cursor).toBe(second);
+
+			// While only the neighbour journals, every read of this account
+			// returns nothing new and the cursor it was given.
+			await store.putControlRecord("theirs-more", "other-co", "{}", LATER);
+			expect(await store.journalHead()).toBeGreaterThan(head);
+			const idle = await store.eventsSince({
+				accountId: "hobo-labs",
+				after: all.cursor,
+				limit: 10,
+			});
+			expect(idle.events).toEqual([]);
+			expect(idle.cursor).toBe(all.cursor);
+			expect(idle.more).toBe(false);
+			expect(
+				(await store.eventsSince({ accountId: "hobo-labs", limit: 10 })).cursor,
+			).toBe(all.cursor);
+			// An account with nothing in the journal reads on from its start.
+			const nobody = await store.eventsSince({
+				accountId: "nobody",
+				limit: 10,
+			});
+			expect(nobody.events).toEqual([]);
+			expect(nobody.cursor).toBe(0);
+			expect(nobody.truncated).toBe(false);
+		});
+
 		it("binds the runner's job and fences it from re-reservation", async () => {
 			const account = configuration().accounts[0];
 			if (!account) throw new Error("fixture account");
@@ -640,6 +710,28 @@ function storeContract(
 			expect(await store.assignedJob(job(1))).toBe(undefined);
 			await store.queue(job(1), LATER, revision);
 			expect(await store.pendingJobs()).toEqual([]);
+		});
+
+		it("withdraws isolated demand without re-queueing when a foreign runner wins", async () => {
+			const account = configuration().accounts[0];
+			if (!account) throw new Error("fixture account");
+			await store.queue(job(1), NOW, revision);
+			const lease = await store.reserve(account, job(1), NOW, revision);
+			if (!lease) throw new Error("reservation");
+			await store.transition(
+				lease.id,
+				["reserved"],
+				(entry) => {
+					entry.state = "dispatching";
+				},
+				"ci.DispatchRequested",
+				NOW,
+				revision,
+			);
+			expect(await store.withdrawQueuedJob(job(1), NOW, revision)).toBe(true);
+			expect((await store.get(lease.id))?.state).toBe("cancelled");
+			expect(await store.pendingJobs()).toEqual([]);
+			expect(await store.activeLeases()).toEqual([]);
 		});
 
 		it("requeues aborted isolated leases and settles box leases", async () => {
@@ -774,243 +866,43 @@ it("reads a lease's events on SQLite through the lease index, never by walking t
 	}
 });
 
-function dockerAvailable(): boolean {
-	if (process.env.HOBO_FUZZ_DOCKER === "0") return false;
-	if (!existsSync("/var/run/docker.sock")) return false;
-	return spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
-}
-
-// A real server, never a shared or production database. Without a Docker
-// engine the Postgres half is skipped; HOBO_CI_TEST_POSTGRES names an
-// already-running disposable server instead of starting a container.
-const externalPostgres = process.env.HOBO_CI_TEST_POSTGRES;
-const postgresAvailable = !!externalPostgres || dockerAvailable();
-let container: StartedTestContainer | undefined;
-let pool: pg.Pool | undefined;
-
-describe.runIf(postgresAvailable)("Postgres engine", () => {
-	beforeAll(async () => {
-		let connectionString = externalPostgres;
-		if (!connectionString) {
-			const { repository, digest } = parsePinnedImage(
-				pinnedContainerImages.postgres17Alpine,
-			);
-			const password = randomUUID();
-			container = await startContainer(() =>
-				new GenericContainer(`${repository}@${digest}`)
-					.withEnvironment({
-						POSTGRES_DB: "contract",
-						POSTGRES_USER: "contract",
-						POSTGRES_PASSWORD: password,
-					})
-					.withWaitStrategy(
-						Wait.forLogMessage(
-							/database system is ready to accept connections/,
-							2,
-						),
-					)
-					.withExposedPorts(5432),
-			);
-			connectionString = `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`;
-		}
-		pool = new pg.Pool({ connectionString, max: 4 });
-	}, 180_000);
-	afterAll(async () => {
-		await pool?.end();
-		await container?.stop();
-	});
-
-	storeContract("PostgresCiStore", async () => {
-		if (!pool) throw new Error("postgres pool unavailable");
-		return {
-			store: new PostgresCiStore(pool, `contract-${randomUUID()}`),
-			close: async () => undefined,
-		};
-	});
-
-	it("lets an observer read while a mutation holds the partition lock", async () => {
-		if (!pool) throw new Error("postgres pool unavailable");
-		const partition = `contract-${randomUUID()}`;
-		const store = new PostgresCiStore(pool, partition);
-		const { revision } = await store.configure(configuration(), 0, NOW);
-		const account = configuration().accounts[0];
-		if (!account) throw new Error("fixture account");
-		await store.queue(job(2), NOW, revision);
-		const lease = await store.reserve(account, job(1), NOW, revision);
-		if (!lease) throw new Error("reservation");
-		// A long mutation: the partition's lock row is held, as every write
-		// and every ordinary read of the store takes it.
-		const writer = await pool.connect();
-		try {
-			await writer.query("BEGIN");
-			await writer.query(
-				"SELECT 1 FROM hobo_ci_partitions WHERE id=$1 FOR UPDATE",
-				[partition],
-			);
-			let queued = false;
-			const behindTheLock = store.get(lease.id).then(() => {
-				queued = true;
-			});
-			const observer = store.observer();
-			expect((await observer.get(lease.id))?.id).toBe(lease.id);
-			expect((await observer.configuration())?.revision).toBe(revision);
-			expect(await observer.journalHead()).toBeGreaterThan(0);
-			expect(
-				(await observer.accountLeases("hobo-labs")).map((entry) => entry.id),
-			).toEqual([lease.id]);
-			expect((await observer.pendingJobs()).map((entry) => entry.id)).toEqual([
-				2,
-			]);
-			expect(await observer.quarantinedWebhooks("hobo-labs", revision)).toEqual(
-				[],
-			);
-			await expect(
-				observer.quarantinedWebhooks("hobo-labs", revision + 1),
-			).rejects.toThrow(/configuration revision conflict/);
-			expect(
-				(
-					await observer.eventsSince({ accountId: "hobo-labs", limit: 10 })
-				).events.map((entry) => entry.event?.type),
-			).toEqual(["ci.JobQueued", "ci.LeaseReserved"]);
-			expect(
-				(
-					await observer.leaseEvents({
-						accountId: "hobo-labs",
-						leaseId: lease.id,
-						limit: 10,
-					})
-				).map((entry) => entry.event?.type),
-			).toEqual(["ci.LeaseReserved"]);
-			// The store's own read is still waiting for the lock.
-			expect(queued).toBe(false);
-			await writer.query("COMMIT");
-			await behindTheLock;
-			expect(queued).toBe(true);
-		} finally {
-			await writer.query("ROLLBACK").catch(() => undefined);
-			writer.release();
-		}
-	});
-
-	it("reads the configuration no more often to record who owns a job", async () => {
-		if (!pool) throw new Error("postgres pool unavailable");
-		const real = pool;
-		const statements: string[] = [];
-		// The store's pool, with each statement a transaction runs noted.
-		const counting = {
-			query: (text: string, values?: readonly string[]) =>
-				real.query(text, values ? [...values] : undefined),
-			connect: async () => {
-				const client = await real.connect();
-				return {
-					query: (text: string, values?: readonly (string | number)[]) => {
-						statements.push(text);
-						return client.query(text, values ? [...values] : undefined);
-					},
-					release: () => client.release(),
-				};
-			},
-		};
-		const store = new PostgresCiStore(
-			// SAFETY: the store uses only `query` and `connect` of its pool, and
-			// only `query` and `release` of a client; both are passed through.
-			counting as pg.Pool,
-			`contract-${randomUUID()}`,
-		);
-		const { revision } = await store.configure(configuration(), 0, NOW);
-		const reads = async (run: () => Promise<void>) => {
-			statements.length = 0;
-			await run();
-			return statements.filter((text) =>
-				text.includes("FROM hobo_ci_configuration"),
-			).length;
-		};
-		// Queueing reads it to check the revision and to find the binding, as
-		// it did before job events named their owner: not once more for that.
-		expect(await reads(() => store.queue(job(1), NOW, revision))).toBe(2);
-		const completed = job(1, "completed");
-		expect(await reads(() => store.observe(completed, LATER, revision))).toBe(
-			1,
-		);
-		// A job whose queue deadline has passed, expired before it was queued.
-		const overdue = job(3);
-		overdue.queueDeadlineAt = NOW;
-		expect(
-			await reads(async () => {
-				expect(await store.expireQueued(overdue, LATER, revision)).toBe(true);
-			}),
-		).toBe(1);
-		expect(
-			(
-				await store.eventsSince({ accountId: "hobo-labs", after: 0, limit: 10 })
-			).events.map((entry) => [entry.event?.type, entry.event?.accountId]),
-		).toEqual([
-			["ci.JobQueued", "hobo-labs"],
-			["ci.JobCompleted", "hobo-labs"],
-			["ci.JobExpired", "hobo-labs"],
-		]);
-	});
-
-	it("says when a read stopped short of the journal's end, whoever filled it", async () => {
-		if (!pool) throw new Error("postgres pool unavailable");
-		const partition = `contract-${randomUUID()}`;
-		const store = new PostgresCiStore(pool, partition);
-		await store.configuration();
-		// Every partition of the table shares one sequence. Another partition's
-		// rows move this one's positions far apart; they are not this journal's
-		// length, and a read from its start must not crawl through them.
-		await pool.query(
-			`INSERT INTO hobo_ci_events(partition_id,body)
-			 SELECT $1, '{"type":"ci.ControlRecordUpdated","accountId":"hobo-labs","at":"${NOW}"}'
-			 FROM generate_series(1,$2::int)`,
-			[`${partition}-other`, 3 * EVENT_SCAN_SPAN],
-		);
+it("reads an account's events on SQLite through the account index, never by walking the journal", async () => {
+	const path = join(sqliteRoot, `${randomUUID()}.sqlite`);
+	const store = new SqliteCiStore(path);
+	const other = new DatabaseSync(path);
+	try {
 		await store.putControlRecord("first", "hobo-labs", "{}", NOW);
-		const start = await store.eventsSince({
-			accountId: "hobo-labs",
-			after: 0,
-			limit: 10,
-		});
-		expect(start.events.length).toBe(1);
-		expect(start.more).toBe(false);
-		expect(
-			(await store.eventsSince({ accountId: "hobo-labs", limit: 10 }))
-				.truncated,
-		).toBe(false);
-		// A neighbour's rows in this partition: more than two scans cover.
-		await pool.query(
-			`INSERT INTO hobo_ci_events(partition_id,body)
-			 SELECT $1, '{"type":"ci.ControlRecordUpdated","accountId":"other-co","at":"${NOW}"}'
-			 FROM generate_series(1,$2::int)`,
-			[partition, 2 * EVENT_SCAN_SPAN + 500],
-		);
-		await store.putControlRecord("last", "hobo-labs", "{}", NOW);
-		const seen: number[] = [];
-		const cut: boolean[] = [];
-		let after = 0;
-		for (;;) {
-			const page = await store.eventsSince({
-				accountId: "hobo-labs",
-				after,
-				limit: 10,
-			});
-			seen.push(...page.events.map((entry) => entry.seq));
-			cut.push(page.more);
-			expect(page.cursor).toBeGreaterThan(after);
-			after = page.cursor;
-			if (!page.more) break;
+		const mine =
+			"SELECT seq, body FROM events INDEXED BY events_account_seq WHERE json_extract(body,'$.accountId')=?";
+		// SQLite's own plan for the newest read and for the cursor read: a
+		// search of the account index, already in journal order.
+		for (const [statement, values] of [
+			[`${mine} ORDER BY seq DESC LIMIT ?`, ["hobo-labs", 11]],
+			[`${mine} AND seq>? ORDER BY seq LIMIT ?`, ["hobo-labs", 0, 11]],
+		] as const) {
+			const plan = other
+				.prepare(`EXPLAIN QUERY PLAN ${statement}`)
+				.all(...values)
+				.map((step) => String(step.detail))
+				.join("\n");
+			expect(plan).toMatch(/SEARCH events USING INDEX events_account_seq/);
+			expect(plan).not.toMatch(/SCAN events|TEMP B-TREE/);
 		}
-		// Both of the account's events, with at least one empty scan between
-		// them that still said "more".
-		expect(seen.length).toBe(2);
-		expect(cut.length).toBeGreaterThanOrEqual(3);
-		expect(cut.at(-1)).toBe(false);
-		const newest = await store.eventsSince({
-			accountId: "hobo-labs",
-			limit: 10,
-		});
-		expect(newest.events.map((entry) => entry.seq)).toEqual([seen[1]]);
-		expect(newest.truncated).toBe(true);
-		expect(newest.cursor).toBe(after);
-	});
+		expect(
+			(await store.eventsSince({ accountId: "hobo-labs", after: 0, limit: 10 }))
+				.events.length,
+		).toBe(1);
+		// Without the index the read fails. It does not quietly fall back to a
+		// walk of the whole journal, which would stop the host while it ran.
+		other.exec("DROP INDEX events_account_seq");
+		await expect(
+			store.eventsSince({ accountId: "hobo-labs", after: 0, limit: 10 }),
+		).rejects.toThrow(/no such index/);
+		await expect(
+			store.eventsSince({ accountId: "hobo-labs", limit: 10 }),
+		).rejects.toThrow(/no such index/);
+	} finally {
+		other.close();
+		store.close();
+	}
 });

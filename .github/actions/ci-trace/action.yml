@@ -13,11 +13,29 @@ runs:
   using: composite
   steps:
     - name: Export OTel trace
+      id: export
       shell: bash
       run: |
         set -euo pipefail
-        node --experimental-strip-types --no-warnings scripts/ci/ci-trace.mts ci-traces "${GITHUB_JOB}"
+        trace_script="scripts/ci/ci-trace.mts"
+        if [[ ! -f "$trace_script" ]]; then
+          echo "::notice title=CI trace skipped::${trace_script} is absent (checkout or bootstrap did not populate the workspace)."
+          echo "upload=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        node --experimental-strip-types --no-warnings "$trace_script" ci-traces "${GITHUB_JOB}"
+        if [[ -f ci-traces/.skip-upload ]]; then
+          echo "upload=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+        fi
     - name: Upload trace artifact
+      if: steps.export.outputs.upload == 'true'
+      # The trace is diagnostics. When GitHub's artifact service is down it answers
+      # with an HTML page, the upload retries for ten minutes and fails, and that
+      # failed the required Main full gate after every gate in it had passed (run
+      # 43094500900). A missing trace must never block main or a release.
+      continue-on-error: true
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: ci-trace-${{ github.job }}-${{ inputs.disambiguator }}-${{ github.run_attempt }}

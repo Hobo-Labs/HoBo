@@ -45,6 +45,8 @@ sandboxes/
 .tools/
 # Local `mise oci build` output (see packages/ci-gh-actions/deploy/ci-runner/build.sh)
 packages/ci-gh-actions/deploy/ci-runner/oci-layout/
+packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/*
+!packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/.gitkeep
 # Local mise install cache (commit turbo lock sidecars under .mise/locks/)
 .mise/*
 !.mise/locks/
@@ -53,6 +55,10 @@ packages/ci-gh-actions/deploy/ci-runner/oci-layout/
 .hobo/*
 !.hobo/dagger.json
 !.hobo/ci.json
+!.hobo/ci-attestors.json
+# Turbo's --anon-profile output from the workspace-test commands (CI and pnpm ci:attest).
+/turbo-profile.json
+/turbo-profile.json.md
 .hobo/ci.local.json
 # OS-released codegen/build lock database, sidecars and interrupted staging trees.
 .hobo-codegen.lock

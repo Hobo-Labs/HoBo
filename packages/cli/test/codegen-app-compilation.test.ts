@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { writeFixtureProject } from "../src/codegen/fixture.js";
 import { selectProjectCodegenEngine } from "../src/codegen/project-engine.js";
 import { runCodegen } from "../src/codegen/run-codegen.js";
@@ -21,7 +21,93 @@ import {
 } from "../src/codegen/types.js";
 import { createHoboCli } from "../src/index.js";
 
+const compilerOptions: ts.CompilerOptions = {
+	noEmit: true,
+	strict: true,
+	types: ["node"],
+	module: ts.ModuleKind.NodeNext,
+	moduleResolution: ts.ModuleResolutionKind.NodeNext,
+	target: ts.ScriptTarget.ES2022,
+};
+
+// Every case compiles against the same TypeScript libs, @types/node and built
+// @hobo/core and @hobo/runtime declarations (~320 files); only the generated
+// project differs. Parse those once for the file, not once per case.
+const dependencySources = new Map<string, ts.SourceFile>();
+
+/**
+ * The compiler's diagnostics for the generated files. The dependencies'
+ * declarations are type-checked by their own builds. Checking all of them
+ * again, in every case, cost 2-5 s of each case's 10 s budget on a quiet
+ * machine and timed cases out when the pre-commit hook runs every package's
+ * tests at once.
+ */
+function generatedDiagnostics(
+	projectRoot: string,
+	files: readonly string[],
+): string[] {
+	const host = ts.createCompilerHost(compilerOptions);
+	const read = host.getSourceFile.bind(host);
+	host.getSourceFile = (fileName, language, onError, shouldCreate) => {
+		if (fileName.startsWith(projectRoot))
+			return read(fileName, language, onError, shouldCreate);
+		const cached = dependencySources.get(fileName);
+		if (cached) return cached;
+		const parsed = read(fileName, language, onError, shouldCreate);
+		if (parsed) dependencySources.set(fileName, parsed);
+		return parsed;
+	};
+	const program = ts.createProgram(files, compilerOptions, host);
+	return files.flatMap((file) => {
+		const source = program.getSourceFile(file);
+		if (!source) throw new Error(`${file} is not in the program`);
+		return ts
+			.getPreEmitDiagnostics(program, source)
+			.map((diagnostic) =>
+				ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
+			);
+	});
+}
+
 describe("generated app declarations compile", () => {
+	// The compiled projects live under one directory whose node_modules links
+	// the packages their generated files import.
+	let projects = "";
+	beforeAll(async () => {
+		projects = await mkdtemp(join(tmpdir(), "hobo-codegen-compile-"));
+		const repo = fileURLToPath(new URL("../../../", import.meta.url));
+		await mkdir(join(projects, "node_modules/@hobo"), { recursive: true });
+		for (const name of ["core", "runtime"])
+			await symlink(
+				join(repo, "packages", name),
+				join(projects, "node_modules/@hobo", name),
+				"dir",
+			);
+		await symlink(
+			join(repo, "node_modules/@types"),
+			join(projects, "node_modules/@types"),
+			"dir",
+		);
+		// Work the first case would otherwise pay inside its own budget, once
+		// per worker: codegen loads the training stack (~1,300 modules) on its
+		// first "use training" scan, and the compiler parses the declarations
+		// every case shares.
+		await import("ts-autocode-training");
+		const dependencies = join(projects, "dependencies.ts");
+		await writeFile(
+			dependencies,
+			[
+				'import type * as core from "@hobo/core";',
+				'import type * as runtime from "@hobo/runtime";',
+				"export type Dependencies = [typeof core, typeof runtime];",
+				"",
+			].join("\n"),
+		);
+		expect(generatedDiagnostics(projects, [dependencies])).toEqual([]);
+	});
+	afterAll(async () => {
+		if (projects) await rm(projects, { recursive: true, force: true });
+	});
 	it.each([
 		{ complex: false, empty: false },
 		{ complex: true, empty: false },
@@ -30,23 +116,10 @@ describe("generated app declarations compile", () => {
 		complex,
 		empty,
 	}) => {
-		const root = await mkdtemp(join(tmpdir(), "hobo-codegen-compile-"));
+		const root = await mkdtemp(join(projects, "project-"));
 		try {
 			await writeFixtureProject(root);
 			await writeFile(join(root, "package.json"), '{"type":"module"}');
-			const repo = fileURLToPath(new URL("../../../", import.meta.url));
-			await mkdir(join(root, "node_modules/@hobo"), { recursive: true });
-			for (const name of ["core", "runtime"])
-				await symlink(
-					join(repo, "packages", name),
-					join(root, "node_modules/@hobo", name),
-					"dir",
-				);
-			await symlink(
-				join(repo, "node_modules/@types"),
-				join(root, "node_modules/@types"),
-				"dir",
-			);
 			if (complex) {
 				await writeFile(
 					join(root, ".hobo/sources/zod/resources.json"),
@@ -103,21 +176,7 @@ describe("generated app declarations compile", () => {
 			const declarations = written.written
 				.filter((path) => path.endsWith(".ts"))
 				.map((path) => join(root, path));
-			const program = ts.createProgram(declarations, {
-				noEmit: true,
-				strict: true,
-				types: ["node"],
-				module: ts.ModuleKind.NodeNext,
-				moduleResolution: ts.ModuleResolutionKind.NodeNext,
-				target: ts.ScriptTarget.ES2022,
-			});
-			expect(
-				ts
-					.getPreEmitDiagnostics(program)
-					.map((diagnostic) =>
-						ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
-					),
-			).toEqual([]);
+			expect(generatedDiagnostics(root, declarations)).toEqual([]);
 			await expect(
 				runCodegen({ projectRoot: root, check: true }),
 			).resolves.toMatchObject({ mode: "check" });
