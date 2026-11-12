@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
 // Hosting-transition realizer (adapters/hosting-transition.ts): versions go
 // through the hosting-transition coordinator; convergence only from SETTLED
 // with the destination owning writes; restore/block are typed refusals.

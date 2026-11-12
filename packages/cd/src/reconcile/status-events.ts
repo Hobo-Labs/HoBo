@@ -38,6 +38,50 @@ export type StatusEventType =
 	| typeof CD_EVENTS.CampDeparted
 	| (typeof RECONCILE_EVENTS)[keyof typeof RECONCILE_EVENTS];
 
+/** Body of a reconcile status event (`#ReconcileStatusEvent` in reconcile.cue). */
+export type StatusEventDrift = Readonly<{
+	resource: string;
+	driftClass: string;
+	fields: readonly string[];
+	outputsHash: string;
+}>;
+
+export type StatusEventBody = Readonly<{
+	schema: typeof RECONCILE_STATUS_SCHEMA;
+	observation: JsonObject;
+	drift?: readonly StatusEventDrift[];
+	orphans?: readonly string[];
+}>;
+
+function bodyFor(
+	type: StatusEventType,
+	observation: ReconcileObservationRecord,
+	body: JsonObject,
+): StatusEventBody {
+	const base = { schema: RECONCILE_STATUS_SCHEMA, observation: body };
+	if (
+		type === RECONCILE_EVENTS.DriftDetected ||
+		type === RECONCILE_EVENTS.DiffProposed
+	)
+		return {
+			...base,
+			drift: driftFindings(observation).map((f) => ({
+				resource: f.resource,
+				driftClass: f.driftClass,
+				fields: [...f.fields],
+				outputsHash: f.outputsHash,
+			})),
+		};
+	if (type === CD_EVENTS.CampDeparted)
+		return {
+			...base,
+			orphans: observation.reasons
+				.filter((r) => r.code === "departure-orphaned")
+				.map((r) => r.subject),
+		};
+	return base;
+}
+
 export function observationJson(
 	observation: ReconcileObservationRecord,
 ): JsonObject {
@@ -76,26 +120,7 @@ export function statusEventsFor(
 		types.push(CD_EVENTS.ReconcileBlocked);
 	return Object.freeze(
 		types.map((type) => {
-			const data: { [key: string]: JsonObject[string] } = {
-				schema: RECONCILE_STATUS_SCHEMA,
-				observation: body,
-			};
-			if (
-				type === RECONCILE_EVENTS.DriftDetected ||
-				type === RECONCILE_EVENTS.DiffProposed
-			) {
-				data.drift = driftFindings(observation).map((f) => ({
-					resource: f.resource,
-					driftClass: f.driftClass,
-					fields: [...f.fields],
-					outputsHash: f.outputsHash,
-				}));
-			}
-			if (type === CD_EVENTS.CampDeparted) {
-				data.orphans = observation.reasons
-					.filter((r) => r.code === "departure-orphaned")
-					.map((r) => r.subject);
-			}
+			const data = bodyFor(type, observation, body);
 			return {
 				type,
 				data,

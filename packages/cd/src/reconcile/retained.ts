@@ -47,12 +47,17 @@ export function tableRetained(kind: string): readonly string[] {
 }
 
 /** Parse `hobo.cd/retain` from a realization parameter: "a,b" or ["a","b"]. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: parse boundary for an untyped realizationParameters JSON value.
 export function parseRetainProperty(value: unknown): readonly string[] {
 	const raw =
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the property is either a comma list or a JSON string array.
 		typeof value === "string"
 			? value.split(",")
 			: Array.isArray(value)
-				? value.filter((item): item is string => typeof item === "string")
+				? value.filter(
+						// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: keep only string entries of the JSON array.
+						(item): item is string => typeof item === "string",
+					)
 				: [];
 	return Object.freeze(
 		[

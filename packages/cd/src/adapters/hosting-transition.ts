@@ -76,42 +76,52 @@ function isRead(action: HostingTransitionAction | undefined): boolean {
 	);
 }
 
+/** Reconcile status and reasons for one coordinator state. */
+export type TransitionVerdict = Readonly<{
+	status: ReconcileStatus;
+	reasons: readonly ReasonRecord[];
+}>;
+
+const CONVERGING: TransitionVerdict = Object.freeze({
+	status: ReconcileStatus.CONVERGING,
+	reasons: Object.freeze([]),
+});
+const CONVERGED: TransitionVerdict = Object.freeze({
+	status: ReconcileStatus.CONVERGED,
+	reasons: Object.freeze([]),
+});
+
+function blockedVerdict(message: string, subject: string): TransitionVerdict {
+	return Object.freeze({
+		status: ReconcileStatus.BLOCKED,
+		reasons: Object.freeze([reason("realize-blocked", message, subject)]),
+	});
+}
+
 /** Map a coordinator state to reconcile status and reasons. */
 export function transitionStatus(
 	state: HostingTransitionState | undefined,
-): Readonly<{ status: ReconcileStatus; reasons: readonly ReasonRecord[] }> {
-	if (!state) return { status: ReconcileStatus.CONVERGING, reasons: [] };
+): TransitionVerdict {
+	if (!state) return CONVERGING;
 	const subject = state.plan?.transitionId ?? "";
 	if (state.phase === HostingTransitionPhase.SETTLED) {
 		if (state.restorationConfirmed || !state.destinationOwnsWrites)
-			return {
-				status: ReconcileStatus.BLOCKED,
-				reasons: [
-					reason(
-						"realize-blocked",
-						"hosting transition settled back on its source; the new version did not take effect",
-						subject,
-					),
-				],
-			};
-		return { status: ReconcileStatus.CONVERGED, reasons: [] };
+			return blockedVerdict(
+				"hosting transition settled back on its source; the new version did not take effect",
+				subject,
+			);
+		return CONVERGED;
 	}
 	if (
 		state.phase === HostingTransitionPhase.BLOCKED ||
 		state.phase === HostingTransitionPhase.RESTORED
 	)
-		return {
-			status: ReconcileStatus.BLOCKED,
-			reasons: [
-				reason(
-					"realize-blocked",
-					state.blockedReason ||
-						`hosting transition ${HostingTransitionPhase[state.phase]}`,
-					subject,
-				),
-			],
-		};
-	return { status: ReconcileStatus.CONVERGING, reasons: [] };
+		return blockedVerdict(
+			state.blockedReason ||
+				`hosting transition ${HostingTransitionPhase[state.phase]}`,
+			subject,
+		);
+	return CONVERGING;
 }
 
 function observationFor(
@@ -120,9 +130,7 @@ function observationFor(
 	state: HostingTransitionState | undefined,
 	extra: readonly ReasonRecord[] = [],
 ): ReconcileObservationRecord {
-	const mapped = plan
-		? transitionStatus(state)
-		: { status: ReconcileStatus.CONVERGED, reasons: [] };
+	const mapped = plan ? transitionStatus(state) : CONVERGED;
 	return create(ReconcileObservationRecordSchema, {
 		campId: input.campId,
 		setId:

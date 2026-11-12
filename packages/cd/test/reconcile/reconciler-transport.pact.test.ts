@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
 // Provider verification of the reconciler ↔ transport boundary against the
 // consumer pact beside it. The in-process transport is verified here; the
 // HTTP transport (./agent, WP11) verifies the same pact over the feed.

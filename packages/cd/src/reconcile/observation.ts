@@ -38,9 +38,8 @@ function digest(text: string): string {
 
 /** Replace a secret-looking value with its secretRef; undefined when clean. */
 export function redactSecret(key: string, value: string): string | undefined {
-	const scanned = toSecretFreeOutputs({ [key]: value }).outputs[key];
-	if (scanned === undefined || typeof scanned === "string") return undefined;
-	return scanned.ref;
+	// A string value only produces a ref when it was redacted as secret.
+	return toSecretFreeOutputs({ [key]: value }).secretRefs[0];
 }
 
 export type AttributeTrim = Readonly<{

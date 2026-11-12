@@ -82,7 +82,8 @@ type LedgerEntry = Readonly<{
 	hash: string;
 	deploymentId: string;
 	kind: string;
-	plan: JsonObject;
+	/** The ResourcePlan as realized (manifest-plan wire form). */
+	plan: ResourcePlan;
 }>;
 
 type Ledger = Readonly<{
@@ -228,7 +229,7 @@ export function createOrchestratorRealizer(
 	async function writeLedger(
 		input: RealizeInput,
 		previous: Ledger,
-		resources: Record<string, LedgerEntry>,
+		resources: ReadonlyMap<string, LedgerEntry>,
 		order: readonly string[],
 		actor: PrincipalRef,
 	): Promise<void> {
@@ -237,7 +238,11 @@ export function createOrchestratorRealizer(
 			[
 				{
 					type: ORCHESTRATOR_LEDGER.realized,
-					data: { setId: input.desired.setId, resources, order: [...order] },
+					data: {
+						setId: input.desired.setId,
+						resources: Object.fromEntries(resources),
+						order: [...order],
+					},
 					meta: {
 						idempotencyKey: `${input.campId}:${input.desired.setId}:${input.fence}`,
 					},
@@ -310,8 +315,7 @@ export function createOrchestratorRealizer(
 			if (!entry) continue;
 			let driftKind = "";
 			if (d.refresh) {
-				// SAFETY: the ledger stores the ResourcePlan JSON it realized.
-				const plan = entry.plan as unknown as ResourcePlan;
+				const plan = entry.plan;
 				const report = await d.refresh.refresh(
 					iacProgramFor(entry.deploymentId, plan, "preview", d.tenant),
 				);
@@ -389,7 +393,9 @@ export function createOrchestratorRealizer(
 			const keep = keepOf(input);
 			const diff = diffGraph(ledger, input.resolved, keep);
 			const deploymentId = `cd.${input.campId}.${input.desired.setId}`;
-			const next: Record<string, LedgerEntry> = { ...ledger.resources };
+			const next = new Map<string, LedgerEntry>(
+				Object.entries(ledger.resources),
+			);
 			try {
 				if (diff.changed.length > 0) {
 					const changedNames = new Set(diff.changed.map((r) => r.name));
@@ -430,13 +436,12 @@ export function createOrchestratorRealizer(
 							ledger.setId,
 						);
 					for (const resource of diff.changed)
-						next[resource.name] = {
+						next.set(resource.name, {
 							hash: resourceNodeHash(input.resolved, resource),
 							deploymentId,
 							kind: resource.port,
-							// SAFETY: a ResourcePlan is a JSON record (manifest-plan wire form).
-							plan: JSON.parse(JSON.stringify(resource)) as JsonObject,
-						};
+							plan: structuredClone(resource),
+						});
 				}
 				const order = ledger.order.length > 0 ? ledger.order : [];
 				const removeOrder = [...diff.removed].sort(
@@ -445,8 +450,7 @@ export function createOrchestratorRealizer(
 				for (const name of removeOrder) {
 					const entry = ledger.resources[name];
 					if (!entry) continue;
-					// SAFETY: the ledger stores the ResourcePlan JSON it realized.
-					const plan = entry.plan as unknown as ResourcePlan;
+					const plan = entry.plan;
 					const destroyed = await destroyResource(
 						{
 							store: d.store,
@@ -469,7 +473,7 @@ export function createOrchestratorRealizer(
 							],
 							ledger.setId,
 						);
-					delete next[name];
+					next.delete(name);
 				}
 			} catch (error) {
 				return blocked(
@@ -480,7 +484,7 @@ export function createOrchestratorRealizer(
 			}
 			const order = [
 				...input.resolved.plan.dependencyOrder,
-				...Object.keys(next).filter(
+				...[...next.keys()].filter(
 					(n) => !input.resolved.plan.dependencyOrder.includes(n),
 				),
 			];

@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-conditional-empty-object-spread, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
 // WP7 acceptance (plan 0024 §9 WP7, §10 rows owned by WP7).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
@@ -577,9 +578,9 @@ describe("observe-only, observations and departure", () => {
 			(e) => e.type === CD_EVENTS.CampDeparted,
 		);
 		expect(departed).toHaveLength(1);
-		expect((departed[0]?.data as { orphans: string[] }).orphans).toEqual([
-			"db",
-		]);
+		expect(
+			departed[0] && (departed[0].data as { orphans: string[] }).orphans,
+		).toEqual(["db"]);
 		expect(obs.reasons.map((r) => r.code)).toContain("departure-orphaned");
 	});
 

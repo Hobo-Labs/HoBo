@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-conditional-empty-object-spread, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
 // Promoted proof semantics (plan 0024 §3, WP7 "Promote"). Each describe block
 // names the frozen proof under src/draft/technical-proofs/ whose semantics it
 // carries into @hobo/cd; the proofs themselves are not edited.

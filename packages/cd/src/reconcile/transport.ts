@@ -69,6 +69,7 @@ function principalFor(reconcilerId: string): PrincipalRef {
 	return { kind: "service", id: `cd-reconciler:${reconcilerId}` };
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only EventStoreError codes are read.
 function codeOf(error: unknown): string {
 	return error instanceof EventStoreError ? error.code : "";
 }

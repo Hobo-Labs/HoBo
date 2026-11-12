@@ -105,6 +105,7 @@ export class ReconcileError extends Error {
 	}
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; this boundary normalizes them to a reason message.
 export function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }

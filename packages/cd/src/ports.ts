@@ -111,7 +111,10 @@ export interface CdBase {
 
 export interface CredentialResolver {
 	/** Resolve a credential locator for one scoped use. Never persisted or logged. */
-	resolve(ref: string, scope: string): Promise<Readonly<Record<string, string>>>;
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
 }
 
 export type FeedRequest = Readonly<{
@@ -130,17 +133,36 @@ export type FeedResponse = Readonly<{
 // ── Freight and ingestion ──────────────────────────────────────────────────
 export interface FreightLedger {
 	record(
-		input: Readonly<{ manifest: FreightManifestRecord; origin: FreightOrigin; sourceName?: string }>,
+		input: Readonly<{
+			manifest: FreightManifestRecord;
+			origin: FreightOrigin;
+			sourceName?: string;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FreightRecord>>;
-	yank(id: FreightId, reason: string, ctx: CdContext): Promise<Outcome<FreightRecord>>;
+	yank(
+		id: FreightId,
+		reason: string,
+		ctx: CdContext,
+	): Promise<Outcome<FreightRecord>>;
 	approve(
-		input: Readonly<{ freightId: FreightId; campId: CampId; reason: string; expiresAtMs: number }>,
+		input: Readonly<{
+			freightId: FreightId;
+			campId: CampId;
+			reason: string;
+			expiresAtMs: number;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FreightApprovedRecord>>;
 	/** Accepts only a PASS verification for that Freight and Camp. */
 	qualify(
-		input: Readonly<{ freightId: FreightId; campId: CampId; pipeline: string; node: string; result: VerificationResultRecord }>,
+		input: Readonly<{
+			freightId: FreightId;
+			campId: CampId;
+			pipeline: string;
+			node: string;
+			result: VerificationResultRecord;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FreightQualifiedRecord>>;
 	get(id: FreightId): Promise<FreightRecord | undefined>;
@@ -149,16 +171,30 @@ export interface FreightLedger {
 	qualifications(id: FreightId): Promise<readonly FreightQualifiedRecord[]>;
 	approvals(id: FreightId): Promise<readonly FreightApprovedRecord[]>;
 	list(
-		query?: Readonly<{ bindle?: string; labels?: Readonly<Record<string, string>>; limit?: number }>,
+		query?: Readonly<{
+			bindle?: string;
+			labels?: Readonly<Record<string, string>>;
+			limit?: number;
+		}>,
 	): Promise<readonly FreightRecord[]>;
 	/** Retention sweep (D18). Returns the Freight retired. */
-	retire(policy: RetentionPolicyRecord, ctx: CdContext): Promise<readonly FreightRecord[]>;
+	retire(
+		policy: RetentionPolicyRecord,
+		ctx: CdContext,
+	): Promise<readonly FreightRecord[]>;
 }
 
-export type VerifiedPublisher = Readonly<{ principal: PrincipalRef; publisher: string; claims: JsonObject }>;
+export type VerifiedPublisher = Readonly<{
+	principal: PrincipalRef;
+	publisher: string;
+	claims: JsonObject;
+}>;
 
 export interface TrustedPublisherVerifier {
-	trust(publisher: TrustedPublisherRecord, ctx: CdContext): Promise<Outcome<TrustedPublisherRecord>>;
+	trust(
+		publisher: TrustedPublisherRecord,
+		ctx: CdContext,
+	): Promise<Outcome<TrustedPublisherRecord>>;
 	verify(token: string, ctx: CdContext): Promise<Outcome<VerifiedPublisher>>;
 }
 
@@ -177,42 +213,73 @@ export interface ProvenanceVerifier {
 
 export interface FreightIngest {
 	manifest(
-		input: Readonly<{ manifest: FreightManifestRecord; publisherToken?: string }>,
+		input: Readonly<{
+			manifest: FreightManifestRecord;
+			publisherToken?: string;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FreightRecord>>;
 	attestation(
-		input: Readonly<{ bindle: string; statement: Uint8Array; bundle?: Uint8Array; publisherToken?: string }>,
+		input: Readonly<{
+			bindle: string;
+			statement: Uint8Array;
+			bundle?: Uint8Array;
+			publisherToken?: string;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FreightRecord>>;
 	/** Inbound CDEvent. Creates Freight only with a verifiable attestation; otherwise schedules polls. */
 	cdevent(
 		input: Readonly<{ body: Uint8Array }>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ freight?: FreightRecord; scheduledPolls: readonly string[] }>>>;
+	): Promise<
+		Outcome<
+			Readonly<{ freight?: FreightRecord; scheduledPolls: readonly string[] }>
+		>
+	>;
 }
 
 // ── Freight sources (pull discovery) ───────────────────────────────────────
 export type CiEventReader = (
 	after: string | undefined,
 	signal: AbortSignal,
-) => AsyncIterable<Readonly<{ cursor: string; type: string; data: JsonObject }>>;
+) => AsyncIterable<
+	Readonly<{ cursor: string; type: string; data: JsonObject }>
+>;
 
-export type CiArtifactReader = (runId: string, path: string) => Promise<Uint8Array | undefined>;
+export type CiArtifactReader = (
+	runId: string,
+	path: string,
+) => Promise<Uint8Array | undefined>;
 
-export type DiscoveryResult = Readonly<{ artifacts: readonly DiscoveredArtifactRecord[]; cursor: string }>;
+export type DiscoveryResult = Readonly<{
+	artifacts: readonly DiscoveredArtifactRecord[];
+	cursor: string;
+}>;
 
 export interface SubscriptionDriver {
 	readonly kind: SubscriptionKind;
 	discover(
-		input: Readonly<{ source: string; subscription: SubscriptionRecord; cursor?: string; signal: AbortSignal }>,
+		input: Readonly<{
+			source: string;
+			subscription: SubscriptionRecord;
+			cursor?: string;
+			signal: AbortSignal;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<DiscoveryResult>>;
 }
 
 export interface FreightSources {
-	define(source: FreightSourceRecord, ctx: CdContext): Promise<Outcome<FreightSourceRecord>>;
+	define(
+		source: FreightSourceRecord,
+		ctx: CdContext,
+	): Promise<Outcome<FreightSourceRecord>>;
 	list(): Promise<readonly FreightSourceRecord[]>;
-	poll(name: string, ctx: CdContext): Promise<Outcome<readonly FreightRecord[]>>;
+	poll(
+		name: string,
+		ctx: CdContext,
+	): Promise<Outcome<readonly FreightRecord[]>>;
 	/** Webhook receiver. Authenticates, maps to sources, schedules polls. Never creates Freight. */
 	nudge(request: FeedRequest, ctx: CdContext): Promise<FeedResponse>;
 	schedule(names: readonly string[], ctx: CdContext): Promise<void>;
@@ -248,7 +315,10 @@ export interface ArtifactStore {
 
 export interface ArtifactVerifier {
 	/** Digest at its coordinate for every artifact in the manifest. */
-	verify(manifest: FreightManifestRecord, ctx: CdContext): Promise<Outcome<FreightManifestRecord>>;
+	verify(
+		manifest: FreightManifestRecord,
+		ctx: CdContext,
+	): Promise<Outcome<FreightManifestRecord>>;
 }
 
 // ── Desired state ──────────────────────────────────────────────────────────
@@ -269,7 +339,11 @@ export interface DesiredStateReader {
 	resolved(set: SetRecord): Promise<ResolvedDeploymentSet>;
 	status(campId: CampId): Promise<ReconcileObservationRecord | undefined>;
 	changes(
-		input: Readonly<{ campIds: readonly CampId[]; after?: EventPosition; signal: AbortSignal }>,
+		input: Readonly<{
+			campIds: readonly CampId[];
+			after?: EventPosition;
+			signal: AbortSignal;
+		}>,
 	): AsyncIterable<DesiredStateChange>;
 }
 
@@ -277,20 +351,34 @@ export interface DeltaLedger {
 	open(delta: DeltaRecord, ctx: CdContext): Promise<Outcome<DeltaRecord>>;
 	update(delta: DeltaRecord, ctx: CdContext): Promise<Outcome<DeltaRecord>>;
 	apply(
-		input: Readonly<{ deltaId: DeltaId; gateDecisionId: string; resolved: ResolvedDeploymentSet; origin: SetOrigin }>,
+		input: Readonly<{
+			deltaId: DeltaId;
+			gateDecisionId: string;
+			resolved: ResolvedDeploymentSet;
+			origin: SetOrigin;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<SetRecord>>;
-	reject(deltaId: DeltaId, reasons: readonly ReasonRecord[], ctx: CdContext): Promise<void>;
+	reject(
+		deltaId: DeltaId,
+		reasons: readonly ReasonRecord[],
+		ctx: CdContext,
+	): Promise<void>;
 	get(deltaId: DeltaId): Promise<DeltaRecord | undefined>;
 }
 
 // ── Pipelines and windows ──────────────────────────────────────────────────
 export interface PipelineController {
-	apply(pipeline: PipelineRecord, ctx: CdContext): Promise<Outcome<PipelineRecord>>;
+	apply(
+		pipeline: PipelineRecord,
+		ctx: CdContext,
+	): Promise<Outcome<PipelineRecord>>;
 	get(name: string): Promise<PipelineRecord | undefined>;
 	list(): Promise<readonly PipelineRecord[]>;
 	/** Freight available to a node, newest first, each with the reasons it is available. */
-	available(input: Readonly<{ pipeline: string; node: string }>): Promise<readonly FreightAvailabilityRecord[]>;
+	available(
+		input: Readonly<{ pipeline: string; node: string }>,
+	): Promise<readonly FreightAvailabilityRecord[]>;
 	/** Evaluate availability and auto-promotion; request promotions. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
@@ -317,9 +405,15 @@ export type WindowEvaluation = Readonly<{
 }>;
 
 export interface ChangeWindows {
-	define(window: ChangeWindowRecord, ctx: CdContext): Promise<Outcome<ChangeWindowRecord>>;
+	define(
+		window: ChangeWindowRecord,
+		ctx: CdContext,
+	): Promise<Outcome<ChangeWindowRecord>>;
 	list(): Promise<readonly ChangeWindowRecord[]>;
-	override(input: WindowOverrideRecord, ctx: CdContext): Promise<Outcome<WindowOverrideRecord>>;
+	override(
+		input: WindowOverrideRecord,
+		ctx: CdContext,
+	): Promise<Outcome<WindowOverrideRecord>>;
 	evaluate(
 		input: Readonly<{
 			campId: CampId;
@@ -335,9 +429,17 @@ export interface ChangeWindows {
 // ── Promotion ──────────────────────────────────────────────────────────────
 export interface SetResolver {
 	resolve(
-		input: Readonly<{ freight: FreightRecord; campId: CampId; intent: DeltaIntent; base?: SetRecord; sourceCampId?: CampId }>,
+		input: Readonly<{
+			freight: FreightRecord;
+			campId: CampId;
+			intent: DeltaIntent;
+			base?: SetRecord;
+			sourceCampId?: CampId;
+		}>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ resolved: ResolvedDeploymentSet; delta: DeltaRecord }>>>;
+	): Promise<
+		Outcome<Readonly<{ resolved: ResolvedDeploymentSet; delta: DeltaRecord }>>
+	>;
 }
 
 export type GateVerdict = Readonly<{
@@ -368,7 +470,12 @@ export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
 export interface ApprovalPort {
 	request(
-		input: Readonly<{ subject: string; summary: string; obligations: readonly string[]; expiresAtMs: number }>,
+		input: Readonly<{
+			subject: string;
+			summary: string;
+			obligations: readonly string[];
+			expiresAtMs: number;
+		}>,
 		ctx: CdContext,
 	): Promise<Readonly<{ requestId: string }>>;
 	status(requestId: string): Promise<ApprovalStatus>;
@@ -389,21 +496,41 @@ export type PromoteRequest = Readonly<{
 }>;
 
 export interface PromotionService {
-	promote(request: PromoteRequest, ctx: CdContext): Promise<Outcome<PromotionRecord>>;
-	rollback(
-		input: Readonly<{ campId: CampId; reason: string; idempotencyKey: string; toSetId?: SetId }>,
+	promote(
+		request: PromoteRequest,
 		ctx: CdContext,
 	): Promise<Outcome<PromotionRecord>>;
-	approve(promotionId: PromotionId, ctx: CdContext): Promise<Outcome<PromotionRecord>>;
+	rollback(
+		input: Readonly<{
+			campId: CampId;
+			reason: string;
+			idempotencyKey: string;
+			toSetId?: SetId;
+		}>,
+		ctx: CdContext,
+	): Promise<Outcome<PromotionRecord>>;
+	approve(
+		promotionId: PromotionId,
+		ctx: CdContext,
+	): Promise<Outcome<PromotionRecord>>;
 	get(promotionId: PromotionId): Promise<PromotionRecord | undefined>;
-	list(query?: Readonly<{ campId?: CampId; limit?: number }>): Promise<readonly PromotionRecord[]>;
+	list(
+		query?: Readonly<{ campId?: CampId; limit?: number }>,
+	): Promise<readonly PromotionRecord[]>;
 	/** Advance in-flight sagas from journal state. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
 
 export interface PreviewEnvironments {
 	createPreview(
-		input: Readonly<{ freightId: FreightId; sourceCampId: CampId; ttlMs: number; idempotencyKey: string; pipeline?: string; node?: string }>,
+		input: Readonly<{
+			freightId: FreightId;
+			sourceCampId: CampId;
+			ttlMs: number;
+			idempotencyKey: string;
+			pipeline?: string;
+			node?: string;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<PreviewEnvironmentRecord>>;
 	expirePreviews(ctx: CdContext): Promise<readonly PreviewEnvironmentRecord[]>;
@@ -411,7 +538,10 @@ export interface PreviewEnvironments {
 }
 
 export interface RunbookExecutor {
-	run(input: Readonly<{ path: string; args: JsonObject }>, ctx: CdContext): Promise<Outcome<JsonObject>>;
+	run(
+		input: Readonly<{ path: string; args: JsonObject }>,
+		ctx: CdContext,
+	): Promise<Outcome<JsonObject>>;
 }
 
 export interface VerifyPort {
@@ -422,7 +552,10 @@ export interface VerifyPort {
 }
 
 export interface NotificationPort {
-	notify(input: Readonly<{ channel: string; subject: string; body: JsonObject }>, ctx: CdContext): Promise<void>;
+	notify(
+		input: Readonly<{ channel: string; subject: string; body: JsonObject }>,
+		ctx: CdContext,
+	): Promise<void>;
 }
 
 // ── Reconciliation ─────────────────────────────────────────────────────────
@@ -438,8 +571,14 @@ export type RealizeInput = Readonly<{
 
 export interface Realizer {
 	/** Drive toward `desired`. Idempotent. Never reports convergence without observation. */
-	converge(input: RealizeInput, ctx: CdContext): Promise<ReconcileObservationRecord>;
-	observe(input: RealizeInput, ctx: CdContext): Promise<ReconcileObservationRecord>;
+	converge(
+		input: RealizeInput,
+		ctx: CdContext,
+	): Promise<ReconcileObservationRecord>;
+	observe(
+		input: RealizeInput,
+		ctx: CdContext,
+	): Promise<ReconcileObservationRecord>;
 }
 
 export type ReconcilerLease = Readonly<{
@@ -453,21 +592,40 @@ export type ReconcilerLease = Readonly<{
 export interface ReconcilerTransport {
 	/** One lease per Camp (subscription CD_SUBSCRIPTIONS.camp). */
 	claim(
-		input: Readonly<{ reconcilerId: ReconcilerId; campId: CampId; holderId: string; ttlMs: number }>,
+		input: Readonly<{
+			reconcilerId: ReconcilerId;
+			campId: CampId;
+			holderId: string;
+			ttlMs: number;
+		}>,
 	): Promise<Outcome<ReconcilerLease>>;
 	renew(lease: ReconcilerLease): Promise<Outcome<ReconcilerLease>>;
 	release(lease: ReconcilerLease): Promise<void>;
 	/** Desired-state changes for the lease's Camp after its committed checkpoint. */
-	feed(input: Readonly<{ lease: ReconcilerLease; signal: AbortSignal }>): AsyncIterable<DesiredStateChange>;
-	resolved(lease: ReconcilerLease, set: SetRecord): Promise<Outcome<ResolvedDeploymentSet>>;
-	report(lease: ReconcilerLease, observation: ReconcileObservationRecord): Promise<Outcome<EventPosition>>;
-	checkpoint(lease: ReconcilerLease, position: EventPosition): Promise<Outcome<EventPosition>>;
+	feed(
+		input: Readonly<{ lease: ReconcilerLease; signal: AbortSignal }>,
+	): AsyncIterable<DesiredStateChange>;
+	resolved(
+		lease: ReconcilerLease,
+		set: SetRecord,
+	): Promise<Outcome<ResolvedDeploymentSet>>;
+	report(
+		lease: ReconcilerLease,
+		observation: ReconcileObservationRecord,
+	): Promise<Outcome<EventPosition>>;
+	checkpoint(
+		lease: ReconcilerLease,
+		position: EventPosition,
+	): Promise<Outcome<EventPosition>>;
 }
 
 export type DriftRoute = "reconcile" | "propose" | "ignore" | "escalate";
 
 export interface DriftPolicy {
-	route(observation: ReconcileObservationRecord, ctx: CdContext): Promise<DriftRoute>;
+	route(
+		observation: ReconcileObservationRecord,
+		ctx: CdContext,
+	): Promise<DriftRoute>;
 }
 
 export interface CampReconciler {
@@ -476,13 +634,20 @@ export interface CampReconciler {
 	/** Claim each Camp, read the feed, converge, report, checkpoint, renew; until aborted. */
 	run(signal: AbortSignal): Promise<void>;
 	/** One bounded pass (tests, `hobo up`). */
-	reconcileOnce(campId: CampId, ctx: CdContext): Promise<ReconcileObservationRecord>;
+	reconcileOnce(
+		campId: CampId,
+		ctx: CdContext,
+	): Promise<ReconcileObservationRecord>;
 }
 
 export interface PublisherPort {
 	readonly target: string;
 	publish(
-		input: Readonly<{ set: SetRecord; resolved: ResolvedDeploymentSet; signal: AbortSignal }>,
+		input: Readonly<{
+			set: SetRecord;
+			resolved: ResolvedDeploymentSet;
+			signal: AbortSignal;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ revision: string }>>>;
 	observe(
@@ -492,19 +657,35 @@ export interface PublisherPort {
 }
 
 // ── Verification ───────────────────────────────────────────────────────────
-export type HealthSamples = Readonly<{ values: readonly number[]; fromMs: number; toMs: number }>;
+export type HealthSamples = Readonly<{
+	values: readonly number[];
+	fromMs: number;
+	toMs: number;
+}>;
 
 export interface HealthSource {
 	readonly kind: HealthSourceKind;
 	query(
-		input: Readonly<{ query: HealthQueryRecord; campId: CampId; cohort: Cohort; fromMs: number; toMs: number; signal: AbortSignal }>,
+		input: Readonly<{
+			query: HealthQueryRecord;
+			campId: CampId;
+			cohort: Cohort;
+			fromMs: number;
+			toMs: number;
+			signal: AbortSignal;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<HealthSamples>>;
 }
 
 export interface VerificationEngine {
 	start(
-		input: Readonly<{ spec: VerificationSpecRecord; freightId: FreightId; campId: CampId; cohortAware: boolean }>,
+		input: Readonly<{
+			spec: VerificationSpecRecord;
+			freightId: FreightId;
+			campId: CampId;
+			cohortAware: boolean;
+		}>,
 		ctx: CdContext,
 	): Promise<VerificationId>;
 	get(id: VerificationId): Promise<VerificationResultRecord | undefined>;
@@ -515,7 +696,10 @@ export interface VerificationEngine {
 // ── Progressive rollout ────────────────────────────────────────────────────
 export interface TrafficShifter {
 	offerings(campId: CampId): Promise<readonly TrafficRoutingOfferingId[]>;
-	shift(input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>, ctx: CdContext): Promise<ApplyResult>;
+	shift(
+		input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>,
+		ctx: CdContext,
+	): Promise<ApplyResult>;
 	status(campId: CampId, planId: RoutingPlanId): Promise<RoutingStatus | null>;
 }
 
@@ -538,19 +722,40 @@ export type RolloutSnapshot = Readonly<{
 
 export interface RolloutEngine {
 	start(plan: RolloutPlanRecord, ctx: CdContext): Promise<RolloutSnapshot>;
-	advance(rolloutId: RolloutId, result: VerificationResultRecord, ctx: CdContext): Promise<RolloutSnapshot>;
-	hold(rolloutId: RolloutId, reason: ReasonRecord, ctx: CdContext): Promise<RolloutSnapshot>;
-	rollback(rolloutId: RolloutId, reason: string, ctx: CdContext): Promise<RolloutSnapshot>;
+	advance(
+		rolloutId: RolloutId,
+		result: VerificationResultRecord,
+		ctx: CdContext,
+	): Promise<RolloutSnapshot>;
+	hold(
+		rolloutId: RolloutId,
+		reason: ReasonRecord,
+		ctx: CdContext,
+	): Promise<RolloutSnapshot>;
+	rollback(
+		rolloutId: RolloutId,
+		reason: string,
+		ctx: CdContext,
+	): Promise<RolloutSnapshot>;
 	get(rolloutId: RolloutId): Promise<RolloutSnapshot | undefined>;
 }
 
 export interface RolloutOrchestrator {
 	plan(
-		input: Readonly<{ promotion: PromotionRecord; obligations: readonly ObligationRef[]; verification: VerificationSpecRecord; stagePercents: readonly number[]; windows: readonly string[] }>,
+		input: Readonly<{
+			promotion: PromotionRecord;
+			obligations: readonly ObligationRef[];
+			verification: VerificationSpecRecord;
+			stagePercents: readonly number[];
+			windows: readonly string[];
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<RolloutPlanRecord>>;
 	run(plan: RolloutPlanRecord, ctx: CdContext): Promise<RolloutSnapshot>;
-	rollback(input: Readonly<{ rolloutId: RolloutId; reason: string }>, ctx: CdContext): Promise<RolloutSnapshot>;
+	rollback(
+		input: Readonly<{ rolloutId: RolloutId; reason: string }>,
+		ctx: CdContext,
+	): Promise<RolloutSnapshot>;
 	get(rolloutId: RolloutId): Promise<RolloutSnapshot | undefined>;
 	tick(ctx: CdContext): Promise<void>;
 }
@@ -564,28 +769,57 @@ export interface DeliveryFeedHandler {
 export interface AgentEnrollment {
 	/** Single-use bootstrap token scoped to one Camp set (D19). */
 	issueToken(
-		input: Readonly<{ campSet: string; campIds: readonly CampId[]; mode: ReconcilerMode; ttlMs: number }>,
+		input: Readonly<{
+			campSet: string;
+			campIds: readonly CampId[];
+			mode: ReconcilerMode;
+			ttlMs: number;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ token: string; expiresAtMs: number }>>>;
 	/** Register a public JWK. PENDING until both grants or a Rail auto-accept (I24). */
 	enroll(
-		input: Readonly<{ token: string; publicJwk: JsonObject; claims: readonly CampClaimRecord[] }>,
+		input: Readonly<{
+			token: string;
+			publicJwk: JsonObject;
+			claims: readonly CampClaimRecord[];
+		}>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ reconciler: ReconcilerRecord; state: EnrollmentState }>>>;
+	): Promise<
+		Outcome<Readonly<{ reconciler: ReconcilerRecord; state: EnrollmentState }>>
+	>;
 	/** Grant 1: the key belongs to a legitimate agent. */
-	approveKey(reconcilerId: ReconcilerId, ctx: CdContext): Promise<Outcome<ReconcilerRecord>>;
+	approveKey(
+		reconcilerId: ReconcilerId,
+		ctx: CdContext,
+	): Promise<Outcome<ReconcilerRecord>>;
 	/** Grant 2: the agent may serve these Camps. */
-	accept(input: Readonly<{ reconcilerId: ReconcilerId; campIds: readonly CampId[] }>, ctx: CdContext): Promise<Outcome<ReconcilerRecord>>;
+	accept(
+		input: Readonly<{ reconcilerId: ReconcilerId; campIds: readonly CampId[] }>,
+		ctx: CdContext,
+	): Promise<Outcome<ReconcilerRecord>>;
 	/** After acceptance, exchange a DPoP proof of key possession for a key-bound JWT-SVID (cnf.jkt). */
 	activate(
 		input: Readonly<{ reconcilerId: ReconcilerId; dpopProof: string }>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ reconciler: ReconcilerRecord; svid: string; expiresAtMs: number }>>>;
+	): Promise<
+		Outcome<
+			Readonly<{
+				reconciler: ReconcilerRecord;
+				svid: string;
+				expiresAtMs: number;
+			}>
+		>
+	>;
 	refresh(
 		input: Readonly<{ svid: string; dpopProof: string }>,
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ svid: string; expiresAtMs: number }>>>;
-	revoke(reconcilerId: ReconcilerId, reason: string, ctx: CdContext): Promise<Outcome<ReconcilerRecord>>;
+	revoke(
+		reconcilerId: ReconcilerId,
+		reason: string,
+		ctx: CdContext,
+	): Promise<Outcome<ReconcilerRecord>>;
 	/** Verify a request's JWT-SVID and DPoP proof (RFC 9449) with jti replay protection. */
 	verify(request: FeedRequest): Promise<Outcome<ReconcilerRecord>>;
 }
@@ -638,7 +872,9 @@ export interface CdAuthorizer {
 	): Promise<Outcome<Readonly<{ decisionId: string; proposalOnly: boolean }>>>;
 }
 
-export type OtelAttributes = Readonly<Record<string, string | number | boolean>>;
+export type OtelAttributes = Readonly<
+	Record<string, string | number | boolean>
+>;
 
 export type OtelSpan = Readonly<{
 	name: string;
@@ -680,7 +916,10 @@ export type HealthReport = Readonly<{
 }>;
 
 export interface CdTelemetry {
-	dora(input: Readonly<{ windowMs: number; campIds?: readonly CampId[] }>, ctx: CdContext): Promise<DoraMetrics>;
+	dora(
+		input: Readonly<{ windowMs: number; campIds?: readonly CampId[] }>,
+		ctx: CdContext,
+	): Promise<DoraMetrics>;
 	reconcileLagMs(campId: CampId, ctx: CdContext): Promise<number | undefined>;
 	health(): HealthReport;
 }
@@ -714,13 +953,24 @@ export interface RailDeliveryReader {
 	forCamp(campId: CampId): Promise<RailDeliveryRecord | undefined>;
 }
 
-export type CampView = Readonly<{ topology: CampTopology; status: CampStatusRecord }>;
+export type CampView = Readonly<{
+	topology: CampTopology;
+	status: CampStatusRecord;
+}>;
 
-export type InventorySnapshot = Readonly<{ digest: Digest; camps: readonly CampView[] }>;
+export type InventorySnapshot = Readonly<{
+	digest: Digest;
+	camps: readonly CampView[];
+}>;
 
 export interface CampInventory {
 	status(campId: CampId): Promise<CampStatusRecord | undefined>;
-	list(query?: Readonly<{ campSets?: readonly string[]; selector?: SelectorRecord }>): Promise<readonly CampView[]>;
+	list(
+		query?: Readonly<{
+			campSets?: readonly string[];
+			selector?: SelectorRecord;
+		}>,
+	): Promise<readonly CampView[]>;
 	/** Merge conditions and claims from one source. Agent sources can never add NO_RUN. */
 	observe(
 		input: Readonly<{
@@ -731,13 +981,22 @@ export interface CampInventory {
 		}>,
 		ctx: CdContext,
 	): Promise<Outcome<CampStatusRecord>>;
-	taint(input: Readonly<{ campId: CampId; taint: TaintRecord }>, ctx: CdContext): Promise<Outcome<CampStatusRecord>>;
+	taint(
+		input: Readonly<{ campId: CampId; taint: TaintRecord }>,
+		ctx: CdContext,
+	): Promise<Outcome<CampStatusRecord>>;
 	untaint(
 		input: Readonly<{ campId: CampId; key: string; effect: TaintEffect }>,
 		ctx: CdContext,
 	): Promise<Outcome<CampStatusRecord>>;
-	manage(input: Readonly<{ campId: CampId; management: CampManagement }>, ctx: CdContext): Promise<Outcome<CampStatusRecord>>;
-	defineSet(set: CampSetRecord, ctx: CdContext): Promise<Outcome<CampSetRecord>>;
+	manage(
+		input: Readonly<{ campId: CampId; management: CampManagement }>,
+		ctx: CdContext,
+	): Promise<Outcome<CampStatusRecord>>;
+	defineSet(
+		set: CampSetRecord,
+		ctx: CdContext,
+	): Promise<Outcome<CampSetRecord>>;
 	sets(): Promise<readonly CampSetRecord[]>;
 	/** Canonical view whose digest a placement decision records. */
 	snapshot(campSets: readonly string[]): Promise<InventorySnapshot>;
@@ -751,9 +1010,15 @@ export type PlacementSubject = Readonly<{
 }>;
 
 export interface PlacementEngine {
-	define(placement: PlacementRecord, ctx: CdContext): Promise<Outcome<PlacementRecord>>;
+	define(
+		placement: PlacementRecord,
+		ctx: CdContext,
+	): Promise<Outcome<PlacementRecord>>;
 	get(name: string): Promise<PlacementRecord | undefined>;
-	reportScores(snapshot: ScoreSnapshotRecord, ctx: CdContext): Promise<Outcome<ScoreSnapshotRecord>>;
+	reportScores(
+		snapshot: ScoreSnapshotRecord,
+		ctx: CdContext,
+	): Promise<Outcome<ScoreSnapshotRecord>>;
 	/** Pure over recorded inputs (I18); records `placement.Decided`. */
 	decide(
 		input: Readonly<{
@@ -785,25 +1050,59 @@ export interface FanoutController {
 		ctx: CdContext,
 	): Promise<Outcome<FanoutStatusRecord>>;
 	get(fanoutId: FanoutId): Promise<FanoutStatusRecord | undefined>;
-	list(query?: Readonly<{ pipeline?: string; node?: string; limit?: number }>): Promise<readonly FanoutStatusRecord[]>;
+	list(
+		query?: Readonly<{ pipeline?: string; node?: string; limit?: number }>,
+	): Promise<readonly FanoutStatusRecord[]>;
 	/** Camps of the node's latest completed decision with their qualified Freight. */
 	qualified(input: Readonly<{ pipeline: string; node: string }>): Promise<
-		Readonly<{ decision?: PlacementDecisionRecord; qualifiedCampIds: readonly CampId[]; stableFreightId?: FreightId }>
+		Readonly<{
+			decision?: PlacementDecisionRecord;
+			qualifiedCampIds: readonly CampId[];
+			stableFreightId?: FreightId;
+		}>
 	>;
-	halt(fanoutId: FanoutId, reason: string, ctx: CdContext): Promise<Outcome<FanoutStatusRecord>>;
-	resume(fanoutId: FanoutId, ctx: CdContext): Promise<Outcome<FanoutStatusRecord>>;
-	rollback(fanoutId: FanoutId, reason: string, ctx: CdContext): Promise<Outcome<FanoutStatusRecord>>;
+	halt(
+		fanoutId: FanoutId,
+		reason: string,
+		ctx: CdContext,
+	): Promise<Outcome<FanoutStatusRecord>>;
+	resume(
+		fanoutId: FanoutId,
+		ctx: CdContext,
+	): Promise<Outcome<FanoutStatusRecord>>;
+	rollback(
+		fanoutId: FanoutId,
+		reason: string,
+		ctx: CdContext,
+	): Promise<Outcome<FanoutStatusRecord>>;
 	/** Advance in-flight fan-outs from journal state under lease `cd:fanout:<id>`. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
 
 export interface FailoverController {
-	propose(input: Readonly<{ campId: CampId; reason: string; idempotencyKey: string }>, ctx: CdContext): Promise<Outcome<readonly FailoverRecord[]>>;
-	approve(failoverId: FailoverId, ctx: CdContext): Promise<Outcome<FailoverRecord>>;
+	propose(
+		input: Readonly<{ campId: CampId; reason: string; idempotencyKey: string }>,
+		ctx: CdContext,
+	): Promise<Outcome<readonly FailoverRecord[]>>;
+	approve(
+		failoverId: FailoverId,
+		ctx: CdContext,
+	): Promise<Outcome<FailoverRecord>>;
 	get(failoverId: FailoverId): Promise<FailoverRecord | undefined>;
-	list(query?: Readonly<{ campId?: CampId; state?: FailoverState; limit?: number }>): Promise<readonly FailoverRecord[]>;
+	list(
+		query?: Readonly<{
+			campId?: CampId;
+			state?: FailoverState;
+			limit?: number;
+		}>,
+	): Promise<readonly FailoverRecord[]>;
 	rebalance(
-		input: Readonly<{ pipeline: string; node: string; reason: string; idempotencyKey: string }>,
+		input: Readonly<{
+			pipeline: string;
+			node: string;
+			reason: string;
+			idempotencyKey: string;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<RebalanceRecord>>;
 	tick(ctx: CdContext): Promise<void>;
@@ -813,17 +1112,33 @@ export interface FailoverController {
 export type RailEventReader = (
 	after: string | undefined,
 	signal: AbortSignal,
-) => AsyncIterable<Readonly<{ cursor: string; railId: string; railDigest: Digest; status: "approved" | "active" | "retired"; stationId: string }>>;
+) => AsyncIterable<
+	Readonly<{
+		cursor: string;
+		railId: string;
+		railDigest: Digest;
+		status: "approved" | "active" | "retired";
+		stationId: string;
+	}>
+>;
 
 export interface CampPolicy {
 	binding(campId: CampId): Promise<PolicyBindingRecord | undefined>;
 	/** Called by promotion only (subject RAIL). */
 	bind(
-		input: Readonly<{ campId: CampId; freight: FreightRecord; mode: PolicyMode; promotionId: PromotionId }>,
+		input: Readonly<{
+			campId: CampId;
+			freight: FreightRecord;
+			mode: PolicyMode;
+			promotionId: PromotionId;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<PolicyBindingRecord>>;
 	/** Rollback: restore the previous enforced digest and clear the candidate. */
-	restore(input: Readonly<{ campId: CampId; promotionId: PromotionId }>, ctx: CdContext): Promise<Outcome<PolicyBindingRecord>>;
+	restore(
+		input: Readonly<{ campId: CampId; promotionId: PromotionId }>,
+		ctx: CdContext,
+	): Promise<Outcome<PolicyBindingRecord>>;
 }
 
 export type ShadowVerdict = Readonly<{
@@ -834,8 +1149,22 @@ export type ShadowVerdict = Readonly<{
 }>;
 
 export interface PostureSeriesReader {
-	noncompliantRatio(input: Readonly<{ campId: CampId; railDigest?: Digest; fromMs: number; toMs: number }>): Promise<readonly number[]>;
-	shadowDivergence(input: Readonly<{ campId: CampId; railDigest: Digest; fromMs: number; toMs: number }>): Promise<readonly number[]>;
+	noncompliantRatio(
+		input: Readonly<{
+			campId: CampId;
+			railDigest?: Digest;
+			fromMs: number;
+			toMs: number;
+		}>,
+	): Promise<readonly number[]>;
+	shadowDivergence(
+		input: Readonly<{
+			campId: CampId;
+			railDigest: Digest;
+			fromMs: number;
+			toMs: number;
+		}>,
+	): Promise<readonly number[]>;
 }
 
 export interface PostureService {
@@ -851,7 +1180,11 @@ export interface PostureService {
 
 export interface ShadowRecorder {
 	/** The Camp's candidate Rail and its resolved pack, while bound in INFORM. */
-	candidate(campId: CampId): Promise<Readonly<{ railDigest: Digest; policyPack: PolicyPack }> | undefined>;
+	candidate(
+		campId: CampId,
+	): Promise<
+		Readonly<{ railDigest: Digest; policyPack: PolicyPack }> | undefined
+	>;
 	record(decision: ShadowDecisionRecord, ctx: CdContext): Promise<void>;
 }
 
@@ -893,9 +1226,16 @@ export interface ContinuousDelivery {
 // ── Module factory signatures (implemented in the named subpath) ───────────
 export interface CdFactories {
 	/** "./freight" (WP1) */
-	createFreightLedger(d: CdBase & { readonly artifacts: ArtifactVerifier; readonly telemetry: TelemetrySink }): FreightLedger;
+	createFreightLedger(
+		d: CdBase & {
+			readonly artifacts: ArtifactVerifier;
+			readonly telemetry: TelemetrySink;
+		},
+	): FreightLedger;
 	/** "./ingest" (WP1) */
-	createTrustedPublisherVerifier(d: CdBase & { readonly http: HttpTransport }): TrustedPublisherVerifier;
+	createTrustedPublisherVerifier(
+		d: CdBase & { readonly http: HttpTransport },
+	): TrustedPublisherVerifier;
 	/** "./ingest" (WP1) */
 	createFreightIngest(
 		d: CdBase & {
@@ -929,11 +1269,23 @@ export interface CdFactories {
 	/** "./artifacts" (WP3) */
 	createArtifactStore(config: ArtifactStoreConfig, d: CdBase): ArtifactStore;
 	/** "./artifacts" (WP3) */
-	createArtifactVerifier(d: CdBase & { readonly artifacts: ArtifactStore; readonly http: HttpTransport }): ArtifactVerifier;
+	createArtifactVerifier(
+		d: CdBase & {
+			readonly artifacts: ArtifactStore;
+			readonly http: HttpTransport;
+		},
+	): ArtifactVerifier;
 	/** "./provenance" (WP3) */
-	createProvenanceVerifier(d: CdBase & { readonly http: HttpTransport; readonly trustPolicy: JsonObject }): ProvenanceVerifier;
+	createProvenanceVerifier(
+		d: CdBase & {
+			readonly http: HttpTransport;
+			readonly trustPolicy: JsonObject;
+		},
+	): ProvenanceVerifier;
 	/** "./sets" (WP4) */
-	createDesiredState(d: CdBase & { readonly artifacts: ArtifactStore }): DesiredStateReader & DeltaLedger;
+	createDesiredState(
+		d: CdBase & { readonly artifacts: ArtifactStore },
+	): DesiredStateReader & DeltaLedger;
 	/** "./pipelines" (WP5) */
 	createPipelineController(
 		d: CdBase & {
@@ -946,7 +1298,9 @@ export interface CdFactories {
 		},
 	): PipelineController;
 	/** "./windows" (WP5) */
-	createChangeWindows(d: CdBase & { readonly authorizer: CdAuthorizer }): ChangeWindows;
+	createChangeWindows(
+		d: CdBase & { readonly authorizer: CdAuthorizer },
+	): ChangeWindows;
 	/** "./promotion" (WP6) */
 	createPromotionService(
 		d: CdBase & {
@@ -981,15 +1335,27 @@ export interface CdFactories {
 	): CampReconciler;
 	/** "./reconcile" (WP7) */
 	createInProcessTransport(
-		d: CdBase & { readonly desired: DesiredStateReader; readonly posture?: PostureService; readonly topology?: TopologyReader },
+		d: CdBase & {
+			readonly desired: DesiredStateReader;
+			readonly posture?: PostureService;
+			readonly topology?: TopologyReader;
+		},
 	): ReconcilerTransport;
 	/** "./verification" (WP9) */
 	createVerificationEngine(
-		d: CdBase & { readonly sources: readonly HealthSource[]; readonly suites: VerifyPort; readonly http: HttpTransport },
+		d: CdBase & {
+			readonly sources: readonly HealthSource[];
+			readonly suites: VerifyPort;
+			readonly http: HttpTransport;
+		},
 	): VerificationEngine;
 	/** "./verification" (WP9) */
 	createHealthSources(
-		d: Readonly<{ http: HttpTransport; credentials: CredentialResolver; posture?: PostureSeriesReader }>,
+		d: Readonly<{
+			http: HttpTransport;
+			credentials: CredentialResolver;
+			posture?: PostureSeriesReader;
+		}>,
 	): readonly HealthSource[];
 	/** "./rollout" (WP10) */
 	createRolloutOrchestrator(
@@ -1005,11 +1371,22 @@ export interface CdFactories {
 	): RolloutOrchestrator;
 	/** "./agent" (WP11) */
 	createAgentEnrollment(
-		d: CdBase & { readonly authorizer: CdAuthorizer; readonly rails: RailDeliveryReader; readonly inventory: CampInventory },
+		d: CdBase & {
+			readonly authorizer: CdAuthorizer;
+			readonly rails: RailDeliveryReader;
+			readonly inventory: CampInventory;
+		},
 	): AgentEnrollment;
 	/** "./agent" (WP11) */
 	createHttpTransport(
-		d: Readonly<{ baseUrl: string; http: HttpTransport; reconcilerId: ReconcilerId; privateJwk: JsonObject; svid: string; now: () => number }>,
+		d: Readonly<{
+			baseUrl: string;
+			http: HttpTransport;
+			reconcilerId: ReconcilerId;
+			privateJwk: JsonObject;
+			svid: string;
+			now: () => number;
+		}>,
 	): ReconcilerTransport;
 	/** "./feed" (WP11) */
 	createDeliveryFeedHandler(
@@ -1033,11 +1410,19 @@ export interface CdFactories {
 		},
 	): CdService;
 	/** "./authz" (WP19) */
-	createCdAuthorizer(d: CdBase & { readonly policyPack: PolicyPack }): CdAuthorizer;
+	createCdAuthorizer(
+		d: CdBase & { readonly policyPack: PolicyPack },
+	): CdAuthorizer;
 	/** "./telemetry" (WP19) */
 	createCdTelemetry(d: CdBase): CdTelemetry;
 	/** "./telemetry" (WP19) */
-	createTelemetrySink(d: Readonly<{ endpoint?: string; http: HttpTransport; headers?: Readonly<Record<string, string>> }>): TelemetrySink;
+	createTelemetrySink(
+		d: Readonly<{
+			endpoint?: string;
+			http: HttpTransport;
+			headers?: Readonly<Record<string, string>>;
+		}>,
+	): TelemetrySink;
 	/** "./inventory" (WP22) */
 	createCampInventory(
 		d: CdBase & {
@@ -1085,10 +1470,15 @@ export interface CdFactories {
 		},
 	): FailoverController;
 	/** "./posture" (WP24) */
-	createCampPolicy(d: CdBase & { readonly authorizer: CdAuthorizer }): CampPolicy;
+	createCampPolicy(
+		d: CdBase & { readonly authorizer: CdAuthorizer },
+	): CampPolicy;
 	/** "./posture" (WP24) */
 	createShadowRecorder(
-		d: CdBase & { readonly campPolicy: CampPolicy; readonly resolvePack: (railDigest: Digest) => Promise<PolicyPack> },
+		d: CdBase & {
+			readonly campPolicy: CampPolicy;
+			readonly resolvePack: (railDigest: Digest) => Promise<PolicyPack>;
+		},
 	): ShadowRecorder;
 	/** "./posture" (WP24) */
 	createPostureService(
@@ -1098,7 +1488,9 @@ export interface CdFactories {
 			readonly rails: RailDeliveryReader;
 			readonly inventory: CampInventory;
 			/** Policy packs by name, as policy-IR documents. */
-			readonly packs: (names: readonly string[]) => Promise<readonly JsonObject[]>;
+			readonly packs: (
+				names: readonly string[],
+			) => Promise<readonly JsonObject[]>;
 			readonly authorizer: CdAuthorizer;
 			readonly telemetry: TelemetrySink;
 		},

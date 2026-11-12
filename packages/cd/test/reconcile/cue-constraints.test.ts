@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
 // Vets real reconcile status-event bodies against data-models/reconcile.cue
 // (the constraints src/reconcile mirrors). Skips with a visible reason when no
 // `cue` binary exists.

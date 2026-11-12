@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
 // Orchestrator realizer (adapters/orchestrator.ts): only changed nodes
 // reconcile, rollback re-applies the predecessor (C4), attestation fails
 // closed (C3), departure keeps, crash resume is idempotent, fencing holds.

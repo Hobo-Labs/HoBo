@@ -58,6 +58,7 @@ import { messageOf, reason } from "./errors.js";
 import {
 	blockedObservation,
 	isConvergedOn,
+	type SanitizeInput,
 	sanitizeObservation,
 } from "./observation.js";
 
@@ -191,7 +192,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		raw: ReconcileObservationRecord,
 		input?: RealizeInput,
 	): ReconcileObservationRecord {
-		return sanitizeObservation({
+		const request: SanitizeInput = {
 			observation: raw,
 			campId: lease.campId,
 			reconcilerId: d.reconcilerId,
@@ -199,8 +200,28 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			nowMs: d.now(),
 			observeFields: change.observeFields,
 			management: change.management,
-			...(input ? { resolved: input.resolved } : {}),
-		});
+		};
+		return sanitizeObservation(
+			input ? { ...request, resolved: input.resolved } : request,
+		);
+	}
+
+	function realizeInput(
+		lease: ReconcilerLease,
+		change: DesiredStateChange,
+		resolved: RealizeInput["resolved"],
+		ctx: CdContext,
+	): RealizeInput {
+		const base: RealizeInput = {
+			campId: lease.campId,
+			desired: change.set,
+			resolved,
+			reconcilerId: d.reconcilerId,
+			fence: lease.fence,
+			signal: ctx.signal ?? new AbortController().signal,
+		};
+		const previous = mem(lease.campId).convergedSet;
+		return previous ? { ...base, previous } : base;
 	}
 
 	async function report(
@@ -360,15 +381,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 				}),
 			);
 		}
-		const input: RealizeInput = {
-			campId: lease.campId,
-			desired: change.set,
-			resolved: resolved.value,
-			reconcilerId: d.reconcilerId,
-			fence: lease.fence,
-			signal: ctx.signal ?? new AbortController().signal,
-			...(m.convergedSet ? { previous: m.convergedSet } : {}),
-		};
+		const input = realizeInput(lease, change, resolved.value, ctx);
 		const observed = sanitize(
 			lease,
 			change,
@@ -456,15 +469,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					reasons: resolved.reasons,
 				}),
 			);
-		const input: RealizeInput = {
-			campId: lease.campId,
-			desired: change.set,
-			resolved: resolved.value,
-			reconcilerId: d.reconcilerId,
-			fence: lease.fence,
-			signal: ctx.signal ?? new AbortController().signal,
-			...(m.convergedSet ? { previous: m.convergedSet } : {}),
-		};
+		const input = realizeInput(lease, change, resolved.value, ctx);
 		const observed = sanitize(
 			lease,
 			change,
@@ -730,8 +735,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					await sleep(CD_DEFAULTS.serviceTickMs, signal);
 				}
 			} finally {
-				for (const lease of [...held.values()])
-					await d.transport.release(lease);
+				for (const lease of held.values()) await d.transport.release(lease);
 				held.clear();
 			}
 		},
