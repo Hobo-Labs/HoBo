@@ -39,6 +39,7 @@ interface Interaction {
 	readonly body: JsonValue;
 }
 function loadPact(): readonly Interaction[] {
+	// SAFETY: the checked-in pact file is the fixture; its shape is asserted by every test below.
 	const pact = JSON.parse(
 		readFileSync(
 			new URL("../contracts/provider-flux-apps.pact.json", import.meta.url),
@@ -91,6 +92,7 @@ function pactWorld(
 }
 
 function spec(changes: JsonObject): JsonValue {
+	// SAFETY: the first pact interaction is the specification envelope.
 	const base = loadPact()[0]?.body as { status: string; data: JsonObject };
 	return { status: "success", data: { ...base.data, ...changes } };
 }
@@ -99,13 +101,13 @@ function request(
 	desired: JsonObject = {},
 	physicalId?: string,
 ): ResolveRequest {
+	const ref = {
+		slot: "service" as const,
+		productId: FLUX_APP_PRODUCT_ID,
+		logicalId: "shop",
+	};
 	return {
-		ref: {
-			slot: "service",
-			productId: FLUX_APP_PRODUCT_ID,
-			logicalId: "shop",
-			...(physicalId === undefined ? {} : { physicalId }),
-		},
+		ref: physicalId === undefined ? ref : { ...ref, physicalId },
 		desired: {
 			appName: "hoboshop",
 			owner: OWNER,
@@ -366,7 +368,11 @@ describe("Flux app resolver (public FluxOS API, observation only)", () => {
 			pactWorld().transport,
 		);
 		expect(() =>
-			cueVet("app_resolver.cue", "#FluxAppOutputs", outcome.outputs),
+			cueVet(
+				"app_resolver.cue",
+				"#FluxAppOutputs",
+				JSON.stringify(outcome.outputs),
+			),
 		).not.toThrow();
 	});
 });
@@ -403,7 +409,11 @@ describe("Flux traffic profile and coverage (I14)", () => {
 	});
 	it("coverage satisfies #HostingCoverage with actual CUE", () => {
 		expect(() =>
-			cueVet("hosting_coverage.cue", "#HostingCoverage", FLUX_HOSTING_COVERAGE),
+			cueVet(
+				"hosting_coverage.cue",
+				"#HostingCoverage",
+				JSON.stringify(FLUX_HOSTING_COVERAGE),
+			),
 		).not.toThrow();
 	});
 });

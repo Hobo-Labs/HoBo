@@ -84,7 +84,7 @@ interface Target {
 	/** component name -> sha256 digest */
 	readonly digests: ReadonlyMap<string, string>;
 	readonly images: ReadonlyMap<string, string>;
-	readonly minInstances?: number;
+	readonly minInstances: number | undefined;
 }
 
 const SIGNED_PATH =
@@ -141,7 +141,7 @@ function target(raw: ResolveRequest): Target {
 		owner,
 		digests,
 		images: pinned,
-		...(minInstances === undefined ? {} : { minInstances }),
+		minInstances: isJsonNumber(minInstances) ? minInstances : undefined,
 	};
 }
 
@@ -263,24 +263,28 @@ async function observe(
 		componentDigests[component] = digest;
 	const single =
 		parsed.digests.size === 1 ? [...parsed.digests.values()][0] : undefined;
+	const observedOutputs = {
+		appName: parsed.appName,
+		owner: parsed.owner,
+		instances: spec.instances,
+		requiredInstances: required,
+		runningInstances: nodes.size,
+		componentDigests,
+		ready,
+		operationConfirmed: ready,
+		operationTerminal: ready,
+		absenceConfirmed: false,
+		lifecycleStatus: ready ? "ready" : "pending",
+	};
 	return {
 		contract: RESOLVER_CONTRACT,
 		action: parsed.request.ref.physicalId === parsed.appName ? "noop" : "adopt",
 		physicalId: parsed.appName,
-		outputs: {
-			appName: parsed.appName,
-			owner: parsed.owner,
-			instances: spec.instances,
-			requiredInstances: required,
-			runningInstances: nodes.size,
-			componentDigests,
-			...(single === undefined ? {} : { artifactDigest: single }),
-			ready,
-			operationConfirmed: ready,
-			operationTerminal: ready,
-			absenceConfirmed: false,
-			lifecycleStatus: ready ? "ready" : "pending",
-		},
+		// Only a single-component app has one artifact identity to report.
+		outputs:
+			single === undefined
+				? observedOutputs
+				: { ...observedOutputs, artifactDigest: single },
 		diagnostics: ready
 			? []
 			: [

@@ -1,4 +1,4 @@
-/** Vet a JSON document against a CUE definition with the pinned cue binary. */
+/** Vet a serialized JSON document against a CUE definition with the pinned cue binary. */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,12 +17,12 @@ const CUE_BIN =
 export function cueVet(
 	cueFile: string,
 	definition: string,
-	document: unknown,
+	serializedJson: string,
 ): void {
 	const directory = mkdtempSync(join(tmpdir(), "wp13-cue-"));
 	try {
 		const json = join(directory, "document.json");
-		writeFileSync(json, JSON.stringify(document));
+		writeFileSync(json, serializedJson);
 		execFileSync(
 			CUE_BIN,
 			[

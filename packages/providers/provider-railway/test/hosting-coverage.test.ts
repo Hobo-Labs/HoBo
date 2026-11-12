@@ -176,7 +176,7 @@ describe("Railway hosting coverage wire contract (protobuf + CUE)", () => {
 			cueVet(
 				"hosting_coverage.cue",
 				"#HostingCoverage",
-				RAILWAY_HOSTING_COVERAGE,
+				JSON.stringify(RAILWAY_HOSTING_COVERAGE),
 			),
 		).not.toThrow();
 	});
@@ -184,7 +184,11 @@ describe("Railway hosting coverage wire contract (protobuf + CUE)", () => {
 		const broken = JSON.parse(JSON.stringify(RAILWAY_HOSTING_COVERAGE));
 		broken.traffic.absent.pop();
 		expect(() =>
-			cueVet("hosting_coverage.cue", "#HostingCoverage", broken),
+			cueVet(
+				"hosting_coverage.cue",
+				"#HostingCoverage",
+				JSON.stringify(broken),
+			),
 		).toThrow();
 	});
 });

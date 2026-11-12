@@ -87,7 +87,8 @@ function unparseable(message: string): never {
 	);
 }
 function scopeId(value: JsonValue | undefined, field: string): string {
-	const text = typeof value === "number" ? String(value) : value;
+	// A numeric wire id and its decimal string are the same identifier.
+	const text = isJsonString(value) ? value : JSON.stringify(value ?? null);
 	if (!isJsonString(text) || !SCOPE_ID.test(text))
 		throw new ResolverError(
 			"RESOLVER_PROVIDER_REJECTED",

@@ -29,8 +29,9 @@ import {
 // public-contract: versioned identity of a provider's I14 coverage document.
 export const HOSTING_COVERAGE_CONTRACT = "hobo.provider-hosting-coverage/v1";
 
-// public-contract: metric names emitted for every resolver call.
+// public-contract: counter name emitted for every resolver call.
 export const RESOLVER_OPERATIONS_METRIC = "hobo.cd.resolver.operations";
+// public-contract: histogram name for every resolver call's duration.
 export const RESOLVER_DURATION_METRIC = "hobo.cd.resolver.duration";
 
 /** Every portable traffic offering id (ADR-0143); a profile declares each one
@@ -114,14 +115,6 @@ function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function freezeDeep<T>(value: T): T {
-	if (value !== null && typeof value === "object") {
-		for (const child of Object.values(value)) freezeDeep(child);
-		Object.freeze(value);
-	}
-	return value;
-}
-
 /**
  * Build a provider's frozen coverage document. Refuses (typed) a declaration
  * that would make I14 unverifiable: a product both resolved and refused, a
@@ -176,17 +169,29 @@ export function defineHostingCoverage(input: {
 	for (const id of profile.fallbacks)
 		if (!offerings.includes(id))
 			fail(`fallback ${id} is not an offering the provider realizes`);
-	return freezeDeep({
+	return Object.freeze({
 		contract: HOSTING_COVERAGE_CONTRACT,
 		providerId: input.providerId,
-		resolvedProductIds: resolved,
-		unresolved: unresolved.map((entry) => ({ ...entry })),
-		traffic: {
+		resolvedProductIds: Object.freeze(resolved),
+		unresolved: Object.freeze(
+			unresolved.map((entry) =>
+				Object.freeze({
+					productId: entry.productId,
+					reason: entry.reason,
+					remediation: entry.remediation,
+				}),
+			),
+		),
+		traffic: Object.freeze({
 			kind: profile.provider,
-			offerings,
-			fallbacks: [...profile.fallbacks],
-			absent: absent.map((entry) => ({ ...entry })),
-		},
+			offerings: Object.freeze(offerings),
+			fallbacks: Object.freeze([...profile.fallbacks]),
+			absent: Object.freeze(
+				absent.map((entry) =>
+					Object.freeze({ offeringId: entry.offeringId, reason: entry.reason }),
+				),
+			),
+		}),
 	});
 }
 
@@ -216,11 +221,6 @@ export function hostingProductRefusal(
 	);
 }
 
-function outcomeOf(error: unknown): string {
-	if (error instanceof ResolverError) return error.code;
-	return "error";
-}
-
 /**
  * Wrap resolvers so every call emits `hobo.cd.resolver.operations` and
  * `hobo.cd.resolver.duration`. Without a sink the resolvers are returned
@@ -247,13 +247,16 @@ export function instrumentResolvers(
 		action?: string,
 	): Promise<void> {
 		const endedAt = now?.() ?? startedAt;
-		const attributes: ResolverMetricAttributes = {
+		const common = {
 			"hobo.provider.id": resolver.providerId,
 			"hobo.resolver.product_id": resolver.productId,
 			"hobo.resolver.operation": operation,
 			"hobo.resolver.outcome": outcome,
-			...(action === undefined ? {} : { "hobo.resolver.action": action }),
-		};
+		} satisfies ResolverMetricAttributes;
+		const attributes =
+			action === undefined
+				? common
+				: { ...common, "hobo.resolver.action": action };
 		try {
 			await sink?.metrics([
 				{
@@ -289,19 +292,21 @@ export function instrumentResolvers(
 			await emit(resolver, operation, startedAt, "ok", actionOf(value));
 			return value;
 		} catch (error) {
-			await emit(resolver, operation, startedAt, outcomeOf(error));
+			await emit(
+				resolver,
+				operation,
+				startedAt,
+				error instanceof ResolverError ? error.code : "error",
+			);
 			throw error;
 		}
 	}
 	return Object.freeze(
 		resolvers.map((resolver): ResourceResolver => {
 			const read = resolver.read;
-			return {
+			const base: ResourceResolver = {
 				providerId: resolver.providerId,
 				productId: resolver.productId,
-				...(resolver.directives === undefined
-					? {}
-					: { directives: resolver.directives }),
 				reconcile: (request: ResolveRequest, transport: HttpTransport) =>
 					measured(
 						resolver,
@@ -316,9 +321,12 @@ export function instrumentResolvers(
 						() => resolver.delete(request, transport),
 						() => undefined,
 					),
-				...(read === undefined
-					? {}
+			};
+			const readable: ResourceResolver =
+				read === undefined
+					? base
 					: {
+							...base,
 							read: (request: ResolveRequest, transport: HttpTransport) =>
 								measured(
 									resolver,
@@ -326,8 +334,10 @@ export function instrumentResolvers(
 									() => read.call(resolver, request, transport),
 									(value) => (value === undefined ? "absent" : value.action),
 								),
-						}),
-			};
+						};
+			return resolver.directives === undefined
+				? readable
+				: { ...readable, directives: resolver.directives };
 		}),
 	);
 }

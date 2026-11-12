@@ -101,7 +101,7 @@ function unparseable(message: string): never {
 interface Target {
 	readonly request: ResolveRequest;
 	readonly stationId: string;
-	readonly artifactDigest?: string;
+	readonly artifactDigest: string | undefined;
 }
 
 function target(raw: ResolveRequest): Target {
@@ -136,14 +136,14 @@ function target(raw: ResolveRequest): Target {
 	return {
 		request,
 		stationId,
-		...(digest === undefined ? {} : { artifactDigest: digest }),
+		artifactDigest: isJsonString(digest) ? digest : undefined,
 	};
 }
 
 interface Running {
 	readonly state: "running";
 	readonly station: WebernetesLocalEndpoint;
-	readonly artifactDigest?: string;
+	readonly artifactDigest: string | undefined;
 }
 type Observed = Running | { readonly state: "released" } | undefined;
 
@@ -169,7 +169,7 @@ function parseRecord(value: JsonValue | undefined): Observed {
 	return {
 		state: "running",
 		station,
-		...(digest === undefined ? {} : { artifactDigest: digest }),
+		artifactDigest: isJsonString(digest) ? digest : undefined,
 	};
 }
 
@@ -179,10 +179,9 @@ export function createWebernetesResolvers(
 ): readonly ResourceResolver[] {
 	const host = options.host;
 	if (
-		!host ||
-		typeof host.provision !== "function" ||
-		typeof host.describe !== "function" ||
-		typeof host.release !== "function"
+		!(host?.provision instanceof Function) ||
+		!(host.describe instanceof Function) ||
+		!(host.release instanceof Function)
 	)
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
@@ -263,25 +262,30 @@ export function createWebernetesResolvers(
 			);
 		if (!artifactMatches)
 			diagnostics.push("the host has not reported the desired artifact yet");
+		const observedOutputs = {
+			stationId: parsed.stationId,
+			stationUrl: observed.station.url,
+			locality: observed.station.locality,
+			probeStatus: status,
+			ready,
+			operationConfirmed: ready,
+			operationTerminal: ready,
+			absenceConfirmed: false,
+			lifecycleStatus: ready ? "ready" : "pending",
+		};
+		// Core's lifecycle parse admits only HTTPS or loopback HTTP endpoints.
+		const served =
+			servable && ready
+				? { ...observedOutputs, servingEndpoint: observed.station.url }
+				: observedOutputs;
 		return {
 			contract: RESOLVER_CONTRACT,
 			action,
 			physicalId: parsed.stationId,
-			outputs: {
-				stationId: parsed.stationId,
-				stationUrl: observed.station.url,
-				locality: observed.station.locality,
-				...(servable && ready ? { servingEndpoint: observed.station.url } : {}),
-				...(observed.artifactDigest === undefined
-					? {}
-					: { artifactDigest: observed.artifactDigest }),
-				probeStatus: status,
-				ready,
-				operationConfirmed: ready,
-				operationTerminal: ready,
-				absenceConfirmed: false,
-				lifecycleStatus: ready ? "ready" : "pending",
-			},
+			outputs:
+				observed.artifactDigest === undefined
+					? served
+					: { ...served, artifactDigest: observed.artifactDigest },
 			diagnostics,
 		};
 	}

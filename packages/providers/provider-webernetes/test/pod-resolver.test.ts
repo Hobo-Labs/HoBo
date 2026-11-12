@@ -41,6 +41,7 @@ interface Interaction {
 	readonly response: JsonValue;
 }
 function loadPact(): readonly Interaction[] {
+	// SAFETY: the checked-in pact file is the fixture; every test below replays it.
 	const pact = JSON.parse(
 		readFileSync(
 			new URL(
@@ -86,6 +87,7 @@ function pactWorld(
 			log.push(`provision ${stationId}`);
 			if (settings.hostThrows) throw new Error("dev server not running");
 			state = "running";
+			// SAFETY: the pact's provision response is the station URL pair.
 			return pactBody("provision a local station") as {
 				stationUrl: string;
 				claimUrl: string;
@@ -95,12 +97,16 @@ function pactWorld(
 			log.push(`describe ${stationId}`);
 			if (settings.hostThrows) throw new Error("dev server not running");
 			if (state === "absent") return undefined;
-			if (state === "released")
+			if (state === "released") {
+				// SAFETY: an untrusted station record; the resolver parses it.
 				return pactBody(
 					"describe a released station",
 				) as WebernetesStationRecord;
+			}
 			if (settings.describeAfterProvision !== undefined)
+				// SAFETY: an untrusted station record; the resolver parses it.
 				return settings.describeAfterProvision as WebernetesStationRecord;
+			// SAFETY: an untrusted station record; the resolver parses it.
 			return pactBody("describe a running station") as WebernetesStationRecord;
 		},
 		async release({ stationId }) {
@@ -126,13 +132,13 @@ function request(
 	desired: JsonObject = {},
 	physicalId?: string,
 ): ResolveRequest {
+	const ref = {
+		slot: "service" as const,
+		productId: WEBERNETES_POD_PRODUCT_ID,
+		logicalId: "shop",
+	};
 	return {
-		ref: {
-			slot: "service",
-			productId: WEBERNETES_POD_PRODUCT_ID,
-			logicalId: "shop",
-			...(physicalId === undefined ? {} : { physicalId }),
-		},
+		ref: physicalId === undefined ? ref : { ...ref, physicalId },
 		desired,
 		credentialRef: "local://webernetes/none",
 	};
@@ -336,9 +342,9 @@ describe("Webernetes pod resolver (local station host)", () => {
 		expect(error.message).toMatch(/desired\.replicas/u);
 	});
 	it("refuses a resolver without a station host at construction", () => {
-		expect(() =>
-			webernetesResolverRegistry({} as { host: WebernetesStationHost }),
-		).toThrow(ResolverError);
+		expect(() => webernetesResolverRegistry(JSON.parse('{"host":{}}'))).toThrow(
+			ResolverError,
+		);
 	});
 	it("emits resolver metrics", async () => {
 		const points: ResolverMetricPoint[] = [];
@@ -366,7 +372,11 @@ describe("Webernetes pod resolver (local station host)", () => {
 			world.transport,
 		);
 		expect(() =>
-			cueVet("pod_resolver.cue", "#WebernetesPodOutputs", outcome.outputs),
+			cueVet(
+				"pod_resolver.cue",
+				"#WebernetesPodOutputs",
+				JSON.stringify(outcome.outputs),
+			),
 		).not.toThrow();
 	});
 });
@@ -380,15 +390,19 @@ describe("Webernetes station-host PACT messages satisfy the CUE wire contract", 
 			cueVet(
 				"pod_resolver.cue",
 				"#WebernetesStationRecord",
-				pactBody(description),
+				JSON.stringify(pactBody(description)),
 			),
 		).not.toThrow();
 	});
 	it("CUE rejects a running record without a station URL", () => {
 		expect(() =>
-			cueVet("pod_resolver.cue", "#WebernetesStationRecord", {
-				state: "running",
-			}),
+			cueVet(
+				"pod_resolver.cue",
+				"#WebernetesStationRecord",
+				JSON.stringify({
+					state: "running",
+				}),
+			),
 		).toThrow();
 	});
 });
@@ -410,6 +424,7 @@ describe("Webernetes real local HTTP lane", () => {
 		await new Promise<void>((resolve) =>
 			server?.listen(0, "127.0.0.1", resolve),
 		);
+		// SAFETY: a TCP server listening on a port reports an AddressInfo.
 		const port = (server.address() as AddressInfo).port;
 		const stationUrl = `http://127.0.0.1:${port}/api/anon/host/shop/`;
 		let running = false;
@@ -474,7 +489,7 @@ describe("Webernetes traffic profile and coverage (I14)", () => {
 			cueVet(
 				"hosting_coverage.cue",
 				"#HostingCoverage",
-				WEBERNETES_HOSTING_COVERAGE,
+				JSON.stringify(WEBERNETES_HOSTING_COVERAGE),
 			),
 		).not.toThrow();
 	});

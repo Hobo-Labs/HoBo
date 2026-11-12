@@ -54,7 +54,7 @@ export function describeResolverConformance(
 			]);
 			for (const resolver of fixture.registry.list()) {
 				expect(resolver.providerId).toBe(fixture.coverage.providerId);
-				expect(typeof resolver.read).toBe("function");
+				expect(resolver.read).toBeInstanceOf(Function);
 			}
 		});
 

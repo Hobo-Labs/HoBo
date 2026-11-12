@@ -64,14 +64,14 @@ function loadPact(): readonly PactInteraction[] {
 			!isJsonObject(entry.response) ||
 			!isJsonString(entry.request.method) ||
 			!isJsonString(entry.request.path) ||
-			typeof entry.response.status !== "number" ||
+			!Number.isInteger(entry.response.status) ||
 			entry.response.body === undefined
 		)
 			throw new Error("malformed Convex pact interaction");
 		return {
 			method: entry.request.method,
 			path: entry.request.path,
-			status: entry.response.status,
+			status: Number(entry.response.status),
 			body: entry.response.body,
 		};
 	});
@@ -117,13 +117,13 @@ function request(
 	desired: Record<string, JsonValue> = {},
 	physicalId?: string,
 ): ResolveRequest {
+	const ref = {
+		slot: "api" as const,
+		productId: CONVEX_CLOUD_DEPLOYMENT_PRODUCT_ID,
+		logicalId: "backend",
+	};
 	return {
-		ref: {
-			slot: "api",
-			productId: CONVEX_CLOUD_DEPLOYMENT_PRODUCT_ID,
-			logicalId: "backend",
-			...(physicalId === undefined ? {} : { physicalId }),
-		},
+		ref: physicalId === undefined ? ref : { ...ref, physicalId },
 		desired: {
 			...scope,
 			deploymentName: "happy-otter-123",
@@ -135,19 +135,16 @@ function request(
 }
 function registry(extra: { metrics?: ResolverMetricPoint[] } = {}) {
 	const points = extra.metrics;
+	const base = { ...scope, resolveCredential: async () => TOKEN };
+	if (!points) return convexResolverRegistry(base);
 	return convexResolverRegistry({
-		...scope,
-		resolveCredential: async () => TOKEN,
-		...(points
-			? {
-					metrics: {
-						async metrics(batch: readonly ResolverMetricPoint[]) {
-							points.push(...batch);
-						},
-					},
-					nowMs: () => 7,
-				}
-			: {}),
+		...base,
+		metrics: {
+			async metrics(batch: readonly ResolverMetricPoint[]) {
+				points.push(...batch);
+			},
+		},
+		nowMs: () => 7,
 	});
 }
 function resolver() {
@@ -348,7 +345,7 @@ describe("Convex cloud deployment resolver (Management API)", () => {
 			cueVet(
 				"cloud_deployment.cue",
 				"#ConvexCloudDeploymentOutputs",
-				outcome.outputs,
+				JSON.stringify(outcome.outputs),
 			),
 		).not.toThrow();
 	});
@@ -396,7 +393,7 @@ describe("Convex traffic profile and coverage (I14)", () => {
 			cueVet(
 				"hosting_coverage.cue",
 				"#HostingCoverage",
-				CONVEX_HOSTING_COVERAGE,
+				JSON.stringify(CONVEX_HOSTING_COVERAGE),
 			),
 		).not.toThrow();
 	});
