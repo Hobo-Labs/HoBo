@@ -34,7 +34,6 @@ import {
 	evaluateRunnerTeardownGuard,
 	resolveRunnerAssignedJob,
 } from "../jit-runner-correlation.js";
-import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "./container-timeout.js";
 import { deregisterGithubRunner } from "../jit-runner-deregister.js";
 import {
 	type JobPickupMetadataCache,
@@ -53,6 +52,7 @@ import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
 import {
 	capIsolatedContainerTimeoutMs,
 	ISOLATED_JIT_FOREIGN_MESH_IDLE_MS,
+	ISOLATED_JIT_QUEUED_BOUND_GRACE_MS,
 	ISOLATED_JIT_UNASSIGNED_IDLE_MS,
 } from "./container-timeout.js";
 import {
@@ -1101,8 +1101,7 @@ export function createIsolatedContainerController(options: {
 				runnerName: lease.runnerName,
 				runnerId: lease.runnerId,
 				reservedJobId: lease.jobId,
-				servedJobId:
-					lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+				servedJobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
 				preferRunIds: [lease.originalRunId],
 				boundSinceMs,
 				nowMs: Date.parse(now()),
@@ -1795,10 +1794,7 @@ export function createIsolatedContainerController(options: {
 			if (hasIsolatedStopIntent(lease)) {
 				// `forceStop` only disables fail-closed on unreadable GitHub here; executing
 				// assignments still block via `evaluateRunnerTeardownGuard`.
-				if (
-					await runnerTeardownBlocked(lease, forceStop !== true)
-				)
-					return;
+				if (await runnerTeardownBlocked(lease, forceStop !== true)) return;
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
 					lease = await markStopped(lease, true);
@@ -2062,8 +2058,7 @@ export function createIsolatedContainerController(options: {
 							runnerName: byId.runnerName,
 							runnerId: byId.runnerId,
 							reservedJobId: byId.jobId,
-							servedJobId:
-								byId.actualJobId > 0 ? byId.actualJobId : byId.jobId,
+							servedJobId: byId.actualJobId > 0 ? byId.actualJobId : byId.jobId,
 							preferRunIds: [byId.originalRunId],
 							boundSinceMs,
 							nowMs: Date.parse(now()),

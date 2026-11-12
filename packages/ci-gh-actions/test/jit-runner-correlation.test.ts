@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as githubModule from "../src/github.js";
+import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "../src/isolated-worker/container-timeout.js";
 import {
 	assignmentBlocksRunnerTeardown,
 	correlateRunnerOnRun,
@@ -7,7 +8,6 @@ import {
 	runnerMatchesGitHubJob,
 	servedGitHubJobBlocksSettlement,
 } from "../src/jit-runner-correlation.js";
-import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "../src/isolated-worker/container-timeout.js";
 
 describe("correlateRunnerOnRun", () => {
 	const runnerName = "hobo-00000000-0000-4000-8000-000000000001";
@@ -153,8 +153,7 @@ describe("settlement custody helpers", () => {
 
 	it("releases queued-bound jobs after the grace window", () => {
 		const nowMs = Date.parse("2026-11-12T12:10:00.000Z");
-		const boundSinceMs =
-			nowMs - (ISOLATED_JIT_QUEUED_BOUND_GRACE_MS + 60_000);
+		const boundSinceMs = nowMs - (ISOLATED_JIT_QUEUED_BOUND_GRACE_MS + 60_000);
 		expect(
 			assignmentBlocksRunnerTeardown(
 				{ jobId: 1, runId: 2, status: "queued" },

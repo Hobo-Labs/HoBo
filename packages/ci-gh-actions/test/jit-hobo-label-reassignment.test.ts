@@ -9,10 +9,10 @@ import {
 	createIsolatedContainerController,
 	RUNNER_EXITED_PATH,
 } from "../src/isolated-worker/container-controller.js";
+import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "../src/isolated-worker/container-timeout.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import { orphanJobCandidateForLease } from "../src/isolated-worker/orphan-jobs.js";
 import * as correlationModule from "../src/jit-runner-correlation.js";
-import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "../src/isolated-worker/container-timeout.js";
 
 function transitionFor(lease: Lease) {
 	return vi.fn(
@@ -713,10 +713,7 @@ describe("shared hobo label JIT reassignment", () => {
 			});
 		}
 
-		function crossJobGithubMocks(
-			lease: Lease,
-			shardStatus: string,
-		): void {
+		function crossJobGithubMocks(lease: Lease, shardStatus: string): void {
 			vi.spyOn(githubModule, "getJob").mockImplementation(
 				async (_api, _i, _r, jobId) => {
 					if (jobId === GHCR_JOB)
@@ -875,11 +872,13 @@ describe("shared hobo label JIT reassignment", () => {
 				settle,
 				withdrawQueuedJob: vi.fn(async () => true),
 			} as SqliteCiStore & HostedRelayStore;
-			vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockResolvedValue({
-				jobId: GHCR_JOB,
-				runId: RELEASE_RUN,
-				status: "queued",
-			});
+			vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockResolvedValue(
+				{
+					jobId: GHCR_JOB,
+					runId: RELEASE_RUN,
+					status: "queued",
+				},
+			);
 			vi.spyOn(githubModule, "getJob").mockResolvedValue({
 				id: GHCR_JOB,
 				run_id: RELEASE_RUN,
