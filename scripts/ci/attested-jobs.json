@@ -725,7 +725,10 @@
 				{
 					"name": "Ensure worker toolchain image",
 					"if": "steps.affected.outputs.image_ids != ''",
-					"run": "set -euo pipefail\nbash packages/ci-gh-actions/deploy/ci-runner/build.sh\n",
+					"run": "node --no-warnings scripts/ci/ensure-ci-worker-image.mts",
+					"env": {
+						"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
+					},
 					"local": "skip",
 					"reason": "runs only when a release image is affected, and then a local run does not cover this job"
 				},
