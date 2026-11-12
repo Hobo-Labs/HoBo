@@ -15,6 +15,9 @@ import type { Digest, TelemetrySink } from "../ports.js";
 
 const tagOf = Object.prototype.toString;
 
+/** A readonly port input built field by field (optional fields added only when present). */
+export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
 export function isJsonObject<T>(value: T): value is T & JsonObject {
 	return (
 		value !== null &&

@@ -25,6 +25,7 @@ import {
 	fid,
 	HOUR,
 	MemoryEventStore,
+	pid,
 	T0,
 	TENANT,
 } from "./store.js";
@@ -168,9 +169,9 @@ describe("A2H approver", () => {
 		);
 		expect(decided.ok).toBe(true);
 		await h.service.tick(h.ctx());
-		expect(
-			(await h.service.get(result.value.promotionId as never))?.state,
-		).toBe(PromotionState.PROMOTED);
+		expect((await h.service.get(pid(result.value.promotionId)))?.state).toBe(
+			PromotionState.PROMOTED,
+		);
 	});
 
 	it("rollout-stage approvals on the same stream are not Camp progress", async () => {
@@ -191,7 +192,7 @@ describe("A2H approver", () => {
 			},
 			h.ctx(),
 		);
-		const record = await h.service.get(result.value.promotionId as never);
+		const record = await h.service.get(pid(result.value.promotionId));
 		expect(record?.targetCampIds).toEqual(["dev-1"]);
 		expect(record?.state).toBe(PromotionState.VERIFYING);
 	});

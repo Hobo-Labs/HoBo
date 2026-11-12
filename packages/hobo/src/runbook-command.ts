@@ -219,11 +219,14 @@ export interface RunbookExecutorDeps extends RunbookCommandDeps {
 	readonly projectDir: string;
 }
 
+/** The part of `@hobo/cd` `CdContext` a runbook hook receives. */
+export type RunbookContext = Readonly<{ tenant: string }>;
+
 /** The `RunbookExecutor` port `@hobo/cd` promotion hooks call (RUNBOOK hooks). */
 export interface CdRunbookExecutor {
 	run(
 		input: Readonly<{ path: string; args: JsonObject }>,
-		ctx: unknown,
+		ctx: RunbookContext,
 	): Promise<RunbookOutcome>;
 }
 

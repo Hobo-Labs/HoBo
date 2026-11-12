@@ -19,6 +19,8 @@ import {
 	PolicyMode,
 	type PostureFindingRecord,
 	PostureFindingRecordSchema,
+	type SetRecord,
+	SetRecordSchema,
 	type ShadowDecisionRecord,
 } from "../../src/_generated/cd_pb.js";
 import {
@@ -136,6 +138,7 @@ class Shadow implements ShadowRecorder {
 		const binding = await this.policy.binding(campId);
 		if (!binding || binding.candidateRailDigest === "") return undefined;
 		return {
+			// SAFETY: test fixture; the value is the shape the port declares.
 			railDigest: binding.candidateRailDigest as Digest,
 			policyPack: packFor(binding.candidateRailDigest),
 		};
@@ -264,8 +267,19 @@ function input(
 		freight,
 		resolved,
 		windows: ["business-hours"],
-		...(current ? { current: { setId: "set_1", campId } as never } : {}),
+		...currentSet(current, campId),
 	};
+}
+
+/** The optional `current` field of the gate input. */
+type CurrentField = { current?: SetRecord };
+
+/** The optional `current` field: present only when the Camp runs a Set. */
+function currentSet(current: boolean, campId: string): CurrentField {
+	const value: CurrentField = {};
+	if (current)
+		value.current = create(SetRecordSchema, { setId: "set_1", campId });
+	return value;
 }
 
 describe("deploy gate (gatekeeper.ts)", () => {
@@ -333,6 +347,7 @@ describe("deploy gate (gatekeeper.ts)", () => {
 		).toMatch(/Change the declaration of web/);
 		const changes = await s.gate.evaluate(
 			input(freight, "prod-1", [
+				// SAFETY: test fixture; the value is the shape the port declares.
 				{ resource: "web", kind: ChangeKind.UPDATE } as never,
 			]),
 			s.ctx,
@@ -411,6 +426,7 @@ describe("deploy gate (gatekeeper.ts)", () => {
 	it("refuses Freight whose provenance is not verified (trust)", async () => {
 		const s = setup();
 		const freight = s.freights.add("f1", {
+			// SAFETY: test fixture; the value is the shape the port declares.
 			provenance: [{ statementDigest: digest("aa"), verified: false } as never],
 		});
 		const verdict = await s.gate.evaluate(input(freight), s.ctx);

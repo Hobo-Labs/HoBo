@@ -7,6 +7,7 @@ import {
 	createRegistryFromProviders,
 	type RegistrableProvider,
 } from "@hobo/cloud";
+import type { JsonObject } from "@hobo/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ChangeKind } from "../../src/_generated/cd_pb.js";
 import {
@@ -22,7 +23,7 @@ import { camp, context, MemoryEventStore, T0, TENANT } from "./store.js";
 
 // The declaration parser lives in @hobo/bindles, which @hobo/cd does not
 // depend on; the test loads it through @hobo/cloud's own resolution.
-let parseManifest: (raw: unknown) => Declaration;
+let parseManifest: (raw: JsonObject) => Declaration;
 beforeAll(async () => {
 	const cloudEntry = fileURLToPath(import.meta.resolve("@hobo/cloud"));
 	const bindles = await import(
@@ -109,10 +110,10 @@ function pinned(environment: string, providerId: string): CampPlanning {
 	};
 }
 
-const CAMPS: Record<string, CampPlanning> = {
+const CAMPS = {
 	"us-1": pinned("prod-us", "alpha"),
 	"eu-1": pinned("prod-eu", "beta"),
-};
+} satisfies Record<string, CampPlanning>;
 
 describe("planning resolver (planning.ts)", () => {
 	it("I1 across two providers: one declaration, Matching per Camp, provider difference as infrastructure_diff", async () => {

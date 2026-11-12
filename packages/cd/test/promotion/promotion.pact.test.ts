@@ -50,20 +50,26 @@ function interaction(description: string): Interaction {
 }
 
 const tag = Object.prototype.toString;
-function isObject(value: unknown): value is Record<string, unknown> {
+function isObject<T>(value: T): value is T & JsonObject {
 	return tag.call(value) === "[object Object]";
 }
 
+/** The JSON form of an observed provider response (drops undefined). */
+function observed<T>(value: T): JsonValue {
+	return JSON.parse(JSON.stringify(value ?? null));
+}
+
 /** Every expected leaf is present and equal in actual (arrays compared whole). */
-function expectSubset(expected: JsonValue, actual: unknown, path = "$"): void {
+function expectSubset(
+	expected: JsonValue,
+	actual: JsonValue | undefined,
+	path = "$",
+): void {
 	if (isObject(expected)) {
 		expect(isObject(actual), `${path} is an object`).toBe(true);
+		const record = isObject(actual) ? actual : {};
 		for (const [key, value] of Object.entries(expected))
-			expectSubset(
-				value,
-				(actual as Record<string, unknown>)[key],
-				`${path}.${key}`,
-			);
+			expectSubset(value, record[key], `${path}.${key}`);
 		return;
 	}
 	expect(actual, path).toEqual(expected);
@@ -71,18 +77,22 @@ function expectSubset(expected: JsonValue, actual: unknown, path = "$"): void {
 
 function expectRules(
 	rules: Interaction["response"]["matchingRules"],
-	body: unknown,
+	body: JsonValue,
 ): void {
 	for (const [path, rule] of Object.entries(rules ?? {})) {
 		const value = path
 			.replace(/^\$\.body\./, "")
 			.split(".")
-			.reduce<unknown>((v, key) => (isObject(v) ? v[key] : undefined), body);
+			.reduce<JsonValue | undefined>(
+				(v, key) => (isObject(v) ? v[key] : undefined),
+				body,
+			);
 		expect(String(value), path).toMatch(new RegExp(rule.regex));
 	}
 }
 
-function verify(description: string, body: unknown): void {
+function verify<T>(description: string, response: T): void {
+	const body = observed(response);
 	const expected = interaction(description).response;
 	expectSubset(expected.body, body);
 	expectRules(expected.matchingRules, body);
@@ -290,6 +300,7 @@ describe("promotion pact (provider verification)", () => {
 			return {
 				status: response.status,
 				result: JSON.parse(
+					// SAFETY: test fixture; the value is the shape the port declares.
 					new TextDecoder().decode(response.body as Uint8Array),
 				),
 			};

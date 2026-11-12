@@ -65,7 +65,12 @@ import type {
 	TopologyReader,
 } from "../ports.js";
 import { previewSourceOf } from "../promotion/ids.js";
-import { digestOf, emitMetric, iso } from "../promotion/journal.js";
+import {
+	digestOf,
+	emitMetric,
+	iso,
+	type Mutable,
+} from "../promotion/journal.js";
 import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
 
 // public-contract: reason codes the deploy gate adds beside Gatekeeper's own.
@@ -127,16 +132,28 @@ export type DeployGateDeps = CdBase & {
 	readonly telemetry: TelemetrySink;
 };
 
-const REMEDIATION: Readonly<Record<string, string>> = {
-	contracts:
+const REMEDIATION = new Map([
+	[
+		"contracts",
 		"Deploy a compatible version first, dual-publish the missing fields, or add a compatibility shim.",
-	policy:
+	],
+	[
+		"policy",
 		"Change the declaration to satisfy the Rail's policy, or promote a Rail that permits it.",
-	obligations: "Satisfy the pending obligations, then approve the promotion.",
-	cost: "Raise the quota through the Station budget authority or reduce the requested resources.",
-	residency:
+	],
+	[
+		"obligations",
+		"Satisfy the pending obligations, then approve the promotion.",
+	],
+	[
+		"cost",
+		"Raise the quota through the Station budget authority or reduce the requested resources.",
+	],
+	[
+		"residency",
 		"Choose a Camp whose declared Yard regions satisfy the residency constraint.",
-};
+	],
+]);
 
 function toReasons(
 	decision: GatekeeperDecision,
@@ -149,7 +166,7 @@ function toReasons(
 			const remediation =
 				Array.isArray(fixes) && fixes.length > 0
 					? fixes.map(String).join("; ")
-					: (REMEDIATION[r.gate] ??
+					: (REMEDIATION.get(r.gate) ??
 						"Inspect the gate decision and correct the cause.");
 			return reason(r.code, r.message, remediation, `${r.gate}:${campId}`);
 		});
@@ -186,11 +203,12 @@ function residencyVerdict(
 	}[] = [];
 	for (const constraint of applicable) {
 		for (const region of [...camp.regions].sort()) {
-			const result = evaluateResidency({
+			const query: Mutable<Parameters<typeof evaluateResidency>[0]> = {
 				constraint,
 				region,
-				...(catalog === undefined ? {} : { catalog }),
-			});
+			};
+			if (catalog !== undefined) query.catalog = catalog;
+			const result = evaluateResidency(query);
 			if (!result.ok)
 				reasons.push({
 					code: result.code,
@@ -289,7 +307,7 @@ async function ownershipReasons(
 }
 
 /** The policy-IR phase a Delta intent is decided in (`@hobo/policy` PHASES). */
-const PHASE_OF: Readonly<Record<DeltaIntent, string>> = {
+const PHASE_OF = {
 	promote: "promote",
 	preview: "promote",
 	config: "promote",
@@ -301,7 +319,7 @@ const PHASE_OF: Readonly<Record<DeltaIntent, string>> = {
 	up: "apply",
 	down: "apply",
 	depart: "apply",
-};
+} as const satisfies Record<DeltaIntent, string>;
 
 // public-contract: label a preview Camp carries in gate and window evaluation.
 export const PREVIEW_LABEL = "hobo.cd/preview" as const;
@@ -342,9 +360,11 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 		pack: PolicyPack,
 		base: Omit<Parameters<typeof evaluateGatekeeper>[0], "policyPack">,
 		extra: readonly ReasonRecord[],
-	): Readonly<{ decision: GatekeeperDecision; effect: GatekeeperEffect }> {
+	) {
 		const decision = evaluateGatekeeper({ ...base, policyPack: pack });
-		return { decision, effect: extra.length > 0 ? "deny" : decision.decision };
+		const effect: GatekeeperEffect =
+			extra.length > 0 ? "deny" : decision.decision;
+		return { decision, effect };
 	}
 
 	return {
@@ -370,12 +390,14 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 			}
 			const subject = await d.subject(input.freight);
 			const residency = residencyVerdict(subject, camp, d.residencyCatalog);
-			const contracts = await d.contracts({
-				campId: camp.campId,
-				freight: input.freight,
-				resolved: input.resolved,
-				...(input.current === undefined ? {} : { current: input.current }),
-			});
+			const contractQuery: Mutable<Parameters<DeployGateDeps["contracts"]>[0]> =
+				{
+					campId: camp.campId,
+					freight: input.freight,
+					resolved: input.resolved,
+				};
+			if (input.current !== undefined) contractQuery.current = input.current;
+			const contracts = await d.contracts(contractQuery);
 			const extra: ReasonRecord[] = [
 				...provenanceReasons(input.freight, campId),
 				...trustReasons(d.trust, input.resolved, nowMs, campId),
@@ -395,7 +417,9 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 						`contracts:${campId}`,
 					),
 				);
-			const base = {
+			const base: Mutable<
+				Omit<Parameters<typeof evaluateGatekeeper>[0], "policyPack">
+			> = {
 				request: {
 					subject: { kind: ctx.principal.kind, id: ctx.principal.id },
 					action: `cd.${input.intent}`,
@@ -430,8 +454,8 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 					limit: 1,
 					requested: 1,
 				},
-				...(residency === undefined ? {} : { residency }),
 			};
+			if (residency !== undefined) base.residency = residency;
 			const enforced = await enforcedRail(camp);
 			const enforcedPack =
 				enforced?.policyPack ?? createPermissiveDefaultPack();
@@ -502,7 +526,7 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 					window: window.open ? "open" : "closed",
 				},
 			});
-			return {
+			const verdict: Mutable<GateVerdict> = {
 				decisionId,
 				effect,
 				obligations: decision.obligations.map((o) =>
@@ -515,8 +539,9 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 				),
 				reasons,
 				window,
-				...(shadow === undefined ? {} : { shadow }),
 			};
+			if (shadow !== undefined) verdict.shadow = shadow;
+			return verdict;
 		},
 	};
 }

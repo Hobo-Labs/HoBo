@@ -61,6 +61,7 @@ function realGate(
 			const binding = await campPolicy.binding(campId);
 			return binding?.candidateRailDigest
 				? {
+						// SAFETY: test fixture; the value is the shape the port declares.
 						railDigest: binding.candidateRailDigest as Digest,
 						policyPack: CHALLENGER,
 					}
@@ -156,6 +157,7 @@ describe("champion-challenger-promotion-contract (promoted)", () => {
 	it("incomplete signed provenance is refused before anything is persisted", async () => {
 		const h = harness({ gate: realGate(new FakeCampPolicy(), []) });
 		h.freight.add("f1", {
+			// SAFETY: test fixture; the value is the shape the port declares.
 			provenance: [{ statementDigest: digest("aa"), verified: false } as never],
 		});
 		const result = await h.service.promote(

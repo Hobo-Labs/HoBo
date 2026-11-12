@@ -53,6 +53,11 @@ function vets(definition: string, value: JsonValue): boolean {
 	}
 }
 
+/** A persisted body as JSON (bodies are JSON by construction). */
+function json<T>(value: T): JsonValue {
+	return JSON.parse(JSON.stringify(value));
+}
+
 async function journal() {
 	const h = harness();
 	h.freight.add("f1");
@@ -88,7 +93,7 @@ describe.skipIf(!cue)("promotion.cue", () => {
 			CD_EVENTS.EnvPromoteRequested,
 			CD_EVENTS.EnvPromoted,
 			CD_EVENTS.EnvPromoteRolledBack,
-		].flatMap((type) => store.events(type).map((e) => e.data as JsonValue));
+		].flatMap((type) => store.events(type).map((e) => json(e.data)));
 		expect(bodies.length).toBeGreaterThan(3);
 		for (const body of bodies)
 			expect(vets("#PromotionRecord", body), JSON.stringify(body)).toBe(true);
@@ -97,14 +102,14 @@ describe.skipIf(!cue)("promotion.cue", () => {
 	it("preview records and saga facts vet", async () => {
 		const store = await journal();
 		for (const e of store.events(CD_EVENTS.EnvCloned))
-			expect(vets("#PreviewEnvironmentRecord", e.data as JsonValue)).toBe(true);
+			expect(vets("#PreviewEnvironmentRecord", json(e.data))).toBe(true);
 		for (const e of store.events("saga.Started"))
-			expect(vets("#PromotionSagaStarted", e.data as JsonValue)).toBe(true);
+			expect(vets("#PromotionSagaStarted", json(e.data))).toBe(true);
 		const steps = store.events("saga.StepEmitted");
 		expect(steps.length).toBeGreaterThan(5);
 		for (const e of steps)
 			expect(
-				vets("#PromotionSagaStep", e.data as JsonValue),
+				vets("#PromotionSagaStep", json(e.data)),
 				JSON.stringify(e.data),
 			).toBe(true);
 	}, 30_000);

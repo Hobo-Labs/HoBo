@@ -141,7 +141,7 @@ export function startedFact(promotionId: string, intent: DeltaIntent) {
 	});
 }
 
-function intentOfSagaName(data: unknown): DeltaIntent {
+function intentOfSagaName<D>(data: D): DeltaIntent {
 	if (!isJsonObject(data) || !isText(data.name)) return "promote";
 	const name = String(data.name);
 	const intent = name.startsWith(`${PROMOTION_SAGA}/`)
@@ -167,9 +167,9 @@ export function completedFact(promotionId: string, outcome: string) {
 }
 
 /** Parse a saga step body; undefined when it is not a promotion step. */
-export function parseStep(
+export function parseStep<D>(
 	promotionId: string,
-	data: unknown,
+	data: D,
 ): Readonly<{ campId: string; step: StepName; handle: string }> | undefined {
 	if (!isJsonObject(data)) return undefined;
 	if (data.sagaId !== sagaIdOf(promotionId)) return undefined;

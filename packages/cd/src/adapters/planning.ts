@@ -42,6 +42,7 @@ import {
 	canonicalJson,
 	digestOf,
 	iso,
+	type Mutable,
 	principalName,
 	sha256Hex,
 } from "../promotion/journal.js";
@@ -166,7 +167,7 @@ export function sealResolved(
 		decidedAtMs: number;
 	}>,
 ): ResolvedDeploymentSet {
-	return createResolvedDeploymentSet({
+	const input: Mutable<Parameters<typeof createResolvedDeploymentSet>[0]> = {
 		tenant: resolved.tenant,
 		environment: resolved.environment,
 		campId: resolved.campId,
@@ -179,11 +180,11 @@ export function sealResolved(
 			decidedAt: iso(gate.decidedAtMs),
 		},
 		secretRefs: resolved.secretRefs,
-		...(resolved.progressive === undefined
-			? {}
-			: { progressive: resolved.progressive }),
 		setId: resolved.setId,
-	});
+	};
+	if (resolved.progressive !== undefined)
+		input.progressive = resolved.progressive;
+	return createResolvedDeploymentSet(input);
 }
 
 function emptyResolved(

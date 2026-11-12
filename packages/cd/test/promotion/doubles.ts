@@ -404,6 +404,7 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 				reasons: [reason("delta-unknown", "unknown Delta", "open it")],
 			};
 		if (entry.status === "applied" && entry.setId)
+			// SAFETY: test fixture; the value is the shape the port declares.
 			return { ok: true, value: (this.sets.get(entry.setId) as StoredSet).set };
 		if (entry.status !== "open")
 			return {
@@ -551,6 +552,7 @@ export class FakeResolver implements SetResolver {
 						this.providers.get(input.campId) ?? "alpha",
 						input.freight.freightId,
 					);
+		// SAFETY: test fixture; the value is the shape the port declares.
 		let infrastructureDiff = [] as ReturnType<typeof diffResolvedSets>;
 		if (input.sourceCampId) {
 			const source = await this.desired.current(input.sourceCampId);

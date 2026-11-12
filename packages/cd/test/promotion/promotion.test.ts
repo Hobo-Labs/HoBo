@@ -21,7 +21,7 @@ import {
 } from "../../src/promotion/index.js";
 import { pipelineNode, resolvedFor } from "./doubles.js";
 import { harness } from "./harness.js";
-import { AGENT, APPROVER, camp, fid, HOUR, MINUTE } from "./store.js";
+import { AGENT, APPROVER, camp, fid, HOUR, MINUTE, pid } from "./store.js";
 
 function withPipeline(h: ReturnType<typeof harness>) {
 	h.pipelines.define("shop", [
@@ -242,18 +242,18 @@ describe("promotion saga (WP6)", () => {
 		expect(p1.ok && p2.ok && p3.ok).toBe(true);
 		if (!p1.ok || !p2.ok || !p3.ok) return;
 		await h.service.tick(h.ctx());
-		expect((await h.service.get(p1.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p1.value.promotionId)))?.state).toBe(
 			PromotionState.SUPERSEDED,
 		);
-		expect((await h.service.get(p2.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p2.value.promotionId)))?.state).toBe(
 			PromotionState.SUPERSEDED,
 		);
-		expect((await h.service.get(p3.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p3.value.promotionId)))?.state).toBe(
 			PromotionState.AWAITING_APPROVAL,
 		);
 		expect(h.store.events(CD_EVENTS.EnvPromoteSuperseded)).toHaveLength(2);
 		const approved = await h.service.approve(
-			p3.value.promotionId as never,
+			pid(p3.value.promotionId),
 			h.ctx(APPROVER),
 		);
 		expect(approved.ok && approved.value.state).toBe(PromotionState.PROMOTED);
@@ -275,19 +275,19 @@ describe("promotion saga (WP6)", () => {
 			h.ctx(),
 		);
 		if (!p1.ok || !p2.ok) throw new Error("expected both requests");
-		expect((await h.service.get(p1.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p1.value.promotionId)))?.state).toBe(
 			PromotionState.VERIFYING,
 		);
-		expect((await h.service.get(p2.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p2.value.promotionId)))?.state).toBe(
 			PromotionState.QUEUED,
 		);
 		h.verification.pending = false;
 		await h.service.tick(h.ctx());
 		await h.service.tick(h.ctx());
-		expect((await h.service.get(p1.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p1.value.promotionId)))?.state).toBe(
 			PromotionState.PROMOTED,
 		);
-		expect((await h.service.get(p2.value.promotionId as never))?.state).toBe(
+		expect((await h.service.get(pid(p2.value.promotionId)))?.state).toBe(
 			PromotionState.PROMOTED,
 		);
 		expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f2");
@@ -310,7 +310,7 @@ describe("promotion saga (WP6)", () => {
 		);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		const record = await h.service.get(result.value.promotionId as never);
+		const record = await h.service.get(pid(result.value.promotionId));
 		expect(record?.state).toBe(PromotionState.FAILED);
 		expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f0");
 		expect((await h.desired.current(camp("dev-2")))?.freightId).toBe("f0");
@@ -367,12 +367,12 @@ describe("promotion saga (WP6)", () => {
 		expect([...h.desired.deltas.values()][0]?.delta.proposal).toBe(true);
 		// The agent cannot approve its own proposal.
 		const self = await h.service.approve(
-			proposed.value.promotionId as never,
+			pid(proposed.value.promotionId),
 			h.ctx(AGENT),
 		);
 		expect(self.ok).toBe(false);
 		const approved = await h.service.approve(
-			proposed.value.promotionId as never,
+			pid(proposed.value.promotionId),
 			h.ctx(APPROVER),
 		);
 		expect(approved.ok && approved.value.state).toBe(PromotionState.PROMOTED);
@@ -406,9 +406,9 @@ describe("promotion saga (WP6)", () => {
 		h.clock.advance(HOUR);
 		await h.service.tick(h.ctx());
 		if (result.ok)
-			expect(
-				(await h.service.get(result.value.promotionId as never))?.state,
-			).toBe(PromotionState.PROMOTED);
+			expect((await h.service.get(pid(result.value.promotionId)))?.state).toBe(
+				PromotionState.PROMOTED,
+			);
 		expect(WINDOW_CLOSED).toBe("window-closed");
 	});
 
@@ -432,9 +432,9 @@ describe("promotion saga (WP6)", () => {
 		h.freight.unusable.add("f1");
 		await h.service.tick(h.ctx());
 		if (running.ok)
-			expect(
-				(await h.service.get(running.value.promotionId as never))?.state,
-			).toBe(PromotionState.FAILED);
+			expect((await h.service.get(pid(running.value.promotionId)))?.state).toBe(
+				PromotionState.FAILED,
+			);
 	});
 
 	it("hooks: BEFORE_APPLY runbook failure rejects before apply and ON_FAILURE runs", async () => {
@@ -503,9 +503,9 @@ describe("promotion saga (WP6)", () => {
 		const restarted = h.restart();
 		h.verification.pending = false;
 		await restarted.tick(h.ctx());
-		expect(
-			(await restarted.get(result.value.promotionId as never))?.state,
-		).toBe(PromotionState.PROMOTED);
+		expect((await restarted.get(pid(result.value.promotionId)))?.state).toBe(
+			PromotionState.PROMOTED,
+		);
 		expect(h.desired.applied).toHaveLength(1);
 		expect(h.rollouts.plans).toHaveLength(1);
 		expect(h.verification.started).toHaveLength(1);
@@ -552,7 +552,7 @@ describe("promotion saga (WP6)", () => {
 		h.clock.advance(25 * HOUR);
 		await h.service.tick(h.ctx());
 		if (result.ok) {
-			const record = await h.service.get(result.value.promotionId as never);
+			const record = await h.service.get(pid(result.value.promotionId));
 			expect(record?.state).toBe(PromotionState.REJECTED);
 			expect(record?.reasons[0]?.code).toBe(PROMOTION_REASON.approvalExpired);
 		}
@@ -579,9 +579,9 @@ describe("promotion saga (WP6)", () => {
 		expect(h.telemetry.named(PROMOTION_METRIC.stepError)).toHaveLength(1);
 		await h.service.tick(h.ctx());
 		if (result.ok)
-			expect(
-				(await h.service.get(result.value.promotionId as never))?.state,
-			).toBe(PromotionState.PROMOTED);
+			expect((await h.service.get(pid(result.value.promotionId)))?.state).toBe(
+				PromotionState.PROMOTED,
+			);
 	});
 
 	it("lists promotions newest first and filters by Camp", async () => {

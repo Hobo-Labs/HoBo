@@ -245,7 +245,7 @@ describe("createRunbookExecutor", () => {
 						path: "runbook.json",
 						args: { campId: "prod-1", point: "before-apply" },
 					},
-					{},
+					{ tenant: "acme" },
 				);
 				expect(result.ok).toBe(true);
 				if (result.ok) {
@@ -278,7 +278,7 @@ describe("createRunbookExecutor", () => {
 					runtime,
 					cliFactory: cli.factory,
 					projectDir: cwd,
-				}).run({ path: "runbook.json", args: {} }, {});
+				}).run({ path: "runbook.json", args: {} }, { tenant: "acme" });
 				expect(result.ok).toBe(false);
 				if (!result.ok) {
 					expect(result.reasons.map((r) => r.code)).toEqual([
@@ -302,18 +302,24 @@ describe("createRunbookExecutor", () => {
 				projectDir: cwd,
 			});
 			for (const outside of ["../outside.json", "/etc/passwd"]) {
-				const result = await executor.run({ path: outside, args: {} }, {});
+				const result = await executor.run(
+					{ path: outside, args: {} },
+					{ tenant: "acme" },
+				);
 				expect(!result.ok && result.reasons[0]?.code).toBe(
 					RUNBOOK_EXECUTOR_REASON.pathOutsideProject,
 				);
 			}
-			const missing = await executor.run({ path: "nope.json", args: {} }, {});
+			const missing = await executor.run(
+				{ path: "nope.json", args: {} },
+				{ tenant: "acme" },
+			);
 			expect(!missing.ok && missing.reasons[0]?.code).toBe(
 				RUNBOOK_EXECUTOR_REASON.invalid,
 			);
 			const none = await createRunbookExecutor({ projectDir: cwd }).run(
 				{ path: "runbook.json", args: {} },
-				{},
+				{ tenant: "acme" },
 			);
 			expect(!none.ok && none.reasons[0]?.code).toBe(
 				RUNBOOK_EXECUTOR_REASON.noRuntime,

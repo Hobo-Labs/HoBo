@@ -10,7 +10,12 @@ import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type ResolvedDeploymentSet,
 } from "@hobo/cloud";
-import type { ActorLeaseHost, EventEnvelope, EventPosition } from "@hobo/core";
+import type {
+	ActorLeaseHost,
+	EventEnvelope,
+	EventPosition,
+	ReadAllOptions,
+} from "@hobo/core";
 import { defineSaga } from "@hobo/events";
 import {
 	type DeltaRecord,
@@ -57,6 +62,7 @@ import type {
 	CdFactories,
 	DeltaId,
 	DeltaIntent,
+	DeployGate,
 	FreightId,
 	GateVerdict,
 	Outcome,
@@ -66,6 +72,7 @@ import type {
 	PromotionService,
 	RolloutId,
 	SetId,
+	SetResolver,
 	VerificationId,
 } from "../ports.js";
 import {
@@ -81,6 +88,7 @@ import {
 	canonicalJson,
 	emitMetric,
 	iso,
+	type Mutable,
 	msOf,
 	principalName,
 	readStream,
@@ -115,7 +123,7 @@ export type PromotionServiceDeps = Parameters<
 	readonly hooks?: HookRunner;
 };
 
-const ORIGIN: Readonly<Record<DeltaIntent, SetOrigin>> = {
+const ORIGIN = {
 	promote: SetOrigin.PROMOTION,
 	rollback: SetOrigin.ROLLBACK,
 	"drift-remediate": SetOrigin.DRIFT_ADOPTION,
@@ -127,7 +135,7 @@ const ORIGIN: Readonly<Record<DeltaIntent, SetOrigin>> = {
 	failover: SetOrigin.FAILOVER,
 	depart: SetOrigin.DEPARTURE,
 	"posture-remediate": SetOrigin.POSTURE_REMEDIATION,
-};
+} as const satisfies Record<DeltaIntent, SetOrigin>;
 
 /** Intents that never need lineage: they remove compute rather than carry Freight forward. */
 const LINEAGE_FREE: ReadonlySet<DeltaIntent> = new Set(["down", "depart"]);
@@ -187,6 +195,11 @@ function asFreight(id: string): FreightId {
 	return id as FreightId;
 }
 
+function asSet(id: string): SetId {
+	// SAFETY: Set ids come from SetRecord.predecessor_set_id or the caller's toSetId.
+	return id as SetId;
+}
+
 function asDelta(id: string): DeltaId {
 	// SAFETY: Delta ids in saga facts were minted by the SetResolver.
 	return id as DeltaId;
@@ -235,20 +248,24 @@ export function createPromotionService(
 		attributes: Readonly<Record<string, string>>,
 		value?: number,
 		kind?: "counter" | "histogram",
-	) =>
-		emitMetric(d.telemetry, {
+	) => {
+		const point: Mutable<Parameters<typeof emitMetric>[1]> = {
 			name,
 			atMs,
 			attributes: { tenant: d.tenant, ...attributes },
-			...(value === undefined ? {} : { value }),
-			...(kind === undefined ? {} : { kind, unit: "ms" }),
-		});
+		};
+		if (value !== undefined) point.value = value;
+		if (kind !== undefined) {
+			point.kind = kind;
+			point.unit = "ms";
+		}
+		emitMetric(d.telemetry, point);
+	};
 
 	async function refreshIndex(): Promise<void> {
-		for await (const positioned of d.store.readAll({
-			...(indexedThrough === undefined ? {} : { after: indexedThrough }),
-			tenant: d.tenant,
-		})) {
+		const options: Mutable<ReadAllOptions> = { tenant: d.tenant };
+		if (indexedThrough !== undefined) options.after = indexedThrough;
+		for await (const positioned of d.store.readAll(options)) {
 			indexedThrough = positioned.position;
 			const event = positioned.event;
 			if (
@@ -603,7 +620,7 @@ export function createPromotionService(
 	type Candidate = {
 		delta: DeltaRecord;
 		resolved: ResolvedDeploymentSet;
-		current?: SetRecord;
+		current: SetRecord | undefined;
 	};
 
 	async function candidateFor(
@@ -620,7 +637,7 @@ export function createPromotionService(
 				value: {
 					delta: railDelta(view, campId, freight, current, ctx),
 					resolved,
-					...(current ? { current } : {}),
+					current,
 				},
 			};
 		}
@@ -633,21 +650,18 @@ export function createPromotionService(
 				value: {
 					delta: stored,
 					resolved: cached,
-					...(current ? { current } : {}),
+					current,
 				},
 			};
-		const resolved = await d.resolver.resolve(
-			{
-				freight,
-				campId,
-				intent: view.intent,
-				...(current ? { base: current } : {}),
-				...(view.request.sourceCampId !== ""
-					? { sourceCampId: asCamp(view.request.sourceCampId) }
-					: {}),
-			},
-			ctx,
-		);
+		const resolveInput: Mutable<Parameters<SetResolver["resolve"]>[0]> = {
+			freight,
+			campId,
+			intent: view.intent,
+		};
+		if (current) resolveInput.base = current;
+		if (view.request.sourceCampId !== "")
+			resolveInput.sourceCampId = asCamp(view.request.sourceCampId);
+		const resolved = await d.resolver.resolve(resolveInput, ctx);
 		if (!resolved.ok) return resolved;
 		const delta = create(DeltaRecordSchema, {
 			...resolved.value.delta,
@@ -671,7 +685,7 @@ export function createPromotionService(
 			value: {
 				delta: stored ?? delta,
 				resolved: resolved.value.resolved,
-				...(current ? { current } : {}),
+				current,
 			},
 		};
 	}
@@ -683,17 +697,15 @@ export function createPromotionService(
 		node: PipelineNodeRecord | undefined,
 		ctx: CdContext,
 	): Promise<GateVerdict> {
-		return d.gate.evaluate(
-			{
-				intent: view.intent,
-				delta: candidate.delta,
-				freight,
-				resolved: candidate.resolved,
-				windows: node ? [...node.windows] : [],
-				...(candidate.current ? { current: candidate.current } : {}),
-			},
-			ctx,
-		);
+		const input: Mutable<Parameters<DeployGate["evaluate"]>[0]> = {
+			intent: view.intent,
+			delta: candidate.delta,
+			freight,
+			resolved: candidate.resolved,
+			windows: node ? [...node.windows] : [],
+		};
+		if (candidate.current) input.current = candidate.current;
+		return d.gate.evaluate(input, ctx);
 	}
 
 	function windowClosed(verdict: GateVerdict, intent: DeltaIntent): boolean {
@@ -1437,7 +1449,7 @@ export function createPromotionService(
 			return { ok: true, value: current };
 		const targetId = toSetId ?? current.predecessorSetId;
 		const target =
-			targetId === "" ? undefined : await d.desired.get(targetId as SetId);
+			targetId === "" ? undefined : await d.desired.get(asSet(targetId));
 		if (!target)
 			return {
 				ok: false,
@@ -2088,22 +2100,22 @@ export function createPromotionService(
 				ttlMs: BigInt(input.ttlMs),
 				expiresAt: iso(ctx.now() + input.ttlMs),
 				createdBy: principalName(ctx.principal),
-				...(freight?.manifest?.source
-					? { source: freight.manifest.source }
-					: {}),
 				pipeline: input.pipeline ?? "",
 				node: input.node ?? "",
 			});
+			if (freight?.manifest?.source) preview.source = freight.manifest.source;
+			const previewRequest: Mutable<PromoteRequest> = {
+				freightId: input.freightId,
+				targets: [campId],
+				idempotencyKey: input.idempotencyKey,
+				sourceCampId: input.sourceCampId,
+				intent: "preview",
+			};
+			if (input.pipeline !== undefined)
+				previewRequest.pipeline = input.pipeline;
+			if (input.node !== undefined) previewRequest.node = input.node;
 			const requested = await request(
-				{
-					freightId: input.freightId,
-					targets: [campId],
-					idempotencyKey: input.idempotencyKey,
-					sourceCampId: input.sourceCampId,
-					intent: "preview",
-					...(input.pipeline === undefined ? {} : { pipeline: input.pipeline }),
-					...(input.node === undefined ? {} : { node: input.node }),
-				},
+				previewRequest,
 				promotionId,
 				ctx,
 				preview,

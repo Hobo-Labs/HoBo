@@ -409,7 +409,9 @@ describe("fleet and policy (D20–D25)", () => {
 		};
 		const aggregate = createFanoutAggregateGate({
 			tenant: "acme",
+			// SAFETY: test fixture; the value is the shape the port declares.
 			fanout: fanout as FanoutController,
+			// SAFETY: test fixture; the value is the shape the port declares.
 			placement: placement as PlacementEngine,
 			topology,
 			rails,

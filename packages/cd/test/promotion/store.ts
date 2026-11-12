@@ -18,7 +18,12 @@ import type {
 	StreamFilter,
 	Subscription,
 } from "@hobo/core";
-import type { CampId, CdContext, FreightId } from "../../src/ports.js";
+import type {
+	CampId,
+	CdContext,
+	FreightId,
+	PromotionId,
+} from "../../src/ports.js";
 
 export const TENANT = "acme";
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
@@ -33,6 +38,11 @@ export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 export function camp(id: string): CampId {
 	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
+}
+
+export function pid(id: string): PromotionId {
+	// SAFETY: promotion ids in tests come from returned PromotionRecords.
+	return id as PromotionId;
 }
 
 export function fid(id: string): FreightId {

@@ -4,7 +4,11 @@ import { createA2HApprover } from "../../src/adapters/approval.js";
 import type { FanoutAggregateGate } from "../../src/adapters/gatekeeper.js";
 import type { TrailsMigrations } from "../../src/adapters/trails.js";
 import type { DeployGate } from "../../src/ports.js";
-import { createPromotionService } from "../../src/promotion/index.js";
+import {
+	createPromotionService,
+	type PromotionServiceDeps,
+} from "../../src/promotion/index.js";
+import type { Mutable } from "../../src/promotion/journal.js";
 import {
 	FakeCampPolicy,
 	FakeDesired,
@@ -59,8 +63,8 @@ export function harness(options: HarnessOptions = {}) {
 		authorizer,
 		telemetry,
 	});
-	const build = () =>
-		createPromotionService({
+	const build = () => {
+		const deps: Mutable<PromotionServiceDeps> = {
 			store,
 			tenant: TENANT,
 			now: c.now,
@@ -78,9 +82,11 @@ export function harness(options: HarnessOptions = {}) {
 			campPolicy,
 			authorizer,
 			telemetry,
-			...(options.trails ? { trails: options.trails } : {}),
-			...(options.aggregate ? { aggregate: options.aggregate } : {}),
-		});
+		};
+		if (options.trails) deps.trails = options.trails;
+		if (options.aggregate) deps.aggregate = options.aggregate;
+		return createPromotionService(deps);
+	};
 	const service = build();
 	const ctx = (principal: PrincipalRef = OPERATOR) => context(c.now, principal);
 	return {
