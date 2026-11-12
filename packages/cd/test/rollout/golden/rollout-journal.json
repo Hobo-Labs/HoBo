@@ -49,7 +49,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Started",
+        "type": "rollout.RampStarted",
         "seq": 2,
         "data": {
           "at": "2026-11-12T12:00:00.000Z"
@@ -57,7 +57,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 3,
         "data": {
           "campId": "prod-a",
@@ -70,7 +70,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 4,
         "data": {
           "campId": "prod-a",
@@ -84,7 +84,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 5,
         "data": {
           "campId": "prod-a",
@@ -96,7 +96,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 6,
         "data": {
           "campId": "prod-a",
@@ -108,7 +108,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 7,
         "data": {
           "campId": "prod-a",
@@ -121,7 +121,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 8,
         "data": {
           "campId": "prod-a",
@@ -131,7 +131,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 9,
         "data": {
           "campId": "prod-a",
@@ -144,7 +144,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 10,
         "data": {
           "campId": "prod-a",
@@ -158,7 +158,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 11,
         "data": {
           "campId": "prod-a",
@@ -170,7 +170,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 12,
         "data": {
           "campId": "prod-a",
@@ -182,7 +182,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 13,
         "data": {
           "campId": "prod-a",
@@ -195,7 +195,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 14,
         "data": {
           "campId": "prod-a",
@@ -205,7 +205,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 15,
         "data": {
           "campId": "prod-a",
@@ -218,7 +218,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 16,
         "data": {
           "campId": "prod-a",
@@ -232,7 +232,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 17,
         "data": {
           "campId": "prod-a",
@@ -244,7 +244,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 18,
         "data": {
           "campId": "prod-a",
@@ -256,7 +256,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 19,
         "data": {
           "campId": "prod-a",
@@ -269,7 +269,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 20,
         "data": {
           "campId": "prod-a",
@@ -279,7 +279,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 21,
         "data": {
           "campId": "prod-a",
@@ -292,7 +292,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 22,
         "data": {
           "campId": "prod-a",
@@ -306,7 +306,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 23,
         "data": {
           "campId": "prod-a",
@@ -318,7 +318,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 24,
         "data": {
           "campId": "prod-a",
@@ -330,7 +330,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 25,
         "data": {
           "campId": "prod-a",
@@ -343,7 +343,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 26,
         "data": {
           "campId": "prod-a",
@@ -353,7 +353,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Finished",
+        "type": "rollout.Finished",
         "seq": 27,
         "data": {
           "status": "promoted",
@@ -363,7 +363,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 1,
         "data": {
           "command": "start",
@@ -402,7 +402,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 2,
         "data": {
           "command": "advance",
@@ -413,7 +413,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 3,
         "data": {
           "command": "advance",
@@ -424,7 +424,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 4,
         "data": {
           "command": "advance",
@@ -435,7 +435,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 5,
         "data": {
           "command": "advance",
@@ -496,7 +496,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Started",
+        "type": "rollout.RampStarted",
         "seq": 2,
         "data": {
           "at": "2026-11-12T12:00:00.000Z"
@@ -504,7 +504,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 3,
         "data": {
           "campId": "prod-a",
@@ -517,7 +517,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 4,
         "data": {
           "campId": "prod-a",
@@ -531,7 +531,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 5,
         "data": {
           "campId": "prod-a",
@@ -543,7 +543,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 6,
         "data": {
           "campId": "prod-a",
@@ -555,7 +555,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 7,
         "data": {
           "campId": "prod-a",
@@ -568,7 +568,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 8,
         "data": {
           "campId": "prod-a",
@@ -578,7 +578,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 9,
         "data": {
           "campId": "prod-a",
@@ -591,7 +591,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 10,
         "data": {
           "campId": "prod-a",
@@ -605,7 +605,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 11,
         "data": {
           "campId": "prod-a",
@@ -617,7 +617,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 12,
         "data": {
           "campId": "prod-a",
@@ -629,7 +629,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 13,
         "data": {
           "campId": "prod-a",
@@ -642,7 +642,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.RollbackStarted",
+        "type": "rollout.RollbackStarted",
         "seq": 14,
         "data": {
           "reason": {
@@ -656,7 +656,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 15,
         "data": {
           "campId": "prod-a",
@@ -669,7 +669,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 16,
         "data": {
           "campId": "prod-a",
@@ -683,7 +683,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 17,
         "data": {
           "campId": "prod-a",
@@ -695,7 +695,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.RollbackDeltaOpened",
+        "type": "rollout.RollbackDeltaOpened",
         "seq": 18,
         "data": {
           "campId": "prod-a",
@@ -706,7 +706,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Finished",
+        "type": "rollout.Finished",
         "seq": 19,
         "data": {
           "status": "rolled-back",
@@ -729,7 +729,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 1,
         "data": {
           "command": "start",
@@ -768,7 +768,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 2,
         "data": {
           "command": "advance",
@@ -779,7 +779,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 3,
         "data": {
           "command": "advance",
@@ -790,7 +790,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 4,
         "data": {
           "command": "rollback",
@@ -850,7 +850,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Started",
+        "type": "rollout.RampStarted",
         "seq": 2,
         "data": {
           "at": "2026-11-12T12:00:00.000Z"
@@ -858,7 +858,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Held",
+        "type": "rollout.Held",
         "seq": 3,
         "data": {
           "reason": {
@@ -872,7 +872,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Released",
+        "type": "rollout.Released",
         "seq": 4,
         "data": {
           "at": "2026-11-12T12:01:00.000Z"
@@ -880,7 +880,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 5,
         "data": {
           "campId": "prod-a",
@@ -893,7 +893,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 6,
         "data": {
           "campId": "prod-a",
@@ -907,7 +907,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 7,
         "data": {
           "campId": "prod-a",
@@ -919,7 +919,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 8,
         "data": {
           "campId": "prod-a",
@@ -931,7 +931,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 9,
         "data": {
           "campId": "prod-a",
@@ -944,7 +944,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 10,
         "data": {
           "campId": "prod-a",
@@ -954,7 +954,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 11,
         "data": {
           "campId": "prod-a",
@@ -967,7 +967,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 12,
         "data": {
           "campId": "prod-a",
@@ -981,7 +981,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 13,
         "data": {
           "campId": "prod-a",
@@ -993,7 +993,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 14,
         "data": {
           "campId": "prod-a",
@@ -1005,7 +1005,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 15,
         "data": {
           "campId": "prod-a",
@@ -1018,7 +1018,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 16,
         "data": {
           "campId": "prod-a",
@@ -1028,7 +1028,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 17,
         "data": {
           "campId": "prod-a",
@@ -1041,7 +1041,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 18,
         "data": {
           "campId": "prod-a",
@@ -1055,7 +1055,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 19,
         "data": {
           "campId": "prod-a",
@@ -1067,7 +1067,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 20,
         "data": {
           "campId": "prod-a",
@@ -1079,7 +1079,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 21,
         "data": {
           "campId": "prod-a",
@@ -1092,7 +1092,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 22,
         "data": {
           "campId": "prod-a",
@@ -1102,7 +1102,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.ShiftRequested",
+        "type": "rollout.ShiftRequested",
         "seq": 23,
         "data": {
           "campId": "prod-a",
@@ -1115,7 +1115,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Shifted",
+        "type": "rollout.Shifted",
         "seq": 24,
         "data": {
           "campId": "prod-a",
@@ -1129,7 +1129,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.TrafficObserved",
+        "type": "rollout.TrafficObserved",
         "seq": 25,
         "data": {
           "campId": "prod-a",
@@ -1141,7 +1141,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.VerificationStarted",
+        "type": "rollout.VerificationStarted",
         "seq": 26,
         "data": {
           "campId": "prod-a",
@@ -1153,7 +1153,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.StageVerified",
+        "type": "rollout.StageVerified",
         "seq": 27,
         "data": {
           "campId": "prod-a",
@@ -1166,7 +1166,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Advanced",
+        "type": "rollout.Advanced",
         "seq": 28,
         "data": {
           "campId": "prod-a",
@@ -1176,7 +1176,7 @@
       },
       {
         "stream": "rollout",
-        "type": "cd.rollout.Finished",
+        "type": "rollout.Finished",
         "seq": 29,
         "data": {
           "status": "promoted",
@@ -1186,7 +1186,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 1,
         "data": {
           "command": "start",
@@ -1225,7 +1225,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 2,
         "data": {
           "command": "hold",
@@ -1240,7 +1240,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 3,
         "data": {
           "command": "advance",
@@ -1251,7 +1251,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 4,
         "data": {
           "command": "advance",
@@ -1262,7 +1262,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 5,
         "data": {
           "command": "advance",
@@ -1273,7 +1273,7 @@
       },
       {
         "stream": "engine",
-        "type": "cd.rollout.EngineCommanded",
+        "type": "rollout.EngineCommanded",
         "seq": 6,
         "data": {
           "command": "advance",
