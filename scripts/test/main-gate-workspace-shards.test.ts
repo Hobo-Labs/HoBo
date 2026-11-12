@@ -71,5 +71,6 @@ describe("main full gate workspace sharding", () => {
 		const finishStart = workflow.indexOf("  main_gate_finish:", shardStart);
 		const block = workflow.slice(shardStart, finishStart);
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != '\[\]'/u);
+		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != ''/u);
 	});
 });
