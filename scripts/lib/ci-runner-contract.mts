@@ -293,6 +293,65 @@ function exportMiseToolBinDirsToPath(
 	return { ok: true };
 }
 
+/** Locked `version =` for each `[[tools.<name>]]` block in mise.lock. */
+export function parseMiseLockPinnedVersions(
+	miseLock: string,
+): ReadonlyMap<string, string> {
+	const versions = new Map<string, string>();
+	let currentTool: string | undefined;
+	for (const line of miseLock.split("\n")) {
+		const trimmed = line.trim();
+		const toolHeader = trimmed.match(/^\[\[tools\.([a-zA-Z0-9_-]+)\]\]$/);
+		if (toolHeader) {
+			currentTool = toolHeader[1];
+			continue;
+		}
+		if (!currentTool || trimmed.startsWith("#")) continue;
+		const versionMatch = trimmed.match(/^version\s*=\s*"([^"]+)"/);
+		if (versionMatch) {
+			versions.set(currentTool, versionMatch[1]!);
+			currentTool = undefined;
+		}
+	}
+	return versions;
+}
+
+function miseLockActiveVersionDrift(
+	root: string,
+	run: CommandRunner,
+	configuredTools: readonly string[],
+	locked: ReadonlyMap<string, string>,
+): string | undefined {
+	const mismatches: string[] = [];
+	for (const tool of configuredTools) {
+		const expected = locked.get(tool);
+		if (!expected) {
+			mismatches.push(`${tool}: no [[tools.${tool}]] entry in ${MISE_LOCK}`);
+			continue;
+		}
+		const currentArgs = ["--cd", root, "current", tool];
+		const current = run("mise", currentArgs);
+		if (!current.ok) {
+			mismatches.push(
+				`${tool}: ${commandFailure(current, commandLine("mise", currentArgs))}`,
+			);
+			continue;
+		}
+		const active = current.out.split("\n")[0]?.trim() ?? "";
+		if (!active) {
+			mismatches.push(
+				`${tool}: mise current returned empty (expected ${expected})`,
+			);
+			continue;
+		}
+		if (active !== expected) {
+			mismatches.push(`${tool}: active ${active} != ${MISE_LOCK} ${expected}`);
+		}
+	}
+	if (mismatches.length === 0) return undefined;
+	return mismatches.join("\n    ");
+}
+
 export function parseMiseToolNames(miseToml: string): string[] {
 	const names: string[] = [];
 	let inTools = false;
@@ -544,6 +603,13 @@ export function assertPinnedMiseToolchain(
 			[],
 			`mise.toml tools missing from ${MISE_LOCK}: ${missing.join(", ")}\n    ${MISE_LOCK_VERIFY_REMEDY}`,
 		);
+	}
+	const locked = parseMiseLockPinnedVersions(
+		readFileSync(join(root, MISE_LOCK), "utf8"),
+	);
+	const drift = miseLockActiveVersionDrift(root, run, configuredTools, locked);
+	if (drift) {
+		return finish(false, [], `${drift}\n    ${MISE_LOCK_VERIFY_REMEDY}`);
 	}
 	const invisibleTools = configuredTools.filter((tool) => {
 		const which = run("sh", ["-c", `command -v ${tool} || true`]);

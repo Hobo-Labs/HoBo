@@ -16,11 +16,12 @@ import { describe, it } from "node:test";
 import { expect } from "vitest";
 import {
 	assertBaseDockerfileDigestPinned,
+	assertPinnedMiseToolchain,
 	assertTurboLockSidecarsPresent,
 	CI_RUNNER_BASE_DOCKERFILE,
 	CI_RUNNER_BUILD_SCRIPT,
-	CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 	CI_RUNNER_PLAYWRIGHT_CHROMIUM,
+	CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 	CI_RUNNER_PREFLIGHT_NODE_ARGS,
 	CI_RUNNER_SYSTEM_PACKAGES,
 	type CommandRunner,
@@ -30,12 +31,12 @@ import {
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
+	parseMiseLockPinnedVersions,
 	parseMiseToolNames,
 	playwrightHeadlessShellExecutables,
 	probeMiseTool,
 	REQUIRED_COMMANDS,
 	spawnCommand,
-	assertPinnedMiseToolchain,
 	syncMissingMiseTools,
 	verifyBaseImageDigestResolves,
 } from "../lib/ci-runner-contract.mts";
@@ -202,9 +203,50 @@ describe("ci-runner mise tool sync", () => {
 		expect(result.detail).toContain("mise.lock");
 	});
 
+	it("parseMiseLockPinnedVersions reads [[tools.*]] version pins", () => {
+		const lock = `[[tools.cue]]\nversion = "0.14.0"\n[[tools.node]]\nversion = "24.0.0"\n`;
+		const versions = parseMiseLockPinnedVersions(lock);
+		expect([...versions.entries()]).toEqual([
+			["cue", "0.14.0"],
+			["node", "24.0.0"],
+		]);
+	});
+
+	it("verify-only preflight fails when active version differs from mise.lock", () => {
+		const result = assertPinnedMiseToolchain(root, {
+			run: (cmd, args) => {
+				if (
+					cmd === "mise" &&
+					args.includes("current") &&
+					args.at(-1) === "cue"
+				) {
+					return { ok: true, out: "0.13.0\n" };
+				}
+				if (cmd === "mise" && args.includes("which")) {
+					const tool = args.at(-1)!;
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
+				if (cmd === "sh" && args.join(" ").includes("command -v")) {
+					return { ok: true, out: "/usr/bin/fake" };
+				}
+				return { ok: true, out: "" };
+			},
+		});
+		expect(result.ok).toBe(false);
+		expect(result.detail).toMatch(/active 0\.13\.0 != .*0\.14\.0/u);
+	});
+
 	it("verify-only preflight passes when dry-run-code is clean", () => {
 		const result = assertPinnedMiseToolchain(root, {
 			run: (cmd, args) => {
+				if (cmd === "mise" && args.includes("current")) {
+					const tool = args.at(-1)!;
+					const lock = parseMiseLockPinnedVersions(
+						readFileSync(join(root, MISE_LOCK), "utf8"),
+					);
+					const pinned = lock.get(tool) ?? "";
+					return { ok: true, out: `${pinned}\n` };
+				}
 				if (cmd === "mise" && args.includes("which")) {
 					const tool = args.at(-1)!;
 					return { ok: true, out: miseWhichExecutable(tool) };
