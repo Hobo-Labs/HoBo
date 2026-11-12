@@ -966,6 +966,39 @@ describe("ledger refusals", () => {
 	});
 });
 
+describe("crash between record and cursor (I12)", () => {
+	it("a failed append after recording repeats the idempotent record and then advances", async () => {
+		const h = harness(OCI_FIXTURES);
+		await defineOk(h, source("app", "web", [image]));
+		const append = h.store.append.bind(h.store);
+		let failNext = true;
+		h.store.append = async (streamId, events, opts) => {
+			if (
+				failNext &&
+				events.some(
+					(event) => event.type === CD_EVENTS.SourceArtifactDiscovered,
+				)
+			) {
+				failNext = false;
+				throw new Error("disk full");
+			}
+			return append(streamId, events, opts);
+		};
+		const crashed = await h.sources.poll("app", h.ctx);
+		expect(!crashed.ok && crashed.reasons[0]?.code).toBe("source-unreachable");
+		expect(h.ledger.recorded.size).toBe(3);
+		const resumed = await pollOk(h, "app");
+		expect(resumed.length).toBe(3);
+		expect(h.ledger.recorded.size).toBe(3);
+		expect(discoveries(h, "app").map((item) => item.outcome)).toEqual([
+			"recorded",
+			"recorded",
+			"recorded",
+		]);
+		expect(await pollOk(h, "app")).toEqual([]);
+	});
+});
+
 describe("secret-free records (I9)", () => {
 	it("never writes a resolved credential into the journal", async () => {
 		const h = harness(OCI_FIXTURES);
