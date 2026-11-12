@@ -107,9 +107,11 @@ export function hasIsolatedStopIntent(lease: Lease): boolean {
 	return (
 		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
 		!lease.pipelineId &&
-		(lease.sandboxStage === "stopping" || lease.sandboxStage === "stopped") &&
 		!!lease.sandboxName &&
-		!!lease.sandboxSessionId
+		!!lease.sandboxSessionId &&
+		(lease.sandboxStage === "stopping" ||
+			lease.sandboxStage === "stopped" ||
+			!!lease.usageCompletedAt)
 	);
 }
 
