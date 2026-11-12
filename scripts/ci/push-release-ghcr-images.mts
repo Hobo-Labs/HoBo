@@ -3,13 +3,22 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
+import {
+	assertReleaseImageMatchesBuild,
+	dockerConfigLabelsForDigestRef,
+	ghcrDigestRef,
+	registryInspectTag,
+	normalizeRepoDigestLine,
+	resolveRegistryDigestForTag,
+	resolveRegistryDigestForTagWithRetry,
+} from "../lib/release-ghcr-digest.mts";
 import {
 	FULL_RELEASE_IMAGE_IDS,
 	ghcrImageTags,
 	parseReleaseRef,
 	releaseImageIdsForTrain,
 } from "../lib/release-version.mts";
-import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -67,6 +76,111 @@ export function releaseImagesToPublish(
 	return images.includes(imageId) ? [imageId] : [];
 }
 
+/**
+ * `<registry repo>@sha256:...` for the tag just pushed. The digest comes from
+ * `docker push`'s own `digest:` line; failing that, from the `RepoDigests`
+ * entry for that repository. Never `RepoDigests[0]`: with the containerd image
+ * store (ARC pods) the first entry is the local name, `hobo-sdk@sha256:...`,
+ * which attest cannot find (finding 141).
+ */
+export function pushedDigestRef(
+	tag: string,
+	pushOutput: string,
+	repoDigestLines: string,
+): string {
+	const repository = tag.slice(0, tag.lastIndexOf(":"));
+	const pushed = /\bdigest: (sha256:[0-9a-f]{64})\b/u.exec(pushOutput)?.[1];
+	if (pushed) return `${repository}@${pushed}`;
+	const entries = repoDigestLines
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	const prefix = `${repository}@`;
+	const match = entries.find(
+		(entry) =>
+			entry.startsWith(prefix) &&
+			/^sha256:[0-9a-f]{64}$/u.test(entry.slice(prefix.length)),
+	);
+	if (match) return match;
+	throw new Error(
+		`no digest for ${tag}: docker push printed none and RepoDigests has no ${prefix} entry (${entries.join(", ") || "none"})`,
+	);
+}
+
+function releaseRevisionFromEnv(): string {
+	const revision =
+		process.env.HOBO_RELEASE_REVISION?.trim() ??
+		process.env.GITHUB_SHA?.trim() ??
+		"";
+	if (!revision) {
+		throw new Error("HOBO_RELEASE_REVISION or GITHUB_SHA required to publish");
+	}
+	return revision;
+}
+
+function tryReusePublishedTag(options: {
+	imageId: string;
+	tag: string;
+	revision: string;
+	releaseVersion: string;
+}): string | undefined {
+	const inspected = registryInspectTag(options.tag);
+	const digestRef =
+		inspected?.digest !== undefined
+			? normalizeRepoDigestLine(
+					options.tag,
+					ghcrDigestRef(
+						options.tag.split(":")[0] ?? options.tag,
+						inspected.digest,
+					),
+					options.imageId,
+				)
+			: resolveRegistryDigestForTag(options.tag);
+	if (!digestRef) return undefined;
+	const labels = dockerConfigLabelsForDigestRef(digestRef);
+	assertReleaseImageMatchesBuild({
+		imageId: options.imageId,
+		tag: options.tag,
+		digestRef,
+		revision: options.revision,
+		releaseVersion: options.releaseVersion,
+		labels,
+	});
+	const line = normalizeRepoDigestLine(options.tag, digestRef, options.imageId);
+	console.log(
+		`reusing registry ${options.tag} as ${line} (revision ${options.revision})`,
+	);
+	return line;
+}
+
+function recordDigestAfterPush(
+	imageId: string,
+	tag: string,
+	pushOutput: string,
+): string {
+	const inspect = spawnSync(
+		"docker",
+		["inspect", "--format={{range .RepoDigests}}{{println .}}{{end}}", tag],
+		{ encoding: "utf8" },
+	);
+	let raw: string;
+	try {
+		raw = pushedDigestRef(
+			tag,
+			pushOutput,
+			inspect.status === 0 ? inspect.stdout : "",
+		);
+	} catch (error) {
+		const remote = resolveRegistryDigestForTagWithRetry(tag);
+		if (!remote) {
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(`${detail}; registry lookup also failed for ${tag}`);
+		}
+		raw = remote;
+	}
+	return normalizeRepoDigestLine(tag, raw, imageId);
+}
+
 export function pushReleaseGhcrImages(options: {
 	releaseRef: string;
 	repository: string;
@@ -85,12 +199,29 @@ export function pushReleaseGhcrImages(options: {
 		"HOBO_RELEASE_PUSH_BUDGET_SEC",
 		RELEASE_PUSH_BUDGET_MS,
 	);
+	const revision = releaseRevisionFromEnv();
+	const releaseVersion = parsed.semver;
 	if (images.length === 0) {
 		console.log(
 			`${options.imageId} is not part of the ${parsed.train} release train; nothing to publish`,
 		);
 	}
 	for (const id of images) {
+		const tags = ghcrImageTags(repo, id, parsed);
+		if (tags.length !== 1) {
+			throw new Error(`expected one GHCR tag for ${id}, got ${tags.length}`);
+		}
+		const tag = tags[0]!;
+		const reused = tryReusePublishedTag({
+			imageId: id,
+			tag,
+			revision,
+			releaseVersion,
+		});
+		if (reused) {
+			digests.push(reused);
+			continue;
+		}
 		if (id === "hobo-mcp") {
 			run("node", [
 				"--no-warnings",
@@ -113,27 +244,18 @@ export function pushReleaseGhcrImages(options: {
 			id,
 			"--keep-candidate",
 		]);
-		const tags = ghcrImageTags(repo, id, parsed);
-		if (tags.length !== 1) {
-			throw new Error(`expected one GHCR tag for ${id}, got ${tags.length}`);
-		}
-		const tag = tags[0]!;
 		run("docker", ["tag", `${id}:candidate`, tag]);
 		const pushStarted = Date.now();
 		console.log(`pushing ${tag}`);
-		runDockerPushWithRetry({ tag, attemptTimeoutMs, budgetMs });
+		const pushOutput = runDockerPushWithRetry({
+			tag,
+			attemptTimeoutMs,
+			budgetMs,
+		});
 		console.log(
 			`pushed ${tag} in ${Math.round((Date.now() - pushStarted) / 1000)}s`,
 		);
-		const inspect = spawnSync(
-			"docker",
-			["inspect", "--format={{index .RepoDigests 0}}", tag],
-			{ encoding: "utf8" },
-		);
-		if (inspect.status !== 0 || !inspect.stdout.trim()) {
-			throw new Error(`docker inspect digest failed for ${tag}`);
-		}
-		digests.push(inspect.stdout.trim());
+		digests.push(recordDigestAfterPush(id, tag, pushOutput));
 		run("docker", ["rmi", "-f", tag]);
 		run("node", [
 			"--no-warnings",

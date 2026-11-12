@@ -131,6 +131,47 @@ describe("release signing key", () => {
 		expect(ed25519PublicLine(key.publicKey)).toBe(publicLine);
 	});
 
+	// Run 43236508916: the release tag failed on the published-key check.
+	it("accepts the published key as an allowed_signers line or quoted", () => {
+		const { pem, publicLine } = openSshKey();
+		for (const published of [
+			`github-actions[bot]@users.noreply.github.com namespaces="git" ${publicLine} release@test`,
+			`"${publicLine} release@test"`,
+			// A principal that is itself spelled like the key type.
+			`ssh-ed25519 ${publicLine} release@test`,
+		]) {
+			const key = releaseSigningKey({
+				HOBO_RELEASE_TAG_SSH_PRIVATE_KEY: pem,
+				HOBO_RELEASE_TAG_SSH_SIGNING_KEY: published,
+			});
+			expect(ed25519PublicLine(key.publicKey)).toBe(publicLine);
+		}
+	});
+
+	it("says what a published key it cannot read looks like, without echoing it", () => {
+		const { pem } = openSshKey();
+		const check = (published: string) => () =>
+			releaseSigningKey({
+				HOBO_RELEASE_TAG_SSH_PRIVATE_KEY: pem,
+				HOBO_RELEASE_TAG_SSH_SIGNING_KEY: published,
+			});
+		expect(check(pem)).toThrow(/it is a private key/);
+		expect(check("SHA256:abcdefghijklmnop")).toThrow(/key fingerprint/);
+		expect(check("AAAAC3NzaC1lZDI1NTE5AAAAIL")).toThrow(
+			/1 field\(s\) and none is ssh-ed25519/,
+		);
+		expect(check("ssh-rsa AAAAB3Nza")).toThrow(/it is a ssh-rsa key/);
+		// Never echo any part of a value that is not a known key type.
+		for (const secret of [
+			"sk-proj-SECRETTOKEN123",
+			'"sk-proj-SECRETTOKEN123 extra"',
+			"ssh-rsaSECRETBLOB",
+		]) {
+			expect(check(secret)).toThrow(/expected "ssh-ed25519 <base64>"/);
+			expect(check(secret)).not.toThrow(/SECRET/);
+		}
+	});
+
 	it("refuses a published key that is not the private key's", () => {
 		const { pem } = openSshKey();
 		const other = openSshKey();

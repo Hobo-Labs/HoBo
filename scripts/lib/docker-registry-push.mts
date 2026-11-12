@@ -81,7 +81,7 @@ export function runDockerPushWithRetry(options: {
 	sleepMs?: (ms: number) => void;
 	log?: (line: string) => void;
 	now?: () => number;
-}): void {
+}): string {
 	const maxAttempts = options.maxAttempts ?? 5;
 	const push = options.push ?? spawnDockerPush;
 	const sleep =
@@ -107,7 +107,7 @@ export function runDockerPushWithRetry(options: {
 		const combined = `${stdout}\n${stderr}`.trim();
 		if (exitCode === 0 && !timedOut) {
 			if (combined) process.stdout.write(`${combined}\n`);
-			return;
+			return combined;
 		}
 		lastOutput = timedOut
 			? `timed out after ${timeoutMs}ms${combined ? `\n${combined}` : ""}`
