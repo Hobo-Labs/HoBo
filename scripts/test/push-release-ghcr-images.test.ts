@@ -166,9 +166,9 @@ describe("runDockerPushWithRetry time limits", () => {
 		expect(push).toHaveBeenCalledTimes(2);
 	});
 
-	it("does not retry a timed-out push that also exited 0", () => {
+	it("counts a timed-out push that also exited 0 as a stall, not a success", () => {
 		// spawnSync can report status 0 alongside ETIMEDOUT only if the child
-		// exited in the same tick; treat it as a stall, never as a success.
+		// exited in the same tick; it is retried, never taken as pushed.
 		const push = vi.fn(() => ({
 			exitCode: 0,
 			stdout: "",
@@ -178,12 +178,36 @@ describe("runDockerPushWithRetry time limits", () => {
 		expect(() =>
 			runDockerPushWithRetry({
 				tag: "ghcr.io/x/y:1",
-				maxAttempts: 1,
+				maxAttempts: 2,
 				attemptTimeoutMs: 1,
+				sleepMs: () => {},
 				log: () => {},
 				push,
 			}),
 		).toThrow(/timed out/u);
+		expect(push).toHaveBeenCalledTimes(2);
+	});
+
+	it("fails at once rather than start an attempt with under a minute left", () => {
+		let clock = 0;
+		const push = vi.fn(() => {
+			clock += 250_000;
+			return { exitCode: null, stdout: "", stderr: "", timedOut: true };
+		});
+		expect(() =>
+			runDockerPushWithRetry({
+				tag: "ghcr.io/x/y:1",
+				attemptTimeoutMs: 250_000,
+				budgetMs: 300_000,
+				sleepMs: (ms) => {
+					clock += ms;
+				},
+				log: () => {},
+				now: () => clock,
+				push,
+			}),
+		).toThrow(/attempt 1\/5/u);
+		expect(push).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -238,9 +262,9 @@ describe("release-hobo publish and attest, one image per job", () => {
 			);
 		const publish = job("release-publish", "release-attest");
 		const attest = job("release-attest", "release-npm");
-		const images =
-			"image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]";
-		expect(publish).toContain(images);
+		const fromTrain =
+			"image_id: ${{ fromJSON(needs.release-images.outputs.images) }}";
+		expect(publish).toContain(fromTrain);
 		expect(publish).toMatch(/max-parallel: 1/u);
 		expect(publish).toContain("timeout-minutes: 20");
 		expect(publish).toContain(
@@ -249,11 +273,44 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(publish).toContain(
 			"name: hobo-release-digest-${{ matrix.image_id }}",
 		);
-		expect(attest).toContain(images);
+		expect(attest).toContain(fromTrain);
 		expect(attest).toContain(
 			"name: hobo-release-digest-${{ matrix.image_id }}",
 		);
 		expect(attest).toContain("if: steps.digest.outputs.present == 'true'");
 		expect(workflow).not.toContain("name: hobo-release-digests\n");
+	});
+});
+
+describe("release-images job", () => {
+	it("lists exactly the images releaseImageIdsForTrain ships for each train", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		const { releaseImageIdsForTrain } = await import(
+			"../lib/release-version.mts"
+		);
+		const workflow = readFileSync(
+			join(
+				import.meta.dirname,
+				"..",
+				"..",
+				".github/workflows/release-hobo.yml",
+			),
+			"utf8",
+		);
+		const job = workflow.slice(
+			workflow.indexOf("\n  release-images:\n"),
+			workflow.indexOf("\n  release-publish:\n"),
+		);
+		const listFor = (pattern: string) => {
+			const line = job
+				.split("\n")
+				.find((row) => row.trim().startsWith(`${pattern})`));
+			const json = /images='([^']+)'/u.exec(line ?? "")?.[1];
+			return JSON.parse(json ?? "null");
+		};
+		expect(listFor("sdk-v*")).toEqual([...releaseImageIdsForTrain("sdk")]);
+		expect(listFor("cli-v*")).toEqual([...releaseImageIdsForTrain("cli")]);
+		expect(listFor("*")).toEqual([...releaseImageIdsForTrain("full")]);
 	});
 });

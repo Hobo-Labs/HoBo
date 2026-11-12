@@ -28,6 +28,9 @@ export function isRetryableDockerPushOutput(output: string): boolean {
 	);
 }
 
+/** A retry starts only if at least this long is left of the budget. */
+export const MIN_PUSH_ATTEMPT_MS = 60_000;
+
 export function dockerPushBackoffMs(attempt: number): number {
 	const base = 5_000;
 	return Math.min(60_000, base * 2 ** Math.max(0, attempt - 1));
@@ -110,9 +113,10 @@ export function runDockerPushWithRetry(options: {
 			? `timed out after ${timeoutMs}ms${combined ? `\n${combined}` : ""}`
 			: combined;
 		const delayMs = dockerPushBackoffMs(attempt);
+		// An attempt left with seconds of budget only fails late; fail now instead.
 		const roomForAnother =
 			options.budgetMs === undefined ||
-			now() - started + delayMs < options.budgetMs;
+			now() - started + delayMs + MIN_PUSH_ATTEMPT_MS <= options.budgetMs;
 		const retryable =
 			(timedOut || isRetryableDockerPushOutput(combined)) &&
 			attempt < maxAttempts &&

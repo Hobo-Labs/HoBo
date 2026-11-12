@@ -556,11 +556,41 @@ jobs:
             pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
           node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --cleanup-only
 
+  release-images:
+    name: Release train images
+    # The images this release ships, as the publish and attest matrices. An
+    # sdk-v or cli-v tag ships only some; its other legs would only add runs
+    # that could block a release they have no part in. Mirrors
+    # releaseImageIdsForTrain (scripts/lib/release-version.mts); a test pins both.
+    # Hosted like the other gates: it runs no repository code, only a case on the ref.
+    if: always() && needs.release-main-train-gate.result == 'success' && (needs.release-main-train-gate.outputs.run == 'true' || startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v') || (github.event_name == 'workflow_dispatch' && inputs.push_images))
+    needs: [release-main-train-gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      images: ${{ steps.train.outputs.images }}
+    steps:
+      - name: Images of this release train
+        id: train
+        env:
+          RELEASE_REF: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
+        run: |
+          set -euo pipefail
+          case "${RELEASE_REF}" in
+            sdk-v*) images='["hobo-sdk"]' ;;
+            cli-v*) images='["hobo-cli","hobo-mcp"]' ;;
+            *) images='["hobo-sdk","hobo-codegen","hobo-cli","hobo-mcp","hobo-ci-serve","hobo-site"]' ;;
+          esac
+          echo "${RELEASE_REF}: ${images}"
+          echo "images=${images}" >> "$GITHUB_OUTPUT"
+
   release-publish:
     name: Publish GHCR images (tagged release)
     if: >-
       always() &&
       needs.release-main-train-gate.result == 'success' &&
+      needs.release-images.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -571,18 +601,19 @@ jobs:
         needs.release-main-train-gate.outputs.run == 'true' ||
         needs.release-contract.result == 'success'
       )
-    needs: [release-main-train-gate, release-contract, release-oci-build-tag]
+    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-images]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
-    # One image per job, like the build matrix: all six built and pushed in one
-    # job ran past the 20-minute limit when one push stalled (run 43144784243).
-    # One at a time, because legs on one box share the `*:candidate` tags.
+    # One image per job: all six built and pushed in one job ran past the
+    # 20-minute limit when one push stalled (run 43144784243). Only the train's
+    # images (release-images). One at a time, because legs on one box share the
+    # `*:candidate` tags.
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
+        image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     permissions:
       contents: read
       packages: write
@@ -645,7 +676,7 @@ jobs:
         startsWith(github.ref, 'refs/tags/cli-v') ||
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    needs: [release-main-train-gate, release-publish]
+    needs: [release-main-train-gate, release-publish, release-images]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
@@ -657,7 +688,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
+        image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:

@@ -31,12 +31,13 @@ function run(cmd: string, args: string[]): void {
 }
 
 /** One `docker push` attempt may run this long before it is stopped and retried. */
-export const RELEASE_PUSH_ATTEMPT_TIMEOUT_MS = 5 * 60_000;
+export const RELEASE_PUSH_ATTEMPT_TIMEOUT_MS = 4 * 60_000;
 /**
- * No new push attempt starts after this. With checkout, install and the image
- * build ahead of it, this keeps a per-image publish job inside its 20 minutes.
+ * No push attempt runs past this. The hobo-mcp leg spends up to about 10
+ * minutes before its push (setup, up to 5 for the worker image, three builds),
+ * so 8 keeps it inside the job's 20 with room to report the failure.
  */
-export const RELEASE_PUSH_BUDGET_MS = 10 * 60_000;
+export const RELEASE_PUSH_BUDGET_MS = 8 * 60_000;
 
 function envMs(name: string, fallback: number): number {
 	const raw = process.env[name]?.trim();
