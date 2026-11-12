@@ -30,8 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          clean: false
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Check sibling pins (offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
@@ -52,9 +52,9 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          clean: false
           fetch-depth: 2
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Check sibling pins (offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
