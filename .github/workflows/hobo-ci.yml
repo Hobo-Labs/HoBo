@@ -749,8 +749,9 @@ jobs:
     needs: [route, ci-runner-image]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    # Build (6) and lane (15) step limits plus checkout and install.
-    timeout-minutes: 25
+    # Build (6) and lane (12) step limits plus checkout and install fit the
+    # 20-minute job limit (scripts/test/workflow-job-timeouts.test.ts).
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -835,7 +836,8 @@ jobs:
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 15
+        # The lane took 4m37s on a GitHub-hosted runner and about 4.5 min locally.
+        timeout-minutes: 12
         run: pnpm run test:scripts
       - name: Prune Turbo cache
         id: turbo-prune

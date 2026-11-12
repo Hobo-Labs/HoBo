@@ -57,4 +57,4 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 
 - The job on a pull request, and a pull request that breaks one script test showing it red: this change was not run on GitHub.
 
-The job's own limit is 25 minutes, above its build (6) and lane (15) step limits plus checkout and install, so a slow cold build fails its own step instead of being cancelled with the job.
+The job's own limit is 20 minutes, the repository's per-job ceiling. Its build (6) and lane (12) step limits leave room for checkout and install inside it, so a slow cold build fails its own step instead of being cancelled with the job. The lane took 4m37s on a GitHub-hosted runner (build 2m14s, whole job about 7.5 minutes).
