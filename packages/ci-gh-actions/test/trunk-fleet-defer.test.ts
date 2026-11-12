@@ -75,6 +75,26 @@ describe("evaluateMainTrunkFleetDefer", () => {
 		expect(decision.peerAbsorbSlots).toBe(2);
 	});
 
+	it("defers plan and deps immediately on memory-headroom when peers exist", () => {
+		for (const jobName of [
+			"Main workspace plan",
+			"CI deps layer (pnpm)",
+		] as const) {
+			const decision = evaluateMainTrunkFleetDefer({
+				jobName,
+				isMainTrunkJob: true,
+				priorWait: wait("memory-headroom", 1_000),
+				deferMs,
+				nowMs,
+				trunkSlots: 1,
+				localTrunkReserved: 0,
+				fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 1, meshFreeSlots: 0 },
+			});
+			expect(decision.action).toBe("defer");
+			expect(decision.waitReason).toBe("memory-headroom");
+		}
+	});
+
 	it("defers cpu-contention immediately when peer absorb slots exist", () => {
 		const decision = evaluateMainTrunkFleetDefer({
 			jobName: "Main workspace test shard 3",

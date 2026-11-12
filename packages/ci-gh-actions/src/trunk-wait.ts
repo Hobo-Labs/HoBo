@@ -1,4 +1,17 @@
 import { mainWorkspaceShardIndex } from "./admission-order.js";
+import { CI_DEPS_LAYER_JOB_NAME } from "./isolated-worker/memory-classes.js";
+
+/** Node-only trunk jobs that should fleet-absorb on memory pressure without a 45s box hold. */
+const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
+
+function isImmediateFleetMainTrunkPickupJob(
+	jobName: string | undefined,
+): boolean {
+	return (
+		jobName === MAIN_WORKSPACE_PLAN_JOB || jobName === CI_DEPS_LAYER_JOB_NAME
+	);
+}
+
 import {
 	type FleetCapacityWitness,
 	type FleetWitnessFields,
@@ -99,7 +112,10 @@ export function evaluateMainTrunkFleetDefer(
 		input.localTrunkReserved >= input.trunkSlots;
 	const peerImmediate =
 		fields.peerAbsorbSlots > 0 &&
-		(slotsFull || input.priorWait?.reason === "cpu-contention");
+		(slotsFull ||
+			input.priorWait?.reason === "cpu-contention" ||
+			(isImmediateFleetMainTrunkPickupJob(input.jobName) &&
+				input.priorWait?.reason === "memory-headroom"));
 	type DeferMeta = {
 		waitedMs: number;
 		deferMs: number;
