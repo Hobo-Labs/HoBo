@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { describe, it } from "vitest";
+import { beforeAll, describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -25,6 +25,30 @@ const tscPath = path.resolve(
   "bin",
   "tsc",
 );
+
+/** One `tsc --noEmit` per file — cold spawn under memory contention exceeded 10s (run 43207388098). */
+let typeDeclarationCheck: {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+};
+
+beforeAll(() => {
+  const result = spawnSync(
+    process.execPath,
+    [tscPath, "--noEmit", "--project", "tsconfig.types.json"],
+    {
+      cwd: packageRoot,
+      encoding: "utf8",
+      shell: false,
+    },
+  );
+  typeDeclarationCheck = {
+    status: result.status,
+    stdout: `${result.stdout ?? ""}`,
+    stderr: `${result.stderr ?? ""}`,
+  };
+});
 
 function declareAppAuth(overrides = {}) {
   return auth({
@@ -195,16 +219,10 @@ describe("hobo:auth authoring surface", () => {
   });
 
   it("type declarations narrow providers and carry ctx.user claims", () => {
-    const result = spawnSync(
-      process.execPath,
-      [tscPath, "--noEmit", "--project", "tsconfig.types.json"],
-      {
-        cwd: packageRoot,
-        encoding: "utf8",
-        shell: false,
-      },
+    assert.equal(
+      typeDeclarationCheck.status,
+      0,
+      `${typeDeclarationCheck.stdout}\n${typeDeclarationCheck.stderr}`,
     );
-
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   });
 });
