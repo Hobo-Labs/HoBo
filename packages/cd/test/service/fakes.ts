@@ -113,23 +113,20 @@ export function fakeStore(): FakeStore {
 }
 
 // ── Telemetry ──────────────────────────────────────────────────────────────
-export type RecordingSink = TelemetrySink & { readonly points: OtelMetricPoint[]; readonly spans: OtelSpan[] };
+export type RecordingSink = TelemetrySink & { readonly points: OtelMetricPoint[]; readonly recorded: OtelSpan[] };
 
 export function recordingSink(): RecordingSink {
 	const points: OtelMetricPoint[] = [];
-	const spanList: OtelSpan[] = [];
-	return {
-		points,
-		get spans() {
-			return spanList;
-		},
+	const recorded: OtelSpan[] = [];
+	const sink: TelemetrySink = {
 		async metrics(p) {
 			points.push(...p);
 		},
 		async spans(s) {
-			spanList.push(...s);
+			recorded.push(...s);
 		},
-	} as RecordingSink;
+	};
+	return Object.assign(sink, { points, recorded }) as unknown as RecordingSink;
 }
 
 // ── Reconcilers ────────────────────────────────────────────────────────────

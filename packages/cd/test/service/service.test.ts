@@ -238,7 +238,7 @@ describe("createCdService — drain", () => {
 		const gate = new Promise<void>((r) => {
 			release = r;
 		});
-		(cd.posture as { tick: () => Promise<void> }).tick = async () => {
+		(cd.posture as unknown as { tick: () => Promise<void> }).tick = async () => {
 			cd.calls.push("posture");
 			await gate;
 		};
