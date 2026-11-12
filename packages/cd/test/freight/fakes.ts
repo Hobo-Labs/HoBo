@@ -116,7 +116,13 @@ export class MemoryEventStore implements DurableEventStore {
 			lastPosition = position;
 		}
 		this.streams.set(streamId, stream);
-		return { streamId, appended, deduped, firstPosition, lastPosition };
+		return {
+			streamId,
+			appended,
+			deduped,
+			...(firstPosition !== undefined ? { firstPosition } : {}),
+			...(lastPosition !== undefined ? { lastPosition } : {}),
+		};
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {

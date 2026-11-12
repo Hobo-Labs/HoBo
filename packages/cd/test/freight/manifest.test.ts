@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ArtifactKind, ArtifactRefSchema, FreightSubject } from "../../src/_generated/cd_pb.js";
 import { FREIGHT_MANIFEST_SCHEMA } from "../../src/events.js";
 import {
+	ALIAS_ADJECTIVES,
+	ALIAS_NOUNS,
 	FREIGHT_REASON,
 	FreightManifestError,
 	freightAlias,
@@ -32,6 +34,15 @@ describe("Freight identity (D2)", () => {
 		expect(a.freightId).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(a.alias).toMatch(/^[a-z]+-[a-z]+$/);
 		expect(freightAlias(a.freightId)).toBe(a.alias);
+	});
+
+	it("alias word lists are unique lowercase words and malformed ids are rejected", () => {
+		for (const list of [ALIAS_ADJECTIVES, ALIAS_NOUNS]) {
+			expect(new Set(list).size).toBe(list.length);
+			expect(list.length).toBeGreaterThanOrEqual(250);
+			for (const word of list) expect(word).toMatch(/^[a-z]+$/);
+		}
+		expect(() => freightAlias("sha256:xyz")).toThrow(TypeError);
 	});
 
 	it("artifact order, coordinates, labels, source and provenance do not change the id", () => {
