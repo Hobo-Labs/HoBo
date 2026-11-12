@@ -584,6 +584,55 @@ describe("promotion saga (WP6)", () => {
 			);
 	});
 
+	it("a Camp that fails before apply releases its open Delta, so the next promotion can open one", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		h.freight.add("f2");
+		h.gate.effect = "require-approval";
+		const denied = await h.service.promote(
+			{ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "d1" },
+			h.ctx(),
+		);
+		if (!denied.ok) throw new Error("expected request");
+		await h.approvals.decide(
+			{
+				requestId: `promotion:${denied.value.promotionId}/dev-1`,
+				approve: false,
+			},
+			h.ctx(APPROVER),
+		);
+		await h.service.tick(h.ctx());
+		expect((await h.service.get(pid(denied.value.promotionId)))?.state).toBe(
+			PromotionState.REJECTED,
+		);
+		expect([...h.desired.deltas.values()][0]?.status).toBe("rejected");
+		h.gate.effect = "allow";
+		const next = await h.service.promote(
+			{ freightId: fid("f2"), targets: [camp("dev-1")], idempotencyKey: "d2" },
+			h.ctx(),
+		);
+		expect(next.ok && next.value.state).toBe(PromotionState.PROMOTED);
+	});
+
+	it("an approved proposal's Delta stops being a proposal before it is applied", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const proposed = await h.service.promote(
+			{ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "pp" },
+			h.ctx(AGENT),
+		);
+		if (!proposed.ok) throw new Error("expected proposal");
+		const updates: boolean[] = [];
+		const update = h.desired.update.bind(h.desired);
+		h.desired.update = async (delta) => {
+			updates.push(delta.proposal);
+			return update(delta);
+		};
+		await h.service.approve(pid(proposed.value.promotionId), h.ctx(APPROVER));
+		expect(updates).toEqual([false]);
+		expect(h.desired.applied).toHaveLength(1);
+	});
+
 	it("lists promotions newest first and filters by Camp", async () => {
 		const h = harness();
 		h.freight.add("f1");

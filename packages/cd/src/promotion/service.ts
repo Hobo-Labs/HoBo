@@ -200,6 +200,15 @@ function asSet(id: string): SetId {
 	return id as SetId;
 }
 
+/**
+ * Delta id scoped to the command that opens it: a refused attempt's Delta
+ * stays recorded, so a later attempt (another promotion, a retried rollback
+ * or teardown) must not reuse its id. Deterministic per scope (I8, I12).
+ */
+function scopedDeltaId(scope: string, deltaId: string): string {
+	return `delta_${sha256Hex(canonicalJson({ scope, deltaId })).slice(0, 24)}`;
+}
+
 function asDelta(id: string): DeltaId {
 	// SAFETY: Delta ids in saga facts were minted by the SetResolver.
 	return id as DeltaId;
@@ -324,17 +333,9 @@ export function createPromotionService(
 			actor: ctx.principal,
 		});
 		if (!event)
-			throw new CampFailure(
-				campId,
-				[
-					reason(
-						PROMOTION_REASON.journalConflict,
-						`step ${step} could not be journaled`,
-						"Another writer holds the promotion stream; the next tick resumes.",
-						campId,
-					),
-				],
-				"failed",
+			// Transient: the step is retried on the next tick (no decision taken).
+			throw new Error(
+				`${PROMOTION_REASON.journalConflict}: step ${step} of Camp ${campId} lost the stream-head race twice`,
 			);
 		progress?.steps.set(step, {
 			handle: String(fact.data.emittedType),
@@ -665,6 +666,10 @@ export function createPromotionService(
 		if (!resolved.ok) return resolved;
 		const delta = create(DeltaRecordSchema, {
 			...resolved.value.delta,
+			deltaId: scopedDeltaId(
+				`${view.promotionId}|${campId}`,
+				resolved.value.delta.deltaId,
+			),
 			proposal: view.request.proposal,
 		});
 		if (deltaId && delta.deltaId !== deltaId)
@@ -989,7 +994,20 @@ export function createPromotionService(
 					...verdict.reasons,
 				]);
 			}
-			if (windowClosed(verdict, view.intent)) return;
+			if (windowClosed(verdict, view.intent)) {
+				await appendStep(view, campId, STEP.awaitingWindow, "apply", ctx);
+				return;
+			}
+			if (view.request.proposal && !rail) {
+				const proposed = await d.desired.get(asDelta(deltaId));
+				if (proposed?.proposal) {
+					const accepted = await d.desired.update(
+						create(DeltaRecordSchema, { ...proposed, proposal: false }),
+						ctx,
+					);
+					if (!accepted.ok) return fail(accepted.reasons);
+				}
+			}
 			if (rail) {
 				const mode =
 					node?.policyMode === PolicyMode.ENFORCE
@@ -1340,6 +1358,13 @@ export function createPromotionService(
 							campId,
 						),
 					];
+			const openDelta = progress.steps.get(STEP.resolved)?.handle;
+			if (
+				openDelta &&
+				!progress.steps.has(STEP.applied) &&
+				view.request.subject !== FreightSubject.RAIL
+			)
+				await d.desired.reject(asDelta(openDelta), reasons, ctx);
 			if (progress.steps.has(STEP.applied)) {
 				const restored = await restoreCamp(
 					view,
@@ -1421,7 +1446,13 @@ export function createPromotionService(
 				: restored;
 		}
 		const applied = progress.steps.get(STEP.applied)?.handle ?? "";
-		const restored = await rollbackSet(campId, applied, undefined, ctx);
+		const restored = await rollbackSet(
+			campId,
+			applied,
+			undefined,
+			`${view.promotionId}|${campId}|compensate`,
+			ctx,
+		);
 		return restored.ok ? { ok: true, value: restored.value.setId } : restored;
 	}
 
@@ -1429,6 +1460,7 @@ export function createPromotionService(
 		campId: CampId,
 		expectedCurrent: string,
 		toSetId: SetId | undefined,
+		scope: string,
 		ctx: CdContext,
 	): Promise<Outcome<SetRecord>> {
 		const current = await d.desired.current(campId);
@@ -1479,13 +1511,16 @@ export function createPromotionService(
 		const after = await d.desired.resolved(target);
 		const delta = create(DeltaRecordSchema, {
 			schemaVersion: DELTA_SCHEMA,
-			deltaId: deltaIdFor({
-				campId,
-				freightId: target.freightId,
-				intent: "rollback",
-				baseSetId: current.setId,
-				contentHash: after.contentHash,
-			}),
+			deltaId: scopedDeltaId(
+				scope,
+				deltaIdFor({
+					campId,
+					freightId: target.freightId,
+					intent: "rollback",
+					baseSetId: current.setId,
+					contentHash: after.contentHash,
+				}),
+			),
 			campId,
 			baseSetId: current.setId,
 			freightId: target.freightId,
@@ -1911,6 +1946,7 @@ export function createPromotionService(
 					input.campId,
 					"",
 					input.toSetId,
+					rollbackId,
 					ctx,
 				);
 				if (!restored.ok) return restored;
@@ -2210,7 +2246,13 @@ export function createPromotionService(
 			ctx,
 		);
 		if (!resolved.ok) return resolved;
-		const delta = resolved.value.delta;
+		const delta = create(DeltaRecordSchema, {
+			...resolved.value.delta,
+			deltaId: scopedDeltaId(
+				`${campId}|expire|${current.setId}`,
+				resolved.value.delta.deltaId,
+			),
+		});
 		if (!(await d.desired.get(asDelta(delta.deltaId)))) {
 			const opened = await d.desired.open(delta, ctx);
 			if (!opened.ok) return opened;
