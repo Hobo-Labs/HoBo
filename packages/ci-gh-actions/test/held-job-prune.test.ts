@@ -10,7 +10,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
 	createHeldJobPruner,
 	pruneHeldJobs,
+	refreshHeldPruneWitnessFromStore,
 } from "../src/isolated-worker/held-job-prune.js";
+import type { GithubTransport } from "../src/github.js";
 import { createPollIngestCoalesce } from "../src/isolated-worker/poll-ingest-coalesce.js";
 import { job, NOW } from "./fixtures.js";
 
@@ -180,4 +182,61 @@ it("rate-limits admission-time prune passes", async () => {
 		terminalJobs: [],
 	});
 	expect(await pruner.maybePrune()).toBe(0);
+});
+
+it("force prune clears held jobs when witness was seeded at startup", async () => {
+	const store = await boxStore();
+	const queued = create(JobSchema, {
+		...job(12),
+		runId: 43107920330,
+	});
+	await store.queue(queued, NOW, 1);
+	const pruner = createHeldJobPruner({ store, now: () => 0 });
+	pruner.observePollWitness({
+		terminalRuns: [
+			{ repositoryId: 101, runId: 43107920330, reason: "run-cancelled" },
+		],
+		terminalJobs: [],
+	});
+	expect(await pruner.maybePrune(true)).toBe(1);
+	expect(await store.pendingJobs()).toHaveLength(0);
+});
+
+it("refreshHeldPruneWitnessFromStore marks completed runs from GitHub", async () => {
+	const store = await boxStore();
+	const queued = create(JobSchema, {
+		...job(88),
+		runId: 43111719541,
+	});
+	await store.queue(queued, NOW, 1);
+	const github: GithubTransport = {
+		request: async () =>
+			new Response(
+				JSON.stringify({
+					id: 43111719541,
+					run_attempt: 1,
+					event: "push",
+					head_sha: "a".repeat(40),
+					head_branch: "main",
+					path: ".github/workflows/ci.yml",
+					display_title: "push",
+					status: "completed",
+					conclusion: "cancelled",
+					run_started_at: NOW,
+					updated_at: NOW,
+					actor: { id: 1 },
+					repository: { id: 101, private: true },
+					head_repository: { id: 101 },
+				}),
+				{ status: 200 },
+			),
+	};
+	const witness = await refreshHeldPruneWitnessFromStore({ store, github });
+	expect(witness.terminalRuns).toEqual([
+		{
+			repositoryId: 101,
+			runId: 43111719541,
+			reason: "run-cancelled",
+		},
+	]);
 });

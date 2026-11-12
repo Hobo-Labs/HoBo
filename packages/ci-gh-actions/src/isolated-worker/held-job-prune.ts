@@ -1,5 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { type Job, JobSchema, type Lease } from "@hobo/ci";
+import { type GithubTransport, getRun } from "../github.js";
 import { TRUNK_RUNNER_LABEL } from "../runner-labels.js";
 import {
 	isUnlaunchedReservation,
@@ -130,6 +131,96 @@ export type PruneHeldJobsOptions = {
 };
 
 /** Drop local demand GitHub has already ended, without touching GitHub. */
+export function mergeHeldPruneWitness(
+	a: HeldJobPollWitness,
+	b: HeldJobPollWitness,
+): HeldJobPollWitness {
+	const runs = new Map<string, HeldJobPollWitness["terminalRuns"][number]>();
+	for (const entry of [...a.terminalRuns, ...b.terminalRuns]) {
+		const key = runPruneKey(entry.repositoryId, entry.runId);
+		const prior = runs.get(key);
+		if (
+			prior === undefined ||
+			(prior.reason !== "run-cancelled" && entry.reason === "run-cancelled")
+		)
+			runs.set(key, entry);
+	}
+	const jobs = new Map<string, HeldJobPollWitness["terminalJobs"][number]>();
+	for (const entry of [...a.terminalJobs, ...b.terminalJobs]) {
+		jobs.set(
+			jobPruneKey(entry.repositoryId, entry.jobId, entry.runAttempt),
+			entry,
+		);
+	}
+	return {
+		terminalRuns: [...runs.values()],
+		terminalJobs: [...jobs.values()],
+	};
+}
+
+function terminalRunReason(
+	conclusion: string | null | undefined,
+): HeldJobPruneReason {
+	if (conclusion === "cancelled") return "run-cancelled";
+	return "run-completed";
+}
+
+/** Refresh witness for runs still referenced locally when poll lookback missed them. */
+export async function refreshHeldPruneWitnessFromStore(options: {
+	store: HeldJobPruneStore;
+	github: GithubTransport;
+}): Promise<HeldJobPollWitness> {
+	const terminalRuns: HeldJobPollWitness["terminalRuns"][number][] = [];
+	const seen = new Set<string>();
+	const pending = await options.store.pendingJobs();
+	const leases = await options.store.activeLeases();
+	const targets: Array<{
+		installationId: number;
+		repository: string;
+		repositoryId: number;
+		runId: number;
+	}> = [];
+	for (const job of pending) {
+		targets.push({
+			installationId: job.installationId,
+			repository: job.repository,
+			repositoryId: job.repositoryId,
+			runId: job.runId,
+		});
+	}
+	for (const lease of leases) {
+		if (!isUnlaunchedReservation(lease)) continue;
+		targets.push({
+			installationId: lease.installationId,
+			repository: lease.repository,
+			repositoryId: lease.repositoryId,
+			runId: lease.originalRunId,
+		});
+	}
+	for (const target of targets) {
+		const key = runPruneKey(target.repositoryId, target.runId);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		try {
+			const run = await getRun(
+				options.github,
+				target.installationId,
+				target.repository,
+				target.runId,
+			);
+			if (run.status !== "completed") continue;
+			terminalRuns.push({
+				repositoryId: target.repositoryId,
+				runId: target.runId,
+				reason: terminalRunReason(run.conclusion),
+			});
+		} catch {
+			continue;
+		}
+	}
+	return { terminalRuns, terminalJobs: [] };
+}
+
 export async function pruneHeldJobs(
 	options: PruneHeldJobsOptions,
 ): Promise<number> {
@@ -212,9 +303,10 @@ export function createHeldJobPruner(options: {
 		observePollWitness(witness: HeldJobPollWitness): void {
 			lastWitness = witness;
 		},
-		async maybePrune(): Promise<number> {
+		async maybePrune(force = false): Promise<number> {
 			const nowMs = now();
-			if (nowMs - lastPruneMs < minIntervalMs || !lastWitness) return 0;
+			if (!force && nowMs - lastPruneMs < minIntervalMs) return 0;
+			if (!lastWitness) return 0;
 			lastPruneMs = nowMs;
 			const at = new Date(nowMs).toISOString();
 			const pruneOptions: PruneHeldJobsOptions = {

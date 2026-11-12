@@ -42,6 +42,32 @@ export const DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS = {
 	swapUsedFractionAdmit: 0.35,
 } as const satisfies HostPressureAdmissionThresholds;
 
+/** CPUs a Main Fabric workspace shard typically consumes on the host (observed ~430%). */
+export const DEFAULT_TRUNK_JOB_CPU_REQUEST = 4;
+/** Headroom kept under load when admitting another trunk job. */
+export const DEFAULT_CPU_ADMISSION_VOLATILITY_CPUS = 1;
+
+export type HostCpuAdmissionInput = Readonly<{
+	cores: number;
+	/** 1-minute load average. */
+	load1: number;
+	/** Worker containers already running or launching on this host. */
+	reservedCpus: number;
+	volatilityCpus: number;
+	requestCpus: number;
+}>;
+
+export function hostCpuHeadroomCpus(input: HostCpuAdmissionInput): number {
+	return (
+		input.cores - input.load1 - input.reservedCpus - input.volatilityCpus
+	);
+}
+
+export function hostCpuAdmitFits(input: HostCpuAdmissionInput): boolean {
+	if (!Number.isFinite(input.cores) || input.cores < 1) return true;
+	return hostCpuHeadroomCpus(input) >= input.requestCpus;
+}
+
 export type ContainerStallThresholds = Readonly<{
 	memoryPsiFullStall: number;
 	cpuPsiFullStall: number;
@@ -185,6 +211,17 @@ export type HostResourcePressureLog = (
 
 function round3(value: number): number {
 	return Math.round(value * 1000) / 1000;
+}
+
+export function trunkWorkerCpuHeadroomFields(input: HostCpuAdmissionInput) {
+	return {
+		cpuCores: input.cores,
+		cpuLoad1: round3(input.load1),
+		cpuReserved: input.reservedCpus,
+		cpuVolatility: input.volatilityCpus,
+		cpuRequest: input.requestCpus,
+		cpuHeadroom: round3(hostCpuHeadroomCpus(input)),
+	} as const satisfies Readonly<Record<string, number>>;
 }
 
 export function hostResourcePressureLogFields(

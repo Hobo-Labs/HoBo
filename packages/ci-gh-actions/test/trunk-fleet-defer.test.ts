@@ -22,6 +22,7 @@ const reasons = [
 	"memory-budget",
 	"trunk-pr-cap",
 	"host-pressure",
+	"cpu-contention",
 	"storage",
 	"headroom",
 ] as const satisfies readonly TrunkWaitState["reason"][];
@@ -60,6 +61,21 @@ describe("evaluateMainTrunkFleetDefer", () => {
 		});
 		expect(decision.action).toBe("defer");
 		expect(decision.peerAbsorbSlots).toBe(2);
+	});
+
+	it("defers main shards blocked on cpu-contention after the wait window", () => {
+		const decision = evaluateMainTrunkFleetDefer({
+			jobName: "Main workspace test shard 1",
+			isMainTrunkJob: true,
+			priorWait: wait("cpu-contention", 50_000),
+			deferMs,
+			nowMs,
+			trunkSlots: 1,
+			localTrunkReserved: 0,
+			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 1, meshFreeSlots: 0 },
+		});
+		expect(decision.action).toBe("defer");
+		expect(decision.waitReason).toBe("cpu-contention");
 	});
 
 	it("holds when peer capacity is zero", () => {

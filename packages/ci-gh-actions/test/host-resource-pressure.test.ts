@@ -5,10 +5,13 @@ import { describe, expect, it } from "vitest";
 import {
 	createContainerStallGuard,
 	DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS,
+	hostCpuAdmitFits,
+	hostCpuHeadroomCpus,
 	hostMemoryAdmitFits,
 	hostPressureBlocksAdmission,
 	parsePsiAverages,
 	readHostResourcePressureSample,
+	trunkWorkerCpuHeadroomFields,
 } from "../src/isolated-worker/host-resource-pressure.js";
 
 describe("host resource pressure", () => {
@@ -33,6 +36,43 @@ describe("host resource pressure", () => {
 	it("requires volatility margin on MemAvailable headroom", () => {
 		expect(hostMemoryAdmitFits(4_500, 1_024, 2_048, 1_024)).toBe(true);
 		expect(hostMemoryAdmitFits(4_000, 1_024, 2_048, 1_024)).toBe(false);
+	});
+
+	it("blocks CPU admission when load plus reserved trunk jobs exhaust cores", () => {
+		const input = {
+			cores: 4,
+			load1: 0.5,
+			reservedCpus: 4,
+			volatilityCpus: 1,
+			requestCpus: 4,
+		};
+		expect(hostCpuHeadroomCpus(input)).toBe(-1.5);
+		expect(hostCpuAdmitFits(input)).toBe(false);
+		expect(trunkWorkerCpuHeadroomFields(input)).toMatchObject({
+			cpuCores: 4,
+			cpuHeadroom: -1.5,
+		});
+	});
+
+	it("admits another trunk job when headroom covers request plus volatility", () => {
+		expect(
+			hostCpuAdmitFits({
+				cores: 8,
+				load1: 2,
+				reservedCpus: 4,
+				volatilityCpus: 1,
+				requestCpus: 4,
+			}),
+		).toBe(false);
+		expect(
+			hostCpuAdmitFits({
+				cores: 8,
+				load1: 1,
+				reservedCpus: 0,
+				volatilityCpus: 1,
+				requestCpus: 4,
+			}),
+		).toBe(true);
 	});
 
 	it("does not block when PSI is below admission thresholds", () => {

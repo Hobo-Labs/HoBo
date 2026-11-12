@@ -4,9 +4,13 @@ import {
 	leaseOccupiesWorkerResources,
 } from "../lease-resource-occupancy.js";
 import {
+	DEFAULT_CPU_ADMISSION_VOLATILITY_CPUS,
+	DEFAULT_TRUNK_JOB_CPU_REQUEST,
 	type HostResourcePressureSample,
+	hostCpuAdmitFits,
 	hostMemoryAdmitFits,
 	hostPressureBlocksAdmission,
+	trunkWorkerCpuHeadroomFields,
 } from "./host-resource-pressure.js";
 import type {
 	WorkerMemoryClassName,
@@ -39,7 +43,12 @@ type MemoryAdmissionWaitFields = {
 	budgetMb: number;
 	availableMb?: number;
 	waitedMs: number;
-	reason: "trunk-pr-cap" | "memory-budget" | "host-available" | "host-pressure";
+	reason:
+		| "trunk-pr-cap"
+		| "memory-budget"
+		| "host-available"
+		| "host-pressure"
+		| "cpu-contention";
 	activeGeneral: number;
 	prCapWithTrunk: number;
 };
@@ -47,7 +56,8 @@ export type MemoryAdmissionRejectReason =
 	| "trunk-pr-cap"
 	| "memory-budget"
 	| "host-available"
-	| "host-pressure";
+	| "host-pressure"
+	| "cpu-contention";
 
 export type MemoryAdmissionDecision = Readonly<{
 	admitted: boolean;
@@ -74,6 +84,9 @@ export function createWorkerMemoryAdmission(
 		availableMemoryMb?: () => number | undefined;
 		volatilityMb?: number;
 		hostPressure?: () => HostResourcePressureSample | undefined;
+		hostCores?: () => number;
+		trunkJobCpuRequest?: number;
+		cpuVolatilityCpus?: number;
 	} = {},
 ) {
 	const now = options.now ?? Date.now;
@@ -91,6 +104,23 @@ export function createWorkerMemoryAdmission(
 		!Number.isInteger(volatilityMb)
 	)
 		throw new Error("invalid memory admission volatilityMb");
+	const trunkJobCpuRequest =
+		options.trunkJobCpuRequest ?? DEFAULT_TRUNK_JOB_CPU_REQUEST;
+	if (
+		!Number.isInteger(trunkJobCpuRequest) ||
+		trunkJobCpuRequest < 1 ||
+		trunkJobCpuRequest > 32
+	)
+		throw new Error("invalid trunk job cpu request");
+	const cpuVolatilityCpus =
+		options.cpuVolatilityCpus ?? DEFAULT_CPU_ADMISSION_VOLATILITY_CPUS;
+	if (
+		!Number.isFinite(cpuVolatilityCpus) ||
+		cpuVolatilityCpus < 0 ||
+		!Number.isInteger(cpuVolatilityCpus)
+	)
+		throw new Error("invalid cpu admission volatility");
+	const hostCores = options.hostCores ?? (() => 1);
 	const waiting = new Map<number, { sinceMs: number; signature: string }>();
 	let warmMb = 0;
 
@@ -202,6 +232,25 @@ export function createWorkerMemoryAdmission(
 		const pressure = options.hostPressure?.();
 		const pressureBlocked =
 			pressure !== undefined && hostPressureBlocksAdmission(pressure);
+		const heavyLeases = admittedLeases.filter(
+			(lease) => leaseMemoryMb(lease) >= config.classes.standard,
+		).length;
+		const cores = hostCores();
+		const load1 =
+			pressure?.loadPerCpu !== undefined && Number.isFinite(pressure.loadPerCpu)
+				? pressure.loadPerCpu * cores
+				: 0;
+		const cpuInput = {
+			cores,
+			load1,
+			reservedCpus: heavyLeases * trunkJobCpuRequest,
+			volatilityCpus: cpuVolatilityCpus,
+			requestCpus: trunkJobCpuRequest,
+		};
+		const trunkCpuBlocked =
+			cores >= trunkJobCpuRequest &&
+			request.memoryMb >= config.classes.standard &&
+			!hostCpuAdmitFits(cpuInput);
 		const trunkBudgetBiasMb =
 			request.rank === 0
 				? unlaunchedGeneralReservedMb(
@@ -218,7 +267,12 @@ export function createWorkerMemoryAdmission(
 			volatilityMb,
 			pressure,
 		);
-		const admitted = !capBlocked && budgetFits && hostFits && !pressureBlocked;
+		const admitted =
+			!capBlocked &&
+			budgetFits &&
+			hostFits &&
+			!pressureBlocked &&
+			!trunkCpuBlocked;
 		if (admitted) {
 			const previous = waiting.get(request.jobId);
 			waiting.delete(request.jobId);
@@ -250,11 +304,13 @@ export function createWorkerMemoryAdmission(
 				: waitedMs > config.holMs;
 		const reason = capBlocked
 			? "trunk-pr-cap"
-			: pressureBlocked
-				? "host-pressure"
-				: !budgetFits
-					? "memory-budget"
-					: "host-available";
+			: trunkCpuBlocked
+				? "cpu-contention"
+				: pressureBlocked
+					? "host-pressure"
+					: !budgetFits
+						? "memory-budget"
+						: "host-available";
 		const availabilitySignature =
 			reason === "host-available" && availableMb !== undefined
 				? `:${Math.floor(availableMb / 512) * 512}`
@@ -276,6 +332,9 @@ export function createWorkerMemoryAdmission(
 				prCapWithTrunk,
 			};
 			if (availableMb !== undefined) fields.availableMb = availableMb;
+			if (reason === "cpu-contention") {
+				Object.assign(fields, trunkWorkerCpuHeadroomFields(cpuInput));
+			}
 			options.log?.("hobo_ci_memory_admission_wait", fields);
 		}
 		return { admitted: false, blockRank, reason };

@@ -12,7 +12,8 @@ export type TrunkWaitReason =
 	| "host-available"
 	| "memory-budget"
 	| "trunk-pr-cap"
-	| "host-pressure";
+	| "host-pressure"
+	| "cpu-contention";
 
 export type TrunkWaitState = Readonly<{
 	sinceMs: number;

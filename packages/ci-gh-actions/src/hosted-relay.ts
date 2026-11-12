@@ -26,7 +26,7 @@ import {
 	TRUNK_RANK,
 } from "./admission-order.js";
 import type { FleetCapacityWitness } from "./fleet-absorb.js";
-import { fleetPeerAbsorbSlots } from "./fleet-absorb.js";
+import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
 import type { FleetCapacityPublisher } from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
@@ -1590,10 +1590,28 @@ export class HostedRelay {
 						}
 						if (trunk && decision.reason) {
 							const waitReason: TrunkWaitReason =
-								decision.reason === "host-pressure"
-									? "host-pressure"
+								decision.reason === "host-pressure" ||
+								decision.reason === "cpu-contention"
+									? decision.reason
 									: decision.reason;
 							waitingTrunk.add(this.reportTrunkWait(job, waitReason));
+							if (
+								mainTrunk &&
+								decision.reason === "cpu-contention" &&
+								this.fleetPeerSlots(fleetWitness) > 0
+							) {
+								const waitedMs = priorWait
+									? Math.max(0, nowMs - priorWait.sinceMs)
+									: 0;
+								this.logTrunkFleetDeferDecision(job, {
+									action: "defer",
+									waitedMs,
+									waitReason: "cpu-contention",
+									...fleetWitnessFields(fleetWitness),
+								});
+								waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
+								continue;
+							}
 							if (mainTrunk) {
 								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
 								const postDecision = evaluateMainTrunkFleetDefer({
