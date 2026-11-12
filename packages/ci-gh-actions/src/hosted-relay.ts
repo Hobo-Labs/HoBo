@@ -1398,9 +1398,8 @@ export class HostedRelay {
 		const wait = rememberTrunkWait(this.trunkWaits, job, reason, nowMs);
 		const waitedMs = nowMs - wait.sinceMs;
 		if (isMainWorkspaceShardJob(job.name)) {
-			const holdKey = `${key}:${reason}`;
-			if (!this.shardAdmissionHoldLogged.has(holdKey)) {
-				this.shardAdmissionHoldLogged.add(holdKey);
+			if (!this.shardAdmissionHoldLogged.has(key)) {
+				this.shardAdmissionHoldLogged.add(key);
 				logMainShardAdmissionHold(job, reason, {
 					waitedMs,
 					...fields,
