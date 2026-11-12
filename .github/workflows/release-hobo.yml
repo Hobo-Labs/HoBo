@@ -852,7 +852,8 @@ jobs:
       group: hobo-release-pages
       cancel-in-progress: false
     env:
-      HOBO_RELEASE_TURBO_BASE: origin/main
+      # The site build is the whole closure (finding 125); no affected base.
+      HOBO_RELEASE_TURBO_BASE: ""
       HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
     permissions:
       contents: write
