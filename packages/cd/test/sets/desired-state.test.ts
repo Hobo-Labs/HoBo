@@ -916,6 +916,46 @@ describe("changes()", () => {
 		expect(changes[1]?.management).toBe(CampManagement.OBSERVE_ONLY);
 	});
 
+	it("multi-Camp feeds yield in global position order and skip unrequested Camps", async () => {
+		const { desired } = setup();
+		const open = async (campId: string, id: string) => {
+			const resolved = resolvedFor(campId, SHOP_V1);
+			unwrap(
+				await desired.open(
+					delta(id, { campId, changes: diffResolvedSets(undefined, resolved) }),
+					ctxAt(T0),
+				),
+			);
+			return unwrap(
+				await desired.apply(
+					{
+						deltaId: deltaId(id),
+						gateDecisionId: `g-${id}`,
+						resolved,
+						origin: SetOrigin.UP,
+					},
+					ctxAt(T0),
+				),
+			);
+		};
+		const a = await open("camp-a", "a1");
+		await open("camp-x", "x1");
+		const b = await open("camp-b", "b1");
+		const controller = new AbortController();
+		const frames = await collect(
+			desired.changes({
+				campIds: [camp("camp-b"), camp("camp-a")],
+				signal: controller.signal,
+			}),
+			2,
+		);
+		controller.abort();
+		expect(frames.map((f) => f.set.setId)).toEqual([a.setId, b.setId]);
+		expect((frames[0]?.position ?? 0n) < (frames[1]?.position ?? 0n)).toBe(
+			true,
+		);
+	});
+
 	it("passes posture observe_fields through when a posture reader is composed", async () => {
 		const store = createFakeEventStore();
 		const desired = createDesiredState({

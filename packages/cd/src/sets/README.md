@@ -30,6 +30,13 @@ desired-state lane every delivery path writes through.
 | `reject(deltaId, reasons)` | `delta.Rejected` |
 | `adoptLegacy()` | `set.Created` with `SET_ORIGIN_LEGACY_FOLD` |
 
+`apply` checks that the Delta's declared `changes` (resource + kind) equal
+`diffResolvedSets(base, resolved)`; an empty Delta is a no-op only when the
+canonical content hash is unchanged (a new gate decision or Freight with an
+identical plan still mints a Set, so lineage is never dropped). Delta ids are
+unique across Camps and may not start with `set_`, which lets one `get`
+serve both ports.
+
 Every append uses the stream head as its expected version (event-store CAS),
 so of two concurrent applies exactly one wins; the loser re-reads and either
 returns the winner's Set (same Delta, I12) or is refused `concurrent-apply`.
