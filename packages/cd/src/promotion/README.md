@@ -88,6 +88,40 @@ and idempotency key (`promo_`, `rollback_`, `preview_`), so a repeated command
 returns the recorded promotion (I12) and a key reused for other Freight or
 targets is refused. CUE constraints: [`data-models/promotion.cue`](../../data-models/promotion.cue).
 
+## Parse, don't validate
+
+Inputs cross one boundary each and become parsed derived types the saga
+never re-checks:
+
+- `PromoteRequest` → a `PromotionRecord` (`env.PromoteRequested`) only after
+  authorization, the usable-Freight check, lineage and the fan-out aggregate.
+- Journal facts → `PromotionView` (`foldPromotion`): unreadable bodies and
+  foreign saga scopes are skipped, never trusted; `parseStep` is the only
+  reader of `<campId>|<step>`.
+- Approval subjects → `ApprovalSubject` (`parseApprovalSubject`); a malformed
+  subject is refused before any write.
+- Ids are branded (`PromotionId`, `DeltaId`, `RolloutId`, `VerificationId`)
+  and minted only by `ids.ts` or the owning port.
+- Resolved sets → `sealResolved`: the pre-gate candidate becomes an applied
+  set only with the gate decision that admitted it.
+
+## Event architecture
+
+- **Commands**: `promote`, `rollback`, `approve`, `createPreview`,
+  `expirePreviews`, `tick`. Each appends past-tense **events** to the
+  **event store** (`DurableEventStore`) with stream-head CAS and an
+  idempotency key, so a repeated command dedupes.
+- **Actor**: one saga per promotion (`defineSaga`), single-writer per
+  `cd-promotion-<id>` stream by CAS; one in-flight promotion per Camp is
+  enforced by the per-Camp queue, and the Camp's spec stream is written only
+  through `DeltaLedger` (one writer per Camp, I4).
+- **Projection / materialized view**: `foldPromotion` rebuilds each
+  `PromotionView` from its stream; a catch-up index over `readAll` orders
+  promotions for supersession and `list`. There is no separate **read store**
+  and no **snapshot**: promotion streams are short (tens of facts), and the
+  event store is the read store. A snapshot can be added behind `load`
+  without changing a port.
+
 ## Adapters (`src/adapters/`)
 
 | File | Implements | Notes |
