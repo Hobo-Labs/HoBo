@@ -40,7 +40,9 @@ import {
 	MemoryEventStore,
 	railReader,
 	RecordingTelemetry,
+	type SourceInit,
 	StaticCredentials,
+	type SubscriptionInit,
 	TENANT,
 } from "./support.js";
 
@@ -105,11 +107,11 @@ function harness(
 	};
 }
 
-function sub(init: Parameters<typeof create<typeof SubscriptionRecordSchema>>[1]) {
+function sub(init: SubscriptionInit) {
 	return create(SubscriptionRecordSchema, init);
 }
 
-function source(name: string, bindle: string, subscriptions: ReturnType<typeof sub>[], extra: Partial<Parameters<typeof create<typeof FreightSourceRecordSchema>>[1]> = {}) {
+function source(name: string, bindle: string, subscriptions: ReturnType<typeof sub>[], extra: SourceInit = {}) {
 	return create(FreightSourceRecordSchema, { name, bindle, subscriptions, automatic: true, ...extra });
 }
 
@@ -364,7 +366,7 @@ describe("require_provenance", () => {
 
 	it("an attestation from an unpinned builder is rejected with the verifier's reasons", async () => {
 		const h = harness(OCI_FIXTURES);
-		await defineOk(h, source("pinned", "web", [sub({ ...signed, trustedBuilderIds: ["https://other.example/builder"] })]));
+		await defineOk(h, source("pinned", "web", [create(SubscriptionRecordSchema, { ...signed, trustedBuilderIds: ["https://other.example/builder"] })]));
 		expect(await pollOk(h, "pinned")).toEqual([]);
 		const rejected = discoveries(h, "pinned").find((item) => item.data.version === "1.2.0");
 		expect(rejected?.reasons.map((item) => item.code)).toEqual(["source-provenance-rejected", "provenance-untrusted"]);

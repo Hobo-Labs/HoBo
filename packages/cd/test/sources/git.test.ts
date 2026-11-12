@@ -8,11 +8,17 @@ import {
 import { createGitDriver } from "../../src/sources/drivers/git.js";
 import { applyDelta, readPackets } from "../../src/sources/drivers/git-pack.js";
 import { gitExchanges, gitFixture } from "./git-fixtures.js";
-import { clock, context, FixtureTransport, signal } from "./support.js";
+import {
+	clock,
+	context,
+	FixtureTransport,
+	signal,
+	type SubscriptionInit,
+} from "./support.js";
 
 const { base, commits } = gitFixture;
 
-function sub(extra: Partial<Parameters<typeof create<typeof SubscriptionRecordSchema>>[1]> = {}) {
+function sub(extra: SubscriptionInit = {}) {
 	return create(SubscriptionRecordSchema, { name: "decl", kind: SubscriptionKind.GIT_REPOSITORY, locator: base, ...extra });
 }
 

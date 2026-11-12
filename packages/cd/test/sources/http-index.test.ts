@@ -7,11 +7,19 @@ import {
 	SubscriptionRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { createHttpIndexDriver } from "../../src/sources/drivers/http-index.js";
-import { clock, context, digestOf, FixtureTransport, json, signal } from "./support.js";
+import {
+	clock,
+	context,
+	digestOf,
+	FixtureTransport,
+	json,
+	signal,
+	type SubscriptionInit,
+} from "./support.js";
 
 const INDEX = "https://downloads.example.com/web/index.json";
 
-function subscription(overrides: Partial<Parameters<typeof create<typeof SubscriptionRecordSchema>>[1]> = {}) {
+function subscription(overrides: SubscriptionInit = {}) {
 	return create(SubscriptionRecordSchema, {
 		name: "bundle",
 		kind: SubscriptionKind.HTTP_INDEX,

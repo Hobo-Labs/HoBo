@@ -7,11 +7,11 @@ export { gitFixture };
 
 /** Recorded exchanges for one moment of the fixture repository (t1, t2, t3). */
 export function gitExchanges(set: "t1" | "t2" | "t3"): readonly Exchange[] {
-	return gitFixture.sets[set].map((item) => ({
-		method: item.method,
-		url: item.url,
-		body: item.body,
-		response: Buffer.from(item.response, "base64").toString("latin1"),
-	}));
+	return gitFixture.sets[set].map((item): Exchange => {
+		const response = Buffer.from(item.response, "base64").toString("latin1");
+		return "body" in item && item.body !== undefined
+			? { method: item.method, url: item.url, body: item.body, response }
+			: { method: item.method, url: item.url, response };
+	});
 }
 

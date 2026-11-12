@@ -1,7 +1,7 @@
 // Test doubles for the WP2 Freight-source tests. Each models the frozen port it
 // stands in for (ports.ts, @hobo/core); none is reachable from production code.
 import { createHash } from "node:crypto";
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, type MessageInitShape, toJson } from "@bufbuild/protobuf";
 import type {
 	AppendOptions,
 	AppendResult,
@@ -27,9 +27,13 @@ import {
 	FreightOrigin,
 	type FreightRecord,
 	FreightRecordSchema,
+	type FreightSourceRecord,
+	type FreightSourceRecordSchema,
 	type ProvenanceRef,
 	ProvenanceRefSchema,
 	ReasonRecordSchema,
+	type SubscriptionRecord,
+	type SubscriptionRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { FREIGHT_SCHEMA } from "../../src/events.js";
 import type {
@@ -50,6 +54,10 @@ import type {
 import { canonical, isText } from "../../src/sources/json.js";
 
 export const TENANT = "acme";
+
+/** Init objects for test records (all fields optional). */
+export type SubscriptionInit = Exclude<MessageInitShape<typeof SubscriptionRecordSchema>, SubscriptionRecord>;
+export type SourceInit = Exclude<MessageInitShape<typeof FreightSourceRecordSchema>, FreightSourceRecord>;
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 

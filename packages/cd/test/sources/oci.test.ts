@@ -15,9 +15,16 @@ import {
 	statementFor,
 	TOKEN_URL,
 } from "./oci-fixtures.js";
-import { clock, context, FixtureTransport, signal, StaticCredentials } from "./support.js";
+import {
+	clock,
+	context,
+	FixtureTransport,
+	signal,
+	StaticCredentials,
+	type SubscriptionInit,
+} from "./support.js";
 
-function sub(extra: Partial<Parameters<typeof create<typeof SubscriptionRecordSchema>>[1]> = {}) {
+function sub(extra: SubscriptionInit = {}) {
 	return create(SubscriptionRecordSchema, {
 		name: "image",
 		kind: SubscriptionKind.OCI_REPOSITORY,

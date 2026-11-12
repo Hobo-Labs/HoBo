@@ -8,9 +8,20 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { createPackageRegistryDriver } from "../../src/sources/drivers/packages.js";
 import { integrity, PACKAGE_FIXTURES, tarball, tarballBody } from "./package-fixtures.js";
-import { clock, context, digestOf, dump, type Exchange, FixtureTransport, json, signal, StaticCredentials } from "./support.js";
+import {
+	clock,
+	context,
+	digestOf,
+	dump,
+	type Exchange,
+	FixtureTransport,
+	json,
+	signal,
+	StaticCredentials,
+	type SubscriptionInit,
+} from "./support.js";
 
-function sub(ecosystem: string, locator: string, extra: Partial<Parameters<typeof create<typeof SubscriptionRecordSchema>>[1]> = {}) {
+function sub(ecosystem: string, locator: string, extra: SubscriptionInit = {}) {
 	return create(SubscriptionRecordSchema, {
 		name: `${ecosystem}-pkg`,
 		kind: SubscriptionKind.PACKAGE_REGISTRY,
