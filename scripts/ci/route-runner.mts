@@ -22,7 +22,10 @@
  * read exactly as before.
  *
  * The box's own capacity record, `HOBO_CI_FLEET_CAPACITY`, is read the same
- * way. While it is fresh, a box that says it cannot admit a job by memory,
+ * way. It is the repository variable a worker rewrites about once a minute;
+ * the workflow hands this step the value it has as the run starts, because a
+ * job's token is refused (403) when it asks the API for a variable. While it
+ * is fresh, a box that says it cannot admit a job by memory,
  * with no free slot on ARC to take the job instead, counts as the fleet
  * refusing jobs. A box that is only busy, a record with no memory verdict,
  * and one that is missing, unreadable or stale change nothing.
@@ -105,12 +108,13 @@ export const FLEET_STATE_MAX_AGE_SECONDS = 5 * 60;
 /** How far ahead of this machine's clock a snapshot's timestamp may be. */
 export const FLEET_STATE_MAX_SKEW_SECONDS = 60;
 /**
- * How old the box's capacity record may be and still count. A worker
- * rewrites it about once a minute while it is up, so an older one is from a
- * worker that has stopped or whose writes are refused, and says nothing
- * about now.
+ * How old the box's capacity record may be and still count: three of the
+ * worker's one-minute writes. Free memory on the box moves by gigabytes
+ * inside a minute, and what this record can do is send a run to machines
+ * that are paid for, so it is believed only while the worker is seen to be
+ * keeping it current. Two writes may be lost before it is set aside.
  */
-export const FLEET_CAPACITY_MAX_AGE_SECONDS = 5 * 60;
+export const FLEET_CAPACITY_MAX_AGE_SECONDS = 3 * 60;
 
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
@@ -952,8 +956,8 @@ export async function main(
 			localEnrolled,
 			limits,
 			fleetState: (nowMs) => parseFleetState(env.HOBO_CI_FLEET_STATE, nowMs),
-			// From the workflow's `vars` context, like the mesh snapshot: the
-			// job's token cannot read a repository variable through the API.
+			// The variable's value as the run started, from the workflow's `vars`
+			// context like the mesh snapshot: the API answers this job's token 403.
 			fleetCapacity: (nowMs) =>
 				parseFleetCapacity(env.HOBO_CI_FLEET_CAPACITY, nowMs),
 		});

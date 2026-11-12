@@ -41,11 +41,12 @@ inputs:
     default: ""
   fleet-capacity:
     description: >-
-      The box's capacity record (the HOBO_CI_FLEET_CAPACITY repository variable):
-      free slots on the box and on ARC, and whether the box can admit a job by
-      memory. Passed in because the job's token cannot read a variable through
-      the API. Used only while it is under five minutes old, and only to leave
-      the fleet when the box cannot admit by memory and ARC has no free slot.
+      The box's capacity record (the HOBO_CI_FLEET_CAPACITY repository variable,
+      which a worker rewrites about once a minute): free slots on the box and on
+      ARC, and whether the box can admit a job by memory. Pass the variable's
+      current value from the vars context; the API refuses a job's token (403).
+      Used only while it is at most three minutes old, and only to leave the
+      fleet when the box cannot admit by memory and ARC has no free slot.
     required: false
     default: ""
 outputs:
