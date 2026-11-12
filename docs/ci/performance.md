@@ -143,6 +143,7 @@ unindexed new finding files as notices.
 - [Finding 135: main gate and shard job wall profiling](./findings/0135-main-gate-and-shard-job-wall-profiling.md)
 - [Finding 139: main gate finish empty shard matrix](./findings/0139-main-gate-finish-empty-shard-matrix.md)
 - [Finding 140: main shard tsc codegen memory contention](./findings/0140-main-shard-tsc-codegen-memory-contention.md)
+- [Finding 141: release digest read the local name](./findings/0141-release-digest-read-the-local-name.md)
 <!-- findings-index:end -->
 
 ## Data

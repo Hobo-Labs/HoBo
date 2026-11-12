@@ -67,6 +67,37 @@ export function releaseImagesToPublish(
 	return images.includes(imageId) ? [imageId] : [];
 }
 
+/**
+ * `<registry repo>@sha256:...` for the tag just pushed. The digest comes from
+ * `docker push`'s own `digest:` line; failing that, from the `RepoDigests`
+ * entry for that repository. Never `RepoDigests[0]`: with the containerd image
+ * store (ARC pods) the first entry is the local name, `hobo-sdk@sha256:...`,
+ * which attest cannot find (finding 141).
+ */
+export function pushedDigestRef(
+	tag: string,
+	pushOutput: string,
+	repoDigestLines: string,
+): string {
+	const repository = tag.slice(0, tag.lastIndexOf(":"));
+	const pushed = /\bdigest: (sha256:[0-9a-f]{64})\b/u.exec(pushOutput)?.[1];
+	if (pushed) return `${repository}@${pushed}`;
+	const entries = repoDigestLines
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	const prefix = `${repository}@`;
+	const match = entries.find(
+		(entry) =>
+			entry.startsWith(prefix) &&
+			/^sha256:[0-9a-f]{64}$/u.test(entry.slice(prefix.length)),
+	);
+	if (match) return match;
+	throw new Error(
+		`no digest for ${tag}: docker push printed none and RepoDigests has no ${prefix} entry (${entries.join(", ") || "none"})`,
+	);
+}
+
 export function pushReleaseGhcrImages(options: {
 	releaseRef: string;
 	repository: string;
@@ -121,19 +152,26 @@ export function pushReleaseGhcrImages(options: {
 		run("docker", ["tag", `${id}:candidate`, tag]);
 		const pushStarted = Date.now();
 		console.log(`pushing ${tag}`);
-		runDockerPushWithRetry({ tag, attemptTimeoutMs, budgetMs });
+		const pushOutput = runDockerPushWithRetry({
+			tag,
+			attemptTimeoutMs,
+			budgetMs,
+		});
 		console.log(
 			`pushed ${tag} in ${Math.round((Date.now() - pushStarted) / 1000)}s`,
 		);
 		const inspect = spawnSync(
 			"docker",
-			["inspect", "--format={{index .RepoDigests 0}}", tag],
+			["inspect", "--format={{range .RepoDigests}}{{println .}}{{end}}", tag],
 			{ encoding: "utf8" },
 		);
-		if (inspect.status !== 0 || !inspect.stdout.trim()) {
-			throw new Error(`docker inspect digest failed for ${tag}`);
-		}
-		digests.push(inspect.stdout.trim());
+		digests.push(
+			pushedDigestRef(
+				tag,
+				pushOutput,
+				inspect.status === 0 ? inspect.stdout : "",
+			),
+		);
 		run("docker", ["rmi", "-f", tag]);
 		run("node", [
 			"--no-warnings",
