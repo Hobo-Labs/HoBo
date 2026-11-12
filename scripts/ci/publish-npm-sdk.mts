@@ -104,7 +104,7 @@ export type NpmPublishDeps = {
 	readonly read?: (path: string) => Uint8Array;
 	readonly qualify?: (
 		input: Parameters<typeof qualifyReleaseCandidate>[0],
-	) => Promise<unknown>;
+	) => Promise<{ readonly freightId: string }>;
 	readonly npm?: (args: string[]) => void;
 };
 
