@@ -221,11 +221,11 @@ function isImagetoolsTagAbsent(
 ): boolean {
 	if (status === 0) return false;
 	if (isImagetoolsRegistryTagNotFound(stderr)) {
-		return stderr.includes(tag) || stderr.includes(tag.split(":")[0] ?? tag);
+		return stderr.includes(tag);
 	}
 	const lower = stderr.toLowerCase();
 	return (
-		/\bmanifest unknown\b/u.test(lower) ||
+		(/\bmanifest unknown\b/u.test(lower) && stderr.includes(tag)) ||
 		(/\bname unknown\b/u.test(lower) && stderr.includes(tag)) ||
 		(/\bno such manifest\b/u.test(lower) && stderr.includes(tag))
 	);
@@ -338,14 +338,26 @@ export function resolveRegistryDigestForTagWithRetry(
 		options.maxAttempts ?? REGISTRY_DIGEST_RESOLVE_MAX_ATTEMPTS;
 	const delayMs = options.delayMs ?? REGISTRY_DIGEST_RESOLVE_DELAY_MS;
 	const sleepMs = options.sleepMs ?? sleepSyncMs;
+	let lastError: Error | undefined;
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-		const digest = resolveRegistryDigestForTag(tag, inspect);
-		if (digest) return digest;
+		try {
+			const digest = resolveRegistryDigestForTag(tag, inspect);
+			if (digest) return digest;
+		} catch (error) {
+			lastError = error instanceof Error ? error : new Error(String(error));
+			if (attempt >= maxAttempts) break;
+			console.error(
+				`registry digest for ${tag} inspect failed (attempt ${attempt}/${maxAttempts}): ${lastError.message}; retrying in ${delayMs}ms`,
+			);
+			sleepMs(delayMs);
+			continue;
+		}
 		if (attempt >= maxAttempts) break;
 		console.error(
 			`registry digest for ${tag} not visible (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms`,
 		);
 		sleepMs(delayMs);
 	}
+	if (lastError) throw lastError;
 	return undefined;
 }

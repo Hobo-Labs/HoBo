@@ -103,10 +103,16 @@ describe("release ghcr digest helpers", () => {
 
 	it("treats manifest unknown as absent and name unknown only when tag appears in stderr", () => {
 		const tag = "ghcr.io/x/y:v1";
-		expect(
+		expect(() =>
 			imagetoolsInspectTag(
 				tag,
 				vi.fn(() => stubSpawnSync(1, "manifest unknown")),
+			),
+		).toThrow(/imagetools inspect/u);
+		expect(
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() => stubSpawnSync(1, `manifest unknown: ${tag}`)),
 			),
 		).toBeUndefined();
 		expect(() =>
@@ -134,6 +140,25 @@ describe("release ghcr digest helpers", () => {
 				}),
 			),
 		).toThrow(/labels without a digest/u);
+	});
+
+	it("resolveRegistryDigestForTagWithRetry retries transient inspect errors", () => {
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-cli:v1";
+		const inspect = vi
+			.fn()
+			.mockImplementationOnce(() => {
+				throw new Error("temporary registry timeout");
+			})
+			.mockReturnValueOnce({ digest: DIGEST_B });
+		const sleepMs = vi.fn();
+		const digest = resolveRegistryDigestForTagWithRetry(tag, inspect, {
+			maxAttempts: 3,
+			delayMs: 1,
+			sleepMs,
+		});
+		expect(digest).toBe(`ghcr.io/hobo-labs/hobo/hobo-cli@${DIGEST_B}`);
+		expect(inspect).toHaveBeenCalledTimes(2);
+		expect(sleepMs).toHaveBeenCalledTimes(1);
 	});
 
 	it("resolveRegistryDigestForTagWithRetry waits until digest appears", () => {
