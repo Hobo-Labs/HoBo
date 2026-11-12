@@ -22,7 +22,7 @@ import {
 	type CampTopology,
 	type TopologyReader,
 } from "@hobo/cd";
-import { TOPOLOGY_CONTRACT_VERSION, type Yard } from "@hobo/yards";
+import type { Yard } from "@hobo/yards";
 import {
 	type CdTopologyCamp,
 	CdTopologyCampSchema,
@@ -35,6 +35,12 @@ import {
 	type ModuleImporter,
 } from "./cd-delivery-module.js";
 import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
+
+// The @hobo/yards contract a topology Yard carries. Typed from `Yard`, so a
+// contract change in @hobo/yards fails to compile here. Not imported at run
+// time: this module stays free of the yards runtime (and its module graph)
+// that only the type is needed from.
+const TOPOLOGY_CONTRACT_VERSION: Yard["contract"] = "hobo.topology-objects/v1";
 
 // public-contract: the Camp label that declares a Camp OBSERVE_ONLY (D5).
 export const CD_MANAGEMENT_LABEL = "hobo.cd/management";

@@ -3,19 +3,17 @@
 // cd_topology schemas, then resolved by `camp list`, `pipeline apply` and
 // `agent token`.
 //
-// The parse runs in-process on real @hobo/yards Yards and runner-fleet
-// records. Loading the repository's TypeScript modules runs in the BUILT
-// binary (a child process per command): tsx loader hooks are process-wide, and
-// this file shares its worker with the rest of the suite.
+// The parse runs in-process on the data-models fixtures (a @hobo/yards Yard
+// in JSON form, a runner-fleet Camp record). The repository's real Yard and
+// delivery modules load in the BUILT binary (a child process per command):
+// they load through tsx and @hobo/yards, whose module state is process-wide,
+// and this file shares its worker with the rest of the suite.
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { camp } from "@hobo/camps";
 import { CampManagement } from "@hobo/cd";
-import { parseRunnerHosts, runnerFleetTopology } from "@hobo/ci-gh-actions";
-import { yard } from "@hobo/yards";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	loadTopologyFiles,
@@ -87,14 +85,17 @@ function deploy(
 	});
 }
 
-const RELAY = yard("hobo-ci-relay", {
-	provider: "vercel",
-	regions: ["iad1"],
-	camps: [
-		camp("production", { envType: "production" }),
-		camp("preview", { envType: "preview" }),
-	],
-});
+const FIXTURES = join(PACKAGE, "data-models", "fixtures", "cd_topology");
+const fixture = (name: string): unknown =>
+	JSON.parse(readFileSync(join(FIXTURES, "valid", name), "utf8"));
+// The relay's Yard as `yard()` builds it, extra members included (the parse
+// reads only what the topology needs).
+const RELAY = {
+	...(fixture("relay-yard.json") as object),
+	require: [],
+	bindings: [{ profile: "api.http", productId: "vercel.function/v1" }],
+	properties: { project: "hobo-ci" },
+};
 
 describe("topology files (parse once with the generated schemas)", () => {
 	it("projects a @hobo/yards Yard's Camps, Yard-scoped", () => {
@@ -114,21 +115,9 @@ describe("topology files (parse once with the generated schemas)", () => {
 		expect(production?.stationId).toBe("local");
 	});
 
-	it("parses the runner fleet's Camp records (runnerFleetTopology)", () => {
-		const hosts = parseRunnerHosts(
-			JSON.stringify([
-				{
-					id: "box",
-					kind: "box-worker",
-					runnerLabels: ["hobo"],
-					ring: "pilot",
-				},
-			]),
-		);
-		expect(hosts.ok).toBe(true);
-		if (!hosts.ok) return;
+	it("parses a runner fleet Camp record (runnerFleetTopology's form)", () => {
 		const parsed = parseTopologyExports(
-			{ camps: runnerFleetTopology(hosts.value, { stationId: "" }) },
+			{ camps: [fixture("runner-camp.json")] },
 			{ stationId: "local", source: "hobo.delivery.ts" },
 		);
 		expect(parsed.ok, parsed.ok ? "" : parsed.message).toBe(true);
