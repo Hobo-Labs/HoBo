@@ -179,6 +179,8 @@ jobs:
 });
 const trunkRunsOn =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+const trunkFleetRoutesRunsOn =
+	'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && (fromJSON(vars.HOBO_CI_FLEET_ROUTES || \'{"trunk":"hobo-trunk","pr":"hobo","fork":"hobo"}\').trunk) || \'hobo\' }}';
 const routedRunsOn =
 	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
@@ -483,11 +485,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const prOnly =
 				/github\.event_name == 'pull_request'/.test(condition) &&
 				!condition.includes("||");
-			assert.equal(
-				runsOn,
-				prOnly ? "hobo" : trunkRunsOn,
-				`${file}:${lines[start]}`,
-			);
+			const expectedTrunk = prOnly
+				? "hobo"
+				: runsOn === trunkFleetRoutesRunsOn
+					? trunkFleetRoutesRunsOn
+					: trunkRunsOn;
+			assert.equal(runsOn, expectedTrunk, `${file}:${lines[start]}`);
 		}
 	}
 });

@@ -316,7 +316,8 @@ export class HostedRelay {
 			 * relay balances nothing ahead of the queue and every job stays on its
 			 * hobo label.
 			 */
-			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
+			fleetRoutes?: Pick<FleetRoutePublisher, "publish"> &
+				Partial<Pick<FleetRoutePublisher, "publishTrunkHostedOverflow">>;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
@@ -1791,6 +1792,29 @@ export class HostedRelay {
 			postReleaseActive,
 			fleetWitness,
 		);
+		const overflow = this.options.headroomTrunkOverflow;
+		if (overflow) {
+			try {
+				const overflowed = await overflow.overflowTrunkJobsWaitingForHeadroom(
+					this.options.store,
+					this.trunkWaits,
+					reservationRevision,
+					this.now(),
+					fleetWitness,
+				);
+				if (overflowed > 0) {
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_trunk_headroom_overflow_batch",
+							count: overflowed,
+							nonLocalFreeSlots: this.fleetPeerSlots(fleetWitness),
+						}),
+					);
+				}
+			} catch {
+				/* Overflow must not stall admission for jobs still on the box. */
+			}
+		}
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
 				(lease) => lease.state === "reserved",

@@ -17,6 +17,9 @@ const workspaceTests = workflow.jobs.workspace_tests;
 const prAffected = workflow.jobs.pr_affected;
 const mainGate = workflow.jobs["main-gate"];
 
+const TRUNK_RUNS_ON =
+	'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && (fromJSON(vars.HOBO_CI_FLEET_ROUTES || \'{"trunk":"hobo-trunk","pr":"hobo","fork":"hobo"}\').trunk) || \'hobo\' }}';
+
 describe("CI deps image push scope", () => {
 	it("runs on every main push without commit file-list filtering", () => {
 		expect(depsJob.if).toContain(
@@ -100,7 +103,8 @@ describe("CI deps image push scope", () => {
 		// The publisher pushes the fleet's own image and the deps job builds
 		// it in the box's Docker context, so neither is routed: both ask for
 		// the fleet's label.
-		expect(depsJob["runs-on"]).toBe(job["runs-on"]);
+		expect(depsJob["runs-on"]).toBe(TRUNK_RUNS_ON);
+		expect(job["runs-on"]).toBe(TRUNK_RUNS_ON);
 		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(

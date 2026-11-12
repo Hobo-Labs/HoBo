@@ -156,7 +156,7 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same non-zero rank; feasible rank-0 waits block lower ranks immediately |
 | `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS` | `45000` | After any Main Fabric trunk admission wait, cooperate when mesh `peerAbsorbSlots` &gt; 0 (ARC + peers via `meshFreeSlots`); log `hobo_ci_trunk_fleet_defer_decision` and `hobo_ci_trunk_headroom_fleet_defer` on release |
-| `HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS` | `120000` | Legacy overflow helper (workflow rerun); not wired on the main box daemon — prefer `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS` |
+| `HOBO_CI_TRUNK_HOSTED_OVERFLOW_MS` | `90000` | After this wait on memory-headroom-blocked trunk jobs with **no** mesh/ARC absorb slots, publish `trunk` → `ubuntu-24.04` in `HOBO_CI_FLEET_ROUTES` and **rerun** the workflow so GitHub-hosted picks up (requires `HOBO_CI_FLEET_ROUTES=1` and workflows reading the variable). Prefer cooperative **`HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`** when peers have slots. |
 | `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB` | `1024` | Extra MemAvailable margin in `HOBO_CI_FLEET_CAPACITY`, worker memory admission, and route-runner admission |
 | `HOBO_CI_JOB_MEMORY_MB` | class hard limit | Per-container value exported to the runner; fallback when its cgroup limit cannot be read |
 | `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; cached ETags make unchanged lists free 304 reads |

@@ -164,7 +164,9 @@ export function createHostedRelayRuntime(options: {
 	>[0]["storageJobReserve"];
 	mergeQueuePositions?: MergeQueuePositionSource;
 	/** See `HostedRelay`: publishes the fleet route table after each pass. */
-	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
+	fleetRoutes?:
+		| Pick<FleetRoutePublisher, "publish" | "publishTrunkHostedOverflow">
+		| undefined;
 	headroomTrunkOverflow?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["headroomTrunkOverflow"];
