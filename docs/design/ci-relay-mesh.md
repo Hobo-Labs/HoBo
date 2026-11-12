@@ -419,6 +419,24 @@ GitHub-hosted). `refusedBy` names what took the fleet out of the decision.
 When the routing step cannot run its script at all it says so in a
 `hobo-ci-route-fallback` warning and falls back as before.
 
+**The main gate follows the route, and asks again before its shards.** On a
+push to `main`, a schedule or a dispatch, `main-gate-plan` and `main-gate` need
+the route job and ask for its runner like every routed job. After its full
+checkout the plan job asks again (`reroute`, the same action with
+`attest: "false"` and `include-own-run: "true"`), but only for a run the route
+job kept on the fleet: a run already sent to GitHub-hosted runners is not
+brought back to a fleet whose deps job was skipped. The second ask reads this
+run's own jobs too, so a plan job that itself waited past the limit (444 s in
+finding 142) sends the shards elsewhere. The shards and the finish job ask for
+`needs.main-gate-plan.outputs.shard_runner`, else the run's route, else the
+trunk label; a second ask that cannot decide outputs nothing, so the run's
+route stands. `ci-deps-image` runs on these events only for a run kept on the
+fleet (or one the route job could not route), and the shards accept it
+skipped. A dispatch can pin its own run with the `route` input, leaving
+`HOBO_CI_ROUTE` untouched. Between the route job and the pickup of the plan
+and deps jobs, a fleet that becomes blocked still holds those two jobs; the
+monitor's stall signal reports it.
+
 Nothing about the fleet reaches a workflow any other way. `scripts/lint-actions.ts`
 rejects any workflow or action that reads a `vars.HOBO_CI_FLEET_*` variable or
 declares an input or environment variable named `fleet-state`,
