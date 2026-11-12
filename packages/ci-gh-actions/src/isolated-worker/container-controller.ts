@@ -87,6 +87,7 @@ import {
 } from "./stall-job-recovery.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
 import type { StoragePeaks } from "./storage-peaks.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 const WORK_TARGET = "/opt/actions-runner/_hobo_work";
@@ -1402,7 +1403,10 @@ export function createIsolatedContainerController(options: {
 						const handle = await options.docker.create(
 							containerSpec(
 								name,
-								planned.reservedMinutes * 60_000,
+								effectiveIsolatedTimeoutMs(
+									planned.reservedMinutes,
+									planned.jobName,
+								),
 								memoryMb,
 								selection,
 								rank,

@@ -65,9 +65,14 @@ export const RELAY_PLATFORM = Object.freeze({
 /** The Marketplace resource the cache binding attaches, one per team. */
 export const RELAY_CACHE_RESOURCE = "hobo-ci-cache";
 
-/** The relay's folder in the config service (`CONFIG-SERVICE.md`). */
+/**
+ * The relay's folder in the config service (`CONFIG-SERVICE.md`). The store
+ * itself is chosen when the deployment runs; its coordinates are committed
+ * to `bindingFile`.
+ */
 export const RELAY_CONFIG_SERVICE = Object.freeze({
-	siteUrl: "https://app.infisical.com",
+	capability: "secrets.config-service/v1",
+	bindingFile: "deploy/secret-store.binding.json",
 	secretPath: "/hobo-ci-relay",
 	productionEnvironment: "prod",
 } as const);
@@ -181,20 +186,30 @@ export default yard("hobo-ci-relay", {
 			connectivityId: "config-service.url/v1",
 			properties: { configServiceEntry: "VALKEY_URL" },
 		},
-		// The config service: Infisical, signed in to with the deployment's own
-		// Vercel OIDC token. Its coordinates are configuration; the two ids are
-		// the owner's and are given at deploy time.
+		// The config service, read with the deployment's own Vercel OIDC token
+		// through Infisical OIDC Auth. WHICH store it is is not declared here:
+		// HoBo routes `secrets.config-service/v1` when the deployment runs
+		// (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
+		// chosen at deploy, provisioned by claim") and commits the store's
+		// coordinates to `deploy/secret-store.binding.json`, which fills the
+		// three inputs. Nothing is pre-provisioned by hand, and nothing is a
+		// Vercel or GitHub secret or variable.
 		{
 			profile: capability.secretRef.runtimeProjection,
 			productId: "infisical.secrets/v1",
 			connectivityId: "infisical.oidc-auth/v1",
 			properties: {
+				capability: RELAY_CONFIG_SERVICE.capability,
+				bindingFile: RELAY_CONFIG_SERVICE.bindingFile,
 				settings: {
 					HOBO_CI_CONFIG_SERVICE: "infisical",
-					INFISICAL_SITE_URL: RELAY_CONFIG_SERVICE.siteUrl,
 					INFISICAL_SECRET_PATH: RELAY_CONFIG_SERVICE.secretPath,
 				},
-				inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+				inputs: [
+					"INFISICAL_IDENTITY_ID",
+					"INFISICAL_PROJECT_ID",
+					"INFISICAL_SITE_URL",
+				],
 			},
 		},
 	],

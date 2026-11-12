@@ -18,6 +18,7 @@ import {
 	type OrphanJobCandidate,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
+import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 export type WorkerLeaseReconciliationStore = Pick<
 	HostedRelayStore,
@@ -455,13 +456,18 @@ export function createWorkerLeaseReconciler(options: {
 					continue;
 				}
 			} else if (container) {
+				const budgetMs = effectiveIsolatedTimeoutMs(
+					lease.reservedMinutes,
+					lease.jobName,
+				);
+				const enforcedTimeoutMs = Math.max(container.timeoutMs ?? 0, budgetMs);
 				if (
 					container.state === "running" &&
-					container.timeoutMs !== undefined &&
 					container.createdAtMs !== undefined &&
+					enforcedTimeoutMs > 0 &&
 					containerPastHardTimeout(
 						container.createdAtMs,
-						container.timeoutMs,
+						enforcedTimeoutMs,
 						now(),
 					)
 				) {
@@ -472,7 +478,8 @@ export function createWorkerLeaseReconciler(options: {
 							leaseId: lease.id,
 							jobId: lease.jobId,
 							name: container.name,
-							timeoutMs: container.timeoutMs,
+							timeoutMs: enforcedTimeoutMs,
+							declaredTimeoutMs: container.timeoutMs ?? 0,
 						});
 					} catch (error) {
 						options.log?.("hobo_ci_lease_reconciliation_failed", {

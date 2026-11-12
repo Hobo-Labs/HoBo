@@ -13,15 +13,19 @@
  * TTL, and a failed refresh keeps the last good copy.
  */
 
+import { readFileSync } from "node:fs";
 import {
 	createInfisicalClient,
 	type InfisicalClient,
 	infisicalBindingFromEnv,
 	type JwtSource,
 	oidcAuth,
+	type ParsedInfisicalBinding,
+	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
 import { getVercelOidcToken } from "@vercel/oidc";
-import type { z } from "zod";
+import { z } from "zod";
+import { withDerivedRelayKeys } from "./relay-derived-keys.js";
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
 	RelayRuntimeConfigSchema,
@@ -61,7 +65,12 @@ export function parseRelayRuntimeConfig(
 			"the config service holds entries the relay does not use",
 			unknown.sort(),
 		);
-	const parsed = RelayRuntimeConfigSchema.safeParse(present);
+	// The session key, the Sandbox proxy token key and CRON_SECRET are derived
+	// from the App private key unless the store holds them
+	// (relay-derived-keys.ts).
+	const parsed = RelayRuntimeConfigSchema.safeParse(
+		withDerivedRelayKeys(present),
+	);
 	if (!parsed.success) {
 		// Zod's issues can quote input; report the keys only.
 		const keys = [
@@ -122,18 +131,130 @@ export function infisicalRelayConfigSource(
  */
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
+// public-contract: the committed store coordinates the production relay reads (ids only).
+export const COMMITTED_STORE_BINDING_URL = new URL(
+	"../deploy/secret-store.binding.json",
+	import.meta.url,
+);
+
+// The fields of `SecretStoreBinding` (@hobo/secret-store-claim) the relay
+// reads; the record's own parser runs when it is written.
+const CommittedBindingSchema = z
+	.object({
+		kind: z.string(),
+		endpoint: z.string(),
+		projectId: z.string(),
+		environment: z.string(),
+		secretPath: z.string(),
+		relayIdentityId: z.string(),
+	})
+	.passthrough();
+
+/** Where the production relay signs in, from the committed binding. */
+export type CommittedStoreCoordinates = Readonly<{
+	binding: ParsedInfisicalBinding;
+	identityId: string;
+}>;
+
+/**
+ * The committed `deploy/secret-store.binding.json` (the `SecretStoreBinding`
+ * record of `@hobo/secret-store-claim`; coordinates only), as the relay needs
+ * it: the store's origin, the relay's project, environment and folder, and
+ * the relay's identity. Parsed by the adapter's own binding parser, so a
+ * malformed file is refused by name, never quoted. Undefined when the file is
+ * absent or names a store the relay cannot read.
+ */
+export function parseCommittedStoreCoordinates(
+	text: string,
+): CommittedStoreCoordinates | undefined {
+	let json: unknown;
+	try {
+		json = JSON.parse(text);
+	} catch {
+		throw new RelayRuntimeConfigError("invalid committed store binding");
+	}
+	const record = CommittedBindingSchema.safeParse(json);
+	if (!record.success)
+		throw new RelayRuntimeConfigError("invalid committed store binding", [
+			"deploy/secret-store.binding.json",
+		]);
+	if (
+		record.data.kind !== "infisical-cloud-attach" &&
+		record.data.kind !== "infisical-self-hosted"
+	)
+		return undefined;
+	try {
+		const binding = parseInfisicalBinding({
+			siteUrl: record.data.endpoint,
+			projectId: record.data.projectId,
+			environment: record.data.environment,
+			secretPath: record.data.secretPath,
+		});
+		const identityId = record.data.relayIdentityId;
+		// Validated by the same parser OIDC Auth uses; throws on a bad id.
+		oidcAuth({ identityId, jwt: vercelOidcJwtSource });
+		return Object.freeze({ binding, identityId });
+	} catch {
+		throw new RelayRuntimeConfigError("invalid committed store binding", [
+			"deploy/secret-store.binding.json",
+		]);
+	}
+}
+
+function readCommittedStoreCoordinates():
+	| CommittedStoreCoordinates
+	| undefined {
+	let text: string;
+	try {
+		text = readFileSync(COMMITTED_STORE_BINDING_URL, "utf8");
+	} catch {
+		return undefined;
+	}
+	return parseCommittedStoreCoordinates(text);
+}
+
 /**
  * The source a deployment declares. `HOBO_CI_CONFIG_SERVICE=infisical` reads
  * the binding (`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`,
  * `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`:
  * plain configuration, not secrets) and signs in with `jwt`, the Vercel OIDC
- * token by default. Unset or `env` reads the environment.
+ * token by default. `env` reads the environment.
+ *
+ * Unset: a production deployment (`VERCEL_ENV=production`) reads the
+ * committed `deploy/secret-store.binding.json` bundled with the function
+ * (ADR-0179 amendment "Secretless first"), so the Vercel Git integration's
+ * build needs no environment variable set through Vercel's API; anything
+ * else reads the environment.
  */
 export function relayConfigSourceFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
-	options: Readonly<{ jwt?: JwtSource; fetch?: typeof fetch }> = {},
+	options: Readonly<{
+		jwt?: JwtSource;
+		fetch?: typeof fetch;
+		/** The committed coordinates; read from the bundled file when absent. */
+		committed?: () => CommittedStoreCoordinates | undefined;
+	}> = {},
 ): RelayConfigSource {
-	const service = env.HOBO_CI_CONFIG_SERVICE ?? "env";
+	const declared = env.HOBO_CI_CONFIG_SERVICE;
+	if (declared === undefined && env.VERCEL_ENV === "production") {
+		const committed = (options.committed ?? readCommittedStoreCoordinates)();
+		if (committed !== undefined) {
+			const auth = oidcAuth({
+				identityId: committed.identityId,
+				jwt: options.jwt ?? vercelOidcJwtSource,
+			});
+			return infisicalRelayConfigSource(
+				options.fetch === undefined
+					? createInfisicalClient({ binding: committed.binding, auth })
+					: createInfisicalClient({
+							binding: committed.binding,
+							auth,
+							fetch: options.fetch,
+						}),
+			);
+		}
+	}
+	const service = declared ?? "env";
 	if (service === "env") return envRelayConfigSource(env);
 	if (service !== "infisical")
 		throw new RelayRuntimeConfigError("unknown config service", [
