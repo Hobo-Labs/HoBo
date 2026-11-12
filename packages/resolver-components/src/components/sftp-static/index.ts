@@ -38,12 +38,16 @@ import {
 	parseJsonText,
 } from "../../json.js";
 
+// public-contract: component id carried in the signed component manifest.
 export const SFTP_STATIC_ID = "sftp-static" as const;
+// public-contract: component version carried in the signed component manifest.
 export const SFTP_STATIC_VERSION = "0.1.0" as const;
+// public-contract: product id stamped on every resource this component resolves.
 export const SFTP_STATIC_PRODUCT = "sftp/static-file" as const;
+// public-contract: source identity the build recipe binds into component bytes.
 export const SFTP_STATIC_SOURCE =
 	"hobo:resolver-components/components/sftp-static@0.1.0" as const;
-export const SFTP_BRIDGE_DEFAULT_HOST = "sftp-bridge.hobo.local" as const;
+const SFTP_BRIDGE_DEFAULT_HOST = "sftp-bridge.hobo.local" as const;
 
 const SHA_HEADER = "x-hobo-sha256";
 
