@@ -151,7 +151,7 @@ export function createApprovalLedger(
 		): Promise<Outcome<ApprovalStatus>> {
 			const known = await facts(subject);
 			if (known.requestedExpiresAtMs === undefined)
-				return { ok: false, reasons: [reason(APPROVAL_REASON.unknownRequest, `no approval was requested for ${approvalSubject(subject.promotionId, subject.scope)}`, "Approve a request that the promotion is waiting on (`hobo deploy status`).", subject.promotionId)] };
+				return { ok: false, reasons: [reason(APPROVAL_REASON.unknownRequest, `no approval was requested for ${approvalSubject(subject.promotionId, subject.scope)}`, "Approve a request the promotion is waiting on (its record is AWAITING_APPROVAL).", subject.promotionId)] };
 			if (known.decision !== undefined)
 				return known.decision === (approve ? "approved" : "denied")
 					? { ok: true, value: known.decision }
@@ -229,7 +229,7 @@ export function createA2HApprover(d: A2HApproverDeps): HumanApprover {
 				summary: input.summary,
 				obligations: [...input.obligations],
 				expiresAt: iso(input.expiresAtMs),
-				answer: "hobo deploy approve",
+				answer: "PromotionService.approve or HumanApprover.decide",
 			};
 			try {
 				await d.notify.notify({ channel, subject: input.subject, body: handoff }, ctx);

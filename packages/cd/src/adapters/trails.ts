@@ -77,7 +77,7 @@ export function createTrailsMigrations(d: TrailsDeps): TrailsMigrations {
 						reason(
 							TRAILS_REASON.error,
 							`Trails ${input.phase} for ${input.migrationId} threw: ${error instanceof Error ? error.message : String(error)}`,
-							"Inspect the migration journal with `hobo trails status`; fix the store, then the promotion retries on its next tick.",
+							"Inspect the Trails migration journal; fix the store, then the promotion retries on its next tick.",
 							input.campId,
 						),
 					],

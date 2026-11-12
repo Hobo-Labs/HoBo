@@ -1092,7 +1092,7 @@ export function createPromotionService(
 		async approve(promotionId, ctx) {
 			const loaded = await load(promotionId);
 			if (!loaded)
-				return { ok: false, reasons: [reason(PROMOTION_REASON.notFound, `promotion ${promotionId} is not recorded`, "List promotions with `hobo deploy status`.", promotionId)] };
+				return { ok: false, reasons: [reason(PROMOTION_REASON.notFound, `promotion ${promotionId} is not recorded`, "List promotions with PromotionService.list.", promotionId)] };
 			const authz = await d.authorizer.authorize("approve", { promotionId }, ctx);
 			if (!authz.ok) return authz;
 			if (authz.value.proposalOnly)
