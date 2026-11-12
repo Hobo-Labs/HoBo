@@ -7,11 +7,11 @@ tags: [hobo, ci, relay, routing, fleet, resilience, implementation, sdlc]
 
 # Relay-owned runner routing: one-shot delivery plan
 
-**Status:** revision 2, after an adversarial review and an implementer walk-through of revision 1 (their findings are in section 13). A confirming review of this revision is pending; dispatch after this line says ready.
+**Status:** ready to dispatch (revision 3). Revision 1 went through an adversarial review and an implementer walk-through; revision 2 through a confirming review that replayed the incident against it. Section 13 lists what each changed. Two design choices carry defaults the owner may change before dispatch: P3 and P10 in section 10.
 **Design authority:** [ADR-0180](../design/adr/fleet-verdict.md#adr-0180). Layer 02 amends it with the decisions here.
 **Base of the stack:** `claude/relay-fleet-verdict` ([#1952](https://github.com/Hobo-Labs/HoBo/pull/1952)), which sits on [#1943](https://github.com/Hobo-Labs/HoBo/pull/1943). If both have merged, base on `main`.
 
-**What "one shot" means here.** The whole build is one stack of seven layers, with nothing left for a later project. Proof in production takes clock time by its nature, so section 6.9 is an operating checklist with evidence gates, run after the stack merges. It adds no code.
+**What "one shot" means here.** The whole build is one stack of seven layers, with nothing left for a later project. Proof in production takes clock time by its nature, so section 6.10 is an operating checklist with evidence gates, run after the stack merges. It adds no code.
 
 ## 1. How to use this document
 
@@ -64,7 +64,7 @@ tags: [hobo, ci, relay, routing, fleet, resilience, implementation, sdlc]
 | **Enrolled** | Listed, with its public key, labels and account, in the hosted relay's runtime configuration |
 | **Fleet label** | `hobo` or `hobo-trunk`, the `runs-on` labels the box serves |
 | **Live** | A reporter whose last accepted report has not expired (180 s) |
-| **Idle** | The box has no lease in an active state, no launch slot in use, and no deps-image build of its own running |
+| **Idle** | The box has no lease in an active state (for any connected repository), no launch slot in use, and none of its own background work running: a deps-image build, a warm container being created, a garbage-collection pass |
 | **Reporter mode** | `HOBO_CI_FLEET_VERDICT_MODE` on the box: `off`, `shadow`, `report` |
 | **Route mode** | The existing `HOBO_CI_ROUTE` pin (`auto`, `fleet`, `local`, `github`) |
 | **Routed workflow** | One of the six that use `./.github/actions/route-runner` |
@@ -98,15 +98,20 @@ Checked in the code or in production logs on 2026-11-12.
 **Rule.** The box relay reports a fleet label blocked only while both hold:
 
 1. **The box is idle and admission would still refuse a job.** With no CI job running, any shortfall is by definition not CI's own (R4). "Would refuse" is the conjunction admission itself uses, evaluated purely on the current host sample with nothing committed:
-   - `hostMemoryAdmitFits(availableMb, standardClassMb, reserveMb, volatilityMb, pressure, thresholds, 0)` is false, or
-   - `hostCpuAdmitFits` is false for a standard job, or
+   - `hostMemoryAdmitFits(availableMb, standardClassMb, reserveMb, volatilityMb, pressure, thresholds, 0)` is false (memory headroom, memory and CPU pressure stall, swap), or
    - the host health monitor's `current()` verdict is `critical` for a disk or inode reason.
+
+   The load-average check admission also makes (`hostCpuAdmitFits`) is deliberately left out: the one-minute load average stays high for minutes after CI's own jobs end, so an idle box would read as refused because of work CI itself just finished (R4).
 2. **Nothing else can take the job.** All of:
    - **Mesh peers** (only when a mesh exists): no other live healthy node serving the label advertises a free slot.
-   - **Declared pools.** For every pool in `HOBO_CI_FLEET_EXTERNAL_POOLS_JSON` whose `labels` include this label: `maxRunners − busy ≤ 0`, where `busy` counts in-progress jobs on those labels whose `runner_name` starts with the pool's `runnerNamePrefix`. The count is used only if the poller completed a poll within the last 60 seconds; otherwise the pool is unknown and the label is not blocked (R3).
+   - **Declared pools.** Over the pools in `HOBO_CI_FLEET_EXTERNAL_POOLS_JSON` whose `labels` include this label, the free runners (`maxRunners − busy`, summed, never below zero) number fewer than `HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS` (integer ≥ 1, default 1). `busy` counts in-progress jobs on those labels whose `runner_name` starts with the pool's `runnerNamePrefix`. The count is used only if the poller completed a poll within the last 60 seconds; otherwise the pool is unknown and the label is not blocked (R3).
+
+     One free runner elsewhere keeps a label open by default. That is not enough to carry a run of several parallel jobs: in finding 142 the box was refusing and ARC ran one job at a time. The owner sets the minimum to what a run needs from the rest of the fleet (P3).
    - **No unaccounted runner.** In the last 15 minutes no job on the label was taken by a runner that is neither a lease of this box, nor a declared pool's, nor a mesh peer's. If one was, capacity exists that the relay cannot count; the label is not blocked and `hobo_ci_fleet_verdict_unaccounted_runner` is logged once per runner-name prefix per hour.
 
 The reason is always `no-capacity`. `no-node` stays in the record and this reporter never sends it.
+
+**It reads the current sample.** Admission reads the lowest free memory over 60 seconds; the evaluator reads the latest reading and relies on the 60-second hold (6.2). The relay can therefore call a label open up to 30 seconds before admission would admit, and pressure that swings faster than the hold never blocks. Both fail open.
 
 **Why idle only.** While CI jobs run, the host's free memory, pressure and load are a mix of CI's and everyone else's. Job containers start siblings through the Docker socket, so even per-container accounting misattributes. A box that external pressure stops from admitting anything becomes idle within one job's length, and the rule then fires. A box that is running some jobs and refusing others is saturated, which the queue heuristics already cover.
 
@@ -119,7 +124,7 @@ The reason is always `no-capacity`. `no-node` stays in the record and this repor
 | Sample interval | 10 s |
 | Enter blocked | every sample in the last 60 s blocked (`HOBO_CI_FLEET_VERDICT_ENTER_MS`) |
 | Leave blocked | every sample in the last 30 s clear (`HOBO_CI_FLEET_VERDICT_EXIT_MS`) |
-| Send | at once on a change; otherwise every 60 s, including when nothing is blocked |
+| Send | at once on a change; otherwise every 60 s, including when nothing is blocked. One request per connected repository |
 | Lifetime of a report | 180 s (`ttlSeconds`) |
 | Send attempt | one request, 3 s limit. A failed send is tried again at the next sample while a change is unsent, otherwise at the next 60 s mark. No other retry |
 | On drain or stop | one last report that blocks nothing, best effort |
@@ -138,7 +143,7 @@ A report is a `PUT /v1/fleet/verdicts/{owner}/{repo}` signed with the reporter's
 - **Headers.** `X-HoBo-Reporter`, `X-HoBo-Sequence` (decimal integer), `X-HoBo-Issued-At` (RFC 3339, milliseconds, `Z`), `X-HoBo-Signature: ed25519=<base64url, no padding>`.
 - **Signing input.** Seven fields joined by a single `\n`, no spaces, no trailing newline: `hobo-fleet-verdict-v1`, `PUT`, the relay origin (lower case, no trailing slash), the request path (lower case), the lower-case hex SHA-256 of the body bytes, the issued-at string, the sequence string. Layer 02 implements `fleetVerdictSigningInput()` once, with three fixed test vectors; the reporter and the relay both import it.
 - **Sequence.** Persisted in `fleet-verdict-state.json` beside the journal. Next value is `max(last + 1, current time in ms)`, written before the request is sent.
-- **Box settings.** `HOBO_CI_FLEET_VERDICT_MODE`, `HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN` (https; required unless the mode is `off`), `HOBO_CI_FLEET_REPORTER_ID`, `HOBO_CI_FLEET_EXTERNAL_POOLS_JSON` (default `[]`; example `[{"labels":["hobo","hobo-trunk"],"runnerNamePrefix":"hobo-runner-","maxRunners":1}]`), and the two hold times. An invalid value refuses to start, as other daemon settings do.
+- **Box settings.** `HOBO_CI_FLEET_VERDICT_MODE`, `HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN` (https; required unless the mode is `off`), `HOBO_CI_FLEET_REPORTER_ID`, `HOBO_CI_FLEET_EXTERNAL_POOLS_JSON` (default `[]`; example `[{"labels":["hobo","hobo-trunk"],"runnerNamePrefix":"hobo-runner-","maxRunners":1}]`), `HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS` (default 1), and the two hold times. An invalid value refuses to start, as other daemon settings do.
 
 ### 6.4 The hosted relay keeps, agrees and serves
 
@@ -150,7 +155,7 @@ A report is a `PUT /v1/fleet/verdicts/{owner}/{repo}` signed with the reporter's
 | --- | --- |
 | The request has no query string | `400 bad-request` |
 | The reporter is enrolled | `401 unknown-reporter` |
-| The signature verifies over the signing input, with this relay's own origin | `401 bad-signature` |
+| The signature verifies over the signing input, built with this relay's configured `publicOrigin`, never the request's `Host` | `401 bad-signature` |
 | Issued-at is within 120 s of this relay's clock | `401 clock-skew` |
 | The sequence is higher than the last accepted from this reporter for this repository | `401 replayed` |
 | The repository is connected under the reporter's account | `404 not-found` |
@@ -166,9 +171,9 @@ Each refusal logs `hobo_ci_fleet_verdict_refused` with the reporter id and reaso
 | `fleet-reporter:<owner>/<repo>:<reporter id>` | `FleetReporterState`: last sequence, mode, `lastReportAt`, and per label `lastBlockedAt`, `lastClearedAt` | 24 hours, refreshed on every accepted report |
 | `fleet-allowance:<owner>/<repo>` | per label: window start, blocked seconds in the window | 24 hours from the window start |
 
-**Agreement.** The served verdict blocks a label only when **every** enrolled reporter whose `labels` include it is live, in `report` mode, and blocks it. One reporter that is silent, in `shadow`, or says the label is open is enough to leave it open (R3). A reporter that does not serve the label has no say.
+**Agreement.** The served verdict blocks a label only when **every** reporter enrolled for the account the repository is connected under, whose `labels` include the label, is live, in `report` mode, and blocks it. One reporter that is silent, in `shadow`, or says the label is open is enough to leave it open (R3). A reporter that does not serve the label has no say. An enrolled box that is switched off therefore keeps its labels open: take it out of enrollment for maintenance (runbook, layer 07).
 
-**Allowance.** On each accepted `report`-mode report that blocks a label, the relay adds the time since that reporter's previous accepted report, capped at 60 s, to the label's blocked seconds. A window starts at the first counted second and lasts 24 hours. While the window's total is at or above 240 minutes (`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` in runtime configuration), the served verdict does not block that label, and the status route says so. Kept at the relay so it covers every reporter and survives a box restart. If the cache is lost the window restarts; the bound is then two allowances in any 24 hours, the same as across a window boundary.
+**Allowance.** It counts the time the *agreed* verdict blocks a label. On each accepted report, for each label the agreed verdict blocked just before this report, the relay adds `min(now − lastCountedAt, 180 s)` to the label's blocked seconds, then sets `lastCountedAt`. A report lives 180 s, so that cap is the most one report can account for, and two reporters blocking together are counted once. A window starts at the first counted second and lasts 24 hours. While the window's total is at or above 240 minutes (`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` in runtime configuration), the served verdict does not block that label, and the status route says so. Kept at the relay so it covers every reporter and survives a box restart. If the cache is lost the window restarts; the bound is then two allowances in any 24 hours, the same as across a window boundary. It is checked when a verdict is read: a read for a connected repository costs two cache round trips (the reporters' entries in one, the allowance in another); a read for an unconnected one still costs none.
 
 **Routes.**
 
@@ -193,10 +198,12 @@ The status route needs a second verifier, `createGithubWorkflowVerifier({ audien
 **Main gate follows the route.** In `hobo-ci.yml`, for `push` to `main`, `schedule` and `workflow_dispatch`:
 
 1. `main-gate-plan` and `main-gate` gain `needs: route` (keeping their other needs) and use the routed expression every other routed job uses.
-2. `main-gate-plan` gains `permissions: actions: read` and, as its **first** step after the bootstrap checkout, a step `reroute` that uses `./.github/actions/route-runner` with the same five operator inputs as the route job and a new input `attest: "false"` that skips the attestation step. The job outputs `shard_runner: ${{ steps.reroute.outputs.runner }}`. The plan script and its cache are unchanged by it: the shard count does not depend on the tier.
-3. `main_workspace_tests` and `main_gate_finish` use `runs-on: ${{ needs.main-gate-plan.outputs.shard_runner }}`; the finish job gains `main-gate-plan` in `needs` if it lacks it.
+2. `main-gate-plan` gains `permissions: actions: read` and a step `reroute`, placed **after the job's full `actions/checkout`** (the bootstrap checkout holds only `.github/actions`; the route script, `packages/ci/src/fleet-overflow.ts` and `.hobo/ci.json` exist only after the full one) and guarded by `if: needs.route.outputs.tier == 'fleet'`. It uses `./.github/actions/route-runner` with the same five operator inputs as the route job and two new inputs: `attest: "false"`, which skips the attestation step, and `include-own-run: "true"`, which makes the queue reading include this run's own jobs. The job outputs `shard_runner: ${{ steps.reroute.outputs.runner || needs.route.outputs.runner }}`. A run already sent to GitHub-hosted runners is not asked again, so it cannot come back to a fleet whose deps job was skipped. The plan script and its cache are unchanged: the shard count does not depend on the tier.
+3. `main_workspace_tests` and `main_gate_finish` gain `route` and `main-gate-plan` in `needs` where missing and use `runs-on: ${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || <the trunk expression they use today> }}`, so a failed or skipped plan job never leaves `runs-on` empty.
 4. `ci-deps-image` gains `needs: route` and, for these three events only, is skipped when `needs.route.outputs.tier != 'fleet'`. Its pull-request behaviour is unchanged. `main_workspace_tests` accepts a skipped `ci-deps-image`.
 5. `scripts/lint-actions.ts` learns the `shard_runner` expression as a routed form, and the route-runner action learns the `attest` input.
+
+**Why the re-ask reads the run's own jobs.** The route job leaves its own run out of the queue reading, rightly: at that moment the run has queued nothing. By the time the plan job runs, the run's own jobs are the freshest evidence there is. In finding 142 the plan job itself waited 444 seconds for a runner; with its own run included, the existing rule "a job has waited past the limit" (120 s) takes the fleet out of the decision and the shards go to GitHub-hosted runners. This uses the route script's existing rules on one more run's jobs; it does not change the route job (P10).
 
 **Residual window, accepted.** If the fleet becomes blocked in the minute or so between the route job and the pickup of `ci-deps-image` or `main-gate-plan`, those two jobs wait on the fleet as they do today. Monitor signal H6 reports it.
 
@@ -208,7 +215,7 @@ The status route needs a second verifier, `createGithubWorkflowVerifier({ audien
 
 `.github/workflows/ci-health.yml`: every two hours and on `workflow_dispatch` (input `dry-run`), on `ubuntu-24.04`, permissions `actions: read`, `checks: read`, `issues: write`, `id-token: write`. It runs `scripts/ci/ci-health.mts`, which loads no package.
 
-**Window and budget.** Each run covers the runs created since the previous successful monitor run started (found from this workflow's own run list), at most 100 runs, newest first. It reads the run list, each run's jobs, and the annotations of each route job's check run: at most 250 API requests. If more than 100 runs fall in the window it processes 100 and reports `truncated`. A rate-limit answer ends the run as failed without opening an issue.
+**Window and budget.** Each run uploads its report, breach or not, with a `windowEnd`. The next run covers runs created since the `windowEnd` in the newest `ci-health-report` artifact, or the last two hours when there is none, so a failing run still moves the window on. At most 100 runs, newest first. It reads the run list, each run's jobs, and the annotations of two check runs per run (the route job and, on main-gate runs, **Main workspace plan**, where `reroute` annotates with the same titles): at most 350 API requests. If more than 100 runs fall in the window it processes 100 and reports `truncated`. A rate-limit answer ends the run as failed without opening an issue.
 
 | Signal | Computed from | Breach |
 | --- | --- | --- |
@@ -216,13 +223,13 @@ The status route needs a second verifier, `createGithubWorkflowVerifier({ audien
 | **H2** relay asked, no verdict | route notices with `relay: unanswered` over those with `verdict` or `unanswered` | more than 5% of at least 20, or all of at least 5 |
 | **H3** relay not asked | route notices with `relay: unasked` and `why: no-relay` | any |
 | **H4** reporter silent | status route: a reporter whose state says `shadow` or `report` and whose `lastReportAt` is more than 10 minutes old | any |
-| **H6** stall | runs whose route notice says `tier: fleet`, with a job on a fleet label that waited more than 10 minutes for a runner, or has been queued that long | any |
-| **H8** paid minutes | sum of job durations in runs whose route notice says `tier: github`, excluding the route job | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (an `env` in the workflow file, default 150) |
+| **H6** stall | jobs whose labels are a fleet label and that waited more than `CI_HEALTH_STALL_MINUTES` for a runner, or have been queued that long, excluding `main-gate` (it waits on its concurrency group). Default 30: eight shards of up to 12 minutes over three slots wait about 24 on a healthy fleet; finding 142's shard 5 waited 36 | any |
+| **H8** paid minutes | durations, rounded up to the minute per job, of jobs whose labels include `ubuntu-24.04`, excluding the route job and the gate jobs that always run there | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (an `env` in the workflow file, default 150) |
 | **H10** allowance spent | status route | any label |
 
 For each breach it opens an issue titled `[ci-health] <signal>: <summary>` with label `ci-health`, assigned to the login in `CI_HEALTH_ASSIGNEE` (an `env` in the workflow file), or comments on the open issue with that signal's prefix. It never closes issues. It writes the full report to the step summary and uploads it as artifact `ci-health-report`, and exits non-zero on any breach. With `dry-run` it prints and writes nothing to issues.
 
-If the status route cannot be reached or refuses the token, H4 and H10 are reported as `unknown`, which is not a breach on its own. The monitor reads its previous run's `ci-health-report` artifact (two more requests, inside the budget); if that run was `unknown` too, it raises H2's issue with that note.
+If the status route cannot be reached or refuses the token, H4 and H10 are reported as `unknown`, which is not a breach on its own. If the previous report (already read for the window) was `unknown` too, it raises H2's issue with that note.
 
 ### 6.7 What bounds cost
 
@@ -237,15 +244,25 @@ A blocked main push costs on the order of 100 billed minutes (the full gate plus
 
 Removed: the `HOBO_CI_FLEET_STATE` publisher, record, fixtures and daemon wiring; the `HOBO_CI_FLEET_CAPACITY` publisher, record and CUE definition. `fleetCapacity.snapshot` stays: dispatch reads it (`hosted-relay.ts:1432`); only `publish` goes. The route table and its `HOBO_CI_FLEET_ROUTES` publisher are **not** touched: they belong to fleet balancing, are off by default, and no workflow may read the variable (6.5 lint). Section 10 (P8) asks whether to retire them too.
 
-### 6.9 Operating checklist (after the stack merges; no code)
+### 6.9 Replay against the incident
+
+The design is checked against run 43207388098 as it happened, and layer 04 turns the second row into a test (B8).
+
+| Moment | What was true | What this design does |
+| --- | --- | --- |
+| 11:14, route job | The box was refusing jobs for lack of memory. ARC took a job ten seconds after it was queued, so it had one runner free | With the ARC pool declared and the minimum set above its size (P3): the box is idle and refusing, the rest of the fleet is below the minimum, and once that has held for 60 s the label is blocked. The whole run goes to GitHub-hosted runners. With the default minimum of 1: open, and the run goes to the fleet as it did |
+| 11:22, plan job | The plan job had waited 444 s for a runner | The re-ask reads the run's own jobs, sees a wait past the 120 s limit, and sends the shards and the finish job to GitHub-hosted runners, whatever the verdict says |
+| 11:22–11:58 | Shards started 14–36 minutes late | Does not happen under either row above. If it did, H6 raises it within two monitor runs |
+
+### 6.10 Operating checklist (after the stack merges; no code)
 
 Order matters: the hosted relay learns the new configuration keys before anyone sets them, because its configuration schema is strict.
 
 | Step | Do | Evidence before the next step |
 | --- | --- | --- |
-| G1 | Merge the stack. Vercel deploys the hosted relay. The smoke check in `relay-deploy.yml` probes the public origin | Smoke check green. Monitor: H2 clear over 24 hours with at least 20 asks |
-| G2 | Enroll the box: run `node packages/ci-gh-actions/scripts/fleet-reporter-enroll.mts` on the box; it prints the JSON entry to add to `HOBO_CI_FLEET_REPORTERS_JSON`. Add it with `hobo ci`. Set the box to `shadow`, declare the ARC pool, restart the daemon | Status route shows the reporter live in `shadow` |
-| G3 | **Forced-pressure game day, shadow.** On the box, while CI is idle: `node packages/ci-gh-actions/scripts/hold-memory.mts --mb <enough to fail admission> --seconds 300` | Status route shows the label's `lastBlockedAt` within 90 s of the start and `lastClearedAt` within 60 s of the end. The served verdict stayed open throughout |
+| G1 | Merge the stack. Vercel deploys the hosted relay. The smoke check in `relay-deploy.yml` probes the public origin. Dispatch `ci-health.yml` once with `dry-run: true` (it can be dispatched only once it is on `main`) | Smoke check green. The dry run's report is complete. Monitor: H2 clear over 24 hours with at least 20 asks |
+| G2 | Enroll the box: run `node packages/ci-gh-actions/scripts/fleet-reporter-enroll.mts` on the box; it prints the JSON entry to add to `HOBO_CI_FLEET_REPORTERS_JSON`. Add it with `hobo ci`. Set the box to `shadow`, declare the ARC pool and the minimum free runners (P3), restart the daemon | Status route shows the reporter live in `shadow` |
+| G3 | **Forced-pressure game day, shadow.** On the box, while CI is idle: `node packages/ci-gh-actions/scripts/hold-memory.mts --mb <enough to fail admission> --seconds 300`. A block also needs the rest of the fleet below the minimum: with the minimum above ARC's size it always is; otherwise hold ARC's runners with a dispatched job for the same five minutes | Status route shows the label's `lastBlockedAt` within 90 s of the start and `lastClearedAt` within 60 s of the end. The served verdict stayed open throughout |
 | G4 | Leave in `shadow` for 72 hours | H4 clear. Compare `lastBlockedAt` history with H6 stalls: record both in the finding |
 | G5 | Set `report`. Repeat the game day while a dispatched run is routed | The route notice says `refusedBy: relay` and the run's jobs use GitHub-hosted runners; after the hold ends, the next dispatched run stays on the fleet. This is the one production observation the channel needs |
 | G6 | Seven days | H6 zero, H8 and H10 within bound |
@@ -281,7 +298,7 @@ Order matters: the hosted relay learns the new configuration keys before anyone 
 | F20 | Fork pull request edits `.hobo/ci.json` | Affects only its own run | Containment | 04: `scripts/test/route-runner.test.ts` › "sends no credential" (exists) |
 | F21 | GitHub budget spent | All CI stops, including the route job. Alerts must fire first | Not a control (6.7) | 07: runbook |
 | F22 | Monitor cannot read its inputs | Run fails; status signals `unknown`; second time raises | Monitor the monitor | 05: › "unknown twice" |
-| F23 | Bad relay deploy | Smoke check red; consumers unknown; revert in the order of 6.9 | Smoke test, safe rollback | 07: `scripts/test/relay-deploy-workflow.test.ts` › "probes the public origin" |
+| F23 | Bad relay deploy | Smoke check red; consumers unknown; revert in the order of 6.10 | Smoke test, safe rollback | 07: `scripts/test/relay-deploy-workflow.test.ts` › "probes the public origin" |
 | F24 | A workflow reintroduces a fleet variable | Lint fails | Guardrail | 04: `scripts/test/lint-actions-runner.test.ts` › "rejects fleet state passed to a workflow" |
 | F25 | A script test breaks | The scripts job fails the pull request | Gate | 01 |
 | F26 | Reporter key file lost or regenerated | Refused `bad-signature`; H4; enroll again | Loud rejection | 02: Pact "refuse a bad signature" |
@@ -289,6 +306,8 @@ Order matters: the hosted relay learns the new configuration keys before anyone 
 | F28 | Hosted relay cannot load its configuration at cold start | It answers 503 as today; consumers unknown | Existing behaviour | none new |
 | F29 | Fleet blocks between the route job and the plan job's pickup | Those two jobs wait; H6 | Accepted residual (6.5) | 05: › "H6" |
 | F30 | A second box without a mesh | Its pickups look unaccounted to the first: never blocked. Two boxes need a mesh and both enrolled | Fail-open | 03: evaluator › "a peer box without a mesh is unaccounted" |
+| F31 | An enrolled box is switched off | Its labels cannot be blocked until it is taken out of enrollment | Unanimity, fail-open | 02: `test/fleet-verdict-agreement.test.ts` › "a silent enrolled reporter keeps the label open"; runbook |
+| F32 | The re-ask step cannot run (files missing, script error) | Shards use the run's first route; the titled warning is on the plan job's check run; H1 | Fallback to the earlier decision, loud | 04: `scripts/test/main-gate-workspace-shards.test.ts` › "the re-ask runs after the full checkout and falls back to the run's route" |
 
 ## 8. Measurable outcomes
 
@@ -302,16 +321,17 @@ Order matters: the hosted relay learns the new configuration keys before anyone 
 | B4 | Failure rows with a named passing test | every row in section 7 that names a test | reviewer |
 | B5 | Workflows that pass fleet state | 0 | 04: F24 |
 | B6 | Scripts lane | exits 0 on the CI image; a required job on pull requests | 01 |
-| B7 | Requests the monitor makes per run | ≤ 250 | 05: test counting fetches over the largest fixture |
+| B7 | Requests the monitor makes per run | ≤ 350 | 05: test counting fetches over the largest fixture |
+| B8 | The incident, replayed | With the job timeline of run 43207388098 as the queue (the plan job queued 444 s), the re-ask chooses GitHub-hosted runners for the shards | 04: `scripts/test/route-runner.test.ts` › "replays finding 142" |
 
-**Operating outcomes** are proven in production by the checklist in 6.9; the monitor's uploaded reports are the record.
+**Operating outcomes** are proven in production by the checklist in 6.10; the monitor's uploaded reports are the record.
 
 | # | Outcome | Target | Proven at |
 | --- | --- | --- | --- |
 | O1 | A forced block is served, and released | within 90 s and 60 s | G3, G5 |
 | O2 | Route jobs that got a relay answer | ≥ 95% over 7 days | G6 (H2) |
 | O3 | Routing fallbacks | 0 over 7 days | G6 (H1) |
-| O4 | Stalls on a fleet-routed run | 0 over 7 days | G6 (H6) |
+| O4 | Fleet-label jobs waiting past the stall limit | 0 over 7 days | G6 (H6) |
 | O5 | Verdict-blocked time per label | ≤ 240 minutes per window | G6 (H10) |
 | O6 | Time for the monitor to raise an injected fault | within two monitor runs (≤ 4 hours) | Game day: dispatch a routed workflow from a branch whose route checkout is broken; H1 opens |
 
@@ -341,12 +361,12 @@ The coordinator adds layers to the stack in the numbered order, runs `gh stack r
 
 | Layer | Owns | Its doc (the staged docs-freshness check needs one per layer) |
 | --- | --- | --- |
-| 01 | A new job in `.github/workflows/hobo-ci.yml` running `pnpm run test:scripts`; `scripts/relevant-check-policy.ts`; whatever the 8 failing tests need | `docs/ci/findings/0144-*.md` and the regenerated index |
+| 01 | A new job `scripts-tests` in `.github/workflows/hobo-ci.yml` and its place in the `pr-gate` job's `needs` and result check; `scripts/relevant-check-policy.ts`; whatever the 8 failing tests need | `docs/ci/findings/0144-*.md` and the regenerated index |
 | 02 | `packages/ci-gh-actions/`: `data-models/fleet_verdict.proto`, `onboarding.cue`, `data-models/fixtures/**/fleet-*`, `src/_generated/fleet_verdict_pb.ts`, `src/fleet-verdict.ts`, new `src/fleet-verdict-auth.ts`, new `src/workflow-oidc.ts`, `src/hosted-control.ts`, `src/http-handler.ts`, `src/client.ts`, `src/relay-host.ts`, `src/relay-cache/records.ts`, `src/cloud-events.ts` (all new event names, including the reporter's), `src/index.ts`, `contracts/fleet-verdict-*`, their tests. `packages/ci-vercel/`: `data-models/relay_runtime_config.proto` with its CUE and generated file, `src/relay-runtime-config-schema.ts`, `src/fleet-verdict-cache.ts`, `src/stateless-composition.ts`, their tests | `docs/design/adr/fleet-verdict.md`, both package READMEs, `data-models/README.md` |
-| 03 | New `packages/ci-gh-actions/src/isolated-worker/fleet-verdict-evaluator.ts`, `fleet-verdict-state.ts`, `fleet-verdict-reporter.ts`; `src/isolated-worker/github-job-poller.ts`; `scripts/isolated-worker-daemon-main.mts`; new `scripts/fleet-reporter-enroll.mts`, `scripts/hold-memory.mts`; their tests. Imports its own modules by relative path; adds nothing to `src/index.ts` | `packages/ci/RUNNER-QUEUE.md` |
+| 03 | New `packages/ci-gh-actions/src/isolated-worker/fleet-verdict-evaluator.ts`, `fleet-verdict-state.ts`, `fleet-verdict-reporter.ts`; `src/isolated-worker/github-job-poller.ts`; `scripts/isolated-worker-daemon-main.mts`; new `scripts/fleet-reporter-enroll.mts`, `scripts/hold-memory.mts`; their tests. Exports its three modules from `src/index.ts` (the daemon imports only the package root; layer 02 is merged below it by then) | `packages/ci/RUNNER-QUEUE.md` |
 | 04 | `scripts/ci/route-runner.mts`, `plan-main-workspace-shards.mts`, `load-fleet-capacity.mts` (deleted), `scripts/lint-actions.ts`, `.github/actions/route-runner/action.yml`, `.github/workflows/hobo-ci.yml`, the tests under `scripts/test/` for these, `test/actions-policy.test.ts` | `docs/design/ci-relay-mesh.md` |
 | 05 | New `scripts/ci/ci-health.mts`, `scripts/test/ci-health.test.ts`, fixtures (implementer B). New `.github/workflows/ci-health.yml` and its allowance in `scripts/lint-actions.ts` (coordinator, after 04) | New `docs/ci/health-monitor.md` |
-| 06 | `packages/ci-gh-actions/src/fleet-state.ts`, `fleet-capacity.ts`, `hosted-relay.ts` (the two publish calls), `hosted-runtime.ts`, `index.ts`, `data-models/mesh.proto`, `mesh-records.ts`, the daemon file (publisher wiring), `packages/ci/src/fleet/capacity-input.ts`, `fleet/index.ts`, `data-models/ci.cue`; their tests and fixtures | `docs/design/ci-fleet-balancing.md` |
+| 06 | `packages/ci-gh-actions/src/fleet-state.ts`, `fleet-capacity.ts`, `hosted-relay.ts` (the two publish calls), `hosted-runtime.ts`, `index.ts`, `data-models/mesh.proto`, `data-models/README.md`, `mesh-records.ts`, the daemon file (publisher wiring), `packages/ci/src/fleet/capacity-input.ts`, `fleet/capacity.ts` (a comment), `fleet/index.ts`, `data-models/ci.cue`, `packages/ci/RUNNER-QUEUE.md` (the passages on the two variables); their tests and fixtures, including `packages/ci/test/fleet-capacity.test.ts` | `docs/design/ci-fleet-balancing.md` |
 | 07 | `.github/workflows/relay-deploy.yml`, `scripts/test/relay-deploy-workflow.test.ts`, `packages/ci-vercel/README.md` (runbooks), `docs/design/traceability.md`, `AGENTS.md`, `.github/pull_request_template.md`, this plan's status line | `docs/ci/findings/0145-*.md` |
 
 ### 9.3 One-shot bodies
@@ -358,7 +378,7 @@ The coordinator adds layers to the stack in the numbered order, runs `gh stack r
 
 - **Why.** F25, B6.
 - **Context.** `pnpm run test:scripts` (`scripts/run-tests.ts --category=scripts`) is run by no workflow. On `main` in a clean container it fails in these suites: *workspace test shards on this repository*, *planCommands*, *the repository's own plans*, *main workspace affected-only*, *turbo unit tasks cover the old runner and every root shard input*, *workspace test duration balancing*.
-- **Steps.** (1) Run the lane on the CI runner image and record which of the six fail there. (2) For each failure, find the cause and fix it; a test that needs a provisioned tool must get that tool from the job, not be skipped. (3) Add a routed job `scripts-tests` to `hobo-ci.yml`, on pull requests and merge groups, that runs the lane when the change touches `scripts/**`, `test/**` or `.github/**`. (4) Add the same lane to `scripts/relevant-check-policy.ts` for those paths. (5) Write the finding.
+- **Steps.** (1) Run the lane on the CI runner image and record which of the six fail there. (2) For each failure, find the cause and fix it; a test that needs a provisioned tool must get that tool from the job, not be skipped. (3) Add a routed job `scripts-tests` to `hobo-ci.yml`, on pull requests and merge groups, that runs the lane when the change touches `scripts/**`, `test/**` or `.github/**`, and add it to the `pr-gate` job's `needs` and to the results that job checks (`hobo-ci.yml`, the job named **PR impact gate**), so it is required. (4) Add the same lane to `scripts/relevant-check-policy.ts` for those paths. (5) Write the finding.
 - **Out.** Any routing change.
 - **Acceptance.** `pnpm run test:scripts` exits 0 on the CI image. `pnpm run actions:lint`. A scratch pull request that breaks one script test shows the new job red; link it in the report and close it.
 - **Outputs.** The job's run link; the finding.
@@ -389,37 +409,37 @@ The coordinator adds layers to the stack in the numbered order, runs `gh stack r
   1. `github-job-poller.ts`: expose, per completed poll, the in-progress jobs on fleet labels with their `runner_name`, label and start time, and when the poll completed. Do not change what is ingested.
   2. `fleet-verdict-evaluator.ts`: the pure function of 6.1. Inputs are plain values. Use `leaseIdFromBoxRunnerName` and the box's own lease ids to tell this box's runners from a peer's.
   3. `fleet-verdict-state.ts`: sample ring, enter and leave holds, the 60 s send schedule, the persisted sequence.
-  4. `fleet-verdict-reporter.ts`: builds the report, signs with layer 02's function, one 3 s `fetch`, modes, final clear, logging.
+  4. `fleet-verdict-reporter.ts`: builds the report, signs with layer 02's function, sends one 3 s `fetch` per connected repository, and handles modes, the final clear and logging.
   5. Daemon: read and validate the settings of 6.3; compute idle from active leases, `liveLaunchSlotsInUse` and the deps-ensure state; start the timer when the mode is not `off`; call the final clear from the existing drain path.
-  6. `scripts/fleet-reporter-enroll.mts`: load the identity and print the enrollment entry. `scripts/hold-memory.mts`: allocate and touch `--mb` megabytes for `--seconds`, then exit.
+  6. `scripts/fleet-reporter-enroll.mts --key-file <path> --id <reporter id> --account <account id> --labels hobo,hobo-trunk`: load the identity and print the enrollment entry. Export the three new modules from `src/index.ts`. `scripts/hold-memory.mts`: allocate and touch `--mb` megabytes for `--seconds`, then exit.
   7. Document the settings and events in `RUNNER-QUEUE.md`.
 - **Out.** `memory-admission.ts`, `host-resource-pressure.ts`, `hosted-relay.ts`, anything layer 02 owns.
-- **Acceptance.** `pnpm --filter @hobo/ci-gh-actions test`; `pnpm exec turbo run typecheck --filter=@hobo/ci-gh-actions`; the tests named for layer 03 in section 7; a property test that for an idle box with no pools, no mesh and no foreign pickups the evaluator's answer equals "any of the three checks in 6.1 fails"; the B1 and B2 integration test against layer 02's handler through `controlHttp`.
+- **Acceptance.** `pnpm --filter @hobo/ci-gh-actions test`; `pnpm exec turbo run typecheck --filter=@hobo/ci-gh-actions`; the tests named for layer 03 in section 7; a property test that for an idle box with no pools, no mesh and no foreign pickups the evaluator's answer equals "either check in 6.1 fails"; the B1 and B2 integration test against layer 02's handler through `controlHttp`.
 - **Outputs.** The integration test's measured times in the report.
 
 #### Layer 04: route job and main gate (coordinator)
 
 - **Why.** Section 6.5 verbatim. F16, F18, F24; B5.
-- **Steps.** In the order of 6.5, items 1–5, then the capacity reader's deletion, then the lint rule. For each changed job, read every step and confirm it runs on `ubuntu-24.04` the way the routed pull-request jobs do.
-- **Acceptance.** `pnpm run test:scripts`; `pnpm run actions:lint`; `pnpm run test:attestation`; `npx vitest run test/actions-policy.test.ts`. Two `workflow_dispatch` runs of HoBo CI Fabric on the branch, linked in the report. To pin them without touching repository variables, add a `workflow_dispatch` input `route` (`auto`, `fleet`, `github`; default `auto`) to `hobo-ci.yml`, used as `mode: ${{ inputs.route || vars.HOBO_CI_ROUTE }}` in the route job and the `reroute` step. With `route: github`, the plan, the full gate, every shard and the finish job run on GitHub-hosted runners and pass. With `route: fleet`, the run behaves as `main` does today.
+- **Steps.** In the order of 6.5, items 1–5, then the capacity reader's deletion, then the lint rule. `include-own-run` is read by `route-runner.mts` (`observeQueue` then keeps this run's jobs instead of leaving them out). The new `runs-on` form must be taught to all three places `scripts/lint-actions.ts` compares `runs-on` (near lines 490, 499 and 505). Rewrite `scripts/test/main-gate-plan-install-free.test.ts`, which imports the deleted reader. The fixture for the lint rule (F24) uses `HOBO_CI_FLEET_ROUTES`, so layer 06's search does not trip on it. For each changed job, read every step and confirm it runs on `ubuntu-24.04` the way the routed pull-request jobs do.
+- **Acceptance.** `pnpm run test:scripts`; `pnpm run actions:lint`; `pnpm run test:attestation`; `npx vitest run test/actions-policy.test.ts`. Two `workflow_dispatch` runs of HoBo CI Fabric on the branch, linked in the report. To pin them without touching repository variables, add a `workflow_dispatch` input `route` to `hobo-ci.yml`: a string, default empty, so an empty input leaves `vars.HOBO_CI_ROUTE` in force. It is used as `mode: ${{ inputs.route || vars.HOBO_CI_ROUTE }}` in the route job and the `reroute` step. With `route: github`, the plan, the full gate, every shard and the finish job run on GitHub-hosted runners and pass. With `route: fleet`, the run behaves as `main` does today.
 - **Stop condition.** If a main-gate step cannot run on `ubuntu-24.04`, stop and report the step; do not work around it.
 
 #### Layer 05: the monitor (implementer B, then coordinator)
 
 - **Why.** Section 6.6 verbatim. F8, F10, F14, F18, F22, F29; B7.
 - **Steps.** (1) Pure functions from recorded API pages to a report: one per signal. (2) A thin layer that fetches the window, with the request budget enforced. (3) Issue open-or-comment. (4) `--dry-run`. (5) Coordinator: the workflow file, and in `lint-actions.ts` an allowance for a hosted job named `ci-health` like the one for `route`.
-- **Acceptance.** `node --import tsx --test scripts/test/ci-health.test.ts`, with a breaching and a clear fixture for each of H1, H2, H3, H4, H6, H8, H10, and the "unknown twice" case; `pnpm run actions:lint`; one `workflow_dispatch` of the workflow with `dry-run: true`, its report attached.
+- **Acceptance.** `node --import tsx --test scripts/test/ci-health.test.ts`, with a breaching and a clear fixture for each of H1, H2, H3, H4, H6, H8, H10, and the "unknown twice" case; `pnpm run actions:lint`; one local dry run against the live repository with a token that can read Actions (`GITHUB_TOKEN=<token> node --import tsx scripts/ci/ci-health.mts --dry-run`; the status signals will read `unknown` without an OIDC token), its report attached. The dispatched dry run is step G1.
 
 #### Layer 06: retirement (implementer A)
 
 - **Why.** Section 6.8. Goal 4.
 - **Steps.** Delete the two publishers and their records, fixtures, exports and daemon wiring; keep `fleetCapacity.snapshot` and remove only `publish`; update the docs generator's inputs if it reads the deleted record.
-- **Acceptance.** `git grep -nP 'HOBO_CI_FLEET_(STATE|CAPACITY)\b' -- packages scripts .github site` prints nothing; `pnpm exec turbo run typecheck test --filter=@hobo/ci --filter=@hobo/ci-gh-actions`; `pnpm run codegen:check`; `pnpm test:schema`.
+- **Acceptance.** `git grep -nP 'HOBO_CI_FLEET_(STATE|CAPACITY)\b' -- 'packages/*/src' packages/ci-gh-actions/scripts packages/ci/RUNNER-QUEUE.md .github` prints nothing (tests, findings and ADR history may still name them); `pnpm exec turbo run typecheck test --filter=@hobo/ci --filter=@hobo/ci-gh-actions`; `pnpm run codegen:check`; `pnpm test:schema`.
 
 #### Layer 07: operations and documents (coordinator)
 
-- **Why.** Sections 6.7 and 6.9. F21, F23.
-- **Steps.** (1) `relay-deploy.yml`: after the existing checks, read the public origin from `.hobo/ci.json` and require `GET /v1/fleet/verdicts/<this repository>` to answer 200 with a `repository` and a `blocked` object; it reports, since Vercel has already deployed. (2) Runbooks in `packages/ci-vercel/README.md`: enrollment, the switches, rollback order, the game day. (3) `AGENTS.md` and the pull-request template: *a change that adds or alters a channel between two deployed components is done only when one production observation of that channel carrying a value is linked*. (4) Traceability. (5) The finding: the evidence of section 2 and what each gate of 6.9 measured, filled in as the gates are passed. (6) Set this plan's status.
+- **Why.** Sections 6.7 and 6.10. F21, F23.
+- **Steps.** (1) `relay-deploy.yml`: after the existing checks, read the public origin from `.hobo/ci.json` and require `GET /v1/fleet/verdicts/<this repository>` to answer 200 with a `repository` and a `blocked` object; it reports, since Vercel has already deployed. (2) Runbooks in `packages/ci-vercel/README.md`: enrollment, the switches, rollback order, the game day. (3) `AGENTS.md` and the pull-request template: *a change that adds or alters a channel between two deployed components is done only when one production observation of that channel carrying a value is linked*. (4) Traceability. (5) The finding: the evidence of section 2 and what each gate of 6.10 measured, filled in as the gates are passed. (6) Set this plan's status.
 - **Acceptance.** `pnpm run lint:docs`; `pnpm run docs:design-lint`; `pnpm run docs:freshness`; `node --import tsx scripts/validate-traceability.ts`; `pnpm run actions:lint`; `node --import tsx --test scripts/test/relay-deploy-workflow.test.ts`.
 
 ## 10. Owner inputs
@@ -430,12 +450,13 @@ Each has a default the swarm uses if no answer arrives. None needs a secret.
 | --- | --- | --- |
 | P1 | [#1935](https://github.com/Hobo-Labs/HoBo/pull/1935): it edits the daemon file layers 03 and 06 own, passes the capacity variable to a script through an environment variable (R2), and its `trunkMemoryAdmit` reads a busy box as out of room (R4). Section 6.5 delivers what it set out to do | Close as superseded |
 | P2 | Merge #1943 and #1952, or leave the stack on them | Stack on them |
-| P3 | The ARC pool: the labels it serves, its runner-name prefix, how many jobs it runs at once | Not declared. An ARC pickup in the past 15 minutes then keeps the label open (F13), so G5 cannot show a block until this is answered |
+| P3 | The ARC pool: the labels it serves, its runner-name prefix, how many jobs it runs at once; and how many free runners the rest of the fleet must have for a label to stay open while the box is refusing (`HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS`). **Design choice.** With the default of 1, the verdict would not have fired in finding 142, because ARC had one runner free | Pool not declared, minimum 1. An ARC pickup in the past 15 minutes then keeps the label open (F13), so G5 cannot show a block until this is answered. Recommended for this fleet: declare the pool and set the minimum above its size |
 | P4 | Enrollment and the box settings (G2) | Reporter stays `off` |
 | P5 | The login the monitor assigns issues to, and the paid-minutes threshold | The repository owner; 150 per window |
 | P6 | Whether to revisit the route job's queue heuristics and its fall-back to GitHub-hosted runners when it cannot decide, both of which can send a busy fleet's runs to paid runners | Unchanged; H8 reports their cost |
 | P7 | A way to read the box's log during the game days, or the owner pastes the `hobo_ci_fleet_verdict_state` lines | Gates are judged from the status route alone |
 | P8 | Whether the unread `HOBO_CI_FLEET_ROUTES` publisher is retired too | Kept |
+| P10 | **Design choice.** The plan job's re-ask includes the run's own jobs in its queue reading (6.5), so a plan job that itself waited past the limit sends the shards to GitHub-hosted runners | On |
 | P9 | What else runs on the box. This design routes around external pressure; it does not reduce it | Nothing changed on the box |
 
 ## 11. Assumptions to check first
@@ -486,9 +507,23 @@ An implementer who finds one false stops and reports it.
 | The node identity and id exist only with a mesh; the sequence would not survive a clock step; replay window after expiry; origin not signed | 6.3; a 24-hour reporter record (6.4) |
 | Layers shared files, layer 02 could not be green alone, two layers shared a package | Contract and relay merged; 03 after 02; ownership rule restated (9.1, 9.2) |
 | Layers 01, 04, 05 owned no doc and would fail the staged docs check | A doc per layer (9.2) |
-| Rollback would crash the relay on its strict configuration | Order in 6.9 |
+| Rollback would crash the relay on its strict configuration | Order in 6.10 |
 | The smoke check probed a protected URL and could not stop the deploy | Probes the public origin and reports (layer 07) |
 | Signals needed verdict history; the monitor's request budget was unstated; targets disagreed | H6 no longer needs history; `lastBlockedAt` and `lastClearedAt` kept per label; window and budget stated; one latency figure (two runs) |
-| Outcomes could not be shown at merge, and gates could pass with no block ever observed | Build and operating outcomes separated; forced-pressure game days (6.9) |
+| Outcomes could not be shown at merge, and gates could pass with no block ever observed | Build and operating outcomes separated; forced-pressure game days (6.10) |
 | The route job's own heuristics also send runs to paid runners | Kept by the owner's instruction; stated in section 3 and asked in P6 |
 | No body had steps, quoted decisions or outputs; test names were labels | Section 9.3; test files and titles in section 7 |
+
+**From the confirming review of revision 2**
+
+| Finding | Change |
+| --- | --- |
+| Replayed against finding 142, the rule did not block: ARC had one free runner at 11:14, and at 11:22 the hold could not have elapsed | A minimum of free runners elsewhere (6.1, P3); the re-ask reads the run's own jobs, whose 444-second wait is the evidence (6.5, P10) |
+| The re-ask step ran before the files it needs were checked out and would have fallen back to paid runners, unseen | After the full checkout, only when the run is on the fleet, falling back to the run's route; the monitor reads the plan job's annotations (6.5, 6.6, F32) |
+| The load-average check lags CI's own jobs by minutes and would block an idle box (R4) | Left out of the rule (6.1) |
+| The allowance credited 60 s to reports that live 180 s, double-counted two reporters, and counted while the agreed verdict was open | Counts the agreed verdict's blocked time (6.4) |
+| Agreement was not scoped to the account; the signature's origin was not named; reads now cost cache round trips | 6.4 |
+| The monitor's window never advanced after a breach; H6 fired on a healthy saturated fleet; H8 missed rerouted shards | 6.6 |
+| The daemon imports only the package root; reports are per repository; the enroll script had no arguments | Layer 03 |
+| Layer 06's search failed on files it did not own; layer 05's dispatch was impossible before merge; the new job was not required; a test imported the deleted reader; the dispatch input overrode the operator pin | Layers 01, 04, 05, 06 |
+| An enrolled box that is off keeps its labels open | Stated in 6.4; F31; runbook |
