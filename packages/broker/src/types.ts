@@ -94,8 +94,8 @@ export interface DeliveryPublisher {
 	readonly repository?: string;
 }
 
-// domain-view: parsed delivery-plane policy; wire form is DeliveryPolicy in data-models/broker.proto.
-export interface DeliveryPolicy {
+// domain-view: parsed (neutral) delivery-plane policy; wire form is DeliveryPolicy in data-models/broker.proto.
+export interface NeutralDeliveryPolicy {
 	readonly reconcilerMode: ReconcilerModeName;
 	/** Present exactly when `reconcilerMode` is `publisher`. */
 	readonly publisher?: DeliveryPublisher;
@@ -104,6 +104,23 @@ export interface DeliveryPolicy {
 	/** @deprecated display label only (see DeliveryRouteLabel); never read for routing. */
 	readonly engine: DeliveryRouteLabel;
 }
+
+/**
+ * @deprecated The pre-D14 domain literal (`engine: argo | in-proc`). Still
+ * accepted where a policy set is built in code; every plane normalizes it
+ * with `normalizeDeliveryPolicy` before routing, and its destination
+ * namespace is never read.
+ */
+export interface LegacyDeliveryPolicy {
+	readonly engine: LegacyDeliveryEngine;
+	readonly syncMode: "auto" | "manual";
+	readonly prune: boolean;
+	readonly gitopsRepo?: string;
+	readonly destinationNamespace?: string;
+}
+
+/** A delivery policy as held in a policy set: neutral, or a legacy literal. */
+export type DeliveryPolicy = NeutralDeliveryPolicy | LegacyDeliveryPolicy;
 
 // domain-view: parsed connector registration; wire form is ConnectorConfig in data-models/broker.proto.
 export interface ConnectorConfig {

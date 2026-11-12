@@ -20,6 +20,7 @@ import {
 	type DeliveryRouteLabel,
 	LEGACY_ARGO_PUBLISHER,
 	LEGACY_DELIVERY_ENGINES,
+	type NeutralDeliveryPolicy,
 	PLACEMENT_OBJECTIVES,
 	type PlacementObjective,
 	type PlacementPolicy,
@@ -231,7 +232,7 @@ function parseDeliveryPublisher(
  */
 export function parseDeliveryPolicy(
 	input: JsonValue | undefined,
-): DeliveryPolicy {
+): NeutralDeliveryPolicy {
 	const raw = asRecord(input, "invalid-delivery-policy");
 	// SAFETY: assertion required at this I/O or test boundary.
 	const syncMode = (raw.syncMode ?? raw.sync_mode ?? "manual") as string;
@@ -296,6 +297,25 @@ export function parseDeliveryPolicy(
 		prune,
 		engine: deliveryRouteLabel(reconcilerMode, publisher),
 	};
+}
+
+/**
+ * The neutral form of any held delivery policy: a parsed policy is returned
+ * as is; a legacy literal is mapped exactly as `parseDeliveryPolicy` maps the
+ * deprecated wire fields (argo → argo-cd publisher, in-proc → conductor).
+ */
+export function normalizeDeliveryPolicy(
+	policy: DeliveryPolicy,
+): NeutralDeliveryPolicy {
+	if ("reconcilerMode" in policy) return policy;
+	return parseDeliveryPolicy({
+		engine: policy.engine,
+		syncMode: policy.syncMode,
+		prune: policy.prune,
+		...(policy.gitopsRepo !== undefined
+			? { gitopsRepo: policy.gitopsRepo }
+			: undefined),
+	});
 }
 
 export function parseBrokerPolicySet(

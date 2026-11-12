@@ -36,6 +36,7 @@ import type { JsonObject } from "../src/json.js";
 import {
 	BrokerParseError,
 	effectivePlacementPolicy,
+	normalizeDeliveryPolicy,
 	parseBillingPolicy,
 	parseBrokerPolicySet,
 	parseBrokerRequest,
@@ -211,6 +212,27 @@ describe("billing policies", () => {
 });
 
 describe("delivery policies (neutral, D14)", () => {
+	it("normalizes a legacy in-code literal exactly as the wire parser maps it", () => {
+		expect(
+			normalizeDeliveryPolicy({
+				engine: "argo",
+				syncMode: "auto",
+				prune: true,
+				gitopsRepo: "https://git.example/r",
+				destinationNamespace: "never-read",
+			}),
+		).toEqual(
+			parseDeliveryPolicy({
+				engine: "argo",
+				syncMode: "auto",
+				prune: true,
+				gitopsRepo: "https://git.example/r",
+			}),
+		);
+		const neutral = parseDeliveryPolicy({ reconcilerMode: "agent" });
+		expect(normalizeDeliveryPolicy(neutral)).toBe(neutral);
+	});
+
 	it("refuses an unknown reconciler mode and an unknown legacy engine", () => {
 		expect(codeOf(() => parseDeliveryPolicy({ reconcilerMode: "push" }))).toBe(
 			"invalid-reconciler-mode",

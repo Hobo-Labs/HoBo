@@ -13,12 +13,14 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { normalizeDeliveryPolicy } from "./policies.js";
 
 import type {
 	BillingPolicy,
 	BrokerRequest,
 	DeliveryPolicy,
 	DeliveryRouteLabel,
+	NeutralDeliveryPolicy,
 	ReconcilerModeName,
 	RejectionReason,
 	ResolutionReceipt,
@@ -221,7 +223,8 @@ export class DeliverySubmissionError extends Error {
  */
 export function createDeliveryPlane(): DeliveryPlane {
 	return {
-		submit(receipt, policy) {
+		submit(receipt, held) {
+			const policy = normalizeDeliveryPolicy(held);
 			if (policy.reconcilerMode !== "conductor") {
 				throw new DeliverySubmissionError(
 					"delivery-plane-unwired",
@@ -242,7 +245,7 @@ export function createDeliveryPlane(): DeliveryPlane {
 /** What the broker asks CD to do with one accepted receipt. */
 export type DeliveryPromotionRequest = Readonly<{
 	receipt: ResolutionReceipt;
-	delivery: DeliveryPolicy;
+	delivery: NeutralDeliveryPolicy;
 }>;
 
 export type DeliveryPromotionReason = Readonly<{
@@ -276,7 +279,8 @@ export function createReconcilerDeliveryPlane(
 	options: ReconcilerDeliveryPlaneOptions,
 ): DeliveryPlane {
 	return {
-		async submit(receipt, policy) {
+		async submit(receipt, held) {
+			const policy = normalizeDeliveryPolicy(held);
 			let result: DeliveryPromotionResult;
 			try {
 				result = await options.requestPromotion({ receipt, delivery: policy });
