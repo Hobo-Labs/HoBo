@@ -152,6 +152,19 @@ export function fleetRunnerNamePrefix(runnerName: string): string {
 	return cut < 0 ? runnerName : runnerName.slice(0, cut + 1);
 }
 
+/**
+ * The lease ids named by box runners (`hobo-<lease uuid>`) among these jobs:
+ * the ids a caller looks up in its own journal to fill `ownLeaseIds`.
+ */
+export function boxLeaseIdsOf(jobs: readonly FleetJobOnRunner[]): string[] {
+	const ids = new Set<string>();
+	for (const job of jobs) {
+		const id = leaseIdFromBoxRunnerName(job.runnerName);
+		if (id !== undefined) ids.add(id);
+	}
+	return [...ids];
+}
+
 function accounted(
 	input: FleetVerdictEvaluatorInput,
 	pickup: FleetJobOnRunner,

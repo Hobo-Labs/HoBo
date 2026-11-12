@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	boxLeaseIdsOf,
 	evaluateFleetVerdict,
 	FLEET_VERDICT_POOL_FRESH_MS,
 	type FleetVerdictEvaluatorInput,
@@ -296,6 +297,20 @@ describe("the fleet verdict evaluator", () => {
 		);
 		expect([...evaluation.blocked.keys()]).toEqual(["hobo"]);
 		expect(evaluation.unaccounted).toEqual([`hobo-${PEER_LEASE}`]);
+	});
+
+	it("names the lease ids of box runners, for the caller to look up as its own", () => {
+		expect(
+			boxLeaseIdsOf([
+				{ label: "hobo", runnerName: `hobo-${OWN_LEASE}`, startedAtMs: NOW },
+				{
+					label: "hobo-trunk",
+					runnerName: `hobo-${OWN_LEASE}`,
+					startedAtMs: NOW,
+				},
+				{ label: "hobo", runnerName: "hobo-runner-a", startedAtMs: NOW },
+			]),
+		).toEqual([OWN_LEASE]);
 	});
 
 	it("names a runner by the prefix its siblings share", () => {
