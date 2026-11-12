@@ -3,6 +3,7 @@
 // rendering for the `*_by` fields.
 import { type DescMessage, fromJson, type JsonValue, type MessageShape, toJson } from "@bufbuild/protobuf";
 import type { PrincipalRef } from "@hobo/core";
+import type { TelemetrySink } from "../ports.js";
 import { isPlainObject } from "./canonical.js";
 
 /** Event body for a generated record: its canonical protobuf JSON. */
@@ -69,4 +70,18 @@ export function principalName(principal: PrincipalRef): string {
 
 export function iso(ms: number): string {
 	return new Date(ms).toISOString();
+}
+
+/**
+ * Emit one counter point. Telemetry is advisory (the journal is the record),
+ * so a failing sink never turns a committed command into an error the caller
+ * would retry.
+ */
+export function emitCounter(
+	sink: TelemetrySink | undefined,
+	point: Readonly<{ name: string; unit: string; atMs: number; attributes: Readonly<Record<string, string>>; value?: number }>,
+): void {
+	sink
+		?.metrics([{ name: point.name, kind: "counter", value: point.value ?? 1, unit: point.unit, atMs: point.atMs, attributes: point.attributes }])
+		.catch(() => undefined);
 }

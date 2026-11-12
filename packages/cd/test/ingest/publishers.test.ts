@@ -155,7 +155,7 @@ describe("trusting a publisher is governed and parsed", () => {
 		const { store, publishers, ctx, authorizer } = await harness();
 		expect((await publishers.trust(githubPublisher(), ctx)).ok).toBe(true);
 		expect(store.events(CD_STREAMS.publisher("github-shop")).map((event) => event.type)).toEqual([CD_EVENTS.PublisherTrusted]);
-		expect(authorizer.calls.map((call) => call.action)).toEqual(["publisher.trust", "publisher.trust"]);
+		expect(authorizer.calls.map((call) => call.action)).toEqual(["publisher.trust", "publisher.trust", "publisher.trust"]);
 	});
 
 	it.each([

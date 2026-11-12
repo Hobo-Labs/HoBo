@@ -37,7 +37,7 @@ import type {
 	Refusal,
 	TelemetrySink,
 } from "../ports.js";
-import { body, decode, iso, principalName, referencedFreightId, stringField } from "./journal.js";
+import { body, decode, emitCounter, iso, principalName, referencedFreightId, stringField } from "./journal.js";
 import { freightIdentity, parseFreightManifest } from "./manifest.js";
 import { FREIGHT_REASON, reason, refuse, refuseWith } from "./reasons.js";
 import { type CampDeployments, planRetention, type RetentionCandidate, type RetentionPin } from "./retention.js";
@@ -91,11 +91,7 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 	let indexedTo: EventPosition | undefined;
 
 	function emit(name: string, attributes: Readonly<Record<string, string>> = {}, value = 1): void {
-		// Telemetry is advisory: the journal is the record. A failing sink
-		// must not turn a committed command into an error the caller retries.
-		deps.telemetry
-			.metrics([{ name, kind: "counter", value, unit: "{freight}", atMs: deps.now(), attributes: { tenant: deps.tenant, ...attributes } }])
-			.catch(() => undefined);
+		emitCounter(deps.telemetry, { name, unit: "{freight}", atMs: deps.now(), attributes: { tenant: deps.tenant, ...attributes }, value });
 	}
 
 	function refused(outcome: Refusal, operation: string): Refusal {
