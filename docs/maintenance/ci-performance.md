@@ -208,6 +208,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   start there, and until 8.0.37 they also refused on Ubuntu kernels that already carry the fix — the
   lane's first run failed on a GitHub-hosted runner for exactly that. With glibc owning rseq the
   allocator falls back to per-thread caches and the host's kernel stops mattering.
+  Every `mongosh` the lane starts, and the compose healthcheck, runs with `HOME=/tmp`. The image sets
+  `HOME` to `/data/db`, where mongosh keeps its lock files, and the image's entrypoint chowns that
+  tree as the container starts. A readiness probe that created and removed a lock file there during
+  the chown made it fail (`chown: cannot access '/data/db/.mongodb/mongosh/...json.lock'`) and the
+  server exit during start-up, which failed the job on one pull request before any test ran.
   The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
   so a cached offline result would replay as a live pass. A green exit is not taken as proof either:
   the live tests skip themselves when their variable is missing, so the step ends with
