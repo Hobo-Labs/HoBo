@@ -39,6 +39,18 @@ export {
 	runCdChaos,
 } from "./cd-chaos.js";
 export {
+	CD_FREIGHT_SUBJECT,
+	CD_POLICY_MODE,
+	CD_ROLLOUT_STRATEGY,
+	DELIVERY_RECORDS_ASSERTIONS,
+	DELIVERY_RECORDS_SUITE,
+	type DeliveryModuleLike,
+	type DeliveryRecordsAssertion,
+	type PipelineLike,
+	type PipelineNodeLike,
+	runDeliveryRecordsConformance,
+} from "./cd-delivery-records.js";
+export {
 	FANOUT_CONTROLLER_ASSERTIONS,
 	FANOUT_CONTROLLER_SUITE,
 	type FanoutCampOutcome,

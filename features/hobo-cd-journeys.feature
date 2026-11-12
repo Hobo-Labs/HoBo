@@ -10,7 +10,7 @@ Feature: HoBo.CD delivery journeys
   Scenario: dev → staging → prod lineage
     Given Freight "shop@1.4.0" is recorded
     When a human promotes "shop@1.4.0" to "prod"
-    Then the promotion is refused with "lineage"
+    Then the promotion is refused with "lineage-unsatisfied"
     When "shop@1.4.0" is promoted to "dev" and verifies PASS
     And "shop@1.4.0" is promoted to "staging" and verifies PASS
     And a human promotes "shop@1.4.0" to "prod"
@@ -60,7 +60,7 @@ Feature: HoBo.CD delivery journeys
     And an approval for 73 hours is refused
     When 73 hours pass
     And a human promotes "shop@1.4.1-hotfix" to "prod"
-    Then the promotion is refused with "lineage"
+    Then the promotion is refused with "lineage-unsatisfied"
 
   Scenario: drift remediation
     Given "shop@1.4.0" runs in "prod"

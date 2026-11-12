@@ -115,7 +115,7 @@ export class DeliveryModel {
 		if (!node) return { status: "refused", code: "pipeline-node-unknown", remediation: "apply the pipeline first" };
 		if (!this.freight.has(freightId) || this.yanked.has(freightId)) return { status: "refused", code: "freight-unusable", remediation: "promote usable Freight" };
 		if (!this.available(freightId, node)) {
-			return { status: "refused", code: "lineage", remediation: `qualify the Freight upstream in ${node.upstream} or record an unexpired approval` };
+			return { status: "refused", code: "lineage-unsatisfied", remediation: `qualify the Freight upstream in ${node.upstream} or record an unexpired approval` };
 		}
 		if (principal.kind === "agent") {
 			const proposalId = `proposal-${this.proposals.length + 1}`;

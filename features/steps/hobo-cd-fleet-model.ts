@@ -183,7 +183,7 @@ export class RailModel {
 		return verdict;
 	}
 	enforce(rail: string): EnforceOutcome {
-		if (this.candidate !== rail || !this.informQualified) return { ok: false, code: "rail-inform-unqualified" };
+		if (this.candidate !== rail || !this.informQualified) return { ok: false, code: "shadow-required" };
 		this.enforced = rail;
 		this.candidate = undefined;
 		return { ok: true };

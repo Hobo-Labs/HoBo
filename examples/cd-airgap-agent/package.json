@@ -1,0 +1,19 @@
+{
+	"name": "@hobo/example-cd-airgap-agent",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"description": "Deliver into an air-gapped Yard: a local registry source, an outbound-only agent reconciler with double opt-in enrollment, and offline installation.",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/conformance": "workspace:*"
+	}
+}

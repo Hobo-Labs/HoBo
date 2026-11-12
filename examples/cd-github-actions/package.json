@@ -1,0 +1,19 @@
+{
+	"name": "@hobo/example-cd-github-actions",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"description": "Deliver a Bindle with HoBo.CD from GitHub Actions: OIDC trusted publishing, SLSA provenance, and a dev → staging → prod canary pipeline.",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/conformance": "workspace:*"
+	}
+}

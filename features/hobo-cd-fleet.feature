@@ -43,7 +43,7 @@ Feature: HoBo.CD fleet and policy journeys
     Then "rail-v1" decides and the Delta is allowed
     And a shadow divergence is recorded for "rail-v2"
     When "rail-v2" is promoted to ENFORCE before its INFORM node qualifies
-    Then the promotion is refused with "rail-inform-unqualified"
+    Then the promotion is refused with "shadow-required"
     When the INFORM node verifies with 1 percent noncompliant and 1 declared divergence
     And "rail-v2" is promoted to ENFORCE
     Then "rail-v2" is the enforced Rail

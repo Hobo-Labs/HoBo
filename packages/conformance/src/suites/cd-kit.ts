@@ -234,7 +234,7 @@ export const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/u;
 // Credential shapes that must never appear in a record (I9). Mirrors the
 // @hobo/cd Freight boundary; matching is a failure, never a redaction.
 const SECRET_PATTERNS: readonly RegExp[] = [
-	/[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@/iu,
+	/[a-z][a-z0-9+.-]*:\/\/[^/\s:@"]+:[^/\s@"]+@/iu,
 	/\bgh[pousr]_[A-Za-z0-9]{30,}\b/u,
 	/\bgithub_pat_[A-Za-z0-9_]{30,}\b/u,
 	/\bglpat-[A-Za-z0-9_-]{20,}\b/u,
@@ -242,7 +242,7 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	/\bAKIA[0-9A-Z]{16}\b/u,
 	/-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
 	/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/u,
-	/\b(?:password|secret|api[_-]?key|token)\s*[:=]\s*\S{6,}/iu,
+	/\b(?:password|secret|api[_-]?key|token)\s*[:=]\s*[A-Za-z0-9+_-]{16,}/iu,
 ];
 
 function toCanonical<T>(node: T): JsonValue {
