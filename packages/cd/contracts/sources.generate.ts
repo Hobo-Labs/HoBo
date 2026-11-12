@@ -1,7 +1,7 @@
 // Writes the WP2 PACT files (contracts/sources.*.pact.json) from the recorded
 // test fixtures, so the contract and the fixtures the driver tests replay can
 // never drift. Re-run after re-recording fixtures:
-//   node --import tsx packages/cd/contracts/generate-sources-pacts.ts
+//   node --import tsx packages/cd/contracts/sources.generate.ts
 // contracts/sources.consumer.test.ts verifies every interaction.
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
