@@ -86,7 +86,7 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `resource.*` | `resource.Provisioned`, `resource.DriftDetected` |
 | `resilience.*` | `resilience.Attempt`, `resilience.Terminal` |
 | `resourcedef.*` | `resourcedef.Registered`, `resourcedef.Updated` (design-only: no emitter ships yet — emission from the registry write path is tracked in GAPS.md) |
-| `rollout.*` | `rollout.Started`, `rollout.Stepped`, `rollout.Promoted`, `rollout.RolledBack`, `rollout.Failed` |
+| `rollout.*` | `rollout.Started`, `rollout.Stepped`, `rollout.Promoted`, `rollout.RolledBack`, `rollout.Failed` (OpenDelivery port, `@hobo/identity`); `@hobo/cd` rollout ledger: `rollout.Lowered`, `rollout.EvidenceObserved`, `rollout.RampStarted`, `rollout.ShiftRequested`, `rollout.Shifted`, `rollout.TrafficObserved`, `rollout.StageVerified`, `rollout.StageApprovalRequested`, `rollout.Held`, `rollout.Released`, `rollout.Advanced`, `rollout.RollbackStarted`, `rollout.RollbackDeltaOpened`, `rollout.Finished`, `rollout.EngineCommanded` (`packages/cd/src/rollout/journal.ts`) |
 | `run.*` | `run.Started`, `run.StepCompleted` |
 | `runbook.*` | `runbook.Defined`, `runbook.Triggered`, `runbook.Diagnosed`, `runbook.FixBlocked`, `runbook.RemediationStarted`, `runbook.RemediationCompleted`, `runbook.StepCompleted`, `runbook.Completed`, `runbook.Failed` |
 | `sdk.*` | `sdk.ExecutionFact` — provider generation and runner execution receipts; Protobuf/CUE payloads in `packages/sdk/data-models/sdk.*` |

@@ -1,0 +1,1287 @@
+{
+  "promoted": {
+    "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+    "status": "promoted",
+    "events": [
+      {
+        "stream": "rollout",
+        "type": "rollout.Lowered",
+        "seq": 1,
+        "data": {
+          "plan": {
+            "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+            "promotionId": "promo-1",
+            "strategy": "ROLLOUT_STRATEGY_CANARY",
+            "stagePercents": [
+              5,
+              25,
+              50,
+              100
+            ],
+            "targetCampIds": [
+              "prod-a"
+            ],
+            "lowerings": [
+              {
+                "campId": "prod-a",
+                "strategy": "ROLLOUT_STRATEGY_CANARY",
+                "offeringId": "lb.weighted",
+                "fallbackFrom": [
+                  "edge.canary"
+                ]
+              }
+            ],
+            "verification": {
+              "windowMs": "600000",
+              "requiredObservations": 3,
+              "progressDeadlineMs": "1800000",
+              "failOnNoData": true
+            }
+          },
+          "freightId": "freight-1",
+          "windows": [
+            "prod"
+          ],
+          "obligations": [],
+          "refused": false,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Started",
+        "seq": 2,
+        "data": {
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 3,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "percent": 5,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 4,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 5,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 6,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-0",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 7,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-0",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 8,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 9,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "percent": 25,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 10,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 11,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 12,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-1",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 13,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-1",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 14,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 15,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "percent": 50,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p50",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 16,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p50",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 17,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p50",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 18,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-2",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 19,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-2",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 20,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 21,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "percent": 100,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p100",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 22,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p100",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 23,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p100",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 24,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-3",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 25,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-3",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 26,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Finished",
+        "seq": 27,
+        "data": {
+          "status": "promoted",
+          "reasons": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 1,
+        "data": {
+          "command": "start",
+          "plan": {
+            "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+            "promotionId": "promo-1",
+            "strategy": "ROLLOUT_STRATEGY_CANARY",
+            "stagePercents": [
+              5,
+              25,
+              50,
+              100
+            ],
+            "targetCampIds": [
+              "prod-a"
+            ],
+            "lowerings": [
+              {
+                "campId": "prod-a",
+                "strategy": "ROLLOUT_STRATEGY_CANARY",
+                "offeringId": "lb.weighted",
+                "fallbackFrom": [
+                  "edge.canary"
+                ]
+              }
+            ],
+            "verification": {
+              "windowMs": "600000",
+              "requiredObservations": 3,
+              "progressDeadlineMs": "1800000",
+              "failOnNoData": true
+            }
+          },
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 2,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 3,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 4,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 5,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      }
+    ]
+  },
+  "rolled-back": {
+    "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+    "status": "rolled-back",
+    "events": [
+      {
+        "stream": "rollout",
+        "type": "rollout.Lowered",
+        "seq": 1,
+        "data": {
+          "plan": {
+            "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+            "promotionId": "promo-1",
+            "strategy": "ROLLOUT_STRATEGY_CANARY",
+            "stagePercents": [
+              5,
+              25,
+              50,
+              100
+            ],
+            "targetCampIds": [
+              "prod-a"
+            ],
+            "lowerings": [
+              {
+                "campId": "prod-a",
+                "strategy": "ROLLOUT_STRATEGY_CANARY",
+                "offeringId": "lb.weighted",
+                "fallbackFrom": [
+                  "edge.canary"
+                ]
+              }
+            ],
+            "verification": {
+              "windowMs": "600000",
+              "requiredObservations": 3,
+              "progressDeadlineMs": "1800000",
+              "failOnNoData": true
+            }
+          },
+          "freightId": "freight-1",
+          "windows": [
+            "prod"
+          ],
+          "obligations": [],
+          "refused": false,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Started",
+        "seq": 2,
+        "data": {
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 3,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "percent": 5,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 4,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 5,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 6,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-0",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 7,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-0",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 8,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 9,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "percent": 25,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 10,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 11,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 12,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-1",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 13,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-1",
+          "verdict": "VERIFICATION_VERDICT_FAIL",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.RollbackStarted",
+        "seq": 14,
+        "data": {
+          "reason": {
+            "code": "rollout-verification-failed",
+            "message": "verification ver-prod-a-1 on Camp prod-a at 25% was FAIL",
+            "remediation": "Verification returned FAIL or INCONCLUSIVE for this stage; the rollout rolls back (D12). Read the verification checks for the cause.",
+            "subject": "ver-prod-a-1"
+          },
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 15,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": -1,
+          "phase": "rollback",
+          "percent": 0,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p0",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 16,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": -1,
+          "phase": "rollback",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p0",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 17,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": -1,
+          "phase": "rollback",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p0",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.RollbackDeltaOpened",
+        "seq": 18,
+        "data": {
+          "campId": "prod-a",
+          "deltaId": "delta-rollback-ad8c8721887c3ac49e5c4646",
+          "why": "rollback",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Finished",
+        "seq": 19,
+        "data": {
+          "status": "rolled-back",
+          "reasons": [
+            {
+              "code": "rollout-verification-failed",
+              "message": "verification ver-prod-a-1 on Camp prod-a at 25% was FAIL",
+              "remediation": "Verification returned FAIL or INCONCLUSIVE for this stage; the rollout rolls back (D12). Read the verification checks for the cause.",
+              "subject": "ver-prod-a-1"
+            },
+            {
+              "code": "rollback-delta-opened",
+              "message": "rollback Delta delta-rollback-ad8c8721887c3ac49e5c4646 to the predecessor Set of Camp prod-a",
+              "remediation": "A rollback Delta to the predecessor Set is open; the promotion gate applies it through the reconciler (I7).",
+              "subject": "delta-rollback-ad8c8721887c3ac49e5c4646"
+            }
+          ],
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 1,
+        "data": {
+          "command": "start",
+          "plan": {
+            "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+            "promotionId": "promo-1",
+            "strategy": "ROLLOUT_STRATEGY_CANARY",
+            "stagePercents": [
+              5,
+              25,
+              50,
+              100
+            ],
+            "targetCampIds": [
+              "prod-a"
+            ],
+            "lowerings": [
+              {
+                "campId": "prod-a",
+                "strategy": "ROLLOUT_STRATEGY_CANARY",
+                "offeringId": "lb.weighted",
+                "fallbackFrom": [
+                  "edge.canary"
+                ]
+              }
+            ],
+            "verification": {
+              "windowMs": "600000",
+              "requiredObservations": 3,
+              "progressDeadlineMs": "1800000",
+              "failOnNoData": true
+            }
+          },
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 2,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 3,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": false,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 4,
+        "data": {
+          "command": "rollback",
+          "reason": "rollout-verification-failed",
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      }
+    ]
+  },
+  "held-then-promoted": {
+    "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+    "status": "promoted",
+    "events": [
+      {
+        "stream": "rollout",
+        "type": "rollout.Lowered",
+        "seq": 1,
+        "data": {
+          "plan": {
+            "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+            "promotionId": "promo-1",
+            "strategy": "ROLLOUT_STRATEGY_CANARY",
+            "stagePercents": [
+              5,
+              25,
+              50,
+              100
+            ],
+            "targetCampIds": [
+              "prod-a"
+            ],
+            "lowerings": [
+              {
+                "campId": "prod-a",
+                "strategy": "ROLLOUT_STRATEGY_CANARY",
+                "offeringId": "lb.weighted",
+                "fallbackFrom": [
+                  "edge.canary"
+                ]
+              }
+            ],
+            "verification": {
+              "windowMs": "600000",
+              "requiredObservations": 3,
+              "progressDeadlineMs": "1800000",
+              "failOnNoData": true
+            }
+          },
+          "freightId": "freight-1",
+          "windows": [
+            "prod"
+          ],
+          "obligations": [],
+          "refused": false,
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Started",
+        "seq": 2,
+        "data": {
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Held",
+        "seq": 3,
+        "data": {
+          "reason": {
+            "code": "window-closed",
+            "message": "window closed for Camp prod-a at stage 0 (year-end-freeze)",
+            "remediation": "A change window is closed for a target Camp; the rollout holds at the stage boundary and resumes when the window opens. Request a governed override (window.override) to proceed early.",
+            "subject": "prod-a"
+          },
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Released",
+        "seq": 4,
+        "data": {
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 5,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "percent": 5,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 6,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 7,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p5",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 8,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-0",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 9,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-0",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 10,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 0,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 11,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "percent": 25,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 12,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 13,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p25",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 14,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-1",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 15,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-1",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 16,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 1,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 17,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "percent": 50,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p50",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 18,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p50",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 19,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p50",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 20,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-2",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 21,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-2",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 22,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 2,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.ShiftRequested",
+        "seq": 23,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "percent": 100,
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p100",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Shifted",
+        "seq": 24,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p100",
+          "realized": "full",
+          "notes": [],
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.TrafficObserved",
+        "seq": 25,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "planId": "rollout-da6857c48bd7d5f3422da6647dde07d8:prod-a:p100",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.VerificationStarted",
+        "seq": 26,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-3",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.StageVerified",
+        "seq": 27,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "phase": "stage",
+          "verificationId": "ver-prod-a-3",
+          "verdict": "VERIFICATION_VERDICT_PASS",
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Advanced",
+        "seq": 28,
+        "data": {
+          "campId": "prod-a",
+          "stageIndex": 3,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "rollout",
+        "type": "cd.rollout.Finished",
+        "seq": 29,
+        "data": {
+          "status": "promoted",
+          "reasons": [],
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 1,
+        "data": {
+          "command": "start",
+          "plan": {
+            "rolloutId": "rollout-da6857c48bd7d5f3422da6647dde07d8",
+            "promotionId": "promo-1",
+            "strategy": "ROLLOUT_STRATEGY_CANARY",
+            "stagePercents": [
+              5,
+              25,
+              50,
+              100
+            ],
+            "targetCampIds": [
+              "prod-a"
+            ],
+            "lowerings": [
+              {
+                "campId": "prod-a",
+                "strategy": "ROLLOUT_STRATEGY_CANARY",
+                "offeringId": "lb.weighted",
+                "fallbackFrom": [
+                  "edge.canary"
+                ]
+              }
+            ],
+            "verification": {
+              "windowMs": "600000",
+              "requiredObservations": 3,
+              "progressDeadlineMs": "1800000",
+              "failOnNoData": true
+            }
+          },
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 2,
+        "data": {
+          "command": "hold",
+          "reason": {
+            "code": "window-closed",
+            "message": "window closed for Camp prod-a at stage 0 (year-end-freeze)",
+            "remediation": "A change window is closed for a target Camp; the rollout holds at the stage boundary and resumes when the window opens. Request a governed override (window.override) to proceed early.",
+            "subject": "prod-a"
+          },
+          "at": "2026-11-12T12:00:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 3,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 4,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 5,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      },
+      {
+        "stream": "engine",
+        "type": "cd.rollout.EngineCommanded",
+        "seq": 6,
+        "data": {
+          "command": "advance",
+          "campId": "prod-a",
+          "pass": true,
+          "at": "2026-11-12T12:01:00.000Z"
+        }
+      }
+    ]
+  }
+}

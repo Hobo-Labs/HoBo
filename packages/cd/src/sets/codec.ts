@@ -21,7 +21,7 @@ import {
 import { DELTA_SCHEMA, SET_SCHEMA } from "../events.js";
 import type { DeltaIntent } from "../ports.js";
 import { DesiredStateError, type SetsFailureCode } from "./errors.js";
-import { member, toJsonValue } from "./json.js";
+import { isJsonObject, member, toJsonValue } from "./json.js";
 
 declare const parsedSet: unique symbol;
 declare const parsedDelta: unique symbol;
@@ -209,6 +209,34 @@ export function parseObservation<T>(data: T): ReconcileObservationRecord {
 			"status",
 		),
 	);
+}
+
+// public-contract: schema id of the reconcile status envelope; equal to
+// RECONCILE_STATUS_SCHEMA in reconcile/status-events (a test pins the two).
+export const STATUS_ENVELOPE_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
+
+/**
+ * The observation a status-stream body carries. The reconcile transport
+ * writes `{ schema, observation }` (#ReconcileStatusEvent in reconcile.cue);
+ * a body with no `schema` member is the legacy bare record and is read as
+ * one. A body naming a schema this module does not know is undefined: it
+ * cannot prove what it observed, so it never becomes the Camp's status. A
+ * known envelope whose observation does not decode is `journal-invalid`.
+ */
+export function parseStatusBody<T>(
+	data: T,
+): ReconcileObservationRecord | undefined {
+	const schema = member(data, "schema");
+	if (schema === undefined) return parseObservation(data);
+	if (schema !== STATUS_ENVELOPE_SCHEMA) return undefined;
+	const observation = member(data, "observation");
+	if (!isJsonObject(observation))
+		return fail(
+			"journal-invalid",
+			`${STATUS_ENVELOPE_SCHEMA} body has no observation object`,
+			"status",
+		);
+	return parseObservation(observation);
 }
 
 /** Management from a camp.* body (`management` as enum name or number); undefined when absent. */
