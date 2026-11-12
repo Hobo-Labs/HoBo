@@ -88,6 +88,25 @@ const ROUTED_RUNS_ON =
 const HOSTED_RUNS_ON = "ubuntu-24.04";
 
 /**
+ * For the job that builds the deps image in the box's own Docker context: a
+ * pull request's run asks for the box by its own label (`hobo-box`, which the
+ * worker serves and no ARC pod does), trunk events keep the trunk label.
+ * `HOBO_CI_BOX_RUNNER=false` falls back to the shared label.
+ */
+const BOX_OR_TRUNK_RUNS_ON =
+	"${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER != 'false' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+const DEPS_IMAGE_BUILD_SCRIPT =
+	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
+
+/** Whether a job's steps (comments aside) run the deps image build. */
+function buildsDepsImage(block: readonly string[]): boolean {
+	return block.some(
+		(line) => !/^\s*#/.test(line) && line.includes(DEPS_IMAGE_BUILD_SCRIPT),
+	);
+}
+
+/**
  * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
  * chooses the runner, so it cannot wait on one. A hosted job with no `uses:`
  * step is a gate: it runs no repository code, only adds up other jobs' results.
@@ -483,17 +502,26 @@ function lintWorkflowYaml(
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
+		const depsImageBuild = buildsDepsImage(block);
+		const boxOrTrunk = runsOn === BOX_OR_TRUNK_RUNS_ON && depsImageBuild;
 		if (
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			!boxOrTrunk &&
 			!npmOidcHosted &&
 			!alwaysHosted
 		) {
 			errors.push(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed label expression`,
+			);
+		}
+		// The image has to land in the Docker context job containers start from.
+		if (depsImageBuild && activeCiFiles.has(file) && !boxOrTrunk) {
+			errors.push(
+				`${file}:${start + 1}: box-label-routing: a job that runs deps/build-deps.sh must use the box-or-trunk label expression`,
 			);
 		}
 		if (runsOn === ROUTED_RUNS_ON && !needsRoute(block)) {
@@ -504,7 +532,8 @@ function lintWorkflowYaml(
 		if (
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
-			runsOn === ROUTED_RUNS_ON
+			runsOn === ROUTED_RUNS_ON ||
+			boxOrTrunk
 		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -592,7 +621,8 @@ function lintWorkflowYaml(
 		activeCiFiles.has(file) &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
-		!text.includes(ROUTED_RUNS_ON)
+		!text.includes(ROUTED_RUNS_ON) &&
+		!text.includes(BOX_OR_TRUNK_RUNS_ON)
 	) {
 		errors.push(
 			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,

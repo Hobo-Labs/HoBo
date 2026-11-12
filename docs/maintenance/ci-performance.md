@@ -2,6 +2,11 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Box-only Docker build.** The job that runs `deps/build-deps.sh` asks for `runs-on: hobo-box` on pull
+  requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
+  no job container reads. Trunk events keep the trunk label; `HOBO_CI_BOX_RUNNER=false` falls back to
+  `hobo`. The runner-image and cold-loop jobs do not need the label: they materialize the
+  content-keyed worker image from the host cache or GHCR wherever they run.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests

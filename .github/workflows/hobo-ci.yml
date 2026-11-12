@@ -203,7 +203,12 @@ jobs:
     # gate and Main full gate's S0 job do not need this job, so a slow fleet does not
     # delay them. Main's workspace plan and shards do, to start from the deps layer;
     # on main this job never builds: it reuses or pulls an image, or defers a miss.
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # A pull request's run asks for the box by its own label: it builds the deps image in the
+    # box's Docker context, and under the shared `hobo` label an ARC pod could take it and
+    # build several GB nothing reads. HOBO_CI_BOX_RUNNER=false is the kill switch for a box
+    # daemon that does not serve `hobo-box`. Trunk events keep the trunk label and its rank.
+    # scripts/lint-actions.ts allows this expression for the job that runs build-deps.sh only.
+    runs-on: ${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER != 'false' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
     # and run the contract; non-PR misses defer to the publisher and daemon.
