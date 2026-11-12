@@ -214,9 +214,7 @@ export async function refreshHeldPruneWitnessFromStore(options: {
 				runId: target.runId,
 				reason: terminalRunReason(run.conclusion),
 			});
-		} catch {
-			continue;
-		}
+		} catch {}
 	}
 	return { terminalRuns, terminalJobs: [] };
 }

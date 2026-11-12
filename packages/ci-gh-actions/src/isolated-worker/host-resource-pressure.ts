@@ -58,9 +58,7 @@ export type HostCpuAdmissionInput = Readonly<{
 }>;
 
 export function hostCpuHeadroomCpus(input: HostCpuAdmissionInput): number {
-	return (
-		input.cores - input.load1 - input.reservedCpus - input.volatilityCpus
-	);
+	return input.cores - input.load1 - input.reservedCpus - input.volatilityCpus;
 }
 
 export function hostCpuAdmitFits(input: HostCpuAdmissionInput): boolean {

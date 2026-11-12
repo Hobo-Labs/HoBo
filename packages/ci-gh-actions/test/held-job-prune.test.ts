@@ -7,12 +7,12 @@ import {
 } from "@hobo/ci";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { afterEach, expect, it, vi } from "vitest";
+import type { GithubTransport } from "../src/github.js";
 import {
 	createHeldJobPruner,
 	pruneHeldJobs,
 	refreshHeldPruneWitnessFromStore,
 } from "../src/isolated-worker/held-job-prune.js";
-import type { GithubTransport } from "../src/github.js";
 import { createPollIngestCoalesce } from "../src/isolated-worker/poll-ingest-coalesce.js";
 import { job, NOW } from "./fixtures.js";
 
