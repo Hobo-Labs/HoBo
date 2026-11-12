@@ -16,6 +16,7 @@ import {
 	type CommandResult,
 	verbHelpText,
 } from "@hobo/cli";
+import type { HttpTransport } from "@hobo/core";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate } from "./ci-app-create.js";
@@ -330,6 +331,10 @@ export function createCiCommand(
 		vercelFetch?: VercelFetch;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
+		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
+		hoboHome?: string;
+		/** The transport `hobo ci deploy --wait`'s verification probes use. */
+		probeHttp?: HttpTransport;
 	} = {},
 ): CommandModule {
 	return {
@@ -395,6 +400,12 @@ export function createCiCommand(
 						: undefined),
 					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 					...(deps.now !== undefined ? { now: deps.now } : undefined),
+					...(deps.hoboHome !== undefined
+						? { home: deps.hoboHome }
+						: undefined),
+					...(deps.probeHttp !== undefined
+						? { probe: deps.probeHttp }
+						: undefined),
 					emitProgress,
 				});
 			}

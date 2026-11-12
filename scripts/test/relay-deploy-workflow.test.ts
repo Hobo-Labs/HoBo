@@ -6,6 +6,7 @@ import {
 	decide,
 	RELAY_DEPLOY_REQUIRED_VARIABLES,
 	RELAY_EXTRA_INPUTS,
+	RELAY_PROBE_ORIGIN_VARIABLES,
 	relayInputDirs,
 	touchesRelay,
 } from "../ci/relay-deploy-gate.mts";
@@ -90,6 +91,24 @@ describe("the relay deploy gate", () => {
 		});
 		assert.equal(partial.run, false);
 		assert.match(partial.reason, /HOBO_CI_RELAY_VERCEL_TEAM_ID/u);
+		assert.equal(partial.level, "notice");
+	});
+
+	it("warns, not notices, when only the probe origins a pre-CD setup lacks are missing", () => {
+		const env = { ...configured };
+		for (const name of RELAY_PROBE_ORIGIN_VARIABLES) delete env[name];
+		const decision = decide({ event: "workflow_dispatch", env, inputDirs });
+		assert.equal(decision.run, false);
+		assert.equal(decision.level, "warning");
+		assert.match(decision.reason, /NOT deployed/u);
+		for (const name of RELAY_PROBE_ORIGIN_VARIABLES)
+			assert.ok(decision.reason.includes(name));
+		const one = decide({
+			event: "workflow_dispatch",
+			env: { ...configured, HOBO_CI_RELAY_PREVIEW_URL: "" },
+			inputDirs,
+		});
+		assert.equal(one.level, "warning");
 	});
 
 	it("deploys a manual run, and a push whose range it cannot read", () => {
@@ -170,8 +189,18 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("deploys production from the Yard, attaching the cache and waiting for READY", () => {
-		const deploy = step("Deploy the relay to production from its Yard");
+	it("delivers preview, then production, through HoBo CD from the Yard, attaching the cache and waiting", () => {
+		const preview = step("Deliver the relay to preview through HoBo CD");
+		for (const part of [
+			"node packages/hobo/dist/bin/hobo.js ci deploy",
+			"--cwd packages/ci-vercel",
+			"--target preview",
+			'--sha "$GITHUB_SHA"',
+			"--provision --wait --json",
+			'HOBO_HOME="$RUNNER_TEMP/hobo-home"',
+		])
+			assert.ok(preview.includes(part), `the preview step lacks ${part}`);
+		const production = step("Promote the relay to production through HoBo CD");
 		for (const part of [
 			"node packages/hobo/dist/bin/hobo.js ci deploy",
 			"--cwd packages/ci-vercel",
@@ -181,20 +210,33 @@ describe("the relay deploy workflow", () => {
 			'--set "INFISICAL_PROJECT_ID=$HOBO_CI_RELAY_INFISICAL_PROJECT_ID"',
 			"--provision --wait --json",
 		])
-			assert.ok(deploy.includes(part), `the deploy step lacks ${part}`);
+			assert.ok(production.includes(part), `the production step lacks ${part}`);
+		// Production after preview, in the journal preview wrote.
+		assert.ok(
+			workflow.indexOf("--target preview") <
+				workflow.indexOf("--target production"),
+		);
+		assert.match(
+			preview,
+			/echo "HOBO_HOME=\$RUNNER_TEMP\/hobo-home" >> "\$GITHUB_ENV"/u,
+		);
 		// The provider and the project come from the Yard, not from here.
-		assert.doesNotMatch(deploy, /--project|--repo|vercel deploy/u);
+		for (const deploy of [preview, production])
+			assert.doesNotMatch(deploy, /--project|--repo|vercel deploy|\|\| true/u);
 		assert.match(
 			step("Install the pinned Vercel CLI for Marketplace provisioning"),
 			/add vercel@\d+\.\d+\.\d+ /u,
 		);
 	});
 
-	it("fails the smoke check on a 5xx from /healthz only, and reports /readyz", () => {
-		const smoke = step("Smoke-check /healthz and /readyz");
-		assert.match(smoke, /5\?\?\) echo "::error/u);
-		assert.match(smoke, /probe \/readyz/u);
-		assert.doesNotMatch(smoke.slice(smoke.indexOf("probe /readyz")), /exit 1/u);
+	it("verifies through CD's probes, not an ad-hoc smoke check", () => {
+		assert.doesNotMatch(workflow, /curl /u);
+		assert.doesNotMatch(workflow, /Smoke-check/u);
+		for (const name of ["HOBO_CI_RELAY_URL", "HOBO_CI_RELAY_PREVIEW_URL"])
+			assert.ok(
+				RELAY_DEPLOY_REQUIRED_VARIABLES.some((required) => required === name),
+				`${name} is not required by the gate`,
+			);
 	});
 
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {
