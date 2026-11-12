@@ -4,6 +4,7 @@ import {
 	assertReleaseImageMatchesBuild,
 	assertSha256ImageDigest,
 	ghcrDigestRef,
+	imagetoolsInspectArgv,
 	imagetoolsInspectTag,
 	isImagetoolsRegistryTagNotFound,
 	normalizeRepoDigestLine,
@@ -34,6 +35,18 @@ function stubSpawnSync(
 }
 
 describe("release ghcr digest helpers", () => {
+	it("builds docker buildx imagetools argv with built-in digest format", () => {
+		const tag = `ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.${Date.now()}`;
+		expect(imagetoolsInspectArgv(tag)).toEqual([
+			"buildx",
+			"imagetools",
+			"inspect",
+			"--format",
+			"digest",
+			tag,
+		]);
+	});
+
 	it("formats ghcr digest refs with image name for attest grep", () => {
 		expect(ghcrDigestRef("ghcr.io/hobo-labs/hobo/hobo-codegen", DIGEST_A)).toBe(
 			`ghcr.io/hobo-labs/hobo/hobo-codegen@${DIGEST_A}`,
@@ -69,12 +82,52 @@ describe("release ghcr digest helpers", () => {
 		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
 	});
 
-	it("fails closed when imagetools returns success but unparsable JSON", () => {
+	it("fails closed when imagetools returns success but not a digest", () => {
 		const run = vi.fn(() => stubSpawnSync(0, ""));
-		run.mockReturnValueOnce({ ...stubSpawnSync(0, ""), stdout: "not-json" });
+		run.mockReturnValueOnce({
+			...stubSpawnSync(0, ""),
+			stdout: "not-a-digest",
+		});
 		expect(() => imagetoolsInspectTag("ghcr.io/x/y:v1", run)).toThrow(
-			/unparsable JSON/u,
+			/sha256:/u,
 		);
+	});
+
+	it("returns digest when tag exists (buildx digest format stdout)", () => {
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1";
+		const inspected = imagetoolsInspectTag(
+			tag,
+			vi.fn(() => ({
+				...stubSpawnSync(0, ""),
+				stdout: `${DIGEST_B}\n`,
+			})),
+		);
+		expect(inspected).toEqual({ digest: DIGEST_B });
+	});
+
+	it("returns undefined when tag is missing (buildx not-found stderr)", () => {
+		const tag = `ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.${Date.now()}`;
+		expect(
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() => stubSpawnSync(1, `ERROR: ${tag}: not found`)),
+			),
+		).toBeUndefined();
+	});
+
+	it("fails loudly on docker CLI usage errors (status 125)", () => {
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.168";
+		expect(() =>
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() =>
+					stubSpawnSync(
+						125,
+						"Run 'docker COMMAND --help' for more information on a command.\n",
+					),
+				),
+			),
+		).toThrow(/status 125/u);
 	});
 
 	it("imagetools inspect fails closed on non-absent errors", () => {

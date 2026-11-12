@@ -135,7 +135,12 @@ function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	return assertSha256ImageDigest(top, "imagetools digest");
 }
 
-/** Test and production parser for `docker buildx imagetools inspect --format '{{json .}}'`. */
+/** argv for registry digest probe; built-in `digest` format (not custom `{{json .}}` templates). */
+export function imagetoolsInspectArgv(tag: string): readonly string[] {
+	return ["buildx", "imagetools", "inspect", "--format", "digest", tag];
+}
+
+/** Test and production parser for `docker buildx imagetools inspect --format json`. */
 export function parseImagetoolsInspectStdout(
 	stdout: string,
 ): { digest?: string; labels?: Record<string, string> } | undefined {
@@ -161,42 +166,52 @@ export function parseImagetoolsInspectStdout(
 	return undefined;
 }
 
+function imagetoolsInspectFailureSuffix(
+	stderr: string,
+	status: number,
+): string {
+	const detail = stderr.trim();
+	if (!detail) {
+		if (status === 125) {
+			return ": docker exited 125 with no stderr (buildx plugin or imagetools --format likely rejected)";
+		}
+		return "";
+	}
+	const tail = detail.split("\n").slice(-3).join(" ");
+	if (status === 125 && /Run 'docker COMMAND --help'/u.test(detail)) {
+		return `: ${tail} (use built-in imagetools --format digest; custom Go templates are unsupported on some CI docker/buildx builds)`;
+	}
+	return `: ${tail}`;
+}
+
 /** Registry lookup via buildx (requires `docker login ghcr.io`). */
 export function imagetoolsInspectTag(
 	tag: string,
 	run: ImagetoolsCommandRunner = (command, args, options) =>
 		spawnSync(command, args, options),
 ): { digest?: string; labels?: Record<string, string> } | undefined {
-	const result = run(
-		"docker",
-		["buildx", "imagetools", "inspect", tag, "--format", "{{json .}}"],
-		{
-			encoding: "utf8",
-		},
-	);
+	const result = run("docker", [...imagetoolsInspectArgv(tag)], {
+		encoding: "utf8",
+	});
 	if (result.status !== 0 || !result.stdout?.trim()) {
 		const detail = `${result.stderr ?? ""}`.trim();
 		if (isImagetoolsTagAbsent(detail, result.status ?? -1, tag))
 			return undefined;
-		const suffix = detail ? `: ${detail.split("\n").slice(-3).join(" ")}` : "";
+		const suffix = imagetoolsInspectFailureSuffix(detail, result.status ?? -1);
 		throw new Error(
 			`imagetools inspect ${tag} failed (status ${result.status ?? "?"})${suffix}`,
 		);
 	}
-	let parsed: { digest?: string; labels?: Record<string, string> } | undefined;
 	try {
-		parsed = parseImagetoolsInspectStdout(result.stdout);
+		const digest = assertSha256ImageDigest(
+			result.stdout.trim(),
+			`imagetools inspect ${tag}`,
+		);
+		return { digest };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`imagetools inspect ${tag}: ${message}`);
 	}
-	if (!parsed) {
-		throw new Error(`imagetools inspect ${tag} returned unparsable JSON`);
-	}
-	if (!parsed.digest) {
-		throw new Error(`imagetools inspect ${tag} returned no digest`);
-	}
-	return parsed;
 }
 
 /** Same bounded retry budget as `.github/actions/release-oci-attest` syft loop. */
