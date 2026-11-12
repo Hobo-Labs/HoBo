@@ -105,9 +105,11 @@ const headline =
 		? `${asText(envelope.code) ?? "HOBO_CI_SECRET_STORE_VERIFY_FAILED"}: ${redactNoise(asText(envelope.message) ?? "verify failed").split("\n")[0]}`
 		: "HOBO_CI_SECRET_STORE_VERIFY_NO_ENVELOPE: verify produced no JSON envelope";
 
-if (exitCode !== 0) {
+const fail =
+	envelope === undefined || exitCode !== 0 || !Number.isFinite(exitCode);
+if (fail) {
 	const escaped = headline.replaceAll("%", "%25").replaceAll("\r", "%0D");
 	console.log(`::error title=Secret store verify::${escaped}`);
 }
 
-process.exit(Number.isFinite(exitCode) ? exitCode : 1);
+process.exit(fail ? 1 : Number.isFinite(exitCode) && exitCode === 0 ? 0 : 1);

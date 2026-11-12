@@ -442,7 +442,8 @@ hobo ci secret-store verify --cwd packages/ci-vercel --json
 
 In the relay deploy workflow, that verify command must finish before the
 summary step runs (`|| status=$?` under bash `-e`); otherwise a non-zero exit
-hides the JSON. The workflow calls
+hides the JSON. The report script fails closed when stdout has no JSON envelope.
+The workflow calls
 `scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines,
 emit `::error::`, and never echo JWTs (details and messages pass JWT-shaped
 redaction). On Infisical OIDC failure, verify appends `oidc_sub` and

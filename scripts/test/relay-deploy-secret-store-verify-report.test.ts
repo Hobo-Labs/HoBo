@@ -93,6 +93,26 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 		}
 	});
 
+	it("fails when stdout had no JSON envelope even if verify exited 0", () => {
+		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
+		const json = join(dir, "empty.json");
+		const err = join(dir, "err.txt");
+		try {
+			writeFileSync(json, "");
+			writeFileSync(err, "");
+			const ran = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", "--no-warnings", report, json, err, "0"],
+				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /HOBO_CI_SECRET_STORE_VERIFY_NO_ENVELOPE/u);
+			assert.match(ran.stdout, /::error title=Secret store verify::/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("fails loudly when stdout had no JSON envelope", () => {
 		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
 		const json = join(dir, "empty.json");
