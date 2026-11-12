@@ -23,11 +23,7 @@ import {
 	readRepo,
 	scaleWorkspaceDurations,
 } from "./dependent-tests.mts";
-import {
-	fetchFleetCapacityVariable,
-	resolveMainWorkspaceParallelCap,
-	resolveMainWorkspaceShardRunners,
-} from "./load-fleet-capacity.mts";
+import { resolveMainWorkspaceParallelCap } from "./load-fleet-capacity.mts";
 import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
@@ -86,46 +82,7 @@ async function main(): Promise<void> {
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
-	function emitShardMatrix(
-		shardCount: number,
-		fleet: Awaited<ReturnType<typeof fetchFleetCapacityVariable>>,
-	): void {
-		const matrix = resolveMainWorkspaceShardRunners(
-			shardCount,
-			fleet,
-			Date.now(),
-		);
-		setOutput("shard_matrix", JSON.stringify(matrix));
-	}
-
 	if (head && tryRestorePlanCache(head)) {
-		const fleetOptions = { repository, token };
-		const fleet = await fetchFleetCapacityVariable(fleetOptions);
-		let shardCount = 1;
-		if (CACHE_DIR) {
-			try {
-				const outputsText = readFileSync(
-					join(CACHE_DIR, "outputs.env"),
-					"utf8",
-				);
-				const shardsLine = outputsText
-					.split("\n")
-					.find((line) => line.startsWith("shards="));
-				if (shardsLine) {
-					const shardsJson = shardsLine.slice("shards=".length).trim();
-					const parsed: unknown = JSON.parse(shardsJson);
-					if (
-						Array.isArray(parsed) &&
-						parsed.every((value) => Number.isInteger(value) && value >= 0)
-					) {
-						shardCount = parsed.length;
-					}
-				}
-			} catch {
-				/* keep default */
-			}
-		}
-		emitShardMatrix(shardCount, fleet);
 		return;
 	}
 	let base = "";
@@ -194,7 +151,6 @@ async function main(): Promise<void> {
 					base ? cliRootFileReader(base) : undefined,
 				);
 	const fleetOptions = { repository, token };
-	const fleetCapacity = await fetchFleetCapacityVariable(fleetOptions);
 	const parallelCap = await resolveMainWorkspaceParallelCap(fleetOptions);
 	const targetSeconds = Number(
 		process.env.MAIN_SHARD_TARGET_SECONDS ??
@@ -229,7 +185,6 @@ async function main(): Promise<void> {
 		count === 0
 			? "[]"
 			: `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
-	emitShardMatrix(count, fleetCapacity);
 	console.error(
 		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
 	);

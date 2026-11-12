@@ -28,6 +28,8 @@ describe("main full gate workspace sharding", () => {
 			workflow.indexOf("  main_workspace_tests:", mainStart),
 		);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
+		assert.match(plan, /emit-main-workspace-shard-matrix\.mts/u);
+		assert.match(plan, /id: shard_matrix/u);
 		assert.match(plan, /needs: \[ci-runner-image\]/u);
 		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
 		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);

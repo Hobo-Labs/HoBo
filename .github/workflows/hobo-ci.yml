@@ -883,7 +883,7 @@ jobs:
       main_tests: ${{ steps.plan.outputs.main_tests }}
       main_scope: ${{ steps.plan.outputs.main_scope }}
       shards: ${{ steps.plan.outputs.shards }}
-      shard_matrix: ${{ steps.plan.outputs.shard_matrix }}
+      shard_matrix: ${{ steps.shard_matrix.outputs.shard_matrix }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -922,6 +922,14 @@ jobs:
           HOBO_TURBO_INVOKER: mise
           MAIN_GATE_PLAN_CACHE_DIR: ${{ runner.temp }}/hobo-main-gate-plan
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
+      - name: Emit workspace shard matrix
+        id: shard_matrix
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_CI_FLEET_CAPACITY_JSON: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
+          MAIN_GATE_SHARDS: ${{ steps.plan.outputs.shards }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/emit-main-workspace-shard-matrix.mts
       - name: Save main workspace plan cache
         if: always() && steps.plan-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
