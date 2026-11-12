@@ -300,9 +300,11 @@ package; until then HoBo CI's deployment is unchanged.
 
 ## Limits and honest scope
 
-- The live lanes (Vercel, Cloudflare, one Prometheus-backed verification, and
-  `kind` for `@hobo/cd-kube-fleet`) are credential- or availability-gated and
-  skip with a visible reason ([live-provider-matrix.md](./live-provider-matrix.md)).
+- Live lanes are credential- or availability-gated and skip with a visible
+  reason. The `kind` lane for `@hobo/cd-kube-fleet` exists; the Vercel,
+  Cloudflare and Prometheus-backed verification lanes plan 0024 requires are
+  tracked in [live-provider-matrix.md](./live-provider-matrix.md#hobocd-live-lanes).
+  Nothing here claims a live run that has not happened.
 - Fixtures are reachable only with `--simulate`, which labels every result.
 - `hobo:resolver` components are exercised through the reference components
   and the conformance kit; componentize's default output is still synthetic

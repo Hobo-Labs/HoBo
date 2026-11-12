@@ -136,6 +136,19 @@ binding changes between lanes — the swap logic is identical.
 Success requires `reapplied` **and** zero failed probe samples; any probe
 failure exits non-zero and the archived evidence names the failing samples.
 
+## HoBo.CD live lanes
+
+Plan 0024 R16 requires four credential- or availability-gated lanes for
+[HoBo.CD](./continuous-delivery.md). Each must skip with a visible reason when
+its environment is absent. Status is recorded here only when a lane has run.
+
+| Lane | Gate | Status |
+|---|---|---|
+| `@hobo/cd-kube-fleet` OCM and Karmada realizers against hubs in `kind` (`test/kind-lane.test.ts`) | `HOBO_KIND_OCM_*`, `HOBO_KIND_KARMADA_*` | Lane exists; skips naming the missing variable. No archived run yet |
+| Vercel delivery through a reconciler | Vercel credentials | Required by R16; not yet recorded |
+| Cloudflare delivery through a reconciler | Cloudflare credentials | Required by R16; not yet recorded |
+| Prometheus-backed verification | A Prometheus HTTP API endpoint | Required by R16; not yet recorded |
+
 ## Credential delivery (who holds the token)
 
 | Source | Providers | Status |
