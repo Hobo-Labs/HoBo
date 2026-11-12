@@ -143,6 +143,16 @@ export function parseOpenSshEd25519PrivateKey(pem: string): Ed25519Key {
  * repeating it: secrets are masked in logs, but a wrong value can still be
  * half a key.
  */
+const OTHER_SSH_KEY_TYPES: readonly string[] = [
+	"ssh-rsa",
+	"ssh-dss",
+	"ecdsa-sha2-nistp256",
+	"ecdsa-sha2-nistp384",
+	"ecdsa-sha2-nistp521",
+	"sk-ssh-ed25519@openssh.com",
+	"sk-ecdsa-sha2-nistp256@openssh.com",
+];
+
 function unreadableSigningKeyHint(value: string): string {
 	if (value.startsWith("-----BEGIN ")) {
 		return "it is a private key; use the public line `ssh-keygen -y -f <key>` prints";
@@ -150,8 +160,11 @@ function unreadableSigningKeyHint(value: string): string {
 	if (value.startsWith("SHA256:")) {
 		return "it is a key fingerprint; use the public key line itself";
 	}
-	if (/^(ssh-rsa|ecdsa-|sk-|ssh-dss)/u.test(value)) {
-		return `it is a ${value.split(/\s+/u)[0]} key; release tags sign with ed25519`;
+	// Name the key type only when it is exactly a known one: a prefix match
+	// would echo the first word of any value, e.g. an `sk-...` API key.
+	const first = value.split(/\s+/u)[0] ?? "";
+	if (OTHER_SSH_KEY_TYPES.includes(first)) {
+		return `it is a ${first} key; release tags sign with ed25519`;
 	}
 	const fields = value.split(/\s+/u).length;
 	return `it has ${fields} field(s) and none is ${KEY_TYPE}`;
@@ -169,18 +182,29 @@ export function parseEd25519PublicLine(line: string): Buffer {
 		.trim()
 		.replace(/^key::/u, "");
 	const fields = value.split(/\s+/u);
-	const at = fields.indexOf(KEY_TYPE);
-	const blob = at === -1 ? undefined : fields[at + 1];
-	if (!blob) {
-		throw new Error(
-			`ssh public key: expected "${KEY_TYPE} <base64>"; ${unreadableSigningKeyHint(value)}`,
-		);
+	// Each "ssh-ed25519" followed by a blob that holds an ed25519 key; an
+	// allowed_signers principal can itself be spelled "ssh-ed25519".
+	let blobs = 0;
+	for (let at = 0; at < fields.length - 1; at++) {
+		if (fields[at] !== KEY_TYPE) continue;
+		blobs += 1;
+		const key = ed25519KeyFromBlob(fields[at + 1] ?? "");
+		if (key) return key;
 	}
-	const reader = new Reader(Buffer.from(blob, "base64"), "ssh public key");
-	if (reader.text() !== KEY_TYPE) {
-		throw new Error("ssh public key: blob is not ed25519");
+	if (blobs > 0) throw new Error("ssh public key: blob is not ed25519");
+	throw new Error(
+		`ssh public key: expected "${KEY_TYPE} <base64>"; ${unreadableSigningKeyHint(value)}`,
+	);
+}
+
+function ed25519KeyFromBlob(blob: string): Buffer | undefined {
+	try {
+		const reader = new Reader(Buffer.from(blob, "base64"), "ssh public key");
+		if (reader.text() !== KEY_TYPE) return undefined;
+		return Buffer.from(reader.string());
+	} catch {
+		return undefined;
 	}
-	return Buffer.from(reader.string());
 }
 
 function signedData(message: Buffer, namespace: string): Buffer {

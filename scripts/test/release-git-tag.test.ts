@@ -137,7 +137,8 @@ describe("release signing key", () => {
 		for (const published of [
 			`github-actions[bot]@users.noreply.github.com namespaces="git" ${publicLine} release@test`,
 			`"${publicLine} release@test"`,
-			`${publicLine}\r\n`,
+			// A principal that is itself spelled like the key type.
+			`ssh-ed25519 ${publicLine} release@test`,
 		]) {
 			const key = releaseSigningKey({
 				HOBO_RELEASE_TAG_SSH_PRIVATE_KEY: pem,
@@ -159,9 +160,16 @@ describe("release signing key", () => {
 		expect(check("AAAAC3NzaC1lZDI1NTE5AAAAIL")).toThrow(
 			/1 field\(s\) and none is ssh-ed25519/,
 		);
-		expect(check("SHA256:secretlookingvalue")).not.toThrow(
-			/secretlookingvalue/,
-		);
+		expect(check("ssh-rsa AAAAB3Nza")).toThrow(/it is a ssh-rsa key/);
+		// Never echo any part of a value that is not a known key type.
+		for (const secret of [
+			"sk-proj-SECRETTOKEN123",
+			'"sk-proj-SECRETTOKEN123 extra"',
+			"ssh-rsaSECRETBLOB",
+		]) {
+			expect(check(secret)).toThrow(/expected "ssh-ed25519 <base64>"/);
+			expect(check(secret)).not.toThrow(/SECRET/);
+		}
 	});
 
 	it("refuses a published key that is not the private key's", () => {
