@@ -1,4 +1,5 @@
 import { capIsolatedContainerTimeoutMs } from "./container-timeout.js";
+import { lookupByJobName } from "./matrix-job-name.js";
 
 /** GitHub `timeout-minutes` for jobs where routing `reservedMinutes` can underestimate. */
 const WORKFLOW_JOB_TIMEOUT_MINUTES = new Map<string, number>([
@@ -18,7 +19,9 @@ export function workflowJobTimeoutMinutes(
 	jobName: string | undefined,
 ): number | undefined {
 	if (!jobName) return undefined;
-	const exact = WORKFLOW_JOB_TIMEOUT_MINUTES.get(jobName);
+	const exact = lookupByJobName(jobName, (name) =>
+		WORKFLOW_JOB_TIMEOUT_MINUTES.get(name),
+	);
 	if (exact !== undefined) return exact;
 	if (MAIN_WORKSPACE_SHARD.test(jobName)) return 20;
 	if (jobName.includes("Build and verify release image")) return 20;

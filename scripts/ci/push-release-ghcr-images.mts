@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	FULL_RELEASE_IMAGE_IDS,
 	ghcrImageTags,
 	parseReleaseRef,
 	releaseImageIdsForTrain,
@@ -29,15 +30,66 @@ function run(cmd: string, args: string[]): void {
 	}
 }
 
+/** One `docker push` attempt may run this long before it is stopped and retried. */
+export const RELEASE_PUSH_ATTEMPT_TIMEOUT_MS = 4 * 60_000;
+/**
+ * No push attempt runs past this. The hobo-mcp leg spends up to about 10
+ * minutes before its push (setup, up to 5 for the worker image, three builds),
+ * so 8 keeps it inside the job's 20 with room to report the failure.
+ */
+export const RELEASE_PUSH_BUDGET_MS = 8 * 60_000;
+
+function envMs(name: string, fallback: number): number {
+	const raw = process.env[name]?.trim();
+	if (!raw) return fallback;
+	const seconds = Number(raw);
+	if (!Number.isFinite(seconds) || seconds <= 0) {
+		throw new Error(`${name} must be a positive number of seconds, got ${raw}`);
+	}
+	return seconds * 1000;
+}
+
+/**
+ * The images this run publishes: the release train's images, or only `imageId`
+ * when one is named (the publish job runs one image per matrix leg). An image
+ * the train does not ship yields none.
+ */
+export function releaseImagesToPublish(
+	releaseRef: string,
+	imageId?: string,
+): readonly string[] {
+	const images = releaseImageIdsForTrain(parseReleaseRef(releaseRef).train);
+	if (imageId === undefined) return images;
+	// A misspelt id must not read as "not in this train" and publish nothing.
+	if (!FULL_RELEASE_IMAGE_IDS.some((id) => id === imageId)) {
+		throw new Error(`unknown release image id: ${imageId}`);
+	}
+	return images.includes(imageId) ? [imageId] : [];
+}
+
 export function pushReleaseGhcrImages(options: {
 	releaseRef: string;
 	repository: string;
 	digestListPath: string;
+	imageId?: string | undefined;
 }): string[] {
 	const parsed = parseReleaseRef(options.releaseRef);
 	const repo = options.repository;
 	const digests: string[] = [];
-	const images = releaseImageIdsForTrain(parsed.train);
+	const images = releaseImagesToPublish(options.releaseRef, options.imageId);
+	const attemptTimeoutMs = envMs(
+		"HOBO_RELEASE_PUSH_ATTEMPT_TIMEOUT_SEC",
+		RELEASE_PUSH_ATTEMPT_TIMEOUT_MS,
+	);
+	const budgetMs = envMs(
+		"HOBO_RELEASE_PUSH_BUDGET_SEC",
+		RELEASE_PUSH_BUDGET_MS,
+	);
+	if (images.length === 0) {
+		console.log(
+			`${options.imageId} is not part of the ${parsed.train} release train; nothing to publish`,
+		);
+	}
 	for (const id of images) {
 		if (id === "hobo-mcp") {
 			run("node", [
@@ -67,7 +119,12 @@ export function pushReleaseGhcrImages(options: {
 		}
 		const tag = tags[0]!;
 		run("docker", ["tag", `${id}:candidate`, tag]);
-		runDockerPushWithRetry({ tag });
+		const pushStarted = Date.now();
+		console.log(`pushing ${tag}`);
+		runDockerPushWithRetry({ tag, attemptTimeoutMs, budgetMs });
+		console.log(
+			`pushed ${tag} in ${Math.round((Date.now() - pushStarted) / 1000)}s`,
+		);
 		const inspect = spawnSync(
 			"docker",
 			["inspect", "--format={{index .RepoDigests 0}}", tag],
@@ -85,22 +142,34 @@ export function pushReleaseGhcrImages(options: {
 			"--cleanup-only",
 		]);
 	}
-	writeFileSync(options.digestListPath, `${digests.join("\n")}\n`, "utf8");
+	// An empty list means "this train ships no such image"; attest skips it.
+	writeFileSync(
+		options.digestListPath,
+		digests.length === 0 ? "" : `${digests.join("\n")}\n`,
+		"utf8",
+	);
 	return digests;
 }
 
 function main(): void {
 	const releaseRef = process.env.HOBO_RELEASE_VERSION ?? "";
 	const repository = process.env.GITHUB_REPOSITORY ?? "";
-	const digestListPath = process.argv[2] ?? "/tmp/hobo-release-digests.txt";
-	if (!releaseRef || !repository) {
-		console.error("HOBO_RELEASE_VERSION and GITHUB_REPOSITORY required");
+	const args = process.argv.slice(2);
+	const imageFlag = args.indexOf("--image");
+	const imageId = imageFlag === -1 ? undefined : args[imageFlag + 1];
+	if (imageFlag !== -1) args.splice(imageFlag, 2);
+	const digestListPath = args[0] ?? "/tmp/hobo-release-digests.txt";
+	if (!releaseRef || !repository || (imageFlag !== -1 && !imageId)) {
+		console.error(
+			"usage: HOBO_RELEASE_VERSION=... GITHUB_REPOSITORY=... push-release-ghcr-images.mts [--image <id>] [digest-list-path]",
+		);
 		process.exit(2);
 	}
 	const digests = pushReleaseGhcrImages({
 		releaseRef,
 		repository,
 		digestListPath,
+		imageId,
 	});
 	for (const line of digests) console.log(line);
 }
