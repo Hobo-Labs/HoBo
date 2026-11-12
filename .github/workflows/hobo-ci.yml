@@ -1260,7 +1260,7 @@ jobs:
 
   main_gate_finish:
     name: Main full gate (finish)
-    needs: [main-gate, main_workspace_tests]
+    needs: [main-gate, main-gate-plan, main_workspace_tests]
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
@@ -1298,6 +1298,8 @@ jobs:
       - name: Require main gate and workspace shards
         env:
           MAIN_RESULT: ${{ needs.main-gate.result }}
+          PLAN_RESULT: ${{ needs.main-gate-plan.result }}
+          PLAN_SHARDS: ${{ needs.main-gate-plan.outputs.shards }}
           WORKSPACE_RESULT: ${{ needs.main_workspace_tests.result }}
         run: |
           set -euo pipefail
@@ -1305,7 +1307,16 @@ jobs:
             echo "Main full gate did not succeed: $MAIN_RESULT" >&2
             exit 1
           fi
-          if [ "$WORKSPACE_RESULT" != "success" ] && [ "$WORKSPACE_RESULT" != "skipped" ]; then
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "Main workspace plan did not succeed: $PLAN_RESULT" >&2
+            exit 1
+          fi
+          if [ "$WORKSPACE_RESULT" = "skipped" ]; then
+            if [ "${PLAN_SHARDS:-}" != "[]" ]; then
+              echo "Main workspace shards were skipped but plan did not emit shards=[] (shards=${PLAN_SHARDS:-unset})" >&2
+              exit 1
+            fi
+          elif [ "$WORKSPACE_RESULT" != "success" ]; then
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi

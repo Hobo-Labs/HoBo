@@ -58,7 +58,10 @@ describe("main full gate workspace sharding", () => {
 		const finishStart = workflow.indexOf("  main_gate_finish:");
 		const artifact = workflow.indexOf("  artifact-trust:", finishStart);
 		const finish = workflow.slice(finishStart, artifact);
-		assert.match(finish, /needs: \[main-gate, main_workspace_tests\]/u);
+		assert.match(
+			finish,
+			/needs: \[main-gate, main-gate-plan, main_workspace_tests\]/u,
+		);
 		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
 	});
