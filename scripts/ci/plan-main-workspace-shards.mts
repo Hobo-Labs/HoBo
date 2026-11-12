@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isNonNegativeInt, isObject, isString } from "../lib/pins-json.ts";
 import { cliRootFileReader, mainGateScope } from "./affected-lanes.mts";
 import {
 	MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE,
@@ -36,6 +37,27 @@ import { loadWorkspaceDurations } from "./workspace-test-durations.mts";
 const GITHUB_OUTPUT = process.env.GITHUB_OUTPUT?.trim();
 const CACHE_DIR = process.env.MAIN_GATE_PLAN_CACHE_DIR?.trim();
 
+type PlanCacheManifest = Readonly<{
+	head: string;
+	parallelCap: number;
+}>;
+
+function parsePlanCacheManifest(text: string): PlanCacheManifest | undefined {
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (!isObject(parsed)) return undefined;
+		const head = parsed.head;
+		const parallelCap = parsed.parallelCap;
+		if (!isString(head) || head.length === 0) return undefined;
+		if (!isNonNegativeInt(parallelCap) || parallelCap < 1 || parallelCap > 8) {
+			return undefined;
+		}
+		return { head, parallelCap };
+	} catch {
+		return undefined;
+	}
+}
+
 function formatOutputs(entries: Record<string, string>): string {
 	return Object.entries(entries)
 		.map(([name, value]) => `${name}=${value}\n`)
@@ -58,12 +80,8 @@ async function tryRestorePlanCache(
 	const manifest = join(CACHE_DIR, "manifest.json");
 	const outputsPath = join(CACHE_DIR, "outputs.env");
 	try {
-		// SAFETY: manifest.json is written by savePlanCache as { head, parallelCap }.
-		const parsed = JSON.parse(readFileSync(manifest, "utf8")) as {
-			head?: string;
-			parallelCap?: number;
-		};
-		if (parsed.head !== head) return false;
+		const parsed = parsePlanCacheManifest(readFileSync(manifest, "utf8"));
+		if (parsed === undefined || parsed.head !== head) return false;
 		const outputsText = readFileSync(outputsPath, "utf8");
 		const shardsLine = outputsText
 			.split("\n")
@@ -72,11 +90,7 @@ async function tryRestorePlanCache(
 		const shardsJson = shardsLine.slice("shards=".length).trim();
 		if (mainGateShardCountFromIndexesJson(shardsJson) < 0) return false;
 		const currentCap = await resolveMainWorkspaceParallelCap(fleetOptions);
-		const cachedCap = parsed.parallelCap;
-		if (
-			cachedCap !== undefined &&
-			(!Number.isInteger(cachedCap) || cachedCap !== currentCap)
-		) {
+		if (parsed.parallelCap !== currentCap) {
 			console.error(
 				`main gate plan: cache stale (parallelCap ${parsed.parallelCap} -> ${currentCap})`,
 			);

@@ -906,9 +906,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
-          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+          key: main-gate-plan-${{ github.sha }}-${{ hash(vars.HOBO_CI_FLEET_CAPACITY) }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
           restore-keys: |
-            main-gate-plan-${{ github.sha }}-
+            main-gate-plan-${{ github.sha }}-${{ hash(vars.HOBO_CI_FLEET_CAPACITY) }}-
       - name: Plan workspace shards
         id: plan
         env:
@@ -935,7 +935,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
-          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+          key: main-gate-plan-${{ github.sha }}-${{ hash(vars.HOBO_CI_FLEET_CAPACITY) }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
 
   main-gate:
     name: Main full gate

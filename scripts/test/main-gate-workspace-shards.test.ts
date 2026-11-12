@@ -65,7 +65,7 @@ describe("main full gate workspace sharding", () => {
 		const repoDecl = src.indexOf(
 			"const repository = process.env.GITHUB_REPOSITORY",
 		);
-		const cacheRestore = src.indexOf("tryRestorePlanCache(head)");
+		const cacheRestore = src.indexOf("tryRestorePlanCache(head, fleetOptions)");
 		assert.ok(repoDecl > -1);
 		assert.ok(cacheRestore > -1);
 		assert.ok(repoDecl < cacheRestore);
