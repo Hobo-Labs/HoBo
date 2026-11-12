@@ -44,7 +44,11 @@ comma-separated list, the environment's first):
   optional `regions`, `labels`, `stationId`, `management`), such as the runner
   fleet's
   [`packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`](../ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts)
-  (one Camp per runner host, `hobo-ci-runners/<host>`);
+  (one Camp per runner host, `hobo-ci-runners/<host>`), or the **release
+  topology**
+  [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
+  (Camps `hobo-release/<npm|oci|pages>-<candidate|stable>`, see
+  [release channels](../../docs/design/release-channels.md#hobo-releases-through-hobo-cd)).
 - a module or JSON file that exports `rails`: Station Rail declarations
   (`id`, `name`, `version`, `stationId` (empty: this Station),
   `approvedProviders`, `delivery`, `metadata`), each built with
@@ -52,6 +56,34 @@ comma-separated list, the environment's first):
   runner fleet's module declares one that binds its Camp set and approves
   `self-hosted`. A Rail the Station's journal activated wins over a declared
   one; two declared Rails for one Station refuse `cd-rail-conflict`.
+
+
+### Publication Camps (catalog resolver realizers)
+
+A Camp whose `provider` is `@hobo/provider-npm`, `@hobo/provider-oci-registry`
+or `@hobo/provider-github` (or its native id) is realized by that provider's
+shipped resolver (`createCatalogResolverRealizer` in `cd-runtime.ts`), and the
+planner offers it exactly that product as a port, so a declaration resource
+`{ "type": "data.v1", "port": "hobo:<product id>" }` places only there. The
+Camp's labels bind where (`CATALOG_REALIZER_LABELS` in
+`provider-hosting-catalog.ts`); the Freight binds what, by digest:
+
+| Provider | Camp labels | Freight |
+|---|---|---|
+| all | `hobo.cd/credential-ref`: the one locator the resolver may use (`env://NAME`); nothing else is resolved for the Camp. Optional `hobo.cd/realize-mode`: `converge` (default) or `observe` (resolver `read` only, never a write) | |
+| npm | `hobo.cd/npm.registry` (`npmjs`, `github-packages`, `https://` origin), `hobo.cd/npm.auth`, `hobo.cd/npm.provenance: required`, optional `hobo.cd/npm.dist-tag` | `PACKAGE` artifacts named `<package>@<version>`, optional `<name>.sigstore` bundle, label `hobo.cd/npm.dist-tag` |
+| oci-registry | `hobo.cd/oci.registry` (host), `hobo.cd/oci.auth-realm`, `hobo.cd/oci.username` (non-secret), optional `hobo.cd/oci.tags` | `OCI_IMAGE` artifacts with a `<host>/<repo>@<digest>` coordinate on that host, label `hobo.cd/oci.tags` |
+| github | `hobo.cd/github.repository` (`owner/repo`), `hobo.cd/github.pages.branch`, `hobo.cd/github.pages.path` | a `STATIC_ASSETS` `hobo.static-site-tree/v1` index (its file blobs in the store), label `hobo.cd/github.commit-message` |
+
+CONVERGED is reported only when every resolver outcome reads `ready` from its
+own observation; a resolver refusal is a BLOCKED observation carrying its
+typed code. A missing or invalid label, or a Freight artifact the Camp cannot
+bind, is `catalog-binding-invalid`; the npm provider limits are named
+`npm-provenance-bundle-missing` and `npm-oidc-scoped-unsupported`. These Camps
+are the conductor realizer unless `--simulate` or the host supplies another; a
+topology that also opens a Kubernetes fleet (`HOBO_CD_KUBE_FLEET`) is refused
+with `cd-conductor-conflict` instead of silently using one conductor. Planning reads a Freight's
+declaration by `canonicalManifestHash`, the digest the build records (`hobo` build verb, D13).
 
 `pipeline apply --file <module>` also reads the module it applies as topology.
 Every export is parsed once with the generated `cd_topology.proto` schemas

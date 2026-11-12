@@ -11,17 +11,27 @@
  */
 
 import { create } from "@bufbuild/protobuf";
+import { canonicalManifestHash } from "@hobo/bindles";
 import {
+	ArtifactKind,
 	type CampId,
 	type CampReconciler,
+	type CampTopology,
 	type CdContext,
 	type CredentialResolver,
+	type FreightId,
 	type FreightRecord,
 	type Outcome,
+	type RealizeInput,
 	type Realizer,
+	type ReasonRecord,
 	ReasonRecordSchema,
+	type ReconcileObservationRecord,
+	ReconcileObservationRecordSchema,
 	type ReconcilerId,
 	ReconcilerMode,
+	ReconcileStatus,
+	ResourceObservationSchema,
 	type TelemetrySink,
 	type TopologyReader,
 } from "@hobo/cd";
@@ -44,7 +54,11 @@ import { createPlacementEngine } from "@hobo/cd/placement";
 // binds at merge (plan 0024): drift routing is WP7.
 import { createDriftPolicy } from "@hobo/cd/reconcile";
 import type { RunnerHostPorts } from "@hobo/ci-gh-actions/runner-host";
-import { createRegistryFromProviders, type PlannerRegistry } from "@hobo/cloud";
+import {
+	createRegistryFromProviders,
+	type PlannerRegistry,
+	type RegistrableProvider,
+} from "@hobo/cloud";
 import type { PolicyPack } from "@hobo/contracts";
 import {
 	type JsonObject as CdJsonObject,
@@ -52,6 +66,7 @@ import {
 	type DurableEventStore,
 	type HttpTransport,
 	type PrincipalRef,
+	ResolverError,
 } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
 import { agentRealizer } from "./cd-agent.js";
@@ -71,6 +86,14 @@ import {
 	TopologyConflictError,
 	yardTopology,
 } from "./cd-topology.js";
+import {
+	CATALOG_REALIZED_PRODUCTS,
+	type CatalogCampBinding,
+	type CatalogFreight,
+	CatalogRealizerError,
+	catalogCampBinding,
+	catalogRealizedProvider,
+} from "./provider-hosting-catalog.js";
 
 export type CdRuntimeOptions = Readonly<{
 	env: Readonly<Record<string, string | undefined>>;
@@ -277,14 +300,53 @@ export async function openCdRuntime(
 	// binds at merge (plan 0024): the baseline delivery policy pack (WP19).
 	const policyPack = options.policyPack ?? createCdBaselinePack();
 	const resolvePack = options.resolvePack ?? (async () => policyPack);
+	// Camps declared on a catalogued publication provider (npm, OCI registry,
+	// GitHub Pages) are realized by that provider's shipped resolver.
+	const catalogCamps = (await declaredTopology.camps()).filter(
+		(camp) => catalogRealizedProvider(camp.provider) !== undefined,
+	);
+	// One conductor per runtime: a topology that needs both the kube fleet's
+	// realizer and the catalog's is refused, never silently resolved to one.
+	if (
+		!config.simulate &&
+		catalogCamps.length > 0 &&
+		kube?.value.realizer &&
+		!options.realizers?.conductor
+	) {
+		await opened?.close();
+		return refusal(
+			"cd-conductor-conflict",
+			`the topology declares publication Camps (${catalogCamps
+				.map((camp) => camp.campId)
+				.join(", ")}) and a Kubernetes fleet: both need the conductor realizer`,
+			"Open publication Camps (--yard) and the Kubernetes fleet (HOBO_CD_KUBE_*) in separate hobo deploy runs, or compose one conductor through options.realizers.",
+		);
+	}
 	const realizers: CdHostInputs["realizers"] = {
+		...(!config.simulate && catalogCamps.length > 0
+			? {
+					conductor: (scope: ComposedContinuousDelivery["scope"]) =>
+						createCatalogResolverRealizer({
+							topology,
+							freight: (id) => scope.freight.get(id),
+							artifacts: scope.artifacts,
+							http,
+							credentials,
+							now,
+						}),
+				}
+			: undefined),
 		...(config.simulate
 			? { conductor: () => createSimulatedRealizer() }
 			: undefined),
 		...(kube?.value.realizer ? { conductor: kube.value.realizer } : undefined),
 		...options.realizers,
 	};
-	const registry = options.registry;
+	const registry =
+		options.registry ??
+		(catalogCamps.length > 0
+			? createRegistryFromProviders(catalogPlannerProviders(catalogCamps))
+			: undefined);
 	const host: CdHostInputs = {
 		store,
 		railCatalog,
@@ -296,6 +358,8 @@ export async function openCdRuntime(
 			// A Freight's declaration is the Bindle the build stored under its
 			// declaration hash (`hobo build`, D13); planning refuses when absent.
 			registry: registry ?? emptyRegistry(),
+			// The digest `hobo build` records as `declaration_hash` (D13).
+			declarationDigest: (declaration) => canonicalManifestHash(declaration),
 			async declaration(freight: FreightRecord) {
 				const bytes = await cd.artifacts.get(
 					freight.manifest?.declarationHash as `sha256:${string}`,
@@ -462,6 +526,289 @@ export function stationOriginOf(feedUrl: string): string {
 		// Unparsable: the transport refuses it with its own reason.
 	}
 	return feedUrl;
+}
+
+/**
+ * Planner offerings of the declared publication Camps: each catalogued
+ * provider offers exactly its one resolver product as a port, so a
+ * declaration resource `{ type: "data.v1", port: "hobo:<productId>" }`
+ * matches only a Camp that provider realizes. Nothing else is offered.
+ */
+export function catalogPlannerProviders(
+	camps: readonly CampTopology[],
+): RegistrableProvider[] {
+	const byProvider = new Map<string, Set<string>>();
+	for (const camp of camps) {
+		const id = catalogRealizedProvider(camp.provider);
+		if (!id) continue;
+		const regions = byProvider.get(id) ?? new Set<string>();
+		for (const region of camp.regions) regions.add(region);
+		byProvider.set(id, regions);
+	}
+	return [...byProvider.entries()]
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.map(([id, regions]) => {
+			// SAFETY: keys come from catalogRealizedProvider above.
+			const port =
+				CATALOG_REALIZED_PRODUCTS[id as keyof typeof CATALOG_REALIZED_PRODUCTS];
+			return {
+				id,
+				regions: [...regions].sort(),
+				capabilities: [
+					{
+						port,
+						satisfies(request) {
+							if (request.port !== port) return { kind: "none" };
+							return (request.features ?? []).length === 0
+								? { kind: "full" }
+								: { kind: "partial", missing: [...(request.features ?? [])] };
+						},
+						estimateCost() {
+							return {
+								marginalPrice: "0",
+								sku: port,
+								unit: "publication",
+								pricingStatus: "unknown",
+							};
+						},
+					},
+				],
+				capabilityManifest() {
+					return {
+						providerId: id,
+						published: {},
+						capabilities: {
+							capabilities: [
+								{
+									port,
+									features: [],
+									productIds: [port],
+									realizedBy: "catalog resolver realizer",
+								},
+							],
+						},
+						cost: { facts: [] },
+					};
+				},
+			} satisfies RegistrableProvider;
+		});
+}
+
+/** A thrown resolver refusal (or any failure) as a typed code and message. */
+function refusalOf(error: Error) {
+	return {
+		code:
+			error instanceof ResolverError || error instanceof CatalogRealizerError
+				? error.code
+				: "realize-failed",
+		message: error.message,
+	};
+}
+
+function realizerReason(code: string, message: string, remediation: string) {
+	return create(ReasonRecordSchema, { code, message, remediation });
+}
+
+/**
+ * The conductor realizer for publication Camps: the Set's Freight is realized
+ * by the Camp's catalogued resolver (`catalogCampBinding`), one resolve
+ * request per artifact. CONVERGED is reported only from the resolvers' own
+ * observed outcomes (I5); a resolver refusal is a BLOCKED observation that
+ * carries its typed code, never a success.
+ */
+export function createCatalogResolverRealizer(
+	deps: Readonly<{
+		topology: TopologyReader;
+		freight: (id: FreightId) => Promise<FreightRecord | undefined>;
+		artifacts: { get(digest: string): Promise<Uint8Array | undefined> };
+		http: HttpTransport;
+		credentials: CredentialResolver;
+		now: () => number;
+	}>,
+): Realizer {
+	async function bindingOf(input: RealizeInput): Promise<
+		| Readonly<{
+				binding: CatalogCampBinding;
+				freight: CatalogFreight;
+		  }>
+		| readonly ReasonRecord[]
+	> {
+		const camp = await deps.topology.camp(input.campId);
+		if (!camp)
+			return [
+				realizerReason(
+					"catalog-camp-unknown",
+					`Camp ${input.campId} is not declared`,
+					"Declare the Camp in the topology (--yard, HOBO_CD_TOPOLOGY).",
+				),
+			];
+		const binding = catalogCampBinding(camp, {
+			artifacts: {
+				get: (digest) => deps.artifacts.get(digest as `sha256:${string}`),
+			},
+			resolveCredential: (ref) =>
+				deps.credentials.resolve(ref, `cd-realize:${input.campId}`),
+		});
+		if (!binding)
+			return [
+				realizerReason(
+					"compose-realizer-missing",
+					`Camp ${input.campId} (provider ${camp.provider}) has no catalog resolver realizer`,
+					"Declare the Camp on @hobo/provider-npm, @hobo/provider-oci-registry or @hobo/provider-github, or compose another conductor realizer.",
+				),
+			];
+		// SAFETY: a Set names the Freight id it was resolved from.
+		const record = await deps.freight(input.desired.freightId as FreightId);
+		if (!record?.manifest)
+			return [
+				realizerReason(
+					"catalog-freight-missing",
+					`Freight ${input.desired.freightId} of Set ${input.desired.setId} is not recorded`,
+					"Record the Freight before promoting it.",
+				),
+			];
+		return {
+			binding,
+			freight: {
+				freightId: record.freightId,
+				labels: { ...record.manifest.labels },
+				artifacts: record.manifest.artifacts.map((artifact) => ({
+					name: artifact.name,
+					kind: ArtifactKind[artifact.kind] ?? "",
+					digest: artifact.digest,
+					coordinate: artifact.coordinate,
+				})),
+			},
+		};
+	}
+
+	function observation(
+		input: RealizeInput,
+		status: ReconcileStatus,
+		reasons: readonly ReasonRecord[],
+		resources: readonly Readonly<{
+			resource: string;
+			physicalId: string;
+			healthy: boolean;
+		}>[] = [],
+	): ReconcileObservationRecord {
+		return create(ReconcileObservationRecordSchema, {
+			campId: input.campId,
+			setId: input.desired.setId,
+			reconcilerId: input.reconcilerId,
+			fenceToken: String(input.fence),
+			status,
+			reasons: [...reasons],
+			observedAt: new Date(deps.now()).toISOString(),
+			resources: resources.map((r) =>
+				create(ResourceObservationSchema, {
+					...r,
+					kind: "catalog-resolver",
+				}),
+			),
+		});
+	}
+
+	// Per Camp, what a binding remembers across passes (acknowledged uploads).
+	const memories = new Map<string, Set<string>>();
+
+	async function pass(
+		input: RealizeInput,
+		asked: "converge" | "observe",
+	): Promise<ReconcileObservationRecord> {
+		let bound: Awaited<ReturnType<typeof bindingOf>>;
+		try {
+			bound = await bindingOf(input);
+		} catch (error) {
+			return blocked(
+				input,
+				refusalOf(error instanceof Error ? error : new Error(String(error))),
+			);
+		}
+		if (!("binding" in bound))
+			return observation(input, ReconcileStatus.BLOCKED, bound);
+		const { binding, freight } = bound;
+		// An observe-mode Camp never writes, whatever the pass asks.
+		const mode = binding.mode === "observe" ? "observe" : asked;
+		let memory = memories.get(input.campId);
+		if (!memory) {
+			memory = new Set<string>();
+			memories.set(input.campId, memory);
+		}
+		const http = binding.transport?.(deps.http, memory) ?? deps.http;
+		const resources: {
+			resource: string;
+			physicalId: string;
+			healthy: boolean;
+		}[] = [];
+		try {
+			const requests = binding.requests(freight);
+			if (requests.length === 0)
+				return observation(input, ReconcileStatus.BLOCKED, [
+					realizerReason(
+						"catalog-freight-empty",
+						`Freight ${freight.freightId} has no artifact ${binding.providerId} realizes`,
+						"Record the artifacts this Camp publishes in the Freight.",
+					),
+				]);
+			const resolver = binding.registry.get(binding.productId);
+			if (!resolver)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					`${binding.providerId} registry has no ${binding.productId} resolver`,
+				);
+			let pending = false;
+			for (const request of requests) {
+				const outcome =
+					mode === "converge"
+						? await resolver.reconcile(request, http)
+						: await resolver.read?.(request, http);
+				// Ready only as the resolver observed it: every realized product
+				// reports `outputs.ready` from its own read (digest and every tag,
+				// dist-tag, or the published tree and its build).
+				const ready = outcome?.outputs.ready === true;
+				if (!ready) pending = true;
+				resources.push({
+					resource: request.ref.logicalId,
+					physicalId: outcome?.physicalId ?? "",
+					healthy: ready,
+				});
+			}
+			return pending
+				? observation(input, ReconcileStatus.CONVERGING, [], resources)
+				: observation(input, ReconcileStatus.CONVERGED, [], resources);
+		} catch (error) {
+			return blocked(
+				input,
+				refusalOf(error instanceof Error ? error : new Error(String(error))),
+				resources,
+			);
+		}
+	}
+
+	function blocked(
+		input: RealizeInput,
+		{ code, message }: Readonly<{ code: string; message: string }>,
+		resources: Parameters<typeof observation>[3] = [],
+	): ReconcileObservationRecord {
+		return observation(
+			input,
+			ReconcileStatus.BLOCKED,
+			[
+				realizerReason(
+					code,
+					message,
+					"Fix the cause the resolver names; the next pass re-observes and is idempotent.",
+				),
+			],
+			resources,
+		);
+	}
+
+	return Object.freeze({
+		converge: (input: RealizeInput, _ctx: CdContext) => pass(input, "converge"),
+		observe: (input: RealizeInput, _ctx: CdContext) => pass(input, "observe"),
+	} satisfies Realizer);
 }
 
 /** An agent-mode reconciler for `hobo deploy agent run` (outbound HTTPS only, I3). */

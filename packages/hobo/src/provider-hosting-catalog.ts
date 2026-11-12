@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import {
 	type ClaimableOperationKeyDeriver,
+	type JsonObject as CoreJsonObject,
 	createBoundedFetchTransport,
 	createClaimableOperationKeyDeriver,
 	createResolverRegistry,
 	type HttpTransport,
+	type ResolveRequest,
 	ResolverError,
 	type ResourceResolver,
 } from "@hobo/core";
@@ -67,7 +69,9 @@ import {
 	netlifyResolverRegistry,
 } from "@hobo/provider-netlify";
 import {
+	NPM_AUTH_MODES,
 	NPM_PACKAGE_VERSION_PRODUCT_ID,
+	type NpmRegistryBinding,
 	type NpmResolverOptions,
 	npmResolverRegistry,
 	parseNpmRegistryBinding,
@@ -91,7 +95,7 @@ import {
 	vercelResolverRegistry,
 } from "@hobo/provider-vercel";
 import type { createVerifiedHostingCredentialLease } from "./hosting-credential-scope.js";
-import { isJsonString, type JsonObject } from "./json.js";
+import { isJsonString, type JsonObject, parseJsonObject } from "./json.js";
 import type {
 	HostingDesiredInput,
 	HostingOperatingLiabilityReader,
@@ -1363,4 +1367,465 @@ function externalRegistry(
 				resolver.productId,
 			);
 	return registry;
+}
+
+// ── Resolver realizers for declared Camps (`@hobo/cd` conductor) ────────────
+//
+// A Camp whose declared `provider` is one of the artifact publication targets
+// below is realized by that provider's shipped resolver: npm package versions
+// (`@hobo/provider-npm`), OCI images by digest (`@hobo/provider-oci-registry`)
+// and GitHub Pages sites (`@hobo/provider-github`). The Camp's labels bind
+// *where* (registry, repository, branch, credential locator); the Freight
+// binds *what* (its artifacts by digest, and per-release directives in its
+// labels). Nothing here reads ambient credentials: the one locator the Camp
+// declares is resolved through the host's CredentialResolver at call time,
+// and no other locator is ever resolved for that Camp.
+
+// public-contract: Camp labels (binding) and Freight labels (directives) the catalog resolver realizer reads.
+export const CATALOG_REALIZER_LABELS = Object.freeze({
+	/** Camp: the credential locator (`env://NAME`, ...) the resolver may use. */
+	credentialRef: "hobo.cd/credential-ref",
+	/** Camp: `npmjs`, `github-packages` or a Verdaccio `https://` origin. */
+	npmRegistry: "hobo.cd/npm.registry",
+	/** Camp: `token` or `oidc-trusted-publishing`. */
+	npmAuth: "hobo.cd/npm.auth",
+	/** Camp or Freight (Camp wins): the dist-tag the Camp points at the version. */
+	npmDistTag: "hobo.cd/npm.dist-tag",
+	/** Camp: `required` refuses a package whose Freight carries no Sigstore bundle. */
+	npmProvenance: "hobo.cd/npm.provenance",
+	/** Camp: the registry host the Camp writes to (`ghcr.io`). */
+	ociRegistry: "hobo.cd/oci.registry",
+	/** Camp: the token realm a bearer challenge from that host may name. */
+	ociAuthRealm: "hobo.cd/oci.auth-realm",
+	/** Camp: the (non-secret) basic-auth user name paired with the credential. */
+	ociUsername: "hobo.cd/oci.username",
+	/** Camp and Freight (both apply): comma-separated tags for the digest. */
+	ociTags: "hobo.cd/oci.tags",
+	/** Camp: `owner/repo` of the Pages site. */
+	githubRepository: "hobo.cd/github.repository",
+	/** Camp: the branch Pages builds from (branch publish mode). */
+	githubPagesBranch: "hobo.cd/github.pages.branch",
+	/** Camp: `/` or `/docs`. */
+	githubPagesPath: "hobo.cd/github.pages.path",
+	/** Freight: the commit message of the published branch commit. */
+	githubCommitMessage: "hobo.cd/github.commit-message",
+	/**
+	 * Camp: `converge` (default) writes the Freight to the target; `observe`
+	 * only re-reads it (resolver `read`, read-only credential scope) and
+	 * reports it ready or not: a channel that qualifies what another Camp
+	 * already published never writes.
+	 */
+	realizeMode: "hobo.cd/realize-mode",
+} as const);
+
+// public-contract: the typed refusal codes of the catalog resolver realizer.
+export const CATALOG_REALIZER_REFUSAL_CODES = Object.freeze([
+	/** A Camp label or a Freight artifact does not bind a valid target: always blocks. */
+	"catalog-binding-invalid",
+	/** npm OIDC trusted publishing of a scoped package (the registry's exchange is unreachable through the transport guard). */
+	"npm-oidc-scoped-unsupported",
+	/** A provenance-required npm Camp and a Freight with no Sigstore bundle for the package. */
+	"npm-provenance-bundle-missing",
+] as const);
+export type CatalogRealizerRefusalCode =
+	(typeof CATALOG_REALIZER_REFUSAL_CODES)[number];
+
+/**
+ * A refusal of the catalog resolver realizer itself (before any resolver
+ * runs), carrying its own typed code: a misdeclared Camp is never read as a
+ * provider limit, and each provider limit is named exactly.
+ */
+export class CatalogRealizerError extends Error {
+	readonly code: CatalogRealizerRefusalCode;
+	constructor(code: CatalogRealizerRefusalCode, message: string) {
+		super(message);
+		this.name = "CatalogRealizerError";
+		this.code = code;
+	}
+}
+
+export type CatalogRealizeMode = "converge" | "observe";
+
+// public-contract: the providers the catalog resolver realizer realizes, with their one product.
+export const CATALOG_REALIZED_PRODUCTS = Object.freeze({
+	npm: NPM_PACKAGE_VERSION_PRODUCT_ID,
+	"oci-registry": OCI_REGISTRY_IMAGE_PRODUCT_ID,
+	github: GITHUB_PAGES_SITE_PRODUCT_ID,
+} as const);
+
+export type CatalogRealizedProviderId = keyof typeof CATALOG_REALIZED_PRODUCTS;
+
+/** The realized provider a declared Camp `provider` names (native id or package name). */
+export function catalogRealizedProvider(
+	provider: string,
+): CatalogRealizedProviderId | undefined {
+	const ids: readonly CatalogRealizedProviderId[] = [
+		"npm",
+		"oci-registry",
+		"github",
+	];
+	return ids.find((id) => provider === id || provider === MANIFEST_IDS[id]);
+}
+
+/** The Freight a Set names, as the realizer reads it (`ArtifactKind` names without prefix). */
+export type CatalogFreight = Readonly<{
+	freightId: string;
+	labels: Readonly<Record<string, string>>;
+	artifacts: readonly Readonly<{
+		name: string;
+		kind: string;
+		digest: string;
+		coordinate: string;
+	}>[];
+}>;
+
+export type CatalogCampBinding = Readonly<{
+	providerId: CatalogRealizedProviderId;
+	productId: string;
+	credentialRef: string;
+	/** `observe` Camps only read the target (`hobo.cd/realize-mode`). */
+	mode: CatalogRealizeMode;
+	registry: HostingResolverRegistry;
+	/** One resolve request per Freight artifact this provider realizes. */
+	requests(freight: CatalogFreight): readonly ResolveRequest[];
+	/**
+	 * The transport the resolver calls through, given the realizer's
+	 * transport and memory the realizer keeps for this Camp across passes.
+	 */
+	transport?(http: HttpTransport, memory: Set<string>): HttpTransport;
+}>;
+
+export type CatalogCampBindingDeps = Readonly<{
+	/** The CD artifact store (`ArtifactStore.get`). */
+	artifacts: { get(digest: string): Promise<Uint8Array | undefined> };
+	/** The host CredentialResolver, for exactly the Camp's declared locator. */
+	resolveCredential: (ref: string) => Promise<Readonly<Record<string, string>>>;
+}>;
+
+function bindingRefusal(campId: string, message: string): never {
+	throw new CatalogRealizerError(
+		"catalog-binding-invalid",
+		`Camp ${campId}: ${message}. Remediation: declare the Camp's ${Object.values(
+			CATALOG_REALIZER_LABELS,
+		)
+			.filter((label) => label.startsWith("hobo.cd/"))
+			.join(", ")} labels as packages/hobo/CD.md describes`,
+	);
+}
+
+function logicalIdOf(value: string): string {
+	const id = value
+		.replace(/[^A-Za-z0-9._-]+/gu, "-")
+		.replace(/^[^A-Za-z0-9]+/u, "")
+		.slice(0, 128);
+	return id === "" ? "artifact" : id;
+}
+
+function listOf(value: string | undefined): string[] {
+	return (value ?? "")
+		.split(",")
+		.map((item) => item.trim())
+		.filter((item) => item !== "");
+}
+
+function npmRegistryOf(campId: string, value: string): NpmRegistryBinding {
+	if (value === "npmjs" || value === "github-packages") return { kind: value };
+	if (value.startsWith("https://")) return { kind: "verdaccio", origin: value };
+	return bindingRefusal(
+		campId,
+		`${CATALOG_REALIZER_LABELS.npmRegistry} must be npmjs, github-packages or an https:// origin`,
+	);
+}
+
+/**
+ * The resolver binding of one declared Camp, or `undefined` when its provider
+ * is not realized by the catalog resolver realizer. A Camp missing a binding
+ * label is refused (typed), never defaulted to another target.
+ */
+export function catalogCampBinding(
+	camp: Readonly<{
+		campId: string;
+		provider: string;
+		labels: Readonly<Record<string, string>>;
+	}>,
+	deps: CatalogCampBindingDeps,
+): CatalogCampBinding | undefined {
+	const providerId = catalogRealizedProvider(camp.provider);
+	if (!providerId) return undefined;
+	const productId = CATALOG_REALIZED_PRODUCTS[providerId];
+	const L = CATALOG_REALIZER_LABELS;
+	const label = (key: string) => {
+		const value = camp.labels[key]?.trim();
+		return value === undefined || value === "" ? undefined : value;
+	};
+	const required = (key: string) =>
+		label(key) ?? bindingRefusal(camp.campId, `label ${key} is required`);
+	const credentialRef = required(L.credentialRef);
+	const declaredMode = label(L.realizeMode) ?? "converge";
+	const mode = (["converge", "observe"] as const).find(
+		(m) => m === declaredMode,
+	);
+	if (!mode)
+		return bindingRefusal(
+			camp.campId,
+			`${L.realizeMode} must be converge or observe`,
+		);
+	// Only the declared locator: a request for any other is refused.
+	const token = async (ref: string) => {
+		if (ref !== credentialRef)
+			throw new ResolverError(
+				"RESOLVER_CREDENTIAL_MISSING",
+				`Camp ${camp.campId} resolves only its declared credential locator`,
+			);
+		const material = await deps.resolveCredential(ref);
+		const value = material.token ?? material.password ?? "";
+		if (value === "")
+			throw new ResolverError(
+				"RESOLVER_CREDENTIAL_MISSING",
+				`credential ${ref} resolved to no material for Camp ${camp.campId}`,
+			);
+		return value;
+	};
+	const request = (
+		logicalId: string,
+		desired: CoreJsonObject,
+	): ResolveRequest => ({
+		ref: {
+			slot: "service",
+			productId,
+			logicalId: logicalIdOf(logicalId),
+		},
+		desired,
+		credentialRef,
+	});
+	switch (providerId) {
+		case "npm": {
+			const registry = npmRegistryOf(camp.campId, required(L.npmRegistry));
+			const declaredAuth = required(L.npmAuth);
+			const auth = NPM_AUTH_MODES.find((mode) => mode === declaredAuth);
+			if (!auth)
+				bindingRefusal(
+					camp.campId,
+					`${L.npmAuth} must be one of ${NPM_AUTH_MODES.join(", ")}`,
+				);
+			const base = parseNpmRegistryBinding(registry).base;
+			const provenanceRequired = label(L.npmProvenance) === "required";
+			return Object.freeze({
+				providerId,
+				productId,
+				credentialRef,
+				mode,
+				registry: npmResolverRegistry({
+					registry,
+					auth,
+					resolveCredential: token,
+					artifacts: deps.artifacts,
+				}),
+				requests(freight: CatalogFreight) {
+					const distTag =
+						label(L.npmDistTag) ?? freight.labels[L.npmDistTag]?.trim() ?? "";
+					const out: ResolveRequest[] = [];
+					for (const artifact of freight.artifacts) {
+						if (artifact.kind !== "PACKAGE") continue;
+						const at = artifact.name.lastIndexOf("@");
+						if (at <= 0)
+							bindingRefusal(
+								camp.campId,
+								`package artifact ${artifact.name} is not named <package>@<version>`,
+							);
+						const bundle = freight.artifacts.find(
+							(other) => other.name === `${artifact.name}.sigstore`,
+						);
+						const packageName = artifact.name.slice(0, at);
+						if (provenanceRequired && !bundle)
+							throw new CatalogRealizerError(
+								"npm-provenance-bundle-missing",
+								`Camp ${camp.campId} requires npm provenance, and Freight ${freight.freightId} carries no Sigstore bundle for ${artifact.name}. Remediation: record the package's Sigstore provenance bundle (${artifact.name}.sigstore) in the Freight; HoBo never publishes a provenance-required package without one`,
+							);
+						if (
+							auth === "oidc-trusted-publishing" &&
+							packageName.startsWith("@")
+						)
+							throw new CatalogRealizerError(
+								"npm-oidc-scoped-unsupported",
+								`Camp ${camp.campId} binds npm OIDC trusted publishing, which @hobo/provider-npm refuses for the scoped package ${packageName}. Remediation: bind token auth (${L.npmAuth}=token) for scoped packages`,
+							);
+						out.push(
+							request(`npm-${artifact.name}`, {
+								registry: base,
+								packageName,
+								version: artifact.name.slice(at + 1),
+								distTag,
+								artifactDigest: artifact.digest,
+								access: "public",
+								...(bundle ? { provenanceDigest: bundle.digest } : undefined),
+							}),
+						);
+					}
+					return out;
+				},
+			});
+		}
+		case "oci-registry": {
+			const host = required(L.ociRegistry);
+			const realm = label(L.ociAuthRealm);
+			const username = label(L.ociUsername);
+			const endpoint = {
+				host,
+				...(realm ? { authRealms: [realm] } : undefined),
+			};
+			return Object.freeze({
+				providerId,
+				productId,
+				credentialRef,
+				mode,
+				registry: ociRegistryResolverRegistry({
+					registry: endpoint,
+					sourceRegistries: [],
+					artifactStore: deps.artifacts,
+					resolveCredential: async (ref: string) => {
+						const secret = await token(ref);
+						return username
+							? { kind: "basic" as const, username, password: secret }
+							: { kind: "bearer" as const, token: secret };
+					},
+				}),
+				requests(freight: CatalogFreight) {
+					const tags = [
+						...new Set([
+							...listOf(freight.labels[L.ociTags]),
+							...listOf(label(L.ociTags)),
+						]),
+					];
+					const out: ResolveRequest[] = [];
+					for (const artifact of freight.artifacts) {
+						if (artifact.kind !== "OCI_IMAGE") continue;
+						const match =
+							/^(?<host>[^/\s]+)\/(?<repo>[^\s@]+)@(?<digest>sha256:[0-9a-f]{64})$/u.exec(
+								artifact.coordinate,
+							);
+						const groups = match?.groups;
+						if (!groups || groups.digest !== artifact.digest)
+							bindingRefusal(
+								camp.campId,
+								`image ${artifact.name} has no <host>/<repository>@<digest> coordinate for ${artifact.digest}`,
+							);
+						if (groups.host !== host)
+							bindingRefusal(
+								camp.campId,
+								`image ${artifact.name} is on ${groups.host ?? ""}, not the Camp's registry ${host}`,
+							);
+						const repository = groups.repo ?? "";
+						out.push(
+							request(`oci-${artifact.name}`, {
+								registry: host,
+								repository,
+								digest: artifact.digest,
+								tags,
+								// Promote, never rebuild (I1): the Freight names content
+								// already at the target by digest; with no source, an
+								// absent manifest is refused, never rebuilt or substituted.
+								copyReferrers: false,
+							}),
+						);
+					}
+					return out;
+				},
+			});
+		}
+		case "github": {
+			const repository = required(L.githubRepository);
+			const [owner, repo, extra] = repository.split("/");
+			if (!owner || !repo || extra !== undefined)
+				bindingRefusal(camp.campId, `${L.githubRepository} must be owner/repo`);
+			const branch = required(L.githubPagesBranch);
+			const path = label(L.githubPagesPath) ?? "/";
+			return Object.freeze({
+				providerId,
+				productId,
+				credentialRef,
+				mode,
+				registry: githubResolverRegistry({
+					api: { kind: "github.com" },
+					resolveCredential: token,
+					artifacts: deps.artifacts,
+				}),
+				transport: gitBlobDedupeTransport,
+				requests(freight: CatalogFreight) {
+					const message = freight.labels[L.githubCommitMessage]?.trim();
+					return freight.artifacts
+						.filter((artifact) => artifact.kind === "STATIC_ASSETS")
+						.map((artifact) =>
+							request(`pages-${owner}-${repo}`, {
+								owner,
+								repo,
+								publishMode: "branch",
+								branch,
+								path,
+								artifactDigest: artifact.digest,
+								...(message ? { commitMessage: message } : undefined),
+							}),
+						);
+				},
+			});
+		}
+	}
+}
+
+const GIT_BLOBS_PATH =
+	/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/git\/blobs$/u;
+
+/** The git blob id of `bytes` (what GitHub names a blob by). */
+function gitBlobSha(bytes: Uint8Array): string {
+	return createHash("sha1")
+		.update(`blob ${bytes.byteLength}\0`)
+		.update(bytes)
+		.digest("hex");
+}
+
+/**
+ * A blob upload GitHub already holds is never repeated. Blob creation counts
+ * against GitHub's content-creation secondary limit (80 per minute): a pass
+ * the limit interrupted, or a later pass before the branch head moved, would
+ * otherwise re-POST every blob not on the observed head. `memory` holds the
+ * blob ids GitHub acknowledged across the realizer's passes for this Camp;
+ * any other blob is looked up first (a read, outside that limit) and posted
+ * only when GitHub does not hold it. Blobs are content-addressed, so the
+ * acknowledgement this returns names exactly the bytes the upload carried.
+ */
+export function gitBlobDedupeTransport(
+	inner: HttpTransport,
+	memory: Set<string>,
+): HttpTransport {
+	return async (request) => {
+		if (
+			request.method !== "POST" ||
+			!GIT_BLOBS_PATH.test(request.url) ||
+			request.body === undefined
+		)
+			return inner(request);
+		const body = parseJsonObject(request.body);
+		if (!isJsonString(body.content) || body.encoding !== "base64")
+			return inner(request);
+		const sha = gitBlobSha(Buffer.from(body.content, "base64"));
+		const held = () => ({
+			status: 201,
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sha, url: `${request.url}/${sha}` }),
+		});
+		if (memory.has(sha)) return held();
+		const { body: _body, ...rest } = request;
+		const seen = await inner({
+			...rest,
+			method: "GET",
+			url: `${request.url}/${sha}`,
+		});
+		if (seen.status === 200) {
+			memory.add(sha);
+			return held();
+		}
+		const sent = await inner(request);
+		if (sent.status === 201) memory.add(sha);
+		return sent;
+	};
 }

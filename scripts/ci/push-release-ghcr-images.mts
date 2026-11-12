@@ -69,6 +69,23 @@ export function ociReleaseArtifacts(
 	});
 }
 
+/**
+ * The release tag the realizer owns on each digest: the one GHCR tag of this
+ * release ref (the tag `docker push` wrote, or the published tag reused).
+ */
+export function releaseTagsOf(
+	releaseRef: string,
+	repository: string,
+	digestLines: readonly string[],
+): string {
+	const parsed = parseReleaseRef(releaseRef);
+	const tags = new Set<string>();
+	for (const artifact of ociReleaseArtifacts(digestLines))
+		for (const ref of ghcrImageTags(repository, artifact.name, parsed))
+			tags.add(ref.slice(ref.lastIndexOf(":") + 1));
+	return [...tags].sort().join(",");
+}
+
 /** One `docker push` attempt may run this long before it is stopped and retried. */
 export const RELEASE_PUSH_ATTEMPT_TIMEOUT_MS = 4 * 60_000;
 /**
@@ -333,15 +350,18 @@ async function main(): Promise<void> {
 	for (const line of digests) console.log(line);
 	// An image this train does not ship pushed nothing: no Freight to record.
 	if (digests.length === 0) return;
-	// GHCR has no @hobo/cd realizer: the push above is the existing publish
-	// step. The digests recorded above (the pushed or already-published digest
-	// GHCR itself reports) become Freight now, and attestation, the signed tag
-	// and the GitHub Release run only when hobo-release/candidate does not
-	// block it.
-	const labels =
-		imageId === undefined
-			? { "hobo.release/ref": releaseRef }
-			: { "hobo.release/ref": releaseRef, "hobo.release/image": imageId };
+	// The digests above (pushed, or the already-published tag GHCR itself
+	// reports) become release Freight, verified at the registry, and are
+	// promoted into hobo-release/oci-candidate: its realizer
+	// (@hobo/provider-oci-registry) asserts the release tag on that digest and
+	// observes digest and tag before the Camp qualifies. Anything but qualified
+	// fails this leg, so attestation, the signed tag and the GitHub Release
+	// never run.
+	const labels = {
+		"hobo.release/ref": releaseRef,
+		"hobo.cd/oci.tags": releaseTagsOf(releaseRef, repository, digests),
+		...(imageId === undefined ? undefined : { "hobo.release/image": imageId }),
+	};
 	await qualifyReleaseCandidate({
 		home: freightHome,
 		family: "oci",

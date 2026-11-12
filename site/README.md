@@ -346,14 +346,15 @@ which GitHub Pages serves ("Deploy from a branch"). Two things push it:
   for why it works this way.
 - **`pnpm run site:deploy`**, by hand, below.
 
-Both paths deliver the site through HoBo CD first: the exact tree about to publish
-is recorded as `hobo-release-pages` Freight (a sha256 tree index in the HoBo
-artifact store) and promoted `hobo-release/candidate` -> `hobo-release/stable`
-through `hobo deploy` (`node scripts/deploy-site.mts --release-freight site/dist`
-in the workflow). GitHub Pages has no `@hobo/cd` realizer, so the gh-pages push
-stays the publish step and runs only when the promotion is not blocked; the
-realizer gap is printed as a warning. The journal lives in `HOBO_RELEASE_CD_HOME`
-(by hand: `HOBO_HOME`, default `~/.hobo`), and the `hobo` package must be built.
+Both paths deliver the site through HoBo CD: the exact tree is recorded as
+`hobo-release-pages` Freight (a `hobo.static-site-tree/v1` index plus its file
+blobs in the HoBo artifact store) and promoted `hobo-release/pages-candidate` ->
+`hobo-release/pages-stable` through `hobo deploy` (`node scripts/deploy-site.mts
+--release-freight site/dist` in the workflow). The candidate Camp's realizer,
+`@hobo/provider-github`, publishes `gh-pages` itself: one commit `deploy: <sha>`
+on the observed head, moved by compare-and-swap with `GITHUB_TOKEN` (by hand too).
+The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
+`~/.hobo`), and the `hobo` package must be built.
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
@@ -362,15 +363,15 @@ re-request Action runners for gates or promote. Checkin gates stay local: `.gith
 + `pnpm agent:check`.
 
 ```sh
-pnpm run site:deploy              # build deps + site, verify dist, publish
-pnpm run site:deploy -- --dry-run # same, but stop before the push
+GITHUB_TOKEN=... pnpm run site:deploy  # build deps + site, verify dist, publish
+pnpm run site:deploy -- --dry-run      # same, but stop before publishing
 ```
 
 [`scripts/deploy-site.mts`](../scripts/deploy-site.mts) automates the steps below and
 adds two guards the manual version lacked: it **refuses to publish when `site/` has
-uncommitted changes** — otherwise the deploy commit's `@ <sha>` names a commit that
-does not describe what shipped — and it stages the build in a throwaway clone, so
-`git init` on an orphan branch cannot run inside your working tree.
+uncommitted changes** — otherwise the deploy commit's `deploy: <sha>` names a commit
+that does not describe what shipped — and it stages the build in a throwaway
+directory, which the Pages realizer publishes (no git in your working tree).
 
 That mattered: this was a manual procedure with nothing to run, and the live site sat
 on a stale commit long after `main` had moved.
