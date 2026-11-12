@@ -75,13 +75,17 @@ export function leaseCpuLoadAccountedInLoad1(
  * Memory-only `reserved` holds (no sandbox yet) are not started work — they
  * must not each claim four CPUs while blocked on this same admission gate.
  */
+function trunkSandboxNotStarted(stage: string | undefined): boolean {
+	return stage === undefined || stage === "";
+}
+
 export function leasePendingTrunkCpuReservation(
 	lease: TrunkCpuLeaseSignal,
 	standardClassMb: number,
 ): boolean {
 	if (lease.memoryMb < standardClassMb) return false;
 	if (leaseCpuLoadAccountedInLoad1(lease)) return false;
-	if (lease.state === "reserved" && lease.sandboxStage === undefined)
+	if (lease.state === "reserved" && trunkSandboxNotStarted(lease.sandboxStage))
 		return false;
 	return true;
 }

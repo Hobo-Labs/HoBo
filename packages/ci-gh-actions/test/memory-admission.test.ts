@@ -616,6 +616,32 @@ describe("worker memory admission", () => {
 		}
 	});
 
+	it("does not reserve CPUs for memory-only holds with empty sandboxStage proto default", () => {
+		const admission = createWorkerMemoryAdmission(config(24_576, 4), {
+			hostCores: () => 8,
+			hostPressure: () => ({
+				atMs: 0,
+				loadPerCpu: 1.9 / 8,
+			}),
+			availableMemoryMb: () => 20_000,
+		});
+		const active = [
+			lease("shard0", 4_096, "standard", "running", "running"),
+			lease("held1", 4_096, "standard", "reserved", ""),
+		];
+		const generalLeaseIds = new Set(active.map((entry) => entry.id));
+		expect(
+			admission.admit({
+				jobId: 42,
+				memoryClass: "standard",
+				memoryMb: 4_096,
+				rank: 0,
+				activeLeases: active,
+				generalLeaseIds,
+			}),
+		).toMatchObject({ admitted: true });
+	});
+
 	it("does not reserve CPUs for memory-only holds blocked on admission (run 43152192203)", () => {
 		const admission = createWorkerMemoryAdmission(config(24_576, 4), {
 			hostCores: () => 8,
