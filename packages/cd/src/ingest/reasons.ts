@@ -22,7 +22,8 @@ export const INGEST_REASON = Object.freeze({
 	ungoverned: "ingest-ungoverned",
 } as const);
 
-export type IngestReasonCode = (typeof INGEST_REASON)[keyof typeof INGEST_REASON];
+export type IngestReasonCode =
+	(typeof INGEST_REASON)[keyof typeof INGEST_REASON];
 
 // public-contract: metric names the ingest boundary emits through TelemetrySink.
 export const INGEST_METRIC = Object.freeze({

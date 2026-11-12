@@ -23,9 +23,15 @@ export type RetentionCandidate = Readonly<{
 }>;
 
 /** One Camp's Set history, oldest first: the last entry is what the Camp runs now. */
-export type CampDeployments = Readonly<{ campId: string; freightIds: readonly string[] }>;
+export type CampDeployments = Readonly<{
+	campId: string;
+	freightIds: readonly string[];
+}>;
 
-export type RetentionPin = Readonly<{ freightId: string; reason: "in-flight-promotion" | "approval" }>;
+export type RetentionPin = Readonly<{
+	freightId: string;
+	reason: "in-flight-promotion" | "approval";
+}>;
 
 export type RetentionPolicy = Readonly<{
 	/** Empty sweeps every Bindle. */
@@ -51,7 +57,10 @@ export type RetentionPlan = Readonly<{
 	kept: readonly Readonly<{ freightId: string; reason: RetentionKeepReason }>[];
 }>;
 
-function underHold(labels: Readonly<Record<string, string>>, holds: readonly string[]): boolean {
+function underHold(
+	labels: Readonly<Record<string, string>>,
+	holds: readonly string[],
+): boolean {
 	if (Object.hasOwn(labels, LEGAL_HOLD_LABEL)) return true;
 	return holds.some((hold) => {
 		const at = hold.indexOf("=");
@@ -61,8 +70,14 @@ function underHold(labels: Readonly<Record<string, string>>, holds: readonly str
 }
 
 export function planRetention(input: RetentionInput): RetentionPlan {
-	const keepPerCamp = input.policy.keepPerCamp > 0 ? input.policy.keepPerCamp : CD_DEFAULTS.retentionKeepPerCamp;
-	const keepMs = input.policy.keepUnpromotedMs > 0 ? input.policy.keepUnpromotedMs : CD_DEFAULTS.retentionKeepUnpromotedMs;
+	const keepPerCamp =
+		input.policy.keepPerCamp > 0
+			? input.policy.keepPerCamp
+			: CD_DEFAULTS.retentionKeepPerCamp;
+	const keepMs =
+		input.policy.keepUnpromotedMs > 0
+			? input.policy.keepUnpromotedMs
+			: CD_DEFAULTS.retentionKeepUnpromotedMs;
 	const reasons = new Map<string, RetentionKeepReason>();
 	const mark = (freightId: string, why: RetentionKeepReason) => {
 		if (!reasons.has(freightId)) reasons.set(freightId, why);
@@ -73,22 +88,35 @@ export function planRetention(input: RetentionInput): RetentionPlan {
 		if (current) mark(current, "deployed");
 	}
 	for (const camp of input.deployments) {
-		for (const freightId of camp.freightIds.slice(-(keepPerCamp + 1), -1)) mark(freightId, "rollback-depth");
+		for (const freightId of camp.freightIds.slice(-(keepPerCamp + 1), -1))
+			mark(freightId, "rollback-depth");
 	}
-	const pins = [...input.pinned].sort((a, b) => (a.reason < b.reason ? 1 : a.reason > b.reason ? -1 : 0));
+	const pins = [...input.pinned].sort((a, b) =>
+		a.reason < b.reason ? 1 : a.reason > b.reason ? -1 : 0,
+	);
 	for (const pin of pins) mark(pin.freightId, pin.reason);
 
 	const retire: string[] = [];
 	const kept: { freightId: string; reason: RetentionKeepReason }[] = [];
 	const ordered = [...input.candidates]
-		.filter((candidate) => input.policy.bindle === "" || candidate.bindle === input.policy.bindle)
-		.sort((a, b) => (a.freightId < b.freightId ? -1 : a.freightId > b.freightId ? 1 : 0));
+		.filter(
+			(candidate) =>
+				input.policy.bindle === "" || candidate.bindle === input.policy.bindle,
+		)
+		.sort((a, b) =>
+			a.freightId < b.freightId ? -1 : a.freightId > b.freightId ? 1 : 0,
+		);
 	for (const candidate of ordered) {
-		if (underHold(candidate.labels, input.policy.legalHoldLabels)) mark(candidate.freightId, "legal-hold");
-		if (input.nowMs - candidate.recordedAtMs < keepMs) mark(candidate.freightId, "young");
+		if (underHold(candidate.labels, input.policy.legalHoldLabels))
+			mark(candidate.freightId, "legal-hold");
+		if (input.nowMs - candidate.recordedAtMs < keepMs)
+			mark(candidate.freightId, "young");
 		const why = reasons.get(candidate.freightId);
 		if (why) kept.push({ freightId: candidate.freightId, reason: why });
 		else retire.push(candidate.freightId);
 	}
-	return Object.freeze({ retire: Object.freeze(retire), kept: Object.freeze(kept) });
+	return Object.freeze({
+		retire: Object.freeze(retire),
+		kept: Object.freeze(kept),
+	});
 }

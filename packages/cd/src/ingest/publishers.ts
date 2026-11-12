@@ -6,16 +6,45 @@
 // @hobo/identity `verifyJwtWithJwks`), its time claims hold within the
 // injected clock skew, its audience is the publisher's, and every required
 // claim is equal. The result is a workload principal; nothing else is trusted.
-import { create, equals } from "@bufbuild/protobuf";
+
 import type { JsonObject } from "@bufbuild/protobuf";
-import type { EventPosition, HttpTransport, PrincipalRef, ReadAllOptions } from "@hobo/core";
+import { create, equals } from "@bufbuild/protobuf";
+import type {
+	EventPosition,
+	HttpTransport,
+	PrincipalRef,
+	ReadAllOptions,
+} from "@hobo/core";
 import { verifyJwtWithJwks } from "@hobo/identity";
-import { type TrustedPublisherRecord, TrustedPublisherRecordSchema } from "../_generated/cd_pb.js";
+import {
+	type TrustedPublisherRecord,
+	TrustedPublisherRecordSchema,
+} from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
-import type { CdAuthorizer, CdBase, Outcome, Refusal, TelemetrySink, TrustedPublisherVerifier, VerifiedPublisher } from "../ports.js";
-import { body, decode, emitCounter, principalName } from "../freight/journal.js";
-import { isJsonArray, isJsonNumber, isJsonObject, isJsonString, parseJsonText, stringAt } from "../freight/json.js";
+import {
+	body,
+	decode,
+	emitCounter,
+	principalName,
+} from "../freight/journal.js";
+import {
+	isJsonArray,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJsonText,
+	stringAt,
+} from "../freight/json.js";
 import { reason } from "../freight/reasons.js";
+import type {
+	CdAuthorizer,
+	CdBase,
+	Outcome,
+	Refusal,
+	TelemetrySink,
+	TrustedPublisherVerifier,
+	VerifiedPublisher,
+} from "../ports.js";
 import { INGEST_METRIC, INGEST_REASON } from "./reasons.js";
 
 export type TrustedPublisherVerifierDeps = CdBase & {
@@ -33,14 +62,25 @@ const MAX_TOKEN_BYTES = 16_384;
 const MAX_DOCUMENT_BYTES = 1_048_576;
 const MAX_CACHE_MS = 86_400_000;
 
-function refuse(code: string, message: string, remediation: string, subject = ""): Refusal {
+function refuse(
+	code: string,
+	message: string,
+	remediation: string,
+	subject = "",
+): Refusal {
 	return { ok: false, reasons: [reason(code, message, remediation, subject)] };
 }
 
 function httpsUrl(value: string): URL | undefined {
 	try {
 		const url = new URL(value);
-		if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
+		if (
+			url.protocol !== "https:" ||
+			url.username !== "" ||
+			url.password !== "" ||
+			url.search !== "" ||
+			url.hash !== ""
+		) {
 			return undefined;
 		}
 		return url;
@@ -50,21 +90,38 @@ function httpsUrl(value: string): URL | undefined {
 }
 
 /** Parse a publisher record; refuse anything that would trust more than it names. */
-export function parseTrustedPublisher(record: TrustedPublisherRecord): Outcome<TrustedPublisherRecord> {
+export function parseTrustedPublisher(
+	record: TrustedPublisherRecord,
+): Outcome<TrustedPublisherRecord> {
 	const problems: string[] = [];
-	if (!NAME_PATTERN.test(record.name)) problems.push("name must be a lowercase slug");
-	if (!httpsUrl(record.issuer) || record.issuer.endsWith("/")) problems.push("issuer must be an https URL without query, fragment or trailing slash");
+	if (!NAME_PATTERN.test(record.name))
+		problems.push("name must be a lowercase slug");
+	if (!httpsUrl(record.issuer) || record.issuer.endsWith("/"))
+		problems.push(
+			"issuer must be an https URL without query, fragment or trailing slash",
+		);
 	if (record.audience.trim() === "") problems.push("audience is required");
 	const claims = Object.entries(record.requiredClaims);
-	if (claims.length === 0) problems.push("at least one required claim (e.g. repository) is needed, or any repository on the issuer could publish");
-	if (claims.some(([key, value]) => key.trim() === "" || value.trim() === "")) problems.push("required claims need non-empty names and values");
-	if (record.bindles.length === 0) problems.push("at least one Bindle is required");
-	if (record.bindles.some((bindle) => !BINDLE_PATTERN.test(bindle))) problems.push("bindles must be Bindle ids");
+	if (claims.length === 0)
+		problems.push(
+			"at least one required claim (e.g. repository) is needed, or any repository on the issuer could publish",
+		);
+	if (claims.some(([key, value]) => key.trim() === "" || value.trim() === ""))
+		problems.push("required claims need non-empty names and values");
+	if (record.bindles.length === 0)
+		problems.push("at least one Bindle is required");
+	if (record.bindles.some((bindle) => !BINDLE_PATTERN.test(bindle)))
+		problems.push("bindles must be Bindle ids");
 	if (problems.length > 0) {
 		return {
 			ok: false,
 			reasons: problems.map((problem) =>
-				reason(INGEST_REASON.publisherRecordInvalid, problem, "fix the TrustedPublisherRecord and trust it again", record.name),
+				reason(
+					INGEST_REASON.publisherRecordInvalid,
+					problem,
+					"fix the TrustedPublisherRecord and trust it again",
+					record.name,
+				),
 			),
 		};
 	}
@@ -74,19 +131,36 @@ export function parseTrustedPublisher(record: TrustedPublisherRecord): Outcome<T
 type CacheEntry = Readonly<{ expiresAtMs: number; json: JsonObject }>;
 
 /** Seconds of `max-age`, or undefined when the response must not be cached. */
-export function cacheLifetimeMs(cacheControl: string | undefined): number | undefined {
+export function cacheLifetimeMs(
+	cacheControl: string | undefined,
+): number | undefined {
 	if (!cacheControl) return undefined;
-	const directives = cacheControl.toLowerCase().split(",").map((part) => part.trim());
-	if (directives.some((directive) => directive === "no-store" || directive === "no-cache")) return undefined;
-	const maxAge = directives.find((directive) => directive.startsWith("max-age="));
+	const directives = cacheControl
+		.toLowerCase()
+		.split(",")
+		.map((part) => part.trim());
+	if (
+		directives.some(
+			(directive) => directive === "no-store" || directive === "no-cache",
+		)
+	)
+		return undefined;
+	const maxAge = directives.find((directive) =>
+		directive.startsWith("max-age="),
+	);
 	if (!maxAge) return undefined;
 	const seconds = Number(maxAge.slice("max-age=".length));
 	if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
 	return Math.min(seconds * 1000, MAX_CACHE_MS);
 }
 
-function header(headers: Readonly<Record<string, string>>, name: string): string | undefined {
-	const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
+function header(
+	headers: Readonly<Record<string, string>>,
+	name: string,
+): string | undefined {
+	const match = Object.entries(headers).find(
+		([key]) => key.toLowerCase() === name,
+	);
 	return match?.[1];
 }
 
@@ -97,9 +171,15 @@ function decodeSegments(token: string): Decoded | undefined {
 	const parts = token.split(".");
 	if (parts.length !== 3 || parts.some((part) => part === "")) return undefined;
 	try {
-		const head = parseJsonText(Buffer.from(parts[0] ?? "", "base64url").toString("utf8"));
-		const claims = parseJsonText(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
-		return isJsonObject(head) && isJsonObject(claims) ? { header: head, claims } : undefined;
+		const head = parseJsonText(
+			Buffer.from(parts[0] ?? "", "base64url").toString("utf8"),
+		);
+		const claims = parseJsonText(
+			Buffer.from(parts[1] ?? "", "base64url").toString("utf8"),
+		);
+		return isJsonObject(head) && isJsonObject(claims)
+			? { header: head, claims }
+			: undefined;
 	} catch {
 		return undefined;
 	}
@@ -112,31 +192,52 @@ function audiences(claims: JsonObject): readonly string[] {
 	return [];
 }
 
-export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDeps): TrustedPublisherVerifier {
+export function createTrustedPublisherVerifier(
+	deps: TrustedPublisherVerifierDeps,
+): TrustedPublisherVerifier {
 	const skewMs = deps.clockSkewMs ?? CD_DEFAULTS.dpopSkewMs;
 	const publishers = new Map<string, TrustedPublisherRecord>();
 	let indexedTo: EventPosition | undefined;
 	const cache = new Map<string, CacheEntry>();
 
-	function emit(name: string, attributes: Readonly<Record<string, string>>): void {
-		emitCounter(deps.telemetry, { name, unit: "{token}", atMs: deps.now(), attributes: { tenant: deps.tenant, ...attributes } });
+	function emit(
+		name: string,
+		attributes: Readonly<Record<string, string>>,
+	): void {
+		emitCounter(deps.telemetry, {
+			name,
+			unit: "{token}",
+			atMs: deps.now(),
+			attributes: { tenant: deps.tenant, ...attributes },
+		});
 	}
 
 	function refused(outcome: Refusal): Refusal {
-		emit(INGEST_METRIC.publisherRefused, { code: outcome.reasons[0]?.code ?? "" });
+		emit(INGEST_METRIC.publisherRefused, {
+			code: outcome.reasons[0]?.code ?? "",
+		});
 		return outcome;
 	}
 
 	async function catchUp(): Promise<void> {
-		const options: ReadAllOptions = { tenant: deps.tenant, filter: { type: CD_EVENTS.PublisherTrusted } };
-		for await (const entry of deps.store.readAll(indexedTo === undefined ? options : { ...options, after: indexedTo })) {
+		const options: ReadAllOptions = {
+			tenant: deps.tenant,
+			filter: { type: CD_EVENTS.PublisherTrusted },
+		};
+		for await (const entry of deps.store.readAll(
+			indexedTo === undefined ? options : { ...options, after: indexedTo },
+		)) {
 			indexedTo = entry.position;
 			const record = decode(TrustedPublisherRecordSchema, entry.event.data);
-			if (record && parseTrustedPublisher(record).ok) publishers.set(record.name, record);
+			if (record && parseTrustedPublisher(record).ok)
+				publishers.set(record.name, record);
 		}
 	}
 
-	async function fetchJson(url: string, fresh: boolean): Promise<JsonObject | undefined> {
+	async function fetchJson(
+		url: string,
+		fresh: boolean,
+	): Promise<JsonObject | undefined> {
 		const nowMs = deps.now();
 		const cached = cache.get(url);
 		if (!fresh && cached && cached.expiresAtMs > nowMs) return cached.json;
@@ -152,12 +253,16 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 		const document = parseJsonText(response.body);
 		if (!isJsonObject(document)) return undefined;
 		const lifetime = cacheLifetimeMs(header(response.headers, "cache-control"));
-		if (lifetime !== undefined) cache.set(url, { expiresAtMs: nowMs + lifetime, json: document });
+		if (lifetime !== undefined)
+			cache.set(url, { expiresAtMs: nowMs + lifetime, json: document });
 		else cache.delete(url);
 		return document;
 	}
 
-	async function jwksFor(issuer: string, fresh: boolean): Promise<Outcome<Readonly<{ keys: JsonObject[] }>>> {
+	async function jwksFor(
+		issuer: string,
+		fresh: boolean,
+	): Promise<Outcome<Readonly<{ keys: JsonObject[] }>>> {
 		const discoveryUrl = `${issuer}/.well-known/openid-configuration`;
 		let discovery: JsonObject | undefined;
 		let jwks: JsonObject | undefined;
@@ -184,7 +289,12 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 		const listed = jwks?.keys;
 		const keys = isJsonArray(listed) ? listed.filter(isJsonObject) : undefined;
 		if (!keys) {
-			return refuse(INGEST_REASON.publisherDiscovery, `JWKS for ${issuer} is unreadable`, "retry; check the issuer's jwks_uri", issuer);
+			return refuse(
+				INGEST_REASON.publisherDiscovery,
+				`JWKS for ${issuer} is unreadable`,
+				"retry; check the issuer's jwks_uri",
+				issuer,
+			);
 		}
 		return { ok: true, value: { keys } };
 	}
@@ -205,18 +315,36 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 			}
 			const decision = await deps.authorizer.authorize(
 				"publisher.trust",
-				{ name: record.name, issuer: record.issuer, audience: record.audience, bindles: [...record.bindles] },
+				{
+					name: record.name,
+					issuer: record.issuer,
+					audience: record.audience,
+					bindles: [...record.bindles],
+				},
 				ctx,
 			);
 			if (!decision.ok) {
 				return refused({
 					ok: false,
-					reasons: [reason(INGEST_REASON.unauthorized, "publisher.trust was denied by policy", "request the grant", record.name), ...decision.reasons],
+					reasons: [
+						reason(
+							INGEST_REASON.unauthorized,
+							"publisher.trust was denied by policy",
+							"request the grant",
+							record.name,
+						),
+						...decision.reasons,
+					],
 				});
 			}
 			if (decision.value.proposalOnly) {
 				return refused(
-					refuse(INGEST_REASON.proposalOnly, `${principalName(ctx.principal)} may only propose publisher.trust`, "ask a granted principal", record.name),
+					refuse(
+						INGEST_REASON.proposalOnly,
+						`${principalName(ctx.principal)} may only propose publisher.trust`,
+						"ask a granted principal",
+						record.name,
+					),
 				);
 			}
 			const stream = CD_STREAMS.publisher(record.name);
@@ -224,15 +352,29 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 			let current: TrustedPublisherRecord | undefined;
 			for await (const event of deps.store.read(stream)) {
 				seq = event.seq;
-				if (event.type === CD_EVENTS.PublisherTrusted) current = decode(TrustedPublisherRecordSchema, event.data);
+				if (event.type === CD_EVENTS.PublisherTrusted)
+					current = decode(TrustedPublisherRecordSchema, event.data);
 			}
-			const normalized = create(TrustedPublisherRecordSchema, { ...record, bindles: [...record.bindles].sort() });
-			if (current && equals(TrustedPublisherRecordSchema, current, normalized)) return { ok: true, value: current };
-			await deps.store.append(stream, [{ type: CD_EVENTS.PublisherTrusted, data: body(TrustedPublisherRecordSchema, normalized) }], {
-				expectedSeq: seq,
-				actor: ctx.principal,
-				tenant: deps.tenant,
+			const normalized = create(TrustedPublisherRecordSchema, {
+				...record,
+				bindles: [...record.bindles].sort(),
 			});
+			if (current && equals(TrustedPublisherRecordSchema, current, normalized))
+				return { ok: true, value: current };
+			await deps.store.append(
+				stream,
+				[
+					{
+						type: CD_EVENTS.PublisherTrusted,
+						data: body(TrustedPublisherRecordSchema, normalized),
+					},
+				],
+				{
+					expectedSeq: seq,
+					actor: ctx.principal,
+					tenant: deps.tenant,
+				},
+			);
 			publishers.set(normalized.name, normalized);
 			return { ok: true, value: normalized };
 		},
@@ -240,7 +382,13 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 		async verify(token, ctx) {
 			const decoded = decodeSegments(token);
 			if (!decoded) {
-				return refused(refuse(INGEST_REASON.publisherToken, "token is not a compact JWT", "send the CI's OIDC ID token unchanged"));
+				return refused(
+					refuse(
+						INGEST_REASON.publisherToken,
+						"token is not a compact JWT",
+						"send the CI's OIDC ID token unchanged",
+					),
+				);
 			}
 			const { claims } = decoded;
 			const issuer = stringAt(claims, "iss") ?? "";
@@ -250,30 +398,64 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 				.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 			if (candidates.length === 0) {
 				return refused(
-					refuse(INGEST_REASON.publisherIssuer, `no trusted publisher for issuer ${issuer || "(none)"}`, "trust a publisher for this issuer first", issuer),
+					refuse(
+						INGEST_REASON.publisherIssuer,
+						`no trusted publisher for issuer ${issuer || "(none)"}`,
+						"trust a publisher for this issuer first",
+						issuer,
+					),
 				);
 			}
-			if (decoded.header.alg !== "RS256" || stringAt(decoded.header, "kid") === undefined) {
-				return refused(refuse(INGEST_REASON.publisherToken, "token must be RS256 with a kid", "use the issuer's standard ID token", issuer));
+			if (
+				decoded.header.alg !== "RS256" ||
+				stringAt(decoded.header, "kid") === undefined
+			) {
+				return refused(
+					refuse(
+						INGEST_REASON.publisherToken,
+						"token must be RS256 with a kid",
+						"use the issuer's standard ID token",
+						issuer,
+					),
+				);
 			}
 			const exp = claims.exp;
 			const nbf = claims.nbf;
 			if (!isJsonNumber(exp) || !isJsonNumber(nbf) || nbf >= exp) {
-				return refused(refuse(INGEST_REASON.publisherToken, "token needs numeric nbf < exp", "use the issuer's standard ID token", issuer));
+				return refused(
+					refuse(
+						INGEST_REASON.publisherToken,
+						"token needs numeric nbf < exp",
+						"use the issuer's standard ID token",
+						issuer,
+					),
+				);
 			}
 			const nowSeconds = ctx.now() / 1000;
 			const skewSeconds = skewMs / 1000;
 			if (exp <= nowSeconds - skewSeconds || nbf > nowSeconds + skewSeconds) {
 				return refused(
-					refuse(INGEST_REASON.publisherExpired, "token is expired or not yet valid", "mint a fresh token in the CI job and retry", issuer),
+					refuse(
+						INGEST_REASON.publisherExpired,
+						"token is expired or not yet valid",
+						"mint a fresh token in the CI job and retry",
+						issuer,
+					),
 				);
 			}
 			const tokenAudiences = audiences(claims);
-			const audienceMatches = candidates.filter((publisher) => tokenAudiences.includes(publisher.audience));
+			const audienceMatches = candidates.filter((publisher) =>
+				tokenAudiences.includes(publisher.audience),
+			);
 			const first = audienceMatches[0];
 			if (!first) {
 				return refused(
-					refuse(INGEST_REASON.publisherAudience, "token audience matches no trusted publisher for this issuer", "request the token with the configured audience", issuer),
+					refuse(
+						INGEST_REASON.publisherAudience,
+						"token audience matches no trusted publisher for this issuer",
+						"request the token with the configured audience",
+						issuer,
+					),
 				);
 			}
 			// Signature authority is @hobo/identity. Time policy (with skew) was
@@ -284,9 +466,17 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 			for (const fresh of [false, true]) {
 				const jwks = await jwksFor(issuer, fresh);
 				if (!jwks.ok) return refused(jwks);
-				if (!fresh && !jwks.value.keys.some((key) => key.kid === decoded.header.kid)) continue;
+				if (
+					!fresh &&
+					!jwks.value.keys.some((key) => key.kid === decoded.header.kid)
+				)
+					continue;
 				try {
-					await verifyJwtWithJwks(token, jwks.value, { issuer, audience: first.audience, now: verifyAt });
+					await verifyJwtWithJwks(token, jwks.value, {
+						issuer,
+						audience: first.audience,
+						now: verifyAt,
+					});
 					verified = true;
 				} catch {
 					verified = false;
@@ -294,7 +484,14 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 				break;
 			}
 			if (!verified) {
-				return refused(refuse(INGEST_REASON.publisherToken, "token signature does not verify against the issuer JWKS", "send the CI's OIDC ID token unchanged", issuer));
+				return refused(
+					refuse(
+						INGEST_REASON.publisherToken,
+						"token signature does not verify against the issuer JWKS",
+						"send the CI's OIDC ID token unchanged",
+						issuer,
+					),
+				);
 			}
 			const mismatches: string[] = [];
 			for (const publisher of audienceMatches) {
@@ -304,9 +501,16 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 					.sort();
 				if (missing.length === 0) {
 					const subject = stringAt(claims, "sub") ?? "";
-					const principal: PrincipalRef = { kind: "service", id: `workload:${publisher.name}:${subject}` };
+					const principal: PrincipalRef = {
+						kind: "service",
+						id: `workload:${publisher.name}:${subject}`,
+					};
 					emit(INGEST_METRIC.publisherVerified, { publisher: publisher.name });
-					const value: VerifiedPublisher = { principal, publisher: publisher.name, claims };
+					const value: VerifiedPublisher = {
+						principal,
+						publisher: publisher.name,
+						claims,
+					};
 					return { ok: true, value };
 				}
 				mismatches.push(`${publisher.name}: ${missing.join(", ")}`);
@@ -324,12 +528,17 @@ export function createTrustedPublisherVerifier(deps: TrustedPublisherVerifierDep
 }
 
 /** The publisher records currently trusted, read from the journal (latest per name). */
-export async function readTrustedPublishers(deps: CdBase): Promise<ReadonlyMap<string, TrustedPublisherRecord>> {
+export async function readTrustedPublishers(
+	deps: CdBase,
+): Promise<ReadonlyMap<string, TrustedPublisherRecord>> {
 	const out = new Map<string, TrustedPublisherRecord>();
-	for await (const entry of deps.store.readAll({ tenant: deps.tenant, filter: { type: CD_EVENTS.PublisherTrusted } })) {
+	for await (const entry of deps.store.readAll({
+		tenant: deps.tenant,
+		filter: { type: CD_EVENTS.PublisherTrusted },
+	})) {
 		const record = decode(TrustedPublisherRecordSchema, entry.event.data);
-		if (record && parseTrustedPublisher(record).ok) out.set(record.name, record);
+		if (record && parseTrustedPublisher(record).ok)
+			out.set(record.name, record);
 	}
 	return out;
 }
-

@@ -6,8 +6,8 @@
 import { createHash } from "node:crypto";
 import { clone, fromJson, isMessage, toJson } from "@bufbuild/protobuf";
 import {
-	type ArtifactRef,
 	ArtifactKind,
+	type ArtifactRef,
 	type FreightManifestRecord,
 	FreightManifestRecordSchema,
 	FreightSubject,
@@ -62,7 +62,9 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 export class FreightManifestError extends Error {
 	readonly reasons: readonly ReasonRecord[];
 	constructor(reasons: readonly ReasonRecord[]) {
-		super(`invalid ${FREIGHT_MANIFEST_SCHEMA}: ${reasons.map((item) => `${item.subject}: ${item.message}`).join("; ")}`);
+		super(
+			`invalid ${FREIGHT_MANIFEST_SCHEMA}: ${reasons.map((item) => `${item.subject}: ${item.message}`).join("; ")}`,
+		);
 		this.name = "FreightManifestError";
 		this.reasons = reasons;
 	}
@@ -73,7 +75,12 @@ export type FreightManifestInput = FreightManifestRecord | Uint8Array | string;
 const MANIFEST_REMEDIATION = `write the manifest with writeFreightManifest (${FREIGHT_MANIFEST_SCHEMA}) and resubmit`;
 
 function invalid(subject: string, message: string): ReasonRecord {
-	return reason(FREIGHT_REASON.manifestInvalid, message, MANIFEST_REMEDIATION, subject);
+	return reason(
+		FREIGHT_REASON.manifestInvalid,
+		message,
+		MANIFEST_REMEDIATION,
+		subject,
+	);
 }
 
 function secret(subject: string): ReasonRecord {
@@ -87,34 +94,83 @@ function secret(subject: string): ReasonRecord {
 
 function decode(text: string): Outcome<FreightManifestRecord> {
 	if (text.length > MAX_MANIFEST_BYTES) {
-		return { ok: false, reasons: [invalid("manifest", `manifest exceeds ${MAX_MANIFEST_BYTES} bytes`)] };
+		return {
+			ok: false,
+			reasons: [
+				invalid("manifest", `manifest exceeds ${MAX_MANIFEST_BYTES} bytes`),
+			],
+		};
 	}
 	const json = parseJsonText(text);
-	if (json === undefined) return { ok: false, reasons: [invalid("manifest", "manifest is not JSON")] };
-	if (!isJsonObject(json)) return { ok: false, reasons: [invalid("manifest", "manifest must be a JSON object")] };
+	if (json === undefined)
+		return {
+			ok: false,
+			reasons: [invalid("manifest", "manifest is not JSON")],
+		};
+	if (!isJsonObject(json))
+		return {
+			ok: false,
+			reasons: [invalid("manifest", "manifest must be a JSON object")],
+		};
 	try {
 		return { ok: true, value: fromJson(FreightManifestRecordSchema, json) };
 	} catch (error) {
-		return { ok: false, reasons: [invalid("manifest", error instanceof Error ? error.message : "unreadable manifest")] };
+		return {
+			ok: false,
+			reasons: [
+				invalid(
+					"manifest",
+					error instanceof Error ? error.message : "unreadable manifest",
+				),
+			],
+		};
 	}
 }
 
-function checkText(subject: string, value: string, reasons: ReasonRecord[]): void {
-	if (value.length > MAX_TEXT) reasons.push(invalid(subject, `${subject} exceeds ${MAX_TEXT} characters`));
-	else if (CONTROL_CHARS.test(value)) reasons.push(invalid(subject, `${subject} contains control characters`));
-	else if (SECRET_PATTERNS.some((pattern) => pattern.test(value))) reasons.push(secret(subject));
+function checkText(
+	subject: string,
+	value: string,
+	reasons: ReasonRecord[],
+): void {
+	if (value.length > MAX_TEXT)
+		reasons.push(invalid(subject, `${subject} exceeds ${MAX_TEXT} characters`));
+	else if (CONTROL_CHARS.test(value))
+		reasons.push(invalid(subject, `${subject} contains control characters`));
+	else if (SECRET_PATTERNS.some((pattern) => pattern.test(value)))
+		reasons.push(secret(subject));
 }
 
-function checkArtifact(item: ArtifactRef, index: number, seen: Set<string>, reasons: ReasonRecord[]): void {
+function checkArtifact(
+	item: ArtifactRef,
+	index: number,
+	seen: Set<string>,
+	reasons: ReasonRecord[],
+): void {
 	const at = `artifacts[${index}]`;
-	if (item.name.trim() === "") reasons.push(invalid(`${at}.name`, "artifact name is required"));
-	else if (seen.has(item.name)) reasons.push(invalid(`${at}.name`, `duplicate artifact name ${item.name}`));
-	else if (!DIGEST_PATTERN.test(item.digest)) reasons.push(invalid(`${at}.digest`, "digest must be sha256:<64 lowercase hex>"));
-	else if (item.kind === ArtifactKind.UNSPECIFIED || ArtifactKind[item.kind] === undefined) {
+	if (item.name.trim() === "")
+		reasons.push(invalid(`${at}.name`, "artifact name is required"));
+	else if (seen.has(item.name))
+		reasons.push(invalid(`${at}.name`, `duplicate artifact name ${item.name}`));
+	else if (!DIGEST_PATTERN.test(item.digest))
+		reasons.push(
+			invalid(`${at}.digest`, "digest must be sha256:<64 lowercase hex>"),
+		);
+	else if (
+		item.kind === ArtifactKind.UNSPECIFIED ||
+		ArtifactKind[item.kind] === undefined
+	) {
 		reasons.push(invalid(`${at}.kind`, "artifact kind must be specified"));
-	} else if (item.coordinate.trim() === "") reasons.push(invalid(`${at}.coordinate`, "artifact coordinate is required"));
+	} else if (item.coordinate.trim() === "")
+		reasons.push(
+			invalid(`${at}.coordinate`, "artifact coordinate is required"),
+		);
 	else if (item.ecosystem !== "" && !ECOSYSTEMS.has(item.ecosystem)) {
-		reasons.push(invalid(`${at}.ecosystem`, `ecosystem must be one of ${ARTIFACT_ECOSYSTEMS.join(", ")}`));
+		reasons.push(
+			invalid(
+				`${at}.ecosystem`,
+				`ecosystem must be one of ${ARTIFACT_ECOSYSTEMS.join(", ")}`,
+			),
+		);
 	} else {
 		checkText(`${at}.name`, item.name, reasons);
 		checkText(`${at}.coordinate`, item.coordinate, reasons);
@@ -126,25 +182,48 @@ function checkArtifact(item: ArtifactRef, index: number, seen: Set<string>, reas
 function check(manifest: FreightManifestRecord): ReasonRecord[] {
 	const reasons: ReasonRecord[] = [];
 	if (manifest.schemaVersion !== FREIGHT_MANIFEST_SCHEMA) {
-		reasons.push(invalid("schemaVersion", `schemaVersion must be ${FREIGHT_MANIFEST_SCHEMA}`));
+		reasons.push(
+			invalid(
+				"schemaVersion",
+				`schemaVersion must be ${FREIGHT_MANIFEST_SCHEMA}`,
+			),
+		);
 	}
 	if (!BINDLE_PATTERN.test(manifest.bindle)) {
-		reasons.push(invalid("bindle", "bindle must be 1-128 characters of [A-Za-z0-9._:@/-]"));
+		reasons.push(
+			invalid("bindle", "bindle must be 1-128 characters of [A-Za-z0-9._:@/-]"),
+		);
 	}
 	if (!DIGEST_PATTERN.test(manifest.declarationHash)) {
-		reasons.push(invalid("declarationHash", "declarationHash must be sha256:<64 lowercase hex>"));
+		reasons.push(
+			invalid(
+				"declarationHash",
+				"declarationHash must be sha256:<64 lowercase hex>",
+			),
+		);
 	}
-	if (FreightSubject[manifest.subject] === undefined) reasons.push(invalid("subject", "unknown Freight subject"));
-	if (manifest.subject === FreightSubject.RAIL && manifest.artifacts.length > 0) {
-		reasons.push(invalid("artifacts", "RAIL Freight carries no artifacts (D24)"));
+	if (FreightSubject[manifest.subject] === undefined)
+		reasons.push(invalid("subject", "unknown Freight subject"));
+	if (
+		manifest.subject === FreightSubject.RAIL &&
+		manifest.artifacts.length > 0
+	) {
+		reasons.push(
+			invalid("artifacts", "RAIL Freight carries no artifacts (D24)"),
+		);
 	}
-	if (manifest.artifacts.length > MAX_ARTIFACTS) reasons.push(invalid("artifacts", `at most ${MAX_ARTIFACTS} artifacts`));
+	if (manifest.artifacts.length > MAX_ARTIFACTS)
+		reasons.push(invalid("artifacts", `at most ${MAX_ARTIFACTS} artifacts`));
 	const seen = new Set<string>();
-	manifest.artifacts.forEach((item, index) => checkArtifact(item, index, seen, reasons));
+	for (const [index, item] of manifest.artifacts.entries()) {
+		checkArtifact(item, index, seen, reasons);
+	}
 	const source = manifest.source;
 	if (source) {
 		if (source.commit !== "" && !COMMIT_PATTERN.test(source.commit)) {
-			reasons.push(invalid("source.commit", "commit must be 7-64 lowercase hex"));
+			reasons.push(
+				invalid("source.commit", "commit must be 7-64 lowercase hex"),
+			);
 		}
 		for (const [field, value] of [
 			["source.repository", source.repository],
@@ -158,18 +237,30 @@ function check(manifest: FreightManifestRecord): ReasonRecord[] {
 	}
 	manifest.provenance.forEach((ref, index) => {
 		const at = `provenance[${index}]`;
-		if (!DIGEST_PATTERN.test(ref.statementDigest)) reasons.push(invalid(`${at}.statementDigest`, "statementDigest must be sha256"));
+		if (!DIGEST_PATTERN.test(ref.statementDigest))
+			reasons.push(
+				invalid(`${at}.statementDigest`, "statementDigest must be sha256"),
+			);
 		if (ref.subjectDigests.some((digest) => !DIGEST_PATTERN.test(digest))) {
-			reasons.push(invalid(`${at}.subjectDigests`, "subject digests must be sha256"));
+			reasons.push(
+				invalid(`${at}.subjectDigests`, "subject digests must be sha256"),
+			);
 		}
-		if (!["", "sigstore", "hobo-jwt"].includes(ref.verifier)) reasons.push(invalid(`${at}.verifier`, "verifier is sigstore or hobo-jwt"));
+		if (!["", "sigstore", "hobo-jwt"].includes(ref.verifier))
+			reasons.push(
+				invalid(`${at}.verifier`, "verifier is sigstore or hobo-jwt"),
+			);
 		checkText(`${at}.builderId`, ref.builderId, reasons);
 		checkText(`${at}.signerIdentity`, ref.signerIdentity, reasons);
 	});
 	const labels = Object.entries(manifest.labels);
-	if (labels.length > MAX_LABELS) reasons.push(invalid("labels", `at most ${MAX_LABELS} labels`));
+	if (labels.length > MAX_LABELS)
+		reasons.push(invalid("labels", `at most ${MAX_LABELS} labels`));
 	for (const [key, value] of labels) {
-		if (!LABEL_KEY_PATTERN.test(key)) reasons.push(invalid(`labels.${key}`, "label keys are lowercase [a-z0-9._/-]"));
+		if (!LABEL_KEY_PATTERN.test(key))
+			reasons.push(
+				invalid(`labels.${key}`, "label keys are lowercase [a-z0-9._/-]"),
+			);
 		else checkText(`labels.${key}`, value, reasons);
 	}
 	return reasons;
@@ -186,30 +277,45 @@ function byKey<T>(key: (item: T) => string): (a: T, b: T) => number {
 /** Normalized copy: subject defaulted to BINDLE, artifacts by name, provenance by statement digest. */
 function normalize(manifest: FreightManifestRecord): FreightManifestRecord {
 	const copy = clone(FreightManifestRecordSchema, manifest);
-	if (copy.subject === FreightSubject.UNSPECIFIED) copy.subject = FreightSubject.BINDLE;
+	if (copy.subject === FreightSubject.UNSPECIFIED)
+		copy.subject = FreightSubject.BINDLE;
 	copy.artifacts.sort(byKey((item) => item.name));
-	copy.provenance.sort(byKey((ref) => `${ref.statementDigest}|${ref.builderId}|${ref.verifier}`));
+	copy.provenance.sort(
+		byKey((ref) => `${ref.statementDigest}|${ref.builderId}|${ref.verifier}`),
+	);
 	for (const ref of copy.provenance) ref.subjectDigests.sort();
 	return copy;
 }
 
-function checked(manifest: FreightManifestRecord): Outcome<FreightManifestRecord> {
+function checked(
+	manifest: FreightManifestRecord,
+): Outcome<FreightManifestRecord> {
 	const reasons = check(manifest);
-	return reasons.length > 0 ? { ok: false, reasons } : { ok: true, value: normalize(manifest) };
+	return reasons.length > 0
+		? { ok: false, reasons }
+		: { ok: true, value: normalize(manifest) };
 }
 
 /** Parse an untrusted manifest (bytes, JSON text, or a record) into the canonical form, or refuse. */
-export function parseFreightManifest(input: FreightManifestInput): Outcome<FreightManifestRecord> {
+export function parseFreightManifest(
+	input: FreightManifestInput,
+): Outcome<FreightManifestRecord> {
 	if (isMessage(input, FreightManifestRecordSchema)) return checked(input);
-	const decoded = decode(input instanceof Uint8Array ? new TextDecoder().decode(input) : input);
+	const decoded = decode(
+		input instanceof Uint8Array ? new TextDecoder().decode(input) : input,
+	);
 	return decoded.ok ? checked(decoded.value) : decoded;
 }
 
 /** The canonical `hobo.freight-manifest/v1` document (sorted keys, no whitespace). */
-export function writeFreightManifest(manifest: FreightManifestRecord): Uint8Array {
+export function writeFreightManifest(
+	manifest: FreightManifestRecord,
+): Uint8Array {
 	const parsed = parseFreightManifest(manifest);
 	if (!parsed.ok) throw new FreightManifestError(parsed.reasons);
-	return new TextEncoder().encode(canonicalJson(toJson(FreightManifestRecordSchema, parsed.value)));
+	return new TextEncoder().encode(
+		canonicalJson(toJson(FreightManifestRecordSchema, parsed.value)),
+	);
 }
 
 /**
@@ -219,19 +325,31 @@ export function writeFreightManifest(manifest: FreightManifestRecord): Uint8Arra
  * are recorded metadata, so the same build reached through any ingress path
  * (or a digest-preserving mirror) is one Freight.
  */
-export function freightIdentity(manifest: FreightManifestRecord): Readonly<{ freightId: FreightId; alias: string }> {
+export function freightIdentity(
+	manifest: FreightManifestRecord,
+): Readonly<{ freightId: FreightId; alias: string }> {
 	const identity = {
 		schemaVersion: manifest.schemaVersion,
-		subject: FreightSubject[manifest.subject === FreightSubject.UNSPECIFIED ? FreightSubject.BINDLE : manifest.subject],
+		subject:
+			FreightSubject[
+				manifest.subject === FreightSubject.UNSPECIFIED
+					? FreightSubject.BINDLE
+					: manifest.subject
+			],
 		bindle: manifest.bindle,
 		declarationHash: manifest.declarationHash,
 		artifacts: [...manifest.artifacts]
 			.sort(byKey((item) => item.name))
-			.map((item) => ({ name: item.name, kind: ArtifactKind[item.kind] ?? "", digest: item.digest })),
+			.map((item) => ({
+				name: item.name,
+				kind: ArtifactKind[item.kind] ?? "",
+				digest: item.digest,
+			})),
 	};
-	const hex = createHash("sha256").update(canonicalJson(identity)).digest("hex");
+	const hex = createHash("sha256")
+		.update(canonicalJson(identity))
+		.digest("hex");
 	// SAFETY: the brand is minted here, from a sha256 over the canonical identity.
 	const freightId = `sha256:${hex}` as FreightId;
 	return Object.freeze({ freightId, alias: freightAlias(freightId) });
 }
-

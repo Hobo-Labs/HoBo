@@ -2,7 +2,13 @@
 // CDEvent artifact ids are purls. Parsing is total: anything that is not a
 // purl returns undefined, never a partial value.
 import { create } from "@bufbuild/protobuf";
-import { type ArtifactRef, ArtifactKind, ArtifactRefSchema, type FreightSourceRecord, SubscriptionKind } from "../_generated/cd_pb.js";
+import {
+	ArtifactKind,
+	type ArtifactRef,
+	ArtifactRefSchema,
+	type FreightSourceRecord,
+	SubscriptionKind,
+} from "../_generated/cd_pb.js";
 
 export type Purl = Readonly<{
 	type: string;
@@ -49,11 +55,23 @@ export function parsePurl(value: string): Purl | undefined {
 	const segments = rest.split("/").filter((segment) => segment !== "");
 	const type = segments.shift()?.toLowerCase() ?? "";
 	const rawName = segments.pop();
-	if (!/^[a-z][a-z0-9.+-]*$/.test(type) || rawName === undefined) return undefined;
+	if (!/^[a-z][a-z0-9.+-]*$/.test(type) || rawName === undefined)
+		return undefined;
 	const name = decodeComponent(rawName);
 	const namespace = segments.map(decodeComponent);
-	if (name === undefined || name === "" || namespace.some((segment) => segment === undefined)) return undefined;
-	return Object.freeze({ type, namespace: namespace.join("/"), name, version, qualifiers: Object.freeze(qualifiers) });
+	if (
+		name === undefined ||
+		name === "" ||
+		namespace.some((segment) => segment === undefined)
+	)
+		return undefined;
+	return Object.freeze({
+		type,
+		namespace: namespace.join("/"),
+		name,
+		version,
+		qualifiers: Object.freeze(qualifiers),
+	});
 }
 
 const PACKAGE_ECOSYSTEMS: Readonly<Record<string, string>> = Object.freeze({
@@ -64,10 +82,17 @@ const PACKAGE_ECOSYSTEMS: Readonly<Record<string, string>> = Object.freeze({
 	cargo: "cargo",
 	gem: "rubygems",
 });
-const GIT_HOSTS: ReadonlySet<string> = new Set(["github", "gitlab", "bitbucket"]);
+const GIT_HOSTS: ReadonlySet<string> = new Set([
+	"github",
+	"gitlab",
+	"bitbucket",
+]);
 
 /** One attestation subject as an artifact. The subject name is the coordinate. */
-export function artifactFromSubject(name: string, sha256Hex: string): ArtifactRef {
+export function artifactFromSubject(
+	name: string,
+	sha256Hex: string,
+): ArtifactRef {
 	const purl = parsePurl(name);
 	const wasm = (purl?.name ?? name).endsWith(".wasm");
 	let kind = wasm ? ArtifactKind.WASM_COMPONENT : ArtifactKind.PACKAGE;
@@ -82,7 +107,13 @@ export function artifactFromSubject(name: string, sha256Hex: string): ArtifactRe
 		kind = ArtifactKind.SOURCE_TREE;
 		ecosystem = "git";
 	}
-	return create(ArtifactRefSchema, { name, kind, digest: `sha256:${sha256Hex}`, coordinate: name, ecosystem });
+	return create(ArtifactRefSchema, {
+		name,
+		kind,
+		digest: `sha256:${sha256Hex}`,
+		coordinate: name,
+		ecosystem,
+	});
 }
 
 /** `scheme://host[:port]/path[:tag][@digest]` → `host[:port]/path`, lowercased. */
@@ -102,8 +133,13 @@ function stripLocator(locator: string): string {
  * schedules a poll, which is a verified read, so this errs toward matching
  * (an extra poll is harmless; a missed one waits for the next interval).
  */
-export function sourcesForPurl(purl: Purl, sources: readonly FreightSourceRecord[]): readonly string[] {
-	const fullName = (purl.namespace ? `${purl.namespace}/${purl.name}` : purl.name).toLowerCase();
+export function sourcesForPurl(
+	purl: Purl,
+	sources: readonly FreightSourceRecord[],
+): readonly string[] {
+	const fullName = (
+		purl.namespace ? `${purl.namespace}/${purl.name}` : purl.name
+	).toLowerCase();
 	const repositoryUrl = stripLocator(purl.qualifiers.repository_url ?? "");
 	const names = new Set<string>();
 	for (const source of sources) {
@@ -113,12 +149,16 @@ export function sourcesForPurl(purl: Purl, sources: readonly FreightSourceRecord
 			const matched =
 				(subscription.kind === SubscriptionKind.OCI_REPOSITORY &&
 					(purl.type === "oci" || purl.type === "docker") &&
-					(repositoryUrl !== "" ? locator === repositoryUrl : locator === fullName || locator.endsWith(`/${fullName}`))) ||
+					(repositoryUrl !== ""
+						? locator === repositoryUrl
+						: locator === fullName || locator.endsWith(`/${fullName}`))) ||
 				(subscription.kind === SubscriptionKind.PACKAGE_REGISTRY &&
 					ecosystem !== undefined &&
 					subscription.ecosystem === ecosystem &&
 					subscription.locator.toLowerCase() === fullName) ||
-				(subscription.kind === SubscriptionKind.GIT_REPOSITORY && GIT_HOSTS.has(purl.type) && locator.endsWith(`/${fullName}`));
+				(subscription.kind === SubscriptionKind.GIT_REPOSITORY &&
+					GIT_HOSTS.has(purl.type) &&
+					locator.endsWith(`/${fullName}`));
 			if (matched) names.add(source.name);
 		}
 	}

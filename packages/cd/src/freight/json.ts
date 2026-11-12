@@ -43,14 +43,20 @@ export function jsonOf<T>(data: T): JsonValue | undefined {
 }
 
 /** A string member of a JSON object, or undefined. */
-export function stringAt(value: JsonValue | undefined, key: string): string | undefined {
+export function stringAt(
+	value: JsonValue | undefined,
+	key: string,
+): string | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const member = value[key];
 	return isJsonString(member) ? member : undefined;
 }
 
 /** An object member of a JSON object, or undefined. */
-export function objectAt(value: JsonValue | undefined, key: string): JsonObject | undefined {
+export function objectAt(
+	value: JsonValue | undefined,
+	key: string,
+): JsonObject | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const member = value[key];
 	return isJsonObject(member) ? member : undefined;

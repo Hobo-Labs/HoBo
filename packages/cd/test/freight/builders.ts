@@ -7,14 +7,18 @@ import {
 	FreightSubject,
 	ProvenanceRefSchema,
 	SourceRefSchema,
-	VerificationVerdict,
 	type VerificationResultRecord,
 	VerificationResultRecordSchema,
+	VerificationVerdict,
 } from "../../src/_generated/cd_pb.js";
 import { FREIGHT_MANIFEST_SCHEMA } from "../../src/events.js";
 import { digestOf } from "./fakes.js";
 
-export function artifact(name: string, seed = name, coordinate = `store://${name}`) {
+export function artifact(
+	name: string,
+	seed = name,
+	coordinate = `store://${name}`,
+) {
 	return create(ArtifactRefSchema, {
 		name,
 		kind: ArtifactKind.WASM_COMPONENT,
@@ -26,7 +30,9 @@ export function artifact(name: string, seed = name, coordinate = `store://${name
 	});
 }
 
-export function manifest(overrides: Partial<Omit<FreightManifestRecord, "$typeName">> = {}): FreightManifestRecord {
+export function manifest(
+	overrides: Partial<Omit<FreightManifestRecord, "$typeName">> = {},
+): FreightManifestRecord {
 	return create(FreightManifestRecordSchema, {
 		schemaVersion: FREIGHT_MANIFEST_SCHEMA,
 		bindle: "shop",

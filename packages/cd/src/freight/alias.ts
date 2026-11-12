@@ -48,9 +48,11 @@ const ID_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 /** The alias of a Freight id. Throws on a malformed id: ids are parsed before they reach here. */
 export function freightAlias(freightId: string): string {
-	if (!ID_PATTERN.test(freightId)) throw new TypeError(`not a Freight id: ${freightId}`);
+	if (!ID_PATTERN.test(freightId))
+		throw new TypeError(`not a Freight id: ${freightId}`);
 	const hex = freightId.slice("sha256:".length);
-	const adjective = Number.parseInt(hex.slice(0, 8), 16) % ALIAS_ADJECTIVES.length;
+	const adjective =
+		Number.parseInt(hex.slice(0, 8), 16) % ALIAS_ADJECTIVES.length;
 	const noun = Number.parseInt(hex.slice(8, 16), 16) % ALIAS_NOUNS.length;
 	return `${ALIAS_ADJECTIVES[adjective]}-${ALIAS_NOUNS[noun]}`;
 }

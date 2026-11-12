@@ -9,7 +9,11 @@ import {
 	SetRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../../src/events.js";
-import { createFreightLedger, FREIGHT_METRIC, planRetention } from "../../src/freight/index.js";
+import {
+	createFreightLedger,
+	FREIGHT_METRIC,
+	planRetention,
+} from "../../src/freight/index.js";
 import { artifact, manifest } from "./builders.js";
 import {
 	camp,
@@ -46,7 +50,10 @@ function harness() {
 		const item = artifact("api", `api-${version}`);
 		artifacts.register(item.coordinate, item.digest);
 		const outcome = await ledger.record(
-			{ manifest: manifest({ artifacts: [item], labels, provenance: [] }), origin: FreightOrigin.MANIFEST },
+			{
+				manifest: manifest({ artifacts: [item], labels, provenance: [] }),
+				origin: FreightOrigin.MANIFEST,
+			},
 			context(time.now),
 		);
 		if (!outcome.ok) throw new Error(JSON.stringify(outcome.reasons));
@@ -64,13 +71,23 @@ function harness() {
 			origin: SetOrigin.PROMOTION,
 			resolvedSetDigest: digestOf(`${campId}-${seq}`),
 		});
-		await store.append(stream, [{ type: CD_EVENTS.SetCreated, data: toJson(SetRecordSchema, set) }], {
-			expectedSeq: seq,
-			actor: OPERATOR,
-			tenant: TENANT,
-		});
+		await store.append(
+			stream,
+			[{ type: CD_EVENTS.SetCreated, data: toJson(SetRecordSchema, set) }],
+			{
+				expectedSeq: seq,
+				actor: OPERATOR,
+				tenant: TENANT,
+			},
+		);
 	};
-	const policy = (overrides: Partial<{ keepPerCamp: number; legalHoldLabels: string[]; bindle: string }> = {}) =>
+	const policy = (
+		overrides: Partial<{
+			keepPerCamp: number;
+			legalHoldLabels: string[];
+			bindle: string;
+		}> = {},
+	) =>
 		create(RetentionPolicyRecordSchema, {
 			bindle: "shop",
 			keepPerCamp: 2,
@@ -106,10 +123,14 @@ describe("retention sweep (D18)", () => {
 		for (const freight of [v1, v2, v3, v4]) await h.deploy("prod-eu", freight);
 		await h.deploy("staging", v1);
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
-		const retired = await h.ledger.retire(h.policy({ keepPerCamp: 2 }), context(h.time.now));
+		const retired = await h.ledger.retire(
+			h.policy({ keepPerCamp: 2 }),
+			context(h.time.now),
+		);
 		// prod-eu: v4 current, v3 and v2 within rollback depth 2; staging: v1 current.
 		expect(retired.map((record) => record.freightId)).toEqual([loose]);
-		for (const kept of [v1, v2, v3, v4, held]) expect(await h.ledger.isUsable(kept)).toBe(true);
+		for (const kept of [v1, v2, v3, v4, held])
+			expect(await h.ledger.isUsable(kept)).toBe(true);
 	});
 
 	it("keeps Freight younger than keep_unpromoted_ms and is idempotent", async () => {
@@ -118,7 +139,11 @@ describe("retention sweep (D18)", () => {
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs - HOUR);
 		expect(await h.ledger.retire(h.policy(), context(h.time.now))).toEqual([]);
 		h.time.advance(2 * HOUR);
-		expect((await h.ledger.retire(h.policy(), context(h.time.now))).map((r) => r.freightId)).toEqual([young]);
+		expect(
+			(await h.ledger.retire(h.policy(), context(h.time.now))).map(
+				(r) => r.freightId,
+			),
+		).toEqual([young]);
 		expect(await h.ledger.retire(h.policy(), context(h.time.now))).toEqual([]);
 	});
 
@@ -126,8 +151,12 @@ describe("retention sweep (D18)", () => {
 		const h = harness();
 		await h.record();
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
-		expect(await h.ledger.retire(h.policy({ bindle: "other" }), context(h.time.now))).toHaveLength(0);
-		expect(await h.ledger.retire(h.policy({ bindle: "" }), context(h.time.now))).toHaveLength(1);
+		expect(
+			await h.ledger.retire(h.policy({ bindle: "other" }), context(h.time.now)),
+		).toHaveLength(0);
+		expect(
+			await h.ledger.retire(h.policy({ bindle: "" }), context(h.time.now)),
+		).toHaveLength(1);
 	});
 
 	it("keeps Freight with an in-flight promotion or an unexpired approval", async () => {
@@ -142,30 +171,57 @@ describe("retention sweep (D18)", () => {
 		});
 		await h.store.append(
 			CD_STREAMS.promotion("p-1"),
-			[{ type: CD_EVENTS.EnvPromoteRequested, data: toJson(PromotionRecordSchema, promotion) }],
+			[
+				{
+					type: CD_EVENTS.EnvPromoteRequested,
+					data: toJson(PromotionRecordSchema, promotion),
+				},
+			],
 			{ expectedSeq: 0, actor: OPERATOR, tenant: TENANT },
 		);
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
 		const ctx = context(h.time.now);
-		const approval = await h.ledger.approve({ freightId: approved, campId: camp("prod-eu"), reason: "hold", expiresAtMs: ctx.now() + HOUR }, ctx);
+		const approval = await h.ledger.approve(
+			{
+				freightId: approved,
+				campId: camp("prod-eu"),
+				reason: "hold",
+				expiresAtMs: ctx.now() + HOUR,
+			},
+			ctx,
+		);
 		expect(approval.ok).toBe(true);
 		expect(await h.ledger.retire(h.policy(), ctx)).toEqual([]);
 		await h.store.append(
 			CD_STREAMS.promotion("p-1"),
-			[{ type: CD_EVENTS.EnvPromoteRejected, data: toJson(PromotionRecordSchema, { ...promotion, state: PromotionState.REJECTED }) }],
+			[
+				{
+					type: CD_EVENTS.EnvPromoteRejected,
+					data: toJson(PromotionRecordSchema, {
+						...promotion,
+						state: PromotionState.REJECTED,
+					}),
+				},
+			],
 			{ expectedSeq: 1, actor: OPERATOR, tenant: TENANT },
 		);
-		expect((await h.ledger.retire(h.policy(), ctx)).map((r) => r.freightId)).toEqual([promoting]);
+		expect(
+			(await h.ledger.retire(h.policy(), ctx)).map((r) => r.freightId),
+		).toEqual([promoting]);
 	});
 
 	it("fails closed when a desired-state event cannot be read", async () => {
 		const h = harness();
 		const freight = await h.record();
-		await h.store.append(CD_STREAMS.campSpec("prod-eu"), [{ type: CD_EVENTS.SetCreated, data: "garbage" }], {
-			expectedSeq: 0,
-			actor: OPERATOR,
-			tenant: TENANT,
-		});
+		await h.store.append(
+			CD_STREAMS.campSpec("prod-eu"),
+			[{ type: CD_EVENTS.SetCreated, data: "garbage" }],
+			{
+				expectedSeq: 0,
+				actor: OPERATOR,
+				tenant: TENANT,
+			},
+		);
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
 		expect(await h.ledger.retire(h.policy(), context(h.time.now))).toEqual([]);
 		expect(await h.ledger.isUsable(freight)).toBe(true);
@@ -176,15 +232,29 @@ describe("retention sweep (D18)", () => {
 		const h = harness();
 		const freight = await h.record();
 		const ctx = context(h.time.now);
-		expect((await h.ledger.yank(freight, "unretained-yank-evidence must never happen", ctx)).ok).toBe(true);
+		expect(
+			(
+				await h.ledger.yank(
+					freight,
+					"unretained-yank-evidence must never happen",
+					ctx,
+				)
+			).ok,
+		).toBe(true);
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
-		expect(await h.ledger.retire(h.policy(), context(h.time.now))).toHaveLength(1);
-		expect(h.store.events(CD_STREAMS.freight(freight)).map((event) => event.type)).toEqual([
+		expect(await h.ledger.retire(h.policy(), context(h.time.now))).toHaveLength(
+			1,
+		);
+		expect(
+			h.store.events(CD_STREAMS.freight(freight)).map((event) => event.type),
+		).toEqual([
 			CD_EVENTS.FreightRecorded,
 			CD_EVENTS.FreightYanked,
 			CD_EVENTS.FreightRetired,
 		]);
-		expect((await h.ledger.get(freight))?.manifest?.source?.builderId).toBe("https://ci.example.com/builders/default");
+		expect((await h.ledger.get(freight))?.manifest?.source?.builderId).toBe(
+			"https://ci.example.com/builders/default",
+		);
 	});
 });
 
@@ -193,21 +263,35 @@ describe("planRetention is pure and order independent (I8)", () => {
 		const candidates = [
 			{ freightId: "sha256:a", bindle: "shop", recordedAtMs: 0, labels: {} },
 			{ freightId: "sha256:b", bindle: "shop", recordedAtMs: 0, labels: {} },
-			{ freightId: "sha256:c", bindle: "shop", recordedAtMs: 0, labels: { "legal-hold": "y" } },
+			{
+				freightId: "sha256:c",
+				bindle: "shop",
+				recordedAtMs: 0,
+				labels: { "legal-hold": "y" },
+			},
 		];
 		const deployments = [
 			{ campId: "x", freightIds: ["sha256:b"] },
 			{ campId: "y", freightIds: [] },
 		];
 		const input = {
-			policy: { bindle: "shop", keepPerCamp: 1, keepUnpromotedMs: 10, legalHoldLabels: ["legal-hold"] },
+			policy: {
+				bindle: "shop",
+				keepPerCamp: 1,
+				keepUnpromotedMs: 10,
+				legalHoldLabels: ["legal-hold"],
+			},
 			nowMs: 100,
 			candidates,
 			deployments,
 			pinned: [],
 		};
 		const forward = planRetention(input);
-		const backward = planRetention({ ...input, candidates: [...candidates].reverse(), deployments: [...deployments].reverse() });
+		const backward = planRetention({
+			...input,
+			candidates: [...candidates].reverse(),
+			deployments: [...deployments].reverse(),
+		});
 		expect(forward).toEqual(backward);
 		expect(forward.retire).toEqual(["sha256:a"]);
 		expect(forward.kept).toEqual([

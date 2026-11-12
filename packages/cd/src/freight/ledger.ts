@@ -23,7 +23,12 @@ import {
 	type RetentionPolicyRecord,
 	VerificationVerdict,
 } from "../_generated/cd_pb.js";
-import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS, FREIGHT_SCHEMA } from "../events.js";
+import {
+	CD_DEFAULTS,
+	CD_EVENTS,
+	CD_STREAMS,
+	FREIGHT_SCHEMA,
+} from "../events.js";
 import type {
 	ArtifactVerifier,
 	CdAction,
@@ -35,10 +40,23 @@ import type {
 	Refusal,
 	TelemetrySink,
 } from "../ports.js";
-import { body, decode, emitCounter, iso, principalName, referencedFreightId, stringField } from "./journal.js";
+import {
+	body,
+	decode,
+	emitCounter,
+	iso,
+	principalName,
+	referencedFreightId,
+	stringField,
+} from "./journal.js";
 import { freightIdentity, parseFreightManifest } from "./manifest.js";
 import { FREIGHT_REASON, reason, refuse, refuseWith } from "./reasons.js";
-import { type CampDeployments, planRetention, type RetentionCandidate, type RetentionPin } from "./retention.js";
+import {
+	type CampDeployments,
+	planRetention,
+	type RetentionCandidate,
+	type RetentionPin,
+} from "./retention.js";
 
 // public-contract: metric names the ledger emits through TelemetrySink.
 export const FREIGHT_METRIC = Object.freeze({
@@ -88,17 +106,35 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 	const index = new Map<string, FreightRecord>();
 	let indexedTo: EventPosition | undefined;
 
-	function emit(name: string, attributes: Readonly<Record<string, string>> = {}, value = 1): void {
-		emitCounter(deps.telemetry, { name, unit: "{freight}", atMs: deps.now(), attributes: { tenant: deps.tenant, ...attributes }, value });
+	function emit(
+		name: string,
+		attributes: Readonly<Record<string, string>> = {},
+		value = 1,
+	): void {
+		emitCounter(deps.telemetry, {
+			name,
+			unit: "{freight}",
+			atMs: deps.now(),
+			attributes: { tenant: deps.tenant, ...attributes },
+			value,
+		});
 	}
 
 	function refused(outcome: Refusal, operation: string): Refusal {
-		emit(FREIGHT_METRIC.refused, { operation, code: outcome.reasons[0]?.code ?? "" });
+		emit(FREIGHT_METRIC.refused, {
+			operation,
+			code: outcome.reasons[0]?.code ?? "",
+		});
 		return outcome;
 	}
 
 	async function load(id: string): Promise<FreightState> {
-		const state: FreightState = { seq: 0, qualifications: [], approvals: [], unreadable: false };
+		const state: FreightState = {
+			seq: 0,
+			qualifications: [],
+			approvals: [],
+			unreadable: false,
+		};
 		for await (const event of deps.store.read(CD_STREAMS.freight(id))) {
 			state.seq = event.seq;
 			switch (event.type) {
@@ -138,7 +174,12 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		id: string,
 		ctx: CdContext,
 		decide: (state: FreightState) => Promise<
-			Outcome<T> | Readonly<{ ok: true; value: T; append: Readonly<{ type: string; data: unknown; key: string }> }>
+			| Outcome<T>
+			| Readonly<{
+					ok: true;
+					value: T;
+					append: Readonly<{ type: string; data: unknown; key: string }>;
+			  }>
 		>,
 	): Promise<Outcome<T>> {
 		for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt += 1) {
@@ -148,7 +189,13 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 			try {
 				await deps.store.append(
 					CD_STREAMS.freight(id),
-					[{ type: decision.append.type, data: decision.append.data, meta: { idempotencyKey: decision.append.key } }],
+					[
+						{
+							type: decision.append.type,
+							data: decision.append.data,
+							meta: { idempotencyKey: decision.append.key },
+						},
+					],
 					{ expectedSeq: state.seq, actor: ctx.principal, tenant: deps.tenant },
 				);
 				return { ok: true, value: decision.value };
@@ -163,19 +210,45 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 				}
 			}
 		}
-		return refuse(FREIGHT_REASON.conflict, `journal append for ${id} did not settle`, "retry the command; it is idempotent", id);
+		return refuse(
+			FREIGHT_REASON.conflict,
+			`journal append for ${id} did not settle`,
+			"retry the command; it is idempotent",
+			id,
+		);
 	}
 
 	function unusable(state: FreightState, id: string): Refusal | undefined {
-		if (!state.record) return refuse(FREIGHT_REASON.notFound, `no Freight ${id}`, "record the Freight first, or check the id", id);
+		if (!state.record)
+			return refuse(
+				FREIGHT_REASON.notFound,
+				`no Freight ${id}`,
+				"record the Freight first, or check the id",
+				id,
+			);
 		if (state.unreadable) {
-			return refuse(FREIGHT_REASON.journalUnreadable, `Freight ${id} has an unreadable journal event`, "repair the journal from backup", id);
+			return refuse(
+				FREIGHT_REASON.journalUnreadable,
+				`Freight ${id} has an unreadable journal event`,
+				"repair the journal from backup",
+				id,
+			);
 		}
 		if (state.yanked) {
-			return refuse(FREIGHT_REASON.yanked, `Freight ${id} was yanked: ${state.yanked.reason}`, "record and promote newer Freight", id);
+			return refuse(
+				FREIGHT_REASON.yanked,
+				`Freight ${id} was yanked: ${state.yanked.reason}`,
+				"record and promote newer Freight",
+				id,
+			);
 		}
 		if (state.retired) {
-			return refuse(FREIGHT_REASON.retired, `Freight ${id} was retired by retention`, "retirement is final: promote newer Freight (a new declaration or artifacts)", id);
+			return refuse(
+				FREIGHT_REASON.retired,
+				`Freight ${id} was retired by retention`,
+				"retirement is final: promote newer Freight (a new declaration or artifacts)",
+				id,
+			);
 		}
 		return undefined;
 	}
@@ -196,7 +269,12 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		const decision = await deps.authorizer.authorize(action, subject, ctx);
 		if (!decision.ok) {
 			return refuseWith(
-				reason(FREIGHT_REASON.unauthorized, `${action} was denied by policy`, "request the grant from a policy owner", action),
+				reason(
+					FREIGHT_REASON.unauthorized,
+					`${action} was denied by policy`,
+					"request the grant from a policy owner",
+					action,
+				),
 				decision.reasons,
 			);
 		}
@@ -212,21 +290,36 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 	}
 
 	async function catchUp(): Promise<void> {
-		const options: ReadAllOptions = { tenant: deps.tenant, filter: { type: CD_EVENTS.FreightRecorded } };
-		for await (const entry of deps.store.readAll(indexedTo === undefined ? options : { ...options, after: indexedTo })) {
+		const options: ReadAllOptions = {
+			tenant: deps.tenant,
+			filter: { type: CD_EVENTS.FreightRecorded },
+		};
+		for await (const entry of deps.store.readAll(
+			indexedTo === undefined ? options : { ...options, after: indexedTo },
+		)) {
 			indexedTo = entry.position;
 			const record = decode(FreightRecordSchema, entry.event.data);
-			if (record && !index.has(record.freightId)) index.set(record.freightId, record);
+			if (record && !index.has(record.freightId))
+				index.set(record.freightId, record);
 		}
 	}
 
 	async function deployments(): Promise<readonly CampDeployments[]> {
 		const byCamp = new Map<string, string[]>();
-		for await (const entry of deps.store.readAll({ tenant: deps.tenant, filter: { type: CD_EVENTS.SetCreated } })) {
+		for await (const entry of deps.store.readAll({
+			tenant: deps.tenant,
+			filter: { type: CD_EVENTS.SetCreated },
+		})) {
 			const freightId = referencedFreightId(entry.event.data);
-			if (freightId === undefined) throw new RetentionAborted(`unreadable ${CD_EVENTS.SetCreated} at ${entry.position}`);
-			const streamCamp = entry.event.streamId.startsWith("cd-camp-") ? entry.event.streamId.slice("cd-camp-".length) : "";
-			const campId = stringField(entry.event.data, "campId", "camp_id") || streamCamp;
+			if (freightId === undefined)
+				throw new RetentionAborted(
+					`unreadable ${CD_EVENTS.SetCreated} at ${entry.position}`,
+				);
+			const streamCamp = entry.event.streamId.startsWith("cd-camp-")
+				? entry.event.streamId.slice("cd-camp-".length)
+				: "";
+			const campId =
+				stringField(entry.event.data, "campId", "camp_id") || streamCamp;
 			const history = byCamp.get(campId) ?? [];
 			history.push(freightId);
 			byCamp.set(campId, history);
@@ -236,23 +329,46 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 
 	async function inFlightPromotions(): Promise<readonly RetentionPin[]> {
 		const requested = new Map<string, string>();
-		for await (const entry of deps.store.readAll({ tenant: deps.tenant, filter: { type: CD_EVENTS.EnvPromoteRequested } })) {
+		for await (const entry of deps.store.readAll({
+			tenant: deps.tenant,
+			filter: { type: CD_EVENTS.EnvPromoteRequested },
+		})) {
 			const freightId = referencedFreightId(entry.event.data);
-			if (freightId === undefined) throw new RetentionAborted(`unreadable ${CD_EVENTS.EnvPromoteRequested} at ${entry.position}`);
+			if (freightId === undefined)
+				throw new RetentionAborted(
+					`unreadable ${CD_EVENTS.EnvPromoteRequested} at ${entry.position}`,
+				);
 			if (freightId !== "") requested.set(entry.event.streamId, freightId);
 		}
 		for (const type of TERMINAL_PROMOTION_EVENTS) {
-			for await (const entry of deps.store.readAll({ tenant: deps.tenant, filter: { type } })) {
+			for await (const entry of deps.store.readAll({
+				tenant: deps.tenant,
+				filter: { type },
+			})) {
 				requested.delete(entry.event.streamId);
 			}
 		}
-		return [...requested.values()].map((freightId) => ({ freightId, reason: "in-flight-promotion" as const }));
+		return [...requested.values()].map((freightId) => ({
+			freightId,
+			reason: "in-flight-promotion" as const,
+		}));
 	}
 
 	return {
 		async record(input, ctx) {
-			if (input.origin === FreightOrigin.UNSPECIFIED || FreightOrigin[input.origin] === undefined) {
-				return refused(refuse(FREIGHT_REASON.originInvalid, "Freight origin must be specified", "pass the ingress origin", "origin"), "record");
+			if (
+				input.origin === FreightOrigin.UNSPECIFIED ||
+				FreightOrigin[input.origin] === undefined
+			) {
+				return refused(
+					refuse(
+						FREIGHT_REASON.originInvalid,
+						"Freight origin must be specified",
+						"pass the ingress origin",
+						"origin",
+					),
+					"record",
+				);
 			}
 			const parsed = parseFreightManifest(input.manifest);
 			if (!parsed.ok) return refused(parsed, "record");
@@ -274,27 +390,38 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					"record",
 				);
 			}
-			const outcome = await mutate<FreightRecord>(freightId, ctx, async (state) => {
-				if (state.record) return { ok: true, value: state.record };
-				const record = create(FreightRecordSchema, {
-					schemaVersion: FREIGHT_SCHEMA,
-					freightId,
-					alias,
-					manifest: parsed.value,
-					origin: input.origin,
-					sourceName: input.sourceName ?? "",
-					recordedBy: principalName(ctx.principal),
-					recordedAt: iso(ctx.now()),
-				});
-				return {
-					ok: true,
-					value: record,
-					append: { type: CD_EVENTS.FreightRecorded, data: body(FreightRecordSchema, record), key: CD_EVENTS.FreightRecorded },
-				};
-			});
+			const outcome = await mutate<FreightRecord>(
+				freightId,
+				ctx,
+				async (state) => {
+					if (state.record) return { ok: true, value: state.record };
+					const record = create(FreightRecordSchema, {
+						schemaVersion: FREIGHT_SCHEMA,
+						freightId,
+						alias,
+						manifest: parsed.value,
+						origin: input.origin,
+						sourceName: input.sourceName ?? "",
+						recordedBy: principalName(ctx.principal),
+						recordedAt: iso(ctx.now()),
+					});
+					return {
+						ok: true,
+						value: record,
+						append: {
+							type: CD_EVENTS.FreightRecorded,
+							data: body(FreightRecordSchema, record),
+							key: CD_EVENTS.FreightRecorded,
+						},
+					};
+				},
+			);
 			if (outcome.ok) {
 				index.set(freightId, outcome.value);
-				emit(FREIGHT_METRIC.recorded, { origin: FreightOrigin[input.origin] ?? "", bindle: parsed.value.bindle });
+				emit(FREIGHT_METRIC.recorded, {
+					origin: FreightOrigin[input.origin] ?? "",
+					bindle: parsed.value.bindle,
+				});
 			}
 			return outcome;
 		},
@@ -302,14 +429,32 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		async yank(id, why, ctx) {
 			const text = why.trim();
 			if (text === "" || text.length > MAX_REASON) {
-				return refused(refuse(FREIGHT_REASON.reasonRequired, "a yank needs a reason (1-1024 characters)", "state why the Freight is unsafe", id), "yank");
+				return refused(
+					refuse(
+						FREIGHT_REASON.reasonRequired,
+						"a yank needs a reason (1-1024 characters)",
+						"state why the Freight is unsafe",
+						id,
+					),
+					"yank",
+				);
 			}
 			let appended = false;
 			const outcome = await mutate<FreightRecord>(id, ctx, async (state) => {
-				if (!state.record) return refuse(FREIGHT_REASON.notFound, `no Freight ${id}`, "check the id or alias", id);
+				if (!state.record)
+					return refuse(
+						FREIGHT_REASON.notFound,
+						`no Freight ${id}`,
+						"check the id or alias",
+						id,
+					);
 				if (state.yanked) return { ok: true, value: state.record };
 				if (deps.authorizer) {
-					const decision = await govern("freight.yank", { freightId: id, reason: text }, ctx);
+					const decision = await govern(
+						"freight.yank",
+						{ freightId: id, reason: text },
+						ctx,
+					);
 					if (!decision.ok) return decision;
 				}
 				const yanked = create(FreightYankedRecordSchema, {
@@ -322,7 +467,11 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 				return {
 					ok: true,
 					value: state.record,
-					append: { type: CD_EVENTS.FreightYanked, data: body(FreightYankedRecordSchema, yanked), key: CD_EVENTS.FreightYanked },
+					append: {
+						type: CD_EVENTS.FreightYanked,
+						data: body(FreightYankedRecordSchema, yanked),
+						key: CD_EVENTS.FreightYanked,
+					},
 				};
 			});
 			if (!outcome.ok) return refused(outcome, "yank");
@@ -333,13 +482,32 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		async approve(input, ctx) {
 			const text = input.reason.trim();
 			if (String(input.campId).trim() === "") {
-				return refused(refuse(FREIGHT_REASON.campRequired, "an approval names one Camp", "pass the target Camp id", "campId"), "approve");
+				return refused(
+					refuse(
+						FREIGHT_REASON.campRequired,
+						"an approval names one Camp",
+						"pass the target Camp id",
+						"campId",
+					),
+					"approve",
+				);
 			}
 			if (text === "" || text.length > MAX_REASON) {
-				return refused(refuse(FREIGHT_REASON.reasonRequired, "an approval needs a reason", "reference the incident or change", "reason"), "approve");
+				return refused(
+					refuse(
+						FREIGHT_REASON.reasonRequired,
+						"an approval needs a reason",
+						"reference the incident or change",
+						"reason",
+					),
+					"approve",
+				);
 			}
 			const nowMs = ctx.now();
-			if (input.expiresAtMs <= nowMs || input.expiresAtMs - nowMs > CD_DEFAULTS.hotfixApprovalMaxMs) {
+			if (
+				input.expiresAtMs <= nowMs ||
+				input.expiresAtMs - nowMs > CD_DEFAULTS.hotfixApprovalMaxMs
+			) {
 				return refused(
 					refuse(
 						FREIGHT_REASON.approvalExpiry,
@@ -350,34 +518,43 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					"approve",
 				);
 			}
-			const outcome = await mutate<FreightApprovedRecord>(input.freightId, ctx, async (state) => {
-				const blocked = unusable(state, input.freightId);
-				if (blocked) return blocked;
-				const decision = await govern(
-					"freight.approve",
-					{ freightId: input.freightId, campId: input.campId, reason: text, expiresAt: iso(input.expiresAtMs) },
-					ctx,
-				);
-				if (!decision.ok) return decision;
-				const approved = create(FreightApprovedRecordSchema, {
-					freightId: input.freightId,
-					campId: input.campId,
-					approvedBy: principalName(ctx.principal),
-					reason: text,
-					decisionId: decision.value,
-					approvedAt: iso(nowMs),
-					expiresAt: iso(input.expiresAtMs),
-				});
-				return {
-					ok: true,
-					value: approved,
-					append: {
-						type: CD_EVENTS.FreightApproved,
-						data: body(FreightApprovedRecordSchema, approved),
-						key: `${CD_EVENTS.FreightApproved}:${decision.value}`,
-					},
-				};
-			});
+			const outcome = await mutate<FreightApprovedRecord>(
+				input.freightId,
+				ctx,
+				async (state) => {
+					const blocked = unusable(state, input.freightId);
+					if (blocked) return blocked;
+					const decision = await govern(
+						"freight.approve",
+						{
+							freightId: input.freightId,
+							campId: input.campId,
+							reason: text,
+							expiresAt: iso(input.expiresAtMs),
+						},
+						ctx,
+					);
+					if (!decision.ok) return decision;
+					const approved = create(FreightApprovedRecordSchema, {
+						freightId: input.freightId,
+						campId: input.campId,
+						approvedBy: principalName(ctx.principal),
+						reason: text,
+						decisionId: decision.value,
+						approvedAt: iso(nowMs),
+						expiresAt: iso(input.expiresAtMs),
+					});
+					return {
+						ok: true,
+						value: approved,
+						append: {
+							type: CD_EVENTS.FreightApproved,
+							data: body(FreightApprovedRecordSchema, approved),
+							key: `${CD_EVENTS.FreightApproved}:${decision.value}`,
+						},
+					};
+				},
+			);
 			if (!outcome.ok) return refused(outcome, "approve");
 			emit(FREIGHT_METRIC.approved);
 			return outcome;
@@ -396,7 +573,11 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					"qualify",
 				);
 			}
-			if (result.freightId !== input.freightId || result.campId !== input.campId || result.verificationId.trim() === "") {
+			if (
+				result.freightId !== input.freightId ||
+				result.campId !== input.campId ||
+				result.verificationId.trim() === ""
+			) {
 				return refused(
 					refuse(
 						FREIGHT_REASON.verificationMismatch,
@@ -407,39 +588,63 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					"qualify",
 				);
 			}
-			if (String(input.campId).trim() === "" || input.pipeline.trim() === "" || input.node.trim() === "") {
-				return refused(refuse(FREIGHT_REASON.campRequired, "qualification names a Camp, pipeline and node", "pass all three", "campId"), "qualify");
+			if (
+				String(input.campId).trim() === "" ||
+				input.pipeline.trim() === "" ||
+				input.node.trim() === ""
+			) {
+				return refused(
+					refuse(
+						FREIGHT_REASON.campRequired,
+						"qualification names a Camp, pipeline and node",
+						"pass all three",
+						"campId",
+					),
+					"qualify",
+				);
 			}
 			const key = `${CD_EVENTS.FreightQualified}:${input.campId}:${input.pipeline}:${input.node}:${result.verificationId}`;
 			let appended = false;
-			const outcome = await mutate<FreightQualifiedRecord>(input.freightId, ctx, async (state) => {
-				const prior = state.qualifications.find(
-					(item) =>
-						item.campId === input.campId &&
-						item.pipeline === input.pipeline &&
-						item.node === input.node &&
-						item.verificationId === result.verificationId,
-				);
-				if (prior) return { ok: true, value: prior };
-				const blocked = unusable(state, input.freightId);
-				if (blocked) return blocked;
-				const qualified = create(FreightQualifiedRecordSchema, {
-					freightId: input.freightId,
-					campId: input.campId,
+			const outcome = await mutate<FreightQualifiedRecord>(
+				input.freightId,
+				ctx,
+				async (state) => {
+					const prior = state.qualifications.find(
+						(item) =>
+							item.campId === input.campId &&
+							item.pipeline === input.pipeline &&
+							item.node === input.node &&
+							item.verificationId === result.verificationId,
+					);
+					if (prior) return { ok: true, value: prior };
+					const blocked = unusable(state, input.freightId);
+					if (blocked) return blocked;
+					const qualified = create(FreightQualifiedRecordSchema, {
+						freightId: input.freightId,
+						campId: input.campId,
+						pipeline: input.pipeline,
+						node: input.node,
+						verificationId: result.verificationId,
+						qualifiedAt: iso(ctx.now()),
+					});
+					appended = true;
+					return {
+						ok: true,
+						value: qualified,
+						append: {
+							type: CD_EVENTS.FreightQualified,
+							data: body(FreightQualifiedRecordSchema, qualified),
+							key,
+						},
+					};
+				},
+			);
+			if (!outcome.ok) return refused(outcome, "qualify");
+			if (appended)
+				emit(FREIGHT_METRIC.qualified, {
 					pipeline: input.pipeline,
 					node: input.node,
-					verificationId: result.verificationId,
-					qualifiedAt: iso(ctx.now()),
 				});
-				appended = true;
-				return {
-					ok: true,
-					value: qualified,
-					append: { type: CD_EVENTS.FreightQualified, data: body(FreightQualifiedRecordSchema, qualified), key },
-				};
-			});
-			if (!outcome.ok) return refused(outcome, "qualify");
-			if (appended) emit(FREIGHT_METRIC.qualified, { pipeline: input.pipeline, node: input.node });
 			return outcome;
 		},
 
@@ -449,7 +654,9 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 
 		async getByAlias(alias) {
 			await catchUp();
-			const matches = [...index.values()].filter((record) => record.alias === alias);
+			const matches = [...index.values()].filter(
+				(record) => record.alias === alias,
+			);
 			// Aliases are for humans; two Freight sharing one is ambiguous and
 			// resolves to nothing rather than to a guess.
 			return matches.length === 1 ? matches[0] : undefined;
@@ -472,9 +679,19 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 			const labels = Object.entries(query.labels ?? {});
 			const matches = [...index.values()]
 				.reverse()
-				.filter((record) => query.bindle === undefined || record.manifest?.bindle === query.bindle)
-				.filter((record) => labels.every(([key, value]) => record.manifest?.labels[key] === value));
-			return query.limit !== undefined && query.limit >= 0 ? matches.slice(0, query.limit) : matches;
+				.filter(
+					(record) =>
+						query.bindle === undefined ||
+						record.manifest?.bindle === query.bindle,
+				)
+				.filter((record) =>
+					labels.every(
+						([key, value]) => record.manifest?.labels[key] === value,
+					),
+				);
+			return query.limit !== undefined && query.limit >= 0
+				? matches.slice(0, query.limit)
+				: matches;
 		},
 
 		async retire(policy: RetentionPolicyRecord, ctx) {
@@ -502,7 +719,11 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 					recordedAtMs: Date.parse(state.record.recordedAt),
 					labels: state.record.manifest?.labels ?? {},
 				});
-				if (state.approvals.some((approval) => Date.parse(approval.expiresAt) > nowMs)) {
+				if (
+					state.approvals.some(
+						(approval) => Date.parse(approval.expiresAt) > nowMs,
+					)
+				) {
 					approvals.push({ freightId: id, reason: "approval" });
 				}
 			}
@@ -520,24 +741,33 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 			});
 			const retired: FreightRecord[] = [];
 			for (const id of plan.retire) {
-				const outcome = await mutate<FreightRecord | undefined>(id, ctx, async (state) => {
-					if (!state.record || state.retired) return { ok: true, value: undefined };
-					const record = create(FreightRetiredRecordSchema, {
-						freightId: id,
-						reason: `retention: unreferenced for ${Number(policy.keepUnpromotedMs) || CD_DEFAULTS.retentionKeepUnpromotedMs} ms`,
-						retiredAt: iso(nowMs),
-					});
-					return {
-						ok: true,
-						value: state.record,
-						append: { type: CD_EVENTS.FreightRetired, data: body(FreightRetiredRecordSchema, record), key: CD_EVENTS.FreightRetired },
-					};
-				});
+				const outcome = await mutate<FreightRecord | undefined>(
+					id,
+					ctx,
+					async (state) => {
+						if (!state.record || state.retired)
+							return { ok: true, value: undefined };
+						const record = create(FreightRetiredRecordSchema, {
+							freightId: id,
+							reason: `retention: unreferenced for ${Number(policy.keepUnpromotedMs) || CD_DEFAULTS.retentionKeepUnpromotedMs} ms`,
+							retiredAt: iso(nowMs),
+						});
+						return {
+							ok: true,
+							value: state.record,
+							append: {
+								type: CD_EVENTS.FreightRetired,
+								data: body(FreightRetiredRecordSchema, record),
+								key: CD_EVENTS.FreightRetired,
+							},
+						};
+					},
+				);
 				if (outcome.ok && outcome.value) retired.push(outcome.value);
 			}
-			if (retired.length > 0) emit(FREIGHT_METRIC.retired, { bindle: policy.bindle }, retired.length);
+			if (retired.length > 0)
+				emit(FREIGHT_METRIC.retired, { bindle: policy.bindle }, retired.length);
 			return retired;
 		},
 	};
 }
-

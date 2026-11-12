@@ -24,17 +24,31 @@ export const FREIGHT_REASON = Object.freeze({
 	journalUnreadable: "freight-journal-unreadable",
 } as const);
 
-export type FreightReasonCode = (typeof FREIGHT_REASON)[keyof typeof FREIGHT_REASON];
+export type FreightReasonCode =
+	(typeof FREIGHT_REASON)[keyof typeof FREIGHT_REASON];
 
-export function reason(code: string, message: string, remediation: string, subject = ""): ReasonRecord {
+export function reason(
+	code: string,
+	message: string,
+	remediation: string,
+	subject = "",
+): ReasonRecord {
 	return create(ReasonRecordSchema, { code, message, remediation, subject });
 }
 
-export function refuse(code: string, message: string, remediation: string, subject = ""): Refusal {
+export function refuse(
+	code: string,
+	message: string,
+	remediation: string,
+	subject = "",
+): Refusal {
 	return { ok: false, reasons: [reason(code, message, remediation, subject)] };
 }
 
 /** A refusal whose first reason is the ledger's own code, followed by the cause's reasons. */
-export function refuseWith(head: ReasonRecord, causes: readonly ReasonRecord[]): Refusal {
+export function refuseWith(
+	head: ReasonRecord,
+	causes: readonly ReasonRecord[],
+): Refusal {
 	return { ok: false, reasons: [head, ...causes] };
 }

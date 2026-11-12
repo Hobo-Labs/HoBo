@@ -1,19 +1,30 @@
 // Journal helpers shared by the Freight ledger and ingest: protobuf-JSON event
 // bodies, tolerant decoding of bodies other work packages own, and principal
 // rendering for the `*_by` fields.
-import { fromJson, type JsonValue, type Message, toJson } from "@bufbuild/protobuf";
+import {
+	fromJson,
+	type JsonValue,
+	type Message,
+	toJson,
+} from "@bufbuild/protobuf";
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import type { PrincipalRef } from "@hobo/core";
 import type { TelemetrySink } from "../ports.js";
 import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 
 /** Event body for a generated record: its canonical protobuf JSON. */
-export function body<T extends Message>(schema: GenMessage<T>, record: T): JsonValue {
+export function body<T extends Message>(
+	schema: GenMessage<T>,
+	record: T,
+): JsonValue {
 	return toJson(schema, record);
 }
 
 /** Decode a persisted body; undefined when it is not that record (never throws). */
-export function decode<T extends Message, D>(schema: GenMessage<T>, data: D): T | undefined {
+export function decode<T extends Message, D>(
+	schema: GenMessage<T>,
+	data: D,
+): T | undefined {
 	const json = jsonOf(data);
 	if (!isJsonObject(json)) return undefined;
 	try {
@@ -73,9 +84,24 @@ export function iso(ms: number): string {
  */
 export function emitCounter(
 	sink: TelemetrySink | undefined,
-	point: Readonly<{ name: string; unit: string; atMs: number; attributes: Readonly<Record<string, string>>; value?: number }>,
+	point: Readonly<{
+		name: string;
+		unit: string;
+		atMs: number;
+		attributes: Readonly<Record<string, string>>;
+		value?: number;
+	}>,
 ): void {
 	sink
-		?.metrics([{ name: point.name, kind: "counter", value: point.value ?? 1, unit: point.unit, atMs: point.atMs, attributes: point.attributes }])
+		?.metrics([
+			{
+				name: point.name,
+				kind: "counter",
+				value: point.value ?? 1,
+				unit: point.unit,
+				atMs: point.atMs,
+				attributes: point.attributes,
+			},
+		])
 		.catch(() => undefined);
 }
