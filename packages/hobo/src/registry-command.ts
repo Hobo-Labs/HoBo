@@ -6,6 +6,8 @@ import {
 } from "@hobo/cloud";
 
 import { REGISTRY_STREAM } from "./add-command.js";
+import { storedCatalogs } from "./pricing-catalog-store.js";
+import { runRegistryAdd } from "./registry-add.js";
 
 export interface RegistryCommandDeps {
 	// The shared Yard runtime whose PlannerRegistry (the provider + capability
@@ -28,19 +30,24 @@ interface RegistryProvider {
 	// Only approved providers are matchable (walkthrough Part 0/2); a held
 	// (installed-but-unapproved) provider renders approved: false.
 	readonly approved: boolean;
+	// Hash of the pricing catalog stored at registration, when the provider
+	// declared billing. Absent for built-in providers.
+	readonly pricingCatalogHash?: string;
 }
 
 // `hobo registry` — administer registry artifacts. This read view lists the
 // live provider + capability catalog the Planner matches deployments against:
 // the content-addressed catalog hash, the registered providers, and the ports
 // (with features/regions) each offers. It reads the injected PlannerRegistry
-// directly — no cloud call, no credential. (Mutating admin — install/remove — is
-// a follow-up; this surfaces what is registered today.)
+// directly — no cloud call, no credential.
+//
+// `hobo registry add <manifest>` registers a provider described by a
+// hobo.provider-manifest/v1 data file (see ./registry-add.ts).
 export function createRegistryCommand(
 	deps: RegistryCommandDeps = {},
 ): CommandModule {
 	return {
-		run: async ({ emitProgress }) => {
+		run: async ({ args, context, emitProgress }) => {
 			const { runtime } = deps;
 			if (!runtime) {
 				return {
@@ -51,6 +58,15 @@ export function createRegistryCommand(
 						"hobo registry has no Yard runtime wired — run it from the composed `hobo` binary.",
 					data: { command: "registry" },
 				};
+			}
+
+			if (args[0] === "add") {
+				return runRegistryAdd({
+					runtime,
+					file: args[1],
+					cwd: context.cwd,
+					emitProgress,
+				});
 			}
 
 			const registry = runtime.registry;
@@ -109,6 +125,7 @@ export function createRegistryCommand(
 					approved: true,
 				}));
 
+			const catalogs = storedCatalogs(registryEvents);
 			const installed: RegistryProvider[] = installedRows
 				.map((row) => ({
 					providerId: row.providerId,
@@ -121,6 +138,12 @@ export function createRegistryCommand(
 					source: "installed" as const,
 					approved: approvedSet.has(row.providerId),
 				}))
+				.map((row): RegistryProvider => {
+					const stored = catalogs.get(row.providerId);
+					return stored === undefined
+						? row
+						: { ...row, pricingCatalogHash: stored.catalogHash };
+				})
 				.sort((a, b) => a.providerId.localeCompare(b.providerId));
 
 			const allProviders = [...providers, ...installed];

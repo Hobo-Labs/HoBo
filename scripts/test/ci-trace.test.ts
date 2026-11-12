@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
 	parseRunSummary,
 	redact,
+	runTraceId,
 	secretValues,
 	toOtlp,
 } from "../ci/ci-trace.mts";
@@ -12,6 +13,31 @@ import {
 const SYNTHETIC = "synthetic-ci-secret-9f8e7d6c5b4a";
 
 describe("ci-trace", () => {
+	it("joins the workflow run's trace when given its id", () => {
+		const run = {
+			execution: { command: "turbo run test", startTime: 1, endTime: 2 },
+			tasks: [{ taskId: "a#test", execution: { startTime: 1, endTime: 2 } }],
+		};
+		const traceId = runTraceId("42738777301");
+		assert.match(traceId, /^[0-9a-f]{32}$/u);
+		const joined = toOtlp([run], "pr-gate", "42738777301-1", traceId);
+		const own = toOtlp([run], "pr-gate", "42738777301-1");
+		const ids = (trace: ReturnType<typeof toOtlp>) => [
+			...new Set(
+				trace.resourceSpans[0]?.scopeSpans[0]?.spans.map(
+					(span) => span.traceId,
+				),
+			),
+		];
+		assert.deepEqual(ids(joined), [traceId]);
+		// Two jobs of one run share the trace; without the id each has its own.
+		assert.deepEqual(
+			ids(toOtlp([run], "workspace_tests", "42738777301-1", traceId)),
+			[traceId],
+		);
+		assert.notDeepEqual(ids(own), [traceId]);
+	});
+
 	it("builds an OTLP trace with a root span and one span per executed task", () => {
 		const trace = JSON.stringify(
 			toOtlp(

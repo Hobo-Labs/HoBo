@@ -1,14 +1,23 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	boxGitMirrorPath,
 	createBoxGitMirror,
-	ensureBoxGitMirrorRoot,
+	defaultGitMirrorFallbackRoot,
+	defaultGitMirrorPreferredRoot,
+	resolveGitMirrorRoot,
 	shaRef,
 } from "../src/isolated-worker/git-mirror.js";
+import { isCompleteGitMirror } from "../src/isolated-worker/git-mirror-usability.js";
 
 const roots: string[] = [];
 
@@ -45,20 +54,82 @@ function commitSource(root: string): CommitSource {
 	return { source, first, second };
 }
 
-describe("ensureBoxGitMirrorRoot", () => {
-	it("creates an absolute mirror root", () => {
+describe("resolveGitMirrorRoot", () => {
+	it("uses the preferred root when it is writable", () => {
+		const preferred = mkdtempSync(join(tmpdir(), "hobo-git-mirror-pref-"));
+		roots.push(preferred);
+		expect(resolveGitMirrorRoot(preferred, "/tmp/fallback-unused")).toBe(
+			preferred,
+		);
+	});
+
+	it("creates a preferred root that does not exist yet", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-root-"));
 		roots.push(root);
 		const mirrorRoot = join(root, "git");
-		expect(ensureBoxGitMirrorRoot(mirrorRoot)).toEqual({ status: "ready" });
-		expect(mirrorRoot).toBeTruthy();
+		expect(
+			resolveGitMirrorRoot(mirrorRoot, join(root, "fallback-unused")),
+		).toBe(mirrorRoot);
+		expect(existsSync(mirrorRoot)).toBe(true);
+		expect(existsSync(join(root, "fallback-unused"))).toBe(false);
 	});
 
-	it("reports EACCES instead of throwing when the root is not writable", async () => {
+	it("falls back when the preferred root cannot be created", () => {
+		const fallback = mkdtempSync(join(tmpdir(), "hobo-git-mirror-fb-"));
+		roots.push(fallback);
+		// A permission failure is simulated: as root, a read-only parent
+		// directory would not stop mkdir, and this test runs as root in containers.
+		for (const code of ["EACCES", "EPERM", "EROFS"])
+			expect(
+				resolveGitMirrorRoot("/var/lib/hobo-ci/git", fallback, (root) => {
+					if (root !== fallback)
+						throw Object.assign(new Error("denied"), { code });
+				}),
+			).toBe(fallback);
+		// Any other failure is not a reason to fall back.
+		expect(() =>
+			resolveGitMirrorRoot("/var/lib/hobo-ci/git", fallback, () => {
+				throw Object.assign(new Error("full"), { code: "ENOSPC" });
+			}),
+		).toThrow("full");
+	});
+
+	it("defaultGitMirrorFallbackRoot is absolute", () => {
+		expect(defaultGitMirrorFallbackRoot()).toMatch(/^\//);
+	});
+
+	it("defaultGitMirrorPreferredRoot uses box cache without HOBO_CI_GIT_MIRROR_ROOT", () => {
+		const priorUser = process.env.USER;
+		const priorHome = process.env.HOME;
+		const priorRoot = process.env.HOBO_CI_GIT_MIRROR_ROOT;
+		delete process.env.HOBO_CI_GIT_MIRROR_ROOT;
+		process.env.USER = "box";
+		process.env.HOME = "/home/box";
+		try {
+			expect(defaultGitMirrorPreferredRoot()).toBe(
+				"/home/box/.cache/hobo-ci/git",
+			);
+		} finally {
+			if (priorRoot === undefined) delete process.env.HOBO_CI_GIT_MIRROR_ROOT;
+			else process.env.HOBO_CI_GIT_MIRROR_ROOT = priorRoot;
+			if (priorUser === undefined) delete process.env.USER;
+			else process.env.USER = priorUser;
+			if (priorHome === undefined) delete process.env.HOME;
+			else process.env.HOME = priorHome;
+		}
+	});
+});
+
+describe("createBoxGitMirror mirror path", () => {
+	it("reports a miss instead of throwing when the mirror path cannot be created", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-root-"));
 		roots.push(root);
 		const locked = join(root, "locked");
-		mkdirSync(locked, { mode: 0o555 });
+		mkdirSync(locked);
+		// A file where the owner directory goes stops mkdir for every user. A
+		// read-only root would not: as root mkdir ignores the mode, and this
+		// test runs as root in containers.
+		writeFileSync(join(locked, "Hobo-Labs"), "");
 		const mirror = createBoxGitMirror({
 			root: locked,
 			repository: "Hobo-Labs/HoBo",
@@ -130,7 +201,172 @@ describe("createBoxGitMirror", () => {
 		).toEqual(["refs/heads/main"]);
 		expect(
 			git(root, ["--git-dir", mirror.path, "rev-parse", "refs/heads/main"]),
-		).toBe(first);
+		).toBe(second);
+	});
+
+	it("repairs an existing blob:none promisor mirror on ensure", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { source, first } = commitSource(root);
+		const mirrorPath = boxGitMirrorPath(
+			join(root, "mirrors"),
+			"Hobo-Labs/HoBo",
+		);
+		mkdirSync(dirname(mirrorPath), { recursive: true });
+		execFileSync("git", ["clone", "--bare", source, mirrorPath]);
+		execFileSync("git", [
+			"--git-dir",
+			mirrorPath,
+			"config",
+			"remote.origin.promisor",
+			"true",
+		]);
+		execFileSync("git", [
+			"--git-dir",
+			mirrorPath,
+			"config",
+			"extensions.partialclonefilter",
+			"blob:none",
+		]);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: source,
+		});
+		const result = await mirror.ensure(first);
+		expect(result).toEqual({ status: "hit", mirror: mirror.path });
+		expect(isCompleteGitMirror(mirror.path)).toBe(true);
+	});
+
+	/** Objects of the commit's tree the mirror does not hold. */
+	function missingObjects(mirrorPath: string, sha: string): string[] {
+		return git(mirrorPath, [
+			"rev-list",
+			"--objects",
+			"--no-walk",
+			"--missing=print",
+			sha,
+		])
+			.split("\n")
+			.filter((line) => line.startsWith("?"));
+	}
+
+	/** A job's checkout: one commit, from the mirror alone, GitHub out of reach. */
+	function checkoutFromMirrorAlone(
+		root: string,
+		mirrorPath: string,
+		sha: string,
+	): string {
+		git(mirrorPath, [
+			"config",
+			"remote.origin.url",
+			`file://${join(root, "unreachable.git")}`,
+		]);
+		const work = join(root, `work-${sha.slice(0, 8)}`);
+		mkdirSync(work);
+		git(work, ["init", "-b", "main"]);
+		git(work, [
+			"fetch",
+			"--no-tags",
+			"--filter=blob:none",
+			"--depth=1",
+			`file://${mirrorPath}`,
+			sha,
+		]);
+		git(work, ["checkout", "FETCH_HEAD"]);
+		return git(work, ["show", "HEAD:README.md"]);
+	}
+
+	function filteringSource(root: string): CommitSource & { url: string } {
+		const made = commitSource(root);
+		// GitHub honours blob:none; a bare path does not, and would hide the bug.
+		git(made.source, ["config", "uploadpack.allowFilter", "true"]);
+		git(made.source, ["config", "uploadpack.allowAnySHA1InWant", "true"]);
+		return { ...made, url: `file://${made.source}` };
+	}
+
+	it("builds a mirror a job can check out from alone", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
+	it("completes a blobless mirror made before the backfill fetched anything", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		expect(missingObjects(mirror.path, second)).not.toEqual([]);
+
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
+	it("takes the commit again when a mirror with no promisor marker lacks its files", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		// A repair that dropped the markers without fetching the blobs: the
+		// mirror now reads as complete, so only the whole-tree check catches it.
+		git(mirror.path, ["config", "--unset", "remote.origin.promisor"]);
+		git(mirror.path, ["config", "--unset", "remote.origin.partialclonefilter"]);
+		expect(isCompleteGitMirror(mirror.path)).toBe(true);
+		expect(missingObjects(mirror.path, second)).not.toEqual([]);
+
+		expect(await mirror.ensure(second)).toEqual({
+			status: "hit",
+			mirror: mirror.path,
+		});
+		expect(missingObjects(mirror.path, second)).toEqual([]);
+		expect(checkoutFromMirrorAlone(root, mirror.path, second)).toBe("two");
+	});
+
+	it("misses rather than hand a job a mirror it cannot complete", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-"));
+		roots.push(root);
+		const { url, second } = filteringSource(root);
+		const mirror = createBoxGitMirror({
+			root: join(root, "mirrors"),
+			repository: "Hobo-Labs/HoBo",
+			originUrl: url,
+		});
+		mkdirSync(join(mirror.path, ".."), { recursive: true });
+		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
+		git(mirror.path, [
+			"config",
+			"remote.origin.url",
+			`file://${join(root, "unreachable.git")}`,
+		]);
+		const result = await mirror.ensure(second);
+		expect(result.status).toBe("miss");
 	});
 
 	it("misses a commit the origin does not have", async () => {

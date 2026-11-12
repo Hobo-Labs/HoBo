@@ -1,0 +1,12 @@
+{
+	"kind": "infisical-self-hosted",
+	"endpoint": "https://admin:fixture@secrets.hobo-fleet.example",
+	"projectId": "proj-1",
+	"environment": "prod",
+	"secretPath": "/hobo-ci-relay",
+	"relayIdentityId": "relay-identity",
+	"deployIdentityId": "deploy-identity",
+	"claimBundleId": "secret-store:hobo-ci-relay:1",
+	"deployProjectId": "proj-deploy-1",
+	"claimState": "pending"
+}

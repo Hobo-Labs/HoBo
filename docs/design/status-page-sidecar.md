@@ -9,8 +9,8 @@ tags: [hobo, design, status-page, availability, sidecar]
 
 > Implementation record for the ADR-0077 / [Plan 49 §C](./developer-experience.md#plan-49)
 > status-page surface. Production code lives in
-> [`packages/status-page`](../../packages/status-page/README.md) with the
-> station sidecar host in `packages/code`. The M0 scope contract is
+> [`packages/status-page`](../../packages/status-page/README.md); a Station
+> sidecar host is the composing host's job. The M0 scope contract is
 > [`public-status-page-incident-communication.md`](./public-status-page-incident-communication.md)
 > (HOBO-497); this build keeps its exclusions (no hosted publisher, no
 > subscriber management, no SLA promises).
@@ -73,10 +73,9 @@ Session Replay (ADR-0137), so no new attachment mechanism is introduced:
   `status-page` is an allowlisted platform option next to `session-replay`,
   and repeated `.with()` replaces rather than stacks.
 - **Station default**: the status sidecar is a `kind: "sidecar"` Station
-  capability with `provenance: "default"` (present unless observed absent),
-  served by the `packages/code` occupancy fleet next to dashboard/Evidence.
-  It is best-effort — a broken status listener never takes the occupancy
-  down — and `HOBO_CODE_SIDECARS=0` disables the fleet wholesale.
+  capability with `provenance: "default"` (present unless observed absent).
+  A host that serves it treats it as best-effort — a broken status listener
+  never takes the occupancy down.
 
 ## Edge cases handled (tested in `packages/status-page/test/`)
 
@@ -92,5 +91,4 @@ public banners, and slug traversal in the static site writer.
 (`data-models/status_page.*`), a consumer pact
 (`contracts/pacts/status-page-projection.pact.json`), a DESIGN.md bound to
 HoBo Rubberhose (ADR-0149) with a design-lint test over rendered output, and
-92 unit tests; the station sidecar adds fleet-probe tests in
-`packages/code/test/status-sidecar-server.test.ts`.
+92 unit tests.

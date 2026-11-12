@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
 	"topologyDigest": "sha256:6b9aeb293fd5f345dcd42bcb27eeafcb9435a32f2e12e0f005fc78df24ef91a8",
-	"resolutionDigest": "sha256:1546fc2ff2d3745ef233285db2abba29d2d350b2571fed4a7d27c431e3d9436f",
+	"resolutionDigest": "sha256:df121b5f7d111d7fd4da1bfe800414deb8ba2e9f3a718e6aa6f78dce35bda495",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",

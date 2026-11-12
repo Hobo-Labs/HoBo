@@ -249,12 +249,19 @@ describe("the CI scripts that read changed paths from stdin, behind a late write
 	});
 
 	it("dependent-tests.mts", async () => {
+		// The lockfile alone plans the whole workspace without walking a test:
+		// the reason names the path, so it arrived, and an empty read says
+		// "empty diff". A docs path plans by walking every package's tests,
+		// which outlasted this harness's 20 s guard on a busy runner.
 		const exit = await runWithLateWriter(
 			[...STRIP, "scripts/ci/dependent-tests.mts"],
-			late,
+			{ ...late, input: "pnpm-lock.yaml\n" },
 		);
 		assert.equal(exit.status, 0, exit.stderr);
-		assert.match(exit.stdout, /^dependent-tests: 0 whole suite\(s\)/);
+		assert.equal(
+			exit.stdout,
+			"dependent-tests: whole workspace (pnpm-lock.yaml changed)\n",
+		);
 	});
 
 	it("impact-classifier.mts", async () => {

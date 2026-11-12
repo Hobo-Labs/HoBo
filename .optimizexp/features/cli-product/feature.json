@@ -1,14 +1,13 @@
 {
   "schemaVersion": 1,
   "id": "cli-product",
-  "title": "Product CLI help and failure honesty (hobo, hobo-code)",
+  "title": "Product CLI help and failure honesty (hobo)",
   "experiences": [
     "dx",
     "ax"
   ],
   "personas": [
-    "product-app-developer",
-    "product-coding-agent"
+    "product-app-developer"
   ],
   "interfaces": [
     "cli"
@@ -17,10 +16,7 @@
   "surfaces": [
     "hobo --help",
     "hobo <verb> --help",
-    "hobo deploy --json",
-    "hobo-code --help",
-    "hobo-code <verb> --help",
-    "hobo-code status --json"
+    "hobo deploy --json"
   ],
   "tags": [
     "@optimizexp",

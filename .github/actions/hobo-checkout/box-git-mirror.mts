@@ -1,7 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	realpathSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+	INCOMPLETE_MIRROR_REASON,
+	isCompleteGitMirror,
+} from "./git-mirror-usability.mts";
 
 export type BoxGitMirrorResolution =
 	| {
@@ -35,6 +45,7 @@ function usableMirror(path: string, sha: string): boolean {
 	} catch {
 		return false;
 	}
+	if (!isCompleteGitMirror(path)) return false;
 	const bareCheck = spawnSync(
 		"git",
 		[`--git-dir=${path}`, "rev-parse", "--is-bare-repository"],
@@ -61,6 +72,23 @@ export function boxGitMirrorInsteadOfConfig(
 	return `[url "${mirrorUrl}"]\n    insteadOf = https://github.com/${repository}\n    insteadOf = https://github.com/${repository}.git\n`;
 }
 
+function mirrorCandidates(
+	env: NodeJS.ProcessEnv,
+	repository: string,
+): readonly string[] {
+	const configured = env.HOBO_CI_GIT_MIRROR?.trim();
+	const root = env.HOBO_CI_GIT_MIRROR_ROOT?.trim();
+	const fromRoot = root ? join(root, `${repository}.git`) : undefined;
+	if (configured || fromRoot) {
+		return [...(configured ? [configured] : []), ...(fromRoot ? [fromRoot] : [])];
+	}
+	return [
+		`/home/box/.cache/hobo-ci/git/${repository}.git`,
+		`/var/lib/hobo-ci/git/${repository}.git`,
+		`/opt/hobo/ci/git/${repository}.git`,
+	];
+}
+
 export function resolveBoxGitMirror(
 	env: NodeJS.ProcessEnv = process.env,
 	extraSearchPaths: readonly string[] = [],
@@ -81,15 +109,7 @@ export function resolveBoxGitMirror(
 			reason: "HOBO_CI_GIT_MIRROR must be absolute and contain no '..' segments",
 		};
 	}
-	const mirrorRoot =
-		env.HOBO_CI_GIT_MIRROR_ROOT?.trim() || "/var/lib/hobo-ci/git";
-	const defaultMirror = join(resolve(mirrorRoot), `${repository}.git`);
-	const candidates = [
-		...(configured ? [configured] : []),
-		defaultMirror,
-		`/opt/hobo/ci/git/${repository}.git`,
-		...extraSearchPaths,
-	];
+	const candidates = [...mirrorCandidates(env, repository), ...extraSearchPaths];
 	let lastReason = "no candidate mirror exists";
 	for (const candidate of candidates) {
 		const absolute = absoluteCandidate(candidate);
@@ -105,6 +125,10 @@ export function resolveBoxGitMirror(
 			lastReason = `cannot resolve mirror ${absolute}`;
 			continue;
 		}
+		if (!isCompleteGitMirror(canonical)) {
+			lastReason = `${INCOMPLETE_MIRROR_REASON}: ${canonical}`;
+			continue;
+		}
 		if (!usableMirror(canonical, sha)) {
 			lastReason = `mirror does not contain the triggering commit: ${canonical}`;
 			continue;
@@ -118,12 +142,25 @@ export function resolveBoxGitMirror(
 	return { status: "miss", reason: lastReason };
 }
 
+function appendGithubEnv(path: string, key: string, value: string): void {
+	appendFileSync(path, `${key}=${value}\n`, "utf8");
+}
+
 function runCli(args: readonly string[]): void {
 	const writeConfigIndex = args.indexOf("--write-config");
 	const configPath =
 		writeConfigIndex >= 0 ? args[writeConfigIndex + 1] : undefined;
+	const exportEnvIndex = args.indexOf("--export-github-env");
+	const githubEnvPath =
+		exportEnvIndex >= 0 ? args[exportEnvIndex + 1] : undefined;
 	if (writeConfigIndex >= 0 && !configPath) {
 		console.log("hobo_ci_git_mirror=miss reason=--write-config requires a path");
+		return;
+	}
+	if (exportEnvIndex >= 0 && !githubEnvPath) {
+		console.log(
+			"hobo_ci_git_mirror=miss reason=--export-github-env requires a path",
+		);
 		return;
 	}
 	try {
@@ -132,9 +169,17 @@ function runCli(args: readonly string[]): void {
 			console.log(
 				`hobo_ci_git_mirror=miss reason=${resolution.reason.replace(/[\r\n]+/g, " ")}`,
 			);
+			if (githubEnvPath) appendGithubEnv(githubEnvPath, "HOBO_CI_GIT_MIRROR_RESOLVED", "");
 			return;
 		}
 		if (configPath) writeFileSync(configPath, resolution.insteadOfConfig, "utf8");
+		if (githubEnvPath) {
+			appendGithubEnv(
+				githubEnvPath,
+				"HOBO_CI_GIT_MIRROR_RESOLVED",
+				resolution.mirror,
+			);
+		}
 		console.log(`hobo_ci_git_mirror=hit mirror=${resolution.mirror}`);
 		console.log(resolution.insteadOfConfig.trimEnd());
 	} catch (error) {

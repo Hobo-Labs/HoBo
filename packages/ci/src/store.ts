@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import {
 	clone,
 	create,
@@ -14,11 +14,18 @@ import {
 import type { BudgetPolicyEvaluationContext } from "@hobo/core";
 import { z } from "zod";
 import { allocationQuote } from "./accounting.js";
+import {
+	accountEventPage,
+	type EventCursor,
+	eventCursorBounds,
+	jobAccountId,
+} from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import {
 	ACTIVE_STATES,
 	type Account,
+	type CiEventPage,
 	CiEventSchema,
 	type Configuration,
 	ConfigurationSchema,
@@ -39,6 +46,8 @@ import {
 	SandboxAllowanceSchema,
 	type SandboxPricing,
 	SandboxPricingSchema,
+	type SequencedCiEvent,
+	SequencedCiEventSchema,
 } from "./index.js";
 import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 import {
@@ -256,6 +265,23 @@ export interface RateReattestation {
 	sourceUrl: string;
 }
 
+/** A journal row as the event it stores and its position. */
+function sequenced(row: Record<string, SQLOutputValue>): SequencedCiEvent {
+	return create(SequencedCiEventSchema, {
+		seq: z.number().int().parse(row.seq),
+		event: fromJsonString(CiEventSchema, z.string().parse(row.body)),
+	});
+}
+
+/**
+ * One account's events, through the index on the account each event names.
+ * An event that names no account (a partition event, or a job event
+ * journalled before its owner was recorded) has no key there and is in no
+ * account's range.
+ */
+const ACCOUNT_EVENTS =
+	"SELECT seq, body FROM events INDEXED BY events_account_seq WHERE json_extract(body,'$.accountId')=?";
+
 /** Single-writer partition. Events and their materialized lease view commit together. */
 export class LeaseStore {
 	private readonly db: DatabaseSync;
@@ -269,6 +295,7 @@ export class LeaseStore {
 		this.db = database ?? new DatabaseSync(path);
 		this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
    CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, body TEXT NOT NULL);
+   CREATE INDEX IF NOT EXISTS events_account_seq ON events(json_extract(body,'$.accountId'), seq);
    CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, job_key TEXT NOT NULL, body TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS terminal_jobs (job_key TEXT PRIMARY KEY);
    CREATE TABLE IF NOT EXISTS assigned_jobs (job_key TEXT PRIMARY KEY, lease_id TEXT NOT NULL, version TEXT NOT NULL DEFAULT '');
@@ -332,6 +359,48 @@ export class LeaseStore {
 			.prepare("SELECT body FROM events ORDER BY seq")
 			.all()
 			.map((row) => fromJsonString(CiEventSchema, z.string().parse(row.body)));
+	}
+	/**
+	 * An account's events after a journal position, oldest first; without a
+	 * position, its newest ones. `seq` is the journal's own key, so a position
+	 * handed back as `after` never skips or repeats an event.
+	 *
+	 * The statement names the account index it reads through, so the read
+	 * touches the account's own events and nothing of any other account's,
+	 * however long the journal is. Left to choose, SQLite could walk the whole
+	 * journal, which stops this single-threaded store, and its host, for as
+	 * long as the journal is long; without the index the read fails instead.
+	 */
+	eventsSince(cursor: EventCursor): CiEventPage {
+		const { accountId, after, limit } = eventCursorBounds(cursor);
+		// One more than the page holds, to say whether the account has more.
+		const rows =
+			after === undefined
+				? this.db
+						.prepare(`${ACCOUNT_EVENTS} ORDER BY seq DESC LIMIT ?`)
+						.all(accountId, limit + 1)
+						.reverse()
+				: this.db
+						.prepare(`${ACCOUNT_EVENTS} AND seq>? ORDER BY seq LIMIT ?`)
+						.all(accountId, after, limit + 1);
+		return accountEventPage(rows.map(sequenced), cursor);
+	}
+	/** The journal's newest position; zero while it is empty. */
+	journalHead(): number {
+		return z
+			.number()
+			.int()
+			.parse(
+				this.db.prepare("SELECT coalesce(max(seq),0) AS head FROM events").get()
+					?.head,
+			);
+	}
+	/** The account whose connection holds this job's repository right now. */
+	private jobOwner(job: Job): string {
+		return jobAccountId(
+			this.configuration()?.configuration?.connections ?? [],
+			job,
+		);
 	}
 	configuration(): ConfigurationState | undefined {
 		const row = this.db
@@ -1472,6 +1541,7 @@ export class LeaseStore {
 					create(CiEventSchema, {
 						type: "ci.JobExpired",
 						at,
+						accountId: this.jobOwner(pending),
 						detail: toJsonString(JobSchema, pending),
 					}),
 				),
@@ -1520,14 +1590,17 @@ export class LeaseStore {
 			return;
 		}
 		const detail = toJsonString(JobSchema, pinned);
-		this.db
-			.prepare("INSERT INTO events(body) VALUES (?)")
-			.run(
-				toJsonString(
-					CiEventSchema,
-					create(CiEventSchema, { type: "ci.JobQueued", at, detail }),
-				),
-			);
+		this.db.prepare("INSERT INTO events(body) VALUES (?)").run(
+			toJsonString(
+				CiEventSchema,
+				create(CiEventSchema, {
+					type: "ci.JobQueued",
+					at,
+					accountId: this.jobOwner(pinned),
+					detail,
+				}),
+			),
+		);
 		this.db
 			.prepare("INSERT INTO pending_jobs(job_key,body) VALUES (?,?)")
 			.run(key, detail);
@@ -1573,6 +1646,7 @@ export class LeaseStore {
 						create(CiEventSchema, {
 							type: "ci.JobAssignmentCleared",
 							at,
+							accountId: lease.accountId,
 							leaseId,
 							detail: toJsonString(JobSchema, job),
 						}),
@@ -1597,6 +1671,7 @@ export class LeaseStore {
 						create(CiEventSchema, {
 							type: "ci.JobCompleted",
 							at,
+							accountId: this.jobOwner(job),
 							detail: toJsonString(JobSchema, job),
 						}),
 					),
@@ -1937,6 +2012,56 @@ export class LeaseStore {
 			lease.state = "cancelled";
 			this.append(lease, "ci.LeaseCancelled", at);
 			this.queueInside(job, at);
+		});
+	}
+	/** Drop box demand when GitHub assigned the job elsewhere; never re-queue. */
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	): boolean {
+		return this.transaction(() => {
+			if (
+				expectedRevision !== undefined &&
+				this.configuration()?.revision !== expectedRevision
+			)
+				throw new Error("configuration revision conflict");
+			const configuration = this.configuration()?.configuration;
+			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			let changed = false;
+			for (const lease of this.all()) {
+				if (
+					lease.repositoryId !== job.repositoryId ||
+					lease.jobId !== job.id ||
+					lease.runAttempt !== job.runAttempt ||
+					!ACTIVE_STATES.has(lease.state)
+				)
+					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
+				const offer = configuration?.accounts
+					.find((account) => account.id === lease.accountId)
+					?.offers.find((candidate) => candidate.id === lease.offerId);
+				if (
+					!shouldAbortIsolatedFleetLease(
+						lease.provider,
+						offer
+							? { backend: offer.backend, runsOn: offer.runsOn }
+							: undefined,
+					)
+				)
+					continue;
+				lease.state = "cancelled";
+				this.append(lease, "ci.LeaseCancelled", at);
+				changed = true;
+			}
+			if (
+				this.db.prepare("SELECT 1 FROM pending_jobs WHERE job_key=?").get(key)
+			) {
+				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
+				changed = true;
+			}
+			return changed;
 		});
 	}
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): void {

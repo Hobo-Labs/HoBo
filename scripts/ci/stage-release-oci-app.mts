@@ -61,13 +61,6 @@ export const RELEASE_OCI_STAGE_SPECS = {
 			{ name: "hobo-mcp", entrypoint: "dist/bin/hobo-mcp.js" },
 		],
 	},
-	"hobo-code": {
-		kind: "deploy",
-		packageName: "@hobo/code",
-		buildFilter: "@hobo/code...",
-		appPath: "app",
-		wrappers: [{ name: "hobo-code", entrypoint: "dist/bin/hobo-code.js" }],
-	},
 	"hobo-codegen": {
 		kind: "deploy",
 		packageName: "@hobo/schema-tools",
@@ -342,17 +335,35 @@ export function releaseOciStagingLocation(
 
 /** Resolve from the workspace: pnpm otherwise chooses a different store for
  * a deployment target on another filesystem, breaking deployment from the workspace store. */
-export function releasePnpmStore(root: string): string {
-	const result = spawnSync("pnpm", ["store", "path", "--silent"], {
+export function releasePnpmStore(
+	root: string,
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	const which = spawnSync("sh", ["-c", "command -v pnpm || true"], {
+		encoding: "utf8",
+		env,
+	});
+	const pnpm = which.stdout?.split("\n")[0]?.trim() || "pnpm";
+	const args = ["store", "path", "--silent"] as const;
+	const result = spawnSync(pnpm, [...args], {
 		cwd: root,
 		encoding: "utf8",
+		env,
 		timeout: 30_000,
 		maxBuffer: 4_096,
 	});
 	const path = result.stdout?.trim() ?? "";
-	if (result.status !== 0 || !isAbsolute(path) || /[\r\n\0]/u.test(path))
-		throw new Error("cannot resolve the workspace pnpm store");
-	return path;
+	if (result.status === 0 && isAbsolute(path) && !/[\r\n\0]/u.test(path)) {
+		return path;
+	}
+	const configured = env.npm_config_store_dir?.trim();
+	if (configured && isAbsolute(configured) && !/[\r\n\0]/u.test(configured)) {
+		return resolve(configured);
+	}
+	const detail = (result.stderr || result.stdout || "").trim();
+	throw new Error(
+		`cannot resolve the workspace pnpm store (${pnpm} ${args.join(" ")} exited ${result.status ?? "null"}${detail ? `: ${detail}` : ""})`,
+	);
 }
 
 /** Deploy is `--prefer-offline`, never `--offline`: deploy re-resolves direct

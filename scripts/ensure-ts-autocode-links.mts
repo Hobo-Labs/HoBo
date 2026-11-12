@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -23,6 +24,35 @@ async function exists(path: string): Promise<boolean> {
 
 async function linked(): Promise<boolean> {
 	return (await exists(trainingMarker)) && (await exists(groundingMarker));
+}
+
+async function fetchPins(): Promise<void> {
+	const result = spawnSync("pnpm", ["run", "pins:fetch", "ts-autocode"], {
+		cwd: root,
+		env: process.env,
+		stdio: "inherit",
+	});
+	if (result.status !== 0) {
+		throw new Error(
+			"`pnpm run pins:fetch ts-autocode` failed; ts-autocode sibling is required",
+		);
+	}
+}
+
+if (!(await linked())) {
+	await fetchPins();
+	if (!(await linked())) {
+		const install = spawnSync("pnpm", ["install", "--frozen-lockfile"], {
+			cwd: root,
+			env: process.env,
+			stdio: "inherit",
+		});
+		if (install.status !== 0) {
+			throw new Error(
+				"pnpm install failed after pins:fetch; cannot link ts-autocode consumers",
+			);
+		}
+	}
 }
 
 if (!(await linked())) {

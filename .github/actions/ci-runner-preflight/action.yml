@@ -1,5 +1,12 @@
 name: CI runner preflight
 description: Fail fast when the hobo runner image is missing pinned toolchains (mise.lock + system packages).
+inputs:
+  browser:
+    description: >-
+      `true` for a job that runs browser tests. The runner image bakes the
+      headless shell in; a GitHub-hosted machine downloads the same pinned one.
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -19,14 +26,29 @@ runs:
             || echo "::warning::docker container prune failed"
           docker system df || true
         fi
+    # A job routed to a GitHub-hosted machine gets the pinned toolchain here;
+    # a no-op on the fleet's image. Its PATH additions reach the next step.
+    - name: Toolchain for a GitHub-hosted machine
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        HOBO_CI_HOSTED_BROWSER: ${{ inputs.browser }}
+      run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
     - shell: bash
       run: |
         set -euo pipefail
         export MISE_EXPERIMENTAL=1
         if command -v mise >/dev/null 2>&1; then
           mise trust ./mise.toml
-          mise install
+          mise install --locked
         fi
         node --no-warnings scripts/ci-runner-preflight.mts
         node --experimental-strip-types scripts/ci/memory-env.mts
+        # The live data-engine lane starts database servers beside the job. A job
+        # that is killed never removes them; they stop themselves, and this takes
+        # away what is left, whichever job starts next on the box.
+        if command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+          node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts sweep \
+            || echo "::warning::data-live sweep failed"
+        fi
         echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

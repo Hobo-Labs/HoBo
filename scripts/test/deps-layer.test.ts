@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -93,6 +94,13 @@ describe("deps layer linking", () => {
 				join(payload, "packages", "ci-gh-actions", "node_modules", "tsx"),
 				"../../../node_modules/tsx",
 			);
+			// A package the layer was built with and the checkout has since
+			// dropped: `packages/code` left main while layers built before that
+			// were still on the box.
+			link(
+				join(payload, "packages", "dropped", "node_modules", "tsx"),
+				"../../../node_modules/tsx",
+			);
 			const env = {
 				...process.env,
 				HOBO_CI_DEPS_LAYER: key,
@@ -120,6 +128,10 @@ describe("deps layer linking", () => {
 				lstatSync(join(checkout, "node_modules")).isSymbolicLink(),
 				true,
 			);
+			// Linking must not bring a dropped package's directory back: a
+			// directory holding only `node_modules` failed the package-layout
+			// check for a package that no longer exists.
+			assert.equal(existsSync(join(checkout, "packages", "dropped")), false);
 			assert.equal(
 				readlinkSync(
 					join(
@@ -168,6 +180,144 @@ describe("deps layer linking", () => {
 			);
 			assert.equal(executable.status, 0, executable.stderr);
 			assert.match(executable.stdout, /tsx-test/);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	});
+
+	it("collapses a real package node_modules tree onto the payload symlink", () => {
+		const temporary = mkdtempSync(join(tmpdir(), "hobo-deps-layer-collapse-"));
+		try {
+			const checkout = join(temporary, "checkout");
+			const payload = join(temporary, "payload");
+			mkdirSync(join(checkout, "packages", "ci-gh-actions"), {
+				recursive: true,
+			});
+			mkdirSync(
+				join(checkout, "packages", "ci-gh-actions", "node_modules", "leftover"),
+				{ recursive: true },
+			);
+			write(
+				join(
+					checkout,
+					"packages",
+					"ci-gh-actions",
+					"node_modules",
+					"leftover",
+					"package.json",
+				),
+				'{"name":"leftover"}\n',
+			);
+			write(join(checkout, "package.json"), '{"private":true}\n');
+			write(
+				join(checkout, "packages", "ci-gh-actions", "package.json"),
+				'{"name":"@hobo/ci-gh-actions","private":true}\n',
+			);
+			write(join(payload, ".hobo-ci-deps-key"), `${key}\n`);
+			mkdirSync(join(payload, "packages", "ci-gh-actions"), {
+				recursive: true,
+			});
+			write(
+				join(payload, "node_modules", ".modules.yaml"),
+				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
+			);
+			// payload/packages/ci-gh-actions/node_modules -> payload/node_modules.
+			link(
+				join(payload, "packages", "ci-gh-actions", "node_modules"),
+				"../../node_modules",
+			);
+			const env = {
+				...process.env,
+				HOBO_CI_DEPS_LAYER: key,
+				HOBO_CI_DEPS_PAYLOAD: payload,
+			};
+			const linked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "link"],
+				checkout,
+				env,
+			);
+			assert.equal(linked.status, 0, `${linked.stderr}\n${linked.stdout}`);
+			assert.equal(
+				lstatSync(
+					join(checkout, "packages", "ci-gh-actions", "node_modules"),
+				).isSymbolicLink(),
+				true,
+			);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	});
+
+	it("reads the payload key when HOBO_CI_DEPS_LAYER is unset", () => {
+		const temporary = mkdtempSync(
+			join(tmpdir(), "hobo-deps-layer-payload-key-"),
+		);
+		try {
+			const checkout = join(temporary, "checkout");
+			const payload = join(temporary, "payload");
+			mkdirSync(join(checkout, "packages", "ci-gh-actions"), {
+				recursive: true,
+			});
+			write(join(checkout, "package.json"), '{"private":true}\n');
+			write(
+				join(checkout, "packages", "ci-gh-actions", "package.json"),
+				'{"name":"@hobo/ci-gh-actions","private":true}\n',
+			);
+			write(
+				join(checkout, "packages", "ci", "package.json"),
+				'{"name":"@hobo/ci","private":true}\n',
+			);
+			write(join(payload, ".hobo-ci-deps-key"), `${key}\n`);
+			write(
+				join(payload, "node_modules", ".modules.yaml"),
+				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
+			);
+			write(
+				join(payload, "node_modules", ".pnpm", "tsx", "package.json"),
+				'{"name":"tsx","version":"4.22.4","main":"index.js","bin":{"tsx":"index.js"}}\n',
+			);
+			write(
+				join(payload, "node_modules", ".pnpm", "tsx", "index.js"),
+				'#!/usr/bin/env node\nconsole.log("tsx-test");\n',
+			);
+			chmodSync(
+				join(payload, "node_modules", ".pnpm", "tsx", "index.js"),
+				0o755,
+			);
+			link(join(payload, "node_modules", "tsx"), ".pnpm/tsx");
+			link(join(payload, "node_modules", ".bin", "tsx"), "../tsx/index.js");
+			link(
+				join(
+					payload,
+					"packages",
+					"ci-gh-actions",
+					"node_modules",
+					"@hobo",
+					"ci",
+				),
+				"../../../ci",
+			);
+			const env = {
+				...process.env,
+				HOBO_CI_DEPS_EXPECTED_KEY: key,
+				HOBO_CI_DEPS_PAYLOAD: payload,
+			};
+			const linked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "link"],
+				checkout,
+				env,
+			);
+			assert.equal(linked.status, 0, linked.stderr);
+			const checked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "check", "--require"],
+				checkout,
+				env,
+			);
+			assert.equal(checked.status, 0, checked.stderr);
+			assert.match(checked.stdout, /match=true/);
 		} finally {
 			rmSync(temporary, { recursive: true, force: true });
 		}

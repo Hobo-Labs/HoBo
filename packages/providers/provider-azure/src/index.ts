@@ -12,6 +12,7 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export { AZURE_HOST_FORMS } from "./host-forms.js";
 export {
 	AZURE_IAC_PROVIDER,
 	assertLocalIacProgram,
@@ -114,6 +115,8 @@ export {
 	functions,
 	type KeyVaultOptions,
 	keyVault,
+	type ManagedDiskOptions,
+	managedDisk,
 	type PostgresFlexibleOptions,
 	postgresFlexible,
 	type RedisCacheOptions,
@@ -130,6 +133,8 @@ export {
 	sqlDatabase,
 	staticWebApps,
 	storageQueue,
+	type VirtualMachineOptions,
+	virtualMachine,
 } from "./slots.js";
 export {
 	AZURE_TRAFFIC_ROUTING_OFFERING_IDS,

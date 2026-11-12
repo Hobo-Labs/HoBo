@@ -5,7 +5,15 @@ import { clone } from "@bufbuild/protobuf";
 import { OfferSchema } from "@hobo/ci";
 import { afterEach, describe, expect, it } from "vitest";
 import { LeaseStore } from "../src/store.js";
-import { harness, job, NOW, queued, reserve, signed } from "./fixtures.js";
+import {
+	harness,
+	job,
+	NOW,
+	persist,
+	queued,
+	reserve,
+	signed,
+} from "./fixtures.js";
 
 const stores: LeaseStore[] = [];
 const apis: ReturnType<typeof harness>["api"][] = [];
@@ -63,6 +71,8 @@ it.each([
 	const offer = account.offers[0];
 	if (!offer) throw new Error("missing offer");
 	offer.provider = provider;
+	// A stored policy names the bridge backend for a Kubernetes host.
+	if (provider === "kubernetes") offer.backend = "gh-actions";
 	offer.runsOn = `${provider}-host`;
 	h.api.hostLabel = offer.runsOn;
 	const lease = await reserve(h);
@@ -83,6 +93,7 @@ it("requeues displaced original demand after a host executed a different queued 
 	const finished = queued(1);
 	finished.action = "completed";
 	finished.workflow_job.runner_name = lease.runnerName;
+	h.api.jobs.set(1, { status: "completed", runner_name: lease.runnerName });
 	const request = signed(finished);
 	await h.relay.webhook(request.body, request.signature, "workflow_job");
 	h.api.host.status = "completed";
@@ -121,6 +132,9 @@ it("readmits a reserved free host when refreshed evidence has no remaining balan
 	if (!offer) throw new Error("missing offer");
 	offer.freeMinutes = 0;
 	offer.validUntil = "2026-11-01T00:00:00Z";
+	// Refreshed usage evidence carries its own, newer observation time.
+	offer.observedAt = NOW;
+	persist(h);
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(0);
 	expect(h.store.get(lease.id)?.state).toBe("cancelled");
@@ -140,6 +154,7 @@ it("requeues an unlaunched reservation when a cheaper host becomes eligible", as
 	cheaper.runsOn = "ubuntu-24.04";
 	cheaper.priceMicrosPerMinute = 1000;
 	account.offers.push(cheaper);
+	persist(h);
 
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(0);
@@ -167,6 +182,7 @@ it("keeps the existing reservation when the new host costs the same", async () =
 	equal.id = "equal";
 	equal.providerAccountId = "another-account";
 	account.offers.push(equal);
+	persist(h);
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(1);
 	expect(h.store.get(original.id)?.state).toBe("dispatched");
@@ -187,6 +203,7 @@ it("requeues an unlaunched paid host for partial free allocation under maximize-
 	free.freeMinutes = 1;
 	free.priceMicrosPerMinute = 1000;
 	account.offers.push(free);
+	persist(h);
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(0);
 	expect(h.store.get(original.id)?.state).toBe("cancelled");
@@ -208,6 +225,8 @@ it("reserves newly measured free minutes on the same unlaunched host", async () 
 	offer.freeMinutes = 0;
 	const original = await reserve(h);
 	offer.freeMinutes = 1;
+	offer.observedAt = NOW;
+	persist(h);
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(0);
 	expect(h.store.get(original.id)?.state).toBe("cancelled");
@@ -334,7 +353,10 @@ describe("signed GitHub intake and original job routing", () => {
 		if (condition === "event") h.api.original.event = "pull_request";
 		if (condition === "installation") payload.installation.id = 999;
 		if (condition === "repository") payload.repository.id = 999;
-		if (condition === "label") payload.workflow_job.labels = ["hobo", "gpu"];
+		if (condition === "label") {
+			payload.workflow_job.labels = ["hobo", "gpu"];
+			h.api.jobs.set(1, { labels: ["hobo", "gpu"] });
+		}
 		const request = signed(payload);
 		expect(
 			await h.relay.webhook(request.body, request.signature, "workflow_job"),
@@ -345,8 +367,12 @@ describe("signed GitHub intake and original job routing", () => {
 		const h = setup();
 		const done = queued();
 		done.action = "completed";
+		h.api.jobStatus = "completed";
 		const terminal = signed(done);
 		await h.relay.webhook(terminal.body, terminal.signature, "workflow_job");
+		// Even if a stale GitHub read still called the job queued, the recorded
+		// completion fences it.
+		h.api.jobStatus = "queued";
 		const request = signed(queued());
 		await h.relay.webhook(request.body, request.signature, "workflow_job");
 		expect(h.store.all()).toHaveLength(0);
@@ -440,6 +466,7 @@ describe("host billing and journal replay", () => {
 		const payload = queued(99);
 		payload.action = "completed";
 		payload.workflow_job.runner_name = lease.runnerName;
+		h.api.jobs.set(99, { status: "completed", runner_name: lease.runnerName });
 		const request = signed(payload);
 		await h.relay.webhook(request.body, request.signature, "workflow_job");
 		expect(h.store.get(lease.id)?.actualJobId).toBe(99);

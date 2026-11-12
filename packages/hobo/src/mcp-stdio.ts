@@ -1,17 +1,27 @@
 import {
 	type AuthContext,
+	capabilityForTool,
 	type HoboMcpServer,
 	MCP_TOOL_SURFACE,
+	NO_HOST_SUPPORT,
+	negotiateSecretCaptureSupport,
+	SECRET_CAPTURE_TOOL_NAMES,
+	type SecretCaptureApp,
+	type SecretCaptureHostSupport,
+	scopeAuthorizesCapability,
 } from "@hobo/mcp";
-import { isJsonString, type JsonObject } from "./json.js";
+import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 
 // The MCP stdio protocol layer for the composed `hobo-mcp` binary
 // (docs/plans/0006 item 3-3). Newline-delimited JSON-RPC 2.0 per the MCP
 // stdio transport; no SDK dependency — the protocol subset the surface needs
-// (initialize / tools/list / tools/call / ping) is small enough for the
-// standard library. All dispatch flows through the injected HoboMcpServer,
-// which routes every call through the SAME @hobo/cli command registry the
-// CLI uses (NFR-004 parity) with deny-by-default auth ahead of dispatch.
+// (initialize / tools/list / tools/call / resources/list / resources/read /
+// ping) is small enough for the standard library. All verb dispatch flows
+// through the injected HoboMcpServer, which routes every call through the
+// SAME @hobo/cli command registry the CLI uses (NFR-004 parity) with
+// deny-by-default auth ahead of dispatch. With an McpStdioSession the
+// secret-capture MCP App's tools and its `ui://` resource are served beside
+// the verbs, gated by the same SVID scope; their results never hold a value.
 
 // public-contract: the MCP protocol revision this stdio server speaks.
 export const HOBO_MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -34,6 +44,7 @@ export interface JsonRpcResponse {
 	readonly error?: {
 		readonly code: number;
 		readonly message: string;
+		readonly data?: unknown;
 	};
 }
 
@@ -51,9 +62,10 @@ export function localOperatorAuth(
 					.filter((name) => name.length > 0),
 			)
 		: null;
-	const tools = MCP_TOOL_SURFACE.filter(
-		(tool) => restrict === null || restrict.has(tool.name),
-	);
+	const tools = [
+		...MCP_TOOL_SURFACE.map((tool) => tool.name),
+		...SECRET_CAPTURE_TOOL_NAMES,
+	].filter((name) => restrict === null || restrict.has(name));
 	return {
 		subject: env.HOBO_MCP_SUBJECT ?? "local-operator",
 		tenant: env.HOBO_MCP_TENANT ?? "local",
@@ -61,12 +73,34 @@ export function localOperatorAuth(
 			kind: "user",
 			id: env.HOBO_MCP_SUBJECT ?? "local-operator",
 		},
-		scope: tools.map((tool) => ({
-			port: tool.capability.port,
-			resource: tool.capability.resource,
-			verbs: [tool.capability.verb],
-		})),
+		scope: tools.map((name) => {
+			const capability = capabilityForTool(name);
+			return {
+				port: capability.port,
+				resource: capability.resource,
+				verbs: [capability.verb],
+			};
+		}),
 	};
+}
+
+// The per-connection state of the secret-capture MCP App (ADR-0179
+// amendment "Deploy secrets captured by an MCP App into the secret store"):
+// the app, and what the client said it supports at `initialize` (MCP Apps,
+// URL-mode elicitation). Absent, the server is the CLI verb surface only.
+export interface McpStdioSession {
+	readonly capture: SecretCaptureApp;
+	support: SecretCaptureHostSupport;
+}
+
+export function createMcpStdioSession(
+	capture: SecretCaptureApp,
+): McpStdioSession {
+	return { capture, support: NO_HOST_SUPPORT };
+}
+
+function captureAllowed(auth: AuthContext, tool: string): boolean {
+	return scopeAuthorizesCapability(auth.scope, capabilityForTool(tool));
 }
 
 // Handle one JSON-RPC message. Returns the response to write, or null for
@@ -75,6 +109,7 @@ export async function handleMcpMessage(
 	server: HoboMcpServer,
 	auth: AuthContext,
 	raw: string,
+	session?: McpStdioSession,
 ): Promise<JsonRpcResponse | null> {
 	let request: JsonRpcRequest;
 	try {
@@ -96,12 +131,19 @@ export async function handleMcpMessage(
 			// SAFETY: assertion required at this I/O or test boundary.
 			const requested = (request.params as { protocolVersion?: string })
 				?.protocolVersion;
+			if (session !== undefined)
+				session.support = negotiateSecretCaptureSupport(
+					request.params?.capabilities,
+				);
 			return {
 				jsonrpc: "2.0",
 				id,
 				result: {
 					protocolVersion: requested ?? HOBO_MCP_PROTOCOL_VERSION,
-					capabilities: { tools: {} },
+					capabilities:
+						session === undefined
+							? { tools: {} }
+							: { tools: {}, resources: {} },
 					serverInfo: {
 						name: HOBO_MCP_SERVER_NAME,
 						version: HOBO_MCP_SERVER_VERSION,
@@ -119,13 +161,45 @@ export async function handleMcpMessage(
 				jsonrpc: "2.0",
 				id,
 				result: {
-					tools: server.listTools().map((tool) => ({
-						name: tool.name,
-						description: `${tool.summary} (role: ${tool.role})`,
-						inputSchema: tool.inputSchema,
-					})),
+					tools: [
+						...server.listTools().map((tool) => ({
+							name: tool.name,
+							description: `${tool.summary} (role: ${tool.role})`,
+							inputSchema: tool.inputSchema,
+						})),
+						...(session === undefined
+							? []
+							: session.capture
+									.tools(session.support)
+									.filter((tool) => captureAllowed(auth, tool.name))),
+					],
 				},
 			};
+		case "resources/list":
+			return {
+				jsonrpc: "2.0",
+				id,
+				result: {
+					resources:
+						session === undefined
+							? []
+							: session.capture.resources(session.support),
+				},
+			};
+		case "resources/read": {
+			const uri = request.params?.uri;
+			const contents =
+				session !== undefined && isJsonString(uri)
+					? session.capture.readResource(uri)
+					: undefined;
+			if (contents === undefined)
+				return {
+					jsonrpc: "2.0",
+					id,
+					error: { code: -32002, message: "resource not found" },
+				};
+			return { jsonrpc: "2.0", id, result: contents };
+		}
 		case "tools/call": {
 			// SAFETY: assertion required at this I/O or test boundary.
 			const params = (request.params ?? {}) as {
@@ -138,6 +212,32 @@ export async function handleMcpMessage(
 					id,
 					error: { code: -32602, message: "tools/call requires params.name" },
 				};
+			}
+			if (session?.capture.handles(params.name)) {
+				if (!captureAllowed(auth, params.name))
+					return {
+						jsonrpc: "2.0",
+						id,
+						result: {
+							content: [
+								{
+									type: "text",
+									text: `MCP_SCOPE_DENIED: ${params.name} is not in this caller's scope.`,
+								},
+							],
+							isError: true,
+						},
+					};
+				const outcome = await session.capture.callTool(
+					params.name,
+					isJsonObject(params.arguments) ? params.arguments : {},
+					session.support,
+				);
+				// A URL elicitation is a JSON-RPC error by design (-32042); every
+				// other outcome is a CallToolResult. Neither holds a secret value.
+				return outcome.kind === "error"
+					? { jsonrpc: "2.0", id, error: outcome.error }
+					: { jsonrpc: "2.0", id, result: outcome.result };
 			}
 			// SAFETY: assertion required at this I/O or test boundary.
 			const args = (params.arguments ?? {}) as {
@@ -190,6 +290,7 @@ export async function serveMcpStdio(options: {
 	readonly auth: AuthContext;
 	readonly input: NodeJS.ReadableStream;
 	readonly output: NodeJS.WritableStream;
+	readonly session?: McpStdioSession;
 }): Promise<void> {
 	let buffer = "";
 	for await (const chunk of options.input) {
@@ -203,6 +304,7 @@ export async function serveMcpStdio(options: {
 					options.server,
 					options.auth,
 					line,
+					options.session,
 				);
 				if (response !== null) {
 					options.output.write(`${JSON.stringify(response)}\n`);

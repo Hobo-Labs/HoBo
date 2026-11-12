@@ -1,0 +1,63 @@
+# Local servers for the live data-engine lanes (`pnpm run test:data-live`).
+#
+#   docker compose -f packages/data-core/deploy/compose.live-engines.yml up -d --wait
+#   pnpm run test:data-live
+#   docker compose -f packages/data-core/deploy/compose.live-engines.yml down -v
+#
+# Test fixtures only: both servers listen on loopback, PostgreSQL trusts every
+# local connection, and MongoDB runs without access control. Never point these
+# settings at data you care about.
+name: hobo-data-engines-live
+
+services:
+  postgres:
+    # Pinned in live-engine-images.json; CI starts the same images.
+    image: postgres:16@sha256:f9a7b9ebf6f56201f949db745e47bc423c0f0f8294bafe991cc10bf74b029657
+    # Logical decoding (change capture) and the logical-copy fast path need
+    # wal_level=logical; every capture subscription holds a replication slot.
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=20
+      - -c
+      - max_wal_senders=20
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      # Over TCP: the image's first-start init server listens on the unix
+      # socket only, so this cannot report healthy just before the restart.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mongodb:
+    image: mongo:8.0@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
+    # Transactions and change streams need a replica set; one member is enough.
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    # MongoDB 8.0 refuses to start on Linux 6.19 through 7.0.13, and before
+    # 8.0.37 on fixed Ubuntu kernels too (SERVER-121912), unless glibc
+    # owns rseq; see scripts/ci/data-live-servers.mts.
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+    ports:
+      - "127.0.0.1:57017:27017"
+    healthcheck:
+      # Initiates the set on first start, then reports healthy once this
+      # member is the writable primary.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { rs.status() } catch (e) {
+          rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) }
+          if (!db.hello().isWritablePrimary) quit(1)
+      interval: 2s
+      timeout: 10s
+      retries: 30

@@ -1,0 +1,393 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-turso ephemeral-state binding"
+	},
+	"provider": {
+		"name": "libSQL database through @libsql/client (Turso or sqld over HTTP; a local file: database)"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The statements the EphemeralStatePort binding sends through @libsql/client's execute, with positional arguments and returned rows in Hrana's typed-value form (integer as a decimal string, blob as base64). Pinned on purpose: each conditional write is one statement whose WHERE clause carries the condition, so the SQL text is the atomicity argument. The clock is injected (bound to 1800000000000) and incarnations are fixed; in production the clock argument is null and the database's own clock is used. Interactions run in order against one database whose table already exists."
+	},
+	"interactions": [
+		{
+			"description": "putIfAbsent of a missing key creates it at revision 1 and returns its incarnation and revision",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "INSERT INTO \"hobo_ephemeral_state\" (k, v, i, r, e) VALUES (?1, ?2, ?3, 1, coalesce(?5, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) + ?4) ON CONFLICT (k) DO UPDATE SET v = excluded.v, i = excluded.i, r = 1, e = excluded.e WHERE \"hobo_ephemeral_state\".e <= coalesce(?5, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) RETURNING i, r",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "blob",
+							"base64": "eyJydW5uZXIiOiJyLTEifQ=="
+						},
+						{
+							"type": "text",
+							"value": "inc-1"
+						},
+						{
+							"type": "integer",
+							"value": "60000"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "text",
+							"value": "inc-1"
+						},
+						{
+							"type": "integer",
+							"value": "1"
+						}
+					]
+				]
+			}
+		},
+		{
+			"description": "putIfAbsent of a live key applies nothing and returns no row",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "INSERT INTO \"hobo_ephemeral_state\" (k, v, i, r, e) VALUES (?1, ?2, ?3, 1, coalesce(?5, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) + ?4) ON CONFLICT (k) DO UPDATE SET v = excluded.v, i = excluded.i, r = 1, e = excluded.e WHERE \"hobo_ephemeral_state\".e <= coalesce(?5, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) RETURNING i, r",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "blob",
+							"base64": "eyJydW5uZXIiOiJyLTIifQ=="
+						},
+						{
+							"type": "text",
+							"value": "inc-2"
+						},
+						{
+							"type": "integer",
+							"value": "60000"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": []
+			}
+		},
+		{
+			"description": "get of a live key returns its value bytes, incarnation and revision",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "SELECT v, i, r FROM \"hobo_ephemeral_state\" WHERE k = ?1 AND e > coalesce(?2, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "blob",
+							"base64": "eyJydW5uZXIiOiJyLTEifQ=="
+						},
+						{
+							"type": "text",
+							"value": "inc-1"
+						},
+						{
+							"type": "integer",
+							"value": "1"
+						}
+					]
+				]
+			}
+		},
+		{
+			"description": "compareAndSet with the current version writes the value, bumps the revision and resets the expiry",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "UPDATE \"hobo_ephemeral_state\" SET v = ?3, r = r + 1, e = coalesce(?5, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) + ?4 WHERE k = ?1 AND e > coalesce(?5, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) AND (i || ':' || r) = ?2 RETURNING i, r",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "text",
+							"value": "inc-1:1"
+						},
+						{
+							"type": "blob",
+							"base64": "eyJydW5uZXIiOiJyLTEiLCJzdGF0ZSI6ImRpc3BhdGNoZWQifQ=="
+						},
+						{
+							"type": "integer",
+							"value": "60000"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "text",
+							"value": "inc-1"
+						},
+						{
+							"type": "integer",
+							"value": "2"
+						}
+					]
+				]
+			}
+		},
+		{
+			"description": "a versioned delete with a stale version removes nothing and returns no row",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "DELETE FROM \"hobo_ephemeral_state\" WHERE k = ?1 AND e > coalesce(?3, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) AND (i || ':' || r) = ?2 RETURNING 1",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "text",
+							"value": "inc-1:1"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": []
+			}
+		},
+		{
+			"description": "getMany returns one row per live key it finds, keyed, so an absent key is a hole",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "SELECT k, v, i, r FROM \"hobo_ephemeral_state\" WHERE k IN (?2, ?3) AND e > coalesce(?1, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))",
+					"args": [
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						},
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "text",
+							"value": "pact:absent"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "blob",
+							"base64": "eyJydW5uZXIiOiJyLTEiLCJzdGF0ZSI6ImRpc3BhdGNoZWQifQ=="
+						},
+						{
+							"type": "text",
+							"value": "inc-1"
+						},
+						{
+							"type": "integer",
+							"value": "2"
+						}
+					]
+				]
+			}
+		},
+		{
+			"description": "increment of a missing key creates it from the step as decimal text",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "INSERT INTO \"hobo_ephemeral_state\" (k, v, i, r, e) VALUES (?1, CAST(?2 AS TEXT), ?3, 1, coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) + ?4) ON CONFLICT (k) DO UPDATE SET v = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) THEN excluded.v ELSE CAST(CAST(\"hobo_ephemeral_state\".v AS INTEGER) + ?2 AS TEXT) END, i = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) THEN excluded.i ELSE \"hobo_ephemeral_state\".i END, r = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) THEN 1 ELSE \"hobo_ephemeral_state\".r + 1 END, e = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) OR ?5 = 'refresh' THEN excluded.e ELSE \"hobo_ephemeral_state\".e END WHERE \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) OR ((instr(\"hobo_ephemeral_state\".v, x'00') = 0 AND length((CASE WHEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 1, 1) = '-' THEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 2) ELSE CAST(\"hobo_ephemeral_state\".v AS TEXT) END)) BETWEEN 1 AND 16 AND (CASE WHEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 1, 1) = '-' THEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 2) ELSE CAST(\"hobo_ephemeral_state\".v AS TEXT) END) NOT GLOB '*[^0-9]*') AND abs(CAST(\"hobo_ephemeral_state\".v AS INTEGER) + ?2) <= 9007199254740991) RETURNING v",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:rate:42"
+						},
+						{
+							"type": "integer",
+							"value": "5"
+						},
+						{
+							"type": "text",
+							"value": "inc-3"
+						},
+						{
+							"type": "integer",
+							"value": "60000"
+						},
+						{
+							"type": "text",
+							"value": "on-create"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "text",
+							"value": "5"
+						}
+					]
+				]
+			}
+		},
+		{
+			"description": "increment of a live counter adds the step and, in refresh mode, resets the expiry",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "INSERT INTO \"hobo_ephemeral_state\" (k, v, i, r, e) VALUES (?1, CAST(?2 AS TEXT), ?3, 1, coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) + ?4) ON CONFLICT (k) DO UPDATE SET v = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) THEN excluded.v ELSE CAST(CAST(\"hobo_ephemeral_state\".v AS INTEGER) + ?2 AS TEXT) END, i = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) THEN excluded.i ELSE \"hobo_ephemeral_state\".i END, r = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) THEN 1 ELSE \"hobo_ephemeral_state\".r + 1 END, e = CASE WHEN \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) OR ?5 = 'refresh' THEN excluded.e ELSE \"hobo_ephemeral_state\".e END WHERE \"hobo_ephemeral_state\".e <= coalesce(?6, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) OR ((instr(\"hobo_ephemeral_state\".v, x'00') = 0 AND length((CASE WHEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 1, 1) = '-' THEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 2) ELSE CAST(\"hobo_ephemeral_state\".v AS TEXT) END)) BETWEEN 1 AND 16 AND (CASE WHEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 1, 1) = '-' THEN substr(CAST(\"hobo_ephemeral_state\".v AS TEXT), 2) ELSE CAST(\"hobo_ephemeral_state\".v AS TEXT) END) NOT GLOB '*[^0-9]*') AND abs(CAST(\"hobo_ephemeral_state\".v AS INTEGER) + ?2) <= 9007199254740991) RETURNING v",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:rate:42"
+						},
+						{
+							"type": "integer",
+							"value": "-2"
+						},
+						{
+							"type": "text",
+							"value": "unexpected"
+						},
+						{
+							"type": "integer",
+							"value": "60000"
+						},
+						{
+							"type": "text",
+							"value": "refresh"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "text",
+							"value": "3"
+						}
+					]
+				]
+			}
+		},
+		{
+			"description": "expire of a missing key updates nothing and returns no row",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "UPDATE \"hobo_ephemeral_state\" SET e = coalesce(?3, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) + ?2 WHERE k = ?1 AND e > coalesce(?3, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) RETURNING 1",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:absent"
+						},
+						{
+							"type": "integer",
+							"value": "60000"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": []
+			}
+		},
+		{
+			"description": "an unconditional delete removes the row and returns whether it was live",
+			"providerState": "the table hobo_ephemeral_state exists, holding exactly the rows the interactions before this one wrote",
+			"request": {
+				"statement": {
+					"sql": "DELETE FROM \"hobo_ephemeral_state\" WHERE k = ?1 RETURNING e > coalesce(?2, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))",
+					"args": [
+						{
+							"type": "text",
+							"value": "pact:lease:42"
+						},
+						{
+							"type": "integer",
+							"value": "1800000000000"
+						}
+					]
+				}
+			},
+			"response": {
+				"rows": [
+					[
+						{
+							"type": "integer",
+							"value": "1"
+						}
+					]
+				]
+			}
+		}
+	]
+}

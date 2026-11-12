@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { createRelayService } from "../src/service.js";
-import { harness } from "../test/fixtures.js";
+import { createRelayHandler } from "../src/http-handler.js";
+import { admitWhenReady, createRelayService } from "../src/service.js";
+import { SECRET } from "../test/fixtures.js";
 
 const Pact = z.object({
 	interactions: z.array(
@@ -19,6 +20,7 @@ const Pact = z.object({
 			request: z.object({
 				method: z.string(),
 				path: z.string(),
+				headers: z.record(z.string(), z.string()).optional(),
 				body: z.json().optional(),
 			}),
 			response: z.object({ status: z.number(), body: z.json() }),
@@ -36,11 +38,28 @@ it("verifies service readiness Pact over actual loopback HTTP with injected depe
 		),
 	);
 	expect(pact.interactions).toHaveLength(4);
-	const h = harness();
 	let available = false;
+	let admitted = 0;
 	const service = createRelayService({
-		relay: h.relay,
-		store: h.store,
+		origin: "https://relay.example",
+		handle: (ready) =>
+			createRelayHandler({
+				application: admitWhenReady(
+					{
+						async ingestWebhook() {
+							admitted++;
+							return "accepted";
+						},
+						claim: async () => new Response(null, { status: 204 }),
+						control: async () => undefined,
+						ready: async () => true,
+					},
+					ready,
+				),
+				webhookSecret: SECRET,
+			}),
+		tick: async () => {},
+		close: () => {},
 		host: "127.0.0.1",
 		port: 0,
 		readinessProbe: async () => available,
@@ -54,7 +73,10 @@ it("verifies service readiness Pact over actual loopback HTTP with injected depe
 			available =
 				interaction.providerStates[0]?.name === "provider readiness available";
 			await service.checkReadiness();
-			const init: RequestInit = { method: interaction.request.method };
+			const init: RequestInit = {
+				method: interaction.request.method,
+				headers: interaction.request.headers ?? {},
+			};
 			if (interaction.request.body !== undefined)
 				init.body = JSON.stringify(interaction.request.body);
 			const response = await fetch(
@@ -65,10 +87,13 @@ it("verifies service readiness Pact over actual loopback HTTP with injected depe
 				interaction.response.status,
 			);
 			expect(response.headers.get("cache-control")).toBe("no-store");
-			expect(response.headers.get("content-type")).toBe("application/json");
+			expect(response.headers.get("content-type")).toContain(
+				"application/json",
+			);
 			expect(await response.json()).toEqual(interaction.response.body);
 		}
-		expect(h.store.all()).toHaveLength(0);
+		// The refused delivery was authentic; it was never handed to the relay.
+		expect(admitted).toBe(0);
 	} finally {
 		await service.stop();
 	}
