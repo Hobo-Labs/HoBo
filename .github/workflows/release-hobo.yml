@@ -43,8 +43,10 @@ on:
       - "scripts/test/release-pages-stale.test.ts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/lib/release-ghcr-digest.mts"
       - "scripts/lib/docker-registry-push.mts"
       - "scripts/test/push-release-ghcr-images.test.ts"
+      - "scripts/test/release-ghcr-digest.test.ts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
       - "scripts/lib/release-sparse-cone.mts"
@@ -105,8 +107,10 @@ on:
       - "scripts/test/release-pages-stale.test.ts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/lib/release-ghcr-digest.mts"
       - "scripts/lib/docker-registry-push.mts"
       - "scripts/test/push-release-ghcr-images.test.ts"
+      - "scripts/test/release-ghcr-digest.test.ts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
       - "scripts/lib/release-sparse-cone.mts"
@@ -707,20 +711,21 @@ jobs:
         with:
           name: hobo-release-digest-${{ matrix.image_id }}
           path: ${{ runner.temp }}/hobo-release-digest
-      # The publish leg writes an empty digest file for an image this release
-      # train does not ship (an sdk-v or cli-v tag); there is nothing to attest.
-      - name: Is this image in the release
+      - name: Require publish digest artifact
         id: digest
         env:
           DIGEST_FILE: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
         run: |
           set -euo pipefail
-          if [ -s "${DIGEST_FILE}" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::${{ matrix.image_id }} is not part of this release train; skipping attestation"
-            echo "present=false" >> "$GITHUB_OUTPUT"
+          if [ ! -f "${DIGEST_FILE}" ]; then
+            echo "::error::digest artifact missing for ${{ matrix.image_id }}"
+            exit 1
           fi
+          if [ ! -s "${DIGEST_FILE}" ]; then
+            echo "::error::digest artifact empty for ${{ matrix.image_id }}; publish must record a registry digest"
+            exit 1
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/release-oci-attest
         if: steps.digest.outputs.present == 'true'
         with:
