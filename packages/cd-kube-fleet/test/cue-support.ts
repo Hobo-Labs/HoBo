@@ -42,7 +42,9 @@ export function vets(definition: string, value: JsonValue): boolean {
 	const file = join(scratch, `value-${written}.json`);
 	writeFileSync(file, JSON.stringify(value));
 	try {
-		execFileSync(cue, ["vet", "-c", "-d", definition, schema, file], { stdio: "pipe" });
+		execFileSync(cue, ["vet", "-c", "-d", definition, schema, file], {
+			stdio: "pipe",
+		});
 		return true;
 	} catch {
 		return false;

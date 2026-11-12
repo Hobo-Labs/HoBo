@@ -5,6 +5,9 @@ import type { JsonObject, JsonValue } from "@hobo/core";
 
 const tagOf = Object.prototype.toString;
 
+/** Owner contract for string attribute maps (labels, feedback, posture attributes). */
+export type StringMap = Readonly<Record<string, string>>;
+
 export function isJsonString<T>(value: T): value is T & string {
 	return tagOf.call(value) === "[object String]";
 }
@@ -31,7 +34,10 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 }
 
 /** The object at `key`, or an empty object. */
-export function objectAt(value: JsonValue | undefined, key: string): JsonObject {
+export function objectAt(
+	value: JsonValue | undefined,
+	key: string,
+): JsonObject {
 	if (!isJsonObject(value)) return {};
 	const child = value[key];
 	return isJsonObject(child) ? child : {};

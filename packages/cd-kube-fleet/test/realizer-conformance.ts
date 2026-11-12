@@ -7,7 +7,13 @@
 import { type Realizer, ReconcileStatus } from "@hobo/cd";
 import { describe, expect, it } from "vitest";
 import type { FakeHub } from "./fake-hub.js";
-import { ctx, deployment, HUB_TOKEN, realizeInput, recordingSink } from "./fixtures.js";
+import {
+	ctx,
+	deployment,
+	HUB_TOKEN,
+	realizeInput,
+	recordingSink,
+} from "./fixtures.js";
 
 export type RealizerHarness = Readonly<{
 	hub: FakeHub;
@@ -20,7 +26,10 @@ export type RealizerHarness = Readonly<{
 const CAMP = "camp-a";
 const web = [deployment("web", "registry.example/web@sha256:aaaa", 2)];
 
-export function describeRealizerConformance(name: string, make: () => RealizerHarness): void {
+export function describeRealizerConformance(
+	name: string,
+	make: () => RealizerHarness,
+): void {
 	describe(`Realizer conformance: ${name}`, () => {
 		it("never reports CONVERGED before the hub observes the apply", async () => {
 			const h = make();
@@ -63,12 +72,17 @@ export function describeRealizerConformance(name: string, make: () => RealizerHa
 			const h = make();
 			const observed = await h.realizer().observe(realizeInput(CAMP, web), ctx);
 			expect(observed.status).toBe(ReconcileStatus.DRIFTED);
-			expect(observed.resources.every((r) => r.driftKind === "deleted")).toBe(true);
+			expect(observed.resources.every((r) => r.driftKind === "deleted")).toBe(
+				true,
+			);
 		});
 
 		it("stamps the observation with Camp, Set, reconciler, fence and the injected clock", async () => {
 			const h = make();
-			const input = realizeInput(CAMP, web, { fence: 42n, reconcilerId: "rec-9" });
+			const input = realizeInput(CAMP, web, {
+				fence: 42n,
+				reconcilerId: "rec-9",
+			});
 			const record = await h.realizer().converge(input, ctx);
 			expect(record.campId).toBe(CAMP);
 			expect(record.setId).toBe(input.desired.setId);
@@ -85,7 +99,14 @@ export function describeRealizerConformance(name: string, make: () => RealizerHa
 			await r.converge(realizeInput(CAMP, web, { fence: 9n }), ctx);
 			h.settle();
 			const before = h.hub.mutatingCalls().length;
-			const stale = await r.converge(realizeInput(CAMP, [deployment("web", "registry.example/web@sha256:bbbb")], { fence: 7n }), ctx);
+			const stale = await r.converge(
+				realizeInput(
+					CAMP,
+					[deployment("web", "registry.example/web@sha256:bbbb")],
+					{ fence: 7n },
+				),
+				ctx,
+			);
 			expect(stale.status).toBe(ReconcileStatus.BLOCKED);
 			expect(stale.reasons.map((x) => x.code)).toContain("stale-fence");
 			expect(h.hub.mutatingCalls().length).toBe(before);
@@ -95,14 +116,24 @@ export function describeRealizerConformance(name: string, make: () => RealizerHa
 			const h = make();
 			const controller = new AbortController();
 			controller.abort(new Error("lease lost"));
-			await expect(h.realizer().converge(realizeInput(CAMP, web, { signal: controller.signal }), ctx)).rejects.toThrow("lease lost");
+			await expect(
+				h
+					.realizer()
+					.converge(
+						realizeInput(CAMP, web, { signal: controller.signal }),
+						ctx,
+					),
+			).rejects.toThrow("lease lost");
 			expect(h.hub.log).toHaveLength(0);
 		});
 
 		it("blocks a resolved set that does not match the Set's content hash, with no hub call", async () => {
 			const h = make();
 			const input = realizeInput(CAMP, web);
-			const tampered = { ...input, resolved: { ...input.resolved, contentHash: "sha256:0000" as const } };
+			const tampered = {
+				...input,
+				resolved: { ...input.resolved, contentHash: "sha256:0000" as const },
+			};
 			const record = await h.realizer().converge(tampered, ctx);
 			expect(record.status).toBe(ReconcileStatus.BLOCKED);
 			expect(record.reasons[0]?.code).toBe("resolved-set-mismatch");
@@ -111,7 +142,9 @@ export function describeRealizerConformance(name: string, make: () => RealizerHa
 
 		it("blocks an unmapped Camp with a typed reason and no hub call", async () => {
 			const h = make();
-			const record = await h.realizer().converge(realizeInput("camp-unknown", web), ctx);
+			const record = await h
+				.realizer()
+				.converge(realizeInput("camp-unknown", web), ctx);
 			expect(record.status).toBe(ReconcileStatus.BLOCKED);
 			expect(record.reasons[0]?.code).toBe("kube-cluster-unmapped");
 			expect(record.reasons[0]?.remediation).not.toBe("");
@@ -120,8 +153,14 @@ export function describeRealizerConformance(name: string, make: () => RealizerHa
 
 		it("refuses a Secret manifest (I9) before any hub call", async () => {
 			const h = make();
-			const secret = { name: "creds", productId: "secret", params: { spec: { type: "Opaque" } } };
-			const record = await h.realizer().converge(realizeInput(CAMP, [...web, secret]), ctx);
+			const secret = {
+				name: "creds",
+				productId: "secret",
+				params: { spec: { type: "Opaque" } },
+			};
+			const record = await h
+				.realizer()
+				.converge(realizeInput(CAMP, [...web, secret]), ctx);
 			expect(record.status).toBe(ReconcileStatus.BLOCKED);
 			expect(record.reasons[0]?.code).toBe("kube-secret-refused");
 			expect(h.hub.log).toHaveLength(0);
@@ -150,12 +189,22 @@ export function describeRealizerConformance(name: string, make: () => RealizerHa
 			await r.converge(realizeInput(CAMP, web), ctx);
 			h.settle();
 			const record = await r.converge(realizeInput(CAMP, web), ctx);
-			expect(JSON.stringify(record, (_k, v) => (typeof v === "bigint" ? String(v) : v))).not.toContain(HUB_TOKEN);
+			expect(
+				JSON.stringify(record, (_k, v) =>
+					typeof v === "bigint" ? String(v) : v,
+				),
+			).not.toContain(HUB_TOKEN);
 			expect(JSON.stringify(sink.points)).not.toContain(HUB_TOKEN);
-			expect(sink.points.some((p) => p.name === "hobo.cd.kube_fleet.realize.passes")).toBe(true);
-			expect(h.hub.log.every((l) => l.authorization === `Bearer ${HUB_TOKEN}`)).toBe(true);
+			expect(
+				sink.points.some((p) => p.name === "hobo.cd.kube_fleet.realize.passes"),
+			).toBe(true);
+			expect(
+				h.hub.log.every((l) => l.authorization === `Bearer ${HUB_TOKEN}`),
+			).toBe(true);
 			// The bearer token travels in the Authorization header only, never in a body.
-			expect(JSON.stringify(h.hub.log.map((l) => l.body ?? null))).not.toContain(HUB_TOKEN);
+			expect(
+				JSON.stringify(h.hub.log.map((l) => l.body ?? null)),
+			).not.toContain(HUB_TOKEN);
 		});
 	});
 }

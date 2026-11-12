@@ -4,7 +4,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HttpTransport, JsonObject, JsonValue, TransportRequest, TransportResponse } from "@hobo/core";
+import type {
+	HttpTransport,
+	JsonObject,
+	JsonValue,
+	TransportRequest,
+	TransportResponse,
+} from "@hobo/core";
 import { expect } from "vitest";
 
 export type PactInteraction = {
@@ -34,7 +40,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 export function loadPact(name: string): Pact {
 	// SAFETY: pact files are JSON documents of this shape.
-	return JSON.parse(readFileSync(join(here, "../pacts", `${name}.pact.json`), "utf8")) as Pact;
+	return JSON.parse(
+		readFileSync(join(here, "../pacts", `${name}.pact.json`), "utf8"),
+	) as Pact;
 }
 
 /** The interactions recorded for one provider state, in order. */
@@ -43,19 +51,35 @@ export function state(pact: Pact, providerState: string): PactInteraction[] {
 }
 
 /** Transport that serves `interactions` strictly in order. */
-export function pactTransport(interactions: readonly PactInteraction[]): HttpTransport & { readonly served: () => number } {
+export function pactTransport(
+	interactions: readonly PactInteraction[],
+): HttpTransport & { readonly served: () => number } {
 	let next = 0;
-	const transport = async (request: TransportRequest): Promise<TransportResponse> => {
+	const transport = async (
+		request: TransportRequest,
+	): Promise<TransportResponse> => {
 		const interaction = interactions[next];
-		if (interaction === undefined) throw new Error(`no pact interaction left for ${request.method} ${request.url}`);
+		if (interaction === undefined)
+			throw new Error(
+				`no pact interaction left for ${request.method} ${request.url}`,
+			);
 		next += 1;
 		const url = new URL(request.url);
-		expect(`${request.method} ${url.pathname}`, interaction.description).toBe(`${interaction.request.method} ${interaction.request.path}`);
-		expect(url.search.replace(/^\?/u, ""), interaction.description).toBe(interaction.request.query ?? "");
-		expect(request.headers, interaction.description).toMatchObject(interaction.request.headers ?? {});
+		expect(`${request.method} ${url.pathname}`, interaction.description).toBe(
+			`${interaction.request.method} ${interaction.request.path}`,
+		);
+		expect(url.search.replace(/^\?/u, ""), interaction.description).toBe(
+			interaction.request.query ?? "",
+		);
+		expect(request.headers, interaction.description).toMatchObject(
+			interaction.request.headers ?? {},
+		);
 		if (interaction.request.body !== undefined) {
 			// SAFETY: request bodies this consumer sends are JSON.
-			expect(JSON.parse(request.body ?? "null") as JsonValue, interaction.description).toMatchObject(interaction.request.body);
+			expect(
+				JSON.parse(request.body ?? "null") as JsonValue,
+				interaction.description,
+			).toMatchObject(interaction.request.body);
 		}
 		const body = interaction.response.body;
 		return {

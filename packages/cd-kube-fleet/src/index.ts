@@ -3,10 +3,10 @@
 // surface takes and returns @hobo/cd and @hobo/core types only; Kubernetes
 // shapes stay inside this package (I11).
 export {
-	type ClusterProfileImportRecord,
-	ClusterProfileImportRecordSchema,
 	type CampClusterRecord,
 	CampClusterRecordSchema,
+	type ClusterProfileImportRecord,
+	ClusterProfileImportRecordSchema,
 	HubKind,
 	type ImportedClusterRecord,
 	ImportedClusterRecordSchema,
@@ -21,9 +21,9 @@ export {
 	OcmRealizerRecordSchema,
 } from "./_generated/kube_fleet_pb.js";
 export {
+	type ClusterProfileChange,
 	type ClusterProfileInventory,
 	type ClusterProfileInventoryDeps,
-	type ClusterProfileChange,
 	type ClusterProfileSnapshot,
 	clusterProfileInventory,
 	type KubeClusterAccess,
@@ -40,8 +40,19 @@ export {
 	parseOcmRealizerConfig,
 	type RealizerConfig,
 } from "./config.js";
-export { KUBE_FLEET_FAILURES, KubeFleetError, type KubeFleetFailureCode } from "./errors.js";
-export { type KarmadaRealizerDeps, karmadaRealizer } from "./karmada/realizer.js";
+export {
+	KUBE_FLEET_FAILURES,
+	KubeFleetError,
+	type KubeFleetFailureCode,
+} from "./errors.js";
+export {
+	type KarmadaRealizerDeps,
+	karmadaRealizer,
+} from "./karmada/realizer.js";
 export { KNOWN_KINDS } from "./kube/objects.js";
-export { type ObserveFieldsReader, type OcmRealizerDeps, ocmRealizer } from "./ocm/realizer.js";
+export {
+	type ObserveFieldsReader,
+	type OcmRealizerDeps,
+	ocmRealizer,
+} from "./ocm/realizer.js";
 export { KUBE_FLEET_METRICS } from "./telemetry.js";

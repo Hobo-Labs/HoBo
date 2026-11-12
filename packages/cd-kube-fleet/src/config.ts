@@ -9,12 +9,12 @@ import {
 	type ClusterProfileImportRecord,
 	ClusterProfileImportRecordSchema,
 	HubKind,
+	type KarmadaRealizerRecord,
 	KarmadaRealizerRecordSchema,
 	KubeAuth,
 	type KubeHubRecord,
 	type OcmRealizerRecord,
 	OcmRealizerRecordSchema,
-	type KarmadaRealizerRecord,
 } from "./_generated/kube_fleet_pb.js";
 import { KubeFleetError } from "./errors.js";
 
@@ -104,7 +104,9 @@ export function parseKubeHub(record: KubeHubRecord, expect?: HubKind): KubeHub {
 	if (record.credentialRef.trim() === "")
 		throw invalid("hub.credential_ref is required");
 	const timeoutMs =
-		record.timeoutMs === 0 ? KUBE_FLEET_DEFAULTS.callTimeoutMs : record.timeoutMs;
+		record.timeoutMs === 0
+			? KUBE_FLEET_DEFAULTS.callTimeoutMs
+			: record.timeoutMs;
 	if (timeoutMs < 1000 || timeoutMs > 120_000)
 		throw invalid("hub.timeout_ms must be within 1000..120000");
 	const auth = record.auth === KubeAuth.EXEC ? KubeAuth.EXEC : KubeAuth.BEARER;
@@ -125,7 +127,9 @@ function parseDeparture(name: string): DepartureAction {
 	if (short === "DELETE") return DepartureAction.DELETE;
 	if (short === "ORPHAN") return DepartureAction.ORPHAN;
 	if (short === "ORPHAN_DATA") return DepartureAction.ORPHAN_DATA;
-	throw invalid(`departure_action ${JSON.stringify(name)} is not a DepartureAction`);
+	throw invalid(
+		`departure_action ${JSON.stringify(name)} is not a DepartureAction`,
+	);
 }
 
 function parseClusters(
@@ -136,9 +140,13 @@ function parseClusters(
 	const out = new Map<string, string>();
 	for (const entry of records) {
 		if (!CAMP_ID.test(entry.campId))
-			throw invalid(`clusters: camp_id ${JSON.stringify(entry.campId)} is invalid`);
+			throw invalid(
+				`clusters: camp_id ${JSON.stringify(entry.campId)} is invalid`,
+			);
 		if (!DNS1123_LABEL.test(entry.cluster))
-			throw invalid(`clusters: cluster ${JSON.stringify(entry.cluster)} is not DNS-1123`);
+			throw invalid(
+				`clusters: cluster ${JSON.stringify(entry.cluster)} is not DNS-1123`,
+			);
 		if (out.has(entry.campId))
 			throw invalid(`clusters: camp_id ${entry.campId} is mapped twice`);
 		out.set(entry.campId, entry.cluster);
@@ -204,13 +212,19 @@ export function parseClusterProfileImport(
 ): ClusterProfileImport {
 	const record = isMessage(input, ClusterProfileImportRecordSchema)
 		? input
-		: fromJsonOrInvalid(() => fromJson(ClusterProfileImportRecordSchema, input));
+		: fromJsonOrInvalid(() =>
+				fromJson(ClusterProfileImportRecordSchema, input),
+			);
 	if (record.schemaVersion !== KUBE_FLEET_SCHEMAS.clusterProfiles)
-		throw invalid(`schema_version must be ${KUBE_FLEET_SCHEMAS.clusterProfiles}`);
+		throw invalid(
+			`schema_version must be ${KUBE_FLEET_SCHEMAS.clusterProfiles}`,
+		);
 	if (record.hub === undefined) throw invalid("hub is required");
 	const hub = parseKubeHub(record.hub);
 	if (record.namespace !== "" && !DNS1123_LABEL.test(record.namespace))
-		throw invalid(`namespace ${JSON.stringify(record.namespace)} is not DNS-1123`);
+		throw invalid(
+			`namespace ${JSON.stringify(record.namespace)} is not DNS-1123`,
+		);
 	for (const [field, value] of [
 		["yard_id", record.yardId],
 		["station_id", record.stationId],
@@ -223,7 +237,9 @@ export function parseClusterProfileImport(
 		(r) => r !== "",
 	);
 	if (regions.length === 0)
-		throw invalid("regions must declare at least one region (claims never grant one)");
+		throw invalid(
+			"regions must declare at least one region (claims never grant one)",
+		);
 	if (!CAMP_PREFIX.test(record.campIdPrefix))
 		throw invalid("camp_id_prefix must be at most 32 of [a-z0-9-]");
 	for (const [key, value] of Object.entries(record.labelSelector)) {

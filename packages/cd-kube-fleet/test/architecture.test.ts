@@ -11,7 +11,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, "..");
 const cdRoot = resolve(packageRoot, "../cd");
 
-function files(root: string, skip: (path: string) => boolean = () => false): string[] {
+function files(
+	root: string,
+	skip: (path: string) => boolean = () => false,
+): string[] {
 	const out: string[] = [];
 	for (const entry of readdirSync(root)) {
 		const path = join(root, entry);
@@ -35,10 +38,16 @@ describe("I11 neutral core and D26 transport-only", () => {
 	it("No Kubernetes type crosses into @hobo/cd (I11 scan)", () => {
 		const scanned = files(join(cdRoot, "src"), (path) => {
 			const rel = relative(join(cdRoot, "src"), path);
-			return rel.startsWith("adapters") || rel.startsWith(join("verification", "sources")) || rel.startsWith("_generated");
+			return (
+				rel.startsWith("adapters") ||
+				rel.startsWith(join("verification", "sources")) ||
+				rel.startsWith("_generated")
+			);
 		});
 		expect(scanned.length).toBeGreaterThan(0);
-		const offenders = scanned.filter((path) => KUBE_TYPES.test(readFileSync(path, "utf8"))).map((path) => relative(cdRoot, path));
+		const offenders = scanned
+			.filter((path) => KUBE_TYPES.test(readFileSync(path, "utf8")))
+			.map((path) => relative(cdRoot, path));
 		expect(offenders).toEqual([]);
 		const proto = readFileSync(join(cdRoot, "data-models/cd.proto"), "utf8");
 		expect(KUBE_TYPES.test(proto)).toBe(false);
@@ -46,25 +55,45 @@ describe("I11 neutral core and D26 transport-only", () => {
 
 	it("@hobo/cd does not depend on this adapter; this adapter depends on @hobo/cd and @hobo/core only", () => {
 		// SAFETY: package manifests are JSON objects.
-		const cd = JSON.parse(readFileSync(join(cdRoot, "package.json"), "utf8")) as { dependencies?: Record<string, string> };
-		expect(Object.keys(cd.dependencies ?? {})).not.toContain("@hobo/cd-kube-fleet");
+		const cd = JSON.parse(
+			readFileSync(join(cdRoot, "package.json"), "utf8"),
+		) as { dependencies?: Record<string, string> };
+		expect(Object.keys(cd.dependencies ?? {})).not.toContain(
+			"@hobo/cd-kube-fleet",
+		);
 		// SAFETY: package manifests are JSON objects.
-		const own = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
-		expect(Object.keys(own.dependencies ?? {}).sort()).toEqual(["@bufbuild/protobuf", "@hobo/cd", "@hobo/core"]);
+		const own = JSON.parse(
+			readFileSync(join(packageRoot, "package.json"), "utf8"),
+		) as {
+			dependencies?: Record<string, string>;
+			devDependencies?: Record<string, string>;
+		};
+		expect(Object.keys(own.dependencies ?? {}).sort()).toEqual([
+			"@bufbuild/protobuf",
+			"@hobo/cd",
+			"@hobo/core",
+		]);
 		expect(own.devDependencies).toBeUndefined();
 	});
 
 	it("speaks the Kubernetes API over HttpTransport only: no client library, no fetch, no kubeconfig", () => {
 		for (const path of files(join(packageRoot, "src"))) {
 			const source = readFileSync(path, "utf8");
-			expect(source, relative(packageRoot, path)).not.toMatch(/@kubernetes\/client-node|kubernetes-client|\bfetch\(|KUBECONFIG|process\.env|node:https?"/u);
-			expect(source, relative(packageRoot, path)).not.toMatch(/from "@hobo\/(?!cd"|core")/u);
+			expect(source, relative(packageRoot, path)).not.toMatch(
+				/@kubernetes\/client-node|kubernetes-client|\bfetch\(|KUBECONFIG|process\.env|node:https?"/u,
+			);
+			expect(source, relative(packageRoot, path)).not.toMatch(
+				/from "@hobo\/(?!cd"|core")/u,
+			);
 		}
 	});
 
 	it("never addresses a fleet manager's rollout, placement, override or failover resources (D26)", () => {
 		for (const path of files(join(packageRoot, "src"))) {
-			expect(FORBIDDEN_RESOURCES.test(readFileSync(path, "utf8")), relative(packageRoot, path)).toBe(false);
+			expect(
+				FORBIDDEN_RESOURCES.test(readFileSync(path, "utf8")),
+				relative(packageRoot, path),
+			).toBe(false);
 		}
 	});
 

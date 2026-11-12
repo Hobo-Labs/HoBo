@@ -19,13 +19,28 @@ import {
 	SignalSource,
 } from "@hobo/cd";
 import type { JsonObject } from "@hobo/core";
-import { type ImportedClusterRecord, ImportedClusterRecordSchema } from "../_generated/kube_fleet_pb.js";
-import { type ClusterProfileImport, DNS1123_LABEL, DNS1123_SUBDOMAIN } from "../config.js";
+import {
+	type ImportedClusterRecord,
+	ImportedClusterRecordSchema,
+} from "../_generated/kube_fleet_pb.js";
+import {
+	type ClusterProfileImport,
+	DNS1123_LABEL,
+	DNS1123_SUBDOMAIN,
+} from "../config.js";
 import { reason } from "../errors.js";
-import { arrayAt, isJsonObject, isJsonString, objectAt, stringAt } from "../json.js";
+import {
+	arrayAt,
+	isJsonObject,
+	isJsonString,
+	objectAt,
+	type StringMap,
+	stringAt,
+} from "../json.js";
 import { campSlug } from "../kube/objects.js";
 
-export const CLUSTER_PROFILE_API = "/apis/multicluster.x-k8s.io/v1alpha1" as const;
+export const CLUSTER_PROFILE_API =
+	"/apis/multicluster.x-k8s.io/v1alpha1" as const;
 
 export function profilesPath(namespace: string | undefined): string {
 	return namespace === undefined
@@ -34,7 +49,10 @@ export function profilesPath(namespace: string | undefined): string {
 }
 
 /** Access provider names and their (in-memory only) cluster endpoints. */
-export type AccessProvider = Readonly<{ name: string; server: string | undefined }>;
+export type AccessProvider = Readonly<{
+	name: string;
+	server: string | undefined;
+}>;
 
 export type ImportedCamp = Readonly<{
 	topology: CampTopology;
@@ -59,19 +77,33 @@ const LABEL_CLAIMS: Readonly<Record<string, string>> = Object.freeze({
 	"topology.kubernetes.io/zone": "zone",
 });
 
-const CONDITION_STATUS: Readonly<Record<string, ConditionStatus>> = Object.freeze({
-	True: ConditionStatus.TRUE,
-	False: ConditionStatus.FALSE,
-	Unknown: ConditionStatus.UNKNOWN,
-});
+const CONDITION_STATUS: Readonly<Record<string, ConditionStatus>> =
+	Object.freeze({
+		True: ConditionStatus.TRUE,
+		False: ConditionStatus.FALSE,
+		Unknown: ConditionStatus.UNKNOWN,
+	});
 
 /** Camp id of a profile: `<prefix><slug(namespace-name)>`. */
-export function campIdOf(config: ClusterProfileImport, namespace: string, name: string): string {
+export function campIdOf(
+	config: ClusterProfileImport,
+	namespace: string,
+	name: string,
+): string {
 	return `${config.campIdPrefix}${campSlug(`${namespace}-${name}`)}`;
 }
 
-function claim(name: string, value: string, reportedBy: string, observedAt: string): CampClaimRecord | undefined {
-	if (!CLAIM_NAME.test(name.replace(/^label:/u, "")) || value.length > MAX_VALUE) return undefined;
+function claim(
+	name: string,
+	value: string,
+	reportedBy: string,
+	observedAt: string,
+): CampClaimRecord | undefined {
+	if (
+		!CLAIM_NAME.test(name.replace(/^label:/u, "")) ||
+		value.length > MAX_VALUE
+	)
+		return undefined;
 	return create(CampClaimRecordSchema, { name, value, reportedBy, observedAt });
 }
 
@@ -88,33 +120,59 @@ export function parseClusterProfile(
 	const metadata = objectAt(item, "metadata");
 	const name = stringAt(metadata, "name");
 	const namespace = stringAt(metadata, "namespace");
-	if (name === undefined || namespace === undefined || !DNS1123_SUBDOMAIN.test(name) || !DNS1123_LABEL.test(namespace))
-		return { ok: false, reason: reason("clusterprofile-invalid", `profile ${namespace ?? "?"}/${name ?? "?"} lacks a valid name or namespace`) };
+	if (
+		name === undefined ||
+		namespace === undefined ||
+		!DNS1123_SUBDOMAIN.test(name) ||
+		!DNS1123_LABEL.test(namespace)
+	)
+		return {
+			ok: false,
+			reason: reason(
+				"clusterprofile-invalid",
+				`profile ${namespace ?? "?"}/${name ?? "?"} lacks a valid name or namespace`,
+			),
+		};
 	const kind = stringAt(item, "kind");
 	if (kind !== undefined && kind !== "ClusterProfile")
-		return { ok: false, reason: reason("clusterprofile-invalid", `${namespace}/${name} is a ${kind}`) };
+		return {
+			ok: false,
+			reason: reason(
+				"clusterprofile-invalid",
+				`${namespace}/${name} is a ${kind}`,
+			),
+		};
 	const spec = objectAt(item, "spec");
 	const status = objectAt(item, "status");
-	const manager = stringAt(objectAt(spec, "clusterManager"), "name") ?? config.hub.name;
+	const manager =
+		stringAt(objectAt(spec, "clusterManager"), "name") ?? config.hub.name;
 	const reportedBy = `service:cluster-manager/${manager}`;
 	const campId = campIdOf(config, namespace, name);
 	const claims: CampClaimRecord[] = [];
 	const attributes: Record<string, string> = {};
 	const labels = objectAt(metadata, "labels");
-	const topologyLabels: Record<string, string> = {
+	const topologyLabels = {
 		"hobo.cd/cluster-profile-namespace": namespace,
 		"hobo.cd/cluster-profile-name": name,
-	};
-	for (const [key, value] of Object.entries(labels).sort(([a], [b]) => a.localeCompare(b))) {
+	} satisfies StringMap;
+	for (const [key, value] of Object.entries(labels).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)) {
 		if (!isJsonString(value) || !LABEL_KEY.test(key)) continue;
 		const mapped = LABEL_CLAIMS[key];
 		const c = claim(mapped ?? `label:${key}`, value, reportedBy, observedAt);
 		if (c !== undefined) claims.push(c);
 		attributes[`label.${key}`] = value;
 	}
-	const kubernetesVersion = stringAt(objectAt(status, "version"), "kubernetes") ?? "";
+	const kubernetesVersion =
+		stringAt(objectAt(status, "version"), "kubernetes") ?? "";
 	if (kubernetesVersion !== "") {
-		const c = claim("kubernetes.version", kubernetesVersion, reportedBy, observedAt);
+		const c = claim(
+			"kubernetes.version",
+			kubernetesVersion,
+			reportedBy,
+			observedAt,
+		);
 		if (c !== undefined) claims.push(c);
 		attributes["kubernetes.version"] = kubernetesVersion;
 	}
@@ -145,9 +203,15 @@ export function parseClusterProfile(
 			}),
 		);
 	}
-	const providers = [...arrayAt(status, "accessProviders"), ...arrayAt(status, "credentialProviders")]
+	const providers = [
+		...arrayAt(status, "accessProviders"),
+		...arrayAt(status, "credentialProviders"),
+	]
 		.filter(isJsonObject)
-		.map((p) => ({ name: stringAt(p, "name") ?? "", server: stringAt(objectAt(p, "cluster"), "server") }))
+		.map((p) => ({
+			name: stringAt(p, "name") ?? "",
+			server: stringAt(objectAt(p, "cluster"), "server"),
+		}))
 		.filter((p) => p.name !== "");
 	const topology: CampTopology = Object.freeze({
 		// SAFETY: brand applied to the import's deterministic Camp id.

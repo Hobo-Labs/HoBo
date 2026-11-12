@@ -6,7 +6,15 @@ import type { RealizeInput } from "@hobo/cd";
 import { type JsonObject, type JsonValue, stableDigest } from "@hobo/core";
 import { DNS1123_LABEL, DNS1123_SUBDOMAIN } from "../config.js";
 import { KubeFleetError } from "../errors.js";
-import { cloneAsJson, isJsonBoolean, isJsonObject, isJsonString, objectAt, stringAt } from "../json.js";
+import {
+	cloneAsJson,
+	isJsonBoolean,
+	isJsonObject,
+	isJsonString,
+	objectAt,
+	type StringMap,
+	stringAt,
+} from "../json.js";
 
 export type ResolvedSet = RealizeInput["resolved"];
 
@@ -52,16 +60,41 @@ export const KNOWN_KINDS: Readonly<Record<string, KindInfo>> = Object.freeze({
 	Service: kind("", "v1", "Service", "services"),
 	ConfigMap: kind("", "v1", "ConfigMap", "configmaps"),
 	ServiceAccount: kind("", "v1", "ServiceAccount", "serviceaccounts"),
-	PersistentVolumeClaim: kind("", "v1", "PersistentVolumeClaim", "persistentvolumeclaims"),
+	PersistentVolumeClaim: kind(
+		"",
+		"v1",
+		"PersistentVolumeClaim",
+		"persistentvolumeclaims",
+	),
 	Namespace: kind("", "v1", "Namespace", "namespaces", false),
 	Job: kind("batch", "v1", "Job", "jobs"),
 	CronJob: kind("batch", "v1", "CronJob", "cronjobs"),
 	Ingress: kind("networking.k8s.io", "v1", "Ingress", "ingresses"),
-	NetworkPolicy: kind("networking.k8s.io", "v1", "NetworkPolicy", "networkpolicies"),
-	HorizontalPodAutoscaler: kind("autoscaling", "v2", "HorizontalPodAutoscaler", "horizontalpodautoscalers"),
-	PodDisruptionBudget: kind("policy", "v1", "PodDisruptionBudget", "poddisruptionbudgets"),
+	NetworkPolicy: kind(
+		"networking.k8s.io",
+		"v1",
+		"NetworkPolicy",
+		"networkpolicies",
+	),
+	HorizontalPodAutoscaler: kind(
+		"autoscaling",
+		"v2",
+		"HorizontalPodAutoscaler",
+		"horizontalpodautoscalers",
+	),
+	PodDisruptionBudget: kind(
+		"policy",
+		"v1",
+		"PodDisruptionBudget",
+		"poddisruptionbudgets",
+	),
 	Role: kind("rbac.authorization.k8s.io", "v1", "Role", "roles"),
-	RoleBinding: kind("rbac.authorization.k8s.io", "v1", "RoleBinding", "rolebindings"),
+	RoleBinding: kind(
+		"rbac.authorization.k8s.io",
+		"v1",
+		"RoleBinding",
+		"rolebindings",
+	),
 });
 
 // productId (lower-case) → kind, for plan resources authored as product + spec.
@@ -73,7 +106,16 @@ const DATA_KINDS = new Set(["PersistentVolumeClaim"]);
 const DATA_PORT =
 	/(database|^db$|kv|queue|object|storage|bucket|blob|volume|data|cache|stream|search|vector|postgres|mysql|redis)/iu;
 
-const SERVER_FIELDS = ["resourceVersion", "uid", "creationTimestamp", "generation", "managedFields", "selfLink", "deletionTimestamp", "ownerReferences"];
+const SERVER_FIELDS = [
+	"resourceVersion",
+	"uid",
+	"creationTimestamp",
+	"generation",
+	"managedFields",
+	"selfLink",
+	"deletionTimestamp",
+	"ownerReferences",
+];
 
 /** apiVersion string of a kind. */
 export function apiVersionOf(info: KindInfo): string {
@@ -82,7 +124,10 @@ export function apiVersionOf(info: KindInfo): string {
 
 /** REST path of a collection (namespace ignored for cluster-scoped kinds). */
 export function collectionPath(info: KindInfo, namespace: string): string {
-	const root = info.group === "" ? `/api/${info.version}` : `/apis/${info.group}/${info.version}`;
+	const root =
+		info.group === ""
+			? `/api/${info.version}`
+			: `/apis/${info.group}/${info.version}`;
 	return info.namespaced
 		? `${root}/namespaces/${encodeURIComponent(namespace)}/${info.resource}`
 		: `${root}/${info.resource}`;
@@ -99,18 +144,31 @@ export function identityOf(
 	return `${o.group}/${o.kind}/${o.namespace}/${o.name}`;
 }
 
-function splitApiVersion(apiVersion: string): Readonly<{ group: string; version: string }> {
+function splitApiVersion(
+	apiVersion: string,
+): Readonly<{ group: string; version: string }> {
 	const slash = apiVersion.indexOf("/");
 	return slash < 0
 		? { group: "", version: apiVersion }
-		: { group: apiVersion.slice(0, slash), version: apiVersion.slice(slash + 1) };
+		: {
+				group: apiVersion.slice(0, slash),
+				version: apiVersion.slice(slash + 1),
+			};
 }
 
-function refuse(code: "kube-object-unrenderable" | "kube-kind-unknown" | "kube-secret-refused" | "kube-name-invalid", resource: string, message: string): KubeFleetError {
+function refuse(
+	code:
+		| "kube-object-unrenderable"
+		| "kube-kind-unknown"
+		| "kube-secret-refused"
+		| "kube-name-invalid",
+	resource: string,
+	message: string,
+): KubeFleetError {
 	return new KubeFleetError(code, `${resource}: ${message}`);
 }
 
-function stringMap(value: JsonValue | undefined): Readonly<Record<string, string>> {
+function stringMap(value: JsonValue | undefined): StringMap {
 	if (!isJsonObject(value)) return {};
 	const out: Record<string, string> = {};
 	for (const [k, v] of Object.entries(value)) if (isJsonString(v)) out[k] = v;
@@ -124,15 +182,28 @@ function kindInfoFor(
 	params: JsonObject,
 ): KindInfo {
 	if (kindName === "Secret")
-		throw refuse("kube-secret-refused", resource, "a Secret manifest would put secret material in a record");
+		throw refuse(
+			"kube-secret-refused",
+			resource,
+			"a Secret manifest would put secret material in a record",
+		);
 	const known = KNOWN_KINDS[kindName];
 	const { group, version } = splitApiVersion(apiVersion);
-	if (known !== undefined && known.group === group) return Object.freeze({ ...known, version });
+	if (known !== undefined && known.group === group)
+		return Object.freeze({ ...known, version });
 	const plural = params.resource;
 	const namespaced = params.namespaced;
-	if (isJsonString(plural) && /^[a-z][a-z0-9]{0,62}$/u.test(plural) && isJsonBoolean(namespaced))
+	if (
+		isJsonString(plural) &&
+		/^[a-z][a-z0-9]{0,62}$/u.test(plural) &&
+		isJsonBoolean(namespaced)
+	)
 		return kind(group, version, kindName, plural, namespaced);
-	throw refuse("kube-kind-unknown", resource, `kind ${apiVersion}/${kindName} is not built in`);
+	throw refuse(
+		"kube-kind-unknown",
+		resource,
+		`kind ${apiVersion}/${kindName} is not built in`,
+	);
 }
 
 function sanitizeMetadata(metadata: JsonObject): JsonObject {
@@ -158,14 +229,27 @@ function renderOne(plan: Plan, defaultNamespace: string): KubeObject {
 		const apiVersion = stringAt(manifest, "apiVersion");
 		const kindName = stringAt(manifest, "kind");
 		if (apiVersion === undefined || kindName === undefined)
-			throw refuse("kube-object-unrenderable", plan.name, "manifest needs apiVersion and kind");
+			throw refuse(
+				"kube-object-unrenderable",
+				plan.name,
+				"manifest needs apiVersion and kind",
+			);
 		info = kindInfoFor(plan.name, apiVersion, kindName, params);
-		const rest = Object.fromEntries(Object.entries(manifest).filter(([key]) => key !== "status"));
-		body = { ...rest, metadata: sanitizeMetadata(objectAt(manifest, "metadata")) };
+		const rest = Object.fromEntries(
+			Object.entries(manifest).filter(([key]) => key !== "status"),
+		);
+		body = {
+			...rest,
+			metadata: sanitizeMetadata(objectAt(manifest, "metadata")),
+		};
 	} else {
 		const productId = (plan.productId ?? "").toLowerCase();
 		if (productId === "secret")
-			throw refuse("kube-secret-refused", plan.name, "a Secret would put secret material in a record");
+			throw refuse(
+				"kube-secret-refused",
+				plan.name,
+				"a Secret would put secret material in a record",
+			);
 		const kindName = PRODUCT_KINDS[productId];
 		const known = kindName === undefined ? undefined : KNOWN_KINDS[kindName];
 		const payloadKey = kindName === "ConfigMap" ? "data" : "spec";
@@ -191,23 +275,40 @@ function renderOne(plan: Plan, defaultNamespace: string): KubeObject {
 	const metadata = objectAt(body, "metadata");
 	const name = stringAt(metadata, "name") ?? "";
 	if (!DNS1123_SUBDOMAIN.test(name))
-		throw refuse("kube-name-invalid", plan.name, `name ${JSON.stringify(name)} is not DNS-1123`);
+		throw refuse(
+			"kube-name-invalid",
+			plan.name,
+			`name ${JSON.stringify(name)} is not DNS-1123`,
+		);
 	const namespace = info.namespaced
-		? (stringAt(metadata, "namespace") ?? stringAt(params, "namespace") ?? defaultNamespace)
+		? (stringAt(metadata, "namespace") ??
+			stringAt(params, "namespace") ??
+			defaultNamespace)
 		: "";
 	if (info.namespaced && !DNS1123_LABEL.test(namespace))
-		throw refuse("kube-name-invalid", plan.name, `namespace ${JSON.stringify(namespace)} is not DNS-1123`);
+		throw refuse(
+			"kube-name-invalid",
+			plan.name,
+			`namespace ${JSON.stringify(namespace)} is not DNS-1123`,
+		);
 	const canonical: JsonObject = {
 		...body,
 		apiVersion: apiVersionOf(info),
 		kind: info.kind,
-		metadata: { ...metadata, name, ...(info.namespaced ? { namespace } : undefined) },
+		metadata: {
+			...metadata,
+			name,
+			...(info.namespaced ? { namespace } : undefined),
+		},
 	};
 	return Object.freeze({
 		resource: plan.name,
 		port: plan.port,
 		classification,
-		data: classification !== "" || DATA_KINDS.has(info.kind) || DATA_PORT.test(plan.port),
+		data:
+			classification !== "" ||
+			DATA_KINDS.has(info.kind) ||
+			DATA_PORT.test(plan.port),
 		info,
 		namespace,
 		name,
@@ -225,12 +326,23 @@ export function renderObjects(
 	resolved: ResolvedSet,
 	defaultNamespace: string,
 ): readonly KubeObject[] {
-	const objects = resolved.plan.resources.map((plan) => renderOne(plan, defaultNamespace));
+	const objects = resolved.plan.resources.map((plan) =>
+		renderOne(plan, defaultNamespace),
+	);
 	const seen = new Set<string>();
 	for (const object of objects) {
-		const id = identityOf({ group: object.info.group, kind: object.info.kind, namespace: object.namespace, name: object.name });
+		const id = identityOf({
+			group: object.info.group,
+			kind: object.info.kind,
+			namespace: object.namespace,
+			name: object.name,
+		});
 		if (seen.has(id))
-			throw refuse("kube-object-unrenderable", object.resource, `two plan resources render to ${id}`);
+			throw refuse(
+				"kube-object-unrenderable",
+				object.resource,
+				`two plan resources render to ${id}`,
+			);
 		seen.add(id);
 	}
 	return Object.freeze(
@@ -240,7 +352,9 @@ export function renderObjects(
 
 /** First 8 hex characters of a `sha256:` digest (or of the sha256 of a string). */
 export function digest8(value: string): string {
-	const hex = value.startsWith("sha256:") ? value.slice(7) : createHash("sha256").update(value).digest("hex");
+	const hex = value.startsWith("sha256:")
+		? value.slice(7)
+		: createHash("sha256").update(value).digest("hex");
 	return hex.slice(0, 8).toLowerCase();
 }
 
@@ -280,7 +394,10 @@ export const HOBO_KEYS = Object.freeze({
 
 /** The fence recorded on a hub object, if any. */
 export function fenceOf(object: JsonObject): bigint | undefined {
-	const raw = stringAt(objectAt(objectAt(object, "metadata"), "annotations"), HOBO_KEYS.fence);
+	const raw = stringAt(
+		objectAt(objectAt(object, "metadata"), "annotations"),
+		HOBO_KEYS.fence,
+	);
 	if (raw === undefined || !/^[0-9]{1,30}$/u.test(raw)) return undefined;
 	return BigInt(raw);
 }

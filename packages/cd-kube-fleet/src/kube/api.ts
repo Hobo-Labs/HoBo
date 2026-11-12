@@ -16,7 +16,12 @@ import { KubeFleetError } from "../errors.js";
 import { isJsonObject, parseJsonText, stringAt } from "../json.js";
 import { KUBE_FLEET_METRICS, type Meter } from "../telemetry.js";
 
-export type WatchEventType = "ADDED" | "MODIFIED" | "DELETED" | "BOOKMARK" | "ERROR";
+export type WatchEventType =
+	| "ADDED"
+	| "MODIFIED"
+	| "DELETED"
+	| "BOOKMARK"
+	| "ERROR";
 
 export type WatchEvent = Readonly<{ type: WatchEventType; object: JsonObject }>;
 
@@ -32,7 +37,10 @@ export interface KubeApi {
 	/** PUT with the body's metadata.resourceVersion (optimistic concurrency). */
 	replace(path: string, body: JsonObject): Promise<JsonObject>;
 	/** DELETE; false on 404. */
-	remove(path: string, propagationPolicy?: "Foreground" | "Background" | "Orphan"): Promise<boolean>;
+	remove(
+		path: string,
+		propagationPolicy?: "Foreground" | "Background" | "Orphan",
+	): Promise<boolean>;
 	/**
 	 * One bounded watch request (timeoutSeconds): the server closes the stream
 	 * and the newline-delimited events are returned. A 410 Gone (or an ERROR
@@ -49,7 +57,13 @@ export type KubeApiDeps = Readonly<{
 	meter?: Meter;
 }>;
 
-const WATCH_TYPES = new Set<string>(["ADDED", "MODIFIED", "DELETED", "BOOKMARK", "ERROR"]);
+const WATCH_TYPES = new Set<string>([
+	"ADDED",
+	"MODIFIED",
+	"DELETED",
+	"BOOKMARK",
+	"ERROR",
+]);
 
 function isWatchType(value: string): value is WatchEventType {
 	return WATCH_TYPES.has(value);
@@ -57,7 +71,9 @@ function isWatchType(value: string): value is WatchEventType {
 
 /** Credential scope string the host's resolver receives. */
 export function credentialScope(hub: KubeHub): string {
-	return hub.auth === KubeAuth.EXEC ? `kube-exec:${hub.name}` : `kube-api:${hub.name}`;
+	return hub.auth === KubeAuth.EXEC
+		? `kube-exec:${hub.name}`
+		: `kube-api:${hub.name}`;
 }
 
 /**
@@ -80,7 +96,10 @@ export function bearerFrom(
 				"kube-credential-unsupported",
 				`credential ${ref} returned client-certificate data, not a token`,
 			);
-		throw new KubeFleetError("kube-credential-missing", `credential ${ref} has no token`);
+		throw new KubeFleetError(
+			"kube-credential-missing",
+			`credential ${ref} has no token`,
+		);
 	}
 	const expires = resolved.expirationTimestamp;
 	if (expires !== undefined && expires !== "") {
@@ -97,11 +116,23 @@ export function bearerFrom(
 function failure(response: TransportResponse, what: string): KubeFleetError {
 	const { status } = response;
 	if (status === 401 || status === 403)
-		return new KubeFleetError("kube-auth-failed", `${what}: HTTP ${status}`, status);
+		return new KubeFleetError(
+			"kube-auth-failed",
+			`${what}: HTTP ${status}`,
+			status,
+		);
 	if (status === 409 || status === 410)
-		return new KubeFleetError("kube-conflict", `${what}: HTTP ${status}`, status);
+		return new KubeFleetError(
+			"kube-conflict",
+			`${what}: HTTP ${status}`,
+			status,
+		);
 	if (status === 429 || status >= 500)
-		return new KubeFleetError("kube-unavailable", `${what}: HTTP ${status}`, status);
+		return new KubeFleetError(
+			"kube-unavailable",
+			`${what}: HTTP ${status}`,
+			status,
+		);
 	const message = stringAt(parseJsonText(response.body), "message");
 	return new KubeFleetError(
 		"kube-response-invalid",
@@ -113,7 +144,10 @@ function failure(response: TransportResponse, what: string): KubeFleetError {
 function objectBody(response: TransportResponse, what: string): JsonObject {
 	const value = parseJsonText(response.body);
 	if (!isJsonObject(value))
-		throw new KubeFleetError("kube-response-invalid", `${what}: body is not a JSON object`);
+		throw new KubeFleetError(
+			"kube-response-invalid",
+			`${what}: body is not a JSON object`,
+		);
 	return value;
 }
 
@@ -135,7 +169,10 @@ export function createKubeApi(deps: KubeApiDeps): KubeApi {
 		body?: JsonValue,
 		timeoutMs = hub.timeoutMs,
 	): Promise<TransportResponse> {
-		const resolved = await credentials.resolve(hub.credentialRef, credentialScope(hub));
+		const resolved = await credentials.resolve(
+			hub.credentialRef,
+			credentialScope(hub),
+		);
 		const token = bearerFrom(resolved, hub.credentialRef, now());
 		const search =
 			query === undefined || Object.keys(query).length === 0
@@ -150,14 +187,20 @@ export function createKubeApi(deps: KubeApiDeps): KubeApi {
 				headers: {
 					accept: "application/json",
 					authorization: `Bearer ${token}`,
-					...(body !== undefined ? { "content-type": "application/json" } : undefined),
+					...(body !== undefined
+						? { "content-type": "application/json" }
+						: undefined),
 				},
 				...(body !== undefined ? { body: JSON.stringify(body) } : undefined),
 				timeoutMs,
 				maxResponseBytes: KUBE_FLEET_DEFAULTS.maxResponseBytes,
 			});
 		} catch (error) {
-			meter?.count(KUBE_FLEET_METRICS.apiCalls, { hub: hub.name, verb, code: "transport" });
+			meter?.count(KUBE_FLEET_METRICS.apiCalls, {
+				hub: hub.name,
+				verb,
+				code: "transport",
+			});
 			throw new KubeFleetError(
 				"kube-unavailable",
 				`${method} ${path}: ${error instanceof Error ? error.message : String(error)}`,
@@ -171,7 +214,8 @@ export function createKubeApi(deps: KubeApiDeps): KubeApi {
 		return response;
 	}
 
-	const ok = (r: TransportResponse): boolean => r.status >= 200 && r.status < 300;
+	const ok = (r: TransportResponse): boolean =>
+		r.status >= 200 && r.status < 300;
 
 	const api: KubeApi = {
 		hub,
@@ -226,11 +270,18 @@ export function createKubeApi(deps: KubeApiDeps): KubeApi {
 				const type = stringAt(value, "type");
 				const object = isJsonObject(value) ? value.object : undefined;
 				if (type === undefined || !isWatchType(type) || !isJsonObject(object))
-					throw new KubeFleetError("kube-response-invalid", `WATCH ${path}: malformed event`);
+					throw new KubeFleetError(
+						"kube-response-invalid",
+						`WATCH ${path}: malformed event`,
+					);
 				if (type === "ERROR") {
 					const code = object.code;
 					if (code === 410)
-						throw new KubeFleetError("kube-conflict", `WATCH ${path}: resourceVersion expired`, 410);
+						throw new KubeFleetError(
+							"kube-conflict",
+							`WATCH ${path}: resourceVersion expired`,
+							410,
+						);
 					throw new KubeFleetError(
 						"kube-unavailable",
 						`WATCH ${path}: ${stringAt(object, "message") ?? "error event"}`,

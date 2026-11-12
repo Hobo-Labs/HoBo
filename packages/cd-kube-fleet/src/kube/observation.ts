@@ -51,12 +51,23 @@ export function preflight(
 	if (cluster === undefined)
 		return {
 			ok: false,
-			reasons: [reason("kube-cluster-unmapped", `Camp ${input.campId} has no cluster`, input.campId)],
+			reasons: [
+				reason(
+					"kube-cluster-unmapped",
+					`Camp ${input.campId} has no cluster`,
+					input.campId,
+				),
+			],
 		};
 	try {
-		return { ok: true, cluster, objects: renderObjects(input.resolved, defaultNamespace) };
+		return {
+			ok: true,
+			cluster,
+			objects: renderObjects(input.resolved, defaultNamespace),
+		};
 	} catch (error) {
-		if (error instanceof KubeFleetError) return { ok: false, reasons: [reasonOf(error, input.campId)] };
+		if (error instanceof KubeFleetError)
+			return { ok: false, reasons: [reasonOf(error, input.campId)] };
 		throw error;
 	}
 }
@@ -111,5 +122,11 @@ export function blocked(
 	ctx: CdContext,
 	error: Error,
 ): ReconcileObservationRecord {
-	return observation(input, ctx, ReconcileStatus.BLOCKED, [], [reasonOf(error, input.campId)]);
+	return observation(
+		input,
+		ctx,
+		ReconcileStatus.BLOCKED,
+		[],
+		[reasonOf(error, input.campId)],
+	);
 }

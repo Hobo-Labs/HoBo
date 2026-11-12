@@ -30,9 +30,16 @@ import {
 import type { HttpTransport, JsonObject, JsonValue } from "@hobo/core";
 import { KUBE_FLEET_DEFAULTS, type RealizerConfig } from "../config.js";
 import { reason } from "../errors.js";
-import { arrayAt, isJsonObject, objectsOf, isJsonString, objectAt, stringAt, valueAtPath } from "../json.js";
+import {
+	arrayAt,
+	isJsonString,
+	objectAt,
+	objectsOf,
+	type StringMap,
+	stringAt,
+	valueAtPath,
+} from "../json.js";
 import { createKubeApi, type KubeApi } from "../kube/api.js";
-import { blocked, keepOf, observation, preflight, resourceObservation } from "../kube/observation.js";
 import {
 	campSlug,
 	collectionPath,
@@ -42,12 +49,19 @@ import {
 	type KubeObject,
 	objectPath,
 } from "../kube/objects.js";
+import {
+	blocked,
+	keepOf,
+	observation,
+	preflight,
+	resourceObservation,
+} from "../kube/observation.js";
 import { createMeter, KUBE_FLEET_METRICS, type Meter } from "../telemetry.js";
 import {
 	bindingPath,
 	indexOf,
-	type PolicyClass,
 	POLICIES_PATH,
+	type PolicyClass,
 	parseBinding,
 	policiesPath,
 	policyName,
@@ -106,7 +120,7 @@ function attributesFor(
 	template: JsonObject | undefined,
 	memberStatus: JsonObject | undefined,
 	fields: readonly string[],
-): Readonly<Record<string, string>> {
+): StringMap {
 	const out: Record<string, string> = {};
 	for (const field of fields) {
 		const value = field.startsWith("status.")
@@ -126,35 +140,88 @@ function abortIfNeeded(input: RealizeInput, ctx: CdContext): void {
 }
 
 export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
-	const defaultNamespace = deps.defaultNamespace ?? KUBE_FLEET_DEFAULTS.defaultNamespace;
+	const defaultNamespace =
+		deps.defaultNamespace ?? KUBE_FLEET_DEFAULTS.defaultNamespace;
 	const { config } = deps;
 
-	async function pass(mode: "converge" | "observe", input: RealizeInput, ctx: CdContext): Promise<ReconcileObservationRecord> {
+	async function pass(
+		mode: "converge" | "observe",
+		input: RealizeInput,
+		ctx: CdContext,
+	): Promise<ReconcileObservationRecord> {
 		abortIfNeeded(input, ctx);
 		const meter = createMeter(deps.telemetry, ctx.now);
 		const started = ctx.now();
-		const attributes = { realizer: "karmada", hub: config.hub.name, camp: input.campId };
-		const finish = async (record: ReconcileObservationRecord): Promise<ReconcileObservationRecord> => {
-			meter.count(KUBE_FLEET_METRICS.passes, { ...attributes, mode, status: ReconcileStatus[record.status] });
-			meter.histogram(KUBE_FLEET_METRICS.duration, ctx.now() - started, "ms", { ...attributes, mode });
+		const attributes = {
+			realizer: "karmada",
+			hub: config.hub.name,
+			camp: input.campId,
+		};
+		const finish = async (
+			record: ReconcileObservationRecord,
+		): Promise<ReconcileObservationRecord> => {
+			meter.count(KUBE_FLEET_METRICS.passes, {
+				...attributes,
+				mode,
+				status: ReconcileStatus[record.status],
+			});
+			meter.histogram(KUBE_FLEET_METRICS.duration, ctx.now() - started, "ms", {
+				...attributes,
+				mode,
+			});
 			await meter.flush();
 			return record;
 		};
 		const checked = preflight(input, config, defaultNamespace);
-		if (!checked.ok) return finish(observation(input, ctx, ReconcileStatus.BLOCKED, [], checked.reasons));
+		if (!checked.ok)
+			return finish(
+				observation(input, ctx, ReconcileStatus.BLOCKED, [], checked.reasons),
+			);
 		const scoped = checked.objects.filter((o) => !o.info.namespaced);
 		if (scoped.length > 0)
 			return finish(
-				observation(input, ctx, ReconcileStatus.BLOCKED, [], [
-					reason("karmada-cluster-scoped-unsupported", `cluster-scoped: ${scoped.map((o) => `${o.info.kind}/${o.name}`).join(", ")}`, input.campId),
-				]),
+				observation(
+					input,
+					ctx,
+					ReconcileStatus.BLOCKED,
+					[],
+					[
+						reason(
+							"karmada-cluster-scoped-unsupported",
+							`cluster-scoped: ${scoped.map((o) => `${o.info.kind}/${o.name}`).join(", ")}`,
+							input.campId,
+						),
+					],
+				),
 			);
-		const api = createKubeApi({ hub: config.hub, http: deps.http, credentials: deps.credentials, now: ctx.now, meter });
+		const api = createKubeApi({
+			hub: config.hub,
+			http: deps.http,
+			credentials: deps.credentials,
+			now: ctx.now,
+			meter,
+		});
 		try {
-			return finish(await run(mode, input, ctx, api, meter, checked.cluster, checked.objects));
+			return finish(
+				await run(
+					mode,
+					input,
+					ctx,
+					api,
+					meter,
+					checked.cluster,
+					checked.objects,
+				),
+			);
 		} catch (error) {
 			if (input.signal.aborted || ctx.signal?.aborted === true) throw error;
-			return finish(blocked(input, ctx, error instanceof Error ? error : new Error(String(error))));
+			return finish(
+				blocked(
+					input,
+					ctx,
+					error instanceof Error ? error : new Error(String(error)),
+				),
+			);
 		}
 	}
 
@@ -169,7 +236,10 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 	): Promise<ReconcileObservationRecord> {
 		const fields = (await deps.observeFields?.(input.campId)) ?? [];
 		const keep = keepOf(input);
-		const mutate = async <T>(verb: string, op: () => Promise<T>): Promise<T> => {
+		const mutate = async <T>(
+			verb: string,
+			op: () => Promise<T>,
+		): Promise<T> => {
 			abortIfNeeded(input, ctx);
 			const out = await op();
 			meter.count(KUBE_FLEET_METRICS.mutations, { realizer: "karmada", verb });
@@ -178,32 +248,81 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 
 		// 1. This Camp's policies, fence check.
 		const policies = objectsOf(
-			arrayAt(await api.list(POLICIES_PATH, { labelSelector: `${HOBO_KEYS.camp}=${campSlug(input.campId)}` }), "items"),
+			arrayAt(
+				await api.list(POLICIES_PATH, {
+					labelSelector: `${HOBO_KEYS.camp}=${campSlug(input.campId)}`,
+				}),
+				"items",
+			),
 		);
 		const newer = policies.find((p) => (fenceOf(p) ?? 0n) > input.fence);
 		if (newer !== undefined)
-			return observation(input, ctx, ReconcileStatus.BLOCKED, [], [
-				reason("stale-fence", `PropagationPolicy ${stringAt(objectAt(newer, "metadata"), "name") ?? ""} carries fence ${fenceOf(newer)}; ours is ${input.fence}`, input.campId),
-			]);
+			return observation(
+				input,
+				ctx,
+				ReconcileStatus.BLOCKED,
+				[],
+				[
+					reason(
+						"stale-fence",
+						`PropagationPolicy ${stringAt(objectAt(newer, "metadata"), "name") ?? ""} carries fence ${fenceOf(newer)}; ours is ${input.fence}`,
+						input.campId,
+					),
+				],
+			);
 
 		// 2. Desired templates: conflict and fence checks before any write.
 		const templates = new Map<string, JsonObject | undefined>();
 		for (const o of objects) {
 			const existing = await api.get(objectPath(o));
 			if (existing !== undefined) {
-				if (stringAt(labelsOf(existing), HOBO_KEYS.camp) !== campSlug(input.campId))
-					return observation(input, ctx, ReconcileStatus.BLOCKED, [], [
-						reason("karmada-template-conflict", `${o.info.kind} ${o.namespace}/${o.name} belongs to ${stringAt(labelsOf(existing), HOBO_KEYS.camp) ?? "no HoBo Camp"}`, input.campId),
-					]);
+				if (
+					stringAt(labelsOf(existing), HOBO_KEYS.camp) !==
+					campSlug(input.campId)
+				)
+					return observation(
+						input,
+						ctx,
+						ReconcileStatus.BLOCKED,
+						[],
+						[
+							reason(
+								"karmada-template-conflict",
+								`${o.info.kind} ${o.namespace}/${o.name} belongs to ${stringAt(labelsOf(existing), HOBO_KEYS.camp) ?? "no HoBo Camp"}`,
+								input.campId,
+							),
+						],
+					);
 				if ((fenceOf(existing) ?? 0n) > input.fence)
-					return observation(input, ctx, ReconcileStatus.BLOCKED, [], [
-						reason("stale-fence", `${o.info.kind} ${o.namespace}/${o.name} carries fence ${fenceOf(existing)}`, input.campId),
-					]);
+					return observation(
+						input,
+						ctx,
+						ReconcileStatus.BLOCKED,
+						[],
+						[
+							reason(
+								"stale-fence",
+								`${o.info.kind} ${o.namespace}/${o.name} carries fence ${fenceOf(existing)}`,
+								input.campId,
+							),
+						],
+					);
 			}
 			templates.set(o.resource, existing);
 		}
 
-		if (mode === "observe") return verify(input, ctx, api, member, objects, templates, fields, [], policies);
+		if (mode === "observe")
+			return verify(
+				input,
+				ctx,
+				api,
+				member,
+				objects,
+				templates,
+				fields,
+				[],
+				policies,
+			);
 
 		// 3. Remove templates the Set no longer declares.
 		const desiredIds = new Set(objects.map((o) => selectedOf(o).identity));
@@ -211,18 +330,32 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 		const reasons: ReasonRecord[] = [];
 		for (const policy of policies) {
 			const ns = stringAt(objectAt(policy, "metadata"), "namespace") ?? "";
-			const cls: PolicyClass = (stringAt(objectAt(policy, "metadata"), "name") ?? "").endsWith("-data") ? "data" : "compute";
+			const cls: PolicyClass = (
+				stringAt(objectAt(policy, "metadata"), "name") ?? ""
+			).endsWith("-data")
+				? "data"
+				: "compute";
 			for (const s of indexOf(policy)) {
 				if (desiredIds.has(s.identity)) continue;
 				if (keep.has(s.resource) && !policyPreserves(policy)) {
-					reasons.push(reason("karmada-keep-retained", `${s.kind} ${s.namespace}/${s.name} kept; its policy does not preserve member resources`, input.campId));
+					reasons.push(
+						reason(
+							"karmada-keep-retained",
+							`${s.kind} ${s.namespace}/${s.name} kept; its policy does not preserve member resources`,
+							input.campId,
+						),
+					);
 					const byClass = carried.get(ns) ?? new Map<PolicyClass, Selected[]>();
 					byClass.set(cls, [...(byClass.get(cls) ?? []), s]);
 					carried.set(ns, byClass);
 					continue;
 				}
-				const group = s.apiVersion.includes("/") ? s.apiVersion.slice(0, s.apiVersion.indexOf("/")) : "";
-				const version = s.apiVersion.includes("/") ? s.apiVersion.slice(s.apiVersion.indexOf("/") + 1) : s.apiVersion;
+				const group = s.apiVersion.includes("/")
+					? s.apiVersion.slice(0, s.apiVersion.indexOf("/"))
+					: "";
+				const version = s.apiVersion.includes("/")
+					? s.apiVersion.slice(s.apiVersion.indexOf("/") + 1)
+					: s.apiVersion;
 				const path = `${collectionPath({ group, version, kind: s.kind, resource: s.plural, namespaced: true }, s.namespace)}/${encodeURIComponent(s.name)}`;
 				await mutate("delete", () => api.remove(path));
 			}
@@ -231,37 +364,57 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 		// 4. Policies: one per namespace and class, pinned to the member.
 		const wanted: Classes = new Map();
 		for (const o of objects) {
-			const byClass = wanted.get(o.namespace) ?? new Map<PolicyClass, Selected[]>();
+			const byClass =
+				wanted.get(o.namespace) ?? new Map<PolicyClass, Selected[]>();
 			const cls: PolicyClass = o.data ? "data" : "compute";
 			byClass.set(cls, [...(byClass.get(cls) ?? []), selectedOf(o)]);
 			wanted.set(o.namespace, byClass);
 		}
 		for (const [ns, byClass] of carried) {
 			const target = wanted.get(ns) ?? new Map<PolicyClass, Selected[]>();
-			for (const [cls, list] of byClass) target.set(cls, [...(target.get(cls) ?? []), ...list]);
+			for (const [cls, list] of byClass)
+				target.set(cls, [...(target.get(cls) ?? []), ...list]);
 			wanted.set(ns, target);
 		}
 		const kept = new Set<string>();
 		for (const [ns, byClass] of wanted) {
 			for (const [cls, selected] of byClass) {
-				const desired = renderPolicy({ campId: input.campId, namespace: ns, cls, member, selected, action: config.departureAction, fence: input.fence, reconcilerId: input.reconcilerId });
+				const desired = renderPolicy({
+					campId: input.campId,
+					namespace: ns,
+					cls,
+					member,
+					selected,
+					action: config.departureAction,
+					fence: input.fence,
+					reconcilerId: input.reconcilerId,
+				});
 				const name = policyName(input.campId, cls);
 				kept.add(`${ns}/${name}`);
 				const existing = policies.find(
-					(p) => stringAt(objectAt(p, "metadata"), "namespace") === ns && stringAt(objectAt(p, "metadata"), "name") === name,
+					(p) =>
+						stringAt(objectAt(p, "metadata"), "namespace") === ns &&
+						stringAt(objectAt(p, "metadata"), "name") === name,
 				);
 				if (existing === undefined) {
 					await mutate("create", () => api.create(policiesPath(ns), desired));
 				} else if (
-					digestOf(objectAt(existing, "spec")) !== digestOf(objectAt(desired, "spec")) ||
+					digestOf(objectAt(existing, "spec")) !==
+						digestOf(objectAt(desired, "spec")) ||
 					fenceOf(existing) !== input.fence ||
-					stringAt(annotationsOf(existing), "hobo.dev/resource-index") !== stringAt(annotationsOf(desired), "hobo.dev/resource-index")
+					stringAt(annotationsOf(existing), "hobo.dev/resource-index") !==
+						stringAt(annotationsOf(desired), "hobo.dev/resource-index")
 				) {
 					const metadata = objectAt(desired, "metadata");
 					await mutate("update", () =>
 						api.replace(`${policiesPath(ns)}/${encodeURIComponent(name)}`, {
 							...desired,
-							metadata: { ...metadata, resourceVersion: stringAt(objectAt(existing, "metadata"), "resourceVersion") ?? "" },
+							metadata: {
+								...metadata,
+								resourceVersion:
+									stringAt(objectAt(existing, "metadata"), "resourceVersion") ??
+									"",
+							},
 						}),
 					);
 				}
@@ -270,7 +423,10 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 		for (const policy of policies) {
 			const ns = stringAt(objectAt(policy, "metadata"), "namespace") ?? "";
 			const name = stringAt(objectAt(policy, "metadata"), "name") ?? "";
-			if (!kept.has(`${ns}/${name}`)) await mutate("delete", () => api.remove(`${policiesPath(ns)}/${encodeURIComponent(name)}`));
+			if (!kept.has(`${ns}/${name}`))
+				await mutate("delete", () =>
+					api.remove(`${policiesPath(ns)}/${encodeURIComponent(name)}`),
+				);
 		}
 
 		// 5. Templates.
@@ -278,12 +434,17 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 			const body = templateBody(o, input);
 			const existing = templates.get(o.resource);
 			if (existing === undefined) {
-				templates.set(o.resource, await mutate("create", () => api.create(collectionPath(o.info, o.namespace), body)));
+				templates.set(
+					o.resource,
+					await mutate("create", () =>
+						api.create(collectionPath(o.info, o.namespace), body),
+					),
+				);
 				continue;
 			}
 			const same =
-				stringAt(annotationsOf(existing), HOBO_KEYS.manifestsDigest) === digestOf(o.body) &&
-				fenceOf(existing) === input.fence;
+				stringAt(annotationsOf(existing), HOBO_KEYS.manifestsDigest) ===
+					digestOf(o.body) && fenceOf(existing) === input.fence;
 			if (same) continue;
 			const metadata = objectAt(body, "metadata");
 			templates.set(
@@ -291,14 +452,29 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 				await mutate("update", () =>
 					api.replace(objectPath(o), {
 						...body,
-						metadata: { ...metadata, resourceVersion: stringAt(objectAt(existing, "metadata"), "resourceVersion") ?? "" },
+						metadata: {
+							...metadata,
+							resourceVersion:
+								stringAt(objectAt(existing, "metadata"), "resourceVersion") ??
+								"",
+						},
 					}),
 				),
 			);
 		}
 
 		// 6. Observe.
-		return verify(input, ctx, api, member, objects, templates, fields, reasons, undefined);
+		return verify(
+			input,
+			ctx,
+			api,
+			member,
+			objects,
+			templates,
+			fields,
+			reasons,
+			undefined,
+		);
 	}
 
 	async function verify(
@@ -317,16 +493,34 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 		let status = ReconcileStatus.CONVERGED;
 		const worse = (next: ReconcileStatus): void => {
 			const rank = (s: ReconcileStatus): number =>
-				s === ReconcileStatus.BLOCKED ? 3 : s === ReconcileStatus.DRIFTED ? 2 : s === ReconcileStatus.CONVERGING ? 1 : 0;
+				s === ReconcileStatus.BLOCKED
+					? 3
+					: s === ReconcileStatus.DRIFTED
+						? 2
+						: s === ReconcileStatus.CONVERGING
+							? 1
+							: 0;
 			if (rank(next) > rank(status)) status = next;
 		};
 		if (policies !== undefined) {
 			// Observe mode: our policies must still pin exactly the member.
 			for (const p of policies) {
-				const names = arrayAt(objectAt(objectAt(objectAt(p, "spec"), "placement"), "clusterAffinity"), "clusterNames");
+				const names = arrayAt(
+					objectAt(
+						objectAt(objectAt(p, "spec"), "placement"),
+						"clusterAffinity",
+					),
+					"clusterNames",
+				);
 				if (names.length !== 1 || names[0] !== member) {
 					worse(ReconcileStatus.DRIFTED);
-					reasons.push(reason("karmada-pinning-violated", `PropagationPolicy ${stringAt(objectAt(p, "metadata"), "name") ?? ""} targets ${JSON.stringify(names)}`, input.campId));
+					reasons.push(
+						reason(
+							"karmada-pinning-violated",
+							`PropagationPolicy ${stringAt(objectAt(p, "metadata"), "name") ?? ""} targets ${JSON.stringify(names)}`,
+							input.campId,
+						),
+					);
 				}
 			}
 		}
@@ -335,60 +529,152 @@ export function karmadaRealizer(deps: KarmadaRealizerDeps): Realizer {
 			const physicalId = `karmada:${member}/${selectedOf(o).identity}`;
 			if (template === undefined) {
 				worse(ReconcileStatus.DRIFTED);
-				reasons.push(reason("karmada-binding-pending", `template ${o.info.kind} ${o.namespace}/${o.name} is missing`, input.campId));
-				resources.push(resourceObservation({ object: o, physicalId, outputsHash: "", healthy: false, driftKind: "deleted" }));
+				reasons.push(
+					reason(
+						"karmada-binding-pending",
+						`template ${o.info.kind} ${o.namespace}/${o.name} is missing`,
+						input.campId,
+					),
+				);
+				resources.push(
+					resourceObservation({
+						object: o,
+						physicalId,
+						outputsHash: "",
+						healthy: false,
+						driftKind: "deleted",
+					}),
+				);
 				continue;
 			}
-			if (stringAt(annotationsOf(template), HOBO_KEYS.manifestsDigest) !== digestOf(o.body)) {
+			if (
+				stringAt(annotationsOf(template), HOBO_KEYS.manifestsDigest) !==
+				digestOf(o.body)
+			) {
 				worse(ReconcileStatus.DRIFTED);
-				reasons.push(reason("karmada-binding-pending", `template ${o.info.kind} ${o.namespace}/${o.name} does not hold the Set's content`, input.campId));
-				resources.push(resourceObservation({ object: o, physicalId, outputsHash: "", healthy: false, driftKind: "modified" }));
+				reasons.push(
+					reason(
+						"karmada-binding-pending",
+						`template ${o.info.kind} ${o.namespace}/${o.name} does not hold the Set's content`,
+						input.campId,
+					),
+				);
+				resources.push(
+					resourceObservation({
+						object: o,
+						physicalId,
+						outputsHash: "",
+						healthy: false,
+						driftKind: "modified",
+					}),
+				);
 				continue;
 			}
 			const raw = await api.get(bindingPath(o));
-			const templateVersion = stringAt(objectAt(template, "metadata"), "resourceVersion") ?? "";
+			const templateVersion =
+				stringAt(objectAt(template, "metadata"), "resourceVersion") ?? "";
 			if (raw === undefined) {
 				worse(ReconcileStatus.CONVERGING);
-				reasons.push(reason("karmada-binding-pending", `no ResourceBinding for ${o.info.kind} ${o.namespace}/${o.name} yet`, input.campId));
-				resources.push(resourceObservation({ object: o, physicalId, outputsHash: "", healthy: false }));
+				reasons.push(
+					reason(
+						"karmada-binding-pending",
+						`no ResourceBinding for ${o.info.kind} ${o.namespace}/${o.name} yet`,
+						input.campId,
+					),
+				);
+				resources.push(
+					resourceObservation({
+						object: o,
+						physicalId,
+						outputsHash: "",
+						healthy: false,
+					}),
+				);
 				continue;
 			}
 			const binding = parseBinding(raw);
-			const foreign = [...binding.clusters, ...binding.members.map((m) => m.cluster)].filter((c) => c !== member);
+			const foreign = [
+				...binding.clusters,
+				...binding.members.map((m) => m.cluster),
+			].filter((c) => c !== member);
 			if (foreign.length > 0) {
 				worse(ReconcileStatus.BLOCKED);
-				reasons.push(reason("karmada-pinning-violated", `${o.info.kind} ${o.namespace}/${o.name} bound to ${[...new Set(foreign)].sort().join(", ")}`, input.campId));
-				resources.push(resourceObservation({ object: o, physicalId, outputsHash: "", healthy: false }));
+				reasons.push(
+					reason(
+						"karmada-pinning-violated",
+						`${o.info.kind} ${o.namespace}/${o.name} bound to ${[...new Set(foreign)].sort().join(", ")}`,
+						input.campId,
+					),
+				);
+				resources.push(
+					resourceObservation({
+						object: o,
+						physicalId,
+						outputsHash: "",
+						healthy: false,
+					}),
+				);
 				continue;
 			}
 			const memberStatus = binding.members.find((m) => m.cluster === member);
-			const current = binding.resourceVersion === "" || binding.resourceVersion === templateVersion;
-			const healthy = memberStatus?.applied === true && memberStatus.health === "Healthy";
+			const current =
+				binding.resourceVersion === "" ||
+				binding.resourceVersion === templateVersion;
+			const healthy =
+				memberStatus?.applied === true && memberStatus.health === "Healthy";
 			resources.push(
 				resourceObservation({
 					object: o,
 					physicalId,
-					outputsHash: memberStatus === undefined ? "" : digestOf(memberStatus.status),
+					outputsHash:
+						memberStatus === undefined ? "" : digestOf(memberStatus.status),
 					healthy: healthy && current,
 					attributes: attributesFor(template, memberStatus?.status, fields),
 				}),
 			);
-			if (!current || binding.clusters.length === 0 || memberStatus === undefined) {
+			if (
+				!current ||
+				binding.clusters.length === 0 ||
+				memberStatus === undefined
+			) {
 				worse(ReconcileStatus.CONVERGING);
-				reasons.push(reason("karmada-binding-pending", `${o.info.kind} ${o.namespace}/${o.name} not bound at the current revision`, input.campId));
-			} else if (memberStatus.applied === false && memberStatus.appliedMessage !== "") {
+				reasons.push(
+					reason(
+						"karmada-binding-pending",
+						`${o.info.kind} ${o.namespace}/${o.name} not bound at the current revision`,
+						input.campId,
+					),
+				);
+			} else if (
+				memberStatus.applied === false &&
+				memberStatus.appliedMessage !== ""
+			) {
 				worse(ReconcileStatus.BLOCKED);
-				reasons.push(reason("karmada-member-unhealthy", `${o.info.kind} ${o.namespace}/${o.name}: ${memberStatus.appliedMessage}`, input.campId));
+				reasons.push(
+					reason(
+						"karmada-member-unhealthy",
+						`${o.info.kind} ${o.namespace}/${o.name}: ${memberStatus.appliedMessage}`,
+						input.campId,
+					),
+				);
 			} else if (!healthy) {
 				worse(ReconcileStatus.CONVERGING);
-				reasons.push(reason("karmada-member-unhealthy", `${o.info.kind} ${o.namespace}/${o.name} is ${memberStatus.health}`, input.campId));
+				reasons.push(
+					reason(
+						"karmada-member-unhealthy",
+						`${o.info.kind} ${o.namespace}/${o.name} is ${memberStatus.health}`,
+						input.campId,
+					),
+				);
 			}
 		}
 		return observation(input, ctx, status, resources, reasons);
 	}
 
 	return Object.freeze({
-		converge: (input: RealizeInput, ctx: CdContext) => pass("converge", input, ctx),
-		observe: (input: RealizeInput, ctx: CdContext) => pass("observe", input, ctx),
+		converge: (input: RealizeInput, ctx: CdContext) =>
+			pass("converge", input, ctx),
+		observe: (input: RealizeInput, ctx: CdContext) =>
+			pass("observe", input, ctx),
 	});
 }

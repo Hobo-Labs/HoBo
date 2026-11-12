@@ -17,7 +17,12 @@ export const KUBE_FLEET_METRICS = Object.freeze({
 export type Meter = Readonly<{
 	count(name: string, attributes: OtelAttributes, value?: number): void;
 	gauge(name: string, value: number, attributes: OtelAttributes): void;
-	histogram(name: string, value: number, unit: string, attributes: OtelAttributes): void;
+	histogram(
+		name: string,
+		value: number,
+		unit: string,
+		attributes: OtelAttributes,
+	): void;
 	flush(): Promise<void>;
 }>;
 

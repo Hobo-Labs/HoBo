@@ -4,8 +4,22 @@
 // and rolls out; the hub only transports.
 import { DepartureAction } from "@hobo/cd";
 import type { JsonObject, JsonValue } from "@hobo/core";
-import { arrayAt, isJsonObject, isJsonString, numberAt, objectAt, stringAt } from "../json.js";
-import { campSlug, digest8, digestOf, HOBO_KEYS, identityOf, type KubeObject } from "../kube/objects.js";
+import {
+	arrayAt,
+	isJsonObject,
+	isJsonString,
+	numberAt,
+	objectAt,
+	stringAt,
+} from "../json.js";
+import {
+	campSlug,
+	digest8,
+	digestOf,
+	HOBO_KEYS,
+	identityOf,
+	type KubeObject,
+} from "../kube/objects.js";
 
 export const OCM_WORK_API = "/apis/work.open-cluster-management.io/v1" as const;
 
@@ -21,21 +35,31 @@ export function workName(campId: string, setDigest: string): string {
 
 /** Status fields an observe field can ask OCM to feed back (`status.*` only). */
 export function feedbackPath(field: string): string | undefined {
-	return field.startsWith("status.") && field.length > 7 ? `.${field.slice(7)}` : undefined;
+	return field.startsWith("status.") && field.length > 7
+		? `.${field.slice(7)}`
+		: undefined;
 }
 
 // Kinds with an OCM WellKnownStatus feedback rule.
-const WELL_KNOWN = new Set(["Deployment", "Job", "DaemonSet", "StatefulSet", "Pod"]);
+const WELL_KNOWN = new Set([
+	"Deployment",
+	"Job",
+	"DaemonSet",
+	"StatefulSet",
+	"Pod",
+]);
 
 function deleteOption(
 	action: DepartureAction,
 	objects: readonly KubeObject[],
 	keep: ReadonlySet<string>,
 ): JsonObject {
-	if (action === DepartureAction.DELETE && keep.size === 0) return { propagationPolicy: "Foreground" };
+	if (action === DepartureAction.DELETE && keep.size === 0)
+		return { propagationPolicy: "Foreground" };
 	if (action === DepartureAction.ORPHAN) return { propagationPolicy: "Orphan" };
 	const orphaned = objects.filter(
-		(o) => keep.has(o.resource) || (action !== DepartureAction.DELETE && o.data),
+		(o) =>
+			keep.has(o.resource) || (action !== DepartureAction.DELETE && o.data),
 	);
 	if (orphaned.length === 0) return { propagationPolicy: "Foreground" };
 	return {
@@ -79,7 +103,8 @@ export function renderManifestWork(input: WorkSpecInput): JsonObject {
 		.map((o) => {
 			const rules: JsonObject[] = [];
 			if (WELL_KNOWN.has(o.info.kind)) rules.push({ type: "WellKnownStatus" });
-			if (statusPaths.length > 0) rules.push({ type: "JSONPaths", jsonPaths: statusPaths });
+			if (statusPaths.length > 0)
+				rules.push({ type: "JSONPaths", jsonPaths: statusPaths });
 			if (rules.length === 0) return undefined;
 			return {
 				resourceIdentifier: {
@@ -145,13 +170,19 @@ export type WorkStatus = Readonly<{
 	manifests: readonly ManifestStatus[];
 }>;
 
-export function parseConditions(value: JsonValue | undefined): readonly Condition[] {
+export function parseConditions(
+	value: JsonValue | undefined,
+): readonly Condition[] {
 	if (!Array.isArray(value)) return [];
 	const out: Condition[] = [];
 	for (const entry of value) {
 		const type = stringAt(entry, "type");
 		const status = stringAt(entry, "status");
-		if (type === undefined || (status !== "True" && status !== "False" && status !== "Unknown")) continue;
+		if (
+			type === undefined ||
+			(status !== "True" && status !== "False" && status !== "Unknown")
+		)
+			continue;
 		out.push({
 			type,
 			status,
@@ -163,7 +194,10 @@ export function parseConditions(value: JsonValue | undefined): readonly Conditio
 	return out;
 }
 
-export function condition(conditions: readonly Condition[], type: string): Condition | undefined {
+export function condition(
+	conditions: readonly Condition[],
+	type: string,
+): Condition | undefined {
 	return conditions.find((c) => c.type === type);
 }
 
@@ -189,12 +223,17 @@ export function parseWorkStatus(work: JsonObject): WorkStatus {
 	const annotations = objectAt(metadata, "annotations");
 	const status = objectAt(work, "status");
 	const manifests: ManifestStatus[] = [];
-	for (const entry of arrayAt(objectAt(status, "resourceStatus"), "manifests")) {
+	for (const entry of arrayAt(
+		objectAt(status, "resourceStatus"),
+		"manifests",
+	)) {
 		const meta = objectAt(entry, "resourceMeta");
 		const feedback: Record<string, string> = {};
 		for (const value of arrayAt(objectAt(entry, "statusFeedback"), "values")) {
 			const name = stringAt(value, "name");
-			const text = feedbackValue(isJsonObject(value) ? value.fieldValue : undefined);
+			const text = feedbackValue(
+				isJsonObject(value) ? value.fieldValue : undefined,
+			);
 			if (name !== undefined && text !== undefined) feedback[name] = text;
 		}
 		manifests.push({
@@ -204,7 +243,9 @@ export function parseWorkStatus(work: JsonObject): WorkStatus {
 				namespace: stringAt(meta, "namespace") ?? "",
 				name: stringAt(meta, "name") ?? "",
 			}),
-			conditions: parseConditions(isJsonObject(entry) ? entry.conditions : undefined),
+			conditions: parseConditions(
+				isJsonObject(entry) ? entry.conditions : undefined,
+			),
 			feedback,
 		});
 	}
@@ -213,8 +254,12 @@ export function parseWorkStatus(work: JsonObject): WorkStatus {
 		name: stringAt(metadata, "name") ?? "",
 		generation: numberAt(metadata, "generation") ?? 0,
 		resourceVersion: stringAt(metadata, "resourceVersion") ?? "",
-		manifestsDigest: Array.isArray(manifestsValue) ? digestOf(manifestsValue) : "",
-		contentHash: isJsonString(annotations[HOBO_KEYS.contentHash]) ? String(annotations[HOBO_KEYS.contentHash]) : "",
+		manifestsDigest: Array.isArray(manifestsValue)
+			? digestOf(manifestsValue)
+			: "",
+		contentHash: isJsonString(annotations[HOBO_KEYS.contentHash])
+			? String(annotations[HOBO_KEYS.contentHash])
+			: "",
 		conditions: parseConditions(status.conditions),
 		manifests,
 	};
