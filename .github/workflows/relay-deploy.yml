@@ -72,7 +72,6 @@ jobs:
             .github/actions/route-runner
             scripts/ci/route-runner.mts
             packages/ci/src/fleet-overflow.ts
-            packages/ci/src/fleet/capacity.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
