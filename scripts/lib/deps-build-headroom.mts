@@ -2,11 +2,54 @@
 /** Resolve measured deps-build inode/byte headroom (shared with build-deps.sh and admission). */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+// Not `deps-build-budget.ts`: that module holds the worker's zod schema, and
+// this file runs in the deps layer job before anything is installed.
+import { depsBuildDockerReserve } from "../../packages/ci-gh-actions/src/isolated-worker/deps-build-docker-reserve.ts";
 import {
-	type DepsBuildTelemetry,
-	DepsBuildTelemetrySchema,
-	depsBuildDockerReserve,
-} from "../../packages/ci-gh-actions/src/isolated-worker/deps-build-budget.ts";
+	isNonNegativeInt,
+	isObject,
+	type Json,
+	parseUnknownJson,
+} from "./pins-json.ts";
+
+const TELEMETRY_FIELDS = [
+	"peakDockerInodes",
+	"peakDockerBytes",
+	"updatedAtMs",
+] as const;
+type TelemetryField = (typeof TELEMETRY_FIELDS)[number];
+
+/** The record `DepsBuildTelemetrySchema` in the worker package describes. */
+export type DepsBuildTelemetry = Readonly<{
+	[field in TelemetryField]?: number;
+}>;
+
+function isTelemetryField(key: string): key is TelemetryField {
+	return TELEMETRY_FIELDS.some((field) => field === key);
+}
+
+/**
+ * Reads a telemetry file's text with node builtins only. Same rule as the
+ * worker's schema: an object, no other key, each value a non-negative integer.
+ * Anything else is `undefined`.
+ */
+export function parseDepsBuildTelemetry(
+	text: string,
+): DepsBuildTelemetry | undefined {
+	let value: Json | undefined;
+	try {
+		value = parseUnknownJson(JSON.parse(text));
+	} catch {
+		return undefined;
+	}
+	if (!isObject(value)) return undefined;
+	const telemetry: { [field in TelemetryField]?: number } = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (!isTelemetryField(key) || !isNonNegativeInt(entry)) return undefined;
+		telemetry[key] = entry;
+	}
+	return telemetry;
+}
 
 function parsePositiveInt(
 	name: string,
@@ -30,10 +73,7 @@ export function loadDepsBuildTelemetry(): DepsBuildTelemetry {
 	const path = telemetryPath();
 	if (!existsSync(path)) return {};
 	try {
-		const parsed = DepsBuildTelemetrySchema.safeParse(
-			JSON.parse(readFileSync(path, "utf8")),
-		);
-		return parsed.success ? parsed.data : {};
+		return parseDepsBuildTelemetry(readFileSync(path, "utf8")) ?? {};
 	} catch {
 		return {};
 	}
