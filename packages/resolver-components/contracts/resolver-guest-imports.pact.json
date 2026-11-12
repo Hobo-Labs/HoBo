@@ -1,0 +1,48 @@
+{
+  "consumer": {
+    "name": "hobo:resolver/resolver-component@0.1.0"
+  },
+  "provider": {
+    "name": "ResolverComponentHostImports"
+  },
+  "interactions": [
+    {
+      "description": "authorized-fetch to a credential-bound host attaches the credential host-side and returns the response",
+      "providerState": "the call carries vault://acme/upload-token and api.acme.test is bound",
+      "request": {
+        "method": "POST",
+        "path": "/import/hobo:resolver/host@0.1.0/authorized-fetch",
+        "body": {
+          "request": { "method": "GET", "url": "https://api.acme.test/v1/site", "headers": [], "body": null },
+          "credentialRef": "vault://acme/upload-token"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": { "status": 200 }
+        }
+      }
+    },
+    {
+      "description": "wasi:http send to a host outside the allowlist is denied",
+      "providerState": "evil.example is not in the signed allowlist",
+      "request": {
+        "method": "POST",
+        "path": "/import/wasi:http/outgoing-handler@0.2.0/send",
+        "body": { "method": "GET", "url": "https://evil.example/", "headers": [], "body": null }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "err": { "tag": "denied" }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}
