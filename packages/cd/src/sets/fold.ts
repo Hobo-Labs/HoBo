@@ -16,9 +16,9 @@ import {
 	type ParsedSet,
 	parseDecision,
 	parseDelta,
-	parseObservation,
 	parsePolicyBinding,
 	parseSet,
+	parseStatusBody,
 } from "./codec.js";
 import { DesiredStateError } from "./errors.js";
 
@@ -212,7 +212,9 @@ function fenceOf(observation: ReconcileObservationRecord): bigint | undefined {
  * Latest observation on a status stream. An observation carrying a fence lower
  * than one already seen came from a superseded lease holder and is ignored (I4).
  * An observation whose fence is not a decimal FenceToken is ignored too
- * (fail-closed): it cannot prove it holds the lease.
+ * (fail-closed): it cannot prove it holds the lease. Bodies are read through
+ * parseStatusBody: the reconcile transport's `{ schema, observation }`
+ * envelope, or the legacy bare record; an unknown schema is skipped.
  */
 export function foldCampStatus(
 	events: Iterable<EventEnvelope>,
@@ -221,7 +223,8 @@ export function foldCampStatus(
 	let fence = 0n;
 	for (const event of events) {
 		if (!STATUS_TYPES.has(event.type)) continue;
-		const observation = parseObservation(event.data);
+		const observation = parseStatusBody(event.data);
+		if (observation === undefined) continue;
 		const token = fenceOf(observation);
 		if (token === undefined || token < fence) continue;
 		fence = token;
