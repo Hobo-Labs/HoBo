@@ -306,6 +306,7 @@ export {
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
+	releaseWorkerStorageGrants,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
 export {

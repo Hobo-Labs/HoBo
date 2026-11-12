@@ -1,0 +1,11 @@
+{
+  "id": "effect-1",
+  "subjectType": "runner-slot",
+  "subjectId": "slot-1",
+  "kind": "github.provision-runner",
+  "sequence": 0,
+  "state": "planned",
+  "idempotencyKey": "provision-slot-1",
+  "createdAt": "2026-11-03T00:00:00Z",
+  "providerScope": "github:10:101"
+}

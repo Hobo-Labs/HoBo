@@ -37,7 +37,7 @@ workflow: a mesh snapshot in `HOBO_CI_FLEET_STATE`, and a capacity record in
 `HOBO_CI_FLEET_CAPACITY`. Each is a repository variable a relay writes, read
 from the `vars` context and handed to the script in an environment variable,
 because a job's token is refused when it asks the API for a variable
-([finding 143](../../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
+([finding 146](../../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
 The script then judged the facts itself.
 
 That is the wrong owner and the wrong transport.

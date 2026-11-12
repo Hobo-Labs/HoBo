@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { JsonValue } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
-import { githubActionsJwtSource } from "../src/index.js";
+import { githubActionsJwtSource, jwtOidcClaimHints } from "../src/index.js";
 import { fakeJwt } from "./support/fake-infisical.js";
 
 const closers: (() => void)[] = [];
@@ -61,5 +61,14 @@ describe("githubActionsJwtSource", () => {
 		).rejects.toThrow(
 			/^infisical workload identity token failed: jwt-unavailable$/u,
 		);
+	});
+});
+
+describe("jwtOidcClaimHints", () => {
+	it("returns sub and aud without echoing the JWT", () => {
+		const jwt = fakeJwt("repo:Hobo-Labs/HoBo:ref:refs/heads/main");
+		expect(jwtOidcClaimHints(jwt)).toEqual({
+			sub: "repo:Hobo-Labs/HoBo:ref:refs/heads/main",
+		});
 	});
 });

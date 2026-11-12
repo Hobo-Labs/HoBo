@@ -874,8 +874,12 @@ Yard, and sets the non-secret settings the chosen rows project, with the two
 Infisical ids given as inputs
 ([`ci-relay-yard.ts`](../../packages/hobo/src/ci-relay-yard.ts)). The
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
-every push to `main` that touches the relay's pnpm-lock closure: it reads the
-Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
+every push to `main` that touches the relay's pnpm-lock closure: after the
+binding exists it runs `hobo ci secret-store verify` (GitHub OIDC audience
+`https://github.com/Hobo-Labs`; failures print `oidc_sub` / `oidc_aud` through
+[`relay-deploy-secret-store-verify-report.mts`](../../scripts/ci/relay-deploy-secret-store-verify-report.mts);
+summaries redact JWT-shaped text; missing stdout JSON fails the step),
+then reads the Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
 the Vercel CLI when the project lacks it, deploys with `--target production
 --wait`, and smoke-checks `/healthz` and `/readyz`. Until a secret store is
 bound (`deploy/secret-store.binding.json`, written when the deployment
@@ -1171,3 +1175,7 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
 [`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) ·
 [`@hobo/kv-redis-compatible`](../../packages/kv-redis-compatible/README.md) ·
 [Shared budget policy](./shared-budget-policy.md)
+
+## Maintenance (2026-11-12)
+
+Relay deploy workflow verify step: documents that `hobo ci secret-store verify` signs in only and does not assert Infisical role shape (Free attach may use Member). See `packages/ci-vercel/CONFIG-SERVICE.md`. The `hobo-deploy` skill fixed-facts table matches the Free **Member** vs Advanced+ custom-role split for `hobo-ci-writer`.

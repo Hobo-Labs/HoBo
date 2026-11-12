@@ -163,6 +163,7 @@ describe("CI deps image push scope", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests",
 		]);
 		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
 		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);
