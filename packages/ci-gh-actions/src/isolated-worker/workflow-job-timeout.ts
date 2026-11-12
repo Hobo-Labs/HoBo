@@ -5,6 +5,7 @@ import { lookupByJobName } from "./matrix-job-name.js";
 const WORKFLOW_JOB_TIMEOUT_MINUTES = new Map<string, number>([
 	["Main full gate", 20],
 	["Main workspace plan", 12],
+	["Main workspace shard matrix", 3],
 	["CI deps layer (pnpm)", 20],
 	["CI fabric contract guard", 20],
 	["Release contract + affected OCI images", 20],

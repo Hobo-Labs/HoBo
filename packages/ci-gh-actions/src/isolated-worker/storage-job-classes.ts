@@ -70,6 +70,7 @@ const JOB_STORAGE_CLASS = {
 	"Attest hobo-code GHCR image": "light",
 	"CI runner image (mise oci)": "runner_image",
 	"Main workspace plan": "light",
+	"Main workspace shard matrix": "light",
 	"CI deps layer (pnpm)": "heavy",
 	"PR impact gate": "light",
 	"PR impact validation": "heavy",

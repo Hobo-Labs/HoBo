@@ -480,7 +480,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",
-					/^  (ci-deps-image|main-gate-plan|main-gate|main_workspace_tests|main_gate_finish):$/,
+					/^  (ci-deps-image|main-gate-plan|main-gate-shard-matrix|main-gate|main_workspace_tests|main_gate_finish):$/,
 					`${file}:${lines[start]} is not routed`,
 				);
 			if (

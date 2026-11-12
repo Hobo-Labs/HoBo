@@ -18,7 +18,7 @@ Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/431
 ## Fix
 
 - Worker **`HOBO_CI_FLEET_CAPACITY`** snapshots add **`trunkMemoryAdmit`** from `memoryAdmitHeadroom` on the **standard (4096 MiB)** shard class with **2048 / 1024 MiB** reserve and volatility unchanged.
-- **`main-gate-plan`** plans shard indexes only (plan can exceed **5 minutes**; e.g. **6m43s** in evidence). A follow-up **`main-gate-shard-matrix`** job inlines **`vars.HOBO_CI_FLEET_CAPACITY`** as **`HOBO_CI_FLEET_CAPACITY_JSON`** at **job** start so freshness is evaluated **after** planning (same-workflow `vars` are fixed per job; not the REST variables API; [finding 0117](../findings/0117-shard-limit-below-the-planned-shard.md)).
+- **`main-gate-plan`** plans shard indexes only (plan can exceed **5 minutes**; e.g. **6m43s** in evidence). A follow-up **`main-gate-shard-matrix`** job (**light** memory class, same as plan) inlines **`vars.HOBO_CI_FLEET_CAPACITY`** as **`HOBO_CI_FLEET_CAPACITY_JSON`** at **job** start so freshness is evaluated **after** planning (same-workflow `vars` are fixed per job; not the REST variables API; [finding 0117](../findings/0117-shard-limit-below-the-planned-shard.md)).
 - **`shard_matrix`**: per-shard **`runner`** — **`hobo-trunk`** for indices covered by **`arc.freeSlots`** when **`trunkMemoryAdmit === false`**, else **`ubuntu-24.04`** (GitHub-hosted machine type, not bare **`hobo`**). Stale **`publishedAt`** (**> 5 minutes**) → all **`hobo-trunk`** (hold, no overflow).
 - **`main_workspace_tests`** matrix **`include`** + **`matrix.runner`** on push, **`schedule`**, dispatch, merge_group, and workflow_run (no workflow rerun, no repo-wide **`HOBO_CI_FLEET_ROUTES`** flip; shared **`hobo`** fleet label unchanged).
 

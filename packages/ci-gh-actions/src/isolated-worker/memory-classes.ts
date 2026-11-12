@@ -44,6 +44,7 @@ const JOB_CLASSES = {
 	"CI runner image (mise oci)": "heavy",
 	// Planning is Node-only (turbo plan + cache upload); light admission avoids a 4096 MiB hold on thin main runs.
 	"Main workspace plan": "light",
+	"Main workspace shard matrix": "light",
 	"PR impact gate": "light",
 	"PR impact validation": "heavy",
 	"PR affected package lanes": "heavy",

@@ -67,6 +67,7 @@ const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 
 /** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
+const MAIN_WORKSPACE_SHARD_MATRIX_JOB = "Main workspace shard matrix";
 const MAIN_FULL_GATE_JOB = "Main full gate";
 const CI_DEPS_LAYER_JOB = "CI deps layer (pnpm)";
 const MAIN_TRAIN_RELEASE_GATE = "Main train release gate (nbgv)";
@@ -149,6 +150,7 @@ function mainFabricTrunkPhase(
 	runEvent?: string | undefined,
 ): number {
 	if (jobName === MAIN_WORKSPACE_PLAN_JOB) return 0;
+	if (jobName === MAIN_WORKSPACE_SHARD_MATRIX_JOB) return 1;
 	if (jobName === CI_DEPS_LAYER_JOB) {
 		// PR runs also build the deps layer, but must not queue ahead of required gates.
 		if (runEvent === "pull_request") return 10;
