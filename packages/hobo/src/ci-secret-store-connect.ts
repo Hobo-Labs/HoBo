@@ -135,7 +135,7 @@ export type VerifyCheck = Readonly<{
 	detail: string;
 }>;
 
-/** The CI writer may create and edit, not read: proving its sign-in is the check. */
+/** Prove CI writer OIDC sign-in (then revoke); Infisical role shape is not asserted. */
 async function signInOnly(
 	identity: string,
 	method: string,
@@ -196,8 +196,9 @@ async function attempt(
 /**
  * Sign in as each identity this environment can prove, by name. Inside a
  * GitHub Actions job (id-token: write): `hobo-ci-writer` (the binding's
- * `deployIdentityId`) through GitHub OIDC; its role writes and cannot read,
- * so signing in, then revoking the token, is the check. Where Vercel's OIDC
+ * `deployIdentityId`) through GitHub OIDC; sign-in then revoke is the check
+ * (on Infisical Cloud Free attach, Member may read — see CONFIG-SERVICE.md).
+ * Where Vercel's OIDC
  * token is present (`VERCEL_OIDC_TOKEN`): `hobo-ci-relay`, listing secret
  * names. Elsewhere a check is `not-run` with where it does run.
  */
