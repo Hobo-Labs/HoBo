@@ -392,6 +392,62 @@ describe("the stateless relay's configuration is read-only", () => {
 		expect(body.error).toMatch(/read-only.*hobo ci.*config service/u);
 	});
 
+	it("keeps a fleet verdict on the cache: reported by the account, read by anyone, gone when it lapses", async () => {
+		const h = await openStatelessRelay();
+		const path = "/v1/fleet/verdicts/Org/Repo";
+		const read = async (at = path) => {
+			const response = await h.relay.handle(new Request(`${ORIGIN}${at}`));
+			expect(response.status).toBe(200);
+			return response.json();
+		};
+		expect(await read()).toEqual({ repository: "org/repo", blocked: {} });
+		// Configuration is read-only here; a verdict is not configuration.
+		const reported = await h.relay.handle(
+			new Request(`${ORIGIN}${path}`, {
+				method: "PUT",
+				headers: {
+					authorization: `Bearer ${h.token}`,
+					"content-type": "application/json",
+				},
+				body: '{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":120}',
+			}),
+		);
+		expect(reported.status).toBe(200);
+		expect((await read()).blocked).toEqual({
+			hobo: { reason: "no-capacity" },
+		});
+		h.clock.advance(119_000);
+		expect((await read()).blocked).toEqual({
+			hobo: { reason: "no-capacity" },
+		});
+		h.clock.advance(1_000);
+		expect(await read()).toEqual({ repository: "org/repo", blocked: {} });
+	});
+
+	it("does not touch the cache for a repository it has no connection to, however it is named", async () => {
+		const h = await openStatelessRelay();
+		const before = h.cache.meter.usage().total;
+		for (const name of [
+			"acme/unknown",
+			"x1/Repo",
+			`${"a".repeat(39)}/${"b".repeat(100)}`,
+		]) {
+			const response = await h.relay.handle(
+				new Request(`${ORIGIN}/v1/fleet/verdicts/${name}`),
+			);
+			expect(response.status).toBe(200);
+			expect((await response.json()).blocked).toEqual({});
+		}
+		expect(h.cache.meter.usage().total).toBe(before);
+		// An owner longer than GitHub allows names no repository.
+		const long = await h.relay.handle(
+			new Request(
+				`${ORIGIN}/v1/fleet/verdicts/${"a".repeat(100)}/${"b".repeat(100)}`,
+			),
+		);
+		expect(long.status).toBe(404);
+	});
+
 	it("still serves the policy view, read from the config service", async () => {
 		const h = await openStatelessRelay();
 		const response = await h.relay.handle(

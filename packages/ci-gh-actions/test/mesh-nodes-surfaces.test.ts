@@ -420,3 +420,23 @@ describe("the MCP server's list_mesh_nodes and hobo-ci://mesh/nodes", () => {
 		).rejects.toThrow(/account scope required: policy:read/);
 	});
 });
+
+describe("the fleet verdict on a relay host", () => {
+	it("is kept by the host: reported by the connected account, then read by anyone", async () => {
+		const h = await relay();
+		const path = "/v1/fleet/verdicts/org/repo";
+		const read = async () => (await h.get(path)).json();
+		expect(await read()).toEqual({ repository: "org/repo", blocked: {} });
+		const reported = await fetch(`${h.base}${path}`, {
+			method: "PUT",
+			headers: { authorization: OPERATOR, "content-type": "application/json" },
+			body: '{"blocked":{"hobo-trunk":{"reason":"no-node"}},"ttlSeconds":60}',
+		});
+		expect(reported.status).toBe(200);
+		expect((await read()).blocked).toEqual({
+			"hobo-trunk": { reason: "no-node" },
+		});
+		// A credential that may only read cannot report.
+		expect((await h.get(path, READER, "PUT")).status).toBe(403);
+	});
+});

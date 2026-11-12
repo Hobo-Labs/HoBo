@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
+	askRelay,
 	BURST_SECONDS,
 	chooseRunner,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
-	FLEET_STATE_MAX_AGE_SECONDS,
-	FLEET_STATE_MAX_SKEW_SECONDS,
-	type FleetState,
 	fleetLabelFor,
-	fleetStateRefusal,
 	hasChosen,
+	type JsonValue,
 	type LabelLoad,
 	labelLoad,
 	lookupOrder,
@@ -24,12 +24,17 @@ import {
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
-	parseFleetState,
+	parseFleetVerdict,
+	parseRelayOrigin,
 	parseRouteMode,
 	probeRunIds,
 	type QueueView,
 	RECENT_PICKUP_SECONDS,
+	RELAY_CONFIG_PATH,
+	RELAY_VERDICT_TIMEOUT_SECONDS,
+	type RelayAnswer,
 	refusingJobs,
+	relayRefusal,
 	routeRunner,
 	runsJustAhead,
 	type SeenJob,
@@ -303,279 +308,422 @@ describe("the routing decision", () => {
 	});
 });
 
-/** A snapshot published `ageSeconds` ago with these labels. */
-const snapshot = (
-	labels: Record<string, { nodes: number; freeSlots: number }>,
-	ageSeconds = 30,
-) =>
-	JSON.stringify({
-		publishedAt: new Date(NOW - ageSeconds * 1000).toISOString(),
-		labels: Object.fromEntries(
-			Object.entries(labels).map(([label, state]) => [
-				label,
-				{ ...state, trustedNodes: state.nodes },
-			]),
+/** The relay's verdict contract, as its provider suite verifies it. */
+const verdictPact: {
+	interactions: {
+		description: string;
+		request: { method: string; path: string };
+		response: { status: number; body: JsonValue };
+	}[];
+} = JSON.parse(
+	readFileSync(
+		new URL(
+			"../../packages/ci-gh-actions/contracts/fleet-verdict-boundary.pact.json",
+			import.meta.url,
 		),
-	});
-const fresh = (
-	labels: Record<string, { nodes: number; freeSlots: number }>,
-): FleetState => {
-	const state = parseFleetState(snapshot(labels), NOW);
-	assert.ok(state);
-	return state;
+		"utf8",
+	),
+);
+const pactAnswer = (description: string) => {
+	const found = verdictPact.interactions.find((entry) =>
+		entry.description.startsWith(description),
+	);
+	assert.ok(found, `the Pact has no interaction "${description}"`);
+	return found;
 };
-const ROOM = { nodes: 2, freeSlots: 3 };
-const FULL = { nodes: 2, freeSlots: 0 };
-const NOBODY = { nodes: 0, freeSlots: 0 };
+/** A verdict that blocks these labels. */
+const verdict = (blocked: Record<string, string> = {}): RelayAnswer => ({
+	kind: "verdict",
+	blocked: new Map(Object.entries(blocked)),
+});
+const NO_NODE = verdict({ hobo: "no-node" });
+const NO_CAPACITY = verdict({ hobo: "no-capacity" });
+const OPEN = verdict();
 
-describe("the mesh's snapshot", () => {
-	it("is read while it is fresh, with how old it is", () => {
-		const state = parseFleetState(
-			snapshot({ hobo: ROOM, "hobo-trunk": NOBODY }, 45),
-			NOW,
-		);
-		assert.equal(state?.ageSeconds, 45);
-		assert.deepEqual(
-			[...(state?.labels ?? [])],
-			[
-				["hobo", { nodes: 2, freeSlots: 3 }],
-				["hobo-trunk", { nodes: 0, freeSlots: 0 }],
-			],
-		);
-	});
-
-	it("is the record the workers publish", () => {
-		// The contract fixture of `MeshFleetState`, as a worker writes it.
-		const value = readFileSync(
-			new URL(
-				"../../packages/ci-gh-actions/data-models/fixtures/valid/mesh-fleet-state.json",
-				import.meta.url,
-			),
-			"utf8",
-		);
-		const state = parseFleetState(
-			value,
-			Date.parse("2026-11-10T02:41:05.000Z"),
-		);
-		assert.equal(state?.ageSeconds, 60);
-		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 3 });
-		assert.deepEqual(state?.labels.get("hobo-trunk"), {
-			nodes: 0,
-			freeSlots: 0,
+describe("the relay the project names", () => {
+	const project = (environment: Record<string, string | boolean>) =>
+		JSON.stringify({
+			defaultEnvironment: "ci",
+			environments: { ci: environment, other: { relayOrigin: "https://x.y" } },
 		});
-	});
 
-	it("is ignored once it is more than five minutes old", () => {
-		assert.equal(FLEET_STATE_MAX_AGE_SECONDS, 300);
-		assert.ok(parseFleetState(snapshot({ hobo: FULL }, 300), NOW));
+	it("is the default environment's relay origin", () => {
 		assert.equal(
-			parseFleetState(snapshot({ hobo: FULL }, 301), NOW),
-			undefined,
-		);
-		assert.equal(
-			parseFleetState(snapshot({ hobo: FULL }, 86_400), NOW),
-			undefined,
+			parseRelayOrigin(project({ relayOrigin: "https://relay.example/" })),
+			"https://relay.example",
 		);
 	});
 
-	it("allows for a little clock skew, and ignores a timestamp from the future", () => {
-		const ahead = (seconds: number) =>
-			parseFleetState(snapshot({ hobo: FULL }, -seconds), NOW);
-		assert.equal(ahead(FLEET_STATE_MAX_SKEW_SECONDS)?.ageSeconds, 0);
-		assert.equal(ahead(FLEET_STATE_MAX_SKEW_SECONDS + 1), undefined);
+	it("is HoBo's hosted relay in this repository", () => {
+		assert.equal(
+			parseRelayOrigin(
+				readFileSync(
+					new URL(`../../${RELAY_CONFIG_PATH}`, import.meta.url),
+					"utf8",
+				),
+			),
+			"https://hobo-ci.vercel.app",
+		);
 	});
 
-	it("is ignored when it is missing or is not the record", () => {
-		for (const value of [
+	it("is nothing when the file is missing, unreadable or names none", () => {
+		for (const text of [
 			undefined,
 			"",
-			"   ",
 			"not json",
 			"[]",
-			"null",
-			'"text"',
 			"{}",
-			'{"labels":{"hobo":{"nodes":0}}}',
-			'{"publishedAt":"yesterday","labels":{}}',
-			`{"publishedAt":"${new Date(NOW).toISOString()}"}`,
-			`{"publishedAt":"${new Date(NOW).toISOString()}","labels":[]}`,
-			`{"publishedAt":${NOW},"labels":{}}`,
+			JSON.stringify({ defaultEnvironment: "ci", environments: {} }),
+			project({}),
+			project({ relayOrigin: "not a url" }),
 		])
-			assert.equal(parseFleetState(value, NOW), undefined, String(value));
+			assert.equal(parseRelayOrigin(text), undefined, String(text));
 	});
 
-	it("reads a label without both counts as unknown, not as refusing", () => {
-		const state = parseFleetState(
-			JSON.stringify({
-				publishedAt: new Date(NOW).toISOString(),
-				labels: {
-					HOBO: { nodes: 2.9, freeSlots: -1 },
-					"hobo-trunk": { nodes: 0 },
-					partial: { freeSlots: 0 },
-					text: { nodes: "many", freeSlots: "none" },
-					odd: 7,
-				},
-			}),
-			NOW,
-		);
-		// Counts that are numbers are read, whole and not below zero.
-		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 0 });
-		// The rest say nothing: left out, so nothing is refused on them.
-		for (const label of ["hobo-trunk", "partial", "text", "odd"]) {
-			assert.equal(state?.labels.has(label), false, label);
-			assert.equal(fleetStateRefusal(state, label), undefined, label);
-		}
+	it("must be https, but for a loopback relay the environment allows", () => {
 		assert.equal(
-			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
-			"fleet",
+			parseRelayOrigin(project({ relayOrigin: "http://relay.example" })),
+			undefined,
 		);
-	});
-
-	it("says a label is refusing when it has no node or no free slot", () => {
-		const state = fresh({ hobo: FULL, "hobo-trunk": NOBODY, spare: ROOM });
-		assert.match(
-			fleetStateRefusal(state, "hobo") ?? "",
-			/mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
+		assert.equal(
+			parseRelayOrigin(project({ relayOrigin: "http://127.0.0.1:8787" })),
+			undefined,
 		);
-		assert.match(
-			fleetStateRefusal(state, "hobo-trunk") ?? "",
-			/shows no live node for hobo-trunk/,
+		assert.equal(
+			parseRelayOrigin(
+				project({
+					relayOrigin: "http://127.0.0.1:8787",
+					allowInsecureLoopback: true,
+				}),
+			),
+			"http://127.0.0.1:8787",
 		);
-		assert.equal(fleetStateRefusal(state, "spare"), undefined);
-		assert.equal(fleetStateRefusal(state, "SPARE"), undefined);
-	});
-
-	it("reads a label the snapshot does not list as unknown: the publisher does not speak for it", () => {
-		const state = fresh({ hobo: ROOM });
-		assert.equal(fleetStateRefusal(state, "hobo-trunk"), undefined);
-		assert.equal(fleetStateRefusal(state, "hobo-local-host"), undefined);
-		assert.equal(fleetStateRefusal(undefined, "hobo"), undefined);
+		assert.equal(
+			parseRelayOrigin(
+				project({
+					relayOrigin: "http://relay.example",
+					allowInsecureLoopback: true,
+				}),
+			),
+			undefined,
+		);
+		assert.equal(
+			parseRelayOrigin(
+				project({ relayOrigin: "https://user:key@relay.example" }),
+			),
+			undefined,
+		);
 	});
 });
 
-describe("the routing decision with the mesh's snapshot", () => {
-	it("leaves a fleet with no free slot at once, though the queue shows it taking jobs", () => {
+describe("the relay's verdict", () => {
+	it("is read from the answers the relay's contract pins", () => {
+		// Routing is the consumer of these two answers; the relay's provider
+		// suite proves it gives them.
+		const standing = pactAnswer("answer the standing verdict");
+		assert.deepEqual(
+			[...(parseFleetVerdict(standing.response.body, "Hobo-Labs/HoBo") ?? [])],
+			[
+				["hobo", "no-capacity"],
+				["hobo-trunk", "no-node"],
+			],
+		);
+		const none = pactAnswer("answer a repository with no verdict");
+		assert.equal(
+			parseFleetVerdict(none.response.body, "hobo-labs/hobo")?.size,
+			0,
+		);
+	});
+
+	it("is not read from an answer about another repository, or one that is not the record", () => {
+		const answers: readonly JsonValue[] = [
+			null,
+			"blocked",
+			[],
+			{},
+			{ repository: "hobo-labs/hobo" },
+			{ repository: "hobo-labs/hobo", blocked: [] },
+			{ repository: "hobo-labs/hobo", blocked: { hobo: "no-node" } },
+			{ repository: "hobo-labs/hobo", blocked: { hobo: {} } },
+			{ repository: "hobo-labs/hobo", blocked: { hobo: { reason: 7 } } },
+			// A reason is printed in the job's log: only a short plain token is one.
+			{
+				repository: "hobo-labs/hobo",
+				blocked: { hobo: { reason: "no-node\n::error::owned" } },
+			},
+			{ repository: "acme/app", blocked: { hobo: { reason: "no-node" } } },
+		];
+		for (const answer of answers)
+			assert.equal(
+				parseFleetVerdict(answer, "hobo-labs/hobo"),
+				undefined,
+				JSON.stringify(answer),
+			);
+	});
+
+	it("still blocks for a reason this reader has not seen", () => {
+		const blocked = parseFleetVerdict(
+			{ repository: "a/b", blocked: { hobo: { reason: "draining" } } },
+			"a/b",
+		);
+		assert.match(
+			relayRefusal(
+				{ kind: "verdict", blocked: blocked ?? new Map() },
+				"hobo",
+			) ?? "",
+			/the relay keeps new work off hobo: draining/,
+		);
+	});
+
+	it("refuses only a label it names", () => {
+		const answer = verdict({ hobo: "no-capacity", "hobo-trunk": "no-node" });
+		assert.equal(
+			relayRefusal(answer, "hobo"),
+			"the relay keeps new work off hobo: no node can admit a job and none has a free slot",
+		);
+		assert.equal(
+			relayRefusal(answer, "HOBO-TRUNK"),
+			"the relay keeps new work off HOBO-TRUNK: no live node serves it",
+		);
+		assert.equal(relayRefusal(answer, "hobo-local-host"), undefined);
+		for (const other of [
+			undefined,
+			OPEN,
+			{ kind: "unasked" },
+			{ kind: "unanswered", why: "it could not be reached" },
+		] as const)
+			assert.equal(relayRefusal(other, "hobo"), undefined);
+	});
+});
+
+describe("asking the relay", () => {
+	const ask = (
+		respond: (url: string, init: RequestInit) => Promise<Response> | Response,
+		target: { origin?: string | undefined; repository?: string } = {
+			origin: "https://relay.example",
+		},
+	) =>
+		askRelay({
+			origin: target.origin,
+			repository: target.repository ?? "Hobo-Labs/HoBo",
+			fetch: async (url, init) => respond(String(url), init ?? {}),
+		});
+
+	it("gets the repository's verdict from the relay, sending no credential", async () => {
+		const standing = pactAnswer("answer the standing verdict");
+		const asked: { url: string; init: RequestInit }[] = [];
+		const answer = await ask((url, init) => {
+			asked.push({ url, init });
+			return Response.json(standing.response.body);
+		});
+		assert.equal(answer.kind, "verdict");
+		assert.equal(
+			answer.kind === "verdict" && answer.blocked.get("hobo"),
+			"no-capacity",
+		);
+		assert.equal(asked.length, 1);
+		assert.equal(
+			asked[0]?.url,
+			"https://relay.example/v1/fleet/verdicts/Hobo-Labs/HoBo",
+		);
+		assert.deepEqual(Object.fromEntries(new Headers(asked[0]?.init.headers)), {
+			accept: "application/json",
+		});
+		assert.equal(asked[0]?.init.redirect, "error");
+	});
+
+	it("does not ask when no relay is named, or the repository is not one", async () => {
+		const never = () => {
+			throw new Error("nothing should be asked");
+		};
+		const origin = "https://relay.example";
+		for (const target of [
+			{ origin: undefined },
+			{ origin, repository: "" },
+			{ origin, repository: "a/b/../c" },
+			{ origin, repository: "a/b?x=1" },
+			// Longer than any owner GitHub has: the relay would answer 404.
+			{ origin, repository: `${"a".repeat(40)}/b` },
+		])
+			assert.deepEqual(await ask(never, target), { kind: "unasked" });
+	});
+
+	it("asks for a managed user's repository, underscore and all", async () => {
+		const asked: string[] = [];
+		await ask(
+			(url) => {
+				asked.push(url);
+				return Response.json({ repository: "mona_corp/app", blocked: {} });
+			},
+			{ origin: "https://relay.example", repository: "Mona_Corp/App" },
+		);
+		assert.deepEqual(asked, [
+			"https://relay.example/v1/fleet/verdicts/Mona_Corp/App",
+		]);
+	});
+
+	it("drops the body of an answer it will not read, so nothing holds the job open", async () => {
+		let cancelled = false;
+		const answer = await ask(
+			() =>
+				new Response(
+					new ReadableStream({
+						cancel() {
+							cancelled = true;
+						},
+					}),
+					{ status: 503 },
+				),
+		);
+		assert.deepEqual(answer, { kind: "unanswered", why: "it answered 503" });
+		assert.equal(cancelled, true);
+	});
+
+	it("reads any failure as no verdict, and says which", async () => {
+		assert.deepEqual(
+			await ask(() =>
+				Response.json({ error: "service unavailable" }, { status: 503 }),
+			),
+			{ kind: "unanswered", why: "it answered 503" },
+		);
+		assert.deepEqual(await ask(() => new Response("<html>")), {
+			kind: "unanswered",
+			why: "its answer was not a verdict",
+		});
+		assert.deepEqual(await ask(() => Response.json({ blocked: 1 })), {
+			kind: "unanswered",
+			why: "its answer was not a verdict",
+		});
+		assert.deepEqual(
+			await ask(() => {
+				throw new TypeError("fetch failed");
+			}),
+			{ kind: "unanswered", why: "it could not be reached" },
+		);
+		assert.deepEqual(
+			await ask(() => {
+				throw new DOMException("timed out", "TimeoutError");
+			}),
+			{
+				kind: "unanswered",
+				why: `it did not answer in ${RELAY_VERDICT_TIMEOUT_SECONDS} s`,
+			},
+		);
+	});
+
+	it("gives up on a relay that does not answer in time", async () => {
+		assert.equal(RELAY_VERDICT_TIMEOUT_SECONDS, 3);
+		// The timeout's own timer does not hold the process open; this does.
+		const awake = setTimeout(() => {}, 10_000);
+		const answer = await ask(
+			(_url, init) =>
+				new Promise<Response>((_resolve, reject) => {
+					assert.ok(init.signal);
+					init.signal.addEventListener("abort", () =>
+						reject(init.signal?.reason),
+					);
+				}),
+		);
+		clearTimeout(awake);
+		assert.deepEqual(answer, {
+			kind: "unanswered",
+			why: "it did not answer in 3 s",
+		});
+	});
+});
+
+describe("the routing decision with the relay's verdict", () => {
+	it("leaves a fleet the relay keeps work off at once, though the queue shows it taking jobs", () => {
 		assert.equal(decide().tier, "fleet");
-		const routed = decide({ fleetState: fresh({ hobo: FULL }) });
+		const routed = decide({ relay: NO_CAPACITY });
 		assert.equal(routed.tier, "github");
 		assert.equal(routed.runner, "ubuntu-24.04");
 		assert.match(routed.reason, /the fleet has nothing waiting/);
 		assert.match(
 			routed.reason,
-			/the mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
+			/the relay keeps new work off hobo: no node can admit a job and none has a free slot/,
 		);
 	});
 
 	it("leaves a fleet with no live node at once", () => {
-		const routed = decide({ fleetState: fresh({ hobo: NOBODY }) });
+		const routed = decide({ relay: NO_NODE });
 		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /shows no live node for hobo/);
+		assert.match(routed.reason, /no live node serves it/);
 	});
 
 	it("judges the label this run would ask for", () => {
-		const state = fresh({ hobo: ROOM, "hobo-trunk": FULL });
-		assert.equal(decide({ fleetState: state }).tier, "fleet");
+		const answer = verdict({ "hobo-trunk": "no-node" });
+		assert.equal(decide({ relay: answer }).tier, "fleet");
 		assert.equal(
-			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
+			decide({ fleetLabel: "hobo-trunk", relay: answer }).tier,
 			"github",
 		);
-		// A trunk label the publisher does not list is not its to refuse: the
-		// queue decides, as without a snapshot.
 		assert.deepEqual(
-			decide({ fleetLabel: "hobo-trunk", fleetState: fresh({ hobo: ROOM }) }),
+			decide({ fleetLabel: "hobo-trunk", relay: NO_NODE }),
 			decide({ fleetLabel: "hobo-trunk" }),
 		);
 	});
 
-	it("stays on the fleet when the snapshot shows room, as the queue alone would", () => {
-		const state = fresh({ hobo: ROOM });
-		assert.deepEqual(decide({ fleetState: state }), decide());
-	});
-
-	it("never makes a fleet look available: room in the snapshot does not outvote the queue", () => {
-		const state = fresh({ hobo: { nodes: 9, freeSlots: 40 } });
+	it("never makes a fleet look available: a verdict that blocks nothing does not outvote the queue", () => {
+		assert.deepEqual(decide({ relay: OPEN }), decide());
 		for (const fleet of [
 			idle,
-			{ ...idle, queued: 38, oldestWaitSeconds: 3600 },
-			{ ...up, slowestRecentPickupSeconds: 1500 },
-			{ ...up, queued: DEFAULT_MAX_QUEUED },
+			{ ...up, queued: 4 },
+			{ ...up, oldestWaitSeconds: 900, queued: 1 },
 		])
-			assert.deepEqual(decide({ fleet, fleetState: state }), decide({ fleet }));
+			assert.deepEqual(decide({ fleet, relay: OPEN }), decide({ fleet }));
 		assert.deepEqual(
-			decide({ undecidedAhead: 2, fleetState: state }),
+			decide({ undecidedAhead: 2, relay: OPEN }),
 			decide({ undecidedAhead: 2 }),
 		);
 	});
 
-	it("changes nothing when the snapshot is stale or missing", () => {
-		const loads: Partial<Parameters<typeof routeRunner>[0]>[] = [
-			{},
-			{ fleet: idle },
-			{ fleet: { ...idle, queued: 38, oldestWaitSeconds: 3600 } },
-			{ localEnrolled: true, fleet: { ...idle, queued: 4 } },
-			{ localEnrolled: true, undecidedAhead: 1 },
-			{ fleetLabel: "hobo-trunk" },
-		];
-		for (const value of [
-			// Says the fleet is full, but is six minutes old.
-			snapshot({ hobo: NOBODY, "hobo-trunk": NOBODY }, 360),
-			undefined,
-			"",
-			"not json",
-		]) {
-			const fleetState = parseFleetState(value, NOW);
-			assert.equal(fleetState, undefined);
-			for (const load of loads)
-				assert.deepEqual(decide({ ...load, fleetState }), decide(load));
+	it("decides as without a relay when it was not asked", () => {
+		for (const load of [{}, { fleet: idle }, { fleet: { ...up, queued: 4 } }])
+			assert.deepEqual(
+				decide({ ...load, relay: { kind: "unasked" } }),
+				decide(load),
+			);
+	});
+
+	it("decides as without a relay when it gave no verdict, and says it did not", () => {
+		const relay = { kind: "unanswered", why: "it answered 503" } as const;
+		for (const load of [{}, { fleet: idle }, { fleet: { ...up, queued: 4 } }]) {
+			const routed = decide({ ...load, relay });
+			const alone = decide(load);
+			assert.deepEqual(
+				[routed.tier, routed.runner],
+				[alone.tier, alone.runner],
+			);
+			assert.match(
+				routed.reason,
+				/the relay gave no verdict \(it answered 503\)/,
+			);
 		}
 	});
 
-	it("passes over a local box the snapshot shows busy, and one it does not list is judged by the queue", () => {
-		const fleetDown = { ...idle, queued: 4, oldestWaitSeconds: 900 };
-		const local = { localEnrolled: true, fleet: fleetDown };
-		assert.equal(decide(local).tier, "local");
-		// Not in the mesh: nothing is known of it but the queue.
+	it("passes over a local box the relay keeps work off, and one it does not name is judged by the queue", () => {
+		const local = {
+			localEnrolled: true,
+			fleet: { ...up, queued: 4 },
+		};
+		assert.equal(decide({ ...local, relay: OPEN }).tier, "local");
 		assert.equal(
-			decide({ ...local, fleetState: fresh({ hobo: ROOM }) }).tier,
-			"local",
-		);
-		const busy = decide({
-			...local,
-			fleetState: fresh({
-				hobo: ROOM,
-				"hobo-local-host": { nodes: 1, freeSlots: 0 },
-			}),
-		});
-		assert.equal(busy.tier, "github");
-		assert.match(
-			busy.reason,
-			/no free slot on 1 node\(s\) for hobo-local-host/,
-		);
-		assert.equal(
-			decide({
-				...local,
-				fleetState: fresh({
-					hobo: ROOM,
-					"hobo-local-host": { nodes: 1, freeSlots: 1 },
-				}),
-			}).tier,
-			"local",
+			decide({ ...local, relay: verdict({ "hobo-local-host": "no-node" }) })
+				.tier,
+			"github",
 		);
 	});
 
-	it("goes to the local box when the snapshot shows the fleet full", () => {
-		const routed = decide({
-			localEnrolled: true,
-			fleetState: fresh({ hobo: FULL }),
-		});
+	it("goes to the local box when the relay keeps work off the fleet", () => {
+		const routed = decide({ localEnrolled: true, relay: NO_CAPACITY });
 		assert.equal(routed.tier, "local");
 	});
 
 	it("does not move a pinned tier", () => {
-		const state = fresh({ hobo: NOBODY });
-		assert.equal(decide({ mode: "fleet", fleetState: state }).runner, "hobo");
+		assert.equal(decide({ mode: "fleet", relay: NO_NODE }).runner, "hobo");
 		assert.equal(
-			decide({ mode: "local", fleetState: state }).runner,
+			decide({ mode: "local", relay: NO_NODE }).runner,
 			"hobo-local-host",
 		);
 	});
@@ -917,10 +1065,15 @@ describe("waiting for the probe", () => {
 	/** Plays out a list of queue views, one per look, on a clock only `sleep` moves. */
 	const choose = async (
 		views: readonly QueueView[],
-		overrides: { localEnrolled?: boolean; fleetState?: string } = {},
+		overrides: {
+			localEnrolled?: boolean;
+			/** What the relay answers on each look; the last one repeats. */
+			relay?: readonly RelayAnswer[];
+		} = {},
 	) => {
 		let clock = NOW;
 		let looks = 0;
+		let asked = 0;
 		const decision = await chooseRunner({
 			observe: async () => {
 				const view = views[Math.min(looks, views.length - 1)];
@@ -936,9 +1089,15 @@ describe("waiting for the probe", () => {
 			fleetLabel: "hobo",
 			localEnrolled: overrides.localEnrolled ?? false,
 			limits,
-			fleetState: (nowMs) => parseFleetState(overrides.fleetState, nowMs),
+			askRelay: async () => {
+				const answers = overrides.relay ?? [{ kind: "unasked" } as const];
+				asked += 1;
+				const answer = answers[Math.min(asked, answers.length) - 1];
+				assert.ok(answer);
+				return answer;
+			},
 		});
-		return { decision, looks, waited: (clock - NOW) / 1000 };
+		return { decision, looks, asked, waited: (clock - NOW) / 1000 };
 	};
 	const quiet = { jobs: [], undecidedAhead: 0, probeUnderway: false };
 	const probing = { ...quiet, probeUnderway: true };
@@ -1001,41 +1160,37 @@ describe("waiting for the probe", () => {
 		);
 	});
 
-	it("does not wait for the probe on a fleet the mesh snapshot shows full", async () => {
-		const waitedFor = await choose([probing]);
-		assert.equal(waitedFor.waited, PROBE_WAIT_SECONDS);
-		const seen = await choose([probing, probing, answered], {
-			fleetState: snapshot({ hobo: FULL }),
-		});
-		assert.deepEqual(
-			[seen.decision.tier, seen.looks, seen.waited],
-			["github", 1, 0],
-		);
-		assert.match(seen.decision.reason, /shows no free slot/);
+	it("does not wait for the probe on a fleet the relay keeps work off", async () => {
+		// A probe being picked up would not change what the relay decided.
+		const seen = await choose([probing], { relay: [NO_CAPACITY] });
+		assert.deepEqual([seen.decision.tier, seen.waited], ["github", 0]);
+		assert.match(seen.decision.reason, /the relay keeps new work off hobo/);
 	});
 
-	it("waits for the probe as before when the snapshot shows room, or is stale", async () => {
-		for (const fleetState of [
-			snapshot({ hobo: ROOM }),
-			snapshot({ hobo: FULL }, 600),
+	it("waits for the probe as before when the relay blocks nothing, or gave no verdict", async () => {
+		for (const answer of [
+			OPEN,
+			{ kind: "unanswered", why: "it could not be reached" } as const,
 		]) {
-			const seen = await choose([probing, probing, answered], { fleetState });
+			const seen = await choose([probing, probing, answered], {
+				relay: [answer],
+			});
 			assert.equal(seen.decision.tier, "fleet");
 			assert.equal(seen.waited, 2 * PROBE_POLL_SECONDS);
 		}
 	});
 
-	it("reads the snapshot afresh on every look, not once", async () => {
-		// Stamped too far ahead of this clock to believe at the first look, and
-		// within its skew ten seconds later: the second look goes by it.
+	it("asks the relay afresh on every look, not once", async () => {
+		// Nothing blocked at first, so the probe is waited on; then the relay
+		// keeps work off the fleet, and the wait ends there.
 		const seen = await choose([probing, probing, answered], {
-			fleetState: snapshot({ hobo: FULL }, -(FLEET_STATE_MAX_SKEW_SECONDS + 5)),
+			relay: [OPEN, NO_NODE],
 		});
 		assert.deepEqual(
-			[seen.decision.tier, seen.looks, seen.waited],
-			["github", 2, PROBE_POLL_SECONDS],
+			[seen.decision.tier, seen.looks, seen.asked],
+			["github", 2, 2],
 		);
-		assert.match(seen.decision.reason, /shows no free slot/);
+		assert.equal(seen.waited, PROBE_POLL_SECONDS);
 	});
 
 	it("falls back to the local box when the probe finds only that", async () => {
@@ -1048,73 +1203,259 @@ describe("waiting for the probe", () => {
 	});
 });
 
+/** A project file naming a relay, as `.hobo/ci.json` does. */
+const RELAY_CONFIG = JSON.stringify({
+	defaultEnvironment: "ci",
+	environments: { ci: { relayOrigin: "https://relay.example" } },
+});
+
+/**
+ * A named relay that must not be called: these decisions are made without
+ * it, and without this a mistake would ask the real relay `.hobo/ci.json` names.
+ */
+const NO_RELAY_CALL = {
+	relayConfig: RELAY_CONFIG,
+	fetch: async (): Promise<never> => {
+		throw new Error("the relay must not be asked here");
+	},
+};
+
 describe("the script as a whole", () => {
 	it("uses GitHub-hosted, and says why, when the queue cannot be read", async () => {
-		const decision = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			GITHUB_REPOSITORY: "acme/app",
-			GITHUB_RUN_ID: "1",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const decision = await main(
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				GITHUB_REPOSITORY: "acme/app",
+				GITHUB_RUN_ID: "1",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.equal(decision.runner, "ubuntu-24.04");
 		assert.equal(decision.tier, "github");
 		assert.match(decision.reason, /could not be read/);
 	});
 
 	it("does not read the queue for a pinned tier", async () => {
-		const pinned = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			HOBO_CI_ROUTE: "fleet",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const pinned = await main(
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				HOBO_CI_ROUTE: "fleet",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.equal(pinned.runner, "hobo-trunk");
-		const hosted = await main({
-			GITHUB_EVENT_NAME: "pull_request",
-			HOBO_CI_ROUTE: "github",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const hosted = await main(
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				HOBO_CI_ROUTE: "github",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.equal(hosted.runner, "ubuntu-24.04");
 	});
 
-	it("keeps a pinned fleet on the fleet whatever the mesh snapshot says", async () => {
-		const pinned = await main({
-			GITHUB_EVENT_NAME: "pull_request",
-			HOBO_CI_ROUTE: "fleet",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-			HOBO_CI_FLEET_STATE: JSON.stringify({
-				publishedAt: new Date().toISOString(),
-				labels: { hobo: { nodes: 0, trustedNodes: 0, freeSlots: 0 } },
-			}),
-		});
+	it("keeps a pinned fleet on the fleet without asking the relay", async () => {
+		const pinned = await main(
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_REPOSITORY: "acme/app",
+				HOBO_CI_ROUTE: "fleet",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.deepEqual([pinned.tier, pinned.runner], ["fleet", "hobo"]);
 	});
 
 	it("sends what is left of an attested run to GitHub-hosted without reading the queue", async () => {
-		const attested = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			HOBO_CI_ATTESTED: "true",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const attested = await main(
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				HOBO_CI_ATTESTED: "true",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.equal(attested.runner, "ubuntu-24.04");
 		assert.equal(attested.tier, "github");
 		assert.match(attested.reason, /signed local run/);
 		// A pin is an operator's override: it still wins.
-		const pinned = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			HOBO_CI_ATTESTED: "true",
-			HOBO_CI_ROUTE: "fleet",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const pinned = await main(
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				HOBO_CI_ATTESTED: "true",
+				HOBO_CI_ROUTE: "fleet",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.equal(pinned.runner, "hobo-trunk");
 		// Anything but the literal `true` is not an attestation.
-		const unattested = await main({
-			GITHUB_EVENT_NAME: "pull_request",
-			HOBO_CI_ATTESTED: "false",
-			GITHUB_REPOSITORY: "acme/app",
-			GITHUB_RUN_ID: "1",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const unattested = await main(
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				HOBO_CI_ATTESTED: "false",
+				GITHUB_REPOSITORY: "acme/app",
+				GITHUB_RUN_ID: "1",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_RELAY_CALL,
+		);
 		assert.match(unattested.reason, /could not be read/);
+	});
+});
+
+describe("the script asking the relay", () => {
+	/** GitHub's queue with a runner that took the probe's `hobo` job a minute ago. */
+	const withFleetUp = async <T>(run: (apiUrl: string) => Promise<T>) => {
+		const ago = (seconds: number) =>
+			new Date(Date.now() - seconds * 1000).toISOString();
+		const server = createServer((request, response) => {
+			const page = request.url?.includes("/jobs")
+				? {
+						jobs: [
+							{
+								run_id: 40,
+								status: "completed",
+								labels: ["hobo"],
+								runner_name: "hobo-1",
+								created_at: ago(65),
+								started_at: ago(60),
+							},
+						],
+					}
+				: {
+						workflow_runs: [
+							{
+								id: 40,
+								path: PROBE_WORKFLOW_PATH,
+								status: "completed",
+								created_at: ago(65),
+								updated_at: ago(50),
+							},
+						],
+					};
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify(page));
+		});
+		await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+		// SAFETY: a server listening on a TCP port reports an AddressInfo.
+		const { port } = server.address() as AddressInfo;
+		try {
+			return await run(`http://127.0.0.1:${port}`);
+		} finally {
+			await new Promise((done) => server.close(done));
+		}
+	};
+	const route = (
+		apiUrl: string,
+		relay: (url: string) => Response,
+		project: { relayConfig: string | undefined } = {
+			relayConfig: RELAY_CONFIG,
+		},
+	) => {
+		const asked: string[] = [];
+		return main(
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				GITHUB_RUN_ID: "51",
+				GITHUB_API_URL: apiUrl,
+			},
+			{
+				relayConfig: project.relayConfig,
+				fetch: async (url) => {
+					asked.push(String(url));
+					return relay(String(url));
+				},
+			},
+		).then((decision) => ({ decision, asked }));
+	};
+
+	it("leaves the fleet when the relay it asked keeps work off the run's label", async () => {
+		await withFleetUp(async (apiUrl) => {
+			const standing = pactAnswer("answer the standing verdict");
+			const { decision, asked } = await route(apiUrl, () =>
+				Response.json(standing.response.body),
+			);
+			assert.deepEqual(asked, [
+				"https://relay.example/v1/fleet/verdicts/Hobo-Labs/HoBo",
+			]);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["github", "ubuntu-24.04"],
+			);
+			assert.match(decision.reason, /the relay keeps new work off hobo/);
+		});
+	});
+
+	it("stays on the fleet when the relay blocks nothing", async () => {
+		await withFleetUp(async (apiUrl) => {
+			const none = pactAnswer("answer a repository with no verdict");
+			const { decision } = await route(apiUrl, () =>
+				Response.json(none.response.body),
+			);
+			assert.equal(decision.tier, "fleet");
+			assert.doesNotMatch(decision.reason, /relay/);
+		});
+	});
+
+	it("stays on the fleet, and says the relay gave no verdict, when it fails", async () => {
+		await withFleetUp(async (apiUrl) => {
+			const { decision } = await route(apiUrl, () =>
+				Response.json({ error: "service unavailable" }, { status: 503 }),
+			);
+			assert.equal(decision.tier, "fleet");
+			assert.match(
+				decision.reason,
+				/the relay gave no verdict \(it answered 503\)/,
+			);
+		});
+	});
+
+	it("asks no one when the project names no relay", async () => {
+		await withFleetUp(async (apiUrl) => {
+			const { decision, asked } = await route(
+				apiUrl,
+				() => {
+					throw new Error("no relay is named");
+				},
+				{ relayConfig: undefined },
+			);
+			assert.deepEqual(asked, []);
+			assert.equal(decision.tier, "fleet");
+		});
+	});
+
+	it("takes nothing about the fleet from the environment", async () => {
+		// What a worker once published for routing, handed over the old way.
+		await withFleetUp(async (apiUrl) => {
+			const decision = await main(
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: "51",
+					GITHUB_API_URL: apiUrl,
+					HOBO_CI_FLEET_STATE: JSON.stringify({
+						publishedAt: new Date().toISOString(),
+						labels: { hobo: { nodes: 0, trustedNodes: 0, freeSlots: 0 } },
+					}),
+					HOBO_CI_FLEET_CAPACITY: JSON.stringify({
+						version: 1,
+						admittedParallel: 0,
+						hobo: { freeSlots: 0 },
+						arc: { freeSlots: 0 },
+						trunkMemoryAdmit: false,
+						publishedAt: new Date().toISOString(),
+					}),
+				},
+				{ relayConfig: undefined },
+			);
+			assert.equal(decision.tier, "fleet");
+		});
 	});
 });
 
@@ -1167,5 +1508,28 @@ describe("the workflows that route", () => {
 			for (const file of needed)
 				assert.ok(lines.has(file), `${path} does not sparse-checkout ${file}`);
 		}
+	});
+
+	it("check out the file that names the relay", () => {
+		for (const path of routed)
+			assert.ok(
+				read(path)
+					.split("\n")
+					.some((line) => line.trim() === RELAY_CONFIG_PATH),
+				`${path} does not sparse-checkout ${RELAY_CONFIG_PATH}`,
+			);
+	});
+
+	it("hand the routing step nothing about the fleet", () => {
+		// The relay is asked at decision time; no input or variable carries
+		// what the fleet can take.
+		const action = read(".github/actions/route-runner/action.yml");
+		for (const path of [".github/actions/route-runner/action.yml", ...routed])
+			assert.doesNotMatch(
+				read(path),
+				/fleet-state|fleet-capacity|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES)/,
+				path,
+			);
+		assert.match(action, /scripts\/ci\/route-runner\.mts/);
 	});
 });
