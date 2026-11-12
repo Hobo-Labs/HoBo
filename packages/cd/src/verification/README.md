@@ -56,6 +56,27 @@ the first tick after a restart rediscovers every Started stream without a
 Completed event. Concurrent ticks are serialized by the stream's expected-seq
 CAS; the loser re-reads and resumes.
 
+## Architecture (AGENTS.md rules)
+
+- **Parse, don't validate.** Specs cross the boundary once, through
+  `parseVerificationSpec`; everything after it takes the derived type
+  `ParsedVerificationSpec` (a brand of the generated `VerificationSpecRecord`),
+  so no engine path re-checks or sees an unparsed spec. Records are the
+  generated protobuf types from `cd_pb.ts`; no proto shape is hand-declared.
+- **Commands and events.** Commands are `start` and `tick`; events are
+  `verification.Started`, `rollout.EvidenceObserved` and
+  `verification.Completed`, appended to the event store (`DurableEventStore`)
+  on one stream per verification.
+- **Actor.** Each `cd-verification-<id>` stream is a single-writer actor: every
+  append carries the expected sequence, so two engines ticking the same
+  verification cannot both complete it.
+- **Projection and read store.** `foldVerification` is the projection; `get`
+  reads it from the stream, and the in-memory map of running verifications is
+  only a cache over it. There is no separate read store and no snapshot: a
+  stream is bounded by its window (one event per sample plus two), so a fold
+  from zero is the snapshot policy. Replay (`replay.ts`) is the same fold plus
+  the same verdict function.
+
 ## Metrics (`TelemetrySink`, optional)
 
 `hobo.cd.verification.started`, `hobo.cd.verification.completed`
