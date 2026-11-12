@@ -203,6 +203,31 @@ describe("ci-runner mise tool sync", () => {
 		expect(result.detail).toContain("mise.lock");
 	});
 
+	it("verify-only preflight does not duplicate command text from spawnCommand failures", () => {
+		const dryRunCommand =
+			"mise --cd /agent/repos/HoBo install --locked --dry-run-code";
+		const dryRunLine = `${dryRunCommand}: exited 1; stderr tail: would install`;
+		const result = assertPinnedMiseToolchain(root, {
+			run: (cmd, args) => {
+				if (cmd === "mise" && args.includes("--dry-run-code")) {
+					return {
+						ok: false,
+						out: "",
+						command: dryRunCommand,
+						failure: dryRunLine,
+					};
+				}
+				return { ok: true, out: "" };
+			},
+		});
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain(dryRunLine);
+		expect(result.detail).toContain("mise.lock");
+		expect(result.detail.split("install --locked --dry-run-code").length).toBe(
+			2,
+		);
+	});
+
 	it("parseMiseLockPinnedVersions reads [[tools.*]] version pins", () => {
 		const lock = `[[tools.cue]]\nversion = "0.14.0"\n[[tools.node]]\nversion = "24.0.0"\n`;
 		const versions = parseMiseLockPinnedVersions(lock);
