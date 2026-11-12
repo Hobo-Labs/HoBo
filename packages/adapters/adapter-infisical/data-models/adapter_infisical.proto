@@ -69,6 +69,19 @@ message InfisicalUniversalAuthLoginRequest {
   string client_secret = 2;
 }
 
+// POST /api/v1/auth/token/revoke: ends a machine identity access token this
+// client obtained by logging in, before its natural expiry. Sent without an
+// Authorization header; the token is the body.
+// https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token
+message InfisicalTokenRevokeRequest {
+  string access_token = 1;
+}
+
+// The answer of POST /api/v1/auth/token/revoke.
+message InfisicalTokenRevokeResponse {
+  string message = 1;
+}
+
 // POST and PATCH /api/v4/secrets/{secretName}.
 message InfisicalSecretWriteRequest {
   string project_id = 1;
@@ -81,4 +94,131 @@ message InfisicalSecretWriteRequest {
 // GitHub's answer to the Actions OIDC token request: `{ "value": "<jwt>" }`.
 message GithubActionsIdToken {
   string value = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Provisioning a store HoBo created (ADR-0179 amendment "Secret store chosen
+// at deploy, provisioned by claim"). Shapes from Infisical's OpenAPI document
+// (https://app.infisical.com/api/docs/json, read 2026-11-12) and the automated
+// bootstrapping guide
+// (https://infisical.com/docs/self-hosting/guides/automated-bootstrapping).
+// Only the fields the adapter sends or reads.
+// ---------------------------------------------------------------------------
+
+// POST /api/v1/admin/bootstrap: the one bootstrap of a self-hosted instance.
+// HoBo generates the password and seals it into the owner's claim; it is
+// never logged.
+message InfisicalBootstrapRequest {
+  string email = 1;
+  string password = 2;
+  string organization = 3;
+}
+
+message InfisicalBootstrapUser {
+  string id = 1;
+  string email = 2;
+  bool super_admin = 3;
+}
+
+message InfisicalOrganization {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+}
+
+// The instance-admin machine identity's Token Auth token: a root credential.
+message InfisicalIdentityCredentials {
+  string token = 1;
+}
+
+message InfisicalBootstrapIdentity {
+  string id = 1;
+  string name = 2;
+  InfisicalIdentityCredentials credentials = 3;
+}
+
+message InfisicalBootstrapResponse {
+  string message = 1;
+  InfisicalBootstrapUser user = 2;
+  InfisicalOrganization organization = 3;
+  InfisicalBootstrapIdentity identity = 4;
+}
+
+// POST /api/v1/projects.
+message InfisicalCreateProjectRequest {
+  string project_name = 1;
+  string slug = 2;
+  string type = 3;
+  bool should_create_default_envs = 4;
+}
+
+message InfisicalProject {
+  string id = 1;
+  string slug = 2;
+  string org_id = 3;
+}
+
+message InfisicalCreateProjectResponse {
+  InfisicalProject project = 1;
+}
+
+// POST /api/v1/folders (`workspaceId` is the project id).
+message InfisicalCreateFolderRequest {
+  string workspace_id = 1;
+  string environment = 2;
+  string name = 3;
+  string path = 4;
+}
+
+message InfisicalFolder {
+  string id = 1;
+  string name = 2;
+}
+
+message InfisicalCreateFolderResponse {
+  InfisicalFolder folder = 1;
+}
+
+// POST /api/v1/projects/{projectId}/identities: a machine identity scoped to
+// one project, with its project role, in one request.
+message InfisicalProjectRole {
+  string role = 1;
+}
+
+message InfisicalCreateProjectIdentityRequest {
+  string name = 1;
+  repeated InfisicalProjectRole roles = 2;
+}
+
+message InfisicalIdentity {
+  string id = 1;
+  string name = 2;
+}
+
+// The answer of POST /api/v1/projects/{projectId}/identities and of
+// GET and DELETE /api/v1/identities/{identityId}.
+message InfisicalIdentityResponse {
+  InfisicalIdentity identity = 1;
+}
+
+// POST /api/v1/auth/oidc-auth/identities/{identityId}: trust one workload
+// issuer (Vercel's team issuer, GitHub Actions) for one identity.
+message InfisicalAttachOidcAuthRequest {
+  string oidc_discovery_url = 1;
+  string bound_issuer = 2;
+  // Comma-separated, as Infisical takes it.
+  string bound_audiences = 3;
+  map<string, string> bound_claims = 4;
+  string bound_subject = 5;
+  uint32 access_token_ttl = 6 [json_name = "accessTokenTTL"];
+  uint32 access_token_max_ttl = 7 [json_name = "accessTokenMaxTTL"];
+}
+
+message InfisicalIdentityOidcAuth {
+  string id = 1;
+  string identity_id = 2;
+}
+
+message InfisicalAttachOidcAuthResponse {
+  InfisicalIdentityOidcAuth identity_oidc_auth = 1;
 }

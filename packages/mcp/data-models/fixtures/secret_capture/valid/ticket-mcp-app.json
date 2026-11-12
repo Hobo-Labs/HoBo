@@ -1,0 +1,15 @@
+{
+	"ticketId": "cap_CCCCCCCCCCCCCCCCCCCCCC",
+	"name": "HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+	"target": "runtime",
+	"channel": "mcp-app",
+	"state": "awaiting-owner",
+	"openedAt": "2026-11-12T10:00:00.000Z",
+	"expiresAt": "2026-11-12T10:10:00.000Z",
+	"key": {
+		"kty": "EC",
+		"crv": "P-256",
+		"x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+		"y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
+	}
+}

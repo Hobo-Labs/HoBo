@@ -32,7 +32,7 @@
     }
   ],
   "project": "hobo-ci",
-  "scope": "token-default",
+  "scope": "team_hobo",
   "target": "production",
   "gitSource": {
     "type": "github",
@@ -84,48 +84,48 @@
   "requests": [
     {
       "method": "GET",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "when": "always: read what the project holds, before any write"
     },
     {
       "method": "POST",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "body": "{\"key\":\"HOBO_CI_CONFIG_SERVICE\",\"value\":\"infisical\",\"type\":\"plain\",\"target\":[\"production\"]}",
       "when": "only if HOBO_CI_CONFIG_SERVICE is not set for production; a plain production-only value that differs is edited instead, and one already as asked is left alone"
     },
     {
       "method": "POST",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "body": "{\"key\":\"INFISICAL_ENVIRONMENT\",\"value\":\"prod\",\"type\":\"plain\",\"target\":[\"production\"]}",
       "when": "only if INFISICAL_ENVIRONMENT is not set for production; a plain production-only value that differs is edited instead, and one already as asked is left alone"
     },
     {
       "method": "POST",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "body": "{\"key\":\"INFISICAL_IDENTITY_ID\",\"value\":\"3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c\",\"type\":\"plain\",\"target\":[\"production\"]}",
       "when": "only if INFISICAL_IDENTITY_ID is not set for production; a plain production-only value that differs is edited instead, and one already as asked is left alone"
     },
     {
       "method": "POST",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "body": "{\"key\":\"INFISICAL_PROJECT_ID\",\"value\":\"6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7\",\"type\":\"plain\",\"target\":[\"production\"]}",
       "when": "only if INFISICAL_PROJECT_ID is not set for production; a plain production-only value that differs is edited instead, and one already as asked is left alone"
     },
     {
       "method": "POST",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "body": "{\"key\":\"INFISICAL_SECRET_PATH\",\"value\":\"/hobo-ci-relay\",\"type\":\"plain\",\"target\":[\"production\"]}",
       "when": "only if INFISICAL_SECRET_PATH is not set for production; a plain production-only value that differs is edited instead, and one already as asked is left alone"
     },
     {
       "method": "POST",
-      "path": "/v10/projects/hobo-ci/env",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
       "body": "{\"key\":\"INFISICAL_SITE_URL\",\"value\":\"https://app.infisical.com\",\"type\":\"plain\",\"target\":[\"production\"]}",
       "when": "only if INFISICAL_SITE_URL is not set for production; a plain production-only value that differs is edited instead, and one already as asked is left alone"
     },
     {
       "method": "POST",
-      "path": "/v13/deployments",
+      "path": "/v13/deployments?teamId=team_hobo",
       "body": "{\"name\":\"hobo-ci\",\"project\":\"hobo-ci\",\"gitSource\":{\"type\":\"github\",\"org\":\"example\",\"repo\":\"hobo\",\"ref\":\"main\",\"sha\":\"0123456789abcdef0123456789abcdef01234567\"},\"target\":\"production\",\"projectSettings\":{\"rootDirectory\":\"packages/ci-vercel\"}}",
       "when": "always: one deployment, built by Vercel from the commit"
     }
@@ -194,12 +194,12 @@
       "selected": true,
       "settings": [
         "HOBO_CI_CONFIG_SERVICE",
-        "INFISICAL_SECRET_PATH",
-        "INFISICAL_SITE_URL"
+        "INFISICAL_SECRET_PATH"
       ],
       "inputs": [
         "INFISICAL_IDENTITY_ID",
-        "INFISICAL_PROJECT_ID"
+        "INFISICAL_PROJECT_ID",
+        "INFISICAL_SITE_URL"
       ]
     },
     {

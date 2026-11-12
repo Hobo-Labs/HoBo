@@ -335,6 +335,82 @@ describe("writes", () => {
 	});
 });
 
+describe("a one-use writer session", () => {
+	const deployScope = {
+		projectId: "proj-deploy",
+		environment: "prod",
+		secretPath: "/",
+	};
+
+	beforeEach(() => {
+		// The capture writer: Universal Auth with a client secret Infisical
+		// lets log in once (`numUsesLimit: 1`), and a role that writes but
+		// cannot read back.
+		fake.identities.push({
+			kind: "universal-auth",
+			clientId: "writer-client",
+			clientSecret: "writer-one-use-secret",
+			access: "write-only",
+			usesLeft: 1,
+		});
+	});
+
+	const writer: InfisicalAuth = {
+		method: "universal-auth",
+		clientId: "writer-client",
+		clientSecret: "writer-one-use-secret",
+	};
+
+	it("signs in once, writes to two projects on that login, and cannot read back", async () => {
+		const runtime = client(writer);
+		const { expiresAtMs } = await runtime.signIn();
+		expect(expiresAtMs).toBe(clock + fake.expiresIn * 1000);
+		const deploy = runtime.forBinding(
+			parseInfisicalBinding({ siteUrl: server.url, ...deployScope }),
+		);
+		await runtime.putSecret("HOBO_CI_WEBHOOK_SECRET", "w".repeat(40));
+		await deploy.putSecret("VERCEL_TOKEN", "vercel-token-fixture");
+		expect(fake.value(scope, "HOBO_CI_WEBHOOK_SECRET")).toBe("w".repeat(40));
+		expect(fake.value(deployScope, "VERCEL_TOKEN")).toBe(
+			"vercel-token-fixture",
+		);
+		expect(logins()).toBe(1);
+		expect((await caught(runtime.listSecretNames())).code).toBe("forbidden");
+	});
+
+	it("revokes the token for every bound client, and the spent secret cannot sign in again", async () => {
+		const runtime = client(writer);
+		const deploy = runtime.forBinding(
+			parseInfisicalBinding({ siteUrl: server.url, ...deployScope }),
+		);
+		await runtime.signIn();
+		const [token] = fake.issuedTokens;
+		await deploy.revoke();
+		expect(fake.revokedTokens).toEqual([token]);
+		// The next write needs a login, and the one-use secret is spent.
+		expect((await caught(runtime.putSecret("X", "y"))).code).toBe(
+			"login-denied",
+		);
+	});
+
+	it("refuses to bind a client to another Infisical origin", () => {
+		expect(() =>
+			client(writer).forBinding(
+				parseInfisicalBinding({
+					siteUrl: "https://elsewhere.example.com",
+					...deployScope,
+				}),
+			),
+		).toThrow(InfisicalError);
+	});
+
+	it("never revokes an access token its owner supplied", async () => {
+		const token = fake.tokenFor("write");
+		await client({ method: "access-token", accessToken: token }).revoke();
+		expect(fake.revokedTokens).toEqual([]);
+	});
+});
+
 describe("redaction", () => {
 	it("never puts the JWT, the access token or a value in an error", async () => {
 		fake.seed(scope, "SECRET", "value-that-must-not-leak");
