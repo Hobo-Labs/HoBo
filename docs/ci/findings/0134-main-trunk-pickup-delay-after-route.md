@@ -31,7 +31,7 @@ No additional in-repo workflow change fixes a multi-minute queue without either 
 
 ## Fix
 
-- **Ops:** Redeploy box worker to a commit that includes #1928 and later trunk pickup fixes (#1930–#1931); verify deps/plan `started_at - created_at` **&lt;15s** on the next main push.
+- **Ops:** Redeploy box worker to **`main` ≥ #1928** (`f2bd06ddf`); verify deps/plan `started_at - created_at` **&lt;15s** on the next main push (compare [43176491360](https://github.com/Hobo-Labs/HoBo/actions/runs/43176491360)).
 - **Observe:** Compare `created_at` vs `started_at` on trunk jobs (this finding’s table); GitHub job wall time alone hides queue delay.
 
 ## Measure
