@@ -140,12 +140,12 @@
       "connectivityId": "infisical.oidc-auth/v1",
       "settings": [
         "HOBO_CI_CONFIG_SERVICE",
-        "INFISICAL_SECRET_PATH",
-        "INFISICAL_SITE_URL"
+        "INFISICAL_SECRET_PATH"
       ],
       "inputs": [
         "INFISICAL_IDENTITY_ID",
-        "INFISICAL_PROJECT_ID"
+        "INFISICAL_PROJECT_ID",
+        "INFISICAL_SITE_URL"
       ]
     },
     {

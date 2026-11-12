@@ -15,6 +15,7 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
 	InfisicalOidcLoginRequestSchema,
 	InfisicalSecretWriteRequestSchema,
+	InfisicalTokenRevokeRequestSchema,
 	InfisicalUniversalAuthLoginRequestSchema,
 } from "../../src/_generated/adapter_infisical_pb.js";
 
@@ -31,7 +32,11 @@ export type FakeResponse = {
 	body?: JsonValue;
 };
 
-type Access = "read" | "write";
+/**
+ * `write-only` is a custom role that may create and edit secrets in a folder
+ * but not read them back: the capture writer's role.
+ */
+type Access = "read" | "write" | "write-only";
 
 type Identity =
 	| { kind: "oidc"; identityId: string; jwt: string; access: Access }
@@ -40,6 +45,8 @@ type Identity =
 			clientId: string;
 			clientSecret: string;
 			access: Access;
+			/** Infisical's `numUsesLimit` on the client secret; absent is unlimited. */
+			usesLeft?: number;
 	  };
 
 type Fault = Readonly<{
@@ -59,6 +66,8 @@ export type FakeInfisical = {
 	readonly requests: RecordedRequest[];
 	/** Tokens the fake issued, so tests can assert none leaked. */
 	readonly issuedTokens: string[];
+	/** Tokens ended through `POST /api/v1/auth/token/revoke`. */
+	readonly revokedTokens: string[];
 	expiresIn: number;
 	/** Tokens the next logins issue, in order, before random ones. */
 	nextTokens: string[];
@@ -141,6 +150,7 @@ export function createFakeInfisical(): FakeInfisical {
 	const store = new Map<string, Map<string, Stored>>();
 	const faults: { fault: Fault; remaining: number }[] = [];
 	const requests: RecordedRequest[] = [];
+	const revokedTokens: string[] = [];
 
 	function folder(scope: Scope): Map<string, Stored> {
 		const key = scopeKey(scope);
@@ -217,7 +227,12 @@ export function createFakeInfisical(): FakeInfisical {
 				candidate.clientId === presented?.clientId &&
 				candidate.clientSecret === presented?.clientSecret,
 		);
-		if (!identity) return error(401, "Invalid credentials");
+		if (identity?.kind !== "universal-auth")
+			return error(401, "Invalid credentials");
+		if (identity.usesLeft !== undefined) {
+			if (identity.usesLeft <= 0) return error(401, "Invalid credentials");
+			identity.usesLeft--;
+		}
 		return issue(identity.access, fake.expiresIn);
 	}
 
@@ -230,6 +245,8 @@ export function createFakeInfisical(): FakeInfisical {
 			? decodeURIComponent(url.pathname.slice("/api/v4/secrets/".length))
 			: undefined;
 		if (request.method === "GET") {
+			if (access === "write-only")
+				return error(403, "You are not allowed to read secrets");
 			const scope: Scope = {
 				projectId: url.searchParams.get("projectId") ?? "",
 				environment: url.searchParams.get("environment") ?? "",
@@ -255,7 +272,7 @@ export function createFakeInfisical(): FakeInfisical {
 			return json({ secret: secretJson(scope, name, stored, version, true) });
 		}
 		if (name === undefined) return error(404, "Route not found");
-		if (access !== "write")
+		if (access === "read")
 			return error(403, "You are not allowed to edit secrets");
 		const write = record(() =>
 			fromJson(InfisicalSecretWriteRequestSchema, request.body ?? null),
@@ -288,6 +305,7 @@ export function createFakeInfisical(): FakeInfisical {
 		identities,
 		requests,
 		issuedTokens,
+		revokedTokens,
 		expiresIn: 7200,
 		nextTokens: [],
 		grant(token, access) {
@@ -338,6 +356,19 @@ export function createFakeInfisical(): FakeInfisical {
 				url.pathname.endsWith("/login")
 			)
 				return login(request, url.pathname);
+			if (
+				request.method === "POST" &&
+				url.pathname === "/api/v1/auth/token/revoke"
+			) {
+				const presented = record(() =>
+					fromJson(InfisicalTokenRevokeRequestSchema, request.body ?? null),
+				);
+				if (!presented || !tokens.has(presented.accessToken))
+					return error(401, "Token expired or invalid");
+				tokens.delete(presented.accessToken);
+				revokedTokens.push(presented.accessToken);
+				return json({ message: "Successfully revoked access token" });
+			}
 			if (!url.pathname.startsWith("/api/v4/secrets"))
 				return error(404, "Route not found");
 			const token = /^Bearer (.+)$/u.exec(authorization)?.[1];
