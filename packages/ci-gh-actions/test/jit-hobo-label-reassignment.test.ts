@@ -4,7 +4,6 @@ import type { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import * as githubModule from "../src/github.js";
-import * as correlationModule from "../src/jit-runner-correlation.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import {
 	createIsolatedContainerController,
@@ -12,6 +11,7 @@ import {
 } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import { orphanJobCandidateForLease } from "../src/isolated-worker/orphan-jobs.js";
+import * as correlationModule from "../src/jit-runner-correlation.js";
 
 function transitionFor(lease: Lease) {
 	return vi.fn(
@@ -148,7 +148,10 @@ describe("shared hobo label JIT reassignment", () => {
 		expect(onStorageGrantRelease).toHaveBeenCalledWith(GHCR_JOB);
 		expect(log).toHaveBeenCalledWith(
 			"hobo_ci_jit_runner_custody_transferred",
-			expect.objectContaining({ servedJobId: SHARD_JOB, servedRunId: MAIN_RUN }),
+			expect.objectContaining({
+				servedJobId: SHARD_JOB,
+				servedRunId: MAIN_RUN,
+			}),
 		);
 		vi.restoreAllMocks();
 	});
@@ -228,7 +231,9 @@ describe("shared hobo label JIT reassignment", () => {
 				];
 			},
 		);
-		vi.spyOn(githubModule, "listInProgressWorkflowRunIds").mockResolvedValue([]);
+		vi.spyOn(githubModule, "listInProgressWorkflowRunIds").mockResolvedValue(
+			[],
+		);
 		vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockResolvedValue({
 			jobId: SHARD_JOB,
 			runId: MAIN_RUN,

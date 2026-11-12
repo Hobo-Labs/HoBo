@@ -30,8 +30,8 @@ import {
 } from "../jit-empty-exit-backoff.js";
 import {
 	correlateRunnerOnRun,
-	resolveRunnerAssignedJob,
 	RUNNER_HELD_JOB_STATUSES,
+	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
 } from "../jit-runner-correlation.js";
 import { deregisterGithubRunner } from "../jit-runner-deregister.js";
@@ -1122,7 +1122,7 @@ export function createIsolatedContainerController(options: {
 			throw new Error("invalid isolated stop time");
 		if (lease.runnerName) {
 			try {
-				let assignment = await resolveRunnerAssignedJob(
+				const assignment = await resolveRunnerAssignedJob(
 					options.github,
 					lease.installationId,
 					lease.repository,
@@ -1723,10 +1723,7 @@ export function createIsolatedContainerController(options: {
 				lease = custody.lease;
 				runnerAssignment = custody.assignment;
 				runnerCustodyHoldsActive = custody.holdsActive;
-				if (
-					lease.actualJobId > 0 &&
-					lease.actualJobId !== reservedJobId
-				)
+				if (lease.actualJobId > 0 && lease.actualJobId !== reservedJobId)
 					options.onStorageGrantRelease?.(reservedJobId);
 				if (custody.holdsActive && forceStop) return;
 			}

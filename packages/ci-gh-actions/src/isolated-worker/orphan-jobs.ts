@@ -60,9 +60,7 @@ export function orphanJobCandidateForLease(
 		observed?.jobId ??
 		(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId);
 	const runId =
-		observed && observed.runId > 0
-			? observed.runId
-			: lease.originalRunId;
+		observed && observed.runId > 0 ? observed.runId : lease.originalRunId;
 	return {
 		repository: lease.repository,
 		installationId: lease.installationId,

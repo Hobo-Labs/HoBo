@@ -1,6 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { ACTIVE_STATES, type Lease } from "@hobo/ci";
-import { JobSchema } from "@hobo/ci";
+import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
 import type { GithubTransport } from "./github.js";
 import type { HostedRelayStore } from "./hosted-relay.js";
 import {
@@ -34,10 +33,7 @@ function reservedJobWithdraw(lease: Lease) {
 
 /** Pin `actualJobId` / `originalRunId` to the job GitHub assigned this runner. */
 export async function adoptRunnerAssignment(
-	store: Pick<
-		HostedRelayStore,
-		"get" | "transition" | "withdrawQueuedJob"
-	>,
+	store: Pick<HostedRelayStore, "get" | "transition" | "withdrawQueuedJob">,
 	github: GithubTransport,
 	lease: Lease,
 	at: string,
@@ -71,8 +67,7 @@ export async function adoptRunnerAssignment(
 	const needsJobPin = lease.actualJobId !== servedJobId;
 	const needsRunPin =
 		assignment.runId > 0 && lease.originalRunId !== assignment.runId;
-	if (!needsJobPin && !needsRunPin)
-		return { lease, assignment, holdsActive };
+	if (!needsJobPin && !needsRunPin) return { lease, assignment, holdsActive };
 	let updated: Lease | undefined;
 	try {
 		updated = await store.transition(
