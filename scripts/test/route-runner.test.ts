@@ -1858,7 +1858,7 @@ describe("the routing step without a decision", () => {
 		}
 		return body.join("\n");
 	})();
-	/** Runs the step where the routing script was not checked out (finding 143). */
+	/** Runs the step where the routing script was not checked out (finding 146). */
 	const fallBack = (env: Record<string, string>) => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-route-fallback-"));
 		try {
