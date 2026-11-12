@@ -193,7 +193,7 @@ The status route needs a second verifier, `createGithubWorkflowVerifier({ audien
 ::notice title=hobo-ci-route::{"v":1,"workflow":"<file>","tier":"fleet|local|github","runner":"<label>","relay":"verdict|unanswered|unasked","why":"<see below>","refusedBy":"relay|queue|none"}
 ```
 
-`why` is `no-relay`, `pinned` or `attested` when `relay` is `unasked`; the existing unanswered text when `unanswered`; empty otherwise. `refusedBy` says what took the fleet out of the decision. The action's fallback path emits `::warning title=hobo-ci-route-fallback::<reason>`. These record the job's own decision.
+`why` is `no-relay`, `pinned`, `attested` or `queue-unread` when `relay` is `unasked`: `no-relay` whenever no relay is configured, whatever else happened (so H3 counts every such run); otherwise `pinned` for a pinned tier, `attested` when a signed local run covers the tree, and `queue-unread` when a relay is configured but the queue could not be read before asking it; the existing unanswered text when `unanswered`; empty otherwise. `refusedBy` says what took the fleet out of the decision. The action's fallback path emits `::warning title=hobo-ci-route-fallback::<reason>`. These record the job's own decision.
 
 **Main gate follows the route.** In `hobo-ci.yml`, for `push` to `main`, `schedule` and `workflow_dispatch`:
 

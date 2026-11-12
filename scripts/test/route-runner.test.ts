@@ -520,7 +520,7 @@ describe("asking the relay", () => {
 			fetch: async (url, init) => respond(String(url), init ?? {}),
 		});
 
-	it("gets the repository's verdict from the relay, sending no credential", async () => {
+	it("sends no credential when it gets the repository's verdict from the relay", async () => {
 		const standing = pactAnswer("answer the standing verdict");
 		const asked: { url: string; init: RequestInit }[] = [];
 		const answer = await ask((url, init) => {
@@ -1591,6 +1591,72 @@ describe("the script asking the relay", () => {
 				),
 			),
 			unasked("queue-unread", "queue"),
+		);
+	});
+
+	it("says no-relay whenever no relay is named, whatever else happened", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+		};
+		const noRelay = { ...NO_RELAY_CALL, relayConfig: undefined };
+		const unasked = (refusedBy: string) => [
+			notice({
+				workflow: "hobo-ci.yml",
+				...hosted,
+				relay: "unasked",
+				why: "no-relay",
+				refusedBy,
+			}),
+		];
+		assert.deepEqual(
+			await noticesOf(() =>
+				main(
+					{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
+					noRelay,
+				),
+			),
+			unasked("queue"),
+		);
+		assert.deepEqual(
+			await noticesOf(() => main({ ...env, HOBO_CI_ROUTE: "github" }, noRelay)),
+			unasked("none"),
+		);
+		assert.deepEqual(
+			await noticesOf(() =>
+				main({ ...env, HOBO_CI_ATTESTED: "true" }, noRelay),
+			),
+			unasked("none"),
+		);
+	});
+
+	it("says queue-unread only when a relay is named and the queue cannot be read", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			GITHUB_REPOSITORY: "acme/app",
+			GITHUB_RUN_ID: "1",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+		};
+		const unasked = (why: string) => [
+			notice({
+				workflow: "hobo-ci.yml",
+				...hosted,
+				relay: "unasked",
+				why,
+				refusedBy: "queue",
+			}),
+		];
+		assert.deepEqual(
+			await noticesOf(() => main(env, NO_RELAY_CALL)),
+			unasked("queue-unread"),
+		);
+		assert.deepEqual(
+			await noticesOf(() => main(env, { relayConfig: undefined })),
+			unasked("no-relay"),
 		);
 	});
 });

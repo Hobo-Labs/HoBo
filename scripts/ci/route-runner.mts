@@ -873,8 +873,12 @@ export async function main(
 		"relayConfig" in io ? io.relayConfig : readRelayConfig(env),
 	);
 	const includeOwnRun = env.HOBO_CI_INCLUDE_OWN_RUN === "true";
-	// Why the relay was not asked, when it was not.
-	let unasked: UnaskedWhy = mode === "auto" ? "no-relay" : "pinned";
+	// Why the relay was not asked, when it was not. With no relay named, that
+	// is the reason whatever else happened, so a monitor counting `no-relay`
+	// sees every run that had none.
+	const unaskedWhy = (why: UnaskedWhy): UnaskedWhy =>
+		relayOrigin === undefined ? "no-relay" : why;
+	let unasked: UnaskedWhy = unaskedWhy(mode === "auto" ? "no-relay" : "pinned");
 	let decision: RouteDecision;
 	// A signed local run was verified for this tree, so the jobs it covers are
 	// skipped and only a few short ones are left. They go where a job is known
@@ -888,7 +892,7 @@ export async function main(
 				"a signed local run covers this tree, so the jobs left do not wait for a fleet",
 			refusedBy: "none",
 		};
-		return report(decision, env, "attested");
+		return report(decision, env, unaskedWhy("attested"));
 	}
 	try {
 		const read = githubReader(
@@ -937,14 +941,15 @@ export async function main(
 			refusedBy: "queue",
 		};
 		// The queue is read before the relay is asked.
-		unasked = "queue-unread";
+		unasked = unaskedWhy("queue-unread");
 	}
 	return report(decision, env, unasked);
 }
 
 /**
- * Why the relay was not asked: no relay is named, the tier is pinned, a
- * signed local run covers the tree, or the queue could not be read first.
+ * Why the relay was not asked: no relay is named (whatever else happened),
+ * or, with one named, the tier is pinned, a signed local run covers the
+ * tree, or the queue could not be read first.
  */
 export type UnaskedWhy = "no-relay" | "pinned" | "attested" | "queue-unread";
 
