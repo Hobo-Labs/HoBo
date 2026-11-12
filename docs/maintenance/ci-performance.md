@@ -85,7 +85,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   when no remote token). `ci-runner-preflight` sizes `HOBO_TURBO_CONCURRENCY` from cgroup headroom
   and learned peaks for `Main workspace test shard *` (4096 MiB standard floor).
   `main_workspace_tests` starts after the plan job only,
-  links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
+  links the deps layer first, and skips pnpm store/install on a layer hit; when the plan emits
+  `shards=[]` the shard job is skipped and finish passes without workspace legs
+  ([finding 139](../ci/findings/0139-main-gate-finish-empty-shard-matrix.md)). S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
   Box dispatch latency (early `dispatchPending`, poll-triggered tick, shard index ordering,

@@ -26,6 +26,7 @@ import type { VercelFetch } from "../src/vercel-client.js";
 
 const RELAY_DIR = fileURLToPath(new URL("../../ci-vercel/", import.meta.url));
 const TOKEN = "synthetic-token-0123";
+/** Pact corpus uses `team_hobo`; override the committed binding team in tests. */
 const TEAM = "team_hobo";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
@@ -114,10 +115,14 @@ async function deploy(
 			}),
 		},
 	});
+	const teamOverride = args.includes("--team")
+		? []
+		: (["--team", TEAM] as const);
 	const result = await cli.run([
 		"ci",
 		"deploy",
 		...args,
+		...teamOverride,
 		"--cwd",
 		options.cwd ?? RELAY_DIR,
 		...(options.json === false ? [] : ["--json"]),
@@ -197,6 +202,8 @@ const INPUTS = [
 	"INFISICAL_IDENTITY_ID=3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c",
 	"--set",
 	"INFISICAL_PROJECT_ID=6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7",
+	"--set",
+	"INFISICAL_SITE_URL=https://app.infisical.com",
 ];
 
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
@@ -244,7 +251,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(ran.data.plan).toEqual(fixture("relay-production-own-scope"));
 		expect(ran.data.plan).toMatchObject({
 			target: "production",
-			scope: "token-default",
+			scope: TEAM,
 			createMissingProject: true,
 			placement: {
 				yard: "hobo-ci-relay",
@@ -309,7 +316,11 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(bindings).toContainEqual(
 			expect.objectContaining({
 				profile: "secret-ref.runtime-projection/v1",
-				inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+				inputs: [
+					"INFISICAL_IDENTITY_ID",
+					"INFISICAL_PROJECT_ID",
+					"INFISICAL_SITE_URL",
+				],
 			}),
 		);
 		expect(bindings).not.toContainEqual(
@@ -320,19 +331,41 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		);
 	});
 
-	it("asks for the owner's ids a production binding needs, by name", async () => {
+	it("fills production Infisical coordinates from deploy/secret-store.binding.json when present", async () => {
+		const binding = parseJsonObject(
+			readFileSync(
+				new URL(
+					"../../ci-vercel/deploy/secret-store.binding.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		);
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
-			[...RELAY, "--target", "production", "--dry-run"],
+			[...RELAY, "--target", "production", "--sha", SHA, "--dry-run"],
 			{ fetch },
 		);
-		expect(ran.exitCode).toBe(2);
-		expect(ran.envelope).toMatchObject({
-			code: "HOBO_CLI_USAGE",
-			message: expect.stringContaining(
-				"Camp hobo-ci-relay/production needs --set INFISICAL_IDENTITY_ID=<value> --set INFISICAL_PROJECT_ID=<value>",
-			),
-		});
+		expect(ran.exitCode).toBe(0);
+		const plan = isJsonObject(ran.data.plan) ? ran.data.plan : {};
+		const rawSettings = plan.settings;
+		const settings = Array.isArray(rawSettings) ? rawSettings : [];
+		expect(settings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					key: "INFISICAL_PROJECT_ID",
+					value: binding.projectId,
+				}),
+				expect.objectContaining({
+					key: "INFISICAL_IDENTITY_ID",
+					value: binding.relayIdentityId,
+				}),
+				expect.objectContaining({
+					key: "INFISICAL_SITE_URL",
+					value: binding.endpoint,
+				}),
+			]),
+		);
 		expect(sent).toEqual([]);
 	});
 

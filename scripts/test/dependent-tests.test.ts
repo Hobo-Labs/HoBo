@@ -7,6 +7,7 @@ import {
 	exportTarget,
 	planCommands,
 	planDependentTests,
+	planHasWorkspaceWork,
 	planShardCount,
 	type Repo,
 	readRepo,
@@ -106,6 +107,30 @@ const repo: Repo = {
 		{ dir: "packages/none", name: "@t/none", dependencies: [] },
 	],
 };
+
+describe("planHasWorkspaceWork", () => {
+	it("is false for an empty scoped plan and true for all or non-empty scoped", () => {
+		assert.equal(
+			planHasWorkspaceWork({
+				mode: "scoped",
+				full: [],
+				subsets: new Map(),
+				skipped: [],
+			}),
+			false,
+		);
+		assert.equal(planHasWorkspaceWork({ mode: "all", reason: "x" }), true);
+		assert.equal(
+			planHasWorkspaceWork({
+				mode: "scoped",
+				full: ["packages/ci"],
+				subsets: new Map(),
+				skipped: [],
+			}),
+			true,
+		);
+	});
+});
 
 describe("workspace test shards", () => {
 	it("partitions whole suites and dependent subsets exactly once", () => {

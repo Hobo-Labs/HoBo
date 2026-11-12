@@ -1,0 +1,13 @@
+{
+	"kind": "infisical-self-hosted",
+	"endpoint": "https://secrets.hobo-fleet.example",
+	"projectId": "proj-1",
+	"environment": "prod",
+	"secretPath": "/hobo-ci-relay",
+	"relayIdentityId": "relay-identity",
+	"deployIdentityId": "deploy-identity",
+	"vercelTeamId": "team_fixture",
+	"claimBundleId": "secret-store:hobo-ci-relay:1",
+	"deployProjectId": "proj-deploy-1",
+	"claimState": "pending"
+}

@@ -32,6 +32,11 @@ export type HostPressureAdmissionThresholds = Readonly<{
 	memoryPsiFullAdmit: number;
 	/** Block admission when CPU PSI `full` avg10 is at or above this. */
 	cpuPsiFullAdmit: number;
+	/**
+	 * Block admission when CPU PSI `some` avg10 is at or above this. The kernel
+	 * reports system-wide CPU `full` as zero, so `some` is the only host signal.
+	 */
+	cpuPsiSomeAdmit: number;
 	/** Block admission when swap used exceeds this share of swap total (0–1). */
 	swapUsedFractionAdmit: number;
 }>;
@@ -39,6 +44,7 @@ export type HostPressureAdmissionThresholds = Readonly<{
 export const DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS = {
 	memoryPsiFullAdmit: 12,
 	cpuPsiFullAdmit: 45,
+	cpuPsiSomeAdmit: 50,
 	swapUsedFractionAdmit: 0.35,
 } as const satisfies HostPressureAdmissionThresholds;
 
@@ -46,15 +52,115 @@ export const DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS = {
 export const DEFAULT_TRUNK_JOB_CPU_REQUEST = 4;
 /** Headroom kept under load when admitting another trunk job. */
 export const DEFAULT_CPU_ADMISSION_VOLATILITY_CPUS = 1;
+/** Time constant of the kernel's 1-minute load average. */
+export const LOAD1_TIME_CONSTANT_MS = 60_000;
+/** How long a started job is assumed to take to reach its resident memory. */
+export const DEFAULT_MEMORY_RAMP_MS = 120_000;
+
+function elapsedSince(startedAt: string | undefined, nowMs: number) {
+	if (!startedAt) return undefined;
+	const startedMs = Date.parse(startedAt);
+	if (!Number.isFinite(startedMs)) return undefined;
+	return Math.max(0, nowMs - startedMs);
+}
+
+/**
+ * Share of a running job's steady CPU the 1-minute load average does not show
+ * yet. The average is an exponential one, so a job that started `t` ago is
+ * only `1 - e^(-t/60s)` visible. A job with no start time is taken as visible.
+ */
+export function cpuShareNotYetInLoad1(
+	startedAt: string | undefined,
+	nowMs: number,
+): number {
+	const elapsedMs = elapsedSince(startedAt, nowMs);
+	if (elapsedMs === undefined) return 0;
+	const share = Math.exp(-elapsedMs / LOAD1_TIME_CONSTANT_MS);
+	return share < 0.05 ? 0 : share;
+}
+
+/**
+ * Share of a running job's reservation MemAvailable does not show yet, falling
+ * in a straight line over the ramp. A job with no start time is taken as
+ * resident; a ramp of zero turns the hold off for running jobs.
+ */
+export function memoryShareNotYetResident(
+	startedAt: string | undefined,
+	nowMs: number,
+	rampMs: number,
+): number {
+	if (!(rampMs > 0)) return 0;
+	const elapsedMs = elapsedSince(startedAt, nowMs);
+	if (elapsedMs === undefined) return 0;
+	return Math.max(0, 1 - elapsedMs / rampMs);
+}
+
+export type TrunkCpuLeaseSignal = Readonly<{
+	memoryMb: number;
+	state: string;
+	sandboxStage?: string;
+}>;
+
+/** Running trunk work is already in the 1m load average — do not reserve again. */
+export function trunkCpuLeaseSignal(
+	memoryMb: number,
+	state: string,
+	sandboxStage?: string,
+): TrunkCpuLeaseSignal {
+	if (sandboxStage === undefined) return { memoryMb, state };
+	return { memoryMb, state, sandboxStage };
+}
+
+export function leaseCpuLoadAccountedInLoad1(
+	lease: TrunkCpuLeaseSignal,
+): boolean {
+	if (lease.sandboxStage === "running") return true;
+	return lease.state === "running" && lease.sandboxStage === undefined;
+}
+
+/**
+ * CPU reserve for standard+ work launching on the host (container coming up).
+ * Memory-only `reserved` holds (no sandbox yet) are not started work — they
+ * must not each claim four CPUs while blocked on this same admission gate.
+ */
+function trunkSandboxNotStarted(stage: string | undefined): boolean {
+	return stage === undefined || stage === "";
+}
+
+export function leasePendingTrunkCpuReservation(
+	lease: TrunkCpuLeaseSignal,
+	standardClassMb: number,
+): boolean {
+	if (lease.memoryMb < standardClassMb) return false;
+	if (leaseCpuLoadAccountedInLoad1(lease)) return false;
+	if (lease.state === "reserved" && trunkSandboxNotStarted(lease.sandboxStage))
+		return false;
+	return true;
+}
+
+export function pendingTrunkCpuReservationCpus(
+	admittedLeases: readonly TrunkCpuLeaseSignal[],
+	standardClassMb: number,
+	cpusPerJob: number,
+): number {
+	let pending = 0;
+	for (const lease of admittedLeases) {
+		if (!leasePendingTrunkCpuReservation(lease, standardClassMb)) continue;
+		pending += cpusPerJob;
+	}
+	return pending;
+}
 
 export type HostCpuAdmissionInput = Readonly<{
 	cores: number;
-	/** 1-minute load average. */
+	/** 1-minute load average (includes CPUs used by running containers). */
 	load1: number;
-	/** Worker containers already running or launching on this host. */
+	/** CPUs reserved for admitted work not yet visible in load1. */
 	reservedCpus: number;
 	volatilityCpus: number;
 	requestCpus: number;
+	/** Standard+ jobs already running (logged; load already in load1). */
+	runningTrunkJobs?: number;
 }>;
 
 export function hostCpuHeadroomCpus(input: HostCpuAdmissionInput): number {
@@ -169,7 +275,8 @@ export function hostPressureBlocksAdmission(
 		return true;
 	if (
 		sample.cpuPsi !== undefined &&
-		sample.cpuPsi.fullAvg10 >= thresholds.cpuPsiFullAdmit
+		(sample.cpuPsi.fullAvg10 >= thresholds.cpuPsiFullAdmit ||
+			sample.cpuPsi.someAvg10 >= thresholds.cpuPsiSomeAdmit)
 	)
 		return true;
 	if (
@@ -182,6 +289,14 @@ export function hostPressureBlocksAdmission(
 	return false;
 }
 
+export function hostMemoryAdmitRequiredMb(
+	requestMb: number,
+	reserveMb: number,
+	volatilityMb: number,
+): number {
+	return requestMb + reserveMb + volatilityMb;
+}
+
 export function hostMemoryAdmitFits(
 	availableMb: number | undefined,
 	requestMb: number,
@@ -189,13 +304,21 @@ export function hostMemoryAdmitFits(
 	volatilityMb: number,
 	pressure?: HostResourcePressureSample,
 	pressureThresholds?: HostPressureAdmissionThresholds,
+	/** Memory promised to admitted jobs that MemAvailable does not show yet. */
+	committedMb = 0,
 ): boolean {
 	if (
 		pressure !== undefined &&
 		hostPressureBlocksAdmission(pressure, pressureThresholds)
 	)
 		return false;
-	return memoryAdmitHeadroom(availableMb, requestMb, reserveMb, volatilityMb);
+	return memoryAdmitHeadroom(
+		availableMb,
+		requestMb,
+		reserveMb,
+		volatilityMb,
+		committedMb,
+	);
 }
 
 export type HostResourcePressureLogFields = Readonly<
@@ -212,14 +335,17 @@ function round3(value: number): number {
 }
 
 export function trunkWorkerCpuHeadroomFields(input: HostCpuAdmissionInput) {
-	return {
+	const fields = {
 		cpuCores: input.cores,
 		cpuLoad1: round3(input.load1),
-		cpuReserved: input.reservedCpus,
+		cpuReserved: round3(input.reservedCpus),
 		cpuVolatility: input.volatilityCpus,
 		cpuRequest: input.requestCpus,
 		cpuHeadroom: round3(hostCpuHeadroomCpus(input)),
-	} as const satisfies Readonly<Record<string, number>>;
+	} satisfies Readonly<Record<string, number>>;
+	if (input.runningTrunkJobs !== undefined)
+		Object.assign(fields, { cpuRunningTrunkJobs: input.runningTrunkJobs });
+	return fields;
 }
 
 export function hostResourcePressureLogFields(

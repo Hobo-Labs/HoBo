@@ -109,7 +109,7 @@ jobs:
     # the runner the box launched for a main job went to an older PR job instead.
     # scripts/lint-actions.ts allows this expression, the trunk expression and `hobo`.
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -160,7 +160,7 @@ jobs:
       - name: Build base + mise oci layers (native arch)
         id: ci_runner_image_build
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
-        timeout-minutes: 25
+        timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -563,11 +563,21 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
           clean: false
+      - uses: ./.github/actions/hobo-repo-checkout
+        with:
           fetch-depth: 0
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -652,11 +662,21 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
           clean: false
+      - uses: ./.github/actions/hobo-repo-checkout
+        with:
           fetch-depth: 0
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -1046,8 +1066,13 @@ jobs:
           remote-mode: remote:rw
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Compute deps expected key
+        id: deps-expected-key
+        run: echo "key=$(node --no-warnings scripts/ci/deps-key.mts)" >> "$GITHUB_OUTPUT"
       - name: Check deps layer match
         id: deps-layer
+        env:
+          HOBO_CI_DEPS_EXPECTED_KEY: ${{ steps.deps-expected-key.outputs.key }}
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - name: Verify deps layer sibling links
         if: steps.deps-layer.outputs.match == 'true'
@@ -1100,9 +1125,8 @@ jobs:
       - name: S0 gate set
         timeout-minutes: 20
         env:
-          # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
-          # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
-          HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
+          # Three parallel relevant-check lanes on the 4 GiB main trunk class (finding 135).
+          HOBO_RELEVANT_CHECK_CONCURRENCY: "3"
           SCOPE: ${{ steps.main-base.outputs.scope }}
           BASE: ${{ steps.main-base.outputs.base }}
         run: |
@@ -1137,7 +1161,9 @@ jobs:
     name: Main workspace test shard ${{ matrix.shard }}
     needs: [ci-runner-image, ci-deps-image, main-gate-plan]
     if: >-
-      !cancelled() && needs.main-gate-plan.result == 'success' && (
+      !cancelled() && needs.main-gate-plan.result == 'success' &&
+      needs.main-gate-plan.outputs.shards != '[]' &&
+      needs.main-gate-plan.outputs.shards != '' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
@@ -1150,21 +1176,22 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Bootstrap repo-local composite actions
+      - name: Resolve repo-local actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.sha }}
-          clean: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
           fetch-depth: 1
           filter: blob:none
           fetch-tags: false
-          sparse-checkout: .github/actions
-          sparse-checkout-cone-mode: true
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          submodules: recursive
           clean: false
+      - uses: ./.github/actions/hobo-repo-checkout
+        with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
@@ -1235,7 +1262,7 @@ jobs:
 
   main_gate_finish:
     name: Main full gate (finish)
-    needs: [main-gate, main_workspace_tests]
+    needs: [main-gate, main-gate-plan, main_workspace_tests]
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
@@ -1273,6 +1300,8 @@ jobs:
       - name: Require main gate and workspace shards
         env:
           MAIN_RESULT: ${{ needs.main-gate.result }}
+          PLAN_RESULT: ${{ needs.main-gate-plan.result }}
+          PLAN_SHARDS: ${{ needs.main-gate-plan.outputs.shards }}
           WORKSPACE_RESULT: ${{ needs.main_workspace_tests.result }}
         run: |
           set -euo pipefail
@@ -1280,60 +1309,44 @@ jobs:
             echo "Main full gate did not succeed: $MAIN_RESULT" >&2
             exit 1
           fi
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "Main workspace plan did not succeed: $PLAN_RESULT" >&2
+            exit 1
+          fi
+          if [ "$PLAN_SHARDS" = "[]" ] || [ -z "${PLAN_SHARDS:-}" ]; then
+            echo "No workspace test shards planned"
+            exit 0
+          fi
           if [ "$WORKSPACE_RESULT" != "success" ]; then
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
+      - uses: ./.github/actions/hobo-repo-checkout
         id: repo_checkout
-        continue-on-error: true
         with:
-          clean: false
           fetch-depth: 0
-          filter: blob:none
-          fetch-tags: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        id: repo_checkout_retry
-        if: steps.repo_checkout.outcome != 'success'
-        continue-on-error: true
-        with:
-          clean: false
-          fetch-depth: 0
-          filter: blob:none
-          fetch-tags: false
+          submodules: recursive
+          bootstrap-composite-actions: "false"
+          marker: scripts/ci/gitleaks-main-scan.mts
       - name: Ensure finish workspace checkout
         id: workspace
         shell: bash
         run: |
           set -euo pipefail
-          marker="scripts/ci/gitleaks-main-scan.mts"
-          if [ -f "$marker" ]; then
+          if [ -f scripts/ci/gitleaks-main-scan.mts ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          cd "${GITHUB_WORKSPACE}"
-          repo="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          for attempt in 1 2 3 4; do
-            rm -rf .git
-            git init -q
-            if git remote get-url origin >/dev/null 2>&1; then
-              git remote set-url origin "$repo"
-            else
-              git remote add origin "$repo"
-            fi
-            if git -c protocol.version=2 fetch --no-tags --prune origin "${GITHUB_SHA}" \
-              && git checkout -f FETCH_HEAD; then
-              if [ -f "$marker" ]; then
-                echo "ready=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            fi
-            if [ "$attempt" -lt 4 ]; then
-              echo "finish workspace checkout retry ${attempt}/4 (git fallback)"
-              sleep $(( attempt * 4 ))
-            fi
-          done
-          echo "::error title=Finish workspace checkout failed::${marker} is still missing after actions/checkout retries and git fallback (metadata download timeout or fetch failure)."
+          echo "::error title=Finish workspace checkout failed::scripts/ci/gitleaks-main-scan.mts is still missing after hobo-repo-checkout"
           exit 1
       - uses: ./.github/actions/ci-runner-preflight
       - name: Secret scan (full history)

@@ -44,6 +44,10 @@ export interface ClaimCeremonyInput {
 export type ClaimOwnershipVerifier = (input: {
 	readonly item: ClaimItem;
 	readonly nowMs: number;
+	// Where the item's one-time actions live, for a verifier that must redeem
+	// HoBo's own revocation material (a secret store's bootstrap token).
+	readonly deploymentRef?: string;
+	readonly home?: string;
 }) => Promise<{ readonly verified: boolean; readonly evidenceRef: string }>;
 
 export async function runClaimCeremony(
@@ -242,7 +246,12 @@ export async function runClaimCeremony(
 				data: { command: "claim", subcommand: "finalize", itemId },
 			};
 		}
-		const verification = await input.deps.verifyOwnership({ item, nowMs });
+		const verification = await input.deps.verifyOwnership({
+			item,
+			nowMs,
+			deploymentRef,
+			home,
+		});
 		const verified = await applyClaimCommand(runtime, snapshot, {
 			kind: "VerifyOwnership",
 			itemId,

@@ -266,11 +266,20 @@ export {
 	type JobObservation,
 } from "./job-durations.js";
 export {
+	countLiveBoxContainers,
+	localWorkerFreeSlots,
+} from "./live-container-count.js";
+export {
 	createLocalRunnerMeshNode,
 	LOCAL_RUNNER_MESH_REPORT,
 	type LocalRunnerSessionObserver,
 } from "./local-runner.js";
 export { startRelayFromEnvironment } from "./main.js";
+export {
+	effectiveParallelLaunchSlots,
+	logMainShardAdmissionHold,
+	mainShardParallelLaunchCapacity,
+} from "./main-shard-parallel-admission.js";
 export {
 	createMergeQueuePositionCache,
 	fetchMergeQueuePositions,
