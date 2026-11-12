@@ -73,6 +73,7 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/merge-queue-reuse.mts
@@ -86,7 +87,6 @@ jobs:
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
-          fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
           reuse-merge-queue: ${{ vars.HOBO_CI_MAIN_REUSE_MERGE_QUEUE }}
 
   ci-runner-image:

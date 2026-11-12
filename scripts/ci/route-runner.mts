@@ -13,19 +13,22 @@
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
  *
- * One more signal is used when it is there: the snapshot a worker of the
- * relay mesh publishes to the `HOBO_CI_FLEET_STATE` repository variable (per
- * label, the nodes it ranks and their free slots). A fresh snapshot that
- * shows a label with no node or no free slot counts as that backend refusing
- * jobs, at once and without queue evidence. A snapshot that is missing,
- * unreadable or more than five minutes old changes nothing: the queue is
- * read exactly as before.
+ * One thing is asked of the fleet, and only when it can be: the relay's
+ * verdict for this repository (`GET /v1/fleet/verdicts/{owner}/{repo}` on the
+ * relay `.hobo/ci.json` names). The relay decides it from what only it
+ * knows, and answers with the labels new work should stay off right now. A
+ * label it names counts as that backend refusing jobs, at once and without
+ * queue evidence. A relay that is not named, does not answer in three
+ * seconds, or names nothing changes nothing: the queue is read exactly as
+ * before. No capacity figure is read here, and none arrives through the
+ * workflow.
  *
  * Runs that start together would each read the same queue before any of them
  * had added to it, so a run waits its turn: while a run that started just
  * ahead has not chosen, this one leaves the self-hosted runners to it.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
@@ -91,13 +94,13 @@ export const SLOW_PICKUP_MEMORY_SECONDS = 60 * 60;
 export const MAX_FINISHED_LOOKUPS = 3;
 
 /**
- * How old the mesh's snapshot may be and still count. A worker rewrites it
- * every two minutes while it is up, so an older one is from a worker that
- * has stopped, and says nothing about now.
+ * How long the relay is waited on for its verdict. It answers from a cache in
+ * well under a second; past this the queue decides alone, as it does when
+ * there is no relay.
  */
-export const FLEET_STATE_MAX_AGE_SECONDS = 5 * 60;
-/** How far ahead of this machine's clock a snapshot's timestamp may be. */
-export const FLEET_STATE_MAX_SKEW_SECONDS = 60;
+export const RELAY_VERDICT_TIMEOUT_SECONDS = 3;
+/** The project file that names the relay; see `parseRelayOrigin`. */
+export const RELAY_CONFIG_PATH = ".hobo/ci.json";
 
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
@@ -193,89 +196,155 @@ export function takingJobs(load: LabelLoad, limits: RouteLimits): boolean {
 	return load.recentPickups > 0 && !refusingJobs(load, limits);
 }
 
-/** What a fresh mesh snapshot says about one label. */
-export type FleetLabelState = Readonly<{ nodes: number; freeSlots: number }>;
-
-/** A mesh snapshot that is fresh enough to use. */
-export type FleetState = Readonly<{
-	ageSeconds: number;
-	labels: ReadonlyMap<string, FleetLabelState>;
-}>;
+/**
+ * What the relay said when it was asked for this repository's verdict.
+ * `unasked`: no relay is named, or the tier is pinned. `unanswered`: it was
+ * asked and gave nothing usable, which is not a refusal. `verdict`: the
+ * labels it blocks, each with the relay's reason.
+ */
+export type RelayAnswer =
+	| Readonly<{ kind: "unasked" }>
+	| Readonly<{ kind: "unanswered"; why: string }>
+	| Readonly<{ kind: "verdict"; blocked: ReadonlyMap<string, string> }>;
 
 /**
- * The mesh snapshot in the `HOBO_CI_FLEET_STATE` variable, or `undefined`
- * when there is nothing to go on: no value, not the expected JSON, no
- * timestamp, or one that is older than the limit or from the future. A
- * snapshot is advice from a worker that may have stopped; only a fresh one
- * is believed.
+ * The relay's origin from the project's `.hobo/ci.json`: the `relayOrigin`
+ * of its default environment. Nothing when the file is missing or unreadable,
+ * names no relay, or names one that is not `https` (plain `http` is taken
+ * only for a loopback address the environment allows, for a local relay).
  */
-export function parseFleetState(
-	value: string | undefined,
-	nowMs: number,
-): FleetState | undefined {
-	if (!value?.trim()) return undefined;
+export function parseRelayOrigin(text: string | undefined): string | undefined {
+	if (!text?.trim()) return undefined;
 	let document: JsonValue;
 	try {
 		// SAFETY: a JSON document is a JsonValue by construction.
-		document = JSON.parse(value) as JsonValue;
+		document = JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;
 	}
-	const state = asObject(document);
-	const publishedAtMs = Date.parse(asText(state?.publishedAt) ?? "");
-	const labels = asObject(state?.labels);
-	if (!state || !labels || Number.isNaN(publishedAtMs)) return undefined;
-	const ageMs = nowMs - publishedAtMs;
-	if (
-		ageMs > FLEET_STATE_MAX_AGE_SECONDS * 1000 ||
-		ageMs < -FLEET_STATE_MAX_SKEW_SECONDS * 1000
-	)
+	const project = asObject(document);
+	const environment = asObject(
+		asObject(project?.environments)?.[
+			asText(project?.defaultEnvironment) ?? ""
+		],
+	);
+	let url: URL;
+	try {
+		url = new URL(asText(environment?.relayOrigin) ?? "");
+	} catch {
 		return undefined;
-	// A count that is there and a number; anything else is not a count.
-	const count = (entry: JsonObject | undefined, name: string) => {
-		const number = asNumber(entry?.[name]);
-		return number !== undefined && Number.isFinite(number)
-			? Math.max(0, Math.floor(number))
-			: undefined;
-	};
-	return {
-		ageSeconds: Math.max(0, Math.floor(ageMs / 1000)),
-		// A label whose entry does not carry both counts says nothing, so it
-		// is left out and is as unknown as a label not listed at all.
-		labels: new Map(
-			Object.entries(labels).flatMap(([label, value]) => {
-				const entry = asObject(value);
-				const nodes = count(entry, "nodes");
-				const freeSlots = count(entry, "freeSlots");
-				return nodes === undefined || freeSlots === undefined
-					? []
-					: [[label.toLowerCase(), { nodes, freeSlots }] as const];
-			}),
-		),
-	};
+	}
+	const loopback =
+		environment?.allowInsecureLoopback === true &&
+		url.protocol === "http:" &&
+		(url.hostname === "127.0.0.1" || url.hostname === "localhost");
+	if (url.protocol !== "https:" && !loopback) return undefined;
+	if (url.username || url.password) return undefined;
+	return url.origin;
 }
 
 /**
- * Why the mesh snapshot says a label is refusing jobs, or `undefined` when
- * it does not: no snapshot, the label has a node with a free slot, or the
- * snapshot does not list the label.
- *
- * The worker that publishes the snapshot lists exactly the fleet labels it
- * serves, with zeros when nobody serves them. A label it does not list is
- * one it does not speak for (another worker's label, or the local box), so
- * its absence is unknown, never a refusal.
+ * A relay's answer for `repository` (`FleetVerdict` in
+ * `packages/ci-gh-actions/data-models/fleet_verdict.proto`): the labels it
+ * blocks. An answer for another repository, or one whose `blocked` is not a
+ * map of labels to reasons, is not a verdict. A reason this reader has not
+ * seen is still a block: the relay decides, and this job runs the reader of
+ * the commit it checked out, which can be older than the relay.
  */
-export function fleetStateRefusal(
-	state: FleetState | undefined,
+export function parseFleetVerdict(
+	document: JsonValue,
+	repository: string,
+): ReadonlyMap<string, string> | undefined {
+	const verdict = asObject(document);
+	const blocked = asObject(verdict?.blocked);
+	if (
+		!blocked ||
+		asText(verdict?.repository)?.toLowerCase() !== repository.toLowerCase()
+	)
+		return undefined;
+	const labels = new Map<string, string>();
+	for (const [label, block] of Object.entries(blocked)) {
+		const reason = asText(asObject(block)?.reason);
+		// A short plain token only: it is printed in this job's log.
+		if (!reason || !/^[a-z][a-z0-9-]{0,39}$/.test(reason)) return undefined;
+		labels.set(label.toLowerCase(), reason);
+	}
+	return labels;
+}
+
+/**
+ * Asks the relay at `origin` for this repository's verdict. Never throws:
+ * a relay that cannot be reached, is slow, or answers something else is
+ * `unanswered`, and the queue decides as if there were no relay.
+ */
+export async function askRelay(input: {
+	origin: string | undefined;
+	repository: string;
+	fetch?: typeof fetch | undefined;
+}): Promise<RelayAnswer> {
+	// The relay's own pattern for a repository (`fleet-verdict.ts`).
+	if (
+		!input.origin ||
+		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(
+			input.repository,
+		)
+	)
+		return { kind: "unasked" };
+	try {
+		const response = await (input.fetch ?? fetch)(
+			`${input.origin}/v1/fleet/verdicts/${input.repository}`,
+			{
+				headers: { accept: "application/json" },
+				redirect: "error",
+				signal: AbortSignal.timeout(RELAY_VERDICT_TIMEOUT_SECONDS * 1000),
+			},
+		);
+		if (response.status !== 200) {
+			// An unread body would hold this process open until the limit.
+			await response.body?.cancel().catch(() => undefined);
+			return { kind: "unanswered", why: `it answered ${response.status}` };
+		}
+		const blocked = parseFleetVerdict(
+			// SAFETY: a JSON document is a JsonValue by construction.
+			(await response.json().catch(() => null)) as JsonValue,
+			input.repository,
+		);
+		return blocked
+			? { kind: "verdict", blocked }
+			: { kind: "unanswered", why: "its answer was not a verdict" };
+	} catch (error) {
+		return {
+			kind: "unanswered",
+			why:
+				error instanceof Error && error.name === "TimeoutError"
+					? `it did not answer in ${RELAY_VERDICT_TIMEOUT_SECONDS} s`
+					: "it could not be reached",
+		};
+	}
+}
+
+/** A reason in words; one this reader has not seen is shown as the relay named it. */
+function relayReason(reason: string): string {
+	if (reason === "no-node") return "no live node serves it";
+	if (reason === "no-capacity")
+		return "no node can admit a job and none has a free slot";
+	return reason;
+}
+
+/**
+ * Why the relay says a label is refusing jobs, or `undefined` when it does
+ * not: it was not asked, it did not answer, or its verdict does not name the
+ * label. A label the relay does not name is one it does not vouch for,
+ * never one it refuses.
+ */
+export function relayRefusal(
+	answer: RelayAnswer | undefined,
 	label: string,
 ): string | undefined {
-	const entry = state?.labels.get(label.toLowerCase());
-	if (!state || !entry) return undefined;
-	if (entry.nodes === 0)
-		return `the mesh snapshot (${state.ageSeconds} s old) shows no live node for ${label}`;
-	if (entry.freeSlots === 0)
-		return `the mesh snapshot (${state.ageSeconds} s old) shows no free slot on ${entry.nodes} node(s) for ${label}`;
-	return undefined;
+	if (answer?.kind !== "verdict") return undefined;
+	const reason = answer.blocked.get(label.toLowerCase());
+	if (reason === undefined) return undefined;
+	return `the relay keeps new work off ${label}: ${relayReason(reason)}`;
 }
 
 export function parseRouteMode(value: string | undefined): RouteMode {
@@ -306,8 +375,8 @@ export function routeRunner(input: {
 	local: LabelLoad;
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
-	/** The mesh's snapshot, when one was published recently; see `parseFleetState`. */
-	fleetState?: FleetState | undefined;
+	/** What the relay answered when asked for this repository's verdict. */
+	relay?: RelayAnswer | undefined;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	if (mode === "fleet")
@@ -332,13 +401,14 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.undecidedAhead === 0;
-	// What the nodes themselves report, when they reported recently: a label
-	// with no node or no free slot is refusing, whatever the queue shows.
-	const fleetRefusal = fleetStateRefusal(input.fleetState, fleetLabel);
-	const localRefusal = fleetStateRefusal(
-		input.fleetState,
-		LOCAL_HOST_RUNNER_LABEL,
-	);
+	// What the relay decided, when it answered: a label it keeps new work off
+	// is refusing, whatever the queue shows.
+	const fleetRefusal = relayRefusal(input.relay, fleetLabel);
+	const localRefusal = relayRefusal(input.relay, LOCAL_HOST_RUNNER_LABEL);
+	const unanswered =
+		input.relay?.kind === "unanswered"
+			? [`the relay gave no verdict (${input.relay.why})`]
+			: [];
 	const members = [
 		{
 			id: "fleet",
@@ -377,6 +447,7 @@ export function routeRunner(input: {
 				]),
 		...(fleetRefusal ? [fleetRefusal] : []),
 		...(input.localEnrolled && localRefusal ? [localRefusal] : []),
+		...unanswered,
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
 		return { tier: "fleet", runner: fleetLabel, reason: loads };
@@ -387,7 +458,8 @@ export function routeRunner(input: {
 	};
 }
 
-type JsonValue =
+/** A parsed JSON document: what GitHub and the relay answer with. */
+export type JsonValue =
 	| null
 	| boolean
 	| number
@@ -647,10 +719,10 @@ export async function chooseRunner(input: {
 	localEnrolled: boolean;
 	limits: RouteLimits;
 	/**
-	 * The mesh's snapshot as of a moment, when one is fresh then. Asked again
-	 * on every pass, since a wait for the probe can outlast its freshness.
+	 * Asks the relay for its verdict. Asked again on every pass: a wait for
+	 * the probe can outlast a verdict, and the relay keeps it current.
 	 */
-	fleetState?: (nowMs: number) => FleetState | undefined;
+	askRelay?: () => Promise<RelayAnswer>;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const startMs = input.now();
@@ -659,7 +731,7 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, LOCAL_HOST_RUNNER_LABEL, nowMs);
-		const fleetState = input.fleetState?.(nowMs);
+		const relay = await input.askRelay?.();
 		const decision = routeRunner({
 			mode: input.mode,
 			fleetLabel,
@@ -668,23 +740,20 @@ export async function chooseRunner(input: {
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
-			fleetState,
+			relay,
 		});
-		// A backend the mesh says is refusing is not waited for: a probe being
-		// picked up would not change what its nodes report.
+		// A backend the relay keeps work off is not waited for: a probe being
+		// picked up would not change what the relay decided.
 		const unseen = (load: LabelLoad, refusal: string | undefined) =>
 			load.recentPickups === 0 && !refusingJobs(load, limits) && !refusal;
 		const probeMayHelp =
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
 			((decision.tier !== "fleet" &&
-				unseen(fleet, fleetStateRefusal(fleetState, fleetLabel))) ||
+				unseen(fleet, relayRefusal(relay, fleetLabel))) ||
 				(decision.tier === "github" &&
 					localEnrolled &&
-					unseen(
-						local,
-						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL),
-					)));
+					unseen(local, relayRefusal(relay, LOCAL_HOST_RUNNER_LABEL))));
 		const waitedSeconds = seconds(startMs, nowMs);
 		if (!probeMayHelp) return decision;
 		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
@@ -734,8 +803,25 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** The project's relay file as checked out, or nothing when it is not there. */
+function readRelayConfig(env: NodeJS.ProcessEnv): string | undefined {
+	try {
+		return readFileSync(
+			join(env.GITHUB_WORKSPACE ?? process.cwd(), RELAY_CONFIG_PATH),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 export async function main(
 	env: NodeJS.ProcessEnv = process.env,
+	io: Readonly<{
+		/** The contents of `.hobo/ci.json`; read from the checkout when left out. */
+		relayConfig?: string | undefined;
+		fetch?: typeof fetch;
+	}> = {},
 ): Promise<RouteDecision> {
 	const fleetLabel = fleetLabelFor(
 		env.GITHUB_EVENT_NAME ?? "",
@@ -753,6 +839,9 @@ export async function main(
 			DEFAULT_MAX_QUEUED,
 		),
 	};
+	const relayOrigin = parseRelayOrigin(
+		"relayConfig" in io ? io.relayConfig : readRelayConfig(env),
+	);
 	let decision: RouteDecision;
 	// A signed local run was verified for this tree, so the jobs it covers are
 	// skipped and only a few short ones are left. They go where a job is known
@@ -797,7 +886,11 @@ export async function main(
 			fleetLabel,
 			localEnrolled,
 			limits,
-			fleetState: (nowMs) => parseFleetState(env.HOBO_CI_FLEET_STATE, nowMs),
+			// A pinned tier is decided without the queue, and without the relay.
+			askRelay: () =>
+				mode === "auto"
+					? askRelay({ origin: relayOrigin, repository, fetch: io.fetch })
+					: Promise.resolve({ kind: "unasked" }),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known

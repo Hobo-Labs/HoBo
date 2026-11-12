@@ -206,6 +206,9 @@ export function relayCacheKeys(environment: string) {
 			key(
 				`worker-health:${segment(scope, "health scope")}:${segment(component, "component")}`,
 			),
+		/** The fleet verdict a relay keeps for one repository (`owner/name`, lower case). */
+		fleetVerdict: (repository: string) =>
+			key(`fleet-verdict:${segment(repository, "repository")}`),
 		/** Ring name (not a key): the ring helper builds `ring:{<name>}:…`. */
 		feedRing: (accountId: string) =>
 			`${prefix}feed:${segment(accountId, "account id")}`,
