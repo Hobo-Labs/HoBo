@@ -4,13 +4,18 @@
  * In order: `--simulate` (the labelled fixture), a runner host
  * (HOBO_CD_RUNNER_HOST names its agent config: the runner-host realizer,
  * `cd-agent-runner-host.ts`), a Kubernetes fleet manager (HOBO_CD_KUBE_FLEET).
- * With none of them the run is refused `compose-realizer-missing`; with a
- * runner host whose container driver or job ports are not wired it is
- * refused `runner-host-interface-missing`, naming each missing port method,
- * before any loop starts. Nothing is faked to get past either.
+ * With none of them the run is refused `compose-realizer-missing`.
+ *
+ * On a runner host the container port is the engine CLI and the job ports
+ * are read from the box worker's data directory (`createWorkerHostJobs`:
+ * its journal read-only, the advert it writes, the admission marker it
+ * honours). A host kind those cannot serve (a `local-runner`'s runner
+ * presence) is refused `runner-host-interface-missing`, naming each missing
+ * port method, before any loop starts. Nothing is faked to get past it.
  */
 
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -47,9 +52,10 @@ export type AgentRealizerInput = Readonly<{
 	/** The Kubernetes fleet realizer, when HOBO_CD_KUBE_FLEET configured one. */
 	kube?: (() => Realizer) | undefined;
 	/**
-	 * Host ports a runner host's composition supplies. Absent ports are
-	 * refused by name; the container port defaults to the host's container
-	 * engine CLI, the job ports have no default.
+	 * Host ports that replace the defaults (tests, another composition). The
+	 * container port defaults to the host's container engine CLI, the job
+	 * ports to the box worker's data directory; a port neither supplies is
+	 * refused by name.
 	 */
 	runnerHost?: RunnerHostPorts | undefined;
 }>;
@@ -103,14 +109,26 @@ async function runnerHostRealizer(
 				env: input.env as NodeJS.ProcessEnv,
 				...(config.dockerBinary ? { binary: config.dockerBinary } : undefined),
 			}),
-		jobs: input.runnerHost?.jobs,
+		jobs:
+			input.runnerHost?.jobs ??
+			runnerHost.createWorkerHostJobs({
+				files: runnerHost.workerHostFiles(
+					resolve(
+						input.cwd,
+						config.workerDatabase ||
+							input.env.HOBO_CI_WORKER_DB?.trim() ||
+							runnerHost.defaultWorkerDatabasePath(input.env, homedir()),
+					),
+				),
+				hostKind: config.hostKind,
+			}),
 	};
 	const gaps = runnerHost.runnerHostInterfaceGaps(ports);
 	if (gaps.length > 0)
 		return refusal(
 			"runner-host-interface-missing",
-			`this host has no ${gaps.join(", ")}; the runner-host realizer drains, swaps and verifies only through the worker's container driver and job ports`,
-			"Run the agent from a composition that wires the worker's job ports (leases, runner presence, mesh advert, admission gate); until then upgrade this host as packages/ci/RUNNER-QUEUE.md describes.",
+			`this ${config.hostKind} host has no ${gaps.join(", ")}; the runner-host realizer drains, swaps and verifies only through the worker's container driver and job ports`,
+			"A local runner's GitHub presence is not readable from the worker's data directory: upgrade this host as packages/ci/RUNNER-QUEUE.md describes, or run the agent from a composition that supplies the missing ports.",
 		);
 	const { createRunnerHostRealizer } = await import(
 		"./cd-agent-runner-host.js"

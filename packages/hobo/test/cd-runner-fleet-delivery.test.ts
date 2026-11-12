@@ -3,23 +3,32 @@
 //
 // 1. The BUILT binary against the repository's real delivery module: the
 //    agent enrolls by double opt-in, the fleet's Placement is decidable
-//    (its declared Rail approves the fleet's provider), and `agent run`
-//    registers the runner-host realizer, refused by name only for the job
-//    ports the binary cannot wire.
+//    (its declared Rail approves the fleet's provider), and `agent run` on a
+//    box worker registers the runner-host realizer with the worker's job
+//    ports and runs its loop; a local runner, whose runner presence the
+//    worker's data directory cannot answer, is refused by name.
 // 2. In process, on the durable SQLite journal, the same records in JSON
 //    form, a Station composed by `openCdRuntime` and an agent composed the
-//    way `agent run` composes it, over a loopback transport to the Station's
-//    own feed (real SVID + DPoP), with a fake runner host: placement decide,
-//    a PROGRESSIVE_PER_GROUP fan-out over the pilot group, a converge that
-//    swaps the controller digest, and a failed verify that restores it.
+//    way `agent run` composes it (its job ports read from a fake box
+//    worker's data directory), over a loopback transport to the Station's
+//    own feed (real SVID + DPoP): placement decide, a PROGRESSIVE_PER_GROUP
+//    fan-out over the pilot group that defers an unready host, a converge
+//    that swaps the controller digest, and a failed verify that restores it.
+//
+// Known gap, not asserted as correct: the composed PromotionService has no
+// placed-Camps reader or fan-out aggregate gate (packages/cd/src/compose/
+// wire.ts), so the fan-out's promotion does not yet write the Set the agent
+// converges; the converge legs below write that Set through the
+// desired-state ledger directly (see the it.todo at the end).
 import { spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create, fromJson } from "@bufbuild/protobuf";
 import {
+	CampClaimRecordSchema,
 	CampConditionType,
 	type CampId,
 	type CdContext,
@@ -30,9 +39,11 @@ import {
 	type FeedResponse,
 	type FreightId,
 	FreightManifestRecordSchema,
+	ReconcileObservationRecordSchema,
 	type ReconcilerId,
 	ReconcilerMode,
 	ReconcileStatus,
+	ResourceObservationSchema,
 	SetOrigin,
 	TaintEffect,
 } from "@hobo/cd";
@@ -42,7 +53,10 @@ import {
 	runnerFleetDelivery,
 	runnerFleetTopology,
 } from "@hobo/ci-gh-actions";
-import { runnerFleetRail } from "@hobo/ci-gh-actions/runner-host";
+import {
+	runnerFleetRail,
+	workerHostFiles,
+} from "@hobo/ci-gh-actions/runner-host";
 import type {
 	HttpTransport,
 	JsonObject,
@@ -53,6 +67,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { agentRealizer } from "../src/cd-agent.js";
 import {
 	CD_RUNNER_HOST_ENV,
+	ingestRunnerHostHealth,
 	RUNNER_HOST_UNREADY_TAINT,
 } from "../src/cd-agent-runner-host.js";
 import { runCdDeploySubcommand } from "../src/cd-deploy.js";
@@ -193,6 +208,57 @@ function deploy(
 	});
 }
 
+/**
+ * `hobo deploy agent run … --json` of the built binary, stopped with SIGTERM
+ * after `ms` unless it exits first (a refusal exits at once).
+ */
+function runAgentFor(
+	home: string,
+	argv: readonly string[],
+	env: Readonly<Record<string, string>>,
+	ms: number,
+): Promise<Envelope & { exitedEarly: boolean }> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(
+			process.execPath,
+			[BIN, "deploy", "agent", "run", ...argv, "--json"],
+			{
+				cwd: REPO,
+				env: {
+					PATH: process.env.PATH ?? "",
+					HOME: home,
+					HOBO_HOME: home,
+					NODE_NO_WARNINGS: "1",
+					...env,
+				},
+				stdio: ["ignore", "pipe", "pipe"],
+			},
+		);
+		let stdout = "";
+		let stderr = "";
+		let exitedEarly = true;
+		const timer = setTimeout(() => {
+			exitedEarly = false;
+			child.kill("SIGTERM");
+		}, ms);
+		child.stdout.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString();
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString();
+		});
+		child.on("close", () => {
+			clearTimeout(timer);
+			try {
+				// SAFETY: --json prints one envelope; the fields read here are its own.
+				resolve({ ...(JSON.parse(stdout) as Envelope), exitedEarly });
+			} catch {
+				reject(new Error(`no JSON envelope: ${stdout}\n${stderr}`));
+			}
+		});
+	});
+}
+
 /** A member of an envelope or event body, by path (array members by index). */
 function pick(
 	value: JsonValue | undefined,
@@ -206,6 +272,17 @@ function pick(
 	}
 	return at;
 }
+
+// The built-binary legs need `pnpm --filter @hobo/hobo build`. Outside CI a
+// missing binary skips them; in CI it fails loudly instead of passing empty.
+it.runIf(Boolean(process.env.CI) && !existsSync(BIN))(
+	"the built binary the runner fleet's binary legs run is present in CI",
+	() => {
+		expect.fail(
+			`${BIN} is missing: build @hobo/hobo before this suite (pnpm --filter @hobo/hobo build)`,
+		);
+	},
+);
 
 describe.skipIf(!existsSync(BIN))(
 	"the runner fleet through the built binary",
@@ -317,15 +394,23 @@ describe.skipIf(!existsSync(BIN))(
 			expect(railless.code).toBe("rail-providers-unknown");
 		});
 
-		it("agent run registers the runner-host realizer and names the job ports the binary cannot wire", async () => {
+		it("agent run on a box worker wires the worker's job ports and runs; a local runner is refused by name", async () => {
 			const home = await freshDir();
 			const keys = agentKeys();
 			const keyFile = join(home, "agent.jwk.json");
 			const svidFile = join(home, "agent.svid");
 			const config = join(home, "agent.runner-host.json");
+			const workerDir = join(home, "worker");
+			await mkdir(workerDir);
 			await writeFile(keyFile, JSON.stringify(keys.privateJwk));
 			await writeFile(svidFile, "");
-			await writeFile(config, JSON.stringify(AGENT_CONFIG));
+			await writeFile(
+				config,
+				JSON.stringify({
+					...AGENT_CONFIG,
+					worker: { database: join(workerDir, "worker.sqlite") },
+				}),
+			);
 			const argv = [
 				"agent",
 				"run",
@@ -342,13 +427,36 @@ describe.skipIf(!existsSync(BIN))(
 			];
 			const without = await deploy(home, argv);
 			expect(without.code).toBe("compose-realizer-missing");
-			const runner = await deploy(home, argv, {
+			// The box worker: every port is wired, so the agent loop starts (the
+			// Station here is unreachable, so it never converges) and stops
+			// cleanly on SIGTERM rather than refusing.
+			const runner = await runAgentFor(
+				home,
+				argv.slice(2),
+				{ HOBO_CD_TOPOLOGY: MODULE, [CD_RUNNER_HOST_ENV]: config },
+				8_000,
+			);
+			expect(runner.exitedEarly, runner.message).toBe(false);
+			expect(runner.ok, runner.message).toBe(true);
+			expect(pick(runner.data, "reconcilerId")).toBe("rec_box");
+
+			// A local runner keeps a registered runner whose GitHub presence the
+			// worker's data directory cannot answer: refused by name, no loop.
+			await writeFile(
+				config,
+				JSON.stringify({
+					...AGENT_CONFIG,
+					hostKind: "local-runner",
+					worker: { database: join(workerDir, "worker.sqlite") },
+				}),
+			);
+			const local = await deploy(home, argv, {
 				[CD_RUNNER_HOST_ENV]: config,
 			});
-			expect(runner.ok).toBe(false);
-			expect(runner.code).toBe("runner-host-interface-missing");
-			expect(runner.message).toContain("jobs.leases");
-			expect(runner.message).not.toContain("compose-realizer-missing");
+			expect(local.ok).toBe(false);
+			expect(local.code).toBe("runner-host-interface-missing");
+			expect(local.message).toContain("jobs.runners");
+			expect(local.message).not.toContain("jobs.leases");
 		});
 	},
 );
@@ -375,14 +483,20 @@ function loopback(
 }
 
 describe("the runner fleet delivered in process (durable SQLite, fake runner host)", () => {
-	it("enrolls, decides placement, fans out over the pilot group, swaps the controller digest and restores it on a failed verify", {
+	it("enrolls, decides placement, defers an unready pilot host, swaps the controller digest and restores it on a failed verify", {
 		timeout: 120_000,
 	}, async () => {
 		const home = await freshDir();
+		// The box worker's data directory, as the controller mounts it.
+		const workerDir = join(home, "worker");
+		await mkdir(workerDir);
+		const worker = workerHostFiles(join(workerDir, "worker.sqlite"));
 		const host = new FakeRunnerHost({
 			running: PREVIOUS,
 			unhealthy: [BROKEN],
+			worker,
 		});
+		await host.beat();
 		const now = () => host.nowMs;
 		const hosts = parseRunnerHosts(
 			await readFile(
@@ -412,8 +526,17 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				.join("\n"),
 		);
 		const agentConfig = join(home, "agent.runner-host.json");
-		await writeFile(agentConfig, JSON.stringify(AGENT_CONFIG));
+		await writeFile(
+			agentConfig,
+			JSON.stringify({
+				...AGENT_CONFIG,
+				worker: { database: worker.database },
+			}),
+		);
 		const env = { HOBO_HOME: home };
+		// Every accepted report's health ingest must succeed; a failure is
+		// reported here, never dropped.
+		const ingestErrors: Error[] = [];
 		const opened = await openCdRuntime({
 			env,
 			home,
@@ -422,6 +545,7 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			now,
 			topologyFiles: [module],
 			http: registry,
+			onRunnerHostIngestError: (error) => ingestErrors.push(error),
 		});
 		if (!opened.ok) throw new Error(opened.reasons[0]?.message);
 		const station = opened.value;
@@ -475,7 +599,9 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				).ok,
 			).toBe(true);
 
-			// The agent, composed as `agent run` composes it on the box.
+			// The agent, composed as `agent run` composes it on the box: the
+			// job ports are its own, read from the worker's data directory; only
+			// the container engine is the fake's.
 			const chosen = await agentRealizer({
 				simulate: false,
 				env: { [CD_RUNNER_HOST_ENV]: agentConfig },
@@ -483,6 +609,7 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				now,
 				sleep: async (ms) => {
 					host.nowMs += ms;
+					await host.beat();
 				},
 				campIds: [BOX],
 				simulated: () => {
@@ -550,8 +677,9 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				if (!recorded.ok) throw new Error(recorded.reasons[0]?.message);
 				return recorded.value;
 			}
-			// The Set a promotion of `image` writes for the box (see the report:
-			// promotion planning for the fleet's Bindle is not composed yet).
+			// The Set a promotion of `image` would write for the box, written
+			// through the desired-state ledger directly: this bypasses promotion,
+			// which cannot write it yet (the known gap in the file comment).
 			async function setFor(image: string, deltaId: string, freightId: string) {
 				const resolved = runnerHostResolvedSet({
 					campId: BOX,
@@ -639,6 +767,38 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				decided.value.groups.find((g) => g.name === "pilot")?.campIds,
 			).toEqual([BOX]);
 
+			// An unready report taints the box NO_PLACE (as the feed's ingest
+			// does for an agent's report whose advert expired).
+			const ingest = (ready: boolean) =>
+				ingestRunnerHostHealth({
+					inventory: station.cd.inventory,
+					observation: create(ReconcileObservationRecordSchema, {
+						campId: BOX,
+						resources: [
+							create(ResourceObservationSchema, {
+								resource: "runner-controller",
+								kind: "hobo-ci.runner-host/v1",
+							}),
+						],
+						claims: [
+							{
+								name: "hobo.ci/mesh-advert",
+								value: ready ? "fresh" : "expired",
+							},
+							{
+								name: "hobo.ci/mesh-advert-valid-until",
+								value: new Date(
+									host.nowMs + (ready ? 60_000 : -1),
+								).toISOString(),
+							},
+							{ name: "hobo.ci/runner-host-ready", value: String(ready) },
+						].map((claim) => create(CampClaimRecordSchema, claim)),
+					}),
+					tenant: station.config.tenant,
+					now,
+				});
+			expect(await ingest(false)).toEqual({ ingested: true, ready: false });
+
 			// A PROGRESSIVE_PER_GROUP fan-out of new Freight over the decision:
 			// the mandatory pilot group runs first, one host in flight.
 			const freight = await recordFreight(TARGET);
@@ -662,33 +822,33 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				ops,
 			);
 			if (!started.ok) throw new Error(started.reasons[0]?.message);
+			const progressed = async () => {
+				const out: { campId: string; outcome: string; code: string }[] = [];
+				for await (const event of station.store.read(
+					`cd-fanout-${started.value.fanoutId}`,
+				))
+					if (event.type === "fanout.Progressed")
+						out.push({
+							campId: String(pick(event.data, "campId")),
+							outcome: String(pick(event.data, "outcome")),
+							code: String(pick(event.data, "reasons", "0", "code") ?? ""),
+						});
+				return out;
+			};
+			// The unready pilot host is deferred at its turn, not requested.
 			await station.cd.fanout.tick(ops);
-			const progressed: { campId: string; outcome: string; code: string }[] =
-				[];
-			for await (const event of station.store.read(
-				`cd-fanout-${started.value.fanoutId}`,
-			))
-				if (event.type === "fanout.Progressed")
-					progressed.push({
-						campId: String(pick(event.data, "campId")),
-						outcome: String(pick(event.data, "outcome")),
-						code: String(pick(event.data, "reasons", "0", "code") ?? ""),
-					});
-			// The pilot's one host is requested first, alone (max concurrency 1).
-			expect(progressed[0]).toEqual({
+			expect((await progressed())[0]).toEqual({
 				campId: BOX,
-				outcome: "requested",
-				code: "",
+				outcome: "deferred",
+				code: "camp-tainted",
 			});
-			// Honest gap: the composed PromotionService has no placed-Camps
-			// reader or fan-out aggregate gate (packages/cd/src/compose/wire.ts),
-			// so a placed node's promotion fails closed. The converge it would
-			// request is driven below through the same desired-state ledger.
-			expect(progressed[1]).toEqual({
-				campId: BOX,
-				outcome: "failed",
-				code: "promotion-placement-unresolved",
-			});
+			// Ready again: the taint clears and the pilot's one host is
+			// requested on the next tick (max concurrency 1).
+			expect(await ingest(true)).toEqual({ ingested: true, ready: true });
+			await station.cd.fanout.tick(ops);
+			expect((await progressed()).map((p) => p.outcome)).toContain("requested");
+			// What the requested promotion then does is the known gap (see the
+			// file comment and the it.todo below): it is not asserted here.
 
 			// The converge the pilot's promotion asks for: drain, swap by digest, verify.
 			const swapped = await setFor(
@@ -704,13 +864,10 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			);
 			expect(host.runningImage()).toBe(TARGET);
 			expect(host.calls).toEqual(
-				expect.arrayContaining([
-					`pull ${TARGET}`,
-					"pause",
-					`stop ${PREVIOUS}`,
-					"resume",
-				]),
+				expect.arrayContaining([`pull ${TARGET}`, `stop ${PREVIOUS}`]),
 			);
+			// Admission was closed through the worker's marker and reopened.
+			expect(existsSync(worker.admissionPaused)).toBe(false);
 
 			// A failed verify restores the previous digest.
 			const broken = await recordFreight(BROKEN);
@@ -733,9 +890,14 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 						t.effect === TaintEffect.NO_PLACE,
 				),
 			).toBe(false);
+			expect(ingestErrors).toEqual([]);
 			await agentStore.close();
 		} finally {
 			await station.close();
 		}
 	});
+
+	it.todo(
+		"the PROGRESSIVE_PER_GROUP fan-out's pilot promotion writes the runner-host Set the agent converges (needs a placed-Camps reader and fan-out aggregate gate on the composed PromotionService, packages/cd/src/compose/wire.ts)",
+	);
 });

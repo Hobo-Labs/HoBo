@@ -1064,7 +1064,7 @@ through two ports the host wires.
 | Port | Methods | Where they come from |
 |---|---|---|
 | `containers` | `listWorkerContainers`, `inspectImage`, `create`, `start`, `stop`, `remove`, `isRunning`, `pull` | the isolated worker's `DockerDriver` plus the deps-image `pull` |
-| `jobs` | `leases`, `runners`, `meshAdvert`, `pauseAdmission`, `resumeAdmission` | the worker's lease store (`ACTIVE_STATES`, `runnerCustody`), GitHub runner presence, the host's mesh advert, the worker's drain gate |
+| `jobs` | `leases`, `runners`, `meshAdvert`, `pauseAdmission`, `resumeAdmission` | the worker's lease store (`ACTIVE_STATES`, `runnerCustody`), GitHub runner presence, the host's mesh advert, the worker's admission gate; across the process boundary, `createWorkerHostJobs` (below) |
 
 A host missing any of them is refused with `RESOLVER_PRODUCT_UNSUPPORTED`
 and `runner-host-interface-missing: this host has no <port.method>, ...`
@@ -1134,9 +1134,22 @@ same table as the mesh board (`deploy/runner-fleet/README.md`).
 the light `@hobo/ci-gh-actions/runner-host` entry, which also carries the
 fleet's Rail (`runnerFleetRail`) and `createCliDockerDriver`, whose `pull`
 (`docker pull <ref>`, option-shaped references refused) completes the
-container port. The job ports have no cross-process source in the worker yet,
-so the binary refuses `runner-host-interface-missing` naming them; see
-`deploy/runner-fleet/README.md`, "What does not work yet".
+container port.
+
+**Job ports from the worker's data directory.** The agent and the box worker
+are separate processes; they meet in the directory of the worker's journal
+(`HOBO_CI_WORKER_DB`, or the agent config's `worker.database`), which the
+controller container mounts from the host. `createWorkerHostJobs` reads it:
+`leases` opens the journal read-only (the worker stays its only writer),
+`meshAdvert` reads `mesh-advert.json`, which the worker rewrites with its own
+`MeshAdvert` after every mesh beat (`writeWorkerMeshAdvert`), and
+`pauseAdmission` / `resumeAdmission` place and remove the `admission-paused`
+marker. While the marker exists the worker's tick runs with `admit: false`
+(running jobs are untouched) and it advertises itself unhealthy. JIT hosts
+(`box-worker`, `mesh-node`) answer `runners` with no standing registrations:
+each job's runner is counted through its lease. A `local-runner`'s GitHub
+presence is not in that directory, so its `runners` port stays unwired and
+the agent refuses `runner-host-interface-missing ... jobs.runners`.
 
 #### Runbook
 
@@ -1158,8 +1171,13 @@ so the binary refuses `runner-host-interface-missing` naming them; see
 - **`runner-host-ambiguous`.** Two controllers are running. Stop the one
   holding no jobs by hand (`docker ps --filter name=hoboci-runner-controller-`);
   the realizer never guesses.
-- **`runner-host-interface-missing`.** The agent was started without the
-  container driver or the job ports; fix the composition, not the host.
+- **`runner-host-interface-missing`.** The agent has no source for a port.
+  On a local runner it names `jobs.runners` (presence is not in the worker's
+  data directory): upgrade that host by hand. Elsewhere fix the composition,
+  not the host.
+- **A pass waits on a closed admission.** `admission-paused` beside the
+  worker's journal is the agent's drain marker; the agent removes it on every
+  exit. If an agent was killed mid-pass, remove the file to reopen admission.
 - **Live lane.** `HOBO_CI_RUNNER_HOST_LIVE_DOCKER=1 pnpm vitest run
   test/runner-host-realizer.test.ts` observes a real Docker engine read-only;
   it is skipped (and says so) otherwise.

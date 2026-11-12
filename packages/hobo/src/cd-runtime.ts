@@ -116,6 +116,11 @@ export type CdRuntimeOptions = Readonly<{
 	runnerHost?: RunnerHostPorts;
 	/** How an agent's realizer waits between observations (default: a timer). */
 	sleep?: (ms: number) => Promise<void>;
+	/**
+	 * Where a failed runner-host health ingest is reported (default: one JSON
+	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
+	 */
+	onRunnerHostIngestError?: (error: Error) => void;
 }>;
 
 export type CdRuntime = Readonly<{
@@ -319,15 +324,18 @@ export async function openCdRuntime(
 	// The Station's Rail decides provider approval for Placement (I5): the
 	// active declared Rail's approvedProviders, else undefined (fail closed).
 	// Accepted runner-host reports also reach Camp inventory as health.
-	const factories = withRunnerHostHealthIngest({
-		...defaultCdFactories,
-		createPlacementEngine: (deps) =>
-			createPlacementEngine({
-				...deps,
-				approvedProviders: (stationId) =>
-					railCatalog.approvedProviders(stationId),
-			}),
-	});
+	const factories = withRunnerHostHealthIngest(
+		{
+			...defaultCdFactories,
+			createPlacementEngine: (deps) =>
+				createPlacementEngine({
+					...deps,
+					approvedProviders: (stationId) =>
+						railCatalog.approvedProviders(stationId),
+				}),
+		},
+		options.onRunnerHostIngestError ?? reportRunnerHostIngestError,
+	);
 	const cd = composeContinuousDelivery({
 		base,
 		factories,
@@ -416,6 +424,17 @@ export async function openCdRuntime(
 			},
 		}),
 	};
+}
+
+/** A failed health ingest leaves readiness stale: say so on stderr. */
+function reportRunnerHostIngestError(error: Error): void {
+	process.stderr.write(
+		`${JSON.stringify({
+			level: "warn",
+			event: "hobo_cd_runner_host_ingest_failed",
+			message: error.message,
+		})}\n`,
+	);
 }
 
 function emptyRegistry(): PlannerRegistry {

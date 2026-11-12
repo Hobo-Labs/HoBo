@@ -3,5 +3,6 @@
 	"hostKind": "box-worker",
 	"credentialRef": "env://HOBO_CI_GHCR_READ_TOKEN",
 	"docker": { "binary": "docker" },
+	"worker": { "database": "/var/lib/hobo-ci/worker.sqlite" },
 	"drainDeadlineMs": 7200000
 }

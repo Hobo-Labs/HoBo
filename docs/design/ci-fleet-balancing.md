@@ -215,9 +215,10 @@ would post for a new offer.
   the runner-host realizer, and each agent report carries the host's mesh
   advert, lease and readiness into Camp inventory, so an unready host is
   tainted `NO_PLACE` and a fan-out defers it. Balancing reads the mesh board,
-  not that inventory. The realizer still lacks a cross-process source for the
-  worker's leases, runner presence and drain gate, so the binary refuses to
-  run it; see
+  not that inventory. The agent reads the worker's leases, advert and
+  admission marker from the worker's data directory; a local runner's
+  presence is not there (refused by name), and the fleet's promotion does not
+  yet write the Set the agent converges; see
   [`deploy/runner-fleet/README.md`](../../packages/ci-gh-actions/deploy/runner-fleet/README.md).
 
 `jog` and `boat` are accepted as policy provider kinds and dispatch through the

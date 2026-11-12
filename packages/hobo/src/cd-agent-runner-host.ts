@@ -91,6 +91,7 @@ const HOST_KINDS: readonly RunnerHostKind[] = [
 const CREDENTIAL_LOCATOR = /^[a-z][a-z0-9+.-]*:\/\/[^\s]{1,256}$/u;
 const DOCKER_BINARY = /^(?:docker|podman|\/[^\s\0]{1,255})$/u;
 const MAX_DRAIN_MS = 24 * 60 * 60_000;
+const ABSOLUTE_PATH = /^\/[^\0]{1,4095}$/u;
 
 /** What a runner host's agent is told about itself (`HOBO_CD_RUNNER_HOST`). */
 export type RunnerHostAgentConfig = Readonly<{
@@ -101,6 +102,11 @@ export type RunnerHostAgentConfig = Readonly<{
 	credentialRef: string;
 	/** The container engine CLI (default `docker`). */
 	dockerBinary?: string;
+	/**
+	 * The box worker's journal (`HOBO_CI_WORKER_DB`); the job ports are read
+	 * from its directory. Default: the worker's own default path.
+	 */
+	workerDatabase?: string;
 	drainDeadlineMs?: number;
 }>;
 
@@ -111,7 +117,7 @@ function refusal(code: string, message: string, remediation: string) {
 	};
 }
 
-const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<mesh node id>","hostKind":"box-worker|mesh-node|local-runner","credentialRef":"env://<NAME>","docker":{"binary":"docker"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
+const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<mesh node id>","hostKind":"box-worker|mesh-node|local-runner","credentialRef":"env://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
 
 /** Parse the agent config once; every problem is listed, nothing partial is returned. */
 export function parseRunnerHostAgentConfig(
@@ -129,11 +135,13 @@ export function parseRunnerHostAgentConfig(
 	const credentialRef = value.credentialRef;
 	const docker = value.docker;
 	const drain = value.drainDeadlineMs;
+	const worker = value.worker;
 	const known = new Set([
 		"hostId",
 		"hostKind",
 		"credentialRef",
 		"docker",
+		"worker",
 		"drainDeadlineMs",
 	]);
 	for (const key of Object.keys(value))
@@ -164,6 +172,20 @@ export function parseRunnerHostAgentConfig(
 			);
 		else if (isJsonString(candidate)) binary = candidate;
 	}
+	let workerDatabase: string | undefined;
+	if (worker !== undefined) {
+		const candidate = isJsonObject(worker) ? worker.database : undefined;
+		if (
+			!isJsonObject(worker) ||
+			Object.keys(worker).some((key) => key !== "database") ||
+			!isJsonString(candidate) ||
+			!ABSOLUTE_PATH.test(candidate)
+		)
+			problems.push(
+				"worker must be {database: <absolute path of the worker's journal>} when given",
+			);
+		else workerDatabase = candidate;
+	}
 	if (
 		drain !== undefined &&
 		(!isJsonNumber(drain) ||
@@ -190,6 +212,7 @@ export function parseRunnerHostAgentConfig(
 			hostKind: kind,
 			credentialRef,
 			...(binary ? { dockerBinary: binary } : undefined),
+			...(workerDatabase ? { workerDatabase } : undefined),
 			...(isJsonNumber(drain) ? { drainDeadlineMs: drain } : undefined),
 		}),
 	};
@@ -262,6 +285,10 @@ function observation(
 		),
 	});
 }
+
+/** `sha256:<hex>` of a digest-pinned image reference. */
+const targetDigest = (image: string): string =>
+	image.slice(image.indexOf("@") + 1);
 
 const digestOf = (outcome: ResolveOutcome | undefined): string => {
 	const digest = outcome?.outputs.controllerDigest;
@@ -378,13 +405,16 @@ export function createRunnerHostRealizer(
 				);
 				const nowMs = input.now();
 				const report = runnerHostCampReport(outcome, nowMs);
+				const digest = digestOf(outcome);
+				// CONVERGED only at the Set's digest, observed serving (I5): a
+				// healthy controller at another digest is still converging.
 				return observation(
 					realize,
-					report.resource.healthy
+					digest === targetDigest(image) && report.resource.healthy
 						? ReconcileStatus.CONVERGED
 						: ReconcileStatus.CONVERGING,
 					report,
-					digestOf(outcome),
+					digest,
 					nowMs,
 				);
 			} catch (error) {
@@ -415,10 +445,9 @@ export function createRunnerHostRealizer(
 			if (wrongHost(realize)) return foreign(realize);
 			const image = runnerHostImageOf(realize.resolved);
 			if (image === undefined) return unresolved(realize);
-			const target = image.slice(image.indexOf("@") + 1);
 			const { report, digest } = await current(realize, image);
 			const status =
-				digest === target && report.resource.healthy
+				digest === targetDigest(image) && report.resource.healthy
 					? ReconcileStatus.CONVERGED
 					: ReconcileStatus.DRIFTED;
 			return observation(realize, status, report, digest, input.now());
@@ -448,7 +477,7 @@ function isRunnerHostReport(observation: ReconcileObservationRecord): boolean {
  */
 export async function ingestRunnerHostHealth(
 	input: Readonly<{
-		inventory: CampInventory;
+		inventory: Pick<CampInventory, "observe" | "taint" | "untaint">;
 		observation: ReconcileObservationRecord;
 		tenant: string;
 		now: () => number;
@@ -465,7 +494,14 @@ export async function ingestRunnerHostHealth(
 	// SAFETY: the feed accepted the observation for this lease's Camp.
 	const campId = observation.campId as CampId;
 	const health = runnerHostHealthConditions(observation.claims, nowMs);
-	await input.inventory.observe(
+	/** A refused inventory write is an ingest failure the caller reports. */
+	const settled = (outcome: Outcome<unknown>, step: string) => {
+		if (!outcome.ok)
+			throw new Error(
+				`runner-host-health-ingest-failed: ${step} for ${campId}: ${outcome.reasons.map((reason) => `${reason.code}: ${reason.message}`).join("; ")}`,
+			);
+	};
+	const observed = await input.inventory.observe(
 		{
 			campId,
 			source: SignalSource.HEALTH_SOURCE,
@@ -479,37 +515,39 @@ export async function ingestRunnerHostHealth(
 		},
 		ctx,
 	);
+	settled(observed, "observe");
 	const ready = health.conditions.every(
 		(condition) => condition.status === "CONDITION_STATUS_TRUE",
 	);
-	const status = await input.inventory.status(campId);
-	const tainted = status?.taints.some(
-		(taint) =>
-			taint.key === RUNNER_HOST_UNREADY_TAINT &&
-			taint.effect === TaintEffect.NO_PLACE,
-	);
-	if (!ready && !tainted)
-		await input.inventory.taint(
-			{
-				campId,
-				taint: create(TaintRecordSchema, {
+	// Taint and untaint replace by key and effect and journal nothing when
+	// unchanged, so each report states the host's readiness outright: no
+	// read-then-write that two concurrent reports could interleave.
+	const marked = !ready
+		? await input.inventory.taint(
+				{
+					campId,
+					taint: create(TaintRecordSchema, {
+						key: RUNNER_HOST_UNREADY_TAINT,
+						value: health.advert,
+						effect: TaintEffect.NO_PLACE,
+						source: SignalSource.HEALTH_SOURCE,
+						reason:
+							health.conditions.find(
+								(condition) => condition.status !== "CONDITION_STATUS_TRUE",
+							)?.reason ?? "runner-host-unready",
+					}),
+				},
+				ctx,
+			)
+		: await input.inventory.untaint(
+				{
+					campId,
 					key: RUNNER_HOST_UNREADY_TAINT,
-					value: health.advert,
 					effect: TaintEffect.NO_PLACE,
-					source: SignalSource.HEALTH_SOURCE,
-					reason:
-						health.conditions.find(
-							(condition) => condition.status !== "CONDITION_STATUS_TRUE",
-						)?.reason ?? "runner-host-unready",
-				}),
-			},
-			ctx,
-		);
-	if (ready && tainted)
-		await input.inventory.untaint(
-			{ campId, key: RUNNER_HOST_UNREADY_TAINT, effect: TaintEffect.NO_PLACE },
-			ctx,
-		);
+				},
+				ctx,
+			);
+	settled(marked, ready ? "untaint" : "taint");
 	return { ingested: true, ready };
 }
 
@@ -534,11 +572,13 @@ function acceptedObservation(
  * Wrap the delivery feed so every observation the feed ACCEPTED (201, after
  * its own SVID, DPoP, lease and fence checks) from a runner-host agent is
  * also ingested into Camp inventory. A failed ingest never fails the agent's
- * report: the reconcile status is already journaled.
+ * report (the reconcile status is already journaled), but it is never
+ * silent either: `onError` gets it, so stale readiness or a missed taint is
+ * visible to the operator.
  */
 export function withRunnerHostHealthIngest(
 	factories: CdFactories,
-	onError: (error: Error) => void = () => {},
+	onError: (error: Error) => void,
 ): CdFactories {
 	return Object.freeze({
 		...factories,

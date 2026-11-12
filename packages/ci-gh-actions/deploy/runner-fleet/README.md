@@ -112,7 +112,13 @@ not placed. Claims narrow, never grant.
 `HOBO_CD_RUNNER_HOST` names the host's agent config
 ([`agent.runner-host.json.example`](agent.runner-host.json.example): `hostId`,
 `hostKind`, the registry read credential's locator `credentialRef`, optionally
-`docker.binary` and `drainDeadlineMs`). A Set for the host's Camp then
+`docker.binary`, `worker.database` and `drainDeadlineMs`). Its job ports are
+read from the box worker's data directory, the directory of `worker.database`
+(default `HOBO_CI_WORKER_DB`, else the worker's own default path), which the
+controller container must mount from the host: the journal read-only for
+leases, `mesh-advert.json` (the worker's own advert, rewritten every mesh
+beat) and the `admission-paused` marker the agent places to drain the host
+(package README, "Job ports from the worker's data directory"). A Set for the host's Camp then
 converges by pulling the image its runner-host row pins by digest, draining,
 swapping the controller and verifying by observation; a failed verify restores
 the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
@@ -124,23 +130,20 @@ the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
 
 These are refused, not faked:
 
-- **The binary has no job ports.** The realizer acts through the worker's
-  container driver (the engine CLI, wired by default) and its job ports:
-  leases, runner presence, the host's mesh advert and the admission (drain)
-  gate. The box worker keeps those in its own process and exposes none of
-  them to another process, so `hobo deploy agent run` with
-  `HOBO_CD_RUNNER_HOST` refuses `runner-host-interface-missing: this host has
-  no jobs.leases, jobs.meshAdvert, jobs.pauseAdmission, jobs.resumeAdmission,
-  jobs.runners` before it starts. A host composition that supplies them
-  (`openCdRuntime({ runnerHost })`) runs it; until the worker exposes them,
-  hosts are upgraded the way [the runner queue guide](../../../ci/RUNNER-QUEUE.md)
-  describes. The realizer also assumes the controller runs as a container;
-  today's box worker daemon runs as a process (`restart-worker.sh`).
-- **A placed node's promotion fails closed.** The fan-out runs the pilot group
-  first, one host at a time, but the composed `@hobo/cd` PromotionService has
-  no placed-Camps reader or fan-out aggregate gate
-  (`packages/cd/src/compose/wire.ts`), so each Camp's promotion is refused
-  `promotion-placement-unresolved` and counted failed.
+- **A local runner has no runner-presence port.** Its GitHub presence is not
+  in the worker's data directory, so `agent run` on a `local-runner` refuses
+  `runner-host-interface-missing ... jobs.runners` before it starts; upgrade
+  those hosts the way [the runner queue guide](../../../ci/RUNNER-QUEUE.md)
+  describes. The realizer also assumes the controller runs as a container
+  with the worker's data directory mounted from the host; today's box worker
+  daemon runs as a process (`restart-worker.sh`).
+- **A placed node's promotion does not write the Set yet.** The fan-out runs
+  the pilot group first, one host at a time, and defers a tainted host, but
+  the composed `@hobo/cd` PromotionService has no placed-Camps reader or
+  fan-out aggregate gate (`packages/cd/src/compose/wire.ts`), so the pilot's
+  promotion does not produce the Set its agent converges. The end-to-end
+  proof writes that Set through the desired-state ledger and keeps the
+  fan-out leg as a `todo`.
 - **No Set resolves the controller image yet.** The realizer reads the image
   from the Set's `hobo-ci.runner-host/v1` plan row (`realizationParameters.image`);
   the fleet's Bindle has no stored planning declaration or planner product for
@@ -152,6 +155,8 @@ These are refused, not faked:
 - **Existing versions have no release tag.** Only a version published after
   this change gets one; the fleet's first Freight is the next image version.
 
-The offline end-to-end proof (enrollment, placement, the pilot-first fan-out,
-a digest swap and a restored failed verify, with a fake runner host) is
+The offline end-to-end proof (enrollment, placement, the pilot-first fan-out
+deferring an unready host, a digest swap and a restored failed verify, with
+the agent's own job ports reading a fake box worker's data directory; and the
+built binary's `agent run` starting its loop on a box worker) is
 [`packages/hobo/test/cd-runner-fleet-delivery.test.ts`](../../../hobo/test/cd-runner-fleet-delivery.test.ts).

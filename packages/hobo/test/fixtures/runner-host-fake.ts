@@ -3,6 +3,18 @@
 // leases, GitHub runner presence and the host's own mesh advert, derived from
 // whichever controller is running. Images listed in `unhealthy` start but
 // never advertise healthy, which is how a failed verify is reproduced.
+//
+// With `worker` set the fake plays the box worker across the process
+// boundary instead: it hands out only the container port, writes the advert
+// the running controller's worker would write into the worker's data
+// directory, and honours the admission marker the agent places there. The
+// agent's own job ports (`createWorkerHostJobs`) then read the host.
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import {
+	type WorkerHostFiles,
+	writeWorkerMeshAdvert,
+} from "@hobo/ci-gh-actions";
 import type { RunnerHostPorts } from "@hobo/ci-gh-actions/runner-host";
 import {
 	createResolvedDeploymentSet,
@@ -72,7 +84,7 @@ export class FakeRunnerHost {
 	readonly calls: string[] = [];
 	readonly images = new Set<string>();
 	readonly containers = new Map<string, Container>();
-	admission = true;
+	#admission = true;
 	nextId = 1;
 
 	constructor(
@@ -82,6 +94,8 @@ export class FakeRunnerHost {
 			unhealthy?: readonly string[];
 			labels?: readonly string[];
 			startMs?: number;
+			/** Play the worker through its data directory (see the file comment). */
+			worker?: WorkerHostFiles;
 		}> = {},
 	) {
 		this.nowMs = options.startMs ?? Date.parse("2026-11-12T10:00:00.000Z");
@@ -104,8 +118,46 @@ export class FakeRunnerHost {
 		)?.image;
 	}
 
+	/** Whether the worker admits jobs: the agent's marker when `worker` is set. */
+	get admission(): boolean {
+		const worker = this.options.worker;
+		return worker ? !existsSync(worker.admissionPaused) : this.#admission;
+	}
+
+	set admission(open: boolean) {
+		this.#admission = open;
+	}
+
+	/** The host's own advert, as the running controller's worker makes it. */
+	advert() {
+		const live = [...this.containers.values()].find(
+			(c) => c.state === "running" && c.name.startsWith(CONTROLLER),
+		);
+		if (!live) return undefined;
+		return {
+			id: this.options.hostId ?? "box",
+			freeSlots: 3,
+			totalSlots: 4,
+			healthy: this.admission && !this.options.unhealthy?.includes(live.image),
+			labels: [...(this.options.labels ?? ["hobo", "hobo-trunk"])],
+			validUntilMs: this.nowMs + 60_000,
+			sinceMs: live.startedAtMs ?? 0,
+			platform: { os: "linux", arch: "x64" },
+		};
+	}
+
+	/** The worker's mesh beat: rewrite (or, with no controller, remove) its advert file. */
+	async beat(): Promise<void> {
+		const worker = this.options.worker;
+		if (!worker) return;
+		const advert = this.advert();
+		if (advert) await writeWorkerMeshAdvert(worker, advert);
+		else await rm(worker.meshAdvert, { force: true });
+	}
+
 	ports(): RunnerHostPorts {
-		return portsOf(this);
+		const ports = portsOf(this);
+		return this.options.worker ? { containers: ports.containers } : ports;
 	}
 }
 
@@ -143,10 +195,12 @@ function portsOf(host: FakeRunnerHost): RunnerHostPorts {
 				if (!container) throw new Error("No such container");
 				container.state = "running";
 				container.startedAtMs = host.nowMs;
+				await host.beat();
 			},
 			async stop(_name: string, containerId: string) {
 				host.calls.push(`stop ${host.containers.get(containerId)?.image}`);
 				host.containers.delete(containerId);
+				await host.beat();
 			},
 			async remove(_name: string, containerId: string) {
 				if (!host.containers.delete(containerId))
@@ -164,21 +218,7 @@ function portsOf(host: FakeRunnerHost): RunnerHostPorts {
 				return [];
 			},
 			async meshAdvert() {
-				const live = [...host.containers.values()].find(
-					(c) => c.state === "running" && c.name.startsWith(CONTROLLER),
-				);
-				if (!live) return undefined;
-				return {
-					id: host.options.hostId ?? "box",
-					freeSlots: 3,
-					totalSlots: 4,
-					healthy:
-						host.admission && !host.options.unhealthy?.includes(live.image),
-					labels: [...(host.options.labels ?? ["hobo", "hobo-trunk"])],
-					validUntilMs: host.nowMs + 60_000,
-					sinceMs: live.startedAtMs ?? 0,
-					platform: { os: "linux", arch: "x64" },
-				};
+				return host.advert();
 			},
 			async pauseAdmission() {
 				host.calls.push("pause");

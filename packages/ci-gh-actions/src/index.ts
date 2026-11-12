@@ -463,6 +463,16 @@ export {
 	runnerHostResolverRegistry,
 } from "./runner-host-realizer.js";
 export {
+	createWorkerHostJobs,
+	readWorkerLeases,
+	WORKER_ADMISSION_PAUSED_FILE,
+	WORKER_MESH_ADVERT_FILE,
+	type WorkerHostFiles,
+	workerAdmissionPaused,
+	workerHostFiles,
+	writeWorkerMeshAdvert,
+} from "./runner-host-worker-jobs.js";
+export {
 	admitWhenReady,
 	createRelayService,
 	type RelayServiceLog,

@@ -12,6 +12,7 @@ import {
 	type CampId,
 	type CdContext,
 	type FenceToken,
+	ReasonRecordSchema,
 	ReconcileObservationRecordSchema,
 	type ReconcilerId,
 	ReconcileStatus,
@@ -21,7 +22,10 @@ import {
 	TaintEffect,
 } from "@hobo/cd";
 import type { RailCatalog } from "@hobo/cd/compose";
-import { runnerFleetRail } from "@hobo/ci-gh-actions/runner-host";
+import {
+	createRunnerHostResolver,
+	runnerFleetRail,
+} from "@hobo/ci-gh-actions/runner-host";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRealizer } from "../src/cd-agent.js";
 import {
@@ -100,7 +104,9 @@ afterEach(async () => {
 	if (dir) await rm(dir, { recursive: true, force: true });
 	dir = "";
 });
-async function writeConfig(value: typeof CONFIG = CONFIG): Promise<string> {
+async function writeConfig(
+	value: Readonly<Record<string, string>> = CONFIG,
+): Promise<string> {
 	dir = await mkdtemp(join(tmpdir(), "runner-host-agent-"));
 	configPath = join(dir, "agent.runner-host.json");
 	await writeFile(configPath, JSON.stringify(value));
@@ -112,13 +118,22 @@ describe("runner-host agent config", () => {
 		const parsed = parseRunnerHostAgentConfig({
 			...CONFIG,
 			docker: { binary: "/usr/bin/docker" },
+			worker: { database: "/var/lib/hobo-ci/worker.sqlite" },
 			drainDeadlineMs: 7_200_000,
 		});
 		expect(parsed.ok && parsed.value).toEqual({
 			...CONFIG,
 			dockerBinary: "/usr/bin/docker",
+			workerDatabase: "/var/lib/hobo-ci/worker.sqlite",
 			drainDeadlineMs: 7_200_000,
 		});
+		const relative = parseRunnerHostAgentConfig({
+			...CONFIG,
+			worker: { database: "worker.sqlite" },
+		});
+		expect(relative.ok ? "" : relative.reasons[0]?.message).toContain(
+			"worker must be {database: <absolute path",
+		);
 	});
 
 	it("refuses a credential value where a locator belongs, and unknown fields", () => {
@@ -169,8 +184,27 @@ describe("agent realizer selection (hobo deploy agent run)", () => {
 		);
 	});
 
-	it("registers the runner-host realizer, and refuses by name the job ports this host has not wired", async () => {
+	it("registers the runner-host realizer with the worker's job ports and the engine CLI, no injected ports", async () => {
 		await writeConfig();
+		const chosen = await agentRealizer({
+			simulate: false,
+			// The worker's journal path, as the box worker itself reads it.
+			env: {
+				[CD_RUNNER_HOST_ENV]: configPath,
+				HOBO_CI_WORKER_DB: join(dir, "worker.sqlite"),
+			},
+			cwd: "/",
+			now: () => 0,
+			campIds: [BOX],
+			simulated: () => {
+				throw new Error("not simulated");
+			},
+		});
+		expect(chosen.ok ? "" : chosen.reasons[0]?.message).toBe("");
+	});
+
+	it("refuses by name the port a local runner's worker directory cannot answer", async () => {
+		await writeConfig({ ...CONFIG, hostKind: "local-runner" });
 		const chosen = await agentRealizer({
 			simulate: false,
 			env: { [CD_RUNNER_HOST_ENV]: configPath },
@@ -181,14 +215,13 @@ describe("agent realizer selection (hobo deploy agent run)", () => {
 				throw new Error("not simulated");
 			},
 		});
-		expect(chosen.ok).toBe(false);
 		const reason = chosen.ok ? undefined : chosen.reasons[0];
 		expect(reason?.code).toBe("runner-host-interface-missing");
-		expect(reason?.message).toContain(
-			"jobs.leases, jobs.meshAdvert, jobs.pauseAdmission, jobs.resumeAdmission, jobs.runners",
-		);
-		// The container port defaults to the engine CLI, so it is not missing.
+		expect(reason?.message).toContain("local-runner host has no jobs.runners");
+		// Only presence is missing: the container port defaults to the engine
+		// CLI and the other job ports come from the worker's data directory.
 		expect(reason?.message).not.toContain("containers.");
+		expect(reason?.message).not.toContain("jobs.leases");
 	});
 
 	it("refuses an agent started for another host's Camp", async () => {
@@ -277,6 +310,40 @@ describe("the runner-host realizer as a @hobo/cd Realizer", () => {
 		);
 	});
 
+	it("converge is CONVERGED only at the Set's digest: a healthy controller at another digest is CONVERGING", async () => {
+		const host = new FakeRunnerHost({ running: PREVIOUS });
+		const resolver = createRunnerHostResolver({
+			hostId: "box",
+			hostKind: "box-worker",
+			host: host.ports(),
+			now: () => host.nowMs,
+		});
+		const realizer = createRunnerHostRealizer({
+			// A resolver whose reconcile reports success without moving the
+			// host: the realizer must not take its word for the digest.
+			resolver: {
+				...resolver,
+				reconcile: async (request, transport) => {
+					const read = await resolver.read?.(request, transport);
+					if (!read) throw new Error("no controller");
+					return read;
+				},
+			},
+			hostId: "box",
+			credentialRef: CONFIG.credentialRef,
+			now: () => host.nowMs,
+		});
+		const observed = await realizer.converge(realizeInput(TARGET), ctx);
+		expect(observed.status).toBe(ReconcileStatus.CONVERGING);
+		expect(observed.setId).toBe("");
+		expect(observed.resources[0]?.physicalId).toBe(
+			`hobo-ci-runners/box/controller@${digestOf(PREVIOUS)}`,
+		);
+		expect((await realizer.converge(realizeInput(PREVIOUS), ctx)).status).toBe(
+			ReconcileStatus.CONVERGED,
+		);
+	});
+
 	it("a Set without a runner-host row is BLOCKED, the host untouched", async () => {
 		const host = new FakeRunnerHost({ running: PREVIOUS });
 		const realizer = createRunnerHostRealizer({
@@ -357,8 +424,14 @@ describe("runner-host health reaches Camp inventory (Station side)", () => {
 					tenant: station.config.tenant,
 					now: () => nowMs,
 				});
-			expect(await ingest(expired)).toEqual({ ingested: true, ready: false });
+			// Concurrent reports race nothing: each states readiness outright.
+			expect(
+				await Promise.all([ingest(expired), ingest(expired), ingest(expired)]),
+			).toEqual(Array(3).fill({ ingested: true, ready: false }));
 			const tainted = await station.cd.inventory.status(BOX);
+			expect(
+				tainted?.taints.filter((t) => t.key === RUNNER_HOST_UNREADY_TAINT),
+			).toHaveLength(1);
 			expect(
 				tainted?.taints.find((t) => t.key === RUNNER_HOST_UNREADY_TAINT)
 					?.effect,
@@ -380,7 +453,9 @@ describe("runner-host health reaches Camp inventory (Station side)", () => {
 				},
 				{ name: "hobo.ci/runner-host-ready", value: "true" },
 			];
-			expect(await ingest(fresh)).toEqual({ ingested: true, ready: true });
+			expect(await Promise.all([ingest(fresh), ingest(fresh)])).toEqual(
+				Array(2).fill({ ingested: true, ready: true }),
+			);
 			const cleared = await station.cd.inventory.status(BOX);
 			expect(
 				cleared?.taints.some((t) => t.key === RUNNER_HOST_UNREADY_TAINT),
@@ -399,6 +474,45 @@ describe("runner-host health reaches Camp inventory (Station side)", () => {
 		} finally {
 			await station.close();
 		}
+	});
+});
+
+describe("a failed health ingest is reported, never silent", () => {
+	it("rejects with the inventory's refusal, for the feed wrapper to hand to onError", async () => {
+		const refused = {
+			ok: false as const,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code: "camp-unknown",
+					message: "not declared",
+				}),
+			],
+		};
+		const unused = async () => {
+			throw new Error("not reached after a refused observe");
+		};
+		await expect(
+			ingestRunnerHostHealth({
+				inventory: {
+					observe: async () => refused,
+					taint: unused,
+					untaint: unused,
+				},
+				observation: create(ReconcileObservationRecordSchema, {
+					campId: BOX,
+					resources: [
+						create(ResourceObservationSchema, {
+							resource: "runner-controller",
+							kind: "hobo-ci.runner-host/v1",
+						}),
+					],
+				}),
+				tenant: "local",
+				now: () => 0,
+			}),
+		).rejects.toThrow(
+			`runner-host-health-ingest-failed: observe for ${BOX}: camp-unknown: not declared`,
+		);
 	});
 });
 
