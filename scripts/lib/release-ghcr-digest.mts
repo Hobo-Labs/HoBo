@@ -135,9 +135,19 @@ function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	return assertSha256ImageDigest(top, "imagetools digest");
 }
 
-/** argv for registry digest probe; built-in `digest` format (not custom `{{json .}}` templates). */
+/** argv for registry digest probe (default tabwriter output; no Go-template --format). */
 export function imagetoolsInspectArgv(tag: string): readonly string[] {
-	return ["buildx", "imagetools", "inspect", "--format", "digest", tag];
+	return ["buildx", "imagetools", "inspect", tag];
+}
+
+/** First top-level `Digest:` line from default `docker buildx imagetools inspect` output. */
+export function parseImagetoolsDefaultStdout(
+	stdout: string,
+): string | undefined {
+	const header = stdout.split(/^Manifests:\s*$/m)[0] ?? stdout;
+	const match = /^Digest:\s+(sha256:[a-f0-9]{64})\s*$/m.exec(header);
+	if (!match?.[1]) return undefined;
+	return assertSha256ImageDigest(match[1], "imagetools default Digest line");
 }
 
 /** Test and production parser for `docker buildx imagetools inspect --format json`. */
@@ -173,13 +183,16 @@ function imagetoolsInspectFailureSuffix(
 	const detail = stderr.trim();
 	if (!detail) {
 		if (status === 125) {
-			return ": docker exited 125 with no stderr (buildx plugin or imagetools --format likely rejected)";
+			return ": docker exited 125 with no stderr (buildx plugin missing or CLI rejected the invocation)";
 		}
 		return "";
 	}
 	const tail = detail.split("\n").slice(-3).join(" ");
+	if (/is not a docker command/u.test(detail)) {
+		return `: ${tail} (install/enable the docker buildx CLI plugin before release publish)`;
+	}
 	if (status === 125 && /Run 'docker COMMAND --help'/u.test(detail)) {
-		return `: ${tail} (use built-in imagetools --format digest; custom Go templates are unsupported on some CI docker/buildx builds)`;
+		return `: ${tail} (buildx imagetools rejected the invocation; prefer default inspect output without --format)`;
 	}
 	return `: ${tail}`;
 }
@@ -202,16 +215,13 @@ export function imagetoolsInspectTag(
 			`imagetools inspect ${tag} failed (status ${result.status ?? "?"})${suffix}`,
 		);
 	}
-	try {
-		const digest = assertSha256ImageDigest(
-			result.stdout.trim(),
-			`imagetools inspect ${tag}`,
+	const digest = parseImagetoolsDefaultStdout(result.stdout);
+	if (!digest) {
+		throw new Error(
+			`imagetools inspect ${tag} returned no top-level Digest line`,
 		);
-		return { digest };
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`imagetools inspect ${tag}: ${message}`);
 	}
+	return { digest };
 }
 
 /** Same bounded retry budget as `.github/actions/release-oci-attest` syft loop. */

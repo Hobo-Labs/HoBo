@@ -1,4 +1,4 @@
-import type { SpawnSyncReturns } from "node:child_process";
+import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import {
 	assertReleaseImageMatchesBuild,
@@ -8,6 +8,7 @@ import {
 	imagetoolsInspectTag,
 	isImagetoolsRegistryTagNotFound,
 	normalizeRepoDigestLine,
+	parseImagetoolsDefaultStdout,
 	resolveRegistryDigestForTag,
 	resolveRegistryDigestForTagWithRetry,
 	stderrReferencesExactTag,
@@ -19,6 +20,35 @@ const DIGEST_B =
 	"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const DIGEST_DEAD =
 	"sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+/** Empirical alpine:3.20 index digest (docker 27.3.1 + buildx 0.19.3, 2026-11-12). */
+const EMPIRICAL_ALPINE_INDEX_DIGEST =
+	"sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
+
+function syntheticDefaultImagetoolsStdout(tag: string, digest: string): string {
+	return [
+		`Name:      ${tag}`,
+		"MediaType: application/vnd.oci.image.index.v1+json",
+		`Digest:    ${digest}`,
+		"           ",
+		"Manifests: ",
+		"  Name:        example@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	].join("\n");
+}
+
+function empiricalDefaultImagetoolsStdout(): string | undefined {
+	const buildx = spawnSync("docker", ["buildx", "version"], {
+		encoding: "utf8",
+	});
+	if (buildx.status !== 0) return undefined;
+	const probe = spawnSync(
+		"docker",
+		["buildx", "imagetools", "inspect", "docker.io/library/alpine:3.20"],
+		{ encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
+	);
+	if (probe.status !== 0 || !probe.stdout?.trim()) return undefined;
+	return probe.stdout;
+}
 
 function stubSpawnSync(
 	status: number,
@@ -35,14 +65,12 @@ function stubSpawnSync(
 }
 
 describe("release ghcr digest helpers", () => {
-	it("builds docker buildx imagetools argv with built-in digest format", () => {
+	it("builds docker buildx imagetools argv without a Go-template --format", () => {
 		const tag = `ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.${Date.now()}`;
 		expect(imagetoolsInspectArgv(tag)).toEqual([
 			"buildx",
 			"imagetools",
 			"inspect",
-			"--format",
-			"digest",
 			tag,
 		]);
 	});
@@ -82,24 +110,37 @@ describe("release ghcr digest helpers", () => {
 		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
 	});
 
-	it("fails closed when imagetools returns success but not a digest", () => {
+	it("fails closed when imagetools returns success but no top-level Digest line", () => {
 		const run = vi.fn(() => stubSpawnSync(0, ""));
 		run.mockReturnValueOnce({
 			...stubSpawnSync(0, ""),
-			stdout: "not-a-digest",
+			stdout: "digest",
 		});
 		expect(() => imagetoolsInspectTag("ghcr.io/x/y:v1", run)).toThrow(
-			/sha256:/u,
+			/no top-level Digest line/u,
 		);
 	});
 
-	it("returns digest when tag exists (buildx digest format stdout)", () => {
+	it("parses empirical default buildx stdout (live or synthetic)", () => {
+		const stdout =
+			empiricalDefaultImagetoolsStdout() ??
+			syntheticDefaultImagetoolsStdout(
+				"docker.io/library/alpine:3.20",
+				EMPIRICAL_ALPINE_INDEX_DIGEST,
+			);
+		expect(parseImagetoolsDefaultStdout(stdout)).toBe(
+			EMPIRICAL_ALPINE_INDEX_DIGEST,
+		);
+	});
+
+	it("returns digest when tag exists (default buildx stdout)", () => {
 		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1";
+		const stdout = syntheticDefaultImagetoolsStdout(tag, DIGEST_B);
 		const inspected = imagetoolsInspectTag(
 			tag,
 			vi.fn(() => ({
 				...stubSpawnSync(0, ""),
-				stdout: `${DIGEST_B}\n`,
+				stdout,
 			})),
 		);
 		expect(inspected).toEqual({ digest: DIGEST_B });

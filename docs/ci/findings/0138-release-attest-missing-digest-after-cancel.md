@@ -17,7 +17,7 @@ Release run [43176733275](https://github.com/Hobo-Labs/HoBo/actions/runs/4317673
 
 ## Fix
 
-- Before building, resolve an existing GHCR tag with `docker buildx imagetools inspect --format digest` (built-in format only — custom `{{json .}}` templates exit 125 on some release runners), then always verify labels via `docker pull` of the immutable `name@sha256:…` ref (never the mutable tag alone).
+- Before building, resolve an existing GHCR tag with default `docker buildx imagetools inspect` (parse the top-level `Digest:` line; do not use `--format` — literal `digest` prints the word `digest`, and custom `{{json .}}` templates exit 125 on some release runners), then always verify labels via `docker pull` of the immutable `name@sha256:…` ref (never the mutable tag alone).
 - Fail closed unless digest strings match `sha256:` + 64 lowercase hex, `io.hobo.release.image` matches the train image id, and `org.opencontainers.image.revision` (and version when present) matches `HOBO_RELEASE_REVISION` for this run.
 - Write a normalized `ghcr.io/.../<image-id>@sha256:…` line either from reuse or after push, with registry fallback when local inspect is empty; full ref lines re-normalize through the expected GHCR name, and non–not-found imagetools failures fail closed (no silent overwrite).
 - Treat only buildx `ERROR: <ref>: not found` when the parsed ref equals the requested tag (no prefix/digest-suffix collisions), plus manifest/name-unknown phrases that reference the exact tag; labels without digest, foreign `RepoDigests` hosts, and generic `not found` stderr fail closed.
