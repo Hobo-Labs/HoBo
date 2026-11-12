@@ -96,7 +96,10 @@ type Harness = {
 	fake: FakeDelivery;
 };
 
-function harness(knobs: Partial<FakeKnobs> = {}): Harness {
+function harness(
+	knobs: Partial<FakeKnobs> = {},
+	overrides: Partial<NonNullable<YardRuntime["delivery"]>> = {},
+): Harness {
 	const store = createRuntimeLocalEventStore({
 		dataDir: path.join(
 			tmpdir(),
@@ -133,6 +136,7 @@ function harness(knobs: Partial<FakeKnobs> = {}): Harness {
 					tick += 1_000;
 					return tick;
 				},
+				...overrides,
 			},
 		},
 	};
@@ -380,6 +384,66 @@ describe("hobo up declares desired state (D13)", () => {
 						p.detail.includes("apply of sessions failed"),
 				),
 			).toBe(true);
+		});
+	});
+});
+
+describe("hobo up stays bounded and fail-closed", () => {
+	it("reports waiting after the bounded conductor passes when convergence is still in progress", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime, fake } = harness({ stall: true }, { maxPasses: 3 });
+			const result = await cliFor(runtime).run(["up", "--json"], { cwd });
+			expect(result.exitCode).toBe(1);
+			const envelope = envelopeOf(result.stdout);
+			expect(envelope.status).toBe("waiting");
+			expect(envelope.code).toBe("HOBO_UP_INCOMPLETE");
+			expect(fake.calls.filter((c) => c.port === "reconcileOnce")).toHaveLength(
+				3,
+			);
+		});
+	});
+
+	it("keeps deploying when the TelemetrySink fails, and says so in progress", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime } = harness(
+				{},
+				{
+					telemetry: {
+						async spans() {},
+						async metrics() {
+							throw new Error("collector offline");
+						},
+					},
+				},
+			);
+			const envelope = envelopeOf(
+				(await cliFor(runtime).run(["up", "--json"], { cwd })).stdout,
+			);
+			expect(envelope.status).toBe("deployed");
+			expect(
+				envelope.data.progress.some(
+					(p) =>
+						p.type === "telemetry.Unavailable" &&
+						p.detail.includes("collector offline"),
+				),
+			).toBe(true);
+		});
+	});
+
+	it("refuses --to and --rollback without CD delivery instead of ignoring them", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime } = harness();
+			const { delivery: _delivery, ...legacy } = runtime;
+			for (const argv of [
+				["up", "--rollback", "--json"],
+				["up", "--to", "some-alias", "--json"],
+			]) {
+				const result = await cliFor(legacy).run(argv, { cwd });
+				expect(result.exitCode).toBe(1);
+				const envelope = envelopeOf(result.stdout);
+				expect(envelope.code).toBe(DELIVERY_REFUSAL.deliveryUnavailable);
+				expect(envelope.remediation?.length).toBeGreaterThan(0);
+			}
 		});
 	});
 });

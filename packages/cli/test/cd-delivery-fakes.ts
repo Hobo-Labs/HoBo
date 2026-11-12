@@ -82,6 +82,8 @@ export type FakeKnobs = {
 	gate: "allow" | "deny" | "require-approval";
 	/** Resource whose apply the reconciler reports as BLOCKED. */
 	blockResource?: string;
+	/** The reconciler never finishes converging (provider still working). */
+	stall?: boolean;
 };
 
 export type FakeDelivery = Readonly<{
@@ -628,6 +630,7 @@ export function createFakeDelivery(input: {
 		const resolved = await resolvedOf(desiredSet);
 		const started = observation(ReconcileStatus.CONVERGING, []);
 		await report(campId, CD_EVENTS.ReconcileStarted, started, SYSTEM);
+		if (knobs.stall) return started;
 		const realized = `cd.${campId}.${desiredSet.setId}`;
 		const blocked = knobs.blockResource;
 		if (blocked && resolved.plan.resources.some((r) => r.name === blocked)) {

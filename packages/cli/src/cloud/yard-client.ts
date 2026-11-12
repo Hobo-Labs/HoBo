@@ -165,6 +165,31 @@ export interface DownResult {
 // it with bounded `reconcileOnce` passes. `down` is a teardown Delta through
 // the same gate. UpResult/DownResult are unchanged; CD detail travels in the
 // DeliveryReceipt beside them.
+//
+// Runbook (handed to WP21 for packages/hobo/CD.md):
+// - `HOBO_FREIGHT_STALE` / `HOBO_FREIGHT_FOREIGN`: `.hobo/freight.json` was
+//   built for another declaration or project. Run `hobo build`, then `hobo up`.
+// - `HOBO_FREIGHT_INVALID`: delete `.hobo/freight.json`, run `hobo build`.
+// - `HOBO_FREIGHT_ARTIFACT_MISSING`: the configured artifact store lacks the
+//   built bytes (store changed or swept). Run `hobo build` against it.
+// - `HOBO_FREIGHT_DECLARATION_MISMATCH`: the artifact store does not address
+//   bytes by sha256; fix the store configuration.
+// - `HOBO_FREIGHT_UNKNOWN`: `--to` names nothing recorded; list Freight with
+//   `hobo deploy freight list`.
+// - `HOBO_ROLLBACK_UNAVAILABLE`: the Camp has no predecessor Set (first deploy,
+//   or torn down); pin a revision with `--to`.
+// - `HOBO_PROMOTION_REFUSED`: the gate, lineage or authorization refused; the
+//   remediations carry the CD reasons verbatim.
+// - `HOBO_PROMOTION_HELD`: approval or a closed change window parks the
+//   promotion; `hobo deploy status` shows it, rerun `hobo up` afterwards.
+// - `HOBO_UP_INCOMPLETE` with status `needs-human`: the reconciler reported
+//   BLOCKED; its reasons are in the `deployment.ReconcileBlocked` progress
+//   line. With status `waiting`: convergence outlived the bounded passes
+//   (`YardDelivery.maxPasses`, default 16); rerun `hobo up` (idempotent) or
+//   let `hobo serve cd` finish it.
+// - `HOBO_DELIVERY_UNAVAILABLE`: `--to`/`--rollback` on a lane without CD.
+// Metrics: `hobo.cli.delivery.{outcome,passes,duration}` by verb and outcome;
+// a failing TelemetrySink shows as a `telemetry.Unavailable` progress line.
 
 // public-contract: where `hobo build` writes the hobo.freight-manifest/v1 document.
 export const FREIGHT_FILE = ".hobo/freight.json";
@@ -189,6 +214,7 @@ export const DELIVERY_REFUSAL = Object.freeze({
 	rollbackUnavailable: "HOBO_ROLLBACK_UNAVAILABLE",
 	promotionRefused: "HOBO_PROMOTION_REFUSED",
 	promotionHeld: "HOBO_PROMOTION_HELD",
+	deliveryUnavailable: "HOBO_DELIVERY_UNAVAILABLE",
 } as const);
 export type DeliveryRefusalCode =
 	(typeof DELIVERY_REFUSAL)[keyof typeof DELIVERY_REFUSAL];
@@ -462,6 +488,25 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				};
 			// D13: without budgeted hosting, `up` declares desired state.
 			if (!requiresHosting && driver) return driver.up(bindle, options);
+			// Revision selection exists only on desired state; never ignore it.
+			if (options.to !== undefined || options.rollback) {
+				const refused = refusal(
+					DELIVERY_REFUSAL.deliveryUnavailable,
+					`--to and --rollback select desired state, which this ${requiresHosting ? "budgeted hosting" : "Yard"} lane does not record`,
+					requiresHosting
+						? "Deploy the revision you want with `hobo up` (budgeted hosting has no revision selector)."
+						: "Run against a Yard composed with @hobo/cd delivery (`hobo serve cd` or the default local runtime), or deploy the revision you want with `hobo up`.",
+				);
+				return {
+					result: refusedResult(deploymentId, refused),
+					receipt: {
+						campId: deploymentId,
+						mode: options.rollback ? "rollback" : "to",
+						passes: 0,
+						refusal: refused.code,
+					},
+				};
+			}
 			const context: GatewayContext = {
 				tenant: session.tenant,
 				actor: session.principal,
