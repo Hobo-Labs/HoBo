@@ -1,0 +1,61 @@
+{
+	"consumer": {
+		"name": "HoBoHostingCoordinator"
+	},
+	"provider": {
+		"name": "ConvexManagementAPI"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"provenance": "Hand-authored consumer expectations (plan 0024 WP13) against the documented Convex Management API at https://api.convex.dev/v1 (docs.convex.dev/management-api, read 2026-11-12); not provider-verified or captured live traffic. The resolver issues only these two read operations."
+	},
+	"interactions": [
+		{
+			"description": "read the team access token scope",
+			"request": {
+				"method": "GET",
+				"path": "/v1/token_details",
+				"headers": {
+					"authorization": "Bearer <team-access-token>"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"type": "teamToken",
+					"teamId": 4242,
+					"name": "hobo-delivery"
+				}
+			}
+		},
+		{
+			"description": "list the deployments of the bound project",
+			"request": {
+				"method": "GET",
+				"path": "/v1/projects/7777/list_deployments",
+				"headers": {
+					"authorization": "Bearer <team-access-token>"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": [
+					{
+						"name": "happy-otter-123",
+						"deploymentType": "prod",
+						"projectId": 7777,
+						"createdTime": 1762905600000
+					},
+					{
+						"name": "quiet-heron-456",
+						"deploymentType": "dev",
+						"projectId": 7777,
+						"createdTime": 1762905600000
+					}
+				]
+			}
+		}
+	]
+}
