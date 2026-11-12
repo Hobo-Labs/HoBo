@@ -7,8 +7,8 @@
 // consumer (the run stops at `contract-blocked` with the dual window open),
 // and the contract pass runs with an empty one.
 import type { FreightRecord } from "../_generated/cd_pb.js";
-import { reason } from "../promotion/reasons.js";
 import type { CampId, CdContext, Outcome } from "../ports.js";
+import { reason } from "../promotion/reasons.js";
 
 export type TrailsPhase = "expand" | "contract";
 
@@ -27,7 +27,11 @@ export interface TrailsMigrations {
 		input: Readonly<{ freight: FreightRecord; campId: CampId }>,
 	): Promise<TrailsMigration | undefined>;
 	run(
-		input: Readonly<{ migrationId: string; campId: CampId; phase: TrailsPhase }>,
+		input: Readonly<{
+			migrationId: string;
+			campId: CampId;
+			phase: TrailsPhase;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<DataMigrationRun>>;
 }
@@ -46,7 +50,11 @@ export const TRAILS_REASON = Object.freeze({
 export type TrailsDeps = Readonly<{
 	/** Bound to `@hobo/trails` `executeDataMigration` by composition. */
 	execute: (
-		input: Readonly<{ migrationId: string; campId: CampId; phase: TrailsPhase }>,
+		input: Readonly<{
+			migrationId: string;
+			campId: CampId;
+			phase: TrailsPhase;
+		}>,
 	) => Promise<DataMigrationRun>;
 	/** Defaults to the Freight manifest label `hobo.cd/data-migration`. */
 	migrationFor?: TrailsMigrations["migrationFor"];

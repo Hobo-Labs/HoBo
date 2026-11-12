@@ -27,15 +27,6 @@ import {
 	type SetRecord,
 } from "../_generated/cd_pb.js";
 import { DELTA_SCHEMA } from "../events.js";
-import {
-	canonicalJson,
-	digestOf,
-	iso,
-	principalName,
-	sha256Hex,
-} from "../promotion/journal.js";
-import { previewSourceOf } from "../promotion/ids.js";
-import { reason } from "../promotion/reasons.js";
 import type {
 	CampId,
 	CdBase,
@@ -46,6 +37,15 @@ import type {
 	Outcome,
 	SetResolver,
 } from "../ports.js";
+import { previewSourceOf } from "../promotion/ids.js";
+import {
+	canonicalJson,
+	digestOf,
+	iso,
+	principalName,
+	sha256Hex,
+} from "../promotion/journal.js";
+import { reason } from "../promotion/reasons.js";
 
 /** The declaration type the planner reads (`@hobo/bindles` ManifestV1). */
 export type Declaration = Parameters<typeof plan>[0];
@@ -61,7 +61,9 @@ export type PlanningDeps = CdBase & {
 	readonly desired: DesiredStateReader;
 	readonly registry: PlannerRegistry;
 	/** The declaration the Freight's `declaration_hash` names. */
-	readonly declaration: (freight: FreightRecord) => Promise<Declaration | undefined>;
+	readonly declaration: (
+		freight: FreightRecord,
+	) => Promise<Declaration | undefined>;
 	/** Per-Camp planning inputs (WP18 builds them from @hobo/camps / @hobo/yards). */
 	readonly camp: (campId: CampId) => Promise<CampPlanning | undefined>;
 	/** Digest the build used for `declaration_hash`; defaults to canonical-JSON sha256. */
@@ -123,7 +125,11 @@ export function diffResolvedSets(
 		changes.push(
 			create(ResourceChangeSchema, {
 				resource: name,
-				kind: !was ? ChangeKind.ADD : !now ? ChangeKind.REMOVE : ChangeKind.UPDATE,
+				kind: !was
+					? ChangeKind.ADD
+					: !now
+						? ChangeKind.REMOVE
+						: ChangeKind.UPDATE,
 				provider:
 					source?.matches.find((m) => m.resource === name)?.providerId ??
 					node?.provider ??
@@ -139,7 +145,13 @@ export function diffResolvedSets(
 
 /** Deterministic Delta id (never starts with `set_`). */
 export function deltaIdFor(
-	input: Readonly<{ campId: string; freightId: string; intent: DeltaIntent; baseSetId: string; contentHash: string }>,
+	input: Readonly<{
+		campId: string;
+		freightId: string;
+		intent: DeltaIntent;
+		baseSetId: string;
+		contentHash: string;
+	}>,
 ): string {
 	return `delta_${sha256Hex(canonicalJson(input)).slice(0, 24)}`;
 }
@@ -147,7 +159,12 @@ export function deltaIdFor(
 /** Re-seal a resolved set with the gate decision that admitted it. */
 export function sealResolved(
 	resolved: ResolvedDeploymentSet,
-	gate: Readonly<{ decision: "allow" | "allow-degraded"; decisionId: string; obligations: readonly string[]; decidedAtMs: number }>,
+	gate: Readonly<{
+		decision: "allow" | "allow-degraded";
+		decisionId: string;
+		obligations: readonly string[];
+		decidedAtMs: number;
+	}>,
 ): ResolvedDeploymentSet {
 	return createResolvedDeploymentSet({
 		tenant: resolved.tenant,
@@ -162,7 +179,9 @@ export function sealResolved(
 			decidedAt: iso(gate.decidedAtMs),
 		},
 		secretRefs: resolved.secretRefs,
-		...(resolved.progressive === undefined ? {} : { progressive: resolved.progressive }),
+		...(resolved.progressive === undefined
+			? {}
+			: { progressive: resolved.progressive }),
 		setId: resolved.setId,
 	});
 }
@@ -177,14 +196,25 @@ function emptyResolved(
 		tenant,
 		environment,
 		campId,
-		plan: { schema: DEPLOYMENT_PLAN_SCHEMA, resources: [], dependencyOrder: [], objective },
+		plan: {
+			schema: DEPLOYMENT_PLAN_SCHEMA,
+			resources: [],
+			dependencyOrder: [],
+			objective,
+		},
 		matches: [],
-		gatekeeper: { decision: "allow", gatekeeperDecisionId: "pending", obligations: [], decidedAt: iso(0) },
+		gatekeeper: {
+			decision: "allow",
+			gatekeeperDecisionId: "pending",
+			obligations: [],
+			decidedAt: iso(0),
+		},
 	});
 }
 
 export function createPlanningResolver(d: PlanningDeps): SetResolver {
-	const declarationDigest = d.declarationDigest ?? ((value: Declaration) => digestOf(value));
+	const declarationDigest =
+		d.declarationDigest ?? ((value: Declaration) => digestOf(value));
 	const dataPorts = new Set<string>(d.dataPorts ?? DEFAULT_DATA_PORTS);
 
 	async function baseResolved(base: SetRecord | undefined) {
@@ -200,7 +230,10 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 		// A preview Camp is planned with its source Camp's inputs (env.Cloned).
 		const inherited = declared ?? (source ? await d.camp(source) : undefined);
 		const camp =
-			declared ?? (inherited ? { ...inherited, environment: `${inherited.environment}-preview` } : undefined);
+			declared ??
+			(inherited
+				? { ...inherited, environment: `${inherited.environment}-preview` }
+				: undefined);
 		if (!camp)
 			return {
 				ok: false,
@@ -272,12 +305,19 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 				campId,
 				plan: result.plan,
 				matches,
-				gatekeeper: { decision: "allow", gatekeeperDecisionId: `pending:${result.planHash}`, obligations: [], decidedAt: iso(0) },
+				gatekeeper: {
+					decision: "allow",
+					gatekeeperDecisionId: `pending:${result.planHash}`,
+					obligations: [],
+					decidedAt: iso(0),
+				},
 			}),
 		};
 	}
 
-	function withoutCompute(resolved: ResolvedDeploymentSet): ResolvedDeploymentSet {
+	function withoutCompute(
+		resolved: ResolvedDeploymentSet,
+	): ResolvedDeploymentSet {
 		const kept = resolved.plan.resources.filter((r) => dataPorts.has(r.port));
 		const names = new Set(kept.map((r) => r.name));
 		return createResolvedDeploymentSet({
@@ -286,8 +326,13 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 			campId: resolved.campId,
 			plan: {
 				schema: DEPLOYMENT_PLAN_SCHEMA,
-				resources: kept.map((r) => ({ ...r, deps: r.deps.filter((dep) => names.has(dep)) })),
-				dependencyOrder: resolved.plan.dependencyOrder.filter((name) => names.has(name)),
+				resources: kept.map((r) => ({
+					...r,
+					deps: r.deps.filter((dep) => names.has(dep)),
+				})),
+				dependencyOrder: resolved.plan.dependencyOrder.filter((name) =>
+					names.has(name),
+				),
 				objective: resolved.plan.objective,
 			},
 			matches: resolved.matches.filter((m) => names.has(m.resource)),
@@ -302,7 +347,12 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 			const before = await baseResolved(base);
 			let resolved: ResolvedDeploymentSet;
 			if (input.intent === "down") {
-				resolved = emptyResolved(d.tenant, before?.environment ?? input.campId, input.campId, before?.plan.objective ?? "min-cost");
+				resolved = emptyResolved(
+					d.tenant,
+					before?.environment ?? input.campId,
+					input.campId,
+					before?.plan.objective ?? "min-cost",
+				);
 			} else if (input.intent === "depart") {
 				resolved = before
 					? withoutCompute(before)
@@ -316,7 +366,9 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 			let infrastructureDiff: ResourceChange[] = [];
 			if (input.sourceCampId && input.sourceCampId !== input.campId) {
 				const sourceSet = await d.desired.current(input.sourceCampId);
-				const source = sourceSet ? await d.desired.resolved(sourceSet) : undefined;
+				const source = sourceSet
+					? await d.desired.resolved(sourceSet)
+					: undefined;
 				if (!source)
 					return {
 						ok: false,

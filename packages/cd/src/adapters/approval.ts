@@ -8,21 +8,8 @@
 // decision is authorized as the governed `approve` action (D15).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { DurableEventStore, HttpTransport, JsonObject } from "@hobo/core";
-import { CD_STREAMS } from "../events.js";
-import {
-	appendOnce,
-	emitMetric,
-	iso,
-	isJsonObject,
-	isNumber,
-	isText,
-	principalName,
-	readStream,
-	toJsonValue,
-} from "../promotion/journal.js";
-import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
-import { SAGA_FACT, sagaIdOf, STEP } from "../promotion/state.js";
 import { createSagaStepEmittedEvent } from "@hobo/events";
+import { CD_STREAMS } from "../events.js";
 import type {
 	ApprovalPort,
 	ApprovalStatus,
@@ -35,6 +22,19 @@ import type {
 	Outcome,
 	TelemetrySink,
 } from "../ports.js";
+import {
+	appendOnce,
+	emitMetric,
+	isJsonObject,
+	isNumber,
+	iso,
+	isText,
+	principalName,
+	readStream,
+	toJsonValue,
+} from "../promotion/journal.js";
+import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
+import { SAGA_FACT, STEP, sagaIdOf } from "../promotion/state.js";
 
 // public-contract: approval subjects are `promotion:<promotionId>/<scope>`,
 // where scope is a Camp id, optionally followed by `/<stage>` (rollouts).
@@ -52,7 +52,8 @@ export const APPROVAL_REASON = Object.freeze({
 } as const);
 
 // public-contract: CloudEvents type the webhook approver sends.
-export const APPROVAL_REQUESTED_TYPE = "dev.cdeventsx.hobo.approval.requested" as const;
+export const APPROVAL_REQUESTED_TYPE =
+	"dev.cdeventsx.hobo.approval.requested" as const;
 
 export type ApprovalSubject = Readonly<{ promotionId: string; scope: string }>;
 
@@ -61,7 +62,9 @@ export function approvalSubject(promotionId: string, scope: string): string {
 }
 
 /** Parse `promotion:<promotionId>/<scope>`; undefined when malformed. */
-export function parseApprovalSubject(subject: string): ApprovalSubject | undefined {
+export function parseApprovalSubject(
+	subject: string,
+): ApprovalSubject | undefined {
 	if (!subject.startsWith(APPROVAL_SUBJECT_PREFIX)) return undefined;
 	const rest = subject.slice(APPROVAL_SUBJECT_PREFIX.length);
 	const slash = rest.indexOf("/");
@@ -86,12 +89,21 @@ export function createApprovalLedger(
 		let requestedExpiresAtMs: number | undefined;
 		let decision: ApprovalFacts["decision"];
 		let decidedBy = "";
-		for (const event of await readStream(d.store, CD_STREAMS.promotion(subject.promotionId))) {
-			if (event.type !== SAGA_FACT.stepEmitted || !isJsonObject(event.data)) continue;
+		for (const event of await readStream(
+			d.store,
+			CD_STREAMS.promotion(subject.promotionId),
+		)) {
+			if (event.type !== SAGA_FACT.stepEmitted || !isJsonObject(event.data))
+				continue;
 			if (event.data.sagaId !== sagaIdOf(subject.promotionId)) continue;
 			const step = isText(event.data.step) ? String(event.data.step) : "";
-			const handle = isText(event.data.emittedType) ? String(event.data.emittedType) : "";
-			if (step === `${subject.scope}|${STEP.approvalRequested}` && requestedExpiresAtMs === undefined) {
+			const handle = isText(event.data.emittedType)
+				? String(event.data.emittedType)
+				: "";
+			if (
+				step === `${subject.scope}|${STEP.approvalRequested}` &&
+				requestedExpiresAtMs === undefined
+			) {
 				const ms = Number(handle.split(" ").at(-1));
 				requestedExpiresAtMs = Number.isFinite(ms) ? ms : 0;
 			}
@@ -133,13 +145,25 @@ export function createApprovalLedger(
 
 	return {
 		facts,
-		async request(subject: ApprovalSubject, expiresAtMs: number, ctx: CdContext): Promise<boolean> {
-			return append(subject, STEP.approvalRequested, `${approvalSubject(subject.promotionId, subject.scope)} ${expiresAtMs}`, ctx);
+		async request(
+			subject: ApprovalSubject,
+			expiresAtMs: number,
+			ctx: CdContext,
+		): Promise<boolean> {
+			return append(
+				subject,
+				STEP.approvalRequested,
+				`${approvalSubject(subject.promotionId, subject.scope)} ${expiresAtMs}`,
+				ctx,
+			);
 		},
 		async status(subject: ApprovalSubject): Promise<ApprovalStatus> {
 			const known = await facts(subject);
 			if (known.decision !== undefined) return known.decision;
-			if (known.requestedExpiresAtMs !== undefined && d.now() >= known.requestedExpiresAtMs)
+			if (
+				known.requestedExpiresAtMs !== undefined &&
+				d.now() >= known.requestedExpiresAtMs
+			)
 				return "expired";
 			return "pending";
 		},
@@ -151,16 +175,61 @@ export function createApprovalLedger(
 		): Promise<Outcome<ApprovalStatus>> {
 			const known = await facts(subject);
 			if (known.requestedExpiresAtMs === undefined)
-				return { ok: false, reasons: [reason(APPROVAL_REASON.unknownRequest, `no approval was requested for ${approvalSubject(subject.promotionId, subject.scope)}`, "Approve a request the promotion is waiting on (its record is AWAITING_APPROVAL).", subject.promotionId)] };
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							APPROVAL_REASON.unknownRequest,
+							`no approval was requested for ${approvalSubject(subject.promotionId, subject.scope)}`,
+							"Approve a request the promotion is waiting on (its record is AWAITING_APPROVAL).",
+							subject.promotionId,
+						),
+					],
+				};
 			if (known.decision !== undefined)
 				return known.decision === (approve ? "approved" : "denied")
 					? { ok: true, value: known.decision }
-					: { ok: false, reasons: [reason(APPROVAL_REASON.alreadyDecided, `request was already ${known.decision} by ${known.decidedBy}`, "A decision is final; request a new promotion to change it.", subject.promotionId)] };
+					: {
+							ok: false,
+							reasons: [
+								reason(
+									APPROVAL_REASON.alreadyDecided,
+									`request was already ${known.decision} by ${known.decidedBy}`,
+									"A decision is final; request a new promotion to change it.",
+									subject.promotionId,
+								),
+							],
+						};
 			if (ctx.now() >= known.requestedExpiresAtMs)
-				return { ok: false, reasons: [reason(APPROVAL_REASON.expired, `request expired at ${iso(known.requestedExpiresAtMs)}`, "Promote again to open a fresh approval request.", subject.promotionId)] };
-			const ok = await append(subject, approve ? STEP.approved : STEP.approvalDenied, by, ctx);
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							APPROVAL_REASON.expired,
+							`request expired at ${iso(known.requestedExpiresAtMs)}`,
+							"Promote again to open a fresh approval request.",
+							subject.promotionId,
+						),
+					],
+				};
+			const ok = await append(
+				subject,
+				approve ? STEP.approved : STEP.approvalDenied,
+				by,
+				ctx,
+			);
 			if (!ok)
-				return { ok: false, reasons: [reason(APPROVAL_REASON.journalConflict, "the decision could not be journaled", "Retry; another writer holds the promotion stream.", subject.promotionId)] };
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							APPROVAL_REASON.journalConflict,
+							"the decision could not be journaled",
+							"Retry; another writer holds the promotion stream.",
+							subject.promotionId,
+						),
+					],
+				};
 			return { ok: true, value: approve ? "approved" : "denied" };
 		},
 	};
@@ -171,13 +240,18 @@ type Ledger = ReturnType<typeof createApprovalLedger>;
 function subjectOrThrow(subject: string): ApprovalSubject {
 	const parsed = parseApprovalSubject(subject);
 	if (!parsed)
-		throw new Error(`${APPROVAL_REASON.subjectInvalid}: approval subject must be ${APPROVAL_SUBJECT_PREFIX}<promotionId>/<scope>, got ${subject}`);
+		throw new Error(
+			`${APPROVAL_REASON.subjectInvalid}: approval subject must be ${APPROVAL_SUBJECT_PREFIX}<promotionId>/<scope>, got ${subject}`,
+		);
 	return parsed;
 }
 
 export interface HumanApprover extends ApprovalPort {
 	/** The human's answer (CLI/MCP), authorized as the governed `approve` action. */
-	decide(input: Readonly<{ requestId: string; approve: boolean }>, ctx: CdContext): Promise<Outcome<ApprovalStatus>>;
+	decide(
+		input: Readonly<{ requestId: string; approve: boolean }>,
+		ctx: CdContext,
+	): Promise<Outcome<ApprovalStatus>>;
 }
 
 export type A2HApproverDeps = Readonly<{
@@ -203,11 +277,35 @@ async function authorizedDecision(
 ): Promise<Outcome<ApprovalStatus>> {
 	const subject = parseApprovalSubject(requestId);
 	if (!subject)
-		return { ok: false, reasons: [reason(APPROVAL_REASON.subjectInvalid, `malformed approval request id ${requestId}`, `Use the request id the promotion recorded (${APPROVAL_SUBJECT_PREFIX}<promotionId>/<camp>).`, requestId)] };
-	const authz = await authorizer.authorize("approve", { requestId, approve }, ctx);
+		return {
+			ok: false,
+			reasons: [
+				reason(
+					APPROVAL_REASON.subjectInvalid,
+					`malformed approval request id ${requestId}`,
+					`Use the request id the promotion recorded (${APPROVAL_SUBJECT_PREFIX}<promotionId>/<camp>).`,
+					requestId,
+				),
+			],
+		};
+	const authz = await authorizer.authorize(
+		"approve",
+		{ requestId, approve },
+		ctx,
+	);
 	if (!authz.ok) return authz;
 	if (authz.value.proposalOnly)
-		return { ok: false, reasons: [reason(APPROVAL_REASON.unauthorized, `${principalName(ctx.principal)} may only propose; an approval needs a human or granted principal`, "Ask an operator with the approve grant to decide (ADR-0094).", requestId)] };
+		return {
+			ok: false,
+			reasons: [
+				reason(
+					APPROVAL_REASON.unauthorized,
+					`${principalName(ctx.principal)} may only propose; an approval needs a human or granted principal`,
+					"Ask an operator with the approve grant to decide (ADR-0094).",
+					requestId,
+				),
+			],
+		};
 	const result = await ledger.decide(subject, approve, by, ctx);
 	emitMetric(telemetry, {
 		name: PROMOTION_METRIC.approvalDecided,
@@ -232,7 +330,10 @@ export function createA2HApprover(d: A2HApproverDeps): HumanApprover {
 				answer: "PromotionService.approve or HumanApprover.decide",
 			};
 			try {
-				await d.notify.notify({ channel, subject: input.subject, body: handoff }, ctx);
+				await d.notify.notify(
+					{ channel, subject: input.subject, body: handoff },
+					ctx,
+				);
 			} catch {
 				// The request is journaled; the handoff is re-sent by the next request call.
 			}
@@ -248,7 +349,16 @@ export function createA2HApprover(d: A2HApproverDeps): HumanApprover {
 			return subject ? ledger.status(subject) : "denied";
 		},
 		decide({ requestId, approve }, ctx) {
-			return authorizedDecision(d.authorizer, ledger, requestId, approve, principalName(ctx.principal), ctx, d.telemetry, d.tenant);
+			return authorizedDecision(
+				d.authorizer,
+				ledger,
+				requestId,
+				approve,
+				principalName(ctx.principal),
+				ctx,
+				d.telemetry,
+				d.tenant,
+			);
 		},
 	};
 }
@@ -289,21 +399,31 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 	const ledger = createApprovalLedger(d);
 
 	async function key(): Promise<string> {
-		const resolved = await d.secrets.resolver.resolve(d.secrets.ref, "cd.approval.webhook");
+		const resolved = await d.secrets.resolver.resolve(
+			d.secrets.ref,
+			"cd.approval.webhook",
+		);
 		const secret = resolved.secret ?? resolved.value ?? "";
 		if (secret === "") throw new Error("approval webhook secret is empty");
 		return secret;
 	}
 
 	async function sign(payload: string): Promise<string> {
-		return createHmac("sha256", await key()).update(payload).digest("base64url");
+		return createHmac("sha256", await key())
+			.update(payload)
+			.digest("base64url");
 	}
 
 	return {
 		async request(input, ctx) {
 			const subject = subjectOrThrow(input.subject);
 			await ledger.request(subject, input.expiresAtMs, ctx);
-			const payload = b64url(JSON.stringify({ requestId: input.subject, expiresAtMs: input.expiresAtMs }));
+			const payload = b64url(
+				JSON.stringify({
+					requestId: input.subject,
+					expiresAtMs: input.expiresAtMs,
+				}),
+			);
 			const token = `${payload}.${await sign(payload)}`;
 			const event = {
 				specversion: "1.0",
@@ -324,7 +444,9 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 			const response = await d.http({
 				method: "POST",
 				url: d.endpoint,
-				headers: { "content-type": "application/cloudevents+json; charset=utf-8" },
+				headers: {
+					"content-type": "application/cloudevents+json; charset=utf-8",
+				},
 				body: JSON.stringify(event),
 				timeoutMs: 5_000,
 				maxResponseBytes: 65_536,
@@ -332,7 +454,11 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 			emitMetric(d.telemetry, {
 				name: PROMOTION_METRIC.approvalRequested,
 				atMs: ctx.now(),
-				attributes: { tenant: d.tenant, approver: "webhook", status: String(response.status) },
+				attributes: {
+					tenant: d.tenant,
+					approver: "webhook",
+					status: String(response.status),
+				},
 			});
 			if (response.status < 200 || response.status >= 300)
 				throw new Error(`approval endpoint answered ${response.status}`);
@@ -343,21 +469,24 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 			return subject ? ledger.status(subject) : "denied";
 		},
 		async callback(request, ctx) {
-			if (request.method !== "POST") return respond(405, { error: "method-not-allowed" });
+			if (request.method !== "POST")
+				return respond(405, { error: "method-not-allowed" });
 			let parsed: unknown;
 			try {
 				parsed = JSON.parse(new TextDecoder().decode(request.body));
 			} catch {
 				return respond(400, { error: "body-not-json" });
 			}
-			if (!isJsonObject(parsed)) return respond(400, { error: "body-not-object" });
+			if (!isJsonObject(parsed))
+				return respond(400, { error: "body-not-object" });
 			const token = isText(parsed.token) ? String(parsed.token) : "";
 			const decision = parsed.decision;
 			const approver = isText(parsed.approver) ? String(parsed.approver) : "";
 			if ((decision !== "approved" && decision !== "denied") || approver === "")
 				return respond(400, { error: "decision-and-approver-required" });
 			const dot = token.lastIndexOf(".");
-			if (dot <= 0) return respond(401, { error: APPROVAL_REASON.signatureInvalid });
+			if (dot <= 0)
+				return respond(401, { error: APPROVAL_REASON.signatureInvalid });
 			const payload = token.slice(0, dot);
 			const expected = Buffer.from(await sign(payload));
 			const given = Buffer.from(token.slice(dot + 1));
@@ -369,9 +498,14 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 			} catch {
 				return respond(401, { error: APPROVAL_REASON.signatureInvalid });
 			}
-			if (!isJsonObject(claims) || !isText(claims.requestId) || !isNumber(claims.expiresAtMs))
+			if (
+				!isJsonObject(claims) ||
+				!isText(claims.requestId) ||
+				!isNumber(claims.expiresAtMs)
+			)
 				return respond(401, { error: APPROVAL_REASON.signatureInvalid });
-			if (ctx.now() >= Number(claims.expiresAtMs)) return respond(410, { error: APPROVAL_REASON.expired });
+			if (ctx.now() >= Number(claims.expiresAtMs))
+				return respond(410, { error: APPROVAL_REASON.expired });
 			const result = await authorizedDecision(
 				d.authorizer,
 				ledger,
@@ -384,10 +518,20 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 			);
 			if (!result.ok) {
 				const code = result.reasons[0]?.code ?? APPROVAL_REASON.unknownRequest;
-				const status = code === APPROVAL_REASON.alreadyDecided ? 409 : code === APPROVAL_REASON.expired ? 410 : code === APPROVAL_REASON.unauthorized ? 403 : 404;
+				const status =
+					code === APPROVAL_REASON.alreadyDecided
+						? 409
+						: code === APPROVAL_REASON.expired
+							? 410
+							: code === APPROVAL_REASON.unauthorized
+								? 403
+								: 404;
 				return respond(status, { error: code });
 			}
-			return respond(200, { requestId: String(claims.requestId), status: result.value });
+			return respond(200, {
+				requestId: String(claims.requestId),
+				status: result.value,
+			});
 		},
 	};
 }

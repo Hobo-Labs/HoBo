@@ -71,7 +71,10 @@ export {
 	PROMOTION_REASON,
 	type PromotionReasonCode,
 } from "./reasons.js";
-export { createPromotionService, type PromotionServiceDeps } from "./service.js";
+export {
+	createPromotionService,
+	type PromotionServiceDeps,
+} from "./service.js";
 export {
 	foldPromotion,
 	PROMOTION_SAGA,

@@ -41,9 +41,6 @@ import {
 	FANOUT_BUDGET_EXCEEDED,
 	OWNERSHIP_CONFLICT,
 } from "../events.js";
-import { previewSourceOf } from "../promotion/ids.js";
-import { digestOf, emitMetric, iso } from "../promotion/journal.js";
-import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
 import type {
 	CampId,
 	CampPolicy,
@@ -67,6 +64,9 @@ import type {
 	TelemetrySink,
 	TopologyReader,
 } from "../ports.js";
+import { previewSourceOf } from "../promotion/ids.js";
+import { digestOf, emitMetric, iso } from "../promotion/journal.js";
+import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
 
 // public-contract: reason codes the deploy gate adds beside Gatekeeper's own.
 export const GATE_REASON = Object.freeze({
@@ -89,7 +89,10 @@ export type ContractState = Readonly<{
 	candidate: readonly BoundaryContract[];
 }>;
 
-export type EnforcedRail = Readonly<{ railDigest: Digest; policyPack: PolicyPack }>;
+export type EnforcedRail = Readonly<{
+	railDigest: Digest;
+	policyPack: PolicyPack;
+}>;
 
 export type DeployGateDeps = CdBase & {
 	readonly topology: TopologyReader;
@@ -100,13 +103,22 @@ export type DeployGateDeps = CdBase & {
 	/** Policy pack of an enforced Rail digest. */
 	readonly resolvePack: (railDigest: Digest) => Promise<PolicyPack>;
 	/** The Station's active Rail; used when a Camp has no enforced binding. */
-	readonly stationRail: (stationId: string) => Promise<EnforcedRail | undefined>;
+	readonly stationRail: (
+		stationId: string,
+	) => Promise<EnforcedRail | undefined>;
 	readonly contracts: (
-		input: Readonly<{ campId: CampId; freight: FreightRecord; resolved: ResolvedDeploymentSet; current?: SetRecord }>,
+		input: Readonly<{
+			campId: CampId;
+			freight: FreightRecord;
+			resolved: ResolvedDeploymentSet;
+			current?: SetRecord;
+		}>,
 	) => Promise<ContractState>;
 	/** Data classifications and residency constraints of the Freight's subject. */
 	readonly subject: (freight: FreightRecord) => Promise<PlacementSubject>;
-	readonly residencyCatalog?: Readonly<Record<string, readonly JurisdictionId[]>>;
+	readonly residencyCatalog?: Readonly<
+		Record<string, readonly JurisdictionId[]>
+	>;
 	readonly trust?: Readonly<{
 		requirement: TrustRequirement;
 		evidence: (subjectId: string) => TrustEvidence | undefined;
@@ -116,14 +128,20 @@ export type DeployGateDeps = CdBase & {
 };
 
 const REMEDIATION: Readonly<Record<string, string>> = {
-	contracts: "Deploy a compatible version first, dual-publish the missing fields, or add a compatibility shim.",
-	policy: "Change the declaration to satisfy the Rail's policy, or promote a Rail that permits it.",
+	contracts:
+		"Deploy a compatible version first, dual-publish the missing fields, or add a compatibility shim.",
+	policy:
+		"Change the declaration to satisfy the Rail's policy, or promote a Rail that permits it.",
 	obligations: "Satisfy the pending obligations, then approve the promotion.",
 	cost: "Raise the quota through the Station budget authority or reduce the requested resources.",
-	residency: "Choose a Camp whose declared Yard regions satisfy the residency constraint.",
+	residency:
+		"Choose a Camp whose declared Yard regions satisfy the residency constraint.",
 };
 
-function toReasons(decision: GatekeeperDecision, campId: string): ReasonRecord[] {
+function toReasons(
+	decision: GatekeeperDecision,
+	campId: string,
+): ReasonRecord[] {
 	return decision.reasons
 		.filter((r) => r.gate !== "effects" && r.gate !== "resilience")
 		.map((r) => {
@@ -131,7 +149,8 @@ function toReasons(decision: GatekeeperDecision, campId: string): ReasonRecord[]
 			const remediation =
 				Array.isArray(fixes) && fixes.length > 0
 					? fixes.map(String).join("; ")
-					: (REMEDIATION[r.gate] ?? "Inspect the gate decision and correct the cause.");
+					: (REMEDIATION[r.gate] ??
+						"Inspect the gate decision and correct the cause.");
 			return reason(r.code, r.message, remediation, `${r.gate}:${campId}`);
 		});
 }
@@ -144,7 +163,9 @@ function residencyVerdict(
 	const applicable = subject.residency.filter(
 		(constraint) =>
 			constraint.classifications.length === 0 ||
-			constraint.classifications.some((c) => subject.classifications.includes(c)),
+			constraint.classifications.some((c) =>
+				subject.classifications.includes(c),
+			),
 	);
 	if (applicable.length === 0) return undefined;
 	if (camp.regions.length === 0)
@@ -157,7 +178,12 @@ function residencyVerdict(
 				},
 			],
 		};
-	const reasons: { code: string; message: string; region?: string; jurisdictions?: readonly string[] }[] = [];
+	const reasons: {
+		code: string;
+		message: string;
+		region?: string;
+		jurisdictions?: readonly string[];
+	}[] = [];
 	for (const constraint of applicable) {
 		for (const region of [...camp.regions].sort()) {
 			const result = evaluateResidency({
@@ -177,8 +203,13 @@ function residencyVerdict(
 	return { ok: reasons.length === 0, reasons };
 }
 
-function provenanceReasons(freight: FreightRecord, campId: string): ReasonRecord[] {
-	const unverified = (freight.manifest?.provenance ?? []).filter((p) => !p.verified);
+function provenanceReasons(
+	freight: FreightRecord,
+	campId: string,
+): ReasonRecord[] {
+	const unverified = (freight.manifest?.provenance ?? []).filter(
+		(p) => !p.verified,
+	);
 	return unverified.map((p) =>
 		reason(
 			GATE_REASON.provenanceUnverified,
@@ -205,7 +236,11 @@ function trustReasons(
 			return evidence === undefined ? { subjectId } : { subjectId, evidence };
 		});
 	if (subjects.length === 0) return [];
-	const verdict = evaluateTrustBundle({ subjects, requirement: trust.requirement, nowMs });
+	const verdict = evaluateTrustBundle({
+		subjects,
+		requirement: trust.requirement,
+		nowMs,
+	});
 	if (verdict.selectable) return [];
 	const reasons = verdict.subjects
 		.filter((s) => !s.verdict.selectable)
@@ -236,7 +271,9 @@ async function ownershipReasons(
 	resolved: ResolvedDeploymentSet,
 	campId: CampId,
 ): Promise<ReasonRecord[]> {
-	const conflicts = (await posture.conflicts(campId)).filter((f) => f.ownershipConflict);
+	const conflicts = (await posture.conflicts(campId)).filter(
+		(f) => f.ownershipConflict,
+	);
 	const present = new Set(resolved.plan.resources.map((r) => r.name));
 	const changed = new Set(delta.changes.map((c) => c.resource));
 	return conflicts
@@ -289,7 +326,9 @@ export async function topologyOf(
 }
 
 export function createDeployGate(d: DeployGateDeps): DeployGate {
-	async function enforcedRail(camp: CampTopology): Promise<EnforcedRail | undefined> {
+	async function enforcedRail(
+		camp: CampTopology,
+	): Promise<EnforcedRail | undefined> {
 		const binding = await d.campPolicy.binding(camp.campId);
 		if (binding && binding.enforcedRailDigest !== "") {
 			// SAFETY: binding digests are written by CampPolicy from Rail Freight (sha256:<hex>).
@@ -340,7 +379,12 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 			const extra: ReasonRecord[] = [
 				...provenanceReasons(input.freight, campId),
 				...trustReasons(d.trust, input.resolved, nowMs, campId),
-				...(await ownershipReasons(d.posture, input.delta, input.resolved, camp.campId)),
+				...(await ownershipReasons(
+					d.posture,
+					input.delta,
+					input.resolved,
+					camp.campId,
+				)),
 			];
 			if (contracts.deployed === undefined && input.current !== undefined)
 				extra.push(
@@ -389,7 +433,8 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 				...(residency === undefined ? {} : { residency }),
 			};
 			const enforced = await enforcedRail(camp);
-			const enforcedPack = enforced?.policyPack ?? createPermissiveDefaultPack();
+			const enforcedPack =
+				enforced?.policyPack ?? createPermissiveDefaultPack();
 			const { decision, effect } = decide(enforcedPack, base, extra);
 			const reasons = [...toReasons(decision, campId), ...extra];
 			const window = await d.windows.evaluate({
@@ -438,13 +483,24 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 					emitMetric(d.telemetry, {
 						name: PROMOTION_METRIC.shadowDiverged,
 						atMs: nowMs,
-						attributes: { tenant: d.tenant, camp: campId, enforced: effect, candidate: shadowed.effect },
+						attributes: {
+							tenant: d.tenant,
+							camp: campId,
+							enforced: effect,
+							candidate: shadowed.effect,
+						},
 					});
 			}
 			emitMetric(d.telemetry, {
 				name: PROMOTION_METRIC.gateDecided,
 				atMs: nowMs,
-				attributes: { tenant: d.tenant, camp: campId, intent: input.intent, effect, window: window.open ? "open" : "closed" },
+				attributes: {
+					tenant: d.tenant,
+					camp: campId,
+					intent: input.intent,
+					effect,
+					window: window.open ? "open" : "closed",
+				},
 			});
 			return {
 				decisionId,
@@ -474,7 +530,9 @@ export interface FanoutAggregateGate {
 	evaluate(
 		input: Readonly<{ fanoutId: FanoutId; freight: FreightRecord }>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ decisionId: string; camps: number; cost: number }>>>;
+	): Promise<
+		Outcome<Readonly<{ decisionId: string; camps: number; cost: number }>>
+	>;
 }
 
 export type FanoutAggregateDeps = Readonly<{
@@ -484,7 +542,9 @@ export type FanoutAggregateDeps = Readonly<{
 	topology: TopologyReader;
 	rails: RailDeliveryReader;
 	/** Cost quote for running the Freight in one Camp (the pricing authority). */
-	quote: (input: Readonly<{ freight: FreightRecord; campId: CampId }>) => Promise<number | undefined>;
+	quote: (
+		input: Readonly<{ freight: FreightRecord; campId: CampId }>,
+	) => Promise<number | undefined>;
 	/** The Station budget (the hosting budget authority); undefined when it has none recorded. */
 	budget: (stationId: string) => Promise<StationBudget | undefined>;
 	/** Station entitlement for the number of Camps one fan-out may reach. */
@@ -492,8 +552,15 @@ export type FanoutAggregateDeps = Readonly<{
 	telemetry: TelemetrySink;
 }>;
 
-export function createFanoutAggregateGate(d: FanoutAggregateDeps): FanoutAggregateGate {
-	const refusal = (code: string, message: string, remediation: string, subject: string) => ({
+export function createFanoutAggregateGate(
+	d: FanoutAggregateDeps,
+): FanoutAggregateGate {
+	const refusal = (
+		code: string,
+		message: string,
+		remediation: string,
+		subject: string,
+	) => ({
 		ok: false as const,
 		reasons: [reason(code, message, remediation, subject)],
 	});
@@ -501,10 +568,20 @@ export function createFanoutAggregateGate(d: FanoutAggregateDeps): FanoutAggrega
 		async evaluate({ fanoutId, freight }, ctx) {
 			const status = await d.fanout.get(fanoutId);
 			if (!status)
-				return refusal(GATE_REASON.fanoutUnknown, `fan-out ${fanoutId} is not recorded`, "Start the fan-out through FanoutController before promoting its Camps.", fanoutId);
+				return refusal(
+					GATE_REASON.fanoutUnknown,
+					`fan-out ${fanoutId} is not recorded`,
+					"Start the fan-out through FanoutController before promoting its Camps.",
+					fanoutId,
+				);
 			const decision = await d.placement.decision(status.decisionId);
 			if (!decision)
-				return refusal(GATE_REASON.fanoutDecisionUnknown, `placement decision ${status.decisionId} is not recorded`, "Re-decide the placement; a fan-out only schedules a recorded decision.", fanoutId);
+				return refusal(
+					GATE_REASON.fanoutDecisionUnknown,
+					`placement decision ${status.decisionId} is not recorded`,
+					"Re-decide the placement; a fan-out only schedules a recorded decision.",
+					fanoutId,
+				);
 			const selected =
 				decision.groups.length > 0
 					? decision.groups.flatMap((g) => g.campIds)
@@ -519,9 +596,14 @@ export function createFanoutAggregateGate(d: FanoutAggregateDeps): FanoutAggrega
 				byStation.set(station, [...(byStation.get(station) ?? []), campId]);
 			}
 			let totalCost = 0;
-			for (const [stationId, camps] of [...byStation.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+			for (const [stationId, camps] of [...byStation.entries()].sort(
+				([a], [b]) => a.localeCompare(b),
+			)) {
 				const rail = await d.rails.forStation(stationId);
-				const railMax = rail && rail.maxFanoutCamps > 0 ? rail.maxFanoutCamps : CD_DEFAULTS.maxFanoutCamps;
+				const railMax =
+					rail && rail.maxFanoutCamps > 0
+						? rail.maxFanoutCamps
+						: CD_DEFAULTS.maxFanoutCamps;
 				const entitled = (await d.entitlement?.(stationId)) ?? railMax;
 				const limit = Math.min(railMax, entitled);
 				if (camps.length > limit)
@@ -535,12 +617,22 @@ export function createFanoutAggregateGate(d: FanoutAggregateDeps): FanoutAggrega
 				for (const campId of camps) {
 					const quote = await d.quote({ freight, campId });
 					if (quote === undefined)
-						return refusal(GATE_REASON.quoteMissing, `no cost quote for Camp ${campId}`, "Record a price for the Camp's providers in the pricing catalog; the aggregate never assumes zero cost.", campId);
+						return refusal(
+							GATE_REASON.quoteMissing,
+							`no cost quote for Camp ${campId}`,
+							"Record a price for the Camp's providers in the pricing catalog; the aggregate never assumes zero cost.",
+							campId,
+						);
 					cost += quote;
 				}
 				const budget = await d.budget(stationId);
 				if (!budget)
-					return refusal(GATE_REASON.budgetMissing, `Station ${stationId} has no budget evidence`, "Record the Station budget with the hosting budget authority before fanning out.", stationId);
+					return refusal(
+						GATE_REASON.budgetMissing,
+						`Station ${stationId} has no budget evidence`,
+						"Record the Station budget with the hosting budget authority before fanning out.",
+						stationId,
+					);
 				if (budget.used + cost > budget.limit)
 					return refusal(
 						GATE_REASON.fanoutBudget,
@@ -553,7 +645,12 @@ export function createFanoutAggregateGate(d: FanoutAggregateDeps): FanoutAggrega
 			emitMetric(d.telemetry, {
 				name: PROMOTION_METRIC.gateDecided,
 				atMs: ctx.now(),
-				attributes: { tenant: d.tenant, fanout: fanoutId, effect: "allow", scope: "aggregate" },
+				attributes: {
+					tenant: d.tenant,
+					fanout: fanoutId,
+					effect: "allow",
+					scope: "aggregate",
+				},
 			});
 			return {
 				ok: true,

@@ -5,23 +5,28 @@
 // (structured mode) to an operator-configured endpoint.
 import type { HttpTransport, JsonObject } from "@hobo/core";
 import {
-	type HookRecord,
 	HookKind,
 	HookPoint,
+	type HookRecord,
 	type ReasonRecord,
 } from "../_generated/cd_pb.js";
-import { canonicalJson, emitMetric, iso, sha256Hex } from "../promotion/journal.js";
-import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
 import type {
+	CampId,
 	CdContext,
+	FreightId,
 	NotificationPort,
 	Outcome,
 	RunbookExecutor,
 	TelemetrySink,
 	VerifyPort,
-	CampId,
-	FreightId,
 } from "../ports.js";
+import {
+	canonicalJson,
+	emitMetric,
+	iso,
+	sha256Hex,
+} from "../promotion/journal.js";
+import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
 
 export type HookSubject = Readonly<{
 	promotionId: string;
@@ -38,7 +43,11 @@ export interface HookRunner {
 	 * fatal). ON_FAILURE never fails: it runs every hook and reports.
 	 */
 	run(
-		input: Readonly<{ hooks: readonly HookRecord[]; point: HookPoint; subject: HookSubject }>,
+		input: Readonly<{
+			hooks: readonly HookRecord[];
+			point: HookPoint;
+			subject: HookSubject;
+		}>,
 		ctx: CdContext,
 	): Promise<Outcome<number>>;
 }
@@ -97,7 +106,11 @@ export function createHookRunner(
 			}
 			case HookKind.SUITE: {
 				const result = await d.suites.run(
-					{ suite: hook.ref, campId: subject.campId, freightId: subject.freightId },
+					{
+						suite: hook.ref,
+						campId: subject.campId,
+						freightId: subject.freightId,
+					},
 					ctx,
 				);
 				if (result.ok) return undefined;
@@ -111,14 +124,22 @@ export function createHookRunner(
 			case HookKind.NOTIFY: {
 				try {
 					await d.notify.notify(
-						{ channel: hook.ref, subject: `${subject.promotionId}/${subject.campId}`, body: args },
+						{
+							channel: hook.ref,
+							subject: `${subject.promotionId}/${subject.campId}`,
+							body: args,
+						},
 						ctx,
 					);
 				} catch (error) {
 					emitMetric(d.telemetry, {
 						name: PROMOTION_METRIC.hookRun,
 						atMs: ctx.now(),
-						attributes: { kind: "notify", point: hookPointName(point), outcome: "error" },
+						attributes: {
+							kind: "notify",
+							point: hookPointName(point),
+							outcome: "error",
+						},
 					});
 					void error;
 				}
@@ -144,7 +165,9 @@ export function createHookRunner(
 					failure = await runOne(hook, point, subject, ctx);
 				} catch (error) {
 					failure = reason(
-						hook.kind === HookKind.SUITE ? HOOK_REASON.suiteFailed : HOOK_REASON.runbookFailed,
+						hook.kind === HookKind.SUITE
+							? HOOK_REASON.suiteFailed
+							: HOOK_REASON.runbookFailed,
 						`hook ${hook.ref} threw at ${hookPointName(point)}: ${error instanceof Error ? error.message : String(error)}`,
 						"Fix the hook target; the promotion retries the hook on its next tick.",
 						subject.campId,
@@ -173,7 +196,8 @@ export function createHookRunner(
 }
 
 // public-contract: CloudEvents type of a NOTIFY hook delivery.
-export const NOTIFY_EVENT_TYPE = "dev.cdeventsx.hobo.promotion.hook.notified" as const;
+export const NOTIFY_EVENT_TYPE =
+	"dev.cdeventsx.hobo.promotion.hook.notified" as const;
 
 /**
  * NotificationPort over the CloudEvents HTTP binding (structured mode,
@@ -192,10 +216,17 @@ export function createCloudEventsNotifier(
 	return {
 		async notify(input, ctx) {
 			const url = d.endpoint(input.channel);
-			if (!url) throw new Error(`no endpoint configured for channel ${input.channel}`);
+			if (!url)
+				throw new Error(`no endpoint configured for channel ${input.channel}`);
 			const event = {
 				specversion: "1.0",
-				id: sha256Hex(canonicalJson({ channel: input.channel, subject: input.subject, data: input.body })),
+				id: sha256Hex(
+					canonicalJson({
+						channel: input.channel,
+						subject: input.subject,
+						data: input.body,
+					}),
+				),
 				source: d.source,
 				type: NOTIFY_EVENT_TYPE,
 				subject: input.subject,
@@ -206,7 +237,9 @@ export function createCloudEventsNotifier(
 			const response = await d.http({
 				method: "POST",
 				url,
-				headers: { "content-type": "application/cloudevents+json; charset=utf-8" },
+				headers: {
+					"content-type": "application/cloudevents+json; charset=utf-8",
+				},
 				body: JSON.stringify(event),
 				timeoutMs: d.timeoutMs ?? 5_000,
 				maxResponseBytes: 65_536,

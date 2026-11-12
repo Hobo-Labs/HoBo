@@ -52,7 +52,10 @@ export function clock(start = T0): Clock {
 	};
 }
 
-export function context(now: () => number, principal: PrincipalRef = OPERATOR): CdContext {
+export function context(
+	now: () => number,
+	principal: PrincipalRef = OPERATOR,
+): CdContext {
 	return { tenant: TENANT, principal, now };
 }
 
@@ -62,19 +65,28 @@ export class MemoryEventStore implements DurableEventStore {
 	private nextId = 1;
 	constructor(private readonly now: () => number = () => T0) {}
 
-	async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
+	async append(
+		streamId: string,
+		events: EventInput[],
+		opts: AppendOptions,
+	): Promise<AppendResult> {
 		const stream = this.streams.get(streamId) ?? [];
 		const deduped: EventEnvelope[] = [];
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing = key === undefined ? undefined : stream.find((event) => event.meta?.idempotencyKey === key);
+			const existing =
+				key === undefined
+					? undefined
+					: stream.find((event) => event.meta?.idempotencyKey === key);
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
 		if (fresh.length === 0) return { streamId, appended: [], deduped };
 		if (opts.expectedSeq !== stream.length)
-			throw new Error(`expected seq ${opts.expectedSeq} but ${streamId} is at ${stream.length}`);
+			throw new Error(
+				`expected seq ${opts.expectedSeq} but ${streamId} is at ${stream.length}`,
+			);
 		const appended: EventEnvelope[] = [];
 		for (const input of fresh) {
 			const envelope: EventEnvelope = {
@@ -101,16 +113,23 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {
-		for (const event of this.streams.get(streamId) ?? []) if (event.seq > fromSeq) yield event;
+		for (const event of this.streams.get(streamId) ?? [])
+			if (event.seq > fromSeq) yield event;
 	}
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		let count = 0;
 		for (const item of this.all.slice()) {
-			if (options.after !== undefined && item.position <= options.after) continue;
+			if (options.after !== undefined && item.position <= options.after)
+				continue;
 			if (options.tenant && item.event.tenant !== options.tenant) continue;
-			if (options.filter?.type && item.event.type !== options.filter.type) continue;
-			if (options.filter?.streamId && item.event.streamId !== options.filter.streamId) continue;
+			if (options.filter?.type && item.event.type !== options.filter.type)
+				continue;
+			if (
+				options.filter?.streamId &&
+				item.event.streamId !== options.filter.streamId
+			)
+				continue;
 			if (options.limit !== undefined && count >= options.limit) return;
 			count += 1;
 			yield item;
@@ -122,19 +141,32 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	events(type: string): EventEnvelope[] {
-		return this.all.filter((item) => item.event.type === type).map((item) => item.event);
+		return this.all
+			.filter((item) => item.event.type === type)
+			.map((item) => item.event);
 	}
 
-	subscribe(_filter: StreamFilter, _handler: (event: EventEnvelope) => void): Subscription {
+	subscribe(
+		_filter: StreamFilter,
+		_handler: (event: EventEnvelope) => void,
+	): Subscription {
 		return { unsubscribe: () => undefined };
 	}
 
-	async snapshot(streamId: string, state: SnapshotRecord["state"], seq: number): Promise<SnapshotRecord> {
+	async snapshot(
+		streamId: string,
+		state: SnapshotRecord["state"],
+		seq: number,
+	): Promise<SnapshotRecord> {
 		return { streamId, seq, state, savedAt: new Date(T0).toISOString() };
 	}
 
 	async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-		const result = await this.append(request.streamId, [...request.events], request.append);
+		const result = await this.append(
+			request.streamId,
+			[...request.events],
+			request.append,
+		);
 		return { ...result, effects: [] };
 	}
 }

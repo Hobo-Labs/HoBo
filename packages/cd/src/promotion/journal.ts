@@ -125,7 +125,11 @@ async function streamRevision(
 export type AppendEvents = Readonly<{
 	store: DurableEventStore;
 	streamId: string;
-	events: readonly Readonly<{ type: string; data: JsonValue; idempotencyKey: string }>[];
+	events: readonly Readonly<{
+		type: string;
+		data: JsonValue;
+		idempotencyKey: string;
+	}>[];
 	tenant: string;
 	actor: PrincipalRef;
 }>;

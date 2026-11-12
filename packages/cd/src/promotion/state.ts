@@ -5,10 +5,10 @@
 import { create } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
-	createSagaStepEmittedEvent,
 	createSagaCompensatedEvent,
 	createSagaCompletedEvent,
 	createSagaStartedEvent,
+	createSagaStepEmittedEvent,
 } from "@hobo/events";
 import {
 	type PreviewEnvironmentRecord,
@@ -174,7 +174,9 @@ export function parseStep(
 	if (!isJsonObject(data)) return undefined;
 	if (data.sagaId !== sagaIdOf(promotionId)) return undefined;
 	const step = isText(data.step) ? String(data.step) : undefined;
-	const handle = isText(data.emittedType) ? String(data.emittedType) : undefined;
+	const handle = isText(data.emittedType)
+		? String(data.emittedType)
+		: undefined;
 	if (step === undefined || handle === undefined) return undefined;
 	const bar = step.lastIndexOf("|");
 	if (bar <= 0) return undefined;
@@ -257,7 +259,10 @@ export function foldPromotion(
 			} else view.rolledBack = record;
 			continue;
 		}
-		if (event.type === CD_EVENTS.EnvCloned || event.type === CD_EVENTS.EnvExpired) {
+		if (
+			event.type === CD_EVENTS.EnvCloned ||
+			event.type === CD_EVENTS.EnvExpired
+		) {
 			const record = decode(PreviewEnvironmentRecordSchema, event.data);
 			// The preview fact always follows the request it belongs to.
 			if (!record || !view) continue;
@@ -355,8 +360,7 @@ const RANK: ReadonlyMap<PromotionState, number> = new Map([
 export function campState(progress: CampProgress): PromotionState {
 	if (progress.steps.has(STEP.qualified)) return PromotionState.VERIFYING;
 	const awaitingWindow =
-		progress.steps.has(STEP.awaitingWindow) &&
-		!progress.steps.has(STEP.gated);
+		progress.steps.has(STEP.awaitingWindow) && !progress.steps.has(STEP.gated);
 	if (awaitingWindow) return PromotionState.AWAITING_WINDOW;
 	for (const [step, state] of IN_FLIGHT_ORDER) {
 		if (step === STEP.awaitingWindow) continue;
@@ -370,7 +374,11 @@ export function overallState(view: PromotionView): PromotionState {
 	if (view.rolledBack) return PromotionState.ROLLED_BACK;
 	const camps = [...view.camps.values()];
 	if (camps.length > 0 && camps.every((camp) => camp.terminal !== undefined)) {
-		if (camps.some((camp) => camp.terminal === "failed" || camp.terminal === "compensated"))
+		if (
+			camps.some(
+				(camp) => camp.terminal === "failed" || camp.terminal === "compensated",
+			)
+		)
 			return PromotionState.FAILED;
 		if (camps.some((camp) => camp.terminal === "rejected"))
 			return PromotionState.REJECTED;

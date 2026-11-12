@@ -1,8 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import {
-	type ReasonRecord,
-	ReasonRecordSchema,
-} from "../_generated/cd_pb.js";
+import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import {
 	FANOUT_BUDGET_EXCEEDED,
 	LINEAGE_UNSATISFIED,

@@ -3,8 +3,8 @@ import type { PrincipalRef } from "@hobo/core";
 import { createA2HApprover } from "../../src/adapters/approval.js";
 import type { FanoutAggregateGate } from "../../src/adapters/gatekeeper.js";
 import type { TrailsMigrations } from "../../src/adapters/trails.js";
-import { createPromotionService } from "../../src/promotion/index.js";
 import type { DeployGate } from "../../src/ports.js";
+import { createPromotionService } from "../../src/promotion/index.js";
 import {
 	FakeCampPolicy,
 	FakeDesired,
@@ -20,7 +20,14 @@ import {
 	RecordingAuthorizer,
 	RecordingTelemetry,
 } from "./doubles.js";
-import { clock, context, MemoryEventStore, OPERATOR, T0, TENANT } from "./store.js";
+import {
+	clock,
+	context,
+	MemoryEventStore,
+	OPERATOR,
+	T0,
+	TENANT,
+} from "./store.js";
 
 export type HarnessOptions = Readonly<{
 	gate?: DeployGate;
@@ -44,7 +51,14 @@ export function harness(options: HarnessOptions = {}) {
 	const campPolicy = new FakeCampPolicy();
 	const authorizer = new RecordingAuthorizer();
 	const telemetry = new RecordingTelemetry();
-	const approvals = createA2HApprover({ store, tenant: TENANT, now: c.now, notify, authorizer, telemetry });
+	const approvals = createA2HApprover({
+		store,
+		tenant: TENANT,
+		now: c.now,
+		notify,
+		authorizer,
+		telemetry,
+	});
 	const build = () =>
 		createPromotionService({
 			store,

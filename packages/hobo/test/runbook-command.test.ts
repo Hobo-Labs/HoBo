@@ -208,7 +208,13 @@ describe("createRunbookExecutor", () => {
 			run: async (argv: readonly string[]) => {
 				calls.push([...argv]);
 				const verb = argv[0] ?? "";
-				return { stdout: JSON.stringify(statuses[verb] ?? { ok: false, status: "unknown" }), stderr: "", exitCode: 0 };
+				return {
+					stdout: JSON.stringify(
+						statuses[verb] ?? { ok: false, status: "unknown" },
+					),
+					stderr: "",
+					exitCode: 0,
+				};
 			},
 			dispatchCommand: async () => {
 				throw new Error("not used");
@@ -219,36 +225,70 @@ describe("createRunbookExecutor", () => {
 	}
 
 	it("runs a hook's runbook through the composed CLI and echoes the hook args", async () => {
-		await withProject({ name: "precheck", steps: [{ verb: "doctor" }, { verb: "verify" }] }, async (cwd) => {
-			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
-			openStores.push(runtime.store as RuntimeLocalEventStore);
-			const cli = fakeCli({ doctor: { ok: true, status: "ok" }, verify: { ok: true, status: "verified" } });
-			const executor = createRunbookExecutor({ runtime, cliFactory: cli.factory, projectDir: cwd });
-			const result = await executor.run({ path: "runbook.json", args: { campId: "prod-1", point: "before-apply" } }, {});
-			expect(result.ok).toBe(true);
-			if (result.ok) {
-				expect(result.value.name).toBe("precheck");
-				expect(result.value.args).toEqual({ campId: "prod-1", point: "before-apply" });
-			}
-			expect(cli.calls).toEqual([["doctor", "--json"], ["verify", "--json"]]);
-		});
+		await withProject(
+			{ name: "precheck", steps: [{ verb: "doctor" }, { verb: "verify" }] },
+			async (cwd) => {
+				const runtime = createDefaultYardRuntime();
+				// SAFETY: assertion required at this I/O or test boundary.
+				openStores.push(runtime.store as RuntimeLocalEventStore);
+				const cli = fakeCli({
+					doctor: { ok: true, status: "ok" },
+					verify: { ok: true, status: "verified" },
+				});
+				const executor = createRunbookExecutor({
+					runtime,
+					cliFactory: cli.factory,
+					projectDir: cwd,
+				});
+				const result = await executor.run(
+					{
+						path: "runbook.json",
+						args: { campId: "prod-1", point: "before-apply" },
+					},
+					{},
+				);
+				expect(result.ok).toBe(true);
+				if (result.ok) {
+					expect(result.value.name).toBe("precheck");
+					expect(result.value.args).toEqual({
+						campId: "prod-1",
+						point: "before-apply",
+					});
+				}
+				expect(cli.calls).toEqual([
+					["doctor", "--json"],
+					["verify", "--json"],
+				]);
+			},
+		);
 	});
 
 	it("returns typed reasons with remediation for a failed step", async () => {
-		await withProject({ name: "bad", steps: [{ verb: "doctor" }, { verb: "claim" }] }, async (cwd) => {
-			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
-			openStores.push(runtime.store as RuntimeLocalEventStore);
-			const cli = fakeCli({ doctor: { ok: true, status: "ok" }, claim: { ok: false, status: "no_account" } });
-			const result = await createRunbookExecutor({ runtime, cliFactory: cli.factory, projectDir: cwd }).run({ path: "runbook.json", args: {} }, {});
-			expect(result.ok).toBe(false);
-			if (!result.ok) {
-				expect(result.reasons.map((r) => r.code)).toEqual([RUNBOOK_EXECUTOR_REASON.failed]);
-				expect(result.reasons[0]?.$typeName).toBe("hobo.cd.v1.ReasonRecord");
-				expect(result.reasons[0]?.remediation).toMatch(/hobo claim/);
-			}
-		});
+		await withProject(
+			{ name: "bad", steps: [{ verb: "doctor" }, { verb: "claim" }] },
+			async (cwd) => {
+				const runtime = createDefaultYardRuntime();
+				// SAFETY: assertion required at this I/O or test boundary.
+				openStores.push(runtime.store as RuntimeLocalEventStore);
+				const cli = fakeCli({
+					doctor: { ok: true, status: "ok" },
+					claim: { ok: false, status: "no_account" },
+				});
+				const result = await createRunbookExecutor({
+					runtime,
+					cliFactory: cli.factory,
+					projectDir: cwd,
+				}).run({ path: "runbook.json", args: {} }, {});
+				expect(result.ok).toBe(false);
+				if (!result.ok) {
+					expect(result.reasons.map((r) => r.code)).toEqual([
+						RUNBOOK_EXECUTOR_REASON.failed,
+					]);
+					expect(result.reasons[0]?.$typeName).toBe("hobo.cd.v1.ReasonRecord");
+					expect(result.reasons[0]?.remediation).toMatch(/hobo claim/);
+				}
+			},
+		);
 	});
 
 	it("refuses paths outside the project, unreadable runbooks and a missing runtime", async () => {
@@ -256,15 +296,28 @@ describe("createRunbookExecutor", () => {
 			const runtime = createDefaultYardRuntime();
 			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
-			const executor = createRunbookExecutor({ runtime, cliFactory: fakeCli({}).factory, projectDir: cwd });
-			for (const escape of ["../outside.json", "/etc/passwd"]) {
-				const result = await executor.run({ path: escape, args: {} }, {});
-				expect(!result.ok && result.reasons[0]?.code).toBe(RUNBOOK_EXECUTOR_REASON.pathOutsideProject);
+			const executor = createRunbookExecutor({
+				runtime,
+				cliFactory: fakeCli({}).factory,
+				projectDir: cwd,
+			});
+			for (const outside of ["../outside.json", "/etc/passwd"]) {
+				const result = await executor.run({ path: outside, args: {} }, {});
+				expect(!result.ok && result.reasons[0]?.code).toBe(
+					RUNBOOK_EXECUTOR_REASON.pathOutsideProject,
+				);
 			}
 			const missing = await executor.run({ path: "nope.json", args: {} }, {});
-			expect(!missing.ok && missing.reasons[0]?.code).toBe(RUNBOOK_EXECUTOR_REASON.invalid);
-			const none = await createRunbookExecutor({ projectDir: cwd }).run({ path: "runbook.json", args: {} }, {});
-			expect(!none.ok && none.reasons[0]?.code).toBe(RUNBOOK_EXECUTOR_REASON.noRuntime);
+			expect(!missing.ok && missing.reasons[0]?.code).toBe(
+				RUNBOOK_EXECUTOR_REASON.invalid,
+			);
+			const none = await createRunbookExecutor({ projectDir: cwd }).run(
+				{ path: "runbook.json", args: {} },
+				{},
+			);
+			expect(!none.ok && none.reasons[0]?.code).toBe(
+				RUNBOOK_EXECUTOR_REASON.noRuntime,
+			);
 		});
 	});
 });

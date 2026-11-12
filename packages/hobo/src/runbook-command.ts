@@ -159,7 +159,12 @@ export function createRunbookCommand(
 			}
 
 			const cli = await cliFor(deps, runtime);
-			const results = await runSteps(cli, runbook.steps, projectDir, emitProgress);
+			const results = await runSteps(
+				cli,
+				runbook.steps,
+				projectDir,
+				emitProgress,
+			);
 
 			const failed = results.filter((r) => !r.ok);
 			const passed = failed.length === 0;
