@@ -2,11 +2,21 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
-- **Box-only Docker build.** The job that runs `deps/build-deps.sh` asks for `runs-on: hobo-box` on pull
-  requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
-  no job container reads. Trunk events keep the trunk label; `HOBO_CI_BOX_RUNNER=false` falls back to
-  `hobo`. The runner-image and cold-loop jobs do not need the label: they materialize the
+- **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
+  pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
+  no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
+  label only when the repository variable `HOBO_CI_BOX_RUNNER` is `true`, set once the deployed box
+  daemon is seen to serve `hobo-box`; otherwise it asks for `hobo` as before. The runner-image and cold-loop jobs do not need the label: they materialize the
   content-keyed worker image from the host cache or GHCR wherever they run.
+- **The release contract reuses the worker image.** `release-hobo.yml` job
+  `release-contract` resolves `hobo-ci-worker` through
+  `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
+  runner's own content-keyed image, else a GHCR pull with the job token
+  (`packages: read`), and `build.sh` only when neither has it. The
+  `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
+  job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
+  legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
+  removes its own `<image>:candidate` when it finishes.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
@@ -36,6 +46,14 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
   Trunk admission now prefers `merge_group` over `push` at the same rank so merge-queue shards are not
   stuck behind a long main push gate when trunk slots are scarce (finding 83).
+  The worker daemon picks the git mirror root with `resolveGitMirrorRoot` (`HOBO_CI_GIT_MIRROR_ROOT`
+  when set, falling back to `~/.cache/hobo-ci/git` when the preferred root is not writable). A lazy
+  mirror clone whose owner directory still cannot be created under that root (**EACCES** on a root that
+  exists but is not writable) does not throw: it is a mirror **miss** with the reason, and the job
+  falls back to a plain checkout.
+  The runner-image job's script-free `pnpm install` (root dependencies for shell lint) goes through
+  `scripts/ci/pnpm-install.mts` like every other workflow install, so a cold store stalls it for the
+  wrapper's bound (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) and a retry, not the job's limit.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and

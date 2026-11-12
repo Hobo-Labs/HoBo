@@ -103,7 +103,7 @@ describe("CI deps image push scope", () => {
 		// The deps job asks for the publisher's label on trunk events and for
 		// the box's own label on pull requests, where it builds the image.
 		expect(depsJob["runs-on"]).toBe(
-			`\${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER != 'false' && 'hobo-box' || 'hobo') || (${job["runs-on"].slice(4, -3)}) }}`,
+			`\${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (${job["runs-on"].slice(4, -3)}) }}`,
 		);
 		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });

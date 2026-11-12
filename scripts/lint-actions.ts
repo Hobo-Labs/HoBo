@@ -91,10 +91,10 @@ const HOSTED_RUNS_ON = "ubuntu-24.04";
  * For the job that builds the deps image in the box's own Docker context: a
  * pull request's run asks for the box by its own label (`hobo-box`, which the
  * worker serves and no ARC pod does), trunk events keep the trunk label.
- * `HOBO_CI_BOX_RUNNER=false` falls back to the shared label.
+ * Opt-in: without `HOBO_CI_BOX_RUNNER=true` the job asks for the shared label.
  */
 const BOX_OR_TRUNK_RUNS_ON =
-	"${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER != 'false' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+	"${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 const DEPS_IMAGE_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
