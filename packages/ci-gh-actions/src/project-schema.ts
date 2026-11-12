@@ -141,17 +141,10 @@ const partialPolicy = policy
 	})
 	.partial();
 const jobAdmission = z.enum(["push", "pull"]);
-/** Worker lease journal. Postgres names the env var holding its URL; never the URL itself. */
+/** Worker lease journal: a local SQLite file, the only store. */
 const workerStore = z
-	.discriminatedUnion("kind", [
-		z.object({ kind: z.literal("sqlite") }).strict(),
-		z
-			.object({
-				kind: z.literal("postgres"),
-				urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
-			})
-			.strict(),
-	])
+	.object({ kind: z.literal("sqlite") })
+	.strict()
 	.meta({ id: "WorkerStore" });
 const ciEngineId = z
 	.string()
@@ -244,6 +237,12 @@ export const CiProjectDocumentSchema = z
 			.refine((entries) => Object.keys(entries).length <= 32)
 			.meta({ maxProperties: 32 })
 			.optional(),
+		/**
+		 * The optional CI agent (`@hobo/ci-agent`): merge-queue planning and
+		 * model-backed conflict resolution. This package only carries the block
+		 * and refuses credential values in it; the agent package owns its shape.
+		 */
+		agent: z.record(z.string(), z.json()).optional(),
 	})
 	.strict();
 
@@ -342,6 +341,7 @@ export function resolveCiProjectReferences(
 		definitions: _definitions,
 		$schema: _schema,
 		integrations: _integrations,
+		agent: _agent,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

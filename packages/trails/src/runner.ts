@@ -11,6 +11,7 @@ import {
 	type DataDualFixture,
 	type DataDualResult,
 	evaluateDataDual,
+	evaluateDataDualEvidence,
 	type SchemaApplyResult,
 } from "./data-steps.js";
 import {
@@ -227,12 +228,18 @@ export class TrailRunner {
 				step.kind === "data-transform" ||
 				step.kind === "continuous-dual-data"
 			) {
-				// Live port supersedes the fixture: snapshot both stores NOW so
-				// the oracle judges real replicated state at this step.
-				const r = evaluateDataDual(
-					step,
-					this.dataDual ? this.dataDual.snapshot() : dataFixture,
-				);
+				// Live port supersedes the fixture: judge both stores NOW so the
+				// oracle sees real replicated state at this step. A port that
+				// offers digest evidence is judged on it — no row leaves the
+				// store; the row view is the fallback for ports without it.
+				const liveEvidence = this.dataDual?.evidence?.();
+				const r =
+					liveEvidence !== undefined
+						? evaluateDataDualEvidence(step, liveEvidence)
+						: evaluateDataDual(
+								step,
+								this.dataDual ? this.dataDual.snapshot() : dataFixture,
+							);
 				dataResults.push(r);
 				if (!r.consistent || !r.zeroLoss) {
 					this.service.setDualHealth(false);

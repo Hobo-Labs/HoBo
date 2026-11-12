@@ -1,0 +1,7 @@
+{
+  "publishedAt": "2026-11-10T02:40:05.000Z",
+  "labels": {
+    "hobo": { "nodes": 2, "trustedNodes": 1, "freeSlots": 3 },
+    "hobo-trunk": { "nodes": 0, "trustedNodes": 0, "freeSlots": 0 }
+  }
+}

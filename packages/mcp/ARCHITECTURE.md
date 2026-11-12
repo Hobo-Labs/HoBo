@@ -51,3 +51,16 @@ package's constructors, never re-declared as parallel wire interfaces.
 `identity-policy-boundary` pacts; `contracts/consumer/` verifies the real server
 realizes their recorded interactions (SVID-scoped agent can call a tool;
 missing scope is denied, fail-closed).
+
+## Secret-capture MCP App
+
+`src/secret-capture/` is a second, separate surface: MCP App tools that are
+not CLI verbs, so they sit outside the NFR-004 parity set by design and are
+composed beside it (`hobo-mcp` lists both and gates both by SVID scope with
+the same `capabilityForTool` triples). Its only inward dependency beyond this
+package is the `SecretStoreConnector` port it is given; it imports no store
+adapter. Each step is an audited `secret.Capture*` fact
+(`hobo.secret-capture/v1`, references only). Its records are generated from
+`data-models/secret_capture.proto` (this package's first `buf.yaml` module),
+and its form follows [`DESIGN.md`](./DESIGN.md).
+

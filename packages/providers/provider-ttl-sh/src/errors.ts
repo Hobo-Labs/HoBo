@@ -21,6 +21,11 @@
  * support ticket.
  */
 
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
+
 export const TTL_SH_ERROR_CODES = [
 	/** A host, scheme, port, or path outside the single allowlisted origin. */
 	"TRANSPORT_NOT_ALLOWED",
@@ -88,69 +93,32 @@ export type TtlShErrorOptions = {
 	readonly cause?: Error;
 };
 
-/**
- * A digest is the artifact's identity, not a secret, and neither is the
- * content-addressed name derived from it. Both are masked out before the credential
- * rules run and restored afterwards.
- */
-const DIGEST_PATTERN = /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/giu;
+export { containsControlChar } from "@hobo/provider-redaction";
 
-const DIGEST_PLACEHOLDER = "\u0001DIGEST\u0002";
+/** The provider's own patterns, on top of the shared ones. */
+export const TTL_SH_REDACTION_PROFILE: ProviderRedactionProfile = {
+	keep: /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/gi,
+	patterns: [/\bBasic\s+\S+/gi],
+	// A long opaque run with no recognisable prefix, for credential formats
+	// nobody has catalogued yet. Deliberately excludes `/` and `.`, so a URL
+	// path is not mistaken for one long token. It starts only where such a run
+	// starts, so one long run is one search. Searched last: run before the JWT
+	// shape, it split a token and left the payload behind.
+	fallbacks: [/(?<![A-Za-z0-9+_-])[A-Za-z0-9+_-]{40,}={0,2}\b/gu],
+};
 
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/\b(?:Bearer|Basic)\s+\S+/giu,
-	/\b(?:password|passwd|token|secret|auth)\s*[=:]\s*\S+/giu,
-	/\b(?:sk|pk|ghp|gho|ghs|glpat)[-_][A-Za-z0-9_-]{8,}/giu,
-	/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*/giu,
-	/\/\/[^/\s:@]+:[^/\s:@]+@/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----/giu,
-	// A long opaque run with no recognisable prefix, for credential formats nobody
-	// has catalogued yet. Deliberately excludes `/` and `.`, so a URL path is not
-	// mistaken for one long token — the identifiers worth keeping (digests,
-	// content-addressed names) are masked out above, but a redaction that ate every
-	// registry path would make the error messages useless.
-	/\b[A-Za-z0-9+_-]{40,}={0,2}\b/gu,
-];
-
-function flattenControlChars(text: string): string {
-	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
-	}
-	return out;
-}
-
-export function containsControlChar(text: string): boolean {
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		if (code <= 31 || code === 127) return true;
-	}
-	return false;
-}
+const providerRedactor = createProviderRedactor(TTL_SH_REDACTION_PROFILE);
 
 /**
- * Redact credential-shaped material and flatten control characters.
+ * Redact credential-shaped material and flatten control characters, through the
+ * shared redactor (`@hobo/provider-redaction`) and ttl.sh's own shapes.
  *
- * Digests survive: they identify the artifact, they appear in every receipt, and a
- * redaction that ate them would make the audit trail useless.
+ * Digests survive: a digest is the artifact's identity, not a secret, it appears
+ * in every receipt, and a redaction that ate it would make the audit trail
+ * useless. It is kept out of the search and put back afterwards.
  */
 export function redactProviderText(text: string, maxLength = 256): string {
-	const digests: string[] = [];
-	let out = text.replace(DIGEST_PATTERN, (match) => {
-		digests.push(match);
-		return DIGEST_PLACEHOLDER;
-	});
-	for (const pattern of CREDENTIAL_PATTERNS)
-		out = out.replace(pattern, "[redacted]");
-	let index = 0;
-	out = out.replace(
-		new RegExp(DIGEST_PLACEHOLDER, "gu"),
-		() => digests[index++] ?? "",
-	);
-	out = flattenControlChars(out).trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
+	return providerRedactor(text, maxLength);
 }
 
 function redactOptionalText(value: string | undefined): string | undefined {

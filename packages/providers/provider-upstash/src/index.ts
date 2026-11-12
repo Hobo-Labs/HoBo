@@ -85,6 +85,14 @@ export {
 	type UpstashTemporaryRedisDriver,
 } from "./driver.js";
 export {
+	createUpstashEphemeralState,
+	resolveUpstashRestEnv,
+	UPSTASH_REST_ENV_PAIRS,
+	type UpstashEphemeralStateOptions,
+	type UpstashRestEnv,
+	type UpstashRestEnvPair,
+} from "./ephemeral-state.js";
+export {
 	isProviderError,
 	PROVIDER_ERROR_CODES,
 	type ProviderErrorCode,

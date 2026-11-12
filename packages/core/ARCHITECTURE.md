@@ -35,6 +35,12 @@ contract surfaces other packages compile against.
 - Protobuf + CUE records: [`data-models/streamer_port.proto`](./data-models/streamer_port.proto)
 - Production adapter: `@hobo/runtime-local` (`createLocalStreamer`)
 
+## Ephemeral state port
+
+- Port interface, branded parsers, lock and ring helpers, command-cost table: [`src/ports/ephemeral-state.ts`](./src/ports/ephemeral-state.ts)
+- Protobuf + CUE records: [`data-models/ephemeral_state.proto`](./data-models/ephemeral_state.proto), [`data-models/ephemeral_state.cue`](./data-models/ephemeral_state.cue)
+- Bindings: `@hobo/kv-redis-compatible` (Redis-protocol scripts, in-memory engine, RESP/TCP, conformance suite) and `@hobo/provider-upstash` (REST). Design: [`docs/design/relay-ephemeral-state.md`](../../docs/design/relay-ephemeral-state.md)
+
 ## Queue + Clock ports (HOBO-596)
 
 - Port interfaces and branded parsers: [`src/ports/queue.ts`](./src/ports/queue.ts), [`src/ports/clock.ts`](./src/ports/clock.ts)

@@ -1,7 +1,7 @@
 # Scoped Cucumber profile for the real-product-CLI experience features.
 # Deliberately separate from .optimizexp/cucumber.yaml: that global profile
-# currently fails to load (broken step expression in
-# packages/code/.optimizexp/**/hobo-code-hermetic-durable) and auto-loading
+# has failed to load before (a broken step expression in a project-local
+# feature) and auto-loading
 # the root cucumber.yaml would pull in src/draft epic proofs instead.
 # Run:
 #   node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js \

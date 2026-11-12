@@ -1,0 +1,505 @@
+{
+	"consumer": {
+		"name": "hobo-data-postgres-engine"
+	},
+	"provider": {
+		"name": "hobo-postgres-executor"
+	},
+	"interactions": [
+		{
+			"description": "the dataset registry answers with the schema a dataset table was created from",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT schema_json FROM \"hobo_fixture_capture\".\"hobo_data_datasets\" WHERE dataset = $1::text",
+					"parameters": [
+						{
+							"text": "hobo_fixture_orders"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "schema_json",
+									"text": "{\"contract\":\"hobo.dataset-schema/v1\",\"name\":\"hobo_fixture_orders\",\"version\":3,\"keyFields\":[\"id\"],\"fields\":[{\"name\":\"id\",\"type\":\"string\",\"nullable\":false},{\"name\":\"qty\",\"type\":\"int64\",\"nullable\":false},{\"name\":\"price\",\"type\":\"decimal\",\"nullable\":false},{\"name\":\"weight\",\"type\":\"float64\",\"nullable\":false},{\"name\":\"active\",\"type\":\"bool\",\"nullable\":false},{\"name\":\"note\",\"type\":\"string\",\"nullable\":true},{\"name\":\"blob\",\"type\":\"bytes\",\"nullable\":false},{\"name\":\"placed_at\",\"type\":\"timestamp\",\"nullable\":false},{\"name\":\"due\",\"type\":\"date\",\"nullable\":false},{\"name\":\"ref\",\"type\":\"uuid\",\"nullable\":false},{\"name\":\"attrs\",\"type\":\"json\",\"nullable\":false},{\"name\":\"card\",\"type\":\"encrypted\",\"nullable\":true}],\"open\":false}"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a point read returns every column as text, and SQL NULL as an absent text",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT \"tenant_id\" AS \"tenant_id\", \"id\" AS \"id\", \"qty\"::text AS \"qty\", \"price\"::text AS \"price\", encode(float8send(\"weight\"), 'hex') AS \"weight\", \"active\"::text AS \"active\", \"note\" AS \"note\", encode(\"blob\", 'hex') AS \"blob\", to_json(\"placed_at\" AT TIME ZONE 'UTC') #>> '{}' AS \"placed_at\", to_json(\"due\") #>> '{}' AS \"due\", \"ref\"::text AS \"ref\", \"attrs\"::text AS \"attrs\", \"card\"::text AS \"card\" FROM \"hobo_fixture_capture\".\"hobo_fixture_orders\" WHERE \"tenant_id\" = $1::text AND \"id\" = $2::text",
+					"parameters": [
+						{
+							"text": ""
+						},
+						{
+							"text": "order-1"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "tenant_id",
+									"text": ""
+								},
+								{
+									"column": "id",
+									"text": "order-1"
+								},
+								{
+									"column": "qty",
+									"text": "9007199254740993"
+								},
+								{
+									"column": "price",
+									"text": "1234.5600"
+								},
+								{
+									"column": "weight",
+									"text": "3fb999999999999a"
+								},
+								{
+									"column": "active",
+									"text": "true"
+								},
+								{
+									"column": "note"
+								},
+								{
+									"column": "blob",
+									"text": "00010203ff"
+								},
+								{
+									"column": "placed_at",
+									"text": "2026-01-02T03:04:05.678901"
+								},
+								{
+									"column": "due",
+									"text": "2026-02-28"
+								},
+								{
+									"column": "ref",
+									"text": "0f8fad5b-d9cb-469f-a165-70867728950e"
+								},
+								{
+									"column": "attrs",
+									"text": "{\"a\": \"b\", \"z\": [1, 2, {\"nested\": null}]}"
+								},
+								{
+									"column": "card"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a migration authority presents its fence token for one transaction only",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT set_config('hobo.fence_token', $1::text, true) AS presented",
+					"parameters": [
+						{
+							"text": "fence:hobo_fixture_orders::example"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "presented",
+									"text": "fence:hobo_fixture_orders::example"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "an upsert casts every parameter in the statement; SQL NULL is an absent text",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "INSERT INTO \"hobo_fixture_capture\".\"hobo_fixture_orders\" (\"tenant_id\", \"id\", \"qty\", \"price\", \"weight\", \"active\", \"note\", \"blob\", \"placed_at\", \"due\", \"ref\", \"attrs\", \"card\") VALUES ($1::text, $2::text, $3::bigint, $4::numeric, $5::double precision, $6::boolean, $7::text, decode($8::text, 'hex'), $9::timestamptz, $10::date, $11::uuid, $12::jsonb, $13::jsonb) ON CONFLICT (\"tenant_id\", \"id\") DO UPDATE SET \"qty\" = EXCLUDED.\"qty\", \"price\" = EXCLUDED.\"price\", \"weight\" = EXCLUDED.\"weight\", \"active\" = EXCLUDED.\"active\", \"note\" = EXCLUDED.\"note\", \"blob\" = EXCLUDED.\"blob\", \"placed_at\" = EXCLUDED.\"placed_at\", \"due\" = EXCLUDED.\"due\", \"ref\" = EXCLUDED.\"ref\", \"attrs\" = EXCLUDED.\"attrs\", \"card\" = EXCLUDED.\"card\"",
+					"parameters": [
+						{
+							"text": ""
+						},
+						{
+							"text": "order-1"
+						},
+						{
+							"text": "9007199254740993"
+						},
+						{
+							"text": "1234.56"
+						},
+						{
+							"text": "0.1"
+						},
+						{
+							"text": "true"
+						},
+						{},
+						{
+							"text": "00010203ff"
+						},
+						{
+							"text": "2026-01-02T03:04:05.678901Z"
+						},
+						{
+							"text": "2026-02-28"
+						},
+						{
+							"text": "0f8fad5b-d9cb-469f-a165-70867728950e"
+						},
+						{
+							"text": "{\"z\":[1,2,{\"nested\":null}],\"a\":\"b\"}"
+						},
+						{}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the watermark is recorded in the same transaction as the changes it covers",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "INSERT INTO \"hobo_fixture_capture\".\"hobo_data_watermarks\" (dataset, source, log_position) VALUES ($1::text, $2::text, $3::text) ON CONFLICT (dataset, source) DO UPDATE SET log_position = EXCLUDED.log_position",
+					"parameters": [
+						{
+							"text": "hobo_fixture_orders"
+						},
+						{
+							"text": "hobo_migration_m1_forward"
+						},
+						{
+							"text": "41"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a conditional apply moves the watermark only from the position the applier named",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "UPDATE \"hobo_fixture_capture\".\"hobo_data_watermarks\" SET log_position = $3::text WHERE dataset = $1::text AND source = $2::text AND log_position = $4::text",
+					"parameters": [
+						{
+							"text": "hobo_fixture_orders"
+						},
+						{
+							"text": "hobo_migration_m1_forward"
+						},
+						{
+							"text": "57"
+						},
+						{
+							"text": "41"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a conditional apply that names a watermark the store has moved past matches no row",
+			"providerState": "another applier has moved the watermark",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "UPDATE \"hobo_fixture_capture\".\"hobo_data_watermarks\" SET log_position = $3::text WHERE dataset = $1::text AND source = $2::text AND log_position = $4::text",
+					"parameters": [
+						{
+							"text": "hobo_fixture_orders"
+						},
+						{
+							"text": "hobo_migration_m1_forward"
+						},
+						{
+							"text": "57"
+						},
+						{
+							"text": "41"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
+			"description": "the decoding call's session settings are pinned for its transaction",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT set_config('TimeZone', 'UTC', true) AS pinned_0, set_config('DateStyle', 'ISO, YMD', true) AS pinned_1, set_config('IntervalStyle', 'postgres', true) AS pinned_2, set_config('extra_float_digits', '1', true) AS pinned_3, set_config('bytea_output', 'hex', true) AS pinned_4",
+					"parameters": [],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "pinned_0",
+									"text": "UTC"
+								},
+								{
+									"column": "pinned_1",
+									"text": "ISO, YMD"
+								},
+								{
+									"column": "pinned_2",
+									"text": "postgres"
+								},
+								{
+									"column": "pinned_3",
+									"text": "1"
+								},
+								{
+									"column": "pinned_4",
+									"text": "hex"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the slot reports what it has released, and whether the log is quiescent",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT confirmed_flush_lsn::text AS confirmed, pg_current_wal_flush_lsn()::text AS flushed, pg_current_wal_insert_lsn()::text AS inserted FROM pg_replication_slots WHERE slot_name = $1::name",
+					"parameters": [
+						{
+							"text": "hobo_s_0123456789ab_0123456789abcdef01234567"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "confirmed",
+									"text": "0/387C000"
+								},
+								{
+									"column": "flushed",
+									"text": "0/3880000"
+								},
+								{
+									"column": "inserted",
+									"text": "0/3880040"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the decoding call returns whole transactions of pgoutput messages as hex text, without consuming them",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT encode(data, 'hex') AS data FROM pg_logical_slot_peek_binary_changes($1::name, NULL, $2::integer, 'proto_version', '1', 'publication_names', $3::text)",
+					"parameters": [
+						{
+							"text": "hobo_s_0123456789ab_0123456789abcdef01234567"
+						},
+						{
+							"text": "64"
+						},
+						{
+							"text": "\"hobo_p_0123456789ab_0123456789abcdef01234567\""
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "data",
+									"text": "42000000000387ccb8000302e4da8b53d500000a48"
+								}
+							]
+						},
+						{
+							"cells": [
+								{
+									"column": "data",
+									"text": "5200006481686f626f5f666978747572655f6361707475726500686f626f5f666978747572655f6f72646572730064000d0174656e616e745f69640000000019ffffffff0169640000000019ffffffff007174790000000014ffffffff00707269636500000006a4ffffffff0077656967687400000002bdffffffff006163746976650000000010ffffffff006e6f74650000000019ffffffff00626c6f620000000011ffffffff00706c616365645f617400000004a0ffffffff00647565000000043affffffff007265660000000b86ffffffff0061747472730000000edaffffffff00636172640000000edaffffffff"
+								}
+							]
+						},
+						{
+							"cells": [
+								{
+									"column": "data",
+									"text": "49000064814e000d740000000074000000076f726465722d317400000010393030373139393235343734303939337400000007313233342e35367400000003302e31740000000174740000002871756f746520272022646f75626c652220616e6420c3bc6ec3af63c3b664c3a920e2809420e99baa740000000c5c7830303031303230336666740000001d323032362d30312d30322030333a30343a30352e3637383930312b3030740000000a323032362d30322d3238740000002430663866616435622d643963622d343639662d613136352d37303836373732383935306574000000467b2261223a202262222c20226e223a20313030303030303030303030303030303030303030302c20227a223a205b312c20322c207b226e6573746564223a206e756c6c7d5d7d740000004d7b22616c67223a20224145532d3235362d47434d222c20226b6579526566223a20226b65793a2f2f7375626a6563742f31222c202263697068657274657874223a20223371322b37773d3d227d"
+								}
+							]
+						},
+						{
+							"cells": [
+								{
+									"column": "data",
+									"text": "4300000000000387ccb8000000000387cce8000302e4da8b53d5"
+								}
+							]
+						}
+					],
+					"rowCount": 4
+				}
+			}
+		},
+		{
+			"description": "a write the store's fence refuses fails with the fence SQLSTATE and none of the server's text",
+			"providerState": "the dataset is fenced and the session presents no token",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "INSERT INTO \"hobo_fixture_capture\".\"hobo_fixture_orders\" (\"tenant_id\", \"id\", \"qty\", \"price\", \"weight\", \"active\", \"note\", \"blob\", \"placed_at\", \"due\", \"ref\", \"attrs\", \"card\") VALUES ($1::text, $2::text, $3::bigint, $4::numeric, $5::double precision, $6::boolean, $7::text, decode($8::text, 'hex'), $9::timestamptz, $10::date, $11::uuid, $12::jsonb, $13::jsonb) ON CONFLICT (\"tenant_id\", \"id\") DO UPDATE SET \"qty\" = EXCLUDED.\"qty\", \"price\" = EXCLUDED.\"price\", \"weight\" = EXCLUDED.\"weight\", \"active\" = EXCLUDED.\"active\", \"note\" = EXCLUDED.\"note\", \"blob\" = EXCLUDED.\"blob\", \"placed_at\" = EXCLUDED.\"placed_at\", \"due\" = EXCLUDED.\"due\", \"ref\" = EXCLUDED.\"ref\", \"attrs\" = EXCLUDED.\"attrs\", \"card\" = EXCLUDED.\"card\"",
+					"parameters": [
+						{
+							"text": ""
+						},
+						{
+							"text": "order-1"
+						},
+						{
+							"text": "9007199254740993"
+						},
+						{
+							"text": "1234.56"
+						},
+						{
+							"text": "0.1"
+						},
+						{
+							"text": "true"
+						},
+						{},
+						{
+							"text": "00010203ff"
+						},
+						{
+							"text": "2026-01-02T03:04:05.678901Z"
+						},
+						{
+							"text": "2026-02-28"
+						},
+						{
+							"text": "0f8fad5b-d9cb-469f-a165-70867728950e"
+						},
+						{
+							"text": "{\"z\":[1,2,{\"nested\":null}],\"a\":\"b\"}"
+						},
+						{}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"sqlState": "HB001"
+				}
+			}
+		}
+	]
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { describe, it } from "vitest";
+import { beforeAll, describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -12,6 +12,14 @@ import {
   generateAuthSurfaceDeclaration,
 } from "../src/auth-authoring-surface.js";
 import { generateDevPrincipalFixture } from "../../hobo-auth-consumer-contract/src/auth-consumer-contract.js";
+
+/** Same contract as `packages/cli/test/support/slow.ts` — root draft shards ignore package vitest.config. */
+function slow(ms: number): number {
+  const floor = Number(process.env.HOBO_TEST_TIMEOUT);
+  return Number.isFinite(floor) && floor > ms ? floor : ms;
+}
+
+const TYPECHECK_HOOK_MS = slow(60_000);
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tscPath = path.resolve(
@@ -25,6 +33,34 @@ const tscPath = path.resolve(
   "bin",
   "tsc",
 );
+
+type TypeDeclarationCheckResult = {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+};
+
+/** One `tsc --noEmit` per file — cold spawn under memory contention exceeded 10s (run 43207388098). */
+let typeDeclarationCheck!: TypeDeclarationCheckResult;
+
+beforeAll(() => {
+  const result = spawnSync(
+    process.execPath,
+    [tscPath, "--noEmit", "--project", "tsconfig.types.json"],
+    {
+      cwd: packageRoot,
+      encoding: "utf8",
+      shell: false,
+      timeout: TYPECHECK_HOOK_MS - 1_000,
+      killSignal: "SIGTERM",
+    },
+  );
+  typeDeclarationCheck = {
+    status: result.status,
+    stdout: `${result.stdout ?? ""}`,
+    stderr: `${result.stderr ?? ""}`,
+  };
+}, TYPECHECK_HOOK_MS);
 
 function declareAppAuth(overrides = {}) {
   return auth({
@@ -75,7 +111,7 @@ function declareAppAuth(overrides = {}) {
   });
 }
 
-describe("hobo:auth authoring surface", () => {
+describe("hobo:auth authoring surface", { timeout: TYPECHECK_HOOK_MS }, () => {
   it("lowers oidc, customJwt, and builtin providers into a secret-free manifest auth entry", () => {
     const declaration = declareAppAuth();
     const manifestEntry = buildAuthManifestEntry(declaration);
@@ -195,16 +231,10 @@ describe("hobo:auth authoring surface", () => {
   });
 
   it("type declarations narrow providers and carry ctx.user claims", () => {
-    const result = spawnSync(
-      process.execPath,
-      [tscPath, "--noEmit", "--project", "tsconfig.types.json"],
-      {
-        cwd: packageRoot,
-        encoding: "utf8",
-        shell: false,
-      },
+    assert.equal(
+      typeDeclarationCheck.status,
+      0,
+      `${typeDeclarationCheck.stdout}\n${typeDeclarationCheck.stderr}`,
     );
-
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   });
 });

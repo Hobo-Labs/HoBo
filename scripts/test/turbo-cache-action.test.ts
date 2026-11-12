@@ -72,6 +72,7 @@ describe("turbo-cache action on the box", () => {
 		assert.deepEqual(exported, [
 			`TURBO_CACHE_DIR=${shared}`,
 			"HOBO_TURBO_CACHE_SHARED=1",
+			"TURBO_CACHE=local:rw",
 		]);
 		assert.ok(existsSync(shared));
 	});
@@ -91,7 +92,7 @@ describe("turbo-cache action on the box", () => {
 			INPUT_TOKEN: "token",
 			INPUT_TEAM: "team",
 		});
-		assert.deepEqual(exported.slice(2), [
+		assert.deepEqual(exported.slice(-3), [
 			"TURBO_TOKEN=token",
 			"TURBO_TEAM=team",
 			"TURBO_CACHE=local:rw,remote:rw",

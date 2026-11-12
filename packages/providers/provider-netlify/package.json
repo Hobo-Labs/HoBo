@@ -18,16 +18,19 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:deep": "vitest run --config vitest.deep.config.ts"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/core": "workspace:*",
-		"@bufbuild/protobuf": "2.12.1"
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"devDependencies": {
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},

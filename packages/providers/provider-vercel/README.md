@@ -130,6 +130,8 @@ Typed `VercelProviderError` with stable codes: `PROVIDER_RATE_LIMITED`,
 `CLAIM_PARTIALLY_COMPLETED`, `BINDING_ROTATION_REQUIRED`,
 `SPONSOR_BUDGET_EXCEEDED`, `SECRET_CUSTODY_UNAVAILABLE`. `redactProviderText`
 strips credential shapes from anything that reaches a log or an error detail.
+It is the shared redactor (`@hobo/provider-redaction`) plus Vercel's claim
+and transfer codes, and the shared one's tests hold the hostile-text cases.
 It searches the first `REDACTION_WINDOW` (8192) characters of a text, or four
 times its `maxLength` when that is more, and, when that cut falls inside a run of
 non-whitespace, the rest of that run, and marks a longer text cut; every shape is

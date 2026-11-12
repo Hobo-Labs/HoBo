@@ -1,0 +1,10 @@
+{
+	"ticketId": "cap_DDDDDDDDDDDDDDDDDDDDDD",
+	"name": "VERCEL_TOKEN",
+	"target": "deploy",
+	"channel": "loopback-page",
+	"state": "awaiting-owner",
+	"openedAt": "2026-11-12T10:00:00Z",
+	"expiresAt": "2026-11-12T10:10:00Z",
+	"url": "https://capture.example.com/capture/cap_DDDDDDDDDDDDDDDDDDDDDD"
+}

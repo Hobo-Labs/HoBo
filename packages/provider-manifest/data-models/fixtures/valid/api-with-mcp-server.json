@@ -1,0 +1,23 @@
+{
+  "schema": "hobo.provider-manifest/v1",
+  "provider": {
+    "id": "has-mcp",
+    "displayName": "Has MCP"
+  },
+  "api": {
+    "specs": [
+      {
+        "id": "rest",
+        "format": "openapi",
+        "url": "https://has-mcp.example.com/openapi.json"
+      }
+    ],
+    "mcpServers": [
+      {
+        "id": "remote",
+        "url": "https://mcp.has-mcp.example.com/mcp",
+        "transport": "streamable-http"
+      }
+    ]
+  }
+}

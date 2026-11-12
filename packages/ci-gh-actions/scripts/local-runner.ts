@@ -10,18 +10,22 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { z } from "zod";
 import {
+	createLocalRunnerMeshNode,
 	installLocalRunnerArchive,
+	LOCAL_RUNNER_MESH_REPORT,
 	LocalRunnerRegistrationUncertainError,
 	LocalRunnerShutdownUncertainError,
 	parseLocalRunnerEnvironment,
 	runLocalRunnerSession,
 } from "../src/local-runner.js";
+import { parseMeshNodeReports } from "../src/mesh-records.js";
 import { acquirePartitionLock } from "../src/partition-lock.js";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -33,6 +37,35 @@ const socket = join(
 	`hobo-ci-${process.getuid?.()}-${createHash("sha256").update(state).digest("hex").slice(0, 16)}.sock`,
 );
 const reply = z.object({ status: z.string(), detail: z.string() });
+
+/**
+ * This machine's own mesh report, as the controller last wrote it: which
+ * nodes it sees (itself alone when no mesh is configured), their capacity
+ * and trust. Read from disk, so it answers with the controller stopped and
+ * with no relay or network; `readAt` says how old it is.
+ */
+async function meshReport() {
+	try {
+		const report = parseMeshNodeReports(
+			await readFile(join(state, LOCAL_RUNNER_MESH_REPORT), "utf8"),
+		);
+		return {
+			mesh: report.mesh,
+			readAt: report.readAt,
+			nodes: report.nodes.map((node) => ({
+				id: node.id,
+				state: node.state,
+				slots: `${node.freeSlots}/${node.totalSlots}`,
+				freeMemoryMb: node.freeMemoryMb ?? null,
+				freeDiskMb: node.freeDiskMb ?? null,
+				reliability: node.reliability ?? null,
+				trust: node.trust,
+			})),
+		};
+	} catch {
+		return undefined;
+	}
+}
 let current = {
 	status: "starting",
 	detail: "Checking local runner prerequisites",
@@ -109,8 +142,33 @@ async function daemon() {
 	const stop = () => stopping.abort();
 	process.on("SIGTERM", stop);
 	process.on("SIGINT", stop);
+	// This machine is a mesh node whether or not a mesh is configured: it
+	// keeps an identity key and a report of itself, and advertises when
+	// HOBO_CI_NATS_URL names a mesh. None of it may stop the runner.
+	let journal: SqliteCiStore | undefined;
+	let mesh: Awaited<ReturnType<typeof createLocalRunnerMeshNode>> | undefined;
+	try {
+		journal = new SqliteCiStore(join(state, "mesh-node.sqlite"));
+		mesh = await createLocalRunnerMeshNode({
+			env: process.env,
+			state,
+			hostname: hostname(),
+			journal,
+			log: (event, fields) =>
+				process.stdout.write(`${JSON.stringify({ event, ...fields })}\n`),
+		});
+		mesh.start();
+	} catch (error) {
+		process.stdout.write(
+			`${JSON.stringify({
+				event: "hobo_ci_mesh_node_unavailable",
+				message: error instanceof Error ? error.message : "unknown",
+			})}\n`,
+		);
+	}
 	const update = async (status: string, detail: string) => {
 		current = { status, detail };
+		mesh?.setHealthy(!["blocked", "waiting"].includes(status));
 		await writeFile(
 			join(state, "status.json"),
 			`${JSON.stringify(current)}\n`,
@@ -161,6 +219,7 @@ async function daemon() {
 					state,
 					archive,
 					signal: stopping.signal,
+					observer: mesh?.observer,
 					registered: () =>
 						update(
 							"registered",
@@ -189,6 +248,10 @@ async function daemon() {
 				);
 		}
 	} finally {
+		// A node that is stopping says so, then leaves the board to forget it.
+		mesh?.setHealthy(false);
+		await mesh?.stop().catch(() => undefined);
+		journal?.close();
 		// Keep control available until the singleton lock has actually drained.
 		await lock.release();
 		server.close();
@@ -235,7 +298,10 @@ async function main() {
 					);
 			} while (!["stopped", "blocked"].includes(observation.status));
 		}
-		process.stdout.write(`${JSON.stringify(observation)}\n`);
+		const report = command === "status" ? await meshReport() : undefined;
+		process.stdout.write(
+			`${JSON.stringify(report ? { ...observation, mesh: report } : observation)}\n`,
+		);
 		if (command === "stop" && observation.status === "blocked")
 			process.exitCode = 1;
 		return;
