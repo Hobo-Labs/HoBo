@@ -92,6 +92,12 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	parseJsonObject,
+} from "./json.js";
 
 // public-contract: the relay's delivery-as-code file, relative to its project.
 export const RELAY_DELIVERY_FILE = "deploy/delivery.ts";
@@ -265,16 +271,17 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 		...new Set(
 			yard.bindings
 				.map((row) => row.productId)
-				.filter((id): id is string => typeof id === "string" && id !== ""),
+				.filter((id): id is string => id !== undefined && id !== ""),
 		),
 	].sort();
 	// An HTTP compute entry only when the Yard binds the HTTP API profile.
 	const http = yard.bindings.some((row) => row.profile === capability.api.http);
-	const offered: Readonly<Record<string, readonly string[]>> = {
-		compute: http ? ["http"] : [],
-		data: [],
-	};
-	const ports = Object.keys(offered);
+	const ports = ["compute", "data"] as const;
+	const none: readonly string[] = [];
+	const offered = {
+		compute: http ? ["http"] : none,
+		data: none,
+	} satisfies Record<(typeof ports)[number], readonly string[]>;
 	return {
 		id: `yard:${yard.name}`,
 		regions: [...yard.regions],
@@ -283,7 +290,7 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 			satisfies(request) {
 				if (request.port !== port) return { kind: "none" };
 				const missing = (request.features ?? []).filter(
-					(feature) => !(offered[port] ?? []).includes(feature),
+					(feature) => !offered[port].includes(feature),
 				);
 				return missing.length === 0
 					? { kind: "full" }
@@ -305,7 +312,7 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 				capabilities: {
 					capabilities: ports.map((port) => ({
 						port,
-						features: [...(offered[port] ?? [])],
+						features: [...offered[port]],
 						productIds,
 						realizedBy: "relay git deployment",
 					})),
@@ -367,13 +374,15 @@ async function pinOf(
 	// SAFETY: checked to carry the sha256: prefix above.
 	const bytes = await read(artifact.digest as `sha256:${string}`);
 	if (!bytes) return undefined;
-	const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+	let fields: JsonObject;
+	try {
+		fields = parseJsonObject(new TextDecoder().decode(bytes));
+	} catch {
 		return undefined;
-	const fields = new Map(Object.entries(parsed));
+	}
 	const text = (key: string) => {
-		const value = fields.get(key);
-		return typeof value === "string" && value !== "" ? value : undefined;
+		const value = fields[key];
+		return isJsonString(value) && value !== "" ? value : undefined;
 	};
 	const repository = text("repository");
 	const ref = text("ref");
@@ -383,8 +392,8 @@ async function pinOf(
 	return {
 		repository,
 		ref,
-		...(sha ? { sha } : {}),
-		...(rootDirectory ? { rootDirectory } : {}),
+		...(sha !== undefined ? { sha } : undefined),
+		...(rootDirectory !== undefined ? { rootDirectory } : undefined),
 	};
 }
 
@@ -594,22 +603,23 @@ export function withStorableRolloutTypes(
 		commit: (request) =>
 			store.commit({ ...request, events: events(request.events) }),
 	};
-	const optional = [
-		"getStreamHead",
-		"loadSnapshot",
-		"claimSubscription",
-		"renewSubscription",
-		"releaseSubscription",
-		"loadCheckpoint",
-		"commitCheckpoint",
-		"resetCheckpoint",
-	] as const;
-	const extra: Record<string, unknown> = {};
-	for (const name of optional) {
-		const method = store[name];
-		if (typeof method === "function") extra[name] = method.bind(store);
-	}
-	return Object.freeze({ ...extra, ...wrapped });
+	// The store's optional capabilities, bound to it, when it has them.
+	if (store.getStreamHead)
+		wrapped.getStreamHead = store.getStreamHead.bind(store);
+	if (store.loadSnapshot) wrapped.loadSnapshot = store.loadSnapshot.bind(store);
+	if (store.claimSubscription)
+		wrapped.claimSubscription = store.claimSubscription.bind(store);
+	if (store.renewSubscription)
+		wrapped.renewSubscription = store.renewSubscription.bind(store);
+	if (store.releaseSubscription)
+		wrapped.releaseSubscription = store.releaseSubscription.bind(store);
+	if (store.loadCheckpoint)
+		wrapped.loadCheckpoint = store.loadCheckpoint.bind(store);
+	if (store.commitCheckpoint)
+		wrapped.commitCheckpoint = store.commitCheckpoint.bind(store);
+	if (store.resetCheckpoint)
+		wrapped.resetCheckpoint = store.resetCheckpoint.bind(store);
+	return Object.freeze(wrapped);
 }
 
 /**
@@ -629,11 +639,9 @@ export async function reportedStatus(
 	let fence = -1n;
 	for await (const event of store.read(CD_STREAMS.campStatus(campId))) {
 		const data = event.data;
-		if (data === null || typeof data !== "object" || Array.isArray(data))
-			continue;
-		const body = new Map(Object.entries(data)).get("observation");
-		if (body === null || typeof body !== "object" || Array.isArray(body))
-			continue;
+		if (!isJsonObject(data)) continue;
+		const body = data.observation;
+		if (!isJsonObject(body)) continue;
 		let parsed: ReconcileObservationRecord;
 		try {
 			parsed = fromJson(ReconcileObservationRecordSchema, body, {
@@ -681,10 +689,10 @@ async function recordFreight(
 		bindle: HOBO_CI_COMPONENTS.relay.bindle,
 		repository: input.source.repository,
 		ref: input.source.ref,
-		...(input.source.sha ? { sha: input.source.sha } : {}),
-		...(input.source.rootDirectory
+		...(input.source.sha !== undefined ? { sha: input.source.sha } : undefined),
+		...(input.source.rootDirectory !== undefined
 			? { rootDirectory: input.source.rootDirectory }
-			: {}),
+			: undefined),
 	};
 	const source = await cd.artifacts.put(
 		encoder.encode(JSON.stringify(pin)),

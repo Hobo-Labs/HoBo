@@ -215,7 +215,7 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /Smoke-check/u);
 		for (const name of ["HOBO_CI_RELAY_URL", "HOBO_CI_RELAY_PREVIEW_URL"])
 			assert.ok(
-				(RELAY_DEPLOY_REQUIRED_VARIABLES as readonly string[]).includes(name),
+				RELAY_DEPLOY_REQUIRED_VARIABLES.some((required) => required === name),
 				`${name} is not required by the gate`,
 			);
 	});

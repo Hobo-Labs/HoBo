@@ -733,7 +733,10 @@ export async function runCiRelayDeploy(
 					),
 				};
 			} catch (error) {
-				return realizationFailure(error, withoutToken);
+				return realizationFailure(
+					error instanceof Error ? error : new Error("not an Error"),
+					withoutToken,
+				);
 			}
 		},
 		async readyState(deploymentId) {
@@ -869,7 +872,7 @@ export async function runCiRelayDeploy(
 // A failed realization, with the code and message this command has always
 // returned for it, and never the token.
 function realizationFailure(
-	error: unknown,
+	error: Error,
 	withoutToken: (value: string) => string,
 ): RelayRealizationFailure {
 	if (error instanceof VercelEnvRefusal)

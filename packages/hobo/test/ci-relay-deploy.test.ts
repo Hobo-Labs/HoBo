@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
-import { type JsonObject, parseJsonObject } from "../src/json.js";
+import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
 // `hobo ci deploy` against the REAL relay declaration
@@ -144,7 +144,7 @@ function healthyRelay(status = 200) {
 	const probed: string[] = [];
 	const http: HttpTransport = async (request) => {
 		probed.push(request.url);
-		return { status, headers: {}, body: new Uint8Array() } as never;
+		return { status, headers: {}, body: "" };
 	};
 	return { http, probed };
 }
@@ -972,12 +972,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			node: "production",
 			campId: "hobo-ci-relay/hobo-ci-relay/production",
 			state: "PROMOTED",
-			freightId:
-				previewDelivery !== null &&
-				typeof previewDelivery === "object" &&
-				!Array.isArray(previewDelivery)
-					? previewDelivery.freightId
-					: "",
+			freightId: isJsonObject(previewDelivery) ? previewDelivery.freightId : "",
 		});
 		expect(second.data.outputs).toMatchObject({
 			camp: "hobo-ci-relay/production",
