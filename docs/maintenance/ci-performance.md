@@ -638,7 +638,7 @@ checks failed on main before anyone saw them:
 - **An enabled workflow the lint does not list.** #1688 added `fleet-enrollment.yml` (the fleet
   enrollment scorecard eval) without adding it to the lint's approved set, so `actions:lint` and the
   `lint-actions-runner.test.ts` repository checks failed on main and refused every commit hook that
-  ran them. It is now listed in `activeCiFiles`, and its two jobs follow the rules the lint then
+  ran them. #1959 lists it in `activeCiFiles`, and its two jobs follow the rules the lint then
   applies: the trunk label expression (the workflow can be dispatched) and `clean: false` on the box
   checkout.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
