@@ -315,6 +315,10 @@ jobs:
     if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
+    # packages: read lets a runner without the worker image (an ARC pod) pull it.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -406,9 +410,12 @@ jobs:
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Ensure worker toolchain image
         if: steps.affected.outputs.image_ids != ''
-        run: |
-          set -euo pipefail
-          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+        # Reuses this tree's content-keyed worker image: the runner's own, else
+        # GHCR's (the token is what lets it pull). It builds the image only when
+        # neither has it, as a pull request that changes the image's inputs does.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Build affected images + live OCI config contract
         if: steps.affected.outputs.image_ids != ''
         env:
@@ -510,6 +517,11 @@ jobs:
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
+    # One at a time. Job containers on a box share its Docker daemon, and the
+    # legs share tags there: the hobo-cli and hobo-mcp legs build
+    # `hobo-sdk:candidate` (hobo-mcp also `hobo-cli:candidate`), and every leg
+    # ends by removing its own `<image>:candidate`
+    # (scripts/ci/build-release-oci-image.mts).
     strategy:
       fail-fast: false
       max-parallel: 1
