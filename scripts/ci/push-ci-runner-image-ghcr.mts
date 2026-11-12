@@ -16,6 +16,7 @@ import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
 	dockerImagePresent,
 	ensureCiWorkerImage,
+	ghcrWorkerManifestReachable,
 } from "./ensure-ci-worker-image.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -107,15 +108,6 @@ export function publishRunnerImageReleaseTag(
 	return { published: remote };
 }
 
-function remoteTagExists(ref: string): boolean {
-	return (
-		spawnSync("docker", ["manifest", "inspect", ref], {
-			cwd: root,
-			stdio: "ignore",
-		}).status === 0
-	);
-}
-
 export function pushCiRunnerImageGhcr(): number {
 	const token =
 		process.env.GITHUB_TOKEN?.trim() ?? process.env.GHCR_TOKEN?.trim() ?? "";
@@ -159,7 +151,11 @@ export function pushCiRunnerImageGhcr(): number {
 		return 0;
 	}
 	// Read before the push: whether GHCR already had this version decides its release tag.
-	const versionWasPublished = remoteTagExists(remote);
+	const versionWasPublished = ghcrWorkerManifestReachable(
+		repository,
+		version,
+		token,
+	);
 	if (run("docker", ["tag", candidate, remote]) !== 0) {
 		console.log(
 			`::notice title=Runner image push skipped::docker tag ${candidate} failed`,

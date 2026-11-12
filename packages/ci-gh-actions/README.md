@@ -1037,6 +1037,22 @@ startup, idle and cleanup time. Actual runner attribution requeues displaced dem
 without duplicate charging. Recovery paginates host discovery; ambiguous results
 or exhausted discovery windows retain reservations for authenticated reconciliation.
 
+## HoBo's runner fleet through HoBo CD
+
+HoBo's own runner hosts (box worker, mesh nodes, local runners on `hobo`,
+`hobo-trunk` and `hobo-local-host`) are Camps of the `hobo-ci-runners` Yard,
+and the worker image is Freight that `@hobo/cd` discovers by polling GHCR.
+`src/runner-fleet-delivery.ts` builds the records from the declared hosts:
+`parseRunnerHosts`, `runnerFleetTopology` (one Camp per host),
+`runnerFleetDelivery` (Camp set `hobo-ci-runner-fleet`, the OCI source, a
+pilot-first Placement and a `PROGRESSIVE_PER_GROUP` fan-out with a failure
+budget and quorum) and `runnerFleetCampObservations` (mesh advertisements as
+Camp inventory conditions and claims). Apply them with
+`hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`;
+each host runs `hobo deploy agent run` beside its controller. Job routing is
+unchanged. What is declared, how a host enrolls and what is still refused are
+in [`deploy/runner-fleet/README.md`](deploy/runner-fleet/README.md).
+
 ## Portable pipelines
 
 `createActionsBackend({workspace})` executes the common parsed pipeline in a bound

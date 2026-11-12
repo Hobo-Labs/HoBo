@@ -447,3 +447,42 @@ describe("fleet health and lease signals feed Camp inventory conditions", () => 
 			]).toEqual([]);
 	});
 });
+
+describe("each runner host runs a HoBo CD agent beside its controller", () => {
+	const unit = readFileSync(join(deployDir, "hobo-cd-agent.service"), "utf8");
+	const env = readFileSync(join(deployDir, "agent.env.example"), "utf8");
+
+	it("hobo-cd-agent.service runs `hobo deploy agent run` with every flag the agent runtime requires", () => {
+		const exec = unit.match(/^ExecStart=(.*)$/mu)?.[1] ?? "";
+		expect(exec).toMatch(/\bhobo deploy agent run\b/u);
+		for (const flag of [
+			"--feed",
+			"--reconciler",
+			"--key-file",
+			"--svid-file",
+			"--camp",
+		])
+			expect(exec).toContain(`${flag} `);
+		// Outbound only: nothing listens.
+		expect(unit).not.toMatch(/ListenStream|--port/u);
+	});
+
+	it("the agent does not start before double opt-in enrollment left a key and an SVID", () => {
+		expect(unit).toMatch(/^ConditionPathExists=.*agent\.jwk\.json$/mu);
+		expect(unit).toMatch(/^ConditionPathExists=.*agent\.svid$/mu);
+	});
+
+	it("agent.env.example names an https feed and a declared runner host Camp, and holds no secret", () => {
+		expect(env).toMatch(/^HOBO_CD_FEED_URL=https:\/\/.*\/v1\/cd\/$/mu);
+		const camp = env.match(/^HOBO_CD_CAMP_ID=(.*)$/mu)?.[1];
+		const declared = parseRunnerHosts(
+			JSON.parse(readFileSync(join(deployDir, "hosts.json"), "utf8")),
+		);
+		expect(declared.ok).toBe(true);
+		if (!declared.ok) return;
+		expect(declared.value.map((h) => `${RUNNER_FLEET_YARD}/${h.id}`)).toContain(
+			camp,
+		);
+		expect(env).not.toMatch(/TOKEN|SECRET|PRIVATE|"d"/u);
+	});
+});
