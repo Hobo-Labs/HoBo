@@ -31,14 +31,13 @@ const activeCiFiles = new Set([
 	"ci-deps-publish.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
+	"fleet-enrollment.yml",
 	"pricing-ci.yml",
 	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
-	// Fleet enrollment v2 scorecard eval on the self-hosted fabric (#1688).
-	"fleet-enrollment.yml",
 ]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the
