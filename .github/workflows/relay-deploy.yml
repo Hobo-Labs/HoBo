@@ -72,7 +72,6 @@ jobs:
             .github/actions/route-runner
             scripts/ci/route-runner.mts
             packages/ci/src/fleet-overflow.ts
-            packages/ci/src/fleet/capacity.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
@@ -83,6 +82,7 @@ jobs:
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
           fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
+          fleet-capacity: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
 
   deploy:
     name: Deploy the hosted CI relay (production)

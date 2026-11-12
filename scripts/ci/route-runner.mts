@@ -21,6 +21,12 @@
  * unreadable or more than five minutes old changes nothing: the queue is
  * read exactly as before.
  *
+ * The box's own capacity record, `HOBO_CI_FLEET_CAPACITY`, is read the same
+ * way. While it is fresh, a box that says it cannot admit a job by memory,
+ * with no free slot on ARC to take the job instead, counts as the fleet
+ * refusing jobs. A box that is only busy, a record with no memory verdict,
+ * and one that is missing, unreadable or stale change nothing.
+ *
  * Runs that start together would each read the same queue before any of them
  * had added to it, so a run waits its turn: while a run that started just
  * ahead has not chosen, this one leaves the self-hosted runners to it.
@@ -28,12 +34,6 @@
 import { appendFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import {
-	FLEET_CAPACITY_VARIABLE,
-	type FleetLabelCapacity,
-	fleetLabelCapacity,
-	parseFleetCapacityVariable,
-} from "../../packages/ci/src/fleet/capacity.ts";
 import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
@@ -104,6 +104,13 @@ export const MAX_FINISHED_LOOKUPS = 3;
 export const FLEET_STATE_MAX_AGE_SECONDS = 5 * 60;
 /** How far ahead of this machine's clock a snapshot's timestamp may be. */
 export const FLEET_STATE_MAX_SKEW_SECONDS = 60;
+/**
+ * How old the box's capacity record may be and still count. A worker
+ * rewrites it about once a minute while it is up, so an older one is from a
+ * worker that has stopped or whose writes are refused, and says nothing
+ * about now.
+ */
+export const FLEET_CAPACITY_MAX_AGE_SECONDS = 5 * 60;
 
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
@@ -284,6 +291,122 @@ export function fleetStateRefusal(
 	return undefined;
 }
 
+/**
+ * What the `HOBO_CI_FLEET_CAPACITY` variable says to routing. Only a `fresh`
+ * record carries anything to act on; the other kinds say why there is none.
+ */
+export type FleetCapacity =
+	| Readonly<{ kind: "unset" }>
+	| Readonly<{ kind: "unreadable" }>
+	| Readonly<{ kind: "undated" }>
+	/** Past the age limit, or (a negative age) dated ahead of this machine. */
+	| Readonly<{ kind: "stale"; ageSeconds: number }>
+	| Readonly<{
+			kind: "fresh";
+			ageSeconds: number;
+			/** Free slots on the box and on ARC, where the record lists them. */
+			boxFreeSlots: number | undefined;
+			arcFreeSlots: number | undefined;
+			/**
+			 * Whether the box can admit a standard-class job by memory now; unset
+			 * when the worker that wrote the record does not report it.
+			 */
+			boxMemoryAdmit: boolean | undefined;
+	  }>;
+
+/**
+ * Reads the record a worker publishes to `HOBO_CI_FLEET_CAPACITY`
+ * (`#FleetCapacityPublished` in `packages/ci/data-models/ci.cue`, written by
+ * `fleetCapacitySnapshot`): `version: 1`, free slots under `hobo` and `arc`,
+ * `publishedAt`, and `trunkMemoryAdmit` from a worker that reports memory.
+ *
+ * Fields it does not use or know are passed over. This job runs the reader
+ * of the commit it checked out, which can be older than the worker, and a
+ * reader that turned away a record with a new field would go blind every
+ * time one is added. A field it does use, with a value of the wrong kind,
+ * makes the whole record unreadable.
+ */
+export function parseFleetCapacity(
+	value: string | undefined,
+	nowMs: number,
+): FleetCapacity {
+	if (!value?.trim()) return { kind: "unset" };
+	let document: JsonValue;
+	try {
+		// SAFETY: a JSON document is a JsonValue by construction.
+		document = JSON.parse(value) as JsonValue;
+	} catch {
+		return { kind: "unreadable" };
+	}
+	const record = asObject(document);
+	if (!record || record.version !== 1) return { kind: "unreadable" };
+	const freeSlots = (member: JsonValue | undefined) =>
+		asNumber(asObject(member)?.freeSlots);
+	const count = (slots: number | undefined) =>
+		slots !== undefined && Number.isInteger(slots) && slots >= 0;
+	const memoryAdmit = asBoolean(record.trunkMemoryAdmit);
+	if (
+		(record.hobo !== undefined && !count(freeSlots(record.hobo))) ||
+		(record.arc !== undefined && !count(freeSlots(record.arc))) ||
+		(record.trunkMemoryAdmit !== undefined && memoryAdmit === undefined)
+	)
+		return { kind: "unreadable" };
+	const publishedAtMs = Date.parse(asText(record.publishedAt) ?? "");
+	if (Number.isNaN(publishedAtMs)) return { kind: "undated" };
+	const ageMs = nowMs - publishedAtMs;
+	if (
+		ageMs > FLEET_CAPACITY_MAX_AGE_SECONDS * 1000 ||
+		ageMs < -FLEET_STATE_MAX_SKEW_SECONDS * 1000
+	)
+		return { kind: "stale", ageSeconds: Math.trunc(ageMs / 1000) };
+	return {
+		kind: "fresh",
+		ageSeconds: Math.max(0, Math.floor(ageMs / 1000)),
+		boxFreeSlots: freeSlots(record.hobo),
+		arcFreeSlots: freeSlots(record.arc),
+		boxMemoryAdmit: memoryAdmit,
+	};
+}
+
+/**
+ * Whether the box's capacity record says the fleet cannot take this run:
+ * it is fresh, the box says it cannot admit a job by memory, and ARC lists
+ * no free slot to take the job instead.
+ *
+ * All three, because the other tier costs money. A box with no free slot is
+ * only busy with CI's own jobs and will take the next one, so that is left
+ * to the queue. A record without a memory verdict, or without ARC's slots,
+ * does not say the fleet is out of room. The verdict is for a standard-class
+ * job, the class most of a run's jobs get, so it stands for either label.
+ */
+export function fleetCapacityRefuses(capacity: FleetCapacity): boolean {
+	return (
+		capacity.kind === "fresh" &&
+		capacity.boxMemoryAdmit === false &&
+		capacity.arcFreeSlots === 0
+	);
+}
+
+function describeCapacity(capacity: FleetCapacity): string {
+	if (capacity.kind === "unset") return "fleet capacity unset";
+	if (capacity.kind === "unreadable")
+		return "fleet capacity is not the record a worker publishes, so it is not used";
+	if (capacity.kind === "undated")
+		return "fleet capacity does not say when it was published, so it is not used";
+	if (capacity.kind === "stale")
+		return capacity.ageSeconds < 0
+			? `fleet capacity is dated ${-capacity.ageSeconds} s ahead of this machine, so it is not used`
+			: `fleet capacity is ${capacity.ageSeconds} s old, so it is not used`;
+	const memory =
+		capacity.boxMemoryAdmit === undefined
+			? "the box gave no memory verdict"
+			: capacity.boxMemoryAdmit
+				? "the box can admit a job by memory"
+				: "the box cannot admit a job by memory";
+	const slots = `${capacity.boxFreeSlots ?? "unknown"} free slot(s) on the box, ${capacity.arcFreeSlots ?? "unknown"} on ARC`;
+	return `fleet capacity (${capacity.ageSeconds} s old): ${memory}, ${slots}${fleetCapacityRefuses(capacity) ? ", so the fleet is not asked" : ""}`;
+}
+
 export function parseRouteMode(value: string | undefined): RouteMode {
 	const mode = ROUTE_MODES.find((candidate) => candidate === value?.trim());
 	return mode ?? "auto";
@@ -312,8 +435,8 @@ export function routeRunner(input: {
 	local: LabelLoad;
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
-	/** Live box headroom from `HOBO_CI_FLEET_CAPACITY`, when published. */
-	fleetCapacity?: FleetLabelCapacity;
+	/** The box's capacity record; see `parseFleetCapacity`. Unset when left out. */
+	fleetCapacity?: FleetCapacity | undefined;
 	/** The mesh's snapshot, when one was published recently; see `parseFleetState`. */
 	fleetState?: FleetState | undefined;
 }): RouteDecision {
@@ -340,10 +463,10 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.undecidedAhead === 0;
-	const capacity = input.fleetCapacity;
-	const fleetAdmits = capacity === undefined || capacity.admit;
-	const fleetSlots =
-		capacity === undefined ? 1 : Math.min(1, Math.max(0, capacity.freeSlots));
+	// What the box itself reports, when it reported recently: no memory for a
+	// job and no ARC slot to take it instead is refusing, whatever the queue shows.
+	const capacity: FleetCapacity = input.fleetCapacity ?? { kind: "unset" };
+	const capacityRefuses = fleetCapacityRefuses(capacity);
 	// What the nodes themselves report, when they reported recently: a label
 	// with no node or no free slot is refusing, whatever the queue shows.
 	const fleetRefusal = fleetStateRefusal(input.fleetState, fleetLabel);
@@ -358,8 +481,11 @@ export function routeRunner(input: {
 			enabled: true,
 			runsOn: fleetLabel,
 			freeSlots:
-				first && fleetAdmits && !fleetRefusal && takingJobs(input.fleet, limits)
-					? fleetSlots
+				first &&
+				!capacityRefuses &&
+				!fleetRefusal &&
+				takingJobs(input.fleet, limits)
+					? 1
 					: 0,
 		},
 		{
@@ -379,15 +505,9 @@ export function routeRunner(input: {
 		},
 	] satisfies FleetMember[];
 	const selected = selectFleetBackend({ members, currentLabels: [] });
-	const capacityNote =
-		capacity === undefined
-			? "fleet capacity unset"
-			: capacity.admit
-				? `fleet admits ${capacity.requiredMb} MiB jobs (${capacity.freeSlots} slot(s))`
-				: `fleet cannot admit ${capacity.requiredMb} MiB (available ${capacity.availableMb ?? "unknown"} MiB, reserve ${capacity.reserveMb}, volatility ${capacity.volatilityMb})`;
 	const loads = [
 		describeLoad("the fleet", input.fleet),
-		capacityNote,
+		describeCapacity(capacity),
 		input.localEnrolled
 			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
@@ -437,6 +557,12 @@ function asNumber(value: JsonValue | undefined): number | undefined {
 	// SAFETY: the tag check proves a number primitive.
 	return tagOf.call(value) === "[object Number]"
 		? (value as number)
+		: undefined;
+}
+function asBoolean(value: JsonValue | undefined): boolean | undefined {
+	// SAFETY: the tag check proves a boolean primitive.
+	return tagOf.call(value) === "[object Boolean]"
+		? (value as boolean)
 		: undefined;
 }
 function asList(value: JsonValue | undefined): readonly JsonValue[] {
@@ -659,31 +785,6 @@ export async function observeQueue(input: {
  * while a probe is under way and no run ahead has yet to choose. Every other
  * case is decided at once.
  */
-async function readFleetCapacity(
-	read: QueueReader,
-	repository: string,
-	fleetLabel: string,
-): Promise<FleetLabelCapacity | undefined> {
-	try {
-		const page = await read(
-			`/repos/${repository}/actions/variables/${FLEET_CAPACITY_VARIABLE}`,
-		);
-		const raw = asObject(page)?.value;
-		let value: string | undefined;
-		if (tagOf.call(raw) === "[object String]") {
-			// SAFETY: the tag check proves a string primitive.
-			value = raw as string;
-		} else {
-			value = asText(raw) ?? undefined;
-		}
-		const snapshot = parseFleetCapacityVariable(value);
-		if (!snapshot) return undefined;
-		return fleetLabelCapacity(snapshot, fleetLabel);
-	} catch {
-		return undefined;
-	}
-}
-
 export async function chooseRunner(input: {
 	observe: (nowMs: number) => Promise<QueueView>;
 	now: () => number;
@@ -692,12 +793,13 @@ export async function chooseRunner(input: {
 	fleetLabel: string;
 	localEnrolled: boolean;
 	limits: RouteLimits;
-	readCapacity?: () => Promise<FleetLabelCapacity | undefined>;
 	/**
 	 * The mesh's snapshot as of a moment, when one is fresh then. Asked again
 	 * on every pass, since a wait for the probe can outlast its freshness.
 	 */
 	fleetState?: (nowMs: number) => FleetState | undefined;
+	/** The box's capacity record as of a moment; asked again on every pass too. */
+	fleetCapacity?: (nowMs: number) => FleetCapacity;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const startMs = input.now();
@@ -706,11 +808,9 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, LOCAL_HOST_RUNNER_LABEL, nowMs);
-		const fleetCapacity = input.readCapacity
-			? await input.readCapacity()
-			: undefined;
+		const fleetCapacity = input.fleetCapacity?.(nowMs);
 		const fleetState = input.fleetState?.(nowMs);
-		const routed = {
+		const decision = routeRunner({
 			mode: input.mode,
 			fleetLabel,
 			localEnrolled,
@@ -719,25 +819,25 @@ export async function chooseRunner(input: {
 			local,
 			undecidedAhead: view.undecidedAhead,
 			fleetState,
-		};
-		const decision =
-			fleetCapacity === undefined
-				? routeRunner(routed)
-				: routeRunner({ ...routed, fleetCapacity });
-		// A backend the mesh says is refusing is not waited for: a probe being
-		// picked up would not change what its nodes report.
-		const unseen = (load: LabelLoad, refusal: string | undefined) =>
-			load.recentPickups === 0 && !refusingJobs(load, limits) && !refusal;
+			fleetCapacity,
+		});
+		// A backend the mesh or the box says is refusing is not waited for: a
+		// probe being picked up would not change what they report.
+		const unseen = (load: LabelLoad, refused: boolean) =>
+			load.recentPickups === 0 && !refusingJobs(load, limits) && !refused;
+		const fleetRefused =
+			fleetStateRefusal(fleetState, fleetLabel) !== undefined ||
+			(fleetCapacity !== undefined && fleetCapacityRefuses(fleetCapacity));
 		const probeMayHelp =
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
-			((decision.tier !== "fleet" &&
-				unseen(fleet, fleetStateRefusal(fleetState, fleetLabel))) ||
+			((decision.tier !== "fleet" && unseen(fleet, fleetRefused)) ||
 				(decision.tier === "github" &&
 					localEnrolled &&
 					unseen(
 						local,
-						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL),
+						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL) !==
+							undefined,
 					)));
 		const waitedSeconds = seconds(startMs, nowMs);
 		if (!probeMayHelp) return decision;
@@ -851,8 +951,11 @@ export async function main(
 			fleetLabel,
 			localEnrolled,
 			limits,
-			readCapacity: () => readFleetCapacity(read, repository, fleetLabel),
 			fleetState: (nowMs) => parseFleetState(env.HOBO_CI_FLEET_STATE, nowMs),
+			// From the workflow's `vars` context, like the mesh snapshot: the
+			// job's token cannot read a repository variable through the API.
+			fleetCapacity: (nowMs) =>
+				parseFleetCapacity(env.HOBO_CI_FLEET_CAPACITY, nowMs),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known

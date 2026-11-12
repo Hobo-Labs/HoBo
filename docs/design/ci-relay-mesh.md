@@ -418,7 +418,7 @@ node, key or address.
 | Fresh, but the run's label is not listed, or its entry lacks a numeric `nodes` or `freeSlots` | Nothing. The publisher does not speak for that label |
 | Missing, unreadable, or more than five minutes old | Nothing. The queue is read exactly as before |
 
-The snapshot sits beside the box's own memory headroom variable,
+The snapshot sits beside the box's own capacity record,
 `HOBO_CI_FLEET_CAPACITY`, which the routing job also reads: each can only
 take the fleet out of a decision, and either one saying the fleet cannot
 take the job is enough.

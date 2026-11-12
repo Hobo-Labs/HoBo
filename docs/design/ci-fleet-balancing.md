@@ -152,12 +152,14 @@ the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
 {"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}
 ```
 
-The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: live MemAvailable on
-the box, minus memory reservations and a volatility margin, with `admit` and
-`freeSlots` per label. The **Route runners** job in HoBo CI Fabric reads that
-variable so a main run does not queue on `hobo-trunk` when the box cannot launch
-the job's memory class, and instead overflows to GitHub-hosted (or ARC when
-enrolled) before jobs park for minutes.
+The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: free launch slots on
+the box and on the rest of the mesh, and when the record was written. The
+**Route runners** job reads that variable and leaves the fleet only when a
+fresh record says the box cannot admit a job by memory and ARC has no free
+slot; a box that is merely busy is left to the queue. The memory verdict
+(`trunkMemoryAdmit`) is not published yet, so today the job only reports the
+slots. See "Fleet balancing and the route table" in
+[`RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
@@ -191,7 +193,7 @@ would post for a new offer.
   label provider is bounded only by that provider's own spend limit. This must
   be closed before a workflow reads the table for a paid provider.
 - **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet.** They read
-  `HOBO_CI_FLEET_CAPACITY` for headroom-aware overflow; indexing the route
+  `HOBO_CI_FLEET_CAPACITY` for capacity-aware overflow; indexing the route
   table per job class is still outstanding. Jobs that run off the box still
   assume its toolchain image and mounts.
 - **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
