@@ -105,7 +105,7 @@ export interface CdServiceHost extends CdService {
 	health(): HealthReport;
 }
 
-type StepState = { ok: boolean; detail: string; running?: Promise<unknown> };
+type StepState = { ok: boolean; detail: string; running?: Promise<unknown> | undefined };
 
 type ReconcilerState = {
 	readonly reconciler: CampReconciler;

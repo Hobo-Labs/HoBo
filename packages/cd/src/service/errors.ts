@@ -36,6 +36,11 @@ export const SERVICE_FAILURES = Object.freeze({
 		status: 503,
 		remediation: "The journal failed; check storage health (`GET /v1/cd/ready`) and retry with backoff.",
 	},
+	"view-failed": {
+		status: 500,
+		remediation:
+			"A module projection threw while building this view; the subject names the route. Check that module's runbook and the service log.",
+	},
 	"not-ready": {
 		status: 503,
 		remediation:

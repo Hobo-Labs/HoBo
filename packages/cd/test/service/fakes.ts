@@ -346,6 +346,9 @@ export function fakeFacade(state: FacadeState = emptyState()): FakeFacade {
 			async get(id: string) {
 				return state.freight.find((f) => f.freightId === id);
 			},
+			async getByAlias(alias: string) {
+				return state.freight.find((f) => f.alias === alias);
+			},
 			async qualifications(id: string) {
 				return state.qualifications.filter((q) => q.freightId === id);
 			},
