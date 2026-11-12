@@ -22,6 +22,11 @@ export const FLEET_CAPACITY_VARIABLE = "HOBO_CI_FLEET_CAPACITY";
 
 const MAX_PARALLEL_CAP = 8;
 
+/** GitHub-hosted machine type for plan-time overflow (not bare `hobo`). */
+const GITHUB_HOSTED_MACHINE_TYPE = "ubuntu-24.04";
+
+export const FLEET_CAPACITY_MAX_AGE_MS = 5 * 60_000;
+
 /** Conservative default when the variable is unset or unreadable. */
 export const DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP = 4;
 
@@ -38,7 +43,53 @@ export type FleetCapacityPublished = Readonly<{
 	publishedAt?: string;
 }>;
 
-export type MainWorkspaceShardRunner = "hobo-trunk" | "hobo";
+export type MainWorkspaceShardRunner =
+	| "hobo-trunk"
+	| typeof GITHUB_HOSTED_MACHINE_TYPE;
+
+export type MainWorkspaceShardMatrixEntry = Readonly<{
+	shard: number;
+	runner: MainWorkspaceShardRunner;
+}>;
+
+export function isFleetCapacityFresh(
+	snapshot: FleetCapacityPublished | undefined,
+	nowMs: number,
+): boolean {
+	if (!snapshot?.publishedAt) return false;
+	const publishedMs = Date.parse(snapshot.publishedAt);
+	if (!Number.isFinite(publishedMs)) return false;
+	return nowMs - publishedMs <= FLEET_CAPACITY_MAX_AGE_MS;
+}
+
+export function resolveMainWorkspaceShardRunners(
+	shardCount: number,
+	snapshot: FleetCapacityPublished | undefined,
+	nowMs: number,
+): MainWorkspaceShardMatrixEntry[] {
+	const count = Math.max(0, Math.floor(shardCount));
+	const fallbackRunner: MainWorkspaceShardRunner = "hobo-trunk";
+	if (count === 0) return [];
+	if (!snapshot || !isFleetCapacityFresh(snapshot, nowMs)) {
+		return Array.from({ length: count }, (_, shard) => ({
+			shard,
+			runner: fallbackRunner,
+		}));
+	}
+	const arcFree = snapshot.arc?.freeSlots ?? 0;
+	const trunkBlocked = snapshot.trunkMemoryAdmit === false;
+	return Array.from({ length: count }, (_, shard) => {
+		if (!trunkBlocked) {
+			return { shard, runner: fallbackRunner };
+		}
+		// SAFETY: overflow runner is the closed GitHub-hosted machine type constant.
+		const hostedRunner = GITHUB_HOSTED_MACHINE_TYPE as MainWorkspaceShardRunner;
+		return {
+			shard,
+			runner: shard < arcFree ? fallbackRunner : hostedRunner,
+		};
+	});
+}
 
 export type LoadFleetCapacityOptions = Readonly<{
 	repository?: string;
@@ -148,11 +199,8 @@ export function resolveMainWorkspaceShardRunner(
 	snapshot: FleetCapacityPublished | undefined,
 	fallback: MainWorkspaceShardRunner = "hobo-trunk",
 ): MainWorkspaceShardRunner {
-	if (!snapshot) return fallback;
-	const arcFree = snapshot.arc?.freeSlots ?? 0;
-	if (arcFree > 0) return "hobo-trunk";
-	if (snapshot.trunkMemoryAdmit === false) return "hobo";
-	return "hobo-trunk";
+	const matrix = resolveMainWorkspaceShardRunners(1, snapshot, Date.now());
+	return matrix[0]?.runner ?? fallback;
 }
 
 /**

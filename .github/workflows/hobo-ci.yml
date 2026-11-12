@@ -883,7 +883,7 @@ jobs:
       main_tests: ${{ steps.plan.outputs.main_tests }}
       main_scope: ${{ steps.plan.outputs.main_scope }}
       shards: ${{ steps.plan.outputs.shards }}
-      shard_runner: ${{ steps.plan.outputs.shard_runner }}
+      shard_matrix: ${{ steps.plan.outputs.shard_matrix }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -1169,8 +1169,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && (needs.main-gate-plan.outputs.shard_runner || 'hobo-trunk') || 'hobo' }}
+        include: ${{ fromJSON(needs.main-gate-plan.outputs.shard_matrix || '[{"shard":0,"runner":"hobo-trunk"}]') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && matrix.runner || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read

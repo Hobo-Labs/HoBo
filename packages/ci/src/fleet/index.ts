@@ -20,13 +20,17 @@ export {
 } from "./capacity.js";
 export {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
+	FLEET_CAPACITY_MAX_AGE_MS,
 	FLEET_CAPACITY_VARIABLE,
 	type FleetCapacityPublished,
 	fleetCapacitySnapshot,
 	fleetCapacityVariableValue,
+	isFleetCapacityFresh,
 	mainWorkspaceParallelCap,
+	type MainWorkspaceShardMatrixEntry,
 	parseFleetCapacityPublished,
 	resolveMainWorkspaceShardRunner,
+	resolveMainWorkspaceShardRunners,
 	type MainWorkspaceShardRunner,
 } from "./capacity-input.js";
 export {

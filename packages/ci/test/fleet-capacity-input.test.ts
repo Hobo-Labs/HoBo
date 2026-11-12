@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
+	FLEET_CAPACITY_MAX_AGE_MS,
 	fleetCapacitySnapshot,
 	fleetCapacityVariableValue,
+	isFleetCapacityFresh,
 	mainWorkspaceParallelCap,
 	parseFleetCapacityPublished,
-	resolveMainWorkspaceShardRunner,
+	resolveMainWorkspaceShardRunners,
 } from "../src/fleet/capacity-input.js";
+
+const NOW = Date.parse("2026-11-12T12:00:00.000Z");
+const FRESH_AT = new Date(NOW - 60_000).toISOString();
+const STALE_AT = new Date(NOW - FLEET_CAPACITY_MAX_AGE_MS - 1).toISOString();
 
 describe("fleet capacity input", () => {
 	it("builds admitted parallel as hobo plus arc capped at eight", () => {
@@ -28,26 +34,19 @@ describe("fleet capacity input", () => {
 		expect(mainWorkspaceParallelCap(parsed)).toBe(3);
 	});
 
-	it("round-trips trunkMemoryAdmit through fleet capacity JSON", () => {
-		const text = fleetCapacityVariableValue(
-			fleetCapacitySnapshot(1, 0, "2026-11-12T00:00:00Z", false),
-		);
-		const parsed = parseFleetCapacityPublished(text);
-		expect(parsed?.trunkMemoryAdmit).toBe(false);
-		expect(resolveMainWorkspaceShardRunner(parsed)).toBe("hobo");
-	});
-
-	it("resolves main workspace shard runner from capacity", () => {
-		expect(
-			resolveMainWorkspaceShardRunner(
-				fleetCapacitySnapshot(1, 2, undefined, false),
-			),
-		).toBe("hobo-trunk");
-		expect(
-			resolveMainWorkspaceShardRunner(
-				fleetCapacitySnapshot(1, 0, undefined, false),
-			),
-		).toBe("hobo");
+	it("per-shard runners: ARC first, ubuntu-24.04 overflow, stale holds trunk", () => {
+		const freshBlocked = fleetCapacitySnapshot(1, 1, FRESH_AT, false);
+		expect(resolveMainWorkspaceShardRunners(3, freshBlocked, NOW)).toEqual([
+			{ shard: 0, runner: "hobo-trunk" },
+			{ shard: 1, runner: "ubuntu-24.04" },
+			{ shard: 2, runner: "ubuntu-24.04" },
+		]);
+		const stale = fleetCapacitySnapshot(0, 0, STALE_AT, false);
+		expect(isFleetCapacityFresh(stale, NOW)).toBe(false);
+		expect(resolveMainWorkspaceShardRunners(2, stale, NOW)).toEqual([
+			{ shard: 0, runner: "hobo-trunk" },
+			{ shard: 1, runner: "hobo-trunk" },
+		]);
 	});
 
 	it("falls back when the variable is missing or invalid", () => {

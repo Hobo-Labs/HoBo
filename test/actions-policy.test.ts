@@ -486,8 +486,8 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			) {
 				assert.equal(
 					runsOn,
-					"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && (needs.main-gate-plan.outputs.shard_runner || 'hobo-trunk') || 'hobo' }}",
-					`${file}:${lines[start]} must use plan-time shard_runner`,
+					'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && matrix.runner || \'hobo\' }}',
+					`${file}:${lines[start]} must use plan-time shard_matrix runner`,
 				);
 				continue;
 			}

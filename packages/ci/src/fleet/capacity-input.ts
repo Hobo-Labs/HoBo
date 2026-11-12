@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_GITHUB_MACHINE_TYPE } from "../fleet-overflow.js";
 
 /** Repository variable the worker publishes capacity snapshots to. */
 // public-contract: main-gate-plan reads parallel admission from this variable.
@@ -31,6 +32,9 @@ const MAX_PARALLEL_CAP = 8;
 
 /** Conservative default when the variable is unset or unreadable. */
 export const DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP = 4;
+
+/** PublishedAt older than this is treated as no capacity (hold on trunk, no hosted overflow). */
+export const FLEET_CAPACITY_MAX_AGE_MS = 5 * 60_000;
 
 const MemberSchema = z
 	.object({
@@ -73,18 +77,64 @@ export function fleetCapacitySnapshot(
 	return snapshot;
 }
 
-export type MainWorkspaceShardRunner = "hobo-trunk" | "hobo";
+export type MainWorkspaceShardRunner =
+	| "hobo-trunk"
+	| typeof DEFAULT_GITHUB_MACHINE_TYPE;
 
-/** Plan-time label for main workspace shards (prefers mesh ARC, else memory, else trunk). */
+export type MainWorkspaceShardMatrixEntry = Readonly<{
+	shard: number;
+	runner: MainWorkspaceShardRunner;
+}>;
+
+export function isFleetCapacityFresh(
+	snapshot: FleetCapacityPublished | undefined,
+	nowMs: number,
+): boolean {
+	if (!snapshot?.publishedAt) return false;
+	const publishedMs = Date.parse(snapshot.publishedAt);
+	if (!Number.isFinite(publishedMs)) return false;
+	return nowMs - publishedMs <= FLEET_CAPACITY_MAX_AGE_MS;
+}
+
+/**
+ * Per-shard runner labels: ARC/trunk first, GitHub-hosted machine type for overflow
+ * (never bare `hobo`). Stale `publishedAt` → all `hobo-trunk` (hold, no overflow).
+ */
+export function resolveMainWorkspaceShardRunners(
+	shardCount: number,
+	snapshot: FleetCapacityPublished | undefined,
+	nowMs: number,
+): MainWorkspaceShardMatrixEntry[] {
+	const count = Math.max(0, Math.floor(shardCount));
+	const fallbackRunner: MainWorkspaceShardRunner = "hobo-trunk";
+	if (count === 0) return [];
+	if (!snapshot || !isFleetCapacityFresh(snapshot, nowMs)) {
+		return Array.from({ length: count }, (_, shard) => ({
+			shard,
+			runner: fallbackRunner,
+		}));
+	}
+	const arcFree = snapshot.arc?.freeSlots ?? 0;
+	const trunkBlocked = snapshot.trunkMemoryAdmit === false;
+	const hosted: MainWorkspaceShardRunner = DEFAULT_GITHUB_MACHINE_TYPE;
+	return Array.from({ length: count }, (_, shard) => {
+		if (!trunkBlocked) {
+			return { shard, runner: fallbackRunner };
+		}
+		return {
+			shard,
+			runner: shard < arcFree ? fallbackRunner : hosted,
+		};
+	});
+}
+
+/** @deprecated Use resolveMainWorkspaceShardRunners; kept for single-label fallbacks. */
 export function resolveMainWorkspaceShardRunner(
 	snapshot: FleetCapacityPublished | undefined,
 	fallback: MainWorkspaceShardRunner = "hobo-trunk",
 ): MainWorkspaceShardRunner {
-	if (!snapshot) return fallback;
-	const arcFree = snapshot.arc?.freeSlots ?? 0;
-	if (arcFree > 0) return "hobo-trunk";
-	if (snapshot.trunkMemoryAdmit === false) return "hobo";
-	return "hobo-trunk";
+	const matrix = resolveMainWorkspaceShardRunners(1, snapshot, Date.now());
+	return matrix[0]?.runner ?? fallback;
 }
 
 export function fleetCapacityVariableValue(

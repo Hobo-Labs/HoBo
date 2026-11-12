@@ -3,7 +3,6 @@ import {
 	admissionRank,
 	createAdmissionOrder,
 	isMainTrunkFleetDeferJob,
-	isMainWorkspaceShardHostedOverflow,
 	mainTrainReleasePhase,
 	TRUNK_RANK,
 } from "../src/admission-order.js";
@@ -442,18 +441,4 @@ it("orders release matrix legs with their non-matrix phase", async () => {
 			)
 		).map((item) => item.jobId),
 	).toEqual([20, 25, 30]);
-});
-
-it("detects plan-time hosted overflow for main workspace shards on hobo only", () => {
-	expect(
-		isMainWorkspaceShardHostedOverflow("Main workspace test shard 2", ["hobo"]),
-	).toBe(true);
-	expect(
-		isMainWorkspaceShardHostedOverflow("Main workspace test shard 2", [
-			"hobo-trunk",
-		]),
-	).toBe(false);
-	expect(isMainWorkspaceShardHostedOverflow("Main full gate", ["hobo"])).toBe(
-		false,
-	);
 });

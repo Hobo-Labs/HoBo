@@ -13,21 +13,20 @@ Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/431
 
 ## Cause
 
-**Main workspace test** jobs hardcoded **`hobo-trunk`** at queue time. When mesh ARC was empty and trunk memory headroom was false, shards still requested a label the box could not launch, with no plan-time escape to **`hobo`** (GitHub-hosted relay).
+**Main workspace test** jobs hardcoded **`hobo-trunk`** at queue time. When mesh ARC was empty and trunk memory headroom was false, shards still requested a label the box could not launch, with no plan-time escape to GitHub-hosted.
 
 ## Fix
 
 - Worker **`HOBO_CI_FLEET_CAPACITY`** snapshots add **`trunkMemoryAdmit`** from `memoryAdmitHeadroom` on the **standard (4096 MiB)** shard class with **2048 / 1024 MiB** reserve and volatility unchanged.
-- **`main-gate-plan`** reads the variable and emits **`shard_runner`**: **`hobo-trunk`** when **`arc.freeSlots > 0`**, else **`hobo`** when **`trunkMemoryAdmit === false`**, else **`hobo-trunk`**.
-- **`main_workspace_tests`** `runs-on` uses **`needs.main-gate-plan.outputs.shard_runner`** (no workflow rerun, no repo-wide **`HOBO_CI_FLEET_ROUTES`** flip).
+- **`main-gate-plan`** emits **`shard_matrix`**: per-shard **`runner`** — **`hobo-trunk`** for indices covered by **`arc.freeSlots`** when **`trunkMemoryAdmit === false`**, else **`ubuntu-24.04`** (GitHub-hosted machine type, not bare **`hobo`**). Stale **`publishedAt`** (**> 5 minutes**) → all **`hobo-trunk`** (hold, no overflow).
+- **`main_workspace_tests`** matrix **`include`** + **`matrix.runner`** (no workflow rerun, no repo-wide **`HOBO_CI_FLEET_ROUTES`** flip; shared **`hobo`** fleet label unchanged).
 
 ## Measure
 
-On a memory-thin box with **ARC 0**: new shard jobs queue on **`hobo`** at plan time when **`trunkMemoryAdmit: false`**, not after **8+ minutes** stuck on **`hobo-trunk`**.
+On a memory-thin box with **ARC 0** and fresh capacity: overflow shards queue on **`ubuntu-24.04`** at plan time when **`trunkMemoryAdmit: false`**, not after **8+ minutes** stuck on **`hobo-trunk`**.
 
 ## Verified
 
 - `packages/ci/test/fleet-capacity-input.test.ts`
-- `packages/ci-gh-actions/test/admission-order.test.ts` (`isMainWorkspaceShardHostedOverflow`)
 - `pnpm run test:smoke scripts/test/load-fleet-capacity.test.ts`
 - `pnpm run test:smoke scripts/test/main-gate-workspace-shards.test.ts`

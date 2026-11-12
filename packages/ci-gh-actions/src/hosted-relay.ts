@@ -23,7 +23,6 @@ import {
 	type AdmissionOrder,
 	createAdmissionOrder,
 	isMainTrunkFleetDeferJob,
-	isMainWorkspaceShardHostedOverflow,
 	isMainWorkspaceShardJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
@@ -1625,16 +1624,7 @@ export class HostedRelay {
 			let lease: Lease | undefined;
 			try {
 				const memoryAdmission = this.options.memoryAdmission;
-				const skipMemoryForHostedOverflow = isMainWorkspaceShardHostedOverflow(
-					job.name,
-					job.labels,
-				);
-				if (
-					memoryAdmission &&
-					memoryGeneral &&
-					memoryTrunk &&
-					!skipMemoryForHostedOverflow
-				) {
+				if (memoryAdmission && memoryGeneral && memoryTrunk) {
 					const memory = memoryRequestForStoredJob(job, memoryAdmission.config);
 					job.memoryClass = memory.memoryClass;
 					job.memoryMb = memory.memoryMb;

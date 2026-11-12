@@ -76,9 +76,9 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
-/** Main workspace shards: plan-time `shard_runner` (fleet capacity), default trunk. */
+/** Main workspace shards: plan-time `shard_matrix` (per-shard runner), default trunk. */
 const MAIN_WORKSPACE_SHARD_RUNS_ON =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && (needs.main-gate-plan.outputs.shard_runner || 'hobo-trunk') || 'hobo' }}";
+	'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && matrix.runner || \'hobo\' }}';
 
 /**
  * What a routed job asks for: the label the `route` job chose (the fleet, an

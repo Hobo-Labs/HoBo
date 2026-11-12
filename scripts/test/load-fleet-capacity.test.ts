@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	FLEET_CAPACITY_MAX_AGE_MS,
+	isFleetCapacityFresh,
 	parseFleetCapacityPublished,
 	resolveMainWorkspaceShardRunner,
+	resolveMainWorkspaceShardRunners,
 } from "../ci/load-fleet-capacity.mts";
 
+const NOW = Date.parse("2026-11-12T12:00:00.000Z");
+const FRESH_AT = new Date(NOW - 60_000).toISOString();
+
 describe("load-fleet-capacity", () => {
-	it("resolves shard runner: ARC preferred", () => {
+	it("resolves per-shard runners: ARC slots then ubuntu-24.04", () => {
 		const snapshot = parseFleetCapacityPublished(
 			JSON.stringify({
 				version: 1,
@@ -14,13 +20,19 @@ describe("load-fleet-capacity", () => {
 				hobo: { freeSlots: 1 },
 				arc: { freeSlots: 1 },
 				trunkMemoryAdmit: false,
+				publishedAt: FRESH_AT,
 			}),
 		);
 		assert.ok(snapshot);
 		assert.equal(resolveMainWorkspaceShardRunner(snapshot), "hobo-trunk");
+		assert.deepEqual(resolveMainWorkspaceShardRunners(3, snapshot, NOW), [
+			{ shard: 0, runner: "hobo-trunk" },
+			{ shard: 1, runner: "ubuntu-24.04" },
+			{ shard: 2, runner: "ubuntu-24.04" },
+		]);
 	});
 
-	it("resolves shard runner: hosted when no ARC and memory blocks trunk", () => {
+	it("stale publishedAt holds overflow on hobo-trunk", () => {
 		const snapshot = parseFleetCapacityPublished(
 			JSON.stringify({
 				version: 1,
@@ -28,10 +40,17 @@ describe("load-fleet-capacity", () => {
 				hobo: { freeSlots: 1 },
 				arc: { freeSlots: 0 },
 				trunkMemoryAdmit: false,
+				publishedAt: new Date(
+					NOW - FLEET_CAPACITY_MAX_AGE_MS - 1,
+				).toISOString(),
 			}),
 		);
 		assert.ok(snapshot);
-		assert.equal(resolveMainWorkspaceShardRunner(snapshot), "hobo");
+		assert.equal(isFleetCapacityFresh(snapshot, NOW), false);
+		assert.deepEqual(resolveMainWorkspaceShardRunners(2, snapshot, NOW), [
+			{ shard: 0, runner: "hobo-trunk" },
+			{ shard: 1, runner: "hobo-trunk" },
+		]);
 	});
 
 	it("parses trunkMemoryAdmit on capacity snapshots", () => {
@@ -42,6 +61,7 @@ describe("load-fleet-capacity", () => {
 				trunkMemoryAdmit: true,
 				hobo: { freeSlots: 2 },
 				arc: { freeSlots: 0 },
+				publishedAt: FRESH_AT,
 			}),
 		);
 		assert.deepEqual(snapshot?.trunkMemoryAdmit, true);

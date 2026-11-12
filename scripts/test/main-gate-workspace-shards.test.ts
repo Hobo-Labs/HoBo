@@ -45,8 +45,8 @@ describe("main full gate workspace sharding", () => {
 		assert.ok(finishStart > shardStart);
 		const block = workflow.slice(shardStart, finishStart);
 		assert.match(block, /Main workspace test shard \$\{\{ matrix\.shard \}\}/u);
-		assert.match(block, /needs\.main-gate-plan\.outputs\.shards/u);
-		assert.match(block, /needs\.main-gate-plan\.outputs\.shard_runner/u);
+		assert.match(block, /needs\.main-gate-plan\.outputs\.shard_matrix/u);
+		assert.match(block, /matrix\.runner/u);
 		assert.match(
 			block,
 			/needs: \[ci-runner-image, ci-deps-image, main-gate-plan\]/u,
