@@ -314,6 +314,24 @@ describe("trusting a publisher is governed and parsed", () => {
 		).toBe(INGEST_REASON.ungoverned);
 	});
 
+	it("a journal conflict while trusting is a typed refusal", async () => {
+		const { time } = await harness();
+		const store = new MemoryEventStore();
+		store.append = async () => {
+			throw new Error("expected seq 0 but stream is at 1");
+		};
+		const racing = createTrustedPublisherVerifier({
+			store,
+			tenant: TENANT,
+			now: time.now,
+			http: new OidcTransport().transport,
+			authorizer: new FakeAuthorizer(),
+		});
+		expect(code(await racing.trust(githubPublisher(), context(time.now)))).toBe(
+			INGEST_REASON.journalConflict,
+		);
+	});
+
 	it("a later trust record for the same name replaces the earlier one", async () => {
 		const { publishers, ctx } = await harness();
 		const narrowed = githubPublisher({

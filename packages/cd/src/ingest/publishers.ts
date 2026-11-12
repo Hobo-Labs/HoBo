@@ -361,20 +361,31 @@ export function createTrustedPublisherVerifier(
 			});
 			if (current && equals(TrustedPublisherRecordSchema, current, normalized))
 				return { ok: true, value: current };
-			await deps.store.append(
-				stream,
-				[
+			try {
+				await deps.store.append(
+					stream,
+					[
+						{
+							type: CD_EVENTS.PublisherTrusted,
+							data: body(TrustedPublisherRecordSchema, normalized),
+						},
+					],
 					{
-						type: CD_EVENTS.PublisherTrusted,
-						data: body(TrustedPublisherRecordSchema, normalized),
+						expectedSeq: seq,
+						actor: ctx.principal,
+						tenant: deps.tenant,
 					},
-				],
-				{
-					expectedSeq: seq,
-					actor: ctx.principal,
-					tenant: deps.tenant,
-				},
-			);
+				);
+			} catch (error) {
+				return refused(
+					refuse(
+						INGEST_REASON.journalConflict,
+						`publisher.Trusted for ${record.name} was not appended: ${error instanceof Error ? error.message : String(error)}`,
+						"another trust change landed first; re-read the publisher and retry",
+						record.name,
+					),
+				);
+			}
 			publishers.set(normalized.name, normalized);
 			return { ok: true, value: normalized };
 		},

@@ -20,6 +20,7 @@ export const INGEST_REASON = Object.freeze({
 	unauthorized: "ingest-unauthorized",
 	proposalOnly: "ingest-proposal-only",
 	ungoverned: "ingest-ungoverned",
+	journalConflict: "ingest-journal-conflict",
 } as const);
 
 export type IngestReasonCode =

@@ -120,4 +120,5 @@ All metrics are counters on `TelemetrySink`, with a `tenant` attribute:
 | `attestation-declaration-missing` | No `hobo.cd/declaration-hash` external parameter. | Add it to the build's external parameters, or push a manifest instead. |
 | `provenance-unverified` | The verifier refused, or its result left a subject uncovered or unverified. | Re-sign the exact statement with a trusted builder and signer. Check the source subscriptions' trusted builder and signer pins. |
 | `unverified-trigger` on a CDEvent | The carried attestation did not verify. The polls in the message were still scheduled. | Nothing is lost: the poll reads the source. Fix the attestation if push creation is wanted. |
+| `ingest-journal-conflict` on `trust` | Another trust change for that publisher landed first. | Re-read the publisher (`readTrustedPublishers`) and retry if the change is still wanted. |
 | `cdevent-unsupported` | Not an artifact event. | Send other CDEvents to the outbound boundary, not to Freight ingest. |
