@@ -1,0 +1,27 @@
+syntax = "proto3";
+package hobo.provider_flux.v1;
+
+// Plan 0024 WP13: the outputs the flux.app/v1 resolver reports from two public
+// FluxOS reads. Observation only: no wallet key, no environment parameters.
+// Design-time wire view (no buf codegen is wired for this package); the CUE
+// definition #FluxAppOutputs constrains the same record.
+message FluxAppOutputs {
+  string app_name = 1;
+  string owner = 2;
+  // Instances the registered specification asks for.
+  int32 instances = 3;
+  // max(instances, desired minInstances).
+  int32 required_instances = 4;
+  // Distinct nodes observed running the app.
+  int32 running_instances = 5;
+  // compose component name -> sha256 digest of its pinned image.
+  map<string, string> component_digests = 6;
+  // Present only when the compose has exactly one component.
+  string artifact_digest = 7;
+  bool ready = 8;
+  bool operation_confirmed = 9;
+  bool operation_terminal = 10;
+  bool absence_confirmed = 11;
+  // ready | pending
+  string lifecycle_status = 12;
+}
