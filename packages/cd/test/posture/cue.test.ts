@@ -70,13 +70,13 @@ function vet(definition: string, value: JsonValue): boolean {
 	}
 }
 
-const BODY_DEFINITION: Readonly<Record<string, string>> = {
-	[CD_EVENTS.PolicyBindingChanged]: "#PolicyBindingRecord",
-	[CD_EVENTS.PolicyShadowDecided]: "#ShadowDecisionRecord",
-	[CD_EVENTS.ComplianceObserved]: "#ComplianceRecord",
-	[CD_EVENTS.ComplianceChanged]: "#ComplianceRecord",
-	[CD_EVENTS.PostureRemediationProposed]: "#PostureRemediationRecord",
-};
+const BODY_DEFINITION = new Map<string, string>([
+	[CD_EVENTS.PolicyBindingChanged, "#PolicyBindingRecord"],
+	[CD_EVENTS.PolicyShadowDecided, "#ShadowDecisionRecord"],
+	[CD_EVENTS.ComplianceObserved, "#ComplianceRecord"],
+	[CD_EVENTS.ComplianceChanged, "#ComplianceRecord"],
+	[CD_EVENTS.PostureRemediationProposed, "#PostureRemediationRecord"],
+]);
 
 describe.skipIf(cue === undefined)("posture.cue", () => {
 	it("accepts every body a full posture journey appends", async () => {
@@ -161,7 +161,7 @@ describe.skipIf(cue === undefined)("posture.cue", () => {
 		);
 		const seen = new Set<string>();
 		for (const { event } of h.store.all) {
-			const definition = BODY_DEFINITION[event.type];
+			const definition = BODY_DEFINITION.get(event.type);
 			if (!definition) continue;
 			// SAFETY: bodies are JSON by construction.
 			expect(
@@ -170,7 +170,7 @@ describe.skipIf(cue === undefined)("posture.cue", () => {
 			).toBe(true);
 			seen.add(event.type);
 		}
-		expect([...seen].sort()).toEqual(Object.keys(BODY_DEFINITION).sort());
+		expect([...seen].sort()).toEqual([...BODY_DEFINITION.keys()].sort());
 		const binding = railDelivery(digest("a"), [
 			{
 				pack: "tls-baseline",

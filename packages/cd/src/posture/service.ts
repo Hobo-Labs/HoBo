@@ -26,7 +26,7 @@
 // (rule, resource, Set, ownership, fix) and Delta ids are derived from them.
 import { create } from "@bufbuild/protobuf";
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
-import type { EventPosition, JsonObject } from "@hobo/core";
+import type { EventPosition, JsonObject, ReadAllOptions } from "@hobo/core";
 import {
 	type PosturePack,
 	observeFields as packObserveFields,
@@ -118,13 +118,16 @@ export type PostureServiceDeps = CdBase & {
 };
 
 const COMPLIANCE_PREFIX = CD_STREAMS.compliance("");
-const MODE_NAME: Readonly<Record<number, RemediationMode>> = {
-	[RemediationModeEnum.INFORM]: "inform",
-	[RemediationModeEnum.INFORM_ONLY]: "inform-only",
-	[RemediationModeEnum.ENFORCE]: "enforce",
-};
 
 type Timed<T> = Readonly<{ record: T; atMs: number }>;
+
+/** Catch-up read options: everything after `cursor` (from the start when there is none). */
+function readOptions(
+	cursor: EventPosition | undefined,
+	base: Readonly<{ tenant: string; filter?: { streamId: string } }>,
+): ReadAllOptions {
+	return cursor === undefined ? base : { ...base, after: cursor };
+}
 
 type CampProjection = {
 	compliance: Timed<ComplianceRecord>[];
@@ -146,7 +149,16 @@ type Target = Readonly<{
 
 /** Remediation mode of a binding; UNSPECIFIED reads as the conservative default (`inform`). */
 function modeOf(mode: RemediationModeEnum): RemediationMode {
-	return MODE_NAME[mode] ?? CD_DEFAULTS.postureRemediation;
+	switch (mode) {
+		case RemediationModeEnum.INFORM:
+			return "inform";
+		case RemediationModeEnum.INFORM_ONLY:
+			return "inform-only";
+		case RemediationModeEnum.ENFORCE:
+			return "enforce";
+		default:
+			return CD_DEFAULTS.postureRemediation;
+	}
 }
 
 function intervalMs(
@@ -280,10 +292,9 @@ export function createPostureService(
 	}
 
 	async function catchUp(): Promise<void> {
-		for await (const { position, event } of d.store.readAll({
-			...(cursor === undefined ? {} : { after: cursor }),
-			tenant: d.tenant,
-		})) {
+		for await (const { position, event } of d.store.readAll(
+			readOptions(cursor, { tenant: d.tenant }),
+		)) {
 			cursor = position;
 			if (!event.streamId.startsWith(COMPLIANCE_PREFIX)) continue;
 			const campId = event.streamId.slice(COMPLIANCE_PREFIX.length);
@@ -315,11 +326,9 @@ export function createPostureService(
 	): Promise<Observed | undefined> {
 		const entry = status.get(campId) ?? {};
 		const streamId = CD_STREAMS.campStatus(campId);
-		for await (const { position, event } of d.store.readAll({
-			...(entry.cursor === undefined ? {} : { after: entry.cursor }),
-			filter: { streamId },
-			tenant: d.tenant,
-		})) {
+		for await (const { position, event } of d.store.readAll(
+			readOptions(entry.cursor, { filter: { streamId }, tenant: d.tenant }),
+		)) {
 			entry.cursor = position;
 			if (
 				event.streamId !== streamId ||

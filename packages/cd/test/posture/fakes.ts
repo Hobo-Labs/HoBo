@@ -3,7 +3,7 @@
 // production code.
 import { create } from "@bufbuild/protobuf";
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
-import { createResolvedDeploymentSet } from "@hobo/cloud";
+import { createResolvedDeploymentSet, type ResourcePlan } from "@hobo/cloud";
 import {
 	type AppendOptions,
 	type AppendResult,
@@ -50,6 +50,7 @@ import type {
 	CdAuthorizer,
 	CdContext,
 	DeltaLedger,
+	DesiredStateChange,
 	DesiredStateReader,
 	Digest,
 	FreightId,
@@ -183,7 +184,8 @@ export class MemoryEventStore implements DurableEventStore {
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		let yielded = 0;
-		for (const entry of [...this.all]) {
+		const snapshot = this.all.slice();
+		for (const entry of snapshot) {
 			if (options.after !== undefined && entry.position <= options.after)
 				continue;
 			if (options.tenant !== undefined && entry.event.tenant !== options.tenant)
@@ -420,14 +422,17 @@ export function resolvedSet(
 		setId,
 		plan: {
 			schema: "hobo.deployment-plan/v1",
-			resources: resources.map((r) => ({
-				name: r.name,
-				port: "hosting",
-				provider: "cloudflare",
-				deps: [],
-				productId: "cloudflare.workers",
-				...(r.parameters ? { realizationParameters: r.parameters } : {}),
-			})),
+			resources: resources.map((r) => {
+				const plan: ResourcePlan = {
+					name: r.name,
+					port: "hosting",
+					provider: "cloudflare",
+					deps: [],
+					productId: "cloudflare.workers",
+				};
+				if (r.parameters) plan.realizationParameters = r.parameters;
+				return plan;
+			}),
 			dependencyOrder: resources.map((r) => r.name),
 			objective: "balanced",
 		},
@@ -488,9 +493,9 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async status() {
 		return undefined;
 	}
-	// biome-ignore lint/correctness/useYield: the posture service never reads changes.
-	async *changes() {
-		return;
+	/** The posture service never reads changes: an empty feed. */
+	async *changes(): AsyncIterable<DesiredStateChange> {
+		yield* [];
 	}
 	async open(delta: DeltaRecord): Promise<Outcome<DeltaRecord>> {
 		if (this.refuseOpen)
@@ -513,7 +518,9 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async update(delta: DeltaRecord): Promise<Outcome<DeltaRecord>> {
 		return { ok: true, value: delta };
 	}
-	async apply(input: unknown): Promise<Outcome<SetRecord>> {
+	async apply(
+		input: Parameters<DeltaLedger["apply"]>[0],
+	): Promise<Outcome<SetRecord>> {
 		this.applied.push(input);
 		throw new Error("the posture service must never apply a Delta (I22)");
 	}

@@ -223,11 +223,11 @@ export function evaluatePosture(
 	});
 }
 
-const CONSERVATIVE: Readonly<Record<RemediationMode, number>> = {
+const CONSERVATIVE = {
 	"inform-only": 2,
 	inform: 1,
 	enforce: 0,
-};
+} as const satisfies Record<RemediationMode, number>;
 
 /**
  * The remediation a rule actually gets. The Rail binding (the parent) is the

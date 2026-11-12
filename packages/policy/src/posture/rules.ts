@@ -346,7 +346,7 @@ function parseRule<T>(
 			`${path}.fix`,
 		);
 	const remediation = parsePin(source.remediation, `${path}.remediation`);
-	return Object.freeze({
+	const rule = {
 		id,
 		pack,
 		phase: "observe" as const,
@@ -359,13 +359,13 @@ function parseRule<T>(
 		// SAFETY: checked against POSTURE_SEVERITIES above.
 		severity: severity as PostureSeverity,
 		controls,
-		...(remediation ? { remediation } : {}),
 		fix: Object.freeze(
 			[...fix].sort((a, b) =>
 				a.field < b.field ? -1 : a.field > b.field ? 1 : 0,
 			),
 		),
-	});
+	};
+	return Object.freeze(remediation ? { ...rule, remediation } : rule);
 }
 
 /** Parse one posture pack document (a policy-IR observe-phase rule profile). Throws `PosturePackError`. */
@@ -401,16 +401,16 @@ export function parsePosturePack<T>(input: T): PosturePack {
 		ids.add(rule.id);
 	}
 	const remediation = parsePin(source.remediation, "$.remediation");
-	return Object.freeze({
+	const parsed = {
 		schemaVersion: POLICY_IR_SCHEMA_VERSION,
 		profile: POSTURE_PROFILE,
 		pack,
-		...(remediation ? { remediation } : {}),
 		observeFields: sortedUnique(observeFieldsList),
 		rules: Object.freeze(
 			[...rules].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
 		),
-	});
+	} satisfies PosturePack;
+	return Object.freeze(remediation ? { ...parsed, remediation } : parsed);
 }
 
 /** The attribute paths reconcilers must report for these packs: the sorted union of their `observeFields`. */

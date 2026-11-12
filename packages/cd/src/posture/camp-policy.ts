@@ -66,10 +66,11 @@ type BindingEntry = Readonly<{
 
 type CampBindings = Readonly<{ entries: readonly BindingEntry[] }>;
 
-const MODE_NAME: Readonly<Record<number, string>> = {
-	[PolicyMode.INFORM]: "INFORM",
-	[PolicyMode.ENFORCE]: "ENFORCE",
-};
+function modeName(mode: PolicyMode): "INFORM" | "ENFORCE" | undefined {
+	if (mode === PolicyMode.INFORM) return "INFORM";
+	if (mode === PolicyMode.ENFORCE) return "ENFORCE";
+	return undefined;
+}
 
 /** The Rail digest that decides for a Camp: its enforced binding, else the Station's active Rail. */
 export function governingRailDigest(
@@ -230,8 +231,8 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 						input.campId,
 					),
 				);
-			const modeName = MODE_NAME[input.mode];
-			if (modeName === undefined)
+			const mode = modeName(input.mode);
+			if (mode === undefined)
 				return refuse(
 					reason(
 						POSTURE_REASON.modeInvalid,
@@ -245,7 +246,7 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 				{
 					campId: input.campId,
 					railDigest,
-					mode: modeName,
+					mode: mode,
 					promotionId: input.promotionId,
 					freightId: freight.freightId,
 				},
@@ -262,7 +263,7 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 					),
 				);
 			const state = await load(input.campId);
-			const key = `bind:${input.promotionId}:${modeName}:${railDigest}`;
+			const key = `bind:${input.promotionId}:${mode}:${railDigest}`;
 			const prior = state.entries.find(
 				(e) =>
 					e.action === "bind" &&
@@ -307,7 +308,7 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 			return append(
 				input.campId,
 				next,
-				{ action: "bind", mode: modeName },
+				{ action: "bind", mode: mode },
 				key,
 				ctx,
 			);

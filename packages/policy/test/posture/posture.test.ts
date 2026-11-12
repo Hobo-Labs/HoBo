@@ -83,8 +83,8 @@ describe("posture rule profile: parse, don't validate", () => {
 			"posture-value-unexpected",
 		],
 	])("refuses a clause with %s", (_name, clause, code) => {
-		const pack = structuredClone(TLS_PACK);
-		pack.rules[1].forbid = [{ field: "public", ...clause } as never];
+		const pack = JSON.parse(JSON.stringify(TLS_PACK));
+		pack.rules[1].forbid = [{ field: "public", ...clause }];
 		expect(() => parsePosturePack(pack)).toThrowError(
 			expect.objectContaining({ code }),
 		);
@@ -105,8 +105,8 @@ describe("posture rule profile: parse, don't validate", () => {
 		expect(() => parsePosturePack(pin)).toThrowError(
 			expect.objectContaining({ code: "posture-remediation-invalid" }),
 		);
-		const noFix = structuredClone(TLS_PACK);
-		delete (noFix.rules[0] as { fix?: unknown }).fix;
+		const noFix = JSON.parse(JSON.stringify(TLS_PACK));
+		noFix.rules[0].fix = undefined;
 		expect(() => parsePosturePack(noFix)).toThrowError(
 			expect.objectContaining({ code: "posture-fix-missing" }),
 		);
@@ -119,10 +119,9 @@ describe("posture rule profile: parse, don't validate", () => {
 			parsePosturePack({ ...TLS_PACK, rules: "nope" });
 			expect.unreachable();
 		} catch (error) {
-			expect(error).toBeInstanceOf(PosturePackError);
-			const typed = error as PosturePackError;
-			expect(typed.path).toBe("$.rules");
-			expect(typed.remediation.length).toBeGreaterThan(0);
+			if (!(error instanceof PosturePackError)) throw error;
+			expect(error.path).toBe("$.rules");
+			expect(error.remediation.length).toBeGreaterThan(0);
 		}
 	});
 });
@@ -177,9 +176,22 @@ describe("evaluator golden vectors (every operator)", () => {
 
 	it.each(VECTORS)("%s %j on %j is %s", (op, operand, observed, expected) => {
 		const attributes = observed === undefined ? {} : { f: observed };
-		expect(
-			evaluateClause({ field: "f", op, ...operand } as never, attributes),
-		).toBe(expected);
+		// The clause goes through the pack boundary, so each vector exercises a parsed clause.
+		const clause = parsePosturePack({
+			...TLS_PACK,
+			observeFields: ["f"],
+			rules: [
+				{
+					id: "v",
+					phase: "observe",
+					effect: "warn",
+					require: [{ field: "f", op, ...operand }],
+					severity: "low",
+				},
+			],
+		}).rules[0]?.require[0];
+		if (!clause) throw new Error("clause");
+		expect(evaluateClause(clause, attributes)).toBe(expected);
 	});
 
 	it("orders semver per precedence (prerelease below release, numeric identifiers numerically)", () => {
@@ -298,10 +310,12 @@ describe("observe_fields and remediation", () => {
 			"inform-only",
 		);
 		const ruleOnly = parsePosturePack(TLS_PACK);
-		const pinned = {
-			...ruleOnly.rules[1],
-			remediation: "inform-only",
-		} as (typeof ruleOnly.rules)[number];
+		const pinnedPack = JSON.parse(JSON.stringify(TLS_PACK));
+		pinnedPack.rules[0].remediation = "inform-only";
+		const pinned = parsePosturePack(pinnedPack).rules.find(
+			(r) => r.id === "tls-min-version",
+		);
+		if (!pinned) throw new Error("pinned rule");
 		expect(
 			effectiveRemediation({
 				binding: "enforce",

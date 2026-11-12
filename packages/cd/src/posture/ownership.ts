@@ -16,7 +16,7 @@
 //
 // Pure: no clock, no I/O.
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
-import type { JsonValue } from "@hobo/core";
+import type { JsonObject, JsonValue } from "@hobo/core";
 import {
 	evaluateClause,
 	type PostureFinding,
@@ -24,7 +24,14 @@ import {
 	type PostureRule,
 } from "@hobo/policy/posture";
 import type { DeltaRecord, PostureFindingRecord } from "../_generated/cd_pb.js";
-import { canonicalJson, isJsonObject, jsonOf } from "./journal.js";
+import {
+	canonicalJson,
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	jsonOf,
+} from "./journal.js";
 
 export type Ownership =
 	| "conflict"
@@ -49,12 +56,12 @@ const PLAN_FIELDS = [
 	"productId",
 	"deploymentId",
 ] as const;
+const PLAN_FIELD_SET: ReadonlySet<string> = new Set(PLAN_FIELDS);
 
 function scalarText(value: JsonValue | undefined): string | undefined {
 	if (value === undefined || value === null) return undefined;
-	if (typeof value === "string") return value;
-	if (typeof value === "number" || typeof value === "boolean")
-		return String(value);
+	if (isJsonString(value)) return value;
+	if (isJsonNumber(value) || isJsonBoolean(value)) return String(value);
 	return canonicalJson(value);
 }
 
@@ -69,7 +76,7 @@ export function setValue(
 ): string | undefined {
 	const plan = jsonOf(resolved.plan.resources.find((r) => r.name === resource));
 	if (!isJsonObject(plan)) return undefined;
-	if ((PLAN_FIELDS as readonly string[]).includes(field)) {
+	if (PLAN_FIELD_SET.has(field)) {
 		const value = scalarText(plan[field]);
 		return value === "" ? undefined : value;
 	}
@@ -159,17 +166,15 @@ export function keptConflicts(
 }
 
 function setPath(
-	target: Record<string, JsonValue>,
+	target: JsonObject,
 	path: readonly string[],
 	value: string,
-): Record<string, JsonValue> {
+): JsonObject {
 	const [head, ...rest] = path;
 	if (head === undefined) return target;
 	if (rest.length === 0) return { ...target, [head]: value };
 	const child = target[head];
-	const next: Record<string, JsonValue> = isJsonObject(child)
-		? Object.fromEntries(Object.entries(child))
-		: {};
+	const next: JsonObject = isJsonObject(child) ? child : {};
 	return { ...target, [head]: setPath(next, rest, value) };
 }
 
@@ -188,9 +193,7 @@ export function applyPostureFixes(
 		resources: resolved.plan.resources.map((r) => {
 			if (r.name !== resource) return r;
 			const current = jsonOf(r.realizationParameters);
-			let parameters: Record<string, JsonValue> = isJsonObject(current)
-				? Object.fromEntries(Object.entries(current))
-				: {};
+			let parameters: JsonObject = isJsonObject(current) ? current : {};
 			for (const fix of fixes)
 				parameters = setPath(parameters, fix.field.split("."), fix.value);
 			// SAFETY: a JSON object built from JSON scalars and objects is a plan realization-parameter object.

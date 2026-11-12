@@ -22,7 +22,14 @@ import {
 	stringsField,
 } from "@hobo/events";
 import { CD_EVENTS } from "../events.js";
-import { canonicalJson, isJsonObject, jsonOf } from "./journal.js";
+import {
+	canonicalJson,
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	jsonOf,
+} from "./journal.js";
 
 const OPTIONAL = { required: false } as const;
 
@@ -225,16 +232,9 @@ export function toPostureCorpusBody<T>(data: T): EventBody {
 	for (const [key, value] of Object.entries(document)) {
 		if (REPEATED_MESSAGES.has(key) && Array.isArray(value))
 			out[key] = value.map((item) => canonicalJson(item));
-		else if (
-			typeof value === "string" ||
-			typeof value === "number" ||
-			typeof value === "boolean"
-		)
+		else if (isJsonString(value) || isJsonNumber(value) || isJsonBoolean(value))
 			out[key] = value;
-		else if (
-			Array.isArray(value) &&
-			value.every((item) => typeof item === "string")
-		)
+		else if (Array.isArray(value) && value.every((item) => isJsonString(item)))
 			out[key] = value.map(String);
 		else if (value !== null) out[key] = canonicalJson(value);
 	}

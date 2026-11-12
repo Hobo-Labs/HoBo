@@ -154,7 +154,7 @@ function result(record: PostureComplianceInput): OscalPostureResult {
 		];
 		if (finding.ownershipConflict)
 			props.push({ name: "hobo-ownership-conflict", value: "true" });
-		return {
+		const observation = {
 			uuid: uuidOf(`${seed}|observation|${finding.rule}|${finding.resource}`),
 			title: oscalString(
 				`${finding.rule} on ${finding.resource}`,
@@ -162,10 +162,12 @@ function result(record: PostureComplianceInput): OscalPostureResult {
 			),
 			description: `Posture rule ${finding.rule} evaluated on ${finding.resource}: ${finding.state}.`,
 			props,
-			methods: ["TEST"],
+			methods: ["TEST"] as const,
 			collected: record.evaluatedAt,
-			...(finding.observed.trim() === "" ? {} : { remarks: finding.observed }),
 		};
+		return finding.observed.trim() === ""
+			? observation
+			: { ...observation, remarks: finding.observed };
 	});
 	const controls = [
 		...new Set(
@@ -186,17 +188,21 @@ function result(record: PostureComplianceInput): OscalPostureResult {
 					`${seed}|observation|${f.rule}|${f.resource}`,
 				),
 			}));
-		return {
+		const finding = {
 			uuid: uuidOf(`${seed}|finding|${control}`),
 			title: control.toUpperCase(),
 			description: `${citing.length} posture finding(s) cite ${control.toUpperCase()}; ${failing ? "at least one is noncompliant or unknown" : "all are compliant or not applicable"}.`,
 			target: {
-				type: "objective-id",
+				type: "objective-id" as const,
 				"target-id": control,
-				status: { state: failing ? "not-satisfied" : "satisfied" },
+				status: {
+					state: failing ? ("not-satisfied" as const) : ("satisfied" as const),
+				},
 			},
-			...(related.length > 0 ? { "related-observations": related } : {}),
 		};
+		return related.length > 0
+			? { ...finding, "related-observations": related }
+			: finding;
 	});
 	const props: OscalPostureProp[] = [
 		{ name: "hobo-camp", value: record.campId },
@@ -209,7 +215,7 @@ function result(record: PostureComplianceInput): OscalPostureResult {
 			name: "hobo-observation-position",
 			value: record.observationPosition,
 		});
-	return {
+	const out = {
 		uuid: uuidOf(`${seed}|result`),
 		title: `Posture of Camp ${record.campId}${record.candidate ? " (candidate Rail)" : ""}`,
 		description: `Continuous posture evaluation of Camp ${record.campId} against Rail ${record.railDigest}: ${record.state}.`,
@@ -223,9 +229,9 @@ function result(record: PostureComplianceInput): OscalPostureResult {
 					: { "include-all": {} },
 			],
 		},
-		...(observations.length > 0 ? { observations } : {}),
 		findings,
 	};
+	return observations.length > 0 ? { ...out, observations } : out;
 }
 
 /**

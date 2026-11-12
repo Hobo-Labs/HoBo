@@ -5,7 +5,8 @@
 // (`sha256:aaaa` = sha256 of 64 `a`s).
 import { readFileSync } from "node:fs";
 import { create, toJson } from "@bufbuild/protobuf";
-import type { JsonObject } from "@hobo/core";
+import type { PolicyPack } from "@hobo/contracts";
+import type { JsonObject, JsonValue } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	FreightQualifiedRecordSchema,
@@ -19,6 +20,7 @@ import {
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import type { Digest } from "../../src/ports.js";
 import { createShadowRecorder } from "../../src/posture/index.js";
+import { isJsonObject } from "../../src/posture/journal.js";
 import {
 	camp,
 	digest,
@@ -52,7 +54,7 @@ function interaction(description: string): Interaction {
 }
 
 /** Real digests → pact aliases, so observed bodies compare with the pact. */
-function alias<T>(value: T): unknown {
+function alias<T>(value: T): JsonValue {
 	return JSON.parse(
 		JSON.stringify(value ?? null).replace(
 			/sha256:([0-9a-f])\1{63}/gu,
@@ -67,22 +69,23 @@ function real(aliasDigest: string): Digest {
 	return digest(match[1]);
 }
 
-function verify(i: Interaction, observed: unknown): void {
+function verify<T>(i: Interaction, value: T): void {
+	const observed = alias(value);
 	const rules = i.response.matchingRules ?? {};
 	const expected = structuredClone(i.response.body);
 	for (const [path, rule] of Object.entries(rules)) {
 		const keys = path.replace(/^\$\.body\./u, "").split(".");
-		let cursor: unknown = observed;
+		let cursor: JsonValue | undefined = observed;
 		for (const key of keys)
-			cursor = (cursor as Record<string, unknown> | undefined)?.[key];
+			cursor = isJsonObject(cursor) ? cursor[key] : undefined;
 		expect(String(cursor)).toMatch(new RegExp(rule.regex, "u"));
 	}
 	expect(observed).toMatchObject(expected);
 }
 
-const PACKS: Record<string, { id: string; version: string; rules: [] }> = {
-	[digest("b")]: { id: "rail-new", version: "2", rules: [] },
-};
+const PACKS = new Map<string, PolicyPack>([
+	[digest("b"), { id: "rail-new", version: "2", rules: [] }],
+]);
 
 async function qualify(h: PostureHarness, freightId: string) {
 	const pipeline = create(PipelineRecordSchema, {
@@ -127,15 +130,12 @@ describe("posture provider verification (PACT)", () => {
 			h.ctx(),
 		);
 		if (!out.ok) throw new Error("refused");
-		verify(
-			i,
-			alias({
-				ok: true,
-				record: toJson(PolicyBindingRecordSchema, out.value),
-				events: h.store.events(CD_STREAMS.campSpec(PROD)).map((e) => e.type),
-				stream: CD_STREAMS.campSpec(PROD),
-			}),
-		);
+		verify(i, {
+			ok: true,
+			record: toJson(PolicyBindingRecordSchema, out.value),
+			events: h.store.events(CD_STREAMS.campSpec(PROD)).map((e) => e.type),
+			stream: CD_STREAMS.campSpec(PROD),
+		});
 	});
 
 	it("BIND ENFORCE without INFORM", async () => {
@@ -192,10 +192,10 @@ describe("posture provider verification (PACT)", () => {
 			h.ctx(),
 		);
 		if (!out.ok) throw new Error("refused");
-		verify(
-			i,
-			alias({ ok: true, record: toJson(PolicyBindingRecordSchema, out.value) }),
-		);
+		verify(i, {
+			ok: true,
+			record: toJson(PolicyBindingRecordSchema, out.value),
+		});
 	});
 
 	it("SHADOW_CANDIDATE and SHADOW_RECORD", async () => {
@@ -212,17 +212,17 @@ describe("posture provider verification (PACT)", () => {
 		const shadow = createShadowRecorder({
 			...h.deps,
 			resolvePack: async (d) =>
-				PACKS[d] ?? { id: "none", version: "0", rules: [] },
+				PACKS.get(d) ?? { id: "none", version: "0", rules: [] },
 		});
 		const candidate = await shadow.candidate(PROD);
 		verify(
 			interaction(
 				"the gate asks for the candidate Rail while the Camp is bound INFORM",
 			),
-			alias({
+			{
 				railDigest: candidate?.railDigest,
 				policyPack: candidate?.policyPack.id,
-			}),
+			},
 		);
 		const i = interaction("the gate records a diverged shadow decision");
 		await shadow.record(

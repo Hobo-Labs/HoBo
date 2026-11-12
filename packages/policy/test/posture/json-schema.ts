@@ -3,7 +3,14 @@
 // the conformance check carries its own evaluator. Any keyword outside the
 // supported set fails loudly instead of being skipped, so the check can
 // never pass by ignoring part of the schema.
-import { isJsonArray, isJsonObject, type JsonValue } from "../../src/json.js";
+import {
+	isJsonArray,
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+} from "../../src/json.js";
 
 type Schema = { readonly [key: string]: JsonValue };
 
@@ -45,7 +52,10 @@ function typeOf(value: JsonValue): string {
 	if (value === null) return "null";
 	if (isJsonArray(value)) return "array";
 	if (isJsonObject(value)) return "object";
-	return typeof value;
+	if (isJsonString(value)) return "string";
+	if (isJsonNumber(value)) return "number";
+	if (isJsonBoolean(value)) return "boolean";
+	return "unknown";
 }
 
 function matchesType(value: JsonValue, type: string): boolean {
@@ -59,7 +69,7 @@ export function createValidator(root: Schema) {
 	const definitions = root.definitions;
 	if (isJsonObject(definitions)) {
 		for (const definition of Object.values(definitions)) {
-			if (isJsonObject(definition) && typeof definition.$id === "string")
+			if (isJsonObject(definition) && isJsonString(definition.$id))
 				byId.set(definition.$id, definition);
 		}
 	}
@@ -91,25 +101,22 @@ export function createValidator(root: Schema) {
 			if (!ANNOTATIONS.has(key) && !SUPPORTED.has(key))
 				throw new Error(`unsupported schema keyword ${key} at ${path}`);
 		}
-		if (typeof schema.$ref === "string")
+		if (isJsonString(schema.$ref))
 			errors.push(...validate(value, resolve(schema.$ref), path));
 		const type = schema.type;
-		if (typeof type === "string" && !matchesType(value, type))
+		if (isJsonString(type) && !matchesType(value, type))
 			errors.push(`${path}: expected ${type}, got ${typeOf(value)}`);
 		if (
 			isJsonArray(type) &&
-			!type.some((t) => typeof t === "string" && matchesType(value, t))
+			!type.some((t) => isJsonString(t) && matchesType(value, t))
 		)
 			errors.push(`${path}: expected one of ${type.join("|")}`);
 		if (isJsonArray(schema.enum) && !schema.enum.includes(value))
 			errors.push(`${path}: ${JSON.stringify(value)} not in enum`);
 		if (schema.const !== undefined && schema.const !== value)
 			errors.push(`${path}: expected const ${JSON.stringify(schema.const)}`);
-		if (typeof value === "string") {
-			if (
-				typeof schema.pattern === "string" &&
-				!regex(schema.pattern).test(value)
-			)
+		if (isJsonString(value)) {
+			if (isJsonString(schema.pattern) && !regex(schema.pattern).test(value))
 				errors.push(
 					`${path}: ${JSON.stringify(value)} fails ${schema.pattern}`,
 				);
@@ -123,13 +130,13 @@ export function createValidator(root: Schema) {
 				errors.push(`${path}: not an email`);
 		}
 		if (
-			typeof value === "number" &&
-			typeof schema.minimum === "number" &&
+			isJsonNumber(value) &&
+			isJsonNumber(schema.minimum) &&
 			value < schema.minimum
 		)
 			errors.push(`${path}: below minimum ${schema.minimum}`);
 		if (isJsonArray(value)) {
-			if (typeof schema.minItems === "number" && value.length < schema.minItems)
+			if (isJsonNumber(schema.minItems) && value.length < schema.minItems)
 				errors.push(`${path}: fewer than ${schema.minItems} items`);
 			if (isJsonObject(schema.items)) {
 				const items = schema.items;
@@ -144,7 +151,7 @@ export function createValidator(root: Schema) {
 				: {};
 			if (isJsonArray(schema.required)) {
 				for (const name of schema.required) {
-					if (typeof name === "string" && !(name in value))
+					if (isJsonString(name) && !(name in value))
 						errors.push(`${path}: missing required ${name}`);
 				}
 			}

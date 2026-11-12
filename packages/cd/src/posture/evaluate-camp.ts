@@ -26,22 +26,24 @@ import {
 } from "../_generated/cd_pb.js";
 import { classifyOwnership, type Ownership } from "./ownership.js";
 
-const STATE: Readonly<Record<PostureState, ComplianceState>> = {
+const STATE = {
 	compliant: ComplianceState.COMPLIANT,
 	noncompliant: ComplianceState.NONCOMPLIANT,
 	unknown: ComplianceState.UNKNOWN,
 	"not-applicable": ComplianceState.NOT_APPLICABLE,
-};
-
-const STATE_NAME: Readonly<Record<number, PostureState>> = {
-	[ComplianceState.COMPLIANT]: "compliant",
-	[ComplianceState.NONCOMPLIANT]: "noncompliant",
-	[ComplianceState.UNKNOWN]: "unknown",
-	[ComplianceState.NOT_APPLICABLE]: "not-applicable",
-};
+} as const satisfies Record<PostureState, ComplianceState>;
 
 export function postureStateOf(state: ComplianceState): PostureState {
-	return STATE_NAME[state] ?? "unknown";
+	switch (state) {
+		case ComplianceState.COMPLIANT:
+			return "compliant";
+		case ComplianceState.NONCOMPLIANT:
+			return "noncompliant";
+		case ComplianceState.NOT_APPLICABLE:
+			return "not-applicable";
+		default:
+			return "unknown";
+	}
 }
 
 /** A remediation the service must act on: one noncompliant finding under an effective `enforce`. */

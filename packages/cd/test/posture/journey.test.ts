@@ -65,10 +65,10 @@ const STRICT: PolicyPack = {
 		},
 	],
 };
-const PACKS: Readonly<Record<Digest, PolicyPack>> = {
-	[OLD_RAIL]: PERMISSIVE,
-	[NEW_RAIL]: STRICT,
-};
+const PACKS = new Map<string, PolicyPack>([
+	[OLD_RAIL, PERMISSIVE],
+	[NEW_RAIL, STRICT],
+]);
 
 /** The gate's policy step: the enforced Rail decides; the candidate is shadowed and recorded. */
 async function gate(
@@ -86,8 +86,8 @@ async function gate(
 	const enforced =
 		governingRailDigest(await h.campPolicy.binding(PROD), stationRail) ??
 		stationRail;
-	const effect = evaluatePolicyPack({ request, pack: PACKS[enforced] }).decision
-		.effect;
+	const effect = evaluatePolicyPack({ request, pack: PACKS.get(enforced) })
+		.decision.effect;
 	const candidate = await shadow.candidate(PROD);
 	let verdict: ShadowVerdict | undefined;
 	if (candidate) {
@@ -172,7 +172,7 @@ describe("Rail inform → enforce journey", () => {
 		const shadow = createShadowRecorder({
 			...h.deps,
 			telemetry: h.telemetry,
-			resolvePack: async (railDigest) => PACKS[railDigest] ?? PERMISSIVE,
+			resolvePack: async (railDigest) => PACKS.get(railDigest) ?? PERMISSIVE,
 		});
 		const freight = railFreight(NEW_RAIL);
 

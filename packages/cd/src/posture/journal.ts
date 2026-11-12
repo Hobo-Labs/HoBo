@@ -36,6 +36,14 @@ export function isJsonString<T>(value: T): value is T & string {
 	return tagOf.call(value) === "[object String]";
 }
 
+export function isJsonNumber<T>(value: T): value is T & number {
+	return tagOf.call(value) === "[object Number]";
+}
+
+export function isJsonBoolean<T>(value: T): value is T & boolean {
+	return value === true || value === false;
+}
+
 /** A persisted value as plain JSON, or undefined when it is not JSON. */
 export function jsonOf<T>(data: T): JsonValue | undefined {
 	if (data === undefined) return undefined;
@@ -172,7 +180,7 @@ export async function appendOnce(
 					{
 						...input.event,
 						meta: {
-							...(input.event.meta ?? {}),
+							...input.event.meta,
 							idempotencyKey: input.idempotencyKey,
 						},
 					},

@@ -8,6 +8,7 @@ import type { Digest } from "../../src/ports.js";
 import {
 	createCampPolicy,
 	createPostureService,
+	type PostureServiceDeps,
 } from "../../src/posture/index.js";
 import {
 	clock,
@@ -89,7 +90,7 @@ export function postureHarness(
 		now: time.now,
 		authorizer,
 	});
-	const deps = {
+	const deps: PostureServiceDeps = {
 		store,
 		tenant: TENANT,
 		now: time.now,
@@ -103,15 +104,12 @@ export function postureHarness(
 		},
 		authorizer,
 		telemetry,
-		...(options.candidateRail === false
-			? {}
-			: {
-					candidateRail: async (
-						railDigest: Digest,
-					): Promise<RailDeliveryRecord | undefined> =>
-						rails.byDigest.get(railDigest),
-				}),
 	};
+	if (options.candidateRail !== false)
+		deps.candidateRail = async (
+			railDigest: Digest,
+		): Promise<RailDeliveryRecord | undefined> =>
+			rails.byDigest.get(railDigest);
 	const service = createPostureService(deps);
 	return {
 		store,
