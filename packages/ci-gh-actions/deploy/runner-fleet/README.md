@@ -14,7 +14,7 @@ new one a host at a time.
 |---|---|
 | [`hosts.json`](hosts.json) | The declared runner hosts: mesh node id, kind (`box-worker`, `mesh-node`, `local-runner`), the runner labels it serves, and its ring (`pilot` or `fleet`). |
 | [`hobo.delivery.ts`](hobo.delivery.ts) | The delivery module `hobo deploy pipeline apply --file` applies; built from `hosts.json` by `runnerFleetDelivery` in [`src/runner-fleet-delivery.ts`](../../src/runner-fleet-delivery.ts). |
-| [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example) | The CD agent each runner host runs beside its controller. |
+| [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example), [`agent.runner-host.json.example`](agent.runner-host.json.example) | The CD agent each runner host runs beside its controller, and what it is told about its host (`HOBO_CD_RUNNER_HOST`). |
 
 ## What the delivery module declares
 
@@ -33,6 +33,13 @@ new one a host at a time.
   pushes one such tag (`release-<UTC yyyymmddHHMMSS>-<content key>`) the first
   time it publishes a version, so publish order is lexical order and one
   version is one Freight. The content key alone (`v<12 hex>`) has no order.
+- **Station Rail** `hobo-ci-runner-fleet` (`runnerFleetRail`, exported as the
+  module's `rails`): it binds the `hobo-ci-runner-fleet` Camp set and approves
+  exactly the provider the fleet's Camps declare, `self-hosted`. Placement
+  reads it as the Station's Rail (empty `stationId`: the composed Station)
+  while the Station's journal has no Rail of its own active; a Rail the
+  journal activated wins, and its providers then come from that Rail. Without
+  a Rail placement fails closed (`rail-providers-unknown`).
 - **Placement** `hobo-ci-runner-fleet`: every eligible host, in a `pilot` group
   (at most one host) and then a `fleet` group.
 - **Pipeline** `hobo-ci-runner-fleet`, node `fleet`: new Freight from the source
@@ -46,8 +53,23 @@ new one a host at a time.
 
 ## Fleet health feeds Camp inventory
 
-`runnerFleetCampObservations(hosts, nodes, now)` maps each host's signed mesh
-advertisement to `CampInventory.observe` input from the health source:
+Every observation a runner host's agent reports carries the host's health as
+claims (`runnerHostCampReport`): `hobo.ci/mesh-advert` (`fresh`, `expired` or
+`missing`: the host's own signed advertisement), `hobo.ci/mesh-advert-valid-until`,
+`hobo.ci/runner-host-ready` (the controller observed serving and the advert
+fresh and healthy) and, while the advert is fresh, `label:hobo.ci/serves-<label>`.
+The Station's delivery feed, once it has accepted the report (SVID, DPoP,
+lease, fence), passes it to `CampInventory.observe` as health-source
+conditions read at the Station's clock (`runnerHostHealthConditions`, the table
+below) plus the claims (`withRunnerHostHealthIngest` in
+[`hobo`'s `cd-agent-runner-host.ts`](../../../hobo/src/cd-agent-runner-host.ts)).
+A host that is not ready carries the `NO_PLACE` taint
+`hobo.ci/runner-host-unready` until a ready report clears it, so placement
+skips it and a fan-out defers it. A host that has never reported is not
+contacted at all and carries the Station's own `hobo.cd/unreachable` taint.
+
+`runnerFleetCampObservations(hosts, nodes, now)` maps the mesh board's view of
+each host to the same table, for a reader of the board:
 
 | Mesh advertisement | REACHABLE | LEASED | READY |
 |---|---|---|---|
@@ -75,25 +97,66 @@ not placed. Claims narrow, never grant.
 3. On the Station, an operator approves the key and accepts the agent for the
    host's Camp: `hobo deploy agent approve-key <id>`, then
    `hobo deploy agent accept <id> --camp hobo-ci-runners/<id>`.
-4. On the host, save the SVID as `agent.svid`, fill `agent.env` from
-   [`agent.env.example`](agent.env.example), and enable
+4. On the host, save the SVID as `agent.svid` (an empty file is fine: the
+   agent activates one by proving key possession once accepted), fill
+   `agent.env` from [`agent.env.example`](agent.env.example) and
+   `agent.runner-host.json` from
+   [`agent.runner-host.json.example`](agent.runner-host.json.example), and enable
    [`hobo-cd-agent.service`](hobo-cd-agent.service). It connects outbound to
    `/v1/cd/` and pulls; the Station never dials it. `hobo deploy agent revoke
    <id> --reason <text>` takes a host out.
+
+## Run the agent on a runner host
+
+`hobo deploy agent run` registers the runner-host realizer when
+`HOBO_CD_RUNNER_HOST` names the host's agent config
+([`agent.runner-host.json.example`](agent.runner-host.json.example): `hostId`,
+`hostKind`, the registry read credential's locator `credentialRef`, optionally
+`docker.binary`, `worker.database` and `drainDeadlineMs`). Its job ports are
+read from the box worker's data directory, the directory of `worker.database`
+(default `HOBO_CI_WORKER_DB`, else the worker's own default path), which the
+controller container must mount from the host: the journal read-only for
+leases, `mesh-advert.json` (the worker's own advert, rewritten every mesh
+beat) and the `admission-paused` marker the agent places to drain the host
+(package README, "Job ports from the worker's data directory"). A Set for the host's Camp then
+converges by pulling the image its runner-host row pins by digest, draining,
+swapping the controller and verifying by observation; a failed verify restores
+the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
+(package README, "Runner-host realizer"). The agent serves only its own Camp
+(`runner-host-camp-unbound` otherwise). `--feed` takes the Station's
+`https://…/v1/cd/` URL.
 
 ## What does not work yet
 
 These are refused, not faked:
 
-- **No runner-host realizer.** `hobo deploy agent run` on a runner host refuses
-  with `compose-realizer-missing`: `@hobo/cd` has no realizer that applies a
-  runner image Set to a box worker, mesh node or local runner (pull the image,
-  drain, restart the controller). Until one exists the fleet records Freight
-  and fans out to nobody; hosts are upgraded the way
-  [the runner queue guide](../../../ci/RUNNER-QUEUE.md) describes.
-- **No ingestion of mesh conditions.** Nothing yet calls `CampInventory.observe`
-  with `runnerFleetCampObservations`; there is no `hobo deploy camp observe`.
-- **Placement fails closed** with `rail-providers-unknown` until the Station's
-  Rail lists approved providers.
+- **A local runner has no runner-presence port.** Its GitHub presence is not
+  in the worker's data directory, so `agent run` on a `local-runner` refuses
+  `runner-host-interface-missing ... jobs.runners` before it starts; upgrade
+  those hosts the way [the runner queue guide](../../../ci/RUNNER-QUEUE.md)
+  describes. The realizer also assumes the controller runs as a container
+  with the worker's data directory mounted from the host; today's box worker
+  daemon runs as a process (`restart-worker.sh`).
+- **A placed node's promotion does not write the Set yet.** The fan-out runs
+  the pilot group first, one host at a time, and defers a tainted host, but
+  the composed `@hobo/cd` PromotionService has no placed-Camps reader or
+  fan-out aggregate gate (`packages/cd/src/compose/wire.ts`), so the pilot's
+  promotion does not produce the Set its agent converges. The end-to-end
+  proof writes that Set through the desired-state ledger and keeps the
+  fan-out leg as a `todo`.
+- **No Set resolves the controller image yet.** The realizer reads the image
+  from the Set's `hobo-ci.runner-host/v1` plan row (`realizationParameters.image`);
+  the fleet's Bindle has no stored planning declaration or planner product for
+  it, so a promoted Set has no such row and converge refuses
+  `runner-host-image-unresolved`.
+- **A host is placed only after it reports.** A Camp is reachable once its
+  agent has reported a reconcile observation, which needs a Set; a fresh host
+  is `hobo.cd/unreachable` until then.
 - **Existing versions have no release tag.** Only a version published after
   this change gets one; the fleet's first Freight is the next image version.
+
+The offline end-to-end proof (enrollment, placement, the pilot-first fan-out
+deferring an unready host, a digest swap and a restored failed verify, with
+the agent's own job ports reading a fake box worker's data directory; and the
+built binary's `agent run` starting its loop on a box worker) is
+[`packages/hobo/test/cd-runner-fleet-delivery.test.ts`](../../../hobo/test/cd-runner-fleet-delivery.test.ts).

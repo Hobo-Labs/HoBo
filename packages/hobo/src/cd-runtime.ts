@@ -40,8 +40,10 @@ import {
 	defaultCdFactories,
 	parseCdComposeConfig,
 } from "@hobo/cd/compose";
+import { createPlacementEngine } from "@hobo/cd/placement";
 // binds at merge (plan 0024): drift routing is WP7.
 import { createDriftPolicy } from "@hobo/cd/reconcile";
+import type { RunnerHostPorts } from "@hobo/ci-gh-actions/runner-host";
 import { createRegistryFromProviders, type PlannerRegistry } from "@hobo/cloud";
 import type { PolicyPack } from "@hobo/contracts";
 import {
@@ -52,6 +54,14 @@ import {
 	type PrincipalRef,
 } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
+import { agentRealizer } from "./cd-agent.js";
+import { withRunnerHostHealthIngest } from "./cd-agent-runner-host.js";
+import {
+	declaredRailCatalog,
+	loadDeclaredRails,
+	memoizedImporter,
+} from "./cd-declared-rails.js";
+import { defaultModuleImporter } from "./cd-delivery-module.js";
 import type { CdDeployHost } from "./cd-deploy.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import {
@@ -98,6 +108,19 @@ export type CdRuntimeOptions = Readonly<{
 	readCiArtifact?: Parameters<
 		typeof composeContinuousDelivery
 	>[0]["readCiArtifact"];
+	/**
+	 * A runner host's job ports (and, optionally, its container port) for
+	 * `hobo deploy agent run` with HOBO_CD_RUNNER_HOST (cd-agent.ts). The
+	 * container port defaults to the engine CLI; job ports have no default.
+	 */
+	runnerHost?: RunnerHostPorts;
+	/** How an agent's realizer waits between observations (default: a timer). */
+	sleep?: (ms: number) => Promise<void>;
+	/**
+	 * Where a failed runner-host health ingest is reported (default: one JSON
+	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
+	 */
+	onRunnerHostIngestError?: (error: Error) => void;
 }>;
 
 export type CdRuntime = Readonly<{
@@ -166,15 +189,32 @@ export async function openCdRuntime(
 	// Declared topology is read before the journal opens: a malformed file
 	// refuses the command with nothing opened.
 	const files = options.topologyFiles ?? [];
+	// One evaluation per module: Camps and Rails are read from the same files.
+	const importModule = memoizedImporter(defaultModuleImporter);
 	const declared =
 		files.length === 0
 			? ({ ok: true, value: [] } as const)
 			: await loadTopologyFiles(files, {
 					cwd: options.cwd,
 					stationId: config.stationId,
+					importModule,
 				});
 	if (!declared.ok)
 		return refusal(declared.code, declared.message, declared.remediation);
+	const declaredRails =
+		files.length === 0
+			? ({ ok: true, value: [] } as const)
+			: await loadDeclaredRails(files, {
+					cwd: options.cwd,
+					stationId: config.stationId,
+					importModule,
+				});
+	if (!declaredRails.ok)
+		return refusal(
+			declaredRails.code,
+			declaredRails.message,
+			declaredRails.remediation,
+		);
 	let declaredTopology: TopologyReader;
 	try {
 		declaredTopology = staticTopologyReader([
@@ -225,7 +265,15 @@ export async function openCdRuntime(
 		...(kube?.value.topology ? [kube.value.topology] : []),
 		...(options.topology ?? []),
 	]);
-	const railCatalog = createJournalRailCatalog({ store });
+	const rails = declaredRailCatalog(
+		createJournalRailCatalog({ store }),
+		declaredRails.value,
+	);
+	if (!rails.ok) {
+		await opened?.close();
+		return rails;
+	}
+	const railCatalog = rails.value;
 	// binds at merge (plan 0024): the baseline delivery policy pack (WP19).
 	const policyPack = options.policyPack ?? createCdBaselinePack();
 	const resolvePack = options.resolvePack ?? (async () => policyPack);
@@ -273,9 +321,24 @@ export async function openCdRuntime(
 			...options.gate,
 		},
 	};
+	// The Station's Rail decides provider approval for Placement (I5): the
+	// active declared Rail's approvedProviders, else undefined (fail closed).
+	// Accepted runner-host reports also reach Camp inventory as health.
+	const factories = withRunnerHostHealthIngest(
+		{
+			...defaultCdFactories,
+			createPlacementEngine: (deps) =>
+				createPlacementEngine({
+					...deps,
+					approvedProviders: (stationId) =>
+						railCatalog.approvedProviders(stationId),
+				}),
+		},
+		options.onRunnerHostIngestError ?? reportRunnerHostIngestError,
+	);
 	const cd = composeContinuousDelivery({
 		base,
-		factories: defaultCdFactories,
+		factories,
 		adapters: defaultCdAdapters(host),
 		http,
 		credentials,
@@ -330,15 +393,20 @@ export async function openCdRuntime(
 				simulated: config.simulate,
 				conductor: (campIds) => conductor(campIds),
 				runAgent: async ({ flags }) => {
-					const realizer = config.simulate
-						? createSimulatedRealizer()
-						: kube?.value.realizer?.(cd.scope);
-					if (!realizer)
-						return refusal(
-							"compose-realizer-missing",
-							"no agent-local realizer is configured",
-							"Configure HOBO_CD_KUBE_FLEET (or another agent-local realizer) on the target, or pass --simulate.",
-						);
+					const kubeRealizer = kube?.value.realizer;
+					const chosen = await agentRealizer({
+						simulate: config.simulate,
+						env: options.env,
+						cwd: options.cwd,
+						now,
+						campIds: campsOf(flags),
+						simulated: createSimulatedRealizer,
+						kube: kubeRealizer ? () => kubeRealizer(cd.scope) : undefined,
+						runnerHost: options.runnerHost,
+						sleep: options.sleep,
+					});
+					if (!chosen.ok) return chosen;
+					const realizer = chosen.value;
 					return runAgentProcess({
 						flags,
 						cwd: options.cwd,
@@ -358,10 +426,42 @@ export async function openCdRuntime(
 	};
 }
 
+/** A failed health ingest leaves readiness stale: say so on stderr. */
+function reportRunnerHostIngestError(error: Error): void {
+	process.stderr.write(
+		`${JSON.stringify({
+			level: "warn",
+			event: "hobo_cd_runner_host_ingest_failed",
+			message: error.message,
+		})}\n`,
+	);
+}
+
 function emptyRegistry(): PlannerRegistry {
 	// No providers: Matching finds no offering and the planning adapter
 	// refuses with a typed reason, never an invented provider.
 	return createRegistryFromProviders([]);
+}
+
+/**
+ * `--feed` names the Station's delivery feed (`https://station/v1/cd/`, as
+ * the usage and the runner fleet's agent.env document it); the agent
+ * transport takes the Station origin and adds `/v1/cd/` itself. Any other
+ * path is passed through for the transport to refuse.
+ */
+export function stationOriginOf(feedUrl: string): string {
+	try {
+		const url = new URL(feedUrl);
+		if (
+			(url.pathname === "/v1/cd/" || url.pathname === "/v1/cd") &&
+			!url.search &&
+			!url.hash
+		)
+			return url.origin;
+	} catch {
+		// Unparsable: the transport refuses it with its own reason.
+	}
+	return feedUrl;
 }
 
 /** An agent-mode reconciler for `hobo deploy agent run` (outbound HTTPS only, I3). */
@@ -385,7 +485,7 @@ export function agentReconciler(
 	// SAFETY: an enrolled reconciler id (the feed verifies it on every request).
 	const reconcilerId = input.reconcilerId as ReconcilerId;
 	const transport = defaultCdFactories.createHttpTransport({
-		baseUrl: input.feedUrl,
+		baseUrl: stationOriginOf(input.feedUrl),
 		http,
 		reconcilerId,
 		privateJwk: input.privateJwk,
@@ -542,6 +642,16 @@ async function openKubeFleet(
 			"Fix the HOBO_CD_KUBE_FLEET file: one of ocm|karmada realizer records, and optionally clusterProfiles (see packages/hobo/CD.md).",
 		);
 	}
+}
+
+/** The `--camp` list of `agent run`. */
+function campsOf(flags: CdJsonObject): CampId[] {
+	const value = flags.camp;
+	// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
+	return (typeof value === "string" ? value : "")
+		.split(",")
+		.map((s) => s.trim())
+		.filter((s) => s !== "") as CampId[];
 }
 
 /** `hobo deploy agent run`: an agent-mode reconciler loop until SIGINT/SIGTERM. */

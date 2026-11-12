@@ -17,7 +17,8 @@ working directory: they act on the Station's journal and its declared topology.
 | Principal | the OS user | `HOBO_USER`; `HOBO_AGENT_ID` makes the session an agent principal (proposal-only unless granted, ADR-0094) |
 | Telemetry | none: nothing is exported | `OTEL_EXPORTER_OTLP_ENDPOINT` (OTLP/HTTP JSON) |
 | Topology | none | `--yard <file,...>` on every `deploy`/`incident`/`serve cd` command, and `HOBO_CD_TOPOLOGY=<file,...>` (see [Topology from the repository](#topology-from-the-repository)). Camp ids are `<yard>/<camp>`; label `hobo.cd/management: observe-only` declares an OBSERVE_ONLY Camp |
-| Rails | the journal's Station `rail.*` events | a Rail's `delivery` object (Camp sets, posture, failover, enrollment) |
+| Rails | the journal's Station `rail.*` events | a Rail's `delivery` object (Camp sets, posture, failover, enrollment); a topology file's `rails` export is the Station's Rail while its journal has none active, and the only source of `approvedProviders` placement reads (without it placement refuses `rail-providers-unknown`) |
+| Runner hosts | none | `HOBO_CD_RUNNER_HOST=<agent config.json>` on a runner host: `agent run` registers the runner-host realizer (packages/ci-gh-actions/deploy/runner-fleet/README.md) |
 | Kubernetes fleets | none | `HOBO_CD_KUBE_FLEET=<file.json>`: `{ "ocm": … }` or `{ "karmada": … }` realizer record, optional `clusterProfiles` import (OBSERVE_ONLY Camps) |
 | Service tick | 1 s | `HOBO_CD_TICK_MS` |
 | Credential locators | `env://NAME` resolved for one use, never stored | any `CredentialResolver` |
@@ -43,7 +44,14 @@ comma-separated list, the environment's first):
   optional `regions`, `labels`, `stationId`, `management`), such as the runner
   fleet's
   [`packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`](../ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts)
-  (one Camp per runner host, `hobo-ci-runners/<host>`).
+  (one Camp per runner host, `hobo-ci-runners/<host>`);
+- a module or JSON file that exports `rails`: Station Rail declarations
+  (`id`, `name`, `version`, `stationId` (empty: this Station),
+  `approvedProviders`, `delivery`, `metadata`), each built with
+  `@hobo/stations` `createRail` so its digest is computed, never read. The
+  runner fleet's module declares one that binds its Camp set and approves
+  `self-hosted`. A Rail the Station's journal activated wins over a declared
+  one; two declared Rails for one Station refuse `cd-rail-conflict`.
 
 `pipeline apply --file <module>` also reads the module it applies as topology.
 Every export is parsed once with the generated `cd_topology.proto` schemas
@@ -228,6 +236,17 @@ Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
 - **`cd-topology-invalid` / `cd-topology-unreadable`**: a `--yard` or
   `HOBO_CD_TOPOLOGY` file has a malformed `yards`/`camps` record or does not
   load; nothing was opened. Fix the named record.
+- **`rail-providers-unknown`** on `placement decide`: the Station's active Rail
+  has no approved providers this host can read. Declare the Rail beside the
+  Camps (`rails` export) or pass the module that does with `--yard`.
+- **`runner-host-interface-missing`** on `agent run`: `HOBO_CD_RUNNER_HOST` is
+  set, so the runner-host realizer is registered, but this process has no
+  source for the worker's job ports (leases, runner presence, mesh advert,
+  admission gate); the message names each. Run it from a composition that
+  supplies them, or upgrade the host by hand.
+- **`runner-host-config-invalid` / `runner-host-camp-unbound`**: fix the agent
+  config the variable names, or start the agent with `--camp
+  hobo-ci-runners/<its host id>` only.
 - **`cd-topology-station-mismatch`**: a Camp record names another Station.
   Leave `stationId` empty or match `HOBO_STATION`.
 - **`cd-topology-duplicate-camp`**: two topology files declare the same Camp.
