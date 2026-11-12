@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 147: jit runner cross job custody kill"
+title: "Finding 148: jit runner cross job custody kill"
 description: "A release-held box JIT runner took a different hobo-labeled job on another workflow run; reconcile retired the lease with stale run metadata while GitHub still showed the cross-assigned job in progress."
 tags: [hobo, ci, jit, runner, custody, orphan, box-worker, main-fabric, release]
 ---
 
-# Finding 147: jit runner cross job custody kill
+# Finding 148: jit runner cross job custody kill
 
 ## Evidence
 

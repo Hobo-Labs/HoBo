@@ -46,6 +46,7 @@ export {
 	relayCacheKeys,
 	relayLeaseTtl,
 	relaySandboxCounterTtl,
+	relayTtlUntil,
 } from "./records.js";
 export {
 	CacheQueuedJobRepairClaims,
