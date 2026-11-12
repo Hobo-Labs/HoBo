@@ -160,6 +160,7 @@ export const CI_DEPLOY_ONLY_OPTIONS = [
 	"root-directory",
 	"create-project",
 	"provision",
+	"adopt",
 ] as const;
 
 export interface CiRelayDeployInput {

@@ -91,12 +91,18 @@ import {
 	createBoundedFetchTransport,
 	type HttpTransport,
 } from "@hobo/core";
+import { VERCEL_GIT_BLOCKED_STATES } from "@hobo/provider-vercel";
 import type { Yard } from "@hobo/yards";
 import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
-import { isJsonString, type JsonObject, parseJsonObject } from "./json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	parseJsonObject,
+} from "./json.js";
 
 // public-contract: the relay's delivery-as-code file, relative to its project.
 export const RELAY_DELIVERY_FILE = "deploy/delivery.ts";
@@ -137,6 +143,21 @@ export type RelaySourcePin = Readonly<{
 	ref: string;
 	sha?: string;
 	rootDirectory?: string;
+	/**
+	 * The deployment Vercel's Git integration created for `sha`, when the
+	 * relay was adopted (`hobo ci deploy --adopt`) rather than deployed: the
+	 * realizer observes it and never creates one.
+	 */
+	adopted?: RelayAdoptedDeployment;
+}>;
+
+/** A Git-integration deployment a relay Freight records (`--adopt`). */
+export type RelayAdoptedDeployment = Readonly<{
+	deploymentId: string;
+	url: string;
+	/** Its state when it was adopted; the realizer reads the current one. */
+	readyState: string;
+	inspectorUrl?: string;
 }>;
 
 /** A failed realization: the command result the front returns verbatim. */
@@ -391,11 +412,35 @@ async function pinOf(
 	if (!repository || !ref) return undefined;
 	const sha = text("sha");
 	const rootDirectory = text("rootDirectory");
+	const adopted = adoptedOf(fields.adopted);
 	return {
 		repository,
 		ref,
 		...(sha !== undefined ? { sha } : undefined),
 		...(rootDirectory !== undefined ? { rootDirectory } : undefined),
+		...(adopted !== undefined ? { adopted } : undefined),
+	};
+}
+
+/** The adopted deployment a source pin records, when it records one whole. */
+function adoptedOf(
+	value: JsonObject[string] | undefined,
+): RelayAdoptedDeployment | undefined {
+	if (!isJsonObject(value)) return undefined;
+	const text = (key: string) => {
+		const field = value[key];
+		return isJsonString(field) && field !== "" ? field : undefined;
+	};
+	const deploymentId = text("deploymentId");
+	const url = text("url");
+	const readyState = text("readyState");
+	if (!deploymentId || !url || !readyState) return undefined;
+	const inspectorUrl = text("inspectorUrl");
+	return {
+		deploymentId,
+		url,
+		readyState,
+		...(inspectorUrl !== undefined ? { inspectorUrl } : undefined),
 	};
 }
 
@@ -483,7 +528,7 @@ export function relayRealizer(
 				status: ReconcileStatus.CONVERGED,
 				handover,
 			});
-		if (state === "ERROR" || state === "CANCELED")
+		if (VERCEL_GIT_BLOCKED_STATES.has(state))
 			return observation({
 				...base,
 				status: ReconcileStatus.BLOCKED,
@@ -569,6 +614,9 @@ async function recordFreight(
 		...(input.source.sha !== undefined ? { sha: input.source.sha } : undefined),
 		...(input.source.rootDirectory !== undefined
 			? { rootDirectory: input.source.rootDirectory }
+			: undefined),
+		...(input.source.adopted !== undefined
+			? { adopted: input.source.adopted }
 			: undefined),
 	};
 	const source = await cd.artifacts.put(

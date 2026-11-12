@@ -69,6 +69,18 @@ export {
 	vercelNativePorts,
 } from "./equivalence.js";
 export {
+	isVercelGitEnvironment,
+	VERCEL_GIT_BLOCKED_STATES,
+	type VercelAdoptedDeployment,
+	type VercelAdoptionVerdict,
+	type VercelGitDeploymentRecord,
+	type VercelGitDeploymentState,
+	type VercelGitDeploymentStatus,
+	vercelAdoptionVerdict,
+	vercelGitDeploymentRecords,
+	vercelGitDeploymentStatus,
+} from "./git-integration-adoption.js";
+export {
 	VERCEL_HOSTING_COVERAGE,
 	VERCEL_NEON_POSTGRES_PRODUCT_ID,
 	VERCEL_UNRESOLVED_PRODUCTS,
