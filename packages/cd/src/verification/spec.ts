@@ -23,8 +23,10 @@ export type ParsedVerificationSpec = VerificationSpecRecord & {
 };
 
 /** Unit that marks a query as an error-budget burn-rate series. */
+// public-contract: HealthQuery.unit value authors write in VerificationSpec.
 export const BURN_RATE_UNIT = "burn_rate";
 /** Unit that marks a query as a ratio; samples outside [0, 1] are invalid. */
+// public-contract: HealthQuery.unit value authors write in VerificationSpec.
 export const RATIO_UNIT = "ratio";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -45,6 +47,8 @@ export const comparisonCheckId = (query: HealthQueryRecord) =>
 	`comparison:${query.name}`;
 export const probeCheckId = (name: string) => `probe:${name}`;
 export const suiteCheckId = (suite: string) => `suite:${suite}`;
+// public-contract: CheckOutcomeRecord.check id of the aggregate
+// error-budget check in verification results.
 export const ERROR_BUDGET_CHECK = "error-budget";
 
 function isHttpsUrl(value: string): boolean {
