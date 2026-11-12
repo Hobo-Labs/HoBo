@@ -128,9 +128,9 @@ jobs:
             --filter=@hobo/hobo... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
       # Pass/fail by identity name: hobo-ci-writer signs in with this job's
-      # GitHub OIDC token (sign-in only; its role writes and cannot read);
-      # hobo-ci-relay is reported not-run here (its Vercel OIDC sign-in is
-      # proved by /readyz below). The hobo-deploy skill reads this step.
+      # GitHub OIDC token (sign-in only, then revoke; Infisical role shape is
+      # not asserted — on Free attach, Member may read). hobo-ci-relay is
+      # not-run here; Vercel OIDC is proved by /readyz below.
       - name: Verify the secret store connection
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -205,7 +205,7 @@ jobs:
   # The GitHub App's credentials, from GitHub straight into the relay's
   # secrets manager (ADR-0179 amendment "Secretless first"): no person and no
   # machine but this job ever holds them, and this job holds no credential:
-  # it signs in as hobo-ci-writer (create/edit only) with its GitHub OIDC token.
+  # it signs in as hobo-ci-writer with its GitHub OIDC token (write-capable role).
   app-credentials:
     name: Deposit the GitHub App's credentials
     needs: route

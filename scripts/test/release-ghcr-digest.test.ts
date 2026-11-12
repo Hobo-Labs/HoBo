@@ -10,6 +10,8 @@ import {
 	resolveRegistryDigestForTag,
 	resolveRegistryDigestForTagWithRetry,
 	stderrReferencesExactTag,
+	registryInspectTag,
+	splitRegistryTag,
 } from "../lib/release-ghcr-digest.mts";
 
 const DIGEST_A =
@@ -294,5 +296,75 @@ describe("release ghcr digest helpers", () => {
 				},
 			}),
 		).not.toThrow();
+	});
+});
+
+describe("registryInspectTag (finding 143)", () => {
+	const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.168";
+	interface RegistryReply {
+		readonly status: number;
+		readonly digest?: string;
+		readonly error?: string;
+	}
+	const reply = (status: number, body: RegistryReply) =>
+		vi.fn(() => ({ status, stdout: JSON.stringify(body), stderr: "" }));
+
+	it("asks the registry for host, repository and tag, not buildx", () => {
+		expect(splitRegistryTag(tag)).toEqual({
+			host: "ghcr.io",
+			name: "hobo-labs/hobo/hobo-sdk",
+			reference: "v0.0.0-alpha.168",
+		});
+		const run = reply(0, { status: 200, digest: DIGEST_A });
+		expect(registryInspectTag(tag, run)).toEqual({ digest: DIGEST_A });
+		expect(run).toHaveBeenCalledWith([
+			"ghcr.io",
+			"hobo-labs/hobo/hobo-sdk",
+			"v0.0.0-alpha.168",
+		]);
+	});
+
+	it("reads a 404 as not published yet", () => {
+		expect(registryInspectTag(tag, reply(0, { status: 404 }))).toBeUndefined();
+	});
+
+	it("fails closed on anything else", () => {
+		expect(() =>
+			registryInspectTag(
+				tag,
+				reply(0, { status: 401, error: "token endpoint refused" }),
+			),
+		).toThrow(/\(HTTP 401\): token endpoint refused/u);
+		expect(() => registryInspectTag(tag, reply(0, { status: 200 }))).toThrow(
+			/no Docker-Content-Digest/u,
+		);
+		expect(() =>
+			registryInspectTag(tag, reply(0, { status: 200, digest: "sha256:bad" })),
+		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
+		expect(() =>
+			registryInspectTag(
+				tag,
+				vi.fn(() => ({ status: 1, stdout: "", stderr: "boom" })),
+			),
+		).toThrow(/registry inspect .* failed \(exit 1\): boom/u);
+		expect(() => splitRegistryTag("hobo-sdk")).toThrow(/expected <host>/u);
+	});
+
+	it("is what the publish step and the post-push fallback use", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		const publish = readFileSync(
+			join(import.meta.dirname, "..", "ci/push-release-ghcr-images.mts"),
+			"utf8",
+		);
+		expect(publish).toContain("registryInspectTag(options.tag)");
+		expect(publish).not.toContain("imagetoolsInspectTag(");
+		const lib = readFileSync(
+			join(import.meta.dirname, "..", "lib/release-ghcr-digest.mts"),
+			"utf8",
+		);
+		expect(lib).not.toMatch(
+			/inspect: ImagetoolsInspect = imagetoolsInspectTag/u,
+		);
 	});
 });

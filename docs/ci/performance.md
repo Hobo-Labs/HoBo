@@ -142,9 +142,12 @@ unindexed new finding files as notices.
 - [Finding 130: release OCI matrix legs missed main-train trunk admission](./findings/0130-release-oci-matrix-legs-missed-main-train-trunk-admission.md)
 - [Finding 135: main gate and shard job wall profiling](./findings/0135-main-gate-and-shard-job-wall-profiling.md)
 - [Finding 136: trunk hosted overflow no peer](./findings/0136-trunk-hosted-overflow-no-peer.md)
+- [Finding 138: release attest missing digest after cancel](./findings/0138-release-attest-missing-digest-after-cancel.md)
 - [Finding 139: main gate finish empty shard matrix](./findings/0139-main-gate-finish-empty-shard-matrix.md)
 - [Finding 140: main shard tsc codegen memory contention](./findings/0140-main-shard-tsc-codegen-memory-contention.md)
 - [Finding 141: release digest read the local name](./findings/0141-release-digest-read-the-local-name.md)
+- [Finding 142: box admission counted neither promised memory nor lasting headroom](./findings/0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md)
+- [Finding 143: release publish needed buildx the runners lack](./findings/0143-release-publish-needed-buildx-the-runners-lack.md)
 <!-- findings-index:end -->
 
 ## Data
