@@ -1,0 +1,29 @@
+{
+	"name": "@hobo/provider-oci-registry",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:test": "tsc -p tsconfig.test.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"description": "HoBo generic OCI distribution registry realizer (oci-registry.image/v1): converges an image or index at a repository by digest plus declared tags on GHCR, Docker Hub, ECR, Artifact Registry, Harbor or Zot over the core ResourceResolver port, with cross-repository mount or verified blob upload, manifest PUT by digest, declared-tag PUT, referrers copy, the WWW-Authenticate bearer token flow and observation-confirmed, digest-preserving convergence (D22)."
+}

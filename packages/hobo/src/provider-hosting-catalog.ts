@@ -38,6 +38,12 @@ import {
 	gcpResolverRegistry,
 } from "@hobo/provider-gcp";
 import {
+	GITHUB_PAGES_SITE_PRODUCT_ID,
+	type GithubPagesResolverOptions,
+	githubResolverRegistry,
+	parseGithubApiBinding,
+} from "@hobo/provider-github";
+import {
 	HETZNER_CLOUD_SERVER_PRODUCT_ID,
 	type HetznerResolverOptions,
 	hetznerResolverRegistry,
@@ -60,6 +66,18 @@ import {
 	type NetlifyResolverOptions,
 	netlifyResolverRegistry,
 } from "@hobo/provider-netlify";
+import {
+	NPM_PACKAGE_VERSION_PRODUCT_ID,
+	type NpmResolverOptions,
+	npmResolverRegistry,
+	parseNpmRegistryBinding,
+} from "@hobo/provider-npm";
+import {
+	OCI_REGISTRY_IMAGE_PRODUCT_ID,
+	type OciRegistryCredential,
+	type OciRegistryResolverOptions,
+	ociRegistryResolverRegistry,
+} from "@hobo/provider-oci-registry";
 import { createPrismaClaimableResolver } from "@hobo/provider-prisma-postgres";
 import {
 	type RailwayResolverOptions,
@@ -160,6 +178,22 @@ export type HostingProviderCatalogEntry =
 	| TokenEntry<"netlify", Omit<NetlifyResolverOptions, "resolveCredential">>
 	| TokenEntry<"vercel", Omit<VercelResolverOptions, "resolveCredential">>
 	| TokenEntry<"railway", Omit<RailwayResolverOptions, "resolveCredential">>
+	| TokenEntry<"npm", Omit<NpmResolverOptions, "resolveCredential">>
+	| (Common<OciRegistryCredential> & {
+			readonly providerId: "oci-registry";
+			/** Source registries pull anonymously or by same-host mount here. */
+			readonly options: Omit<OciRegistryResolverOptions, "resolveCredential">;
+	  })
+	| (TokenEntry<
+			"github",
+			Omit<
+				GithubPagesResolverOptions,
+				"resolveCredential" | "resolveDeploymentOidcToken"
+			>
+	  > & {
+			/** Pages-deployment mode only: the workflow OIDC token, same account. */
+			readonly deploymentOidcLease?: StringLease;
+	  })
 	| TokenEntry<
 			"neon",
 			Omit<
@@ -246,6 +280,9 @@ const MANIFEST_IDS = Object.freeze({
 	netlify: "@hobo/provider-netlify",
 	vercel: "@hobo/provider-vercel",
 	railway: "@hobo/provider-railway",
+	npm: "@hobo/provider-npm",
+	"oci-registry": "@hobo/provider-oci-registry",
+	github: "@hobo/provider-github",
 	neon: "@hobo/provider-neon",
 	prisma: "@hobo/provider-prisma-postgres",
 	upstash: "@hobo/provider-upstash",
@@ -299,9 +336,16 @@ function hosting(
 	providerId: string,
 	packageName: string,
 	stem: string,
-	extra: { readonly coverage?: boolean; readonly products?: string[] } = {},
+	extra: {
+		readonly coverage?: boolean;
+		readonly products?: string[];
+		/** Traffic-profile stem when it differs from the registry stem. */
+		readonly profileStem?: string;
+	} = {},
 ): ProviderDeliveryCoverage {
-	const upper = stem.replace(/[A-Z]/gu, (c) => `_${c}`).toUpperCase();
+	const constant = (value: string) =>
+		value.replace(/[A-Z]/gu, (c) => `_${c}`).toUpperCase();
+	const upper = constant(stem);
 	const base = {
 		packageName,
 		providerId,
@@ -309,7 +353,7 @@ function hosting(
 		resolverExport: `${stem}ResolverRegistry`,
 		traffic: Object.freeze({
 			kind: "profile" as const,
-			profileExport: `${upper}_TRAFFIC_ROUTING_PROFILE`,
+			profileExport: `${constant(extra.profileStem ?? stem)}_TRAFFIC_ROUTING_PROFILE`,
 		}),
 	};
 	const covered = extra.coverage
@@ -384,6 +428,10 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			products: ["flux.app/v1"],
 		}),
 		hosting("gcp", "@hobo/provider-gcp", "gcp"),
+		hosting("github", "@hobo/provider-github", "github", {
+			profileStem: "githubPages",
+			products: [GITHUB_PAGES_SITE_PRODUCT_ID],
+		}),
 		hosting("hetzner", "@hobo/provider-hetzner", "hetzner"),
 		hosting("hostinger", "@hobo/provider-hostinger", "hostinger"),
 		hosting("kubernetes", "@hobo/provider-kubernetes", "kubernetes"),
@@ -392,6 +440,13 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 		}),
 		hosting("netlify", "@hobo/provider-netlify", "netlify", {
 			coverage: true,
+		}),
+		hosting("npm", "@hobo/provider-npm", "npm", {
+			products: [NPM_PACKAGE_VERSION_PRODUCT_ID],
+		}),
+		hosting("oci-registry", "@hobo/provider-oci-registry", "ociRegistry", {
+			coverage: true,
+			products: [OCI_REGISTRY_IMAGE_PRODUCT_ID],
 		}),
 		hosting("railway", "@hobo/provider-railway", "railway", {
 			coverage: true,
@@ -479,7 +534,7 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"deliver to a hosting provider; runners are selected by @hobo/ci",
 		),
 		refused(
-			"github",
+			"github-runner",
 			"@hobo/runner-github",
 			"A CI runner executes builds; CD never delivers to it (any CI may feed Freight).",
 			"deliver to a hosting provider; runners are selected by @hobo/ci",
@@ -655,6 +710,15 @@ function verifyNativeScope(entry: HostingProviderCatalogEntry) {
 		case "railway":
 			expected = `railway://projects/${entry.options.projectId}/environments/${entry.options.environmentId}`;
 			break;
+		case "npm":
+			expected = `npm://registries/${encodeURIComponent(parseNpmRegistryBinding(entry.options.registry).base)}`;
+			break;
+		case "oci-registry":
+			expected = `oci-registry://registries/${encodeURIComponent(entry.options.registry.host)}`;
+			break;
+		case "github":
+			expected = `github://apis/${encodeURIComponent(parseGithubApiBinding(entry.options.api).base)}/accounts/${entry.lease.binding.providerAccountId}`;
+			break;
 		case "vercel":
 			if (!entry.options.teamId)
 				throw new Error(
@@ -734,7 +798,13 @@ export function prepareHostingProviderDesired(
 	)
 		return result;
 	// Promote, never rebuild (I1): these resolvers pin the observed content.
-	if (providerId === "lakebed" || providerId === "browser-wasm") {
+	if (
+		providerId === "lakebed" ||
+		providerId === "browser-wasm" ||
+		providerId === "npm" ||
+		providerId === "oci-registry" ||
+		providerId === "github"
+	) {
 		if (
 			input.contentDigest === undefined ||
 			!/^sha256:[a-f0-9]{64}$/u.test(input.contentDigest)
@@ -742,7 +812,12 @@ export function prepareHostingProviderDesired(
 			throw new Error(
 				`${providerId} hosting requires the approved content digest of the delivered artifact`,
 			);
-		metadata("artifactDigest", input.contentDigest);
+		// An OCI image is identified by its manifest digest; the others by
+		// the Freight blob digest (tarball, static-site tree index, capsule).
+		metadata(
+			providerId === "oci-registry" ? "digest" : "artifactDigest",
+			input.contentDigest,
+		);
 		return result;
 	}
 	if (providerId === "railway") {
@@ -963,6 +1038,44 @@ export function createProductionHostingProviderCatalog(
 				});
 				break;
 			}
+			case "npm":
+				registry = npmResolverRegistry({
+					...entry.options,
+					registry: Object.freeze({ ...entry.options.registry }),
+					resolveCredential: pinnedCredential(entry.lease),
+				});
+				break;
+			case "oci-registry": {
+				const sources = entry.options.sourceRegistries ?? [];
+				if (sources.some((source) => source.credentialRef !== undefined))
+					throw new Error(
+						"production OCI catalog pulls source registries anonymously or by same-host mount; a source pull credential needs its own enrolled catalog entry",
+					);
+				registry = ociRegistryResolverRegistry({
+					...entry.options,
+					registry: Object.freeze({ ...entry.options.registry }),
+					sourceRegistries: Object.freeze(
+						sources.map((source) => Object.freeze({ ...source })),
+					),
+					resolveCredential: pinnedCredential(entry.lease),
+				});
+				break;
+			}
+			case "github":
+				registry = githubResolverRegistry({
+					...entry.options,
+					api: Object.freeze({ ...entry.options.api }),
+					resolveCredential: pinnedCredential(entry.lease),
+					...(entry.deploymentOidcLease
+						? {
+								resolveDeploymentOidcToken: auxiliaryCredential(
+									entry.lease.credentialRef,
+									entry.deploymentOidcLease,
+								),
+							}
+						: {}),
+				});
+				break;
 			case "neon":
 				registry = createResolverRegistry([
 					createNeonClaimableResolver({
@@ -1058,6 +1171,9 @@ export function createProductionHostingProviderCatalog(
 				: []),
 			...(entry.providerId === "hetzner" && entry.objectStorageLease
 				? [entry.objectStorageLease]
+				: []),
+			...(entry.providerId === "github" && entry.deploymentOidcLease
+				? [entry.deploymentOidcLease]
 				: []),
 		];
 		for (const item of secondary)
