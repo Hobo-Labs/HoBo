@@ -358,15 +358,13 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 `--dry-run` prints the placement, the chosen bindings and every request it
 would send, and sends none. A real run reads `VERCEL_TOKEN` from the environment
 and deploys to **preview** unless `--target production` is given. Production
-chooses the config-service binding, which asks for the owner's two Infisical
-ids:
+chooses the config-service binding, which asks for the store's origin and two
+ids; `hobo ci deploy` reads them, and the team, from the committed
+`deploy/secret-store.binding.json`:
 
 ```sh
 hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
-  --target production --team team_… \
-  --set INFISICAL_IDENTITY_ID=<hobo-ci-relay id> \
-  --set INFISICAL_PROJECT_ID=<hobo-ci project id> \
-  --provision --wait --dry-run
+  --target production --provision --wait --dry-run
 ```
 
 | Option | Means |
@@ -380,11 +378,97 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
 every merge to `main` that changes the relay, reading the Vercel token from the
-config service with GitHub OIDC. See
+relay's secret store with GitHub OIDC. Production's config-service inputs
+(`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`) and the
+team come from `deploy/secret-store.binding.json` in the relay's project; a
+`--set` still overrides one. See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
-for the repository variables it needs, and [the README](README.md) for the plan
-record and its gates. It has been exercised against fakes only.
+and [the README](README.md) for the plan record and its gates. It has been
+exercised against fakes only.
 
+## Choose the relay's secret store (`hobo ci secret-store`)
+
+The relay's config/secret store is not set up by hand and lives in no Vercel
+or GitHub secret or variable (ADR-0179 amendment
+[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
+HoBo routes `secrets.config-service/v1` when the deployment runs, provisions
+the store, and hands it to the owner through a HoBo claim:
+
+```sh
+cd packages/ci-vercel
+hobo ci secret-store plan --json --fleet-host https://<fresh Infisical on the fleet>
+hobo ci secret-store provision --team team_… --vercel-team-slug <slug> \
+  --vercel-project-id prj_… --fleet-host https://… --owner-email <owner>
+# the owner, in their own terminal:
+hobo claim open secret-store
+hobo claim finalize secret-store
+```
+
+| Option | Means |
+|---|---|
+| `--auth-md <origin>` | A store that may publish auth.md; probed for anonymous agent registration (repeatable) |
+| `--fleet-host <origin>` | A fresh Infisical the Yard placed on a compute fleet host; HoBo bootstraps it |
+| `--owner-email <address>` | The admin user a self-hosted store's claim hands over |
+| `--team`, `--vercel-team-slug`, `--vercel-project-id` | The Vercel team and project the relay's identity trusts (OIDC issuer, subject and pinned `owner_id`/`project_id`) |
+| `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare Worker, an auth.md store; for the hosted relay the Worker is an experiment, not its store) |
+
+`plan` contacts nothing but the `--auth-md` candidates. `provision` writes
+`deploy/secret-store.binding.json` (coordinates only) when the relay can read
+the store, attaches the claim bundle to the deployment's claim journal, and
+prints the owner's next steps; it never prints a claim link, a password or a
+token. `INFISICAL_TOKEN` (from the owner's own `infisical login`) selects the
+attach-only offer for an Infisical Cloud organization the owner already has.
+`hobo claim finalize secret-store` for a self-hosted store deletes HoBo's
+bootstrap identity and passes only when Infisical refuses its token.
+Agents drive this through the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md) skill.
+
+### Secretless first: connect, verify, deposit, capture
+
+For the hosted relay the requirement is a secrets manager the relay reads
+with workload identity
+([amendment](../../docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first));
+today that is Infisical (OIDC Auth). 1Password and Bitwarden offers are
+listed with `runtimeAuth: "stored-token"` and never chosen for the relay's
+runtime store. The `hobo-deploy` skill walks the owner through the
+dashboard's OIDC trust one step at a time, then records the ids:
+
+```sh
+hobo ci secret-store connect --cwd packages/ci-vercel \
+  --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
+  --deploy-identity-id <hobo-ci-writer> --team team_… \
+  [--deploy-project-id <id>] [--site-url https://<self-hosted Infisical>] [--yes]
+hobo ci secret-store verify --cwd packages/ci-vercel --json
+```
+
+`connect` writes the same `SecretStoreBinding` as `provision` (kind
+`infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
+project is optional and empty by default) and refuses to replace one
+without `--yes`. `verify` reports `pass`, `fail` or `not-run` by identity
+name: `hobo-ci-writer` inside a GitHub Actions job (GitHub OIDC sign-in, then
+a revoke; role shape not asserted), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
+present (secret names only). The deploy workflow runs it as *Verify the
+secret store connection*.
+
+The GitHub App's credentials never touch a person or this CLI:
+`hobo ci app create --via-workflow` takes GitHub's one-time manifest code
+from the browser's redirect and hands it, on stdin to `gh workflow run`, to
+the deploy workflow; its `app-credentials` job masks it and runs
+`hobo ci app deposit` (code from `HOBO_APP_MANIFEST_CODE`), which converts,
+verifies the App and writes the credentials as `hobo-ci-writer` over GitHub
+OIDC.
+
+For an optional third-party cache credential, `hobo-mcp` serves the
+secret-capture MCP App: `capture_secret` opens a form the owner types into
+(an MCP App in hosts that support MCP Apps, a `127.0.0.1` page otherwise, by
+URL-mode elicitation where the client supports it); the value is sealed in
+the form, opened in the `hobo-mcp` process and written with a one-use
+`hobo-secret-writer` session (`src/mcp-secret-capture.ts`). Tools:
+`capture_secret`, `secret_capture_status`, `end_secret_capture`, and the
+form's own `submit_secret_value` (listed only to MCP Apps hosts, with
+`visibility: ["app"]`). `HOBO_SECRET_STORE_PROJECT` names the relay project
+when `hobo-mcp` does not start in the HoBo checkout; `HOBO_MCP_TOOLS` can
+leave the capture tools out of scope. Details:
+[`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
 
 ## Create the hosted relay's GitHub App
 

@@ -54,6 +54,9 @@ describe("worker memory config", () => {
 			{ totalMemoryMb: 15_989, trunkSlots: 1 },
 		);
 		expect(memoryRequestForJob("Secret scan", config).memoryMb).toBe(1_024);
+		expect(memoryRequestForJob("Main workspace plan", config).memoryMb).toBe(
+			1_024,
+		);
 		expect(memoryRequestForJob("unknown job", config).memoryMb).toBe(2_048);
 		expect(memoryRequestForJob("PR impact validation", config).memoryMb).toBe(
 			4_096,
@@ -63,6 +66,7 @@ describe("worker memory config", () => {
 
 	it("maps exact workflow job names and defaults unknown jobs to standard", () => {
 		expect(memoryClassForJob("CI fabric contract guard")).toBe("light");
+		expect(memoryClassForJob("Main workspace plan")).toBe("light");
 		expect(memoryClassForJob("PR impact gate")).toBe("light");
 		expect(memoryClassForJob("PR impact validation")).toBe("heavy");
 		expect(memoryClassForJob("PR affected package lanes")).toBe("heavy");

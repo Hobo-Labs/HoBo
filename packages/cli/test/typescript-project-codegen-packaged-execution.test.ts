@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { resetTrainables } from "@hobo/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { runCodegen } from "../src/codegen/run-codegen.js";
 import { createTypeScriptProjectCodegenEngine } from "../src/codegen/typescript-project-engine.js";
 import { slow } from "./support/slow.js";
 import {
 	compile,
 	compilePackagedConsumer,
+	fixture,
 	write,
 } from "./support/typescript-project.js";
 
@@ -22,9 +23,24 @@ afterEach(() => {
 
 // One of four files split from typescript-project-codegen.test.ts so the
 // files can spread across workers; helpers are in ./support/typescript-project.ts.
+// Run 43207388098 (fb51fd87d): roots case hit the 60s cap under host memory
+// contention (~4GiB MemAvailable, seven shards); clean local ~1.4s/case (~5s×3).
 describe("TypeScript app codegen executes the compiler-inferred app contract: packaged execution", {
-	timeout: slow(60_000),
+	timeout: slow(120_000),
 }, () => {
+	beforeAll(async () => {
+		const root = await mkdtemp(join(tmpdir(), "hobo-ts-packaged-warmup-"));
+		try {
+			await fixture(root);
+			await runCodegen(
+				{ projectRoot: root, check: false },
+				{ engine: createTypeScriptProjectCodegenEngine() },
+			);
+			await compile(root);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, slow(120_000));
 	it("executes a packaged complex generic/class/overloaded/namespace app with aliases, top-level await and dynamic imports in plain Node", async () => {
 		const root = await mkdtemp(
 			join(tmpdir(), "hobo-ts-imprint-complex-native-"),

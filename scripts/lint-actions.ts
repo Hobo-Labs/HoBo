@@ -89,10 +89,10 @@ const HOSTED_RUNS_ON = "ubuntu-24.04";
 
 /**
  * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
- * chooses the runner, so it cannot wait on one. An `always()` job with no
- * `uses:` step is a gate: it runs no repository code, only adds up other
- * jobs' results, and on the fleet a superseded run's gate held the next run
- * until a runner was free.
+ * chooses the runner, so it cannot wait on one. A hosted job with no `uses:`
+ * step is a gate: it runs no repository code, only adds up other jobs' results.
+ * PR gates use `always()`; release train gates use `!cancelled()` so a
+ * cancelled run does not keep scheduling downstream work.
  */
 function isAlwaysHostedJob(
 	jobLine: string,
@@ -104,8 +104,11 @@ function isAlwaysHostedJob(
 		return block.some(
 			(line) => line.trim() === "uses: ./.github/actions/route-runner",
 		);
+	const stepsAt = block.findIndex((line) => line === "    steps:");
+	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
+	const gateIf = header.join("\n");
 	return (
-		block.some((line) => /^    if:.*\balways\(\)/.test(line)) &&
+		(/\balways\(\)/.test(gateIf) || /!cancelled\(\)/.test(gateIf)) &&
 		!block.some((line) => /^\s*-?\s*uses:/.test(line))
 	);
 }
@@ -398,11 +401,21 @@ function lintLocalActionsNeedCheckoutFirst(
 		}
 		const step = block.slice(i, end);
 		if (
-			step.some(
-				(entry) =>
+			step.some((entry) => {
+				if (
 					/^\s+- uses: actions\/checkout@/.test(entry) ||
-					/^\s+uses: actions\/checkout@/.test(entry),
-			)
+					/^\s+uses: actions\/checkout@/.test(entry)
+				)
+					return true;
+				return (
+					/^\s+- uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+- uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					) ||
+					/^\s+uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(entry)
+				);
+			})
 		) {
 			seenCheckout = true;
 		}

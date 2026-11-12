@@ -6,9 +6,14 @@ import {
 import { describe, expect, it } from "vitest";
 import { RelayRuntimeConfigSchema as RelayRuntimeConfigProto } from "../src/_generated/relay_runtime_config_pb.js";
 import {
+	deriveRelayKey,
+	RELAY_DERIVED_KEYS,
+} from "../src/relay-derived-keys.js";
+import {
 	createRelayRuntimeConfigLoader,
 	envRelayConfigSource,
 	infisicalRelayConfigSource,
+	parseCommittedStoreCoordinates,
 	parseRelayRuntimeConfig,
 	type RelayConfigSource,
 	RelayRuntimeConfigError,
@@ -53,6 +58,11 @@ function stubClient(read: () => Record<string, string>): InfisicalClient {
 		getSecret: fail,
 		putSecret: fail,
 		signOut() {},
+		signIn: fail,
+		revoke: fail,
+		forBinding() {
+			throw new Error("not used");
+		},
 	};
 }
 
@@ -301,5 +311,136 @@ describe("the loader", () => {
 			source: counting(() => ({ ...entries, CRON_SECRET: "x" })).source,
 		});
 		await expect(loader.load()).rejects.toThrow(/CRON_SECRET/u);
+	});
+});
+
+describe("secretless first: keys the relay derives (ADR-0179 amendment)", () => {
+	const {
+		HOBO_CI_SESSION_KEY: _session,
+		CRON_SECRET: _cron,
+		...stored
+	} = entries;
+
+	it("derives the session key, the Sandbox proxy key and CRON_SECRET from the App key", () => {
+		const config = parseRelayRuntimeConfig(stored);
+		for (const name of RELAY_DERIVED_KEYS)
+			expect(config[name]).toBe(deriveRelayKey(pem, name));
+		expect(config.HOBO_CI_SESSION_KEY).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+		// Distinct keys per purpose.
+		expect(new Set(RELAY_DERIVED_KEYS.map((name) => config[name])).size).toBe(
+			3,
+		);
+	});
+
+	it("is stable for one App key and changes when the key rotates", () => {
+		const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 })
+			.privateKey.export({ type: "pkcs8", format: "pem" })
+			.toString();
+		expect(deriveRelayKey(pem, "CRON_SECRET")).toBe(
+			deriveRelayKey(pem, "CRON_SECRET"),
+		);
+		expect(deriveRelayKey(rotated, "CRON_SECRET")).not.toBe(
+			deriveRelayKey(pem, "CRON_SECRET"),
+		);
+	});
+
+	it("keeps a value the store holds explicitly", () => {
+		expect(parseRelayRuntimeConfig(entries).HOBO_CI_SESSION_KEY).toBe(
+			entries.HOBO_CI_SESSION_KEY,
+		);
+	});
+
+	it("names the App key, not a derived one, when the App key is missing", () => {
+		const { HOBO_CI_GITHUB_APP_PRIVATE_KEY: _key, ...noKey } = stored;
+		const error = errorOf(() => parseRelayRuntimeConfig(noKey));
+		expect(error.keys).toContain("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
+		expect(error.message).not.toContain("BEGIN");
+	});
+});
+
+describe("secretless first: the committed store coordinates", () => {
+	const binding = {
+		kind: "infisical-cloud-attach",
+		endpoint: "https://app.infisical.com",
+		projectId: "proj-runtime",
+		deployProjectId: "proj-deploy",
+		environment: "prod",
+		secretPath: "/hobo-ci-relay",
+		relayIdentityId: "relay-identity",
+		deployIdentityId: "ci-identity",
+		vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+		claimBundleId: "secret-store:hobo-ci-relay:connect-1",
+		claimState: "claimed",
+	};
+
+	it("reads the relay's folder and identity from the committed binding", () => {
+		const coordinates = parseCommittedStoreCoordinates(JSON.stringify(binding));
+		expect(coordinates?.identityId).toBe("relay-identity");
+		expect(coordinates?.binding).toMatchObject({
+			siteUrl: "https://app.infisical.com",
+			projectId: "proj-runtime",
+			environment: "prod",
+			secretPath: "/hobo-ci-relay",
+		});
+		expect(
+			parseCommittedStoreCoordinates(
+				JSON.stringify({ ...binding, kind: "cloudflare-temporary" }),
+			),
+		).toBeUndefined();
+		expect(() =>
+			parseCommittedStoreCoordinates(
+				JSON.stringify({ ...binding, projectId: "../other" }),
+			),
+		).toThrow(RelayRuntimeConfigError);
+	});
+
+	it("signs a production deployment in from the committed binding, with no environment variable set", async () => {
+		const requests: string[] = [];
+		const source = relayConfigSourceFromEnv(
+			{ VERCEL_ENV: "production" },
+			{
+				committed: () =>
+					parseCommittedStoreCoordinates(JSON.stringify(binding)),
+				jwt: async () => "header.payload.signature",
+				fetch: async (input) => {
+					const url = new URL(String(input));
+					requests.push(url.pathname);
+					if (url.pathname === "/api/v1/auth/oidc-auth/login")
+						return Response.json({
+							accessToken: "synthetic-access",
+							expiresIn: 600,
+							accessTokenMaxTTL: 600,
+							tokenType: "Bearer",
+						});
+					return Response.json({ secrets: [], imports: [] });
+				},
+			},
+		);
+		expect(source.kind).toBe("infisical");
+		await source.read();
+		expect(requests).toEqual([
+			"/api/v1/auth/oidc-auth/login",
+			"/api/v4/secrets",
+		]);
+	});
+
+	it("leaves previews and an explicit HOBO_CI_CONFIG_SERVICE as they were", () => {
+		const committed = () =>
+			parseCommittedStoreCoordinates(JSON.stringify(binding));
+		expect(
+			relayConfigSourceFromEnv({ VERCEL_ENV: "preview" }, { committed }).kind,
+		).toBe("env");
+		expect(
+			relayConfigSourceFromEnv(
+				{ VERCEL_ENV: "production", HOBO_CI_CONFIG_SERVICE: "env" },
+				{ committed },
+			).kind,
+		).toBe("env");
+		expect(
+			relayConfigSourceFromEnv(
+				{ VERCEL_ENV: "production" },
+				{ committed: () => undefined },
+			).kind,
+		).toBe("env");
 	});
 });

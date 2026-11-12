@@ -182,6 +182,9 @@ export function createHostedRelayRuntime(options: {
 	unlaunchedReservationRelease?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["unlaunchedReservationRelease"];
+	parallelLaunchCapacity?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["parallelLaunchCapacity"];
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -306,6 +309,8 @@ export function createHostedRelayRuntime(options: {
 		if (options.unlaunchedReservationRelease)
 			relayOptions.unlaunchedReservationRelease =
 				options.unlaunchedReservationRelease;
+		if (options.parallelLaunchCapacity)
+			relayOptions.parallelLaunchCapacity = options.parallelLaunchCapacity;
 		return new HostedRelay(relayOptions);
 	}
 	/**

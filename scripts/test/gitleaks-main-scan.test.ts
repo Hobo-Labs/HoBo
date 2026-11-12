@@ -208,7 +208,7 @@ describe("main-gate wiring", () => {
 			"finish must populate the workspace or fail",
 		);
 		assert.ok(mainGateFinish.includes("Finish workspace checkout failed"));
-		assert.ok(mainGateFinish.includes("repo_checkout_retry"));
+		assert.ok(mainGateFinish.includes("hobo-repo-checkout"));
 		assert.equal(
 			mainGateFinish.includes("steps.workspace.outputs.ready == 'true'"),
 			false,

@@ -4,9 +4,13 @@
  *
  * Two questions, both answered before anything is installed:
  *
- * 1. Has the owner set the repository variables the deploy needs? Until they
- *    have, the job ends with a notice and succeeds, so `main` stays green
- *    before the one-time setup in `packages/ci-vercel/CONFIG-SERVICE.md`.
+ * 1. Is a secret store bound to the relay? The store is chosen and
+ *    provisioned when the HoBo deployment first runs
+ *    (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
+ *    chosen at deploy, provisioned by claim"), which commits its coordinates
+ *    to `packages/ci-vercel/deploy/secret-store.binding.json`. Until then the
+ *    job ends with a notice and succeeds. No repository variable or secret is
+ *    read: the gate is the committed binding.
  * 2. For a push: does the pushed range touch the relay? The relay's inputs are
  *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
  *    closure (`importerClosure`, the release OCI impact tooling's), plus this
@@ -31,20 +35,14 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
-	"scripts/ci/relay-deploy-credential.mts",
 ] as const;
 
-/**
- * Repository variables a deploy cannot run without. Values are ids and
- * coordinates, never secrets; their meaning is in CONFIG-SERVICE.md.
- */
-export const RELAY_DEPLOY_REQUIRED_VARIABLES = [
-	"HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID",
-	"HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID",
-	"HOBO_CI_RELAY_INFISICAL_IDENTITY_ID",
-	"HOBO_CI_RELAY_INFISICAL_PROJECT_ID",
-	"HOBO_CI_RELAY_VERCEL_TEAM_ID",
-] as const;
+/** The relay's committed secret store binding: coordinates only. */
+export const RELAY_SECRET_STORE_BINDING =
+	"packages/ci-vercel/deploy/secret-store.binding.json";
+
+/** What the gate knows of the binding; it never reads a value out. */
+export type StoreBindingState = "absent" | "unreadable" | "bound";
 
 export type GateDecision = Readonly<{ run: boolean; reason: string }>;
 
@@ -68,27 +66,41 @@ export function touchesRelay(
 	);
 }
 
-/** Missing required variables, by name; the values are never read out. */
-export function missingVariables(
-	env: Readonly<Record<string, string | undefined>>,
-): readonly string[] {
-	return RELAY_DEPLOY_REQUIRED_VARIABLES.filter(
-		(name) => (env[name] ?? "").trim() === "",
-	);
+/**
+ * Whether the binding file is there, is JSON, and names a kind and an HTTPS
+ * endpoint. A shape hint only: the full parse (`@hobo/secret-store-claim`'s
+ * `readSecretStoreBinding`) runs in the credential step, and this gate runs
+ * before anything is installed, on node builtins only.
+ */
+export function storeBindingState(text: string | undefined): StoreBindingState {
+	if (text === undefined) return "absent";
+	try {
+		JSON.parse(text);
+	} catch {
+		return "unreadable";
+	}
+	return /"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) &&
+		/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
+		? "bound"
+		: "unreadable";
 }
 
 export function decide(input: {
 	readonly event: string;
-	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly store: StoreBindingState;
 	/** Changed paths of a push, or undefined when the range could not be read. */
 	readonly changed?: readonly string[];
 	readonly inputDirs: readonly string[];
 }): GateDecision {
-	const missing = missingVariables(input.env);
-	if (missing.length > 0)
+	if (input.store === "absent")
 		return {
 			run: false,
-			reason: `the relay deploy is not set up yet: set the repository variables ${missing.join(", ")} (packages/ci-vercel/CONFIG-SERVICE.md)`,
+			reason: `no secret store is bound to the relay yet: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
+		};
+	if (input.store === "unreadable")
+		return {
+			run: false,
+			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
 		};
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
@@ -130,9 +142,15 @@ function main(argv: readonly string[]): void {
 	const to = flag("--to") ?? "HEAD";
 	const output = flag("--github-output");
 	const changed = event === "push" ? changedPaths(from, to) : undefined;
+	let bindingText: string | undefined;
+	try {
+		bindingText = readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8");
+	} catch {
+		bindingText = undefined;
+	}
 	const decision = decide({
 		event,
-		env: process.env,
+		store: storeBindingState(bindingText),
 		...(event === "push" && changed !== undefined ? { changed } : undefined),
 		inputDirs:
 			event === "push"
