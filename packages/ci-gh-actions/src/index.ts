@@ -42,10 +42,6 @@ export {
 	type FleetCapacityPublishInput,
 } from "./fleet-capacity.js";
 export {
-	countLiveBoxContainers,
-	localWorkerFreeSlots,
-} from "./live-container-count.js";
-export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,
@@ -269,6 +265,10 @@ export {
 	type JobDurations,
 	type JobObservation,
 } from "./job-durations.js";
+export {
+	countLiveBoxContainers,
+	localWorkerFreeSlots,
+} from "./live-container-count.js";
 export {
 	createLocalRunnerMeshNode,
 	LOCAL_RUNNER_MESH_REPORT,

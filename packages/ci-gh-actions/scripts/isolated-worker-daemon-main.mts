@@ -17,6 +17,7 @@ import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
+	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
 	createCliDockerDriver,
@@ -61,6 +62,7 @@ import {
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
 	loadMeshIdentity,
+	localWorkerFreeSlots,
 	type MeshJournal,
 	memoryRequestForJob,
 	mergeHeldPruneWitness,
@@ -85,8 +87,6 @@ import {
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
-	countLiveBoxContainers,
-	localWorkerFreeSlots,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -1498,7 +1498,9 @@ try {
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
-				liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
+				liveLaunchSlotsInUse = countLiveBoxContainers(
+					await store.activeLeases(),
+				);
 				drainJobInFlight = reconciliation.drainJobInFlight;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
