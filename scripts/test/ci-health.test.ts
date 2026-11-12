@@ -635,3 +635,47 @@ describe("ci-health run", () => {
 		assert.equal(result.report.runs, 100);
 	});
 });
+
+describe("ci-health workflow", () => {
+	const root = join(import.meta.dirname, "..", "..");
+	const read = (path: string): string => readFileSync(join(root, path), "utf8");
+
+	it("the monitor imports nothing but node builtins", () => {
+		const imports = [
+			...read("scripts/ci/ci-health.mts").matchAll(
+				/^import .* from "([^"]+)";$/gm,
+			),
+		].map((match) => match[1] ?? "");
+		assert.ok(imports.length > 0);
+		for (const specifier of imports)
+			assert.match(specifier, /^node:/, specifier);
+	});
+
+	it("runs every two hours and on dispatch, checks out only the monitor and uploads every report", () => {
+		const workflow = read(".github/workflows/ci-health.yml");
+		assert.match(workflow, /cron: "\d+ \*\/2 \* \* \*"/);
+		assert.match(workflow, /workflow_dispatch:\n {4}inputs:\n {6}dry-run:/);
+		for (const permission of [
+			"actions: read",
+			"checks: read",
+			"issues: write",
+			"id-token: write",
+		])
+			assert.match(workflow, new RegExp(`^  ${permission}$`, "m"));
+		assert.match(
+			workflow,
+			/sparse-checkout: \|\n {12}scripts\/ci\/ci-health\.mts\n {12}\.hobo\/ci\.json\n/,
+		);
+		assert.match(workflow, /run: node scripts\/ci\/ci-health\.mts$/m);
+		assert.match(
+			workflow,
+			/if: always\(\)\n {8}uses: actions\/upload-artifact@[0-9a-f]{40}\n {8}with:\n {10}name: \$\{\{ inputs\.dry-run && 'ci-health-dry-run' \|\| 'ci-health-report' \}\}\n {10}path: ci-health-report\.json/,
+		);
+		for (const setting of [
+			"CI_HEALTH_ASSIGNEE",
+			"CI_HEALTH_PAID_MINUTES_PER_WINDOW",
+			"CI_HEALTH_STALL_MINUTES",
+		])
+			assert.match(workflow, new RegExp(`^  ${setting}: `, "m"));
+	});
+});

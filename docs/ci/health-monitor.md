@@ -17,7 +17,12 @@ so a signal that stops carrying a value is raised within two monitor runs instea
 | --- | --- |
 | Script (node builtins only, runs straight from a checkout) | [`scripts/ci/ci-health.mts`](../../scripts/ci/ci-health.mts) |
 | Tests and recorded fixtures | `scripts/test/ci-health.test.ts`, `scripts/test/fixtures/ci-health/` |
-| Workflow (every two hours and on dispatch) | `.github/workflows/ci-health.yml` |
+| Workflow (every two hours and on dispatch) | [`.github/workflows/ci-health.yml`](../../.github/workflows/ci-health.yml) |
+| Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
+
+The workflow holds `actions: read`, `checks: read`, `issues: write`, `id-token: write`, and `contents: read`
+for its sparse checkout of the monitor and `.hobo/ci.json`. It needs no `pnpm install`: Node 24 runs the
+`.mts` file directly.
 
 ## What it reads
 
