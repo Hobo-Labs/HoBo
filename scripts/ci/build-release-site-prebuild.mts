@@ -4,8 +4,8 @@
  * examples:runtime prebuild.
  *
  * Always the whole closure, never "affected since origin/main": the job runs
- * on a fresh runner, so a package left out has no dist, and the Turbo cache
- * already skips what did not change. The affected form also broke outright
+ * on a fresh runner, so a package left out has no dist. The whole closure
+ * (about 40 tasks) takes about 2 minutes there (run 43144784243). The affected form also broke outright
  * once main had moved past the commit under release: the checkout is shallow,
  * so there was no merge base (finding 125), and with full history a release
  * commit behind main would have selected nothing.

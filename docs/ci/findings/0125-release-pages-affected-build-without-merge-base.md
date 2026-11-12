@@ -27,7 +27,7 @@ The filter was wrong even with full history. The commit under release is an ance
 
 ## Fix
 
-- The prebuild always builds the whole `hobo-site...` closure. The Turbo cache already skips packages that did not change.
+- The prebuild always builds the whole `hobo-site...` closure. The job restores no Turbo cache, so that is all 39 tasks, about 2 minutes: the last successful Pages job (run [43144784243](https://github.com/Hobo-Labs/HoBo/actions/runs/43144784243)) ran this same full build, because `origin/main` matched its commit, and took 3m39s in all.
 - `release-pages` sets `HOBO_RELEASE_TURBO_BASE: ""`, like the OCI build and publish jobs.
 
 ## Verified
