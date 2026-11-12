@@ -1,4 +1,5 @@
 import type { ControlAuthenticator } from "./control-auth.js";
+import { createMemoryFleetVerdicts } from "./fleet-verdict.js";
 import type { GithubAppTransport } from "./github.js";
 import {
 	createHostedControlPlane,
@@ -84,6 +85,9 @@ export function createRelayHost(options: {
 			// A failed logger must not fail a tick or a request.
 		}
 	};
+	// Kept in this process: a verdict lapses in minutes and its reporter
+	// repeats it, so a restart costs one report (ADR-0180).
+	const fleetVerdicts = createMemoryFleetVerdicts(() => Date.parse(now()));
 	const relay = async () => {
 		const state = await store.configuration();
 		if (!state?.configuration)
@@ -113,6 +117,7 @@ export function createRelayHost(options: {
 				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
 				meshNodes: options.meshNodes,
+				fleetVerdicts,
 			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
