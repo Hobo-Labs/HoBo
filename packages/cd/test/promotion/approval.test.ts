@@ -10,7 +10,7 @@ import {
 	createWebhookApprover,
 	parseApprovalSubject,
 } from "../../src/adapters/approval.js";
-import { principalName } from "../../src/promotion/journal.js";
+import { isJsonObject, principalName } from "../../src/promotion/journal.js";
 import { SAGA_FACT } from "../../src/promotion/state.js";
 import {
 	FakeNotify,
@@ -266,7 +266,7 @@ describe("webhook approver", () => {
 		// The recorded decider is the authenticated caller, not the body's claim.
 		const decided = w.store
 			.events(SAGA_FACT.stepEmitted)
-			.map((e) => String((e.data as { emittedType?: string }).emittedType))
+			.map((e) => (isJsonObject(e.data) ? String(e.data.emittedType) : ""))
 			.filter((handle) => handle.startsWith("webhook:"));
 		expect(decided).toEqual([
 			`webhook:${principalName(context(w.c.now).principal)} unverified-approver=bot`,
