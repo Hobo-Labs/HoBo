@@ -21,7 +21,7 @@ it("names the newest in-flight main Fabric push", () => {
 			event: "push",
 			head_branch: "main",
 			path: fabric,
-			status: "queued",
+			status: "in_progress",
 			run_started_at: "2026-11-11T03:55:00Z",
 		},
 	]);
@@ -70,4 +70,72 @@ it("ignores pull requests and other workflows", () => {
 		},
 	]);
 	expect(superseded.size).toBe(0);
+});
+
+it("never starves the running main push for a newer one still waiting its turn", () => {
+	// Main pushes queue on one concurrency group: the newer run stays queued
+	// until the running one finishes, so it must not mark that one superseded.
+	const superseded = supersededMainFabricPushRunIds([
+		{
+			id: 300,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "in_progress",
+			run_started_at: "2026-11-11T22:00:00Z",
+		},
+		{
+			id: 301,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "queued",
+			run_started_at: "2026-11-11T22:05:00Z",
+		},
+	]);
+	expect(superseded.size).toBe(0);
+});
+
+it("still drops a queued older run once a newer one has started", () => {
+	const superseded = supersededMainFabricPushRunIds([
+		{
+			id: 400,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "queued",
+			run_started_at: "2026-11-11T22:00:00Z",
+		},
+		{
+			id: 401,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "in_progress",
+			run_started_at: "2026-11-11T22:05:00Z",
+		},
+	]);
+	expect([...superseded]).toEqual([400]);
+});
+
+it("hints prewarm at the started main push, not a newer one still waiting", () => {
+	const newest = newestMainFabricPushRunId([
+		{
+			id: 500,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "in_progress",
+			run_started_at: "2026-11-11T22:00:00Z",
+		},
+		{
+			id: 501,
+			event: "push",
+			head_branch: "main",
+			path: fabric,
+			status: "queued",
+			run_started_at: "2026-11-11T22:05:00Z",
+		},
+	]);
+	expect(newest).toBe(500);
 });

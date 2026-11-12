@@ -585,6 +585,24 @@ describe("createVercelClient.setProjectEnv (scripted transport, no network)", ()
 		"hobo_ci_session_key",
 		"not a name",
 		"1ST",
+		// The relay's cache backends write their own connection variables.
+		"UPSTASH_REDIS_REST_URL",
+		"UPSTASH_REDIS_REST_TOKEN",
+		"KV_REST_API_URL",
+		"KV_URL",
+		"TURSO_DATABASE_URL",
+		"TURSO_AUTH_TOKEN",
+		"LIBSQL_URL",
+		"BLOB_READ_WRITE_TOKEN",
+		"VALKEY_URL",
+		"REDIS_HOST",
+		// The config service: its credentials, and any name past its coordinates.
+		"INFISICAL_TOKEN",
+		"INFISICAL_UNIVERSAL_AUTH_CLIENT_ID",
+		"INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET",
+		"INFISICAL_API_URL",
+		"INFISICAL",
+		"infisical_secret_path",
 	])("refuses the secret-looking name %s before any request", async (key) => {
 		const { fetch, sent } = scripted({});
 		expect(isRefusedEnvKey(key)).toBe(true);
@@ -605,6 +623,13 @@ describe("createVercelClient.setProjectEnv (scripted transport, no network)", ()
 		"HOBO_CI_BOOTSTRAP_ACCOUNT_ID",
 		"HOBO_CI_GITHUB_APP_ID",
 		"HOBO_CI_GITHUB_APP_CLIENT_ID",
+		"HOBO_CI_CONFIG_SERVICE",
+		// The config service's coordinates: where to sign in, not with what.
+		"INFISICAL_SITE_URL",
+		"INFISICAL_IDENTITY_ID",
+		"INFISICAL_PROJECT_ID",
+		"INFISICAL_ENVIRONMENT",
+		"INFISICAL_SECRET_PATH",
 	])("takes the relay's non-secret setting %s", (key) => {
 		expect(isRefusedEnvKey(key)).toBe(false);
 	});

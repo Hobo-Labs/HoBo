@@ -24,8 +24,13 @@ import {
 import { pinCiQueueDeadline } from "@hobo/ci/store";
 import { z } from "zod";
 import { RelayCacheJobSchema } from "../_generated/relay_cache_pb.js";
-import { type GithubTransport, getJob } from "../github.js";
+import {
+	type GithubTransport,
+	getJob,
+	listRunWorkflowJobs,
+} from "../github.js";
 import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
+import { servedRunnerLabel } from "../runner-labels.js";
 import {
 	RELAY_MAX_GENERATION,
 	relayJobKey,
@@ -275,6 +280,11 @@ export async function rebuildLease(
 		sandboxSessionId: chosen.sandboxSessionId,
 		createdAt: at,
 	});
+	// The proxy VM is found by its name when the lease is cleaned up.
+	if (chosen.from === "sandbox" && offer?.sandboxPricing?.proxyVmRequired) {
+		lease.proxySandboxName = names.proxySandbox;
+		lease.proxySandboxStage = "creating";
+	}
 	const created = await access.createLease(
 		lease,
 		chosen.generation,
@@ -339,6 +349,112 @@ export async function resolveUncertainLease(
 		return { kind: "unresolved" };
 	await access.queue(job, at, github.createdAt);
 	return { kind: "requeued", nextGeneration: generation + 1 };
+}
+
+const StatusRunList = z.object({
+	workflow_runs: z
+		.array(z.object({ id: z.number().int().positive() }))
+		.max(100),
+});
+
+export type RelayRebuildPassResult = Readonly<{
+	/** Accounts whose holds were unknown when the pass began. */
+	accounts: readonly string[];
+	/** Accounts whose every live job was looked up: priced offers may admit again. */
+	marked: readonly string[];
+	/** Jobs rebuild was run for, by outcome kind. */
+	outcomes: Readonly<Record<string, number>>;
+}>;
+
+/**
+ * Restore the in-flight holds of every account whose index the cache lost
+ * (`accountsAwaitingRebuild`), from GitHub: for each of the account's
+ * connections, the queued and in-progress workflow runs (one page of each),
+ * their jobs, and `rebuildLease` for each live job HoBo serves. An account
+ * whose listings all answered and fit on a page is marked holds-known;
+ * otherwise priced offers stay paused and the next pass tries again.
+ *
+ * Cheap when nothing was lost: one cache read, no GitHub call.
+ */
+export async function rebuildInflight(
+	store: RelayCacheStore,
+	discovery: RelayDiscoveryPort,
+	github: GithubTransport,
+	at: string,
+	options: RelayRebuildOptions = {},
+): Promise<RelayRebuildPassResult> {
+	const accounts = await store.accountsAwaitingRebuild();
+	const outcomes: Record<string, number> = {};
+	const marked: string[] = [];
+	if (accounts.length === 0) return { accounts, marked, outcomes };
+	const config = (await store.rebuildAccess().snapshot()).state.configuration;
+	for (const accountId of accounts) {
+		let complete = true;
+		for (const connection of config?.connections ?? []) {
+			if (connection.accountId !== accountId) continue;
+			for (const status of ["queued", "in_progress"] as const) {
+				let runs: { id: number }[];
+				try {
+					const response = await github.request(
+						connection.installationId,
+						`/repos/${connection.repository}/actions/runs?status=${status}&per_page=100`,
+					);
+					if (!response.ok) {
+						complete = false;
+						continue;
+					}
+					runs = StatusRunList.parse(await response.json()).workflow_runs;
+				} catch {
+					complete = false;
+					continue;
+				}
+				// A full page may have left runs unlisted.
+				if (runs.length === 100) complete = false;
+				for (const run of runs) {
+					try {
+						for (const found of await listRunWorkflowJobs(
+							github,
+							connection.installationId,
+							connection.repository,
+							run.id,
+						)) {
+							if (found.status !== "queued" && found.status !== "in_progress")
+								continue;
+							const runner = found.runner_name ?? "";
+							if (runner && !leaseIdFromBoxRunnerName(runner)) continue;
+							if (!runner && !servedRunnerLabel(found.labels ?? [])) continue;
+							const job = create(JobSchema, {
+								id: found.id,
+								runId: found.run_id,
+								runAttempt: found.run_attempt ?? 1,
+								repositoryId: connection.repositoryId,
+								installationId: connection.installationId,
+								repository: connection.repository,
+								labels: found.labels ?? [],
+								action: found.status,
+								runnerName: runner,
+								isolatedRequired: connection.isolatedOnly,
+							});
+							const outcome = await rebuildLease(
+								store,
+								discovery,
+								job,
+								at,
+								options,
+							);
+							outcomes[outcome.kind] = (outcomes[outcome.kind] ?? 0) + 1;
+						}
+					} catch {
+						complete = false;
+					}
+				}
+			}
+		}
+		if (!complete) continue;
+		await store.markHoldsKnown(accountId, at);
+		marked.push(accountId);
+	}
+	return { accounts, marked, outcomes };
 }
 
 const RunnerList = z.object({

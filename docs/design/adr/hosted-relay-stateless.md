@@ -8,7 +8,9 @@ tags: [hobo, design, adr, ci, relay, twelve-factor]
 # ADR-0179 — The Hosted CI Relay Keeps No Durable State {#adr-0179}
 
 **Status:** Accepted (design; implementation phased); amended 2026-11-11 with
-[options routed by budget](#amendment-options-routed-by-budget)
+[options routed by budget](#amendment-options-routed-by-budget). Implemented:
+phases 2, 2b, 3, 4a, 4b and 4c (cache-fleet selection by budget); not yet
+deployed
 **Date:** 2026-11-11
 **Supersedes, for the hosted relay:** the PostgreSQL store (`PostgresCiStore`)
 as the relay's store, the relay database fleet and store selection, the Drizzle
@@ -153,6 +155,16 @@ unverified and is tested before the floor relies on it. One more owner action:
 create an Aiven free Valkey service and store its connection URL in the config
 service. Details, sources, the cost table at measured volume and the phases
 (2b, 4b–4e, 5): [Options routed by budget](../hosted-relay-stateless.md#options-routed-by-budget).
+
+*Phase 4c, implemented.* The engine-neutral parts moved to
+[`@hobo/backend-fleet`](../../../packages/backend-fleet/README.md), which
+`@hobo/data-postgres` re-exports. The assignment log is kept in one key of
+every cache backend (`ephemeralAssignmentReplica`), the active backend is
+read from it by majority, a move is sealed for longer than twice the minute
+an instance caches that answer before the target is activated, and the
+repair tick routes by budget (`routeFleetByBudget`: switch at 90% projected,
+back only below 80%). With no majority the relay refuses admissions
+retryably. Details: [Exactly one cache at a time](../hosted-relay-stateless.md#exactly-one-cache-at-a-time).
 
 ## Alternatives considered
 

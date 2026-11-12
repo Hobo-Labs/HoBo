@@ -29,14 +29,17 @@ env:
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
 
-# A newer push to main supersedes the in-progress one: its secret scan covers the landed
-# range (schedule still does full history after a blob backfill) and its gates test the
-# newer tree, while the older run would hold box slots the merge queue is waiting for.
-# The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
-# push never cancels them; merge_group runs are never cancelled.
+# Pushes to main queue: the running one finishes, the newest waits, and GitHub drops any
+# older waiting run (its commits are in the newest tree, and the gate tests from the last
+# green main). They used to cancel the running one, and with the merge queue landing a
+# commit every few minutes and a main run taking longer than that, no main run finished
+# for hours; the release train and the deps publish run only after a green main run.
+# A newer pull_request push still cancels its PR's older run. The event name keeps
+# schedule and workflow_dispatch on main out of the pushes' group; merge_group runs are
+# never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   route:
@@ -106,7 +109,7 @@ jobs:
     # the runner the box launched for a main job went to an older PR job instead.
     # scripts/lint-actions.ts allows this expression, the trunk expression and `hobo`.
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -138,6 +141,10 @@ jobs:
       - name: Materialize runner image (host cache or GHCR)
         id: materialize
         if: steps.rebuild.outputs.needed == 'true'
+        # --materialize-only exits 2 when neither the box nor GHCR has this content key, which
+        # is every change to an image input; the build steps below then run. Without this the
+        # job failed there and the build never ran.
+        continue-on-error: true
         timeout-minutes: 5
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,7 +160,7 @@ jobs:
       - name: Build base + mise oci layers (native arch)
         id: ci_runner_image_build
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1233,6 +1240,7 @@ jobs:
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Bootstrap repo-local composite actions
@@ -1333,6 +1341,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BEFORE: ${{ github.event.before }}
           SCAN_SHA: ${{ github.sha }}
+          # Read-only: lists completed runs to find the last green main commit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail

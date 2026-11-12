@@ -10,42 +10,22 @@
  * The count is a lower bound. An instance that is stopped before it flushes
  * loses what it had not yet written; a host bounds that by flushing often.
  */
+import {
+	billingPeriod,
+	FLEET_USAGE_UNITS,
+	type FleetUsageUnit,
+} from "@hobo/backend-fleet";
 import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
 import { column, type FleetBackend, parseCount } from "./sql.js";
 
-/** The units an allowance, and therefore a measurement, can be stated in. */
-export const FLEET_USAGE_UNITS = [
-	"operations",
-	"compute-hours",
-	"storage-bytes",
-] as const;
-
-export type FleetUsageUnit = (typeof FLEET_USAGE_UNITS)[number];
-
-export type BillingPeriod = {
-	/** `YYYY-MM` of the UTC calendar month. */
-	readonly id: string;
-	readonly startsAtMs: number;
-	readonly endsAtMs: number;
-};
-
-/** The UTC calendar month containing `nowMs`. */
-export function billingPeriod(nowMs: number): BillingPeriod {
-	if (!Number.isSafeInteger(nowMs) || nowMs < 0)
-		throw new PostgresDataError(
-			"FLEET_RECORD_INVALID",
-			"a billing period needs a non-negative instant",
-		);
-	const now = new Date(nowMs);
-	const year = now.getUTCFullYear();
-	const month = now.getUTCMonth();
-	return {
-		id: `${year}-${String(month + 1).padStart(2, "0")}`,
-		startsAtMs: Date.UTC(year, month, 1),
-		endsAtMs: Date.UTC(year, month + 1, 1),
-	};
-}
+// The billing period and the units are engine-neutral (`@hobo/backend-fleet`).
+export {
+	type BillingPeriod,
+	billingPeriod,
+	FLEET_USAGE_UNITS,
+	type FleetUsageUnit,
+} from "@hobo/backend-fleet";
 
 // parallel-type-allowed: the parsed in-process measurement read back through readUsage; the proto PostgresFleetUsage is its wire projection.
 export type PostgresFleetUsage = {

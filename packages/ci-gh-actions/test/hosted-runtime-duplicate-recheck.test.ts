@@ -69,6 +69,8 @@ it("requeues an uncovered duplicate queued delivery", async () => {
 		expect.objectContaining({ id: 1, runAttempt: 1, repositoryId: 101 }),
 		new Date(NOW).toISOString(),
 		expect.any(Number),
+		// GitHub's `created_at` for the job; this fixture's job has none.
+		undefined,
 	);
 });
 

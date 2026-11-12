@@ -147,10 +147,11 @@ permissions:
 # newest waits, and GitHub drops any older waiting run. The gate measures from the last
 # release tag, so the run that goes next releases everything the dropped ones would have,
 # and it asks after the running release has tagged, not before (two releases of
-# overlapping changes, or an older one finishing last). Keyed by the CI run's event so a
-# scheduled or dispatched CI completion, which the gate skips, never displaces a push.
+# overlapping changes, or an older one finishing last). Keyed by the CI run's event and
+# conclusion so a completion the gate skips (scheduled, dispatched, or a main push that was
+# dropped or failed) never displaces a release waiting on a green push.
 concurrency:
-  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}', github.event.workflow_run.event) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
+  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:

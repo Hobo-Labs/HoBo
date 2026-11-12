@@ -8,6 +8,7 @@ import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { describe, expect, it } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
+import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import { type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
@@ -86,6 +87,9 @@ async function deploy(
 		readonly fetch: VercelFetch;
 		readonly json?: boolean;
 		readonly cwd?: string;
+		readonly vercelCli?: VercelCliRunner;
+		readonly sleep?: (ms: number) => Promise<void>;
+		readonly now?: () => number;
 	},
 ): Promise<Ran> {
 	const cli = createHoboCli({
@@ -93,6 +97,11 @@ async function deploy(
 			ci: createCiCommand({
 				env: options.env ?? {},
 				vercelFetch: options.fetch,
+				...(options.vercelCli !== undefined
+					? { vercelCli: options.vercelCli }
+					: undefined),
+				...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
+				...(options.now !== undefined ? { now: options.now } : undefined),
 			}),
 		},
 	});
@@ -125,6 +134,14 @@ const RELAY = [
 	"hobo-ci",
 ];
 const SETTING = ["--set", "HOBO_CI_PUBLIC_URL=https://ci.example.test"];
+// The owner's Infisical ids the production config-service binding asks for:
+// identifiers, not credentials (synthetic here).
+const INPUTS = [
+	"--set",
+	"INFISICAL_IDENTITY_ID=3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c",
+	"--set",
+	"INFISICAL_PROJECT_ID=6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7",
+];
 
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
 	it("plans a preview deployment by default, with no token and no request", async () => {
@@ -161,6 +178,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 				"--root-directory",
 				"packages/ci-vercel",
 				"--create-project",
+				...INPUTS,
 				"--dry-run",
 			],
 			{ fetch },
@@ -172,7 +190,158 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			target: "production",
 			scope: "token-default",
 			createMissingProject: true,
+			placement: {
+				yard: "hobo-ci-relay",
+				camp: "hobo-ci-relay/production",
+				provider: "vercel",
+			},
 		});
+		expect(sent).toEqual([]);
+	});
+
+	it("takes the repository and the project from the Yard, and the settings from the bindings production chooses", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				"--ref",
+				"main",
+				"--sha",
+				SHA,
+				"--target",
+				"production",
+				"--team",
+				TEAM,
+				...INPUTS,
+				"--dry-run",
+			],
+			{ fetch, json: false },
+		);
+
+		expect(ran.exitCode).toBe(0);
+		expect(ran.stdout).toContain(
+			"placed by Yard hobo-ci-relay (provider vercel, iad1), Camp hobo-ci-relay/production",
+		);
+		expect(ran.stdout).toContain(
+			`to Vercel project hobo-ci, scope ${TEAM}, target production`,
+		);
+		expect(ran.stdout).toContain("from github Hobo-Labs/HoBo@main");
+		expect(ran.stdout).toContain(
+			"Settings set for production first (non-secret): HOBO_CI_CONFIG_SERVICE=infisical INFISICAL_ENVIRONMENT=prod INFISICAL_IDENTITY_ID=3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c INFISICAL_PROJECT_ID=6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7 INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_SITE_URL=https://app.infisical.com",
+		);
+		expect(ran.stdout).toContain(
+			"secret-ref.runtime-projection/v1 -> infisical.secrets/v1 via infisical.oidc-auth/v1",
+		);
+		expect(ran.stdout).toContain(
+			"kv.redis-compatible/v1 -> upstash.redis/v1 via vercel.marketplace/v1 (marketplace:upstash/upstash-kv)",
+		);
+		// The catalog's other cache backends are listed in the record, not chosen.
+		expect(ran.stdout).not.toContain("-> aiven.valkey/v1");
+		expect(sent).toEqual([]);
+	});
+
+	it("keeps the config service out of preview, where the relay identity cannot sign in", async () => {
+		const { fetch } = unreachable();
+		const ran = await deploy([...RELAY, "--dry-run"], { fetch });
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.plan).toMatchObject({
+			target: "preview",
+			placement: { camp: "hobo-ci-relay/preview" },
+		});
+		const plan = parseJsonObject(JSON.stringify(ran.data.plan));
+		expect(JSON.stringify(plan.settings ?? [])).not.toContain("INFISICAL");
+		const bindings = Array.isArray(plan.bindings) ? plan.bindings : [];
+		expect(bindings).toContainEqual(
+			expect.objectContaining({
+				profile: "secret-ref.runtime-projection/v1",
+				inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+			}),
+		);
+		expect(bindings).not.toContainEqual(
+			expect.objectContaining({
+				profile: "secret-ref.runtime-projection/v1",
+				selected: true,
+			}),
+		);
+	});
+
+	it("asks for the owner's ids a production binding needs, by name", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[...RELAY, "--target", "production", "--dry-run"],
+			{ fetch },
+		);
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining(
+				"Camp hobo-ci-relay/production needs --set INFISICAL_IDENTITY_ID=<value> --set INFISICAL_PROJECT_ID=<value>",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses to override a setting the Yard's bindings set", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...RELAY,
+				"--target",
+				"production",
+				...INPUTS,
+				"--set",
+				"INFISICAL_ENVIRONMENT=dev",
+				"--dry-run",
+			],
+			{ fetch },
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_SETTING_REFUSED",
+			message: expect.stringContaining(
+				"Camp hobo-ci-relay/production's bindings set INFISICAL_ENVIRONMENT",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("plans what the workflow on main runs: production from the Yard, provisioning first", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				"--ref",
+				"main",
+				"--sha",
+				SHA,
+				"--target",
+				"production",
+				"--team",
+				TEAM,
+				"--provision",
+				...INPUTS,
+				"--dry-run",
+			],
+			{ fetch },
+		);
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.plan).toEqual(fixture("relay-production-provision"));
+		expect(sent).toEqual([]);
+	});
+
+	it("lists the Vercel CLI commands --provision would run, with no token among them", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[...RELAY, "--team", TEAM, "--provision", "--dry-run"],
+			{ fetch, json: false, env: { VERCEL_TOKEN: TOKEN } },
+		);
+		expect(ran.exitCode).toBe(0);
+		expect(ran.stdout).toContain(
+			"1. vercel integration list hobo-ci --integration upstash --json",
+		);
+		expect(ran.stdout).toContain(
+			"4. vercel integration add upstash/upstash-kv --name hobo-ci-cache --environment preview --no-env-pull --non-interactive --json",
+		);
+		expect(ran.stdout).not.toContain(TOKEN);
+		expect(ran.stdout).not.toContain("--token");
 		expect(sent).toEqual([]);
 	});
 
@@ -190,12 +359,14 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			"Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.",
 		);
 		expect(ran.stdout).toContain(
-			"Deploy hobo-ci-relay (queue hobo-ci, schedule hobo-ci-repair, api relay, secret secrets, data state)",
+			"Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)",
 		);
 		expect(ran.stdout).toContain(
 			`to Vercel project hobo-ci, scope ${TEAM}, target preview`,
 		);
-		expect(ran.stdout).toContain("CRON_SECRET, DATABASE_URL,");
+		expect(ran.stdout).toContain(
+			"CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256,",
+		);
 		expect(ran.stdout).toContain(`3. POST /v13/deployments?teamId=${TEAM}`);
 		expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
 	});
@@ -213,14 +384,40 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			"a credential under a non-secret name",
 			"HOBO_CI_PUBLIC_URL=https://user:synthetic-pw@ci.example.test",
 		],
+		["an Infisical access token", "INFISICAL_TOKEN=synthetic-value-0123"],
+		[
+			"an Infisical Universal Auth client id",
+			"INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=synthetic-value-0123",
+		],
+		[
+			"an Infisical name that is not a coordinate",
+			"INFISICAL_API_URL=https://synthetic.example.test",
+		],
+		["the Upstash token", "UPSTASH_REDIS_REST_TOKEN=synthetic-value-0123"],
+		["a Vercel KV URL", "KV_REST_API_URL=https://synthetic.example.test"],
+		["the Turso URL", "TURSO_DATABASE_URL=libsql://synthetic.example.test"],
+		["a libSQL URL", "LIBSQL_URL=libsql://synthetic.example.test"],
+		["the Blob token", "BLOB_READ_WRITE_TOKEN=synthetic-value-0123"],
+		["a Valkey URL", "VALKEY_URL=rediss://synthetic.example.test:6379"],
+		["a Redis URL", "REDIS_URL=rediss://synthetic.example.test:6379"],
 	])("refuses to set %s, and never echoes its value", async (_name, setting) => {
 		const { fetch, sent } = unreachable();
 		const value = setting.slice(setting.indexOf("=") + 1);
 		for (const mode of [["--dry-run"], []]) {
-			const ran = await deploy([...RELAY, "--set", setting, ...mode], {
-				fetch,
-				env: { VERCEL_TOKEN: TOKEN },
-			});
+			// Production too: its config-service binding's inputs are allowed,
+			// and nothing else under the config service's prefix is.
+			const ran = await deploy(
+				[
+					...RELAY,
+					"--target",
+					"production",
+					...INPUTS,
+					"--set",
+					setting,
+					...mode,
+				],
+				{ fetch, env: { VERCEL_TOKEN: TOKEN } },
+			);
 
 			expect(ran.exitCode).toBe(1);
 			expect(ran.envelope).toMatchObject({
@@ -237,9 +434,8 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 	});
 
 	it.each([
-		[["--ref", "main", "--project", "hobo-ci"], /--repo <owner\/name>/u],
+		[["--repo", "not-a-repo", "--ref", "main"], /--repo <owner\/name>/u],
 		[["--repo", "example/hobo", "--project", "hobo-ci"], /--ref/u],
-		[["--repo", "example/hobo", "--ref", "main"], /--project/u],
 		[
 			[...RELAY, "--target", "staging"],
 			/preview \(the default\) or production/u,
@@ -278,6 +474,38 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(ran.envelope).toMatchObject({
 			message: expect.stringContaining("--cwd packages/ci-vercel"),
 		});
+	});
+
+	it("needs the Bindle's Yard: without one there is no placement and no provider", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, "--dry-run"], {
+			fetch,
+			cwd: fileURLToPath(
+				new URL("./fixtures/relay-yards/no-yard/", import.meta.url),
+			),
+		});
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining("No Yard found here for relay-fixture"),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("realizes Vercel Yards only, and says which provider the Yard named", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, "--dry-run"], {
+			fetch,
+			cwd: fileURLToPath(
+				new URL("./fixtures/relay-yards/other-provider/", import.meta.url),
+			),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_YARD_PROVIDER",
+			message: expect.stringContaining("places relay-fixture on netlify"),
+		});
+		expect(sent).toEqual([]);
 	});
 
 	it("keeps its options off the other CI commands", async () => {
@@ -340,6 +568,8 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 			configCreated: "HOBO_CI_PUBLIC_URL",
 			configUpdated: "",
 			configUnchanged: "",
+			yard: "hobo-ci-relay",
+			camp: "hobo-ci-relay/preview",
 		});
 		expect(ran.data.plan).toEqual(fixture("relay-preview"));
 		expect(ran.stdout).not.toContain(TOKEN);
@@ -413,5 +643,165 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 				expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
 			}
 		}
+	});
+});
+
+// A Vercel that holds no settings, answers one deployment, and reports its
+// state from `states`, one per read. Records each request as "METHOD path".
+function scriptedVercel(states: readonly string[]) {
+	const sent: string[] = [];
+	let reads = 0;
+	const answer = (status: number, body: JsonObject) => ({
+		ok: status >= 200 && status < 300,
+		status,
+		async text() {
+			return JSON.stringify(body);
+		},
+		async json() {
+			return body;
+		},
+	});
+	const fetch: VercelFetch = async (url, init) => {
+		const path = url.replace("https://api.vercel.com", "");
+		sent.push(`${init.method} ${path}`);
+		if (init.method === "POST" && path.startsWith("/v13/deployments"))
+			return answer(200, {
+				id: "dpl_wait",
+				url: "hobo-ci-git-main.example.vercel.app",
+				readyState: "QUEUED",
+			});
+		if (init.method === "GET" && path.startsWith("/v13/deployments/dpl_wait")) {
+			const readyState = states[Math.min(reads, states.length - 1)] ?? "READY";
+			reads += 1;
+			return answer(200, {
+				id: "dpl_wait",
+				url: "hobo-ci-git-main.example.vercel.app",
+				readyState,
+			});
+		}
+		return answer(404, { error: { code: "not_found", message: "no" } });
+	};
+	return { fetch, sent };
+}
+
+// A Vercel CLI whose `integration list` answers come from `listed` (project,
+// then team) and which records every command it is given.
+function fakeVercelCli(listed: { project: string; team: string }) {
+	const commands: string[] = [];
+	const run: VercelCliRunner = async (args) => {
+		commands.push(args.join(" "));
+		if (args[0] === "integration" && args[1] === "list")
+			return {
+				code: 0,
+				stdout: args.includes("--all") ? listed.team : listed.project,
+			};
+		return { code: 0, stdout: "{}" };
+	};
+	return { run, commands };
+}
+
+describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
+	const env = { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM };
+	const instant = { sleep: async () => {}, now: () => 0 };
+
+	it("provisions the Marketplace cache the Camp chooses when the team has none, then deploys and waits for READY", async () => {
+		const vercel = scriptedVercel(["BUILDING", "READY"]);
+		const cli = fakeVercelCli({ project: "[]", team: "[]" });
+		const ran = await deploy([...RELAY, "--provision", "--wait"], {
+			fetch: vercel.fetch,
+			env,
+			vercelCli: cli.run,
+			...instant,
+		});
+
+		expect(ran.exitCode).toBe(0);
+		expect(cli.commands).toEqual([
+			"integration list hobo-ci --integration upstash --json",
+			"integration list --all --integration upstash --json",
+			"integration add upstash/upstash-kv --name hobo-ci-cache --environment preview --no-env-pull --non-interactive --json",
+		]);
+		expect(vercel.sent).toEqual([
+			`POST /v13/deployments?teamId=${TEAM}`,
+			`GET /v13/deployments/dpl_wait?teamId=${TEAM}`,
+			`GET /v13/deployments/dpl_wait?teamId=${TEAM}`,
+		]);
+		expect(ran.data.outputs).toMatchObject({
+			provisioned: "upstash/upstash-kv:hobo-ci-cache=created",
+			readyState: "READY",
+			camp: "hobo-ci-relay/preview",
+		});
+		expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
+	});
+
+	it("connects a resource the team already has, and leaves a connected one alone", async () => {
+		const resource = JSON.stringify([{ name: "hobo-ci-cache" }]);
+		const connect = fakeVercelCli({ project: "[]", team: resource });
+		const first = await deploy([...RELAY, "--provision"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			vercelCli: connect.run,
+		});
+		expect(first.data.outputs).toMatchObject({
+			provisioned: "upstash/upstash-kv:hobo-ci-cache=connected",
+		});
+		expect(connect.commands.at(-1)).toBe(
+			"integration resource connect hobo-ci-cache hobo-ci --environment preview --yes --json",
+		);
+
+		const present = fakeVercelCli({ project: resource, team: resource });
+		const again = await deploy([...RELAY, "--provision"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			vercelCli: present.run,
+		});
+		expect(again.data.outputs).toMatchObject({
+			provisioned: "upstash/upstash-kv:hobo-ci-cache=present",
+		});
+		expect(present.commands).toHaveLength(1);
+	});
+
+	it("reports a provisioning it could not do and deploys anyway", async () => {
+		const refusing: VercelCliRunner = async (args) =>
+			args[1] === "add" ? { code: 1, stdout: "" } : { code: 0, stdout: "[]" };
+		const ran = await deploy([...RELAY, "--provision"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			vercelCli: refusing,
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.outputs).toMatchObject({
+			provisioned: "upstash/upstash-kv:hobo-ci-cache=failed",
+		});
+	});
+
+	it("fails when the deployment ends in ERROR", async () => {
+		const ran = await deploy([...RELAY, "--wait"], {
+			fetch: scriptedVercel(["BUILDING", "ERROR"]).fetch,
+			env,
+			...instant,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_NOT_READY",
+			data: { outputs: { readyState: "ERROR" } },
+		});
+	});
+
+	it("stops waiting after its limit, and says the state it last saw", async () => {
+		let clock = 0;
+		const ran = await deploy([...RELAY, "--wait"], {
+			fetch: scriptedVercel(["BUILDING"]).fetch,
+			env,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+			now: () => clock,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_NOT_READY",
+			data: { outputs: { readyState: "BUILDING after 15 minutes" } },
+		});
 	});
 });

@@ -74,6 +74,12 @@ export interface SandboxProxyDriver {
 	stop(name: string, sessionId: string): Promise<SandboxUsage>;
 }
 export interface SandboxLeaseStore extends HostedRelayStore {
+	/**
+	 * The proxy session token for a lease, when the store derives it (the
+	 * relay cache store: an HMAC of the lease id under a key from the config
+	 * service). Without it the controller draws a random token.
+	 */
+	sandboxProxyToken?(leaseId: string): string;
 	configureSandboxProxy(
 		accountId: string,
 		leaseId: string,
@@ -168,7 +174,7 @@ export function createSandboxController(options: {
 	unmet: (lease: Lease) => Promise<Job | undefined>;
 	/** Receives only fixed phase names, lease identity and a sanitized HTTP status. */
 	reportFailure?: (failure: SandboxLaunchFailure) => void;
-	now?: () => string;
+	now?: (() => string) | undefined;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
 	function report(
@@ -427,7 +433,9 @@ export function createSandboxController(options: {
 						now(),
 					);
 					if (!createdProxy) throw new Error("proxy creation uncertain");
-					proxyToken = randomBytes(32).toString("base64url");
+					proxyToken =
+						options.store.sandboxProxyToken?.(id) ??
+						randomBytes(32).toString("base64url");
 					await options.store.configureSandboxProxy(
 						createdProxy.accountId,
 						id,

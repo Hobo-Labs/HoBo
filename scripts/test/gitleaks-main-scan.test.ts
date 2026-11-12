@@ -82,6 +82,31 @@ describe("planMainGitleaksScan", () => {
 		});
 	});
 
+	it("starts from the last green main commit when pushes in between were dropped", () => {
+		const plan = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "ccc",
+			sha: "ddd",
+			lastGreenSha: "aaa",
+			commitExists: () => true,
+			isAncestor: (ancestor, commit) => ancestor === "aaa" && commit === "ccc",
+		});
+		assert.equal(plan.logOpts, "aaa..ddd");
+		assert.equal(plan.fetchBlobs, false);
+	});
+
+	it("keeps the push range when the last green commit is not behind it", () => {
+		const plan = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "ccc",
+			sha: "ddd",
+			lastGreenSha: "zzz",
+			commitExists: () => true,
+			isAncestor: () => false,
+		});
+		assert.equal(plan.logOpts, "ccc..ddd");
+	});
+
 	it("treats a forced push (zero before) as full history", () => {
 		const plan = planMainGitleaksScan({
 			eventName: "push",

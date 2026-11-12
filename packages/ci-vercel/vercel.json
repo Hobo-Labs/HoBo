@@ -11,6 +11,22 @@
           "topic": "hobo-ci"
         }
       ]
+    },
+    "api/intake.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "hobo-ci-intake"
+        }
+      ]
+    },
+    "api/lease-steps.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "hobo-ci-lease-steps"
+        }
+      ]
     }
   },
   "schedules": {

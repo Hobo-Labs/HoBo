@@ -7,9 +7,15 @@ tags: [hobo, design, ci, data-plane]
 
 # Relay Ephemeral State
 
-**Status:** the port, its four bindings (in-memory, Valkey/Redis over RESP,
-Upstash REST, Turso/libSQL) and their conformance suite are implemented. The relay does not use it yet; moving the relay's lease records,
-markers and counters onto it is a later phase.
+**Status:** the port, its five bindings (in-memory, Valkey/Redis over RESP,
+Upstash REST, Turso/libSQL, Vercel Blob) and their conformance suite are
+implemented. The
+hosted relay's store runs on it (ADR-0179 phase 4a), and the
+relay deployed from `@hobo/ci-vercel` is composed on it with no database
+(phase 4b). Since phase 4c every binding the deployment's environment (or
+the config service) names is a member of the relay's cache fleet: exactly one
+is active, chosen by budget, and each is metered in the units it bills
+([The cache fleet](../../packages/ci-vercel/README.md#the-cache-fleet)).
 
 ## Why
 
@@ -149,9 +155,16 @@ offer in HoBo's pricing catalog, and budget policy picks exactly one active
 backend: Upstash (500,000 commands a month free, then pay-as-you-go), Aiven for
 Valkey free (no command cap), Turso free (500 million rows read, 10 million
 written; blocked when exhausted), self-hosted Valkey (no provider cost), and
-later Vercel Blob (first-party, conditional writes by ETag; not built). The
-assignment log that names the active backend is itself kept on the backends
-through this port's compare-and-set, by majority. A switch starts the new
+Vercel Blob (first-party, conditional writes by ETag; pay-as-you-go, so
+chosen only under a declared cap). The assignment log that names the active
+backend is itself kept on the backends through this port, by majority: one
+key per backend, `hobo-ci:<env>:fleet:assignment`, written by
+`putIfAbsent` or `compareAndSet` on the version read
+(`ephemeralAssignmentReplica` in
+[`@hobo/backend-fleet`](../../packages/backend-fleet/README.md)), with the
+30-day TTL refreshed on every write and repair tick. A log a backend loses
+reads as empty and is rejoined from the others. Usage counters live on each
+backend too, `hobo-ci:<env>:fleet:usage:<backend>:<unit>:<YYYY-MM>`. A switch starts the new
 backend cold, which is safe because everything here may be lost. Sources, the
 cost table and the selection policy:
 [Options routed by budget](./hosted-relay-stateless.md#options-routed-by-budget).

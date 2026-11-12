@@ -90,6 +90,44 @@ const appSettings = {
 	HOBO_CI_GITHUB_APP_CLIENT_SECRET: z.string().regex(/^[!-~]{20,256}$/),
 };
 
+/**
+ * Secrets only the stateless relay reads; the Neon broker never carried
+ * them. The Sandbox proxy token key: each proxy session token is derived
+ * from it (an HMAC of the lease id), so no token is stored anywhere.
+ */
+const relaySecrets = {
+	HOBO_CI_SANDBOX_PROXY_TOKEN_KEY: canonicalKey.optional(),
+};
+
+/**
+ * Cache bindings and offers the config service may hold (ADR-0179 phase 4c):
+ * a backend's connection the Marketplace does not inject (an Aiven Valkey URL
+ * is the expected one), and the declared offers and switch marks. Each value
+ * is checked for shape only; it reaches the cache's client and nothing else,
+ * and every error names the key.
+ */
+const cacheSettings = {
+	VALKEY_URL: z
+		.string()
+		.max(2048)
+		.regex(/^rediss?:\/\/[^\s]+$/u)
+		.optional(),
+	TURSO_DATABASE_URL: z
+		.string()
+		.max(2048)
+		.regex(/^(?:libsql|https):\/\/[^\s@]+$/u)
+		.optional(),
+	TURSO_AUTH_TOKEN: z
+		.string()
+		.regex(/^[!-~]{1,4096}$/u)
+		.optional(),
+	BLOB_STORE_ID: z
+		.string()
+		.regex(/^(?:store_)?[A-Za-z0-9]{1,64}$/u)
+		.optional(),
+	HOBO_CI_CACHE_OFFERS_JSON: z.string().min(2).max(16_384).optional(),
+};
+
 /** The onboarding token must be one of the owner's control tokens. */
 function onboardingBinding(
 	value: z.infer<typeof brokerFields>,
@@ -143,6 +181,8 @@ export type RuntimeBrokerConfig = z.infer<typeof RuntimeBrokerConfig>;
 export const RELAY_RUNTIME_CONFIG_SETTINGS = Object.freeze({
 	...brokerSettings,
 	...appSettings,
+	...relaySecrets,
+	...cacheSettings,
 });
 
 /** The relay's whole runtime configuration as the config service holds it. */

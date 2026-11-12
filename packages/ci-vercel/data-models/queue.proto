@@ -1,7 +1,8 @@
 syntax = "proto3";
 package hobo.ci.vercel.v1;
 
-// A GitHub delivery was committed to the inbox and may be processed.
+// A GitHub delivery was committed to the inbox and may be processed. Sent by
+// relays before ADR-0179 phase 4b; the stateless relay acknowledges it.
 message HostedQueueWakeup {
   string delivery_id = 1;
 }
@@ -10,4 +11,37 @@ message HostedQueueWakeup {
 message HostedQueueRepair {
   string source = 1;
   string name = 2;
+}
+
+// A signature-verified GitHub delivery, carried by the intake topic in place
+// of an inbox row (ADR-0179). The queue's idempotency key is the delivery id.
+message HostedQueueDelivery {
+  string kind = 1;
+  string delivery_id = 2;
+  string event = 3;
+  double installation_id = 4;
+  double repository_id = 5;
+  bytes raw_body = 6;
+  string received_at = 7;
+}
+
+// One lifecycle step of one lease, sent delayed to the lease-steps topic with
+// idempotency key `${lease_id}:${step}:${n}`.
+message HostedLeaseStep {
+  string kind = 1;
+  string lease_id = 2;
+  string step = 3;
+  uint32 n = 4;
+  HostedLeaseStepJob job = 5;
+}
+
+// The job a lease serves: enough for a step to rebuild a lease the cache lost.
+message HostedLeaseStepJob {
+  double id = 1;
+  double run_id = 2;
+  uint32 run_attempt = 3;
+  double repository_id = 4;
+  double installation_id = 5;
+  string repository = 6;
+  bool isolated_required = 7;
 }

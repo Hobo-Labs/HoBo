@@ -347,20 +347,46 @@ Secrets never pass through HoBo:
 ## Deploying the hosted relay with HoBo
 
 `hobo ci deploy` deploys the hosted relay (`packages/ci-vercel`, declared as a
-HoBo app in its `src/bindle.ts`) to Vercel from a git ref. Run it in the relay's
-project directory or pass `--cwd packages/ci-vercel`:
+HoBo app in its `src/bindle.ts`) to Vercel from a git ref. Where it goes comes
+from the relay's Yard, `packages/ci-vercel/deploy/yard.ts` (ADR-0179 phase 6):
+the Yard names the provider, the project and repository, and the binding rows;
+the target names a Camp (`production` or `preview`), and the rows that Camp
+requires project the non-secret settings. Run it in the relay's project
+directory or pass `--cwd packages/ci-vercel`:
 
 ```sh
-hobo ci deploy --cwd packages/ci-vercel --repo <owner>/<repository> \
-  --ref main --project hobo-ci --team team_… --dry-run
+hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 ```
 
-`--dry-run` prints every request it would send and sends none; a real run reads
-`VERCEL_TOKEN` from the environment and deploys to **preview** unless
-`--target production` is given. It sets only non-secret settings the relay
-declares (`--set NAME=value`), never a secret, and provisions no storage. See
-[the README](README.md) for the options, the plan record and its gates. It has
-been exercised against a fake transport only.
+`--dry-run` prints the placement, the chosen bindings and every request it
+would send, and sends none. A real run reads `VERCEL_TOKEN` from the environment
+and deploys to **preview** unless `--target production` is given. Production
+chooses the config-service binding, which asks for the owner's two Infisical
+ids:
+
+```sh
+hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
+  --target production --team team_… \
+  --set INFISICAL_IDENTITY_ID=<hobo-ci-relay id> \
+  --set INFISICAL_PROJECT_ID=<hobo-ci project id> \
+  --provision --wait --dry-run
+```
+
+| Option | Means |
+|---|---|
+| `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
+| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or an `INFISICAL_*` name other than the five coordinates |
+| `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
+| `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
+| `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
+
+Nobody runs this against production by hand: the
+[relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
+every merge to `main` that changes the relay, reading the Vercel token from the
+config service with GitHub OIDC. See
+[`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
+for the repository variables it needs, and [the README](README.md) for the plan
+record and its gates. It has been exercised against fakes only.
 
 
 ## Create the hosted relay's GitHub App

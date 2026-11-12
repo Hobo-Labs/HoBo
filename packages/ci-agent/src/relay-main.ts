@@ -30,7 +30,7 @@ import { configuredStructuredMerger } from "./structured-merge.js";
  */
 export async function startRelayWithAgentFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
-) {
+): Promise<Awaited<ReturnType<typeof startRelayFromEnvironment>>> {
 	const path = env.HOBO_CI_AGENT_CONFIG;
 	const block = path
 		? parseCiAgentBlock(readFileSync(path, "utf8"))

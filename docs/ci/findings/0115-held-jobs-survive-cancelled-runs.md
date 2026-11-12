@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 113: held jobs survive cancelled runs"
+title: "Finding 115: held jobs survive cancelled runs"
 description: "Box worker kept coalesced pending jobs and unlaunched reservations after GitHub cancelled or completed the run."
 tags: [hobo, ci, performance, box-worker, poll, admission]
 ---
 
-# Finding 113: held jobs survive cancelled runs
+# Finding 115: held jobs survive cancelled runs
 
 ## Evidence
 
