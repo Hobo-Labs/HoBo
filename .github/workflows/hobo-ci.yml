@@ -917,6 +917,7 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_CI_FLEET_CAPACITY_JSON: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
           MAIN_SHARD_TARGET_SECONDS: "180"
           HOBO_TURBO_INVOKER: mise
           MAIN_GATE_PLAN_CACHE_DIR: ${{ runner.temp }}/hobo-main-gate-plan
