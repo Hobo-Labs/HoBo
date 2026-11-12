@@ -563,11 +563,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/hobo-repo-checkout
         with:
-          submodules: recursive
-          clean: false
           fetch-depth: 0
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -652,11 +652,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/hobo-repo-checkout
         with:
-          submodules: recursive
-          clean: false
           fetch-depth: 0
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -1150,21 +1150,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/hobo-repo-checkout
         with:
           ref: ${{ github.sha }}
-          clean: false
-          fetch-depth: 1
-          filter: blob:none
-          fetch-tags: false
-          sparse-checkout: .github/actions
-          sparse-checkout-cone-mode: true
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          submodules: recursive
-          clean: false
           fetch-depth: 0
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
@@ -1284,56 +1275,23 @@ jobs:
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/hobo-repo-checkout
         id: repo_checkout
-        continue-on-error: true
         with:
-          clean: false
           fetch-depth: 0
-          filter: blob:none
-          fetch-tags: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        id: repo_checkout_retry
-        if: steps.repo_checkout.outcome != 'success'
-        continue-on-error: true
-        with:
-          clean: false
-          fetch-depth: 0
-          filter: blob:none
-          fetch-tags: false
+          submodules: recursive
+          bootstrap-composite-actions: "false"
+          marker: scripts/ci/gitleaks-main-scan.mts
       - name: Ensure finish workspace checkout
         id: workspace
         shell: bash
         run: |
           set -euo pipefail
-          marker="scripts/ci/gitleaks-main-scan.mts"
-          if [ -f "$marker" ]; then
+          if [ -f scripts/ci/gitleaks-main-scan.mts ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          cd "${GITHUB_WORKSPACE}"
-          repo="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          for attempt in 1 2 3 4; do
-            rm -rf .git
-            git init -q
-            if git remote get-url origin >/dev/null 2>&1; then
-              git remote set-url origin "$repo"
-            else
-              git remote add origin "$repo"
-            fi
-            if git -c protocol.version=2 fetch --no-tags --prune origin "${GITHUB_SHA}" \
-              && git checkout -f FETCH_HEAD; then
-              if [ -f "$marker" ]; then
-                echo "ready=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            fi
-            if [ "$attempt" -lt 4 ]; then
-              echo "finish workspace checkout retry ${attempt}/4 (git fallback)"
-              sleep $(( attempt * 4 ))
-            fi
-          done
-          echo "::error title=Finish workspace checkout failed::${marker} is still missing after actions/checkout retries and git fallback (metadata download timeout or fetch failure)."
+          echo "::error title=Finish workspace checkout failed::scripts/ci/gitleaks-main-scan.mts is still missing after hobo-repo-checkout"
           exit 1
       - uses: ./.github/actions/ci-runner-preflight
       - name: Secret scan (full history)

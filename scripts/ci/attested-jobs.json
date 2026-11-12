@@ -211,7 +211,12 @@
 			"matrix": "${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
 			"steps": [
 				{
-					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"uses": "./.github/actions/hobo-repo-checkout",
+					"with": {
+						"fetch-depth": "0",
+						"submodules": "recursive",
+						"marker": "scripts/ci/ci-trace.mts"
+					},
 					"local": "skip",
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
@@ -313,7 +318,12 @@
 			"outputs": {},
 			"steps": [
 				{
-					"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+					"uses": "./.github/actions/hobo-repo-checkout",
+					"with": {
+						"fetch-depth": "0",
+						"submodules": "recursive",
+						"marker": "scripts/ci/ci-trace.mts"
+					},
 					"local": "skip",
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},

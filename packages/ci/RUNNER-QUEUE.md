@@ -167,6 +167,7 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Expected Docker-writable-layer inode growth reserved per admitted job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_GIT_MIRROR_ROOT` | `/home/box/.cache/hobo-ci/git` on box workers (`/var/lib/hobo-ci/git` elsewhere) | Host root for per-repo **full** bare mirrors (`<root>/<owner>/<repo>.git`); falls back to `$HOBO_HOME/.cache/hobo-ci/git` when the preferred root is not writable; injected into job containers for checkout probe |
 | `HOBO_CI_GIT_MIRROR` | unset | `0` disables the box git mirror (jobs fetch GitHub as today); any other value or unset keeps Phase 2 on |
+| *(job env)* `HOBO_CI_GIT_MIRROR_RESOLVED` | set by `hobo-repo-checkout` / `hobo-checkout` probe | Absolute path to a **full** bare mirror used for `objects/info/alternates` seeding before sparse/partial remote fetches; empty when mirror miss |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared content-addressed store mounted at `/pnpm-store`; empty disables it |
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image, builder, store and dead-workdir GC interval; minimum 60000, capped at 300000 |
