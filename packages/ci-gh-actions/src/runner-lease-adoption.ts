@@ -1,4 +1,6 @@
+import { create } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, type Lease } from "@hobo/ci";
+import { JobSchema } from "@hobo/ci";
 import type { GithubTransport } from "./github.js";
 import type { HostedRelayStore } from "./hosted-relay.js";
 import {
@@ -6,6 +8,7 @@ import {
 	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
 } from "./jit-runner-correlation.js";
+import { RUNNER_LABEL } from "./runner-labels.js";
 
 export type RunnerCustodyAdoption = Readonly<{
 	lease: Lease;
@@ -13,9 +16,28 @@ export type RunnerCustodyAdoption = Readonly<{
 	holdsActive: boolean;
 }>;
 
+function reservedJobWithdraw(lease: Lease) {
+	return create(JobSchema, {
+		id: lease.jobId,
+		runId: lease.originalRunId,
+		runAttempt: lease.runAttempt,
+		repositoryId: lease.repositoryId,
+		installationId: lease.installationId,
+		repository: lease.repository,
+		memoryClass: lease.memoryClass,
+		memoryMb: lease.memoryMb,
+		labels: [RUNNER_LABEL],
+		action: "queued",
+		isolatedRequired: true,
+	});
+}
+
 /** Pin `actualJobId` / `originalRunId` to the job GitHub assigned this runner. */
 export async function adoptRunnerAssignment(
-	store: Pick<HostedRelayStore, "get" | "transition">,
+	store: Pick<
+		HostedRelayStore,
+		"get" | "transition" | "withdrawQueuedJob"
+	>,
 	github: GithubTransport,
 	lease: Lease,
 	at: string,
@@ -25,6 +47,8 @@ export async function adoptRunnerAssignment(
 	) => void,
 ): Promise<RunnerCustodyAdoption> {
 	if (!lease.runnerName) return { lease, holdsActive: false };
+	const reservedJobId = lease.jobId;
+	const reservedRunId = lease.originalRunId;
 	let assignment: ResolvedRunnerAssignment | undefined;
 	try {
 		assignment = await resolveRunnerAssignedJob(
@@ -44,9 +68,10 @@ export async function adoptRunnerAssignment(
 	const holdsActive = runnerHoldsActiveJob(assignment);
 	if (!assignment) return { lease, holdsActive: false };
 	const servedJobId = assignment.jobId;
-	if (lease.actualJobId > 0 && lease.actualJobId !== servedJobId)
-		return { lease, assignment, holdsActive };
-	if (lease.actualJobId === servedJobId)
+	const needsJobPin = lease.actualJobId !== servedJobId;
+	const needsRunPin =
+		assignment.runId > 0 && lease.originalRunId !== assignment.runId;
+	if (!needsJobPin && !needsRunPin)
 		return { lease, assignment, holdsActive };
 	let updated: Lease | undefined;
 	try {
@@ -54,11 +79,8 @@ export async function adoptRunnerAssignment(
 			lease.id,
 			[...ACTIVE_STATES],
 			(entry) => {
-				if (entry.actualJobId > 0 && entry.actualJobId !== servedJobId)
-					throw new Error("runner job assignment conflict");
 				entry.actualJobId = servedJobId;
-				if (assignment.runId > 0 && entry.originalRunId !== assignment.runId)
-					entry.originalRunId = assignment.runId;
+				if (assignment.runId > 0) entry.originalRunId = assignment.runId;
 			},
 			"ci.JobObserved",
 			at,
@@ -69,12 +91,25 @@ export async function adoptRunnerAssignment(
 	if (updated) {
 		log?.("hobo_ci_jit_runner_custody_transferred", {
 			leaseId: lease.id,
-			reservedJobId: lease.jobId,
+			reservedJobId,
 			servedJobId: assignment.jobId,
 			servedRunId: assignment.runId,
 			servedStatus: assignment.status,
 			runnerName: lease.runnerName,
 		});
+		if (servedJobId !== reservedJobId) {
+			const reserved = reservedJobWithdraw(lease);
+			await store.withdrawQueuedJob?.(
+				create(JobSchema, {
+					...reserved,
+					id: reservedJobId,
+					runId: reservedRunId,
+				}),
+				at,
+				undefined,
+				lease.id,
+			);
+		}
 		return { lease: updated, assignment, holdsActive };
 	}
 	const current = await store.get(lease.id);
