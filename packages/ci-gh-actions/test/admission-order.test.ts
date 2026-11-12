@@ -140,6 +140,53 @@ it("admits Main workspace plan before Main full gate on the same push run", asyn
 	).toEqual([10, 11, 12]);
 });
 
+it("admits CI deps layer after plan and before full gate on the same push", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const order = createAdmissionOrder(github);
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(14, "Main full gate"),
+					fabric(13, "CI deps layer (pnpm)"),
+					fabric(12, "Main workspace plan"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([12, 13, 14]);
+});
+
+it("does not prioritize CI deps layer ahead of PR impact validation on pull requests", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(20, "CI deps layer (pnpm)"),
+					fabric(21, "PR impact validation"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([21, 20]);
+});
+
 it("orders main workspace shards by index within a run before duration ties", async () => {
 	const { github } = transport(
 		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
