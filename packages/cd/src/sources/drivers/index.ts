@@ -13,12 +13,15 @@ import { createHttpIndexDriver } from "./http-index.js";
 import { createOciDriver } from "./oci.js";
 import { createPackageRegistryDriver } from "./packages.js";
 
+type CiReaders = { readCiEvents?: CiEventReader; readCiArtifact?: CiArtifactReader };
+type RailReaders = { readRailEvents?: RailEventReader };
+
 export const createSubscriptionDrivers: CdFactories["createSubscriptionDrivers"] = (d) => {
 	const http = { http: d.http, credentials: d.credentials };
-	const ci: { readCiEvents?: CiEventReader; readCiArtifact?: CiArtifactReader } = {};
+	const ci: CiReaders = {};
 	if (d.readCiEvents) ci.readCiEvents = d.readCiEvents;
 	if (d.readCiArtifact) ci.readCiArtifact = d.readCiArtifact;
-	const rail: { readRailEvents?: RailEventReader } = {};
+	const rail: RailReaders = {};
 	if (d.readRailEvents) rail.readRailEvents = d.readRailEvents;
 	const drivers: SubscriptionDriver[] = [
 		createOciDriver(http),

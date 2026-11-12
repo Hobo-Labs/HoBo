@@ -94,6 +94,13 @@ export type SemverRange = Readonly<{ source: string; test: (version: string) => 
 
 const PARTIAL = /^v?(\*|x|X|0|[1-9]\d*)(?:\.(\*|x|X|0|[1-9]\d*)(?:\.(\*|x|X|0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?)?)?$/;
 
+type MutablePartial = {
+	major?: number;
+	minor?: number;
+	patch?: number;
+	prerelease: (string | number)[];
+};
+
 type Partial = Readonly<{
 	major?: number;
 	minor?: number;
@@ -109,7 +116,7 @@ function parsePartial(text: string): Partial | undefined {
 	const match = PARTIAL.exec(text);
 	if (!match) return undefined;
 	const [, major, minor, patch, pre] = match;
-	const result: { major?: number; minor?: number; patch?: number; prerelease: (string | number)[] } = {
+	const result: MutablePartial = {
 		prerelease: pre ? pre.split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part)) : [],
 	};
 	if (!wildcard(major)) result.major = Number(major);

@@ -42,7 +42,7 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
 ];
 
-const DEFAULT_SELECTION: Readonly<Record<SubscriptionKind, SelectionStrategy>> = {
+const DEFAULT_SELECTION = {
 	[SubscriptionKind.UNSPECIFIED]: SelectionStrategy.UNSPECIFIED,
 	[SubscriptionKind.OCI_REPOSITORY]: SelectionStrategy.SEMVER,
 	[SubscriptionKind.GIT_REPOSITORY]: SelectionStrategy.SEMVER,
@@ -50,7 +50,7 @@ const DEFAULT_SELECTION: Readonly<Record<SubscriptionKind, SelectionStrategy>> =
 	[SubscriptionKind.HTTP_INDEX]: SelectionStrategy.SEMVER,
 	[SubscriptionKind.HOBO_CI]: SelectionStrategy.NEWEST_BUILD,
 	[SubscriptionKind.HOBO_RAIL]: SelectionStrategy.LEXICAL,
-};
+} as const satisfies Readonly<Record<SubscriptionKind, SelectionStrategy>>;
 
 /** Kinds whose driver can fetch attestations for `require_provenance`. */
 export const PROVENANCE_KINDS: ReadonlySet<SubscriptionKind> = new Set([SubscriptionKind.OCI_REPOSITORY]);

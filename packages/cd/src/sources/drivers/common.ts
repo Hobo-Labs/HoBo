@@ -23,7 +23,8 @@ export type Candidate = Readonly<{
 	commit?: string;
 }>;
 
-export type DriverCursor = Readonly<{ hw?: string; at?: string }>;
+type MutableCursor = { hw?: string; at?: string };
+export type DriverCursor = Readonly<MutableCursor>;
 
 export function parseCursor(cursor: string | undefined): DriverCursor {
 	if (cursor === undefined || cursor === "") return {};
@@ -31,7 +32,7 @@ export function parseCursor(cursor: string | undefined): DriverCursor {
 	if (!isRecord(value)) return {};
 	const hw = field(value, "hw");
 	const at = field(value, "at");
-	const out: { hw?: string; at?: string } = {};
+	const out: MutableCursor = {};
 	if (isText(hw)) out.hw = hw;
 	if (isText(at)) out.at = at;
 	return out;
@@ -52,12 +53,14 @@ function rankStrategy(selection: SelectionStrategy): SelectionStrategy {
 	return selection === SelectionStrategy.SEMVER ? SelectionStrategy.SEMVER : SelectionStrategy.LEXICAL;
 }
 
+export type Selection = Readonly<{ selected: readonly Candidate[]; cursor: string }>;
+
 /** Filter, then pick the newest `limit` strictly above the cursor's mark, oldest first. */
 export function selectCandidates(
 	subscription: SubscriptionRecord,
 	candidates: readonly Candidate[],
 	cursor: string | undefined,
-): Readonly<{ selected: readonly Candidate[]; cursor: string }> {
+): Selection {
 	const previous = parseCursor(cursor);
 	const allowed = candidates.filter((item) => versionAllowed(subscription, item.version).ok);
 	const byRank = new Map<string, Candidate>();

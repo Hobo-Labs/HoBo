@@ -44,14 +44,14 @@ export const PACKAGE_REGISTRY_DEFAULTS: Readonly<Record<PackageEcosystem, string
 	rubygems: "https://rubygems.org",
 });
 
-const PURL_TYPE: Readonly<Record<PackageEcosystem, string>> = {
+const PURL_TYPE = {
 	npm: "npm",
 	pypi: "pypi",
 	maven: "maven",
 	nuget: "nuget",
 	cargo: "cargo",
 	rubygems: "gem",
-};
+} as const satisfies Readonly<Record<PackageEcosystem, string>>;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const NAME = /^[A-Za-z0-9@._:/-]{1,214}$/;
@@ -298,14 +298,16 @@ async function listMaven(locator: Locator, fetch: Fetcher): Promise<Outcome<List
 	};
 }
 
-const LISTERS: Readonly<Record<PackageEcosystem, (locator: Locator, fetch: Fetcher) => Promise<Outcome<Listing>>>> = {
+type Lister = (locator: Locator, fetch: Fetcher) => Promise<Outcome<Listing>>;
+
+const LISTERS = {
 	npm: listNpm,
 	pypi: listPypi,
 	maven: listMaven,
 	nuget: listNuget,
 	cargo: listCargo,
 	rubygems: listRubygems,
-};
+} as const satisfies Readonly<Record<PackageEcosystem, Lister>>;
 
 export function createPackageRegistryDriver(
 	d: Readonly<{ http: HttpTransport; credentials?: CredentialResolver }>,

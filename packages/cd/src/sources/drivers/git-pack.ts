@@ -61,7 +61,9 @@ export function packetText(packet: Packet): string | undefined {
  * The v2 capability advertisement (`info/refs?service=git-upload-pack`),
  * tolerating the `# service=` preamble smart-HTTP servers send first.
  */
-export function parseCapabilities(bytes: Uint8Array): Readonly<{ version: number; capabilities: ReadonlyMap<string, string> }> {
+export type CapabilityAdvert = Readonly<{ version: number; capabilities: ReadonlyMap<string, string> }>;
+
+export function parseCapabilities(bytes: Uint8Array): CapabilityAdvert {
 	const lines = readPackets(bytes)
 		.map(packetText)
 		.filter((line): line is string => line !== undefined && !line.startsWith("# service="));
@@ -115,7 +117,12 @@ export function fetchPackfile(bytes: Uint8Array): Uint8Array {
 
 // ── packfile ────────────────────────────────────────────────────────────────
 
-const TYPES: Readonly<Record<number, GitObjectType>> = { 1: "commit", 2: "tree", 3: "blob", 4: "tag" };
+const TYPES = new Map<number, GitObjectType>([
+	[1, "commit"],
+	[2, "tree"],
+	[3, "blob"],
+	[4, "tag"],
+]);
 const MAX_OBJECTS = 1_000_000;
 
 function hashObject(format: ObjectFormat, type: GitObjectType, data: Uint8Array): string {
@@ -133,7 +140,9 @@ type InflateWithInfo = (
 // SAFETY: @types/node does not model the documented `info: true` overload.
 const inflateWithInfo = inflateSync as InflateWithInfo;
 
-function inflate(bytes: Uint8Array, offset: number, size: number): Readonly<{ data: Uint8Array; consumed: number }> {
+type Inflated = Readonly<{ data: Uint8Array; consumed: number }>;
+
+function inflate(bytes: Uint8Array, offset: number, size: number): Inflated {
 	try {
 		const result = inflateWithInfo(bytes.subarray(offset), { info: true });
 		const data = new Uint8Array(result.buffer);
@@ -146,7 +155,9 @@ function inflate(bytes: Uint8Array, offset: number, size: number): Readonly<{ da
 	}
 }
 
-function readVarint(bytes: Uint8Array, start: number): Readonly<{ value: number; next: number }> {
+type Varint = Readonly<{ value: number; next: number }>;
+
+function readVarint(bytes: Uint8Array, start: number): Varint {
 	let value = 0;
 	let shift = 0;
 	let offset = start;
@@ -254,7 +265,7 @@ export function readPack(pack: Uint8Array, format: ObjectFormat): ReadonlyMap<st
 			offset += inflated.consumed;
 			pending.push({ offset: start, base: { oid: base }, delta: inflated.data });
 		} else {
-			const type = TYPES[typeCode];
+			const type = TYPES.get(typeCode);
 			if (!type) throw new GitFormatError(`unknown object type ${typeCode}`);
 			const inflated = inflate(pack, offset, size);
 			offset += inflated.consumed;

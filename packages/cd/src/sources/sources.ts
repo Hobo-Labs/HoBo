@@ -517,7 +517,10 @@ export function createFreightSources(d: FreightSourcesDeps): FreightSources {
 }
 
 /** Read the outcome and reasons recorded with one `source.ArtifactDiscovered`. */
-export function discoveryOutcome(event: EventEnvelope): Readonly<{ outcome: string; reasons: readonly ReasonRecord[]; freightIds: readonly string[] }> {
+/** The outcome, reasons and Freight ids recorded with one discovery. */
+export type DiscoveryOutcomeView = Readonly<{ outcome: string; reasons: readonly ReasonRecord[]; freightIds: readonly string[] }>;
+
+export function discoveryOutcome(event: EventEnvelope): DiscoveryOutcomeView {
 	const reasons = event.meta?.reasons;
 	const ids = event.meta?.freightIds;
 	return {

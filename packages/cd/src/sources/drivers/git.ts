@@ -45,12 +45,13 @@ export const GIT_AGENT = "hobo-cd/1";
 export const GIT_MAX_PACK_BYTES = 64 * 1024 * 1024;
 const BRANCH = /^(?!\/|.*\/\/|.*\.\.|.*@\{|.*\.lock$)[A-Za-z0-9._/-]{1,200}$/;
 
-export type GitCursor = Readonly<{ hw?: string; at?: string; tree?: string }>;
+type MutableGitCursor = { hw?: string; at?: string; tree?: string };
+export type GitCursor = Readonly<MutableGitCursor>;
 
 function parseGitCursor(cursor: string | undefined): GitCursor {
 	const value = cursor ? parseJson(cursor) : undefined;
 	if (!isRecord(value)) return {};
-	const out: { hw?: string; at?: string; tree?: string } = {};
+	const out: MutableGitCursor = {};
 	for (const key of ["hw", "at", "tree"] as const) {
 		const item = field(value, key);
 		if (isText(item)) out[key] = item;

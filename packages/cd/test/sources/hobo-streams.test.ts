@@ -59,7 +59,9 @@ describe("HOBO_RAIL driver", () => {
 
 const bundle = encode("wasm-bytes");
 
-function ciEvent(cursor: string, runId: string, status: string, sha: string, pipelineId = "web-build"): Readonly<{ cursor: string; type: string; data: JsonObject }> {
+type CiEvent = Readonly<{ cursor: string; type: string; data: JsonObject }>;
+
+function ciEvent(cursor: string, runId: string, status: string, sha: string, pipelineId = "web-build"): CiEvent {
 	const lease = {
 		id: `lease-${runId}`,
 		pipelineId,

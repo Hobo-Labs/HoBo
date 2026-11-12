@@ -64,12 +64,13 @@ function parsePath(path: string): Readonly<{ receiver?: WebhookReceiver; query: 
 	return receiver ? { receiver, query: new URLSearchParams(search) } : { query: new URLSearchParams(search) };
 }
 
-type Secret = Readonly<{ secret?: string; token?: string }>;
+type MutableSecret = { secret?: string; token?: string };
+type Secret = Readonly<MutableSecret>;
 
 async function secretFor(secrets: CredentialResolver, receiver: WebhookReceiver): Promise<Secret | undefined> {
 	try {
 		const value = await secrets.resolve(webhookSecretRef(receiver), WEBHOOK_SECRET_SCOPE);
-		const out: { secret?: string; token?: string } = {};
+		const out: MutableSecret = {};
 		if (value.secret) out.secret = value.secret;
 		if (value.token) out.token = value.token;
 		return out.secret || out.token ? out : undefined;

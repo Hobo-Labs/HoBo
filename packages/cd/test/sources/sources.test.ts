@@ -14,7 +14,7 @@ import {
 	SubscriptionRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS, SOURCE_SCHEMA } from "../../src/events.js";
-import type { CiEventReader, FeedRequest, SubscriptionDriver } from "../../src/ports.js";
+import type { CiEventReader, FeedRequest, FeedResponse, SubscriptionDriver } from "../../src/ports.js";
 import {
 	createFreightSources,
 	createSubscriptionDrivers,
@@ -22,7 +22,7 @@ import {
 	SOURCE_METRIC,
 	webhookSecretRef,
 } from "../../src/sources/index.js";
-import { encode } from "../../src/sources/json.js";
+import { encode, isRecord } from "../../src/sources/json.js";
 import { gitExchanges, gitFixture } from "./git-fixtures.js";
 import { COMMIT_B, DIGESTS, OCI_FIXTURES } from "./oci-fixtures.js";
 import { PACKAGE_FIXTURES } from "./package-fixtures.js";
@@ -69,14 +69,16 @@ function harness(
 	const telemetry = new RecordingTelemetry();
 	let fixture = new FixtureTransport(exchanges);
 	const http: HttpTransport = (request) => fixture.http(request);
+	const driverDeps: Parameters<typeof createSubscriptionDrivers>[0] & { readCiEvents?: CiEventReader } = {
+		http,
+		credentials: new StaticCredentials({}),
+	};
+	const readers: Parameters<typeof createSubscriptionDrivers>[0] = options.readCiEvents
+		? { ...driverDeps, readCiEvents: options.readCiEvents, readCiArtifact: async () => encode("wasm") }
+		: driverDeps;
 	const drivers =
 		options.drivers ??
-		createSubscriptionDrivers({
-			http,
-			credentials: new StaticCredentials({}),
-			...(options.readCiEvents ? { readCiEvents: options.readCiEvents, readCiArtifact: async () => encode("wasm") } : {}),
-			...(options.readRailEvents ? { readRailEvents: railReader(options.readRailEvents) } : {}),
-		});
+		createSubscriptionDrivers(options.readRailEvents ? { ...readers, readRailEvents: railReader(options.readRailEvents) } : readers);
 	const sources = createFreightSources({
 		store,
 		tenant: TENANT,
@@ -133,7 +135,16 @@ function discoveries(h: Harness, name: string) {
 	return h.store
 		.events(CD_STREAMS.source(name))
 		.filter((event) => event.type === CD_EVENTS.SourceArtifactDiscovered)
-		.map((event) => ({ data: event.data as JsonObject, ...discoveryOutcome(event) }));
+		.map((event) => {
+			const data: JsonObject = isRecord(event.data) ? event.data : {};
+			return { data, ...discoveryOutcome(event) };
+		});
+}
+
+/** Nudge responses are buffered JSON (never streamed). */
+function bodyText(response: FeedResponse): string {
+	if (!(response.body instanceof Uint8Array)) throw new Error("nudge responses are buffered");
+	return new TextDecoder().decode(response.body);
 }
 
 function githubPush(repository: string, secret = WEBHOOK_SECRET): FeedRequest {
@@ -394,7 +405,7 @@ describe("webhooks only nudge (I15)", () => {
 		await defineOk(h, source("app", "web", [image], { automatic: false }));
 		const response = await h.sources.nudge(harborPush("harbor-token"), h.ctx);
 		expect(response.status).toBe(202);
-		expect(JSON.parse(new TextDecoder().decode(response.body as Uint8Array))).toEqual({ receiver: "harbor", scheduled: ["app"] });
+		expect(JSON.parse(bodyText(response))).toEqual({ receiver: "harbor", scheduled: ["app"] });
 		expect(h.ledger.calls).toEqual([]);
 		expect(h.fixture.requests).toEqual([]);
 		await h.sources.tick(h.ctx);
@@ -421,7 +432,7 @@ describe("webhooks only nudge (I15)", () => {
 		await defineOk(h, source("hub", "web", [sub({ name: "image", kind: SubscriptionKind.OCI_REPOSITORY, locator: "docker.io/acme/web" })], { automatic: false }));
 		await defineOk(h, source("npm", "web", [sub({ name: "pkg", kind: SubscriptionKind.PACKAGE_REGISTRY, ecosystem: "npm", locator: "@acme/web" })], { automatic: false }));
 		const scheduled = async (request: FeedRequest) =>
-			JSON.parse(new TextDecoder().decode((await h.sources.nudge(request, h.ctx)).body as Uint8Array)).scheduled;
+			JSON.parse(bodyText(await h.sources.nudge(request, h.ctx))).scheduled;
 		expect(await scheduled(githubPush("https://github.com/Acme/Web"))).toEqual(["decl"]);
 		expect(
 			await scheduled({ method: "POST", path: "/nudge/gitlab", headers: { "X-Gitlab-Token": "gl-token" }, body: encode(json({ project: { git_http_url: "https://github.com/acme/web.git" } })) }),

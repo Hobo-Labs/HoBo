@@ -121,7 +121,9 @@ function comboKey(members: readonly DiscoveredArtifactRecord[]): string {
 		.join("|");
 }
 
-export function assemble(input: AssemblyInput): Readonly<{ freight: readonly Assembled[]; deferred: readonly Deferred[] }> {
+export type AssemblyResult = Readonly<{ freight: readonly Assembled[]; deferred: readonly Deferred[] }>;
+
+export function assemble(input: AssemblyInput): AssemblyResult {
 	const { source } = input;
 	const subscriptions = source.subscriptions.map((item) => item.name);
 	const freight: Assembled[] = [];
