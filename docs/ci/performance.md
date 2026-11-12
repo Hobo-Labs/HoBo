@@ -146,7 +146,9 @@ unindexed new finding files as notices.
 - [Finding 140: main shard tsc codegen memory contention](./findings/0140-main-shard-tsc-codegen-memory-contention.md)
 - [Finding 141: release digest read the local name](./findings/0141-release-digest-read-the-local-name.md)
 - [Finding 142: box admission counted neither promised memory nor lasting headroom](./findings/0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md)
-- [Finding 143: route job read a capacity record no worker wrote](./findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)
+- [Finding 143: release publish needed buildx the runners lack](./findings/0143-release-publish-needed-buildx-the-runners-lack.md)
+- [Finding 144: no pull-request job ran the scripts lane](./findings/0144-no-pull-request-job-ran-the-scripts-lane.md)
+- [Finding 146: route job read a capacity record no worker wrote](./findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)
 <!-- findings-index:end -->
 
 ## Data

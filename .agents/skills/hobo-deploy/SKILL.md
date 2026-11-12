@@ -19,7 +19,7 @@ signs in to with OIDC.**
 | Deploy target | Vercel project `hobo-ci` (`prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO`), team `tyler-r-kendricks-projects` (`team_BRBUnG6uGhSsVV3EG5GFV3FM`), Yard `hobo-ci-relay`; deployed by Vercel's Git integration on a push to `main` |
 | Repository | `Hobo-Labs/HoBo`; `.github/workflows/relay-deploy.yml` verifies, finds the deployment, smoke-checks |
 | Relay runtime store | a secrets manager the relay signs in to with its Vercel OIDC token: today only **Infisical** can (OIDC Auth); folder `/hobo-ci-relay` of project `hobo-ci`, environment `prod` |
-| Identities | `hobo-ci-relay` (OIDC, Vercel, read), `hobo-ci-writer` (OIDC, GitHub Actions on `main`, create/edit only) |
+| Identities | `hobo-ci-relay` (OIDC, Vercel, Viewer/read), `hobo-ci-writer` (OIDC, GitHub Actions on `main`, write-capable: Advanced+ custom create/edit-only, Free **Member**) |
 | Binding | `packages/ci-vercel/deploy/secret-store.binding.json` (ids only) |
 | Secrets a person handles on the default path | **none** |
 
@@ -102,16 +102,17 @@ they paste (identifiers, not secrets).
    Add it to project `hobo-ci` with role **Viewer**. Paste its **ID**."
    (Vercel project `hobo-ci` → Settings → Security → OIDC Federation must be
    on, issuer mode **Team**; you may check read-only with the Vercel MCP.)
-4. "In project `hobo-ci` → Access Control → Roles → **Add Role**
-   `hobo-ci-writer`: Secrets **Create** and **Edit** only (not Read, not
-   Delete), environment `prod`, path `/hobo-ci-relay`. Then Create Identity
-   `hobo-ci-writer` (organization role **No Access**) with **OIDC Auth**:
+4. In project `hobo-ci`, create identity `hobo-ci-writer` (organization role
+   **No Access**) with **OIDC Auth**:
    - OIDC Discovery URL and Issuer: `https://token.actions.githubusercontent.com`
    - Subject: `repo:Hobo-Labs/HoBo:ref:refs/heads/main`
    - Audiences: `https://github.com/Hobo-Labs`
    - Access Token TTL `600`, Max TTL `600`
 
-   Add it to `hobo-ci` with that role. Paste its **ID**."
+   **Role:** **Advanced+** — add custom role `hobo-ci-writer` (create/edit
+   only on `prod` + `/hobo-ci-relay`) and assign it. **Free plan** — assign
+   built-in project **Member** (see `packages/ci-vercel/CONFIG-SERVICE.md` §
+   *Least privilege on Infisical Cloud Free (attach)*). Paste its **ID**."
 5. You run:
 
    ```sh

@@ -9,7 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	boxGitMirrorInsteadOfConfig,
@@ -119,6 +119,21 @@ describe("resolveBoxGitMirror", () => {
 			mirror: realpathSync(mirror),
 			insteadOfConfig: boxGitMirrorInsteadOfConfig(mirror, repository),
 		});
+	});
+
+	it("uses HOBO_CI_GIT_MIRROR_ROOT for the default candidate path", () => {
+		const nested = join(temp, "custom-root", `${repository}.git`);
+		mkdirSync(dirname(nested), { recursive: true });
+		execFileSync("cp", ["-a", mirror, nested]);
+		const result = resolveBoxGitMirror({
+			GITHUB_REPOSITORY: repository,
+			GITHUB_SHA: sha,
+			HOBO_CI_GIT_MIRROR_ROOT: join(temp, "custom-root"),
+		});
+		expect(result.status).toBe("hit");
+		if (result.status === "hit") {
+			expect(result.mirror).toBe(realpathSync(nested));
+		}
 	});
 
 	it("misses a bare mirror that lacks the triggering commit", () => {
