@@ -9,10 +9,22 @@
 // loaded from the `sigstore` package's own dependency closure (so the version
 // is exactly the one `sigstore@5.0.1` pins in the lockfile) and driven with
 // the trusted root from the trust policy.
-
 import type { KeyObject } from "node:crypto";
 import { createRequire } from "node:module";
-import { isJsonObject, type JsonObject } from "../artifacts/json.js";
+import {
+	errorCodeOf,
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+	parseJsonText,
+} from "../artifacts/json.js";
+
+// Opaque values that only ever flow between the sigstore modules.
+type TrustedRootMessage = Readonly<{ readonly __sigstore: "TrustedRoot" }>;
+type TrustMaterial = Readonly<{ readonly __sigstore: "TrustMaterial" }>;
+type ParsedBundle = Readonly<{ readonly __sigstore: "Bundle" }>;
+type SignedEntity = Readonly<{ readonly __sigstore: "SignedEntity" }>;
 
 type CertificateIdentity = Readonly<{
 	subjectAlternativeName?: string;
@@ -24,96 +36,92 @@ type VerificationPolicy = Readonly<{
 	extensions?: Readonly<{ issuer?: string }>;
 }>;
 
+type VerifierOptions = Readonly<{
+	ctlogThreshold: number;
+	tlogThreshold: number;
+}>;
+
 type Signer = Readonly<{ key: KeyObject; identity?: CertificateIdentity }>;
 
-type SigstoreVerifier = {
-	verify(entity: object, policy?: VerificationPolicy): Signer;
-};
+interface SigstoreVerifier {
+	verify(entity: SignedEntity, policy?: VerificationPolicy): Signer;
+}
+
+/** The surface of @sigstore/verify@4 that sigstore@5.0.1 itself uses. */
+interface VerifyModule {
+	Verifier: new (
+		trust: TrustMaterial,
+		options: VerifierOptions,
+	) => SigstoreVerifier;
+	toTrustMaterial(root: TrustedRootMessage): TrustMaterial;
+	toSignedEntity(bundle: ParsedBundle, artifact?: Buffer): SignedEntity;
+}
+
+interface BundleModule {
+	bundleFromJSON(json: JsonObject): ParsedBundle;
+}
+
+interface SpecsModule {
+	TrustedRoot: Readonly<{ fromJSON(json: JsonObject): TrustedRootMessage }>;
+}
 
 type SigstoreModules = Readonly<{
-	Verifier: new (trust: object, options: object) => SigstoreVerifier;
-	toTrustMaterial(root: object): object;
-	toSignedEntity(bundle: object, artifact?: Buffer): object;
-	bundleFromJSON(json: JsonObject): object;
-	trustedRootFromJSON(json: JsonObject): object;
-	publicGoodSeedRoot(): JsonObject;
+	verify: VerifyModule;
+	bundle: BundleModule;
+	specs: SpecsModule;
+	seeds: JsonValue;
 }>;
 
 let loaded: SigstoreModules | undefined;
 
-function hasFunction<K extends string>(
-	value: object,
-	key: K,
-): value is Record<K, (...args: never[]) => object> {
-	return key in value && typeof Reflect.get(value, key) === "function";
-}
-
 /** The sigstore@5.0.1 verification closure, resolved from the `sigstore` package itself. */
-export function sigstoreModules(): SigstoreModules {
+function sigstoreModules(): SigstoreModules {
 	if (loaded !== undefined) return loaded;
 	const local = createRequire(import.meta.url);
 	const fromSigstore = createRequire(local.resolve("sigstore"));
-	const verify: object = fromSigstore("@sigstore/verify");
-	const bundle: object = fromSigstore("@sigstore/bundle");
-	const specs: object = fromSigstore("@sigstore/protobuf-specs");
-	const tufEntry = fromSigstore.resolve("@sigstore/tuf");
-	const seeds: object = createRequire(tufEntry)("../seeds.json");
-	const trustedRoot = Reflect.get(specs, "TrustedRoot");
-	if (
-		!hasFunction(verify, "toTrustMaterial") ||
-		!hasFunction(verify, "toSignedEntity") ||
-		!hasFunction(bundle, "bundleFromJSON") ||
-		typeof Reflect.get(verify, "Verifier") !== "function" ||
-		typeof trustedRoot !== "object" ||
-		trustedRoot === null ||
-		!hasFunction(trustedRoot, "fromJSON")
-	)
-		throw new Error(
-			"sigstore@5.0.1 verification modules are not the expected shape",
-		);
-	loaded = {
-		// SAFETY: checked above to be the @sigstore/verify Verifier class.
-		Verifier: Reflect.get(verify, "Verifier") as SigstoreModules["Verifier"],
-		toTrustMaterial: (root) => verify.toTrustMaterial(root as never),
-		toSignedEntity: (entity, artifact) =>
-			verify.toSignedEntity(entity as never, artifact as never),
-		bundleFromJSON: (json) => bundle.bundleFromJSON(json as never),
-		trustedRootFromJSON: (json) => trustedRoot.fromJSON(json as never),
-		publicGoodSeedRoot: () => {
-			const seed = Reflect.get(seeds, "https://tuf-repo-cdn.sigstore.dev");
-			const targets = isJsonObject(seed) ? seed.targets : undefined;
-			const encoded = isJsonObject(targets)
-				? targets["trusted_root.json"]
-				: undefined;
-			const parsed: unknown =
-				typeof encoded === "string"
-					? JSON.parse(Buffer.from(encoded, "base64").toString("utf8"))
-					: undefined;
-			if (!isJsonObject(parsed))
-				throw new Error(
-					"the sigstore public-good seed has no trusted_root.json",
-				);
-			return parsed;
-		},
-	};
+	const verify: VerifyModule = fromSigstore("@sigstore/verify");
+	const bundle: BundleModule = fromSigstore("@sigstore/bundle");
+	const specs: SpecsModule = fromSigstore("@sigstore/protobuf-specs");
+	const seeds: JsonValue = createRequire(fromSigstore.resolve("@sigstore/tuf"))(
+		"../seeds.json",
+	);
+	loaded = { verify, bundle, specs, seeds };
 	return loaded;
 }
 
-export type SigstoreTrust = Readonly<{
-	verifier: SigstoreVerifier;
-}>;
+/** The public-good trusted root embedded in the @sigstore/tuf seed that sigstore@5.0.1 ships. */
+export function publicGoodSeedRoot(): JsonObject {
+	const { seeds } = sigstoreModules();
+	const seed = isJsonObject(seeds)
+		? seeds["https://tuf-repo-cdn.sigstore.dev"]
+		: undefined;
+	const targets = isJsonObject(seed) ? seed.targets : undefined;
+	const encoded = isJsonObject(targets)
+		? targets["trusted_root.json"]
+		: undefined;
+	const parsed = isJsonString(encoded)
+		? parseJsonText(Buffer.from(encoded, "base64").toString("utf8"))
+		: undefined;
+	if (!isJsonObject(parsed))
+		throw new Error(
+			"the sigstore public-good seed carries no trusted_root.json",
+		);
+	return parsed;
+}
+
+export type SigstoreTrust = Readonly<{ verifier: SigstoreVerifier }>;
 
 /** Build trust material once per trust policy; throws on a malformed trusted root. */
 export function sigstoreTrust(
 	trustedRoot: JsonObject,
-	thresholds: Readonly<{ ctlogThreshold: number; tlogThreshold: number }>,
+	thresholds: VerifierOptions,
 ): SigstoreTrust {
-	const modules = sigstoreModules();
-	const material = modules.toTrustMaterial(
-		modules.trustedRootFromJSON(trustedRoot),
+	const { verify, specs } = sigstoreModules();
+	const material = verify.toTrustMaterial(
+		specs.TrustedRoot.fromJSON(trustedRoot),
 	);
 	return {
-		verifier: new modules.Verifier(material, {
+		verifier: new verify.Verifier(material, {
 			ctlogThreshold: thresholds.ctlogThreshold,
 			tlogThreshold: thresholds.tlogThreshold,
 		}),
@@ -128,17 +136,59 @@ export type SigstoreResult =
 			detail: string;
 	  }>;
 
-function errorCode<E>(error: E): string {
-	if (typeof error === "object" && error !== null) {
-		const code = Reflect.get(error, "code");
-		if (typeof code === "string") return code;
-		const name = Reflect.get(error, "name");
-		if (typeof name === "string") return name;
-	}
-	return "error";
-}
-
 const IN_TOTO_PAYLOAD_TYPE = "application/vnd.in-toto+json";
+
+type Entity =
+	| Readonly<{ ok: true; entity: SignedEntity }>
+	| Readonly<{ ok: false; result: SigstoreResult }>;
+
+function signedEntity(bundle: JsonObject, statement: Uint8Array): Entity {
+	const { verify, bundle: bundles } = sigstoreModules();
+	let parsed: ParsedBundle;
+	try {
+		parsed = bundles.bundleFromJSON(bundle);
+	} catch (error) {
+		return {
+			ok: false,
+			result: { ok: false, stage: "bundle", detail: errorCodeOf(error) },
+		};
+	}
+	const envelope = bundle.dsseEnvelope;
+	try {
+		if (!isJsonObject(envelope))
+			return {
+				ok: true,
+				entity: verify.toSignedEntity(parsed, Buffer.from(statement)),
+			};
+		if (envelope.payloadType !== IN_TOTO_PAYLOAD_TYPE)
+			return {
+				ok: false,
+				result: {
+					ok: false,
+					stage: "payload",
+					detail: "payloadType is not application/vnd.in-toto+json",
+				},
+			};
+		const payload = isJsonString(envelope.payload)
+			? Buffer.from(envelope.payload, "base64")
+			: undefined;
+		if (payload === undefined || !payload.equals(Buffer.from(statement)))
+			return {
+				ok: false,
+				result: {
+					ok: false,
+					stage: "payload",
+					detail: "the DSSE payload is not the statement",
+				},
+			};
+		return { ok: true, entity: verify.toSignedEntity(parsed) };
+	} catch (error) {
+		return {
+			ok: false,
+			result: { ok: false, stage: "bundle", detail: errorCodeOf(error) },
+		};
+	}
+}
 
 /**
  * Verify a serialized Sigstore bundle over exactly `statement`. A DSSE bundle's
@@ -150,45 +200,13 @@ export function verifySigstoreBundle(
 	bundle: JsonObject,
 	statement: Uint8Array,
 ): SigstoreResult {
-	const modules = sigstoreModules();
-	let parsed: object;
-	try {
-		parsed = modules.bundleFromJSON(bundle);
-	} catch (error) {
-		return { ok: false, stage: "bundle", detail: errorCode(error) };
-	}
-	const envelope = bundle.dsseEnvelope;
-	let entity: object;
-	try {
-		if (isJsonObject(envelope)) {
-			const payload =
-				typeof envelope.payload === "string"
-					? Buffer.from(envelope.payload, "base64")
-					: undefined;
-			if (envelope.payloadType !== IN_TOTO_PAYLOAD_TYPE)
-				return {
-					ok: false,
-					stage: "payload",
-					detail: "payloadType is not application/vnd.in-toto+json",
-				};
-			if (payload === undefined || !payload.equals(Buffer.from(statement)))
-				return {
-					ok: false,
-					stage: "payload",
-					detail: "the DSSE payload is not the statement",
-				};
-			entity = modules.toSignedEntity(parsed);
-		} else {
-			entity = modules.toSignedEntity(parsed, Buffer.from(statement));
-		}
-	} catch (error) {
-		return { ok: false, stage: "bundle", detail: errorCode(error) };
-	}
+	const entity = signedEntity(bundle, statement);
+	if (!entity.ok) return entity.result;
 	let signer: Signer;
 	try {
-		signer = trust.verifier.verify(entity);
+		signer = trust.verifier.verify(entity.entity);
 	} catch (error) {
-		return { ok: false, stage: "signature", detail: errorCode(error) };
+		return { ok: false, stage: "signature", detail: errorCodeOf(error) };
 	}
 	return {
 		ok: true,
@@ -204,13 +222,10 @@ export function enforceSigstorePolicy(
 	statement: Uint8Array,
 	policy: Readonly<{ subjectAlternativeName: string; issuer: string }>,
 ): boolean {
-	const modules = sigstoreModules();
+	const entity = signedEntity(bundle, statement);
+	if (!entity.ok) return false;
 	try {
-		const parsed = modules.bundleFromJSON(bundle);
-		const entity = isJsonObject(bundle.dsseEnvelope)
-			? modules.toSignedEntity(parsed)
-			: modules.toSignedEntity(parsed, Buffer.from(statement));
-		trust.verifier.verify(entity, {
+		trust.verifier.verify(entity.entity, {
 			subjectAlternativeName: policy.subjectAlternativeName,
 			extensions: { issuer: policy.issuer },
 		});

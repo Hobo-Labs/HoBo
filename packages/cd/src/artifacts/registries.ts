@@ -61,14 +61,16 @@ export const REGISTRY_ECOSYSTEMS = Object.freeze([
 ] as const);
 export type RegistryEcosystem = (typeof REGISTRY_ECOSYSTEMS)[number];
 
-const PURL_TYPE: Readonly<Record<Exclude<RegistryEcosystem, "oci">, string>> = {
+const PURL_TYPE = {
 	npm: "npm",
 	pypi: "pypi",
 	nuget: "nuget",
 	maven: "maven",
 	cargo: "cargo",
 	rubygems: "gem",
-};
+} as const satisfies Readonly<
+	Record<Exclude<RegistryEcosystem, "oci">, string>
+>;
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 8 * 1_048_576;
@@ -628,12 +630,7 @@ async function oci(
 	};
 }
 
-const LOOKUPS: Readonly<
-	Record<
-		RegistryEcosystem,
-		(http: HttpTransport, artifact: ArtifactRef) => Promise<LookupResult>
-	>
-> = {
+const LOOKUPS = {
 	oci,
 	npm,
 	nuget,
@@ -641,10 +638,15 @@ const LOOKUPS: Readonly<
 	maven,
 	cargo,
 	rubygems,
-};
+} as const satisfies Readonly<
+	Record<
+		RegistryEcosystem,
+		(http: HttpTransport, artifact: ArtifactRef) => Promise<LookupResult>
+	>
+>;
 
 export function isRegistryEcosystem(value: string): value is RegistryEcosystem {
-	return (REGISTRY_ECOSYSTEMS as readonly string[]).includes(value);
+	return REGISTRY_ECOSYSTEMS.some((ecosystem) => ecosystem === value);
 }
 
 export function lookupRegistryDigest(

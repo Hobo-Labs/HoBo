@@ -21,7 +21,7 @@ export const PROVENANCE_REASON = Object.freeze({
 export type ProvenanceReasonCode =
 	(typeof PROVENANCE_REASON)[keyof typeof PROVENANCE_REASON];
 
-const REMEDIATION: Readonly<Record<ProvenanceReasonCode, string>> = {
+const REMEDIATION = {
 	"provenance-unsigned":
 		"Attach the build's Sigstore bundle (or a HoBo-signed attestation JWT) to the statement; unsigned provenance is never trusted.",
 	"provenance-bundle-invalid":
@@ -42,7 +42,7 @@ const REMEDIATION: Readonly<Record<ProvenanceReasonCode, string>> = {
 		"Pin the builder id that produced this artifact in the subscription or trust policy, or rebuild on a trusted builder.",
 	"provenance-subject-mismatch":
 		"Attest exactly the artifacts the Freight carries: every statement subject digest must be an artifact digest and vice versa.",
-};
+} as const satisfies Readonly<Record<ProvenanceReasonCode, string>>;
 
 export function provenanceReason(
 	code: ProvenanceReasonCode,

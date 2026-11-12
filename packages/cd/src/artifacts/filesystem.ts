@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { Digest } from "../ports.js";
 import type { BlobBackend, BlobMeta, WriteOutcome } from "./backend.js";
 import { digestHex, parseDigest } from "./digest.js";
+import { errorCodeOf } from "./json.js";
 import { ARTIFACT_REASON, ArtifactStoreError } from "./reasons.js";
 
 /** The filesystem calls the backend makes; injectable so tests can fail one mid-write. */
@@ -32,11 +33,8 @@ export const NODE_FILESYSTEM_IO: FilesystemIo = Object.freeze({
 });
 
 function errorCode<E>(error: E): string {
-	if (typeof error === "object" && error !== null && "code" in error) {
-		const code = error.code;
-		return typeof code === "string" ? code : "";
-	}
-	return "";
+	const code = errorCodeOf(error);
+	return /^E[A-Z]+$/.test(code) ? code : "";
 }
 
 function unavailable<E>(operation: string, error: E): ArtifactStoreError {

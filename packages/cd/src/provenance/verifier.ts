@@ -23,6 +23,7 @@ import {
 import { parseDigest } from "../artifacts/digest.js";
 import {
 	isJsonObject,
+	isJsonString,
 	type JsonObject,
 	parseJsonText,
 } from "../artifacts/json.js";
@@ -42,8 +43,8 @@ import {
 } from "./reasons.js";
 import {
 	enforceSigstorePolicy,
+	publicGoodSeedRoot,
 	type SigstoreTrust,
-	sigstoreModules,
 	sigstoreTrust,
 	verifySigstoreBundle,
 } from "./sigstore.js";
@@ -99,7 +100,7 @@ export function createProvenanceVerifier(
 			? undefined
 			: sigstoreTrust(
 					sigstore.trustedRoot === SIGSTORE_PUBLIC_GOOD_SEED
-						? sigstoreModules().publicGoodSeedRoot()
+						? publicGoodSeedRoot()
 						: sigstore.trustedRoot,
 					sigstore,
 				);
@@ -148,7 +149,7 @@ export function createProvenanceVerifier(
 		const bundle = parseJsonText(text);
 		if (
 			!isJsonObject(bundle) ||
-			typeof bundle.mediaType !== "string" ||
+			!isJsonString(bundle.mediaType) ||
 			!bundle.mediaType.startsWith("application/vnd.dev.sigstore.bundle")
 		)
 			return refuseProvenance(

@@ -11,6 +11,7 @@ import {
 } from "@hobo/registry";
 import {
 	isJsonObject,
+	isJsonString,
 	type JsonObject,
 	type JsonValue,
 	objectAt,
@@ -38,7 +39,7 @@ function liftV1Builder(raw: JsonObject): JsonObject | string {
 		return "predicate names two different builders (builder.id and runDetails.builder.id)";
 	const lifted: JsonObject = {
 		...predicate,
-		builder: { ...(legacy ?? {}), id: v1Id },
+		builder: { ...legacy, id: v1Id },
 	};
 	return { ...raw, predicate: lifted };
 }
@@ -53,7 +54,7 @@ export function parseStatement(bytes: Uint8Array): StatementResult {
 	if (raw === undefined)
 		return { ok: false, detail: "the statement is not UTF-8 JSON" };
 	const view = isJsonObject(raw) ? liftV1Builder(raw) : raw;
-	if (typeof view === "string") return { ok: false, detail: view };
+	if (isJsonString(view)) return { ok: false, detail: view };
 	const parsed = parseProvenanceStatement(view);
 	if (!parsed.ok)
 		return {

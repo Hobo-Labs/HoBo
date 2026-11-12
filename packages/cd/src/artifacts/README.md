@@ -17,6 +17,18 @@ provenance half lives in [`../provenance`](../provenance/README.md).
 
 ## Design
 
+- **Parse, don't validate.** Every untrusted input becomes a parsed type
+  before it is used: digests become the `Digest` brand through `parseDigest`,
+  coordinates become `Purl` / `OciReference` derived types (or nothing),
+  store configs pass `parseS3Config`, and registry responses are read through
+  JSON guards into `RegistryDigest` values. Records are the generated
+  `cd_pb.ts` types; `data-models/artifacts.cue` carries the same constraints.
+- **Commands and events.** `put` and `delete` are the commands; each folds
+  the per-digest stream `cd-artifact-<digest>` (the actor's whole state) and
+  appends at most one event with expected-seq CAS. The `DurableEventStore` is
+  the only event store. No projection, materialized view or read store is
+  kept: presence is the backend's, and `history` reads the stream directly; no
+  snapshot is needed because a digest stream holds a handful of facts.
 - **Content addressing.** The store computes the sha256 digest itself; a
   caller never names the digest of bytes it puts. The `ArtifactRef` it returns
   has coordinate `store://<backend>/sha256:<hex>` and ecosystem `store`.

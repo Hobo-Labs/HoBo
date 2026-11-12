@@ -22,7 +22,7 @@ export async function verifyHoboJwt(
 	statementDigest: string,
 	verifier: SignatureVerifier,
 ): Promise<JwtResult> {
-	let claims: Readonly<Record<string, unknown>>;
+	let claims: Awaited<ReturnType<typeof verifyJwtWithJwks>>["claims"];
 	try {
 		const verified = await verifyJwtWithJwks(
 			token,

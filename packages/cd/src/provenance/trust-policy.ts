@@ -88,60 +88,56 @@ export function parseTrustPolicy(raw: JsonObject): TrustPolicy {
 				key,
 				"one of builderIds, signerIdentities, sigstore, hoboJwt",
 			);
-	const policy: {
-		builderIds: readonly string[];
-		signerIdentities: readonly string[];
-		sigstore?: SigstorePolicy;
-		hoboJwt?: HoboJwtPolicy;
-	} = {
-		builderIds: strings(raw.builderIds, "builderIds"),
-		signerIdentities: strings(raw.signerIdentities, "signerIdentities"),
+	const builderIds = strings(raw.builderIds, "builderIds");
+	const signerIdentities = strings(raw.signerIdentities, "signerIdentities");
+	const sigstore = parseSigstore(raw.sigstore);
+	const hoboJwt = parseHoboJwt(raw.hoboJwt);
+	const base: TrustPolicy = { builderIds, signerIdentities };
+	const withSigstore: TrustPolicy =
+		sigstore === undefined ? base : { ...base, sigstore };
+	return hoboJwt === undefined ? withSigstore : { ...withSigstore, hoboJwt };
+}
+
+function parseSigstore(
+	value: JsonValue | undefined,
+): SigstorePolicy | undefined {
+	if (value === undefined) return undefined;
+	if (!isJsonObject(value))
+		throw new ProvenanceTrustPolicyError("sigstore", "an object");
+	const root = value.trustedRoot;
+	if (!(isJsonObject(root) || root === SIGSTORE_PUBLIC_GOOD_SEED))
+		throw new ProvenanceTrustPolicyError(
+			"sigstore.trustedRoot",
+			`a Sigstore TrustedRoot object or "${SIGSTORE_PUBLIC_GOOD_SEED}"`,
+		);
+	const issuers = strings(value.issuers, "sigstore.issuers");
+	if (issuers.length === 0)
+		throw new ProvenanceTrustPolicyError(
+			"sigstore.issuers",
+			"a non-empty array of OIDC issuer URLs",
+		);
+	return {
+		trustedRoot: root,
+		issuers,
+		ctlogThreshold: threshold(value.ctlogThreshold, "sigstore.ctlogThreshold"),
+		tlogThreshold: threshold(value.tlogThreshold, "sigstore.tlogThreshold"),
 	};
-	const sigstore = raw.sigstore;
-	if (sigstore !== undefined) {
-		if (!isJsonObject(sigstore))
-			throw new ProvenanceTrustPolicyError("sigstore", "an object");
-		const root = sigstore.trustedRoot;
-		if (!(isJsonObject(root) || root === SIGSTORE_PUBLIC_GOOD_SEED))
-			throw new ProvenanceTrustPolicyError(
-				"sigstore.trustedRoot",
-				`a Sigstore TrustedRoot object or "${SIGSTORE_PUBLIC_GOOD_SEED}"`,
-			);
-		const issuers = strings(sigstore.issuers, "sigstore.issuers");
-		if (issuers.length === 0)
-			throw new ProvenanceTrustPolicyError(
-				"sigstore.issuers",
-				"a non-empty array of OIDC issuer URLs",
-			);
-		policy.sigstore = {
-			trustedRoot: root,
-			issuers,
-			ctlogThreshold: threshold(
-				sigstore.ctlogThreshold,
-				"sigstore.ctlogThreshold",
-			),
-			tlogThreshold: threshold(
-				sigstore.tlogThreshold,
-				"sigstore.tlogThreshold",
-			),
-		};
-	}
-	const jwt = raw.hoboJwt;
-	if (jwt !== undefined) {
-		if (!isJsonObject(jwt))
-			throw new ProvenanceTrustPolicyError("hoboJwt", "an object");
-		const jwks = jwt.jwks;
-		const keys = isJsonObject(jwks) ? jwks.keys : undefined;
-		if (!isJsonArray(keys) || keys.length === 0 || !keys.every(isJsonObject))
-			throw new ProvenanceTrustPolicyError(
-				"hoboJwt.jwks.keys",
-				"a non-empty array of JWKs",
-			);
-		policy.hoboJwt = {
-			jwks: { keys: keys.filter(isJsonObject) },
-			issuer: nonEmpty(jwt.issuer, "hoboJwt.issuer"),
-			audience: nonEmpty(jwt.audience, "hoboJwt.audience"),
-		};
-	}
-	return policy;
+}
+
+function parseHoboJwt(value: JsonValue | undefined): HoboJwtPolicy | undefined {
+	if (value === undefined) return undefined;
+	if (!isJsonObject(value))
+		throw new ProvenanceTrustPolicyError("hoboJwt", "an object");
+	const jwks = value.jwks;
+	const keys = isJsonObject(jwks) ? jwks.keys : undefined;
+	if (!isJsonArray(keys) || keys.length === 0 || !keys.every(isJsonObject))
+		throw new ProvenanceTrustPolicyError(
+			"hoboJwt.jwks.keys",
+			"a non-empty array of JWKs",
+		);
+	return {
+		jwks: { keys: keys.filter(isJsonObject) },
+		issuer: nonEmpty(value.issuer, "hoboJwt.issuer"),
+		audience: nonEmpty(value.audience, "hoboJwt.audience"),
+	};
 }

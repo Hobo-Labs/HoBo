@@ -46,6 +46,17 @@ export function jsonOf<T>(data: T): JsonValue | undefined {
 	}
 }
 
+/**
+ * The `code` (Node system errors, sigstore errors) or else the `name` of a
+ * thrown value, for typed failure messages. Never the message: messages of
+ * third-party errors can carry URLs or payload fragments.
+ */
+export function errorCodeOf<E>(error: E): string {
+	if (!(error instanceof Error)) return "error";
+	const code = Object.entries(error).find(([key]) => key === "code")?.[1];
+	return isJsonString(code) && code !== "" ? code : error.name;
+}
+
 export function stringAt(object: JsonObject, key: string): string | undefined {
 	const value = object[key];
 	return isJsonString(value) ? value : undefined;

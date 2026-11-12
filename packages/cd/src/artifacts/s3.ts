@@ -13,7 +13,11 @@
 //   objects are stored base64-encoded with `x-amz-meta-hobo-encoding: base64`
 //   and decoded on read; the digest is always over the decoded bytes.
 
-import type { TransportMethod, TransportResponse } from "@hobo/core";
+import type {
+	TransportMethod,
+	TransportRequest,
+	TransportResponse,
+} from "@hobo/core";
 import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
 import type { ArtifactStoreConfig, Digest } from "../ports.js";
 import type { BlobBackend, BlobMeta, WriteOutcome } from "./backend.js";
@@ -23,6 +27,7 @@ import {
 	encodeBase64,
 	parseDigest,
 } from "./digest.js";
+import { errorCodeOf } from "./json.js";
 import { ARTIFACT_REASON, ArtifactStoreError } from "./reasons.js";
 
 // public-contract: raw size above which an S3 upload is multipart (64 MiB).
@@ -99,16 +104,18 @@ export function signS3Request(
 		now: Date;
 	}>,
 ) {
-	return signAwsRequest({
+	const request = {
 		method: input.method,
 		url: input.url,
 		headers: input.headers,
-		...(input.body === undefined ? {} : { body: input.body }),
 		region: input.region,
 		service: "s3",
 		credentials: input.credentials,
 		now: input.now,
-	});
+	};
+	return signAwsRequest(
+		input.body === undefined ? request : { ...request, body: input.body },
+	);
 }
 
 export function parseS3Config(config: S3Config): S3Config {
@@ -158,15 +165,7 @@ function credentialsFrom(
 }
 
 function transportFailure<E>(operation: string, error: E): ArtifactStoreError {
-	const code =
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		typeof error.code === "string"
-			? error.code
-			: error instanceof Error
-				? error.name
-				: "error";
+	const code = errorCodeOf(error);
 	return new ArtifactStoreError(
 		ARTIFACT_REASON.backendUnavailable,
 		`s3 ${operation} did not complete (${code}); its outcome is unknown`,
@@ -239,25 +238,33 @@ export function createS3Backend(
 			.map(([name, value]) => `${rfc3986(name)}=${rfc3986(value)}`)
 			.join("&");
 		const url = `${base}${path}${query === "" ? "" : `?${query}`}`;
-		const signed = signS3Request({
+		const unsigned = {
 			method: request.method,
 			url,
 			headers: request.headers ?? {},
-			...(request.body === undefined ? {} : { body: request.body }),
 			region: config.region,
 			credentials: await credentials(),
 			now: new Date(now()),
-		});
+		};
+		const signed = signS3Request(
+			request.body === undefined
+				? unsigned
+				: { ...unsigned, body: request.body },
+		);
 		const { host: _host, ...headers } = signed.headers;
+		const outgoing: TransportRequest = {
+			method: request.method,
+			url,
+			headers,
+			timeoutMs: request.timeoutMs,
+			maxResponseBytes: request.maxResponseBytes,
+		};
 		try {
-			return await config.http({
-				method: request.method,
-				url,
-				headers,
-				...(request.body === undefined ? {} : { body: request.body }),
-				timeoutMs: request.timeoutMs,
-				maxResponseBytes: request.maxResponseBytes,
-			});
+			return await config.http(
+				request.body === undefined
+					? outgoing
+					: { ...outgoing, body: request.body },
+			);
 		} catch (error) {
 			throw transportFailure(request.operation, error);
 		}
@@ -266,10 +273,7 @@ export function createS3Backend(
 	const keyOf = (digest: Digest) =>
 		`${ARTIFACT_S3_KEY_PREFIX}${digestHex(digest)}`;
 
-	function objectHeaders(
-		digest: Digest,
-		meta: BlobMeta,
-	): Record<string, string> {
+	function objectHeaders(digest: Digest, meta: BlobMeta) {
 		return {
 			"content-type": "text/plain; charset=utf-8",
 			"x-amz-meta-hobo-encoding": "base64",
