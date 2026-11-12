@@ -23,3 +23,4 @@ Main run [43188550050](https://github.com/Hobo-Labs/HoBo/actions/runs/4318855005
 ## Verified
 
 - `pnpm run test:smoke scripts/test/main-gate-workspace-shards.test.ts`
+- `pnpm run test:smoke scripts/test/main-gate-finish.test.ts`
