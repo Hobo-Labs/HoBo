@@ -482,7 +482,7 @@ jobs:
   release-oci-build-tag:
     name: Build all OCI images on tag (gate publish)
     if: >-
-      always() &&
+      !cancelled() &&
       needs.release-main-train-gate.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -563,7 +563,15 @@ jobs:
     # that could block a release they have no part in. Mirrors
     # releaseImageIdsForTrain (scripts/lib/release-version.mts); a test pins both.
     # Hosted like the other gates: it runs no repository code, only a case on the ref.
-    if: always() && needs.release-main-train-gate.result == 'success' && (needs.release-main-train-gate.outputs.run == 'true' || startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v') || (github.event_name == 'workflow_dispatch' && inputs.push_images))
+    if: >-
+      !cancelled() &&
+      needs.release-main-train-gate.result == 'success' &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        startsWith(github.ref, 'refs/tags/sdk-v') ||
+        startsWith(github.ref, 'refs/tags/cli-v') ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      )
     needs: [release-main-train-gate]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -588,9 +596,10 @@ jobs:
   release-publish:
     name: Publish GHCR images (tagged release)
     if: >-
-      always() &&
+      !cancelled() &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-images.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -668,7 +677,8 @@ jobs:
   release-attest:
     name: Attest GHCR images
     if: >-
-      always() &&
+      !cancelled() &&
+      needs.release-main-train-gate.result == 'success' &&
       needs.release-publish.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -727,9 +737,10 @@ jobs:
     # repository variable HOBO_NPM_PUBLISH is 'true' this job is skipped, not run
     # to fail with ENEEDAUTH and take the tag and GitHub Release down with it.
     if: >-
-      always() &&
+      !cancelled() &&
       vars.HOBO_NPM_PUBLISH == 'true' &&
       needs.release-main-train-gate.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -840,7 +851,7 @@ jobs:
   release-pages:
     name: Publish GitHub Pages (site/)
     if: >-
-      always() &&
+      !cancelled() &&
       needs.release-pages-gate.result == 'success' &&
       needs.release-pages-gate.outputs.deploy == 'true'
     needs: [release-pages-gate]
