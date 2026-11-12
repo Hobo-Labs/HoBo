@@ -26,6 +26,19 @@ export function mainShardParallelLaunchCapacity(
 	);
 }
 
+/** Convert memory-parallel admits into total box launch slots (live + additional). */
+export function effectiveParallelLaunchSlots(
+	policyLaunchSlots: number,
+	liveContainerCount: number,
+	additionalMemoryParallelCap: number | undefined,
+): number {
+	if (additionalMemoryParallelCap === undefined) return policyLaunchSlots;
+	return Math.min(
+		policyLaunchSlots,
+		liveContainerCount + Math.max(0, additionalMemoryParallelCap),
+	);
+}
+
 export type MainShardAdmissionHoldFields = Readonly<
 	Record<string, string | number | boolean>
 >;

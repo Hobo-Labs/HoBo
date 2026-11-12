@@ -276,6 +276,7 @@ export {
 } from "./local-runner.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
+	effectiveParallelLaunchSlots,
 	logMainShardAdmissionHold,
 	mainShardParallelLaunchCapacity,
 } from "./main-shard-parallel-admission.js";

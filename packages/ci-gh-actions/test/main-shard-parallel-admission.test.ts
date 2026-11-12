@@ -1,8 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	effectiveParallelLaunchSlots,
 	logMainShardAdmissionHold,
 	mainShardParallelLaunchCapacity,
 } from "../src/main-shard-parallel-admission.js";
+
+describe("effectiveParallelLaunchSlots", () => {
+	it("preserves zero memory headroom without clamping to one", () => {
+		expect(effectiveParallelLaunchSlots(3, 0, 0)).toBe(0);
+	});
+
+	it("adds live containers to the memory-derived additional cap", () => {
+		expect(effectiveParallelLaunchSlots(3, 1, 1)).toBe(2);
+		expect(effectiveParallelLaunchSlots(3, 1, 4)).toBe(3);
+	});
+
+	it("falls back to policy slots when memory cap is unset", () => {
+		expect(effectiveParallelLaunchSlots(3, 2, undefined)).toBe(3);
+	});
+});
 
 describe("mainShardParallelLaunchCapacity", () => {
 	it("caps at launch slots", () => {

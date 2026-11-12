@@ -255,20 +255,13 @@ export function hostMemoryAdmitFits(
 	volatilityMb: number,
 	pressure?: HostResourcePressureSample,
 	pressureThresholds?: HostPressureAdmissionThresholds,
-	committedMb = 0,
 ): boolean {
 	if (
 		pressure !== undefined &&
 		hostPressureBlocksAdmission(pressure, pressureThresholds)
 	)
 		return false;
-	return memoryAdmitHeadroom(
-		availableMb,
-		requestMb,
-		reserveMb,
-		volatilityMb,
-		committedMb,
-	);
+	return memoryAdmitHeadroom(availableMb, requestMb, reserveMb, volatilityMb);
 }
 
 export type HostResourcePressureLogFields = Readonly<

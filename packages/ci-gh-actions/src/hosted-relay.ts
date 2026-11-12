@@ -66,6 +66,7 @@ import {
 } from "./lease-resource-occupancy.js";
 import { countLiveBoxContainers } from "./live-container-count.js";
 import {
+	effectiveParallelLaunchSlots,
 	logMainShardAdmissionHold,
 	type MainShardAdmissionHoldFields,
 } from "./main-shard-parallel-admission.js";
@@ -255,6 +256,7 @@ export class HostedRelay {
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
 	private readonly trunkWaits: TrunkWaitCache;
 	private readonly trunkDeferDecisionSig = new Map<string, string>();
+	private shardAdmissionHoldLogged = new Set<string>();
 	private readonly unlaunchedReReserveLedger = new Map<
 		string,
 		Readonly<{
@@ -622,11 +624,11 @@ export class HostedRelay {
 		const active = await this.options.store.activeLeases();
 		const nowMs = Date.parse(this.now());
 		const boundMs = policy.boundMs ?? DEFAULT_UNLAUNCHED_RESERVE_MS;
-		const memoryParallelCap =
-			this.options.parallelLaunchCapacity?.() ?? policy.launchSlots;
-		const effectiveLaunchSlots = Math.min(
+		const liveContainerCount = countLiveBoxContainers(active);
+		const effectiveLaunchSlots = effectiveParallelLaunchSlots(
 			policy.launchSlots,
-			Math.max(1, memoryParallelCap),
+			liveContainerCount,
+			this.options.parallelLaunchCapacity?.(),
 		);
 		const releaseBase = {
 			boundMs,
@@ -640,7 +642,7 @@ export class HostedRelay {
 					lease.runnerId === 0,
 			).length,
 			launchSlots: effectiveLaunchSlots,
-			liveContainerCount: countLiveBoxContainers(active),
+			liveContainerCount,
 			backlogImmediate: policy.backlogImmediate ?? true,
 		};
 		const releaseContext = fleetWitness
@@ -1395,10 +1397,16 @@ export class HostedRelay {
 		const nowMs = Date.parse(this.now());
 		const wait = rememberTrunkWait(this.trunkWaits, job, reason, nowMs);
 		const waitedMs = nowMs - wait.sinceMs;
-		logMainShardAdmissionHold(job, reason, {
-			waitedMs,
-			...fields,
-		});
+		if (isMainWorkspaceShardJob(job.name)) {
+			const holdKey = `${key}:${reason}`;
+			if (!this.shardAdmissionHoldLogged.has(holdKey)) {
+				this.shardAdmissionHoldLogged.add(holdKey);
+				logMainShardAdmissionHold(job, reason, {
+					waitedMs,
+					...fields,
+				});
+			}
+		}
 		if (waitedMs > 10_000 && !wait.logged) {
 			this.trunkWaits.set(key, { ...wait, logged: true });
 			console.error(
@@ -1417,6 +1425,7 @@ export class HostedRelay {
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
 		this.dispatchGithubJobCache = new Map();
+		this.shardAdmissionHoldLogged.clear();
 		const reservationRevision = await this.refreshConfig();
 		const queued = await this.options.store.pendingJobs();
 		let fleetWitness: FleetCapacityWitness | undefined;
@@ -1571,29 +1580,15 @@ export class HostedRelay {
 				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
 			}
 			if (fleetDeferDecision.action === "defer") {
-				if (isMainWorkspaceShardJob(job.name)) {
-					logMainShardAdmissionHold(job, "fleet-capacity", {
+				waitingTrunk.add(
+					this.reportTrunkWait(job, "fleet-capacity", {
 						action: "defer",
 						holdReason: fleetDeferDecision.holdReason ?? "",
 						localTrunkReserved,
 						trunkSlots: this.options.trunkSlots ?? 0,
-					});
-				}
-				waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
+					}),
+				);
 				continue;
-			}
-			if (
-				fleetDeferDecision.action === "hold" &&
-				isMainWorkspaceShardJob(job.name) &&
-				fleetDeferDecision.holdReason !== undefined &&
-				fleetDeferDecision.holdReason !== "no-wait"
-			) {
-				logMainShardAdmissionHold(job, "fleet-capacity", {
-					action: "hold",
-					holdReason: fleetDeferDecision.holdReason,
-					localTrunkReserved,
-					trunkSlots: this.options.trunkSlots ?? 0,
-				});
 			}
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
@@ -1641,19 +1636,12 @@ export class HostedRelay {
 							if (rank === TRUNK_RANK) rankZeroWaiting = true;
 							else memoryBlockedRanks.add(rank);
 						}
-						if (decision.reason && isMainWorkspaceShardJob(job.name)) {
-							logMainShardAdmissionHold(job, decision.reason, {
-								requestMb: memory.memoryMb,
-								memoryClass: memory.memoryClass,
-							});
-						}
 						if (trunk && decision.reason) {
 							const waitReason: TrunkWaitReason =
 								decision.reason === "host-pressure" ||
 								decision.reason === "cpu-contention"
 									? decision.reason
 									: decision.reason;
-							waitingTrunk.add(this.reportTrunkWait(job, waitReason));
 							if (
 								mainTrunk &&
 								decision.reason === "cpu-contention" &&
@@ -1668,9 +1656,21 @@ export class HostedRelay {
 									waitReason: "cpu-contention",
 									...fleetWitnessFields(fleetWitness),
 								});
-								waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
+								waitingTrunk.add(
+									this.reportTrunkWait(job, "fleet-capacity", {
+										requestMb: memory.memoryMb,
+										memoryClass: memory.memoryClass,
+										waitReason: "cpu-contention",
+									}),
+								);
 								continue;
 							}
+							waitingTrunk.add(
+								this.reportTrunkWait(job, waitReason, {
+									requestMb: memory.memoryMb,
+									memoryClass: memory.memoryClass,
+								}),
+							);
 							if (mainTrunk) {
 								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
 								const postDecision = evaluateMainTrunkFleetDefer({
