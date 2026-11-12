@@ -1,3 +1,10 @@
+---
+type: Maintenance Note
+title: "CI performance notes"
+description: "How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down."
+tags: [hobo, ci, performance, maintenance]
+---
+
 # CI performance notes
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.

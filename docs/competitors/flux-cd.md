@@ -229,6 +229,21 @@ State labels follow the research contract.
    because it has a clean boundary. HoBo's ports should be shaped so that someone can adopt one
    without adopting the platform — that is how this category actually spreads.
 
+
+## HoBo.CD update (2026-11-12)
+
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0180](../design/adr/01-architecture-core.md#adr-0180), [continuous-delivery.md](../design/continuous-delivery.md)); the competitor research
+itself was not re-run.
+
+- **Pull reconciliation is HoBo's model too.** Freight sources poll registries and Git hosts
+  forward-only (webhooks only nudge a poll), and per-Camp reconcilers converge on desired state
+  they read. `agent`-mode reconcilers run inside the target and connect outbound only, the shape
+  Flux's in-cluster controllers have.
+- **Flux is a publisher target.** `@hobo/cd-gitops` renders a Set as a Flux `Kustomization`,
+  commits it, and counts the Camp converged only from Flux's observed status.
+- **Promotion between environments**, which Flux leaves to image automation and repository
+  layout, is a pipeline graph with lineage, verification and change windows in HoBo.CD.
+
 ## Sources
 
 - [Flux concepts](https://fluxcd.io/flux/concepts/) — GitOps and gitless-GitOps definitions, sources, reconciliation, bootstrap (quoted above)

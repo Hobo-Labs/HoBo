@@ -37,7 +37,7 @@
     },
     {
       "name": "cd-source-folder-readme",
-      "description": "Every @hobo/cd source folder carries a README.md with a Runbook section (plan 0024 §7.8 and §7.11; ADR-0178). docs/runbooks/cd/ is assembled from those sections. adapters/ is a flat folder of single-file adapters owned per file and documented in packages/cd/README.md.",
+      "description": "Every @hobo/cd source folder carries a README.md with a Runbook section (plan 0024 §7.8 and §7.11; ADR-0180). docs/runbooks/cd/ is assembled from those sections. adapters/ is a flat folder of single-file adapters owned per file and documented in packages/cd/README.md.",
       "paths": [
         "packages/cd/src/{name}",
         "!packages/cd/src/_generated",

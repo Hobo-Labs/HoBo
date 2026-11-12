@@ -144,3 +144,33 @@ A model/prompt promotion is governed by the same four-lens taxonomy as any chang
 #### AI-side scope
 - **In scope:** model/prompt/eval-dataset registry entries (versioned, signed, provenance); the `guardrail` capability as an enforced default (NeMo Guardrails + Microsoft Responsible AI toolkit, local-first); red-teaming on the chaos-tier pattern, including automated continuous red-team campaigns; eval-dataset classification/contamination policy; model cards as exported facts; the four-lens model-promotion gate; per-token cost/safety budgets (riding the spend breaker); model distribution over Registry distribution ([ADR-0062](./adr/07-portability-extensibility.md#adr-0062)).
 - **Out of scope:** as with data compliance above, HoBo does not run a responsible-AI attestation *program* itself ([ADR-0064](./adr/07-portability-extensibility.md#adr-0064)) — it exports the facts, a GRC tool runs the program; a watermarking/output-provenance scheme for generated media is a separate concern.
+
+## HoBo.CD: posture and compliance
+
+Governance at decision time (the gate) is joined by **continuous posture**
+([ADR-0180](./adr/01-architecture-core.md#adr-0180) D24, D25; [continuous-delivery.md](./continuous-delivery.md)):
+
+- **Rails are delivered like software.** An approved Rail version is Freight.
+  It is promoted through a pipeline first in `INFORM` mode, where the enforced
+  Rail still decides and the gate records shadow decisions
+  (`policy.ShadowDecided`) with any divergence, and only then in `ENFORCE`
+  mode, which requires a qualified `INFORM` node upstream. A Rail change no
+  longer activates everywhere at once, and rollback restores the previous
+  enforced digest.
+- **Posture rules** are policy-IR rules in phase `observe`, bound by a Rail's
+  `delivery.posture`. They match resources by kind and classification and
+  assert `require` or `forbid` over declared attributes with a fixed operator
+  set; there is no expression language.
+- **Evaluation** runs Station-side with the pure `@hobo/policy/posture`
+  evaluator over attributes reconcilers report (secret-free, at most 16 KiB
+  per resource). Results are `compliance.Observed` and `compliance.Changed`,
+  and the Camp's `POSTURE_COMPLIANT` condition. Agents report facts and never
+  evaluate posture.
+- **Remediation has one mutator.** `inform` records; `inform-only` cannot be
+  raised by a parent; `enforce` acts only through a repair Delta applied by the
+  Camp's reconciler. A rule that contradicts a value the Set owns is
+  `ownership-conflict`: nothing is mutated, and the gate refuses promotions
+  that keep the violation.
+- **Evidence.** Compliance records map to **OSCAL assessment results**
+  beside the existing OSCAL export.
+- **Runbook:** [policy delivery and posture](../runbooks/cd/posture.md).
