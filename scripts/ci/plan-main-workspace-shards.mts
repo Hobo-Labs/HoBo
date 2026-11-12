@@ -16,6 +16,7 @@ import {
 	MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE,
 	MAIN_WORKSPACE_COLD_CACHE_PATH_THRESHOLD,
 	MAIN_WORKSPACE_SHARD_TARGET_SECONDS,
+	mainWorkspaceShardTimeouts,
 	planDependentTests,
 	planDependentTestsForTurboAffected,
 	planMainWorkspaceShardCount,
@@ -179,14 +180,17 @@ async function main(): Promise<void> {
 	});
 	const count = shardPlan.count;
 	const shards = `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
+	const timeouts = mainWorkspaceShardTimeouts(shardPlan.peakShardSeconds);
 	console.error(
-		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
+		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}, shardTimeoutMinutes=${timeouts.stepMinutes}/${timeouts.jobMinutes}`,
 	);
 	const outputs = {
 		main_base: base,
 		main_tests: tests,
 		main_scope: scope,
 		shards,
+		shard_timeout_minutes: String(timeouts.stepMinutes),
+		shard_job_timeout_minutes: String(timeouts.jobMinutes),
 	};
 	for (const [name, value] of Object.entries(outputs)) setOutput(name, value);
 	if (head) savePlanCache(head, outputs);
