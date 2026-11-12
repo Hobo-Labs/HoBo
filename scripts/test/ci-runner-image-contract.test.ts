@@ -670,6 +670,8 @@ describe("ci-runner image contract (host smoke)", () => {
 			join(root, ".github/actions/ci-runner-preflight/action.yml"),
 			"utf8",
 		);
+		expect(action).toContain("install-toolchain:");
+		expect(action).toMatch(/if: inputs\.install-toolchain == 'true'/);
 		expect(action).toContain(
 			"node --no-warnings scripts/ci-runner-preflight.mts",
 		);
