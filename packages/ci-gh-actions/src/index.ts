@@ -58,6 +58,24 @@ export {
 	type FleetStatePublisher,
 } from "./fleet-state.js";
 export {
+	createMemoryFleetVerdicts,
+	FLEET_VERDICT_MAX_TTL_SECONDS,
+	FLEET_VERDICT_REASONS,
+	FLEET_VERDICTS_PATH,
+	type FleetVerdictReason,
+	type FleetVerdictRepository,
+	type FleetVerdictStore,
+	fleetVerdictExpiresAtMs,
+	fleetVerdictJson,
+	fleetVerdictReportJson,
+	noFleetVerdict,
+	type ParsedFleetVerdictReport,
+	parseFleetVerdict,
+	parseFleetVerdictPath,
+	parseFleetVerdictReport,
+	standingFleetVerdict,
+} from "./fleet-verdict.js";
+export {
 	createGithubAppTransport,
 	type GithubAppTransport,
 	type GithubTransport,

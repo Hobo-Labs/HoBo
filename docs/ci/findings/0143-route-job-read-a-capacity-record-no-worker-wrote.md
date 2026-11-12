@@ -50,9 +50,9 @@ main gate plan: scope=repo-wide, tests=all, parallelCap=4, …
 
 ## Not changed
 
-- **Capacity-aware routing is not built.** A run can still be sent to a fleet that cannot admit its jobs (cause 4). The answer has to come from the relay and reach a run before its jobs are queued; the design is open.
+- **Capacity-aware routing is not built.** A run can still be sent to a fleet that cannot admit its jobs (cause 4). The answer has to come from the relay and reach a run before its jobs are queued: [ADR-0180](../../design/adr/fleet-verdict.md#adr-0180) has the route job ask the relay for a verdict. The relay's reporter is the part still to build.
 - **Main workspace plan** still asks the API for the record and is refused (cause 2). [#1935](https://github.com/Hobo-Labs/HoBo/pull/1935) hands it the variable through an environment variable, the mechanism rejected above.
-- **The mesh snapshot** (`HOBO_CI_FLEET_STATE`) still reaches the route step through an action input and an environment variable, as it did before this change.
+- **The mesh snapshot** (`HOBO_CI_FLEET_STATE`) reached the route step through an action input and an environment variable until ADR-0180 removed that reader.
 - **Nothing is publishing.** On this change's pull request `vars.HOBO_CI_FLEET_CAPACITY` and `vars.HOBO_CI_FLEET_STATE` were both empty (run [43245922777](https://github.com/Hobo-Labs/HoBo/actions/runs/43245922777)). Publishing needs `HOBO_CI_FLEET_ROUTES=1` on the box daemon and **Variables: write** on the App. Not checked: the box's log and the repository's variable list were not readable from this change.
 
 ## Measure

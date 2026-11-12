@@ -71,6 +71,7 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
@@ -81,7 +82,6 @@ jobs:
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
-          fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
 
   deploy:
     name: Deploy the hosted CI relay (production)

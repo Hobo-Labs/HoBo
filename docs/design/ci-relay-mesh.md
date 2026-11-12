@@ -132,6 +132,11 @@ way:
 | Sharing a queue between workers | Relay mesh | NATS, or nothing: ranking alone still works |
 | Hosted relay on Vercel | Not involved | — |
 
+Routing is not in that path. Before a run's jobs are queued, the routing job
+may ask the hosted relay for a fleet verdict
+([ADR-0180](./adr/fleet-verdict.md#adr-0180)); a relay that does not answer
+changes nothing, and a job already queued never touches it.
+
 The one setting that would tie a worker to the hosted relay is
 `HOBO_CI_JOB_ADMISSION=push`. It is not a default, and a mesh does not need
 it; the mesh gate applies only to `pull`. The shared Postgres store
@@ -381,54 +386,40 @@ step of delay, and an `invalid` one now costs nothing.
   keys listed, every node ranks only itself.
 - A node that loses its key file gets a new identity and must be listed again.
 
-## Routing reads the mesh when it can
+## Routing asks the relay
 
 The routing job (`scripts/ci/route-runner.mts`) chooses the fleet, a local box
 or GitHub-hosted before a run's jobs are queued. It reads GitHub's queue,
-which says what happened to jobs already queued; it could not see a fleet
-that was full or gone until jobs had waited on it.
+which says what happened to jobs already queued; it cannot see a fleet that is
+full or gone until jobs have waited on it.
 
-Workers with `HOBO_CI_FLEET_ROUTES=1` in a mesh also keep a snapshot in the
-repository variable `HOBO_CI_FLEET_STATE`. It is about 150 bytes and names no
-node, key or address.
+So it asks the relay ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). A relay
+with a view of the fleet reports, per repository, the labels new work should
+stay off; the hosted relay keeps each report until it lapses and serves it at
+`GET /v1/fleet/verdicts/{owner}/{repo}`. The routing job reads the relay's
+origin from `.hobo/ci.json` and asks on every pass of its decision, with a
+three-second limit.
 
-- **What it lists:** exactly the fleet labels the publishing worker serves,
-  each with its live healthy nodes, how many of them it trusts, and their free
-  slots, and when it was published. Never `hobo-local-host`: the board is
-  shared by every repository, and one developer's busy machine says nothing
-  about another repository's local box.
-- **Who writes it:** one worker per mesh, elected as the monitor elects its
-  reporter: the live, healthy node with the lowest id among those serving a
-  fleet label (with `requireTrusted`, among trusted ones). The others stay
-  quiet. All workers in a mesh should share the flag: if the elected worker
-  does not publish, nobody does, and the snapshot ages out (which changes
-  nothing). A node with a lower id that advertises but never publishes can
-  hold publishing off the same way; the fallback is the queue, as before.
-- **How often:** GitHub limits variable writes, so the worker writes only when
-  what routing reads changes (per label, whether there is a node and whether
-  there is a free slot), at most every 30 seconds, and otherwise every two
-  minutes so a live mesh's snapshot never goes stale, and once more as the
-  publisher starts to drain. The log says what routing reads
-  (`hobo=open,hobo-trunk=full`), not the value.
-
-| The snapshot | What routing does |
+| The relay | What routing does |
 |---|---|
-| Fresh (five minutes old or less) and the run's label has no node, or no free slot | That backend is refusing jobs, at once, without waiting for queue evidence |
-| Fresh and the label has a free slot | Nothing new. The queue still decides: a snapshot never makes a backend look available |
-| Fresh, but the run's label is not listed, or its entry lacks a numeric `nodes` or `freeSlots` | Nothing. The publisher does not speak for that label |
-| Missing, unreadable, or more than five minutes old | Nothing. The queue is read exactly as before |
+| Names the run's label (`no-node`, `no-capacity`) | That backend is refusing jobs, at once, without waiting for queue evidence |
+| Answers and does not name it | Nothing new. The queue still decides: a verdict never makes a backend look available |
+| Is not named, does not answer in time, or answers something that is not a verdict | Nothing. The queue is read exactly as before, and the job's log says the relay gave no verdict |
 
-The routing job reads no other record of the fleet. It once tried to read
-the box's `HOBO_CI_FLEET_CAPACITY` variable and never received a value
-([finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
+A label is blocked when no live healthy node serves it, or when none can admit
+a job for a reason other than its own running jobs and no other has a free
+slot. A label that is only busy is not blocked. No count of nodes, slots or
+memory leaves the relay.
 
-The counts are of every live healthy node serving the label that the reader
-does not reject, trusted or not, even with `requireTrusted`. That setting
-decides whom a worker defers to when ranking; it does not stop an unlisted
-worker from picking up a job GitHub hands it, and routing asks whether a job on
-this label will start. `invalid` advertisements are never counted. A forged
-advertisement can therefore only make a label look as if it has room, which
-changes nothing.
+**Not built yet: the reporter.** Nothing sends a report today, so the relay
+answers that nothing is blocked. Until the reporter replaces it, workers with
+`HOBO_CI_FLEET_ROUTES=1` in a mesh still keep the older snapshot in the
+repository variable `HOBO_CI_FLEET_STATE` (per fleet label: live healthy
+nodes, how many are trusted, their free slots, and when it was published; one
+elected worker writes it, on a change and at least every two minutes). The
+routing job no longer reads that variable: it reached the job through the
+workflow and an environment variable, was as old as its last write, and
+treated a label with no free slot as refusing.
 
 ## Reliability: a node that drops jobs gets fewer
 
@@ -551,7 +542,7 @@ interface.
 | 6 | The advertisement as a protobuf and CUE record (`MeshAdvert`), read as protobuf JSON at the NATS boundary; an older node's advertisement still parses | Done |
 | 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
 | 9 | Trust: a per-node Ed25519 identity, signed advertisements, a trusted-key set in the mesh's configuration, `invalid` nodes never ranked | Done. No attestation of what a node runs, no key rotation or revocation list, and the buckets' access control is NATS's, not the mesh's |
-| 10 | Routing reads a mesh snapshot (`HOBO_CI_FLEET_STATE`) as an extra signal when it is fresh | Done; the snapshot is one worker's view, and each worker with the flag writes its own |
+| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | The route, its stores and the routing job's client are done; the reporter is not. The older `HOBO_CI_FLEET_STATE` snapshot is still written and no longer read by routing |
 
 A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
 peers, it ranks itself first for every job and takes them all, so turning the
@@ -646,10 +637,12 @@ of the four keys listed.
   surfaces list it as `lost`, since the moment its advertisement expired.
 
 Routing (`scripts/test/route-runner.test.ts` and
-`packages/ci-gh-actions/test/fleet-state.test.ts`): a fresh snapshot with no
-node or no free slot for the run's label sends the run elsewhere at once; one
-with room, a stale one and a missing one each leave the decision identical to
-the queue's alone; a pinned tier does not move.
+`packages/ci-gh-actions/contracts/fleet-verdict-boundary.provider.test.ts`): a
+verdict that names the run's label sends the run elsewhere at once; one that
+names nothing, a relay that fails or is slow, and no relay each leave the
+decision identical to the queue's alone; a pinned tier does not ask.
+`packages/ci-gh-actions/test/fleet-state.test.ts` covers the older snapshot's
+publisher.
 
 ## Open questions
 
@@ -660,9 +653,10 @@ the queue's alone; a pinned tier does not move.
   a new one under its old one.
 - **Per-node write access to the board.** NATS can restrict each node to its
   own key of the nodes bucket; the mesh does not set that up.
-- **One snapshot per mesh.** Every worker with the flag writes its own view
-  to `HOBO_CI_FLEET_STATE`. They agree when they see the same board; a
-  partitioned worker would publish a smaller mesh until the others overwrite it.
+- **One reporter per mesh.** Every worker with the flag writes its own view
+  to `HOBO_CI_FLEET_STATE`, and the fleet verdict's reporter will have the
+  same question: they agree when they see the same board; a partitioned
+  worker would report a smaller mesh until the others overwrite it.
 - **Rented providers.** The fleet balancer has a circuit breaker per member
   (healthy or not). The same decayed score could rank rented providers by how
   often their runners arrive; it does not yet.
