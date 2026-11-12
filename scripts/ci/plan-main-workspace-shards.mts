@@ -80,6 +80,8 @@ function savePlanCache(head: string, outputs: Record<string, string>): void {
 async function main(): Promise<void> {
 	// Install-free on the worker: turbo via mise, no pnpm install for planning.
 	process.env.HOBO_TURBO_INVOKER ??= "mise";
+	const repository = process.env.GITHUB_REPOSITORY ?? "";
+	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
@@ -91,8 +93,6 @@ async function main(): Promise<void> {
 		setOutput("shard_runner", shardRunner);
 		return;
 	}
-	const repository = process.env.GITHUB_REPOSITORY ?? "";
-	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
 	let base = "";
 	if (eventName === "push") {
 		let lastGreen: string | undefined;

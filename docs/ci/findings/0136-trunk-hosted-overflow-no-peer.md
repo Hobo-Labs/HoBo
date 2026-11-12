@@ -28,5 +28,6 @@ On a memory-thin box with **ARC 0**: new shard jobs queue on **`hobo`** at plan 
 ## Verified
 
 - `packages/ci/test/fleet-capacity-input.test.ts`
+- `packages/ci-gh-actions/test/admission-order.test.ts` (`isMainWorkspaceShardHostedOverflow`)
 - `pnpm run test:smoke scripts/test/load-fleet-capacity.test.ts`
 - `pnpm run test:smoke scripts/test/main-gate-workspace-shards.test.ts`

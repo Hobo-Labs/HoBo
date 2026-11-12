@@ -125,6 +125,16 @@ export function isMainWorkspaceShardJob(jobName: string | undefined): boolean {
 	return mainWorkspaceShardIndex(jobName) !== undefined;
 }
 
+/** Plan-time `hobo` overflow: shards must reach GitHub-hosted relay, not local memory gates. */
+export function isMainWorkspaceShardHostedOverflow(
+	jobName: string | undefined,
+	labels: readonly string[] | undefined,
+): boolean {
+	if (!isMainWorkspaceShardJob(jobName)) return false;
+	const lower = labels?.map((l) => l.toLowerCase()) ?? [];
+	return lower.length === 1 && lower[0] === "hobo";
+}
+
 /** Main push / merge_group Fabric trunk jobs eligible for cooperative fleet defer. */
 export function isMainTrunkFleetDeferJob(
 	jobName: string | undefined,

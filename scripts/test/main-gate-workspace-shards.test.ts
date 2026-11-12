@@ -55,6 +55,20 @@ describe("main full gate workspace sharding", () => {
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
 	});
 
+	it("declares repository and token before plan cache restore", () => {
+		const src = readFileSync(
+			join(import.meta.dirname, "..", "ci", "plan-main-workspace-shards.mts"),
+			"utf8",
+		);
+		const repoDecl = src.indexOf(
+			"const repository = process.env.GITHUB_REPOSITORY",
+		);
+		const cacheRestore = src.indexOf("tryRestorePlanCache(head)");
+		assert.ok(repoDecl > -1);
+		assert.ok(cacheRestore > -1);
+		assert.ok(repoDecl < cacheRestore);
+	});
+
 	it("finishes with gitleaks after workspace shards", () => {
 		const finishStart = workflow.indexOf("  main_gate_finish:");
 		const artifact = workflow.indexOf("  artifact-trust:", finishStart);
