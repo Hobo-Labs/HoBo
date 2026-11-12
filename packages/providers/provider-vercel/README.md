@@ -429,3 +429,29 @@ validated immutable deployment origin after fetching its artifact. Pending and
 failed deployments, project records, and guessed aliases provide no serving
 endpoint proof. Endpoint metadata never substitutes for artifact or business
 health evidence.
+
+## Delivery coverage (plan 0024 WP14, I14)
+
+`VERCEL_HOSTING_COVERAGE` (contract `hobo.provider-hosting-coverage/v1`,
+`data-models/hosting_coverage.{proto,cue}`) states, for every catalogued
+product, a shipped resolver (`vercel.edge-config/v1`, `vercel.project/v1`,
+`vercel.static-deploy/v1`) or a typed refusal with remediation
+(`vercel.blob/v1`, `vercel.edge-function/v1`, `vercel.neon-postgres/v1`);
+`vercelProductRefusal(productId)` returns the `RESOLVER_PRODUCT_UNSUPPORTED`
+error. `VERCEL_TRAFFIC_ROUTING_PROFILE` is the audited profile, byte-equal to
+`@hobo/connectivity`'s: `edge.canary` (Rolling Releases), `edge.path`,
+`edge.header`, with `inprocess.weighted` as the Station-side fallback; the
+other fourteen portable offerings are declared absent with a reason
+(`VERCEL_TRAFFIC_ROUTING_ABSENT`). `vercelResolverRegistry` takes optional
+`metrics` + `nowMs` and then emits `hobo.cd.resolver.operations` and
+`hobo.cd.resolver.duration` for every call.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.blob/v1` | no convergent Blob create exists | create the store once and reference it, or bind an objectStore provider with a resolver |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.edge-function/v1` | functions ship inside a deployment | deliver them with the project deployment |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.neon-postgres/v1` | Vercel Postgres is Neon via the Marketplace | bind `@hobo/provider-neon` |
+| a canary is lowered to `inprocess.weighted` | Rolling Releases were not realizable for the plan | check the two mapped deployment ids; the rung is recorded (`rollout.Lowered`) |
+| no `hobo.cd.resolver.*` metrics | the registry was built without `metrics` and `nowMs` | pass both; a sink without a clock is refused |
