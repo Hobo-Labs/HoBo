@@ -3,7 +3,10 @@
 // `attestations`; createFreightSources verifies that material through the
 // ProvenanceVerifier port. A driver without it can never satisfy
 // `require_provenance` (define refuses; poll skips).
-import type { DiscoveredArtifactRecord, SubscriptionRecord } from "../_generated/cd_pb.js";
+import type {
+	DiscoveredArtifactRecord,
+	SubscriptionRecord,
+} from "../_generated/cd_pb.js";
 import type { CdContext, Outcome, SubscriptionDriver } from "../ports.js";
 
 export type AttestationMaterial = Readonly<{
@@ -24,6 +27,8 @@ export interface AttestingDriver extends SubscriptionDriver {
 	): Promise<Outcome<readonly AttestationMaterial[]>>;
 }
 
-export function isAttestingDriver(driver: SubscriptionDriver): driver is AttestingDriver {
+export function isAttestingDriver(
+	driver: SubscriptionDriver,
+): driver is AttestingDriver {
 	return "attestations" in driver;
 }

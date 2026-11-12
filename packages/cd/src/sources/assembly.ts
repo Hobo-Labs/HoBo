@@ -33,7 +33,10 @@ import { canonical, sha256Digest } from "./json.js";
 // public-contract: the label every discovered Freight carries naming its source.
 export const SOURCE_LABEL = "hobo.cd/source" as const;
 
-export type Assembled = Readonly<{ manifest: FreightManifestRecord; members: readonly DiscoveredArtifactRecord[] }>;
+export type Assembled = Readonly<{
+	manifest: FreightManifestRecord;
+	members: readonly DiscoveredArtifactRecord[];
+}>;
 
 export type AssemblyInput = Readonly<{
 	source: FreightSourceRecord;
@@ -43,7 +46,10 @@ export type AssemblyInput = Readonly<{
 	fresh: readonly DiscoveredArtifactRecord[];
 }>;
 
-export type Deferred = Readonly<{ artifact: DiscoveredArtifactRecord; waitingFor: readonly string[] }>;
+export type Deferred = Readonly<{
+	artifact: DiscoveredArtifactRecord;
+	waitingFor: readonly string[];
+}>;
 
 /** Digest of the source definition used when no subscription supplies the declaration. */
 export function definitionDigest(source: FreightSourceRecord): string {
@@ -51,7 +57,9 @@ export function definitionDigest(source: FreightSourceRecord): string {
 		canonical({
 			bindle: source.bindle,
 			assembly: AssemblyRule[source.assembly] ?? "",
-			subscriptions: source.subscriptions.map((item) => toJson(SubscriptionRecordSchema, item)),
+			subscriptions: source.subscriptions.map((item) =>
+				toJson(SubscriptionRecordSchema, item),
+			),
 		}),
 	);
 }
@@ -60,14 +68,21 @@ function isDeclaration(artifact: ArtifactRef | undefined): boolean {
 	return artifact?.kind === ArtifactKind.SOURCE_TREE;
 }
 
-function latestPerSubscription(records: readonly DiscoveredArtifactRecord[]): Map<string, DiscoveredArtifactRecord> {
+function latestPerSubscription(
+	records: readonly DiscoveredArtifactRecord[],
+): Map<string, DiscoveredArtifactRecord> {
 	const latest = new Map<string, DiscoveredArtifactRecord>();
 	for (const record of records) latest.set(record.subscription, record);
 	return latest;
 }
 
-function manifestFor(source: FreightSourceRecord, members: readonly DiscoveredArtifactRecord[]): FreightManifestRecord {
-	const rail = source.subscriptions.some((item) => item.kind === SubscriptionKind.HOBO_RAIL);
+function manifestFor(
+	source: FreightSourceRecord,
+	members: readonly DiscoveredArtifactRecord[],
+): FreightManifestRecord {
+	const rail = source.subscriptions.some(
+		(item) => item.kind === SubscriptionKind.HOBO_RAIL,
+	);
 	const labels = { [SOURCE_LABEL]: source.name };
 	if (rail) {
 		const member = members[0];
@@ -80,11 +95,17 @@ function manifestFor(source: FreightSourceRecord, members: readonly DiscoveredAr
 			labels,
 		});
 	}
-	const ordered = [...members].sort((left, right) => left.subscription.localeCompare(right.subscription));
+	const ordered = [...members].sort((left, right) =>
+		left.subscription.localeCompare(right.subscription),
+	);
 	const declaration = ordered.find((item) => isDeclaration(item.artifact));
 	const git = ordered.find((item) => item.artifact?.ecosystem === "git");
-	const ci = source.subscriptions.find((item) => item.kind === SubscriptionKind.HOBO_CI);
-	const ciMember = ci ? ordered.find((item) => item.subscription === ci.name) : undefined;
+	const ci = source.subscriptions.find(
+		(item) => item.kind === SubscriptionKind.HOBO_CI,
+	);
+	const ciMember = ci
+		? ordered.find((item) => item.subscription === ci.name)
+		: undefined;
 	const commit = ordered.find((item) => item.commit !== "")?.commit ?? "";
 	const provenance: ProvenanceRef[] = [];
 	const seen = new Set<string>();
@@ -106,7 +127,9 @@ function manifestFor(source: FreightSourceRecord, members: readonly DiscoveredAr
 		schemaVersion: FREIGHT_MANIFEST_SCHEMA,
 		bindle: source.bindle,
 		declarationHash: declaration?.artifact?.digest ?? definitionDigest(source),
-		artifacts: ordered.flatMap((item) => (item.artifact ? [item.artifact] : [])),
+		artifacts: ordered.flatMap((item) =>
+			item.artifact ? [item.artifact] : [],
+		),
 		source: sourceRef,
 		provenance,
 		labels,
@@ -116,12 +139,18 @@ function manifestFor(source: FreightSourceRecord, members: readonly DiscoveredAr
 
 function comboKey(members: readonly DiscoveredArtifactRecord[]): string {
 	return members
-		.map((item) => `${item.subscription}=${item.artifact?.digest ?? ""}@${item.version}`)
+		.map(
+			(item) =>
+				`${item.subscription}=${item.artifact?.digest ?? ""}@${item.version}`,
+		)
 		.sort()
 		.join("|");
 }
 
-export type AssemblyResult = Readonly<{ freight: readonly Assembled[]; deferred: readonly Deferred[] }>;
+export type AssemblyResult = Readonly<{
+	freight: readonly Assembled[];
+	deferred: readonly Deferred[];
+}>;
 
 export function assemble(input: AssemblyInput): AssemblyResult {
 	const { source } = input;
@@ -135,16 +164,27 @@ export function assemble(input: AssemblyInput): AssemblyResult {
 		emitted.add(key);
 		freight.push({ manifest: manifestFor(source, members), members });
 	};
-	if (source.assembly === AssemblyRule.SAME_VERSION || source.assembly === AssemblyRule.SAME_COMMIT) {
-		const keyOf = (item: DiscoveredArtifactRecord) => (source.assembly === AssemblyRule.SAME_VERSION ? item.version : item.commit);
+	if (
+		source.assembly === AssemblyRule.SAME_VERSION ||
+		source.assembly === AssemblyRule.SAME_COMMIT
+	) {
+		const keyOf = (item: DiscoveredArtifactRecord) =>
+			source.assembly === AssemblyRule.SAME_VERSION
+				? item.version
+				: item.commit;
 		const all = [...input.history, ...input.fresh];
 		for (const item of input.fresh) {
 			const key = keyOf(item);
-			const matching = latestPerSubscription(all.filter((candidate) => key !== "" && keyOf(candidate) === key));
+			const matching = latestPerSubscription(
+				all.filter((candidate) => key !== "" && keyOf(candidate) === key),
+			);
 			matching.set(item.subscription, item);
 			const missing = subscriptions.filter((name) => !matching.has(name));
 			if (key === "" || missing.length > 0) {
-				deferred.push({ artifact: item, waitingFor: key === "" ? subscriptions : missing });
+				deferred.push({
+					artifact: item,
+					waitingFor: key === "" ? subscriptions : missing,
+				});
 				continue;
 			}
 			push(subscriptions.flatMap((name) => matching.get(name) ?? []));
@@ -159,7 +199,11 @@ export function assemble(input: AssemblyInput): AssemblyResult {
 			deferred.push({ artifact: item, waitingFor: missing });
 			continue;
 		}
-		push(subscriptions.flatMap((name) => (name === item.subscription ? [item] : (latest.get(name) ?? []))));
+		push(
+			subscriptions.flatMap((name) =>
+				name === item.subscription ? [item] : (latest.get(name) ?? []),
+			),
+		);
 	}
 	return { freight, deferred };
 }

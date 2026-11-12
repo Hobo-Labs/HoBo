@@ -30,23 +30,34 @@ export function parseSemver(version: string): Semver | undefined {
 		minor: numbers[1] ?? 0,
 		patch: numbers[2] ?? 0,
 		prerelease: match[4]
-			? match[4].split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part))
+			? match[4]
+					.split(".")
+					.map((part) => (/^\d+$/.test(part) ? Number(part) : part))
 			: [],
 	};
 }
 
-function compareIdentifier(left: string | number, right: string | number): number {
+function compareIdentifier(
+	left: string | number,
+	right: string | number,
+): number {
 	const leftNumeric = Number.isInteger(left);
 	const rightNumeric = Number.isInteger(right);
 	if (leftNumeric && rightNumeric) return Number(left) - Number(right);
 	if (leftNumeric) return -1;
 	if (rightNumeric) return 1;
-	return String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0;
+	return String(left) < String(right)
+		? -1
+		: String(left) > String(right)
+			? 1
+			: 0;
 }
 
 export function compareSemver(left: Semver, right: Semver): number {
 	const core =
-		left.major - right.major || left.minor - right.minor || left.patch - right.patch;
+		left.major - right.major ||
+		left.minor - right.minor ||
+		left.patch - right.patch;
 	if (core !== 0) return Math.sign(core);
 	if (left.prerelease.length === 0 || right.prerelease.length === 0)
 		return Math.sign(right.prerelease.length - left.prerelease.length);
@@ -90,9 +101,13 @@ export function compareVersions(
 type Operator = "<" | "<=" | ">" | ">=" | "=";
 type Comparator = Readonly<{ operator: Operator; version: Semver }>;
 
-export type SemverRange = Readonly<{ source: string; test: (version: string) => boolean }>;
+export type SemverRange = Readonly<{
+	source: string;
+	test: (version: string) => boolean;
+}>;
 
-const PARTIAL = /^v?(\*|x|X|0|[1-9]\d*)(?:\.(\*|x|X|0|[1-9]\d*)(?:\.(\*|x|X|0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?)?)?$/;
+const PARTIAL =
+	/^v?(\*|x|X|0|[1-9]\d*)(?:\.(\*|x|X|0|[1-9]\d*)(?:\.(\*|x|X|0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?)?)?$/;
 
 type MutablePartial = {
 	major?: number;
@@ -117,22 +132,36 @@ function parsePartial(text: string): Partial | undefined {
 	if (!match) return undefined;
 	const [, major, minor, patch, pre] = match;
 	const result: MutablePartial = {
-		prerelease: pre ? pre.split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part)) : [],
+		prerelease: pre
+			? pre.split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part))
+			: [],
 	};
 	if (!wildcard(major)) result.major = Number(major);
-	if (result.major !== undefined && !wildcard(minor)) result.minor = Number(minor);
-	if (result.minor !== undefined && !wildcard(patch)) result.patch = Number(patch);
+	if (result.major !== undefined && !wildcard(minor))
+		result.minor = Number(minor);
+	if (result.minor !== undefined && !wildcard(patch))
+		result.patch = Number(patch);
 	return result;
 }
 
-function sv(major: number, minor: number, patch: number, prerelease: readonly (string | number)[] = []): Semver {
+function sv(
+	major: number,
+	minor: number,
+	patch: number,
+	prerelease: readonly (string | number)[] = [],
+): Semver {
 	return { major, minor, patch, prerelease };
 }
 
 const ZERO_PRE = Object.freeze(["0"]);
 
 function lowerOf(partial: Partial): Semver {
-	return sv(partial.major ?? 0, partial.minor ?? 0, partial.patch ?? 0, partial.prerelease);
+	return sv(
+		partial.major ?? 0,
+		partial.minor ?? 0,
+		partial.patch ?? 0,
+		partial.prerelease,
+	);
 }
 
 /** Expand one range token (caret, tilde, x-range, comparator) to comparators. */
@@ -142,7 +171,8 @@ function expand(token: string): readonly Comparator[] | undefined {
 	const partial = parsePartial(operatorMatch?.[2] ?? "");
 	if (!partial) return undefined;
 	const { major, minor, patch } = partial;
-	if (major === undefined) return operator === "<" || operator === ">" ? [] : [];
+	if (major === undefined)
+		return operator === "<" || operator === ">" ? [] : [];
 	const exact = patch !== undefined;
 	switch (operator) {
 		case "^": {
@@ -159,7 +189,10 @@ function expand(token: string): readonly Comparator[] | undefined {
 			];
 		}
 		case "~": {
-			const upper = minor === undefined ? sv(major + 1, 0, 0, ZERO_PRE) : sv(major, minor + 1, 0, ZERO_PRE);
+			const upper =
+				minor === undefined
+					? sv(major + 1, 0, 0, ZERO_PRE)
+					: sv(major, minor + 1, 0, ZERO_PRE);
 			return [
 				{ operator: ">=", version: lowerOf(partial) },
 				{ operator: "<", version: upper },
@@ -168,7 +201,10 @@ function expand(token: string): readonly Comparator[] | undefined {
 		case "":
 		case "=": {
 			if (exact) return [{ operator: "=", version: lowerOf(partial) }];
-			const upper = minor === undefined ? sv(major + 1, 0, 0, ZERO_PRE) : sv(major, minor + 1, 0, ZERO_PRE);
+			const upper =
+				minor === undefined
+					? sv(major + 1, 0, 0, ZERO_PRE)
+					: sv(major, minor + 1, 0, ZERO_PRE);
 			return [
 				{ operator: ">=", version: lowerOf(partial) },
 				{ operator: "<", version: upper },
@@ -179,19 +215,30 @@ function expand(token: string): readonly Comparator[] | undefined {
 			return [
 				{
 					operator: ">=",
-					version: minor === undefined ? sv(major + 1, 0, 0) : sv(major, minor + 1, 0),
+					version:
+						minor === undefined ? sv(major + 1, 0, 0) : sv(major, minor + 1, 0),
 				},
 			];
 		case ">=":
 			return [{ operator: ">=", version: lowerOf(partial) }];
 		case "<":
-			return [{ operator: "<", version: exact ? lowerOf(partial) : sv(major, minor ?? 0, 0, ZERO_PRE) }];
+			return [
+				{
+					operator: "<",
+					version: exact
+						? lowerOf(partial)
+						: sv(major, minor ?? 0, 0, ZERO_PRE),
+				},
+			];
 		case "<=":
 			if (exact) return [{ operator: "<=", version: lowerOf(partial) }];
 			return [
 				{
 					operator: "<",
-					version: minor === undefined ? sv(major + 1, 0, 0, ZERO_PRE) : sv(major, minor + 1, 0, ZERO_PRE),
+					version:
+						minor === undefined
+							? sv(major + 1, 0, 0, ZERO_PRE)
+							: sv(major, minor + 1, 0, ZERO_PRE),
 				},
 			];
 		default:
@@ -216,7 +263,11 @@ function satisfies(version: Semver, comparator: Comparator): boolean {
 }
 
 function sameTuple(left: Semver, right: Semver): boolean {
-	return left.major === right.major && left.minor === right.minor && left.patch === right.patch;
+	return (
+		left.major === right.major &&
+		left.minor === right.minor &&
+		left.patch === right.patch
+	);
 }
 
 function testSet(set: readonly Comparator[], version: Semver): boolean {
@@ -254,7 +305,9 @@ export function parseSemverRange(source: string): Outcome<SemverRange> {
 			if (!low || !high) return invalid();
 			comparators.push(...low, ...high);
 		} else if (trimmed !== "") {
-			for (const token of trimmed.replace(/(\^|~|<=|>=|<|>|=)\s+/g, "$1").split(/\s+/)) {
+			for (const token of trimmed
+				.replace(/(\^|~|<=|>=|<|>|=)\s+/g, "$1")
+				.split(/\s+/)) {
 				const expanded = expand(token);
 				if (!expanded) return invalid();
 				comparators.push(...expanded);
@@ -284,7 +337,10 @@ export type VersionFilter = Pick<
 const MAX_PATTERN_LENGTH = 256;
 
 /** Compile a subscription pattern; refuses oversized or invalid expressions. */
-export function compilePattern(pattern: string, subject: string): Outcome<RegExp> {
+export function compilePattern(
+	pattern: string,
+	subject: string,
+): Outcome<RegExp> {
 	if (pattern.length > MAX_PATTERN_LENGTH)
 		return refuse(
 			SOURCE_REASON.invalid,
@@ -305,29 +361,42 @@ export function compilePattern(pattern: string, subject: string): Outcome<RegExp
 }
 
 /** Whether a version passes the subscription's allow/ignore/range filters. */
-export function versionAllowed(filter: VersionFilter, version: string): Outcome<string> {
+export function versionAllowed(
+	filter: VersionFilter,
+	version: string,
+): Outcome<string> {
 	const skip = (message: string) =>
-		refuse(SOURCE_REASON.filtered, message, "adjust allowPattern, ignorePatterns or semverRange", version);
+		refuse(
+			SOURCE_REASON.filtered,
+			message,
+			"adjust allowPattern, ignorePatterns or semverRange",
+			version,
+		);
 	if (filter.allowPattern !== "") {
 		const allow = compilePattern(filter.allowPattern, "allowPattern");
 		if (!allow.ok) return allow;
-		if (!allow.value.test(version)) return skip(`${version} does not match allowPattern`);
+		if (!allow.value.test(version))
+			return skip(`${version} does not match allowPattern`);
 	}
 	for (const pattern of filter.ignorePatterns) {
 		const ignore = compilePattern(pattern, "ignorePatterns");
 		if (!ignore.ok) return ignore;
-		if (ignore.value.test(version)) return skip(`${version} matches ignore pattern ${pattern}`);
+		if (ignore.value.test(version))
+			return skip(`${version} matches ignore pattern ${pattern}`);
 	}
 	if (filter.selection === SelectionStrategy.SEMVER) {
 		const parsed = parseSemver(version);
 		if (!parsed) return skip(`${version} is not SemVer`);
 		// Conservative default: a prerelease is discovered only when a range admits it.
 		if (filter.semverRange === "" && parsed.prerelease.length > 0)
-			return skip(`${version} is a prerelease and no semverRange admits prereleases`);
+			return skip(
+				`${version} is a prerelease and no semverRange admits prereleases`,
+			);
 		if (filter.semverRange !== "") {
 			const range = parseSemverRange(filter.semverRange);
 			if (!range.ok) return range;
-			if (!range.value.test(version)) return skip(`${version} is outside ${filter.semverRange}`);
+			if (!range.value.test(version))
+				return skip(`${version} is outside ${filter.semverRange}`);
 		}
 	}
 	return { ok: true, value: version };
@@ -347,7 +416,9 @@ export function selectNewest(
 	const above =
 		highWater === undefined
 			? unique
-			: unique.filter((version) => compareVersions(strategy, version, highWater) > 0);
+			: unique.filter(
+					(version) => compareVersions(strategy, version, highWater) > 0,
+				);
 	above.sort((left, right) => compareVersions(strategy, left, right));
 	return above.slice(Math.max(0, above.length - limit));
 }

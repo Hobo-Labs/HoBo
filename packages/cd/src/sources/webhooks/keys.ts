@@ -14,9 +14,12 @@ export function ociKey(reference: string): string | undefined {
 	const withoutDigest = withoutScheme.split("@")[0] ?? "";
 	const lastSlash = withoutDigest.lastIndexOf("/");
 	const colon = withoutDigest.lastIndexOf(":");
-	const repository = colon > lastSlash ? withoutDigest.slice(0, colon) : withoutDigest;
+	const repository =
+		colon > lastSlash ? withoutDigest.slice(0, colon) : withoutDigest;
 	const parsed = parseOciLocator(repository.toLowerCase());
-	return parsed.ok ? `oci:${parsed.value.host}/${parsed.value.repository}` : undefined;
+	return parsed.ok
+		? `oci:${parsed.value.host}/${parsed.value.repository}`
+		: undefined;
 }
 
 /** `git:<host><path>` without scheme, credentials, `.git` or trailing slash. */
@@ -49,7 +52,8 @@ export function purlKey(purl: string): string | undefined {
 	if (type === "oci" || type === "docker") {
 		const repositoryUrl = /[?&]repository_url=([^&#]+)/.exec(purl)?.[1];
 		if (repositoryUrl) return ociKey(decodeURIComponent(repositoryUrl));
-		if (type === "docker") return ociKey(`docker.io/${decodeURIComponent(match[2])}`);
+		if (type === "docker")
+			return ociKey(`docker.io/${decodeURIComponent(match[2])}`);
 		return undefined;
 	}
 	const name = match[2]
@@ -60,7 +64,9 @@ export function purlKey(purl: string): string | undefined {
 }
 
 /** Keys of one subscription; HOBO_CI and HOBO_RAIL are never nudged from outside. */
-export function subscriptionKeys(subscription: SubscriptionRecord): readonly string[] {
+export function subscriptionKeys(
+	subscription: SubscriptionRecord,
+): readonly string[] {
 	switch (subscription.kind) {
 		case SubscriptionKind.OCI_REPOSITORY: {
 			const key = ociKey(subscription.locator);
@@ -77,7 +83,9 @@ export function subscriptionKeys(subscription: SubscriptionRecord): readonly str
 		case SubscriptionKind.PACKAGE_REGISTRY: {
 			const locator = parsePackageLocator(subscription);
 			if (!locator.ok) return [];
-			const key = purlKey(packagePurl(locator.value.ecosystem, locator.value.name, "0"));
+			const key = purlKey(
+				packagePurl(locator.value.ecosystem, locator.value.name, "0"),
+			);
 			return key ? [key] : [];
 		}
 		default:

@@ -37,16 +37,25 @@ export function parseJson(text: string): JsonValue | undefined {
 	}
 }
 
-export function field(value: JsonValue | undefined, key: string): JsonValue | undefined {
+export function field(
+	value: JsonValue | undefined,
+	key: string,
+): JsonValue | undefined {
 	return isRecord(value) ? value[key] : undefined;
 }
 
-export function text(value: JsonValue | undefined, key: string): string | undefined {
+export function text(
+	value: JsonValue | undefined,
+	key: string,
+): string | undefined {
 	const found = field(value, key);
 	return isText(found) ? found : undefined;
 }
 
-export function list(value: JsonValue | undefined, key: string): readonly JsonValue[] {
+export function list(
+	value: JsonValue | undefined,
+	key: string,
+): readonly JsonValue[] {
 	const found = field(value, key);
 	return isList(found) ? found : [];
 }

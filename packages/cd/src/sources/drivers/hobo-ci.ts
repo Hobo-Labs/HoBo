@@ -7,14 +7,32 @@
 import { create } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
 import {
-	ArtifactRefSchema,
 	type ArtifactRef,
+	ArtifactRefSchema,
 	SubscriptionKind,
 } from "../../_generated/cd_pb.js";
-import type { CiArtifactReader, CiEventReader, SubscriptionDriver } from "../../ports.js";
-import { field, isRecord, isText, list, parseJson, sha256Hex, text } from "../json.js";
+import type {
+	CiArtifactReader,
+	CiEventReader,
+	SubscriptionDriver,
+} from "../../ports.js";
+import {
+	field,
+	isRecord,
+	isText,
+	list,
+	parseJson,
+	sha256Hex,
+	text,
+} from "../json.js";
 import { refuse, SOURCE_REASON } from "../reasons.js";
-import { type Candidate, discovered, discoveryLimit, parseCursor, writeCursor } from "./common.js";
+import {
+	type Candidate,
+	discovered,
+	discoveryLimit,
+	parseCursor,
+	writeCursor,
+} from "./common.js";
 
 // public-contract: the CI event type the HOBO_CI driver reads.
 export const CI_RESULT_EVENT = "ci.PipelineResultObserved" as const;
@@ -25,12 +43,22 @@ export const CI_SCAN_LIMIT = 10_000;
 
 const COMMIT = /^[0-9a-f]{7,64}$/;
 
-type CiOutput = Readonly<{ runId: string; path: string; sha256: string; commit?: string }>;
+type CiOutput = Readonly<{
+	runId: string;
+	path: string;
+	sha256: string;
+	commit?: string;
+}>;
 
 /** Structural parse of one CI event into its passing outputs for `locator`. */
-export function ciOutputs(data: JsonValue, locator: string): readonly CiOutput[] {
+export function ciOutputs(
+	data: JsonValue,
+	locator: string,
+): readonly CiOutput[] {
 	const detail = field(data, "detail");
-	const lease: JsonValue | undefined = isText(detail) ? parseJson(detail) : data;
+	const lease: JsonValue | undefined = isText(detail)
+		? parseJson(detail)
+		: data;
 	if (!isRecord(lease)) return [];
 	const result = field(lease, "result");
 	if (text(result, "status") !== CI_PASSED) return [];
@@ -38,7 +66,8 @@ export function ciOutputs(data: JsonValue, locator: string): readonly CiOutput[]
 	if (!runId) return [];
 	const owners = [text(lease, "pipelineId"), text(lease, "repository")];
 	if (!owners.includes(locator)) return [];
-	const commit = text(lease, "headSha") ?? text(lease, "commit") ?? text(lease, "sha");
+	const commit =
+		text(lease, "headSha") ?? text(lease, "commit") ?? text(lease, "sha");
 	return list(result, "artifacts").flatMap((artifact) => {
 		const path = text(artifact, "path");
 		const sha = (text(artifact, "sha256") ?? "").replace(/^sha256:/, "");
@@ -48,18 +77,33 @@ export function ciOutputs(data: JsonValue, locator: string): readonly CiOutput[]
 	});
 }
 
-function pathMatches(path: string, artifactName: string, include: readonly string[]): boolean {
+function pathMatches(
+	path: string,
+	artifactName: string,
+	include: readonly string[],
+): boolean {
 	if (artifactName !== "") return path === artifactName;
 	if (include.length === 0) return true;
-	return include.some((prefix) => path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`));
+	return include.some(
+		(prefix) =>
+			path === prefix ||
+			path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
+	);
 }
 
-export function ciCoordinate(locator: string, runId: string, path: string): string {
+export function ciCoordinate(
+	locator: string,
+	runId: string,
+	path: string,
+): string {
 	return `hobo-ci://${encodeURIComponent(locator)}/${encodeURIComponent(runId)}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 export function createCiDriver(
-	d: Readonly<{ readCiEvents?: CiEventReader; readCiArtifact?: CiArtifactReader }>,
+	d: Readonly<{
+		readCiEvents?: CiEventReader;
+		readCiArtifact?: CiArtifactReader;
+	}>,
 ): SubscriptionDriver {
 	return {
 		kind: SubscriptionKind.HOBO_CI,
@@ -84,12 +128,21 @@ export function createCiDriver(
 				at = event.cursor;
 				if (event.type === CI_RESULT_EVENT) {
 					for (const output of ciOutputs(event.data, subscription.locator)) {
-						if (pathMatches(output.path, subscription.artifactName, subscription.includePaths)) outputs.push(output);
+						if (
+							pathMatches(
+								output.path,
+								subscription.artifactName,
+								subscription.includePaths,
+							)
+						)
+							outputs.push(output);
 					}
 				}
 				if (scanned >= CI_SCAN_LIMIT) break;
 			}
-			const newest = outputs.slice(Math.max(0, outputs.length - discoveryLimit(subscription)));
+			const newest = outputs.slice(
+				Math.max(0, outputs.length - discoveryLimit(subscription)),
+			);
 			const candidates: Candidate[] = [];
 			for (const output of newest) {
 				const bytes = await readArtifact(output.runId, output.path);
@@ -114,17 +167,33 @@ export function createCiDriver(
 					name: subscription.artifactName || subscription.name,
 					kind: subscription.artifactKind,
 					digest: `sha256:${digest}`,
-					coordinate: ciCoordinate(subscription.locator, output.runId, output.path),
+					coordinate: ciCoordinate(
+						subscription.locator,
+						output.runId,
+						output.path,
+					),
 					sizeBytes: BigInt(bytes.byteLength),
 					ecosystem: "store",
 				});
-				const candidate: Candidate = { version: output.runId, rank: output.runId, artifact };
-				candidates.push(output.commit ? { ...candidate, commit: output.commit } : candidate);
+				const candidate: Candidate = {
+					version: output.runId,
+					rank: output.runId,
+					artifact,
+				};
+				candidates.push(
+					output.commit ? { ...candidate, commit: output.commit } : candidate,
+				);
 			}
-			const cursor = at === undefined ? writeCursor(previous) : writeCursor({ ...previous, at });
+			const cursor =
+				at === undefined
+					? writeCursor(previous)
+					: writeCursor({ ...previous, at });
 			return {
 				ok: true,
-				value: { artifacts: candidates.map((item) => discovered(input, item, ctx)), cursor },
+				value: {
+					artifacts: candidates.map((item) => discovered(input, item, ctx)),
+					cursor,
+				},
 			};
 		},
 	};

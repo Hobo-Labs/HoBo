@@ -10,10 +10,22 @@ import {
 
 describe("semver", () => {
 	it("parses SemVer 2.0 with an optional leading v and orders prereleases below releases", () => {
-		expect(parseSemver("v1.2.3")).toMatchObject({ major: 1, minor: 2, patch: 3 });
+		expect(parseSemver("v1.2.3")).toMatchObject({
+			major: 1,
+			minor: 2,
+			patch: 3,
+		});
 		expect(parseSemver("1.2")).toBeUndefined();
 		expect(parseSemver("01.2.3")).toBeUndefined();
-		const order = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1"];
+		const order = [
+			"1.0.0-alpha",
+			"1.0.0-alpha.1",
+			"1.0.0-beta.2",
+			"1.0.0-beta.11",
+			"1.0.0-rc.1",
+			"1.0.0",
+			"1.0.1",
+		];
 		const shuffled = [...order].reverse();
 		shuffled.sort((a, b) => compareVersions(SelectionStrategy.SEMVER, a, b));
 		expect(shuffled).toEqual(order);
@@ -64,6 +76,8 @@ describe("selection", () => {
 			"1.0.0",
 		);
 		expect(picked).toEqual(["1.2.0", "1.3.0"]);
-		expect(selectNewest(SelectionStrategy.LEXICAL, ["b", "c", "a"], 5, "b")).toEqual(["c"]);
+		expect(
+			selectNewest(SelectionStrategy.LEXICAL, ["b", "c", "a"], 5, "b"),
+		).toEqual(["c"]);
 	});
 });

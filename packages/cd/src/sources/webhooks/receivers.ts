@@ -36,14 +36,25 @@ export function webhookSecretRef(receiver: WebhookReceiver): string {
 
 export type NudgeRefusalStatus = 400 | 401 | 404 | 405 | 413;
 
-export type Received = Readonly<{ receiver: WebhookReceiver; keys: readonly string[] }>;
+export type Received = Readonly<{
+	receiver: WebhookReceiver;
+	keys: readonly string[];
+}>;
 
 export type ReceiveOutcome =
 	| Readonly<{ ok: true; value: Received }>
-	| Readonly<{ ok: false; status: NudgeRefusalStatus; reasons: readonly ReasonRecord[] }>;
+	| Readonly<{
+			ok: false;
+			status: NudgeRefusalStatus;
+			reasons: readonly ReasonRecord[];
+	  }>;
 
-function lower(headers: Readonly<Record<string, string>>): ReadonlyMap<string, string> {
-	return new Map(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+function lower(
+	headers: Readonly<Record<string, string>>,
+): ReadonlyMap<string, string> {
+	return new Map(
+		Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]),
+	);
 }
 
 /** Constant-time string equality (both sides hashed first, so lengths match). */
@@ -57,19 +68,33 @@ function hmacHex(secret: string, body: Uint8Array): string {
 	return createHmac("sha256", secret).update(body).digest("hex");
 }
 
-function parsePath(path: string): Readonly<{ receiver?: WebhookReceiver; query: URLSearchParams }> {
+function parsePath(
+	path: string,
+): Readonly<{ receiver?: WebhookReceiver; query: URLSearchParams }> {
 	const [pathname = "", search = ""] = path.split("?", 2);
-	const last = pathname.split("/").filter((part) => part !== "").at(-1) ?? "";
+	const last =
+		pathname
+			.split("/")
+			.filter((part) => part !== "")
+			.at(-1) ?? "";
 	const receiver = WEBHOOK_RECEIVERS.find((item) => item === last);
-	return receiver ? { receiver, query: new URLSearchParams(search) } : { query: new URLSearchParams(search) };
+	return receiver
+		? { receiver, query: new URLSearchParams(search) }
+		: { query: new URLSearchParams(search) };
 }
 
 type MutableSecret = { secret?: string; token?: string };
 type Secret = Readonly<MutableSecret>;
 
-async function secretFor(secrets: CredentialResolver, receiver: WebhookReceiver): Promise<Secret | undefined> {
+async function secretFor(
+	secrets: CredentialResolver,
+	receiver: WebhookReceiver,
+): Promise<Secret | undefined> {
 	try {
-		const value = await secrets.resolve(webhookSecretRef(receiver), WEBHOOK_SECRET_SCOPE);
+		const value = await secrets.resolve(
+			webhookSecretRef(receiver),
+			WEBHOOK_SECRET_SCOPE,
+		);
 		const out: MutableSecret = {};
 		if (value.secret) out.secret = value.secret;
 		if (value.token) out.token = value.token;
@@ -87,8 +112,13 @@ function authenticate(
 	secret: Secret,
 ): boolean {
 	const hmac = (value: string | undefined, prefix: string) =>
-		secret.secret !== undefined && value !== undefined && safeEqual(value, `${prefix}${hmacHex(secret.secret, body)}`);
-	const token = (value: string | undefined) => secret.token !== undefined && value !== undefined && safeEqual(value, secret.token);
+		secret.secret !== undefined &&
+		value !== undefined &&
+		safeEqual(value, `${prefix}${hmacHex(secret.secret, body)}`);
+	const token = (value: string | undefined) =>
+		secret.token !== undefined &&
+		value !== undefined &&
+		safeEqual(value, secret.token);
 	switch (receiver) {
 		case "github":
 		case "ghcr":
@@ -98,7 +128,10 @@ function authenticate(
 		case "gitea":
 			return hmac(headers.get("x-gitea-signature"), "");
 		case "forgejo":
-			return hmac(headers.get("x-forgejo-signature") ?? headers.get("x-gitea-signature"), "");
+			return hmac(
+				headers.get("x-forgejo-signature") ?? headers.get("x-gitea-signature"),
+				"",
+			);
 		case "gitlab":
 			return token(headers.get("x-gitlab-token"));
 		case "harbor":
@@ -120,22 +153,36 @@ function keys(...candidates: ReadonlyArray<string | undefined>): string[] {
 
 function githubKeys(payload: JsonValue, event: string): string[] {
 	if (event === "package" || event === "registry_package") {
-		const pkg = field(payload, event === "package" ? "package" : "registry_package");
+		const pkg = field(
+			payload,
+			event === "package" ? "package" : "registry_package",
+		);
 		const type = (text(pkg, "package_type") ?? "").toLowerCase();
 		const url = text(field(pkg, "package_version"), "package_url");
-		if (type === "container" || type === "docker") return keys(url ? ociKey(url) : undefined);
+		if (type === "container" || type === "docker")
+			return keys(url ? ociKey(url) : undefined);
 		const name = text(pkg, "name");
-		const namespace = text(field(pkg, "namespace") ?? field(payload, "repository"), "login") ?? text(field(payload, "organization"), "login");
-		if (type === "npm" && name) return keys(purlKey(`pkg:npm/${namespace ? `%40${namespace}/` : ""}${name}`));
+		const namespace =
+			text(field(pkg, "namespace") ?? field(payload, "repository"), "login") ??
+			text(field(payload, "organization"), "login");
+		if (type === "npm" && name)
+			return keys(
+				purlKey(`pkg:npm/${namespace ? `%40${namespace}/` : ""}${name}`),
+			);
 		return [];
 	}
 	const repository = field(payload, "repository");
 	return keys(
-		...[text(repository, "clone_url"), text(repository, "html_url")].map((url) => (url ? gitKey(url) : undefined)),
+		...[text(repository, "clone_url"), text(repository, "html_url")].map(
+			(url) => (url ? gitKey(url) : undefined),
+		),
 	);
 }
 
-function cloudEventKeys(payload: JsonValue | undefined, headers: ReadonlyMap<string, string>): string[] {
+function cloudEventKeys(
+	payload: JsonValue | undefined,
+	headers: ReadonlyMap<string, string>,
+): string[] {
 	const data = headers.has("ce-type") ? payload : field(payload, "data");
 	const subject = field(data, "subject");
 	const content = field(subject, "content");
@@ -161,16 +208,35 @@ function payloadKeys(
 	switch (receiver) {
 		case "github":
 		case "ghcr":
-			return payload === undefined ? [] : githubKeys(payload, headers.get("x-github-event") ?? "");
+			return payload === undefined
+				? []
+				: githubKeys(payload, headers.get("x-github-event") ?? "");
 		case "gitlab":
-			return keys(gitKey(text(field(payload, "project"), "git_http_url") ?? text(field(payload, "repository"), "git_http_url") ?? ""));
+			return keys(
+				gitKey(
+					text(field(payload, "project"), "git_http_url") ??
+						text(field(payload, "repository"), "git_http_url") ??
+						"",
+				),
+			);
 		case "bitbucket":
-			return keys(gitKey(text(field(field(field(payload, "repository"), "links"), "html"), "href") ?? ""));
+			return keys(
+				gitKey(
+					text(
+						field(field(field(payload, "repository"), "links"), "html"),
+						"href",
+					) ?? "",
+				),
+			);
 		case "gitea":
 		case "forgejo":
-			return keys(gitKey(text(field(payload, "repository"), "clone_url") ?? ""));
+			return keys(
+				gitKey(text(field(payload, "repository"), "clone_url") ?? ""),
+			);
 		case "harbor":
-			return list(field(payload, "event_data"), "resources").flatMap((item) => keys(ociKey(text(item, "resource_url") ?? "")));
+			return list(field(payload, "event_data"), "resources").flatMap((item) =>
+				keys(ociKey(text(item, "resource_url") ?? "")),
+			);
 		case "dockerhub": {
 			const name = text(field(payload, "repository"), "repo_name");
 			return name ? keys(ociKey(`docker.io/${name}`)) : [];
@@ -180,12 +246,22 @@ function payloadKeys(
 			const repository = text(detail, "repository-name");
 			const account = text(payload, "account");
 			const region = text(payload, "region");
-			return repository && account && region ? keys(ociKey(`${account}.dkr.ecr.${region}.amazonaws.com/${repository}`)) : [];
+			return repository && account && region
+				? keys(
+						ociKey(`${account}.dkr.ecr.${region}.amazonaws.com/${repository}`),
+					)
+				: [];
 		}
 		case "artifact-registry": {
 			const encoded = text(field(payload, "message"), "data");
-			const message = encoded ? parseJson(Buffer.from(encoded, "base64").toString("utf8")) : undefined;
-			return keys(...[text(message, "digest"), text(message, "tag")].map((item) => (item ? ociKey(item) : undefined)));
+			const message = encoded
+				? parseJson(Buffer.from(encoded, "base64").toString("utf8"))
+				: undefined;
+			return keys(
+				...[text(message, "digest"), text(message, "tag")].map((item) =>
+					item ? ociKey(item) : undefined,
+				),
+			);
 		}
 		case "cloudevents":
 			return cloudEventKeys(payload, headers);
@@ -204,18 +280,44 @@ export async function receiveWebhook(
 		return {
 			ok: false,
 			status: 404,
-			reasons: refuse(SOURCE_REASON.invalid, `no webhook receiver at ${request.path.split("?")[0]}`, `post to .../nudge/<receiver>, one of ${WEBHOOK_RECEIVERS.join(", ")}`, "path").reasons,
+			reasons: refuse(
+				SOURCE_REASON.invalid,
+				`no webhook receiver at ${request.path.split("?")[0]}`,
+				`post to .../nudge/<receiver>, one of ${WEBHOOK_RECEIVERS.join(", ")}`,
+				"path",
+			).reasons,
 		};
 	}
 	if (request.method.toUpperCase() !== "POST") {
-		return { ok: false, status: 405, reasons: refuse(SOURCE_REASON.invalid, "webhooks are POST", "configure the sender to POST", receiver).reasons };
+		return {
+			ok: false,
+			status: 405,
+			reasons: refuse(
+				SOURCE_REASON.invalid,
+				"webhooks are POST",
+				"configure the sender to POST",
+				receiver,
+			).reasons,
+		};
 	}
 	if (request.body.byteLength > WEBHOOK_MAX_BODY_BYTES) {
-		return { ok: false, status: 413, reasons: refuse(SOURCE_REASON.invalid, "webhook body too large", "send event notifications, not artifacts", receiver).reasons };
+		return {
+			ok: false,
+			status: 413,
+			reasons: refuse(
+				SOURCE_REASON.invalid,
+				"webhook body too large",
+				"send event notifications, not artifacts",
+				receiver,
+			).reasons,
+		};
 	}
 	const headers = lower(request.headers);
 	const secret = await secretFor(secrets, receiver);
-	if (!secret || !authenticate(receiver, headers, query, request.body, secret)) {
+	if (
+		!secret ||
+		!authenticate(receiver, headers, query, request.body, secret)
+	) {
 		return {
 			ok: false,
 			status: 401,
@@ -227,9 +329,19 @@ export async function receiveWebhook(
 			).reasons,
 		};
 	}
-	const payload = request.body.byteLength === 0 ? undefined : parseJson(utf8(request.body));
+	const payload =
+		request.body.byteLength === 0 ? undefined : parseJson(utf8(request.body));
 	if (request.body.byteLength > 0 && payload === undefined) {
-		return { ok: false, status: 400, reasons: refuse(SOURCE_REASON.invalid, "webhook body is not JSON", "send JSON payloads", receiver).reasons };
+		return {
+			ok: false,
+			status: 400,
+			reasons: refuse(
+				SOURCE_REASON.invalid,
+				"webhook body is not JSON",
+				"send JSON payloads",
+				receiver,
+			).reasons,
+		};
 	}
 	const found = payloadKeys(receiver, payload, headers);
 	return { ok: true, value: { receiver, keys: [...new Set(found)].sort() } };

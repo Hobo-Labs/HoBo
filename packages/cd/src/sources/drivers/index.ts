@@ -13,29 +13,43 @@ import { createHttpIndexDriver } from "./http-index.js";
 import { createOciDriver } from "./oci.js";
 import { createPackageRegistryDriver } from "./packages.js";
 
-type CiReaders = { readCiEvents?: CiEventReader; readCiArtifact?: CiArtifactReader };
+type CiReaders = {
+	readCiEvents?: CiEventReader;
+	readCiArtifact?: CiArtifactReader;
+};
 type RailReaders = { readRailEvents?: RailEventReader };
 
-export const createSubscriptionDrivers: CdFactories["createSubscriptionDrivers"] = (d) => {
-	const http = { http: d.http, credentials: d.credentials };
-	const ci: CiReaders = {};
-	if (d.readCiEvents) ci.readCiEvents = d.readCiEvents;
-	if (d.readCiArtifact) ci.readCiArtifact = d.readCiArtifact;
-	const rail: RailReaders = {};
-	if (d.readRailEvents) rail.readRailEvents = d.readRailEvents;
-	const drivers: SubscriptionDriver[] = [
-		createOciDriver(http),
-		createGitDriver(http),
-		createPackageRegistryDriver(http),
-		createHttpIndexDriver(http),
-		createCiDriver(ci),
-		createRailDriver(rail),
-	];
-	return drivers;
-};
+export const createSubscriptionDrivers: CdFactories["createSubscriptionDrivers"] =
+	(d) => {
+		const http = { http: d.http, credentials: d.credentials };
+		const ci: CiReaders = {};
+		if (d.readCiEvents) ci.readCiEvents = d.readCiEvents;
+		if (d.readCiArtifact) ci.readCiArtifact = d.readCiArtifact;
+		const rail: RailReaders = {};
+		if (d.readRailEvents) rail.readRailEvents = d.readRailEvents;
+		const drivers: SubscriptionDriver[] = [
+			createOciDriver(http),
+			createGitDriver(http),
+			createPackageRegistryDriver(http),
+			createHttpIndexDriver(http),
+			createCiDriver(ci),
+			createRailDriver(rail),
+		];
+		return drivers;
+	};
 
-export { createGitDriver, fetchRequest, lsRefsRequest, treeDigest } from "./git.js";
-export { CI_PASSED, CI_RESULT_EVENT, ciOutputs, createCiDriver } from "./hobo-ci.js";
+export {
+	createGitDriver,
+	fetchRequest,
+	lsRefsRequest,
+	treeDigest,
+} from "./git.js";
+export {
+	CI_PASSED,
+	CI_RESULT_EVENT,
+	ciOutputs,
+	createCiDriver,
+} from "./hobo-ci.js";
 export { createRailDriver, railCoordinate } from "./hobo-rail.js";
 export { createHttpIndexDriver } from "./http-index.js";
 export {

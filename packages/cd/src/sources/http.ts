@@ -3,7 +3,11 @@
 // refusal. Rate limits (429, 503 with Retry-After, GitHub-style 403 with an
 // exhausted quota) become `source-rate-limited` with the server's delay so the
 // source backs off instead of hammering the registry.
-import type { HttpTransport, TransportMethod, TransportResponse } from "@hobo/core";
+import type {
+	HttpTransport,
+	TransportMethod,
+	TransportResponse,
+} from "@hobo/core";
 import type { CredentialResolver, Outcome } from "../ports.js";
 import { latin1Bytes } from "./json.js";
 import { rateLimited, refuse, SOURCE_REASON } from "./reasons.js";
@@ -23,7 +27,10 @@ export type SourceRequest = Readonly<{
 	accept?: readonly number[];
 }>;
 
-export function header(response: TransportResponse, name: string): string | undefined {
+export function header(
+	response: TransportResponse,
+	name: string,
+): string | undefined {
 	const wanted = name.toLowerCase();
 	for (const [key, value] of Object.entries(response.headers)) {
 		if (key.toLowerCase() === wanted) return value;
@@ -47,8 +54,11 @@ function retryAfter(response: TransportResponse, nowMs: number): number {
 
 function isRateLimit(response: TransportResponse): boolean {
 	if (response.status === 429) return true;
-	if (response.status === 503 && header(response, "retry-after") !== undefined) return true;
-	return response.status === 403 && header(response, "x-ratelimit-remaining") === "0";
+	if (response.status === 503 && header(response, "retry-after") !== undefined)
+		return true;
+	return (
+		response.status === 403 && header(response, "x-ratelimit-remaining") === "0"
+	);
 }
 
 /** Strip query and userinfo before a URL lands in a reason (records are secret-free). */
@@ -84,7 +94,11 @@ export async function fetchSource(
 			timeoutMs: SOURCE_HTTP_TIMEOUT_MS,
 			maxResponseBytes: request.maxResponseBytes ?? SOURCE_HTTP_MAX_BYTES,
 		};
-		response = await http(request.body === undefined ? outbound : { ...outbound, body: request.body });
+		response = await http(
+			request.body === undefined
+				? outbound
+				: { ...outbound, body: request.body },
+		);
 	} catch (error) {
 		return refuse(
 			SOURCE_REASON.unreachable,
@@ -93,9 +107,12 @@ export async function fetchSource(
 			where,
 		);
 	}
-	if (request.accept?.includes(response.status)) return { ok: true, value: response };
-	if (isRateLimit(response)) return rateLimited(where, retryAfter(response, nowMs));
-	if (response.status >= 200 && response.status < 300) return { ok: true, value: response };
+	if (request.accept?.includes(response.status))
+		return { ok: true, value: response };
+	if (isRateLimit(response))
+		return rateLimited(where, retryAfter(response, nowMs));
+	if (response.status >= 200 && response.status < 300)
+		return { ok: true, value: response };
 	if (response.status === 401 || response.status === 403) {
 		return refuse(
 			SOURCE_REASON.authFailed,
@@ -121,7 +138,10 @@ export async function fetchSource(
 }
 
 /** Decode a binary body; refuses a transport that is not byte-transparent. */
-export function bodyBytes(response: TransportResponse, where: string): Outcome<Uint8Array> {
+export function bodyBytes(
+	response: TransportResponse,
+	where: string,
+): Outcome<Uint8Array> {
 	const bytes = latin1Bytes(response.body);
 	if (bytes) return { ok: true, value: bytes };
 	return refuse(
@@ -164,9 +184,12 @@ export async function credentialHeaders(
 			ref,
 		);
 	}
-	if (secret.token !== undefined) return { ok: true, value: { authorization: `Bearer ${secret.token}` } };
+	if (secret.token !== undefined)
+		return { ok: true, value: { authorization: `Bearer ${secret.token}` } };
 	if (secret.username !== undefined && secret.password !== undefined) {
-		const basic = Buffer.from(`${secret.username}:${secret.password}`).toString("base64");
+		const basic = Buffer.from(`${secret.username}:${secret.password}`).toString(
+			"base64",
+		);
 		return { ok: true, value: { authorization: `Basic ${basic}` } };
 	}
 	return refuse(

@@ -8,7 +8,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchRequest, lsRefsRequest } from "../../../src/sources/drivers/git.js";
+import {
+	fetchRequest,
+	lsRefsRequest,
+} from "../../../src/sources/drivers/git.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = mkdtempSync(join(tmpdir(), "hobo-cd-git-fixture-"));
@@ -56,13 +59,25 @@ const infoRefs = Buffer.concat([
 	git(["upload-pack", "--http-backend-info-refs", "."]),
 ]);
 
-type Recorded = { method: string; url: string; body?: string; response: string };
+type Recorded = {
+	method: string;
+	url: string;
+	body?: string;
+	response: string;
+};
 const sets: Record<string, Recorded[]> = {};
 const commits: Record<string, string> = {};
 
-function record(name: string, extraFetches: ReadonlyArray<readonly [readonly string[], string]>): void {
+function record(
+	name: string,
+	extraFetches: ReadonlyArray<readonly [readonly string[], string]>,
+): void {
 	const exchanges: Recorded[] = [
-		{ method: "GET", url: `${BASE}/info/refs?service=git-upload-pack`, response: infoRefs.toString("base64") },
+		{
+			method: "GET",
+			url: `${BASE}/info/refs?service=git-upload-pack`,
+			response: infoRefs.toString("base64"),
+		},
 	];
 	for (const prefix of ["refs/heads/main", "refs/tags/"]) {
 		const body = lsRefsRequest(prefix, "sha1");
@@ -70,7 +85,9 @@ function record(name: string, extraFetches: ReadonlyArray<readonly [readonly str
 			method: "POST",
 			url: `${BASE}/git-upload-pack`,
 			body,
-			response: git(["upload-pack", "--stateless-rpc", "."], body).toString("base64"),
+			response: git(["upload-pack", "--stateless-rpc", "."], body).toString(
+				"base64",
+			),
 		});
 	}
 	for (const [wants, filter] of extraFetches) {
@@ -79,7 +96,9 @@ function record(name: string, extraFetches: ReadonlyArray<readonly [readonly str
 			method: "POST",
 			url: `${BASE}/git-upload-pack`,
 			body,
-			response: git(["upload-pack", "--stateless-rpc", "."], body).toString("base64"),
+			response: git(["upload-pack", "--stateless-rpc", "."], body).toString(
+				"base64",
+			),
 		});
 	}
 	sets[name] = exchanges;
@@ -116,5 +135,8 @@ record("t3", [
 	[[commits.c3], "blob:none"],
 ]);
 
-writeFileSync(join(here, "git.json"), `${JSON.stringify({ base: BASE, commits, sets }, null, "\t")}\n`);
+writeFileSync(
+	join(here, "git.json"),
+	`${JSON.stringify({ base: BASE, commits, sets }, null, "\t")}\n`,
+);
 process.stdout.write(`wrote ${join(here, "git.json")}\n`);

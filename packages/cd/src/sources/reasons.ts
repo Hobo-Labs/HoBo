@@ -29,7 +29,8 @@ export const SOURCE_REASON = Object.freeze({
 	unverifiedTrigger: UNVERIFIED_TRIGGER,
 } as const);
 
-export type SourceReasonCode = (typeof SOURCE_REASON)[keyof typeof SOURCE_REASON];
+export type SourceReasonCode =
+	(typeof SOURCE_REASON)[keyof typeof SOURCE_REASON];
 
 export function reason(
 	code: SourceReasonCode,
@@ -61,7 +62,9 @@ export function rateLimited(where: string, retryAfterMs: number): Refusal {
 	);
 }
 
-export function retryAfterMs(reasons: readonly ReasonRecord[]): number | undefined {
+export function retryAfterMs(
+	reasons: readonly ReasonRecord[],
+): number | undefined {
 	for (const item of reasons) {
 		if (item.code !== SOURCE_REASON.rateLimited) continue;
 		const match = RETRY_AFTER.exec(item.subject);

@@ -19,18 +19,30 @@ import {
 	SubscriptionKind,
 	type SubscriptionRecord,
 } from "../../_generated/cd_pb.js";
-import type { CdContext, CredentialResolver, Outcome, SubscriptionDriver } from "../../ports.js";
-import { bodyBytes, credentialHeaders, fetchSource, redactUrl, SOURCE_HTTP_MAX_BYTES, upstreamInvalid } from "../http.js";
+import type {
+	CdContext,
+	CredentialResolver,
+	Outcome,
+	SubscriptionDriver,
+} from "../../ports.js";
+import {
+	bodyBytes,
+	credentialHeaders,
+	fetchSource,
+	redactUrl,
+	SOURCE_HTTP_MAX_BYTES,
+	upstreamInvalid,
+} from "../http.js";
 import { field, isRecord, isText, parseJson, sha256Hex } from "../json.js";
 import { refuse, SOURCE_REASON } from "../reasons.js";
 import { type Candidate, discovered, selectCandidates } from "./common.js";
 import {
 	DELIM,
 	FLUSH,
+	fetchPackfile,
 	GitFormatError,
 	type GitObject,
 	type ObjectFormat,
-	fetchPackfile,
 	parseCapabilities,
 	parseCommit,
 	parseLsRefs,
@@ -79,13 +91,19 @@ export function treeDigest(
 	subscription: Pick<SubscriptionRecord, "includePaths" | "excludePaths">,
 	format: ObjectFormat,
 ): string {
-	if (subscription.includePaths.length === 0 && subscription.excludePaths.length === 0) {
+	if (
+		subscription.includePaths.length === 0 &&
+		subscription.excludePaths.length === 0
+	) {
 		return `sha256:${sha256Hex(`hobo.cd.git-tree/v1\nroot ${commit.tree}\n`)}`;
 	}
 	const lines = walkTree(objects, commit.tree, format)
 		.filter(
 			(file) =>
-				(subscription.includePaths.length === 0 || subscription.includePaths.some((prefix) => under(file.path, prefix))) &&
+				(subscription.includePaths.length === 0 ||
+					subscription.includePaths.some((prefix) =>
+						under(file.path, prefix),
+					)) &&
 				!subscription.excludePaths.some((prefix) => under(file.path, prefix)),
 		)
 		.map((file) => `${file.mode} ${file.oid} ${file.path}\n`)
@@ -107,7 +125,11 @@ export function lsRefsRequest(prefix: string, format: ObjectFormat): string {
 }
 
 /** The v2 request body for a shallow, filtered fetch of `wants`. */
-export function fetchRequest(wants: readonly string[], filter: string, format: ObjectFormat): string {
+export function fetchRequest(
+	wants: readonly string[],
+	filter: string,
+	format: ObjectFormat,
+): string {
 	return [
 		pktLine("command=fetch\n"),
 		pktLine(`agent=${GIT_AGENT}\n`),
@@ -140,14 +162,25 @@ function gitError(where: string, error: GitFormatError) {
 	return upstreamInvalid(where, error.message);
 }
 
-export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?: CredentialResolver }>): SubscriptionDriver {
-	async function open(subscription: SubscriptionRecord, ctx: CdContext): Promise<Outcome<Session>> {
+export function createGitDriver(
+	d: Readonly<{ http: HttpTransport; credentials?: CredentialResolver }>,
+): SubscriptionDriver {
+	async function open(
+		subscription: SubscriptionRecord,
+		ctx: CdContext,
+	): Promise<Outcome<Session>> {
 		const base = subscription.locator.replace(/\/+$/, "");
-		const auth = await credentialHeaders(d.credentials, subscription.credentialRef);
+		const auth = await credentialHeaders(
+			d.credentials,
+			subscription.credentialRef,
+		);
 		if (!auth.ok) return auth;
 		const response = await fetchSource(
 			d.http,
-			{ url: `${base}/info/refs?service=git-upload-pack`, headers: { ...auth.value, "git-protocol": "version=2" } },
+			{
+				url: `${base}/info/refs?service=git-upload-pack`,
+				headers: { ...auth.value, "git-protocol": "version=2" },
+			},
 			ctx.now(),
 		);
 		if (!response.ok) return response;
@@ -157,10 +190,16 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 		try {
 			advert = parseCapabilities(bytes.value);
 		} catch (error) {
-			return error instanceof GitFormatError ? gitError(redactUrl(base), error) : upstreamInvalid(redactUrl(base), "unreadable advertisement");
+			return error instanceof GitFormatError
+				? gitError(redactUrl(base), error)
+				: upstreamInvalid(redactUrl(base), "unreadable advertisement");
 		}
 		const fetch = advert.capabilities.get("fetch");
-		if (advert.version !== 2 || !advert.capabilities.has("ls-refs") || fetch === undefined) {
+		if (
+			advert.version !== 2 ||
+			!advert.capabilities.has("ls-refs") ||
+			fetch === undefined
+		) {
 			return refuse(
 				SOURCE_REASON.gitCapabilityMissing,
 				`${redactUrl(base)} does not speak Git protocol v2 (ls-refs and fetch)`,
@@ -168,11 +207,25 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 				redactUrl(base),
 			);
 		}
-		const format: ObjectFormat = advert.capabilities.get("object-format") === "sha256" ? "sha256" : "sha1";
-		return { ok: true, value: { base, headers: auth.value, format, fetchFeatures: new Set(fetch.split(" ")) } };
+		const format: ObjectFormat =
+			advert.capabilities.get("object-format") === "sha256" ? "sha256" : "sha1";
+		return {
+			ok: true,
+			value: {
+				base,
+				headers: auth.value,
+				format,
+				fetchFeatures: new Set(fetch.split(" ")),
+			},
+		};
 	}
 
-	async function post(session: Session, body: string, ctx: CdContext, maxResponseBytes?: number): Promise<Outcome<Uint8Array>> {
+	async function post(
+		session: Session,
+		body: string,
+		ctx: CdContext,
+		maxResponseBytes?: number,
+	): Promise<Outcome<Uint8Array>> {
 		const response = await fetchSource(
 			d.http,
 			{
@@ -195,7 +248,10 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 		ctx: CdContext,
 	): Promise<Outcome<ReadonlyMap<string, GitObject>>> {
 		const where = redactUrl(session.base);
-		if (!session.fetchFeatures.has("shallow") || !session.fetchFeatures.has("filter")) {
+		if (
+			!session.fetchFeatures.has("shallow") ||
+			!session.fetchFeatures.has("filter")
+		) {
 			return refuse(
 				SOURCE_REASON.gitCapabilityMissing,
 				`${where} does not advertise fetch shallow and filter`,
@@ -203,16 +259,30 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 				where,
 			);
 		}
-		const body = await post(session, fetchRequest(wants, withTrees ? "blob:none" : "tree:0", session.format), ctx, GIT_MAX_PACK_BYTES);
+		const body = await post(
+			session,
+			fetchRequest(wants, withTrees ? "blob:none" : "tree:0", session.format),
+			ctx,
+			GIT_MAX_PACK_BYTES,
+		);
 		if (!body.ok) return body;
 		try {
-			return { ok: true, value: readPack(fetchPackfile(body.value), session.format) };
+			return {
+				ok: true,
+				value: readPack(fetchPackfile(body.value), session.format),
+			};
 		} catch (error) {
-			return error instanceof GitFormatError ? gitError(where, error) : upstreamInvalid(where, "unreadable packfile");
+			return error instanceof GitFormatError
+				? gitError(where, error)
+				: upstreamInvalid(where, "unreadable packfile");
 		}
 	}
 
-	function artifactFor(subscription: SubscriptionRecord, oid: string, digest: string) {
+	function artifactFor(
+		subscription: SubscriptionRecord,
+		oid: string,
+		digest: string,
+	) {
 		return create(ArtifactRefSchema, {
 			name: subscription.artifactName || subscription.name,
 			kind: subscription.artifactKind || ArtifactKind.SOURCE_TREE,
@@ -227,37 +297,79 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 		async discover(input, ctx) {
 			const { subscription } = input;
 			if (!safeHttpsUrl(subscription.locator)) {
-				return refuse(SOURCE_REASON.invalid, "Git locator must be an https URL without credentials", "use https://host/owner/repo.git and a credentialRef", "locator");
+				return refuse(
+					SOURCE_REASON.invalid,
+					"Git locator must be an https URL without credentials",
+					"use https://host/owner/repo.git and a credentialRef",
+					"locator",
+				);
 			}
 			if (subscription.branch !== "" && !BRANCH.test(subscription.branch)) {
-				return refuse(SOURCE_REASON.invalid, `branch ${JSON.stringify(subscription.branch)} is not a valid ref name`, "name a branch such as main or release/1.x", "branch");
+				return refuse(
+					SOURCE_REASON.invalid,
+					`branch ${JSON.stringify(subscription.branch)} is not a valid ref name`,
+					"name a branch such as main or release/1.x",
+					"branch",
+				);
 			}
 			const session = await open(subscription, ctx);
 			if (!session.ok) return session;
 			const where = redactUrl(session.value.base);
-			const prefix = subscription.branch !== "" ? `refs/heads/${subscription.branch}` : "refs/tags/";
-			const listed = await post(session.value, lsRefsRequest(prefix, session.value.format), ctx);
+			const prefix =
+				subscription.branch !== ""
+					? `refs/heads/${subscription.branch}`
+					: "refs/tags/";
+			const listed = await post(
+				session.value,
+				lsRefsRequest(prefix, session.value.format),
+				ctx,
+			);
 			if (!listed.ok) return listed;
 			let refs: ReturnType<typeof parseLsRefs>;
 			try {
 				refs = parseLsRefs(listed.value);
 			} catch (error) {
-				return error instanceof GitFormatError ? gitError(where, error) : upstreamInvalid(where, "unreadable ls-refs");
+				return error instanceof GitFormatError
+					? gitError(where, error)
+					: upstreamInvalid(where, "unreadable ls-refs");
 			}
-			const withTrees = subscription.includePaths.length > 0 || subscription.excludePaths.length > 0;
+			const withTrees =
+				subscription.includePaths.length > 0 ||
+				subscription.excludePaths.length > 0;
 			const previous = parseGitCursor(input.cursor);
-			if (subscription.branch !== "") return discoverBranch(input, ctx, session.value, refs, previous, withTrees);
+			if (subscription.branch !== "")
+				return discoverBranch(
+					input,
+					ctx,
+					session.value,
+					refs,
+					previous,
+					withTrees,
+				);
 			// Tags: SemVer or lexical selection over tag names, newest N above the mark.
 			const tags = refs
 				.filter((ref) => ref.name.startsWith("refs/tags/"))
-				.map((ref) => ({ version: ref.name.slice("refs/tags/".length), oid: ref.peeled ?? ref.oid }));
+				.map((ref) => ({
+					version: ref.name.slice("refs/tags/".length),
+					oid: ref.peeled ?? ref.oid,
+				}));
 			const commitOf = new Map(tags.map((tag) => [tag.version, tag.oid]));
 			const picked = selectCandidates(
 				subscription,
-				tags.map((tag) => ({ version: tag.version, rank: tag.version, artifact: create(ArtifactRefSchema, {}) })),
-				previous.hw === undefined ? undefined : writeGitCursor({ hw: previous.hw }),
+				tags.map((tag) => ({
+					version: tag.version,
+					rank: tag.version,
+					artifact: create(ArtifactRefSchema, {}),
+				})),
+				previous.hw === undefined
+					? undefined
+					: writeGitCursor({ hw: previous.hw }),
 			);
-			if (picked.selected.length === 0) return { ok: true, value: { artifacts: [], cursor: writeGitCursor(previous) } };
+			if (picked.selected.length === 0)
+				return {
+					ok: true,
+					value: { artifacts: [], cursor: writeGitCursor(previous) },
+				};
 			const wants = picked.selected.flatMap((item) => {
 				const oid = commitOf.get(item.version);
 				return oid ? [oid] : [];
@@ -268,18 +380,41 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 			for (const item of picked.selected) {
 				const oid = commitOf.get(item.version) ?? "";
 				const object = objects.value.get(oid);
-				if (object?.type !== "commit") return upstreamInvalid(where, `tag ${item.version} does not point at a fetched commit`);
+				if (object?.type !== "commit")
+					return upstreamInvalid(
+						where,
+						`tag ${item.version} does not point at a fetched commit`,
+					);
 				try {
 					const commit = parseCommit(object.data);
-					const digest = treeDigest(objects.value, commit, subscription, session.value.format);
-					const candidate: Candidate = { ...item, artifact: artifactFor(subscription, oid, digest), commit: oid };
+					const digest = treeDigest(
+						objects.value,
+						commit,
+						subscription,
+						session.value.format,
+					);
+					const candidate: Candidate = {
+						...item,
+						artifact: artifactFor(subscription, oid, digest),
+						commit: oid,
+					};
 					artifacts.push(discovered(input, candidate, ctx));
 				} catch (error) {
-					return error instanceof GitFormatError ? gitError(where, error) : upstreamInvalid(where, "unreadable commit");
+					return error instanceof GitFormatError
+						? gitError(where, error)
+						: upstreamInvalid(where, "unreadable commit");
 				}
 			}
 			const last = picked.selected.at(-1);
-			return { ok: true, value: { artifacts, cursor: writeGitCursor(last ? { ...previous, hw: last.rank } : previous) } };
+			return {
+				ok: true,
+				value: {
+					artifacts,
+					cursor: writeGitCursor(
+						last ? { ...previous, hw: last.rank } : previous,
+					),
+				},
+			};
 		},
 	};
 
@@ -290,45 +425,89 @@ export function createGitDriver(d: Readonly<{ http: HttpTransport; credentials?:
 		refs: ReturnType<typeof parseLsRefs>,
 		previous: GitCursor,
 		withTrees: boolean,
-	): Promise<Outcome<Readonly<{ artifacts: readonly DiscoveredArtifactRecord[]; cursor: string }>>> {
+	): Promise<
+		Outcome<
+			Readonly<{
+				artifacts: readonly DiscoveredArtifactRecord[];
+				cursor: string;
+			}>
+		>
+	> {
 		const { subscription } = input;
 		const where = redactUrl(session.base);
-		const head = refs.find((ref) => ref.name === `refs/heads/${subscription.branch}`);
+		const head = refs.find(
+			(ref) => ref.name === `refs/heads/${subscription.branch}`,
+		);
 		if (!head) {
-			return refuse(SOURCE_REASON.notFound, `${where} has no branch ${subscription.branch}`, "fix the subscription branch", subscription.branch);
+			return refuse(
+				SOURCE_REASON.notFound,
+				`${where} has no branch ${subscription.branch}`,
+				"fix the subscription branch",
+				subscription.branch,
+			);
 		}
-		if (head.oid === previous.at) return { ok: true, value: { artifacts: [], cursor: writeGitCursor(previous) } };
+		if (head.oid === previous.at)
+			return {
+				ok: true,
+				value: { artifacts: [], cursor: writeGitCursor(previous) },
+			};
 		const objects = await fetchObjects(session, [head.oid], withTrees, ctx);
 		if (!objects.ok) return objects;
 		const object = objects.value.get(head.oid);
-		if (object?.type !== "commit") return upstreamInvalid(where, `branch head ${head.oid} was not fetched`);
+		if (object?.type !== "commit")
+			return upstreamInvalid(where, `branch head ${head.oid} was not fetched`);
 		try {
 			const commit = parseCommit(object.data);
 			// Forward-only: a head older than the mark (a force-push backwards) is not discovered.
 			const rank = `${String(commit.committedAtMs).padStart(15, "0")}\u0000${head.oid}`;
 			if (previous.hw !== undefined && rank <= previous.hw) {
-				return { ok: true, value: { artifacts: [], cursor: writeGitCursor({ ...previous, at: head.oid }) } };
+				return {
+					ok: true,
+					value: {
+						artifacts: [],
+						cursor: writeGitCursor({ ...previous, at: head.oid }),
+					},
+				};
 			}
-			const digest = treeDigest(objects.value, commit, subscription, session.format);
+			const digest = treeDigest(
+				objects.value,
+				commit,
+				subscription,
+				session.format,
+			);
 			const cursor = writeGitCursor({ hw: rank, at: head.oid, tree: digest });
-			if (digest === previous.tree) return { ok: true, value: { artifacts: [], cursor } };
+			if (digest === previous.tree)
+				return { ok: true, value: { artifacts: [], cursor } };
 			const candidate: Candidate = {
 				version: head.oid,
 				rank,
 				artifact: artifactFor(subscription, head.oid, digest),
 				commit: head.oid,
 			};
-			return { ok: true, value: { artifacts: [discovered(input, candidate, ctx)], cursor } };
+			return {
+				ok: true,
+				value: { artifacts: [discovered(input, candidate, ctx)], cursor },
+			};
 		} catch (error) {
-			return error instanceof GitFormatError ? gitError(where, error) : upstreamInvalid(where, "unreadable commit");
+			return error instanceof GitFormatError
+				? gitError(where, error)
+				: upstreamInvalid(where, "unreadable commit");
 		}
 	}
 }
 
 /** Selections a Git subscription accepts: tags by SemVer/lexical, a branch by newest commit. */
-export function gitSelectionAllowed(subscription: Pick<SubscriptionRecord, "branch" | "selection">): boolean {
+export function gitSelectionAllowed(
+	subscription: Pick<SubscriptionRecord, "branch" | "selection">,
+): boolean {
 	if (subscription.branch !== "") {
-		return subscription.selection === SelectionStrategy.NEWEST_COMMIT || subscription.selection === SelectionStrategy.UNSPECIFIED;
+		return (
+			subscription.selection === SelectionStrategy.NEWEST_COMMIT ||
+			subscription.selection === SelectionStrategy.UNSPECIFIED
+		);
 	}
-	return subscription.selection !== SelectionStrategy.NEWEST_BUILD && subscription.selection !== SelectionStrategy.NEWEST_COMMIT;
+	return (
+		subscription.selection !== SelectionStrategy.NEWEST_BUILD &&
+		subscription.selection !== SelectionStrategy.NEWEST_COMMIT
+	);
 }

@@ -12,7 +12,7 @@ import {
 } from "../../_generated/cd_pb.js";
 import { CD_DEFAULTS } from "../../events.js";
 import type { CdContext, Outcome } from "../../ports.js";
-import { field, isText, isRecord, parseJson } from "../json.js";
+import { field, isRecord, isText, parseJson } from "../json.js";
 import { selectNewest, versionAllowed } from "../selection.js";
 
 export type Candidate = Readonly<{
@@ -46,14 +46,21 @@ export function writeCursor(cursor: DriverCursor): string {
 }
 
 export function discoveryLimit(subscription: SubscriptionRecord): number {
-	return subscription.discoveryLimit > 0 ? subscription.discoveryLimit : CD_DEFAULTS.sourceDiscoveryLimit;
+	return subscription.discoveryLimit > 0
+		? subscription.discoveryLimit
+		: CD_DEFAULTS.sourceDiscoveryLimit;
 }
 
 function rankStrategy(selection: SelectionStrategy): SelectionStrategy {
-	return selection === SelectionStrategy.SEMVER ? SelectionStrategy.SEMVER : SelectionStrategy.LEXICAL;
+	return selection === SelectionStrategy.SEMVER
+		? SelectionStrategy.SEMVER
+		: SelectionStrategy.LEXICAL;
 }
 
-export type Selection = Readonly<{ selected: readonly Candidate[]; cursor: string }>;
+export type Selection = Readonly<{
+	selected: readonly Candidate[];
+	cursor: string;
+}>;
 
 /** Filter, then pick the newest `limit` strictly above the cursor's mark, oldest first. */
 export function selectCandidates(
@@ -62,11 +69,19 @@ export function selectCandidates(
 	cursor: string | undefined,
 ): Selection {
 	const previous = parseCursor(cursor);
-	const allowed = candidates.filter((item) => versionAllowed(subscription, item.version).ok);
+	const allowed = candidates.filter(
+		(item) => versionAllowed(subscription, item.version).ok,
+	);
 	const byRank = new Map<string, Candidate>();
-	for (const item of allowed) if (!byRank.has(item.rank)) byRank.set(item.rank, item);
+	for (const item of allowed)
+		if (!byRank.has(item.rank)) byRank.set(item.rank, item);
 	const strategy = rankStrategy(subscription.selection);
-	const ranks = selectNewest(strategy, [...byRank.keys()], discoveryLimit(subscription), previous.hw);
+	const ranks = selectNewest(
+		strategy,
+		[...byRank.keys()],
+		discoveryLimit(subscription),
+		previous.hw,
+	);
 	const selected = ranks.flatMap((rank) => {
 		const found = byRank.get(rank);
 		return found ? [found] : [];
@@ -95,10 +110,16 @@ export function discovered(
 }
 
 export function toDiscovery(
-	input: Readonly<{ source: string; subscription: SubscriptionRecord; cursor?: string }>,
+	input: Readonly<{
+		source: string;
+		subscription: SubscriptionRecord;
+		cursor?: string;
+	}>,
 	candidates: readonly Candidate[],
 	ctx: CdContext,
-): Outcome<Readonly<{ artifacts: readonly DiscoveredArtifactRecord[]; cursor: string }>> {
+): Outcome<
+	Readonly<{ artifacts: readonly DiscoveredArtifactRecord[]; cursor: string }>
+> {
 	const picked = selectCandidates(input.subscription, candidates, input.cursor);
 	return {
 		ok: true,

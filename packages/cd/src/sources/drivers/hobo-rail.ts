@@ -12,7 +12,13 @@ import {
 import type { RailEventReader, SubscriptionDriver } from "../../ports.js";
 import { isDigest } from "../json.js";
 import { refuse, SOURCE_REASON } from "../reasons.js";
-import { type Candidate, discovered, discoveryLimit, parseCursor, writeCursor } from "./common.js";
+import {
+	type Candidate,
+	discovered,
+	discoveryLimit,
+	parseCursor,
+	writeCursor,
+} from "./common.js";
 
 /** Upper bound of Rail events scanned per poll; the cursor resumes after it. */
 export const RAIL_SCAN_LIMIT = 10_000;
@@ -21,7 +27,9 @@ export function railCoordinate(railId: string, railDigest: string): string {
 	return `rail:${railId}@${railDigest}`;
 }
 
-export function createRailDriver(d: Readonly<{ readRailEvents?: RailEventReader }>): SubscriptionDriver {
+export function createRailDriver(
+	d: Readonly<{ readRailEvents?: RailEventReader }>,
+): SubscriptionDriver {
 	return {
 		kind: SubscriptionKind.HOBO_RAIL,
 		async discover(input, ctx) {
@@ -45,7 +53,8 @@ export function createRailDriver(d: Readonly<{ readRailEvents?: RailEventReader 
 				at = event.cursor;
 				if (event.railId === railId && isDigest(event.railDigest)) {
 					if (event.status === "retired") retired.add(event.railDigest);
-					else if (!approved.has(event.railDigest)) approved.set(event.railDigest, event.cursor);
+					else if (!approved.has(event.railDigest))
+						approved.set(event.railDigest, event.cursor);
 				}
 				if (scanned >= RAIL_SCAN_LIMIT) break;
 			}
@@ -61,11 +70,19 @@ export function createRailDriver(d: Readonly<{ readRailEvents?: RailEventReader 
 						coordinate: railCoordinate(railId, digest),
 					}),
 				}));
-			const limited = candidates.slice(Math.max(0, candidates.length - discoveryLimit(input.subscription)));
-			const cursor = at === undefined ? writeCursor(previous) : writeCursor({ ...previous, at });
+			const limited = candidates.slice(
+				Math.max(0, candidates.length - discoveryLimit(input.subscription)),
+			);
+			const cursor =
+				at === undefined
+					? writeCursor(previous)
+					: writeCursor({ ...previous, at });
 			return {
 				ok: true,
-				value: { artifacts: limited.map((item) => discovered(input, item, ctx)), cursor },
+				value: {
+					artifacts: limited.map((item) => discovered(input, item, ctx)),
+					cursor,
+				},
 			};
 		},
 	};
