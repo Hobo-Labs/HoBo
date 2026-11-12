@@ -63,6 +63,7 @@ import {
 	loadMeshIdentity,
 	type MeshJournal,
 	memoryRequestForJob,
+	mergeHeldPruneWitness,
 	meshReliabilityJournal,
 	meshReliabilityResetToken,
 	meshSettingsFromEnv,
@@ -71,6 +72,7 @@ import {
 	readHostHealthSample,
 	readHostMemory,
 	readHostResourcePressureSample,
+	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
 	resolvedStorageReserve,
 	resolveGitMirrorRoot,
@@ -331,6 +333,7 @@ const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	availableMemoryMb: readAvailableMemoryMb,
 	volatilityMb: capacityVolatilityMb,
 	hostPressure: hostPressureSample,
+	hostCores: () => cpus().length,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -1381,7 +1384,33 @@ try {
 		const inboxDrainIntervalMs = Math.min(intervalMs, 5_000);
 		runInboxDrain();
 		inboxDrainTimer = setInterval(runInboxDrain, inboxDrainIntervalMs);
-		runJobPoll();
+		void (async () => {
+			if (heldJobPruner) {
+				const storeWitness = await refreshHeldPruneWitnessFromStore({
+					store,
+					github,
+				});
+				if (
+					storeWitness.terminalRuns.length > 0 ||
+					storeWitness.terminalJobs.length > 0
+				) {
+					heldJobPruner.observePollWitness(
+						mergeHeldPruneWitness(
+							{ terminalRuns: [], terminalJobs: [] },
+							storeWitness,
+						),
+					);
+					const pruned = await heldJobPruner.maybePrune(true);
+					if (pruned > 0) void runTick().catch(() => undefined);
+				}
+			}
+			runJobPoll();
+		})().catch((error) => {
+			log("hobo_ci_held_job_startup_prune_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+			runJobPoll();
+		});
 		jobPollTimer = setInterval(() => {
 			runJobPoll();
 			runOrphanJobReconcile();

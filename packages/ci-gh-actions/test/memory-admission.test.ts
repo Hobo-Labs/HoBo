@@ -549,6 +549,41 @@ describe("worker memory admission", () => {
 		);
 	});
 
+	it("blocks standard trunk admission under CPU contention and logs headroom fields", () => {
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(16_384, 3), {
+			log,
+			hostCores: () => 4,
+			hostPressure: () => ({
+				atMs: 0,
+				loadPerCpu: 1.1,
+			}),
+			availableMemoryMb: () => 8_000,
+		});
+		const active = [
+			lease("gate", 4_096, "standard"),
+			lease("shard0", 4_096, "standard"),
+		];
+		expect(
+			admission.admit({
+				jobId: 3,
+				memoryClass: "standard",
+				memoryMb: 4_096,
+				rank: 1,
+				activeLeases: active,
+				generalLeaseIds: new Set(["gate", "shard0"]),
+			}),
+		).toMatchObject({ admitted: false, reason: "cpu-contention" });
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				reason: "cpu-contention",
+				cpuCores: 4,
+				cpuRequest: 4,
+			}),
+		);
+	});
+
 	it("blocks admission when host PSI reports memory pressure", () => {
 		const log = vi.fn();
 		const admission = createWorkerMemoryAdmission(config(16_384), {

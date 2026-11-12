@@ -163,7 +163,9 @@ export {
 	createHeldJobPruner,
 	type HeldJobPollWitness,
 	type HeldJobPruneReason,
+	mergeHeldPruneWitness,
 	pruneHeldJobs,
+	refreshHeldPruneWitnessFromStore,
 } from "./isolated-worker/held-job-prune.js";
 export {
 	classifyHostHealth,
