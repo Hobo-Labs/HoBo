@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
-import { type JsonObject, parseJsonObject } from "../src/json.js";
+import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
 // `hobo ci deploy` against the REAL relay declaration
@@ -21,6 +21,7 @@ import type { VercelFetch } from "../src/vercel-client.js";
 
 const RELAY_DIR = fileURLToPath(new URL("../../ci-vercel/", import.meta.url));
 const TOKEN = "synthetic-token-0123";
+/** Pact corpus uses `team_hobo`; override the committed binding team in tests. */
 const TEAM = "team_hobo";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
@@ -105,10 +106,14 @@ async function deploy(
 			}),
 		},
 	});
+	const teamOverride = args.includes("--team")
+		? []
+		: (["--team", TEAM] as const);
 	const result = await cli.run([
 		"ci",
 		"deploy",
 		...args,
+		...teamOverride,
 		"--cwd",
 		options.cwd ?? RELAY_DIR,
 		...(options.json === false ? [] : ["--json"]),
@@ -190,7 +195,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(ran.data.plan).toEqual(fixture("relay-production-own-scope"));
 		expect(ran.data.plan).toMatchObject({
 			target: "production",
-			scope: "token-default",
+			scope: TEAM,
 			createMissingProject: true,
 			placement: {
 				yard: "hobo-ci-relay",
@@ -270,19 +275,41 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		);
 	});
 
-	it("asks for the owner's ids a production binding needs, by name", async () => {
+	it("fills production Infisical coordinates from deploy/secret-store.binding.json when present", async () => {
+		const binding = parseJsonObject(
+			readFileSync(
+				new URL(
+					"../../ci-vercel/deploy/secret-store.binding.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		);
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
-			[...RELAY, "--target", "production", "--dry-run"],
+			[...RELAY, "--target", "production", "--sha", SHA, "--dry-run"],
 			{ fetch },
 		);
-		expect(ran.exitCode).toBe(2);
-		expect(ran.envelope).toMatchObject({
-			code: "HOBO_CLI_USAGE",
-			message: expect.stringContaining(
-				"Camp hobo-ci-relay/production needs --set INFISICAL_IDENTITY_ID=<value> --set INFISICAL_PROJECT_ID=<value> --set INFISICAL_SITE_URL=<value>",
-			),
-		});
+		expect(ran.exitCode).toBe(0);
+		const plan = isJsonObject(ran.data.plan) ? ran.data.plan : {};
+		const rawSettings = plan.settings;
+		const settings = Array.isArray(rawSettings) ? rawSettings : [];
+		expect(settings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					key: "INFISICAL_PROJECT_ID",
+					value: binding.projectId,
+				}),
+				expect.objectContaining({
+					key: "INFISICAL_IDENTITY_ID",
+					value: binding.relayIdentityId,
+				}),
+				expect.objectContaining({
+					key: "INFISICAL_SITE_URL",
+					value: binding.endpoint,
+				}),
+			]),
+		);
 		expect(sent).toEqual([]);
 	});
 

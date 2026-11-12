@@ -157,7 +157,7 @@ the box and on the rest of the mesh, and when the record was written. No
 workflow uses it. The **Route runners** job no longer tries to: judging raw
 capacity in a workflow repeats, outside the relay and its budget, the decision
 this table already is
-([finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
+([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
