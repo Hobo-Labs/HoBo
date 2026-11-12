@@ -39,7 +39,7 @@ describe("main_gate_finish workspace prerequisites", () => {
 		);
 	});
 
-	it("accepts skipped workspace shards only when the plan succeeded with shards=[]", () => {
+	it("passes finish when the plan emitted no shards (skipped or empty-matrix failure)", () => {
 		type Case = Readonly<{
 			plan: string;
 			shards: string;
@@ -48,11 +48,20 @@ describe("main_gate_finish workspace prerequisites", () => {
 		}>;
 		const cases: Case[] = [
 			{ plan: "success", shards: "[]", workspace: "skipped", ok: true },
+			{
+				plan: "success",
+				shards: "",
+				workspace: "failure",
+				ok: true,
+			},
 			{ plan: "success", shards: "[0]", workspace: "success", ok: true },
+			{ plan: "failure", shards: "[]", workspace: "skipped", ok: false },
 			{ plan: "failure", shards: "", workspace: "skipped", ok: false },
-			{ plan: "cancelled", shards: "", workspace: "skipped", ok: false },
+			{ plan: "cancelled", shards: "[]", workspace: "skipped", ok: false },
+			{ plan: "success", shards: "[]", workspace: "skipped", ok: true },
+			{ plan: "success", shards: "", workspace: "skipped", ok: true },
 			{ plan: "success", shards: "[0]", workspace: "skipped", ok: false },
-			{ plan: "success", shards: "[]", workspace: "failure", ok: false },
+			{ plan: "success", shards: "[]", workspace: "failure", ok: true },
 		];
 		for (const entry of cases) {
 			const run = spawnSync("bash", ["-c", script], {

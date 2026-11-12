@@ -65,4 +65,12 @@ describe("main full gate workspace sharding", () => {
 		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
 	});
+
+	it("skips workspace shard jobs when the plan emits no shards", () => {
+		const shardStart = workflow.indexOf("  main_workspace_tests:");
+		const finishStart = workflow.indexOf("  main_gate_finish:", shardStart);
+		const block = workflow.slice(shardStart, finishStart);
+		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != '\[\]'/u);
+		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != ''/u);
+	});
 });
