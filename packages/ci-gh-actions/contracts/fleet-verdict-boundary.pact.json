@@ -1,0 +1,403 @@
+{
+  "consumer": {
+    "name": "HoboCiRunnerRoutingAndFleetReporter"
+  },
+  "provider": {
+    "name": "HoboCiRelayFleetVerdictApi"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "consumerFixtures": {
+      "tokens": {
+        "tenant": "control-tenant-token-with-at-least-32-characters",
+        "neighbor": "control-neighbor-token-with-at-least-32-characters",
+        "readonly": "control-readonly-token-with-at-least-32-characters"
+      },
+      "now": "2026-10-27T00:00:00Z",
+      "configuration": {
+        "accounts": [
+          {
+            "id": "tenant",
+            "budgetMicros": 1000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          {
+            "id": "neighbor",
+            "budgetMicros": 2000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          }
+        ],
+        "connections": [
+          {
+            "accountId": "tenant",
+            "repository": "Hobo-Labs/HoBo",
+            "repositoryId": 101,
+            "installationId": 5,
+            "bridgeWorkflow": "host.yml",
+            "bridgeSha": "0123456789abcdef0123456789abcdef01234567",
+            "runnerGroupId": 1,
+            "allowedEvents": [
+              "push"
+            ],
+            "allowedRefs": [
+              "refs/heads/main"
+            ],
+            "trustedRepositoryAcknowledged": true,
+            "bridgeRef": "hobo-ci-v1",
+            "dispatcherActorId": 123
+          }
+        ]
+      }
+    }
+  },
+  "interactions": [
+    {
+      "description": "answer a repository with no verdict as blocking nothing, to anyone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {}
+        }
+      }
+    },
+    {
+      "description": "answer a repository the relay has never heard of the same way",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/acme/unknown",
+        "headers": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "acme/unknown",
+          "blocked": {}
+        }
+      }
+    },
+    {
+      "description": "refuse a path that names no repository",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/hobo-labs",
+        "headers": {}
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "not found"
+        }
+      }
+    },
+    {
+      "description": "refuse a report without account authentication",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "blocked": {
+            "hobo-trunk": {
+              "reason": "no-node"
+            },
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account authentication required"
+        }
+      }
+    },
+    {
+      "description": "refuse a report from a credential that may only read",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-readonly-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "blocked": {
+            "hobo-trunk": {
+              "reason": "no-node"
+            },
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account scope required"
+        }
+      }
+    },
+    {
+      "description": "refuse a report for a repository the account is not connected to",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "blocked": {
+            "hobo-trunk": {
+              "reason": "no-node"
+            },
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "not found"
+        }
+      }
+    },
+    {
+      "description": "refuse a report with a reason the record does not have",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "busy"
+            }
+          },
+          "ttlSeconds": 180
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "invalid fleet verdict report"
+        }
+      }
+    },
+    {
+      "description": "refuse a report that would stand longer than five minutes",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "no-node"
+            }
+          },
+          "ttlSeconds": 86400
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "invalid fleet verdict report"
+        }
+      }
+    },
+    {
+      "description": "keep a report from the connected account and answer the verdict it stamped",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "blocked": {
+            "hobo-trunk": {
+              "reason": "no-node"
+            },
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            },
+            "hobo-trunk": {
+              "reason": "no-node"
+            }
+          },
+          "observedAt": "2026-10-27T00:00:00.000Z",
+          "expiresAt": "2026-10-27T00:03:00.000Z"
+        }
+      }
+    },
+    {
+      "description": "answer the standing verdict to anyone, whatever the path's case",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            },
+            "hobo-trunk": {
+              "reason": "no-node"
+            }
+          },
+          "observedAt": "2026-10-27T00:00:00.000Z",
+          "expiresAt": "2026-10-27T00:03:00.000Z"
+        }
+      }
+    },
+    {
+      "description": "refuse any other method",
+      "request": {
+        "method": "POST",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        }
+      },
+      "response": {
+        "status": 405,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "method not allowed"
+        }
+      }
+    },
+    {
+      "description": "clear the verdict when the report blocks nothing",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "ttlSeconds": 60
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {}
+        }
+      }
+    },
+    {
+      "description": "answer a cleared verdict as blocking nothing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "headers": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {}
+        }
+      }
+    }
+  ]
+}
