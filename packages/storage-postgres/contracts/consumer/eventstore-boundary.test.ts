@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { isJsonObject, isJsonString } from "../../src/json.js";
+import { loadPact } from "../pact.js";
 
 /**
  * Consumer side of eventstore-boundary.pact.json. The consumer is the CD
@@ -12,19 +11,7 @@ import { describe, expect, it } from "vitest";
  * expects is one it can classify, and that successful responses carry
  * u64-safe decimal strings.
  */
-const here = dirname(fileURLToPath(import.meta.url));
-const pact = JSON.parse(
-	readFileSync(join(here, "..", "eventstore-boundary.pact.json"), "utf8"),
-) as {
-	consumer: { name: string };
-	provider: { name: string };
-	interactions: {
-		description: string;
-		providerState: string;
-		request: { method: string };
-		response: Record<string, unknown> & { error?: { code: string } };
-	}[];
-};
+const pact = loadPact();
 
 type Classification = "lost-lease" | "retry" | "regression" | "unavailable";
 
@@ -44,15 +31,17 @@ function classify(code: string): Classification {
 
 describe("eventstore boundary — consumer expectations", () => {
 	it("names the consumer and provider of this boundary", () => {
-		expect(pact.consumer.name).toBe("hobo-cd-reconciler");
-		expect(pact.provider.name).toBe("hobo-storage-postgres");
+		expect(pact.consumer).toBe("hobo-cd-reconciler");
+		expect(pact.provider).toBe("hobo-storage-postgres");
 		expect(pact.interactions.length).toBeGreaterThanOrEqual(8);
 	});
 
 	it("expects only failure codes the reconciler classifies as something other than an outage", () => {
 		for (const interaction of pact.interactions) {
-			const code = interaction.response.error?.code;
-			if (code === undefined) continue;
+			const error = interaction.response.error;
+			if (error === undefined) continue;
+			expect(isJsonObject(error) && isJsonString(error.code)).toBe(true);
+			const code = isJsonObject(error) ? String(error.code) : "";
 			expect(classify(code), interaction.description).not.toBe("unavailable");
 		}
 	});
@@ -68,7 +57,9 @@ describe("eventstore boundary — consumer expectations", () => {
 
 	it("covers every method the reconciler calls with at least one interaction", () => {
 		const methods = new Set(
-			pact.interactions.map((interaction) => interaction.request.method),
+			pact.interactions.map((interaction) =>
+				String(interaction.request.method),
+			),
 		);
 		expect([...methods].sort()).toEqual([
 			"append",

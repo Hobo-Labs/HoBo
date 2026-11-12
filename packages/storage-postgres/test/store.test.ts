@@ -254,10 +254,7 @@ describeLive(
 			});
 			expect(retry.appended).toHaveLength(0);
 			expect(retry.effects.every((receipt) => receipt.deduped)).toBe(true);
-			const [queue] = await adminQuery<{
-				count: string;
-				created_position: string;
-			}>(
+			const [queue] = await adminQuery(
 				`SELECT count(*)::text AS count, max(created_position)::text AS created_position FROM "${store.schema}".queue_messages`,
 			);
 			expect(queue).toEqual({ count: "2", created_position: "1" });
@@ -429,7 +426,7 @@ describeLive(
 				{ ...OPTS, expectedSeq: 0 },
 			);
 			expect(result.appended[0]?.ts).toBe("2030-01-01T00:00:00.000Z");
-			const [row] = await adminQuery<{ created_at: string }>(
+			const [row] = await adminQuery(
 				`SELECT created_at FROM "${store.schema}".streams`,
 			);
 			expect(row?.created_at).toBe("2030-01-01T00:00:00.000Z");

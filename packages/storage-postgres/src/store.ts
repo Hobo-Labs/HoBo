@@ -17,6 +17,7 @@ import {
 	FENCING_COMPAT,
 	type FoldHandlers,
 	type FoldResult,
+	type JsonValue,
 	MissingFenceError,
 	OptimisticSequenceConflictError,
 	type PositionedEvent,
@@ -46,6 +47,7 @@ import {
 } from "./errors.js";
 import { notifyChannel, quoteSchema, type SchemaName } from "./identifiers.js";
 import { eventIdFor } from "./ids.js";
+import { asError, isJsonNumber, isJsonString, jsonField } from "./json.js";
 import { type MigrationReport, migrateSchema } from "./migrate.js";
 import { SCHEMA_VERSION } from "./migrations/index.js";
 import {
@@ -66,6 +68,7 @@ import {
 	type PgListenerLike,
 	type PgPoolLike,
 	type PgRow,
+	text,
 } from "./pg.js";
 import {
 	decodeJsonColumn,
@@ -185,14 +188,6 @@ function cloneJson<T>(value: T): T {
 	return structuredClone(value);
 }
 
-function isError(value: unknown): value is Error {
-	return value instanceof Error;
-}
-
-function asError(value: unknown): Error {
-	return isError(value) ? value : new Error(String(value));
-}
-
 /**
  * Create a PostgreSQL-backed DurableEventStore.
  *
@@ -300,7 +295,7 @@ export function createPostgresEventStore(
 		if (readyPromise === undefined) {
 			const attempt = initialize();
 			readyPromise = attempt;
-			attempt.catch((error: unknown) => {
+			attempt.catch((error) => {
 				countError(asError(error));
 				// Retry only transient failures; drift, schema-ahead and old
 				// servers stay refused for the life of this store.
@@ -420,7 +415,7 @@ export function createPostgresEventStore(
 			await client.connect();
 			await client.query(`LISTEN "${notifyChannel(config.schema)}"`);
 		})();
-		listening.catch((error: unknown) => {
+		listening.catch((error) => {
 			countError(translatePgError(asError(error)));
 			if (listener === client) {
 				listener = undefined;
@@ -450,7 +445,7 @@ export function createPostgresEventStore(
 			liveCursor = earliest !== undefined && earliest < head ? earliest : head;
 			await startListener().catch(() => undefined);
 		})();
-		liveStart.catch((error: unknown) => countError(asError(error)));
+		liveStart.catch((error) => countError(asError(error)));
 	}
 
 	async function pumpOnce(): Promise<void> {
@@ -679,7 +674,7 @@ export function createPostgresEventStore(
 			);
 			for (const row of found.rows) {
 				const key = row.idempotency_key;
-				if (typeof key === "string") committed.set(key, rowToEnvelope(row));
+				if (isJsonString(key)) committed.set(key, rowToEnvelope(row));
 			}
 		}
 		const deduped: EventEnvelope[] = [];
@@ -947,7 +942,7 @@ export function createPostgresEventStore(
 
 	async function snapshot(
 		streamId: string,
-		state: unknown,
+		state: JsonValue,
 		seq: number,
 	): Promise<SnapshotRecord> {
 		const id = requireNonEmpty(streamId, "streamId");
@@ -1014,7 +1009,7 @@ export function createPostgresEventStore(
 				streamId: id,
 				seq: int4(row, "seq"),
 				state,
-				savedAt: String(row.saved_at),
+				savedAt: text(row, "saved_at"),
 			});
 		});
 	}
@@ -1025,13 +1020,9 @@ export function createPostgresEventStore(
 		cause: Error,
 	): Promise<EventEnvelope> {
 		for await (const candidate of readStream(streamId, 1)) {
-			const data = candidate.data;
 			if (
 				candidate.type.endsWith(".Quarantined") &&
-				data !== null &&
-				typeof data === "object" &&
-				!Array.isArray(data) &&
-				(data as { offendingSeq?: unknown }).offendingSeq === event.seq
+				jsonField(candidate.data, "offendingSeq") === event.seq
 			) {
 				return candidate;
 			}
@@ -1042,13 +1033,14 @@ export function createPostgresEventStore(
 			actor: { kind: "system", id: "storage-postgres" },
 			tenant: event.tenant,
 			causationId: event.id,
-			...(event.correlationId !== undefined
-				? { correlationId: event.correlationId }
-				: {}),
-			...(head !== undefined && head.ownerEpoch > 0n
-				? { fenceToken: head.ownerEpoch }
-				: {}),
 		};
+		if (event.correlationId !== undefined) {
+			appendOptions.correlationId = event.correlationId;
+		}
+		// Quarantine must not bypass fencing: continue at the stream's epoch.
+		if (head !== undefined && head.ownerEpoch > 0n) {
+			appendOptions.fenceToken = head.ownerEpoch;
+		}
 		const aggregate = event.type.split(".")[0] ?? "event";
 		const result = await commit({
 			streamId,
@@ -1094,16 +1086,9 @@ export function createPostgresEventStore(
 		for await (const event of readStream(id, 1)) events.push(event);
 		const alreadyQuarantined = new Set<number>();
 		for (const event of events) {
-			const data = event.data;
-			if (
-				event.type.endsWith(".Quarantined") &&
-				data !== null &&
-				typeof data === "object" &&
-				!Array.isArray(data)
-			) {
-				const offending = (data as { offendingSeq?: unknown }).offendingSeq;
-				if (typeof offending === "number") alreadyQuarantined.add(offending);
-			}
+			if (!event.type.endsWith(".Quarantined")) continue;
+			const offending = jsonField(event.data, "offendingSeq");
+			if (isJsonNumber(offending)) alreadyQuarantined.add(offending);
 		}
 		let state: S = cloneJson<S>(foldOptions.initialState);
 		const quarantined: FoldResult<S>["quarantined"] = [];
@@ -1119,12 +1104,12 @@ export function createPostgresEventStore(
 				state = cloneJson(handler(cloneJson(state), cloneJson(event)));
 			} catch (caught) {
 				const marker = await appendQuarantine(id, event, asError(caught));
-				const reason = (marker.data as { reason?: unknown } | null)?.reason;
+				const reason = jsonField(marker.data, "reason");
 				quarantined.push({
 					offendingSeq: event.seq,
 					quarantineSeq: marker.seq,
 					type: marker.type,
-					reason: typeof reason === "string" ? reason : "",
+					reason: isJsonString(reason) ? reason : "",
 				});
 			}
 		}
@@ -1175,17 +1160,18 @@ export function createPostgresEventStore(
 			opts: AppendOptions,
 		): Promise<AppendResult> {
 			const result = await commit({ streamId, events, append: opts });
-			return Object.freeze({
+			const out: AppendResult = {
 				streamId: result.streamId,
 				appended: result.appended,
 				deduped: result.deduped,
-				...(result.firstPosition !== undefined
-					? { firstPosition: result.firstPosition }
-					: {}),
-				...(result.lastPosition !== undefined
-					? { lastPosition: result.lastPosition }
-					: {}),
-			});
+			};
+			if (result.firstPosition !== undefined) {
+				out.firstPosition = result.firstPosition;
+			}
+			if (result.lastPosition !== undefined) {
+				out.lastPosition = result.lastPosition;
+			}
+			return Object.freeze(out);
 		},
 
 		commit,
@@ -1240,7 +1226,7 @@ export function createPostgresEventStore(
 						claimLease(client, s, key, options.holderId, ttl, clock.now()),
 					),
 				() => leaseClaimMetric("granted"),
-			).catch((error: unknown) => {
+			).catch((error) => {
 				if (
 					error instanceof StoragePostgresError &&
 					error.failure === "lease-held"

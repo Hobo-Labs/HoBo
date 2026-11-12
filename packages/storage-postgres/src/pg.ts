@@ -1,8 +1,12 @@
 import pg from "pg";
 import type { PostgresStoreConfig } from "./config.js";
+import { isJsonNumber, isJsonString } from "./json.js";
 
 /** One row as the driver returns it (int8 arrives as a decimal string). */
-export type PgRow = Readonly<Record<string, unknown>>;
+/** One cell: this store selects only text, int2/4/8 (int8 as text) and boolean columns. */
+export type PgCell = string | number | boolean | null;
+
+export type PgRow = Readonly<Record<string, PgCell>>;
 
 export type PgParam = string | number | boolean | null | readonly string[];
 
@@ -27,7 +31,7 @@ export interface PgPoolLike {
 /** A dedicated (non-pooled) connection used for LISTEN. */
 export interface PgListenerLike {
 	connect(): Promise<void>;
-	query(text: string): Promise<unknown>;
+	query(text: string): Promise<void>;
 	onNotification(listener: (channel: string) => void): void;
 	onError(listener: (error: Error) => void): void;
 	end(): Promise<void>;
@@ -60,7 +64,9 @@ export function createPgListener(config: PostgresStoreConfig): PgListenerLike {
 	const client = new pg.Client(connectionSettings(config));
 	return Object.freeze({
 		connect: () => client.connect(),
-		query: (sql: string) => client.query(sql),
+		async query(sql: string) {
+			await client.query(sql);
+		},
 		onNotification(listener: (channel: string) => void) {
 			client.on("notification", (message) => listener(message.channel));
 		},
@@ -74,20 +80,19 @@ export function createPgListener(config: PostgresStoreConfig): PgListenerLike {
 /** Parse an int8 column (decimal string or number) into a bigint. */
 export function int8(row: PgRow, column: string): bigint {
 	const value = row[column];
-	if (typeof value === "string" && /^-?(0|[1-9][0-9]*)$/u.test(value)) {
+	if (isJsonString(value) && /^-?(0|[1-9][0-9]*)$/u.test(value)) {
 		return BigInt(value);
 	}
-	if (typeof value === "number" && Number.isSafeInteger(value)) {
+	if (isJsonNumber(value) && Number.isSafeInteger(value)) {
 		return BigInt(value);
 	}
-	if (typeof value === "bigint") return value;
 	throw new TypeError(`column ${column} is not an int8: ${String(value)}`);
 }
 
 export function int4(row: PgRow, column: string): number {
 	const value = row[column];
-	if (typeof value === "number" && Number.isSafeInteger(value)) return value;
-	if (typeof value === "string" && /^-?(0|[1-9][0-9]*)$/u.test(value)) {
+	if (isJsonNumber(value) && Number.isSafeInteger(value)) return value;
+	if (isJsonString(value) && /^-?(0|[1-9][0-9]*)$/u.test(value)) {
 		return Number(value);
 	}
 	throw new TypeError(`column ${column} is not an int4: ${String(value)}`);
@@ -95,7 +100,7 @@ export function int4(row: PgRow, column: string): number {
 
 export function text(row: PgRow, column: string): string {
 	const value = row[column];
-	if (typeof value !== "string") {
+	if (!isJsonString(value)) {
 		throw new TypeError(`column ${column} is not text: ${String(value)}`);
 	}
 	return value;

@@ -1,5 +1,6 @@
 import { EventStoreError, type EventStoreErrorCode } from "@hobo/core";
 import { StoragePostgresErrorCode } from "./_generated/storage_postgres_pb.js";
+import { isJsonString } from "./json.js";
 
 /**
  * Failure classes this store adds to the core EventStore error vocabulary.
@@ -156,14 +157,15 @@ const NETWORK_ERRNOS = new Set([
 	"EAI_AGAIN",
 ]);
 
-function stringField(error: Error, field: "code"): string | undefined {
-	const value: unknown = Reflect.get(error, field);
-	return typeof value === "string" ? value : undefined;
+function driverCode(error: Error): string | undefined {
+	if (!("code" in error)) return undefined;
+	const value = error.code;
+	return isJsonString(value) ? value : undefined;
 }
 
 /** True when the whole transaction may be retried (serialization/deadlock). */
 export function isRetryableTransactionError(error: Error): boolean {
-	const code = stringField(error, "code");
+	const code = driverCode(error);
 	return code !== undefined && RETRYABLE_SQLSTATES.has(code);
 }
 
@@ -174,7 +176,7 @@ export function isRetryableTransactionError(error: Error): boolean {
  */
 export function translatePgError(error: Error): Error {
 	if (error instanceof EventStoreError) return error;
-	const code = stringField(error, "code");
+	const code = driverCode(error);
 	if (code === undefined) {
 		if (
 			/timeout exceeded when trying to connect|Connection terminated/iu.test(

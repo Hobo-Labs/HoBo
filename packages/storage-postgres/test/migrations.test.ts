@@ -42,7 +42,7 @@ describeLive("migrations", () => {
 		expect(reports.every((report) => report.toVersion === SCHEMA_VERSION)).toBe(
 			true,
 		);
-		const rows = await adminQuery<{ version: number; checksum: string }>(
+		const rows = await adminQuery(
 			`SELECT version, checksum FROM "${schema}".schema_migrations`,
 		);
 		expect(rows).toEqual(

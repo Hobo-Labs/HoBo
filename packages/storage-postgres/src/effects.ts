@@ -3,7 +3,7 @@ import { StoragePostgresError } from "./errors.js";
 import { type PgClientLike, text } from "./pg.js";
 import { JSON_CODEC } from "./rows.js";
 
-function json(value: unknown): string {
+function json<T>(value: T): string {
 	return JSON.stringify(value ?? {});
 }
 

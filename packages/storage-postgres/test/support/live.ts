@@ -3,6 +3,8 @@ import pg from "pg";
 import { afterAll, describe, inject } from "vitest";
 import {
 	createPostgresEventStore,
+	type PgParam,
+	type PgRow,
 	type PostgresEventStore,
 	type PostgresEventStoreOptions,
 } from "../../src/index.js";
@@ -71,16 +73,15 @@ export function liveStore(
 }
 
 /** Run SQL as an administrator on the lane (fixtures, inspection). */
-export async function adminQuery<T = Record<string, unknown>>(
+export async function adminQuery(
 	sql: string,
-	values: unknown[] = [],
-): Promise<T[]> {
+	values: readonly PgParam[] = [],
+): Promise<readonly PgRow[]> {
 	const client = new pg.Client({ connectionString: POSTGRES_URL });
 	await client.connect();
 	try {
-		const result = await client.query(sql, values);
-		// SAFETY: test fixture reads; callers name the row shape they selected.
-		return result.rows as T[];
+		const result = await client.query<PgRow>(sql, [...values]);
+		return result.rows;
 	} finally {
 		await client.end();
 	}

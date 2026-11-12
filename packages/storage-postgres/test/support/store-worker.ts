@@ -8,9 +8,21 @@
  */
 import { createInterface } from "node:readline";
 import {
+	type AppendOptions,
+	EventStoreError,
+	type JsonObject,
+	type JsonValue,
+} from "@hobo/core";
+import {
 	createPostgresEventStore,
 	StoragePostgresError,
 } from "../../src/index.js";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJsonText,
+} from "../../src/json.js";
 
 const [url, schema, start] = process.argv.slice(2);
 if (url === undefined || schema === undefined) {
@@ -24,28 +36,32 @@ const store = createPostgresEventStore({
 	clock: { now: () => new Date(nowMs).toISOString() },
 });
 
-type Command = Readonly<Record<string, unknown>> & { id: number; op: string };
-
-function big(value: unknown): bigint {
-	if (typeof value === "string" || typeof value === "number")
-		return BigInt(value);
-	throw new TypeError(`expected integer, got ${String(value)}`);
+function big(command: JsonObject, field: string): bigint {
+	const value = command[field];
+	if (isJsonString(value) || isJsonNumber(value)) return BigInt(value);
+	throw new TypeError(`${field}: expected integer`);
 }
 
-function str(value: unknown): string {
-	if (typeof value !== "string")
-		throw new TypeError(`expected string, got ${String(value)}`);
+function str(command: JsonObject, field: string, fallback?: string): string {
+	const value = command[field] ?? fallback;
+	if (!isJsonString(value)) throw new TypeError(`${field}: expected string`);
 	return value;
 }
 
-async function execute(command: Command): Promise<unknown> {
+function num(command: JsonObject, field: string, fallback: number): number {
+	const value = command[field] ?? fallback;
+	if (!isJsonNumber(value)) throw new TypeError(`${field}: expected number`);
+	return value;
+}
+
+async function execute(command: JsonObject): Promise<JsonValue> {
 	const key = {
-		subscriptionId: str(command.subscriptionId ?? "sub"),
-		partitionId: str(command.partitionId ?? "part"),
+		subscriptionId: str(command, "subscriptionId", "sub"),
+		partitionId: str(command, "partitionId", "part"),
 	};
-	switch (command.op) {
+	switch (str(command, "op")) {
 		case "clock":
-			nowMs = Date.parse(str(command.at));
+			nowMs = Date.parse(str(command, "at"));
 			return new Date(nowMs).toISOString();
 		case "ready":
 			await store.ready();
@@ -53,48 +69,45 @@ async function execute(command: Command): Promise<unknown> {
 		case "claim": {
 			const lease = await store.claimSubscription({
 				...key,
-				holderId: str(command.holderId),
-				leaseTtlMs: Number(command.ttlMs ?? 30_000),
+				holderId: str(command, "holderId"),
+				leaseTtlMs: num(command, "ttlMs", 30_000),
 			});
 			return { fence: lease.fenceToken.toString(), expiresAt: lease.expiresAt };
 		}
 		case "renew": {
 			const lease = await store.renewSubscription({
 				...key,
-				holderId: str(command.holderId),
-				fenceToken: big(command.fence),
-				leaseTtlMs: Number(command.ttlMs ?? 30_000),
+				holderId: str(command, "holderId"),
+				fenceToken: big(command, "fence"),
+				leaseTtlMs: num(command, "ttlMs", 30_000),
 			});
 			return { fence: lease.fenceToken.toString(), expiresAt: lease.expiresAt };
 		}
 		case "append": {
+			const options: AppendOptions = {
+				expectedSeq: num(command, "expectedSeq", 0),
+				actor: { kind: "system", id: "worker" },
+				tenant: "t1",
+			};
+			if (command.fence !== undefined)
+				options.fenceToken = big(command, "fence");
 			const result = await store.append(
-				str(command.streamId),
+				str(command, "streamId"),
 				[
 					{
 						type: "camp.Applied",
-						data: { by: str(command.holderId ?? "anon") },
+						data: { by: str(command, "holderId", "anon") },
 					},
 				],
-				{
-					expectedSeq: Number(command.expectedSeq),
-					actor: { kind: "system", id: "worker" },
-					tenant: "t1",
-					...(command.fence !== undefined
-						? { fenceToken: big(command.fence) }
-						: {}),
-				},
+				options,
 			);
-			return {
-				seq: result.appended[0]?.seq,
-				position: result.lastPosition?.toString(),
-			};
+			return result.lastPosition?.toString() ?? null;
 		}
 		case "checkpoint": {
 			const checkpoint = await store.commitCheckpoint({
 				...key,
-				position: big(command.position),
-				fenceToken: big(command.fence),
+				position: big(command, "position"),
+				fenceToken: big(command, "fence"),
 			});
 			return checkpoint.position.toString();
 		}
@@ -104,42 +117,40 @@ async function execute(command: Command): Promise<unknown> {
 		}
 		case "positions": {
 			const out: string[] = [];
-			for await (const item of store.readAll({
-				...(command.after !== undefined ? { after: big(command.after) } : {}),
-			})) {
+			const options =
+				command.after === undefined ? {} : { after: big(command, "after") };
+			for await (const item of store.readAll(options)) {
 				out.push(item.position.toString());
 			}
 			return out;
 		}
 		default:
-			throw new TypeError(`unknown op ${command.op}`);
+			throw new TypeError(`unknown op ${str(command, "op")}`);
 	}
+}
+
+function failureReply(id: JsonValue, error: Error): JsonObject {
+	return {
+		id,
+		ok: false,
+		code: error instanceof EventStoreError ? error.code : error.name,
+		failure: error instanceof StoragePostgresError ? error.failure : null,
+		message: error.message,
+	};
 }
 
 const lines = createInterface({ input: process.stdin });
 lines.on("line", (line) => {
-	// SAFETY: the parent writes one JSON command per line.
-	const command = JSON.parse(line) as Command;
+	const command = parseJsonText(line);
+	if (!isJsonObject(command)) return;
+	const id = command.id ?? null;
 	execute(command).then(
 		(value) =>
+			process.stdout.write(`${JSON.stringify({ id, ok: true, value })}\n`),
+		(error) =>
 			process.stdout.write(
-				`${JSON.stringify({ id: command.id, ok: true, value })}\n`,
+				`${JSON.stringify(failureReply(id, error instanceof Error ? error : new Error(String(error))))}\n`,
 			),
-		(error: unknown) => {
-			const code =
-				error instanceof Error ? Reflect.get(error, "code") : undefined;
-			const failure =
-				error instanceof StoragePostgresError ? error.failure : undefined;
-			process.stdout.write(
-				`${JSON.stringify({
-					id: command.id,
-					ok: false,
-					code: typeof code === "string" ? code : "UNKNOWN",
-					failure,
-					message: error instanceof Error ? error.message : String(error),
-				})}\n`,
-			);
-		},
 	);
 });
 lines.on("close", () => {

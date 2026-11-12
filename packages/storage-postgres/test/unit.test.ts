@@ -91,7 +91,7 @@ describe("configuration (parse, don't validate)", () => {
 			failure: "invalid-config",
 			code: "INVALID_INPUT",
 		});
-		expect(String((caught as Error).message)).toContain(fragment);
+		expect(caught instanceof Error ? caught.message : "").toContain(fragment);
 	});
 
 	it("reads HOBO_STORE_POSTGRES_* and requires the URL", () => {

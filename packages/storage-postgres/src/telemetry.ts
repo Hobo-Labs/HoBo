@@ -74,7 +74,7 @@ export function createStoreMetrics(
 			void delivery.finally(() => pending.delete(delivery));
 		},
 		async flush() {
-			await Promise.all([...pending]);
+			await Promise.all(pending);
 		},
 		dropped: () => dropped,
 	});

@@ -127,12 +127,15 @@ describeLive("operations: telemetry, health, timeouts", () => {
 					...OPTS,
 					expectedSeq: 1,
 				})
-				.catch((caught: unknown) => caught);
+				.catch((caught) => caught);
 			expect(error).toMatchObject({
 				code: "PERSISTENCE_UNAVAILABLE",
 				failure: "statement-timeout",
 			});
-			expect(remediationFor(error as Error)).toContain("pg_stat_activity");
+			expect(error).toBeInstanceOf(Error);
+			expect(
+				error instanceof Error ? remediationFor(error) : undefined,
+			).toContain("pg_stat_activity");
 		} finally {
 			await blocker.query("ROLLBACK");
 			await blocker.end();

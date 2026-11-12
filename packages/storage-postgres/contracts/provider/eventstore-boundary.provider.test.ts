@@ -1,35 +1,31 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+	type AppendOptions,
+	type EventInput,
+	EventStoreError,
+	type JsonObject,
+} from "@hobo/core";
 import { expect, it } from "vitest";
 import type { PostgresEventStore } from "../../src/index.js";
+import { isJsonNumber, isJsonObject, isJsonString } from "../../src/json.js";
 import {
 	describeLive,
 	liveStore,
+	type ManualClock,
 	manualClock,
 	OPTS,
 } from "../../test/support/live.js";
+import { loadPact } from "../pact.js";
 
 /** Provider verification: replay every pact interaction against a real PostgreSQL store. */
-const here = dirname(fileURLToPath(import.meta.url));
-const pact = JSON.parse(
-	readFileSync(join(here, "..", "eventstore-boundary.pact.json"), "utf8"),
-) as {
-	interactions: {
-		description: string;
-		providerState: string;
-		request: Record<string, unknown> & { method: string };
-		response: Record<string, unknown>;
-	}[];
-};
+const pact = loadPact();
 
 const CAMP = { subscriptionId: "hobo.cd.camp", partitionId: "camp-1" };
 
 async function arrange(
 	store: PostgresEventStore,
-	clock: ReturnType<typeof manualClock>,
+	clock: ManualClock,
 	state: string,
-) {
+): Promise<void> {
 	switch (state) {
 		case "an empty store":
 			return;
@@ -68,57 +64,84 @@ async function arrange(
 	}
 }
 
+function field(request: JsonObject, name: string): string {
+	const value = request[name];
+	if (!isJsonString(value)) throw new Error(`request.${name} missing`);
+	return value;
+}
+
+function eventsOf(request: JsonObject): EventInput[] {
+	const events = request.events;
+	if (!Array.isArray(events)) throw new Error("request.events missing");
+	return events.map((event) => {
+		if (!isJsonObject(event) || !isJsonString(event.type)) {
+			throw new Error("request event malformed");
+		}
+		return { type: event.type, data: event.data ?? {} };
+	});
+}
+
+function appendOptionsOf(request: JsonObject): AppendOptions {
+	const options = request.options;
+	if (!isJsonObject(options) || !isJsonNumber(options.expectedSeq)) {
+		throw new Error("request.options malformed");
+	}
+	const parsed: AppendOptions = { ...OPTS, expectedSeq: options.expectedSeq };
+	if (isJsonString(options.fenceToken)) {
+		parsed.fenceToken = BigInt(options.fenceToken);
+	}
+	return parsed;
+}
+
+async function perform(
+	store: PostgresEventStore,
+	request: JsonObject,
+): Promise<JsonObject> {
+	switch (request.method) {
+		case "append": {
+			const result = await store.append(
+				field(request, "streamId"),
+				eventsOf(request),
+				appendOptionsOf(request),
+			);
+			return {
+				appended: result.appended.length,
+				firstPosition: result.firstPosition?.toString() ?? null,
+				lastPosition: result.lastPosition?.toString() ?? null,
+			};
+		}
+		case "claimSubscription": {
+			const lease = await store.claimSubscription({
+				subscriptionId: field(request, "subscriptionId"),
+				partitionId: field(request, "partitionId"),
+				holderId: field(request, "holderId"),
+			});
+			return { fenceToken: lease.fenceToken.toString() };
+		}
+		case "commitCheckpoint": {
+			const checkpoint = await store.commitCheckpoint({
+				subscriptionId: field(request, "subscriptionId"),
+				partitionId: field(request, "partitionId"),
+				position: BigInt(field(request, "position")),
+				fenceToken: BigInt(field(request, "fenceToken")),
+			});
+			return { position: checkpoint.position.toString() };
+		}
+		default:
+			throw new Error(`unknown method ${String(request.method)}`);
+	}
+}
+
 async function act(
 	store: PostgresEventStore,
-	request: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-	const text = (field: string) => String(request[field]);
+	request: JsonObject,
+): Promise<JsonObject> {
 	try {
-		switch (request.method) {
-			case "append": {
-				const options = request.options as {
-					expectedSeq: number;
-					fenceToken?: string;
-				};
-				const result = await store.append(
-					text("streamId"),
-					request.events as never,
-					{
-						...OPTS,
-						expectedSeq: options.expectedSeq,
-						...(options.fenceToken !== undefined
-							? { fenceToken: BigInt(options.fenceToken) }
-							: {}),
-					},
-				);
-				return {
-					appended: result.appended.length,
-					firstPosition: result.firstPosition?.toString(),
-					lastPosition: result.lastPosition?.toString(),
-				};
-			}
-			case "claimSubscription": {
-				const lease = await store.claimSubscription({
-					subscriptionId: text("subscriptionId"),
-					partitionId: text("partitionId"),
-					holderId: text("holderId"),
-				});
-				return { fenceToken: lease.fenceToken.toString() };
-			}
-			case "commitCheckpoint": {
-				const checkpoint = await store.commitCheckpoint({
-					subscriptionId: text("subscriptionId"),
-					partitionId: text("partitionId"),
-					position: BigInt(text("position")),
-					fenceToken: BigInt(text("fenceToken")),
-				});
-				return { position: checkpoint.position.toString() };
-			}
-			default:
-				throw new Error(`unknown method ${String(request.method)}`);
-		}
+		return await perform(store, request);
 	} catch (error) {
-		return { error: { code: String(Reflect.get(error as object, "code")) } };
+		if (error instanceof EventStoreError)
+			return { error: { code: error.code } };
+		throw error;
 	}
 }
 

@@ -48,12 +48,12 @@ describeLive("WP17 lease failover (§10: Postgres lease holder dies)", () => {
 
 		const first = startStoreProcess(schema, T0);
 		processes.push(first);
-		const leaseA = (await first.call("claim", {
+		const leaseA = await first.lease("claim", {
 			...key,
 			holderId: "replica-a",
 			ttlMs: 30_000,
-		})) as { fence: string };
-		const positions = (await first.call("positions")) as string[];
+		});
+		const positions = await first.strings("positions");
 		expect(positions).toHaveLength(total);
 		// Process (and checkpoint) the first five, then die without releasing.
 		for (const position of positions.slice(0, 5)) {
@@ -72,17 +72,17 @@ describeLive("WP17 lease failover (§10: Postgres lease holder dies)", () => {
 			failure: "lease-held",
 		});
 		await second.call("clock", { at: "2026-11-12T00:00:30.001Z" });
-		const leaseB = (await second.call("claim", {
+		const leaseB = await second.lease("claim", {
 			...key,
 			holderId: "replica-b",
 			ttlMs: 30_000,
-		})) as { fence: string };
+		});
 		expect(BigInt(leaseB.fence)).toBeGreaterThan(BigInt(leaseA.fence));
-		const resumeFrom = (await second.call("loadCheckpoint", key)) as string;
+		const resumeFrom = await second.text("loadCheckpoint", key);
 		expect(resumeFrom).toBe(positions[4]);
-		const rest = (await second.call("positions", {
+		const rest = await second.strings("positions", {
 			after: resumeFrom,
-		})) as string[];
+		});
 		expect(rest).toEqual(positions.slice(5));
 		for (const position of rest) {
 			await second.call("checkpoint", {
@@ -129,17 +129,17 @@ describeLive("WP17 lease failover (§10: Postgres lease holder dies)", () => {
 		const zombie = startStoreProcess(schema, T0);
 		const heir = startStoreProcess(schema, "2026-11-12T00:01:00.000Z");
 		processes.push(zombie, heir);
-		const old = (await zombie.call("claim", {
+		const old = await zombie.lease("claim", {
 			...key,
 			holderId: "zombie",
 			ttlMs: 30_000,
-		})) as { fence: string };
+		});
 		await zombie.call("checkpoint", { ...key, position: 1, fence: old.fence });
-		const fresh = (await heir.call("claim", {
+		const fresh = await heir.lease("claim", {
 			...key,
 			holderId: "heir",
 			ttlMs: 30_000,
-		})) as { fence: string };
+		});
 		await heir.call("checkpoint", { ...key, position: 2, fence: fresh.fence });
 
 		const late = await zombie.send("checkpoint", {

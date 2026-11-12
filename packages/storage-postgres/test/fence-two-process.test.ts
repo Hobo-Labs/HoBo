@@ -50,11 +50,11 @@ describeLive("WP17 two-process fence", () => {
 		const key = { subscriptionId: "hobo.cd.camp", partitionId: "camp-1" };
 		const stream = "cd:camp:camp-1:status";
 
-		const leaseA = (await a.call("claim", {
+		const leaseA = await a.lease("claim", {
 			...key,
 			holderId: "replica-a",
 			ttlMs: 30_000,
-		})) as { fence: string };
+		});
 		expect(leaseA.fence).toBe("1");
 		await a.call("append", {
 			streamId: stream,
@@ -73,11 +73,11 @@ describeLive("WP17 two-process fence", () => {
 		});
 		// ... but can once A's lease has expired on B's clock (A is paused, not dead).
 		await b.call("clock", { at: "2026-11-12T00:00:31.000Z" });
-		const leaseB = (await b.call("claim", {
+		const leaseB = await b.lease("claim", {
 			...key,
 			holderId: "replica-b",
 			ttlMs: 30_000,
-		})) as { fence: string };
+		});
 		expect(leaseB.fence).toBe("2");
 		await b.call("append", {
 			streamId: stream,
@@ -123,15 +123,17 @@ describeLive("WP17 two-process fence", () => {
 		});
 
 		// Only B's write landed after the takeover, and the stream carries B's epoch.
-		const rows = await adminQuery<{ seq: number; data: string }>(
+		const rows = await adminQuery(
 			`SELECT seq, data FROM "${schema}".events WHERE stream_id = $1 ORDER BY seq`,
 			[stream],
 		);
-		expect(rows.map((row) => [row.seq, JSON.parse(row.data).by])).toEqual([
+		expect(
+			rows.map((row) => [row.seq, JSON.parse(String(row.data)).by]),
+		).toEqual([
 			[1, "replica-a"],
 			[2, "replica-b"],
 		]);
-		const [head] = await adminQuery<{ owner_epoch: string }>(
+		const [head] = await adminQuery(
 			`SELECT owner_epoch FROM "${schema}".streams WHERE stream_id = $1`,
 			[stream],
 		);
@@ -157,7 +159,7 @@ describeLive("WP17 two-process fence", () => {
 			});
 			seq += 1;
 		}
-		const positions = (await a.call("positions")) as string[];
+		const positions = await a.strings("positions");
 		expect(positions).toEqual(
 			Array.from({ length: 10 }, (_, i) => String(i + 1)),
 		);

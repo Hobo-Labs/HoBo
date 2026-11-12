@@ -7,6 +7,13 @@ import {
 	type PrincipalRef,
 } from "@hobo/core";
 import { StoragePostgresError } from "./errors.js";
+import {
+	isJsonBigInt,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJsonText,
+} from "./json.js";
 
 /** Largest value an int8 column holds; fence tokens and positions above it are refused. */
 export const MAX_INT8 = (1n << 63n) - 1n;
@@ -35,39 +42,30 @@ export type ParsedAppend = Readonly<{
 	fenceToken: bigint | undefined;
 }>;
 
-/** A plain JSON object (not an array, null or class instance). */
-export function isJsonObject(value: unknown): value is JsonObject {
-	return (
-		value !== null &&
-		typeof value === "object" &&
-		Object.prototype.toString.call(value) === "[object Object]"
-	);
-}
-
 function invalid(message: string): StoragePostgresError {
 	return new StoragePostgresError("invalid-input", message);
 }
 
-export function requireNonEmpty(value: unknown, field: string): string {
-	if (typeof value !== "string" || value.length === 0) {
+export function requireNonEmpty<T>(value: T, field: string): string {
+	if (!isJsonString(value) || value.length === 0) {
 		throw invalid(`${field} must be a non-empty string`);
 	}
 	return value;
 }
 
-export function requireNonNegInt(value: unknown, field: string): number {
-	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+export function requireNonNegInt<T>(value: T, field: string): number {
+	if (!isJsonNumber(value) || !Number.isSafeInteger(value) || value < 0) {
 		throw invalid(`${field} must be a non-negative safe integer`);
 	}
 	return value;
 }
 
-export function requireInt8(value: unknown, field: string): bigint {
+export function requireInt8<T>(value: T, field: string): bigint {
 	let parsed: bigint;
-	if (typeof value === "bigint") parsed = value;
-	else if (typeof value === "number" && Number.isSafeInteger(value))
+	if (isJsonBigInt(value)) parsed = value;
+	else if (isJsonNumber(value) && Number.isSafeInteger(value))
 		parsed = BigInt(value);
-	else if (typeof value === "string" && /^(0|[1-9][0-9]*)$/u.test(value))
+	else if (isJsonString(value) && /^(0|[1-9][0-9]*)$/u.test(value))
 		parsed = BigInt(value);
 	else throw invalid(`${field} must be a non-negative integer`);
 	if (parsed < 0n || parsed > MAX_INT8) {
@@ -76,28 +74,59 @@ export function requireInt8(value: unknown, field: string): bigint {
 	return parsed;
 }
 
-function optionalText(value: unknown, field: string): string | undefined {
+function optionalText<T>(value: T, field: string): string | undefined {
 	if (value === undefined || value === null) return undefined;
-	if (typeof value !== "string") throw invalid(`${field} must be a string`);
+	if (!isJsonString(value)) throw invalid(`${field} must be a string`);
 	return value;
 }
 
-function canonicalText(
-	value: unknown,
-	field: string,
-	maxBytes: number,
-): string {
+/** Canonical JSON text of a caller value, bounded in bytes. */
+function canonicalText<T>(value: T, field: string, maxBytes: number): string {
 	let text: string | undefined;
 	try {
 		text = JSON.stringify(value ?? {});
 	} catch {
-		throw invalid(`${field} must be JSON-serialisable`);
+		text = undefined;
 	}
 	if (text === undefined) throw invalid(`${field} must be JSON-serialisable`);
 	if (Buffer.byteLength(text, "utf8") > maxBytes) {
 		throw invalid(`${field} exceeds ${maxBytes} bytes`);
 	}
 	return text;
+}
+
+function parseEventInput(event: EventInput, index: number): ParsedEventInput {
+	if (!isJsonObject(event)) throw invalid(`events[${index}] must be an object`);
+	const type = requireNonEmpty(event.type, `events[${index}].type`);
+	const v = event.v ?? 1;
+	if (!isJsonNumber(v) || !Number.isSafeInteger(v) || v <= 0) {
+		throw invalid(`events[${index}].v must be a positive safe integer`);
+	}
+	const dataText = canonicalText(
+		event.data ?? {},
+		`events[${index}].data`,
+		EVENTSTORE_LIMITS.maxPayloadBytes,
+	);
+	const metaText = canonicalText(
+		event.meta ?? {},
+		`events[${index}].meta`,
+		EVENTSTORE_LIMITS.maxMetadataBytes,
+	);
+	const data = parseJsonText(dataText) ?? null;
+	const meta = parseJsonText(metaText);
+	if (!isJsonObject(meta)) {
+		throw invalid(`events[${index}].meta must be an object`);
+	}
+	const key = meta.idempotencyKey;
+	return Object.freeze({
+		type,
+		v,
+		data,
+		meta,
+		dataText,
+		metaText,
+		idempotencyKey: isJsonString(key) && key.length > 0 ? key : undefined,
+	});
 }
 
 export function parseEventInputs(
@@ -109,62 +138,26 @@ export function parseEventInputs(
 			`events batch exceeds maxBatchEvents=${EVENTSTORE_LIMITS.maxBatchEvents}`,
 		);
 	}
-	return events.map((event, index) => {
-		if (!isJsonObject(event))
-			throw invalid(`events[${index}] must be an object`);
-		const type = requireNonEmpty(event.type, `events[${index}].type`);
-		const v: unknown = event.v ?? 1;
-		if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) {
-			throw invalid(`events[${index}].v must be a positive safe integer`);
-		}
-		const dataText = canonicalText(
-			event.data ?? {},
-			`events[${index}].data`,
-			EVENTSTORE_LIMITS.maxPayloadBytes,
-		);
-		const metaText = canonicalText(
-			event.meta ?? {},
-			`events[${index}].meta`,
-			EVENTSTORE_LIMITS.maxMetadataBytes,
-		);
-		// SAFETY: round-tripped through JSON text above; this is its parse.
-		const data = JSON.parse(dataText) as JsonValue;
-		const metaValue: unknown = JSON.parse(metaText);
-		if (!isJsonObject(metaValue)) {
-			throw invalid(`events[${index}].meta must be an object`);
-		}
-		const meta: JsonObject = metaValue;
-		const key = meta.idempotencyKey;
-		return Object.freeze({
-			type,
-			v,
-			data,
-			meta,
-			dataText,
-			metaText,
-			idempotencyKey:
-				typeof key === "string" && key.length > 0 ? key : undefined,
-		});
-	});
+	return events.map(parseEventInput);
 }
 
-export function parseAppendOptions(opts: AppendOptions): ParsedAppend {
-	if (!isJsonObject(opts)) {
-		throw invalid("append options must be an object");
-	}
-	const actor = opts.actor;
+function parseActor(actor: PrincipalRef): PrincipalRef {
 	if (
-		actor === null ||
-		typeof actor !== "object" ||
-		typeof actor.kind !== "string" ||
-		typeof actor.id !== "string" ||
+		!isJsonObject(actor) ||
+		!isJsonString(actor.kind) ||
+		!isJsonString(actor.id) ||
 		actor.id.length === 0
 	) {
 		throw invalid("actor must be a principal reference { kind, id }");
 	}
+	return actor;
+}
+
+export function parseAppendOptions(opts: AppendOptions): ParsedAppend {
+	if (!isJsonObject(opts)) throw invalid("append options must be an object");
 	return Object.freeze({
 		expectedSeq: requireNonNegInt(opts.expectedSeq, "expectedSeq"),
-		actor,
+		actor: parseActor(opts.actor),
 		tenant: requireNonEmpty(opts.tenant, "tenant"),
 		project: optionalText(opts.project, "project"),
 		causationId: optionalText(opts.causationId, "causationId"),
@@ -178,10 +171,13 @@ export function parseAppendOptions(opts: AppendOptions): ParsedAppend {
 }
 
 /** Lease TTL from the caller, bounded to (0, 24 h]. */
-export function parseLeaseTtl(value: unknown, fallback: number): number {
+export function parseLeaseTtl(
+	value: number | undefined,
+	fallback: number,
+): number {
 	if (value === undefined) return fallback;
 	if (
-		typeof value !== "number" ||
+		!isJsonNumber(value) ||
 		!Number.isSafeInteger(value) ||
 		value <= 0 ||
 		value > 86_400_000
