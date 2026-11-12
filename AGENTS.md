@@ -421,6 +421,13 @@ pnpm agent:check -- --staged
 
 Use broader build-impacting checks only when intentionally validating a branch/root tooling change, not as a default staged hook substitute.
 
+### Channels between deployed components need one production observation
+
+**A change that adds or alters a channel between two deployed components is done only when one production observation of that channel carrying a value is linked.** A channel is anything one deployed component writes or serves and another reads: a relay route a workflow asks, a report a box sends the relay, a repository variable, an artifact a later run reads, an annotation a monitor reads. Tests on both sides are necessary and not enough: every signal in [finding 145](docs/ci/findings/0145-fleet-verdict-channel-operating-record.md) was built and unit-tested on both sides, never seen carrying a value in production, and failed into a default without telling anyone ([finding 143](docs/ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md): a capacity variable no worker wrote, read through an API a job token is refused).
+
+- Link the observation (a run, a log line, a status read showing a real value crossing the channel) in the pull request or in the finding that tracks the channel. Until it exists, the work is "built, not proven": say so, and name the step that will produce it.
+- A consumer that falls back to a default when the channel carries nothing must leave a record something reads (a titled annotation, a log event a monitor counts), so a silent channel is raised instead of looking like a quiet one.
+
 ## Documentation maintenance rule
 
 Whenever a change touches code, automation, package metadata, CI, hooks, or agent tooling, update the matching documentation in the same change. At minimum, check whether `README.md`, `docs/design/index.md`, `docs/agent-tooling.md`, and the relevant proof/contract README still describe the current state. If no user-facing docs change is needed, add or update the closest maintenance note so reviewers can see that docs were considered.
