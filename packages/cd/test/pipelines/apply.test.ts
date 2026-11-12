@@ -415,3 +415,30 @@ describe("apply: policy delivery (D24)", () => {
 		).toBe(true);
 	});
 });
+
+describe("apply: journal", () => {
+	it("re-reads and retries once when a concurrent writer wins the stream head, then reports a conflict", async () => {
+		const h = harness();
+		await h.source("images");
+		h.store.failNextAppend = 1;
+		expect((await h.controller.apply(linear(), h.ctx)).ok).toBe(true);
+		const changed = linear();
+		changed.nodes[0]?.campIds.push("staging-2");
+		changed.nodes[1]?.campIds.splice(1, 1);
+		h.store.failNextAppend = 2;
+		expect(await refusalCodes(h, changed)).toContain(PIPELINE_REASON.conflict);
+	});
+
+	it("treats an unreadable pipeline.Applied as absent and reports it", async () => {
+		const h = harness();
+		await h.store.seed(
+			"cd-pipeline-broken",
+			CD_EVENTS.PipelineApplied,
+			"garbage",
+		);
+		expect(await h.controller.get("broken")).toBeUndefined();
+		await h.controller.tick(h.ctx);
+		expect(h.promotions.requests).toEqual([]);
+		expect(h.telemetry.named(PIPELINE_METRIC.unreadable)).toHaveLength(1);
+	});
+});
