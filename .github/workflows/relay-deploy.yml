@@ -7,15 +7,21 @@ name: HoBo relay deploy
 # relay's pipeline (packages/ci-vercel/deploy/delivery.ts) with @hobo/cd. The
 # relay's Yard (packages/ci-vercel/deploy/yard.ts) places it on Vercel and
 # names its bindings. Preview runs first; production takes only the Freight
-# preview verified (probes of /healthz and /readyz, failing closed) and
-# qualified, in the same job-scoped CD journal.
+# preview verified and qualified, in the same job-scoped CD journal. Preview is
+# verified by /healthz only (its Camp has no config-service binding, so its
+# /readyz answers 503); production by /healthz and /readyz, failing closed.
+# Production is NOT deployed when preview does not qualify the commit, and a
+# production deployment that fails verification stays live: the job fails,
+# nothing is rolled back.
 #
 # No Vercel secret lives in this repository: the job signs in to Infisical with
 # its own GitHub Actions OIDC token as the `hobo-ci-deploy` machine identity
 # and reads the deploy token from the `hobo-ci-deploy` project. The
 # coordinates are repository variables (ids, not secrets). Until the owner has
 # set them (packages/ci-vercel/CONFIG-SERVICE.md) the job ends with a notice
-# and succeeds.
+# and succeeds; when only the probe origins (HOBO_CI_RELAY_URL,
+# HOBO_CI_RELAY_PREVIEW_URL) are missing, it ends with a warning, because
+# production deploys have stopped until the owner sets them.
 
 on:
   push:

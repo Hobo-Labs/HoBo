@@ -7,6 +7,9 @@
  * 1. Has the owner set the repository variables the deploy needs? Until they
  *    have, the job ends with a notice and succeeds, so `main` stays green
  *    before the one-time setup in `packages/ci-vercel/CONFIG-SERVICE.md`.
+ *    When only the probe origins are missing (a repository set up before the
+ *    relay was delivered through HoBo CD) it ends with a WARNING instead: its
+ *    production deploys have stopped, and the owner must set them.
  * 2. For a push: does the pushed range touch the relay? The relay's inputs are
  *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
  *    closure (`importerClosure`, the release OCI impact tooling's), plus this
@@ -50,7 +53,27 @@ export const RELAY_DEPLOY_REQUIRED_VARIABLES = [
 	"HOBO_CI_RELAY_PREVIEW_URL",
 ] as const;
 
-export type GateDecision = Readonly<{ run: boolean; reason: string }>;
+/**
+ * The probe origins HoBo CD verifies each Camp at. They became required when
+ * the relay began delivering through HoBo CD; before that the relay deployed
+ * without them. A repository set up before then has every other variable and
+ * not these, so its production deploys would stop: that skip is a warning,
+ * not a notice.
+ */
+export const RELAY_PROBE_ORIGIN_VARIABLES = [
+	"HOBO_CI_RELAY_URL",
+	"HOBO_CI_RELAY_PREVIEW_URL",
+] as const;
+
+/**
+ * `notice` for a skip that is expected (not set up yet, nothing changed);
+ * `warning` for one that stops deploys a repository used to get.
+ */
+export type GateDecision = Readonly<{
+	run: boolean;
+	reason: string;
+	level?: "notice" | "warning";
+}>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
@@ -89,9 +112,17 @@ export function decide(input: {
 	readonly inputDirs: readonly string[];
 }): GateDecision {
 	const missing = missingVariables(input.env);
+	const origins = new Set<string>(RELAY_PROBE_ORIGIN_VARIABLES);
+	if (missing.length > 0 && missing.every((name) => origins.has(name)))
+		return {
+			run: false,
+			level: "warning",
+			reason: `the relay is NOT deployed: it is now delivered through HoBo CD, which verifies each Camp at its probe origin, and ${missing.join(", ")} is not set. Production deploys stop until the owner sets it (packages/ci-vercel/CONFIG-SERVICE.md, migration step)`,
+		};
 	if (missing.length > 0)
 		return {
 			run: false,
+			level: "notice",
 			reason: `the relay deploy is not set up yet: set the repository variables ${missing.join(", ")} (packages/ci-vercel/CONFIG-SERVICE.md)`,
 		};
 	if (input.event === "workflow_dispatch")
@@ -149,7 +180,7 @@ function main(argv: readonly string[]): void {
 	process.stdout.write(
 		decision.run
 			? `Deploying the relay: ${decision.reason}.\n`
-			: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
+			: `::${decision.level ?? "notice"} title=Relay deploy skipped::${decision.reason}.\n`,
 	);
 }
 

@@ -29,6 +29,20 @@
 // Marketplace attaches the cache). A Yard on any other provider is refused
 // before this module runs.
 //
+// Journal: the relay's own, `<HOBO_HOME>/ci-relay/cd/journal.sqlite`, never
+// the shared one `hobo deploy` and `hobo serve cd` use (`<HOBO_HOME>/cd/`).
+// KNOWN CD GAP: @hobo/cd cannot run a rollout on a durable journal today. Its
+// rollout event types (`cd.rollout.*`, packages/cd/src/rollout/journal.ts)
+// carry two dots, which SQLite and Postgres refuse (`family.PastTenseFact`),
+// and `@hobo/cd/sets` cannot fold the `{ schema, observation }` envelope the
+// reconcile transport writes to a Camp's status stream. This module works
+// around both (`withStorableRolloutTypes`, `reportedStatus`) with a private
+// storage encoding (`cdrollout.*`) that no other CD tool declares, so it
+// keeps that encoding in a journal only it opens, and refuses
+// (HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE) when the environment names a shared CD
+// store (HOBO_CD_SQLITE_PATH, HOBO_CD_POSTGRES_URL). Both shims go once
+// @hobo/cd fixes the event names and the status fold.
+//
 // Composition: this is `composeContinuousDelivery` with the same factories,
 // adapters, store and artifact selection as `openCdRuntime`, with two host
 // inputs that runtime does not take today: the planning declaration digest
@@ -167,7 +181,10 @@ export type RelayDeliveryInput = Readonly<{
 	/** The relay's project directory (holds `deploy/delivery.ts`). */
 	cwd: string;
 	env: Readonly<Record<string, string | undefined>>;
-	/** HOBO_HOME: where the default SQLite journal and artifact store live. */
+	/**
+	 * HOBO_HOME. The relay's journal and artifact store live under
+	 * `<home>/ci-relay/cd`, never the shared `<home>/cd`.
+	 */
 	home: string;
 	yard: Yard;
 	declaration: ManifestV1;
@@ -223,6 +240,22 @@ export type RelayDeliveryOutcome =
 			realization?: RelayRealizationFailure;
 			handover?: Readonly<Record<string, string>>;
 	  }>;
+
+// public-contract: the relay's journal directory under HOBO_HOME (see the
+// KNOWN CD GAP above): never the shared `<HOBO_HOME>/cd`.
+export const RELAY_JOURNAL_DIR = "ci-relay";
+
+// Environment names that point CD at a shared store; the relay's private
+// rollout encoding must not reach it.
+const SHARED_STORE_ENV = [
+	"HOBO_CD_SQLITE_PATH",
+	"HOBO_CD_POSTGRES_URL",
+] as const;
+
+/** The HOBO_HOME the relay's CD journal and artifacts live under. */
+export function relayJournalHome(home: string): string {
+	return `${home.replace(/\/+$/u, "")}/${RELAY_JOURNAL_DIR}`;
+}
 
 const DEFAULT_LIMIT_MS = 20 * 60_000;
 const DEFAULT_INTERVAL_MS = 10_000;
@@ -756,9 +789,18 @@ export async function deliverRelay(
 		input.sleep ??
 		((ms: number) => new Promise((done) => setTimeout(done, ms)));
 	const emit = input.emitProgress ?? (() => {});
+	const shared = SHARED_STORE_ENV.filter(
+		(name) => (input.env[name] ?? "").trim() !== "",
+	);
+	if (shared.length > 0)
+		return {
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.unavailable,
+			message: `${shared.join(" and ")} name a shared CD store. The relay's delivery needs a journal of its own: @hobo/cd cannot run a rollout on a durable journal yet (its cd.rollout.* event types are refused there, and it cannot read the reconcile status envelope), and the relay's workaround stores rollout events under a private name no other CD tool reads. Unset ${shared.join(" and ")}; the relay uses ${relayJournalHome("$HOBO_HOME")}/cd.`,
+		};
 	const parsed = parseCdComposeConfig({
 		env: input.env,
-		home: input.home,
+		home: relayJournalHome(input.home),
 		simulate: false,
 	});
 	if (!parsed.ok)

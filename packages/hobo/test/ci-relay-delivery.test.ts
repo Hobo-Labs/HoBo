@@ -2,7 +2,8 @@
 // production pipeline, the gate, the conductor realizer and the probe
 // verification, all offline (a fake Vercel realization, a fake probe
 // transport, an injected clock, a temporary SQLite journal).
-import { mkdtemp } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { toJson } from "@bufbuild/protobuf";
@@ -12,7 +13,7 @@ import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
 import type { HttpTransport } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	type DeliveryModule,
 	loadDeliveryFile,
@@ -22,6 +23,7 @@ import {
 	deliverRelay,
 	RELAY_DELIVERY_FILE,
 	RELAY_DELIVERY_REFUSAL,
+	RELAY_JOURNAL_DIR,
 	type RelayRealization,
 	type RelaySourcePin,
 	relayCampId,
@@ -90,9 +92,19 @@ type Harness = Readonly<{
 	clock: { now: number };
 }>;
 
+const homes: string[] = [];
+
+afterAll(async () => {
+	await Promise.all(
+		homes.map((home) => rm(home, { recursive: true, force: true })),
+	);
+});
+
 async function harness(): Promise<Harness> {
+	const home = await mkdtemp(join(tmpdir(), "relay-delivery-"));
+	homes.push(home);
 	return {
-		home: await mkdtemp(join(tmpdir(), "relay-delivery-")),
+		home,
 		deployed: [],
 		probed: [],
 		clock: { now: Date.UTC(2026, 10, 12, 12) },
@@ -182,17 +194,18 @@ describe("the relay's delivery records (deploy/delivery.ts)", () => {
 		expect(pipeline?.nodes[0]?.campIds).toEqual([relayCampId(yard, "preview")]);
 	});
 
-	it("verifies each node with /healthz and /readyz probes that fail closed on no data", () => {
+	it("verifies preview with /healthz and production with /healthz and /readyz, failing closed on no data", () => {
 		const [preview, production] = records.pipelines[0]?.nodes ?? [];
-		for (const [node, origin] of [
-			[preview, PREVIEW],
-			[production, PRODUCTION],
+		// The preview Camp has no config-service binding, so its /readyz answers
+		// 503 started:false: requiring it would block every production deploy.
+		for (const [node, urls] of [
+			[preview, [`${PREVIEW}/healthz`]],
+			[production, [`${PRODUCTION}/healthz`, `${PRODUCTION}/readyz`]],
 		] as const) {
 			expect(node?.verification?.failOnNoData).toBe(true);
-			expect(node?.verification?.probes.map((probe) => probe.urlRef)).toEqual([
-				`${origin}/healthz`,
-				`${origin}/readyz`,
-			]);
+			expect(node?.verification?.probes.map((probe) => probe.urlRef)).toEqual(
+				urls,
+			);
 			expect(
 				node?.verification?.probes.every(
 					(probe) => probe.expectStatus === 200 && probe.minSuccessRatio === 1,
@@ -255,8 +268,27 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 			{ repository: "Hobo-Labs/HoBo", ref: "main", sha: SHA },
 		]);
 		expect(h.probed).toContain(`${PREVIEW}/healthz`);
-		expect(h.probed).toContain(`${PREVIEW}/readyz`);
+		expect(h.probed).not.toContain(`${PREVIEW}/readyz`);
+		// The relay's own journal, never the shared <HOBO_HOME>/cd.
+		expect(existsSync(join(h.home, RELAY_JOURNAL_DIR, "cd"))).toBe(true);
+		expect(existsSync(join(h.home, "cd"))).toBe(false);
 	}, 60_000);
+
+	it.each([
+		["HOBO_CD_SQLITE_PATH", "/shared/cd/journal.sqlite"],
+		["HOBO_CD_POSTGRES_URL", "postgres://cd.example.test/cd"],
+	])("refuses, naming the CD gap, when %s points CD at a shared store", async (name, value) => {
+		const h = await harness();
+		const outcome = await deliver(h, "preview", {
+			env: { HOBO_USER: "relay-test", [name]: value },
+		});
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.unavailable);
+		expect(outcome.message).toContain(name);
+		expect(outcome.message).toContain("cd.rollout");
+		expect(h.deployed).toEqual([]);
+	});
 
 	it("refuses production before anything is deployed when preview has not qualified the commit", async () => {
 		const h = await harness();

@@ -14,11 +14,25 @@
  * - `production` takes only Freight that `preview` qualified: a production
  *   deploy of a commit that has not passed preview verification is refused.
  *
- * Each node verifies with HTTP probes of the relay's `/healthz` and `/readyz`
- * and fails closed on no data: a probe that cannot reach the relay is an
- * unhealthy attempt, and a node whose origin is not configured probes a
- * reserved `.invalid` host (RFC 6761) that never answers, so nothing is
- * qualified there until the owner names the origin.
+ * Each node verifies with HTTP probes and fails closed on no data: a probe
+ * that cannot reach the relay is an unhealthy attempt, and a node whose origin
+ * is not configured probes a reserved `.invalid` host (RFC 6761) that never
+ * answers, so nothing is qualified there until the owner names the origin.
+ *
+ * - `production` probes `/healthz` and `/readyz`: it is qualified only once
+ *   the relay has started against its config service.
+ * - `preview` probes `/healthz` only. The preview Camp has no config-service
+ *   binding (`yard.ts`: a preview reads its environment), so its `/readyz`
+ *   answers 503 `started:false` unless the owner configured the preview
+ *   environment by hand; requiring it would mean preview never qualifies and
+ *   production is never deployed. `/healthz` answers 200 whenever the
+ *   function runs (`src/entry.ts`).
+ *
+ * Known gap: the probes read a fixed origin, not the deployment just realized,
+ * and nothing asserts that the origin serves the Freight's commit; a stale
+ * deployment behind the origin can answer for a newer commit. Closing it needs
+ * the deployment's own URL with a protection-bypass header, or `/healthz`
+ * reporting the build SHA.
  *
  * The origins are the module's only inputs, read once when it loads:
  * `HOBO_CI_RELAY_URL` (production, the same repository variable the smoke
@@ -55,28 +69,26 @@ const ORIGINS = Object.freeze({
 // Three observations a minute apart-ish: a probe every 20 s across a 60 s
 // window, every attempt must answer 200, and the verification gives up
 // (FAIL, never PASS) after five minutes.
-function verification(origin: string) {
+function probe(origin: string, name: "healthz" | "readyz") {
+	return {
+		name,
+		urlRef: `${origin}/${name}`,
+		expectStatus: 200,
+		intervalMs: "20000",
+		minSuccessRatio: 1,
+	};
+}
+
+function verification(
+	origin: string,
+	paths: readonly ("healthz" | "readyz")[],
+) {
 	return {
 		windowMs: "60000",
 		requiredObservations: 3,
 		progressDeadlineMs: "300000",
 		failOnNoData: true,
-		probes: [
-			{
-				name: "healthz",
-				urlRef: `${origin}/healthz`,
-				expectStatus: 200,
-				intervalMs: "20000",
-				minSuccessRatio: 1,
-			},
-			{
-				name: "readyz",
-				urlRef: `${origin}/readyz`,
-				expectStatus: 200,
-				intervalMs: "20000",
-				minSuccessRatio: 1,
-			},
-		],
+		probes: paths.map((name) => probe(origin, name)),
 	};
 }
 
@@ -119,14 +131,14 @@ export const pipelines = [
 				campIds: [`${YARD}/${YARD}/preview`],
 				fromSources: [SOURCE, "origin:manifest"],
 				strategy: "ROLLOUT_STRATEGY_ALL_AT_ONCE",
-				verification: verification(ORIGINS.preview),
+				verification: verification(ORIGINS.preview, ["healthz"]),
 			},
 			{
 				name: "production",
 				campIds: [`${YARD}/${YARD}/production`],
 				fromNodes: ["preview"],
 				strategy: "ROLLOUT_STRATEGY_ALL_AT_ONCE",
-				verification: verification(ORIGINS.production),
+				verification: verification(ORIGINS.production, ["healthz", "readyz"]),
 			},
 		],
 	},

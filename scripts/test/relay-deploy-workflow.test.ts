@@ -6,6 +6,7 @@ import {
 	decide,
 	RELAY_DEPLOY_REQUIRED_VARIABLES,
 	RELAY_EXTRA_INPUTS,
+	RELAY_PROBE_ORIGIN_VARIABLES,
 	relayInputDirs,
 	touchesRelay,
 } from "../ci/relay-deploy-gate.mts";
@@ -90,6 +91,24 @@ describe("the relay deploy gate", () => {
 		});
 		assert.equal(partial.run, false);
 		assert.match(partial.reason, /HOBO_CI_RELAY_VERCEL_TEAM_ID/u);
+		assert.equal(partial.level, "notice");
+	});
+
+	it("warns, not notices, when only the probe origins a pre-CD setup lacks are missing", () => {
+		const env = { ...configured };
+		for (const name of RELAY_PROBE_ORIGIN_VARIABLES) delete env[name];
+		const decision = decide({ event: "workflow_dispatch", env, inputDirs });
+		assert.equal(decision.run, false);
+		assert.equal(decision.level, "warning");
+		assert.match(decision.reason, /NOT deployed/u);
+		for (const name of RELAY_PROBE_ORIGIN_VARIABLES)
+			assert.ok(decision.reason.includes(name));
+		const one = decide({
+			event: "workflow_dispatch",
+			env: { ...configured, HOBO_CI_RELAY_PREVIEW_URL: "" },
+			inputDirs,
+		});
+		assert.equal(one.level, "warning");
 	});
 
 	it("deploys a manual run, and a push whose range it cannot read", () => {

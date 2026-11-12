@@ -17,9 +17,24 @@
 // preview qualified) and the CD gate, and realized by a conductor reconciler
 // whose realizer is `createVercelDeployProvider`'s git-artifact mode: the
 // settings first, then one deployment for the whole Bindle. `--wait` drives the
-// promotion to its end: READY, then the node's probes of `/healthz` and
-// `/readyz` (failing closed on no data), then qualification. Without `--wait`
-// the command returns once the deployment exists, unverified.
+// promotion to its end: READY, then the node's probes (`/healthz` for
+// preview, `/healthz` and `/readyz` for production, failing closed on no
+// data), then qualification. Without `--wait` the command returns once the
+// deployment exists, unverified. The journal is the relay's own
+// (`<HOBO_HOME>/ci-relay/cd`), never the shared one (ci-relay-delivery.ts names
+// the CD gap that requires it).
+//
+// CONTRACT CHANGE (from the direct-deploy verb; packages/ci-vercel/README.md
+// "Contract changes of hobo ci deploy"): `--wait` now verifies and qualifies,
+// so it needs the target's probe origin (HOBO_CI_RELAY_PREVIEW_URL or
+// HOBO_CI_RELAY_URL) and is refused without it
+// (HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET); `--target production` needs `--sha`
+// and preview's qualification of that commit in the same journal
+// (HOBO_CI_DEPLOY_NOT_QUALIFIED); the wait limit is 20 minutes, not 15; new
+// failure codes: HOBO_CI_DEPLOY_INCOMPLETE, HOBO_CI_DEPLOY_VERIFICATION_FAILED,
+// HOBO_CI_DEPLOY_NOT_QUALIFIED, HOBO_CI_DEPLOY_SOURCE_UNPINNED,
+// HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE, HOBO_CI_DEPLOY_DELIVERY_INVALID,
+// HOBO_CI_DEPLOY_FREIGHT_REFUSED, HOBO_CI_DEPLOY_PROMOTION_REFUSED.
 //
 // The target is chosen HERE, where the deploy is run, not in the Bindle; and
 // it is PREVIEW unless `--target production` says otherwise. Production needs
@@ -72,6 +87,7 @@ import {
 } from "./_generated/vercel_git_deployment_pb.js";
 import {
 	deliverRelay,
+	RELAY_JOURNAL_DIR,
 	type RelayRealization,
 	type RelayRealizationFailure,
 	relayCampId,
@@ -178,6 +194,14 @@ const TEAM_ID = /^team_[A-Za-z0-9]+$/u;
 export const RELAY_VERIFY_ORIGIN = Object.freeze({
 	preview: "HOBO_CI_RELAY_PREVIEW_URL",
 	production: "HOBO_CI_RELAY_URL",
+} as const);
+
+// What each target's verification probes (deploy/delivery.ts declares the
+// same): the preview Camp has no config-service binding, so its /readyz
+// answers 503 and only /healthz is required there.
+export const RELAY_VERIFY_PATHS = Object.freeze({
+	preview: Object.freeze(["/healthz"]),
+	production: Object.freeze(["/healthz", "/readyz"]),
 } as const);
 
 const HTTPS_ORIGIN = /^https:\/\/[^/?#\s]+\/?$/u;
@@ -339,7 +363,8 @@ function describeDelivery(
 			? ["  only if preview qualified the same Freight (the same commit)"]
 			: []),
 		"  a conductor reconciler realizes it as the Vercel git deployment above, converged once Vercel reports READY",
-		`  --wait verifies it with probes of /healthz and /readyz at ${RELAY_VERIFY_ORIGIN[target]} (fail closed on no data) and qualifies it`,
+		`  --wait verifies it with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${RELAY_VERIFY_ORIGIN[target]} (fail closed on no data) and qualifies it`,
+		`  in the relay's own CD journal under HOBO_HOME (${RELAY_JOURNAL_DIR}/cd), never the shared one`,
 	].join("\n");
 }
 
@@ -636,7 +661,7 @@ export async function runCiRelayDeploy(
 	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
 		return refused(
 			"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
-			`--wait verifies ${target} with probes of /healthz and /readyz at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
+			`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
 		);
 
 	const token = env.VERCEL_TOKEN;

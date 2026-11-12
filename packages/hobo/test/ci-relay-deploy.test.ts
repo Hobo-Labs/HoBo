@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,7 @@ import { parsePactDocument } from "@hobo/contract-harness";
 import type { HttpTransport } from "@hobo/core";
 import { at } from "@hobo/core/total-access";
 import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
@@ -134,10 +134,17 @@ async function deploy(
 	};
 }
 
-// A HOBO_HOME of its own for each run: the CD journal lives there.
+// A HOBO_HOME of its own for each run: the CD journal lives there. Removed
+// once the file's tests are done.
+const homes: string[] = [];
 function freshHome(): string {
-	return mkdtempSync(join(tmpdir(), "hobo-ci-deploy-"));
+	const home = mkdtempSync(join(tmpdir(), "hobo-ci-deploy-"));
+	homes.push(home);
+	return home;
 }
+afterAll(() => {
+	for (const home of homes) rmSync(home, { recursive: true, force: true });
+});
 
 // The relay answering its probes, and the URLs it was asked for.
 function healthyRelay(status = 200) {
@@ -165,8 +172,14 @@ const ORIGINS = {
 	HOBO_CI_RELAY_URL: "https://relay.example.test",
 };
 // deploy/delivery.ts reads its probe origins from the process environment
-// when it loads, as it does when the workflow runs the command.
-Object.assign(process.env, ORIGINS);
+// when it loads, as it does when the workflow runs the command. Stubbed for
+// this file only, and restored after it.
+beforeAll(() => {
+	for (const [name, value] of Object.entries(ORIGINS)) vi.stubEnv(name, value);
+});
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
 
 const RELAY = [
 	"--repo",

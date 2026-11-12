@@ -224,20 +224,53 @@ packages/ci-vercel/deploy/delivery.ts` applies the same records):
 
 | Node | Camp | Takes Freight from | Verified by |
 |---|---|---|---|
-| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | probes of `$HOBO_CI_RELAY_PREVIEW_URL/healthz` and `/readyz` |
+| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz` (the preview Camp has no config-service binding, so its `/readyz` answers 503 and is not required) |
 | `production` | `hobo-ci-relay/production` | **only** Freight `preview` qualified | probes of `$HOBO_CI_RELAY_URL/healthz` and `/readyz` |
 
 Each probe must answer 200 on every attempt across a 60 s window; a probe that
 cannot reach the relay is an unhealthy attempt, and no data fails the
 verification (a node whose origin is unset probes a reserved `.invalid` host).
-PASS is the only qualification; a failed verification fails the promotion and
-the predecessor Set is restored. `hobo ci deploy --target production` needs
-`--sha` and is refused, before anything is sent, when preview has not
-qualified that commit (`HOBO_CI_DEPLOY_NOT_QUALIFIED`). `--wait` drives the
-promotion to its end; without it the command returns once the deployment
-exists, unverified. The result keeps its JSON contract (`code`,
-`data.outputs`, `data.plan`) and adds `data.delivery` (pipeline, node, Camp,
-Freight, promotion and its state).
+PASS is the only qualification. **A failed verification fails the promotion
+and the job; it does not roll anything back.** The deployment that failed
+stays live on Vercel: CI's journal is job-scoped, so a production Camp there
+never has a predecessor Set to restore, the command returns as soon as the
+promotion is terminal, and there is no Vercel rollback realizer (no redeploy or
+re-alias of the previous deployment). Roll back by hand (`vercel rollback`, or
+promote the previous deployment in the dashboard).
+`hobo ci deploy --target production` needs `--sha` and is refused, before
+anything is sent, when preview has not qualified that commit
+(`HOBO_CI_DEPLOY_NOT_QUALIFIED`). `--wait` drives the promotion to its end;
+without it the command returns once the deployment exists, unverified. The
+result keeps its JSON contract (`code`, `data.outputs`, `data.plan`) and adds
+`data.delivery` (pipeline, node, Camp, Freight, promotion and its state).
+
+Known gaps, stated rather than hidden:
+
+- **Probes read a fixed origin, not the deployment just made.** Nothing checks
+  that `$HOBO_CI_RELAY_PREVIEW_URL` (or `$HOBO_CI_RELAY_URL`) serves the
+  Freight's commit, so a stale deployment behind the origin can qualify a newer
+  commit, and production trusts that qualification. Closing it needs the
+  deployment's own URL with a protection-bypass header, or `/healthz`
+  reporting the build SHA.
+- **@hobo/cd cannot run a rollout on a durable journal yet.** Its
+  `cd.rollout.*` event types are refused by SQLite and Postgres, and
+  `@hobo/cd/sets` cannot fold the `{ schema, observation }` status envelope.
+  `hobo ci deploy` works around both with a private encoding, so it keeps its
+  own journal (`$HOBO_HOME/ci-relay/cd`), never the shared `$HOBO_HOME/cd`
+  that `hobo deploy` and `hobo serve cd` read, and refuses
+  (`HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`) when `HOBO_CD_SQLITE_PATH` or
+  `HOBO_CD_POSTGRES_URL` names a shared store. The fix belongs in `@hobo/cd`.
+
+#### Contract changes of `hobo ci deploy`
+
+Delivering through HoBo CD changed the verb for anyone who runs it by hand:
+
+| Before | Now |
+|---|---|
+| `--wait` waited for READY | `--wait` waits for READY, then verifies and qualifies; it needs the target's probe origin (`HOBO_CI_RELAY_PREVIEW_URL` or `HOBO_CI_RELAY_URL`) and is refused without it (`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`) |
+| `--target production` deployed any ref | it needs `--sha`, and preview's qualification of that commit in the same journal (`HOBO_CI_DEPLOY_NOT_QUALIFIED`) |
+| a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
+| — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
@@ -255,14 +288,16 @@ and on `workflow_dispatch`:
 3. `hobo ci deploy --target preview --sha … --provision --wait` records the
    pushed commit as Freight, attaches the Upstash cache through the
    Marketplace if the project lacks it, deploys it to preview, waits for READY
-   and verifies it with the preview probes, in a job-scoped CD journal
-   (`HOBO_HOME=$RUNNER_TEMP/hobo-home`).
-4. `hobo ci deploy --target production --sha … --provision --wait` promotes
-   the same Freight to production only because preview qualified it, sets the
-   production Camp's settings, deploys, waits for READY and verifies it with
-   the production probes. `/readyz` must answer 200, so production is not
-   qualified while the relay reports `config-unavailable` (before the owner's
-   config-service setup).
+   and verifies it with the preview probe (`/healthz`), in a job-scoped CD
+   journal (`HOBO_HOME=$RUNNER_TEMP/hobo-home`).
+4. Only if preview qualified the commit, `hobo ci deploy --target production
+   --sha … --provision --wait` promotes the same Freight to production, sets
+   the production Camp's settings, deploys, waits for READY and verifies it
+   with the production probes. **When preview does not qualify, production is
+   not deployed at all** and the job fails. `/readyz` must answer 200 in
+   production, so before the owner's config-service setup production is
+   deployed, fails verification (`config-unavailable`) and stays live
+   unqualified, and the job fails.
 
 By hand, for a preview or to read a plan:
 
@@ -274,7 +309,8 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… \
 # A real run reads VERCEL_TOKEN from the environment. Preview is the default.
 VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
 
-# Verify and qualify it (needs HOBO_CI_RELAY_PREVIEW_URL), then promote it.
+# Verify and qualify it (needs HOBO_CI_RELAY_PREVIEW_URL), then promote it
+# (the journal is $HOBO_HOME/ci-relay/cd, so promote with the same HOBO_HOME).
 VERCEL_TOKEN=… HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
   --cwd packages/ci-vercel --ref main --sha <commit> --team team_… --wait
 ```
