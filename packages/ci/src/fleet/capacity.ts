@@ -3,7 +3,7 @@
  * size fits under the host reserve and volatility margin, and how many fit
  * side by side.
  *
- * The record a worker publishes to `HOBO_CI_FLEET_CAPACITY` is
+ * The record the relay publishes to `HOBO_CI_FLEET_CAPACITY` is
  * `FleetCapacityPublished` in `capacity-input.ts`; it is the only shape of
  * that variable.
  */
