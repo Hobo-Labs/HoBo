@@ -153,13 +153,11 @@ the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
 ```
 
 The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: free launch slots on
-the box and on the rest of the mesh, and when the record was written. The
-**Route runners** job reads that variable and leaves the fleet only when a
-fresh record says the box cannot admit a job by memory and ARC has no free
-slot; a box that is merely busy is left to the queue. The memory verdict
-(`trunkMemoryAdmit`) is not published yet, so today the job only reports the
-slots. See "Fleet balancing and the route table" in
-[`RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+the box and on the rest of the mesh, and when the record was written. No
+workflow uses it. The **Route runners** job no longer tries to: judging raw
+capacity in a workflow repeats, outside the relay and its budget, the decision
+this table already is
+([finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
@@ -192,9 +190,9 @@ would post for a new offer.
   relay records those jobs from their `workflow_job` events, a route to a paid
   label provider is bounded only by that provider's own spend limit. This must
   be closed before a workflow reads the table for a paid provider.
-- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet.** They read
-  `HOBO_CI_FLEET_CAPACITY` for capacity-aware overflow; indexing the route
-  table per job class is still outstanding. Jobs that run off the box still
+- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet**, nor
+  `HOBO_CI_FLEET_CAPACITY`. Indexing the route table per job class is still
+  outstanding. Jobs that run off the box still
   assume its toolchain image and mounts.
 - **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
   E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop).

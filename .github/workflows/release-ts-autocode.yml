@@ -57,7 +57,6 @@ jobs:
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
           fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
-          fleet-capacity: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
 
   ts-autocode-release-contract:
     name: ts-autocode pin cone + npm dry-run

@@ -241,7 +241,6 @@ jobs:
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
           fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
-          fleet-capacity: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
 
   release-main-train-gate:
     name: Main train release gate (nbgv)

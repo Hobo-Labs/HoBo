@@ -418,10 +418,9 @@ node, key or address.
 | Fresh, but the run's label is not listed, or its entry lacks a numeric `nodes` or `freeSlots` | Nothing. The publisher does not speak for that label |
 | Missing, unreadable, or more than five minutes old | Nothing. The queue is read exactly as before |
 
-The snapshot sits beside the box's own capacity record,
-`HOBO_CI_FLEET_CAPACITY`, which the routing job also reads: each can only
-take the fleet out of a decision, and either one saying the fleet cannot
-take the job is enough.
+The routing job reads no other record of the fleet. It once tried to read
+the box's `HOBO_CI_FLEET_CAPACITY` variable and never received a value
+([finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
 
 The counts are of every live healthy node serving the label that the reader
 does not reject, trusted or not, even with `requireTrusted`. That setting

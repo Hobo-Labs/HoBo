@@ -1,24 +1,15 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
-import {
-	fleetCapacitySnapshot,
-	fleetCapacityVariableValue,
-} from "../../packages/ci/src/fleet/capacity-input.ts";
 import {
 	BURST_SECONDS,
 	chooseRunner,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
-	FLEET_CAPACITY_MAX_AGE_SECONDS,
 	FLEET_STATE_MAX_AGE_SECONDS,
 	FLEET_STATE_MAX_SKEW_SECONDS,
-	type FleetCapacity,
 	type FleetState,
-	fleetCapacityRefuses,
 	fleetLabelFor,
 	fleetStateRefusal,
 	hasChosen,
@@ -33,7 +24,6 @@ import {
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
-	parseFleetCapacity,
 	parseFleetState,
 	parseRouteMode,
 	probeRunIds,
@@ -88,35 +78,6 @@ const decide = (overrides: Partial<Parameters<typeof routeRunner>[0]> = {}) =>
 		undecidedAhead: 0,
 		...overrides,
 	});
-
-/**
- * The `HOBO_CI_FLEET_CAPACITY` value as a worker writes it, published
- * `ageSeconds` before `nowMs`. A worker that reports its memory verdict adds
- * `trunkMemoryAdmit` to the same record.
- */
-const published = (
-	fields: { hobo?: number; arc?: number; trunkMemoryAdmit?: boolean } = {},
-	ageSeconds = 30,
-	nowMs = NOW,
-) => {
-	const value = fleetCapacityVariableValue(
-		fleetCapacitySnapshot(
-			fields.hobo ?? 0,
-			fields.arc ?? 0,
-			new Date(nowMs - ageSeconds * 1000).toISOString(),
-		),
-	);
-	return fields.trunkMemoryAdmit === undefined
-		? value
-		: JSON.stringify({
-				...JSON.parse(value),
-				trunkMemoryAdmit: fields.trunkMemoryAdmit,
-			});
-};
-const capacity = (...args: Parameters<typeof published>): FleetCapacity =>
-	parseFleetCapacity(published(...args), NOW);
-/** The box cannot admit by memory and ARC has no free slot. */
-const NO_ROOM = { hobo: 1, arc: 0, trunkMemoryAdmit: false };
 
 describe("the load on a label", () => {
 	it("counts jobs asking for exactly that label and takes the oldest wait", () => {
@@ -620,228 +581,6 @@ describe("the routing decision with the mesh's snapshot", () => {
 	});
 });
 
-describe("the box's capacity snapshot", () => {
-	it("is the record a worker publishes", () => {
-		// The value in the variable, byte for byte, with no memory verdict.
-		const value =
-			'{"version":1,"admittedParallel":1,"hobo":{"freeSlots":1},"arc":{"freeSlots":0},"publishedAt":"2026-11-10T17:59:30.000Z"}';
-		assert.equal(published({ hobo: 1, arc: 0 }), value);
-		assert.deepEqual(parseFleetCapacity(value, NOW), {
-			kind: "fresh",
-			ageSeconds: 30,
-			boxFreeSlots: 1,
-			arcFreeSlots: 0,
-			boxMemoryAdmit: undefined,
-		});
-	});
-
-	it("carries the box's memory verdict when the worker reports one", () => {
-		const value =
-			'{"version":1,"admittedParallel":0,"hobo":{"freeSlots":0},"arc":{"freeSlots":0},"trunkMemoryAdmit":false,"publishedAt":"2026-11-10T17:59:30.000Z"}';
-		assert.deepEqual(parseFleetCapacity(value, NOW), {
-			kind: "fresh",
-			ageSeconds: 30,
-			boxFreeSlots: 0,
-			arcFreeSlots: 0,
-			boxMemoryAdmit: false,
-		});
-		const admits = capacity({ hobo: 2, arc: 1, trunkMemoryAdmit: true });
-		assert.equal(admits.kind === "fresh" && admits.boxMemoryAdmit, true);
-	});
-
-	it("still reads a record with a field this reader does not know", () => {
-		// The route job runs the reader of the commit it checked out, which can
-		// be older than the worker that wrote the variable.
-		const value = JSON.stringify({
-			...JSON.parse(published({ hobo: 2, arc: 1 })),
-			heavyMemoryAdmit: true,
-		});
-		const read = parseFleetCapacity(value, NOW);
-		assert.equal(read.kind === "fresh" && read.boxFreeSlots, 2);
-	});
-
-	it("is unset when the variable is empty", () => {
-		for (const value of [undefined, "", "  \n"])
-			assert.deepEqual(parseFleetCapacity(value, NOW), { kind: "unset" });
-	});
-
-	it("is unreadable when it is not that record, and says so", () => {
-		const record = JSON.parse(published({ hobo: 1, arc: 0 }));
-		// The per-label record this reader once expected and no worker wrote.
-		const perLabel = {
-			freeSlots: 1,
-			requiredMb: 4096,
-			reserveMb: 2048,
-			volatilityMb: 1024,
-			admit: false,
-		};
-		for (const value of [
-			"not json",
-			"[]",
-			'"text"',
-			JSON.stringify({ atMs: NOW, hobo: perLabel, "hobo-trunk": perLabel }),
-			JSON.stringify({ ...record, version: 2 }),
-			JSON.stringify({ ...record, hobo: { freeSlots: -1 } }),
-			JSON.stringify({ ...record, arc: { freeSlots: 0.5 } }),
-			JSON.stringify({ ...record, arc: null }),
-			JSON.stringify({ ...record, trunkMemoryAdmit: "false" }),
-		])
-			assert.deepEqual(
-				parseFleetCapacity(value, NOW),
-				{ kind: "unreadable" },
-				value,
-			);
-	});
-
-	it("is undated without a time it was published", () => {
-		const { publishedAt: _, ...undated } = JSON.parse(published(NO_ROOM));
-		for (const value of [
-			JSON.stringify(undated),
-			JSON.stringify({ ...undated, publishedAt: "yesterday" }),
-		])
-			assert.deepEqual(parseFleetCapacity(value, NOW), { kind: "undated" });
-	});
-
-	it("is stale past the age limit, and from the future", () => {
-		assert.equal(
-			capacity(NO_ROOM, FLEET_CAPACITY_MAX_AGE_SECONDS).kind,
-			"fresh",
-		);
-		assert.deepEqual(capacity(NO_ROOM, FLEET_CAPACITY_MAX_AGE_SECONDS + 1), {
-			kind: "stale",
-			ageSeconds: FLEET_CAPACITY_MAX_AGE_SECONDS + 1,
-		});
-		// A box whose clock runs a little ahead of this machine's is still read.
-		assert.deepEqual(capacity(NO_ROOM, -FLEET_STATE_MAX_SKEW_SECONDS), {
-			kind: "fresh",
-			ageSeconds: 0,
-			boxFreeSlots: 1,
-			arcFreeSlots: 0,
-			boxMemoryAdmit: false,
-		});
-		assert.deepEqual(capacity(NO_ROOM, -FLEET_STATE_MAX_SKEW_SECONDS - 1), {
-			kind: "stale",
-			ageSeconds: -FLEET_STATE_MAX_SKEW_SECONDS - 1,
-		});
-	});
-
-	it("refuses only when the box cannot admit by memory and ARC has no free slot", () => {
-		assert.equal(fleetCapacityRefuses(capacity(NO_ROOM)), true);
-		for (const other of [
-			capacity({ ...NO_ROOM, arc: 1 }),
-			capacity({ hobo: 0, arc: 0, trunkMemoryAdmit: true }),
-			// No verdict: the box did not say it cannot admit.
-			capacity({ hobo: 0, arc: 0 }),
-			capacity(NO_ROOM, FLEET_CAPACITY_MAX_AGE_SECONDS + 1),
-			parseFleetCapacity(undefined, NOW),
-			parseFleetCapacity("not json", NOW),
-		])
-			assert.equal(fleetCapacityRefuses(other), false, JSON.stringify(other));
-		// ARC's slots not listed is not ARC having none.
-		const { arc: _, ...boxOnly } = JSON.parse(published(NO_ROOM));
-		assert.equal(
-			fleetCapacityRefuses(parseFleetCapacity(JSON.stringify(boxOnly), NOW)),
-			false,
-		);
-	});
-});
-
-describe("the routing decision with the box's capacity", () => {
-	it("reports what the worker published instead of an unset capacity", () => {
-		assert.match(decide().reason, /; fleet capacity unset; /);
-		const routed = decide({ fleetCapacity: capacity({ hobo: 1, arc: 0 }) });
-		assert.equal(routed.tier, "fleet");
-		assert.doesNotMatch(routed.reason, /fleet capacity unset/);
-		assert.match(
-			routed.reason,
-			/; fleet capacity \(30 s old\): the box gave no memory verdict, 1 free slot\(s\) on the box, 0 on ARC; /,
-		);
-	});
-
-	it("leaves the fleet when the box cannot admit by memory and ARC has no free slot", () => {
-		for (const fleetLabel of ["hobo", "hobo-trunk"]) {
-			const routed = decide({ fleetLabel, fleetCapacity: capacity(NO_ROOM) });
-			assert.equal(routed.tier, "github");
-			assert.equal(routed.runner, "ubuntu-24.04");
-			assert.match(
-				routed.reason,
-				/fleet capacity \(30 s old\): the box cannot admit a job by memory, 1 free slot\(s\) on the box, 0 on ARC, so the fleet is not asked/,
-			);
-		}
-	});
-
-	it("asks an enrolled local box before GitHub-hosted when capacity refuses the fleet", () => {
-		const routed = decide({
-			localEnrolled: true,
-			fleetCapacity: capacity(NO_ROOM),
-		});
-		assert.equal(routed.tier, "local");
-	});
-
-	it("keeps the fleet while ARC has a free slot", () => {
-		const routed = decide({
-			fleetCapacity: capacity({ ...NO_ROOM, arc: 1 }),
-		});
-		assert.equal(routed.tier, "fleet");
-		assert.match(
-			routed.reason,
-			/the box cannot admit a job by memory, 1 free slot\(s\) on the box, 1 on ARC;/,
-		);
-	});
-
-	it("keeps the fleet when the box is only busy: no free slot is the queue's to judge", () => {
-		for (const busy of [
-			capacity({ hobo: 0, arc: 0, trunkMemoryAdmit: true }),
-			capacity({ hobo: 0, arc: 0 }),
-		])
-			assert.equal(decide({ fleetCapacity: busy }).tier, "fleet");
-		// And the queue still can refuse it.
-		const routed = decide({
-			fleet: { ...up, queued: 4 },
-			fleetCapacity: capacity({ hobo: 0, arc: 0, trunkMemoryAdmit: true }),
-		});
-		assert.equal(routed.tier, "github");
-	});
-
-	it("reads a stale snapshot as unknown, not as a refusal", () => {
-		const old = capacity(NO_ROOM, 900);
-		const routed = decide({ fleetCapacity: old });
-		assert.equal(routed.tier, "fleet");
-		assert.match(
-			routed.reason,
-			/; fleet capacity is 900 s old, so it is not used; /,
-		);
-		// The queue is read exactly as without one.
-		assert.equal(
-			decide({ fleet: idle, fleetCapacity: old }).tier,
-			decide({ fleet: idle }).tier,
-		);
-		assert.equal(
-			decide({
-				fleet: { ...up, oldestWaitSeconds: 900, queued: 1 },
-				fleetCapacity: old,
-			}).tier,
-			"github",
-		);
-	});
-
-	it("says why a snapshot it cannot use is not used", () => {
-		assert.match(
-			decide({ fleetCapacity: parseFleetCapacity("{}", NOW) }).reason,
-			/; fleet capacity is not the record a worker publishes, so it is not used; /,
-		);
-		assert.match(
-			decide({ fleetCapacity: capacity(NO_ROOM, -600) }).reason,
-			/; fleet capacity is dated 600 s ahead of this machine, so it is not used; /,
-		);
-	});
-
-	it("does not move a pinned fleet", () => {
-		const pinned = decide({ mode: "fleet", fleetCapacity: capacity(NO_ROOM) });
-		assert.deepEqual([pinned.tier, pinned.runner], ["fleet", "hobo"]);
-	});
-});
-
 describe("the fleet label a run asks for", () => {
 	it("is the trunk label for trunk events unless that is switched off", () => {
 		assert.equal(fleetLabelFor("pull_request", undefined), "hobo");
@@ -1178,11 +917,7 @@ describe("waiting for the probe", () => {
 	/** Plays out a list of queue views, one per look, on a clock only `sleep` moves. */
 	const choose = async (
 		views: readonly QueueView[],
-		overrides: {
-			localEnrolled?: boolean;
-			fleetState?: string;
-			fleetCapacity?: string;
-		} = {},
+		overrides: { localEnrolled?: boolean; fleetState?: string } = {},
 	) => {
 		let clock = NOW;
 		let looks = 0;
@@ -1202,8 +937,6 @@ describe("waiting for the probe", () => {
 			localEnrolled: overrides.localEnrolled ?? false,
 			limits,
 			fleetState: (nowMs) => parseFleetState(overrides.fleetState, nowMs),
-			fleetCapacity: (nowMs) =>
-				parseFleetCapacity(overrides.fleetCapacity, nowMs),
 		});
 		return { decision, looks, waited: (clock - NOW) / 1000 };
 	};
@@ -1246,23 +979,6 @@ describe("waiting for the probe", () => {
 			{ ...probing, jobs: [waiting("hobo", 900), waiting("hobo", 10)] },
 		]);
 		assert.deepEqual([seen.decision.tier, seen.waited], ["github", 0]);
-	});
-
-	it("does not wait on a fleet the box's capacity refuses", async () => {
-		// A probe being picked up would not change what the box reports.
-		const seen = await choose([probing], {
-			fleetCapacity: published(NO_ROOM),
-		});
-		assert.deepEqual([seen.decision.tier, seen.waited], ["github", 0]);
-		assert.match(seen.decision.reason, /so the fleet is not asked/);
-	});
-
-	it("still waits for the probe when the box's capacity does not refuse", async () => {
-		const seen = await choose([probing, probing, answered], {
-			fleetCapacity: published({ ...NO_ROOM, arc: 1 }),
-		});
-		assert.equal(seen.decision.tier, "fleet");
-		assert.equal(seen.waited, 2 * PROBE_POLL_SECONDS);
 	});
 
 	it("does not wait while a run ahead has yet to choose", async () => {
@@ -1402,82 +1118,6 @@ describe("the script as a whole", () => {
 	});
 });
 
-describe("the script with the box's capacity", () => {
-	/** A queue in which a runner took the probe's `hobo` job a minute ago. */
-	const withFleetUp = async <T>(run: (apiUrl: string) => Promise<T>) => {
-		const ago = (seconds: number) =>
-			new Date(Date.now() - seconds * 1000).toISOString();
-		const server = createServer((request, response) => {
-			const page = request.url?.includes("/jobs")
-				? {
-						jobs: [
-							{
-								run_id: 40,
-								status: "completed",
-								labels: ["hobo"],
-								runner_name: "hobo-1",
-								created_at: ago(65),
-								started_at: ago(60),
-							},
-						],
-					}
-				: {
-						workflow_runs: [
-							{
-								id: 40,
-								path: PROBE_WORKFLOW_PATH,
-								status: "completed",
-								created_at: ago(65),
-								updated_at: ago(50),
-							},
-						],
-					};
-			response.setHeader("content-type", "application/json");
-			response.end(JSON.stringify(page));
-		});
-		await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-		// SAFETY: a server listening on a TCP port reports an AddressInfo.
-		const { port } = server.address() as AddressInfo;
-		try {
-			return await run(`http://127.0.0.1:${port}`);
-		} finally {
-			await new Promise((done) => server.close(done));
-		}
-	};
-	const route = (apiUrl: string, fleetCapacity?: string) => {
-		const env: NodeJS.ProcessEnv = {
-			GITHUB_EVENT_NAME: "pull_request",
-			GITHUB_REPOSITORY: "acme/app",
-			GITHUB_RUN_ID: "51",
-			GITHUB_API_URL: apiUrl,
-		};
-		if (fleetCapacity !== undefined) env.HOBO_CI_FLEET_CAPACITY = fleetCapacity;
-		return main(env);
-	};
-
-	it("reads the variable the workflow passes in and leaves a fleet with no room", async () => {
-		await withFleetUp(async (apiUrl) => {
-			const unset = await route(apiUrl);
-			assert.equal(unset.tier, "fleet");
-			assert.match(unset.reason, /fleet capacity unset/);
-
-			const room = await route(
-				apiUrl,
-				published({ hobo: 1, arc: 0 }, 30, Date.now()),
-			);
-			assert.equal(room.tier, "fleet");
-			assert.match(room.reason, /fleet capacity \(\d+ s old\): /);
-
-			const none = await route(apiUrl, published(NO_ROOM, 30, Date.now()));
-			assert.deepEqual([none.tier, none.runner], ["github", "ubuntu-24.04"]);
-			assert.match(none.reason, /so the fleet is not asked/);
-
-			const stale = await route(apiUrl, published(NO_ROOM, 900, Date.now()));
-			assert.equal(stale.tier, "fleet");
-		});
-	});
-});
-
 describe("the workflows that route", () => {
 	const root = resolve(import.meta.dirname, "..", "..");
 	const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -1509,9 +1149,14 @@ describe("the workflows that route", () => {
 			read(path).includes("uses: ./.github/actions/route-runner"),
 		);
 
+	// A file the script loads and a workflow does not check out stops the
+	// script before it decides, and the step then falls back to GitHub-hosted.
 	it("check out every file the routing script loads", () => {
 		const needed = loadedBy("scripts/ci/route-runner.mts");
-		assert.ok(needed.has("packages/ci/src/fleet-overflow.ts"));
+		assert.deepEqual([...needed].sort(), [
+			"packages/ci/src/fleet-overflow.ts",
+			"scripts/ci/route-runner.mts",
+		]);
 		assert.ok(routed.length >= 6, `found ${routed.length} routed workflows`);
 		for (const path of routed) {
 			const lines = new Set(
@@ -1522,20 +1167,5 @@ describe("the workflows that route", () => {
 			for (const file of needed)
 				assert.ok(lines.has(file), `${path} does not sparse-checkout ${file}`);
 		}
-	});
-
-	it("pass the box's capacity variable to the routing step", () => {
-		// The job's token cannot read a repository variable through the API, so
-		// the value comes from the `vars` context, like the mesh snapshot.
-		assert.match(
-			read(".github/actions/route-runner/action.yml"),
-			/^ {8}HOBO_CI_FLEET_CAPACITY: \$\{\{ inputs\.fleet-capacity \}\}$/m,
-		);
-		for (const path of routed)
-			assert.match(
-				read(path),
-				/^ {10}fleet-capacity: \$\{\{ vars\.HOBO_CI_FLEET_CAPACITY \}\}$/m,
-				`${path} does not pass fleet-capacity`,
-			);
 	});
 });

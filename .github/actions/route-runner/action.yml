@@ -39,16 +39,6 @@ inputs:
       old; empty, stale or unreadable, the queue is read as before.
     required: false
     default: ""
-  fleet-capacity:
-    description: >-
-      The box's capacity record (the HOBO_CI_FLEET_CAPACITY repository variable,
-      which a worker rewrites about once a minute): free slots on the box and on
-      ARC, and whether the box can admit a job by memory. Pass the variable's
-      current value from the vars context; the API refuses a job's token (403).
-      Used only while it is at most three minutes old, and only to leave the
-      fleet when the box cannot admit by memory and ARC has no free slot.
-    required: false
-    default: ""
 outputs:
   runner:
     description: The runs-on label for this run's jobs.
@@ -112,7 +102,6 @@ runs:
         HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
         HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
         HOBO_CI_FLEET_STATE: ${{ inputs.fleet-state }}
-        HOBO_CI_FLEET_CAPACITY: ${{ inputs.fleet-capacity }}
       run: |
         set -uo pipefail
         fleet=hobo
