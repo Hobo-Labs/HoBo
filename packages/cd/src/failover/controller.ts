@@ -1248,6 +1248,15 @@ export function createFailoverController(
 					)) {
 						const placement = await d.placement.get(node.placement);
 						if (!noRunDue(taint, placement?.tolerations ?? [], nowMs)) continue;
+						const key = `taint:${taint.key}:${taint.addedAt}`;
+						const id = failoverIdFor(
+							d.tenant,
+							view.topology.campId,
+							pipeline,
+							node.name,
+							key,
+						);
+						if ((await load(id)) !== undefined) continue;
 						const denied = await authorize(
 							"failover.propose",
 							{ campId: view.topology.campId, taint: taint.key },
@@ -1259,7 +1268,7 @@ export function createFailoverController(
 								campId: view.topology.campId,
 								pipeline,
 								node,
-								key: `taint:${taint.key}:${taint.addedAt}`,
+								key,
 								taint: taint.key,
 								reasonText: `NO_RUN taint ${taint.key} outlived its toleration`,
 							},

@@ -842,7 +842,16 @@ export function createFanoutController(
 					}
 				}
 				if (view.state === FanoutState.COMPLETED) {
-					await scheduleNext(view, ctx, true);
+					// Late entrants converge to the node's current qualified Freight:
+					// only the newest fan-out of the node catches its Camps up.
+					const newer = everyone.some(
+						(other) =>
+							other.fanoutId !== view.fanoutId &&
+							other.pipeline === view.pipeline &&
+							other.node === view.node &&
+							startedBefore(view, other),
+					);
+					if (!newer) await scheduleNext(view, ctx, true);
 					await depart(view, ctx);
 				}
 			},
