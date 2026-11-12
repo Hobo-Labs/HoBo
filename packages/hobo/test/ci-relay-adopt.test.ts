@@ -16,6 +16,7 @@ import {
 	runCiRelayAdopt,
 } from "../src/ci-relay-adopt.js";
 import { RELAY_DELIVERY_REFUSAL } from "../src/ci-relay-delivery.js";
+import type { JsonValue } from "../src/json.js";
 
 const RELAY_DIR = resolve(import.meta.dirname, "../../ci-vercel");
 const SHA = "c".repeat(40);
@@ -33,9 +34,9 @@ afterAll(async () => {
 
 type GitHubFake = Readonly<{
 	/** Listings answered in turn; the last repeats. */
-	listings?: readonly unknown[];
+	listings?: readonly JsonValue[];
 	/** Statuses answered in turn for deployment 701; the last repeats. */
-	statuses?: readonly unknown[];
+	statuses?: readonly JsonValue[];
 	/** The commit `GET /deployments/701` reports. */
 	commit?: string;
 }>;
@@ -73,7 +74,7 @@ async function harness(fake: GitHubFake = {}): Promise<Harness> {
 	const statuses = fake.statuses ?? [READY];
 	let listed = 0;
 	let observed = 0;
-	const json = (value: unknown) => ({
+	const json = (value: JsonValue) => ({
 		status: 200,
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(value),
@@ -148,6 +149,7 @@ describe("hobo ci deploy --adopt", () => {
 		const result = await adopt(h);
 		expect(result.ok, result.message).not.toBe(false);
 		expect(result.code).toBe("HOBO_CI_ADOPTED");
+		// SAFETY: runCiRelayAdopt returns this shape (see ci-relay-adopt.ts data()).
 		const data = result.data as {
 			adopted: Record<string, string>;
 			delivery: Record<string, { state: string; freightId: string }>;
@@ -188,6 +190,7 @@ describe("hobo ci deploy --adopt", () => {
 		});
 		const result = await adopt(h);
 		expect(result.ok, result.message).not.toBe(false);
+		// SAFETY: runCiRelayAdopt returns this shape (see ci-relay-adopt.ts data()).
 		const data = result.data as { adopted: Record<string, string> };
 		expect(data.adopted.readyState).toBe("BUILDING");
 		expectReadOnly(h);
@@ -245,6 +248,7 @@ describe("hobo ci deploy --adopt", () => {
 		});
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe(RELAY_DELIVERY_REFUSAL.verificationFailed);
+		// SAFETY: runCiRelayAdopt returns this shape (see ci-relay-adopt.ts data()).
 		const data = result.data as {
 			delivery: Record<string, { state: string } | null>;
 		};
