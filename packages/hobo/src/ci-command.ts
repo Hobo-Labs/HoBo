@@ -15,10 +15,11 @@ import {
 	type CommandModule,
 	type CommandResult,
 	verbHelpText,
+	type YardRuntime,
 } from "@hobo/cli";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
-import { runCiAppCreate } from "./ci-app-create.js";
+import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
@@ -34,6 +35,11 @@ import {
 } from "./ci-relay-deploy.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRuns } from "./ci-runs.js";
+import {
+	CI_SECRET_STORE_OPTIONS,
+	runCiSecretStore,
+	SECRET_STORE_ONLY_OPTIONS,
+} from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 import type { VercelFetch } from "./vercel-client.js";
 
@@ -278,6 +284,17 @@ function parseCiArgs(args: readonly string[]) {
 			provision: { type: "boolean" },
 			"owner-id": { type: "string" },
 			name: { type: "string" },
+			"auth-md": { type: "string", multiple: true },
+			"fleet-host": { type: "string" },
+			"owner-email": { type: "string" },
+			"vercel-team-slug": { type: "string" },
+			"vercel-project-id": { type: "string" },
+			"allow-designed": { type: "boolean" },
+			"deploy-project-id": { type: "string" },
+			"relay-identity-id": { type: "string" },
+			"deploy-identity-id": { type: "string" },
+			"site-url": { type: "string" },
+			"via-workflow": { type: "boolean" },
 		},
 	});
 }
@@ -330,6 +347,8 @@ export function createCiCommand(
 		vercelFetch?: VercelFetch;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
+		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
+		runtime?: YardRuntime;
 	} = {},
 ): CommandModule {
 	return {
@@ -371,6 +390,7 @@ export function createCiCommand(
 					"github",
 					"deploy",
 					"app",
+					"secret-store",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
@@ -398,6 +418,40 @@ export function createCiCommand(
 					emitProgress,
 				});
 			}
+			if (command === "secret-store") {
+				if (positionals.length !== 2)
+					return usage(
+						"Use hobo ci secret-store plan, provision, connect or verify.",
+					);
+				const allowed = new Set<string>(CI_SECRET_STORE_OPTIONS);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(
+						`--${unsupported[0]} does not apply to hobo ci secret-store.`,
+					);
+				return runCiSecretStore({
+					subcommand: positionals[1] ?? "",
+					cwd: flags.cwd,
+					values,
+					env: deps.env ?? process.env,
+					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					...(deps.runtime !== undefined
+						? { runtime: deps.runtime }
+						: undefined),
+					interactive:
+						(deps.interactive ??
+							Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
+						!flags.json,
+					prompt: deps.prompt ?? promptOnTerminal,
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
+				});
+			}
+			for (const key of SECRET_STORE_ONLY_OPTIONS) {
+				if (values[key] !== undefined)
+					return usage(`--${key} only applies to hobo ci secret-store.`);
+			}
 			{
 				const misplaced = CI_DEPLOY_ONLY_OPTIONS.find(
 					(key) => values[key] !== undefined,
@@ -406,14 +460,32 @@ export function createCiCommand(
 					return usage(`--${misplaced} only applies to hobo ci deploy.`);
 			}
 			if (command === "app") {
-				if (positionals.length !== 2 || positionals[1] !== "create")
-					return usage("Use hobo ci app create.");
+				if (
+					positionals.length !== 2 ||
+					(positionals[1] !== "create" && positionals[1] !== "deposit")
+				)
+					return usage("Use hobo ci app create (or deposit, in the workflow).");
+				if (positionals[1] === "deposit")
+					return runCiAppDeposit({
+						cwd: flags.cwd,
+						relay:
+							values.relay === undefined ? undefined : String(values.relay),
+						ownerId:
+							values["owner-id"] === undefined
+								? undefined
+								: String(values["owner-id"]),
+						env: deps.env ?? process.env,
+						emitProgress,
+						fetch: deps.fetch,
+						sleep: deps.sleep,
+					});
 				const allowed = new Set([
 					"relay",
 					"owner-id",
 					"name",
 					"yes",
 					"non-interactive",
+					"via-workflow",
 				]);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),
@@ -435,6 +507,7 @@ export function createCiCommand(
 							: String(values["owner-id"]),
 					name: values.name === undefined ? undefined : String(values.name),
 					replace: values.yes === true,
+					viaWorkflow: values["via-workflow"] === true,
 					interactive,
 					env: deps.env ?? process.env,
 					emitProgress,

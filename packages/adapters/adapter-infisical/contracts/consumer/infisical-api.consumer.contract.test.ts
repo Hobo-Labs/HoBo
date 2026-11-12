@@ -197,9 +197,35 @@ describe("the Infisical API (consumer contract)", () => {
 		seen.length = 0;
 	});
 
+	it("signs in, then revokes the token it obtained, in the body and without a bearer header", async () => {
+		const c = client("/hobo-ci-relay", {
+			method: "universal-auth",
+			clientId: "owner-client",
+			clientSecret: "fixture-client-secret",
+		});
+		await c.signIn();
+		await c.revoke();
+		expect(seen.map((entry) => entry.request.path)).toEqual([
+			"/api/v1/auth/universal-auth/login",
+			"/api/v1/auth/token/revoke",
+		]);
+		expect(seen[1]?.request.headers?.authorization).toBeUndefined();
+		expectRecorded();
+		// Nothing is left to end: a second revoke makes no request.
+		await c.revoke();
+		expect(seen).toEqual([]);
+	});
+
 	it("records no token or JWT in a request the pact keeps as a path", () => {
-		for (const interaction of pact.interactions)
-			expect(interaction.request.path).not.toMatch(/token|jwt|Bearer/iu);
+		for (const interaction of pact.interactions) {
+			// The revoke endpoint's own name contains "token"; the token it ends
+			// travels in the body, never in the path.
+			const route = interaction.request.path.replace(
+				/^\/api\/v1\/auth\/token\/revoke$/u,
+				"/api/v1/auth/(revoke)",
+			);
+			expect(route).not.toMatch(/token|jwt|Bearer/iu);
+		}
 	});
 
 	it("lists the pact in the inventory", async () => {

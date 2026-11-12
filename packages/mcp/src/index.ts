@@ -39,6 +39,7 @@ export {
 	type RateLimitReason,
 	rateLimitKey,
 } from "./rate-limit.js";
+export * from "./secret-capture/index.js";
 export {
 	type CreateHoboMcpServerOptions,
 	createHoboMcpServer,

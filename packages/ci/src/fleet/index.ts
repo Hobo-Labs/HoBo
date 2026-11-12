@@ -15,6 +15,7 @@ export {
 	type FleetLabelCapacity,
 	fleetLabelCapacity,
 	memoryAdmitHeadroom,
+	memoryAdmitParallelCount,
 	parseFleetCapacityVariable,
 } from "./capacity.js";
 export {
