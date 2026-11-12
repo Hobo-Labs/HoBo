@@ -15,7 +15,9 @@ import {
 	createArtifactStore,
 	createArtifactVerifier,
 } from "../../src/artifacts/index.js";
+import { createMemoryBackend } from "../../src/artifacts/memory.js";
 import { cratesIndexPath } from "../../src/artifacts/registries.js";
+import { createStoreOver } from "../../src/artifacts/store.js";
 import type { ArtifactStore, Digest } from "../../src/ports.js";
 import {
 	bytesOf,
@@ -871,4 +873,39 @@ describe("fail-closed registry behaviour", () => {
 	});
 });
 
-export type { Digest };
+describe("plan 0024 §10 (WP3 rows)", () => {
+	it("Artifact corrupted at rest: detected; promotion blocked", async () => {
+		const backend = createMemoryBackend();
+		const telemetry = new RecordingTelemetry();
+		const deps = {
+			store: new MemoryEventStore(),
+			tenant: TENANT,
+			now: () => T0,
+			telemetry,
+		};
+		const artifacts = createStoreOver(backend, deps);
+		const ref = await artifacts.put(
+			TARBALL,
+			{
+				name: "api",
+				kind: ArtifactKind.PACKAGE,
+				mediaType: "application/gzip",
+			},
+			context(),
+		);
+		const stored = backend.blobs.get(ref.digest as Digest);
+		if (stored) stored[0] = (stored[0] ?? 0) ^ 0xff;
+		const verifier = createArtifactVerifier({
+			...deps,
+			artifacts,
+			http: new ScriptedTransport().http,
+		});
+		const outcome = await verifier.verify(manifestOf(ref), context());
+		expect(outcome.ok).toBe(false);
+		if (!outcome.ok)
+			expect(
+				outcome.reasons.map((reason) => [reason.code, reason.subject]),
+			).toEqual([[ARTIFACT_REASON.corrupt, "api"]]);
+		expect(telemetry.count("hobo.cd.artifact.corrupt")).toBe(1);
+	});
+});

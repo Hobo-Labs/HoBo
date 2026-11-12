@@ -82,7 +82,7 @@ export function corrupt(digest: string, backend: string): ArtifactStoreError {
 	return new ArtifactStoreError(
 		ARTIFACT_REASON.corrupt,
 		`stored bytes for ${digest} on the ${backend} backend do not hash to their digest`,
-		"Treat the blob as lost: delete it (`hobo deploy artifacts delete <digest>`) and re-put the original bytes from the build; promotion of Freight that names it stays blocked until then.",
+		"Re-put the original bytes from the build (a put of the true bytes repairs the blob in place), or delete it through the artifact store; promotion of Freight that names it stays blocked until then.",
 		digest,
 	);
 }
