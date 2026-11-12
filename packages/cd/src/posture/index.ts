@@ -10,3 +10,4 @@ export {
 	POSTURE_REASON,
 	PostureJournalError,
 } from "./reasons.js";
+export { createShadowRecorder, type ShadowRecorderDeps } from "./shadow.js";

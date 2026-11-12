@@ -152,6 +152,9 @@ export type AppendOne = Readonly<{
 
 const APPEND_ATTEMPTS = 4;
 
+/** The event a key resolved to, and whether this call appended it (false: an earlier call did). */
+export type Appended = Readonly<{ event: EventEnvelope; fresh: boolean }>;
+
 /**
  * Append one fact under stream-head CAS with an idempotency key. A concurrent
  * writer causes a re-read and retry; a repeated key returns the recorded
@@ -159,7 +162,7 @@ const APPEND_ATTEMPTS = 4;
  */
 export async function appendOnce(
 	input: AppendOne,
-): Promise<EventEnvelope | undefined> {
+): Promise<Appended | undefined> {
 	for (let attempt = 0; attempt < APPEND_ATTEMPTS; attempt += 1) {
 		const expectedSeq = await streamRevision(input.store, input.streamId);
 		try {
@@ -176,8 +179,10 @@ export async function appendOnce(
 				],
 				{ expectedSeq, actor: input.actor, tenant: input.tenant },
 			);
-			const event = result.appended[0] ?? result.deduped[0];
-			if (event) return event;
+			const fresh = result.appended[0];
+			if (fresh) return { event: fresh, fresh: true };
+			const recorded = result.deduped[0];
+			if (recorded) return { event: recorded, fresh: false };
 		} catch (error) {
 			if (!(error instanceof Error) || !isEventStoreOptimisticConflict(error))
 				throw error;

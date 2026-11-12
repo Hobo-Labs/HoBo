@@ -160,7 +160,7 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 		key: string,
 		ctx: CdContext,
 	) {
-		const event = await appendOnce({
+		const appended = await appendOnce({
 			store: d.store,
 			tenant: d.tenant,
 			actor: ctx.principal,
@@ -172,7 +172,7 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 			},
 			idempotencyKey: key,
 		});
-		if (!event)
+		if (!appended)
 			return refuse(
 				reason(
 					POSTURE_REASON.journalConflict,
@@ -181,7 +181,9 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 					campId,
 				),
 			);
+		const { event } = appended;
 		const written = decode(PolicyBindingRecordSchema, event.data) ?? record;
+		if (!appended.fresh) return { ok: true as const, value: written };
 		emit(d.telemetry, [
 			{
 				name: POSTURE_METRIC.bindingChanged,
