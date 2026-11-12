@@ -1,11 +1,11 @@
 // A composed orchestrator over the real Harness engine adapter and the fakes.
 import { createHarnessRolloutEngine } from "../../src/adapters/harness.js";
+import type { RolloutEngine, RolloutOrchestrator } from "../../src/ports.js";
 import type { CanaryCapacity } from "../../src/rollout/capacity.js";
 import {
 	createRolloutOrchestrator,
 	type ExperimentConclusions,
 } from "../../src/rollout/orchestrator.js";
-import type { RolloutEngine, RolloutOrchestrator } from "../../src/ports.js";
 import {
 	clock,
 	context,
@@ -49,10 +49,26 @@ export function rig(
 			desired,
 			approvals,
 			telemetry,
-			...(options.capacity === undefined ? undefined : { capacity: options.capacity }),
-			...(options.experiments === undefined ? undefined : { experiments: options.experiments }),
+			...(options.capacity === undefined
+				? undefined
+				: { capacity: options.capacity }),
+			...(options.experiments === undefined
+				? undefined
+				: { experiments: options.experiments }),
 		});
 	const orchestrator = build();
 	const ctx = context(time.now);
-	return { store, time, traffic, verification, windows, desired, approvals, telemetry, engine, orchestrator, ctx };
+	return {
+		store,
+		time,
+		traffic,
+		verification,
+		windows,
+		desired,
+		approvals,
+		telemetry,
+		engine,
+		orchestrator,
+		ctx,
+	};
 }

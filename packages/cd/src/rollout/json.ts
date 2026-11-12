@@ -66,7 +66,9 @@ export function canonicalJson(value: JsonValue): string {
 		const keys = Object.keys(value).sort();
 		return `{${keys
 			.filter((key) => value[key] !== undefined)
-			.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`)
+			.map(
+				(key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`,
+			)
 			.join(",")}}`;
 	}
 	return JSON.stringify(value);

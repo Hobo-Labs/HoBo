@@ -1,6 +1,7 @@
 // WP10 Accept bullets and §10 rows for createRolloutOrchestrator, driven over
 // the real Harness engine adapter (adapters/harness.ts) and port doubles.
 import { describe, expect, it } from "vitest";
+import type { RolloutPlanRecord } from "../../src/_generated/cd_pb.js";
 import {
 	RolloutStrategy,
 	VerificationVerdict,
@@ -10,14 +11,13 @@ import {
 	PROGRESSIVE_UNSUPPORTED,
 	WINDOW_CLOSED,
 } from "../../src/events.js";
-import type { RolloutPlanRecord } from "../../src/_generated/cd_pb.js";
 import type { RolloutId } from "../../src/ports.js";
 import { ROLLOUT_LEDGER } from "../../src/rollout/journal.js";
 import { ROLLOUT_OBLIGATIONS } from "../../src/rollout/lowering.js";
 import {
 	camp,
-	MINUTE,
 	MemoryEventStore,
+	MINUTE,
 	obligation,
 	promotion,
 	spec,
@@ -28,20 +28,32 @@ async function planned(
 	r: Rig,
 	strategy: RolloutStrategy,
 	targets: readonly string[] = ["prod-a"],
-	extra: Partial<Readonly<{ windows: readonly string[]; obligations: ReturnType<typeof obligation>[]; deadlineMs: number; stagePercents: readonly number[] }>> = {},
+	extra: Partial<
+		Readonly<{
+			windows: readonly string[];
+			obligations: ReturnType<typeof obligation>[];
+			deadlineMs: number;
+			stagePercents: readonly number[];
+		}>
+	> = {},
 ): Promise<RolloutPlanRecord> {
 	for (const target of targets) r.desired.promoted(target, "freight-1");
 	const result = await r.orchestrator.plan(
 		{
 			promotion: promotion({ targets, strategy }),
 			obligations: extra.obligations ?? [],
-			verification: spec(extra.deadlineMs === undefined ? {} : { deadlineMs: extra.deadlineMs }),
+			verification: spec(
+				extra.deadlineMs === undefined ? {} : { deadlineMs: extra.deadlineMs },
+			),
 			stagePercents: extra.stagePercents ?? [],
 			windows: extra.windows ?? ["prod-windows"],
 		},
 		r.ctx,
 	);
-	if (!result.ok) throw new Error(`plan refused: ${result.reasons.map((x) => x.code).join(", ")}`);
+	if (!result.ok)
+		throw new Error(
+			`plan refused: ${result.reasons.map((x) => x.code).join(", ")}`,
+		);
 	return result.value;
 }
 
@@ -62,14 +74,24 @@ describe("createRolloutOrchestrator", () => {
 		expect(snapshot.percent).toBe(100);
 		expect(r.traffic.percents("prod-a")).toEqual([5, 25, 50, 100]);
 		// Comparisons run while traffic is split; at 100% there is no baseline.
-		expect(r.verification.started.map((s) => s.cohortAware)).toEqual([true, true, true, false]);
+		expect(r.verification.started.map((s) => s.cohortAware)).toEqual([
+			true,
+			true,
+			true,
+			false,
+		]);
 		expect(r.telemetry.named("hobo.cd.rollout.completed")).toHaveLength(1);
-		expect(r.telemetry.named("hobo.cd.rollout.lowered")[0]?.attributes["hobo.traffic.offering"]).toBe("lb.weighted");
+		expect(
+			r.telemetry.named("hobo.cd.rollout.lowered")[0]?.attributes[
+				"hobo.traffic.offering"
+			],
+		).toBe("lb.weighted");
 	});
 
 	it("Accept: FAIL → rollback (zero exposure, then a rollback Delta to the predecessor Set)", async () => {
 		const r = rig();
-		r.verification.script = ({ call }) => (call === 1 ? VerificationVerdict.FAIL : VerificationVerdict.PASS);
+		r.verification.script = ({ call }) =>
+			call === 1 ? VerificationVerdict.FAIL : VerificationVerdict.PASS;
 		const plan = await planned(r, RolloutStrategy.CANARY);
 		const snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("rolled-back");
@@ -97,7 +119,9 @@ describe("createRolloutOrchestrator", () => {
 
 	it("Accept: provider success with split traffic → non-converged; verdict at the deadline", async () => {
 		const r = rig();
-		const plan = await planned(r, RolloutStrategy.BLUE_GREEN, ["prod-a"], { deadlineMs: 10 * MINUTE });
+		const plan = await planned(r, RolloutStrategy.BLUE_GREEN, ["prod-a"], {
+			deadlineMs: 10 * MINUTE,
+		});
 		r.traffic.stuck.add("prod-a");
 		let snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("running");
@@ -110,7 +134,9 @@ describe("createRolloutOrchestrator", () => {
 		await r.orchestrator.tick(r.ctx);
 		snapshot = (await r.orchestrator.get(rid(plan))) ?? snapshot;
 		expect(snapshot.status).not.toBe("promoted");
-		expect(snapshot.reasons.map((x) => x.code)).toContain("rollout-traffic-unconverged");
+		expect(snapshot.reasons.map((x) => x.code)).toContain(
+			"rollout-traffic-unconverged",
+		);
 		// The stage was never verified on the strength of a provider self-report.
 		expect(r.verification.started).toHaveLength(1);
 	});
@@ -121,7 +147,10 @@ describe("createRolloutOrchestrator", () => {
 		r.desired.promoted("prod-a", "freight-1");
 		const result = await r.orchestrator.plan(
 			{
-				promotion: promotion({ targets: ["prod-a"], strategy: RolloutStrategy.CANARY }),
+				promotion: promotion({
+					targets: ["prod-a"],
+					strategy: RolloutStrategy.CANARY,
+				}),
 				obligations: [],
 				verification: spec(),
 				stagePercents: [],
@@ -132,11 +161,17 @@ describe("createRolloutOrchestrator", () => {
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.reasons[0]?.code).toBe(PROGRESSIVE_UNSUPPORTED);
-		expect(result.reasons[0]?.remediation).toContain("ROLLOUT_STRATEGY_ALL_AT_ONCE");
-		expect(r.traffic.shifts).toHaveLength(0);
-		expect(r.store.events(ROLLOUT_LEDGER.stream(r.store.streamIds()[0]?.slice("cd-rollout-".length) ?? ""))[0]?.type).toBe(
-			"rollout.Lowered",
+		expect(result.reasons[0]?.remediation).toContain(
+			"ROLLOUT_STRATEGY_ALL_AT_ONCE",
 		);
+		expect(r.traffic.shifts).toHaveLength(0);
+		expect(
+			r.store.events(
+				ROLLOUT_LEDGER.stream(
+					r.store.streamIds()[0]?.slice("cd-rollout-".length) ?? "",
+				),
+			)[0]?.type,
+		).toBe("rollout.Lowered");
 	});
 
 	it("Accept: a freeze mid-rollout holds at the next boundary and resumes when open", async () => {
@@ -167,13 +202,19 @@ describe("createRolloutOrchestrator", () => {
 	it("Accept: replay is identical — a fresh orchestrator and engine over the same journal agree", async () => {
 		const store = new MemoryEventStore();
 		const live = rig({ store });
-		live.verification.script = ({ call }) => (call === 2 ? "pending" : VerificationVerdict.PASS);
-		const plan = await planned(live, RolloutStrategy.CANARY, ["prod-a", "prod-b"]);
+		live.verification.script = ({ call }) =>
+			call === 2 ? "pending" : VerificationVerdict.PASS;
+		const plan = await planned(live, RolloutStrategy.CANARY, [
+			"prod-a",
+			"prod-b",
+		]);
 		await live.orchestrator.run(plan, live.ctx);
 		const before = await live.orchestrator.get(rid(plan));
 		const replayed = rig({ store });
 		expect(await replayed.orchestrator.get(rid(plan))).toEqual(before);
-		expect(await replayed.engine.get(rid(plan))).toEqual(await live.engine.get(rid(plan)));
+		expect(await replayed.engine.get(rid(plan))).toEqual(
+			await live.engine.get(rid(plan)),
+		);
 		// The journal fully determines the next decision too.
 		live.verification.settle(VerificationVerdict.PASS);
 		await live.orchestrator.tick(live.ctx);
@@ -184,7 +225,12 @@ describe("createRolloutOrchestrator", () => {
 
 	it("exposes one Camp at a time per stage (Camps are ordered target groups)", async () => {
 		const r = rig();
-		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a", "prod-b"], { stagePercents: [10, 100] });
+		const plan = await planned(
+			r,
+			RolloutStrategy.CANARY,
+			["prod-a", "prod-b"],
+			{ stagePercents: [10, 100] },
+		);
 		const snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("promoted");
 		expect(r.traffic.shifts.map((s) => `${s.campId}@${s.percent}`)).toEqual([
@@ -210,7 +256,9 @@ describe("createRolloutOrchestrator", () => {
 
 	it("an unconverged Camp fails closed at the progress deadline", async () => {
 		const r = rig();
-		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], { deadlineMs: 5 * MINUTE });
+		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], {
+			deadlineMs: 5 * MINUTE,
+		});
 		r.desired.promoted("prod-a", "freight-1", { converged: false });
 		await r.orchestrator.run(plan, r.ctx);
 		r.time.advance(6 * MINUTE);
@@ -227,7 +275,10 @@ describe("createRolloutOrchestrator", () => {
 		expect(plan.stagePercents).toEqual([...CD_RAMP_DEFAULTS.blueGreen]);
 		const snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("promoted");
-		expect(r.verification.started.map((s) => s.cohortAware)).toEqual([false, false]);
+		expect(r.verification.started.map((s) => s.cohortAware)).toEqual([
+			false,
+			false,
+		]);
 		expect(r.traffic.percents("prod-a")).toEqual([100]);
 	});
 
@@ -244,7 +295,9 @@ describe("createRolloutOrchestrator", () => {
 		let verdict: "ship" | "do-not-ship" | "inconclusive" | undefined;
 		const r = rig({ experiments: { conclusion: async () => verdict } });
 		const plan = await planned(r, RolloutStrategy.EXPERIMENT, ["prod-a"], {
-			obligations: [obligation(ROLLOUT_OBLIGATIONS.experiment, "checkout-copy")],
+			obligations: [
+				obligation(ROLLOUT_OBLIGATIONS.experiment, "checkout-copy"),
+			],
 		});
 		expect(plan.stagePercents).toEqual([...CD_RAMP_DEFAULTS.experiment, 100]);
 		expect(plan.experimentId).toBe("checkout-copy");
@@ -273,7 +326,12 @@ describe("createRolloutOrchestrator", () => {
 		await r.orchestrator.run(plan, r.ctx);
 		await r.store.append(
 			"experiment-promo-1",
-			[{ type: "experiment.Concluded", data: { experiment: "promo-1", verdict: "ship" } }],
+			[
+				{
+					type: "experiment.Concluded",
+					data: { experiment: "promo-1", verdict: "ship" },
+				},
+			],
 			{ expectedSeq: 0, actor: r.ctx.principal, tenant: "acme" },
 		);
 		await r.orchestrator.tick(r.ctx);
@@ -324,7 +382,15 @@ describe("createRolloutOrchestrator", () => {
 			capacity: {
 				reserve: async () => ({
 					ok: false,
-					reasons: [{ $typeName: "hobo.cd.v1.ReasonRecord", code: "canary-capacity-unavailable", message: "budget.exhausted", remediation: "x", subject: "" }],
+					reasons: [
+						{
+							$typeName: "hobo.cd.v1.ReasonRecord",
+							code: "canary-capacity-unavailable",
+							message: "budget.exhausted",
+							remediation: "x",
+							subject: "",
+						},
+					],
 				}),
 			},
 		});
@@ -332,7 +398,9 @@ describe("createRolloutOrchestrator", () => {
 		expect((await r.orchestrator.run(plan, r.ctx)).status).toBe("rolled-back");
 		expect(r.traffic.shifts).toHaveLength(0);
 		const u = rig();
-		const plan2 = await planned(u, RolloutStrategy.CANARY, ["prod-a"], { obligations: [obligation(ROLLOUT_OBLIGATIONS.hostingBudget)] });
+		const plan2 = await planned(u, RolloutStrategy.CANARY, ["prod-a"], {
+			obligations: [obligation(ROLLOUT_OBLIGATIONS.hostingBudget)],
+		});
 		const snapshot = await u.orchestrator.run(plan2, u.ctx);
 		expect(snapshot.status).toBe("rolled-back");
 		expect(snapshot.reasons[0]?.code).toBe("canary-capacity-unconfigured");
@@ -356,7 +424,10 @@ describe("createRolloutOrchestrator", () => {
 		await r.orchestrator.run(plan, r.ctx);
 		r.windows.open = false;
 		r.windows.rollbackAllowed = false;
-		let snapshot = await r.orchestrator.rollback({ rolloutId: rid(plan), reason: "operator" }, r.ctx);
+		let snapshot = await r.orchestrator.rollback(
+			{ rolloutId: rid(plan), reason: "operator" },
+			r.ctx,
+		);
 		expect(snapshot.status).toBe("awaiting-window");
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
 		r.windows.open = true;
@@ -372,7 +443,10 @@ describe("createRolloutOrchestrator", () => {
 		const plan = await planned(r, RolloutStrategy.CANARY);
 		await r.orchestrator.run(plan, r.ctx);
 		r.windows.open = false;
-		const snapshot = await r.orchestrator.rollback({ rolloutId: rid(plan), reason: "operator" }, r.ctx);
+		const snapshot = await r.orchestrator.rollback(
+			{ rolloutId: rid(plan), reason: "operator" },
+			r.ctx,
+		);
 		expect(snapshot.status).toBe("rolled-back");
 	});
 
@@ -383,30 +457,41 @@ describe("createRolloutOrchestrator", () => {
 		r.desired.promoted("prod-a", "freight-1", { predecessor: false });
 		const snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("rolled-back");
-		expect(snapshot.reasons.map((x) => x.code)).toContain("rollback-no-predecessor");
+		expect(snapshot.reasons.map((x) => x.code)).toContain(
+			"rollback-no-predecessor",
+		);
 		expect(r.desired.deltas.size).toBe(0);
 	});
 
 	it("zero exposure that is never observed escalates to needs-human at the deadline", async () => {
 		const r = rig();
 		r.verification.script = () => VerificationVerdict.FAIL;
-		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], { deadlineMs: 5 * MINUTE });
+		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], {
+			deadlineMs: 5 * MINUTE,
+		});
 		r.traffic.stuck.add("prod-a");
 		r.traffic.active.set(camp("prod-a"), "manual"); // first shift is not observed either
 		await r.orchestrator.run(plan, r.ctx);
-		await r.orchestrator.rollback({ rolloutId: rid(plan), reason: "operator" }, r.ctx);
+		await r.orchestrator.rollback(
+			{ rolloutId: rid(plan), reason: "operator" },
+			r.ctx,
+		);
 		r.time.advance(6 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
 		const snapshot = await r.orchestrator.get(rid(plan));
 		expect(snapshot?.status).toBe("failed");
-		expect(snapshot?.reasons.map((x) => x.code)).toContain("rollback-non-convergeable");
+		expect(snapshot?.reasons.map((x) => x.code)).toContain(
+			"rollback-non-convergeable",
+		);
 	});
 
 	it("a crash between the shift intent and its acknowledgement resumes by observation, never a second shift", async () => {
 		const store = new MemoryEventStore();
 		const r = rig({ store });
 		r.verification.script = () => VerificationVerdict.PASS;
-		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], { stagePercents: [5, 100] });
+		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], {
+			stagePercents: [5, 100],
+		});
 		r.traffic.throwOn.add("prod-a"); // the provider call dies mid-flight
 		await r.orchestrator.run(plan, r.ctx);
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
@@ -418,7 +503,9 @@ describe("createRolloutOrchestrator", () => {
 		resumed.desired.promoted("prod-a", "freight-1");
 		await resumed.orchestrator.tick(resumed.ctx);
 		expect(resumed.traffic.percents("prod-a")).toEqual([100]);
-		expect((await resumed.orchestrator.get(rid(plan)))?.status).toBe("promoted");
+		expect((await resumed.orchestrator.get(rid(plan)))?.status).toBe(
+			"promoted",
+		);
 	});
 
 	it("two drivers on one rollout never both shift (CAS on the ledger)", async () => {
@@ -431,32 +518,63 @@ describe("createRolloutOrchestrator", () => {
 		b.desired.promoted("prod-a", "freight-1");
 		b.verification.script = () => "pending";
 		await Promise.all([a.orchestrator.tick(a.ctx), b.orchestrator.tick(b.ctx)]);
-		expect([...a.traffic.percents("prod-a"), ...b.traffic.percents("prod-a")]).toEqual([5]);
+		expect([
+			...a.traffic.percents("prod-a"),
+			...b.traffic.percents("prod-a"),
+		]).toEqual([5]);
 	});
 
 	it("plan is idempotent; run refuses an unplanned or edited plan", async () => {
 		const r = rig();
 		const plan = await planned(r, RolloutStrategy.CANARY);
 		const again = await r.orchestrator.plan(
-			{ promotion: promotion({ targets: ["prod-a"], strategy: RolloutStrategy.CANARY }), obligations: [], verification: spec(), stagePercents: [], windows: ["prod-windows"] },
+			{
+				promotion: promotion({
+					targets: ["prod-a"],
+					strategy: RolloutStrategy.CANARY,
+				}),
+				obligations: [],
+				verification: spec(),
+				stagePercents: [],
+				windows: ["prod-windows"],
+			},
 			r.ctx,
 		);
 		expect(again.ok && again.value.rolloutId).toBe(plan.rolloutId);
 		const edited = { ...plan, stagePercents: [100] };
-		expect((await r.orchestrator.run(edited, r.ctx)).reasons[0]?.code).toBe("rollout-plan-mismatch");
+		expect((await r.orchestrator.run(edited, r.ctx)).reasons[0]?.code).toBe(
+			"rollout-plan-mismatch",
+		);
 		const unplanned = { ...plan, rolloutId: "rollout-nope" };
-		expect((await r.orchestrator.run(unplanned, r.ctx)).reasons[0]?.code).toBe("rollout-unplanned");
+		expect((await r.orchestrator.run(unplanned, r.ctx)).reasons[0]?.code).toBe(
+			"rollout-unplanned",
+		);
 	});
 
 	it("refuses invalid stage percents and incomplete promotions with typed reasons", async () => {
 		const r = rig();
 		const bad = await r.orchestrator.plan(
-			{ promotion: promotion({ targets: ["prod-a"], strategy: RolloutStrategy.CANARY }), obligations: [], verification: spec(), stagePercents: [50, 25], windows: [] },
+			{
+				promotion: promotion({
+					targets: ["prod-a"],
+					strategy: RolloutStrategy.CANARY,
+				}),
+				obligations: [],
+				verification: spec(),
+				stagePercents: [50, 25],
+				windows: [],
+			},
 			r.ctx,
 		);
 		expect(!bad.ok && bad.reasons[0]?.code).toBe("rollout-stages-invalid");
 		const empty = await r.orchestrator.plan(
-			{ promotion: promotion({ targets: [], strategy: RolloutStrategy.CANARY }), obligations: [], verification: spec(), stagePercents: [], windows: [] },
+			{
+				promotion: promotion({ targets: [], strategy: RolloutStrategy.CANARY }),
+				obligations: [],
+				verification: spec(),
+				stagePercents: [],
+				windows: [],
+			},
 			r.ctx,
 		);
 		expect(!empty.ok && empty.reasons[0]?.code).toBe("rollout-targets-missing");

@@ -48,7 +48,10 @@ export type AnalysisWebhookDeps = Readonly<{
 }>;
 
 /** RFC 6901 JSON pointer lookup. */
-export function pointer(document: JsonValue, path: string): JsonValue | undefined {
+export function pointer(
+	document: JsonValue,
+	path: string,
+): JsonValue | undefined {
 	if (path === "") return document;
 	if (!path.startsWith("/")) return undefined;
 	let current: JsonValue | undefined = document;
@@ -65,17 +68,23 @@ export function pointer(document: JsonValue, path: string): JsonValue | undefine
 	return current;
 }
 
-function numericSamples(value: JsonValue | undefined): readonly number[] | undefined {
+function numericSamples(
+	value: JsonValue | undefined,
+): readonly number[] | undefined {
 	if (isJsonNumber(value) && Number.isFinite(value)) return [value];
 	if (!isJsonArray(value) || value.length === 0) return undefined;
-	const values = value.flatMap((v) => (isJsonNumber(v) && Number.isFinite(v) ? [v] : []));
+	const values = value.flatMap((v) =>
+		isJsonNumber(v) && Number.isFinite(v) ? [v] : [],
+	);
 	return values.length === value.length ? values : undefined;
 }
 
 function httpsUrl(ref: string): string | undefined {
 	try {
 		const url = new URL(ref);
-		return url.protocol === "https:" && url.username === "" && url.password === ""
+		return url.protocol === "https:" &&
+			url.username === "" &&
+			url.password === ""
 			? url.toString()
 			: undefined;
 	} catch {
@@ -86,7 +95,10 @@ function httpsUrl(ref: string): string | undefined {
 export function withAnalysisWebhooks(d: AnalysisWebhookDeps): HealthSource {
 	const kind = d.base?.kind ?? HealthSourceKind.HTTP_JSON;
 
-	async function headers(credentialRef: string, scope: string): Promise<Readonly<Record<string, string>>> {
+	async function headers(
+		credentialRef: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>> {
 		if (credentialRef === "") return {};
 		return d.credentials.resolve(credentialRef, scope);
 	}
@@ -106,16 +118,32 @@ export function withAnalysisWebhooks(d: AnalysisWebhookDeps): HealthSource {
 				);
 			}
 			const url = httpsUrl(
-				ref.slice((statusGate ? ANALYSIS_ENDPOINTS.statusGate : ANALYSIS_ENDPOINTS.jsonMetric).length),
+				ref.slice(
+					(statusGate
+						? ANALYSIS_ENDPOINTS.statusGate
+						: ANALYSIS_ENDPOINTS.jsonMetric
+					).length,
+				),
 			);
 			if (!url)
-				return refuse("analysis-webhook-unconfigured", "analysis webhook URL must be absolute https", input.campId);
+				return refuse(
+					"analysis-webhook-unconfigured",
+					"analysis webhook URL must be absolute https",
+					input.campId,
+				);
 			const window = { fromMs: input.fromMs, toMs: input.toMs };
 			let auth: Readonly<Record<string, string>>;
 			try {
-				auth = await headers(input.query.credentialRef, `analysis:${input.campId}`);
+				auth = await headers(
+					input.query.credentialRef,
+					`analysis:${input.campId}`,
+				);
 			} catch {
-				return refuse("analysis-webhook-unavailable", "analysis webhook credential did not resolve", input.campId);
+				return refuse(
+					"analysis-webhook-unavailable",
+					"analysis webhook credential did not resolve",
+					input.campId,
+				);
 			}
 			try {
 				if (statusGate) {
@@ -140,7 +168,11 @@ export function withAnalysisWebhooks(d: AnalysisWebhookDeps): HealthSource {
 						return { ok: true, value: { values: [1], ...window } };
 					if (response.status >= 400 && response.status < 500)
 						return { ok: true, value: { values: [0], ...window } };
-					return refuse("analysis-webhook-unavailable", `analysis webhook answered ${response.status}`, input.campId);
+					return refuse(
+						"analysis-webhook-unavailable",
+						`analysis webhook answered ${response.status}`,
+						input.campId,
+					);
 				}
 				const response = await d.http({
 					method: "GET",
@@ -150,9 +182,16 @@ export function withAnalysisWebhooks(d: AnalysisWebhookDeps): HealthSource {
 					maxResponseBytes: MAX_RESPONSE_BYTES,
 				});
 				if (response.status < 200 || response.status >= 300)
-					return refuse("analysis-webhook-unavailable", `analysis metric answered ${response.status}`, input.campId);
+					return refuse(
+						"analysis-webhook-unavailable",
+						`analysis metric answered ${response.status}`,
+						input.campId,
+					);
 				const document = parseJsonText(response.body);
-				const values = document === undefined ? undefined : numericSamples(pointer(document, input.query.query));
+				const values =
+					document === undefined
+						? undefined
+						: numericSamples(pointer(document, input.query.query));
 				if (!values)
 					return refuse(
 						"analysis-webhook-unavailable",
@@ -161,7 +200,11 @@ export function withAnalysisWebhooks(d: AnalysisWebhookDeps): HealthSource {
 					);
 				return { ok: true, value: { values, ...window } };
 			} catch {
-				return refuse("analysis-webhook-unavailable", "analysis webhook transport failed", input.campId);
+				return refuse(
+					"analysis-webhook-unavailable",
+					"analysis webhook transport failed",
+					input.campId,
+				);
 			}
 		},
 	};

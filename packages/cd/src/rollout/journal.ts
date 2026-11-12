@@ -74,7 +74,11 @@ export type ShiftRecord = Readonly<{
 	planId: string;
 	percent: number;
 	requestedAtMs: number;
-	acknowledged?: Readonly<{ planId: string; realized: string; notes: readonly string[] }>;
+	acknowledged?: Readonly<{
+		planId: string;
+		realized: string;
+		notes: readonly string[];
+	}>;
 	observed: boolean;
 }>;
 
@@ -114,7 +118,10 @@ export type RolloutLedgerState = Readonly<{
 	observedExposure: ReadonlyMap<string, number>;
 	hold?: ReasonRecord;
 	rollback?: RollbackState;
-	finished?: Readonly<{ status: FinishedStatus; reasons: readonly ReasonRecord[] }>;
+	finished?: Readonly<{
+		status: FinishedStatus;
+		reasons: readonly ReasonRecord[];
+	}>;
 	/** Time of the last recorded step; observation deadlines run from here. */
 	lastProgressAtMs: number;
 	/** Stream revision, for the expected-seq CAS on the next append. */
@@ -199,13 +206,24 @@ export function loweredBody(
 
 export const bodies = Object.freeze({
 	started: (atMs: number): JsonObject => ({ at: iso(atMs) }),
-	capacityReserved: (campId: string, reservationId: string, atMs: number): JsonObject => ({
+	capacityReserved: (
+		campId: string,
+		reservationId: string,
+		atMs: number,
+	): JsonObject => ({
 		campId,
 		reservationId,
 		at: iso(atMs),
 	}),
 	shiftRequested: (
-		input: Readonly<{ campId: string; stageIndex: number; phase: ShiftPhase; percent: number; planId: string; atMs: number }>,
+		input: Readonly<{
+			campId: string;
+			stageIndex: number;
+			phase: ShiftPhase;
+			percent: number;
+			planId: string;
+			atMs: number;
+		}>,
 	): JsonObject => ({
 		campId: input.campId,
 		stageIndex: input.stageIndex,
@@ -215,7 +233,15 @@ export const bodies = Object.freeze({
 		at: iso(input.atMs),
 	}),
 	shifted: (
-		input: Readonly<{ campId: string; stageIndex: number; phase: ShiftPhase; planId: string; realized: string; notes: readonly string[]; atMs: number }>,
+		input: Readonly<{
+			campId: string;
+			stageIndex: number;
+			phase: ShiftPhase;
+			planId: string;
+			realized: string;
+			notes: readonly string[];
+			atMs: number;
+		}>,
 	): JsonObject => ({
 		campId: input.campId,
 		stageIndex: input.stageIndex,
@@ -226,7 +252,13 @@ export const bodies = Object.freeze({
 		at: iso(input.atMs),
 	}),
 	trafficObserved: (
-		input: Readonly<{ campId: string; stageIndex: number; phase: ShiftPhase; planId: string; atMs: number }>,
+		input: Readonly<{
+			campId: string;
+			stageIndex: number;
+			phase: ShiftPhase;
+			planId: string;
+			atMs: number;
+		}>,
 	): JsonObject => ({
 		campId: input.campId,
 		stageIndex: input.stageIndex,
@@ -235,7 +267,13 @@ export const bodies = Object.freeze({
 		at: iso(input.atMs),
 	}),
 	verificationStarted: (
-		input: Readonly<{ campId: string; stageIndex: number; phase: VerificationPhase; verificationId: string; atMs: number }>,
+		input: Readonly<{
+			campId: string;
+			stageIndex: number;
+			phase: VerificationPhase;
+			verificationId: string;
+			atMs: number;
+		}>,
 	): JsonObject => ({
 		campId: input.campId,
 		stageIndex: input.stageIndex,
@@ -244,7 +282,14 @@ export const bodies = Object.freeze({
 		at: iso(input.atMs),
 	}),
 	stageVerified: (
-		input: Readonly<{ campId: string; stageIndex: number; phase: VerificationPhase; verificationId: string; verdict: VerificationVerdict; atMs: number }>,
+		input: Readonly<{
+			campId: string;
+			stageIndex: number;
+			phase: VerificationPhase;
+			verificationId: string;
+			verdict: VerificationVerdict;
+			atMs: number;
+		}>,
 	): JsonObject => ({
 		campId: input.campId,
 		stageIndex: input.stageIndex,
@@ -253,7 +298,12 @@ export const bodies = Object.freeze({
 		verdict: verdictName(input.verdict),
 		at: iso(input.atMs),
 	}),
-	approvalRequested: (campId: string, stageIndex: number, requestId: string, atMs: number): JsonObject => ({
+	approvalRequested: (
+		campId: string,
+		stageIndex: number,
+		requestId: string,
+		atMs: number,
+	): JsonObject => ({
 		campId,
 		stageIndex,
 		requestId,
@@ -273,13 +323,22 @@ export const bodies = Object.freeze({
 		reason: reasonJson(why),
 		at: iso(atMs),
 	}),
-	rollbackDeltaOpened: (campId: string, deltaId: string, why: string, atMs: number): JsonObject => ({
+	rollbackDeltaOpened: (
+		campId: string,
+		deltaId: string,
+		why: string,
+		atMs: number,
+	): JsonObject => ({
 		campId,
 		deltaId,
 		why,
 		at: iso(atMs),
 	}),
-	finished: (status: FinishedStatus, reasons: readonly ReasonRecord[], atMs: number): JsonObject => ({
+	finished: (
+		status: FinishedStatus,
+		reasons: readonly ReasonRecord[],
+		atMs: number,
+	): JsonObject => ({
 		status,
 		reasons: reasons.map(reasonJson),
 		at: iso(atMs),
@@ -295,7 +354,9 @@ function decodeLowered(
 ): RolloutLedgerState | undefined {
 	const plannedAtMs = msOf(data.at);
 	const planJson = objectOf(data.plan);
-	const plan = planJson ? decode(() => fromJson(RolloutPlanRecordSchema, planJson)) : undefined;
+	const plan = planJson
+		? decode(() => fromJson(RolloutPlanRecordSchema, planJson))
+		: undefined;
 	if (plannedAtMs === undefined || !plan || plan.rolloutId !== rolloutId)
 		return undefined;
 	const obligations: ObligationRef[] = [];
@@ -340,7 +401,9 @@ function withRollback(
 	state: RolloutLedgerState,
 	update: (prev: RollbackState) => RollbackState,
 ): RolloutLedgerState {
-	return state.rollback ? { ...state, rollback: update(state.rollback) } : state;
+	return state.rollback
+		? { ...state, rollback: update(state.rollback) }
+		: state;
 }
 
 function applyShift(
@@ -408,7 +471,8 @@ function step(
 						: undefined,
 				);
 				// A shift realized "none" changed nothing: exposure stays at the last observed split.
-				if (text(data.phase) === "rollback" || text(data.realized) !== "none") return acked;
+				if (text(data.phase) === "rollback" || text(data.realized) !== "none")
+					return acked;
 				const exposure = new Map(acked.exposure);
 				exposure.set(campId, acked.observedExposure.get(campId) ?? 0);
 				return { ...acked, exposure };
@@ -418,7 +482,9 @@ function step(
 					prev ? { ...prev, observed: true } : undefined,
 				);
 				if (text(data.phase) === "rollback") return observed;
-				const percent = observed.stages.get(stageKey(campId, stageIndex))?.shift?.percent ?? 0;
+				const percent =
+					observed.stages.get(stageKey(campId, stageIndex))?.shift?.percent ??
+					0;
 				const observedExposure = new Map(observed.observedExposure);
 				observedExposure.set(campId, percent);
 				return { ...observed, observedExposure };
@@ -456,7 +522,8 @@ function step(
 			case ROLLOUT_LEDGER.rollbackStarted: {
 				if (state.rollback) return state;
 				const why =
-					reasonOf(data.reason) ?? create(ReasonRecordSchema, { code: "rollback-requested" });
+					reasonOf(data.reason) ??
+					create(ReasonRecordSchema, { code: "rollback-requested" });
 				const { hold: _cleared, ...rest } = state;
 				return {
 					...rest,
@@ -483,9 +550,16 @@ function step(
 				});
 			case ROLLOUT_LEDGER.finished: {
 				const status = text(data.status);
-				if (status !== "promoted" && status !== "rolled-back" && status !== "failed")
+				if (
+					status !== "promoted" &&
+					status !== "rolled-back" &&
+					status !== "failed"
+				)
 					return state;
-				return { ...state, finished: { status, reasons: reasonsOf(data.reasons) } };
+				return {
+					...state,
+					finished: { status, reasons: reasonsOf(data.reasons) },
+				};
 			}
 			default:
 				return state;

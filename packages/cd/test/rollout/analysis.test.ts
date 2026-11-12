@@ -21,7 +21,9 @@ const TO = 1794485400000;
 type Interaction = (typeof pact.interactions)[number];
 
 function interaction(description: string): Interaction {
-	const found = pact.interactions.find((item) => item.description === description);
+	const found = pact.interactions.find(
+		(item) => item.description === description,
+	);
 	if (!found) throw new Error(`Pact interaction missing: ${description}`);
 	return found;
 }
@@ -32,11 +34,14 @@ function served(contract: Interaction, seen: TransportRequest[]) {
 		const url = new URL(request.url);
 		expect(request.method).toBe(contract.request.method);
 		expect(url.pathname).toBe(contract.request.path);
-		const headers = "headers" in contract.request ? contract.request.headers : {};
-		for (const [name, value] of Object.entries(headers ?? {})) expect(request.headers[name]).toBe(value);
+		const headers =
+			"headers" in contract.request ? contract.request.headers : {};
+		for (const [name, value] of Object.entries(headers ?? {}))
+			expect(request.headers[name]).toBe(value);
 		if ("body" in contract.request && contract.request.body !== undefined)
 			expect(JSON.parse(request.body ?? "null")).toEqual(contract.request.body);
-		const body = "body" in contract.response ? JSON.stringify(contract.response.body) : "";
+		const body =
+			"body" in contract.response ? JSON.stringify(contract.response.body) : "";
 		return { status: contract.response.status, headers: {}, body };
 	};
 }
@@ -58,10 +63,22 @@ function query(endpointRef: string, q = "", credentialRef = "gate-credential") {
 	});
 }
 
-function ask(source: HealthSource, endpointRef: string, q = "", credentialRef = "gate-credential") {
+function ask(
+	source: HealthSource,
+	endpointRef: string,
+	q = "",
+	credentialRef = "gate-credential",
+) {
 	const time = clock();
 	return source.query(
-		{ query: query(endpointRef, q, credentialRef), campId: camp("prod-a"), cohort: Cohort.CANARY, fromMs: FROM, toMs: TO, signal: new AbortController().signal },
+		{
+			query: query(endpointRef, q, credentialRef),
+			campId: camp("prod-a"),
+			cohort: Cohort.CANARY,
+			fromMs: FROM,
+			toMs: TO,
+			signal: new AbortController().signal,
+		},
 		context(time.now),
 	);
 }
@@ -72,26 +89,45 @@ const METRIC = "analysis+metric:https://runs.example.com/runs/42";
 describe("withAnalysisWebhooks (PACT)", () => {
 	it("status gate: 2xx is one passing sample", async () => {
 		const seen: TransportRequest[] = [];
-		const source = withAnalysisWebhooks({ http: served(interaction("status gate passes the stage"), seen), credentials });
+		const source = withAnalysisWebhooks({
+			http: served(interaction("status gate passes the stage"), seen),
+			credentials,
+		});
 		const result = await ask(source, GATE);
-		expect(result).toEqual({ ok: true, value: { values: [1], fromMs: FROM, toMs: TO } });
+		expect(result).toEqual({
+			ok: true,
+			value: { values: [1], fromMs: FROM, toMs: TO },
+		});
 		expect(seen).toHaveLength(1);
 	});
 
 	it("status gate: 4xx is one failing sample", async () => {
-		const source = withAnalysisWebhooks({ http: served(interaction("status gate rejects the stage"), []), credentials });
-		expect(await ask(source, GATE)).toEqual({ ok: true, value: { values: [0], fromMs: FROM, toMs: TO } });
+		const source = withAnalysisWebhooks({
+			http: served(interaction("status gate rejects the stage"), []),
+			credentials,
+		});
+		expect(await ask(source, GATE)).toEqual({
+			ok: true,
+			value: { values: [0], fromMs: FROM, toMs: TO },
+		});
 	});
 
 	it("status gate down is a refusal (no data, so FAIL) — never a fallback pass", async () => {
-		const source = withAnalysisWebhooks({ http: served(interaction("status gate is down"), []), credentials });
+		const source = withAnalysisWebhooks({
+			http: served(interaction("status gate is down"), []),
+			credentials,
+		});
 		const result = await ask(source, GATE);
 		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.reasons[0]?.code).toBe("analysis-webhook-unavailable");
+		if (!result.ok)
+			expect(result.reasons[0]?.code).toBe("analysis-webhook-unavailable");
 	});
 
 	it("json metric: the pointer's numeric array becomes the samples", async () => {
-		const source = withAnalysisWebhooks({ http: served(interaction("json metric series at a pointer"), []), credentials });
+		const source = withAnalysisWebhooks({
+			http: served(interaction("json metric series at a pointer"), []),
+			credentials,
+		});
 		expect(await ask(source, METRIC, "/metrics/0/measurements")).toEqual({
 			ok: true,
 			value: { values: [0.01, 0.02, 0.015], fromMs: FROM, toMs: TO },
@@ -99,7 +135,10 @@ describe("withAnalysisWebhooks (PACT)", () => {
 	});
 
 	it("json metric with no numeric value is a refusal", async () => {
-		const source = withAnalysisWebhooks({ http: served(interaction("json metric without a numeric value"), []), credentials });
+		const source = withAnalysisWebhooks({
+			http: served(interaction("json metric without a numeric value"), []),
+			credentials,
+		});
 		const result = await ask(source, METRIC, "/metrics/0/measurements");
 		expect(result.ok).toBe(false);
 	});
@@ -113,29 +152,41 @@ describe("withAnalysisWebhooks (boundaries)", () => {
 	it("delegates every other query to the wrapped source of the same kind", async () => {
 		const base: HealthSource = {
 			kind: HealthSourceKind.HTTP_JSON,
-			query: async () => ({ ok: true, value: { values: [7], fromMs: 1, toMs: 2 } }),
+			query: async () => ({
+				ok: true,
+				value: { values: [7], fromMs: 1, toMs: 2 },
+			}),
 		};
 		const source = withAnalysisWebhooks({ http: never, credentials, base });
 		expect(source.kind).toBe(HealthSourceKind.HTTP_JSON);
-		expect(await ask(source, "https://metrics.example.com/series")).toEqual({ ok: true, value: { values: [7], fromMs: 1, toMs: 2 } });
+		expect(await ask(source, "https://metrics.example.com/series")).toEqual({
+			ok: true,
+			value: { values: [7], fromMs: 1, toMs: 2 },
+		});
 	});
 
 	it("refuses non-https or credential-in-URL endpoints and unresolvable credentials without calling out", async () => {
 		const source = withAnalysisWebhooks({ http: never, credentials });
-		for (const ref of ["analysis+status:http://gate.example.com/x", "analysis+metric:https://user:pw@gate.example.com/x", "https://plain.example.com"]) {
+		for (const ref of [
+			"analysis+status:http://gate.example.com/x",
+			"analysis+metric:https://user:pw@gate.example.com/x",
+			"https://plain.example.com",
+		]) {
 			const result = await ask(source, ref);
 			expect(result.ok).toBe(false);
 		}
 		const result = await ask(source, GATE, "", "missing-credential");
 		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.reasons[0]?.message).not.toContain("gate-token");
+		if (!result.ok)
+			expect(result.reasons[0]?.message).not.toContain("gate-token");
 	});
 
 	it("a transport failure is a refusal", async () => {
 		const source = withAnalysisWebhooks({ http: never, credentials });
 		const result = await ask(source, METRIC, "/x");
 		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.reasons[0]?.code).toBe("analysis-webhook-unavailable");
+		if (!result.ok)
+			expect(result.reasons[0]?.code).toBe("analysis-webhook-unavailable");
 	});
 
 	it("resolves RFC 6901 pointers", () => {

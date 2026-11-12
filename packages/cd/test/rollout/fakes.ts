@@ -42,7 +42,6 @@ import {
 	VerificationVerdict,
 	type WindowOverrideRecord,
 } from "../../src/_generated/cd_pb.js";
-import { stageShare } from "../../src/rollout/routing.js";
 import type {
 	ApprovalPort,
 	ApprovalStatus,
@@ -65,6 +64,7 @@ import type {
 	WindowEvaluation,
 } from "../../src/ports.js";
 import { isJsonString } from "../../src/rollout/json.js";
+import { stageShare } from "../../src/rollout/routing.js";
 
 export const TENANT = "acme";
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
@@ -94,7 +94,10 @@ export function clock(start = T0) {
 	};
 }
 
-export function context(now: () => number, principal: PrincipalRef = OPERATOR): CdContext {
+export function context(
+	now: () => number,
+	principal: PrincipalRef = OPERATOR,
+): CdContext {
 	return { tenant: TENANT, principal, now };
 }
 
@@ -106,8 +109,15 @@ export class MemoryEventStore implements DurableEventStore {
 	/** Make the next append to a stream whose id starts with this prefix fail once. */
 	failNextAppend: string | undefined;
 
-	async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
-		if (this.failNextAppend !== undefined && streamId.startsWith(this.failNextAppend)) {
+	async append(
+		streamId: string,
+		events: EventInput[],
+		opts: AppendOptions,
+	): Promise<AppendResult> {
+		if (
+			this.failNextAppend !== undefined &&
+			streamId.startsWith(this.failNextAppend)
+		) {
 			this.failNextAppend = undefined;
 			throw new Error(`injected append failure on ${streamId}`);
 		}
@@ -116,13 +126,17 @@ export class MemoryEventStore implements DurableEventStore {
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing = isJsonString(key) ? stream.find((event) => event.meta?.idempotencyKey === key) : undefined;
+			const existing = isJsonString(key)
+				? stream.find((event) => event.meta?.idempotencyKey === key)
+				: undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
 		if (fresh.length === 0) return { streamId, appended: [], deduped };
 		if (opts.expectedSeq !== stream.length)
-			throw new Error(`expected seq ${opts.expectedSeq} but stream ${streamId} is at ${stream.length}`);
+			throw new Error(
+				`expected seq ${opts.expectedSeq} but stream ${streamId} is at ${stream.length}`,
+			);
 		const appended: EventEnvelope[] = [];
 		for (const input of fresh) {
 			const envelope: EventEnvelope = {
@@ -149,29 +163,51 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {
-		for (const event of this.streams.get(streamId) ?? []) if (event.seq > fromSeq) yield event;
+		for (const event of this.streams.get(streamId) ?? [])
+			if (event.seq > fromSeq) yield event;
 	}
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		for (const entry of this.all) {
-			if (options.after !== undefined && entry.position <= options.after) continue;
-			if (options.tenant !== undefined && entry.event.tenant !== options.tenant) continue;
-			if (options.filter?.type !== undefined && entry.event.type !== options.filter.type) continue;
-			if (options.filter?.streamId !== undefined && entry.event.streamId !== options.filter.streamId) continue;
+			if (options.after !== undefined && entry.position <= options.after)
+				continue;
+			if (options.tenant !== undefined && entry.event.tenant !== options.tenant)
+				continue;
+			if (
+				options.filter?.type !== undefined &&
+				entry.event.type !== options.filter.type
+			)
+				continue;
+			if (
+				options.filter?.streamId !== undefined &&
+				entry.event.streamId !== options.filter.streamId
+			)
+				continue;
 			yield entry;
 		}
 	}
 
-	subscribe(_filter: StreamFilter, _handler: (event: EventEnvelope) => void): Subscription {
+	subscribe(
+		_filter: StreamFilter,
+		_handler: (event: EventEnvelope) => void,
+	): Subscription {
 		return { unsubscribe: () => undefined };
 	}
 
-	async snapshot(streamId: string, state: never, seq: number): Promise<SnapshotRecord> {
+	async snapshot(
+		streamId: string,
+		state: never,
+		seq: number,
+	): Promise<SnapshotRecord> {
 		return { streamId, seq, state, savedAt: new Date(T0).toISOString() };
 	}
 
 	async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-		const result = await this.append(request.streamId, [...request.events], request.append);
+		const result = await this.append(
+			request.streamId,
+			[...request.events],
+			request.append,
+		);
 		return { ...result, effects: [] };
 	}
 
@@ -201,66 +237,127 @@ export class RecordingTelemetry implements TelemetrySink {
  * split (provider self-report vs observed traffic).
  */
 export class FakeTraffic implements TrafficShifter {
-	readonly shifts: Array<Readonly<{ campId: CampId; percent: number; planId: string }>> = [];
+	readonly shifts: Array<
+		Readonly<{ campId: CampId; percent: number; planId: string }>
+	> = [];
 	readonly active = new Map<CampId, string>();
 	offeringsByCamp = new Map<string, readonly TrafficRoutingOfferingId[]>();
 	stuck = new Set<string>();
 	refuse = new Set<string>();
 	throwOn = new Set<string>();
 
-	async offerings(campId: CampId): Promise<readonly TrafficRoutingOfferingId[]> {
+	async offerings(
+		campId: CampId,
+	): Promise<readonly TrafficRoutingOfferingId[]> {
 		return this.offeringsByCamp.get(campId) ?? ["lb.weighted"];
 	}
 
-	async shift(input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>): Promise<ApplyResult> {
+	async shift(
+		input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>,
+	): Promise<ApplyResult> {
 		const percent = stageShare(input.plan) ?? -1;
-		this.shifts.push({ campId: input.campId, percent, planId: input.plan.planId });
-		if (this.throwOn.has(input.campId)) throw new Error("provider connection reset");
+		this.shifts.push({
+			campId: input.campId,
+			percent,
+			planId: input.plan.planId,
+		});
+		if (this.throwOn.has(input.campId))
+			throw new Error("provider connection reset");
 		if (this.refuse.has(input.campId))
-			return { planId: input.plan.planId, provider: "simple", realized: "none", notes: ["traffic-cutover-refused"] };
-		if (!this.stuck.has(input.campId)) this.active.set(input.campId, input.plan.planId);
-		return { planId: input.plan.planId, provider: "simple", realized: "full", notes: [] };
+			return {
+				planId: input.plan.planId,
+				provider: "simple",
+				realized: "none",
+				notes: ["traffic-cutover-refused"],
+			};
+		if (!this.stuck.has(input.campId))
+			this.active.set(input.campId, input.plan.planId);
+		return {
+			planId: input.plan.planId,
+			provider: "simple",
+			realized: "full",
+			notes: [],
+		};
 	}
 
-	async status(campId: CampId, planId: RoutingPlanId): Promise<RoutingStatus | null> {
+	async status(
+		campId: CampId,
+		planId: RoutingPlanId,
+	): Promise<RoutingStatus | null> {
 		const active = this.active.get(campId) === planId;
 		return { planId, active, realized: active ? "full" : "partial", notes: [] };
 	}
 
 	percents(campId: string): readonly number[] {
-		return this.shifts.filter((shift) => shift.campId === campId).map((shift) => shift.percent);
+		return this.shifts
+			.filter((shift) => shift.campId === campId)
+			.map((shift) => shift.percent);
 	}
 }
 
-type Script = (input: Readonly<{ campId: string; cohortAware: boolean; call: number }>) => VerificationVerdict | "pending";
+type Script = (
+	input: Readonly<{ campId: string; cohortAware: boolean; call: number }>,
+) => VerificationVerdict | "pending";
 
 /** A VerificationEngine whose verdicts the test scripts per Camp and call. */
 export class FakeVerification implements VerificationEngine {
-	readonly started: Array<Readonly<{ id: VerificationId; campId: string; cohortAware: boolean; freightId: string }>> = [];
+	readonly started: Array<
+		Readonly<{
+			id: VerificationId;
+			campId: string;
+			cohortAware: boolean;
+			freightId: string;
+		}>
+	> = [];
 	private readonly results = new Map<string, VerificationResultRecord>();
 	private readonly pendingIds = new Set<string>();
 	constructor(public script: Script = () => VerificationVerdict.PASS) {}
 
-	async start(input: Parameters<VerificationEngine["start"]>[0]): Promise<VerificationId> {
+	async start(
+		input: Parameters<VerificationEngine["start"]>[0],
+	): Promise<VerificationId> {
 		const call = this.started.filter((s) => s.campId === input.campId).length;
 		// SAFETY: test double ids.
 		const id = `ver-${input.campId}-${call}` as VerificationId;
-		this.started.push({ id, campId: input.campId, cohortAware: input.cohortAware, freightId: input.freightId });
-		const verdict = this.script({ campId: input.campId, cohortAware: input.cohortAware, call });
+		this.started.push({
+			id,
+			campId: input.campId,
+			cohortAware: input.cohortAware,
+			freightId: input.freightId,
+		});
+		const verdict = this.script({
+			campId: input.campId,
+			cohortAware: input.cohortAware,
+			call,
+		});
 		if (verdict === "pending") this.pendingIds.add(id);
 		else this.complete(id, input.campId, input.freightId, verdict);
 		return id;
 	}
 
-	complete(id: string, campId: string, freightId: string, verdict: VerificationVerdict): void {
+	complete(
+		id: string,
+		campId: string,
+		freightId: string,
+		verdict: VerificationVerdict,
+	): void {
 		this.pendingIds.delete(id);
-		this.results.set(id, create(VerificationResultRecordSchema, { verificationId: id, campId, freightId, verdict }));
+		this.results.set(
+			id,
+			create(VerificationResultRecordSchema, {
+				verificationId: id,
+				campId,
+				freightId,
+				verdict,
+			}),
+		);
 	}
 
 	/** Complete every pending verification with this verdict. */
 	settle(verdict: VerificationVerdict): void {
 		for (const started of this.started)
-			if (this.pendingIds.has(started.id)) this.complete(started.id, started.campId, started.freightId, verdict);
+			if (this.pendingIds.has(started.id))
+				this.complete(started.id, started.campId, started.freightId, verdict);
 	}
 
 	async get(id: VerificationId): Promise<VerificationResultRecord | undefined> {
@@ -276,18 +373,30 @@ export class FakeVerification implements VerificationEngine {
 export class FakeWindows implements ChangeWindows {
 	open = true;
 	rollbackAllowed = true;
-	readonly evaluations: Array<Readonly<{ campId: string; intent: string; windowNames: readonly string[] }>> = [];
-	async define(window: ChangeWindowRecord): Promise<Outcome<ChangeWindowRecord>> {
+	readonly evaluations: Array<
+		Readonly<{ campId: string; intent: string; windowNames: readonly string[] }>
+	> = [];
+	async define(
+		window: ChangeWindowRecord,
+	): Promise<Outcome<ChangeWindowRecord>> {
 		return { ok: true, value: window };
 	}
 	async list(): Promise<readonly ChangeWindowRecord[]> {
 		return [];
 	}
-	async override(input: WindowOverrideRecord): Promise<Outcome<WindowOverrideRecord>> {
+	async override(
+		input: WindowOverrideRecord,
+	): Promise<Outcome<WindowOverrideRecord>> {
 		return { ok: true, value: input };
 	}
-	async evaluate(input: Parameters<ChangeWindows["evaluate"]>[0]): Promise<WindowEvaluation> {
-		this.evaluations.push({ campId: input.campId, intent: input.intent, windowNames: input.windowNames });
+	async evaluate(
+		input: Parameters<ChangeWindows["evaluate"]>[0],
+	): Promise<WindowEvaluation> {
+		this.evaluations.push({
+			campId: input.campId,
+			intent: input.intent,
+			windowNames: input.windowNames,
+		});
 		return {
 			open: this.open,
 			rollbackAllowed: this.rollbackAllowed,
@@ -305,10 +414,21 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	readonly deltas = new Map<string, DeltaRecord>();
 
 	/** Record `freightId` as the converged current Set on the Camp, with a predecessor Set. */
-	promoted(campId: string, freightId: string, options: Readonly<{ predecessor?: boolean; converged?: boolean }> = {}): void {
+	promoted(
+		campId: string,
+		freightId: string,
+		options: Readonly<{ predecessor?: boolean; converged?: boolean }> = {},
+	): void {
 		const predecessorId = `set-${campId}-prev`;
 		if (options.predecessor !== false)
-			this.sets.set(predecessorId, create(SetRecordSchema, { setId: predecessorId, campId, freightId: "freight-prev" }));
+			this.sets.set(
+				predecessorId,
+				create(SetRecordSchema, {
+					setId: predecessorId,
+					campId,
+					freightId: "freight-prev",
+				}),
+			);
 		const setId = `set-${campId}-${freightId}`;
 		this.sets.set(
 			setId,
@@ -325,7 +445,10 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 			create(ReconcileObservationRecordSchema, {
 				campId,
 				setId,
-				status: options.converged === false ? ReconcileStatus.CONVERGING : ReconcileStatus.CONVERGED,
+				status:
+					options.converged === false
+						? ReconcileStatus.CONVERGING
+						: ReconcileStatus.CONVERGED,
 			}),
 		);
 	}
@@ -349,7 +472,9 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async resolved(): Promise<never> {
 		throw new Error("not used by the rollout orchestrator");
 	}
-	async status(campId: CampId): Promise<ReconcileObservationRecord | undefined> {
+	async status(
+		campId: CampId,
+	): Promise<ReconcileObservationRecord | undefined> {
 		return this.statusByCamp.get(campId);
 	}
 	async *changes(): AsyncIterable<DesiredStateChange> {}
@@ -367,9 +492,12 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 }
 
 export class FakeApprovals implements ApprovalPort {
-	readonly requests: Array<Readonly<{ subject: string; requestId: string }>> = [];
+	readonly requests: Array<Readonly<{ subject: string; requestId: string }>> =
+		[];
 	answer: ApprovalStatus = "pending";
-	async request(input: Parameters<ApprovalPort["request"]>[0]): Promise<Readonly<{ requestId: string }>> {
+	async request(
+		input: Parameters<ApprovalPort["request"]>[0],
+	): Promise<Readonly<{ requestId: string }>> {
 		const requestId = `apr-${this.requests.length + 1}`;
 		this.requests.push({ subject: input.subject, requestId });
 		return { requestId };
@@ -380,7 +508,12 @@ export class FakeApprovals implements ApprovalPort {
 }
 
 export function promotion(
-	input: Readonly<{ id?: string; freight?: string; targets: readonly string[]; strategy: RolloutStrategy }>,
+	input: Readonly<{
+		id?: string;
+		freight?: string;
+		targets: readonly string[];
+		strategy: RolloutStrategy;
+	}>,
 ): PromotionRecord {
 	return create(PromotionRecordSchema, {
 		promotionId: input.id ?? "promo-1",
@@ -390,7 +523,9 @@ export function promotion(
 	});
 }
 
-export function spec(fields: Readonly<{ deadlineMs?: number }> = {}): VerificationSpecRecord {
+export function spec(
+	fields: Readonly<{ deadlineMs?: number }> = {},
+): VerificationSpecRecord {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: 600_000n,
 		requiredObservations: 3,

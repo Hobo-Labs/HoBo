@@ -55,7 +55,11 @@ export type CampRoutingContext = Readonly<{
 	healthGate: CutoverHealthGate;
 	restorationHealthGate: CutoverHealthGate;
 	/** Financial admission and durable intent checkpoint before each provider write. */
-	beforeApply: (plan: RoutingPlan, phase: "ramp" | "restore", percent: number) => Promise<void>;
+	beforeApply: (
+		plan: RoutingPlan,
+		phase: "ramp" | "restore",
+		percent: number,
+	) => Promise<void>;
 	minObservationSeconds?: number;
 	maxObservationAgeSeconds?: number;
 	consecutiveFailuresToRollback?: number;
@@ -80,7 +84,13 @@ function unrealized(
 	notes: readonly string[],
 	realized: "none" | "partial" = "none",
 ): ApplyResult {
-	return { planId, provider: "other", realized, notes: [...notes], unmet: [...notes] };
+	return {
+		planId,
+		provider: "other",
+		realized,
+		notes: [...notes],
+		unmet: [...notes],
+	};
 }
 
 /**
@@ -99,7 +109,9 @@ function reasonCodes(result: RoutingCutoverResult): readonly string[] {
 	return result.reasons.map((r) => `${r.code}: ${r.message}`);
 }
 
-export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): TrafficShifter {
+export function createCutoverTrafficShifter(
+	d: CutoverTrafficShifterDeps,
+): TrafficShifter {
 	/** Plans each Camp's cutovers applied, oldest first: incumbent candidates. */
 	const history = new Map<CampId, RoutingPlan[]>();
 	const remember = (campId: CampId, plan: RoutingPlan) => {
@@ -111,7 +123,10 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 	 * the port reports active and fully realized (a pending write may or may not
 	 * have landed), else the composed live plan.
 	 */
-	async function incumbentFor(campId: CampId, context: CampRoutingContext): Promise<RoutingPlan> {
+	async function incumbentFor(
+		campId: CampId,
+		context: CampRoutingContext,
+	): Promise<RoutingPlan> {
 		const candidates = [...(history.get(campId) ?? [])].reverse();
 		for (const plan of candidates) {
 			const status = await context.port.status(plan.planId);
@@ -125,10 +140,13 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 		_ctx: CdContext,
 	): Promise<ApplyResult> {
 		const context = await d.routing(input.campId);
-		if (!context) return unrealized(input.plan.planId, ["traffic-unconfigured"]);
+		if (!context)
+			return unrealized(input.plan.planId, ["traffic-unconfigured"]);
 		const percent = stageShare(input.plan);
 		if (percent === undefined)
-			return unrealized(input.plan.planId, ["traffic-plan-invalid: not a stable/candidate stage plan"]);
+			return unrealized(input.plan.planId, [
+				"traffic-plan-invalid: not a stable/candidate stage plan",
+			]);
 		const incumbent = await incumbentFor(input.campId, context);
 		const toStable = percent === 0;
 		const rampSteps = toStable || percent === 100 ? [100] : [percent, 100];
@@ -147,8 +165,12 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 			topology: context.topology,
 			policyDecision: context.policyDecision,
 			port,
-			fromBackendId: toStable ? context.candidateBackendId : context.stableBackendId,
-			toBackendId: toStable ? context.stableBackendId : context.candidateBackendId,
+			fromBackendId: toStable
+				? context.candidateBackendId
+				: context.stableBackendId,
+			toBackendId: toStable
+				? context.stableBackendId
+				: context.candidateBackendId,
 			rampSteps,
 			healthGate: context.healthGate,
 			restorationHealthGate: context.restorationHealthGate,
@@ -165,7 +187,10 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 				: { maxObservationAgeSeconds: context.maxObservationAgeSeconds }),
 			...(context.consecutiveFailuresToRollback === undefined
 				? undefined
-				: { consecutiveFailuresToRollback: context.consecutiveFailuresToRollback }),
+				: {
+						consecutiveFailuresToRollback:
+							context.consecutiveFailuresToRollback,
+					}),
 			clock: () => new Date(d.now()).toISOString(),
 			planIdPrefix: input.plan.planId,
 			onFact: (fact) => d.onFact?.(input.campId, fact),
@@ -177,7 +202,9 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 				await context.beforeApply(plan, phase, step);
 			},
 		});
-		const stagePlan = result.plans.find((plan) => plan.planId === cutoverPlanId(input.plan.planId));
+		const stagePlan = result.plans.find(
+			(plan) => plan.planId === cutoverPlanId(input.plan.planId),
+		);
 		if (result.ok && result.finalApplyResult) {
 			if (stagePlan) remember(input.campId, stagePlan);
 			return result.finalApplyResult;
@@ -190,9 +217,15 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 			}
 		}
 		if (result.refused)
-			return unrealized(input.plan.planId, ["traffic-cutover-refused", ...reasonCodes(result)]);
+			return unrealized(input.plan.planId, [
+				"traffic-cutover-refused",
+				...reasonCodes(result),
+			]);
 		if (result.rolledBack)
-			return unrealized(input.plan.planId, ["traffic-cutover-rolled-back", ...reasonCodes(result)]);
+			return unrealized(input.plan.planId, [
+				"traffic-cutover-rolled-back",
+				...reasonCodes(result),
+			]);
 		// Ambiguous provider outcome: resolved by observation only (I5), never a blind retry.
 		const pendingId = result.pendingPlanId ?? input.plan.planId;
 		const pendingPlan = result.plans.find((plan) => plan.planId === pendingId);

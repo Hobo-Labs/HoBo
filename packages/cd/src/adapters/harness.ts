@@ -62,7 +62,12 @@ export type HarnessRolloutEngineDeps = CdBase &
 
 type Command =
 	| Readonly<{ command: "start"; plan: RolloutPlanRecord; atMs: number }>
-	| Readonly<{ command: "advance"; campId: string; pass: boolean; atMs: number }>
+	| Readonly<{
+			command: "advance";
+			campId: string;
+			pass: boolean;
+			atMs: number;
+	  }>
 	| Readonly<{ command: "hold"; hold: ReasonRecord; atMs: number }>
 	| Readonly<{ command: "rollback"; why: string; atMs: number }>;
 
@@ -100,11 +105,24 @@ function commandBody(command: Command): JsonObject {
 	const at = new Date(command.atMs).toISOString();
 	switch (command.command) {
 		case "start":
-			return { command: "start", plan: toJson(RolloutPlanRecordSchema, command.plan), at };
+			return {
+				command: "start",
+				plan: toJson(RolloutPlanRecordSchema, command.plan),
+				at,
+			};
 		case "advance":
-			return { command: "advance", campId: command.campId, pass: command.pass, at };
+			return {
+				command: "advance",
+				campId: command.campId,
+				pass: command.pass,
+				at,
+			};
 		case "hold":
-			return { command: "hold", reason: toJson(ReasonRecordSchema, command.hold), at };
+			return {
+				command: "hold",
+				reason: toJson(ReasonRecordSchema, command.hold),
+				at,
+			};
 		case "rollback":
 			return { command: "rollback", reason: command.why, at };
 	}
@@ -117,17 +135,28 @@ function decodeCommand(value: JsonValue | undefined): Command | undefined {
 	if (!Number.isFinite(atMs)) return undefined;
 	try {
 		switch (text(data.command)) {
-			case "start":
-			{
+			case "start": {
 				const plan = objectOf(data.plan);
-				return plan ? { command: "start", plan: fromJson(RolloutPlanRecordSchema, plan), atMs } : undefined;
+				return plan
+					? {
+							command: "start",
+							plan: fromJson(RolloutPlanRecordSchema, plan),
+							atMs,
+						}
+					: undefined;
 			}
 			case "advance":
-				return { command: "advance", campId: text(data.campId), pass: data.pass === true, atMs };
-			case "hold":
-			{
+				return {
+					command: "advance",
+					campId: text(data.campId),
+					pass: data.pass === true,
+					atMs,
+				};
+			case "hold": {
 				const hold = objectOf(data.reason);
-				return hold ? { command: "hold", hold: fromJson(ReasonRecordSchema, hold), atMs } : undefined;
+				return hold
+					? { command: "hold", hold: fromJson(ReasonRecordSchema, hold), atMs }
+					: undefined;
 			}
 			case "rollback":
 				return { command: "rollback", why: text(data.reason), atMs };
@@ -149,13 +178,19 @@ const STATUS: Readonly<Record<RolloutState["status"], RolloutStatus>> = {
 };
 
 function holdStatus(hold: ReasonRecord): RolloutStatus {
-	if (hold.code === WINDOW_CLOSED || hold.code === "rollout-rollback-window-closed")
+	if (
+		hold.code === WINDOW_CLOSED ||
+		hold.code === "rollout-rollback-window-closed"
+	)
 		return "awaiting-window";
 	if (hold.code === "rollout-approval-pending") return "awaiting-approval";
 	return "running";
 }
 
-function engineReasons(state: RolloutState, rolloutId: string): readonly ReasonRecord[] {
+function engineReasons(
+	state: RolloutState,
+	rolloutId: string,
+): readonly ReasonRecord[] {
 	if (state.status === "halted")
 		return [
 			reason(
@@ -165,7 +200,9 @@ function engineReasons(state: RolloutState, rolloutId: string): readonly ReasonR
 			),
 		];
 	if (state.status === "rolled_back")
-		return [reason("rollback-requested", state.reason ?? "rolled back", rolloutId)];
+		return [
+			reason("rollback-requested", state.reason ?? "rolled back", rolloutId),
+		];
 	return [];
 }
 
@@ -174,13 +211,17 @@ function pending(instance: Instance, campId: string): boolean {
 	return instance.engine.nextBatch(instance.internalId).includes(campId);
 }
 
-export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): RolloutEngine {
+export function createHarnessRolloutEngine(
+	d: HarnessRolloutEngineDeps,
+): RolloutEngine {
 	const instances = new Map<string, Instance>();
 	const locks = new Map<string, Promise<void>>();
 
 	function fresh(): Instance {
 		const clock = { atMs: d.now() };
-		const flags = d.flags ?? new FeatureFlagStore({ now: () => new Date(clock.atMs).toISOString() });
+		const flags =
+			d.flags ??
+			new FeatureFlagStore({ now: () => new Date(clock.atMs).toISOString() });
 		return {
 			engine: new OpenDeliveryEngine({
 				store: flags,
@@ -198,7 +239,9 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 		switch (command.command) {
 			case "start": {
 				if (instance.internalId !== "") return;
-				instance.internalId = instance.engine.start(rolloutPolicy(command.plan)).id;
+				instance.internalId = instance.engine.start(
+					rolloutPolicy(command.plan),
+				).id;
 				return;
 			}
 			case "advance": {
@@ -227,7 +270,8 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 		const cached = instances.get(rolloutId);
 		if (cached) return cached;
 		const events: EventEnvelope[] = [];
-		for await (const event of d.store.read(HARNESS_LEDGER.stream(rolloutId))) events.push(event);
+		for await (const event of d.store.read(HARNESS_LEDGER.stream(rolloutId)))
+			events.push(event);
 		if (events.length === 0) return undefined;
 		const instance = fresh();
 		for (const event of events) {
@@ -271,9 +315,12 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 				status: "failed",
 				stageIndex: 0,
 				percent: 0,
-				reasons: [reason("rollout-unknown", "engine record missing", rolloutId)],
+				reasons: [
+					reason("rollout-unknown", "engine record missing", rolloutId),
+				],
 			};
-		const live = state.status === "running" || state.status === "awaiting_approval";
+		const live =
+			state.status === "running" || state.status === "awaiting_approval";
 		const hold = live ? instance.hold : undefined;
 		return {
 			// SAFETY: echo of the caller's rollout id.
@@ -285,7 +332,10 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 		};
 	}
 
-	async function exclusive<T>(rolloutId: string, fn: () => Promise<T>): Promise<T> {
+	async function exclusive<T>(
+		rolloutId: string,
+		fn: () => Promise<T>,
+	): Promise<T> {
 		const previous = locks.get(rolloutId) ?? Promise.resolve();
 		let release = (): void => undefined;
 		const next = new Promise<void>((resolve) => {
@@ -308,7 +358,13 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 			status: "failed",
 			stageIndex: 0,
 			percent: 0,
-			reasons: [reason("rollout-unknown", "no engine record for this rollout", rolloutId)],
+			reasons: [
+				reason(
+					"rollout-unknown",
+					"no engine record for this rollout",
+					rolloutId,
+				),
+			],
 		};
 	}
 
@@ -318,7 +374,12 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 				const existing = await hydrate(plan.rolloutId);
 				if (existing) return snapshot(plan.rolloutId, existing);
 				const instance = fresh();
-				await record(plan.rolloutId, instance, { command: "start", plan, atMs: ctx.now() }, ctx);
+				await record(
+					plan.rolloutId,
+					instance,
+					{ command: "start", plan, atMs: ctx.now() },
+					ctx,
+				);
 				instances.set(plan.rolloutId, instance);
 				return snapshot(plan.rolloutId, instance);
 			}),
@@ -345,8 +406,16 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 			exclusive(rolloutId, async () => {
 				const instance = await hydrate(rolloutId);
 				if (!instance) return unknown(rolloutId);
-				if (instance.hold?.code !== why.code || instance.hold.message !== why.message)
-					await record(rolloutId, instance, { command: "hold", hold: why, atMs: ctx.now() }, ctx);
+				if (
+					instance.hold?.code !== why.code ||
+					instance.hold.message !== why.message
+				)
+					await record(
+						rolloutId,
+						instance,
+						{ command: "hold", hold: why, atMs: ctx.now() },
+						ctx,
+					);
 				return snapshot(rolloutId, instance);
 			}),
 		rollback: (rolloutId, why, ctx) =>
@@ -354,7 +423,12 @@ export function createHarnessRolloutEngine(d: HarnessRolloutEngineDeps): Rollout
 				const instance = await hydrate(rolloutId);
 				if (!instance) return unknown(rolloutId);
 				if (instance.engine.get(instance.internalId)?.status !== "rolled_back")
-					await record(rolloutId, instance, { command: "rollback", why, atMs: ctx.now() }, ctx);
+					await record(
+						rolloutId,
+						instance,
+						{ command: "rollback", why, atMs: ctx.now() },
+						ctx,
+					);
 				return snapshot(rolloutId, instance);
 			}),
 		get: async (rolloutId) => {

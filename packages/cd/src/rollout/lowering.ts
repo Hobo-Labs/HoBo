@@ -20,12 +20,13 @@ import type { CampId, Outcome } from "../ports.js";
 import { reason, refuse } from "./reasons.js";
 
 // public-contract: the D7 traffic rung ladder, best first.
-export const TRAFFIC_LADDER: readonly TrafficRoutingOfferingId[] = Object.freeze([
-	"edge.canary",
-	"lb.weighted",
-	"dns.weighted",
-	"inprocess.weighted",
-]);
+export const TRAFFIC_LADDER: readonly TrafficRoutingOfferingId[] =
+	Object.freeze([
+		"edge.canary",
+		"lb.weighted",
+		"dns.weighted",
+		"inprocess.weighted",
+	]);
 
 // public-contract: obligation kinds the orchestrator honours (set by the gate).
 export const ROLLOUT_OBLIGATIONS = Object.freeze({
@@ -56,7 +57,10 @@ export function needsTraffic(strategy: RolloutStrategy): boolean {
 }
 
 /** Canary-vs-baseline comparisons are meaningful only while traffic is split. */
-export function cohortAware(strategy: RolloutStrategy, percent: number): boolean {
+export function cohortAware(
+	strategy: RolloutStrategy,
+	percent: number,
+): boolean {
 	return (
 		percent < 100 &&
 		(strategy === RolloutStrategy.CANARY ||
@@ -72,8 +76,10 @@ export function hasObligation(
 }
 
 function defaultsFor(strategy: RolloutStrategy): readonly number[] {
-	if (strategy === RolloutStrategy.BLUE_GREEN) return CD_RAMP_DEFAULTS.blueGreen;
-	if (strategy === RolloutStrategy.EXPERIMENT) return CD_RAMP_DEFAULTS.experiment;
+	if (strategy === RolloutStrategy.BLUE_GREEN)
+		return CD_RAMP_DEFAULTS.blueGreen;
+	if (strategy === RolloutStrategy.EXPERIMENT)
+		return CD_RAMP_DEFAULTS.experiment;
 	if (strategy === RolloutStrategy.CANARY) return CD_RAMP_DEFAULTS.canary;
 	return [100];
 }
@@ -120,7 +126,11 @@ export function lowerCamp(
 		fallbackForbidden: boolean;
 	}>,
 ): RolloutLoweringRecord {
-	const record = (offeringId = "", fallbackFrom: readonly string[] = [], refusal?: ReasonRecord) =>
+	const record = (
+		offeringId = "",
+		fallbackFrom: readonly string[] = [],
+		refusal?: ReasonRecord,
+	) =>
 		create(RolloutLoweringRecordSchema, {
 			campId: input.campId,
 			strategy: input.strategy,

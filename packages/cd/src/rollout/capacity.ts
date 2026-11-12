@@ -21,10 +21,15 @@ export interface CanaryCapacity {
 /** The priced commitment of running the candidate beside the stable version on one Camp. */
 export type CanaryQuote = (
 	input: Readonly<{ rolloutId: RolloutId; campId: CampId; percent: number }>,
-) => Promise<Readonly<{ planHash: string; commitment: HostingPlanCommitment }> | undefined>;
+) => Promise<
+	Readonly<{ planHash: string; commitment: HostingPlanCommitment }> | undefined
+>;
 
 /** Deterministic reservation id: one per rollout and Camp, so a retry never double-reserves. */
-export function canaryReservationId(rolloutId: RolloutId, campId: CampId): string {
+export function canaryReservationId(
+	rolloutId: RolloutId,
+	campId: CampId,
+): string {
 	return `canary:${rolloutId}:${campId}`;
 }
 

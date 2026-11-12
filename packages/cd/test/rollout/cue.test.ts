@@ -53,9 +53,14 @@ function vets(definition: string, value: JsonValue | undefined): boolean {
 	if (!cue) throw new Error("cue binary not found");
 	written += 1;
 	const file = join(scratch, `value-${written}.cue`);
-	writeFileSync(file, `package rollout\n\nvalue: ${definition} & ${JSON.stringify(value)}\n`);
+	writeFileSync(
+		file,
+		`package rollout\n\nvalue: ${definition} & ${JSON.stringify(value)}\n`,
+	);
 	try {
-		execFileSync(cue, ["export", schema, file, "-e", "value"], { stdio: "pipe" });
+		execFileSync(cue, ["export", schema, file, "-e", "value"], {
+			stdio: "pipe",
+		});
 		return true;
 	} catch {
 		return false;
@@ -85,7 +90,10 @@ describe.skipIf(cue === undefined)(
 				r.desired.promoted("prod-b", "freight-1");
 				const planned = await r.orchestrator.plan(
 					{
-						promotion: promotion({ targets: ["prod-a", "prod-b"], strategy: RolloutStrategy.CANARY }),
+						promotion: promotion({
+							targets: ["prod-a", "prod-b"],
+							strategy: RolloutStrategy.CANARY,
+						}),
 						obligations: [],
 						verification: spec(),
 						stagePercents: [],
@@ -99,18 +107,27 @@ describe.skipIf(cue === undefined)(
 				r.windows.open = true;
 				r.time.advance(MINUTE);
 				await r.orchestrator.tick(r.ctx);
-				for (const event of r.store.events(ROLLOUT_LEDGER.stream(planned.value.rolloutId))) {
+				for (const event of r.store.events(
+					ROLLOUT_LEDGER.stream(planned.value.rolloutId),
+				)) {
 					const definition = DEFINITION[event.type];
 					if (!definition) continue;
-					expect(vets(definition, jsonOf(event.data)), `${event.type} ${JSON.stringify(event.data)}`).toBe(true);
+					expect(
+						vets(definition, jsonOf(event.data)),
+						`${event.type} ${JSON.stringify(event.data)}`,
+					).toBe(true);
 					checked.push(event.type);
 				}
 			}
-			for (const type of Object.keys(DEFINITION)) expect(checked).toContain(type);
+			for (const type of Object.keys(DEFINITION))
+				expect(checked).toContain(type);
 		});
 
 		it("refuses stage percents the parser refuses and vets the ones it accepts", () => {
-			const plan = (stagePercents: readonly number[], strategy = "ROLLOUT_STRATEGY_CANARY") => ({
+			const plan = (
+				stagePercents: readonly number[],
+				strategy = "ROLLOUT_STRATEGY_CANARY",
+			) => ({
 				rolloutId: `rollout-${"a".repeat(32)}`,
 				promotionId: "promo-1",
 				strategy,
@@ -118,34 +135,97 @@ describe.skipIf(cue === undefined)(
 				targetCampIds: ["prod-a"],
 				lowerings: [{ campId: "prod-a", strategy, offeringId: "lb.weighted" }],
 			});
-			for (const percents of [[50, 25], [0, 100], [10, 10, 100], [5, 50]]) {
+			for (const percents of [
+				[50, 25],
+				[0, 100],
+				[10, 10, 100],
+				[5, 50],
+			]) {
 				const parsed = stagePercentsFor(RolloutStrategy.CANARY, percents);
 				// The parser appends 100 to a short ramp; CUE vets the stored (completed) plan.
 				const stored = parsed.ok ? parsed.value : percents;
 				expect(vets("#RolloutPlanRecord", plan(stored))).toBe(parsed.ok);
 			}
-			expect(vets("#RolloutPlanRecord", plan([50, 100], "ROLLOUT_STRATEGY_BLUE_GREEN"))).toBe(false);
-			expect(stagePercentsFor(RolloutStrategy.BLUE_GREEN, [50, 100]).ok).toBe(false);
+			expect(
+				vets(
+					"#RolloutPlanRecord",
+					plan([50, 100], "ROLLOUT_STRATEGY_BLUE_GREEN"),
+				),
+			).toBe(false);
+			expect(stagePercentsFor(RolloutStrategy.BLUE_GREEN, [50, 100]).ok).toBe(
+				false,
+			);
 		});
 
 		it("a lowering is a rung or a progressive-unsupported refusal, never both", () => {
-			const rung = lowerCamp({ campId: camp("a"), strategy: RolloutStrategy.CANARY, offerings: ["dns.weighted"], fallbackForbidden: false });
-			const refused = lowerCamp({ campId: camp("a"), strategy: RolloutStrategy.CANARY, offerings: [], fallbackForbidden: false });
-			expect(vets("#RolloutLoweringRecord", toJson(RolloutLoweringRecordSchema, rung))).toBe(true);
-			expect(vets("#RolloutLoweringRecord", toJson(RolloutLoweringRecordSchema, refused))).toBe(true);
-			const both = create(RolloutLoweringRecordSchema, { ...rung, refusal: refused.refusal });
-			expect(vets("#RolloutLoweringRecord", toJson(RolloutLoweringRecordSchema, both))).toBe(false);
-			const neither = create(RolloutLoweringRecordSchema, { campId: "a", strategy: RolloutStrategy.CANARY });
-			expect(vets("#RolloutLoweringRecord", toJson(RolloutLoweringRecordSchema, neither))).toBe(false);
+			const rung = lowerCamp({
+				campId: camp("a"),
+				strategy: RolloutStrategy.CANARY,
+				offerings: ["dns.weighted"],
+				fallbackForbidden: false,
+			});
+			const refused = lowerCamp({
+				campId: camp("a"),
+				strategy: RolloutStrategy.CANARY,
+				offerings: [],
+				fallbackForbidden: false,
+			});
+			expect(
+				vets(
+					"#RolloutLoweringRecord",
+					toJson(RolloutLoweringRecordSchema, rung),
+				),
+			).toBe(true);
+			expect(
+				vets(
+					"#RolloutLoweringRecord",
+					toJson(RolloutLoweringRecordSchema, refused),
+				),
+			).toBe(true);
+			const both = create(RolloutLoweringRecordSchema, {
+				...rung,
+				refusal: refused.refusal,
+			});
+			expect(
+				vets(
+					"#RolloutLoweringRecord",
+					toJson(RolloutLoweringRecordSchema, both),
+				),
+			).toBe(false);
+			const neither = create(RolloutLoweringRecordSchema, {
+				campId: "a",
+				strategy: RolloutStrategy.CANARY,
+			});
+			expect(
+				vets(
+					"#RolloutLoweringRecord",
+					toJson(RolloutLoweringRecordSchema, neither),
+				),
+			).toBe(false);
 		});
 
 		it("a failed or rolled-back finish always says why; holds are only boundary holds", () => {
 			const at = new Date(0).toISOString();
-			expect(vets("#RolloutFinished", { status: "rolled-back", reasons: [], at })).toBe(false);
-			expect(vets("#RolloutFinished", { status: "promoted", reasons: [], at })).toBe(true);
-			const hold = (code: string) => toJson(ReasonRecordSchema, create(ReasonRecordSchema, { code, remediation: "wait" }));
-			expect(vets("#RolloutHeld", { reason: hold(WINDOW_CLOSED), at })).toBe(true);
-			expect(vets("#RolloutHeld", { reason: hold("rollout-verification-failed"), at })).toBe(false);
+			expect(
+				vets("#RolloutFinished", { status: "rolled-back", reasons: [], at }),
+			).toBe(false);
+			expect(
+				vets("#RolloutFinished", { status: "promoted", reasons: [], at }),
+			).toBe(true);
+			const hold = (code: string) =>
+				toJson(
+					ReasonRecordSchema,
+					create(ReasonRecordSchema, { code, remediation: "wait" }),
+				);
+			expect(vets("#RolloutHeld", { reason: hold(WINDOW_CLOSED), at })).toBe(
+				true,
+			);
+			expect(
+				vets("#RolloutHeld", {
+					reason: hold("rollout-verification-failed"),
+					at,
+				}),
+			).toBe(false);
 		});
 	},
 );

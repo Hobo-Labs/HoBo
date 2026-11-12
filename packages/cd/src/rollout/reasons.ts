@@ -24,8 +24,7 @@ export const ROLLOUT_REASONS = Object.freeze({
 		"The plan was refused at lowering; read its lowering refusals, fix the cause and plan again.",
 	"rollout-plan-mismatch":
 		"The plan passed to run() differs from the one recorded for this rollout id; re-plan instead of editing a plan record.",
-	"rollout-unknown":
-		"No rollout with this id was planned in this tenant.",
+	"rollout-unknown": "No rollout with this id was planned in this tenant.",
 	"rollout-awaiting-convergence":
 		"The target Camp's reconciler has not reported CONVERGED for the current Set yet; the rollout waits (bounded by the progress deadline).",
 	"rollout-traffic-unconverged":
