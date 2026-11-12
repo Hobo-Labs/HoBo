@@ -2,9 +2,15 @@
 // qualified Freight, never to an older fan-out's Freight.
 import { describe, expect, it } from "vitest";
 import { FanoutState } from "../../src/_generated/cd_pb.js";
-import type { FanoutId } from "../../src/ports.js";
 import { decisionOf, FREIGHT, fanoutOf, healthy } from "./fakes.js";
-import { addCamps, drive, freightB, harness, startInput } from "./harness.js";
+import {
+	addCamps,
+	drive,
+	freightB,
+	harness,
+	idOf,
+	startInput,
+} from "./harness.js";
 
 describe("fan-out late entry (MATCH_NODE)", () => {
 	it("a Camp deferred by two runs catches up only to the newest run's Freight", async () => {
@@ -24,9 +30,9 @@ describe("fan-out late entry (MATCH_NODE)", () => {
 		);
 		if (!second.ok) throw new Error("start refused");
 		await drive(h);
-		expect(
-			(await h.controller.get(second.value.fanoutId as FanoutId))?.state,
-		).toBe(FanoutState.COMPLETED);
+		expect((await h.controller.get(idOf(second.value)))?.state).toBe(
+			FanoutState.COMPLETED,
+		);
 
 		h.inventory.setStatus("c004", healthy("c004"));
 		await drive(h);

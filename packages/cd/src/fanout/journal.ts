@@ -8,14 +8,14 @@ import {
 	fromJson,
 	type JsonObject,
 	type JsonValue,
-	type MessageShape,
 	toJson,
 } from "@bufbuild/protobuf";
-import type {
-	DurableEventStore,
-	EventEnvelope,
-	EventInput,
-	PrincipalRef,
+import {
+	type DurableEventStore,
+	type EventEnvelope,
+	type EventInput,
+	EventStoreError,
+	type PrincipalRef,
 } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { OtelMetricPoint, TelemetrySink } from "../ports.js";
@@ -63,7 +63,7 @@ export function refuse(...reasons: readonly ReasonRecord[]) {
 // ── Codecs (protobuf JSON is the only body format) ────────────────────────
 export function encode<Desc extends DescMessage>(
 	schema: Desc,
-	message: MessageShape<Desc>,
+	message: Parameters<typeof toJson<Desc>>[1],
 ): JsonValue {
 	return toJson(schema, message);
 }
@@ -72,7 +72,7 @@ export function encode<Desc extends DescMessage>(
 export function decode<Desc extends DescMessage>(
 	schema: Desc,
 	value: JsonValue | undefined,
-): MessageShape<Desc> | undefined {
+): ReturnType<typeof fromJson<Desc>> | undefined {
 	if (value === undefined || value === null) return undefined;
 	try {
 		return fromJson(schema, value, { ignoreUnknownFields: true });
@@ -81,26 +81,38 @@ export function decode<Desc extends DescMessage>(
 	}
 }
 
-export function isJsonObject(value: unknown): value is JsonObject {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+// JSON guards for values that arrive already parsed (event bodies). They read
+// the runtime tag, the idiom @hobo/core uses, and establish the JSON contract
+// callers then decode against a generated schema.
+const tagOf = Object.prototype.toString;
+
+export function isJsonString<T>(value: T): value is T & string {
+	return tagOf.call(value) === "[object String]";
 }
 
-export function jsonObject(value: unknown): JsonObject {
+export function isJsonNumber<T>(value: T): value is T & number {
+	return tagOf.call(value) === "[object Number]";
+}
+
+/** A non-null, non-array plain object. */
+export function isJsonObject<T>(value: T): value is T & JsonObject {
+	return tagOf.call(value) === "[object Object]";
+}
+
+export function jsonObject<T>(value: T): JsonObject {
 	return isJsonObject(value) ? value : {};
 }
 
 export function jsonString(value: JsonValue | undefined): string {
-	return typeof value === "string" ? value : "";
+	return isJsonString(value) ? value : "";
 }
 
 export function jsonNumber(value: JsonValue | undefined): number {
-	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+	return isJsonNumber(value) && Number.isFinite(value) ? value : 0;
 }
 
 export function jsonStrings(value: JsonValue | undefined): string[] {
-	return Array.isArray(value)
-		? value.filter((item): item is string => typeof item === "string")
-		: [];
+	return Array.isArray(value) ? value.filter(isJsonString) : [];
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────
@@ -163,13 +175,20 @@ export async function appendAt(input: AppendInput): Promise<number> {
 	return input.expectedSeq + result.appended.length;
 }
 
-export function isConflict(error: unknown): boolean {
+const CONFLICT_CODES: ReadonlySet<string> = new Set([
+	"OPTIMISTIC_SEQUENCE_CONFLICT",
+	"SUBSCRIPTION_LEASE_CONFLICT",
+	"LEASE_CONFLICT",
+	"STALE_FENCE",
+]);
+
+/** A concurrent writer or lease holder won: re-fold on the next tick. */
+export function isConflict<T>(error: T): boolean {
+	if (error instanceof EventStoreError) return CONFLICT_CODES.has(error.code);
 	return (
-		isJsonObject(error) &&
-		(error.code === "OPTIMISTIC_SEQUENCE_CONFLICT" ||
-			error.code === "SUBSCRIPTION_LEASE_CONFLICT" ||
-			error.code === "LEASE_CONFLICT" ||
-			error.code === "STALE_FENCE")
+		error instanceof Error &&
+		"code" in error &&
+		CONFLICT_CODES.has(String(error.code))
 	);
 }
 

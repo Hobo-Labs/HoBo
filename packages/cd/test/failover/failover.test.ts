@@ -18,11 +18,18 @@ import {
 	FAILOVER_REASON,
 	noRunDue,
 } from "../../src/failover/index.js";
-import type { FailoverId } from "../../src/ports.js";
 import { camp, FREIGHT, healthy, MINUTE, T0 } from "../fanout/fakes.js";
 import { drive } from "../fanout/harness.js";
 import { topologyOf } from "./fakes.js";
-import { departs, EU_ONLY, noRun, run, setup, taint } from "./setup.js";
+import {
+	departs,
+	EU_ONLY,
+	failoverIdOf,
+	noRun,
+	run,
+	setup,
+	taint,
+} from "./setup.js";
 
 describe("failover: provider region dies, Rail permits automation (§10 WP23 row 4)", () => {
 	it("one governed failover: replacement passes residency, source kept until the replacement qualifies, traffic via Station cutover", async () => {
@@ -53,12 +60,12 @@ describe("failover: provider region dies, Rail permits automation (§10 WP23 row
 		await run(s, "hold", 3);
 		expect(departs(s, "eu-000")).toEqual([]);
 		expect(s.traffic.shifts).toEqual([]);
-		expect(
-			(await s.failover.get(record?.failoverId as FailoverId))?.state,
-		).toBe(FailoverState.VERIFYING);
+		expect((await s.failover.get(failoverIdOf(record)))?.state).toBe(
+			FailoverState.VERIFYING,
+		);
 
 		await run(s, "pass", 3);
-		const done = await s.failover.get(record?.failoverId as FailoverId);
+		const done = await s.failover.get(failoverIdOf(record));
 		expect(done?.state).toBe(FailoverState.COMPLETED);
 		expect(s.traffic.shifts.map((x) => x.campId)).toEqual(["eu-spare"]);
 		expect(s.traffic.shifts[0]?.plan.backends.map((b) => b.id)).toEqual([
@@ -91,17 +98,17 @@ describe("failover: provider region dies, Rail permits automation (§10 WP23 row
 			s.h.promotions.calls.some((c) => c.request.intent === "failover"),
 		).toBe(false);
 		s.h.authorizer.proposalOnly.add("failover.approve");
-		expect(
-			(await s.failover.approve(record?.failoverId as FailoverId, s.h.ctx)).ok,
-		).toBe(false);
+		expect((await s.failover.approve(failoverIdOf(record), s.h.ctx)).ok).toBe(
+			false,
+		);
 		s.h.authorizer.proposalOnly.clear();
-		expect(
-			(await s.failover.approve(record?.failoverId as FailoverId, s.h.ctx)).ok,
-		).toBe(true);
+		expect((await s.failover.approve(failoverIdOf(record), s.h.ctx)).ok).toBe(
+			true,
+		);
 		await run(s, "pass", 4);
-		expect(
-			(await s.failover.get(record?.failoverId as FailoverId))?.state,
-		).toBe(FailoverState.COMPLETED);
+		expect((await s.failover.get(failoverIdOf(record)))?.state).toBe(
+			FailoverState.COMPLETED,
+		);
 	});
 
 	it("re-checks residency on the replacement even if placement offers a non-compliant Camp", async () => {

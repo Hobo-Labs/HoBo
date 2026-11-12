@@ -123,10 +123,10 @@ function begin(event: EventEnvelope): FanoutView | undefined {
 }
 
 /** Apply one fact. Unknown or unparseable bodies change nothing but the revision. */
-export function apply(
+export function apply<T>(
 	view: FanoutView,
 	type: string,
-	data: unknown,
+	data: T,
 	seq: number,
 ): void {
 	view.seq = seq;

@@ -14,7 +14,6 @@ import {
 	foldFanout,
 	statusOf,
 } from "../../src/fanout/index.js";
-import type { FanoutId } from "../../src/ports.js";
 import {
 	camp,
 	decisionOf,
@@ -24,7 +23,14 @@ import {
 	healthy,
 	MINUTE,
 } from "./fakes.js";
-import { addCamps, drive, freightB, harness, startInput } from "./harness.js";
+import {
+	addCamps,
+	drive,
+	freightB,
+	harness,
+	idOf,
+	startInput,
+} from "./harness.js";
 
 describe("fan-out: 400 Camps PROGRESSIVE_PER_GROUP with 3 unreachable (§10 WP23 row 1)", () => {
 	it("defers the 3 unreachable Camps (never failed), qualifies quorum 95%, and catches them up on reconnect", async () => {
@@ -42,7 +48,7 @@ describe("fan-out: 400 Camps PROGRESSIVE_PER_GROUP with 3 unreachable (§10 WP23
 		if (!started.ok) return;
 		await drive(h);
 
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.state).toBe(FanoutState.COMPLETED);
 		expect(status?.failed).toEqual([]);
 		expect([...(status?.deferred ?? [])].sort()).toEqual(offline);
@@ -67,7 +73,7 @@ describe("fan-out: 400 Camps PROGRESSIVE_PER_GROUP with 3 unreachable (§10 WP23
 		// Reconnect: they catch up to the node's qualified Freight (MATCH_NODE).
 		for (const id of offline) h.inventory.setStatus(id, healthy(id));
 		await drive(h);
-		const after = await h.controller.get(started.value.fanoutId as FanoutId);
+		const after = await h.controller.get(idOf(started.value));
 		expect(after?.deferred).toEqual([]);
 		expect(after?.succeeded).toHaveLength(400);
 		const caughtUp = h.promotions.calls.filter((c) =>
@@ -111,7 +117,7 @@ describe("fan-out: 400 Camps PROGRESSIVE_PER_GROUP with 3 unreachable (§10 WP23
 		);
 		if (!started.ok) throw new Error("start refused");
 		await drive(h);
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect([...(status?.deferred ?? [])].sort()).toEqual(["c001", "c006"]);
 		expect(status?.failed).toEqual([]);
 		expect(
@@ -134,7 +140,7 @@ describe("fan-out: mandatory groups (§10 WP23 row 3)", () => {
 		);
 		if (!started.ok) throw new Error("start refused");
 		await drive(h, (campId) => (campId === "c003" ? "fail" : "pass"));
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.state).toBe(FanoutState.HALTED);
 		expect(status?.reasons[0]?.code).toBe(FANOUT_REASON.mandatoryFailed);
 		const requested = new Set(
@@ -186,7 +192,7 @@ describe("fan-out: failure budget (§10 WP23 row 2)", () => {
 		);
 		if (!started.ok) throw new Error("start refused");
 		await drive(h, (campId) => (failing.has(campId) ? "fail" : "pass"));
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.state).toBe(FanoutState.HALTED);
 		expect(status?.reasons[0]?.code).toBe(FANOUT_REASON.budgetExceeded);
 		expect(new Set(status?.failed)).toEqual(failing);
@@ -218,7 +224,7 @@ describe("fan-out: failure budget (§10 WP23 row 2)", () => {
 		);
 		if (!started.ok) throw new Error("start refused");
 		await drive(h, (campId) => (failing.has(campId) ? "fail" : "pass"));
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.state).toBe(FanoutState.COMPLETED);
 		expect(h.promotions.rollbacks).toEqual([]);
 	});
@@ -235,9 +241,9 @@ describe("fan-out: failure budget (§10 WP23 row 2)", () => {
 		);
 		if (!started.ok) throw new Error("start refused");
 		await drive(h);
-		expect(
-			(await h.controller.get(started.value.fanoutId as FanoutId))?.state,
-		).toBe(FanoutState.COMPLETED);
+		expect((await h.controller.get(idOf(started.value)))?.state).toBe(
+			FanoutState.COMPLETED,
+		);
 	});
 
 	it("fails a Camp whose promotion does not qualify within progress_deadline_ms", async () => {
@@ -255,7 +261,7 @@ describe("fan-out: failure budget (§10 WP23 row 2)", () => {
 		await drive(h, (campId) => (campId === "c000" ? "hold" : "pass"), {
 			maxTicks: 10,
 		});
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.failed).toEqual(["c000"]);
 		const events = h.store.events(CD_STREAMS.fanout(started.value.fanoutId));
 		expect(JSON.stringify(events)).toContain(FANOUT_REASON.progressDeadline);
@@ -314,7 +320,7 @@ describe("fan-out: bounded concurrency under chaos (I20)", () => {
 		}
 		expect(peakJournal).toBeLessThanOrEqual(max);
 		expect(h.promotions.peakLive).toBeLessThanOrEqual(max);
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.state).toBe(FanoutState.COMPLETED);
 	});
 
@@ -384,7 +390,7 @@ describe("fan-out: control and lifecycle", () => {
 		if (!started.ok) throw new Error("start refused");
 		h.freight.yanked.add(FREIGHT);
 		await h.controller.tick(h.ctx);
-		const status = await h.controller.get(started.value.fanoutId as FanoutId);
+		const status = await h.controller.get(idOf(started.value));
 		expect(status?.state).toBe(FanoutState.HALTED);
 		expect(status?.reasons[0]?.code).toBe(FANOUT_REASON.freightUnusable);
 	});
@@ -425,7 +431,7 @@ describe("fan-out: control and lifecycle", () => {
 			h.ctx,
 		);
 		if (!started.ok) throw new Error("start refused");
-		const id = started.value.fanoutId as FanoutId;
+		const id = idOf(started.value);
 		h.authorizer.proposalOnly.add("fanout.halt");
 		expect((await h.controller.halt(id, "stop", h.ctx)).ok).toBe(false);
 		h.authorizer.proposalOnly.clear();
@@ -470,7 +476,7 @@ describe("fan-out: control and lifecycle", () => {
 			h.ctx,
 		);
 		if (!started.ok) throw new Error("start refused");
-		const id = started.value.fanoutId as FanoutId;
+		const id = idOf(started.value);
 		await drive(h, (c) => (["c000", "c001"].includes(c) ? "fail" : "pass"), {
 			maxTicks: 3,
 		});
@@ -500,11 +506,11 @@ describe("fan-out: control and lifecycle", () => {
 			h.promotions.calls.filter((c) => c.request.freightId === freightB),
 		).toHaveLength(0);
 		await drive(h);
-		const old = await h.controller.get(first.value.fanoutId as FanoutId);
+		const old = await h.controller.get(idOf(first.value));
 		expect(old?.state).toBe(FanoutState.SUPERSEDED);
 		expect(old?.succeeded).toEqual(["c000", "c001", "c002", "c003", "c004"]);
 		expect(old?.pending).toHaveLength(15);
-		const next = await h.controller.get(second.value.fanoutId as FanoutId);
+		const next = await h.controller.get(idOf(second.value));
 		expect(next?.state).toBe(FanoutState.COMPLETED);
 		expect(next?.succeeded).toHaveLength(20);
 	});
@@ -556,7 +562,7 @@ describe("fan-out: control and lifecycle", () => {
 		);
 		if (!started.ok) throw new Error("start refused");
 		await drive(h, (c) => (c === "c004" ? "fail" : "pass"));
-		const live = await h.controller.get(started.value.fanoutId as FanoutId);
+		const live = await h.controller.get(idOf(started.value));
 		const replay = foldFanout(
 			h.store.events(CD_STREAMS.fanout(started.value.fanoutId)),
 		);

@@ -3,9 +3,9 @@
 // scenario must keep writing them byte-for-byte, and every corpus body must
 // keep parsing (an incompatible change needs an upcaster, not a silent edit).
 // Regenerate deliberately with UPDATE_GOLDEN=1.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { JsonValue } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { CD_EVENTS } from "../../src/events.js";
 import {
@@ -16,6 +16,8 @@ import {
 	parseStarted,
 	parseStatusFact,
 } from "../../src/fanout/facts.js";
+import { isJsonObject, jsonString } from "../../src/fanout/journal.js";
+import { maybeWriteCorpus, readCorpus } from "./corpus.js";
 import { fanoutScenario } from "./scenario.js";
 
 const CORPUS = join(
@@ -24,47 +26,37 @@ const CORPUS = join(
 	"fanout-events.v1.json",
 );
 
-const PARSERS: Readonly<Record<string, (data: unknown) => unknown>> = {
-	[CD_EVENTS.FanoutStarted]: parseStarted,
-	[CD_EVENTS.FanoutProgressed]: parseProgressed,
-	[CD_EVENTS.FanoutHalted]: parseHalted,
-	[CD_EVENTS.FanoutResumed]: parseResumed,
-	[CD_EVENTS.FanoutCompleted]: parseStatusFact,
-	[CD_EVENTS.FanoutRolledBack]: parseStatusFact,
-	[CD_EVENTS.CampDeparted]: parseDeparted,
-};
+/** Whether a body of `type` parses with the current fact parsers. */
+const PARSES = new Map<string, (data: JsonValue) => boolean>([
+	[CD_EVENTS.FanoutStarted, (data) => parseStarted(data) !== undefined],
+	[CD_EVENTS.FanoutProgressed, (data) => parseProgressed(data) !== undefined],
+	[CD_EVENTS.FanoutHalted, (data) => parseHalted(data) !== undefined],
+	[CD_EVENTS.FanoutResumed, (data) => parseResumed(data) !== undefined],
+	[CD_EVENTS.FanoutCompleted, (data) => parseStatusFact(data).atMs > 0],
+	[CD_EVENTS.FanoutRolledBack, (data) => parseStatusFact(data).atMs > 0],
+	[CD_EVENTS.CampDeparted, (data) => parseDeparted(data) !== undefined],
+]);
 
-function corpusKey(type: string, data: unknown): string {
-	const outcome =
-		typeof data === "object" && data !== null && "outcome" in data
-			? `:${String(data.outcome)}`
-			: "";
-	return `${type}${outcome}`;
+function corpusKey(type: string, data: JsonValue): string {
+	const outcome = isJsonObject(data) ? jsonString(data.outcome) : "";
+	return outcome === "" ? type : `${type}:${outcome}`;
 }
 
 describe("fan-out golden upcaster corpus", () => {
 	it("the scenario writes exactly the pinned v1 bodies, and each parses", async () => {
 		const h = await fanoutScenario();
-		const current: Record<string, unknown> = {};
+		const current = new Map<string, JsonValue>();
 		for (const event of h.store.journal()) {
-			if (PARSERS[event.type] === undefined) continue;
+			if (!PARSES.has(event.type)) continue;
 			const key = corpusKey(event.type, event.data);
-			if (!(key in current)) current[key] = event.data;
+			if (!current.has(key)) current.set(key, event.data);
 		}
-		if (process.env.UPDATE_GOLDEN === "1") {
-			mkdirSync(dirname(CORPUS), { recursive: true });
-			writeFileSync(CORPUS, `${JSON.stringify(current, null, "\t")}\n`);
-		}
-		const pinned = JSON.parse(readFileSync(CORPUS, "utf8")) as Record<
-			string,
-			unknown
-		>;
-		expect(current).toEqual(pinned);
-		for (const [key, body] of Object.entries(pinned)) {
-			const type = key.split(":")[0] ?? "";
-			const parse = PARSERS[type];
-			expect(parse, key).toBeDefined();
-			expect(parse?.(body), key).toBeDefined();
+		maybeWriteCorpus(CORPUS, current);
+		const pinned = readCorpus(CORPUS);
+		expect(Object.fromEntries(current)).toEqual(Object.fromEntries(pinned));
+		for (const [key, body] of pinned) {
+			const parses = PARSES.get(key.split(":")[0] ?? "");
+			expect(parses?.(body), key).toBe(true);
 		}
 	});
 });

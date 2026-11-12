@@ -122,6 +122,11 @@ function statusJson(status: FanoutStatusRecord | undefined): JsonObject {
 }
 
 const DEPARTURE_PREFIX = "DEPARTURE_ACTION_";
+const DEPARTURE_ACTIONS: readonly DepartureAction[] = [
+	DepartureAction.DELETE,
+	DepartureAction.ORPHAN,
+	DepartureAction.ORPHAN_DATA,
+];
 
 /** Protobuf JSON enum name, e.g. DEPARTURE_ACTION_ORPHAN_DATA. */
 function departureName(action: DepartureAction): string {
@@ -132,11 +137,9 @@ function departureOf(value: JsonValue | undefined): DepartureAction {
 	const name = jsonString(value);
 	if (!name.startsWith(DEPARTURE_PREFIX)) return DepartureAction.UNSPECIFIED;
 	const bare = name.slice(DEPARTURE_PREFIX.length);
-	const found = Object.entries(DepartureAction).find(
-		([key, entry]) => key === bare && typeof entry === "number",
-	);
-	const action = found?.[1];
-	return typeof action === "number" ? action : DepartureAction.UNSPECIFIED;
+	for (const action of DEPARTURE_ACTIONS)
+		if (DepartureAction[action] === bare) return action;
+	return DepartureAction.UNSPECIFIED;
 }
 
 // ── Started ────────────────────────────────────────────────────────────────
@@ -156,7 +159,7 @@ export function startedBody(fact: StartedFact): JsonObject {
 	};
 }
 
-export function parseStarted(value: unknown): StartedFact | undefined {
+export function parseStarted<T>(value: T): StartedFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const decision = decode(PlacementDecisionRecordSchema, value.decision);
 	const fanout = decode(FanoutRecordSchema, value.fanout);
@@ -191,7 +194,7 @@ export function progressedBody(fact: ProgressedFact): JsonObject {
 	};
 }
 
-export function parseProgressed(value: unknown): ProgressedFact | undefined {
+export function parseProgressed<T>(value: T): ProgressedFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const outcome = jsonString(value.outcome);
 	if (!OUTCOMES.has(outcome)) return undefined;
@@ -216,7 +219,7 @@ export function haltedBody(fact: HaltedFact): JsonObject {
 	};
 }
 
-export function parseHalted(value: unknown): HaltedFact | undefined {
+export function parseHalted<T>(value: T): HaltedFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const parsed = decode(ReasonRecordSchema, value.reason);
 	if (parsed === undefined) return undefined;
@@ -235,7 +238,7 @@ export function resumedBody(fact: ResumedFact): JsonObject {
 	};
 }
 
-export function parseResumed(value: unknown): ResumedFact | undefined {
+export function parseResumed<T>(value: T): ResumedFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	return {
 		baseline: jsonNumber(value.baseline),
@@ -253,7 +256,7 @@ export function statusBody(fact: StatusFact): JsonObject {
 	};
 }
 
-export function parseStatusFact(value: unknown): StatusFact {
+export function parseStatusFact<T>(value: T): StatusFact {
 	const body = jsonObject(value);
 	return {
 		atMs: jsonNumber(body.atMs),
@@ -276,7 +279,7 @@ export function departedBody(fact: DepartedFact): JsonObject {
 	};
 }
 
-export function parseDeparted(value: unknown): DepartedFact | undefined {
+export function parseDeparted<T>(value: T): DepartedFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const campId = jsonString(value.campId);
 	if (campId === "") return undefined;
@@ -326,7 +329,7 @@ export function failoverBody(fact: FailoverFact): JsonObject {
 	};
 }
 
-export function parseFailoverFact(value: unknown): FailoverFact | undefined {
+export function parseFailoverFact<T>(value: T): FailoverFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const failover = decode(FailoverRecordSchema, value.failover);
 	if (failover === undefined || failover.failoverId === "") return undefined;

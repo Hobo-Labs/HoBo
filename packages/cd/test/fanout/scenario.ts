@@ -3,9 +3,17 @@
 // and SUPERSEDED), RolledBack and camp.Departed. Used by the CUE agreement
 // and golden-corpus tests.
 import { FanoutStrategy } from "../../src/_generated/cd_pb.js";
-import type { FanoutId, FreightId } from "../../src/ports.js";
-import { decisionOf, fanoutOf, healthy } from "./fakes.js";
-import { addCamps, drive, freightB, harness, startInput } from "./harness.js";
+import { decisionOf, fanoutOf, freightIdOf, healthy } from "./fakes.js";
+import {
+	addCamps,
+	drive,
+	freightB,
+	harness,
+	idOf,
+	startInput,
+} from "./harness.js";
+
+const freightC = freightIdOf("sha256:cccc");
 
 export async function fanoutScenario() {
 	const h = harness();
@@ -20,7 +28,7 @@ export async function fanoutScenario() {
 	await drive(h, (c) => (c === "c001" || c === "c002" ? "fail" : "pass"), {
 		maxTicks: 4,
 	});
-	await h.controller.resume(a.value.fanoutId as FanoutId, h.ctx);
+	await h.controller.resume(idOf(a.value), h.ctx);
 	await drive(h);
 
 	h.desired.place("c011", [
@@ -34,7 +42,7 @@ export async function fanoutScenario() {
 	);
 	if (!b.ok) throw new Error("start B refused");
 	const c = await h.controller.start(
-		startInput(narrow, fanoutOf(), { freightId: "sha256:cccc" as FreightId }),
+		startInput(narrow, fanoutOf(), { freightId: freightC }),
 		h.ctx,
 	);
 	if (!c.ok) throw new Error("start C refused");
@@ -46,11 +54,7 @@ export async function fanoutScenario() {
 		h.ctx,
 	);
 	if (!d.ok) throw new Error("start D refused");
-	await h.controller.halt(d.value.fanoutId as FanoutId, "operator stop", h.ctx);
-	await h.controller.rollback(
-		d.value.fanoutId as FanoutId,
-		"bad release",
-		h.ctx,
-	);
+	await h.controller.halt(idOf(d.value), "operator stop", h.ctx);
+	await h.controller.rollback(idOf(d.value), "bad release", h.ctx);
 	return h;
 }

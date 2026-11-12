@@ -2,7 +2,11 @@
 // frozen port (ports.ts, @hobo/core eventstore); none is reachable from
 // production code.
 import { create } from "@bufbuild/protobuf";
-import type { ResolvedDeploymentSet } from "@hobo/cloud";
+import {
+	createResolvedDeploymentSet,
+	DEPLOYMENT_PLAN_SCHEMA,
+	type ResolvedDeploymentSet,
+} from "@hobo/cloud";
 import {
 	type AppendOptions,
 	type AppendResult,
@@ -16,6 +20,7 @@ import {
 	EventStoreError,
 	type FenceToken,
 	type JsonObject,
+	type JsonValue,
 	OptimisticSequenceConflictError,
 	type PartitionId,
 	type PositionedEvent,
@@ -86,7 +91,13 @@ export const TENANT = "acme";
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
 export const SECOND = 1_000;
 export const MINUTE = 60 * SECOND;
-export const FREIGHT = "sha256:aaaa" as FreightId;
+/** Brand a fixture Freight id. */
+export function freightIdOf(id: string): FreightId {
+	// SAFETY: test fixture Freight ids are literal sha256 ids.
+	return id as FreightId;
+}
+
+export const FREIGHT = freightIdOf("sha256:aaaa");
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
@@ -207,9 +218,9 @@ export class MemoryEventStore implements DurableEventStore {
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
 			const existing =
-				typeof key === "string"
-					? stream.find((e) => e.meta?.idempotencyKey === key)
-					: undefined;
+				key === undefined
+					? undefined
+					: stream.find((e) => e.meta?.idempotencyKey === key);
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
@@ -231,6 +242,7 @@ export class MemoryEventStore implements DurableEventStore {
 				ts: new Date(T0).toISOString(),
 				actor: opts.actor,
 				tenant: opts.tenant,
+				// SAFETY: appended bodies are JSON by construction (protobuf JSON).
 				data: structuredClone(input.data) as EventEnvelope["data"],
 			};
 			if (input.meta) envelope.meta = structuredClone(input.meta);
@@ -251,7 +263,7 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
-		for (const entry of [...this.all]) {
+		for (const entry of this.all.slice()) {
 			if (options.after !== undefined && entry.position <= options.after)
 				continue;
 			if (options.tenant !== undefined && entry.event.tenant !== options.tenant)
@@ -299,8 +311,17 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	/** Every event, in journal order (golden replay). */
-	journal(): readonly EventEnvelope[] {
-		return this.all.map((entry) => entry.event);
+	journal(): readonly Readonly<{
+		type: string;
+		streamId: string;
+		data: JsonValue;
+	}>[] {
+		return this.all.map((entry) => {
+			const data: JsonValue = JSON.parse(
+				JSON.stringify(entry.event.data ?? null),
+			);
+			return { type: entry.event.type, streamId: entry.event.streamId, data };
+		});
 	}
 }
 
@@ -676,11 +697,7 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	): void {
 		const set = create(SetRecordSchema, { setId: `set-${campId}`, campId });
 		this.sets.set(campId, set);
-		this.resolvedSets.set(set.setId, {
-			plan: {
-				resources: resources.map((r) => ({ ...r, provider: "aws", deps: [] })),
-			},
-		} as unknown as ResolvedDeploymentSet);
+		this.resolvedSets.set(set.setId, resolvedSet(campId, resources));
 	}
 	async current(campId: CampId) {
 		return this.sets.get(campId);
@@ -777,4 +794,29 @@ export function groupAt(decision: PlacementDecisionRecord, index: number) {
 	const group = decision.groups[index];
 	if (group === undefined) throw new Error(`fixture has no group ${index}`);
 	return group;
+}
+
+/** A real (Gatekeeper-approved) resolved set over the given plan resources. */
+export function resolvedSet(
+	campId: string,
+	resources: readonly Readonly<{ name: string; port: string }>[],
+): ResolvedDeploymentSet {
+	return createResolvedDeploymentSet({
+		tenant: TENANT,
+		environment: "production",
+		campId,
+		plan: {
+			schema: DEPLOYMENT_PLAN_SCHEMA,
+			resources: resources.map((r) => ({ ...r, provider: "aws", deps: [] })),
+			dependencyOrder: resources.map((r) => r.name),
+			objective: "cost",
+		},
+		matches: [],
+		gatekeeper: {
+			decision: "allow",
+			gatekeeperDecisionId: "gate-1",
+			obligations: [],
+			decidedAt: new Date(T0).toISOString(),
+		},
+	});
 }

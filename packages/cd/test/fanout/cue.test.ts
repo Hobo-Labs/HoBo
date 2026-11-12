@@ -8,6 +8,7 @@ import {
 	FanoutStrategy,
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
+import { parseProgressed } from "../../src/fanout/facts.js";
 import { parseFanoutPlan } from "../../src/fanout/index.js";
 import { cue, vetter } from "./cue-support.js";
 import { decisionOf } from "./fakes.js";
@@ -15,15 +16,15 @@ import { fanoutScenario } from "./scenario.js";
 
 const vets = vetter("fanout.cue");
 
-const DEFINITION: Readonly<Record<string, string>> = {
-	[CD_EVENTS.FanoutStarted]: "#FanoutStartedBody",
-	[CD_EVENTS.FanoutProgressed]: "#FanoutProgressedBody",
-	[CD_EVENTS.FanoutHalted]: "#FanoutHaltedBody",
-	[CD_EVENTS.FanoutResumed]: "#FanoutResumedBody",
-	[CD_EVENTS.FanoutCompleted]: "#FanoutStatusBody",
-	[CD_EVENTS.FanoutRolledBack]: "#FanoutStatusBody",
-	[CD_EVENTS.CampDeparted]: "#CampDepartedBody",
-};
+const DEFINITION = new Map<string, string>([
+	[CD_EVENTS.FanoutStarted, "#FanoutStartedBody"],
+	[CD_EVENTS.FanoutProgressed, "#FanoutProgressedBody"],
+	[CD_EVENTS.FanoutHalted, "#FanoutHaltedBody"],
+	[CD_EVENTS.FanoutResumed, "#FanoutResumedBody"],
+	[CD_EVENTS.FanoutCompleted, "#FanoutStatusBody"],
+	[CD_EVENTS.FanoutRolledBack, "#FanoutStatusBody"],
+	[CD_EVENTS.CampDeparted, "#CampDepartedBody"],
+]);
 
 describe.skipIf(cue === undefined)(
 	"fanout.cue agrees with the fan-out controller (skips with no cue binary: run scripts/bootstrap-dev.sh)",
@@ -33,18 +34,18 @@ describe.skipIf(cue === undefined)(
 			const seen = new Set<string>();
 			const outcomes = new Set<string>();
 			for (const event of h.store.journal()) {
-				const definition = DEFINITION[event.type];
+				const definition = DEFINITION.get(event.type);
 				if (definition === undefined) continue;
 				seen.add(event.type);
 				if (event.type === CD_EVENTS.FanoutProgressed)
-					outcomes.add(String((event.data as { outcome: string }).outcome));
+					outcomes.add(parseProgressed(event.data)?.outcome ?? "");
 				const result = vets(definition, event.data);
 				expect(
 					result.error,
 					`${event.type} ${JSON.stringify(event.data).slice(0, 300)}`,
 				).toBe("");
 			}
-			expect([...seen].sort()).toEqual(Object.keys(DEFINITION).sort());
+			expect([...seen].sort()).toEqual([...DEFINITION.keys()].sort());
 			expect([...outcomes].sort()).toEqual(
 				[
 					"bound",

@@ -10,7 +10,11 @@ import {
 	type TaintRecord,
 	TaintRecordSchema,
 } from "../../src/_generated/cd_pb.js";
-import { createFailoverController } from "../../src/failover/index.js";
+import {
+	createFailoverController,
+	type FailoverControllerDeps,
+} from "../../src/failover/index.js";
+import type { FailoverId } from "../../src/ports.js";
 import { decisionOf, fanoutOf, healthy, MINUTE } from "../fanout/fakes.js";
 import { drive, harness, startInput } from "../fanout/harness.js";
 import {
@@ -81,7 +85,7 @@ export async function setup(
 		allowImmediatePurge: options.allowImmediatePurge ?? false,
 	});
 	const traffic = new FakeTraffic();
-	const failover = createFailoverController({
+	const deps: FailoverControllerDeps = {
 		store: h.store,
 		tenant: h.ctx.tenant,
 		now: h.time.now,
@@ -96,15 +100,18 @@ export async function setup(
 		traffic,
 		authorizer: h.authorizer,
 		telemetry: h.telemetry,
-		...(options.withContext === false
-			? {}
+	};
+	const failover = createFailoverController(
+		options.withContext === false
+			? deps
 			: {
+					...deps,
 					placementContext: async () => ({
 						stationId: "station-eu",
 						subject: EU_ONLY,
 					}),
-				}),
-	});
+				},
+	);
 	return {
 		h,
 		failover,
@@ -144,3 +151,11 @@ export const departs = (s: Setup, campId: string) =>
 	s.h.promotions.calls.filter(
 		(c) => c.request.intent === "depart" && c.request.targets[0] === campId,
 	);
+
+/** The branded id of a failover record the controller returned. */
+export function failoverIdOf(
+	record: Readonly<{ failoverId: string }> | undefined,
+): FailoverId {
+	// SAFETY: failover ids in records are minted by failoverIdFor.
+	return (record?.failoverId ?? "") as FailoverId;
+}

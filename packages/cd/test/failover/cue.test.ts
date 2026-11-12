@@ -15,14 +15,14 @@ import { failoverScenario } from "./scenario.js";
 
 const vets = vetter("failover.cue");
 
-const DEFINITION: Readonly<Record<string, string>> = {
-	[CD_EVENTS.FailoverProposed]: "#FailoverBody",
-	[CD_EVENTS.FailoverStarted]: "#FailoverBody",
-	[CD_EVENTS.FailoverProgressed]: "#FailoverBody",
-	[CD_EVENTS.FailoverCompleted]: "#FailoverBody",
-	[CD_EVENTS.FailoverRefused]: "#FailoverBody",
-	[CD_EVENTS.RebalanceRequested]: "#RebalanceRequestedBody",
-};
+const DEFINITION = new Map<string, string>([
+	[CD_EVENTS.FailoverProposed, "#FailoverBody"],
+	[CD_EVENTS.FailoverStarted, "#FailoverBody"],
+	[CD_EVENTS.FailoverProgressed, "#FailoverBody"],
+	[CD_EVENTS.FailoverCompleted, "#FailoverBody"],
+	[CD_EVENTS.FailoverRefused, "#FailoverBody"],
+	[CD_EVENTS.RebalanceRequested, "#RebalanceRequestedBody"],
+]);
 
 describe.skipIf(cue === undefined)(
 	"failover.cue agrees with the failover controller (skips with no cue binary: run scripts/bootstrap-dev.sh)",
@@ -31,7 +31,7 @@ describe.skipIf(cue === undefined)(
 			const s = await failoverScenario();
 			const seen = new Set<string>();
 			for (const event of s.h.store.journal()) {
-				const definition = DEFINITION[event.type];
+				const definition = DEFINITION.get(event.type);
 				if (definition === undefined) continue;
 				seen.add(event.type);
 				const result = vets(definition, event.data);
@@ -40,7 +40,7 @@ describe.skipIf(cue === undefined)(
 					`${event.type} ${JSON.stringify(event.data).slice(0, 300)}`,
 				).toBe("");
 			}
-			expect([...seen].sort()).toEqual(Object.keys(DEFINITION).sort());
+			expect([...seen].sort()).toEqual([...DEFINITION.keys()].sort());
 		}, 60_000);
 
 		it("refuses a self-move, a started failover without a replacement, and secret-shaped handover names", () => {

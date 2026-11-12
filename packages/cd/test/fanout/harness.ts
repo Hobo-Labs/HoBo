@@ -10,11 +10,7 @@ import {
 	createFanoutController,
 	type FanoutStartInput,
 } from "../../src/fanout/index.js";
-import type {
-	CdContext,
-	FanoutController,
-	FreightId,
-} from "../../src/ports.js";
+import type { CdContext, FanoutController, FanoutId } from "../../src/ports.js";
 import {
 	asLedger,
 	clock,
@@ -26,6 +22,7 @@ import {
 	FakePromotions,
 	FakeWindows,
 	FREIGHT,
+	freightIdOf,
 	MemoryEventStore,
 	MINUTE,
 	RecordingTelemetry,
@@ -137,4 +134,10 @@ export async function drive(
 	}
 }
 
-export const freightB = "sha256:bbbb" as FreightId;
+export const freightB = freightIdOf("sha256:bbbb");
+
+/** The branded id of a fan-out status the controller returned. */
+export function idOf(status: Readonly<{ fanoutId: string }>): FanoutId {
+	// SAFETY: fan-out ids in status records are minted by fanoutIdFor.
+	return status.fanoutId as FanoutId;
+}

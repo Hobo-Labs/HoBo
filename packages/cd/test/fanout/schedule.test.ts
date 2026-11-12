@@ -24,7 +24,13 @@ import {
 	schedule,
 } from "../../src/fanout/index.js";
 import type { WindowEvaluation } from "../../src/ports.js";
-import { decisionOf, fanoutOf, groupAt, healthy } from "./fakes.js";
+import {
+	decisionOf,
+	fanoutOf,
+	groupAt,
+	healthy,
+	resolvedSet,
+} from "./fakes.js";
 
 function plan(
 	n: number,
@@ -49,10 +55,12 @@ function slots(
 	return new Map(
 		p.campIds.map((campId) => [
 			campId,
-			{ campId, state: states[campId] ?? ("pending" as SlotState) },
+			{ campId, state: states[campId] ?? PENDING },
 		]),
 	);
 }
+
+const PENDING: SlotState = "pending";
 
 const OPEN: WindowEvaluation = {
 	open: true,
@@ -309,15 +317,11 @@ describe("classify and eligibility", () => {
 
 describe("data resources and the effective decision", () => {
 	it("treats data ports and classified or data-kind observations as data", () => {
-		const resolved = {
-			plan: {
-				resources: [
-					{ name: "web", port: "hobo:http-service" },
-					{ name: "db", port: "hobo:database" },
-					{ name: "q", port: "queue" },
-				],
-			},
-		};
+		const resolved = resolvedSet("c1", [
+			{ name: "web", port: "hobo:http-service" },
+			{ name: "db", port: "hobo:database" },
+			{ name: "q", port: "queue" },
+		]);
 		const observed = create(ReconcileObservationRecordSchema, {
 			resources: [
 				{ resource: "files", kind: "bucket" },
@@ -325,7 +329,7 @@ describe("data resources and the effective decision", () => {
 				{ resource: "fn", kind: "function" },
 			],
 		});
-		expect(dataResourcesOf(resolved as never, observed)).toEqual([
+		expect(dataResourcesOf(resolved, observed)).toEqual([
 			"cache",
 			"db",
 			"files",

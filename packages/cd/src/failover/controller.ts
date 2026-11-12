@@ -8,7 +8,7 @@
 // re-checks residency on the replacement, purges GRACEFUL only after the
 // replacement qualified, and never fails back. `rebalance` records moves and
 // runs them as GRACEFUL moves under the node's fan-out limit.
-import { create, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { create, type JsonObject } from "@bufbuild/protobuf";
 import {
 	type ActorLeaseHost,
 	evaluateResidency,
@@ -80,6 +80,7 @@ import {
 	unreachableData,
 } from "./policy.js";
 
+// public-contract: saga name recorded in saga facts for every failover.
 export const FAILOVER_SAGA = "cd.failover" as const;
 
 export const FAILOVER_METRIC = Object.freeze({
@@ -157,6 +158,16 @@ const FAILED_PROMOTION: ReadonlySet<PromotionState> = new Set([
 ]);
 
 type View = { fact: FailoverFact; seq: number };
+
+/** Wire form of the Station cutover plan, parsed by core `parseRoutingPlan`. */
+type CutoverPlanJson = {
+	planId: string;
+	intent: JsonObject;
+	backends: JsonObject[];
+	createdAt: string;
+	notes: string[];
+	stationId?: string;
+};
 
 export function failoverIdFor(
 	tenant: string,
@@ -541,13 +552,14 @@ export function createFailoverController(
 			];
 		for (const constraint of subject.residency)
 			for (const region of regions) {
-				const result = evaluateResidency({
-					constraint,
-					region,
-					...(d.regionCatalog === undefined
-						? {}
-						: { catalog: d.regionCatalog }),
-				});
+				const result =
+					d.regionCatalog === undefined
+						? evaluateResidency({ constraint, region })
+						: evaluateResidency({
+								constraint,
+								region,
+								catalog: d.regionCatalog,
+							});
 				if (!result.ok)
 					return [
 						reason(
@@ -770,7 +782,7 @@ export function createFailoverController(
 	function cutoverPlan(view: View, service: string): RoutingPlan {
 		const f = view.fact.failover;
 		const backend = { id: f.toCampId, service };
-		const json: JsonValue = {
+		const plan: CutoverPlanJson = {
 			planId: `failover-${f.failoverId}`,
 			intent: {
 				service,
@@ -778,11 +790,11 @@ export function createFailoverController(
 				rules: [{ backends: [backend], weightStrategy: "static" }],
 			},
 			backends: [backend],
-			...(view.fact.stationId === "" ? {} : { stationId: view.fact.stationId }),
 			createdAt: iso(view.fact.startedAtMs),
 			notes: [`failover from ${f.fromCampId} to ${f.toCampId}`],
 		};
-		return parseRoutingPlan(json);
+		if (view.fact.stationId !== "") plan.stationId = view.fact.stationId;
+		return parseRoutingPlan(plan);
 	}
 
 	async function graceExpired(
@@ -821,7 +833,8 @@ export function createFailoverController(
 		const promotion =
 			f.promotionId === ""
 				? undefined
-				: await d.promotions.get(f.promotionId as PromotionId);
+				: // SAFETY: promotion ids are recorded from PromotionService results.
+					await d.promotions.get(f.promotionId as PromotionId);
 		if (
 			f.state === FailoverState.REPLACING ||
 			f.state === FailoverState.VERIFYING
@@ -1132,7 +1145,7 @@ export function createFailoverController(
 			)) {
 				const existing = decode(
 					RebalanceRecordSchema,
-					jsonObject(event.data).rebalance as JsonValue,
+					jsonObject(event.data).rebalance,
 				);
 				if (existing !== undefined) return { ok: true, value: existing };
 			}

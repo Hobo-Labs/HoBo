@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { JsonValue } from "@bufbuild/protobuf";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -32,7 +33,7 @@ export const cue = findCue();
 
 export type Vet = (
 	definition: string,
-	value: unknown,
+	value: JsonValue,
 ) => Readonly<{ ok: boolean; error: string }>;
 
 /** A vetter bound to one schema under packages/cd/data-models. */
