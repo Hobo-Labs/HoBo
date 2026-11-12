@@ -214,14 +214,20 @@ export function isImagetoolsRegistryTagNotFound(stderr: string): boolean {
 	return /(?:^|\n)error:\s*.+:\s*not found\s*$/im.test(trimmed);
 }
 
-/** Substring `tag` in stderr must not be a longer ref (`:v1` vs `:v10`). */
+const TAG_REF_SUFFIX = /[a-zA-Z0-9_.-]/;
+
+/** Substring `tag` in stderr must not be a longer valid tag (`:v1` vs `:v1.1`). */
 export function stderrReferencesExactTag(stderr: string, tag: string): boolean {
+	for (const line of stderr.split("\n")) {
+		const notFound = line.trim().match(/^error:\s*(.+):\s*not found$/iu);
+		if (notFound?.[1]?.trim() === tag) return true;
+	}
 	let start = 0;
 	for (;;) {
 		const idx = stderr.indexOf(tag, start);
 		if (idx === -1) return false;
 		const after = stderr[idx + tag.length];
-		if (after === undefined || !/[a-zA-Z0-9]/.test(after)) return true;
+		if (after === undefined || !TAG_REF_SUFFIX.test(after)) return true;
 		start = idx + 1;
 	}
 }

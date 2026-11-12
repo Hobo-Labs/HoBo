@@ -83,18 +83,23 @@ describe("release ghcr digest helpers", () => {
 	it("rejects tag prefix collisions in stderr", () => {
 		const tag = "ghcr.io/hobo-labs/hobo/hobo-cli:v1";
 		const longer = "ghcr.io/hobo-labs/hobo/hobo-cli:v10";
+		const dotted = "ghcr.io/hobo-labs/hobo/hobo-cli:v1.1";
+		const dashed = "ghcr.io/hobo-labs/hobo/hobo-cli:v1-rc";
+		const underscored = "ghcr.io/hobo-labs/hobo/hobo-cli:v1_foo";
 		expect(stderrReferencesExactTag(`ERROR: ${tag}: not found`, tag)).toBe(
 			true,
 		);
 		expect(stderrReferencesExactTag(`ERROR: ${longer}: not found`, tag)).toBe(
 			false,
 		);
-		expect(() =>
-			imagetoolsInspectTag(
-				tag,
-				vi.fn(() => stubSpawnSync(1, `ERROR: ${longer}: not found`)),
-			),
-		).toThrow(/imagetools inspect/u);
+		for (const other of [longer, dotted, dashed, underscored]) {
+			expect(() =>
+				imagetoolsInspectTag(
+					tag,
+					vi.fn(() => stubSpawnSync(1, `ERROR: ${other}: not found`)),
+				),
+			).toThrow(/imagetools inspect/u);
+		}
 	});
 
 	it("treats buildx ERROR ref-not-found as absent only for matching refs", () => {
