@@ -8,6 +8,11 @@ import {
 import type { FanoutId } from "../../src/ports.js";
 import { campsOfDecision, placedCampsFrom } from "../../src/promotion/index.js";
 
+const asFanoutId = (id: string): FanoutId =>
+	// SAFETY: test fixture ids are literal fan-out ids; the reader under test
+	// only compares them by string equality.
+	id as FanoutId;
+
 const decision = (id: string, node = "prod") =>
 	create(PlacementDecisionRecordSchema, {
 		decisionId: id,
@@ -56,7 +61,7 @@ describe("placedCampsFrom", () => {
 			await read({
 				pipeline: "fleet",
 				node: "prod",
-				fanoutId: "fo-1" as FanoutId,
+				fanoutId: asFanoutId("fo-1"),
 			}),
 		).toEqual(["c-1", "c-2", "c-3"]);
 		expect(await read({ pipeline: "fleet", node: "prod" })).toEqual([
@@ -72,14 +77,14 @@ describe("placedCampsFrom", () => {
 			await read({
 				pipeline: "fleet",
 				node: "prod",
-				fanoutId: "fo-2" as FanoutId,
+				fanoutId: asFanoutId("fo-2"),
 			}),
 		).toBeUndefined();
 		expect(
 			await read({
 				pipeline: "fleet",
 				node: "prod",
-				fanoutId: "fo-x" as FanoutId,
+				fanoutId: asFanoutId("fo-x"),
 			}),
 		).toBeUndefined();
 		expect(await read({ pipeline: "other", node: "prod" })).toBeUndefined();

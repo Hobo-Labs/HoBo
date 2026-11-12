@@ -8,6 +8,8 @@
  * replay with the same clock produces the same rows (I8); they are never
  * read from the server clock.
  */
+// public-contract: recorded in the migrations table and hashed into the
+// migration checksum; renaming it fails verification of existing stores.
 export const name = "initial";
 
 export function sql(s: string): string {

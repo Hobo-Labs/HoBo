@@ -26,6 +26,8 @@ import {
 	sampleValue,
 } from "./http.js";
 
+// public-contract: NerdGraph GraphQL document sent to New Relic; pinned by the
+// newrelic PACT.
 export const NERDGRAPH_NRQL_DOCUMENT =
 	"query($accountId: Int!, $nrql: Nrql!) { actor { account(id: $accountId) { nrql(query: $nrql) { results } } } }";
 

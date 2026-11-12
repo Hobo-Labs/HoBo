@@ -1061,21 +1061,25 @@ export function createProductionHostingProviderCatalog(
 				});
 				break;
 			}
-			case "github":
-				registry = githubResolverRegistry({
+			case "github": {
+				const githubOptions = {
 					...entry.options,
 					api: Object.freeze({ ...entry.options.api }),
 					resolveCredential: pinnedCredential(entry.lease),
-					...(entry.deploymentOidcLease
+				};
+				registry = githubResolverRegistry(
+					entry.deploymentOidcLease
 						? {
+								...githubOptions,
 								resolveDeploymentOidcToken: auxiliaryCredential(
 									entry.lease.credentialRef,
 									entry.deploymentOidcLease,
 								),
 							}
-						: {}),
-				});
+						: githubOptions,
+				);
 				break;
+			}
 			case "neon":
 				registry = createResolverRegistry([
 					createNeonClaimableResolver({
