@@ -252,14 +252,14 @@ Known gaps, stated rather than hidden:
   commit, and production trusts that qualification. Closing it needs the
   deployment's own URL with a protection-bypass header, or `/healthz`
   reporting the build SHA.
-- **@hobo/cd cannot run a rollout on a durable journal yet.** Its
-  `cd.rollout.*` event types are refused by SQLite and Postgres, and
-  `@hobo/cd/sets` cannot fold the `{ schema, observation }` status envelope.
-  `hobo ci deploy` works around both with a private encoding, so it keeps its
-  own journal (`$HOBO_HOME/ci-relay/cd`), never the shared `$HOBO_HOME/cd`
-  that `hobo deploy` and `hobo serve cd` read, and refuses
-  (`HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`) when `HOBO_CD_SQLITE_PATH` or
-  `HOBO_CD_POSTGRES_URL` names a shared store. The fix belongs in `@hobo/cd`.
+
+The journal is the shared CD journal: `$HOBO_HOME/cd`, or the store
+`HOBO_CD_SQLITE_PATH` / `HOBO_CD_POSTGRES_URL` names, the same one
+`hobo deploy` and `hobo serve cd` read. `@hobo/cd` stores the rollout ledger
+under the durable `rollout.*` family and folds the reconcile status envelope
+itself, so the relay's promotions are ordinary CD records: `hobo deploy logs
+--camp hobo-ci-relay/hobo-ci-relay/production --yard
+packages/ci-vercel/deploy/yard.ts` shows them.
 
 #### Contract changes of `hobo ci deploy`
 
@@ -327,7 +327,7 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… \
 VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
 
 # Verify and qualify it (needs HOBO_CI_RELAY_PREVIEW_URL), then promote it
-# (the journal is $HOBO_HOME/ci-relay/cd, so promote with the same HOBO_HOME).
+# (preview's qualification is read from the same CD journal, so keep HOBO_HOME).
 VERCEL_TOKEN=… HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
   --cwd packages/ci-vercel --ref main --sha <commit> --team team_… --wait
 ```
