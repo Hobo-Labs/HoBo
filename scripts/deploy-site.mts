@@ -12,9 +12,18 @@
  * it is generated output, recoverable by rebuilding the source commit it names
  * — and keeping it would grow the clone for every deploy.
  *
+ * HoBo delivers its own site through HoBo CD: before the push, the exact tree
+ * is recorded as release Freight (a STATIC_ASSETS tree index) and promoted
+ * hobo-release/candidate -> hobo-release/stable through `hobo deploy`
+ * (scripts/ci/create-github-release.mts). GitHub Pages has no @hobo/cd
+ * realizer, so the push below stays the publish step; it runs only when the
+ * promotion is not blocked, and the realizer gap is printed.
+ *
  * Usage:
  *   pnpm run site:deploy              # build, then publish
  *   pnpm run site:deploy -- --dry-run # build and show what would publish
+ *   node scripts/deploy-site.mts --release-freight <dir>  # record + promote only
+ *     (the release workflow, before its gh-pages step; HOBO_RELEASE_CD_HOME)
  */
 
 import { execFileSync } from "node:child_process";
@@ -26,8 +35,14 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+	promoteReleaseStable,
+	qualifyReleaseCandidate,
+	siteTreeIndex,
+} from "./ci/create-github-release.mts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 const SITE_DIR = join(REPO_ROOT, "site");
@@ -118,7 +133,44 @@ function build(): void {
 	}
 }
 
-function publish(sha: string): void {
+/**
+ * Record the tree about to publish as `hobo-release-pages` Freight and promote
+ * it candidate -> stable; throws when @hobo/cd blocks either step.
+ */
+export async function qualifySiteRelease(input: {
+	readonly dist: string;
+	readonly home: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+}): Promise<void> {
+	const env = input.env ?? process.env;
+	const index = siteTreeIndex(input.dist);
+	await qualifyReleaseCandidate({
+		home: input.home,
+		family: "pages",
+		env,
+		stored: [
+			{
+				name: "site",
+				kind: "ARTIFACT_KIND_STATIC_ASSETS",
+				mediaType: "application/vnd.hobo.release-tree+json",
+				bytes: index.bytes,
+			},
+		],
+		labels: { "hobo.release/pages-branch": BRANCH },
+	});
+	if (!(await promoteReleaseStable(input.home, env)))
+		throw new Error("release Freight pages blocked at hobo-release/stable");
+}
+
+function releaseCdHome(): string {
+	return (
+		process.env.HOBO_RELEASE_CD_HOME ||
+		process.env.HOBO_HOME ||
+		join(homedir(), ".hobo")
+	);
+}
+
+async function publish(sha: string): Promise<void> {
 	// A throwaway clone keeps the working tree untouched: a checkout of an
 	// orphan branch in place would sweep the repo out from under the build.
 	const staging = mkdtempSync(join(tmpdir(), "hobo-pages-"));
@@ -193,6 +245,8 @@ function publish(sha: string): void {
 		);
 
 		const files = git(["ls-files"], staging).split("\n").filter(Boolean).length;
+		if (!dryRun)
+			await qualifySiteRelease({ dist: staging, home: releaseCdHome() });
 		if (dryRun) {
 			console.log(
 				`[dry run] would force-push ${files} files to ${BRANCH} as "${message}"`,
@@ -208,6 +262,21 @@ function publish(sha: string): void {
 	}
 }
 
-const sha = assertClean();
-build();
-publish(sha);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+	try {
+		const at = process.argv.indexOf("--release-freight");
+		if (at !== -1) {
+			const dist = process.argv[at + 1];
+			if (!dist)
+				throw new Error("--release-freight needs the built site directory");
+			await qualifySiteRelease({ dist: resolve(dist), home: releaseCdHome() });
+		} else {
+			const sha = assertClean();
+			build();
+			await publish(sha);
+		}
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
+}

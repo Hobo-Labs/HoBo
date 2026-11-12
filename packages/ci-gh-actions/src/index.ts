@@ -402,6 +402,21 @@ export {
 	traceGithubTransport,
 } from "./relay-trace.js";
 export {
+	parseRunnerHosts,
+	RUNNER_FLEET_BINDLE,
+	RUNNER_FLEET_CAMP_SET,
+	RUNNER_FLEET_PIPELINE,
+	RUNNER_FLEET_PLACEMENT,
+	RUNNER_FLEET_YARD,
+	RUNNER_IMAGE_RELEASE_TAG_PATTERN,
+	RUNNER_IMAGE_SOURCE,
+	type RunnerCampObservation,
+	type RunnerHost,
+	runnerFleetCampObservations,
+	runnerFleetDelivery,
+	runnerFleetTopology,
+} from "./runner-fleet-delivery.js";
+export {
 	admitWhenReady,
 	createRelayService,
 	type RelayServiceLog,

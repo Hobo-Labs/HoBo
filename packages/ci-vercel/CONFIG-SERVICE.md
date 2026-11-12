@@ -141,8 +141,16 @@ from the `hobo-ci-deploy` project (step 5), masked in the log.
 ### Repository variables
 
 Settings → Secrets and variables → Actions → **Variables** (not Secrets: these
-are ids and coordinates, and the job reads them as `vars.*`). Until the first
-five are set, the job ends with a notice naming the missing ones, and succeeds.
+are ids and coordinates, and the job reads them as `vars.*`). Until every
+required one is set, the job ends with a notice naming the missing ones, and
+succeeds: **nothing is deployed, not even production**.
+
+**Migration step (relay delivered through HoBo CD).** `HOBO_CI_RELAY_URL` was
+optional and `HOBO_CI_RELAY_PREVIEW_URL` is new; both are now required. A
+repository that set the other variables before this change and not these two
+stops deploying the relay to production: the job ends with a **warning**
+(not a notice) naming them, and stays green. Set both before merging the
+change that delivers the relay through HoBo CD.
 
 | Variable | Value | Required |
 |---|---|---|
@@ -155,15 +163,27 @@ five are set, the job ends with a notice naming the missing ones, and succeeds.
 | `HOBO_CI_DEPLOY_INFISICAL_SECRET_PATH` | the folder holding `VERCEL_TOKEN` | no; `/` |
 | `HOBO_CI_INFISICAL_SITE_URL` | `https://eu.infisical.com` for EU Cloud | no; US Cloud |
 | `HOBO_CI_DEPLOY_INFISICAL_AUDIENCE` | the audience the deploy identity expects, if not GitHub's default | no |
-| `HOBO_CI_RELAY_URL` | the relay's production origin, for the smoke check | no; the deployment URL, which Deployment Protection may answer 401 |
+| `HOBO_CI_RELAY_URL` | the relay's production origin (`https://…`), where HoBo CD's production probes read `/healthz` and `/readyz` | yes |
+| `HOBO_CI_RELAY_PREVIEW_URL` | a preview origin that answers without Deployment Protection (e.g. a protection-bypassed branch alias), where the preview probe reads `/healthz` | yes |
 
 ### What the workflow does, and what stays with the owner
 
-Automated, on every deploy: the setting of the production Camp's non-secret
-configuration, the deployment of the pushed commit, the wait for READY, a smoke
-check (a 5xx from `/healthz` fails the job; `/readyz` is reported, and answers
-`config-unavailable` until the folder above is filled), and the attachment of
-the cache. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
+Automated, on every deploy, by HoBo CD (`hobo ci deploy`, see the
+[README](README.md#deploying-the-relay-with-hobo)): the pushed commit recorded
+as Freight, its delivery to preview and verification there (`/healthz` only:
+the preview Camp has no config-service binding, so its `/readyz` answers 503
+`started:false` and is not required), then its promotion to production (only
+because preview qualified it), the setting of the production Camp's
+non-secret configuration, the wait for READY, verification by probes of
+`/healthz` and `/readyz` (each must answer 200), and the attachment of the
+cache.
+
+**Production is not deployed until preview qualifies the commit.** If the
+preview deployment is not READY or its `/healthz` fails, the job fails and
+production is never touched. Production *is* deployed before the
+config-service setup above, but its `/readyz` answers `config-unavailable`
+until the folder is filled, so its verification fails and the job fails: the
+deployment stays live on Vercel (nothing rolls it back) and is not qualified. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
 and, when `hobo-ci-cache` is missing, connects the team's resource of that name
 for production or provisions one (`vercel integration add upstash/upstash-kv

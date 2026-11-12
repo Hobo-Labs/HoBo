@@ -162,6 +162,51 @@ what evidence M1 must prove, and which adjacent initiatives own publication or r
 | Publication support handoff | Launch Support Desk & Escalation | Support handoff | Support can inspect customer-safe channel state, limitation, pause/rollback, and escalation data. |
 | Scope boundary register | Release Channels | Audit fixture | Deployment, artifact, compatibility, messaging, support, security, and M1-M4 follow-up work route out. |
 
+## HoBo Releases Through HoBo CD
+
+HoBo's own release train (`.github/workflows/release-hobo.yml`) maps the
+release-candidate and GA classes above onto two `@hobo/cd` Camps and records
+every artifact as Freight with provenance
+([plan 0024](../plans/0024-hobo-cd-swarm-instruction.md),
+[`hobo deploy`](../../packages/hobo/CD.md)).
+
+| Channel | Camp | What publishes on it | Gated step |
+|---|---|---|---|
+| Release candidate | `hobo-release/candidate` | npm tarballs (`alpha`/`next` dist-tag), GHCR images by digest | `npm publish`; attestation and the tag job after the GHCR push |
+| Stable | `hobo-release/stable` | the signed git tag, the GitHub Release, the Pages bundle | `push-release-git-tag`, `create-github-release`, the gh-pages push |
+
+Each family (`npm`, `oci`, `pages`) is the Bindle `hobo-release-<family>`; its
+pipeline chains `candidate` -> `stable`. The steps are the `hobo deploy`
+subcommands, run through the `hobo` package's own CD host:
+
+1. `freight record`: the manifest names each artifact by sha256 digest, the
+   release commit, the run id and the workflow as builder. Tarballs and the
+   Pages tree index go into the HoBo artifact store first; GHCR images are
+   verified at the registry. A refusal stops the job.
+2. `pipeline apply` of `hobo-release-<family>`.
+3. `promote <freight> --camp hobo-release/candidate`, then in the tag jobs (or
+   the Pages job) `promote <freight> --camp hobo-release/stable`. The journal
+   (`HOBO_RELEASE_CD_HOME`) travels between jobs as the
+   `hobo-release-freight-<family>` artifact, so stable sees the candidate
+   promotion of the same Freight.
+
+The verdict is `qualified` (promoted), `gap` (refused only with a typed code
+for missing topology or realizer: `pipeline-unknown-camp`,
+`promotion-resolve-failed`, `planning-camp-unknown`,
+`compose-realizer-missing`) or `blocked` (anything else). The existing publish
+step runs on `qualified` or `gap`; `gap` prints a warning naming the codes.
+Until the pipeline applies, stable additionally requires a journaled,
+non-blocked candidate promotion of the same Freight
+(`release-lineage-missing` otherwise). Which targets have no realizer is
+listed in the [live provider matrix](./live-provider-matrix.md#hobos-own-release-targets-release-freight-through-hobocd).
+
+Known limits: the GHCR push happens before the candidate verdict (registry
+verification needs the pushed digest), so a blocked verdict stops
+attestation, the tag and the GitHub Release but leaves the version tag in
+GHCR. The `hobo` binary's shell parser does not yet pass `--file`/`--camp` to
+`hobo deploy`, so the release scripts call the verb's host
+(`openDefaultCdHost`, `runCdDeploySubcommand`) directly.
+
 ## Follow-Up Gate
 
 M1/M2/M3/M4 Release Channels design, service, release-note, artifact, compatibility, beta, support,

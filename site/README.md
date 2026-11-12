@@ -346,6 +346,16 @@ which GitHub Pages serves ("Deploy from a branch"). Two things push it:
   for why it works this way.
 - **`pnpm run site:deploy`**, by hand, below.
 
+Both paths deliver the site through HoBo CD first: the exact tree about to publish
+is recorded as `hobo-release-pages` Freight (a sha256 tree index in the HoBo
+artifact store) and promoted `hobo-release/candidate` -> `hobo-release/stable`
+through `hobo deploy` (`node scripts/deploy-site.mts --release-freight site/dist`
+in the workflow). GitHub Pages has no `@hobo/cd` realizer, so the gh-pages push
+stays the publish step and runs only when the promotion is not blocked; the
+realizer gap is printed as a warning. The journal lives in `HOBO_RELEASE_CD_HOME`
+(by hand: `HOBO_HOME`, default `~/.hobo`), and the `hobo` package must be built.
+See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
+
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
 from before saying a site change has shipped. **Agents must not** wait on, cancel, or
 re-request Action runners for gates or promote. Checkin gates stay local: `.githooks`
