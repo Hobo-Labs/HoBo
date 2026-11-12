@@ -25,7 +25,13 @@ import type {
 	OtelMetricPoint,
 	TelemetrySink,
 } from "../ports.js";
-import { isStoreFailure, messageOf, SERVICE_FAILURES, type ServiceFailureCode, serviceReason } from "./errors.js";
+import {
+	isStoreFailure,
+	messageOf,
+	SERVICE_FAILURES,
+	type ServiceFailureCode,
+	serviceReason,
+} from "./errors.js";
 
 // public-contract: the tick steps, in the order the service runs them.
 export const CD_SERVICE_STEPS = Object.freeze([
@@ -94,9 +100,17 @@ export type StepReport = Readonly<{
 	reason?: ReturnType<typeof serviceReason>;
 }>;
 
-export type TickReport = Readonly<{ atMs: number; store: boolean; steps: readonly StepReport[] }>;
+export type TickReport = Readonly<{
+	atMs: number;
+	store: boolean;
+	steps: readonly StepReport[];
+}>;
 
-export type DrainReport = Readonly<{ completed: boolean; durationMs: number; pending: readonly string[] }>;
+export type DrainReport = Readonly<{
+	completed: boolean;
+	durationMs: number;
+	pending: readonly string[];
+}>;
 
 export interface CdServiceHost extends CdService {
 	/** Run one tick now (tests, `hobo up`). Ticks never overlap. */
@@ -105,7 +119,11 @@ export interface CdServiceHost extends CdService {
 	health(): HealthReport;
 }
 
-type StepState = { ok: boolean; detail: string; running?: Promise<unknown> | undefined };
+type StepState = {
+	ok: boolean;
+	detail: string;
+	running?: Promise<unknown> | undefined;
+};
 
 type ReconcilerState = {
 	readonly reconciler: CampReconciler;
@@ -118,8 +136,12 @@ type ReconcilerState = {
 
 export function createCdService(d: CdServiceDeps): CdServiceHost {
 	const tickMs = Math.max(1, d.tickIntervalMs);
-	const backoff = d.reconcilerBackoff ?? { baseMs: 1_000, maxMs: CD_DEFAULTS.leaseTtlMs };
-	const retentionEvery = d.retentionIntervalMs ?? CD_SERVICE_RETENTION_INTERVAL_MS;
+	const backoff = d.reconcilerBackoff ?? {
+		baseMs: 1_000,
+		maxMs: CD_DEFAULTS.leaseTtlMs,
+	};
+	const retentionEvery =
+		d.retentionIntervalMs ?? CD_SERVICE_RETENTION_INTERVAL_MS;
 	const stepTimeout = d.stepTimeoutMs ?? Math.max(30 * tickMs, 30_000);
 
 	let started = false;
@@ -140,7 +162,13 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	}));
 
 	// ── Telemetry ─────────────────────────────────────────────────────────
-	function point(name: string, kind: OtelMetricPoint["kind"], value: number, attributes: OtelAttributes, unit = "1"): OtelMetricPoint {
+	function point(
+		name: string,
+		kind: OtelMetricPoint["kind"],
+		value: number,
+		attributes: OtelAttributes,
+		unit = "1",
+	): OtelMetricPoint {
 		return { name, kind, value, unit, atMs: d.now(), attributes };
 	}
 	function emit(points: readonly OtelMetricPoint[]): void {
@@ -151,7 +179,12 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	}
 
 	function ctx(): CdContext {
-		return { tenant: d.tenant, principal: d.principal, now: d.now, signal: runAbort.signal };
+		return {
+			tenant: d.tenant,
+			principal: d.principal,
+			now: d.now,
+			signal: runAbort.signal,
+		};
 	}
 
 	// ── Steps ─────────────────────────────────────────────────────────────
@@ -180,13 +213,18 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			case "previews":
 				return () => cd.promotions.expirePreviews(c);
 			case "retention": {
-				const due = lastRetentionMs === undefined || d.now() - lastRetentionMs >= retentionEvery;
+				const due =
+					lastRetentionMs === undefined ||
+					d.now() - lastRetentionMs >= retentionEvery;
 				if (!due) return undefined;
 				return async () => {
 					let retired = 0;
-					for (const policy of d.retention) retired += (await cd.freight.retire(policy, c)).length;
+					for (const policy of d.retention)
+						retired += (await cd.freight.retire(policy, c)).length;
 					lastRetentionMs = d.now();
-					emit([point(CD_SERVICE_METRICS.retentionRetired, "counter", retired, {})]);
+					emit([
+						point(CD_SERVICE_METRICS.retentionRetired, "counter", retired, {}),
+					]);
 				};
 			}
 		}
@@ -195,7 +233,17 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	async function runStep(step: CdServiceStep): Promise<StepReport> {
 		const prior = steps.get(step);
 		if (prior?.running) {
-			return { step, ok: false, ms: 0, skipped: true, reason: serviceReason("step-failed", `${step} is still running from an earlier tick`, step) };
+			return {
+				step,
+				ok: false,
+				ms: 0,
+				skipped: true,
+				reason: serviceReason(
+					"step-failed",
+					`${step} is still running from an earlier tick`,
+					step,
+				),
+			};
 		}
 		const fn = stepFn(step);
 		if (!fn) return { step, ok: true, ms: 0, skipped: true };
@@ -206,9 +254,16 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			timer = setTimeout(() => resolve("timeout"), stepTimeout);
 		});
 		try {
-			const result = await Promise.race([running.then(() => "done" as const), timedOut]);
+			const result = await Promise.race([
+				running.then(() => "done" as const),
+				timedOut,
+			]);
 			if (result === "timeout") {
-				const state: StepState = { ok: false, detail: `step-failed: ${step} exceeded ${stepTimeout} ms`, running };
+				const state: StepState = {
+					ok: false,
+					detail: `step-failed: ${step} exceeded ${stepTimeout} ms`,
+					running,
+				};
 				steps.set(step, state);
 				running.then(
 					() => {
@@ -219,7 +274,16 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 						state.detail = `step-failed: ${messageOf(error)}`;
 					},
 				);
-				return { step, ok: false, ms: performance.now() - startedAt, reason: serviceReason("step-failed", `${step} exceeded its ${stepTimeout} ms deadline`, step) };
+				return {
+					step,
+					ok: false,
+					ms: performance.now() - startedAt,
+					reason: serviceReason(
+						"step-failed",
+						`${step} exceeded its ${stepTimeout} ms deadline`,
+						step,
+					),
+				};
 			}
 			steps.set(step, { ok: true, detail: "ok" });
 			return { step, ok: true, ms: performance.now() - startedAt };
@@ -228,8 +292,20 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 				storeOk = false;
 				storeDetail = `store-unavailable: ${messageOf(error)}`;
 			}
-			steps.set(step, { ok: false, detail: `step-failed: ${messageOf(error)}` });
-			return { step, ok: false, ms: performance.now() - startedAt, reason: serviceReason("step-failed", `${step}: ${messageOf(error)}`, step) };
+			steps.set(step, {
+				ok: false,
+				detail: `step-failed: ${messageOf(error)}`,
+			});
+			return {
+				step,
+				ok: false,
+				ms: performance.now() - startedAt,
+				reason: serviceReason(
+					"step-failed",
+					`${step}: ${messageOf(error)}`,
+					step,
+				),
+			};
 		} finally {
 			clearTimeout(timer);
 		}
@@ -259,14 +335,33 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			}
 		}
 		const points: OtelMetricPoint[] = [
-			point(CD_SERVICE_METRICS.tickMs, "histogram", performance.now() - startedAt, {}, "ms"),
+			point(
+				CD_SERVICE_METRICS.tickMs,
+				"histogram",
+				performance.now() - startedAt,
+				{},
+				"ms",
+			),
 			point(CD_SERVICE_METRICS.storeUp, "gauge", storeOk ? 1 : 0, {}),
 			point(CD_SERVICE_METRICS.ready, "gauge", ready() ? 1 : 0, {}),
 		];
 		for (const r of reports) {
 			if (r.skipped && r.ok) continue;
-			points.push(point(CD_SERVICE_METRICS.stepMs, "histogram", r.ms, { step: r.step, outcome: r.ok ? "ok" : "failed" }, "ms"));
-			if (!r.ok) points.push(point(CD_SERVICE_METRICS.stepFailures, "counter", 1, { step: r.step }));
+			points.push(
+				point(
+					CD_SERVICE_METRICS.stepMs,
+					"histogram",
+					r.ms,
+					{ step: r.step, outcome: r.ok ? "ok" : "failed" },
+					"ms",
+				),
+			);
+			if (!r.ok)
+				points.push(
+					point(CD_SERVICE_METRICS.stepFailures, "counter", 1, {
+						step: r.step,
+					}),
+				);
 		}
 		emit(points);
 		return { atMs, store: storeOk, steps: reports };
@@ -274,11 +369,15 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 
 	function tick(): Promise<TickReport> {
 		// Ticks never overlap: a caller during a tick gets the next one.
-		const next = (inflight ?? Promise.resolve()).catch(() => undefined).then(runTick);
+		const next = (inflight ?? Promise.resolve())
+			.catch(() => undefined)
+			.then(runTick);
 		inflight = next;
-		next.finally(() => {
-			if (inflight === next) inflight = undefined;
-		}).catch(() => undefined);
+		next
+			.finally(() => {
+				if (inflight === next) inflight = undefined;
+			})
+			.catch(() => undefined);
 		return next;
 	}
 
@@ -286,7 +385,9 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		if (draining) return;
 		loopTimer = setTimeout(() => {
 			loopTimer = undefined;
-			tick().finally(schedule).catch(() => undefined);
+			tick()
+				.finally(schedule)
+				.catch(() => undefined);
 		}, tickMs);
 		loopTimer.unref?.();
 	}
@@ -306,8 +407,15 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			if (d.now() - startedAt >= backoff.maxMs) state.restarts = 0;
 			state.restarts += 1;
 			state.detail = `reconciler-crashed: ${error === undefined ? "run loop returned before drain" : messageOf(error)}`;
-			emit([point(CD_SERVICE_METRICS.reconcilerRestarts, "counter", 1, { reconciler: state.reconciler.reconcilerId })]);
-			const wait = Math.min(backoff.maxMs, backoff.baseMs * 2 ** (state.restarts - 1));
+			emit([
+				point(CD_SERVICE_METRICS.reconcilerRestarts, "counter", 1, {
+					reconciler: state.reconciler.reconcilerId,
+				}),
+			]);
+			const wait = Math.min(
+				backoff.maxMs,
+				backoff.baseMs * 2 ** (state.restarts - 1),
+			);
 			state.timer = setTimeout(() => superviseReconciler(state), wait);
 			state.timer.unref?.();
 		};
@@ -333,15 +441,27 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 
 	function health(): HealthReport {
 		const checks: { name: string; ok: boolean; detail: string }[] = [
-			{ name: "started", ok: started && !draining, detail: !started ? "not started" : draining ? "draining" : "ok" },
+			{
+				name: "started",
+				ok: started && !draining,
+				detail: !started ? "not started" : draining ? "draining" : "ok",
+			},
 			{ name: "store", ok: storeOk, detail: storeDetail },
 		];
 		for (const r of reconcilers) {
-			checks.push({ name: `reconciler:${r.reconciler.reconcilerId}`, ok: r.running, detail: r.detail });
+			checks.push({
+				name: `reconciler:${r.reconciler.reconcilerId}`,
+				ok: r.running,
+				detail: r.detail,
+			});
 		}
 		for (const step of CD_SERVICE_STEPS) {
 			const s = steps.get(step);
-			checks.push({ name: `step:${step}`, ok: s?.ok ?? true, detail: s?.detail ?? "not run yet" });
+			checks.push({
+				name: `step:${step}`,
+				ok: s?.ok ?? true,
+				detail: s?.detail ?? "not run yet",
+			});
 		}
 		if (lastDrain) {
 			checks.push({
@@ -357,7 +477,11 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────
 	async function start(): Promise<void> {
-		if (started) throw new CdServiceError("already-started", "this CD service instance was already started");
+		if (started)
+			throw new CdServiceError(
+				"already-started",
+				"this CD service instance was already started",
+			);
 		started = true;
 		for (const r of reconcilers) superviseReconciler(r);
 		await tick();
@@ -369,12 +493,18 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		draining = true;
 		if (loopTimer !== undefined) clearTimeout(loopTimer);
 		loopTimer = undefined;
-		for (const r of reconcilers) if (r.timer !== undefined) clearTimeout(r.timer);
+		for (const r of reconcilers)
+			if (r.timer !== undefined) clearTimeout(r.timer);
 		runAbort.abort(new CdServiceError("not-ready", "CD service draining"));
 		const pending = new Map<string, Promise<unknown>>();
-		if (inflight) pending.set("tick", inflight.catch(() => undefined));
+		if (inflight)
+			pending.set(
+				"tick",
+				inflight.catch(() => undefined),
+			);
 		for (const r of reconcilers) {
-			if (r.run && r.running) pending.set(`reconciler:${r.reconciler.reconcilerId}`, r.run);
+			if (r.run && r.running)
+				pending.set(`reconciler:${r.reconciler.reconcilerId}`, r.run);
 		}
 		const settled = new Set<string>();
 		const all = Promise.all(
@@ -386,17 +516,29 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		).then(() => true as const);
 		const expired = new Promise<false>((resolve) => {
 			if (signal.aborted) resolve(false);
-			else signal.addEventListener("abort", () => resolve(false), { once: true });
+			else
+				signal.addEventListener("abort", () => resolve(false), { once: true });
 		});
-		const completed = pending.size === 0 ? true : await Promise.race([all, expired]);
+		const completed =
+			pending.size === 0 ? true : await Promise.race([all, expired]);
 		const remaining = [...pending.keys()].filter((n) => !settled.has(n));
-		lastDrain = { completed, durationMs: performance.now() - startedAt, pending: remaining };
+		lastDrain = {
+			completed,
+			durationMs: performance.now() - startedAt,
+			pending: remaining,
+		};
 		if (!started && pending.size === 0) {
 			lastDrain = undefined;
 			return;
 		}
 		emit([
-			point(CD_SERVICE_METRICS.drainMs, "histogram", lastDrain.durationMs, { completed }, "ms"),
+			point(
+				CD_SERVICE_METRICS.drainMs,
+				"histogram",
+				lastDrain.durationMs,
+				{ completed },
+				"ms",
+			),
 			point(CD_SERVICE_METRICS.ready, "gauge", 0, {}),
 		]);
 	}

@@ -8,7 +8,11 @@
 // repeated. Heartbeat comments keep proxies open; the response ends with
 // `event: end` at the long-poll bound (55 s by default) and EventSource
 // reconnects with the last id. A journal failure ends with `event: error`.
-import type { DurableEventStore, EventPosition, PositionedEvent } from "@hobo/core";
+import type {
+	DurableEventStore,
+	EventPosition,
+	PositionedEvent,
+} from "@hobo/core";
 import { CD_DEFAULTS } from "../events.js";
 import { messageOf, serviceReason } from "./errors.js";
 import { encode, stringify } from "./wire.js";
@@ -31,7 +35,13 @@ export type StreamOptions = Readonly<{
 
 export function frameOf(e: PositionedEvent): string {
 	const position = e.position.toString();
-	const data = { position, streamId: e.event.streamId, type: e.event.type, ts: e.event.ts, data: e.event.data };
+	const data = {
+		position,
+		streamId: e.event.streamId,
+		type: e.event.type,
+		ts: e.event.ts,
+		data: e.event.data,
+	};
 	return `id: ${position}\nevent: ${e.event.type}\ndata: ${stringify(data)}\n\n`;
 }
 
@@ -48,7 +58,9 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
-export async function* cdEventStream(o: StreamOptions): AsyncIterable<Uint8Array> {
+export async function* cdEventStream(
+	o: StreamOptions,
+): AsyncIterable<Uint8Array> {
 	let cursor = o.after;
 	const startedAt = Date.now();
 	let lastBeat = startedAt;
@@ -57,7 +69,11 @@ export async function* cdEventStream(o: StreamOptions): AsyncIterable<Uint8Array
 		while (!o.signal.aborted) {
 			let sent = 0;
 			let read = 0;
-			for await (const e of o.store.readAll({ ...(cursor === undefined ? {} : { after: cursor }), limit: o.batch, tenant: o.tenant })) {
+			for await (const e of o.store.readAll({
+				...(cursor === undefined ? {} : { after: cursor }),
+				limit: o.batch,
+				tenant: o.tenant,
+			})) {
 				read += 1;
 				cursor = e.position;
 				if (!e.event.streamId.startsWith(CD_STREAM_PREFIX)) continue;
@@ -74,13 +90,22 @@ export async function* cdEventStream(o: StreamOptions): AsyncIterable<Uint8Array
 				lastBeat = now;
 				yield encode(": heartbeat\n\n");
 			}
-			await wait(Math.min(o.pollMs, Math.max(1, o.maxMs - (now - startedAt))), o.signal);
+			await wait(
+				Math.min(o.pollMs, Math.max(1, o.maxMs - (now - startedAt))),
+				o.signal,
+			);
 		}
 		if (o.signal.aborted) return;
-		yield encode(`event: end\ndata: ${stringify({ reason: "long-poll", lastEventId: cursor?.toString() ?? null })}\n\n`);
+		yield encode(
+			`event: end\ndata: ${stringify({ reason: "long-poll", lastEventId: cursor?.toString() ?? null })}\n\n`,
+		);
 	} catch (error) {
 		// The journal is the only thing this generator reads, so any failure is a store failure.
-		const reason = serviceReason("store-unavailable", messageOf(error), "stream");
+		const reason = serviceReason(
+			"store-unavailable",
+			messageOf(error),
+			"stream",
+		);
 		yield encode(
 			`event: error\ndata: ${stringify({ code: reason.code, message: reason.message, remediation: reason.remediation, lastEventId: cursor?.toString() ?? null })}\n\n`,
 		);

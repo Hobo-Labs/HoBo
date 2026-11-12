@@ -36,8 +36,10 @@ import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import type { CampId, CampView } from "../../src/ports.js";
 import { emptyState, type FacadeState, type FakeStore } from "./fakes.js";
 
-export const FREIGHT_ID = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-export const RAIL_DIGEST = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+export const FREIGHT_ID =
+	"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+export const RAIL_DIGEST =
+	"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 function camp(
 	id: string,
@@ -61,7 +63,8 @@ function camp(
 			conditions: [
 				create(CampConditionRecordSchema, {
 					type: CampConditionType.READY,
-					status: opts.ready === false ? ConditionStatus.FALSE : ConditionStatus.TRUE,
+					status:
+						opts.ready === false ? ConditionStatus.FALSE : ConditionStatus.TRUE,
 					source: SignalSource.RECONCILER,
 					reason: "observed",
 					since: "2026-11-01T00:00:00.000Z",
@@ -92,8 +95,16 @@ export function world(): FacadeState {
 			name: "shop",
 			bindle: "shop",
 			nodes: [
-				create(PipelineNodeRecordSchema, { name: "staging", campIds: ["stg-1"], fromSources: ["shop-oci"] }),
-				create(PipelineNodeRecordSchema, { name: "prod", placement: "eu-fleet", fromNodes: ["staging"] }),
+				create(PipelineNodeRecordSchema, {
+					name: "staging",
+					campIds: ["stg-1"],
+					fromSources: ["shop-oci"],
+				}),
+				create(PipelineNodeRecordSchema, {
+					name: "prod",
+					placement: "eu-fleet",
+					fromNodes: ["staging"],
+				}),
 			],
 			definedBy: "user:ops",
 		}),
@@ -189,7 +200,10 @@ export function world(): FacadeState {
 	s.camps.push(
 		camp("stg-1", "staging"),
 		camp("eu-1", "eu"),
-		camp("eu-2", "eu", { ready: false, taint: { key: "hobo.cd/unreachable", effect: TaintEffect.NO_PLACE } }),
+		camp("eu-2", "eu", {
+			ready: false,
+			taint: { key: "hobo.cd/unreachable", effect: TaintEffect.NO_PLACE },
+		}),
 	);
 	s.decisions.push(
 		create(PlacementDecisionRecordSchema, {
@@ -198,7 +212,14 @@ export function world(): FacadeState {
 			pipeline: "shop",
 			node: "prod",
 			inventoryDigest: "sha256:cccc",
-			groups: [create(PlacementGroupDecisionRecordSchema, { name: "pilot", index: 0, campIds: ["eu-1"], mandatory: true })],
+			groups: [
+				create(PlacementGroupDecisionRecordSchema, {
+					name: "pilot",
+					index: 0,
+					campIds: ["eu-1"],
+					mandatory: true,
+				}),
+			],
 			decidedAt: "2026-11-01T03:30:00.000Z",
 		}),
 	);
@@ -257,10 +278,22 @@ export function world(): FacadeState {
 
 /** Journal facts mirrored on the SSE stream. */
 export function seedJournal(store: FakeStore): void {
-	store.push(CD_STREAMS.freight(FREIGHT_ID), CD_EVENTS.FreightRecorded, { freightId: FREIGHT_ID });
-	store.push(CD_STREAMS.campInventory("eu-2"), CD_EVENTS.CampTainted, { campId: "eu-2", effect: "TAINT_EFFECT_NO_PLACE" });
+	store.push(CD_STREAMS.freight(FREIGHT_ID), CD_EVENTS.FreightRecorded, {
+		freightId: FREIGHT_ID,
+	});
+	store.push(CD_STREAMS.campInventory("eu-2"), CD_EVENTS.CampTainted, {
+		campId: "eu-2",
+		effect: "TAINT_EFFECT_NO_PLACE",
+	});
 	store.push("yard-other", "yard.Unrelated", { x: 1 });
-	store.push(CD_STREAMS.fanout("fan-1"), CD_EVENTS.FanoutProgressed, { fanoutId: "fan-1", big: 10n });
-	store.push(CD_STREAMS.failover("fo-1"), CD_EVENTS.FailoverProposed, { failoverId: "fo-1" });
-	store.push(CD_STREAMS.compliance("eu-1"), CD_EVENTS.ComplianceObserved, { campId: "eu-1" });
+	store.push(CD_STREAMS.fanout("fan-1"), CD_EVENTS.FanoutProgressed, {
+		fanoutId: "fan-1",
+		big: 10n,
+	});
+	store.push(CD_STREAMS.failover("fo-1"), CD_EVENTS.FailoverProposed, {
+		failoverId: "fo-1",
+	});
+	store.push(CD_STREAMS.compliance("eu-1"), CD_EVENTS.ComplianceObserved, {
+		campId: "eu-1",
+	});
 }

@@ -4,22 +4,31 @@
 // routes parse to `{kind: "feed"}` and go to the delivery feed unchanged.
 import type { EventPosition } from "@hobo/core";
 import {
-	CampConditionType,
+	type CampConditionType,
 	CampConditionTypeSchema,
 	ConditionStatus,
 	ConditionStatusSchema,
-	FailoverState,
+	type FailoverState,
 	FailoverStateSchema,
-	TaintEffect,
+	type TaintEffect,
 	TaintEffectSchema,
 } from "../_generated/cd_pb.js";
-import type { CampId, Digest, FanoutId, FeedRequest, Outcome } from "../ports.js";
+import type {
+	CampId,
+	Digest,
+	FanoutId,
+	FeedRequest,
+	Outcome,
+} from "../ports.js";
 import { serviceRefusal } from "./errors.js";
 
 /** A path segment: 1–256 printable chars, no slash, not `.`/`..`. */
 export type PathName = string & { readonly __brand: "cd.service.PathName" };
 
-export type ConditionFilter = Readonly<{ type: CampConditionType; status: ConditionStatus }>;
+export type ConditionFilter = Readonly<{
+	type: CampConditionType;
+	status: ConditionStatus;
+}>;
 export type TaintFilter = Readonly<{ effect: TaintEffect } | { key: string }>;
 
 export const PROMOTIONS_DEFAULT_LIMIT = 100;
@@ -32,15 +41,30 @@ export type CdReadRoute =
 	| Readonly<{ kind: "freight"; idOrAlias: PathName }>
 	| Readonly<{ kind: "promotions"; campId?: CampId; limit: number }>
 	| Readonly<{ kind: "campStatus"; campId: CampId }>
-	| Readonly<{ kind: "camps"; set?: PathName; taint?: TaintFilter; condition?: ConditionFilter }>
+	| Readonly<{
+			kind: "camps";
+			set?: PathName;
+			taint?: TaintFilter;
+			condition?: ConditionFilter;
+	  }>
 	| Readonly<{ kind: "campInventory"; campId: CampId }>
-	| Readonly<{ kind: "placementDecision"; placement: PathName; decisionId: PathName }>
+	| Readonly<{
+			kind: "placementDecision";
+			placement: PathName;
+			decisionId: PathName;
+	  }>
 	| Readonly<{ kind: "fanout"; fanoutId: FanoutId }>
 	| Readonly<{ kind: "failovers"; state?: FailoverState }>
 	| Readonly<{ kind: "compliance"; campId?: CampId; railDigest?: Digest }>
-	| Readonly<{ kind: "stream"; after?: EventPosition; types?: ReadonlySet<string> }>;
+	| Readonly<{
+			kind: "stream";
+			after?: EventPosition;
+			types?: ReadonlySet<string>;
+	  }>;
 
-export type ParsedRequest = Readonly<{ kind: "feed" }> | Readonly<{ kind: "read"; route: CdReadRoute; name: string }>;
+export type ParsedRequest =
+	| Readonly<{ kind: "feed" }>
+	| Readonly<{ kind: "read"; route: CdReadRoute; name: string }>;
 
 const PATTERNS: readonly (readonly [RegExp, string])[] = [
 	[/^\/v1\/cd\/openapi\.json$/, "openapi"],
@@ -68,24 +92,51 @@ export function parsePathName(raw: string, subject: string): Outcome<PathName> {
 	try {
 		value = decodeURIComponent(raw);
 	} catch {
-		return serviceRefusal("query-invalid", `${subject} is not valid percent-encoding`, subject);
+		return serviceRefusal(
+			"query-invalid",
+			`${subject} is not valid percent-encoding`,
+			subject,
+		);
 	}
-	if (value.length === 0 || value.length > 256 || !PRINTABLE.test(value) || value.includes("/") || value === "." || value === "..") {
-		return serviceRefusal("query-invalid", `${subject} must be 1–256 printable characters without '/'`, subject);
+	if (
+		value.length === 0 ||
+		value.length > 256 ||
+		!PRINTABLE.test(value) ||
+		value.includes("/") ||
+		value === "." ||
+		value === ".."
+	) {
+		return serviceRefusal(
+			"query-invalid",
+			`${subject} must be 1–256 printable characters without '/'`,
+			subject,
+		);
 	}
 	return { ok: true, value: value as PathName };
 }
 
 function parseEnum<E extends number>(
-	schema: Readonly<{ values: readonly Readonly<{ number: number; name: string; localName: string }>[] }>,
+	schema: Readonly<{
+		values: readonly Readonly<{
+			number: number;
+			name: string;
+			localName: string;
+		}>[];
+	}>,
 	raw: string,
 ): E | undefined {
 	const upper = raw.trim().toUpperCase();
-	const found = schema.values.find((v) => v.number !== 0 && (v.name === upper || v.localName === upper));
+	const found = schema.values.find(
+		(v) => v.number !== 0 && (v.name === upper || v.localName === upper),
+	);
 	return found === undefined ? undefined : (found.number as E);
 }
 
-function names(schema: Readonly<{ values: readonly Readonly<{ number: number; localName: string }>[] }>): string {
+function names(
+	schema: Readonly<{
+		values: readonly Readonly<{ number: number; localName: string }>[];
+	}>,
+): string {
 	return schema.values
 		.filter((v) => v.number !== 0)
 		.map((v) => v.localName)
@@ -96,12 +147,21 @@ export function parseCondition(raw: string): Outcome<ConditionFilter> {
 	const [typeRaw = "", statusRaw] = raw.split("=", 2);
 	const type = parseEnum<CampConditionType>(CampConditionTypeSchema, typeRaw);
 	if (type === undefined) {
-		return serviceRefusal("query-invalid", `condition must be one of ${names(CampConditionTypeSchema)} (optionally =true|false|unknown)`, "condition");
+		return serviceRefusal(
+			"query-invalid",
+			`condition must be one of ${names(CampConditionTypeSchema)} (optionally =true|false|unknown)`,
+			"condition",
+		);
 	}
-	if (statusRaw === undefined) return { ok: true, value: { type, status: ConditionStatus.TRUE } };
+	if (statusRaw === undefined)
+		return { ok: true, value: { type, status: ConditionStatus.TRUE } };
 	const status = parseEnum<ConditionStatus>(ConditionStatusSchema, statusRaw);
 	if (status === undefined) {
-		return serviceRefusal("query-invalid", `condition status must be one of ${names(ConditionStatusSchema)}`, "condition");
+		return serviceRefusal(
+			"query-invalid",
+			`condition status must be one of ${names(ConditionStatusSchema)}`,
+			"condition",
+		);
 	}
 	return { ok: true, value: { type, status } };
 }
@@ -110,18 +170,29 @@ export function parseTaint(raw: string): Outcome<TaintFilter> {
 	const effect = parseEnum<TaintEffect>(TaintEffectSchema, raw);
 	if (effect !== undefined) return { ok: true, value: { effect } };
 	const key = parsePathNameLoose(raw);
-	if (key === undefined) return serviceRefusal("query-invalid", "taint must be NO_PLACE, NO_RUN or a taint key", "taint");
+	if (key === undefined)
+		return serviceRefusal(
+			"query-invalid",
+			"taint must be NO_PLACE, NO_RUN or a taint key",
+			"taint",
+		);
 	return { ok: true, value: { key } };
 }
 
 function parsePathNameLoose(raw: string): string | undefined {
-	return raw.length > 0 && raw.length <= 256 && PRINTABLE.test(raw) ? raw : undefined;
+	return raw.length > 0 && raw.length <= 256 && PRINTABLE.test(raw)
+		? raw
+		: undefined;
 }
 
 export function parseFailoverState(raw: string): Outcome<FailoverState> {
 	const state = parseEnum<FailoverState>(FailoverStateSchema, raw);
 	return state === undefined
-		? serviceRefusal("query-invalid", `state must be one of ${names(FailoverStateSchema)}`, "state")
+		? serviceRefusal(
+				"query-invalid",
+				`state must be one of ${names(FailoverStateSchema)}`,
+				"state",
+			)
 		: { ok: true, value: state };
 }
 
@@ -130,18 +201,30 @@ const DIGEST = /^sha256:[0-9a-f]{1,64}$/;
 export function parseDigest(raw: string, subject: string): Outcome<Digest> {
 	return DIGEST.test(raw)
 		? { ok: true, value: raw as Digest }
-		: serviceRefusal("query-invalid", `${subject} must be a sha256:<hex> digest`, subject);
+		: serviceRefusal(
+				"query-invalid",
+				`${subject} must be a sha256:<hex> digest`,
+				subject,
+			);
 }
 
 const POSITION = /^(0|[1-9][0-9]{0,19})$/;
 
 export function parsePosition(raw: string): Outcome<EventPosition> {
 	if (!POSITION.test(raw)) {
-		return serviceRefusal("last-event-id-invalid", "Last-Event-ID must be a non-negative decimal journal position", "last-event-id");
+		return serviceRefusal(
+			"last-event-id-invalid",
+			"Last-Event-ID must be a non-negative decimal journal position",
+			"last-event-id",
+		);
 	}
 	const value = BigInt(raw);
 	if (value > 0xffff_ffff_ffff_ffffn) {
-		return serviceRefusal("last-event-id-invalid", "Last-Event-ID exceeds a 64-bit position", "last-event-id");
+		return serviceRefusal(
+			"last-event-id-invalid",
+			"Last-Event-ID exceeds a 64-bit position",
+			"last-event-id",
+		);
 	}
 	return { ok: true, value: value as EventPosition };
 }
@@ -150,18 +233,26 @@ function parseLimit(raw: string | null): Outcome<number> {
 	if (raw === null) return { ok: true, value: PROMOTIONS_DEFAULT_LIMIT };
 	const n = /^[0-9]{1,5}$/.test(raw) ? Number(raw) : Number.NaN;
 	if (!Number.isInteger(n) || n < 1 || n > PROMOTIONS_MAX_LIMIT) {
-		return serviceRefusal("query-invalid", `limit must be an integer from 1 to ${PROMOTIONS_MAX_LIMIT}`, "limit");
+		return serviceRefusal(
+			"query-invalid",
+			`limit must be an integer from 1 to ${PROMOTIONS_MAX_LIMIT}`,
+			"limit",
+		);
 	}
 	return { ok: true, value: n };
 }
 
 function header(request: FeedRequest, name: string): string | undefined {
 	const want = name.toLowerCase();
-	for (const [k, v] of Object.entries(request.headers)) if (k.toLowerCase() === want) return v;
+	for (const [k, v] of Object.entries(request.headers))
+		if (k.toLowerCase() === want) return v;
 	return undefined;
 }
 
-function optional<T>(raw: string | null, parse: (raw: string) => Outcome<T>): Outcome<T | undefined> {
+function optional<T>(
+	raw: string | null,
+	parse: (raw: string) => Outcome<T>,
+): Outcome<T | undefined> {
 	if (raw === null || raw === "") return { ok: true, value: undefined };
 	return parse(raw);
 }
@@ -174,12 +265,18 @@ function asCamp(o: Outcome<PathName>): Outcome<CampId> {
 export function parseReadRequest(request: FeedRequest): Outcome<ParsedRequest> {
 	const url = new URL(request.path, "http://cd.invalid");
 	const path = url.pathname;
-	const match = PATTERNS.map(([re, name]) => [re.exec(path), name] as const).find(([m]) => m !== null);
+	const match = PATTERNS.map(
+		([re, name]) => [re.exec(path), name] as const,
+	).find(([m]) => m !== null);
 	if (!match) return { ok: true, value: { kind: "feed" } };
 	const [m, name] = match;
 	if (m === null) return { ok: true, value: { kind: "feed" } };
 	if (request.method.toUpperCase() !== "GET") {
-		return serviceRefusal("method-not-allowed", `${request.method} ${path} is not allowed; the CD read API is GET only`, path);
+		return serviceRefusal(
+			"method-not-allowed",
+			`${request.method} ${path} is not allowed; the CD read API is GET only`,
+			path,
+		);
 	}
 	const q = url.searchParams;
 	const route = parseRoute(name, m, q, request);
@@ -187,7 +284,12 @@ export function parseReadRequest(request: FeedRequest): Outcome<ParsedRequest> {
 	return { ok: true, value: { kind: "read", route: route.value, name } };
 }
 
-function parseRoute(name: string, m: RegExpExecArray, q: URLSearchParams, request: FeedRequest): Outcome<CdReadRoute> {
+function parseRoute(
+	name: string,
+	m: RegExpExecArray,
+	q: URLSearchParams,
+	request: FeedRequest,
+): Outcome<CdReadRoute> {
 	const p1 = m[1] ?? "";
 	const p2 = m[2] ?? "";
 	switch (name) {
@@ -197,18 +299,31 @@ function parseRoute(name: string, m: RegExpExecArray, q: URLSearchParams, reques
 			return { ok: true, value: { kind: "ready" } };
 		case "pipeline": {
 			const n = parsePathName(p1, "name");
-			return n.ok ? { ok: true, value: { kind: "pipeline", name: n.value } } : n;
+			return n.ok
+				? { ok: true, value: { kind: "pipeline", name: n.value } }
+				: n;
 		}
 		case "freight": {
 			const n = parsePathName(p1, "id");
-			return n.ok ? { ok: true, value: { kind: "freight", idOrAlias: n.value } } : n;
+			return n.ok
+				? { ok: true, value: { kind: "freight", idOrAlias: n.value } }
+				: n;
 		}
 		case "promotions": {
-			const camp = optional(q.get("camp"), (r) => asCamp(parsePathName(r, "camp")));
+			const camp = optional(q.get("camp"), (r) =>
+				asCamp(parsePathName(r, "camp")),
+			);
 			if (!camp.ok) return camp;
 			const limit = parseLimit(q.get("limit"));
 			if (!limit.ok) return limit;
-			return { ok: true, value: { kind: "promotions", limit: limit.value, ...(camp.value === undefined ? {} : { campId: camp.value }) } };
+			return {
+				ok: true,
+				value: {
+					kind: "promotions",
+					limit: limit.value,
+					...(camp.value === undefined ? {} : { campId: camp.value }),
+				},
+			};
 		}
 		case "camps": {
 			const set = optional(q.get("set"), (r) => parsePathName(r, "set"));
@@ -223,7 +338,9 @@ function parseRoute(name: string, m: RegExpExecArray, q: URLSearchParams, reques
 					kind: "camps",
 					...(set.value === undefined ? {} : { set: set.value }),
 					...(taint.value === undefined ? {} : { taint: taint.value }),
-					...(condition.value === undefined ? {} : { condition: condition.value }),
+					...(condition.value === undefined
+						? {}
+						: { condition: condition.value }),
 				},
 			};
 		}
@@ -231,26 +348,52 @@ function parseRoute(name: string, m: RegExpExecArray, q: URLSearchParams, reques
 		case "campInventory": {
 			const c = asCamp(parsePathName(p1, "id"));
 			if (!c.ok) return c;
-			return { ok: true, value: name === "campStatus" ? { kind: "campStatus", campId: c.value } : { kind: "campInventory", campId: c.value } };
+			return {
+				ok: true,
+				value:
+					name === "campStatus"
+						? { kind: "campStatus", campId: c.value }
+						: { kind: "campInventory", campId: c.value },
+			};
 		}
 		case "placementDecision": {
 			const placement = parsePathName(p1, "name");
 			if (!placement.ok) return placement;
 			const decision = parsePathName(p2, "id");
 			if (!decision.ok) return decision;
-			return { ok: true, value: { kind: "placementDecision", placement: placement.value, decisionId: decision.value } };
+			return {
+				ok: true,
+				value: {
+					kind: "placementDecision",
+					placement: placement.value,
+					decisionId: decision.value,
+				},
+			};
 		}
 		case "fanout": {
 			const f = parsePathName(p1, "id");
-			return f.ok ? { ok: true, value: { kind: "fanout", fanoutId: f.value as string as FanoutId } } : f;
+			return f.ok
+				? {
+						ok: true,
+						value: { kind: "fanout", fanoutId: f.value as string as FanoutId },
+					}
+				: f;
 		}
 		case "failovers": {
 			const state = optional(q.get("state"), parseFailoverState);
 			if (!state.ok) return state;
-			return { ok: true, value: { kind: "failovers", ...(state.value === undefined ? {} : { state: state.value }) } };
+			return {
+				ok: true,
+				value: {
+					kind: "failovers",
+					...(state.value === undefined ? {} : { state: state.value }),
+				},
+			};
 		}
 		case "compliance": {
-			const camp = optional(q.get("camp"), (r) => asCamp(parsePathName(r, "camp")));
+			const camp = optional(q.get("camp"), (r) =>
+				asCamp(parsePathName(r, "camp")),
+			);
 			if (!camp.ok) return camp;
 			const rail = optional(q.get("rail"), (r) => parseDigest(r, "rail"));
 			if (!rail.ok) return rail;
@@ -265,16 +408,30 @@ function parseRoute(name: string, m: RegExpExecArray, q: URLSearchParams, reques
 		}
 		default: {
 			// stream
-			const lastEventId = header(request, "last-event-id") ?? q.get("after") ?? undefined;
-			const after = lastEventId === undefined || lastEventId === "" ? undefined : parsePosition(lastEventId.trim());
+			const lastEventId =
+				header(request, "last-event-id") ?? q.get("after") ?? undefined;
+			const after =
+				lastEventId === undefined || lastEventId === ""
+					? undefined
+					: parsePosition(lastEventId.trim());
 			if (after && !after.ok) return after;
 			const typesRaw = q.get("types");
-			const types = typesRaw ? new Set(typesRaw.split(",").map((t) => t.trim()).filter(Boolean)) : undefined;
+			const types = typesRaw
+				? new Set(
+						typesRaw
+							.split(",")
+							.map((t) => t.trim())
+							.filter(Boolean),
+					)
+				: undefined;
 			return {
 				ok: true,
-				value: { kind: "stream", ...(after === undefined ? {} : { after: after.value }), ...(types === undefined ? {} : { types }) },
+				value: {
+					kind: "stream",
+					...(after === undefined ? {} : { after: after.value }),
+					...(types === undefined ? {} : { types }),
+				},
 			};
 		}
 	}
 }
-

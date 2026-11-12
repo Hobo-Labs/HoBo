@@ -16,7 +16,12 @@ type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 type Interaction = {
 	description: string;
 	providerState: string;
-	request: { method: string; path: string; query?: Record<string, string>; headers?: Record<string, string> };
+	request: {
+		method: string;
+		path: string;
+		query?: Record<string, string>;
+		headers?: Record<string, string>;
+	};
 	response: {
 		status: number;
 		headers: Record<string, string>;
@@ -25,32 +30,64 @@ type Interaction = {
 	};
 };
 
-const PACT_URL = new URL("../../../control-api/contracts/pacts/control-api-cd.pact.json", import.meta.url);
-const pact: { consumer: { name: string }; provider: { name: string }; interactions: Interaction[] } = JSON.parse(
-	readFileSync(PACT_URL, "utf8"),
+const PACT_URL = new URL(
+	"../../../control-api/contracts/pacts/control-api-cd.pact.json",
+	import.meta.url,
 );
+const pact: {
+	consumer: { name: string };
+	provider: { name: string };
+	interactions: Interaction[];
+} = JSON.parse(readFileSync(PACT_URL, "utf8"));
 const openapi = cdOpenApi() as {
-	paths: Record<string, Record<string, { parameters?: { name: string; in: string }[]; responses: Record<string, { content?: Record<string, { schema: Json }> }> }>>;
+	paths: Record<
+		string,
+		Record<
+			string,
+			{
+				parameters?: { name: string; in: string }[];
+				responses: Record<
+					string,
+					{ content?: Record<string, { schema: Json }> }
+				>;
+			}
+		>
+	>;
 	components: { schemas: Record<string, Json> };
 };
 
 /** Recursive subset match: every expected key/element is present and equal. */
-function subset(actual: Json | undefined, expected: Json, path = "$"): string[] {
+function subset(
+	actual: Json | undefined,
+	expected: Json,
+	path = "$",
+): string[] {
 	if (expected === null || typeof expected !== "object") {
-		return actual === expected ? [] : [`${path}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`];
+		return actual === expected
+			? []
+			: [
+					`${path}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+				];
 	}
 	if (Array.isArray(expected)) {
 		if (!Array.isArray(actual)) return [`${path}: expected array`];
-		if (actual.length < expected.length) return [`${path}: expected ≥ ${expected.length} items, got ${actual.length}`];
+		if (actual.length < expected.length)
+			return [
+				`${path}: expected ≥ ${expected.length} items, got ${actual.length}`,
+			];
 		return expected.flatMap((e, i) => subset(actual[i], e, `${path}[${i}]`));
 	}
-	if (actual === null || typeof actual !== "object" || Array.isArray(actual)) return [`${path}: expected object`];
-	return Object.entries(expected).flatMap(([k, v]) => subset(actual[k], v, `${path}.${k}`));
+	if (actual === null || typeof actual !== "object" || Array.isArray(actual))
+		return [`${path}: expected object`];
+	return Object.entries(expected).flatMap(([k, v]) =>
+		subset(actual[k], v, `${path}.${k}`),
+	);
 }
 
 /** The JSON-Schema subset the OpenAPI document uses: $ref, type, required, properties, items, const, enum. */
 function validate(value: Json | undefined, schema: Json, path = "$"): string[] {
-	if (schema === null || typeof schema !== "object" || Array.isArray(schema)) return [];
+	if (schema === null || typeof schema !== "object" || Array.isArray(schema))
+		return [];
 	if (typeof schema.$ref === "string") {
 		const name = schema.$ref.replace("#/components/schemas/", "");
 		const target = openapi.components.schemas[name];
@@ -58,14 +95,19 @@ function validate(value: Json | undefined, schema: Json, path = "$"): string[] {
 		return validate(value, target, path);
 	}
 	const errors: string[] = [];
-	if ("const" in schema && value !== schema.const) errors.push(`${path}: expected const ${JSON.stringify(schema.const)}`);
-	if (Array.isArray(schema.enum) && !schema.enum.includes(value as Json)) errors.push(`${path}: not in enum`);
+	if ("const" in schema && value !== schema.const)
+		errors.push(`${path}: expected const ${JSON.stringify(schema.const)}`);
+	if (Array.isArray(schema.enum) && !schema.enum.includes(value as Json))
+		errors.push(`${path}: not in enum`);
 	switch (schema.type) {
 		case "object": {
-			if (value === null || typeof value !== "object" || Array.isArray(value)) return [`${path}: expected object`];
-			for (const key of (schema.required as string[] | undefined) ?? []) if (!(key in value)) errors.push(`${path}: missing ${key}`);
+			if (value === null || typeof value !== "object" || Array.isArray(value))
+				return [`${path}: expected object`];
+			for (const key of (schema.required as string[] | undefined) ?? [])
+				if (!(key in value)) errors.push(`${path}: missing ${key}`);
 			const props = (schema.properties ?? {}) as Record<string, Json>;
-			for (const [k, s] of Object.entries(props)) if (k in value) errors.push(...validate(value[k], s, `${path}.${k}`));
+			for (const [k, s] of Object.entries(props))
+				if (k in value) errors.push(...validate(value[k], s, `${path}.${k}`));
 			break;
 		}
 		case "array":
@@ -88,7 +130,11 @@ function validate(value: Json | undefined, schema: Json, path = "$"): string[] {
 }
 
 function templateFor(path: string): string | undefined {
-	return Object.keys(openapi.paths).find((t) => new RegExp(`^${t.replace(/\{[^}]+\}/g, "[^/]+").replace(/\./g, "\\.")}$`).test(path));
+	return Object.keys(openapi.paths).find((t) =>
+		new RegExp(
+			`^${t.replace(/\{[^}]+\}/g, "[^/]+").replace(/\./g, "\\.")}$`,
+		).test(path),
+	);
 }
 
 function sseFrames(raw: string) {
@@ -112,8 +158,12 @@ describe("PACT @hobo/hobo → @hobo/control-api (/v1/cd read API)", () => {
 	it("names its parties and covers every OpenAPI read route", () => {
 		expect(pact.provider.name).toBe("@hobo/control-api");
 		expect(pact.consumer.name).toBe("@hobo/hobo");
-		const covered = new Set(pact.interactions.map((i) => templateFor(i.request.path)));
-		const routes = Object.keys(openapi.paths).filter((p) => p !== "/v1/cd/openapi.json");
+		const covered = new Set(
+			pact.interactions.map((i) => templateFor(i.request.path)),
+		);
+		const routes = Object.keys(openapi.paths).filter(
+			(p) => p !== "/v1/cd/openapi.json",
+		);
 		expect(routes.filter((r) => !covered.has(r))).toEqual([]);
 	});
 
@@ -122,10 +172,16 @@ describe("PACT @hobo/hobo → @hobo/control-api (/v1/cd read API)", () => {
 			const env = await providerFor(interaction.providerState);
 			const { path, query, method, headers } = interaction.request;
 			const search = query ? `?${new URLSearchParams(query).toString()}` : "";
-			const request: FeedRequest = { method, path: `${path}${search}`, headers: headers ?? {}, body: new Uint8Array() };
+			const request: FeedRequest = {
+				method,
+				path: `${path}${search}`,
+				headers: headers ?? {},
+				body: new Uint8Array(),
+			};
 			const res = await env.api.handle(request, new AbortController().signal);
 			expect(res.status).toBe(interaction.response.status);
-			for (const [k, v] of Object.entries(interaction.response.headers)) expect(res.headers[k]).toBe(v);
+			for (const [k, v] of Object.entries(interaction.response.headers))
+				expect(res.headers[k]).toBe(v);
 
 			// The path must be an OpenAPI route and every query/header parameter declared.
 			const template = templateFor(path);
@@ -133,10 +189,16 @@ describe("PACT @hobo/hobo → @hobo/control-api (/v1/cd read API)", () => {
 			const operation = openapi.paths[template ?? ""]?.get;
 			if (method === "GET") {
 				expect(operation).toBeDefined();
-				const declared = new Set((operation?.parameters ?? []).map((p) => p.name.toLowerCase()));
-				for (const key of Object.keys(query ?? {})) expect(declared.has(key.toLowerCase()), `query ${key}`).toBe(true);
-				for (const key of Object.keys(headers ?? {})) expect(declared.has(key.toLowerCase()), `header ${key}`).toBe(true);
-				expect(Object.keys(operation?.responses ?? {})).toContain(String(res.status));
+				const declared = new Set(
+					(operation?.parameters ?? []).map((p) => p.name.toLowerCase()),
+				);
+				for (const key of Object.keys(query ?? {}))
+					expect(declared.has(key.toLowerCase()), `query ${key}`).toBe(true);
+				for (const key of Object.keys(headers ?? {}))
+					expect(declared.has(key.toLowerCase()), `header ${key}`).toBe(true);
+				expect(Object.keys(operation?.responses ?? {})).toContain(
+					String(res.status),
+				);
 			}
 
 			if (interaction.response.sse) {
@@ -148,7 +210,9 @@ describe("PACT @hobo/hobo → @hobo/control-api (/v1/cd read API)", () => {
 					if (want.id) expect(got?.id).toBe(want.id);
 					if (want.data) expect(subset(got?.data, want.data)).toEqual([]);
 					if (want.event !== "end") {
-						expect(validate(got?.data, { $ref: "#/components/schemas/StreamFrame" })).toEqual([]);
+						expect(
+							validate(got?.data, { $ref: "#/components/schemas/StreamFrame" }),
+						).toEqual([]);
 					}
 				});
 				await env.service.drain(AbortSignal.timeout(500));
@@ -158,11 +222,16 @@ describe("PACT @hobo/hobo → @hobo/control-api (/v1/cd read API)", () => {
 			const body = JSON.parse(await text(res)) as Json;
 			expect(subset(body, interaction.response.body ?? {})).toEqual([]);
 			if (method === "GET") {
-				const schema = operation?.responses[String(res.status)]?.content?.["application/json"]?.schema;
+				const schema =
+					operation?.responses[String(res.status)]?.content?.[
+						"application/json"
+					]?.schema;
 				expect(schema, `no schema for ${res.status}`).toBeDefined();
 				expect(validate(body, schema ?? null)).toEqual([]);
 			} else {
-				expect(validate(body, { $ref: "#/components/schemas/Refusal" })).toEqual([]);
+				expect(
+					validate(body, { $ref: "#/components/schemas/Refusal" }),
+				).toEqual([]);
 			}
 			await env.service.drain(AbortSignal.timeout(500));
 		});

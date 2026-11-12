@@ -385,7 +385,10 @@ export async function createControlApiServer(
 					res,
 					200,
 					// SAFETY: both OpenAPI documents are JSON literals (no functions, no bigints).
-					mergeOpenApi(controlApiOpenApi(), options.cd?.openapi?.()) as JsonObject,
+					mergeOpenApi(
+						controlApiOpenApi(),
+						options.cd?.openapi?.(),
+					) as JsonObject,
 				);
 				return;
 			}
@@ -736,7 +739,11 @@ function isBytes(body: CdHttpResponse["body"]): body is Uint8Array {
 }
 
 /** Adapt one Node request to the mounted CD handler and stream its response back. */
-async function handleCd(mount: CdHttpMount, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleCd(
+	mount: CdHttpMount,
+	req: IncomingMessage,
+	res: ServerResponse,
+): Promise<void> {
 	const body = await readRaw(req);
 	if (body === undefined) {
 		sendJson(res, 413, {
@@ -782,16 +789,23 @@ async function handleCd(mount: CdHttpMount, req: IncomingMessage, res: ServerRes
 
 type OpenApiDoc = Readonly<Record<string, unknown>>;
 
-function objectAt(doc: OpenApiDoc | undefined, key: string): Record<string, unknown> {
+function objectAt(
+	doc: OpenApiDoc | undefined,
+	key: string,
+): Record<string, unknown> {
 	const value = doc?.[key];
-	return value !== null && Object.prototype.toString.call(value) === "[object Object]"
+	return value !== null &&
+		Object.prototype.toString.call(value) === "[object Object]"
 		? // SAFETY: the guard above proves the value is a plain JSON object.
 			(value as Record<string, unknown>)
 		: {};
 }
 
 /** Merge a mounted surface's paths and component schemas into the control API document. */
-function mergeOpenApi(base: OpenApiDoc, mounted: OpenApiDoc | undefined): OpenApiDoc {
+function mergeOpenApi(
+	base: OpenApiDoc,
+	mounted: OpenApiDoc | undefined,
+): OpenApiDoc {
 	if (!mounted) return base;
 	const schemas = objectAt(objectAt(mounted, "components"), "schemas");
 	return {
@@ -799,7 +813,10 @@ function mergeOpenApi(base: OpenApiDoc, mounted: OpenApiDoc | undefined): OpenAp
 		paths: { ...objectAt(base, "paths"), ...objectAt(mounted, "paths") },
 		components: {
 			...objectAt(base, "components"),
-			schemas: { ...objectAt(objectAt(base, "components"), "schemas"), ...schemas },
+			schemas: {
+				...objectAt(objectAt(base, "components"), "schemas"),
+				...schemas,
+			},
 		},
 	};
 }

@@ -33,14 +33,20 @@ afterEach(async () => {
 async function start(cd?: CdHttpMount): Promise<ControlApiServer> {
 	const hoboHome = mkdtempSync(join(tmpdir(), "hobo-capi-cd-"));
 	temps.push(hoboHome);
-	const server = await createControlApiServer({ hoboHome, port: 0, ...(cd ? { cd } : {}) });
+	const server = await createControlApiServer({
+		hoboHome,
+		port: 0,
+		...(cd ? { cd } : {}),
+	});
 	servers.push(server);
 	return server;
 }
 
 const encoder = new TextEncoder();
 
-function recordingMount(respond: (req: CdHttpRequest, signal: AbortSignal) => Promise<CdHttpResponse>) {
+function recordingMount(
+	respond: (req: CdHttpRequest, signal: AbortSignal) => Promise<CdHttpResponse>,
+) {
 	const seen: CdHttpRequest[] = [];
 	const mount: CdHttpMount = {
 		pathPrefix: "/v1/cd/",
@@ -61,13 +67,20 @@ describe("control-api /v1/cd/ mount", () => {
 	it("passes method, path with query, headers and raw body through; returns status, headers and body", async () => {
 		const { mount, seen } = recordingMount(async () => ({
 			status: 201,
-			headers: { "content-type": "application/json; charset=utf-8", "x-cd": "yes" },
+			headers: {
+				"content-type": "application/json; charset=utf-8",
+				"x-cd": "yes",
+			},
 			body: encoder.encode(JSON.stringify({ ok: true, value: { id: "x" } })),
 		}));
 		const server = await start(mount);
 		const res = await fetch(`${server.url}/v1/cd/leases?camp=eu-1`, {
 			method: "POST",
-			headers: { "content-type": "application/json", DPoP: "proof", Authorization: "DPoP svid" },
+			headers: {
+				"content-type": "application/json",
+				DPoP: "proof",
+				Authorization: "DPoP svid",
+			},
 			body: JSON.stringify({ campId: "eu-1" }),
 		});
 		expect(res.status).toBe(201);
@@ -78,7 +91,9 @@ describe("control-api /v1/cd/ mount", () => {
 		expect(seen[0]?.path).toBe("/v1/cd/leases?camp=eu-1");
 		expect(seen[0]?.headers.dpop).toBe("proof");
 		expect(seen[0]?.headers.authorization).toBe("DPoP svid");
-		expect(new TextDecoder().decode(seen[0]?.body)).toBe(JSON.stringify({ campId: "eu-1" }));
+		expect(new TextDecoder().decode(seen[0]?.body)).toBe(
+			JSON.stringify({ campId: "eu-1" }),
+		);
 	});
 
 	it("streams an async-iterable body (SSE) chunk by chunk", async () => {
@@ -92,7 +107,9 @@ describe("control-api /v1/cd/ mount", () => {
 			})(),
 		}));
 		const server = await start(mount);
-		const res = await fetch(`${server.url}/v1/cd/stream`, { headers: { "Last-Event-ID": "0" } });
+		const res = await fetch(`${server.url}/v1/cd/stream`, {
+			headers: { "Last-Event-ID": "0" },
+		});
 		expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
 		const body = await res.text();
 		expect(body).toContain("event: freight.Recorded");
@@ -102,7 +119,9 @@ describe("control-api /v1/cd/ mount", () => {
 	it("aborts the handler's signal when the client disconnects", async () => {
 		let aborted: Promise<void> = Promise.resolve();
 		const { mount } = recordingMount(async (_req, signal) => {
-			aborted = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+			aborted = new Promise<void>((resolve) =>
+				signal.addEventListener("abort", () => resolve(), { once: true }),
+			);
 			return {
 				status: 200,
 				headers: { "content-type": "text/event-stream" },
@@ -122,7 +141,12 @@ describe("control-api /v1/cd/ mount", () => {
 			});
 			req.end();
 		});
-		await expect(Promise.race([aborted.then(() => "aborted"), new Promise((r) => setTimeout(() => r("timeout"), 2_000))])).resolves.toBe("aborted");
+		await expect(
+			Promise.race([
+				aborted.then(() => "aborted"),
+				new Promise((r) => setTimeout(() => r("timeout"), 2_000)),
+			]),
+		).resolves.toBe("aborted");
 	});
 
 	it("a stream that fails after headers are sent ends the response instead of crashing the server", async () => {
@@ -141,7 +165,11 @@ describe("control-api /v1/cd/ mount", () => {
 	});
 
 	it("refuses an oversized body with 413 before calling the handler", async () => {
-		const { mount, seen } = recordingMount(async () => ({ status: 200, headers: {}, body: new Uint8Array() }));
+		const { mount, seen } = recordingMount(async () => ({
+			status: 200,
+			headers: {},
+			body: new Uint8Array(),
+		}));
 		const server = await start(mount);
 		const res = await fetch(`${server.url}/v1/cd/observations`, {
 			method: "POST",
@@ -163,13 +191,21 @@ describe("control-api /v1/cd/ mount", () => {
 	});
 
 	it("merges the CD OpenAPI paths and schemas into /v1/openapi.json", async () => {
-		const { mount } = recordingMount(async () => ({ status: 200, headers: {}, body: new Uint8Array() }));
+		const { mount } = recordingMount(async () => ({
+			status: 200,
+			headers: {},
+			body: new Uint8Array(),
+		}));
 		const server = await start(mount);
-		const doc = (await (await fetch(`${server.url}/v1/openapi.json`)).json()) as {
+		const doc = (await (
+			await fetch(`${server.url}/v1/openapi.json`)
+		).json()) as {
 			paths: Record<string, unknown>;
 			components?: { schemas?: Record<string, unknown> };
 		};
-		expect(doc.paths["/v1/cd/camps"]).toEqual({ get: { summary: "Camp inventory" } });
+		expect(doc.paths["/v1/cd/camps"]).toEqual({
+			get: { summary: "Camp inventory" },
+		});
 		expect(doc.paths["/v1/station/status"]).toBeDefined();
 		expect(doc.components?.schemas?.CampList).toEqual({ type: "object" });
 	});
@@ -178,7 +214,11 @@ describe("control-api /v1/cd/ mount", () => {
 		const server = await start();
 		const res = await fetch(`${server.url}/v1/cd/camps`);
 		expect(res.status).toBe(404);
-		const doc = (await (await fetch(`${server.url}/v1/openapi.json`)).json()) as { paths: Record<string, unknown> };
-		expect(Object.keys(doc.paths).some((p) => p.startsWith("/v1/cd/"))).toBe(false);
+		const doc = (await (
+			await fetch(`${server.url}/v1/openapi.json`)
+		).json()) as { paths: Record<string, unknown> };
+		expect(Object.keys(doc.paths).some((p) => p.startsWith("/v1/cd/"))).toBe(
+			false,
+		);
 	});
 });

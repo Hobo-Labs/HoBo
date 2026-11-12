@@ -45,7 +45,10 @@ import type {
 	TopologyReader,
 } from "../../src/ports.js";
 
-export const principal: PrincipalRef = { kind: "service", id: "cd-service-test" } as PrincipalRef;
+export const principal: PrincipalRef = {
+	kind: "service",
+	id: "cd-service-test",
+} as PrincipalRef;
 export const asCamp = (id: string) => id as CampId;
 export const asReconciler = (id: string) => id as ReconcilerId;
 
@@ -63,7 +66,8 @@ export function fakeStore(): FakeStore {
 	let lost = false;
 	let next = 1n;
 	const guard = () => {
-		if (lost) throw new PersistenceUnavailableError("journal unreachable (test)");
+		if (lost)
+			throw new PersistenceUnavailableError("journal unreachable (test)");
 	};
 	const store = {
 		events,
@@ -76,7 +80,8 @@ export function fakeStore(): FakeStore {
 		push(streamId: string, type: string, data: unknown) {
 			const position = next as EventPosition;
 			next += 1n;
-			const seq = events.filter((e) => e.event.streamId === streamId).length + 1;
+			const seq =
+				events.filter((e) => e.event.streamId === streamId).length + 1;
 			const event: EventEnvelope = {
 				id: `evt-${position}`,
 				type,
@@ -95,9 +100,15 @@ export function fakeStore(): FakeStore {
 			guard();
 			let yielded = 0;
 			for (const e of [...events]) {
-				if (options?.after !== undefined && e.position <= options.after) continue;
-				if (options?.filter?.streamId && e.event.streamId !== options.filter.streamId) continue;
-				if (options?.filter?.type && e.event.type !== options.filter.type) continue;
+				if (options?.after !== undefined && e.position <= options.after)
+					continue;
+				if (
+					options?.filter?.streamId &&
+					e.event.streamId !== options.filter.streamId
+				)
+					continue;
+				if (options?.filter?.type && e.event.type !== options.filter.type)
+					continue;
 				if (options?.limit !== undefined && yielded >= options.limit) return;
 				yielded += 1;
 				yield e;
@@ -113,7 +124,10 @@ export function fakeStore(): FakeStore {
 }
 
 // ── Telemetry ──────────────────────────────────────────────────────────────
-export type RecordingSink = TelemetrySink & { readonly points: OtelMetricPoint[]; readonly recorded: OtelSpan[] };
+export type RecordingSink = TelemetrySink & {
+	readonly points: OtelMetricPoint[];
+	readonly recorded: OtelSpan[];
+};
 
 export function recordingSink(): RecordingSink {
 	const points: OtelMetricPoint[] = [];
@@ -139,7 +153,10 @@ export type FakeReconciler = CampReconciler & {
 	wedge(): void;
 };
 
-export function fakeReconciler(id: string, campIds: readonly string[]): FakeReconciler {
+export function fakeReconciler(
+	id: string,
+	campIds: readonly string[],
+): FakeReconciler {
 	const leases = new Set<string>();
 	let crash: Error | undefined;
 	let wedged = false;
@@ -248,7 +265,17 @@ export function fakeFacade(state: FacadeState = emptyState()): FakeFacade {
 				status: 404,
 				headers: { "content-type": "application/json" },
 				body: new TextEncoder().encode(
-					JSON.stringify({ ok: false, reasons: [{ code: "route-unknown", message: "feed", remediation: "x", subject: "" }] }),
+					JSON.stringify({
+						ok: false,
+						reasons: [
+							{
+								code: "route-unknown",
+								message: "feed",
+								remediation: "x",
+								subject: "",
+							},
+						],
+					}),
 				),
 			};
 		},
@@ -270,7 +297,9 @@ export function fakeFacade(state: FacadeState = emptyState()): FakeFacade {
 			async list(query?: { campSets?: readonly string[] }) {
 				calls.push("inventory.list");
 				if (!query?.campSets?.length) return state.camps;
-				return state.camps.filter((c) => query.campSets?.includes(c.topology.labels["set"] ?? ""));
+				return state.camps.filter((c) =>
+					query.campSets?.includes(c.topology.labels.set ?? ""),
+				);
 			},
 			async status(campId: CampId): Promise<CampStatusRecord | undefined> {
 				return state.camps.find((c) => c.topology.campId === campId)?.status;
@@ -293,7 +322,9 @@ export function fakeFacade(state: FacadeState = emptyState()): FakeFacade {
 			},
 			async list(query?: { campId?: CampId; limit?: number }) {
 				const rows = state.promotions.filter(
-					(p) => query?.campId === undefined || p.targetCampIds.includes(query.campId),
+					(p) =>
+						query?.campId === undefined ||
+						p.targetCampIds.includes(query.campId),
 				);
 				return query?.limit === undefined ? rows : rows.slice(0, query.limit);
 			},
@@ -313,14 +344,19 @@ export function fakeFacade(state: FacadeState = emptyState()): FakeFacade {
 			async qualified(input: { pipeline: string; node: string }) {
 				const q = state.fanoutQualified[`${input.pipeline}/${input.node}`];
 				return q
-					? { qualifiedCampIds: q.campIds, ...(q.freightId ? { stableFreightId: q.freightId } : {}) }
+					? {
+							qualifiedCampIds: q.campIds,
+							...(q.freightId ? { stableFreightId: q.freightId } : {}),
+						}
 					: { qualifiedCampIds: [] };
 			},
 		},
 		failover: {
 			tick: step("failover"),
 			async list(query?: { state?: number; limit?: number }) {
-				return state.failovers.filter((f) => query?.state === undefined || f.state === query.state);
+				return state.failovers.filter(
+					(f) => query?.state === undefined || f.state === query.state,
+				);
 			},
 		},
 		posture: {

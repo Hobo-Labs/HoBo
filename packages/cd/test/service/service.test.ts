@@ -6,14 +6,33 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { RetentionPolicyRecordSchema } from "../../src/_generated/cd_pb.js";
 import { CD_DEFAULTS } from "../../src/events.js";
-import { CD_SERVICE_STEPS, CdServiceError, createCdService } from "../../src/service/index.js";
-import { fakeFacade, fakeReconciler, fakeStore, principal, recordingSink } from "./fakes.js";
+import {
+	CD_SERVICE_STEPS,
+	CdServiceError,
+	createCdService,
+} from "../../src/service/index.js";
+import {
+	fakeFacade,
+	fakeReconciler,
+	fakeStore,
+	principal,
+	recordingSink,
+} from "./fakes.js";
 
-function setup(over: Partial<{ tickIntervalMs: number; retentionIntervalMs: number; stepTimeoutMs: number }> = {}) {
+function setup(
+	over: Partial<{
+		tickIntervalMs: number;
+		retentionIntervalMs: number;
+		stepTimeoutMs: number;
+	}> = {},
+) {
 	const store = fakeStore();
 	const cd = fakeFacade();
 	const sink = recordingSink();
-	const reconcilers = [fakeReconciler("r1", ["eu-1", "eu-2"]), fakeReconciler("r2", ["us-1"])];
+	const reconcilers = [
+		fakeReconciler("r1", ["eu-1", "eu-2"]),
+		fakeReconciler("r2", ["us-1"]),
+	];
 	let now = 1_700_000_000_000;
 	const service = createCdService({
 		store,
@@ -21,13 +40,19 @@ function setup(over: Partial<{ tickIntervalMs: number; retentionIntervalMs: numb
 		now: () => now,
 		cd,
 		reconcilers,
-		retention: [create(RetentionPolicyRecordSchema, { bindle: "shop", keepPerCamp: 5 })],
+		retention: [
+			create(RetentionPolicyRecordSchema, { bindle: "shop", keepPerCamp: 5 }),
+		],
 		tickIntervalMs: over.tickIntervalMs ?? 60_000,
 		principal,
 		telemetry: sink,
 		reconcilerBackoff: { baseMs: 15, maxMs: 60 },
-		...(over.retentionIntervalMs === undefined ? {} : { retentionIntervalMs: over.retentionIntervalMs }),
-		...(over.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: over.stepTimeoutMs }),
+		...(over.retentionIntervalMs === undefined
+			? {}
+			: { retentionIntervalMs: over.retentionIntervalMs }),
+		...(over.stepTimeoutMs === undefined
+			? {}
+			: { stepTimeoutMs: over.stepTimeoutMs }),
 	});
 	return {
 		store,
@@ -62,7 +87,9 @@ describe("createCdService — tick loop", () => {
 			"previews",
 			"retention",
 		]);
-		expect(cd.calls.filter((c) => c !== "inventory.list")).toEqual([...CD_SERVICE_STEPS]);
+		expect(cd.calls.filter((c) => c !== "inventory.list")).toEqual([
+			...CD_SERVICE_STEPS,
+		]);
 		expect(report.steps.every((s) => s.ok)).toBe(true);
 	});
 
@@ -76,8 +103,16 @@ describe("createCdService — tick loop", () => {
 		expect(failed?.reason?.remediation).toMatch(/runbook/);
 		expect(cd.calls).toContain("posture");
 		expect(cd.calls).toContain("retention");
-		expect(sink.points.some((p) => p.name === "hobo.cd.service.step_failures" && p.attributes.step === "pipelines")).toBe(true);
-		const check = service.health().checks.find((c) => c.name === "step:pipelines");
+		expect(
+			sink.points.some(
+				(p) =>
+					p.name === "hobo.cd.service.step_failures" &&
+					p.attributes.step === "pipelines",
+			),
+		).toBe(true);
+		const check = service
+			.health()
+			.checks.find((c) => c.name === "step:pipelines");
 		expect(check?.ok).toBe(false);
 		expect(check?.detail).toContain("pipeline fold exploded");
 	});
@@ -96,7 +131,9 @@ describe("createCdService — tick loop", () => {
 		const { service, cd } = setup({ stepTimeoutMs: 20 });
 		cd.hangStep("fanout");
 		const first = await service.tick();
-		expect(first.steps.find((s) => s.step === "fanout")?.reason?.code).toBe("step-failed");
+		expect(first.steps.find((s) => s.step === "fanout")?.reason?.code).toBe(
+			"step-failed",
+		);
 		expect(cd.calls.filter((c) => c === "posture")).toHaveLength(1);
 		const second = await service.tick();
 		expect(second.steps.find((s) => s.step === "fanout")?.skipped).toBe(true);
@@ -141,7 +178,11 @@ describe("createCdService — readiness", () => {
 		const before = cd.calls.length;
 		await service.tick();
 		expect(cd.calls.length).toBe(before);
-		expect(sink.points.some((p) => p.name === "hobo.cd.service.ready" && p.value === 0)).toBe(true);
+		expect(
+			sink.points.some(
+				(p) => p.name === "hobo.cd.service.ready" && p.value === 0,
+			),
+		).toBe(true);
 		store.restore();
 		await service.tick();
 		expect(service.ready()).toBe(true);
@@ -166,7 +207,9 @@ describe("createCdService — readiness", () => {
 		cd.failStep("sources", new Error("registry unreachable"));
 		await service.tick();
 		expect(service.ready()).toBe(false);
-		expect(service.health().checks.find((c) => c.name === "step:sources")?.ok).toBe(false);
+		expect(
+			service.health().checks.find((c) => c.name === "step:sources")?.ok,
+		).toBe(false);
 		await service.tick();
 		expect(service.ready()).toBe(true);
 		await service.drain(deadline(1_000));
@@ -179,13 +222,17 @@ describe("createCdService — readiness", () => {
 		r1.crashNext(new Error("lease store refused"));
 		await service.start();
 		expect(service.ready()).toBe(false);
-		const check = service.health().checks.find((c) => c.name === "reconciler:r1");
+		const check = service
+			.health()
+			.checks.find((c) => c.name === "reconciler:r1");
 		expect(check?.ok).toBe(false);
 		expect(check?.detail).toMatch(/lease store refused/);
 		await sleep(80);
 		expect(r1.runs).toBe(2);
 		expect(service.ready()).toBe(true);
-		expect(sink.points.some((p) => p.name === "hobo.cd.service.reconciler_restarts")).toBe(true);
+		expect(
+			sink.points.some((p) => p.name === "hobo.cd.service.reconciler_restarts"),
+		).toBe(true);
 		await service.drain(deadline(1_000));
 	});
 
@@ -199,7 +246,9 @@ describe("createCdService — readiness", () => {
 	it("refuses a second start with a typed error", async () => {
 		const { service } = setup();
 		await service.start();
-		await expect(service.start()).rejects.toMatchObject({ code: "already-started" });
+		await expect(service.start()).rejects.toMatchObject({
+			code: "already-started",
+		});
 		await expect(service.start()).rejects.toBeInstanceOf(CdServiceError);
 		await service.drain(deadline(1_000));
 	});
@@ -215,7 +264,9 @@ describe("createCdService — drain", () => {
 		const after = cd.calls.length;
 		await sleep(30);
 		expect(cd.calls.length).toBe(after);
-		expect(service.health().checks.find((c) => c.name === "drain")).toMatchObject({ ok: true });
+		expect(
+			service.health().checks.find((c) => c.name === "drain"),
+		).toMatchObject({ ok: true });
 	});
 
 	it("drain completes within the deadline even when a reconciler is wedged", async () => {
@@ -229,7 +280,13 @@ describe("createCdService — drain", () => {
 		const check = service.health().checks.find((c) => c.name === "drain");
 		expect(check?.ok).toBe(false);
 		expect(check?.detail).toContain("drain-deadline-exceeded");
-		expect(sink.points.some((p) => p.name === "hobo.cd.service.drain_ms" && p.attributes.completed === false)).toBe(true);
+		expect(
+			sink.points.some(
+				(p) =>
+					p.name === "hobo.cd.service.drain_ms" &&
+					p.attributes.completed === false,
+			),
+		).toBe(true);
 	});
 
 	it("drain waits for the in-flight tick to finish before returning", async () => {
@@ -238,10 +295,11 @@ describe("createCdService — drain", () => {
 		const gate = new Promise<void>((r) => {
 			release = r;
 		});
-		(cd.posture as unknown as { tick: () => Promise<void> }).tick = async () => {
-			cd.calls.push("posture");
-			await gate;
-		};
+		(cd.posture as unknown as { tick: () => Promise<void> }).tick =
+			async () => {
+				cd.calls.push("posture");
+				await gate;
+			};
 		const tick = service.tick();
 		let drained = false;
 		const drain = service.drain(deadline(1_000)).then(() => {

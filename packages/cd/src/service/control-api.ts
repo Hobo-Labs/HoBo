@@ -16,7 +16,12 @@ import type {
 	TelemetrySink,
 	TopologyReader,
 } from "../ports.js";
-import { isStoreFailure, messageOf, serviceReason, serviceRefusal } from "./errors.js";
+import {
+	isStoreFailure,
+	messageOf,
+	serviceReason,
+	serviceRefusal,
+} from "./errors.js";
 import { cdOpenApi } from "./openapi.js";
 import { type CdReadRoute, parseReadRequest } from "./routes.js";
 import { cdEventStream, STREAM_DEFAULTS } from "./stream.js";
@@ -33,7 +38,12 @@ import {
 	promotionsView,
 	type ViewDeps,
 } from "./views.js";
-import { okResponse, rawJsonResponse, refusalResponse, sseResponse } from "./wire.js";
+import {
+	okResponse,
+	rawJsonResponse,
+	refusalResponse,
+	sseResponse,
+} from "./wire.js";
 
 // public-contract: metric names the read API emits through TelemetrySink.
 export const CD_API_METRICS = Object.freeze({
@@ -48,7 +58,16 @@ export type CdControlApiDeps = Readonly<{
 	now: () => number;
 	cd: Pick<
 		ContinuousDelivery,
-		"pipelines" | "freight" | "promotions" | "desired" | "inventory" | "placement" | "fanout" | "failover" | "posture" | "feed"
+		| "pipelines"
+		| "freight"
+		| "promotions"
+		| "desired"
+		| "inventory"
+		| "placement"
+		| "fanout"
+		| "failover"
+		| "posture"
+		| "feed"
 	>;
 	/** Declared topology for `/camps/{id}/inventory` (composed by WP18). */
 	topology?: TopologyReader;
@@ -75,7 +94,11 @@ function segmentOf(path: string): string {
 }
 
 export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
-	const views: ViewDeps = { cd: d.cd, store: d.store, ...(d.topology ? { topology: d.topology } : {}) };
+	const views: ViewDeps = {
+		cd: d.cd,
+		store: d.store,
+		...(d.topology ? { topology: d.topology } : {}),
+	};
 
 	function emit(points: readonly OtelMetricPoint[]): void {
 		d.telemetry?.metrics(points).catch(() => {
@@ -90,11 +113,22 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 		const reasons =
 			failing.length > 0
 				? failing.map((c) => serviceReason("not-ready", c.detail, c.name))
-				: [serviceReason("not-ready", report ? "not ready" : "no CD service is attached to this API", "service")];
+				: [
+						serviceReason(
+							"not-ready",
+							report ? "not ready" : "no CD service is attached to this API",
+							"service",
+						),
+					];
 		return refusalResponse({ ok: false, reasons });
 	}
 
-	async function view(route: Exclude<CdReadRoute, Readonly<{ kind: "openapi" | "ready" | "stream" }>>): Promise<Outcome<JsonValue>> {
+	async function view(
+		route: Exclude<
+			CdReadRoute,
+			Readonly<{ kind: "openapi" | "ready" | "stream" }>
+		>,
+	): Promise<Outcome<JsonValue>> {
 		switch (route.kind) {
 			case "pipeline":
 				return pipelineView(views, route);
@@ -119,13 +153,20 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 		}
 	}
 
-	async function route(request: FeedRequest, signal: AbortSignal): Promise<[FeedResponse, string]> {
+	async function route(
+		request: FeedRequest,
+		signal: AbortSignal,
+	): Promise<[FeedResponse, string]> {
 		const parsed = parseReadRequest(request);
 		if (!parsed.ok) {
-			const allow = parsed.reasons[0]?.code === "method-not-allowed" ? { allow: "GET" } : {};
+			const allow =
+				parsed.reasons[0]?.code === "method-not-allowed"
+					? { allow: "GET" }
+					: {};
 			return [refusalResponse(parsed, allow), "refused"];
 		}
-		if (parsed.value.kind === "feed") return [await d.cd.feed.handle(request, signal), "feed"];
+		if (parsed.value.kind === "feed")
+			return [await d.cd.feed.handle(request, signal), "feed"];
 		const { route: r } = parsed.value;
 		const name = segmentOf(request.path);
 		if (r.kind === "openapi") return [rawJsonResponse(cdOpenApi()), name];
@@ -139,7 +180,17 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 				heartbeatMs: d.streamHeartbeatMs ?? STREAM_DEFAULTS.heartbeatMs,
 				maxMs: d.streamMaxMs ?? STREAM_DEFAULTS.maxMs,
 				batch: d.streamBatch ?? STREAM_DEFAULTS.batch,
-				onFrames: (count) => emit([{ name: CD_API_METRICS.streamFrames, kind: "counter", value: count, unit: "1", atMs: d.now(), attributes: {} }]),
+				onFrames: (count) =>
+					emit([
+						{
+							name: CD_API_METRICS.streamFrames,
+							kind: "counter",
+							value: count,
+							unit: "1",
+							atMs: d.now(),
+							attributes: {},
+						},
+					]),
 				...(r.after === undefined ? {} : { after: r.after }),
 				...(r.types === undefined ? {} : { types: r.types }),
 			});
@@ -147,22 +198,45 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 		}
 		try {
 			const result = await view(r);
-			return [result.ok ? okResponse(result.value) : refusalResponse(result), name];
+			return [
+				result.ok ? okResponse(result.value) : refusalResponse(result),
+				name,
+			];
 		} catch (error) {
 			const code = isStoreFailure(error) ? "store-unavailable" : "view-failed";
-			return [refusalResponse(serviceRefusal(code, messageOf(error), name)), name];
+			return [
+				refusalResponse(serviceRefusal(code, messageOf(error), name)),
+				name,
+			];
 		}
 	}
 
 	return Object.freeze({
 		pathPrefix: "/v1/cd/" as const,
 		openapi: cdOpenApi,
-		async handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse> {
+		async handle(
+			request: FeedRequest,
+			signal: AbortSignal,
+		): Promise<FeedResponse> {
 			const startedAt = performance.now();
 			const [response, name] = await route(request, signal);
 			emit([
-				{ name: CD_API_METRICS.requests, kind: "counter", value: 1, unit: "1", atMs: d.now(), attributes: { route: name, status: response.status } },
-				{ name: CD_API_METRICS.requestMs, kind: "histogram", value: performance.now() - startedAt, unit: "ms", atMs: d.now(), attributes: { route: name } },
+				{
+					name: CD_API_METRICS.requests,
+					kind: "counter",
+					value: 1,
+					unit: "1",
+					atMs: d.now(),
+					attributes: { route: name, status: response.status },
+				},
+				{
+					name: CD_API_METRICS.requestMs,
+					kind: "histogram",
+					value: performance.now() - startedAt,
+					unit: "ms",
+					atMs: d.now(),
+					attributes: { route: name },
+				},
 			]);
 			return response;
 		},

@@ -2,11 +2,17 @@
 // 0024). Every code has the HTTP status the read API answers with and a
 // remediation an operator can act on. Delivery-feed codes stay with the feed.
 import { create } from "@bufbuild/protobuf";
-import { PersistenceUnavailableError, StorageWorkerTerminatedError } from "@hobo/core";
+import {
+	PersistenceUnavailableError,
+	StorageWorkerTerminatedError,
+} from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-export type ServiceFailureSpec = Readonly<{ status: number; remediation: string }>;
+export type ServiceFailureSpec = Readonly<{
+	status: number;
+	remediation: string;
+}>;
 
 // public-contract: refusal codes of `@hobo/cd/service` with HTTP status and remediation.
 export const SERVICE_FAILURES = Object.freeze({
@@ -17,15 +23,18 @@ export const SERVICE_FAILURES = Object.freeze({
 	},
 	"method-not-allowed": {
 		status: 405,
-		remediation: "The CD read API is read-only; use GET. Mutations go through `hobo deploy` and the governed commands.",
+		remediation:
+			"The CD read API is read-only; use GET. Mutations go through `hobo deploy` and the governed commands.",
 	},
 	"not-found": {
 		status: 404,
-		remediation: "Check the id or name; list the collection first (for example `GET /v1/cd/camps`).",
+		remediation:
+			"Check the id or name; list the collection first (for example `GET /v1/cd/camps`).",
 	},
 	"query-invalid": {
 		status: 400,
-		remediation: "Fix the query parameter named in the message; the accepted values are in `GET /v1/cd/openapi.json`.",
+		remediation:
+			"Fix the query parameter named in the message; the accepted values are in `GET /v1/cd/openapi.json`.",
 	},
 	"last-event-id-invalid": {
 		status: 400,
@@ -34,7 +43,8 @@ export const SERVICE_FAILURES = Object.freeze({
 	},
 	"store-unavailable": {
 		status: 503,
-		remediation: "The journal failed; check storage health (`GET /v1/cd/ready`) and retry with backoff.",
+		remediation:
+			"The journal failed; check storage health (`GET /v1/cd/ready`) and retry with backoff.",
 	},
 	"view-failed": {
 		status: 500,
@@ -63,13 +73,18 @@ export const SERVICE_FAILURES = Object.freeze({
 	},
 	"already-started": {
 		status: 409,
-		remediation: "A service instance starts once; create a new instance to restart after a drain.",
+		remediation:
+			"A service instance starts once; create a new instance to restart after a drain.",
 	},
 } as const satisfies Readonly<Record<string, ServiceFailureSpec>>);
 
 export type ServiceFailureCode = keyof typeof SERVICE_FAILURES;
 
-export function serviceReason(code: ServiceFailureCode, message: string, subject = ""): ReasonRecord {
+export function serviceReason(
+	code: ServiceFailureCode,
+	message: string,
+	subject = "",
+): ReasonRecord {
 	return create(ReasonRecordSchema, {
 		code,
 		message,
@@ -78,14 +93,20 @@ export function serviceReason(code: ServiceFailureCode, message: string, subject
 	});
 }
 
-export function serviceRefusal(code: ServiceFailureCode, message: string, subject = ""): Refusal {
+export function serviceRefusal(
+	code: ServiceFailureCode,
+	message: string,
+	subject = "",
+): Refusal {
 	return { ok: false, reasons: [serviceReason(code, message, subject)] };
 }
 
 /** HTTP status of a refusal: the first reason's known code, else 400. */
 export function statusOf(refusal: Refusal): number {
 	const code = refusal.reasons[0]?.code ?? "";
-	return Object.hasOwn(SERVICE_FAILURES, code) ? SERVICE_FAILURES[code as ServiceFailureCode].status : 400;
+	return Object.hasOwn(SERVICE_FAILURES, code)
+		? SERVICE_FAILURES[code as ServiceFailureCode].status
+		: 400;
 }
 
 export function messageOf(error: unknown): string {
@@ -94,5 +115,8 @@ export function messageOf(error: unknown): string {
 
 /** True when an error means the journal itself is unavailable. */
 export function isStoreFailure(error: unknown): boolean {
-	return error instanceof PersistenceUnavailableError || error instanceof StorageWorkerTerminatedError;
+	return (
+		error instanceof PersistenceUnavailableError ||
+		error instanceof StorageWorkerTerminatedError
+	);
 }
