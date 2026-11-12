@@ -2,6 +2,7 @@
 // the SQLite journal's CAS/idempotency semantics, an in-memory ArtifactStore
 // that can corrupt bytes at rest, a recording TelemetrySink and fixtures.
 import { createHash } from "node:crypto";
+import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
 	type DeploymentPlan,
@@ -24,7 +25,6 @@ import {
 	type StreamFilter,
 	type Subscription,
 } from "@hobo/core";
-import { create } from "@bufbuild/protobuf";
 import {
 	type ArtifactKind,
 	type ArtifactRef,
@@ -49,14 +49,21 @@ export type FakeStore = DurableEventStore & {
 export function createFakeEventStore(): FakeStore {
 	const log: PositionedEvent[] = [];
 	const heads = new Map<string, number>();
-	const handlers = new Set<{ filter: StreamFilter; handler: (event: EventEnvelope) => void | Promise<void> }>();
+	const handlers = new Set<{
+		filter: StreamFilter;
+		handler: (event: EventEnvelope) => void | Promise<void>;
+	}>();
 	let position = 0n;
 	let ids = 0;
 
 	const store: FakeStore = {
 		log,
 		conflicts: 0,
-		async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
+		async append(
+			streamId: string,
+			events: EventInput[],
+			opts: AppendOptions,
+		): Promise<AppendResult> {
 			if (store.beforeAppend) await store.beforeAppend(streamId);
 			const deduped: EventEnvelope[] = [];
 			const pending: EventInput[] = [];
@@ -65,7 +72,11 @@ export function createFakeEventStore(): FakeStore {
 				const existing =
 					key === undefined
 						? undefined
-						: log.find((entry) => entry.event.streamId === streamId && idempotencyKeyOf(entry.event) === key);
+						: log.find(
+								(entry) =>
+									entry.event.streamId === streamId &&
+									idempotencyKeyOf(entry.event) === key,
+							);
 				if (existing) deduped.push(existing.event);
 				else pending.push(input);
 			}
@@ -73,7 +84,11 @@ export function createFakeEventStore(): FakeStore {
 			const revision = heads.get(streamId) ?? 0;
 			if (revision !== opts.expectedSeq) {
 				store.conflicts += 1;
-				throw new OptimisticSequenceConflictError(streamId, opts.expectedSeq, revision);
+				throw new OptimisticSequenceConflictError(
+					streamId,
+					opts.expectedSeq,
+					revision,
+				);
 			}
 			const appended: EventEnvelope[] = [];
 			let first: EventPosition | undefined;
@@ -118,10 +133,14 @@ export function createFakeEventStore(): FakeStore {
 		},
 		async *read(streamId: string, fromSeq = 1): AsyncIterable<EventEnvelope> {
 			for (const entry of [...log]) {
-				if (entry.event.streamId === streamId && entry.event.seq >= fromSeq) yield entry.event;
+				if (entry.event.streamId === streamId && entry.event.seq >= fromSeq)
+					yield entry.event;
 			}
 		},
-		subscribe(filter: StreamFilter, handler: (event: EventEnvelope) => void | Promise<void>): Subscription {
+		subscribe(
+			filter: StreamFilter,
+			handler: (event: EventEnvelope) => void | Promise<void>,
+		): Subscription {
 			const entry = { filter, handler };
 			handlers.add(entry);
 			return { unsubscribe: () => handlers.delete(entry) };
@@ -129,10 +148,13 @@ export function createFakeEventStore(): FakeStore {
 		async snapshot(streamId: string, state, seq): Promise<SnapshotRecord> {
 			return { streamId, state, seq, savedAt: new Date(0).toISOString() };
 		},
-		async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
+		async *readAll(
+			options: ReadAllOptions = {},
+		): AsyncIterable<PositionedEvent> {
 			let count = 0;
 			for (const entry of [...log]) {
-				if (options.after !== undefined && entry.position <= options.after) continue;
+				if (options.after !== undefined && entry.position <= options.after)
+					continue;
 				if (options.filter && !matches(options.filter, entry.event)) continue;
 				if (options.limit !== undefined && count >= options.limit) return;
 				count += 1;
@@ -140,7 +162,11 @@ export function createFakeEventStore(): FakeStore {
 			}
 		},
 		async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-			const result = await store.append(request.streamId, [...request.events], request.append);
+			const result = await store.append(
+				request.streamId,
+				[...request.events],
+				request.append,
+			);
 			return { ...result, effects: [] };
 		},
 		getStreamHead(streamId: string) {
@@ -158,14 +184,21 @@ function idempotencyKeyOf(input: { meta?: unknown }): string | undefined {
 }
 
 function matches(filter: StreamFilter, event: EventEnvelope): boolean {
-	if (filter.streamId !== undefined && filter.streamId !== event.streamId) return false;
+	if (filter.streamId !== undefined && filter.streamId !== event.streamId)
+		return false;
 	if (filter.type !== undefined && filter.type !== event.type) return false;
 	return true;
 }
 
 export type FakeArtifactStore = ArtifactStore & {
 	readonly blobs: Map<string, Uint8Array>;
-	readonly puts: Array<{ name: string; kind: ArtifactKind; mediaType: string; digest: string; size: number }>;
+	readonly puts: Array<{
+		name: string;
+		kind: ArtifactKind;
+		mediaType: string;
+		digest: string;
+		size: number;
+	}>;
 	corrupt(digest: string): void;
 	/** When set, put() reports this digest instead of the real one. */
 	lieAboutDigest?: string;
@@ -216,7 +249,9 @@ export function createFakeArtifactStore(): FakeArtifactStore {
 	return artifacts;
 }
 
-export type RecordingTelemetry = TelemetrySink & { readonly points: OtelMetricPoint[] };
+export type RecordingTelemetry = TelemetrySink & {
+	readonly points: OtelMetricPoint[];
+};
 
 export function createRecordingTelemetry(): RecordingTelemetry {
 	const points: OtelMetricPoint[] = [];
@@ -231,7 +266,10 @@ export function createRecordingTelemetry(): RecordingTelemetry {
 
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@example.test" };
 
-export function ctxAt(nowMs: number, principal: PrincipalRef = OPERATOR): CdContext {
+export function ctxAt(
+	nowMs: number,
+	principal: PrincipalRef = OPERATOR,
+): CdContext {
 	return { tenant: "acme", principal, now: () => nowMs };
 }
 
@@ -241,7 +279,12 @@ export function camp(id: string): CampId {
 	return id as CampId;
 }
 
-export type ResourceSpec = Readonly<{ name: string; deps?: readonly string[]; provider?: string; image?: string }>;
+export type ResourceSpec = Readonly<{
+	name: string;
+	deps?: readonly string[];
+	provider?: string;
+	image?: string;
+}>;
 
 export function planOf(resources: readonly ResourceSpec[]): DeploymentPlan {
 	return {
@@ -251,7 +294,9 @@ export function planOf(resources: readonly ResourceSpec[]): DeploymentPlan {
 			port: "hobo:runtime/workflow",
 			provider: resource.provider ?? "aws",
 			deps: [...(resource.deps ?? [])],
-			...(resource.image !== undefined ? { realizationParameters: { image: resource.image } } : {}),
+			...(resource.image !== undefined
+				? { realizationParameters: { image: resource.image } }
+				: {}),
 		})),
 		dependencyOrder: resources.map((resource) => resource.name),
 		objective: "cost",
@@ -261,7 +306,11 @@ export function planOf(resources: readonly ResourceSpec[]): DeploymentPlan {
 export function resolvedFor(
 	campId: string,
 	resources: readonly ResourceSpec[],
-	options: Readonly<{ tenant?: string; secretRefs?: readonly string[]; decisionId?: string }> = {},
+	options: Readonly<{
+		tenant?: string;
+		secretRefs?: readonly string[];
+		decisionId?: string;
+	}> = {},
 ): ResolvedDeploymentSet {
 	return createResolvedDeploymentSet({
 		tenant: options.tenant ?? "acme",
@@ -285,18 +334,29 @@ export function resolvedFor(
 }
 
 export const SHOP_V1: readonly ResourceSpec[] = [
-	{ name: "shop.api", deps: ["shop.db", "shop.cache"], image: "registry.example/shop-api:v1" },
+	{
+		name: "shop.api",
+		deps: ["shop.db", "shop.cache"],
+		image: "registry.example/shop-api:v1",
+	},
 	{ name: "shop.cache" },
 	{ name: "shop.db" },
 ];
 
 export const SHOP_V2: readonly ResourceSpec[] = [
-	{ name: "shop.api", deps: ["shop.db", "shop.worker"], image: "registry.example/shop-api:v2" },
+	{
+		name: "shop.api",
+		deps: ["shop.db", "shop.worker"],
+		image: "registry.example/shop-api:v2",
+	},
 	{ name: "shop.db" },
 	{ name: "shop.worker", deps: ["shop.db"] },
 ];
 
-export async function collect<T>(iterable: AsyncIterable<T>, max: number): Promise<T[]> {
+export async function collect<T>(
+	iterable: AsyncIterable<T>,
+	max: number,
+): Promise<T[]> {
 	const out: T[] = [];
 	for await (const item of iterable) {
 		out.push(item);

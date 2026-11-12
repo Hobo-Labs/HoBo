@@ -2,7 +2,11 @@
 // `deployment.Requested/Planned/Deployed/RolledBack` on `deployment:<id>`
 // streams. They are folded into a Set with SET_ORIGIN_LEGACY_FOLD so every
 // estate has a current Set and a single desired-state lane.
-import { CLOUD_EVENTS, type DeploymentPlan, type MatchSelection } from "@hobo/cloud";
+import {
+	CLOUD_EVENTS,
+	type DeploymentPlan,
+	type MatchSelection,
+} from "@hobo/cloud";
 import type { EventEnvelope } from "@hobo/core";
 
 // public-contract: the legacy event types this module folds (owned by @hobo/cloud).
@@ -38,7 +42,9 @@ function field(data: unknown, key: string): unknown {
 
 function text(data: unknown, key: string): string | undefined {
 	const value = field(data, key);
-	return tagOf.call(value) === "[object String]" && value !== "" ? String(value) : undefined;
+	return tagOf.call(value) === "[object String]" && value !== ""
+		? String(value)
+		: undefined;
 }
 
 function isPlan(value: unknown): value is DeploymentPlan {
@@ -52,7 +58,9 @@ function isPlan(value: unknown): value is DeploymentPlan {
 }
 
 /** Pure fold of one legacy deployment stream; undefined when it never planned. */
-export function foldLegacyDeployment(events: readonly EventEnvelope[]): LegacyDeployment | undefined {
+export function foldLegacyDeployment(
+	events: readonly EventEnvelope[],
+): LegacyDeployment | undefined {
 	let deploymentId: string | undefined;
 	let tenant: string | undefined;
 	let campId: string | undefined;

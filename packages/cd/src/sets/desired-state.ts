@@ -8,7 +8,10 @@
 // - Resolved sets are content-addressed blobs in the ArtifactStore (B3); a Set
 //   carries only the digest and size, and every read verifies them (B4).
 import { create } from "@bufbuild/protobuf";
-import { createResolvedDeploymentSet, type ResolvedDeploymentSet } from "@hobo/cloud";
+import {
+	createResolvedDeploymentSet,
+	type ResolvedDeploymentSet,
+} from "@hobo/cloud";
 import {
 	type DurableEventStore,
 	type EventEnvelope,
@@ -29,7 +32,14 @@ import {
 	type SetRecord,
 	SetRecordSchema,
 } from "../_generated/cd_pb.js";
-import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS, DELTA_SCHEMA, RESOLVED_SET_MEDIA_TYPE, SET_SCHEMA } from "../events.js";
+import {
+	CD_DEFAULTS,
+	CD_EVENTS,
+	CD_STREAMS,
+	DELTA_SCHEMA,
+	RESOLVED_SET_MEDIA_TYPE,
+	SET_SCHEMA,
+} from "../events.js";
 import type {
 	ArtifactStore,
 	CampId,
@@ -46,10 +56,29 @@ import type {
 	SetId,
 	TelemetrySink,
 } from "../ports.js";
-import { checkDelta, checkSet, cloneDelta, encodeDecision, encodeDelta, encodeSet, type ParsedSet } from "./codec.js";
-import { DesiredStateError, reason, refuse, refusalFrom } from "./errors.js";
-import { applyCampSpecEvent, type CampSpecState, emptyCampSpec, foldCampSpec, foldCampStatus, foldManagement } from "./fold.js";
-import { foldLegacyDeployment, LEGACY_EVENTS, type LegacyDeployment } from "./legacy.js";
+import {
+	checkDelta,
+	checkSet,
+	cloneDelta,
+	encodeDecision,
+	encodeDelta,
+	encodeSet,
+	type ParsedSet,
+} from "./codec.js";
+import { DesiredStateError, reason, refusalFrom, refuse } from "./errors.js";
+import {
+	applyCampSpecEvent,
+	type CampSpecState,
+	emptyCampSpec,
+	foldCampSpec,
+	foldCampStatus,
+	foldManagement,
+} from "./fold.js";
+import {
+	foldLegacyDeployment,
+	LEGACY_EVENTS,
+	type LegacyDeployment,
+} from "./legacy.js";
 import {
 	type CanonicalResolvedSet,
 	canonicalJson,
@@ -131,7 +160,9 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	): Promise<void> {
 		if (!d.telemetry) return;
 		try {
-			await d.telemetry.metrics([{ name, kind, value, unit, atMs: d.now(), attributes }]);
+			await d.telemetry.metrics([
+				{ name, kind, value, unit, atMs: d.now(), attributes },
+			]);
 		} catch {
 			// Telemetry is best-effort; a collector outage never fails a delivery command.
 		}
@@ -147,7 +178,12 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		return foldCampSpec(campId, await readStream(CD_STREAMS.campSpec(campId)));
 	}
 
-	async function append(campId: CampId, state: CampSpecState, events: EventInput[], ctx: CdContext): Promise<void> {
+	async function append(
+		campId: CampId,
+		state: CampSpecState,
+		events: EventInput[],
+		ctx: CdContext,
+	): Promise<void> {
 		await store.append(CD_STREAMS.campSpec(campId), events, {
 			expectedSeq: state.seq,
 			actor: ctx.principal,
@@ -158,8 +194,12 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	async function campOfDelta(deltaId: string): Promise<CampId | undefined> {
 		const cached = deltaCamps.get(deltaId);
 		if (cached !== undefined) return cached;
-		for await (const { event } of store.readAll({ filter: { type: CD_EVENTS.DeltaOpened } })) {
-			const data = event.data as { deltaId?: unknown; campId?: unknown } | undefined;
+		for await (const { event } of store.readAll({
+			filter: { type: CD_EVENTS.DeltaOpened },
+		})) {
+			const data = event.data as
+				| { deltaId?: unknown; campId?: unknown }
+				| undefined;
 			if (data?.deltaId === deltaId && typeof data.campId === "string") {
 				// SAFETY: campId was recorded by a parsed delta.Opened.
 				const campId = data.campId as CampId;
@@ -173,8 +213,12 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	async function campOfSet(setId: string): Promise<CampId | undefined> {
 		const cached = setCamps.get(setId);
 		if (cached !== undefined) return cached;
-		for await (const { event } of store.readAll({ filter: { type: CD_EVENTS.SetCreated } })) {
-			const data = event.data as { setId?: unknown; campId?: unknown } | undefined;
+		for await (const { event } of store.readAll({
+			filter: { type: CD_EVENTS.SetCreated },
+		})) {
+			const data = event.data as
+				| { setId?: unknown; campId?: unknown }
+				| undefined;
 			if (data?.setId === setId && typeof data.campId === "string") {
 				// SAFETY: campId was recorded by a parsed set.Created.
 				const campId = data.campId as CampId;
@@ -202,7 +246,10 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 				digest: set.resolvedSetDigest,
 				size: Number(set.resolvedSetBytes),
 			});
-			if (decoded.contentHash !== set.contentHash || decoded.campId !== set.campId) {
+			if (
+				decoded.contentHash !== set.contentHash ||
+				decoded.campId !== set.campId
+			) {
 				throw new DesiredStateError(
 					"resolved-set-invalid",
 					`blob ${set.resolvedSetDigest} does not hold Set ${set.setId} (content ${decoded.contentHash})`,
@@ -212,25 +259,36 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			return decoded;
 		} catch (error) {
 			if (error instanceof DesiredStateError) {
-				await metric("hobo.cd.sets.resolved_set_verify_failures", 1, { ...attributes, "hobo.cd.reason": error.code });
+				await metric("hobo.cd.sets.resolved_set_verify_failures", 1, {
+					...attributes,
+					"hobo.cd.reason": error.code,
+				});
 			}
 			throw error;
 		}
 	}
 
 	/** Check a Delta's changes against the resources of its base Set. */
-	async function checkChanges(delta: DeltaRecord, state: CampSpecState): Promise<Outcome<true>> {
+	async function checkChanges(
+		delta: DeltaRecord,
+		state: CampSpecState,
+	): Promise<Outcome<true>> {
 		if (delta.changes.length === 0) return { ok: true, value: true };
 		let names: ReadonlySet<string>;
 		try {
-			names = resourceNames(state.current ? await resolved(state.current) : undefined);
+			names = resourceNames(
+				state.current ? await resolved(state.current) : undefined,
+			);
 		} catch (error) {
 			if (error instanceof DesiredStateError) return refusalFrom(error);
 			throw error;
 		}
 		for (const change of delta.changes) {
 			const present = names.has(change.resource);
-			if ((change.kind === ChangeKind.ADD && present) || (change.kind !== ChangeKind.ADD && !present)) {
+			if (
+				(change.kind === ChangeKind.ADD && present) ||
+				(change.kind !== ChangeKind.ADD && !present)
+			) {
 				return refuse(
 					"delta-absent-resource",
 					`${ChangeKind[change.kind]} ${change.resource} against base ${state.current?.setId ?? "<none>"}`,
@@ -277,10 +335,16 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			} catch (error) {
 				if (!(error instanceof OptimisticSequenceConflictError)) throw error;
 				conflicted = true;
-				await metric("hobo.cd.sets.apply_conflicts", 1, { "hobo.cd.camp": campId });
+				await metric("hobo.cd.sets.apply_conflicts", 1, {
+					"hobo.cd.camp": campId,
+				});
 			}
 		}
-		return refuse("concurrent-apply", `spec stream of ${campId} kept moving after ${MAX_ATTEMPTS} attempts`, campId);
+		return refuse(
+			"concurrent-apply",
+			`spec stream of ${campId} kept moving after ${MAX_ATTEMPTS} attempts`,
+			campId,
+		);
 	}
 
 	const open: DeltaLedger["open"] = async (input, ctx) => {
@@ -291,16 +355,29 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		const campId = delta.campId as CampId;
 		const owner = await campOfDelta(delta.deltaId);
 		if (owner !== undefined && owner !== campId) {
-			return refuse("delta-invalid", `delta ${delta.deltaId} already belongs to camp ${owner}`, delta.deltaId);
+			return refuse(
+				"delta-invalid",
+				`delta ${delta.deltaId} already belongs to camp ${owner}`,
+				delta.deltaId,
+			);
 		}
 		return withCas(campId, async (state) => {
 			const existing = state.deltas.get(delta.deltaId);
 			if (existing) {
-				if (existing.status === "open" && sameIntent(existing.record, delta)) return { ok: true, value: existing.record };
-				return refuse("delta-not-open", `delta ${delta.deltaId} is already recorded (${existing.status})`, delta.deltaId);
+				if (existing.status === "open" && sameIntent(existing.record, delta))
+					return { ok: true, value: existing.record };
+				return refuse(
+					"delta-not-open",
+					`delta ${delta.deltaId} is already recorded (${existing.status})`,
+					delta.deltaId,
+				);
 			}
 			if (state.openDeltaId !== undefined) {
-				return refuse("delta-overlap", `camp ${campId} already has open delta ${state.openDeltaId}`, campId);
+				return refuse(
+					"delta-overlap",
+					`camp ${campId} already has open delta ${state.openDeltaId}`,
+					campId,
+				);
 			}
 			const currentId = state.current?.setId ?? "";
 			if (delta.baseSetId !== currentId) {
@@ -312,9 +389,17 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			}
 			const changes = await checkChanges(delta, state);
 			if (!changes.ok) return changes;
-			await append(campId, state, [{ type: CD_EVENTS.DeltaOpened, data: encodeDelta(delta) }], ctx);
+			await append(
+				campId,
+				state,
+				[{ type: CD_EVENTS.DeltaOpened, data: encodeDelta(delta) }],
+				ctx,
+			);
 			deltaCamps.set(delta.deltaId, campId);
-			await metric("hobo.cd.sets.deltas_opened", 1, { "hobo.cd.camp": campId, "hobo.cd.intent": delta.intent });
+			await metric("hobo.cd.sets.deltas_opened", 1, {
+				"hobo.cd.camp": campId,
+				"hobo.cd.intent": delta.intent,
+			});
 			return { ok: true, value: delta };
 		});
 	};
@@ -324,151 +409,283 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		if (!normalized.ok) return normalized;
 		const delta = normalized.value;
 		const campId = await campOfDelta(delta.deltaId);
-		if (campId === undefined) return refuse("delta-not-found", `delta ${delta.deltaId} was never opened`, delta.deltaId);
-		if (campId !== delta.campId) return refuse("delta-invalid", `delta ${delta.deltaId} belongs to camp ${campId}`, delta.deltaId);
+		if (campId === undefined)
+			return refuse(
+				"delta-not-found",
+				`delta ${delta.deltaId} was never opened`,
+				delta.deltaId,
+			);
+		if (campId !== delta.campId)
+			return refuse(
+				"delta-invalid",
+				`delta ${delta.deltaId} belongs to camp ${campId}`,
+				delta.deltaId,
+			);
 		return withCas(campId, async (state) => {
 			const existing = state.deltas.get(delta.deltaId);
-			if (!existing) return refuse("delta-not-found", `delta ${delta.deltaId} is not on camp ${campId}`, delta.deltaId);
-			if (existing.status !== "open") return refuse("delta-not-open", `delta ${delta.deltaId} is ${existing.status}`, delta.deltaId);
+			if (!existing)
+				return refuse(
+					"delta-not-found",
+					`delta ${delta.deltaId} is not on camp ${campId}`,
+					delta.deltaId,
+				);
+			if (existing.status !== "open")
+				return refuse(
+					"delta-not-open",
+					`delta ${delta.deltaId} is ${existing.status}`,
+					delta.deltaId,
+				);
 			if (delta.baseSetId !== existing.record.baseSetId) {
-				return refuse("delta-stale-base", "an update cannot move a Delta to another base Set", delta.deltaId);
+				return refuse(
+					"delta-stale-base",
+					"an update cannot move a Delta to another base Set",
+					delta.deltaId,
+				);
 			}
 			const changes = await checkChanges(delta, state);
 			if (!changes.ok) return changes;
 			const record = cloneDelta(delta);
 			record.openedAt = existing.record.openedAt;
 			record.openedBy = existing.record.openedBy;
-			await append(campId, state, [{ type: CD_EVENTS.DeltaUpdated, data: encodeDelta(record) }], ctx);
+			await append(
+				campId,
+				state,
+				[{ type: CD_EVENTS.DeltaUpdated, data: encodeDelta(record) }],
+				ctx,
+			);
 			return { ok: true, value: checkDelta(record) };
 		});
 	};
 
 	const apply: DeltaLedger["apply"] = async (input, ctx) => {
 		const origin = input.origin;
-		if (origin === SetOrigin.UNSPECIFIED || origin === SetOrigin.LEGACY_FOLD || SetOrigin[origin] === undefined) {
-			return refuse("set-origin-invalid", `origin ${SetOrigin[origin] ?? origin} cannot be applied`, input.deltaId);
+		if (
+			origin === SetOrigin.UNSPECIFIED ||
+			origin === SetOrigin.LEGACY_FOLD ||
+			SetOrigin[origin] === undefined
+		) {
+			return refuse(
+				"set-origin-invalid",
+				`origin ${SetOrigin[origin] ?? origin} cannot be applied`,
+				input.deltaId,
+			);
 		}
 		if (input.gateDecisionId === "") {
-			return refuse("gate-decision-missing", `delta ${input.deltaId} has no gate decision`, input.deltaId);
+			return refuse(
+				"gate-decision-missing",
+				`delta ${input.deltaId} has no gate decision`,
+				input.deltaId,
+			);
 		}
 		const campId = await campOfDelta(input.deltaId);
-		if (campId === undefined) return refuse("delta-not-found", `delta ${input.deltaId} was never opened`, input.deltaId);
-		const attributes = { "hobo.cd.camp": campId, "hobo.cd.origin": SetOrigin[origin] ?? "" };
+		if (campId === undefined)
+			return refuse(
+				"delta-not-found",
+				`delta ${input.deltaId} was never opened`,
+				input.deltaId,
+			);
+		const attributes = {
+			"hobo.cd.camp": campId,
+			"hobo.cd.origin": SetOrigin[origin] ?? "",
+		};
 
-		const outcome = await withCas<SetRecord>(campId, async (state, conflicted) => {
-			const entry = state.deltas.get(input.deltaId);
-			if (!entry) return refuse("delta-not-found", `delta ${input.deltaId} is not on camp ${campId}`, input.deltaId);
-			if (entry.status === "applied") {
-				const setId = entry.decision?.setId ?? "";
-				const set = state.sets.find((candidate) => candidate.setId === setId);
-				if (set) return { ok: true, value: set };
-				return refuse("journal-invalid", `applied delta ${input.deltaId} names unknown Set ${setId}`, campId);
-			}
-			if (entry.status === "rejected") {
-				return conflicted
-					? refuse("concurrent-apply", `delta ${input.deltaId} was rejected by a concurrent writer`, campId)
-					: refuse("delta-rejected", `delta ${input.deltaId} was rejected`, input.deltaId);
-			}
-			const delta = entry.record;
-			if (input.resolved.campId !== delta.campId || input.resolved.tenant !== d.tenant) {
-				return refuse(
-					"resolved-set-camp-mismatch",
-					`resolved set is for ${input.resolved.tenant}/${input.resolved.campId}, delta is for ${d.tenant}/${delta.campId}`,
-					campId,
+		const outcome = await withCas<SetRecord>(
+			campId,
+			async (state, conflicted) => {
+				const entry = state.deltas.get(input.deltaId);
+				if (!entry)
+					return refuse(
+						"delta-not-found",
+						`delta ${input.deltaId} is not on camp ${campId}`,
+						input.deltaId,
+					);
+				if (entry.status === "applied") {
+					const setId = entry.decision?.setId ?? "";
+					const set = state.sets.find((candidate) => candidate.setId === setId);
+					if (set) return { ok: true, value: set };
+					return refuse(
+						"journal-invalid",
+						`applied delta ${input.deltaId} names unknown Set ${setId}`,
+						campId,
+					);
+				}
+				if (entry.status === "rejected") {
+					return conflicted
+						? refuse(
+								"concurrent-apply",
+								`delta ${input.deltaId} was rejected by a concurrent writer`,
+								campId,
+							)
+						: refuse(
+								"delta-rejected",
+								`delta ${input.deltaId} was rejected`,
+								input.deltaId,
+							);
+				}
+				const delta = entry.record;
+				if (
+					input.resolved.campId !== delta.campId ||
+					input.resolved.tenant !== d.tenant
+				) {
+					return refuse(
+						"resolved-set-camp-mismatch",
+						`resolved set is for ${input.resolved.tenant}/${input.resolved.campId}, delta is for ${d.tenant}/${delta.campId}`,
+						campId,
+					);
+				}
+				let blob: ReturnType<typeof encodeResolvedSetBlob>;
+				let base: CanonicalResolvedSet | undefined;
+				try {
+					blob = encodeResolvedSetBlob(input.resolved);
+					base = state.current ? await resolved(state.current) : undefined;
+				} catch (error) {
+					if (error instanceof DesiredStateError) return refusalFrom(error);
+					throw error;
+				}
+				if (delta.baseSetId !== (state.current?.setId ?? "")) {
+					return refuse(
+						"delta-stale-base",
+						`camp ${campId} moved past base ${delta.baseSetId || "<none>"}`,
+						campId,
+					);
+				}
+				const computed = diffResolvedSets(base, blob.resolved)
+					.map(changeKey)
+					.sort();
+				const declared = delta.changes.map(changeKey).sort();
+				if (computed.join("|") !== declared.join("|")) {
+					return refuse(
+						"delta-diff-mismatch",
+						`delta declares [${declared.join(", ")}], the resolved set changes [${computed.join(", ")}]`,
+						input.deltaId,
+					);
+				}
+				const decision = (setId: string): DeltaDecisionRecord =>
+					create(DeltaDecisionRecordSchema, {
+						deltaId: delta.deltaId,
+						setId,
+						gateDecisionId: input.gateDecisionId,
+						decidedAt: isoAt(ctx.now()),
+					});
+				if (
+					state.current &&
+					state.current.contentHash === blob.resolved.contentHash
+				) {
+					// Empty Delta: an explicit no-op that mints no Set (delta-set-apply-reconcile).
+					await append(
+						campId,
+						state,
+						[
+							{
+								type: CD_EVENTS.DeltaApplied,
+								data: encodeDecision(decision(state.current.setId)),
+							},
+						],
+						ctx,
+					);
+					return { ok: true, value: state.current };
+				}
+				const ref = await d.artifacts.put(
+					blob.bytes,
+					{
+						name: `resolved-set/${campId}/${delta.deltaId}`,
+						kind: ArtifactKind.PACKAGE,
+						mediaType: RESOLVED_SET_MEDIA_TYPE,
+					},
+					ctx,
 				);
-			}
-			let blob: ReturnType<typeof encodeResolvedSetBlob>;
-			let base: CanonicalResolvedSet | undefined;
-			try {
-				blob = encodeResolvedSetBlob(input.resolved);
-				base = state.current ? await resolved(state.current) : undefined;
-			} catch (error) {
-				if (error instanceof DesiredStateError) return refusalFrom(error);
-				throw error;
-			}
-			if (delta.baseSetId !== (state.current?.setId ?? "")) {
-				return refuse("delta-stale-base", `camp ${campId} moved past base ${delta.baseSetId || "<none>"}`, campId);
-			}
-			const computed = diffResolvedSets(base, blob.resolved).map(changeKey).sort();
-			const declared = delta.changes.map(changeKey).sort();
-			if (computed.join("|") !== declared.join("|")) {
-				return refuse(
-					"delta-diff-mismatch",
-					`delta declares [${declared.join(", ")}], the resolved set changes [${computed.join(", ")}]`,
-					input.deltaId,
+				if (
+					ref.digest !== blob.digest ||
+					(ref.sizeBytes !== 0n && ref.sizeBytes !== BigInt(blob.size))
+				) {
+					return refuse(
+						"blob-digest-mismatch",
+						`artifact store returned ${ref.digest} (${ref.sizeBytes} bytes) for ${blob.digest} (${blob.size} bytes)`,
+						campId,
+					);
+				}
+				const set = checkSet(
+					create(SetRecordSchema, {
+						schemaVersion: SET_SCHEMA,
+						setId: setIdFor([
+							d.tenant,
+							campId,
+							delta.deltaId,
+							blob.resolved.contentHash,
+						]),
+						tenant: d.tenant,
+						environment: blob.resolved.environment,
+						campId,
+						freightId: delta.freightId,
+						planHash: blob.resolved.planHash,
+						contentHash: blob.resolved.contentHash,
+						predecessorSetId: state.current?.setId ?? "",
+						gateDecisionId: input.gateDecisionId,
+						origin,
+						resolvedSetDigest: blob.digest,
+						resolvedSetBytes: BigInt(blob.size),
+						createdAt: isoAt(ctx.now()),
+					}),
+					"resolved-set-invalid",
 				);
-			}
-			const decision = (setId: string): DeltaDecisionRecord =>
-				create(DeltaDecisionRecordSchema, {
-					deltaId: delta.deltaId,
-					setId,
-					gateDecisionId: input.gateDecisionId,
-					decidedAt: isoAt(ctx.now()),
-				});
-			if (state.current && state.current.contentHash === blob.resolved.contentHash) {
-				// Empty Delta: an explicit no-op that mints no Set (delta-set-apply-reconcile).
-				await append(campId, state, [{ type: CD_EVENTS.DeltaApplied, data: encodeDecision(decision(state.current.setId)) }], ctx);
-				return { ok: true, value: state.current };
-			}
-			const ref = await d.artifacts.put(
-				blob.bytes,
-				{ name: `resolved-set/${campId}/${delta.deltaId}`, kind: ArtifactKind.PACKAGE, mediaType: RESOLVED_SET_MEDIA_TYPE },
-				ctx,
-			);
-			if (ref.digest !== blob.digest || (ref.sizeBytes !== 0n && ref.sizeBytes !== BigInt(blob.size))) {
-				return refuse(
-					"blob-digest-mismatch",
-					`artifact store returned ${ref.digest} (${ref.sizeBytes} bytes) for ${blob.digest} (${blob.size} bytes)`,
+				await append(
 					campId,
+					state,
+					[
+						{
+							type: CD_EVENTS.DeltaApplied,
+							data: encodeDecision(decision(set.setId)),
+						},
+						{ type: CD_EVENTS.SetCreated, data: encodeSet(set) },
+					],
+					ctx,
 				);
-			}
-			const set = checkSet(
-				create(SetRecordSchema, {
-					schemaVersion: SET_SCHEMA,
-					setId: setIdFor([d.tenant, campId, delta.deltaId, blob.resolved.contentHash]),
-					tenant: d.tenant,
-					environment: blob.resolved.environment,
-					campId,
-					freightId: delta.freightId,
-					planHash: blob.resolved.planHash,
-					contentHash: blob.resolved.contentHash,
-					predecessorSetId: state.current?.setId ?? "",
-					gateDecisionId: input.gateDecisionId,
-					origin,
-					resolvedSetDigest: blob.digest,
-					resolvedSetBytes: BigInt(blob.size),
-					createdAt: isoAt(ctx.now()),
-				}),
-				"resolved-set-invalid",
-			);
-			await append(
-				campId,
-				state,
-				[
-					{ type: CD_EVENTS.DeltaApplied, data: encodeDecision(decision(set.setId)) },
-					{ type: CD_EVENTS.SetCreated, data: encodeSet(set) },
-				],
-				ctx,
-			);
-			setCamps.set(set.setId, campId);
-			await metric("hobo.cd.sets.resolved_set_bytes", blob.size, attributes, "histogram", "By");
-			return { ok: true, value: set };
-		});
-		await metric(outcome.ok ? "hobo.cd.sets.deltas_applied" : "hobo.cd.sets.apply_refused", 1, {
-			...attributes,
-			...(outcome.ok ? {} : { "hobo.cd.reason": outcome.reasons[0]?.code ?? "" }),
-		});
+				setCamps.set(set.setId, campId);
+				await metric(
+					"hobo.cd.sets.resolved_set_bytes",
+					blob.size,
+					attributes,
+					"histogram",
+					"By",
+				);
+				return { ok: true, value: set };
+			},
+		);
+		await metric(
+			outcome.ok ? "hobo.cd.sets.deltas_applied" : "hobo.cd.sets.apply_refused",
+			1,
+			{
+				...attributes,
+				...(outcome.ok
+					? {}
+					: { "hobo.cd.reason": outcome.reasons[0]?.code ?? "" }),
+			},
+		);
 		return outcome;
 	};
 
 	const reject: DeltaLedger["reject"] = async (deltaId, reasons, ctx) => {
 		const campId = await campOfDelta(deltaId);
-		if (campId === undefined) throw new DesiredStateError("delta-not-found", `delta ${deltaId} was never opened`, deltaId);
+		if (campId === undefined)
+			throw new DesiredStateError(
+				"delta-not-found",
+				`delta ${deltaId} was never opened`,
+				deltaId,
+			);
 		const outcome = await withCas<true>(campId, async (state) => {
 			const entry = state.deltas.get(deltaId);
-			if (!entry) throw new DesiredStateError("delta-not-found", `delta ${deltaId} is not on camp ${campId}`, deltaId);
+			if (!entry)
+				throw new DesiredStateError(
+					"delta-not-found",
+					`delta ${deltaId} is not on camp ${campId}`,
+					deltaId,
+				);
 			if (entry.status === "applied") {
-				throw new DesiredStateError("delta-already-applied", `delta ${deltaId} was applied as ${entry.decision?.setId ?? "?"}`, deltaId);
+				throw new DesiredStateError(
+					"delta-already-applied",
+					`delta ${deltaId} was applied as ${entry.decision?.setId ?? "?"}`,
+					deltaId,
+				);
 			}
 			if (entry.status === "rejected") return { ok: true, value: true };
 			const decision = create(DeltaDecisionRecordSchema, {
@@ -476,7 +693,12 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 				reasons: [...reasons],
 				decidedAt: isoAt(ctx.now()),
 			});
-			await append(campId, state, [{ type: CD_EVENTS.DeltaRejected, data: encodeDecision(decision) }], ctx);
+			await append(
+				campId,
+				state,
+				[{ type: CD_EVENTS.DeltaRejected, data: encodeDecision(decision) }],
+				ctx,
+			);
 			await metric("hobo.cd.sets.deltas_rejected", 1, {
 				"hobo.cd.camp": campId,
 				"hobo.cd.reason": reasons[0]?.code ?? "",
@@ -485,7 +707,11 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		});
 		if (!outcome.ok) {
 			const first = outcome.reasons[0];
-			throw new DesiredStateError("concurrent-apply", first?.message ?? "reject did not land", deltaId);
+			throw new DesiredStateError(
+				"concurrent-apply",
+				first?.message ?? "reject did not land",
+				deltaId,
+			);
 		}
 	};
 
@@ -501,18 +727,30 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		return (await spec(campId)).sets.find((set) => set.setId === setId);
 	}
 
-	async function management(campId: CampId, state: CampSpecState): Promise<CampManagement> {
-		const inventory = foldManagement(await readStream(CD_STREAMS.campInventory(campId)));
+	async function management(
+		campId: CampId,
+		state: CampSpecState,
+	): Promise<CampManagement> {
+		const inventory = foldManagement(
+			await readStream(CD_STREAMS.campInventory(campId)),
+		);
 		return inventory ?? state.management ?? CampManagement.MANAGED;
 	}
 
 	async function* changes(
-		input: Readonly<{ campIds: readonly CampId[]; after?: EventPosition; signal: AbortSignal }>,
+		input: Readonly<{
+			campIds: readonly CampId[];
+			after?: EventPosition;
+			signal: AbortSignal;
+		}>,
 	): AsyncIterable<DesiredStateChange> {
 		const { campIds, after, signal } = input;
-		const byStream = new Map(campIds.map((campId) => [CD_STREAMS.campSpec(campId), campId] as const));
+		const byStream = new Map(
+			campIds.map((campId) => [CD_STREAMS.campSpec(campId), campId] as const),
+		);
 		const states = new Map<CampId, CampSpecState>();
-		const single = campIds.length === 1 ? CD_STREAMS.campSpec(campIds[0] ?? "") : undefined;
+		const single =
+			campIds.length === 1 ? CD_STREAMS.campSpec(campIds[0] ?? "") : undefined;
 		let cursor: EventPosition | undefined;
 		let dirty = false;
 		let wake: (() => void) | undefined;
@@ -527,7 +765,11 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		try {
 			while (!signal.aborted) {
 				dirty = false;
-				const batch: { position: EventPosition; campId: CampId; event: EventEnvelope }[] = [];
+				const batch: {
+					position: EventPosition;
+					campId: CampId;
+					event: EventEnvelope;
+				}[] = [];
 				const reads = store.readAll({
 					...(cursor !== undefined ? { after: cursor } : {}),
 					...(single !== undefined ? { filter: { streamId: single } } : {}),
@@ -538,11 +780,17 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 					if (campId !== undefined) batch.push({ position, campId, event });
 				}
 				for (const { position, campId, event } of batch) {
-					const state = applyCampSpecEvent(states.get(campId) ?? emptyCampSpec(campId), event);
+					const state = applyCampSpecEvent(
+						states.get(campId) ?? emptyCampSpec(campId),
+						event,
+					);
 					states.set(campId, state);
 					if (after !== undefined && position <= after) continue;
-					if (!CHANGE_TYPES.has(event.type) || state.current === undefined) continue;
-					const observeFields = d.posture ? await d.posture.observeFields(campId) : [];
+					if (!CHANGE_TYPES.has(event.type) || state.current === undefined)
+						continue;
+					const observeFields = d.posture
+						? await d.posture.observeFields(campId)
+						: [];
 					yield Object.freeze({
 						position,
 						set: state.current,
@@ -554,7 +802,10 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 				}
 				if (dirty || signal.aborted) continue;
 				await new Promise<void>((resolve) => {
-					const timer = setTimeout(resolve, d.pollIntervalMs ?? CD_DEFAULTS.serviceTickMs);
+					const timer = setTimeout(
+						resolve,
+						d.pollIntervalMs ?? CD_DEFAULTS.serviceTickMs,
+					);
 					wake = () => {
 						clearTimeout(timer);
 						resolve();
@@ -568,7 +819,10 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		}
 	}
 
-	async function adoptOne(legacy: LegacyDeployment, ctx: CdContext): Promise<SetRecord | undefined> {
+	async function adoptOne(
+		legacy: LegacyDeployment,
+		ctx: CdContext,
+	): Promise<SetRecord | undefined> {
 		// SAFETY: camp ids are opaque strings at this boundary.
 		const campId = legacy.campId as CampId;
 		const state = await spec(campId);
@@ -591,16 +845,29 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		);
 		const ref = await d.artifacts.put(
 			blob.bytes,
-			{ name: `resolved-set/${campId}/legacy`, kind: ArtifactKind.PACKAGE, mediaType: RESOLVED_SET_MEDIA_TYPE },
+			{
+				name: `resolved-set/${campId}/legacy`,
+				kind: ArtifactKind.PACKAGE,
+				mediaType: RESOLVED_SET_MEDIA_TYPE,
+			},
 			ctx,
 		);
 		if (ref.digest !== blob.digest) {
-			throw new DesiredStateError("blob-digest-mismatch", `artifact store returned ${ref.digest} for ${blob.digest}`, campId);
+			throw new DesiredStateError(
+				"blob-digest-mismatch",
+				`artifact store returned ${ref.digest} for ${blob.digest}`,
+				campId,
+			);
 		}
 		const set: ParsedSet = checkSet(
 			create(SetRecordSchema, {
 				schemaVersion: SET_SCHEMA,
-				setId: setIdFor([d.tenant, campId, gateDecisionId, blob.resolved.contentHash]),
+				setId: setIdFor([
+					d.tenant,
+					campId,
+					gateDecisionId,
+					blob.resolved.contentHash,
+				]),
 				tenant: d.tenant,
 				environment: legacy.environment,
 				campId,
@@ -618,7 +885,13 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			await append(
 				campId,
 				state,
-				[{ type: CD_EVENTS.SetCreated, data: encodeSet(set), meta: { idempotencyKey: `set.Created:${gateDecisionId}` } }],
+				[
+					{
+						type: CD_EVENTS.SetCreated,
+						data: encodeSet(set),
+						meta: { idempotencyKey: `set.Created:${gateDecisionId}` },
+					},
+				],
 				ctx,
 			);
 		} catch (error) {
@@ -631,30 +904,55 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 
 	async function adoptLegacy(ctx: CdContext): Promise<LegacyAdoption> {
 		const streams: string[] = [];
-		for await (const { event } of store.readAll({ filter: { type: LEGACY_EVENTS.planned } })) {
-			if (event.tenant === d.tenant && !streams.includes(event.streamId)) streams.push(event.streamId);
+		for await (const { event } of store.readAll({
+			filter: { type: LEGACY_EVENTS.planned },
+		})) {
+			if (event.tenant === d.tenant && !streams.includes(event.streamId))
+				streams.push(event.streamId);
 		}
 		const latest = new Map<string, LegacyDeployment>();
 		const skipped: ReasonRecord[] = [];
 		for (const streamId of streams) {
 			const legacy = foldLegacyDeployment(await readStream(streamId));
-			if (legacy === undefined || legacy.state !== "deployed" || legacy.tenant !== d.tenant) continue;
+			if (
+				legacy === undefined ||
+				legacy.state !== "deployed" ||
+				legacy.tenant !== d.tenant
+			)
+				continue;
 			const prior = latest.get(legacy.campId);
-			if (!prior || (prior.deployedAtSeq ?? 0) <= (legacy.deployedAtSeq ?? 0)) latest.set(legacy.campId, legacy);
+			if (!prior || (prior.deployedAtSeq ?? 0) <= (legacy.deployedAtSeq ?? 0))
+				latest.set(legacy.campId, legacy);
 		}
 		const adopted: SetRecord[] = [];
-		for (const legacy of [...latest.values()].sort((a, b) => a.campId.localeCompare(b.campId))) {
+		for (const legacy of [...latest.values()].sort((a, b) =>
+			a.campId.localeCompare(b.campId),
+		)) {
 			try {
 				const set = await adoptOne(legacy, ctx);
 				if (set) adopted.push(set);
 			} catch (error) {
 				if (!(error instanceof DesiredStateError)) throw error;
-				skipped.push(reason(error.code, `${legacy.streamId}: ${error.message}`, legacy.campId, error.remediation));
-				await metric("hobo.cd.sets.legacy_skipped", 1, { "hobo.cd.camp": legacy.campId, "hobo.cd.reason": error.code });
+				skipped.push(
+					reason(
+						error.code,
+						`${legacy.streamId}: ${error.message}`,
+						legacy.campId,
+						error.remediation,
+					),
+				);
+				await metric("hobo.cd.sets.legacy_skipped", 1, {
+					"hobo.cd.camp": legacy.campId,
+					"hobo.cd.reason": error.code,
+				});
 			}
 		}
-		if (adopted.length > 0) await metric("hobo.cd.sets.legacy_adopted", adopted.length, {});
-		return Object.freeze({ adopted: Object.freeze(adopted), skipped: Object.freeze(skipped) });
+		if (adopted.length > 0)
+			await metric("hobo.cd.sets.legacy_adopted", adopted.length, {});
+		return Object.freeze({
+			adopted: Object.freeze(adopted),
+			skipped: Object.freeze(skipped),
+		});
 	}
 
 	return Object.freeze({
@@ -662,13 +960,18 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			return (await spec(campId)).current;
 		},
 		// SAFETY: ids are dispatched by their disjoint prefixes (see DesiredState).
-		get: ((id: string) => (id.startsWith("set_") ? getSet(id as SetId) : getDelta(id as DeltaId))) as DesiredState["get"],
+		get: ((id: string) =>
+			id.startsWith("set_")
+				? getSet(id as SetId)
+				: getDelta(id as DeltaId)) as DesiredState["get"],
 		async history(campId: CampId, limit?: number) {
 			const sets = [...(await spec(campId)).sets].reverse();
 			return limit === undefined ? sets : sets.slice(0, Math.max(0, limit));
 		},
 		resolved: (set: SetRecord): Promise<ResolvedDeploymentSet> => resolved(set),
-		async status(campId: CampId): Promise<ReconcileObservationRecord | undefined> {
+		async status(
+			campId: CampId,
+		): Promise<ReconcileObservationRecord | undefined> {
 			return foldCampStatus(await readStream(CD_STREAMS.campStatus(campId)));
 		},
 		changes,

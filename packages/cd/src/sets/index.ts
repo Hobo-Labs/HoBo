@@ -13,8 +13,16 @@ export {
 	type DesiredStateDeps,
 	type LegacyAdoption,
 } from "./desired-state.js";
-export { DesiredStateError, SETS_FAILURES, type SetsFailureCode } from "./errors.js";
-export { SET_EVENT_CONTRACTS, setsCorpusBaseline, toCorpusBody } from "./event-contracts.js";
+export {
+	DesiredStateError,
+	SETS_FAILURES,
+	type SetsFailureCode,
+} from "./errors.js";
+export {
+	SET_EVENT_CONTRACTS,
+	setsCorpusBaseline,
+	toCorpusBody,
+} from "./event-contracts.js";
 export {
 	applyCampSpecEvent,
 	type CampSpecState,
@@ -25,7 +33,11 @@ export {
 	foldCampStatus,
 	foldManagement,
 } from "./fold.js";
-export { foldLegacyDeployment, LEGACY_EVENTS, type LegacyDeployment } from "./legacy.js";
+export {
+	foldLegacyDeployment,
+	LEGACY_EVENTS,
+	type LegacyDeployment,
+} from "./legacy.js";
 export {
 	type CanonicalResolvedSet,
 	canonicalJson,

@@ -16,24 +16,45 @@ import {
 	RESOLVED_SET_SCHEMA,
 	type ResolvedDeploymentSet,
 } from "@hobo/cloud";
-import { ChangeKind, type ResourceChange, ResourceChangeSchema } from "../_generated/cd_pb.js";
+import {
+	ChangeKind,
+	type ResourceChange,
+	ResourceChangeSchema,
+} from "../_generated/cd_pb.js";
 import type { Digest } from "../ports.js";
 import { DesiredStateError } from "./errors.js";
 
 declare const canonicalBrand: unique symbol;
 
 /** A verified ResolvedDeploymentSet in canonical key order. */
-export type CanonicalResolvedSet = ResolvedDeploymentSet & { readonly [canonicalBrand]: "cd.CanonicalResolvedSet" };
+export type CanonicalResolvedSet = ResolvedDeploymentSet & {
+	readonly [canonicalBrand]: "cd.CanonicalResolvedSet";
+};
 
-export type ResolvedSetBlob = Readonly<{ bytes: Uint8Array; digest: Digest; size: number }>;
+export type ResolvedSetBlob = Readonly<{
+	bytes: Uint8Array;
+	digest: Digest;
+	size: number;
+}>;
 
 const tagOf = Object.prototype.toString;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
-type Json = string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json };
+type Json =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly Json[]
+	| { readonly [key: string]: Json };
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-	return value !== null && value !== undefined && !Array.isArray(value) && tagOf.call(value) === "[object Object]";
+	return (
+		value !== null &&
+		value !== undefined &&
+		!Array.isArray(value) &&
+		tagOf.call(value) === "[object Object]"
+	);
 }
 
 function isString(value: unknown): value is string {
@@ -75,31 +96,54 @@ function invalid(message: string, subject = ""): DesiredStateError {
 /** Structural parse of an untrusted resolved-set document. */
 function parseShape(value: unknown): ResolvedDeploymentSet {
 	if (!isObject(value)) throw invalid("resolved set must be a JSON object");
-	if (value.schemaVersion !== RESOLVED_SET_SCHEMA) throw invalid(`schemaVersion must be ${RESOLVED_SET_SCHEMA}`);
+	if (value.schemaVersion !== RESOLVED_SET_SCHEMA)
+		throw invalid(`schemaVersion must be ${RESOLVED_SET_SCHEMA}`);
 	for (const field of ["setId", "tenant", "environment", "campId"] as const) {
-		if (!isString(value[field]) || value[field] === "") throw invalid(`${field} must be a non-empty string`);
+		if (!isString(value[field]) || value[field] === "")
+			throw invalid(`${field} must be a non-empty string`);
 	}
 	for (const field of ["planHash", "contentHash"] as const) {
 		const hash = value[field];
-		if (!isString(hash) || !DIGEST.test(hash)) throw invalid(`${field} must be sha256:<64 hex>`);
+		if (!isString(hash) || !DIGEST.test(hash))
+			throw invalid(`${field} must be sha256:<64 hex>`);
 	}
 	const plan = value.plan;
-	if (!isObject(plan) || !isString(plan.schema) || !isString(plan.objective)) throw invalid("plan must be a DeploymentPlan");
-	if (!Array.isArray(plan.resources) || !isStringList(plan.dependencyOrder)) throw invalid("plan.resources and plan.dependencyOrder are required");
+	if (!isObject(plan) || !isString(plan.schema) || !isString(plan.objective))
+		throw invalid("plan must be a DeploymentPlan");
+	if (!Array.isArray(plan.resources) || !isStringList(plan.dependencyOrder))
+		throw invalid("plan.resources and plan.dependencyOrder are required");
 	for (const [index, resource] of plan.resources.entries()) {
-		if (!isObject(resource) || !isString(resource.name) || resource.name === "") throw invalid(`plan.resources[${index}].name is required`);
-		if (!isString(resource.port) || !isString(resource.provider) || !isStringList(resource.deps)) {
-			throw invalid(`plan.resources[${index}] needs port, provider and deps`, resource.name);
+		if (!isObject(resource) || !isString(resource.name) || resource.name === "")
+			throw invalid(`plan.resources[${index}].name is required`);
+		if (
+			!isString(resource.port) ||
+			!isString(resource.provider) ||
+			!isStringList(resource.deps)
+		) {
+			throw invalid(
+				`plan.resources[${index}] needs port, provider and deps`,
+				resource.name,
+			);
 		}
 	}
-	if (!Array.isArray(value.matches) || !value.matches.every((m) => isObject(m) && isString(m.resource) && isString(m.providerId))) {
+	if (
+		!Array.isArray(value.matches) ||
+		!value.matches.every(
+			(m) => isObject(m) && isString(m.resource) && isString(m.providerId),
+		)
+	) {
 		throw invalid("matches must be a list of Matching selections");
 	}
 	const gatekeeper = value.gatekeeper;
-	if (!isObject(gatekeeper) || !isString(gatekeeper.decision) || !isString(gatekeeper.gatekeeperDecisionId)) {
+	if (
+		!isObject(gatekeeper) ||
+		!isString(gatekeeper.decision) ||
+		!isString(gatekeeper.gatekeeperDecisionId)
+	) {
 		throw invalid("gatekeeper approval is required");
 	}
-	if (!isStringList(value.secretRefs)) throw invalid("secretRefs must be a list of references");
+	if (!isStringList(value.secretRefs))
+		throw invalid("secretRefs must be a list of references");
 	// SAFETY: every field read above was checked against the ResolvedDeploymentSet shape.
 	return value as ResolvedDeploymentSet;
 }
@@ -115,10 +159,17 @@ function rebuild(resolved: ResolvedDeploymentSet): ResolvedDeploymentSet {
 			gatekeeper: resolved.gatekeeper,
 			secretRefs: resolved.secretRefs,
 			setId: resolved.setId,
-			...(resolved.progressive !== undefined ? { progressive: resolved.progressive } : {}),
+			...(resolved.progressive !== undefined
+				? { progressive: resolved.progressive }
+				: {}),
 		});
 	} catch (error) {
-		throw invalid(error instanceof Error ? error.message : "resolved set rejected by its constructor", resolved.campId);
+		throw invalid(
+			error instanceof Error
+				? error.message
+				: "resolved set rejected by its constructor",
+			resolved.campId,
+		);
 	}
 }
 
@@ -127,20 +178,29 @@ function checkSecretFree(resolved: ResolvedDeploymentSet): void {
 		assertSecretFree(resolved);
 	} catch (error) {
 		const path = isObject(error) && isString(error.path) ? error.path : "$";
-		throw new DesiredStateError("secret-material", `plaintext secret material at ${path}`, resolved.campId);
+		throw new DesiredStateError(
+			"secret-material",
+			`plaintext secret material at ${path}`,
+			resolved.campId,
+		);
 	}
 }
 
 function checkDependencies(plan: DeploymentPlan, subject: string): void {
 	const names = new Set<string>();
 	for (const resource of plan.resources) {
-		if (names.has(resource.name)) throw invalid(`duplicate resource ${resource.name}`, subject);
+		if (names.has(resource.name))
+			throw invalid(`duplicate resource ${resource.name}`, subject);
 		names.add(resource.name);
 	}
 	for (const resource of plan.resources) {
 		for (const dep of resource.deps) {
 			if (!names.has(dep)) {
-				throw new DesiredStateError("missing-dependency", `${resource.name} has missing dependency ${dep}`, subject);
+				throw new DesiredStateError(
+					"missing-dependency",
+					`${resource.name} has missing dependency ${dep}`,
+					subject,
+				);
 			}
 		}
 	}
@@ -150,13 +210,21 @@ function checkDependencies(plan: DeploymentPlan, subject: string): void {
  * Verify an in-memory resolved set and return it in canonical key order.
  * Order: shape → secret-free → closed dependencies → the producer's own hashes.
  */
-export function verifyResolvedSet(input: ResolvedDeploymentSet): CanonicalResolvedSet {
+export function verifyResolvedSet(
+	input: ResolvedDeploymentSet,
+): CanonicalResolvedSet {
 	const shaped = parseShape(JSON.parse(JSON.stringify(input)));
 	checkSecretFree(shaped);
 	checkDependencies(shaped.plan, shaped.campId);
 	const recomputed = rebuild(input);
-	if (recomputed.planHash !== input.planHash || recomputed.contentHash !== input.contentHash) {
-		throw invalid("plan or content hash does not match the resolved set", input.campId);
+	if (
+		recomputed.planHash !== input.planHash ||
+		recomputed.contentHash !== input.contentHash
+	) {
+		throw invalid(
+			"plan or content hash does not match the resolved set",
+			input.campId,
+		);
 	}
 	return canonicalize(shaped);
 }
@@ -168,10 +236,17 @@ function canonicalize(shaped: ResolvedDeploymentSet): CanonicalResolvedSet {
 	return Object.freeze(rebuild(sorted)) as CanonicalResolvedSet;
 }
 
-export function encodeResolvedSetBlob(input: ResolvedDeploymentSet): ResolvedSetBlob & { resolved: CanonicalResolvedSet } {
+export function encodeResolvedSetBlob(
+	input: ResolvedDeploymentSet,
+): ResolvedSetBlob & { resolved: CanonicalResolvedSet } {
 	const resolved = verifyResolvedSet(input);
 	const bytes = new TextEncoder().encode(canonicalJson(resolved));
-	return Object.freeze({ bytes, digest: sha256Digest(bytes), size: bytes.byteLength, resolved });
+	return Object.freeze({
+		bytes,
+		digest: sha256Digest(bytes),
+		size: bytes.byteLength,
+		resolved,
+	});
 }
 
 /** Decode a stored blob, refusing any digest/size mismatch before parsing. */
@@ -180,7 +255,10 @@ export function decodeResolvedSetBlob(
 	expected: Readonly<{ digest: string; size?: number }>,
 ): CanonicalResolvedSet {
 	const digest = sha256Digest(bytes);
-	if (digest !== expected.digest || (expected.size !== undefined && expected.size !== bytes.byteLength)) {
+	if (
+		digest !== expected.digest ||
+		(expected.size !== undefined && expected.size !== bytes.byteLength)
+	) {
 		throw new DesiredStateError(
 			"resolved-set-digest-mismatch",
 			`blob ${expected.digest} hashes to ${digest} (${bytes.byteLength} bytes)`,
@@ -189,7 +267,9 @@ export function decodeResolvedSetBlob(
 	}
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+		parsed = JSON.parse(
+			new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+		);
 	} catch {
 		throw invalid("blob is not UTF-8 JSON", expected.digest);
 	}
@@ -197,7 +277,10 @@ export function decodeResolvedSetBlob(
 	checkSecretFree(shaped);
 	checkDependencies(shaped.plan, shaped.campId);
 	const canonical = canonicalize(shaped);
-	if (canonical.contentHash !== shaped.contentHash || canonical.planHash !== shaped.planHash) {
+	if (
+		canonical.contentHash !== shaped.contentHash ||
+		canonical.planHash !== shaped.planHash
+	) {
 		throw invalid("blob content hash does not verify", expected.digest);
 	}
 	return canonical;
@@ -230,9 +313,16 @@ export function diffResolvedSets(
 		const afterHash = now ? resourceHash(after, name) : "";
 		if (beforeHash === afterHash) continue;
 		const node = now ?? was;
-		const kind = !was ? ChangeKind.ADD : !now ? ChangeKind.REMOVE : ChangeKind.UPDATE;
+		const kind = !was
+			? ChangeKind.ADD
+			: !now
+				? ChangeKind.REMOVE
+				: ChangeKind.UPDATE;
 		const source = now ? after : before;
-		const provider = source?.matches.find((m) => m.resource === name)?.providerId ?? node?.provider ?? "";
+		const provider =
+			source?.matches.find((m) => m.resource === name)?.providerId ??
+			node?.provider ??
+			"";
 		changes.push(
 			create(ResourceChangeSchema, {
 				resource: name,
@@ -248,6 +338,8 @@ export function diffResolvedSets(
 }
 
 /** Names present in a resolved set (used to check Delta changes against a base). */
-export function resourceNames(resolved: ResolvedDeploymentSet | undefined): ReadonlySet<string> {
+export function resourceNames(
+	resolved: ResolvedDeploymentSet | undefined,
+): ReadonlySet<string> {
 	return new Set(resolved?.plan.resources.map((r) => r.name) ?? []);
 }

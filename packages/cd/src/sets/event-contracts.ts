@@ -69,7 +69,12 @@ const DIGEST_B = `sha256:${"b".repeat(64)}`;
 const DIGEST_C = `sha256:${"c".repeat(64)}`;
 const FREIGHT = `sha256:${"1".repeat(64)}`;
 
-const ADD_API = canonicalJson({ resource: "shop.api", kind: "CHANGE_KIND_ADD", provider: "aws", afterHash: DIGEST_A });
+const ADD_API = canonicalJson({
+	resource: "shop.api",
+	kind: "CHANGE_KIND_ADD",
+	provider: "aws",
+	afterHash: DIGEST_A,
+});
 const UPDATE_API = canonicalJson({
 	resource: "shop.api",
 	kind: "CHANGE_KIND_UPDATE",
@@ -78,7 +83,11 @@ const UPDATE_API = canonicalJson({
 	afterHash: DIGEST_B,
 });
 
-function v1(type: string, fields: readonly EventFieldSpec[], bodies: readonly EventBody[]): EventEvolutionContract {
+function v1(
+	type: string,
+	fields: readonly EventFieldSpec[],
+	bodies: readonly EventBody[],
+): EventEvolutionContract {
 	const schema = eventSchema(type, 1, fields);
 	const slug = type.replaceAll(".", "-");
 	return Object.freeze({
@@ -87,104 +96,127 @@ function v1(type: string, fields: readonly EventFieldSpec[], bodies: readonly Ev
 		schemas: Object.freeze([schema]),
 		upcasters: Object.freeze([]),
 		goldenCorpus: Object.freeze(
-			bodies.map((body, index) => createCorpusEntry(schema, `${slug}-v1${index === 0 ? "" : `-${index}`}`, body)),
+			bodies.map((body, index) =>
+				createCorpusEntry(
+					schema,
+					`${slug}-v1${index === 0 ? "" : `-${index}`}`,
+					body,
+				),
+			),
 		),
 	});
 }
 
 // public-contract: evolution contracts for set.Created and delta.* (golden corpus).
-export const SET_EVENT_CONTRACTS: readonly EventEvolutionContract[] = Object.freeze([
-	v1(CD_EVENTS.SetCreated, SET_FIELDS, [
-		{
-			schemaVersion: "hobo.cd.set/v1",
-			setId: "set_0123456789abcdef0123456789abcdef",
-			tenant: "acme",
-			environment: "production",
-			campId: "prod-aws",
-			freightId: FREIGHT,
-			planHash: DIGEST_A,
-			contentHash: DIGEST_B,
-			gateDecisionId: "gate-1",
-			origin: "SET_ORIGIN_PROMOTION",
-			resolvedSetDigest: DIGEST_C,
-			resolvedSetBytes: "2048",
-			createdAt: "2026-11-12T00:00:00.000Z",
-		},
-		{
-			schemaVersion: "hobo.cd.set/v1",
-			setId: "set_fedcba9876543210fedcba9876543210",
-			tenant: "acme",
-			environment: "default",
-			campId: "shop",
-			planHash: DIGEST_A,
-			contentHash: DIGEST_B,
-			gateDecisionId: "legacy:deployment:shop@5",
-			origin: "SET_ORIGIN_LEGACY_FOLD",
-			resolvedSetDigest: DIGEST_C,
-			resolvedSetBytes: "1024",
-			createdAt: "2026-11-12T00:00:00.000Z",
-		},
-	]),
-	v1(CD_EVENTS.DeltaOpened, DELTA_FIELDS, [
-		{
-			schemaVersion: "hobo.cd.delta/v1",
-			deltaId: "delta-1",
-			campId: "prod-aws",
-			freightId: FREIGHT,
-			changes: [ADD_API],
-			openedBy: "user:ops@example.test",
-			openedAt: "2026-11-12T00:00:00.000Z",
-			intent: "up",
-		},
-	]),
-	v1(CD_EVENTS.DeltaUpdated, DELTA_FIELDS, [
-		{
-			schemaVersion: "hobo.cd.delta/v1",
-			deltaId: "delta-2",
-			campId: "prod-aws",
-			baseSetId: "set_0123456789abcdef0123456789abcdef",
-			freightId: FREIGHT,
-			changes: [UPDATE_API],
-			infrastructureDiff: [UPDATE_API],
-			openedBy: "agent:reconciler-1",
-			proposal: true,
-			openedAt: "2026-11-12T00:00:00.000Z",
-			intent: "promote",
-		},
-	]),
-	v1(CD_EVENTS.DeltaApplied, DECISION_FIELDS, [
-		{
-			deltaId: "delta-1",
-			setId: "set_0123456789abcdef0123456789abcdef",
-			gateDecisionId: "gate-1",
-			decidedAt: "2026-11-12T00:00:01.000Z",
-		},
-	]),
-	v1(CD_EVENTS.DeltaRejected, DECISION_FIELDS, [
-		{
-			deltaId: "delta-2",
-			reasons: [
-				canonicalJson({ code: "window-closed", message: "freeze active", remediation: "wait for the window", subject: "prod-aws" }),
-			],
-			decidedAt: "2026-11-12T00:00:02.000Z",
-		},
-	]),
-]);
+export const SET_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
+	Object.freeze([
+		v1(CD_EVENTS.SetCreated, SET_FIELDS, [
+			{
+				schemaVersion: "hobo.cd.set/v1",
+				setId: "set_0123456789abcdef0123456789abcdef",
+				tenant: "acme",
+				environment: "production",
+				campId: "prod-aws",
+				freightId: FREIGHT,
+				planHash: DIGEST_A,
+				contentHash: DIGEST_B,
+				gateDecisionId: "gate-1",
+				origin: "SET_ORIGIN_PROMOTION",
+				resolvedSetDigest: DIGEST_C,
+				resolvedSetBytes: "2048",
+				createdAt: "2026-11-12T00:00:00.000Z",
+			},
+			{
+				schemaVersion: "hobo.cd.set/v1",
+				setId: "set_fedcba9876543210fedcba9876543210",
+				tenant: "acme",
+				environment: "default",
+				campId: "shop",
+				planHash: DIGEST_A,
+				contentHash: DIGEST_B,
+				gateDecisionId: "legacy:deployment:shop@5",
+				origin: "SET_ORIGIN_LEGACY_FOLD",
+				resolvedSetDigest: DIGEST_C,
+				resolvedSetBytes: "1024",
+				createdAt: "2026-11-12T00:00:00.000Z",
+			},
+		]),
+		v1(CD_EVENTS.DeltaOpened, DELTA_FIELDS, [
+			{
+				schemaVersion: "hobo.cd.delta/v1",
+				deltaId: "delta-1",
+				campId: "prod-aws",
+				freightId: FREIGHT,
+				changes: [ADD_API],
+				openedBy: "user:ops@example.test",
+				openedAt: "2026-11-12T00:00:00.000Z",
+				intent: "up",
+			},
+		]),
+		v1(CD_EVENTS.DeltaUpdated, DELTA_FIELDS, [
+			{
+				schemaVersion: "hobo.cd.delta/v1",
+				deltaId: "delta-2",
+				campId: "prod-aws",
+				baseSetId: "set_0123456789abcdef0123456789abcdef",
+				freightId: FREIGHT,
+				changes: [UPDATE_API],
+				infrastructureDiff: [UPDATE_API],
+				openedBy: "agent:reconciler-1",
+				proposal: true,
+				openedAt: "2026-11-12T00:00:00.000Z",
+				intent: "promote",
+			},
+		]),
+		v1(CD_EVENTS.DeltaApplied, DECISION_FIELDS, [
+			{
+				deltaId: "delta-1",
+				setId: "set_0123456789abcdef0123456789abcdef",
+				gateDecisionId: "gate-1",
+				decidedAt: "2026-11-12T00:00:01.000Z",
+			},
+		]),
+		v1(CD_EVENTS.DeltaRejected, DECISION_FIELDS, [
+			{
+				deltaId: "delta-2",
+				reasons: [
+					canonicalJson({
+						code: "window-closed",
+						message: "freeze active",
+						remediation: "wait for the window",
+						subject: "prod-aws",
+					}),
+				],
+				decidedAt: "2026-11-12T00:00:02.000Z",
+			},
+		]),
+	]);
 
 export function setsCorpusBaseline(): CorpusBaseline {
-	return createCorpusBaseline(SET_EVENT_CONTRACTS.flatMap((contract) => contract.goldenCorpus));
+	return createCorpusBaseline(
+		SET_EVENT_CONTRACTS.flatMap((contract) => contract.goldenCorpus),
+	);
 }
 
-const REPEATED_MESSAGES: ReadonlySet<string> = new Set(["changes", "infrastructureDiff", "reasons"]);
+const REPEATED_MESSAGES: ReadonlySet<string> = new Set([
+	"changes",
+	"infrastructureDiff",
+	"reasons",
+]);
 
 /** The corpus view of a journal body: repeated messages become canonical JSON strings. */
 export function toCorpusBody(_type: string, data: unknown): EventBody {
-	if (data === null || typeof data !== "object" || Array.isArray(data)) return {};
+	if (data === null || typeof data !== "object" || Array.isArray(data))
+		return {};
 	const body: Record<string, EventBody[string]> = {};
 	for (const [key, value] of Object.entries(data)) {
 		if (REPEATED_MESSAGES.has(key) && Array.isArray(value)) {
 			body[key] = value.map((member) => canonicalJson(member));
-		} else if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
+		} else if (
+			typeof value === "string" ||
+			typeof value === "boolean" ||
+			typeof value === "number"
+		) {
 			body[key] = value;
 		} else {
 			body[key] = canonicalJson(value);

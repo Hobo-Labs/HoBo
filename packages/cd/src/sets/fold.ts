@@ -44,10 +44,19 @@ export type CampSpecState = Readonly<{
 }>;
 
 export function emptyCampSpec(campId: string): CampSpecState {
-	return Object.freeze({ campId, seq: 0, sets: Object.freeze([]), deltas: new Map() });
+	return Object.freeze({
+		campId,
+		seq: 0,
+		sets: Object.freeze([]),
+		deltas: new Map(),
+	});
 }
 
-function corrupt(state: CampSpecState, event: EventEnvelope, message: string): never {
+function corrupt(
+	state: CampSpecState,
+	event: EventEnvelope,
+	message: string,
+): never {
 	throw new DesiredStateError(
 		"journal-invalid",
 		`${event.streamId}@${event.seq} ${event.type}: ${message}`,
@@ -55,12 +64,24 @@ function corrupt(state: CampSpecState, event: EventEnvelope, message: string): n
 	);
 }
 
-function sameCamp(state: CampSpecState, event: EventEnvelope, campId: string): void {
-	if (campId !== state.campId) corrupt(state, event, `recorded for camp ${campId}, expected camp ${state.campId}`);
+function sameCamp(
+	state: CampSpecState,
+	event: EventEnvelope,
+	campId: string,
+): void {
+	if (campId !== state.campId)
+		corrupt(
+			state,
+			event,
+			`recorded for camp ${campId}, expected camp ${state.campId}`,
+		);
 }
 
 /** Reducer for one spec-stream event. Unknown event types are carried over unchanged. */
-export function applyCampSpecEvent(state: CampSpecState, event: EventEnvelope): CampSpecState {
+export function applyCampSpecEvent(
+	state: CampSpecState,
+	event: EventEnvelope,
+): CampSpecState {
 	const next = { ...state, seq: event.seq };
 	switch (event.type) {
 		case CD_EVENTS.SetCreated: {
@@ -68,42 +89,83 @@ export function applyCampSpecEvent(state: CampSpecState, event: EventEnvelope): 
 			sameCamp(state, event, set.campId);
 			const expected = state.current?.setId ?? "";
 			if (set.predecessorSetId !== expected) {
-				corrupt(state, event, `predecessor ${set.predecessorSetId || "<none>"} is not the current Set ${expected || "<none>"}`);
+				corrupt(
+					state,
+					event,
+					`predecessor ${set.predecessorSetId || "<none>"} is not the current Set ${expected || "<none>"}`,
+				);
 			}
-			return Object.freeze({ ...next, current: set, sets: Object.freeze([...state.sets, set]) });
+			return Object.freeze({
+				...next,
+				current: set,
+				sets: Object.freeze([...state.sets, set]),
+			});
 		}
 		case CD_EVENTS.DeltaOpened: {
 			const delta = parseDelta(event.data);
 			sameCamp(state, event, delta.campId);
-			if (state.openDeltaId !== undefined && state.openDeltaId !== delta.deltaId) {
+			if (
+				state.openDeltaId !== undefined &&
+				state.openDeltaId !== delta.deltaId
+			) {
 				corrupt(state, event, `overlapping open delta ${state.openDeltaId}`);
 			}
 			if (delta.baseSetId !== (state.current?.setId ?? "")) {
-				corrupt(state, event, `base ${delta.baseSetId || "<none>"} is not the current Set`);
+				corrupt(
+					state,
+					event,
+					`base ${delta.baseSetId || "<none>"} is not the current Set`,
+				);
 			}
 			const deltas = new Map(state.deltas);
-			deltas.set(delta.deltaId, Object.freeze({ record: delta, status: "open" }));
+			deltas.set(
+				delta.deltaId,
+				Object.freeze({ record: delta, status: "open" }),
+			);
 			return Object.freeze({ ...next, deltas, openDeltaId: delta.deltaId });
 		}
 		case CD_EVENTS.DeltaUpdated: {
 			const delta = parseDelta(event.data);
 			sameCamp(state, event, delta.campId);
 			const entry = state.deltas.get(delta.deltaId);
-			if (!entry) corrupt(state, event, `delta.Updated for ${delta.deltaId} before delta.Opened`);
-			if (entry.status !== "open") corrupt(state, event, `delta ${delta.deltaId} is ${entry.status}`);
+			if (!entry)
+				corrupt(
+					state,
+					event,
+					`delta.Updated for ${delta.deltaId} before delta.Opened`,
+				);
+			if (entry.status !== "open")
+				corrupt(state, event, `delta ${delta.deltaId} is ${entry.status}`);
 			const deltas = new Map(state.deltas);
-			deltas.set(delta.deltaId, Object.freeze({ record: delta, status: "open" }));
+			deltas.set(
+				delta.deltaId,
+				Object.freeze({ record: delta, status: "open" }),
+			);
 			return Object.freeze({ ...next, deltas });
 		}
 		case CD_EVENTS.DeltaApplied:
 		case CD_EVENTS.DeltaRejected: {
 			const decision = parseDecision(event.data);
 			const entry = state.deltas.get(decision.deltaId);
-			if (!entry) corrupt(state, event, `${event.type} for ${decision.deltaId} before delta.Opened`);
-			if (entry.status !== "open") corrupt(state, event, `delta ${decision.deltaId} is already ${entry.status}`);
-			const status: DeltaStatus = event.type === CD_EVENTS.DeltaApplied ? "applied" : "rejected";
+			if (!entry)
+				corrupt(
+					state,
+					event,
+					`${event.type} for ${decision.deltaId} before delta.Opened`,
+				);
+			if (entry.status !== "open")
+				corrupt(
+					state,
+					event,
+					`delta ${decision.deltaId} is already ${entry.status}`,
+				);
+			const status: DeltaStatus =
+				event.type === CD_EVENTS.DeltaApplied ? "applied" : "rejected";
 			const deltas = new Map(state.deltas);
-			deltas.set(decision.deltaId, Object.freeze({ record: entry.record, status, decision }));
+			deltas.set(
+				decision.deltaId,
+				Object.freeze({ record: entry.record, status, decision }),
+			);
 			const { openDeltaId: _closed, ...rest } = next;
 			return Object.freeze({ ...rest, deltas });
 		}
@@ -114,14 +176,19 @@ export function applyCampSpecEvent(state: CampSpecState, event: EventEnvelope): 
 		}
 		case CD_EVENTS.CampManagementChanged: {
 			const management = managementOf(event.data);
-			return Object.freeze(management === undefined ? next : { ...next, management });
+			return Object.freeze(
+				management === undefined ? next : { ...next, management },
+			);
 		}
 		default:
 			return Object.freeze(next);
 	}
 }
 
-export function foldCampSpec(campId: string, events: Iterable<EventEnvelope>): CampSpecState {
+export function foldCampSpec(
+	campId: string,
+	events: Iterable<EventEnvelope>,
+): CampSpecState {
 	let state = emptyCampSpec(campId);
 	for (const event of events) state = applyCampSpecEvent(state, event);
 	return state;
@@ -135,14 +202,18 @@ const STATUS_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 function fenceOf(observation: ReconcileObservationRecord): bigint {
-	return /^(0|[1-9]\d*)$/.test(observation.fenceToken) ? BigInt(observation.fenceToken) : 0n;
+	return /^(0|[1-9]\d*)$/.test(observation.fenceToken)
+		? BigInt(observation.fenceToken)
+		: 0n;
 }
 
 /**
  * Latest observation on a status stream. An observation carrying a fence lower
  * than one already seen came from a superseded lease holder and is ignored (I4).
  */
-export function foldCampStatus(events: Iterable<EventEnvelope>): ReconcileObservationRecord | undefined {
+export function foldCampStatus(
+	events: Iterable<EventEnvelope>,
+): ReconcileObservationRecord | undefined {
 	let latest: ReconcileObservationRecord | undefined;
 	let fence = 0n;
 	for (const event of events) {
@@ -157,7 +228,9 @@ export function foldCampStatus(events: Iterable<EventEnvelope>): ReconcileObserv
 }
 
 /** Management carried on the inventory stream (WP22 writes it); last one wins. */
-export function foldManagement(events: Iterable<EventEnvelope>): CampManagement | undefined {
+export function foldManagement(
+	events: Iterable<EventEnvelope>,
+): CampManagement | undefined {
 	let management: CampManagement | undefined;
 	for (const event of events) {
 		const value = managementOf(event.data);
