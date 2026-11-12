@@ -33,3 +33,64 @@ message WorldStreamEvent {
   bool demo = 3; // provenance: true when fed by the deterministic simulator
   string json_payload = 4;
 }
+
+// ── CD read API under /v1/cd/ (plan 0024 WP12) ─────────────────────────────
+// Record payloads are owned by hobo.cd.v1 (packages/cd/data-models/cd.proto)
+// and travel as canonical protobuf JSON — referenced here, not duplicated.
+// The envelope matches the delivery feed's: {ok: true, value} | {ok: false,
+// reasons}. Contract: contracts/pacts/control-api-cd.pact.json, checked
+// against GET /v1/cd/openapi.json.
+
+// One refusal reason (same fields as hobo.cd.v1.ReasonRecord).
+message CdReason {
+  string code = 1;
+  string message = 2;
+  string remediation = 3;
+  string subject = 4;
+}
+
+message CdReadEnvelope {
+  bool ok = 1;
+  // JSON-encoded view (pipeline graph, Freight timeline, …) when ok.
+  string json_value = 2;
+  repeated CdReason reasons = 3;
+}
+
+// One SSE frame of GET /v1/cd/stream: `id: <position>`, `event: <type>`,
+// `data: <this message as JSON>`.
+message CdStreamFrame {
+  // Decimal EventPosition (64-bit safe); also the SSE id and Last-Event-ID.
+  string position = 1;
+  string stream_id = 2;
+  string type = 3;
+  string ts = 4;
+  // JSON-encoded event body as appended by @hobo/cd.
+  string json_data = 5;
+}
+
+// The current Freight of one Camp in a pipeline node.
+message CdCampCurrent {
+  string camp_id = 1;
+  string freight_id = 2;
+  string set_id = 3;
+}
+
+message CdPipelineNodeView {
+  string name = 1;
+  repeated string from_sources = 2;
+  repeated string from_nodes = 3;
+  string placement = 4;
+  string decision_id = 5;
+  repeated string qualified_camp_ids = 6;
+  string qualified_freight_id = 7;
+  repeated CdCampCurrent camps = 8;
+  // JSON-encoded hobo.cd.v1.FreightAvailabilityRecord list.
+  string json_available = 9;
+}
+
+message CdTimelineEntry {
+  string at = 1;
+  string kind = 2; // recorded | promotion | qualified | approved | yanked | retired
+  string camp_id = 3;
+  string json_detail = 4;
+}

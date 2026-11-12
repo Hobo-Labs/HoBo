@@ -46,8 +46,53 @@ import {
 	type WorldState,
 } from "@hobo/yard-world";
 
+/**
+ * A `/v1/cd/` request as the CD handler sees it (structurally identical to
+ * `FeedRequest` in `@hobo/cd`): header names lower-cased, path with query.
+ */
+export type CdHttpRequest = Readonly<{
+	method: string;
+	path: string;
+	headers: Readonly<Record<string, string>>;
+	body: Uint8Array;
+}>;
+
+/** A `/v1/cd/` response (structurally identical to `FeedResponse` in `@hobo/cd`). */
+export type CdHttpResponse = Readonly<{
+	status: number;
+	headers: Readonly<Record<string, string>>;
+	body: Uint8Array | AsyncIterable<Uint8Array>;
+}>;
+
+/**
+ * The CD surface the control API mounts under `/v1/cd/` (plan 0024 WP12):
+ * `createCdControlApi` from `@hobo/cd/service` (read API + SSE stream, falling
+ * through to the delivery feed). Typed structurally so the control API needs
+ * no build-time dependency on `@hobo/cd`; composition (WP18) passes it in.
+ */
+export interface CdHttpMount {
+	readonly pathPrefix: string;
+	handle(request: CdHttpRequest, signal: AbortSignal): Promise<CdHttpResponse>;
+	/** OpenAPI document of the mounted routes; its paths and schemas are merged into `/v1/openapi.json`. */
+	openapi?(): OpenApiDocument;
+}
+
+/** A JSON value inside an OpenAPI document. */
+export type OpenApiValue =
+	| null
+	| boolean
+	| number
+	| string
+	| readonly OpenApiValue[]
+	| OpenApiDocument;
+
+/** An OpenAPI document (or any JSON object inside one). */
+export type OpenApiDocument = { readonly [key: string]: OpenApiValue };
+
 export type ControlApiServerOptions = Readonly<{
 	hoboHome: string;
+	/** Mount the CD read API, SSE stream and delivery feed under `/v1/cd/`. */
+	cd?: CdHttpMount;
 	host?: string;
 	port?: number;
 	/** SSE poll interval ms (default 500). */
@@ -346,9 +391,23 @@ export async function createControlApiServer(
 				return;
 			}
 
-			// OpenAPI-ish surface description
+			// OpenAPI-ish surface description (plus the mounted CD routes).
 			if (req.method === "GET" && path === "/v1/openapi.json") {
-				sendJson(res, 200, controlApiOpenApi());
+				sendJson(
+					res,
+					200,
+					// SAFETY: both OpenAPI documents are JSON literals (no functions, no bigints).
+					mergeOpenApi(
+						controlApiOpenApi(),
+						options.cd?.openapi?.(),
+					) as JsonObject,
+				);
+				return;
+			}
+
+			// CD read API, SSE stream and delivery feed (plan 0024 WP12).
+			if (options.cd && path.startsWith(options.cd.pathPrefix)) {
+				await handleCd(options.cd, req, res);
 				return;
 			}
 
@@ -662,6 +721,123 @@ function opt<T extends object>(
 	return Object.fromEntries(
 		Object.entries(obj).filter(([, value]) => value !== undefined),
 	) as never;
+}
+
+/** Read a request body as raw bytes; undefined when it exceeds MAX_BODY_BYTES (the rest is drained, not buffered). */
+async function readRaw(req: IncomingMessage): Promise<Uint8Array | undefined> {
+	const chunks: Buffer[] = [];
+	let size = 0;
+	let tooLarge = false;
+	for await (const chunk of req) {
+		const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+		size += buf.length;
+		if (size > MAX_BODY_BYTES) tooLarge = true;
+		if (!tooLarge) chunks.push(buf);
+	}
+	return tooLarge ? undefined : new Uint8Array(Buffer.concat(chunks));
+}
+
+function lowerHeaders(req: IncomingMessage): CdHttpRequest["headers"] {
+	return Object.fromEntries(
+		Object.entries(req.headers).flatMap(([name, value]) =>
+			value === undefined
+				? []
+				: [
+						[
+							name.toLowerCase(),
+							Array.isArray(value) ? value.join(", ") : value,
+						],
+					],
+		),
+	);
+}
+
+function isBytes(body: CdHttpResponse["body"]): body is Uint8Array {
+	return body instanceof Uint8Array;
+}
+
+/** Adapt one Node request to the mounted CD handler and stream its response back. */
+async function handleCd(
+	mount: CdHttpMount,
+	req: IncomingMessage,
+	res: ServerResponse,
+): Promise<void> {
+	const body = await readRaw(req);
+	if (body === undefined) {
+		sendJson(res, 413, {
+			ok: false,
+			code: "payload-too-large",
+			message: `request body exceeds ${MAX_BODY_BYTES} bytes`,
+		});
+		return;
+	}
+	// A client that goes away aborts the handler (long-polls, SSE streams).
+	const controller = new AbortController();
+	res.on("close", () => controller.abort());
+	const response = await mount.handle(
+		{
+			method: req.method ?? "GET",
+			path: req.url ?? "/",
+			headers: lowerHeaders(req),
+			body,
+		},
+		controller.signal,
+	);
+	res.writeHead(response.status, {
+		"access-control-allow-origin": "*",
+		...response.headers,
+	});
+	if (isBytes(response.body)) {
+		res.end(Buffer.from(response.body));
+		return;
+	}
+	res.flushHeaders();
+	try {
+		for await (const chunk of response.body) {
+			if (controller.signal.aborted) break;
+			res.write(Buffer.from(chunk));
+		}
+	} catch {
+		// Headers are already sent, so a producer failure can only end the
+		// stream; the client resumes with Last-Event-ID.
+	} finally {
+		res.end();
+	}
+}
+
+const EMPTY_DOCUMENT: OpenApiDocument = Object.freeze({});
+
+function isDocument(value: OpenApiValue | undefined): value is OpenApiDocument {
+	return (
+		value !== null &&
+		value !== undefined &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	);
+}
+
+function objectAt(doc: OpenApiDocument, key: string): OpenApiDocument {
+	const value = doc[key];
+	return isDocument(value) ? value : EMPTY_DOCUMENT;
+}
+
+/** Merge a mounted surface's paths and component schemas into the control API document. */
+function mergeOpenApi(
+	base: OpenApiDocument,
+	mounted: OpenApiDocument | undefined,
+) {
+	if (!mounted) return base;
+	const schemas = objectAt(objectAt(mounted, "components"), "schemas");
+	return {
+		...base,
+		paths: { ...objectAt(base, "paths"), ...objectAt(mounted, "paths") },
+		components: {
+			...objectAt(base, "components"),
+			schemas: {
+				...objectAt(objectAt(base, "components"), "schemas"),
+				...schemas,
+			},
+		},
+	};
 }
 
 function controlApiOpenApi() {
