@@ -440,12 +440,22 @@ hobo ci secret-store connect --cwd packages/ci-vercel \
 hobo ci secret-store verify --cwd packages/ci-vercel --json
 ```
 
+In the relay deploy workflow, that verify command must finish before the
+summary step runs (`|| status=$?` under bash `-e`); otherwise a non-zero exit
+hides the JSON. The report script fails closed when stdout has no JSON envelope.
+The workflow calls
+`scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines,
+emit `::error::`, and never echo JWTs (details and messages pass JWT-shaped
+redaction). On Infisical OIDC failure, verify appends `oidc_sub` and
+`oidc_aud` from the same memoized workload JWT used for sign-in (GitHub OIDC
+audience `https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
+
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
 project is optional and empty by default) and refuses to replace one
 without `--yes`. `verify` reports `pass`, `fail` or `not-run` by identity
 name: `hobo-ci-writer` inside a GitHub Actions job (GitHub OIDC sign-in, then
-a revoke; it cannot read), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
+a revoke; role shape not asserted), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
 present (secret names only). The deploy workflow runs it as *Verify the
 secret store connection*.
 

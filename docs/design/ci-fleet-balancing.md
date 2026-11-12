@@ -156,7 +156,7 @@ The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: free launch slots on
 the box and on the rest of the mesh, and when the record was written. The
 **Route runners** job does not read it, or this table. Judging raw capacity in
 a workflow repeats, outside the relay, a decision only the relay can make
-([finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md)).
+([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
 It asks the relay instead for a fleet verdict: which fleet labels new work
 should stay off right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)).
 

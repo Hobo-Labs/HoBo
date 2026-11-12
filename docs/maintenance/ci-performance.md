@@ -2,6 +2,15 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **The release contract reuses the worker image.** `release-hobo.yml` job
+  `release-contract` resolves `hobo-ci-worker` through
+  `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
+  runner's own content-keyed image, else a GHCR pull with the job token
+  (`packages: read`), and `build.sh` only when neither has it. The
+  `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
+  job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
+  legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
+  removes its own `<image>:candidate` when it finishes.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
@@ -31,6 +40,14 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
   Trunk admission now prefers `merge_group` over `push` at the same rank so merge-queue shards are not
   stuck behind a long main push gate when trunk slots are scarce (finding 83).
+  The worker daemon picks the git mirror root with `resolveGitMirrorRoot` (`HOBO_CI_GIT_MIRROR_ROOT`
+  when set, falling back to `~/.cache/hobo-ci/git` when the preferred root is not writable). A lazy
+  mirror clone whose owner directory still cannot be created under that root (**EACCES** on a root that
+  exists but is not writable) does not throw: it is a mirror **miss** with the reason, and the job
+  falls back to a plain checkout.
+  The runner-image job's script-free `pnpm install` (root dependencies for shell lint) goes through
+  `scripts/ci/pnpm-install.mts` like every other workflow install, so a cold store stalls it for the
+  wrapper's bound (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) and a retry, not the job's limit.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
@@ -618,6 +635,12 @@ checks failed on main before anyone saw them:
   checkout that sets `clean: false` twice: two branches that each add the line to the same checkout
   merge without a git conflict into a duplicate YAML key, which GitHub cannot parse, so the workflow
   does not run at all.
+- **An enabled workflow the lint does not list.** #1688 added `fleet-enrollment.yml` (the fleet
+  enrollment scorecard eval) without adding it to the lint's approved set, so `actions:lint` and the
+  `lint-actions-runner.test.ts` repository checks failed on main and refused every commit hook that
+  ran them. It is now listed in `activeCiFiles`, and its two jobs follow the rules the lint then
+  applies: the trunk label expression (the workflow can be dispatched) and `clean: false` on the box
+  checkout.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads

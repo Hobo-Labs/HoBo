@@ -10,7 +10,7 @@ const workflow = readFileSync(
 
 describe("main full gate workspace sharding", () => {
 	it("checks out what the route script loads, and no longer the capacity module it once read", () => {
-		// The route script stopped loading `fleet/capacity.ts` (finding 143);
+		// The route script stopped loading `fleet/capacity.ts` (finding 146);
 		// `route-runner.test.ts` checks every routed workflow against what the
 		// script loads today.
 		const routeStart = workflow.indexOf("  route:");
