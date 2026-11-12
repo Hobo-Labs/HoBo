@@ -44,9 +44,14 @@ operator  revoke(id)                                 governed reconciler.revoke 
 - **Replay store:** the journal's per-stream idempotency key is the jti record
   (atomic, shared by replicas). Proofs are valid for ±60 s, so streams are
   bucketed by `iat` (2 × skew) and old buckets are compaction-eligible.
-- **Read model:** the in-memory fold per reconciler is a cache rebuilt from the
-  journal; no snapshot is needed (a reconciler stream has a handful of events
-  plus one per SVID).
+- **Commands and events:** `issueToken`, `enroll`, `approveKey`, `accept`,
+  `activate`, `refresh`, `revoke` are commands; each appends the events above
+  to the durable event store (`DurableEventStore`, SQLite or Postgres), which
+  is the only record.
+- **Projection / read store:** the in-memory fold per reconciler is a
+  materialized view rebuilt from the journal and caught up on every read; it
+  is the read store `verify` uses. No snapshot is needed (a reconciler stream
+  has a handful of events plus one per SVID).
 - **Parse, don't validate:** `parsePublicJwk` → `PublicJwk` (EC P-256 or OKP
   Ed25519, never private material), `jwkThumbprint` → `JwkThumbprint`,
   `verifyDpopProof` → `VerifiedDpop`, `parseStationOrigin` → `StationOrigin`,
