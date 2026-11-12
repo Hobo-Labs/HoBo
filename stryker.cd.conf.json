@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation lane for @hobo/cd and @hobo/resolver-components (plan 0024 WP20). Scoped, like the other lanes, to the decision modules where a silently-passing test is most dangerous: placement and fan-out scheduling (I18, I20), the Mann-Whitney verdict (D9), lease fencing (I4), DPoP proof and jti replay checks (WP11), the Freight manifest boundary (D2, I9), and the resolver-component egress allowlist and secret scanner (D6, I9). Run with `pnpm exec stryker run stryker.cd.conf.json` after the plan 0024 work packages merge; until then the mutated files do not exist on a single WP branch.",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.mutation.cd.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "packages/cd/src/placement/decide.ts",
+    "packages/cd/src/fanout/schedule.ts",
+    "packages/cd/src/fanout/classify.ts",
+    "packages/cd/src/verification/stats.ts",
+    "packages/cd/src/verification/evaluate.ts",
+    "packages/cd/src/reconcile/transport.ts",
+    "packages/cd/src/agent/dpop-verifier.ts",
+    "packages/cd/src/agent/replay.ts",
+    "packages/cd/src/freight/manifest.ts",
+    "packages/resolver-components/src/egress.ts",
+    "packages/resolver-components/src/secrets.ts",
+    "packages/resolver-components/src/manifest.ts"
+  ],
+  "ignorePatterns": [
+    "examples/wasp-opensaas/app",
+    "external",
+    "site",
+    "src/draft",
+    "evals",
+    ".stryker-tmp",
+    ".coverage",
+    "**/dist"
+  ],
+  "reporters": [
+    "clear-text",
+    "progress"
+  ],
+  "clearTextReporter": {
+    "maxTestsToLog": 0
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 60
+  },
+  "timeoutMS": 20000,
+  "concurrency": 4,
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "_baseline": "Unmeasured: the mutated modules land with their work packages (WP7, WP9, WP11, WP1, WP22, WP23, WP8). break starts at the repo floor of 60, as @hobo/core did; the coordinator records the first measured score here and raises break toward 80."
+}

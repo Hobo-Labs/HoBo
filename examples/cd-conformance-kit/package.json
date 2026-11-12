@@ -9,7 +9,7 @@
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
 		"test:chaos": "vitest run test/cd-chaos.test.ts",
-		"test:load": "HOBO_CD_LOAD=1 vitest run test/cd-fanout-load.test.ts",
+		"test:load": "vitest run test/cd-fanout-load.test.ts",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check --no-errors-on-unmatched ."
 	},
