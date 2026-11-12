@@ -132,6 +132,9 @@ unindexed new finding files as notices.
 - [Finding 119: main trunk fleet pickup and admission](./findings/0119-main-trunk-fleet-pickup-and-admission.md)
 - [Finding 120: isolated container workflow timeout floor](./findings/0120-isolated-container-workflow-timeout-floor.md)
 - [Finding 121: release publish stalled push hit job limit](./findings/0121-release-publish-stalled-push-hit-job-limit.md)
+- [Finding 122: CPU admission load double-count](./findings/0122-cpu-admission-load-double-count.md)
+- [Finding 124: admission telemetry memory headroom](./findings/0124-admission-telemetry-memory-headroom.md)
+- [Finding 125: release pages affected build without merge base](./findings/0125-release-pages-affected-build-without-merge-base.md)
 <!-- findings-index:end -->
 
 ## Data
