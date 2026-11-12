@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -31,6 +31,15 @@ import { SDK_PACKAGES } from "../ci/stage-sdk-artifacts.mts";
 import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
+
+/** Documents the deploy context leaves out by file name. */
+const NAMED_DOCUMENTS = new Set([
+	"README.md",
+	"readme.md",
+	"CHANGELOG.md",
+	"HISTORY.md",
+	"DESIGN.md",
+]);
 
 const WorkspaceManifest = z.object({
 	name: z.string().optional(),
@@ -389,7 +398,10 @@ describe("release OCI app staging", () => {
 				"app/**/*.map",
 				"app/**/test/**",
 				"app/**/__tests__/**",
-				"app/**/*.md",
+				"app/**/README.md",
+				"app/**/readme.md",
+				"app/**/CHANGELOG.md",
+				"app/**/HISTORY.md",
 				"app/**/DESIGN.md",
 				"",
 			].join("\n"),
@@ -514,8 +526,25 @@ describe("release OCI app staging", () => {
 			"app/node_modules/x/src/__tests__/a.js",
 			"app/README.md",
 			"app/node_modules/@hobo/core/README.md",
+			"app/node_modules/ms/readme.md",
+			"app/node_modules/zod/CHANGELOG.md",
 		])
 			expect(releaseOciDockerignoreExcludes(rules, noise), noise).toBe(true);
+	});
+
+	it("keeps third-party licence texts in a deploy context", () => {
+		// Their licences ask for the text to travel with the code, and many
+		// packages keep it in a Markdown file.
+		const rules = releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-cli"]);
+		for (const text of [
+			"app/LICENSE",
+			"app/node_modules/esbuild/LICENSE.md",
+			"app/node_modules/ms/license.md",
+			"app/node_modules/.pnpm/jose@6.0.0/node_modules/jose/LICENSE.md",
+			"app/node_modules/x/NOTICE.md",
+			"app/node_modules/x/ThirdPartyNotices.md",
+		])
+			expect(releaseOciDockerignoreExcludes(rules, text), text).toBe(false);
 	});
 
 	it("keeps every data file a workspace package ships in a deploy context", () => {
@@ -536,10 +565,11 @@ describe("release OCI app staging", () => {
 			);
 			if (!name) continue;
 			for (const entry of files) {
-				// Build output is covered above; docs are left out on purpose.
+				// Build output is covered above; a document the rules name by its
+				// file name is left out on purpose.
 				if (entry === "dist" || !existsSync(join(packageRoot, entry))) continue;
 				for (const file of walk(join(packageRoot, entry))) {
-					if (file.endsWith(".md")) continue;
+					if (NAMED_DOCUMENTS.has(basename(file))) continue;
 					const shipped = relative(packageRoot, file).replaceAll("\\", "/");
 					for (const base of [
 						`app/node_modules/${name}`,

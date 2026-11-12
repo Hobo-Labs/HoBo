@@ -474,16 +474,21 @@ function stageSite(
 }
 
 /**
- * Build noise left out of a deploy image's context. Directory and extension
- * rules only: a rule on a file-name infix (`*.test.*`, `*.spec.*`) also drops
- * data a package ships to be read at run time, such as the `app.test.ts.tpl`
- * starter templates in `@hobo/patterns`.
+ * Build noise left out of a deploy image's context: source maps, test
+ * directories and named documents. Two wider rules are left out on purpose.
+ * A file-name infix (`*.test.*`, `*.spec.*`) also drops data a package ships
+ * to be read at run time, such as the `app.test.ts.tpl` starter templates in
+ * `@hobo/patterns`. Every `*.md` also drops the `LICENSE.md` texts that have
+ * to travel with the third-party code in the image.
  */
 const DEPLOY_CONTEXT_NOISE = [
 	"app/**/*.map",
 	"app/**/test/**",
 	"app/**/__tests__/**",
-	"app/**/*.md",
+	"app/**/README.md",
+	"app/**/readme.md",
+	"app/**/CHANGELOG.md",
+	"app/**/HISTORY.md",
 	"app/**/DESIGN.md",
 ] as const;
 

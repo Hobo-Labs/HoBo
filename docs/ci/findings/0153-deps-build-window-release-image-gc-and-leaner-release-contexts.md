@@ -33,13 +33,13 @@ The branch's routed publisher, its `publish-overflow` job on a GitHub-hosted run
    - A caller that is in a container it cannot identify waits `HOBO_CI_DEPS_BUILD_WAIT_UNKNOWN_SELF_MS` (2 minutes) on job containers and then proceeds, logging that one of them may be itself. Low headroom never proceeds.
 3. **Recorded peaks.** After a build, `scripts/lib/deps-build-headroom.mts --record` keeps the largest inode and byte drop seen in `$HOBO_HOME/ci/deps-build-telemetry.json` (`HOBO_CI_DEPS_BUILD_TELEMETRY_PATH`). The directory has to exist already: a write that fails is ignored and the build carries on. The build window raises its floor when a recorded peak is above the measured one; `build-deps.sh` still takes its floor from main's defaults.
 4. **Release-image GC.** `selectWorkerImagesForDeletion` also removes superseded `ghcr.io/hobo-labs/hobo/hobo-*` tags, keeping the newest per image name. It never removes a `:candidate` tag, an image a container uses, an image a candidate tag names, or an image younger than one hour, so a release that has built and tagged an image and not yet pushed it keeps both names.
-5. **Leaner release contexts.** A deploy image's `.dockerignore` leaves source maps, `test` and `__tests__` directories and Markdown out of the context. File-name rules such as `*.test.*` are not used: they dropped the `app.test.ts.tpl` starter templates `hobo` scaffolds from.
+5. **Leaner release contexts.** A deploy image's `.dockerignore` leaves source maps, `test` and `__tests__` directories and named documents (`README.md`, `CHANGELOG.md`, `HISTORY.md`, `DESIGN.md`) out of the context. Two wider rules are not used: `*.test.*` dropped the `app.test.ts.tpl` starter templates `hobo` scaffolds from, and `*.md` dropped the `LICENSE.md` texts of 38 third-party packages in the `hobo-cli` image.
 6. **A bounded builder cache after release builds.** `build-release-oci-image.mts` prunes with `--keep-storage` (`HOBO_RELEASE_BUILDER_CACHE_CAP`, default 2GB) instead of emptying the cache.
 
 ## Verification
 
 - `scripts/test/deps-build-window.test.ts`: the caller's own container is left out, another job's container counts, an unidentified caller proceeds after its bound.
 - `packages/ci-gh-actions/test/image-gc.test.ts`: candidate, in-use and young release images are kept.
-- `scripts/test/stage-release-oci-app.test.ts`: every path a release Dockerfile copies, and every data file a workspace package ships, stays in the context.
+- `scripts/test/stage-release-oci-app.test.ts`: every path a release Dockerfile copies, every data file a workspace package ships and every licence text stays in the context.
 - `scripts/test/ci-deps-image-contract.test.ts`: eviction runs before the headroom check; the build window is wired into both paths.
 - `packages/ci-gh-actions/test/deps-build-budget.test.ts`: the measured reserve and a recorded peak above it.
