@@ -28,7 +28,10 @@ import {
 } from "./admission-order.js";
 import type { FleetCapacityWitness } from "./fleet-absorb.js";
 import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
-import type { FleetCapacityPublisher } from "./fleet-capacity.js";
+import type {
+	FleetCapacityPublishInput,
+	FleetCapacityPublisher,
+} from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
@@ -316,8 +319,7 @@ export class HostedRelay {
 			 * relay balances nothing ahead of the queue and every job stays on its
 			 * hobo label.
 			 */
-			fleetRoutes?: Pick<FleetRoutePublisher, "publish"> &
-				Partial<Pick<FleetRoutePublisher, "publishTrunkHostedOverflow">>;
+			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
@@ -1792,29 +1794,6 @@ export class HostedRelay {
 			postReleaseActive,
 			fleetWitness,
 		);
-		const overflow = this.options.headroomTrunkOverflow;
-		if (overflow) {
-			try {
-				const overflowed = await overflow.overflowTrunkJobsWaitingForHeadroom(
-					this.options.store,
-					this.trunkWaits,
-					reservationRevision,
-					this.now(),
-					fleetWitness,
-				);
-				if (overflowed > 0) {
-					console.error(
-						JSON.stringify({
-							event: "hobo_ci_trunk_headroom_overflow_batch",
-							count: overflowed,
-							nonLocalFreeSlots: this.fleetPeerSlots(fleetWitness),
-						}),
-					);
-				}
-			} catch {
-				/* Overflow must not stall admission for jobs still on the box. */
-			}
-		}
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
 				(lease) => lease.state === "reserved",
@@ -2034,7 +2013,11 @@ export class HostedRelay {
 	private async publishFleetCapacity(): Promise<void> {
 		const publisher = this.options.fleetCapacity;
 		if (!publisher) return;
-		let snapshot: Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>;
+		let snapshot: Readonly<{
+			hoboFreeSlots: number;
+			arcFreeSlots?: number;
+			trunkMemoryAdmit?: boolean;
+		}>;
 		try {
 			snapshot = await publisher.snapshot();
 		} catch {
@@ -2048,13 +2031,17 @@ export class HostedRelay {
 					repository: connection.repository,
 					hoboFreeSlots: snapshot.hoboFreeSlots,
 					at,
-				};
+				} satisfies FleetCapacityPublishInput;
+				const withTrunk =
+					snapshot.trunkMemoryAdmit === undefined
+						? base
+						: { ...base, trunkMemoryAdmit: snapshot.trunkMemoryAdmit };
 				if (snapshot.arcFreeSlots === undefined) {
-					await publisher.publish(base);
+					await publisher.publish(withTrunk);
 					continue;
 				}
 				await publisher.publish({
-					...base,
+					...withTrunk,
 					arcFreeSlots: snapshot.arcFreeSlots,
 				});
 			} catch {

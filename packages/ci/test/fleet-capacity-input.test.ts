@@ -5,6 +5,7 @@ import {
 	fleetCapacityVariableValue,
 	mainWorkspaceParallelCap,
 	parseFleetCapacityPublished,
+	resolveMainWorkspaceShardRunner,
 } from "../src/fleet/capacity-input.js";
 
 describe("fleet capacity input", () => {
@@ -25,6 +26,19 @@ describe("fleet capacity input", () => {
 		const parsed = parseFleetCapacityPublished(text);
 		expect(parsed?.admittedParallel).toBe(3);
 		expect(mainWorkspaceParallelCap(parsed)).toBe(3);
+	});
+
+	it("resolves main workspace shard runner from capacity", () => {
+		expect(
+			resolveMainWorkspaceShardRunner(
+				fleetCapacitySnapshot(1, 2, undefined, false),
+			),
+		).toBe("hobo-trunk");
+		expect(
+			resolveMainWorkspaceShardRunner(
+				fleetCapacitySnapshot(1, 0, undefined, false),
+			),
+		).toBe("hobo");
 	});
 
 	it("falls back when the variable is missing or invalid", () => {

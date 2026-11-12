@@ -30,7 +30,6 @@ import {
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
-	createHeadroomTrunkOverflow,
 	createHeldJobPruner,
 	createHostedRelayRuntime,
 	createHostHealthMonitor,
@@ -839,13 +838,23 @@ try {
 	const localFleetCapacitySnapshot = async () => {
 		const active = await store.activeLeases();
 		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
+		const availableMb = readAvailableMemoryMb();
+		const trunkMemoryAdmit = memoryAdmitHeadroom(
+			availableMb,
+			memoryConfig.classes.heavy,
+			memoryConfig.reserveMb,
+			capacityVolatilityMb,
+		);
 		const meshCap = await mesh?.observe();
-		if (!meshCap) return { hoboFreeSlots };
+		if (!meshCap) {
+			return { hoboFreeSlots, trunkMemoryAdmit };
+		}
 		const meshFree = meshCap.freeSlots;
 		return {
 			hoboFreeSlots,
 			meshFreeSlots: meshFree,
 			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
+			trunkMemoryAdmit,
 		};
 	};
 	const headroomFleetDeferMs = Number(
@@ -857,31 +866,6 @@ try {
 		!Number.isInteger(headroomFleetDeferMs)
 	)
 		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS");
-	const trunkHostedOverflowMs = Number(
-		process.env.HOBO_CI_TRUNK_HOSTED_OVERFLOW_MS ?? "90000",
-	);
-	if (
-		!Number.isFinite(trunkHostedOverflowMs) ||
-		trunkHostedOverflowMs < 0 ||
-		!Number.isInteger(trunkHostedOverflowMs)
-	)
-		throw new Error("invalid HOBO_CI_TRUNK_HOSTED_OVERFLOW_MS");
-	const headroomTrunkOverflow =
-		publishFleetRoutes && fleetRoutes
-			? createHeadroomTrunkOverflow({
-					github,
-					memoryAdmission,
-					availableMemoryMb: readAvailableMemoryMb,
-					volatilityMb: capacityVolatilityMb,
-					overflowAfterMs: trunkHostedOverflowMs,
-					beforeOverflowRerun: async (job) =>
-						fleetRoutes.publishTrunkHostedOverflow({
-							installationId: job.installationId,
-							repository: job.repository,
-						}),
-					log: (event, fields) => log(event, fields),
-				})
-			: undefined;
 	const unlaunchedReserveMs = Number(
 		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
 	);
@@ -930,7 +914,6 @@ try {
 		storageJobReserve,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
-		headroomTrunkOverflow,
 		headroomFleetDeferMs,
 		unlaunchedReservationRelease: {
 			boundMs: unlaunchedReserveMs,

@@ -24,6 +24,7 @@ export type FleetCapacityPublishInput = Readonly<{
 	repository: string;
 	hoboFreeSlots: number;
 	arcFreeSlots?: number;
+	trunkMemoryAdmit?: boolean;
 	/** Authoritative current time, RFC 3339 UTC. */
 	at: string;
 }>;
@@ -85,6 +86,7 @@ export function createFleetCapacityPublisher(options: {
 			input.hoboFreeSlots,
 			input.arcFreeSlots ?? 0,
 			input.at,
+			input.trunkMemoryAdmit,
 		);
 		const value = fleetCapacityVariableValue(snapshot);
 		const last = published.get(input.repository);

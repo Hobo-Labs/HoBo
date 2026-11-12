@@ -76,9 +76,9 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
-/** Trunk label from `HOBO_CI_FLEET_ROUTES` (overflow reruns may set `trunk` → GitHub-hosted). */
-const TRUNK_FLEET_ROUTES_RUNS_ON =
-	'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && (fromJSON(vars.HOBO_CI_FLEET_ROUTES || \'{"trunk":"hobo-trunk","pr":"hobo","fork":"hobo"}\').trunk) || \'hobo\' }}';
+/** Main workspace shards: plan-time `shard_runner` (fleet capacity), default trunk. */
+const MAIN_WORKSPACE_SHARD_RUNS_ON =
+	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && (needs.main-gate-plan.outputs.shard_runner || 'hobo-trunk') || 'hobo' }}";
 
 /**
  * What a routed job asks for: the label the `route` job chose (the fleet, an
@@ -492,7 +492,7 @@ function lintWorkflowYaml(
 			runsOn !== undefined &&
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
-			runsOn !== TRUNK_FLEET_ROUTES_RUNS_ON &&
+			runsOn !== MAIN_WORKSPACE_SHARD_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			!npmOidcHosted &&
 			!alwaysHosted
@@ -509,7 +509,7 @@ function lintWorkflowYaml(
 		if (
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
-			runsOn === TRUNK_FLEET_ROUTES_RUNS_ON ||
+			runsOn === MAIN_WORKSPACE_SHARD_RUNS_ON ||
 			runsOn === ROUTED_RUNS_ON
 		) {
 			for (const [index, line] of block.entries()) {
@@ -552,10 +552,7 @@ function lintWorkflowYaml(
 					`${file}:${start + 1}: trunk-label-routing: push/merge_group/workflow_dispatch-capable jobs must use the trunk label expression`,
 				);
 			}
-			if (
-				prOnly &&
-				(runsOn === TRUNK_RUNS_ON || runsOn === TRUNK_FLEET_ROUTES_RUNS_ON)
-			) {
+			if (prOnly && runsOn === TRUNK_RUNS_ON) {
 				errors.push(
 					`${file}:${start + 1}: trunk-label-routing: PR-only jobs must use plain hobo`,
 				);
@@ -601,7 +598,6 @@ function lintWorkflowYaml(
 		activeCiFiles.has(file) &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
-		!text.includes(TRUNK_FLEET_ROUTES_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON)
 	) {
 		errors.push(

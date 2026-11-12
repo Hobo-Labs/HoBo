@@ -26,6 +26,8 @@ export {
 	fleetCapacityVariableValue,
 	mainWorkspaceParallelCap,
 	parseFleetCapacityPublished,
+	resolveMainWorkspaceShardRunner,
+	type MainWorkspaceShardRunner,
 } from "./capacity-input.js";
 export {
 	FLEET_PROVIDER_KINDS,

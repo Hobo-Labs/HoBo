@@ -11,6 +11,12 @@ import {
 	parseUnknownJson,
 } from "../lib/pins-json.ts";
 
+const tagOf = Object.prototype.toString;
+
+function isJsonBoolean(value: Json | undefined): value is boolean {
+	return tagOf.call(value) === "[object Boolean]";
+}
+
 /** Repository variable the worker publishes capacity snapshots to. */
 export const FLEET_CAPACITY_VARIABLE = "HOBO_CI_FLEET_CAPACITY";
 
@@ -28,8 +34,11 @@ export type FleetCapacityPublished = Readonly<{
 	admittedParallel: number;
 	hobo?: FleetCapacityMember;
 	arc?: FleetCapacityMember;
+	trunkMemoryAdmit?: boolean;
 	publishedAt?: string;
 }>;
+
+export type MainWorkspaceShardRunner = "hobo-trunk" | "hobo";
 
 export type LoadFleetCapacityOptions = Readonly<{
 	repository?: string;
@@ -51,18 +60,22 @@ function fleetCapacitySnapshot(
 	hoboFreeSlots: number,
 	arcFreeSlots = 0,
 	publishedAt?: string,
+	trunkMemoryAdmit?: boolean,
 ): FleetCapacityPublished {
 	const hobo = Math.max(0, Math.floor(hoboFreeSlots));
 	const arc = Math.max(0, Math.floor(arcFreeSlots));
 	const admittedParallel = Math.min(MAX_PARALLEL_CAP, hobo + arc);
-	const snapshot: FleetCapacityPublished = {
+	let snapshot: FleetCapacityPublished = {
 		version: 1,
 		admittedParallel,
 		hobo: { freeSlots: hobo },
 		arc: { freeSlots: arc },
 	};
+	if (trunkMemoryAdmit !== undefined) {
+		snapshot = { ...snapshot, trunkMemoryAdmit };
+	}
 	if (publishedAt !== undefined) {
-		return { ...snapshot, publishedAt };
+		snapshot = { ...snapshot, publishedAt };
 	}
 	return snapshot;
 }
@@ -92,12 +105,17 @@ export function parseFleetCapacityPublished(
 	if (publishedAt !== undefined && !isString(publishedAt)) {
 		return undefined;
 	}
+	const trunkMemoryAdmit = parsed.trunkMemoryAdmit;
+	if (trunkMemoryAdmit !== undefined && !isJsonBoolean(trunkMemoryAdmit)) {
+		return undefined;
+	}
 	const extraKeys = Object.keys(parsed).filter(
 		(key) =>
 			key !== "version" &&
 			key !== "admittedParallel" &&
 			key !== "hobo" &&
 			key !== "arc" &&
+			key !== "trunkMemoryAdmit" &&
 			key !== "publishedAt",
 	);
 	if (extraKeys.length > 0) return undefined;
@@ -109,6 +127,7 @@ export function parseFleetCapacityPublished(
 			hobo?.freeSlots ?? 0,
 			arc?.freeSlots ?? 0,
 			publishedAt,
+			trunkMemoryAdmit,
 		);
 		return { ...snapshot, admittedParallel: admittedRaw };
 	}
@@ -117,7 +136,23 @@ export function parseFleetCapacityPublished(
 	const arcSlots = arc?.freeSlots ?? 0;
 	const admitted = Math.min(MAX_PARALLEL_CAP, hoboSlots + arcSlots);
 	if (admitted === 0 && hoboSlots === 0 && arcSlots === 0) return undefined;
-	return fleetCapacitySnapshot(hoboSlots, arcSlots, publishedAt);
+	return fleetCapacitySnapshot(
+		hoboSlots,
+		arcSlots,
+		publishedAt,
+		trunkMemoryAdmit,
+	);
+}
+
+export function resolveMainWorkspaceShardRunner(
+	snapshot: FleetCapacityPublished | undefined,
+	fallback: MainWorkspaceShardRunner = "hobo-trunk",
+): MainWorkspaceShardRunner {
+	if (!snapshot) return fallback;
+	const arcFree = snapshot.arc?.freeSlots ?? 0;
+	if (arcFree > 0) return "hobo-trunk";
+	if (snapshot.trunkMemoryAdmit === false) return "hobo";
+	return "hobo-trunk";
 }
 
 /**

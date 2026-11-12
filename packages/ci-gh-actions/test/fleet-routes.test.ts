@@ -56,7 +56,6 @@ function github(
 	options: {
 		private?: boolean;
 		variableStatus?: number;
-		variableBody?: { value: string };
 		createStatus?: number;
 		repositoryStatus?: number;
 	} = {},
@@ -74,14 +73,6 @@ function github(
 					},
 					{ status: options.repositoryStatus ?? 200 },
 				);
-			if (
-				path ===
-					`/repos/${REPOSITORY}/actions/variables/HOBO_CI_FLEET_ROUTES` &&
-				method === "GET"
-			)
-				return Response.json(options.variableBody ?? { value: "" }, {
-					status: 200,
-				});
 			if (method === "PATCH")
 				return new Response(null, { status: options.variableStatus ?? 204 });
 			if (method === "POST")
@@ -221,33 +212,6 @@ describe("fleet route publisher", () => {
 			(await publisher.publish(input(0, "2026-11-10T00:10:00Z")))?.outcome,
 		).toBe("failed");
 		expect(events).toHaveLength(2);
-	});
-
-	it("forces trunk onto GitHub-hosted for overflow reruns", async () => {
-		const api = github({
-			variableBody: {
-				value: '{"fork":"hobo","pr":"hobo","trunk":"hobo-trunk"}',
-			},
-		});
-		const events: Parameters<FleetRouteLog>[1][] = [];
-		const publisher = createFleetRoutePublisher({
-			github: api.transport,
-			log: (_event, fields) => events.push({ ...fields }),
-		});
-		expect(
-			await publisher.publishTrunkHostedOverflow({
-				installationId: 7,
-				repository: REPOSITORY,
-			}),
-		).toBe(true);
-		expect(api.calls.at(-1)).toMatchObject({
-			method: "PATCH",
-			body: JSON.stringify({
-				name: "HOBO_CI_FLEET_ROUTES",
-				value: '{"fork":"hobo","pr":"hobo","trunk":"ubuntu-24.04"}',
-			}),
-		});
-		expect(events.at(-1)?.overflow).toBe(true);
 	});
 
 	it("puts every class back on its hobo label when asked to reset", async () => {

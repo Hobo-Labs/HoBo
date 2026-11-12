@@ -22,7 +22,11 @@ import {
 	readRepo,
 	scaleWorkspaceDurations,
 } from "./dependent-tests.mts";
-import { resolveMainWorkspaceParallelCap } from "./load-fleet-capacity.mts";
+import {
+	fetchFleetCapacityVariable,
+	resolveMainWorkspaceParallelCap,
+	resolveMainWorkspaceShardRunner,
+} from "./load-fleet-capacity.mts";
 import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
@@ -147,10 +151,10 @@ async function main(): Promise<void> {
 					repo,
 					base ? cliRootFileReader(base) : undefined,
 				);
-	const parallelCap = await resolveMainWorkspaceParallelCap({
-		repository,
-		token,
-	});
+	const fleetOptions = { repository, token };
+	const fleetCapacity = await fetchFleetCapacityVariable(fleetOptions);
+	const shardRunner = resolveMainWorkspaceShardRunner(fleetCapacity);
+	const parallelCap = await resolveMainWorkspaceParallelCap(fleetOptions);
 	const targetSeconds = Number(
 		process.env.MAIN_SHARD_TARGET_SECONDS ??
 			String(MAIN_WORKSPACE_SHARD_TARGET_SECONDS),
@@ -180,13 +184,14 @@ async function main(): Promise<void> {
 	const count = shardPlan.count;
 	const shards = `[${Array.from({ length: count }, (_, index) => index).join(", ")}]`;
 	console.error(
-		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
+		`main gate plan: scope=${scope}, tests=${tests}, parallelCap=${parallelCap}, shardRunner=${shardRunner}, peakShardSeconds=${shardPlan.peakShardSeconds}, shards=${shards}`,
 	);
 	const outputs = {
 		main_base: base,
 		main_tests: tests,
 		main_scope: scope,
 		shards,
+		shard_runner: shardRunner,
 	};
 	for (const [name, value] of Object.entries(outputs)) setOutput(name, value);
 	if (head) savePlanCache(head, outputs);

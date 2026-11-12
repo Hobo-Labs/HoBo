@@ -15,7 +15,6 @@
 
 import {
 	type Account,
-	DEFAULT_GITHUB_MACHINE_TYPE,
 	FLEET_ROUTES_VARIABLE,
 	type FleetRouteTable,
 	fleetAccountExposure,
@@ -60,10 +59,6 @@ const Repository = z.object({
 	private: z.boolean(),
 	owner: z.object({ type: z.string() }),
 });
-
-const FleetRoutesVariableBody = z.object({ value: z.string().optional() });
-
-const StoredFleetRoutes = z.record(z.string().min(1), z.string().min(1));
 
 const FACTS_TTL_MS = 10 * 60_000;
 const NONE: ReadonlySet<string> = new Set();
@@ -314,82 +309,7 @@ export function createFleetRoutePublisher(options: {
 		}
 	}
 
-	/**
-	 * Forces trunk onto GitHub-hosted before a headroom overflow rerun so new
-	 * jobs read `ubuntu-24.04` instead of waiting on hobo-trunk again.
-	 */
-	async function publishTrunkHostedOverflow(target: {
-		installationId: number;
-		repository: string;
-	}): Promise<boolean> {
-		const defaults = {
-			fork: RUNNER_LABEL,
-			pr: RUNNER_LABEL,
-			trunk: TRUNK_RUNNER_LABEL,
-		} as const;
-		let routes = { ...defaults };
-		try {
-			const response = await options.github.request(
-				target.installationId,
-				`/repos/${target.repository}/actions/variables/${variable}`,
-			);
-			if (response.ok) {
-				const body = FleetRoutesVariableBody.parse(await response.json());
-				if (body.value) {
-					const merged = StoredFleetRoutes.safeParse(JSON.parse(body.value));
-					if (merged.success) routes = { ...defaults, ...merged.data };
-				}
-			}
-		} catch (error) {
-			options.log?.("hobo_ci_fleet_routes_error", {
-				repository: target.repository,
-				variable,
-				overflow: true,
-				message: error instanceof Error ? error.message : "unknown failure",
-			});
-		}
-		const overflowRoutes = {
-			...routes,
-			trunk: DEFAULT_GITHUB_MACHINE_TYPE,
-		};
-		const value = JSON.stringify(
-			Object.fromEntries(
-				Object.entries(overflowRoutes).sort(([left], [right]) =>
-					left < right ? -1 : left > right ? 1 : 0,
-				),
-			),
-		);
-		try {
-			const status = await write(
-				target.installationId,
-				target.repository,
-				value,
-			);
-			const ok = status === 201 || status === 204;
-			options.log?.(
-				ok ? "hobo_ci_fleet_routes_published" : "hobo_ci_fleet_routes_error",
-				{
-					repository: target.repository,
-					variable,
-					value,
-					status,
-					overflow: true,
-				},
-			);
-			if (ok) published.set(target.repository, { value, atMs: Date.now() });
-			return ok;
-		} catch (error) {
-			options.log?.("hobo_ci_fleet_routes_error", {
-				repository: target.repository,
-				variable,
-				overflow: true,
-				message: error instanceof Error ? error.message : "unknown failure",
-			});
-			return false;
-		}
-	}
-
-	return { publish, reset, publishTrunkHostedOverflow, variable };
+	return { publish, reset, variable };
 }
 
 export type FleetRoutePublisher = ReturnType<typeof createFleetRoutePublisher>;

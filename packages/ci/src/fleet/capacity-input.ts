@@ -22,6 +22,8 @@ export type FleetCapacityPublished = Readonly<{
 	admittedParallel: number;
 	hobo?: FleetCapacityMember;
 	arc?: FleetCapacityMember;
+	/** Whether the box can admit a 4096 MiB trunk-class job now (reserve 2048, volatility 1024). */
+	trunkMemoryAdmit?: boolean;
 	publishedAt?: string;
 }>;
 
@@ -42,6 +44,7 @@ const FleetCapacitySchema = z
 		admittedParallel: z.number().int().nonnegative().max(MAX_PARALLEL_CAP),
 		hobo: MemberSchema.optional(),
 		arc: MemberSchema.optional(),
+		trunkMemoryAdmit: z.boolean().optional(),
 		publishedAt: z.string().min(1).optional(),
 	})
 	.strict();
@@ -50,20 +53,38 @@ export function fleetCapacitySnapshot(
 	hoboFreeSlots: number,
 	arcFreeSlots = 0,
 	publishedAt?: string,
+	trunkMemoryAdmit?: boolean,
 ): FleetCapacityPublished {
 	const hobo = Math.max(0, Math.floor(hoboFreeSlots));
 	const arc = Math.max(0, Math.floor(arcFreeSlots));
 	const admittedParallel = Math.min(MAX_PARALLEL_CAP, hobo + arc);
-	const snapshot: FleetCapacityPublished = {
+	let snapshot: FleetCapacityPublished = {
 		version: 1,
 		admittedParallel,
 		hobo: { freeSlots: hobo },
 		arc: { freeSlots: arc },
 	};
+	if (trunkMemoryAdmit !== undefined) {
+		snapshot = { ...snapshot, trunkMemoryAdmit };
+	}
 	if (publishedAt !== undefined) {
-		return { ...snapshot, publishedAt };
+		snapshot = { ...snapshot, publishedAt };
 	}
 	return snapshot;
+}
+
+export type MainWorkspaceShardRunner = "hobo-trunk" | "hobo";
+
+/** Plan-time label for main workspace shards (prefers mesh ARC, else memory, else trunk). */
+export function resolveMainWorkspaceShardRunner(
+	snapshot: FleetCapacityPublished | undefined,
+	fallback: MainWorkspaceShardRunner = "hobo-trunk",
+): MainWorkspaceShardRunner {
+	if (!snapshot) return fallback;
+	const arcFree = snapshot.arc?.freeSlots ?? 0;
+	if (arcFree > 0) return "hobo-trunk";
+	if (snapshot.trunkMemoryAdmit === false) return "hobo";
+	return "hobo-trunk";
 }
 
 export function fleetCapacityVariableValue(

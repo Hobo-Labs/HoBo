@@ -1,8 +1,4 @@
 import { type Job, type Lease, memoryAdmitHeadroom } from "@hobo/ci";
-import {
-	type FleetCapacityWitness,
-	fleetPeerAbsorbSlots,
-} from "../fleet-absorb.js";
 import type { GithubTransport } from "../github.js";
 import { getJob, rerunWorkflowRun } from "../github.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
@@ -59,8 +55,6 @@ export function createHeadroomTrunkOverflow(options: {
 	now?: () => number;
 	log?: HeadroomTrunkOverflowLog;
 	cooldown?: Map<string, number>;
-	/** Publishes trunk → GitHub-hosted before rerun when fleet routes are enabled. */
-	beforeOverflowRerun?: (job: Job) => Promise<boolean | undefined>;
 }) {
 	const now = options.now ?? Date.now;
 	const overflowAfterMs = options.overflowAfterMs ?? DEFAULT_OVERFLOW_AFTER_MS;
@@ -77,10 +71,7 @@ export function createHeadroomTrunkOverflow(options: {
 		trunkWaits: TrunkWaitCache,
 		reservationRevision: number,
 		at: string,
-		fleetWitness?: FleetCapacityWitness,
 	): Promise<number> {
-		if (fleetWitness !== undefined && fleetPeerAbsorbSlots(fleetWitness) > 0)
-			return 0;
 		const availableMb = options.availableMemoryMb();
 		const reserveMb = options.memoryAdmission.config.reserveMb;
 		let overflowed = 0;
@@ -149,10 +140,6 @@ export function createHeadroomTrunkOverflow(options: {
 				);
 			}
 			await store.withdrawQueuedJob?.(job, at, reservationRevision);
-			if (options.beforeOverflowRerun) {
-				const published = await options.beforeOverflowRerun(job);
-				if (published === false) continue;
-			}
 			const response = await rerunWorkflowRun(
 				options.github,
 				job.installationId,

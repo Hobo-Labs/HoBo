@@ -9,22 +9,24 @@ tags: [hobo, ci, performance, main-gate, memory, fleet, overflow, github-hosted]
 
 ## Evidence
 
-Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/43183884926) on `38d4b73eb` trended past **20 minutes**. After a **6m43s** **Main workspace plan**, shards **0–2** remained **queued ~8 minutes** on `hobo-trunk` while the box correctly refused **4096 MiB** class work (**~2.4–5 GiB** MemAvailable vs **7168 MiB** need). Mesh/`HOBO_CI_FLEET_CAPACITY` showed **`arcFreeSlots: 0`**; GitHub-hosted never picked up.
-
-Worker behavior at **`05457ecf3`** and on **`main`**: cooperative trunk fleet defer (`evaluateMainTrunkFleetDefer`) **holds** when `peerAbsorbSlots <= 0`; `createHeadroomTrunkOverflow` existed but was **never called** from `HostedRelay`, and workflows hardcoded `hobo-trunk` instead of reading `HOBO_CI_FLEET_ROUTES`.
+Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/43183884926) on `38d4b73eb` trended past **20 minutes**. After a **6m43s** **Main workspace plan**, shards **0–2** remained **queued ~8 minutes** on `hobo-trunk` while the box correctly refused **4096 MiB** class work (**~2.4–5 GiB** MemAvailable vs **7168 MiB** need). Mesh/`HOBO_CI_FLEET_CAPACITY` showed **`arc.freeSlots: 0`**; GitHub-hosted never picked up.
 
 ## Cause
 
-1. **No hosted escape hatch** — overflow rerun + route publish was implemented but unwired; shards looped on the relay label indefinitely.
-2. **Workflows ignored `HOBO_CI_FLEET_ROUTES`** — even a published `trunk` → `ubuntu-24.04` would not affect reruns until jobs read the variable at queue time.
-3. **ARC=0 is normal** — fleet defer cannot help without peers; hosted overflow must run after a bounded wait without lowering memory classes.
+**Main workspace test** jobs hardcoded **`hobo-trunk`** at queue time. When mesh ARC was empty and trunk memory headroom was false, shards still requested a label the box could not launch, with no plan-time escape to **`hobo`** (GitHub-hosted relay).
 
 ## Fix
 
-- Wire **`headroomTrunkOverflow`** on the box daemon when **`HOBO_CI_FLEET_ROUTES=1`**; invoke each dispatch pass after cooperative trunk releases.
-- **`HOBO_CI_TRUNK_HOSTED_OVERFLOW_MS`** (default **90000**): when memory still blocks and **`peerAbsorbSlots === 0`**, **`publishTrunkHostedOverflow`** then workflow **rerun**.
-- Main Fabric trunk jobs use **`fromJSON(vars.HOBO_CI_FLEET_ROUTES…).trunk`** with hobo defaults.
+- Worker **`HOBO_CI_FLEET_CAPACITY`** snapshots add **`trunkMemoryAdmit`** from `memoryAdmitHeadroom` with **4096 / 2048 / 1024 MiB** (heavy class unchanged).
+- **`main-gate-plan`** reads the variable and emits **`shard_runner`**: **`hobo-trunk`** when **`arc.freeSlots > 0`**, else **`hobo`** when **`trunkMemoryAdmit === false`**, else **`hobo-trunk`**.
+- **`main_workspace_tests`** `runs-on` uses **`needs.main-gate-plan.outputs.shard_runner`** (no workflow rerun, no repo-wide **`HOBO_CI_FLEET_ROUTES`** flip).
 
 ## Measure
 
-On a memory-thin box with **ARC 0**: trunk shards overflow to GitHub-hosted within **~90s** of headroom wait, not **8+ minutes** on `hobo-trunk`; **`hobo_ci_trunk_headroom_overflow`** and **`hobo_ci_fleet_routes_published` `overflow: true`** appear once per rescued run.
+On a memory-thin box with **ARC 0**: new shard jobs queue on **`hobo`** at plan time when **`trunkMemoryAdmit: false`**, not after **8+ minutes** stuck on **`hobo-trunk`**.
+
+## Verified
+
+- `packages/ci/test/fleet-capacity-input.test.ts`
+- `pnpm run test:smoke scripts/test/load-fleet-capacity.test.ts`
+- `pnpm run test:smoke scripts/test/main-gate-workspace-shards.test.ts`

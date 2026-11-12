@@ -355,5 +355,6 @@ package ci
 	admittedParallel: int & >=0 & <=8
 	hobo?: {freeSlots: int & >=0}
 	arc?: {freeSlots: int & >=0}
+	trunkMemoryAdmit?: bool
 	publishedAt?: string
 }
