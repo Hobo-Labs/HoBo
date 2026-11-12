@@ -32,13 +32,21 @@ on:
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
+      - "scripts/test/release-relevant-push.test.ts"
       - "scripts/ci/push-release-git-tag.mts"
+      - "scripts/ci/create-github-release.mts"
+      - "scripts/lib/ssh-sig.mts"
+      - "scripts/test/release-git-tag.test.ts"
       - "scripts/lib/nbgv-release-version.mts"
       - "scripts/lib/release-hobo-path-filters.mts"
+      - "scripts/lib/release-pages-stale.mts"
+      - "scripts/test/release-pages-stale.test.ts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/lib/release-ghcr-digest.mts"
       - "scripts/lib/docker-registry-push.mts"
       - "scripts/test/push-release-ghcr-images.test.ts"
+      - "scripts/test/release-ghcr-digest.test.ts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
       - "scripts/lib/release-sparse-cone.mts"
@@ -88,13 +96,21 @@ on:
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
+      - "scripts/test/release-relevant-push.test.ts"
       - "scripts/ci/push-release-git-tag.mts"
+      - "scripts/ci/create-github-release.mts"
+      - "scripts/lib/ssh-sig.mts"
+      - "scripts/test/release-git-tag.test.ts"
       - "scripts/lib/nbgv-release-version.mts"
       - "scripts/lib/release-hobo-path-filters.mts"
+      - "scripts/lib/release-pages-stale.mts"
+      - "scripts/test/release-pages-stale.test.ts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/lib/release-ghcr-digest.mts"
       - "scripts/lib/docker-registry-push.mts"
       - "scripts/test/push-release-ghcr-images.test.ts"
+      - "scripts/test/release-ghcr-digest.test.ts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
       - "scripts/lib/release-sparse-cone.mts"
@@ -123,12 +139,23 @@ on:
         description: "Release tag (e.g. v0.0.0-alpha.0, sdk-v0.0.0-alpha.0) when push_images is true"
         type: string
         required: false
+      publish_pages:
+        description: "Publish site/ to GitHub Pages from main now (run from main only; never puts an older commit back)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+# Main-train runs (workflow_run after a green main push) share one queue: one runs, the
+# newest waits, and GitHub drops any older waiting run. The gate measures from the last
+# release tag, so the run that goes next releases everything the dropped ones would have,
+# and it asks after the running release has tagged, not before (two releases of
+# overlapping changes, or an older one finishing last). Keyed by the CI run's event and
+# conclusion so a completion the gate skips (scheduled, dispatched, or a main push that was
+# dropped or failed) never displaces a release waiting on a green push.
 concurrency:
-  group: hobo-release-${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -188,6 +215,10 @@ jobs:
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
+      # A signed local run verified for this tree (scripts/ci/verify-attestation.mts):
+      # the jobs it covers are skipped. `false` and `[]` when there is none.
+      attested: ${{ steps.route.outputs.attested }}
+      attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -197,6 +228,8 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
@@ -207,6 +240,7 @@ jobs:
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+          fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
 
   release-main-train-gate:
     name: Main train release gate (nbgv)
@@ -240,7 +274,10 @@ jobs:
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push'
         run: node --no-warnings scripts/ci/ensure-nbgv-toolchain.mts
-      - name: Skip when push did not touch release paths
+      # Measured from the last release tag, not from head^: a commit whose own CI
+      # run was cancelled by the next push, or that landed behind another in one
+      # merge-queue batch, still ships with the next green run on main.
+      - name: Skip when nothing on a release path changed since the last release
         id: scope
         if: >-
           github.event_name == 'workflow_run' &&
@@ -250,7 +287,7 @@ jobs:
           set -euo pipefail
           head_sha='${{ github.event.workflow_run.head_sha }}'
           node --no-warnings scripts/ci/check-release-relevant-push.mts \
-            --from "${head_sha}^" \
+            --since-last-release \
             --to "${head_sha}" \
             --github-output "$GITHUB_OUTPUT"
       - name: Resolve fixed alpha train version
@@ -269,11 +306,13 @@ jobs:
           node --no-warnings scripts/ci/compute-release-version.mts "$head_sha" --github-env --github-output "$GITHUB_OUTPUT"
 
   # One job, not three: on the shared two-slot box every extra job pays its own
-  # checkout and install (~2 min) and its own wait for a slot. hobo-code is
-  # built by release-code.yml, never here.
+  # checkout and install (~2 min) and its own wait for a slot.
   release-contract:
     name: Release contract + affected OCI images
     needs: route
+    # Skipped when the route job verified a signed local run of this job for this
+    # tree. A local run signs for this job only when no OCI image is affected.
+    if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     steps:
@@ -314,9 +353,12 @@ jobs:
           --label release-contract-vitest --
           pnpm exec vitest run
           scripts/test/release-contract-vitest-scope.test.ts
+          scripts/test/release-git-tag.test.ts
           scripts/test/release-oci-affected.test.ts
           scripts/test/release-oci-attest-contract.test.ts
           scripts/test/release-oci-image-contract.test.ts
+          scripts/test/release-pages-stale.test.ts
+          scripts/test/release-relevant-push.test.ts
           scripts/test/release-sparse-cone.test.ts
           scripts/test/release-version.test.ts
           scripts/test/stage-release-oci-app.test.ts
@@ -348,9 +390,9 @@ jobs:
           # Editing this workflow edits how every image is built, so it builds them all.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
             || ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release-hobo.yml; then
-            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all --exclude=hobo-code)"
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all)"
           else
-            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --exclude=hobo-code --explain)"
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --explain)"
           fi
           echo "affected: ${images}"
           echo "image_ids=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" "))' "$images")" >> "$GITHUB_OUTPUT"
@@ -444,7 +486,7 @@ jobs:
   release-oci-build-tag:
     name: Build all OCI images on tag (gate publish)
     if: >-
-      always() &&
+      !cancelled() &&
       needs.release-main-train-gate.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -457,6 +499,10 @@ jobs:
         needs.release-contract.result == 'success'
       )
     needs: [release-main-train-gate, release-contract]
+    # packages: read lets a runner without the worker image (an ARC pod) pull it.
+    permissions:
+      contents: read
+      packages: read
     env:
       HOBO_RELEASE_TURBO_BASE: ""
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
@@ -484,7 +530,13 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
-      - run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 5
+        # Without a token the GHCR pull is never tried, and a runner that does not
+        # already hold the image refuses the release (run 43059319805).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Build hobo-sdk before CLI/MCP
         if: matrix.image_id == 'hobo-cli' || matrix.image_id == 'hobo-mcp'
         env:
@@ -508,11 +560,50 @@ jobs:
             pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
           node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --cleanup-only
 
+  release-images:
+    name: Release train images
+    # The images this release ships, as the publish and attest matrices. An
+    # sdk-v or cli-v tag ships only some; its other legs would only add runs
+    # that could block a release they have no part in. Mirrors
+    # releaseImageIdsForTrain (scripts/lib/release-version.mts); a test pins both.
+    # Hosted like the other gates: it runs no repository code, only a case on the ref.
+    if: >-
+      !cancelled() &&
+      needs.release-main-train-gate.result == 'success' &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        startsWith(github.ref, 'refs/tags/sdk-v') ||
+        startsWith(github.ref, 'refs/tags/cli-v') ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      )
+    needs: [release-main-train-gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      images: ${{ steps.train.outputs.images }}
+    steps:
+      - name: Images of this release train
+        id: train
+        env:
+          RELEASE_REF: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
+        run: |
+          set -euo pipefail
+          case "${RELEASE_REF}" in
+            sdk-v*) images='["hobo-sdk"]' ;;
+            cli-v*) images='["hobo-cli","hobo-mcp"]' ;;
+            *) images='["hobo-sdk","hobo-codegen","hobo-cli","hobo-mcp","hobo-ci-serve","hobo-site"]' ;;
+          esac
+          echo "${RELEASE_REF}: ${images}"
+          echo "images=${images}" >> "$GITHUB_OUTPUT"
+
   release-publish:
     name: Publish GHCR images (tagged release)
     if: >-
-      always() &&
+      !cancelled() &&
       needs.release-main-train-gate.result == 'success' &&
+      needs.release-images.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -523,10 +614,19 @@ jobs:
         needs.release-main-train-gate.outputs.run == 'true' ||
         needs.release-contract.result == 'success'
       )
-    needs: [release-main-train-gate, release-contract, release-oci-build-tag]
+    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-images]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
+    # One image per job: all six built and pushed in one job ran past the
+    # 20-minute limit when one push stalled (run 43144784243). Only the train's
+    # images (release-images). One at a time, because legs on one box share the
+    # `*:candidate` tags.
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     permissions:
       contents: read
       packages: write
@@ -561,21 +661,31 @@ jobs:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 5
+        # Without a token the GHCR pull is never tried, and a runner that does not
+        # already hold the image refuses the release (run 43059319805).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Build and push release images
-        run: node --no-warnings scripts/ci/push-release-ghcr-images.mts /tmp/hobo-release-digests.txt
-      - name: Upload digest list
+      - name: Build and push release image
+        # The token asks GHCR whether the tag is already published (finding 143).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/push-release-ghcr-images.mts --image ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-release-digest.txt"
+      - name: Upload digest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: hobo-release-digests
-          path: /tmp/hobo-release-digests.txt
+          name: hobo-release-digest-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-digest.txt
+          if-no-files-found: error
 
   release-attest:
     name: Attest GHCR images
     if: >-
-      always() &&
+      !cancelled() &&
+      needs.release-main-train-gate.result == 'success' &&
       needs.release-publish.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -583,7 +693,7 @@ jobs:
         startsWith(github.ref, 'refs/tags/cli-v') ||
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    needs: [release-main-train-gate, release-publish]
+    needs: [release-main-train-gate, release-publish, release-images]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
@@ -595,27 +705,50 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
+        image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           clean: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: hobo-release-digests
-          path: /tmp/hobo-release-digests
+          name: hobo-release-digest-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-digest
+      - name: Require publish digest artifact
+        id: digest
+        env:
+          DIGEST_FILE: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
+        run: |
+          set -euo pipefail
+          if [ ! -f "${DIGEST_FILE}" ]; then
+            echo "::error::digest artifact missing for ${{ matrix.image_id }}"
+            exit 1
+          fi
+          if [ ! -s "${DIGEST_FILE}" ]; then
+            echo "::error::digest artifact empty for ${{ matrix.image_id }}; publish must record a registry digest"
+            exit 1
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/release-oci-attest
+        if: steps.digest.outputs.present == 'true'
         with:
-          digest-list-path: /tmp/hobo-release-digests/hobo-release-digests.txt
+          digest-list-path: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
           image-id: ${{ matrix.image_id }}
           ghcr-username: ${{ github.actor }}
           ghcr-token: ${{ secrets.GITHUB_TOKEN }}
 
   release-npm:
     name: npm publish train (SDK allowlist)
+    # The @hobo-labs packages have never been published, and npm trusted
+    # publishing cannot attach to a package that does not exist yet: the first
+    # publish needs the one-time bootstrap in docs/release/pipelines.md. Until the
+    # repository variable HOBO_NPM_PUBLISH is 'true' this job is skipped, not run
+    # to fail with ENEEDAUTH and take the tag and GitHub Release down with it.
     if: >-
-      always() &&
+      !cancelled() &&
+      vars.HOBO_NPM_PUBLISH == 'true' &&
       needs.release-main-train-gate.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -665,18 +798,82 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release
 
+  # The site is published from what gh-pages holds, not from the push that
+  # triggered this run: a deploy that failed, a run that was cancelled, or a
+  # commit that reached main in a merge-queue batch behind another is picked up
+  # by the next green run. Apart from the train gate on purpose: it is two API
+  # calls, and the site must not wait on dotnet and vitest to learn whether it
+  # is stale.
+  release-pages-gate:
+    name: Pages freshness gate
+    if: >-
+      github.repository == 'Hobo-Labs/HoBo' &&
+      (
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push') ||
+        (github.event_name == 'workflow_dispatch' && inputs.publish_pages &&
+          github.ref == 'refs/heads/main')
+      )
+    needs: [route]
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      deploy: ${{ steps.stale.outputs.deploy }}
+    env:
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          persist-credentials: false
+          clean: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/release-hobo.yml
+            .github/actions/ci-runner-preflight/hosted-toolchain.sh
+            scripts/ci/check-release-pages-stale.mts
+            scripts/lib/release-pages-stale.mts
+            scripts/lib/release-hobo-path-filters.mts
+            scripts/lib/pins-json.ts
+            scripts/lib/pins-error.ts
+      - name: Node that runs TypeScript as written
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash .github/actions/ci-runner-preflight/hosted-toolchain.sh
+      - name: Is gh-pages behind this commit?
+        id: stale
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAGES_FORCE: ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086 # PAGES_FORCE is one flag or nothing
+          node --no-warnings scripts/ci/check-release-pages-stale.mts \
+            --head "$HOBO_RELEASE_CHECKOUT_REF" $PAGES_FORCE \
+            --github-output "$GITHUB_OUTPUT"
+
   release-pages:
     name: Publish GitHub Pages (site/)
     if: >-
-      always() &&
-      needs.release-main-train-gate.result == 'success' &&
-      needs.release-main-train-gate.outputs.run == 'true'
-    needs: [release-main-train-gate]
+      !cancelled() &&
+      needs.release-pages-gate.result == 'success' &&
+      needs.release-pages-gate.outputs.deploy == 'true'
+    needs: [release-pages-gate]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
+    # One publish at a time. Two runs for different commits used to be free to
+    # push gh-pages in either order.
+    concurrency:
+      group: hobo-release-pages
+      cancel-in-progress: false
     env:
-      HOBO_RELEASE_TURBO_BASE: origin/main
-      HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha }}
+      # The site build is the whole closure (finding 125); no affected base.
+      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
     permissions:
       contents: write
       pages: write
@@ -697,24 +894,74 @@ jobs:
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
-      - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      # The gate answered before this job waited for a runner and for the
+      # publish slot; another run may have published a newer commit since.
+      - name: Is gh-pages still behind this commit?
+        id: fresh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAGES_FORCE: ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086 # PAGES_FORCE is one flag or nothing
+          node --no-warnings scripts/ci/check-release-pages-stale.mts \
+            --head "$HOBO_RELEASE_CHECKOUT_REF" $PAGES_FORCE \
+            --github-output "$GITHUB_OUTPUT"
+      - if: steps.fresh.outputs.deploy == 'true'
+        run: pnpm run pins:fetch ts-autocode
+      - if: steps.fresh.outputs.deploy == 'true'
+        uses: ./.github/actions/pnpm-store
+      - if: steps.fresh.outputs.deploy == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build hobo-site workspace deps for prebuild
+        if: steps.fresh.outputs.deploy == 'true'
         run: node --no-warnings scripts/ci/build-release-site-prebuild.mts
       - name: Build Astro site
+        if: steps.fresh.outputs.deploy == 'true'
         run: pnpm --filter hobo-site run build
+      # The same tree scripts/deploy-site.mts publishes: the art catalogue is a
+      # second Astro build (base /HoBo/media) nested under the site, so one
+      # commit describes everything served. Without it a workflow deploy
+      # deleted /media/ from under a manual one.
+      - name: Build the art catalogue
+        if: steps.fresh.outputs.deploy == 'true'
+        run: pnpm --filter hobo-media run build
+      - name: Nest the art catalogue under /media/
+        if: steps.fresh.outputs.deploy == 'true'
+        run: |
+          set -euo pipefail
+          test -f media/dist/index.html
+          test -f site/dist/.nojekyll
+          mkdir -p site/dist/media
+          cp -a media/dist/. site/dist/media/
       - name: Deploy to gh-pages branch
+        if: steps.fresh.outputs.deploy == 'true'
         uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: site/dist
           force_orphan: true
+          # The default message names github.sha, which on a workflow_run event
+          # is the tip of main when the event fired, not the commit built here.
+          # The freshness gate reads this back, so it has to be the truth.
+          full_commit_message: "deploy: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}"
 
   release-tag:
     name: Signed git tag + GitHub Release (main train)
-    if: needs.release-main-train-gate.outputs.run == 'true'
-    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages]
+    # Pages has its own gate now. The tag must not wait on this run's publish:
+    # it is skipped when gh-pages already holds a newer commit, and cancelled
+    # when a newer run's publish takes its place in the hobo-release-pages
+    # queue. A failed publish, or a gate that failed to decide, still blocks it.
+    if: >-
+      !cancelled() &&
+      needs.release-main-train-gate.outputs.run == 'true' &&
+      needs.release-publish.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
+      (vars.HOBO_NPM_PUBLISH != 'true' || needs.release-npm.result == 'success') &&
+      needs.release-attest.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
+      contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)
+    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
     timeout-minutes: 10
@@ -736,21 +983,23 @@ jobs:
           tag='${{ needs.release-main-train-gate.outputs.release_ref }}'
           node --no-warnings scripts/ci/push-release-git-tag.mts --tag "$tag" --commit '${{ needs.release-main-train-gate.outputs.release_sha }}'
       - name: Create GitHub Release (prerelease)
+        # Through the REST API: the release runners have no gh CLI.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag='${{ needs.release-main-train-gate.outputs.release_ref }}'
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "GitHub Release $tag already exists"
-            exit 0
-          fi
-          args=(release create "$tag" --generate-notes --title "$tag" --prerelease)
-          gh "${args[@]}"
+          node --no-warnings scripts/ci/create-github-release.mts --tag "$tag" --prerelease
 
   release-github:
     name: GitHub Release (independent train tag)
-    if: startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v')
+    if: >-
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v')) &&
+      needs.release-publish.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
+      (vars.HOBO_NPM_PUBLISH != 'true' || startsWith(github.ref, 'refs/tags/cli-v') || needs.release-npm.result == 'success') &&
+      needs.release-attest.result == 'success'
     needs: [release-publish, release-npm, release-attest]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
@@ -762,14 +1011,15 @@ jobs:
           clean: false
           fetch-depth: 1
       - name: Create or update GitHub Release
+        # Through the REST API: the release runners have no gh CLI.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           dist_tag="$(node --no-warnings scripts/ci/resolve-release-version.mts "${{ github.ref_name }}" | sed -n 's/^HOBO_RELEASE_NPM_DIST_TAG=//p')"
-          args=(release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}")
-          if [ "$dist_tag" != "latest" ]; then args+=(--prerelease); fi
-          gh "${args[@]}"
+          prerelease=()
+          if [ "$dist_tag" != "latest" ]; then prerelease=(--prerelease); fi
+          node --no-warnings scripts/ci/create-github-release.mts --tag "${{ github.ref_name }}" "${prerelease[@]}"
 
   release-pr-gate:
     name: HoBo release PR gate (required)
@@ -781,21 +1031,40 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Fail closed when release contract is red
+        env:
+          CONTRACT_RESULT: ${{ needs.release-contract.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+          ATTESTED: ${{ needs.route.outputs.attested }}
+          ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
         run: |
           set -euo pipefail
+          # A skipped job counts only when the route job itself succeeded and
+          # reported a verified signed local run that covers that job by id.
+          attested() {
+            [ "${ROUTE_RESULT:-}" = "success" ] || return 1
+            [ "${ATTESTED:-}" = "true" ] || return 1
+            case "${ATTESTED_JOBS:-}" in
+              *"\"$1\""*) return 0 ;;
+            esac
+            return 1
+          }
           # A contract skipped because routing failed was never evaluated.
-          if [ "${{ needs.route.result }}" != "success" ]; then
-            echo "::error::Runner routing did not succeed (result=${{ needs.route.result }})"
+          if [ "${ROUTE_RESULT:-}" != "success" ]; then
+            echo "::error::Runner routing did not succeed (result=${ROUTE_RESULT:-})"
             exit 1
           fi
-          case "${{ needs.release-contract.result }}" in
+          case "${CONTRACT_RESULT:-}" in
             success) exit 0 ;;
             skipped)
-              echo "::warning::release-contract skipped; not treating as merge blocker"
-              exit 0
+              if attested release-contract; then
+                echo "release-contract skipped for a verified signed local run"
+                exit 0
+              fi
+              echo "::error::Release contract was skipped without a verified signed local run"
+              exit 1
               ;;
             *)
-              echo "::error::Release contract + affected OCI images must pass (result=${{ needs.release-contract.result }})"
+              echo "::error::Release contract + affected OCI images must pass (result=${CONTRACT_RESULT:-})"
               exit 1
               ;;
           esac

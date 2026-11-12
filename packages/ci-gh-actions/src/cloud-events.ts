@@ -30,10 +30,23 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_isolated_worker_draining", "ci.WorkerDrainStarted"],
 	["hobo_ci_isolated_worker_drained", "ci.WorkerDrained"],
 	["hobo_ci_isolated_worker_drain_timeout", "ci.WorkerDrainTimedOut"],
+	["hobo_ci_isolated_worker_drain_force_exit", "ci.WorkerDrainForceExited"],
+	["hobo_ci_lease_github_terminal_dropped", "ci.LeaseGithubTerminalDropped"],
+	["hobo_ci_held_job_pruned", "ci.HeldJobPruned"],
+	["hobo_ci_trunk_headroom_fleet_defer", "ci.TrunkHeadroomFleetDeferred"],
+	["hobo_ci_trunk_fleet_defer_decision", "ci.TrunkFleetDeferDecision"],
+	["hobo_ci_inbox_delivery_failed", "ci.InboxDeliveryFailed"],
+	["hobo_ci_inbox_delivery_timed_out", "ci.InboxDeliveryTimedOut"],
+	["hobo_ci_inbox_drain_pass", "ci.InboxDrainPass"],
+	["hobo_ci_inbox_drain_failed", "ci.InboxDrainFailed"],
 	["hobo_ci_isolated_worker_tick_failed", "ci.WorkerTickFailed"],
 	// Jobs and runners
 	["hobo_ci_job_pickup", "ci.JobPickedUp"],
 	["hobo_ci_launch_failed", "ci.RunnerLaunchFailed"],
+	["hobo_ci_launch_yielded_foreign_runner", "ci.RunnerLaunchYieldedForeign"],
+	["hobo_ci_jit_empty_exit", "ci.JitRunnerExitedWithoutJob"],
+	["hobo_ci_jit_empty_exit_backoff", "ci.JitEmptyExitBackoff"],
+	["hobo_ci_jit_runner_served_other_job", "ci.JitRunnerServedOtherJob"],
 	["hobo_ci_container_oom", "ci.ContainerOomKilled"],
 	["hobo_ci_container_timeout_enforced", "ci.ContainerTimedOut"],
 	// Runs the worker interfered with
@@ -44,6 +57,11 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	// Host pressure
 	["hobo_ci_inode_pressure", "ci.HostInodePressureDetected"],
 	["hobo_ci_memory_admission_wait", "ci.MemoryAdmissionDelayed"],
+	["hobo_ci_host_resource_pressure", "ci.HostResourcePressureReported"],
+	["hobo_ci_container_stall_requeue", "ci.ContainerStallRequeue"],
+	["hobo_ci_stall_job_annotated", "ci.StallJobAnnotated"],
+	["hobo_ci_stall_job_rerun", "ci.StallJobRerunRequested"],
+	["hobo_ci_stall_job_rerun_skipped", "ci.StallJobRerunSkipped"],
 	["hobo_ci_storage_admission_wait", "ci.StorageAdmissionDelayed"],
 	// Relay mesh
 	["hobo_ci_mesh_job_taken", "ci.MeshJobTaken"],
@@ -56,9 +74,17 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_mesh_node_lost", "ci.MeshNodeLost"],
 	["hobo_ci_mesh_node_unhealthy", "ci.MeshNodeDegraded"],
 	["hobo_ci_mesh_node_recovered", "ci.MeshNodeRecovered"],
+	// Trust: an advertisement whose signature failed, and a changed trusted-key set
+	["hobo_ci_mesh_node_invalid", "ci.MeshNodeRejected"],
+	["hobo_ci_mesh_trust_changed", "ci.MeshTrustChanged"],
 	["hobo_ci_mesh_capacity_exhausted", "ci.MeshCapacityExhausted"],
 	["hobo_ci_mesh_capacity_restored", "ci.MeshCapacityRestored"],
 	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],
+	["hobo_ci_fleet_capacity_published", "ci.FleetCapacityPublished"],
+	["hobo_ci_fleet_capacity_error", "ci.FleetCapacityPublishError"],
+	// A node's record of the jobs it took
+	["hobo_ci_mesh_job_dropped", "ci.MeshJobDropped"],
+	["hobo_ci_mesh_reliability", "ci.MeshReliabilityChanged"],
 	["hobo_ci_mesh_config_published", "ci.MeshConfigPublished"],
 	["hobo_ci_mesh_config_drift", "ci.MeshConfigDrifted"],
 	// Telemetry about telemetry

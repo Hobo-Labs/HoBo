@@ -339,7 +339,7 @@ HoBo's typed surface runs throughout — `ctx.bindings.db` is "a provider-agnost
 
 1. **Sources → generated artifacts.** Codegen is a **deterministic pure function** of: the **WIT interfaces** (jco guest-types, [Plan 20](../wasm-runtime-wit.md#plan-20)) + **Zod schemas** (step/workflow/`query`/search I/O) + **`.allow()`** scopes ([Plan 21](../authoring-resources-wiring.md#plan-21)) + the **bindle graph** (`bind` edges, [Plan 21](../authoring-resources-wiring.md#plan-21)). It emits: typed `ctx.bindings.<name>` clients, typed `useQuery()`/search results ([Plan 32](../data-plane.md#plan-32)/[Plan 32](../data-plane.md#plan-32)), typed workflow/step signatures, typed provider `.with()` options, and a typed **`api` function-tree** reference.
 2. **Location & commit policy: a checked-in `_generated/` directory** (`.hobo/generated/` or `src/_generated/`). Rationale: reviewable in diffs, gives editors types with **no build step**, and is **offline/air-gap-friendly** ([ADR-0036](07-portability-extensibility.md#adr-0036)). **`hobo codegen --check`** is a CI gate that regenerates and fails on drift.
-3. **When it runs:** `hobo dev` regenerates on change (watch); `hobo build` regenerates + fails on drift; `hobo new` scaffolds an initial `_generated/`. Because generation is deterministic, the same sources always produce the same output (reproducible; replay/air-gap friendly).
+3. **When it runs:** `hobo dev` regenerates on change (watch); `hobo build` regenerates + fails on drift before it builds anything; `hobo new` scaffolds an initial `_generated/`. Ahead of that gate, `hobo build` refuses a request that can never build only on inputs that are authoritative without codegen: an explicit empty `services` list in `hobo.bindle.json` (`HOBO_BUILD_NO_SERVICES`), or an explicit wasm/container runtime for a plain TypeScript app whose imprint's recorded inputs all still match (`HOBO_BUILD_RUNTIME_INVALID`). A project codegen has not generated, including a fresh clone without the gitignored `.hobo/`, gets the drift answer whatever it asks for. Because generation is deterministic, the same sources always produce the same output (reproducible; replay/air-gap friendly).
 4. **Agent parity:** an MCP `codegen` tool so agents regenerate + typecheck like the CLI ([Plan 6](../ai-native-agent-auth.md#plan-06)/[Plan 7](../developer-experience.md#plan-07)).
 5. **Domain-schema emitters (WIT-record canonical, [ADR-0051](03-data-plane.md#adr-0051)).** When domain types are authored as WIT records ([Plan 32](../data-plane.md#plan-32)), codegen adds two deterministic outputs alongside the TS types: **protobuf** message descriptors (the event-body wire encoding, [Plan 11](../data-plane.md#plan-11)) and **Zod** validators (a runtime-validation view of the record). Same `_generated/` location + `--check` drift gate; protobuf is an encoding, not an authoring source.
 
@@ -655,6 +655,10 @@ ADR-0131 made Station the control-plane occupancy primitive, but "Station capabi
 - **(+)** The durable state hobo-code creates is authored in one reviewable declaration; drift between docs and auto-init literals can no longer happen silently.
 - **(−)** Two init verbs coexist (`hobo station init` operator seed, `hobo-code init` discovery-gated dev seed); docs must keep the distinction crisp.
 - **(−)** The capability kind vocabulary is closed; new facility families require an ADR amendment rather than an ad-hoc string.
+
+### Amendment (2026-11-08: hobo-code leaves main)
+
+Decisions 3 and 4 (`hobo-code init`, the dev-scenario `codeDevStation` declarations) and the hobo-code consequences describe the `feature/hobo-code` branch, not `main`. Decisions 1, 2 and 5 — the typed `StationCapability`, fail-closed matching and the declared `isolationClass` — are on `main` in `@hobo/stations`.
 
 ## ADR-0158
 **Deployment phases: `plan` / `init` / `handle` — one program, three evaluations, phase-safe by contract.**

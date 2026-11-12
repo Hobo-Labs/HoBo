@@ -108,6 +108,9 @@ export type FleetEvent =
 			readonly silent: readonly string[];
 	  };
 
+/** Which side of a copy a backend is when its schema is prepared. */
+export type FleetSchemaRole = "writer" | "standby";
+
 export type FleetReconcileOptions = {
 	/** In configured order. The first is the writer of an empty fleet. */
 	readonly backends: readonly FleetBackend[];
@@ -119,10 +122,17 @@ export type FleetReconcileOptions = {
 	/** Added to a lease when waiting for writers to stop after sealing. */
 	readonly graceMs: number;
 	/**
-	 * Create the application's tables on a backend. Called for both sides, and
-	 * only when a copy found the standby's schema different from the writer's.
+	 * Prepare the application's schema on a backend. Called for both sides of a
+	 * copy, the standby first, and only when the copy found the standby's
+	 * schema different from the writer's. `role` says which side the backend
+	 * is under the assignment the tick resolved: a host may bring the writer
+	 * forward the way its application does, and must prepare a standby without
+	 * the application, which does not write there.
 	 */
-	readonly ensureSchema: (backend: FleetBackend) => Promise<void>;
+	readonly ensureSchema: (
+		backend: FleetBackend,
+		role: FleetSchemaRole,
+	) => Promise<void>;
 	readonly checkBudget: FleetBudgetCheck;
 	readonly meter: UsageMeter | undefined;
 	readonly limits: Partial<ReplicationLimits> | undefined;
@@ -265,8 +275,8 @@ export async function reconcileFleet(
 			) {
 				// Either side may be the one that lacks a table: a writer creates
 				// some of its tables only when it first needs them.
-				await options.ensureSchema(target);
-				await options.ensureSchema(source);
+				await options.ensureSchema(target, "standby");
+				await options.ensureSchema(source, "writer");
 				outcome = await replicateSnapshot({
 					source,
 					target,

@@ -10,100 +10,112 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-deps-publish-${{ github.repository }}
-  cancel-in-progress: true
-
 jobs:
-  route:
-    name: Route deps publish
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+  publish:
+    name: Publish local deps image (non-blocking)
+    # The deps key includes the worker image's, so a new worker key means a new deps image,
+    # and building one builds the worker image it sits on when GHCR lacks it. Wait for the
+    # runner-image job so that build pulls the image instead of racing a second build.sh
+    # (both use the box's fixed staging registry container).
+    needs: [runner-image]
+    # Keyed by the CI run's conclusion: a dropped or failed main run completes too, and the
+    # job skips it, so it must not cancel a publish that a green run started.
+    concurrency:
+      group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
+      cancel-in-progress: true
+    # Runs when the runner-image job succeeded, failed or skipped, but not when it was cancelled:
+    # a waiting runner-image job that a newer run replaced is cancelled, and this run's deps
+    # build would then race the build still running (the newer run publishes deps instead).
+    if: >-
+      !cancelled() &&
+      needs.runner-image.result != 'cancelled' &&
+      github.repository == 'Hobo-Labs/HoBo' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
     permissions:
-      actions: read
       contents: read
-    outputs:
-      runner: ${{ steps.route.outputs.runner }}
-      tier: ${{ steps.route.outputs.tier }}
+      packages: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          submodules: recursive
+          clean: false
           fetch-depth: 1
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            .github/actions/route-runner
-            scripts/ci/route-runner.mts
-            packages/ci/src/fleet-overflow.ts
-      - id: route
-        uses: ./.github/actions/route-runner
-        with:
-          token: ${{ github.token }}
-          mode: ${{ vars.HOBO_CI_ROUTE }}
-          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
-          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
-          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
-          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+      - name: Publish missing deps tag with a bounded wall clock
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh
 
-  publish:
-    name: Publish local deps image (non-blocking)
-    needs: route
+  # HoBo CI Fabric builds the worker image on a main push only when that push's own commits
+  # touch an image input. A push that waited behind a running main run and was dropped is
+  # listed by no later push, so its image change was never built or published, and release
+  # jobs on ARC pull the worker from GHCR (finding 113). After every green main run this
+  # publishes the image for that commit's content key if GHCR lacks it, built from that
+  # commit here, never taken from the box's Docker cache, where pull requests build too.
+  runner-image:
+    name: Publish worker image if GHCR lacks it (non-blocking)
     if: >-
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
-    runs-on: ${{ needs.route.outputs.runner || 'hobo' }}
+    # A build takes several minutes; a newer green run waits for it rather than cancelling it,
+    # and then finds the image published (or publishes its own content key).
+    concurrency:
+      group: ci-runner-image-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
+      cancel-in-progress: false
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # The 20-minute job rule holds here too (finding 121): the build gets 15 of them, so a
+    # build that cannot finish in that fails loudly instead of holding a box past its limit.
     timeout-minutes: 20
     permissions:
       contents: read
       packages: write
-    outputs:
-      spill: ${{ steps.publish.outputs.spill }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
-          submodules: recursive
           clean: false
           fetch-depth: 1
-      - id: publish
-        name: Publish missing deps tag with a bounded wall clock
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Ask GHCR for this commit's worker image
+        id: status
         env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOBO_CI_DEPS_BUILD_SPILL_OK: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status
+      - name: Build the worker image from this commit and publish it
+        if: steps.status.outputs.ghcr != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISE_EXPERIMENTAL: "1"
+          VERSION: ${{ steps.status.outputs.version }}
+          # ensure-ci-worker-image's default is 10 minutes; the push and checks need the last 5.
+          HOBO_CI_WORKER_BUILD_BUDGET_SEC: "900"
         run: |
           set -euo pipefail
-          if bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh; then
-            echo "spill=false" >> "$GITHUB_OUTPUT"
-          else
-            status=$?
-            if [ "$status" -eq 2 ]; then
-              echo "::warning::Box lacks inode/disk headroom for deps build; spilling to GitHub-hosted"
-              echo "spill=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            exit "$status"
+          tag="hobo-ci-worker:${VERSION}"
+          # A pull request's job may have built an image under this tag on the box, and build.sh
+          # reuses whatever the tag names. Untag it, even if a container still uses it.
+          docker image rm -f "$tag" >/dev/null 2>&1 || true
+          if docker image inspect "$tag" >/dev/null 2>&1; then
+            echo "::error title=Worker image tag still present::could not remove ${tag} before building"
+            exit 1
           fi
-
-  publish-overflow:
-    name: Publish deps image (fleet overflow)
-    needs: [route, publish]
-    if: >-
-      needs.publish.outputs.spill == 'true' &&
-      github.repository == 'Hobo-Labs/HoBo'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
-          submodules: recursive
-          clean: false
-          fetch-depth: 1
-      - name: Publish on GitHub-hosted runner
+          # build.sh leaves the box's :local on this image, the green main commit's, which is what
+          # the box's next main jobs want; the next image-changing build moves it again.
+          HOBO_CI_SKIP_GHCR_PULL=1 node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+          node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts
+      - name: Fail unless GHCR now has it
+        if: steps.status.outputs.ghcr != 'true'
         env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          out="$(GITHUB_OUTPUT=/dev/null node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status)"
+          echo "$out"
+          case "$out" in
+            *"ghcr=true"*) ;;
+            *) echo "::error title=Worker image not published::GHCR still has no image for this commit's content key; release jobs on ARC pods cannot pull it."; exit 1 ;;
+          esac

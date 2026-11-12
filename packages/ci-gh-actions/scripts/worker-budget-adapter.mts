@@ -1,30 +1,18 @@
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { BudgetAdmissionDeniedError } from "@hobo/broker";
-import {
-	type CiAsyncSharedBudgetHooks,
-	type CiSharedBudgetHooks,
-	createCiAsyncSharedBudgetHooks,
-	createCiSharedBudgetHooks,
-} from "@hobo/ci";
+import { type CiSharedBudgetHooks, createCiSharedBudgetHooks } from "@hobo/ci";
 import { z } from "zod";
 
 type SqliteOptions = Parameters<typeof createCiSharedBudgetHooks>[0];
-type PostgresOptions = Parameters<typeof createCiAsyncSharedBudgetHooks>[0];
-type Adapter =
-	| {
-			kind: "sqlite";
-			options: SqliteOptions;
-			close?: () => void | Promise<void>;
-	  }
-	| {
-			kind: "postgres";
-			options: PostgresOptions;
-			close?: () => void | Promise<void>;
-	  };
+type Adapter = {
+	kind: "sqlite";
+	options: SqliteOptions;
+	close?: () => void | Promise<void>;
+};
 type AdapterModule = {
 	createCiWorkerBudgetAdapter: (input: {
-		kind: "sqlite" | "postgres";
+		kind: "sqlite";
 	}) => Adapter | Promise<Adapter>;
 };
 const callable = z.function();
@@ -37,7 +25,7 @@ const denialCode = z.enum([
 const moduleSchema = z.object({ createCiWorkerBudgetAdapter: callable });
 const closeSchema = z.object({ close: callable });
 const adapterSchema = z.object({
-	kind: z.enum(["sqlite", "postgres"]),
+	kind: z.literal("sqlite"),
 	options: z.object({
 		quoteLease: callable,
 		authority: z.object({
@@ -76,13 +64,6 @@ function safeSync<T>(action: () => T): T {
 		return redactOperationError(error instanceof Error ? error : new Error());
 	}
 }
-async function safeAsync<T>(action: () => Promise<T>): Promise<T> {
-	try {
-		return await action();
-	} catch (error) {
-		return redactOperationError(error instanceof Error ? error : new Error());
-	}
-}
 function safeSqliteHooks(hooks: CiSharedBudgetHooks): CiSharedBudgetHooks {
 	return {
 		reserve: (lease, measurements) =>
@@ -95,26 +76,12 @@ function safeSqliteHooks(hooks: CiSharedBudgetHooks): CiSharedBudgetHooks {
 			safeSync(() => hooks.releaseUnused(lease, ref)),
 	};
 }
-function safePostgresHooks(
-	hooks: CiAsyncSharedBudgetHooks,
-): CiAsyncSharedBudgetHooks {
-	return {
-		reserve: (lease, measurements) =>
-			safeAsync(() => hooks.reserve(lease, measurements)),
-		claim: (lease, measurements) =>
-			safeAsync(() => hooks.claim(lease, measurements)),
-		uncertain: (lease) => safeAsync(() => hooks.uncertain(lease)),
-		settle: (lease, evidence) => safeAsync(() => hooks.settle(lease, evidence)),
-		releaseUnused: (lease, ref) =>
-			safeAsync(() => hooks.releaseUnused(lease, ref)),
-	};
-}
 
 /** Operator-selected trusted code supplies a shared durable authority and native evidence.
  * Never load this path from a repository or job configuration. */
 export async function loadWorkerBudgetAdapter(
 	path: string | undefined,
-	kind: "sqlite" | "postgres",
+	kind: "sqlite",
 ) {
 	if (path === undefined) return undefined;
 	if (!isAbsolute(path) || !/\.(?:mjs|js)$/u.test(path))
@@ -130,15 +97,12 @@ export async function loadWorkerBudgetAdapter(
 		if (!adapterSchema.safeParse(adapter).success || adapter.kind !== kind)
 			throw new Error("invalid adapter");
 		const authority = adapter.options.authority;
-		// SQLite workers need synchronous durable hooks; distributed PostgreSQL
-		// workers require the asynchronous shared authority contract.
+		// The worker's SQLite journal needs synchronous durable hooks.
 		const probe = authority.read(new Date().toISOString());
-		const asynchronous = probe instanceof Promise;
-		if (asynchronous !== (kind === "postgres")) {
-			if (asynchronous) await probe.catch(() => undefined);
+		if (probe instanceof Promise) {
+			await probe.catch(() => undefined);
 			throw new Error("authority backend does not match worker store");
 		}
-		await probe;
 		const close = async () => {
 			try {
 				await adapter?.close?.();
@@ -146,15 +110,9 @@ export async function loadWorkerBudgetAdapter(
 				throw new Error("trusted CI budget adapter cleanup failed");
 			}
 		};
-		if (adapter.kind === "sqlite")
-			return {
-				kind: adapter.kind,
-				hooks: safeSqliteHooks(createCiSharedBudgetHooks(adapter.options)),
-				close,
-			};
 		return {
 			kind: adapter.kind,
-			hooks: safePostgresHooks(createCiAsyncSharedBudgetHooks(adapter.options)),
+			hooks: safeSqliteHooks(createCiSharedBudgetHooks(adapter.options)),
 			close,
 		};
 	} catch {

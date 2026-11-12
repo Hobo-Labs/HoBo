@@ -19,6 +19,7 @@ import {
 	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
 	effectiveCiAccount,
+	isJobEvent,
 	LeaseSchema,
 	OfferSchema,
 	parseCiPolicy,
@@ -30,12 +31,29 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import { z } from "zod";
+import {
+	accountLease,
+	ControlError,
+	configurationState,
+	type QuarantinedDelivery,
+	quarantinedDeliveries,
+	reconcileAccountLease,
+	retryQuarantinedDelivery,
+} from "./account-operations.js";
 import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
 	IsolatedOnboardingError,
 	prepareIsolatedConnection,
 } from "./isolated-onboarding.js";
+import {
+	createMeshNodesReader,
+	type MeshNodesReader,
+} from "./mesh-nodes-reader.js";
+import {
+	meshNodeReportsForAccount,
+	meshNodeReportsJson,
+} from "./mesh-records.js";
 import {
 	applyOnboarding,
 	connectRepository,
@@ -87,29 +105,12 @@ export interface HostedControlStore extends HostedRelayStore {
 	quarantinedWebhooks(
 		accountId: string,
 		expectedRevision: number,
-	): Promise<
-		Array<{
-			deliveryId: string;
-			event: string;
-			installationId: number;
-			repositoryId: number;
-			receivedAt: string;
-			attempts: number;
-		}>
-	>;
+	): Promise<QuarantinedDelivery[]>;
 	retryQuarantinedWebhook(
 		accountId: string,
 		expectedRevision: number,
 		deliveryId: string,
 	): Promise<boolean>;
-}
-class ControlError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
-	}
 }
 function response(status: number, value: string, revision?: number): Response {
 	const headers = new Headers({
@@ -184,6 +185,34 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
+// public-contract: the relay route that lists the mesh's nodes.
+export const MESH_NODES_PATH = "/v1/mesh/nodes";
+
+/**
+ * The control routes that write configuration, or keep records a relay with
+ * a read-only config source has no place for (ADR-0179 §8): policy and
+ * provider writes, budget signals and usage observations, the inbox
+ * quarantine, and repository setup with its operation records. On such a
+ * relay each answers 410 (`readOnlyConfig`).
+ */
+export function isConfigWriteRoute(method: string, path: string): boolean {
+	if (path.startsWith("/v2/accounts/self/inbox/")) return true;
+	if (path.startsWith("/v1/accounts/self/repositories/")) return true;
+	if (method === "PUT")
+		return (
+			path === "/v1/accounts/self/policy" ||
+			path === "/v2/accounts/self/policy" ||
+			path === "/v2/accounts/self/providers"
+		);
+	if (method === "POST")
+		return (
+			path === "/v2/accounts/self/signals" ||
+			path === "/v2/accounts/self/observations" ||
+			path === "/v2/accounts/self/rate-observations"
+		);
+	return false;
+}
+
 /** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
@@ -204,14 +233,23 @@ export function createHostedControlPlane(options: {
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
+	/**
+	 * What the relay mesh looks like from this host, for `GET /v1/mesh/nodes`.
+	 * A host with no mesh leaves it out, and the route then answers
+	 * `mesh: "not-configured"`: an answer, not an error.
+	 */
+	meshNodes?: MeshNodesReader | undefined;
+	/**
+	 * The relay reads its configuration from a config service and never
+	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
+	 * answers 410 naming where configuration is written instead. Read
+	 * routes are unchanged.
+	 */
+	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
 }) {
 	const { store, relay } = options;
-	async function state(): Promise<ConfigurationState> {
-		const result = await store.configuration();
-		if (!result?.configuration)
-			throw new ControlError(503, "configuration unavailable");
-		return result;
-	}
+	const meshNodes = options.meshNodes ?? createMeshNodesReader();
+	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
 		repositoryId: number,
@@ -255,9 +293,19 @@ export function createHostedControlPlane(options: {
 		const path = new URL(request.url).pathname;
 		if (
 			!path.startsWith("/v1/accounts/self/") &&
-			!path.startsWith("/v2/accounts/self/")
+			!path.startsWith("/v2/accounts/self/") &&
+			path !== MESH_NODES_PATH
 		)
 			return undefined;
+		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
+			return response(
+				410,
+				JSON.stringify({
+					error:
+						"configuration is read-only on this relay: write it with `hobo ci`, which updates the config service",
+					configService: options.readOnlyConfig.configService,
+				}),
+			);
 		try {
 			const principal = await options.authenticate(
 				request.headers.get("authorization") ?? undefined,
@@ -281,6 +329,30 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
+			// The mesh is the relay's own infrastructure, not one account's: any
+			// account credential that may read (`policy:read`) may see it. The
+			// answer names nodes, capacity and public keys, never a secret.
+			if (path === MESH_NODES_PATH) {
+				if (request.method !== "GET")
+					throw new ControlError(405, "method not allowed");
+				// A machine running jobs for one repository is shown in full only
+				// to the account that owns that repository.
+				const connections =
+					(await store.configuration())?.configuration?.connections ?? [];
+				return response(
+					200,
+					meshNodeReportsJson(
+						meshNodeReportsForAccount(
+							await meshNodes(),
+							new Set(
+								connections
+									.filter((entry) => entry.accountId === principal.accountId)
+									.map((entry) => entry.repository),
+							),
+						),
+					),
+				);
+			}
 			if (path === "/v2/accounts/self/runtime" && request.method === "GET") {
 				if (!options.runtimeDiagnostic)
 					throw new ControlError(404, "runtime diagnostic unavailable");
@@ -735,12 +807,11 @@ export function createHostedControlPlane(options: {
 				path === "/v2/accounts/self/inbox/quarantined" &&
 				request.method === "GET"
 			) {
-				const current = await state();
-				const deliveries = await store.quarantinedWebhooks(
+				const { revision: current, deliveries } = await quarantinedDeliveries(
+					store,
 					principal.accountId,
-					current.revision,
 				);
-				return response(200, JSON.stringify({ deliveries }), current.revision);
+				return response(200, JSON.stringify({ deliveries }), current);
 			}
 			const retry =
 				/^\/v2\/accounts\/self\/inbox\/([A-Za-z0-9-]{1,100})\/retry$/.exec(
@@ -750,21 +821,27 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(400, "retry request must have an empty body");
 				const expected = revision(request);
-				const done = await store.retryQuarantinedWebhook(
+				await retryQuarantinedDelivery(
+					store,
 					principal.accountId,
 					expected,
 					retry[1],
 				);
-				if (!done)
-					throw new ControlError(404, "quarantined delivery not found");
 				return response(200, JSON.stringify({ status: "queued" }), expected);
 			}
 			if (path === "/v1/accounts/self/leases" && request.method === "GET") {
 				const leases = (await store.all())
 					.filter((entry) => entry.accountId === principal.accountId)
 					.slice(-100);
+				// The account's lease and record events, as this route has always
+				// returned them. A job's own events (queued, completed, expired)
+				// now name their account too; they are served by the relay's MCP
+				// server and must not crowd the lease events out of this window.
 				const events = (await store.events())
-					.filter((entry) => entry.accountId === principal.accountId)
+					.filter(
+						(entry) =>
+							entry.accountId === principal.accountId && !isJobEvent(entry),
+					)
 					.slice(-100);
 				return response(
 					200,
@@ -1166,9 +1243,7 @@ export function createHostedControlPlane(options: {
 				);
 			}
 			if (lease?.[1]) {
-				const found = await store.get(lease[1]);
-				if (!found || found.accountId !== principal.accountId)
-					throw new ControlError(404, "lease not found");
+				const found = await accountLease(store, principal.accountId, lease[1]);
 				if (request.method === "GET" && !lease[2])
 					return response(200, toJsonString(LeaseSchema, found));
 				if (request.method === "POST" && lease[2] === "reconcile") {
@@ -1176,12 +1251,18 @@ export function createHostedControlPlane(options: {
 						ReconcileRequestSchema,
 						await readBody(request),
 					);
-					if (!Number.isSafeInteger(input.hostRunId) || input.hostRunId < 1)
-						throw new ControlError(400, "positive host run id required");
-					await relay.reconcile(found.id, input.hostRunId);
 					return response(
 						200,
-						toJsonString(LeaseSchema, (await store.get(found.id)) ?? found),
+						toJsonString(
+							LeaseSchema,
+							await reconcileAccountLease(
+								relay,
+								store,
+								principal.accountId,
+								found.id,
+								input.hostRunId,
+							),
+						),
 					);
 				}
 				throw new ControlError(405, "method not allowed");

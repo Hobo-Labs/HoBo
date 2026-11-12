@@ -40,6 +40,12 @@ const broadAgentCategories = new Set([
 const categories = {
 	unit: rootOnly ? ["test/*test.ts", "test/*test.mjs"] : legacyUnitPatterns,
 	draft: draftUnitPatterns,
+	// Every test of the repo's own scripts, each under the runner it is
+	// written for: the Vitest-style files in the Vitest run below, then the
+	// node:test-style files under `node --test`. `test:scripts` used to hand
+	// the whole directory to `node --test`, which cannot load a Vitest-style
+	// file, so it reported one failure per such file on a healthy tree.
+	scripts: ["scripts/test/*.test.ts"],
 	types: [
 		"src/draft/*/*/type-tests/*.ts",
 		"src/draft/exp-proofs/*/*/type-tests/*.ts",
@@ -120,7 +126,8 @@ if (!patterns) {
 
 // Category lanes run under Vitest, which cannot load node:test-style files.
 // Package files belong to their package-level `node --test` contract lanes;
-// root test/ files run under Node below after the Vitest process finishes.
+// root test/ and scripts/test/ files run under Node below after the Vitest
+// process finishes.
 const nodeTestFiles = new Set<string>();
 // Frozen proofs cannot change after promotion (scripts/promotions.json), so a
 // frozen proof test that runs its stale code against the live repo would fail
@@ -144,19 +151,26 @@ const testFiles =
 		: category === "draft"
 			? selectDraftShard(selectedFiles, shard)
 			: selectShard(selectedFiles, shard);
-const rootNodeTestFiles = [...nodeTestFiles].filter((file) =>
-	file.startsWith("test/"),
+const rootNodeTestFiles = [...nodeTestFiles].filter(
+	(file) => file.startsWith("test/") || file.startsWith("scripts/test/"),
 );
 const shardedRootNodeTestFiles =
 	shard === undefined
 		? rootNodeTestFiles
 		: selectShard(rootNodeTestFiles, shard);
-if (nodeTestFiles.size > 0) {
+const deferredNodeTestFiles = [...nodeTestFiles].filter(
+	(file) => !rootNodeTestFiles.includes(file),
+);
+if (deferredNodeTestFiles.length > 0) {
 	console.log(
-		`Skipping ${nodeTestFiles.size} node:test-style file(s) covered by node:test lanes:`,
+		`Skipping ${deferredNodeTestFiles.length} node:test-style file(s) covered by node:test lanes:`,
 	);
-	for (const file of nodeTestFiles) console.log(`  ${file}`);
+	for (const file of deferredNodeTestFiles) console.log(`  ${file}`);
 }
+if (shardedRootNodeTestFiles.length > 0)
+	console.log(
+		`Running ${shardedRootNodeTestFiles.length} node:test-style file(s) under node --test after Vitest.`,
+	);
 
 if (isAgent && broadAgentCategories.has(category) && !finalValidation) {
 	throw new Error(
@@ -283,7 +297,9 @@ try {
 		);
 	}
 	let exitCode = result.status ?? 1;
-	if (exitCode === 0 && shardedRootNodeTestFiles.length > 0) {
+	// Run the node:test files whatever Vitest answered: one command reports
+	// every failure in the lane, not only the first runner's.
+	if (shardedRootNodeTestFiles.length > 0) {
 		const nodeResult = spawnSync(
 			process.execPath,
 			["--import", "tsx", "--test", ...shardedRootNodeTestFiles],
@@ -299,7 +315,7 @@ try {
 			console.error(
 				`run-tests: node --test failed: ${nodeResult.error.message}`,
 			);
-		exitCode = nodeResult.status ?? 1;
+		if (exitCode === 0) exitCode = nodeResult.status ?? 1;
 	}
 	process.exitCode = exitCode;
 } finally {

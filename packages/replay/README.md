@@ -87,6 +87,8 @@ Client-side before send/persist:
 - Mask password / email / tel inputs
 - Mask `[data-hobo-mask]`, `.hobo-mask`, payment autocomplete fields
 - Redact `Authorization` / `Cookie` headers in network capture
+- Mask debug-payload strings that look like secrets; the pattern is linear in
+  the string, so a long one cannot stall a persistence path
 - Continuous-identity `principalRef` only (no free-text PII)
 
 ## Production gating

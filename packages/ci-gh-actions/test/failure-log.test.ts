@@ -35,6 +35,20 @@ describe("describeFailure", () => {
 		});
 	});
 
+	it("carries a database's SQLSTATE, from the error or its cause, and nothing else shaped like a code", () => {
+		const refused = Object.assign(new Error("password authentication failed"), {
+			code: "28P01",
+		});
+		expect(describeFailure(refused).sqlstate).toBe("28P01");
+		expect(
+			describeFailure(new Error("store failed", { cause: refused })).sqlstate,
+		).toBe("28P01");
+		const network = Object.assign(new Error("connect ECONNREFUSED"), {
+			code: "ECONNREFUSED",
+		});
+		expect(describeFailure(network)).not.toHaveProperty("sqlstate");
+	});
+
 	it("removes credentials and anything shaped like a token", () => {
 		const failure = describeFailure(
 			new Error(

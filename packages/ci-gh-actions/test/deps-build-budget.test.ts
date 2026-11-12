@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-	depsBuildDockerReserve,
 	DEPS_BUILD_MEASURED_DOCKER_INODES,
 	DEPS_BUILD_VOLATILITY_INODES,
+	depsBuildDockerReserve,
 } from "../src/isolated-worker/deps-build-budget.js";
 
 describe("deps build budget", () => {
 	it("applies volatility on measured peaks", () => {
 		const reserve = depsBuildDockerReserve();
 		expect(reserve.dockerDataRoot).toBe(
-			Math.ceil(DEPS_BUILD_MEASURED_DOCKER_INODES * DEPS_BUILD_VOLATILITY_INODES),
+			Math.ceil(
+				DEPS_BUILD_MEASURED_DOCKER_INODES * DEPS_BUILD_VOLATILITY_INODES,
+			),
 		);
 	});
 

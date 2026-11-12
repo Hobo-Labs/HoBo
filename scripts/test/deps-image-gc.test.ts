@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	depsGcKeepTag,
 	selectWorkerImagesForDeletion,
 	type WorkerImage,
 } from "../../packages/ci-gh-actions/src/isolated-worker/image-gc.ts";
@@ -14,6 +15,18 @@ const image = (tag: string, created: number, inUse = false): WorkerImage => ({
 });
 
 describe("deps image garbage collection", () => {
+	it("maps hobo-ci-deps:local to the keyed tag when the label is known", () => {
+		assert.equal(
+			depsGcKeepTag("hobo-ci-deps:local", "abc12"),
+			"hobo-ci-deps:abc12",
+		);
+		assert.equal(depsGcKeepTag("hobo-ci-deps:local", undefined), undefined);
+		assert.equal(
+			depsGcKeepTag("hobo-ci-deps:keyed", undefined),
+			"hobo-ci-deps:keyed",
+		);
+	});
+
 	it("keeps only the current and newest previous keyed images", () => {
 		const images = [
 			image("hobo-ci-deps:oldest", 200),

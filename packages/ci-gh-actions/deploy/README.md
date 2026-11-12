@@ -112,21 +112,19 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
-| `HOBO_CI_JOB_POLL_MS` | `2000` | GitHub list-poll interval; minimum 2000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit. The daemon also polls once per reconcile tick so pickup is not gated on this interval alone. |
+| `HOBO_CI_JOB_POLL_MS` | `2000` | GitHub list-poll interval; minimum 2000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit. |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Docker-writable-layer inode growth reserved per job; digits only, `0` disables this root's reservation |
-| `HOBO_CI_STORAGE_INODE_SAFETY_MARGIN` | `25000` | Floor inode margin below projected grants; the daemon may raise this from observed inode volatility (`hobo_ci_host_capacity.safetyMarginInodes`) |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
-| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | _(measured × 1.2, default ~210k)_ | Override only: free inodes required before a deps rebuild (`scripts/lib/deps-build-headroom.mts`) |
-| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | _(measured × 1.1)_ | Override only: free bytes required before a deps rebuild |
+| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only; sub-threshold runs LRU-evict unused `hobo-ci-deps:*` images via `scripts/ci-runner-image-gc.mts` after builder prune |
+| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
 | `HOBO_CI_DEPS_BUILD_TELEMETRY_PATH` | `$HOBO_HOME/ci/deps-build-telemetry.json` | Rolling peak inode/byte consumption recorded after successful deps builds |
-| `HOBO_CI_DEPS_BUILD_SPILL_OK` | unset | When `1`, exit **2** instead of refusing when headroom is still short (publisher overflows to GitHub-hosted) |
 | `HOBO_RELEASE_BUILDER_CACHE_CAP` | `2GB` | `docker builder prune --keep-storage` cap after release OCI builds on shared boxes |
 | `HOBO_CI_DEPS_BUILD_WAIT_MS` | `900000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` before a publisher or PR miss build |
 | `HOBO_CI_DEPS_BUILD_WAIT_POLL_MS` | `10000` | Poll interval for the deps build window script; digits only |
@@ -353,7 +351,7 @@ or built candidate is tagged `hobo-ci-deps:local` only after the real mounted-jo
 contract passes, then passed to keep-2 GC. `HOBO_CI_DEPS_IMAGE=` disables both
 selection and this ensure loop.
 
-GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red. When the publisher must rebuild, `build-deps.sh` runs `scripts/ci/ensure-ci-worker-image.mts` if the checkout's computed `hobo-ci-worker:<version>` is missing in the job's Docker context (GHCR pull or `build.sh`), instead of failing immediately when `:local` lacks a versioned tag.
+GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red. When the publisher must rebuild, `build-deps.sh` runs `scripts/ci/ensure-ci-worker-image.mts` if the checkout's computed `hobo-ci-worker:<version>` is missing in the job's Docker context (GHCR pull or bounded `build.sh` with a cached Playwright zip), instead of failing immediately when `:local` lacks a versioned tag. Release trains refuse `build.sh` when the GHCR worker is missing (see finding 91); the runner base installs headless-shell from `HOBO_CI_PLAYWRIGHT_CACHE` / staged `playwright-cache`, not unbounded CDN retries inside the Dockerfile.
 
 Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
 registry, or build work, then `hobo_ci_deps_image_ensure` with

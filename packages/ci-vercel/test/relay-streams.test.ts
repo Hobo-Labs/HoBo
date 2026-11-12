@@ -41,6 +41,9 @@ it("streams only the sandbox and queue paths of this host", () => {
 		"/sandbox/egressive",
 		"/internal/tick",
 		"/v1/accounts/self/policy",
+		// MCP runs without sessions here: each request is answered with JSON.
+		"/mcp",
+		"/engines/gh-actions/mcp",
 	])
 		expect(streamsBody(path)).toBe(false);
 });

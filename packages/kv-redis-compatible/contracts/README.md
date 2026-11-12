@@ -58,6 +58,25 @@ caller's `keyPrefix`. An adapter must not rewrite keys further, or two
 conformance runs against one store will collide and the failure will look like
 an implementation bug.
 
+## Ephemeral-state commands: `pacts/ephemeral-state-executor.pact.json`
+
+The `EphemeralStatePort` binding (`createRedisEphemeralState`) is a second
+consumer of the same executor. Its pact pins the exact commands it sends
+(`EVALSHA` with the script's SHA-1, the `EVAL` fallback with the script body,
+`HMGET`, `PEXPIRE`) and the replies a Redis-protocol store gives them from an
+empty script cache. Two rules are load-bearing:
+
+- `NOSCRIPT` is a returned error reply. An executor that throws it (or, over
+  REST, treats a `400 {"error": ...}` envelope as a transport failure) makes the
+  `EVAL` fallback unreachable and every first call fail.
+- A script body is part of the contract. Editing one changes its SHA-1, so the
+  pact must change with it, deliberately.
+
+`test/ephemeral-pact.test.ts` replays the consumer side against the binding
+and the provider side against the in-memory engine;
+`test/ephemeral-resp.test.ts` replays the provider side against a real
+Valkey/Redis when one is available.
+
 ## Not a contract boundary
 
 `runKvRedisConformance`, the case catalog, the requirement builders, and the

@@ -3,9 +3,11 @@ import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+	createWalker,
 	exportTarget,
 	planCommands,
 	planDependentTests,
+	planHasWorkspaceWork,
 	planShardCount,
 	type Repo,
 	readRepo,
@@ -106,6 +108,30 @@ const repo: Repo = {
 	],
 };
 
+describe("planHasWorkspaceWork", () => {
+	it("is false for an empty scoped plan and true for all or non-empty scoped", () => {
+		assert.equal(
+			planHasWorkspaceWork({
+				mode: "scoped",
+				full: [],
+				subsets: new Map(),
+				skipped: [],
+			}),
+			false,
+		);
+		assert.equal(planHasWorkspaceWork({ mode: "all", reason: "x" }), true);
+		assert.equal(
+			planHasWorkspaceWork({
+				mode: "scoped",
+				full: ["packages/ci"],
+				subsets: new Map(),
+				skipped: [],
+			}),
+			true,
+		);
+	});
+});
+
 describe("workspace test shards", () => {
 	it("partitions whole suites and dependent subsets exactly once", () => {
 		const plan = planDependentTests(["packages/lib/src/client.ts"], repo);
@@ -129,19 +155,51 @@ describe("workspace test shards", () => {
 		assert.equal(new Set(subsets.map(([dir]) => dir)).size, subsets.length);
 	});
 
-	it("partitions every workspace for a repo-wide plan and rejects invalid shards", () => {
+	it("partitions every workspace that has a test task for a repo-wide plan and rejects invalid shards", () => {
 		const plan: TestPlan = { mode: "all", reason: "global input" };
-		const shards = [0, 1, 2, 3].map((index) =>
-			shardTestPlan(plan, repo.workspaces, index, 4),
-		);
-		const full = shards.flatMap((part) =>
-			part.mode === "scoped" ? part.full : [],
-		);
-		assert.deepEqual(
-			[...full].sort(),
-			repo.workspaces.map((ws) => ws.dir).sort(),
-		);
-		assert.equal(new Set(full).size, full.length);
+		// The fixture tree's own task graph. A repo-wide plan is partitioned
+		// from the graph, not from the workspace list: packages/none has no
+		// test task here, so no shard carries it.
+		const tested = repo.workspaces
+			.map((ws) => ws.dir)
+			.filter((dir) => dir !== "packages/none");
+		const graph: TestGraph = () => [
+			...tested.map((directory) => ({
+				taskId: `${directory}#test`,
+				task: "test",
+				directory,
+			})),
+			{ taskId: "@t/lib#build", task: "build", directory: "packages/lib" },
+		];
+		const durations = { defaultSeconds: 1, seconds: new Map<string, number>() };
+		// Main plans past the parallel cap when a shard would outrun its time
+		// limit (finding 117), so the split must hold at those counts too.
+		for (const count of [4, 8, 16]) {
+			const shards: ReturnType<typeof shardTestPlan>[] = [];
+			for (let index = 0; index < count; index++)
+				shards.push(
+					shardTestPlan(plan, repo.workspaces, index, count, durations, graph),
+				);
+			const full: string[] = shards.flatMap((part) =>
+				part.mode === "scoped" ? [...part.full] : [],
+			);
+			assert.deepEqual([...full].sort(), [...tested].sort(), `${count} shards`);
+			assert.equal(new Set(full).size, full.length, `${count} shards`);
+		}
+		// A test task in a directory the workspace list does not know would be
+		// dropped from every shard; the plan is refused instead. So is a graph
+		// with no test task at all.
+		for (const broken of [
+			() => [
+				...graph([]),
+				{ taskId: "@t/new#test", task: "test", directory: "packages/new" },
+			],
+			() => [],
+		] satisfies TestGraph[])
+			assert.throws(
+				() => shardTestPlan(plan, repo.workspaces, 0, 4, durations, broken),
+				/repo-wide test graph includes an undiscovered workspace/u,
+			);
 		for (const [index, count] of [
 			[-1, 4],
 			[4, 4],
@@ -168,6 +226,37 @@ describe("workspace test shards", () => {
 				),
 			/both a whole suite and a subset/u,
 		);
+	});
+});
+
+describe("workspace test shards on this repository", () => {
+	it("carries every workspace turbo would test in exactly one shard", () => {
+		// The real workspace list against the real task graph: the pair main's
+		// repo-wide shards are planned from. A package whose test task turbo
+		// knows but workspace discovery does not would fail the plan on main.
+		const tasks = turboTestGraph([]);
+		const tested = [
+			...new Set(
+				tasks
+					.filter((task) => task.task === "test")
+					.map((task) => task.directory),
+			),
+		].sort();
+		assert.ok(tested.length > 0);
+		const workspaces = readRepo().workspaces;
+		const full = [0, 1, 2, 3]
+			.map((index) =>
+				shardTestPlan(
+					{ mode: "all", reason: "global input" },
+					workspaces,
+					index,
+					4,
+					undefined,
+					() => tasks,
+				),
+			)
+			.flatMap((part) => (part.mode === "scoped" ? part.full : []));
+		assert.deepEqual([...full].sort(), tested);
 	});
 });
 
@@ -1005,29 +1094,58 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	const plan = (path: string) =>
 		scoped(planDependentTests([path], (tree ??= readRepo())));
 
+	// The packages whose `vitest.config.ts` merges the root config to leave the
+	// `*.deep.test.ts` tier out of `test` (docs/design/provider-redaction.md).
+	const tiered = [
+		"packages/auth-md",
+		"packages/claims",
+		"packages/conformance",
+		"packages/packs/pack-framework",
+		"packages/provider-redaction",
+		"packages/providers/provider-aws",
+		"packages/providers/provider-browser-wasm",
+		"packages/providers/provider-kubernetes",
+		"packages/providers/provider-neon",
+		"packages/providers/provider-netlify",
+		"packages/providers/provider-prisma-postgres",
+		"packages/providers/provider-ttl-sh",
+		"packages/providers/provider-upstash",
+		"packages/providers/provider-vercel",
+		"packages/recipes",
+		"packages/redaction-test-harness",
+	];
+	const withTiered = (...others: string[]) => [...tiered, ...others].sort();
+
 	// `packages/cli` merges the root config but its script builds first.
 	for (const [path, full] of [
-		["vitest.config.ts", ["packages/cli", "packages/hobo"]],
+		["vitest.config.ts", withTiered("packages/cli", "packages/hobo")],
 		[
 			"test/setup/hobo-test-homes.ts",
-			["packages/cli", "packages/code", "packages/hobo"],
+			withTiered("packages/cli", "packages/hobo"),
 		],
 		[
 			"test/setup/isolate-hobo-home.ts",
-			["packages/cli", "packages/code", "packages/hobo"],
+			withTiered("packages/cli", "packages/hobo"),
 		],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
-			assert.deepEqual(plan(path), { full, subsets: {}, skipped: [] });
+			const planned = plan(path);
+			// A list of names, not a count: it changes only when a package starts
+			// or stops reaching the root config, and then this says what to edit.
+			assert.deepEqual(
+				planned,
+				{ full, subsets: {}, skipped: [] },
+				`a change to ${path} plans ${JSON.stringify(planned)}, and this case expects the whole suites ${JSON.stringify(full)} and nothing else. If a package's vitest config now merges the root config (or one stopped), or a test now reads ${path}, update the list for ${path} in this file; otherwise the planner's reach changed and that is the bug.`,
+			);
 		});
 
 	it("runs a test that imports another package's source by relative path", () => {
-		// `packages/code` imports `../../cli/src/cloud/loader.js` and declares no
-		// dependency on @hobo/cli; 3317dcc2 changed cli and missed it.
+		// `packages/stations` imports `../../broker/src/budget-signals.js` and
+		// declares no dependency on @hobo/broker.
 		assert.ok(
-			plan("packages/cli/src/cloud/loader.ts").subsets[
-				"packages/code"
-			]?.includes("test/happy-path-run.test.ts"),
+			plan("packages/broker/src/budget-signals.ts").subsets[
+				"packages/stations"
+			]?.includes("test/ci-routing.test.ts"),
 		);
 	});
 
@@ -1057,13 +1175,42 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		});
 
 	it("plans a generated @hobo/core leaf by what imports it, not by core's `./`", () => {
-		const { full, subsets, skipped } = plan(
-			"packages/core/src/_generated/actor_host_port_pb.ts",
+		// No module of @hobo/core imports this generated file. `startsWith("./")`
+		// in core's plugin-manifest.ts once read as an edge to all of
+		// `packages/core/src`, so core's entry reached the file and every
+		// importer of @hobo/core ran. No package is counted here: the workspace
+		// grows, and a count went red on every unrelated addition.
+		const leaf = "packages/core/src/_generated/actor_host_port_pb.ts";
+		const repo = (tree ??= readRepo());
+		assert.ok(
+			repo.files.has(leaf),
+			`${leaf} is gone: use another generated file of @hobo/core that none of its modules imports`,
 		);
+		const { reaches } = createWalker(repo);
+		const through = [...repo.files]
+			.filter(
+				(file) =>
+					file.startsWith("packages/core/src/") &&
+					file !== leaf &&
+					reaches(file, new Set([leaf]), true) === leaf,
+			)
+			.sort();
 		assert.deepEqual(
-			[full.length, Object.keys(subsets).length, skipped.length],
-			[13, 14, 106],
+			through,
+			[],
+			`these modules of @hobo/core reach ${leaf}: ${through.join(", ")}. If one now imports it, the file is no longer a leaf: list its importers here or use another leaf. If none does, a string literal is read as a path again (the bare \`./\` edge).`,
 		);
+		const { full, skipped } = plan(leaf);
 		assert.ok(full.includes("packages/core"));
+		// Dependents that import @hobo/core and whose tests name nothing wider.
+		for (const dir of [
+			"packages/broker",
+			"packages/contracts",
+			"packages/events",
+		])
+			assert.ok(
+				skipped.includes(dir),
+				`${dir} is not skipped for a change to ${leaf}. If one of its tests now reaches that file, or the walk gives up on one (a computed import(), a literal naming a directory that holds packages), name another dependent that only imports @hobo/core; otherwise importing @hobo/core selects every dependent again.`,
+			);
 	});
 });

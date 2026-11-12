@@ -410,7 +410,7 @@ describe("the receipt an apply returns", () => {
 		// with a change and no way to land it.
 		const receipt = apply(root(PLAIN));
 		expect(receipt.promotionRequired).toBe(true);
-		expect(receipt.promotionRef).toBe("hobo-code promote");
+		expect(receipt.promotionRef).toBe("caller-promotes");
 	});
 
 	it("records that no model was called", () => {

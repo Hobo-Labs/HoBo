@@ -1,11 +1,11 @@
 {
 	"consumer": {
-		"name": "@hobo/code"
+		"name": "hobo-rift-cli-consumer"
 	},
 	"provider": {
 		"name": "hobo-rift-cli"
 	},
-	"comment": "The boundary @hobo/code depends on: argv in, exit code plus stdout out. Verified for real by test/pact.test.ts, which runs the built CLI for every interaction below.",
+	"comment": "The boundary a caller of hobo-rift depends on: argv in, exit code plus stdout out. Verified for real by test/pact.test.ts, which runs the built CLI for every interaction below.",
 	"interactions": [
 		{
 			"description": "capability reports the chosen tier and why",

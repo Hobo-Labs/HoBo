@@ -165,34 +165,18 @@ describe("hobo ci serve multi-engine", () => {
 		expect(env.HOBO_CI_STORE_URL_ENV).toBeUndefined();
 	});
 
-	it("takes a Postgres worker store from the config by env var name", async () => {
+	it("refuses a Postgres worker store in the config: the worker's journal is SQLite", async () => {
 		const cwd = await projectRoot(
 			withStore({ kind: "postgres", urlEnv: "HOBO_CI_SHARED_DB" }),
 		);
-		const plan = await resolveCiServePlan({
-			cwd,
-			options: { environment: "local" },
-			env: {},
-			git,
-		});
-		expect(plan.workerStore).toEqual({
-			kind: "postgres",
-			urlEnv: "HOBO_CI_SHARED_DB",
-		});
-		expect(() =>
-			ciWorkerEnvironment({
-				relayEnv: {},
-				store: plan.workerStore,
-				stateDir: "/s",
+		await expect(
+			resolveCiServePlan({
+				cwd,
+				options: { environment: "local" },
+				env: {},
+				git,
 			}),
-		).toThrow("--with-worker postgres store requires HOBO_CI_SHARED_DB");
-		const env = ciWorkerEnvironment({
-			relayEnv: { HOBO_CI_SHARED_DB: "postgres://synthetic.invalid/db" },
-			store: plan.workerStore,
-			stateDir: "/s",
-		});
-		expect(env.HOBO_CI_STORE).toBe("postgres");
-		expect(env.HOBO_CI_STORE_URL_ENV).toBe("HOBO_CI_SHARED_DB");
+		).rejects.toThrow();
 	});
 
 	it("refuses a connection string written into the config", async () => {
@@ -302,6 +286,129 @@ describe("hobo ci serve multi-engine", () => {
 		} finally {
 			await handle.stop();
 		}
+	});
+});
+
+describe("hobo ci serve with a CI agent", () => {
+	const agent = {
+		mode: "observe",
+		engines: [
+			{
+				id: "primary",
+				kind: "gateway",
+				model: "openai/gpt-5.1",
+				credential: "env:TEST_MODEL_KEY",
+			},
+		],
+	};
+	const accountToken = "test-account-token-0123456789abcdef";
+	/** A project (optionally with an agent block), an imported App key and a free port. */
+	async function serveInput(project: z.infer<ReturnType<typeof z.json>>) {
+		const cwd = await projectRoot(JSON.stringify(project));
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-home-"));
+		directories.push(home);
+		await writeFile(
+			join(home, "source.pem"),
+			generateKeyPairSync("rsa", {
+				modulusLength: 2048,
+				privateKeyEncoding: { type: "pkcs8", format: "pem" },
+				publicKeyEncoding: { type: "spki", format: "pem" },
+			}).privateKey,
+		);
+		await writeFile(
+			join(home, "source-secret"),
+			"test-webhook-secret-for-imported-app",
+		);
+		await importGithubKey({
+			home,
+			appId: "123",
+			keyFile: join(home, "source.pem"),
+			webhookSecretFile: join(home, "source-secret"),
+			fetch: async () => Response.json({ id: 123 }),
+		});
+		const { createServer } = await import("node:net");
+		const port = await new Promise<number>((resolve, reject) => {
+			const server = createServer();
+			server.listen(0, "127.0.0.1", () => {
+				const picked = ListenAddress.parse(server.address()).port;
+				server.close((error) => (error ? reject(error) : resolve(picked)));
+			});
+		});
+		return {
+			home,
+			agentState: join(home, "ci", "serve", "agent"),
+			input: {
+				cwd,
+				options: {
+					environment: "local",
+					port: String(port),
+					home,
+					installationId: "1",
+				},
+				git,
+			},
+		};
+	}
+	const exists = (path: string) =>
+		readFile(path).then(
+			() => true,
+			() => false,
+		);
+
+	it("starts the agent beside the relay when the project has an agent block", async () => {
+		const { input, agentState } = await serveInput({
+			...minimalProject,
+			agent,
+		});
+		const events: string[] = [];
+		const handle = await startCiServe({
+			...input,
+			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken, TEST_MODEL_KEY: "not-real" },
+			emitProgress: (message) => events.push(message),
+		});
+		try {
+			const ready = await fetch(`http://127.0.0.1:${handle.plan.port}/readyz`);
+			expect(ready.status).toBe(200);
+			// The agent opened its journal under this serve's state directory.
+			expect(await exists(join(agentState, "agent.sqlite"))).toBe(true);
+			expect(
+				events.some((message) =>
+					/"event":"serve\.starting".*"agent":true/.test(message),
+				),
+			).toBe(true);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	it("serves without the agent when there is no block, or with --no-agent", async () => {
+		for (const { project, options } of [
+			{ project: minimalProject, options: {} },
+			{ project: { ...minimalProject, agent }, options: { noAgent: true } },
+		]) {
+			const { input, agentState } = await serveInput(project);
+			const handle = await startCiServe({
+				...input,
+				options: { ...input.options, ...options },
+				// No model key: without the agent, none is needed.
+				env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
+			});
+			try {
+				expect(
+					(await fetch(`http://127.0.0.1:${handle.plan.port}/readyz`)).status,
+				).toBe(200);
+				expect(await exists(join(agentState, "agent.sqlite"))).toBe(false);
+			} finally {
+				await handle.stop();
+			}
+		}
+	});
+
+	it("refuses to serve when the agent's model credential is not in the environment", async () => {
+		const { input } = await serveInput({ ...minimalProject, agent });
+		await expect(
+			startCiServe({ ...input, env: { HOBO_CI_ACCOUNT_TOKEN: accountToken } }),
+		).rejects.toThrow("CI agent credential is not set: env:TEST_MODEL_KEY");
 	});
 });
 

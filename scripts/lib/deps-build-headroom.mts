@@ -3,8 +3,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
-	DepsBuildTelemetrySchema,
 	type DepsBuildTelemetry,
+	DepsBuildTelemetrySchema,
 	depsBuildDockerReserve,
 } from "../../packages/ci-gh-actions/src/isolated-worker/deps-build-budget.ts";
 

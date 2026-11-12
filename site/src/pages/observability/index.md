@@ -17,6 +17,7 @@ HoBo’s primary observability substrate is the **event log** plus rebuildable p
 | [Metering](/HoBo/reference/metering/) | Usage facts and showback projections |
 | [Streamer](/HoBo/reference/streamer/) | High-volume frames outside the domain log |
 | [Endpoint Monitor](/HoBo/operations/endpoint-monitor/) | Synthetics and SLO burn |
+| [CI host health](/HoBo/ci/host-health/) | The CI box's CPU, memory, disk and inode pressure |
 
 ## Principles
 

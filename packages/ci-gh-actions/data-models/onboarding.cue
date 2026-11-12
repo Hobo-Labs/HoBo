@@ -1,4 +1,7 @@
 package ghactions
+
+import "list"
+
 #JitBootstrapResponse: {encodedJitConfig: string & =~"^[A-Za-z0-9+/=]+$"}
 #OnboardingPrincipal: {accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", installationIds: [number & >0, ...number & >0]}
 #OnboardingFile: {path: ".github/workflows/hobo-ci-host.yml" | ".hobo-ci/bootstrap.mts", content: string & !="", sha256: string & =~"^[a-f0-9]{64}$"}
@@ -58,4 +61,126 @@ package ghactions
  if provider == "depot" {auth: method: "github-app" | "oidc" | "secret-ref", runsOn: [...=~"^depot-[a-z0-9.-]+$"]}
  if provider == "boat" {auth: method: "device" | "secret-ref", runsOn: [...=~"^boat(-(small|large|xlarge))?$"]}
 }
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration
+// Views the relay's MCP server returns. Protobuf JSON leaves out a zero or
+// empty field, so only what identifies a view is required.
+#RelayMcpLease: {
+ id: string & =~"^[a-f0-9-]{36}$"
+ state: string & !=""
+ active?: bool
+ repository?: string
+ jobId?: int & >=0, jobName?: string, runId?: int & >=0, runAttempt?: int & >=0
+ provider?: string, offerId?: string, runnerName?: string
+ createdAt?: string, dispatchingAt?: string, settledAt?: string, queueDeadlineAt?: string
+ hostRunId?: int & >=0, actualJobId?: int & >=0
+ billedMinutes?: number & >=0, paidMicros?: number & >=0
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ sandboxStage?: string
+}
+#RelayMcpJob: {
+ id: int & >0, runId: int & >0, runAttempt?: int & >=0
+ repository: string & !=""
+ name?: string, labels?: [...string], isolatedRequired?: bool
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ queueDeadlineAt?: string
+}
+#RelayMcpEvent: {
+ cursor: string & =~"^[A-Za-z0-9_-]{22}$"
+ type: string & =~"^ci\\.[A-Za-z]+$"
+ at: string & !=""
+ leaseId?: string, state?: string, repository?: string
+ jobId?: int & >=0, jobName?: string, runId?: int & >=0, runAttempt?: int & >=0
+}
+#RelayMcpLeases: {leases?: [...#RelayMcpLease], truncated?: bool}
+#RelayMcpLeaseDetail: {lease: #RelayMcpLease, events?: [...#RelayMcpEvent]}
+#RelayMcpJobs: {jobs?: [...#RelayMcpJob], truncated?: bool}
+#RelayMcpEvents: {events?: [...#RelayMcpEvent], cursor: string & =~"^[A-Za-z0-9_-]{22}$", timedOut?: bool, more?: bool, truncated?: bool}
+#RelayMcpEngine: {id: string & =~"^[a-z0-9-]{1,40}$", ready?: bool}
+#RelayMcpStatus: {ready?: bool, engines: [#RelayMcpEngine, ...#RelayMcpEngine], subscriptions?: bool, waitDefaultSeconds: int & >=1, waitMaxSeconds: int & >=1, accountCalls: int & >=1, accountWaits: int & >=1, requestMessages: int & >=1, mesh?: "configured" | "not-configured"}
+#RelayMcpQuarantinedDelivery: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", event: string & !="", installationId: int & >0, repositoryId: int & >0, receivedAt: string & !="", attempts?: int & >=0}
+#RelayMcpQuarantine: {deliveries?: [...#RelayMcpQuarantinedDelivery]}
+#RelayMcpRetry: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", status: "queued"}
+#MeshRepository: string & =~"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$"
+#MeshNodeId: string & =~"^[A-Za-z0-9_-]{1,64}$"
+#MeshPublicKey: string & =~"^[A-Za-z0-9_-]{43}$"
+#MeshLabel: string & =~"^.{1,80}$"
+#MeshFree: {memoryMb?: int & >=0 & <=16777216, diskMb?: int & >=0 & <=1073741824}
+#MeshPlatform: {os: string & =~"^.{1,32}$", arch: string & =~"^.{1,32}$"}
+#MeshReliabilitySamples: {delivered?: number & >=0, dropped?: number & >=0}
+#MeshIdentityProof: {publicKey: #MeshPublicKey, signature: string & =~"^[A-Za-z0-9_-]{86}$"}
+#MeshAdvert: {
+	id: #MeshNodeId
+	freeSlots: int & >=0 & <=4096
+	totalSlots?: int & >=0 & <=4096
+	healthy: bool
+	labels: [...#MeshLabel] & list.MaxItems(32)
+	validUntilMs: int & >=0
+	free?: #MeshFree
+	platform?: #MeshPlatform
+	reliability?: number & >=0 & <=1
+	samples?: #MeshReliabilitySamples
+	sinceMs?: int & >=0
+	identity?: #MeshIdentityProof
+	repository?: "" | #MeshRepository
+}
+#MeshTrustedKey: {publicKey: #MeshPublicKey, nodeId?: "" | #MeshNodeId}
+#MeshTrustConfig: {trustedKeys: [...#MeshTrustedKey] & list.MaxItems(256), requireTrusted?: bool}
+#MeshReliabilityRecord: {delivered: number & >=0, dropped: number & >=0, atMs: number & >=0, resetToken?: string & =~"^[A-Za-z0-9._:-]{0,64}$"}
+#MeshNodeReport: {
+	id: #MeshNodeId
+	state: "live" | "unhealthy" | "lost"
+	since?: string
+	healthy?: bool
+	lastSeenAt?: string
+	validUntil: string & !=""
+	totalSlots?: int & >=0 & <=4096
+	freeSlots?: int & >=0 & <=4096
+	freeMemoryMb?: int & >=0
+	freeDiskMb?: int & >=0
+	platform?: #MeshPlatform
+	labels?: [...#MeshLabel]
+	trust: "trusted" | "unverified" | "invalid"
+	publicKey?: "" | #MeshPublicKey
+	reliability?: number & >=0 & <=1
+	delivered?: number & >=0
+	dropped?: number & >=0
+	repository?: "" | #MeshRepository
+}
+#MeshCapacitySummary: {nodes?: int & >=0, healthy?: int & >=0, available?: int & >=0, totalSlots?: int & >=0, freeSlots?: int & >=0, freeMemoryMb?: int & >=0, largestFreeMemoryMb?: int & >=0, freeDiskMb?: int & >=0}
+#MeshNodeReports: {mesh: "configured" | "not-configured" | "unreachable", nodes?: [...#MeshNodeReport], capacity?: #MeshCapacitySummary, readAt?: string, requireTrusted?: bool, truncated?: bool}
+#MeshFleetLabelState: {nodes?: int & >=0, trustedNodes?: int & >=0, freeSlots?: int & >=0}
+#MeshFleetState: {publishedAt: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$", labels: {[=~"^[A-Za-z0-9_.-]{1,80}$"]: #MeshFleetLabelState}}
+#RelayCacheJobKey: string & =~"^[0-9]{1,16}:[0-9]{1,16}:[0-9]{1,10}$"
+#RelayCacheLeaseId: string & =~"^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+#RelayCacheIntent: {kind: "ci.DispatchRequested" | "ci.RunnerClaimed" | "ci.SandboxCreated", at: string & !=""}
+#RelayCacheLease: {leaseJson: string & =~"^\\{", jobKey: #RelayCacheJobKey, generation?: int & >=0 & <=64, intents?: [...#RelayCacheIntent] & list.MaxItems(3), rebuiltFrom?: "runner" | "bridge-run" | "sandbox"}
+#RelayCacheAssignment: {leaseId: #RelayCacheLeaseId, version: string & =~"^[0-9a-f-]{36}$"}
+#RelayCacheJob: {
+	jobKey: #RelayCacheJobKey
+	state: "pending" | "taken" | "idle" | "terminal"
+	generation?: int & >=0 & <=64
+	leaseId?: #RelayCacheLeaseId
+	pendingJobJson?: string & =~"^\\{"
+	firstSeenAt: string & !=""
+	queueDeadlineAt?: string
+	assigned?: #RelayCacheAssignment
+	terminalReason?: "completed" | "expired"
+}
+#RelayCacheInflightEntry: {leaseId: #RelayCacheLeaseId, jobKey: string & !="", offerId: string & !="", provider: string & !="", providerAccountId?: string, reservedPaidMicros?: number & >=0, reservedFreeMinutes?: number & >=0, reservedMinutes?: number & >=0, sandboxReservedAllowanceJson?: string, createdAt: string & !=""}
+#RelayCacheInflight: {accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", entries?: [...#RelayCacheInflightEntry] & list.MaxItems(1000), recentTerminal?: [...#RelayCacheLeaseId] & list.MaxItems(50), holdsKnown?: bool, rebuiltAt?: string}
+#RelayCachePending: {jobKeys?: [...#RelayCacheJobKey] & list.MaxItems(2000)}
+#RelayCacheDelivery: {fingerprint: string & =~"^[a-f0-9]{64}$", receivedAt: string & !="", ignored?: bool}
+#RelayCacheSandboxEgress: {leaseId: #RelayCacheLeaseId, accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", maxBytes?: number & >=0}
+#RelayCacheAccountId: string & =~"^[A-Za-z0-9_-]{1,80}$"
+#RelayCacheWebhookScan: {cursorUrl?: string & =~"^https://api\\.github\\.com/app/hook/deliveries\\?", checkpointAt: string & !=""}
+#RelayCacheQueuedCursor: {page?: int & >=1 & <=1000, runs?: [...(int & >0)] & list.MaxItems(100), loaded?: bool, hasNext?: bool, runIndex?: int & >=0 & <=100, jobPage?: int & >=1 & <=1000, jobIndex?: int & >=0 & <=100}
+#RelayCacheQueuedScan: {cursor: #RelayCacheQueuedCursor, dueMs?: number & >=0, touchedMs?: number & >=0}
+// Sealed records carry ciphertext only: no account, token or verifier field.
+#RelayCacheSealed: close({keyId: string & =~"^[a-f0-9]{16}$", nonce: string & !="", ciphertext: string & !=""})
+// Sealed payloads: never stored in the clear, so outside the stored union.
+#RelayCacheOAuthState: {browserDigest: string & =~"^[a-f0-9]{64}$", accountId: #RelayCacheAccountId, verifier: string & !="", controlToken: string & !="", expiresAtMs: number & >0}
+#RelayCacheOAuthSession: {accountId: #RelayCacheAccountId, githubId: number & >0, githubToken: string & !="", controlToken: string & !="", expiresAtMs: number & >0}
+#RelayCacheOwnerSession: {accountId: #RelayCacheAccountId, expiresAtMs: number & >0}
+#RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
+#RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
+#RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter

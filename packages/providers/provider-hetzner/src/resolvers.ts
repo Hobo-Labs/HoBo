@@ -75,8 +75,12 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
-
 import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
+import {
+	createProviderRedactor,
+	LONG_TOKEN_RUN_PROFILE,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
 
 import {
 	isJsonArray,
@@ -232,8 +236,18 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9]{32,}$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule. The length rule is searched
+ * last, so it cannot split a JWT or a key the shared shapes redact whole.
+ */
+/** The provider's own patterns, on top of the shared ones. */
+export const HETZNER_REDACTION_PROFILE: ProviderRedactionProfile =
+	LONG_TOKEN_RUN_PROFILE;
+
+const redactTokenText = createProviderRedactor(HETZNER_REDACTION_PROFILE);
 
 /**
  * Redact provider text before it reaches a message, a diagnostic, or a log.
@@ -241,8 +255,7 @@ const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
  * carried resource names and token fragments before.
  */
 export function redactHetznerText(text: string, limit = 400): string {
-	const scrubbed = text.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(text, limit);
 }
 
 // ---------------------------------------------------------------------------

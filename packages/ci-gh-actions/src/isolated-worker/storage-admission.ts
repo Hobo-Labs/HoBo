@@ -1,15 +1,7 @@
 import { basename } from "node:path";
-import { z } from "zod";
-import {
-	buildHostCapacityRecord,
-	type HostCapacityTracker,
-	readHostCapacitySignals,
-} from "./host-capacity.js";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 import {
 	DEPS_BUILD_ADMISSION_ID,
-	storageReserveForClass,
-	storageReserveForJob,
 	type WorkerStorageReserve,
 } from "./storage-job-classes.js";
 import {
@@ -28,9 +20,8 @@ export {
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
-const INODE_GRANT_GRACE_MS = 60_000;
-const BYTE_SAFETY_MARGIN_FLOOR = 2 * 1024 * 1024 * 1024;
-const IMMINENT_INODE_BUFFER = 50_000;
+const INODE_GRANT_GRACE_MS = 15_000;
+
 export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
 	pruneBuilder(keepStorage: string): Promise<void>;
@@ -68,39 +59,12 @@ export type WorkerStorageLog = (
 	event:
 		| "hobo_ci_inode_pressure"
 		| "hobo_ci_inode_reserve_wait"
+		| "hobo_ci_disk_reserve_wait"
 		| "hobo_ci_pnpm_store_prune"
 		| "hobo_ci_storage_admission_wait"
-		| "hobo_ci_storage_capacity"
-		| "hobo_ci_host_capacity"
 		| "hobo_ci_storage_prune_failed",
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
-
-export type StorageAdmissionRequest = Readonly<{
-	jobId: string;
-	jobName?: string;
-	reserve?: WorkerStorageReserve;
-}>;
-
-export type StorageAdmissionTarget = string | StorageAdmissionRequest;
-
-type ResolvedStorageAdmission = Readonly<{
-	jobId: string;
-	reserve: WorkerStorageReserve;
-}>;
-
-const StorageAdmissionRequestSchema = z.object({
-	jobId: z.string(),
-	jobName: z.string().optional(),
-	reserve: z
-		.object({
-			workRoot: z.number().int().nonnegative(),
-			dockerDataRoot: z.number().int().nonnegative(),
-			workRootBytes: z.number().int().nonnegative(),
-			dockerDataRootBytes: z.number().int().nonnegative(),
-		})
-		.optional(),
-});
 
 type Pressure = Readonly<{
 	root: string;
@@ -137,22 +101,59 @@ type StorageSample = Pressure &
 	Readonly<{
 		device: number;
 		ffree: number;
-		freeBytes: number;
-		reserve: number;
+		bfree: number;
+		bsize: number;
+		reserveInodes: number;
+		reserveBytes: number;
 		index: number;
 	}>;
 
-type InodeGrant = Readonly<{
-	grantedAtMs: number;
-	ffree: readonly number[];
-	reserve: WorkerStorageReserve;
+type DeviceReserve = Readonly<{
+	device: number;
+	index: number;
+	root: string;
+	inodes: number;
+	bytes: number;
 }>;
 
-type InodeReserveWait = Readonly<{
+type StorageGrant = Readonly<{
+	grantedAtMs: number;
+	ffree: readonly number[];
+	bfree: readonly number[];
+	perDevice: readonly DeviceReserve[];
+}>;
+
+/** Shared-root stores: one device pool gets the max slice, not the sum of paths. */
+export function deviceReservesForSamples(
+	samples: readonly StorageSample[],
+): readonly DeviceReserve[] {
+	const groups = new Map<number, StorageSample[]>();
+	for (const entry of samples) {
+		const group = groups.get(entry.device) ?? [];
+		group.push(entry);
+		groups.set(entry.device, group);
+	}
+	const reserves: DeviceReserve[] = [];
+	for (const group of groups.values()) {
+		const first = group[0];
+		if (!first) continue;
+		reserves.push({
+			device: first.device,
+			index: first.index,
+			root: first.root,
+			inodes: Math.max(0, ...group.map((entry) => entry.reserveInodes)),
+			bytes: Math.max(0, ...group.map((entry) => entry.reserveBytes)),
+		});
+	}
+	return reserves;
+}
+
+type StorageReserveWait = Readonly<{
+	kind: "inode" | "disk";
 	root: string;
-	freeInodes: number;
-	outstandingInodes: number;
-	requiredInodes: number;
+	free: number;
+	outstanding: number;
+	required: number;
 	activeGrants: number;
 }>;
 
@@ -167,11 +168,8 @@ export function createWorkerStorageAdmission(options: {
 	builderCacheCap?: string;
 	softLimit?: number;
 	hardLimit?: number;
-	jobInodes?: Partial<
-		Pick<WorkerStorageReserve, "workRoot" | "dockerDataRoot">
-	>;
-	safetyMarginInodes?: number;
-	capacityTracker?: HostCapacityTracker;
+	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+	defaultJobReserve?: WorkerStorageReserve;
 	admitMaintainIntervalMs?: number;
 	scheduleRetiredSweep?: () => void;
 	now?: () => number;
@@ -181,44 +179,23 @@ export function createWorkerStorageAdmission(options: {
 	const hardLimit = options.hardLimit ?? HARD_LIMIT;
 	if (!(softLimit > 0) || !(hardLimit > softLimit) || !(hardLimit < 1))
 		throw new Error("invalid worker storage thresholds");
-	const classDefault = storageReserveForClass("standard");
-	const inodeOverride = options.jobInodes;
-	const defaultReserve: WorkerStorageReserve =
-		inodeOverride?.workRoot !== undefined &&
-		inodeOverride.dockerDataRoot !== undefined
-			? {
-					...classDefault,
-					workRoot: inodeOverride.workRoot,
-					dockerDataRoot: inodeOverride.dockerDataRoot,
-				}
-			: classDefault;
+	const defaultJobReserve = options.defaultJobReserve ?? {
+		workRoot: options.jobInodes?.workRoot ?? 200_000,
+		dockerDataRoot: options.jobInodes?.dockerDataRoot ?? 170_000,
+		workRootBytes: 8 * 1024 * 1024 * 1024,
+		dockerDataRootBytes: 6 * 1024 * 1024 * 1024,
+	};
 	for (const reserve of [
-		defaultReserve.workRoot,
-		defaultReserve.dockerDataRoot,
+		defaultJobReserve.workRoot,
+		defaultJobReserve.dockerDataRoot,
+		defaultJobReserve.workRootBytes,
+		defaultJobReserve.dockerDataRootBytes,
 	])
 		if (!Number.isSafeInteger(reserve) || reserve < 0)
-			throw new Error("invalid worker job inode reservation");
-	const safetyMarginFloor = options.safetyMarginInodes ?? 25_000;
-	if (
-		!Number.isSafeInteger(safetyMarginFloor) ||
-		safetyMarginFloor < 0 ||
-		safetyMarginFloor > 10_000_000
-	)
-		throw new Error("invalid worker storage inode safety margin");
-	const capacityTracker = options.capacityTracker;
-	function inodeSafetyMargin(): number {
-		return Math.max(
-			safetyMarginFloor,
-			capacityTracker?.marginInodes() ?? safetyMarginFloor,
-		);
-	}
-	const reservations = [
-		{ root: options.dockerDataRoot, kind: "dockerDataRoot" as const },
-		{ root: options.workRoot, kind: "workRoot" as const },
-	];
+			throw new Error("invalid worker job storage reservation");
 	const now = options.now ?? Date.now;
 	const admitMaintainIntervalMs = options.admitMaintainIntervalMs ?? 60_000;
-	const grants = new Map<string, InodeGrant>();
+	const grants = new Map<string, StorageGrant>();
 	let lastAdmitMaintainMs: number | undefined;
 	let hardEpisode = false;
 	let reserveEpisode = false;
@@ -226,46 +203,57 @@ export function createWorkerStorageAdmission(options: {
 	let pnpmPruneInFlight = false;
 	let pnpmPruneWaitLogged = false;
 
-	async function sample(): Promise<StorageSample[]> {
+	function reservationsFor(jobReserve: WorkerStorageReserve): readonly {
+		root: string;
+		reserveInodes: number;
+		reserveBytes: number;
+		index: number;
+	}[] {
+		return [
+			{
+				root: options.dockerDataRoot,
+				reserveInodes: jobReserve.dockerDataRoot,
+				reserveBytes: jobReserve.dockerDataRootBytes,
+				index: 0,
+			},
+			{
+				root: options.workRoot,
+				reserveInodes: jobReserve.workRoot,
+				reserveBytes: jobReserve.workRootBytes,
+				index: 1,
+			},
+		];
+	}
+
+	async function sample(
+		jobReserve: WorkerStorageReserve,
+	): Promise<StorageSample[]> {
 		return Promise.all(
-			reservations.map(async (reservation, index) => {
+			reservationsFor(jobReserve).map(async (reservation) => {
 				const [stats, device] = await Promise.all([
 					options.fs.statfs(reservation.root),
 					options.fs.device(reservation.root),
 				]);
+				const bsize = stats.bsize > 0 ? stats.bsize : 4096;
 				return {
 					...pressure(reservation.root, stats),
 					device,
 					ffree: stats.ffree,
-					freeBytes: stats.bfree * stats.bsize,
-					reserve: 0,
-					index,
+					bfree: stats.bfree,
+					bsize,
+					reserveInodes: reservation.reserveInodes,
+					reserveBytes: reservation.reserveBytes,
+					index: reservation.index,
 				};
 			}),
 		);
-	}
-
-	function resolveTarget(
-		target: StorageAdmissionTarget,
-	): ResolvedStorageAdmission {
-		const stringTarget = z.string().safeParse(target);
-		if (stringTarget.success)
-			return { jobId: stringTarget.data, reserve: defaultReserve };
-		const request = StorageAdmissionRequestSchema.parse(target);
-		if (request.reserve)
-			return { jobId: request.jobId, reserve: request.reserve };
-		if (request.jobName)
-			return {
-				jobId: request.jobId,
-				reserve: storageReserveForJob(request.jobName),
-			};
-		return { jobId: request.jobId, reserve: defaultReserve };
 	}
 
 	function reconcile(activeLeases: readonly WorkerStorageLease[]) {
 		const activeJobs = new Set(activeLeases.map((lease) => lease.jobId));
 		const nowMs = now();
 		for (const [jobId, grant] of grants) {
+			// The deps image build holds no lease; its grant lives until released.
 			if (jobId === DEPS_BUILD_ADMISSION_ID) continue;
 			if (
 				!activeJobs.has(jobId) &&
@@ -275,291 +263,66 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
-	function reserveForSample(
-		sample: StorageSample,
-		reserve: WorkerStorageReserve,
-	): number {
-		return sample.index === 0 ? reserve.dockerDataRoot : reserve.workRoot;
-	}
-
-	function reserveBytesForSample(
-		sample: StorageSample,
-		reserve: WorkerStorageReserve,
-	): number {
-		return sample.index === 0
-			? reserve.dockerDataRootBytes
-			: reserve.workRootBytes;
-	}
-
-	function byteSafetyMargin(): number {
-		return BYTE_SAFETY_MARGIN_FLOOR;
-	}
-
-	function reservedBytesOnDevice(
-		samples: readonly StorageSample[],
-		device: number,
-	): number {
-		let total = 0;
-		for (const grant of grants.values()) {
-			for (const sample of samples) {
-				if (sample.device !== device) continue;
-				total += reserveBytesForSample(sample, grant.reserve);
-			}
-		}
-		return total;
-	}
-
-	function reservedInodesOnDevice(
-		samples: readonly StorageSample[],
-		device: number,
-	): number {
-		let total = 0;
-		for (const grant of grants.values()) {
-			for (const sample of samples) {
-				if (sample.device !== device) continue;
-				total += reserveForSample(sample, grant.reserve);
-			}
-		}
-		return total;
-	}
-
-	function totalReservedInodes(samples: readonly StorageSample[]): number {
-		const devices = new Set(samples.map((entry) => entry.device));
-		let total = 0;
-		for (const device of devices)
-			total += reservedInodesOnDevice(samples, device);
-		return total;
-	}
-
-	function observedFreeInodes(samples: readonly StorageSample[]): number {
-		let min = Number.POSITIVE_INFINITY;
-		for (const entry of samples) min = Math.min(min, entry.ffree);
-		return Number.isFinite(min) ? min : 0;
-	}
-
-	function observedFreeBytes(samples: readonly StorageSample[]): number {
-		let min = Number.POSITIVE_INFINITY;
-		for (const entry of samples) min = Math.min(min, entry.freeBytes);
-		return Number.isFinite(min) ? min : 0;
-	}
-
-	function logHostCapacity(samples: readonly StorageSample[]) {
-		if (!capacityTracker) return;
-		const reserved = totalReservedInodes(samples);
-		const snap = capacityTracker.snapshot(reserved);
-		options.log?.("hobo_ci_host_capacity", {
-			observedFreeInodes: snap.observedFreeInodes,
-			observedFreeBytes: snap.observedFreeBytes,
-			ourReservedInodes: snap.ourReservedInodes,
-			safetyMarginInodes: snap.safetyMarginInodes,
-			externalInodeDrain: snap.externalInodeDrain ?? -1,
-			memAvailableMb: snap.memAvailableMb ?? -1,
-			admitNewWork: snap.admitNewWork,
-			reason: snap.reason ?? "",
-		});
-	}
-
-	async function probeHostCapacity(
-		activeLeases: readonly WorkerStorageLease[],
-	): Promise<void> {
-		reconcile(activeLeases);
-		let samples: StorageSample[];
-		try {
-			samples = await sample();
-		} catch {
-			return;
-		}
-		const signals = readHostCapacitySignals();
-		capacityTracker?.record(
-			buildHostCapacityRecord(
-				observedFreeInodes(samples),
-				observedFreeBytes(samples),
-				signals,
-			),
-		);
-		logHostCapacity(samples);
-	}
-
-	function reserveShortage(
-		samples: readonly StorageSample[],
-		incoming: WorkerStorageReserve,
-	) {
-		const groups = new Map<number, StorageSample[]>();
-		for (const entry of samples) {
-			const group = groups.get(entry.device) ?? [];
-			group.push(entry);
-			groups.set(entry.device, group);
-		}
-		let oldest: InodeGrant | undefined;
+	function reserveShortage(samples: readonly StorageSample[]) {
+		const newReserves = deviceReservesForSamples(samples);
+		let oldest: StorageGrant | undefined;
 		for (const grant of grants.values())
 			if (!oldest || grant.grantedAtMs < oldest.grantedAtMs) oldest = grant;
-		for (const group of groups.values()) {
-			const first = group[0];
-			if (!first) continue;
-			const incomingRequired = group.reduce(
-				(total, entry) => total + reserveForSample(entry, incoming),
-				0,
-			);
-			const outstandingReserved = reservedInodesOnDevice(samples, first.device);
-			const baseline = oldest?.ffree[first.index] ?? first.ffree;
-			const consumption = Math.max(0, baseline - first.ffree);
-			const outstandingInodes = Math.max(0, outstandingReserved - consumption);
-			const requiredInodes = incomingRequired + outstandingInodes;
-			const incomingBytes = group.reduce(
-				(total, entry) => total + reserveBytesForSample(entry, incoming),
-				0,
-			);
-			const outstandingBytes = reservedBytesOnDevice(samples, first.device);
-			const requiredBytes = incomingBytes + outstandingBytes;
-			if (
-				incomingRequired > 0 &&
-				first.ffree - inodeSafetyMargin() < requiredInodes
-			)
+		for (const required of newReserves) {
+			let committedInodes = 0;
+			let committedBytes = 0;
+			for (const grant of grants.values()) {
+				for (const slice of grant.perDevice) {
+					if (slice.device !== required.device) continue;
+					committedInodes += slice.inodes;
+					committedBytes += slice.bytes;
+				}
+			}
+			const sample = samples.find((entry) => entry.device === required.device);
+			if (!sample) continue;
+			const baselineInodes = oldest?.ffree[sample.index] ?? sample.ffree;
+			const inodeConsumption = Math.max(0, baselineInodes - sample.ffree);
+			const netReservedInodes = Math.max(0, committedInodes - inodeConsumption);
+			const headroomInodes = sample.ffree - netReservedInodes;
+			if (required.inodes > 0 && headroomInodes < required.inodes)
 				return {
-					root: first.root,
-					freeInodes: first.ffree,
-					outstandingInodes: requiredInodes - incomingRequired,
-					requiredInodes,
+					kind: "inode",
+					root: required.root,
+					free: sample.ffree,
+					outstanding: netReservedInodes,
+					required: required.inodes,
 					activeGrants: grants.size,
-				} satisfies InodeReserveWait;
-			if (
-				incomingBytes > 0 &&
-				first.freeBytes - byteSafetyMargin() < requiredBytes
-			)
+				} satisfies StorageReserveWait;
+			const freeBytes = sample.bfree * sample.bsize;
+			const baselineBlocks = oldest?.bfree[sample.index] ?? sample.bfree;
+			const byteConsumption = Math.max(
+				0,
+				(baselineBlocks - sample.bfree) * sample.bsize,
+			);
+			const netReservedBytes = Math.max(0, committedBytes - byteConsumption);
+			const headroomBytes = freeBytes - netReservedBytes;
+			if (required.bytes > 0 && headroomBytes < required.bytes)
 				return {
-					root: first.root,
-					freeInodes: first.ffree,
-					outstandingInodes: requiredInodes - incomingRequired,
-					requiredInodes,
+					kind: "disk",
+					root: required.root,
+					free: freeBytes,
+					outstanding: netReservedBytes,
+					required: required.bytes,
 					activeGrants: grants.size,
-				} satisfies InodeReserveWait;
+				} satisfies StorageReserveWait;
 		}
 		return undefined;
 	}
 
-	function imminentPressureFromSamples(samples: readonly StorageSample[]):
-		| Readonly<{
-				preempt: boolean;
-				observedFreeInodes: number;
-				floorInodes: number;
-				observedFreeBytes: number;
-				floorBytes: number;
-		  }>
-		| undefined {
-		const freeInodes = observedFreeInodes(samples);
-		const freeBytes = observedFreeBytes(samples);
-		const reservedInodes = totalReservedInodes(samples);
-		const margin = inodeSafetyMargin();
-		const template = storageReserveForClass("light");
-		const floorInodes =
-			reservedInodes + margin + template.workRoot + template.dockerDataRoot;
-		const reservedBytes = samples.reduce(
-			(max, sample) =>
-				Math.max(max, reservedBytesOnDevice(samples, sample.device)),
-			0,
-		);
-		const floorBytes =
-			reservedBytes +
-			byteSafetyMargin() +
-			template.workRootBytes +
-			template.dockerDataRootBytes;
-		const preempt =
-			freeInodes < floorInodes + IMMINENT_INODE_BUFFER ||
-			freeBytes < floorBytes + BYTE_SAFETY_MARGIN_FLOOR / 4;
-		if (!preempt) return undefined;
-		return {
-			preempt: true,
-			observedFreeInodes: freeInodes,
-			floorInodes,
-			observedFreeBytes: freeBytes,
-			floorBytes,
-		};
-	}
-
-	function grant(
-		jobId: string,
-		samples: readonly StorageSample[],
-		reserve: WorkerStorageReserve,
-	) {
+	function grant(jobId: string, samples: readonly StorageSample[]) {
 		grants.set(jobId, {
 			grantedAtMs: now(),
 			ffree: samples.map((entry) => entry.ffree),
-			reserve,
+			bfree: samples.map((entry) => entry.bfree),
+			perDevice: deviceReservesForSamples(samples),
 		});
 		reserveEpisode = false;
 		return true;
-	}
-
-	function binPackConcurrent(
-		samples: readonly StorageSample[],
-		template: WorkerStorageReserve,
-	): number {
-		const groups = new Map<number, StorageSample[]>();
-		for (const entry of samples) {
-			const group = groups.get(entry.device) ?? [];
-			group.push(entry);
-			groups.set(entry.device, group);
-		}
-		let limit = Number.POSITIVE_INFINITY;
-		for (const group of groups.values()) {
-			const perJob = group.reduce(
-				(total, entry) => total + reserveForSample(entry, template),
-				0,
-			);
-			const perJobBytes = group.reduce(
-				(total, entry) => total + reserveBytesForSample(entry, template),
-				0,
-			);
-			if (perJob <= 0 && perJobBytes <= 0) continue;
-			const first = group[0];
-			if (!first) continue;
-			const reserved = reservedInodesOnDevice(samples, first.device);
-			const reservedBytes = reservedBytesOnDevice(samples, first.device);
-			const headroomInodes = first.ffree - inodeSafetyMargin() - reserved;
-			const headroomBytes =
-				first.freeBytes - byteSafetyMargin() - reservedBytes;
-			const byInodes =
-				perJob > 0
-					? Math.floor(headroomInodes / perJob)
-					: Number.POSITIVE_INFINITY;
-			const byBytes =
-				perJobBytes > 0
-					? Math.floor(headroomBytes / perJobBytes)
-					: Number.POSITIVE_INFINITY;
-			limit = Math.min(limit, byInodes, byBytes);
-		}
-		return Number.isFinite(limit) ? Math.max(0, limit) : 0;
-	}
-
-	function logCapacity(
-		samples: readonly StorageSample[],
-		template: WorkerStorageReserve,
-	) {
-		const concurrent = binPackConcurrent(samples, template);
-		const docker = samples.find((entry) => entry.index === 0);
-		const work = samples.find((entry) => entry.index === 1);
-		const margin = inodeSafetyMargin();
-		const reserved = totalReservedInodes(samples);
-		options.log?.("hobo_ci_storage_capacity", {
-			freeInodesDocker: docker?.ffree ?? -1,
-			freeInodesWork: work?.ffree ?? -1,
-			observedFreeInodes: observedFreeInodes(samples),
-			observedFreeBytes: observedFreeBytes(samples),
-			safetyMarginInodes: margin,
-			ourReservedInodes: reserved,
-			activeGrants: grants.size,
-			maxConcurrentStandard: concurrent,
-			maxConcurrentHeavy: binPackConcurrent(
-				samples,
-				storageReserveForClass("heavy"),
-			),
-			maxConcurrentLight: binPackConcurrent(
-				samples,
-				storageReserveForClass("light"),
-			),
-			templateWork: template.workRoot,
-			templateDocker: template.dockerDataRoot,
-		});
 	}
 
 	async function attempt(operation: string, run: () => Promise<void>) {
@@ -668,32 +431,11 @@ export function createWorkerStorageAdmission(options: {
 		release(jobId: string) {
 			grants.delete(jobId);
 		},
-		isAdmissionOpen(): boolean {
-			return capacityTracker?.shouldBlockAdmission() !== true;
-		},
-		probeHostCapacity,
-		async evaluateImminentPressure(
-			activeLeases: readonly WorkerStorageLease[],
-		) {
-			reconcile(activeLeases);
-			try {
-				return imminentPressureFromSamples(await sample());
-			} catch {
-				return undefined;
-			}
-		},
 		async admit(
 			activeLeases: readonly WorkerStorageLease[],
-			target: StorageAdmissionTarget,
+			jobId: string,
+			jobReserve: WorkerStorageReserve = defaultJobReserve,
 		): Promise<boolean> {
-			if (capacityTracker?.shouldBlockAdmission()) {
-				const reason = capacityTracker.blockReason();
-				if (reason)
-					options.log?.("hobo_ci_storage_admission_wait", {
-						message: `host-capacity:${reason}`,
-					});
-				return false;
-			}
 			if (pnpmPruneInFlight) {
 				if (!pnpmPruneWaitLogged)
 					options.log?.("hobo_ci_storage_admission_wait", {
@@ -702,11 +444,10 @@ export function createWorkerStorageAdmission(options: {
 				pnpmPruneWaitLogged = true;
 				return false;
 			}
-			const { jobId, reserve } = resolveTarget(target);
 			reconcile(activeLeases);
 			let before: StorageSample[];
 			try {
-				before = await sample();
+				before = await sample(jobReserve);
 				unavailable = false;
 			} catch (error) {
 				if (!unavailable) {
@@ -717,20 +458,12 @@ export function createWorkerStorageAdmission(options: {
 				}
 				return false;
 			}
-			const proactiveShortage = reserveShortage(before, reserve);
 			const softPressure = before.some(
 				(entry) => Math.max(entry.diskUsage, entry.inodeUsage) > softLimit,
 			);
-			if (!proactiveShortage && !softPressure) {
+			if (!softPressure && !reserveShortage(before)) {
 				hardEpisode = false;
-				logCapacity(before, storageReserveForClass("standard"));
-				return grant(jobId, before, reserve);
-			}
-			if (proactiveShortage) {
-				if (!reserveEpisode)
-					options.log?.("hobo_ci_inode_reserve_wait", proactiveShortage);
-				reserveEpisode = true;
-				return false;
+				return grant(jobId, before);
 			}
 			const nowMs = now();
 			if (
@@ -738,67 +471,70 @@ export function createWorkerStorageAdmission(options: {
 				nowMs - lastAdmitMaintainMs >= admitMaintainIntervalMs
 			) {
 				lastAdmitMaintainMs = nowMs;
-				await maintain(activeLeases, { pnpmStore: true });
+				await maintain(activeLeases);
 			}
 			let after: StorageSample[];
 			try {
-				after = await sample();
+				after = await sample(jobReserve);
 			} catch (error) {
 				options.log?.("hobo_ci_storage_admission_wait", {
 					message: error instanceof Error ? error.message : "unknown",
 				});
 				return false;
 			}
-			const shortage = reserveShortage(after, reserve);
+			const inodeHard = after.some((entry) => entry.inodeUsage > hardLimit);
+			const diskHard = after.some((entry) => entry.diskUsage > hardLimit);
+			if ((inodeHard || diskHard) && !hardEpisode) {
+				hardEpisode = true;
+				const worst = after.reduce((current, entry) =>
+					Math.max(entry.diskUsage, entry.inodeUsage) >
+					Math.max(current.diskUsage, current.inodeUsage)
+						? entry
+						: current,
+				);
+				options.log?.("hobo_ci_inode_pressure", {
+					root: worst.root,
+					pressureKind:
+						inodeHard && diskHard ? "both" : inodeHard ? "inode" : "disk",
+					diskUsagePercent: percent(worst.diskUsage),
+					inodeUsagePercent: percent(worst.inodeUsage),
+					softLimitPercent: percent(softLimit),
+					hardLimitPercent: percent(hardLimit),
+				});
+			}
+			const shortage = reserveShortage(after);
 			if (shortage) {
-				if (!reserveEpisode)
-					options.log?.("hobo_ci_inode_reserve_wait", shortage);
+				if (!reserveEpisode) {
+					if (shortage.kind === "inode")
+						options.log?.("hobo_ci_inode_reserve_wait", {
+							root: shortage.root,
+							freeInodes: shortage.free,
+							outstandingInodes: shortage.outstanding,
+							requiredInodes: shortage.required,
+							activeGrants: shortage.activeGrants,
+						});
+					else
+						options.log?.("hobo_ci_disk_reserve_wait", {
+							root: shortage.root,
+							freeBytes: shortage.free,
+							outstandingBytes: shortage.outstanding,
+							requiredBytes: shortage.required,
+							activeGrants: shortage.activeGrants,
+						});
+				}
 				reserveEpisode = true;
 				return false;
 			}
-			const inodeHard = after.some((entry) => entry.inodeUsage > hardLimit);
-			const diskHard = after.some((entry) => entry.diskUsage > hardLimit);
-			if (inodeHard || diskHard) {
-				if (!hardEpisode) {
-					hardEpisode = true;
-					const worst = after.reduce((current, entry) =>
-						Math.max(entry.diskUsage, entry.inodeUsage) >
-						Math.max(current.diskUsage, current.inodeUsage)
-							? entry
-							: current,
-					);
-					options.log?.("hobo_ci_inode_pressure", {
-						root: worst.root,
-						pressureKind:
-							inodeHard && diskHard ? "both" : inodeHard ? "inode" : "disk",
-						diskUsagePercent: percent(worst.diskUsage),
-						inodeUsagePercent: percent(worst.inodeUsage),
-						softLimitPercent: percent(softLimit),
-						hardLimitPercent: percent(hardLimit),
-					});
-				}
-				return false;
-			}
-			if (
-				after.every(
-					(entry) => Math.max(entry.diskUsage, entry.inodeUsage) <= softLimit,
+			if (!inodeHard && !diskHard) {
+				if (
+					after.every(
+						(entry) => Math.max(entry.diskUsage, entry.inodeUsage) <= softLimit,
+					)
 				)
-			)
-				hardEpisode = false;
-			logCapacity(after, storageReserveForClass("standard"));
-			return grant(jobId, after, reserve);
-		},
-		async binPackSlots(
-			template: WorkerStorageReserve = storageReserveForClass("standard"),
-		): Promise<number> {
-			reconcile(await options.activeLeases());
-			const samples = await sample();
-			return binPackConcurrent(samples, template);
-		},
-		async canFit(reserve: WorkerStorageReserve): Promise<boolean> {
-			reconcile(await options.activeLeases());
-			const samples = await sample();
-			return reserveShortage(samples, reserve) === undefined;
+					hardEpisode = false;
+				return grant(jobId, after);
+			}
+			return false;
 		},
 	};
 }

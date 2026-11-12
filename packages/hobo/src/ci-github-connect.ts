@@ -52,7 +52,8 @@ async function json(response: Response): Promise<JsonValue> {
 	}
 }
 
-function openBrowser(url: string): void {
+/** Open `url` in the browser; the caller also prints it for headless systems. */
+export function openBrowser(url: string): void {
 	const env = Object.fromEntries(
 		Object.entries(process.env).filter(
 			([name]) => !/TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY/i.test(name),

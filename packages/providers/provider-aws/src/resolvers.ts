@@ -81,6 +81,10 @@ import {
 	type TransportResponse,
 } from "@hobo/core";
 import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
 
 import {
 	isJsonArray,
@@ -191,10 +195,17 @@ export const AWS_RESOLVED_PRODUCT_IDS = Object.freeze(
  * `aws.cloudfront-site/v1`: `CreateDistribution` returns a new distribution id
  * per call; the only name-ish handle is a caller reference AWS uses for
  * *deduplication windows*, not for identity, so it cannot carry convergence.
+ * `aws.ec2-instance/v1`, `aws.ebs-volume/v1`: catalog and declaration only. An
+ * instance needs a subnet, a security group and an image, and a volume needs
+ * the instance's Availability Zone; a Yard binding names none of them, and
+ * choosing them here would be a network decision this resolver is not
+ * entitled to take. No resolver is shipped.
  */
 export const AWS_UNRESOLVED_PRODUCT_IDS = Object.freeze(
 	[
 		"aws.amplify-hosting/v1",
+		"aws.ebs-volume/v1",
+		"aws.ec2-instance/v1",
 		"aws.api-gateway/v1",
 		"aws.app-runner/v1",
 		"aws.aurora-serverless-postgres/v1",
@@ -248,8 +259,19 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^(?:[A-Z0-9]{16,}|[A-Za-z0-9/+=_-]{32,})$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9/+=_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule. The length rule is searched
+ * last, so it cannot split a JWT or a key the shared shapes redact whole.
+ */
+/** The provider's own patterns, on top of the shared ones. */
+export const AWS_REDACTION_PROFILE: ProviderRedactionProfile = {
+	fallbacks: [/[A-Za-z0-9/+=_-]{20,}/gu],
+};
+
+const redactTokenText = createProviderRedactor(AWS_REDACTION_PROFILE);
 
 /**
  * Redact provider text before it reaches a message, a diagnostic, or a log.
@@ -272,8 +294,7 @@ export function redactAwsText(
 			scrubbed = scrubbed.split(material).join("[redacted]");
 		}
 	}
-	scrubbed = scrubbed.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(scrubbed, limit);
 }
 
 /**

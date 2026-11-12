@@ -109,7 +109,21 @@ describe("provider neutrality", () => {
 		expect(offences).toEqual([]);
 	});
 
-	it("depends only on the capability vocabulary at runtime", () => {
+	it("imports no database driver: the engine binding takes an injected executor", () => {
+		const offences: string[] = [];
+		for (const file of files) {
+			const source = readFileSync(file, "utf8");
+			for (const match of source.matchAll(/from\s+"([^"]+)"/gu)) {
+				const specifier = match[1] ?? "";
+				if (specifier === "pg" || specifier.startsWith("pg-")) {
+					offences.push(`${file} imports ${specifier}`);
+				}
+			}
+		}
+		expect(offences).toEqual([]);
+	});
+
+	it("depends only on the capability vocabulary, the engine-neutral data contract and the engine-neutral fleet register at runtime", () => {
 		const manifestPath = fileURLToPath(
 			new URL("../package.json", import.meta.url),
 		);
@@ -119,7 +133,11 @@ describe("provider neutrality", () => {
 			readFileSync(manifestPath, "utf8"),
 		) as PackageManifest;
 		const names = Object.keys(manifest.dependencies ?? {});
-		expect(names).toEqual(["@hobo/capability-profiles"]);
+		expect(names).toEqual([
+			"@hobo/backend-fleet",
+			"@hobo/capability-profiles",
+			"@hobo/data-core",
+		]);
 	});
 
 	it("exports no symbol whose name carries a provider", () => {

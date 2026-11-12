@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package hobo.ci.vercel.v1;
+
+// What each of the hosted relay's cache backends costs and allows, and the
+// marks the relay switches at (ADR-0179 phase 4c). The JSON form is the value
+// of HOBO_CI_CACHE_OFFERS_JSON, from the config service or the environment;
+// `src/cache-offers.ts` parses it into the FleetOffer and FleetRoutingMarks
+// records of @hobo/backend-fleet over defaults equal to the vendor free tiers.
+// Backends are named by fleet id, never by a URL or a credential.
+message RelayCacheOffers {
+  // An offer named here replaces the default for its backend entirely.
+  repeated RelayCacheOffer offers = 1;
+  optional RelayCacheMarks marks = 2;
+}
+
+message RelayCacheOffer {
+  // upstash, valkey, redis, turso, blob or memory.
+  string backend = 1;
+  // free, prepaid or payg.
+  string tier = 2;
+  string plan = 3;
+  // Micro-dollars a month. Unset means unknown.
+  optional uint64 fixed_monthly_fee_micros = 4;
+  // The most this backend may cost in a month, micro-dollars. Unset: zero.
+  optional uint64 cap_micros = 5;
+  repeated RelayCacheAllowance allowances = 6;
+  RelayCacheEvidence evidence = 7;
+}
+
+message RelayCacheAllowance {
+  // commands, rows-read, rows-written, simple-operations, advanced-operations
+  // or operations.
+  string unit = 1;
+  // Included a month. Unset means unknown.
+  optional uint64 included = 2;
+  // hard-stop, metered or unknown.
+  string beyond = 3;
+  // Micro-dollars a unit beyond the allowance; fractions allowed. Set exactly
+  // when beyond is metered.
+  optional double metered_micros_per_unit = 4;
+}
+
+message RelayCacheEvidence {
+  string source = 1;
+  // YYYY-MM-DD: the day somebody read the source.
+  string observed_at = 2;
+}
+
+message RelayCacheMarks {
+  // Leave the active backend at this projected percentage of an allowance.
+  optional double switch_at_percent = 1;
+  // Take a backend only below this projected percentage.
+  optional double switch_back_below_percent = 2;
+  // No move for preference sooner than this after the previous one.
+  optional uint32 min_dwell_minutes = 3;
+  // How long the active backend must fail before a failover.
+  optional uint32 failover_after_seconds = 4;
+}

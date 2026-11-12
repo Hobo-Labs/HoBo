@@ -38,6 +38,7 @@ import {
 	parseCount,
 	parseFlag,
 	quoteIdentifier,
+	type SqlExecutor,
 	type SqlSession,
 } from "./sql.js";
 
@@ -114,14 +115,50 @@ export type ReplicationOutcome =
 			readonly detail: string;
 	  };
 
-class Refused extends Error {
+/**
+ * Thrown inside a copy to stop it with a named reason. Both transactions are
+ * rolled back. `replicateSnapshot` turns it into a `refused` outcome; a caller
+ * of `copySnapshot` catches it itself.
+ */
+export class ReplicationRefused extends Error {
 	constructor(
 		readonly refusal: ReplicationRefusal,
+		/** Names a table or column; never data and never a connection. */
 		readonly detail: string,
 	) {
 		super(refusal);
+		this.name = "ReplicationRefused";
 	}
 }
+
+/** What one copy read and wrote. */
+export type SnapshotCopy = {
+	/** When the snapshot was taken, on the source's clock. */
+	readonly snapshotAtMs: number;
+	readonly tables: readonly ReplicatedTable[];
+	readonly rowCount: number;
+	/** Row text rewritten by this copy. */
+	readonly byteCount: number;
+};
+
+export type SnapshotCopyRequest<T> = {
+	readonly source: SqlExecutor;
+	readonly target: SqlExecutor;
+	readonly layout: FleetLayout;
+	readonly limits?: Partial<ReplicationLimits> | undefined;
+	/**
+	 * Runs on the target, inside its transaction, before any of its copied
+	 * tables is read or changed. This is where a caller takes its lock and
+	 * decides whether the target may be overwritten at all; throwing rolls
+	 * both transactions back.
+	 */
+	readonly admit: (to: SqlSession) => Promise<void>;
+	/**
+	 * Runs on the target after the copy was verified, in the same transaction,
+	 * so what it writes commits with the copied rows or not at all.
+	 */
+	readonly record: (to: SqlSession, copy: SnapshotCopy) => Promise<T>;
+};
 
 type CatalogColumn = {
 	readonly name: string;
@@ -394,7 +431,7 @@ async function copyTable(
 		const bytes = docs.reduce((total, doc) => total + doc.length, 0);
 		budget.bytes += bytes;
 		if (budget.bytes > limits.maxBytes)
-			throw new Refused(
+			throw new ReplicationRefused(
 				"oversized",
 				`copied data exceeds ${limits.maxBytes} bytes at table ${table.name}`,
 			);
@@ -462,21 +499,140 @@ function sameTable(
 }
 
 /**
+ * Replace the target's copied tables with a snapshot of the source's: the copy
+ * itself, without a rule about who may be overwritten. The caller supplies
+ * that rule as `admit` and what to write down afterwards as `record`.
+ *
+ * The source is read in one `REPEATABLE READ READ ONLY` transaction and the
+ * target is replaced in one transaction. Refuses, by throwing
+ * `ReplicationRefused`, a source over the row or byte limit (`oversized`),
+ * catalogs that differ (`schema-mismatch`) and a target that does not digest
+ * to the source after the copy (`digest-mismatch`). Anything thrown, by this
+ * function, by `admit` or by `record`, rolls both transactions back.
+ *
+ * Only tables whose digest differs are rewritten, so a run over an unchanged
+ * database costs a fixed handful of statements on each side. That matters on a
+ * plan that meters statements.
+ */
+export async function copySnapshot<T>(
+	request: SnapshotCopyRequest<T>,
+): Promise<T> {
+	const { layout } = request;
+	const limits = { ...DEFAULT_REPLICATION_LIMITS, ...request.limits };
+	return inTransaction(
+		request.source,
+		"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+		async (from) => {
+			const snapshotAtMs = await pinSession(from);
+			const catalog = await readCatalog(from, layout);
+			const tables = await digestTables(from, catalog);
+			const rowCount = tables.reduce((total, table) => total + table.rows, 0);
+			if (rowCount > limits.maxRows)
+				throw new ReplicationRefused(
+					"oversized",
+					`${rowCount} rows exceed the limit of ${limits.maxRows}`,
+				);
+			return inTransaction(request.target, "BEGIN", async (to) => {
+				await pinSession(to);
+				await request.admit(to);
+				const targetCatalog = await readCatalog(to, layout);
+				const difference = catalogDifference(catalog, targetCatalog);
+				if (difference !== undefined)
+					throw new ReplicationRefused("schema-mismatch", difference);
+				// What the target really holds now, not what a watermark says:
+				// a returned writer's watermark describes an older life.
+				const before = await digestTables(to, targetCatalog);
+				const stale = catalog.filter(
+					(relation, index) =>
+						!sameTable(
+							tables[index],
+							before.find((entry) => entry.name === relation.name),
+						),
+				);
+				// A table another table points at cannot be truncated alone.
+				const rewrite =
+					stale.length > 0 && catalog.some((relation) => relation.referenced)
+						? catalog
+						: stale;
+				const budget = { bytes: 0 };
+				if (rewrite.length > 0) {
+					await to.query(
+						`TRUNCATE ${rewrite.map((relation) => quoteIdentifier(relation.name)).join(", ")}`,
+					);
+					for (const [index, relation] of rewrite.entries())
+						await copyTable(
+							from,
+							to,
+							relation,
+							`fleet_copy_${index}`,
+							limits,
+							budget,
+						);
+				}
+				const positions = sequencePositions(catalog).flatMap((position) => {
+					const match = targetCatalog
+						.find((relation) => relation.name === position.table)
+						?.columns.find((entry) => entry.name === position.column);
+					return position.value === undefined || match?.sequence === undefined
+						? []
+						: [{ sequence: match.sequence, value: position.value }];
+				});
+				if (positions.length > 0)
+					// Never backwards: a returned writer may have handed out more.
+					await to.query(
+						`SELECT setval(s.name::regclass, GREATEST(s.position,
+							coalesce(pg_sequence_last_value(s.name::regclass), s.position)), true)::text AS position
+						FROM (VALUES ${positions
+							.map(
+								(_, index) =>
+									`($${index * 2 + 1}::text, $${index * 2 + 2}::bigint)`,
+							)
+							.join(", ")}) AS s(name, position)`,
+						positions.flatMap((position) => [
+							position.sequence,
+							position.value,
+						]),
+					);
+				if (rewrite.length > 0) {
+					const after = await digestTables(to, rewrite);
+					for (const copied of after)
+						if (
+							!sameTable(
+								copied,
+								tables.find((entry) => entry.name === copied.name),
+							)
+						)
+							throw new ReplicationRefused(
+								"digest-mismatch",
+								`table ${copied.name} differs from the source after the copy`,
+							);
+				}
+				return request.record(to, {
+					snapshotAtMs,
+					tables,
+					rowCount,
+					byteCount: budget.bytes,
+				});
+			});
+		},
+	);
+}
+
+/**
  * Replace the target's copied tables with a snapshot of the source's.
  *
  * Returns `refused` with a named reason for every condition this function
  * checks. A failed connection or statement is thrown, and both transactions
  * are rolled back: the target keeps its previous snapshot and watermark.
  *
- * Only tables whose digest differs are rewritten, so a run over an unchanged
- * database costs a fixed handful of statements on each side. That matters on a
- * plan that meters statements.
+ * The copy is `copySnapshot`; what this adds is the fleet's rule for who may
+ * be overwritten (the target's own assignment log, read under the fleet's
+ * lock) and the watermark.
  */
 export async function replicateSnapshot(
 	request: ReplicationRequest,
 ): Promise<ReplicationOutcome> {
 	const { source, target, layout, assignment } = request;
-	const limits = { ...DEFAULT_REPLICATION_LIMITS, ...request.limits };
 	if (source.id === target.id)
 		return {
 			status: "refused",
@@ -490,136 +646,56 @@ export async function replicateSnapshot(
 			detail: `assignment ${assignment.epoch} does not name the source as writer`,
 		};
 	try {
-		const watermark = await inTransaction(
-			source.executor,
-			"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
-			async (from) => {
-				const snapshotAtMs = await pinSession(from);
-				const catalog = await readCatalog(from, layout);
-				const tables = await digestTables(from, catalog);
-				const rowCount = tables.reduce((total, table) => total + table.rows, 0);
-				if (rowCount > limits.maxRows)
-					throw new Refused(
-						"oversized",
-						`${rowCount} rows exceed the limit of ${limits.maxRows}`,
+		const watermark = await copySnapshot({
+			source: source.executor,
+			target: target.executor,
+			layout,
+			limits: request.limits,
+			admit: async (to) => {
+				const lock = await to.query(
+					"SELECT pg_try_advisory_xact_lock($1::int, hashtext($2))::text AS locked",
+					[FLEET_LOCK_CLASS, layout.assignmentTable],
+				);
+				if (!parseFlag(column(lock.rows[0] ?? {}, "locked"), "locked"))
+					throw new ReplicationRefused(
+						"busy",
+						"another copy into the target is running",
 					);
-				return inTransaction(target.executor, "BEGIN", async (to) => {
-					await pinSession(to);
-					const lock = await to.query(
-						"SELECT pg_try_advisory_xact_lock($1::int, hashtext($2))::text AS locked",
-						[FLEET_LOCK_CLASS, layout.assignmentTable],
+				// The target's own log, read on this session and under the lock.
+				const held = await readAssignmentRows(to, layout, 1);
+				const newest = held.at(-1);
+				if (newest?.active === target.id)
+					throw new ReplicationRefused(
+						"target-is-writer",
+						`the target's own log names it writer at epoch ${newest.epoch}`,
 					);
-					if (!parseFlag(column(lock.rows[0] ?? {}, "locked"), "locked"))
-						throw new Refused(
-							"busy",
-							"another copy into the target is running",
-						);
-					// The target's own log, read on this session and under the lock.
-					const held = await readAssignmentRows(to, layout, 1);
-					const newest = held.at(-1);
-					if (newest?.active === target.id)
-						throw new Refused(
-							"target-is-writer",
-							`the target's own log names it writer at epoch ${newest.epoch}`,
-						);
-					if (
-						newest === undefined ||
-						assignmentKey(newest) !== assignmentKey(assignment)
-					)
-						throw new Refused(
-							"target-log-differs",
-							`the target's newest entry is epoch ${newest?.epoch ?? 0}, not the resolved epoch ${assignment.epoch}`,
-						);
-					const targetCatalog = await readCatalog(to, layout);
-					const difference = catalogDifference(catalog, targetCatalog);
-					if (difference !== undefined)
-						throw new Refused("schema-mismatch", difference);
-					// What the target really holds now, not what a watermark says:
-					// a returned writer's watermark describes an older life.
-					const before = await digestTables(to, targetCatalog);
-					const stale = catalog.filter(
-						(relation, index) =>
-							!sameTable(
-								tables[index],
-								before.find((entry) => entry.name === relation.name),
-							),
+				if (
+					newest === undefined ||
+					assignmentKey(newest) !== assignmentKey(assignment)
+				)
+					throw new ReplicationRefused(
+						"target-log-differs",
+						`the target's newest entry is epoch ${newest?.epoch ?? 0}, not the resolved epoch ${assignment.epoch}`,
 					);
-					// A table another table points at cannot be truncated alone.
-					const rewrite =
-						stale.length > 0 && catalog.some((relation) => relation.referenced)
-							? catalog
-							: stale;
-					const budget = { bytes: 0 };
-					if (rewrite.length > 0) {
-						await to.query(
-							`TRUNCATE ${rewrite.map((relation) => quoteIdentifier(relation.name)).join(", ")}`,
-						);
-						for (const [index, relation] of rewrite.entries())
-							await copyTable(
-								from,
-								to,
-								relation,
-								`fleet_copy_${index}`,
-								limits,
-								budget,
-							);
-					}
-					const positions = sequencePositions(catalog).flatMap((position) => {
-						const match = targetCatalog
-							.find((relation) => relation.name === position.table)
-							?.columns.find((entry) => entry.name === position.column);
-						return position.value === undefined || match?.sequence === undefined
-							? []
-							: [{ sequence: match.sequence, value: position.value }];
-					});
-					if (positions.length > 0)
-						// Never backwards: a returned writer may have handed out more.
-						await to.query(
-							`SELECT setval(s.name::regclass, GREATEST(s.position,
-								coalesce(pg_sequence_last_value(s.name::regclass), s.position)), true)::text AS position
-							FROM (VALUES ${positions
-								.map(
-									(_, index) =>
-										`($${index * 2 + 1}::text, $${index * 2 + 2}::bigint)`,
-								)
-								.join(", ")}) AS s(name, position)`,
-							positions.flatMap((position) => [
-								position.sequence,
-								position.value,
-							]),
-						);
-					if (rewrite.length > 0) {
-						const after = await digestTables(to, rewrite);
-						for (const copied of after)
-							if (
-								!sameTable(
-									copied,
-									tables.find((entry) => entry.name === copied.name),
-								)
-							)
-								throw new Refused(
-									"digest-mismatch",
-									`table ${copied.name} differs from the source after the copy`,
-								);
-					}
-					const record = {
-						source: source.id,
-						sourceEpoch: assignment.epoch,
-						snapshotAtMs,
-						tables,
-						rowCount,
-						byteCount: budget.bytes,
-					};
-					return {
-						...record,
-						digest: await writeWatermark(to, layout, record),
-					};
-				});
 			},
-		);
+			record: async (to, copy) => {
+				const record = {
+					source: source.id,
+					sourceEpoch: assignment.epoch,
+					snapshotAtMs: copy.snapshotAtMs,
+					tables: copy.tables,
+					rowCount: copy.rowCount,
+					byteCount: copy.byteCount,
+				};
+				return {
+					...record,
+					digest: await writeWatermark(to, layout, record),
+				};
+			},
+		});
 		return { status: "replicated", watermark };
 	} catch (error) {
-		if (error instanceof Refused)
+		if (error instanceof ReplicationRefused)
 			return {
 				status: "refused",
 				refusal: error.refusal,

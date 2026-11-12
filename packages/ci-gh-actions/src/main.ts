@@ -1,5 +1,7 @@
 import { createPrivateKey } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { hostname } from "node:os";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
@@ -7,9 +9,10 @@ import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
 import { createControlAuthenticator } from "./control-auth.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
+import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
-import { createRelayHost } from "./relay-host.js";
+import { createRelayHost, type RelayAgent } from "./relay-host.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
@@ -29,7 +32,18 @@ function secret(env: NodeJS.ProcessEnv, name: string): string {
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
 	/** A host embedding the relay may supply its own GitHub App transport. */
-	ports: { github?: GithubAppTransport } = {},
+	ports: {
+		github?: GithubAppTransport;
+		/**
+		 * Builds the optional CI agent once the store is open. It is handed the
+		 * repositories this relay is connected to, read fresh on every call.
+		 */
+		agent?: (relay: {
+			connections(): Promise<
+				readonly { installationId: number; repository: string }[]
+			>;
+		}) => RelayAgent | Promise<RelayAgent>;
+	} = {},
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
 	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
@@ -89,8 +103,57 @@ export async function startRelayFromEnvironment(
 				0,
 				new Date().toISOString(),
 			);
+		const agent = await ports.agent?.({
+			connections: async () =>
+				((await store.configuration())?.configuration?.connections ?? []).map(
+					(connection) => ({
+						installationId: connection.installationId,
+						repository: connection.repository,
+					}),
+				),
+		});
+		// One JSON line per mesh event, in the shape of the relay's own log.
+		const meshLog = (
+			level: "info" | "error",
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+		) =>
+			process.stdout.write(`${JSON.stringify({ level, event, ...fields })}\n`);
+		// The relay is a node of the mesh HOBO_CI_NATS_URL names: it takes no
+		// jobs (no slots, no labels), so what it advertises is that it is up
+		// and who it is, and the same list shows its health beside the
+		// workers'. With no mesh it is not a node, and says so when asked.
+		// Nothing about the mesh may keep the relay from starting.
+		let ready: () => boolean = () => false;
+		let mesh: JoinedMesh | undefined;
+		if (env.HOBO_CI_NATS_URL)
+			try {
+				mesh = await joinMeshFromEnv({
+					env,
+					defaultNodeId: `relay-${hostname()}`,
+					// Beside the relay's journal, readable by its owner only.
+					keyFile:
+						env.HOBO_CI_MESH_KEY_FILE ??
+						join(dirname(database), "mesh-node.key"),
+					connectionName: `hobo-ci-relay ${hostname()}`,
+					describe: () => ({
+						freeSlots: 0,
+						totalSlots: 0,
+						healthy: ready(),
+						labels: [],
+						platform: { os: process.platform, arch: process.arch },
+					}),
+					log: (event, fields) => meshLog("info", event, fields),
+				});
+			} catch (error) {
+				meshLog("error", "hobo_ci_mesh_node_unavailable", {
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			}
 		const { service, runtime } = createRelayHost({
 			store,
+			agent,
+			meshNodes: mesh?.node.reports,
 			github:
 				ports.github ??
 				createGithubAppTransport({
@@ -117,6 +180,9 @@ export async function startRelayFromEnvironment(
 			logger: (entry) => process.stdout.write(`${JSON.stringify(entry)}\n`),
 		});
 		await service.start();
+		// What the relay advertises as its health is its own readiness probe.
+		ready = () => service.ready();
+		mesh?.start();
 		let stopping: Promise<{ drained: boolean }> | undefined;
 		return {
 			service,
@@ -124,6 +190,9 @@ export async function startRelayFromEnvironment(
 			store,
 			stop() {
 				stopping ??= (async () => {
+					// Say so before going: the list shows the relay draining, then lost.
+					ready = () => false;
+					await mesh?.stop().catch(() => undefined);
 					const result = await service.stop();
 					if (result.drained) await lock.release();
 					return result;

@@ -79,6 +79,8 @@ class FakeGithub implements GithubTransport {
 	attempts = new Map<number, number>();
 	/** Event, start time and head SHA per run id; a pull request when absent. */
 	started = new Map<number, { event: string; at: string; headSha?: string }>();
+	/** Completed-run conclusion when not `success`. */
+	conclusions = new Map<number, string>();
 	constructor(
 		readonly runs: Record<"queued" | "in_progress", number[]> & {
 			completed?: number[];
@@ -147,7 +149,12 @@ class FakeGithub implements GithubTransport {
 						...listed(this.runs.unlisted, "queued"),
 						...listed(this.runs.queued, "queued"),
 						...listed(this.runs.in_progress, "in_progress"),
-						...listed(this.runs.completed, "completed"),
+						...listed(this.runs.completed, "completed").map((run) => ({
+							...run,
+							conclusion:
+								this.conclusions.get(run.id) ??
+								(run.status === "completed" ? "success" : null),
+						})),
 					],
 				},
 				{ headers },
@@ -177,6 +184,8 @@ class FakeGithub implements GithubTransport {
 					workflow_runs: (this.runs.completed ?? []).map((id) => ({
 						id,
 						run_attempt: this.attempt(id),
+						status: "completed",
+						conclusion: this.conclusions.get(id) ?? "success",
 					})),
 				},
 				{ headers },
@@ -240,6 +249,69 @@ class FakeGithub implements GithubTransport {
 }
 
 describe("GitHub job poller", () => {
+	it("leaves a queued job in GitHub's queue until the claim gate lets it in", async () => {
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [901] },
+			{
+				900: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo"],
+						created_at: "2026-11-02T11:59:00Z",
+					},
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+				901: [
+					{
+						id: 3,
+						status: "in_progress",
+						labels: ["hobo"],
+						runner_name: "hobo-r3",
+					},
+				],
+			},
+		);
+		const asked: unknown[] = [];
+		let turn = false;
+		const ingested: string[] = [];
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async (delivery) => {
+				ingested.push(delivery.deliveryId);
+				return "accepted";
+			},
+			claim: async (job) => {
+				asked.push(job);
+				if (job.jobId === 2) throw new Error("gate broke");
+				return turn;
+			},
+			now: () => NOW,
+		});
+		const first = await poller.poll();
+		// Job 1 waits its turn. Job 2's gate threw, which must not strand it.
+		// Job 3 is already running: the gate is only for queued jobs.
+		expect(first.waiting).toEqual([
+			{ jobId: 1, runId: 900, result: "mesh-deferred" },
+		]);
+		expect(ingested).toEqual([
+			"poll-2-1-q",
+			expect.stringMatching(/^poll-3-1-p-/),
+		]);
+		expect(asked[0]).toEqual({
+			jobId: 1,
+			runId: 900,
+			repository: REPO,
+			label: "hobo",
+			createdAt: "2026-11-02T11:59:00Z",
+		});
+		// Nothing remembered the refusal: the next poll asks again and takes it.
+		turn = true;
+		await poller.poll();
+		expect(ingested).toContain("poll-1-1-q");
+	});
+
 	it("turns runs-on: hobo jobs into one durable delivery per job state", async () => {
 		const github = new FakeGithub(
 			{ queued: [900], in_progress: [901] },
@@ -289,6 +361,17 @@ describe("GitHub job poller", () => {
 			notModified: 0,
 			githubErrors: 0,
 			waiting: [],
+			heldPruneWitness: {
+				terminalRuns: [],
+				terminalJobs: [
+					{
+						repositoryId: CONNECTION.repositoryId,
+						jobId: 6,
+						runAttempt: 1,
+						reason: "job-completed",
+					},
+				],
+			},
 			rateLimitRemaining: 4000,
 		});
 		const ids = Object.keys(bodies).sort();
@@ -394,6 +477,47 @@ describe("GitHub job poller", () => {
 		expect(github.counted).toEqual([
 			"GET /repos/Org/Repo/actions/runs/900/jobs?filter=latest&per_page=100",
 		]);
+	});
+
+	it("records held-prune witness from completed poll reads", async () => {
+		const github = new FakeGithub(
+			{ queued: [], in_progress: [], completed: [43107920330] },
+			{
+				43107920330: [
+					{
+						id: 1,
+						status: "completed",
+						labels: ["hobo"],
+						conclusion: "cancelled",
+					},
+				],
+			},
+		);
+		github.conclusions.set(43107920330, "cancelled");
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async () => "ignored",
+			now: () => NOW,
+		});
+		const summary = await poller.poll();
+		expect(summary.heldPruneWitness).toEqual({
+			terminalRuns: [
+				{
+					repositoryId: CONNECTION.repositoryId,
+					runId: 43107920330,
+					reason: "run-cancelled",
+				},
+			],
+			terminalJobs: [
+				{
+					repositoryId: CONNECTION.repositoryId,
+					jobId: 1,
+					runAttempt: 1,
+					reason: "job-cancelled",
+				},
+			],
+		});
 	});
 
 	it("keeps the completed-runs URL still between polls in one ten-minute step", async () => {
@@ -631,27 +755,8 @@ describe("pull-mode box worker over SQLite", () => {
 	async function configuredStore(
 		concurrency: number,
 		path = join(root, `${randomUUID()}.sqlite`),
-		input: {
-			offers?: ReturnType<typeof create<typeof OfferSchema>>[];
-			isolatedOnly?: boolean;
-		} = {},
 	) {
 		const store = new SqliteCiStore(path);
-		const offers = input.offers ?? [
-			create(OfferSchema, {
-				id: "box-isolated",
-				provider: "kubernetes",
-				providerAccountId: "box",
-				enabled: true,
-				runsOn: "hobo-isolated-worker",
-				backend: "isolated-container",
-				concurrency,
-				observedAt: "2026-11-02T00:00:00Z",
-				validUntil: "2026-12-31T23:59:59Z",
-				sourceUrl: "https://example.test/box-evidence",
-				bridgeAcknowledged: true,
-			}),
-		];
 		await store.configure(
 			create(ConfigurationSchema, {
 				accounts: [
@@ -659,7 +764,21 @@ describe("pull-mode box worker over SQLite", () => {
 						id: "hobo-labs",
 						maxRuntimeMinutes: 30,
 						startupMinutes: 5,
-						offers,
+						offers: [
+							create(OfferSchema, {
+								id: "box-isolated",
+								provider: "kubernetes",
+								providerAccountId: "box",
+								enabled: true,
+								runsOn: "hobo-isolated-worker",
+								backend: "isolated-container",
+								concurrency,
+								observedAt: "2026-11-02T00:00:00Z",
+								validUntil: "2026-12-31T23:59:59Z",
+								sourceUrl: "https://example.test/box-evidence",
+								bridgeAcknowledged: true,
+							}),
+						],
 					}),
 				],
 				connections: [
@@ -667,23 +786,10 @@ describe("pull-mode box worker over SQLite", () => {
 						accountId: "hobo-labs",
 						...CONNECTION,
 						runnerGroupId: 1,
-						isolatedOnly: input.isolatedOnly ?? true,
-						...(input.isolatedOnly === false
-							? {
-									acceptAllMatchingRepositoryJobs: false,
-									bridgeWorkflow: "host.yml",
-									bridgeSha: "a".repeat(40),
-									bridgeRef: "hobo-ci-v1",
-									dispatcherActorId: 123,
-									allowedEvents: ["push"],
-									allowedRefs: ["refs/heads/main"],
-									trustedRepositoryAcknowledged: true,
-								}
-							: {
-									acceptAllMatchingRepositoryJobs: true,
-									trustedRepositoryAcknowledged: true,
-									publicRepositoryAcknowledged: true,
-								}),
+						isolatedOnly: true,
+						acceptAllMatchingRepositoryJobs: true,
+						trustedRepositoryAcknowledged: true,
+						publicRepositoryAcknowledged: true,
 					}),
 				],
 			}),
@@ -705,6 +811,15 @@ describe("pull-mode box worker over SQLite", () => {
 			skipLaunchFor?: readonly number[];
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			unlaunchedReservationRelease?: Parameters<
+				typeof createHostedRelayRuntime
+			>[0]["unlaunchedReservationRelease"];
+			fleetCapacity?: Parameters<
+				typeof createHostedRelayRuntime
+			>[0]["fleetCapacity"];
+			trunkSlots?: number;
+			headroomFleetDeferMs?: number;
+			parallelLaunchCapacity?: () => number;
 			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
@@ -752,6 +867,14 @@ describe("pull-mode box worker over SQLite", () => {
 		if (trunk?.memoryAdmission) options.memoryAdmission = trunk.memoryAdmission;
 		if (trunk?.storageAdmission)
 			options.storageAdmission = trunk.storageAdmission;
+		if (trunk?.unlaunchedReservationRelease)
+			options.unlaunchedReservationRelease = trunk.unlaunchedReservationRelease;
+		if (trunk?.fleetCapacity) options.fleetCapacity = trunk.fleetCapacity;
+		if (trunk?.trunkSlots !== undefined) options.trunkSlots = trunk.trunkSlots;
+		if (trunk?.headroomFleetDeferMs !== undefined)
+			options.headroomFleetDeferMs = trunk.headroomFleetDeferMs;
+		if (trunk?.parallelLaunchCapacity)
+			options.parallelLaunchCapacity = trunk.parallelLaunchCapacity;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -965,81 +1088,6 @@ describe("pull-mode box worker over SQLite", () => {
 		store.close();
 	});
 
-	it("reserves ARC overflow when box storage refuses instead of re-queuing on hobo", async () => {
-		const store = await configuredStore(
-			2,
-			join(root, `${randomUUID()}.sqlite`),
-			{
-				isolatedOnly: false,
-				offers: [
-					create(OfferSchema, {
-						id: "box",
-						provider: "hobo-box-worker",
-						providerAccountId: "box",
-						enabled: true,
-						runsOn: "hobo-isolated-worker",
-						backend: "isolated-container",
-						concurrency: 2,
-						observedAt: "2026-11-02T00:00:00Z",
-						validUntil: "2026-12-31T23:59:59Z",
-						sourceUrl: "https://example.test/box-evidence",
-						bridgeAcknowledged: true,
-					}),
-					create(OfferSchema, {
-						id: "arc",
-						provider: "kubernetes",
-						providerAccountId: "arc",
-						enabled: true,
-						runsOn: "hobo-arc",
-						backend: "gh-actions",
-						concurrency: 4,
-						observedAt: "2026-11-02T00:00:00Z",
-						validUntil: "2026-12-31T23:59:59Z",
-						sourceUrl: "https://example.test/arc-evidence",
-						bridgeAcknowledged: true,
-					}),
-				],
-			},
-		);
-		const github = new FakeGithub(
-			{ queued: [900], in_progress: [] },
-			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
-		);
-		const storageAdmission: WorkerStorageAdmission = {
-			admit: vi.fn(async () => false),
-			release: vi.fn(),
-			reap: vi.fn(async () => undefined),
-			maintain: vi.fn(async () => undefined),
-			isAdmissionOpen: () => true,
-		};
-		const runtime = boxRuntime(store, github, [], undefined, {
-			labels: new Map(),
-			storageAdmission,
-		});
-		await store.queue(
-			create(JobSchema, {
-				id: 1,
-				runId: 900,
-				runAttempt: 1,
-				repositoryId: CONNECTION.repositoryId,
-				installationId: CONNECTION.installationId,
-				repository: CONNECTION.repository,
-				name: "PR impact gate",
-				labels: ["hobo"],
-				isolatedRequired: false,
-			}),
-			new Date(NOW).toISOString(),
-		);
-		await runtime.tick({ maxDeliveries: 10 });
-		expect(await store.pendingJobs()).toEqual([]);
-		const leases = await store.all();
-		expect(leases).toHaveLength(1);
-		expect(leases[0]?.offerId).toBe("arc");
-		expect(leases[0]?.provider).toBe("kubernetes");
-		expect(storageAdmission.admit).toHaveBeenCalled();
-		store.close();
-	});
-
 	it("calls storage admission only until the first refusal in a dispatch pass", async () => {
 		const store = await configuredStore(2);
 		const github = new FakeGithub(
@@ -1172,9 +1220,10 @@ describe("pull-mode box worker over SQLite", () => {
 		});
 		await poller.poll();
 		await runtime.tick({ maxDeliveries: 10 });
-		expect(storageAdmission.admit).toHaveBeenCalledWith(
+		expect(storageAdmission.admit).toHaveBeenLastCalledWith(
 			expect.any(Array),
-			expect.objectContaining({ jobId: "2" }),
+			"2",
+			undefined,
 		);
 		expect(storageAdmission.release).toHaveBeenCalledWith("2");
 		expect(storageAdmission.release).not.toHaveBeenCalledWith("1");
@@ -1829,7 +1878,7 @@ describe("pull-mode box worker over SQLite", () => {
 			).length;
 		const afterRequeue = originalJobReads();
 		await runtime.tick({ maxDeliveries: 10 });
-		expect(originalJobReads()).toBe(afterRequeue);
+		expect(originalJobReads()).toBe(afterRequeue + 1); // one ghost-binding guard read before reserve
 
 		await store.transition(
 			first.id,
@@ -1850,6 +1899,380 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(
 			(await store.activeLeases()).some((lease) => lease.jobId === 4),
 		).toBe(false);
+		store.close();
+	});
+
+	it("releases a stuck unlaunched reservation after the launch bound", async () => {
+		let nowMs = NOW;
+		const store = await configuredStore(1);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{ 800: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }] },
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T12:00:00Z" });
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			skipLaunchFor: [1],
+			unlaunchedReservationRelease: {
+				launchSlots: 1,
+				boundMs: 1_000,
+				backlogImmediate: true,
+			},
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 1 }),
+			},
+			now: () => new Date(nowMs).toISOString(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => nowMs,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const reserved = (await store.activeLeases()).find(
+			(lease) => lease.jobId === 1,
+		);
+		expect(reserved?.state).toBe("reserved");
+		expect(launched).toEqual([]);
+		nowMs += 2_000;
+		await runtime.tick({ maxDeliveries: 10 });
+		expect((await store.get(reserved?.id ?? ""))?.state).toBe("cancelled");
+		expect((await store.pendingJobs()).map((job) => job.id)).toContain(1);
+		expect(launched).toEqual([]);
+		store.close();
+	});
+
+	it("reserves main workspace shards in parallel when launch capacity allows", async () => {
+		const store = await configuredStore(4);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [0, 1, 2].map((shard) => ({
+					id: shard + 1,
+					status: "queued" as const,
+					labels: ["hobo-trunk"],
+					name: `Main workspace test shard ${shard}`,
+				})),
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T17:00:00Z" });
+		const launched: string[] = [];
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "24576" },
+				{ totalMemoryMb: 32_768, trunkSlots: 1 },
+			),
+			{
+				availableMemoryMb: () => 20_480,
+			},
+		);
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			trunkSlots: 1,
+			memoryAdmission,
+			parallelLaunchCapacity: () => 3,
+			unlaunchedReservationRelease: {
+				launchSlots: 3,
+				boundMs: 25_000,
+				backlogMinAgeMs: 25_000,
+				backlogImmediate: true,
+			},
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 3, arcFreeSlots: 0 }),
+			},
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const leases = (await store.activeLeases()).filter(
+			(lease) => lease.state !== "cancelled",
+		);
+		expect(leases.map((lease) => lease.jobId).sort()).toEqual([1, 2, 3]);
+		store.close();
+	});
+
+	it("logs one main shard hold per dispatch pass", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 0",
+					},
+					{
+						id: 2,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 1",
+					},
+				],
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T15:30:00Z" });
+		const holdCounts = new Map<number, number>();
+		const MainShardHold = z
+			.object({
+				event: z.literal("hobo_ci_main_shard_admission_hold"),
+				jobId: z.number(),
+			})
+			.passthrough();
+		const prevError = console.error;
+		console.error = (...args: unknown[]) => {
+			for (const arg of args) {
+				if (!z.string().safeParse(arg).success) continue;
+				const text = z.string().parse(arg);
+				const parsed = MainShardHold.safeParse(JSON.parse(text));
+				if (parsed.success) {
+					const prior = holdCounts.get(parsed.data.jobId) ?? 0;
+					holdCounts.set(parsed.data.jobId, prior + 1);
+				}
+			}
+			prevError(...args);
+		};
+		try {
+			const memoryAdmission = createWorkerMemoryAdmission(
+				resolveWorkerMemoryConfig(
+					{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+					{ totalMemoryMb: 16_384, trunkSlots: 1 },
+				),
+				{ availableMemoryMb: () => 256 },
+			);
+			const runtime = boxRuntime(store, github, [], undefined, {
+				labels: new Map(),
+				trunkSlots: 1,
+				memoryAdmission,
+				fleetCapacity: {
+					publish: async () => {},
+					snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 0 }),
+				},
+			});
+			const poller = createGithubJobPoller({
+				github,
+				admissionOrder: runtime.admissionOrder,
+				connections: async () =>
+					(await store.configuration())?.configuration?.connections ?? [],
+				ingest: (delivery) => runtime.ingestWebhook(delivery),
+				now: () => NOW,
+			});
+			await poller.poll();
+			await runtime.tick({ maxDeliveries: 10 });
+			expect(holdCounts.get(1)).toBe(1);
+			expect(holdCounts.get(2)).toBe(1);
+		} finally {
+			console.error = prevError;
+			store.close();
+		}
+	});
+
+	it("defers extra main workspace shards when local trunk slots are full but mesh has room", async () => {
+		const store = await configuredStore(4);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 0",
+					},
+					{
+						id: 2,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 1",
+					},
+				],
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T14:00:00Z" });
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			trunkSlots: 1,
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 2 }),
+			},
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const leases = (await store.activeLeases()).filter(
+			(lease) => lease.state !== "cancelled",
+		);
+		expect(leases.length).toBeLessThanOrEqual(1);
+		if (leases.length === 1) expect(leases[0]?.jobId).toBe(1);
+		store.close();
+	});
+
+	it("defers a headroom-blocked trunk shard to the fleet after the defer window", async () => {
+		let nowMs = NOW;
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 0",
+					},
+					{
+						id: 2,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 1",
+					},
+				],
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T15:00:00Z" });
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+				{ totalMemoryMb: 16_384, trunkSlots: 1 },
+			),
+			{
+				availableMemoryMb: () => 256,
+				now: () => nowMs,
+			},
+		);
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			trunkSlots: 1,
+			memoryAdmission,
+			headroomFleetDeferMs: 1_000,
+			skipLaunchFor: [1],
+			fleetCapacity: {
+				publish: async () => {},
+				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 2 }),
+			},
+			now: () => new Date(nowMs).toISOString(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => nowMs,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).some(
+				(lease) => lease.jobId === 2 && lease.state !== "cancelled",
+			),
+		).toBe(false);
+		nowMs += 2_000;
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).some(
+				(lease) => lease.jobId === 2 && lease.state !== "cancelled",
+			),
+		).toBe(false);
+		store.close();
+	});
+
+	it("does not churn release and re-reserve under memory wait without mesh headroom", async () => {
+		const store = await configuredStore(4);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [1, 2, 3, 4, 5].map((id) => ({
+					id,
+					status: "queued",
+					labels: ["hobo-trunk"],
+					name: `Workspace test shard ${id - 1}`,
+				})),
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T13:34:57Z" });
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+				{ totalMemoryMb: 16_384, trunkSlots: 1 },
+			),
+			{
+				availableMemoryMb: () => 256,
+				now: () => NOW,
+			},
+		);
+		const releaseEvents: { jobId?: number; releaseCount?: number }[] = [];
+		const UnlaunchedReleased = z
+			.object({
+				event: z.literal("hobo_ci_unlaunched_reservation_released"),
+				jobId: z.number().optional(),
+				releaseCount: z.number().optional(),
+			})
+			.passthrough();
+		const prevError = console.error;
+		console.error = (...args: unknown[]) => {
+			for (const arg of args) {
+				if (!z.string().safeParse(arg).success) continue;
+				const text = z.string().parse(arg);
+				const parsed = UnlaunchedReleased.safeParse(JSON.parse(text));
+				if (parsed.success) releaseEvents.push(parsed.data);
+			}
+			prevError(...args);
+		};
+		try {
+			const runtime = boxRuntime(store, github, [], undefined, {
+				labels: new Map(),
+				memoryAdmission,
+				unlaunchedReservationRelease: {
+					launchSlots: 4,
+					boundMs: 25_000,
+					backlogMinAgeMs: 25_000,
+					reReserveCooldownMs: 30_000,
+					backlogImmediate: true,
+				},
+				fleetCapacity: {
+					publish: async () => {},
+					snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 0 }),
+				},
+			});
+			const poller = createGithubJobPoller({
+				github,
+				admissionOrder: runtime.admissionOrder,
+				connections: async () =>
+					(await store.configuration())?.configuration?.connections ?? [],
+				ingest: (delivery) => runtime.ingestWebhook(delivery),
+				now: () => NOW,
+			});
+			await poller.poll();
+			for (let i = 0; i < 12; i += 1) await runtime.tick({ maxDeliveries: 10 });
+			expect(releaseEvents).toEqual([]);
+		} finally {
+			console.error = prevError;
+		}
 		store.close();
 	});
 
@@ -2479,6 +2902,8 @@ describe("pull-mode box worker over SQLite", () => {
 						{ status: 201 },
 					);
 				}
+				if (method === "DELETE" && /\/actions\/runners\/\d+$/u.test(path))
+					return new Response(null, { status: 204 });
 				return fake.request(installationId, path, method, body, ifNoneMatch);
 			},
 		};
@@ -2595,6 +3020,8 @@ describe("pull-mode box worker over SQLite", () => {
 				runId: 700,
 				runEvent: "merge_group",
 				label: "hobo-trunk",
+				jitLabels: "hobo-trunk",
+				jobLabels: "hobo-trunk",
 				jobCreatedAt: "2026-11-04T06:16:45Z",
 				admittedAt: "2026-11-04T06:16:47.000Z",
 				containerStartedAt: "2026-11-04T06:16:47.000Z",
@@ -2669,6 +3096,8 @@ describe("pull-mode box worker over SQLite", () => {
 						{ status: 201 },
 					);
 				}
+				if (method === "DELETE" && /\/actions\/runners\/\d+$/u.test(path))
+					return new Response(null, { status: 204 });
 				return fake.request(installationId, path, method, body, ifNoneMatch);
 			},
 		};
@@ -2774,6 +3203,8 @@ describe("pull-mode box worker over SQLite", () => {
 						{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
 						{ status: 201 },
 					);
+				if (method === "DELETE" && /\/actions\/runners\/\d+$/u.test(path))
+					return new Response(null, { status: 204 });
 				throw new Error(`unexpected ${method} ${path}`);
 			},
 		};

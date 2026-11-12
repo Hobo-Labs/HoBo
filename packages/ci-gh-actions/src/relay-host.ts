@@ -10,12 +10,25 @@ import {
 	type HostedInboxStore,
 } from "./hosted-runtime.js";
 import { createRelayHandler, type StubEngine } from "./http-handler.js";
+import type { MeshNodesReader } from "./mesh-nodes-reader.js";
 import type { IdentityVerifier } from "./oidc.js";
+import { createRelayMcp, isRelayMcpPath } from "./relay-mcp.js";
+import type { RelayMcpStore } from "./relay-mcp-server.js";
 import {
 	admitWhenReady,
 	createRelayService,
 	type RelayServiceLog,
 } from "./service.js";
+
+/**
+ * An optional CI agent beside the relay (see `@hobo/ci-agent`). The relay
+ * only schedules it; what a pass does is the agent's own business.
+ */
+export type RelayAgent = Readonly<{
+	tick(): Promise<void>;
+	/** How often a pass starts; one minute when omitted. */
+	intervalMs?: number;
+}>;
 
 /**
  * The relay as a long-running Node service over one store partition: the host
@@ -24,7 +37,15 @@ import {
  * listener, the tick timer, the readiness probe and the drain.
  */
 export function createRelayHost(options: {
-	store: HostedInboxStore & HostedControlStore & { close(): void };
+	store: HostedInboxStore &
+		HostedControlStore &
+		RelayMcpStore & { close(): void };
+	/**
+	 * What the MCP server reads through, when the store's own reads take a
+	 * lock that admission also takes: that store's observer. Defaults to the
+	 * store itself, which is right for a single-writer SQLite file.
+	 */
+	mcpStore?: RelayMcpStore;
 	github: GithubAppTransport;
 	identity: IdentityVerifier;
 	webhookSecret: string;
@@ -42,6 +63,15 @@ export function createRelayHost(options: {
 	probeIntervalMs?: number;
 	probeTimeoutMs?: number;
 	drainTimeoutMs?: number;
+	/** Off unless supplied. It never delays the worker tick or fails the relay. */
+	agent?: RelayAgent | undefined;
+	/**
+	 * What the relay mesh looks like from this host, when it is a node of one
+	 * (`createMeshNode`). The account API's `GET /v1/mesh/nodes` and the MCP
+	 * server's `list_mesh_nodes` both answer from it; without it both answer
+	 * `mesh: "not-configured"`.
+	 */
+	meshNodes?: MeshNodesReader | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
 }) {
@@ -82,10 +112,30 @@ export function createRelayHost(options: {
 				assets: options.assets,
 				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
+				meshNodes: options.meshNodes,
 			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
 		now,
+	});
+	const { agent } = options;
+	const agentOptions = agent
+		? {
+				agentTick: () => agent.tick(),
+				agentIntervalMs: agent.intervalMs ?? 60_000,
+			}
+		: {};
+	// This process outlives a request, so it holds MCP sessions and pushes
+	// resource updates to their subscribers.
+	const mcp = createRelayMcp({
+		store: options.mcpStore ?? store,
+		relay,
+		authenticate: options.authenticate,
+		ready: async () => service.ready(),
+		meshNodes: options.meshNodes,
+		publicOrigin: options.publicOrigin,
+		sessions: "memory",
+		cursorSecret: webhookSecret,
 	});
 	const service = createRelayService({
 		origin: options.publicOrigin,
@@ -98,7 +148,7 @@ export function createRelayHost(options: {
 		drainTimeoutMs: options.drainTimeoutMs ?? 30_000,
 		handle: (ready) =>
 			createRelayHandler({
-				application: admitWhenReady(runtime, ready),
+				application: admitWhenReady({ ...runtime, mcp: mcp.handle }, ready),
 				webhookSecret,
 				ingressForwardSecret: options.ingressForwardSecret,
 				engineId: "gh-actions",
@@ -107,7 +157,10 @@ export function createRelayHost(options: {
 				now,
 			}),
 		tick: () => runtime.tick(),
+		...agentOptions,
 		close: () => store.close(),
+		streams: isRelayMcpPath,
+		quiesce: () => mcp.close(),
 		// Deployment readiness is local partition integrity. A real runner acceptance
 		// workflow separately verifies external installation permissions and execution.
 		readinessProbe: async (signal) => {

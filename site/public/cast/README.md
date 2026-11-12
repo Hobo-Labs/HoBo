@@ -1,8 +1,8 @@
 # The cast
 
 The hobits who are not Bo. Bo walks the trail; these are the travelers who turn
-up around him when the page has been still a while — on the trail, and poking
-out from behind the page's own boxes (`src/lib/stage/troupe.ts`).
+up around him — asleep by the road, on a handcar, racing past, and poking out
+from behind the page's own cards (`src/lib/stage/landing.ts`).
 
 They are their own characters with their own sheets. **Nothing here is Bo's art
 and none of Bo's sheets are used for them** — a second character played by the
@@ -23,7 +23,7 @@ never has to know who it is animating:
 
 `cast.json`, beside the sheets, records the contract and each character's own
 numbers (standing height, and how far down a peek must reveal to clear the
-eyes). The build writes it and `src/lib/stage/cast.ts` reads it, so the
+eyes). The build writes it and `src/lib/stage/landing.ts` reads it, so the
 geometry the page plays and the geometry on disk cannot drift apart.
 
 ## Who they are
@@ -115,5 +115,5 @@ silhouette and limbs stated explicitly. One Nano Banana Pro board was refused
 by the provider's content filter for no visible reason and was not retried
 once that model was dropped.
 
-A character joins the cast in `src/lib/stage/cast.ts` only after its sheet has
+A character joins the cast in `src/components/TrailStage.astro` only after its sheet has
 been looked at, at the size it ships, on both the day and night page.
