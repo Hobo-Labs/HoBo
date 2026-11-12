@@ -188,7 +188,7 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	}
 
 	// ── Steps ─────────────────────────────────────────────────────────────
-	function stepFn(step: CdServiceStep): (() => Promise<unknown>) | undefined {
+	function stepFn(step: CdServiceStep): (() => Promise<void>) | undefined {
 		const c = ctx();
 		const cd = d.cd;
 		switch (step) {
@@ -201,7 +201,9 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			case "promotions":
 				return () => cd.promotions.tick(c);
 			case "verification":
-				return () => cd.verification.tick(c);
+				return async () => {
+					await cd.verification.tick(c);
+				};
 			case "rollouts":
 				return () => cd.rollouts.tick(c);
 			case "fanout":
@@ -211,7 +213,9 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			case "posture":
 				return () => cd.posture.tick(c);
 			case "previews":
-				return () => cd.promotions.expirePreviews(c);
+				return async () => {
+					await cd.promotions.expirePreviews(c);
+				};
 			case "retention": {
 				const due =
 					lastRetentionMs === undefined ||
@@ -269,7 +273,7 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 					() => {
 						state.running = undefined;
 					},
-					(error: unknown) => {
+					(error) => {
 						state.running = undefined;
 						state.detail = `step-failed: ${messageOf(error)}`;
 					},
@@ -398,7 +402,7 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		state.running = true;
 		state.detail = "running";
 		const startedAt = d.now();
-		const done = (error: unknown) => {
+		const done = (failure: string | undefined) => {
 			state.running = false;
 			if (draining) {
 				state.detail = "drained";
@@ -406,7 +410,7 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 			}
 			if (d.now() - startedAt >= backoff.maxMs) state.restarts = 0;
 			state.restarts += 1;
-			state.detail = `reconciler-crashed: ${error === undefined ? "run loop returned before drain" : messageOf(error)}`;
+			state.detail = `reconciler-crashed: ${failure ?? "run loop returned before drain"}`;
 			emit([
 				point(CD_SERVICE_METRICS.reconcilerRestarts, "counter", 1, {
 					reconciler: state.reconciler.reconcilerId,
@@ -427,7 +431,7 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		}
 		state.run = run.then(
 			() => done(undefined),
-			(error: unknown) => done(error),
+			(error) => done(messageOf(error)),
 		);
 	}
 

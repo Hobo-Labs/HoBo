@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: tests read controlled JSON envelopes. */
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-chained-type-assertions, anti-slop/no-unknown-returns -- SAFETY: tests read controlled JSON envelopes and swap one fake method in place. */
 // WP12 read API over the CD ports: every route, query parsing, refusals with
 // remediation, feed fall-through, and the SSE stream resuming by Last-Event-ID.
 import { describe, expect, it } from "vitest";

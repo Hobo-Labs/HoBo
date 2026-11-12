@@ -74,8 +74,20 @@ export interface CdHttpMount {
 	readonly pathPrefix: string;
 	handle(request: CdHttpRequest, signal: AbortSignal): Promise<CdHttpResponse>;
 	/** OpenAPI document of the mounted routes; its paths and schemas are merged into `/v1/openapi.json`. */
-	openapi?(): Readonly<Record<string, unknown>>;
+	openapi?(): OpenApiDocument;
 }
+
+/** A JSON value inside an OpenAPI document. */
+export type OpenApiValue =
+	| null
+	| boolean
+	| number
+	| string
+	| readonly OpenApiValue[]
+	| OpenApiDocument;
+
+/** An OpenAPI document (or any JSON object inside one). */
+export type OpenApiDocument = { readonly [key: string]: OpenApiValue };
 
 export type ControlApiServerOptions = Readonly<{
 	hoboHome: string;
@@ -725,13 +737,19 @@ async function readRaw(req: IncomingMessage): Promise<Uint8Array | undefined> {
 	return tooLarge ? undefined : new Uint8Array(Buffer.concat(chunks));
 }
 
-function lowerHeaders(req: IncomingMessage): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [name, value] of Object.entries(req.headers)) {
-		if (value === undefined) continue;
-		out[name.toLowerCase()] = Array.isArray(value) ? value.join(", ") : value;
-	}
-	return out;
+function lowerHeaders(req: IncomingMessage): CdHttpRequest["headers"] {
+	return Object.fromEntries(
+		Object.entries(req.headers).flatMap(([name, value]) =>
+			value === undefined
+				? []
+				: [
+						[
+							name.toLowerCase(),
+							Array.isArray(value) ? value.join(", ") : value,
+						],
+					],
+		),
+	);
 }
 
 function isBytes(body: CdHttpResponse["body"]): body is Uint8Array {
@@ -787,25 +805,26 @@ async function handleCd(
 	}
 }
 
-type OpenApiDoc = Readonly<Record<string, unknown>>;
+const EMPTY_DOCUMENT: OpenApiDocument = Object.freeze({});
 
-function objectAt(
-	doc: OpenApiDoc | undefined,
-	key: string,
-): Record<string, unknown> {
-	const value = doc?.[key];
-	return value !== null &&
+function isDocument(value: OpenApiValue | undefined): value is OpenApiDocument {
+	return (
+		value !== null &&
+		value !== undefined &&
 		Object.prototype.toString.call(value) === "[object Object]"
-		? // SAFETY: the guard above proves the value is a plain JSON object.
-			(value as Record<string, unknown>)
-		: {};
+	);
+}
+
+function objectAt(doc: OpenApiDocument, key: string): OpenApiDocument {
+	const value = doc[key];
+	return isDocument(value) ? value : EMPTY_DOCUMENT;
 }
 
 /** Merge a mounted surface's paths and component schemas into the control API document. */
 function mergeOpenApi(
-	base: OpenApiDoc,
-	mounted: OpenApiDoc | undefined,
-): OpenApiDoc {
+	base: OpenApiDocument,
+	mounted: OpenApiDocument | undefined,
+) {
 	if (!mounted) return base;
 	const schemas = objectAt(objectAt(mounted, "components"), "schemas");
 	return {

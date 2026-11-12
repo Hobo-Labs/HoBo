@@ -1,10 +1,11 @@
 // Read-side views of the CD read API (WP12). Each view is a pure fold over
 // the module ports' projections (no writes, no decisions); records leave as
 // canonical protobuf JSON. View shapes are constrained in
-// packages/control-api/data-models/control_api.{proto,cue} (`CdPipelineView`,
-// `CdFreightTimeline`, …) and pinned by the PACT in
-// packages/control-api/contracts/pacts/control-api-cd.pact.json.
-import type { DurableEventStore, JsonValue } from "@hobo/core";
+// packages/control-api/data-models/control_api.{proto,cue} (`CdPipelineNodeView`,
+// `CdTimelineEntry`, …) and pinned by the PACT in
+// packages/control-api/contracts/pacts/control-api-cd.pact.json. Absent
+// optional members are `undefined` and are omitted on the wire.
+import type { DurableEventStore } from "@hobo/core";
 import {
 	type CampStatusRecord,
 	CampStatusRecordSchema,
@@ -37,7 +38,7 @@ import type {
 import { serviceRefusal } from "./errors.js";
 import type { CdReadRoute, ConditionFilter, TaintFilter } from "./routes.js";
 import { PROMOTIONS_MAX_LIMIT } from "./routes.js";
-import { recordJson } from "./wire.js";
+import { recordJson, type WireValue } from "./wire.js";
 
 /** The journal reads the read API needs (never appends). */
 export type DurableStoreReader = Pick<DurableEventStore, "read" | "readAll">;
@@ -56,18 +57,21 @@ export type ViewDeps = Readonly<{
 		| "posture"
 	>;
 	store: DurableStoreReader;
-	topology?: Readonly<{
-		camp(campId: CampId): Promise<CampTopology | undefined>;
-	}>;
+	topology:
+		| Readonly<{ camp(campId: CampId): Promise<CampTopology | undefined> }>
+		| undefined;
 }>;
 
 type Route<K extends CdReadRoute["kind"]> = Extract<CdReadRoute, { kind: K }>;
 
-async function currentOf(d: ViewDeps, campId: string) {
-	const set = await d.cd.desired.current(campId as CampId);
-	return set
-		? { campId, freightId: set.freightId, setId: set.setId }
-		: { campId };
+function asCampId(campId: string): CampId {
+	// SAFETY: Camp ids here come from records the modules wrote (node camp_ids, decision groups).
+	return campId as CampId;
+}
+
+async function currentOf(d: ViewDeps, campId: string): Promise<WireValue> {
+	const set = await d.cd.desired.current(asCampId(campId));
+	return { campId, freightId: set?.freightId, setId: set?.setId };
 }
 
 function placementCamps(
@@ -80,101 +84,120 @@ async function nodeView(
 	d: ViewDeps,
 	pipeline: string,
 	node: PipelineNodeRecord,
-) {
+): Promise<WireValue> {
 	const available = await d.cd.pipelines.available({
 		pipeline,
 		node: node.name,
 	});
-	const base = {
-		name: node.name,
-		edges: {
-			fromSources: [...node.fromSources],
-			fromNodes: [...node.fromNodes],
-		},
-		available: available.map((a) =>
-			recordJson(FreightAvailabilityRecordSchema, a),
-		),
+	const edges = {
+		fromSources: [...node.fromSources],
+		fromNodes: [...node.fromNodes],
 	};
-	if (node.placement !== "") {
-		const q = await d.cd.fanout.qualified({ pipeline, node: node.name });
-		const campIds = q.decision
-			? placementCamps(q.decision.groups)
-			: [...q.qualifiedCampIds].sort();
+	const availableJson = available.map((a) =>
+		recordJson(FreightAvailabilityRecordSchema, a),
+	);
+	if (node.placement === "") {
 		return {
-			...base,
-			placement: node.placement,
-			...(q.decision ? { decisionId: q.decision.decisionId } : {}),
-			qualified: {
-				campIds: [...q.qualifiedCampIds],
-				...(q.stableFreightId ? { freightId: q.stableFreightId } : {}),
-			},
-			camps: await Promise.all(campIds.map((c) => currentOf(d, c))),
+			name: node.name,
+			edges,
+			camps: await Promise.all(node.campIds.map((c) => currentOf(d, c))),
+			available: availableJson,
 		};
 	}
+	const q = await d.cd.fanout.qualified({ pipeline, node: node.name });
+	const campIds = q.decision
+		? placementCamps(q.decision.groups)
+		: [...q.qualifiedCampIds].sort();
 	return {
-		...base,
-		camps: await Promise.all([...node.campIds].map((c) => currentOf(d, c))),
+		name: node.name,
+		edges,
+		placement: node.placement,
+		decisionId: q.decision?.decisionId,
+		qualified: {
+			campIds: [...q.qualifiedCampIds],
+			freightId: q.stableFreightId,
+		},
+		camps: await Promise.all(campIds.map((c) => currentOf(d, c))),
+		available: availableJson,
 	};
 }
 
 export async function pipelineView(
 	d: ViewDeps,
 	r: Route<"pipeline">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const pipeline = await d.cd.pipelines.get(r.name);
 	if (!pipeline)
 		return serviceRefusal("not-found", `no pipeline named ${r.name}`, r.name);
-	const nodes = [];
+	const nodes: WireValue[] = [];
 	for (const node of pipeline.nodes)
 		nodes.push(await nodeView(d, pipeline.name, node));
 	return {
 		ok: true,
-		value: {
-			pipeline: recordJson(PipelineRecordSchema, pipeline),
-			nodes,
-		} as JsonValue,
+		value: { pipeline: recordJson(PipelineRecordSchema, pipeline), nodes },
 	};
 }
 
-type TimelineEntry = {
-	at: string;
-	kind: string;
-	campId?: string;
-	detail: JsonValue;
-};
+const TIMELINE_ORDER = [
+	"recorded",
+	"promotion",
+	"qualified",
+	"approved",
+	"yanked",
+	"retired",
+] as const;
 
-const JOURNAL_KINDS: Readonly<Record<string, string>> = {
-	[CD_EVENTS.FreightYanked]: "yanked",
-	[CD_EVENTS.FreightRetired]: "retired",
-};
+type TimelineKind = (typeof TIMELINE_ORDER)[number];
+
+type TimelineEntry = Readonly<{
+	at: string;
+	kind: TimelineKind;
+	campId: string | undefined;
+	detail: WireValue;
+}>;
+
+const JOURNAL_KINDS = new Map<string, TimelineKind>([
+	[CD_EVENTS.FreightYanked, "yanked"],
+	[CD_EVENTS.FreightRetired, "retired"],
+]);
+
+async function findFreight(
+	d: ViewDeps,
+	idOrAlias: string,
+): Promise<FreightRecord | undefined> {
+	// SAFETY: a lookup key only; an unknown id simply finds nothing.
+	const byId = await d.cd.freight.get(idOrAlias as FreightId);
+	return byId ?? (await d.cd.freight.getByAlias(idOrAlias));
+}
 
 export async function freightTimeline(
 	d: ViewDeps,
 	r: Route<"freight">,
-): Promise<Outcome<JsonValue>> {
-	const freight: FreightRecord | undefined =
-		(await d.cd.freight.get(r.idOrAlias as string as FreightId)) ??
-		(await d.cd.freight.getByAlias(r.idOrAlias));
+): Promise<Outcome<WireValue>> {
+	const freight = await findFreight(d, r.idOrAlias);
 	if (!freight)
 		return serviceRefusal(
 			"not-found",
 			`no Freight with id or alias ${r.idOrAlias}`,
 			r.idOrAlias,
 		);
+	// SAFETY: the ledger returned this record, so its id is a recorded FreightId.
 	const id = freight.freightId as FreightId;
 	const entries: TimelineEntry[] = [
 		{
 			at: freight.recordedAt,
 			kind: "recorded",
+			campId: undefined,
 			detail: { by: freight.recordedBy },
 		},
 	];
 	for await (const event of d.store.read(CD_STREAMS.freight(id))) {
-		const kind = JOURNAL_KINDS[event.type];
+		const kind = JOURNAL_KINDS.get(event.type);
 		if (kind)
 			entries.push({
 				at: event.ts,
 				kind,
+				campId: undefined,
 				detail: { type: event.type, by: event.actor.id },
 			});
 	}
@@ -210,18 +233,10 @@ export async function freightTimeline(
 			});
 		}
 	}
-	const order = [
-		"recorded",
-		"promotion",
-		"qualified",
-		"approved",
-		"yanked",
-		"retired",
-	];
 	entries.sort(
 		(a, b) =>
 			a.at.localeCompare(b.at) ||
-			order.indexOf(a.kind) - order.indexOf(b.kind) ||
+			TIMELINE_ORDER.indexOf(a.kind) - TIMELINE_ORDER.indexOf(b.kind) ||
 			(a.campId ?? "").localeCompare(b.campId ?? ""),
 	);
 	const camps = [
@@ -233,18 +248,19 @@ export async function freightTimeline(
 			freight: recordJson(FreightRecordSchema, freight),
 			camps,
 			timeline: entries,
-		} as JsonValue,
+		},
 	};
 }
 
 export async function promotionsView(
 	d: ViewDeps,
 	r: Route<"promotions">,
-): Promise<Outcome<JsonValue>> {
-	const rows = await d.cd.promotions.list({
-		limit: r.limit,
-		...(r.campId === undefined ? {} : { campId: r.campId }),
-	});
+): Promise<Outcome<WireValue>> {
+	const rows = await d.cd.promotions.list(
+		r.campId === undefined
+			? { limit: r.limit }
+			: { campId: r.campId, limit: r.limit },
+	);
 	return {
 		ok: true,
 		value: {
@@ -258,7 +274,7 @@ export async function promotionsView(
 export async function campStatusView(
 	d: ViewDeps,
 	r: Route<"campStatus">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const [current, observation, inventory] = await Promise.all([
 		d.cd.desired.current(r.campId),
 		d.cd.desired.status(r.campId),
@@ -274,18 +290,11 @@ export async function campStatusView(
 		ok: true,
 		value: {
 			campId: r.campId,
-			...(current ? { current: recordJson(SetRecordSchema, current) } : {}),
-			...(observation
-				? {
-						observation: recordJson(
-							ReconcileObservationRecordSchema,
-							observation,
-						),
-					}
-				: {}),
-			...(inventory
-				? { inventory: recordJson(CampStatusRecordSchema, inventory) }
-				: {}),
+			current: current && recordJson(SetRecordSchema, current),
+			observation:
+				observation &&
+				recordJson(ReconcileObservationRecordSchema, observation),
+			inventory: inventory && recordJson(CampStatusRecordSchema, inventory),
 		},
 	};
 }
@@ -305,12 +314,9 @@ function matchesTaint(status: CampStatusRecord, f: TaintFilter): boolean {
 	);
 }
 
-function campJson(view: CampView): JsonValue {
+function campJson(view: CampView): WireValue {
 	return {
-		topology: {
-			...view.topology,
-			regions: [...view.topology.regions],
-		} as JsonValue,
+		topology: view.topology,
 		status: recordJson(CampStatusRecordSchema, view.status),
 	};
 }
@@ -318,16 +324,16 @@ function campJson(view: CampView): JsonValue {
 export async function campsView(
 	d: ViewDeps,
 	r: Route<"camps">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const views = await d.cd.inventory.list(
 		r.set === undefined ? undefined : { campSets: [r.set] },
 	);
+	const { taint, condition } = r;
 	const filtered = views
-		.filter((v) => (r.taint ? matchesTaint(v.status, r.taint) : true))
-		.filter((v) =>
-			r.condition ? matchesCondition(v.status, r.condition) : true,
+		.filter((v) => taint === undefined || matchesTaint(v.status, taint))
+		.filter(
+			(v) => condition === undefined || matchesCondition(v.status, condition),
 		)
-		.slice()
 		.sort((a, b) => a.topology.campId.localeCompare(b.topology.campId));
 	return { ok: true, value: { camps: filtered.map(campJson) } };
 }
@@ -335,7 +341,7 @@ export async function campsView(
 export async function campInventoryView(
 	d: ViewDeps,
 	r: Route<"campInventory">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const [status, topology] = await Promise.all([
 		d.cd.inventory.status(r.campId),
 		d.topology?.camp(r.campId),
@@ -350,15 +356,8 @@ export async function campInventoryView(
 		ok: true,
 		value: {
 			campId: r.campId,
-			...(topology
-				? {
-						topology: {
-							...topology,
-							regions: [...topology.regions],
-						} as JsonValue,
-					}
-				: {}),
-			...(status ? { status: recordJson(CampStatusRecordSchema, status) } : {}),
+			topology,
+			status: status && recordJson(CampStatusRecordSchema, status),
 		},
 	};
 }
@@ -366,7 +365,7 @@ export async function campInventoryView(
 export async function placementDecisionView(
 	d: ViewDeps,
 	r: Route<"placementDecision">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const decision = await d.cd.placement.decision(r.decisionId);
 	if (!decision || decision.placement !== r.placement) {
 		return serviceRefusal(
@@ -384,7 +383,7 @@ export async function placementDecisionView(
 export async function fanoutView(
 	d: ViewDeps,
 	r: Route<"fanout">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const fanout = await d.cd.fanout.get(r.fanoutId);
 	if (!fanout)
 		return serviceRefusal("not-found", `no fan-out ${r.fanoutId}`, r.fanoutId);
@@ -397,17 +396,15 @@ export async function fanoutView(
 export async function failoversView(
 	d: ViewDeps,
 	r: Route<"failovers">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const rows = await d.cd.failover.list(
 		r.state === undefined ? undefined : { state: r.state },
 	);
-	const sorted = rows
-		.slice()
-		.sort(
-			(a, b) =>
-				b.updatedAt.localeCompare(a.updatedAt) ||
-				a.failoverId.localeCompare(b.failoverId),
-		);
+	const sorted = [...rows].sort(
+		(a, b) =>
+			b.updatedAt.localeCompare(a.updatedAt) ||
+			a.failoverId.localeCompare(b.failoverId),
+	);
 	return {
 		ok: true,
 		value: {
@@ -419,12 +416,12 @@ export async function failoversView(
 export async function complianceView(
 	d: ViewDeps,
 	r: Route<"compliance">,
-): Promise<Outcome<JsonValue>> {
+): Promise<Outcome<WireValue>> {
 	const campIds =
 		r.campId !== undefined
 			? [r.campId]
 			: (await d.cd.inventory.list()).map((v) => v.topology.campId).sort();
-	const out: JsonValue[] = [];
+	const out: WireValue[] = [];
 	for (const campId of campIds) {
 		for (const record of await d.cd.posture.compliance(campId)) {
 			if (r.railDigest !== undefined && record.railDigest !== r.railDigest)

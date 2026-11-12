@@ -12,10 +12,11 @@ import type {
 	DurableEventStore,
 	EventPosition,
 	PositionedEvent,
+	ReadAllOptions,
 } from "@hobo/core";
 import { CD_DEFAULTS } from "../events.js";
 import { messageOf, serviceReason } from "./errors.js";
-import { encode, stringify } from "./wire.js";
+import { encode, stringify, type WireValue } from "./wire.js";
 
 /** Every @hobo/cd stream id starts with this prefix (CD_STREAMS). */
 export const CD_STREAM_PREFIX = "cd-";
@@ -23,8 +24,8 @@ export const CD_STREAM_PREFIX = "cd-";
 export type StreamOptions = Readonly<{
 	store: Pick<DurableEventStore, "readAll">;
 	tenant: string;
-	after?: EventPosition;
-	types?: ReadonlySet<string>;
+	after: EventPosition | undefined;
+	types: ReadonlySet<string> | undefined;
 	signal: AbortSignal;
 	pollMs: number;
 	heartbeatMs: number;
@@ -40,7 +41,8 @@ export function frameOf(e: PositionedEvent): string {
 		streamId: e.event.streamId,
 		type: e.event.type,
 		ts: e.event.ts,
-		data: e.event.data,
+		// SAFETY: @hobo/cd appends only JSON (and 64-bit integer) event bodies.
+		data: e.event.data as WireValue,
 	};
 	return `id: ${position}\nevent: ${e.event.type}\ndata: ${stringify(data)}\n\n`;
 }
@@ -69,11 +71,11 @@ export async function* cdEventStream(
 		while (!o.signal.aborted) {
 			let sent = 0;
 			let read = 0;
-			for await (const e of o.store.readAll({
-				...(cursor === undefined ? {} : { after: cursor }),
-				limit: o.batch,
-				tenant: o.tenant,
-			})) {
+			const page: ReadAllOptions =
+				cursor === undefined
+					? { limit: o.batch, tenant: o.tenant }
+					: { after: cursor, limit: o.batch, tenant: o.tenant };
+			for await (const e of o.store.readAll(page)) {
 				read += 1;
 				cursor = e.position;
 				if (!e.event.streamId.startsWith(CD_STREAM_PREFIX)) continue;

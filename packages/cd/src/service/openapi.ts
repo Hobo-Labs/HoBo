@@ -3,200 +3,237 @@
 // against this document (every interaction's path, parameters and response
 // body must match), so the two cannot drift. Record payloads are canonical
 // protobuf JSON of the frozen `hobo.cd.v1` messages (cd.proto).
+import type { JsonObject } from "@hobo/core";
 
-type Schema = Readonly<Record<string, unknown>>;
+/** A JSON Schema (OpenAPI 3.1 dialect) node. */
+export type CdApiSchema = JsonObject;
 
-const obj = (
+/** The OpenAPI document; plain JSON so it can be served and merged as-is. */
+export type CdOpenApiDocument = JsonObject;
+
+function obj(
 	required: readonly string[],
-	properties: Readonly<Record<string, Schema>>,
-	description?: string,
-): Schema => ({
-	type: "object",
-	required: [...required],
-	properties,
-	...(description ? { description } : {}),
-});
-const str: Schema = { type: "string" };
-const strings: Schema = { type: "array", items: str };
-const bool: Schema = { type: "boolean" };
-const record = (message: string, required: readonly string[] = []): Schema =>
-	obj(
-		required,
-		{},
+	properties: Readonly<Record<string, CdApiSchema>>,
+): CdApiSchema {
+	return { type: "object", required: [...required], properties };
+}
+
+function described(schema: CdApiSchema, description: string): CdApiSchema {
+	return { ...schema, description };
+}
+
+const str = { type: "string" } satisfies CdApiSchema;
+const strings = { type: "array", items: str } satisfies CdApiSchema;
+const bool = { type: "boolean" } satisfies CdApiSchema;
+
+function record(
+	message: string,
+	required: readonly string[] = [],
+): CdApiSchema {
+	return described(
+		obj(required, {}),
 		`hobo.cd.v1.${message} as canonical protobuf JSON (camelCase, enum names, 64-bit integers as strings)`,
 	);
-const arrayOf = (items: Schema): Schema => ({ type: "array", items });
-const ref = (name: string): Schema => ({
-	$ref: `#/components/schemas/${name}`,
-});
+}
 
-export const CD_API_SCHEMAS = Object.freeze({
-	Reason: obj(["code", "message", "remediation", "subject"], {
-		code: str,
-		message: str,
-		remediation: str,
-		subject: str,
-	}),
-	Refusal: obj(["ok", "reasons"], {
-		ok: { const: false },
-		reasons: arrayOf(ref("Reason")),
-	}),
-	CampCurrent: obj(["campId"], { campId: str, freightId: str, setId: str }),
-	PipelineNodeView: obj(["name", "edges", "camps", "available"], {
-		name: str,
-		edges: obj(["fromSources", "fromNodes"], {
-			fromSources: strings,
-			fromNodes: strings,
+function arrayOf(items: CdApiSchema): CdApiSchema {
+	return { type: "array", items };
+}
+
+function ref(name: CdApiSchemaName): CdApiSchema {
+	return { $ref: `#/components/schemas/${name}` };
+}
+
+type CdApiSchemaName =
+	| "Reason"
+	| "Refusal"
+	| "CampCurrent"
+	| "PipelineNodeView"
+	| "PipelineView"
+	| "TimelineEntry"
+	| "FreightTimeline"
+	| "PromotionList"
+	| "CampStatusView"
+	| "CampTopology"
+	| "CampList"
+	| "CampInventoryView"
+	| "PlacementDecisionView"
+	| "FanoutView"
+	| "FailoverList"
+	| "ComplianceList"
+	| "HealthReport"
+	| "StreamFrame";
+
+export const CD_API_SCHEMAS: Readonly<Record<CdApiSchemaName, CdApiSchema>> =
+	Object.freeze({
+		Reason: obj(["code", "message", "remediation", "subject"], {
+			code: str,
+			message: str,
+			remediation: str,
+			subject: str,
 		}),
-		placement: str,
-		decisionId: str,
-		qualified: obj(["campIds"], { campIds: strings, freightId: str }),
-		camps: arrayOf(ref("CampCurrent")),
-		available: arrayOf(record("FreightAvailabilityRecord", ["freightId"])),
-	}),
-	PipelineView: obj(["pipeline", "nodes"], {
-		pipeline: record("PipelineRecord", ["name"]),
-		nodes: arrayOf(ref("PipelineNodeView")),
-	}),
-	TimelineEntry: obj(["at", "kind", "detail"], {
-		at: str,
-		kind: {
-			type: "string",
-			enum: [
-				"recorded",
-				"promotion",
-				"qualified",
-				"approved",
-				"yanked",
-				"retired",
-			],
-		},
-		campId: str,
-		detail: { type: "object" },
-	}),
-	FreightTimeline: obj(["freight", "camps", "timeline"], {
-		freight: record("FreightRecord", ["freightId"]),
-		camps: strings,
-		timeline: arrayOf(ref("TimelineEntry")),
-	}),
-	PromotionList: obj(["promotions"], {
-		promotions: arrayOf(record("PromotionRecord", ["promotionId"])),
-	}),
-	CampStatusView: obj(["campId"], {
-		campId: str,
-		current: record("SetRecord"),
-		observation: record("ReconcileObservationRecord"),
-		inventory: record("CampStatusRecord"),
-	}),
-	CampTopology: obj(
-		[
-			"campId",
-			"yardId",
-			"stationId",
-			"provider",
-			"regions",
-			"envType",
-			"labels",
-			"management",
-		],
-		{
-			campId: str,
-			yardId: str,
-			stationId: str,
-			provider: str,
-			regions: strings,
-			envType: str,
-			labels: { type: "object" },
-			management: { type: "integer" },
-		},
-	),
-	CampList: obj(["camps"], {
-		camps: arrayOf(
-			obj(["topology", "status"], {
-				topology: ref("CampTopology"),
-				status: record("CampStatusRecord"),
+		Refusal: obj(["ok", "reasons"], {
+			ok: { const: false },
+			reasons: arrayOf(ref("Reason")),
+		}),
+		CampCurrent: obj(["campId"], { campId: str, freightId: str, setId: str }),
+		PipelineNodeView: obj(["name", "edges", "camps", "available"], {
+			name: str,
+			edges: obj(["fromSources", "fromNodes"], {
+				fromSources: strings,
+				fromNodes: strings,
 			}),
+			placement: str,
+			decisionId: str,
+			qualified: obj(["campIds"], { campIds: strings, freightId: str }),
+			camps: arrayOf(ref("CampCurrent")),
+			available: arrayOf(record("FreightAvailabilityRecord", ["freightId"])),
+		}),
+		PipelineView: obj(["pipeline", "nodes"], {
+			pipeline: record("PipelineRecord", ["name"]),
+			nodes: arrayOf(ref("PipelineNodeView")),
+		}),
+		TimelineEntry: obj(["at", "kind", "detail"], {
+			at: str,
+			kind: {
+				type: "string",
+				enum: [
+					"recorded",
+					"promotion",
+					"qualified",
+					"approved",
+					"yanked",
+					"retired",
+				],
+			},
+			campId: str,
+			detail: { type: "object" },
+		}),
+		FreightTimeline: obj(["freight", "camps", "timeline"], {
+			freight: record("FreightRecord", ["freightId"]),
+			camps: strings,
+			timeline: arrayOf(ref("TimelineEntry")),
+		}),
+		PromotionList: obj(["promotions"], {
+			promotions: arrayOf(record("PromotionRecord", ["promotionId"])),
+		}),
+		CampStatusView: obj(["campId"], {
+			campId: str,
+			current: record("SetRecord"),
+			observation: record("ReconcileObservationRecord"),
+			inventory: record("CampStatusRecord"),
+		}),
+		CampTopology: obj(
+			[
+				"campId",
+				"yardId",
+				"stationId",
+				"provider",
+				"regions",
+				"envType",
+				"labels",
+				"management",
+			],
+			{
+				campId: str,
+				yardId: str,
+				stationId: str,
+				provider: str,
+				regions: strings,
+				envType: str,
+				labels: { type: "object" },
+				management: { type: "integer" },
+			},
 		),
-	}),
-	CampInventoryView: obj(["campId"], {
-		campId: str,
-		topology: ref("CampTopology"),
-		status: record("CampStatusRecord"),
-	}),
-	PlacementDecisionView: obj(["decision"], {
-		decision: record("PlacementDecisionRecord", ["decisionId", "placement"]),
-	}),
-	FanoutView: obj(["fanout"], {
-		fanout: record("FanoutStatusRecord", ["fanoutId"]),
-	}),
-	FailoverList: obj(["failovers"], {
-		failovers: arrayOf(record("FailoverRecord", ["failoverId"])),
-	}),
-	ComplianceList: obj(["compliance"], {
-		compliance: arrayOf(record("ComplianceRecord", ["campId"])),
-	}),
-	HealthReport: obj(["ok", "checks"], {
-		ok: bool,
-		checks: arrayOf(
-			obj(["name", "ok", "detail"], { name: str, ok: bool, detail: str }),
-		),
-	}),
-	StreamFrame: obj(["position", "streamId", "type", "ts"], {
-		position: str,
-		streamId: str,
-		type: str,
-		ts: str,
-		data: {},
-	}),
-});
+		CampList: obj(["camps"], {
+			camps: arrayOf(
+				obj(["topology", "status"], {
+					topology: ref("CampTopology"),
+					status: record("CampStatusRecord"),
+				}),
+			),
+		}),
+		CampInventoryView: obj(["campId"], {
+			campId: str,
+			topology: ref("CampTopology"),
+			status: record("CampStatusRecord"),
+		}),
+		PlacementDecisionView: obj(["decision"], {
+			decision: record("PlacementDecisionRecord", ["decisionId", "placement"]),
+		}),
+		FanoutView: obj(["fanout"], {
+			fanout: record("FanoutStatusRecord", ["fanoutId"]),
+		}),
+		FailoverList: obj(["failovers"], {
+			failovers: arrayOf(record("FailoverRecord", ["failoverId"])),
+		}),
+		ComplianceList: obj(["compliance"], {
+			compliance: arrayOf(record("ComplianceRecord", ["campId"])),
+		}),
+		HealthReport: obj(["ok", "checks"], {
+			ok: bool,
+			checks: arrayOf(
+				obj(["name", "ok", "detail"], { name: str, ok: bool, detail: str }),
+			),
+		}),
+		StreamFrame: obj(["position", "streamId", "type", "ts"], {
+			position: str,
+			streamId: str,
+			type: str,
+			ts: str,
+			data: {},
+		}),
+	});
 
-export type CdApiSchemaName = keyof typeof CD_API_SCHEMAS;
-
-const ok = (value: CdApiSchemaName): Schema => ({
-	description: "ok",
-	content: {
-		"application/json": {
-			schema: obj(["ok", "value"], { ok: { const: true }, value: ref(value) }),
+function ok(value: CdApiSchemaName): CdApiSchema {
+	return {
+		description: "ok",
+		content: {
+			"application/json": {
+				schema: obj(["ok", "value"], {
+					ok: { const: true },
+					value: ref(value),
+				}),
+			},
 		},
-	},
-});
-const refused = (description: string): Schema => ({
-	description,
-	content: { "application/json": { schema: ref("Refusal") } },
-});
-const q = (name: string, description: string, required = false): Schema => ({
-	name,
-	in: "query",
-	required,
-	schema: str,
-	description,
-});
-const p = (name: string, description: string): Schema => ({
-	name,
-	in: "path",
-	required: true,
-	schema: str,
-	description,
-});
-const get = (
+	};
+}
+
+function refused(description: string): CdApiSchema {
+	return {
+		description,
+		content: { "application/json": { schema: ref("Refusal") } },
+	};
+}
+
+function query(name: string, description: string): CdApiSchema {
+	return { name, in: "query", required: false, schema: str, description };
+}
+
+function pathParam(name: string, description: string): CdApiSchema {
+	return { name, in: "path", required: true, schema: str, description };
+}
+
+function getOperation(
 	summary: string,
 	value: CdApiSchemaName,
-	parameters: readonly Schema[] = [],
-	notFound = false,
-): Schema => ({
-	get: {
-		summary,
-		parameters: [...parameters],
-		responses: {
-			"200": ok(value),
-			"400": refused("query-invalid"),
-			...(notFound ? { "404": refused("not-found") } : {}),
-			"503": refused("store-unavailable"),
-		},
-	},
-});
+	parameters: readonly CdApiSchema[],
+	notFound: boolean,
+): CdApiSchema {
+	const responses = {
+		"200": ok(value),
+		"400": refused("query-invalid"),
+		"503": refused("store-unavailable"),
+	};
+	const withNotFound = notFound
+		? { ...responses, "404": refused("not-found") }
+		: responses;
+	return {
+		get: { summary, parameters: [...parameters], responses: withNotFound },
+	};
+}
 
-export function cdOpenApi(): Readonly<Record<string, unknown>> {
+export function cdOpenApi(): CdOpenApiDocument {
 	return {
 		openapi: "3.1.0",
 		info: {
@@ -218,61 +255,76 @@ export function cdOpenApi(): Readonly<Record<string, unknown>> {
 					responses: { "200": ok("HealthReport"), "503": refused("not-ready") },
 				},
 			},
-			"/v1/cd/pipelines/{name}": get(
+			"/v1/cd/pipelines/{name}": getOperation(
 				"Pipeline graph with per-node current Freight and availability",
 				"PipelineView",
-				[p("name", "pipeline name")],
+				[pathParam("name", "pipeline name")],
 				true,
 			),
-			"/v1/cd/freight/{id}": get(
+			"/v1/cd/freight/{id}": getOperation(
 				"Freight timeline across Camps",
 				"FreightTimeline",
-				[p("id", "Freight id (sha256:…) or alias")],
+				[pathParam("id", "Freight id (sha256:…) or alias")],
 				true,
 			),
-			"/v1/cd/promotions": get("Promotions, newest first", "PromotionList", [
-				q("camp", "target Camp id"),
-				q("limit", "1–1000, default 100"),
-			]),
-			"/v1/cd/camps": get("Camp inventory", "CampList", [
-				q("set", "Camp set name"),
-				q("taint", "NO_PLACE | NO_RUN | taint key"),
-				q(
-					"condition",
-					"READY | REACHABLE | LEASED | CREDENTIAL_VALID | CLAIMS_CONSISTENT | POSTURE_COMPLIANT, optionally =true|false|unknown",
-				),
-			]),
-			"/v1/cd/camps/{id}/status": get(
+			"/v1/cd/promotions": getOperation(
+				"Promotions, newest first",
+				"PromotionList",
+				[
+					query("camp", "target Camp id"),
+					query("limit", "1–1000, default 100"),
+				],
+				false,
+			),
+			"/v1/cd/camps": getOperation(
+				"Camp inventory",
+				"CampList",
+				[
+					query("set", "Camp set name"),
+					query("taint", "NO_PLACE | NO_RUN | taint key"),
+					query(
+						"condition",
+						"READY | REACHABLE | LEASED | CREDENTIAL_VALID | CLAIMS_CONSISTENT | POSTURE_COMPLIANT, optionally =true|false|unknown",
+					),
+				],
+				false,
+			),
+			"/v1/cd/camps/{id}/status": getOperation(
 				"Desired Set, last reconcile observation and inventory status",
 				"CampStatusView",
-				[p("id", "Camp id")],
+				[pathParam("id", "Camp id")],
 				true,
 			),
-			"/v1/cd/camps/{id}/inventory": get(
+			"/v1/cd/camps/{id}/inventory": getOperation(
 				"Declared topology and observed status",
 				"CampInventoryView",
-				[p("id", "Camp id")],
+				[pathParam("id", "Camp id")],
 				true,
 			),
-			"/v1/cd/placements/{name}/decisions/{id}": get(
+			"/v1/cd/placements/{name}/decisions/{id}": getOperation(
 				"A recorded placement decision",
 				"PlacementDecisionView",
-				[p("name", "placement name"), p("id", "decision id")],
+				[pathParam("name", "placement name"), pathParam("id", "decision id")],
 				true,
 			),
-			"/v1/cd/fanouts/{id}": get(
+			"/v1/cd/fanouts/{id}": getOperation(
 				"Fan-out status",
 				"FanoutView",
-				[p("id", "fan-out id")],
+				[pathParam("id", "fan-out id")],
 				true,
 			),
-			"/v1/cd/failovers": get("Failovers, most recent first", "FailoverList", [
-				q("state", "PROPOSED | REPLACING | … | ABANDONED"),
-			]),
-			"/v1/cd/compliance": get("Compliance records", "ComplianceList", [
-				q("camp", "Camp id"),
-				q("rail", "Rail digest sha256:…"),
-			]),
+			"/v1/cd/failovers": getOperation(
+				"Failovers, most recent first",
+				"FailoverList",
+				[query("state", "PROPOSED | REPLACING | … | ABANDONED")],
+				false,
+			),
+			"/v1/cd/compliance": getOperation(
+				"Compliance records",
+				"ComplianceList",
+				[query("camp", "Camp id"), query("rail", "Rail digest sha256:…")],
+				false,
+			),
 			"/v1/cd/stream": {
 				get: {
 					summary:
@@ -285,8 +337,11 @@ export function cdOpenApi(): Readonly<Record<string, unknown>> {
 							schema: str,
 							description: "decimal journal position",
 						},
-						q("after", "decimal journal position (when headers cannot be set)"),
-						q("types", "comma-separated event types"),
+						query(
+							"after",
+							"decimal journal position (when headers cannot be set)",
+						),
+						query("types", "comma-separated event types"),
 					],
 					responses: {
 						"200": {
@@ -299,6 +354,6 @@ export function cdOpenApi(): Readonly<Record<string, unknown>> {
 				},
 			},
 		},
-		components: { schemas: CD_API_SCHEMAS },
+		components: { schemas: { ...CD_API_SCHEMAS } },
 	};
 }

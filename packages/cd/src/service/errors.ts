@@ -105,15 +105,18 @@ export function serviceRefusal(
 export function statusOf(refusal: Refusal): number {
 	const code = refusal.reasons[0]?.code ?? "";
 	return Object.hasOwn(SERVICE_FAILURES, code)
-		? SERVICE_FAILURES[code as ServiceFailureCode].status
+		? // SAFETY: Object.hasOwn proved the code is a SERVICE_FAILURES key.
+			SERVICE_FAILURES[code as ServiceFailureCode].status
 		: 400;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only Error.message or String() is read.
 export function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
 /** True when an error means the journal itself is unavailable. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only instanceof against the core store errors is checked.
 export function isStoreFailure(error: unknown): boolean {
 	return (
 		error instanceof PersistenceUnavailableError ||

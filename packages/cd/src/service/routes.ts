@@ -39,13 +39,13 @@ export type CdReadRoute =
 	| Readonly<{ kind: "ready" }>
 	| Readonly<{ kind: "pipeline"; name: PathName }>
 	| Readonly<{ kind: "freight"; idOrAlias: PathName }>
-	| Readonly<{ kind: "promotions"; campId?: CampId; limit: number }>
+	| Readonly<{ kind: "promotions"; campId: CampId | undefined; limit: number }>
 	| Readonly<{ kind: "campStatus"; campId: CampId }>
 	| Readonly<{
 			kind: "camps";
-			set?: PathName;
-			taint?: TaintFilter;
-			condition?: ConditionFilter;
+			set: PathName | undefined;
+			taint: TaintFilter | undefined;
+			condition: ConditionFilter | undefined;
 	  }>
 	| Readonly<{ kind: "campInventory"; campId: CampId }>
 	| Readonly<{
@@ -54,12 +54,16 @@ export type CdReadRoute =
 			decisionId: PathName;
 	  }>
 	| Readonly<{ kind: "fanout"; fanoutId: FanoutId }>
-	| Readonly<{ kind: "failovers"; state?: FailoverState }>
-	| Readonly<{ kind: "compliance"; campId?: CampId; railDigest?: Digest }>
+	| Readonly<{ kind: "failovers"; state: FailoverState | undefined }>
+	| Readonly<{
+			kind: "compliance";
+			campId: CampId | undefined;
+			railDigest: Digest | undefined;
+	  }>
 	| Readonly<{
 			kind: "stream";
-			after?: EventPosition;
-			types?: ReadonlySet<string>;
+			after: EventPosition | undefined;
+			types: ReadonlySet<string> | undefined;
 	  }>;
 
 export type ParsedRequest =
@@ -112,6 +116,7 @@ export function parsePathName(raw: string, subject: string): Outcome<PathName> {
 			subject,
 		);
 	}
+	// SAFETY: the checks above are exactly the PathName invariant.
 	return { ok: true, value: value as PathName };
 }
 
@@ -129,6 +134,7 @@ function parseEnum<E extends number>(
 	const found = schema.values.find(
 		(v) => v.number !== 0 && (v.name === upper || v.localName === upper),
 	);
+	// SAFETY: `found` is a value of the enum schema E was instantiated with.
 	return found === undefined ? undefined : (found.number as E);
 }
 
@@ -200,7 +206,8 @@ const DIGEST = /^sha256:[0-9a-f]{1,64}$/;
 
 export function parseDigest(raw: string, subject: string): Outcome<Digest> {
 	return DIGEST.test(raw)
-		? { ok: true, value: raw as Digest }
+		? // SAFETY: DIGEST matched, which is the Digest invariant.
+			{ ok: true, value: raw as Digest }
 		: serviceRefusal(
 				"query-invalid",
 				`${subject} must be a sha256:<hex> digest`,
@@ -226,6 +233,7 @@ export function parsePosition(raw: string): Outcome<EventPosition> {
 			"last-event-id",
 		);
 	}
+	// SAFETY: a non-negative decimal within 64 bits is a valid EventPosition.
 	return { ok: true, value: value as EventPosition };
 }
 
@@ -257,7 +265,14 @@ function optional<T>(
 	return parse(raw);
 }
 
+function asFanout(name: PathName): FanoutId {
+	const raw: string = name;
+	// SAFETY: a parsed PathName satisfies the FanoutId invariant (non-empty, printable, no slash).
+	return raw as FanoutId;
+}
+
 function asCamp(o: Outcome<PathName>): Outcome<CampId> {
+	// SAFETY: a parsed PathName satisfies the CampId invariant (non-empty, printable, no slash).
 	return o as Outcome<CampId>;
 }
 
@@ -321,7 +336,7 @@ function parseRoute(
 				value: {
 					kind: "promotions",
 					limit: limit.value,
-					...(camp.value === undefined ? {} : { campId: camp.value }),
+					campId: camp.value,
 				},
 			};
 		}
@@ -336,11 +351,9 @@ function parseRoute(
 				ok: true,
 				value: {
 					kind: "camps",
-					...(set.value === undefined ? {} : { set: set.value }),
-					...(taint.value === undefined ? {} : { taint: taint.value }),
-					...(condition.value === undefined
-						? {}
-						: { condition: condition.value }),
+					set: set.value,
+					taint: taint.value,
+					condition: condition.value,
 				},
 			};
 		}
@@ -375,7 +388,7 @@ function parseRoute(
 			return f.ok
 				? {
 						ok: true,
-						value: { kind: "fanout", fanoutId: f.value as string as FanoutId },
+						value: { kind: "fanout", fanoutId: asFanout(f.value) },
 					}
 				: f;
 		}
@@ -386,7 +399,7 @@ function parseRoute(
 				ok: true,
 				value: {
 					kind: "failovers",
-					...(state.value === undefined ? {} : { state: state.value }),
+					state: state.value,
 				},
 			};
 		}
@@ -401,8 +414,8 @@ function parseRoute(
 				ok: true,
 				value: {
 					kind: "compliance",
-					...(camp.value === undefined ? {} : { campId: camp.value }),
-					...(rail.value === undefined ? {} : { railDigest: rail.value }),
+					campId: camp.value,
+					railDigest: rail.value,
 				},
 			};
 		}
@@ -428,8 +441,8 @@ function parseRoute(
 				ok: true,
 				value: {
 					kind: "stream",
-					...(after === undefined ? {} : { after: after.value }),
-					...(types === undefined ? {} : { types }),
+					after: after?.value,
+					types,
 				},
 			};
 		}

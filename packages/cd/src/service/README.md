@@ -24,6 +24,24 @@ const control = await createControlApiServer({
 await service.drain(AbortSignal.timeout(25_000));
 ```
 
+## Architecture
+
+- **Commands and events.** The host issues no commands of its own; it calls
+  each module's tick, and the modules (actors over their journal streams)
+  append the events in `CD_EVENTS`. The read API never appends.
+- **Event store.** One `DurableEventStore` (SQLite single-node, Postgres
+  multi-node). Readiness probes it; the SSE stream tails it by position with
+  `readAll`.
+- **Projections and read store.** Every read route is a pure fold over the
+  modules' projections (`DesiredStateReader`, `CampInventory`,
+  `FanoutController.get`, …), which are the materialized views and the read
+  store; the API keeps no state, so any replica serves any request. No
+  snapshot is cached here — module snapshots stay inside the modules.
+- **Parse, don't validate.** `parseReadRequest` turns a raw request into a
+  `CdReadRoute` of parsed, derived types (`PathName`, `CampId`, `Digest`,
+  `EventPosition`, `ConditionFilter`, `TaintFilter`, `FailoverState`) once;
+  nothing past `routes.ts` re-checks a string.
+
 ## Tick loop
 
 One tick every `tickIntervalMs` (default `CD_DEFAULTS.serviceTickMs`, 1 s),

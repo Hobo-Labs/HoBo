@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: tests build generated records with create() and brand ids they mint. */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread -- SAFETY: tests build generated records with create(), brand ids they mint, and swap one fake method in place. */
 // WP12 Accept: readiness flips on store loss; drain completes within the
 // deadline; the service ticks every module (incl. inventory, fan-out,
 // failover and posture); drain releases leases.

@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters -- SAFETY: test doubles implement only the port members the service and read API call and brand ids they mint. */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread -- SAFETY: test doubles implement only the port members the service and read API call, so they are cast to the full port once; ids they mint are branded here. */
 // Test doubles for the CD service host (WP12). Each fake implements only the
 // members of the frozen ports that the service or the read API call; the rest
 // throw so an unexpected dependency is loud.
@@ -99,7 +99,7 @@ export function fakeStore(): FakeStore {
 		async *readAll(options?: ReadAllOptions): AsyncIterable<PositionedEvent> {
 			guard();
 			let yielded = 0;
-			for (const e of [...events]) {
+			for (const e of events.slice()) {
 				if (options?.after !== undefined && e.position <= options.after)
 					continue;
 				if (

@@ -5,7 +5,7 @@
 // `/v1/cd/` path is handed to the delivery feed unchanged, so one mount
 // serves operators and agents. The surface is read-only: mutations go through
 // the governed commands (`hobo deploy`, MCP), never through this API.
-import type { DurableEventStore, JsonValue } from "@hobo/core";
+import type { DurableEventStore } from "@hobo/core";
 import type {
 	ContinuousDelivery,
 	FeedRequest,
@@ -22,7 +22,7 @@ import {
 	serviceReason,
 	serviceRefusal,
 } from "./errors.js";
-import { cdOpenApi } from "./openapi.js";
+import { type CdOpenApiDocument, cdOpenApi } from "./openapi.js";
 import { type CdReadRoute, parseReadRequest } from "./routes.js";
 import { cdEventStream, STREAM_DEFAULTS } from "./stream.js";
 import {
@@ -43,6 +43,7 @@ import {
 	rawJsonResponse,
 	refusalResponse,
 	sseResponse,
+	type WireValue,
 } from "./wire.js";
 
 // public-contract: metric names the read API emits through TelemetrySink.
@@ -84,7 +85,7 @@ export interface CdControlApi {
 	readonly pathPrefix: "/v1/cd/";
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
 	/** The OpenAPI document of the read routes (merged into the control API's). */
-	openapi(): Readonly<Record<string, unknown>>;
+	openapi(): CdOpenApiDocument;
 }
 
 /** Metric label: the first path segment under /v1/cd/ (bounded, no ids). */
@@ -94,11 +95,7 @@ function segmentOf(path: string): string {
 }
 
 export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
-	const views: ViewDeps = {
-		cd: d.cd,
-		store: d.store,
-		...(d.topology ? { topology: d.topology } : {}),
-	};
+	const views: ViewDeps = { cd: d.cd, store: d.store, topology: d.topology };
 
 	function emit(points: readonly OtelMetricPoint[]): void {
 		d.telemetry?.metrics(points).catch(() => {
@@ -128,7 +125,7 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 			CdReadRoute,
 			Readonly<{ kind: "openapi" | "ready" | "stream" }>
 		>,
-	): Promise<Outcome<JsonValue>> {
+	): Promise<Outcome<WireValue>> {
 		switch (route.kind) {
 			case "pipeline":
 				return pipelineView(views, route);
@@ -191,8 +188,8 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 							attributes: {},
 						},
 					]),
-				...(r.after === undefined ? {} : { after: r.after }),
-				...(r.types === undefined ? {} : { types: r.types }),
+				after: r.after,
+				types: r.types,
 			});
 			return [sseResponse(body), name];
 		}
