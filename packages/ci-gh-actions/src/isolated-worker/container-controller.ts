@@ -1095,8 +1095,13 @@ export function createIsolatedContainerController(options: {
 		return updated;
 	};
 
-	const jitRunnerBlocksSettlement = async (lease: Lease): Promise<boolean> => {
+	const jitRunnerBlocksSettlement = async (
+		lease: Lease,
+		opts?: Readonly<{ failClosed?: boolean }>,
+	): Promise<boolean> => {
 		if (!lease.runnerName) return false;
+		const onGithubError = (): boolean =>
+			opts?.failClosed === true && lease.runnerId > 0;
 		try {
 			const assignment = await resolveRunnerAssignedJob(
 				options.github,
@@ -1111,7 +1116,7 @@ export function createIsolatedContainerController(options: {
 			);
 			if (runnerHoldsActiveJob(assignment)) return true;
 		} catch {
-			// Fall through to getJob when assignment cannot be resolved.
+			// Fall through to getJob on the served workflow job.
 		}
 		const servedJobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 		try {
@@ -1127,7 +1132,7 @@ export function createIsolatedContainerController(options: {
 				runner_name: job.runner_name ?? null,
 			});
 		} catch {
-			return false;
+			return onGithubError();
 		}
 	};
 
@@ -1159,7 +1164,10 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
-		if (!opts?.force && (await jitRunnerBlocksSettlement(lease))) {
+		if (
+			!opts?.force &&
+			(await jitRunnerBlocksSettlement(lease, { failClosed: true }))
+		) {
 			options.log?.("hobo_ci_jit_settle_deferred_active_custody", {
 				leaseId: lease.id,
 				reservedJobId: lease.jobId,
@@ -1729,7 +1737,6 @@ export function createIsolatedContainerController(options: {
 			}
 		},
 		async reconcile(id: string, forceStop?: boolean) {
-			const deferStopForActiveCustody = forceStop !== true;
 			let lease = await options.store.get(id);
 			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
 			const reservedJobId = lease.jobId;
@@ -2041,12 +2048,6 @@ export function createIsolatedContainerController(options: {
 					if (!stop) return;
 				}
 			}
-			if (
-				stop &&
-				deferStopForActiveCustody &&
-				(await jitRunnerBlocksSettlement(lease))
-			)
-				return;
 			let removed = false;
 			try {
 				try {
