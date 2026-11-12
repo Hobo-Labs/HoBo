@@ -7,12 +7,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
+	CampClaimRecordSchema,
+	CampConditionType,
 	type CampId,
 	type CdContext,
 	type FenceToken,
+	ReconcileObservationRecordSchema,
 	type ReconcilerId,
 	ReconcileStatus,
+	ResourceObservationSchema,
 	SetRecordSchema,
+	SignalSource,
+	TaintEffect,
 } from "@hobo/cd";
 import type { RailCatalog } from "@hobo/cd/compose";
 import { runnerFleetRail } from "@hobo/ci-gh-actions/runner-host";
@@ -21,7 +27,9 @@ import { agentRealizer } from "../src/cd-agent.js";
 import {
 	CD_RUNNER_HOST_ENV,
 	createRunnerHostRealizer,
+	ingestRunnerHostHealth,
 	parseRunnerHostAgentConfig,
+	RUNNER_HOST_UNREADY_TAINT,
 	runnerHostImageOf,
 } from "../src/cd-agent-runner-host.js";
 import {
@@ -29,6 +37,7 @@ import {
 	parseDeclaredRails,
 } from "../src/cd-declared-rails.js";
 import { parseDeliveryModule } from "../src/cd-delivery-module.js";
+import { openCdRuntime, stationOriginOf } from "../src/cd-runtime.js";
 import {
 	digestOf,
 	FakeRunnerHost,
@@ -120,6 +129,23 @@ describe("runner-host agent config", () => {
 		expect(message).toContain("credentialRef must be a credential locator");
 		expect(message).toContain("unknown field extra");
 		expect(message).not.toContain("ghp_notalocator");
+	});
+});
+
+describe("agent run --feed", () => {
+	it("takes the documented /v1/cd/ feed URL as the Station origin, and passes anything else through", () => {
+		expect(stationOriginOf("https://station.example/v1/cd/")).toBe(
+			"https://station.example",
+		);
+		expect(stationOriginOf("https://station.example")).toBe(
+			"https://station.example",
+		);
+		expect(stationOriginOf("https://station.example/other/")).toBe(
+			"https://station.example/other/",
+		);
+		expect(stationOriginOf("http://station.example/v1/cd/")).toBe(
+			"http://station.example",
+		);
 	});
 });
 
@@ -269,6 +295,109 @@ describe("the runner-host realizer as a @hobo/cd Realizer", () => {
 	});
 });
 
+describe("runner-host health reaches Camp inventory (Station side)", () => {
+	it("an unready host is tainted NO_PLACE with health conditions, and untainted once ready", async () => {
+		const home = await mkdtemp(join(tmpdir(), "runner-host-health-"));
+		dir = home;
+		const topology = join(home, "camps.json");
+		await writeFile(
+			topology,
+			JSON.stringify({
+				camps: [
+					{
+						campId: BOX,
+						yardId: "hobo-ci-runners",
+						provider: "self-hosted",
+						envType: "ci",
+						labels: { "hobo.ci/serves-hobo": "true" },
+					},
+				],
+			}),
+		);
+		let nowMs = Date.parse("2026-11-12T10:00:00.000Z");
+		const opened = await openCdRuntime({
+			env: { HOBO_HOME: home },
+			home,
+			cwd: home,
+			simulate: false,
+			now: () => nowMs,
+			topologyFiles: [topology],
+		});
+		if (!opened.ok) throw new Error(opened.reasons[0]?.message);
+		const station = opened.value;
+		try {
+			const host = new FakeRunnerHost({ running: PREVIOUS });
+			const report = (claims: readonly { name: string; value: string }[]) =>
+				create(ReconcileObservationRecordSchema, {
+					campId: BOX,
+					resources: [
+						create(ResourceObservationSchema, {
+							resource: "runner-controller",
+							kind: "hobo-ci.runner-host/v1",
+						}),
+					],
+					claims: claims.map((claim) => create(CampClaimRecordSchema, claim)),
+				});
+			const expired = [
+				{ name: "hobo.ci/mesh-advert", value: "expired" },
+				{
+					name: "hobo.ci/mesh-advert-valid-until",
+					value: new Date(nowMs - 1).toISOString(),
+				},
+				{ name: "hobo.ci/runner-host-ready", value: "false" },
+			];
+			const ingest = (claims: typeof expired) =>
+				ingestRunnerHostHealth({
+					inventory: station.cd.inventory,
+					observation: report(claims),
+					tenant: station.config.tenant,
+					now: () => nowMs,
+				});
+			expect(await ingest(expired)).toEqual({ ingested: true, ready: false });
+			const tainted = await station.cd.inventory.status(BOX);
+			expect(
+				tainted?.taints.find((t) => t.key === RUNNER_HOST_UNREADY_TAINT)
+					?.effect,
+			).toBe(TaintEffect.NO_PLACE);
+			expect(
+				tainted?.conditions.find(
+					(c) =>
+						c.type === CampConditionType.READY &&
+						c.source === SignalSource.HEALTH_SOURCE,
+				)?.reason,
+			).toBe("mesh-advert-expired");
+
+			nowMs += 1_000;
+			const fresh = [
+				{ name: "hobo.ci/mesh-advert", value: "fresh" },
+				{
+					name: "hobo.ci/mesh-advert-valid-until",
+					value: new Date(nowMs + 60_000).toISOString(),
+				},
+				{ name: "hobo.ci/runner-host-ready", value: "true" },
+			];
+			expect(await ingest(fresh)).toEqual({ ingested: true, ready: true });
+			const cleared = await station.cd.inventory.status(BOX);
+			expect(
+				cleared?.taints.some((t) => t.key === RUNNER_HOST_UNREADY_TAINT),
+			).toBe(false);
+			// Only a runner-host agent's report is read as runner health.
+			const other = create(ReconcileObservationRecordSchema, { campId: BOX });
+			expect(
+				await ingestRunnerHostHealth({
+					inventory: station.cd.inventory,
+					observation: other,
+					tenant: station.config.tenant,
+					now: () => nowMs,
+				}),
+			).toEqual({ ingested: false });
+			expect(host.calls).toEqual([]);
+		} finally {
+			await station.close();
+		}
+	});
+});
+
 describe("Station Rails declared beside the runner fleet's Camps", () => {
 	const journal = (active?: Awaited<ReturnType<RailCatalog["active"]>>) =>
 		({
@@ -330,8 +459,6 @@ describe("Station Rails declared beside the runner fleet's Camps", () => {
 		);
 		if (!two.ok) throw new Error(two.message);
 		const catalog = declaredRailCatalog(journal(), two.value);
-		expect(catalog.ok ? "" : catalog.reasons[0]?.code).toBe(
-			"cd-rail-conflict",
-		);
+		expect(catalog.ok ? "" : catalog.reasons[0]?.code).toBe("cd-rail-conflict");
 	});
 });

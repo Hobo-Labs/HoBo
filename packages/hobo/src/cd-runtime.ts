@@ -40,9 +40,9 @@ import {
 	defaultCdFactories,
 	parseCdComposeConfig,
 } from "@hobo/cd/compose";
+import { createPlacementEngine } from "@hobo/cd/placement";
 // binds at merge (plan 0024): drift routing is WP7.
 import { createDriftPolicy } from "@hobo/cd/reconcile";
-import { createPlacementEngine } from "@hobo/cd/placement";
 import type { RunnerHostPorts } from "@hobo/ci-gh-actions/runner-host";
 import { createRegistryFromProviders, type PlannerRegistry } from "@hobo/cloud";
 import type { PolicyPack } from "@hobo/contracts";
@@ -61,8 +61,8 @@ import {
 	loadDeclaredRails,
 	memoizedImporter,
 } from "./cd-declared-rails.js";
-import type { CdDeployHost } from "./cd-deploy.js";
 import { defaultModuleImporter } from "./cd-delivery-module.js";
+import type { CdDeployHost } from "./cd-deploy.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import {
 	loadTopologyFiles,
@@ -424,6 +424,27 @@ function emptyRegistry(): PlannerRegistry {
 	return createRegistryFromProviders([]);
 }
 
+/**
+ * `--feed` names the Station's delivery feed (`https://station/v1/cd/`, as
+ * the usage and the runner fleet's agent.env document it); the agent
+ * transport takes the Station origin and adds `/v1/cd/` itself. Any other
+ * path is passed through for the transport to refuse.
+ */
+export function stationOriginOf(feedUrl: string): string {
+	try {
+		const url = new URL(feedUrl);
+		if (
+			(url.pathname === "/v1/cd/" || url.pathname === "/v1/cd") &&
+			!url.search &&
+			!url.hash
+		)
+			return url.origin;
+	} catch {
+		// Unparsable: the transport refuses it with its own reason.
+	}
+	return feedUrl;
+}
+
 /** An agent-mode reconciler for `hobo deploy agent run` (outbound HTTPS only, I3). */
 export function agentReconciler(
 	input: Readonly<{
@@ -445,7 +466,7 @@ export function agentReconciler(
 	// SAFETY: an enrolled reconciler id (the feed verifies it on every request).
 	const reconcilerId = input.reconcilerId as ReconcilerId;
 	const transport = defaultCdFactories.createHttpTransport({
-		baseUrl: input.feedUrl,
+		baseUrl: stationOriginOf(input.feedUrl),
 		http,
 		reconcilerId,
 		privateJwk: input.privateJwk,

@@ -511,7 +511,8 @@ function acceptedObservation(
 ): ReconcileObservationRecord | undefined {
 	try {
 		const body: unknown = JSON.parse(new TextDecoder().decode(request.body));
-		if (!isJsonObject(body) || !isJsonObject(body.observation)) return undefined;
+		if (!isJsonObject(body) || !isJsonObject(body.observation))
+			return undefined;
 		// SAFETY: plain JSON just parsed; fromJson parses it with the schema.
 		const json = body.observation as JsonValue;
 		return fromJson(ReconcileObservationRecordSchema, json);

@@ -178,7 +178,9 @@ export type DeclaredRailCatalog = RailCatalog &
 		 * is not a declared one (the journal catalog does not carry them), so
 		 * placement fails closed.
 		 */
-		approvedProviders(stationId: string): Promise<readonly string[] | undefined>;
+		approvedProviders(
+			stationId: string,
+		): Promise<readonly string[] | undefined>;
 	}>;
 
 /**
@@ -210,9 +212,7 @@ export function declaredRailCatalog(
 		byDigest.set(rail.entry.railDigest, rail);
 	}
 	async function active(stationId: string) {
-		return (
-			(await journal.active(stationId)) ?? byStation.get(stationId)?.entry
-		);
+		return (await journal.active(stationId)) ?? byStation.get(stationId)?.entry;
 	}
 	return {
 		ok: true,
@@ -220,12 +220,15 @@ export function declaredRailCatalog(
 			active,
 			async byDigest(railDigest: string) {
 				return (
-					(await journal.byDigest(railDigest)) ?? byDigest.get(railDigest)?.entry
+					(await journal.byDigest(railDigest)) ??
+					byDigest.get(railDigest)?.entry
 				);
 			},
 			async approvedProviders(stationId: string) {
 				const rail = await active(stationId);
-				return rail ? byDigest.get(rail.railDigest)?.approvedProviders : undefined;
+				return rail
+					? byDigest.get(rail.railDigest)?.approvedProviders
+					: undefined;
 			},
 		}),
 	};
