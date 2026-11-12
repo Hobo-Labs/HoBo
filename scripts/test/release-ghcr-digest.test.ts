@@ -54,14 +54,18 @@ describe("release ghcr digest helpers", () => {
 		);
 	});
 
-	it("re-normalizes full repo digest lines to the expected GHCR name", () => {
+	it("rejects foreign repository prefixes in repo digest lines", () => {
 		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1";
 		const foreign = `evil.io/hobo/hobo-sdk@${DIGEST_A}`;
-		expect(normalizeRepoDigestLine(tag, foreign, "hobo-sdk")).toBe(
-			`ghcr.io/hobo-labs/hobo/hobo-sdk@${DIGEST_A}`,
+		expect(() => normalizeRepoDigestLine(tag, foreign, "hobo-sdk")).toThrow(
+			/repository mismatch/u,
 		);
 		expect(() =>
-			normalizeRepoDigestLine(tag, `ghcr.io/x/hobo-sdk@sha256:bad`, "hobo-sdk"),
+			normalizeRepoDigestLine(
+				tag,
+				`ghcr.io/hobo-labs/hobo/hobo-sdk@sha256:bad`,
+				"hobo-sdk",
+			),
 		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
 	});
 
@@ -100,6 +104,20 @@ describe("release ghcr digest helpers", () => {
 				),
 			).toThrow(/imagetools inspect/u);
 		}
+		expect(() =>
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() => stubSpawnSync(1, `ERROR: x${tag}: not found`)),
+			),
+		).toThrow(/imagetools inspect/u);
+		expect(() =>
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() =>
+					stubSpawnSync(1, `ERROR: ${tag}@${DIGEST_A}: not found`),
+				),
+			),
+		).toThrow(/imagetools inspect/u);
 	});
 
 	it("treats buildx ERROR ref-not-found as absent only for matching refs", () => {

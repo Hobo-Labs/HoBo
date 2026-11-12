@@ -41,25 +41,32 @@ export function normalizeRepoDigestLine(
 		throw new Error(`empty repo digest for ${tag}`);
 	}
 	const needle = `/${imageId}@`;
+	const imageName = tag.split(":")[0] ?? tag;
 	if (trimmed.includes(needle)) {
 		const at = trimmed.lastIndexOf("@");
 		if (at === -1) {
 			throw new Error(`repo digest missing @ for ${tag}: ${trimmed}`);
 		}
+		const refPrefix = trimmed.slice(0, at);
+		if (refPrefix !== imageName) {
+			throw new Error(`repo digest repository mismatch for ${tag}: ${trimmed}`);
+		}
 		const digest = trimmed.slice(at + 1);
-		const imageName = tag.split(":")[0] ?? tag;
 		return ghcrDigestRef(
 			imageName,
 			assertSha256ImageDigest(digest, `${tag} repo digest`),
 		);
 	}
-	const imageName = tag.split(":")[0] ?? tag;
 	if (trimmed.startsWith("sha256:")) {
 		return ghcrDigestRef(imageName, assertSha256ImageDigest(trimmed, tag));
 	}
 	const at = trimmed.lastIndexOf("@");
 	if (at === -1) {
 		throw new Error(`repo digest missing @ for ${tag}: ${trimmed}`);
+	}
+	const refPrefix = trimmed.slice(0, at);
+	if (refPrefix !== imageName) {
+		throw new Error(`repo digest repository mismatch for ${tag}: ${trimmed}`);
 	}
 	const digest = trimmed.slice(at + 1);
 	return ghcrDigestRef(
@@ -216,16 +223,29 @@ export function isImagetoolsRegistryTagNotFound(stderr: string): boolean {
 
 const TAG_REF_SUFFIX = /[a-zA-Z0-9_.-]/;
 
-/** Substring `tag` in stderr must not be a longer valid tag (`:v1` vs `:v1.1`). */
-export function stderrReferencesExactTag(stderr: string, tag: string): boolean {
+/** Buildx missing-tag line must name the requested ref exactly (no substring match). */
+export function stderrDeclaresRequestedTagNotFound(
+	stderr: string,
+	tag: string,
+): boolean {
 	for (const line of stderr.split("\n")) {
 		const notFound = line.trim().match(/^error:\s*(.+):\s*not found$/iu);
 		if (notFound?.[1]?.trim() === tag) return true;
 	}
+	return false;
+}
+
+/** Substring `tag` in stderr must not be a longer valid tag (`:v1` vs `:v1.1`). */
+export function stderrReferencesExactTag(stderr: string, tag: string): boolean {
 	let start = 0;
 	for (;;) {
 		const idx = stderr.indexOf(tag, start);
 		if (idx === -1) return false;
+		const before = idx > 0 ? stderr[idx - 1] : undefined;
+		if (before !== undefined && TAG_REF_SUFFIX.test(before)) {
+			start = idx + 1;
+			continue;
+		}
 		const after = stderr[idx + tag.length];
 		if (after === undefined || !TAG_REF_SUFFIX.test(after)) return true;
 		start = idx + 1;
@@ -239,7 +259,7 @@ function isImagetoolsTagAbsent(
 ): boolean {
 	if (status === 0) return false;
 	if (isImagetoolsRegistryTagNotFound(stderr)) {
-		return stderrReferencesExactTag(stderr, tag);
+		return stderrDeclaresRequestedTagNotFound(stderr, tag);
 	}
 	const lower = stderr.toLowerCase();
 	return (
