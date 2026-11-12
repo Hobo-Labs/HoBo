@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: this test's conformance walker is a parse boundary: it reads records as untyped protobuf JSON and checks each key and value against cd.proto's text, so it must accept unknown input. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MeshNode } from "@hobo/ci/mesh";
@@ -29,7 +30,7 @@ const HOSTS = [
 ];
 
 function hosts() {
-	const parsed = parseRunnerHosts(HOSTS);
+	const parsed = parseRunnerHosts(JSON.stringify(HOSTS));
 	if (!parsed.ok) throw new Error(parsed.problems.join("; "));
 	return parsed.value;
 }
@@ -130,18 +131,31 @@ describe("runner hosts are parsed once (parse, don't validate)", () => {
 	});
 
 	it("parseRunnerHosts refuses unknown labels, duplicate ids, a local runner on a fleet label and a fleet with no pilot", () => {
-		const bad = parseRunnerHosts([
-			{ id: "box", kind: "box-worker", runnerLabels: ["hobo-arc"] },
-			{ id: "box", kind: "mesh-node", runnerLabels: ["hobo"] },
-			{ id: "Bad Id", kind: "local-runner", runnerLabels: ["hobo"] },
-			{ id: "x", kind: "mesh-node", runnerLabels: ["hobo-local-host"] },
-		]);
+		const malformed = parseRunnerHosts(
+			JSON.stringify([
+				{ id: "box", kind: "box-worker", runnerLabels: ["hobo-arc"] },
+				{ id: "Bad Id", kind: "local-runner", runnerLabels: ["hobo"] },
+			]),
+		);
+		expect(malformed.ok).toBe(false);
+		if (malformed.ok) return;
+		expect(malformed.code).toBe("runner-hosts-invalid");
+		expect(malformed.problems.join("\n")).toMatch(/hosts\.0\.runnerLabels\.0/u);
+		expect(malformed.problems.join("\n")).toMatch(
+			/hosts\.1\.id: not a lowercase host id/u,
+		);
+		const bad = parseRunnerHosts(
+			JSON.stringify([
+				{ id: "box", kind: "box-worker", runnerLabels: ["hobo"] },
+				{ id: "box", kind: "mesh-node", runnerLabels: ["hobo"] },
+				{ id: "laptop", kind: "local-runner", runnerLabels: ["hobo"] },
+				{ id: "x", kind: "mesh-node", runnerLabels: ["hobo-local-host"] },
+			]),
+		);
 		expect(bad.ok).toBe(false);
 		if (bad.ok) return;
 		expect(bad.code).toBe("runner-hosts-invalid");
-		expect(bad.problems.join("\n")).toMatch(/hobo-arc/u);
 		expect(bad.problems.join("\n")).toMatch(/duplicate host id box/u);
-		expect(bad.problems.join("\n")).toMatch(/Bad Id/u);
 		expect(bad.problems.join("\n")).toMatch(
 			/local-runner serves only hobo-local-host/u,
 		);
@@ -152,9 +166,9 @@ describe("runner hosts are parsed once (parse, don't validate)", () => {
 		expect(bad.remediation).toMatch(/hosts\.json/u);
 	});
 
-	it("parseRunnerHosts refuses something that is not a list", () => {
-		const bad = parseRunnerHosts({ hosts: [] });
-		expect(bad.ok).toBe(false);
+	it("parseRunnerHosts refuses something that is not a list, or not JSON", () => {
+		expect(parseRunnerHosts(JSON.stringify({ hosts: [] })).ok).toBe(false);
+		expect(parseRunnerHosts("[").ok).toBe(false);
 	});
 });
 
@@ -290,7 +304,7 @@ describe("the delivery module for the runner fleet", () => {
 
 	it("deploy/runner-fleet/hobo.delivery.ts exports exactly the delivery-module records of the declared hosts", async () => {
 		const declared = parseRunnerHosts(
-			JSON.parse(readFileSync(join(deployDir, "hosts.json"), "utf8")),
+			readFileSync(join(deployDir, "hosts.json"), "utf8"),
 		);
 		expect(declared.ok).toBe(true);
 		if (!declared.ok) return;
@@ -476,7 +490,7 @@ describe("each runner host runs a HoBo CD agent beside its controller", () => {
 		expect(env).toMatch(/^HOBO_CD_FEED_URL=https:\/\/.*\/v1\/cd\/$/mu);
 		const camp = env.match(/^HOBO_CD_CAMP_ID=(.*)$/mu)?.[1];
 		const declared = parseRunnerHosts(
-			JSON.parse(readFileSync(join(deployDir, "hosts.json"), "utf8")),
+			readFileSync(join(deployDir, "hosts.json"), "utf8"),
 		);
 		expect(declared.ok).toBe(true);
 		if (!declared.ok) return;

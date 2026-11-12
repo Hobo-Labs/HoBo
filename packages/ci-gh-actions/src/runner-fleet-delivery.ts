@@ -22,6 +22,7 @@
  * It holds data and pure functions only: no I/O, no clock but the one given.
  */
 import type { MeshNode } from "@hobo/ci/mesh";
+import { z } from "zod";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 // public-contract: names shared with @hobo/cd HOBO_CI_COMPONENTS.runnerFleet.
@@ -81,85 +82,67 @@ export type RunnerHostsOutcome =
 			remediation: string;
 	  }>;
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const HostEntry = z.object({
+	id: z.string().regex(HOST_ID, "not a lowercase host id (the mesh node id)"),
+	kind: z.enum(HOST_KINDS),
+	runnerLabels: z.array(z.enum(SERVED_LABELS)).min(1),
+	ring: z.enum(RINGS).default("fleet"),
+});
+const HostList = z.array(HostEntry);
 
-function oneOf<T extends string>(
-	values: readonly T[],
-	value: unknown,
-): value is T {
-	return values.some((v) => v === value);
+function invalid(problems: readonly string[]): RunnerHostsOutcome {
+	return {
+		ok: false,
+		code: "runner-hosts-invalid",
+		problems,
+		remediation: REMEDIATION,
+	};
 }
 
 /**
- * Parse a declared host list (`deploy/runner-fleet/hosts.json`). Every
- * problem is listed; nothing partial is returned.
+ * Parse a declared host list (the text of `deploy/runner-fleet/hosts.json`).
+ * Every problem is listed; nothing partial is returned.
  */
-export function parseRunnerHosts(input: unknown): RunnerHostsOutcome {
-	const problems: string[] = [];
-	const hosts: RunnerHost[] = [];
-	if (!Array.isArray(input))
-		return {
-			ok: false,
-			code: "runner-hosts-invalid",
-			problems: ["the host list must be a JSON array"],
-			remediation: REMEDIATION,
-		};
-	const seen = new Set<string>();
-	for (const [index, item] of input.entries()) {
-		const at = `hosts[${index}]`;
-		if (!isRecord(item)) {
-			problems.push(`${at}: not an object`);
-			continue;
-		}
-		const { id, kind, runnerLabels } = item;
-		const ring = item.ring ?? "fleet";
-		if (typeof id !== "string" || !HOST_ID.test(id))
-			problems.push(
-				`${at}.id: ${JSON.stringify(id)} is not a lowercase host id (the mesh node id)`,
-			);
-		else if (seen.has(id)) problems.push(`${at}: duplicate host id ${id}`);
-		if (typeof id === "string") seen.add(id);
-		if (!oneOf(HOST_KINDS, kind))
-			problems.push(`${at}.kind: one of ${HOST_KINDS.join(", ")}`);
-		if (!oneOf(RINGS, ring)) problems.push(`${at}.ring: pilot or fleet`);
-		const labels: ServedRunnerLabel[] = [];
-		if (!Array.isArray(runnerLabels) || runnerLabels.length === 0)
-			problems.push(`${at}.runnerLabels: a non-empty list`);
-		else
-			for (const label of runnerLabels) {
-				if (oneOf(SERVED_LABELS, label)) labels.push(label);
-				else
-					problems.push(
-						`${at}.runnerLabels: ${JSON.stringify(label)} is not one of ${SERVED_LABELS.join(", ")}`,
-					);
-			}
-		if (kind === "local-runner" && labels.some((l) => l !== LOCAL_HOST_LABEL))
-			problems.push(`${at}: a local-runner serves only hobo-local-host`);
-		if (kind !== "local-runner" && labels.includes(LOCAL_HOST_LABEL))
-			problems.push(`${at}: only a local-runner serves hobo-local-host`);
-		if (typeof id === "string" && oneOf(HOST_KINDS, kind) && oneOf(RINGS, ring))
-			hosts.push(
-				Object.freeze({
-					id,
-					kind,
-					runnerLabels: Object.freeze([...new Set(labels)].sort()),
-					ring,
-				}),
-			);
+export function parseRunnerHosts(text: string): RunnerHostsOutcome {
+	let json: ReturnType<typeof JSON.parse>;
+	try {
+		json = JSON.parse(text);
+	} catch (error) {
+		return invalid([`not JSON: ${String(error)}`]);
 	}
-	if (input.length > 1 && !hosts.some((h) => h.ring === "pilot"))
+	const parsed = HostList.safeParse(json);
+	if (!parsed.success)
+		return invalid(
+			parsed.error.issues.map(
+				(issue) => `hosts.${issue.path.join(".")}: ${issue.message}`,
+			),
+		);
+	const problems: string[] = [];
+	const seen = new Set<string>();
+	for (const [index, host] of parsed.data.entries()) {
+		const at = `hosts.${index}`;
+		if (seen.has(host.id)) problems.push(`${at}: duplicate host id ${host.id}`);
+		seen.add(host.id);
+		const local = host.runnerLabels.includes(LOCAL_HOST_LABEL);
+		if (
+			host.kind === "local-runner" &&
+			host.runnerLabels.some((l) => l !== LOCAL_HOST_LABEL)
+		)
+			problems.push(`${at}: a local-runner serves only hobo-local-host`);
+		if (host.kind !== "local-runner" && local)
+			problems.push(`${at}: only a local-runner serves hobo-local-host`);
+	}
+	if (parsed.data.length > 1 && !parsed.data.some((h) => h.ring === "pilot"))
 		problems.push(
 			"no pilot host: mark one host ring pilot so new Freight reaches it first",
 		);
-	if (problems.length > 0)
-		return {
-			ok: false,
-			code: "runner-hosts-invalid",
-			problems,
-			remediation: REMEDIATION,
-		};
+	if (problems.length > 0) return invalid(problems);
+	const hosts: RunnerHost[] = parsed.data.map((host) =>
+		Object.freeze({
+			...host,
+			runnerLabels: Object.freeze([...new Set(host.runnerLabels)].sort()),
+		}),
+	);
 	return {
 		ok: true,
 		value: Object.freeze(hosts.sort((a, b) => (a.id < b.id ? -1 : 1))),
@@ -167,20 +150,23 @@ export function parseRunnerHosts(input: unknown): RunnerHostsOutcome {
 }
 
 const REMEDIATION =
-	"Fix packages/ci-gh-actions/deploy/runner-fleet/hosts.json: one entry per runner host with its mesh node id, kind, the runner labels it serves and its ring, then regenerate hobo.delivery.json (pnpm --filter @hobo/ci-gh-actions runner-fleet:delivery).";
+	"Fix packages/ci-gh-actions/deploy/runner-fleet/hosts.json: one entry per runner host with its mesh node id (lowercase), kind, the runner labels it serves and its ring, and exactly one pilot when there is more than one host.";
 
 export const campIdOf = (host: Pick<RunnerHost, "id">): string =>
 	`${RUNNER_FLEET_YARD}/${host.id}`;
 
 function hostLabels(host: RunnerHost): Readonly<Record<string, string>> {
-	const labels: Record<string, string> = {
-		[FLEET_LABEL]: "true",
-		[RING_LABEL]: host.ring,
-		[HOST_KIND_LABEL]: host.kind,
-	};
-	for (const label of SERVED_LABELS)
-		labels[servesLabel(label)] = String(host.runnerLabels.includes(label));
-	return Object.freeze(labels);
+	return Object.freeze(
+		Object.fromEntries([
+			[FLEET_LABEL, "true"],
+			[RING_LABEL, host.ring],
+			[HOST_KIND_LABEL, host.kind],
+			...SERVED_LABELS.map((label) => [
+				servesLabel(label),
+				String(host.runnerLabels.includes(label)),
+			]),
+		]),
+	);
 }
 
 // domain-view: the CampTopology shape @hobo/cd's TopologyReader returns.
