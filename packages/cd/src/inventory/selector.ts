@@ -7,7 +7,9 @@ import type { CampTopology } from "../ports.js";
 import { reason } from "./support.js";
 
 /** A selector whose fields were checked at a parse boundary. */
-export type ParsedSelector = SelectorRecord & { readonly __brand: "cd.ParsedSelector" };
+export type ParsedSelector = SelectorRecord & {
+	readonly __brand: "cd.ParsedSelector";
+};
 
 const LABEL_KEY = /^[A-Za-z0-9]([A-Za-z0-9._/-]{0,126}[A-Za-z0-9])?$/u;
 const SHORT_TEXT = 256;
@@ -30,7 +32,9 @@ export function isEmptySelector(selector: SelectorRecord | undefined): boolean {
 export function parseSelector(
 	selector: SelectorRecord | undefined,
 	path: string,
-): Readonly<{ ok: true; value: ParsedSelector | undefined }> | Readonly<{ ok: false; reasons: readonly ReasonRecord[] }> {
+):
+	| Readonly<{ ok: true; value: ParsedSelector | undefined }>
+	| Readonly<{ ok: false; reasons: readonly ReasonRecord[] }> {
 	if (selector === undefined) return { ok: true, value: undefined };
 	const reasons: ReasonRecord[] = [];
 	if (selector.bindles.length > 0) {
@@ -77,10 +81,13 @@ export function parseSelector(
 }
 
 /** Jurisdictions of every declared region, sorted and unique. */
-export function campJurisdictions(topology: CampTopology): readonly JurisdictionId[] {
+export function campJurisdictions(
+	topology: CampTopology,
+): readonly JurisdictionId[] {
 	const all = new Set<JurisdictionId>();
 	for (const region of topology.regions) {
-		for (const jurisdiction of jurisdictionsForRegion(region)) all.add(jurisdiction);
+		for (const jurisdiction of jurisdictionsForRegion(region))
+			all.add(jurisdiction);
 	}
 	return [...all].sort();
 }
@@ -91,19 +98,35 @@ export function campJurisdictions(topology: CampTopology): readonly Jurisdiction
  * listed jurisdiction; a Camp with no declared region never matches it.
  * An empty selector matches every Camp.
  */
-export function matchesSelector(selector: SelectorRecord | undefined, topology: CampTopology): boolean {
+export function matchesSelector(
+	selector: SelectorRecord | undefined,
+	topology: CampTopology,
+): boolean {
 	if (selector === undefined) return true;
 	if (selector.bindles.length > 0) return false;
 	for (const [key, value] of Object.entries(selector.labels)) {
 		if (topology.labels[key] !== value) return false;
 	}
-	if (selector.envTypes.length > 0 && !selector.envTypes.includes(topology.envType)) return false;
-	if (selector.campIds.length > 0 && !selector.campIds.includes(topology.campId)) return false;
+	if (
+		selector.envTypes.length > 0 &&
+		!selector.envTypes.includes(topology.envType)
+	)
+		return false;
+	if (
+		selector.campIds.length > 0 &&
+		!selector.campIds.includes(topology.campId)
+	)
+		return false;
 	if (selector.jurisdictions.length > 0) {
 		if (topology.regions.length === 0) return false;
 		for (const region of topology.regions) {
 			const inside = jurisdictionsForRegion(region);
-			if (!inside.some((jurisdiction) => selector.jurisdictions.includes(jurisdiction))) return false;
+			if (
+				!inside.some((jurisdiction) =>
+					selector.jurisdictions.includes(jurisdiction),
+				)
+			)
+				return false;
 		}
 	}
 	return true;

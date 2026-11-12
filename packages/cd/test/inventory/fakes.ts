@@ -70,7 +70,10 @@ export function clock(start = T0) {
 	};
 }
 
-export function context(now: () => number, principal: PrincipalRef = OPERATOR): CdContext {
+export function context(
+	now: () => number,
+	principal: PrincipalRef = OPERATOR,
+): CdContext {
 	return { tenant: TENANT, principal, now };
 }
 
@@ -87,7 +90,11 @@ export class MemoryEventStore implements DurableEventStore {
 	/** Test hook: run before the CAS check of the next append (simulates a concurrent writer). */
 	beforeAppend: (() => Promise<void>) | undefined;
 
-	async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
+	async append(
+		streamId: string,
+		events: EventInput[],
+		opts: AppendOptions,
+	): Promise<AppendResult> {
 		this.appendCalls += 1;
 		const hook = this.beforeAppend;
 		this.beforeAppend = undefined;
@@ -97,13 +104,20 @@ export class MemoryEventStore implements DurableEventStore {
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing = typeof key === "string" ? stream.find((event) => event.meta?.idempotencyKey === key) : undefined;
+			const existing =
+				typeof key === "string"
+					? stream.find((event) => event.meta?.idempotencyKey === key)
+					: undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
 		if (fresh.length === 0) return { streamId, appended: [], deduped };
 		if (opts.expectedSeq !== stream.length) {
-			throw new OptimisticSequenceConflictError(streamId, opts.expectedSeq, stream.length);
+			throw new OptimisticSequenceConflictError(
+				streamId,
+				opts.expectedSeq,
+				stream.length,
+			);
 		}
 		const appended: EventEnvelope[] = [];
 		for (const input of fresh) {
@@ -139,26 +153,47 @@ export class MemoryEventStore implements DurableEventStore {
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		let yielded = 0;
 		for (const entry of [...this.all]) {
-			if (options.after !== undefined && entry.position <= options.after) continue;
-			if (options.tenant !== undefined && entry.event.tenant !== options.tenant) continue;
-			if (options.filter?.type !== undefined && entry.event.type !== options.filter.type) continue;
-			if (options.filter?.streamId !== undefined && entry.event.streamId !== options.filter.streamId) continue;
+			if (options.after !== undefined && entry.position <= options.after)
+				continue;
+			if (options.tenant !== undefined && entry.event.tenant !== options.tenant)
+				continue;
+			if (
+				options.filter?.type !== undefined &&
+				entry.event.type !== options.filter.type
+			)
+				continue;
+			if (
+				options.filter?.streamId !== undefined &&
+				entry.event.streamId !== options.filter.streamId
+			)
+				continue;
 			if (options.limit !== undefined && yielded >= options.limit) return;
 			yielded += 1;
 			yield entry;
 		}
 	}
 
-	subscribe(_filter: StreamFilter, _handler: (event: EventEnvelope) => void): Subscription {
+	subscribe(
+		_filter: StreamFilter,
+		_handler: (event: EventEnvelope) => void,
+	): Subscription {
 		return { unsubscribe: () => undefined };
 	}
 
-	async snapshot(streamId: string, state: never, seq: number): Promise<SnapshotRecord> {
+	async snapshot(
+		streamId: string,
+		state: never,
+		seq: number,
+	): Promise<SnapshotRecord> {
 		return { streamId, seq, state, savedAt: new Date(T0).toISOString() };
 	}
 
 	async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-		const result = await this.append(request.streamId, [...request.events], request.append);
+		const result = await this.append(
+			request.streamId,
+			[...request.events],
+			request.append,
+		);
 		return { ...result, effects: [] };
 	}
 
@@ -168,12 +203,30 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	/** Test helper: append a Station-side reconcile status event for a Camp. */
-	async reconcileEvent(campId: string, type: string = CD_EVENTS.StatusObserved, fenceToken = "7"): Promise<void> {
+	async reconcileEvent(
+		campId: string,
+		type: string = CD_EVENTS.StatusObserved,
+		fenceToken = "7",
+	): Promise<void> {
 		const stream = CD_STREAMS.campStatus(campId);
 		await this.append(
 			stream,
-			[{ type, data: { campId, reconcilerId: "rec-1", fenceToken, status: "RECONCILE_STATUS_CONVERGED" } }],
-			{ expectedSeq: this.events(stream).length, actor: STATION, tenant: TENANT },
+			[
+				{
+					type,
+					data: {
+						campId,
+						reconcilerId: "rec-1",
+						fenceToken,
+						status: "RECONCILE_STATUS_CONVERGED",
+					},
+				},
+			],
+			{
+				expectedSeq: this.events(stream).length,
+				actor: STATION,
+				tenant: TENANT,
+			},
 		);
 	}
 }
@@ -188,15 +241,26 @@ export class RecordingTelemetry implements TelemetrySink {
 		this.points.push(...points);
 	}
 	count(name: string): number {
-		return this.points.filter((point) => point.name === name).reduce((sum, point) => sum + point.value, 0);
+		return this.points
+			.filter((point) => point.name === name)
+			.reduce((sum, point) => sum + point.value, 0);
 	}
 }
 
 export function reasonOf(code: string, message: string): ReasonRecord {
-	return create(ReasonRecordSchema, { code, message, remediation: "fix the fixture", subject: code });
+	return create(ReasonRecordSchema, {
+		code,
+		message,
+		remediation: "fix the fixture",
+		subject: code,
+	});
 }
 
-export type AuthorizerCall = Readonly<{ action: CdAction; principal: PrincipalRef; subject: JsonObject }>;
+export type AuthorizerCall = Readonly<{
+	action: CdAction;
+	principal: PrincipalRef;
+	subject: JsonObject;
+}>;
 
 /** Allows users and services; agents get proposal-only; listed actions are denied. */
 export class FakeAuthorizer implements CdAuthorizer {
@@ -208,8 +272,18 @@ export class FakeAuthorizer implements CdAuthorizer {
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ decisionId: string; proposalOnly: boolean }>>> {
 		this.calls.push({ action, principal: ctx.principal, subject });
-		if (this.denied.has(action)) return { ok: false, reasons: [reasonOf("policy-denied", `${action} denied`)] };
-		return { ok: true, value: { decisionId: `dec-${this.calls.length}`, proposalOnly: ctx.principal.kind === "agent" } };
+		if (this.denied.has(action))
+			return {
+				ok: false,
+				reasons: [reasonOf("policy-denied", `${action} denied`)],
+			};
+		return {
+			ok: true,
+			value: {
+				decisionId: `dec-${this.calls.length}`,
+				proposalOnly: ctx.principal.kind === "agent",
+			},
+		};
 	}
 }
 
@@ -239,7 +313,14 @@ export class FakeTopology implements TopologyReader {
 	}
 }
 
-export function railDelivery(input: Partial<{ campSets: string[]; automatic: boolean; requiredSignals: number; maxFanoutCamps: number }> = {}): RailDeliveryRecord {
+export function railDelivery(
+	input: Partial<{
+		campSets: string[];
+		automatic: boolean;
+		requiredSignals: number;
+		maxFanoutCamps: number;
+	}> = {},
+): RailDeliveryRecord {
 	return create(RailDeliveryRecordSchema, {
 		railDigest: `sha256:${"a".repeat(64)}`,
 		campSets: input.campSets ?? [],
@@ -253,7 +334,9 @@ export function railDelivery(input: Partial<{ campSets: string[]; automatic: boo
 }
 
 export class FakeRails implements RailDeliveryReader {
-	constructor(public delivery: RailDeliveryRecord | undefined = railDelivery()) {}
+	constructor(
+		public delivery: RailDeliveryRecord | undefined = railDelivery(),
+	) {}
 	async forStation(): Promise<RailDeliveryRecord | undefined> {
 		return this.delivery;
 	}
@@ -277,9 +360,10 @@ export class FakeDesired implements DesiredStateReader {
 	async resolved(): Promise<never> {
 		throw new Error("not used by the inventory");
 	}
-	async status(campId: CampId): Promise<ReconcileObservationRecord | undefined> {
+	async status(
+		campId: CampId,
+	): Promise<ReconcileObservationRecord | undefined> {
 		return this.observations.get(campId);
 	}
-	// biome-ignore lint/correctness/useYield: the inventory never reads changes.
 	async *changes(): AsyncIterable<never> {}
 }

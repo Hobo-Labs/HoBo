@@ -12,9 +12,16 @@ import {
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { isEventStoreOptimisticConflict, type PrincipalRef } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
-import type { Digest, OtelAttributes, Refusal, TelemetrySink } from "../ports.js";
+import type {
+	Digest,
+	OtelAttributes,
+	Refusal,
+	TelemetrySink,
+} from "../ports.js";
 
-function isObject(value: JsonValue | undefined): value is { [key: string]: JsonValue } {
+function isObject(
+	value: JsonValue | undefined,
+): value is { [key: string]: JsonValue } {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -37,13 +44,20 @@ export function sha256Digest(value: JsonValue): Digest {
 }
 
 /** Event body for a generated record: its canonical protobuf JSON. */
-export function body<T extends Message>(schema: GenMessage<T>, record: T): JsonValue {
+export function body<T extends Message>(
+	schema: GenMessage<T>,
+	record: T,
+): JsonValue {
 	return toJson(schema, record);
 }
 
 /** Decode a persisted body; undefined when it is not that record (never throws). */
-export function decode<T extends Message>(schema: GenMessage<T>, data: unknown): T | undefined {
-	if (typeof data !== "object" || data === null || Array.isArray(data)) return undefined;
+export function decode<T extends Message>(
+	schema: GenMessage<T>,
+	data: unknown,
+): T | undefined {
+	if (typeof data !== "object" || data === null || Array.isArray(data))
+		return undefined;
 	try {
 		// SAFETY: a non-null, non-array object read back from the journal is JSON.
 		return fromJson(schema, data as JsonValue, { ignoreUnknownFields: true });
@@ -52,7 +66,12 @@ export function decode<T extends Message>(schema: GenMessage<T>, data: unknown):
 	}
 }
 
-export function reason(code: string, message: string, remediation: string, subject = ""): ReasonRecord {
+export function reason(
+	code: string,
+	message: string,
+	remediation: string,
+	subject = "",
+): ReasonRecord {
 	return create(ReasonRecordSchema, { code, message, remediation, subject });
 }
 

@@ -10,8 +10,18 @@
 // Projection: an in-memory per-Camp view caught up from the stream before
 //           every command (CAS on the stream revision, retried on conflict),
 //           so several Station replicas stay consistent.
-import { create, type JsonObject, type JsonValue, toJson } from "@bufbuild/protobuf";
-import type { EventEnvelope, EventInput, EventPosition, PrincipalRef } from "@hobo/core";
+import {
+	create,
+	type JsonObject,
+	type JsonValue,
+	toJson,
+} from "@bufbuild/protobuf";
+import type {
+	EventEnvelope,
+	EventInput,
+	EventPosition,
+	PrincipalRef,
+} from "@hobo/core";
 import {
 	type CampClaimRecord,
 	CampClaimRecordSchema,
@@ -24,8 +34,8 @@ import {
 	type CampStatusRecord,
 	CampStatusRecordSchema,
 	ConditionStatus,
-	ReconcileObservationRecordSchema,
 	type ReasonRecord,
+	ReconcileObservationRecordSchema,
 	type SelectorRecord,
 	SignalSource,
 	TaintEffect,
@@ -62,9 +72,26 @@ import {
 	sortConditions,
 	sortTaints,
 } from "./derive.js";
-import { isManagement, parseCampSet, parseClaims, parseConditions, parseTaint } from "./parse.js";
+import {
+	isManagement,
+	parseCampSet,
+	parseClaims,
+	parseConditions,
+	parseTaint,
+} from "./parse.js";
 import { isEmptySelector, matchesSelector } from "./selector.js";
-import { body, decode, emit, isConflict, iso, parseTime, principalName, reason, refuse, sha256Digest } from "./support.js";
+import {
+	body,
+	decode,
+	emit,
+	isConflict,
+	iso,
+	parseTime,
+	principalName,
+	reason,
+	refuse,
+	sha256Digest,
+} from "./support.js";
 
 export type CampInventoryDeps = CdBase & {
 	readonly topology: TopologyReader;
@@ -118,7 +145,8 @@ function contactMeta(contact: ContactState): JsonObject {
 
 function contactFromMeta(meta: JsonObject | undefined): ContactState {
 	const source = meta?.contact;
-	if (typeof source !== "object" || source === null || Array.isArray(source)) return {};
+	if (typeof source !== "object" || source === null || Array.isArray(source))
+		return {};
 	const out: Record<string, number> = {};
 	for (const field of CONTACT_FIELDS) {
 		const raw = source[field.replace(/Ms$/u, "At")];
@@ -130,7 +158,8 @@ function contactFromMeta(meta: JsonObject | undefined): ContactState {
 
 function topologyJson(topology: CampTopology): JsonValue {
 	const labels: JsonObject = {};
-	for (const key of Object.keys(topology.labels).sort()) labels[key] = topology.labels[key] ?? "";
+	for (const key of Object.keys(topology.labels).sort())
+		labels[key] = topology.labels[key] ?? "";
 	return {
 		campId: topology.campId,
 		yardId: topology.yardId,
@@ -149,11 +178,21 @@ function canonicalTopology(topology: CampTopology): CampTopology {
 
 /** The view of a declared Camp with no recorded status: never contacted, hence NO_PLACE (fail closed). */
 function pristine(topology: CampTopology): CampStatusRecord {
-	const derived = deriveStatus({ previous: defaultStatus(topology), topology, contact: {}, failover: undefined, atMs: 0 });
+	const derived = deriveStatus({
+		previous: defaultStatus(topology),
+		topology,
+		contact: {},
+		failover: undefined,
+		atMs: 0,
+	});
 	return create(CampStatusRecordSchema, {
 		...derived,
-		conditions: derived.conditions.map((condition) => create(CampConditionRecordSchema, { ...condition, since: "" })),
-		taints: derived.taints.map((taint) => create(TaintRecordSchema, { ...taint, addedAt: "" })),
+		conditions: derived.conditions.map((condition) =>
+			create(CampConditionRecordSchema, { ...condition, since: "" }),
+		),
+		taints: derived.taints.map((taint) =>
+			create(TaintRecordSchema, { ...taint, addedAt: "" }),
+		),
 		updatedAt: "",
 	});
 }
@@ -162,18 +201,34 @@ function taintKey(taint: TaintRecord): string {
 	return `${taint.effect}/${taint.key}`;
 }
 
-function taintAudit(before: CampStatusRecord | undefined, after: CampStatusRecord): EventInput[] {
-	const prior = new Map((before?.taints ?? []).map((taint) => [taintKey(taint), taint]));
+function taintAudit(
+	before: CampStatusRecord | undefined,
+	after: CampStatusRecord,
+): EventInput[] {
+	const prior = new Map(
+		(before?.taints ?? []).map((taint) => [taintKey(taint), taint]),
+	);
 	const next = new Map(after.taints.map((taint) => [taintKey(taint), taint]));
 	const events: EventInput[] = [];
 	for (const [key, taint] of next) {
 		const old = prior.get(key);
-		if (old === undefined || old.value !== taint.value || old.reason !== taint.reason) {
-			events.push({ type: CD_EVENTS.CampTainted, data: body(TaintRecordSchema, taint) });
+		if (
+			old === undefined ||
+			old.value !== taint.value ||
+			old.reason !== taint.reason
+		) {
+			events.push({
+				type: CD_EVENTS.CampTainted,
+				data: body(TaintRecordSchema, taint),
+			});
 		}
 	}
 	for (const [key, taint] of prior) {
-		if (!next.has(key)) events.push({ type: CD_EVENTS.CampUntainted, data: body(TaintRecordSchema, taint) });
+		if (!next.has(key))
+			events.push({
+				type: CD_EVENTS.CampUntainted,
+				data: body(TaintRecordSchema, taint),
+			});
 	}
 	return events;
 }
@@ -188,7 +243,15 @@ function mergeClaims(
 	for (const claim of incoming) {
 		const before = byName.get(claim.name);
 		if (before !== undefined && before.value === claim.value) continue;
-		byName.set(claim.name, create(CampClaimRecordSchema, { name: claim.name, value: claim.value, reportedBy, observedAt }));
+		byName.set(
+			claim.name,
+			create(CampClaimRecordSchema, {
+				name: claim.name,
+				value: claim.value,
+				reportedBy,
+				observedAt,
+			}),
+		);
 	}
 	return sortClaims([...byName.values()]);
 }
@@ -207,7 +270,9 @@ function fenceTokenOf(data: unknown): string {
 	if (observation !== undefined) return observation.fenceToken;
 	if (typeof data === "object" && data !== null && !Array.isArray(data)) {
 		// SAFETY: structural read of a body another work package owns.
-		const raw = (data as Record<string, unknown>).fenceToken ?? (data as Record<string, unknown>).fence_token;
+		const raw =
+			(data as Record<string, unknown>).fenceToken ??
+			(data as Record<string, unknown>).fence_token;
 		return typeof raw === "string" ? raw : "";
 	}
 	return "";
@@ -230,16 +295,29 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 	}
 
 	async function load(campId: string): Promise<CampState> {
-		const state = camps.get(campId) ?? { status: undefined, seq: 0, contact: {} };
-		for await (const event of d.store.read(CD_STREAMS.campInventory(campId), state.seq)) applyEvent(state, event);
+		const state = camps.get(campId) ?? {
+			status: undefined,
+			seq: 0,
+			contact: {},
+		};
+		for await (const event of d.store.read(
+			CD_STREAMS.campInventory(campId),
+			state.seq,
+		))
+			applyEvent(state, event);
 		camps.set(campId, state);
 		return state;
 	}
 
 	async function loadSets(): Promise<void> {
-		const options = setsCursor === undefined
-			? { filter: { type: CD_EVENTS.CampSetDefined }, tenant: d.tenant }
-			: { after: setsCursor, filter: { type: CD_EVENTS.CampSetDefined }, tenant: d.tenant };
+		const options =
+			setsCursor === undefined
+				? { filter: { type: CD_EVENTS.CampSetDefined }, tenant: d.tenant }
+				: {
+						after: setsCursor,
+						filter: { type: CD_EVENTS.CampSetDefined },
+						tenant: d.tenant,
+					};
 		for await (const entry of d.store.readAll(options)) {
 			setsCursor = entry.position;
 			const set = decode(CampSetRecordSchema, entry.event.data);
@@ -251,7 +329,10 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		campId: CampId,
 		actor: PrincipalRef,
 		atMs: number,
-		compute: (state: CampState, topology: CampTopology | undefined) => Promise<Change | ReasonRecord[]>,
+		compute: (
+			state: CampState,
+			topology: CampTopology | undefined,
+		) => Promise<Change | ReasonRecord[]>,
 		known?: CampTopology,
 	): Promise<Outcome<CampStatusRecord>> {
 		const topology = known ?? (await d.topology.camp(campId));
@@ -260,12 +341,16 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 			const before = state.status;
 			const change = await compute(state, topology);
 			if (Array.isArray(change)) return refuse(...change);
-			const changed = before === undefined || !sameStatus(before, change.status);
+			const changed =
+				before === undefined || !sameStatus(before, change.status);
 			if (!changed) {
 				state.contact = change.contact;
 				return { ok: true, value: before };
 			}
-			const status = create(CampStatusRecordSchema, { ...change.status, updatedAt: iso(atMs) });
+			const status = create(CampStatusRecordSchema, {
+				...change.status,
+				updatedAt: iso(atMs),
+			});
 			const events: EventInput[] = [
 				...change.audit,
 				...taintAudit(before, status),
@@ -276,11 +361,15 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 				},
 			];
 			try {
-				const result = await d.store.append(CD_STREAMS.campInventory(campId), events, {
-					expectedSeq: state.seq,
-					actor,
-					tenant: d.tenant,
-				});
+				const result = await d.store.append(
+					CD_STREAMS.campInventory(campId),
+					events,
+					{
+						expectedSeq: state.seq,
+						actor,
+						tenant: d.tenant,
+					},
+				);
 				const last = result.appended.at(-1);
 				if (last !== undefined) state.seq = last.seq;
 				state.status = status;
@@ -293,7 +382,11 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		}
 	}
 
-	function emitChange(before: CampStatusRecord | undefined, after: CampStatusRecord, atMs: number): void {
+	function emitChange(
+		before: CampStatusRecord | undefined,
+		after: CampStatusRecord,
+		atMs: number,
+	): void {
 		const prior = new Set((before?.taints ?? []).map(taintKey));
 		const next = new Set(after.taints.map(taintKey));
 		const points: OtelMetricPoint[] = [
@@ -303,7 +396,9 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 				value: 1,
 				unit: "{change}",
 				atMs,
-				attributes: { management: CampManagement[after.management] ?? "UNSPECIFIED" },
+				attributes: {
+					management: CampManagement[after.management] ?? "UNSPECIFIED",
+				},
 			},
 		];
 		for (const taint of after.taints) {
@@ -314,7 +409,11 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 					value: 1,
 					unit: "{taint}",
 					atMs,
-					attributes: { effect: TaintEffect[taint.effect] ?? "", key: taint.key, change: "added" },
+					attributes: {
+						effect: TaintEffect[taint.effect] ?? "",
+						key: taint.key,
+						change: "added",
+					},
 				});
 			}
 		}
@@ -326,20 +425,34 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 					value: 1,
 					unit: "{taint}",
 					atMs,
-					attributes: { effect: TaintEffect[taint.effect] ?? "", key: taint.key, change: "cleared" },
+					attributes: {
+						effect: TaintEffect[taint.effect] ?? "",
+						key: taint.key,
+						change: "cleared",
+					},
 				});
 			}
 		}
 		emit(d.telemetry, points);
 	}
 
-	function baseStatus(state: CampState, topology: CampTopology | undefined, campId: string): CampStatusRecord {
+	function baseStatus(
+		state: CampState,
+		topology: CampTopology | undefined,
+		campId: string,
+	): CampStatusRecord {
 		if (state.status !== undefined) return state.status;
-		return topology !== undefined ? defaultStatus(topology) : create(CampStatusRecordSchema, { campId });
+		return topology !== undefined
+			? defaultStatus(topology)
+			: create(CampStatusRecordSchema, { campId });
 	}
 
-	async function failoverFor(campId: CampId, conditions: readonly CampConditionRecord[]) {
-		if (!negativeSignals(conditions).has(SignalSource.STATION)) return undefined;
+	async function failoverFor(
+		campId: CampId,
+		conditions: readonly CampConditionRecord[],
+	) {
+		if (!negativeSignals(conditions).has(SignalSource.STATION))
+			return undefined;
 		return (await d.rails.forCamp(campId))?.failover;
 	}
 
@@ -350,12 +463,24 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		contact: ContactState,
 		atMs: number,
 	): Promise<CampStatusRecord> {
-		const first = deriveStatus({ previous: status, topology, contact, failover: undefined, atMs });
+		const first = deriveStatus({
+			previous: status,
+			topology,
+			contact,
+			failover: undefined,
+			atMs,
+		});
 		const failover = await failoverFor(campId, first.conditions);
-		return failover === undefined ? first : deriveStatus({ previous: status, topology, contact, failover, atMs });
+		return failover === undefined
+			? first
+			: deriveStatus({ previous: status, topology, contact, failover, atMs });
 	}
 
-	async function authorize(action: CdAction, subject: JsonObject, ctx: CdContext): Promise<ReasonRecord[] | undefined> {
+	async function authorize(
+		action: CdAction,
+		subject: JsonObject,
+		ctx: CdContext,
+	): Promise<ReasonRecord[] | undefined> {
 		const decision = await d.authorizer.authorize(action, subject, ctx);
 		if (!decision.ok) return [...decision.reasons];
 		if (decision.value.proposalOnly) return [proposalRefusal(action)];
@@ -364,12 +489,17 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 
 	function membersOf(set: CampSetRecord, topology: CampTopology): boolean {
 		if (set.campIds.includes(topology.campId)) return true;
-		return !isEmptySelector(set.selector) && matchesSelector(set.selector, topology);
+		return (
+			!isEmptySelector(set.selector) && matchesSelector(set.selector, topology)
+		);
 	}
 
 	async function view(topology: CampTopology): Promise<CampView> {
 		const state = await load(topology.campId);
-		return { topology: canonicalTopology(topology), status: state.status ?? pristine(topology) };
+		return {
+			topology: canonicalTopology(topology),
+			status: state.status ?? pristine(topology),
+		};
 	}
 
 	async function scan(atMs: number): Promise<Set<string>> {
@@ -377,15 +507,23 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		if (!scanReady) {
 			// Cold start: activity already in the journal is not contact *now*;
 			// recorded contact comes from the last StatusChanged meta instead.
-			for await (const entry of d.store.readAll({ tenant: d.tenant })) scanCursor = entry.position;
+			for await (const entry of d.store.readAll({ tenant: d.tenant }))
+				scanCursor = entry.position;
 			scanReady = true;
 			return active;
 		}
-		const options = scanCursor === undefined ? { tenant: d.tenant } : { after: scanCursor, tenant: d.tenant };
+		const options =
+			scanCursor === undefined
+				? { tenant: d.tenant }
+				: { after: scanCursor, tenant: d.tenant };
 		for await (const entry of d.store.readAll(options)) {
 			scanCursor = entry.position;
 			const event = entry.event;
-			if (!CONTACT_EVENTS.has(event.type) || !event.streamId.startsWith(STATUS_PREFIX)) continue;
+			if (
+				!CONTACT_EVENTS.has(event.type) ||
+				!event.streamId.startsWith(STATUS_PREFIX)
+			)
+				continue;
 			const campId = event.streamId.slice(STATUS_PREFIX.length);
 			if (campId === "") continue;
 			const state = await load(campId);
@@ -413,24 +551,45 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 			let chosen: readonly CampTopology[] = all;
 			if (query?.campSets !== undefined) {
 				await loadSets();
-				const wanted = query.campSets.map((name) => sets.get(name)).filter((set) => set !== undefined);
-				chosen = chosen.filter((topology) => wanted.some((set) => membersOf(set, topology)));
+				const wanted = query.campSets
+					.map((name) => sets.get(name))
+					.filter((set) => set !== undefined);
+				chosen = chosen.filter((topology) =>
+					wanted.some((set) => membersOf(set, topology)),
+				);
 			}
 			if (query?.selector !== undefined) {
 				const selector: SelectorRecord = query.selector;
-				chosen = chosen.filter((topology) => matchesSelector(selector, topology));
+				chosen = chosen.filter((topology) =>
+					matchesSelector(selector, topology),
+				);
 			}
-			const sorted = [...chosen].sort((a, b) => (a.campId < b.campId ? -1 : a.campId > b.campId ? 1 : 0));
+			const sorted = [...chosen].sort((a, b) =>
+				a.campId < b.campId ? -1 : a.campId > b.campId ? 1 : 0,
+			);
 			return Promise.all(sorted.map(view));
 		},
 
 		async observe(input, ctx) {
 			const atMs = ctx.now();
 			const source = input.source;
-			if (source === SignalSource.UNSPECIFIED || SignalSource[source] === undefined) {
-				return refuse(reason("source-invalid", "observation source is unspecified", "report as station, reconciler, health-source or operator", "source"));
+			if (
+				source === SignalSource.UNSPECIFIED ||
+				SignalSource[source] === undefined
+			) {
+				return refuse(
+					reason(
+						"source-invalid",
+						"observation source is unspecified",
+						"report as station, reconciler, health-source or operator",
+						"source",
+					),
+				);
 			}
-			if (ctx.principal.kind === "agent" && source !== SignalSource.RECONCILER) {
+			if (
+				ctx.principal.kind === "agent" &&
+				source !== SignalSource.RECONCILER
+			) {
 				return refuse(
 					reason(
 						"source-not-permitted",
@@ -441,46 +600,89 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 				);
 			}
 			if (source === SignalSource.OPERATOR && ctx.principal.kind !== "user") {
-				return refuse(reason("source-not-permitted", "only a human operator reports as OPERATOR", "report as STATION or HEALTH_SOURCE", "source"));
+				return refuse(
+					reason(
+						"source-not-permitted",
+						"only a human operator reports as OPERATOR",
+						"report as STATION or HEALTH_SOURCE",
+						"source",
+					),
+				);
 			}
 			const conditions = parseConditions(input.conditions);
 			if (!conditions.ok) return conditions;
 			const claims = parseClaims(input.claims);
 			if (!claims.ok) return claims;
 			const reporter = principalName(ctx.principal);
-			const result = await commit(input.campId, ctx.principal, atMs, async (state, topology) => {
-				if (topology === undefined) {
-					return [reason("camp-unknown", `Camp ${input.campId} is not declared`, "declare the Camp in its Yard topology first", input.campId)];
-				}
-				let contact: ContactState = { ...state.contact };
-				const previous = baseStatus(state, topology, input.campId);
-				const kept = new Map(previous.conditions.map((condition) => [`${condition.type}/${condition.source}`, condition]));
-				for (const condition of conditions.value) {
-					if (source === SignalSource.STATION) {
-						contact = stationReport(contact, condition, atMs);
-						if (condition.type === CampConditionType.REACHABLE || condition.type === CampConditionType.LEASED || condition.type === CampConditionType.CREDENTIAL_VALID) continue;
+			const result = await commit(
+				input.campId,
+				ctx.principal,
+				atMs,
+				async (state, topology) => {
+					if (topology === undefined) {
+						return [
+							reason(
+								"camp-unknown",
+								`Camp ${input.campId} is not declared`,
+								"declare the Camp in its Yard topology first",
+								input.campId,
+							),
+						];
 					}
-					const key = `${condition.type}/${source}`;
-					const before = kept.get(key);
-					kept.set(
-						key,
-						create(CampConditionRecordSchema, {
-							type: condition.type,
-							status: condition.status,
-							source,
-							reason: condition.reason,
-							since: before !== undefined && before.status === condition.status ? before.since : iso(atMs),
-						}),
+					let contact: ContactState = { ...state.contact };
+					const previous = baseStatus(state, topology, input.campId);
+					const kept = new Map(
+						previous.conditions.map((condition) => [
+							`${condition.type}/${condition.source}`,
+							condition,
+						]),
 					);
-				}
-				const merged = create(CampStatusRecordSchema, {
-					...previous,
-					conditions: sortConditions([...kept.values()]),
-					claims: mergeClaims(previous.claims, claims.value, reporter, iso(atMs)),
-				});
-				const status = await rederive(input.campId, merged, topology, contact, atMs);
-				return { status, contact, audit: [] };
-			});
+					for (const condition of conditions.value) {
+						if (source === SignalSource.STATION) {
+							contact = stationReport(contact, condition, atMs);
+							if (
+								condition.type === CampConditionType.REACHABLE ||
+								condition.type === CampConditionType.LEASED ||
+								condition.type === CampConditionType.CREDENTIAL_VALID
+							)
+								continue;
+						}
+						const key = `${condition.type}/${source}`;
+						const before = kept.get(key);
+						kept.set(
+							key,
+							create(CampConditionRecordSchema, {
+								type: condition.type,
+								status: condition.status,
+								source,
+								reason: condition.reason,
+								since:
+									before !== undefined && before.status === condition.status
+										? before.since
+										: iso(atMs),
+							}),
+						);
+					}
+					const merged = create(CampStatusRecordSchema, {
+						...previous,
+						conditions: sortConditions([...kept.values()]),
+						claims: mergeClaims(
+							previous.claims,
+							claims.value,
+							reporter,
+							iso(atMs),
+						),
+					});
+					const status = await rederive(
+						input.campId,
+						merged,
+						topology,
+						contact,
+						atMs,
+					);
+					return { status, contact, audit: [] };
+				},
+			);
 			return result;
 		},
 
@@ -493,42 +695,90 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 				if (taint.source === SignalSource.RECONCILER) {
 					return refuse(noRunRefusal("an agent self-report never adds NO_RUN"));
 				}
-				if (taint.source === SignalSource.OPERATOR && ctx.principal.kind !== "user") {
-					return refuse(noRunRefusal("an OPERATOR NO_RUN needs a human operator principal"));
+				if (
+					taint.source === SignalSource.OPERATOR &&
+					ctx.principal.kind !== "user"
+				) {
+					return refuse(
+						noRunRefusal("an OPERATOR NO_RUN needs a human operator principal"),
+					);
 				}
 			}
-			const denied = await authorize("camp.taint", { campId: input.campId, key: taint.key, effect: TaintEffect[taint.effect] ?? "" }, ctx);
+			const denied = await authorize(
+				"camp.taint",
+				{
+					campId: input.campId,
+					key: taint.key,
+					effect: TaintEffect[taint.effect] ?? "",
+				},
+				ctx,
+			);
 			if (denied !== undefined) return refuse(...denied);
-			return commit(input.campId, ctx.principal, atMs, async (state, topology) => {
-				if (topology === undefined && state.status === undefined) {
-					return [reason("camp-unknown", `Camp ${input.campId} is not declared`, "declare the Camp in its Yard topology first", input.campId)];
-				}
-				const previous = baseStatus(state, topology, input.campId);
-				if (taint.effect === TaintEffect.NO_RUN && taint.source !== SignalSource.OPERATOR) {
-					const failover = (await d.rails.forCamp(input.campId))?.failover;
-					if (!noRunPermitted(previous.conditions, failover)) {
+			return commit(
+				input.campId,
+				ctx.principal,
+				atMs,
+				async (state, topology) => {
+					if (topology === undefined && state.status === undefined) {
 						return [
-							noRunRefusal(
-								`the Rail rule needs failover.automatic and ${failover?.requiredSignals || CD_DEFAULTS.taintRequiredSignals} independent negative signals, one Station-observed`,
+							reason(
+								"camp-unknown",
+								`Camp ${input.campId} is not declared`,
+								"declare the Camp in its Yard topology first",
+								input.campId,
 							),
 						];
 					}
-				}
-				const record = create(TaintRecordSchema, {
-					...taint,
-					addedBy: principalName(ctx.principal),
-					addedAt: previous.taints.find((t) => t.key === taint.key && t.effect === taint.effect && t.value === taint.value)?.addedAt || iso(atMs),
-				});
-				const taints = previous.taints.filter((t) => !(t.key === taint.key && t.effect === taint.effect));
-				const next = create(CampStatusRecordSchema, { ...previous, taints: sortTaints([...taints, record]) });
-				const status = await rederive(input.campId, next, topology, state.contact, atMs);
-				return { status, contact: state.contact, audit: [] };
-			});
+					const previous = baseStatus(state, topology, input.campId);
+					if (
+						taint.effect === TaintEffect.NO_RUN &&
+						taint.source !== SignalSource.OPERATOR
+					) {
+						const failover = (await d.rails.forCamp(input.campId))?.failover;
+						if (!noRunPermitted(previous.conditions, failover)) {
+							return [
+								noRunRefusal(
+									`the Rail rule needs failover.automatic and ${failover?.requiredSignals || CD_DEFAULTS.taintRequiredSignals} independent negative signals, one Station-observed`,
+								),
+							];
+						}
+					}
+					const record = create(TaintRecordSchema, {
+						...taint,
+						addedBy: principalName(ctx.principal),
+						addedAt:
+							previous.taints.find(
+								(t) =>
+									t.key === taint.key &&
+									t.effect === taint.effect &&
+									t.value === taint.value,
+							)?.addedAt || iso(atMs),
+					});
+					const taints = previous.taints.filter(
+						(t) => !(t.key === taint.key && t.effect === taint.effect),
+					);
+					const next = create(CampStatusRecordSchema, {
+						...previous,
+						taints: sortTaints([...taints, record]),
+					});
+					const status = await rederive(
+						input.campId,
+						next,
+						topology,
+						state.contact,
+						atMs,
+					);
+					return { status, contact: state.contact, audit: [] };
+				},
+			);
 		},
 
 		async untaint(input, ctx) {
 			const atMs = ctx.now();
-			if (input.effect === TaintEffect.NO_PLACE && isAutomaticNoPlace(input.key)) {
+			if (
+				input.effect === TaintEffect.NO_PLACE &&
+				isAutomaticNoPlace(input.key)
+			) {
 				return refuse(
 					reason(
 						"taint-automatic",
@@ -538,68 +788,160 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 					),
 				);
 			}
-			const denied = await authorize("camp.untaint", { campId: input.campId, key: input.key, effect: TaintEffect[input.effect] ?? "" }, ctx);
+			const denied = await authorize(
+				"camp.untaint",
+				{
+					campId: input.campId,
+					key: input.key,
+					effect: TaintEffect[input.effect] ?? "",
+				},
+				ctx,
+			);
 			if (denied !== undefined) return refuse(...denied);
-			return commit(input.campId, ctx.principal, atMs, async (state, topology) => {
-				const previous = baseStatus(state, topology, input.campId);
-				const taints = previous.taints.filter((t) => !(t.key === input.key && t.effect === input.effect));
-				const next = create(CampStatusRecordSchema, { ...previous, taints });
-				const status = await rederive(input.campId, next, topology, state.contact, atMs);
-				return { status, contact: state.contact, audit: [] };
-			});
+			return commit(
+				input.campId,
+				ctx.principal,
+				atMs,
+				async (state, topology) => {
+					const previous = baseStatus(state, topology, input.campId);
+					const taints = previous.taints.filter(
+						(t) => !(t.key === input.key && t.effect === input.effect),
+					);
+					const next = create(CampStatusRecordSchema, { ...previous, taints });
+					const status = await rederive(
+						input.campId,
+						next,
+						topology,
+						state.contact,
+						atMs,
+					);
+					return { status, contact: state.contact, audit: [] };
+				},
+			);
 		},
 
 		async manage(input, ctx) {
 			const atMs = ctx.now();
 			if (!isManagement(input.management)) {
-				return refuse(reason("management-invalid", "management must be MANAGED or OBSERVE_ONLY", "set management", "management"));
+				return refuse(
+					reason(
+						"management-invalid",
+						"management must be MANAGED or OBSERVE_ONLY",
+						"set management",
+						"management",
+					),
+				);
 			}
-			const denied = await authorize("camp.manage", { campId: input.campId, management: CampManagement[input.management] ?? "" }, ctx);
+			const denied = await authorize(
+				"camp.manage",
+				{
+					campId: input.campId,
+					management: CampManagement[input.management] ?? "",
+				},
+				ctx,
+			);
 			if (denied !== undefined) return refuse(...denied);
-			return commit(input.campId, ctx.principal, atMs, async (state, topology) => {
-				if (topology === undefined && state.status === undefined) {
-					return [reason("camp-unknown", `Camp ${input.campId} is not declared`, "declare the Camp in its Yard topology first", input.campId)];
-				}
-				const previous = baseStatus(state, topology, input.campId);
-				const next = create(CampStatusRecordSchema, { ...previous, management: input.management });
-				const status = await rederive(input.campId, next, topology, state.contact, atMs);
-				const audit: EventInput[] =
-					previous.management === input.management
-						? []
-						: [{ type: CD_EVENTS.CampManagementChanged, data: body(CampStatusRecordSchema, create(CampStatusRecordSchema, { campId: input.campId, management: input.management })) }];
-				return { status, contact: state.contact, audit };
-			});
+			return commit(
+				input.campId,
+				ctx.principal,
+				atMs,
+				async (state, topology) => {
+					if (topology === undefined && state.status === undefined) {
+						return [
+							reason(
+								"camp-unknown",
+								`Camp ${input.campId} is not declared`,
+								"declare the Camp in its Yard topology first",
+								input.campId,
+							),
+						];
+					}
+					const previous = baseStatus(state, topology, input.campId);
+					const next = create(CampStatusRecordSchema, {
+						...previous,
+						management: input.management,
+					});
+					const status = await rederive(
+						input.campId,
+						next,
+						topology,
+						state.contact,
+						atMs,
+					);
+					const audit: EventInput[] =
+						previous.management === input.management
+							? []
+							: [
+									{
+										type: CD_EVENTS.CampManagementChanged,
+										data: body(
+											CampStatusRecordSchema,
+											create(CampStatusRecordSchema, {
+												campId: input.campId,
+												management: input.management,
+											}),
+										),
+									},
+								];
+					return { status, contact: state.contact, audit };
+				},
+			);
 		},
 
 		async defineSet(set, ctx) {
 			const parsed = parseCampSet(set);
 			if (!parsed.ok) return parsed;
-			const denied = await authorize("campset.define", { name: parsed.value.name }, ctx);
+			const denied = await authorize(
+				"campset.define",
+				{ name: parsed.value.name },
+				ctx,
+			);
 			if (denied !== undefined) return refuse(...denied);
-			const record = create(CampSetRecordSchema, { ...parsed.value, definedBy: principalName(ctx.principal) });
+			const record = create(CampSetRecordSchema, {
+				...parsed.value,
+				definedBy: principalName(ctx.principal),
+			});
 			const stream = CD_STREAMS.campSet(record.name);
 			for (let attempt = 0; ; attempt += 1) {
 				let seq = 0;
 				let current: CampSetRecord | undefined;
 				for await (const event of d.store.read(stream)) {
 					seq = event.seq;
-					if (event.type === CD_EVENTS.CampSetDefined) current = decode(CampSetRecordSchema, event.data) ?? current;
+					if (event.type === CD_EVENTS.CampSetDefined)
+						current = decode(CampSetRecordSchema, event.data) ?? current;
 				}
 				const sameDefinition = (a: CampSetRecord, b: CampSetRecord) =>
-					sha256Digest(toJson(CampSetRecordSchema, { ...a, definedBy: "" })) === sha256Digest(toJson(CampSetRecordSchema, { ...b, definedBy: "" }));
+					sha256Digest(toJson(CampSetRecordSchema, { ...a, definedBy: "" })) ===
+					sha256Digest(toJson(CampSetRecordSchema, { ...b, definedBy: "" }));
 				if (current !== undefined && sameDefinition(current, record)) {
 					sets.set(current.name, current);
 					return { ok: true, value: current };
 				}
 				try {
-					await d.store.append(stream, [{ type: CD_EVENTS.CampSetDefined, data: body(CampSetRecordSchema, record) }], {
-						expectedSeq: seq,
-						actor: ctx.principal,
-						tenant: d.tenant,
-					});
+					await d.store.append(
+						stream,
+						[
+							{
+								type: CD_EVENTS.CampSetDefined,
+								data: body(CampSetRecordSchema, record),
+							},
+						],
+						{
+							expectedSeq: seq,
+							actor: ctx.principal,
+							tenant: d.tenant,
+						},
+					);
 					sets.set(record.name, record);
 					emit(d.telemetry, [
-						{ name: "hobo.cd.inventory.campsets_defined", kind: "counter", value: 1, unit: "{set}", atMs: ctx.now(), attributes: { set: record.name } },
+						{
+							name: "hobo.cd.inventory.campsets_defined",
+							kind: "counter",
+							value: 1,
+							unit: "{set}",
+							atMs: ctx.now(),
+							attributes: { set: record.name },
+						},
 					]);
 					return { ok: true, value: record };
 				} catch (error) {
@@ -610,17 +952,23 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 
 		async sets() {
 			await loadSets();
-			return [...sets.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+			return [...sets.values()].sort((a, b) =>
+				a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+			);
 		},
 
 		async snapshot(campSets) {
 			await loadSets();
 			const names = [...new Set(campSets)].sort();
-			const chosen = names.map((name) => sets.get(name)).filter((set) => set !== undefined);
+			const chosen = names
+				.map((name) => sets.get(name))
+				.filter((set) => set !== undefined);
 			const all = await d.topology.camps();
 			const members = all
 				.filter((topology) => chosen.some((set) => membersOf(set, topology)))
-				.sort((a, b) => (a.campId < b.campId ? -1 : a.campId > b.campId ? 1 : 0));
+				.sort((a, b) =>
+					a.campId < b.campId ? -1 : a.campId > b.campId ? 1 : 0,
+				);
 			const camps = await Promise.all(members.map(view));
 			const digest = sha256Digest({
 				campSets: names,
@@ -644,27 +992,69 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 				const campId = topology.campId;
 				let observation: Awaited<ReturnType<DesiredStateReader["status"]>>;
 				if (active.has(campId)) observation = await d.desired.status(campId);
-				const result = await commit(campId, ctx.principal, atMs, async (state) => {
-					const previous = baseStatus(state, topology, campId);
-					const merged =
-						observation !== undefined && observation.claims.length > 0
-							? create(CampStatusRecordSchema, {
-									...previous,
-									claims: mergeClaims(previous.claims, observation.claims, `reconciler:${observation.reconcilerId}`, iso(atMs)),
-								})
-							: previous;
-					const status = await rederive(campId, merged, topology, state.contact, atMs);
-					return { status, contact: state.contact, audit: [] };
-				}, topology);
+				const result = await commit(
+					campId,
+					ctx.principal,
+					atMs,
+					async (state) => {
+						const previous = baseStatus(state, topology, campId);
+						const merged =
+							observation !== undefined && observation.claims.length > 0
+								? create(CampStatusRecordSchema, {
+										...previous,
+										claims: mergeClaims(
+											previous.claims,
+											observation.claims,
+											`reconciler:${observation.reconcilerId}`,
+											iso(atMs),
+										),
+									})
+								: previous;
+						const status = await rederive(
+							campId,
+							merged,
+							topology,
+							state.contact,
+							atMs,
+						);
+						return { status, contact: state.contact, audit: [] };
+					},
+					topology,
+				);
 				if (result.ok) {
-					if (result.value.taints.some((t) => t.effect === TaintEffect.NO_PLACE)) noPlace += 1;
-					if (result.value.taints.some((t) => t.effect === TaintEffect.NO_RUN)) noRun += 1;
+					if (
+						result.value.taints.some((t) => t.effect === TaintEffect.NO_PLACE)
+					)
+						noPlace += 1;
+					if (result.value.taints.some((t) => t.effect === TaintEffect.NO_RUN))
+						noRun += 1;
 				}
 			}
 			emit(d.telemetry, [
-				{ name: "hobo.cd.inventory.camps", kind: "gauge", value: topologies.length, unit: "{camp}", atMs, attributes: { taint: "any" } },
-				{ name: "hobo.cd.inventory.camps", kind: "gauge", value: noPlace, unit: "{camp}", atMs, attributes: { taint: "NO_PLACE" } },
-				{ name: "hobo.cd.inventory.camps", kind: "gauge", value: noRun, unit: "{camp}", atMs, attributes: { taint: "NO_RUN" } },
+				{
+					name: "hobo.cd.inventory.camps",
+					kind: "gauge",
+					value: topologies.length,
+					unit: "{camp}",
+					atMs,
+					attributes: { taint: "any" },
+				},
+				{
+					name: "hobo.cd.inventory.camps",
+					kind: "gauge",
+					value: noPlace,
+					unit: "{camp}",
+					atMs,
+					attributes: { taint: "NO_PLACE" },
+				},
+				{
+					name: "hobo.cd.inventory.camps",
+					kind: "gauge",
+					value: noRun,
+					unit: "{camp}",
+					atMs,
+					attributes: { taint: "NO_RUN" },
+				},
 			]);
 		},
 	};
@@ -681,7 +1071,11 @@ function noRunRefusal(detail: string): ReasonRecord {
 }
 
 /** Fold a Station-sourced report of a derived condition into contact state. */
-function stationReport(contact: ContactState, condition: CampConditionRecord, atMs: number): ContactState {
+function stationReport(
+	contact: ContactState,
+	condition: CampConditionRecord,
+	atMs: number,
+): ContactState {
 	const truthy = condition.status === ConditionStatus.TRUE;
 	const falsy = condition.status === ConditionStatus.FALSE;
 	switch (condition.type) {
@@ -694,13 +1088,23 @@ function stationReport(contact: ContactState, condition: CampConditionRecord, at
 			if (falsy) return { ...contact, leaseLostMs: atMs };
 			return contact;
 		case CampConditionType.CREDENTIAL_VALID: {
-			if (falsy) return { ...contact, credentialReportedMs: atMs, credentialFailedMs: atMs };
+			if (falsy)
+				return {
+					...contact,
+					credentialReportedMs: atMs,
+					credentialFailedMs: atMs,
+				};
 			if (!truthy) return contact;
 			const match = CREDENTIAL_EXPIRY.exec(condition.reason);
-			const reported = match?.[1] !== undefined ? parseTime(match[1]) : undefined;
+			const reported =
+				match?.[1] !== undefined ? parseTime(match[1]) : undefined;
 			const expires = reported ?? atMs + CD_DEFAULTS.svidTtlMs;
 			const { credentialFailedMs: _cleared, ...rest } = contact;
-			return { ...rest, credentialReportedMs: atMs, credentialExpiresMs: expires };
+			return {
+				...rest,
+				credentialReportedMs: atMs,
+				credentialExpiresMs: expires,
+			};
 		}
 		default:
 			return contact;
