@@ -1,0 +1,7 @@
+{
+	"hostId": "box",
+	"hostKind": "box-worker",
+	"credentialRef": "env://HOBO_CI_GHCR_READ_TOKEN",
+	"docker": { "binary": "docker" },
+	"drainDeadlineMs": 7200000
+}

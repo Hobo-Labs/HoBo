@@ -1120,6 +1120,24 @@ from the advert. `runnerHostCampReport(outcome, now)` derives `healthy` from
 carries. Traffic routing: none (`RUNNER_HOST_TRAFFIC_ROUTING_PROFILE`, kind
 `other`, every offering declared absent): jobs are routed by the relay.
 
+The report's claims also carry the host's health (`RUNNER_HOST_HEALTH_CLAIMS`:
+`hobo.ci/mesh-advert` fresh/expired/missing, `hobo.ci/mesh-advert-valid-until`,
+`hobo.ci/runner-host-ready`, and the served-label claims while the advert is
+fresh); `runnerHostAbsentReport` is the report for a host with no controller.
+The Station reads them back with `runnerHostHealthConditions(claims, now)`:
+health-source REACHABLE / LEASED / READY conditions at its own clock, the
+same table as the mesh board (`deploy/runner-fleet/README.md`).
+
+**Registration.** `hobo deploy agent run` registers this realizer when
+`HOBO_CD_RUNNER_HOST` names the host's agent config
+(`deploy/runner-fleet/agent.runner-host.json.example`); `hobo` imports it from
+the light `@hobo/ci-gh-actions/runner-host` entry, which also carries the
+fleet's Rail (`runnerFleetRail`) and `createCliDockerDriver`, whose `pull`
+(`docker pull <ref>`, option-shaped references refused) completes the
+container port. The job ports have no cross-process source in the worker yet,
+so the binary refuses `runner-host-interface-missing` naming them; see
+`deploy/runner-fleet/README.md`, "What does not work yet".
+
 #### Runbook
 
 - **A pass refuses `runner-host-drain-deadline`.** A job outlived the drain
