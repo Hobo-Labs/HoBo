@@ -1,8 +1,10 @@
 // The WIT world matches the host's constants, and the componentize recipe
 // is deterministic on the synthetic lane and fails closed on the real lane.
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ComponentizeToolchainError } from "@hobo/componentize";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
 	buildResolverComponent,
 	componentizeResolver,
@@ -92,10 +94,13 @@ describe("componentize build recipe", () => {
 	});
 
 	it("the real lane fails closed when the toolchain is missing", async () => {
+		// An empty temporary source root: the lane must refuse before it reads it.
+		const sourceRoot = mkdtempSync(join(tmpdir(), "resolver-real-lane-"));
+		afterAll(() => rmSync(sourceRoot, { recursive: true, force: true }));
 		await expect(
 			componentizeResolverReal(
 				{
-					sourceRoot: "/nonexistent",
+					sourceRoot,
 					sourceDateEpoch: "2026-01-01T00:00:00Z",
 					witSource: wit,
 				},
