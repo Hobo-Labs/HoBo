@@ -9,6 +9,10 @@ import {
 	releaseImageIdsForTrain,
 } from "../lib/release-version.mts";
 import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
+import {
+	qualifyReleaseCandidate,
+	type ReleaseArtifact,
+} from "./create-github-release.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -27,6 +31,31 @@ function run(cmd: string, args: string[]): void {
 	if (result.status !== 0) {
 		throw new Error(`${cmd} ${args.join(" ")} failed (${result.status})`);
 	}
+}
+
+/**
+ * Each pushed image as a release Freight artifact: `@hobo/cd` verifies the
+ * digest at the GHCR coordinate (registry lookup), never a claimed one.
+ */
+export function ociReleaseArtifacts(
+	digestLines: readonly string[],
+): ReleaseArtifact[] {
+	return digestLines.map((line) => {
+		const match = /^(?<repo>[^\s@]+\/(?<id>[^\s/@:]+))@(?<digest>sha256:[0-9a-f]{64})$/u.exec(
+			line.trim(),
+		);
+		if (!match?.groups)
+			throw new Error(`${line} is not a pushed digest (<repo>@sha256:<hex>)`);
+		return {
+			name: match.groups.id ?? "",
+			kind: "ARTIFACT_KIND_OCI_IMAGE",
+			digest: match.groups.digest ?? "",
+			coordinate: line.trim(),
+			ecosystem: "oci",
+			// The registry decides index vs manifest; @hobo/cd verifies the digest.
+			mediaType: "",
+		};
+	});
 }
 
 export function pushReleaseGhcrImages(options: {
@@ -89,12 +118,15 @@ export function pushReleaseGhcrImages(options: {
 	return digests;
 }
 
-function main(): void {
+async function main(): Promise<void> {
 	const releaseRef = process.env.HOBO_RELEASE_VERSION ?? "";
 	const repository = process.env.GITHUB_REPOSITORY ?? "";
+	const freightHome = process.env.HOBO_RELEASE_CD_HOME ?? "";
 	const digestListPath = process.argv[2] ?? "/tmp/hobo-release-digests.txt";
-	if (!releaseRef || !repository) {
-		console.error("HOBO_RELEASE_VERSION and GITHUB_REPOSITORY required");
+	if (!releaseRef || !repository || !freightHome) {
+		console.error(
+			"HOBO_RELEASE_VERSION, GITHUB_REPOSITORY and HOBO_RELEASE_CD_HOME (release Freight journal) required",
+		);
 		process.exit(2);
 	}
 	const digests = pushReleaseGhcrImages({
@@ -103,8 +135,24 @@ function main(): void {
 		digestListPath,
 	});
 	for (const line of digests) console.log(line);
+	// GHCR has no @hobo/cd realizer: the push above is the existing publish
+	// step. The images become Freight now, and attestation, the signed tag and
+	// the GitHub Release run only when hobo-release/candidate does not block it.
+	await qualifyReleaseCandidate({
+		home: freightHome,
+		family: "oci",
+		registry: ociReleaseArtifacts(digests),
+		labels: { "hobo.release/ref": releaseRef },
+	});
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	main();
+	try {
+		await main();
+	} catch (error) {
+		console.error(
+			`::error::${error instanceof Error ? error.message : String(error)}`,
+		);
+		process.exit(1);
+	}
 }

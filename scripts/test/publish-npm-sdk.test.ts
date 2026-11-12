@@ -3,6 +3,7 @@ import {
 	npmPublishAuthEnv,
 	npmPublishCliPrefix,
 	PINNED_NPM_CLI,
+	publishNpmSdkArtifacts,
 	resolveNpmPublishAuthMode,
 } from "../ci/publish-npm-sdk.mts";
 import { npmPublishArgs, parseReleaseRef } from "../lib/release-version.mts";
@@ -74,5 +75,86 @@ describe("release-hobo release-npm hosted runner contract", () => {
 		expect(block).toMatch(/id-token:\s*write/u);
 		expect(block).not.toMatch(/ci-runner-preflight/u);
 		expect(block).toMatch(/jdx\/mise-action@/u);
+	});
+});
+
+describe("npm publish goes through release Freight first", () => {
+	const staged = {
+		version: "0.0.0-alpha.9",
+		packages: [
+			{ workspace: "@hobo/core", public: "@hobo-labs/core", file: "core.tgz" },
+		],
+	};
+
+	it("refuses to publish without a release Freight home (HOBO_RELEASE_CD_HOME)", async () => {
+		const npm: string[][] = [];
+		await expect(
+			publishNpmSdkArtifacts(
+				{ stagingDir: "/tmp/x", token: "", releaseRef: "v0.0.0-alpha.9" },
+				{
+					stage: () => staged,
+					tarballs: () => ["/tmp/x/core.tgz"],
+					qualify: async () => ({ freightId: "sha256:x" }),
+					npm: (args) => npm.push(args),
+				},
+			),
+		).rejects.toThrow(/HOBO_RELEASE_CD_HOME/);
+		expect(npm).toEqual([]);
+	});
+
+	it("publishes nothing when @hobo/cd blocks the candidate Freight", async () => {
+		const npm: string[][] = [];
+		await expect(
+			publishNpmSdkArtifacts(
+				{
+					stagingDir: "/tmp/x",
+					token: "",
+					releaseRef: "v0.0.0-alpha.9",
+					freightHome: "/tmp/cd",
+				},
+				{
+					stage: () => staged,
+					tarballs: () => ["/tmp/x/core.tgz"],
+					read: () => new Uint8Array([1]),
+					qualify: async () => {
+						throw new Error(
+							"release Freight npm blocked: freight-artifacts-unverified",
+						);
+					},
+					npm: (args) => npm.push(args),
+				},
+			),
+		).rejects.toThrow(/blocked/);
+		expect(npm).toEqual([]);
+	});
+
+	it("records every staged tarball as Freight, then publishes them in pack order", async () => {
+		const npm: string[][] = [];
+		let recorded: readonly { name: string }[] = [];
+		await publishNpmSdkArtifacts(
+			{
+				stagingDir: "/tmp/x",
+				token: "",
+				releaseRef: "v0.0.0-alpha.9",
+				freightHome: "/tmp/cd",
+			},
+			{
+				stage: () => staged,
+				tarballs: () => ["/tmp/x/core.tgz"],
+				read: () => new Uint8Array([1, 2, 3]),
+				qualify: async (input) => {
+					recorded = input.stored ?? [];
+					expect(npm).toEqual([]);
+					return { freightId: "sha256:x" };
+				},
+				npm: (args) => npm.push(args),
+			},
+		);
+		expect(recorded.map((r) => r.name)).toEqual([
+			"@hobo-labs/core@0.0.0-alpha.9",
+		]);
+		expect(npm).toEqual([
+			npmPublishArgs("core.tgz", parseReleaseRef("v0.0.0-alpha.9")),
+		]);
 	});
 });

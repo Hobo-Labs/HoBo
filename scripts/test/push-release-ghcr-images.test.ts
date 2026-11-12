@@ -86,3 +86,35 @@ describe("push-release-ghcr-images wiring", () => {
 		expect(source).not.toMatch(/run\("docker", \["push"/u);
 	});
 });
+
+describe("ociReleaseArtifacts", () => {
+	const digest = `sha256:${"b".repeat(64)}`;
+
+	it("names each pushed GHCR image by digest for registry-verified Freight", async () => {
+		const { ociReleaseArtifacts } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		expect(
+			ociReleaseArtifacts([`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`]),
+		).toEqual([
+			{
+				name: "hobo-sdk",
+				kind: "ARTIFACT_KIND_OCI_IMAGE",
+				digest,
+				coordinate: `ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`,
+				ecosystem: "oci",
+				// The registry decides index vs manifest; @hobo/cd verifies the digest.
+				mediaType: "",
+			},
+		]);
+	});
+
+	it("refuses a digest line that is not <repo>@sha256:<hex>", async () => {
+		const { ociReleaseArtifacts } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		expect(() => ociReleaseArtifacts(["ghcr.io/hobo-labs/hobo/hobo-sdk:v1"])).toThrow(
+			/not a pushed digest/,
+		);
+	});
+});

@@ -548,6 +548,8 @@ export function siteTreeIndex(dir: string): { digest: string; bytes: Uint8Array 
 	const walk = (at: string) => {
 		for (const entry of readdirSync(at, { withFileTypes: true })) {
 			const full = join(at, entry.name);
+			// A staging clone's git metadata is not part of what publishes.
+			if (entry.isDirectory() && entry.name === ".git" && at === dir) continue;
 			if (entry.isDirectory()) walk(full);
 			else if (entry.isFile()) {
 				const bytes = readFileSync(full);
