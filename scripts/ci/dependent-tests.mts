@@ -367,6 +367,15 @@ export function scaleWorkspaceDurations(
 	return { defaultSeconds: table.defaultSeconds * factor, seconds };
 }
 
+/**
+ * The most a main workspace shard is planned to take. Its tests step stops at
+ * 19 minutes and its job at 20 (the workflow-wide job cap); this leaves room
+ * for setup and for an estimate that runs short.
+ */
+export const MAIN_WORKSPACE_SHARD_BUDGET_SECONDS = 12 * 60;
+/** Most shards a main run plans, however far over budget the work is. */
+export const MAX_MAIN_WORKSPACE_SHARDS = 16;
+
 /** Target gap between slowest and fastest main workspace shard loads. */
 export const MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS = 10;
 
@@ -393,7 +402,9 @@ export function minimumScopedShardCount(
 /**
  * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
  * several duration-balanced workspace groups, targeting roughly
- * `targetSeconds` on the slowest shard when capacity allows.
+ * `targetSeconds` on the slowest shard when capacity allows. Past the cap only
+ * when the slowest shard would otherwise exceed
+ * `MAIN_WORKSPACE_SHARD_BUDGET_SECONDS`, up to `MAX_MAIN_WORKSPACE_SHARDS`.
  */
 export function planMainWorkspaceShardCount(
 	plan: TestPlan,
@@ -429,13 +440,25 @@ export function planMainWorkspaceShardCount(
 	const units = testWorkspaceUnits(plan, workspaces);
 	const weightFor = (unit: string) =>
 		planUnitLoadSeconds(plan, unit, repo, durations);
-	const peakShardSeconds = maxShardLoadSeconds(
-		units,
-		durations,
-		count,
-		weightFor,
-	);
-	return { count, parallelCap, peakShardSeconds };
+	const peakAt = (shards: number) =>
+		maxShardLoadSeconds(units, durations, shards, weightFor);
+	// A shard job may not run past 20 minutes (the workflow cap, and the box
+	// stops an isolated container at 20 minutes plus grace), so when even
+	// `parallelCap` shards leave the slowest one over budget, plan more: the
+	// extra shards wait for a slot instead of being cancelled (finding 117).
+	// Stop once another shard no longer lowers the slowest one (one workspace
+	// alone over budget).
+	let peak = peakAt(count);
+	while (
+		count < MAX_MAIN_WORKSPACE_SHARDS &&
+		peak > MAIN_WORKSPACE_SHARD_BUDGET_SECONDS
+	) {
+		const next = peakAt(count + 1);
+		if (next >= peak) break;
+		count += 1;
+		peak = next;
+	}
+	return { count, parallelCap, peakShardSeconds: peak };
 }
 
 type Json =
