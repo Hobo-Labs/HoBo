@@ -4,21 +4,36 @@
  * provisioned by claim"). Facts carry a source and the day they were read;
  * they are ranking and planning input, never billing input.
  *
- * Preference, and why:
+ * Preference, and why (the owner's direction, 2026-11-12: Infisical with
+ * OIDC Auth is the default):
  *
- * 1. `auth-md` — any store whose protected-resource metadata advertises
- *    anonymous agent registration. The agent registers, the owner approves
- *    through the store's own claim page. Generic: discovery picks up a secret
- *    manager the day it publishes auth.md. On 2026-11-12 none of Infisical,
- *    Doppler, 1Password, Bitwarden or Akeyless did.
- * 2. `cloudflare-temporary` — HoBo's config-service Worker on a Cloudflare
- *    temporary account: agent-created, claimed by the owner through
- *    Cloudflare's claim URL within 60 minutes.
- * 3. `infisical-self-hosted` — open-source Infisical on the owner's compute
+ * 1. `infisical-cloud-attach` — an Infisical Cloud organization the owner
+ *    signs up for in the web app; the relay and CI sign in with OIDC Auth
+ *    (Vercel and GitHub Actions tokens), so no credential is stored anywhere.
+ *    Infisical Cloud offers no agent or delegated way to create an
+ *    organization or a machine identity, so the owner creates them in the
+ *    dashboard (the `hobo-deploy` skill walks it) and `hobo ci secret-store
+ *    connect` records the ids.
+ * 2. `infisical-self-hosted` — open-source Infisical on the owner's compute
  *    fleet, bootstrapped by HoBo, handed over through a HoBo sealed claim.
- * 4. `infisical-cloud-attach` — an Infisical Cloud organization the owner
- *    already has: attach-only, because Infisical Cloud offers no agent or
- *    delegated way to create an organization or a machine identity.
+ *    Not the default: the host's availability becomes the relay's.
+ * 3. `auth-md` — any store whose protected-resource metadata advertises
+ *    anonymous agent registration. On 2026-11-12 none of Infisical, Doppler,
+ *    1Password, Bitwarden or Akeyless did.
+ * 4. `cloudflare-temporary` — HoBo's config-service Worker on a Cloudflare
+ *    temporary account: an experiment, not the relay's store.
+ * 5. `1password-attach` and 6. `bitwarden-attach` — the owner's existing
+ *    1Password or Bitwarden Secrets Manager account (ADR-0179 amendment
+ *    "Secrets manager, not Infisical"). Both are `stored-token` for a
+ *    workload (checked 2026-11-12: 1Password service-account tokens, its
+ *    workload-identity preview still has the workflow hold an integration
+ *    key and does not list Vercel; Bitwarden machine-account access tokens,
+ *    no OIDC federation documented), so routing passes over them for the
+ *    relay's runtime reads; they serve the owner's side.
+ *
+ * Secretless first: every offer says how a workload signs in
+ * (`runtimeAuth`), and `selectSecretStore` never routes the relay to a
+ * `stored-token` offer, `--allow-designed` or not.
  */
 import { create } from "@bufbuild/protobuf";
 import {
@@ -35,7 +50,23 @@ export const SECRET_STORE_KINDS = [
 	"cloudflare-temporary",
 	"infisical-self-hosted",
 	"infisical-cloud-attach",
+	"1password-attach",
+	"bitwarden-attach",
 ] as const;
+
+/** The secrets managers behind the offers. */
+export const SECRET_STORE_PROVIDERS = [
+	"auth-md",
+	"cloudflare",
+	"infisical",
+	"1password",
+	"bitwarden",
+] as const;
+export type SecretStoreProvider = (typeof SECRET_STORE_PROVIDERS)[number];
+
+/** How a workload signs in to the store; routing is secretless first. */
+export const RUNTIME_AUTH = ["workload-identity", "stored-token"] as const;
+export type RuntimeAuth = (typeof RUNTIME_AUTH)[number];
 export type SecretStoreKind = (typeof SECRET_STORE_KINDS)[number];
 
 export const CLAIM_MECHANISMS = [
@@ -53,6 +84,8 @@ export type ParsedSecretStoreOffer = Readonly<{
 	claimMechanism: ClaimMechanism;
 	claimWindowMinutes: number;
 	runtimeBinding: "built" | "designed";
+	provider: SecretStoreProvider;
+	runtimeAuth: RuntimeAuth;
 	cost: string;
 	availability: string;
 	sourceUrl: string;
@@ -84,9 +117,13 @@ export function parseSecretStoreOffer(
 	const kind = parseSecretStoreKind(record.kind);
 	const claimMechanism = oneOf(CLAIM_MECHANISMS, record.claimMechanism);
 	const runtimeBinding = oneOf(["built", "designed"], record.runtimeBinding);
+	const provider = oneOf(SECRET_STORE_PROVIDERS, record.provider);
+	const runtimeAuth = oneOf(RUNTIME_AUTH, record.runtimeAuth);
 	const ok =
 		claimMechanism !== undefined &&
 		runtimeBinding !== undefined &&
+		provider !== undefined &&
+		runtimeAuth !== undefined &&
 		record.preference >= 1 &&
 		record.preference <= 16 &&
 		record.claimWindowMinutes <= 10_080 &&
@@ -96,7 +133,13 @@ export function parseSecretStoreOffer(
 		/^.{1,400}$/u.test(record.availability) &&
 		/^https:\/\/[A-Za-z0-9.-]+\//u.test(record.sourceUrl) &&
 		/^\d{4}-\d{2}-\d{2}$/u.test(record.checkedAt);
-	if (!ok || claimMechanism === undefined || runtimeBinding === undefined)
+	if (
+		!ok ||
+		claimMechanism === undefined ||
+		runtimeBinding === undefined ||
+		provider === undefined ||
+		runtimeAuth === undefined
+	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
 			`the ${kind} offer does not meet its constraints`,
@@ -107,6 +150,8 @@ export function parseSecretStoreOffer(
 		claimMechanism,
 		claimWindowMinutes: record.claimWindowMinutes,
 		runtimeBinding,
+		provider,
+		runtimeAuth,
 		cost: record.cost,
 		availability: record.availability,
 		sourceUrl: record.sourceUrl,
@@ -126,33 +171,24 @@ export const DEFAULT_SECRET_STORE_OFFERS: readonly ParsedSecretStoreOffer[] =
 	Object.freeze(
 		[
 			{
-				kind: "auth-md",
+				kind: "infisical-cloud-attach",
+				provider: "infisical",
+				runtimeAuth: "workload-identity",
 				preference: 1,
-				claimMechanism: "auth-md-claim",
+				claimMechanism: "owner-sign-in",
 				claimWindowMinutes: 0,
-				runtimeBinding: "designed",
-				cost: "Whatever the discovered store charges; read from its offer at deploy time.",
+				runtimeBinding: "built",
+				cost: "Infisical Cloud's free plan; limits checked when the organization is used.",
 				availability:
-					"Any store whose protected-resource metadata advertises anonymous agent registration. No secret manager checked on 2026-11-12 publishes auth.md.",
-				sourceUrl: "https://workos.com/auth-md/docs/flows/anonymous",
-				checkedAt: READ,
-			},
-			{
-				kind: "cloudflare-temporary",
-				preference: 2,
-				claimMechanism: "provider-claim-url",
-				claimWindowMinutes: 60,
-				runtimeBinding: "designed",
-				cost: "No charge on the temporary account; after the claim, the owner's Cloudflare plan (Workers, KV and Durable Objects free allowances).",
-				availability:
-					"Account creation is rate-limited; an account not claimed within 60 minutes is deleted with everything in it. Secret bindings are not listed as supported on temporary accounts.",
-				sourceUrl:
-					"https://developers.cloudflare.com/workers/platform/claim-deployments/",
+					"Attach-only: the owner signs in once with the Infisical CLI; Infisical Cloud offers no agent or delegated way to create an organization or a machine identity.",
+				sourceUrl: "https://app.infisical.com/api/docs/json",
 				checkedAt: READ,
 			},
 			{
 				kind: "infisical-self-hosted",
-				preference: 3,
+				provider: "infisical",
+				runtimeAuth: "workload-identity",
+				preference: 2,
 				claimMechanism: "hobo-sealed-claim",
 				claimWindowMinutes: 0,
 				runtimeBinding: "built",
@@ -164,15 +200,60 @@ export const DEFAULT_SECRET_STORE_OFFERS: readonly ParsedSecretStoreOffer[] =
 				checkedAt: READ,
 			},
 			{
-				kind: "infisical-cloud-attach",
+				kind: "auth-md",
+				provider: "auth-md",
+				runtimeAuth: "workload-identity",
+				preference: 3,
+				claimMechanism: "auth-md-claim",
+				claimWindowMinutes: 0,
+				runtimeBinding: "designed",
+				cost: "Whatever the discovered store charges; read from its offer at deploy time.",
+				availability:
+					"Any store whose protected-resource metadata advertises anonymous agent registration. No secret manager checked on 2026-11-12 publishes auth.md.",
+				sourceUrl: "https://workos.com/auth-md/docs/flows/anonymous",
+				checkedAt: READ,
+			},
+			{
+				kind: "cloudflare-temporary",
+				provider: "cloudflare",
+				runtimeAuth: "workload-identity",
 				preference: 4,
+				claimMechanism: "provider-claim-url",
+				claimWindowMinutes: 60,
+				runtimeBinding: "designed",
+				cost: "No charge on the temporary account; after the claim, the owner's Cloudflare plan (Workers, KV and Durable Objects free allowances).",
+				availability:
+					"Account creation is rate-limited; an account not claimed within 60 minutes is deleted with everything in it. Secret bindings are not listed as supported on temporary accounts.",
+				sourceUrl:
+					"https://developers.cloudflare.com/workers/platform/claim-deployments/",
+				checkedAt: READ,
+			},
+			{
+				kind: "1password-attach",
+				provider: "1password",
+				runtimeAuth: "stored-token",
+				preference: 5,
 				claimMechanism: "owner-sign-in",
 				claimWindowMinutes: 0,
-				runtimeBinding: "built",
-				cost: "Infisical Cloud's free plan; limits checked when the organization is used.",
+				runtimeBinding: "designed",
+				cost: "The owner's 1Password plan; workload identity (preview) needs 1Password Business.",
 				availability:
-					"Attach-only: the owner signs in once with the Infisical CLI; Infisical Cloud offers no agent or delegated way to create an organization or a machine identity.",
-				sourceUrl: "https://app.infisical.com/api/docs/json",
+					"A workload signs in with a service-account token; the workload-identity preview federates GitHub Actions and custom OIDC but still needs a stored integration key, and does not list Vercel. Owner side only.",
+				sourceUrl: "https://www.1password.dev/brokered-access",
+				checkedAt: READ,
+			},
+			{
+				kind: "bitwarden-attach",
+				provider: "bitwarden",
+				runtimeAuth: "stored-token",
+				preference: 6,
+				claimMechanism: "owner-sign-in",
+				claimWindowMinutes: 0,
+				runtimeBinding: "designed",
+				cost: "The owner's Bitwarden Secrets Manager plan.",
+				availability:
+					"Machine accounts sign in with an access token (no expiry by default); no OIDC federation is documented. Owner side only.",
+				sourceUrl: "https://bitwarden.com/help/access-tokens/",
 				checkedAt: READ,
 			},
 		].map((fields) =>

@@ -26,8 +26,16 @@ take it explicitly.
   (honouring `Retry-After`), 5xx and transport failures, a 1 MiB answer cap, no
   redirects, a 10 s timeout per request.
 - **Port** (`createInfisicalSecretsPort`): `access` / `accessVersion` read,
-  `put` updates or creates (used only by `hobo ci` and the deploy workflow; the
-  relay's identity is read-only), `listVersions` returns the current version.
+  `put` updates or creates (used only by `hobo ci`, the deploy workflow and
+  the `hobo-mcp` secret capture; the relay's identity is read-only),
+  `listVersions` returns the current version.
+- **Sessions**: `signIn()` logs in now and says when the token expires;
+  `revoke()` ends a token the client obtained by logging in (never one its
+  owner supplied); `forBinding(binding)` binds the same sign-in to another
+  project or folder on the same origin. The `hobo-mcp` secret capture uses all
+  three for its one-use writer session: a Universal Auth client secret with
+  `numUsesLimit: 1` spent by one login, writes to the relay's folder and the
+  deploy project on that login, then a revoke.
   `valueRef` is the entry's `infisical://` SecretRef.
 - **References**: `infisicalSecretRef(binding, key)` and
   `parseInfisicalSecretRef(ref)` map to the `infisical` scheme of
@@ -44,6 +52,7 @@ take it explicitly.
 | Read one | `GET /api/v4/secrets/{secretName}?projectId&environment&secretPath&type=shared[&version]` | <https://infisical.com/docs/api-reference/endpoints/secrets/read> |
 | Create | `POST /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/create> |
 | Update | `PATCH /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/update> |
+| Revoke an access token this client obtained | `POST /api/v1/auth/token/revoke` `{accessToken}` (no Authorization header) | <https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token> |
 
 Provisioning a store HoBo created or was handed (`src/admin.ts`, ADR-0179
 amendment "Secret store chosen at deploy, provisioned by claim"), from

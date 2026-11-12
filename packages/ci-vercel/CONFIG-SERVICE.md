@@ -61,16 +61,74 @@ hobo claim finalize secret-store
 
 | Preference | Offer | How the owner takes it | Relay can read it |
 |---|---|---|---|
-| 1 | Any store that publishes auth.md with anonymous agent registration | the store's own claim page, opened through `hobo claim open` | designed |
-| 2 | HoBo's config-service Worker on a Cloudflare temporary account | Cloudflare's claim page, within 60 minutes | designed |
-| 3 | Infisical on the owner's compute fleet, bootstrapped by HoBo | a sealed sign-in, revealed once by `hobo claim open`; finalize revokes HoBo's bootstrap identity | yes |
-| 4 | An Infisical Cloud organization the owner already has (attach-only) | the owner's own `infisical login`, for one run | yes |
+| 1 (default) | Infisical Cloud with OIDC Auth: the owner signs up in the web app and creates the project and two OIDC identities (the `hobo-deploy` skill walks it) | the owner's own account; `hobo ci secret-store connect` records the ids; no token anywhere | yes |
+| 2 | Infisical on the owner's compute fleet, bootstrapped by HoBo (chosen by naming `--fleet-host`) | a sealed sign-in, revealed once by `hobo claim open`; finalize revokes HoBo's bootstrap identity | yes |
+| 3 | Any store that publishes auth.md with anonymous agent registration | the store's own claim page, opened through `hobo claim open` | designed |
+| 4 | HoBo's config-service Worker on a Cloudflare temporary account (an experiment) | Cloudflare's claim page, within 60 minutes | designed |
+| 5, 6 | 1Password, Bitwarden Secrets Manager | the owner's own account | never for the relay: a workload needs a stored token |
 
-HoBo routes to the first offer whose evidence is present and whose runtime
-binding is built; `--allow-designed` lifts the second gate. Today that makes
-self-hosted Infisical the first store the relay can actually use; the
-Cloudflare Worker and auth.md stores are provisioned and claimed by the same
-command once their runtime binding lands (the amendment says what is built).
+HoBo routes to the first offer whose evidence is present, whose runtime
+binding is built and whose workloads sign in without a stored token;
+`--allow-designed` lifts the second gate, never the third. Infisical Cloud
+with OIDC Auth is the default (the owner's choice, 2026-11-12); the Cloudflare
+Worker and auth.md stores would be provisioned and claimed by the same command
+once their runtime binding lands (the amendments say what is built).
+
+### The relay's store today: secretless first
+
+The ADR-0179 amendment
+[Secretless first](../../docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first)
+narrows the table above for the hosted relay. It deploys to its Vercel
+project `hobo-ci` through Vercel's Git integration (no deploy token), and the
+owner handles no secret value on the default path:
+
+- **A secrets manager, chosen secretless first.** The requirement is
+  `secrets.config-service/v1` behind the `SecretsPort`, with three providers:
+  Infisical (OIDC Auth trusts the relay's Vercel OIDC token: no stored
+  credential), 1Password and Bitwarden Secrets Manager (a workload needs a
+  stored token, so they serve the owner's side and are never the relay's
+  runtime store). Routing records each offer's `runtimeAuth` and passes over
+  `stored-token` ones. The Cloudflare Worker (offer 2) is an experiment.
+- **Fewer secrets.** No `VERCEL_TOKEN`; `HOBO_CI_SESSION_KEY`,
+  `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` and `CRON_SECRET` are derived from the App
+  private key (`src/relay-derived-keys.ts`; a stored value still wins); the
+  GitHub App's key, webhook secret and client secret go from GitHub's
+  manifest conversion straight into the store (`hobo ci app create
+  --via-workflow`, then the deploy workflow's `app-credentials` job runs
+  `hobo ci app deposit` as `hobo-ci-writer` over GitHub OIDC); the cache's
+  default member is Vercel Blob over OIDC. The amendment's table lists every
+  secret, what it became and the vendor evidence.
+- **Coordinates in the repository.** In production (`VERCEL_ENV=production`,
+  no `HOBO_CI_CONFIG_SERVICE`), the loader reads the store's origin, project,
+  environment, folder and the relay's identity from the committed
+  `deploy/secret-store.binding.json`, bundled with every function
+  (`vercel.json` `includeFiles`). No environment variable is set through
+  Vercel's API.
+- **Connecting** (once): the `hobo-deploy` skill walks the owner through the
+  dashboard one step at a time, every value prefilled: project `hobo-ci`
+  (folder `/hobo-ci-relay`, `prod`); `hobo-ci-relay` with OIDC Auth trusting
+  Vercel (issuer `https://oidc.vercel.com/tyler-r-kendricks-projects`,
+  subject `owner:tyler-r-kendricks-projects:project:hobo-ci:environment:production`,
+  audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
+  `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
+  Actions (subject `repo:Hobo-Labs/HoBo:ref:refs/heads/main`, audience
+  `https://github.com/Hobo-Labs`), create/edit only. Then:
+
+  ```sh
+  hobo ci secret-store connect --cwd packages/ci-vercel \
+    --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
+    --deploy-identity-id <hobo-ci-writer> --team team_BRBUnG6uGhSsVV3EG5GFV3FM
+  ```
+
+- **The remainder.** Only an optional third-party cache credential
+  (`VALKEY_URL`, a `TURSO_AUTH_TOKEN` the Marketplace does not manage) is
+  ever typed by a person, into the HoBo MCP App (`capture_secret` on
+  `hobo-mcp`), never into the chat; it goes sealed from the form to the MCP
+  server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
+- **Verifying**, by identity name: `hobo-ci-writer` in the deploy workflow's
+  *Verify the secret store connection* step (`hobo ci secret-store verify`:
+  sign in with GitHub OIDC, then revoke; the writer cannot read);
+  `hobo-ci-relay` by `/readyz` after Vercel deploys.
 
 ### What provisioning creates
 

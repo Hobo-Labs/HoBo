@@ -139,7 +139,14 @@ describe("the relay deploy workflow", () => {
 	it("runs on a push to main and by hand, and nowhere else", () => {
 		assert.match(
 			workflow,
-			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n\n/mu,
+			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n {4}inputs:\n/mu,
+		);
+		// The only dispatch inputs: the App's one-time code and two ids.
+		assert.deepEqual(
+			[...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu)].map(
+				(match) => match[1],
+			),
+			["manifest_code", "relay", "owner_id"],
 		);
 		assert.match(
 			workflow,
@@ -148,8 +155,12 @@ describe("the relay deploy workflow", () => {
 		assert.match(workflow, /cancel-in-progress: false/u);
 	});
 
-	it("may read the repository and mint an OIDC token, and nothing more", () => {
+	it("may read the repository and its deployments and mint an OIDC token, and nothing more", () => {
 		assert.match(workflow, /^permissions:\n {2}contents: read\n/mu);
+		assert.match(
+			workflow,
+			/ {4}permissions:\n {6}contents: read\n {6}deployments: read\n {6}id-token: write\n/u,
+		);
 		assert.match(
 			workflow,
 			/ {4}permissions:\n {6}contents: read\n {6}id-token: write\n/u,
@@ -182,45 +193,59 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("reads the deploy token through the config service, masked, before the deploy step", () => {
-		const credential = step(
-			"Read the Vercel deploy token (secret store, GitHub OIDC)",
-		);
-		assert.match(
-			credential,
-			/node --import tsx scripts\/ci\/relay-deploy-credential\.mts/u,
-		);
-		const script = readFileSync(
-			join(root, "scripts/ci/relay-deploy-credential.mts"),
-			"utf8",
-		);
-		assert.match(script, /exportMaskedToGithubEnv\(/u);
-		assert.ok(
-			workflow.indexOf("relay-deploy-credential.mts") <
-				workflow.indexOf("ci deploy \\"),
-		);
+	it("holds no Vercel token and makes no Vercel API write: Vercel's Git integration deploys", () => {
 		assert.doesNotMatch(
 			workflow,
-			/VERCEL_TOKEN:|--token\b|echo "\$VERCEL_TOKEN/u,
+			/VERCEL_TOKEN|relay-deploy-credential|ci deploy|vercel@\d|vercel deploy|--token\b/u,
+		);
+		assert.ok(
+			!existsSync(join(root, "scripts/ci/relay-deploy-credential.mts")),
+		);
+		const find = step("Find Vercel's Git deployment of this commit");
+		assert.match(find, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
+		assert.match(
+			find,
+			/repos\/\$GITHUB_REPOSITORY\/deployments\?sha=\$GITHUB_SHA/u,
+		);
+		assert.match(find, /test\("hobo-ci"\)/u);
+		assert.match(find, /environment_url/u);
+	});
+
+	it("verifies the secret store's CI identity by name before looking for the deployment", () => {
+		const verify = step("Verify the secret store connection");
+		assert.match(
+			verify,
+			/node packages\/hobo\/dist\/bin\/hobo\.js ci secret-store verify/u,
+		);
+		assert.ok(
+			workflow.indexOf("ci secret-store verify") <
+				workflow.indexOf("Find Vercel's Git deployment of this commit"),
 		);
 	});
 
-	it("deploys production from the Yard, attaching the cache and waiting for READY", () => {
-		const deploy = step("Deploy the relay to production from its Yard");
-		for (const part of [
-			"node packages/hobo/dist/bin/hobo.js ci deploy",
-			"--cwd packages/ci-vercel",
-			"--target production",
-			'--sha "$GITHUB_SHA"',
-			"--provision --wait --json",
-		])
-			assert.ok(deploy.includes(part), `the deploy step lacks ${part}`);
-		// The provider and the project come from the Yard, the team and the
-		// store's coordinates from the committed binding, not from here.
-		assert.doesNotMatch(deploy, /--project|--repo|--team|--set|vercel deploy/u);
+	it("deposits the GitHub App's credentials with OIDC only when handed a manifest code, masked first", () => {
 		assert.match(
-			step("Install the pinned Vercel CLI for Marketplace provisioning"),
-			/add vercel@\d+\.\d+\.\d+ /u,
+			workflow,
+			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event\.inputs\.manifest_code != ''/u,
+		);
+		assert.match(
+			workflow,
+			/ {2}deploy:\n[\s\S]*?if: [^\n]*github\.event\.inputs\.manifest_code == ''/u,
+		);
+		const mask = step("Mask the one-time manifest code");
+		assert.match(mask, /::add-mask::\$HOBO_APP_MANIFEST_CODE/u);
+		const deposit = step(
+			"Convert the manifest code and store the credentials (GitHub OIDC)",
+		);
+		assert.match(deposit, /ci app deposit/u);
+		// The code reaches the command through the environment, never argv.
+		assert.doesNotMatch(
+			deposit,
+			/--code|\$\{\{ github\.event\.inputs\.manifest_code \}\}"/u,
+		);
+		assert.ok(
+			workflow.indexOf("Mask the one-time manifest code") <
+				workflow.indexOf("ci app deposit"),
 		);
 	});
 

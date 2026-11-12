@@ -3,7 +3,7 @@ package secret_store_claim
 // Constraints for the secret store a deploy chooses (ADR-0179 amendment,
 // 2026-11-12). Field names are the protobuf JSON names.
 
-#Kind: "auth-md" | "cloudflare-temporary" | "infisical-self-hosted" | "infisical-cloud-attach"
+#Kind: "auth-md" | "cloudflare-temporary" | "infisical-self-hosted" | "infisical-cloud-attach" | "1password-attach" | "bitwarden-attach"
 
 #Https: string & =~"^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$"
 
@@ -19,6 +19,8 @@ package secret_store_claim
 	availability:        string & =~"^.{1,400}$"
 	sourceUrl:           #Https
 	checkedAt:           string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+	provider:            "auth-md" | "cloudflare" | "infisical" | "1password" | "bitwarden"
+	runtimeAuth:         "workload-identity" | "stored-token"
 	// A provider claim URL has a deadline; HoBo's sealed claim sets its own.
 	if claimMechanism == "provider-claim-url" {claimWindowMinutes: >0}
 }
@@ -57,7 +59,9 @@ package secret_store_claim
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
 	// Apart from the relay's project: the relay identity cannot read it.
-	deployProjectId: #Id & !=projectId
+	// Optional: a separate project for deploy-time credentials, empty when the
+	// default path needs none (ADR-0179 amendment "Secretless first").
+	deployProjectId?: #Id & !=projectId
 }
 
 // The flat fixture corpus holds bindings.

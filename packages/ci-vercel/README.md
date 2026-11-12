@@ -222,19 +222,32 @@ and on `workflow_dispatch`:
 1. The gate ends the job with a notice, and success, until a secret store is
    bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
    which `hobo ci secret-store provision` writes when the HoBo deployment
-   chooses the store and the owner claims it
-   ([Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
+   chooses the store and the owner claims it, or `hobo ci secret-store connect`
+   writes from the ids of a secrets manager the owner connected with OIDC
+   ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
+   [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
    No repository variable or secret is read.
-2. With `permissions: id-token: write`, the job signs in to the store through
-   OIDC Auth as `hobo-ci-deploy` (GitHub's token, `githubActionsJwtSource`),
-   reads `VERCEL_TOKEN` from the `hobo-ci-deploy` project the binding names,
-   masks it (`::add-mask::`) and hands it to the next steps through
-   `$GITHUB_ENV` (`scripts/ci/relay-deploy-credential.mts`).
-3. `hobo ci deploy --target production --provision --wait` attaches the
-   Upstash cache through the Marketplace if the project lacks it, sets the
-   production Camp's settings, deploys the pushed commit and waits for READY.
+2. *Verify the secret store connection*: with `permissions: id-token: write`
+   the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; it may
+   create and edit, not read), then revokes the token, and reports it pass or
+   fail by name (`hobo ci secret-store verify`).
+3. *Find Vercel's Git deployment of this commit*: Vercel's Git integration
+   deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
+   write); the job reads that deployment's URL from GitHub's Deployments API
+   with its own `GITHUB_TOKEN` (`deployments: read`).
 4. A smoke check fails the job on a 5xx from `/healthz` and reports `/readyz`
-   (which answers `config-unavailable` until the owner's config-service setup).
+   (which answers 503 until the relay can sign in to its store and read it).
+
+A manual run given a GitHub App manifest code (`hobo ci app create
+--via-workflow` dispatches it) runs only the `app-credentials` job instead:
+it masks the code and runs `hobo ci app deposit`, which converts it and
+writes the App's credentials into the store as `hobo-ci-writer`
+([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first)).
+
+In production the relay reads its store's coordinates from the committed
+binding (bundled through `vercel.json` `includeFiles`), and derives its
+session key, Sandbox proxy key and `CRON_SECRET` from the App private key
+(`src/relay-derived-keys.ts`).
 
 By hand, for a preview or to read a plan:
 

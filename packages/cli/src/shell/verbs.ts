@@ -317,7 +317,9 @@ Usage:
   hobo ci connect <provider>       Add a runner integration: blacksmith, depot, jog (usejog), boat
   hobo ci github import-key        Import or rotate a self-hosted GitHub App key
   hobo ci github key-status        Check the self-hosted App key configuration
-  hobo ci app create               Create the hosted relay's GitHub App; credentials go straight to Infisical
+  hobo ci app create               Create the hosted relay's GitHub App; credentials go straight to the secrets manager
+                                   (--via-workflow: the deploy workflow converts the code over GitHub OIDC)
+  hobo ci app deposit              In that workflow: convert HOBO_APP_MANIFEST_CODE and store the credentials
   hobo ci list|ls                  List GitHub Actions runs
   hobo ci inspect [run]            Inspect a run
   hobo ci logs [run]               Read run logs
@@ -328,6 +330,8 @@ Usage:
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
   hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
+  hobo ci secret-store connect    Record an Infisical the owner connected by hand (OIDC Auth)
+  hobo ci secret-store verify     Sign in as each identity it can here; pass/fail by name
 
 Role: ${verb.role}
 ${statusLine}
@@ -412,6 +416,14 @@ Secret store options (hobo ci secret-store plan|provision; ADR-0179 amendment):
   --vercel-project-id <id>    The relay's Vercel project id (prj_...)
   --allow-designed            Route to a store the relay cannot read yet
   Writes deploy/secret-store.binding.json (coordinates only); never prints a claim link.
+Connect options (hobo ci secret-store connect; identifiers, none is a secret):
+  --project-id <id>           The relay's Infisical project (folder /hobo-ci-relay)
+  --deploy-project-id <id>    The deploy credential's project (VERCEL_TOKEN at /)
+  --relay-identity-id <id>    hobo-ci-relay (OIDC Auth, Vercel)
+  --deploy-identity-id <id>   hobo-ci-deploy (OIDC Auth, GitHub Actions)
+  --team <team_id>            The Vercel team the relay's identity trusts
+  --site-url <origin>         Infisical origin (default https://app.infisical.com)
+  --yes                       Replace an existing binding
 
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch

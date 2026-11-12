@@ -66,6 +66,15 @@ package adapter_infisical
 	clientSecret: string & =~"^[!-~]+$"
 }
 
+#InfisicalTokenRevokeRequest: {
+	accessToken: string & =~"^[!-~]+$"
+}
+
+#InfisicalTokenRevokeResponse: {
+	message: string
+	...
+}
+
 #InfisicalSecretWriteRequest: {
 	projectId:   #InfisicalBinding.projectId
 	environment: #InfisicalBinding.environment

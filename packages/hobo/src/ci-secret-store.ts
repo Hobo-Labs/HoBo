@@ -1,4 +1,4 @@
-// `hobo ci secret-store plan|provision` — choose the hosted relay's
+// `hobo ci secret-store plan|provision|connect|verify` — choose the hosted relay's
 // config/secret store when the deployment runs, provision it, and hand it to
 // the owner by claim (ADR-0179 amendment "Secret store chosen at deploy,
 // provisioned by claim"; `@hobo/secret-store-claim`).
@@ -64,12 +64,23 @@ import {
 
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { loadRelayYard } from "./ci-relay-yard.js";
+import {
+	runCiSecretStoreConnect,
+	runCiSecretStoreVerify,
+} from "./ci-secret-store-connect.js";
 import { applyClaimCommand, rebuildClaimState } from "./claim-plane.js";
 import { isJsonString } from "./json.js";
 import { createFileOneTimeActionStore } from "./one-time-action-store-file.js";
 
 // The options of `hobo ci secret-store`, as `parseCiArgs` names them.
 export const CI_SECRET_STORE_OPTIONS = [
+	"project-id",
+	"deploy-project-id",
+	"relay-identity-id",
+	"deploy-identity-id",
+	"site-url",
+	"environment",
+	"yes",
 	"auth-md",
 	"fleet-host",
 	"owner-email",
@@ -83,6 +94,10 @@ export const CI_SECRET_STORE_OPTIONS = [
 
 // The ones no other `hobo ci` command takes.
 export const SECRET_STORE_ONLY_OPTIONS = [
+	"deploy-project-id",
+	"relay-identity-id",
+	"deploy-identity-id",
+	"site-url",
 	"auth-md",
 	"fleet-host",
 	"owner-email",
@@ -295,13 +310,16 @@ async function gatherEvidence(input: CiSecretStoreInput) {
 						false,
 						"no fresh Infisical on a compute fleet host (--fleet-host <origin>)",
 					),
-			isJsonString(input.env.INFISICAL_TOKEN) &&
-			input.env.INFISICAL_TOKEN !== ""
+			// The default (ADR-0179 amendment "Secretless first"): the owner signs
+			// up in Infisical's web app and creates the OIDC Auth identities there;
+			// nothing HoBo runs needs a token for it. Naming a fleet host is the
+			// owner choosing self-hosted Infisical instead.
+			text(input.values, "fleet-host") === undefined
 				? evidence("infisical-cloud-attach", true)
 				: evidence(
 						"infisical-cloud-attach",
 						false,
-						"the owner is not signed in to Infisical (INFISICAL_TOKEN from infisical login)",
+						"the owner chose a self-hosted Infisical (--fleet-host)",
 					),
 		],
 	};
@@ -333,7 +351,8 @@ async function attachBundle(
 	});
 }
 
-async function writeBinding(
+/** Write the binding atomically; `provision` and `connect` both use it. */
+export async function writeSecretStoreBinding(
 	cwd: string,
 	binding: ParsedSecretStoreBinding,
 ): Promise<string> {
@@ -368,6 +387,11 @@ function claimSteps(kind: string, cwd: string): readonly string[] {
 				`Then run \`hobo claim finalize ${SECRET_STORE_CLAIM_ITEM} ${where}\`: HoBo deletes its own bootstrap identity and checks that Infisical refuses its token.`,
 				`Commit ${SECRET_STORE_BINDING_FILE} (coordinates only) so hobo ci deploy and the deploy workflow find the store.`,
 			];
+		case "infisical-cloud-attach":
+			return [
+				"In Infisical's web app: sign up or in, create project hobo-ci with folder /hobo-ci-relay in prod, and add two OIDC Auth machine identities, hobo-ci-relay (Vercel) and hobo-ci-writer (GitHub Actions). The hobo-deploy skill gives every value.",
+				`Run \`hobo ci secret-store connect ${where} --project-id … --relay-identity-id … --deploy-identity-id … --team …\` with the ids (none is a secret), then commit ${SECRET_STORE_BINDING_FILE}.`,
+			];
 		default:
 			return [
 				`Commit ${SECRET_STORE_BINDING_FILE} (coordinates only) so hobo ci deploy and the deploy workflow find the store.`,
@@ -378,9 +402,11 @@ function claimSteps(kind: string, cwd: string): readonly string[] {
 export async function runCiSecretStore(
 	input: CiSecretStoreInput,
 ): Promise<CommandResult> {
+	if (input.subcommand === "connect") return runCiSecretStoreConnect(input);
+	if (input.subcommand === "verify") return runCiSecretStoreVerify(input);
 	if (input.subcommand !== "plan" && input.subcommand !== "provision")
 		return usage(
-			"Use hobo ci secret-store plan or hobo ci secret-store provision.",
+			"Use hobo ci secret-store plan, provision, connect or verify.",
 		);
 	const now = new Date(input.now?.() ?? Date.now());
 	const gathered = await gatherEvidence(input);
@@ -404,6 +430,9 @@ export async function runCiSecretStore(
 		claimMechanism: offer.claimMechanism,
 		claimWindowMinutes: offer.claimWindowMinutes,
 		runtimeBinding: offer.runtimeBinding,
+		provider: offer.provider,
+		// Secretless first: "stored-token" stores never hold the relay's runtime secrets.
+		runtimeAuth: offer.runtimeAuth,
 		cost: offer.cost,
 		availability: offer.availability,
 		source: `${offer.sourceUrl} (read ${offer.checkedAt})`,
@@ -498,6 +527,25 @@ export async function runCiSecretStore(
 				});
 				bundle = result.bundle;
 				binding = result.binding;
+			} else if (
+				!isJsonString(input.env.INFISICAL_TOKEN) ||
+				input.env.INFISICAL_TOKEN === ""
+			) {
+				// No token: the default path. The owner creates the project and the
+				// two OIDC Auth identities in the dashboard; connect records the ids.
+				return {
+					ok: true,
+					status: "planned",
+					code: "HOBO_CI_SECRET_STORE_CONNECT_IN_DASHBOARD",
+					message: `${summary}\nInfisical Cloud with OIDC Auth: create the project and the identities in Infisical's web app (the hobo-deploy skill walks it, every value prefilled), then run hobo ci secret-store connect with their ids. No token is needed anywhere.`,
+					data: {
+						command: "ci secret-store",
+						subcommand: "provision",
+						selection,
+						offers,
+						claimSteps: [...claimSteps(kind, input.cwd)],
+					},
+				};
 			} else {
 				binding = await attachInfisicalCloud({
 					...(input.env.INFISICAL_SITE_URL
@@ -567,7 +615,7 @@ export async function runCiSecretStore(
 			await attachBundle(input.runtime, deploymentRef, bundle);
 		const written =
 			binding !== undefined
-				? await writeBinding(input.cwd, binding)
+				? await writeSecretStoreBinding(input.cwd, binding)
 				: undefined;
 		const steps = claimSteps(kind, input.cwd);
 		return {

@@ -80,7 +80,11 @@ export function selectSecretStore(input: {
 	for (const offer of ordered) {
 		const seen = input.evidence.find((entry) => entry.kind === offer.kind);
 		let reason: string | undefined;
-		if (seen === undefined) reason = "not probed by this deploy";
+		// Secretless first: a store the relay could only read with a stored
+		// token is never its runtime store; nowhere it may live is allowed.
+		if (offer.runtimeAuth === "stored-token")
+			reason = `the relay would need a stored ${offer.provider} token on Vercel or in GitHub, which ADR-0179 forbids; ${offer.provider} serves the owner's side only`;
+		else if (seen === undefined) reason = "not probed by this deploy";
 		else if (!seen.available) reason = seen.detail;
 		else if (offer.runtimeBinding !== "built" && input.allowDesigned !== true)
 			reason =

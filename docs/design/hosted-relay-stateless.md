@@ -824,6 +824,26 @@ claim step, and the verification of Cloudflare and auth.md claims.
 The Aiven Valkey URL is an optional cache-fleet member an owner may add to the
 store; nothing waits on it.
 
+## Secrets captured by an MCP App
+
+[Secretless first](adr/hosted-relay-stateless.md#amendment-secretless-first)
+(ADR-0179 amendment, 2026-11-12) keeps the relay on its Vercel project
+`hobo-ci`, deployed by Vercel's Git integration with no token, and shrinks
+the secrets that exist at all: three keys derived from the App key, the App's
+credentials handed from GitHub straight to the store, Blob over OIDC, the
+store's coordinates committed. The store is a generic secrets manager
+(Infisical, 1Password, Bitwarden), ranked secretless first: only one that
+trusts the relay's Vercel OIDC token (Infisical today) holds the relay's
+runtime secrets. Whatever cannot be secretless (an optional third-party cache
+credential) is typed by the owner into the HoBo MCP App (`capture_secret` on
+`hobo-mcp`, `ui://hobo/secret-capture`, or its `127.0.0.1` fallback page),
+sealed in the form and written without entering the agent's context. The
+`hobo-deploy` skill detects which manager the agent has, suggests one when
+none is present, walks the owner through OIDC trust one step at a time, and
+reports each identity by name. Package details:
+[`@hobo/mcp`](../../packages/mcp/README.md#secret-capture-mcp-app),
+[`CONFIG-SERVICE.md`](../../packages/ci-vercel/CONFIG-SERVICE.md).
+
 ## Deployment through HoBo
 
 The relay's deployment config is HoBo's own app model: the Bindle in
@@ -890,6 +910,7 @@ on its free plan.
 | 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository. **Yard, Camps, planning, workflow and provisioning implemented ([status](#deployment-through-hobo)); not yet run live** |
 | 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone. **Done** (`test/relay-bundle.test.ts` bundles the relay's entries and checks) |
 | 7b | [Secret store chosen at deploy](#secret-store-chosen-at-deploy): `@hobo/secret-store-claim` (offers, routing, auth.md, Cloudflare temporary account, self-hosted Infisical, attach-only), `hobo ci secret-store`, finalize for self-hosted stores, the deploy reading the committed binding, the workflow gated on it and routed, the `hobo-deploy` skill | A deploy chooses its store and the owner takes it by claim with no setup checklist and nothing in Vercel or GitHub secrets or variables. **Built against stand-ins**; the config-service Worker, fleet placement and the Vercel token claim step are designed |
+| 7c | [Secrets captured by an MCP App](#secrets-captured-by-an-mcp-app) under secretless first: no deploy token (Vercel's Git integration), derived keys, App credentials deposited by the workflow over GitHub OIDC, committed store coordinates, `@hobo/adapter-1password` and `@hobo/adapter-bitwarden`, `runtimeAuth` routing, `hobo ci secret-store connect` and `verify`, the `capture_secret` MCP App and its loopback fallback, the `hobo-deploy` skill | The owner handles no secret value on the default path; any secrets manager can be chosen, secretless first; each identity is verified by name. **Built against fakes and pact mocks**; no MCP Apps host has rendered the form yet |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon and the broker are disconnected |
 
 **Phase 4 so far.** 4a: the store on the cache (`@hobo/ci-gh-actions/relay-cache`).

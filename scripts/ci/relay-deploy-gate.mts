@@ -35,7 +35,6 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
-	"scripts/ci/relay-deploy-credential.mts",
 ] as const;
 
 /** The relay's committed secret store binding: coordinates only. */

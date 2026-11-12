@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file adapter_infisical.proto.
  */
 export const file_adapter_infisical: GenFile = /*@__PURE__*/
-  fileDesc("ChdhZGFwdGVyX2luZmlzaWNhbC5wcm90bxIZaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MSJiChBJbmZpc2ljYWxCaW5kaW5nEhAKCHNpdGVfdXJsGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkSEwoLZW52aXJvbm1lbnQYAyABKAkSEwoLc2VjcmV0X3BhdGgYBCABKAkihwEKFkluZmlzaWNhbExvZ2luUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKA0SLwoUYWNjZXNzX3Rva2VuX21heF90dGwYAyABKA1SEWFjY2Vzc1Rva2VuTWF4VFRMEhIKCnRva2VuX3R5cGUYBCABKAkiaQoPSW5maXNpY2FsU2VjcmV0EhIKCnNlY3JldF9rZXkYASABKAkSFAoMc2VjcmV0X3ZhbHVlGAIgASgJEg8KB3ZlcnNpb24YAyABKA0SGwoTc2VjcmV0X3ZhbHVlX2hpZGRlbhgEIAEoCCJSChNJbmZpc2ljYWxTZWNyZXRMaXN0EjsKB3NlY3JldHMYASADKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbFNlY3JldCIfChFJbmZpc2ljYWxBcHByb3ZhbBIKCgJpZBgBIAEoCSKVAQoXSW5maXNpY2FsU2VjcmV0RW52ZWxvcGUSOgoGc2VjcmV0GAEgASgLMiouaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxTZWNyZXQSPgoIYXBwcm92YWwYAiABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFwcHJvdmFsIkwKFkluZmlzaWNhbEVycm9yRW52ZWxvcGUSDgoGcmVxX2lkGAEgASgJEhMKC3N0YXR1c19jb2RlGAIgASgNEg0KBWVycm9yGAMgASgJIj0KGUluZmlzaWNhbE9pZGNMb2dpblJlcXVlc3QSEwoLaWRlbnRpdHlfaWQYASABKAkSCwoDand0GAIgASgJIk4KIkluZmlzaWNhbFVuaXZlcnNhbEF1dGhMb2dpblJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkifwobSW5maXNpY2FsU2VjcmV0V3JpdGVSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEwoLZW52aXJvbm1lbnQYAiABKAkSEwoLc2VjcmV0X3BhdGgYAyABKAkSFAoMc2VjcmV0X3ZhbHVlGAQgASgJEgwKBHR5cGUYBSABKAkiJQoUR2l0aHViQWN0aW9uc0lkVG9rZW4SDQoFdmFsdWUYASABKAkiUgoZSW5maXNpY2FsQm9vdHN0cmFwUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxvcmdhbml6YXRpb24YAyABKAkiSAoWSW5maXNpY2FsQm9vdHN0cmFwVXNlchIKCgJpZBgBIAEoCRINCgVlbWFpbBgCIAEoCRITCgtzdXBlcl9hZG1pbhgDIAEoCCI/ChVJbmZpc2ljYWxPcmdhbml6YXRpb24SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRzbHVnGAMgASgJIi0KHEluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMSDQoFdG9rZW4YASABKAkihAEKGkluZmlzaWNhbEJvb3RzdHJhcElkZW50aXR5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSTAoLY3JlZGVudGlhbHMYAyABKAsyNy5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMi/wEKGkluZmlzaWNhbEJvb3RzdHJhcFJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkSPwoEdXNlchgCIAEoCzIxLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwVXNlchJGCgxvcmdhbml6YXRpb24YAyABKAsyMC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbE9yZ2FuaXphdGlvbhJHCghpZGVudGl0eRgEIAEoCzI1LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwSWRlbnRpdHkidQodSW5maXNpY2FsQ3JlYXRlUHJvamVjdFJlcXVlc3QSFAoMcHJvamVjdF9uYW1lGAEgASgJEgwKBHNsdWcYAiABKAkSDAoEdHlwZRgDIAEoCRIiChpzaG91bGRfY3JlYXRlX2RlZmF1bHRfZW52cxgEIAEoCCI8ChBJbmZpc2ljYWxQcm9qZWN0EgoKAmlkGAEgASgJEgwKBHNsdWcYAiABKAkSDgoGb3JnX2lkGAMgASgJIl4KHkluZmlzaWNhbENyZWF0ZVByb2plY3RSZXNwb25zZRI8Cgdwcm9qZWN0GAEgASgLMisuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxQcm9qZWN0ImUKHEluZmlzaWNhbENyZWF0ZUZvbGRlclJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEhMKC2Vudmlyb25tZW50GAIgASgJEgwKBG5hbWUYAyABKAkSDAoEcGF0aBgEIAEoCSIrCg9JbmZpc2ljYWxGb2xkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSJbCh1JbmZpc2ljYWxDcmVhdGVGb2xkZXJSZXNwb25zZRI6CgZmb2xkZXIYASABKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEZvbGRlciIkChRJbmZpc2ljYWxQcm9qZWN0Um9sZRIMCgRyb2xlGAEgASgJInUKJUluZmlzaWNhbENyZWF0ZVByb2plY3RJZGVudGl0eVJlcXVlc3QSDAoEbmFtZRgBIAEoCRI+CgVyb2xlcxgCIAMoCzIvLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsUHJvamVjdFJvbGUiLQoRSW5maXNpY2FsSWRlbnRpdHkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSJbChlJbmZpc2ljYWxJZGVudGl0eVJlc3BvbnNlEj4KCGlkZW50aXR5GAEgASgLMiwuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxJZGVudGl0eSLzAgoeSW5maXNpY2FsQXR0YWNoT2lkY0F1dGhSZXF1ZXN0EhoKEm9pZGNfZGlzY292ZXJ5X3VybBgBIAEoCRIUCgxib3VuZF9pc3N1ZXIYAiABKAkSFwoPYm91bmRfYXVkaWVuY2VzGAMgASgJEmAKDGJvdW5kX2NsYWltcxgEIAMoCzJKLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQXR0YWNoT2lkY0F1dGhSZXF1ZXN0LkJvdW5kQ2xhaW1zRW50cnkSFQoNYm91bmRfc3ViamVjdBgFIAEoCRIoChBhY2Nlc3NfdG9rZW5fdHRsGAYgASgNUg5hY2Nlc3NUb2tlblRUTBIvChRhY2Nlc3NfdG9rZW5fbWF4X3R0bBgHIAEoDVIRYWNjZXNzVG9rZW5NYXhUVEwaMgoQQm91bmRDbGFpbXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIjwKGUluZmlzaWNhbElkZW50aXR5T2lkY0F1dGgSCgoCaWQYASABKAkSEwoLaWRlbnRpdHlfaWQYAiABKAkicwofSW5maXNpY2FsQXR0YWNoT2lkY0F1dGhSZXNwb25zZRJQChJpZGVudGl0eV9vaWRjX2F1dGgYASABKAsyNC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5T2lkY0F1dGhiBnByb3RvMw");
+  fileDesc("ChdhZGFwdGVyX2luZmlzaWNhbC5wcm90bxIZaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MSJiChBJbmZpc2ljYWxCaW5kaW5nEhAKCHNpdGVfdXJsGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkSEwoLZW52aXJvbm1lbnQYAyABKAkSEwoLc2VjcmV0X3BhdGgYBCABKAkihwEKFkluZmlzaWNhbExvZ2luUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKA0SLwoUYWNjZXNzX3Rva2VuX21heF90dGwYAyABKA1SEWFjY2Vzc1Rva2VuTWF4VFRMEhIKCnRva2VuX3R5cGUYBCABKAkiaQoPSW5maXNpY2FsU2VjcmV0EhIKCnNlY3JldF9rZXkYASABKAkSFAoMc2VjcmV0X3ZhbHVlGAIgASgJEg8KB3ZlcnNpb24YAyABKA0SGwoTc2VjcmV0X3ZhbHVlX2hpZGRlbhgEIAEoCCJSChNJbmZpc2ljYWxTZWNyZXRMaXN0EjsKB3NlY3JldHMYASADKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbFNlY3JldCIfChFJbmZpc2ljYWxBcHByb3ZhbBIKCgJpZBgBIAEoCSKVAQoXSW5maXNpY2FsU2VjcmV0RW52ZWxvcGUSOgoGc2VjcmV0GAEgASgLMiouaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxTZWNyZXQSPgoIYXBwcm92YWwYAiABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFwcHJvdmFsIkwKFkluZmlzaWNhbEVycm9yRW52ZWxvcGUSDgoGcmVxX2lkGAEgASgJEhMKC3N0YXR1c19jb2RlGAIgASgNEg0KBWVycm9yGAMgASgJIj0KGUluZmlzaWNhbE9pZGNMb2dpblJlcXVlc3QSEwoLaWRlbnRpdHlfaWQYASABKAkSCwoDand0GAIgASgJIk4KIkluZmlzaWNhbFVuaXZlcnNhbEF1dGhMb2dpblJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkiMwobSW5maXNpY2FsVG9rZW5SZXZva2VSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSIvChxJbmZpc2ljYWxUb2tlblJldm9rZVJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkifwobSW5maXNpY2FsU2VjcmV0V3JpdGVSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEwoLZW52aXJvbm1lbnQYAiABKAkSEwoLc2VjcmV0X3BhdGgYAyABKAkSFAoMc2VjcmV0X3ZhbHVlGAQgASgJEgwKBHR5cGUYBSABKAkiJQoUR2l0aHViQWN0aW9uc0lkVG9rZW4SDQoFdmFsdWUYASABKAkiUgoZSW5maXNpY2FsQm9vdHN0cmFwUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxvcmdhbml6YXRpb24YAyABKAkiSAoWSW5maXNpY2FsQm9vdHN0cmFwVXNlchIKCgJpZBgBIAEoCRINCgVlbWFpbBgCIAEoCRITCgtzdXBlcl9hZG1pbhgDIAEoCCI/ChVJbmZpc2ljYWxPcmdhbml6YXRpb24SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRzbHVnGAMgASgJIi0KHEluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMSDQoFdG9rZW4YASABKAkihAEKGkluZmlzaWNhbEJvb3RzdHJhcElkZW50aXR5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSTAoLY3JlZGVudGlhbHMYAyABKAsyNy5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMi/wEKGkluZmlzaWNhbEJvb3RzdHJhcFJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkSPwoEdXNlchgCIAEoCzIxLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwVXNlchJGCgxvcmdhbml6YXRpb24YAyABKAsyMC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbE9yZ2FuaXphdGlvbhJHCghpZGVudGl0eRgEIAEoCzI1LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwSWRlbnRpdHkidQodSW5maXNpY2FsQ3JlYXRlUHJvamVjdFJlcXVlc3QSFAoMcHJvamVjdF9uYW1lGAEgASgJEgwKBHNsdWcYAiABKAkSDAoEdHlwZRgDIAEoCRIiChpzaG91bGRfY3JlYXRlX2RlZmF1bHRfZW52cxgEIAEoCCI8ChBJbmZpc2ljYWxQcm9qZWN0EgoKAmlkGAEgASgJEgwKBHNsdWcYAiABKAkSDgoGb3JnX2lkGAMgASgJIl4KHkluZmlzaWNhbENyZWF0ZVByb2plY3RSZXNwb25zZRI8Cgdwcm9qZWN0GAEgASgLMisuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxQcm9qZWN0ImUKHEluZmlzaWNhbENyZWF0ZUZvbGRlclJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEhMKC2Vudmlyb25tZW50GAIgASgJEgwKBG5hbWUYAyABKAkSDAoEcGF0aBgEIAEoCSIrCg9JbmZpc2ljYWxGb2xkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSJbCh1JbmZpc2ljYWxDcmVhdGVGb2xkZXJSZXNwb25zZRI6CgZmb2xkZXIYASABKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEZvbGRlciIkChRJbmZpc2ljYWxQcm9qZWN0Um9sZRIMCgRyb2xlGAEgASgJInUKJUluZmlzaWNhbENyZWF0ZVByb2plY3RJZGVudGl0eVJlcXVlc3QSDAoEbmFtZRgBIAEoCRI+CgVyb2xlcxgCIAMoCzIvLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsUHJvamVjdFJvbGUiLQoRSW5maXNpY2FsSWRlbnRpdHkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSJbChlJbmZpc2ljYWxJZGVudGl0eVJlc3BvbnNlEj4KCGlkZW50aXR5GAEgASgLMiwuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxJZGVudGl0eSLzAgoeSW5maXNpY2FsQXR0YWNoT2lkY0F1dGhSZXF1ZXN0EhoKEm9pZGNfZGlzY292ZXJ5X3VybBgBIAEoCRIUCgxib3VuZF9pc3N1ZXIYAiABKAkSFwoPYm91bmRfYXVkaWVuY2VzGAMgASgJEmAKDGJvdW5kX2NsYWltcxgEIAMoCzJKLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQXR0YWNoT2lkY0F1dGhSZXF1ZXN0LkJvdW5kQ2xhaW1zRW50cnkSFQoNYm91bmRfc3ViamVjdBgFIAEoCRIoChBhY2Nlc3NfdG9rZW5fdHRsGAYgASgNUg5hY2Nlc3NUb2tlblRUTBIvChRhY2Nlc3NfdG9rZW5fbWF4X3R0bBgHIAEoDVIRYWNjZXNzVG9rZW5NYXhUVEwaMgoQQm91bmRDbGFpbXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIjwKGUluZmlzaWNhbElkZW50aXR5T2lkY0F1dGgSCgoCaWQYASABKAkSEwoLaWRlbnRpdHlfaWQYAiABKAkicwofSW5maXNpY2FsQXR0YWNoT2lkY0F1dGhSZXNwb25zZRJQChJpZGVudGl0eV9vaWRjX2F1dGgYASABKAsyNC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5T2lkY0F1dGhiBnByb3RvMw");
 
 /**
  * Where a deployment reads its configuration and secrets: the Infisical site,
@@ -262,6 +262,47 @@ export const InfisicalUniversalAuthLoginRequestSchema: GenMessage<InfisicalUnive
   messageDesc(file_adapter_infisical, 8);
 
 /**
+ * POST /api/v1/auth/token/revoke: ends a machine identity access token this
+ * client obtained by logging in, before its natural expiry. Sent without an
+ * Authorization header; the token is the body.
+ * https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token
+ *
+ * @generated from message hobo.adapter_infisical.v1.InfisicalTokenRevokeRequest
+ */
+export type InfisicalTokenRevokeRequest = Message<"hobo.adapter_infisical.v1.InfisicalTokenRevokeRequest"> & {
+  /**
+   * @generated from field: string access_token = 1;
+   */
+  accessToken: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalTokenRevokeRequest.
+ * Use `create(InfisicalTokenRevokeRequestSchema)` to create a new message.
+ */
+export const InfisicalTokenRevokeRequestSchema: GenMessage<InfisicalTokenRevokeRequest> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 9);
+
+/**
+ * The answer of POST /api/v1/auth/token/revoke.
+ *
+ * @generated from message hobo.adapter_infisical.v1.InfisicalTokenRevokeResponse
+ */
+export type InfisicalTokenRevokeResponse = Message<"hobo.adapter_infisical.v1.InfisicalTokenRevokeResponse"> & {
+  /**
+   * @generated from field: string message = 1;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalTokenRevokeResponse.
+ * Use `create(InfisicalTokenRevokeResponseSchema)` to create a new message.
+ */
+export const InfisicalTokenRevokeResponseSchema: GenMessage<InfisicalTokenRevokeResponse> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 10);
+
+/**
  * POST and PATCH /api/v4/secrets/{secretName}.
  *
  * @generated from message hobo.adapter_infisical.v1.InfisicalSecretWriteRequest
@@ -298,7 +339,7 @@ export type InfisicalSecretWriteRequest = Message<"hobo.adapter_infisical.v1.Inf
  * Use `create(InfisicalSecretWriteRequestSchema)` to create a new message.
  */
 export const InfisicalSecretWriteRequestSchema: GenMessage<InfisicalSecretWriteRequest> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 9);
+  messageDesc(file_adapter_infisical, 11);
 
 /**
  * GitHub's answer to the Actions OIDC token request: `{ "value": "<jwt>" }`.
@@ -317,7 +358,7 @@ export type GithubActionsIdToken = Message<"hobo.adapter_infisical.v1.GithubActi
  * Use `create(GithubActionsIdTokenSchema)` to create a new message.
  */
 export const GithubActionsIdTokenSchema: GenMessage<GithubActionsIdToken> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 10);
+  messageDesc(file_adapter_infisical, 12);
 
 /**
  * POST /api/v1/admin/bootstrap: the one bootstrap of a self-hosted instance.
@@ -348,7 +389,7 @@ export type InfisicalBootstrapRequest = Message<"hobo.adapter_infisical.v1.Infis
  * Use `create(InfisicalBootstrapRequestSchema)` to create a new message.
  */
 export const InfisicalBootstrapRequestSchema: GenMessage<InfisicalBootstrapRequest> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 11);
+  messageDesc(file_adapter_infisical, 13);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalBootstrapUser
@@ -375,7 +416,7 @@ export type InfisicalBootstrapUser = Message<"hobo.adapter_infisical.v1.Infisica
  * Use `create(InfisicalBootstrapUserSchema)` to create a new message.
  */
 export const InfisicalBootstrapUserSchema: GenMessage<InfisicalBootstrapUser> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 12);
+  messageDesc(file_adapter_infisical, 14);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalOrganization
@@ -402,7 +443,7 @@ export type InfisicalOrganization = Message<"hobo.adapter_infisical.v1.Infisical
  * Use `create(InfisicalOrganizationSchema)` to create a new message.
  */
 export const InfisicalOrganizationSchema: GenMessage<InfisicalOrganization> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 13);
+  messageDesc(file_adapter_infisical, 15);
 
 /**
  * The instance-admin machine identity's Token Auth token: a root credential.
@@ -421,7 +462,7 @@ export type InfisicalIdentityCredentials = Message<"hobo.adapter_infisical.v1.In
  * Use `create(InfisicalIdentityCredentialsSchema)` to create a new message.
  */
 export const InfisicalIdentityCredentialsSchema: GenMessage<InfisicalIdentityCredentials> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 14);
+  messageDesc(file_adapter_infisical, 16);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalBootstrapIdentity
@@ -448,7 +489,7 @@ export type InfisicalBootstrapIdentity = Message<"hobo.adapter_infisical.v1.Infi
  * Use `create(InfisicalBootstrapIdentitySchema)` to create a new message.
  */
 export const InfisicalBootstrapIdentitySchema: GenMessage<InfisicalBootstrapIdentity> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 15);
+  messageDesc(file_adapter_infisical, 17);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalBootstrapResponse
@@ -480,7 +521,7 @@ export type InfisicalBootstrapResponse = Message<"hobo.adapter_infisical.v1.Infi
  * Use `create(InfisicalBootstrapResponseSchema)` to create a new message.
  */
 export const InfisicalBootstrapResponseSchema: GenMessage<InfisicalBootstrapResponse> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 16);
+  messageDesc(file_adapter_infisical, 18);
 
 /**
  * POST /api/v1/projects.
@@ -514,7 +555,7 @@ export type InfisicalCreateProjectRequest = Message<"hobo.adapter_infisical.v1.I
  * Use `create(InfisicalCreateProjectRequestSchema)` to create a new message.
  */
 export const InfisicalCreateProjectRequestSchema: GenMessage<InfisicalCreateProjectRequest> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 17);
+  messageDesc(file_adapter_infisical, 19);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalProject
@@ -541,7 +582,7 @@ export type InfisicalProject = Message<"hobo.adapter_infisical.v1.InfisicalProje
  * Use `create(InfisicalProjectSchema)` to create a new message.
  */
 export const InfisicalProjectSchema: GenMessage<InfisicalProject> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 18);
+  messageDesc(file_adapter_infisical, 20);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalCreateProjectResponse
@@ -558,7 +599,7 @@ export type InfisicalCreateProjectResponse = Message<"hobo.adapter_infisical.v1.
  * Use `create(InfisicalCreateProjectResponseSchema)` to create a new message.
  */
 export const InfisicalCreateProjectResponseSchema: GenMessage<InfisicalCreateProjectResponse> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 19);
+  messageDesc(file_adapter_infisical, 21);
 
 /**
  * POST /api/v1/folders (`workspaceId` is the project id).
@@ -592,7 +633,7 @@ export type InfisicalCreateFolderRequest = Message<"hobo.adapter_infisical.v1.In
  * Use `create(InfisicalCreateFolderRequestSchema)` to create a new message.
  */
 export const InfisicalCreateFolderRequestSchema: GenMessage<InfisicalCreateFolderRequest> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 20);
+  messageDesc(file_adapter_infisical, 22);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalFolder
@@ -614,7 +655,7 @@ export type InfisicalFolder = Message<"hobo.adapter_infisical.v1.InfisicalFolder
  * Use `create(InfisicalFolderSchema)` to create a new message.
  */
 export const InfisicalFolderSchema: GenMessage<InfisicalFolder> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 21);
+  messageDesc(file_adapter_infisical, 23);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalCreateFolderResponse
@@ -631,7 +672,7 @@ export type InfisicalCreateFolderResponse = Message<"hobo.adapter_infisical.v1.I
  * Use `create(InfisicalCreateFolderResponseSchema)` to create a new message.
  */
 export const InfisicalCreateFolderResponseSchema: GenMessage<InfisicalCreateFolderResponse> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 22);
+  messageDesc(file_adapter_infisical, 24);
 
 /**
  * POST /api/v1/projects/{projectId}/identities: a machine identity scoped to
@@ -651,7 +692,7 @@ export type InfisicalProjectRole = Message<"hobo.adapter_infisical.v1.InfisicalP
  * Use `create(InfisicalProjectRoleSchema)` to create a new message.
  */
 export const InfisicalProjectRoleSchema: GenMessage<InfisicalProjectRole> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 23);
+  messageDesc(file_adapter_infisical, 25);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalCreateProjectIdentityRequest
@@ -673,7 +714,7 @@ export type InfisicalCreateProjectIdentityRequest = Message<"hobo.adapter_infisi
  * Use `create(InfisicalCreateProjectIdentityRequestSchema)` to create a new message.
  */
 export const InfisicalCreateProjectIdentityRequestSchema: GenMessage<InfisicalCreateProjectIdentityRequest> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 24);
+  messageDesc(file_adapter_infisical, 26);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalIdentity
@@ -695,7 +736,7 @@ export type InfisicalIdentity = Message<"hobo.adapter_infisical.v1.InfisicalIden
  * Use `create(InfisicalIdentitySchema)` to create a new message.
  */
 export const InfisicalIdentitySchema: GenMessage<InfisicalIdentity> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 25);
+  messageDesc(file_adapter_infisical, 27);
 
 /**
  * The answer of POST /api/v1/projects/{projectId}/identities and of
@@ -715,7 +756,7 @@ export type InfisicalIdentityResponse = Message<"hobo.adapter_infisical.v1.Infis
  * Use `create(InfisicalIdentityResponseSchema)` to create a new message.
  */
 export const InfisicalIdentityResponseSchema: GenMessage<InfisicalIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 26);
+  messageDesc(file_adapter_infisical, 28);
 
 /**
  * POST /api/v1/auth/oidc-auth/identities/{identityId}: trust one workload
@@ -767,7 +808,7 @@ export type InfisicalAttachOidcAuthRequest = Message<"hobo.adapter_infisical.v1.
  * Use `create(InfisicalAttachOidcAuthRequestSchema)` to create a new message.
  */
 export const InfisicalAttachOidcAuthRequestSchema: GenMessage<InfisicalAttachOidcAuthRequest> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 27);
+  messageDesc(file_adapter_infisical, 29);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalIdentityOidcAuth
@@ -789,7 +830,7 @@ export type InfisicalIdentityOidcAuth = Message<"hobo.adapter_infisical.v1.Infis
  * Use `create(InfisicalIdentityOidcAuthSchema)` to create a new message.
  */
 export const InfisicalIdentityOidcAuthSchema: GenMessage<InfisicalIdentityOidcAuth> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 28);
+  messageDesc(file_adapter_infisical, 30);
 
 /**
  * @generated from message hobo.adapter_infisical.v1.InfisicalAttachOidcAuthResponse
@@ -806,5 +847,5 @@ export type InfisicalAttachOidcAuthResponse = Message<"hobo.adapter_infisical.v1
  * Use `create(InfisicalAttachOidcAuthResponseSchema)` to create a new message.
  */
 export const InfisicalAttachOidcAuthResponseSchema: GenMessage<InfisicalAttachOidcAuthResponse> = /*@__PURE__*/
-  messageDesc(file_adapter_infisical, 29);
+  messageDesc(file_adapter_infisical, 31);
 

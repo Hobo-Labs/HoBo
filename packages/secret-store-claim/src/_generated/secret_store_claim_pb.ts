@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file secret_store_claim.proto.
  */
 export const file_secret_store_claim: GenFile = /*@__PURE__*/
-  fileDesc("ChhzZWNyZXRfc3RvcmVfY2xhaW0ucHJvdG8SGmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxItABChBTZWNyZXRTdG9yZU9mZmVyEgwKBGtpbmQYASABKAkSEgoKcHJlZmVyZW5jZRgCIAEoDRIXCg9jbGFpbV9tZWNoYW5pc20YAyABKAkSHAoUY2xhaW1fd2luZG93X21pbnV0ZXMYBCABKA0SFwoPcnVudGltZV9iaW5kaW5nGAUgASgJEgwKBGNvc3QYBiABKAkSFAoMYXZhaWxhYmlsaXR5GAcgASgJEhIKCnNvdXJjZV91cmwYCCABKAkSEgoKY2hlY2tlZF9hdBgJIAEoCSJGChNTZWNyZXRTdG9yZUV2aWRlbmNlEgwKBGtpbmQYASABKAkSEQoJYXZhaWxhYmxlGAIgASgIEg4KBmRldGFpbBgDIAEoCSIvCg9TZWNyZXRTdG9yZVNraXASDAoEa2luZBgBIAEoCRIOCgZyZWFzb24YAiABKAkikwEKFFNlY3JldFN0b3JlU2VsZWN0aW9uEhIKCmNhcGFiaWxpdHkYASABKAkSFQoNc2VsZWN0ZWRfa2luZBgCIAEoCRI8Cgdza2lwcGVkGAMgAygLMisuaG9iby5zZWNyZXRfc3RvcmVfY2xhaW0udjEuU2VjcmV0U3RvcmVTa2lwEhIKCmRlY2lkZWRfYXQYBCABKAkiigIKElNlY3JldFN0b3JlQmluZGluZxIMCgRraW5kGAEgASgJEhAKCGVuZHBvaW50GAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSEwoLZW52aXJvbm1lbnQYBCABKAkSEwoLc2VjcmV0X3BhdGgYBSABKAkSGQoRcmVsYXlfaWRlbnRpdHlfaWQYBiABKAkSGgoSZGVwbG95X2lkZW50aXR5X2lkGAcgASgJEhYKDnZlcmNlbF90ZWFtX2lkGAggASgJEhcKD2NsYWltX2J1bmRsZV9pZBgJIAEoCRITCgtjbGFpbV9zdGF0ZRgKIAEoCRIZChFkZXBsb3lfcHJvamVjdF9pZBgLIAEoCWIGcHJvdG8z");
+  fileDesc("ChhzZWNyZXRfc3RvcmVfY2xhaW0ucHJvdG8SGmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxIvgBChBTZWNyZXRTdG9yZU9mZmVyEgwKBGtpbmQYASABKAkSEgoKcHJlZmVyZW5jZRgCIAEoDRIXCg9jbGFpbV9tZWNoYW5pc20YAyABKAkSHAoUY2xhaW1fd2luZG93X21pbnV0ZXMYBCABKA0SFwoPcnVudGltZV9iaW5kaW5nGAUgASgJEgwKBGNvc3QYBiABKAkSFAoMYXZhaWxhYmlsaXR5GAcgASgJEhIKCnNvdXJjZV91cmwYCCABKAkSEgoKY2hlY2tlZF9hdBgJIAEoCRIQCghwcm92aWRlchgKIAEoCRIUCgxydW50aW1lX2F1dGgYCyABKAkiRgoTU2VjcmV0U3RvcmVFdmlkZW5jZRIMCgRraW5kGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIOCgZkZXRhaWwYAyABKAkiLwoPU2VjcmV0U3RvcmVTa2lwEgwKBGtpbmQYASABKAkSDgoGcmVhc29uGAIgASgJIpMBChRTZWNyZXRTdG9yZVNlbGVjdGlvbhISCgpjYXBhYmlsaXR5GAEgASgJEhUKDXNlbGVjdGVkX2tpbmQYAiABKAkSPAoHc2tpcHBlZBgDIAMoCzIrLmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxLlNlY3JldFN0b3JlU2tpcBISCgpkZWNpZGVkX2F0GAQgASgJIooCChJTZWNyZXRTdG9yZUJpbmRpbmcSDAoEa2luZBgBIAEoCRIQCghlbmRwb2ludBgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEhMKC3NlY3JldF9wYXRoGAUgASgJEhkKEXJlbGF5X2lkZW50aXR5X2lkGAYgASgJEhoKEmRlcGxveV9pZGVudGl0eV9pZBgHIAEoCRIWCg52ZXJjZWxfdGVhbV9pZBgIIAEoCRIXCg9jbGFpbV9idW5kbGVfaWQYCSABKAkSEwoLY2xhaW1fc3RhdGUYCiABKAkSGQoRZGVwbG95X3Byb2plY3RfaWQYCyABKAliBnByb3RvMw");
 
 /**
  * One way to satisfy the capability, as HoBo policy ranks it.
@@ -20,7 +20,7 @@ export const file_secret_store_claim: GenFile = /*@__PURE__*/
 export type SecretStoreOffer = Message<"hobo.secret_store_claim.v1.SecretStoreOffer"> & {
   /**
    * "auth-md" | "cloudflare-temporary" | "infisical-self-hosted" |
-   * "infisical-cloud-attach".
+   * "infisical-cloud-attach" | "1password-attach" | "bitwarden-attach".
    *
    * @generated from field: string kind = 1;
    */
@@ -81,6 +81,24 @@ export type SecretStoreOffer = Message<"hobo.secret_store_claim.v1.SecretStoreOf
    * @generated from field: string checked_at = 9;
    */
   checkedAt: string;
+
+  /**
+   * The secrets manager behind the offer: "auth-md" (whichever store),
+   * "cloudflare", "infisical", "1password" or "bitwarden".
+   *
+   * @generated from field: string provider = 10;
+   */
+  provider: string;
+
+  /**
+   * How a workload (the relay on Vercel, a GitHub Actions job) signs in:
+   * "workload-identity" (OIDC federation, no stored credential) or
+   * "stored-token" (a token must live where the workload runs). Routing
+   * passes over "stored-token" offers for the relay's runtime reads.
+   *
+   * @generated from field: string runtime_auth = 11;
+   */
+  runtimeAuth: string;
 };
 
 /**

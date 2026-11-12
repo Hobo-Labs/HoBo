@@ -459,6 +459,12 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// port, for the same reason; one exact, named line, pinned beside the others
 	// in boundaries.test.ts.
 	"packages/adapters/adapter-infisical->packages/identity",
+	// The 1Password and Bitwarden Secrets Manager adapters (ADR-0179 amendment
+	// "Secrets manager, not Infisical") are the fourth and fifth implementers
+	// of the same port, for the same reason; one exact, named line each,
+	// pinned beside the others in boundaries.test.ts.
+	"packages/adapters/adapter-1password->packages/identity",
+	"packages/adapters/adapter-bitwarden->packages/identity",
 	// Connector packages (#1052) are AUTHORING-side declarations, not runtime
 	// adapters: they export an opaque symbol built with @hobo/bindles'
 	// defineConnector so b.connector() can resolve it. The edge points at the

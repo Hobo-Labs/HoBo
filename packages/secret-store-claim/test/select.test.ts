@@ -20,15 +20,54 @@ const evidence = (kind: string, available: boolean, detail = "") =>
 		create(SecretStoreEvidenceSchema, { kind, available, detail }),
 	);
 
+describe("secretless first (ADR-0179 amendment)", () => {
+	it("says how a workload signs in to each secrets manager", () => {
+		expect(
+			DEFAULT_SECRET_STORE_OFFERS.map((offer) => [
+				offer.provider,
+				offer.runtimeAuth,
+			]),
+		).toEqual([
+			["infisical", "workload-identity"],
+			["infisical", "workload-identity"],
+			["auth-md", "workload-identity"],
+			["cloudflare", "workload-identity"],
+			["1password", "stored-token"],
+			["bitwarden", "stored-token"],
+		]);
+	});
+
+	it("never routes the relay to a stored-token store, even with --allow-designed", () => {
+		const onlyTokens = DEFAULT_SECRET_STORE_OFFERS.filter(
+			(offer) => offer.runtimeAuth === "stored-token",
+		);
+		let message = "";
+		try {
+			selectSecretStore({
+				offers: onlyTokens,
+				evidence: onlyTokens.map((offer) => evidence(offer.kind, true)),
+				allowDesigned: true,
+				now: new Date("2026-11-12T00:00:00Z"),
+			});
+		} catch (error) {
+			message = String(error);
+		}
+		expect(message).toContain("stored 1password token");
+		expect(message).toContain("stored bitwarden token");
+	});
+});
+
 describe("the default offers", () => {
 	it("prefer agent auth with a claim, then HoBo-hosted, then attach-only", () => {
 		expect(DEFAULT_SECRET_STORE_OFFERS.map((offer) => offer.kind)).toEqual([
+			"infisical-cloud-attach",
+			"infisical-self-hosted",
 			"auth-md",
 			"cloudflare-temporary",
-			"infisical-self-hosted",
-			"infisical-cloud-attach",
+			"1password-attach",
+			"bitwarden-attach",
 		]);
-		expect(SECRET_STORE_KINDS).toHaveLength(4);
+		expect(SECRET_STORE_KINDS).toHaveLength(6);
 		for (const offer of DEFAULT_SECRET_STORE_OFFERS) {
 			expect(offer.sourceUrl).toMatch(/^https:\/\//u);
 			expect(offer.checkedAt).toBe("2026-11-12");
@@ -63,33 +102,54 @@ describe("the default offers", () => {
 });
 
 describe("routing secrets.config-service/v1 at deploy time", () => {
-	it("passes over stores the relay cannot read yet, saying why", () => {
+	it("routes to Infisical Cloud with OIDC Auth by default, the owner's choice", () => {
 		const route = selectSecretStore({
 			offers: DEFAULT_SECRET_STORE_OFFERS,
 			evidence: [
-				evidence(
-					"auth-md",
-					false,
-					"auth.md metadata advertises no anonymous registration",
-				),
 				evidence("cloudflare-temporary", true),
 				evidence("infisical-self-hosted", true),
 				evidence("infisical-cloud-attach", true),
 			],
 			now: NOW,
 		});
-		expect(route.selection.selectedKind).toBe("infisical-self-hosted");
+		expect(route.selection.selectedKind).toBe("infisical-cloud-attach");
 		expect(route.selection.capability).toBe("secrets.config-service/v1");
-		expect(
-			route.selection.skipped.map((skip) => [skip.kind, skip.reason]),
-		).toEqual([
-			["auth-md", "auth.md metadata advertises no anonymous registration"],
-			[
-				"cloudflare-temporary",
-				"the relay cannot read this store yet (runtime binding designed, not built)",
-			],
-		]);
+		expect(route.selection.skipped).toEqual([]);
 		expect(route.selection.decidedAt).toBe(NOW.toISOString());
+	});
+
+	it("passes over stores the relay cannot read yet, saying why", () => {
+		let message = "";
+		try {
+			selectSecretStore({
+				offers: DEFAULT_SECRET_STORE_OFFERS,
+				evidence: [
+					evidence(
+						"infisical-cloud-attach",
+						false,
+						"no Infisical organization",
+					),
+					evidence(
+						"infisical-self-hosted",
+						false,
+						"no fresh compute fleet host",
+					),
+					evidence(
+						"auth-md",
+						false,
+						"auth.md metadata advertises no anonymous registration",
+					),
+					evidence("cloudflare-temporary", true),
+				],
+				now: NOW,
+			});
+		} catch (error) {
+			message = String(error);
+		}
+		expect(message).toContain(
+			"the relay cannot read this store yet (runtime binding designed, not built)",
+		);
+		expect(message).toContain("no Infisical organization");
 	});
 
 	it("takes the preferred claimable store when designs are allowed", () => {
@@ -105,19 +165,19 @@ describe("routing secrets.config-service/v1 at deploy time", () => {
 		expect(route.selection.selectedKind).toBe("cloudflare-temporary");
 	});
 
-	it("falls to attach-only when no fleet host is free", () => {
+	it("falls to self-hosted Infisical only when the owner has no Infisical Cloud organization", () => {
 		const route = selectSecretStore({
 			offers: DEFAULT_SECRET_STORE_OFFERS,
 			evidence: [
-				evidence("infisical-self-hosted", false, "no fresh compute fleet host"),
-				evidence("infisical-cloud-attach", true),
+				evidence("infisical-cloud-attach", false, "no Infisical organization"),
+				evidence("infisical-self-hosted", true),
 			],
 			now: NOW,
 		});
-		expect(route.selection.selectedKind).toBe("infisical-cloud-attach");
-		expect(route.selection.skipped.map((skip) => skip.reason)).toContain(
-			"not probed by this deploy",
-		);
+		expect(route.selection.selectedKind).toBe("infisical-self-hosted");
+		expect(route.selection.skipped.map((skip) => skip.reason)).toEqual([
+			"no Infisical organization",
+		]);
 	});
 
 	it("refuses with every reason when nothing is available", () => {

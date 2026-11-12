@@ -46,8 +46,9 @@ export function parseSecretStoreBinding(
 		(ENDPOINT.test(record.endpoint) ||
 			(options.allowLoopback === true && LOOPBACK.test(record.endpoint))) &&
 		ID.test(record.projectId) &&
-		ID.test(record.deployProjectId) &&
-		record.deployProjectId !== record.projectId &&
+		(record.deployProjectId === "" ||
+			(ID.test(record.deployProjectId) &&
+				record.deployProjectId !== record.projectId)) &&
 		/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(record.environment) &&
 		/^\/([A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*)?$/u.test(record.secretPath) &&
 		ID.test(record.relayIdentityId) &&

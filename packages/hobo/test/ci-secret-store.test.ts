@@ -65,7 +65,7 @@ function never(): Promise<string> {
 }
 
 describe("hobo ci secret-store plan", () => {
-	it("refuses with every offer's reason when nothing can provide the store", async () => {
+	it("routes to Infisical Cloud with OIDC Auth by default, with no token, and names the dashboard steps", async () => {
 		const cwd = await tempDir("hobo-secret-store-");
 		const result = await runCiSecretStore({
 			subcommand: "plan",
@@ -76,14 +76,26 @@ describe("hobo ci secret-store plan", () => {
 			prompt: never,
 			now: () => NOW,
 		});
-		expect(result.ok).toBe(false);
-		expect(result.code).toBe("SECRET_STORE_NO_OFFER");
-		expect(result.message).toContain("cloudflare-temporary");
-		expect(result.message).toContain("interactive terminal");
-		expect(result.message).toContain("--fleet-host");
+		expect(result.ok).toBe(true);
+		// SAFETY: a successful plan's data is the shape runCiSecretStore builds.
+		const data = result.data as {
+			selection: { selected: string };
+			claimSteps: string[];
+			offers: { kind: string; runtimeAuth: string }[];
+		};
+		expect(data.selection.selected).toBe("infisical-cloud-attach");
+		expect(data.claimSteps.join("\n")).toContain(
+			"hobo ci secret-store connect",
+		);
+		expect(
+			data.offers
+				.filter((offer) => offer.runtimeAuth === "stored-token")
+				.map((offer) => offer.kind),
+		).toEqual(["1password-attach", "bitwarden-attach"]);
+		expect(stub.bodies).toHaveLength(0);
 	});
 
-	it("routes to the self-hosted store over designed offers, and names the claim steps", async () => {
+	it("routes to the self-hosted store when Infisical Cloud is ruled out, and names the claim steps", async () => {
 		const cwd = await tempDir("hobo-secret-store-");
 		const result = await runCiSecretStore({
 			subcommand: "plan",
@@ -104,9 +116,8 @@ describe("hobo ci secret-store plan", () => {
 			claimSteps: string[];
 		};
 		expect(data.selection.selected).toBe("infisical-self-hosted");
-		expect(data.selection.skipped.map((skip) => skip.kind)).toEqual([
-			"auth-md",
-			"cloudflare-temporary",
+		expect(data.selection.skipped.map((skip) => skip.reason)).toEqual([
+			"the owner chose a self-hosted Infisical (--fleet-host)",
 		]);
 		expect(data.claimSteps.join("\n")).toContain(
 			"hobo claim open secret-store",
