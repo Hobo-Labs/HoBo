@@ -1040,24 +1040,19 @@ type ParsedAdvert = Readonly<{
 	labels: readonly string[];
 }>;
 
+/** The advert part of an outcome's outputs (`RunnerHostAdvertOutputs`). */
+const AdvertOutputs = z.object({
+	healthy: z.boolean(),
+	validUntilMs: z.number().finite(),
+	labels: z.array(z.string()).default([]),
+});
+
 /** The advert part of an outcome's outputs, parsed; undefined when absent or malformed. */
-function advertOutputs(value: unknown): ParsedAdvert | undefined {
-	if (value === null || Array.isArray(value) || !(value instanceof Object))
-		return undefined;
-	const healthy: unknown = Reflect.get(value, "healthy");
-	const validUntilMs: unknown = Reflect.get(value, "validUntilMs");
-	const labels: unknown = Reflect.get(value, "labels");
-	if (healthy !== true && healthy !== false) return undefined;
-	if (!Number.isFinite(validUntilMs)) return undefined;
-	return {
-		healthy,
-		validUntilMs: Number(validUntilMs),
-		labels: Array.isArray(labels)
-			? labels.flatMap((label: unknown) =>
-					typeof label === "string" ? [label] : [],
-				)
-			: [],
-	};
+function advertOutputs(
+	value: ResolveOutcome["outputs"][string] | undefined,
+): ParsedAdvert | undefined {
+	const parsed = AdvertOutputs.safeParse(value);
+	return parsed.success ? parsed.data : undefined;
 }
 
 /**

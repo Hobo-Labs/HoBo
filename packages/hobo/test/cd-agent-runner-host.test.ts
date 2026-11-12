@@ -45,6 +45,7 @@ import {
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
 
+// SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;
 const PREVIOUS = imageAt("1");
 const TARGET = imageAt("2");
@@ -68,7 +69,9 @@ function realizeInput(image: string | undefined, campId: CampId = BOX) {
 			campId,
 			...(image ? { image } : undefined),
 		}),
+		// SAFETY: opaque ids a lease would carry; the realizer only echoes them.
 		reconcilerId: "rec_box" as ReconcilerId,
+		// SAFETY: as above.
 		fence: 7n as FenceToken,
 		signal: new AbortController().signal,
 	};
@@ -97,7 +100,7 @@ afterEach(async () => {
 	if (dir) await rm(dir, { recursive: true, force: true });
 	dir = "";
 });
-async function writeConfig(value: object = CONFIG): Promise<string> {
+async function writeConfig(value: typeof CONFIG = CONFIG): Promise<string> {
 	dir = await mkdtemp(join(tmpdir(), "runner-host-agent-"));
 	configPath = join(dir, "agent.runner-host.json");
 	await writeFile(configPath, JSON.stringify(value));
@@ -196,6 +199,7 @@ describe("agent realizer selection (hobo deploy agent run)", () => {
 			env: { [CD_RUNNER_HOST_ENV]: configPath },
 			cwd: "/",
 			now: () => 0,
+			// SAFETY: another runner host's Camp id, the refusal under test.
 			campIds: [BOX, "hobo-ci-runners/mesh-1" as CampId],
 			simulated: () => {
 				throw new Error("not simulated");

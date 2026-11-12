@@ -24,6 +24,7 @@ import {
 	CD_RUNNER_HOST_ENV,
 	parseRunnerHostAgentConfig,
 } from "./cd-agent-runner-host.js";
+import type { JsonValue } from "./json.js";
 
 function refusal(code: string, message: string, remediation: string) {
 	return {
@@ -72,7 +73,7 @@ async function runnerHostRealizer(
 	input: AgentRealizerInput,
 	configFile: string,
 ): Promise<Outcome<Realizer>> {
-	let raw: unknown;
+	let raw: JsonValue;
 	try {
 		raw = JSON.parse(await readFile(resolve(input.cwd, configFile), "utf8"));
 	} catch (error) {

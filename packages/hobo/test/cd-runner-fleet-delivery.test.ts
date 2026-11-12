@@ -43,7 +43,12 @@ import {
 	runnerFleetTopology,
 } from "@hobo/ci-gh-actions";
 import { runnerFleetRail } from "@hobo/ci-gh-actions/runner-host";
-import type { HttpTransport, JsonObject, TransportRequest } from "@hobo/core";
+import type {
+	HttpTransport,
+	JsonObject,
+	JsonValue,
+	TransportRequest,
+} from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRealizer } from "../src/cd-agent.js";
 import {
@@ -53,6 +58,7 @@ import {
 import { runCdDeploySubcommand } from "../src/cd-deploy.js";
 import { agentReconciler, openCdRuntime } from "../src/cd-runtime.js";
 import { openCdStore } from "../src/cd-store.js";
+import { isJsonArray, isJsonObject } from "../src/json.js";
 import {
 	digestOf,
 	FakeRunnerHost,
@@ -64,6 +70,7 @@ const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
 const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
 const MODULE = "packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts";
+// SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;
 const FLEET = "hobo-ci-runner-fleet";
 /**
@@ -127,11 +134,10 @@ async function freshDir(): Promise<string> {
 	return dir;
 }
 
+type AgentKeys = Readonly<{ privateJwk: JsonObject; publicJwk: JsonObject }>;
+
 /** An agent key pair: the private JWK stays with the agent, the public one enrolls. */
-function agentKeys(): Readonly<{
-	privateJwk: JsonObject;
-	publicJwk: JsonObject;
-}> {
+function agentKeys(): AgentKeys {
 	const { privateKey, publicKey } = generateKeyPairSync("ec", {
 		namedCurve: "P-256",
 	});
@@ -146,7 +152,7 @@ type Envelope = Readonly<{
 	ok: boolean;
 	code?: string;
 	message?: string;
-	data?: Readonly<Record<string, unknown>>;
+	data?: JsonObject;
 }>;
 
 /** One `hobo deploy … --json` run of the built binary from the repo root. */
@@ -187,21 +193,19 @@ function deploy(
 	});
 }
 
-/** An enum value as printed (number or protobuf JSON name) to its short name. */
-function enumName(
-	values: Readonly<Record<string | number, string | number>>,
-	value: unknown,
-): string {
-	if (typeof value === "number") return String(values[value]);
-	return String(value).replace(/^ENROLLMENT_STATE_/u, "");
+/** A member of an envelope or event body, by path (array members by index). */
+function pick(
+	value: JsonValue | undefined,
+	...path: string[]
+): JsonValue | undefined {
+	let at = value;
+	for (const key of path) {
+		if (isJsonArray(at)) at = at[Number(key)];
+		else if (isJsonObject(at)) at = at[key];
+		else return undefined;
+	}
+	return at;
 }
-
-const pick = (value: unknown, ...path: string[]): unknown =>
-	path.reduce<unknown>(
-		(at, key) =>
-			at !== null && typeof at === "object" ? Reflect.get(at, key) : undefined,
-		value,
-	);
 
 describe.skipIf(!existsSync(BIN))(
 	"the runner fleet through the built binary",
@@ -238,8 +242,8 @@ describe.skipIf(!existsSync(BIN))(
 				publicFile,
 			]);
 			expect(enrolled.ok, enrolled.message).toBe(true);
-			expect(enumName(EnrollmentState, pick(enrolled.data, "state"))).toBe(
-				"PENDING",
+			expect(["ENROLLMENT_STATE_PENDING", EnrollmentState.PENDING]).toContain(
+				pick(enrolled.data, "state"),
 			);
 			const id = String(pick(enrolled.data, "reconciler", "reconcilerId"));
 			// Grant 1 and grant 2 come from separate principals (I24).
@@ -259,12 +263,9 @@ describe.skipIf(!existsSync(BIN))(
 				{ HOBO_USER: "ops-bob" },
 			);
 			expect(accepted.ok, accepted.message).toBe(true);
-			expect(
-				enumName(
-					EnrollmentState,
-					pick(accepted.data, "reconciler", "enrollment"),
-				),
-			).toBe("ACCEPTED");
+			expect(["ENROLLMENT_STATE_ACCEPTED", EnrollmentState.ACCEPTED]).toContain(
+				pick(accepted.data, "reconciler", "enrollment"),
+			);
 
 			// The module's Rail approves the fleet's provider: placement no longer
 			// refuses rail-providers-unknown. The box has not contacted the Station
@@ -454,6 +455,7 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				operator("ops-alice"),
 			);
 			if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
+			// SAFETY: the id the enrollment ledger just minted.
 			const reconcilerId = enrolled.value.reconciler
 				.reconcilerId as ReconcilerId;
 			expect(
@@ -650,6 +652,7 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				{
 					pipeline: FLEET,
 					node: "fleet",
+					// SAFETY: the id the Freight ledger just recorded.
 					freightId: freight.freightId as FreightId,
 					decision: decided.value,
 					fanout: node.fanout,

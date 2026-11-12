@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters -- SAFETY: topology files are untrusted module exports; each `rails` entry is parsed member by member and rebuilt with @hobo/stations createRail before it is used. */
 /**
  * Station Rails declared in topology files (`--yard`, HOBO_CD_TOPOLOGY, a
  * delivery module applied with `pipeline apply --file`): the `rails` export.

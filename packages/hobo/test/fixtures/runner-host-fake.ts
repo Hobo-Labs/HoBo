@@ -105,85 +105,89 @@ export class FakeRunnerHost {
 	}
 
 	ports(): RunnerHostPorts {
-		const host = this;
-		return {
-			containers: {
-				async listWorkerContainers() {
-					return [...host.containers.values()].map(
-						({ image: _i, startedAtMs: _s, ...c }) => c,
-					);
-				},
-				async pull(image: string) {
-					host.calls.push(`pull ${image}`);
-					host.images.add(image);
-				},
-				async inspectImage(image: string) {
-					if (!host.images.has(image)) throw new Error("No such image");
-					return { id: digestOf(image), repoTags: [], labels: {} };
-				},
-				async create(spec) {
-					host.calls.push(`create ${spec.image}`);
-					if (!host.images.has(spec.image)) throw new Error("No such image");
-					const containerId = String(host.nextId++).padStart(64, "c");
-					host.containers.set(containerId, {
-						name: spec.name,
-						containerId,
-						state: "created",
-						image: spec.image,
-					});
-					return { name: spec.name, containerId };
-				},
-				async start(_name: string, containerId: string) {
-					const container = host.containers.get(containerId);
-					if (!container) throw new Error("No such container");
-					container.state = "running";
-					container.startedAtMs = host.nowMs;
-				},
-				async stop(_name: string, containerId: string) {
-					host.calls.push(`stop ${host.containers.get(containerId)?.image}`);
-					host.containers.delete(containerId);
-				},
-				async remove(_name: string, containerId: string) {
-					if (!host.containers.delete(containerId))
-						throw new Error("No such container");
-				},
-				async isRunning(_name: string, containerId: string) {
-					return host.containers.get(containerId)?.state === "running";
-				},
-			},
-			jobs: {
-				async leases() {
-					return [];
-				},
-				async runners() {
-					return [];
-				},
-				async meshAdvert() {
-					const live = [...host.containers.values()].find(
-						(c) => c.state === "running" && c.name.startsWith(CONTROLLER),
-					);
-					if (!live) return undefined;
-					return {
-						id: host.options.hostId ?? "box",
-						freeSlots: 3,
-						totalSlots: 4,
-						healthy:
-							host.admission && !host.options.unhealthy?.includes(live.image),
-						labels: [...(host.options.labels ?? ["hobo", "hobo-trunk"])],
-						validUntilMs: host.nowMs + 60_000,
-						sinceMs: live.startedAtMs ?? 0,
-						platform: { os: "linux", arch: "x64" },
-					};
-				},
-				async pauseAdmission() {
-					host.calls.push("pause");
-					host.admission = false;
-				},
-				async resumeAdmission() {
-					host.calls.push("resume");
-					host.admission = true;
-				},
-			},
-		};
+		return portsOf(this);
 	}
+}
+
+/** The ports a FakeRunnerHost hands the realizer. */
+function portsOf(host: FakeRunnerHost): RunnerHostPorts {
+	return {
+		containers: {
+			async listWorkerContainers() {
+				return [...host.containers.values()].map(
+					({ image: _i, startedAtMs: _s, ...c }) => c,
+				);
+			},
+			async pull(image: string) {
+				host.calls.push(`pull ${image}`);
+				host.images.add(image);
+			},
+			async inspectImage(image: string) {
+				if (!host.images.has(image)) throw new Error("No such image");
+				return { id: digestOf(image), repoTags: [], labels: {} };
+			},
+			async create(spec) {
+				host.calls.push(`create ${spec.image}`);
+				if (!host.images.has(spec.image)) throw new Error("No such image");
+				const containerId = String(host.nextId++).padStart(64, "c");
+				host.containers.set(containerId, {
+					name: spec.name,
+					containerId,
+					state: "created",
+					image: spec.image,
+				});
+				return { name: spec.name, containerId };
+			},
+			async start(_name: string, containerId: string) {
+				const container = host.containers.get(containerId);
+				if (!container) throw new Error("No such container");
+				container.state = "running";
+				container.startedAtMs = host.nowMs;
+			},
+			async stop(_name: string, containerId: string) {
+				host.calls.push(`stop ${host.containers.get(containerId)?.image}`);
+				host.containers.delete(containerId);
+			},
+			async remove(_name: string, containerId: string) {
+				if (!host.containers.delete(containerId))
+					throw new Error("No such container");
+			},
+			async isRunning(_name: string, containerId: string) {
+				return host.containers.get(containerId)?.state === "running";
+			},
+		},
+		jobs: {
+			async leases() {
+				return [];
+			},
+			async runners() {
+				return [];
+			},
+			async meshAdvert() {
+				const live = [...host.containers.values()].find(
+					(c) => c.state === "running" && c.name.startsWith(CONTROLLER),
+				);
+				if (!live) return undefined;
+				return {
+					id: host.options.hostId ?? "box",
+					freeSlots: 3,
+					totalSlots: 4,
+					healthy:
+						host.admission && !host.options.unhealthy?.includes(live.image),
+					labels: [...(host.options.labels ?? ["hobo", "hobo-trunk"])],
+					validUntilMs: host.nowMs + 60_000,
+					sinceMs: live.startedAtMs ?? 0,
+					platform: { os: "linux", arch: "x64" },
+				};
+			},
+			async pauseAdmission() {
+				host.calls.push("pause");
+				host.admission = false;
+			},
+			async resumeAdmission() {
+				host.calls.push("resume");
+				host.admission = true;
+			},
+		},
+	};
 }

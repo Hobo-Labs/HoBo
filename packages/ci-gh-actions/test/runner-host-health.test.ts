@@ -34,7 +34,14 @@ const DIGEST = `sha256:${"2".repeat(64)}`;
 
 /** A resolver outcome as the realizer reports it for the recorded box host. */
 function outcomeWith(
-	meshAdvert: Record<string, unknown> | undefined,
+	meshAdvert:
+		| Readonly<{
+				healthy: boolean;
+				validUntilMs: number;
+				sinceMs?: number;
+				labels: readonly string[];
+		  }>
+		| undefined,
 	serving = true,
 ) {
 	return {

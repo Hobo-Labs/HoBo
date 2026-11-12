@@ -26,7 +26,11 @@
  * resolves, logs or records it.
  */
 
-import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import {
+	create,
+	fromJson,
+	type JsonValue as ProtoJson,
+} from "@bufbuild/protobuf";
 import {
 	type CampClaimRecord,
 	CampClaimRecordSchema,
@@ -65,7 +69,12 @@ import {
 	ResolverError,
 	type ResourceResolver,
 } from "@hobo/core";
-import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+} from "./json.js";
 
 // public-contract: env var naming the runner-host agent config file on a runner host.
 export const CD_RUNNER_HOST_ENV = "HOBO_CD_RUNNER_HOST";
@@ -106,7 +115,7 @@ const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostI
 
 /** Parse the agent config once; every problem is listed, nothing partial is returned. */
 export function parseRunnerHostAgentConfig(
-	value: unknown,
+	value: JsonValue,
 ): Outcome<RunnerHostAgentConfig> {
 	if (!isJsonObject(value))
 		return refusal(
@@ -514,7 +523,7 @@ function acceptedObservation(
 		if (!isJsonObject(body) || !isJsonObject(body.observation))
 			return undefined;
 		// SAFETY: plain JSON just parsed; fromJson parses it with the schema.
-		const json = body.observation as JsonValue;
+		const json = body.observation as ProtoJson;
 		return fromJson(ReconcileObservationRecordSchema, json);
 	} catch {
 		return undefined;
@@ -529,7 +538,7 @@ function acceptedObservation(
  */
 export function withRunnerHostHealthIngest(
 	factories: CdFactories,
-	onError: (error: unknown) => void = () => {},
+	onError: (error: Error) => void = () => {},
 ): CdFactories {
 	return Object.freeze({
 		...factories,
@@ -555,7 +564,7 @@ export function withRunnerHostHealthIngest(
 								observation: accepted,
 								tenant: deps.tenant,
 								now: deps.now,
-							}).catch(onError);
+							}).catch((error: Error) => onError(error));
 					}
 					return response;
 				},
