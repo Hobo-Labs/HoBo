@@ -216,6 +216,21 @@ describe("the fleet verdict reporter", () => {
 		expect(h.logs.at(-1)).toMatchObject({ sent: "failed" });
 	});
 
+	it("logs its state on every change and at most once per 5 minutes otherwise, failed sends included", async () => {
+		const h = harness({}, async () => new Response("{}", { status: 503 }));
+		// Samples from 0 to 290 s: one line, at the start.
+		await h.run(300);
+		const states = () =>
+			h.logs.filter((entry) => entry.event === "hobo_ci_fleet_verdict_state");
+		expect(states()).toHaveLength(1);
+		await h.run(10);
+		expect(states()).toHaveLength(2);
+		h.box.blocked = ["hobo"];
+		await h.run(70);
+		expect(states().at(-1)).toMatchObject({ changed: true, blocked: "hobo" });
+		expect(states()).toHaveLength(3);
+	});
+
 	it("reports in shadow mode what it would block, marked shadow", async () => {
 		const h = harness({ mode: "shadow" });
 		h.box.blocked = ["hobo-trunk"];

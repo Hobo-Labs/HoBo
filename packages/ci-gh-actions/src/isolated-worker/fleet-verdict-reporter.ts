@@ -204,7 +204,6 @@ export function createFleetVerdictReporter(
 		}
 		if (
 			changed ||
-			sent === false ||
 			lastLoggedAtMs === undefined ||
 			nowMs - lastLoggedAtMs >= FLEET_VERDICT_LOG_EVERY_MS
 		) {
