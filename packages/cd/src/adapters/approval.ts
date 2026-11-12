@@ -379,7 +379,11 @@ export type WebhookApproverDeps = Readonly<{
 }>;
 
 export interface WebhookApprover extends ApprovalPort {
-	/** Signed callback: `{ token, decision: "approved" | "denied", approver }`. */
+	/**
+	 * Signed callback: `{ token, decision: "approved" | "denied", approver }`.
+	 * The decision is recorded as the authenticated caller principal; the body's
+	 * `approver` is recorded as an unverified claim.
+	 */
 	callback(request: FeedRequest, ctx: CdContext): Promise<FeedResponse>;
 }
 
@@ -511,7 +515,10 @@ export function createWebhookApprover(d: WebhookApproverDeps): WebhookApprover {
 				ledger,
 				String(claims.requestId),
 				decision === "approved",
-				`webhook:${approver}`,
+				// The decider is the authenticated caller; the body's approver
+				// is self-asserted by whoever holds the token, so it is kept
+				// only as an explicitly unverified claim.
+				`webhook:${principalName(ctx.principal)} unverified-approver=${approver}`,
 				ctx,
 				d.telemetry,
 				d.tenant,

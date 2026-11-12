@@ -10,6 +10,8 @@ import {
 	createWebhookApprover,
 	parseApprovalSubject,
 } from "../../src/adapters/approval.js";
+import { principalName } from "../../src/promotion/journal.js";
+import { SAGA_FACT } from "../../src/promotion/state.js";
 import {
 	FakeNotify,
 	RecordingAuthorizer,
@@ -233,7 +235,7 @@ describe("webhook approver", () => {
 			);
 			return response.status;
 		};
-		return { c, approver, sent, call };
+		return { c, store, approver, sent, call };
 	}
 
 	it("never carries the secret in the request, and the token verifies only with it", async () => {
@@ -261,6 +263,14 @@ describe("webhook approver", () => {
 		expect(await w.approver.status("promotion:promo_1/prod-1")).toBe(
 			"approved",
 		);
+		// The recorded decider is the authenticated caller, not the body's claim.
+		const decided = w.store
+			.events(SAGA_FACT.stepEmitted)
+			.map((e) => String((e.data as { emittedType?: string }).emittedType))
+			.filter((handle) => handle.startsWith("webhook:"));
+		expect(decided).toEqual([
+			`webhook:${principalName(context(w.c.now).principal)} unverified-approver=bot`,
+		]);
 	});
 
 	it("refuses expired tokens, malformed bodies and other methods", async () => {

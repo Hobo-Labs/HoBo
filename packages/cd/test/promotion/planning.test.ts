@@ -225,14 +225,16 @@ describe("planning resolver (planning.ts)", () => {
 			{ freight, campId: camp("us-1"), intent: "promote" },
 			context(() => T0),
 		);
-		if (!missing.ok)
-			expect(missing.reasons[0]?.code).toBe(PLANNING_REASON.declarationMissing);
+		expect(missing.ok).toBe(false);
+		if (missing.ok) throw new Error("expected a missing-declaration refusal");
+		expect(missing.reasons[0]?.code).toBe(PLANNING_REASON.declarationMissing);
 		const unknown = await s.resolver.resolve(
 			{ freight, campId: camp("mars-1"), intent: "promote" },
 			context(() => T0),
 		);
-		if (!unknown.ok)
-			expect(unknown.reasons[0]?.code).toBe(PLANNING_REASON.campUnknown);
+		expect(unknown.ok).toBe(false);
+		if (unknown.ok) throw new Error("expected an unknown-Camp refusal");
+		expect(unknown.reasons[0]?.code).toBe(PLANNING_REASON.campUnknown);
 	});
 
 	it("refuses a Camp Matching cannot satisfy", async () => {

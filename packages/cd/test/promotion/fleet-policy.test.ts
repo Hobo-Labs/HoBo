@@ -183,14 +183,11 @@ describe("Trails sequencing (D11)", () => {
 			h.ctx(),
 		);
 		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.reasons[0]?.code).toBe(
-				PROMOTION_REASON.rollbackPastContract,
-			);
-			expect(result.reasons[0]?.remediation).toMatch(
-				/compensating Trails expand for migration orders-v2/,
-			);
-		}
+		if (result.ok) throw new Error("expected a rollback-past-contract refusal");
+		expect(result.reasons[0]?.code).toBe(PROMOTION_REASON.rollbackPastContract);
+		expect(result.reasons[0]?.remediation).toMatch(
+			/compensating Trails expand for migration orders-v2/,
+		);
 		expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f1");
 	});
 
@@ -201,11 +198,12 @@ describe("Trails sequencing (D11)", () => {
 			{ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "m" },
 			h.ctx(),
 		);
-		expect(result.ok && result.value.state).toBe(PromotionState.REJECTED);
-		if (result.ok)
-			expect(result.value.reasons[0]?.code).toBe(
-				PROMOTION_REASON.trailsUnavailable,
-			);
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("expected a recorded rejection");
+		expect(result.value.state).toBe(PromotionState.REJECTED);
+		expect(result.value.reasons[0]?.code).toBe(
+			PROMOTION_REASON.trailsUnavailable,
+		);
 		expect(h.desired.applied).toHaveLength(0);
 	});
 });
