@@ -96,11 +96,7 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
-import {
-	isJsonString,
-	type JsonObject,
-	parseJsonObject,
-} from "./json.js";
+import { isJsonString, type JsonObject, parseJsonObject } from "./json.js";
 
 // public-contract: the relay's delivery-as-code file, relative to its project.
 export const RELAY_DELIVERY_FILE = "deploy/delivery.ts";
