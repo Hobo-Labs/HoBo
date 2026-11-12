@@ -59,6 +59,11 @@ export {
 	type TrailsPhase,
 } from "../adapters/trails.js";
 export {
+	PROMOTION_EVENT_CONTRACTS,
+	promotionCorpusBaseline,
+	toPromotionCorpusBody,
+} from "./event-contracts.js";
+export {
 	PREVIEW_CAMP_SEPARATOR,
 	previewCampIdFor,
 	previewPromotionIdFor,
