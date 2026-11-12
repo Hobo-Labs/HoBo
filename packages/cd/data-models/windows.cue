@@ -27,11 +27,13 @@ import "strings"
 // One RRULE part of the accepted subset; COUNT/UNTIL exclusivity, value
 // ranges and BYDAY ordinals are checked by `parseRrule`.
 #RrulePart: =~"^(FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)|INTERVAL=[0-9]+|COUNT=[0-9]+|UNTIL=[0-9]{8}(T[0-9]{6}Z)?|BYDAY=[+-]?[0-9]{0,2}(MO|TU|WE|TH|FR|SA|SU)(,[+-]?[0-9]{0,2}(MO|TU|WE|TH|FR|SA|SU))*|BYMONTHDAY=[+-]?[0-9]{1,2}(,[+-]?[0-9]{1,2})*|BYMONTH=[0-9]{1,2}(,[0-9]{1,2})*|BYHOUR=[0-9]{1,2}(,[0-9]{1,2})*|BYMINUTE=[0-9]{1,2}(,[0-9]{1,2})*)$"
-#Rrule:     =~"^(RRULE:)?FREQ=" & =~"^(RRULE:)?[A-Z]+=[^;]+(;[A-Z]+=[^;]+)*$"
+#Rrule:     =~"(^|;|:)FREQ=" & =~"^(RRULE:)?[A-Z]+=[^;]+(;[A-Z]+=[^;]+)*$"
+
+#WindowKind: "WINDOW_KIND_ALLOW" | "WINDOW_KIND_FREEZE"
 
 #ChangeWindowRecord: {
 	name:      #Slug
-	kind:      "WINDOW_KIND_ALLOW" | "WINDOW_KIND_FREEZE"
+	kind:      #WindowKind
 	selector?: #SelectorRecord
 	// RFC 5545 RRULE subset; absent means a single occurrence [startsAt, endsAt).
 	rrule?:      #Rrule

@@ -29,9 +29,12 @@ import (
 #DepartureAction: "DEPARTURE_ACTION_UNSPECIFIED" | "DEPARTURE_ACTION_DELETE" | "DEPARTURE_ACTION_ORPHAN" | "DEPARTURE_ACTION_ORPHAN_DATA"
 #PurgeMode:       "PURGE_MODE_UNSPECIFIED" | "PURGE_MODE_GRACEFUL" | "PURGE_MODE_NEVER" | "PURGE_MODE_IMMEDIATE"
 
+#HookKind:  "HOOK_KIND_RUNBOOK" | "HOOK_KIND_NOTIFY" | "HOOK_KIND_SUITE"
+#HookPoint: "HOOK_POINT_BEFORE_APPLY" | "HOOK_POINT_AFTER_CONVERGED" | "HOOK_POINT_AFTER_QUALIFIED" | "HOOK_POINT_ON_FAILURE"
+
 #HookRecord: {
-	kind:  "HOOK_KIND_RUNBOOK" | "HOOK_KIND_NOTIFY" | "HOOK_KIND_SUITE"
-	point: "HOOK_POINT_BEFORE_APPLY" | "HOOK_POINT_AFTER_CONVERGED" | "HOOK_POINT_AFTER_QUALIFIED" | "HOOK_POINT_ON_FAILURE"
+	kind:  #HookKind
+	point: #HookPoint
 	ref:   #Text
 }
 
@@ -102,6 +105,9 @@ import (
 // pipelines, and every RAIL node has one (D24).
 #BindleNode: #ListNode | #PlacedNode
 #RailNode:   {#ListNode, policyMode: #PolicyMode} | {#PlacedNode, policyMode: #PolicyMode}
+
+// Any node of either kind of pipeline.
+#PipelineNodeRecord: #BindleNode | #RailNode
 
 #PipelineBase: {
 	schemaVersion?: "hobo.cd.pipeline/v1"

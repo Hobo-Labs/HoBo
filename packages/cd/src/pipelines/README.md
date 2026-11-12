@@ -30,6 +30,20 @@ ones:
 
 ## Design
 
+**Parse, don't validate.** Nothing reaches the journal unparsed.
+`validatePipeline` + `normalizePipeline` turn a `PipelineRecord` into its
+parsed form (schema stamped, subject normalized, definer recorded) or a typed
+refusal; availability works on derived types (`NodeAvailability`,
+`PlacedView`). `data-models/pipelines.cue` carries the single-record
+constraints, and `test/pipelines/cue.test.ts` checks that the two agree.
+
+**Event architecture.** Each command (`apply`, the requests `tick` makes)
+appends one event to the event store; the per-pipeline stream
+`cd-pipeline-<name>` is the actor's state. Queries read a projection (a
+materialized view used as the read store) rebuilt from the journal on start.
+No snapshot is needed: a pipeline stream holds its definitions and one
+availability fact per node and Freight.
+
 ### `apply`
 
 `apply` validates the whole graph and reports every problem:

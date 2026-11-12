@@ -62,6 +62,14 @@ describe.skipIf(cue === undefined)(
 					selector: { envTypes: ["production"], labels: { tier: "web" } },
 				}),
 				window({
+					name: "any-order",
+					kind: WindowKind.FREEZE,
+					timezone: "UTC",
+					rrule: "INTERVAL=2;FREQ=DAILY",
+					durationMs: BigInt(HOUR),
+					startsAt: "2026-11-01T00:00:00Z",
+				}),
+				window({
 					name: "launch",
 					kind: WindowKind.FREEZE,
 					timezone: "UTC",

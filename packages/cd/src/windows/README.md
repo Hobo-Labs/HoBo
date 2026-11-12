@@ -20,6 +20,11 @@ This folder is half of work package WP5 of
 
 ## Design
 
+- **Parse, don't validate.** `compileWindow` turns a record into a derived
+  type (`CompiledWindow`: rule parsed into `RecurrenceRule`, durations as
+  numbers) or a typed refusal; nothing reaches the journal unparsed.
+  `data-models/windows.cue` carries the single-record constraints, checked
+  against the parser in `test/windows/cue.test.ts`.
 - **The RRULE subset.** `FREQ=DAILY|WEEKLY|MONTHLY|YEARLY` with `BYDAY`,
   `BYMONTHDAY`, `BYMONTH`, `BYHOUR`, `BYMINUTE`, `INTERVAL`, `COUNT` and
   `UNTIL`.
@@ -68,7 +73,8 @@ This folder is half of work package WP5 of
   - Appends use stream-head CAS and idempotency keys: `window:<digest>` and
     `override:<digest>`. Redefining identically is a no-op (I12).
   - A catch-up projection over both event types is the read store. It is
-    rebuilt from the journal on start.
+    rebuilt from the journal on start. No snapshot is needed: a window
+    stream holds a few definitions and overrides.
   - Evaluation is pure over the projection and the instant the caller
     passes (I8).
 - **Governance (D15).**
