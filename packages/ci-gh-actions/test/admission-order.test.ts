@@ -165,7 +165,9 @@ it("admits CI deps layer after plan and before full gate on the same push", asyn
 
 it("does not prioritize CI deps layer ahead of PR impact validation on pull requests", async () => {
 	const { github } = transport(
-		new Map([[1, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }]]),
+		new Map([
+			[1, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
 	);
 	const order = createAdmissionOrder(github);
 	const fabric = (jobId: number, jobName: string) => ({
