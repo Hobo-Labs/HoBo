@@ -131,7 +131,7 @@ describe("golden inventory journal corpus (v1 bodies)", () => {
 				type: entry.type,
 				v: entry.v,
 				data: entry.data,
-				...(entry.meta ? { meta: entry.meta } : {}),
+				meta: entry.meta ?? {},
 			})),
 			{ expectedSeq: 0, actor: OPERATOR, tenant: TENANT },
 		);

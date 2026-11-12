@@ -62,9 +62,9 @@ export type DecideInput = Readonly<{
 	subject: PlacementSubject;
 	railDelivery: RailDeliveryRecord | undefined;
 	/** The Rail's `approvedProviders`; undefined when the composition supplies none. */
-	approvedProviders?: readonly string[];
-	exclude?: readonly string[];
-	count?: number;
+	approvedProviders?: readonly string[] | undefined;
+	exclude?: readonly string[] | undefined;
+	count?: number | undefined;
 	pipeline: string;
 	node: string;
 	atMs: number;
@@ -319,10 +319,16 @@ function select(
 	return { ok: true, value: { selected, blocked } };
 }
 
+/** Groups of a decision plus the reasons recorded while forming them. */
+type GroupedDecision = Readonly<{
+	groups: PlacementGroupDecisionRecord[];
+	reasons: ReasonRecord[];
+}>;
+
 function groupsOf(
 	placement: PlacementRecord,
 	selected: readonly CampView[],
-): { groups: PlacementGroupDecisionRecord[]; reasons: ReasonRecord[] } {
+): GroupedDecision {
 	const total = selected.length;
 	const remaining = [...selected];
 	const groups: PlacementGroupDecisionRecord[] = [];

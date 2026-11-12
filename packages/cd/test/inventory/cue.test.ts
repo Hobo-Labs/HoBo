@@ -1,6 +1,6 @@
 // data-models/inventory.cue and the inventory parse boundary must agree: what
 // the inventory records vets clean, and what the parsers refuse, CUE refuses.
-import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	CampClaimRecordSchema,
@@ -20,6 +20,7 @@ import {
 	parseCampSet,
 	parseTaint,
 } from "../../src/inventory/index.js";
+import { jsonOf } from "../../src/inventory/json.js";
 import { cue, vetter } from "./cue-support.js";
 import {
 	AGENT,
@@ -104,16 +105,18 @@ describe.skipIf(cue === undefined)(
 			);
 			expect(statuses.length).toBeGreaterThan(1);
 			for (const event of statuses)
-				expect(vets("#CampStatusRecord", event.data as JsonValue)).toBe(true);
+				expect(vets("#CampStatusRecord", jsonOf(event.data) ?? null)).toBe(
+					true,
+				);
 			for (const event of recorded.filter(
 				(entry) =>
 					entry.type === CD_EVENTS.CampTainted ||
 					entry.type === CD_EVENTS.CampUntainted,
 			)) {
-				expect(vets("#TaintRecord", event.data as JsonValue)).toBe(true);
+				expect(vets("#TaintRecord", jsonOf(event.data) ?? null)).toBe(true);
 			}
 			for (const event of store.events(CD_STREAMS.campSet("us")))
-				expect(vets("#CampSetRecord", event.data as JsonValue)).toBe(true);
+				expect(vets("#CampSetRecord", jsonOf(event.data) ?? null)).toBe(true);
 		});
 
 		it("refuses what the parsers refuse", () => {

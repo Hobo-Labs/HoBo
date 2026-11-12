@@ -30,6 +30,7 @@ import {
 	type ReconcileObservationRecord,
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
+import { isJsonString } from "../../src/inventory/json.js";
 import type {
 	CampId,
 	CampTopology,
@@ -104,10 +105,9 @@ export class MemoryEventStore implements DurableEventStore {
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing =
-				typeof key === "string"
-					? stream.find((event) => event.meta?.idempotencyKey === key)
-					: undefined;
+			const existing = isJsonString(key)
+				? stream.find((event) => event.meta?.idempotencyKey === key)
+				: undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
@@ -145,14 +145,14 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {
-		for (const event of [...(this.streams.get(streamId) ?? [])]) {
+		for (const event of this.streams.get(streamId) ?? []) {
 			if (event.seq > fromSeq) yield event;
 		}
 	}
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		let yielded = 0;
-		for (const entry of [...this.all]) {
+		for (const entry of this.all) {
 			if (options.after !== undefined && entry.position <= options.after)
 				continue;
 			if (options.tenant !== undefined && entry.event.tenant !== options.tenant)

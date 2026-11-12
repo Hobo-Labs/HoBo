@@ -121,7 +121,11 @@ function shuffle<T>(items: readonly T[], seed: number): T[] {
 	for (let index = out.length - 1; index > 0; index -= 1) {
 		state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
 		const pick = state % (index + 1);
-		[out[index], out[pick]] = [out[pick] as T, out[index] as T];
+		const here = out[index];
+		const there = out[pick];
+		if (here === undefined || there === undefined) continue;
+		out[index] = there;
+		out[pick] = here;
 	}
 	return out;
 }

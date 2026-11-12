@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { TaintEffect } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import { createCampInventory } from "../../src/inventory/index.js";
+import { jsonOf, stringAt } from "../../src/inventory/json.js";
 import {
 	createPlacementEngine,
 	scoreStream,
@@ -146,8 +147,7 @@ describe("golden placement journal corpus (v1 bodies)", () => {
 		]);
 		expect(decision?.scoreSnapshotDigests).toEqual([DIGEST_B]);
 		// The recorded snapshot is re-read for later decisions as is.
-		const reported = store.events(scoreStream("capacity"))[0]
-			?.data as JsonObject;
-		expect(reported.digest).toBe(DIGEST_B);
+		const reported = jsonOf(store.events(scoreStream("capacity"))[0]?.data);
+		expect(stringAt(reported, "digest")).toBe(DIGEST_B);
 	});
 });

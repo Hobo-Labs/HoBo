@@ -1,6 +1,6 @@
 // data-models/placement.cue and the placement parse boundary must agree: what
 // the engine records vets clean, and what the parsers refuse, CUE refuses.
-import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	CampSetRecordSchema,
@@ -14,6 +14,7 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS, CD_STREAMS, PLACEMENT_SCHEMA } from "../../src/events.js";
 import { createCampInventory } from "../../src/inventory/index.js";
+import { jsonOf } from "../../src/inventory/json.js";
 import {
 	createPlacementEngine,
 	parsePlacement,
@@ -137,21 +138,23 @@ describe.skipIf(cue === undefined)(
 			expect(
 				vets(
 					"#PlacementRecord",
-					events.find((e) => e.type === CD_EVENTS.PlacementDefined)
-						?.data as JsonValue,
+					jsonOf(
+						events.find((e) => e.type === CD_EVENTS.PlacementDefined)?.data,
+					) ?? null,
 				),
 			).toBe(true);
 			expect(
 				vets(
 					"#PlacementDecisionRecord",
-					events.find((e) => e.type === CD_EVENTS.PlacementDecided)
-						?.data as JsonValue,
+					jsonOf(
+						events.find((e) => e.type === CD_EVENTS.PlacementDecided)?.data,
+					) ?? null,
 				),
 			).toBe(true);
 			expect(
 				vets(
 					"#ScoreSnapshotRecord",
-					store.events(scoreStream("capacity"))[0]?.data as JsonValue,
+					jsonOf(store.events(scoreStream("capacity"))[0]?.data) ?? null,
 				),
 			).toBe(true);
 		});

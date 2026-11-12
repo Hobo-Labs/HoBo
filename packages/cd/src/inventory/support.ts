@@ -18,12 +18,7 @@ import type {
 	Refusal,
 	TelemetrySink,
 } from "../ports.js";
-
-function isObject(
-	value: JsonValue | undefined,
-): value is { [key: string]: JsonValue } {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isJsonArray, isJsonObject, jsonOf } from "./json.js";
 
 /**
  * Canonical JSON: object keys sorted by code unit, no whitespace, arrays in
@@ -31,8 +26,8 @@ function isObject(
  * digests need.
  */
 export function canonicalJson(value: JsonValue): string {
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-	if (isObject(value)) {
+	if (isJsonArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+	if (isJsonObject(value)) {
 		const keys = Object.keys(value).sort();
 		return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`).join(",")}}`;
 	}
@@ -52,15 +47,14 @@ export function body<T extends Message>(
 }
 
 /** Decode a persisted body; undefined when it is not that record (never throws). */
-export function decode<T extends Message>(
+export function decode<T extends Message, D>(
 	schema: GenMessage<T>,
-	data: unknown,
+	data: D,
 ): T | undefined {
-	if (typeof data !== "object" || data === null || Array.isArray(data))
-		return undefined;
+	const json = jsonOf(data);
+	if (!isJsonObject(json)) return undefined;
 	try {
-		// SAFETY: a non-null, non-array object read back from the journal is JSON.
-		return fromJson(schema, data as JsonValue, { ignoreUnknownFields: true });
+		return fromJson(schema, json, { ignoreUnknownFields: true });
 	} catch {
 		return undefined;
 	}
@@ -114,6 +108,6 @@ export function emit(
 }
 
 /** True when an append failed only because another writer moved the stream head. */
-export function isConflict(error: unknown): boolean {
+export function isConflict<E>(error: E): boolean {
 	return error instanceof Error && isEventStoreOptimisticConflict(error);
 }

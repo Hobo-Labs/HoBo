@@ -72,6 +72,7 @@ import {
 	sortConditions,
 	sortTaints,
 } from "./derive.js";
+import { jsonOf, objectAt, stringAt } from "./json.js";
 import {
 	isManagement,
 	parseCampSet,
@@ -143,14 +144,12 @@ function contactMeta(contact: ContactState): JsonObject {
 	return out;
 }
 
-function contactFromMeta(meta: JsonObject | undefined): ContactState {
-	const source = meta?.contact;
-	if (typeof source !== "object" || source === null || Array.isArray(source))
-		return {};
-	const out: Record<string, number> = {};
+function contactFromMeta<M>(meta: M): ContactState {
+	const source = objectAt(jsonOf(meta), "contact");
+	const out: { -readonly [K in keyof ContactState]: ContactState[K] } = {};
 	for (const field of CONTACT_FIELDS) {
-		const raw = source[field.replace(/Ms$/u, "At")];
-		const ms = typeof raw === "string" ? parseTime(raw) : undefined;
+		const raw = stringAt(source, field.replace(/Ms$/u, "At"));
+		const ms = raw === undefined ? undefined : parseTime(raw);
 		if (ms !== undefined) out[field] = ms;
 	}
 	return out;
@@ -265,17 +264,11 @@ function proposalRefusal(action: CdAction): ReasonRecord {
 	);
 }
 
-function fenceTokenOf(data: unknown): string {
+function fenceTokenOf<D>(data: D): string {
 	const observation = decode(ReconcileObservationRecordSchema, data);
 	if (observation !== undefined) return observation.fenceToken;
-	if (typeof data === "object" && data !== null && !Array.isArray(data)) {
-		// SAFETY: structural read of a body another work package owns.
-		const raw =
-			(data as Record<string, unknown>).fenceToken ??
-			(data as Record<string, unknown>).fence_token;
-		return typeof raw === "string" ? raw : "";
-	}
-	return "";
+	const json = jsonOf(data);
+	return stringAt(json, "fenceToken") ?? stringAt(json, "fence_token") ?? "";
 }
 
 export function createCampInventory(d: CampInventoryDeps): CampInventory {
@@ -527,12 +520,10 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 			const campId = event.streamId.slice(STATUS_PREFIX.length);
 			if (campId === "") continue;
 			const state = await load(campId);
-			const fenced = fenceTokenOf(event.data) !== "";
-			state.contact = {
-				...state.contact,
-				lastContactMs: atMs,
-				...(fenced ? { lastLeaseMs: atMs } : {}),
-			};
+			const touched: { -readonly [K in keyof ContactState]: ContactState[K] } =
+				{ ...state.contact, lastContactMs: atMs };
+			if (fenceTokenOf(event.data) !== "") touched.lastLeaseMs = atMs;
+			state.contact = touched;
 			active.add(campId);
 		}
 		return active;

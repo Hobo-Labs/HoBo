@@ -7,6 +7,7 @@
 // keyed by a deterministic id over its inputs, so a retried `decide` with the
 // same inputs is one event (I12) and replay yields the same record (I18).
 import { create, type JsonObject, toJson } from "@bufbuild/protobuf";
+import type { EventInput } from "@hobo/core";
 import {
 	type PlacementDecisionRecord,
 	PlacementDecisionRecordSchema,
@@ -132,17 +133,13 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 			let seq = 0;
 			for await (const event of d.store.read(stream)) seq = event.seq;
 			try {
-				await d.store.append(
-					stream,
-					[
-						{
-							type,
-							data,
-							...(key === undefined ? {} : { meta: { idempotencyKey: key } }),
-						},
-					],
-					{ expectedSeq: seq, actor: ctx.principal, tenant: d.tenant },
-				);
+				const event: EventInput = { type, data };
+				if (key !== undefined) event.meta = { idempotencyKey: key };
+				await d.store.append(stream, [event], {
+					expectedSeq: seq,
+					actor: ctx.principal,
+					tenant: d.tenant,
+				});
 				return;
 			} catch (error) {
 				if (attempt >= 4 || !isConflict(error)) throw error;
@@ -266,9 +263,9 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 				scores,
 				subject: input.subject,
 				railDelivery,
-				...(approvedProviders !== undefined ? { approvedProviders } : {}),
-				...(input.exclude !== undefined ? { exclude: input.exclude } : {}),
-				...(input.count !== undefined ? { count: input.count } : {}),
+				approvedProviders,
+				exclude: input.exclude,
+				count: input.count,
 				pipeline: input.pipeline,
 				node: input.node,
 				atMs,
