@@ -22,7 +22,7 @@ boundary, and the CUE constraints are checked by `pnpm run test:schema`.
   commit `src/_generated/`. Only the coordinator amends `cd.proto`.
 - **A `test:schema` failure names a `.cue` file.** A record no longer satisfies
   its constraint; fix the producer, not the constraint, unless the decision in
-  [ADR-0180](../../../docs/design/adr/01-architecture-core.md#adr-0180) changed.
+  [ADR-0181](../../../docs/design/adr/01-architecture-core.md#adr-0181) changed.
 - **An old event body no longer decodes.** Every body has a golden upcaster
   corpus entry; add an upcaster in the owning module rather than editing the
   stored event.
