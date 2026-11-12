@@ -28,7 +28,7 @@ function midranks(values: readonly number[]) {
 	const order = values
 		.map((value, index) => ({ value, index }))
 		.sort((a, b) => a.value - b.value || a.index - b.index);
-	const ranks = new Array<number>(values.length).fill(0);
+	const ranks = Array.from({ length: values.length }, () => 0);
 	const tieGroups: number[] = [];
 	let start = 0;
 	while (start < order.length) {
@@ -57,7 +57,7 @@ function midranks(values: readonly number[]) {
  */
 function exactCounts(m: number, n: number): bigint[] {
 	const degree = m * n;
-	let coefficients: bigint[] = new Array<bigint>(degree + 1).fill(0n);
+	let coefficients = Array.from({ length: degree + 1 }, () => 0n);
 	coefficients[0] = 1n;
 	for (let i = 1; i <= m; i += 1) {
 		const next = coefficients.slice();
