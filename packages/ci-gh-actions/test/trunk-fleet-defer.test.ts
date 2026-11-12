@@ -127,6 +127,22 @@ describe("evaluateMainTrunkFleetDefer", () => {
 		expect(decision.holdReason).toBeUndefined();
 	});
 
+	it("does not treat the box as slot-full while memory-parallel trunk launches remain", () => {
+		const decision = evaluateMainTrunkFleetDefer({
+			jobName: "Main workspace test shard 2",
+			isMainTrunkJob: true,
+			priorWait: undefined,
+			deferMs,
+			nowMs,
+			trunkSlots: 1,
+			parallelTrunkLaunchCapacity: 3,
+			localTrunkReserved: 1,
+			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 2, meshFreeSlots: 2 },
+		});
+		expect(decision.action).toBe("hold");
+		expect(decision.holdReason).toBe("no-wait");
+	});
+
 	it("holds when peer capacity is zero", () => {
 		const decision = evaluateMainTrunkFleetDefer({
 			jobName: "Main workspace test shard 1",

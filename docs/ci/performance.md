@@ -138,6 +138,7 @@ unindexed new finding files as notices.
 - [Finding 126: release workflow_run trunk admission](./findings/0126-release-workflow-run-trunk-admission.md)
 - [Finding 127: main shard parallel admission](./findings/0127-main-shard-parallel-admission.md)
 - [Finding 128: light trunk plan and immediate fleet pickup for deps](./findings/0128-light-trunk-plan-and-immediate-fleet-pickup-for-deps.md)
+- [Finding 131: main shard trunk slot ceiling ignored parallel launch capacity](./findings/0131-main-shard-trunk-slot-ceiling-ignored-parallel-launch-capacity.md)
 <!-- findings-index:end -->
 
 ## Data

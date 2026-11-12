@@ -87,6 +87,8 @@ export function evaluateMainTrunkFleetDefer(
 		deferMs: number;
 		nowMs: number;
 		trunkSlots: number | undefined;
+		/** Memory-headroom parallel trunk launches allowed on the box (#1926). */
+		parallelTrunkLaunchCapacity?: number;
 		localTrunkReserved: number;
 		fleetWitness: FleetCapacityWitness | undefined;
 	}>,
@@ -106,10 +108,12 @@ export function evaluateMainTrunkFleetDefer(
 		effectiveDeferMs,
 		input.nowMs,
 	);
+	const trunkSlotCeiling = Math.max(
+		input.trunkSlots ?? 0,
+		input.parallelTrunkLaunchCapacity ?? 0,
+	);
 	const slotsFull =
-		input.trunkSlots !== undefined &&
-		input.trunkSlots > 0 &&
-		input.localTrunkReserved >= input.trunkSlots;
+		trunkSlotCeiling > 0 && input.localTrunkReserved >= trunkSlotCeiling;
 	const peerImmediate =
 		fields.peerAbsorbSlots > 0 &&
 		(slotsFull ||
