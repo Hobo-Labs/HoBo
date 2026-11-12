@@ -47,6 +47,18 @@ Canonical verbs: **43**, defined in `src/shell/verbs.ts` — including lifecycle
 
 Global flags: `--json`, `--camp <camp>`, `--cwd <path>`, `--verbose`, `-q`, `--help`.
 
+Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
+own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,
+`INCIDENT_SUBCOMMANDS`, `SERVE_SUBCOMMANDS`). Each is a typed value or switch;
+the shell resolves the subcommand from the positional words (two words, then
+one, then the verb's default) and accepts exactly the flags it declares,
+parsed into `flags.subcommandOptions`. Any other flag is refused with the usual
+`Unknown option` usage error; `deploy` and `incident` accept no other shell
+flag beside the global ones. These verbs run without a Bindle in the working
+directory. `@hobo/hobo`'s `test/cd-cli-parity.test.ts` keeps the deploy table
+equal to its CD subcommands, and `test/cd-md-examples.test.ts` runs every
+`packages/hobo/CD.md` example against the built binary.
+
 `hobo ci` shows setup help. `hobo ci enable` (alias `connect`) connects a GitHub
 repository; `list`/`ls`, `inspect`, `logs`, `grep`, and `rerun` operate on its
 GitHub Actions runs using the authenticated GitHub CLI (`gh`). `status` inspects

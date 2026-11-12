@@ -264,9 +264,11 @@ const ARTIFACT_KIND = {
 
 /**
  * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
- * store under `home`). The `hobo` verb's shell parser does not yet pass
- * `--file`/`--camp` to `deploy`, so this calls the verb's own host and
- * dispatcher directly; nothing else is composed here.
+ * store under `home`). It calls the verb's own host and dispatcher in
+ * process (the same subcommands `hobo deploy freight record --file`,
+ * `pipeline apply --file` and `promote --camp` run from the binary), so one
+ * journal stays open across a family's record and promote; nothing else is
+ * composed here.
  */
 export async function openReleaseCd(options: {
 	readonly home: string;

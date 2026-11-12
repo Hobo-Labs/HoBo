@@ -1,10 +1,11 @@
 # HoBo CD from the `hobo` binary
 
-`hobo deploy`, `hobo incident` and `hobo serve cd` all run against one
-composition of `@hobo/cd` (`composeContinuousDelivery`, plan 0024 WP18). There
-is no second delivery lane and no fixture path except `--simulate`, which is
-labelled in every result (`data.simulated: true`, reason code `simulated` on
-every observation).
+`hobo deploy`, `hobo incident status` and `hobo serve cd --port 8791` all run
+against one composition of `@hobo/cd` (`composeContinuousDelivery`, plan 0024
+WP18). There is no second delivery lane and no fixture path except
+`--simulate`, which is labelled in every result (`data.simulated: true`, reason
+code `simulated` on every observation). None of them needs a Bindle in the
+working directory: they act on the Station's journal and its declared topology.
 
 ## Composition
 
@@ -14,8 +15,8 @@ every observation).
 | Artifact store | filesystem at `$HOBO_HOME/cd/artifacts` | `HOBO_CD_ARTIFACT_ROOT`; s3-compatible with `HOBO_CD_S3_ENDPOINT` (https), `HOBO_CD_S3_BUCKET`, `HOBO_CD_S3_REGION`, `HOBO_CD_S3_CREDENTIAL_REF` |
 | Tenant / Station | `local` / `local` | `HOBO_TENANT`, `HOBO_STATION` |
 | Principal | the OS user | `HOBO_USER`; `HOBO_AGENT_ID` makes the session an agent principal (proposal-only unless granted, ADR-0094) |
-| Telemetry | none | `OTEL_EXPORTER_OTLP_ENDPOINT` (OTLP/HTTP JSON) |
-| Topology | Yards and Camps (`@hobo/yards`, `@hobo/camps`); Camp ids are `<yard>/<camp>` | label `hobo.cd/management: observe-only` declares an OBSERVE_ONLY Camp |
+| Telemetry | none: nothing is exported | `OTEL_EXPORTER_OTLP_ENDPOINT` (OTLP/HTTP JSON) |
+| Topology | none | `--yard <file,...>` on every `deploy`/`incident`/`serve cd` command, and `HOBO_CD_TOPOLOGY=<file,...>` (see [Topology from the repository](#topology-from-the-repository)). Camp ids are `<yard>/<camp>`; label `hobo.cd/management: observe-only` declares an OBSERVE_ONLY Camp |
 | Rails | the journal's Station `rail.*` events | a Rail's `delivery` object (Camp sets, posture, failover, enrollment) |
 | Kubernetes fleets | none | `HOBO_CD_KUBE_FLEET=<file.json>`: `{ "ocm": … }` or `{ "karmada": … }` realizer record, optional `clusterProfiles` import (OBSERVE_ONLY Camps) |
 | Service tick | 1 s | `HOBO_CD_TICK_MS` |
@@ -27,6 +28,30 @@ canary is refused as `progressive-unsupported`), and an unrouted NOTIFY is
 dropped and counted. A reconciler mode with no realizer is refused with
 `compose-realizer-missing`.
 
+## Topology from the repository
+
+Camps are declared where the repository declares them, and a CD command reads
+them from the files it is given (`--yard`, `HOBO_CD_TOPOLOGY`; both take a
+comma-separated list, the environment's first):
+
+- a **Yard module**: `export default yard(...)` from `@hobo/yards`, such as the
+  CI relay's [`packages/ci-vercel/deploy/yard.ts`](../ci-vercel/deploy/yard.ts)
+  (Camps `hobo-ci-relay/hobo-ci-relay/preview` and
+  `hobo-ci-relay/hobo-ci-relay/production`);
+- a **delivery module** that also exports `yards` (Yards) and/or `camps`
+  (Camp records: `campId` `<yard>/<camp>`, `yardId`, `provider`, `envType`,
+  optional `regions`, `labels`, `stationId`, `management`), such as the runner
+  fleet's
+  [`packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`](../ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts)
+  (one Camp per runner host, `hobo-ci-runners/<host>`).
+
+`pipeline apply --file <module>` also reads the module it applies as topology.
+Every export is parsed once with the generated `cd_topology.proto` schemas
+(`data-models/`); a malformed record, a Yard that is not a `@hobo/yards` Yard,
+a Camp declared for another Station or the same Camp declared twice refuses
+the whole command before the journal opens. Other exports of a Yard module are
+not topology and are ignored here.
+
 ## `hobo deploy`
 
 Run `hobo deploy` with no arguments for every usage line. Output is one
@@ -34,33 +59,115 @@ envelope for humans, scripts and agents: `--format json|text` (or `--json`)
 changes only `message`; `data` holds the records as canonical protobuf JSON.
 Every refusal has a `code` and at least one `remediation` (the next step).
 
+Each subcommand takes exactly the flags its usage line names, plus `--format`,
+`--simulate` and `--yard`, typed by the shell (`@hobo/cli`
+`src/shell/subcommands.ts`): a value flag takes the next token or
+`--name=value`, a switch takes none. Any other flag is refused with
+`Unknown option` (`HOBO_CLI_USAGE`), as for every other verb.
+
 | Group | Subcommands |
 |---|---|
-| Freight | `freight record --file <manifest.json>`, `freight list`, `freight show|yank|approve <id|alias>` |
-| Sources | `source define --file`, `source list`, `source poll <name>` |
-| Pipelines | `pipeline apply --file <pipeline.json|hobo.delivery.ts>`, `pipeline show <name>`, `pipeline list` |
-| Windows | `window define --file`, `window list`, `window override <window> --camp <a,b> --reason` |
-| Promotion | `promote <freight> --camp <a,b> [--pipeline --node] [--strategy] [--propose]`, `status`, `logs`, `rollback --camp --reason [--to <set>]`, `reconcile --camp`, `preview create|list`, `verify show <id>`, `metrics` |
-| Agents | `agent token --camp-set`, `agent enroll --token --jwk-file`, `agent approve-key <id>`, `agent accept <id> --camp`, `agent run`, `agent revoke <id> --reason` |
-| Publishers | `publisher define --file <TrustedPublisherRecord>` |
-| Fleet | `campset define|list`, `camp list|show|taint|untaint|manage`, `placement define|decide|show`, `scores report`, `fanout show|halt|resume|rollback`, `failover list|approve`, `rebalance` |
-| Policy | `compliance show <camp>`; Rails promote with `promote <rail-freight>` |
-| Hosting | `hosting-status|hosting-resume|hosting-cancel|hosting-resume-mutation <deployment-id>` (unchanged) |
+| Freight | `freight record`, `freight list`, `freight show`, `freight yank`, `freight approve` |
+| Sources | `source define`, `source list`, `source poll` |
+| Pipelines | `pipeline apply`, `pipeline show`, `pipeline list` |
+| Windows | `window define`, `window list`, `window override` |
+| Promotion | `promote`, `status`, `logs`, `rollback`, `reconcile`, `preview create`, `preview list`, `verify show`, `metrics` |
+| Agents | `agent token`, `agent enroll`, `agent approve-key`, `agent accept`, `agent run`, `agent revoke` |
+| Publishers | `publisher define` |
+| Fleet | `campset define`, `campset list`, `camp list`, `camp show`, `camp taint`, `camp untaint`, `camp manage`, `placement define`, `placement decide`, `placement show`, `scores report`, `fanout show`, `fanout halt`, `fanout resume`, `fanout rollback`, `failover list`, `failover approve`, `rebalance` |
+| Policy | `compliance show`; Rails promote with `promote` and Rail Freight |
+| Hosting | `hosting-status`, `hosting-resume`, `hosting-cancel`, `hosting-resume-mutation` (unchanged) |
 
 Promotions and rollbacks derive a deterministic idempotency key from their
 inputs (override with `--idempotency-key`), so the same request twice is one
 request (I12).
 
+### Examples
+
+Run from the repository root. Every line below is executed by
+`test/cd-md-examples.test.ts` against the built binary (with `--simulate` and a
+temporary `HOBO_HOME`); none may fail in the shell. Names such as
+`hobo-ci-relay@1` or `freight-manifest.json` stand for your own Freight and
+files.
+
+```sh
+hobo deploy
+hobo deploy freight record --file freight-manifest.json
+hobo deploy freight list --bindle hobo-ci-relay --limit 20
+hobo deploy freight show hobo-ci-relay@1
+hobo deploy freight yank hobo-ci-relay@1 --reason cve-2026-0001
+hobo deploy freight approve hobo-ci-relay@1 --camp hobo-ci-relay/hobo-ci-relay/production --reason hotfix --ttl-ms 3600000
+hobo deploy source define --file packages/ci-vercel/deploy/delivery.ts
+hobo deploy source list
+hobo deploy source poll hobo-ci-relay
+hobo deploy pipeline apply --file packages/ci-vercel/deploy/delivery.ts --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy pipeline show hobo-ci-relay
+hobo deploy pipeline list
+hobo deploy window define --file change-window.json
+hobo deploy window list
+hobo deploy window override weekend-freeze --camp hobo-ci-relay/hobo-ci-relay/production --reason incident-fix --ttl-ms 3600000
+hobo deploy promote hobo-ci-relay@1 --camp hobo-ci-relay/hobo-ci-relay/preview --pipeline hobo-ci-relay --node preview --strategy all-at-once --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy promote hobo-ci-relay@1 --camp hobo-ci-relay/hobo-ci-relay/production --source-camp hobo-ci-relay/hobo-ci-relay/preview --propose --idempotency-key relay-production-1 --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy status --camp hobo-ci-relay/hobo-ci-relay/preview --limit 10 --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy logs --camp hobo-ci-relay/hobo-ci-relay/preview --limit 50
+hobo deploy rollback --camp hobo-ci-relay/hobo-ci-relay/production --reason slo-burn --to set-1 --idempotency-key rollback-1 --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy reconcile --camp hobo-ci-relay/hobo-ci-relay/preview --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy preview create hobo-ci-relay@1 --source-camp hobo-ci-relay/hobo-ci-relay/preview --ttl-ms 86400000 --pipeline hobo-ci-relay --node preview --idempotency-key preview-42
+hobo deploy preview list
+hobo deploy verify show verification-1
+hobo deploy metrics --window-ms 604800000 --camp hobo-ci-relay/hobo-ci-relay/production
+hobo deploy agent token --camp-set hobo-ci-runner-fleet --camp hobo-ci-runners/box --mode agent --ttl-ms 3600000 --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy agent enroll --token bootstrap-token --jwk-file public.jwk.json
+hobo deploy agent approve-key reconciler-1
+hobo deploy agent accept reconciler-1 --camp hobo-ci-runners/box --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy agent run --feed https://station.example/v1/cd/ --reconciler reconciler-1 --key-file agent.jwk.json --svid-file agent.svid --camp hobo-ci-runners/box
+hobo deploy agent revoke reconciler-1 --reason host-retired
+hobo deploy publisher define --file trusted-publisher.json
+hobo deploy campset define --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy campset list
+hobo deploy camp list --campset hobo-ci-runner-fleet --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy camp list --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy camp show hobo-ci-runners/box --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy camp taint hobo-ci-runners/box --key maintenance --value disk-swap --effect no-place --reason disk-swap --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy camp untaint hobo-ci-runners/box --key maintenance --effect no-place --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy camp manage hobo-ci-runners/box --management observe-only --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy placement define --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy placement decide hobo-ci-runner-fleet --pipeline hobo-ci-runner-fleet --node fleet --station local --count 1 --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+hobo deploy placement show hobo-ci-runner-fleet
+hobo deploy scores report --file score-snapshot.json
+hobo deploy fanout show --pipeline hobo-ci-runner-fleet --node fleet
+hobo deploy fanout halt fanout-1 --reason pilot-failed
+hobo deploy fanout resume fanout-1
+hobo deploy fanout rollback fanout-1 --reason pilot-failed
+hobo deploy failover list --camp hobo-ci-relay/hobo-ci-relay/production --limit 10
+hobo deploy failover approve failover-1
+hobo deploy rebalance --pipeline hobo-ci-runner-fleet --node fleet --reason drain-box --idempotency-key rebalance-1
+hobo deploy compliance show hobo-ci-relay/hobo-ci-relay/production --yard packages/ci-vercel/deploy/yard.ts
+hobo deploy hosting-status deployment-1
+hobo deploy hosting-resume deployment-1
+hobo deploy hosting-cancel deployment-1
+hobo deploy hosting-resume-mutation deployment-1
+hobo incident status --camp hobo-ci-relay/hobo-ci-relay/production
+hobo incident open --camp hobo-ci-relay/hobo-ci-relay/production --signal slo-burn --reason error-budget --yard packages/ci-vercel/deploy/yard.ts
+hobo serve cd --port 8791 --host 127.0.0.1 --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
+```
+
 ### Delivery as code
 
-`hobo deploy pipeline apply --file hobo.delivery.ts` loads a module that
-exports plain records (protobuf JSON form) and applies them in dependency
-order: `publishers`, `sources`, `windows`, `campSets`, `placements`,
-`pipelines`. An unknown export or a malformed record refuses the whole file
-before anything is applied.
+`pipeline apply --file hobo.delivery.ts` loads a module that exports plain
+records (protobuf JSON form) and applies them in dependency order:
+`publishers`, `sources`, `windows`, `campSets`, `placements`, `pipelines`. It
+may also export topology (`yards`, `camps`; see above), which is read, not
+applied. An unknown export or a malformed record refuses the whole file before
+anything is applied.
 
 ```ts
 // hobo.delivery.ts
+export const camps = [
+  { campId: "edge/staging", yardId: "edge", provider: "vercel", envType: "staging" },
+  { campId: "edge/prod", yardId: "edge", provider: "vercel", envType: "production" },
+];
 export const sources = [
   { name: "web-ci", bindle: "web", subscriptions: [{ name: "web-ci", kind: "SUBSCRIPTION_KIND_HOBO_CI", locator: "acme/web" }] },
 ];
@@ -81,25 +188,29 @@ export const pipelines = [
 `@hobo/cd/compose` exports `hoboCiDogfoodSources({ ciPipeline })`: HOBO_CI
 Freight sources for HoBo's CI relay (`hobo-ci-relay`) and runner fleet
 (`hobo-ci-runner-fleet`). Write them into a delivery module and apply them;
-their pipelines promote the relay and the fleet like any other Bindle.
+their pipelines promote the relay and the fleet like any other Bindle. The
+relay's Camps come from its Yard module and the fleet's from its delivery
+module (the examples above).
 
 ## `hobo incident`
 
 `incident status` lists failed, rolled-back and rejected promotions and open
-failovers from the journal. `incident open --camp <camp> --signal <s>` runs the
-CD rollback (D12): zero exposure, then a Delta to the predecessor Set through
-the same gate. An agent principal's rollback is recorded as a proposal.
+failovers from the journal. `incident open` (with `--camp` and `--signal`)
+runs the CD rollback (D12): zero exposure, then a Delta to the predecessor Set
+through the same gate. An agent principal's rollback is recorded as a proposal.
 
 ## `hobo serve cd`
 
-`hobo serve cd [--port 8791] [--host 127.0.0.1] [--simulate]` hosts the CD
-service: the tick loop, a conductor reconciler over the Station's MANAGED Camps,
-`/v1/cd/` (read API for operators, delivery feed for enrolled agents),
-`/healthz` and `/readyz`. Agents connect outbound to `/v1/cd/`; the Station
-never dials an agent (I3).
+`serve cd` (with `--port`, default 8791, `--host`, default 127.0.0.1,
+`--simulate` and `--yard`) hosts the CD service: the tick loop, a conductor
+reconciler over the Station's MANAGED Camps, `/v1/cd/` (read API for
+operators, delivery feed for enrolled agents), `/healthz` and `/readyz`.
+Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
 
 ## Runbook
 
+- **`Unknown option` (`HOBO_CLI_USAGE`)**: the flag is not one the subcommand
+  declares. Run `hobo deploy` for every usage line.
 - **`compose-realizer-missing`** on `serve cd` or `deploy reconcile`: no
   conductor realizer is composed for the Station. Configure one (Kubernetes
   fleets via `HOBO_CD_KUBE_FLEET`, the hosting-transition or orchestrator
@@ -111,6 +222,16 @@ never dials an agent (I3).
   that `$HOBO_HOME` is writable; for Postgres check reachability and version.
 - **`cd-kube-fleet-invalid`**: fix the `HOBO_CD_KUBE_FLEET` file (exactly one of
   `ocm`/`karmada`).
+- **`pipeline-unknown-camp`, `token-scope-invalid`, an empty `camp list`**: the
+  Camps are not in the topology this command read. Pass the Yard or delivery
+  module that declares them with `--yard` (or set `HOBO_CD_TOPOLOGY`).
+- **`cd-topology-invalid` / `cd-topology-unreadable`**: a `--yard` or
+  `HOBO_CD_TOPOLOGY` file has a malformed `yards`/`camps` record or does not
+  load; nothing was opened. Fix the named record.
+- **`cd-topology-station-mismatch`**: a Camp record names another Station.
+  Leave `stationId` empty or match `HOBO_STATION`.
+- **`cd-topology-duplicate-camp`**: two topology files declare the same Camp.
+  Drop one.
 - **`delivery-module-invalid` / `delivery-module-unreadable`**: the
   `--file` module has an unknown export or a malformed record; nothing was
   applied. Fix the named record and re-run.

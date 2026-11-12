@@ -18,7 +18,8 @@ import {
 	cdDeployUsage,
 	runCdDeploySubcommand,
 } from "./cd-deploy.js";
-import { cdRefused, parseCdFormat } from "./cd-render.js";
+import { cdFlagsOf, cdRefused, parseCdFormat } from "./cd-render.js";
+import { topologyFilesOf } from "./cd-topology.js";
 import { defaultHoboHome } from "./hobo-home.js";
 import type { createProductionHostingExecution } from "./hosting-execution.js";
 import { isJsonString, type JsonObject } from "./json.js";
@@ -35,6 +36,8 @@ export type CdHostOpener = (
 		cwd: string;
 		env: Readonly<Record<string, string | undefined>>;
 		home: string;
+		/** Topology files (`--yard`, HOBO_CD_TOPOLOGY, a delivery module being applied). */
+		topologyFiles?: readonly string[];
 	}>,
 ) => Promise<Outcome<OpenedCdHost>>;
 
@@ -48,6 +51,28 @@ export interface DeployCommandDeps {
 	readonly openCd?: CdHostOpener;
 }
 
+/**
+ * Topology files for one CD command: HOBO_CD_TOPOLOGY, `--yard`, and for
+ * `pipeline apply --file <module>` the module itself (a delivery module may
+ * export `yards`/`camps`). Each file once.
+ */
+export function cdTopologyFiles(
+	args: readonly string[],
+	flags: JsonObject,
+	env: Readonly<Record<string, string | undefined>>,
+): readonly string[] {
+	const files = [...topologyFilesOf(flags, env)];
+	const module = flags.file;
+	if (
+		args[0] === "pipeline" &&
+		args[1] === "apply" &&
+		isJsonString(module) &&
+		!module.trim().endsWith(".json")
+	)
+		files.push(module.trim());
+	return [...new Set(files)];
+}
+
 /** The default opener: the one composed CD runtime. */
 export const openDefaultCdHost: CdHostOpener = async (input) => {
 	const { openCdRuntime } = await import("./cd-runtime.js");
@@ -56,6 +81,9 @@ export const openDefaultCdHost: CdHostOpener = async (input) => {
 		home: input.home,
 		cwd: input.cwd,
 		simulate: input.simulate,
+		...(input.topologyFiles
+			? { topologyFiles: input.topologyFiles }
+			: undefined),
 	});
 	if (!runtime.ok) return runtime;
 	return {
@@ -128,8 +156,7 @@ export function createDeployCommand(
 	return {
 		run: async ({ args, flags, context }) => {
 			if (args[0]?.startsWith("hosting-")) return hostingSubcommand(deps, args);
-			// SAFETY: assertion required at this I/O or test boundary.
-			const f = flags as JsonObject;
+			const f = cdFlagsOf(flags);
 			if (args.length === 0 || args[0] === "help" || f.help === true)
 				return {
 					ok: true,
@@ -150,6 +177,7 @@ export function createDeployCommand(
 				cwd: (isJsonString(f.cwd) && f.cwd) || context.cwd,
 				env,
 				home: deps.hoboHome ?? defaultHoboHome(env),
+				topologyFiles: cdTopologyFiles(args, f, env),
 			});
 			if (!opened.ok)
 				return cdRefused({

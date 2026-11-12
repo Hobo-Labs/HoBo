@@ -47,6 +47,17 @@ export const DELIVERY_MODULE_EXPORTS = Object.freeze({
 	publishers: TrustedPublisherRecordSchema,
 } as const);
 
+/**
+ * Topology a delivery module may also declare: `yards` (@hobo/yards Yards)
+ * and `camps` (CdTopologyCamp records). They are not applied: the topology
+ * loader (cd-topology.ts) parses them when the module is a topology file.
+ */
+// public-contract: the delivery module's topology export names.
+export const DELIVERY_MODULE_TOPOLOGY_EXPORTS = Object.freeze([
+	"yards",
+	"camps",
+] as const);
+
 // domain-view: parsed delivery module (arrays of generated records).
 export type DeliveryModule = Readonly<{
 	sources: readonly FreightSourceRecord[];
@@ -103,6 +114,7 @@ export function parseDeliveryModule(
 			: exports;
 	const known = new Set<string>([
 		...Object.keys(DELIVERY_MODULE_EXPORTS),
+		...DELIVERY_MODULE_TOPOLOGY_EXPORTS,
 		"default",
 	]);
 	const unknown = Object.keys(root).filter((key) => !known.has(key));

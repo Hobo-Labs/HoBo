@@ -203,6 +203,11 @@ describe("delivery as code", () => {
 
 	it("loads a real hobo.delivery.ts module through tsx", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "cd-delivery-ts-"));
+		// A delivery module lives in an ES-module package, as in this repository.
+		// Without a package.json the .ts file's module format is ambiguous, and in
+		// the shared test worker an earlier file's tsx registration could compile
+		// it as CommonJS and evaluate it as ESM (`__filename is not defined`).
+		await writeFile(join(dir, "package.json"), '{ "type": "module" }\n');
 		await writeFile(
 			join(dir, "hobo.delivery.ts"),
 			'const pipelines: { name: string; bindle: string }[] = [{ name: "web", bindle: "web" }];\nexport { pipelines };\n',

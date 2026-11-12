@@ -29,19 +29,12 @@
 // Marketplace attaches the cache). A Yard on any other provider is refused
 // before this module runs.
 //
-// Journal: the relay's own, `<HOBO_HOME>/ci-relay/cd/journal.sqlite`, never
-// the shared one `hobo deploy` and `hobo serve cd` use (`<HOBO_HOME>/cd/`).
-// KNOWN CD GAP: @hobo/cd cannot run a rollout on a durable journal today. Its
-// rollout event types (`cd.rollout.*`, packages/cd/src/rollout/journal.ts)
-// carry two dots, which SQLite and Postgres refuse (`family.PastTenseFact`),
-// and `@hobo/cd/sets` cannot fold the `{ schema, observation }` envelope the
-// reconcile transport writes to a Camp's status stream. This module works
-// around both (`withStorableRolloutTypes`, `reportedStatus`) with a private
-// storage encoding (`cdrollout.*`) that no other CD tool declares, so it
-// keeps that encoding in a journal only it opens, and refuses
-// (HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE) when the environment names a shared CD
-// store (HOBO_CD_SQLITE_PATH, HOBO_CD_POSTGRES_URL). Both shims go once
-// @hobo/cd fixes the event names and the status fold.
+// Journal: the shared CD journal `hobo deploy` and `hobo serve cd` use
+// (`<HOBO_HOME>/cd/journal.sqlite`, or the store HOBO_CD_SQLITE_PATH /
+// HOBO_CD_POSTGRES_URL name). @hobo/cd stores its rollout ledger under the
+// `rollout.*` family a durable journal accepts and folds the reconcile
+// transport's `{ schema, observation }` status envelope itself, so the relay's
+// promotions are ordinary CD records any CD tool reads.
 //
 // Composition: this is `composeContinuousDelivery` with the same factories,
 // adapters, store and artifact selection as `openCdRuntime`, with two host
@@ -49,7 +42,7 @@
 // (`canonicalManifestHash`, the digest the Freight names) and the relay's
 // Yard-declared registry.
 
-import { create, fromJson, toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import {
 	canonicalManifestHash,
 	type ManifestV1,
@@ -59,9 +52,7 @@ import {
 import {
 	ArtifactKind,
 	type CampId,
-	CD_STREAMS,
 	type CdContext,
-	type CdFactories,
 	type FreightId,
 	FreightManifestRecordSchema,
 	FreightOrigin,
@@ -98,7 +89,6 @@ import {
 import {
 	capability,
 	createBoundedFetchTransport,
-	type DurableEventStore,
 	type HttpTransport,
 } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
@@ -107,7 +97,6 @@ import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
 import {
-	isJsonObject,
 	isJsonString,
 	type JsonObject,
 	parseJsonObject,
@@ -182,8 +171,8 @@ export type RelayDeliveryInput = Readonly<{
 	cwd: string;
 	env: Readonly<Record<string, string | undefined>>;
 	/**
-	 * HOBO_HOME. The relay's journal and artifact store live under
-	 * `<home>/ci-relay/cd`, never the shared `<home>/cd`.
+	 * HOBO_HOME. The relay's journal and artifact store are the shared CD
+	 * ones under `<home>/cd`, unless the environment names another store.
 	 */
 	home: string;
 	yard: Yard;
@@ -240,22 +229,6 @@ export type RelayDeliveryOutcome =
 			realization?: RelayRealizationFailure;
 			handover?: Readonly<Record<string, string>>;
 	  }>;
-
-// public-contract: the relay's journal directory under HOBO_HOME (see the
-// KNOWN CD GAP above): never the shared `<HOBO_HOME>/cd`.
-export const RELAY_JOURNAL_DIR = "ci-relay";
-
-// Environment names that point CD at a shared store; the relay's private
-// rollout encoding must not reach it.
-const SHARED_STORE_ENV = [
-	"HOBO_CD_SQLITE_PATH",
-	"HOBO_CD_POSTGRES_URL",
-] as const;
-
-/** The HOBO_HOME the relay's CD journal and artifacts live under. */
-export function relayJournalHome(home: string): string {
-	return `${home.replace(/\/+$/u, "")}/${RELAY_JOURNAL_DIR}`;
-}
 
 const DEFAULT_LIMIT_MS = 20 * 60_000;
 const DEFAULT_INTERVAL_MS = 10_000;
@@ -577,131 +550,6 @@ export function relayRealizer(
 	};
 }
 
-// The rollout ledger's event types (`cd.rollout.Started`, ...) have two dots,
-// which a durable journal refuses (`family.PastTenseFact`), so no rollout can
-// start on SQLite or Postgres. Until @hobo/cd renames them, the relay's journal
-// stores them as `cdrollout.<Fact>` and reads them back under their declared
-// names; every other event passes through unchanged.
-const ROLLOUT_TYPE = "cd.rollout.";
-const STORED_ROLLOUT_TYPE = "cdrollout.";
-
-function storedType(type: string): string {
-	return type.startsWith(ROLLOUT_TYPE)
-		? `${STORED_ROLLOUT_TYPE}${type.slice(ROLLOUT_TYPE.length)}`
-		: type;
-}
-
-function declaredType(type: string): string {
-	return type.startsWith(STORED_ROLLOUT_TYPE)
-		? `${ROLLOUT_TYPE}${type.slice(STORED_ROLLOUT_TYPE.length)}`
-		: type;
-}
-
-function declaredEnvelope<E extends Readonly<{ type: string }>>(event: E): E {
-	return event.type.startsWith(STORED_ROLLOUT_TYPE)
-		? { ...event, type: declaredType(event.type) }
-		: event;
-}
-
-/** A durable journal that stores the rollout ledger's types under a valid family. */
-export function withStorableRolloutTypes(
-	store: DurableEventStore,
-): DurableEventStore {
-	const events = <I extends Readonly<{ type: string }>>(input: readonly I[]) =>
-		input.map((event) => ({ ...event, type: storedType(event.type) }));
-	const filter = <F extends Readonly<{ type?: string }>>(value: F): F =>
-		value.type === undefined
-			? value
-			: { ...value, type: storedType(value.type) };
-	const wrapped: DurableEventStore = {
-		append: (streamId, input, opts) =>
-			store.append(streamId, events(input), opts),
-		async *read(streamId, fromSeq) {
-			for await (const event of store.read(streamId, fromSeq))
-				yield declaredEnvelope(event);
-		},
-		subscribe: (value, handler) =>
-			store.subscribe(filter(value), (event) =>
-				handler(declaredEnvelope(event)),
-			),
-		snapshot: (streamId, state, seq) => store.snapshot(streamId, state, seq),
-		async *readAll(options) {
-			const scoped =
-				options?.filter === undefined
-					? options
-					: { ...options, filter: filter(options.filter) };
-			for await (const entry of store.readAll(scoped))
-				yield { ...entry, event: declaredEnvelope(entry.event) };
-		},
-		commit: (request) =>
-			store.commit({ ...request, events: events(request.events) }),
-	};
-	// The store's optional capabilities, bound to it, when it has them.
-	if (store.getStreamHead)
-		wrapped.getStreamHead = store.getStreamHead.bind(store);
-	if (store.loadSnapshot) wrapped.loadSnapshot = store.loadSnapshot.bind(store);
-	if (store.claimSubscription)
-		wrapped.claimSubscription = store.claimSubscription.bind(store);
-	if (store.renewSubscription)
-		wrapped.renewSubscription = store.renewSubscription.bind(store);
-	if (store.releaseSubscription)
-		wrapped.releaseSubscription = store.releaseSubscription.bind(store);
-	if (store.loadCheckpoint)
-		wrapped.loadCheckpoint = store.loadCheckpoint.bind(store);
-	if (store.commitCheckpoint)
-		wrapped.commitCheckpoint = store.commitCheckpoint.bind(store);
-	if (store.resetCheckpoint)
-		wrapped.resetCheckpoint = store.resetCheckpoint.bind(store);
-	return Object.freeze(wrapped);
-}
-
-/**
- * The latest observation a reconciler reported for a Camp, read from its
- * status stream. The reconcile transport writes each status body as
- * `{ schema, observation }`; `@hobo/cd/sets` folds the body as a bare
- * observation, finds no fence and reports nothing, so a rollout would wait
- * forever for a convergence the journal holds. This reads the envelope
- * (highest fence wins, as in the fold) and is used only when the module's
- * own reader finds nothing.
- */
-export async function reportedStatus(
-	store: Pick<Awaited<ReturnType<CdStoreOpener>>["store"], "read">,
-	campId: CampId,
-): Promise<ReconcileObservationRecord | undefined> {
-	let latest: ReconcileObservationRecord | undefined;
-	let fence = -1n;
-	for await (const event of store.read(CD_STREAMS.campStatus(campId))) {
-		const data = event.data;
-		if (!isJsonObject(data)) continue;
-		const body = data.observation;
-		if (!isJsonObject(body)) continue;
-		let parsed: ReconcileObservationRecord;
-		try {
-			parsed = fromJson(ReconcileObservationRecordSchema, body, {
-				ignoreUnknownFields: true,
-			});
-		} catch {
-			continue;
-		}
-		if (!/^(0|[1-9]\d*)$/u.test(parsed.fenceToken)) continue;
-		const token = BigInt(parsed.fenceToken);
-		if (token < fence) continue;
-		fence = token;
-		latest = parsed;
-	}
-	return latest;
-}
-
-const desiredStateReadingReports: CdFactories["createDesiredState"] = (d) => {
-	const inner = defaultCdFactories.createDesiredState(d);
-	return Object.freeze({
-		...inner,
-		async status(campId: CampId) {
-			return (await inner.status(campId)) ?? reportedStatus(d.store, campId);
-		},
-	});
-};
-
 /** Record the relay build as Freight (idempotent: one commit, one Freight). */
 async function recordFreight(
 	cd: ReturnType<typeof composeContinuousDelivery>,
@@ -789,18 +637,9 @@ export async function deliverRelay(
 		input.sleep ??
 		((ms: number) => new Promise((done) => setTimeout(done, ms)));
 	const emit = input.emitProgress ?? (() => {});
-	const shared = SHARED_STORE_ENV.filter(
-		(name) => (input.env[name] ?? "").trim() !== "",
-	);
-	if (shared.length > 0)
-		return {
-			ok: false,
-			code: RELAY_DELIVERY_REFUSAL.unavailable,
-			message: `${shared.join(" and ")} name a shared CD store. The relay's delivery needs a journal of its own: @hobo/cd cannot run a rollout on a durable journal yet (its cd.rollout.* event types are refused there, and it cannot read the reconcile status envelope), and the relay's workaround stores rollout events under a private name no other CD tool reads. Unset ${shared.join(" and ")}; the relay uses ${relayJournalHome("$HOBO_HOME")}/cd.`,
-		};
 	const parsed = parseCdComposeConfig({
 		env: input.env,
-		home: relayJournalHome(input.home),
+		home: input.home,
 		simulate: false,
 	});
 	if (!parsed.ok)
@@ -821,14 +660,7 @@ export async function deliverRelay(
 		};
 	}
 	try {
-		return await deliverWith(
-			input,
-			config,
-			withStorableRolloutTypes(opened.store),
-			now,
-			sleep,
-			emit,
-		);
+		return await deliverWith(input, config, opened.store, now, sleep, emit);
 	} finally {
 		await opened.close();
 	}
@@ -859,10 +691,7 @@ async function deliverWith(
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
 	const cd = composeContinuousDelivery({
 		base: { store, tenant: config.tenant, now },
-		factories: {
-			...defaultCdFactories,
-			createDesiredState: desiredStateReadingReports,
-		},
+		factories: defaultCdFactories,
 		adapters: defaultCdAdapters({
 			store,
 			railCatalog,
