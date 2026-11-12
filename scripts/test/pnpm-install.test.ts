@@ -190,17 +190,19 @@ describe("bounded pnpm install", () => {
 		for (const line of wrapped) {
 			assert.ok(line.includes("--frozen-lockfile"), line.trim());
 		}
-		// Any other install, flagged or bare, is unbounded. The runner-image
-		// job's script-free install is the one there is, and it is pinned
-		// whole: it runs before the wrapper's own inputs exist
-		// (ci-runner-image-contract), and no other job may borrow its form.
+		// Any other install, flagged or bare, is unbounded, so there is none:
+		// the runner-image job's script-free install goes through the wrapper
+		// too (the wrapper imports node builtins only, and passes its
+		// arguments on), where a cold store used to stall it unbounded.
 		assert.deepEqual(
 			lines
 				.filter((line) => /\bpnpm (?:install|i)\b/u.test(line))
 				.map((line) => line.trim()),
-			[
-				"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
-			],
+			[],
+		);
+		assert.ok(
+			wrapped.some((line) => line.includes("--ignore-scripts")),
+			"the runner-image job installs without lifecycle scripts",
 		);
 		assert.doesNotMatch(workflow, /^\s*pnpm install --frozen-lockfile/mu);
 	});

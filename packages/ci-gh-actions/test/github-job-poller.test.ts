@@ -1059,6 +1059,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const storageAdmission: WorkerStorageAdmission = {
 			admit: vi.fn(async () => allowed),
 			release: vi.fn(),
+			bindGrant: vi.fn(),
 			reap: vi.fn(async () => undefined),
 			maintain: vi.fn(async () => undefined),
 		};
@@ -1102,6 +1103,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const storageAdmission: WorkerStorageAdmission = {
 			admit: vi.fn(async () => false),
 			release: vi.fn(),
+			bindGrant: vi.fn(),
 			reap: vi.fn(async () => undefined),
 			maintain: vi.fn(async () => undefined),
 		};
@@ -1148,6 +1150,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const storageAdmission: WorkerStorageAdmission = {
 			admit: vi.fn(async () => false),
 			release: vi.fn(),
+			bindGrant: vi.fn(),
 			reap: vi.fn(async () => undefined),
 			maintain: vi.fn(async () => undefined),
 		};
@@ -1203,6 +1206,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const storageAdmission: WorkerStorageAdmission = {
 			admit: vi.fn(async () => true),
 			release: vi.fn(),
+			bindGrant: vi.fn(),
 			reap: vi.fn(async () => undefined),
 			maintain: vi.fn(async () => undefined),
 		};

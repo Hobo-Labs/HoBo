@@ -22,6 +22,7 @@ import {
 	createInfisicalClient,
 	githubActionsJwtSource,
 	InfisicalError,
+	jwtOidcClaimHints,
 	oidcAuth,
 	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
@@ -45,6 +46,8 @@ import { isJsonString } from "./json.js";
 export const RELAY_STORE_ENVIRONMENT = "prod";
 // public-contract: the relay's folder path.
 export const RELAY_STORE_SECRET_PATH = "/hobo-ci-relay";
+// public-contract: audience Infisical expects for hobo-ci-writer GitHub OIDC.
+export const RELAY_GITHUB_OIDC_AUDIENCE = "https://github.com/Hobo-Labs";
 
 function data(
 	subcommand: string,
@@ -135,11 +138,21 @@ export type VerifyCheck = Readonly<{
 	detail: string;
 }>;
 
+function oidcHintSuffix(jwt: string | undefined): string {
+	if (jwt === undefined) return "";
+	const hints = jwtOidcClaimHints(jwt);
+	const parts: string[] = [];
+	if (hints.sub !== undefined) parts.push(`oidc_sub=${hints.sub}`);
+	if (hints.aud !== undefined) parts.push(`oidc_aud=${hints.aud}`);
+	return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+}
+
 /** Prove CI writer OIDC sign-in (then revoke); Infisical role shape is not asserted. */
 async function signInOnly(
 	identity: string,
 	method: string,
 	client: () => ReturnType<typeof createInfisicalClient>,
+	workloadJwt?: () => string | undefined,
 ): Promise<VerifyCheck> {
 	try {
 		const session = client();
@@ -152,9 +165,9 @@ async function signInOnly(
 			method,
 			result: "fail",
 			detail:
-				error instanceof InfisicalError
+				(error instanceof InfisicalError
 					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in could not run",
+					: "the sign-in could not run") + oidcHintSuffix(workloadJwt?.()),
 		};
 	}
 }
@@ -237,27 +250,38 @@ export async function runCiSecretStoreVerify(
 	const inActions =
 		(env.ACTIONS_ID_TOKEN_REQUEST_URL ?? "") !== "" &&
 		(env.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "") !== "";
+	const githubJwt = githubActionsJwtSource({
+		env,
+		audience: RELAY_GITHUB_OIDC_AUDIENCE,
+		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+	});
+	let githubWorkloadJwt: string | undefined;
+	const memoGithubJwt = async () => {
+		if (githubWorkloadJwt === undefined) githubWorkloadJwt = await githubJwt();
+		return githubWorkloadJwt;
+	};
 	checks.push(
 		inActions
-			? await signInOnly("hobo-ci-writer", "GitHub Actions OIDC", () =>
-					createInfisicalClient({
-						binding: parseInfisicalBinding({
-							siteUrl: store.endpoint,
-							projectId: store.projectId,
-							environment: store.environment,
-							secretPath: store.secretPath,
-						}),
-						auth: oidcAuth({
-							identityId: store.deployIdentityId,
-							jwt: githubActionsJwtSource({
-								env,
-								...(input.fetch !== undefined
-									? { fetch: input.fetch }
-									: undefined),
+			? await signInOnly(
+					"hobo-ci-writer",
+					"GitHub Actions OIDC",
+					() =>
+						createInfisicalClient({
+							binding: parseInfisicalBinding({
+								siteUrl: store.endpoint,
+								projectId: store.projectId,
+								environment: store.environment,
+								secretPath: store.secretPath,
 							}),
+							auth: oidcAuth({
+								identityId: store.deployIdentityId,
+								jwt: memoGithubJwt,
+							}),
+							...(input.fetch !== undefined
+								? { fetch: input.fetch }
+								: undefined),
 						}),
-						...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-					}),
+					() => githubWorkloadJwt,
 				)
 			: {
 					identity: "hobo-ci-writer",
