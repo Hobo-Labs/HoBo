@@ -20,14 +20,17 @@ export async function failoverScenario() {
 	s.h.desired.sets.delete("eu-001");
 	s.h.inventory.setStatus(
 		"eu-spare",
-		healthy("eu-spare", [create(TaintRecordSchema, { key: "drain", effect: TaintEffect.NO_PLACE })]),
+		healthy("eu-spare", [
+			create(TaintRecordSchema, { key: "drain", effect: TaintEffect.NO_PLACE }),
+		]),
 	);
 	s.h.inventory.camps.delete("a-us-spare");
 	const rebalance = await s.failover.rebalance(
 		{ pipeline: "web", node: "prod", reason: "spread", idempotencyKey: "r1" },
 		s.h.ctx,
 	);
-	if (!rebalance.ok) throw new Error(`rebalance refused: ${rebalance.reasons[0]?.code}`);
+	if (!rebalance.ok)
+		throw new Error(`rebalance refused: ${rebalance.reasons[0]?.code}`);
 	await run(s, "pass", 6);
 	return s;
 }

@@ -1,8 +1,20 @@
 // Shared wiring for the WP23 fan-out tests: one controller over the fakes,
 // and a driver that settles live promotions between ticks.
-import { DepartureAction, type FanoutRecord, FanoutState, type PlacementDecisionRecord } from "../../src/_generated/cd_pb.js";
-import { createFanoutController, type FanoutStartInput } from "../../src/fanout/index.js";
-import type { CdContext, FanoutController, FreightId } from "../../src/ports.js";
+import {
+	DepartureAction,
+	type FanoutRecord,
+	FanoutState,
+	type PlacementDecisionRecord,
+} from "../../src/_generated/cd_pb.js";
+import {
+	createFanoutController,
+	type FanoutStartInput,
+} from "../../src/fanout/index.js";
+import type {
+	CdContext,
+	FanoutController,
+	FreightId,
+} from "../../src/ports.js";
 import {
 	asLedger,
 	clock,
@@ -20,7 +32,9 @@ import {
 	TENANT,
 } from "./fakes.js";
 
-export function harness(options: Readonly<{ leases?: boolean; holderId?: string }> = {}) {
+export function harness(
+	options: Readonly<{ leases?: boolean; holderId?: string }> = {},
+) {
 	const time = clock();
 	const store = new MemoryEventStore({ leases: options.leases ?? false });
 	store.leaseNow = time.now;
@@ -47,13 +61,27 @@ export function harness(options: Readonly<{ leases?: boolean; holderId?: string 
 		});
 	const controller = make(options.holderId ?? "replica-a");
 	const ctx: CdContext = context(time.now);
-	return { time, store, freight, promotions, inventory, windows, desired, authorizer, telemetry, controller, make, ctx };
+	return {
+		time,
+		store,
+		freight,
+		promotions,
+		inventory,
+		windows,
+		desired,
+		authorizer,
+		telemetry,
+		controller,
+		make,
+		ctx,
+	};
 }
 
 export type Harness = ReturnType<typeof harness>;
 
 export function addCamps(h: Harness, decision: PlacementDecisionRecord): void {
-	for (const group of decision.groups) for (const campId of group.campIds) h.inventory.add(campId);
+	for (const group of decision.groups)
+		for (const campId of group.campIds) h.inventory.add(campId);
 }
 
 export function startInput(
@@ -80,7 +108,11 @@ export function startInput(
 export async function drive(
 	h: Harness,
 	outcome: (campId: string) => "pass" | "fail" | "hold" = () => "pass",
-	options: Readonly<{ maxTicks?: number; controller?: FanoutController; onTick?: () => void }> = {},
+	options: Readonly<{
+		maxTicks?: number;
+		controller?: FanoutController;
+		onTick?: () => void;
+	}> = {},
 ): Promise<void> {
 	const controller = options.controller ?? h.controller;
 	for (let i = 0; i < (options.maxTicks ?? 400); i += 1) {
@@ -94,7 +126,9 @@ export async function drive(
 		h.time.advance(MINUTE + 1);
 		const statuses = await controller.list();
 		const settled = statuses.every(
-			(s) => s.inFlight.length === 0 && (s.pending.length === 0 || s.state !== FanoutState.RUNNING),
+			(s) =>
+				s.inFlight.length === 0 &&
+				(s.pending.length === 0 || s.state !== FanoutState.RUNNING),
 		);
 		if (settled && h.promotions.live().length === 0) {
 			await controller.tick(h.ctx);

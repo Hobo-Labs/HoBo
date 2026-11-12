@@ -18,7 +18,11 @@ import {
 } from "../../src/fanout/facts.js";
 import { fanoutScenario } from "./scenario.js";
 
-const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "golden", "fanout-events.v1.json");
+const CORPUS = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"golden",
+	"fanout-events.v1.json",
+);
 
 const PARSERS: Readonly<Record<string, (data: unknown) => unknown>> = {
 	[CD_EVENTS.FanoutStarted]: parseStarted,
@@ -31,7 +35,10 @@ const PARSERS: Readonly<Record<string, (data: unknown) => unknown>> = {
 };
 
 function corpusKey(type: string, data: unknown): string {
-	const outcome = typeof data === "object" && data !== null && "outcome" in data ? `:${String(data.outcome)}` : "";
+	const outcome =
+		typeof data === "object" && data !== null && "outcome" in data
+			? `:${String(data.outcome)}`
+			: "";
 	return `${type}${outcome}`;
 }
 
@@ -48,7 +55,10 @@ describe("fan-out golden upcaster corpus", () => {
 			mkdirSync(dirname(CORPUS), { recursive: true });
 			writeFileSync(CORPUS, `${JSON.stringify(current, null, "\t")}\n`);
 		}
-		const pinned = JSON.parse(readFileSync(CORPUS, "utf8")) as Record<string, unknown>;
+		const pinned = JSON.parse(readFileSync(CORPUS, "utf8")) as Record<
+			string,
+			unknown
+		>;
 		expect(current).toEqual(pinned);
 		for (const [key, body] of Object.entries(pinned)) {
 			const type = key.split(":")[0] ?? "";

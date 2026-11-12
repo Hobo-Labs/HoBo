@@ -128,7 +128,8 @@ export function eligibility(
 		];
 	const taint = status.taints.find(
 		(item) =>
-			item.effect === TaintEffect.NO_PLACE || item.effect === TaintEffect.NO_RUN,
+			item.effect === TaintEffect.NO_PLACE ||
+			item.effect === TaintEffect.NO_RUN,
 	);
 	if (taint !== undefined)
 		return [

@@ -6,8 +6,8 @@ import {
 	PurgeMode,
 	type RailDeliveryRecord,
 	type ReasonRecord,
-	type TaintRecord,
 	TaintEffect,
+	type TaintRecord,
 	type TolerationRecord,
 } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, FAILOVER_UNSAFE } from "../events.js";
@@ -43,7 +43,9 @@ export type RailFailover = Readonly<{
 	allowImmediatePurge: boolean;
 }>;
 
-export function railFailover(rail: RailDeliveryRecord | undefined): RailFailover {
+export function railFailover(
+	rail: RailDeliveryRecord | undefined,
+): RailFailover {
 	const declared = rail?.failover;
 	return {
 		automatic: declared?.automatic ?? CD_DEFAULTS.failoverAutomatic,
@@ -62,7 +64,9 @@ export type NodeFailover = Readonly<{
 	handoverOutputs: readonly string[];
 }>;
 
-export function nodeFailover(policy: FailoverPolicyRecord | undefined): NodeFailover {
+export function nodeFailover(
+	policy: FailoverPolicyRecord | undefined,
+): NodeFailover {
 	return {
 		purge:
 			policy === undefined || policy.purge === PurgeMode.UNSPECIFIED
@@ -96,11 +100,16 @@ export function noRunDue(
 	nowMs: number,
 ): boolean {
 	if (taint.effect !== TaintEffect.NO_RUN) return false;
-	const matching = tolerations.filter((toleration) => tolerates(toleration, taint));
-	if (matching.some((toleration) => toleration.tolerationMs === 0n)) return false;
+	const matching = tolerations.filter((toleration) =>
+		tolerates(toleration, taint),
+	);
+	if (matching.some((toleration) => toleration.tolerationMs === 0n))
+		return false;
 	const graceMs =
 		matching.length > 0
-			? Math.max(...matching.map((toleration) => Number(toleration.tolerationMs)))
+			? Math.max(
+					...matching.map((toleration) => Number(toleration.tolerationMs)),
+				)
 			: CD_DEFAULTS.noRunTolerationMs;
 	return nowMs >= msOf(taint.addedAt) + graceMs;
 }

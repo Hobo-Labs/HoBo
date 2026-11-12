@@ -35,13 +35,27 @@ describe.skipIf(cue === undefined)(
 				if (definition === undefined) continue;
 				seen.add(event.type);
 				const result = vets(definition, event.data);
-				expect(result.error, `${event.type} ${JSON.stringify(event.data).slice(0, 300)}`).toBe("");
+				expect(
+					result.error,
+					`${event.type} ${JSON.stringify(event.data).slice(0, 300)}`,
+				).toBe("");
 			}
 			expect([...seen].sort()).toEqual(Object.keys(DEFINITION).sort());
 		}, 60_000);
 
 		it("refuses a self-move, a started failover without a replacement, and secret-shaped handover names", () => {
-			expect(vets("#RebalanceMoveRecord", toJson(RebalanceMoveRecordSchema, create(RebalanceMoveRecordSchema, { fromCampId: "a", toCampId: "a" }))).ok).toBe(false);
+			expect(
+				vets(
+					"#RebalanceMoveRecord",
+					toJson(
+						RebalanceMoveRecordSchema,
+						create(RebalanceMoveRecordSchema, {
+							fromCampId: "a",
+							toCampId: "a",
+						}),
+					),
+				).ok,
+			).toBe(false);
 			const started = create(FailoverRecordSchema, {
 				failoverId: `failover-${"0".repeat(32)}`,
 				pipeline: "web",
@@ -51,11 +65,27 @@ describe.skipIf(cue === undefined)(
 				purge: PurgeMode.GRACEFUL,
 				updatedAt: "2026-11-12T12:00:00.000Z",
 			});
-			expect(vets("#FailoverRecord", toJson(FailoverRecordSchema, started)).ok).toBe(false);
-			const complete = create(FailoverRecordSchema, { ...started, toCampId: "b", freightId: "sha256:aa", promotionId: "prm-1" });
-			expect(vets("#FailoverRecord", toJson(FailoverRecordSchema, complete)).ok).toBe(true);
-			const policy = create(FailoverPolicyRecordSchema, { handoverOutputs: ["db password=hunter2"] });
-			expect(vets("#FailoverPolicyRecord", toJson(FailoverPolicyRecordSchema, policy)).ok).toBe(false);
+			expect(
+				vets("#FailoverRecord", toJson(FailoverRecordSchema, started)).ok,
+			).toBe(false);
+			const complete = create(FailoverRecordSchema, {
+				...started,
+				toCampId: "b",
+				freightId: "sha256:aa",
+				promotionId: "prm-1",
+			});
+			expect(
+				vets("#FailoverRecord", toJson(FailoverRecordSchema, complete)).ok,
+			).toBe(true);
+			const policy = create(FailoverPolicyRecordSchema, {
+				handoverOutputs: ["db password=hunter2"],
+			});
+			expect(
+				vets(
+					"#FailoverPolicyRecord",
+					toJson(FailoverPolicyRecordSchema, policy),
+				).ok,
+			).toBe(false);
 		});
 	},
 );

@@ -191,9 +191,7 @@ export function progressedBody(fact: ProgressedFact): JsonObject {
 	};
 }
 
-export function parseProgressed(
-	value: unknown,
-): ProgressedFact | undefined {
+export function parseProgressed(value: unknown): ProgressedFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const outcome = jsonString(value.outcome);
 	if (!OUTCOMES.has(outcome)) return undefined;
@@ -230,7 +228,11 @@ export function parseHalted(value: unknown): HaltedFact | undefined {
 }
 
 export function resumedBody(fact: ResumedFact): JsonObject {
-	return { baseline: fact.baseline, atMs: fact.atMs, ...statusJson(fact.status) };
+	return {
+		baseline: fact.baseline,
+		atMs: fact.atMs,
+		...statusJson(fact.status),
+	};
 }
 
 export function parseResumed(value: unknown): ResumedFact | undefined {
@@ -324,9 +326,7 @@ export function failoverBody(fact: FailoverFact): JsonObject {
 	};
 }
 
-export function parseFailoverFact(
-	value: unknown,
-): FailoverFact | undefined {
+export function parseFailoverFact(value: unknown): FailoverFact | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const failover = decode(FailoverRecordSchema, value.failover);
 	if (failover === undefined || failover.failoverId === "") return undefined;

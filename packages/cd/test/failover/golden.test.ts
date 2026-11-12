@@ -35,8 +35,12 @@ describe("failover golden upcaster corpus", () => {
 		mkdirSync(DIR, { recursive: true });
 		if (process.env.UPDATE_GOLDEN === "1")
 			writeFileSync(CORPUS, `${JSON.stringify(current, null, "\t")}\n`);
-		const pinned = JSON.parse(readFileSync(CORPUS, "utf8")) as Record<string, unknown>;
+		const pinned = JSON.parse(readFileSync(CORPUS, "utf8")) as Record<
+			string,
+			unknown
+		>;
 		expect(current).toEqual(pinned);
-		for (const [type, body] of Object.entries(pinned)) expect(PARSERS[type]?.(body), type).toBeDefined();
+		for (const [type, body] of Object.entries(pinned))
+			expect(PARSERS[type]?.(body), type).toBeDefined();
 	});
 });

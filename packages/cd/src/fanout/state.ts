@@ -72,7 +72,9 @@ export function isTerminal(view: FanoutView): boolean {
 
 /** RUNNING or HALTED: holds the node and blocks a newer fan-out from starting. */
 export function isActive(view: FanoutView): boolean {
-	return view.state === FanoutState.RUNNING || view.state === FanoutState.HALTED;
+	return (
+		view.state === FanoutState.RUNNING || view.state === FanoutState.HALTED
+	);
 }
 
 function begin(event: EventEnvelope): FanoutView | undefined {
@@ -121,7 +123,12 @@ function begin(event: EventEnvelope): FanoutView | undefined {
 }
 
 /** Apply one fact. Unknown or unparseable bodies change nothing but the revision. */
-export function apply(view: FanoutView, type: string, data: unknown, seq: number): void {
+export function apply(
+	view: FanoutView,
+	type: string,
+	data: unknown,
+	seq: number,
+): void {
 	view.seq = seq;
 	switch (type) {
 		case CD_EVENTS.FanoutProgressed: {
@@ -205,13 +212,16 @@ export function fold(events: readonly EventEnvelope[]): FanoutView | undefined {
 		return undefined;
 	const view = begin(first);
 	if (view === undefined) return undefined;
-	for (const event of events.slice(1)) apply(view, event.type, event.data, event.seq);
+	for (const event of events.slice(1))
+		apply(view, event.type, event.data, event.seq);
 	return view;
 }
 
 /** Slots in run order with one state each. */
 export function campsIn(view: FanoutView, state: Slot["state"]): string[] {
-	return view.plan.campIds.filter((campId) => view.slots.get(campId)?.state === state);
+	return view.plan.campIds.filter(
+		(campId) => view.slots.get(campId)?.state === state,
+	);
 }
 
 export function statusOf(view: FanoutView): FanoutStatusRecord {

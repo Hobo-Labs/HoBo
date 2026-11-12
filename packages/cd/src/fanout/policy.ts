@@ -13,7 +13,10 @@ import { CD_DEFAULTS } from "../events.js";
 import type { Outcome } from "../ports.js";
 import { reason } from "./journal.js";
 
-export type FanoutStrategyName = "ALL" | "PROGRESSIVE" | "PROGRESSIVE_PER_GROUP";
+export type FanoutStrategyName =
+	| "ALL"
+	| "PROGRESSIVE"
+	| "PROGRESSIVE_PER_GROUP";
 
 export type FanoutGroup = Readonly<{
 	name: string;
@@ -79,7 +82,11 @@ function strategyName(strategy: FanoutStrategy): FanoutStrategyName {
 	}
 }
 
-function invalid(message: string, remediation: string, subject = ""): ReasonRecord {
+function invalid(
+	message: string,
+	remediation: string,
+	subject = "",
+): ReasonRecord {
 	return reason(FANOUT_REASON.invalid, message, remediation, subject);
 }
 

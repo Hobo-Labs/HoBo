@@ -40,11 +40,17 @@ function count(
 	return n;
 }
 
-function stateOf(slots: ReadonlyMap<string, SlotView>, campId: string): SlotState {
+function stateOf(
+	slots: ReadonlyMap<string, SlotView>,
+	campId: string,
+): SlotState {
 	return slots.get(campId)?.state ?? "pending";
 }
 
-function busy(slots: ReadonlyMap<string, SlotView>, group: FanoutGroup): boolean {
+function busy(
+	slots: ReadonlyMap<string, SlotView>,
+	group: FanoutGroup,
+): boolean {
 	return group.campIds.some((campId) => {
 		const state = stateOf(slots, campId);
 		return state === "pending" || state === "in-flight";

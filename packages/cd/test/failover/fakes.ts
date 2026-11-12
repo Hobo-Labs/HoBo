@@ -45,7 +45,10 @@ import type { FakeInventory } from "../fanout/fakes.js";
 
 export class FakePipelines implements PipelineController {
 	readonly pipelines = new Map<string, PipelineRecord>();
-	define(name: string, node: Readonly<{ fanout: FanoutRecord; failover?: FailoverPolicyRecord }>): void {
+	define(
+		name: string,
+		node: Readonly<{ fanout: FanoutRecord; failover?: FailoverPolicyRecord }>,
+	): void {
 		this.pipelines.set(
 			name,
 			create(PipelineRecordSchema, {
@@ -93,27 +96,45 @@ export class FakePlacement implements PlacementEngine {
 		return { ok: true, value: p };
 	}
 	async get(name: string) {
-		return create(PlacementRecordSchema, { name, tolerations: this.tolerations });
+		return create(PlacementRecordSchema, {
+			name,
+			tolerations: this.tolerations,
+		});
 	}
-	async reportScores(s: ScoreSnapshotRecord): Promise<Outcome<ScoreSnapshotRecord>> {
+	async reportScores(
+		s: ScoreSnapshotRecord,
+	): Promise<Outcome<ScoreSnapshotRecord>> {
 		return { ok: true, value: s };
 	}
-	async decide(input: Parameters<PlacementEngine["decide"]>[0], _ctx: CdContext): Promise<Outcome<PlacementDecisionRecord>> {
+	async decide(
+		input: Parameters<PlacementEngine["decide"]>[0],
+		_ctx: CdContext,
+	): Promise<Outcome<PlacementDecisionRecord>> {
 		this.calls.push(input);
 		const exclude = new Set<string>(input.exclude ?? []);
 		const eligible = [...this.inventory.camps.values()]
 			.filter((v) => !exclude.has(v.topology.campId))
-			.filter((v) => !v.status.taints.some((t) => t.effect === TaintEffect.NO_PLACE || t.effect === TaintEffect.NO_RUN))
+			.filter(
+				(v) =>
+					!v.status.taints.some(
+						(t) =>
+							t.effect === TaintEffect.NO_PLACE ||
+							t.effect === TaintEffect.NO_RUN,
+					),
+			)
 			.filter(
 				(v) =>
 					this.ignoreResidency ||
 					input.subject.residency.every((constraint) =>
-						v.topology.regions.every((region) => evaluateResidency({ constraint, region }).ok),
+						v.topology.regions.every(
+							(region) => evaluateResidency({ constraint, region }).ok,
+						),
 					),
 			)
 			.map((v) => v.topology.campId)
 			.sort();
-		const chosen = input.count === undefined ? eligible : eligible.slice(0, input.count);
+		const chosen =
+			input.count === undefined ? eligible : eligible.slice(0, input.count);
 		if (chosen.length === 0) return { ok: false, reasons: [] };
 		const decisionId = `redecide-${this.next}`;
 		this.next += 1;
@@ -124,7 +145,9 @@ export class FakePlacement implements PlacementEngine {
 				placement: input.placement,
 				pipeline: input.pipeline,
 				node: input.node,
-				candidates: chosen.map((campId) => create(PlacementCandidateRecordSchema, { campId, selected: true })),
+				candidates: chosen.map((campId) =>
+					create(PlacementCandidateRecordSchema, { campId, selected: true }),
+				),
 			}),
 		};
 	}
@@ -135,14 +158,21 @@ export class FakePlacement implements PlacementEngine {
 
 export function topologyOf(inventory: FakeInventory): TopologyReader {
 	return {
-		camps: async (): Promise<readonly CampTopology[]> => [...inventory.camps.values()].map((v) => v.topology),
+		camps: async (): Promise<readonly CampTopology[]> =>
+			[...inventory.camps.values()].map((v) => v.topology),
 		camp: async (campId: CampId) => inventory.camps.get(campId)?.topology,
 	};
 }
 
 export class FakeRails implements RailDeliveryReader {
 	rail: RailDeliveryRecord;
-	constructor(failover: Readonly<{ automatic?: boolean; maxConcurrent?: number; allowImmediatePurge?: boolean }> = {}) {
+	constructor(
+		failover: Readonly<{
+			automatic?: boolean;
+			maxConcurrent?: number;
+			allowImmediatePurge?: boolean;
+		}> = {},
+	) {
 		this.rail = create(RailDeliveryRecordSchema, {
 			railDigest: "sha256:rail",
 			campSets: ["fleet"],
@@ -163,13 +193,28 @@ export class FakeTraffic implements TrafficShifter {
 	async offerings(): Promise<readonly TrafficRoutingOfferingId[]> {
 		return [];
 	}
-	async shift(input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>): Promise<ApplyResult> {
+	async shift(
+		input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>,
+	): Promise<ApplyResult> {
 		this.shifts.push({ campId: input.campId, plan: input.plan });
-		return { planId: input.plan.planId, provider: "simple", realized: this.realize ? "full" : "none", notes: [] };
+		return {
+			planId: input.plan.planId,
+			provider: "simple",
+			realized: this.realize ? "full" : "none",
+			notes: [],
+		};
 	}
-	async status(_campId: CampId, planId: RoutingPlanId): Promise<RoutingStatus | null> {
+	async status(
+		_campId: CampId,
+		planId: RoutingPlanId,
+	): Promise<RoutingStatus | null> {
 		const known = this.shifts.some((s) => s.plan.planId === planId);
 		if (!known) return null;
-		return { planId, active: this.realize, realized: this.realize ? "full" : "none", notes: [] };
+		return {
+			planId,
+			active: this.realize,
+			realized: this.realize ? "full" : "none",
+			notes: [],
+		};
 	}
 }
