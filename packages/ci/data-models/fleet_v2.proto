@@ -1,0 +1,211 @@
+syntax = "proto3";
+package hobo.ci.v2;
+
+message GitHubJobKey {
+  string kind = 1;
+  string account_id = 2;
+  string engine_id = 3;
+  string installation_id = 4;
+  string repository_id = 5;
+  string run_id = 6;
+  string job_id = 7;
+  uint32 run_attempt = 8;
+}
+
+message DaggerPipelineKey {
+  string kind = 1;
+  string account_id = 2;
+  string engine_id = 3;
+  string pipeline_id = 4;
+  string pipeline_digest = 5;
+}
+
+message ExecutionKey {
+  oneof key {
+    GitHubJobKey github_job = 1;
+    DaggerPipelineKey dagger_pipeline = 2;
+  }
+}
+
+message ExecutionProfile {
+  string id = 1;
+  string os = 2;
+  string architecture = 3;
+  string isolation = 4;
+  string lifecycle = 5;
+  string guarantee = 6;
+}
+
+message CiDemand {
+  ExecutionKey key = 1;
+  string state = 2;
+  string first_observed_at = 3;
+  string last_observed_at = 4;
+  uint32 policy_revision = 5;
+  string required_profile_id = 6;
+  string source = 7;
+  repeated string source_delivery_ids = 8;
+}
+
+message RunnerSlot {
+  string id = 1;
+  string account_id = 2;
+  string offer_id = 3;
+  string worker_binding_id = 4;
+  string cluster_binding_id = 5;
+  string profile_id = 6;
+  string runner_name = 7;
+  string state = 8;
+  string capacity_group_id = 9;
+  uint32 capacity_cost_units = 10;
+  string policy_hash = 11;
+  string offer_observation_hash = 12;
+  string quote_hash = 13;
+  string binding_secret_hash = 14;
+  string external_runner_id = 15;
+  string kubernetes_uid = 16;
+  string incarnation_id = 17;
+  string created_at = 18;
+}
+
+message ExecutionClaim {
+  string id = 1;
+  ExecutionKey key = 2;
+  string runner_slot_id = 3;
+  string state = 4;
+  string profile_id = 5;
+  string policy_hash = 6;
+  string offer_id = 7;
+  string quote_hash = 8;
+  string start_authorized_at = 9;
+  string actual_started_at = 10;
+  string terminal_at = 11;
+  string incarnation_id = 12;
+}
+
+message Effect {
+  string id = 1;
+  string subject_type = 2;
+  string subject_id = 3;
+  string kind = 4;
+  uint32 sequence = 5;
+  string state = 6;
+  string idempotency_key = 7;
+  string external_locator = 8;
+  string created_at = 9;
+  string provider_scope = 10;
+}
+
+message WorkerDelivery {
+  string id = 1;
+  string effect_id = 2;
+  string worker_id = 3;
+  uint32 owner_epoch = 4;
+  uint32 fence = 5;
+  string expires_at = 6;
+  string state = 7;
+}
+
+message CapacityGroup {
+  string id = 1;
+  string account_id = 2;
+  uint32 approved_units = 3;
+  uint32 reserved_units = 4;
+  uint32 seq = 5;
+  string state = 6;
+}
+
+message ControllerIncarnation {
+  string id = 1;
+  string created_at = 2;
+  string reason = 3;
+}
+
+message Outbox {
+  string id = 1;
+  string effect_id = 2;
+  string state = 3;
+  string available_at = 4;
+  string created_at = 5;
+}
+
+message Observation {
+  string worker_id = 1;
+  string account_id = 2;
+  uint32 sequence = 3;
+  string observed_at = 4;
+  string content_hash = 5;
+}
+
+message OfferAdmission {
+  string offer_id = 1;
+  string account_id = 2;
+  string observation_hash = 3;
+  uint32 policy_revision = 4;
+  string state = 5;
+}
+
+enum FleetRejectionCode {
+  FLEET_REJECTION_CODE_UNSPECIFIED = 0;
+  FLEET_REJECTION_CODE_INVALID_RECORD = 1;
+  FLEET_REJECTION_CODE_INVALID_TRANSITION = 2;
+  FLEET_REJECTION_CODE_NOT_FOUND = 3;
+  FLEET_REJECTION_CODE_DEMAND_CONFLICT = 4;
+  FLEET_REJECTION_CODE_CAPACITY_CONFLICT = 5;
+  FLEET_REJECTION_CODE_CAPACITY_EXHAUSTED = 6;
+  FLEET_REJECTION_CODE_CAPACITY_INELIGIBLE = 7;
+  FLEET_REJECTION_CODE_POLICY_REVISION_CONFLICT = 8;
+  FLEET_REJECTION_CODE_OFFER_OBSERVATION_CONFLICT = 9;
+  FLEET_REJECTION_CODE_OFFER_REVOKED = 10;
+  FLEET_REJECTION_CODE_PROFILE_INCOMPATIBLE = 11;
+  FLEET_REJECTION_CODE_GUARANTEE_REQUIRED = 12;
+  FLEET_REJECTION_CODE_EFFECT_NOT_CLAIMABLE = 13;
+  FLEET_REJECTION_CODE_EFFECT_DELIVERY_ACTIVE = 14;
+  FLEET_REJECTION_CODE_STALE_DELIVERY_FENCE = 15;
+  FLEET_REJECTION_CODE_OBSERVATION_SEQUENCE_REGRESSED = 16;
+  FLEET_REJECTION_CODE_SLOT_NOT_REGISTERED = 17;
+  FLEET_REJECTION_CODE_SLOT_ALREADY_BOUND = 18;
+  FLEET_REJECTION_CODE_BINDING_SECRET_MISMATCH = 19;
+  FLEET_REJECTION_CODE_ASSIGNMENT_MISMATCH = 20;
+  FLEET_REJECTION_CODE_INCARNATION_STALE = 21;
+  FLEET_REJECTION_CODE_EXECUTION_ALREADY_CLAIMED = 22;
+  FLEET_REJECTION_CODE_EXECUTION_CONFLICT = 23;
+  FLEET_REJECTION_CODE_SETTLEMENT_CONFLICT = 24;
+  FLEET_REJECTION_CODE_TEARDOWN_UNCONFIRMED = 25;
+  FLEET_REJECTION_CODE_QUARANTINED = 26;
+}
+
+enum FleetEventType {
+  FLEET_EVENT_TYPE_UNSPECIFIED = 0;
+  FLEET_EVENT_TYPE_DEMAND_OBSERVED = 1;
+  FLEET_EVENT_TYPE_DEMAND_DEDUPLICATED = 2;
+  FLEET_EVENT_TYPE_CAPACITY_RESERVED = 3;
+  FLEET_EVENT_TYPE_RUNNER_SLOT_TRANSITIONED = 4;
+  FLEET_EVENT_TYPE_EFFECT_PLANNED = 5;
+  FLEET_EVENT_TYPE_EFFECT_DELIVERY_CLAIMED = 6;
+  FLEET_EVENT_TYPE_EFFECT_DISPATCHING = 7;
+  FLEET_EVENT_TYPE_EFFECT_CONFIRMED = 8;
+  FLEET_EVENT_TYPE_EFFECT_UNCERTAIN = 9;
+  FLEET_EVENT_TYPE_EXECUTION_START_AUTHORIZED = 10;
+  FLEET_EVENT_TYPE_EXECUTION_RUNNING = 11;
+  FLEET_EVENT_TYPE_EXECUTION_COMPLETED = 12;
+  FLEET_EVENT_TYPE_EXECUTION_FAILED = 13;
+  FLEET_EVENT_TYPE_EXECUTION_CANCELLED = 14;
+  FLEET_EVENT_TYPE_EXECUTION_UNCERTAIN = 15;
+  FLEET_EVENT_TYPE_CAPACITY_RELEASED = 16;
+  FLEET_EVENT_TYPE_OBSERVATION_ACCEPTED = 17;
+  FLEET_EVENT_TYPE_CONTROLLER_INCARNATION_CREATED = 18;
+  FLEET_EVENT_TYPE_CAPACITY_QUARANTINED = 19;
+}
+
+message FleetEvent {
+  string id = 1;
+  FleetEventType type = 2;
+  string at = 3;
+  string account_id = 4;
+  string subject_type = 5;
+  string subject_id = 6;
+  ExecutionKey execution_key = 7;
+  string incarnation_id = 8;
+  FleetRejectionCode rejection_code = 9;
+}
