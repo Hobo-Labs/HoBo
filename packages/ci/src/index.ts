@@ -45,6 +45,34 @@ export {
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
+export {
+	CI_FREIGHT_MANIFEST_SCHEMA,
+	CI_FREIGHT_MANIFEST_SUFFIX,
+	CI_FREIGHT_REASON,
+	CI_PROVENANCE_OUTPUT,
+	type CiBuild,
+	CiFreightError,
+	type CiFreightManifest,
+	type CiFreightOutput,
+	type CiFreightOutputs,
+	type CiFreightReason,
+	type CiProvenance,
+	type CiProvenanceRef,
+	ciDeclarationHash,
+	ciFreightCoordinate,
+	ciFreightManifest,
+	ciFreightOutputs,
+	ciFreightPipelineArtifacts,
+	ciFreightResult,
+	ciProvenanceStatement,
+	HOBO_CI_BUILD_TYPE,
+	HOBO_DELIVERABLES,
+	type HoboDeliverable,
+	type HoboDeliverableId,
+	IN_TOTO_STATEMENT_TYPE,
+	SLSA_PROVENANCE_PREDICATE,
+	writeCiFreightManifest,
+} from "./freight.js";
 export { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {
