@@ -37,6 +37,7 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 - The two test expectations follow the code they describe: the suites that merge the root config, and the finish job's empty-plan pass.
 - `fleet-enrollment.yml` no longer sets `NODE_OPTIONS`; both of its jobs run `ci-runner-preflight` on the fleet, which sizes the heap from the job's memory.
 - `turbo.json` lists `test/fleet-enrollment-scorecard.eval.test.ts` in `//#test:unit:root:0`'s inputs.
+- `packages/ci-gh-actions/test/deps-image-scope.test.ts` pins the PR impact gate's needs; it now expects `scripts-tests` among them (it failed `@hobo/ci-gh-actions`'s tests until it did).
 - **The job `scripts-tests`** in `hobo-ci.yml` runs `pnpm run test:scripts` on pull requests and merge groups when the change touches `scripts/**`, `test/**` or `.github/**`, on the routed runner after `ci-runner-preflight`. Before the lane it restores the Turbo cache and builds the dependencies (`--filter=<package>^...`) of every package whose `src/` a scripts test imports, 88 build tasks. The **PR impact gate** needs it and fails unless it succeeded.
 - **`scripts/relevant-check-policy.ts`** selects `test:scripts` for the same paths in a base-ref `pnpm agent:check`, and leaves it to the job when the caller runs workspace tests externally (CI) or checks a staged commit.
 
