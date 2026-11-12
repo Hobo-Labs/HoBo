@@ -1,0 +1,121 @@
+{
+	"base": "https://git.example.com/acme/web.git",
+	"commits": {
+		"c1": "375f3ec87584f33536445eb150faf016a00f5ebe",
+		"c2": "bf8fb013795b8046f74f2ad12f1fb604ee676cc0",
+		"c3": "b4c2950fce083767ec7a7b9d54703645d493ba5f"
+	},
+	"sets": {
+		"t1": [
+			{
+				"method": "GET",
+				"url": "https://git.example.com/acme/web.git/info/refs?service=git-upload-pack",
+				"response": "MDAxZSMgc2VydmljZT1naXQtdXBsb2FkLXBhY2sKMDAwMDAwMGV2ZXJzaW9uIDIKMDAxNWFnZW50PWdpdC8yLjQzLjAKMDAxM2xzLXJlZnM9dW5ib3JuCjAwMjdmZXRjaD1zaGFsbG93IHdhaXQtZm9yLWRvbmUgZmlsdGVyCjAwMTJzZXJ2ZXItb3B0aW9uCjAwMTdvYmplY3QtZm9ybWF0PXNoYTEKMDAxMG9iamVjdC1pbmZvCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0014command=ls-refs\n0014agent=hobo-cd/1\n00010009peel\n001fref-prefix refs/heads/main\n0000",
+				"response": "MDAzZDM3NWYzZWM4NzU4NGYzMzUzNjQ0NWViMTUwZmFmMDE2YTAwZjVlYmUgcmVmcy9oZWFkcy9tYWluCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0014command=ls-refs\n0014agent=hobo-cd/1\n00010009peel\n001aref-prefix refs/tags/\n0000",
+				"response": "MDAzZTM3NWYzZWM4NzU4NGYzMzUzNjQ0NWViMTUwZmFmMDE2YTAwZjVlYmUgcmVmcy90YWdzL3YxLjAuMAowMDAw"
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0012filter tree:0\n0032want 375f3ec87584f33536445eb150faf016a00f5ebe\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyAzNzVmM2VjODc1ODRmMzM1MzY0NDVlYjE1MGZhZjAxNmEwMGY1ZWJlMDAwMTAwMGRwYWNrZmlsZQowMDk1AVBBQ0sAAAACAAAAAZEKeJyVi0EKgzAQAO95xd4Lsrtq0kApnvxHsllRaLCEFXx+hb7AOQ0DY00VpBeWQqEnLqwLMooEHDOnLJl90pEjDRhdOmzdG8zbaUdTeC1/mfRM9fvRTvb6BgrxiUweER544a5aNzO9PToh9wPgOjDX1kZeyPGhf5ayRdenohHOnhoMuTAwMDYBajAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0015filter blob:none\n0032want 375f3ec87584f33536445eb150faf016a00f5ebe\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyAzNzVmM2VjODc1ODRmMzM1MzY0NDVlYjE1MGZhZjAxNmEwMGY1ZWJlMDAwMTAwMGRwYWNrZmlsZQowMTM1AVBBQ0sAAAACAAAABJEKeJyVi0EKgzAQAO95xd4Lsrtq0kApnvxHsllRaLCEFXx+hb7AOQ0DY00VpBeWQqEnLqwLMooEHDOnLJl90pEjDRhdOmzdG8zbaUdTeC1/mfRM9fvRTvb6BgrxiUweER544a5aNzO9PToh9wPgOjDXrwN4nDMxAAKFlNSCnPxKhv6VXBbhfO/3rouYkFHE9trR/eRqcROwguKiZAaFp1zs//6vf545+3P/F6aqhHyHvFUA5skZw6MCeJwzNDAwMzFRSCwo0EsuTWWwtpoZ8KLm0kyzmvPGoe8nzeCL0NkEANKKDY+hAnicMzQwMDMxUUjUK6koYQhTW/3hu17E9YXBZt1La7ccKz7wsBAAxeMOgPZ5YO5pEe+7ECZqTMyPj76RDKowMDA2Ae4wMDAw"
+			}
+		],
+		"t2": [
+			{
+				"method": "GET",
+				"url": "https://git.example.com/acme/web.git/info/refs?service=git-upload-pack",
+				"response": "MDAxZSMgc2VydmljZT1naXQtdXBsb2FkLXBhY2sKMDAwMDAwMGV2ZXJzaW9uIDIKMDAxNWFnZW50PWdpdC8yLjQzLjAKMDAxM2xzLXJlZnM9dW5ib3JuCjAwMjdmZXRjaD1zaGFsbG93IHdhaXQtZm9yLWRvbmUgZmlsdGVyCjAwMTJzZXJ2ZXItb3B0aW9uCjAwMTdvYmplY3QtZm9ybWF0PXNoYTEKMDAxMG9iamVjdC1pbmZvCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0014command=ls-refs\n0014agent=hobo-cd/1\n00010009peel\n001fref-prefix refs/heads/main\n0000",
+				"response": "MDAzZGJmOGZiMDEzNzk1YjgwNDZmNzRmMmFkMTJmMWZiNjA0ZWU2NzZjYzAgcmVmcy9oZWFkcy9tYWluCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0014command=ls-refs\n0014agent=hobo-cd/1\n00010009peel\n001aref-prefix refs/tags/\n0000",
+				"response": "MDAzZTM3NWYzZWM4NzU4NGYzMzUzNjQ0NWViMTUwZmFmMDE2YTAwZjVlYmUgcmVmcy90YWdzL3YxLjAuMAowMDZlOWU4NDk2OWQ0M2YyMmFlZDliYTExODdiNzVkNjUyNjNiY2I4ODcwZSByZWZzL3RhZ3MvdjEuMS4wIHBlZWxlZDpiZjhmYjAxMzc5NWI4MDQ2Zjc0ZjJhZDEyZjFmYjYwNGVlNjc2Y2MwCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0012filter tree:0\n0032want bf8fb013795b8046f74f2ad12f1fb604ee676cc0\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiZjhmYjAxMzc5NWI4MDQ2Zjc0ZjJhZDEyZjFmYjYwNGVlNjc2Y2MwMDAwMTAwMGRwYWNrZmlsZQowMGIyAVBBQ0sAAAACAAAAAZENeJyVi0sKwzAMBfc+hfeFIleW5UAJXfUe/kg00DTBOJDj19ATdFZvHkxvIhY4OWUMHmomdiRQsNQc0cWJqwZBRozIZk9NPt0ik6KUyBS9ItIoPUl2BJoUXEgAOlxMOvpra/a5nP1oYu/6Gw8507q/5Vq2dbaOpwgEHsBeYGDGuy69y9+hKTfzBT16Pbk1zcLFcJfRR5L/Sp0obT4BYbSOMDAwNgGjMDAwMA=="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0015filter blob:none\n0032want bf8fb013795b8046f74f2ad12f1fb604ee676cc0\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiZjhmYjAxMzc5NWI4MDQ2Zjc0ZjJhZDEyZjFmYjYwNGVlNjc2Y2MwMDAwMTAwMGRwYWNrZmlsZQowMTUzAVBBQ0sAAAACAAAABJENeJyVi0sKwzAMBfc+hfeFIleW5UAJXfUe/kg00DTBOJDj19ATdFZvHkxvIhY4OWUMHmomdiRQsNQc0cWJqwZBRozIZk9NPt0ik6KUyBS9ItIoPUl2BJoUXEgAOlxMOvpra/a5nP1oYu/6Gw8507q/5Vq2dbaOpwgEHsBeYGDGuy69y9+hKTfzBT16PbmvA3icMzEAAoWU1IKc/EqG/pVcFuF87/eui5iQUcT22tH95GpxE7CC4qJkBkO7XbpiPffz7sXPWdV+8uPW74cvswAA3JoaTKMCeJwzNDAwMzFRSCwo0EsuTWWwtpoZ8KLm0kyzmvPGoe8nzeCL0NkEANKKDY+hAnicMzQwMDMxUUjUK6koYfgu+f6KwVXt8yfCspw3vU4N67jcUQgAz5cOiL16ES57Id7lwkvnnk+jq3C6UqEwMDA2AeUwMDAw"
+			}
+		],
+		"t3": [
+			{
+				"method": "GET",
+				"url": "https://git.example.com/acme/web.git/info/refs?service=git-upload-pack",
+				"response": "MDAxZSMgc2VydmljZT1naXQtdXBsb2FkLXBhY2sKMDAwMDAwMGV2ZXJzaW9uIDIKMDAxNWFnZW50PWdpdC8yLjQzLjAKMDAxM2xzLXJlZnM9dW5ib3JuCjAwMjdmZXRjaD1zaGFsbG93IHdhaXQtZm9yLWRvbmUgZmlsdGVyCjAwMTJzZXJ2ZXItb3B0aW9uCjAwMTdvYmplY3QtZm9ybWF0PXNoYTEKMDAxMG9iamVjdC1pbmZvCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0014command=ls-refs\n0014agent=hobo-cd/1\n00010009peel\n001fref-prefix refs/heads/main\n0000",
+				"response": "MDAzZGI0YzI5NTBmY2UwODM3NjdlYzdhN2I5ZDU0NzAzNjQ1ZDQ5M2JhNWYgcmVmcy9oZWFkcy9tYWluCjAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0014command=ls-refs\n0014agent=hobo-cd/1\n00010009peel\n001aref-prefix refs/tags/\n0000",
+				"response": "MDAzZTM3NWYzZWM4NzU4NGYzMzUzNjQ0NWViMTUwZmFmMDE2YTAwZjVlYmUgcmVmcy90YWdzL3YxLjAuMAowMDZlOWU4NDk2OWQ0M2YyMmFlZDliYTExODdiNzVkNjUyNjNiY2I4ODcwZSByZWZzL3RhZ3MvdjEuMS4wIHBlZWxlZDpiZjhmYjAxMzc5NWI4MDQ2Zjc0ZjJhZDEyZjFmYjYwNGVlNjc2Y2MwCjAwM2ViNGMyOTUwZmNlMDgzNzY3ZWM3YTdiOWQ1NDcwMzY0NWQ0OTNiYTVmIHJlZnMvdGFncy92MS4yLjAKMDAwMA=="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0012filter tree:0\n0032want b4c2950fce083767ec7a7b9d54703645d493ba5f\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiNGMyOTUwZmNlMDgzNzY3ZWM3YTdiOWQ1NDcwMzY0NWQ0OTNiYTVmMDAwMTAwMGRwYWNrZmlsZQowMGIxAVBBQ0sAAAACAAAAAZENeJyVi0sKwjAQQPc5xewFmfwTEHHlPZLJDBasLSGFHt+AJ/CtHg/e6MyQvMeCgs04Ss0SmeaYPZlA0krCQDpbdqT20vkzoEqSitrG7GtCFyQ6MaVpI1pqwPmGGIhQlWO8tg7P5RxHZ7jJTx58lnV/85W29Q465oQxG0S44ETNui5j8N+jIqu+OJ0/O2MkQFDAZsI0TYNolVOjO+p6xhowMDA2AVgwMDAw"
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0015filter blob:none\n0032want b4c2950fce083767ec7a7b9d54703645d493ba5f\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiNGMyOTUwZmNlMDgzNzY3ZWM3YTdiOWQ1NDcwMzY0NWQ0OTNiYTVmMDAwMTAwMGRwYWNrZmlsZQowMTUxAVBBQ0sAAAACAAAABJENeJyVi0sKwjAQQPc5xewFmfwTEHHlPZLJDBasLSGFHt+AJ/CtHg/e6MyQvMeCgs04Ss0SmeaYPZlA0krCQDpbdqT20vkzoEqSitrG7GtCFyQ6MaVpI1pqwPmGGIhQlWO8tg7P5RxHZ7jJTx58lnV/85W29Q465oQxG0S44ETNui5j8N+jIqu+OJ0/O68DeJwzMQAChZTUgpz8SgbGuqM7/+ZO19PQXDg/Rc//9lz54ngTsILiomQGQ7tdumI99/Puxc9Z1X7y49bvhy+zAADiVhpUowJ4nDM0MDAzMVFILCjQSy5NZXgdo1Y8b0VZFcM92zxJo8MO54xMigDNNAyPoQJ4nDM0MDAzMVFI1CupKGH4Lvn+isFV7fMnwrKcN71ODeu43FEIAM+XDoihvs3x1A+FMXp2zyxSqphF67VpMDAwNgG4MDAwMA=="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0012filter tree:0\n0032want 375f3ec87584f33536445eb150faf016a00f5ebe\n0032want b4c2950fce083767ec7a7b9d54703645d493ba5f\n0032want bf8fb013795b8046f74f2ad12f1fb604ee676cc0\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiZjhmYjAxMzc5NWI4MDQ2Zjc0ZjJhZDEyZjFmYjYwNGVlNjc2Y2MwMDAzNHNoYWxsb3cgYjRjMjk1MGZjZTA4Mzc2N2VjN2E3YjlkNTQ3MDM2NDVkNDkzYmE1ZjAwMzRzaGFsbG93IDM3NWYzZWM4NzU4NGYzMzUzNjQ0NWViMTUwZmFmMDE2YTAwZjVlYmUwMDAxMDAwZHBhY2tmaWxlCjAxYjABUEFDSwAAAAIAAAADkQ14nJWLSwrCMBBA9znF7AWZ/BMQceU9kskMFqwtIYUe34An8K0eD97ozJC8x4KCzThKzRKZ5pg9mUDSSsJAOlt2pPbS+TOgSpKK2sbsa0IXJDoxpWkjWmrA+YYYiFCVY7y2Ds/lHEdnuMlPHnyWdX/zlbb1DjrmhDEbRLjgRM26LmPw36Miq744nT87kQ14nJWLSwrDMAwF9z6F94UiV5blQAld9R7+SDTQNME4kOPX0BN0Vm8eTG8iFjg5ZQweaiZ2JFCw1BzRxYmrBkFGjMhmT00+3SKTopTIFL0i0ig9SXYEmhRcSAA6XEw6+mtr9rmc/Whi7/obDznTur/lWrZ1to6nCAQewF5gYMa7Lr3L36EpN/MFPXo9uZEKeJyVi0EKgzAQAO95xd4Lsrtq0kApnvxHsllRaLCEFXx+hb7AOQ0DY00VpBeWQqEnLqwLMooEHDOnLJl90pEjDRhdOmzdG8zbaUdTeC1/mfRM9fvRTvb6BgrxiUweER544a5aNzO9PToh9wPgOjDXimCfHTXQTo7rzSGUk2nHicV4CDAwMDYB8TAwMDA="
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0015filter blob:none\n0032want 375f3ec87584f33536445eb150faf016a00f5ebe\n0032want b4c2950fce083767ec7a7b9d54703645d493ba5f\n0032want bf8fb013795b8046f74f2ad12f1fb604ee676cc0\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiZjhmYjAxMzc5NWI4MDQ2Zjc0ZjJhZDEyZjFmYjYwNGVlNjc2Y2MwMDAzNHNoYWxsb3cgYjRjMjk1MGZjZTA4Mzc2N2VjN2E3YjlkNTQ3MDM2NDVkNDkzYmE1ZjAwMzRzaGFsbG93IDM3NWYzZWM4NzU4NGYzMzUzNjQ0NWViMTUwZmFmMDE2YTAwZjVlYmUwMDAxMDAwZHBhY2tmaWxlCjAzMzcBUEFDSwAAAAIAAAAKkQ14nJWLSwrCMBBA9znF7AWZ/BMQceU9kskMFqwtIYUe34An8K0eD97ozJC8x4KCzThKzRKZ5pg9mUDSSsJAOlt2pPbS+TOgSpKK2sbsa0IXJDoxpWkjWmrA+YYYiFCVY7y2Ds/lHEdnuMlPHnyWdX/zlbb1DjrmhDEbRLjgRM26LmPw36Miq744nT87kQ14nJWLSwrDMAwF9z6F94UiV5blQAld9R7+SDTQNME4kOPX0BN0Vm8eTG8iFjg5ZQweaiZ2JFCw1BzRxYmrBkFGjMhmT00+3SKTopTIFL0i0ig9SXYEmhRcSAA6XEw6+mtr9rmc/Whi7/obDznTur/lWrZ1to6nCAQewF5gYMa7Lr3L36EpN/MFPXo9uZEKeJyVi0EKgzAQAO95xd4Lsrtq0kApnvxHsllRaLCEFXx+hb7AOQ0DY00VpBeWQqEnLqwLMooEHDOnLJl90pEjDRhdOmzdG8zbaUdTeC1/mfRM9fvRTvb6BgrxiUweER544a5aNzO9PToh9wPgOjDXrwN4nDMxAAKFlNSCnPxKBsa6ozv/5k7X09BcOD9Fz//2XPnieBOwguKiZAZDu126Yj338+7Fz1nVfvLj1u+HL7MAAOJWGlSjAnicMzQwMDMxUUgsKNBLLk1leB2jVjxvRVkVwz3bPEmjww7njEyKAM00DI+hAnicMzQwMDMxUUjUK6koYfgu+f6KwVXt8yfCspw3vU4N67jcUQgAz5cOiK8DeJwzMQAChZTUgpz8Sob+lVwW4Xzv966LmJBRxPba0f3kanETsILiomQGQ7tdumI99/Puxc9Z1X7y49bvhy+zAADcmhpMowJ4nDM0MDAzMVFILCjQSy5NZbC2mhnwoubSTLOa88ah7yfN4IvQ2QQA0ooNj68DeJwzMQAChZTUgpz8Sob+lVwW4Xzv966LmJBRxPba0f3kanETsILiomQGhadc7P/+r3+eOftz/xemqoR8h7xVAObJGcOhAnicMzQwMDMxUUjUK6koYQhTW/3hu17E9YXBZt1La7ccKz7wsBAAxeMOgBgKuYhBDnKICurc1gnNEJeZzEAwMDA2ATIwMDAw"
+			},
+			{
+				"method": "POST",
+				"url": "https://git.example.com/acme/web.git/git-upload-pack",
+				"body": "0012command=fetch\n0014agent=hobo-cd/1\n00010010no-progress\n000eofs-delta\n000ddeepen 1\n0015filter blob:none\n0032want b4c2950fce083767ec7a7b9d54703645d493ba5f\n0009done\n0000",
+				"response": "MDAxMXNoYWxsb3ctaW5mbwowMDM0c2hhbGxvdyBiNGMyOTUwZmNlMDgzNzY3ZWM3YTdiOWQ1NDcwMzY0NWQ0OTNiYTVmMDAwMTAwMGRwYWNrZmlsZQowMTUxAVBBQ0sAAAACAAAABJENeJyVi0sKwjAQQPc5xewFmfwTEHHlPZLJDBasLSGFHt+AJ/CtHg/e6MyQvMeCgs04Ss0SmeaYPZlA0krCQDpbdqT20vkzoEqSitrG7GtCFyQ6MaVpI1pqwPmGGIhQlWO8tg7P5RxHZ7jJTx58lnV/85W29Q465oQxG0S44ETNui5j8N+jIqu+OJ0/O68DeJwzMQAChZTUgpz8SgbGuqM7/+ZO19PQXDg/Rc//9lz54ngTsILiomQGQ7tdumI99/Puxc9Z1X7y49bvhy+zAADiVhpUowJ4nDM0MDAzMVFILCjQSy5NZXgdo1Y8b0VZFcM92zxJo8MO54xMigDNNAyPoQJ4nDM0MDAzMVFI1CupKGH4Lvn+isFV7fMnwrKcN71ODeu43FEIAM+XDoihvs3x1A+FMXp2zyxSqphF67VpMDAwNgG4MDAwMA=="
+			}
+		]
+	}
+}
