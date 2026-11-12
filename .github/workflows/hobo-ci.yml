@@ -1161,7 +1161,9 @@ jobs:
     name: Main workspace test shard ${{ matrix.shard }}
     needs: [ci-runner-image, ci-deps-image, main-gate-plan]
     if: >-
-      !cancelled() && needs.main-gate-plan.result == 'success' && (
+      !cancelled() && needs.main-gate-plan.result == 'success' &&
+      needs.main-gate-plan.outputs.shards != '[]' &&
+      needs.main-gate-plan.outputs.shards != '' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
@@ -1311,12 +1313,11 @@ jobs:
             echo "Main workspace plan did not succeed: $PLAN_RESULT" >&2
             exit 1
           fi
-          if [ "$WORKSPACE_RESULT" = "skipped" ]; then
-            if [ "${PLAN_SHARDS:-}" != "[]" ]; then
-              echo "Main workspace shards were skipped but plan did not emit shards=[] (shards=${PLAN_SHARDS:-unset})" >&2
-              exit 1
-            fi
-          elif [ "$WORKSPACE_RESULT" != "success" ]; then
+          if [ "$PLAN_SHARDS" = "[]" ] || [ -z "${PLAN_SHARDS:-}" ]; then
+            echo "No workspace test shards planned"
+            exit 0
+          fi
+          if [ "$WORKSPACE_RESULT" != "success" ]; then
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -64,5 +65,99 @@ describe("main full gate workspace sharding", () => {
 		);
 		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
 		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
+	});
+
+	it("skips workspace shard jobs when the plan emits no shards", () => {
+		const shardStart = workflow.indexOf("  main_workspace_tests:");
+		const finishStart = workflow.indexOf("  main_gate_finish:", shardStart);
+		const block = workflow.slice(shardStart, finishStart);
+		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != '\[\]'/u);
+	});
+});
+
+function shellForFinishShardGate(block: string): string {
+	const start = block.indexOf("      - name: Require main gate and workspace shards\n");
+	assert.ok(start >= 0);
+	const step = block.slice(start);
+	const match = step.match(/\n        run: \|\n((?: {10}[^\n]*\n?)+)/u);
+	const body = match?.[1];
+	assert.ok(body !== undefined);
+	return body.replace(/^ {10}/gmu, "");
+}
+
+describe("main gate finish workspace shard gate", () => {
+	const finishStart = workflow.indexOf("  main_gate_finish:");
+	const finish = workflow.slice(
+		finishStart,
+		workflow.indexOf("  artifact-trust:", finishStart),
+	);
+	const script = shellForFinishShardGate(finish);
+
+	function runGate(env: Record<string, string>): number | null {
+		return spawnSync("bash", ["-c", script], { env: { ...process.env, ...env } })
+			.status;
+	}
+
+	it("passes when the plan succeeded with no shards and workspace was skipped", () => {
+		assert.equal(
+			runGate({
+				MAIN_RESULT: "success",
+				PLAN_RESULT: "success",
+				PLAN_SHARDS: "[]",
+				WORKSPACE_RESULT: "skipped",
+			}),
+			0,
+		);
+	});
+
+	it("passes when the plan succeeded with no shards even if workspace failed (empty matrix)", () => {
+		assert.equal(
+			runGate({
+				MAIN_RESULT: "success",
+				PLAN_RESULT: "success",
+				PLAN_SHARDS: "[]",
+				WORKSPACE_RESULT: "failure",
+			}),
+			0,
+		);
+	});
+
+	it("fails when the plan did not succeed", () => {
+		for (const planResult of ["failure", "cancelled", "skipped"]) {
+			assert.equal(
+				runGate({
+					MAIN_RESULT: "success",
+					PLAN_RESULT: planResult,
+					PLAN_SHARDS: "[]",
+					WORKSPACE_RESULT: "skipped",
+				}),
+				1,
+				planResult,
+			);
+		}
+	});
+
+	it("fails when shards were planned and workspace tests failed", () => {
+		assert.equal(
+			runGate({
+				MAIN_RESULT: "success",
+				PLAN_RESULT: "success",
+				PLAN_SHARDS: "[0,1]",
+				WORKSPACE_RESULT: "failure",
+			}),
+			1,
+		);
+	});
+
+	it("passes when shards were planned and workspace tests succeeded", () => {
+		assert.equal(
+			runGate({
+				MAIN_RESULT: "success",
+				PLAN_RESULT: "success",
+				PLAN_SHARDS: "[0]",
+				WORKSPACE_RESULT: "success",
+			}),
+			0,
+		);
 	});
 });
