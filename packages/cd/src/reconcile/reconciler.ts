@@ -381,6 +381,10 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			input,
 		);
 		m.lastObservedAtMs = d.now();
+		// Without a successful observation nothing is applied: an unknown
+		// target state is resolved by observation only (I5).
+		if (observed.status === ReconcileStatus.BLOCKED)
+			return report(lease, observed);
 		if (change.management !== CampManagement.MANAGED) {
 			// OBSERVE_ONLY: read, report and record drift; never apply.
 			const findings = driftFindings(observed);

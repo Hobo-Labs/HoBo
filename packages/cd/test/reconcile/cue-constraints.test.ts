@@ -28,10 +28,13 @@ import {
 	TENANT,
 } from "./fakes.js";
 
-const schema = fileURLToPath(new URL("../../data-models/reconcile.cue", import.meta.url));
+const schema = fileURLToPath(
+	new URL("../../data-models/reconcile.cue", import.meta.url),
+);
 
 function findCue(): string | undefined {
-	if (process.env.HOBO_CUE_BIN && existsSync(process.env.HOBO_CUE_BIN)) return process.env.HOBO_CUE_BIN;
+	if (process.env.HOBO_CUE_BIN && existsSync(process.env.HOBO_CUE_BIN))
+		return process.env.HOBO_CUE_BIN;
 	let dir = fileURLToPath(new URL(".", import.meta.url));
 	for (let i = 0; i < 12; i++) {
 		const tools = join(dir, ".tools", "cue");
@@ -43,7 +46,9 @@ function findCue(): string | undefined {
 		dir = join(dir, "..");
 	}
 	try {
-		return execFileSync("which", ["cue"], { encoding: "utf8" }).trim() || undefined;
+		return (
+			execFileSync("which", ["cue"], { encoding: "utf8" }).trim() || undefined
+		);
 	} catch {
 		return undefined;
 	}
@@ -51,13 +56,19 @@ function findCue(): string | undefined {
 
 const cue = findCue();
 
-function vet(definition: string, value: unknown): { ok: boolean; output: string } {
+function vet(
+	definition: string,
+	value: unknown,
+): { ok: boolean; output: string } {
 	if (!cue) throw new Error("cue missing");
 	const dir = mkdtempSync(join(tmpdir(), "hobo-cd-reconcile-cue-"));
 	const file = join(dir, "data.json");
 	writeFileSync(file, JSON.stringify(value));
 	try {
-		execFileSync(cue, ["vet", "-d", definition, schema, file], { encoding: "utf8", stdio: "pipe" });
+		execFileSync(cue, ["vet", "-d", definition, schema, file], {
+			encoding: "utf8",
+			stdio: "pipe",
+		});
 		return { ok: true, output: "" };
 	} catch (error) {
 		const e = error as { stderr?: string; stdout?: string };
@@ -80,12 +91,20 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			mode: ReconcilerMode.CONDUCTOR,
 			campIds: [camp],
 			holderId: "host",
-			transport: createInProcessTransport({ store, tenant: TENANT, now: clock.now, desired }),
+			transport: createInProcessTransport({
+				store,
+				tenant: TENANT,
+				now: clock.now,
+				desired,
+			}),
 			realizer,
 			drift: createDriftPolicy(),
 			telemetry: createRecordingSink(),
 		});
-		const resolved = resolvedFor(camp, [{ name: "api" }, { name: "db", port: "database" }]);
+		const resolved = resolvedFor(camp, [
+			{ name: "api" },
+			{ name: "db", port: "database" },
+		]);
 		await desired.publish(setFor(camp, resolved, 1), resolved);
 		await reconciler.reconcileOnce(camp, ctxAt(clock));
 		clock.advance(61_000);
@@ -107,7 +126,12 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			fenceToken: "1",
 			observedAt: "2026-11-12T00:00:00.000Z",
 		};
-		expect(vet("#ReconcileObservationRecord", { ...base, status: "RECONCILE_STATUS_BLOCKED" }).ok).toBe(false);
+		expect(
+			vet("#ReconcileObservationRecord", {
+				...base,
+				status: "RECONCILE_STATUS_BLOCKED",
+			}).ok,
+		).toBe(false);
 		expect(
 			vet("#ReconcileObservationRecord", {
 				...base,
@@ -115,7 +139,18 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 				resources: [{ resource: "a", driftKind: "Modified::" }],
 			}).ok,
 		).toBe(false);
-		expect(vet("#ReconcileObservationRecord", { ...base, fenceToken: "-1", status: "RECONCILE_STATUS_CONVERGED" }).ok).toBe(false);
-		expect(vet("#ReconcileObservationRecord", { ...base, status: "RECONCILE_STATUS_CONVERGED" }).ok).toBe(true);
+		expect(
+			vet("#ReconcileObservationRecord", {
+				...base,
+				fenceToken: "-1",
+				status: "RECONCILE_STATUS_CONVERGED",
+			}).ok,
+		).toBe(false);
+		expect(
+			vet("#ReconcileObservationRecord", {
+				...base,
+				status: "RECONCILE_STATUS_CONVERGED",
+			}).ok,
+		).toBe(true);
 	});
 });

@@ -159,10 +159,49 @@ function blocked(
 	});
 }
 
+/** Raised by the fail-fast executor so a failed apply blocks the pass. */
+export class RealizeExecFailed extends Error {
+	readonly resourceId: string;
+	readonly classification: string;
+	constructor(resourceId: string, classification: string, why: string) {
+		super(`${resourceId}: ${classification} exec failure: ${why}`);
+		this.name = "RealizeExecFailed";
+		this.resourceId = resourceId;
+		this.classification = classification;
+	}
+}
+
+/**
+ * A failed exec aborts the orchestrator pass instead of being recorded as
+ * resource.Failed. The orchestrator would otherwise retry a retryable failure
+ * in-process without bound, or run choreographed compensation that destroys
+ * live resources on a fatal one. For delivery, a failure blocks the Camp with
+ * a reason; the reconciler retries with backoff (the deployment stream still
+ * shows Provisioning, so the resumed apply is idempotent), and undoing a
+ * change is a rollback Delta through the gate (D12, I7).
+ */
+export function failFastExecutor(
+	executor: OrchestratorDeps["executor"],
+): OrchestratorDeps["executor"] {
+	return {
+		async run(program, credential, options) {
+			const result = await executor.run(program, credential, options);
+			if (result.status === "failed")
+				throw new RealizeExecFailed(
+					program.resourceId,
+					result.classification,
+					result.reason,
+				);
+			return result;
+		},
+	};
+}
+
 export function createOrchestratorRealizer(
 	d: OrchestratorRealizerDeps,
 ): Realizer {
 	const ttl = d.attestationTtlMs ?? 300_000;
+	const executor = failFastExecutor(d.executor);
 
 	async function readLedger(campId: string): Promise<Ledger> {
 		let out = EMPTY_LEDGER;
@@ -363,7 +402,7 @@ export function createOrchestratorRealizer(
 						{
 							store: d.store,
 							actorHost: d.actorHost,
-							executor: d.executor,
+							executor,
 							broker: d.broker,
 						},
 						{
@@ -412,7 +451,7 @@ export function createOrchestratorRealizer(
 						{
 							store: d.store,
 							actorHost: d.actorHost,
-							executor: d.executor,
+							executor,
 							broker: d.broker,
 						},
 						plan,
