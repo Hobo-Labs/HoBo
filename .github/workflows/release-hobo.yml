@@ -60,6 +60,9 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
+      - "scripts/test/release-freight.test.ts"
+      - "scripts/deploy-site.mts"
+      - "scripts/test/deploy-site.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
@@ -122,6 +125,9 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
+      - "scripts/test/release-freight.test.ts"
+      - "scripts/deploy-site.mts"
+      - "scripts/test/deploy-site.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
@@ -361,6 +367,8 @@ jobs:
           scripts/test/stage-sdk-artifacts.test.ts
           scripts/test/build-release-site-prebuild.test.ts
           scripts/test/nbgv-release-version.test.ts
+          scripts/test/release-freight.test.ts
+          scripts/test/deploy-site.test.ts
       - name: Upload release contract vitest log
         if: failure() && steps.release_contract_tests.outcome == 'failure'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -573,7 +581,7 @@ jobs:
       )
     needs: [release-main-train-gate, release-contract, release-oci-build-tag]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: read
@@ -617,8 +625,26 @@ jobs:
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Build and push release images
+      # HoBo releases itself through HoBo: the release Freight steps run the
+      # `hobo deploy` composition of @hobo/cd from the built hobo package.
+      - name: Build the hobo CLI (release Freight through hobo deploy)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      # GHCR has no @hobo/cd realizer, so the push stays the publish step. The
+      # pushed digests become release Freight (verified at the registry) and
+      # are promoted into hobo-release/candidate; a blocked verdict fails this
+      # job, so attestation, the signed tag and the GitHub Release never run.
+      - name: Build and push release images, record them as release Freight
+        env:
+          HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/oci
         run: node --no-warnings scripts/ci/push-release-ghcr-images.mts /tmp/hobo-release-digests.txt
+      - name: Upload the release Freight journal (oci)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-release-freight-oci
+          path: ${{ runner.temp }}/hobo-release-cd/oci
+          include-hidden-files: true
       - name: Upload digest list
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -687,7 +713,7 @@ jobs:
     needs: [release-main-train-gate, release-contract, release-oci-build-tag]
     # npm trusted publishing (OIDC) requires GitHub-hosted runners — not self-hosted hobo.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     environment: release
     permissions:
       contents: read
@@ -719,10 +745,27 @@ jobs:
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
+      # HoBo releases itself through HoBo: the release Freight steps run the
+      # `hobo deploy` composition of @hobo/cd from the built hobo package.
+      - name: Build the hobo CLI (release Freight through hobo deploy)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      # Tarballs are recorded as release Freight and promoted into
+      # hobo-release/candidate before any npm publish; a blocked verdict stops
+      # the publish (npm has no @hobo/cd realizer, so npm publish stays the step).
       - name: npm publish (@hobo-labs via OIDC or hobodev token + provenance)
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/npm
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release
+      - name: Upload the release Freight journal (npm)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-release-freight-npm
+          path: ${{ runner.temp }}/hobo-release-cd/npm
+          include-hidden-files: true
 
   # The site is published from what gh-pages holds, not from the push that
   # triggered this run: a deploy that failed, a run that was cancelled, or a
@@ -790,7 +833,7 @@ jobs:
       needs.release-pages-gate.outputs.deploy == 'true'
     needs: [release-pages-gate]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     # One publish at a time. Two runs for different commits used to be free to
     # push gh-pages in either order.
     concurrency:
@@ -859,6 +902,20 @@ jobs:
           test -f site/dist/.nojekyll
           mkdir -p site/dist/media
           cp -a media/dist/. site/dist/media/
+      - name: Build the hobo CLI (release Freight through hobo deploy)
+        if: steps.fresh.outputs.deploy == 'true'
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      # GitHub Pages has no @hobo/cd realizer: the tree below is recorded as
+      # release Freight and promoted candidate -> stable through hobo deploy,
+      # and the gh-pages push runs only when neither step is blocked.
+      - name: Record and promote the Pages bundle (hobo deploy)
+        if: steps.fresh.outputs.deploy == 'true'
+        env:
+          HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+        run: node --no-warnings scripts/deploy-site.mts --release-freight site/dist
       - name: Deploy to gh-pages branch
         if: steps.fresh.outputs.deploy == 'true'
         uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e
@@ -889,7 +946,7 @@ jobs:
     needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
@@ -898,6 +955,38 @@ jobs:
           clean: false
           ref: ${{ needs.release-main-train-gate.outputs.release_sha }}
           fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      # HoBo releases itself through HoBo: the release Freight steps run the
+      # `hobo deploy` composition of @hobo/cd from the built hobo package.
+      - name: Build the hobo CLI (release Freight through hobo deploy)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Download the release Freight journal (oci)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-release-freight-oci
+          path: ${{ runner.temp }}/hobo-release-cd/oci
+      - name: Download the release Freight journal (npm)
+        if: needs.release-npm.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-release-freight-npm
+          path: ${{ runner.temp }}/hobo-release-cd/npm
+      # Candidate -> stable with lineage, through hobo deploy promote. The tag
+      # and the GitHub Release are published only when this is not blocked.
+      - name: Promote release Freight to hobo-release/stable (hobo deploy)
+        env:
+          CD_ROOT: ${{ runner.temp }}/hobo-release-cd
+          NPM_RESULT: ${{ needs.release-npm.result }}
+        run: |
+          set -euo pipefail
+          homes=(--freight-home "$CD_ROOT/oci")
+          if [ "$NPM_RESULT" = "success" ]; then homes+=(--freight-home "$CD_ROOT/npm"); fi
+          node --no-warnings scripts/ci/create-github-release.mts promote-stable "${homes[@]}"
       - name: Push signed release tag (idempotent)
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -927,7 +1016,7 @@ jobs:
       needs.release-attest.result == 'success'
     needs: [release-publish, release-npm, release-attest]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
@@ -935,6 +1024,38 @@ jobs:
         with:
           clean: false
           fetch-depth: 1
+      - uses: ./.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      # HoBo releases itself through HoBo: the release Freight steps run the
+      # `hobo deploy` composition of @hobo/cd from the built hobo package.
+      - name: Build the hobo CLI (release Freight through hobo deploy)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Download the release Freight journal (oci)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-release-freight-oci
+          path: ${{ runner.temp }}/hobo-release-cd/oci
+      - name: Download the release Freight journal (npm)
+        if: needs.release-npm.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-release-freight-npm
+          path: ${{ runner.temp }}/hobo-release-cd/npm
+      # Candidate -> stable with lineage, through hobo deploy promote. The tag
+      # and the GitHub Release are published only when this is not blocked.
+      - name: Promote release Freight to hobo-release/stable (hobo deploy)
+        env:
+          CD_ROOT: ${{ runner.temp }}/hobo-release-cd
+          NPM_RESULT: ${{ needs.release-npm.result }}
+        run: |
+          set -euo pipefail
+          homes=(--freight-home "$CD_ROOT/oci")
+          if [ "$NPM_RESULT" = "success" ]; then homes+=(--freight-home "$CD_ROOT/npm"); fi
+          node --no-warnings scripts/ci/create-github-release.mts promote-stable "${homes[@]}"
       - name: Create or update GitHub Release
         # Through the REST API: the release runners have no gh CLI.
         env:

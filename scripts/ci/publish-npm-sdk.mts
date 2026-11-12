@@ -3,14 +3,18 @@
  * Publish allowlisted SDK packages to npm with OIDC provenance.
  * Non-empty NPM_TOKEN → NODE_AUTH_TOKEN + hobodev whoami check.
  * Empty token → npm trusted publishing (GitHub-hosted runners + id-token: write only).
+ * Every tarball is recorded as release Freight and promoted into
+ * hobo-release/candidate through `hobo deploy` before anything is published.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { npmPublishArgs, parseReleaseRef } from "../lib/release-version.mts";
+import { qualifyReleaseCandidate } from "./create-github-release.mts";
 import {
 	orderedSdkTarballPaths,
+	type SdkArtifactManifest,
 	stageSdkArtifactsDir,
 } from "./stage-sdk-artifacts.mts";
 
@@ -93,32 +97,78 @@ function assertPublisher(token: string): void {
 	}
 }
 
-export function publishNpmSdkArtifacts(options: {
-	stagingDir: string;
-	token: string;
-	releaseRef: string;
-}): void {
+/** Seams for tests; production staging, Freight and npm by default. */
+export type NpmPublishDeps = {
+	readonly stage?: (dir: string) => SdkArtifactManifest;
+	readonly tarballs?: (dir: string) => string[];
+	readonly read?: (path: string) => Uint8Array;
+	readonly qualify?: (
+		input: Parameters<typeof qualifyReleaseCandidate>[0],
+	) => Promise<{ readonly freightId: string }>;
+	readonly npm?: (args: string[]) => void;
+};
+
+/**
+ * Stage the SDK tarballs, record them as release Freight and promote it into
+ * `hobo-release/candidate` through `hobo deploy` (scripts/ci/create-github-release.mts),
+ * then publish. A blocked verdict throws before any `npm publish`.
+ */
+export async function publishNpmSdkArtifacts(
+	options: {
+		stagingDir: string;
+		token: string;
+		releaseRef: string;
+		/** HOBO_HOME of the release Freight journal (HOBO_RELEASE_CD_HOME). */
+		freightHome?: string;
+	},
+	deps: NpmPublishDeps = {},
+): Promise<void> {
 	const mode = resolveNpmPublishAuthMode(options.token);
-	if (mode === "token") {
-		assertPublisher(options.token);
-	}
 	const parsed = parseReleaseRef(options.releaseRef);
 	if (parsed.npmDistTag === "latest") {
 		throw new Error("refusing npm dist-tag latest on release train");
 	}
+	if (!options.freightHome?.trim()) {
+		throw new Error(
+			"npm publish needs release Freight: set HOBO_RELEASE_CD_HOME to the hobo deploy journal directory",
+		);
+	}
+	if (mode === "token" && !deps.npm) {
+		assertPublisher(options.token);
+	}
 	const authEnv = npmPublishAuthEnv(mode, options.token);
-	const manifest = stageSdkArtifactsDir(options.stagingDir);
-	const tarballs = orderedSdkTarballPaths(options.stagingDir);
+	const manifest = (deps.stage ?? stageSdkArtifactsDir)(options.stagingDir);
+	const tarballs = (deps.tarballs ?? orderedSdkTarballPaths)(
+		options.stagingDir,
+	);
 	if (tarballs.length !== manifest.packages.length) {
 		throw new Error("SDK tarball manifest count mismatch");
 	}
+	const read =
+		deps.read ?? ((path: string) => new Uint8Array(readFileSync(path)));
+	await (deps.qualify ?? qualifyReleaseCandidate)({
+		home: options.freightHome,
+		family: "npm",
+		stored: manifest.packages.map((entry, index) => ({
+			name: `${entry.public}@${manifest.version}`,
+			kind: "ARTIFACT_KIND_PACKAGE",
+			mediaType: "application/gzip",
+			bytes: read(tarballs[index] ?? ""),
+		})),
+		labels: {
+			"hobo.release/ref": options.releaseRef,
+			"hobo.release/npm-dist-tag": parsed.npmDistTag,
+		},
+	});
+	const npm =
+		deps.npm ?? ((args: string[]) => runNpm(args, options.stagingDir, authEnv));
 	for (const tarball of tarballs) {
 		const file = tarball.slice(tarball.lastIndexOf("/") + 1);
-		runNpm(npmPublishArgs(file, parsed), options.stagingDir, authEnv);
+		npm(npmPublishArgs(file, parsed));
 	}
 }
 
-function main(): void {
+async function main(): Promise<void> {
 	const stagingDir = process.argv[2] ?? join(root, "/tmp/hobo-npm-release");
 	const token = process.env.NPM_TOKEN ?? "";
 	if (!process.env.HOBO_RELEASE_VERSION) {
@@ -131,10 +181,11 @@ function main(): void {
 			"NPM_TOKEN empty; publishing via npm trusted publishing (OIDC + --provenance)",
 		);
 	}
-	publishNpmSdkArtifacts({
+	await publishNpmSdkArtifacts({
 		stagingDir,
 		token,
 		releaseRef: process.env.HOBO_RELEASE_VERSION,
+		freightHome: process.env.HOBO_RELEASE_CD_HOME ?? "",
 	});
 	const manifest = join(stagingDir, "MANIFEST.json");
 	if (existsSync(manifest)) {
@@ -143,5 +194,12 @@ function main(): void {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	main();
+	try {
+		await main();
+	} catch (error) {
+		console.error(
+			`::error::${error instanceof Error ? error.message : String(error)}`,
+		);
+		process.exit(1);
+	}
 }
