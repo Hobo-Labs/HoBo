@@ -140,6 +140,10 @@ never re-checks:
 - Protobuf: `PromotionRecord`, `PreviewEnvironmentRecord`, `ObligationRef`,
   `PromotionState` in `data-models/cd.proto` (frozen); CUE in
   `data-models/promotion.cue`, vetted against real bodies by `cue.test.ts`.
+- Upcaster corpus: `PROMOTION_EVENT_CONTRACTS` pins the v1 bodies of every
+  `env.*` event the saga appends;
+  `test/promotion/fixtures/promotion-corpus-baseline.json` is append-only
+  (`event-contracts.test.ts`).
 - Promoted proofs: `can-deploy-compatibility-gate-contract` (`gate.test.ts`,
   "can-deploy (promoted proof)") and `champion-challenger-promotion-contract`
   (`promoted-proofs.test.ts`).
