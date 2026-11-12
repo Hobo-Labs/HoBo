@@ -55,7 +55,9 @@ export function parseRetainProperty(value: unknown): readonly string[] {
 				? value.filter((item): item is string => typeof item === "string")
 				: [];
 	return Object.freeze(
-		[...new Set(raw.map((field) => field.trim()).filter((f) => f !== ""))].sort(),
+		[
+			...new Set(raw.map((field) => field.trim()).filter((f) => f !== "")),
+		].sort(),
 	);
 }
 
@@ -103,7 +105,10 @@ export const DRIFT_CLASSES = Object.freeze([
 export type DriftClass = (typeof DRIFT_CLASSES)[number] | "unknown";
 
 /** Parsed `drift_kind`: `<class>` or `<class>:<field>[,<field>...]`. */
-export type DriftKind = Readonly<{ driftClass: DriftClass; fields: readonly string[] }>;
+export type DriftKind = Readonly<{
+	driftClass: DriftClass;
+	fields: readonly string[];
+}>;
 
 export function parseDriftKind(value: string): DriftKind | undefined {
 	const text = value.trim();

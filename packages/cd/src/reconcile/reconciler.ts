@@ -38,8 +38,8 @@ import type {
 	DriftPolicy,
 	DriftRoute,
 	OtelMetricPoint,
-	Realizer,
 	RealizeInput,
+	Realizer,
 	ReconcilerId,
 	ReconcilerLease,
 	ReconcilerTransport,
@@ -47,9 +47,9 @@ import type {
 } from "../ports.js";
 import { backoffMs } from "./backoff.js";
 import {
-	defaultDepartureAction,
 	type DeparturePlan,
 	type DirectedRealizeInput,
+	defaultDepartureAction,
 	keptButMissing,
 	planDeparture,
 } from "./departure.js";
@@ -136,7 +136,8 @@ function withReasons(
 export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 	const memory = new Map<CampId, CampMemory>();
 	const held = new Map<CampId, ReconcilerLease>();
-	const observeIntervalMs = d.observeIntervalMs ?? RECONCILE_OBSERVE_INTERVAL_MS;
+	const observeIntervalMs =
+		d.observeIntervalMs ?? RECONCILE_OBSERVE_INTERVAL_MS;
 	const maxRemediations = d.maxRemediations ?? 1;
 	const sleep = d.sleep ?? defaultSleep;
 	const principal: PrincipalRef = d.principal ?? {
@@ -329,7 +330,11 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 	): Promise<ReconcileObservationRecord> {
 		const committed = await d.transport.checkpoint(lease, change.position);
 		if (!committed.ok)
-			return withReasons(observation, committed.reasons, ReconcileStatus.BLOCKED);
+			return withReasons(
+				observation,
+				committed.reasons,
+				ReconcileStatus.BLOCKED,
+			);
 		return observation;
 	}
 
@@ -367,23 +372,51 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		const observed = sanitize(
 			lease,
 			change,
-			await guarded(lease, change, () => d.realizer.observe(input, ctx), "realize-failed"),
+			await guarded(
+				lease,
+				change,
+				() => d.realizer.observe(input, ctx),
+				"realize-failed",
+			),
 			input,
 		);
 		m.lastObservedAtMs = d.now();
 		if (change.management !== CampManagement.MANAGED) {
-			const reported = await report(lease, observed);
+			// OBSERVE_ONLY: read, report and record drift; never apply.
+			const findings = driftFindings(observed);
+			const reported = await report(
+				lease,
+				findings.length === 0
+					? observed
+					: withReasons(observed, [
+							reason(
+								"drift-detected",
+								`drift on ${findings.map((f) => `${f.resource}:${f.driftClass}`).join(", ")} (observe-only)`,
+								lease.campId,
+							),
+						]),
+			);
 			return reported.status === ReconcileStatus.BLOCKED
 				? reported
 				: checkpoint(lease, change, reported);
 		}
 		const plan = await departure(lease, change, input, observed);
+		// The target already runs this Set but diverged: that is drift, routed
+		// by policy, never a silent re-apply.
+		if (
+			!plan &&
+			observed.setId === change.set.setId &&
+			driftFindings(observed).length > 0
+		)
+			return routeDrift(lease, change, input, observed, ctx);
 		if (!plan && isConvergedOn(observed, change.set.setId)) {
 			const reported = await report(lease, observed);
 			m.convergedSet = change.set;
 			return checkpoint(lease, change, reported);
 		}
-		const directed: DirectedRealizeInput = plan ? { ...input, keep: plan.keep } : input;
+		const directed: DirectedRealizeInput = plan
+			? { ...input, keep: plan.keep }
+			: input;
 		let after = await mutate(lease, change, directed, ctx);
 		if (!after) return observed;
 		if (plan) after = departureOutcome(plan, after);
@@ -431,15 +464,39 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		const observed = sanitize(
 			lease,
 			change,
-			await guarded(lease, change, () => d.realizer.observe(input, ctx), "realize-failed"),
+			await guarded(
+				lease,
+				change,
+				() => d.realizer.observe(input, ctx),
+				"realize-failed",
+			),
 			input,
 		);
 		m.lastObservedAtMs = d.now();
+		return routeDrift(lease, change, input, observed, ctx);
+	}
+
+	/**
+	 * Drift detection and routing for a Camp that runs `change.set`: flapping
+	 * suppression, DriftPolicy routing and the oscillation guard.
+	 */
+	async function routeDrift(
+		lease: ReconcilerLease,
+		change: DesiredStateChange,
+		input: RealizeInput,
+		observed: ReconcileObservationRecord,
+		ctx: CdContext,
+	): Promise<ReconcileObservationRecord> {
+		const m = mem(lease.campId);
 		const findings = driftFindings(observed);
 		if (findings.length === 0) {
 			m.lastDriftFingerprint = undefined;
 			const previous = m.lastObservation;
-			if (previous && previous.status === observed.status && previous.setId === observed.setId)
+			if (
+				previous &&
+				previous.status === observed.status &&
+				previous.setId === observed.setId
+			)
 				return observed;
 			return report(lease, observed);
 		}
@@ -469,7 +526,11 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					lease,
 					withReasons(observed, [
 						detected,
-						reason("drift-ignored", "drift recorded; policy ignores it", lease.campId),
+						reason(
+							"drift-ignored",
+							"drift recorded; policy ignores it",
+							lease.campId,
+						),
 					]),
 				);
 			case "propose":
@@ -477,7 +538,11 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					lease,
 					withReasons(observed, [
 						detected,
-						reason("drift-proposed", "drift diff proposed for review", lease.campId),
+						reason(
+							"drift-proposed",
+							"drift diff proposed for review",
+							lease.campId,
+						),
 					]),
 				);
 			case "escalate":
@@ -506,7 +571,11 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 				const remediated =
 					after.status === ReconcileStatus.CONVERGED
 						? withReasons(after, [
-								reason("drift-reconciled", "re-applied the current Set", lease.campId),
+								reason(
+									"drift-reconciled",
+									"re-applied the current Set",
+									lease.campId,
+								),
 							])
 						: after;
 				// A confirmed reconverge makes the same fingerprint new drift next
@@ -518,7 +587,9 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		}
 	}
 
-	async function lease(campId: CampId): Promise<ReconcilerLease | ReasonRecord[]> {
+	async function lease(
+		campId: CampId,
+	): Promise<ReconcilerLease | ReasonRecord[]> {
 		const existing = held.get(campId);
 		if (existing) {
 			const renewed = await d.transport.renew(existing);
@@ -549,7 +620,8 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		const got = await lease(campId);
 		if (Array.isArray(got)) {
 			m.attempt += 1;
-			m.nextAttemptAtMs = d.now() + backoffMs(d.reconcilerId, campId, m.attempt);
+			m.nextAttemptAtMs =
+				d.now() + backoffMs(d.reconcilerId, campId, m.attempt);
 			await metric([point(RECONCILE_METRICS.leaseRefused, 1, campId)]);
 			return blockedObservation({
 				campId,
@@ -596,15 +668,25 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		const blocked = observation.status === ReconcileStatus.BLOCKED;
 		if (blocked) {
 			m.attempt += 1;
-			m.nextAttemptAtMs = d.now() + backoffMs(d.reconcilerId, campId, m.attempt);
+			m.nextAttemptAtMs =
+				d.now() + backoffMs(d.reconcilerId, campId, m.attempt);
 		} else {
 			m.attempt = 0;
 			m.nextAttemptAtMs = 0;
 		}
 		const status = ReconcileStatus[observation.status] ?? "UNSPECIFIED";
 		await metric([
-			point(RECONCILE_METRICS.passes, 1, campId, { "hobo.cd.reconcile.status": status }),
-			point(RECONCILE_METRICS.duration, d.now() - started, campId, {}, "histogram", "ms"),
+			point(RECONCILE_METRICS.passes, 1, campId, {
+				"hobo.cd.reconcile.status": status,
+			}),
+			point(
+				RECONCILE_METRICS.duration,
+				d.now() - started,
+				campId,
+				{},
+				"histogram",
+				"ms",
+			),
 			...(blocked
 				? [
 						point(RECONCILE_METRICS.blocked, 1, campId, {
@@ -644,7 +726,8 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					await sleep(CD_DEFAULTS.serviceTickMs, signal);
 				}
 			} finally {
-				for (const lease of [...held.values()]) await d.transport.release(lease);
+				for (const lease of [...held.values()])
+					await d.transport.release(lease);
 				held.clear();
 			}
 		},

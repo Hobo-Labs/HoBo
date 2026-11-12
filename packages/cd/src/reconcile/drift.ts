@@ -41,7 +41,9 @@ export function driftFindings(
 			}),
 		);
 	}
-	return Object.freeze(out.sort((a, b) => a.resource.localeCompare(b.resource)));
+	return Object.freeze(
+		out.sort((a, b) => a.resource.localeCompare(b.resource)),
+	);
 }
 
 /** Stable identity of one drift: the same desired + observed refs, same print. */
@@ -156,7 +158,9 @@ export function decideDrift(
 }
 
 /** The default DriftPolicy: per-class routes with the safety overrides above. */
-export function createDriftPolicy(options: DriftPolicyOptions = {}): DriftPolicy {
+export function createDriftPolicy(
+	options: DriftPolicyOptions = {},
+): DriftPolicy {
 	return Object.freeze({
 		async route(
 			observation: ReconcileObservationRecord,

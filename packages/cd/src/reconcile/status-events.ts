@@ -64,9 +64,12 @@ export function statusEventsFor(
 	if (observation.status === ReconcileStatus.CONVERGING)
 		types.push(CD_EVENTS.ReconcileStarted);
 	types.push(CD_EVENTS.StatusObserved);
-	if (has(observation, "drift-detected")) types.push(RECONCILE_EVENTS.DriftDetected);
-	if (has(observation, "drift-proposed")) types.push(RECONCILE_EVENTS.DiffProposed);
-	if (has(observation, "departure-orphaned")) types.push(CD_EVENTS.CampDeparted);
+	if (has(observation, "drift-detected"))
+		types.push(RECONCILE_EVENTS.DriftDetected);
+	if (has(observation, "drift-proposed"))
+		types.push(RECONCILE_EVENTS.DiffProposed);
+	if (has(observation, "departure-orphaned"))
+		types.push(CD_EVENTS.CampDeparted);
 	if (observation.status === ReconcileStatus.CONVERGED)
 		types.push(CD_EVENTS.Converged);
 	if (observation.status === ReconcileStatus.BLOCKED)
@@ -77,7 +80,10 @@ export function statusEventsFor(
 				schema: RECONCILE_STATUS_SCHEMA,
 				observation: body,
 			};
-			if (type === RECONCILE_EVENTS.DriftDetected || type === RECONCILE_EVENTS.DiffProposed) {
+			if (
+				type === RECONCILE_EVENTS.DriftDetected ||
+				type === RECONCILE_EVENTS.DiffProposed
+			) {
 				data.drift = driftFindings(observation).map((f) => ({
 					resource: f.resource,
 					driftClass: f.driftClass,

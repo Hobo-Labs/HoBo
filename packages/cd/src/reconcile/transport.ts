@@ -24,7 +24,12 @@ import {
 	type PrincipalRef,
 } from "@hobo/core";
 import { CampManagement, type SetRecord } from "../_generated/cd_pb.js";
-import { CD_DEFAULTS, CD_STREAMS, CD_SUBSCRIPTIONS, CD_EVENTS } from "../events.js";
+import {
+	CD_DEFAULTS,
+	CD_EVENTS,
+	CD_STREAMS,
+	CD_SUBSCRIPTIONS,
+} from "../events.js";
 import type {
 	CampId,
 	CdBase,
@@ -37,8 +42,8 @@ import type {
 	TopologyReader,
 } from "../ports.js";
 import { messageOf, refuse } from "./errors.js";
-import { observationJson, statusEventsFor } from "./status-events.js";
 import { stableJson } from "./json.js";
+import { observationJson, statusEventsFor } from "./status-events.js";
 
 export type InProcessTransportDeps = CdBase & {
 	readonly desired: DesiredStateReader;
@@ -104,7 +109,10 @@ export function createInProcessTransport(
 		return head;
 	}
 
-	async function adjust(change: DesiredStateChange, campId: CampId): Promise<DesiredStateChange> {
+	async function adjust(
+		change: DesiredStateChange,
+		campId: CampId,
+	): Promise<DesiredStateChange> {
 		const observeFields = d.posture
 			? await d.posture.observeFields(campId)
 			: change.observeFields;
@@ -181,10 +189,14 @@ export function createInProcessTransport(
 	}
 
 	async function renew(
-	lease: ReconcilerLease,
+		lease: ReconcilerLease,
 	): Promise<Outcome<ReconcilerLease>> {
 		if (!store.renewSubscription)
-			return refuse("lease-unsupported", "the event store cannot renew leases", lease.campId);
+			return refuse(
+				"lease-unsupported",
+				"the event store cannot renew leases",
+				lease.campId,
+			);
 		try {
 			const renewed = await store.renewSubscription({
 				...subscription(lease.campId),
@@ -194,12 +206,19 @@ export function createInProcessTransport(
 			});
 			return {
 				ok: true as const,
-				value: Object.freeze({ ...lease, expiresAtMs: Date.parse(renewed.expiresAt) }),
+				value: Object.freeze({
+					...lease,
+					expiresAtMs: Date.parse(renewed.expiresAt),
+				}),
 			};
 		} catch (error) {
 			const code = codeOf(error);
 			if (code === "STALE_FENCE" || code.endsWith("LEASE_CONFLICT"))
-				return refuse("stale-fence", `lease fence ${lease.fence} on ${lease.campId} is no longer current`, lease.campId);
+				return refuse(
+					"stale-fence",
+					`lease fence ${lease.fence} on ${lease.campId} is no longer current`,
+					lease.campId,
+				);
 			return refuse("store-unavailable", messageOf(error), lease.campId);
 		}
 	}
@@ -207,7 +226,11 @@ export function createInProcessTransport(
 	return Object.freeze({
 		async claim(input) {
 			if (!store.claimSubscription)
-				return refuse("lease-unsupported", "the event store has no subscription leases", input.campId);
+				return refuse(
+					"lease-unsupported",
+					"the event store has no subscription leases",
+					input.campId,
+				);
 			try {
 				const lease = await store.claimSubscription({
 					...subscription(input.campId),
@@ -226,7 +249,11 @@ export function createInProcessTransport(
 			} catch (error) {
 				const code = codeOf(error);
 				if (code === "STALE_FENCE" || code.endsWith("LEASE_CONFLICT"))
-					return refuse("lease-held", `Camp ${input.campId} is leased by another reconciler`, input.campId);
+					return refuse(
+						"lease-held",
+						`Camp ${input.campId} is leased by another reconciler`,
+						input.campId,
+					);
 				return refuse("store-unavailable", messageOf(error), input.campId);
 			}
 		},
@@ -247,16 +274,26 @@ export function createInProcessTransport(
 		feed,
 		async resolved(lease, set: SetRecord) {
 			if (set.campId !== lease.campId)
-				return refuse("resolved-set-mismatch", `Set ${set.setId} belongs to Camp ${set.campId}, not ${lease.campId}`, set.setId);
+				return refuse(
+					"resolved-set-mismatch",
+					`Set ${set.setId} belongs to Camp ${set.campId}, not ${lease.campId}`,
+					set.setId,
+				);
 			try {
 				const resolved = await d.desired.resolved(set);
 				if (resolved.contentHash !== set.contentHash)
-					return refuse("resolved-set-mismatch", `resolved set ${resolved.contentHash} does not match Set content ${set.contentHash}`, set.setId);
+					return refuse(
+						"resolved-set-mismatch",
+						`resolved set ${resolved.contentHash} does not match Set content ${set.contentHash}`,
+						set.setId,
+					);
 				return { ok: true as const, value: resolved };
 			} catch (error) {
 				const message = messageOf(error);
 				return refuse(
-					/digest-mismatch|corrupt/u.test(message) ? "resolved-set-mismatch" : "resolved-set-missing",
+					/digest-mismatch|corrupt/u.test(message)
+						? "resolved-set-mismatch"
+						: "resolved-set-missing",
 					`resolved set ${set.resolvedSetDigest} for Set ${set.setId}: ${message}`,
 					set.setId,
 				);
@@ -268,7 +305,11 @@ export function createInProcessTransport(
 				observation.reconcilerId !== lease.reconcilerId ||
 				observation.fenceToken !== lease.fence.toString(10)
 			)
-				return refuse("invalid-observation", "observation is not stamped with this lease", lease.campId);
+				return refuse(
+					"invalid-observation",
+					"observation is not stamped with this lease",
+					lease.campId,
+				);
 			const current = await renew(lease);
 			if (!current.ok) return current;
 			const stream = CD_STREAMS.campStatus(lease.campId);
@@ -285,21 +326,34 @@ export function createInProcessTransport(
 					});
 					return {
 						ok: true as const,
-						value: result.lastPosition ?? (await lastStatusPosition(lease.campId)),
+						value:
+							result.lastPosition ?? (await lastStatusPosition(lease.campId)),
 					};
 				} catch (error) {
 					const code = codeOf(error);
 					if (code === "OPTIMISTIC_SEQUENCE_CONFLICT") continue;
 					if (code === "STALE_FENCE" || code === "MISSING_FENCE")
-						return refuse("stale-fence", `status append refused for fence ${lease.fence}`, lease.campId);
+						return refuse(
+							"stale-fence",
+							`status append refused for fence ${lease.fence}`,
+							lease.campId,
+						);
 					return refuse("store-unavailable", messageOf(error), lease.campId);
 				}
 			}
-			return refuse("report-refused", "status stream kept changing under a single-writer lease", lease.campId);
+			return refuse(
+				"report-refused",
+				"status stream kept changing under a single-writer lease",
+				lease.campId,
+			);
 		},
 		async checkpoint(lease, position) {
 			if (!store.commitCheckpoint)
-				return refuse("lease-unsupported", "the event store cannot commit checkpoints", lease.campId);
+				return refuse(
+					"lease-unsupported",
+					"the event store cannot commit checkpoints",
+					lease.campId,
+				);
 			try {
 				const committed = await store.commitCheckpoint({
 					...subscription(lease.campId),
@@ -310,12 +364,19 @@ export function createInProcessTransport(
 			} catch (error) {
 				const code = codeOf(error);
 				if (code === "CHECKPOINT_REGRESSION")
-					return refuse("checkpoint-regression", `checkpoint ${position} is behind the committed one`, lease.campId);
+					return refuse(
+						"checkpoint-regression",
+						`checkpoint ${position} is behind the committed one`,
+						lease.campId,
+					);
 				if (code === "STALE_FENCE")
-					return refuse("stale-fence", `checkpoint refused for fence ${lease.fence}`, lease.campId);
+					return refuse(
+						"stale-fence",
+						`checkpoint refused for fence ${lease.fence}`,
+						lease.campId,
+					);
 				return refuse("store-unavailable", messageOf(error), lease.campId);
 			}
 		},
 	} satisfies ReconcilerTransport);
 }
-
