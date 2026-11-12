@@ -12,6 +12,7 @@ import {
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import { orphanJobCandidateForLease } from "../src/isolated-worker/orphan-jobs.js";
 import * as correlationModule from "../src/jit-runner-correlation.js";
+import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "../src/isolated-worker/container-timeout.js";
 
 function transitionFor(lease: Lease) {
 	return vi.fn(
@@ -400,6 +401,292 @@ describe("shared hobo label JIT reassignment", () => {
 		await controller.host.reconcile(lease.id);
 		expect(remove).toHaveBeenCalled();
 		expect(settle).toHaveBeenCalled();
+	});
+
+	it("defers stop while a queued-bound job is inside the grace window", async () => {
+		const leaseId = "queued-bound-inside-grace";
+		const now = "2026-11-12T12:03:00.000Z";
+		const createdAt = new Date(
+			Date.parse(now) - (ISOLATED_JIT_QUEUED_BOUND_GRACE_MS - 30_000),
+		).toISOString();
+		const lease = create(LeaseSchema, {
+			id: leaseId,
+			accountId: "a",
+			offerId: "box",
+			provider: "hobo-box-worker",
+			jobId: GHCR_JOB,
+			actualJobId: GHCR_JOB,
+			originalRunId: RELEASE_RUN,
+			runAttempt: 1,
+			repositoryId: 101,
+			repository: "Hobo-Labs/HoBo",
+			installationId: 10,
+			runnerName: `hobo-${leaseId}`,
+			runnerId: 99,
+			sandboxName: `hobo-${leaseId}`,
+			sandboxSessionId: "cid-queued",
+			sandboxStage: "running",
+			state: "running",
+			usageCompletedAt: "2026-11-12T12:02:30.000Z",
+			createdAt,
+		});
+		const settle = vi.fn();
+		// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
+		const store = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			activeLeases: async () => [lease],
+			transition: transitionFor(lease),
+			settle,
+			withdrawQueuedJob: vi.fn(async () => true),
+		} as SqliteCiStore & HostedRelayStore;
+		vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockResolvedValue({
+			jobId: GHCR_JOB,
+			runId: RELEASE_RUN,
+			status: "queued",
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: GHCR_JOB,
+			run_id: RELEASE_RUN,
+			status: "queued",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			runner_id: lease.runnerId,
+			run_attempt: 1,
+		});
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			list: vi.fn(async () => [
+				{ name: lease.sandboxName, containerId: lease.sandboxSessionId },
+			]),
+			isRunning: vi.fn(async () => false),
+			exists: vi.fn(async () => false),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github: githubAllowRunnerDeregister(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "worker-a",
+			workerImage: "hobo-ci-worker:local",
+			now: () => now,
+		});
+		await controller.host.reconcile(lease.id);
+		expect(settle).not.toHaveBeenCalled();
+		vi.restoreAllMocks();
+	});
+
+	it("releases a queued-bound job after the grace window", async () => {
+		const leaseId = "queued-bound-after-grace";
+		const now = "2026-11-12T12:10:00.000Z";
+		const createdAt = new Date(
+			Date.parse(now) - (ISOLATED_JIT_QUEUED_BOUND_GRACE_MS + 60_000),
+		).toISOString();
+		const lease = create(LeaseSchema, {
+			id: leaseId,
+			accountId: "a",
+			offerId: "box",
+			provider: "hobo-box-worker",
+			jobId: GHCR_JOB,
+			actualJobId: GHCR_JOB,
+			originalRunId: RELEASE_RUN,
+			runAttempt: 1,
+			repositoryId: 101,
+			repository: "Hobo-Labs/HoBo",
+			installationId: 10,
+			runnerName: `hobo-${leaseId}`,
+			runnerId: 99,
+			sandboxName: `hobo-${leaseId}`,
+			sandboxSessionId: "cid-queued-old",
+			sandboxStage: "running",
+			state: "running",
+			usageCompletedAt: "2026-11-12T12:09:00.000Z",
+			createdAt,
+		});
+		const settle = vi.fn();
+		const remove = vi.fn();
+		// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
+		const store = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			activeLeases: async () => [lease],
+			transition: transitionFor(lease),
+			settle,
+			withdrawQueuedJob: vi.fn(async () => true),
+		} as SqliteCiStore & HostedRelayStore;
+		vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockResolvedValue({
+			jobId: GHCR_JOB,
+			runId: RELEASE_RUN,
+			status: "queued",
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: GHCR_JOB,
+			run_id: RELEASE_RUN,
+			status: "queued",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			runner_id: lease.runnerId,
+			run_attempt: 1,
+		});
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove,
+			list: vi.fn(async () => [
+				{ name: lease.sandboxName, containerId: lease.sandboxSessionId },
+			]),
+			isRunning: vi.fn(async () => false),
+			exists: vi.fn(async () => false),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github: githubAllowRunnerDeregister(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "worker-a",
+			workerImage: "hobo-ci-worker:local",
+			now: () => now,
+		});
+		await controller.host.reconcile(lease.id);
+		expect(remove).toHaveBeenCalled();
+		expect(settle).toHaveBeenCalled();
+		vi.restoreAllMocks();
+	});
+
+	it("fails closed when correlation and getJob both error", async () => {
+		const leaseId = "correlation-and-getjob-fail";
+		const lease = create(LeaseSchema, {
+			id: leaseId,
+			accountId: "a",
+			offerId: "box",
+			provider: "hobo-box-worker",
+			jobId: GHCR_JOB,
+			actualJobId: GHCR_JOB,
+			originalRunId: RELEASE_RUN,
+			runAttempt: 1,
+			repositoryId: 101,
+			repository: "Hobo-Labs/HoBo",
+			installationId: 10,
+			runnerName: `hobo-${leaseId}`,
+			runnerId: 99,
+			sandboxName: `hobo-${leaseId}`,
+			sandboxSessionId: "cid-fail",
+			sandboxStage: "running",
+			state: "running",
+			usageCompletedAt: "2026-11-12T12:02:00.000Z",
+			createdAt: "2026-11-12T12:00:00.000Z",
+		});
+		const settle = vi.fn();
+		// SAFETY: reconcile touches only get, activeLeases, transition, settle.
+		const store = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			activeLeases: async () => [lease],
+			transition: transitionFor(lease),
+			settle,
+		} as SqliteCiStore & HostedRelayStore;
+		vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockRejectedValue(
+			new Error("correlation down"),
+		);
+		vi.spyOn(githubModule, "getJob").mockRejectedValue(
+			new Error("temporary GitHub failure"),
+		);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			list: vi.fn(async () => [
+				{ name: lease.sandboxName, containerId: lease.sandboxSessionId },
+			]),
+			isRunning: vi.fn(async () => false),
+			exists: vi.fn(async () => false),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github: deniedGithub(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "worker-a",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-11-12T12:03:00.000Z",
+		});
+		await controller.host.reconcile(lease.id);
+		expect(settle).not.toHaveBeenCalled();
+		vi.restoreAllMocks();
+	});
+
+	it("falls through correlation errors to getJob before settling", async () => {
+		const leaseId = "correlation-fallthrough-getjob";
+		const lease = create(LeaseSchema, {
+			id: leaseId,
+			accountId: "a",
+			offerId: "box",
+			provider: "hobo-box-worker",
+			jobId: GHCR_JOB,
+			actualJobId: GHCR_JOB,
+			originalRunId: RELEASE_RUN,
+			runAttempt: 1,
+			repositoryId: 101,
+			repository: "Hobo-Labs/HoBo",
+			installationId: 10,
+			runnerName: `hobo-${leaseId}`,
+			runnerId: 99,
+			sandboxName: `hobo-${leaseId}`,
+			sandboxSessionId: "cid-fallthrough",
+			sandboxStage: "running",
+			state: "running",
+			usageCompletedAt: "2026-11-12T12:02:00.000Z",
+			createdAt: "2026-11-12T12:00:00.000Z",
+		});
+		const settle = vi.fn();
+		const remove = vi.fn();
+		// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
+		const store = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			activeLeases: async () => [lease],
+			transition: transitionFor(lease),
+			settle,
+			withdrawQueuedJob: vi.fn(async () => true),
+		} as SqliteCiStore & HostedRelayStore;
+		vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockRejectedValue(
+			new Error("correlation down"),
+		);
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: GHCR_JOB,
+			run_id: RELEASE_RUN,
+			status: "completed",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			runner_id: lease.runnerId,
+			run_attempt: 1,
+		});
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove,
+			list: vi.fn(async () => []),
+			isRunning: vi.fn(async () => false),
+			exists: vi.fn(async () => false),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github: githubAllowRunnerDeregister(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "worker-a",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-11-12T12:10:00.000Z",
+		});
+		await controller.host.reconcile(lease.id);
+		expect(settle).toHaveBeenCalled();
+		vi.restoreAllMocks();
 	});
 
 	it("orphan telemetry prefers the served job run id", () => {

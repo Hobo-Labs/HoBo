@@ -21,9 +21,10 @@ Poll coalescing (#1819) and lease cancel grant release (#1797) were not the prim
 
 ## Fix
 
-`packages/ci-gh-actions`: pin `actualJobId` / `originalRunId` to GitHub’s served job (including run-id-only drift), withdraw the reserved queued job once on custody transfer, refuse stop/deregister while the served job is executing (not merely queued), settle/deregister/release grants once it completes, treat durable `usageCompletedAt` as stop intent, resolve orphan run ids from GitHub, and follow `actualJobId` for storage grant maintain/release.
+`packages/ci-gh-actions`: pin `actualJobId` / `originalRunId` to GitHub’s served job (including run-id-only drift), withdraw the reserved queued job once on custody transfer, refuse stop/deregister while the served job is **executing** (`RUNNER_EXECUTING_JOB_STATUSES`), bound a **queued-but-never-started** runner with `ISOLATED_JIT_QUEUED_BOUND_GRACE_MS` then release cooperatively, fall through correlation errors to `getJob` (fail-closed when GitHub is unreadable and `runnerId > 0`), settle/deregister/release grants once work completes, treat durable `usageCompletedAt` as stop intent, resolve orphan run ids from GitHub, and follow `actualJobId` for storage grant maintain/release.
 
 ## Gates
 
 - `packages/ci-gh-actions/test/jit-hobo-label-reassignment.test.ts`
+- `packages/ci-gh-actions/test/jit-runner-correlation.test.ts`
 - `packages/ci-gh-actions/test/runner-lease-adoption.test.ts`

@@ -4,8 +4,8 @@ import type { GithubTransport } from "./github.js";
 import type { HostedRelayStore } from "./hosted-relay.js";
 import {
 	type ResolvedRunnerAssignment,
+	RUNNER_EXECUTING_JOB_STATUSES,
 	resolveRunnerAssignedJob,
-	runnerHoldsActiveJob,
 } from "./jit-runner-correlation.js";
 import { RUNNER_LABEL } from "./runner-labels.js";
 
@@ -61,7 +61,8 @@ export async function adoptRunnerAssignment(
 	} catch {
 		return { lease, holdsActive: false };
 	}
-	const holdsActive = runnerHoldsActiveJob(assignment);
+	const holdsActive =
+		!!assignment && RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status);
 	if (!assignment) return { lease, holdsActive: false };
 	const servedJobId = assignment.jobId;
 	const needsJobPin = lease.actualJobId !== servedJobId;

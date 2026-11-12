@@ -29,12 +29,12 @@ import {
 	recordJitEmptyExit,
 } from "../jit-empty-exit-backoff.js";
 import {
+	assignmentBlocksRunnerTeardown,
 	correlateRunnerOnRun,
-	RUNNER_EXECUTING_JOB_STATUSES,
+	evaluateRunnerTeardownGuard,
 	resolveRunnerAssignedJob,
-	runnerHoldsActiveJob,
-	servedGitHubJobBlocksSettlement,
 } from "../jit-runner-correlation.js";
+import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "./container-timeout.js";
 import { deregisterGithubRunner } from "../jit-runner-deregister.js";
 import {
 	type JobPickupMetadataCache,
@@ -680,24 +680,7 @@ export function createIsolatedContainerController(options: {
 			(await options.docker.containerExists(containerName))
 		)
 			return;
-		if (lease.runnerName) {
-			try {
-				const assignment = await resolveRunnerAssignedJob(
-					options.github,
-					lease.installationId,
-					lease.repository,
-					lease.runnerName,
-					lease.runnerId,
-					{
-						reservedJobId: lease.jobId,
-						preferRunIds: [lease.originalRunId],
-					},
-				);
-				if (runnerHoldsActiveJob(assignment)) return;
-			} catch {
-				// Fall through when assignment cannot be resolved.
-			}
-		}
+		if (lease.runnerName && (await runnerTeardownBlocked(lease, true))) return;
 		try {
 			if (options.workFs.measureJobDirectory && lease.jobName) {
 				const measured = await options.workFs.measureJobDirectory(directory);
@@ -1096,50 +1079,43 @@ export function createIsolatedContainerController(options: {
 		return updated;
 	};
 
+	const runnerTeardownBlocked = async (
+		lease: Lease,
+		failClosed: boolean,
+		opts?: Readonly<{ observeServedJob?: boolean }>,
+	): Promise<boolean> => {
+		if (!lease.runnerName) return false;
+		const boundSinceMs =
+			runnerRegisteredAtMs.get(lease.id) ?? Date.parse(lease.createdAt);
+		const guardOpts = { failClosed } satisfies NonNullable<
+			Parameters<typeof evaluateRunnerTeardownGuard>[2]
+		>;
+		if (opts?.observeServedJob !== undefined) {
+			Object.assign(guardOpts, { observeServedJob: opts.observeServedJob });
+		}
+		return evaluateRunnerTeardownGuard(
+			options.github,
+			{
+				installationId: lease.installationId,
+				repository: lease.repository,
+				runnerName: lease.runnerName,
+				runnerId: lease.runnerId,
+				reservedJobId: lease.jobId,
+				servedJobId:
+					lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+				preferRunIds: [lease.originalRunId],
+				boundSinceMs,
+				nowMs: Date.parse(now()),
+			},
+			guardOpts,
+		);
+	};
+
 	const jitRunnerBlocksSettlement = async (
 		lease: Lease,
 		opts?: Readonly<{ failClosed?: boolean }>,
-	): Promise<boolean> => {
-		if (!lease.runnerName) return false;
-		const onGithubError = (): boolean =>
-			opts?.failClosed === true && lease.runnerId > 0;
-		try {
-			const assignment = await resolveRunnerAssignedJob(
-				options.github,
-				lease.installationId,
-				lease.repository,
-				lease.runnerName,
-				lease.runnerId,
-				{
-					reservedJobId: lease.jobId,
-					preferRunIds: [lease.originalRunId],
-				},
-			);
-			if (
-				assignment &&
-				RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status)
-			)
-				return true;
-		} catch {
-			// Fall through to getJob on the served workflow job.
-		}
-		const servedJobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
-		try {
-			const job = await getJob(
-				options.github,
-				lease.installationId,
-				lease.repository,
-				servedJobId,
-			);
-			return servedGitHubJobBlocksSettlement(lease, {
-				status: job.status,
-				runner_id: job.runner_id ?? null,
-				runner_name: job.runner_name ?? null,
-			});
-		} catch {
-			return onGithubError();
-		}
-	};
+	): Promise<boolean> =>
+		runnerTeardownBlocked(lease, opts?.failClosed === true);
 
 	const settleStopped = async (
 		lease: Lease,
@@ -1813,24 +1789,10 @@ export function createIsolatedContainerController(options: {
 				lease = attached;
 			}
 			if (hasIsolatedStopIntent(lease)) {
-				if (lease.runnerName) {
-					try {
-						const assignment = await resolveRunnerAssignedJob(
-							options.github,
-							lease.installationId,
-							lease.repository,
-							lease.runnerName,
-							lease.runnerId,
-							{
-								reservedJobId: lease.jobId,
-								preferRunIds: [lease.originalRunId],
-							},
-						);
-						if (runnerHoldsActiveJob(assignment)) return;
-					} catch {
-						if (!forceStop) return;
-					}
-				}
+				if (
+					await runnerTeardownBlocked(lease, forceStop !== true)
+				)
+					return;
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
 					lease = await markStopped(lease, true);
@@ -1909,27 +1871,18 @@ export function createIsolatedContainerController(options: {
 					if (running) return;
 				}
 				if (exited) {
-					if (runnerCustodyHoldsActive) return;
-					if (lease.runnerName) {
-						try {
-							const assignment = await resolveRunnerAssignedJob(
-								options.github,
-								lease.installationId,
-								lease.repository,
-								lease.runnerName,
-								lease.runnerId,
-								{
-									reservedJobId: lease.jobId,
-									preferRunIds: [lease.originalRunId],
-								},
-							);
-							if (runnerHoldsActiveJob(assignment)) return;
-						} catch {
-							if (runnerAssignment && runnerHoldsActiveJob(runnerAssignment))
-								return;
-							// Local exit marker is sufficient to retire the session; continue.
-						}
-					}
+					const boundSinceMs =
+						runnerRegisteredAtMs.get(lease.id) ?? Date.parse(lease.createdAt);
+					if (
+						runnerCustodyHoldsActive ||
+						assignmentBlocksRunnerTeardown(
+							runnerAssignment,
+							boundSinceMs,
+							Date.parse(now()),
+							ISOLATED_JIT_QUEUED_BOUND_GRACE_MS,
+						)
+					)
+						return;
 					const emptyKey = jitEmptyExitKey(
 						lease.repositoryId,
 						lease.jobId,
@@ -2031,28 +1984,11 @@ export function createIsolatedContainerController(options: {
 			// reconciliation cannot retire it until there is a reason to stop.
 			if (!stop) return;
 			if (runnerCustodyHoldsActive) return;
-			if (lease.runnerName) {
-				try {
-					const assignment =
-						runnerAssignment ??
-						(await resolveRunnerAssignedJob(
-							options.github,
-							lease.installationId,
-							lease.repository,
-							lease.runnerName,
-							lease.runnerId,
-							{
-								reservedJobId: lease.jobId,
-								preferRunIds: [lease.originalRunId],
-							},
-						));
-					if (runnerHoldsActiveJob(assignment)) return;
-				} catch {
-					if (runnerAssignment && runnerHoldsActiveJob(runnerAssignment))
-						return;
-					if (!stop) return;
-				}
-			}
+			if (
+				!forceStop &&
+				(await runnerTeardownBlocked(lease, true))
+			)
+				return;
 			let removed = false;
 			try {
 				try {
@@ -2111,22 +2047,27 @@ export function createIsolatedContainerController(options: {
 				(byId.runnerName === container.name ||
 					byId.sandboxName === container.name)
 			) {
-				try {
-					const assignment = await resolveRunnerAssignedJob(
+				const boundSinceMs =
+					runnerRegisteredAtMs.get(byId.id) ?? Date.parse(byId.createdAt);
+				if (
+					await evaluateRunnerTeardownGuard(
 						options.github,
-						byId.installationId,
-						byId.repository,
-						byId.runnerName,
-						byId.runnerId,
 						{
+							installationId: byId.installationId,
+							repository: byId.repository,
+							runnerName: byId.runnerName,
+							runnerId: byId.runnerId,
 							reservedJobId: byId.jobId,
+							servedJobId:
+								byId.actualJobId > 0 ? byId.actualJobId : byId.jobId,
 							preferRunIds: [byId.originalRunId],
+							boundSinceMs,
+							nowMs: Date.parse(now()),
 						},
-					);
-					if (runnerHoldsActiveJob(assignment)) return true;
-				} catch {
+						{ failClosed: true },
+					)
+				)
 					return true;
-				}
 			}
 		}
 		for (const lease of leases) {
@@ -2148,22 +2089,27 @@ export function createIsolatedContainerController(options: {
 			(resolvedLeaseId ? await options.store.get(resolvedLeaseId) : undefined);
 		if (!custodyLease?.runnerName || custodyLease.runnerName !== container.name)
 			return false;
-		try {
-			const assignment = await resolveRunnerAssignedJob(
-				options.github,
-				custodyLease.installationId,
-				custodyLease.repository,
-				container.name,
-				custodyLease.runnerId,
-				{
-					reservedJobId: custodyLease.jobId,
-					preferRunIds: [custodyLease.originalRunId],
-				},
-			);
-			return runnerHoldsActiveJob(assignment);
-		} catch {
-			return true;
-		}
+		const boundSinceMs =
+			runnerRegisteredAtMs.get(custodyLease.id) ??
+			Date.parse(custodyLease.createdAt);
+		return evaluateRunnerTeardownGuard(
+			options.github,
+			{
+				installationId: custodyLease.installationId,
+				repository: custodyLease.repository,
+				runnerName: container.name,
+				runnerId: custodyLease.runnerId,
+				reservedJobId: custodyLease.jobId,
+				servedJobId:
+					custodyLease.actualJobId > 0
+						? custodyLease.actualJobId
+						: custodyLease.jobId,
+				preferRunIds: [custodyLease.originalRunId],
+				boundSinceMs,
+				nowMs: Date.parse(now()),
+			},
+			{ failClosed: true },
+		);
 	};
 	const cancelStaleGithubLease = async (
 		lease: Lease,
