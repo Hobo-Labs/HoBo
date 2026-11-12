@@ -1,4 +1,4 @@
-import { type SpawnSyncReturns, spawnSync } from "node:child_process";
+import type { SpawnSyncReturns } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import {
 	assertReleaseImageMatchesBuild,
@@ -34,20 +34,6 @@ function syntheticDefaultImagetoolsStdout(tag: string, digest: string): string {
 		"Manifests: ",
 		"  Name:        example@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 	].join("\n");
-}
-
-function empiricalDefaultImagetoolsStdout(): string | undefined {
-	const buildx = spawnSync("docker", ["buildx", "version"], {
-		encoding: "utf8",
-	});
-	if (buildx.status !== 0) return undefined;
-	const probe = spawnSync(
-		"docker",
-		["buildx", "imagetools", "inspect", "docker.io/library/alpine:3.20"],
-		{ encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
-	);
-	if (probe.status !== 0 || !probe.stdout?.trim()) return undefined;
-	return probe.stdout;
 }
 
 function stubSpawnSync(
@@ -121,16 +107,36 @@ describe("release ghcr digest helpers", () => {
 		);
 	});
 
-	it("parses empirical default buildx stdout (live or synthetic)", () => {
-		const stdout =
-			empiricalDefaultImagetoolsStdout() ??
-			syntheticDefaultImagetoolsStdout(
-				"docker.io/library/alpine:3.20",
-				EMPIRICAL_ALPINE_INDEX_DIGEST,
-			);
+	it("parses default buildx stdout shape from empirical alpine capture", () => {
+		const stdout = syntheticDefaultImagetoolsStdout(
+			"docker.io/library/alpine:3.20",
+			EMPIRICAL_ALPINE_INDEX_DIGEST,
+		);
 		expect(parseImagetoolsDefaultStdout(stdout)).toBe(
 			EMPIRICAL_ALPINE_INDEX_DIGEST,
 		);
+	});
+
+	it("fails closed on multiline Digest output", () => {
+		expect(
+			parseImagetoolsDefaultStdout(
+				"Name: docker.io/library/alpine:3.20\nDigest:\nsha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n",
+			),
+		).toBeUndefined();
+	});
+
+	it("fails loudly when buildx plugin is missing", () => {
+		expect(() =>
+			imagetoolsInspectTag(
+				"ghcr.io/x/y:v1",
+				vi.fn(() =>
+					stubSpawnSync(
+						1,
+						"docker: 'buildx' is not a docker command.\nSee 'docker --help'",
+					),
+				),
+			),
+		).toThrow(/buildx CLI plugin/u);
 	});
 
 	it("returns digest when tag exists (default buildx stdout)", () => {

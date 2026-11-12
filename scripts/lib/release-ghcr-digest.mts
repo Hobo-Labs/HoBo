@@ -145,7 +145,7 @@ export function parseImagetoolsDefaultStdout(
 	stdout: string,
 ): string | undefined {
 	const header = stdout.split(/^Manifests:\s*$/m)[0] ?? stdout;
-	const match = /^Digest:\s+(sha256:[a-f0-9]{64})\s*$/m.exec(header);
+	const match = /^Digest:[ \t]+(sha256:[a-f0-9]{64})[ \t]*$/m.exec(header);
 	if (!match?.[1]) return undefined;
 	return assertSha256ImageDigest(match[1], "imagetools default Digest line");
 }
