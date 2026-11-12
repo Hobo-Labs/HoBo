@@ -15,10 +15,24 @@ import {
 	type JsonObject,
 	type PrincipalRef,
 } from "@hobo/core";
-import { type ReconcileObservationRecord, ReconcileObservationRecordSchema, ReconcileStatus } from "../_generated/cd_pb.js";
-import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS, CD_SUBSCRIPTIONS } from "../events.js";
-import type { CampId, Outcome, ReconcilerId, ReconcilerLease } from "../ports.js";
+import {
+	type ReconcileObservationRecord,
+	ReconcileObservationRecordSchema,
+	ReconcileStatus,
+} from "../_generated/cd_pb.js";
 import { messageOf } from "../agent/errors.js";
+import {
+	CD_DEFAULTS,
+	CD_EVENTS,
+	CD_STREAMS,
+	CD_SUBSCRIPTIONS,
+} from "../events.js";
+import type {
+	CampId,
+	Outcome,
+	ReconcilerId,
+	ReconcilerLease,
+} from "../ports.js";
 import { feedRefusal } from "./errors.js";
 
 // public-contract: schema id of reconcile status event bodies (shared with WP7's in-process transport).
@@ -44,14 +58,23 @@ function principalFor(reconcilerId: string): PrincipalRef {
 }
 
 /** Status events for one observation, in order (same mapping as WP7). */
-export function statusEventsFor(observation: ReconcileObservationRecord, idempotencyPrefix: string): readonly EventInput[] {
+export function statusEventsFor(
+	observation: ReconcileObservationRecord,
+	idempotencyPrefix: string,
+): readonly EventInput[] {
 	// SAFETY: toJson of a message is always a JSON object.
-	const body = toJson(ReconcileObservationRecordSchema, observation) as JsonObject;
+	const body = toJson(
+		ReconcileObservationRecordSchema,
+		observation,
+	) as JsonObject;
 	const types: string[] = [];
-	if (observation.status === ReconcileStatus.CONVERGING) types.push(CD_EVENTS.ReconcileStarted);
+	if (observation.status === ReconcileStatus.CONVERGING)
+		types.push(CD_EVENTS.ReconcileStarted);
 	types.push(CD_EVENTS.StatusObserved);
-	if (observation.status === ReconcileStatus.CONVERGED) types.push(CD_EVENTS.Converged);
-	if (observation.status === ReconcileStatus.BLOCKED) types.push(CD_EVENTS.ReconcileBlocked);
+	if (observation.status === ReconcileStatus.CONVERGED)
+		types.push(CD_EVENTS.Converged);
+	if (observation.status === ReconcileStatus.BLOCKED)
+		types.push(CD_EVENTS.ReconcileBlocked);
 	return types.map((type) => ({
 		type,
 		data: { schema: RECONCILE_STATUS_SCHEMA, observation: body },
@@ -61,11 +84,25 @@ export function statusEventsFor(observation: ReconcileObservationRecord, idempot
 
 export type FeedJournal = ReturnType<typeof createFeedJournal>;
 
-export function createFeedJournal(d: Readonly<{ store: DurableEventStore; tenant: string }>) {
+export function createFeedJournal(
+	d: Readonly<{ store: DurableEventStore; tenant: string }>,
+) {
 	const store = d.store;
 
-	async function claim(input: Readonly<{ reconcilerId: ReconcilerId; campId: CampId; holderId: string; ttlMs: number }>): Promise<Outcome<ReconcilerLease>> {
-		if (!store.claimSubscription) return feedRefusal("lease-unsupported", "the event store has no subscription leases", input.campId);
+	async function claim(
+		input: Readonly<{
+			reconcilerId: ReconcilerId;
+			campId: CampId;
+			holderId: string;
+			ttlMs: number;
+		}>,
+	): Promise<Outcome<ReconcilerLease>> {
+		if (!store.claimSubscription)
+			return feedRefusal(
+				"lease-unsupported",
+				"the event store has no subscription leases",
+				input.campId,
+			);
 		try {
 			const lease = await store.claimSubscription({
 				...subscription(input.campId),
@@ -85,13 +122,25 @@ export function createFeedJournal(d: Readonly<{ store: DurableEventStore; tenant
 		} catch (error) {
 			const code = codeOf(error);
 			if (code === "STALE_FENCE" || code.endsWith("LEASE_CONFLICT"))
-				return feedRefusal("lease-held", `Camp ${input.campId} is leased by another reconciler`, input.campId);
+				return feedRefusal(
+					"lease-held",
+					`Camp ${input.campId} is leased by another reconciler`,
+					input.campId,
+				);
 			return feedRefusal("store-unavailable", messageOf(error), input.campId);
 		}
 	}
 
-	async function renew(lease: ReconcilerLease, ttlMs: number = CD_DEFAULTS.leaseTtlMs): Promise<Outcome<ReconcilerLease>> {
-		if (!store.renewSubscription) return feedRefusal("lease-unsupported", "the event store cannot renew leases", lease.campId);
+	async function renew(
+		lease: ReconcilerLease,
+		ttlMs: number = CD_DEFAULTS.leaseTtlMs,
+	): Promise<Outcome<ReconcilerLease>> {
+		if (!store.renewSubscription)
+			return feedRefusal(
+				"lease-unsupported",
+				"the event store cannot renew leases",
+				lease.campId,
+			);
 		try {
 			const renewed = await store.renewSubscription({
 				...subscription(lease.campId),
@@ -99,11 +148,21 @@ export function createFeedJournal(d: Readonly<{ store: DurableEventStore; tenant
 				fenceToken: lease.fence,
 				leaseTtlMs: ttlMs,
 			});
-			return { ok: true, value: Object.freeze({ ...lease, expiresAtMs: Date.parse(renewed.expiresAt) }) };
+			return {
+				ok: true,
+				value: Object.freeze({
+					...lease,
+					expiresAtMs: Date.parse(renewed.expiresAt),
+				}),
+			};
 		} catch (error) {
 			const code = codeOf(error);
 			if (code === "STALE_FENCE" || code.endsWith("LEASE_CONFLICT"))
-				return feedRefusal("stale-fence", `lease fence ${lease.fence} on ${lease.campId} is no longer current`, lease.campId);
+				return feedRefusal(
+					"stale-fence",
+					`lease fence ${lease.fence} on ${lease.campId} is no longer current`,
+					lease.campId,
+				);
 			return feedRefusal("store-unavailable", messageOf(error), lease.campId);
 		}
 	}
@@ -129,13 +188,24 @@ export function createFeedJournal(d: Readonly<{ store: DurableEventStore; tenant
 		return seq;
 	}
 
-	async function report(lease: ReconcilerLease, observation: ReconcileObservationRecord): Promise<Outcome<EventPosition>> {
+	async function report(
+		lease: ReconcilerLease,
+		observation: ReconcileObservationRecord,
+	): Promise<Outcome<EventPosition>> {
 		const current = await renew(lease);
 		if (!current.ok) return current;
 		const stream = CD_STREAMS.campStatus(lease.campId);
 		const bytes = toJson(ReconcileObservationRecordSchema, observation);
-		const digest = createHash("sha256").update(JSON.stringify(bytes)).digest("hex").slice(0, 32);
-		const events = [...statusEventsFor(observation, `${lease.campId}:${lease.fence}:${digest}`)];
+		const digest = createHash("sha256")
+			.update(JSON.stringify(bytes))
+			.digest("hex")
+			.slice(0, 32);
+		const events = [
+			...statusEventsFor(
+				observation,
+				`${lease.campId}:${lease.fence}:${digest}`,
+			),
+		];
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
 			try {
 				const result = await store.append(stream, events, {
@@ -150,30 +220,62 @@ export function createFeedJournal(d: Readonly<{ store: DurableEventStore; tenant
 				const code = codeOf(error);
 				if (code === "OPTIMISTIC_SEQUENCE_CONFLICT") continue;
 				if (code === "STALE_FENCE" || code === "MISSING_FENCE")
-					return feedRefusal("stale-fence", `status append refused for fence ${lease.fence}`, lease.campId);
+					return feedRefusal(
+						"stale-fence",
+						`status append refused for fence ${lease.fence}`,
+						lease.campId,
+					);
 				return feedRefusal("store-unavailable", messageOf(error), lease.campId);
 			}
 		}
-		return feedRefusal("report-refused", "status stream kept changing under a single-writer lease", lease.campId);
+		return feedRefusal(
+			"report-refused",
+			"status stream kept changing under a single-writer lease",
+			lease.campId,
+		);
 	}
 
 	async function lastPosition(stream: string): Promise<EventPosition> {
 		let last = 0n;
-		for await (const { position } of store.readAll({ filter: { streamId: stream } })) last = position;
+		for await (const { position } of store.readAll({
+			filter: { streamId: stream },
+		}))
+			last = position;
 		// SAFETY: positions come from the journal.
 		return last as EventPosition;
 	}
 
-	async function checkpoint(lease: ReconcilerLease, position: EventPosition): Promise<Outcome<EventPosition>> {
-		if (!store.commitCheckpoint) return feedRefusal("lease-unsupported", "the event store cannot commit checkpoints", lease.campId);
+	async function checkpoint(
+		lease: ReconcilerLease,
+		position: EventPosition,
+	): Promise<Outcome<EventPosition>> {
+		if (!store.commitCheckpoint)
+			return feedRefusal(
+				"lease-unsupported",
+				"the event store cannot commit checkpoints",
+				lease.campId,
+			);
 		try {
-			const committed = await store.commitCheckpoint({ ...subscription(lease.campId), position, fenceToken: lease.fence });
+			const committed = await store.commitCheckpoint({
+				...subscription(lease.campId),
+				position,
+				fenceToken: lease.fence,
+			});
 			return { ok: true, value: committed.position };
 		} catch (error) {
 			const code = codeOf(error);
 			if (code === "CHECKPOINT_REGRESSION")
-				return feedRefusal("checkpoint-regression", `checkpoint ${position} is behind the committed one`, lease.campId);
-			if (code === "STALE_FENCE") return feedRefusal("stale-fence", `checkpoint refused for fence ${lease.fence}`, lease.campId);
+				return feedRefusal(
+					"checkpoint-regression",
+					`checkpoint ${position} is behind the committed one`,
+					lease.campId,
+				);
+			if (code === "STALE_FENCE")
+				return feedRefusal(
+					"stale-fence",
+					`checkpoint refused for fence ${lease.fence}`,
+					lease.campId,
+				);
 			return feedRefusal("store-unavailable", messageOf(error), lease.campId);
 		}
 	}
@@ -187,16 +289,30 @@ export function createFeedJournal(d: Readonly<{ store: DurableEventStore; tenant
 	async function specHead(campId: string): Promise<EventPosition | undefined> {
 		let head: EventPosition | undefined;
 		let seenSet = false;
-		for await (const { position, event } of store.readAll({ filter: { streamId: CD_STREAMS.campSpec(campId) } })) {
+		for await (const { position, event } of store.readAll({
+			filter: { streamId: CD_STREAMS.campSpec(campId) },
+		})) {
 			if (event.type === CD_EVENTS.SetCreated) seenSet = true;
 			if (seenSet && CHANGE_TYPES.has(event.type)) head = position;
 		}
 		return head;
 	}
 
-	return Object.freeze({ claim, renew, release, report, checkpoint, committed, specHead });
+	return Object.freeze({
+		claim,
+		renew,
+		release,
+		report,
+		checkpoint,
+		committed,
+		specHead,
+	});
 }
 
-const CHANGE_TYPES: ReadonlySet<string> = new Set([CD_EVENTS.SetCreated, CD_EVENTS.PolicyBindingChanged, CD_EVENTS.CampManagementChanged]);
+const CHANGE_TYPES: ReadonlySet<string> = new Set([
+	CD_EVENTS.SetCreated,
+	CD_EVENTS.PolicyBindingChanged,
+	CD_EVENTS.CampManagementChanged,
+]);
 
 export type { FenceToken };

@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: test fakes brand ids they mint and read controlled fixtures at the test boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/no-known-value-widening -- SAFETY: test fixtures brand ids they mint, build partial generated records, and read controlled JSON at the test boundary. */
 // Test fakes owned by WP11 (plan 0024 §7.3): an indexed in-memory
 // DurableEventStore with the SQLite journal's per-stream idempotency, CAS,
 // owner-epoch fencing and subscription lease/checkpoint semantics on an
@@ -78,7 +78,11 @@ import type {
 export const T0 = Date.parse("2026-11-12T00:00:00.000Z");
 export const TENANT = "acme";
 
-export type Clock = { ms: number; now: () => number; advance: (ms: number) => void };
+export type Clock = {
+	ms: number;
+	now: () => number;
+	advance: (ms: number) => void;
+};
 
 export function createClock(start = T0): Clock {
 	const clock: Clock = {
@@ -115,7 +119,10 @@ export function createFakeStore(clock: Clock): FakeStore {
 	const byStream = new Map<string, PositionedEvent[]>();
 	const byKey = new Map<string, EventEnvelope>();
 	const heads = new Map<string, { revision: number; ownerEpoch: bigint }>();
-	const handlers = new Set<{ filter: StreamFilter; handler: (event: EventEnvelope) => void | Promise<void> }>();
+	const handlers = new Set<{
+		filter: StreamFilter;
+		handler: (event: EventEnvelope) => void | Promise<void>;
+	}>();
 	const leases = new Map<string, Lease>();
 	const checkpoints = new Map<string, SubscriptionCheckpoint>();
 	let position = 0n;
@@ -126,14 +133,19 @@ export function createFakeStore(clock: Clock): FakeStore {
 	const store: FakeStore = {
 		log,
 		appends: 0,
-		async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
+		async append(
+			streamId: string,
+			events: EventInput[],
+			opts: AppendOptions,
+		): Promise<AppendResult> {
 			store.appends += 1;
 			const deduped: EventEnvelope[] = [];
 			const pending: EventInput[] = [];
 			const seen = new Set<string>();
 			for (const input of events) {
 				const k = idempotencyKeyOf(input.meta);
-				const existing = k === undefined ? undefined : byKey.get(`${streamId}\u0000${k}`);
+				const existing =
+					k === undefined ? undefined : byKey.get(`${streamId}\u0000${k}`);
 				if (existing) deduped.push(existing);
 				else if (k !== undefined && seen.has(k)) continue;
 				else {
@@ -144,13 +156,20 @@ export function createFakeStore(clock: Clock): FakeStore {
 			const head = heads.get(streamId) ?? { revision: 0, ownerEpoch: 0n };
 			let nextEpoch = head.ownerEpoch;
 			if (head.ownerEpoch > 0n) {
-				if (opts.fenceToken === undefined) throw new StaleFenceError(streamId, 0n, head.ownerEpoch);
-				if (opts.fenceToken < head.ownerEpoch) throw new StaleFenceError(streamId, opts.fenceToken, head.ownerEpoch);
+				if (opts.fenceToken === undefined)
+					throw new StaleFenceError(streamId, 0n, head.ownerEpoch);
+				if (opts.fenceToken < head.ownerEpoch)
+					throw new StaleFenceError(streamId, opts.fenceToken, head.ownerEpoch);
 				nextEpoch = opts.fenceToken;
-			} else if (opts.fenceToken !== undefined && opts.fenceToken > 0n) nextEpoch = opts.fenceToken;
+			} else if (opts.fenceToken !== undefined && opts.fenceToken > 0n)
+				nextEpoch = opts.fenceToken;
 			if (pending.length === 0) return { streamId, appended: [], deduped };
 			if (head.revision !== opts.expectedSeq)
-				throw new OptimisticSequenceConflictError(streamId, opts.expectedSeq, head.revision);
+				throw new OptimisticSequenceConflictError(
+					streamId,
+					opts.expectedSeq,
+					head.revision,
+				);
 			const appended: EventEnvelope[] = [];
 			let first: EventPosition | undefined;
 			let last: EventPosition | undefined;
@@ -185,14 +204,16 @@ export function createFakeStore(clock: Clock): FakeStore {
 			}
 			heads.set(streamId, { revision: seq, ownerEpoch: nextEpoch });
 			for (const entry of handlers)
-				for (const event of appended) if (matches(entry.filter, event)) void entry.handler(event);
+				for (const event of appended)
+					if (matches(entry.filter, event)) void entry.handler(event);
 			const result: AppendResult = { streamId, appended, deduped };
 			if (first !== undefined) result.firstPosition = first;
 			if (last !== undefined) result.lastPosition = last;
 			return result;
 		},
 		async *read(streamId: string, fromSeq = 1): AsyncIterable<EventEnvelope> {
-			for (const entry of (byStream.get(streamId) ?? []).slice()) if (entry.event.seq >= fromSeq) yield entry.event;
+			for (const entry of (byStream.get(streamId) ?? []).slice())
+				if (entry.event.seq >= fromSeq) yield entry.event;
 		},
 		subscribe(filter, handler) {
 			const entry = { filter, handler };
@@ -202,11 +223,17 @@ export function createFakeStore(clock: Clock): FakeStore {
 		async snapshot(streamId, state, seq): Promise<SnapshotRecord> {
 			return { streamId, state, seq, savedAt: iso(clock.now()) };
 		},
-		async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
-			const source = options.filter?.streamId !== undefined ? (byStream.get(options.filter.streamId) ?? []) : log;
+		async *readAll(
+			options: ReadAllOptions = {},
+		): AsyncIterable<PositionedEvent> {
+			const source =
+				options.filter?.streamId !== undefined
+					? (byStream.get(options.filter.streamId) ?? [])
+					: log;
 			let count = 0;
 			for (const entry of source.slice()) {
-				if (options.after !== undefined && entry.position <= options.after) continue;
+				if (options.after !== undefined && entry.position <= options.after)
+					continue;
 				if (options.filter && !matches(options.filter, entry.event)) continue;
 				if (options.limit !== undefined && count >= options.limit) return;
 				count += 1;
@@ -214,7 +241,11 @@ export function createFakeStore(clock: Clock): FakeStore {
 			}
 		},
 		async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-			const result = await store.append(request.streamId, [...request.events], request.append);
+			const result = await store.append(
+				request.streamId,
+				[...request.events],
+				request.append,
+			);
 			return { ...result, effects: [] };
 		},
 		getStreamHead(streamId: string) {
@@ -225,10 +256,18 @@ export function createFakeStore(clock: Clock): FakeStore {
 			const k = key(options.subscriptionId, options.partitionId);
 			const existing = leases.get(k);
 			const now = clock.now();
-			if (existing && existing.expiresAtMs > now && existing.holderId !== options.holderId)
+			if (
+				existing &&
+				existing.expiresAtMs > now &&
+				existing.holderId !== options.holderId
+			)
 				throw new StaleFenceError(k, 0n, existing.fence);
 			const fence = (existing?.fence ?? 0n) + 1n;
-			const lease = { holderId: options.holderId, fence, expiresAtMs: now + (options.leaseTtlMs ?? 30_000) };
+			const lease = {
+				holderId: options.holderId,
+				fence,
+				expiresAtMs: now + (options.leaseTtlMs ?? 30_000),
+			};
 			leases.set(k, lease);
 			return leaseOf(options.subscriptionId, options.partitionId, lease);
 		},
@@ -246,8 +285,14 @@ export function createFakeStore(clock: Clock): FakeStore {
 			return leaseOf(options.subscriptionId, options.partitionId, existing);
 		},
 		async releaseSubscription(options) {
-			const existing = leases.get(key(options.subscriptionId, options.partitionId));
-			if (existing && existing.holderId === options.holderId && existing.fence === options.fenceToken)
+			const existing = leases.get(
+				key(options.subscriptionId, options.partitionId),
+			);
+			if (
+				existing &&
+				existing.holderId === options.holderId &&
+				existing.fence === options.fenceToken
+			)
 				existing.expiresAtMs = 0;
 		},
 		async loadCheckpoint(options) {
@@ -260,7 +305,12 @@ export function createFakeStore(clock: Clock): FakeStore {
 				throw new StaleFenceError(k, options.fenceToken, lease?.fence ?? 0n);
 			const current = checkpoints.get(k);
 			if (current && options.position < current.position)
-				throw new CheckpointRegressionError(options.subscriptionId, options.partitionId, options.position, current.position);
+				throw new CheckpointRegressionError(
+					options.subscriptionId,
+					options.partitionId,
+					options.position,
+					current.position,
+				);
 			const checkpoint: SubscriptionCheckpoint = {
 				subscriptionId: options.subscriptionId as SubscriptionId,
 				partitionId: options.partitionId as PartitionId,
@@ -272,7 +322,11 @@ export function createFakeStore(clock: Clock): FakeStore {
 			return checkpoint;
 		},
 	};
-	function leaseOf(subscriptionId: string, partitionId: string, lease: Lease): SubscriptionLease {
+	function leaseOf(
+		subscriptionId: string,
+		partitionId: string,
+		lease: Lease,
+	): SubscriptionLease {
 		return {
 			subscriptionId: subscriptionId as SubscriptionId,
 			partitionId: partitionId as PartitionId,
@@ -290,14 +344,17 @@ function idempotencyKeyOf(meta: JsonObject | undefined): string | undefined {
 }
 
 function matches(filter: StreamFilter, event: EventEnvelope): boolean {
-	if (filter.streamId !== undefined && filter.streamId !== event.streamId) return false;
+	if (filter.streamId !== undefined && filter.streamId !== event.streamId)
+		return false;
 	if (filter.type !== undefined && filter.type !== event.type) return false;
 	return true;
 }
 
 // ── Artifacts, Sets and desired state ──────────────────────────────────────
 
-export function createMemoryArtifacts(): ArtifactStore & { readonly blobs: Map<string, Uint8Array> } {
+export function createMemoryArtifacts(): ArtifactStore & {
+	readonly blobs: Map<string, Uint8Array>;
+} {
 	const blobs = new Map<string, Uint8Array>();
 	return {
 		backend: "memory",
@@ -305,7 +362,13 @@ export function createMemoryArtifacts(): ArtifactStore & { readonly blobs: Map<s
 		async put(bytes, meta) {
 			const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 			blobs.set(digest, bytes);
-			return { name: meta.name, kind: meta.kind, mediaType: meta.mediaType, digest, size: BigInt(bytes.byteLength) } as never;
+			return {
+				name: meta.name,
+				kind: meta.kind,
+				mediaType: meta.mediaType,
+				digest,
+				size: BigInt(bytes.byteLength),
+			} as never;
 		},
 		async get(digest) {
 			return blobs.get(digest);
@@ -322,7 +385,11 @@ export function createMemoryArtifacts(): ArtifactStore & { readonly blobs: Map<s
 	};
 }
 
-export function resolvedFor(campId: string, resources: readonly string[] = ["api"], padding = 0): ResolvedDeploymentSet {
+export function resolvedFor(
+	campId: string,
+	resources: readonly string[] = ["api"],
+	padding = 0,
+): ResolvedDeploymentSet {
 	const plan: DeploymentPlan = {
 		schema: "hobo.deployment-plan/v1",
 		resources: resources.map((name) => ({
@@ -330,7 +397,10 @@ export function resolvedFor(campId: string, resources: readonly string[] = ["api
 			port: "compute",
 			provider: "fake",
 			deps: [],
-			realizationParameters: { version: "1", ...(padding > 0 ? { padding: "x".repeat(padding) } : {}) },
+			realizationParameters: {
+				version: "1",
+				...(padding > 0 ? { padding: "x".repeat(padding) } : {}),
+			},
 		})),
 		dependencyOrder: [...resources],
 		objective: "test",
@@ -341,7 +411,12 @@ export function resolvedFor(campId: string, resources: readonly string[] = ["api
 		campId,
 		plan,
 		matches: [],
-		gatekeeper: { decision: "allow", gatekeeperDecisionId: "gate-1", obligations: [], decidedAt: new Date(T0).toISOString() },
+		gatekeeper: {
+			decision: "allow",
+			gatekeeperDecisionId: "gate-1",
+			obligations: [],
+			decidedAt: new Date(T0).toISOString(),
+		},
 		secretRefs: ["secretref://target/db-password"],
 	});
 }
@@ -362,17 +437,32 @@ function canonical(value: unknown): string {
 }
 
 export type FakeDesired = DesiredStateReader & {
-	publish(campId: string, resolved: ResolvedDeploymentSet, opts?: { storeBlob?: boolean; management?: CampManagement }): Promise<SetRecord>;
+	publish(
+		campId: string,
+		resolved: ResolvedDeploymentSet,
+		opts?: { storeBlob?: boolean; management?: CampManagement },
+	): Promise<SetRecord>;
 };
 
-export function createFakeDesired(store: FakeStore, artifacts: ReturnType<typeof createMemoryArtifacts>): FakeDesired {
+export function createFakeDesired(
+	store: FakeStore,
+	artifacts: ReturnType<typeof createMemoryArtifacts>,
+): FakeDesired {
 	const sets = new Map<string, SetRecord>();
 	let n = 0;
-	function changeOf(position: EventPosition, event: EventEnvelope): DesiredStateChange {
+	function changeOf(
+		position: EventPosition,
+		event: EventEnvelope,
+	): DesiredStateChange {
 		const data = event.data as { setId: string; management?: number };
 		const set = sets.get(data.setId);
 		if (!set) throw new Error(`unknown set ${data.setId}`);
-		return { position, set, observeFields: [], management: data.management ?? CampManagement.MANAGED };
+		return {
+			position,
+			set,
+			observeFields: [],
+			management: data.management ?? CampManagement.MANAGED,
+		};
 	}
 	const reader: FakeDesired = {
 		async publish(campId, resolved, opts = {}) {
@@ -398,8 +488,20 @@ export function createFakeDesired(store: FakeStore, artifacts: ReturnType<typeof
 			const stream = CD_STREAMS.campSpec(campId);
 			await store.append(
 				stream,
-				[{ type: CD_EVENTS.SetCreated, data: { setId: set.setId, management: opts.management ?? CampManagement.MANAGED } }],
-				{ expectedSeq: store.getStreamHead?.(stream)?.revision ?? 0, actor: { kind: "system", id: "test" }, tenant: TENANT },
+				[
+					{
+						type: CD_EVENTS.SetCreated,
+						data: {
+							setId: set.setId,
+							management: opts.management ?? CampManagement.MANAGED,
+						},
+					},
+				],
+				{
+					expectedSeq: store.getStreamHead?.(stream)?.revision ?? 0,
+					actor: { kind: "system", id: "test" },
+					tenant: TENANT,
+				},
 			);
 			return set;
 		},
@@ -411,7 +513,9 @@ export function createFakeDesired(store: FakeStore, artifacts: ReturnType<typeof
 		},
 		async history(campId, limit = 50) {
 			const out: SetRecord[] = [];
-			for await (const { event } of store.readAll({ filter: { streamId: CD_STREAMS.campSpec(campId) } })) {
+			for await (const { event } of store.readAll({
+				filter: { streamId: CD_STREAMS.campSpec(campId) },
+			})) {
 				const set = sets.get((event.data as { setId: string }).setId);
 				if (set) out.unshift(set);
 			}
@@ -437,7 +541,9 @@ export function createFakeDesired(store: FakeStore, artifacts: ReturnType<typeof
 				if (input.signal.aborted) return;
 				await new Promise<void>((resolve) => {
 					const subs = input.campIds.map((campId) =>
-						store.subscribe({ streamId: CD_STREAMS.campSpec(campId) }, () => done()),
+						store.subscribe({ streamId: CD_STREAMS.campSpec(campId) }, () =>
+							done(),
+						),
 					);
 					const done = () => {
 						for (const s of subs) s.unsubscribe();
@@ -463,7 +569,9 @@ export type Observed = Readonly<{
 	principal: string;
 }>;
 
-export function createFakeInventory(sets: Readonly<Record<string, readonly string[]>>): CampInventory & {
+export function createFakeInventory(
+	sets: Readonly<Record<string, readonly string[]>>,
+): CampInventory & {
 	readonly observed: Observed[];
 } {
 	const observed: Observed[] = [];
@@ -478,7 +586,10 @@ export function createFakeInventory(sets: Readonly<Record<string, readonly strin
 			labels: {},
 			management: CampManagement.MANAGED,
 		},
-		status: create(CampStatusRecordSchema, { campId, management: CampManagement.MANAGED }),
+		status: create(CampStatusRecordSchema, {
+			campId,
+			management: CampManagement.MANAGED,
+		}),
 	});
 	return {
 		observed,
@@ -491,8 +602,14 @@ export function createFakeInventory(sets: Readonly<Record<string, readonly strin
 			return [...ids].sort().map(view);
 		},
 		async observe(input, ctx) {
-			observed.push({ ...input, principal: `${ctx.principal.kind}:${ctx.principal.id}` });
-			return { ok: true, value: create(CampStatusRecordSchema, { campId: input.campId }) };
+			observed.push({
+				...input,
+				principal: `${ctx.principal.kind}:${ctx.principal.id}`,
+			});
+			return {
+				ok: true,
+				value: create(CampStatusRecordSchema, { campId: input.campId }),
+			};
 		},
 		async taint() {
 			throw new Error("not used");
@@ -516,7 +633,10 @@ export function createFakeInventory(sets: Readonly<Record<string, readonly strin
 	} satisfies CampInventory & { observed: Observed[] };
 }
 
-export function railWith(enrollment?: { separateApprovers: boolean; autoAcceptScopes?: readonly string[] }): RailDeliveryRecord {
+export function railWith(enrollment?: {
+	separateApprovers: boolean;
+	autoAcceptScopes?: readonly string[];
+}): RailDeliveryRecord {
 	return create(RailDeliveryRecordSchema, {
 		railDigest: `sha256:${"a".repeat(64)}`,
 		...(enrollment
@@ -541,25 +661,50 @@ export function createFakeRails(rail?: RailDeliveryRecord): RailDeliveryReader {
 	};
 }
 
-export type Decision = Readonly<{ action: CdAction; principal: string; subject: JsonObject }>;
+export type Decision = Readonly<{
+	action: CdAction;
+	principal: string;
+	subject: JsonObject;
+}>;
 
-export function createFakeAuthorizer(deny: readonly CdAction[] = []): CdAuthorizer & { readonly decisions: Decision[] } {
+export function createFakeAuthorizer(
+	deny: readonly CdAction[] = [],
+): CdAuthorizer & { readonly decisions: Decision[] } {
 	const decisions: Decision[] = [];
 	return {
 		decisions,
 		async authorize(action, subject, ctx) {
-			decisions.push({ action, principal: `${ctx.principal.kind}:${ctx.principal.id}`, subject });
+			decisions.push({
+				action,
+				principal: `${ctx.principal.kind}:${ctx.principal.id}`,
+				subject,
+			});
 			if (deny.includes(action))
-				return { ok: false, reasons: [{ code: "policy-denied", message: `${action} denied`, remediation: "ask", subject: action } as never] };
+				return {
+					ok: false,
+					reasons: [
+						{
+							code: "policy-denied",
+							message: `${action} denied`,
+							remediation: "ask",
+							subject: action,
+						} as never,
+					],
+				};
 			return {
 				ok: true,
-				value: { decisionId: `dec-${decisions.length}`, proposalOnly: ctx.principal.kind === "agent" },
+				value: {
+					decisionId: `dec-${decisions.length}`,
+					proposalOnly: ctx.principal.kind === "agent",
+				},
 			};
 		},
 	};
 }
 
-export function createFakePosture(fields: readonly string[] = []): PostureService {
+export function createFakePosture(
+	fields: readonly string[] = [],
+): PostureService {
 	return {
 		async compliance(): Promise<readonly ComplianceRecord[]> {
 			return [];
@@ -577,7 +722,10 @@ export function createFakePosture(fields: readonly string[] = []): PostureServic
 	};
 }
 
-export function createFakeTopology(campIds: readonly string[], observeOnly: readonly string[] = []): TopologyReader {
+export function createFakeTopology(
+	campIds: readonly string[],
+	observeOnly: readonly string[] = [],
+): TopologyReader {
 	const camp = (campId: string): CampTopology => ({
 		campId: asCamp(campId),
 		yardId: "yard-1",
@@ -586,7 +734,9 @@ export function createFakeTopology(campIds: readonly string[], observeOnly: read
 		regions: ["eu-west-1"],
 		envType: "prod",
 		labels: {},
-		management: observeOnly.includes(campId) ? CampManagement.OBSERVE_ONLY : CampManagement.MANAGED,
+		management: observeOnly.includes(campId)
+			? CampManagement.OBSERVE_ONLY
+			: CampManagement.MANAGED,
 	});
 	return {
 		async camps() {
@@ -598,7 +748,10 @@ export function createFakeTopology(campIds: readonly string[], observeOnly: read
 	};
 }
 
-export function createRecordingTelemetry(): TelemetrySink & { readonly points: OtelMetricPoint[]; readonly spanLog: OtelSpan[] } {
+export function createRecordingTelemetry(): TelemetrySink & {
+	readonly points: OtelMetricPoint[];
+	readonly spanLog: OtelSpan[];
+} {
 	const points: OtelMetricPoint[] = [];
 	const spanLog: OtelSpan[] = [];
 	return {

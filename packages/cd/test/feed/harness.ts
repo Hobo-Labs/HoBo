@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test harness wiring over controlled fixtures. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/no-known-value-widening -- SAFETY: test fixtures brand ids they mint, build partial generated records, and read controlled JSON at the test boundary. */
 // A Station double (event store + desired state + artifacts + enrollment +
 // delivery feed) and an HttpTransport that carries agent requests into it.
 // The double records every exchange so tests can prove direction (agent →
@@ -13,9 +13,22 @@ import {
 	ReconcileStatus,
 	type SetRecord,
 } from "../../src/_generated/cd_pb.js";
-import { type AgentKeyPair, createAgentEnrollment, createHttpTransport, generateAgentKey } from "../../src/agent/index.js";
-import { createDeliveryFeedHandler, type DeliveryFeedDeps } from "../../src/feed/index.js";
-import type { CampId, ReconcilerId, ReconcilerLease, ReconcilerTransport } from "../../src/ports.js";
+import {
+	type AgentKeyPair,
+	createAgentEnrollment,
+	createHttpTransport,
+	generateAgentKey,
+} from "../../src/agent/index.js";
+import {
+	createDeliveryFeedHandler,
+	type DeliveryFeedDeps,
+} from "../../src/feed/index.js";
+import type {
+	CampId,
+	ReconcilerId,
+	ReconcilerLease,
+	ReconcilerTransport,
+} from "../../src/ports.js";
 import {
 	asCamp,
 	type Clock,
@@ -36,9 +49,15 @@ import {
 
 export const BASE_URL = "https://station.test";
 
-export type Exchange = Readonly<{ request: TransportRequest; status: number; body: string }>;
+export type Exchange = Readonly<{
+	request: TransportRequest;
+	status: number;
+	body: string;
+}>;
 
-export type StationOptions = Partial<Pick<DeliveryFeedDeps, "heartbeatMs" | "longPollMs" | "maxFramesPerResponse">> & {
+export type StationOptions = Partial<
+	Pick<DeliveryFeedDeps, "heartbeatMs" | "longPollMs" | "maxFramesPerResponse">
+> & {
 	camps?: readonly string[];
 	observeFields?: readonly string[];
 	observeOnly?: readonly string[];
@@ -56,7 +75,12 @@ export function createStation(options: StationOptions = {}) {
 	const telemetry = createRecordingTelemetry();
 	const kms = createInMemoryKms();
 	kms.generateRsaKey("svid-1");
-	const issuer = new JwtSvidIssuer({ issuerUrl: `${BASE_URL}/identity`, kms, activeKeyId: "svid-1", jwksKeyIds: ["svid-1"] });
+	const issuer = new JwtSvidIssuer({
+		issuerUrl: `${BASE_URL}/identity`,
+		kms,
+		activeKeyId: "svid-1",
+		jwksKeyIds: ["svid-1"],
+	});
 	const enrollment = createAgentEnrollment({
 		store,
 		tenant: TENANT,
@@ -81,7 +105,9 @@ export function createStation(options: StationOptions = {}) {
 		telemetry,
 		heartbeatMs: options.heartbeatMs ?? 20,
 		longPollMs: options.longPollMs ?? 60,
-		...(options.maxFramesPerResponse !== undefined ? { maxFramesPerResponse: options.maxFramesPerResponse } : {}),
+		...(options.maxFramesPerResponse !== undefined
+			? { maxFramesPerResponse: options.maxFramesPerResponse }
+			: {}),
 	});
 	const exchanges: Exchange[] = [];
 	/** Cut the next N feed responses after `frames` frames (simulates a dropped connection). */
@@ -98,7 +124,8 @@ export function createStation(options: StationOptions = {}) {
 			new AbortController().signal,
 		);
 		let body = "";
-		if (response.body instanceof Uint8Array) body = new TextDecoder().decode(response.body);
+		if (response.body instanceof Uint8Array)
+			body = new TextDecoder().decode(response.body);
 		else {
 			const cut = url.pathname === "/v1/cd/feed" ? cuts.shift() : undefined;
 			let frames = 0;
@@ -114,7 +141,22 @@ export function createStation(options: StationOptions = {}) {
 		exchanges.push({ request, status: response.status, body });
 		return { status: response.status, headers: response.headers, body };
 	};
-	return { clock, store, artifacts, desired, inventory, authorizer, telemetry, issuer, enrollment, handler, http, exchanges, cuts, camps };
+	return {
+		clock,
+		store,
+		artifacts,
+		desired,
+		inventory,
+		authorizer,
+		telemetry,
+		issuer,
+		enrollment,
+		handler,
+		http,
+		exchanges,
+		cuts,
+		camps,
+	};
 }
 
 export type Station = ReturnType<typeof createStation>;
@@ -122,12 +164,25 @@ export type Station = ReturnType<typeof createStation>;
 /** Enroll over HTTP with a bootstrap token, grant both opt-ins as two operators, return an agent transport. */
 export async function provisionAgent(
 	station: Station,
-	options: { campIds?: readonly string[]; grants?: "both" | "key-only" | "none"; key?: AgentKeyPair } = {},
-): Promise<{ key: AgentKeyPair; reconcilerId: ReconcilerId; transport: ReconcilerTransport }> {
+	options: {
+		campIds?: readonly string[];
+		grants?: "both" | "key-only" | "none";
+		key?: AgentKeyPair;
+	} = {},
+): Promise<{
+	key: AgentKeyPair;
+	reconcilerId: ReconcilerId;
+	transport: ReconcilerTransport;
+}> {
 	const campIds = options.campIds ?? station.camps;
 	const key = options.key ?? generateAgentKey();
 	const token = await station.enrollment.issueToken(
-		{ campSet: "fleet", campIds: campIds.map(asCamp), mode: ReconcilerMode.AGENT, ttlMs: 3_600_000 },
+		{
+			campSet: "fleet",
+			campIds: campIds.map(asCamp),
+			mode: ReconcilerMode.AGENT,
+			ttlMs: 3_600_000,
+		},
 		ctxAt(station.clock, { kind: "user", id: "alice" }),
 	);
 	if (!token.ok) throw new Error(token.reasons[0]?.code);
@@ -135,20 +190,44 @@ export async function provisionAgent(
 		method: "POST",
 		url: `${BASE_URL}/v1/cd/enrollments`,
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ token: token.value.token, publicJwk: key.publicJwk, claims: [{ name: "region", value: "eu-west-1" }] }),
+		body: JSON.stringify({
+			token: token.value.token,
+			publicJwk: key.publicJwk,
+			claims: [{ name: "region", value: "eu-west-1" }],
+		}),
 		timeoutMs: 1000,
 		maxResponseBytes: 1_000_000,
 	});
-	const reconcilerId = JSON.parse(response.body).value.reconciler.reconcilerId as ReconcilerId;
+	const reconcilerId = JSON.parse(response.body).value.reconciler
+		.reconcilerId as ReconcilerId;
 	const grants = options.grants ?? "both";
-	if (grants !== "none") await station.enrollment.approveKey(reconcilerId, ctxAt(station.clock, { kind: "user", id: "alice" }));
+	if (grants !== "none")
+		await station.enrollment.approveKey(
+			reconcilerId,
+			ctxAt(station.clock, { kind: "user", id: "alice" }),
+		);
 	if (grants === "both")
-		await station.enrollment.accept({ reconcilerId, campIds: campIds.map(asCamp) }, ctxAt(station.clock, { kind: "user", id: "bob" }));
-	const transport = createHttpTransport({ baseUrl: BASE_URL, http: station.http, reconcilerId, privateJwk: key.privateJwk, svid: "", now: station.clock.now });
+		await station.enrollment.accept(
+			{ reconcilerId, campIds: campIds.map(asCamp) },
+			ctxAt(station.clock, { kind: "user", id: "bob" }),
+		);
+	const transport = createHttpTransport({
+		baseUrl: BASE_URL,
+		http: station.http,
+		reconcilerId,
+		privateJwk: key.privateJwk,
+		svid: "",
+		now: station.clock.now,
+	});
 	return { key, reconcilerId, transport };
 }
 
-export function observation(lease: ReconcilerLease, set: SetRecord, status: ReconcileStatus, extra: Partial<ReconcileObservationRecord> = {}) {
+export function observation(
+	lease: ReconcilerLease,
+	set: SetRecord,
+	status: ReconcileStatus,
+	extra: Partial<ReconcileObservationRecord> = {},
+) {
 	return create(ReconcileObservationRecordSchema, {
 		campId: lease.campId,
 		setId: set.setId,

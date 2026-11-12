@@ -8,24 +8,41 @@
 import { describe, expect, it } from "vitest";
 import { ReconcileStatus } from "../../src/_generated/cd_pb.js";
 import { resolvedFor } from "./fakes.js";
-import { camp, collect, createStation, observation, provisionAgent } from "./harness.js";
+import {
+	camp,
+	collect,
+	createStation,
+	observation,
+	provisionAgent,
+} from "./harness.js";
 
 const CAMPS = 1_000;
 const AGENTS = 50;
 
 function p99(samples: readonly number[]): number {
 	const sorted = [...samples].sort((a, b) => a - b);
-	return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.99) - 1)] ?? 0;
+	return (
+		sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.99) - 1)] ??
+		0
+	);
 }
 
 describe("delivery feed load baseline", () => {
 	it(`serves ${CAMPS} Camps with ${AGENTS} agents and records p99 frame and checkpoint latency`, async () => {
-		const camps = Array.from({ length: CAMPS }, (_, i) => `camp-${String(i).padStart(4, "0")}`);
+		const camps = Array.from(
+			{ length: CAMPS },
+			(_, i) => `camp-${String(i).padStart(4, "0")}`,
+		);
 		const station = createStation({ camps, longPollMs: 1_000 });
 		for (const id of camps) await station.desired.publish(id, resolvedFor(id));
 		const perAgent = CAMPS / AGENTS;
 		const agents = [];
-		for (let a = 0; a < AGENTS; a += 1) agents.push(await provisionAgent(station, { campIds: camps.slice(a * perAgent, (a + 1) * perAgent) }));
+		for (let a = 0; a < AGENTS; a += 1)
+			agents.push(
+				await provisionAgent(station, {
+					campIds: camps.slice(a * perAgent, (a + 1) * perAgent),
+				}),
+			);
 
 		const frameMs: number[] = [];
 		const checkpointMs: number[] = [];
@@ -34,18 +51,33 @@ describe("delivery feed load baseline", () => {
 		await Promise.all(
 			agents.map(async (agent, a) => {
 				for (const id of camps.slice(a * perAgent, (a + 1) * perAgent)) {
-					const lease = await agent.transport.claim({ reconcilerId: agent.reconcilerId, campId: camp(id), holderId: `host-${a}`, ttlMs: 30_000 });
+					const lease = await agent.transport.claim({
+						reconcilerId: agent.reconcilerId,
+						campId: camp(id),
+						holderId: `host-${a}`,
+						ttlMs: 30_000,
+					});
 					if (!lease.ok) throw new Error(`${id}: ${lease.reasons[0]?.code}`);
 					const t0 = performance.now();
-					const [change] = await collect(agent.transport.feed({ lease: lease.value, signal }));
+					const [change] = await collect(
+						agent.transport.feed({ lease: lease.value, signal }),
+					);
 					frameMs.push(performance.now() - t0);
 					if (!change) throw new Error(`${id}: no frame`);
-					const reported = await agent.transport.report(lease.value, observation(lease.value, change.set, ReconcileStatus.CONVERGED));
-					if (!reported.ok) throw new Error(`${id}: ${reported.reasons[0]?.code}`);
+					const reported = await agent.transport.report(
+						lease.value,
+						observation(lease.value, change.set, ReconcileStatus.CONVERGED),
+					);
+					if (!reported.ok)
+						throw new Error(`${id}: ${reported.reasons[0]?.code}`);
 					const t1 = performance.now();
-					const committed = await agent.transport.checkpoint(lease.value, change.position);
+					const committed = await agent.transport.checkpoint(
+						lease.value,
+						change.position,
+					);
 					checkpointMs.push(performance.now() - t1);
-					if (!committed.ok) throw new Error(`${id}: ${committed.reasons[0]?.code}`);
+					if (!committed.ok)
+						throw new Error(`${id}: ${committed.reasons[0]?.code}`);
 				}
 			}),
 		);
@@ -65,7 +97,9 @@ describe("delivery feed load baseline", () => {
 		expect(baseline.p99FrameMs).toBeLessThan(2_000);
 		expect(baseline.p99CheckpointMs).toBeLessThan(1_000);
 		// Every Camp converged exactly once on its status stream.
-		const converged = station.store.log.filter((e) => e.event.type === "deployment.Converged");
+		const converged = station.store.log.filter(
+			(e) => e.event.type === "deployment.Converged",
+		);
 		expect(converged).toHaveLength(CAMPS);
 	}, 300_000);
 });

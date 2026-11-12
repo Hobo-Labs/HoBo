@@ -11,7 +11,9 @@ import { AGENT_EVENT_SCHEMA, AGENT_EVENTS, AGENT_STREAMS } from "./events.js";
 
 export interface DpopReplayStore {
 	/** True on first sight of this (reconciler, jti); false on a replay. */
-	claim(input: Readonly<{ reconcilerId: string; jti: string; iatSeconds: number }>): Promise<boolean>;
+	claim(
+		input: Readonly<{ reconcilerId: string; jti: string; iatSeconds: number }>,
+	): Promise<boolean>;
 }
 
 const MAX_ATTEMPTS = 8;
@@ -22,10 +24,17 @@ export function createJournalReplayStore(
 	const bucketMs = Math.max(1, d.skewMs * 2);
 	return Object.freeze({
 		async claim(input) {
-			const stream = AGENT_STREAMS.dpop(input.reconcilerId, Math.floor((input.iatSeconds * 1000) / bucketMs));
+			const stream = AGENT_STREAMS.dpop(
+				input.reconcilerId,
+				Math.floor((input.iatSeconds * 1000) / bucketMs),
+			);
 			const event = {
 				type: AGENT_EVENTS.DpopProofAccepted,
-				data: { schema: AGENT_EVENT_SCHEMA, jti: input.jti, iat: input.iatSeconds },
+				data: {
+					schema: AGENT_EVENT_SCHEMA,
+					jti: input.jti,
+					iat: input.iatSeconds,
+				},
 				meta: { idempotencyKey: input.jti },
 			};
 			for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -38,16 +47,26 @@ export function createJournalReplayStore(
 					});
 					return result.appended.length === 1;
 				} catch (error) {
-					if (error instanceof EventStoreError && error.code === "OPTIMISTIC_SEQUENCE_CONFLICT") continue;
+					if (
+						error instanceof EventStoreError &&
+						error.code === "OPTIMISTIC_SEQUENCE_CONFLICT"
+					)
+						continue;
 					throw error;
 				}
 			}
-			throw new EventStoreError("OPTIMISTIC_SEQUENCE_CONFLICT", `replay stream ${stream} kept changing`);
+			throw new EventStoreError(
+				"OPTIMISTIC_SEQUENCE_CONFLICT",
+				`replay stream ${stream} kept changing`,
+			);
 		},
 	} satisfies DpopReplayStore);
 }
 
-async function headOf(store: DurableEventStore, stream: string): Promise<number> {
+async function headOf(
+	store: DurableEventStore,
+	stream: string,
+): Promise<number> {
 	const head = store.getStreamHead?.(stream);
 	if (head) return head.revision;
 	let seq = 0;

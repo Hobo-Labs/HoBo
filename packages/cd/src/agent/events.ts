@@ -11,8 +11,6 @@ export const AGENT_EVENTS = Object.freeze({
 	BootstrapTokenConsumed: "reconciler.BootstrapTokenConsumed",
 	/** Reconciler stream: a key-bound JWT-SVID was issued (its jti and expiry; never the token). */
 	SvidIssued: "reconciler.SvidIssued",
-	/** Reconciler stream: an SVID refresh failed (CREDENTIAL_VALID evidence). */
-	SvidRefreshFailed: "reconciler.SvidRefreshFailed",
 	/** Stream `cd-dpop-<reconcilerId>-<bucket>`: a DPoP proof jti was seen (idempotency key = jti). */
 	DpopProofAccepted: "reconciler.DpopProofAccepted",
 } as const);
@@ -20,7 +18,8 @@ export const AGENT_EVENTS = Object.freeze({
 // public-contract: agent-identity stream ids.
 export const AGENT_STREAMS = Object.freeze({
 	bootstrap: (tokenHash: string) => `cd-bootstrap-${tokenHash}`,
-	dpop: (reconcilerId: string, bucket: number) => `cd-dpop-${reconcilerId}-${bucket}`,
+	dpop: (reconcilerId: string, bucket: number) =>
+		`cd-dpop-${reconcilerId}-${bucket}`,
 });
 
 // public-contract: schema id of agent-identity event bodies.

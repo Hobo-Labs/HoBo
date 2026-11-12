@@ -9,10 +9,17 @@
 // skipped and nothing is repeated.
 
 // public-contract: SSE event names of the delivery feed.
-export const FEED_SSE_EVENTS = Object.freeze({ frame: "frame", end: "end" } as const);
+export const FEED_SSE_EVENTS = Object.freeze({
+	frame: "frame",
+	end: "end",
+} as const);
 
 // public-contract: reasons a feed response ends cleanly.
-export const FEED_END_REASONS = Object.freeze(["caught-up", "long-poll", "limit"] as const);
+export const FEED_END_REASONS = Object.freeze([
+	"caught-up",
+	"long-poll",
+	"limit",
+] as const);
 export type FeedEndReason = (typeof FEED_END_REASONS)[number];
 
 export type SseMessage = Readonly<{ id?: string; event: string; data: string }>;
@@ -43,13 +50,18 @@ export function decodeSse(text: string): readonly SseMessage[] {
 			if (line === "" || line.startsWith(":")) continue;
 			const colon = line.indexOf(":");
 			const field = colon === -1 ? line : line.slice(0, colon);
-			const value = colon === -1 ? "" : line.slice(colon + 1).replace(/^ /u, "");
+			const value =
+				colon === -1 ? "" : line.slice(colon + 1).replace(/^ /u, "");
 			if (field === "id") id = value;
 			else if (field === "event") event = value;
 			else if (field === "data") data.push(value);
 		}
 		if (data.length === 0) continue;
-		out.push(id === undefined ? { event, data: data.join("\n") } : { id, event, data: data.join("\n") });
+		out.push(
+			id === undefined
+				? { event, data: data.join("\n") }
+				: { id, event, data: data.join("\n") },
+		);
 	}
 	return out;
 }

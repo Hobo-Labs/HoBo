@@ -20,9 +20,25 @@
 //   verify      SVID signature/issuer/audience/expiry, DPoP (htm, htu, iat,
 //               ath, jti replay), key binding, enrollment state.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { create, fromJson, type JsonValue as PbJsonValue, toJson } from "@bufbuild/protobuf";
-import { type DurableEventStore, type EventInput, EventStoreError, type JsonObject, type PrincipalRef } from "@hobo/core";
-import { createInMemoryKms, JwtSvidIssuer, type JwtSvidClaims, verifyJwtWithJwks } from "@hobo/identity";
+import {
+	create,
+	fromJson,
+	type JsonValue as PbJsonValue,
+	toJson,
+} from "@bufbuild/protobuf";
+import {
+	type DurableEventStore,
+	type EventInput,
+	EventStoreError,
+	type JsonObject,
+	type PrincipalRef,
+} from "@hobo/core";
+import {
+	createInMemoryKms,
+	type JwtSvidClaims,
+	JwtSvidIssuer,
+	verifyJwtWithJwks,
+} from "@hobo/identity";
 import {
 	type CampClaimRecord,
 	CampClaimRecordSchema,
@@ -35,7 +51,21 @@ import {
 	ReconcilerRecordSchema,
 	SignalSource,
 } from "../_generated/cd_pb.js";
-import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS, ENROLLMENT_INCOMPLETE } from "../events.js";
+import {
+	CD_DEFAULTS,
+	CD_EVENTS,
+	CD_STREAMS,
+	ENROLLMENT_INCOMPLETE,
+} from "../events.js";
+import {
+	headerOf,
+	isNumber,
+	isText,
+	isWireObject,
+	text,
+	texts,
+	type WireObject,
+} from "../feed/json.js";
 import type {
 	AgentEnrollment,
 	CampId,
@@ -54,7 +84,13 @@ import type {
 import { createDpopProofVerifier } from "./dpop-verifier.js";
 import { type AgentFailureCode, agentRefusal, messageOf } from "./errors.js";
 import { AGENT_EVENT_SCHEMA, AGENT_EVENTS, AGENT_STREAMS } from "./events.js";
-import { type JwkThumbprint, jwkThumbprint, type PublicJwk, parsePublicJwk, publicJwkJson } from "./jose.js";
+import {
+	type JwkThumbprint,
+	jwkThumbprint,
+	type PublicJwk,
+	parsePublicJwk,
+	publicJwkJson,
+} from "./jose.js";
 import { createMeter } from "./metrics.js";
 import { createJournalReplayStore, type DpopReplayStore } from "./replay.js";
 
@@ -124,15 +160,11 @@ function recordJson(record: ReconcilerRecord): JsonObject {
 }
 
 function str(value: PbJsonValue | undefined): string {
-	return typeof value === "string" ? value : "";
+	return text(value) ?? "";
 }
 
-function strs(value: PbJsonValue | undefined): string[] {
-	return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-function isObj(value: PbJsonValue | undefined): value is { [k: string]: PbJsonValue } {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
+function bodyOf<T>(data: T): WireObject {
+	return isWireObject(data) ? data : {};
 }
 
 export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
@@ -140,8 +172,22 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 	const meter = createMeter(d.telemetry, d.now);
 	const issuer = d.issuer ?? defaultIssuer(d.tenant);
 	const trustDomain = d.trustDomain ?? d.tenant;
-	const replay = d.replay ?? createJournalReplayStore({ store, tenant: d.tenant, skewMs: CD_DEFAULTS.dpopSkewMs });
-	const dpop = createDpopProofVerifier({ replay, skewMs: CD_DEFAULTS.dpopSkewMs, ...(d.publicOrigin ? { publicOrigin: d.publicOrigin } : {}) });
+	const replay =
+		d.replay ??
+		createJournalReplayStore({
+			store,
+			tenant: d.tenant,
+			skewMs: CD_DEFAULTS.dpopSkewMs,
+		});
+	const dpop = createDpopProofVerifier(
+		d.publicOrigin === undefined
+			? { replay, skewMs: CD_DEFAULTS.dpopSkewMs }
+			: {
+					replay,
+					skewMs: CD_DEFAULTS.dpopSkewMs,
+					publicOrigin: d.publicOrigin,
+				},
+	);
 	const cache = new Map<string, View>();
 
 	// ── Folds ────────────────────────────────────────────────────────────
@@ -149,27 +195,35 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		const stream = CD_STREAMS.reconciler(reconcilerId);
 		let view = cache.get(reconcilerId);
 		for await (const event of store.read(stream, (view?.seq ?? 0) + 1)) {
-			const data = event.data as { [k: string]: PbJsonValue };
+			const data = bodyOf(event.data);
 			if (event.type === CD_EVENTS.ReconcilerEnrollmentRequested) {
 				const jwkJson = data.publicJwk;
-				const parsed = isObj(jwkJson) ? parsePublicJwk(jwkJson as JsonObject) : undefined;
+				// SAFETY: a JSON object from the journal; parsePublicJwk narrows it to a PublicJwk.
+				const parsed = isWireObject(jwkJson)
+					? parsePublicJwk(jwkJson as JsonObject)
+					: undefined;
 				view = {
 					seq: event.seq,
-					record: fromJson(ReconcilerRecordSchema, data.reconciler ?? {}, { ignoreUnknownFields: true }),
+					record: fromJson(ReconcilerRecordSchema, data.reconciler ?? {}, {
+						ignoreUnknownFields: true,
+					}),
 					jwk: parsed?.ok ? parsed.value : undefined,
-					scopeCampIds: strs(data.scopeCampIds),
+					scopeCampIds: texts(data.scopeCampIds),
 				};
 				continue;
 			}
 			if (!view) continue;
 			view.seq = event.seq;
 			const record = view.record;
-			if (event.type === CD_EVENTS.ReconcilerKeyApproved) record.keyApprovedBy = str(data.by);
+			if (event.type === CD_EVENTS.ReconcilerKeyApproved)
+				record.keyApprovedBy = str(data.by);
 			else if (event.type === CD_EVENTS.ReconcilerAccepted) {
 				record.acceptedBy = str(data.by);
-				record.campIds = strs(data.campIds);
-				if (str(data.autoAcceptScope)) record.autoAcceptedByScope = str(data.autoAcceptScope);
-			} else if (event.type === CD_EVENTS.ReconcilerEnrolled) record.enrollment = EnrollmentState.ACCEPTED;
+				record.campIds = texts(data.campIds);
+				if (str(data.autoAcceptScope))
+					record.autoAcceptedByScope = str(data.autoAcceptScope);
+			} else if (event.type === CD_EVENTS.ReconcilerEnrolled)
+				record.enrollment = EnrollmentState.ACCEPTED;
 			else if (event.type === CD_EVENTS.ReconcilerRevoked) {
 				record.enrollment = EnrollmentState.REVOKED;
 				record.revokedAt = str(data.at);
@@ -182,39 +236,69 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 	async function loadToken(tokenHash: string): Promise<TokenView | undefined> {
 		let token: TokenView | undefined;
 		for await (const event of store.read(AGENT_STREAMS.bootstrap(tokenHash))) {
-			const data = event.data as { [k: string]: PbJsonValue };
+			const data = bodyOf(event.data);
 			if (event.type === AGENT_EVENTS.BootstrapTokenIssued)
 				token = {
 					seq: event.seq,
 					campSet: str(data.campSet),
-					campIds: strs(data.campIds),
-					mode: typeof data.mode === "number" ? data.mode : ReconcilerMode.UNSPECIFIED,
+					campIds: texts(data.campIds),
+					mode: isNumber(data.mode) ? data.mode : ReconcilerMode.UNSPECIFIED,
 					expiresAtMs: Date.parse(str(data.expiresAt)),
 				};
 			else if (event.type === AGENT_EVENTS.BootstrapTokenConsumed && token)
-				token = { ...token, seq: event.seq, consumedBy: str(data.thumbprint), reconcilerId: str(data.reconcilerId) };
+				token = {
+					...token,
+					seq: event.seq,
+					consumedBy: str(data.thumbprint),
+					reconcilerId: str(data.reconcilerId),
+				};
 		}
 		return token;
 	}
 
 	// ── Helpers ──────────────────────────────────────────────────────────
-	async function govern(action: CdAction, subject: JsonObject, ctx: CdContext): Promise<Outcome<string>> {
+	async function govern(
+		action: CdAction,
+		subject: JsonObject,
+		ctx: CdContext,
+	): Promise<Outcome<string>> {
 		const decision = await d.authorizer.authorize(action, subject, ctx);
 		if (!decision.ok) {
 			const reason = decision.reasons[0];
-			return agentRefusal("policy-denied", reason?.message ?? `${action} denied`, action);
+			return agentRefusal(
+				"policy-denied",
+				reason?.message ?? `${action} denied`,
+				action,
+			);
 		}
 		if (decision.value.proposalOnly)
-			return agentRefusal("proposal-only", `${principalKey(ctx.principal)} may only propose ${action}`, action);
+			return agentRefusal(
+				"proposal-only",
+				`${principalKey(ctx.principal)} may only propose ${action}`,
+				action,
+			);
 		return { ok: true, value: decision.value.decisionId };
 	}
 
-	async function append(stream: string, expectedSeq: number, events: readonly EventInput[], actor: PrincipalRef): Promise<boolean> {
+	async function append(
+		stream: string,
+		expectedSeq: number,
+		events: readonly EventInput[],
+		actor: PrincipalRef,
+	): Promise<boolean> {
 		try {
-			await store.append(stream, [...events], { expectedSeq, actor, tenant: d.tenant });
+			await store.append(stream, [...events], {
+				expectedSeq,
+				actor,
+				tenant: d.tenant,
+			});
 			return true;
 		} catch (error) {
-			if (error instanceof EventStoreError && error.code === "OPTIMISTIC_SEQUENCE_CONFLICT") return false;
+			if (
+				error instanceof EventStoreError &&
+				error.code === "OPTIMISTIC_SEQUENCE_CONFLICT"
+			)
+				return false;
 			throw error;
 		}
 	}
@@ -232,23 +316,35 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		return rails;
 	}
 
-	async function separateApprovers(campIds: readonly string[]): Promise<boolean> {
+	async function separateApprovers(
+		campIds: readonly string[],
+	): Promise<boolean> {
 		for (const rail of await governingRails(campIds)) {
 			const enrollment = rail?.enrollment;
 			if (!enrollment) {
 				if (CD_DEFAULTS.enrollmentSeparateApprovers) return true;
 			} else if (enrollment.separateApprovers) return true;
 		}
-		return campIds.length === 0 ? CD_DEFAULTS.enrollmentSeparateApprovers : false;
+		return campIds.length === 0
+			? CD_DEFAULTS.enrollmentSeparateApprovers
+			: false;
 	}
 
-	async function autoAccepts(scope: string, campIds: readonly string[]): Promise<boolean> {
+	async function autoAccepts(
+		scope: string,
+		campIds: readonly string[],
+	): Promise<boolean> {
 		if (campIds.length === 0) return false;
-		for (const rail of await governingRails(campIds)) if (!rail?.enrollment?.autoAcceptScopes.includes(scope)) return false;
+		for (const rail of await governingRails(campIds))
+			if (!rail?.enrollment?.autoAcceptScopes.includes(scope)) return false;
 		return true;
 	}
 
-	async function reportCredential(view: View, status: ConditionStatus, reason: string): Promise<void> {
+	async function reportCredential(
+		view: View,
+		status: ConditionStatus,
+		reason: string,
+	): Promise<void> {
 		const ctx: CdContext = { tenant: d.tenant, principal: STATION, now: d.now };
 		for (const campId of view.record.campIds) {
 			const condition = create(CampConditionRecordSchema, {
@@ -260,10 +356,23 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 			});
 			try {
 				// SAFETY: accepted Camp ids are within the inventory-checked token scope.
-				const result = await d.inventory.observe({ campId: campId as CampId, source: SignalSource.STATION, conditions: [condition], claims: [] }, ctx);
-				if (!result.ok) meter("hobo.cd.agent.inventory_report_failures", 1, { code: result.reasons[0]?.code ?? "" });
+				const result = await d.inventory.observe(
+					{
+						campId: campId as CampId,
+						source: SignalSource.STATION,
+						conditions: [condition],
+						claims: [],
+					},
+					ctx,
+				);
+				if (!result.ok)
+					meter("hobo.cd.agent.inventory_report_failures", 1, {
+						code: result.reasons[0]?.code ?? "",
+					});
 			} catch {
-				meter("hobo.cd.agent.inventory_report_failures", 1, { code: "inventory-unavailable" });
+				meter("hobo.cd.agent.inventory_report_failures", 1, {
+					code: "inventory-unavailable",
+				});
 			}
 		}
 	}
@@ -276,21 +385,53 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 	): Promise<Outcome<ReconcilerRecord>> {
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
 			const view = await load(reconcilerId);
-			if (!view) return agentRefusal("reconciler-unknown", `no enrollment for ${reconcilerId}`, reconcilerId);
+			if (!view)
+				return agentRefusal(
+					"reconciler-unknown",
+					`no enrollment for ${reconcilerId}`,
+					reconcilerId,
+				);
 			if (view.record.enrollment === EnrollmentState.REVOKED)
-				return agentRefusal("reconciler-revoked", `${reconcilerId} was revoked at ${view.record.revokedAt}`, reconcilerId);
+				return agentRefusal(
+					"reconciler-revoked",
+					`${reconcilerId} was revoked at ${view.record.revokedAt}`,
+					reconcilerId,
+				);
 			const planned = await plan(view);
 			if (!planned.ok) return planned;
 			if (planned.value.length === 0) return { ok: true, value: view.record };
-			if (await append(CD_STREAMS.reconciler(reconcilerId), view.seq, planned.value, ctx.principal)) {
+			if (
+				await append(
+					CD_STREAMS.reconciler(reconcilerId),
+					view.seq,
+					planned.value,
+					ctx.principal,
+				)
+			) {
 				const fresh = await load(reconcilerId);
-				return fresh ? { ok: true, value: fresh.record } : agentRefusal("store-unavailable", "enrollment vanished", reconcilerId);
+				return fresh
+					? { ok: true, value: fresh.record }
+					: agentRefusal(
+							"store-unavailable",
+							"enrollment vanished",
+							reconcilerId,
+						);
 			}
 		}
-		return agentRefusal("store-unavailable", `reconciler stream ${reconcilerId} kept changing`, reconcilerId);
+		return agentRefusal(
+			"store-unavailable",
+			`reconciler stream ${reconcilerId} kept changing`,
+			reconcilerId,
+		);
 	}
 
-	function completion(view: View, keyApprovedBy: string, acceptedBy: string, campIds: readonly string[], autoScope = ""): EventInput[] {
+	function completion(
+		view: View,
+		keyApprovedBy: string,
+		acceptedBy: string,
+		campIds: readonly string[],
+		autoScope = "",
+	): EventInput[] {
 		if (!keyApprovedBy || !acceptedBy) return [];
 		const record = create(ReconcilerRecordSchema, {
 			...view.record,
@@ -300,11 +441,17 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 			enrollment: EnrollmentState.ACCEPTED,
 			autoAcceptedByScope: autoScope || view.record.autoAcceptedByScope,
 		});
-		return [event(CD_EVENTS.ReconcilerEnrolled, { reconciler: recordJson(record) })];
+		return [
+			event(CD_EVENTS.ReconcilerEnrolled, { reconciler: recordJson(record) }),
+		];
 	}
 
 	// ── SVIDs ────────────────────────────────────────────────────────────
-	async function issueSvid(view: View, kind: "activate" | "refresh", ctx: CdContext): Promise<Outcome<{ svid: string; expiresAtMs: number }>> {
+	async function issueSvid(
+		view: View,
+		kind: "activate" | "refresh",
+		ctx: CdContext,
+	): Promise<Outcome<{ svid: string; expiresAtMs: number }>> {
 		const nowMs = ctx.now();
 		const iat = Math.floor(nowMs / 1000);
 		const exp = Math.floor((nowMs + CD_DEFAULTS.svidTtlMs) / 1000);
@@ -315,7 +462,11 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 			tenant: d.tenant,
 			parentPrincipal: { kind: "service", id: "cd-station" },
 			codeVersion: { digest: "", version: "" },
-			scope: view.record.campIds.map((campId) => ({ port: "hobo:cd-feed", resource: campId, verbs: ["claim", "feed", "report", "checkpoint"] })),
+			scope: view.record.campIds.map((campId) => ({
+				port: "hobo:cd-feed",
+				resource: campId,
+				verbs: ["claim", "feed", "report", "checkpoint"],
+			})),
 			iat,
 			nbf: iat,
 			exp,
@@ -327,24 +478,41 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		const appended = await append(
 			CD_STREAMS.reconciler(view.record.reconcilerId),
 			view.seq,
-			[event(AGENT_EVENTS.SvidIssued, { jti, kind, expiresAt: iso(expiresAtMs) })],
+			[
+				event(AGENT_EVENTS.SvidIssued, {
+					jti,
+					kind,
+					expiresAt: iso(expiresAtMs),
+				}),
+			],
 			ctx.principal,
 		);
 		if (!appended) {
 			// A concurrent grant or revocation landed: re-check state before handing out a credential.
 			const fresh = await load(view.record.reconcilerId);
 			if (!fresh || fresh.record.enrollment !== EnrollmentState.ACCEPTED)
-				return agentRefusal("reconciler-revoked", "enrollment changed while issuing the SVID", view.record.reconcilerId);
+				return agentRefusal(
+					"reconciler-revoked",
+					"enrollment changed while issuing the SVID",
+					view.record.reconcilerId,
+				);
 			return issueSvid(fresh, kind, ctx);
 		}
 		meter("hobo.cd.agent.svids_issued", 1, { kind });
-		await reportCredential(view, ConditionStatus.TRUE, `expires-at:${iso(expiresAtMs)}`);
+		await reportCredential(
+			view,
+			ConditionStatus.TRUE,
+			`expires-at:${iso(expiresAtMs)}`,
+		);
 		return { ok: true, value: { svid, expiresAtMs } };
 	}
 
 	type SvidClaims = Readonly<{ reconcilerId: string; jkt: string }>;
 
-	async function verifySvid(svid: string, nowMs: number): Promise<Outcome<SvidClaims>> {
+	async function verifySvid(
+		svid: string,
+		nowMs: number,
+	): Promise<Outcome<SvidClaims>> {
 		try {
 			const verified = await verifyJwtWithJwks(svid, issuer.jwks(), {
 				issuer: issuer.issuerUrl,
@@ -354,19 +522,40 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 			const sub = verified.claims.sub;
 			const cnf = verified.claims.cnf;
 			const prefix = `spiffe://${trustDomain}/hobo-cd/reconciler/`;
-			if (typeof sub !== "string" || !sub.startsWith(prefix)) return agentRefusal("svid-invalid", "SVID subject is not a delivery reconciler");
-			const jkt = isObj(cnf as PbJsonValue) ? (cnf as { jkt?: PbJsonValue }).jkt : undefined;
-			if (typeof jkt !== "string") return agentRefusal("svid-invalid", "SVID is not key-bound (no cnf.jkt)");
-			return { ok: true, value: { reconcilerId: sub.slice(prefix.length), jkt } };
+			if (!isText(sub) || !sub.startsWith(prefix))
+				return agentRefusal(
+					"svid-invalid",
+					"SVID subject is not a delivery reconciler",
+				);
+			const jkt = isWireObject(cnf) ? cnf.jkt : undefined;
+			if (!isText(jkt))
+				return agentRefusal(
+					"svid-invalid",
+					"SVID is not key-bound (no cnf.jkt)",
+				);
+			return {
+				ok: true,
+				value: {
+					reconcilerId: String(sub).slice(prefix.length),
+					jkt: String(jkt),
+				},
+			};
 		} catch (error) {
 			const message = messageOf(error);
-			return agentRefusal(/expired/u.test(message) ? "svid-expired" : "svid-invalid", message);
+			return agentRefusal(
+				/expired/u.test(message) ? "svid-expired" : "svid-invalid",
+				message,
+			);
 		}
 	}
 
 	function stateRefusal(view: View): Refusal | undefined {
 		if (view.record.enrollment === EnrollmentState.REVOKED)
-			return agentRefusal("reconciler-revoked", `${view.record.reconcilerId} was revoked`, view.record.reconcilerId);
+			return agentRefusal(
+				"reconciler-revoked",
+				`${view.record.reconcilerId} was revoked`,
+				view.record.reconcilerId,
+			);
 		if (view.record.enrollment !== EnrollmentState.ACCEPTED)
 			return agentRefusal(
 				ENROLLMENT_INCOMPLETE,
@@ -384,18 +573,48 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 	// ── Port ─────────────────────────────────────────────────────────────
 	const enrollment: AgentEnrollment = {
 		async issueToken(input, ctx) {
-			if (input.mode !== ReconcilerMode.AGENT && input.mode !== ReconcilerMode.PUBLISHER)
-				return agentRefusal("mode-invalid", `mode ${ReconcilerMode[input.mode]} does not enroll`);
-			const ttlMs = input.ttlMs === 0 ? CD_DEFAULTS.bootstrapTokenTtlMs : input.ttlMs;
-			if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || ttlMs > CD_DEFAULTS.bootstrapTokenMaxTtlMs)
-				return agentRefusal("token-ttl-invalid", `ttl ${input.ttlMs} ms is outside 1 ms..24 h`);
+			if (
+				input.mode !== ReconcilerMode.AGENT &&
+				input.mode !== ReconcilerMode.PUBLISHER
+			)
+				return agentRefusal(
+					"mode-invalid",
+					`mode ${ReconcilerMode[input.mode]} does not enroll`,
+				);
+			const ttlMs =
+				input.ttlMs === 0 ? CD_DEFAULTS.bootstrapTokenTtlMs : input.ttlMs;
+			if (
+				!Number.isSafeInteger(ttlMs) ||
+				ttlMs <= 0 ||
+				ttlMs > CD_DEFAULTS.bootstrapTokenMaxTtlMs
+			)
+				return agentRefusal(
+					"token-ttl-invalid",
+					`ttl ${input.ttlMs} ms is outside 1 ms..24 h`,
+				);
 			const campIds = [...new Set(input.campIds)].sort();
-			if (campIds.length === 0 || !input.campSet) return agentRefusal("token-scope-invalid", "a token names a Camp set and at least one Camp");
-			const members = new Set((await d.inventory.list({ campSets: [input.campSet] })).map((v) => v.topology.campId as string));
+			if (campIds.length === 0 || !input.campSet)
+				return agentRefusal(
+					"token-scope-invalid",
+					"a token names a Camp set and at least one Camp",
+				);
+			const members = new Set<string>(
+				(await d.inventory.list({ campSets: [input.campSet] })).map(
+					(v) => v.topology.campId,
+				),
+			);
 			const outside = campIds.filter((c) => !members.has(c));
 			if (outside.length > 0)
-				return agentRefusal("token-scope-invalid", `Camps ${outside.join(", ")} are not in Camp set ${input.campSet}`, input.campSet);
-			const decision = await govern("reconciler.enroll", { campSet: input.campSet, campIds, mode: ReconcilerMode[input.mode] }, ctx);
+				return agentRefusal(
+					"token-scope-invalid",
+					`Camps ${outside.join(", ")} are not in Camp set ${input.campSet}`,
+					input.campSet,
+				);
+			const decision = await govern(
+				"reconciler.enroll",
+				{ campSet: input.campSet, campIds, mode: ReconcilerMode[input.mode] },
+				ctx,
+			);
 			if (!decision.ok) return decision;
 			const token = `${BOOTSTRAP_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
 			const expiresAtMs = ctx.now() + ttlMs;
@@ -419,7 +638,13 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 
 		async enroll(input, ctx) {
 			const result = await enrollOnce(input, ctx);
-			meter("hobo.cd.agent.enrollments", 1, result.ok ? { state: EnrollmentState[result.value.state] } : { refused: result.reasons[0]?.code ?? "" });
+			meter(
+				"hobo.cd.agent.enrollments",
+				1,
+				result.ok
+					? { state: EnrollmentState[result.value.state] }
+					: { refused: result.reasons[0]?.code ?? "" },
+			);
 			return result;
 		},
 
@@ -427,15 +652,39 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 			const result = await mutate(reconcilerId, ctx, async (view) => {
 				if (view.record.keyApprovedBy) return { ok: true, value: [] };
 				const by = principalKey(ctx.principal);
-				if (view.record.acceptedBy === by && (await separateApprovers(view.scopeCampIds)))
-					return agentRefusal("separate-approvers-required", `${by} already granted reconciler.accept`, reconcilerId);
-				const decision = await govern("reconciler.approve-key", { reconcilerId, keyThumbprint: view.record.keyThumbprint, scope: view.record.bootstrapScope }, ctx);
+				if (
+					view.record.acceptedBy === by &&
+					(await separateApprovers(view.scopeCampIds))
+				)
+					return agentRefusal(
+						"separate-approvers-required",
+						`${by} already granted reconciler.accept`,
+						reconcilerId,
+					);
+				const decision = await govern(
+					"reconciler.approve-key",
+					{
+						reconcilerId,
+						keyThumbprint: view.record.keyThumbprint,
+						scope: view.record.bootstrapScope,
+					},
+					ctx,
+				);
 				if (!decision.ok) return decision;
 				return {
 					ok: true,
 					value: [
-						event(CD_EVENTS.ReconcilerKeyApproved, { by, decisionId: decision.value, at: iso(ctx.now()) }),
-						...completion(view, by, view.record.acceptedBy, view.record.campIds),
+						event(CD_EVENTS.ReconcilerKeyApproved, {
+							by,
+							decisionId: decision.value,
+							at: iso(ctx.now()),
+						}),
+						...completion(
+							view,
+							by,
+							view.record.acceptedBy,
+							view.record.campIds,
+						),
 					],
 				};
 			});
@@ -444,7 +693,7 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		},
 
 		async accept(input, ctx) {
-			const campIds = [...new Set(input.campIds as readonly string[])].sort();
+			const campIds = [...new Set<string>(input.campIds)].sort();
 			const result = await mutate(input.reconcilerId, ctx, async (view) => {
 				const outside = campIds.filter((c) => !view.scopeCampIds.includes(c));
 				if (campIds.length === 0 || outside.length > 0)
@@ -453,17 +702,41 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 						`Camps ${outside.join(", ") || "(none)"} are outside bootstrap scope ${view.record.bootstrapScope}`,
 						input.reconcilerId,
 					);
-				if (view.record.acceptedBy && sameList(view.record.campIds, campIds)) return { ok: true, value: [] };
+				if (view.record.acceptedBy && sameList(view.record.campIds, campIds))
+					return { ok: true, value: [] };
 				const by = principalKey(ctx.principal);
-				if (view.record.keyApprovedBy === by && (await separateApprovers(view.scopeCampIds)))
-					return agentRefusal("separate-approvers-required", `${by} already granted reconciler.approve-key`, input.reconcilerId);
-				const decision = await govern("reconciler.accept", { reconcilerId: input.reconcilerId, campIds, scope: view.record.bootstrapScope }, ctx);
+				if (
+					view.record.keyApprovedBy === by &&
+					(await separateApprovers(view.scopeCampIds))
+				)
+					return agentRefusal(
+						"separate-approvers-required",
+						`${by} already granted reconciler.approve-key`,
+						input.reconcilerId,
+					);
+				const decision = await govern(
+					"reconciler.accept",
+					{
+						reconcilerId: input.reconcilerId,
+						campIds,
+						scope: view.record.bootstrapScope,
+					},
+					ctx,
+				);
 				if (!decision.ok) return decision;
 				return {
 					ok: true,
 					value: [
-						event(CD_EVENTS.ReconcilerAccepted, { by, decisionId: decision.value, campIds, autoAcceptScope: "", at: iso(ctx.now()) }),
-						...(view.record.enrollment === EnrollmentState.ACCEPTED ? [] : completion(view, view.record.keyApprovedBy, by, campIds)),
+						event(CD_EVENTS.ReconcilerAccepted, {
+							by,
+							decisionId: decision.value,
+							campIds,
+							autoAcceptScope: "",
+							at: iso(ctx.now()),
+						}),
+						...(view.record.enrollment === EnrollmentState.ACCEPTED
+							? []
+							: completion(view, view.record.keyApprovedBy, by, campIds)),
 					],
 				};
 			});
@@ -473,13 +746,32 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 
 		async activate(input, ctx) {
 			const view = await load(input.reconcilerId);
-			if (!view) return refused(agentRefusal("reconciler-unknown", `no enrollment for ${input.reconcilerId}`), "hobo.cd.agent.verify_refusals");
+			if (!view)
+				return refused(
+					agentRefusal(
+						"reconciler-unknown",
+						`no enrollment for ${input.reconcilerId}`,
+					),
+					"hobo.cd.agent.verify_refusals",
+				);
 			const state = stateRefusal(view);
 			if (state) return refused(state, "hobo.cd.agent.verify_refusals");
-			const proof = await dpop.verify(input.dpopProof, { reconcilerId: view.record.reconcilerId, method: "POST", url: SVID_REFRESH_PATH, nowMs: ctx.now() });
+			const proof = await dpop.verify(input.dpopProof, {
+				reconcilerId: view.record.reconcilerId,
+				method: "POST",
+				url: SVID_REFRESH_PATH,
+				nowMs: ctx.now(),
+			});
 			if (!proof.ok) return refused(proof, "hobo.cd.agent.verify_refusals");
 			if (proof.value.jkt !== view.record.keyThumbprint)
-				return refused(agentRefusal("dpop-key-mismatch", "the proof key is not the enrolled key", input.reconcilerId), "hobo.cd.agent.verify_refusals");
+				return refused(
+					agentRefusal(
+						"dpop-key-mismatch",
+						"the proof key is not the enrolled key",
+						input.reconcilerId,
+					),
+					"hobo.cd.agent.verify_refusals",
+				);
 			const issued = await issueSvid(view, "activate", ctx);
 			if (!issued.ok) return issued;
 			const fresh = (await load(input.reconcilerId)) ?? view;
@@ -488,20 +780,37 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 
 		async refresh(input, ctx) {
 			const claims = await verifySvid(input.svid, ctx.now());
-			const known = claims.ok ? await load(claims.value.reconcilerId) : undefined;
+			const known = claims.ok
+				? await load(claims.value.reconcilerId)
+				: undefined;
 			const fail = async (outcome: Refusal): Promise<Refusal> => {
-				if (known && known.record.enrollment === EnrollmentState.ACCEPTED) await reportCredential(known, ConditionStatus.FALSE, "svid-refresh-failed");
+				if (known && known.record.enrollment === EnrollmentState.ACCEPTED)
+					await reportCredential(
+						known,
+						ConditionStatus.FALSE,
+						"svid-refresh-failed",
+					);
 				else if (!claims.ok && claims.reasons[0]?.code === "svid-expired") {
 					// Expiry is checked after the signature, so an expired SVID still names its reconciler authentically.
 					const sub = unverifiedSubject(input.svid, trustDomain);
 					const view = sub ? await load(sub) : undefined;
-					if (view && view.record.enrollment === EnrollmentState.ACCEPTED) await reportCredential(view, ConditionStatus.FALSE, "svid-refresh-failed");
+					if (view && view.record.enrollment === EnrollmentState.ACCEPTED)
+						await reportCredential(
+							view,
+							ConditionStatus.FALSE,
+							"svid-refresh-failed",
+						);
 				}
-				meter("hobo.cd.agent.refresh_failures", 1, { code: outcome.reasons[0]?.code ?? "" });
+				meter("hobo.cd.agent.refresh_failures", 1, {
+					code: outcome.reasons[0]?.code ?? "",
+				});
 				return outcome;
 			};
 			if (!claims.ok) return fail(claims);
-			if (!known) return fail(agentRefusal("svid-invalid", "the SVID names no enrolled reconciler"));
+			if (!known)
+				return fail(
+					agentRefusal("svid-invalid", "the SVID names no enrolled reconciler"),
+				);
 			const state = stateRefusal(known);
 			if (state) return refused(state, "hobo.cd.agent.refresh_failures");
 			const proof = await dpop.verify(input.dpopProof, {
@@ -512,62 +821,124 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				accessToken: input.svid,
 			});
 			if (!proof.ok) return fail(proof);
-			if (proof.value.jkt !== claims.value.jkt || proof.value.jkt !== known.record.keyThumbprint)
-				return fail(agentRefusal("dpop-key-mismatch", "the proof key is not the SVID's bound key"));
+			if (
+				proof.value.jkt !== claims.value.jkt ||
+				proof.value.jkt !== known.record.keyThumbprint
+			)
+				return fail(
+					agentRefusal(
+						"dpop-key-mismatch",
+						"the proof key is not the SVID's bound key",
+					),
+				);
 			return issueSvid(known, "refresh", ctx);
 		},
 
 		async revoke(reconcilerId, reason, ctx) {
 			const result = await mutate(reconcilerId, ctx, async () => {
-				const decision = await govern("reconciler.revoke", { reconcilerId, reason }, ctx);
+				const decision = await govern(
+					"reconciler.revoke",
+					{ reconcilerId, reason },
+					ctx,
+				);
 				if (!decision.ok) return decision;
 				return {
 					ok: true,
-					value: [event(CD_EVENTS.ReconcilerRevoked, { by: principalKey(ctx.principal), reason, decisionId: decision.value, at: iso(ctx.now()) })],
+					value: [
+						event(CD_EVENTS.ReconcilerRevoked, {
+							by: principalKey(ctx.principal),
+							reason,
+							decisionId: decision.value,
+							at: iso(ctx.now()),
+						}),
+					],
 				};
 			});
 			if (result.ok) {
 				meter("hobo.cd.agent.revocations", 1);
 				const view = await load(reconcilerId);
-				if (view) await reportCredential(view, ConditionStatus.FALSE, "reconciler-revoked");
+				if (view)
+					await reportCredential(
+						view,
+						ConditionStatus.FALSE,
+						"reconciler-revoked",
+					);
 			}
 			return result;
 		},
 
 		async verify(request: FeedRequest) {
-			return refused(await verifyRequest(request), "hobo.cd.agent.verify_refusals");
+			return refused(
+				await verifyRequest(request),
+				"hobo.cd.agent.verify_refusals",
+			);
 		},
 	};
 
-	async function verifyRequest(request: FeedRequest): Promise<Outcome<ReconcilerRecord>> {
-		const headers = lower(request.headers);
-		const authorization = headers.authorization ?? "";
+	async function verifyRequest(
+		request: FeedRequest,
+	): Promise<Outcome<ReconcilerRecord>> {
+		const authorization = headerOf(request.headers, "authorization") ?? "";
 		const match = /^DPoP\s+([A-Za-z0-9_.-]+)$/u.exec(authorization);
-		if (!match?.[1]) return agentRefusal("svid-required", "send Authorization: DPoP <JWT-SVID>");
+		if (!match?.[1])
+			return agentRefusal(
+				"svid-required",
+				"send Authorization: DPoP <JWT-SVID>",
+			);
 		const svid = match[1];
-		const proofHeader = headers.dpop;
-		if (!proofHeader) return agentRefusal("dpop-required", "send a DPoP proof header");
+		const proofHeader = headerOf(request.headers, "dpop");
+		if (!proofHeader)
+			return agentRefusal("dpop-required", "send a DPoP proof header");
 		const nowMs = d.now();
 		const claims = await verifySvid(svid, nowMs);
 		if (!claims.ok) return claims;
 		const view = await load(claims.value.reconcilerId);
-		if (!view) return agentRefusal("svid-invalid", "the SVID names no enrolled reconciler");
+		if (!view)
+			return agentRefusal(
+				"svid-invalid",
+				"the SVID names no enrolled reconciler",
+			);
 		const state = stateRefusal(view);
 		if (state) return state;
 		const path = request.path.split("?")[0] ?? request.path;
-		const url = d.publicOrigin ? `${d.publicOrigin}${path}` : headers.host ? `https://${headers.host}${path}` : path;
-		const proof = await dpop.verify(proofHeader, { reconcilerId: view.record.reconcilerId, method: request.method, url, nowMs, accessToken: svid });
+		const host = headerOf(request.headers, "host");
+		const url = d.publicOrigin
+			? `${d.publicOrigin}${path}`
+			: host
+				? `https://${host}${path}`
+				: path;
+		const proof = await dpop.verify(proofHeader, {
+			reconcilerId: view.record.reconcilerId,
+			method: request.method,
+			url,
+			nowMs,
+			accessToken: svid,
+		});
 		if (!proof.ok) return proof;
-		if (proof.value.jkt !== claims.value.jkt || proof.value.jkt !== view.record.keyThumbprint)
-			return agentRefusal("dpop-key-mismatch", "the proof key is not the SVID's bound key", view.record.reconcilerId);
+		if (
+			proof.value.jkt !== claims.value.jkt ||
+			proof.value.jkt !== view.record.keyThumbprint
+		)
+			return agentRefusal(
+				"dpop-key-mismatch",
+				"the proof key is not the SVID's bound key",
+				view.record.reconcilerId,
+			);
 		return { ok: true, value: view.record };
 	}
 
 	async function enrollOnce(
-		input: Readonly<{ token: string; publicJwk: JsonObject; claims: readonly CampClaimRecord[] }>,
+		input: Readonly<{
+			token: string;
+			publicJwk: JsonObject;
+			claims: readonly CampClaimRecord[];
+		}>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ reconciler: ReconcilerRecord; state: EnrollmentState }>>> {
-		if (!input.token.startsWith(BOOTSTRAP_TOKEN_PREFIX)) return agentRefusal("token-invalid", "not a bootstrap token");
+	): Promise<
+		Outcome<Readonly<{ reconciler: ReconcilerRecord; state: EnrollmentState }>>
+	> {
+		if (!input.token.startsWith(BOOTSTRAP_TOKEN_PREFIX))
+			return agentRefusal("token-invalid", "not a bootstrap token");
 		const jwk = parsePublicJwk(input.publicJwk);
 		if (!jwk.ok) return jwk;
 		const claims = parseClaims(input.claims);
@@ -577,19 +948,47 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		const tokenHash = sha256Hex(input.token);
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
 			const token = await loadToken(tokenHash);
-			if (!token) return agentRefusal("token-invalid", "unknown bootstrap token");
+			if (!token)
+				return agentRefusal("token-invalid", "unknown bootstrap token");
 			const existing = await load(reconcilerId);
 			if (token.consumedBy !== undefined) {
-				if (token.consumedBy !== thumbprint) return agentRefusal("token-used", "the bootstrap token was already used");
-				if (existing) return { ok: true, value: { reconciler: existing.record, state: existing.record.enrollment } };
+				if (token.consumedBy !== thumbprint)
+					return agentRefusal(
+						"token-used",
+						"the bootstrap token was already used",
+					);
+				if (existing)
+					return {
+						ok: true,
+						value: {
+							reconciler: existing.record,
+							state: existing.record.enrollment,
+						},
+					};
 			} else {
-				if (ctx.now() > token.expiresAtMs) return agentRefusal("token-expired", `the bootstrap token expired at ${iso(token.expiresAtMs)}`);
-				if (existing?.record.enrollment === EnrollmentState.REVOKED) return agentRefusal("key-revoked", "this key was revoked");
-				if (existing) return agentRefusal("key-already-enrolled", `key is enrolled as ${reconcilerId}`, reconcilerId);
+				if (ctx.now() > token.expiresAtMs)
+					return agentRefusal(
+						"token-expired",
+						`the bootstrap token expired at ${iso(token.expiresAtMs)}`,
+					);
+				if (existing?.record.enrollment === EnrollmentState.REVOKED)
+					return agentRefusal("key-revoked", "this key was revoked");
+				if (existing)
+					return agentRefusal(
+						"key-already-enrolled",
+						`key is enrolled as ${reconcilerId}`,
+						reconcilerId,
+					);
 				const consumed = await append(
 					AGENT_STREAMS.bootstrap(tokenHash),
 					token.seq,
-					[event(AGENT_EVENTS.BootstrapTokenConsumed, { thumbprint, reconcilerId, at: iso(ctx.now()) })],
+					[
+						event(AGENT_EVENTS.BootstrapTokenConsumed, {
+							thumbprint,
+							reconcilerId,
+							at: iso(ctx.now()),
+						}),
+					],
 					ctx.principal,
 				);
 				if (!consumed) continue;
@@ -606,59 +1005,115 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				enrollment: EnrollmentState.PENDING,
 				bootstrapScope: token.campSet,
 			});
-			const view: View = { seq: 0, record, jwk: jwk.value, scopeCampIds: token.campIds };
+			const view: View = {
+				seq: 0,
+				record,
+				jwk: jwk.value,
+				scopeCampIds: token.campIds,
+			};
 			const autoBy = `rail-auto-accept:${token.campSet}`;
 			const events: EventInput[] = [
 				event(CD_EVENTS.ReconcilerEnrollmentRequested, {
 					reconciler: recordJson(record),
 					publicJwk: publicJwkJson(jwk.value),
 					scopeCampIds: [...token.campIds],
-					claims: claims.value.map((c) => toJson(CampClaimRecordSchema, c) as JsonObject),
+					claims: claims.value.map((c) => toJson(CampClaimRecordSchema, c)),
 					tokenHash,
 				}),
 				...(auto
 					? [
-							event(CD_EVENTS.ReconcilerKeyApproved, { by: autoBy, decisionId: "", at: iso(ctx.now()) }),
-							event(CD_EVENTS.ReconcilerAccepted, { by: autoBy, decisionId: "", campIds: [...token.campIds], autoAcceptScope: token.campSet, at: iso(ctx.now()) }),
+							event(CD_EVENTS.ReconcilerKeyApproved, {
+								by: autoBy,
+								decisionId: "",
+								at: iso(ctx.now()),
+							}),
+							event(CD_EVENTS.ReconcilerAccepted, {
+								by: autoBy,
+								decisionId: "",
+								campIds: [...token.campIds],
+								autoAcceptScope: token.campSet,
+								at: iso(ctx.now()),
+							}),
 							...completion(view, autoBy, autoBy, token.campIds, token.campSet),
 						]
 					: []),
 			];
-			if (!(await append(CD_STREAMS.reconciler(reconcilerId), 0, events, ctx.principal))) continue;
+			if (
+				!(await append(
+					CD_STREAMS.reconciler(reconcilerId),
+					0,
+					events,
+					ctx.principal,
+				))
+			)
+				continue;
 			const fresh = await load(reconcilerId);
-			if (!fresh) return agentRefusal("store-unavailable", "enrollment vanished", reconcilerId);
-			return { ok: true, value: { reconciler: fresh.record, state: fresh.record.enrollment } };
+			if (!fresh)
+				return agentRefusal(
+					"store-unavailable",
+					"enrollment vanished",
+					reconcilerId,
+				);
+			return {
+				ok: true,
+				value: { reconciler: fresh.record, state: fresh.record.enrollment },
+			};
 		}
-		return agentRefusal("store-unavailable", "enrollment kept conflicting", reconcilerId);
+		return agentRefusal(
+			"store-unavailable",
+			"enrollment kept conflicting",
+			reconcilerId,
+		);
 	}
 
 	return Object.freeze(enrollment);
 }
 
-function parseClaims(claims: readonly CampClaimRecord[]): Outcome<readonly CampClaimRecord[]> {
+function parseClaims(
+	claims: readonly CampClaimRecord[],
+): Outcome<readonly CampClaimRecord[]> {
 	const names = new Set<string>();
 	for (const claim of claims) {
-		if (!claim.name || !claim.value || names.has(claim.name)) return agentRefusal("claim-invalid", `claim ${claim.name || "(unnamed)"} is invalid`);
+		if (!claim.name || !claim.value || names.has(claim.name))
+			return agentRefusal(
+				"claim-invalid",
+				`claim ${claim.name || "(unnamed)"} is invalid`,
+			);
 		names.add(claim.name);
 	}
-	return { ok: true, value: claims.map((c) => create(CampClaimRecordSchema, { name: c.name, value: c.value, reportedBy: c.reportedBy, observedAt: c.observedAt })) };
+	return {
+		ok: true,
+		value: claims.map((c) =>
+			create(CampClaimRecordSchema, {
+				name: c.name,
+				value: c.value,
+				reportedBy: c.reportedBy,
+				observedAt: c.observedAt,
+			}),
+		),
+	};
 }
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
-	return a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+	return (
+		a.length === b.length &&
+		[...a].sort().every((v, i) => v === [...b].sort()[i])
+	);
 }
 
-function lower(headers: Readonly<Record<string, string>>): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(headers)) out[k.toLowerCase()] = v;
-	return out;
-}
-
-function unverifiedSubject(svid: string, trustDomain: string): string | undefined {
+function unverifiedSubject(
+	svid: string,
+	trustDomain: string,
+): string | undefined {
 	try {
-		const claims = JSON.parse(Buffer.from(svid.split(".")[1] ?? "", "base64url").toString("utf8"));
+		const claims: PbJsonValue = JSON.parse(
+			Buffer.from(svid.split(".")[1] ?? "", "base64url").toString("utf8"),
+		);
 		const prefix = `spiffe://${trustDomain}/hobo-cd/reconciler/`;
-		return typeof claims.sub === "string" && claims.sub.startsWith(prefix) ? claims.sub.slice(prefix.length) : undefined;
+		const sub = isWireObject(claims) ? claims.sub : undefined;
+		return isText(sub) && sub.startsWith(prefix)
+			? String(sub).slice(prefix.length)
+			: undefined;
 	} catch {
 		return undefined;
 	}
@@ -667,7 +1122,12 @@ function unverifiedSubject(svid: string, trustDomain: string): string | undefine
 function defaultIssuer(tenant: string): JwtSvidIssuer {
 	const kms = createInMemoryKms();
 	kms.generateRsaKey("cd-feed-svid-1");
-	return new JwtSvidIssuer({ issuerUrl: `https://cd.hobo.invalid/${tenant}`, kms, activeKeyId: "cd-feed-svid-1", jwksKeyIds: ["cd-feed-svid-1"] });
+	return new JwtSvidIssuer({
+		issuerUrl: `https://cd.hobo.invalid/${tenant}`,
+		kms,
+		activeKeyId: "cd-feed-svid-1",
+		jwksKeyIds: ["cd-feed-svid-1"],
+	});
 }
 
 export type { AgentFailureCode };

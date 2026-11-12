@@ -5,6 +5,7 @@
 // replay store's job (./replay.ts); key binding (`cnf.jkt`) is the caller's.
 import { createHash } from "node:crypto";
 import type { JsonObject } from "@hobo/core";
+import { isNumber, isText, isWireObject } from "../feed/json.js";
 import type { Outcome } from "../ports.js";
 import { agentRefusal } from "./errors.js";
 import {
@@ -43,19 +44,42 @@ export function normalizeHtu(url: string): string {
 	return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
 }
 
-export function createDpopProof(
-	input: Readonly<{ privateJwk: JsonObject; method: string; url: string; iatSeconds: number; jti: string; accessToken?: string }>,
-): string {
+export type DpopProofInput = Readonly<{
+	privateJwk: JsonObject;
+	method: string;
+	url: string;
+	iatSeconds: number;
+	jti: string;
+	accessToken?: string;
+}>;
+
+/** RFC 9449 §4.2 proof claims. */
+export type DpopClaims = Readonly<{
+	htm: string;
+	htu: string;
+	iat: number;
+	jti: string;
+	ath?: string;
+}>;
+
+export function createDpopProof(input: DpopProofInput): string {
 	const pub = publicOf(input.privateJwk);
 	if (!pub.ok) throw new Error(pub.reasons[0]?.message ?? "invalid agent key");
-	const header: JsonObject = { typ: DPOP_JWT_TYPE, alg: algorithmOf(pub.value), jwk: publicJwkJson(pub.value) };
-	const payload: JsonObject = {
+	const header: JsonObject = {
+		typ: DPOP_JWT_TYPE,
+		alg: algorithmOf(pub.value),
+		jwk: publicJwkJson(pub.value),
+	};
+	const base = {
 		htm: input.method,
 		htu: normalizeHtu(input.url),
 		iat: input.iatSeconds,
 		jti: input.jti,
-		...(input.accessToken !== undefined ? { ath: accessTokenHash(input.accessToken) } : {}),
 	};
+	const payload: DpopClaims =
+		input.accessToken === undefined
+			? base
+			: { ...base, ath: accessTokenHash(input.accessToken) };
 	return signCompactJws(header, payload, input.privateJwk);
 }
 
@@ -80,22 +104,49 @@ function hostOf(url: string): string | undefined {
 	return /^https?:\/\//u.test(url) ? new URL(url).host : undefined;
 }
 
-export function verifyDpopProof(proof: string, expect: DpopExpectation): Outcome<VerifiedDpop> {
+export function verifyDpopProof(
+	proof: string,
+	expect: DpopExpectation,
+): Outcome<VerifiedDpop> {
 	const decoded = decodeCompactJws(proof);
-	if (!decoded) return agentRefusal("dpop-invalid", "the DPoP proof is not a compact JWS");
+	if (!decoded)
+		return agentRefusal("dpop-invalid", "the DPoP proof is not a compact JWS");
 	const { header, payload } = decoded;
-	if (header.typ !== DPOP_JWT_TYPE) return agentRefusal("dpop-invalid", `typ must be ${DPOP_JWT_TYPE}`);
+	if (header.typ !== DPOP_JWT_TYPE)
+		return agentRefusal("dpop-invalid", `typ must be ${DPOP_JWT_TYPE}`);
 	const jwkJson = header.jwk;
-	if (jwkJson === null || typeof jwkJson !== "object" || Array.isArray(jwkJson))
+	if (!isWireObject(jwkJson))
 		return agentRefusal("dpop-invalid", "the proof header has no public `jwk`");
 	const jwk = parsePublicJwk(jwkJson);
-	if (!jwk.ok) return agentRefusal("dpop-invalid", jwk.reasons[0]?.message ?? "invalid proof jwk");
-	if (header.alg !== algorithmOf(jwk.value)) return agentRefusal("dpop-invalid", `alg ${String(header.alg)} does not fit the key`);
-	if (!verifyCompactJws(decoded, jwk.value)) return agentRefusal("dpop-invalid", "the DPoP proof signature does not verify");
+	if (!jwk.ok)
+		return agentRefusal(
+			"dpop-invalid",
+			jwk.reasons[0]?.message ?? "invalid proof jwk",
+		);
+	if (header.alg !== algorithmOf(jwk.value))
+		return agentRefusal(
+			"dpop-invalid",
+			`alg ${String(header.alg)} does not fit the key`,
+		);
+	if (!verifyCompactJws(decoded, jwk.value))
+		return agentRefusal(
+			"dpop-invalid",
+			"the DPoP proof signature does not verify",
+		);
 	const { htm, htu, iat, jti, ath } = payload;
-	if (typeof htm !== "string" || typeof htu !== "string" || typeof iat !== "number" || typeof jti !== "string" || jti.length === 0)
+	if (
+		!isText(htm) ||
+		!isText(htu) ||
+		!isNumber(iat) ||
+		!isText(jti) ||
+		jti.length === 0
+	)
 		return agentRefusal("dpop-invalid", "the proof lacks htm, htu, iat or jti");
-	if (htm !== expect.method) return agentRefusal("dpop-method-mismatch", `htm ${htm} is not ${expect.method}`);
+	if (htm !== expect.method)
+		return agentRefusal(
+			"dpop-method-mismatch",
+			`htm ${htm} is not ${expect.method}`,
+		);
 	const expectedPath = pathOf(expect.url);
 	const proofPath = pathOf(htu);
 	const expectedHost = hostOf(expect.url);
@@ -105,12 +156,30 @@ export function verifyDpopProof(proof: string, expect: DpopExpectation): Outcome
 		/[?#]/u.test(htu) ||
 		(expectedHost !== undefined && hostOf(htu) !== expectedHost)
 	)
-		return agentRefusal("dpop-url-mismatch", `htu ${htu} does not match ${expect.url}`);
+		return agentRefusal(
+			"dpop-url-mismatch",
+			`htu ${htu} does not match ${expect.url}`,
+		);
 	if (Math.abs(iat * 1000 - expect.nowMs) > expect.skewMs)
-		return agentRefusal("dpop-stale", `iat ${iat} is outside ±${expect.skewMs} ms of the Station clock`);
-	if (expect.accessToken !== undefined && ath !== accessTokenHash(expect.accessToken))
-		return agentRefusal("dpop-ath-mismatch", "ath does not hash the presented SVID");
+		return agentRefusal(
+			"dpop-stale",
+			`iat ${iat} is outside ±${expect.skewMs} ms of the Station clock`,
+		);
+	if (
+		expect.accessToken !== undefined &&
+		ath !== accessTokenHash(expect.accessToken)
+	)
+		return agentRefusal(
+			"dpop-ath-mismatch",
+			"ath does not hash the presented SVID",
+		);
 	// SAFETY: every member was verified above, including the signature.
-	const value = Object.freeze({ jkt: jwkThumbprint(jwk.value), jti, iatSeconds: iat, htm, htu }) as VerifiedDpop;
+	const value = Object.freeze({
+		jkt: jwkThumbprint(jwk.value),
+		jti,
+		iatSeconds: iat,
+		htm,
+		htu,
+	}) as VerifiedDpop;
 	return { ok: true, value };
 }
