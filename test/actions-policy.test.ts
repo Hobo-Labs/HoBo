@@ -450,9 +450,15 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.match(block, /uses: \.\/\.github\/actions\/route-runner$/m);
 				continue;
 			}
-			// A required gate runs no action and always runs: GitHub-hosted too.
+			// A required gate runs no action on GitHub-hosted too. `always()` is for
+			// PR gates that still summarize upstream jobs; `!cancelled()` is for
+			// release train gates that must drop when the run is cancelled.
 			if (runsOn === "ubuntu-24.04") {
-				assert.match(condition, /always\(\)/, `${file}:${lines[start]}`);
+				assert.match(
+					condition,
+					/always\(\)|!cancelled\(\)/,
+					`${file}:${lines[start]}`,
+				);
 				assert.doesNotMatch(block, /uses:/, `${file}:${lines[start]}`);
 				continue;
 			}
