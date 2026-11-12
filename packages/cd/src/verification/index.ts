@@ -16,4 +16,26 @@ export {
 	suiteCheckId,
 	thresholdCheckId,
 } from "./spec.js";
+export {
+	type AwsCredentials,
+	CLOUDWATCH_TARGET,
+	COHORT_VALUES,
+	createCloudWatchSource,
+	createDatadogSource,
+	createHealthSources,
+	createHoboMeteringSource,
+	createHoboPostureSource,
+	createHttpJsonSource,
+	createNewRelicSource,
+	createPrometheusSource,
+	credentialScope,
+	informVerificationSpec,
+	METERING_SERIES_PATH,
+	NERDGRAPH_NRQL_DOCUMENT,
+	POSTURE_SERIES,
+	prometheusStepSeconds,
+	resolvePointer,
+	type SourceDeps,
+	signV4,
+} from "./sources/index.js";
 export { alphaFor, type CohortComparison, compareCohorts, EXACT_BELOW, type MannWhitneyResult, mannWhitneyU, normalSurvival } from "./stats.js";
