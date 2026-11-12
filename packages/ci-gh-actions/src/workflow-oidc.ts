@@ -57,8 +57,8 @@ export type GithubWorkflowVerifier = Readonly<{
 export function createGithubWorkflowVerifier(options: {
 	/** This relay's public origin: the audience a workflow asks GitHub for. */
 	audience: string;
-	fetch?: typeof fetch;
-	now?: () => number;
+	fetch?: typeof fetch | undefined;
+	now?: (() => number) | undefined;
 }): GithubWorkflowVerifier {
 	const send = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;

@@ -10,12 +10,144 @@
       "version": "3.0.0"
     },
     "consumerFixtures": {
-      "tokens": {
-        "tenant": "control-tenant-token-with-at-least-32-characters",
-        "neighbor": "control-neighbor-token-with-at-least-32-characters",
-        "readonly": "control-readonly-token-with-at-least-32-characters"
-      },
       "now": "2026-10-27T00:00:00Z",
+      "publicOrigin": "https://ci.hobo.test",
+      "reporters": {
+        "reporters": [
+          {
+            "id": "box-1",
+            "publicKey": "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+            "accountId": "tenant",
+            "labels": [
+              "hobo",
+              "hobo-trunk"
+            ]
+          },
+          {
+            "id": "box-2",
+            "publicKey": "KIe6YOEEhFNv_MLK8qn5bWx-IA2K0Tunzdfe5-CpaGY",
+            "accountId": "tenant",
+            "labels": [
+              "hobo"
+            ]
+          },
+          {
+            "id": "box-3",
+            "publicKey": "KIe6YOEEhFNv_MLK8qn5bWx-IA2K0Tunzdfe5-CpaGY",
+            "accountId": "neighbor",
+            "labels": [
+              "hobo"
+            ]
+          }
+        ]
+      },
+      "dailyBlockMinutes": 240,
+      "workflowTokens": {
+        "hobo-labs/hobo": "workflow-token-of-hobo-labs-hobo",
+        "acme/app": "workflow-token-of-acme-app",
+        "acme/unknown": "workflow-token-of-acme-unknown"
+      },
+      "signing": [
+        {
+          "description": "refuse a report with a query string",
+          "signedBy": "box-1",
+          "reporter": "box-1",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse an unknown reporter",
+          "signedBy": "box-1",
+          "reporter": "box-9",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse a bad signature",
+          "signedBy": "box-2",
+          "reporter": "box-1",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse a report signed for another origin",
+          "signedBy": "box-1",
+          "reporter": "box-1",
+          "origin": "https://hobo-ci.vercel.app",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse a report outside the clock window",
+          "signedBy": "box-1",
+          "reporter": "box-1",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-26T23:57:59.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse a report for a repository the reporter's account is not connected to",
+          "signedBy": "box-1",
+          "reporter": "box-1",
+          "origin": "https://ci.hobo.test",
+          "repository": "acme/app",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse a label the reporter is not enrolled for",
+          "signedBy": "box-2",
+          "reporter": "box-2",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "accept a signed report and answer the stored entry as stamped",
+          "signedBy": "box-1",
+          "reporter": "box-1",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "refuse a replayed report",
+          "signedBy": "box-1",
+          "reporter": "box-1",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200001"
+        },
+        {
+          "description": "accept a shadow report and keep it as blocking nothing",
+          "signedBy": "box-2",
+          "reporter": "box-2",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200002"
+        },
+        {
+          "description": "accept the second reporter's report",
+          "signedBy": "box-2",
+          "reporter": "box-2",
+          "origin": "https://ci.hobo.test",
+          "repository": "hobo-labs/hobo",
+          "issuedAt": "2026-10-27T00:00:00.000Z",
+          "sequence": "1793059200003"
+        }
+      ],
       "configuration": {
         "accounts": [
           {
@@ -49,6 +181,24 @@
             "trustedRepositoryAcknowledged": true,
             "bridgeRef": "hobo-ci-v1",
             "dispatcherActorId": 123
+          },
+          {
+            "accountId": "neighbor",
+            "repository": "Acme/App",
+            "repositoryId": 202,
+            "installationId": 6,
+            "bridgeWorkflow": "host.yml",
+            "bridgeSha": "0123456789abcdef0123456789abcdef01234567",
+            "runnerGroupId": 1,
+            "allowedEvents": [
+              "push"
+            ],
+            "allowedRefs": [
+              "refs/heads/main"
+            ],
+            "trustedRepositoryAcknowledged": true,
+            "bridgeRef": "hobo-ci-v1",
+            "dispatcherActorId": 124
           }
         ]
       }
@@ -112,23 +262,80 @@
       }
     },
     {
-      "description": "refuse a report without account authentication",
+      "description": "refuse a read with a query string",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "query": "fresh=1",
+        "headers": {}
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "bad request",
+          "reason": "bad-request"
+        }
+      }
+    },
+    {
+      "description": "refuse a report with a query string",
       "request": {
         "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "query": "ttl=1",
         "headers": {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=zyM-LdGqokNDeYCneq_-USvRocSQynQUWeOB6v6bh9g75k2iVKHADS2PwraJdOZCAJLMQUPCe2SvAUFNhbppCA"
         },
         "body": {
           "blocked": {
-            "hobo-trunk": {
-              "reason": "no-node"
-            },
             "hobo": {
               "reason": "no-capacity"
             }
           },
-          "ttlSeconds": 180
+          "ttlSeconds": 180,
+          "mode": "report"
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "bad request",
+          "reason": "bad-request"
+        }
+      }
+    },
+    {
+      "description": "refuse an unknown reporter",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-9",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=zyM-LdGqokNDeYCneq_-USvRocSQynQUWeOB6v6bh9g75k2iVKHADS2PwraJdOZCAJLMQUPCe2SvAUFNhbppCA"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180,
+          "mode": "report"
         }
       },
       "response": {
@@ -138,61 +345,133 @@
           "Cache-Control": "no-store"
         },
         "body": {
-          "error": "account authentication required"
+          "error": "unknown reporter",
+          "reason": "unknown-reporter"
         }
       }
     },
     {
-      "description": "refuse a report from a credential that may only read",
+      "description": "refuse a bad signature",
       "request": {
         "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
         "headers": {
-          "Authorization": "Bearer control-readonly-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=vufaCN2bEBqwmM0xxDlQtIc6DJPmmuWoHZj4Gs4J-AiPEFZjeg0e65PvdgNfoLb9wGOfLvBc7mI9v_AHFPXTDA"
         },
         "body": {
           "blocked": {
-            "hobo-trunk": {
-              "reason": "no-node"
-            },
             "hobo": {
               "reason": "no-capacity"
             }
           },
-          "ttlSeconds": 180
+          "ttlSeconds": 180,
+          "mode": "report"
         }
       },
       "response": {
-        "status": 403,
+        "status": 401,
         "headers": {
           "Content-Type": "application/json",
           "Cache-Control": "no-store"
         },
         "body": {
-          "error": "account scope required"
+          "error": "bad signature",
+          "reason": "bad-signature"
         }
       }
     },
     {
-      "description": "refuse a report for a repository the account is not connected to",
+      "description": "refuse a report signed for another origin",
       "request": {
         "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
         "headers": {
-          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=TXeiKoiXSLyNs82akumk-3JbrHJE1dzE4oA8YHUWs4f5c4AUqrcTtVs5F3bdPasWFZeWG-Sc_jmpcO8aivWdBQ"
         },
         "body": {
           "blocked": {
-            "hobo-trunk": {
-              "reason": "no-node"
-            },
             "hobo": {
               "reason": "no-capacity"
             }
           },
-          "ttlSeconds": 180
+          "ttlSeconds": 180,
+          "mode": "report"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "bad signature",
+          "reason": "bad-signature"
+        }
+      }
+    },
+    {
+      "description": "refuse a report outside the clock window",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-26T23:57:59.000Z",
+          "X-HoBo-Signature": "ed25519=PUkourSC-ninVpdUzBvl55-y2kYVLOgBlX2MvrKs4r1nCpAXUG0Z2S3FkbcjpQ_sFOn2ptMzZWlxhn5QxBCuBg"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180,
+          "mode": "report"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "clock skew",
+          "reason": "clock-skew"
+        }
+      }
+    },
+    {
+      "description": "refuse a report for a repository the reporter's account is not connected to",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/acme/app",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=39lHoviHslwKYCykQG3Pf10J12AViAeEXiank178gtwa1ch0qU01TlHs5Yzkkv-1J5zqs1nuIqxb0yoY8MsHDQ"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180,
+          "mode": "report"
         }
       },
       "response": {
@@ -202,87 +481,65 @@
           "Cache-Control": "no-store"
         },
         "body": {
-          "error": "not found"
+          "error": "not found",
+          "reason": "not-found"
         }
       }
     },
     {
-      "description": "refuse a report with a reason the record does not have",
+      "description": "refuse a label the reporter is not enrolled for",
       "request": {
         "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
-        "headers": {
-          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
-        },
-        "body": {
-          "blocked": {
-            "hobo": {
-              "reason": "busy"
-            }
-          },
-          "ttlSeconds": 180
-        }
-      },
-      "response": {
-        "status": 400,
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
         "headers": {
           "Content-Type": "application/json",
-          "Cache-Control": "no-store"
-        },
-        "body": {
-          "error": "invalid fleet verdict report"
-        }
-      }
-    },
-    {
-      "description": "refuse a report that would stand longer than five minutes",
-      "request": {
-        "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
-        "headers": {
-          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
-        },
-        "body": {
-          "blocked": {
-            "hobo": {
-              "reason": "no-node"
-            }
-          },
-          "ttlSeconds": 86400
-        }
-      },
-      "response": {
-        "status": 400,
-        "headers": {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store"
-        },
-        "body": {
-          "error": "invalid fleet verdict report"
-        }
-      }
-    },
-    {
-      "description": "keep a report from the connected account and answer the verdict it stamped",
-      "request": {
-        "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
-        "headers": {
-          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
+          "X-HoBo-Reporter": "box-2",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=G91UtydfjwQeXu7YaCQKQsQg493fX1zDYGBGC0Gb7dCzDa706bRlunpFXRcEQ1fVVodU7veuoczBQgHm6XkFCg"
         },
         "body": {
           "blocked": {
             "hobo-trunk": {
-              "reason": "no-node"
-            },
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180,
+          "mode": "report"
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "invalid report",
+          "reason": "invalid-report"
+        }
+      }
+    },
+    {
+      "description": "accept a signed report and answer the stored entry as stamped",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=zyM-LdGqokNDeYCneq_-USvRocSQynQUWeOB6v6bh9g75k2iVKHADS2PwraJdOZCAJLMQUPCe2SvAUFNhbppCA"
+        },
+        "body": {
+          "blocked": {
             "hobo": {
               "reason": "no-capacity"
             }
           },
-          "ttlSeconds": 180
+          "ttlSeconds": 180,
+          "mode": "report"
         }
       },
       "response": {
@@ -296,9 +553,6 @@
           "blocked": {
             "hobo": {
               "reason": "no-capacity"
-            },
-            "hobo-trunk": {
-              "reason": "no-node"
             }
           },
           "observedAt": "2026-10-27T00:00:00.000Z",
@@ -307,7 +561,41 @@
       }
     },
     {
-      "description": "answer the standing verdict to anyone, whatever the path's case",
+      "description": "refuse a replayed report",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-1",
+          "X-HoBo-Sequence": "1793059200001",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=zyM-LdGqokNDeYCneq_-USvRocSQynQUWeOB6v6bh9g75k2iVKHADS2PwraJdOZCAJLMQUPCe2SvAUFNhbppCA"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180,
+          "mode": "report"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "replayed",
+          "reason": "replayed"
+        }
+      }
+    },
+    {
+      "description": "keep a label open while another enrolled reporter is silent",
       "request": {
         "method": "GET",
         "path": "/v1/fleet/verdicts/hobo-labs/hobo",
@@ -321,52 +609,52 @@
         },
         "body": {
           "repository": "hobo-labs/hobo",
+          "blocked": {}
+        }
+      }
+    },
+    {
+      "description": "accept a shadow report and keep it as blocking nothing",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-2",
+          "X-HoBo-Sequence": "1793059200002",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=_h_9QH55Ixq8wvGWdgpQL-KYsda_ZI9IbVZG-fJQfsOJok-G51jBdqvG1yPpy1jiIznk6Ab0h_IJPCHxqDHXBg"
+        },
+        "body": {
           "blocked": {
             "hobo": {
               "reason": "no-capacity"
-            },
-            "hobo-trunk": {
-              "reason": "no-node"
             }
           },
+          "ttlSeconds": 180,
+          "mode": "shadow"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {},
           "observedAt": "2026-10-27T00:00:00.000Z",
           "expiresAt": "2026-10-27T00:03:00.000Z"
         }
       }
     },
     {
-      "description": "refuse any other method",
+      "description": "keep a label open while a reporter blocks it only in shadow",
       "request": {
-        "method": "POST",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
-        "headers": {
-          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
-        }
-      },
-      "response": {
-        "status": 405,
-        "headers": {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store"
-        },
-        "body": {
-          "error": "method not allowed"
-        }
-      }
-    },
-    {
-      "description": "clear the verdict when the report blocks nothing",
-      "request": {
-        "method": "PUT",
-        "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
-        "headers": {
-          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
-          "Content-Type": "application/json"
-        },
-        "body": {
-          "ttlSeconds": 60
-        }
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {}
       },
       "response": {
         "status": 200,
@@ -381,7 +669,47 @@
       }
     },
     {
-      "description": "answer a cleared verdict as blocking nothing",
+      "description": "accept the second reporter's report",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-HoBo-Reporter": "box-2",
+          "X-HoBo-Sequence": "1793059200003",
+          "X-HoBo-Issued-At": "2026-10-27T00:00:00.000Z",
+          "X-HoBo-Signature": "ed25519=inFLwh1mQF-9WjqNDFEwiKByWXUCeR48APJVBcSGU_VFi-Or1ZLUGZB1MrbsfpSWvOEP7ISpQq8WxzYUJ2WWBw"
+        },
+        "body": {
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "ttlSeconds": 180,
+          "mode": "report"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "observedAt": "2026-10-27T00:00:00.000Z",
+          "expiresAt": "2026-10-27T00:03:00.000Z"
+        }
+      }
+    },
+    {
+      "description": "answer the agreed verdict once every enrolled reporter blocks the label",
       "request": {
         "method": "GET",
         "path": "/v1/fleet/verdicts/Hobo-Labs/HoBo",
@@ -395,7 +723,160 @@
         },
         "body": {
           "repository": "hobo-labs/hobo",
+          "blocked": {
+            "hobo": {
+              "reason": "no-capacity"
+            }
+          },
+          "observedAt": "2026-10-27T00:00:00.000Z",
+          "expiresAt": "2026-10-27T00:03:00.000Z"
+        }
+      }
+    },
+    {
+      "description": "serve a label open once its allowance is spent",
+      "providerStates": [
+        {
+          "name": "the hobo label's allowance on hobo-labs/hobo is spent"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/verdicts/hobo-labs/hobo",
+        "headers": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
           "blocked": {}
+        }
+      }
+    },
+    {
+      "description": "answer the reporters' status to a workflow of the repository",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/reporters/Hobo-Labs/HoBo",
+        "headers": {
+          "Authorization": "Bearer workflow-token-of-hobo-labs-hobo"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "repository": "hobo-labs/hobo",
+          "reporters": [
+            {
+              "id": "box-1",
+              "labels": [
+                "hobo",
+                "hobo-trunk"
+              ],
+              "live": true,
+              "state": {
+                "lastSequence": "1793059200001",
+                "mode": "report",
+                "lastReportAt": "2026-10-27T00:00:00.000Z",
+                "labels": {
+                  "hobo": {
+                    "lastBlockedAt": "2026-10-27T00:00:00.000Z"
+                  }
+                }
+              }
+            },
+            {
+              "id": "box-2",
+              "labels": [
+                "hobo"
+              ],
+              "live": true,
+              "state": {
+                "lastSequence": "1793059200003",
+                "mode": "report",
+                "lastReportAt": "2026-10-27T00:00:00.000Z",
+                "labels": {
+                  "hobo": {
+                    "lastBlockedAt": "2026-10-27T00:00:00.000Z"
+                  }
+                }
+              }
+            }
+          ],
+          "allowance": {
+            "hobo": {
+              "usedSeconds": 14400,
+              "spent": true,
+              "windowStart": "2026-10-26T23:00:00.000Z"
+            }
+          },
+          "dailyBlockMinutes": 240
+        }
+      }
+    },
+    {
+      "description": "refuse the status without a workflow token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/reporters/hobo-labs/hobo",
+        "headers": {}
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "workflow identity required"
+        }
+      }
+    },
+    {
+      "description": "refuse the status to a workflow of another repository",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/reporters/hobo-labs/hobo",
+        "headers": {
+          "Authorization": "Bearer workflow-token-of-acme-app"
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "another repository"
+        }
+      }
+    },
+    {
+      "description": "refuse the status of a repository that is not connected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/reporters/acme/unknown",
+        "headers": {
+          "Authorization": "Bearer workflow-token-of-acme-unknown"
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "not found"
         }
       }
     }

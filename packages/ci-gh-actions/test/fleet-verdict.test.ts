@@ -1,16 +1,22 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+	createMemoryFleetVerdictKv,
 	createMemoryFleetVerdicts,
 	FLEET_VERDICT_MAX_TTL_SECONDS,
+	fleetReporterStateJson,
+	fleetVerdictAllowanceJson,
 	fleetVerdictJson,
 	fleetVerdictReportJson,
+	nextFleetReporterState,
 	noFleetVerdict,
-	parseFleetVerdict,
-	parseFleetVerdictPath,
+	parseFleetReporterState,
 	parseFleetReporters,
+	parseFleetVerdict,
+	parseFleetVerdictAllowance,
+	parseFleetVerdictPath,
 	parseFleetVerdictReport,
-	standingFleetVerdict,
+	reportedFleetVerdict,
 } from "../src/fleet-verdict.js";
 
 const fixture = (name: string) =>
@@ -57,23 +63,31 @@ describe("the fleet verdict's repository", () => {
 });
 
 describe("a fleet verdict report", () => {
-	it("is parsed into the labels it blocks and how long it stands", () => {
+	it("is parsed into the labels it blocks, how long it stands and its mode", () => {
 		const report = parseFleetVerdictReport(
 			fixture("valid/fleet-verdict-report.json"),
 		);
 		expect(report?.ttlMs).toBe(180_000);
+		expect(report?.mode).toBe("report");
 		expect([...(report?.blocked ?? [])]).toEqual([["hobo", "no-capacity"]]);
+		expect(
+			parseFleetVerdictReport(fixture("valid/fleet-verdict-report-shadow.json"))
+				?.mode,
+		).toBe("shadow");
 	});
 
 	it("keeps labels in lower case, the spelling routing asks in", () => {
 		const report = parseFleetVerdictReport(
-			'{"blocked":{"HoBo-Trunk":{"reason":"no-node"}},"ttlSeconds":60}',
+			'{"blocked":{"HoBo-Trunk":{"reason":"no-node"}},"ttlSeconds":60,"mode":"report"}',
 		);
 		expect([...(report?.blocked ?? [])]).toEqual([["hobo-trunk", "no-node"]]);
 	});
 
 	it("may block nothing, which clears the verdict", () => {
-		expect(parseFleetVerdictReport('{"ttlSeconds":60}')?.blocked.size).toBe(0);
+		expect(
+			parseFleetVerdictReport('{"ttlSeconds":60,"mode":"report"}')?.blocked
+				.size,
+		).toBe(0);
 	});
 
 	it("is refused when it is not one, whole", () => {
@@ -88,22 +102,28 @@ describe("a fleet verdict report", () => {
 			"not json",
 			"[]",
 			fixture("invalid/fleet-verdict-report-long.json"),
-			'{"blocked":{"hobo":{"reason":"busy"}},"ttlSeconds":60}',
-			'{"blocked":{"hobo":{}},"ttlSeconds":60}',
-			'{"blocked":{"hobo":{"reason":"no-node"}}}',
-			'{"blocked":{"hobo":{"reason":"no-node"}},"ttlSeconds":0}',
-			`{"blocked":{"hobo":{"reason":"no-node"}},"ttlSeconds":${FLEET_VERDICT_MAX_TTL_SECONDS + 1}}`,
-			'{"blocked":{"hobo trunk":{"reason":"no-node"}},"ttlSeconds":60}',
-			'{"blocked":{"hobo":{"reason":"no-node"},"HOBO":{"reason":"no-capacity"}},"ttlSeconds":60}',
-			JSON.stringify({ blocked: many, ttlSeconds: 60 }),
+			fixture("invalid/fleet-verdict-report-mode.json"),
+			fixture("invalid/fleet-verdict-report-no-mode.json"),
+			'{"blocked":{"hobo":{"reason":"busy"}},"ttlSeconds":60,"mode":"report"}',
+			'{"blocked":{"hobo":{}},"ttlSeconds":60,"mode":"report"}',
+			'{"blocked":{"hobo":{"reason":"no-node"}},"mode":"report"}',
+			'{"blocked":{"hobo":{"reason":"no-node"}},"ttlSeconds":60}',
+			'{"blocked":{"hobo":{"reason":"no-node"}},"ttlSeconds":60,"mode":"off"}',
+			'{"blocked":{"hobo":{"reason":"no-node"}},"ttlSeconds":0,"mode":"report"}',
+			`{"blocked":{"hobo":{"reason":"no-node"}},"ttlSeconds":${FLEET_VERDICT_MAX_TTL_SECONDS + 1},"mode":"report"}`,
+			'{"blocked":{"hobo trunk":{"reason":"no-node"}},"ttlSeconds":60,"mode":"report"}',
+			'{"blocked":{"hobo":{"reason":"no-node"},"HOBO":{"reason":"no-capacity"}},"ttlSeconds":60,"mode":"report"}',
+			JSON.stringify({ blocked: many, ttlSeconds: 60, mode: "report" }),
 			// A key the record would drop, alone or beside a real label: the
 			// report is refused whole, not read as blocking less.
-			'{"blocked":{"__proto__":{"reason":"no-node"}},"ttlSeconds":60}',
-			'{"blocked":{"hobo":{"reason":"no-node"},"__proto__":{"reason":"busy"}},"ttlSeconds":60}',
-			'{"blocked":{"constructor":{"reason":"no-node"},"-hobo":{"reason":"no-node"}},"ttlSeconds":60}',
-			'{"blocked":["hobo"],"ttlSeconds":60}',
+			'{"blocked":{"__proto__":{"reason":"no-node"}},"ttlSeconds":60,"mode":"report"}',
+			'{"blocked":{"hobo":{"reason":"no-node"},"__proto__":{"reason":"busy"}},"ttlSeconds":60,"mode":"report"}',
+			'{"blocked":{"constructor":{"reason":"no-node"},"-hobo":{"reason":"no-node"}},"ttlSeconds":60,"mode":"report"}',
+			'{"blocked":["hobo"],"ttlSeconds":60,"mode":"report"}',
 			// A capacity figure is not part of a verdict.
-			'{"blocked":{"hobo":{"reason":"no-capacity","freeMemoryMb":2400}},"ttlSeconds":60}',
+			'{"blocked":{"hobo":{"reason":"no-capacity","freeMemoryMb":2400}},"ttlSeconds":60,"mode":"report"}',
+			// Nor is a credential: a report is signed, never carries a bearer.
+			'{"blocked":{},"ttlSeconds":60,"mode":"report","token":"x"}',
 		])
 			expect(parseFleetVerdictReport(text), text).toBeUndefined();
 	});
@@ -115,9 +135,10 @@ describe("a fleet verdict report", () => {
 				["hobo", "no-capacity"],
 			]),
 			180,
+			"shadow",
 		);
 		expect(text).toBe(
-			'{"blocked":{"hobo":{"reason":"no-capacity"},"hobo-trunk":{"reason":"no-node"}},"ttlSeconds":180}',
+			'{"blocked":{"hobo":{"reason":"no-capacity"},"hobo-trunk":{"reason":"no-node"}},"ttlSeconds":180,"mode":"shadow"}',
 		);
 		expect(parseFleetVerdictReport(text)?.blocked.get("hobo-trunk")).toBe(
 			"no-node",
@@ -129,16 +150,34 @@ describe("a fleet verdict", () => {
 	it("is the record of the contract fixture, stamped by the relay that keeps it", () => {
 		if (!repository) throw new Error("no repository");
 		const report = parseFleetVerdictReport(
-			'{"blocked":{"hobo-trunk":{"reason":"no-node"},"hobo":{"reason":"no-capacity"}},"ttlSeconds":180}',
+			'{"blocked":{"hobo-trunk":{"reason":"no-node"},"hobo":{"reason":"no-capacity"}},"ttlSeconds":180,"mode":"report"}',
 		);
 		if (!report) throw new Error("no report");
-		const verdict = standingFleetVerdict(repository, report, NOW);
+		const verdict = reportedFleetVerdict(repository, report, NOW);
 		expect(JSON.parse(fleetVerdictJson(verdict))).toEqual(
 			JSON.parse(fixture("valid/fleet-verdict.json")),
 		);
 		expect(parseFleetVerdict(fixture("valid/fleet-verdict.json"))).toEqual(
 			verdict,
 		);
+	});
+
+	it("is kept dated but blocking nothing for a shadow report, which is never served", () => {
+		if (!repository) throw new Error("no repository");
+		const report = parseFleetVerdictReport(
+			'{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":180,"mode":"shadow"}',
+		);
+		if (!report) throw new Error("no report");
+		expect(
+			JSON.parse(
+				fleetVerdictJson(reportedFleetVerdict(repository, report, NOW)),
+			),
+		).toEqual({
+			repository: "hobo-labs/hobo",
+			blocked: {},
+			observedAt: "2026-11-12T16:00:05.000Z",
+			expiresAt: "2026-11-12T16:03:05.000Z",
+		});
 	});
 
 	it("names the repository and blocks nothing when there is none", () => {
@@ -153,6 +192,7 @@ describe("a fleet verdict", () => {
 			"",
 			"{",
 			fixture("invalid/fleet-verdict-busy.json"),
+			fixture("invalid/fleet-verdict-capacity-figure.json"),
 			'{"repository":"Hobo-Labs/HoBo","blocked":{}}',
 			'{"repository":"hobo-labs/hobo","blocked":{"hobo":{"reason":"no-node"}}}',
 			'{"repository":"hobo-labs/hobo","blocked":{"hobo":{"reason":"no-node"}},"observedAt":"2026-11-12T16:00:05.000Z","expiresAt":"soon"}',
@@ -161,45 +201,170 @@ describe("a fleet verdict", () => {
 	});
 });
 
-describe("the verdicts a relay keeps in memory", () => {
-	const standing = (ttlSeconds: number, at: number) => {
-		if (!repository) throw new Error("no repository");
-		const report = parseFleetVerdictReport(
-			`{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":${ttlSeconds}}`,
+describe("what the relay keeps about reporters", () => {
+	it("reads the reporter state and allowance fixtures and writes them back the same", () => {
+		const state = parseFleetReporterState(
+			fixture("valid/fleet-reporter-state.json"),
 		);
-		if (!report) throw new Error("no report");
-		return standingFleetVerdict(repository, report, at);
+		if (!state) throw new Error("no state");
+		expect(state.lastSequence).toBe(1_794_499_205_000n);
+		expect(JSON.parse(fleetReporterStateJson(state))).toEqual(
+			JSON.parse(fixture("valid/fleet-reporter-state.json")),
+		);
+		const allowance = parseFleetVerdictAllowance(
+			fixture("valid/fleet-verdict-allowance.json"),
+		);
+		if (!allowance) throw new Error("no allowance");
+		expect(JSON.parse(fleetVerdictAllowanceJson(allowance))).toEqual(
+			JSON.parse(fixture("valid/fleet-verdict-allowance.json")),
+		);
+	});
+
+	it("refuses a state or allowance that is not one", () => {
+		for (const text of [
+			"",
+			fixture("invalid/fleet-reporter-state-mode.json"),
+			'{"lastSequence":"0","mode":"report","lastReportAt":"2026-11-12T16:00:05.000Z"}',
+			'{"lastSequence":"1","mode":"report","lastReportAt":"yesterday"}',
+			'{"lastSequence":"1","mode":"report","lastReportAt":"2026-11-12T16:00:05.000Z","publicKey":"x"}',
+		])
+			expect(parseFleetReporterState(text), text).toBeUndefined();
+		for (const text of [
+			"",
+			'{"labels":{"hobo":{"windowStart":"soon"}}}',
+			'{"labels":{"hobo trunk":{"windowStart":"2026-11-12T16:00:05.000Z"}}}',
+		])
+			expect(parseFleetVerdictAllowance(text), text).toBeUndefined();
+	});
+
+	it("marks when a reporter's reports change a label, not every repeat", () => {
+		const reporter = {
+			id: "box-1",
+			publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+			accountId: "tenant",
+			labels: ["hobo", "hobo-trunk"],
+		};
+		const report = (text: string) => {
+			const parsed = parseFleetVerdictReport(text);
+			if (!parsed) throw new Error("no report");
+			return parsed;
+		};
+		const blocking = report(
+			'{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":180,"mode":"shadow"}',
+		);
+		const clear = report('{"ttlSeconds":180,"mode":"report"}');
+		const first = nextFleetReporterState(undefined, reporter, 1n, clear, NOW);
+		expect(first.labels).toEqual({});
+		const blocked = nextFleetReporterState(
+			first,
+			reporter,
+			2n,
+			blocking,
+			NOW + 10_000,
+		);
+		const again = nextFleetReporterState(
+			blocked,
+			reporter,
+			3n,
+			blocking,
+			NOW + 70_000,
+		);
+		expect(again.labels.hobo?.lastBlockedAt).toBe("2026-11-12T16:00:15.000Z");
+		expect(again.mode).toBe("shadow");
+		const cleared = nextFleetReporterState(
+			again,
+			reporter,
+			4n,
+			clear,
+			NOW + 130_000,
+		);
+		expect(cleared.labels.hobo).toMatchObject({
+			lastBlockedAt: "2026-11-12T16:00:15.000Z",
+			lastClearedAt: "2026-11-12T16:02:15.000Z",
+		});
+		expect(cleared.lastSequence).toBe(4n);
+		expect(cleared.lastReportAt).toBe("2026-11-12T16:02:15.000Z");
+	});
+});
+
+describe("the verdicts a relay keeps in memory", () => {
+	const reporter = {
+		id: "box-1",
+		publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+		accountId: "tenant",
+		labels: ["hobo"],
+	};
+	const enrolled = { reporters: [reporter], dailyBlockMinutes: 240 };
+	const submit = (ttlSeconds: number, sequence: bigint) => {
+		const report = parseFleetVerdictReport(
+			`{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":${ttlSeconds},"mode":"report"}`,
+		);
+		if (!report || !repository) throw new Error("no report");
+		return { repository, reporter, sequence, report };
 	};
 
 	it("serves a verdict until it expires, and no longer", async () => {
 		if (!repository) throw new Error("no repository");
 		let clock = NOW;
 		const verdicts = createMemoryFleetVerdicts(() => clock);
-		expect(await verdicts.read(repository)).toBeUndefined();
-		await verdicts.write(standing(60, clock));
-		expect((await verdicts.read(repository))?.blocked.hobo?.reason).toBe(
-			"no-capacity",
+		expect((await verdicts.read(repository, enrolled)).blocked).toEqual({});
+		expect((await verdicts.accept(submit(60, 1n), enrolled)).accepted).toBe(
+			true,
 		);
+		expect(
+			(await verdicts.read(repository, enrolled)).blocked.hobo?.reason,
+		).toBe("no-capacity");
 		clock += 59_999;
-		expect(await verdicts.read(repository)).toBeDefined();
+		expect(
+			(await verdicts.read(repository, enrolled)).blocked.hobo,
+		).toBeDefined();
 		clock += 1;
-		expect(await verdicts.read(repository)).toBeUndefined();
+		expect((await verdicts.read(repository, enrolled)).blocked).toEqual({});
 	});
 
-	it("forgets a verdict that is replaced by one blocking nothing", async () => {
+	it("refuses a sequence it has already accepted from the reporter", async () => {
 		if (!repository) throw new Error("no repository");
 		const verdicts = createMemoryFleetVerdicts(() => NOW);
-		await verdicts.write(standing(60, NOW));
-		await verdicts.write(noFleetVerdict(repository));
-		expect(await verdicts.read(repository)).toBeUndefined();
+		expect((await verdicts.accept(submit(60, 5n), enrolled)).accepted).toBe(
+			true,
+		);
+		expect(await verdicts.lastSequence(repository, "box-1")).toBe(5n);
+		for (const sequence of [5n, 4n])
+			expect(await verdicts.accept(submit(60, sequence), enrolled)).toEqual({
+				accepted: false,
+				reason: "replayed",
+			});
+		expect((await verdicts.accept(submit(60, 6n), enrolled)).accepted).toBe(
+			true,
+		);
 	});
 
 	it("keeps each repository's verdict apart", async () => {
 		const other = parseFleetVerdictPath("/v1/fleet/verdicts/acme/app");
 		if (!other || !repository) throw new Error("no repository");
 		const verdicts = createMemoryFleetVerdicts(() => NOW);
-		await verdicts.write(standing(60, NOW));
-		expect(await verdicts.read(other)).toBeUndefined();
+		await verdicts.accept(submit(60, 1n), enrolled);
+		expect((await verdicts.read(other, enrolled)).blocked).toEqual({});
+	});
+
+	it("reads nothing at all for an account with no reporter enrolled", async () => {
+		if (!repository) throw new Error("no repository");
+		const kv = createMemoryFleetVerdictKv(() => NOW);
+		let reads = 0;
+		const verdicts = createMemoryFleetVerdicts(() => NOW, {
+			...kv,
+			getMany: (keys) => {
+				reads++;
+				return kv.getMany(keys);
+			},
+		});
+		expect(
+			await verdicts.read(repository, {
+				reporters: [],
+				dailyBlockMinutes: 240,
+			}),
+		).toEqual(noFleetVerdict(repository));
+		expect(reads).toBe(0);
 	});
 });
 

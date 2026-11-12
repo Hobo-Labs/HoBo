@@ -1,3 +1,11 @@
+export type {
+	FleetReporterState,
+	FleetReporterStatus,
+	FleetReporterStatusList,
+	FleetVerdict,
+	FleetVerdictAllowance,
+	FleetVerdictAllowanceUse,
+} from "./_generated/fleet_verdict_pb.js";
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
@@ -58,27 +66,50 @@ export {
 	type FleetStatePublisher,
 } from "./fleet-state.js";
 export {
+	agreedFleetBlocks,
+	countFleetVerdictAllowance,
+	createFleetVerdictStore,
+	createMemoryFleetVerdictKv,
 	createMemoryFleetVerdicts,
+	FLEET_REPORTERS_PATH,
+	FLEET_REPORTERS_PER_ACCOUNT,
+	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
 	FLEET_VERDICT_MAX_TTL_SECONDS,
+	FLEET_VERDICT_MODES,
 	FLEET_VERDICT_REASONS,
 	FLEET_VERDICTS_PATH,
+	type FleetEnrollment,
+	type FleetReporter,
+	type FleetVerdictAcceptance,
+	type FleetVerdictKeys,
+	type FleetVerdictKv,
+	type FleetVerdictKvEntry,
+	type FleetVerdictMode,
 	type FleetVerdictReason,
 	type FleetVerdictRepository,
+	type FleetVerdictSettings,
 	type FleetVerdictStore,
+	type FleetVerdictSubmission,
+	fleetAllowanceSpent,
+	fleetEnrollmentFor,
+	fleetReporterStateJson,
+	fleetReporterStatusListJson,
+	fleetVerdictAllowanceJson,
 	fleetVerdictExpiresAtMs,
 	fleetVerdictJson,
 	fleetVerdictReportJson,
+	MEMORY_FLEET_VERDICT_KEYS,
+	nextFleetReporterState,
 	noFleetVerdict,
 	type ParsedFleetVerdictReport,
+	parseFleetReporterState,
+	parseFleetReporters,
+	parseFleetReportersPath,
 	parseFleetVerdict,
+	parseFleetVerdictAllowance,
 	parseFleetVerdictPath,
 	parseFleetVerdictReport,
-	standingFleetVerdict,
-	FLEET_REPORTERS_PER_ACCOUNT,
-	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-	type FleetReporter,
-	type FleetVerdictSettings,
-	parseFleetReporters,
+	reportedFleetVerdict,
 } from "./fleet-verdict.js";
 export {
 	FLEET_REPORTER_ID,
@@ -107,6 +138,8 @@ export { verifyConvertedGithubApp } from "./github-app-manifest-validation.js";
 export { withGithubReadCache } from "./github-read-cache.js";
 export {
 	createHostedControlPlane,
+	type FleetVerdictRefusal,
+	type FleetVerdictService,
 	isConfigWriteRoute,
 	MESH_NODES_PATH,
 } from "./hosted-control.js";
@@ -379,11 +412,6 @@ export {
 	type GithubClaims,
 	type IdentityVerifier,
 } from "./oidc.js";
-export {
-	createGithubWorkflowVerifier,
-	type GithubWorkflowClaims,
-	type GithubWorkflowVerifier,
-} from "./workflow-oidc.js";
 export * from "./onboarding.js";
 export {
 	applyCiEnvironmentPolicy,
@@ -471,3 +499,8 @@ export {
 	createWebhookIngressHandler,
 } from "./webhook-ingress.js";
 export { createWebhookRepair } from "./webhook-repair.js";
+export {
+	createGithubWorkflowVerifier,
+	type GithubWorkflowClaims,
+	type GithubWorkflowVerifier,
+} from "./workflow-oidc.js";

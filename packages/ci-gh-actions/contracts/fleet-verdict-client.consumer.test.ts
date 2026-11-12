@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
+import { meshIdentityFromPem } from "@hobo/ci/mesh";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CiRelayClientError, createCiRelayClient } from "../src/client.js";
 import { parseFleetVerdictReport } from "../src/fleet-verdict.js";
+import { signedFleetVerdictRequest } from "../src/fleet-verdict-auth.js";
+import {
+	BOX_1_KEY_PEM,
+	BOX_2_KEY_PEM,
+} from "../test/fixtures/fleet-reporter-keys.js";
 
 const ORIGIN = "https://relay.example";
 const Interaction = z.object({
@@ -10,15 +16,28 @@ const Interaction = z.object({
 	request: z.object({
 		method: z.enum(["GET", "PUT", "POST"]),
 		path: z.string(),
+		query: z.string().optional(),
 		headers: z.record(z.string(), z.string()),
 		body: z.json().optional(),
 	}),
 	response: z.object({ status: z.number(), body: z.json() }),
 });
+const Signing = z.object({
+	description: z.string(),
+	signedBy: z.enum(["box-1", "box-2"]),
+	reporter: z.string(),
+	origin: z.string(),
+	repository: z.string(),
+	issuedAt: z.string(),
+	sequence: z.string(),
+});
 const pact = z
 	.object({
 		metadata: z.object({
-			consumerFixtures: z.object({ tokens: z.object({ tenant: z.string() }) }),
+			consumerFixtures: z.object({
+				signing: z.array(Signing),
+				workflowTokens: z.record(z.string(), z.string()),
+			}),
 		}),
 		interactions: z.array(Interaction),
 	})
@@ -30,113 +49,139 @@ const pact = z
 			),
 		),
 	);
-type Client = ReturnType<typeof createCiRelayClient>;
-const repositoryOf = (path: string) => path.split("/").slice(-2).join("/");
-
-/** The reporting relay as a consumer: it only ever sends a report it could parse. */
-function report(client: Client, interaction: z.infer<typeof Interaction>) {
-	const parsed = parseFleetVerdictReport(
-		JSON.stringify(interaction.request.body),
-	);
-	if (!parsed) throw new Error("the client cannot author this report");
-	return client.putFleetVerdict(
-		repositoryOf(interaction.request.path),
-		parsed.blocked,
-		parsed.ttlMs / 1000,
-	);
-}
+const keys = {
+	"box-1": meshIdentityFromPem(BOX_1_KEY_PEM),
+	"box-2": meshIdentityFromPem(BOX_2_KEY_PEM),
+};
 
 describe("the fleet reporter as a consumer of the verdict routes", () => {
-	it("sends every report the Pact has it send, and reads the verdict or a sanitized refusal back", async () => {
-		// The rest are requests this client cannot make: no credential, a
-		// report it would refuse to author, another method, a path with no
-		// repository. The provider suite verifies how the relay answers them.
-		const reachable = pact.interactions.filter(
-			({ request }) =>
-				request.method === "PUT" &&
-				request.headers.Authorization !== undefined &&
-				parseFleetVerdictReport(JSON.stringify(request.body)) !== undefined,
+	it("signs every report the Pact sends exactly as the shared signing function does", () => {
+		const reports = pact.interactions.filter(
+			(entry) => entry.request.method === "PUT",
 		);
-		expect(reachable.map((entry) => entry.response.status)).toEqual([
-			403, 404, 200, 200,
-		]);
-		for (const interaction of reachable) {
-			let calls = 0;
-			const send: typeof fetch = async (url, init) => {
-				calls++;
-				expect(String(url)).toBe(`${ORIGIN}${interaction.request.path}`);
-				expect(init?.method).toBe("PUT");
-				expect(init?.redirect).toBe("error");
-				expect(Object.fromEntries(new Headers(init?.headers))).toEqual(
-					Object.fromEntries(new Headers(interaction.request.headers)),
-				);
-				expect(JSON.parse(String(init?.body))).toEqual(
-					interaction.request.body,
-				);
-				return Response.json(interaction.response.body, {
-					status: interaction.response.status,
-				});
-			};
-			const client = createCiRelayClient({
-				origin: ORIGIN,
-				accountToken: async () =>
-					(interaction.request.headers.Authorization ?? "").slice(7),
-				fetch: send,
+		expect(reports.map((entry) => entry.description).sort()).toEqual(
+			pact.metadata.consumerFixtures.signing
+				.map((entry) => entry.description)
+				.sort(),
+		);
+		for (const signing of pact.metadata.consumerFixtures.signing) {
+			const interaction = reports.find(
+				(entry) => entry.description === signing.description,
+			);
+			if (!interaction)
+				throw new Error(`no interaction ${signing.description}`);
+			const body = JSON.stringify(interaction.request.body);
+			// The reporter only ever sends a body it could parse back.
+			expect(parseFleetVerdictReport(body), signing.description).toBeDefined();
+			const request = signedFleetVerdictRequest({
+				identity: keys[signing.signedBy],
+				reporterId: signing.reporter,
+				origin: signing.origin,
+				repository: signing.repository,
+				body,
+				issuedAt: signing.issuedAt,
+				sequence: signing.sequence,
 			});
-			if (interaction.response.status >= 400)
-				await expect(report(client, interaction)).rejects.toMatchObject({
-					name: "CiRelayClientError",
-					status: interaction.response.status,
-					message: `relay request failed (${interaction.response.status})`,
-				});
-			else {
-				const verdict = await report(client, interaction);
-				expect(verdict.$typeName).toBe("hobo.ci.gh_actions.v1.FleetVerdict");
-				expect(verdict).toMatchObject(
-					z.record(z.string(), z.json()).parse(interaction.response.body),
-				);
-			}
-			expect(calls).toBe(1);
+			expect(request.path, signing.description).toBe(interaction.request.path);
+			expect(request.headers, signing.description).toEqual(
+				interaction.request.headers,
+			);
+			expect(request.body).toBe(body);
 		}
 	});
 
-	it("reads a standing verdict", async () => {
-		const standing = pact.interactions.find(
-			(entry) =>
-				entry.request.method === "GET" &&
-				entry.description.startsWith("answer the standing verdict"),
+	it("reads the agreed verdict", async () => {
+		const standing = pact.interactions.find((entry) =>
+			entry.description.startsWith("answer the agreed verdict"),
 		);
-		if (!standing) throw new Error("the Pact has no standing verdict");
+		if (!standing) throw new Error("the Pact has no agreed verdict");
 		const client = createCiRelayClient({
 			origin: ORIGIN,
-			accountToken: () => pact.metadata.consumerFixtures.tokens.tenant,
+			accountToken: () => "unused-account-token-of-at-least-32-chars",
 			fetch: async (url, init) => {
 				expect(String(url)).toBe(`${ORIGIN}${standing.request.path}`);
 				expect(init?.method).toBe("GET");
 				return Response.json(standing.response.body);
 			},
 		});
-		const verdict = await client.getFleetVerdict("hobo-labs/hobo");
+		const verdict = await client.getFleetVerdict("Hobo-Labs/HoBo");
 		expect(verdict.blocked.hobo?.reason).toBe("no-capacity");
 		expect(verdict.expiresAt).toBe("2026-10-27T00:03:00.000Z");
 	});
 
-	it("never sends a report it could not parse, or one for something that is not a repository", async () => {
+	it("reads the reporters' status with the workflow's token, and a sanitized refusal", async () => {
+		for (const interaction of pact.interactions.filter((entry) =>
+			entry.request.path.startsWith("/v1/fleet/reporters/"),
+		)) {
+			const authorization = interaction.request.headers.Authorization;
+			if (!authorization) continue;
+			let calls = 0;
+			const client = createCiRelayClient({
+				origin: ORIGIN,
+				accountToken: () => "unused-account-token-of-at-least-32-chars",
+				fetch: async (url, init) => {
+					calls++;
+					expect(String(url)).toBe(`${ORIGIN}${interaction.request.path}`);
+					expect(init?.method).toBe("GET");
+					expect(init?.redirect).toBe("error");
+					expect(new Headers(init?.headers).get("authorization")).toBe(
+						authorization,
+					);
+					return Response.json(interaction.response.body, {
+						status: interaction.response.status,
+					});
+				},
+			});
+			const repository = interaction.request.path
+				.split("/")
+				.slice(-2)
+				.join("/");
+			const asking = client.getFleetReporters(
+				repository,
+				authorization.slice("Bearer ".length),
+			);
+			if (interaction.response.status >= 400)
+				await expect(asking).rejects.toMatchObject({
+					name: "CiRelayClientError",
+					status: interaction.response.status,
+					message: `relay request failed (${interaction.response.status})`,
+				});
+			else {
+				const status = await asking;
+				expect(status.$typeName).toBe(
+					"hobo.ci.gh_actions.v1.FleetReporterStatusList",
+				);
+				expect(status.reporters.map((entry) => entry.live)).toEqual([
+					true,
+					true,
+				]);
+				expect(status.allowance.hobo?.spent).toBe(true);
+			}
+			expect(calls).toBe(1);
+		}
+	});
+
+	it("never asks for something that is not a repository, or with a token that is not one", () => {
 		const client = createCiRelayClient({
 			origin: ORIGIN,
-			accountToken: () => pact.metadata.consumerFixtures.tokens.tenant,
+			accountToken: () => "unused-account-token-of-at-least-32-chars",
 			fetch: async () => {
 				throw new Error("nothing should be sent");
 			},
 		});
-		const blocked = new Map([["hobo", "no-node" as const]]);
 		for (const send of [
-			() => client.putFleetVerdict("hobo-labs/hobo", blocked, 86_400),
-			() => client.putFleetVerdict("hobo-labs/hobo", blocked, 0),
-			() => client.putFleetVerdict("hobo-labs", blocked, 60),
-			() => client.putFleetVerdict("hobo-labs/hobo/../x", blocked, 60),
 			() => client.getFleetVerdict("../accounts/self/policy"),
+			() => client.getFleetVerdict("hobo-labs"),
+			() => client.getFleetReporters("hobo-labs/hobo/../x", "token"),
 		])
 			expect(send).toThrow(CiRelayClientError);
+		return Promise.all([
+			expect(client.getFleetReporters("hobo-labs/hobo", "")).rejects.toThrow(
+				CiRelayClientError,
+			),
+			expect(
+				client.getFleetReporters("hobo-labs/hobo", "a token"),
+			).rejects.toThrow(CiRelayClientError),
+		]);
 	});
 });
