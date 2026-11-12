@@ -30,7 +30,6 @@ import type {
 	Outcome,
 	PromoteRequest,
 	PromotionId,
-	PromotionService,
 	ReconcilerId,
 	TelemetrySink,
 } from "@hobo/cd";
@@ -70,7 +69,9 @@ import {
 	runCompensation,
 	runOrchestrator,
 } from "@hobo/cloud";
-import type { EventStore, PrincipalRef } from "@hobo/core";
+import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
+import { stableStringify } from "../src/build/events.js";
+import type { JsonValue } from "../src/json.js";
 
 export type DeliverySlice = Pick<
 	ContinuousDelivery,
@@ -90,7 +91,7 @@ export type FakeDelivery = Readonly<{
 	cd: DeliverySlice;
 	knobs: FakeKnobs;
 	/** Every port call in order, for the PACT consumer test. */
-	calls: Array<Readonly<{ port: string; input: unknown }>>;
+	calls: Array<Readonly<{ port: string; input: JsonValue }>>;
 	blobs: Map<string, Uint8Array>;
 	metrics: OtelMetricPoint[];
 	telemetry: TelemetrySink;
@@ -102,19 +103,24 @@ function sha(bytes: Uint8Array | string): Digest {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-function sorted(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(sorted);
-	if (value !== null && typeof value === "object") {
-		const out: Record<string, unknown> = {};
-		for (const key of Object.keys(value).sort())
-			out[key] = sorted((value as Record<string, unknown>)[key]);
-		return out;
-	}
-	return value;
+function isDigest(value: string): value is Digest {
+	return /^sha256:[0-9a-f]{64}$/.test(value);
 }
 
-function canonical(value: unknown): string {
-	return JSON.stringify(sorted(value));
+function setOf(event: EventEnvelope): SetRecord {
+	// SAFETY: set.Created bodies are written by writeSet as SetRecord JSON.
+	return fromJson(SetRecordSchema, event.data as ProtoJson);
+}
+
+/** A port call's input as plain JSON, as the pact records it. */
+function jsonOf<T>(value: T): JsonValue {
+	// SAFETY: JSON.parse of JSON.stringify output is a JSON value by construction.
+	return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
+}
+
+/** Sorted-key compact JSON (the canonical form the real writer emits). */
+function canonical(value: ProtoJson): string {
+	return stableStringify(value).trimEnd();
 }
 
 function iso(ms: number): string {
@@ -155,7 +161,10 @@ export function createFakeDelivery(input: {
 }): FakeDelivery {
 	const { store, registry, orchestrator, tenant } = input;
 	const knobs: FakeKnobs = { gate: "allow", ...input.knobs };
-	const calls: Array<{ port: string; input: unknown }> = [];
+	const calls: Array<{ port: string; input: JsonValue }> = [];
+	const called = <T>(port: string, input: T): void => {
+		calls.push({ port, input: jsonOf(input) });
+	};
 	const blobs = new Map<string, Uint8Array>();
 	const metrics: OtelMetricPoint[] = [];
 	const freightById = new Map<string, FreightRecord>();
@@ -164,7 +173,7 @@ export function createFakeDelivery(input: {
 	const artifacts: ArtifactStore = {
 		backend: "memory",
 		async put(bytes, meta) {
-			calls.push({ port: "artifacts.put", input: meta });
+			called("artifacts.put", meta);
 			const digest = sha(bytes);
 			blobs.set(digest, bytes);
 			return create(ArtifactRefSchema, {
@@ -184,7 +193,7 @@ export function createFakeDelivery(input: {
 			return blobs.has(digest);
 		},
 		async *list() {
-			for (const digest of blobs.keys()) yield digest as Digest;
+			for (const digest of blobs.keys()) if (isDigest(digest)) yield digest;
 		},
 		async delete(digest) {
 			blobs.delete(digest);
@@ -193,12 +202,9 @@ export function createFakeDelivery(input: {
 
 	const freight: FreightLedger = {
 		async record({ manifest, origin }, ctx) {
-			calls.push({
-				port: "freight.record",
-				input: {
-					manifest: toJson(FreightManifestRecordSchema, manifest),
-					origin,
-				},
+			called("freight.record", {
+				manifest: toJson(FreightManifestRecordSchema, manifest),
+				origin,
 			});
 			const identity = canonical({
 				bindle: manifest.bindle,
@@ -267,9 +273,7 @@ export function createFakeDelivery(input: {
 
 	async function sets(campId: string): Promise<SetRecord[]> {
 		const events = await collectStream(store, CD_STREAMS.campSpec(campId));
-		return events
-			.filter((e) => e.type === CD_EVENTS.SetCreated)
-			.map((e) => fromJson(SetRecordSchema, e.data as ProtoJson));
+		return events.filter((e) => e.type === CD_EVENTS.SetCreated).map(setOf);
 	}
 
 	async function observations(
@@ -279,6 +283,7 @@ export function createFakeDelivery(input: {
 		return events
 			.filter((e) => e.type === CD_EVENTS.StatusObserved)
 			.map((e) =>
+				// SAFETY: status bodies are written by `report` as observation JSON.
 				fromJson(ReconcileObservationRecordSchema, e.data as ProtoJson),
 			);
 	}
@@ -287,6 +292,7 @@ export function createFakeDelivery(input: {
 		const bytes = blobs.get(set.resolvedSetDigest);
 		if (!bytes)
 			throw new Error(`resolved set ${set.resolvedSetDigest} missing`);
+		// SAFETY: the blob was written by writeSet from a ResolvedDeploymentSet.
 		return JSON.parse(new TextDecoder().decode(bytes)) as ResolvedDeploymentSet;
 	}
 
@@ -323,7 +329,7 @@ export function createFakeDelivery(input: {
 		ctx: CdContext,
 	): Promise<SetRecord> {
 		campIds.add(campId);
-		const blob = new TextEncoder().encode(canonical(resolved));
+		const blob = new TextEncoder().encode(JSON.stringify(resolved));
 		const digest = sha(blob);
 		blobs.set(digest, blob);
 		const previous = (await sets(campId)).at(-1);
@@ -411,12 +417,13 @@ export function createFakeDelivery(input: {
 	}
 
 	function promotionIdFor(key: string): PromotionId {
+		// SAFETY: the fake mints promotion ids deterministically from the key.
 		return `prom-${sha(key).slice(7, 19)}` as PromotionId;
 	}
 
-	const promotionService: PromotionService = {
+	const promotionService: DeliverySlice["promotions"] = {
 		async promote(request: PromoteRequest, ctx) {
-			calls.push({ port: "promotions.promote", input: { ...request } });
+			called("promotions.promote", request);
 			const promotionId = promotionIdFor(request.idempotencyKey);
 			const existing = promotions.get(promotionId);
 			if (existing) return { ok: true, value: existing };
@@ -493,7 +500,7 @@ export function createFakeDelivery(input: {
 			return { ok: true, value: record };
 		},
 		async rollback(request, ctx) {
-			calls.push({ port: "promotions.rollback", input: { ...request } });
+			called("promotions.rollback", request);
 			const promotionId = promotionIdFor(`rollback|${request.idempotencyKey}`);
 			const existing = promotions.get(promotionId);
 			if (existing) return { ok: true, value: existing };
@@ -542,7 +549,16 @@ export function createFakeDelivery(input: {
 			return [...promotions.values()];
 		},
 		async tick() {
-			calls.push({ port: "promotions.tick", input: {} });
+			called("promotions.tick", {});
+		},
+		async createPreview() {
+			throw new Error("not used by the CLI");
+		},
+		async expirePreviews() {
+			return [];
+		},
+		async listPreviews() {
+			return [];
 		},
 	};
 
@@ -552,10 +568,7 @@ export function createFakeDelivery(input: {
 		campIds: readonly CampId[];
 		holderId: string;
 	}): CampReconciler {
-		calls.push({
-			port: "createReconciler",
-			input: { ...spec, campIds: [...spec.campIds] },
-		});
+		called("createReconciler", spec);
 		return {
 			reconcilerId: spec.reconcilerId,
 			mode: spec.mode,
@@ -563,7 +576,7 @@ export function createFakeDelivery(input: {
 				throw new Error("hobo up runs bounded passes only");
 			},
 			async reconcileOnce(campId, ctx) {
-				calls.push({ port: "reconcileOnce", input: { campId } });
+				called("reconcileOnce", { campId });
 				return reconcile(campId, spec.reconcilerId, ctx);
 			},
 		};
@@ -697,8 +710,8 @@ export function createFakeDelivery(input: {
 			freight,
 			artifacts,
 			desired,
-			promotions: promotionService as DeliverySlice["promotions"],
-			createReconciler: createReconciler as DeliverySlice["createReconciler"],
+			promotions: promotionService,
+			createReconciler,
 		},
 		knobs,
 		calls,
@@ -717,6 +730,7 @@ export const fakeFreightManifestCodec = Object.freeze({
 	},
 	parse(bytes: Uint8Array): Outcome<FreightManifestRecord> {
 		try {
+			// SAFETY: JSON.parse returns JSON; fromJson below is the real parse.
 			const json = JSON.parse(new TextDecoder().decode(bytes)) as ProtoJson;
 			const manifest = fromJson(FreightManifestRecordSchema, json);
 			if (manifest.schemaVersion !== "hobo.freight-manifest/v1")

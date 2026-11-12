@@ -73,9 +73,9 @@ export interface BuildCommandOptions
 	 * every artifact's bytes in the configured artifact store and writes
 	 * `.hobo/freight.json` with the injected `writeFreightManifest`.
 	 */
-	readonly delivery?: YardDelivery;
+	readonly delivery?: YardDelivery | undefined;
 	/** Principal attributed in the artifact store; defaults to the persisted session. */
-	readonly session?: YardSession;
+	readonly session?: YardSession | undefined;
 }
 
 type FreightEmitted =
@@ -268,7 +268,7 @@ export function createBuildCommand(
 						manifestDigest: result.manifestDigest,
 						runtimeTarget: request.targetRuntime,
 						artifacts: result.artifacts,
-						...(freight ? { freight } : {}),
+						freight,
 					},
 				};
 			} catch (error) {

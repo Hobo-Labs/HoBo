@@ -70,20 +70,18 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 				message: destroyed
 					? `hobo down destroyed ${result.destroyed.length} resources (${result.destroyed.join(", ")})`
 					: `hobo down needs attention (status ${result.status})`,
-				...(destroyed
-					? {}
-					: {
-							remediation: [
-								"Inspect the Camp with `hobo deploy status` and the progress above, fix the cause, then rerun `hobo down`.",
-							],
-						}),
+				remediation: destroyed
+					? []
+					: [
+							"Inspect the Camp with `hobo deploy status` and the progress above, fix the cause, then rerun `hobo down`.",
+						],
 				data: {
 					command: "down",
 					deploymentId,
 					destroyed: result.destroyed,
 					progress: result.progress,
 					identity: session.principal.id,
-					...(receipt ? { delivery: receipt } : {}),
+					delivery: receipt,
 				},
 			};
 		},

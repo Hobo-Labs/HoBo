@@ -27,6 +27,7 @@ import {
 	persistSession,
 	type YardRuntime,
 } from "../src/index.js";
+import type { JsonObject } from "../src/json.js";
 import {
 	createFakeDelivery,
 	type FakeDelivery,
@@ -143,7 +144,7 @@ function harness(
 }
 
 async function withProject(
-	manifest: object,
+	manifest: JsonObject,
 	callback: (cwd: string) => Promise<void>,
 ): Promise<void> {
 	const dir = await mkdtemp(path.join(tmpdir(), "hobo-cli-cd-"));
@@ -155,7 +156,7 @@ async function withProject(
 	}
 }
 
-async function writeBindle(dir: string, manifest: object): Promise<void> {
+async function writeBindle(dir: string, manifest: JsonObject): Promise<void> {
 	await writeFile(
 		path.join(dir, "hobo.bindle.json"),
 		`${JSON.stringify(manifest, null, 2)}\n`,
@@ -210,6 +211,7 @@ async function campSets(store: RuntimeLocalEventStore, campId: string) {
 	const sets = [];
 	for await (const event of store.read(`cd-camp-${campId}`))
 		if (event.type === CD_EVENTS.SetCreated)
+			// SAFETY: set.Created bodies are SetRecord protobuf JSON.
 			sets.push(fromJson(SetRecordSchema, event.data as ProtoJson));
 	return sets;
 }

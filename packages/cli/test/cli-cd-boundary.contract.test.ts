@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseManifest } from "@hobo/bindles";
-import { ReconcileStatus, SetOrigin } from "@hobo/cd";
+import { type CampId, ReconcileStatus, SetOrigin } from "@hobo/cd";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
@@ -20,6 +20,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { createYardClient, type YardClient } from "../src/cloud/yard-client.js";
 import { createFixtureSession } from "../src/index.js";
+import { isJsonObject, type JsonObject, type JsonValue } from "../src/json.js";
 import {
 	createFakeDelivery,
 	type FakeDelivery,
@@ -40,8 +41,8 @@ const pactPath = join(
 
 type Interaction = Readonly<{
 	description: string;
-	request: Readonly<{ port: string; contents: Record<string, unknown> }>;
-	response: Readonly<{ contents: Record<string, unknown> }>;
+	request: Readonly<{ port: string; contents: JsonObject }>;
+	response: Readonly<{ contents: JsonObject }>;
 	matchingRules: Readonly<Record<string, string>>;
 }>;
 
@@ -74,6 +75,8 @@ const BINDLE_V2 = parseManifest({
 });
 
 const DEPLOYMENT = "pact-cd";
+// SAFETY: `hobo up` uses the deployment id as the deployment Camp id by default.
+const CAMP = DEPLOYMENT as CampId;
 
 let stores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
@@ -81,7 +84,9 @@ afterEach(() => {
 	stores = [];
 });
 
-function seam(): { client: YardClient; fake: FakeDelivery } {
+type Seam = Readonly<{ client: YardClient; fake: FakeDelivery }>;
+
+function seam(): Seam {
 	const store = createRuntimeLocalEventStore({
 		dataDir: join(
 			tmpdir(),
@@ -137,17 +142,20 @@ function interaction(description: string): Interaction {
 	return found;
 }
 
-function valueAt(root: unknown, dotted: string): unknown {
-	let cursor: unknown = root;
+function valueAt(
+	root: JsonValue | undefined,
+	dotted: string,
+): JsonValue | undefined {
+	let cursor = root;
 	for (const key of dotted.split(".")) {
-		if (cursor === null || typeof cursor !== "object") return undefined;
-		cursor = (cursor as Record<string, unknown>)[key];
+		if (!isJsonObject(cursor)) return undefined;
+		cursor = cursor[key];
 	}
 	return cursor;
 }
 
 /** Exact contents match plus every `request.*` matching rule. */
-function expectRequest(item: Interaction, actual: unknown): void {
+function expectRequest(item: Interaction, actual: JsonValue | undefined): void {
 	expect(actual).toMatchObject(item.request.contents);
 	for (const [path, pattern] of Object.entries(item.matchingRules))
 		if (path.startsWith("request."))
@@ -156,10 +164,7 @@ function expectRequest(item: Interaction, actual: unknown): void {
 			);
 }
 
-function expectResponse(
-	item: Interaction,
-	actual: Record<string, unknown>,
-): void {
+function expectResponse(item: Interaction, actual: JsonObject): void {
 	for (const [path, pattern] of Object.entries(item.matchingRules))
 		if (path.startsWith("response."))
 			expect(String(valueAt(actual, path.slice("response.".length)))).toMatch(
@@ -196,8 +201,8 @@ describe("CLI <-> CD boundary pact", () => {
 		const recordCall = fake.calls.find((c) => c.port === "freight.record");
 		expectRequest(record, recordCall?.input);
 		expectResponse(record, {
-			freightId: receipt?.freightId,
-			alias: receipt?.alias,
+			freightId: receipt?.freightId ?? null,
+			alias: receipt?.alias ?? null,
 		});
 
 		const promote = interaction(
@@ -205,7 +210,7 @@ describe("CLI <-> CD boundary pact", () => {
 		);
 		const promoteCall = fake.calls.find((c) => c.port === "promotions.promote");
 		expectRequest(promote, promoteCall?.input);
-		expectResponse(promote, { promotionId: receipt?.promotionId });
+		expectResponse(promote, { promotionId: receipt?.promotionId ?? null });
 
 		const conductor = interaction(
 			"hobo up converges the Camp with a bounded in-process conductor",
@@ -214,12 +219,9 @@ describe("CLI <-> CD boundary pact", () => {
 		expectRequest(conductor, created?.input);
 		const reconciled = fake.calls.filter((c) => c.port === "reconcileOnce");
 		expect(reconciled.at(-1)?.input).toEqual({ campId: DEPLOYMENT });
-		const observed = await fake.cd.desired.status(DEPLOYMENT as never);
-		expect(ReconcileStatus[observed?.status ?? 0]).toBe(
-			String(
-				(conductor.response.contents.reconcileOnce as { status: string })
-					.status,
-			).replace("RECONCILE_STATUS_", ""),
+		const observed = await fake.cd.desired.status(CAMP);
+		expect(`RECONCILE_STATUS_${ReconcileStatus[observed?.status ?? 0]}`).toBe(
+			valueAt(conductor.response.contents, "reconcileOnce.status"),
 		);
 	});
 
@@ -238,7 +240,7 @@ describe("CLI <-> CD boundary pact", () => {
 			.filter((c) => c.port === "promotions.promote")
 			.at(-1);
 		expectRequest(teardown, call?.input);
-		const current = await fake.cd.desired.current(DEPLOYMENT as never);
+		const current = await fake.cd.desired.current(CAMP);
 		expect(`SET_ORIGIN_${SetOrigin[current?.origin ?? 0]}`).toBe(
 			teardown.response.contents.setOrigin,
 		);
@@ -259,7 +261,7 @@ describe("CLI <-> CD boundary pact", () => {
 		);
 		const call = fake.calls.find((c) => c.port === "promotions.rollback");
 		expectRequest(rollback, call?.input);
-		const current = await fake.cd.desired.current(DEPLOYMENT as never);
+		const current = await fake.cd.desired.current(CAMP);
 		expect(`SET_ORIGIN_${SetOrigin[current?.origin ?? 0]}`).toBe(
 			rollback.response.contents.setOrigin,
 		);

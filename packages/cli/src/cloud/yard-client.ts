@@ -255,27 +255,27 @@ export type DeliveryMode = "up" | "to" | "rollback" | "anonymous" | "down";
 export type DeliveryReceipt = Readonly<{
 	campId: string;
 	mode: DeliveryMode;
-	freightId?: string;
-	alias?: string;
-	setId?: string;
-	promotionId?: string;
+	freightId?: string | undefined;
+	alias?: string | undefined;
+	setId?: string | undefined;
+	promotionId?: string | undefined;
 	passes: number;
-	refusal?: DeliveryRefusalCode;
-	claimHint?: string;
+	refusal?: DeliveryRefusalCode | undefined;
+	claimHint?: string | undefined;
 }>;
 
 export interface DeliverOptions {
 	readonly deploymentId: string;
 	readonly session: YardSession;
-	readonly config?: DeployConfig;
+	readonly config?: DeployConfig | undefined;
 	/** Bytes of `.hobo/freight.json` when `hobo build` wrote one. */
-	readonly freightManifest?: Uint8Array;
+	readonly freightManifest?: Uint8Array | undefined;
 	/** `--to <freight id | alias>`. */
-	readonly to?: string;
-	readonly rollback?: boolean;
-	readonly anonymous?: boolean;
+	readonly to?: string | undefined;
+	readonly rollback?: boolean | undefined;
+	readonly anonymous?: boolean | undefined;
 	/** Streamed while the conductor loop runs. */
-	readonly onProgress?: (event: ProgressEvent) => void;
+	readonly onProgress?: ((event: ProgressEvent) => void) | undefined;
 }
 
 export interface YardClient {
@@ -674,9 +674,9 @@ type Refused = Readonly<{
 
 type Converged = Readonly<{
 	passes: number;
-	set?: SetRecord;
-	observation?: ReconcileObservationRecord;
-	promotion?: PromotionRecord;
+	set?: SetRecord | undefined;
+	observation?: ReconcileObservationRecord | undefined;
+	promotion?: PromotionRecord | undefined;
 	/** The promotion parked before applying (approval or window). */
 	held?: PromotionRecord;
 	/** The promotion ended without applying. */
@@ -693,14 +693,14 @@ const HELD_PROMOTION: ReadonlySet<PromotionState> = new Set([
 	PromotionState.AWAITING_WINDOW,
 ]);
 
-const STATUS_EVENT: Readonly<Record<ReconcileStatus, string>> = {
+const STATUS_EVENT = {
 	[ReconcileStatus.UNSPECIFIED]: "deployment.StatusObserved",
 	[ReconcileStatus.CONVERGING]: "deployment.ReconcileStarted",
 	[ReconcileStatus.CONVERGED]: "deployment.Converged",
 	[ReconcileStatus.BLOCKED]: "deployment.ReconcileBlocked",
 	[ReconcileStatus.DRIFTED]: "deployment.StatusObserved",
 	[ReconcileStatus.OBSERVED]: "deployment.StatusObserved",
-};
+} as const satisfies Readonly<Record<ReconcileStatus, string>>;
 
 const ANONYMOUS_CLAIM_HINT =
 	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote)."; // public-contract: claim next step printed after `hobo up --anonymous`
@@ -945,7 +945,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 	async function converge(input: {
 		campId: CampId;
 		baseSetId: string | undefined;
-		promotionId?: PromotionId;
+		promotionId: PromotionId | undefined;
 		reconciler: CampReconciler;
 		ctx: CdContext;
 		emit: (event: ProgressEvent) => void;
@@ -998,19 +998,9 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				(observation.status === ReconcileStatus.CONVERGED ||
 					observation.status === ReconcileStatus.BLOCKED)
 			)
-				return {
-					passes: pass,
-					set,
-					observation,
-					...(promotion ? { promotion } : {}),
-				};
+				return { passes: pass, set, observation, promotion };
 		}
-		return {
-			passes: maxPasses,
-			...(set ? { set } : {}),
-			...(observation ? { observation } : {}),
-			...(promotion ? { promotion } : {}),
-		};
+		return { passes: maxPasses, set, observation, promotion };
 	}
 
 	async function planOf(set: SetRecord): Promise<DeploymentPlan> {
@@ -1164,7 +1154,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 			const outcome = await converge({
 				campId,
 				baseSetId: before?.setId,
-				...(promotionId ? { promotionId } : {}),
+				promotionId,
 				reconciler: reconcilerFor(campId, deploymentId),
 				ctx,
 				emit,
@@ -1217,11 +1207,11 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				},
 				{
 					passes: outcome.passes,
-					...(promotionId ? { promotionId } : {}),
+					promotionId,
 					freightId: set.freightId,
-					...(selectedFreight ? { alias: selectedFreight.alias } : {}),
+					alias: selectedFreight?.alias,
 					setId: set.setId,
-					...(mode === "anonymous" ? { claimHint: ANONYMOUS_CLAIM_HINT } : {}),
+					claimHint: mode === "anonymous" ? ANONYMOUS_CLAIM_HINT : undefined,
 				},
 			);
 		},
@@ -1301,7 +1291,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 			const outcome = await converge({
 				campId,
 				baseSetId: promotionId ? before.setId : undefined,
-				...(promotionId ? { promotionId } : {}),
+				promotionId,
 				reconciler: reconcilerFor(campId, deploymentId),
 				ctx,
 				emit,
@@ -1335,10 +1325,10 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				},
 				{
 					passes: outcome.passes,
-					...(promotionId ? { promotionId } : {}),
+					promotionId,
 					freightId: before.freightId,
-					...(outcome.set ? { setId: outcome.set.setId } : {}),
-					...(refused ? { refusal: DELIVERY_REFUSAL.promotionRefused } : {}),
+					setId: outcome.set?.setId,
+					refusal: refused ? DELIVERY_REFUSAL.promotionRefused : undefined,
 				},
 			);
 		},

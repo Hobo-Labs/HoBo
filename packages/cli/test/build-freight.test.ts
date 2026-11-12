@@ -31,6 +31,7 @@ import {
 	writeBuildFixtureProject,
 	type YardRuntime,
 } from "../src/index.js";
+import { isJsonArray, isJsonObject, type JsonValue } from "../src/json.js";
 import {
 	createFakeDelivery,
 	type FakeDelivery,
@@ -55,11 +56,13 @@ afterEach(() => {
 	stores = [];
 });
 
-function harness(): {
+type BuildHarness = Readonly<{
 	fake: FakeDelivery;
 	delivery: YardDelivery;
 	runtime: YardRuntime;
-} {
+}>;
+
+function harness(): BuildHarness {
 	const store = createRuntimeLocalEventStore({
 		dataDir: path.join(
 			tmpdir(),
@@ -103,6 +106,13 @@ function harness(): {
 	return { fake, delivery, runtime: { ...base, delivery } };
 }
 
+function valueOf(
+	value: JsonValue | undefined,
+	key: string,
+): JsonValue | undefined {
+	return isJsonObject(value) ? value[key] : undefined;
+}
+
 /** A build fixture whose hobo.bindle.json is also a hobo.manifest/v1 declaration. */
 async function withDeclaredBuildProject(
 	callback: (projectRoot: string) => Promise<void>,
@@ -142,7 +152,7 @@ function buildCli(delivery?: YardDelivery) {
 		commands: {
 			build: createBuildCommand({
 				requireRealComponentize: false,
-				...(delivery ? { delivery } : {}),
+				delivery,
 			}),
 		},
 	});
@@ -202,8 +212,7 @@ describe("hobo build emits Freight", () => {
 			const declarationPut = fake.calls.find(
 				(c) =>
 					c.port === "artifacts.put" &&
-					(c.input as { mediaType: string }).mediaType ===
-						DECLARATION_MEDIA_TYPE,
+					valueOf(c.input, "mediaType") === DECLARATION_MEDIA_TYPE,
 			);
 			expect(declarationPut).toBeDefined();
 			expect(fake.blobs.has(declaration)).toBe(true);
@@ -231,12 +240,14 @@ describe("hobo build emits Freight", () => {
 				await readFile(path.join(projectRoot, FREIGHT_FILE)),
 			);
 			if (!built.ok) throw new Error("freight.json unreadable");
+			const recordedArtifacts = valueOf(
+				valueOf(recorded?.input, "manifest"),
+				"artifacts",
+			);
 			expect(
-				(
-					recorded?.input as {
-						manifest: { artifacts: Array<{ digest: string }> };
-					}
-				).manifest.artifacts.map((a) => a.digest),
+				isJsonArray(recordedArtifacts)
+					? recordedArtifacts.map((a) => valueOf(a, "digest"))
+					: [],
 			).toEqual(built.value.artifacts.map((a) => a.digest));
 		});
 	});

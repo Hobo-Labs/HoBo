@@ -93,10 +93,10 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				deploymentId,
 				session,
 				config,
-				...(freightManifest ? { freightManifest } : {}),
-				...(flags.to !== null ? { to: flags.to } : {}),
-				...(flags.rollback ? { rollback: true } : {}),
-				...(anonymous ? { anonymous: true } : {}),
+				freightManifest,
+				to: flags.to ?? undefined,
+				rollback: flags.rollback,
+				anonymous,
 				onProgress: (step) => emitProgress(progressLine(step)),
 			};
 			const { result, receipt } = await yard.deliver(bindle, options);
@@ -115,7 +115,7 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 						deploymentId,
 						reason: result.reason,
 						remediations: result.remediations,
-						...(receipt ? { delivery: receipt } : {}),
+						delivery: receipt,
 					},
 				};
 			}
@@ -141,7 +141,7 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 					resources: result.plan.resources,
 					progress: result.progress,
 					identity: session.principal.id,
-					...(receipt ? { delivery: receipt } : {}),
+					delivery: receipt,
 				},
 			};
 		},
