@@ -175,17 +175,20 @@ export function imagetoolsInspectTag(
 			`imagetools inspect ${tag} failed (status ${result.status ?? "?"})${suffix}`,
 		);
 	}
-	return parseImagetoolsInspectStdout(result.stdout);
+	const parsed = parseImagetoolsInspectStdout(result.stdout);
+	if (!parsed) {
+		throw new Error(`imagetools inspect ${tag} returned unparsable JSON`);
+	}
+	return parsed;
 }
 
 function isImagetoolsTagAbsent(stderr: string, status: number): boolean {
 	if (status === 0) return false;
 	const lower = stderr.toLowerCase();
 	return (
-		lower.includes("not found") ||
-		lower.includes("manifest unknown") ||
-		lower.includes("name unknown") ||
-		lower.includes("no such manifest")
+		/\bmanifest unknown\b/u.test(lower) ||
+		/\bname unknown\b/u.test(lower) ||
+		/\bno such manifest\b/u.test(lower)
 	);
 }
 
@@ -205,6 +208,17 @@ export function assertReleaseImageMatchesBuild(options: {
 	if (!labels || Object.keys(labels).length === 0) {
 		throw new Error(
 			`${options.imageId}: registry tag ${options.tag} has no OCI labels; cannot verify revision ${options.revision}`,
+		);
+	}
+	const releaseImage = labels["io.hobo.release.image"]?.trim();
+	if (!releaseImage) {
+		throw new Error(
+			`${options.imageId}: ${options.digestRef} missing io.hobo.release.image`,
+		);
+	}
+	if (releaseImage !== options.imageId) {
+		throw new Error(
+			`${options.imageId}: ${options.digestRef} io.hobo.release.image ${releaseImage} != expected ${options.imageId}`,
 		);
 	}
 	const revision = labels["org.opencontainers.image.revision"]?.trim();

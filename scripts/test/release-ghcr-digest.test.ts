@@ -62,6 +62,14 @@ describe("release ghcr digest helpers", () => {
 		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
 	});
 
+	it("fails closed when imagetools returns success but unparsable JSON", () => {
+		const run = vi.fn(() => stubSpawnSync(0, ""));
+		run.mockReturnValueOnce({ ...stubSpawnSync(0, ""), stdout: "not-json" });
+		expect(() => imagetoolsInspectTag("ghcr.io/x/y:v1", run)).toThrow(
+			/unparsable JSON/u,
+		);
+	});
+
 	it("imagetools inspect fails closed on non-absent errors", () => {
 		const run = vi.fn(() => stubSpawnSync(1, "unexpected registry failure"));
 		expect(() => imagetoolsInspectTag("ghcr.io/x/y:v1", run)).toThrow(
@@ -110,6 +118,7 @@ describe("release ghcr digest helpers", () => {
 				revision: "abc123",
 				releaseVersion: "0.0.0-alpha.1",
 				labels: {
+					"io.hobo.release.image": "hobo-sdk",
 					"org.opencontainers.image.revision": "wrong",
 					"org.opencontainers.image.version": "0.0.0-alpha.1",
 				},
@@ -126,6 +135,7 @@ describe("release ghcr digest helpers", () => {
 				revision: "abc123",
 				releaseVersion: "0.0.0-alpha.1",
 				labels: {
+					"io.hobo.release.image": "hobo-sdk",
 					"org.opencontainers.image.revision": "abc123",
 					"org.opencontainers.image.version": "0.0.0-alpha.1",
 				},
