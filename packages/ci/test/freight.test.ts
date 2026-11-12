@@ -321,3 +321,46 @@ describe("the freight CLI the HoBo CI Fabric workflow calls", () => {
 		expect(lines.join("")).toMatch(/no deliverable/);
 	});
 });
+
+describe("the HoBo CI Fabric workflow writes HoBo's own Freight", () => {
+	const workflow = readFileSync(
+		join(import.meta.dirname, "../../../.github/workflows/hobo-ci.yml"),
+		"utf8",
+	);
+	const finish = workflow.slice(
+		workflow.indexOf("\n  main_gate_finish:"),
+		workflow.indexOf("\n  artifact-trust:"),
+	);
+	const step = (name: string) => {
+		const start = finish.indexOf(`- name: ${name}`);
+		const end = finish.indexOf("\n      - ", start + 1);
+		return finish.slice(start, end < 0 ? undefined : end);
+	};
+
+	it("runs the freight writer only on a main push, after the gate and the secret scan", () => {
+		const write = step("Write HoBo's own Freight");
+		expect(write).toContain("packages/ci/dist/freight-cli.js");
+		expect(write).toContain("--pipeline hobo-ci");
+		expect(write).toContain('--deliverable "sdk=');
+		expect(write).toContain('--deliverable "cli=');
+		expect(write).toContain(
+			"if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+		);
+		const at = finish.indexOf("Write HoBo's own Freight");
+		expect(
+			finish.indexOf("Require main gate and workspace shards"),
+		).toBeLessThan(at);
+		expect(finish.indexOf("Secret scan (full history)")).toBeLessThan(at);
+	});
+
+	it("exposes the Freight as a run artifact without any credential", () => {
+		const write = step("Write HoBo's own Freight");
+		expect(write).not.toMatch(/secrets\.|TOKEN|id-token/);
+		const expose = step("Expose HoBo's own Freight as CI outputs");
+		expect(expose).toContain("uses: actions/upload-artifact@");
+		expect(expose).toContain("if-no-files-found: error");
+		expect(finish).toMatch(
+			/permissions:\n {6}actions: read\n {6}contents: read\n/,
+		);
+	});
+});
