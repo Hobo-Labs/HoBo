@@ -28,8 +28,12 @@ describe("main full gate workspace sharding", () => {
 			workflow.indexOf("  main_workspace_tests:", mainStart),
 		);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
-		assert.match(plan, /emit-main-workspace-shard-matrix\.mts/u);
-		assert.match(plan, /id: shard_matrix/u);
+		const matrixStart = workflow.indexOf("  main-gate-shard-matrix:");
+		const matrixEnd = workflow.indexOf("  main-gate:", matrixStart);
+		assert.ok(matrixStart > -1);
+		const matrix = workflow.slice(matrixStart, matrixEnd);
+		assert.match(matrix, /emit-main-workspace-shard-matrix\.mts/u);
+		assert.match(matrix, /id: shard_matrix/u);
 		assert.match(plan, /needs: \[ci-runner-image\]/u);
 		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
 		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
@@ -47,11 +51,14 @@ describe("main full gate workspace sharding", () => {
 		assert.ok(finishStart > shardStart);
 		const block = workflow.slice(shardStart, finishStart);
 		assert.match(block, /Main workspace test shard \$\{\{ matrix\.shard \}\}/u);
-		assert.match(block, /needs\.main-gate-plan\.outputs\.shard_matrix/u);
+		assert.match(
+			block,
+			/needs\.main-gate-shard-matrix\.outputs\.shard_matrix/u,
+		);
 		assert.match(block, /matrix\.runner/u);
 		assert.match(
 			block,
-			/needs: \[ci-runner-image, ci-deps-image, main-gate-plan\]/u,
+			/needs: \[ci-runner-image, ci-deps-image, main-gate-plan, main-gate-shard-matrix\]/u,
 		);
 		assert.doesNotMatch(block, /needs: \[route,/u);
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);

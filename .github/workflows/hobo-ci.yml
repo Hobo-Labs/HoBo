@@ -883,7 +883,6 @@ jobs:
       main_tests: ${{ steps.plan.outputs.main_tests }}
       main_scope: ${{ steps.plan.outputs.main_scope }}
       shards: ${{ steps.plan.outputs.shards }}
-      shard_matrix: ${{ steps.shard_matrix.outputs.shard_matrix }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -922,20 +921,47 @@ jobs:
           HOBO_TURBO_INVOKER: mise
           MAIN_GATE_PLAN_CACHE_DIR: ${{ runner.temp }}/hobo-main-gate-plan
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
-      - name: Emit workspace shard matrix
-        id: shard_matrix
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOBO_CI_FLEET_CAPACITY_JSON: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
-          MAIN_GATE_SHARDS: ${{ steps.plan.outputs.shards }}
-        run: node --experimental-strip-types --no-warnings scripts/ci/emit-main-workspace-shard-matrix.mts
       - name: Save main workspace plan cache
         if: success()
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
           key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+
+  main-gate-shard-matrix:
+    name: Main workspace shard matrix
+    needs: [main-gate-plan]
+    if: >-
+      !cancelled() && needs.main-gate-plan.result == 'success' && (
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch')
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    outputs:
+      shard_matrix: ${{ steps.shard_matrix.outputs.shard_matrix }}
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: |
+            scripts/ci
+            scripts/lib
+      - name: Emit workspace shard matrix
+        id: shard_matrix
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_CI_FLEET_CAPACITY_JSON: ${{ vars.HOBO_CI_FLEET_CAPACITY }}
+          MAIN_GATE_SHARDS: ${{ needs.main-gate-plan.outputs.shards }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/emit-main-workspace-shard-matrix.mts
 
   main-gate:
     name: Main full gate
@@ -1169,9 +1195,10 @@ jobs:
 
   main_workspace_tests:
     name: Main workspace test shard ${{ matrix.shard }}
-    needs: [ci-runner-image, ci-deps-image, main-gate-plan]
+    needs: [ci-runner-image, ci-deps-image, main-gate-plan, main-gate-shard-matrix]
     if: >-
       !cancelled() && needs.main-gate-plan.result == 'success' &&
+      needs.main-gate-shard-matrix.result == 'success' &&
       needs.main-gate-plan.outputs.shards != '[]' &&
       needs.main-gate-plan.outputs.shards != '' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -1180,7 +1207,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.main-gate-plan.outputs.shard_matrix || '[{"shard":0,"runner":"hobo-trunk"}]') }}
+        include: ${{ fromJSON(needs.main-gate-shard-matrix.outputs.shard_matrix || '[{"shard":0,"runner":"hobo-trunk"}]') }}
     runs-on: ${{ matrix.runner == 'ubuntu-24.04' && matrix.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","schedule","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && matrix.runner || 'hobo') }}
     timeout-minutes: 20
     permissions:

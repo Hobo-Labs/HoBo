@@ -11,7 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { onTestFinished, test } from "vitest";
-import { lintActionsRepository } from "../scripts/lint-actions.ts";
+import {
+	lintActionsRepository,
+	MAIN_WORKSPACE_SHARD_RUNS_ON,
+} from "../scripts/lint-actions.ts";
 
 const template = await readFile(
 	new URL(
@@ -486,7 +489,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			) {
 				assert.equal(
 					runsOn,
-					'${{ vars.HOBO_CI_TRUNK_RUNNER != \'false\' && contains(fromJSON(\'["push","schedule","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && matrix.runner || \'hobo\' }}',
+					MAIN_WORKSPACE_SHARD_RUNS_ON,
 					`${file}:${lines[start]} must use plan-time shard_matrix runner`,
 				);
 				continue;
