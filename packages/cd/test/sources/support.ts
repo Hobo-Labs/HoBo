@@ -37,12 +37,14 @@ import type {
 	CdAuthorizer,
 	CdContext,
 	CredentialResolver,
+	Digest,
 	FreightId,
 	FreightLedger,
 	OtelMetricPoint,
 	OtelSpan,
 	Outcome,
 	ProvenanceVerifier,
+	RailEventReader,
 	TelemetrySink,
 } from "../../src/ports.js";
 import { canonical, isText } from "../../src/sources/json.js";
@@ -343,3 +345,15 @@ export class FakeProvenance implements ProvenanceVerifier {
 		};
 	}
 }
+
+// ── Event readers ──────────────────────────────────────────────────────────
+
+export type RailEvent = Readonly<{ cursor: string; railId: string; railDigest: Digest; status: "approved" | "active" | "retired"; stationId: string }>;
+
+export function railReader(events: readonly RailEvent[]): RailEventReader {
+	return async function* (after) {
+		const start = after === undefined ? 0 : events.findIndex((event) => event.cursor === after) + 1;
+		for (const event of events.slice(start)) yield event;
+	};
+}
+

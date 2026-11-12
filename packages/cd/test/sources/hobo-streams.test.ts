@@ -7,20 +7,11 @@ import {
 	SubscriptionKind,
 	SubscriptionRecordSchema,
 } from "../../src/_generated/cd_pb.js";
-import type { CiEventReader, Digest, RailEventReader } from "../../src/ports.js";
+import type { CiEventReader } from "../../src/ports.js";
 import { createCiDriver } from "../../src/sources/drivers/hobo-ci.js";
 import { createRailDriver } from "../../src/sources/drivers/hobo-rail.js";
 import { encode } from "../../src/sources/json.js";
-import { clock, context, digestOf, signal } from "./support.js";
-
-type RailEvent = Readonly<{ cursor: string; railId: string; railDigest: Digest; status: "approved" | "active" | "retired"; stationId: string }>;
-
-export function railReader(events: readonly RailEvent[]): RailEventReader {
-	return async function* (after) {
-		const start = after === undefined ? 0 : events.findIndex((event) => event.cursor === after) + 1;
-		for (const event of events.slice(start)) yield event;
-	};
-}
+import { clock, context, digestOf, type RailEvent, railReader, signal } from "./support.js";
 
 const railSub = create(SubscriptionRecordSchema, { name: "rail", kind: SubscriptionKind.HOBO_RAIL, locator: "rail-prod" });
 const D1 = digestOf("rail-v1");

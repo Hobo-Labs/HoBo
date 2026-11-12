@@ -7,20 +7,10 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { createGitDriver } from "../../src/sources/drivers/git.js";
 import { applyDelta, readPackets } from "../../src/sources/drivers/git-pack.js";
-import gitFixture from "./fixtures/git.json" with { type: "json" };
-import { clock, context, type Exchange, FixtureTransport, signal } from "./support.js";
+import { gitExchanges, gitFixture } from "./git-fixtures.js";
+import { clock, context, FixtureTransport, signal } from "./support.js";
 
 const { base, commits } = gitFixture;
-
-/** Recorded exchanges for one moment of the fixture repository (t1, t2, t3). */
-export function gitExchanges(set: "t1" | "t2" | "t3"): readonly Exchange[] {
-	return gitFixture.sets[set].map((item) => ({
-		method: item.method,
-		url: item.url,
-		...(item.body === undefined ? {} : { body: item.body }),
-		response: Buffer.from(item.response, "base64").toString("latin1"),
-	}));
-}
 
 function sub(extra: Partial<Parameters<typeof create<typeof SubscriptionRecordSchema>>[1]> = {}) {
 	return create(SubscriptionRecordSchema, { name: "decl", kind: SubscriptionKind.GIT_REPOSITORY, locator: base, ...extra });
