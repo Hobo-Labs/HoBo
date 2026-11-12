@@ -191,6 +191,16 @@ jobs:
     if: \${{ false }}
     runs-on: ubuntu-latest
     steps:
+      - uses: ./.github/actions/ci-runner-preflight
+`;
+	const hoboCheckoutOnly = `name: x
+on:
+  workflow_dispatch:
+jobs:
+  job:
+    if: \${{ false }}
+    runs-on: ubuntu-latest
+    steps:
       - uses: ./.github/actions/hobo-checkout
 `;
 	const disabledGood = `name: x
@@ -204,7 +214,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           sparse-checkout: .github/actions
-      - uses: ./.github/actions/hobo-checkout
+      - uses: ./.github/actions/ci-runner-preflight
 `;
 	const badResult = await lint(
 		await fixture({}, { "local-action-guard.yml": disabledBad }),
@@ -212,7 +222,15 @@ jobs:
 	assert.equal(badResult.status, 1);
 	assert.match(
 		badResult.stderr,
-		/repo-local action \.\/\.github\/actions\/hobo-checkout must follow a pinned actions\/checkout step/,
+		/repo-local action \.\/\.github\/actions\/ci-runner-preflight must follow a pinned actions\/checkout step/,
+	);
+	assert.equal(
+		(
+			await lint(
+				await fixture({}, { "local-action-guard.yml": hoboCheckoutOnly }),
+			)
+		).status,
+		0,
 	);
 	assert.equal(
 		(await lint(await fixture({}, { "local-action-guard.yml": disabledGood })))

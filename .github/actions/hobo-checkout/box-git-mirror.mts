@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	realpathSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -136,12 +142,25 @@ export function resolveBoxGitMirror(
 	return { status: "miss", reason: lastReason };
 }
 
+function appendGithubEnv(path: string, key: string, value: string): void {
+	appendFileSync(path, `${key}=${value}\n`, "utf8");
+}
+
 function runCli(args: readonly string[]): void {
 	const writeConfigIndex = args.indexOf("--write-config");
 	const configPath =
 		writeConfigIndex >= 0 ? args[writeConfigIndex + 1] : undefined;
+	const exportEnvIndex = args.indexOf("--export-github-env");
+	const githubEnvPath =
+		exportEnvIndex >= 0 ? args[exportEnvIndex + 1] : undefined;
 	if (writeConfigIndex >= 0 && !configPath) {
 		console.log("hobo_ci_git_mirror=miss reason=--write-config requires a path");
+		return;
+	}
+	if (exportEnvIndex >= 0 && !githubEnvPath) {
+		console.log(
+			"hobo_ci_git_mirror=miss reason=--export-github-env requires a path",
+		);
 		return;
 	}
 	try {
@@ -150,9 +169,17 @@ function runCli(args: readonly string[]): void {
 			console.log(
 				`hobo_ci_git_mirror=miss reason=${resolution.reason.replace(/[\r\n]+/g, " ")}`,
 			);
+			if (githubEnvPath) appendGithubEnv(githubEnvPath, "HOBO_CI_GIT_MIRROR_RESOLVED", "");
 			return;
 		}
 		if (configPath) writeFileSync(configPath, resolution.insteadOfConfig, "utf8");
+		if (githubEnvPath) {
+			appendGithubEnv(
+				githubEnvPath,
+				"HOBO_CI_GIT_MIRROR_RESOLVED",
+				resolution.mirror,
+			);
+		}
 		console.log(`hobo_ci_git_mirror=hit mirror=${resolution.mirror}`);
 		console.log(resolution.insteadOfConfig.trimEnd());
 	} catch (error) {

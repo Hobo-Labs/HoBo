@@ -398,11 +398,21 @@ function lintLocalActionsNeedCheckoutFirst(
 		}
 		const step = block.slice(i, end);
 		if (
-			step.some(
-				(entry) =>
+			step.some((entry) => {
+				if (
 					/^\s+- uses: actions\/checkout@/.test(entry) ||
-					/^\s+uses: actions\/checkout@/.test(entry),
-			)
+					/^\s+uses: actions\/checkout@/.test(entry)
+				)
+					return true;
+				return (
+					/^\s+- uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+- uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					) ||
+					/^\s+uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(entry)
+				);
+			})
 		) {
 			seenCheckout = true;
 		}
