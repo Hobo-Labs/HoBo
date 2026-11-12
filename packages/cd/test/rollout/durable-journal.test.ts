@@ -21,6 +21,7 @@ import {
 	ReconcileStatus,
 	RolloutStrategy,
 	SetOrigin,
+	type SetRecord,
 	VerificationVerdict,
 } from "../../src/_generated/cd_pb.js";
 import { createHarnessRolloutEngine } from "../../src/adapters/harness.js";
@@ -31,7 +32,6 @@ import type {
 	DeltaId,
 	ReconcilerId,
 	RolloutId,
-	SetRecord,
 } from "../../src/ports.js";
 import { createInProcessTransport } from "../../src/reconcile/transport.js";
 import { ROLLOUT_LEDGER } from "../../src/rollout/journal.js";
@@ -67,7 +67,8 @@ const STORABLE = /^[a-z][a-z0-9]*\.[A-Z][A-Za-z0-9]*$/;
 
 const dirs: string[] = [];
 afterEach(() => {
-	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of dirs.splice(0))
+		rmSync(dir, { recursive: true, force: true });
 });
 
 function campId(id: string): CampId {
@@ -221,7 +222,7 @@ describe("rollout on a durable SQLite journal", () => {
 		);
 		if (!planned.ok) throw new Error("plan refused");
 		const ran = await w.orchestrator.run(planned.value, ctx);
-		expect(ran.ok).toBe(true);
+		expect(ran.status).not.toBe("failed");
 		const rolloutId = planned.value.rolloutId as RolloutId;
 		for (let i = 0; i < 20; i += 1) {
 			const snapshot = await w.orchestrator.get(rolloutId);
@@ -237,9 +238,16 @@ describe("rollout on a durable SQLite journal", () => {
 		// folded), then went back to zero.
 		expect(w.traffic.percents(CAMP).at(0)).toBeGreaterThan(0);
 		expect(w.traffic.percents(CAMP).at(-1)).toBe(0);
-		// The rollback Delta to the predecessor Set is in the durable ledger.
-		const rollbackDelta = (await w.desired.current(campId(CAMP)))?.setId;
-		expect(rollbackDelta).toBe(promoted.setId);
+		// The rollback Delta to the predecessor Set is in the durable Delta ledger.
+		const opened = finished?.reasons.find(
+			(r) => r.code === "rollback-delta-opened",
+		);
+		expect(opened).toBeDefined();
+		// SAFETY: the reason's subject is the rollback Delta id.
+		const rollback = await w.desired.get((opened?.subject ?? "") as DeltaId);
+		expect(rollback?.intent).toBe("rollback");
+		expect(rollback?.freightId).toBe(PREVIOUS);
+		expect(rollback?.baseSetId).toBe(promoted.setId);
 
 		const ledger = await types(journal, ROLLOUT_LEDGER.stream(rolloutId));
 		expect(ledger).toContain(ROLLOUT_LEDGER.rollbackStarted);

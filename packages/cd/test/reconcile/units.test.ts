@@ -9,7 +9,7 @@ import {
 	ReconcileStatus,
 	ResourceObservationSchema,
 } from "../../src/_generated/cd_pb.js";
-import { CD_EVENTS } from "../../src/events.js";
+import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import {
 	applyRetained,
 	backoffMs,
@@ -24,10 +24,15 @@ import {
 	RECONCILE_BACKOFF,
 	RECONCILE_EVENTS,
 	RECONCILE_FAILURES,
+	RECONCILE_STATUS_SCHEMA,
 	statusEventsFor,
 	tableRetained,
 	trimAttributes,
 } from "../../src/reconcile/index.js";
+import {
+	foldCampStatus,
+	STATUS_ENVELOPE_SCHEMA,
+} from "../../src/sets/index.js";
 
 const obs = (
 	fields: Parameters<typeof create<typeof ReconcileObservationRecordSchema>>[1],
@@ -249,5 +254,33 @@ describe("status events", () => {
 			expect(code).toMatch(/^[a-z-]+$/u);
 			expect(remediation.length).toBeGreaterThan(20);
 		}
+	});
+});
+
+describe("status envelope contract with @hobo/cd/sets", () => {
+	it("the status bodies statusEventsFor writes fold to their observation in DesiredStateReader.status()", () => {
+		expect(RECONCILE_STATUS_SCHEMA).toBe(STATUS_ENVELOPE_SCHEMA);
+		const observation = obs({
+			campId: "prod",
+			setId: "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			reconcilerId: "rec-1",
+			fenceToken: "4",
+			status: ReconcileStatus.CONVERGED,
+			observedAt: "2026-11-12T00:00:00.000Z",
+			reasons: [create(ReasonRecordSchema, { code: "drift-detected" })],
+		});
+		const events = statusEventsFor(observation, "p").map((event, i) => ({
+			id: `evt-${i + 1}`,
+			type: event.type,
+			v: 1,
+			streamId: CD_STREAMS.campStatus("prod"),
+			seq: i + 1,
+			ts: "2026-11-12T00:00:00.000Z",
+			actor: { kind: "service" as const, id: "cd-reconciler:rec-1" },
+			tenant: "acme",
+			data: event.data,
+		}));
+		expect(events.map((e) => e.type)).toContain(CD_EVENTS.Converged);
+		expect(foldCampStatus(events)).toEqual(observation);
 	});
 });
