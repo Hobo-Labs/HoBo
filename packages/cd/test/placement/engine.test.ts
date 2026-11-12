@@ -193,6 +193,14 @@ describe("PlacementEngine.define and reportScores (D15, D20)", () => {
 		);
 	});
 
+	it("redefining back to an earlier definition takes effect", async () => {
+		const h = await harness();
+		await h.engine.define(basic(), h.ops);
+		await h.engine.define(basic({ count: 1 }), h.ops);
+		await h.engine.define(basic(), h.ops);
+		expect((await h.engine.get("web"))?.count).toBe(0);
+	});
+
 	it("reportScores is authorized, stamped and digested; expired or over-long snapshots are refused", async () => {
 		const h = await harness();
 		const valid = create(ScoreSnapshotRecordSchema, {

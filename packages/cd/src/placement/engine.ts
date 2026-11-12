@@ -125,7 +125,7 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 		stream: string,
 		type: string,
 		data: ReturnType<typeof body>,
-		key: string,
+		key: string | undefined,
 		ctx: CdContext,
 	): Promise<void> {
 		for (let attempt = 0; ; attempt += 1) {
@@ -134,7 +134,13 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 			try {
 				await d.store.append(
 					stream,
-					[{ type, data, meta: { idempotencyKey: key } }],
+					[
+						{
+							type,
+							data,
+							...(key === undefined ? {} : { meta: { idempotencyKey: key } }),
+						},
+					],
 					{ expectedSeq: seq, actor: ctx.principal, tenant: d.tenant },
 				);
 				return;
@@ -169,7 +175,8 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 				CD_STREAMS.placement(record.name),
 				CD_EVENTS.PlacementDefined,
 				body(PlacementRecordSchema, record),
-				`define:${content(record)}`,
+				// No key: redefining back to an earlier content must append again.
+				undefined,
 				ctx,
 			);
 			emit(d.telemetry, [
