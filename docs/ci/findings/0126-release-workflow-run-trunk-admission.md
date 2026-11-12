@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 121: release workflow_run trunk admission"
+title: "Finding 126: release workflow_run trunk admission"
 description: "Main-train release jobs on workflow_run were admitted at PR rank and skipped fleet defer while OCI matrix cells waited under CPU contention."
 tags: [hobo, ci, performance, release, workflow_run, admission, fleet-defer]
 ---
 
-# Finding 121: release workflow_run trunk admission
+# Finding 126: release workflow_run trunk admission
 
 ## Symptom
 

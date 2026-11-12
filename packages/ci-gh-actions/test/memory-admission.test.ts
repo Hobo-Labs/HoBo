@@ -21,8 +21,9 @@ function lease(
 	memoryMb: number,
 	memoryClass: "light" | "standard" | "heavy" = "heavy",
 	state = "running",
+	sandboxStage?: string,
 ): MemoryLease {
-	return { id, memoryMb, memoryClass, state };
+	return { id, memoryMb, memoryClass, state, sandboxStage };
 }
 
 describe("worker memory admission", () => {
@@ -561,8 +562,8 @@ describe("worker memory admission", () => {
 			availableMemoryMb: () => 8_000,
 		});
 		const active = [
-			lease("gate", 4_096, "standard"),
-			lease("shard0", 4_096, "standard"),
+			lease("gate", 4_096, "standard", "running", "running"),
+			lease("shard0", 4_096, "standard", "running", "running"),
 		];
 		expect(
 			admission.admit({
@@ -580,6 +581,128 @@ describe("worker memory admission", () => {
 				reason: "cpu-contention",
 				cpuCores: 4,
 				cpuRequest: 4,
+				cpuReserved: 0,
+				cpuRunningTrunkJobs: 2,
+			}),
+		);
+	});
+
+	it("admits main trunk shard on eight cores with load 1.6 and two or three running standards", () => {
+		const admission = createWorkerMemoryAdmission(config(24_576, 4), {
+			hostCores: () => 8,
+			hostPressure: () => ({
+				atMs: 0,
+				loadPerCpu: 1.6 / 8,
+			}),
+			availableMemoryMb: () => 16_000,
+		});
+		const running = (id: string) =>
+			lease(id, 4_096, "standard", "running", "running");
+		for (const count of [2, 3] as const) {
+			const active = Array.from({ length: count }, (_, index) =>
+				running(`shard${index}`),
+			);
+			const generalLeaseIds = new Set(active.map((entry) => entry.id));
+			expect(
+				admission.admit({
+					jobId: 90 + count,
+					memoryClass: "standard",
+					memoryMb: 4_096,
+					rank: 0,
+					activeLeases: active,
+					generalLeaseIds,
+				}),
+			).toMatchObject({ admitted: true });
+		}
+	});
+
+	it("does not reserve CPUs for memory-only holds with empty sandboxStage proto default", () => {
+		const admission = createWorkerMemoryAdmission(config(24_576, 4), {
+			hostCores: () => 8,
+			hostPressure: () => ({
+				atMs: 0,
+				loadPerCpu: 1.9 / 8,
+			}),
+			availableMemoryMb: () => 20_000,
+		});
+		const active = [
+			lease("shard0", 4_096, "standard", "running", "running"),
+			lease("held1", 4_096, "standard", "reserved", ""),
+		];
+		const generalLeaseIds = new Set(active.map((entry) => entry.id));
+		expect(
+			admission.admit({
+				jobId: 42,
+				memoryClass: "standard",
+				memoryMb: 4_096,
+				rank: 0,
+				activeLeases: active,
+				generalLeaseIds,
+			}),
+		).toMatchObject({ admitted: true });
+	});
+
+	it("does not reserve CPUs for memory-only holds blocked on admission (run 43152192203)", () => {
+		const admission = createWorkerMemoryAdmission(config(24_576, 4), {
+			hostCores: () => 8,
+			hostPressure: () => ({
+				atMs: 0,
+				loadPerCpu: 1.9 / 8,
+			}),
+			availableMemoryMb: () => 20_000,
+		});
+		const active = [
+			lease("shard0", 4_096, "standard", "running", "running"),
+			lease("held1", 4_096, "standard", "reserved"),
+			lease("held2", 4_096, "standard", "reserved"),
+			lease("held3", 4_096, "standard", "reserved"),
+		];
+		const generalLeaseIds = new Set(active.map((entry) => entry.id));
+		expect(
+			admission.admit({
+				jobId: 41,
+				memoryClass: "standard",
+				memoryMb: 4_096,
+				rank: 0,
+				activeLeases: active,
+				generalLeaseIds,
+			}),
+		).toMatchObject({ admitted: true });
+	});
+
+	it("reserves CPUs for a standard job launching but not yet running", () => {
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(24_576, 4), {
+			log,
+			hostCores: () => 8,
+			hostPressure: () => ({
+				atMs: 0,
+				loadPerCpu: 1.9 / 8,
+			}),
+			availableMemoryMb: () => 16_000,
+		});
+		const active = [
+			lease("shard0", 4_096, "standard", "running", "running"),
+			lease("launching", 4_096, "standard", "running", "creating"),
+		];
+		const generalLeaseIds = new Set(active.map((entry) => entry.id));
+		expect(
+			admission.admit({
+				jobId: 40,
+				memoryClass: "standard",
+				memoryMb: 4_096,
+				rank: 0,
+				activeLeases: active,
+				generalLeaseIds,
+			}),
+		).toMatchObject({ admitted: false, reason: "cpu-contention" });
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				cpuReserved: 4,
+				cpuRunningTrunkJobs: 1,
+				cpuLoad1: 1.9,
+				cpuHeadroom: 1.1,
 			}),
 		);
 	});
@@ -606,12 +729,13 @@ describe("worker memory admission", () => {
 		).toMatchObject({ admitted: false, reason: "host-pressure" });
 	});
 
-	it("blocks admission below the live host reserve and logs host-available", () => {
+	it("blocks admission below the live host reserve and logs memory-headroom", () => {
 		const log = vi.fn();
 		const availableMemoryMb = vi.fn(() => 2_500);
 		const admission = createWorkerMemoryAdmission(config(8_000), {
 			log,
 			availableMemoryMb,
+			volatilityMb: 1_024,
 		});
 		const request = {
 			jobId: 1,
@@ -627,8 +751,38 @@ describe("worker memory admission", () => {
 		expect(log).toHaveBeenCalledWith(
 			"hobo_ci_memory_admission_wait",
 			expect.objectContaining({
-				reason: "host-available",
+				reason: "memory-headroom",
 				availableMb: 2_500,
+				requiredMb: 1_024 + 2_048 + 1_024,
+			}),
+		);
+	});
+
+	it("logs memory-headroom for a standard job below MemAvailable + reserve + volatility", () => {
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(16_384), {
+			log,
+			availableMemoryMb: () => 5_100,
+			volatilityMb: 1_024,
+		});
+		const decision = admission.admit({
+			jobId: 42,
+			memoryClass: "standard",
+			memoryMb: 4_096,
+			rank: 0,
+			activeLeases: [],
+			generalLeaseIds: new Set<string>(),
+		});
+		expect(decision).toMatchObject({
+			admitted: false,
+			reason: "memory-headroom",
+		});
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				reason: "memory-headroom",
+				availableMb: 5_100,
+				requiredMb: 7_168,
 			}),
 		);
 	});

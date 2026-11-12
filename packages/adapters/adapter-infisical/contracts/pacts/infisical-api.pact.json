@@ -85,6 +85,29 @@
 			}
 		},
 		{
+			"description": "revoke ends an access token the adapter obtained by logging in",
+			"providerState": "the access token fixture-owner-token is live",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/auth/token/revoke",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"accessToken": "fixture-owner-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"message": "Successfully revoked access token"
+				}
+			}
+		},
+		{
 			"description": "list secrets returns every literal value in the bound folder in one request",
 			"providerState": "folder /hobo-ci-relay of proj-1/prod holds HOBO_CI_PUBLIC_URL",
 			"request": {

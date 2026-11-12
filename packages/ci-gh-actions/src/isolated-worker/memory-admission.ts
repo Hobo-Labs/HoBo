@@ -9,7 +9,11 @@ import {
 	type HostResourcePressureSample,
 	hostCpuAdmitFits,
 	hostMemoryAdmitFits,
+	hostMemoryAdmitRequiredMb,
 	hostPressureBlocksAdmission,
+	leaseCpuLoadAccountedInLoad1,
+	pendingTrunkCpuReservationCpus,
+	trunkCpuLeaseSignal,
 	trunkWorkerCpuHeadroomFields,
 } from "./host-resource-pressure.js";
 import type {
@@ -46,15 +50,18 @@ type MemoryAdmissionWaitFields = {
 	reason:
 		| "trunk-pr-cap"
 		| "memory-budget"
+		| "memory-headroom"
 		| "host-available"
 		| "host-pressure"
 		| "cpu-contention";
+	requiredMb?: number;
 	activeGeneral: number;
 	prCapWithTrunk: number;
 };
 export type MemoryAdmissionRejectReason =
 	| "trunk-pr-cap"
 	| "memory-budget"
+	| "memory-headroom"
 	| "host-available"
 	| "host-pressure"
 	| "cpu-contention";
@@ -232,8 +239,18 @@ export function createWorkerMemoryAdmission(
 		const pressure = options.hostPressure?.();
 		const pressureBlocked =
 			pressure !== undefined && hostPressureBlocksAdmission(pressure);
-		const heavyLeases = admittedLeases.filter(
-			(lease) => leaseMemoryMb(lease) >= config.classes.standard,
+		const trunkCpuSignals = admittedLeases.map((lease) =>
+			trunkCpuLeaseSignal(
+				leaseMemoryMb(lease),
+				lease.state,
+				lease.sandboxStage,
+			),
+		);
+		const standardTrunkLeases = trunkCpuSignals.filter(
+			(lease) => lease.memoryMb >= config.classes.standard,
+		);
+		const runningTrunkJobs = standardTrunkLeases.filter((lease) =>
+			leaseCpuLoadAccountedInLoad1(lease),
 		).length;
 		const cores = hostCores();
 		const load1 =
@@ -243,9 +260,14 @@ export function createWorkerMemoryAdmission(
 		const cpuInput = {
 			cores,
 			load1,
-			reservedCpus: heavyLeases * trunkJobCpuRequest,
+			reservedCpus: pendingTrunkCpuReservationCpus(
+				trunkCpuSignals,
+				config.classes.standard,
+				trunkJobCpuRequest,
+			),
 			volatilityCpus: cpuVolatilityCpus,
 			requestCpus: trunkJobCpuRequest,
+			runningTrunkJobs,
 		};
 		const trunkCpuBlocked =
 			cores >= trunkJobCpuRequest &&
@@ -310,10 +332,18 @@ export function createWorkerMemoryAdmission(
 					? "host-pressure"
 					: !budgetFits
 						? "memory-budget"
-						: "host-available";
+						: !hostFits
+							? "memory-headroom"
+							: "host-available";
+		const requiredMb = hostMemoryAdmitRequiredMb(
+			request.memoryMb,
+			config.reserveMb,
+			volatilityMb,
+		);
 		const availabilitySignature =
-			reason === "host-available" && availableMb !== undefined
-				? `:${Math.floor(availableMb / 512) * 512}`
+			(reason === "host-available" || reason === "memory-headroom") &&
+			availableMb !== undefined
+				? `:${Math.floor(availableMb / 512) * 512}:${requiredMb}`
 				: "";
 		const signature = `${reason}:${request.memoryClass}:${request.memoryMb}:${inUse}:${config.budgetMb}:${activeNonTrunk}:${blockRank}${availabilitySignature}`;
 		if (signature !== state.signature) {
@@ -332,6 +362,7 @@ export function createWorkerMemoryAdmission(
 				prCapWithTrunk,
 			};
 			if (availableMb !== undefined) fields.availableMb = availableMb;
+			if (reason === "memory-headroom") fields.requiredMb = requiredMb;
 			if (reason === "cpu-contention") {
 				Object.assign(fields, trunkWorkerCpuHeadroomFields(cpuInput));
 			}

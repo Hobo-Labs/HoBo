@@ -124,6 +124,18 @@ unindexed new finding files as notices.
 - [Finding 111: trunk headroom fleet defer](./findings/0111-trunk-headroom-fleet-defer.md)
 - [Finding 112: inbox drain stalls poll tick](./findings/0112-inbox-drain-stalls-poll-tick.md)
 - [Finding 113: main CI starved by cancel-in-progress](./findings/0113-main-ci-starved-by-cancel-in-progress.md)
+- [Finding 114: sigterm drain counted non-job work](./findings/0114-sigterm-drain-counted-non-job-work.md)
+- [Finding 115: held jobs survive cancelled runs](./findings/0115-held-jobs-survive-cancelled-runs.md)
+- [Finding 116: main shard timeout — CPU admission](./findings/0116-main-shard-timeout-cpu-admission.md)
+- [Finding 117: shard limit below the planned shard](./findings/0117-shard-limit-below-the-planned-shard.md)
+- [Finding 118: main shard checkout promisor flake](./findings/0118-main-shard-checkout-promisor-flake.md)
+- [Finding 119: main trunk fleet pickup and admission](./findings/0119-main-trunk-fleet-pickup-and-admission.md)
+- [Finding 120: isolated container workflow timeout floor](./findings/0120-isolated-container-workflow-timeout-floor.md)
+- [Finding 121: release publish stalled push hit job limit](./findings/0121-release-publish-stalled-push-hit-job-limit.md)
+- [Finding 122: CPU admission load double-count](./findings/0122-cpu-admission-load-double-count.md)
+- [Finding 124: admission telemetry memory headroom](./findings/0124-admission-telemetry-memory-headroom.md)
+- [Finding 125: release pages affected build without merge base](./findings/0125-release-pages-affected-build-without-merge-base.md)
+- [Finding 126: release workflow_run trunk admission](./findings/0126-release-workflow-run-trunk-admission.md)
 <!-- findings-index:end -->
 
 ## Data

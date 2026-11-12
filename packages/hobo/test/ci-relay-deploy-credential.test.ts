@@ -1,3 +1,4 @@
+import { readSecretStoreBinding } from "@hobo/secret-store-claim";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,7 +8,9 @@ import {
 } from "../src/ci-relay-deploy-credential.js";
 
 // The deploy workflow's credential step against fakes of GitHub's OIDC token
-// endpoint and of Infisical. No network: every URL is answered here.
+// endpoint and of Infisical. No network: every URL is answered here. Where to
+// sign in comes from the store's committed binding, never from a repository
+// variable.
 
 const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl";
 const DEPLOY_TOKEN = "synthetic-vercel-deploy-token-0123";
@@ -18,9 +21,23 @@ const env = {
 	ACTIONS_ID_TOKEN_REQUEST_URL:
 		"https://token.actions.example.test/token?api-version=2.0",
 	ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
-	HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID: IDENTITY,
-	HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID: PROJECT,
 };
+
+// What `hobo ci secret-store provision` commits: coordinates only.
+const binding = readSecretStoreBinding(
+	JSON.stringify({
+		kind: "infisical-cloud-attach",
+		endpoint: "https://app.infisical.com",
+		projectId: "relay-project",
+		deployProjectId: PROJECT,
+		environment: "prod",
+		secretPath: "/hobo-ci-relay",
+		relayIdentityId: "relay-identity",
+		deployIdentityId: IDENTITY,
+		claimBundleId: "secret-store.ci-vercel.attach-1",
+		claimState: "claimed",
+	}),
+);
 
 // The global `fetch`'s type; each test passes its own, nothing global is replaced.
 type Fetch = typeof fetch;
@@ -73,7 +90,7 @@ function fakes(secretValue = DEPLOY_TOKEN, loginStatus = 200) {
 describe("readRelayDeployToken", () => {
 	it("signs in with the job's OIDC token as the deploy identity and reads VERCEL_TOKEN from the deploy project", async () => {
 		const { fetch, seen } = fakes();
-		const token = await readRelayDeployToken({ env, fetch });
+		const token = await readRelayDeployToken({ binding, env, fetch });
 
 		expect(token).toBe(DEPLOY_TOKEN);
 		expect(
@@ -93,20 +110,17 @@ describe("readRelayDeployToken", () => {
 		expect(read.searchParams.get("secretPath")).toBe("/");
 	});
 
-	it("needs the deploy identity: without it nothing is asked of anyone", async () => {
+	it("needs the runner's OIDC request: without it nothing is asked of the store", async () => {
 		const { fetch, seen } = fakes();
 		await expect(
-			readRelayDeployToken({
-				env: { ...env, HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID: "" },
-				fetch,
-			}),
+			readRelayDeployToken({ binding, env: {}, fetch }),
 		).rejects.toBeInstanceOf(RelayDeployCredentialError);
 		expect(seen).toEqual([]);
 	});
 
 	it("says why a sign-in failed without saying any token", async () => {
 		const { fetch } = fakes(DEPLOY_TOKEN, 401);
-		const error = await readRelayDeployToken({ env, fetch }).catch(
+		const error = await readRelayDeployToken({ binding, env, fetch }).catch(
 			(caught: Error) => caught,
 		);
 		expect(error).toBeInstanceOf(RelayDeployCredentialError);
@@ -117,7 +131,7 @@ describe("readRelayDeployToken", () => {
 
 	it("refuses a stored value that is not a single-line token, and does not say it", async () => {
 		const { fetch } = fakes("two\nlines-of-synthetic-value");
-		const error = await readRelayDeployToken({ env, fetch }).catch(
+		const error = await readRelayDeployToken({ binding, env, fetch }).catch(
 			(caught: Error) => caught,
 		);
 		expect(error).toBeInstanceOf(RelayDeployCredentialError);

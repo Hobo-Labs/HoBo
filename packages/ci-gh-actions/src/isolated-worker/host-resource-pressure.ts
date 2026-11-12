@@ -47,14 +47,72 @@ export const DEFAULT_TRUNK_JOB_CPU_REQUEST = 4;
 /** Headroom kept under load when admitting another trunk job. */
 export const DEFAULT_CPU_ADMISSION_VOLATILITY_CPUS = 1;
 
+export type TrunkCpuLeaseSignal = Readonly<{
+	memoryMb: number;
+	state: string;
+	sandboxStage?: string;
+}>;
+
+/** Running trunk work is already in the 1m load average — do not reserve again. */
+export function trunkCpuLeaseSignal(
+	memoryMb: number,
+	state: string,
+	sandboxStage?: string,
+): TrunkCpuLeaseSignal {
+	if (sandboxStage === undefined) return { memoryMb, state };
+	return { memoryMb, state, sandboxStage };
+}
+
+export function leaseCpuLoadAccountedInLoad1(
+	lease: TrunkCpuLeaseSignal,
+): boolean {
+	if (lease.sandboxStage === "running") return true;
+	return lease.state === "running" && lease.sandboxStage === undefined;
+}
+
+/**
+ * CPU reserve for standard+ work launching on the host (container coming up).
+ * Memory-only `reserved` holds (no sandbox yet) are not started work — they
+ * must not each claim four CPUs while blocked on this same admission gate.
+ */
+function trunkSandboxNotStarted(stage: string | undefined): boolean {
+	return stage === undefined || stage === "";
+}
+
+export function leasePendingTrunkCpuReservation(
+	lease: TrunkCpuLeaseSignal,
+	standardClassMb: number,
+): boolean {
+	if (lease.memoryMb < standardClassMb) return false;
+	if (leaseCpuLoadAccountedInLoad1(lease)) return false;
+	if (lease.state === "reserved" && trunkSandboxNotStarted(lease.sandboxStage))
+		return false;
+	return true;
+}
+
+export function pendingTrunkCpuReservationCpus(
+	admittedLeases: readonly TrunkCpuLeaseSignal[],
+	standardClassMb: number,
+	cpusPerJob: number,
+): number {
+	let pending = 0;
+	for (const lease of admittedLeases) {
+		if (!leasePendingTrunkCpuReservation(lease, standardClassMb)) continue;
+		pending += cpusPerJob;
+	}
+	return pending;
+}
+
 export type HostCpuAdmissionInput = Readonly<{
 	cores: number;
-	/** 1-minute load average. */
+	/** 1-minute load average (includes CPUs used by running containers). */
 	load1: number;
-	/** Worker containers already running or launching on this host. */
+	/** CPUs reserved for admitted work not yet visible in load1. */
 	reservedCpus: number;
 	volatilityCpus: number;
 	requestCpus: number;
+	/** Standard+ jobs already running (logged; load already in load1). */
+	runningTrunkJobs?: number;
 }>;
 
 export function hostCpuHeadroomCpus(input: HostCpuAdmissionInput): number {
@@ -182,6 +240,14 @@ export function hostPressureBlocksAdmission(
 	return false;
 }
 
+export function hostMemoryAdmitRequiredMb(
+	requestMb: number,
+	reserveMb: number,
+	volatilityMb: number,
+): number {
+	return requestMb + reserveMb + volatilityMb;
+}
+
 export function hostMemoryAdmitFits(
 	availableMb: number | undefined,
 	requestMb: number,
@@ -212,14 +278,17 @@ function round3(value: number): number {
 }
 
 export function trunkWorkerCpuHeadroomFields(input: HostCpuAdmissionInput) {
-	return {
+	const fields = {
 		cpuCores: input.cores,
 		cpuLoad1: round3(input.load1),
 		cpuReserved: input.reservedCpus,
 		cpuVolatility: input.volatilityCpus,
 		cpuRequest: input.requestCpus,
 		cpuHeadroom: round3(hostCpuHeadroomCpus(input)),
-	} as const satisfies Readonly<Record<string, number>>;
+	} satisfies Readonly<Record<string, number>>;
+	if (input.runningTrunkJobs !== undefined)
+		Object.assign(fields, { cpuRunningTrunkJobs: input.runningTrunkJobs });
+	return fields;
 }
 
 export function hostResourcePressureLogFields(

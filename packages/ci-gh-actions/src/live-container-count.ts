@@ -17,3 +17,11 @@ export function countLiveBoxContainers(leases: readonly Lease[]): number {
 			LIVE_BOX_CONTAINER_STATES.has(lease.state),
 	).length;
 }
+
+/** Worker launch slots not consumed by a live box container. */
+export function localWorkerFreeSlots(
+	launchSlots: number,
+	leases: readonly Lease[],
+): number {
+	return Math.max(0, launchSlots - countLiveBoxContainers(leases));
+}

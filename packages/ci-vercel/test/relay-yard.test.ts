@@ -1,5 +1,4 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { INFISICAL_CLOUD_SITE_URL } from "@hobo/adapter-infisical";
 import { capability } from "@hobo/core";
 import { parseYardBindings } from "@hobo/yards";
 import { describe, expect, it } from "vitest";
@@ -92,7 +91,7 @@ describe("the relay's Yard", () => {
 		}
 	});
 
-	it("binds the config service in production only, with its coordinates as configuration", () => {
+	it("binds the config service in production only; the store is chosen at deploy, its coordinates are inputs", () => {
 		const production = campOf("production");
 		const preview = campOf("preview");
 		const profile = capability.secretRef.runtimeProjection;
@@ -103,11 +102,16 @@ describe("the relay's Yard", () => {
 				productId: "infisical.secrets/v1",
 				connectivityId: "infisical.oidc-auth/v1",
 				properties: {
-					inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+					capability: "secrets.config-service/v1",
+					bindingFile: "deploy/secret-store.binding.json",
+					inputs: [
+						"INFISICAL_IDENTITY_ID",
+						"INFISICAL_PROJECT_ID",
+						"INFISICAL_SITE_URL",
+					],
 					settings: {
 						HOBO_CI_CONFIG_SERVICE: "infisical",
 						INFISICAL_SECRET_PATH: "/hobo-ci-relay",
-						INFISICAL_SITE_URL: INFISICAL_CLOUD_SITE_URL,
 					},
 				},
 			}),

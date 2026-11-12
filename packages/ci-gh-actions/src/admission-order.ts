@@ -92,7 +92,10 @@ export function mainTrainReleasePhase(
 	if (jobName === "Route runners" || jobName === MAIN_TRAIN_RELEASE_GATE)
 		return 0;
 	if (jobName === RELEASE_CONTRACT_JOB) return 1;
-	if (jobName === RELEASE_OCI_GATE_JOB || BUILD_VERIFY_RELEASE_IMAGE.test(jobName))
+	if (
+		jobName === RELEASE_OCI_GATE_JOB ||
+		BUILD_VERIFY_RELEASE_IMAGE.test(jobName)
+	)
 		return 2;
 	if (
 		jobName === RELEASE_GHCR_PUBLISH_JOB ||
