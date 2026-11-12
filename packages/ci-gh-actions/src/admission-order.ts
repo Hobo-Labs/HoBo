@@ -1,4 +1,5 @@
 import { type GithubTransport, getRun } from "./github.js";
+import { lookupByJobName } from "./isolated-worker/matrix-job-name.js";
 import type { JobDurations } from "./job-durations.js";
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
@@ -76,6 +77,16 @@ const RELEASE_PAGES_JOB = "Publish GitHub Pages (site/)";
 const RELEASE_NPM_JOB = "npm publish train (SDK allowlist)";
 const BUILD_VERIFY_RELEASE_IMAGE = /Build and verify release image/u;
 
+const MAIN_TRAIN_RELEASE_PHASES = new Map<string, number>([
+	["Route runners", 0],
+	[MAIN_TRAIN_RELEASE_GATE, 0],
+	[RELEASE_CONTRACT_JOB, 1],
+	[RELEASE_OCI_GATE_JOB, 2],
+	[RELEASE_GHCR_PUBLISH_JOB, 3],
+	[RELEASE_PAGES_JOB, 3],
+	[RELEASE_NPM_JOB, 3],
+]);
+
 function isMainTrainReleaseRun(event: string): boolean {
 	return (
 		event === "workflow_run" ||
@@ -89,20 +100,16 @@ export function mainTrainReleasePhase(
 	jobName: string | undefined,
 ): number | undefined {
 	if (!jobName) return undefined;
-	if (jobName === "Route runners" || jobName === MAIN_TRAIN_RELEASE_GATE)
-		return 0;
-	if (jobName === RELEASE_CONTRACT_JOB) return 1;
+	const byName = lookupByJobName(jobName, (name) =>
+		MAIN_TRAIN_RELEASE_PHASES.get(name),
+	);
+	if (byName !== undefined) return byName;
 	if (
-		jobName === RELEASE_OCI_GATE_JOB ||
-		BUILD_VERIFY_RELEASE_IMAGE.test(jobName)
+		lookupByJobName(jobName, (name) =>
+			BUILD_VERIFY_RELEASE_IMAGE.test(name) ? 2 : undefined,
+		) !== undefined
 	)
 		return 2;
-	if (
-		jobName === RELEASE_GHCR_PUBLISH_JOB ||
-		jobName === RELEASE_PAGES_JOB ||
-		jobName === RELEASE_NPM_JOB
-	)
-		return 3;
 	return undefined;
 }
 

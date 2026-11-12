@@ -112,7 +112,10 @@ owner handles no secret value on the default path:
   audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
   `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
   Actions (subject `repo:Hobo-Labs/HoBo:ref:refs/heads/main`, audience
-  `https://github.com/Hobo-Labs`), create/edit only. Then:
+  `https://github.com/Hobo-Labs`), create/edit only. (**Connected:** Tyler
+  approved using built-in project **Member** (formerly Developer) for
+  `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
+  Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). `hobo ci secret-store verify` still checks OIDC sign-in only, not Infisical role shape.) Then:
 
   ```sh
   hobo ci secret-store connect --cwd packages/ci-vercel \
@@ -127,8 +130,43 @@ owner handles no secret value on the default path:
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
 - **Verifying**, by identity name: `hobo-ci-writer` in the deploy workflow's
   *Verify the secret store connection* step (`hobo ci secret-store verify`:
-  sign in with GitHub OIDC, then revoke; the writer cannot read);
-  `hobo-ci-relay` by `/readyz` after Vercel deploys.
+  sign in with GitHub OIDC, then revoke; does **not** assert Infisical role
+  shape); `hobo-ci-relay` by `/readyz` after Vercel deploys.
+
+### Least privilege on Infisical Cloud Free (attach)
+
+Tyler's org is on the **Free** plan. Custom project roles and several access
+controls are paid features ([pricing](https://infisical.com/pricing) — “Custom
+roles, multi-role, temporary access” from **Advanced**; “Access controls
+(RBAC/ABAC)” from **Pro**; checked 2026-11-12). **Operator decision
+(2026-11-12): option (d)** — accept built-in **Member** for `hobo-ci-writer`
+with compensating controls, without upgrading Infisical.
+
+| Candidate | Free? | HoBo / relay fit |
+|---|---|---|
+| **(a) Additional privileges** scoped to `prod` + `/hobo-ci-relay` | **No** — privileges layer on project RBAC; Free has no RBAC/ABAC ([pricing](https://infisical.com/pricing); [additional privileges](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges); checked 2026-11-12) | N/A |
+| **(b) Separate writer project** (`deployProjectId` ≠ `projectId`) | Yes (second project on Free) | HoBo's **provisioned** layout splits relay vs deploy-credential projects ([`secret-store-claim`](../secret-store-claim/src/infisical.ts)). **Attach** is single-project today. Reconnecting with `--deploy-project-id` scopes only the deploy-credential viewer; `hobo ci app deposit` still writes `store.projectId`, so a second project does not isolate App-credential writes without a new connect/provision design. |
+| **(c) Drop writer / Viewer-only** | — | **No** — `app-credentials` and MCP capture write into `/hobo-ci-relay` ([`relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)); verify only proves OIDC sign-in |
+| **(d) Member + compensating controls** | **Yes** | **Chosen** for current attach binding |
+
+Compensating controls for **(d)** (no dashboard change required beyond
+existing OIDC):
+
+- **Trust:** GitHub OIDC subject `repo:Hobo-Labs/HoBo:ref:refs/heads/main`,
+  audience `https://github.com/Hobo-Labs`, writer token TTL **600s** (Tyler
+  configured).
+- **Separation:** `hobo-ci-relay` remains **Viewer**; only relay-deploy
+  workflow jobs use `hobo-ci-writer` OIDC.
+- **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer is for deploy
+  deposit paths, not the relay runtime token.
+- **Residual:** Member can read/write secrets in **all environments** in the
+  project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12) — accepted on Free until upgrade or a future **(b)** code path.
+
+**(b)** on Free does **not** tighten today's attach binding: `hobo ci app
+deposit` writes `store.projectId` and `store.secretPath`, so App credentials
+stay in the relay project. A second project (`deployProjectId`) scopes only
+the deploy-credential **viewer** layout from provisioned connect — not App
+deposit without a new binding/connect design.
 
 ### What provisioning creates
 

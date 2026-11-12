@@ -84,6 +84,9 @@ describe("push-release-ghcr-images wiring", () => {
 		);
 		expect(source).toMatch(/runDockerPushWithRetry/u);
 		expect(source).not.toMatch(/run\("docker", \["push"/u);
+		expect(source).toMatch(/resolveRegistryDigestForTagWithRetry/u);
+		expect(source).toMatch(/tryReusePublishedTag/u);
+		expect(source).toMatch(/normalizeRepoDigestLine/u);
 	});
 });
 
@@ -277,6 +280,7 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(attest).toContain(
 			"name: hobo-release-digest-${{ matrix.image_id }}",
 		);
+		expect(attest).toContain("digest artifact empty");
 		expect(attest).toContain("if: steps.digest.outputs.present == 'true'");
 		expect(workflow).not.toContain("name: hobo-release-digests\n");
 	});
@@ -312,5 +316,73 @@ describe("release-images job", () => {
 		expect(listFor("sdk-v*")).toEqual([...releaseImageIdsForTrain("sdk")]);
 		expect(listFor("cli-v*")).toEqual([...releaseImageIdsForTrain("cli")]);
 		expect(listFor("*")).toEqual([...releaseImageIdsForTrain("full")]);
+	});
+});
+
+describe("pushedDigestRef (finding 141)", () => {
+	const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.159";
+	const digest =
+		"sha256:e9e01db3ed33237ceac6cf6b8ba6f5f3335287418739ff6992139f4599ab0a20";
+
+	it("takes the digest docker push printed, under the pushed repository", async () => {
+		const { pushedDigestRef } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		// Run 43176733275, ARC pod: RepoDigests[0] was the local name.
+		expect(
+			pushedDigestRef(
+				tag,
+				`abc: Layer already exists\nv0.0.0-alpha.159: digest: ${digest} size: 4307`,
+				`hobo-sdk@${digest}\n`,
+			),
+		).toBe(`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`);
+	});
+
+	it("falls back to the RepoDigests entry for the pushed repository, never the first", async () => {
+		const { pushedDigestRef } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		expect(
+			pushedDigestRef(
+				tag,
+				"",
+				`hobo-sdk@${digest}\nghcr.io/hobo-labs/hobo/hobo-sdk@${digest}\n`,
+			),
+		).toBe(`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`);
+	});
+
+	it("refuses rather than record a reference attest cannot find", async () => {
+		const { pushedDigestRef } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		expect(() => pushedDigestRef(tag, "", `hobo-sdk@${digest}\n`)).toThrow(
+			/no digest for .*hobo-sdk@sha256/u,
+		);
+		expect(() => pushedDigestRef(tag, "", "")).toThrow(
+			/RepoDigests has no ghcr.io\/hobo-labs\/hobo\/hobo-sdk@ entry \(none\)/u,
+		);
+	});
+
+	it("produces a line the attest step selects by image id", async () => {
+		const { pushedDigestRef } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		const line = pushedDigestRef(tag, `x: digest: ${digest} size: 1`, "");
+		// .github/actions/release-oci-attest: grep -F "/${IMAGE_ID}@"
+		expect(line.includes("/hobo-sdk@")).toBe(true);
+	});
+
+	it("returns the push output so the digest can be read from it", () => {
+		expect(
+			runDockerPushWithRetry({
+				tag,
+				log: () => {},
+				push: () => ({
+					exitCode: 0,
+					stdout: `v: digest: ${digest} size: 1`,
+					stderr: "",
+				}),
+			}),
+		).toContain(digest);
 	});
 });
