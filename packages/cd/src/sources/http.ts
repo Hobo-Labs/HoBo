@@ -153,6 +153,7 @@ export function bodyBytes(
 }
 
 /** Scope string a source passes to CredentialResolver.resolve. */
+// public-contract: credential scope sources request from CredentialResolver; operators grant it by name.
 export const SOURCE_CREDENTIAL_SCOPE = "cd:source:read";
 
 /**
