@@ -762,7 +762,8 @@ jobs:
     needs: [route, ci-runner-image]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 20
+    # Build (6) and lane (15) step limits plus checkout and install.
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
