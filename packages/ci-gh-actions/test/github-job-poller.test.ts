@@ -372,6 +372,10 @@ describe("GitHub job poller", () => {
 					},
 				],
 			},
+			fleetJobs: {
+				completedAt: new Date(NOW).toISOString(),
+				inProgress: [{ label: "hobo", runnerName: "hobo-r2" }],
+			},
 			rateLimitRemaining: 4000,
 		});
 		const ids = Object.keys(bodies).sort();
@@ -595,6 +599,74 @@ describe("GitHub job poller", () => {
 		github.calls = [];
 		expect(await poller.poll()).toMatchObject({ runs: 0, settled: 1 });
 		expect(jobReads()).toEqual([]);
+	});
+
+	it("reports the jobs runners hold on fleet labels once a poll completes, and nothing from a cut-short one", async () => {
+		const github = new FakeGithub(
+			{ queued: [], in_progress: [903] },
+			{
+				903: [
+					{
+						id: 31,
+						status: "in_progress",
+						labels: ["hobo"],
+						runner_name: "hobo-runner-set-x7k2p-runner-9q4z",
+						started_at: "2026-11-02T11:58:00Z",
+					},
+					{
+						id: 32,
+						status: "in_progress",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-0b6f2a2e-7c1d-4b8e-9a51-2f6c1d9e8a10",
+						started_at: "2026-11-02T11:59:00Z",
+					},
+					// Not a fleet label, not yet assigned, finished: none counts.
+					{
+						id: 33,
+						status: "in_progress",
+						labels: ["ubuntu-24.04"],
+						runner_name: "GitHub Actions 7",
+						started_at: "2026-11-02T11:59:00Z",
+					},
+					{ id: 34, status: "queued", labels: ["hobo"], runner_name: null },
+					{
+						id: 35,
+						status: "completed",
+						labels: ["hobo"],
+						runner_name: "hobo-runner-set-x7k2p-runner-aaaa",
+						started_at: "2026-11-02T11:50:00Z",
+					},
+				],
+			},
+		);
+		let clock = NOW;
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async () => "duplicate",
+			now: () => clock,
+		});
+		const summary = await poller.poll();
+		expect(summary.fleetJobs).toEqual({
+			completedAt: new Date(NOW).toISOString(),
+			inProgress: [
+				{
+					label: "hobo",
+					runnerName: "hobo-runner-set-x7k2p-runner-9q4z",
+					startedAt: "2026-11-02T11:58:00Z",
+				},
+				{
+					label: "hobo-trunk",
+					runnerName: "hobo-0b6f2a2e-7c1d-4b8e-9a51-2f6c1d9e8a10",
+					startedAt: "2026-11-02T11:59:00Z",
+				},
+			],
+		});
+		github.limited = true;
+		clock += 10_000;
+		const paused = await poller.poll();
+		expect(paused.pausedUntil).toBeDefined();
+		expect(paused.fleetJobs).toBeUndefined();
 	});
 
 	it("pauses until the rate-limit reset instead of hammering GitHub", async () => {
