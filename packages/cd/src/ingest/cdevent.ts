@@ -36,6 +36,12 @@ export type ArtifactCdEvent = Readonly<{
 	purl: Purl;
 	subjectId: string;
 	attestation: CarriedAttestation | undefined;
+	/**
+	 * Why a carried attestation could not be read (bad base64). The nudge is
+	 * still valid: the ingest schedules polls first, then refuses the
+	 * attestation as an unverified trigger.
+	 */
+	attestationError: string | undefined;
 }>;
 
 function invalid(message: string): Outcome<never> {
@@ -109,26 +115,28 @@ export function parseArtifactCdEvent(
 		objectAt(event, "customData"),
 		CDEVENT_ATTESTATION_KEY,
 	);
-	if (!carried)
-		return {
-			ok: true,
-			value: { id, type, purl, subjectId, attestation: undefined },
-		};
+	const nudge = (
+		attestation: CarriedAttestation | undefined,
+		attestationError: string | undefined,
+	): Outcome<ArtifactCdEvent> => ({
+		ok: true,
+		value: { id, type, purl, subjectId, attestation, attestationError },
+	});
+	if (!carried) return nudge(undefined, undefined);
 	const statement = base64(stringAt(carried, "statement"));
 	if (!statement)
-		return invalid(
+		return nudge(
+			undefined,
 			`customData["${CDEVENT_ATTESTATION_KEY}"].statement must be base64`,
 		);
-	const bundleText = stringAt(carried, "bundle");
-	const bundle = base64(bundleText);
+	const bundle = base64(stringAt(carried, "bundle"));
 	if (carried.bundle !== undefined && !bundle)
-		return invalid(
+		return nudge(
+			undefined,
 			`customData["${CDEVENT_ATTESTATION_KEY}"].bundle must be base64`,
 		);
-	const attestation: CarriedAttestation = {
-		bindle: stringAt(carried, "bindle") ?? "",
-		statement,
-		bundle,
-	};
-	return { ok: true, value: { id, type, purl, subjectId, attestation } };
+	return nudge(
+		{ bindle: stringAt(carried, "bindle") ?? "", statement, bundle },
+		undefined,
+	);
 }

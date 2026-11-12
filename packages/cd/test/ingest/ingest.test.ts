@@ -416,6 +416,23 @@ describe("FreightIngest.cdevent (webhooks only nudge, I15)", () => {
 		expect(await h.ledger.list()).toEqual([]);
 	});
 
+	it("a malformed carried attestation still nudges, then refuses as an unverified trigger", async () => {
+		const h = await ingestHarness();
+		const outcome = await h.ingest.cdevent(
+			{
+				body: cdevent("dev.cdevents.artifact.published.0.2.0", API_PURL, {
+					"hobo.cd/attestation": { bindle: "shop", statement: "not base64!" },
+				}),
+			},
+			h.ctx,
+		);
+		expect(!outcome.ok && outcome.reasons.map((reason) => reason.code)).toEqual(
+			[UNVERIFIED_TRIGGER, INGEST_REASON.attestationInvalid],
+		);
+		expect(h.sources.scheduled).toEqual([["shop-images"]]);
+		expect(await h.ledger.list()).toEqual([]);
+	});
+
 	it.each([
 		[
 			"not JSON",

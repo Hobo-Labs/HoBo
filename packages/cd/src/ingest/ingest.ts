@@ -45,7 +45,7 @@ import type {
 	TelemetrySink,
 	TrustedPublisherVerifier,
 } from "../ports.js";
-import { parseArtifactCdEvent } from "./cdevent.js";
+import { CDEVENT_ATTESTATION_KEY, parseArtifactCdEvent } from "./cdevent.js";
 import { readTrustedPublishers } from "./publishers.js";
 import { artifactFromSubject, sourcesForPurl } from "./purl.js";
 import { INGEST_METRIC, INGEST_REASON } from "./reasons.js";
@@ -373,7 +373,28 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 				);
 			}
 			const carried = event.value.attestation;
-			if (!carried) return { ok: true, value: { scheduledPolls } };
+			const attestationError = event.value.attestationError;
+			if (!carried && attestationError === undefined)
+				return { ok: true, value: { scheduledPolls } };
+			const trigger = reason(
+				INGEST_REASON.unverifiedTrigger,
+				`CDEvent ${event.value.id} carried an attestation that did not verify; polls scheduled: ${scheduledPolls.join(", ") || "none"}`,
+				"the scheduled polls read the source; fix the attestation to create Freight from the event",
+				event.value.subjectId,
+			);
+			if (!carried) {
+				const refusal = reason(
+					INGEST_REASON.attestationInvalid,
+					attestationError ?? "the carried attestation could not be read",
+					"base64-encode the statement and bundle in the carried attestation",
+					CDEVENT_ATTESTATION_KEY,
+				);
+				emit(INGEST_METRIC.refused, {
+					path: "cdevent",
+					code: refusal.code,
+				});
+				return { ok: false, reasons: [trigger, refusal] };
+			}
 			const bindles = unique(
 				sources
 					.filter((source) => scheduledPolls.includes(source.name))
@@ -385,12 +406,6 @@ export function createFreightIngest(deps: FreightIngestDeps): FreightIngest {
 					: bindles.length === 1
 						? (bindles[0] ?? "")
 						: "";
-			const trigger = reason(
-				INGEST_REASON.unverifiedTrigger,
-				`CDEvent ${event.value.id} carried an attestation that did not verify; polls scheduled: ${scheduledPolls.join(", ") || "none"}`,
-				"the scheduled polls read the source; fix the attestation to create Freight from the event",
-				event.value.subjectId,
-			);
 			if (bindle === "")
 				return {
 					ok: false,
