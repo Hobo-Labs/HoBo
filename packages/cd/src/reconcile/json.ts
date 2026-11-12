@@ -18,14 +18,14 @@ export function isJsonObject(
 }
 
 /** Deterministic JSON: object keys sorted at every depth. */
-export function stableJson(value: JsonValue | undefined): string {
+export function stableJson(value: unknown): string {
 	if (value === undefined) return "null";
-	if (isJsonArray(value)) return `[${value.map(stableJson).join(",")}]`;
-	if (isJsonObject(value)) {
-		const keys = Object.keys(value).sort();
-		return `{${keys
-			.map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
-			.join(",")}}`;
+	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+	if (value !== null && typeof value === "object") {
+		const entries = Object.entries(value).sort(([a], [b]) =>
+			a < b ? -1 : a > b ? 1 : 0,
+		);
+		return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
 	}
 	return JSON.stringify(value);
 }
