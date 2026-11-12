@@ -76,6 +76,21 @@ export {
 	standingFleetVerdict,
 } from "./fleet-verdict.js";
 export {
+	FLEET_REPORTER_ID,
+	FLEET_REPORTER_PUBLIC_KEY,
+	FLEET_VERDICT_HEADERS,
+	FLEET_VERDICT_SIGNING_CONTEXT,
+	type FleetVerdictSigner,
+	type FleetVerdictSigningFields,
+	fleetVerdictSigningInput,
+	isFleetVerdictIssuedAt,
+	isFleetVerdictSequence,
+	type SignedFleetVerdictRequest,
+	signedFleetVerdictRequest,
+	signFleetVerdictReport,
+	verifyFleetVerdictReport,
+} from "./fleet-verdict-auth.js";
+export {
 	createGithubAppTransport,
 	type GithubAppTransport,
 	type GithubTransport,
