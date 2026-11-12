@@ -71,7 +71,6 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
-            packages/ci/src/fleet/capacity.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
@@ -156,7 +155,8 @@ jobs:
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - name: Install root deps for shell lint
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
-        run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
+        # Bounded like every other install: a cold store once stalled this one until the job limit.
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
         id: ci_runner_image_build
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
