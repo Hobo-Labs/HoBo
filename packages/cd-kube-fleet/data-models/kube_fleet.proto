@@ -1,0 +1,109 @@
+syntax = "proto3";
+package hobo.cd.kubefleet.v1;
+
+// Wire contracts for @hobo/cd-kube-fleet (plan 0024, WP25, D26). Kubernetes
+// fleet managers (Open Cluster Management, Karmada) and SIG-Multicluster
+// ClusterProfile inventories are transports and inventory for HoBo Camps,
+// never schedulers. Constraints live in kube_fleet.cue. Records hold
+// credential *references* only, never secret values.
+
+enum HubKind {
+  HUB_KIND_UNSPECIFIED = 0;
+  // An Open Cluster Management hub (ManifestWork API).
+  HUB_KIND_OCM = 1;
+  // A Karmada control plane (resource templates + PropagationPolicy).
+  HUB_KIND_KARMADA = 2;
+  // Any API server serving multicluster.x-k8s.io ClusterProfiles.
+  HUB_KIND_CLUSTER_INVENTORY = 3;
+}
+
+enum KubeAuth {
+  KUBE_AUTH_UNSPECIFIED = 0;
+  // `{ token }` from the CredentialResolver, sent as a bearer token.
+  KUBE_AUTH_BEARER = 1;
+  // The host runs the client-go exec plugin and returns its ExecCredential
+  // status (`{ token, expirationTimestamp? }`). Resolved host-side per call.
+  KUBE_AUTH_EXEC = 2;
+}
+
+// hobo.cd-kube-fleet.hub/v1: one Kubernetes API endpoint.
+message KubeHubRecord {
+  string schema_version = 1;
+  string name = 2;
+  HubKind kind = 3;
+  // https://host[:port], no path, no userinfo.
+  string api_base_url = 4;
+  // Credential locator resolved per call; never a token.
+  string credential_ref = 5;
+  KubeAuth auth = 6;
+  // Per-call timeout; 0 means the package default (15 s).
+  uint32 timeout_ms = 7;
+}
+
+// Which managed cluster (OCM ManagedCluster / Karmada member) a Camp is.
+message CampClusterRecord {
+  string camp_id = 1;
+  string cluster = 2;
+}
+
+// hobo.cd-kube-fleet.ocm/v1: the OCM realizer.
+message OcmRealizerRecord {
+  string schema_version = 1;
+  KubeHubRecord hub = 2;
+  repeated CampClusterRecord clusters = 3;
+  // DepartureAction enum name from hobo.cd.v1 (default ORPHAN_DATA).
+  string departure_action = 4;
+}
+
+// hobo.cd-kube-fleet.karmada/v1: the Karmada realizer.
+message KarmadaRealizerRecord {
+  string schema_version = 1;
+  KubeHubRecord hub = 2;
+  repeated CampClusterRecord clusters = 3;
+  // DepartureAction enum name from hobo.cd.v1 (default ORPHAN_DATA).
+  string departure_action = 4;
+}
+
+// hobo.cd-kube-fleet.cluster-profiles/v1: one ClusterProfile import.
+message ClusterProfileImportRecord {
+  string schema_version = 1;
+  KubeHubRecord hub = 2;
+  // Namespace holding the ClusterProfiles; empty lists every namespace.
+  string namespace = 3;
+  // Declared topology every imported Camp gets. Regions are declared here,
+  // never taken from a profile (claims narrow, never grant: I19).
+  string yard_id = 4;
+  string station_id = 5;
+  string provider = 6;
+  string env_type = 7;
+  repeated string regions = 8;
+  // Camp ids are `<camp_id_prefix><namespace>-<name>` slugs.
+  string camp_id_prefix = 9;
+  // Kubernetes label selector over ClusterProfiles (equality only).
+  map<string, string> label_selector = 10;
+  // Bounded watch request length; 0 means the package default (50 s).
+  uint32 watch_timeout_seconds = 11;
+}
+
+// One Kubernetes object identity.
+message KubeObjectRefRecord {
+  string group = 1;
+  string version = 2;
+  string kind = 3;
+  // Lower-case plural REST resource, e.g. deployments.
+  string resource = 4;
+  string namespace = 5;
+  string name = 6;
+}
+
+// What one ClusterProfile import yields for a Camp. Secret-free: access
+// providers are named, their endpoints and credentials never recorded.
+message ImportedClusterRecord {
+  string camp_id = 1;
+  string profile_namespace = 2;
+  string profile_name = 3;
+  string cluster_manager = 4;
+  string kubernetes_version = 5;
+  repeated string access_providers = 6;
+  string resource_version = 7;
+}
