@@ -138,16 +138,45 @@ export function parseOpenSshEd25519PrivateKey(pem: string): Ed25519Key {
 	return { publicKey, seed: Buffer.from(secretKey.subarray(0, 32)) };
 }
 
-/** Reads `ssh-ed25519 AAAA… [comment]` (optionally `key::`-prefixed) into the raw key. */
-export function parseEd25519PublicLine(line: string): Buffer {
-	const fields = line
-		.trim()
-		.replace(/^key::/u, "")
-		.split(/\s+/u);
-	if (fields[0] !== KEY_TYPE || !fields[1]) {
-		throw new Error(`ssh public key: expected "${KEY_TYPE} <base64>"`);
+/**
+ * What a value that is not an ssh-ed25519 public key looks like, without
+ * repeating it: secrets are masked in logs, but a wrong value can still be
+ * half a key.
+ */
+function unreadableSigningKeyHint(value: string): string {
+	if (value.startsWith("-----BEGIN ")) {
+		return "it is a private key; use the public line `ssh-keygen -y -f <key>` prints";
 	}
-	const reader = new Reader(Buffer.from(fields[1], "base64"), "ssh public key");
+	if (value.startsWith("SHA256:")) {
+		return "it is a key fingerprint; use the public key line itself";
+	}
+	if (/^(ssh-rsa|ecdsa-|sk-|ssh-dss)/u.test(value)) {
+		return `it is a ${value.split(/\s+/u)[0]} key; release tags sign with ed25519`;
+	}
+	const fields = value.split(/\s+/u).length;
+	return `it has ${fields} field(s) and none is ${KEY_TYPE}`;
+}
+
+/**
+ * Reads the raw key from `ssh-ed25519 AAAA… [comment]`, optionally
+ * `key::`-prefixed (git's user.signingkey form) or quoted, or from a git
+ * allowed_signers line (`principal [options] ssh-ed25519 AAAA… [comment]`).
+ */
+export function parseEd25519PublicLine(line: string): Buffer {
+	const value = line
+		.trim()
+		.replace(/^(["'])(.*)\1$/su, "$2")
+		.trim()
+		.replace(/^key::/u, "");
+	const fields = value.split(/\s+/u);
+	const at = fields.indexOf(KEY_TYPE);
+	const blob = at === -1 ? undefined : fields[at + 1];
+	if (!blob) {
+		throw new Error(
+			`ssh public key: expected "${KEY_TYPE} <base64>"; ${unreadableSigningKeyHint(value)}`,
+		);
+	}
+	const reader = new Reader(Buffer.from(blob, "base64"), "ssh public key");
 	if (reader.text() !== KEY_TYPE) {
 		throw new Error("ssh public key: blob is not ed25519");
 	}
