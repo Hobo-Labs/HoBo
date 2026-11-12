@@ -173,6 +173,24 @@ describe("hobo ci secret-store verify", () => {
 		expect(JSON.stringify(result)).not.toContain(ACCESS);
 	});
 
+	it("reuses the same OIDC workload JWT for sign-in and claim hints", async () => {
+		await runCiSecretStore(input("connect", IDS));
+		let jwtFetches = 0;
+		const fake = infisical(401, []);
+		const fetch: Fetch = (request, init) => {
+			const url = String(request);
+			if (url.startsWith("https://token.actions.example.test/")) {
+				jwtFetches += 1;
+				return Promise.resolve(
+					new Response(JSON.stringify({ value: JWT }), { status: 200 }),
+				);
+			}
+			return fake.fetch(request, init);
+		};
+		await runCiSecretStore(input("verify", {}, actions, fetch));
+		expect(jwtFetches).toBe(1);
+	});
+
 	it("fails by name when the OIDC trust does not match", async () => {
 		await runCiSecretStore(input("connect", IDS));
 		const denied = await runCiSecretStore(
@@ -182,6 +200,7 @@ describe("hobo ci secret-store verify", () => {
 		expect(denied.message).toMatch(
 			/hobo-ci-writer \(GitHub Actions OIDC\): fail — infisical login-denied/u,
 		);
+		expect(denied.message).toMatch(/oidc_sub=repo/u);
 	});
 
 	it("checks hobo-ci-relay where Vercel's OIDC token is present", async () => {
