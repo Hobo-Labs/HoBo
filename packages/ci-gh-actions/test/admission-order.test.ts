@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import {
 	admissionRank,
 	createAdmissionOrder,
+	isMainTrunkFleetDeferJob,
+	mainTrainReleasePhase,
 	TRUNK_RANK,
 } from "../src/admission-order.js";
 import type { GithubTransport } from "../src/github.js";
@@ -39,6 +41,7 @@ const ref = (runId: number, jobId = runId) => ({
 it("ranks merge-queue and trunk runs ahead of pull requests and sweeps", () => {
 	expect(admissionRank("merge_group")).toBe(0);
 	expect(admissionRank("push")).toBe(0);
+	expect(admissionRank("workflow_run")).toBe(0);
 	expect(admissionRank("workflow_dispatch")).toBe(0);
 	expect(admissionRank("pull_request")).toBe(1);
 	expect(admissionRank("pull_request_target")).toBe(1);
@@ -349,4 +352,57 @@ it("uses primed run data without another GitHub request", async () => {
 		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
 	).toEqual([1, 2]);
 	expect(calls).toEqual([2]);
+});
+
+it("admits workflow_run release jobs ahead of pull requests", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+			[2, { event: "pull_request", startedAt: "2026-10-26T11:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const release = {
+		...ref(1, 50),
+		jobName: "Build all OCI images on tag (gate publish)",
+	};
+	expect(
+		(await order([ref(2), release], (item) => item)).map((item) => item.jobId),
+	).toEqual([50, 2]);
+	expect(await order.rank(release)).toBe(TRUNK_RANK);
+});
+
+it("orders main-train release phases within one workflow_run", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const job = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		mainTrainReleasePhase("Build all OCI images on tag (gate publish)"),
+	).toBe(2);
+	expect(
+		isMainTrunkFleetDeferJob(
+			"Build all OCI images on tag (gate publish)",
+			"workflow_run",
+		),
+	).toBe(true);
+	expect(
+		(
+			await order(
+				[
+					job(30, "Publish GHCR images (tagged release)"),
+					job(10, "Main train release gate (nbgv)"),
+					job(20, "Release contract + affected OCI images"),
+					job(25, "Build all OCI images on tag (gate publish)"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([10, 20, 25, 30]);
 });
