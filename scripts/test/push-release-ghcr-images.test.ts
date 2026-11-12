@@ -84,6 +84,9 @@ describe("push-release-ghcr-images wiring", () => {
 		);
 		expect(source).toMatch(/runDockerPushWithRetry/u);
 		expect(source).not.toMatch(/run\("docker", \["push"/u);
+		expect(source).toMatch(/resolveRegistryDigestForTagWithRetry/u);
+		expect(source).toMatch(/tryReusePublishedTag/u);
+		expect(source).toMatch(/normalizeRepoDigestLine/u);
 	});
 });
 
@@ -277,6 +280,7 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(attest).toContain(
 			"name: hobo-release-digest-${{ matrix.image_id }}",
 		);
+		expect(attest).toContain("digest artifact empty");
 		expect(attest).toContain("if: steps.digest.outputs.present == 'true'");
 		expect(workflow).not.toContain("name: hobo-release-digests\n");
 	});
