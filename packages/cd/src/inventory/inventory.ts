@@ -155,6 +155,35 @@ function contactFromMeta<M>(meta: M): ContactState {
 	return out;
 }
 
+const latest = (a: number | undefined, b: number | undefined) =>
+	a === undefined ? b : b === undefined ? a : Math.max(a, b);
+
+/**
+ * Merge contact recorded by another replica into this one's: the newest
+ * observation of each kind wins, and credential state follows whichever side
+ * reported the credential last.
+ */
+export function mergeContact(
+	mine: ContactState,
+	recorded: ContactState,
+): ContactState {
+	const credential =
+		(recorded.credentialReportedMs ?? Number.NEGATIVE_INFINITY) >
+		(mine.credentialReportedMs ?? Number.NEGATIVE_INFINITY)
+			? recorded
+			: mine;
+	return {
+		...credential,
+		lastContactMs: latest(mine.lastContactMs, recorded.lastContactMs),
+		unreachableReportedMs: latest(
+			mine.unreachableReportedMs,
+			recorded.unreachableReportedMs,
+		),
+		lastLeaseMs: latest(mine.lastLeaseMs, recorded.lastLeaseMs),
+		leaseLostMs: latest(mine.leaseLostMs, recorded.leaseLostMs),
+	};
+}
+
 function topologyJson(topology: CampTopology): JsonValue {
 	const labels: JsonObject = {};
 	for (const key of Object.keys(topology.labels).sort())
@@ -284,7 +313,7 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		const status = decode(CampStatusRecordSchema, event.data);
 		if (status === undefined) return;
 		state.status = status;
-		state.contact = contactFromMeta(event.meta);
+		state.contact = mergeContact(state.contact, contactFromMeta(event.meta));
 	}
 
 	async function load(campId: string): Promise<CampState> {

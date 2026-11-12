@@ -10,7 +10,11 @@ export {
 	RESERVED_TAINT_PREFIX,
 	SYSTEM_ACTOR,
 } from "./derive.js";
-export { type CampInventoryDeps, createCampInventory } from "./inventory.js";
+export {
+	type CampInventoryDeps,
+	createCampInventory,
+	mergeContact,
+} from "./inventory.js";
 export {
 	type ParsedCampSet,
 	type ParsedClaim,

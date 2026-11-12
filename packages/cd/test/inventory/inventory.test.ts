@@ -18,7 +18,11 @@ import {
 	TaintRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../../src/events.js";
-import { AUTO_TAINTS, createCampInventory } from "../../src/inventory/index.js";
+import {
+	AUTO_TAINTS,
+	createCampInventory,
+	mergeContact,
+} from "../../src/inventory/index.js";
 import {
 	AGENT,
 	camp,
@@ -816,5 +820,32 @@ describe("management, sets and snapshot (D20)", () => {
 				SignalSource.OPERATOR,
 			)?.status,
 		).toBe(ConditionStatus.TRUE);
+	});
+});
+
+describe("replica contact merge", () => {
+	it("keeps the newest contact of each kind and the latest credential report", () => {
+		const merged = mergeContact(
+			{
+				lastContactMs: 10,
+				lastLeaseMs: 5,
+				credentialReportedMs: 3,
+				credentialFailedMs: 3,
+			},
+			{
+				lastContactMs: 7,
+				lastLeaseMs: 9,
+				credentialReportedMs: 4,
+				credentialExpiresMs: 100,
+			},
+		);
+		expect(merged).toEqual({
+			lastContactMs: 10,
+			lastLeaseMs: 9,
+			unreachableReportedMs: undefined,
+			leaseLostMs: undefined,
+			credentialReportedMs: 4,
+			credentialExpiresMs: 100,
+		});
 	});
 });

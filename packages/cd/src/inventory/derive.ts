@@ -62,16 +62,16 @@ export const DERIVED_TYPES: ReadonlySet<CampConditionType> = new Set([
  * Station-sourced reports, or SVID issuance and refresh outcomes.
  */
 export type ContactState = Readonly<{
-	lastContactMs?: number;
-	unreachableReportedMs?: number;
-	lastLeaseMs?: number;
-	leaseLostMs?: number;
+	lastContactMs?: number | undefined;
+	unreachableReportedMs?: number | undefined;
+	lastLeaseMs?: number | undefined;
+	leaseLostMs?: number | undefined;
 	/** Expiry of the last successfully issued or refreshed SVID. */
-	credentialExpiresMs?: number;
+	credentialExpiresMs?: number | undefined;
 	/** Set by a failed refresh; cleared by the next success. */
-	credentialFailedMs?: number;
+	credentialFailedMs?: number | undefined;
 	/** Last credential report of either kind; absent when the Camp holds no SVID (conductor mode). */
-	credentialReportedMs?: number;
+	credentialReportedMs?: number | undefined;
 }>;
 
 type Derived = Readonly<{
