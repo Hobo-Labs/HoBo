@@ -61,8 +61,14 @@ export type DecideInput = Readonly<{
 	scores: readonly ScoreSnapshotRecord[];
 	subject: PlacementSubject;
 	railDelivery: RailDeliveryRecord | undefined;
-	/** The Rail's `approvedProviders`; undefined when the composition supplies none. */
+	/**
+	 * The Rail's `approvedProviders`. Stations Rails always carry one (default
+	 * `["local"]`), so undefined means the evidence is absent and the decision
+	 * is refused with `rail-providers-unknown` (fail closed, I5).
+	 */
 	approvedProviders?: readonly string[] | undefined;
+	/** Every defined Camp set name; a visible set outside it records `set-unknown`. */
+	knownSets?: readonly string[] | undefined;
 	exclude?: readonly string[] | undefined;
 	count?: number | undefined;
 	pipeline: string;
@@ -182,7 +188,7 @@ function exclusions(
 		}
 	}
 	if (
-		input.approvedProviders !== undefined &&
+		input.approvedProviders === undefined ||
 		!input.approvedProviders.includes(view.topology.provider)
 	) {
 		codes.push(EXCLUSION.providerNotApproved);
@@ -396,7 +402,12 @@ function groupsOf(
 	return { groups, reasons };
 }
 
-/** Deterministic decision id over every recorded input. */
+/**
+ * Deterministic decision id over every recorded input. `atMs` is an input on
+ * purpose: score expiry and taint toleration windows depend on it, so a retry
+ * at the same instant is one event (I12) while a retry at a later clock
+ * reading is a new decision over possibly different evidence.
+ */
 export function decisionIdOf(
 	input: DecideInput,
 	scoreDigests: readonly string[],
@@ -447,18 +458,45 @@ export function decidePlacement(
 		}
 	}
 	if (input.approvedProviders === undefined) {
-		reasons.push(
+		return refuse(
 			reason(
 				"rail-providers-unknown",
-				"the Rail's approvedProviders were not supplied; provider approval was not evaluated",
+				"the Rail's approvedProviders were not supplied; provider approval cannot be evaluated, so placement fails closed",
 				"wire approvedProviders into createPlacementEngine in the composition",
 				"approvedProviders",
 			),
 		);
 	}
+	if (input.knownSets !== undefined) {
+		const known = new Set(input.knownSets);
+		for (const set of [...placement.campSets].sort(byText)) {
+			if (bound.has(set) && !known.has(set)) {
+				reasons.push(
+					reason(
+						"set-unknown",
+						`Camp set "${set}" is bound by the Rail but has no definition and contributes no Camps`,
+						"define the set with inventory.defineSet or remove it from the Placement",
+						set,
+					),
+				);
+			}
+		}
+	}
 	const unique = new Map<string, CampView>();
-	for (const view of input.snapshot.camps)
-		unique.set(view.topology.campId, view);
+	for (const view of input.snapshot.camps) {
+		const id = view.topology.campId;
+		if (unique.has(id)) {
+			return refuse(
+				reason(
+					"inventory-invalid",
+					`the inventory snapshot lists Camp "${id}" more than once`,
+					"rebuild the inventory snapshot; Camp ids must be unique",
+					id,
+				),
+			);
+		}
+		unique.set(id, view);
+	}
 	const views = [...unique.values()]
 		.filter((view) => matchesSelector(placement.predicate, view.topology))
 		.sort((a, b) => byText(a.topology.campId, b.topology.campId));

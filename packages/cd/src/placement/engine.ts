@@ -54,8 +54,9 @@ export type PlacementEngineDeps = CdBase & {
 	/**
 	 * The Station's active Rail `approvedProviders` (stations `Rail`). The
 	 * frozen RailDeliveryReader carries only the `delivery` object, so the
-	 * composition (WP18) supplies this; when absent, `provider-not-approved`
-	 * cannot fire and every decision records a `rail-providers-unknown` reason.
+	 * composition (WP18) supplies this; when absent (or it resolves to
+	 * undefined) every decision is refused with `rail-providers-unknown`:
+	 * missing evidence fails closed (I5).
 	 */
 	readonly approvedProviders?: (
 		stationId: string,
@@ -250,6 +251,7 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 			const bound = new Set(railDelivery?.campSets ?? []);
 			const visible = placement.campSets.filter((name) => bound.has(name));
 			const snapshot = await d.inventory.snapshot(visible);
+			const knownSets = (await d.inventory.sets()).map((set) => set.name);
 			const scores = await readScores(
 				placement.scores.map((weight) => weight.score),
 			);
@@ -264,6 +266,7 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 				subject: input.subject,
 				railDelivery,
 				approvedProviders,
+				knownSets,
 				exclude: input.exclude,
 				count: input.count,
 				pipeline: input.pipeline,

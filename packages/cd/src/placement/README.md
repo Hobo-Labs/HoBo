@@ -76,9 +76,18 @@ or retrying yields a byte-identical record (I18).
 | `placement-unsatisfiable` (subject = key) | add eligible Camps, relax spread, lower count |
 | `proposal-only`, `policy-denied` | ask a granted principal |
 
-Decision reasons (not refusals): `set-not-bound`, `group-empty`,
-`rail-providers-unknown` (the composition did not supply the Rail's
-`approvedProviders`; provider approval was not evaluated).
+Refusals that fail closed on absent evidence: `rail-providers-unknown` (the
+composition did not supply the Rail's `approvedProviders`; provider approval
+cannot be evaluated, so nothing is placed) and `inventory-invalid` (the
+snapshot lists a Camp id twice).
+
+Decision reasons (not refusals): `set-not-bound`, `set-unknown` (a bound set
+has no definition and contributes no Camps), `group-empty`.
+
+Idempotency: the decision id covers every recorded input including the decide
+instant, because score expiry and toleration windows depend on it. A retry at
+the same instant appends nothing; a retry at a later clock reading is a new
+decision.
 
 ## Runbook
 
@@ -93,6 +102,6 @@ Decision reasons (not refusals): `set-not-bound`, `group-empty`,
 - **Decision differs between replicas.** It cannot for the same recorded
   inputs; compare `inventoryDigest` and `scoreSnapshotDigests`. Differing
   digests mean the inventory or scores changed between the calls.
-- **`rail-providers-unknown` on every decision.** Wire
+- **`rail-providers-unknown` refuses every decision.** Wire
   `approvedProviders: (stationId) => rail.approvedProviders` into
   `createPlacementEngine` in the composition.

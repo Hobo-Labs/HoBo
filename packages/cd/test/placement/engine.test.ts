@@ -410,4 +410,39 @@ describe("PlacementEngine.decide (D20, I18, I19)", () => {
 				: [],
 		).toEqual(["eu-2"]);
 	});
+	it("a composition without approvedProviders fails closed and appends nothing (I5)", async () => {
+		const h = await harness();
+		await h.engine.define(basic(), h.ops);
+		const bare = createPlacementEngine({
+			store: h.store,
+			tenant: TENANT,
+			now: h.time.now,
+			inventory: h.inventory,
+			rails: h.rails,
+			authorizer: h.authorizer,
+		});
+		const result = await bare.decide(decideInput, h.ops);
+		expect(result.ok ? "" : result.reasons[0]?.code).toBe(
+			"rail-providers-unknown",
+		);
+		expect(
+			h.store
+				.events(CD_STREAMS.placement("web"))
+				.filter((e) => e.type === CD_EVENTS.PlacementDecided),
+		).toHaveLength(0);
+	});
+
+	it("a bound but undefined Camp set is named with set-unknown", async () => {
+		const h = await harness();
+		h.rails.delivery = railDelivery({ campSets: ["fleet", "ghost"] });
+		await h.engine.define(basic({ campSets: ["fleet", "ghost"] }), h.ops);
+		const result = await h.engine.decide(decideInput, h.ops);
+		expect(
+			result.ok
+				? result.value.reasons
+						.filter((r) => r.code === "set-unknown")
+						.map((r) => r.subject)
+				: ["refused"],
+		).toEqual(["ghost"]);
+	});
 });

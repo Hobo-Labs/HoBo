@@ -577,14 +577,57 @@ describe("decidePlacement exclusions (D20, I19)", () => {
 		expect(result.ok).toBe(true);
 	});
 
-	it("without the Rail's approvedProviders the decision records rail-providers-unknown", () => {
+	it("without the Rail's approvedProviders the decision is refused with rail-providers-unknown (I5)", () => {
 		const { approvedProviders: _omitted, ...rest } = input({
 			snapshot: snapshot([view(topology("a"))]),
 		});
 		const result = decidePlacement(rest);
-		expect(result.ok ? result.value.reasons.map((r) => r.code) : []).toContain(
-			"rail-providers-unknown",
+		expect(result.ok).toBe(false);
+		expect(codeOf(result, "rail-providers-unknown")?.subject).toBe(
+			"approvedProviders",
 		);
+	});
+
+	it("an empty approvedProviders list excludes every Camp with provider-not-approved", () => {
+		const result = decidePlacement(
+			input({
+				snapshot: snapshot([view(topology("a"))]),
+				approvedProviders: [],
+			}),
+		);
+		expect(result.ok).toBe(false);
+		expect(codeOf(result, PLACEMENT_UNSATISFIABLE)?.subject).toBe("candidates");
+	});
+
+	it("a bound set without a definition records set-unknown", () => {
+		const result = decidePlacement(
+			input({
+				placement: placement({ campSets: ["fleet", "ghost"] }),
+				railDelivery: railDelivery({ campSets: ["fleet", "ghost"] }),
+				snapshot: snapshot([view(topology("a"))]),
+				knownSets: ["fleet"],
+			}),
+		);
+		expect(
+			result.ok
+				? result.value.reasons
+						.filter((r) => r.code === "set-unknown")
+						.map((r) => r.subject)
+				: [],
+		).toEqual(["ghost"]);
+	});
+
+	it("a snapshot listing a Camp id twice is refused with inventory-invalid", () => {
+		const a = topology("a");
+		const result = decidePlacement(
+			input({
+				snapshot: snapshot([
+					view(a),
+					view(a, { management: CampManagement.OBSERVE_ONLY }),
+				]),
+			}),
+		);
+		expect(codeOf(result, "inventory-invalid")?.subject).toBe("a");
 	});
 });
 
