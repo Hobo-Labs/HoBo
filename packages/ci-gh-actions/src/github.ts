@@ -96,7 +96,8 @@ const RunWorkflowJob = z.object({
 	status: z.string(),
 	labels: z.array(z.string()).optional(),
 	runner_name: z.string().nullable().optional(),
-	runner_id: z.number().int().positive().nullable().optional(),
+	// Queued jobs are unassigned: GitHub may send 0 or null.
+	runner_id: z.number().int().nonnegative().nullable().optional(),
 });
 
 export type GithubRunWorkflowJob = z.infer<typeof RunWorkflowJob>;
@@ -200,7 +201,7 @@ export async function getJob(
 			labels: z.array(z.string()),
 			name: z.string().optional(),
 			runner_name: z.string().nullable().optional(),
-			runner_id: z.number().int().positive().nullable().optional(),
+			runner_id: z.number().int().nonnegative().nullable().optional(),
 			run_attempt: z.number().int().positive().optional(),
 			created_at: z.string().optional(),
 		})

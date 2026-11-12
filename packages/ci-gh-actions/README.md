@@ -1175,6 +1175,9 @@ GitHub and Vercel show under a job's candidate names (generations 0..3, or the
 job record's generation) back into a lease record, always `uncertain`;
 `resolveUncertainLease` re-admits the next generation only when nothing exists
 under the lease's names and GitHub still shows the job queued.
+Queued jobs use `runner_id` **0** or **null** in GitHub REST; `getJob` and run-job
+listing accept both as unassigned (inbox delivery no longer fails Zod on 0).
+
 `githubRelayDiscovery` is the GitHub side (`getJob`, runners by name, bridge
 runs by title); the Vercel side is the Sandbox host's lookup by name
 (`@hobo/ci-vercel`), where not found is a 404.
