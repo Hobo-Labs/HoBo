@@ -51,6 +51,7 @@ import type {
 	CdBase,
 	CdContext,
 	ChangeWindows,
+	DeltaIntent,
 	DeployGate,
 	Digest,
 	FanoutController,
@@ -250,6 +251,21 @@ async function ownershipReasons(
 		);
 }
 
+/** The policy-IR phase a Delta intent is decided in (`@hobo/policy` PHASES). */
+const PHASE_OF: Readonly<Record<DeltaIntent, string>> = {
+	promote: "promote",
+	preview: "promote",
+	config: "promote",
+	topology: "promote",
+	failover: "promote",
+	"drift-remediate": "repair",
+	"posture-remediate": "repair",
+	rollback: "apply",
+	up: "apply",
+	down: "apply",
+	depart: "apply",
+};
+
 // public-contract: label a preview Camp carries in gate and window evaluation.
 export const PREVIEW_LABEL = "hobo.cd/preview" as const;
 
@@ -340,7 +356,7 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 					subject: { kind: ctx.principal.kind, id: ctx.principal.id },
 					action: `cd.${input.intent}`,
 					resource: { kind: "camp", id: campId },
-					phase: "deploy",
+					phase: PHASE_OF[input.intent],
 					context: {
 						target: campId,
 						intent: input.intent,
