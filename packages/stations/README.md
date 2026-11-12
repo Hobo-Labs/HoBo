@@ -48,8 +48,7 @@ occupants (`hobo.station-capability/v1`; closed kind vocabulary; provenance
 declared set against host observations **fail-closed** (declared-but-unobserved
 is missing) and produces a `hobo.station-capability-manifest/v1`, persisted
 beside the Station data (`stationCapabilitiesPath` →
-`HOBO_HOME/stations/<id>/capabilities.json`). Consumed by `hobo-code init`
-machine discovery — see `docs/design/stations.md`.
+`HOBO_HOME/stations/<id>/capabilities.json`). See `docs/design/stations.md`.
 
 ```ts
 import { matchStationCapabilities, stationCapability } from "@hobo/stations";

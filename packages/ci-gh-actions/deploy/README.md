@@ -122,7 +122,7 @@ non-secret settings:
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
-| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only; sub-threshold runs LRU-evict unused `hobo-ci-deps:*` images via `scripts/ci-runner-image-gc.mts` after builder prune |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
 
 One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
@@ -196,6 +196,7 @@ active lease or container and retires them through the same path. Startup and sc
 drain-mode shutdown awaits it, and handoff mode leaves it for the successor. Watch `hobo_ci_work_dir_retired`,
 `hobo_ci_work_dir_removed` and `hobo_ci_work_dir_remove_failed`. Ticks over five seconds also log
 `hobo_ci_isolated_worker_tick_slow` with delivery, worker/lease reconciliation and dispatch timings.
+Orphan-job GitHub recovery (`reconcileOrphanJobs`) runs off the dispatch tick (same interval as job poll) so long force-cancel/rerun chains do not hold the worker slot while live runners finish uploading logs.
 All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
 store/work-root configurations fail startup. Jobs and admission-pressure maintenance never prune the store. Only
 scheduled GC requests pnpm pruning, and only with no active leases and no running container mounting the store;
@@ -300,7 +301,7 @@ kubectl get pods -l app=hobo-ci
 The Service is `ClusterIP` on port 8787. Configure your cluster's existing TLS
 Ingress or Gateway to route the public origin to that Service, using its managed
 certificate. There is no NodePort or plaintext public LoadBalancer in this
-manifest. `/healthz` checks process liveness; `/readyz` includes recovery/readiness
+manifest. `/healthz` checks process liveness; `/readyz` reports partition readiness
 and becomes unavailable while draining. Recreate updates deliberately incur a
 brief availability gap. Kubernetes secrets, ingress/certificate provisioning,
 registry access and storage lifecycle remain operator-managed infrastructure.
@@ -346,7 +347,7 @@ or built candidate is tagged `hobo-ci-deps:local` only after the real mounted-jo
 contract passes, then passed to keep-2 GC. `HOBO_CI_DEPS_IMAGE=` disables both
 selection and this ensure loop.
 
-GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red.
+GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red. When the publisher must rebuild, `build-deps.sh` runs `scripts/ci/ensure-ci-worker-image.mts` if the checkout's computed `hobo-ci-worker:<version>` is missing in the job's Docker context (GHCR pull or bounded `build.sh` with a cached Playwright zip), instead of failing immediately when `:local` lacks a versioned tag. Release trains refuse `build.sh` when the GHCR worker is missing (see finding 91); the runner base installs headless-shell from `HOBO_CI_PLAYWRIGHT_CACHE` / staged `playwright-cache`, not unbounded CDN retries inside the Dockerfile.
 
 Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
 registry, or build work, then `hobo_ci_deps_image_ensure` with
@@ -422,6 +423,6 @@ re-admitting side effects.
 `docker compose stop` and Kubernetes termination send SIGTERM. The relay first
 withdraws readiness, drains in-flight requests/work, closes SQLite and releases
 its process lock. Both manifests allow 90 seconds before forced termination.
-After a forced kill, restart recovery preserves uncertain launches rather than
-blindly retrying them. A healthy readiness response is service evidence; it does
+After a forced kill, the worker tick marks a launch that was in flight uncertain
+once it is two minutes old rather than blindly retrying it. A healthy readiness response is service evidence; it does
 not certify vendor runner availability or final invoices.

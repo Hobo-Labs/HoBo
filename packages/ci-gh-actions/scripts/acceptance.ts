@@ -15,13 +15,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { create } from "@bufbuild/protobuf";
 import { OfferSchema } from "@hobo/ci";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { z } from "zod";
+import { relayInstallAssets } from "../src/assets.js";
 import { runHostProcess, runnerEnvironment } from "../src/bootstrap.js";
-import type { GithubTransport } from "../src/github.js";
+import type { GithubAppTransport } from "../src/github.js";
 import { createGithubOidcVerifier } from "../src/oidc.js";
-import { Relay } from "../src/relay.js";
-import { createRelayService } from "../src/service.js";
-import { LeaseStore } from "../src/store.js";
+import { createRelayHost } from "../src/relay-host.js";
 import {
 	config,
 	NOW,
@@ -31,17 +31,12 @@ import {
 	SHA,
 } from "../test/fixtures.js";
 
-const providers = [
-	"warpbuild",
-	"depot",
-	"kubernetes",
-	"blacksmith",
-	"github",
-] as const;
+// Workflow-bridge hosts a stored configuration accepts as they stand. A
+// Kubernetes bridge host would also rank GitHub-hosted runners behind it.
+const providers = ["warpbuild", "depot", "blacksmith", "github"] as const;
 const labels = [
 	"warp-ubuntu-latest-x64-2x",
 	"depot-ubuntu-24.04",
-	"hobo-ci-isolated-k8s-host",
 	"blacksmith-2vcpu-ubuntu-2404",
 	"ubuntu-24.04",
 ];
@@ -164,8 +159,9 @@ interface Host {
 	registered: boolean;
 	deleted: boolean;
 }
-/** All provider/GitHub boundaries are local. The production Relay, identity verifier,
- * HTTP server, durable ledger and host process launcher are used without replacement. */
+/** All provider/GitHub boundaries are local. The production relay host (core, durable
+ * inbox, control plane, HTTP handler and service), identity verifier, SQLite store and
+ * host process launcher are used without replacement. */
 export async function runAcceptance(options: {
 	actBinary: string;
 	evidenceDirectory?: string | undefined;
@@ -301,7 +297,13 @@ export async function runAcceptance(options: {
 					JSON.stringify(
 						originalRun
 							? { ...run(), id: 10 + jobId, status }
-							: { id: jobId, run_id: 10 + jobId, status, labels: ["hobo"] },
+							: {
+									id: jobId,
+									run_id: 10 + jobId,
+									run_attempt: 1,
+									status,
+									labels: ["hobo"],
+								},
 					),
 				);
 				return;
@@ -437,7 +439,11 @@ export async function runAcceptance(options: {
 		}
 	});
 	const fixtureOrigin = await listen(fixture);
-	const github: GithubTransport = {
+	const github: GithubAppTransport = {
+		async appRequest() {
+			unmatched++;
+			throw new Error("unmatched GitHub App contract");
+		},
 		request(installation, path, method = "GET", body) {
 			const init: RequestInit = {
 				method,
@@ -462,33 +468,40 @@ export async function runAcceptance(options: {
 		() => Date.parse(now),
 	);
 	const database = join(root, "relay.sqlite");
-	let store = new LeaseStore(database);
-	let relay = new Relay({
-		config: configuration,
-		store,
-		github,
-		identity,
-		webhookSecret: SECRET,
-		now: () => now,
-	});
+	let store = new SqliteCiStore(database);
+	await store.configure(configuration, 0, now);
 	let ticks = 0;
 	let drains = 0;
+	let deliveries = 0;
 	const serviceLogs: string[] = [];
-	const makeService = () =>
-		createRelayService({
-			relay,
+	const makeService = () => {
+		const host = createRelayHost({
 			store,
+			github,
+			identity,
+			webhookSecret: SECRET,
+			authenticate: () => undefined,
+			publicOrigin: "https://relay.example",
+			assets: relayInstallAssets(),
 			port: 0,
 			host: "127.0.0.1",
 			tickIntervalMs: 25,
-			readinessProbe: async () => true,
-			beforeDispatch: async () => {
-				ticks++;
-			},
 			logger: (entry) => {
 				serviceLogs.push(entry.event);
 			},
+			now: () => now,
 		});
+		// Count the worker's passes without replacing any of them.
+		const tick = host.runtime.tick.bind(host.runtime);
+		host.runtime.tick = async (options) => {
+			try {
+				await tick(options);
+			} finally {
+				ticks++;
+			}
+		};
+		return host.service;
+	};
 	let service = makeService();
 	await service.start();
 	invariant(await service.checkReadiness(), "relay service not ready");
@@ -497,9 +510,12 @@ export async function runAcceptance(options: {
 		(await fetch(`${origin}/readyz`)).status === 200,
 		"relay service readiness HTTP failed",
 	);
-	const waitFor = async (ready: () => boolean, message: string) => {
+	const waitFor = async (
+		ready: () => boolean | Promise<boolean>,
+		message: string,
+	) => {
 		const deadline = Date.now() + 5000;
-		while (!ready()) {
+		while (!(await ready())) {
 			invariant(Date.now() < deadline, message);
 			await new Promise((resolveWait) => setTimeout(resolveWait, 10));
 		}
@@ -520,6 +536,7 @@ export async function runAcceptance(options: {
 			method: "POST",
 			headers: {
 				"x-github-event": event,
+				"x-github-delivery": `acceptance-${++deliveries}`,
 				"x-hub-signature-256": `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`,
 			},
 			body,
@@ -568,11 +585,18 @@ export async function runAcceptance(options: {
 					runner_name: null,
 				},
 			};
+			// The delivery is committed to the inbox; the worker reserves it.
 			invariant(
-				(await webhook(payload)).startsWith("reserved:"),
+				(await webhook(payload)) === "accepted",
+				"signed delivery was not committed",
+			);
+			const reserved = async () =>
+				(await store.all()).find((entry) => entry.jobId === currentJob);
+			await waitFor(
+				async () => (await reserved()) !== undefined,
 				"eligible job was blocked",
 			);
-			const lease = store.all().find((entry) => entry.jobId === currentJob);
+			const lease = await reserved();
 			invariant(
 				lease !== undefined && lease.provider === expectedProvider,
 				"free-first/cheapest/budget routing violated",
@@ -621,7 +645,7 @@ export async function runAcceptance(options: {
 				.parse(await claim.json());
 			const launch = authorizeLaunch(jit.encodedJitConfig, selected.identity);
 			invariant(
-				selected.registered && store.get(lease.id)?.state === "running",
+				selected.registered && (await store.get(lease.id))?.state === "running",
 				"JIT registration not committed",
 			);
 			const marker = join(root, `job-${currentJob}.marker`);
@@ -694,25 +718,33 @@ export async function runAcceptance(options: {
 						},
 					},
 					"workflow_run",
-				)) === "settled",
+				)) === "accepted",
+				"completion delivery was not committed",
+			);
+			await waitFor(
+				async () => (await store.get(lease.id))?.state === "completed",
 				"completion not settled",
 			);
-			const settled = store.get(lease.id);
+			const settled = await store.get(lease.id);
 			invariant(
 				settled?.state === "completed" && selected.deleted,
 				"runner cleanup or durable settlement missing",
 			);
 			invariant(
 				settled.billedFreeMinutes ===
-					(!options.local && currentJob <= 5 ? 2 : 0),
+					(!options.local && currentJob <= providers.length ? 2 : 0),
 				"free allocation settlement incorrect",
 			);
 			currentJob++;
 		}
 		const before = launches;
 		// A free local machine is not exhausted by spending. Simulate it going away.
-		if (options.local)
+		if (options.local) {
 			for (const offer of account.offers) offer.enabled = false;
+			const state = await store.configuration();
+			invariant(state !== undefined, "configuration missing");
+			await store.configure(configuration, state.revision, now);
+		}
 		originalStatus = "queued";
 		invariant(
 			(await webhook({
@@ -726,8 +758,8 @@ export async function runAcceptance(options: {
 					labels: ["hobo"],
 					runner_name: null,
 				},
-			})) === "waiting-for-budget-or-capacity",
-			"unavailable capacity or exhausted account admitted work",
+			})) === "accepted",
+			"signed delivery was not committed",
 		);
 		const deniedAtTick = ticks;
 		await waitFor(
@@ -735,30 +767,24 @@ export async function runAcceptance(options: {
 			"budget refusal not revisited by worker",
 		);
 		invariant(
-			hosts.size === before && launches === before,
-			"budget refusal launched host",
+			hosts.size === before &&
+				launches === before &&
+				!(await store.all()).some((entry) => entry.jobId === currentJob),
+			"unavailable capacity or exhausted account admitted work",
 		);
-		const settledBefore = JSON.stringify(store.all());
+		const settledBefore = JSON.stringify(await store.all());
 		invariant(
 			(await service.stop()).drained,
 			"service did not drain before reopen",
 		);
 		drains++;
-		store = new LeaseStore(database);
-		relay = new Relay({
-			config: configuration,
-			store,
-			github,
-			identity,
-			webhookSecret: SECRET,
-			now: () => now,
-		});
+		store = new SqliteCiStore(database);
 		invariant(
-			store.pendingJobs().length === 1,
+			(await store.pendingJobs()).length === 1,
 			"durable reopen lost denied demand",
 		);
 		invariant(
-			JSON.stringify(store.all()) === settledBefore,
+			JSON.stringify(await store.all()) === settledBefore,
 			"durable reopen changed settlement",
 		);
 		service = makeService();
@@ -782,8 +808,9 @@ export async function runAcceptance(options: {
 						},
 					},
 					"workflow_run",
-				)) === "settled",
-				"replayed completion not accepted",
+					// The inbox recognises the same signed body and commits nothing new.
+				)) === "duplicate",
+				"replayed completion not recognised",
 			);
 		}
 		await waitFor(
@@ -791,7 +818,8 @@ export async function runAcceptance(options: {
 			"reopened automatic worker did not run",
 		);
 		invariant(
-			hosts.size === before && JSON.stringify(store.all()) === settledBefore,
+			hosts.size === before &&
+				JSON.stringify(await store.all()) === settledBefore,
 			"replay duplicated dispatch or settlement",
 		);
 		invariant(
@@ -800,14 +828,14 @@ export async function runAcceptance(options: {
 				launches === expectedProviders.length,
 			"acceptance silently skipped boundaries",
 		);
-		const freeMinutesConsumed = store
-			.all()
-			.reduce((sum, lease) => sum + lease.billedFreeMinutes, 0);
-		const paidMicros = store
-			.all()
-			.reduce((sum, lease) => sum + lease.paidMicros, 0);
+		const ledger = await store.all();
+		const freeMinutesConsumed = ledger.reduce(
+			(sum, lease) => sum + lease.billedFreeMinutes,
+			0,
+		);
+		const paidMicros = ledger.reduce((sum, lease) => sum + lease.paidMicros, 0);
 		invariant(
-			freeMinutesConsumed === (options.local ? 0 : 10) &&
+			freeMinutesConsumed === (options.local ? 0 : 2 * providers.length) &&
 				paidMicros === (options.local ? 0 : 6000),
 			"final budget accounting incorrect",
 		);

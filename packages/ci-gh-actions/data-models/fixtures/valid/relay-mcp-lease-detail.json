@@ -1,0 +1,39 @@
+{
+  "lease": {
+    "id": "01234567-89ab-4cde-8fab-0123456789ab",
+    "state": "running",
+    "active": true,
+    "repository": "Org/Repo",
+    "jobId": 7,
+    "jobName": "test",
+    "runId": 900,
+    "runAttempt": 1,
+    "provider": "github",
+    "offerId": "github",
+    "runnerName": "hobo-01234567-89ab-4cde-8fab-0123456789ab",
+    "createdAt": "2026-11-02T12:00:01.000Z",
+    "dispatchingAt": "2026-11-02T12:00:02.000Z",
+    "settledAt": "",
+    "queueDeadlineAt": "",
+    "hostRunId": 901,
+    "actualJobId": 7,
+    "billedMinutes": 0,
+    "paidMicros": 0,
+    "memoryClass": "",
+    "sandboxStage": ""
+  },
+  "events": [
+    {
+      "cursor": "cursor-for-position-42",
+      "type": "ci.LeaseReserved",
+      "at": "2026-11-02T12:00:01.000Z",
+      "leaseId": "01234567-89ab-4cde-8fab-0123456789ab",
+      "state": "reserved",
+      "repository": "Org/Repo",
+      "jobId": 7,
+      "jobName": "test",
+      "runId": 900,
+      "runAttempt": 1
+    }
+  ]
+}

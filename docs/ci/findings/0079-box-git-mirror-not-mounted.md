@@ -34,8 +34,11 @@ landed with Phase 1. The worker fetch, mount, and `HOBO_CI_GIT_MIRROR` env did n
 
 ## Fix
 
-`createBoxGitMirror` owns `/var/lib/hobo-ci/git/<owner>/<repo>.git`:
-- clone `--bare --filter=blob:none` once, then `--no-filter` backfill of `main`;
+`createBoxGitMirror` owns `/var/lib/hobo-ci/git/<owner>/<repo>.git` (or the
+resolved `HOBO_CI_GIT_MIRROR_ROOT` fallback under `~/.cache/hobo-ci/git`):
+- clone `--bare` with **no** `blob:none` / promisor filter (upload-pack must serve full objects);
+- refresh `refs/heads/main` with `git fetch --no-filter` on every locked `ensure`;
+- repair legacy partial mirrors by stripping promisor config and re-fetching;
 - one writer per repository;
 - `git fetch --no-filter origin <sha>:refs/hobo/sha/<sha>` before `docker create`
   (never a branch name for a PR / fork object);
@@ -54,6 +57,8 @@ pays GitHub once.
 ## Verification
 
 `packages/ci-gh-actions/test/git-mirror.test.ts` — hit, miss, SHA-only refs, serialized writers.
+`scripts/ci/git-mirror-usability.mts` — mirror in sparse release checkouts for `hobo-checkout` (kept in sync with the package copy).
+`.github/actions/hobo-checkout/git-mirror-usability.mts` — same logic colocated for `box-git-mirror.mts` before `scripts/` is checked out.
 `test/isolated-worker-parallel.test.ts` — `:ro` mount and `HOBO_CI_GIT_MIRROR`.
 `test/isolated-worker-launch-thrash.test.ts` — ensure-before-create.
 Expected Main full gate checkout: **~1–2 s** on a hit (`hobo_ci_git_mirror=hit`).

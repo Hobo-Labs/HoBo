@@ -1,0 +1,293 @@
+{
+  "consumer": {
+    "name": "HoboVercelGitDeploy"
+  },
+  "provider": {
+    "name": "VercelRestApi"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "list project environment variables when the setting is absent",
+      "request": {
+        "method": "GET",
+        "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "envs": [
+            {
+              "id": "env_operator",
+              "key": "DATABASE_URL",
+              "value": "synthetic-ciphertext-held-by-the-operator",
+              "type": "encrypted",
+              "target": [
+                "production",
+                "preview"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list project environment variables holding the setting as asked",
+      "request": {
+        "method": "GET",
+        "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "envs": [
+            {
+              "id": "env_operator",
+              "key": "DATABASE_URL",
+              "value": "synthetic-ciphertext-held-by-the-operator",
+              "type": "encrypted",
+              "target": [
+                "production",
+                "preview"
+              ]
+            },
+            {
+              "id": "env_public_url",
+              "key": "HOBO_CI_PUBLIC_URL",
+              "value": "https://ci.example.test",
+              "type": "plain",
+              "target": [
+                "preview"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list project environment variables holding an older value of the setting",
+      "request": {
+        "method": "GET",
+        "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "envs": [
+            {
+              "id": "env_operator",
+              "key": "DATABASE_URL",
+              "value": "synthetic-ciphertext-held-by-the-operator",
+              "type": "encrypted",
+              "target": [
+                "production",
+                "preview"
+              ]
+            },
+            {
+              "id": "env_public_url",
+              "key": "HOBO_CI_PUBLIC_URL",
+              "value": "https://old.example.test",
+              "type": "plain",
+              "target": [
+                "preview"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "create a plain environment variable for the preview environment",
+      "request": {
+        "method": "POST",
+        "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "key": "HOBO_CI_PUBLIC_URL",
+          "value": "https://ci.example.test",
+          "type": "plain",
+          "target": [
+            "preview"
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "created": {
+            "id": "env_public_url",
+            "key": "HOBO_CI_PUBLIC_URL",
+            "value": "https://ci.example.test",
+            "type": "plain",
+            "target": [
+              "preview"
+            ]
+          },
+          "failed": []
+        }
+      }
+    },
+    {
+      "description": "edit the value of an environment variable",
+      "request": {
+        "method": "PATCH",
+        "path": "/v9/projects/hobo-ci/env/env_public_url?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "value": "https://ci.example.test"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "env_public_url",
+          "key": "HOBO_CI_PUBLIC_URL",
+          "value": "https://ci.example.test",
+          "type": "plain",
+          "target": [
+            "preview"
+          ]
+        }
+      }
+    },
+    {
+      "description": "create a production deployment from a GitHub ref pinned to a commit",
+      "request": {
+        "method": "POST",
+        "path": "/v13/deployments?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "hobo-ci",
+          "project": "hobo-ci",
+          "gitSource": {
+            "type": "github",
+            "org": "example",
+            "repo": "hobo",
+            "ref": "main",
+            "sha": "0123456789abcdef0123456789abcdef01234567"
+          },
+          "target": "production"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "dpl_production",
+          "url": "hobo-ci.example.vercel.app",
+          "readyState": "QUEUED"
+        }
+      }
+    },
+    {
+      "description": "create a preview deployment from a GitHub ref",
+      "request": {
+        "method": "POST",
+        "path": "/v13/deployments?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "hobo-ci",
+          "project": "hobo-ci",
+          "gitSource": {
+            "type": "github",
+            "org": "example",
+            "repo": "hobo",
+            "ref": "main"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "dpl_preview",
+          "url": "hobo-ci-git-main.example.vercel.app",
+          "readyState": "QUEUED"
+        }
+      }
+    },
+    {
+      "description": "refuse a deployment whose project does not exist",
+      "request": {
+        "method": "POST",
+        "path": "/v13/deployments?teamId=team_hobo",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "hobo-ci-absent",
+          "project": "hobo-ci-absent",
+          "gitSource": {
+            "type": "github",
+            "org": "example",
+            "repo": "hobo",
+            "ref": "main"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found",
+            "message": "Project not found"
+          }
+        }
+      }
+    },
+    {
+      "description": "create a preview deployment in the token's own scope",
+      "request": {
+        "method": "POST",
+        "path": "/v13/deployments",
+        "headers": {
+          "Authorization": "Bearer synthetic-token-0123",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "hobo-ci",
+          "project": "hobo-ci",
+          "gitSource": {
+            "type": "github",
+            "org": "example",
+            "repo": "hobo",
+            "ref": "main"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "dpl_own_scope",
+          "url": "hobo-ci-own.example.vercel.app",
+          "readyState": "QUEUED"
+        }
+      }
+    }
+  ]
+}

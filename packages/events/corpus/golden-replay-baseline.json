@@ -38,6 +38,18 @@
 			"bodyDigest": "sha256:bb0544b093f031bc195cd594eb2dc90c5e44e3138466942ac322d6a80641bdc9"
 		},
 		{
+			"key": "migration.Held@v1#migration-Held-v1",
+			"bodyDigest": "sha256:eb4c96b061e0f9bf51fd4936c4312cb42f77805bbc800705307675ffe3d0df73"
+		},
+		{
+			"key": "migration.Resumed@v1#migration-Resumed-v1",
+			"bodyDigest": "sha256:506c1bc9dc34b62f88d67ce917cdf73d14d9bf2315719638c298c0c80cd8cbc3"
+		},
+		{
+			"key": "migration.Completed@v1#migration-Completed-v1",
+			"bodyDigest": "sha256:306f28dfcef9ebeb33d33d0396f31d38711248dc76f4b675f21229c5248b14ff"
+		},
+		{
 			"key": "pricing.RateCardPublished@v1#pricing-RateCardPublished-v1",
 			"bodyDigest": "sha256:500e821e8ce2caee71b440165884e3a0c9729cfd934686d400e578b6c8a9f08f"
 		},
@@ -72,6 +84,54 @@
 		{
 			"key": "pricing.ReconciliationRecorded@v1#pricing-ReconciliationRecorded-v1",
 			"bodyDigest": "sha256:b43f709ab93050c0af3d3f3c8abd665d3936bf30aa152bb6dc65ad5d0a572063"
+		},
+		{
+			"key": "migration.FenceRequested@v1#migration-FenceRequested-v1",
+			"bodyDigest": "sha256:e6ac0b5ebae630d68d73c6e1e02b8ee3decf49c1684622652fd8963283423822"
+		},
+		{
+			"key": "migration.RollbackDecided@v1#migration-RollbackDecided-v1",
+			"bodyDigest": "sha256:eac3338164aee6e0550c198691b7225969890bfbd51d5c6d402207cd8568120b"
+		},
+		{
+			"key": "migration.FenceRaised@v1#migration-FenceRaised-v1",
+			"bodyDigest": "sha256:962db258229c2b2d2dda0cf64b7e09f2d4b44a683f5d3e575d0a3b0382e94d3c"
+		},
+		{
+			"key": "migration.PhaseIntended@v1#migration-PhaseIntended-v1",
+			"bodyDigest": "sha256:60ea9ff0d31856e5b99f2a4b46f4707ba15d27dc96b15388a30afcc64c5cb4ff"
+		},
+		{
+			"key": "migration.Planned@v1#migration-Planned-v1-executor",
+			"bodyDigest": "sha256:86e2642375d672aef57141c14b6599793038526c15e0ed4b84c59ff041592560"
+		},
+		{
+			"key": "migration.Planned@v2#migration-Planned-v2",
+			"bodyDigest": "sha256:032327295d2e76c7e7e50dbfe5911af902b51432be0f054418041b9f7ee30135"
+		},
+		{
+			"key": "migration.PhaseApplied@v1#migration-PhaseApplied-v1-fence-token",
+			"bodyDigest": "sha256:9c2cdb42d2d6fd6e76a6c622f1b08bd10912515fe3e3fb7a465b395956838616"
+		},
+		{
+			"key": "migration.PhaseApplied@v2#migration-PhaseApplied-v2",
+			"bodyDigest": "sha256:74d13cc7c7b483618fd96bc48af6239a93397d365db7e20f27c609ad938487e1"
+		},
+		{
+			"key": "migration.CutOver@v1#migration-CutOver-v1-fence-token",
+			"bodyDigest": "sha256:9948aa201cc1a01e2386d9c3bf0e28a720c11e40b936422b8c2d98a61786d20f"
+		},
+		{
+			"key": "migration.CutOver@v2#migration-CutOver-v2",
+			"bodyDigest": "sha256:4a95c91f50fba961d30e2bde4d5fa72ba0a62dea679febe1551f3775bfaa8efc"
+		},
+		{
+			"key": "migration.RolledBack@v2#migration-RolledBack-v2",
+			"bodyDigest": "sha256:f53df2b41665ce4b15722ed506593a16df17be27a4631f38d9913cb43b161e9d"
+		},
+		{
+			"key": "pricing.CatalogRegistered@v1#pricing-CatalogRegistered-v1",
+			"bodyDigest": "sha256:634ba394ac6bb83c088cfba13a87f36a531eb45965674dab1722080ce90486ea"
 		}
 	]
 }

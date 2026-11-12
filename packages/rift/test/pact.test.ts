@@ -1,7 +1,7 @@
 /**
  * Provider verification for the CLI boundary.
  *
- * `@hobo/code` drives `hobo-rift` by argv and reads exit code plus stdout — it
+ * A caller drives `hobo-rift` by argv and reads exit code plus stdout — it
  * has no other way in. A pact file that nobody executes is decoration, so this
  * runs the built CLI once per interaction in a throwaway root and checks the
  * response the contract promises.

@@ -179,6 +179,29 @@ The brief named cloud, CI, and AI. Policy and infra are named here because the
 remaining eight packages need a home — leaving them in a flat directory would
 reproduce the problem for the majority of the set.
 
+### Data engines — one package per engine over a common contract
+
+The same reasoning applied to data, and the same asymmetry existed:
+`@hobo/data-postgres` owned a profile, a conformance suite, and migration
+profiles, while the live schema-apply and dual-run bindings sat inside
+`@hobo/trails` and imported `node:sqlite` directly. That is now separated
+([ADR-0177](./adr/03-data-plane.md#adr-0177)):
+
+| Package | Owns |
+|---|---|
+| `@hobo/data-core` | engine-neutral contract: canonical records and change envelope, engine SPI (including the optional native-transfer port), pattern catalog + selector, custody-path policy verdict, pattern executors, migration aggregate and its compare-and-set journal, conformance kit, reference engine |
+| `@hobo/data-sqlite`, `@hobo/data-postgres`, `@hobo/data-mongodb` | one engine each: the SPI binding, its declaration, its type-mapping annex, its impedance codes; PostgreSQL also the one native realization (logical-copy) |
+| `@hobo/trails` | the runbook engine; imports `@hobo/data-core` and never an engine at runtime |
+
+The boundary gate enforces the last row: from an orchestrator's `src/`, an import of
+a `@hobo/data-<engine>` package, a database driver (`node:sqlite`, `pg`, `mongodb`, …),
+or engine-specific storage is refused in any form — static, dynamic `import()`, or
+`require()` — and allowed only from tests; one engine package importing another at
+runtime is refused too. `@hobo/data` is
+unchanged — it stays the app-authoring kernel and is deliberately not the
+common engine package. Detail, evidence, and limits are in
+[data-engines-continuous-migration.md](./data-engines-continuous-migration.md).
+
 ### Stations
 
 | Package | Owns |
@@ -210,7 +233,7 @@ composition root *and* the CLI binary. Split it:
 |---|---|
 | `@hobo/host` | composition root **library**: wires manifests, broker, resolvers, station-local, runtimes into a runnable local stack |
 | `@hobo/hobo` | the `hobo` CLI binary, over `@hobo/host` |
-| `@hobo/station-cli`, `@hobo/code`, `@hobo/rift`, `@hobo/stage-gate`, `@hobo/conformance` | the other binaries, over `@hobo/host` or the core packages directly |
+| `@hobo/station-cli`, `@hobo/rift`, `@hobo/stage-gate`, `@hobo/conformance` | the other binaries, over `@hobo/host` or the core packages directly |
 | `@hobo/control-yard`, `@hobo/status-page`, `site` | web apps, over `@hobo/host` or core packages directly |
 
 That gives the brief's outcome — every CLI and web app on one composition

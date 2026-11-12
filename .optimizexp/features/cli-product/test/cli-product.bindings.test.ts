@@ -9,7 +9,6 @@ import {
   assertExitCode,
   assertJsonFieldEquals,
   runHoboCli,
-  runHoboCodeCli,
   setFeatureContext,
   setPersona,
 } from "../steps/implementations.ts";
@@ -42,12 +41,5 @@ describe("optimizexp feature cli-product bindings", () => {
     assertExitCode(world, 1);
     assertJsonFieldEquals(world, "status", "not_implemented");
     assertJsonFieldEquals(world, "code", "HOBO_CLI_STUB");
-  });
-
-  it("runs hobo-code unknown verb and parses the JSON envelope", () => {
-    const world = createWorld("cli-product");
-    runHoboCodeCli(world, "notaverb-zz --json");
-    assertExitCode(world, 1);
-    assertJsonFieldEquals(world, "code", "HOBO_CODE_UNKNOWN_VERB");
   });
 });

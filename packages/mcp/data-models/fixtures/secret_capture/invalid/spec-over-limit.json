@@ -1,0 +1,9 @@
+{
+	"name": "HOBO_CI_WEBHOOK_SECRET",
+	"target": "runtime",
+	"label": "Webhook secret",
+	"purpose": "GitHub signs webhook deliveries with it.",
+	"minBytes": 32,
+	"maxBytes": 1048576,
+	"charset": "printable-line"
+}

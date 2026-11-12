@@ -1,0 +1,484 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-vercel-blob ephemeral-state binding, through @vercel/blob 2.8.2"
+	},
+	"provider": {
+		"name": "Vercel Blob API, private store"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "HTTP exchanges the binding causes through the pinned SDK, with only the request headers its behaviour depends on. Hand-authored from a run against the local emulator, not captured from or verified against Vercel. The clock, incarnations and write ids are fixed; ETags are the emulator's. The interaction sent by 'another writer' is replayed by the provider side and skipped by the consumer side."
+	},
+	"interactions": [
+		{
+			"description": "putIfAbsent of a missing key: create-only private upload, accepted",
+			"sentBy": "binding",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/bGVhc2U6NDI"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "0",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-1\"}"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"pathname": "pact/bGVhc2U6NDI",
+					"contentType": "application/json",
+					"contentDisposition": "inline",
+					"etag": "\"1\""
+				}
+			}
+		},
+		{
+			"description": "putIfAbsent of a live key: the create-only upload is refused",
+			"sentBy": "binding",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/bGVhc2U6NDI"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "0",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-2\\\"}\",\"incarnation\":\"inc-2\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-2\"}"
+			},
+			"response": {
+				"status": 400,
+				"headers": {},
+				"body": {
+					"error": {
+						"code": "bad_request",
+						"message": "This blob already exists, use `allowOverwrite: true` if you want to overwrite it."
+					}
+				}
+			}
+		},
+		{
+			"description": "putIfAbsent of a live key: origin read shows the live record",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6NDI",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"1\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-1\"}"
+			}
+		},
+		{
+			"description": "get: origin read",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6NDI",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"1\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-1\"}"
+			}
+		},
+		{
+			"description": "compareAndSet: origin read for the version and ETag",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6NDI",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"1\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-1\"}"
+			}
+		},
+		{
+			"description": "compareAndSet: upload conditional on the ETag read, accepted",
+			"sentBy": "binding",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/bGVhc2U6NDI"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "1",
+					"x-if-match": "\"1\"",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\",\\\"state\\\":\\\"dispatched\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-3\"}"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"pathname": "pact/bGVhc2U6NDI",
+					"contentType": "application/json",
+					"contentDisposition": "inline",
+					"etag": "\"2\""
+				}
+			}
+		},
+		{
+			"description": "compareAndSet with a stale version: origin read only",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6NDI",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"2\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\",\\\"state\\\":\\\"dispatched\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-3\"}"
+			}
+		},
+		{
+			"description": "getMany: origin read of the present key",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6NDI",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"2\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\",\\\"state\\\":\\\"dispatched\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-3\"}"
+			}
+		},
+		{
+			"description": "getMany: origin read of an absent key is a 404",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6YWJzZW50",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 404,
+				"headers": {},
+				"body": ""
+			}
+		},
+		{
+			"description": "increment of a missing key: origin read is a 404",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/cmF0ZTph",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 404,
+				"headers": {},
+				"body": ""
+			}
+		},
+		{
+			"description": "increment of a missing key: create-only upload of the step",
+			"sentBy": "binding",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/cmF0ZTph"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "0",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"2\",\"incarnation\":\"inc-3\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-4\"}"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"pathname": "pact/cmF0ZTph",
+					"contentType": "application/json",
+					"contentDisposition": "inline",
+					"etag": "\"3\""
+				}
+			}
+		},
+		{
+			"description": "increment: origin read of the counter",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/cmF0ZTph",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"3\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"2\",\"incarnation\":\"inc-3\",\"revision\":\"1\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-4\"}"
+			}
+		},
+		{
+			"description": "another writer bumps the counter with its own conditional upload",
+			"sentBy": "another writer",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/cmF0ZTph"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "1",
+					"x-if-match": "\"3\"",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"10\",\"incarnation\":\"inc-3\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"other-writer-1\"}"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"pathname": "pact/cmF0ZTph",
+					"contentType": "application/json",
+					"contentDisposition": "inline",
+					"etag": "\"4\""
+				}
+			}
+		},
+		{
+			"description": "increment: the upload conditional on the ETag it read is refused (412)",
+			"sentBy": "binding",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/cmF0ZTph"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "1",
+					"x-if-match": "\"3\"",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"5\",\"incarnation\":\"inc-3\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-5\"}"
+			},
+			"response": {
+				"status": 412,
+				"headers": {},
+				"body": {
+					"error": {
+						"code": "precondition_failed",
+						"message": "Precondition failed: ETag mismatch"
+					}
+				}
+			}
+		},
+		{
+			"description": "increment: origin read after the conflict",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/cmF0ZTph",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"4\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"10\",\"incarnation\":\"inc-3\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"other-writer-1\"}"
+			}
+		},
+		{
+			"description": "increment: upload conditional on the new ETag, accepted",
+			"sentBy": "binding",
+			"request": {
+				"method": "PUT",
+				"path": "/api/blob/",
+				"query": {
+					"pathname": "pact/cmF0ZTph"
+				},
+				"headers": {
+					"x-vercel-blob-access": "private",
+					"x-allow-overwrite": "1",
+					"x-if-match": "\"4\"",
+					"x-add-random-suffix": "0",
+					"x-content-type": "application/json",
+					"x-cache-control-max-age": "60"
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"13\",\"incarnation\":\"inc-3\",\"revision\":\"3\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-6\"}"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"pathname": "pact/cmF0ZTph",
+					"contentType": "application/json",
+					"contentDisposition": "inline",
+					"etag": "\"5\""
+				}
+			}
+		},
+		{
+			"description": "expire of a missing key: origin read is a 404",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bWlzc2luZw",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 404,
+				"headers": {},
+				"body": ""
+			}
+		},
+		{
+			"description": "versioned delete: origin read for the version and ETag",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/blob/pact/bGVhc2U6NDI",
+				"query": {
+					"cache": "0"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"etag": "\"2\""
+				},
+				"body": "{\"format\":\"hobo.vercel-blob.ephemeral/v1\",\"value\":\"{\\\"runner\\\":\\\"r-1\\\",\\\"state\\\":\\\"dispatched\\\"}\",\"incarnation\":\"inc-1\",\"revision\":\"2\",\"expiresAtMs\":\"1800000060000\",\"writeId\":\"w-3\"}"
+			}
+		},
+		{
+			"description": "versioned delete: delete conditional on the ETag, accepted",
+			"sentBy": "binding",
+			"request": {
+				"method": "POST",
+				"path": "/api/blob/delete",
+				"query": {},
+				"headers": {
+					"x-if-match": "\"2\""
+				},
+				"body": "{\"urls\":[\"pact/bGVhc2U6NDI\"]}"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {}
+			}
+		},
+		{
+			"description": "purge: one listing page of the namespace",
+			"sentBy": "binding",
+			"request": {
+				"method": "GET",
+				"path": "/api/blob",
+				"query": {
+					"limit": "1000",
+					"prefix": "pact/"
+				},
+				"headers": {},
+				"body": ""
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"blobs": [
+						{
+							"pathname": "pact/cmF0ZTph",
+							"size": 0,
+							"uploadedAt": "2027-01-15T08:00:00.000Z",
+							"etag": "\"5\""
+						}
+					],
+					"hasMore": false
+				}
+			}
+		}
+	]
+}

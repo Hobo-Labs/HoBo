@@ -1,0 +1,10 @@
+{
+	"name": "HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+	"target": "runtime",
+	"label": "GitHub App private key (PEM)",
+	"purpose": "The relay signs GitHub App installation tokens with it.",
+	"minBytes": 1500,
+	"maxBytes": 32768,
+	"charset": "printable-multiline",
+	"pattern": "^-----BEGIN (RSA )?PRIVATE KEY-----[\\s\\S]+-----END (RSA )?PRIVATE KEY-----\\r?\\n?$"
+}

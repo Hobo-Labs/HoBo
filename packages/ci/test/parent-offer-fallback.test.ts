@@ -8,11 +8,9 @@ import {
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
 	type BudgetReservation,
-	createPostgresBudgetAdmissionAuthority,
 	createSqliteBudgetAdmissionAuthority,
 	HostingQuoteSchema,
 } from "@hobo/broker";
-import { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	AccountSchema,
@@ -23,21 +21,17 @@ import {
 	OfferSchema,
 } from "../src/_generated/ci_pb.js";
 import { parsePipeline } from "../src/execution.js";
-import { PostgresCiStore } from "../src/postgres-store.js";
 import {
-	type AsyncBudgetAdmissionAuthority,
 	type CiSharedBudgetOptions,
 	ciFinancialPlanHash,
 	ciRequestDigest,
 	ciReservationId,
-	createCiAsyncSharedBudgetHooks,
 	createCiSharedBudgetHooks,
 } from "../src/shared-budget.js";
 import { LeaseStore } from "../src/store.js";
 
 const NOW = "2026-10-30T12:00:00Z";
 const UNTIL = "2026-10-31T00:00:00Z";
-const connectionURL = process.env.HOBO_TEST_POSTGRES_URL;
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
 	for (const close of cleanup.splice(0).reverse()) await close();
@@ -220,9 +214,7 @@ const allocationCoverage: NonNullable<
 			bucket.periodId === lease.budgetPeriodId,
 	);
 
-function parentControls(
-	authority: BudgetAdmissionAuthority | AsyncBudgetAdmissionAuthority,
-) {
+function parentControls(authority: BudgetAdmissionAuthority) {
 	return {
 		readParent: async () => authority.read(NOW),
 		lookupParent: async (id: string) => authority.lookup(id),
@@ -316,56 +308,6 @@ async function sqliteScenario(
 		},
 	};
 }
-async function postgresScenario(
-	credits: number,
-	loseAcknowledgement: boolean,
-): Promise<Scenario> {
-	const f = fixture(credits);
-	const nativePool = new Pool({ connectionString: connectionURL, max: 5 });
-	cleanup.push(() => nativePool.end());
-	const parent = createPostgresBudgetAdmissionAuthority({
-		pool: nativePool,
-		snapshot: f.snapshot,
-		now: () => NOW,
-	});
-	const attempts: Lease[] = [];
-	const actual = createCiAsyncSharedBudgetHooks({
-		authority: parent,
-		quoteLease: (lease) => {
-			attempts.push(lease);
-			return quoteLease(lease);
-		},
-		mode: "conservative",
-		verifyAllocationCoverage: allocationCoverage,
-		now: () => NOW,
-	});
-	const store = new PostgresCiStore(nativePool, randomUUID(), {
-		sharedBudget: {
-			...actual,
-			async reserve(lease, measurements) {
-				const receipt = await actual.reserve(lease, measurements);
-				if (loseAcknowledgement)
-					throw new Error("unknown parent write acknowledgement");
-				return receipt;
-			},
-		},
-	});
-	await store.configure(f.config, 0, NOW);
-	await store.queue(f.job, NOW);
-	return {
-		attempts,
-		admit: () => store.reserve(f.account, f.job, NOW),
-		all: () => store.all(),
-		reservedEvents: async () =>
-			(await store.events()).filter(
-				(event) => event.type === "ci.LeaseReserved",
-			).length,
-		...parentControls(parent),
-		allowAcknowledgement() {
-			loseAcknowledgement = false;
-		},
-	};
-}
 function acceptance(
 	label: string,
 	setup: (credits: number, loseAck: boolean) => Promise<Scenario>,
@@ -446,7 +388,4 @@ acceptance(
 );
 acceptance("SQLite runner parent-aware offer fallback", (credits, loseAck) =>
 	sqliteScenario(false, credits, loseAck),
-);
-describe.skipIf(!connectionURL)("real PostgreSQL", () =>
-	acceptance("runner parent-aware offer fallback", postgresScenario),
 );

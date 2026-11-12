@@ -50,6 +50,7 @@ Default durable journal is a **single-owner SQLite** path. Alternate engines and
 | **`hobo` CLI** | Lifecycle, diagnosis, authoring, ops |
 | **MCP** | Same verbs for agents |
 | **Metering** | Usage facts and showback |
+| **HoBo CI** | Where CI jobs run: one runner label, a fleet of providers ranked by the Dispatcher under the budget policy |
 
 ## Rules of thumb
 
@@ -60,4 +61,4 @@ Default durable journal is a **single-owner SQLite** path. Alternate engines and
 
 ## Related
 
-[Architecture](/HoBo/architecture/) · [Component hosts](/HoBo/reference/component-hosts/) · [Runtime ports](/HoBo/reference/runtime-ports/) · [CLI](/HoBo/reference/cli/)
+[Architecture](/HoBo/architecture/) · [Component hosts](/HoBo/reference/component-hosts/) · [Runtime ports](/HoBo/reference/runtime-ports/) · [CLI](/HoBo/reference/cli/) · [HoBo CI](/HoBo/ci/)

@@ -1,5 +1,0 @@
-{
-	"supersededBy": "feat/hobo-code-experience-overhaul (docs/plans/hobo-code-experience-overhaul/sdlc-state.md)",
-	"reason": "Certified the pre-overhaul InteractiveShell from artifacts that were never committed: iterations 000/001 scores.json are missing (the 11→2 harm and 4/5 delight numbers are unauditable), and the flagship cold-start TTY evidence was captured on the non-TTY fail-closed path with no primary artifact. The shell has since been rebuilt (differential rendering, honest dispatch replies, streaming engine); re-certification must use the perceptual-metrics harness with a real TTY recording.",
-	"at": "2026-08-03T00:00:00Z"
-}

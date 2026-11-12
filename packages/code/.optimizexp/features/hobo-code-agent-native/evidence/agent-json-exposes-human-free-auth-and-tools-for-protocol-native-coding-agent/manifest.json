@@ -1,1 +1,0 @@
-{"featureId":"hobo-code-agent-native","scenarioSlug":"agent-json-exposes-human-free-auth-and-tools-for-protocol-native-coding-agent","driver":"cli","primary":"primary.txt","kind":"transcript","capturedAt":"2026-07-31T19:42:12Z","command":"hobo-code agent --json"}

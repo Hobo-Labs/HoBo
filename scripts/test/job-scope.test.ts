@@ -179,19 +179,36 @@ describe("job-scope", () => {
 				"src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts",
 			],
 			["scripts/ci/dev-cold-loop-timing.mts"],
+			[
+				"scripts/ci/data-live-servers.mts",
+				"scripts/ensure-built.mts",
+				"vitest.config.ts",
+				"packages/data-core/test/conformance.test.ts",
+				"packages/data-sqlite/test/conformance.test.ts",
+				"packages/data-postgres/test/engine-live.test.ts",
+				"packages/data-postgres/test/engine-hardening-live.test.ts",
+				"packages/data-postgres/test/native-live.test.ts",
+				"packages/data-postgres/test/cross-engine-live.test.ts",
+				"packages/data-mongodb/test/live.test.ts",
+				"packages/data-mongodb/test/cross-engine-live.test.ts",
+				"packages/trails/test/data-patterns-e2e.test.ts",
+			],
 		]);
 		const own = [
 			"src/draft/technical-proofs/componentize-artifact-trust-contract/src/index.ts",
 			"packages/cli/src/index.ts",
+			"packages/data-mongodb/src/index.ts",
 		];
+		// The jobs that run vitest from the root config load its setup files.
+		const vitestJobs = [0, 2];
 		for (const [index, entries] of jobs.entries()) {
 			const skip = jobScope(["docs/a.md"], entries, fs);
 			assert.equal(skip.run, false, skip.reason);
 			assert.equal(jobScope([own[index] ?? ""], entries, fs).run, true);
 			assert.equal(
 				jobScope(["test/setup/isolate-hobo-home.ts"], entries, fs).run,
-				index === 0,
-				"the root vitest setup is an input of the vitest-run job only",
+				vitestJobs.includes(index),
+				"the root vitest setup is an input of the vitest-run jobs only",
 			);
 		}
 	});

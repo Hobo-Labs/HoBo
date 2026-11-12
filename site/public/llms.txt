@@ -18,7 +18,6 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 - [Getting started](https://tyler-r-kendrick.github.io/HoBo/guide/getting-started/)
 - [Core concepts](https://tyler-r-kendrick.github.io/HoBo/guide/concepts/)
 - [The hobo CLI](https://tyler-r-kendrick.github.io/HoBo/guide/cli/)
-- [hobo-code](https://tyler-r-kendrick.github.io/HoBo/guide/hobo-code/)
 - [Search](https://tyler-r-kendrick.github.io/HoBo/search/)
 - [The trail map](https://tyler-r-kendrick.github.io/HoBo/guide/status/)
 
@@ -44,6 +43,14 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 - [Continuous migration](https://tyler-r-kendrick.github.io/HoBo/cicd/migration/)
 - [Progressive delivery](https://tyler-r-kendrick.github.io/HoBo/cicd/progressive-delivery/)
 - [Generation pipeline](https://tyler-r-kendrick.github.io/HoBo/cicd/generation/)
+
+## HoBo CI
+
+- [HoBo CI overview](https://tyler-r-kendrick.github.io/HoBo/ci/)
+- [Providers](https://tyler-r-kendrick.github.io/HoBo/ci/providers/)
+- [Fleet balancing](https://tyler-r-kendrick.github.io/HoBo/ci/fleet-balancing/)
+- [Route table](https://tyler-r-kendrick.github.io/HoBo/ci/route-table/)
+- [Host health](https://tyler-r-kendrick.github.io/HoBo/ci/host-health/)
 
 ## Primitives
 

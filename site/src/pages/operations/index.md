@@ -32,4 +32,4 @@ Also: [Shared model](/HoBo/operations/shared-model/) · [Handoffs & A2H](/HoBo/o
 
 ## Related
 
-[The Crew (custom ACP)](/HoBo/crew/) · [Observability](/HoBo/observability/) · [CI/CD](/HoBo/cicd/)
+[The Crew (custom ACP)](/HoBo/crew/) · [HoBo CI](/HoBo/ci/) (where CI jobs run) · [Observability](/HoBo/observability/) · [CI/CD](/HoBo/cicd/)

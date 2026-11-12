@@ -10,9 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-	installSdkTarballsIntoApp,
 	moveExtractedPackageDir,
-	nodeModulesPathForPackageName,
 	RELEASE_OCI_STAGE_SPECS,
 	releaseOciAffectedImageIds,
 	releaseOciDeployArgs,
@@ -24,24 +22,21 @@ import {
 	sdkOverlayExtractRoot,
 	stageReleaseOciApp,
 } from "../ci/stage-release-oci-app.mts";
-import {
-	SDK_PACKAGES,
-	stageSdkArtifactsDir,
-} from "../ci/stage-sdk-artifacts.mts";
+import { SDK_PACKAGES } from "../ci/stage-sdk-artifacts.mts";
 import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
-function runQuiet(cwd: string, command: string, args: readonly string[]): void {
-	const result = spawnSync(command, args, { cwd, encoding: "utf8" });
-	expect(
-		result.status,
-		`${result.stdout}\n${result.stderr}\n${result.error?.message ?? ""}`,
-	).toBe(0);
-}
+// The three cases that take this do nothing but spawn git, some ten processes
+// each against a fresh repository, and on a loaded runner those spawns alone
+// have passed the 10 s default. No network is involved: the repositories have
+// no remote.
+const GIT_FIXTURE_TIMEOUT_MS = 30_000;
 
 describe("release OCI app staging", () => {
-	it("resolves the Turbo base on a sparse PR checkout", () => {
+	it("resolves the Turbo base on a sparse PR checkout", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-base-"));
 		const git = (...args: string[]): void => {
 			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
@@ -73,7 +68,9 @@ describe("release OCI app staging", () => {
 		}
 	});
 
-	it("builds the full importer closure on tag release when origin/main is absent", () => {
+	it("builds the full importer closure on tag release when origin/main is absent", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-tag-"));
 		const previousRef = process.env.GITHUB_REF;
 		const previousEvent = process.env.GITHUB_EVENT_NAME;
@@ -109,7 +106,9 @@ describe("release OCI app staging", () => {
 		}
 	});
 
-	it("combines SCM-affected and requested image filters", () => {
+	it("combines SCM-affected and requested image filters", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-filters-"));
 		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
 		const git = (...args: string[]): void => {
@@ -174,7 +173,6 @@ describe("release OCI app staging", () => {
 
 	it.each([
 		["hobo-cli", "@hobo/hobo", "@hobo/hobo..."],
-		["hobo-code", "@hobo/code", "@hobo/code..."],
 		["hobo-codegen", "@hobo/schema-tools", "@hobo/schema-tools..."],
 		["hobo-ci-serve", "@hobo/ci-gh-actions", "@hobo/ci-gh-actions..."],
 	])("stages %s as a deployed app", (imageId, packageName, buildFilter) => {
@@ -195,7 +193,7 @@ describe("release OCI app staging", () => {
 		const specs = Object.values(RELEASE_OCI_STAGE_SPECS).filter(
 			(spec) => spec.kind === "deploy",
 		);
-		expect(specs).toHaveLength(4);
+		expect(specs).toHaveLength(3);
 		for (const spec of specs) {
 			const appDir = join("staging", spec.appPath);
 			expect(releaseOciDeployArgs(spec.packageName, appDir, storeDir)).toEqual([
@@ -203,7 +201,7 @@ describe("release OCI app staging", () => {
 				spec.packageName,
 				"deploy",
 				"--prod",
-				"--offline",
+				"--prefer-offline",
 				"--config.inject-workspace-packages=true",
 				"--cpu=current",
 				"--os=current",
@@ -241,6 +239,16 @@ describe("release OCI app staging", () => {
 		expect(
 			releaseOciDeployArgs("@hobo/hobo", "app", storeDir, location.hardlink),
 		).toContain("--config.package-import-method=hardlink");
+	});
+
+	it("prefers npm_config_store_dir without shelling out to pnpm", () => {
+		const storeDir = resolve("/pnpm-store");
+		expect(
+			releasePnpmStore(root, {
+				npm_config_store_dir: storeDir,
+				PATH: "/usr/bin",
+			}),
+		).toBe(storeDir);
 	});
 
 	it("pins the workspace store for a deployment on another filesystem", () => {
@@ -293,9 +301,6 @@ describe("release OCI app staging", () => {
 				{ name: "hobo", entrypoint: "dist/bin/hobo.js" },
 				{ name: "hobo-mcp", entrypoint: "dist/bin/hobo-mcp.js" },
 			],
-		});
-		expect(RELEASE_OCI_STAGE_SPECS["hobo-code"]).toMatchObject({
-			wrappers: [{ name: "hobo-code", entrypoint: "dist/bin/hobo-code.js" }],
 		});
 		expect(RELEASE_OCI_STAGE_SPECS["hobo-codegen"]).toMatchObject({
 			wrappers: [{ name: "hobo-codegen", entrypoint: "dist/cli.js" }],
@@ -403,42 +408,6 @@ describe("release OCI app staging", () => {
 			"@hobo/cli",
 		]);
 	});
-
-	it("overlays SDK tarballs into a pnpm-deploy app without npm install", () => {
-		const previousSemver = process.env.HOBO_RELEASE_SEMVER;
-		const fixtureRoot = mkdtempSync(join(tmpdir(), "hobo-sdk-overlay-"));
-		const appDir = join(fixtureRoot, "app");
-		const artifactsDir = join(fixtureRoot, "artifacts");
-		try {
-			process.env.HOBO_RELEASE_SEMVER = "0.0.0-pr.test";
-			mkdirSync(appDir, { recursive: true });
-			runQuiet(
-				root,
-				"pnpm",
-				releaseOciDeployArgs("@hobo/hobo", appDir, releasePnpmStore(root)),
-			);
-			stageSdkArtifactsDir(artifactsDir);
-			installSdkTarballsIntoApp(appDir, artifactsDir);
-			const cliPath = nodeModulesPathForPackageName(appDir, "@hobo-labs/cli");
-			expect(readFileSync(join(cliPath, "package.json"), "utf8")).toMatch(
-				/"name"\s*:\s*"@hobo-labs\/cli"/,
-			);
-			const probe = spawnSync(
-				"node",
-				[
-					"--input-type=module",
-					"-e",
-					"import('@hobo-labs/core').then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); })",
-				],
-				{ cwd: appDir, encoding: "utf8" },
-			);
-			expect(probe.status, probe.stderr || probe.stdout).toBe(0);
-		} finally {
-			if (previousSemver === undefined) delete process.env.HOBO_RELEASE_SEMVER;
-			else process.env.HOBO_RELEASE_SEMVER = previousSemver;
-			rmSync(fixtureRoot, { recursive: true, force: true });
-		}
-	}, 240_000);
 
 	it("uses an overlay temp dir under the deploy app (same device as node_modules)", () => {
 		const appDir = mkdtempSync(join(tmpdir(), "hobo-overlay-root-"));

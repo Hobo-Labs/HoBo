@@ -93,9 +93,14 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("pr_gate_validation"),
 		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
 	);
-	assert.match(
-		jobText("ci-guard"),
-		/^ {4}if: github\.event_name == 'pull_request'$/mu,
+	// Pull requests only, and skipped there only for a signed local run the
+	// route job verified as covering this job by id.
+	assert.ok(
+		jobText("ci-guard")
+			.split("\n")
+			.includes(
+				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+			),
 	);
 });
 
@@ -174,9 +179,21 @@ jobs:
 });
 const trunkRunsOn =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+const routedRunsOn =
+	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
+on:
+  workflow_dispatch:
+jobs:
+  job:
+    if: \${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/ci-runner-preflight
+`;
+	const hoboCheckoutOnly = `name: x
 on:
   workflow_dispatch:
 jobs:
@@ -197,7 +214,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           sparse-checkout: .github/actions
-      - uses: ./.github/actions/hobo-checkout
+      - uses: ./.github/actions/ci-runner-preflight
 `;
 	const badResult = await lint(
 		await fixture({}, { "local-action-guard.yml": disabledBad }),
@@ -205,7 +222,15 @@ jobs:
 	assert.equal(badResult.status, 1);
 	assert.match(
 		badResult.stderr,
-		/repo-local action \.\/\.github\/actions\/hobo-checkout must follow a pinned actions\/checkout step/,
+		/repo-local action \.\/\.github\/actions\/ci-runner-preflight must follow a pinned actions\/checkout step/,
+	);
+	assert.equal(
+		(
+			await lint(
+				await fixture({}, { "local-action-guard.yml": hoboCheckoutOnly }),
+			)
+		).status,
+		0,
 	);
 	assert.equal(
 		(await lint(await fixture({}, { "local-action-guard.yml": disabledGood })))
@@ -382,7 +407,6 @@ test("every trunk-capable CI and release job requests the trunk label by default
 		"examples-e2e.yml",
 		"dev-env-smoke.yml",
 		"release-hobo.yml",
-		"release-code.yml",
 		"pricing-ci.yml",
 		"release-pricing.yml",
 	]) {
@@ -420,6 +444,42 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
+			// The route job chooses the runner, so it cannot wait on one.
+			if ((lines[start] ?? "") === "  route:") {
+				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
+				assert.match(block, /uses: \.\/\.github\/actions\/route-runner$/m);
+				continue;
+			}
+			// A required gate runs no action on GitHub-hosted too. `always()` is for
+			// PR gates that still summarize upstream jobs; `!cancelled()` is for
+			// release train gates that must drop when the run is cancelled.
+			if (runsOn === "ubuntu-24.04") {
+				assert.match(
+					condition,
+					/always\(\)|!cancelled\(\)/,
+					`${file}:${lines[start]}`,
+				);
+				assert.doesNotMatch(block, /uses:/, `${file}:${lines[start]}`);
+				continue;
+			}
+			// A routed job asks for the label the route job chose, which is the
+			// trunk label for trunk events when the fleet is taking jobs.
+			if (runsOn === routedRunsOn) {
+				assert.match(
+					block,
+					/^    needs: (route|\[route[,\]])/m,
+					`${file}:${lines[start]} must need route`,
+				);
+				continue;
+			}
+			// Everything in hobo-ci.yml is routed except deps-image (box Docker) and
+			// main trunk jobs that pin hobo-trunk to skip the route pickup gate.
+			if (file === "hobo-ci.yml")
+				assert.match(
+					lines[start] ?? "",
+					/^  (ci-deps-image|main-gate-plan|main-gate|main_workspace_tests|main_gate_finish):$/,
+					`${file}:${lines[start]} is not routed`,
+				);
 			const prOnly =
 				/github\.event_name == 'pull_request'/.test(condition) &&
 				!condition.includes("||");

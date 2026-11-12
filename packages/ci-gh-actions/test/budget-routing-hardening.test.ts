@@ -37,7 +37,7 @@ function setup(
 	strategy = "min-cost",
 	common?: { budgetPolicy: JsonObject; hooks: CiSharedBudgetHooks },
 ) {
-	const h = harness(":memory:", common?.hooks);
+	const h = harness(undefined, common?.hooks);
 	fixtures.push(h);
 	const account = h.configuration.accounts[0];
 	if (!account?.offers[0]) throw new Error("missing fixture account");
@@ -241,6 +241,9 @@ it("retains accounting context while limiting hosted repricing to the reserved h
 	expect(h.store.get(lease.id)?.state).toBe("dispatched");
 });
 
+// Both arms run the one relay core. They differ in the store it writes through:
+// the SQLite store of the Node host (`hosted=false`), or an adapter over the
+// lease journal alone (`hosted=true`).
 describe.each([false, true])("CI budget lifecycle (hosted=%s)", (hosted) => {
 	it("dispatches a strict common policy with attempt, queue and other-provider guards after the real parent claim", async () => {
 		const h = sharedSetup(hosted);
@@ -372,11 +375,21 @@ describe.each([false, true])("CI budget lifecycle (hosted=%s)", (hosted) => {
 	it("does not dispatch if financial claim or durable intent crosses the queue deadline", async () => {
 		const h = setup(hosted);
 		const lease = h.reserve(new Date(Date.parse(NOW) + 1000).toISOString());
+		const crossDeadline = (event: string) => {
+			if (event === "ci.DispatchRequested")
+				h.clock.now = new Date(Date.parse(NOW) + 2000).toISOString();
+		};
+		// The intent is written through whichever store this relay holds.
 		const transition = h.store.transition.bind(h.store);
 		h.store.transition = (...args) => {
 			const result = transition(...args);
-			if (args[3] === "ci.DispatchRequested")
-				h.clock.now = new Date(Date.parse(NOW) + 2000).toISOString();
+			crossDeadline(args[3]);
+			return result;
+		};
+		const ledgerTransition = h.ledger.transition.bind(h.ledger);
+		h.ledger.transition = async (...args) => {
+			const result = await ledgerTransition(...args);
+			crossDeadline(args[3]);
 			return result;
 		};
 		await h.relay.dispatchPending();

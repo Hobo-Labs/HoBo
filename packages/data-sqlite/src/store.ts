@@ -1,0 +1,1107 @@
+/**
+ * The SQLite dataset store: every operation the SPI needs, synchronously,
+ * over one `node:sqlite` connection.
+ *
+ * SQLite is embedded and single-owner (ADR-0135: one partition, one writer),
+ * and that shapes three decisions here, each of which the engine declaration
+ * states rather than hides:
+ *
+ * - **Capture is a transactional outbox.** A change is journaled in the same
+ *   transaction as the write that caused it. A write that bypasses this store
+ *   is not captured. A journal row is kept only while a subscription has yet
+ *   to acknowledge it: a subscription starts at the head, so with no
+ *   subscription nobody is entitled to a change and none is retained.
+ * - **The fence is enforced at the write entry point.** It is a durable row
+ *   checked inside the write transaction — but a process with its own
+ *   connection to the file is not stopped by it.
+ * - **A scan is fuzzy.** It pages by key on the same connection; the
+ *   executors take a capture position first and replay from it, which
+ *   converges regardless.
+ */
+import { randomUUID } from "node:crypto";
+import {
+	DatabaseSync,
+	type SQLInputValue,
+	type SQLOutputValue,
+	type StatementSync,
+} from "node:sqlite";
+import {
+	type CanonicalRecord,
+	type CaptureBatch,
+	CapturePositionError,
+	type ChangeEnvelope,
+	canonicalEncode,
+	DataCoreError,
+	type DatasetDigest,
+	DatasetDigestBuilder,
+	type DatasetField,
+	type DatasetSchema,
+	type DatasetScope,
+	decodeRecordKey,
+	encodeRecordKey,
+	envelopeOf,
+	FencedWriteError,
+	type JsonObject,
+	type JsonValue,
+	type Position,
+	parseCanonicalRecord,
+	parseDatasetSchema,
+	type RecordMutation,
+	StaleApplyError,
+	schemaDigest,
+} from "@hobo/data-core";
+
+const tagOf = Object.prototype.toString;
+
+type Row = Record<string, SQLOutputValue>;
+
+/** Column holding undeclared fields of an open schema, as one JSON object. */
+const EXTRA_COLUMN = "hobo_extra";
+const TENANT_COLUMN = "tenant_id";
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+/**
+ * Table names a dataset may not take: this binding's own metadata tables and
+ * SQLite's internal ones. A dataset named after the fence table would hand
+ * the records port every fence token, and the means to delete a fence.
+ */
+const RESERVED_TABLE_PREFIXES: readonly string[] = Object.freeze([
+	"hobo_data_",
+	"sqlite_",
+]);
+/** A journal position as this store mints it: a sequence number in decimal. */
+const POSITION = /^(0|[1-9][0-9]*)$/u;
+
+function assertNotReserved(dataset: string): void {
+	const name = dataset.toLowerCase();
+	if (RESERVED_TABLE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+		throw new DataCoreError(
+			"INVALID_DATASET_SCHEMA",
+			`dataset name ${dataset} is reserved by the SQLite binding`,
+			{ detail: { dataset } },
+		);
+	}
+}
+
+const NATIVE_TYPES: Readonly<Record<DatasetField["type"], string>> =
+	Object.freeze({
+		bool: "INTEGER",
+		int64: "INTEGER",
+		float64: "REAL",
+		decimal: "TEXT",
+		string: "TEXT",
+		bytes: "BLOB",
+		timestamp: "TEXT",
+		date: "TEXT",
+		uuid: "TEXT",
+		json: "TEXT",
+		encrypted: "TEXT",
+	});
+
+export function sqliteNativeType(type: DatasetField["type"]): string {
+	return NATIVE_TYPES[type];
+}
+
+export function quoteIdentifier(name: string): string {
+	if (!IDENTIFIER.test(name)) {
+		throw new DataCoreError(
+			"INVALID_DATASET_SCHEMA",
+			`invalid SQL identifier: ${name}`,
+			{
+				detail: { identifier: name },
+			},
+		);
+	}
+	return `"${name}"`;
+}
+
+function isText<T>(value: T): value is T & string {
+	return tagOf.call(value) === "[object String]";
+}
+
+function isBigInt<T>(value: T): value is T & bigint {
+	return tagOf.call(value) === "[object BigInt]";
+}
+
+function parseJson(text: string): JsonValue {
+	// SAFETY: JSON.parse yields a JSON value at this document boundary.
+	return JSON.parse(text) as JsonValue;
+}
+
+function toNative(field: DatasetField, value: JsonValue): SQLInputValue {
+	if (value === null) return null;
+	switch (field.type) {
+		case "bool":
+			return value === true ? 1 : 0;
+		case "int64":
+			return BigInt(String(value));
+		case "float64":
+			return Number(value);
+		case "bytes":
+			return Buffer.from(String(value), "base64");
+		case "json":
+		case "encrypted":
+			// JSON text escapes U+0000, so it survives where raw text would not.
+			return canonicalEncode(value);
+		case "string": {
+			const text = String(value);
+			// SQLite's text API stops at the first NUL: the value would be stored
+			// truncated. Refusing is the only outcome that is not silent loss.
+			if (text.includes("\u0000")) {
+				throw new DataCoreError(
+					"INVALID_RECORD",
+					`${field.name} contains U+0000, which SQLite text cannot hold`,
+					{ detail: { field: field.name } },
+				);
+			}
+			return text;
+		}
+		default:
+			return String(value);
+	}
+}
+
+function fromNative(field: DatasetField, raw: SQLOutputValue): JsonValue {
+	if (raw === null) return null;
+	switch (field.type) {
+		case "bool":
+			return Number(raw) !== 0;
+		case "int64":
+			return isBigInt(raw) ? raw.toString() : String(raw);
+		case "float64":
+			return Number(raw);
+		case "bytes":
+			return raw instanceof Uint8Array
+				? Buffer.from(raw).toString("base64")
+				: String(raw);
+		case "json":
+		case "encrypted":
+			return parseJson(String(raw));
+		default:
+			return String(raw);
+	}
+}
+
+export interface SqliteStoreOptions {
+	/** Store file path, or `:memory:`. */
+	readonly path: string;
+	readonly clock?: () => string;
+}
+
+/** One page of a keyset scan, and the cursor to continue from. */
+export interface KeysetPage {
+	readonly rows: RecordMutation[];
+	readonly last: readonly SQLInputValue[] | undefined;
+}
+
+export interface FenceRow {
+	readonly tenant: string;
+	readonly fenceToken: string;
+}
+
+export class SqliteDatasetStore {
+	readonly path: string;
+	private db: DatabaseSync;
+	private readonly clock: () => string;
+	private readonly statements = new Map<string, StatementSync>();
+	private readonly schemas = new Map<string, DatasetSchema>();
+
+	constructor(options: SqliteStoreOptions) {
+		this.path = options.path;
+		this.clock = options.clock ?? (() => new Date().toISOString());
+		this.db = new DatabaseSync(options.path);
+		this.bootstrap();
+	}
+
+	private bootstrap(): void {
+		// Erasure has to hold in the file, not only in its tables: without this
+		// a deleted row stays readable in the page it was freed from.
+		this.db.exec("PRAGMA secure_delete = ON");
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS hobo_data_datasets (
+				name TEXT PRIMARY KEY,
+				schema TEXT NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS hobo_data_journal (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				dataset TEXT NOT NULL,
+				tenant_id TEXT NOT NULL,
+				key TEXT NOT NULL,
+				op TEXT NOT NULL CHECK (op IN ('upsert', 'delete')),
+				record TEXT,
+				tx INTEGER
+			);
+			CREATE INDEX IF NOT EXISTS hobo_data_journal_scope
+				ON hobo_data_journal (dataset, tenant_id, seq);
+			CREATE TABLE IF NOT EXISTS hobo_data_watermarks (
+				dataset TEXT NOT NULL,
+				source TEXT NOT NULL,
+				position TEXT NOT NULL,
+				PRIMARY KEY (dataset, source)
+			);
+			CREATE TABLE IF NOT EXISTS hobo_data_fences (
+				dataset TEXT NOT NULL,
+				tenant_id TEXT NOT NULL,
+				fence_token TEXT NOT NULL,
+				fenced_at TEXT NOT NULL,
+				PRIMARY KEY (dataset, tenant_id)
+			);
+			CREATE TABLE IF NOT EXISTS hobo_data_subscriptions (
+				name TEXT PRIMARY KEY,
+				dataset TEXT NOT NULL,
+				tenant_id TEXT,
+				start_position INTEGER NOT NULL,
+				ack_position INTEGER NOT NULL
+			);
+		`);
+		// A subscription recorded before its tenant was kept gains the column;
+		// its row stays unbound and is bound by the next scope that names it.
+		const bound = this.db
+			.prepare(
+				"SELECT 1 AS present FROM pragma_table_info('hobo_data_subscriptions') WHERE name = 'tenant_id'",
+			)
+			.get();
+		if (bound === undefined) {
+			this.db.exec(
+				"ALTER TABLE hobo_data_subscriptions ADD COLUMN tenant_id TEXT",
+			);
+		}
+		// A journal written before transactions were marked gains the column;
+		// its existing rows stay unmarked and read as one transaction each.
+		const marked = this.db
+			.prepare(
+				"SELECT 1 AS present FROM pragma_table_info('hobo_data_journal') WHERE name = 'tx'",
+			)
+			.get();
+		if (marked === undefined) {
+			this.db.exec("ALTER TABLE hobo_data_journal ADD COLUMN tx INTEGER");
+		}
+		// A store left by an earlier version may hold journal no reader is
+		// entitled to; it is released on open rather than at the next write.
+		// Looked for first, so that opening a store with nothing to release
+		// takes no write lock.
+		const unowed = this.get(
+			"SELECT seq FROM hobo_data_journal WHERE seq <= ? LIMIT 1",
+			this.journalFloor(),
+		);
+		if (unowed !== undefined) this.prune();
+	}
+
+	/** The raw connection, for the schema-apply port's arbitrary statements. */
+	connection(): DatabaseSync {
+		return this.db;
+	}
+
+	/** Swap the store file for a snapshot and reopen (schema-apply restore). */
+	reopen(replaceFile: () => void): void {
+		this.statements.clear();
+		this.schemas.clear();
+		this.db.close();
+		replaceFile();
+		this.db = new DatabaseSync(this.path);
+		this.bootstrap();
+	}
+
+	close(): void {
+		this.statements.clear();
+		this.db.close();
+	}
+
+	private statement(sql: string): StatementSync {
+		const cached = this.statements.get(sql);
+		if (cached !== undefined) return cached;
+		const prepared = this.db.prepare(sql);
+		// 64-bit integers must survive the trip; a JS number cannot hold them.
+		prepared.setReadBigInts(true);
+		this.statements.set(sql, prepared);
+		return prepared;
+	}
+
+	private all(sql: string, ...params: SQLInputValue[]): Row[] {
+		// SAFETY: node:sqlite returns plain column-name → value rows.
+		return this.statement(sql).all(...params) as Row[];
+	}
+
+	private get(sql: string, ...params: SQLInputValue[]): Row | undefined {
+		// SAFETY: node:sqlite returns a plain column-name → value row or undefined.
+		return this.statement(sql).get(...params) as Row | undefined;
+	}
+
+	private run(sql: string, ...params: SQLInputValue[]): number {
+		return Number(this.statement(sql).run(...params).changes);
+	}
+
+	transaction<T>(body: () => T): T {
+		this.db.exec("BEGIN IMMEDIATE");
+		try {
+			const result = body();
+			this.db.exec("COMMIT");
+			return result;
+		} catch (error) {
+			this.db.exec("ROLLBACK");
+			throw error;
+		}
+	}
+
+	// ── datasets ──────────────────────────────────────────────────────────────
+
+	describe(name: string): DatasetSchema | undefined {
+		const cached = this.schemas.get(name);
+		if (cached !== undefined) return cached;
+		const row = this.get(
+			"SELECT schema FROM hobo_data_datasets WHERE name = ?",
+			name,
+		);
+		if (row === undefined) return undefined;
+		const schema = parseDatasetSchema(parseJson(String(row.schema)));
+		this.schemas.set(name, schema);
+		return schema;
+	}
+
+	schema(name: string): DatasetSchema {
+		// Checked here as well as in `ensure`: a store that registered a
+		// reserved name before it was refused must not serve it either.
+		assertNotReserved(name);
+		const found = this.describe(name);
+		if (found === undefined) {
+			throw new DataCoreError(
+				"INVALID_RECORD",
+				`dataset ${name} does not exist`,
+				{
+					detail: { dataset: name },
+				},
+			);
+		}
+		return found;
+	}
+
+	/**
+	 * Create the dataset table if absent. An existing table with the same name
+	 * is adopted: that is how a brownfield store written before this engine
+	 * existed comes under it without a copy.
+	 */
+	ensure(schema: DatasetSchema, serialized: JsonObject): boolean {
+		assertNotReserved(schema.name);
+		const existing = this.describe(schema.name);
+		if (existing !== undefined) {
+			if (schemaDigest(existing) !== schemaDigest(schema)) {
+				throw new DataCoreError(
+					"INVALID_DATASET_SCHEMA",
+					`dataset ${schema.name} exists with a different schema`,
+					{ detail: { dataset: schema.name } },
+				);
+			}
+			return false;
+		}
+		const columns = [
+			`${quoteIdentifier(TENANT_COLUMN)} TEXT NOT NULL DEFAULT ''`,
+			...schema.fields.map(
+				(field) =>
+					`${quoteIdentifier(field.name)} ${sqliteNativeType(field.type)}${field.nullable ? "" : " NOT NULL"}`,
+			),
+			...(schema.open ? [`${quoteIdentifier(EXTRA_COLUMN)} TEXT`] : []),
+			`PRIMARY KEY (${[TENANT_COLUMN, ...schema.keyFields].map(quoteIdentifier).join(", ")})`,
+		];
+		this.transaction(() => {
+			this.db.exec(
+				`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(schema.name)} (${columns.join(", ")})`,
+			);
+			this.run(
+				"INSERT INTO hobo_data_datasets (name, schema) VALUES (?, ?)",
+				schema.name,
+				canonicalEncode(serialized),
+			);
+		});
+		this.schemas.set(schema.name, schema);
+		return true;
+	}
+
+	// ── records ───────────────────────────────────────────────────────────────
+
+	private rowToRecord(schema: DatasetSchema, row: Row): CanonicalRecord {
+		// Entries, not property assignment or Object.assign: either would treat
+		// an undeclared field named `__proto__` as the prototype and drop it.
+		const entries: [string, JsonValue][] = schema.fields.map((field) => [
+			field.name,
+			fromNative(field, row[field.name] ?? null),
+		]);
+		const extra = row[EXTRA_COLUMN];
+		if (schema.open && isText(extra)) {
+			const parsed = parseJson(extra);
+			if (parsed !== null && tagOf.call(parsed) === "[object Object]") {
+				// SAFETY: the tag check above proves a JSON object.
+				entries.push(...Object.entries(parsed as JsonObject));
+			}
+		}
+		return parseCanonicalRecord(schema, Object.fromEntries(entries));
+	}
+
+	private keyParams(
+		schema: DatasetSchema,
+		tenant: string,
+		key: string,
+	): SQLInputValue[] {
+		const values = decodeRecordKey(schema, key);
+		return [
+			tenant,
+			...schema.keyFields.map((name) => {
+				const field = schema.fields.find((entry) => entry.name === name);
+				const value = values[name] ?? null;
+				return field === undefined ? String(value) : toNative(field, value);
+			}),
+		];
+	}
+
+	private keyPredicate(schema: DatasetSchema): string {
+		return [TENANT_COLUMN, ...schema.keyFields]
+			.map((name) => `${quoteIdentifier(name)} = ?`)
+			.join(" AND ");
+	}
+
+	read(
+		dataset: string,
+		tenant: string,
+		key: string,
+	): CanonicalRecord | undefined {
+		const schema = this.schema(dataset);
+		const row = this.get(
+			`SELECT * FROM ${quoteIdentifier(dataset)} WHERE ${this.keyPredicate(schema)}`,
+			...this.keyParams(schema, tenant, key),
+		);
+		return row === undefined ? undefined : this.rowToRecord(schema, row);
+	}
+
+	fences(dataset: string): FenceRow[] {
+		return this.all(
+			"SELECT tenant_id, fence_token FROM hobo_data_fences WHERE dataset = ?",
+			dataset,
+		).map((row) => ({
+			tenant: String(row.tenant_id),
+			fenceToken: String(row.fence_token),
+		}));
+	}
+
+	private assertWritable(
+		dataset: string,
+		mutations: readonly RecordMutation[],
+		fenceToken: string | undefined,
+	): void {
+		const fences = this.fences(dataset);
+		if (fences.length === 0) return;
+		for (const mutation of mutations) {
+			for (const fence of fences) {
+				if (
+					(fence.tenant === "" || fence.tenant === mutation.tenant) &&
+					fence.fenceToken !== fenceToken
+				) {
+					throw new FencedWriteError(dataset, mutation.tenant);
+				}
+			}
+		}
+	}
+
+	private applyMutation(schema: DatasetSchema, mutation: RecordMutation): void {
+		const table = quoteIdentifier(schema.name);
+		if (mutation.op === "delete" || mutation.record === undefined) {
+			this.run(
+				`DELETE FROM ${table} WHERE ${this.keyPredicate(schema)}`,
+				...this.keyParams(schema, mutation.tenant, mutation.key),
+			);
+			return;
+		}
+		const record = mutation.record;
+		const declared = new Set(schema.fields.map((field) => field.name));
+		const columns = [
+			TENANT_COLUMN,
+			...schema.fields.map((field) => field.name),
+		];
+		const values: SQLInputValue[] = [
+			mutation.tenant,
+			...schema.fields.map((field) =>
+				toNative(field, record[field.name] ?? null),
+			),
+		];
+		if (schema.open) {
+			// Entries again: assigning a field named `__proto__` would drop it
+			// here while the journal still carried it.
+			const extra = Object.fromEntries(
+				Object.entries(record).filter(([key]) => !declared.has(key)),
+			);
+			columns.push(EXTRA_COLUMN);
+			values.push(canonicalEncode(extra));
+		}
+		const assignments = columns
+			.filter(
+				(name) => name !== TENANT_COLUMN && !schema.keyFields.includes(name),
+			)
+			.map(
+				(name) =>
+					`${quoteIdentifier(name)} = excluded.${quoteIdentifier(name)}`,
+			);
+		const conflict = [TENANT_COLUMN, ...schema.keyFields]
+			.map(quoteIdentifier)
+			.join(", ");
+		this.run(
+			`INSERT INTO ${table} (${columns.map(quoteIdentifier).join(", ")})
+			 VALUES (${columns.map(() => "?").join(", ")})
+			 ON CONFLICT (${conflict}) DO ${
+					assignments.length === 0
+						? "NOTHING"
+						: `UPDATE SET ${assignments.join(", ")}`
+}`,
+			...values,
+		);
+	}
+
+	/**
+	 * The one constructor for a mutation this store will apply. The record is
+	 * parsed again rather than trusted, and the key must be the canonical key:
+	 * a caller's uppercase uuid and its canonical lowercase would otherwise be
+	 * two rows that read back under one key, and a mutation whose key named a
+	 * different record than it carried would land under the record's.
+	 */
+	private parseMutation(
+		schema: DatasetSchema,
+		mutation: RecordMutation,
+	): RecordMutation {
+		const refuse = (message: string): never => {
+			throw new DataCoreError("INVALID_RECORD", message, {
+				detail: { dataset: schema.name, field: "key" },
+			});
+		};
+		if (mutation.op === "delete") {
+			const key = encodeRecordKey(
+				schema,
+				decodeRecordKey(schema, mutation.key),
+			);
+			if (key !== mutation.key) {
+				refuse("a delete must name its record by the canonical key");
+			}
+			return { tenant: mutation.tenant, key, op: "delete" };
+		}
+		const record = parseCanonicalRecord(schema, mutation.record);
+		const key = encodeRecordKey(schema, record);
+		if (key !== mutation.key) {
+			refuse("a mutation's key must be the canonical key of its record");
+		}
+		return { tenant: mutation.tenant, key, op: "upsert", record };
+	}
+
+	/**
+	 * The one write path. Fence check, the mutations, and their journal rows
+	 * are one transaction: a change is captured if and only if it landed.
+	 */
+	commit(
+		dataset: string,
+		requested: readonly RecordMutation[],
+		fenceToken: string | undefined,
+		watermark?: {
+			readonly source: string;
+			readonly position: Position;
+			/** The watermark the batch is conditional on; absent is unconditional. */
+			readonly expected?: Position | null;
+		},
+	): Position {
+		const schema = this.schema(dataset);
+		const mutations = requested.map((mutation) =>
+			this.parseMutation(schema, mutation),
+		);
+		return this.transaction(() => {
+			this.assertWritable(dataset, mutations, fenceToken);
+			// A conditional apply: the comparison is inside the transaction that
+			// writes, so of two appliers naming one watermark only one lands,
+			// and a refusal rolls back with nothing written.
+			if (
+				watermark?.expected !== undefined &&
+				(this.watermark(dataset, watermark.source) ?? null) !==
+					watermark.expected
+			) {
+				throw new StaleApplyError(dataset, watermark.source);
+			}
+			// Every row of this transaction carries the head it started from, so
+			// capture can tell where one transaction ends and the next begins.
+			const tx = this.head();
+			for (const mutation of mutations) {
+				this.applyMutation(schema, mutation);
+				this.run(
+					"INSERT INTO hobo_data_journal (dataset, tenant_id, key, op, record, tx) VALUES (?, ?, ?, ?, ?, ?)",
+					dataset,
+					mutation.tenant,
+					mutation.key,
+					mutation.op,
+					mutation.record === undefined
+						? null
+						: canonicalEncode(mutation.record),
+					tx,
+				);
+			}
+			if (watermark !== undefined) {
+				this.run(
+					`INSERT INTO hobo_data_watermarks (dataset, source, position) VALUES (?, ?, ?)
+					 ON CONFLICT (dataset, source) DO UPDATE SET position = excluded.position`,
+					dataset,
+					watermark.source,
+					watermark.position,
+				);
+			}
+			// With no subscription the rows just written are owed to nobody and
+			// leave with the transaction; the head they advanced stays.
+			this.prune();
+			return String(this.head());
+		});
+	}
+
+	watermark(dataset: string, source: string): Position | undefined {
+		const row = this.get(
+			"SELECT position FROM hobo_data_watermarks WHERE dataset = ? AND source = ?",
+			dataset,
+			source,
+		);
+		return row === undefined ? undefined : String(row.position);
+	}
+
+	// ── journal / capture ─────────────────────────────────────────────────────
+
+	/** Highest journal sequence ever assigned, even after pruning. */
+	head(): number {
+		const row = this.get(
+			"SELECT seq FROM sqlite_sequence WHERE name = 'hobo_data_journal'",
+		);
+		return row === undefined ? 0 : Number(row.seq);
+	}
+
+	/**
+	 * The position at or before which every change has been released: the
+	 * least any subscription has acknowledged, or the head when there is no
+	 * subscription — a subscription starts at the head, so none that starts
+	 * later is entitled to a change made before it.
+	 */
+	journalFloor(): number {
+		const head = this.head();
+		const row = this.get(
+			"SELECT MIN(ack_position) AS floor FROM hobo_data_subscriptions",
+		);
+		return row === undefined || row.floor === null
+			? head
+			: Math.min(Number(row.floor), head);
+	}
+
+	/** The one constructor for a position this store minted. */
+	private parsePosition(position: Position, subscription = ""): number {
+		const head = this.head();
+		// A position past the head was minted by some other store, or by this
+		// one before it was restored; changes at or before it would be skipped.
+		if (!POSITION.test(position) || !(Number(position) <= head)) {
+			throw new CapturePositionError(
+				subscription,
+				`a capture position for this store is a journal sequence from 0 to its head, ${head}`,
+			);
+		}
+		return Number(position);
+	}
+
+	/** A position the journal can still be read from. */
+	private parseReadPosition(after: Position): number {
+		const from = this.parsePosition(after);
+		const floor = this.journalFloor();
+		if (from < floor) {
+			throw new CapturePositionError(
+				"",
+				`changes at or before ${floor} were released; the journal cannot be read from ${from}`,
+			);
+		}
+		return from;
+	}
+
+	/** Highest journal sequence still retained within a scope. */
+	headOf(scope: DatasetScope): number {
+		const row =
+			scope.tenant === ""
+				? this.get(
+						"SELECT MAX(seq) AS head FROM hobo_data_journal WHERE dataset = ?",
+						scope.dataset,
+					)
+				: this.get(
+						"SELECT MAX(seq) AS head FROM hobo_data_journal WHERE dataset = ? AND tenant_id = ?",
+						scope.dataset,
+						scope.tenant,
+					);
+		return row === undefined || row.head === null ? 0 : Number(row.head);
+	}
+
+	/**
+	 * A name is one reader of one scope. Started again on that scope it
+	 * answers its original position; named on another dataset or another
+	 * tenant it is refused — answering would start that reader at a position
+	 * it never asked for, with changes from before it existed.
+	 */
+	startSubscription(name: string, scope: DatasetScope): Position {
+		this.schema(scope.dataset);
+		const existing = this.get(
+			"SELECT dataset, tenant_id, start_position FROM hobo_data_subscriptions WHERE name = ?",
+			name,
+		);
+		if (existing !== undefined) {
+			const bound = existing.tenant_id;
+			if (
+				String(existing.dataset) !== scope.dataset ||
+				(bound !== null && String(bound) !== scope.tenant)
+			) {
+				throw new DataCoreError(
+					"CAPTURE_SUBSCRIPTION_CONFLICT",
+					`subscription ${name} is bound to another scope`,
+					{ detail: { subscription: name } },
+				);
+			}
+			if (bound === null) {
+				// Recorded before tenants were kept: bound to the scope that
+				// names it now.
+				this.run(
+					"UPDATE hobo_data_subscriptions SET tenant_id = ? WHERE name = ? AND tenant_id IS NULL",
+					scope.tenant,
+					name,
+				);
+			}
+			return String(existing.start_position);
+		}
+		const head = this.head();
+		this.run(
+			"INSERT INTO hobo_data_subscriptions (name, dataset, tenant_id, start_position, ack_position) VALUES (?, ?, ?, ?, ?)",
+			name,
+			scope.dataset,
+			scope.tenant,
+			head,
+			head,
+		);
+		return String(head);
+	}
+
+	/**
+	 * Hold everything the journal still retains for a reader that keeps its
+	 * own cursor: from the floor, which is zero for a store that never had a
+	 * change released.
+	 */
+	pinJournal(name: string, dataset: string): void {
+		const floor = this.journalFloor();
+		this.run(
+			`INSERT INTO hobo_data_subscriptions (name, dataset, start_position, ack_position)
+			 VALUES (?, ?, ?, ?) ON CONFLICT (name) DO NOTHING`,
+			name,
+			dataset,
+			floor,
+			floor,
+		);
+	}
+
+	/**
+	 * Ordered changes in scope strictly after `after`. A batch never splits a
+	 * transaction: when the limit falls inside one, the rest of it is returned
+	 * too, so the batch may hold more than `limit` changes.
+	 */
+	readChanges(
+		scope: DatasetScope,
+		after: Position,
+		limit: number,
+	): CaptureBatch {
+		const schema = this.schema(scope.dataset);
+		const from = this.parseReadPosition(after);
+		const inScope =
+			scope.tenant === "" ? "dataset = ?" : "dataset = ? AND tenant_id = ?";
+		const scopeParams: SQLInputValue[] =
+			scope.tenant === "" ? [scope.dataset] : [scope.dataset, scope.tenant];
+		const select = `SELECT seq, tenant_id, key, op, record, tx FROM hobo_data_journal WHERE ${inScope}`;
+		const rows = this.all(
+			`${select} AND seq > ? ORDER BY seq LIMIT ?`,
+			...scopeParams,
+			from,
+			limit + 1,
+		);
+		let caughtUp = rows.length <= limit;
+		let page = rows.slice(0, limit);
+		const boundary = page[page.length - 1];
+		const tx = boundary?.tx ?? null;
+		if (boundary !== undefined && tx !== null && rows[limit]?.tx === tx) {
+			// The limit fell inside a transaction; the rest of it comes too.
+			page = [
+				...page,
+				...this.all(
+					`${select} AND tx = ? AND seq > ? ORDER BY seq`,
+					...scopeParams,
+					Number(tx),
+					Number(boundary.seq),
+				),
+			];
+			caughtUp =
+				this.get(
+					`SELECT seq FROM hobo_data_journal WHERE ${inScope} AND seq > ? LIMIT 1`,
+					...scopeParams,
+					Number(page[page.length - 1]?.seq ?? boundary.seq),
+				) === undefined;
+		}
+		const changes: ChangeEnvelope[] = page.map((row) => {
+			const tenant = String(row.tenant_id);
+			const key = String(row.key);
+			const mutation: RecordMutation =
+				row.op === "upsert" && row.record !== null
+					? {
+							tenant,
+							key,
+							op: "upsert",
+							record: parseCanonicalRecord(
+								schema,
+								parseJson(String(row.record)),
+							),
+						}
+					: { tenant, key, op: "delete" };
+			return envelopeOf(schema, mutation, String(row.seq));
+		});
+		const last = page[page.length - 1];
+		return {
+			changes,
+			// Caught up means everything to the head was considered, including
+			// changes outside this scope; otherwise resume after the last row.
+			position: caughtUp
+				? String(this.head())
+				: String(last === undefined ? from : Number(last.seq)),
+			caughtUp,
+		};
+	}
+
+	/** Changes in scope not yet behind a position. */
+	pending(scope: DatasetScope, after: Position): number {
+		const from = this.parseReadPosition(after);
+		const row =
+			scope.tenant === ""
+				? this.get(
+						"SELECT COUNT(*) AS pending FROM hobo_data_journal WHERE dataset = ? AND seq > ?",
+						scope.dataset,
+						from,
+					)
+				: this.get(
+						"SELECT COUNT(*) AS pending FROM hobo_data_journal WHERE dataset = ? AND seq > ? AND tenant_id = ?",
+						scope.dataset,
+						from,
+						scope.tenant,
+					);
+		return row === undefined ? 0 : Number(row.pending);
+	}
+
+	/** Record progress and release journal no subscription still needs. */
+	acknowledge(name: string, position: Position): void {
+		this.run(
+			"UPDATE hobo_data_subscriptions SET ack_position = MAX(ack_position, ?) WHERE name = ?",
+			this.parsePosition(position, name),
+			name,
+		);
+		this.prune();
+	}
+
+	/** Drop the subscription and release whatever journal only it was holding. */
+	stopSubscription(name: string): void {
+		this.run("DELETE FROM hobo_data_subscriptions WHERE name = ?", name);
+		this.prune();
+	}
+
+	/**
+	 * Release every journal row at or before the floor. Run wherever the floor
+	 * can rise — a write with no subscription, an acknowledgement, a stop — so
+	 * a payload never outlives the last reader entitled to it.
+	 */
+	private prune(): void {
+		this.run(
+			"DELETE FROM hobo_data_journal WHERE seq <= ?",
+			this.journalFloor(),
+		);
+	}
+
+	// ── scans ─────────────────────────────────────────────────────────────────
+
+	/** One keyset page of a scope, in (tenant, key) order. */
+	page(
+		scope: DatasetScope,
+		after: readonly SQLInputValue[] | undefined,
+		limit: number,
+	): KeysetPage {
+		const schema = this.schema(scope.dataset);
+		const order = [TENANT_COLUMN, ...schema.keyFields].map(quoteIdentifier);
+		const predicates: string[] = [];
+		const params: SQLInputValue[] = [];
+		if (scope.tenant !== "") {
+			predicates.push(`${quoteIdentifier(TENANT_COLUMN)} = ?`);
+			params.push(scope.tenant);
+		}
+		if (after !== undefined) {
+			predicates.push(
+				`(${order.join(", ")}) > (${order.map(() => "?").join(", ")})`,
+			);
+			params.push(...after);
+		}
+		const rows = this.all(
+			`SELECT * FROM ${quoteIdentifier(scope.dataset)}
+			 ${predicates.length === 0 ? "" : `WHERE ${predicates.join(" AND ")}`}
+			 ORDER BY ${order.join(", ")} LIMIT ?`,
+			...params,
+			limit,
+		);
+		const mutations = rows.map((row): RecordMutation => {
+			const record = this.rowToRecord(schema, row);
+			return {
+				tenant: String(row[TENANT_COLUMN]),
+				key: encodeRecordKey(schema, record),
+				op: "upsert",
+				record,
+			};
+		});
+		const lastRow = rows[rows.length - 1];
+		return {
+			rows: mutations,
+			last:
+				lastRow === undefined
+					? undefined
+					: [TENANT_COLUMN, ...schema.keyFields].map((name) => {
+							const value = lastRow[name] ?? null;
+							// A BLOB cannot be a key column; everything else binds as read.
+							return value instanceof Uint8Array ? null : value;
+						}),
+		};
+	}
+
+	digest(scope: DatasetScope, buckets: number): DatasetDigest {
+		const builder = new DatasetDigestBuilder(
+			scope.dataset,
+			scope.tenant,
+			buckets,
+		);
+		let after: readonly SQLInputValue[] | undefined;
+		for (;;) {
+			const page = this.page(scope, after, 1000);
+			for (const row of page.rows) {
+				if (row.record !== undefined)
+					builder.add(row.tenant, row.key, row.record);
+			}
+			if (page.rows.length < 1000 || page.last === undefined) break;
+			after = page.last;
+		}
+		return builder.finish();
+	}
+
+	count(scope: DatasetScope): number {
+		const table = quoteIdentifier(scope.dataset);
+		const row =
+			scope.tenant === ""
+				? this.get(`SELECT COUNT(*) AS total FROM ${table}`)
+				: this.get(
+						`SELECT COUNT(*) AS total FROM ${table} WHERE ${quoteIdentifier(TENANT_COLUMN)} = ?`,
+						scope.tenant,
+					);
+		return row === undefined ? 0 : Number(row.total);
+	}
+
+	// ── fence / retire ────────────────────────────────────────────────────────
+
+	raiseFence(scope: DatasetScope): string {
+		this.schema(scope.dataset);
+		return this.transaction(() => {
+			const existing = this.fences(scope.dataset).find(
+				(fence) => fence.tenant === scope.tenant,
+			);
+			if (existing !== undefined) return existing.fenceToken;
+			// Random, never derived: a token built from the scope, the head and
+			// the clock repeats when a fence is released and raised again, and
+			// the previous holder would pass the new fence.
+			const fenceToken = randomUUID();
+			this.run(
+				"INSERT INTO hobo_data_fences (dataset, tenant_id, fence_token, fenced_at) VALUES (?, ?, ?, ?)",
+				scope.dataset,
+				scope.tenant,
+				fenceToken,
+				this.clock(),
+			);
+			return fenceToken;
+		});
+	}
+
+	releaseFence(scope: DatasetScope, fenceToken: string): void {
+		const existing = this.fences(scope.dataset).find(
+			(fence) => fence.tenant === scope.tenant,
+		);
+		if (existing === undefined) return;
+		if (existing.fenceToken !== fenceToken) {
+			throw new DataCoreError(
+				"FENCE_TOKEN_MISMATCH",
+				"only the fence token holder may release a fence",
+				{ detail: { dataset: scope.dataset } },
+			);
+		}
+		this.run(
+			"DELETE FROM hobo_data_fences WHERE dataset = ? AND tenant_id = ?",
+			scope.dataset,
+			scope.tenant,
+		);
+	}
+
+	isFenced(scope: DatasetScope): boolean {
+		return this.fences(scope.dataset).some(
+			(fence) => fence.tenant === scope.tenant,
+		);
+	}
+
+	/**
+	 * Destructive. Refused unless the caller holds the raised fence and the
+	 * scope still digests to the verified value. A physical reap, so it is not
+	 * journaled: nothing downstream should replay it as a logical delete.
+	 *
+	 * The scope's journal rows go in the same transaction — every version of
+	 * every record, and the keys of its deletes. Erasing the table while the
+	 * outbox still held the payloads would not be an erasure. A subscription
+	 * that had not read them yet never will.
+	 */
+	retire(
+		scope: DatasetScope,
+		fenceToken: string,
+		expected: DatasetDigest,
+	): number {
+		return this.transaction(() => {
+			const fence = this.fences(scope.dataset).find(
+				(entry) => entry.tenant === scope.tenant,
+			);
+			if (fence === undefined || fence.fenceToken !== fenceToken) {
+				throw new DataCoreError(
+					"RETIRE_REFUSED",
+					"retire needs the raised fence's token; the store may still be authoritative",
+					{ detail: { dataset: scope.dataset } },
+				);
+			}
+			const current = this.digest(scope, expected.buckets.length);
+			// Redelivery: the scope is already empty behind the caller's own
+			// fence. There is nothing left to compare and nothing to remove.
+			if (current.count === 0) return 0;
+			if (
+				current.count !== expected.count ||
+				current.digest !== expected.digest
+			) {
+				throw new DataCoreError(
+					"RETIRE_REFUSED",
+					"the store no longer matches the verified digest",
+					{ detail: { dataset: scope.dataset } },
+				);
+			}
+			const table = quoteIdentifier(scope.dataset);
+			if (scope.tenant === "") {
+				this.run(
+					"DELETE FROM hobo_data_journal WHERE dataset = ?",
+					scope.dataset,
+				);
+				return this.run(`DELETE FROM ${table}`);
+			}
+			this.run(
+				"DELETE FROM hobo_data_journal WHERE dataset = ? AND tenant_id = ?",
+				scope.dataset,
+				scope.tenant,
+			);
+			return this.run(
+				`DELETE FROM ${table} WHERE ${quoteIdentifier(TENANT_COLUMN)} = ?`,
+				scope.tenant,
+			);
+		});
+	}
+}

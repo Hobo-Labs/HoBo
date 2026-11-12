@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Data-store catalog entries: a provider profile with its evidence attached.
+// Every claim about a third-party store carries the vendor documentation URL
+// it was read from and the day it was read; ResourceOfferingProfileRecord
+// (offering_resolution.proto) is derived from these, never written beside them.
+
+message DataStoreClaimSourceRecord {
+  string url = 1;        // https vendor documentation URL
+  string checked_at = 2; // UTC YYYY-MM-DD the URL was read
+  string note = 3;
+}
+
+message DataStoreCatalogClaimRecord {
+  string offering = 1;    // a data-store offering id, e.g. backup.pitr
+  string realization = 2; // native | fallback | operator | unsupported | unknown
+  string stability = 3;   // stable | preview | experimental
+  string fidelity = 4;    // real | simulated | mocked | camp-only
+  repeated string features = 5;
+  string detail = 6;
+  repeated DataStoreClaimSourceRecord sources = 7;
+}
+
+message DataStoreCatalogEntryRecord {
+  string provider = 1;   // a data-store provider id, e.g. aws-aurora-postgres
+  string vendor = 2;
+  string product = 3;
+  string management = 4; // managed | self-hosted
+  string stability = 5;  // stable | preview | experimental
+  repeated DataStoreClaimSourceRecord stability_sources = 6;
+  string yard_product_id = 7;
+  repeated DataStoreCatalogClaimRecord claims = 8;
+  string stability_basis = 9; // vendor-stated | inferred
+}

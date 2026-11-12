@@ -129,6 +129,15 @@ export function parseRestReply(body: string): RedisReply {
 	return { kind: "value", value: parseRedisValue(result) };
 }
 
+function errorEnvelope(body: string): RedisReply | undefined {
+	try {
+		const reply = parseRestReply(body);
+		return reply.kind === "error" ? reply : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 const COMMAND_VERB = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/u;
 
 export function createUpstashRestExecutor(
@@ -167,6 +176,16 @@ export function createUpstashRestExecutor(
 			});
 
 			if (response.status === 200) return parseRestReply(response.body);
+			if (response.status === 400) {
+				// Upstash answers a command that fails (WRONGTYPE, NOSCRIPT, a
+				// syntax error) with 400 and the same `{"error": …}` envelope.
+				// That is a Redis error reply, not a transport failure: the
+				// ephemeral-state binding depends on seeing NOSCRIPT as a reply
+				// to fall back from EVALSHA to EVAL. A 400 without that envelope
+				// is still a provider error below.
+				const reply = errorEnvelope(response.body);
+				if (reply !== undefined) return reply;
+			}
 			if (response.status === 401 || response.status === 403) {
 				throw new UpstashProviderError(
 					"PROVIDER_AUTH_FAILED",

@@ -103,11 +103,11 @@ fails if this block and `providerParity()` disagree):
 
 <!-- parity:begin -->
 ```text
-aws L1-DECLARED: 8/19 resolvers declared (conformance not asserted here)
-azure L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
+aws L1-DECLARED: 8/21 resolvers declared (conformance not asserted here)
+azure L1-DECLARED: 9/18 resolvers declared (conformance not asserted here)
 cloudflare L1-DECLARED: 6/6 resolvers declared (conformance not asserted here)
 digitalocean L1-DECLARED: 15/15 resolvers declared (conformance not asserted here)
-gcp L1-DECLARED: 9/14 resolvers declared (conformance not asserted here)
+gcp L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
 hetzner L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 hostinger L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 kubernetes L1-DECLARED: 9/9 resolvers declared (conformance not asserted here)
@@ -120,6 +120,70 @@ persistence boundary, so it has no protobuf record or CUE wire schema. The
 TypeScript row interface therefore duplicates no wire contract. Protobuf-first
 applies to the provider-catalog boundary, whose records and constraints remain
 in `data-models/`.
+
+## PostgreSQL backend catalog
+
+`POSTGRES_BACKEND_CATALOG` names every PostgreSQL backend HoBo can describe —
+Neon, Prisma Postgres, Supabase, pgEdge Cloud, PlanetScale Postgres, Azure
+Database for PostgreSQL flexible server, Azure HorizonDB (preview), Amazon RDS
+for PostgreSQL, Aurora PostgreSQL, Cloud SQL for PostgreSQL, AlloyDB, and
+self-hosted PostgreSQL — as `@hobo/core` `DataStoreCatalogEntry` records. Each
+entry answers the same fourteen offering questions (point-in-time restore,
+replicas, multi-region, multi-writer, failover, logical replication in and out,
+transaction pooler, password and identity-token auth, public CA), and every
+answer carries the vendor documentation URL it was read from and the date.
+
+```ts
+import { postgresBackendProfiles } from "@hobo/cloud-providers";
+import { resolveDataStore } from "@hobo/core";
+
+const resolved = resolveDataStore(postgresBackendProfiles(), {
+  features: ["sql.relational", "backup.pitr", "replicate.logical-subscribe"],
+  negotiation: "require",
+});
+```
+
+**This is a catalog of cited claims, not a readiness claim.** Nothing in it has
+been provisioned or connected to from this repository. A claim that could not
+be confirmed from a primary source is `unknown`, says what is missing, and is
+never matched; `postgresBackendEvidence()` reports cited-versus-unknown counts
+per entry. No prices or free-tier allowances are recorded. Amazon Aurora DSQL
+is recorded in `POSTGRES_BACKEND_EXCLUSIONS` rather than given a provider id,
+because it is PostgreSQL-compatible rather than PostgreSQL. The full table, the
+naming decision and the sources' date are in
+[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+
+## Self-hosted PostgreSQL: which registered providers could host it
+
+`selfHostedPostgresHosts()` answers from what each provider package declares —
+the `compute` classes of its `EQUIVALENCE_CLASSES` and the capability profiles
+of its Yard catalog — through `assessSelfHostedDataStore` in `@hobo/core`,
+which holds no list of provider names. It assesses the nine parity namespaces
+plus Netlify and Railway (equivalence classes only; no Yard catalog here):
+
+| Verdict | Providers | Why |
+|---|---|---|
+| `can` | `aws` (EC2 instance + EBS volume), `azure` (Virtual Machine + managed disk), `gcp` (Compute Engine VM + Persistent Disk), `digitalocean` (Droplet + Block Storage), `hetzner` (Cloud Server + Volume) | A VM with an attachable block-storage volume, both products in the provider's Yard catalog. Every facet established, no caveat. |
+| `can` | `kubernetes` (StatefulSet + PersistentVolumeClaim) | A cited container form whose volume is a Yard `bucket.filesystem/v1` product. |
+| `can`, with a caveat | `hostinger` (VPS), `railway` (persistent service) | Hostinger declares no volume, so data shares the VM's lifetime. Railway's volume is cited but is not a Yard product. |
+| `cannot` | `cloudflare`, `vercel`, `netlify` | Nothing declared is a VM or a container (edge workers; static and HTTP compute). |
+
+Per product, `SelfHostAssessment.forms` also shows the other forms. ECS on
+Fargate and Azure Container Apps still qualify, still caveated: their volume
+(EFS, Azure Files) is a network share that is not a Yard product. Cloud Run is
+`undetermined`. `aws.app-runner/v1` (HTTP only) and
+`digitalocean.app-platform-service/v1` (no persistent storage) are `cannot`.
+
+The AWS, Azure and GCP VM and block-storage products are **catalog only**, like
+those packages' other unresolved products: no resolver, nothing provisionable
+from here, and each is listed in its package's `*_UNRESOLVED_PRODUCT_IDS`.
+
+A verdict describes the declaration, not the vendor. Six provider packages
+publish `*_HOST_FORMS`: cited, per-product statements about products
+they already declare, read here unchanged. An `undetermined` is resolved by
+citing the missing facets in that provider's host forms, never by
+special-casing the provider here. Citations per facet are in
+[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
 
 ## HONEST SCOPE
 

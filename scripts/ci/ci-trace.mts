@@ -6,7 +6,8 @@
  * Usage: node --experimental-strip-types scripts/ci/ci-trace.mts <out-dir> [job-name]
  *
  * Reads `.turbo/runs/*.json` (written by `turbo run --summarize`), writes
- * `<out-dir>/otel-spans.json` and a redacted copy of each summary. Only
+ * `<out-dir>/otel-spans.json` and a redacted copy of each summary. On GitHub
+ * the trace id is the workflow run's, shared with the relay's own spans. Only
  * timings, task ids, cache status and exit codes are kept; environment
  * variable lists, hashes, commands and user/SCM identity are dropped, and any
  * value of a secret-named environment variable is scrubbed from the output.
@@ -176,13 +177,26 @@ const intAttr = (key: string, value: number) => ({
 	value: { intValue: `${Math.trunc(value)}` },
 });
 
-/** One root span per turbo run, one child span per task. */
+/**
+ * The trace of one workflow run. The relay and the box worker derive the same
+ * id from the run id (`runTraceId` in packages/ci-gh-actions/src/relay-trace.ts),
+ * so a job's Turbo spans land in the trace that holds its queue wait, its
+ * runner and any cancellation. Run ids are unique across GitHub.
+ */
+export function runTraceId(githubRunId: string): string {
+	return hex(`github-actions-run:${githubRunId}`, 16);
+}
+
+/**
+ * One root span per turbo run, one child span per task. `traceId` joins them
+ * to a workflow run's trace; without it the job gets a trace of its own.
+ */
 export function toOtlp(
 	runs: readonly RunSummary[],
 	job: string,
 	runId: string,
+	traceId: string = hex(`${runId}:${job}`, 16),
 ) {
-	const traceId = hex(`${runId}:${job}`, 16);
 	const spans = runs.flatMap((run, index) => {
 		const rootId = hex(`${runId}:${job}:${run.id ?? index}`, 8);
 		const root = {
@@ -258,7 +272,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const secrets = secretValues(process.env);
 	writeFileSync(
 		join(outDir, "otel-spans.json"),
-		redact(JSON.stringify(toOtlp(runs, job, runId), null, 1), secrets),
+		redact(
+			JSON.stringify(
+				/^\d+$/.test(process.env.GITHUB_RUN_ID ?? "")
+					? toOtlp(
+							runs,
+							job,
+							runId,
+							runTraceId(process.env.GITHUB_RUN_ID ?? ""),
+						)
+					: toOtlp(runs, job, runId),
+				null,
+				1,
+			),
+			secrets,
+		),
 	);
 	runs.forEach((run, index) => {
 		writeFileSync(
@@ -272,7 +300,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			join(outDir, "turbo-profile.json"),
 			redact(readFileSync("turbo-profile.json", "utf8"), secrets),
 		);
+	const taskSpanCount = runs.reduce((n, r) => n + r.tasks.length, 0);
+	if (runs.length === 0) {
+		writeFileSync(join(outDir, ".skip-upload"), "no-turbo-runs\n");
+	}
 	console.error(
-		`ci-trace: ${runs.length} turbo run(s), ${runs.reduce((n, r) => n + r.tasks.length, 0)} task span(s) -> ${outDir}`,
+		`ci-trace: ${runs.length} turbo run(s), ${taskSpanCount} task span(s) -> ${outDir}`,
 	);
 }
