@@ -876,7 +876,11 @@ export function createPromotionService(
 							failure = error;
 							throw error;
 						}
-						throw error;
+						// A port threw (transient): nothing is decided; the next tick retries.
+						metric(PROMOTION_METRIC.stepError, ctx.now(), {
+							camp: progress.campId,
+							error: error instanceof Error ? error.name : "unknown",
+						});
 					}
 				}
 			},

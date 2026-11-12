@@ -62,6 +62,7 @@ export const PROMOTION_METRIC = Object.freeze({
 	requested: "hobo.cd.promotion.requested",
 	refused: "hobo.cd.promotion.refused",
 	step: "hobo.cd.promotion.step",
+	stepError: "hobo.cd.promotion.step_error",
 	promoted: "hobo.cd.promotion.promoted",
 	failed: "hobo.cd.promotion.failed",
 	superseded: "hobo.cd.promotion.superseded",

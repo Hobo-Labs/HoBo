@@ -318,6 +318,26 @@ describe("promotion saga (WP6)", () => {
 		}
 	});
 
+	it("a port that throws is transient: nothing is decided and the next tick retries", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const plan = h.rollouts.plan.bind(h.rollouts);
+		let failures = 1;
+		h.rollouts.plan = async (input, ctx) => {
+			if (failures > 0) {
+				failures -= 1;
+				throw new Error("orchestrator unavailable");
+			}
+			return plan(input, ctx);
+		};
+		const result = await h.service.promote({ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "t" }, h.ctx());
+		expect(result.ok && result.value.state).toBe(PromotionState.ROLLING_OUT);
+		expect(h.store.events("saga.Compensated")).toHaveLength(0);
+		expect(h.telemetry.named(PROMOTION_METRIC.stepError)).toHaveLength(1);
+		await h.service.tick(h.ctx());
+		if (result.ok) expect((await h.service.get(result.value.promotionId as never))?.state).toBe(PromotionState.PROMOTED);
+	});
+
 	it("lists promotions newest first and filters by Camp", async () => {
 		const h = harness();
 		h.freight.add("f1");
