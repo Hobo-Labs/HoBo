@@ -18,7 +18,25 @@ import {
 } from "../../src/adapters/traffic.js";
 import type { RolloutId } from "../../src/ports.js";
 import { stageRoutingPlan } from "../../src/rollout/routing.js";
-import { camp, clock, context, T0, TENANT } from "./fakes.js";
+import { createHarnessRolloutEngine } from "../../src/adapters/harness.js";
+import { RolloutStrategy } from "../../src/_generated/cd_pb.js";
+import { createRolloutOrchestrator } from "../../src/rollout/orchestrator.js";
+import {
+	camp,
+	clock,
+	context,
+	FakeApprovals,
+	FakeDesired,
+	FakeVerification,
+	FakeWindows,
+	MemoryEventStore,
+	MINUTE,
+	promotion,
+	RecordingTelemetry,
+	spec,
+	T0,
+	TENANT,
+} from "./fakes.js";
 
 const tenantId = parseTenantId(TENANT);
 const SERVICE = "web";
@@ -31,12 +49,15 @@ class MemoryRoutingPort implements TrafficRoutingPort {
 	activeId: string | undefined;
 	degradeAbove = 101;
 
+	/** Acknowledge `full` at or above this candidate weight but leave the old split routing. */
+	stuckAbove = 101;
+
 	async apply(plan: RoutingPlan): Promise<ApplyResult> {
 		this.applied.push(plan);
 		this.plans.set(plan.planId, plan);
 		const candidate = plan.backends.find((b) => b.id === "green")?.weight ?? 0;
 		const realized = candidate >= this.degradeAbove ? "partial" : "full";
-		if (realized === "full") this.activeId = plan.planId;
+		if (realized === "full" && candidate < this.stuckAbove) this.activeId = plan.planId;
 		return { planId: plan.planId, provider: this.provider, realized, notes: [] };
 	}
 
@@ -204,5 +225,60 @@ describe("createCutoverTrafficShifter", () => {
 		const { shifter, checkpoints, cdctx } = await setup({ healthGate: () => false });
 		await shifter.shift({ campId: camp("prod-a"), plan: stage(5), signal }, cdctx);
 		expect(checkpoints.map((c) => c.split(":").slice(0, 2).join(":"))).toEqual(["ramp:5", "restore:0"]);
+	});
+});
+
+describe("rollout over Station cutover (end to end)", () => {
+	async function rollout(configure: (port: MemoryRoutingPort) => void = () => undefined) {
+		const station = await setup();
+		configure(station.port);
+		const store = new MemoryEventStore();
+		const desired = new FakeDesired();
+		desired.promoted("prod-a", "freight-1");
+		const base = { store, tenant: TENANT, now: station.time.now };
+		const orchestrator = createRolloutOrchestrator({
+			...base,
+			engine: createHarnessRolloutEngine(base),
+			traffic: station.shifter,
+			verification: new FakeVerification(),
+			windows: new FakeWindows(),
+			desired,
+			approvals: new FakeApprovals(),
+			telemetry: new RecordingTelemetry(),
+		});
+		const planned = await orchestrator.plan(
+			{
+				promotion: promotion({ targets: ["prod-a"], strategy: RolloutStrategy.CANARY }),
+				obligations: [],
+				verification: spec({ deadlineMs: 10 * MINUTE }),
+				stagePercents: [],
+				windows: [],
+			},
+			station.cdctx,
+		);
+		if (!planned.ok) throw new Error("plan refused");
+		return { ...station, orchestrator, plan: planned.value, desired };
+	}
+
+	it("canary ramps 5/25/50/100 through Station cutover only and promotes", async () => {
+		const r = await rollout();
+		const snapshot = await r.orchestrator.run(r.plan, r.cdctx);
+		expect(snapshot.status).toBe("promoted");
+		expect(r.port.weights()).toEqual(["blue:95,green:5", "blue:75,green:25", "blue:50,green:50", "green:100"]);
+	});
+
+	it("§10 provider reports success, traffic still split: non-converged until the deadline, then rolled back", async () => {
+		const r = await rollout((port) => {
+			port.stuckAbove = 100; // the final flip is acknowledged but never routes
+		});
+		let snapshot = await r.orchestrator.run(r.plan, r.cdctx);
+		expect(snapshot.status).toBe("running");
+		expect(snapshot.percent).toBe(100);
+		r.time.advance(11 * MINUTE);
+		await r.orchestrator.tick(r.cdctx);
+		snapshot = (await r.orchestrator.get(snapshot.rolloutId)) ?? snapshot;
+		expect(snapshot.status).toBe("rolled-back");
+		expect(snapshot.reasons[0]?.code).toBe("rollout-traffic-unconverged");
+		expect(r.port.weights().at(-1)).toBe("blue:100");
 	});
 });

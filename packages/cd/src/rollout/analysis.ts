@@ -16,7 +16,7 @@
 // source's behavior for every other query. Credentials are resolved for one
 // scoped call and never logged or recorded (I9).
 import type { HttpTransport, JsonValue } from "@hobo/core";
-import { HealthSourceKind } from "../_generated/cd_pb.js";
+import { Cohort, HealthSourceKind } from "../_generated/cd_pb.js";
 import type {
 	CredentialResolver,
 	HealthSamples,
@@ -128,7 +128,7 @@ export function withAnalysisWebhooks(d: AnalysisWebhookDeps): HealthSource {
 							phase: "stage-boundary",
 							metadata: {
 								campId: input.campId,
-								cohort: String(input.cohort),
+								cohort: `COHORT_${Cohort[input.cohort] ?? "UNSPECIFIED"}`,
 								fromMs: String(input.fromMs),
 								toMs: String(input.toMs),
 							},

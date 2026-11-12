@@ -100,8 +100,25 @@ function reasonCodes(result: RoutingCutoverResult): readonly string[] {
 }
 
 export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): TrafficShifter {
-	/** The plan each Camp's routing was last observed to realize (the next cutover's incumbent). */
-	const live = new Map<CampId, RoutingPlan>();
+	/** Plans each Camp's cutovers applied, oldest first: incumbent candidates. */
+	const history = new Map<CampId, RoutingPlan[]>();
+	const remember = (campId: CampId, plan: RoutingPlan) => {
+		history.set(campId, [...(history.get(campId) ?? []), plan].slice(-8));
+	};
+
+	/**
+	 * The incumbent is resolved by observation, never assumed: the newest plan
+	 * the port reports active and fully realized (a pending write may or may not
+	 * have landed), else the composed live plan.
+	 */
+	async function incumbentFor(campId: CampId, context: CampRoutingContext): Promise<RoutingPlan> {
+		const candidates = [...(history.get(campId) ?? [])].reverse();
+		for (const plan of candidates) {
+			const status = await context.port.status(plan.planId);
+			if (status?.active === true && status.realized === "full") return plan;
+		}
+		return context.incumbentPlan;
+	}
 
 	async function shift(
 		input: Readonly<{ campId: CampId; plan: RoutingPlan; signal: AbortSignal }>,
@@ -112,7 +129,7 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 		const percent = stageShare(input.plan);
 		if (percent === undefined)
 			return unrealized(input.plan.planId, ["traffic-plan-invalid: not a stable/candidate stage plan"]);
-		const incumbent = live.get(input.campId) ?? context.incumbentPlan;
+		const incumbent = await incumbentFor(input.campId, context);
 		const toStable = percent === 0;
 		const rampSteps = toStable || percent === 100 ? [100] : [percent, 100];
 		const acknowledged = new Map<string, ApplyResult>();
@@ -162,13 +179,13 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 		});
 		const stagePlan = result.plans.find((plan) => plan.planId === cutoverPlanId(input.plan.planId));
 		if (result.ok && result.finalApplyResult) {
-			if (stagePlan) live.set(input.campId, stagePlan);
+			if (stagePlan) remember(input.campId, stagePlan);
 			return result.finalApplyResult;
 		}
 		if (boundaryReached && stagePlan) {
 			const stageResult = acknowledged.get(stagePlan.planId);
 			if (stageResult) {
-				live.set(input.campId, stagePlan);
+				remember(input.campId, stagePlan);
 				return stageResult;
 			}
 		}
@@ -179,7 +196,7 @@ export function createCutoverTrafficShifter(d: CutoverTrafficShifterDeps): Traff
 		// Ambiguous provider outcome: resolved by observation only (I5), never a blind retry.
 		const pendingId = result.pendingPlanId ?? input.plan.planId;
 		const pendingPlan = result.plans.find((plan) => plan.planId === pendingId);
-		if (pendingPlan) live.set(input.campId, pendingPlan);
+		if (pendingPlan) remember(input.campId, pendingPlan);
 		return unrealized(
 			// SAFETY: the pending plan id is the cutover's own plan id.
 			pendingId as RoutingPlanId,
