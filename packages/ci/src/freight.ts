@@ -160,47 +160,51 @@ export class CiFreightError extends Error {
 	}
 }
 
-/** cd.proto ProvenanceRef in protobuf JSON; empty fields are omitted, as toJson does. */
+/** cd.proto ProvenanceRef; proto3 defaults ("" and false) are written as omitted. */
 export type CiProvenanceRef = Readonly<{
 	statementDigest: string;
-	predicateType?: string;
-	builderId?: string;
-	signerIdentity?: string;
-	issuer?: string;
-	verified?: boolean;
-	verifier?: string;
-	subjectDigests?: readonly string[];
+	predicateType: string;
+	builderId: string;
+	signerIdentity: string;
+	issuer: string;
+	verified: boolean;
+	verifier: string;
+	subjectDigests: readonly string[];
 }>;
 
-// domain-view: the protobuf-JSON wire form of @hobo/cd's FreightManifestRecord;
-// @hobo/ci has no cd.proto codegen and cannot import @hobo/cd (cycle).
+/** cd.proto ArtifactRef; `kind` is the protobuf JSON enum name. */
+export type CiFreightArtifact = Readonly<{
+	name: string;
+	kind: string;
+	digest: string;
+	coordinate: string;
+	sizeBytes: number;
+	mediaType: string;
+	ecosystem: string;
+}>;
+
+/** cd.proto SourceRef. */
+export type CiFreightSource = Readonly<{
+	repository: string;
+	commit: string;
+	ref: string;
+	ciRunId: string;
+	ciSystem: string;
+	builderId: string;
+}>;
+
+// domain-view: the fields of @hobo/cd's FreightManifestRecord that a HoBo CI
+// build writes; @hobo/ci has no cd.proto codegen and cannot import @hobo/cd.
 export type CiFreightManifest = Readonly<{
 	schemaVersion: string;
 	bindle: string;
 	declarationHash: string;
-	artifacts: readonly Readonly<{
-		name: string;
-		kind: string;
-		digest: string;
-		coordinate: string;
-		sizeBytes?: string;
-		mediaType?: string;
-		ecosystem?: string;
-	}>[];
-	source?: Readonly<Partial<Record<keyof typeof SOURCE_FIELDS, string>>>;
-	provenance?: readonly CiProvenanceRef[];
-	labels?: Readonly<Record<string, string>>;
-	subject?: string;
+	artifacts: readonly CiFreightArtifact[];
+	source: CiFreightSource;
+	provenance: readonly CiProvenanceRef[];
+	labels: Readonly<Record<string, string>>;
+	subject: "FREIGHT_SUBJECT_BINDLE";
 }>;
-
-const SOURCE_FIELDS = {
-	repository: "repository",
-	commit: "commit",
-	ref: "ref",
-	ciRunId: "runId",
-	ciSystem: "ciSystem",
-	builderId: "builderId",
-} as const satisfies Record<string, keyof CiBuild>;
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const BINDLE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$/;
@@ -220,25 +224,16 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
 ];
 
-type Json =
-	| string
-	| number
-	| boolean
-	| null
-	| readonly Json[]
-	| { readonly [key: string]: Json | undefined };
+// Canonical JSON (keys sorted by code unit, no whitespace), written field by
+// field: every writer below lists its keys already in that order and leaves
+// out proto3 defaults, as protobuf toJson does.
+const text = (value: string) => JSON.stringify(value);
+const field = (key: string, json: string) => `${text(key)}:${json}`;
+const object = (fields: readonly string[]) => `{${fields.join(",")}}`;
+const list = (items: readonly string[]) => `[${items.join(",")}]`;
 
-/** Object keys sorted by code unit, no whitespace: the canonical JSON @hobo/cd ids hash. */
-function canonicalJson(value: Json | undefined): string {
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-	if (value !== null && typeof value === "object") {
-		const record = value as { readonly [key: string]: Json | undefined };
-		const keys = Object.keys(record)
-			.filter((key) => record[key] !== undefined)
-			.sort();
-		return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
-	}
-	return JSON.stringify(value ?? null);
+function textField(fields: string[], key: string, value: string): void {
+	if (value !== "") fields.push(field(key, text(value)));
 }
 
 function sha256(bytes: Uint8Array | string): string {
@@ -309,33 +304,34 @@ function check(manifest: CiFreightManifest): CiFreightReason[] {
 		else {
 			checkText(`${at}.name`, item.name, out);
 			checkText(`${at}.coordinate`, item.coordinate, out);
-			checkText(`${at}.mediaType`, item.mediaType ?? "", out);
+			checkText(`${at}.mediaType`, item.mediaType, out);
 		}
 		seen.add(item.name);
 	});
-	const source = manifest.source ?? {};
-	if (source.commit && !COMMIT.test(source.commit))
+	const source = manifest.source;
+	if (source.commit !== "" && !COMMIT.test(source.commit))
 		out.push(invalid("source.commit", "commit must be 7-64 lowercase hex"));
-	for (const key of Object.keys(
-		SOURCE_FIELDS,
-	) as (keyof typeof SOURCE_FIELDS)[])
-		if (key !== "commit") checkText(`source.${key}`, source[key] ?? "", out);
-	(manifest.provenance ?? []).forEach((ref, index) => {
+	checkText("source.repository", source.repository, out);
+	checkText("source.ref", source.ref, out);
+	checkText("source.ciRunId", source.ciRunId, out);
+	checkText("source.ciSystem", source.ciSystem, out);
+	checkText("source.builderId", source.builderId, out);
+	manifest.provenance.forEach((ref, index) => {
 		const at = `provenance[${index}]`;
 		if (!DIGEST.test(ref.statementDigest))
 			out.push(
 				invalid(`${at}.statementDigest`, "statementDigest must be sha256"),
 			);
-		if ((ref.subjectDigests ?? []).some((digest) => !DIGEST.test(digest)))
+		if (ref.subjectDigests.some((digest) => !DIGEST.test(digest)))
 			out.push(
 				invalid(`${at}.subjectDigests`, "subject digests must be sha256"),
 			);
-		if (!["", "sigstore", "hobo-jwt"].includes(ref.verifier ?? ""))
+		if (!["", "sigstore", "hobo-jwt"].includes(ref.verifier))
 			out.push(invalid(`${at}.verifier`, "verifier is sigstore or hobo-jwt"));
-		checkText(`${at}.builderId`, ref.builderId ?? "", out);
-		checkText(`${at}.signerIdentity`, ref.signerIdentity ?? "", out);
+		checkText(`${at}.builderId`, ref.builderId, out);
+		checkText(`${at}.signerIdentity`, ref.signerIdentity, out);
 	});
-	for (const [key, value] of Object.entries(manifest.labels ?? {})) {
+	for (const [key, value] of Object.entries(manifest.labels)) {
 		if (!LABEL_KEY.test(key))
 			out.push(
 				invalid(`labels.${key}`, "label keys are lowercase [a-z0-9._/-]"),
@@ -347,21 +343,48 @@ function check(manifest: CiFreightManifest): CiFreightReason[] {
 
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Drop the fields protobuf JSON omits (empty strings, false, empty lists and maps). */
-function omitDefaults(value: Json | undefined): Json | undefined {
-	if (Array.isArray(value)) {
-		const list = value.map(omitDefaults).filter((item) => item !== undefined);
-		return list.length === 0 ? undefined : (list as Json[]);
-	}
-	if (value !== null && typeof value === "object") {
-		const record: Record<string, Json> = {};
-		for (const [key, item] of Object.entries(value)) {
-			const kept = omitDefaults(item);
-			if (kept !== undefined) record[key] = kept;
-		}
-		return Object.keys(record).length === 0 ? undefined : record;
-	}
-	return value === "" || value === false ? undefined : value;
+function artifactJson(item: CiFreightArtifact): string {
+	const fields: string[] = [];
+	textField(fields, "coordinate", item.coordinate);
+	textField(fields, "digest", item.digest);
+	textField(fields, "ecosystem", item.ecosystem);
+	textField(fields, "kind", item.kind);
+	textField(fields, "mediaType", item.mediaType);
+	textField(fields, "name", item.name);
+	// uint64 is a JSON string in protobuf JSON; zero is the default and is omitted.
+	if (item.sizeBytes > 0)
+		textField(fields, "sizeBytes", String(item.sizeBytes));
+	return object(fields);
+}
+
+function provenanceJson(ref: CiProvenanceRef): string {
+	const fields: string[] = [];
+	textField(fields, "builderId", ref.builderId);
+	textField(fields, "issuer", ref.issuer);
+	textField(fields, "predicateType", ref.predicateType);
+	textField(fields, "signerIdentity", ref.signerIdentity);
+	textField(fields, "statementDigest", ref.statementDigest);
+	if (ref.subjectDigests.length > 0)
+		fields.push(
+			field(
+				"subjectDigests",
+				list([...ref.subjectDigests].sort(byText).map(text)),
+			),
+		);
+	if (ref.verified) fields.push(field("verified", "true"));
+	textField(fields, "verifier", ref.verifier);
+	return object(fields);
+}
+
+function sourceJson(source: CiFreightSource): string {
+	const fields: string[] = [];
+	textField(fields, "builderId", source.builderId);
+	textField(fields, "ciRunId", source.ciRunId);
+	textField(fields, "ciSystem", source.ciSystem);
+	textField(fields, "commit", source.commit);
+	textField(fields, "ref", source.ref);
+	textField(fields, "repository", source.repository);
+	return object(fields);
 }
 
 /** The canonical `hobo.freight-manifest/v1` document @hobo/cd parses, or a CiFreightError. */
@@ -370,33 +393,36 @@ export function writeCiFreightManifest(
 ): Uint8Array {
 	const reasons = check(manifest);
 	if (reasons.length > 0) throw new CiFreightError(reasons);
-	const normalized = {
-		...manifest,
-		subject: manifest.subject || "FREIGHT_SUBJECT_BINDLE",
-		artifacts: [...manifest.artifacts].sort((a, b) => byText(a.name, b.name)),
-		provenance: [...(manifest.provenance ?? [])]
-			.map((ref) => ({
-				...ref,
-				subjectDigests: [...(ref.subjectDigests ?? [])].sort(byText),
-			}))
-			.sort((a, b) =>
-				byText(
-					`${a.statementDigest}|${a.builderId ?? ""}|${a.verifier ?? ""}`,
-					`${b.statementDigest}|${b.builderId ?? ""}|${b.verifier ?? ""}`,
-				),
+	const artifacts = [...manifest.artifacts].sort((a, b) =>
+		byText(a.name, b.name),
+	);
+	const provenance = [...manifest.provenance].sort((a, b) =>
+		byText(
+			`${a.statementDigest}|${a.builderId}|${a.verifier}`,
+			`${b.statementDigest}|${b.builderId}|${b.verifier}`,
+		),
+	);
+	const labels = Object.entries(manifest.labels).sort(([a], [b]) =>
+		byText(a, b),
+	);
+	const fields: string[] = [];
+	if (artifacts.length > 0)
+		fields.push(field("artifacts", list(artifacts.map(artifactJson))));
+	textField(fields, "bindle", manifest.bindle);
+	textField(fields, "declarationHash", manifest.declarationHash);
+	if (labels.length > 0)
+		fields.push(
+			field(
+				"labels",
+				object(labels.map(([key, value]) => field(key, text(value)))),
 			),
-	};
-	const json = omitDefaults(normalized as unknown as Json) ?? {};
-	// A source message that was set stays present, even when all its fields are empty.
-	const withSource =
-		manifest.source !== undefined &&
-		typeof json === "object" &&
-		json !== null &&
-		!Array.isArray(json) &&
-		!("source" in json)
-			? { ...json, source: {} }
-			: json;
-	return new TextEncoder().encode(canonicalJson(withSource));
+		);
+	if (provenance.length > 0)
+		fields.push(field("provenance", list(provenance.map(provenanceJson))));
+	textField(fields, "schemaVersion", manifest.schemaVersion);
+	fields.push(field("source", sourceJson(manifest.source)));
+	textField(fields, "subject", manifest.subject);
+	return new TextEncoder().encode(object(fields));
 }
 
 /** Where a HOBO_CI subscription finds an output: @hobo/cd's `ciCoordinate`. */
@@ -409,15 +435,15 @@ export function ciFreightCoordinate(build: CiBuild, path: string): string {
  * A change to the declaration with the same bytes is new Freight, as in @hobo/cd.
  */
 export function ciDeclarationHash(deliverable: HoboDeliverable): string {
-	const declaration = {
-		schema: "hobo.ci.deliverable/v1",
-		bindle: deliverable.bindle,
-		output: deliverable.output,
-		kind: deliverable.kind,
-		ecosystem: deliverable.ecosystem,
-		mediaType: deliverable.mediaType,
-	};
-	return `sha256:${sha256(canonicalJson(declaration))}`;
+	const declaration = object([
+		field("bindle", text(deliverable.bindle)),
+		field("ecosystem", text(deliverable.ecosystem)),
+		field("kind", text(deliverable.kind)),
+		field("mediaType", text(deliverable.mediaType)),
+		field("output", text(deliverable.output)),
+		field("schema", text("hobo.ci.deliverable/v1")),
+	]);
+	return `sha256:${sha256(declaration)}`;
 }
 
 export type CiProvenance = Readonly<{
@@ -445,36 +471,52 @@ export function ciProvenanceStatement(
 ): CiProvenance {
 	refuseBuild(build);
 	const sorted = [...subjects].sort((a, b) => byText(a.name, b.name));
-	const statement = {
-		_type: IN_TOTO_STATEMENT_TYPE,
-		subject: sorted.map((item) => ({
-			name: item.name,
-			digest: { sha256: item.digest.replace(/^sha256:/, "") },
-		})),
-		predicateType: SLSA_PROVENANCE_PREDICATE,
-		predicate: {
-			buildDefinition: {
-				buildType: HOBO_CI_BUILD_TYPE,
-				externalParameters: {
-					repository: build.repository,
-					ref: build.ref,
-					pipeline: build.pipeline,
-				},
-				internalParameters: { ciSystem: build.ciSystem },
-				resolvedDependencies: [
-					{
-						uri: `git+${build.repository}@${build.ref}`,
-						digest: { gitCommit: build.commit },
-					},
-				],
-			},
-			runDetails: {
-				builder: { id: build.builderId },
-				metadata: { invocationId: build.runId },
-			},
-		},
-	};
-	const bytes = new TextEncoder().encode(canonicalJson(statement));
+	const dependency = object([
+		field("digest", object([field("gitCommit", text(build.commit))])),
+		field("uri", text(`git+${build.repository}@${build.ref}`)),
+	]);
+	const buildDefinition = object([
+		field("buildType", text(HOBO_CI_BUILD_TYPE)),
+		field(
+			"externalParameters",
+			object([
+				field("pipeline", text(build.pipeline)),
+				field("ref", text(build.ref)),
+				field("repository", text(build.repository)),
+			]),
+		),
+		field(
+			"internalParameters",
+			object([field("ciSystem", text(build.ciSystem))]),
+		),
+		field("resolvedDependencies", list([dependency])),
+	]);
+	const runDetails = object([
+		field("builder", object([field("id", text(build.builderId))])),
+		field("metadata", object([field("invocationId", text(build.runId))])),
+	]);
+	const subject = sorted.map((item) =>
+		object([
+			field(
+				"digest",
+				object([field("sha256", text(item.digest.replace(/^sha256:/, "")))]),
+			),
+			field("name", text(item.name)),
+		]),
+	);
+	const statement = object([
+		field("_type", text(IN_TOTO_STATEMENT_TYPE)),
+		field(
+			"predicate",
+			object([
+				field("buildDefinition", buildDefinition),
+				field("runDetails", runDetails),
+			]),
+		),
+		field("predicateType", text(SLSA_PROVENANCE_PREDICATE)),
+		field("subject", list(subject)),
+	]);
+	const bytes = new TextEncoder().encode(statement);
 	const digest = `sha256:${sha256(bytes)}`;
 	return {
 		bytes,
@@ -483,6 +525,8 @@ export function ciProvenanceStatement(
 			statementDigest: digest,
 			predicateType: SLSA_PROVENANCE_PREDICATE,
 			builderId: build.builderId,
+			signerIdentity: "",
+			issuer: "",
 			verified: false,
 			verifier: "",
 			subjectDigests: sorted.map((item) => item.digest),
@@ -512,7 +556,7 @@ export function ciFreightManifest(
 				kind: deliverable.kind,
 				digest: input.digest,
 				coordinate: ciFreightCoordinate(build, deliverable.output),
-				...(input.sizeBytes > 0 ? { sizeBytes: String(input.sizeBytes) } : {}),
+				sizeBytes: input.sizeBytes,
 				mediaType: deliverable.mediaType,
 				ecosystem: deliverable.ecosystem,
 			},
@@ -621,15 +665,8 @@ export async function ciFreightPipelineArtifacts(
 	);
 }
 
-/**
- * The structural shape of a passing `ci.PipelineResultObserved` lease for
- * these outputs, for a CI system that exposes outputs as files (GitHub
- * Actions artifacts) rather than through the @hobo/ci store.
- */
-export function ciFreightResult(
-	build: CiBuild,
-	outputs: readonly CiFreightOutput[],
-): Readonly<{
+/** A passing `ci.PipelineResultObserved` lease, as far as a HOBO_CI source reads it. */
+export type CiFreightResult = Readonly<{
 	pipelineId: string;
 	repository: string;
 	headSha: string;
@@ -638,7 +675,17 @@ export function ciFreightResult(
 		status: "passed";
 		artifacts: readonly Readonly<{ path: string; sha256: string }>[];
 	}>;
-}> {
+}>;
+
+/**
+ * The structural shape of a passing `ci.PipelineResultObserved` lease for
+ * these outputs, for a CI system that exposes outputs as files (GitHub
+ * Actions artifacts) rather than through the @hobo/ci store.
+ */
+export function ciFreightResult(
+	build: CiBuild,
+	outputs: readonly CiFreightOutput[],
+): CiFreightResult {
 	return {
 		pipelineId: build.pipeline,
 		repository: build.repository,

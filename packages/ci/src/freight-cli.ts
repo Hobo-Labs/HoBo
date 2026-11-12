@@ -28,58 +28,66 @@ export type CiFreightCliIo = Readonly<{
 const USAGE =
 	"usage: freight-cli --out <dir> --repository <owner/name> --commit <sha> --ref <ref> --pipeline <id> --run-id <id> --ci-system <name> --builder-id <uri> --deliverable <id>=<file> [...]";
 
+function parseCliArgs(args: readonly string[]) {
+	return parseArgs({
+		args: [...args],
+		options: {
+			out: { type: "string" },
+			repository: { type: "string" },
+			commit: { type: "string" },
+			ref: { type: "string" },
+			pipeline: { type: "string" },
+			"run-id": { type: "string" },
+			"ci-system": { type: "string" },
+			"builder-id": { type: "string" },
+			deliverable: { type: "string", multiple: true },
+		},
+		strict: true,
+	});
+}
+
 export async function runCiFreightCli(
 	args: readonly string[],
 	io: CiFreightCliIo = {},
 ): Promise<number> {
 	const write = io.write ?? ((text: string) => process.stdout.write(text));
-	const required = [
-		"out",
-		"repository",
-		"commit",
-		"ref",
-		"pipeline",
-		"run-id",
-		"ci-system",
-		"builder-id",
-	] as const;
-	let values: Record<string, string | string[] | boolean | undefined>;
+	let parsed: ReturnType<typeof parseCliArgs>;
 	try {
-		({ values } = parseArgs({
-			args: [...args],
-			options: {
-				...Object.fromEntries(
-					required.map((name) => [name, { type: "string" as const }]),
-				),
-				deliverable: { type: "string", multiple: true },
-			},
-			strict: true,
-		}));
+		parsed = parseCliArgs(args);
 	} catch (error) {
 		write(
 			`${error instanceof Error ? error.message : "bad arguments"}\n${USAGE}\n`,
 		);
 		return 2;
 	}
-	const text = (name: string) => {
-		const value = values[name];
-		return typeof value === "string" ? value : "";
+	const { values } = parsed;
+	const given = {
+		out: values.out ?? "",
+		repository: values.repository ?? "",
+		commit: values.commit ?? "",
+		ref: values.ref ?? "",
+		pipeline: values.pipeline ?? "",
+		"run-id": values["run-id"] ?? "",
+		"ci-system": values["ci-system"] ?? "",
+		"builder-id": values["builder-id"] ?? "",
 	};
-	const missing = required.filter((name) => text(name) === "");
+	const missing = Object.entries(given)
+		.filter(([, value]) => value === "")
+		.map(([name]) => name);
 	if (missing.length > 0) {
 		write(`missing --${missing.join(", --")}\n${USAGE}\n`);
 		return 2;
 	}
 	const build: CiBuild = {
-		repository: text("repository"),
-		commit: text("commit"),
-		ref: text("ref"),
-		pipeline: text("pipeline"),
-		runId: text("run-id"),
-		ciSystem: text("ci-system"),
-		builderId: text("builder-id"),
+		repository: given.repository,
+		commit: given.commit,
+		ref: given.ref,
+		pipeline: given.pipeline,
+		runId: given["run-id"],
+		ciSystem: given["ci-system"],
+		builderId: given["builder-id"],
 	};
-	const requested = Array.isArray(values.deliverable) ? values.deliverable : [];
+	const requested = values.deliverable ?? [];
 	const built: { id: string; bytes: Uint8Array }[] = [];
 	for (const entry of requested) {
 		const at = entry.indexOf("=");
@@ -106,7 +114,7 @@ export async function runCiFreightCli(
 			write(`refused ${reason.subject}: ${reason.code}: ${reason.message}\n`);
 		return 1;
 	}
-	const out = resolve(text("out"));
+	const out = resolve(given.out);
 	for (const output of emitted.outputs) {
 		const path = join(out, ...output.path.split("/"));
 		await mkdir(dirname(path), { recursive: true });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, toJsonString } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { LeaseSchema, PipelineResultSchema } from "../src/_generated/ci_pb.js";
 import {
@@ -88,17 +88,17 @@ describe("HoBo's own deliverables as Freight", () => {
 			sizeBytes: 1,
 			build,
 		});
-		let refusal: unknown;
-		try {
-			writeCiFreightManifest(manifest);
-		} catch (error) {
-			refusal = error;
-		}
-		expect(refusal).toBeInstanceOf(CiFreightError);
-		expect((refusal as CiFreightError).reasons[0]).toMatchObject({
-			code: CI_FREIGHT_REASON.manifestInvalid,
-			subject: "artifacts[0].digest",
-		});
+		expect(() => writeCiFreightManifest(manifest)).toThrow(
+			expect.objectContaining({
+				name: "CiFreightError",
+				reasons: [
+					expect.objectContaining({
+						code: CI_FREIGHT_REASON.manifestInvalid,
+						subject: "artifacts[0].digest",
+					}),
+				],
+			}),
+		);
 	});
 
 	it("refuses credential material in a source field instead of redacting it", () => {
@@ -111,14 +111,17 @@ describe("HoBo's own deliverables as Freight", () => {
 				repository: "https://user:hunter2@example.com/hobo.git",
 			},
 		});
-		expect(() => writeCiFreightManifest(manifest)).toThrow(CiFreightError);
-		try {
-			writeCiFreightManifest(manifest);
-		} catch (error) {
-			expect((error as CiFreightError).reasons[0]?.code).toBe(
-				CI_FREIGHT_REASON.secretInRecord,
-			);
-		}
+		expect(() => writeCiFreightManifest(manifest)).toThrow(
+			expect.objectContaining({
+				name: "CiFreightError",
+				reasons: [
+					expect.objectContaining({
+						code: CI_FREIGHT_REASON.secretInRecord,
+						subject: "source.repository",
+					}),
+				],
+			}),
+		);
 	});
 
 	it("records provenance as an in-toto v1 statement with an SLSA v1 predicate over every subject", () => {
@@ -204,23 +207,17 @@ describe("HoBo's own deliverables as Freight", () => {
 		});
 		// The structural read @hobo/cd's CiEventReader driver makes (I15):
 		// match by path, then hash the bytes it reads back.
-		const json = toJson(LeaseSchema, lease) as {
-			pipelineId: string;
-			result: {
-				status: string;
-				artifacts: { path: string; sha256: string; data: string }[];
-			};
-		};
+		const json = JSON.parse(toJsonString(LeaseSchema, lease));
 		expect(json.pipelineId).toBe("hobo-main");
 		expect(json.result.status).toBe("passed");
 		const relay = json.result.artifacts.find(
-			(item) => item.path === "relay/bundle",
+			(item: { path: string }) => item.path === "relay/bundle",
 		);
 		expect(relay?.sha256).toBe(sha(bundle));
 		expect(sha(Buffer.from(relay?.data ?? "", "base64"))).toBe(relay?.sha256);
-		expect(json.result.artifacts.map((item) => item.path)).toContain(
-			"relay/bundle.freight.json",
-		);
+		expect(
+			json.result.artifacts.map((item: { path: string }) => item.path),
+		).toContain("relay/bundle.freight.json");
 	});
 
 	it("refuses an output over the pipeline artifact limit instead of truncating it", async () => {
