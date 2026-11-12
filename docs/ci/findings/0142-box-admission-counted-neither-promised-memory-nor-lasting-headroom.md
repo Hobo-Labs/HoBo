@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 141: box admission counted neither promised memory nor lasting headroom"
+title: "Finding 142: box admission counted neither promised memory nor lasting headroom"
 description: "Run 43207388098: the box started shard pairs 6 s and 12 s apart against the same free-memory reading on a host with 2.4–4.4 GB free, its CPU pressure gate read a value the kernel always reports as zero, and the route job had no capacity view."
 tags: [hobo, ci, performance, admission, memory, cpu, psi, main-gate, shards, fleet]
 ---
 
-# Finding 141: box admission counted neither promised memory nor lasting headroom
+# Finding 142: box admission counted neither promised memory nor lasting headroom
 
 ## Evidence
 
