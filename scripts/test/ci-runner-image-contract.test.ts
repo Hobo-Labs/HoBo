@@ -35,6 +35,7 @@ import {
 	probeMiseTool,
 	REQUIRED_COMMANDS,
 	spawnCommand,
+	assertPinnedMiseToolchain,
 	syncMissingMiseTools,
 	verifyBaseImageDigestResolves,
 } from "../lib/ci-runner-contract.mts";
@@ -180,6 +181,43 @@ describe("ci-runner mise tool sync", () => {
 			},
 		]);
 		expect(env.PATH).toContain(binDir);
+	});
+
+	it("verify-only preflight fails closed when locked install would be needed", () => {
+		const result = assertPinnedMiseToolchain(root, {
+			run: (cmd, args) => {
+				if (cmd === "mise" && args.includes("--dry-run-code")) {
+					return {
+						ok: false,
+						out: "",
+						command: "mise install --locked --dry-run-code",
+						failure: "would install node 24.0.0",
+					};
+				}
+				return { ok: true, out: "" };
+			},
+		});
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain("dry-run-code");
+		expect(result.detail).toContain("mise.lock");
+	});
+
+	it("verify-only preflight passes when dry-run-code is clean", () => {
+		const result = assertPinnedMiseToolchain(root, {
+			run: (cmd, args) => {
+				if (cmd === "mise" && args.includes("which")) {
+					const tool = args.at(-1)!;
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
+				if (cmd === "sh" && args.join(" ").includes("command -v")) {
+					return { ok: true, out: "/usr/bin/fake" };
+				}
+				return { ok: true, out: "" };
+			},
+		});
+		expect(result.ok).toBe(true);
+		expect(result.detail).toContain("verify-only");
+		expect(result.installed).toEqual([]);
 	});
 
 	it("exports PATH-invisible configured tools when already installed (syft preflight)", () => {
@@ -672,6 +710,7 @@ describe("ci-runner image contract (host smoke)", () => {
 		);
 		expect(action).toContain("install-toolchain:");
 		expect(action).toMatch(/if: inputs\.install-toolchain == 'true'/);
+		expect(action).toContain("HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL");
 		expect(action).toContain(
 			"node --no-warnings scripts/ci-runner-preflight.mts",
 		);

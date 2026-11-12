@@ -462,6 +462,110 @@ export function syncMissingMiseTools(
 	);
 }
 
+const MISE_LOCK_VERIFY_REMEDY = `Remedy: runner image must ship every tool at the versions pinned in ${MISE_LOCK}; rebuild with bash ${CI_RUNNER_BUILD_SCRIPT} or run mise install --locked before plan jobs`;
+
+/**
+ * Fail closed when `mise install --locked` was skipped: every configured tool must
+ * already be present at the locked versions (no network install).
+ */
+export function assertPinnedMiseToolchain(
+	root: string,
+	options: {
+		readonly run?: CommandRunner;
+		readonly now?: () => number;
+		readonly env?: NodeJS.ProcessEnv;
+		readonly appendFile?: (path: string, data: string) => void;
+	} = {},
+): MiseToolSyncResult {
+	const run = options.run ?? spawnCommand;
+	const now = options.now ?? Date.now;
+	const env = options.env ?? process.env;
+	const appendFile = options.appendFile ?? appendFileSync;
+	const started = now();
+	const finish = (
+		ok: boolean,
+		installed: readonly string[],
+		detail: string,
+	): MiseToolSyncResult => ({
+		ok,
+		installed,
+		elapsedMs: now() - started,
+		detail,
+	});
+	const trustArgs = ["--cd", root, "trust", "./mise.toml"];
+	const trust = run("mise", trustArgs);
+	if (!trust.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(trust, commandLine("mise", trustArgs))}\n    ${MISE_LOCK_VERIFY_REMEDY}`,
+		);
+	}
+	const verifyArgs = ["--cd", root, "install", "--locked", "--dry-run-code"];
+	const verify = run("mise", verifyArgs);
+	if (!verify.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(verify, commandLine("mise", verifyArgs))}\n    ${MISE_LOCK_VERIFY_REMEDY}`,
+		);
+	}
+	const listArgs = [
+		"--cd",
+		root,
+		"ls",
+		"--current",
+		"--missing",
+		"--no-header",
+	];
+	const listing = run("mise", listArgs);
+	if (!listing.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(listing, commandLine("mise", listArgs))}\n    ${MISE_LOCK_VERIFY_REMEDY}`,
+		);
+	}
+	const configuredTools = parseMiseToolNames(
+		readFileSync(join(root, MISE_TOML), "utf8"),
+	);
+	const configured = new Set(configuredTools);
+	const missing = [
+		...new Set(
+			listing.out.split("\n").flatMap((line) => {
+				const [name] = line.trim().split(/\s+/);
+				return name && configured.has(name) ? [name] : [];
+			}),
+		),
+	];
+	if (missing.length > 0) {
+		return finish(
+			false,
+			[],
+			`mise.toml tools missing from ${MISE_LOCK}: ${missing.join(", ")}\n    ${MISE_LOCK_VERIFY_REMEDY}`,
+		);
+	}
+	const invisibleTools = configuredTools.filter((tool) => {
+		const which = run("sh", ["-c", `command -v ${tool} || true`]);
+		return !(which.out.split("\n")[0]?.trim() ?? "");
+	});
+	const pathExport = exportMiseToolBinDirsToPath(
+		root,
+		invisibleTools,
+		run,
+		env,
+		appendFile,
+	);
+	if (!pathExport.ok) {
+		return finish(false, [], pathExport.detail);
+	}
+	return finish(
+		true,
+		[],
+		"all mise.toml tools match mise.lock (verify-only preflight)",
+	);
+}
+
 const SYSTEM_COMMANDS = {
 	xz: "xz-utils",
 	git: "git",

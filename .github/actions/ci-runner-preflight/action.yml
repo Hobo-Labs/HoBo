@@ -50,6 +50,8 @@ runs:
           mise install --locked
         fi
     - shell: bash
+      env:
+        HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL: ${{ inputs.install-toolchain == 'false' && '1' || '' }}
       run: |
         set -euo pipefail
         node --no-warnings scripts/ci-runner-preflight.mts

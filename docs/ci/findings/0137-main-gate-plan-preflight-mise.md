@@ -17,7 +17,7 @@ Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/431
 
 ## Fix
 
-Add composite input **`install-toolchain`** (default **true**). **`main-gate-plan`** passes **`install-toolchain: false`** so the fleet image's baked toolchain is used; contract check (`ci-runner-preflight.mts`) still runs.
+Add composite input **`install-toolchain`** (default **true**). **`main-gate-plan`** passes **`install-toolchain: false`** so the fleet image's baked toolchain is used. Preflight then runs **verify-only** mise: `mise install --locked --dry-run-code` plus `evaluateCiRunnerContract` — no install, fail closed on drift from **`mise.lock`**.
 
 ## Measure
 
