@@ -130,8 +130,12 @@ owner handles no secret value on the default path:
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
 - **Verifying**, by identity name: `hobo-ci-writer` in the deploy workflow's
   *Verify the secret store connection* step (`hobo ci secret-store verify`:
-  sign in with GitHub OIDC, then revoke; does **not** assert Infisical role
-  shape); `hobo-ci-relay` by `/readyz` after Vercel deploys.
+  sign in with GitHub OIDC, audience `https://github.com/Hobo-Labs`, then
+  revoke; failures print `oidc_sub` / `oidc_aud` for dashboard trust matching;
+  does **not** assert Infisical role shape); `hobo-ci-relay` by `/readyz` after
+  Vercel deploys. The workflow step runs
+  `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
+  stderr-only crashes fail loudly in the log and job summary.
 
 ### Least privilege on Infisical Cloud Free (attach)
 

@@ -874,8 +874,12 @@ Yard, and sets the non-secret settings the chosen rows project, with the two
 Infisical ids given as inputs
 ([`ci-relay-yard.ts`](../../packages/hobo/src/ci-relay-yard.ts)). The
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
-every push to `main` that touches the relay's pnpm-lock closure: it reads the
-Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
+every push to `main` that touches the relay's pnpm-lock closure: after the
+binding exists it runs `hobo ci secret-store verify` (GitHub OIDC audience
+`https://github.com/Hobo-Labs`; failures print `oidc_sub` / `oidc_aud` through
+[`relay-deploy-secret-store-verify-report.mts`](../../scripts/ci/relay-deploy-secret-store-verify-report.mts);
+summaries redact JWT-shaped text; missing stdout JSON fails the step),
+then reads the Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
 the Vercel CLI when the project lacks it, deploys with `--target production
 --wait`, and smoke-checks `/healthz` and `/readyz`. Until a secret store is
 bound (`deploy/secret-store.binding.json`, written when the deployment
