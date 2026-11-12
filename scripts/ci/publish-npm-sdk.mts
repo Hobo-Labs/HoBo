@@ -102,7 +102,9 @@ export type NpmPublishDeps = {
 	readonly stage?: (dir: string) => SdkArtifactManifest;
 	readonly tarballs?: (dir: string) => string[];
 	readonly read?: (path: string) => Uint8Array;
-	readonly qualify?: typeof qualifyReleaseCandidate;
+	readonly qualify?: (
+		input: Parameters<typeof qualifyReleaseCandidate>[0],
+	) => Promise<unknown>;
 	readonly npm?: (args: string[]) => void;
 };
 
@@ -136,11 +138,14 @@ export async function publishNpmSdkArtifacts(
 	}
 	const authEnv = npmPublishAuthEnv(mode, options.token);
 	const manifest = (deps.stage ?? stageSdkArtifactsDir)(options.stagingDir);
-	const tarballs = (deps.tarballs ?? orderedSdkTarballPaths)(options.stagingDir);
+	const tarballs = (deps.tarballs ?? orderedSdkTarballPaths)(
+		options.stagingDir,
+	);
 	if (tarballs.length !== manifest.packages.length) {
 		throw new Error("SDK tarball manifest count mismatch");
 	}
-	const read = deps.read ?? ((path: string) => new Uint8Array(readFileSync(path)));
+	const read =
+		deps.read ?? ((path: string) => new Uint8Array(readFileSync(path)));
 	await (deps.qualify ?? qualifyReleaseCandidate)({
 		home: options.freightHome,
 		family: "npm",
@@ -156,8 +161,7 @@ export async function publishNpmSdkArtifacts(
 		},
 	});
 	const npm =
-		deps.npm ??
-		((args: string[]) => runNpm(args, options.stagingDir, authEnv));
+		deps.npm ?? ((args: string[]) => runNpm(args, options.stagingDir, authEnv));
 	for (const tarball of tarballs) {
 		const file = tarball.slice(tarball.lastIndexOf("/") + 1);
 		npm(npmPublishArgs(file, parsed));

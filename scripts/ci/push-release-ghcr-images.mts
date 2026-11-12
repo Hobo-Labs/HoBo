@@ -41,9 +41,10 @@ export function ociReleaseArtifacts(
 	digestLines: readonly string[],
 ): ReleaseArtifact[] {
 	return digestLines.map((line) => {
-		const match = /^(?<repo>[^\s@]+\/(?<id>[^\s/@:]+))@(?<digest>sha256:[0-9a-f]{64})$/u.exec(
-			line.trim(),
-		);
+		const match =
+			/^(?<repo>[^\s@]+\/(?<id>[^\s/@:]+))@(?<digest>sha256:[0-9a-f]{64})$/u.exec(
+				line.trim(),
+			);
 		if (!match?.groups)
 			throw new Error(`${line} is not a pushed digest (<repo>@sha256:<hex>)`);
 		return {

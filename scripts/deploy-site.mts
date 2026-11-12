@@ -163,7 +163,11 @@ export async function qualifySiteRelease(input: {
 }
 
 function releaseCdHome(): string {
-	return process.env.HOBO_RELEASE_CD_HOME || process.env.HOBO_HOME || join(homedir(), ".hobo");
+	return (
+		process.env.HOBO_RELEASE_CD_HOME ||
+		process.env.HOBO_HOME ||
+		join(homedir(), ".hobo")
+	);
 }
 
 async function publish(sha: string): Promise<void> {
@@ -241,7 +245,8 @@ async function publish(sha: string): Promise<void> {
 		);
 
 		const files = git(["ls-files"], staging).split("\n").filter(Boolean).length;
-		if (!dryRun) await qualifySiteRelease({ dist: staging, home: releaseCdHome() });
+		if (!dryRun)
+			await qualifySiteRelease({ dist: staging, home: releaseCdHome() });
 		if (dryRun) {
 			console.log(
 				`[dry run] would force-push ${files} files to ${BRANCH} as "${message}"`,
@@ -262,7 +267,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 		const at = process.argv.indexOf("--release-freight");
 		if (at !== -1) {
 			const dist = process.argv[at + 1];
-			if (!dist) throw new Error("--release-freight needs the built site directory");
+			if (!dist)
+				throw new Error("--release-freight needs the built site directory");
 			await qualifySiteRelease({ dist: resolve(dist), home: releaseCdHome() });
 		} else {
 			const sha = assertClean();

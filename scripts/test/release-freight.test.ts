@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -58,7 +64,10 @@ describe("releaseFreightManifest", () => {
 
 	it("refuses a release source whose commit is not a git sha", () => {
 		expect(() =>
-			releaseSource({ GITHUB_REPOSITORY: "Hobo-Labs/HoBo", HOBO_RELEASE_REVISION: "main" }),
+			releaseSource({
+				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				HOBO_RELEASE_REVISION: "main",
+			}),
 		).toThrow(/commit/);
 	});
 });
@@ -87,9 +96,9 @@ describe("classifyPromotion", () => {
 	});
 
 	it("qualifies a promoted release", () => {
-		expect(classifyPromotion(promotion("PROMOTION_STATE_PROMOTED", [])).outcome).toBe(
-			"qualified",
-		);
+		expect(
+			classifyPromotion(promotion("PROMOTION_STATE_PROMOTED", [])).outcome,
+		).toBe("qualified");
 	});
 
 	it("reports the missing realizer as a typed gap, never as qualified", () => {
@@ -100,28 +109,40 @@ describe("classifyPromotion", () => {
 			]),
 		);
 		expect(verdict.outcome).toBe("gap");
-		expect(verdict.codes).toEqual(["promotion-resolve-failed", "planning-camp-unknown"]);
+		expect(verdict.codes).toEqual([
+			"promotion-resolve-failed",
+			"planning-camp-unknown",
+		]);
 	});
 
 	it("blocks a rejection that is not the known realizer gap", () => {
 		const verdict = classifyPromotion(
-			promotion("PROMOTION_STATE_REJECTED", ["planning-camp-unknown", "freight-yanked"]),
+			promotion("PROMOTION_STATE_REJECTED", [
+				"planning-camp-unknown",
+				"freight-yanked",
+			]),
 		);
 		expect(verdict.outcome).toBe("blocked");
 	});
 
 	it("blocks a promotion that has not finished (fail closed)", () => {
-		expect(classifyPromotion(promotion("PROMOTION_STATE_QUEUED", [])).outcome).toBe("blocked");
+		expect(
+			classifyPromotion(promotion("PROMOTION_STATE_QUEUED", [])).outcome,
+		).toBe("blocked");
 	});
 
 	it("blocks a refused command unless every reason is a gap code", () => {
 		const refused = (codes: string[]) => ({
 			ok: false,
-			code: codes[0],
+			code: codes[0] ?? "",
 			data: { reasons: codes.map((code) => ({ code, message: code })) },
 		});
-		expect(classifyPromotion(refused(["pipeline-unknown-camp"])).outcome).toBe("gap");
-		expect(classifyPromotion(refused(["lineage-unsatisfied"])).outcome).toBe("blocked");
+		expect(classifyPromotion(refused(["pipeline-unknown-camp"])).outcome).toBe(
+			"gap",
+		);
+		expect(classifyPromotion(refused(["lineage-unsatisfied"])).outcome).toBe(
+			"blocked",
+		);
 	});
 
 	it("keeps the gap list to codes @hobo/cd emits for missing topology or realizers", () => {
@@ -142,7 +163,9 @@ describe("siteTreeIndex", () => {
 		writeFileSync(join(dir, "media", "bo.png"), "png");
 		const first = siteTreeIndex(dir);
 		expect(siteTreeIndex(dir).digest).toBe(first.digest);
-		expect(JSON.parse(new TextDecoder().decode(first.bytes)).files).toHaveLength(2);
+		expect(
+			JSON.parse(new TextDecoder().decode(first.bytes)).files,
+		).toHaveLength(2);
 		writeFileSync(join(dir, "media", "bo.png"), "png2");
 		expect(siteTreeIndex(dir).digest).not.toBe(first.digest);
 	});
@@ -157,115 +180,123 @@ if (!hoboBuilt) {
 	);
 }
 
-describe.skipIf(!hoboBuilt)("release Freight through hobo deploy", { timeout: 60_000 }, () => {
-	async function candidate(home: string, bytes = "tarball") {
-		const cd = await openReleaseCd({ home, env: {} });
-		try {
-			const recorded = await recordReleaseFreight(cd, {
-				family: "npm",
-				source,
-				stored: [
-					{
-						name: "@hobo-labs/core@0.0.0-alpha.1",
-						kind: "ARTIFACT_KIND_PACKAGE",
-						mediaType: "application/gzip",
-						bytes: new TextEncoder().encode(bytes),
-					},
-				],
-				labels: { "hobo.release/ref": "v0.0.0-alpha.1" },
-			});
-			const verdict = await promoteReleaseFreight(cd, {
-				family: "npm",
-				channel: "candidate",
-				freightId: recorded.freightId,
-			});
-			return { recorded, verdict };
-		} finally {
-			await cd.close();
-		}
-	}
-
-	it("records verified Freight and reports the candidate realizer gap", async () => {
-		const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
-		const { recorded, verdict } = await candidate(home);
-		expect(recorded.freightId).toMatch(/^sha256:[0-9a-f]{64}$/);
-		expect(verdict.outcome).toBe("gap");
-		expect(verdict.codes).toContain("planning-camp-unknown");
-		const report = JSON.parse(readFileSync(join(home, "release-freight-npm.json"), "utf8"));
-		expect(report.freightId).toBe(recorded.freightId);
-		expect(report.channels.candidate.outcome).toBe("gap");
-	});
-
-	it("promotes to stable only with candidate lineage in the journal", async () => {
-		const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
-		const { recorded } = await candidate(home);
-		const cd = await openReleaseCd({ home, env: {} });
-		try {
-			const stable = await promoteReleaseFreight(cd, {
-				family: "npm",
-				channel: "stable",
-				freightId: recorded.freightId,
-			});
-			expect(stable.outcome).toBe("gap");
-			expect(stable.lineage).toBe("candidate-journaled");
-		} finally {
-			await cd.close();
-		}
-	});
-
-	it("blocks stable for Freight that never went through candidate", async () => {
-		const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
-		const cd = await openReleaseCd({ home, env: {} });
-		try {
-			const recorded = await recordReleaseFreight(cd, {
-				family: "npm",
-				source,
-				stored: [
-					{
-						name: "@hobo-labs/core@0.0.0-alpha.2",
-						kind: "ARTIFACT_KIND_PACKAGE",
-						mediaType: "application/gzip",
-						bytes: new TextEncoder().encode("other"),
-					},
-				],
-			});
-			const stable = await promoteReleaseFreight(cd, {
-				family: "npm",
-				channel: "stable",
-				freightId: recorded.freightId,
-			});
-			expect(stable.outcome).toBe("blocked");
-			expect(stable.codes).toEqual(["release-lineage-missing"]);
-		} finally {
-			await cd.close();
-		}
-	});
-
-	it("blocks a registry artifact @hobo/cd cannot verify (no fake Freight)", async () => {
-		const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
-		const cd = await openReleaseCd({ home, env: {} });
-		try {
-			await expect(
-				recordReleaseFreight(cd, {
-					family: "oci",
+describe.skipIf(!hoboBuilt)(
+	"release Freight through hobo deploy",
+	{ timeout: 60_000 },
+	() => {
+		async function candidate(home: string, bytes = "tarball") {
+			const cd = await openReleaseCd({ home, env: {} });
+			try {
+				const recorded = await recordReleaseFreight(cd, {
+					family: "npm",
 					source,
-					registry: [
+					stored: [
 						{
-							name: "hobo-sdk",
-							kind: "ARTIFACT_KIND_OCI_IMAGE",
-							digest: DIGEST,
-							coordinate: "not a coordinate",
-							ecosystem: "oci",
-							mediaType: "application/vnd.oci.image.index.v1+json",
+							name: "@hobo-labs/core@0.0.0-alpha.1",
+							kind: "ARTIFACT_KIND_PACKAGE",
+							mediaType: "application/gzip",
+							bytes: new TextEncoder().encode(bytes),
 						},
 					],
-				}),
-			).rejects.toThrow(/artifact-coordinate-invalid|freight-artifacts-unverified/);
-		} finally {
-			await cd.close();
+					labels: { "hobo.release/ref": "v0.0.0-alpha.1" },
+				});
+				const verdict = await promoteReleaseFreight(cd, {
+					family: "npm",
+					channel: "candidate",
+					freightId: recorded.freightId,
+				});
+				return { recorded, verdict };
+			} finally {
+				await cd.close();
+			}
 		}
-	});
-});
+
+		it("records verified Freight and reports the candidate realizer gap", async () => {
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
+			const { recorded, verdict } = await candidate(home);
+			expect(recorded.freightId).toMatch(/^sha256:[0-9a-f]{64}$/);
+			expect(verdict.outcome).toBe("gap");
+			expect(verdict.codes).toContain("planning-camp-unknown");
+			const report = JSON.parse(
+				readFileSync(join(home, "release-freight-npm.json"), "utf8"),
+			);
+			expect(report.freightId).toBe(recorded.freightId);
+			expect(report.channels.candidate.outcome).toBe("gap");
+		});
+
+		it("promotes to stable only with candidate lineage in the journal", async () => {
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
+			const { recorded } = await candidate(home);
+			const cd = await openReleaseCd({ home, env: {} });
+			try {
+				const stable = await promoteReleaseFreight(cd, {
+					family: "npm",
+					channel: "stable",
+					freightId: recorded.freightId,
+				});
+				expect(stable.outcome).toBe("gap");
+				expect(stable.lineage).toBe("candidate-journaled");
+			} finally {
+				await cd.close();
+			}
+		});
+
+		it("blocks stable for Freight that never went through candidate", async () => {
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
+			const cd = await openReleaseCd({ home, env: {} });
+			try {
+				const recorded = await recordReleaseFreight(cd, {
+					family: "npm",
+					source,
+					stored: [
+						{
+							name: "@hobo-labs/core@0.0.0-alpha.2",
+							kind: "ARTIFACT_KIND_PACKAGE",
+							mediaType: "application/gzip",
+							bytes: new TextEncoder().encode("other"),
+						},
+					],
+				});
+				const stable = await promoteReleaseFreight(cd, {
+					family: "npm",
+					channel: "stable",
+					freightId: recorded.freightId,
+				});
+				expect(stable.outcome).toBe("blocked");
+				expect(stable.codes).toEqual(["release-lineage-missing"]);
+			} finally {
+				await cd.close();
+			}
+		});
+
+		it("blocks a registry artifact @hobo/cd cannot verify (no fake Freight)", async () => {
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-cd-"));
+			const cd = await openReleaseCd({ home, env: {} });
+			try {
+				await expect(
+					recordReleaseFreight(cd, {
+						family: "oci",
+						source,
+						registry: [
+							{
+								name: "hobo-sdk",
+								kind: "ARTIFACT_KIND_OCI_IMAGE",
+								digest: DIGEST,
+								coordinate: "not a coordinate",
+								ecosystem: "oci",
+								mediaType: "application/vnd.oci.image.index.v1+json",
+							},
+						],
+					}),
+				).rejects.toThrow(
+					/artifact-coordinate-invalid|freight-artifacts-unverified/,
+				);
+			} finally {
+				await cd.close();
+			}
+		});
+	},
+);
 
 describe("release-hobo.yml publishes only release Freight", () => {
 	const workflow = readFileSync(
@@ -313,8 +344,16 @@ describe("release-hobo.yml publishes only release Freight", () => {
 
 	it("promotes to stable before the signed tag and the GitHub Release", () => {
 		before(job("release-tag"), "promote-stable", "push-release-git-tag.mts");
-		before(job("release-tag"), "promote-stable", "create-github-release.mts --tag");
-		before(job("release-github"), "promote-stable", "create-github-release.mts --tag");
+		before(
+			job("release-tag"),
+			"promote-stable",
+			"create-github-release.mts --tag",
+		);
+		before(
+			job("release-github"),
+			"promote-stable",
+			"create-github-release.mts --tag",
+		);
 	});
 
 	it("keeps the release permissions and OIDC flow unchanged", () => {

@@ -35,12 +35,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = join(import.meta.dirname, "..", "..");
 
 /** The built `hobo` package whose `hobo deploy` composition records and promotes. */
-export const HOBO_CLI_DIST = join(repoRoot, "packages", "hobo", "dist", "index.js");
+export const HOBO_CLI_DIST = join(
+	repoRoot,
+	"packages",
+	"hobo",
+	"dist",
+	"index.js",
+);
 
 export type ReleaseFamily = "npm" | "oci" | "pages";
 export type ReleaseChannel = "candidate" | "stable";
 
-export const RELEASE_FAMILIES: readonly ReleaseFamily[] = ["npm", "oci", "pages"];
+export const RELEASE_FAMILIES: readonly ReleaseFamily[] = [
+	"npm",
+	"oci",
+	"pages",
+];
 export const RELEASE_YARD = "hobo-release";
 
 /** `<yard>/<camp>`: the Camp each release channel promotes into. */
@@ -94,14 +104,25 @@ export function releaseSource(
 		commit,
 		ref: env.GITHUB_REF?.trim() ?? "",
 		ciRunId: env.GITHUB_RUN_ID?.trim() ?? "",
-		ciSystem: env.GITHUB_ACTIONS === "true" || env.GITHUB_RUN_ID ? "github-actions" : "local",
+		ciSystem:
+			env.GITHUB_ACTIONS === "true" || env.GITHUB_RUN_ID
+				? "github-actions"
+				: "local",
 		builderId: `https://github.com/${repository}/.github/workflows/release-hobo.yml`,
 	};
 }
 
+/** The `hobo.cd.v1.ArtifactKind` names a release artifact may carry. */
+export type ArtifactKindName =
+	| "ARTIFACT_KIND_FUNCTION_BUNDLE"
+	| "ARTIFACT_KIND_STATIC_ASSETS"
+	| "ARTIFACT_KIND_OCI_IMAGE"
+	| "ARTIFACT_KIND_PACKAGE"
+	| "ARTIFACT_KIND_SOURCE_TREE";
+
 export type ReleaseArtifact = Readonly<{
 	name: string;
-	kind: string;
+	kind: ArtifactKindName;
 	digest: string;
 	coordinate: string;
 	ecosystem: string;
@@ -115,13 +136,15 @@ export function releaseFreightManifest(input: {
 	readonly declarationHash: string;
 	readonly source: ReleaseSource;
 	readonly artifacts: readonly ReleaseArtifact[];
-	readonly labels?: Readonly<Record<string, string>>;
+	readonly labels?: Readonly<Record<string, string>> | undefined;
 }) {
 	return {
 		schemaVersion: "hobo.freight-manifest/v1",
 		bindle: releaseBindle(input.family),
 		declarationHash: input.declarationHash,
-		artifacts: [...input.artifacts].sort((a, b) => a.name.localeCompare(b.name)),
+		artifacts: [...input.artifacts].sort((a, b) =>
+			a.name.localeCompare(b.name),
+		),
 		source: { ...input.source },
 		labels: { ...input.labels, "hobo.release/family": input.family },
 	};
@@ -168,7 +191,9 @@ export type CdResult = {
 		readonly promotion?: CdPromotion;
 		readonly freight?: { readonly freightId?: string; readonly alias?: string };
 		readonly usable?: boolean;
-		readonly camps?: readonly { readonly promotions?: readonly CdPromotion[] }[];
+		readonly camps?: readonly {
+			readonly promotions?: readonly CdPromotion[];
+		}[];
 	};
 };
 
@@ -188,7 +213,8 @@ export function classifyPromotion(result: CdResult): ReleaseVerdict {
 	const promotion = result.data?.promotion;
 	if (!result.ok || !promotion) {
 		const codes = (result.data?.reasons ?? []).map((r) => r.code ?? "");
-		const all = codes.length > 0 ? codes : [result.code ?? "release-promotion-refused"];
+		const all =
+			codes.length > 0 ? codes : [result.code ?? "release-promotion-refused"];
 		return {
 			outcome: gapOnly(all) ? "gap" : "blocked",
 			codes: all,
@@ -216,22 +242,25 @@ export function classifyPromotion(result: CdResult): ReleaseVerdict {
 /** The `hobo deploy` composition opened on one HOBO_HOME. */
 export type ReleaseCd = Readonly<{
 	home: string;
-	run(args: readonly string[], flags?: Record<string, string>): Promise<CdResult>;
+	run(
+		args: readonly string[],
+		flags?: Record<string, string>,
+	): Promise<CdResult>;
 	store(
 		bytes: Uint8Array,
-		meta: { name: string; kind: string; mediaType: string },
+		meta: { name: string; kind: ArtifactKindName; mediaType: string },
 	): Promise<ReleaseArtifact>;
 	close(): Promise<void>;
 }>;
 
 // The ArtifactKind numbers of hobo.cd.v1 (packages/cd/data-models/cd.proto).
-const ARTIFACT_KIND: Readonly<Record<string, number>> = {
+const ARTIFACT_KIND = {
 	ARTIFACT_KIND_FUNCTION_BUNDLE: 2,
 	ARTIFACT_KIND_STATIC_ASSETS: 3,
 	ARTIFACT_KIND_OCI_IMAGE: 4,
 	ARTIFACT_KIND_PACKAGE: 6,
 	ARTIFACT_KIND_SOURCE_TREE: 7,
-};
+} as const;
 
 /**
  * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
@@ -270,7 +299,6 @@ export async function openReleaseCd(options: {
 			hobo.runCdDeploySubcommand(host, args, { ...flags, format: "json" }),
 		async store(bytes, meta) {
 			const kind = ARTIFACT_KIND[meta.kind];
-			if (kind === undefined) throw new Error(`unknown artifact kind ${meta.kind}`);
 			const ref = await host.cd.artifacts.put(
 				bytes,
 				{ name: meta.name, kind, mediaType: meta.mediaType },
@@ -302,11 +330,14 @@ export function releaseReportPath(home: string, family: ReleaseFamily): string {
 	return join(home, `release-freight-${family}.json`);
 }
 
-function readReport(home: string, family: ReleaseFamily): ReleaseReport | undefined {
+function readReport(
+	home: string,
+	family: ReleaseFamily,
+): ReleaseReport | undefined {
 	const path = releaseReportPath(home, family);
-	return existsSync(path)
-		? (JSON.parse(readFileSync(path, "utf8")) as ReleaseReport)
-		: undefined;
+	if (!existsSync(path)) return undefined;
+	// SAFETY: writeReport is the only writer of this file, in this module.
+	return JSON.parse(readFileSync(path, "utf8")) as ReleaseReport;
 }
 
 function writeReport(home: string, report: ReleaseReport): void {
@@ -327,18 +358,21 @@ export async function recordReleaseFreight(
 	input: {
 		readonly family: ReleaseFamily;
 		readonly source: ReleaseSource;
-		readonly stored?: readonly {
-			name: string;
-			kind: string;
-			mediaType: string;
-			bytes: Uint8Array;
-		}[];
-		readonly registry?: readonly ReleaseArtifact[];
-		readonly labels?: Readonly<Record<string, string>>;
+		readonly stored?:
+			| readonly {
+					name: string;
+					kind: ArtifactKindName;
+					mediaType: string;
+					bytes: Uint8Array;
+			  }[]
+			| undefined;
+		readonly registry?: readonly ReleaseArtifact[] | undefined;
+		readonly labels?: Readonly<Record<string, string>> | undefined;
 	},
 ): Promise<{ freightId: string; alias: string }> {
 	const artifacts: ReleaseArtifact[] = [...(input.registry ?? [])];
-	for (const item of input.stored ?? []) artifacts.push(await cd.store(item.bytes, item));
+	for (const item of input.stored ?? [])
+		artifacts.push(await cd.store(item.bytes, item));
 	if (artifacts.length === 0)
 		throw new Error(`release Freight for ${input.family} has no artifacts`);
 	// The release declaration: which artifacts this release is, by digest.
@@ -364,7 +398,7 @@ export async function recordReleaseFreight(
 		declarationHash: declaration.digest,
 		source: input.source,
 		artifacts,
-		...(input.labels ? { labels: input.labels } : {}),
+		labels: input.labels,
 	});
 	const file = join(cd.home, `release-freight-${input.family}.manifest.json`);
 	writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -375,7 +409,10 @@ export async function recordReleaseFreight(
 			`hobo deploy freight record refused ${input.family}: ${recorded.code} ${JSON.stringify(recorded.data?.reasons ?? [])}`,
 		);
 	const pipelineFile = join(cd.home, `release-pipeline-${input.family}.json`);
-	writeFileSync(pipelineFile, JSON.stringify(releasePipelineModule(input.family)));
+	writeFileSync(
+		pipelineFile,
+		JSON.stringify(releasePipelineModule(input.family)),
+	);
 	const applied = await cd.run(["pipeline", "apply"], { file: pipelineFile });
 	const pipelineCodes = applied.ok
 		? []
@@ -419,13 +456,16 @@ export async function promoteReleaseFreight(
 			message: `Freight ${input.freightId} is missing, yanked or retired`,
 		};
 	} else if (input.channel === "stable" && !pipelined) {
-		const candidate = await cd.run(["status"], { camp: releaseCampId("candidate") });
+		const candidate = await cd.run(["status"], {
+			camp: releaseCampId("candidate"),
+		});
 		const journaled = (candidate.data?.camps ?? [])
 			.flatMap((c) => c.promotions ?? [])
 			.some(
 				(p) =>
 					p.freightId === input.freightId &&
-					classifyPromotion({ ok: true, data: { promotion: p } }).outcome !== "blocked",
+					classifyPromotion({ ok: true, data: { promotion: p } }).outcome !==
+						"blocked",
 			);
 		verdict = journaled
 			? {
@@ -442,13 +482,12 @@ export async function promoteReleaseFreight(
 					message: `Freight ${input.freightId} has no candidate promotion in this journal`,
 				};
 	} else {
+		const camp = releaseCampId(input.channel);
+		const flags = pipelined
+			? { camp, pipeline: releaseBindle(input.family), node: input.channel }
+			: { camp };
 		verdict = classifyPromotion(
-			await cd.run(["promote", input.freightId], {
-				camp: releaseCampId(input.channel),
-				...(pipelined
-					? { pipeline: releaseBindle(input.family), node: input.channel }
-					: {}),
-			}),
+			await cd.run(["promote", input.freightId], flags),
 		);
 		if (pipelined) verdict = { ...verdict, lineage: "pipeline" };
 	}
@@ -468,7 +507,8 @@ export function announceVerdict(
 	env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
 	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
-	if (verdict.outcome === "blocked") console.error(`::error::${line} ${verdict.message}`);
+	if (verdict.outcome === "blocked")
+		console.error(`::error::${line} ${verdict.message}`);
 	else if (verdict.outcome === "gap")
 		console.log(
 			`::warning::${line}: @hobo/cd has no realizer for this target; publication stays the existing step`,
@@ -494,9 +534,9 @@ export async function qualifyReleaseCandidate(input: {
 		const { freightId } = await recordReleaseFreight(cd, {
 			family: input.family,
 			source: releaseSource(env),
-			...(input.stored ? { stored: input.stored } : {}),
-			...(input.registry ? { registry: input.registry } : {}),
-			...(input.labels ? { labels: input.labels } : {}),
+			stored: input.stored,
+			registry: input.registry,
+			labels: input.labels,
 		});
 		const verdict = await promoteReleaseFreight(cd, {
 			family: input.family,
@@ -504,7 +544,9 @@ export async function qualifyReleaseCandidate(input: {
 			freightId,
 		});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
-			throw new Error(`release Freight ${input.family} blocked: ${verdict.codes.join(", ")}`);
+			throw new Error(
+				`release Freight ${input.family} blocked: ${verdict.codes.join(", ")}`,
+			);
 		return { freightId, verdict };
 	} finally {
 		await cd.close();
@@ -543,7 +585,9 @@ export async function promoteReleaseStable(
  * A deterministic index of a published tree (sorted paths with each file's
  * sha256). Its digest names the exact bytes a static site publishes.
  */
-export function siteTreeIndex(dir: string): { digest: string; bytes: Uint8Array } {
+export type SiteTreeIndex = Readonly<{ digest: string; bytes: Uint8Array }>;
+
+export function siteTreeIndex(dir: string): SiteTreeIndex {
 	const files: { path: string; sha256: string; size: number }[] = [];
 	const walk = (at: string) => {
 		for (const entry of readdirSync(at, { withFileTypes: true })) {
@@ -671,7 +715,8 @@ async function main(): Promise<void> {
 	if (process.argv[2] === "promote-stable") {
 		const homes: string[] = [];
 		for (let i = 3; i < process.argv.length; i++) {
-			if (process.argv[i] === "--freight-home") homes.push(process.argv[++i] ?? "");
+			if (process.argv[i] === "--freight-home")
+				homes.push(process.argv[++i] ?? "");
 		}
 		if (homes.length === 0 || homes.some((h) => !h.trim())) {
 			console.error(

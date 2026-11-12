@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -33,9 +39,13 @@ describe("deploy-site release Freight", () => {
 			await qualifySiteRelease({
 				dist: site(),
 				home,
-				env: { HOBO_RELEASE_REVISION: "0123456789abcdef0123456789abcdef01234567" },
+				env: {
+					HOBO_RELEASE_REVISION: "0123456789abcdef0123456789abcdef01234567",
+				},
 			});
-			const report = JSON.parse(readFileSync(releaseReportPath(home, "pages"), "utf8"));
+			const report = JSON.parse(
+				readFileSync(releaseReportPath(home, "pages"), "utf8"),
+			);
 			expect(report.channels.candidate.outcome).toBe("gap");
 			expect(report.channels.stable.outcome).toBe("gap");
 			expect(report.channels.stable.lineage).toBe("candidate-journaled");

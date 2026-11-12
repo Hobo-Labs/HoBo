@@ -113,8 +113,8 @@ describe("ociReleaseArtifacts", () => {
 		const { ociReleaseArtifacts } = await import(
 			"../ci/push-release-ghcr-images.mts"
 		);
-		expect(() => ociReleaseArtifacts(["ghcr.io/hobo-labs/hobo/hobo-sdk:v1"])).toThrow(
-			/not a pushed digest/,
-		);
+		expect(() =>
+			ociReleaseArtifacts(["ghcr.io/hobo-labs/hobo/hobo-sdk:v1"]),
+		).toThrow(/not a pushed digest/);
 	});
 });
