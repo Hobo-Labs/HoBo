@@ -40,8 +40,15 @@ runs:
         export MISE_EXPERIMENTAL=1
         if command -v mise >/dev/null 2>&1; then
           mise trust ./mise.toml
-          mise install
+          mise install --locked
         fi
         node --no-warnings scripts/ci-runner-preflight.mts
         node --experimental-strip-types scripts/ci/memory-env.mts
+        # The live data-engine lane starts database servers beside the job. A job
+        # that is killed never removes them; they stop themselves, and this takes
+        # away what is left, whichever job starts next on the box.
+        if command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+          node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts sweep \
+            || echo "::warning::data-live sweep failed"
+        fi
         echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

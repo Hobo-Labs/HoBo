@@ -1,6 +1,18 @@
 export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
+export { allocationQuote } from "./accounting.js";
 export { parseConfiguration, positiveId } from "./config.js";
+export {
+	accountEventPage,
+	accountOwnsJob,
+	type EventCursor,
+	eventCursorBounds,
+	eventJob,
+	isJobEvent,
+	jobAccountId,
+	type LeaseEventsQuery,
+	leaseEventsBounds,
+} from "./event-log.js";
 export {
 	type BackendKind,
 	BackendUnavailableError,
@@ -20,6 +32,7 @@ export {
 	shellQuote,
 	supportsPipeline,
 } from "./execution.js";
+export * from "./fleet/index.js";
 export {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
@@ -32,6 +45,8 @@ export {
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
+export { isIsolatedRetirementTransition } from "./isolated-retirement.js";
+export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -76,3 +91,10 @@ export {
 	createCiAsyncSharedBudgetHooks,
 	createCiSharedBudgetHooks,
 } from "./shared-budget.js";
+export {
+	isWebhookDeliveryId,
+	MAX_WEBHOOKS_PER_INSTALLATION_WINDOW,
+	parseWebhookEnvelope,
+	type WebhookEnvelope,
+	type WebhookInput,
+} from "./webhook-inbox.js";

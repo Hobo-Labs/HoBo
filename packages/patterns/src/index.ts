@@ -19,7 +19,6 @@ export {
 	defaultAtomsRoot,
 	defaultCatalogRoot,
 	loadPatternCatalog,
-	openUiStarterRoot,
 	type PatternCatalog,
 	readRenderingBody,
 } from "./catalog.js";

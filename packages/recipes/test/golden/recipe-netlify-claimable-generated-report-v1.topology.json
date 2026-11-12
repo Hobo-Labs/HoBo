@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.netlify.claimable-generated-report/v1",
 	"topologyDigest": "sha256:7388540bc67d2d122fb5f8820bfe8a12d8e148564d163aa71b0b496b30212fd2",
-	"resolutionDigest": "sha256:29d93ea92c8a3f60d4803c8f095b8360bf537f67edd6875b444bb16ad4eabd0a",
+	"resolutionDigest": "sha256:460662b3013f856466d8ed5bc6e146bcdbfeb744b19760d99e09e7980adf9d67",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.netlify.claimable-generated-report/v1",

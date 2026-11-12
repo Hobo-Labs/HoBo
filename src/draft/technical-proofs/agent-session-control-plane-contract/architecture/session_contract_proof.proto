@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package hobo.draft.session_contract.v1;
-
-message SessionContractProof {
-  string command_schema = 1;
-  string snapshot_schema = 2;
-  repeated string accepted_command_cases = 3;
-}

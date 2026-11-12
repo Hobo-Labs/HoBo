@@ -625,6 +625,55 @@ describe("workflow files", () => {
 		expect(codes).toContain("workflow.pr-gate.affected");
 	});
 
+	it("skipping jobs for a signed local run needs a verifying route job and a gate that reads its result", () => {
+		// Skipping a covered job is safe only while two things hold: the route
+		// job verifies the signature, and the gate knows the route job itself
+		// succeeded. Drop either and a skipped job would pass on nobody's word.
+		const hoboCi = (extra: string) => [
+			{
+				name: "hobo-ci.yml",
+				path: ".github/workflows/hobo-ci.yml",
+				content: `jobs:
+  pr-gate:
+    steps:
+      - run: pnpm agent:check
+      - run: turbo run build typecheck lint test:unit test:contract:consumer conformance | scripts/ci/affected-lanes.mts
+  main-gate:
+  ci-guard:
+    if: \${{ !(needs.route.outputs.attested == 'true') }}
+  secret-scan:
+${extra}`,
+			},
+		];
+		const verifier = "    - scripts/ci/verify-attestation.mts\n";
+		const routeResult = "    ROUTE_RESULT: ${{ needs.route.result }}\n";
+		const neither = codesFor(contract(), hoboCi(""));
+		expect(neither).toContain("workflow.pr-gate.attestation-unverified");
+		expect(neither).toContain("workflow.pr-gate.attestation-route-result");
+		const noGate = codesFor(contract(), hoboCi(verifier));
+		expect(noGate).not.toContain("workflow.pr-gate.attestation-unverified");
+		expect(noGate).toContain("workflow.pr-gate.attestation-route-result");
+		const noVerifier = codesFor(contract(), hoboCi(routeResult));
+		expect(noVerifier).toContain("workflow.pr-gate.attestation-unverified");
+		expect(noVerifier).not.toContain(
+			"workflow.pr-gate.attestation-route-result",
+		);
+		const both = codesFor(contract(), hoboCi(verifier + routeResult));
+		expect(both.filter((code) => code.includes("attestation"))).toEqual([]);
+	});
+
+	it("a workflow that skips nothing for a signed local run needs neither", () => {
+		const codes = codesFor(contract(), [
+			{
+				name: "hobo-ci.yml",
+				path: ".github/workflows/hobo-ci.yml",
+				content:
+					"jobs:\n  pr-gate:\n  main-gate:\n  ci-guard:\n  secret-scan:\n",
+			},
+		]);
+		expect(codes.filter((code) => code.includes("attestation"))).toEqual([]);
+	});
+
 	it("an examples-e2e.yml with no jobs reports both as missing", () => {
 		const codes = codesFor(contract(), [
 			{

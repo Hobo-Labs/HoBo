@@ -1,0 +1,219 @@
+name: HoBo resilient repo checkout
+description: Box git-mirror alternates seeding, HTTP/1.1 stabilization, and bounded retries for full-tree trunk/PR checkouts.
+inputs:
+  ref:
+    description: Commit to checkout (defaults to the triggering commit)
+    required: false
+    default: ""
+  fetch-depth:
+    description: git fetch depth (0 = full history for diffs)
+    required: false
+    default: "0"
+  submodules:
+    description: Whether to fetch submodules after checkout
+    required: false
+    default: "false"
+  bootstrap-composite-actions:
+    description: Sparse-checkout .github/actions before the full tree (needed for local composites)
+    required: false
+    default: "true"
+  marker:
+    description: Optional repo-relative file that must exist after checkout (fail closed)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Node for a GitHub-hosted machine
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: bash "${GITHUB_ACTION_PATH}/../ci-runner-preflight/hosted-toolchain.sh"
+    - name: Probe box git mirror
+      shell: bash
+      run: |
+        set -euo pipefail
+        cfg="${RUNNER_TEMP}/hobo-git-system.config"
+        rm -f "$cfg"
+        node --experimental-strip-types --no-warnings \
+          "${GITHUB_ACTION_PATH}/../hobo-checkout/box-git-mirror.mts" \
+          --write-config "$cfg" \
+          --export-github-env "$GITHUB_ENV"
+        if [ -f "$cfg" ]; then
+          echo "GIT_CONFIG_SYSTEM=$cfg" >> "$GITHUB_ENV"
+          export GIT_CONFIG_SYSTEM="$cfg"
+        fi
+    - name: Stabilize partial-clone HTTP (HTTP/1.1)
+      shell: bash
+      run: git config --global http.version HTTP/1.1
+    - name: Bootstrap repo-local composite actions (attempt 1)
+      id: bootstrap1
+      if: inputs.bootstrap-composite-actions == 'true'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      continue-on-error: true
+      with:
+        ref: ${{ inputs.ref }}
+        clean: false
+        fetch-depth: 1
+        filter: blob:none
+        fetch-tags: false
+        sparse-checkout: .github/actions
+        sparse-checkout-cone-mode: true
+    - name: Reset partial clone after failed bootstrap
+      if: inputs.bootstrap-composite-actions == 'true' && steps.bootstrap1.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
+    - name: Disable box git mirror after transport errors (bootstrap)
+      if: inputs.bootstrap-composite-actions == 'true' && steps.bootstrap1.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${GIT_CONFIG_SYSTEM:-}" ]; then
+          exit 0
+        fi
+        echo "Disabling box git mirror after bootstrap failure; later attempts use GitHub"
+        rm -f "${GIT_CONFIG_SYSTEM}"
+        echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"
+        echo "HOBO_CI_GIT_MIRROR_RESOLVED=" >> "$GITHUB_ENV"
+    - name: Bootstrap repo-local composite actions (attempt 2)
+      id: bootstrap2
+      if: inputs.bootstrap-composite-actions == 'true' && steps.bootstrap1.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      continue-on-error: true
+      with:
+        ref: ${{ inputs.ref }}
+        clean: false
+        fetch-depth: 1
+        filter: blob:none
+        fetch-tags: false
+        sparse-checkout: .github/actions
+        sparse-checkout-cone-mode: true
+    - name: Reset partial clone after failed bootstrap (attempt 2)
+      if: inputs.bootstrap-composite-actions == 'true' && steps.bootstrap1.outcome != 'success' && steps.bootstrap2.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
+    - name: Bootstrap repo-local composite actions (attempt 3)
+      id: bootstrap3
+      if: inputs.bootstrap-composite-actions == 'true' && steps.bootstrap1.outcome != 'success' && steps.bootstrap2.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        ref: ${{ inputs.ref }}
+        clean: false
+        fetch-depth: 1
+        filter: blob:none
+        fetch-tags: false
+        sparse-checkout: .github/actions
+        sparse-checkout-cone-mode: true
+    - name: Checkout from bare mirror (alternates)
+      id: mirror_checkout
+      if: env.HOBO_CI_GIT_MIRROR_RESOLVED != ''
+      shell: bash
+      env:
+        CHECKOUT_REF: ${{ inputs.ref != '' && inputs.ref || github.sha }}
+        CHECKOUT_DEPTH: ${{ inputs.fetch-depth }}
+        CHECKOUT_SUBMODULES: ${{ inputs.submodules }}
+        CHECKOUT_MARKER: ${{ inputs.marker }}
+      run: |
+        set -euo pipefail
+        marker_args=()
+        if [ -n "${CHECKOUT_MARKER}" ]; then
+          marker_args=(--marker "${CHECKOUT_MARKER}")
+        fi
+        node --experimental-strip-types --no-warnings \
+          "${GITHUB_ACTION_PATH}/../hobo-checkout/repo-checkout.mts" \
+          --sha "${CHECKOUT_REF}" \
+          --mirror "${HOBO_CI_GIT_MIRROR_RESOLVED}" \
+          --origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+          --fetch-depth "${CHECKOUT_DEPTH}" \
+          --submodules "${CHECKOUT_SUBMODULES}" \
+          "${marker_args[@]}"
+    - name: Disable box git mirror after mirror checkout failure
+      if: env.HOBO_CI_GIT_MIRROR_RESOLVED != '' && steps.mirror_checkout.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${GIT_CONFIG_SYSTEM:-}" ]; then
+          exit 0
+        fi
+        echo "Disabling box git mirror after mirror checkout failure; remote retries use GitHub"
+        rm -f "${GIT_CONFIG_SYSTEM}"
+        echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"
+        echo "HOBO_CI_GIT_MIRROR_RESOLVED=" >> "$GITHUB_ENV"
+    - name: Backoff before remote checkout retry
+      if: env.HOBO_CI_GIT_MIRROR_RESOLVED == '' || steps.mirror_checkout.outcome != 'success'
+      shell: bash
+      run: sleep 8
+    - name: Remote checkout (attempt 1)
+      id: remote1
+      if: steps.mirror_checkout.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      continue-on-error: true
+      with:
+        ref: ${{ inputs.ref }}
+        clean: false
+        fetch-depth: ${{ inputs.fetch-depth }}
+        fetch-tags: false
+        submodules: ${{ inputs.submodules }}
+    - name: Reset after failed remote checkout
+      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
+    - name: Backoff before remote checkout retry (2)
+      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success'
+      shell: bash
+      run: sleep 8
+    - name: Remote checkout (attempt 2)
+      id: remote2
+      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      continue-on-error: true
+      with:
+        ref: ${{ inputs.ref }}
+        clean: false
+        fetch-depth: ${{ inputs.fetch-depth }}
+        fetch-tags: false
+        submodules: ${{ inputs.submodules }}
+    - name: Reset after failed remote checkout (attempt 2)
+      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success' && steps.remote2.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
+    - name: Backoff before remote checkout retry (3)
+      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success' && steps.remote2.outcome != 'success'
+      shell: bash
+      run: sleep 8
+    - name: Remote checkout (attempt 3)
+      id: remote3
+      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success' && steps.remote2.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        ref: ${{ inputs.ref }}
+        clean: false
+        fetch-depth: ${{ inputs.fetch-depth }}
+        fetch-tags: false
+        submodules: ${{ inputs.submodules }}
+    - name: Require successful repo checkout
+      shell: bash
+      env:
+        CHECKOUT_MARKER: ${{ inputs.marker }}
+      run: |
+        set -euo pipefail
+        if [ "${{ steps.mirror_checkout.outcome }}" = "success" ] \
+          || [ "${{ steps.remote1.outcome }}" = "success" ] \
+          || [ "${{ steps.remote2.outcome }}" = "success" ] \
+          || [ "${{ steps.remote3.outcome }}" = "success" ]; then
+          if [ -n "${CHECKOUT_MARKER}" ] && [ ! -f "${CHECKOUT_MARKER}" ]; then
+            echo "::error::checkout succeeded but marker ${CHECKOUT_MARKER} is missing"
+            exit 1
+          fi
+          exit 0
+        fi
+        if [ "${{ inputs.bootstrap-composite-actions }}" = "true" ]; then
+          if [ "${{ steps.bootstrap1.outcome }}" != "success" ] \
+            && [ "${{ steps.bootstrap2.outcome }}" != "success" ] \
+            && [ "${{ steps.bootstrap3.outcome }}" != "success" ]; then
+            echo "::error::bootstrap checkout for .github/actions failed"
+            exit 1
+          fi
+        fi
+        echo "::error::repo checkout failed after mirror seeding and 3 remote attempts"
+        exit 1

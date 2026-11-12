@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
+import { COVERED_JOBS } from "./ci/attestation.mts";
 import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
@@ -31,12 +32,45 @@ const activeCiFiles = new Set([
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
 	"pricing-ci.yml",
+	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
+	"relay-deploy.yml",
 	"release-hobo.yml",
-	"release-code.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
-const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
+/**
+ * The probe: one job per self-hosted label, there only to be picked up, so the
+ * route job can tell which labels have a runner behind them.
+ */
+const probeFile = "fleet-probe.yml";
+const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
+const allowedEnabled = new Set([acceptanceFile, probeFile, ...activeCiFiles]);
+
+/**
+ * The probe asks for each label by name, which no other workflow may, so it
+ * may do nothing else: no action, no checkout, no repository code.
+ */
+function lintProbeWorkflow(errors: string[], text: string): void {
+	const lines = text.split("\n");
+	for (const [index, line] of lines.entries()) {
+		const runsOn = /^\s*runs-on:\s*(.*?)\s*$/.exec(line)?.[1];
+		if (runsOn !== undefined && !PROBE_RUNS_ON.has(runsOn))
+			errors.push(
+				`${probeFile}:${index + 1}: a probe job must ask for one self-hosted label by name (${[...PROBE_RUNS_ON].join(", ")})`,
+			);
+		if (/^\s*-?\s*uses:/.test(line))
+			errors.push(
+				`${probeFile}:${index + 1}: the probe must not use an action or check anything out`,
+			);
+		const run = /^\s*-?\s*run:\s*(.*?)\s*$/.exec(line)?.[1];
+		if (run !== undefined && run !== '"true"')
+			errors.push(
+				`${probeFile}:${index + 1}: a probe step must do nothing (run: "true")`,
+			);
+	}
+	if (!/^permissions: \{\}$/m.test(text))
+		errors.push(`${probeFile}: the probe must hold no permissions`);
+}
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
@@ -55,10 +89,10 @@ const HOSTED_RUNS_ON = "ubuntu-24.04";
 
 /**
  * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
- * chooses the runner, so it cannot wait on one. An `always()` job with no
- * `uses:` step is a gate: it runs no repository code, only adds up other
- * jobs' results, and on the fleet a superseded run's gate held the next run
- * until a runner was free.
+ * chooses the runner, so it cannot wait on one. A hosted job with no `uses:`
+ * step is a gate: it runs no repository code, only adds up other jobs' results.
+ * PR gates use `always()`; release train gates use `!cancelled()` so a
+ * cancelled run does not keep scheduling downstream work.
  */
 function isAlwaysHostedJob(
 	jobLine: string,
@@ -70,8 +104,11 @@ function isAlwaysHostedJob(
 		return block.some(
 			(line) => line.trim() === "uses: ./.github/actions/route-runner",
 		);
+	const stepsAt = block.findIndex((line) => line === "    steps:");
+	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
+	const gateIf = header.join("\n");
 	return (
-		block.some((line) => /^    if:.*\balways\(\)/.test(line)) &&
+		(/\balways\(\)/.test(gateIf) || /!cancelled\(\)/.test(gateIf)) &&
 		!block.some((line) => /^\s*-?\s*uses:/.test(line))
 	);
 }
@@ -88,6 +125,150 @@ function needsRoute(block: readonly string[]): boolean {
 		.filter((line, index) => index === 0 || line.startsWith("      - "))
 		.join(" ");
 	return /(^|[\s[,-])route([\s\],]|$)/.test(list.replace(/^\s*needs:/, ""));
+}
+
+/** What the route job must check out to verify a signed local run. */
+const ATTESTATION_VERIFIER_FILES = [
+	"scripts/ci/attestation.mts",
+	"scripts/ci/verify-attestation.mts",
+];
+
+/** How a gate reads the route job's answer: its own result first, then what it reported. */
+const ATTESTED_GATE_ENV = [
+	"ROUTE_RESULT: ${{ needs.route.result }}",
+	"ATTESTED: ${{ needs.route.outputs.attested }}",
+	"ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}",
+];
+
+/**
+ * The one shell helper a gate decides with. A skipped job counts only when the
+ * route job succeeded, said exactly `true`, and listed that job's quoted id.
+ */
+const ATTESTED_HELPER = [
+	"attested() {",
+	'[ "${ROUTE_RESULT:-}" = "success" ] || return 1',
+	'[ "${ATTESTED:-}" = "true" ] || return 1',
+	'case "${ATTESTED_JOBS:-}" in',
+	'*"\\"$1\\""*) return 0 ;;',
+	"esac",
+	"return 1",
+	"}",
+];
+
+/** The one condition that skips a job for a signed local run: by that job's own id. */
+function skipWhenAttested(jobId: string): string {
+	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+}
+
+/**
+ * A signed local run (scripts/ci/local-attest.mts) may stand in for a covered
+ * job and for nothing else. The route job verifies the signature, so a job
+ * skipped for one must need the route job and name only itself, and the route
+ * job must check the verifier out. A gate that accepts a skipped job must read
+ * the route job's own result, so a route job that failed vouches for nothing.
+ */
+function lintAttestedSkips(
+	errors: string[],
+	file: string,
+	jobLine: string,
+	block: readonly string[],
+	line: number,
+): void {
+	const jobId = /^  ([A-Za-z0-9_-]+):$/.exec(jobLine)?.[1] ?? "";
+	const stepsAt = block.findIndex((entry) => entry === "    steps:");
+	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
+	const body = stepsAt === -1 ? [] : block.slice(stepsAt);
+	if (jobId === "route") {
+		const declares = header.some((entry) =>
+			/^      attested(-jobs)?:/.test(entry),
+		);
+		if (!declares) return;
+		for (const needed of ATTESTATION_VERIFIER_FILES)
+			if (!body.some((entry) => entry.trim() === needed))
+				errors.push(
+					`${file}:${line}: a route job that reports an attestation must sparse-checkout ${needed}`,
+				);
+		return;
+	}
+	const ifAt = header.findIndex((entry) => entry.startsWith("    if:"));
+	const condition =
+		ifAt === -1
+			? ""
+			: header
+					.slice(ifAt)
+					.filter((entry, index) => index === 0 || entry.startsWith("      "))
+					.join(" ");
+	if (condition.includes("attested")) {
+		// SAFETY: widening the covered ids to plain strings to look one up.
+		const covered = (COVERED_JOBS as readonly string[]).includes(jobId);
+		if (!covered)
+			errors.push(
+				`${file}:${line}: ${jobId} is not a job a signed local run covers (scripts/ci/attestation.mts), so it must not be skipped for one`,
+			);
+		else if (
+			!condition.includes(skipWhenAttested(jobId)) ||
+			condition.split("attested-jobs").length !== 2 ||
+			condition.split("needs.route.outputs.attested ").length !== 2
+		)
+			errors.push(
+				`${file}:${line}: ${jobId} must be skipped for a signed local run by exactly: ${skipWhenAttested(jobId)}`,
+			);
+		if (!needsRoute(block))
+			errors.push(
+				`${file}:${line}: a job skipped for a signed local run must need the route job`,
+			);
+	}
+	// A gate adds up other jobs' results. One that waits on a covered job will
+	// see it skipped for a signed local run, so it must decide with the one
+	// shared helper: the route job succeeded, said `true`, and named the job.
+	const needed = header
+		.slice(
+			Math.max(
+				0,
+				header.findIndex((entry) => entry.startsWith("    needs:")),
+			),
+		)
+		.filter((entry, index) => index === 0 || entry.startsWith("      - "))
+		.join(" ");
+	// A gate, as elsewhere in this file: it always runs and runs no action.
+	const isGate =
+		/\balways\(\)/.test(condition) &&
+		!body.some((entry) => /^\s*-?\s*uses:/.test(entry));
+	const waitsOnCovered =
+		isGate &&
+		header.some((entry) => entry.startsWith("    needs:")) &&
+		COVERED_JOBS.some((covered) =>
+			new RegExp(`(^|[\\s\\[,-])${covered}([\\s\\],]|$)`).test(
+				needed.replace(/^\s*needs:/, ""),
+			),
+		);
+	const readsAttestation = body.some((entry) =>
+		entry.includes("needs.route.outputs.attested"),
+	);
+	if (waitsOnCovered && !readsAttestation)
+		errors.push(
+			`${file}:${line}: a gate that waits on a job a signed local run covers must decide a skipped job with the attested() helper`,
+		);
+	if (readsAttestation) {
+		if (!needsRoute(block))
+			errors.push(
+				`${file}:${line}: a job that reads the attestation must need the route job`,
+			);
+		const trimmed = body.map((entry) => entry.trim());
+		for (const needed of ATTESTED_GATE_ENV)
+			if (!trimmed.includes(needed))
+				errors.push(
+					`${file}:${line}: a job that accepts an attestation must read it as: ${needed}`,
+				);
+		const at = trimmed.indexOf(ATTESTED_HELPER[0] ?? "");
+		if (
+			at === -1 ||
+			ATTESTED_HELPER.some((text, index) => trimmed[at + index] !== text)
+		)
+			errors.push(
+				`${file}:${line}: a job that accepts an attestation must decide with the shared attested() helper, unchanged`,
+			);
+	}
 }
 
 /** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
@@ -220,11 +401,21 @@ function lintLocalActionsNeedCheckoutFirst(
 		}
 		const step = block.slice(i, end);
 		if (
-			step.some(
-				(entry) =>
+			step.some((entry) => {
+				if (
 					/^\s+- uses: actions\/checkout@/.test(entry) ||
-					/^\s+uses: actions\/checkout@/.test(entry),
-			)
+					/^\s+uses: actions\/checkout@/.test(entry)
+				)
+					return true;
+				return (
+					/^\s+- uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+- uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					) ||
+					/^\s+uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(entry)
+				);
+			})
 		) {
 			seenCheckout = true;
 		}
@@ -251,6 +442,10 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
+	if (file === probeFile && !requireDisabledJobs) {
+		lintProbeWorkflow(errors, text);
+		return;
+	}
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
@@ -358,6 +553,8 @@ function lintWorkflowYaml(
 			}
 		}
 		lintLocalActionsNeedCheckoutFirst(errors, file, block, start + 1);
+		if (!requireDisabledJobs)
+			lintAttestedSkips(errors, file, jobLine, block, start + 1);
 	}
 	const firstCheckout = lines.findIndex((line) =>
 		line.includes("actions/checkout@"),

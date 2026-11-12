@@ -27,8 +27,16 @@ import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
+// The three cases that take this do nothing but spawn git, some ten processes
+// each against a fresh repository, and on a loaded runner those spawns alone
+// have passed the 10 s default. No network is involved: the repositories have
+// no remote.
+const GIT_FIXTURE_TIMEOUT_MS = 30_000;
+
 describe("release OCI app staging", () => {
-	it("resolves the Turbo base on a sparse PR checkout", () => {
+	it("resolves the Turbo base on a sparse PR checkout", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-base-"));
 		const git = (...args: string[]): void => {
 			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
@@ -60,7 +68,9 @@ describe("release OCI app staging", () => {
 		}
 	});
 
-	it("builds the full importer closure on tag release when origin/main is absent", () => {
+	it("builds the full importer closure on tag release when origin/main is absent", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-tag-"));
 		const previousRef = process.env.GITHUB_REF;
 		const previousEvent = process.env.GITHUB_EVENT_NAME;
@@ -96,7 +106,9 @@ describe("release OCI app staging", () => {
 		}
 	});
 
-	it("combines SCM-affected and requested image filters", () => {
+	it("combines SCM-affected and requested image filters", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-filters-"));
 		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
 		const git = (...args: string[]): void => {
@@ -161,7 +173,6 @@ describe("release OCI app staging", () => {
 
 	it.each([
 		["hobo-cli", "@hobo/hobo", "@hobo/hobo..."],
-		["hobo-code", "@hobo/code", "@hobo/code..."],
 		["hobo-codegen", "@hobo/schema-tools", "@hobo/schema-tools..."],
 		["hobo-ci-serve", "@hobo/ci-gh-actions", "@hobo/ci-gh-actions..."],
 	])("stages %s as a deployed app", (imageId, packageName, buildFilter) => {
@@ -182,7 +193,7 @@ describe("release OCI app staging", () => {
 		const specs = Object.values(RELEASE_OCI_STAGE_SPECS).filter(
 			(spec) => spec.kind === "deploy",
 		);
-		expect(specs).toHaveLength(4);
+		expect(specs).toHaveLength(3);
 		for (const spec of specs) {
 			const appDir = join("staging", spec.appPath);
 			expect(releaseOciDeployArgs(spec.packageName, appDir, storeDir)).toEqual([
@@ -290,9 +301,6 @@ describe("release OCI app staging", () => {
 				{ name: "hobo", entrypoint: "dist/bin/hobo.js" },
 				{ name: "hobo-mcp", entrypoint: "dist/bin/hobo-mcp.js" },
 			],
-		});
-		expect(RELEASE_OCI_STAGE_SPECS["hobo-code"]).toMatchObject({
-			wrappers: [{ name: "hobo-code", entrypoint: "dist/bin/hobo-code.js" }],
 		});
 		expect(RELEASE_OCI_STAGE_SPECS["hobo-codegen"]).toMatchObject({
 			wrappers: [{ name: "hobo-codegen", entrypoint: "dist/cli.js" }],

@@ -1,7 +1,32 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
+
+const WORKER_STORAGE_FS =
+	"packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts";
+const STORAGE_ADMISSION =
+	"packages/ci-gh-actions/src/isolated-worker/storage-admission.ts";
+const HOST_CAPACITY =
+	"packages/ci-gh-actions/src/isolated-worker/host-capacity.ts";
+const MOUNT_TEST = "scripts/test/ci-deps-image-mount.test.ts";
+
+function importSpecifiers(source: string): readonly string[] {
+	return [
+		...source.matchAll(
+			/^import\s+(?:type\s+)?[\s\w{},*]*\s+from\s+["']([^"']+)["']/gm,
+		),
+	].map((match) => match[1]!);
+}
 
 const root = join(import.meta.dirname, "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -145,12 +170,14 @@ describe("CI deps image build contract", () => {
 		const computed = build.indexOf(
 			'toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"',
 		);
+		const ensure = build.indexOf("scripts/ci/ensure-ci-worker-image.mts");
 		const fallback = build.indexOf(
 			"docker image inspect hobo-ci-worker:local --format",
 		);
 		const key = build.indexOf('--toolchain "${toolchain}"');
 		assert.ok(computed > -1);
-		assert.ok(fallback > computed);
+		assert.ok(ensure > computed);
+		assert.ok(fallback > ensure);
 		assert.ok(key > fallback);
 		includes(build, "^hobo-ci-worker:(v[0-9a-f]{12})$");
 		includes(build, "Using toolchain image");
@@ -236,14 +263,9 @@ describe("CI deps image build contract", () => {
 	});
 
 	it("guards Docker inode and disk headroom before a deps rebuild", () => {
-		includes(
-			build,
-			'inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"',
-		);
-		includes(
-			build,
-			'byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"',
-		);
+		includes(build, "deps-build-headroom-defaults.mts");
+		includes(build, "HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-");
+		includes(build, "HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
 		includes(build, "df --output=iavail");
@@ -259,6 +281,9 @@ describe("CI deps image build contract", () => {
 			"refusing deps rebuild: Docker data root still below headroom after builder prune",
 		);
 		includes(build, "cannot sample Docker data root for deps build headroom");
+		includes(build, "sample_docker_headroom_via_host");
+		includes(build, "host:");
+		includes(build, "no device-matched bind mount");
 		assert.ok(!build.includes("docker image prune -af"));
 		assert.ok(!build.includes("docker image prune -a"));
 		const guard = build.indexOf("ensure_deps_build_headroom");
@@ -331,8 +356,10 @@ describe("CI deps workflow contract", () => {
 		assert.ok(start > -1);
 		assert.ok(end > start);
 		includes(job, "name: CI deps layer (pnpm)");
-		includes(job, "needs: [route, ci-runner-image]");
-		includes(job, "needs.ci-runner-image.result != 'failure'");
+		// Not routed: it builds in the box's Docker context, which a
+		// GitHub-hosted machine does not have.
+		includes(job, "needs: [route]");
+		assert.ok(!job.includes("needs.route.outputs.runner"));
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
 		includes(
@@ -414,13 +441,238 @@ describe("CI deps workflow contract", () => {
 		assert.doesNotMatch(job, /--import tsx/);
 	});
 
-	it("does not put the deps image on Main full gate's critical path", () => {
-		const mainStart = workflow.indexOf("  main-gate:");
-		const mainEnd = workflow.indexOf("  artifact-trust:", mainStart);
-		const main = workflow.slice(mainStart, mainEnd);
-		includes(main, "needs: [route, ci-runner-image]");
-		assert.ok(!main.includes("ci-deps-image"));
-		includes(workflow, "Check deps layer match");
+	it("loads the mount contract without an install and scopes every file it loads", () => {
+		// The job has no `pnpm install`: the mount contract is loaded by
+		// `node --experimental-strip-types` through ts-source-resolve.mts, so one
+		// package import anywhere in its graph fails the step before Docker runs.
+		const entry = "scripts/test/ci-deps-image-mount.test.ts";
+		const hook = "scripts/lib/ts-source-resolve.mts";
+		const graph = new Set<string>();
+		const packages: string[] = [];
+		const pending = [entry, hook];
+		for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+			if (graph.has(path)) continue;
+			graph.add(path);
+			const specifiers = [
+				...read(path).matchAll(
+					/(?:\bfrom\s+|\bimport\s*\(\s*|^import\s+)"([^"]+)"/gmu,
+				),
+			].map((match) => match[1] ?? "");
+			for (const specifier of specifiers) {
+				if (specifier.startsWith("node:")) continue;
+				if (!specifier.startsWith(".")) {
+					packages.push(`${path}: ${specifier}`);
+					continue;
+				}
+				// The same fallback ts-source-resolve.mts applies: a NodeNext `.js`
+				// specifier names a sibling `.ts` source.
+				const target = resolve(root, dirname(path), specifier);
+				const source = existsSync(target)
+					? target
+					: `${target.slice(0, -".js".length)}.ts`;
+				pending.push(relative(root, source));
+			}
+		}
+		assert.deepEqual(packages, [], "package imports in a no-install job");
+		assert.ok(graph.has(WORKER_STORAGE_FS));
+
+		const scopeStart = job.indexOf(
+			"- name: Limit PR builds to deps image inputs",
+		);
+		const scope = job.slice(scopeStart, job.indexOf("- name:", scopeStart + 1));
+		const scoped = [...scope.matchAll(/^\s+([\w./-]+)(?: \\|\)")$/gmu)].map(
+			(match) => match[1] ?? "",
+		);
+		assert.ok(scoped.length > 0);
+		for (const path of graph)
+			assert.ok(
+				scoped.some((entry) => path === entry || path.startsWith(`${entry}/`)),
+				`${path} is loaded by the mount contract but a PR that changes it skips the job`,
+			);
+
+		// Run it the way the job does, in a tree that holds only those files and
+		// no node_modules. Without HOBO_CI_DEPS_MOUNT_CONTRACT the Docker case is
+		// skipped, so what this proves is that every import resolves.
+		const bare = mkdtempSync(join(tmpdir(), "hobo-deps-mount-imports-"));
+		try {
+			for (const path of graph) {
+				mkdirSync(dirname(join(bare, path)), { recursive: true });
+				cpSync(join(root, path), join(bare, path));
+			}
+			const { HOBO_CI_DEPS_MOUNT_CONTRACT: _contract, ...env } = process.env;
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					"--import",
+					`./${hook}`,
+					"--test",
+					entry,
+				],
+				{ cwd: bare, env, encoding: "utf8" },
+			);
+			assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+		} finally {
+			rmSync(bare, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps the deps image off the required PR gate and Main's S0 job, and names the jobs that do wait for it", () => {
+		const jobs = new Map<string, { needs: string[]; block: string }>();
+		const lines = workflow.slice(workflow.indexOf("\njobs:\n")).split("\n");
+		const starts = lines.flatMap((line, index) =>
+			/^ {2}[A-Za-z0-9_-]+:$/u.test(line) ? [index] : [],
+		);
+		for (const [position, startIndex] of starts.entries()) {
+			const block = lines.slice(startIndex, starts[position + 1]).join("\n");
+			const declared = block.match(/^ {4}needs: (.+)$/mu)?.[1] ?? "";
+			jobs.set((lines[startIndex] ?? "").trim().slice(0, -1), {
+				needs: declared
+					.replace(/^\[|\]$/gu, "")
+					.split(",")
+					.map((name) => name.trim())
+					.filter((name) => name !== ""),
+				block,
+			});
+		}
+		const job = (id: string) => {
+			const found = jobs.get(id);
+			assert.ok(found, `missing job ${id}`);
+			return found;
+		};
+		/** Every job `id` waits for, directly or through another job. */
+		const waitsFor = (id: string): Set<string> => {
+			const seen = new Set<string>();
+			const pending = [...job(id).needs];
+			for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+				if (seen.has(next)) continue;
+				seen.add(next);
+				pending.push(...job(next).needs);
+			}
+			return seen;
+		};
+
+		// The required PR check and Main full gate's S0 job never wait for the
+		// deps image, not even through another job: a PR that changes the image's
+		// inputs builds it for minutes, and S0 installs for itself on a layer miss.
+		for (const id of [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+			"pr-gate",
+			"main-gate",
+		])
+			assert.ok(
+				!waitsFor(id).has("ci-deps-image"),
+				`${id} waits for the deps image`,
+			);
+		assert.deepEqual(job("main-gate").needs, ["ci-runner-image"]);
+		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
+		includes(job("main-gate").block, "Check deps layer match");
+
+		// Main's workspace plan and its shards wait for it on purpose (#1840):
+		// they start from the deps layer, and on main the deps job never builds
+		// (it reuses or pulls an image, or defers a miss). Any other job that
+		// starts to wait for the image has to be added here deliberately.
+		assert.deepEqual(
+			[...jobs]
+				.filter(([, { needs }]) => needs.includes("ci-deps-image"))
+				.map(([id]) => id),
+			["main_workspace_tests"],
+		);
+		// Plan is install-free and runs beside the deps image job; only shards wait for it.
+		assert.deepEqual(job("main-gate-plan").needs, ["ci-runner-image"]);
+		// A failed or skipped deps job must not take shards with it: they run
+		// unless the run is cancelled, and a shard installs on a layer miss.
+		for (const id of ["main_workspace_tests"]) {
+			assert.match(job(id).block, /^ {4}if: >-\n {6}!cancelled\(\) && /mu, id);
+			assert.doesNotMatch(
+				job(id).block,
+				/needs\.ci-deps-image\.result/u,
+				`${id} is gated on the deps job's result`,
+			);
+		}
+		includes(job("main_workspace_tests").block, "Check deps layer match");
+		includes(
+			job("main_workspace_tests").block,
+			"steps.deps-layer.outputs.match != 'true'",
+		);
+		// The finish job therefore waits for the image only through the shards.
+		assert.ok(!job("main_gate_finish").needs.includes("ci-deps-image"));
+		assert.ok(waitsFor("main_gate_finish").has("ci-deps-image"));
+	});
+});
+
+describe("CI deps mount probe contract", () => {
+	it("mount verify imports worker-storage-fs only (not storage-admission)", () => {
+		const mount = read(MOUNT_TEST);
+		includes(mount, WORKER_STORAGE_FS);
+		assert.ok(
+			!mount.includes(STORAGE_ADMISSION),
+			"mount verify must not load storage-admission (zod and admission graph)",
+		);
+	});
+
+	it("worker-storage-fs imports only node built-ins and its own siblings", () => {
+		// A sibling module is loaded from the checkout like this file; the graph
+		// test above holds every file it reaches to node built-ins and to the
+		// job's scope. A package import would need an install the job lacks.
+		for (const specifier of importSpecifiers(read(WORKER_STORAGE_FS))) {
+			assert.match(
+				specifier,
+				/^(?:node:|\.\/[\w-]+\.js$)/u,
+				`worker-storage-fs must not import ${specifier}`,
+			);
+		}
+	});
+
+	it("host-capacity stays node-only when present (safe for future mount probes)", () => {
+		if (!existsSync(join(root, HOST_CAPACITY))) return;
+		for (const specifier of importSpecifiers(read(HOST_CAPACITY))) {
+			assert.match(
+				specifier,
+				/^node:/u,
+				`host-capacity must not import ${specifier} on the mount path`,
+			);
+		}
+	});
+
+	it("storage-admission mount probe runs with no workspace node_modules", () => {
+		const probeCwd = mkdtempSync(join(tmpdir(), "hobo-deps-mount-probe-"));
+		const jobDir = join(probeCwd, "hobo-00000000-0000-4000-8000-000000000099");
+		try {
+			const modulePath = join(root, WORKER_STORAGE_FS);
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--import",
+					join(root, "scripts/lib/ts-source-resolve.mts"),
+					"-e",
+					[
+						`import { createNodeWorkerStorageFileSystem } from ${JSON.stringify(modulePath)};`,
+						`await createNodeWorkerStorageFileSystem().prepareJobDirectory(${JSON.stringify(jobDir)});`,
+					].join(" "),
+				],
+				{
+					cwd: probeCwd,
+					env: {
+						PATH: process.env.PATH ?? "",
+						HOME: process.env.HOME ?? "",
+						USER: process.env.USER ?? "",
+						LANG: process.env.LANG ?? "C.UTF-8",
+					},
+					encoding: "utf8",
+				},
+			);
+			const combined = `${result.stdout}\n${result.stderr}`;
+			assert.equal(result.status, 0, combined);
+			assert.doesNotMatch(combined, /ERR_MODULE_NOT_FOUND.*['"]zod['"]/u);
+			assert.ok(existsSync(join(jobDir, "HoBo", "HoBo")));
+		} finally {
+			rmSync(probeCwd, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -442,6 +694,7 @@ describe("CI deps publisher contract", () => {
 	});
 
 	it("skips an existing GHCR tag and builds only after a confirmed miss", () => {
+		includes(publish, 'export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"');
 		includes(publish, 'key="$(node --no-warnings scripts/ci/deps-key.mts)"');
 		includes(publish, 'candidate="hobo-ci-deps:${key}"');
 		includes(publish, "docker image inspect hobo-ci-deps:local");

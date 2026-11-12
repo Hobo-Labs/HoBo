@@ -28,7 +28,7 @@ surfaces.
 | `access` | identity | Request elevated or cross-env access / break-glass (short-lived capability; audited). | ADR-0133 |
 | `feature` | delivery | OpenFeature flags, canary, and experiment observe (`list`, `eval`, `set`, `kill`, `canary`, `experiment`). Sole app evaluation API is OpenFeature; no vendor SDKs. | ADR-0044, ADR-0083 |
 | `deploy` | delivery | Attested continuous delivery (`status`, `logs`, `rollback`). Secret-free status; no ambient credentials. | ADR-0083, ADR-0008 |
-| `ci` | delivery | Connect a GitHub repository to isolated CI (`enable`, `connect` alias), inspect its connection (`status`), and manage Actions runs (`list`/`ls`, `inspect`, `logs`, `grep`, `rerun`). Works without a Bindle. [Setup and Vercel parity](../../packages/hobo/CI.md). | ADR-0071, ADR-0083 |
+| `ci` | delivery | Connect a GitHub repository to isolated CI (`enable`, `connect` alias), inspect its connection (`status`), and manage Actions runs (`list`/`ls`, `inspect`, `logs`, `grep`, `rerun`). Works without a Bindle. `deploy` is the exception: it deploys the hosted relay's own Bindle to Vercel from a git ref (preview by default, `--dry-run` sends nothing). [Setup and Vercel parity](../../packages/hobo/CI.md). | ADR-0071, ADR-0083 |
 | `incident` | delivery | CD failure disposition (`status`, `open` for A2H or sandboxed self-heal). Default A2H; self-heal only in ADR-0076 lane. | ADR-0082, ADR-0094, ADR-0076 |
 | `claim` | identity | Bind an anonymous `npx hobo up` deployment to an account while preserving state and URL. Local: event-store rebind. Remote: `hobo claim <account> --broker <uri> --token <claimToken>` exchanges the claim token without re-provision. Provider ownership is a separate ceremony: `status` lists every claim item with its own deadline and outstanding obligations, `open <item>` redeems that item's one-time action, and `finalize <item>` verifies ownership and discharges obligations before the item may complete. | HOBO-136, HOBO-164, ADR-0151 |
 | `recipes` | read-only | List and inspect deployment recipes (`list`, `show <recipe-id>`): Yards, placements, bootstrap classes, claim terms, and required consents, before any provider login. | ADR-0151 |
@@ -46,7 +46,7 @@ surfaces.
 | `stub` | authoring | Run with a contract-backed stub behind a WIT port while implementation is generated or deferred. | HOBO-160, HOBO-392 |
 | `drift` | diagnostics | Report drift and route governed remediation through proposals or gated `up` convergence. | HOBO-216, HOBO-369 |
 | `add` | distribution | Install a provider/listing as available to deterministic selection after signature, provenance, and conformance checks. | HOBO-362, HOBO-365 |
-| `registry` | distribution | Registry administration subcommands, including signed offline bundle import for air-gapped Yards. | HOBO-350, HOBO-383 |
+| `registry` | distribution | Registry administration subcommands, including signed offline bundle import for air-gapped Yards. `hobo registry add <manifest>` registers a provider described by a [provider manifest](./provider-manifest.md) data file: held on the first run, approved for matching on the second. | HOBO-350, HOBO-383 |
 | `import` | migration | Adopt an existing estate in place as adopted/external resources; never destroy/recreate on import. | HOBO-225, HOBO-369 |
 | `generate` | generation | Request the provider-generation loop for a backend/capability; certification still passes through conformance and Registry. | HOBO-207, HOBO-348 |
 | `sandbox` | test loop | Run a system-under-test in an isolated lane with out-of-scope boundaries served from contracts. | HOBO-190, HOBO-392 |
@@ -62,19 +62,6 @@ surfaces.
 | `derivative` | extensibility | Manage derived HoBo implementations; `derivative upgrade` checks descriptors, runs upcasters, and reruns conformance. | HOBO-36, HOBO-336, HOBO-386 |
 | `runbook` | SRE | Execute or replay declarative incident runbooks; write actions still pass through policy obligations. | HOBO-260, HOBO-285 |
 
-
-## Coding harness binary (`hobo-code`)
-
-The coding harness is **not** a `hobo <verb>` entry. It ships as a separate binary:
-
-```bash
-hobo-code [flags] [<verb>] [args]
-hobo-code [flags] <prompt...>   # default verb: dispatch
-```
-
-Package: `@hobo/code` / composition-root bin from `@hobo/hobo`. Flat verbs: `dispatch` (default), `status`, `session`, `scaffold`, `template`, `isolate`, `promote`, `budget`, `remote`, `platform`, `join`, `agent`, `nodes`, `rooms`, `help`. Distributed compute (block/buzz-inspired hive) is folded into those verbs — there is **no** nested `buzz` verb. `hobo-code template` / `/template` is the zero-LLM pattern route ([ADR-0153](./adr/03-data-plane.md#adr-0153)). Known chat phrases still emit via the session ([ADR-0152](./adr/03-data-plane.md#adr-0152)). See [ADR-0139](./adr/03-data-plane.md#adr-0139) and [hobo-code-isolation-runbook.md](./hobo-code-isolation-runbook.md).
-
-`hobo-code init` ([ADR-0155](./adr/01-architecture-core.md#adr-0155)) is the **discovery-gated dev seed**, distinct from operator `hobo station init`: it inspects the machine (Node, git, isolation platform matrix, local model server, devenv/nix, harnesses) and matches the evidence against the default localhost capability set declared on the dev-scenario Station (`--scenario local-dev|ephemeral|preview`). Required-missing fails closed with remediation and writes nothing; `--dry-run` reports only. See [stations.md](./stations.md).
 
 ## Station context resolution
 

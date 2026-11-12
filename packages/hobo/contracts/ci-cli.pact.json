@@ -27,6 +27,11 @@
       "providerStates": [{ "name": "example/project is connected in isolated mode" }],
       "request": { "method": "GET", "path": "/v1/accounts/self/policy", "headers": { "Authorization": "Bearer cli-test-token" } },
       "response": { "status": 200, "body": { "revision": 7, "account": { "id": "account-test" }, "connections": [{ "accountId": "account-test", "repository": "example/project", "installationId": 42, "isolatedOnly": true, "acceptAllMatchingRepositoryJobs": true }] } }
+    },
+    {
+      "description": "read the relay mesh's nodes on a relay with no mesh",
+      "request": { "method": "GET", "path": "/v1/mesh/nodes", "headers": { "Authorization": "Bearer cli-test-token" } },
+      "response": { "status": 200, "body": { "mesh": "not-configured", "nodes": [], "readAt": "", "requireTrusted": false, "truncated": false } }
     }
   ]
 }

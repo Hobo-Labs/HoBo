@@ -55,7 +55,9 @@ jobs:
           mode: ${{ vars.HOBO_CI_ROUTE }}
           local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
+          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+          fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
 
   pricing-release-contract:
     name: Pricing release contract (static)

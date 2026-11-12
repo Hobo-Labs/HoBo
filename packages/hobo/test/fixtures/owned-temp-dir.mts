@@ -3,14 +3,14 @@
 //   node --import tsx owned-temp-dir.mts <normal|throw|wait|asked-twice|two|graceful|graceful-first|library-emit|entry-emit-hup|worker> <ready file>
 // `wait`, `asked-twice`, `two`, `graceful` and `graceful-first` write the ready
 // file and wait for a signal; `asked-twice` asks for the signal handlers a
-// second time, as hobo-code's loader does on every /hobo verb; `two` makes a
+// second time, as a shell's loader may on every command; `two` makes a
 // second directory first, as a process holding both a hobo-yard-* store and a
 // hobo-pulumi-live-* workspace does; `graceful`
 // first installs a SIGTERM handler of its own, as a server's graceful stop does,
 // which records whether the directory is still there, then exits 0.
 // `graceful-first` installs that handler before the entry point asks for the
-// signal handlers, as hobo-code's shell has its own before a /hobo command
-// first loads the composition.
+// signal handlers, as a shell can have its own before a command first loads
+// the composition.
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMainThread, Worker, workerData } from "node:worker_threads";

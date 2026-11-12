@@ -1,47 +1,23 @@
-import {
-	chown,
-	lstat,
-	mkdir,
-	readdir,
-	rename,
-	rm,
-	rmdir,
-	stat,
-	statfs,
-} from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { z } from "zod";
+import { basename } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
+import type { WorkerStorageReserve } from "./storage-job-classes.js";
+import {
+	createNodeWorkerStorageFileSystem,
+	type WorkerFileSystemStats,
+	type WorkerStorageFileSystem,
+	type WorkerWorkDirectoryRemoval,
+} from "./worker-storage-fs.js";
+
+export {
+	createNodeWorkerStorageFileSystem,
+	type WorkerFileSystemStats,
+	type WorkerStorageFileSystem,
+	type WorkerWorkDirectoryRemoval,
+};
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
-const INODE_GRANT_GRACE_MS = 60_000;
-const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
-const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
-const RETIRED_ROOT = ".retired";
-const ErrnoCode = z.object({ code: z.string() });
-
-export type WorkerFileSystemStats = Readonly<{
-	blocks: number;
-	bfree: number;
-	files: number;
-	ffree: number;
-}>;
-
-export type WorkerWorkDirectoryRemoval = Readonly<{
-	bytes: number;
-	entries: number;
-}>;
-
-export type WorkerStorageFileSystem = Readonly<{
-	statfs(path: string): Promise<WorkerFileSystemStats>;
-	device(path: string): Promise<number>;
-	jobDirectories(root: string): Promise<readonly string[]>;
-	retiredDirectories(root: string): Promise<readonly string[]>;
-	prepareJobDirectory(path: string): Promise<void>;
-	retireJobDirectory(path: string): Promise<string | undefined>;
-	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
-}>;
+const INODE_GRANT_GRACE_MS = 15_000;
 
 export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
@@ -80,124 +56,12 @@ export type WorkerStorageLog = (
 	event:
 		| "hobo_ci_inode_pressure"
 		| "hobo_ci_inode_reserve_wait"
+		| "hobo_ci_disk_reserve_wait"
 		| "hobo_ci_pnpm_store_prune"
 		| "hobo_ci_storage_admission_wait"
 		| "hobo_ci_storage_prune_failed",
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
-
-export function createNodeWorkerStorageFileSystem(
-	operations: Readonly<{
-		chown: typeof chown;
-		mkdir: typeof mkdir;
-		lstat?: typeof lstat;
-		readdir?: typeof readdir;
-		rename?: typeof rename;
-		rm?: typeof rm;
-		rmdir?: typeof rmdir;
-	}> = { chown, mkdir },
-): WorkerStorageFileSystem {
-	const io = {
-		lstat: operations.lstat ?? lstat,
-		readdir: operations.readdir ?? readdir,
-		rename: operations.rename ?? rename,
-		rm: operations.rm ?? rm,
-		rmdir: operations.rmdir ?? rmdir,
-	};
-	return {
-		async statfs(path) {
-			const stats = await statfs(path);
-			return {
-				blocks: stats.blocks,
-				bfree: stats.bfree,
-				files: stats.files,
-				ffree: stats.ffree,
-			};
-		},
-		async device(path) {
-			return (await stat(path)).dev;
-		},
-		async jobDirectories(root) {
-			const entries = await io.readdir(root, { withFileTypes: true });
-			return entries
-				.filter(
-					(entry) => entry.isDirectory() && JOB_DIRECTORY.test(entry.name),
-				)
-				.map((entry) => join(root, entry.name));
-		},
-		async retiredDirectories(root) {
-			try {
-				const entries = await io.readdir(join(root, RETIRED_ROOT), {
-					withFileTypes: true,
-				});
-				return entries
-					.filter(
-						(entry) =>
-							entry.isDirectory() && RETIRED_JOB_DIRECTORY.test(entry.name),
-					)
-					.map((entry) => join(root, RETIRED_ROOT, entry.name));
-			} catch (error) {
-				const parsed = ErrnoCode.safeParse(error);
-				if (parsed.success && parsed.data.code === "ENOENT") return [];
-				throw error;
-			}
-		},
-		async prepareJobDirectory(path) {
-			if (!JOB_DIRECTORY.test(basename(path)))
-				throw new Error("invalid worker job directory");
-			await operations.mkdir(path, { recursive: true, mode: 0o755 });
-			const repository = join(path, "HoBo");
-			const checkout = join(repository, "HoBo");
-			await operations.mkdir(checkout, { recursive: true, mode: 0o755 });
-			await operations.chown(repository, 1000, 1000);
-			await operations.chown(checkout, 1000, 1000);
-			await operations.chown(path, 1000, 1000);
-		},
-		async retireJobDirectory(path) {
-			const name = basename(path);
-			if (!JOB_DIRECTORY.test(name))
-				throw new Error("invalid worker job directory");
-			const retiredRoot = join(dirname(path), RETIRED_ROOT);
-			await operations.mkdir(retiredRoot, { recursive: true, mode: 0o700 });
-			const retired = join(retiredRoot, `${name}-${Date.now().toString(36)}`);
-			try {
-				await io.rename(path, retired);
-				return retired;
-			} catch (error) {
-				const parsed = ErrnoCode.safeParse(error);
-				if (parsed.success && parsed.data.code === "ENOENT") return undefined;
-				throw error;
-			}
-		},
-		async removeJobDirectory(path) {
-			const name = basename(path);
-			const valid =
-				basename(dirname(path)) === RETIRED_ROOT
-					? RETIRED_JOB_DIRECTORY.test(name)
-					: JOB_DIRECTORY.test(name);
-			if (!valid) throw new Error("invalid worker job directory");
-			const remove = async (
-				entryPath: string,
-			): Promise<WorkerWorkDirectoryRemoval> => {
-				const metadata = await io.lstat(entryPath);
-				if (!metadata.isDirectory()) {
-					await io.rm(entryPath, { force: false });
-					return { bytes: metadata.size, entries: 1 };
-				}
-				let bytes = 0;
-				let entries = 1;
-				for (const entry of await io.readdir(entryPath)) {
-					const child = await remove(join(entryPath, entry));
-					bytes += child.bytes;
-					entries += child.entries;
-				}
-				await io.rmdir(entryPath);
-				return { bytes, entries };
-			};
-			return remove(path);
-		},
-	};
-}
 
 type Pressure = Readonly<{
 	root: string;
@@ -231,18 +95,62 @@ function percent(value: number): number {
 }
 
 type StorageSample = Pressure &
-	Readonly<{ device: number; ffree: number; reserve: number; index: number }>;
+	Readonly<{
+		device: number;
+		ffree: number;
+		bfree: number;
+		bsize: number;
+		reserveInodes: number;
+		reserveBytes: number;
+		index: number;
+	}>;
 
-type InodeGrant = Readonly<{
-	grantedAtMs: number;
-	ffree: readonly number[];
+type DeviceReserve = Readonly<{
+	device: number;
+	index: number;
+	root: string;
+	inodes: number;
+	bytes: number;
 }>;
 
-type InodeReserveWait = Readonly<{
+type StorageGrant = Readonly<{
+	grantedAtMs: number;
+	ffree: readonly number[];
+	bfree: readonly number[];
+	perDevice: readonly DeviceReserve[];
+}>;
+
+/** Shared-root stores: one device pool gets the max slice, not the sum of paths. */
+export function deviceReservesForSamples(
+	samples: readonly StorageSample[],
+): readonly DeviceReserve[] {
+	const groups = new Map<number, StorageSample[]>();
+	for (const entry of samples) {
+		const group = groups.get(entry.device) ?? [];
+		group.push(entry);
+		groups.set(entry.device, group);
+	}
+	const reserves: DeviceReserve[] = [];
+	for (const group of groups.values()) {
+		const first = group[0];
+		if (!first) continue;
+		reserves.push({
+			device: first.device,
+			index: first.index,
+			root: first.root,
+			inodes: Math.max(0, ...group.map((entry) => entry.reserveInodes)),
+			bytes: Math.max(0, ...group.map((entry) => entry.reserveBytes)),
+		});
+	}
+	return reserves;
+}
+
+type StorageReserveWait = Readonly<{
+	kind: "inode" | "disk";
 	root: string;
-	freeInodes: number;
-	outstandingInodes: number;
-	requiredInodes: number;
+	free: number;
+	outstanding: number;
+	required: number;
 	activeGrants: number;
 }>;
 
@@ -258,6 +166,7 @@ export function createWorkerStorageAdmission(options: {
 	softLimit?: number;
 	hardLimit?: number;
 	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+	defaultJobReserve?: WorkerStorageReserve;
 	admitMaintainIntervalMs?: number;
 	scheduleRetiredSweep?: () => void;
 	now?: () => number;
@@ -267,20 +176,23 @@ export function createWorkerStorageAdmission(options: {
 	const hardLimit = options.hardLimit ?? HARD_LIMIT;
 	if (!(softLimit > 0) || !(hardLimit > softLimit) || !(hardLimit < 1))
 		throw new Error("invalid worker storage thresholds");
-	const jobInodes = options.jobInodes ?? {
-		workRoot: 200_000,
-		dockerDataRoot: 170_000,
+	const defaultJobReserve = options.defaultJobReserve ?? {
+		workRoot: options.jobInodes?.workRoot ?? 200_000,
+		dockerDataRoot: options.jobInodes?.dockerDataRoot ?? 170_000,
+		workRootBytes: 8 * 1024 * 1024 * 1024,
+		dockerDataRootBytes: 6 * 1024 * 1024 * 1024,
 	};
-	for (const reserve of [jobInodes.workRoot, jobInodes.dockerDataRoot])
+	for (const reserve of [
+		defaultJobReserve.workRoot,
+		defaultJobReserve.dockerDataRoot,
+		defaultJobReserve.workRootBytes,
+		defaultJobReserve.dockerDataRootBytes,
+	])
 		if (!Number.isSafeInteger(reserve) || reserve < 0)
-			throw new Error("invalid worker job inode reservation");
-	const reservations = [
-		{ root: options.dockerDataRoot, reserve: jobInodes.dockerDataRoot },
-		{ root: options.workRoot, reserve: jobInodes.workRoot },
-	];
+			throw new Error("invalid worker job storage reservation");
 	const now = options.now ?? Date.now;
 	const admitMaintainIntervalMs = options.admitMaintainIntervalMs ?? 60_000;
-	const grants = new Map<string, InodeGrant>();
+	const grants = new Map<string, StorageGrant>();
 	let lastAdmitMaintainMs: number | undefined;
 	let hardEpisode = false;
 	let reserveEpisode = false;
@@ -288,19 +200,47 @@ export function createWorkerStorageAdmission(options: {
 	let pnpmPruneInFlight = false;
 	let pnpmPruneWaitLogged = false;
 
-	async function sample(): Promise<StorageSample[]> {
+	function reservationsFor(jobReserve: WorkerStorageReserve): readonly {
+		root: string;
+		reserveInodes: number;
+		reserveBytes: number;
+		index: number;
+	}[] {
+		return [
+			{
+				root: options.dockerDataRoot,
+				reserveInodes: jobReserve.dockerDataRoot,
+				reserveBytes: jobReserve.dockerDataRootBytes,
+				index: 0,
+			},
+			{
+				root: options.workRoot,
+				reserveInodes: jobReserve.workRoot,
+				reserveBytes: jobReserve.workRootBytes,
+				index: 1,
+			},
+		];
+	}
+
+	async function sample(
+		jobReserve: WorkerStorageReserve,
+	): Promise<StorageSample[]> {
 		return Promise.all(
-			reservations.map(async (reservation, index) => {
+			reservationsFor(jobReserve).map(async (reservation) => {
 				const [stats, device] = await Promise.all([
 					options.fs.statfs(reservation.root),
 					options.fs.device(reservation.root),
 				]);
+				const bsize = stats.bsize > 0 ? stats.bsize : 4096;
 				return {
 					...pressure(reservation.root, stats),
 					device,
 					ffree: stats.ffree,
-					reserve: reservation.reserve,
-					index,
+					bfree: stats.bfree,
+					bsize,
+					reserveInodes: reservation.reserveInodes,
+					reserveBytes: reservation.reserveBytes,
+					index: reservation.index,
 				};
 			}),
 		);
@@ -318,39 +258,52 @@ export function createWorkerStorageAdmission(options: {
 	}
 
 	function reserveShortage(samples: readonly StorageSample[]) {
-		const groups = new Map<number, StorageSample[]>();
-		for (const entry of samples) {
-			const group = groups.get(entry.device) ?? [];
-			group.push(entry);
-			groups.set(entry.device, group);
-		}
-		let oldest: InodeGrant | undefined;
+		const newReserves = deviceReservesForSamples(samples);
+		let oldest: StorageGrant | undefined;
 		for (const grant of grants.values())
 			if (!oldest || grant.grantedAtMs < oldest.grantedAtMs) oldest = grant;
-		for (const group of groups.values()) {
-			const first = group[0];
-			if (!first) continue;
-			const requiredInodes = group.reduce(
-				(total, entry) => total + entry.reserve,
-				0,
-			);
-			const baseline = oldest?.ffree[first.index] ?? first.ffree;
-			// Consumption since the oldest grant belongs to all grants; freed inodes only increase conservatism.
-			const outstandingInodes = Math.max(
-				0,
-				requiredInodes * grants.size - (baseline - first.ffree),
-			);
-			if (
-				requiredInodes > 0 &&
-				first.ffree - outstandingInodes < requiredInodes
-			)
+		for (const required of newReserves) {
+			let committedInodes = 0;
+			let committedBytes = 0;
+			for (const grant of grants.values()) {
+				for (const slice of grant.perDevice) {
+					if (slice.device !== required.device) continue;
+					committedInodes += slice.inodes;
+					committedBytes += slice.bytes;
+				}
+			}
+			const sample = samples.find((entry) => entry.device === required.device);
+			if (!sample) continue;
+			const baselineInodes = oldest?.ffree[sample.index] ?? sample.ffree;
+			const inodeConsumption = Math.max(0, baselineInodes - sample.ffree);
+			const netReservedInodes = Math.max(0, committedInodes - inodeConsumption);
+			const headroomInodes = sample.ffree - netReservedInodes;
+			if (required.inodes > 0 && headroomInodes < required.inodes)
 				return {
-					root: first.root,
-					freeInodes: first.ffree,
-					outstandingInodes,
-					requiredInodes,
+					kind: "inode",
+					root: required.root,
+					free: sample.ffree,
+					outstanding: netReservedInodes,
+					required: required.inodes,
 					activeGrants: grants.size,
-				} satisfies InodeReserveWait;
+				} satisfies StorageReserveWait;
+			const freeBytes = sample.bfree * sample.bsize;
+			const baselineBlocks = oldest?.bfree[sample.index] ?? sample.bfree;
+			const byteConsumption = Math.max(
+				0,
+				(baselineBlocks - sample.bfree) * sample.bsize,
+			);
+			const netReservedBytes = Math.max(0, committedBytes - byteConsumption);
+			const headroomBytes = freeBytes - netReservedBytes;
+			if (required.bytes > 0 && headroomBytes < required.bytes)
+				return {
+					kind: "disk",
+					root: required.root,
+					free: freeBytes,
+					outstanding: netReservedBytes,
+					required: required.bytes,
+					activeGrants: grants.size,
+				} satisfies StorageReserveWait;
 		}
 		return undefined;
 	}
@@ -359,6 +312,8 @@ export function createWorkerStorageAdmission(options: {
 		grants.set(jobId, {
 			grantedAtMs: now(),
 			ffree: samples.map((entry) => entry.ffree),
+			bfree: samples.map((entry) => entry.bfree),
+			perDevice: deviceReservesForSamples(samples),
 		});
 		reserveEpisode = false;
 		return true;
@@ -473,6 +428,7 @@ export function createWorkerStorageAdmission(options: {
 		async admit(
 			activeLeases: readonly WorkerStorageLease[],
 			jobId: string,
+			jobReserve: WorkerStorageReserve = defaultJobReserve,
 		): Promise<boolean> {
 			if (pnpmPruneInFlight) {
 				if (!pnpmPruneWaitLogged)
@@ -485,7 +441,7 @@ export function createWorkerStorageAdmission(options: {
 			reconcile(activeLeases);
 			let before: StorageSample[];
 			try {
-				before = await sample();
+				before = await sample(jobReserve);
 				unavailable = false;
 			} catch (error) {
 				if (!unavailable) {
@@ -513,7 +469,7 @@ export function createWorkerStorageAdmission(options: {
 			}
 			let after: StorageSample[];
 			try {
-				after = await sample();
+				after = await sample(jobReserve);
 			} catch (error) {
 				options.log?.("hobo_ci_storage_admission_wait", {
 					message: error instanceof Error ? error.message : "unknown",
@@ -542,8 +498,24 @@ export function createWorkerStorageAdmission(options: {
 			}
 			const shortage = reserveShortage(after);
 			if (shortage) {
-				if (!reserveEpisode)
-					options.log?.("hobo_ci_inode_reserve_wait", shortage);
+				if (!reserveEpisode) {
+					if (shortage.kind === "inode")
+						options.log?.("hobo_ci_inode_reserve_wait", {
+							root: shortage.root,
+							freeInodes: shortage.free,
+							outstandingInodes: shortage.outstanding,
+							requiredInodes: shortage.required,
+							activeGrants: shortage.activeGrants,
+						});
+					else
+						options.log?.("hobo_ci_disk_reserve_wait", {
+							root: shortage.root,
+							freeBytes: shortage.free,
+							outstandingBytes: shortage.outstanding,
+							requiredBytes: shortage.required,
+							activeGrants: shortage.activeGrants,
+						});
+				}
 				reserveEpisode = true;
 				return false;
 			}

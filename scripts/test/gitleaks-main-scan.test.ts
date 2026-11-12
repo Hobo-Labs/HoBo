@@ -21,6 +21,10 @@ const workflow = readFileSync(
 );
 const mainGate = workflow.slice(
 	workflow.indexOf("\n  main-gate:"),
+	workflow.indexOf("\n  main_workspace_tests:"),
+);
+const mainGateFinish = workflow.slice(
+	workflow.indexOf("\n  main_gate_finish:"),
 	workflow.indexOf("\n  artifact-trust:"),
 );
 
@@ -76,6 +80,31 @@ describe("planMainGitleaksScan", () => {
 			timeoutSeconds: 90,
 			waitSeconds: RANGE_WAIT_SECONDS,
 		});
+	});
+
+	it("starts from the last green main commit when pushes in between were dropped", () => {
+		const plan = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "ccc",
+			sha: "ddd",
+			lastGreenSha: "aaa",
+			commitExists: () => true,
+			isAncestor: (ancestor, commit) => ancestor === "aaa" && commit === "ccc",
+		});
+		assert.equal(plan.logOpts, "aaa..ddd");
+		assert.equal(plan.fetchBlobs, false);
+	});
+
+	it("keeps the push range when the last green commit is not behind it", () => {
+		const plan = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "ccc",
+			sha: "ddd",
+			lastGreenSha: "zzz",
+			commitExists: () => true,
+			isAncestor: () => false,
+		});
+		assert.equal(plan.logOpts, "ccc..ddd");
 	});
 
 	it("treats a forced push (zero before) as full history", () => {
@@ -150,23 +179,53 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 });
 
 describe("main-gate wiring", () => {
-	it("starts and waits through gitleaks-main-scan, not raw unbounded gitleaks", () => {
-		assert.ok(
+	it("runs gitleaks through gitleaks-main-scan in the finish job, not inside S0", () => {
+		assert.equal(
 			mainGate.includes("scripts/ci/gitleaks-main-scan.mts --background"),
+			false,
 		);
-		assert.ok(mainGate.includes("scripts/ci/gitleaks-main-scan.mts --wait"));
+		assert.ok(
+			mainGateFinish.includes("scripts/ci/gitleaks-main-scan.mts --background"),
+		);
+		assert.ok(
+			mainGateFinish.includes("scripts/ci/gitleaks-main-scan.mts --wait"),
+		);
 		assert.equal(
 			/nohup bash -c '\s*gitleaks git --config \.gitleaks\.toml --redact --exit-code 1 >/u.test(
-				mainGate,
+				mainGateFinish,
 			),
 			false,
 		);
-		const start = mainGate.indexOf("name: Start secret scan");
-		const wait = mainGate.indexOf("name: Secret scan (full history)");
-		const workspace = mainGate.indexOf("name: Workspace tests");
-		assert.ok(start > -1);
-		assert.ok(wait > workspace);
+		const wait = mainGateFinish.indexOf("name: Secret scan (full history)");
+		assert.ok(wait > -1);
 		assert.ok(FULL_WAIT_SECONDS <= 720);
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
+	});
+
+	it("requires finish workspace checkout before gitleaks (fail closed)", () => {
+		assert.ok(
+			mainGateFinish.includes("Ensure finish workspace checkout"),
+			"finish must populate the workspace or fail",
+		);
+		assert.ok(mainGateFinish.includes("Finish workspace checkout failed"));
+		assert.ok(mainGateFinish.includes("hobo-repo-checkout"));
+		assert.equal(
+			mainGateFinish.includes("steps.workspace.outputs.ready == 'true'"),
+			false,
+			"gitleaks and preflight must not be skipped when workspace is missing",
+		);
+		assert.ok(
+			mainGateFinish.includes("Bootstrap composite actions (git fallback)"),
+		);
+		const secretScan = mainGateFinish.indexOf(
+			"name: Secret scan (full history)",
+		);
+		const preflight = mainGateFinish.indexOf(
+			"./.github/actions/ci-runner-preflight",
+		);
+		assert.ok(
+			preflight > -1 && secretScan > -1,
+			"preflight and secret scan steps must remain unconditional after workspace ensure",
+		);
 	});
 });

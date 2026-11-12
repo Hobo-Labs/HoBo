@@ -1,5 +1,7 @@
 import { type GithubTransport, getRun } from "./github.js";
+import { lookupByJobName } from "./isolated-worker/matrix-job-name.js";
 import type { JobDurations } from "./job-durations.js";
+import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
@@ -10,7 +12,7 @@ export type AdmissionKey = Readonly<{
 	headSha?: string | undefined;
 }>;
 
-/** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
+/** The rank of merge_group, push, workflow_run, and workflow_dispatch runs: trunk work. */
 export const TRUNK_RANK = 0;
 
 /** Merge-group checks outrank main-push gates on a shared trunk host. */
@@ -19,6 +21,7 @@ export function trunkEventPriority(event: string): number {
 		case "merge_group":
 			return 0;
 		case "push":
+		case "workflow_run":
 		case "workflow_dispatch":
 			return 1;
 		default:
@@ -34,6 +37,7 @@ export function admissionRank(event: string): number {
 	switch (event) {
 		case "merge_group":
 		case "push":
+		case "workflow_run":
 		case "workflow_dispatch":
 			return TRUNK_RANK;
 		case "schedule":
@@ -56,7 +60,104 @@ export type AdmissionRef = Readonly<{
 	runId: number;
 	jobId: number;
 	labels?: readonly string[];
+	jobName?: string | undefined;
 }>;
+
+const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
+
+/** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
+const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
+const MAIN_FULL_GATE_JOB = "Main full gate";
+const CI_DEPS_LAYER_JOB = "CI deps layer (pnpm)";
+const MAIN_TRAIN_RELEASE_GATE = "Main train release gate (nbgv)";
+const RELEASE_CONTRACT_JOB = "Release contract + affected OCI images";
+const RELEASE_OCI_GATE_JOB = "Build all OCI images on tag (gate publish)";
+const RELEASE_GHCR_PUBLISH_JOB = "Publish GHCR images (tagged release)";
+const RELEASE_PAGES_JOB = "Publish GitHub Pages (site/)";
+const RELEASE_NPM_JOB = "npm publish train (SDK allowlist)";
+const BUILD_VERIFY_RELEASE_IMAGE = /Build and verify release image/u;
+
+const MAIN_TRAIN_RELEASE_PHASES = new Map<string, number>([
+	["Route runners", 0],
+	[MAIN_TRAIN_RELEASE_GATE, 0],
+	[RELEASE_CONTRACT_JOB, 1],
+	[RELEASE_OCI_GATE_JOB, 2],
+	[RELEASE_GHCR_PUBLISH_JOB, 3],
+	[RELEASE_PAGES_JOB, 3],
+	[RELEASE_NPM_JOB, 3],
+]);
+
+function isMainTrainReleaseRun(event: string): boolean {
+	return (
+		event === "workflow_run" ||
+		event === "push" ||
+		event === "workflow_dispatch"
+	);
+}
+
+/** Phase within a main-train release workflow run (lower admits first on the host). */
+export function mainTrainReleasePhase(
+	jobName: string | undefined,
+): number | undefined {
+	if (!jobName) return undefined;
+	const byName = lookupByJobName(jobName, (name) =>
+		MAIN_TRAIN_RELEASE_PHASES.get(name),
+	);
+	if (byName !== undefined) return byName;
+	if (
+		lookupByJobName(jobName, (name) =>
+			BUILD_VERIFY_RELEASE_IMAGE.test(name) ? 2 : undefined,
+		) !== undefined
+	)
+		return 2;
+	return undefined;
+}
+
+export function mainWorkspaceShardIndex(
+	jobName: string | undefined,
+): number | undefined {
+	if (!jobName) return undefined;
+	const match = MAIN_WORKSPACE_SHARD.exec(jobName);
+	return match ? Number(match[1]) : undefined;
+}
+
+export function isMainWorkspaceShardJob(jobName: string | undefined): boolean {
+	return mainWorkspaceShardIndex(jobName) !== undefined;
+}
+
+/** Main push / merge_group Fabric trunk jobs eligible for cooperative fleet defer. */
+export function isMainTrunkFleetDeferJob(
+	jobName: string | undefined,
+	runEvent?: string | undefined,
+): boolean {
+	return trunkAdmissionPhase(jobName, runEvent) <= 3;
+}
+
+function trunkAdmissionPhase(
+	jobName: string | undefined,
+	runEvent?: string | undefined,
+): number {
+	if (runEvent && isMainTrainReleaseRun(runEvent)) {
+		const releasePhase = mainTrainReleasePhase(jobName);
+		if (releasePhase !== undefined) return releasePhase;
+	}
+	return mainFabricTrunkPhase(jobName, runEvent);
+}
+
+function mainFabricTrunkPhase(
+	jobName: string | undefined,
+	runEvent?: string | undefined,
+): number {
+	if (jobName === MAIN_WORKSPACE_PLAN_JOB) return 0;
+	if (jobName === CI_DEPS_LAYER_JOB) {
+		// PR runs also build the deps layer, but must not queue ahead of required gates.
+		if (runEvent === "pull_request") return 10;
+		return 1;
+	}
+	if (jobName === MAIN_FULL_GATE_JOB) return 2;
+	if (isMainWorkspaceShardJob(jobName)) return 3;
+	return 4;
+}
 
 /**
  * Orders demand for a host. A run's event and start time never change for an
@@ -68,9 +169,24 @@ export type AdmissionRef = Readonly<{
  * on a freed slot; a job with no history expects 0 and the job id breaks
  * remaining ties.
  */
+type MergeGroupSortKey = Readonly<{ position: number; stale: boolean }>;
+
+function mergeGroupSortKey(
+	headSha: string | undefined,
+	snapshot: ReturnType<MergeQueuePositionSource> | undefined,
+): MergeGroupSortKey {
+	if (!headSha || headSha.length < 40)
+		return { position: Number.POSITIVE_INFINITY, stale: false };
+	if (!snapshot) return { position: Number.POSITIVE_INFINITY, stale: false };
+	const position = snapshot.byHeadSha.get(headSha);
+	if (position !== undefined) return { position, stale: false };
+	return { position: Number.POSITIVE_INFINITY, stale: true };
+}
+
 export function createAdmissionOrder(
 	github: GithubTransport,
 	durations?: Pick<JobDurations, "expectedMs">,
+	mergeQueuePositions?: MergeQueuePositionSource,
 ) {
 	const runs = new Map<number, AdmissionKey>();
 	function remember(
@@ -124,6 +240,7 @@ export function createAdmissionOrder(
 	): Promise<T[]> {
 		const keyed: {
 			item: T;
+			ref: AdmissionRef;
 			key: AdmissionKey;
 			expectedMs: number;
 			jobId: number;
@@ -132,20 +249,52 @@ export function createAdmissionOrder(
 			const ref = refOf(item);
 			keyed.push({
 				item,
+				ref,
 				key: await keyFor(ref),
 				expectedMs: durations?.expectedMs(ref.repository, ref.jobId) ?? 0,
 				jobId: ref.jobId,
 			});
 		}
+		const mqSnapshot = mergeQueuePositions?.();
 		return keyed
-			.sort(
-				(a, b) =>
-					a.key.rank - b.key.rank ||
-					trunkEventPriority(a.key.event) - trunkEventPriority(b.key.event) ||
-					a.key.startedAtMs - b.key.startedAtMs ||
-					b.expectedMs - a.expectedMs ||
-					a.jobId - b.jobId,
-			)
+			.sort((a, b) => {
+				if (a.key.rank !== b.key.rank) return a.key.rank - b.key.rank;
+				if (trunkEventPriority(a.key.event) !== trunkEventPriority(b.key.event))
+					return (
+						trunkEventPriority(a.key.event) - trunkEventPriority(b.key.event)
+					);
+				if (a.key.event === "merge_group" && b.key.event === "merge_group") {
+					const ga = mergeGroupSortKey(a.key.headSha, mqSnapshot);
+					const gb = mergeGroupSortKey(b.key.headSha, mqSnapshot);
+					if (ga.stale !== gb.stale) return ga.stale ? 1 : -1;
+					if (mqSnapshot && ga.position !== gb.position)
+						return ga.position - gb.position;
+					return a.jobId - b.jobId;
+				}
+				// Main pushes queue (finding 113), so two push runs hold jobs at once only when
+				// one is winding down after a manual cancel or a re-run; admit the newest first
+				// so slots serve live trunk.
+				if (
+					(a.key.event === "push" && b.key.event === "push") ||
+					(a.key.event === "workflow_run" && b.key.event === "workflow_run")
+				) {
+					const pushStart = (ms: number) => (Number.isFinite(ms) ? ms : 0);
+					if (pushStart(a.key.startedAtMs) !== pushStart(b.key.startedAtMs))
+						return pushStart(b.key.startedAtMs) - pushStart(a.key.startedAtMs);
+				} else if (a.key.startedAtMs !== b.key.startedAtMs)
+					return a.key.startedAtMs - b.key.startedAtMs;
+				if (a.ref.runId === b.ref.runId) {
+					const phaseA = trunkAdmissionPhase(a.ref.jobName, a.key.event);
+					const phaseB = trunkAdmissionPhase(b.ref.jobName, b.key.event);
+					if (phaseA !== phaseB) return phaseA - phaseB;
+					const shardA = mainWorkspaceShardIndex(a.ref.jobName);
+					const shardB = mainWorkspaceShardIndex(b.ref.jobName);
+					if (shardA !== undefined && shardB !== undefined && shardA !== shardB)
+						return shardA - shardB;
+				}
+				if (b.expectedMs !== a.expectedMs) return b.expectedMs - a.expectedMs;
+				return a.jobId - b.jobId;
+			})
 			.map((entry) => entry.item);
 	}
 	return Object.assign(order, {
@@ -161,6 +310,33 @@ export function createAdmissionOrder(
 		event: async (ref: AdmissionRef) => (await keyFor(ref)).event,
 		headSha: async (ref: AdmissionRef) => (await keyFor(ref)).headSha,
 		mergeGroupKey: async (ref: AdmissionRef) => {
+			const key = await keyFor(ref);
+			if (key.event !== "merge_group") return undefined;
+			return key.headSha ?? `run:${ref.runId}`;
+		},
+		mergeGroupKeyForLease: async (lease: {
+			installationId: number;
+			repository: string;
+			originalRunId: number;
+			jobId: number;
+			actualJobId: number;
+			labels?: readonly string[];
+		}) => {
+			const ref: AdmissionRef =
+				lease.labels === undefined
+					? {
+							installationId: lease.installationId,
+							repository: lease.repository,
+							runId: lease.originalRunId,
+							jobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+						}
+					: {
+							installationId: lease.installationId,
+							repository: lease.repository,
+							runId: lease.originalRunId,
+							jobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+							labels: lease.labels,
+						};
 			const key = await keyFor(ref);
 			if (key.event !== "merge_group") return undefined;
 			return key.headSha ?? `run:${ref.runId}`;

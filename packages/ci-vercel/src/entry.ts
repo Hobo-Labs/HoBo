@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { JsonValue } from "@bufbuild/protobuf";
 import {
 	ciEventSinkFromEnv,
 	createCiEventEmitter,
@@ -7,24 +8,36 @@ import {
 	reportRelayFailure,
 	setRelayFailureEvents,
 } from "@hobo/ci-gh-actions";
-import { getVercelOidcToken } from "@vercel/oidc";
-import { type MessageMetadata, QueueClient } from "@vercel/queue";
-import { createBootstrapEntry } from "./bootstrap-entry.js";
-import { createVercelApplication } from "./composition.js";
-import { forwardQueueWakeup } from "./queue-forwarding.js";
+import {
+	type MessageMetadata,
+	QueueClient,
+	type RetryHandler,
+} from "@vercel/queue";
+import {
+	forwardQueueHandoff,
+	QueueHandoffError,
+	redeliverRefusedWakeup,
+} from "./queue-forwarding.js";
+import {
+	encodeRelayQueueMessage,
+	parseRelayQueueMessage,
+	type RelayQueueSend,
+} from "./relay-queue.js";
+import {
+	createRelayRuntimeConfigLoader,
+	type RelayConfigSource,
+	type RelayRuntimeConfigLoader,
+	relayConfigSourceFromEnv,
+} from "./relay-runtime-config.js";
 import { streamsBody } from "./relay-streams.js";
-import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
-import { isPlatformScheduleRun, QueueMessageSchema } from "./worker.js";
+import { composeStatelessRelay } from "./stateless-composition.js";
 
-// Keep Vercel's default deployment pinning: the callback hands each wakeup to
-// the current production relay before acknowledging its original delivery.
+// Keep Vercel's default deployment pinning: the callback hands each message
+// to the current production relay before acknowledging its original delivery.
 const queue = new QueueClient();
-// Public deployment addresses, pinned in source; neither is a credential.
-const brokerOrigin =
-	"https://br-morning-dust-b78xxqrk-hobocivault.compute.c-13.us-east-1.aws.neon.tech";
-const brokerAudience = "https://hobo-ci.vercel.app/internal/runtime-config";
-// Owner bootstrap requires converted-App metadata and browser identity checks.
-const ownerBootstrapEnabled = true;
+const send: RelayQueueSend = async (topic, payload, options) => {
+	await queue.send(topic, payload, options);
+};
 // With HOBO_CI_EVENTS_URL set, each relay failure is also a CloudEvent.
 setRelayFailureEvents(
 	createCiEventEmitter({
@@ -37,67 +50,63 @@ setRelayFailureEvents(
 		sink: ciEventSinkFromEnv(process.env).sink,
 	}),
 );
-let startup: ReturnType<typeof createVercelApplication> | undefined;
-function application() {
-	const options = {
-		env: process.env,
-		notify: async (deliveryId: string) => {
-			await queue.send("hobo-ci", { deliveryId }, { retentionSeconds: 3600 });
-		},
-		continueRepair: async () => {
-			await queue.send(
-				"hobo-ci",
-				{ source: "hobo-ci", name: "hobo-ci-repair" },
-				{
-					delaySeconds: 60,
-					retentionSeconds: 3600,
-					idempotencyKey: `repair-${Math.floor(Date.now() / 60_000)}`,
-				},
-			);
-		},
-		scheduledRepair: async () => {
-			await queue.send(
-				"hobo-ci",
-				{ source: "static", name: "hobo-ci-repair" },
-				{ retentionSeconds: 3600 },
-			);
+
+/** When the config service last failed a refresh; cleared by the next success. */
+let configStaleSince: number | undefined;
+let loader:
+	| { kind: RelayConfigSource["kind"]; config: RelayRuntimeConfigLoader }
+	| undefined;
+/**
+ * The relay's configuration and secrets, from the config service the
+ * deployment names (`HOBO_CI_CONFIG_SERVICE`: `infisical`, or `env`). One
+ * loader per instance, shared by the HTTP entry and the queue consumer.
+ */
+function configLoader() {
+	if (loader) return loader;
+	const source = relayConfigSourceFromEnv(process.env);
+	const tracked: RelayConfigSource = {
+		kind: source.kind,
+		async read() {
+			const entries = await source.read();
+			configStaleSince = undefined;
+			return entries;
 		},
 	};
-	// Which step of startup was running when it failed: the log line names it.
-	let stage = "runtime-config";
+	loader = {
+		kind: source.kind,
+		config: createRelayRuntimeConfigLoader({
+			source: tracked,
+			onRefreshFailed: (error) => {
+				configStaleSince ??= Date.now();
+				reportRelayFailure(
+					"hobo_ci_config_refresh_failed",
+					{ configService: source.kind },
+					error,
+				);
+			},
+		}),
+	};
+	return loader;
+}
+
+let startup: ReturnType<typeof composeStatelessRelay> | undefined;
+function application() {
 	startup ??= Promise.resolve()
-		.then(async () => {
-			let env = process.env;
-			let ownerVerifiedBootstrap = false;
-			if (
-				env.VERCEL_ENV === "production" &&
-				!env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256 &&
-				!env.HOBO_CI_GITHUB_APP_ID
-			) {
-				const config = await loadBrokerRuntimeConfig({
-					origin: brokerOrigin,
-					audience: brokerAudience,
-					getToken: (audience) =>
-						getVercelOidcToken({ audience, skipCache: true }),
-				});
-				env = { ...env, ...config };
-				ownerVerifiedBootstrap = ownerBootstrapEnabled;
-			}
-			stage = "application";
-			const resolved = { ...options, env };
-			if (!env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256)
-				return createVercelApplication(resolved);
-			const bootstrapOptions: Parameters<typeof createBootstrapEntry>[0] =
-				resolved;
-			if (ownerVerifiedBootstrap)
-				bootstrapOptions.expectedGithubOwnerId = 145080887;
-			return createBootstrapEntry(bootstrapOptions);
+		.then(() => {
+			const { kind, config } = configLoader();
+			return composeStatelessRelay({
+				env: process.env,
+				config,
+				configService: kind,
+				configStaleSince: () => configStaleSince,
+				send,
+			});
 		})
 		.catch((error) => {
-			// Every request answers 503 until this succeeds; say why.
+			// Every request but /healthz answers 503 until this succeeds; say why.
 			reportRelayFailure(
 				"hobo_ci_relay_init_failed",
-				{ stage },
+				{ stage: "stateless" },
 				error instanceof Error ? error : undefined,
 			);
 			startup = undefined;
@@ -106,7 +115,11 @@ function application() {
 	return startup;
 }
 
-/** Vercel Node Function HTTP entrypoint. */
+/**
+ * Vercel Node Function HTTP entrypoint. `/healthz` answers 200 whatever the
+ * relay's state (the process is up); everything else waits for the relay,
+ * and answers 503 while it cannot start (`/readyz` says so in its body).
+ */
 export function createHttpEntry(
 	load: () => Promise<{
 		origin: string;
@@ -117,6 +130,15 @@ export function createHttpEntry(
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> => {
+		const path = (request.url ?? "/").split("?")[0];
+		if (request.method === "GET" && path === "/healthz") {
+			response.writeHead(200, {
+				"Content-Type": "application/json",
+				"Cache-Control": "no-store",
+			});
+			response.end(JSON.stringify({ ok: true }));
+			return;
+		}
 		try {
 			const app = await load();
 			await createNodeRelayHandler({
@@ -125,8 +147,26 @@ export function createHttpEntry(
 				streams: streamsBody,
 			})(request, response);
 		} catch {
-			if (!response.headersSent)
-				response.writeHead(503, { "Cache-Control": "no-store" });
+			if (response.headersSent) {
+				response.end();
+				return;
+			}
+			if (request.method === "GET" && path === "/readyz") {
+				response.writeHead(503, {
+					"Content-Type": "application/json",
+					"Cache-Control": "no-store",
+				});
+				response.end(
+					JSON.stringify({
+						ready: false,
+						// The relay could not start: the config service, the
+						// configuration or the cache binding; the log names which.
+						started: false,
+					}),
+				);
+				return;
+			}
+			response.writeHead(503, { "Cache-Control": "no-store" });
 			response.end();
 		}
 	};
@@ -157,34 +197,67 @@ export function reportQueueBinding(metadata: MessageMetadata) {
 	}
 }
 
-/** Private Vercel queue trigger. The database remains the source of truth. */
-export const consume = queue.handleNodeCallback(async (message, metadata) => {
+/**
+ * What the queue does with a message this callback failed to hand over.
+ *
+ * A relay that answered 503 gets the message again after a delay the queue
+ * itself holds (`redeliverRefusedWakeup`). Thrown straight back, production
+ * redelivered each message about every 15 s for as long as the relay was
+ * down. The queue client reports nothing for a rescheduled message, so the
+ * one line that names the status is written here.
+ */
+export const retryQueueWakeup: RetryHandler = (error, metadata) => {
+	const directive = redeliverRefusedWakeup(error, metadata);
+	if (directive && "afterSeconds" in directive)
+		reportRelayFailure(
+			"hobo_ci_queue_handoff_deferred",
+			{
+				status: error instanceof QueueHandoffError ? error.status : 0,
+				afterSeconds: directive.afterSeconds,
+				deliveryCount: metadata.deliveryCount,
+			},
+			error instanceof Error ? error : undefined,
+		);
+	return directive;
+};
+
+/**
+ * One queue message, from any of the relay's topics (intake, lease steps,
+ * repair). Off production it runs here. In production it is handed to the
+ * current production relay (`/internal/queue-wakeup`, authenticated with
+ * `CRON_SECRET` from the config service), so a message an older deployment
+ * consumes still runs the newest code; that handler drops a failed repair
+ * tick and holds a failed delivery or lease step for redelivery.
+ */
+async function queueCallback(
+	message: JsonValue,
+	metadata: MessageMetadata,
+): Promise<void> {
 	reportQueueBinding(metadata);
+	const parsed = parseRelayQueueMessage(message);
 	if (process.env.VERCEL_ENV !== "production") {
-		const parsed = QueueMessageSchema.parse(message);
-		// Every deployment declares the static schedule in vercel.json. Only
-		// production repairs on a timer; a preview acknowledges the run unworked.
-		if (isPlatformScheduleRun(parsed)) return;
-		await (await application()).tick(parsed);
+		await (await application()).run(parsed);
 		return;
 	}
-	let origin = process.env.HOBO_CI_PUBLIC_URL;
-	let secret = process.env.CRON_SECRET;
-	if (
-		!process.env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256 &&
-		!process.env.HOBO_CI_GITHUB_APP_ID
-	) {
-		const config = await loadBrokerRuntimeConfig({
-			origin: brokerOrigin,
-			audience: brokerAudience,
-			getToken: (audience) => getVercelOidcToken({ audience, skipCache: true }),
-		});
-		if (config.HOBO_CI_PUBLIC_URL !== new URL(brokerAudience).origin)
-			throw new Error("queue handoff origin mismatch");
-		origin = config.HOBO_CI_PUBLIC_URL;
-		secret = config.CRON_SECRET;
-	}
-	if (!origin || !secret)
-		throw new Error("queue handoff configuration unavailable");
-	await forwardQueueWakeup({ origin, secret, message });
-});
+	const config = await configLoader().config.load();
+	await forwardQueueHandoff({
+		origin: config.HOBO_CI_PUBLIC_URL,
+		secret: config.CRON_SECRET,
+		body: encodeRelayQueueMessage(parsed),
+	});
+}
+
+/**
+ * Register the queue callback on `client` together with its redelivery
+ * policy. A function of the client so a test can see what is registered.
+ */
+export function registerQueueConsumer(
+	client: Pick<QueueClient, "handleNodeCallback">,
+) {
+	return client.handleNodeCallback<JsonValue>(queueCallback, {
+		retry: retryQueueWakeup,
+	});
+}
+
+/** Private Vercel queue trigger, one function per topic (`vercel.json`). */
+export const consume = registerQueueConsumer(queue);

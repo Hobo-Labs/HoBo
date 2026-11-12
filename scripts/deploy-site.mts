@@ -108,6 +108,13 @@ function build(): void {
 			cwd: SITE_DIR,
 			stdio: "inherit",
 		});
+		// The landing page's trail fills one screen per stop: check every stop
+		// still reads at laptop sizes and on a phone before it ships.
+		console.log("verifying built site (the landing trail at every size)…");
+		execFileSync("pnpm", ["run", "landing:verify-dist"], {
+			cwd: SITE_DIR,
+			stdio: "inherit",
+		});
 	}
 }
 

@@ -1,0 +1,83 @@
+{
+ "consumer": {
+  "name": "HoboCiAgent"
+ },
+ "provider": {
+  "name": "ResolutionEngine"
+ },
+ "metadata": {
+  "pactSpecification": {
+   "version": "4.0.0"
+  },
+  "evidence": "Hand-authored synchronous-message contract for the engine port; verified against the AI SDK mock language model only; no live model verification."
+ },
+ "interactions": [
+  {
+   "type": "Synchronous/Messages",
+   "description": "propose replacement text for every conflict region of one file",
+   "request": {
+    "contents": {
+     "path": "src/pricing.ts",
+     "ours": "pull request #42",
+     "theirs": "main",
+     "regions": [
+      {
+       "id": 0,
+       "ours": "export const RATE = 0.2;\n",
+       "base": "export const RATE = 0.1;\n",
+       "theirs": "export const RATE = 0.15;\nexport const CURRENCY = \"USD\";\n",
+       "before": "// rates\n",
+       "after": "\nexport function price() {}\n"
+      }
+     ]
+    },
+    "contentType": "application/json"
+   },
+   "response": [
+    {
+     "contents": {
+      "regions": [
+       {
+        "id": 0,
+        "resolution": "export const RATE = 0.2;\nexport const CURRENCY = \"USD\";\n",
+        "confidence": 0.86
+       }
+      ]
+     },
+     "contentType": "application/json"
+    }
+   ]
+  },
+  {
+   "type": "Synchronous/Messages",
+   "description": "an answer that omits a region is not a resolution",
+   "request": {
+    "contents": {
+     "path": "src/pricing.ts",
+     "ours": "pull request #42",
+     "theirs": "main",
+     "regions": [
+      {
+       "id": 0,
+       "ours": "export const RATE = 0.2;\n",
+       "base": "export const RATE = 0.1;\n",
+       "theirs": "export const RATE = 0.15;\nexport const CURRENCY = \"USD\";\n",
+       "before": "// rates\n",
+       "after": "\nexport function price() {}\n"
+      }
+     ]
+    },
+    "contentType": "application/json"
+   },
+   "response": [
+    {
+     "contents": {
+      "regions": []
+     },
+     "contentType": "application/json"
+    }
+   ],
+   "expectedOutcome": "failed"
+  }
+ ]
+}

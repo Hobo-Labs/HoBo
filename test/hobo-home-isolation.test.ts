@@ -4,9 +4,9 @@
  * Much of this workspace resolves its state directory as
  * `process.env.HOBO_HOME ?? join(HOME, ".hobo")`, so a test that calls such an
  * API without an explicit `hoboHome` writes where a real session would. That
- * happened: a clean run of `packages/code` left 33 files under `~/.hobo/durable`
- * — chats, evidence, and an auth session written by a test whose only assertion
- * was that `auth --help` prints a help page.
+ * happened: a clean run of one package's suite left 33 files under
+ * `~/.hobo/durable` — chats, evidence, and an auth session written by a test
+ * whose only assertion was that `auth --help` prints a help page.
  *
  * `test/setup/isolate-hobo-home.ts` fixes it by pointing every test file's
  * `HOBO_HOME` at a throwaway directory. This file is the guard on that fix: the

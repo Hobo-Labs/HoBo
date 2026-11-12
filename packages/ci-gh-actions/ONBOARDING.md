@@ -1,29 +1,20 @@
 # Hosted GitHub App onboarding
 
-The hosted relay can initialize its shared GitHub App without an existing App.
-A platform operator provisions a PostgreSQL database, a 32-byte random encryption
-key in the platform secret manager, an HTTPS relay origin, an operator bootstrap
-bearer token and its SHA-256 digest, and an initial HoBo account identifier. The
-operator bearer is distinct from every customer account bearer. Keep both raw
-bearers and the encryption key out of source control and logs.
-
-Open `/v1/app-bootstrap/setup` in a browser and enter the operator bearer and
-App name. The page sends the bearer only in the `Authorization` header of a
-same-origin POST to `/v1/app-bootstrap/start`; it never puts the bearer in a URL
-or browser storage. API clients may instead POST JSON `{ "name": "HoBo CI" }`
-with the operator bearer in `Authorization`. The
-response sets an HttpOnly, Secure, SameSite=Lax browser cookie and returns an
-`action` on `github.com` plus a `manifest` object. The setup page submits that
-manifest as a form POST. API clients must make the same browser form POST to
-the returned action, with a `manifest` field containing the JSON serialization
-of that object. GitHub requires a signed-in App owner to approve creation. Its
-callback returns to the same browser, exchanges the one-use code, and writes
-App credentials encrypted in PostgreSQL. The manifest subscribes to
-`workflow_job` and `workflow_run` and requests organization Members read access
-for administrator verification. It registers the OAuth callback used below.
+The hosted relay keeps no database
+([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)) and does
+not create the GitHub App: `hobo ci` creates it through GitHub's manifest flow
+and writes its credentials to the relay's config service, which the relay only
+reads ([Config service](../ci-vercel/CONFIG-SERVICE.md)). The relay's
+App-creation routes answer 410. What the relay still serves is the owner's
+invitation (`POST /v1/app-bootstrap/start` with the invitation the config
+service holds, redeemed once) and the OAuth and installation flow below, all on
+its cache ([Helpers on the cache](../ci-vercel/README.md#helpers-on-the-cache)).
+The App's manifest subscribes to `workflow_job` and `workflow_run`, requests
+organization Members read access for administrator verification, and registers
+the OAuth callback used below.
 
 For a guided terminal flow, use `hobo ci connect github --relay <origin>` with
-an account credential. It opens this same manifest flow, waits for the relay to
+an account credential. It opens the manifest flow, waits for the relay to
 confirm registration, guides the App owner through enabling Device Flow in GitHub
 settings, verifies device authorization, and waits for the account's installation
 binding. See [the CLI guide](../hobo/CI.md) for key import, rotation boundaries
@@ -43,18 +34,13 @@ do not provide a device-flow switch. Do not add an unrecognized manifest field o
 claim that registration enabled it automatically; complete the
 [App settings step](https://docs.github.com/en/apps/maintaining-github-apps/modifying-a-github-app-registration#enabling-or-disabling-the-device-flow).
 
-An uncertain App conversion is fenced; subsequent bootstrap attempts are
-refused until an operator reconciles the GitHub App and stored credentials. The
-service must not create a replacement automatically: GitHub may have created the
-original App despite a lost response.
-
 For an existing App, open `/v1/app-registration/setup`, enter an account bearer
 with `repositories:write`, and select **Connect GitHub**. The page keeps the
 bearer in memory and sends it only in the `Authorization` header. API clients
 can POST `/v1/app-registration/oauth/start` using the same account bearer. Navigate the same browser to the returned GitHub
 `authorizeUrl`. The callback validates browser-bound, one-use state and PKCE,
 checks the GitHub user, and sets a short-lived HttpOnly, Secure, SameSite=Lax
-session cookie. The session and GitHub user token are encrypted server-side;
+session cookie. The session and GitHub user token are sealed in the cache;
 every operation rechecks the HoBo bearer and scope.
 
 POST `/v1/app-registration/state` with `{ "purpose": "install" }` using that
@@ -67,16 +53,9 @@ owner or an active organization administrator. Only then is the installation
 bound uniquely to the HoBo account. The hosted account API includes that verified
 installation in the caller's repository permissions.
 
-For development, the focused OAuth tests use mocked GitHub requests. The
-PostgreSQL integration contract uses a **fresh disposable database**:
-
-```sh
-HOBO_CI_TEST_POSTGRES='postgresql://…' pnpm exec tsx packages/ci-gh-actions/scripts/onboarding-postgres-contract.ts
-```
-
-The integration contract covers singleton bootstrap concurrency, App credential
-encryption, state replay and browser binding, OAuth PKCE, account isolation and
-control-token revocation. It does not contact GitHub or verify a deployed service.
+For development, the focused OAuth tests use mocked GitHub requests, and the
+stateless onboarding tests run on the in-memory cache. They do not contact
+GitHub or verify a deployed service.
 
 ## Public repositories and pull requests
 
