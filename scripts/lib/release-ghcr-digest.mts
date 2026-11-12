@@ -242,7 +242,10 @@ export function stderrReferencesExactTag(stderr: string, tag: string): boolean {
 		const idx = stderr.indexOf(tag, start);
 		if (idx === -1) return false;
 		const before = idx > 0 ? stderr[idx - 1] : undefined;
-		if (before !== undefined && TAG_REF_SUFFIX.test(before)) {
+		if (
+			before !== undefined &&
+			(TAG_REF_SUFFIX.test(before) || before === "/" || before === ":")
+		) {
 			start = idx + 1;
 			continue;
 		}

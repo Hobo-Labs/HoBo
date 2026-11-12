@@ -113,6 +113,12 @@ describe("release ghcr digest helpers", () => {
 		expect(() =>
 			imagetoolsInspectTag(
 				tag,
+				vi.fn(() => stubSpawnSync(1, `ERROR: evil/${tag}: not found`)),
+			),
+		).toThrow(/imagetools inspect/u);
+		expect(() =>
+			imagetoolsInspectTag(
+				tag,
 				vi.fn(() => stubSpawnSync(1, `ERROR: ${tag}@${DIGEST_A}: not found`)),
 			),
 		).toThrow(/imagetools inspect/u);
