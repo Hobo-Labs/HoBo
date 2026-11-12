@@ -97,13 +97,15 @@ function tryReusePublishedTag(options: {
 		inspected?.digest !== undefined
 			? normalizeRepoDigestLine(
 					options.tag,
-					ghcrDigestRef(options.tag.split(":")[0] ?? options.tag, inspected.digest),
+					ghcrDigestRef(
+						options.tag.split(":")[0] ?? options.tag,
+						inspected.digest,
+					),
 					options.imageId,
 				)
 			: resolveRegistryDigestForTag(options.tag);
 	if (!digestRef) return undefined;
-	const labels =
-		inspected?.labels ?? dockerConfigLabelsForDigestRef(digestRef);
+	const labels = dockerConfigLabelsForDigestRef(digestRef);
 	assertReleaseImageMatchesBuild({
 		imageId: options.imageId,
 		tag: options.tag,
