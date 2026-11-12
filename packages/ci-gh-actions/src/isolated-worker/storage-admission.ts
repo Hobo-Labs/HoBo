@@ -248,14 +248,17 @@ export function createWorkerStorageAdmission(options: {
 	}
 
 	function reconcile(activeLeases: readonly WorkerStorageLease[]) {
-		const activeJobs = new Set(activeLeases.map((lease) => lease.jobId));
+		const activeHolders = new Set([
+			...activeLeases.map((lease) => lease.id),
+			...activeLeases.map((lease) => lease.jobId),
+		]);
 		const nowMs = now();
-		for (const [jobId, grant] of grants)
+		for (const [holder, grant] of grants)
 			if (
-				!activeJobs.has(jobId) &&
+				!activeHolders.has(holder) &&
 				nowMs - grant.grantedAtMs > INODE_GRANT_GRACE_MS
 			)
-				grants.delete(jobId);
+				grants.delete(holder);
 	}
 
 	function reserveShortage(samples: readonly StorageSample[]) {
@@ -309,8 +312,8 @@ export function createWorkerStorageAdmission(options: {
 		return undefined;
 	}
 
-	function grant(jobId: string, samples: readonly StorageSample[]) {
-		grants.set(jobId, {
+	function grant(holder: string, samples: readonly StorageSample[]) {
+		grants.set(holder, {
 			grantedAtMs: now(),
 			ffree: samples.map((entry) => entry.ffree),
 			bfree: samples.map((entry) => entry.bfree),
@@ -429,8 +432,14 @@ export function createWorkerStorageAdmission(options: {
 	return {
 		reap,
 		maintain,
-		release(jobId: string) {
-			grants.delete(jobId);
+		release(holder: string) {
+			grants.delete(holder);
+		},
+		bindGrant(pendingHolder: string, leaseHolder: string) {
+			const existing = grants.get(pendingHolder);
+			if (!existing) return;
+			grants.delete(pendingHolder);
+			grants.set(leaseHolder, existing);
 		},
 		async admit(
 			activeLeases: readonly WorkerStorageLease[],
@@ -556,3 +565,13 @@ export function createWorkerStorageAdmission(options: {
 export type WorkerStorageAdmission = ReturnType<
 	typeof createWorkerStorageAdmission
 >;
+
+/** Drop inode headroom reserved for a lease and its pre-reserve job holder. */
+export function releaseWorkerStorageGrants(
+	admission: WorkerStorageAdmission | undefined,
+	lease: Readonly<{ id: string; jobId: number }>,
+): void {
+	if (!admission) return;
+	admission.release(lease.id);
+	admission.release(String(lease.jobId));
+}

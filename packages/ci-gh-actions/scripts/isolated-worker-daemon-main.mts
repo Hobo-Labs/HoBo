@@ -732,6 +732,7 @@ try {
 		containerEnv,
 		workRoot,
 		workFs,
+		storageAdmission,
 		scheduleRetiredSweep: retiredSweep.trigger,
 		containerStallGuard,
 		noContainerDrainMaxMs,

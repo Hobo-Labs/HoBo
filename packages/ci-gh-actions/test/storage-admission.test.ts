@@ -239,6 +239,35 @@ describe("worker storage admission", () => {
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
 	});
 
+	it("binds a pre-reserve grant to the lease id and releases on terminal cleanup", async () => {
+		const h = harness({
+			before: freeInodes(500_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		for (let i = 0; i < 12; i++) {
+			const jobId = `job-${i}`;
+			const leaseId = `lease-${i}`;
+			await expect(h.admission.admit([], jobId)).resolves.toBe(true);
+			h.admission.bindGrant(jobId, leaseId);
+			h.admission.release(leaseId);
+			h.admission.release(jobId);
+		}
+		await expect(h.admission.admit([], "job-final")).resolves.toBe(true);
+	});
+
+	it("blocks further admission until bound lease grants are released", async () => {
+		const h = harness({
+			before: freeInodes(380_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.admission.bindGrant("job-1", "lease-1");
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		h.admission.release("lease-1");
+		h.admission.release("job-1");
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
 	it("expires a grant without an active lease after the grace period", async () => {
 		let nowMs = 0;
 		const h = harness({
@@ -247,6 +276,7 @@ describe("worker storage admission", () => {
 			now: () => nowMs,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.admission.bindGrant("job-1", "lease-1");
 		nowMs = 15_000;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
 		nowMs = 15_001;
