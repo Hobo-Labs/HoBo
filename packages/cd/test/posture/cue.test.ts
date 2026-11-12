@@ -11,6 +11,7 @@ import type { JsonValue } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	PolicyMode,
+	RailDeliveryRecordSchema,
 	RailPostureBindingRecordSchema,
 	RemediationMode,
 } from "../../src/_generated/cd_pb.js";
@@ -178,6 +179,17 @@ describe.skipIf(cue === undefined)("posture.cue", () => {
 			},
 		]).posture[0];
 		if (!binding) throw new Error("binding");
+		expect(
+			vet(
+				"#RailDeliveryRecord",
+				toJson(
+					RailDeliveryRecordSchema,
+					railDelivery(digest("a"), [
+						{ pack: "tls-baseline", remediation: RemediationMode.INFORM_ONLY },
+					]),
+				),
+			),
+		).toBe(true);
 		expect(
 			vet(
 				"#RailPostureBindingRecord",

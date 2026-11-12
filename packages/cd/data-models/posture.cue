@@ -22,6 +22,7 @@ import "strings"
 #Effect:    "allow" | "allow-degraded" | "deny" | "warn" | "mutate" | "require-approval"
 #Severity:  "info" | "low" | "medium" | "high" | "critical"
 #Control:   =~"^[A-Za-z][A-Za-z0-9]*([.-][A-Za-z0-9]+)*$"
+
 // `<pack>/<rule>`: both are posture profile ids.
 #RuleKey: =~"^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?/[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
 
@@ -77,6 +78,7 @@ import "strings"
 	// Only an enforced, noncompliant finding can be an ownership conflict (I22).
 	ownershipConflict?: true
 	if ownershipConflict != _|_ {state: "COMPLIANCE_STATE_NONCOMPLIANT"}
+
 	// A rule that matched no resource is not applicable, and only then.
 	if resource == _|_ {state: "COMPLIANCE_STATE_NOT_APPLICABLE"}
 }
@@ -84,10 +86,10 @@ import "strings"
 // compliance.Observed / compliance.Changed body. It always names the
 // observation position it evaluated (D25).
 #ComplianceRecord: {
-	campId:              #Id
-	railDigest:          #Digest
-	candidate?:          true
-	state:               #ComplianceState
+	campId:     #Id
+	railDigest: #Digest
+	candidate?: true
+	state:      #ComplianceState
 	findings?: [...#PostureFindingRecord]
 	observationPosition: #Position
 	evaluatedAt:         #Timestamp
@@ -103,6 +105,31 @@ import "strings"
 	mode:     "REMEDIATION_MODE_ENFORCE"
 	deltaId?: =~"^delta_posture_[0-9a-f]{24}$"
 	reasons: [#ReasonRecord, ...#ReasonRecord]
+}
+
+#PolicyMode:     "POLICY_MODE_INFORM" | "POLICY_MODE_ENFORCE"
+#FreightSubject: "FREIGHT_SUBJECT_BINDLE" | "FREIGHT_SUBJECT_RAIL"
+
+#RailFailoverRecord: {
+	automatic?:           bool
+	maxConcurrent?:       int & >=0
+	allowImmediatePurge?: bool
+	requiredSignals?:     int & >=0
+}
+
+#RailEnrollmentRecord: {
+	separateApprovers?: bool
+	autoAcceptScopes?: [...#Id]
+}
+
+// The Rail's opaque `delivery` object as @hobo/cd parses it (D20, D24).
+#RailDeliveryRecord: {
+	railDigest: #Digest
+	campSets?: [...#Id]
+	posture?: [...#RailPostureBindingRecord]
+	failover?:       #RailFailoverRecord
+	enrollment?:     #RailEnrollmentRecord
+	maxFanoutCamps?: int & >=0
 }
 
 // A Rail `delivery.posture` entry (parsed into RailDeliveryRecord).
