@@ -165,10 +165,14 @@ export async function openCdRuntime(
 	const config = parsed.value;
 	// Declared topology is read before the journal opens: a malformed file
 	// refuses the command with nothing opened.
-	const declared = await loadTopologyFiles(options.topologyFiles ?? [], {
-		cwd: options.cwd,
-		stationId: config.stationId,
-	});
+	const files = options.topologyFiles ?? [];
+	const declared =
+		files.length === 0
+			? ({ ok: true, value: [] } as const)
+			: await loadTopologyFiles(files, {
+					cwd: options.cwd,
+					stationId: config.stationId,
+				});
 	if (!declared.ok)
 		return refusal(declared.code, declared.message, declared.remediation);
 	let declaredTopology: TopologyReader;

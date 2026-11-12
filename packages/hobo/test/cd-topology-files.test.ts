@@ -86,12 +86,15 @@ function deploy(
 }
 
 const FIXTURES = join(PACKAGE, "data-models", "fixtures", "cd_topology");
-const fixture = (name: string): unknown =>
-	JSON.parse(readFileSync(join(FIXTURES, "valid", name), "utf8"));
+// A valid fixture as the plain JSON object a module export would be; the
+// topology parser under test is what reads its members.
+const fixture = (name: string): object =>
+	// SAFETY: every file under fixtures/cd_topology/valid is a JSON object (the CUE gate vets it).
+	JSON.parse(readFileSync(join(FIXTURES, "valid", name), "utf8")) as object;
 // The relay's Yard as `yard()` builds it, extra members included (the parse
 // reads only what the topology needs).
 const RELAY = {
-	...(fixture("relay-yard.json") as object),
+	...fixture("relay-yard.json"),
 	require: [],
 	bindings: [{ profile: "api.http", productId: "vercel.function/v1" }],
 	properties: { project: "hobo-ci" },
