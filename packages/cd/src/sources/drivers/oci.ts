@@ -243,7 +243,7 @@ class Registry {
 		)
 			this.authorization = remembered.token;
 		const headers = this.authorization
-			? { ...(request.headers ?? {}), authorization: this.authorization }
+			? { ...request.headers, authorization: this.authorization }
 			: (request.headers ?? {});
 		const first = await fetchSource(
 			this.http,
@@ -277,7 +277,7 @@ class Registry {
 			{
 				...request,
 				headers: {
-					...(request.headers ?? {}),
+					...request.headers,
 					authorization: authorization.value,
 				},
 			},

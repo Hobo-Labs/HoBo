@@ -362,7 +362,7 @@ describe("Rail journal contract (sources.hobo-rail.pact.json)", () => {
 			for (const item of railPact.interactions) {
 				const { railDigest, status, ...rest } = item.contents;
 				if (
-					!/^sha256:/.test(railDigest) ||
+					!railDigest.startsWith("sha256:") ||
 					(status !== "approved" && status !== "active" && status !== "retired")
 				)
 					throw new Error("contract");
