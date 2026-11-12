@@ -152,12 +152,12 @@ the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
 {"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}
 ```
 
-The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: live MemAvailable on
-the box, minus memory reservations and a volatility margin, with `admit` and
-`freeSlots` per label. The **Route runners** job in HoBo CI Fabric reads that
-variable so a main run does not queue on `hobo-trunk` when the box cannot launch
-the job's memory class, and instead overflows to GitHub-hosted (or ARC when
-enrolled) before jobs park for minutes.
+The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: free launch slots on
+the box and on the rest of the mesh, and when the record was written. No
+workflow uses it. The **Route runners** job no longer tries to: judging raw
+capacity in a workflow repeats, outside the relay and its budget, the decision
+this table already is
+([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
@@ -190,9 +190,9 @@ would post for a new offer.
   relay records those jobs from their `workflow_job` events, a route to a paid
   label provider is bounded only by that provider's own spend limit. This must
   be closed before a workflow reads the table for a paid provider.
-- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet.** They read
-  `HOBO_CI_FLEET_CAPACITY` for headroom-aware overflow; indexing the route
-  table per job class is still outstanding. Jobs that run off the box still
+- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet**, nor
+  `HOBO_CI_FLEET_CAPACITY`. Indexing the route table per job class is still
+  outstanding. Jobs that run off the box still
   assume its toolchain image and mounts.
 - **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
   E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop).

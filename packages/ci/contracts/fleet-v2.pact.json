@@ -1,0 +1,25 @@
+{
+  "consumer": { "name": "@hobo/ci" },
+  "provider": { "name": "strict-fleet-store" },
+  "interactions": [
+    {
+      "description": "reserve capacity after demand intake",
+      "request": {
+        "method": "POST",
+        "path": "/fleet/v2/reserve",
+        "headers": { "Content-Type": "application/json" },
+        "body": {
+          "demandKey": { "githubJob": { "kind": "github-job" } },
+          "expectedCapacitySeq": 0,
+          "expectedPolicyRevision": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": { "runnerName": "hobo-slot-1", "state": "reserved" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

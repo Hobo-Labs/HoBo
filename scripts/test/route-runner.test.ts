@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
 	BURST_SECONDS,
@@ -77,15 +78,6 @@ const decide = (overrides: Partial<Parameters<typeof routeRunner>[0]> = {}) =>
 		undecidedAhead: 0,
 		...overrides,
 	});
-
-const trunkCapacity = {
-	freeSlots: 1,
-	requiredMb: 4096,
-	reserveMb: 2048,
-	volatilityMb: 1024,
-	availableMb: 2400,
-	admit: false,
-};
 
 describe("the load on a label", () => {
 	it("counts jobs asking for exactly that label and takes the oldest wait", () => {
@@ -294,15 +286,6 @@ describe("the routing decision", () => {
 
 	it("asks the fleet for the trunk label on trunk events", () => {
 		assert.equal(decide({ fleetLabel: "hobo-trunk" }).runner, "hobo-trunk");
-	});
-
-	it("overflows to GitHub-hosted when live capacity refuses trunk jobs", () => {
-		const routed = decide({
-			fleetLabel: "hobo-trunk",
-			fleetCapacity: trunkCapacity,
-		});
-		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /cannot admit/);
 	});
 
 	it("honours a pinned tier without looking at the queue", () => {
@@ -1132,5 +1115,57 @@ describe("the script as a whole", () => {
 			GITHUB_API_URL: "http://127.0.0.1:9",
 		});
 		assert.match(unattested.reason, /could not be read/);
+	});
+});
+
+describe("the workflows that route", () => {
+	const root = resolve(import.meta.dirname, "..", "..");
+	const read = (path: string) => readFileSync(join(root, path), "utf8");
+	/** The files a script loads, itself included, as repository paths. */
+	const loadedBy = (path: string, seen = new Set<string>()): Set<string> => {
+		if (seen.has(path)) return seen;
+		seen.add(path);
+		for (const [, specifier = ""] of read(path).matchAll(
+			/^(?:import|export)\s[^;]*?from\s+"([^"]+)"/gms,
+		)) {
+			if (specifier.startsWith("node:")) continue;
+			assert.ok(
+				specifier.startsWith("."),
+				`${path} imports ${specifier}, which the route job never installs`,
+			);
+			loadedBy(
+				relative(root, resolve(root, dirname(path), specifier)).replaceAll(
+					"\\",
+					"/",
+				),
+				seen,
+			);
+		}
+		return seen;
+	};
+	const routed = readdirSync(join(root, ".github/workflows"))
+		.map((name) => `.github/workflows/${name}`)
+		.filter((path) =>
+			read(path).includes("uses: ./.github/actions/route-runner"),
+		);
+
+	// A file the script loads and a workflow does not check out stops the
+	// script before it decides, and the step then falls back to GitHub-hosted.
+	it("check out every file the routing script loads", () => {
+		const needed = loadedBy("scripts/ci/route-runner.mts");
+		assert.deepEqual([...needed].sort(), [
+			"packages/ci/src/fleet-overflow.ts",
+			"scripts/ci/route-runner.mts",
+		]);
+		assert.ok(routed.length >= 6, `found ${routed.length} routed workflows`);
+		for (const path of routed) {
+			const lines = new Set(
+				read(path)
+					.split("\n")
+					.map((line) => line.trim()),
+			);
+			for (const file of needed)
+				assert.ok(lines.has(file), `${path} does not sparse-checkout ${file}`);
+		}
 	});
 });
