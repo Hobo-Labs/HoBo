@@ -29,7 +29,6 @@ import {
 	HealthQueryRecordSchema,
 	HealthSourceKind,
 	Sensitivity,
-	type VerificationSpecRecord,
 	VerificationSpecRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import type {
@@ -248,7 +247,7 @@ export function query(name: string, fields: MessageInitShape<typeof HealthQueryR
 }
 
 /** A ten-minute spec with an error-rate threshold. */
-export function thresholdSpec(overrides: Partial<VerificationSpecRecord> = {}): VerificationSpecRecord {
+export function thresholdSpec(overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {}) {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(10 * MINUTE),
 		requiredObservations: 3,
@@ -260,7 +259,7 @@ export function thresholdSpec(overrides: Partial<VerificationSpecRecord> = {}): 
 }
 
 /** A ten-minute spec with a latency canary-vs-baseline comparison. */
-export function comparisonSpec(overrides: Partial<VerificationSpecRecord> = {}): VerificationSpecRecord {
+export function comparisonSpec(overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {}) {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(10 * MINUTE),
 		requiredObservations: 3,
