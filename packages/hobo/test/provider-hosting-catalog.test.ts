@@ -23,6 +23,7 @@ import {
 	DIGITALOCEAN_SPACES_PRODUCT_ID,
 } from "@hobo/provider-digitalocean";
 import { GCP_CLOUD_RUN_PRODUCT_ID } from "@hobo/provider-gcp";
+import { GITHUB_PAGES_SITE_PRODUCT_ID } from "@hobo/provider-github";
 import { HETZNER_CLOUD_SERVER_PRODUCT_ID } from "@hobo/provider-hetzner";
 import { HOSTINGER_VPS_PRODUCT_ID } from "@hobo/provider-hostinger";
 import { KUBERNETES_DEPLOYMENT_PRODUCT_ID } from "@hobo/provider-kubernetes";
@@ -37,6 +38,8 @@ import {
 	createInMemoryIdempotencyStore as neonStore,
 } from "@hobo/provider-neon";
 import { NETLIFY_STATIC_DEPLOY_PRODUCT_ID } from "@hobo/provider-netlify";
+import { NPM_PACKAGE_VERSION_PRODUCT_ID } from "@hobo/provider-npm";
+import { OCI_REGISTRY_IMAGE_PRODUCT_ID } from "@hobo/provider-oci-registry";
 import {
 	createNodeProcessRunner,
 	createPrismaClaimableDatabaseDriver,
@@ -926,6 +929,106 @@ describe("plan 0024 WP14: registration of the remaining hosting providers", () =
 				parameters: {},
 			}),
 		).toThrow("content digest");
+	});
+
+	it("registers the CD realizers (npm, OCI registry, GitHub Pages) under both aliases, pinning the approved content digest", async () => {
+		const fx = fixture();
+		const artifacts = { get: refuseIO };
+		const catalog = createProductionHostingProviderCatalog([
+			{
+				providerId: "npm",
+				lease: await fx.lease(
+					"npm",
+					`npm://registries/${encodeURIComponent("https://registry.npmjs.org")}`,
+					"npm-token",
+				),
+				options: { registry: { kind: "npmjs" }, auth: "token", artifacts },
+				observeOperatingLiability: refuseIO,
+			},
+			{
+				providerId: "oci-registry",
+				lease: await fx.lease(
+					"oci-registry",
+					"oci-registry://registries/ghcr.io",
+					{
+						kind: "bearer" as const,
+						token: "oci-token",
+					},
+				),
+				options: { registry: { host: "ghcr.io" } },
+				observeOperatingLiability: refuseIO,
+			},
+			{
+				providerId: "github",
+				lease: await fx.lease(
+					"github",
+					`github://apis/${encodeURIComponent("https://api.github.com")}/accounts/${account}`,
+					"gh-token",
+				),
+				options: { api: { kind: "github.com" }, artifacts },
+				observeOperatingLiability: refuseIO,
+			},
+		]);
+		for (const [id, product, field] of [
+			["npm", NPM_PACKAGE_VERSION_PRODUCT_ID, "artifactDigest"],
+			["oci-registry", OCI_REGISTRY_IMAGE_PRODUCT_ID, "digest"],
+			["github", GITHUB_PAGES_SITE_PRODUCT_ID, "artifactDigest"],
+		] as const) {
+			const binding = catalog.get(id);
+			expect(binding).toBe(catalog.get(`@hobo/provider-${id}`));
+			expect(binding?.registry.get(product)).toBeDefined();
+			const input = {
+				productId: product,
+				source: false,
+				logicalId: "pkg",
+				artifactId: digest,
+				operationId: "op",
+				ownershipRef: "tenant/deploy/pkg",
+				parameters: {},
+			};
+			expect(
+				binding?.prepareDesired?.({ ...input, contentDigest: digest }),
+			).toEqual({ [field]: digest });
+			expect(() => binding?.prepareDesired?.(input)).toThrow("content digest");
+		}
+	});
+
+	it("refuses a CD realizer whose credential scope names another registry, or an unenrolled OCI source credential", async () => {
+		const fx = fixture();
+		const artifacts = { get: refuseIO };
+		const elsewhere = await fx.lease("npm", "npm://registries/elsewhere", "t");
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "npm",
+					lease: elsewhere,
+					options: { registry: { kind: "npmjs" }, auth: "token", artifacts },
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow("native scope");
+		const oci = await fx.lease(
+			"oci-registry",
+			"oci-registry://registries/ghcr.io",
+			{
+				kind: "anonymous" as const,
+			},
+		);
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "oci-registry",
+					lease: oci,
+					options: {
+						registry: { host: "ghcr.io" },
+						sourceRegistries: [
+							{ host: "docker.io", credentialRef: "vault://other/docker" },
+						],
+					},
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow("source pull credential");
 	});
 
 	it("binds an external provider's registry under the pinned credential (browser-wasm)", async () => {
