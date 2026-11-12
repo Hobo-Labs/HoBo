@@ -11,7 +11,8 @@
 //               exists (at-least-once), so a restarted reconciler re-observes
 //               without waiting for a new Set.
 //   resolved    the verified resolved-set blob; a missing or corrupt blob is a
-//               typed refusal, never a guess.
+//               typed refusal, never a guess (classified by the thrown error's
+//               typed `code`, never its message).
 //   report      lease re-check, then a fenced append of the status events to
 //               `cd-camp-status-<id>` (never the spec stream).
 //   checkpoint  fenced, monotonic subscription checkpoint.
@@ -72,6 +73,21 @@ function principalFor(reconcilerId: string): PrincipalRef {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only EventStoreError codes are read.
 function codeOf(error: unknown): string {
 	return error instanceof EventStoreError ? error.code : "";
+}
+
+// Typed codes (DesiredStateError, ArtifactStoreError, ReconcileError) that mean
+// the bytes exist but do not verify. Any other failure is a missing blob.
+const MISMATCH_CODES: ReadonlySet<string> = new Set([
+	"resolved-set-digest-mismatch",
+	"resolved-set-mismatch",
+	"blob-digest-mismatch",
+	"artifact-corrupt",
+	"artifact-digest-mismatch",
+]);
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only an Error's `code` property is read and matched against MISMATCH_CODES.
+function typedCodeOf(error: unknown): string {
+	return error instanceof Error && "code" in error ? String(error.code) : "";
 }
 
 function asPosition(value: bigint): EventPosition {
@@ -261,6 +277,7 @@ export function createInProcessTransport(
 		renew,
 		async release(lease) {
 			ttls.delete(leaseKey(lease));
+			delivered.delete(leaseKey(lease));
 			if (!store.releaseSubscription) return;
 			try {
 				await store.releaseSubscription({
@@ -292,7 +309,7 @@ export function createInProcessTransport(
 			} catch (error) {
 				const message = messageOf(error);
 				return refuse(
-					/digest-mismatch|corrupt/u.test(message)
+					MISMATCH_CODES.has(typedCodeOf(error))
 						? "resolved-set-mismatch"
 						: "resolved-set-missing",
 					`resolved set ${set.resolvedSetDigest} for Set ${set.setId}: ${message}`,

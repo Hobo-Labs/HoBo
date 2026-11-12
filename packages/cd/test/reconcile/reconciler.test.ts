@@ -137,8 +137,17 @@ describe("createCampReconciler", () => {
 		const b = h.reconciler("r-b", "host-b", realizerB);
 		const controller = new AbortController();
 		// A holds the lease across passes (run mode) and writes.
+		// Deterministic signal: A's first status append proves it holds the lease.
+		let firstAppend!: () => void;
+		const aHoldsLease = new Promise<void>((r) => {
+			firstAppend = r;
+		});
+		h.store.beforeAppend = (streamId) => {
+			if (streamId === "cd-camp-status-camp-eu-1") firstAppend();
+		};
 		const run = a.run(controller.signal);
-		await new Promise((r) => setTimeout(r, 30));
+		await aHoldsLease;
+		h.store.beforeAppend = undefined;
 		const refused = await b.reconcileOnce(CAMP, h.ctx);
 		expect(refused.status).toBe(ReconcileStatus.BLOCKED);
 		expect(refused.reasons.map((r) => r.code)).toEqual(["lease-held"]);
@@ -272,6 +281,54 @@ describe("createCampReconciler", () => {
 			h.sink.points.find((p) => p.name === RECONCILE_METRICS.passes)
 				?.attributes["hobo.cd.camp"],
 		).toBe(CAMP);
+	});
+});
+
+describe("transport.resolved", () => {
+	async function leaseFor(h: ReturnType<typeof harness>) {
+		const out = await h.transport.claim({
+			reconcilerId: asReconciler("r-a"),
+			campId: CAMP,
+			holderId: "host-a",
+			ttlMs: 30_000,
+		});
+		if (!out.ok) throw new Error(out.reasons[0]?.code);
+		return out.value;
+	}
+	const codedError = (code: string, message: string) =>
+		Object.assign(new Error(message), { code });
+
+	it.each([
+		["resolved-set-digest-mismatch"],
+		["blob-digest-mismatch"],
+		["artifact-corrupt"],
+		["artifact-digest-mismatch"],
+	])("a typed %s error is resolved-set-mismatch, whatever the message says", async (code) => {
+		const h = harness();
+		const resolved = resolvedFor(CAMP, V1);
+		const set = setFor(CAMP, resolved, 1);
+		await h.desired.publish(set, resolved);
+		h.desired.resolved = async () => {
+			throw codedError(code, "bytes unavailable");
+		};
+		const out = await h.transport.resolved(await leaseFor(h), set);
+		expect(out.ok ? [] : out.reasons.map((r) => r.code)).toEqual([
+			"resolved-set-mismatch",
+		]);
+	});
+
+	it("an untyped error is resolved-set-missing even when its message mentions corruption", async () => {
+		const h = harness();
+		const resolved = resolvedFor(CAMP, V1);
+		const set = setFor(CAMP, resolved, 1);
+		await h.desired.publish(set, resolved);
+		h.desired.resolved = async () => {
+			throw new Error("backend corrupt digest-mismatch wording changed");
+		};
+		const out = await h.transport.resolved(await leaseFor(h), set);
+		expect(out.ok ? [] : out.reasons.map((r) => r.code)).toEqual([
+			"resolved-set-missing",
+		]);
 	});
 });
 

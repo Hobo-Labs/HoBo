@@ -79,6 +79,9 @@ parsed once into derived types and never re-checked downstream:
    reconciler re-observes without waiting for a Set.
 3. Fetch the resolved set. A missing or mismatched blob blocks with
    `resolved-set-missing` / `resolved-set-mismatch`; nothing is checkpointed.
+   The split follows the thrown error's typed `code` (`resolved-set-digest-mismatch`,
+   `blob-digest-mismatch`, `artifact-corrupt`, `artifact-digest-mismatch` mean mismatch;
+   anything else is missing), never its message text.
 4. **Observe first.** A failed observation blocks (I5). An observation that
    already proves the Set reports `Converged` and checkpoints (this is how a
    crash between execute and observe resumes without repeating a mutation).
