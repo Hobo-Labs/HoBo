@@ -47,6 +47,8 @@ describe("fan-out: 400 Camps PROGRESSIVE_PER_GROUP with 3 unreachable (§10 WP23
 			offline.map((id) => campKey(started.value.fanoutId, id)).sort(),
 		);
 		expect((await h.controller.qualified({ pipeline: "web", node: "prod" })).qualifiedCampIds).toHaveLength(400);
+		expect(h.telemetry.count(FANOUT_METRIC.stepError)).toBe(0);
+		expect(h.telemetry.count(FANOUT_METRIC.started)).toBe(1);
 	});
 
 	it("defers Camps that are NO_PLACE-tainted or in a closed window at their turn", async () => {

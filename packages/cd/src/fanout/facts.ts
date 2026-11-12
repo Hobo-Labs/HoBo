@@ -292,6 +292,14 @@ export type FailoverFact = Readonly<{
 	approved: boolean;
 	approvedBy: string;
 	decisionId: string;
+	/** Station cutover plan id once traffic was shifted. */
+	routingPlanId: string;
+	/** True once the source was purged (IMMEDIATE purges early). */
+	purged: boolean;
+	/** Concurrency budget for rebalance moves (the node's fan-out limit); 0 for failovers. */
+	limit: number;
+	/** When the saga was admitted (REPLACING); grace runs from here. */
+	startedAtMs: number;
 	atMs: number;
 }>;
 
@@ -303,6 +311,10 @@ export function failoverBody(fact: FailoverFact): JsonObject {
 		approved: fact.approved,
 		approvedBy: fact.approvedBy,
 		decisionId: fact.decisionId,
+		routingPlanId: fact.routingPlanId,
+		purged: fact.purged,
+		limit: fact.limit,
+		startedAtMs: fact.startedAtMs,
 		atMs: fact.atMs,
 	};
 }
@@ -320,6 +332,10 @@ export function parseFailoverFact(
 		approved: value.approved === true,
 		approvedBy: jsonString(value.approvedBy),
 		decisionId: jsonString(value.decisionId),
+		routingPlanId: jsonString(value.routingPlanId),
+		purged: value.purged === true,
+		limit: jsonNumber(value.limit),
+		startedAtMs: jsonNumber(value.startedAtMs),
 		atMs: jsonNumber(value.atMs),
 	};
 }
