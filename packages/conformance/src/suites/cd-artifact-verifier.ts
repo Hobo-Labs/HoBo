@@ -11,6 +11,7 @@ import {
 } from "./cd-kit.js";
 import type { ArtifactVerifierLike } from "./cd-shapes.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const ARTIFACT_VERIFIER_SUITE = "hobo.cd.artifact-verifier/v1";
 
 // public-contract: assertion names of the ArtifactVerifier suite.

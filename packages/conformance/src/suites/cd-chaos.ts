@@ -9,6 +9,7 @@ import {
 	runCdAssertions,
 } from "./cd-kit.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const CD_CHAOS_SUITE = "hobo.cd.chaos/v1";
 
 // public-contract: the CD chaos faults (plan 0024 WP20).

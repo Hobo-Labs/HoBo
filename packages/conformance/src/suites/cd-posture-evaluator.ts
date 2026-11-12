@@ -13,6 +13,7 @@ import {
 	runCdAssertions,
 } from "./cd-kit.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const POSTURE_EVALUATOR_SUITE = "hobo.cd.posture-evaluator/v1";
 
 // public-contract: assertion names of the PostureEvaluator suite.

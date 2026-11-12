@@ -19,10 +19,11 @@ import {
 	type KubeObject,
 } from "../kube/objects.js";
 
-export const KARMADA_POLICY_API = "/apis/policy.karmada.io/v1alpha1" as const;
-export const KARMADA_WORK_API = "/apis/work.karmada.io/v1alpha2" as const;
+const KARMADA_POLICY_API = "/apis/policy.karmada.io/v1alpha1" as const;
+const KARMADA_WORK_API = "/apis/work.karmada.io/v1alpha2" as const;
 
 /** Cluster-wide list path for PropagationPolicies (filtered by label). */
+// public-contract: Karmada policy.karmada.io/v1alpha1 REST path the realizer lists.
 export const POLICIES_PATH =
 	`${KARMADA_POLICY_API}/propagationpolicies` as const;
 
@@ -65,6 +66,7 @@ export type Selected = Readonly<{
 	name: string;
 }>;
 
+// public-contract: annotation key recording selected templates on the hub policy object.
 export const RESOURCE_INDEX = "hobo.dev/resource-index";
 
 export function selectedOf(object: KubeObject): Selected {

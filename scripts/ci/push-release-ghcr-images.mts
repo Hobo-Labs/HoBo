@@ -338,14 +338,15 @@ async function main(): Promise<void> {
 	// GHCR itself reports) become Freight now, and attestation, the signed tag
 	// and the GitHub Release run only when hobo-release/candidate does not
 	// block it.
+	const labels =
+		imageId === undefined
+			? { "hobo.release/ref": releaseRef }
+			: { "hobo.release/ref": releaseRef, "hobo.release/image": imageId };
 	await qualifyReleaseCandidate({
 		home: freightHome,
 		family: "oci",
 		registry: ociReleaseArtifacts(digests),
-		labels: {
-			"hobo.release/ref": releaseRef,
-			...(imageId !== undefined ? { "hobo.release/image": imageId } : {}),
-		},
+		labels,
 	});
 }
 

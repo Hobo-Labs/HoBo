@@ -19,7 +19,7 @@ import { messageOf, serviceReason } from "./errors.js";
 import { encode, stringify, type WireValue } from "./wire.js";
 
 /** Every @hobo/cd stream id starts with this prefix (CD_STREAMS). */
-export const CD_STREAM_PREFIX = "cd-";
+const CD_STREAM_PREFIX = "cd-";
 
 export type StreamOptions = Readonly<{
 	store: Pick<DurableEventStore, "readAll">;

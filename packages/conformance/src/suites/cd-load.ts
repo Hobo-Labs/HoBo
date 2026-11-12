@@ -9,6 +9,7 @@ import {
 	runCdAssertions,
 } from "./cd-kit.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const CD_LOAD_SUITE = "hobo.cd.fanout-load/v1";
 
 // public-contract: the load lane's default shape (plan 0024 WP20 Load).

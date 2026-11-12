@@ -17,6 +17,7 @@ import type {
 	SubscriptionDriverLike,
 } from "./cd-shapes.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const SUBSCRIPTION_DRIVER_SUITE = "hobo.cd.subscription-driver/v1";
 
 // public-contract: assertion names of the SubscriptionDriver suite.

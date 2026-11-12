@@ -31,10 +31,14 @@ import {
 } from "../../guest/index.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "../../json.js";
 
+// public-contract: component id carried in the signed component manifest.
 export const HTTP_ARTIFACT_UPLOAD_ID = "http-artifact-upload" as const;
+// public-contract: component version carried in the signed component manifest.
 export const HTTP_ARTIFACT_UPLOAD_VERSION = "0.1.0" as const;
+// public-contract: product id stamped on every resource this component resolves.
 export const HTTP_ARTIFACT_UPLOAD_PRODUCT = "http/artifact-upload" as const;
 /** Source identity bound into the component bytes by the build recipe. */
+// public-contract: source identity the build recipe binds into component bytes.
 export const HTTP_ARTIFACT_UPLOAD_SOURCE =
 	"hobo:resolver-components/components/http-artifact-upload@0.1.0" as const;
 

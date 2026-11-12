@@ -33,6 +33,7 @@ import {
 
 // ── Toolset matrix ───────────────────────────────────────────────────────────
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const TOOLSET_MATRIX_SUITE = "hobo.cd.toolset-matrix/v1";
 
 // public-contract: the seven ingress paths of the toolset matrix (D3).
@@ -136,6 +137,7 @@ export async function runToolsetMatrix(
 
 // ── Platform matrix ──────────────────────────────────────────────────────────
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const PLATFORM_MATRIX_SUITE = "hobo.cd.platform-matrix/v1";
 
 // public-contract: traffic rungs in lowering order (D7), plus no traffic capability.
@@ -258,6 +260,7 @@ export async function runPlatformMatrix(
 
 // ── Air-gapped Yard (§10 WP20) ───────────────────────────────────────────────
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const AIRGAP_SUITE = "hobo.cd.airgap/v1";
 
 export const AIRGAP_ASSERTIONS = Object.freeze([
@@ -381,6 +384,7 @@ export async function runAirgapConformance(
 
 // ── Journal replay (§10 WP20) ────────────────────────────────────────────────
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const JOURNAL_REPLAY_SUITE = "hobo.cd.journal-replay/v1";
 
 export const JOURNAL_REPLAY_ASSERTIONS = Object.freeze([

@@ -33,8 +33,10 @@ export const AUTO_TAINTS = Object.freeze({
 });
 
 /** Prefix reserved for automatic taints; operators may not add these keys. */
+// public-contract: reserved taint-key namespace operators may not write (persisted taint keys).
 export const RESERVED_TAINT_PREFIX = "hobo.cd/";
 
+// public-contract: actor recorded as `addedBy` on automatic taints in journaled events.
 export const SYSTEM_ACTOR = "system:cd-inventory";
 
 const AUTO_NO_PLACE = new Set<string>([
