@@ -72,6 +72,11 @@ export {
 	rollbackIdFor,
 } from "./ids.js";
 export {
+	campsOfDecision,
+	type PlacedCamps,
+	placedCampsFrom,
+} from "./placed.js";
+export {
 	PROMOTION_METRIC,
 	PROMOTION_REASON,
 	type PromotionReasonCode,

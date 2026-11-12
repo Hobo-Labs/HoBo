@@ -21,6 +21,7 @@ journal, so a crash anywhere resumes by re-reading facts.
 | 1 | authorize (`promote`, `rail.promote`, `preview.create`) | `CdAuthorizer` | refusal, or `proposal=true` for proposal-only principals |
 | 2 | refuse yanked/retired Freight (I13; checked again every step) | `FreightLedger.isUsable` | refusal / `env.PromoteRejected` |
 | 3 | lineage (I16) unless an unexpired `freight.Approved` covers the target | `PipelineController.available` | `lineage-unsatisfied` / `shadow-required` |
+| 3a | placed nodes (D21): the governed Camps are the recorded `placement.Decided` Camps (the fan-out's decision, else the node's latest), read through the optional `placed` dep (`placedCampsFrom`); targets outside them are refused, and an unresolvable decision fails closed, also for un-piped promotions | `PlacedCamps` | `promotion-target-outside-node` / `promotion-placement-unresolved` / `lineage-unsatisfied` |
 | — | fan-out aggregate (D20) when `fanoutId` is set, before any Camp starts | `FanoutAggregateGate` | `fanout-budget-exceeded` |
 | 4 | per-Camp queue: newest queued wins; a Camp past apply holds the queue | journal | `env.PromoteSuperseded` (older), open Delta rejected |
 | 5–6 | resolve + open the Delta (`changes`, `infrastructure_diff`) | `SetResolver`, `DeltaLedger.open` | step `resolved` (Delta id) |
@@ -128,7 +129,7 @@ never re-checks:
 |---|---|---|
 | `planning.ts` | `SetResolver` | `@hobo/cloud` `plan(declaration, config, registry)` — the `pureplan` path. Verifies the declaration digest equals the Freight's `declaration_hash` (fail closed). `down` = empty plan; `depart` keeps data ports (ORPHAN_DATA). `diffResolvedSets` is the rule `DeltaLedger.apply` checks. |
 | `gatekeeper.ts` | `DeployGate`, `FanoutAggregateGate` | `evaluateGatekeeper` with the Camp's enforced Rail pack (binding, else Station Rail, else permissive default); can-deploy fails closed on unknown running versions; unverified provenance and stale trust evidence deny; residency over declared Yard regions; ownership conflicts (I22); windows passed through; candidate Rail evaluated in shadow and recorded through `ShadowRecorder` (D24). |
-| `approval.ts` | `ApprovalPort` | A2H handoff (NotificationPort) decided by an authorized human; CloudEvents webhook approver with an HMAC-SHA256 signed callback. Subjects `promotion:<id>/<scope>`. |
+| `approval.ts` | `ApprovalPort` | A2H handoff (NotificationPort) decided by an authorized human; CloudEvents webhook approver with an HMAC-SHA256 signed callback; the decision records the authenticated caller principal, and the body's `approver` only as an `unverified-approver=` claim. Subjects `promotion:<id>/<scope>`. |
 | `trails.ts` | `TrailsMigrations` | Bound to `@hobo/trails` `executeDataMigration` by composition; label `hobo.cd/data-migration`. |
 | `hooks.ts` | `HookRunner`, `NotificationPort` | RUNBOOK → `RunbookExecutor` (`createRunbookExecutor` in `@hobo/hobo`), SUITE → `VerifyPort`, NOTIFY → CloudEvents structured mode. NOTIFY is best-effort. |
 
@@ -167,6 +168,7 @@ A failing sink never fails a command.
 
 | Symptom (reason code) | Meaning | Action |
 |---|---|---|
+| `promotion-placement-unresolved` | The node uses a `placement` and no recorded decision resolves its Camps (or no placement reader is composed). | Decide the placement for the node first; compose `placed: placedCampsFrom({ fanout, placement })`. |
 | `lineage-unsatisfied` | The Freight is not available to the node (not qualified upstream or not soaked). | Promote it through the upstream node, wait for `required_soak_ms`, or record an expiring `freight.Approved` hotfix for the Camp (`FreightLedger.approve`, governed `freight.approve`). |
 | `shadow-required` | A Rail is promoted to ENFORCE without a qualified INFORM node upstream. | Bind it in INFORM first and let posture verification qualify it. |
 | `promotion-superseded` | Newer Freight was queued for the Camp before this one applied. | Nothing; the newest proceeds. |

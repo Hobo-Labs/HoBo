@@ -15,6 +15,7 @@ import {
 	WINDOW_CLOSED,
 } from "../../src/events.js";
 import {
+	type PlacedCamps,
 	PROMOTION_METRIC,
 	PROMOTION_REASON,
 	STEP,
@@ -404,11 +405,12 @@ describe("promotion saga (WP6)", () => {
 			overrides: [],
 		};
 		h.clock.advance(HOUR);
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("expected the promotion to wait");
 		await h.service.tick(h.ctx());
-		if (result.ok)
-			expect((await h.service.get(pid(result.value.promotionId)))?.state).toBe(
-				PromotionState.PROMOTED,
-			);
+		expect((await h.service.get(pid(result.value.promotionId)))?.state).toBe(
+			PromotionState.PROMOTED,
+		);
 		expect(WINDOW_CLOSED).toBe("window-closed");
 	});
 
@@ -429,12 +431,119 @@ describe("promotion saga (WP6)", () => {
 			{ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "y2" },
 			h.ctx(),
 		);
+		expect(running.ok).toBe(true);
+		if (!running.ok) throw new Error("expected the promotion to start");
 		h.freight.unusable.add("f1");
 		await h.service.tick(h.ctx());
-		if (running.ok)
-			expect((await h.service.get(pid(running.value.promotionId)))?.state).toBe(
-				PromotionState.FAILED,
+		expect((await h.service.get(pid(running.value.promotionId)))?.state).toBe(
+			PromotionState.FAILED,
+		);
+	});
+
+	describe("lineage for placement-based nodes (D21, I16)", () => {
+		const placedPipeline = (h: ReturnType<typeof harness>) =>
+			h.pipelines.define("fleet", [
+				pipelineNode("staging", { campIds: ["staging-1"] }),
+				pipelineNode("prod", { placement: "eu-prod", fromNodes: ["staging"] }),
+			]);
+		const decided =
+			(camps: readonly string[]): PlacedCamps =>
+			async ({ pipeline, node }) =>
+				pipeline === "fleet" && node === "prod" ? camps : undefined;
+
+		it("refuses Freight not available at a placed prod node when promoted with no pipeline", async () => {
+			const h = harness({ placed: decided(["prod-eu-1", "prod-eu-2"]) });
+			placedPipeline(h);
+			h.freight.add("f1");
+			const bypass = await h.service.promote(
+				{
+					freightId: fid("f1"),
+					targets: [camp("prod-eu-1")],
+					idempotencyKey: "p",
+				},
+				h.ctx(),
 			);
+			expect(bypass.ok).toBe(false);
+			if (bypass.ok) throw new Error("expected lineage refusal");
+			expect(bypass.reasons[0]?.code).toBe(LINEAGE_UNSATISFIED);
+			expect(bypass.reasons[0]?.message).toMatch(/prod-eu-1 \(fleet\/prod\)/);
+			// A Camp outside every node stays ungoverned.
+			const free = await h.service.promote(
+				{
+					freightId: fid("f1"),
+					targets: [camp("dev-1")],
+					idempotencyKey: "p2",
+				},
+				h.ctx(),
+			);
+			expect(free.ok).toBe(true);
+		});
+
+		it("fails closed when the placed node's decision cannot be resolved", async () => {
+			for (const h of [harness(), harness({ placed: async () => undefined })]) {
+				placedPipeline(h);
+				h.freight.add("f1");
+				const bypass = await h.service.promote(
+					{
+						freightId: fid("f1"),
+						targets: [camp("dev-1")],
+						idempotencyKey: "u",
+					},
+					h.ctx(),
+				);
+				expect(bypass.ok).toBe(false);
+				if (bypass.ok) throw new Error("expected lineage refusal");
+				expect(bypass.reasons[0]?.code).toBe(LINEAGE_UNSATISFIED);
+				expect(bypass.reasons[0]?.message).toMatch(/placement unresolved/);
+				h.pipelines.makeAvailable("fleet", "prod", "f1");
+				const named = await h.service.promote(
+					{
+						freightId: fid("f1"),
+						targets: [camp("prod-eu-1")],
+						idempotencyKey: "u2",
+						pipeline: "fleet",
+						node: "prod",
+					},
+					h.ctx(),
+				);
+				expect(named.ok).toBe(false);
+				if (named.ok) throw new Error("expected placement refusal");
+				expect(named.reasons[0]?.code).toBe(
+					PROMOTION_REASON.placementUnresolved,
+				);
+			}
+		});
+
+		it("refuses a target outside the placement when the placed node is named", async () => {
+			const h = harness({ placed: decided(["prod-eu-1"]) });
+			placedPipeline(h);
+			h.freight.add("f1");
+			h.pipelines.makeAvailable("fleet", "prod", "f1");
+			const outside = await h.service.promote(
+				{
+					freightId: fid("f1"),
+					targets: [camp("prod-us-1")],
+					idempotencyKey: "o",
+					pipeline: "fleet",
+					node: "prod",
+				},
+				h.ctx(),
+			);
+			expect(outside.ok).toBe(false);
+			if (outside.ok) throw new Error("expected target-outside-node refusal");
+			expect(outside.reasons[0]?.code).toBe(PROMOTION_REASON.targetOutsideNode);
+			const inside = await h.service.promote(
+				{
+					freightId: fid("f1"),
+					targets: [camp("prod-eu-1")],
+					idempotencyKey: "i",
+					pipeline: "fleet",
+					node: "prod",
+				},
+				h.ctx(),
+			);
+			expect(inside.ok).toBe(true);
+		});
 	});
 
 	it("hooks: BEFORE_APPLY runbook failure rejects before apply and ON_FAILURE runs", async () => {

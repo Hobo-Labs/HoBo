@@ -63,6 +63,7 @@ import type {
 	DeltaId,
 	DeltaIntent,
 	DeployGate,
+	FanoutId,
 	FreightId,
 	GateVerdict,
 	Outcome,
@@ -95,6 +96,7 @@ import {
 	sha256Hex,
 	toJsonValue,
 } from "./journal.js";
+import type { PlacedCamps } from "./placed.js";
 import { PROMOTION_METRIC, PROMOTION_REASON, reason } from "./reasons.js";
 import {
 	type CampProgress,
@@ -121,6 +123,12 @@ export type PromotionServiceDeps = Parameters<
 	readonly aggregate?: FanoutAggregateGate;
 	/** Defaults to the hook runner over `runbooks`, `suites` and `notify`. */
 	readonly hooks?: HookRunner;
+	/**
+	 * Governed Camps of placement-based nodes (D21), from their recorded
+	 * decision (see `placedCampsFrom`). Without it, lineage fails closed for
+	 * every placed node.
+	 */
+	readonly placed?: PlacedCamps;
 };
 
 const ORIGIN = {
@@ -448,6 +456,31 @@ export function createPromotionService(
 	}
 
 	// ── Lineage (I16) ──────────────────────────────────────────────────────
+	/** Camps a node governs: its `camp_ids`, or its recorded placement decision (D21). */
+	async function governedBy(
+		pipeline: string,
+		node: PipelineNodeRecord,
+		fanoutId?: FanoutId,
+	): Promise<readonly string[] | undefined> {
+		if (node.placement === "") return node.campIds;
+		if (!d.placed) return undefined;
+		const input: Mutable<Parameters<PlacedCamps>[0]> = {
+			pipeline,
+			node: node.name,
+		};
+		if (fanoutId !== undefined) input.fanoutId = fanoutId;
+		return d.placed(input);
+	}
+
+	function placementUnresolved(pipeline: string, node: PipelineNodeRecord) {
+		return reason(
+			PROMOTION_REASON.placementUnresolved,
+			`node ${pipeline}/${node.name} uses placement ${node.placement} and no recorded decision resolves its Camps`,
+			"Decide the placement for the node (or compose the placement reader) before promoting through it.",
+			`${pipeline}/${node.name}`,
+		);
+	}
+
 	async function lineage(
 		request: PromoteRequest,
 		freight: FreightRecord,
@@ -480,31 +513,38 @@ export function createPromotionService(
 						),
 					],
 				};
-			const placed = node.placement !== "";
-			if (!placed) {
-				const allowed = new Set(node.campIds);
-				const outside = request.targets.filter(
-					(t) =>
-						!allowed.has(t) &&
-						!(
-							intent === "preview" &&
-							request.sourceCampId !== undefined &&
-							allowed.has(request.sourceCampId)
+			const governedCamps = await governedBy(
+				request.pipeline,
+				node,
+				request.fanoutId,
+			);
+			if (governedCamps === undefined)
+				return {
+					ok: false,
+					reasons: [placementUnresolved(request.pipeline, node)],
+				};
+			const allowed = new Set(governedCamps);
+			const outside = request.targets.filter(
+				(t) =>
+					!allowed.has(t) &&
+					!(
+						intent === "preview" &&
+						request.sourceCampId !== undefined &&
+						allowed.has(request.sourceCampId)
+					),
+			);
+			if (outside.length > 0)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.targetOutsideNode,
+							`Camps ${outside.join(", ")} are not in node ${node.name}`,
+							`Promote to the Camps node ${node.name} lists, or add them to the pipeline.`,
+							outside.join(","),
 						),
-				);
-				if (outside.length > 0)
-					return {
-						ok: false,
-						reasons: [
-							reason(
-								PROMOTION_REASON.targetOutsideNode,
-								`Camps ${outside.join(", ")} are not in node ${node.name}`,
-								`Promote to the Camps node ${node.name} lists, or add them to the pipeline.`,
-								outside.join(","),
-							),
-						],
-					};
-			}
+					],
+				};
 			const available = await d.pipelines.available({
 				pipeline: request.pipeline,
 				node: node.name,
@@ -535,12 +575,22 @@ export function createPromotionService(
 			};
 		}
 		// No pipeline named: allowed only for Camps that no pipeline node governs.
+		// A placed node whose decision cannot be resolved may govern any target.
 		const governed: string[] = [];
 		for (const pipeline of await d.pipelines.list()) {
-			for (const node of pipeline.nodes)
+			for (const node of pipeline.nodes) {
+				const camps = await governedBy(pipeline.name, node);
 				for (const target of request.targets)
-					if (node.campIds.includes(target) && !(await coveredBy(target)))
-						governed.push(`${target} (${pipeline.name}/${node.name})`);
+					if (
+						(camps === undefined || camps.includes(target)) &&
+						!(await coveredBy(target))
+					)
+						governed.push(
+							camps === undefined
+								? `${target} (${pipeline.name}/${node.name}: placement unresolved)`
+								: `${target} (${pipeline.name}/${node.name})`,
+						);
+			}
 		}
 		if (governed.length > 0)
 			return {

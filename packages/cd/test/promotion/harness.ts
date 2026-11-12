@@ -6,6 +6,7 @@ import type { TrailsMigrations } from "../../src/adapters/trails.js";
 import type { DeployGate } from "../../src/ports.js";
 import {
 	createPromotionService,
+	type PlacedCamps,
 	type PromotionServiceDeps,
 } from "../../src/promotion/index.js";
 import type { Mutable } from "../../src/promotion/journal.js";
@@ -37,6 +38,7 @@ export type HarnessOptions = Readonly<{
 	gate?: DeployGate;
 	trails?: TrailsMigrations;
 	aggregate?: FanoutAggregateGate;
+	placed?: PlacedCamps;
 }>;
 
 export function harness(options: HarnessOptions = {}) {
@@ -85,6 +87,7 @@ export function harness(options: HarnessOptions = {}) {
 		};
 		if (options.trails) deps.trails = options.trails;
 		if (options.aggregate) deps.aggregate = options.aggregate;
+		if (options.placed) deps.placed = options.placed;
 		return createPromotionService(deps);
 	};
 	const service = build();

@@ -21,6 +21,7 @@ export const PROMOTION_REASON = Object.freeze({
 	shadowRequired: SHADOW_REQUIRED,
 	pipelineUnknown: "promotion-pipeline-unknown",
 	targetOutsideNode: "promotion-target-outside-node",
+	placementUnresolved: "promotion-placement-unresolved",
 	superseded: "promotion-superseded",
 	resolveFailed: "promotion-resolve-failed",
 	resolutionChanged: "promotion-resolution-changed",
