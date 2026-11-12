@@ -151,4 +151,8 @@ package ci
 }
 
 #FleetV2Record: #GitHubJobKey | #DaggerPipelineKey | #ExecutionKey | #ExecutionProfile | #CiDemand | #RunnerSlot | #ExecutionClaim | #Effect | #WorkerDelivery | #CapacityGroup | #ControllerIncarnation | #Outbox | #Observation | #OfferAdmission | #FleetEvent
-#FleetV2: #Ci | #FleetV2Record
+// Fixtures under fixtures/fleet_v2 are fleet records; the package-wide fixtures
+// are #Ci records and are vetted against this definition too. A fleet record
+// wins when a value fits both: an #ExecutionProfile has only lowercase string
+// fields, which #FleetRoutes also admits as extra job classes.
+#FleetV2: *#FleetV2Record | #Ci

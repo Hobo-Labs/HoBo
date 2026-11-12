@@ -218,7 +218,7 @@ package ci
 #SequencedCiEvent: {seq: int & >0, event: #CiEvent}
 #CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0, more?: bool, truncated?: bool}
 
-#Ci: #FleetRoutes | #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult | #FleetV2Record
+#Ci: #FleetRoutes | #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
 
 #PipelineStep: {id: string & !="", argv: [string & !="", ...string], cwd: string, env: [string & !="__proto__"]: string}
 #Pipeline: {

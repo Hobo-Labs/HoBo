@@ -146,17 +146,43 @@ function cueDefinitionName(schemaPath: string): string {
 	return `#${pascal}`;
 }
 
+const CUE_PACKAGE_CLAUSE = /^package\s+(\w+)\s*$/m;
+
+/**
+ * The files CUE unifies with each schema: those in the folder that declare the
+ * same package, so a definition in a sibling file is a legitimate reference. A
+ * file with no package clause, or the only file of its package, is vetted alone.
+ */
+async function unifiedSchemas(
+	schemas: readonly string[],
+): Promise<ReadonlyMap<string, readonly string[]>> {
+	const packageOf = new Map<string, string | undefined>();
+	for (const schema of schemas)
+		packageOf.set(
+			schema,
+			CUE_PACKAGE_CLAUSE.exec(await readFile(schema, "utf8"))?.[1],
+		);
+	const unified = new Map<string, readonly string[]>();
+	for (const schema of schemas) {
+		const name = packageOf.get(schema);
+		unified.set(
+			schema,
+			name === undefined
+				? [schema]
+				: schemas.filter((other) => packageOf.get(other) === name),
+		);
+	}
+	return unified;
+}
+
 async function vetFixture(
 	cueBinary: string,
 	schemaPath: string,
 	fixturePath: string,
 	pkg: DataModelPackage,
 	expectValid: boolean,
+	schemaArgs: readonly string[],
 ): Promise<CueViolation[]> {
-	const schemaArgs =
-		pkg.cueSchemas.length > 0
-			? pkg.cueSchemas
-			: [join(pkg.dataModelsDir, schemaPath)];
 	const definition = cueDefinitionName(schemaPath);
 	const absoluteFixture = join(pkg.dataModelsDir, fixturePath);
 	const result = await runCommand(
@@ -185,10 +211,11 @@ export async function vetCueConstraints(
 ): Promise<CueVetResult> {
 	const cueBinary = await ensureCueBinary(repoRoot);
 	const violations: CueViolation[] = [];
+	const unified = await unifiedSchemas(pkg.cueSchemas);
 
-	for (const schemaPath of pkg.cueSchemas.map((absolute) =>
-		absolute.slice(pkg.dataModelsDir.length + 1),
-	)) {
+	for (const absolute of pkg.cueSchemas) {
+		const schemaPath = absolute.slice(pkg.dataModelsDir.length + 1);
+		const schemaArgs = unified.get(absolute) ?? [absolute];
 		// Flat corpora retain their package-wide meaning. Scoped corpora add
 		// checks only for their owning schema; they cannot mask flat fixtures.
 		for (const fixtureRoot of [
@@ -212,6 +239,7 @@ export async function vetCueConstraints(
 							join(fixtureRoot, kind, fixture),
 							pkg,
 							expectValid,
+							schemaArgs,
 						)),
 					);
 				}
