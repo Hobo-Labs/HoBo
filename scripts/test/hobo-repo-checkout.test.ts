@@ -30,7 +30,9 @@ describe("hobo-repo-checkout wiring", () => {
 			workflow.indexOf("\n  main_workspace_tests:"),
 			workflow.indexOf("\n  main_gate_finish:"),
 		);
+		expect(block).toContain("Resolve repo-local actions");
 		expect(block).toContain("uses: ./.github/actions/hobo-repo-checkout");
+		expect(block).toContain('bootstrap-composite-actions: "false"');
 		expect(block).toContain("marker: scripts/ci/ci-trace.mts");
 		expect(block).toContain("submodules: recursive");
 	});

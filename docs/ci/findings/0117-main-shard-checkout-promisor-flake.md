@@ -20,6 +20,7 @@ Trunk workspace shards used a bare `actions/checkout` with `clean: false` after 
 - New composite **`hobo-repo-checkout`**: box mirror probe (`GIT_CONFIG_SYSTEM` + `HOBO_CI_GIT_MIRROR_RESOLVED`), **alternates** seeding via `repo-checkout.mts`, then up to **three** pinned remote checkouts with **8s backoff**.
 - Wired into **main workspace test shards**, **PR workspace shards**, **PR affected lanes**, and **main full gate (finish)** checkout.
 - `scripts/actions:lint` accepts `hobo-repo-checkout` as a checkout source for repo-local composites.
+- Workflow jobs prepend pinned sparse `actions/checkout` for `.github/actions` so GitHub-hosted fallbacks can load `hobo-repo-checkout`; the composite runs with `bootstrap-composite-actions: false` after that.
 
 ## Measure
 

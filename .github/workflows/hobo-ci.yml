@@ -563,11 +563,21 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
       - uses: ./.github/actions/hobo-repo-checkout
         with:
           fetch-depth: 0
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -652,11 +662,21 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
       - uses: ./.github/actions/hobo-repo-checkout
         with:
           fetch-depth: 0
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
       - uses: ./.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -1150,12 +1170,22 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
       - uses: ./.github/actions/hobo-repo-checkout
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
@@ -1275,6 +1305,15 @@ jobs:
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
       - uses: ./.github/actions/hobo-repo-checkout
         id: repo_checkout
         with:
