@@ -78,11 +78,21 @@ function packFor(railDigest: string): PolicyPack {
 	return railDigest === STRICT_DIGEST ? STRICT : LENIENT;
 }
 
-class Posture implements Pick<PostureService, "conflicts"> {
+class Posture implements PostureService {
 	findings: PostureFindingRecord[] = [];
 	async conflicts() {
 		return this.findings;
 	}
+	async compliance() {
+		return [];
+	}
+	async observeFields() {
+		return [];
+	}
+	async remediations() {
+		return [];
+	}
+	async tick() {}
 }
 
 function setup(options: { regions?: string[]; contracts?: { deployed?: readonly BoundaryContract[]; candidate: readonly BoundaryContract[] }; subject?: PlacementSubject } = {}) {
@@ -111,7 +121,7 @@ function setup(options: { regions?: string[]; contracts?: { deployed?: readonly 
 		windows,
 		campPolicy,
 		shadow,
-		posture: posture as PostureService,
+		posture,
 		resolvePack: async (railDigest) => packFor(railDigest),
 		stationRail: async () => ({ railDigest: LENIENT_DIGEST, policyPack: LENIENT }),
 		contracts: async () => options.contracts ?? { deployed: [], candidate: [] },
