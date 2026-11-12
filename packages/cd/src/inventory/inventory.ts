@@ -520,10 +520,10 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 			const campId = event.streamId.slice(STATUS_PREFIX.length);
 			if (campId === "") continue;
 			const state = await load(campId);
-			const touched: { -readonly [K in keyof ContactState]: ContactState[K] } =
-				{ ...state.contact, lastContactMs: atMs };
-			if (fenceTokenOf(event.data) !== "") touched.lastLeaseMs = atMs;
-			state.contact = touched;
+			state.contact =
+				fenceTokenOf(event.data) === ""
+					? { ...state.contact, lastContactMs: atMs }
+					: { ...state.contact, lastContactMs: atMs, lastLeaseMs: atMs };
 			active.add(campId);
 		}
 		return active;

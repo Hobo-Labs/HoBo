@@ -36,9 +36,7 @@ const LABEL_SPREAD = /^label:[A-Za-z0-9]([A-Za-z0-9._/-]{0,126}[A-Za-z0-9])?$/u;
 const REQUIRED_CLAIM = /^([^=]+)(=(.{0,256}))?$/u;
 
 export function isSpreadKey(key: string): boolean {
-	return (
-		(SPREAD_KEYS as readonly string[]).includes(key) || LABEL_SPREAD.test(key)
-	);
+	return SPREAD_KEYS.some((known) => known === key) || LABEL_SPREAD.test(key);
 }
 
 function invalid(
