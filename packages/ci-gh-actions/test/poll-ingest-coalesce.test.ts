@@ -3,7 +3,7 @@ import { createPollIngestCoalesce } from "../src/isolated-worker/poll-ingest-coa
 
 describe("poll ingest coalesce", () => {
 	it("does not back off duplicate ingest (store may need duplicate-recheck)", () => {
-		let clock = 0;
+		const clock = 0;
 		const coalesce = createPollIngestCoalesce({
 			now: () => clock,
 			minMs: 10_000,
@@ -37,6 +37,22 @@ describe("poll ingest coalesce", () => {
 		expect(coalesce.shouldSkip(1, 300, 1)).toBe(true);
 		clock = 15_001;
 		expect(coalesce.shouldSkip(1, 300, 1)).toBe(false);
+	});
+
+	it("backs off requeued and foreign-runner poll results", () => {
+		const coalesce = createPollIngestCoalesce({ now: () => 0 });
+		coalesce.observe(1, 500, 1, "requeued");
+		expect(coalesce.shouldSkip(1, 500, 1)).toBe(true);
+		coalesce.observe(1, 501, 1, "foreign-runner");
+		expect(coalesce.shouldSkip(1, 501, 1)).toBe(true);
+	});
+
+	it("forget clears a quiet backoff without another ingest observe", () => {
+		const coalesce = createPollIngestCoalesce({ now: () => 0 });
+		coalesce.observe(1, 600, 1, "waiting-for-budget-or-capacity");
+		expect(coalesce.shouldSkip(1, 600, 1)).toBe(true);
+		coalesce.forget(1, 600, 1);
+		expect(coalesce.shouldSkip(1, 600, 1)).toBe(false);
 	});
 
 	it("forces ingest when the job has been queued longer than maxMs", () => {

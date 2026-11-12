@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import {
 	mkdir,
@@ -15,22 +15,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseConfiguration } from "@hobo/ci";
-import { PostgresCiStore } from "@hobo/ci/postgres";
-import { Pool } from "pg";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createControlAuthenticator } from "../../ci-gh-actions/src/control-plane.js";
+import { createControlAuthenticator } from "../../ci-gh-actions/src/control-auth.js";
 import { createHostedControlPlane } from "../../ci-gh-actions/src/hosted-control.js";
 import { HostedRelay } from "../../ci-gh-actions/src/hosted-relay.js";
 import type { OnboardingGithubPort } from "../../ci-gh-actions/src/onboarding.js";
 import { isJsonString } from "../src/json.js";
 
-// A separate integration lane: shipped process, real TLS and native PostgreSQL.
-// Only GitHub's App/repository identity boundary is emulated. No customer jobs
-// run in this fixture; live runner acceptance is verified separately.
+// A separate integration lane: shipped process, real TLS and the relay's own
+// SQLite store on disk. Only GitHub's App/repository identity boundary is
+// emulated. No customer jobs run in this fixture; live runner acceptance is
+// verified separately.
 const execute = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 const binary = join(here, "../dist/bin/hobo.js");
-const partition = `cli-e2e-${randomUUID()}`;
 const token = randomBytes(32).toString("hex");
 let temporary: string;
 let repository: string;
@@ -38,8 +37,7 @@ let home: string;
 let certificate: string;
 let key: string;
 let origin: string;
-let pool: Pool;
-let store: PostgresCiStore;
+let store: SqliteCiStore;
 let server: ReturnType<typeof createServer>;
 let control: ReturnType<typeof createHostedControlPlane>;
 let loseResponse = false;
@@ -87,7 +85,7 @@ const github: OnboardingGithubPort = {
 };
 
 async function compose() {
-	store = new PostgresCiStore(pool, partition);
+	store = new SqliteCiStore(join(temporary, "relay.sqlite"));
 	const configuration = parseConfiguration(
 		await readFile(
 			new URL(
@@ -226,14 +224,6 @@ async function cli(args: string[], overrides: NodeJS.ProcessEnv = {}) {
 }
 
 beforeAll(async () => {
-	const database = process.env.HOBO_CI_TEST_POSTGRES;
-	if (
-		!database ||
-		!["127.0.0.1", "localhost"].includes(new URL(database).hostname)
-	)
-		throw new Error(
-			"HOBO_CI_TEST_POSTGRES must name a disposable local PostgreSQL database",
-		);
 	temporary = await mkdtemp(join(tmpdir(), "hobo-cli-ci-e2e-"));
 	repository = join(temporary, "repository");
 	home = join(temporary, "ci-home");
@@ -278,7 +268,6 @@ beforeAll(async () => {
 		],
 		{ timeout: 10000 },
 	);
-	pool = new Pool({ connectionString: database, max: 4 });
 	await start();
 	await compose();
 });
@@ -286,27 +275,13 @@ beforeAll(async () => {
 afterAll(async () => {
 	try {
 		if (server) await stop();
-		if (pool) {
-			// This fixture owns one partition, never the shared database schema.
-			for (const table of [
-				"hobo_ci_events",
-				"hobo_ci_configuration",
-				"hobo_ci_control_records",
-			])
-				await pool.query(`DELETE FROM ${table} WHERE partition_id=$1`, [
-					partition,
-				]);
-			await pool.query("DELETE FROM hobo_ci_partitions WHERE id=$1", [
-				partition,
-			]);
-		}
 	} finally {
-		if (pool) await pool.end();
+		store?.close();
 		if (temporary) await rm(temporary, { recursive: true, force: true });
 	}
 });
 
-describe("shipped hobo ci over trusted HTTPS and native PostgreSQL", () => {
+describe("shipped hobo ci over trusted HTTPS and a SQLite relay store", () => {
 	it("connects from a real Git checkout and persists only a credential-free user link", async () => {
 		const result = await cli([
 			"connect",
@@ -335,14 +310,10 @@ describe("shipped hobo ci over trusted HTTPS and native PostgreSQL", () => {
 		expect(mutations).toBe(1);
 		expect(failure).toBeUndefined();
 	});
-	it("recovers persisted connection state after a real server/database-client restart", async () => {
+	it("recovers persisted connection state after a real server and store restart", async () => {
 		const port = Number(new URL(origin).port);
 		await stop();
-		await pool.end();
-		pool = new Pool({
-			connectionString: process.env.HOBO_CI_TEST_POSTGRES,
-			max: 4,
-		});
+		store.close();
 		await start(port);
 		await compose();
 		const status = await cli(["status"]);

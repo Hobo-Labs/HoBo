@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
 	"topologyDigest": "sha256:312c55b15dd3ee8f5c515246c61c107d5118a7117a823d53f052c7c11a237813",
-	"resolutionDigest": "sha256:abc6f80e1e918268e0f721d85b8a47eb2e06e6483b06fbfac9393d753d567402",
+	"resolutionDigest": "sha256:794fa889734f6043155020e6bbf636a48ba1eb744aa181dbc84af216b04e50c6",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",

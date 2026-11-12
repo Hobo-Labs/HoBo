@@ -95,7 +95,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 - Stations also host the **traffic-routing plane** (ADR-0143): the per-resource-class **offering registry**, the **closed routing control loop** (budget/health signal → re-dispatch → re-synthesize → re-apply, with StabilityPolicy cooldown/hysteresis/flip limit), and the **progressive cutover saga** (fail-closed preconditions, rollback hysteresis, refusal + `TtlLowered` ladder). The picker is `@hobo/dispatcher` (ADR-0071, deterministic credit/budget selection; `dispatch.Decided`/`dispatch.Reservation*`); budget signals (`budget.ThresholdCrossed`/`Recovered`, exactly-once) come from `@hobo/broker`.
 - CLI: `hobo station init|up|down|status|rails *` is **ops/setup**, not a lifecycle verb. Missing Station fails closed (`hobo station init`).
 - Profile: `defaultStation` / `activeRail` required for control-plane work; `defaultBrokerUri` is only a remote Conductor HTTP endpoint, not a setup path.
-- **Station capabilities + localhost discovery (ADR-0155):** `StationCapability` (`hobo.station-capability/v1`, closed kind vocabulary, provenance `default|discovered|declared`) formalizes the "PAM/Replay/sidecars are Station capabilities" prose; matching against host evidence is fail-closed and persists `HOBO_HOME/stations/<id>/capabilities.json`. `hobo-code init` is the discovery-gated dev seed (probes Node/git/isolation matrix/ollama/devenv/harnesses; required-missing refuses to write). hobo-code dev scenarios dogfood `station()` declarations (`codeDevStation` in `packages/code/src/dev-stations.ts`) — never re-introduce ad-hoc init literals. Narrative: `docs/design/stations.md`.
+- **Station capabilities + localhost discovery (ADR-0155):** `StationCapability` (`hobo.station-capability/v1`, closed kind vocabulary, provenance `default|discovered|declared`) formalizes the "PAM/Replay/sidecars are Station capabilities" prose; matching against host evidence is fail-closed and persists `HOBO_HOME/stations/<id>/capabilities.json`. Never re-introduce ad-hoc Station init literals. Narrative: `docs/design/stations.md`.
 
 ### Portable SQLite EventStore / durable actor journal (ADR-0135)
 
@@ -233,25 +233,24 @@ Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/tec
 
 Visual work is a first-class gate, same as typecheck and PACT. **Do not wait for the user to say “run design lint” or “use /impeccable.”** If you touch a visual surface, apply the design system while editing and run the linters before you claim the work is done.
 
-A change is visual when it touches any of: `site/`, `packages/code` TUI/dashboard/Evidence HTML, `packages/control-yard`, a package `DESIGN.md`, CSS/HTML chrome, `tui-*.ts(x)`, `interactive-shell.ts`, `session-dashboard.ts`, `evidence-chrome.ts`, or rendered copy/color/layout/motion.
+A change is visual when it touches any of: `site/`, `packages/control-yard`, `packages/status-page` rendered HTML, a package `DESIGN.md`, CSS/HTML chrome, or rendered copy/color/layout/motion.
 
 ### Authority
 
 | Surface | Binding DESIGN.md | Implementation |
 |---|---|---|
 | Public site | [`site/DESIGN.md`](site/DESIGN.md) | `site/src/styles/` |
-| `hobo-code` TUI + occupancy dashboard + Evidence | [`packages/code/DESIGN.md`](packages/code/DESIGN.md) | `tui-tokens.ts`, `tui-components.tsx`, `evidence-chrome.ts` |
+| Status page | [`packages/status-page/DESIGN.md`](packages/status-page/DESIGN.md) | that package only |
 | Control-yard | [`packages/control-yard/DESIGN.md`](packages/control-yard/DESIGN.md) | that package only |
 
-`site/DESIGN.md` is the product identity (ADR-0149). Do not run `/impeccable document` at the repo root. Do not invent a fourth identity.
+`site/DESIGN.md` is the product identity (ADR-0149). Do not run `/impeccable document` at the repo root. Do not invent another identity.
 
 ### While editing
 
 1. Read the owning `DESIGN.md` **before** the first visual edit.
-2. Use the package design system: `TUI_TOKENS` / `DESIGN_COLOR_TOKENS`, Evidence chrome helpers, and React-style TUI components (`ShellChrome`, `BroadcastFrame`, `InkTable`, `WelcomeSurface`, `AgentPanes`, `TextPane`, …). Do not hand-roll hex, SaaS blues, extra accents, or ANSI color outside `rubberhose.ts` `ACCENT`.
-3. New TUI chrome is a component in `tui-components.tsx` (or a sibling `tui-*.tsx`), then composed. Do not assemble the main screen from raw `h()` strings or `TextPane` dumps when a component exists.
-4. Spark (`#c5301c`) and go (`#14672c`) stay rare. Never paint a whole frame, hover-every-control, or night-collapse cards into the ground.
-5. After visual edits, run impeccable `critique` then `audit` (and `polish` if they find P0/P1) on the files you changed. That is part of the implementation loop, not a later favor.
+2. Use the owning package's tokens and shared components. Do not hand-roll hex, SaaS blues or extra accents.
+3. Spark (`#c5301c`) and go (`#14672c`) stay rare. Never paint a whole frame, hover-every-control, or night-collapse cards into the ground.
+4. After visual edits, run impeccable `critique` then `audit` (and `polish` if they find P0/P1) on the files you changed. That is part of the implementation loop, not a later favor.
 
 ### Before you say done
 
@@ -261,9 +260,7 @@ pnpm run design:lint
 
 Plus the package lints that actually cover the files you touched:
 
-- `@hobo/code` TUI: `packages/code/test/tui-design-lint.test.ts` (includes `interactive-shell.ts`)
-- Evidence + dashboard HTML: `packages/code/test/evidence-design-lint.test.ts`
-- Visual fixtures: `packages/code/test/tui-visual.test.ts` / `lookfeel.test.ts` when chrome geometry changed
+- Status page HTML: `packages/status-page/test/status-page-design-lint.test.ts`
 
 `pnpm agent:check -- --staged` already selects `design:lint` when UI/`DESIGN.md` files change. That is not a reason to skip the explicit lint or to skip impeccable on a visual diff. A change that fails `design:lint` or the package design-lint tests is not complete.
 
@@ -345,10 +342,10 @@ do not fit in 16 GB. Percentage rather than a fixed number so the cap scales wit
 whatever machine it lands on.
 
 
-Generated output belongs to exactly one generator. `packages/code/src/_generated`
-is the protobuf codegen pipeline's; TUI art from `gen-logo-tui.mts` /
-`gen-bo-idle-tui.mts` lives in `_generated-art`. Two generators sharing a
-directory makes the drift check report the other's output as unexpected.
+Generated output belongs to exactly one generator. A package's `src/_generated`
+is the protobuf codegen pipeline's; any other generator writes to its own
+directory. Two generators sharing a directory makes the drift check report the
+other's output as unexpected.
 
 ## JavaScript-family implementation file policy
 
@@ -782,6 +779,79 @@ includes `HEAD`, without which a registry transport cannot be expressed at all
 `TransportGuardError` carries a `detail` map, so a redirect refusal names its
 target — bounded and stripped of control characters, because that value is
 chosen by the peer and ends up in logs.
+
+Provider error text is redacted the same way: one implementation in
+`@hobo/provider-redaction` (`redactProviderText`, or
+`createProviderRedactor` with a profile of the provider's own structured
+shapes, its generic `fallbacks` such as a long-opaque-run rule (searched last,
+so one cannot split a JWT and leave its payload), a kept span such as ttl.sh's
+digests, percent-decoding, or whitespace collapsing).
+Every pattern in it is linear in the text and has an adversarial test, the
+search is bounded by `REDACTION_WINDOW`, and a provider pattern goes in its
+profile, never in a local copy of the redactor. Guards that refuse a payload
+rather than redact it use its `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR`, and a
+scrubber that must keep line breaks and length (auth-md's `redactText`) uses
+its `PRIVATE_KEY_PATTERN` and `JWT_PATTERN` through `redactMatches`. A redactor
+with shapes of its own searches them all over the same text and merges the
+spans (`redactMatches`), never replaces them in turn: a shape that ran first cut
+a run short, or ate another shape's name or a key's END line, and part of a
+credential survived. A new pattern must be linear: one that can start again
+inside a run it already scanned to the end (`\bey…` inside `-ey-ey…`,
+`[\s\S]*?END` from every BEGIN, `\S*` before a literal from every `http`,
+`\b[…]+@` from every boundary inside `a.a.a.…`, a variable-length look-back
+placed first, which runs at every position, decoding the whole text again until
+it stops changing) is quadratic on a hostile body. So is one with two optional
+quantifiers next to each other that read the same character (`\s*["']?\s*`,
+`\s*:?\s*`: write `\s*(?:["']\s*)?`), a look-back with a starred class that
+overlaps the character after it (`(?<=(?:^|[^…])[._%+-]*[A-Za-z0-9_])` on a run
+of `_`), and a value that may chain on to the end and is then read again from
+the next run. Do not set `i` and `u` together on a redaction pattern: Unicode case
+folding puts `ſ` and `K` (U+017F, U+212A) in `[A-Za-z]` and `\w`, so a
+look-behind that refuses a start after a letter refuses one after them too,
+and the credential after them is kept. Use `i` alone, list those two in a body
+class that should hold them, and spell words with `anyCase` where `u` is
+needed. A look-behind that says where a run starts holds exactly the run's
+own class: one narrower than the body (ASCII before a `[ſK…]` body) lets every
+position inside a run of the missing characters start a match.
+
+Sweep every pattern with `@hobo/redaction-test-harness/linear-sweep` (`assertSweepLinear`, or
+`assertPatternSweepLinear` for one pattern, through the caller's own search),
+which reads the pattern's alphabet from its own classes and builds runs of every
+class and every pair of them, runs between the pattern's own literal fragments
+ended by each terminator, each fragment over and over, and periodic texts, so
+neither a class nobody listed, a look-ahead for a later literal
+(`\S*(?=…-----END)` read again from every place it could give a character
+back), a repeated literal nor a long period can hide a quadratic case. Give a
+whole-function sweep a whole sample as a word and the literals it looks for as
+fragments. Structure a regular expression can only find by looking ahead from
+every position (a private key's last END line) is found in code instead. A redactor or guard that replaces another is held to it with
+`@hobo/redaction-test-harness/redaction-differential` (`assertRevealsNoMore`,
+`assertFindsNoLess`), the old one vendored under the package's
+`test/fixtures`: it may redact more, never less.
+
+Tier those tests. `test` is the fast tier, run on every change: unit cases,
+every leak and hostile input a review found as a fixed input (screened once
+with `assertInputLinear`, not swept), and a differential at 5k texts (20k for a
+detector). Sweeps,
+growth measurements and full-size differentials go in `*.deep.test.ts`, which
+the package's `vitest.config.ts` (extending the root config) excludes and
+`test:deep` runs (`vitest.deep.config.ts`, a turbo task, `pnpm run test:deep`).
+The shared shapes are swept once, in `@hobo/provider-redaction`; a caller
+sweeps only what it adds (`ownPatterns(…, SHARED_PATTERNS)`), and callers that
+share a profile (`LONG_TOKEN_RUN_PROFILE`) test it once, where it is defined,
+and only their own wrapper themselves. The deep tier runs the full-size
+differentials at 50k texts on three seeds (`DEEP_SEEDS`).
+
+Prove it with `assertGrowsLinearly` from `@hobo/redaction-test-harness/linear-time`, never with a
+wall-clock bound such as "1 MB in under a second": CI runs on single-CPU
+runners, and a loaded machine fails an absolute bound that a linear pattern
+meets. It times n and 4n characters in the thread's CPU time, not wall time, the
+better of two runs each, taking turns; n doubles from 4096 until a run takes 30
+ms of CPU, so a quadratic pattern is caught at a size it still finishes at, and
+an operation too quick for that is repeated within each run. It fails at a ratio
+of 8, where linear work gives about 4 and quadratic about 16. Its only absolute
+bound is a 20 s backstop on one call, which only a hang reaches. Show the old
+pattern fails the same measure.
 
 Credentials are **not** passed through, and the provider tests do not need them
 to be: `CLOUDFLARE_API_TOKEN`, `VERCEL_TOKEN` and friends are saved, set, and

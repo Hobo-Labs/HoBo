@@ -1461,8 +1461,7 @@ a.card:hover .card-cta {
 /* Scroll-linked reveals where supported; static everywhere else.
    `translate` (not transform) so hover transforms stay free. */
 @supports (animation-timeline: view()) {
-	.card,
-	.scene {
+	.card {
 		animation: rise-in linear both;
 		animation-timeline: view();
 		/* The Held Breath Rule: start at 15% into the entry, not at 0%. The gap
@@ -1479,33 +1478,6 @@ a.card:hover .card-cta {
 	to {
 		translate: 0 0;
 	}
-}
-
-/* ---------- Story panels: traced reference illustrations ---------- */
-
-.scene {
-	margin: clamp(1.75rem, 4vw, 3rem) auto;
-	max-width: 680px;
-}
-
-.scene.scene-crossroads,
-.scene.scene-depot {
-	max-width: 820px;
-}
-
-.scene svg {
-	display: block;
-	width: 100%;
-	height: auto;
-	transition: transform var(--dur-scene) var(--ease-boing);
-}
-
-.scene:hover svg {
-	transform: translateY(-6px) rotate(-0.4deg);
-}
-
-.scene-ink {
-	fill: var(--ink);
 }
 
 /* ---------- Whimsy: stickers, squiggles, rails, postcards ---------- */

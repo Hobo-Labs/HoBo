@@ -498,6 +498,8 @@ export function ssmParameterStore(
 }
 
 type AnySlotOptions =
+	| Ec2InstanceOptions
+	| EbsVolumeOptions
 	| S3Options
 	| RdsPostgresOptions
 	| RdsMysqlOptions
@@ -517,3 +519,49 @@ type AnySlotOptions =
 	| SnsOptions
 	| SecretsManagerOptions
 	| SsmParameterStoreOptions;
+
+export interface Ec2InstanceOptions {
+	/** An instance type such as `t4g.small`. */
+	readonly instanceType?: string;
+	readonly architecture?: "x86_64" | "arm64";
+	readonly imageId?: string;
+	readonly subnet?: string;
+}
+
+/**
+ * Amazon EC2 instance — slot `service`, profile `service.worker/v1`: a long-running
+ * virtual machine. Catalog only: this package ships no resolver for it. It is
+ * deliberately not also listed under `web.hosted/v1`; a VM can host a web
+ * origin, but that row is left for the change that models its public address.
+ */
+export function ec2Instance(options?: Ec2InstanceOptions): SlotBinding {
+	return slotBinding({
+		slot: "service",
+		profile: capability.service.worker,
+		productId: "aws.ec2-instance/v1",
+		properties: present(options ?? {}),
+	});
+}
+
+export interface EbsVolumeOptions {
+	readonly sizeGb?: number;
+	/** A volume type such as `gp3`. */
+	readonly volumeType?: string;
+	readonly iops?: number;
+	readonly encrypted?: boolean;
+}
+
+/**
+ * Amazon EBS volume — slot `bucket`, profile `bucket.filesystem/v1`. A block
+ * device formatted and attached to one virtual machine has hierarchical path
+ * semantics, which is `bucket.filesystem/v1`. Catalog only: this package ships
+ * no resolver for it.
+ */
+export function ebsVolume(options?: EbsVolumeOptions): SlotBinding {
+	return slotBinding({
+		slot: "bucket",
+		profile: capability.bucket.filesystem,
+		productId: "aws.ebs-volume/v1",
+		properties: present(options ?? {}),
+	});
+}

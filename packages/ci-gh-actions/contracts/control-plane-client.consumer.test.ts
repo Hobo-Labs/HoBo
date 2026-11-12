@@ -45,6 +45,7 @@ function invoke(client: Client, interaction: z.infer<typeof Interaction>) {
 	if (path.endsWith("/policy")) return client.getPolicy();
 	if (path.endsWith("/installations")) return client.getInstallations();
 	if (path.endsWith("/leases")) return client.getLeases();
+	if (path === "/v1/mesh/nodes") return client.getMeshNodes();
 	return client.getSetup(path.split("/").at(-1) ?? "");
 }
 
@@ -120,12 +121,13 @@ describe("typed account control-plane client consumer", () => {
 			);
 		}
 	});
-	it("matches all 12 SDK-reachable Pact requests and parses responses or sanitized errors", async () => {
-		// Six malformed wire cases have no SDK method: missing auth/CAS, account query
-		// override, unknown policy/setup fields and a client-authored apply body. Their
-		// real HTTP rejection is independently verified by the provider Pact suite.
-		const reachable = new Set([1, 3, 4, 5, 8, 9, 10, 11, 14, 15, 16, 17]);
-		expect(pact.interactions).toHaveLength(18);
+	it("matches all 13 SDK-reachable Pact requests and parses responses or sanitized errors", async () => {
+		// Seven malformed wire cases have no SDK method: missing auth (on the policy
+		// and on the mesh's node list), missing CAS, account query override, unknown
+		// policy/setup fields and a client-authored apply body. Their real HTTP
+		// rejection is independently verified by the provider Pact suite.
+		const reachable = new Set([1, 3, 4, 5, 8, 9, 10, 11, 14, 15, 16, 17, 19]);
+		expect(pact.interactions).toHaveLength(20);
 		let exercised = 0;
 		for (const [index, interaction] of pact.interactions.entries()) {
 			if (!reachable.has(index)) continue;
@@ -170,7 +172,7 @@ describe("typed account control-plane client consumer", () => {
 			expect(calls).toBe(1);
 			exercised++;
 		}
-		expect(exercised).toBe(12);
+		expect(exercised).toBe(13);
 	});
 
 	it("uses generated setup and lease messages on every remaining public method", async () => {

@@ -154,7 +154,8 @@ components:
 Willie ink-and-paper, Cuphead title cards, Fleischer bounce — not a pastel product
 dashboard. Everything is **ink on paper by day** and **paper on ink by night**
 (exact theme inversion). Bo the bindlebug is soot-colored with googly eyes; scenery
-is *traced* illustration, never generative glop.
+and cast are *supplied* illustration — traced, or generated and then reviewed and
+normalized to one ink — never unreviewed generative glop.
 
 Voice is “homeward bound” whimsy with precise technical tables. Agents generating
 or editing UI **must** read this file first and keep every surface on-system.
@@ -173,16 +174,19 @@ hardcoded hex in new work.
 4. **Film grain** — faint fixed grain overlay; old-reel vibe without muddy contrast.
 5. **Strict B&W base** — neutrals dominate; **spark** (vermillion) and **go** (green)
    are rare interactive/status accents only — never rainbow chrome.
-6. **Traced art only** — mascot and scene panels are reference traces (`Mascot`,
-   `scenes/*`, parallax plates). Do not invent flat vector substitutes.
-   Scene panels are being rebuilt one at a time from the approved prop art in
-   the media catalogue (`media/public/reference/scene-props/`), each prop
-   machine-traced into rigged layers that animate in place — `Crossroads` is
-   the first: the signpost's five boards wobble around their nails while the
-   post stays planted, composed with the supplied parallax plates and Bo's
-   idle strip. Prop ink follows the mascot night rule (lifts to soot with a
-   light rim, never inverts); plates invert to chalk; clouds keep their own
-   ink. Each remaining scene swaps only after its owner-approved preview.
+6. **Supplied art only** — nothing on the site is drawn in a renderer. Bo, the
+   scenery plates, the landmarks beside the trail and the cast of hobits are
+   all artwork — traced, or generated and then reviewed — vendored as files
+   and used as given. Do not invent flat vector substitutes.
+   **The trail is the page's imagery.** The landing page used to stop five
+   times for a large traced scene panel; those are gone, and the props they
+   were traced from now stand on the trail itself, where each one arrives with
+   the section it belongs to (see *The trail* under Motion). A page of text
+   with one living picture docked beneath it reads as a place; a page that
+   interrupts itself with five posters reads as a slideshow.
+   Prop ink follows the plates' night rule and inverts to chalk; Bo and the
+   cast follow the mascot rule (soot stays dark and takes a light rim, never
+   inverts); clouds keep their own ink.
 
 ## Colors
 
@@ -264,7 +268,8 @@ tables remain scannable.
 
 - Max content width ≈ **1160px** container; header ~**3.75rem**.
 - Spacing scale: 4 / 8 / 16 / 24 / 40 / 64 — generous cartoon breathing room.
-- Docs: sticky sidebar + prose column; landing: hero + story scenes + bento cards.
+- Docs: sticky sidebar + prose column; landing: hero + sections of cards, with
+  the trail band docked to the bottom of the viewport for the whole page.
 - Base path deploy: `/HoBo/` — links in markdown include the base.
 
 ## Elevation & Depth
@@ -274,7 +279,9 @@ Not Material elevation. Use **sticker depth**:
 - Hard offset shadows (e.g. 4px 4px 0 ink) on cards/buttons when pop is needed.
 - Thick 2–3px borders in `ink` / `border-strong`.
 - Film grain overlay sits above the whole page (non-interactive).
-- Parallax trail band uses **supplied plates**, not CSS-drawn hills.
+- The trail band uses **supplied plates and landmarks**, not CSS-drawn hills.
+  It sits above the page as a docked strip with one ink rule along its top
+  edge — a frame, not a floating panel, so it takes no shadow.
 
 ## Motion
 
@@ -302,7 +309,7 @@ hardcoded copies of the real bounce curve sat in the stylesheet unnamed and
 unaccounted for. They are the same curve, so they are now one token.
 
 Reach for `--ease` by default. `--ease-boing` is for motion whose *job* is to
-read as cartoon physics — the postcard bob, the theme toggle, scene hovers — and
+read as cartoon physics — the postcard bob, the theme toggle, landmark hovers — and
 a third curve is not available. Anything that seems to need one is either not
 rubberhose or is a special case that must say why in a comment.
 
@@ -333,13 +340,27 @@ not on this list is a bug:
 |---|---|---|
 | `boing` / `boing-sm` | 550ms / 450ms | The signature bounce. Overshoot needs the settle; clipped to 420ms it reads as a twitch, not a squash. |
 | `postcard-sway` | 2.2s | Loop — homepage postcard drift |
-| `plx-cloud-squash` | 3.1s | Loop — parallax cloud |
+| `tst-loop` / `tst-walk-x` / `tst-walk-y` | per plate / 0.3s / 1.8s | Loop — the band with no script: the plates and Bo's 36-frame walk on a timer |
+| `tst-squash` / `tst-pow` | 0.5s / 0.9s | A clicked cloud squashing, a clicked prop's word rising and fading |
 | `lost-bob` | 3.6s | Loop — Bo idling on the 404 |
 | `blink` | 7.3s | Loop — Bo's eyes |
+| `tst-idle` / `tst-pump` / `tst-nudge` | 2.4s / 0.5s / 1.1s | Loop — Bo standing about, Cog pumping the handcar, the Next arrow's nudge until the reader first moves |
+| `tst-dash` | 1.7s | Pip crossing the band once, end to end: a gag, not a wait |
 
 `boing` is the honest one to watch: it is response motion that exceeds the cap
 on purpose. Two named exceptions is a style; a third would mean the cap is
 fiction and the table should be rewritten instead of extended.
+
+**The trail's travel is the other honest exception, and it is one rule, not a
+list.** Moving between stops on the landing page is *travel*, and travel that
+lands in 420ms is a jump cut — the thing the owner rejected as abrupt and
+clunky. So a move is timed as a journey: the section hand-over (420ms out,
+760ms in, staggered 60ms), the camera's 1.6s glide, a sign standing up (0.6s)
+or a stop's set unfolding (0.7s, 90ms apart), the handcar rolling off (2.8s)
+and the iris on a long phone jump (1.2s). None of it blocks: the next section's
+text is readable from its first frame, a second request mid-move bends the move
+instead of queueing behind it, and under `prefers-reduced-motion` every one of
+them is zero.
 
 ### MA (間) — the interval is the animation
 
@@ -357,7 +378,7 @@ delays are written out rather than generated.
 **The Held Breath Rule.** Anything that reveals on scroll waits until it is
 **15% into the viewport**, not at the edge. The gap between "it could animate"
 and "it does" is the MA. Triggering at the boundary makes the page feel twitchy.
-*Implemented* as `animation-range: entry 15% entry 60%` on `.card` / `.scene`.
+*Implemented* as `animation-range: entry 15% entry 60%` on `.card`.
 This rule was documented before it was true — the range began at `entry 0%`,
 i.e. exactly the boundary the rule forbids — so treat an unimplemented rule here
 as a defect in the stylesheet, not a nicety in the doc.
@@ -405,23 +426,101 @@ would be invisible to precisely the users who asked for less motion.
 and load the page. Every piece of content must be present and legible. If
 anything is missing, the motion was load-bearing and the layout is wrong.
 
-### Parallax
+### The trail
 
-The trail parallax is the one place scroll drives motion. It is **ambient by
-definition**: it carries no information, so under reduced motion it simply
-stops, and nothing is lost. Layers move at fractions of scroll — never faster
-than scroll itself, which reads as a glitch rather than depth.
+The landing page is a row of **stops**, not a long scroll. Each section is one
+stop, and the trail band at the foot of the screen is where the reader travels
+between them. Here the movement *is* the meaning: going on is walking Bo to the
+next stop.
+
+- **One stop per gesture.** The wheel, the arrow keys, Page Up/Down, a swipe and
+  the Previous/Next buttons each move exactly one stop, however hard the wheel
+  was spun. Speed is never coupled to input: the reader decides *where*, never
+  *how fast*.
+- **A move is a timed glide.** The camera follows a minimum-jerk curve — it starts
+  from rest without a lurch and arrives without a stop. Asked to go somewhere new
+  mid-glide, it bends toward the new place from the speed it already has, so
+  nothing ever cuts.
+- **Desktop keeps the page.** The current section sits above the band in the
+  page's own layout. Moving on hands it over: the old section drifts back the way
+  Bo came and goes out of focus while the next is already arriving, so there is
+  never a frame with nothing arriving. Then the band follows: the old stop folds
+  flat, Bo walks on, and the new stop's props stand up around him — one under
+  each card, scaled against Bo so big things stand big — with a road sign over
+  his head naming the stop.
+- **A phone is the trail.** There is not room for both, so the trail fills the
+  screen and the sections stand beside it on signs. A jump too far to walk closes
+  an iris on Bo and opens it on the new place.
+- **He turns round.** Heading back he walks on his other side, `bo-walk-left.png`,
+  a drawing of its own. He is never mirrored and never walks backwards. His stride
+  comes from the ground covered, so a planted foot stays planted; when he stops he
+  lands with the small boing and stands about.
+- **A trail marker shows where you are.** A dotted line of stops, the current one
+  in spark, Bo's head riding along it. Every stop is a button: the marker is the
+  navigation, not a decoration of it.
+- **The page lets go at the end.** Past the last stop the wheel and the Next
+  button scroll on to the footer like any page.
+- **Nothing is ever clipped.** A stop that does not fit the screen (a laptop, a
+  zoomed page) reads from its top and scrolls inside its own box before the
+  trail moves on, with its foot fading while there is more below. Content never
+  hides under the header or the band.
+
+**Signs are drawn, everything else is supplied.** A road sign's words have to be
+text, so the signs are the one thing drawn in CSS: an ink line that wobbles
+(an SVG displacement filter), heavier on the under and right edges, nail heads,
+plank seams, grained posts planted in the road, and a slight lean. Plates, props,
+clouds and the cast are artwork, used as given.
+
+**It is ambient by definition.** It carries no information the sections do not
+already carry: with no script the sections read top to bottom as an ordinary
+page and the band walks Bo along on a timer, docked to the foot of the viewport.
+Under reduced motion nothing travels — the stops swap in place and the props are
+simply standing. State by position, not by motion.
+
+### The troupe
+
+A still page should not be a dead one. Four hobits turn up along the trail, each
+doing one small thing, and meeting one stamps it on the last stop's "Hobits met
+along the way" card — the page's hidden joy, and a reason to walk all of it.
+
+| Who | Where | What |
+|---|---|---|
+| Tuck | asleep by the road at the second stop | wakes as Bo arrives and waves |
+| Cog | on a handcar at the third stop | waves and rolls off down the line |
+| Mags | behind a card, once the page is still | peeks over its top edge, looks round, waves, ducks |
+| Pip | on the trail, every third step | races past |
+
+**The Margin Rule.** A visitor may appear in exactly two places: on the trail,
+which is the page's margin by construction, or rising from *behind* a card's top
+edge into the gap above it. Before every peek that gap is measured for real; if
+anything a reader could be looking at is there, the card is skipped. Nobody ever
+stands in the reading column.
+
+**The One Guest Rule.** One visitor at a time, 9–15 seconds between peeks, and
+at most five in one sitting.
+
+**The Exit Rule.** The moment the reader moves on, whoever is out gets out of
+the way — a startle, then gone faster than he arrived.
+
+**The Whole Sheet Rule.** A character looks around by moving his pupils, not his
+outline: look-left, look-right and blink are derived from the standing pose by
+changing colour only, so the silhouette cannot boil between them.
+
+None of it carries information. The pause button on the trail stops everything
+that moves on its own and is remembered; under `prefers-reduced-motion` nobody
+peeks or races, and Tuck and Cog simply wave.
 
 ### What motion may not do
 
 - **Don't** animate `width`, `height`, `top` or `left`. Transform and opacity
   only; anything else invites layout thrash on a long docs page.
-- **Don't** animate on page load except for the one scene-level reveal. A page
-  that performs on arrival delays reading.
+- **Don't** animate on page load except for the one scene-level reveal — on the
+  landing page, Bo walking into frame. A page that performs on arrival delays
+  reading.
 - **Don't** use motion as the only signal for anything. Colour, position or text
   must say it too.
 - **Don't** loop anything in the reading column. Ambient motion belongs in the
-  margins — literally.
+  margins — literally. The troupe's Margin Rule is how that is checked.
 
 ## Shapes
 
@@ -494,14 +593,17 @@ markers, bland cursors) are **off-system**. Own them in
 - Lead with rubberhose / Steamboat / Cuphead language in new illustrations and
   motion (bounce, squash, pie eyes).
 - Keep day/night as **inversion pairs** of the same tokens.
-- Trace or reuse existing Bo / scene / plate art.
+- Reuse existing Bo / plate / landmark / cast art; generate new art only
+  through the reviewed pipeline (`media/scripts/`, AGENTS.md "Generated-art
+  rules") and normalize it to the same contracts.
 - Put interactive emphasis on **spark** sparingly; default chrome stays ink/paper.
 - Validate this file with `pnpm --filter hobo-site run design:lint`.
 
 ### Don't
 
 - Don’t introduce flat SaaS blues, purples, or multi-stop brand gradients.
-- Don’t replace traced scenes with stock isometric 3D or “AI app” blobs.
+- Don’t replace supplied art with stock isometric 3D or “AI app” blobs, and
+  don’t bring back full-width scene panels between sections — the trail is the picture.
 - Don’t thin outlines below ~2px on primary chrome.
 - Don’t soft-blur everything into modern glass UI.
 - Don’t put free-text secrets or live credentials in examples (HoBo policy).

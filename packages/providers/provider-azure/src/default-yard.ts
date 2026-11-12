@@ -44,6 +44,7 @@ import {
 	cosmosTable,
 	functions,
 	keyVault,
+	managedDisk,
 	postgresFlexible,
 	redisCache,
 	serviceBusQueue,
@@ -51,6 +52,7 @@ import {
 	sqlDatabase,
 	staticWebApps,
 	storageQueue,
+	virtualMachine,
 } from "./slots.js";
 
 /** Allocatable options per capability slot; a slot may hold several. */
@@ -84,10 +86,14 @@ export interface AzureYardSpecOptions {
 export const AZURE_DEFAULT_BINDINGS: AzureSlotCatalog = Object.freeze({
 	web: Object.freeze([staticWebApps(), appService(), containerApps(), aks()]),
 	api: Object.freeze([apiManagement()]),
-	service: Object.freeze([functions(), containerAppsService()]),
+	service: Object.freeze([
+		virtualMachine(),
+		functions(),
+		containerAppsService(),
+	]),
 	data: Object.freeze([postgresFlexible(), sqlDatabase(), cosmosDb()]),
 	kv: Object.freeze([cosmosTable(), redisCache()]),
-	bucket: Object.freeze([blobStorage()]),
+	bucket: Object.freeze([managedDisk(), blobStorage()]),
 	queue: Object.freeze([storageQueue(), serviceBusQueue()]),
 	topic: Object.freeze([serviceBusTopic()]),
 	secretRef: Object.freeze([keyVault()]),

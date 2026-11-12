@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	CI_DEPS_LAYER_JOB_NAME,
+	CI_DEPS_LAYER_MEMORY_FLOOR_MB,
+	CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB,
 	memoryClassForJob,
 	memoryRequestForJob,
 	parseAvailableMemoryMb,
@@ -24,12 +27,36 @@ describe("worker memory config", () => {
 		});
 	});
 
+	it("raises CI deps layer memory above the 4096 MiB floor before peaks exist", () => {
+		const config = resolveWorkerMemoryConfig(
+			{},
+			{ totalMemoryMb: 15_989, trunkSlots: 1 },
+		);
+		const request = memoryRequestForJob(CI_DEPS_LAYER_JOB_NAME, config);
+		expect(request.memoryClass).toBe("heavy");
+		expect(request.memoryMb).toBeGreaterThanOrEqual(
+			CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB,
+		);
+		expect(request.memoryMb).toBeGreaterThan(CI_DEPS_LAYER_MEMORY_FLOOR_MB);
+		expect(
+			memoryRequestForJob(CI_DEPS_LAYER_JOB_NAME, {
+				...config,
+				memoryPeaks: {
+					[CI_DEPS_LAYER_JOB_NAME]: { peaksMb: [4097, 4100, 4098] },
+				},
+			}).memoryMb,
+		).toBeGreaterThan(CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB);
+	});
+
 	it("uses per-class reserves for unmeasured jobs", () => {
 		const config = resolveWorkerMemoryConfig(
 			{},
 			{ totalMemoryMb: 15_989, trunkSlots: 1 },
 		);
 		expect(memoryRequestForJob("Secret scan", config).memoryMb).toBe(1_024);
+		expect(memoryRequestForJob("Main workspace plan", config).memoryMb).toBe(
+			1_024,
+		);
 		expect(memoryRequestForJob("unknown job", config).memoryMb).toBe(2_048);
 		expect(memoryRequestForJob("PR impact validation", config).memoryMb).toBe(
 			4_096,
@@ -39,13 +66,33 @@ describe("worker memory config", () => {
 
 	it("maps exact workflow job names and defaults unknown jobs to standard", () => {
 		expect(memoryClassForJob("CI fabric contract guard")).toBe("light");
+		expect(memoryClassForJob("Main workspace plan")).toBe("light");
 		expect(memoryClassForJob("PR impact gate")).toBe("light");
 		expect(memoryClassForJob("PR impact validation")).toBe("heavy");
 		expect(memoryClassForJob("PR affected package lanes")).toBe("heavy");
+		expect(
+			memoryClassForJob("Live data engines (PostgreSQL 16, MongoDB 8)"),
+		).toBe("heavy");
 		for (let shard = 0; shard < 8; shard++)
 			expect(memoryClassForJob(`Workspace test shard ${shard}`)).toBe("heavy");
 		expect(memoryClassForJob("Workspace test shard 0 (0)")).toBe("heavy");
 		expect(memoryClassForJob("Workspace test shard 8")).toBe("standard");
+		for (let shard = 0; shard < 4; shard++)
+			expect(memoryClassForJob(`Main workspace test shard ${shard}`)).toBe(
+				"standard",
+			);
+		expect(
+			memoryRequestForJob("Main workspace test shard 0", {
+				budgetMb: 14_000,
+				reserveMb: 2_048,
+				classes: { light: 3_072, standard: 4_096, heavy: 6_144 },
+				unmeasured: { light: 1_024, standard: 4_096, heavy: 4_096 },
+				defaultClass: "standard",
+				trunkReservationMb: 4_096,
+				holMs: 60_000,
+				learn: false,
+			}).memoryMb,
+		).toBe(4_096);
 		expect(memoryClassForJob("CI fabric contract guard (retry)")).toBe(
 			"standard",
 		);

@@ -5,6 +5,8 @@ import { delimiter, dirname, isAbsolute, join } from "node:path";
 
 export const CI_RUNNER_BASE_DOCKERFILE =
 	"packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile";
+export const CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT =
+	"packages/ci-gh-actions/deploy/ci-runner/base/install-playwright-headless-shell.sh";
 export const CI_RUNNER_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/build.sh";
 export const CI_RUNNER_SYSTEM_PACKAGES =
@@ -16,6 +18,7 @@ export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
 	MISE_TOML,
 	CI_RUNNER_SYSTEM_PACKAGES,
 	CI_RUNNER_BASE_DOCKERFILE,
+	CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 	CI_RUNNER_BUILD_SCRIPT,
 ] as const;
 

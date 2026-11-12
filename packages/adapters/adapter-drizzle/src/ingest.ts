@@ -68,11 +68,11 @@ export interface DrizzleIngestResult {
  * Unrecognized constructs are collected as impedance findings, never silently
  * dropped and never thrown over.
  */
-export function ingestDrizzleSchema(
-	moduleExports: JsonObject,
+export function ingestDrizzleSchema<SchemaModule>(
+	moduleExports: SchemaModule,
 	options?: DrizzleIngestOptions,
 ): DrizzleIngestResult {
-	if (!isJsonObject(moduleExports) || moduleExports === null) {
+	if (!isSchemaModule(moduleExports)) {
 		throw new DrizzleAdapterError(
 			"DRIZZLE_INGEST_INPUT_INVALID",
 			"ingestDrizzleSchema expects a module namespace object of exports.",
@@ -137,6 +137,18 @@ export function ingestDrizzleSchema(
 		schema,
 		impedance: sortImpedance(findings),
 	});
+}
+
+/**
+ * A schema module arrives either as a plain record of exports or as the module
+ * namespace object `import * as schema` produces. The namespace is an exotic
+ * object tagged `Module`, not `Object`, so it has to be admitted by name or the
+ * documented way of calling this function is the one way that is refused.
+ */
+function isSchemaModule<T>(value: T): value is T & JsonObject {
+	if (value === undefined || value === null) return false;
+	if (isJsonObject(value)) return true;
+	return Object.prototype.toString.call(value) === "[object Module]";
 }
 
 function readTable<T>(
@@ -306,6 +318,25 @@ function readIndexes<T>(
 				detail: `Extra-config entry "${entryKey}" of table "${table}" (${describe(entryValue)}) is not a readable index builder; it was not ingested.`,
 			});
 			continue;
+		}
+		if (read.expressionKeys > 0) {
+			findings.push({
+				code: "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+				detail: `Index "${read.name}" of table "${table}" keys on ${read.expressionKeys} SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested.`,
+			});
+			continue;
+		}
+		if (read.partial) {
+			findings.push({
+				code: "DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
+				detail: `Index "${read.name}" of table "${table}" is partial (it has a WHERE predicate); the canonical IR carries its columns but not the predicate.`,
+			});
+		}
+		if (read.orderedKeys.length > 0) {
+			findings.push({
+				code: "DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE",
+				detail: `Index "${read.name}" of table "${table}" keys ${read.orderedKeys.map((key) => `"${key}"`).join(", ")} with a non-default sort order, nulls order, or operator class; the canonical IR carries the columns but not how they are ordered.`,
+			});
 		}
 		indexes.push(
 			Object.freeze({

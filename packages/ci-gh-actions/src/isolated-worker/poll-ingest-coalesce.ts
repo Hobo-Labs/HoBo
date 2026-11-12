@@ -4,6 +4,8 @@ const QUIET_RESULTS = new Set([
 	"waiting-for-budget-or-capacity",
 	"waiting-for-assignment-recovery",
 	"queued",
+	"requeued",
+	"foreign-runner",
 ]);
 
 export type PollIngestCoalesceOptions = Readonly<{
@@ -56,6 +58,11 @@ export function createPollIngestCoalesce(
 			}
 			const until = untilByKey.get(jobKey);
 			return until !== undefined && now() < until;
+		},
+		forget(repositoryId: number, jobId: number, runAttempt: number): void {
+			const jobKey = key(repositoryId, jobId, runAttempt);
+			untilByKey.delete(jobKey);
+			streakByKey.delete(jobKey);
 		},
 		observe(
 			repositoryId: number,

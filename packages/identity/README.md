@@ -29,6 +29,9 @@ promotes the near-production draft proof
   - `asHoboSecretsStore` — WIT-shaped residual view over any port
   - **Optional OpenBao:** install **`@hobo/adapter-openbao`** (not a default dependency)
     for residual OpenBao JWT + KV v2. Not included in default installs.
+  - **Optional Infisical:** **`@hobo/adapter-infisical`** implements the
+    `infisical` port kind (workload OIDC sign-in, no secret zero); the hosted CI
+    relay's config service (ADR-0179). Not a default dependency.
 - Every identity and token event carries the never-compact
   `CREDENTIAL_AUDIT_RETENTION` descriptor.
 - **Continuous Identity Migration Plane** ([ADR-0132](../../docs/design/adr/02-identity-security.md#adr-0132))

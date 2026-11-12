@@ -109,6 +109,8 @@ export const capability = Object.freeze({
 		nosql: "data.nosql/v1",
 		/** Schemaless or schema-flexible document persistence. */
 		document: "data.document/v1",
+		/** MongoDB wire protocol and document model. */
+		mongodb: "data.mongodb/v1",
 		/** Vertex/edge persistence with traversal queries. */
 		graph: "data.graph/v1",
 		/** Row-keyed sparse columns at scale. */

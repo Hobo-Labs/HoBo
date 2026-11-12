@@ -1,0 +1,45 @@
+{
+	"name": "@hobo/adapter-infisical",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "Optional Infisical SecretsPort adapter for HoBo: signs in with a workload OIDC token (Vercel, GitHub Actions) through Infisical OIDC Auth, so the hosted CI relay reads its config and secrets with no secret zero (ADR-0179).",
+	"type": "module",
+	"engines": {
+		"node": "^22.21.0 || >=24"
+	},
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/bindings": "workspace:*",
+		"@hobo/identity": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:types": "tsc --noEmit -p tsconfig.types.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer",
+		"test:contract:provider": "vitest run contracts/provider"
+	}
+}

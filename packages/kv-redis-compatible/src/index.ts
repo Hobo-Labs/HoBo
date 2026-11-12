@@ -8,6 +8,41 @@ export {
 	KV_REDIS_CONSISTENCY_CLAIMS,
 } from "./cases.js";
 export {
+	EPHEMERAL_STATE_CONFORMANCE_CASES,
+	type EphemeralConformanceArea,
+	type EphemeralConformanceCase,
+	type EphemeralConformanceContext,
+	EphemeralConformanceFailure,
+	type EphemeralConformanceResult,
+	runEphemeralStateConformance,
+} from "./ephemeral-conformance.js";
+export {
+	createManualClock,
+	createMemoryEphemeralState,
+	createMemoryRedisExecutor,
+	type ManualClock,
+	type MemoryEphemeralStateOptions,
+	type MemoryRedisExecutor,
+	type MemoryRedisExecutorOptions,
+} from "./ephemeral-memory.js";
+export {
+	type CommandUsage,
+	commandBudgetStatus,
+	type MeteredExecutor,
+	type MeterOptions,
+	meterExecutor,
+} from "./ephemeral-meter.js";
+export {
+	EPHEMERAL_SCRIPTS,
+	type EphemeralScript,
+	type EphemeralScriptName,
+	scriptSha1,
+} from "./ephemeral-scripts.js";
+export {
+	createRedisEphemeralState,
+	type RedisEphemeralStateOptions,
+} from "./ephemeral-state.js";
+export {
 	isKvRedisCompatibleError,
 	KV_REDIS_ERROR_CODES,
 	KvRedisCompatibleError,
@@ -39,6 +74,7 @@ export {
 	type ReferenceStoreOptions,
 } from "./reference-store.js";
 export {
+	KV_EPHEMERAL_STATE_PROFILE,
 	KV_KEY_VALUE_PROFILE,
 	KV_REDIS_COMPATIBLE_PROFILE,
 	KV_VALKEY_PROFILE,

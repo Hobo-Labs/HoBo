@@ -1,16 +1,6 @@
-import {
-	createServer,
-	type IncomingMessage,
-	type ServerResponse,
-} from "node:http";
-import type { Relay } from "./relay.js";
-import { createRelayRequestHandler } from "./server.js";
-import type { LeaseStore } from "./store.js";
-
-interface EngineReadyEntry {
-	readonly ready: boolean;
-}
-type EngineReadyMap = Record<string, EngineReadyEntry>;
+import { createServer, type ServerResponse } from "node:http";
+import type { HostedRelayApplication } from "./http-handler.js";
+import { createNodeRelayHandler } from "./node-http.js";
 
 export type RelayServiceLog = Readonly<{
 	level: "info" | "error";
@@ -22,33 +12,48 @@ export type RelayServiceLog = Readonly<{
 		| "service.http_failed"
 		| "worker.lease_failed"
 		| "worker.tick_failed"
+		| "agent.tick_failed"
 		| "readiness.failed";
 	leaseId?: string;
 }>;
 
 export type RelayServiceOptions = {
-	relay: Pick<
-		Relay,
-		"webhook" | "claim" | "reconcile" | "discover" | "dispatchPending" | "now"
-	>;
-	store: Pick<LeaseStore, "all" | "recover" | "close">;
+	/** The public origin requests are addressed to. */
+	origin: string;
+	/** The origin is an explicitly enabled plain-HTTP loopback one. */
+	allowLoopbackHttp?: boolean;
+	/**
+	 * The relay's HTTP handler. It is handed this service's readiness, so
+	 * `/readyz` and admission follow the probe and the drain.
+	 */
+	handle: (ready: () => boolean) => (request: Request) => Promise<Response>;
+	/** One pass of the relay worker: inbox, lease reconciliation, dispatch. */
+	tick: () => Promise<void>;
+	/**
+	 * An optional second worker (the CI agent) on its own cadence. It runs only
+	 * while the service is ready, one pass at a time, and never delays `tick`:
+	 * a pass can wait minutes on a model while jobs keep being dispatched. A
+	 * failed pass is logged and the next one runs as scheduled. The drain waits
+	 * for a pass in flight.
+	 */
+	agentTick?: () => Promise<void>;
+	agentIntervalMs?: number;
+	/** Releases the store once every accepted request and the worker are done. */
+	close: () => void;
+	/** Paths whose responses stream; see `createNodeRelayHandler`. */
+	streams?: (pathname: string) => boolean;
+	/**
+	 * Ends what would otherwise hold a connection open through the drain: an
+	 * event stream has no last byte to wait for.
+	 */
+	quiesce?: () => Promise<void>;
 	host?: string;
 	port: number;
-	engineId?: string;
-	mountPath?: string;
-	legacyRootPaths?: boolean;
-	stubEngines?: Readonly<Record<string, { ready: () => boolean }>>;
 	tickIntervalMs?: number;
 	probeIntervalMs?: number;
 	probeTimeoutMs?: number;
 	drainTimeoutMs?: number;
 	readinessProbe: (signal: AbortSignal) => Promise<boolean>;
-	beforeDispatch?: () => Promise<void>;
-	controlHandler?: (
-		request: IncomingMessage,
-		response: ServerResponse,
-	) => boolean | Promise<boolean>;
-	trustProxy?: boolean;
 	logger?: (entry: RelayServiceLog) => void;
 };
 
@@ -58,7 +63,34 @@ function interval(value: number, name: string): number {
 	return value;
 }
 
-/** Owns HTTP intake, reconciliation and a bounded drain of accepted work. */
+/**
+ * Admit deliveries and runner claims only while the host is ready. The
+ * control plane stays reachable, so an account can still be set up while a
+ * provider or the partition is being repaired.
+ */
+export function admitWhenReady(
+	application: HostedRelayApplication,
+	ready: () => boolean,
+): HostedRelayApplication {
+	return {
+		...application,
+		ready: async () => ready(),
+		async ingestWebhook(input) {
+			if (!ready()) throw new Error("relay is not ready");
+			return application.ingestWebhook(input);
+		},
+		async claim(leaseId, oidc) {
+			if (!ready()) throw new Error("relay is not ready");
+			return application.claim(leaseId, oidc);
+		},
+	};
+}
+
+/**
+ * The long-running Node host of the relay: an HTTP server in front of the
+ * shared handler, a timer that drives the worker tick, a cached readiness
+ * probe and a bounded drain of accepted work.
+ */
 export function createRelayService(options: RelayServiceOptions) {
 	if (
 		!Number.isInteger(options.port) ||
@@ -82,8 +114,14 @@ export function createRelayService(options: RelayServiceOptions) {
 		options.drainTimeoutMs ?? 30_000,
 		"drain timeout",
 	);
+	const agentIntervalMs = interval(
+		options.agentIntervalMs ?? 60_000,
+		"agent interval",
+	);
 	let stopping = false;
 	let isReady = false;
+	let agentWorker: Promise<void> | undefined;
+	let agentTimer: ReturnType<typeof setInterval> | undefined;
 	let started: Promise<void> | undefined;
 	let stoppingResult: Promise<{ drained: boolean }> | undefined;
 	let worker: Promise<void> | undefined;
@@ -92,13 +130,6 @@ export function createRelayService(options: RelayServiceOptions) {
 	let timer: ReturnType<typeof setInterval> | undefined;
 	const requests = new Set<Promise<void>>();
 	const responses = new Set<ServerResponse>();
-	const handler = createRelayRequestHandler(options.relay);
-	const engineId = options.engineId ?? "gh-actions";
-	const mountPath =
-		options.mountPath ??
-		(options.engineId ? `/engines/${options.engineId}` : undefined);
-	const stubEngines = options.stubEngines ?? {};
-	const legacyRootPaths = options.legacyRootPaths !== false;
 
 	function log(entry: RelayServiceLog): void {
 		try {
@@ -107,116 +138,41 @@ export function createRelayService(options: RelayServiceOptions) {
 			// Logging must never turn a durable operation into an HTTP retry.
 		}
 	}
-	function json(
-		response: ServerResponse,
-		status: number,
-		result: string,
-	): void {
+	async function unavailable(response: ServerResponse): Promise<void> {
 		response.setHeader("Content-Type", "application/json");
 		response.setHeader("Cache-Control", "no-store");
-		response.writeHead(status).end(result);
+		response.writeHead(503).end('{"error":"service unavailable"}');
 	}
-	function engineSubPath(url: string, id: string): string | undefined {
-		const prefix = `/engines/${id}`;
-		if (url === prefix) return "/";
-		if (url.startsWith(`${prefix}/`)) return url.slice(prefix.length);
-		return undefined;
+	function ready(): boolean {
+		return !stopping && isReady && Date.now() - lastProbeAt < probeIntervalMs;
 	}
-	function aggregateReady() {
-		const engines = {
-			[engineId]: { ready: ready() },
-		};
-		for (const [id, stub] of Object.entries(stubEngines)) {
-			engines[id] = { ready: stub.ready() };
-		}
-		const allReady = Object.values(engines).every((entry) => entry.ready);
-		return { ready: allReady, engines } satisfies {
-			ready: boolean;
-			engines: EngineReadyMap;
-		};
-	}
-	async function handle(request: IncomingMessage, response: ServerResponse) {
-		const url = request.url ?? "/";
-		if (options.trustProxy) {
-			const proto = request.headers["x-forwarded-proto"];
-			if (proto !== undefined) {
-				const first = (Array.isArray(proto) ? proto[0] : proto)
-					?.split(",")[0]
-					?.trim()
-					.toLowerCase();
-				if (first && first !== "https") {
-					json(response, 403, '{"error":"insecure proxy forward"}');
-					return;
-				}
+	const handle = options.handle(ready);
+	const handler = createNodeRelayHandler({
+		origin: options.origin,
+		allowLoopbackHttp: options.allowLoopbackHttp === true,
+		streams: (pathname) => options.streams?.(pathname) === true,
+		async handle(request) {
+			try {
+				return await handle(request);
+			} catch (error) {
+				// The adapter answers 503 and writes the reason to the failure log.
+				log({ level: "error", event: "service.http_failed" });
+				throw error;
 			}
-		}
-		if (request.method === "GET" && url === "/healthz") {
-			const engines = {
-				[engineId]: { ok: true },
-			};
-			for (const id of Object.keys(stubEngines)) engines[id] = { ok: true };
-			json(response, 200, JSON.stringify({ ok: true, engines }));
-			return;
-		}
-		if (request.method === "GET" && url === "/readyz") {
-			const status = aggregateReady();
-			json(response, status.ready ? 200 : 503, JSON.stringify(status));
-			return;
-		}
-		for (const [id, stub] of Object.entries(stubEngines)) {
-			const subPath = engineSubPath(url, id);
-			if (!subPath) continue;
-			if (request.method === "GET" && subPath === "/healthz") {
-				json(response, 200, JSON.stringify({ ok: true, engine: id }));
-				return;
-			}
-			if (request.method === "GET" && subPath === "/readyz") {
-				json(
-					response,
-					stub.ready() ? 200 : 503,
-					JSON.stringify({ ready: stub.ready(), engine: id }),
-				);
-				return;
-			}
-			json(response, 404, '{"error":"not found"}');
-			return;
-		}
-		if (mountPath) {
-			const mounted = engineSubPath(url, engineId);
-			if (mounted !== undefined) request.url = mounted;
-			else if (
-				!legacyRootPaths &&
-				url.startsWith("/engines/") &&
-				engineSubPath(url, engineId) === undefined
-			) {
-				json(response, 404, '{"error":"not found"}');
-				return;
-			}
-		}
-		if (stopping) {
-			json(response, 503, '{"error":"service unavailable"}');
-			return;
-		}
-		if (await options.controlHandler?.(request, response)) return;
-		if (
-			!ready() &&
-			(request.url === "/github/webhooks" ||
-				request.url?.startsWith("/v1/leases/") ||
-				(mountPath !== undefined &&
-					request.url?.startsWith(`${mountPath}/github/webhooks`)))
-		) {
-			json(response, 503, '{"error":"service unavailable"}');
-			return;
-		}
-		await handler(request, response);
-	}
+		},
+	});
 	const server = createServer((request, response) => {
 		responses.add(response);
-		const pending = handle(request, response)
+		// A draining service still answers its probes; it accepts nothing else.
+		const probing =
+			request.method === "GET" &&
+			/\/(?:healthz|readyz)$/.test(request.url ?? "");
+		const pending = (
+			stopping && !probing ? unavailable(response) : handler(request, response)
+		)
 			.catch(() => {
 				log({ level: "error", event: "service.http_failed" });
-				if (!response.headersSent)
-					json(response, 503, '{"error":"service unavailable"}');
+				if (!response.headersSent) void unavailable(response);
 				else response.destroy();
 			})
 			.finally(() => {
@@ -235,9 +191,6 @@ export function createRelayService(options: RelayServiceOptions) {
 		log({ level: "error", event: "service.http_failed" });
 	});
 
-	function ready(): boolean {
-		return !stopping && isReady && Date.now() - lastProbeAt < probeIntervalMs;
-	}
 	function checkReadiness(): Promise<boolean> {
 		if (stopping) return Promise.resolve(false);
 		if (probe) return probe;
@@ -272,44 +225,35 @@ export function createRelayService(options: RelayServiceOptions) {
 	function tick(): void {
 		if (stopping || worker) return;
 		worker = (async () => {
-			await options.beforeDispatch?.();
 			if (Date.now() - lastProbeAt >= probeIntervalMs) await checkReadiness();
 			if (!ready()) return;
-			for (const lease of options.store.all()) {
-				if (stopping) break;
-				if (
-					!["running", "claiming", "dispatched", "uncertain"].includes(
-						lease.state,
-					)
-				)
-					continue;
-				try {
-					if (lease.hostRunId > 0)
-						await options.relay.reconcile(lease.id, lease.hostRunId);
-					else await options.relay.discover(lease.id);
-				} catch {
-					log({
-						level: "error",
-						event: "worker.lease_failed",
-						leaseId: lease.id,
-					});
-				}
-			}
-			if (ready()) await options.relay.dispatchPending();
+			await options.tick();
 		})()
 			.catch(() => {
-				isReady = false;
+				// The next pass retries. Readiness is the probe's to decide: one
+				// delivery GitHub could not answer for is not an outage.
 				log({ level: "error", event: "worker.tick_failed" });
 			})
 			.finally(() => {
 				worker = undefined;
 			});
 	}
+	function agentTick(): void {
+		const pass = options.agentTick;
+		if (!pass || stopping || agentWorker || !ready()) return;
+		agentWorker = Promise.resolve()
+			.then(pass)
+			.catch(() => {
+				log({ level: "error", event: "agent.tick_failed" });
+			})
+			.finally(() => {
+				agentWorker = undefined;
+			});
+	}
 	function start(): Promise<void> {
 		if (started) return started;
 		if (stopping) return Promise.reject(new Error("relay service is stopped"));
 		started = (async () => {
-			options.store.recover(options.relay.now());
 			await new Promise<void>((resolve, reject) => {
 				server.once("error", reject);
 				server.listen(options.port, options.host ?? "127.0.0.1", () => {
@@ -319,6 +263,8 @@ export function createRelayService(options: RelayServiceOptions) {
 			});
 			if (stopping) return;
 			timer = setInterval(tick, tickIntervalMs);
+			if (options.agentTick)
+				agentTimer = setInterval(agentTick, agentIntervalMs);
 			tick();
 			log({ level: "info", event: "service.started" });
 		})();
@@ -329,6 +275,7 @@ export function createRelayService(options: RelayServiceOptions) {
 		stopping = true;
 		isReady = false;
 		clearInterval(timer);
+		clearInterval(agentTimer);
 		for (const response of responses)
 			if (!response.headersSent) response.setHeader("Connection", "close");
 		log({ level: "info", event: "service.draining" });
@@ -337,11 +284,12 @@ export function createRelayService(options: RelayServiceOptions) {
 			const drained = (async () => {
 				// A concurrent start must finish listening before close is called.
 				await started?.catch(() => undefined);
+				await options.quiesce?.().catch(() => undefined);
 				const closed = new Promise<void>((resolve) => {
 					server.close(() => resolve());
 				});
-				await Promise.all([closed, worker, probe, ...requests]);
-				options.store.close();
+				await Promise.all([closed, worker, agentWorker, probe, ...requests]);
+				options.close();
 				log({ level: "info", event: "service.drained" });
 				return { drained: true };
 			})();
