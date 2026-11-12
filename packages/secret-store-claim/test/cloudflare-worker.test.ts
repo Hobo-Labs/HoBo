@@ -66,7 +66,7 @@ const binding = {
 /** The `HOBO_CONFIG_BINDING` text out of a multipart upload's metadata part. */
 function uploadedBinding(body: string): string {
 	const metadata =
-		/name="metadata"[^]*?\r\n\r\n(\{[^\r]*\})\r\n/u.exec(body)?.[1] ?? "{}";
+		/name="metadata"[\s\S]*?\r\n\r\n(\{[^\r]*\})\r\n/u.exec(body)?.[1] ?? "{}";
 	const parsed: { bindings?: { name: string; text?: string }[] } =
 		JSON.parse(metadata);
 	return (

@@ -66,7 +66,7 @@ describe("HoBo ⇄ Cloudflare temporary accounts (consumer, the experiment)", ()
 				seen.push(recorded);
 				if (request.method === "PUT") {
 					const metadata =
-						/name="metadata"[^]*?\r\n\r\n(\{[^\r]*\})\r\n/u.exec(
+						/name="metadata"[\s\S]*?\r\n\r\n(\{[^\r]*\})\r\n/u.exec(
 							request.body ?? "",
 						)?.[1] ?? "{}";
 					const parsed: {

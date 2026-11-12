@@ -8,8 +8,8 @@
  * (`test/miniflare.test.ts`) runs the real runtime.
  */
 import {
-	createConfigServiceHandler,
 	type ConfigServiceEnv,
+	createConfigServiceHandler,
 	type StoreNamespace,
 	type StoreObjectId,
 } from "./worker/handler.js";

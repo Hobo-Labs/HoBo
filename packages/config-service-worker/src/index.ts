@@ -57,7 +57,6 @@ export {
 	createInMemoryConfigService,
 	type InMemoryConfigService,
 } from "./stand-in.js";
-export { ERROR_CODES, type ErrorCode } from "./worker/http.js";
 export {
 	BOOTSTRAP_SCHEME,
 	CONFIG_SERVICE_NAME,
@@ -66,6 +65,7 @@ export {
 	type StoreNamespace,
 	type StoreObjectId,
 } from "./worker/handler.js";
+export { ERROR_CODES, type ErrorCode } from "./worker/http.js";
 export { FOLDERS, type Folder, LIMITS } from "./worker/records.js";
 export {
 	ConfigStore,

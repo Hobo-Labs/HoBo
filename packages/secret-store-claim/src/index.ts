@@ -3,6 +3,9 @@
  * chosen when a HoBo deployment runs and handed to its owner by claim
  * (ADR-0179 amendment "Secret store chosen at deploy, provisioned by claim").
  */
+
+// The experiment's Worker build, so callers need no second import edge.
+export { configServiceWorkerModules } from "@hobo/config-service-worker";
 export type {
 	SecretStoreBinding,
 	SecretStoreEvidence,
@@ -45,8 +48,6 @@ export {
 	provisionCloudflareTemporaryStore,
 	verifyCloudflareTemporaryClaim,
 } from "./cloudflare.js";
-// The experiment's Worker build, so callers need no second import edge.
-export { configServiceWorkerModules } from "@hobo/config-service-worker";
 export {
 	SECRET_STORE_ERROR_CODES,
 	SecretStoreError,

@@ -6,9 +6,9 @@
 import {
 	type ConfigServiceEnv,
 	createInMemoryConfigService,
-	type InMemoryConfigService,
 	formatOwnerAccess,
 	formatWorkerBinding,
+	type InMemoryConfigService,
 	newBootstrapCredential,
 	newStoreId,
 } from "../../src/index.js";

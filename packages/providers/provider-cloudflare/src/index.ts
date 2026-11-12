@@ -150,14 +150,6 @@ export {
 	temporaryAccountProvisionedEvent,
 } from "./temporary-account.js";
 export {
-	type DurableObjectWorkerUpload,
-	MAX_WORKER_UPLOAD_BYTES,
-	type TemporaryWorkerDeployment,
-	type TemporaryWorkerModule,
-	uploadTemporaryAccountWorker,
-	workerUploadBody,
-} from "./temporary-account-worker.js";
-export {
 	assertManagementAuthorized,
 	type ClaimCompletedEvent,
 	type ClaimCompletion,
@@ -236,6 +228,14 @@ export {
 	type TemporaryAccountResourceLimit,
 	type TemporaryAccountResourceRequest,
 } from "./temporary-account-resources.js";
+export {
+	type DurableObjectWorkerUpload,
+	MAX_WORKER_UPLOAD_BYTES,
+	type TemporaryWorkerDeployment,
+	type TemporaryWorkerModule,
+	uploadTemporaryAccountWorker,
+	workerUploadBody,
+} from "./temporary-account-worker.js";
 export {
 	type PreviewChallenge,
 	type PreviewChallengeSolution,

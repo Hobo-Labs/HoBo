@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	ConfigServiceClientError,
-	createConfigServiceClient,
 	type ConfigServiceCredential,
+	createConfigServiceClient,
 } from "../src/index.js";
 import { harness, ORIGIN } from "./support/harness.js";
 import {

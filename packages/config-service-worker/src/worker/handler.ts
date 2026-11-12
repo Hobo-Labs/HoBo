@@ -22,12 +22,12 @@
  */
 import { base64UrlDecode, readBounded } from "./bytes.js";
 import { failure, json } from "./http.js";
+import { field, isJsonString, jsonObject } from "./json.js";
 import {
 	createJwtVerifier,
 	type JwtVerifier,
 	type VerifiedClaims,
 } from "./jwt.js";
-import { field, isJsonString, jsonObject } from "./json.js";
 import {
 	type Folder,
 	LIMITS,

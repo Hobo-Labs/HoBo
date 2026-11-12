@@ -9,10 +9,10 @@ import { Miniflare } from "miniflare";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	CONFIG_BINDING_VAR,
-	CONFIG_STORE_BINDING,
-	CONFIG_STORE_CLASS,
 	CONFIG_SERVICE_COMPATIBILITY_DATE,
 	CONFIG_SERVICE_MAIN_MODULE,
+	CONFIG_STORE_BINDING,
+	CONFIG_STORE_CLASS,
 	configServiceWorkerModules,
 	createConfigServiceClient,
 	formatWorkerBinding,

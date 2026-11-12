@@ -21,8 +21,8 @@ import {
 	ConfigServiceHealthSchema,
 	ConfigServiceSeededSchema,
 } from "./_generated/config_service_worker_pb.js";
-import { ERROR_CODES, type ErrorCode } from "./worker/http.js";
 import { BOOTSTRAP_SCHEME, CONFIG_SERVICE_NAME } from "./worker/handler.js";
+import { ERROR_CODES, type ErrorCode } from "./worker/http.js";
 import type { Folder } from "./worker/records.js";
 
 export type ConfigServiceClientErrorCode =
