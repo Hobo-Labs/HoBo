@@ -5,6 +5,9 @@ description: >-
   is. Never fails: when the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen (this step is running there, so it is the one tier
   known to be up) and a warning says why. Pinned to the fleet, it stays there.
+  What the fleet can take is not passed in: the script asks the relay that
+  .hobo/ci.json names for its verdict (ADR-0180), so the workflow must check
+  that file out, and a relay that does not answer changes nothing.
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and what is left goes to GitHub-hosted without reading the queue.
@@ -30,13 +33,6 @@ inputs:
     default: ""
   trunk-runner:
     description: "`false` keeps trunk events on the shared `hobo` label."
-    required: false
-    default: ""
-  fleet-state:
-    description: >-
-      The relay mesh's snapshot (the HOBO_CI_FLEET_STATE repository variable): per
-      label, live nodes and free slots. Used only while it is under five minutes
-      old; empty, stale or unreadable, the queue is read as before.
     required: false
     default: ""
 outputs:
@@ -101,7 +97,6 @@ runs:
         HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
         HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
         HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
-        HOBO_CI_FLEET_STATE: ${{ inputs.fleet-state }}
       run: |
         set -uo pipefail
         fleet=hobo

@@ -71,6 +71,7 @@ import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
+import { createCacheFleetVerdicts } from "./fleet-verdict-cache.js";
 import {
 	mcpWaitCeilingMs,
 	RELAY_FUNCTION_MAX_DURATION_SECONDS,
@@ -421,6 +422,12 @@ export async function composeStatelessRelay(
 		publicOrigin: origin,
 		resolve: onboarding.trustedBootstrapControl,
 	});
+	// Fleet verdicts for runner routing (ADR-0180): kept here, decided elsewhere.
+	const fleetVerdicts = createCacheFleetVerdicts({
+		state: fleet.state,
+		environment,
+		now: nowMs,
+	});
 	const health = new CacheWorkerHealth({
 		state: fleet.state,
 		environment,
@@ -491,6 +498,7 @@ export async function composeStatelessRelay(
 			runtimeDiagnostic: () =>
 				runtimeDiagnostic({ deploymentId: env.VERCEL_DEPLOYMENT_ID, sandbox }),
 			readOnlyConfig: { configService: options.configService },
+			fleetVerdicts,
 		})(await delegateOwnerControl(request));
 	};
 	const runtime = createHostedRelayRuntime({
