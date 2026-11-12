@@ -2697,6 +2697,34 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/resolver-components:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/componentize':
+        specifier: workspace:*
+        version: link:../componentize
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/registry':
+        specifier: workspace:*
+        version: link:../registry
+    devDependencies:
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      '@types/node':
+        specifier: '>=24.0.0'
+        version: 24.13.2
+
   packages/rift:
     dependencies:
       '@bufbuild/protobuf':
