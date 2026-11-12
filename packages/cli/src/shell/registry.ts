@@ -1,6 +1,7 @@
 import { stubResult } from "../cloud/stub.js";
 import type { CliContext, CommandResult } from "../types/envelope.js";
 import { UsageError } from "./errors.js";
+import type { SubcommandOptions } from "./subcommands.js";
 import { CANONICAL_VERBS, verbNames } from "./verbs.js";
 
 export interface CommandRunInput {
@@ -43,6 +44,8 @@ export interface CommandRunInput {
 		readonly demoSeed: string | null;
 		readonly region: string | null;
 		readonly budgetId?: string | null;
+		/** Options the resolved subcommand declares (subcommands.ts); absent from hand-built inputs. */
+		readonly subcommandOptions?: SubcommandOptions;
 	};
 	readonly args: readonly string[];
 	readonly verb: string;

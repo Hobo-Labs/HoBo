@@ -1,0 +1,6 @@
+{
+	"kind": "station",
+	"contract": "hobo.topology-objects/v1",
+	"name": "hobo-ci-relay",
+	"providerId": "vercel"
+}

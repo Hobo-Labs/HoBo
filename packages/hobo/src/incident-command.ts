@@ -13,7 +13,14 @@
 
 import { type CampId, PromotionState } from "@hobo/cd";
 import type { CommandModule, CommandResult } from "@hobo/cli";
-import { cdOk, cdRefused, cdUsage, parseCdFormat } from "./cd-render.js";
+import {
+	cdFlagsOf,
+	cdOk,
+	cdRefused,
+	cdUsage,
+	parseCdFormat,
+} from "./cd-render.js";
+import { topologyFilesOf } from "./cd-topology.js";
 import {
 	type CdHostOpener,
 	isSimulate,
@@ -55,8 +62,7 @@ export function createIncidentCommand(
 ): CommandModule {
 	return {
 		run: async ({ args, flags, context, emitProgress }) => {
-			// SAFETY: assertion required at this I/O or test boundary.
-			const f = flags as JsonObject;
+			const f = cdFlagsOf(flags);
 			const sub = args[0] ?? "status";
 			const format = parseCdFormat(f);
 			const fmt = format.ok ? format.format : "text";
@@ -77,6 +83,7 @@ export function createIncidentCommand(
 				cwd: (isJsonString(f.cwd) && f.cwd) || context.cwd,
 				env,
 				home: deps.hoboHome ?? defaultHoboHome(env),
+				topologyFiles: topologyFilesOf(f, env),
 			});
 			if (!opened.ok)
 				return cdRefused({

@@ -311,9 +311,11 @@ describe("the delivery module for the runner fleet", () => {
 		const module: Record<string, unknown> = await import(
 			join(deployDir, "hobo.delivery.ts")
 		);
-		// `hobo deploy pipeline apply` refuses any other export.
+		// `hobo deploy pipeline apply` refuses any other export; `camps` is the
+		// topology `hobo deploy --yard` reads (packages/hobo/CD.md).
 		expect(Object.keys(module).sort()).toEqual([
 			"campSets",
+			"camps",
 			"pipelines",
 			"placements",
 			"sources",
@@ -321,7 +323,11 @@ describe("the delivery module for the runner fleet", () => {
 		const generated = runnerFleetDelivery(declared.value, {
 			repository: "Hobo-Labs/HoBo",
 		});
-		expect({ ...module }).toEqual({ ...generated });
+		const { camps, ...records } = module;
+		expect(records).toEqual({ ...generated });
+		expect(camps).toEqual(
+			runnerFleetTopology(declared.value, { stationId: "" }),
+		);
 	});
 
 	it("every record carries the schema version @hobo/cd's parsers require", () => {

@@ -10,6 +10,8 @@
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { createControlApiServer } from "@hobo/control-api";
 import { defaultHoboHome } from "./bare-metal-yard.js";
+import { cdFlagsOf } from "./cd-render.js";
+import { topologyFilesOf } from "./cd-topology.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
 
 export interface ServeControlCommandDeps {
@@ -33,6 +35,8 @@ export interface ServeControlCommandDeps {
 		readonly host: string;
 		readonly port: number;
 		readonly log: (line: string) => void;
+		/** Topology files (`--yard`, HOBO_CD_TOPOLOGY). */
+		readonly topologyFiles?: readonly string[];
 	}) => Promise<
 		| {
 				readonly ok: true;
@@ -59,6 +63,9 @@ async function defaultServeCd(
 		home: input.hoboHome,
 		cwd: input.cwd,
 		simulate: input.simulate,
+		...(input.topologyFiles
+			? { topologyFiles: input.topologyFiles }
+			: undefined),
 	});
 	if (!runtime.ok) {
 		const first = runtime.reasons[0];
@@ -90,8 +97,7 @@ export function createServeControlCommand(
 	return {
 		implemented: true,
 		async run({ args, flags }) {
-			// SAFETY: assertion required at this I/O or test boundary.
-			const f = flags as JsonObject;
+			const f = cdFlagsOf(flags);
 			const env = deps.env ?? process.env;
 			const target = args[0] ?? "control";
 			if (target === "cd") return serveCd(deps, f, env);
@@ -202,6 +208,7 @@ async function serveCd(
 		host,
 		port: Number.isFinite(port) ? port : 8791,
 		log,
+		topologyFiles: topologyFilesOf(f, env),
 	});
 	if (!started.ok)
 		return {
