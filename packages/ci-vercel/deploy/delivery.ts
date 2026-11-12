@@ -32,7 +32,10 @@
  * and nothing asserts that the origin serves the Freight's commit; a stale
  * deployment behind the origin can answer for a newer commit. Closing it needs
  * the deployment's own URL with a protection-bypass header, or `/healthz`
- * reporting the build SHA.
+ * reporting the build SHA. `hobo ci deploy --adopt` (the token-free mode the
+ * deploy workflow runs) applies these records with every probe aimed at the
+ * adopted Git-integration deployment's own URL instead, so that path verifies
+ * the deployment of the Freight's commit.
  *
  * The origins are the module's only inputs, read once when it loads:
  * `HOBO_CI_RELAY_URL` (production, the same repository variable the smoke

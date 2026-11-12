@@ -29,6 +29,7 @@ import {
 	meshNodesData,
 	meshNodesTable,
 } from "./ci-mesh-status.js";
+import { CI_DEPLOY_ADOPT_OPTIONS, runCiRelayAdopt } from "./ci-relay-adopt.js";
 import {
 	CI_DEPLOY_ONLY_OPTIONS,
 	CI_DEPLOY_OPTIONS,
@@ -283,6 +284,7 @@ function parseCiArgs(args: readonly string[]) {
 			"root-directory": { type: "string" },
 			"create-project": { type: "boolean" },
 			provision: { type: "boolean" },
+			adopt: { type: "boolean" },
 			"owner-id": { type: "string" },
 			name: { type: "string" },
 			"auth-md": { type: "string", multiple: true },
@@ -350,6 +352,8 @@ export function createCiCommand(
 		vercelCli?: VercelCliRunner;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
 		hoboHome?: string;
+		/** The transport `hobo ci deploy --adopt` reads GitHub's Deployments API with. */
+		githubHttp?: HttpTransport;
 		/** The transport `hobo ci deploy --wait`'s verification probes use. */
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
@@ -402,6 +406,33 @@ export function createCiCommand(
 			if (command === "deploy") {
 				if (positionals.length !== 1)
 					return usage("hobo ci deploy takes no positional arguments.");
+				if (values.adopt === true) {
+					const adoptable = new Set<string>(CI_DEPLOY_ADOPT_OPTIONS);
+					const other = Object.entries(values).find(
+						([key, value]) => value !== undefined && !adoptable.has(key),
+					);
+					if (other)
+						return usage(
+							`--${other[0]} does not apply to hobo ci deploy --adopt: it observes the deployment Vercel's Git integration made and configures none.`,
+						);
+					return runCiRelayAdopt({
+						cwd: flags.cwd,
+						values,
+						env: deps.env ?? process.env,
+						...(deps.githubHttp !== undefined
+							? { github: deps.githubHttp }
+							: undefined),
+						...(deps.probeHttp !== undefined
+							? { probe: deps.probeHttp }
+							: undefined),
+						...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+						...(deps.now !== undefined ? { now: deps.now } : undefined),
+						...(deps.hoboHome !== undefined
+							? { home: deps.hoboHome }
+							: undefined),
+						emitProgress,
+					});
+				}
 				const allowed = new Set<string>(CI_DEPLOY_OPTIONS);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),

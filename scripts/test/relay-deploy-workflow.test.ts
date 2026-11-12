@@ -196,22 +196,33 @@ describe("the relay deploy workflow", () => {
 	it("holds no Vercel token and makes no Vercel API write: Vercel's Git integration deploys", () => {
 		assert.doesNotMatch(
 			workflow,
-			/VERCEL_TOKEN|relay-deploy-credential|ci deploy|vercel@\d|vercel deploy|--token\b/u,
+			/VERCEL_TOKEN|relay-deploy-credential|vercel@\d|vercel deploy|--token\b/u,
 		);
+		// The only `hobo ci deploy` is the observe-only adoption.
+		for (const match of workflow.matchAll(/ci deploy\b[^\n]*/gu))
+			assert.match(match[0], /^ci deploy --adopt\b/u, match[0]);
 		assert.ok(
 			!existsSync(join(root, "scripts/ci/relay-deploy-credential.mts")),
 		);
-		const find = step("Find Vercel's Git deployment of this commit");
-		assert.match(find, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
-		assert.match(
-			find,
-			/repos\/\$GITHUB_REPOSITORY\/deployments\?sha=\$GITHUB_SHA/u,
-		);
-		assert.match(find, /test\("hobo-ci"\)/u);
-		assert.match(find, /environment_url/u);
 	});
 
-	it("verifies the secret store's CI identity by name before looking for the deployment", () => {
+	it("adopts Vercel's deployment of the pushed commit with hobo, reading it with the job's own token", () => {
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.match(adopt, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
+		assert.match(
+			adopt,
+			/node packages\/hobo\/dist\/bin\/hobo\.js ci deploy --adopt/u,
+		);
+		assert.match(adopt, /--cwd packages\/ci-vercel/u);
+		assert.match(adopt, /--sha "\$GITHUB_SHA"/u);
+		// The command's own exit status decides the step: no swallowed failure.
+		assert.match(adopt, /exit "\$status"/u);
+		assert.doesNotMatch(adopt, /--adopt[^\n]*\|\| true/u);
+		// The ad-hoc lookup and smoke check are gone: hobo does both, fail closed.
+		assert.doesNotMatch(workflow, /gh api|curl /u);
+	});
+
+	it("verifies the secret store's CI identity by name before adopting the deployment", () => {
 		const verify = step("Verify the secret store connection");
 		assert.match(
 			verify,
@@ -221,7 +232,7 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(verify, /\|\| true/u);
 		assert.ok(
 			workflow.indexOf("ci secret-store verify") <
-				workflow.indexOf("Find Vercel's Git deployment of this commit"),
+				workflow.indexOf("Adopt Vercel's Git deployment of this commit"),
 		);
 	});
 
@@ -249,13 +260,6 @@ describe("the relay deploy workflow", () => {
 			workflow.indexOf("Mask the one-time manifest code") <
 				workflow.indexOf("ci app deposit"),
 		);
-	});
-
-	it("fails the smoke check on a 5xx from /healthz only, and reports /readyz", () => {
-		const smoke = step("Smoke-check /healthz and /readyz");
-		assert.match(smoke, /5\?\?\) echo "::error/u);
-		assert.match(smoke, /probe \/readyz/u);
-		assert.doesNotMatch(smoke.slice(smoke.indexOf("probe /readyz")), /exit 1/u);
 	});
 
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {
