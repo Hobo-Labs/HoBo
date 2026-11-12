@@ -445,7 +445,7 @@ hobo ci secret-store verify --cwd packages/ci-vercel --json
 project is optional and empty by default) and refuses to replace one
 without `--yes`. `verify` reports `pass`, `fail` or `not-run` by identity
 name: `hobo-ci-writer` inside a GitHub Actions job (GitHub OIDC sign-in, then
-a revoke; it cannot read), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
+a revoke; role shape not asserted), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
 present (secret names only). The deploy workflow runs it as *Verify the
 secret store connection*.
 
