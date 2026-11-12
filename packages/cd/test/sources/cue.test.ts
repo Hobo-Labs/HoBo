@@ -172,8 +172,9 @@ describe("sources.cue", () => {
 			}),
 		);
 		if (!isRecord(good)) throw new Error("json");
+		const base: Readonly<Record<string, JsonValue>> = good;
 		const mutate = (patch: Readonly<Record<string, JsonValue>>): JsonValue => ({
-			...good,
+			...base,
 			...patch,
 		});
 		expect(vets("#SourceFreightSource", mutate({ name: "App!" }))).toBe(false);
@@ -195,8 +196,9 @@ describe("sources.cue", () => {
 			}),
 		);
 		if (!isRecord(subscription)) throw new Error("json");
+		const subscriptionBase: Readonly<Record<string, JsonValue>> = subscription;
 		const withSub = (patch: Readonly<Record<string, JsonValue>>) =>
-			mutate({ subscriptions: [{ ...subscription, ...patch }] });
+			mutate({ subscriptions: [{ ...subscriptionBase, ...patch }] });
 		expect(vets("#SourceFreightSource", withSub({}))).toBe(true);
 		expect(
 			vets(

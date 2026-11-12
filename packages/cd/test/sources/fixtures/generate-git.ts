@@ -132,7 +132,6 @@ record("t3", [
 	[[commits.c3], "blob:none"],
 	[[commits.c1, commits.c2, commits.c3], "tree:0"],
 	[[commits.c1, commits.c2, commits.c3], "blob:none"],
-	[[commits.c3], "blob:none"],
 ]);
 
 writeFileSync(
