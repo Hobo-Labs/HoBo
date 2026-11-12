@@ -21,6 +21,23 @@ describe("storage job classes", () => {
 		);
 	});
 
+	it("classes a matrix leg by its job's name", () => {
+		expect(
+			storageClassForJob("Publish GHCR images (tagged release) (hobo-cli)"),
+		).toBe("release_trunk");
+		expect(
+			storageClassForJob(
+				"Build all OCI images on tag (gate publish) (hobo-mcp)",
+			),
+		).toBe("runner_image");
+		expect(storageClassForJob("Attest GHCR images (hobo-sdk)")).toBe("light");
+		// A name that itself ends in parentheses still matches exactly.
+		expect(storageClassForJob("Publish GitHub Pages (site/)")).toBe(
+			"release_trunk",
+		);
+		expect(storageClassForJob("Unknown job (x)")).toBe("standard");
+	});
+
 	it("scales unmeasured inode budgets below class caps", () => {
 		const reserve = learnedStorageReserve(
 			undefined,

@@ -273,6 +273,7 @@ describe("loadRelayYard", () => {
 		expect(production.inputs).toEqual([
 			"INFISICAL_IDENTITY_ID",
 			"INFISICAL_PROJECT_ID",
+			"INFISICAL_SITE_URL",
 		]);
 		expect(production.attachments).toEqual([
 			{

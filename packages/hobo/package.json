@@ -87,6 +87,7 @@
 		"@hobo/runtime-local": "workspace:*",
 		"@hobo/runtime-oci": "workspace:*",
 		"@hobo/runtime-wasm": "workspace:*",
+		"@hobo/secret-store-claim": "workspace:*",
 		"@hobo/stations": "workspace:*",
 		"@hobo/storage-postgres": "workspace:*",
 		"@hobo/storage-sqlite": "workspace:*",

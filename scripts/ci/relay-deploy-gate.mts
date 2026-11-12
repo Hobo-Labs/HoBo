@@ -4,12 +4,13 @@
  *
  * Two questions, both answered before anything is installed:
  *
- * 1. Has the owner set the repository variables the deploy needs? Until they
- *    have, the job ends with a notice and succeeds, so `main` stays green
- *    before the one-time setup in `packages/ci-vercel/CONFIG-SERVICE.md`.
- *    When only the probe origins are missing (a repository set up before the
- *    relay was delivered through HoBo CD) it ends with a WARNING instead: its
- *    production deploys have stopped, and the owner must set them.
+ * 1. Is a secret store bound to the relay? The store is chosen and
+ *    provisioned when the HoBo deployment first runs
+ *    (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
+ *    chosen at deploy, provisioned by claim"), which commits its coordinates
+ *    to `packages/ci-vercel/deploy/secret-store.binding.json`. Until then the
+ *    job ends with a notice and succeeds. No repository variable or secret is
+ *    read: the gate is the committed binding.
  * 2. For a push: does the pushed range touch the relay? The relay's inputs are
  *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
  *    closure (`importerClosure`, the release OCI impact tooling's), plus this
@@ -34,46 +35,16 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
-	"scripts/ci/relay-deploy-credential.mts",
 ] as const;
 
-/**
- * Repository variables a deploy cannot run without. Values are ids and
- * coordinates, never secrets; their meaning is in CONFIG-SERVICE.md. The two
- * relay origins are where HoBo CD's verification probes reach each Camp: a
- * delivery without them could never be verified, so it does not start.
- */
-export const RELAY_DEPLOY_REQUIRED_VARIABLES = [
-	"HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID",
-	"HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID",
-	"HOBO_CI_RELAY_INFISICAL_IDENTITY_ID",
-	"HOBO_CI_RELAY_INFISICAL_PROJECT_ID",
-	"HOBO_CI_RELAY_VERCEL_TEAM_ID",
-	"HOBO_CI_RELAY_URL",
-	"HOBO_CI_RELAY_PREVIEW_URL",
-] as const;
+/** The relay's committed secret store binding: coordinates only. */
+export const RELAY_SECRET_STORE_BINDING =
+	"packages/ci-vercel/deploy/secret-store.binding.json";
 
-/**
- * The probe origins HoBo CD verifies each Camp at. They became required when
- * the relay began delivering through HoBo CD; before that the relay deployed
- * without them. A repository set up before then has every other variable and
- * not these, so its production deploys would stop: that skip is a warning,
- * not a notice.
- */
-export const RELAY_PROBE_ORIGIN_VARIABLES = [
-	"HOBO_CI_RELAY_URL",
-	"HOBO_CI_RELAY_PREVIEW_URL",
-] as const;
+/** What the gate knows of the binding; it never reads a value out. */
+export type StoreBindingState = "absent" | "unreadable" | "bound";
 
-/**
- * `notice` for a skip that is expected (not set up yet, nothing changed);
- * `warning` for one that stops deploys a repository used to get.
- */
-export type GateDecision = Readonly<{
-	run: boolean;
-	reason: string;
-	level?: "notice" | "warning";
-}>;
+export type GateDecision = Readonly<{ run: boolean; reason: string }>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
@@ -95,35 +66,41 @@ export function touchesRelay(
 	);
 }
 
-/** Missing required variables, by name; the values are never read out. */
-export function missingVariables(
-	env: Readonly<Record<string, string | undefined>>,
-): readonly string[] {
-	return RELAY_DEPLOY_REQUIRED_VARIABLES.filter(
-		(name) => (env[name] ?? "").trim() === "",
-	);
+/**
+ * Whether the binding file is there, is JSON, and names a kind and an HTTPS
+ * endpoint. A shape hint only: the full parse (`@hobo/secret-store-claim`'s
+ * `readSecretStoreBinding`) runs in the credential step, and this gate runs
+ * before anything is installed, on node builtins only.
+ */
+export function storeBindingState(text: string | undefined): StoreBindingState {
+	if (text === undefined) return "absent";
+	try {
+		JSON.parse(text);
+	} catch {
+		return "unreadable";
+	}
+	return /"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) &&
+		/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
+		? "bound"
+		: "unreadable";
 }
 
 export function decide(input: {
 	readonly event: string;
-	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly store: StoreBindingState;
 	/** Changed paths of a push, or undefined when the range could not be read. */
 	readonly changed?: readonly string[];
 	readonly inputDirs: readonly string[];
 }): GateDecision {
-	const missing = missingVariables(input.env);
-	const origins = new Set<string>(RELAY_PROBE_ORIGIN_VARIABLES);
-	if (missing.length > 0 && missing.every((name) => origins.has(name)))
+	if (input.store === "absent")
 		return {
 			run: false,
-			level: "warning",
-			reason: `the relay is NOT deployed: it is now delivered through HoBo CD, which verifies each Camp at its probe origin, and ${missing.join(", ")} is not set. Production deploys stop until the owner sets it (packages/ci-vercel/CONFIG-SERVICE.md, migration step)`,
+			reason: `no secret store is bound to the relay yet: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
 		};
-	if (missing.length > 0)
+	if (input.store === "unreadable")
 		return {
 			run: false,
-			level: "notice",
-			reason: `the relay deploy is not set up yet: set the repository variables ${missing.join(", ")} (packages/ci-vercel/CONFIG-SERVICE.md)`,
+			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
 		};
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
@@ -165,9 +142,15 @@ function main(argv: readonly string[]): void {
 	const to = flag("--to") ?? "HEAD";
 	const output = flag("--github-output");
 	const changed = event === "push" ? changedPaths(from, to) : undefined;
+	let bindingText: string | undefined;
+	try {
+		bindingText = readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8");
+	} catch {
+		bindingText = undefined;
+	}
 	const decision = decide({
 		event,
-		env: process.env,
+		store: storeBindingState(bindingText),
 		...(event === "push" && changed !== undefined ? { changed } : undefined),
 		inputDirs:
 			event === "push"
@@ -180,7 +163,7 @@ function main(argv: readonly string[]): void {
 	process.stdout.write(
 		decision.run
 			? `Deploying the relay: ${decision.reason}.\n`
-			: `::${decision.level ?? "notice"} title=Relay deploy skipped::${decision.reason}.\n`,
+			: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
 	);
 }
 

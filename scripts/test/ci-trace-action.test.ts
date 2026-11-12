@@ -36,6 +36,15 @@ describe("ci-trace action artifact names", () => {
 		expect(ACTION).toMatch(/scripts\/ci\/ci-trace\.mts/u);
 	});
 
+	it("skips artifact upload when export reports no turbo runs", () => {
+		expect(ACTION).toMatch(/id: export/m);
+		expect(ACTION).toMatch(/upload=false.*GITHUB_OUTPUT/s);
+		const upload = ACTION.slice(
+			ACTION.indexOf("- name: Upload trace artifact"),
+		);
+		expect(upload).toMatch(/if: steps\.export\.outputs\.upload == 'true'/);
+	});
+
 	it("never fails the job it reports on when the upload fails", () => {
 		// Only the upload talks to an outside service; it alone may fail quietly.
 		const upload = ACTION.slice(

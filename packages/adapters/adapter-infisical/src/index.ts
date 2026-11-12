@@ -6,6 +6,13 @@ export {
 	InfisicalSecretSchema,
 } from "./_generated/adapter_infisical_pb.js";
 export {
+	type BootstrappedInfisical,
+	bootstrapInfisicalInstance,
+	createInfisicalAdmin,
+	type InfisicalAdmin,
+	type InfisicalOidcTrust,
+} from "./admin.js";
+export {
 	githubActionsJwtSource,
 	type InfisicalAuth,
 	type JwtSource,

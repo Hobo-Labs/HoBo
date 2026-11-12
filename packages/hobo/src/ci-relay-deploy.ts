@@ -79,6 +79,10 @@ import {
 } from "@hobo/cli";
 import type { IacOutputs, IacProgram } from "@hobo/cloud";
 import type { HttpTransport } from "@hobo/core";
+import {
+	type ParsedSecretStoreBinding,
+	SECRET_STORE_BINDING_FILE,
+} from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
 
 import {
@@ -106,6 +110,11 @@ import {
 	resolveRelayPlacement,
 } from "./ci-relay-yard.js";
 import { validRepository } from "./ci-repository.js";
+import {
+	loadSecretStoreBinding,
+	SecretStoreBindingRefusal,
+	secretStoreDeployInputs,
+} from "./ci-secret-store.js";
 import { defaultHoboHome } from "./hobo-home.js";
 import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
 import {
@@ -444,14 +453,30 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
-	const teamId = text("team") ?? env.VERCEL_TEAM_ID;
+	// The secret store chosen when the relay was first deployed
+	// (`hobo ci secret-store provision`): its committed coordinates fill the
+	// config-service binding's inputs and name the team, so no repository
+	// variable or Vercel secret holds them.
+	let storeBinding: ParsedSecretStoreBinding | undefined;
+	try {
+		storeBinding = loadSecretStoreBinding(input.cwd);
+	} catch (error) {
+		if (error instanceof SecretStoreBindingRefusal)
+			return refused(error.code, error.message);
+		throw error;
+	}
+	const teamId =
+		text("team") ??
+		(storeBinding?.vercelTeamId || undefined) ??
+		env.VERCEL_TEAM_ID;
 	if (teamId !== undefined && teamId !== "" && !TEAM_ID.test(teamId))
 		return usage(
-			"The Vercel team must be the canonical team id (team_ and the rest), from --team or VERCEL_TEAM_ID; a slug or a name selects no team.",
+			"The Vercel team must be the canonical team id (team_ and the rest), from --team, the secret store binding or VERCEL_TEAM_ID; a slug or a name selects no team.",
 		);
 	const rawSettings = values.set;
-	const settings = parseSettings(Array.isArray(rawSettings) ? rawSettings : []);
-	if (isJsonString(settings)) return usage(settings);
+	const given = parseSettings(Array.isArray(rawSettings) ? rawSettings : []);
+	if (isJsonString(given)) return usage(given);
+	const settings = new Map(given);
 
 	let definition: BindleDefinition | null;
 	try {
@@ -530,10 +555,14 @@ export async function runCiRelayDeploy(
 				`Refused --set number ${position}: ${reason}. Nothing was sent.`,
 			);
 	}
+	if (storeBinding !== undefined)
+		for (const [name, value] of secretStoreDeployInputs(storeBinding))
+			if (placement.inputs.includes(name) && !settings.has(name))
+				settings.set(name, value);
 	const missing = placement.inputs.filter((name) => !settings.has(name));
 	if (missing.length > 0)
 		return usage(
-			`Camp ${placement.camp} needs ${missing.map((name) => `--set ${name}=<value>`).join(" ")}: its bindings ask the deploy for these, and the Yard holds no value for them.`,
+			`Camp ${placement.camp} needs ${missing.map((name) => `--set ${name}=<value>`).join(" ")}: its bindings ask the deploy for these, and the Yard holds no value for them. The config service's coordinates come from ${SECRET_STORE_BINDING_FILE}, which hobo ci secret-store provision writes when it chooses the store.`,
 		);
 	// The Yard's settings and the command's, one map, sorted by name.
 	const configuration = new Map(

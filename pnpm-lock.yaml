@@ -437,6 +437,28 @@ importers:
         specifier: ^0.185.4
         version: 0.185.4
 
+  packages/adapters/adapter-1password:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../../identity
+    devDependencies:
+      '@hobo/contract-harness':
+        specifier: workspace:*
+        version: link:../../contract-harness
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/adapters/adapter-better-auth:
     dependencies:
       '@hobo/core':
@@ -446,6 +468,28 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/adapters/adapter-bitwarden:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../../identity
+    devDependencies:
+      '@hobo/contract-harness':
+        specifier: workspace:*
+        version: link:../../contract-harness
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -1823,6 +1867,9 @@ importers:
       '@hobo/runtime-wasm':
         specifier: workspace:*
         version: link:../runtimes/runtime-wasm
+      '@hobo/secret-store-claim':
+        specifier: workspace:*
+        version: link:../secret-store-claim
       '@hobo/stations':
         specifier: workspace:*
         version: link:../stations
@@ -2047,6 +2094,9 @@ importers:
 
   packages/mcp:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@hobo/cli':
         specifier: workspace:*
         version: link:../cli
@@ -3031,6 +3081,34 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.25.12)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/secret-store-claim:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
+      '@hobo/auth-md':
+        specifier: workspace:*
+        version: link:../auth-md
+      '@hobo/claims':
+        specifier: workspace:*
+        version: link:../claims
+      '@hobo/provider-cloudflare':
+        specifier: workspace:*
+        version: link:../providers/provider-cloudflare
+    devDependencies:
+      '@hobo/contract-harness':
+        specifier: workspace:*
+        version: link:../contract-harness
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/stage-gate:
     devDependencies:

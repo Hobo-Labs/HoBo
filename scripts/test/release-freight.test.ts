@@ -323,7 +323,12 @@ describe("release-hobo.yml publishes only release Freight", () => {
 			/HOBO_RELEASE_CD_HOME: \$\{\{ runner\.temp \}\}\/hobo-release-cd\/oci/u,
 		);
 		before(block, "--filter=@hobo/hobo...", "push-release-ghcr-images.mts");
-		expect(block).toContain("name: hobo-release-freight-oci");
+		// One image per leg, so one journal per image; promote-stable reads them all.
+		expect(block).toContain(
+			"name: hobo-release-freight-oci-${{ matrix.image_id }}",
+		);
+		for (const name of ["release-tag", "release-github"])
+			expect(job(name)).toContain("pattern: hobo-release-freight-oci-*");
 	});
 
 	it("records npm tarballs before npm publish", () => {

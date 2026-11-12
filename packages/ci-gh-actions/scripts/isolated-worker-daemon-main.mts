@@ -17,6 +17,7 @@ import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
+	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
 	createCliDockerDriver,
@@ -61,7 +62,9 @@ import {
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
 	loadMeshIdentity,
+	localWorkerFreeSlots,
 	type MeshJournal,
+	mainShardParallelLaunchCapacity,
 	memoryRequestForJob,
 	mergeHeldPruneWitness,
 	meshReliabilityJournal,
@@ -327,6 +330,18 @@ const hostPressureSample = () => readHostResourcePressureSample(Date.now());
 const containerStallGuard = createContainerStallGuard({
 	read: hostPressureSample,
 });
+// A started job's reservation stays counted against host memory this long.
+const memoryRampMs = Number(
+	process.env.HOBO_CI_WORKER_MEMORY_RAMP_MS ?? "120000",
+);
+if (!Number.isInteger(memoryRampMs) || memoryRampMs < 0)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_RAMP_MS");
+// Free memory has to have lasted this long before a job is admitted on it.
+const memoryLowWaterMs = Number(
+	process.env.HOBO_CI_WORKER_MEMORY_LOW_WATER_MS ?? "60000",
+);
+if (!Number.isInteger(memoryLowWaterMs) || memoryLowWaterMs < 0)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_LOW_WATER_MS");
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
@@ -334,6 +349,8 @@ const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	volatilityMb: capacityVolatilityMb,
 	hostPressure: hostPressureSample,
 	hostCores: () => cpus().length,
+	memoryRampMs,
+	availableWindowMs: memoryLowWaterMs,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -719,7 +736,7 @@ try {
 		noContainerDrainMaxMs,
 	});
 	const firstReconciliation = await worker.reconcileLeases();
-	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
+	let liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
 	let drainJobInFlight = firstReconciliation.drainJobInFlight;
 	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
@@ -829,9 +846,21 @@ try {
 				},
 			})
 		: undefined;
-	const fleetCapacity = publishFleetRoutes
+	const fleetCapacityPublisher = publishFleetRoutes
 		? createFleetCapacityPublisher({ github, log })
 		: undefined;
+	const localFleetCapacitySnapshot = async () => {
+		const active = await store.activeLeases();
+		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
+		const meshCap = await mesh?.observe();
+		if (!meshCap) return { hoboFreeSlots };
+		const meshFree = meshCap.freeSlots;
+		return {
+			hoboFreeSlots,
+			meshFreeSlots: meshFree,
+			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
+		};
+	};
 	const headroomFleetDeferMs = Number(
 		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
 	);
@@ -898,21 +927,21 @@ try {
 			backlogImmediate:
 				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",
 		},
-		fleetCapacity: fleetCapacity
-			? {
-					publish: (input) => fleetCapacity.publish(input),
-					snapshot: async () => {
-						const hoboFreeSlots = Math.max(0, slots - liveWorkerLeaseIds.size);
-						const meshCap = await mesh?.observe();
-						const meshFree = meshCap?.freeSlots ?? hoboFreeSlots;
-						return {
-							hoboFreeSlots,
-							meshFreeSlots: meshFree,
-							arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
-						};
-					},
-				}
-			: undefined,
+		parallelLaunchCapacity: () =>
+			mainShardParallelLaunchCapacity({
+				availableMb: memoryAdmission.availableLowWaterMb(),
+				requestMb: memoryConfig.classes.standard,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+				launchSlots: slots,
+			}),
+		fleetCapacity: {
+			publish: async (input) => {
+				if (!fleetCapacityPublisher) return undefined;
+				return fleetCapacityPublisher.publish(input);
+			},
+			snapshot: localFleetCapacitySnapshot,
+		},
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -991,7 +1020,7 @@ try {
 					requireTrusted: meshTrust.requireTrusted,
 					initialReliability: storedReliability?.record,
 					persistReliability: (record) => void meshReliability?.save(record),
-					freeSlots: () => slots - liveWorkerLeaseIds.size,
+					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
 					totalSlots: slots,
 					healthy: () => !meshDraining,
 					servesTrunk: trunkSlots > 0,
@@ -1211,7 +1240,7 @@ try {
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
-		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
 		drainJobInFlight = reconciliation.drainJobInFlight;
 		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		runOrphanJobReconcile();
@@ -1492,6 +1521,9 @@ try {
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				liveLaunchSlotsInUse = countLiveBoxContainers(
+					await store.activeLeases(),
+				);
 				drainJobInFlight = reconciliation.drainJobInFlight;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
