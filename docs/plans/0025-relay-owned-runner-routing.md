@@ -24,7 +24,7 @@ tags: [hobo, ci, relay, routing, fleet, resilience, implementation, sdlc]
 | Incident (2026-11-12) | Evidence | Cause |
 | --- | --- | --- |
 | A main run went to a fleet that could not admit its jobs; shards started 14–36 minutes late and two timed out | Run [43207388098](https://github.com/Hobo-Labs/HoBo/actions/runs/43207388098), [finding 142](../ci/findings/0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md) | Nothing that routes a run can see what the relay knows, and the main gate's jobs are pinned to `hobo-trunk` whatever the route job decides |
-| Every unpinned run of four workflows went to paid runners | Run [43239493135](https://github.com/Hobo-Labs/HoBo/actions/runs/43239493135), [finding 143](../ci/findings/0143-route-job-read-a-capacity-record-no-worker-wrote.md) | The route script crashed on a file the workflow did not check out; the step fell back with a warning nobody read |
+| Every unpinned run of four workflows went to paid runners | Run [43239493135](https://github.com/Hobo-Labs/HoBo/actions/runs/43239493135), [finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md) | The route script crashed on a file the workflow did not check out; the step fell back with a warning nobody read |
 | The shard planner used its default cap in both runs checked | Jobs `131146352582`, `131259868933`: `variables/HOBO_CI_FLEET_CAPACITY returned 403` | A job token cannot read a repository variable; the failure is swallowed |
 | A broken script test reached a green pull request | [#1943](https://github.com/Hobo-Labs/HoBo/pull/1943), `scripts/test/main-gate-workspace-shards.test.ts` | No pull-request job runs `scripts/test` |
 
