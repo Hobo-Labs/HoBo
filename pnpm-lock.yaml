@@ -675,6 +675,18 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/cd-kube-fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/ci:
     dependencies:
       '@bufbuild/protobuf':
