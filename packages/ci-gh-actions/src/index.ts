@@ -374,6 +374,11 @@ export {
 	type GithubClaims,
 	type IdentityVerifier,
 } from "./oidc.js";
+export {
+	createGithubWorkflowVerifier,
+	type GithubWorkflowClaims,
+	type GithubWorkflowVerifier,
+} from "./workflow-oidc.js";
 export * from "./onboarding.js";
 export {
 	applyCiEnvironmentPolicy,
