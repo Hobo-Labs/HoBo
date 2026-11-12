@@ -36,6 +36,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   mirror clone whose owner directory still cannot be created under that root (**EACCES** on a root that
   exists but is not writable) does not throw: it is a mirror **miss** with the reason, and the job
   falls back to a plain checkout.
+  The runner-image job's script-free `pnpm install` (root dependencies for shell lint) goes through
+  `scripts/ci/pnpm-install.mts` like every other workflow install, so a cold store stalls it for the
+  wrapper's bound (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) and a retry, not the job's limit.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
