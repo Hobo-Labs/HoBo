@@ -22,7 +22,9 @@ import {
 	verifierFor,
 } from "./harness.js";
 
-async function refusalOf(run: Promise<unknown>): Promise<ResolverComponentError> {
+async function refusalOf(
+	run: Promise<unknown>,
+): Promise<ResolverComponentError> {
 	try {
 		await run;
 	} catch (error) {
@@ -36,7 +38,10 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 	it("verifies a correctly signed bundle and binds both digests", async () => {
 		const signer = issuer();
 		const built = build(manifestJson(), "bundle-ok");
-		const verified = await verifyResolverComponentBundle(await signedBundle(built, signer), verifierFor(signer));
+		const verified = await verifyResolverComponentBundle(
+			await signedBundle(built, signer),
+			verifierFor(signer),
+		);
 		expect(verified.wasmDigest).toBe(built.manifest.wasmDigest);
 		expect(verified.registryDigest).toBe(built.registryDigest);
 		expect(verified.signedBy).toBe("spiffe://hobo/component-publisher");
@@ -44,14 +49,22 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 
 	it("refuses to load without a verifier (unverified is never a pass)", async () => {
 		const built = build(manifestJson(), "bundle-unverified");
-		const error = await refusalOf(verifyResolverComponentBundle(await signedBundle(built, issuer()), undefined));
+		const error = await refusalOf(
+			verifyResolverComponentBundle(
+				await signedBundle(built, issuer()),
+				undefined,
+			),
+		);
 		expect(error.componentCode).toBe("component.bundle-unverified");
 	});
 
 	it("refuses a foreign signer", async () => {
 		const built = build(manifestJson(), "bundle-foreign");
 		const error = await refusalOf(
-			verifyResolverComponentBundle(await signedBundle(built, issuer()), verifierFor(issuer())),
+			verifyResolverComponentBundle(
+				await signedBundle(built, issuer()),
+				verifierFor(issuer()),
+			),
 		);
 		expect(error.componentCode).toBe("component.bundle-signature-failed");
 	});
@@ -62,7 +75,9 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 		const bundle = await signedBundle(built, signer);
 		const wasm = Uint8Array.from(bundle.wasm);
 		wasm[wasm.length - 1] = (wasm.at(-1) ?? 0) ^ 1;
-		const error = await refusalOf(verifyResolverComponentBundle({ ...bundle, wasm }, verifierFor(signer)));
+		const error = await refusalOf(
+			verifyResolverComponentBundle({ ...bundle, wasm }, verifierFor(signer)),
+		);
 		expect(error.componentCode).toBe("component.bundle-digest-mismatch");
 	});
 
@@ -71,11 +86,20 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 		const built = build(manifestJson(), "bundle-widen");
 		const bundle = await signedBundle(built, signer);
 		const widened = build(
-			manifestJson({ egress: [{ host: "api.acme.test" }, { host: "upload.acme.test" }, { host: "evil.example" }] }),
+			manifestJson({
+				egress: [
+					{ host: "api.acme.test" },
+					{ host: "upload.acme.test" },
+					{ host: "evil.example" },
+				],
+			}),
 			"bundle-widen",
 		);
 		const swapped = await refusalOf(
-			verifyResolverComponentBundle({ ...bundle, manifest: widened.manifestJson }, verifierFor(signer)),
+			verifyResolverComponentBundle(
+				{ ...bundle, manifest: widened.manifestJson },
+				verifierFor(signer),
+			),
 		);
 		expect(swapped.componentCode).toBe("component.bundle-digest-mismatch");
 		const rebound = await refusalOf(
@@ -83,7 +107,10 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 				{
 					...bundle,
 					manifest: widened.manifestJson,
-					registry: { ...bundle.registry, manifest: resolverRegistryManifest(widened.manifest) },
+					registry: {
+						...bundle.registry,
+						manifest: resolverRegistryManifest(widened.manifest),
+					},
 				},
 				verifierFor(signer),
 			),
@@ -96,7 +123,10 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 		const built = build(manifestJson(), "bundle-magic");
 		const bundle = await signedBundle(built, signer);
 		const error = await refusalOf(
-			verifyResolverComponentBundle({ ...bundle, wasm: new TextEncoder().encode("#!/bin/sh") }, verifierFor(signer)),
+			verifyResolverComponentBundle(
+				{ ...bundle, wasm: new TextEncoder().encode("#!/bin/sh") },
+				verifierFor(signer),
+			),
 		);
 		expect(error.componentCode).toBe("component.bundle-digest-mismatch");
 	});
@@ -104,17 +134,22 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 	it("refuses to instantiate bytes no engine can run, and a mode the manifest does not allow", async () => {
 		const signer = issuer();
 		const built = build(manifestJson(), "bundle-engine");
-		const verified = await verifyResolverComponentBundle(await signedBundle(built, signer), verifierFor(signer));
+		const verified = await verifyResolverComponentBundle(
+			await signedBundle(built, signer),
+			verifierFor(signer),
+		);
 		const options = {
-			componentHost: createRuntimeLocalComponentHost({ appendEvent: () => undefined }),
+			componentHost: createRuntimeLocalComponentHost({
+				appendEvent: () => undefined,
+			}),
 			engine: createGuestModuleEngine(new Map()),
 			mode: "conductor" as const,
 			resolveHost: publicDns,
 			credentials: new Credentials(),
 		};
-		expect((await refusalOf(loadResolverComponent(verified, options))).componentCode).toBe(
-			"component.engine-unavailable",
-		);
+		expect(
+			(await refusalOf(loadResolverComponent(verified, options))).componentCode,
+		).toBe("component.engine-unavailable");
 		const guest = defineResolverGuest(() => ({
 			describe: async () => ({ componentId: "x", version: "0", classes: [] }),
 			reconcile: async () => ok(outcome("noop", "x", {})),
@@ -125,7 +160,9 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 		const agentOnly = await refusalOf(
 			loadResolverComponent(verified, {
 				...options,
-				engine: createGuestModuleEngine(new Map([[verified.wasmDigest, guest]])),
+				engine: createGuestModuleEngine(
+					new Map([[verified.wasmDigest, guest]]),
+				),
 				mode: "agent",
 			}),
 		);
@@ -133,8 +170,16 @@ describe("signed component bundles (verified via @hobo/registry)", () => {
 	});
 
 	it("component bytes are deterministic for the same source", () => {
-		const a = componentizeResolver({ componentId: "c", version: "1.0.0", source: "s" });
-		const b = componentizeResolver({ componentId: "c", version: "1.0.0", source: "s" });
+		const a = componentizeResolver({
+			componentId: "c",
+			version: "1.0.0",
+			source: "s",
+		});
+		const b = componentizeResolver({
+			componentId: "c",
+			version: "1.0.0",
+			source: "s",
+		});
 		expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
 		expect(WebAssembly.validate(a)).toBe(true);
 	});

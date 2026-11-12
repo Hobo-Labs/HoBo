@@ -10,7 +10,10 @@ describe("secret scanner", () => {
 		["raw", `prefix ${SECRET} suffix`],
 		["the full header value", `Bearer ${SECRET}`],
 		["base64", Buffer.from(SECRET).toString("base64")],
-		["base64 inside a larger blob", Buffer.from(`xx${SECRET}yy`).toString("base64")],
+		[
+			"base64 inside a larger blob",
+			Buffer.from(`xx${SECRET}yy`).toString("base64"),
+		],
 		["base64url", Buffer.from(`a${SECRET}`).toString("base64url")],
 		["hex", Buffer.from(SECRET).toString("hex")],
 		["upper hex", Buffer.from(SECRET).toString("hex").toUpperCase()],
@@ -26,7 +29,9 @@ describe("secret scanner", () => {
 	});
 
 	it("redacts every occurrence", () => {
-		const redacted = scanner.redact(`{"auth":"Bearer ${SECRET}","again":"${SECRET}"}`);
+		const redacted = scanner.redact(
+			`{"auth":"Bearer ${SECRET}","again":"${SECRET}"}`,
+		);
 		expect(redacted).not.toContain(SECRET);
 		expect(redacted).toContain(REDACTED);
 	});

@@ -20,9 +20,9 @@ import type {
 	WitLogLevel,
 	WitReadResult,
 	WitResolveOutcome,
+	WitResolveRequest,
 	WitResolverAction,
 	WitResolverError,
-	WitResolveRequest,
 	WitResourceClass,
 	WitResult,
 } from "./types.js";
@@ -80,8 +80,16 @@ export interface InstancesPayload {
 	readonly credentialRef: string;
 }
 
-export function object(value: JsonValue | undefined, label: string): JsonObject {
-	if (value === undefined || value === null || !isJsonObject(value) || isJsonArray(value))
+export function object(
+	value: JsonValue | undefined,
+	label: string,
+): JsonObject {
+	if (
+		value === undefined ||
+		value === null ||
+		!isJsonObject(value) ||
+		isJsonArray(value)
+	)
 		throw new AbiError(`${label}: expected a record`);
 	return value;
 }
@@ -91,23 +99,37 @@ export function string(value: JsonValue | undefined, label: string): string {
 	return value;
 }
 
-function optionalString(value: JsonValue | undefined, label: string): string | null {
+function optionalString(
+	value: JsonValue | undefined,
+	label: string,
+): string | null {
 	if (value === undefined || value === null) return null;
 	return string(value, label);
 }
 
-function stringList(value: JsonValue | undefined, label: string): readonly string[] {
-	if (!isJsonArray(value)) throw new AbiError(`${label}: expected a list<string>`);
-	return Object.freeze(value.map((entry, index) => string(entry, `${label}[${index}]`)));
+function stringList(
+	value: JsonValue | undefined,
+	label: string,
+): readonly string[] {
+	if (!isJsonArray(value))
+		throw new AbiError(`${label}: expected a list<string>`);
+	return Object.freeze(
+		value.map((entry, index) => string(entry, `${label}[${index}]`)),
+	);
 }
 
-function headers(value: JsonValue | undefined, label: string): readonly WitHeader[] {
+function headers(
+	value: JsonValue | undefined,
+	label: string,
+): readonly WitHeader[] {
 	if (!isJsonArray(value))
 		throw new AbiError(`${label}: expected list<tuple<string, string>>`);
 	return Object.freeze(
 		value.map((entry, index): WitHeader => {
 			if (!isJsonArray(entry) || entry.length !== 2)
-				throw new AbiError(`${label}[${index}]: expected tuple<string, string>`);
+				throw new AbiError(
+					`${label}[${index}]: expected tuple<string, string>`,
+				);
 			return Object.freeze([
 				string(entry[0], `${label}[${index}].0`),
 				string(entry[1], `${label}[${index}].1`),
@@ -126,10 +148,17 @@ export function liftHttpRequest(value: JsonValue | undefined): WitHttpRequest {
 	});
 }
 
-export function liftHttpResponse(value: JsonValue | undefined): WitHttpResponse {
+export function liftHttpResponse(
+	value: JsonValue | undefined,
+): WitHttpResponse {
 	const source = object(value, "http-response");
 	const status = source.status;
-	if (!isJsonNumber(status) || !Number.isInteger(status) || status < 0 || status > 65_535)
+	if (
+		!isJsonNumber(status) ||
+		!Number.isInteger(status) ||
+		status < 0 ||
+		status > 65_535
+	)
 		throw new AbiError("http-response.status: expected u16");
 	return Object.freeze({
 		status,
@@ -138,32 +167,50 @@ export function liftHttpResponse(value: JsonValue | undefined): WitHttpResponse 
 	});
 }
 
-export function liftEgressResult(value: JsonValue | undefined): WitEgressResult {
+export function liftEgressResult(
+	value: JsonValue | undefined,
+): WitEgressResult {
 	const source = object(value, "egress result");
-	if (source.ok !== undefined) return Object.freeze({ ok: liftHttpResponse(source.ok) });
+	if (source.ok !== undefined)
+		return Object.freeze({ ok: liftHttpResponse(source.ok) });
 	const err = object(source.err, "egress result.err");
-	if (err.tag !== "denied") throw new AbiError("egress-error: expected tag denied");
+	if (err.tag !== "denied")
+		throw new AbiError("egress-error: expected tag denied");
 	return Object.freeze({
-		err: Object.freeze({ tag: "denied", val: string(err.val, "egress-error.val") }),
+		err: Object.freeze({
+			tag: "denied",
+			val: string(err.val, "egress-error.val"),
+		}),
 	});
 }
 
-export function liftAuthorizedFetch(value: JsonValue | undefined): AuthorizedFetchPayload {
+export function liftAuthorizedFetch(
+	value: JsonValue | undefined,
+): AuthorizedFetchPayload {
 	const source = object(value, "authorized-fetch");
 	return Object.freeze({
 		request: liftHttpRequest(source.request),
-		credentialRef: string(source.credentialRef, "authorized-fetch.credential-ref"),
+		credentialRef: string(
+			source.credentialRef,
+			"authorized-fetch.credential-ref",
+		),
 	});
 }
 
 export function liftLog(value: JsonValue | undefined): LogPayload {
 	const source = object(value, "log");
 	const level = LOG_LEVELS.find((candidate) => candidate === source.level);
-	if (level === undefined) throw new AbiError("log.level: expected a log-level");
-	return Object.freeze({ level, message: string(source.message, "log.message") });
+	if (level === undefined)
+		throw new AbiError("log.level: expected a log-level");
+	return Object.freeze({
+		level,
+		message: string(source.message, "log.message"),
+	});
 }
 
-export function liftInstancesPayload(value: JsonValue | undefined): InstancesPayload {
+export function liftInstancesPayload(
+	value: JsonValue | undefined,
+): InstancesPayload {
 	const source = object(value, "instances");
 	return Object.freeze({
 		productId: string(source.productId, "instances.product-id"),
@@ -171,7 +218,9 @@ export function liftInstancesPayload(value: JsonValue | undefined): InstancesPay
 	});
 }
 
-export function liftResolveRequest(value: JsonValue | undefined): WitResolveRequest {
+export function liftResolveRequest(
+	value: JsonValue | undefined,
+): WitResolveRequest {
 	const source = object(value, "resolve-request");
 	const ref = object(source.ref, "resolve-request.ref");
 	return Object.freeze({
@@ -182,14 +231,21 @@ export function liftResolveRequest(value: JsonValue | undefined): WitResolveRequ
 			physicalId: optionalString(ref.physicalId, "ref.physical-id"),
 		}),
 		desiredJson: string(source.desiredJson, "resolve-request.desired-json"),
-		observedJson: optionalString(source.observedJson, "resolve-request.observed-json"),
-		credentialRef: string(source.credentialRef, "resolve-request.credential-ref"),
+		observedJson: optionalString(
+			source.observedJson,
+			"resolve-request.observed-json",
+		),
+		credentialRef: string(
+			source.credentialRef,
+			"resolve-request.credential-ref",
+		),
 	});
 }
 
 export function liftDescription(value: JsonValue | undefined): WitDescription {
 	const source = object(value, "description");
-	if (!isJsonArray(source.classes)) throw new AbiError("description.classes: expected a list");
+	if (!isJsonArray(source.classes))
+		throw new AbiError("description.classes: expected a list");
 	return Object.freeze({
 		componentId: string(source.componentId, "description.component-id"),
 		version: string(source.version, "description.version"),
@@ -199,8 +255,14 @@ export function liftDescription(value: JsonValue | undefined): WitDescription {
 				return Object.freeze({
 					productId: string(item.productId, "resource-class.product-id"),
 					slot: string(item.slot, "resource-class.slot"),
-					retainedFields: stringList(item.retainedFields, "resource-class.retained-fields"),
-					observeFields: stringList(item.observeFields, "resource-class.observe-fields"),
+					retainedFields: stringList(
+						item.retainedFields,
+						"resource-class.retained-fields",
+					),
+					observeFields: stringList(
+						item.observeFields,
+						"resource-class.observe-fields",
+					),
 					directives: stringList(item.directives, "resource-class.directives"),
 				});
 			}),
@@ -211,7 +273,8 @@ export function liftDescription(value: JsonValue | undefined): WitDescription {
 export function liftOutcome(value: JsonValue | undefined): WitResolveOutcome {
 	const source = object(value, "resolve-outcome");
 	const action = ACTIONS.find((candidate) => candidate === source.action);
-	if (action === undefined) throw new AbiError("resolve-outcome.action: expected a resolver-action");
+	if (action === undefined)
+		throw new AbiError("resolve-outcome.action: expected a resolver-action");
 	return Object.freeze({
 		action,
 		physicalId: string(source.physicalId, "resolve-outcome.physical-id"),
@@ -220,7 +283,9 @@ export function liftOutcome(value: JsonValue | undefined): WitResolveOutcome {
 	});
 }
 
-export function liftReadResult(value: JsonValue | undefined): WitReadResult | null {
+export function liftReadResult(
+	value: JsonValue | undefined,
+): WitReadResult | null {
 	if (value === null) return null;
 	const source = object(value, "read-result");
 	return Object.freeze({
@@ -229,8 +294,11 @@ export function liftReadResult(value: JsonValue | undefined): WitReadResult | nu
 	});
 }
 
-export function liftInstances(value: JsonValue | undefined): readonly WitInstance[] {
-	if (!isJsonArray(value)) throw new AbiError("instances: expected list<instance>");
+export function liftInstances(
+	value: JsonValue | undefined,
+): readonly WitInstance[] {
+	if (!isJsonArray(value))
+		throw new AbiError("instances: expected list<instance>");
 	return Object.freeze(
 		value.map((entry, index): WitInstance => {
 			const item = object(entry, `instances[${index}]`);
@@ -243,7 +311,8 @@ export function liftInstances(value: JsonValue | undefined): readonly WitInstanc
 }
 
 export function liftNull(value: JsonValue | undefined): null {
-	if (value !== null && value !== undefined) throw new AbiError("expected unit");
+	if (value !== null && value !== undefined)
+		throw new AbiError("expected unit");
 	return null;
 }
 
@@ -253,12 +322,14 @@ export function liftResult<T>(
 	liftOk: (ok: JsonValue | undefined) => T,
 ): WitResult<T> {
 	const source = object(value, "result");
-	if (Object.hasOwn(source, "ok")) return Object.freeze({ ok: liftOk(source.ok) });
+	if (Object.hasOwn(source, "ok"))
+		return Object.freeze({ ok: liftOk(source.ok) });
 	const err = object(source.err, "result.err");
 	const val = string(err.val, "resolver-error.val");
 	let error: WitResolverError;
 	if (err.tag === "rejected") error = { tag: "rejected", val };
 	else if (err.tag === "unsupported") error = { tag: "unsupported", val };
-	else throw new AbiError("resolver-error.tag: expected rejected | unsupported");
+	else
+		throw new AbiError("resolver-error.tag: expected rejected | unsupported");
 	return Object.freeze({ err: Object.freeze(error) });
 }

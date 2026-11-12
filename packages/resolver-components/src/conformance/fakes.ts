@@ -2,7 +2,11 @@
 // conformance kit and the CD platform matrix. Each fake checks the bearer
 // token the host attaches (so a run without host-side injection fails) and
 // keeps its state in memory; nothing is persisted.
-import type { HttpTransport, TransportRequest, TransportResponse } from "@hobo/core";
+import type {
+	HttpTransport,
+	TransportRequest,
+	TransportResponse,
+} from "@hobo/core";
 
 /** Deterministic Last-Modified stamp (no ambient clock). */
 const STAMP = "Wed, 11 Nov 2026 00:00:00 GMT";
@@ -19,7 +23,11 @@ export interface FakeEndpoint {
 	readonly objects: ReadonlyMap<string, StoredObject>;
 }
 
-function response(status: number, body = "", headers: Record<string, string> = {}): TransportResponse {
+function response(
+	status: number,
+	body = "",
+	headers: Record<string, string> = {},
+): TransportResponse {
 	return { status, headers, body };
 }
 
@@ -42,8 +50,10 @@ export function createFakeUploadEndpoint(options: {
 	const transport: HttpTransport = async (request) => {
 		const url = new URL(request.url);
 		if (url.hostname !== options.host) return response(502, "unknown host");
-		if (url.pathname === healthPath && request.method === "GET") return response(200, "ok");
-		if (!authorized(request, options.token)) return response(401, "unauthorized");
+		if (url.pathname === healthPath && request.method === "GET")
+			return response(200, "ok");
+		if (!authorized(request, options.token))
+			return response(401, "unauthorized");
 		const key = url.pathname;
 		const stored = objects.get(key);
 		if (request.method === "GET" || request.method === "HEAD") {
@@ -59,7 +69,8 @@ export function createFakeUploadEndpoint(options: {
 			objects.set(key, {
 				body: request.body ?? "",
 				digest: request.headers["x-hobo-artifact-digest"] ?? "",
-				contentType: request.headers["content-type"] ?? "application/octet-stream",
+				contentType:
+					request.headers["content-type"] ?? "application/octet-stream",
 				mode: "",
 			});
 			return response(stored === undefined ? 201 : 200);
@@ -86,14 +97,17 @@ export function createFakeSftpBridge(options: {
 		const url = new URL(request.url);
 		if (url.hostname !== options.host) return response(502, "unknown host");
 		if (url.pathname === "/v1/health") return response(200, "ok");
-		if (!authorized(request, options.token)) return response(401, "unauthorized");
+		if (!authorized(request, options.token))
+			return response(401, "unauthorized");
 		if (url.pathname === "/v1/files" && request.method === "GET") {
 			const prefix = url.searchParams.get("prefix") ?? "/";
 			const listed = [...objects.entries()]
 				.filter(([path]) => path.startsWith(prefix))
 				.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
 				.map(([path, stored]) => ({ path, sha256: stored.digest }));
-			return response(200, JSON.stringify(listed), { "content-type": "application/json" });
+			return response(200, JSON.stringify(listed), {
+				"content-type": "application/json",
+			});
 		}
 		if (!url.pathname.startsWith("/v1/files/")) return response(404);
 		const path = decodeURIComponent(url.pathname.slice("/v1/files".length));

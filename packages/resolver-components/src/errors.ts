@@ -62,25 +62,26 @@ const REMEDIATION: Readonly<Record<ResolverComponentErrorCode, string>> =
 			"Make the credential locator resolvable where the reconciler runs (agent-local in agent mode).",
 	});
 
-const CORE_CODE: Readonly<Record<ResolverComponentErrorCode, ResolverErrorCode>> =
-	Object.freeze({
-		"component.manifest-invalid": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.bundle-unverified": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.bundle-signature-failed": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.bundle-digest-mismatch": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.engine-unavailable": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.describe-mismatch": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.egress-denied": "RESOLVER_PROVIDER_REJECTED",
-		"component.secret-exfiltration": "RESOLVER_OUTPUT_UNPARSEABLE",
-		"component.fuel-exhausted": "RESOLVER_PROVIDER_REJECTED",
-		"component.memory-exceeded": "RESOLVER_PROVIDER_REJECTED",
-		"component.timeout": "RESOLVER_PROVIDER_REJECTED",
-		"component.trap": "RESOLVER_PROVIDER_REJECTED",
-		"component.guest-rejected": "RESOLVER_PROVIDER_REJECTED",
-		"component.guest-unsupported": "RESOLVER_PRODUCT_UNSUPPORTED",
-		"component.output-unparseable": "RESOLVER_OUTPUT_UNPARSEABLE",
-		"component.credential-unavailable": "RESOLVER_CREDENTIAL_MISSING",
-	});
+const CORE_CODE: Readonly<
+	Record<ResolverComponentErrorCode, ResolverErrorCode>
+> = Object.freeze({
+	"component.manifest-invalid": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.bundle-unverified": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.bundle-signature-failed": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.bundle-digest-mismatch": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.engine-unavailable": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.describe-mismatch": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.egress-denied": "RESOLVER_PROVIDER_REJECTED",
+	"component.secret-exfiltration": "RESOLVER_OUTPUT_UNPARSEABLE",
+	"component.fuel-exhausted": "RESOLVER_PROVIDER_REJECTED",
+	"component.memory-exceeded": "RESOLVER_PROVIDER_REJECTED",
+	"component.timeout": "RESOLVER_PROVIDER_REJECTED",
+	"component.trap": "RESOLVER_PROVIDER_REJECTED",
+	"component.guest-rejected": "RESOLVER_PROVIDER_REJECTED",
+	"component.guest-unsupported": "RESOLVER_PRODUCT_UNSUPPORTED",
+	"component.output-unparseable": "RESOLVER_OUTPUT_UNPARSEABLE",
+	"component.credential-unavailable": "RESOLVER_CREDENTIAL_MISSING",
+});
 
 /** A component-host refusal: a `ResolverError` with a component code. */
 export class ResolverComponentError extends ResolverError {

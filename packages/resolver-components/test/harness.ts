@@ -1,7 +1,11 @@
 // Test harness: a signing issuer, a bundle builder, a runtime-local
 // component host, a fake DNS, a credential store with a known secret, and a
 // programmable upstream transport that records every request it receives.
-import type { CredentialResolver, OtelMetricPoint, TelemetrySink } from "@hobo/cd";
+import type {
+	CredentialResolver,
+	OtelMetricPoint,
+	TelemetrySink,
+} from "@hobo/cd";
 import type {
 	HttpTransport,
 	JsonObject,
@@ -9,7 +13,11 @@ import type {
 	TransportRequest,
 	TransportResponse,
 } from "@hobo/core";
-import { createInMemoryKms, type JwtSvidClaims, JwtSvidIssuer } from "@hobo/identity";
+import {
+	createInMemoryKms,
+	type JwtSvidClaims,
+	JwtSvidIssuer,
+} from "@hobo/identity";
 import type { SignatureVerifier } from "@hobo/registry";
 import { createRuntimeLocalComponentHost } from "@hobo/runtime-local";
 import {
@@ -17,6 +25,7 @@ import {
 	buildResolverComponent,
 	componentizeResolver,
 } from "../src/build/index.js";
+import type { ResolverGuestModule } from "../src/guest/types.js";
 import {
 	type ComponentInvocationRecord,
 	type ComponentLogLine,
@@ -30,7 +39,7 @@ import {
 	type ResolverComponentBundle,
 	verifyResolverComponentBundle,
 } from "../src/index.js";
-import type { ResolverGuestModule } from "../src/guest/types.js";
+import { isJsonString } from "../src/json.js";
 
 export const NOW_SECONDS = 1_790_000_000;
 export const SECRET = "tok_live_9f8e7d6c5b4a39281706";
@@ -56,7 +65,10 @@ export function verifierFor(signer: JwtSvidIssuer): SignatureVerifier {
 	};
 }
 
-export async function attest(signer: JwtSvidIssuer, digest: string): Promise<string> {
+export async function attest(
+	signer: JwtSvidIssuer,
+	digest: string,
+): Promise<string> {
 	const claims: JwtSvidClaims = {
 		sub: "spiffe://hobo/component-publisher",
 		aud: "hobo-registry",
@@ -71,8 +83,11 @@ export async function attest(signer: JwtSvidIssuer, digest: string): Promise<str
 	return signer.signJwtSvid(claims);
 }
 
-export function build(manifest: JsonObject, source: string): BuiltResolverComponent {
-	const id = typeof manifest.id === "string" ? manifest.id : "component";
+export function build(
+	manifest: JsonObject,
+	source: string,
+): BuiltResolverComponent {
+	const id = isJsonString(manifest.id) ? manifest.id : "component";
 	return buildResolverComponent(
 		manifest,
 		componentizeResolver({ componentId: id, version: "0.0.0", source }),
@@ -118,7 +133,9 @@ export class ManualTimers implements ComponentTimers {
 	}
 }
 
-export type Route = (request: TransportRequest) => TransportResponse | Promise<TransportResponse>;
+export type Route = (
+	request: TransportRequest,
+) => TransportResponse | Promise<TransportResponse>;
 
 /** Records requests; routes by `METHOD url-prefix`. */
 export class Upstream {
@@ -132,14 +149,21 @@ export class Upstream {
 		this.requests.push(request);
 		for (const [key, handler] of this.routes) {
 			const [method, prefix] = key.split(" ");
-			if ((method === "*" || method === request.method) && request.url.startsWith(prefix ?? ""))
+			if (
+				(method === "*" || method === request.method) &&
+				request.url.startsWith(prefix ?? "")
+			)
 				return handler(request);
 		}
 		return { status: 404, headers: {}, body: "" };
 	};
 }
 
-export function respond(status: number, body = "", headers: Record<string, string> = {}): TransportResponse {
+export function respond(
+	status: number,
+	body = "",
+	headers: Record<string, string> = {},
+): TransportResponse {
 	return { status, headers, body };
 }
 
@@ -148,7 +172,10 @@ export const publicDns = async (host: string): Promise<readonly string[]> =>
 
 export class Credentials implements CredentialResolver {
 	readonly calls: { ref: string; scope: string }[] = [];
-	async resolve(ref: string, scope: string): Promise<Readonly<Record<string, string>>> {
+	async resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>> {
 		this.calls.push({ ref, scope });
 		if (ref !== CREDENTIAL_REF) throw new Error(`unknown credential ${ref}`);
 		return { authorization: `Bearer ${SECRET}` };
@@ -189,14 +216,21 @@ export async function hosted(
 ): Promise<Hosted> {
 	const signer = issuer();
 	const built = build(manifest, source);
-	const verified = await verifyResolverComponentBundle(await signedBundle(built, signer), verifierFor(signer));
+	const verified = await verifyResolverComponentBundle(
+		await signedBundle(built, signer),
+		verifierFor(signer),
+	);
 	const invocations: ComponentInvocationRecord[] = [];
 	const logs: ComponentLogLine[] = [];
 	const credentials = new Credentials();
 	const metrics = new Metrics();
 	const component = await loadResolverComponent(verified, {
-		componentHost: createRuntimeLocalComponentHost({ appendEvent: () => undefined }),
-		engine: createGuestModuleEngine(new Map([[built.manifest.wasmDigest, guest]])),
+		componentHost: createRuntimeLocalComponentHost({
+			appendEvent: () => undefined,
+		}),
+		engine: createGuestModuleEngine(
+			new Map([[built.manifest.wasmDigest, guest]]),
+		),
 		mode: options.mode ?? "conductor",
 		resolveHost: options.resolveHost ?? publicDns,
 		credentials,
@@ -210,7 +244,11 @@ export async function hosted(
 	return { component, invocations, logs, credentials, metrics, built };
 }
 
-export function request(productId: string, desired: JsonObject, physicalId?: string): ResolveRequest {
+export function request(
+	productId: string,
+	desired: JsonObject,
+	physicalId?: string,
+): ResolveRequest {
 	return {
 		ref: {
 			slot: "web",

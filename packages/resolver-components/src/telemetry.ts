@@ -39,11 +39,46 @@ export function invocationMetrics(
 		"hobo.resolver_component.outcome": outcomeLabel(record.outcome),
 	};
 	const points: OtelMetricPoint[] = [
-		{ name: RESOLVER_COMPONENT_METRICS.invocations, kind: "counter", value: 1, unit: "{invocation}", atMs, attributes },
-		{ name: RESOLVER_COMPONENT_METRICS.duration, kind: "histogram", value: record.durationMs, unit: "ms", atMs, attributes },
-		{ name: RESOLVER_COMPONENT_METRICS.fuel, kind: "histogram", value: Number(record.fuelUsed), unit: "{fuel}", atMs, attributes },
-		{ name: RESOLVER_COMPONENT_METRICS.peakMemory, kind: "histogram", value: Number(record.peakMemoryBytes), unit: "By", atMs, attributes },
-		{ name: RESOLVER_COMPONENT_METRICS.egressCalls, kind: "counter", value: record.egressCalls, unit: "{request}", atMs, attributes },
+		{
+			name: RESOLVER_COMPONENT_METRICS.invocations,
+			kind: "counter",
+			value: 1,
+			unit: "{invocation}",
+			atMs,
+			attributes,
+		},
+		{
+			name: RESOLVER_COMPONENT_METRICS.duration,
+			kind: "histogram",
+			value: record.durationMs,
+			unit: "ms",
+			atMs,
+			attributes,
+		},
+		{
+			name: RESOLVER_COMPONENT_METRICS.fuel,
+			kind: "histogram",
+			value: Number(record.fuelUsed),
+			unit: "{fuel}",
+			atMs,
+			attributes,
+		},
+		{
+			name: RESOLVER_COMPONENT_METRICS.peakMemory,
+			kind: "histogram",
+			value: Number(record.peakMemoryBytes),
+			unit: "By",
+			atMs,
+			attributes,
+		},
+		{
+			name: RESOLVER_COMPONENT_METRICS.egressCalls,
+			kind: "counter",
+			value: record.egressCalls,
+			unit: "{request}",
+			atMs,
+			attributes,
+		},
 	];
 	for (const denial of record.denials) {
 		points.push({

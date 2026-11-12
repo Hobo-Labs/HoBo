@@ -118,11 +118,16 @@ export async function verifyResolverComponentBundle(
 		manifest: registry.manifest,
 		attestation: bundle.registry.attestation,
 	};
-	if (bundle.registry.statement !== undefined) input.statement = bundle.registry.statement;
+	if (bundle.registry.statement !== undefined)
+		input.statement = bundle.registry.statement;
 	if (verifier !== undefined) input.verifier = verifier;
 	const verdict = await verifyBundleProvenance(input);
 	if (verdict.status === "unverified")
-		throw new ResolverComponentError("component.bundle-unverified", verdict.reason, id);
+		throw new ResolverComponentError(
+			"component.bundle-unverified",
+			verdict.reason,
+			id,
+		);
 	if (verdict.status === "failed")
 		throw new ResolverComponentError(
 			"component.bundle-signature-failed",
@@ -140,7 +145,10 @@ export async function verifyResolverComponentBundle(
 	});
 }
 
-function assertBinding(registry: BundleManifest, manifest: ComponentManifest): void {
+function assertBinding(
+	registry: BundleManifest,
+	manifest: ComponentManifest,
+): void {
 	const id = manifest.id;
 	const mismatch = (detail: string): ResolverComponentError =>
 		new ResolverComponentError("component.bundle-digest-mismatch", detail, id);
@@ -149,9 +157,16 @@ function assertBinding(registry: BundleManifest, manifest: ComponentManifest): v
 			`registry manifest names ${registry.name}@${registry.version}, the component is ${manifest.id}@${manifest.version}`,
 		);
 	if (registry.provider !== manifest.providerId)
-		throw mismatch(`registry provider ${registry.provider} is not ${manifest.providerId}`);
-	const capability = registry.capabilities.find((entry) => entry.port === RESOLVER_BUNDLE_PORT);
-	if (capability === undefined) throw mismatch(`registry manifest declares no ${RESOLVER_BUNDLE_PORT} capability`);
+		throw mismatch(
+			`registry provider ${registry.provider} is not ${manifest.providerId}`,
+		);
+	const capability = registry.capabilities.find(
+		(entry) => entry.port === RESOLVER_BUNDLE_PORT,
+	);
+	if (capability === undefined)
+		throw mismatch(
+			`registry manifest declares no ${RESOLVER_BUNDLE_PORT} capability`,
+		);
 	const expected = [
 		`${MANIFEST_FEATURE_PREFIX}${componentManifestDigest(manifest)}`,
 		`${WASM_FEATURE_PREFIX}${manifest.wasmDigest}`,
@@ -162,12 +177,20 @@ function assertBinding(registry: BundleManifest, manifest: ComponentManifest): v
 	}
 	const bound = capability.features.filter(
 		(feature) =>
-			feature.startsWith(MANIFEST_FEATURE_PREFIX) || feature.startsWith(WASM_FEATURE_PREFIX),
+			feature.startsWith(MANIFEST_FEATURE_PREFIX) ||
+			feature.startsWith(WASM_FEATURE_PREFIX),
 	);
 	if (bound.length !== expected.length)
-		throw mismatch("registry manifest binds more than one manifest or wasm digest");
+		throw mismatch(
+			"registry manifest binds more than one manifest or wasm digest",
+		);
 }
 
 function hasWasmMagic(bytes: Uint8Array): boolean {
-	return bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+	return (
+		bytes[0] === 0x00 &&
+		bytes[1] === 0x61 &&
+		bytes[2] === 0x73 &&
+		bytes[3] === 0x6d
+	);
 }

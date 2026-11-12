@@ -18,14 +18,24 @@ import { defineResolverGuest, ok, outcome } from "../src/guest/index.js";
 import { manifestJson } from "./fixtures.js";
 import { CREDENTIAL_REF, hosted, SECRET } from "./harness.js";
 
-const sha = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+const sha = (text: string) =>
+	`sha256:${createHash("sha256").update(text).digest("hex")}`;
 
 describe("conformance kit: reference components", () => {
 	it("http-artifact-upload passes every check", async () => {
-		const reference = httpArtifactUpload([{ host: "static.example.net", credential: true }]);
+		const reference = httpArtifactUpload([
+			{ host: "static.example.net", credential: true },
+		]);
 		const built = buildReferenceComponent(reference);
-		const { component } = await hosted(built.manifestJson, reference.guest, reference.source);
-		const endpoint = createFakeUploadEndpoint({ host: "static.example.net", token: SECRET });
+		const { component } = await hosted(
+			built.manifestJson,
+			reference.guest,
+			reference.source,
+		);
+		const endpoint = createFakeUploadEndpoint({
+			host: "static.example.net",
+			token: SECRET,
+		});
 		const report = await runResolverComponentConformance({
 			component,
 			productId: "http/artifact-upload",
@@ -49,20 +59,39 @@ describe("conformance kit: reference components", () => {
 		});
 		expect(failedChecks(report)).toEqual([]);
 		expect(report.passed).toBe(true);
-		expect(report.checks.map((check) => check.id)).toEqual([...CONFORMANCE_CHECKS]);
+		expect(report.checks.map((check) => check.id)).toEqual([
+			...CONFORMANCE_CHECKS,
+		]);
 	});
 
 	it("sftp-static passes every check through the agent-local bridge", async () => {
 		const reference = sftpStatic();
 		const built = buildReferenceComponent(reference);
-		const { component } = await hosted(built.manifestJson, reference.guest, reference.source, { mode: "agent" });
-		const bridge = createFakeSftpBridge({ host: "sftp-bridge.hobo.local", token: SECRET });
+		const { component } = await hosted(
+			built.manifestJson,
+			reference.guest,
+			reference.source,
+			{ mode: "agent" },
+		);
+		const bridge = createFakeSftpBridge({
+			host: "sftp-bridge.hobo.local",
+			token: SECRET,
+		});
 		const report = await runResolverComponentConformance({
 			component,
 			productId: "sftp/static-file",
 			upstream: bridge.transport,
-			desired: { remotePath: "/var/www/index.html", content: "v1", digest: sha("v1") },
-			changed: { remotePath: "/var/www/index.html", content: "v2", digest: sha("v2"), mode: "0640" },
+			desired: {
+				remotePath: "/var/www/index.html",
+				content: "v1",
+				digest: sha("v1"),
+			},
+			changed: {
+				remotePath: "/var/www/index.html",
+				content: "v2",
+				digest: sha("v2"),
+				mode: "0640",
+			},
 			credentialRef: CREDENTIAL_REF,
 			credentialMaterial: [`Bearer ${SECRET}`],
 		});
@@ -72,9 +101,9 @@ describe("conformance kit: reference components", () => {
 	it("sftp-static refuses to load in conductor mode (agent-only bridge)", async () => {
 		const reference = sftpStatic();
 		const built = buildReferenceComponent(reference);
-		await expect(hosted(built.manifestJson, reference.guest, reference.source)).rejects.toThrow(
-			/component.manifest-invalid/u,
-		);
+		await expect(
+			hosted(built.manifestJson, reference.guest, reference.source),
+		).rejects.toThrow(/component.manifest-invalid/u);
 	});
 });
 

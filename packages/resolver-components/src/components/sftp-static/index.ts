@@ -21,8 +21,8 @@ import {
 	ok,
 	outcome,
 	properties,
-	rejected,
 	type ResolverGuestImports,
+	rejected,
 	type WitInstance,
 	type WitReadResult,
 	type WitResolveOutcome,
@@ -55,7 +55,9 @@ export interface SftpBridgeOptions {
 }
 
 /** The agent-mode manifest for a bridge reachable at `options`. */
-export function sftpStaticManifest(options: SftpBridgeOptions = {}): JsonObject {
+export function sftpStaticManifest(
+	options: SftpBridgeOptions = {},
+): JsonObject {
 	const host = options.host ?? SFTP_BRIDGE_DEFAULT_HOST;
 	return {
 		schema: "hobo.resolver-components.manifest/v1",
@@ -97,34 +99,51 @@ function desiredOf(request: WitResolveRequest): Desired | string {
 	const remotePath = bag.remotePath;
 	const content = bag.content;
 	const digest = bag.digest;
-	if (!isJsonString(remotePath) || !remotePath.startsWith("/") || remotePath.includes(".."))
+	if (
+		!isJsonString(remotePath) ||
+		!remotePath.startsWith("/") ||
+		remotePath.includes("..")
+	)
 		return "remotePath must be an absolute path without ..";
 	if (!isJsonString(content)) return "content must be a string";
 	if (!isJsonString(digest) || !/^sha256:[0-9a-f]{64}$/u.test(digest))
 		return "digest must be sha256:<64 hex>";
 	const mode = isJsonString(bag.mode) ? bag.mode : "0644";
-	if (!/^0[0-7]{3}$/u.test(mode)) return "mode must be an octal string such as 0644";
+	if (!/^0[0-7]{3}$/u.test(mode))
+		return "mode must be an octal string such as 0644";
 	return { remotePath, content, digest, mode };
 }
 
-export function sftpStaticGuest(bridgeBase = `https://${SFTP_BRIDGE_DEFAULT_HOST}:8443`) {
+export function sftpStaticGuest(
+	bridgeBase = `https://${SFTP_BRIDGE_DEFAULT_HOST}:8443`,
+) {
 	return defineResolverGuest((host: ResolverGuestImports) => {
-		const fileUrl = (path: string) => `${bridgeBase}/v1/files${path.split("/").map(encodeURIComponent).join("/")}`;
+		const fileUrl = (path: string) =>
+			`${bridgeBase}/v1/files${path.split("/").map(encodeURIComponent).join("/")}`;
 
 		const stat = async (desired: Desired, credentialRef: string) =>
 			host.authorizedFetch(
-				{ method: "GET", url: fileUrl(desired.remotePath), headers: [], body: null },
+				{
+					method: "GET",
+					url: fileUrl(desired.remotePath),
+					headers: [],
+					body: null,
+				},
 				credentialRef,
 			);
 
-		const reconcile = async (request: WitResolveRequest): Promise<WitResult<WitResolveOutcome>> => {
+		const reconcile = async (
+			request: WitResolveRequest,
+		): Promise<WitResult<WitResolveOutcome>> => {
 			const desired = desiredOf(request);
 			if (isJsonString(desired)) return rejected(desired);
 			const current = await stat(desired, request.credentialRef);
-			if ("err" in current) return rejected(`bridge denied: ${current.err.val}`);
+			if ("err" in current)
+				return rejected(`bridge denied: ${current.err.val}`);
 			if (current.ok.status !== 404 && current.ok.status >= 300)
 				return rejected(`bridge answered ${current.ok.status}`);
-			const existing = current.ok.status === 404 ? undefined : header(current.ok, SHA_HEADER);
+			const existing =
+				current.ok.status === 404 ? undefined : header(current.ok, SHA_HEADER);
 			let action: "create" | "update" | "noop" | "adopt";
 			if (existing === desired.digest) {
 				action = request.ref.physicalId === null ? "adopt" : "noop";
@@ -142,24 +161,34 @@ export function sftpStaticGuest(bridgeBase = `https://${SFTP_BRIDGE_DEFAULT_HOST
 					request.credentialRef,
 				);
 				if ("err" in put) return rejected(`bridge denied: ${put.err.val}`);
-				if (put.ok.status < 200 || put.ok.status >= 300) return rejected(`bridge answered ${put.ok.status}`);
+				if (put.ok.status < 200 || put.ok.status >= 300)
+					return rejected(`bridge answered ${put.ok.status}`);
 				action = existing === undefined ? "create" : "update";
 			}
-			return ok(outcome(action, `sftp:${desired.remotePath}`, { path: desired.remotePath, sha256: desired.digest }));
+			return ok(
+				outcome(action, `sftp:${desired.remotePath}`, {
+					path: desired.remotePath,
+					sha256: desired.digest,
+				}),
+			);
 		};
 
-		const read = async (request: WitResolveRequest): Promise<WitResult<WitReadResult | null>> => {
+		const read = async (
+			request: WitResolveRequest,
+		): Promise<WitResult<WitReadResult | null>> => {
 			const desired = desiredOf(request);
 			if (isJsonString(desired)) return rejected(desired);
 			const current = await stat(desired, request.credentialRef);
-			if ("err" in current) return rejected(`bridge denied: ${current.err.val}`);
+			if ("err" in current)
+				return rejected(`bridge denied: ${current.err.val}`);
 			if (current.ok.status === 404) return ok(null);
-			if (current.ok.status >= 300) return rejected(`bridge answered ${current.ok.status}`);
+			if (current.ok.status >= 300)
+				return rejected(`bridge answered ${current.ok.status}`);
 			const sha256 = header(current.ok, SHA_HEADER) ?? "";
 			const mode = header(current.ok, "x-hobo-file-mode") ?? "";
-			const outputs: Record<string, string> = { path: desired.remotePath, sha256 };
 			const mtime = header(current.ok, "last-modified");
-			if (mtime !== undefined) outputs.mtime = mtime;
+			const base = { path: desired.remotePath, sha256 };
+			const outputs = mtime === undefined ? base : { ...base, mtime };
 			return ok({
 				outcome: outcome("noop", `sftp:${desired.remotePath}`, outputs),
 				attributes: [
@@ -169,38 +198,69 @@ export function sftpStaticGuest(bridgeBase = `https://${SFTP_BRIDGE_DEFAULT_HOST
 			});
 		};
 
-		const remove = async (request: WitResolveRequest): Promise<WitResult<null>> => {
+		const remove = async (
+			request: WitResolveRequest,
+		): Promise<WitResult<null>> => {
 			const desired = desiredOf(request);
 			if (isJsonString(desired)) return rejected(desired);
 			const result = await host.authorizedFetch(
-				{ method: "DELETE", url: fileUrl(desired.remotePath), headers: [], body: null },
+				{
+					method: "DELETE",
+					url: fileUrl(desired.remotePath),
+					headers: [],
+					body: null,
+				},
 				request.credentialRef,
 			);
 			if ("err" in result) return rejected(`bridge denied: ${result.err.val}`);
-			if (result.ok.status === 404 || (result.ok.status >= 200 && result.ok.status < 300)) return ok(null);
+			if (
+				result.ok.status === 404 ||
+				(result.ok.status >= 200 && result.ok.status < 300)
+			)
+				return ok(null);
 			return rejected(`bridge answered ${result.ok.status}`);
 		};
 
-		const instances = async (_productId: string, credentialRef: string): Promise<WitResult<readonly WitInstance[]>> => {
+		const instances = async (
+			_productId: string,
+			credentialRef: string,
+		): Promise<WitResult<readonly WitInstance[]>> => {
 			const result = await host.authorizedFetch(
-				{ method: "GET", url: `${bridgeBase}/v1/files?prefix=%2F`, headers: [["accept", "application/json"]], body: null },
+				{
+					method: "GET",
+					url: `${bridgeBase}/v1/files?prefix=%2F`,
+					headers: [["accept", "application/json"]],
+					body: null,
+				},
 				credentialRef,
 			);
 			if ("err" in result) return rejected(`bridge denied: ${result.err.val}`);
-			if (result.ok.status !== 200) return rejected(`bridge answered ${result.ok.status}`);
+			if (result.ok.status !== 200)
+				return rejected(`bridge answered ${result.ok.status}`);
 			let listed: JsonValue;
 			try {
 				listed = parseJsonText(result.ok.body);
 			} catch {
 				return rejected("bridge listing is not JSON");
 			}
-			if (!isJsonArray(listed)) return rejected("bridge listing is not a JSON array");
+			if (!isJsonArray(listed))
+				return rejected("bridge listing is not a JSON array");
 			const out: WitInstance[] = [];
 			for (const entry of listed) {
 				if (isJsonObject(entry) && isJsonString(entry.path))
-					out.push({ logicalId: entry.path.replace(/[^A-Za-z0-9._-]/gu, "_").replace(/^_+/u, "") || "root", physicalId: `sftp:${entry.path}` });
+					out.push({
+						logicalId:
+							entry.path
+								.replace(/[^A-Za-z0-9._-]/gu, "_")
+								.replace(/^_+/u, "") || "root",
+						physicalId: `sftp:${entry.path}`,
+					});
 			}
-			return ok(out.sort((left, right) => (left.physicalId < right.physicalId ? -1 : 1)));
+			return ok(
+				out.sort((left, right) =>
+					left.physicalId < right.physicalId ? -1 : 1,
+				),
+			);
 		};
 
 		return {

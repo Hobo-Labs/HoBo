@@ -39,8 +39,17 @@ import type {
 	WitResolveRequest,
 	WitResult,
 } from "./guest/types.js";
-import { isJsonObject, type JsonObject, type JsonValue, parseJsonText } from "./json.js";
-import { type ComponentResourceClass, compare, CREDENTIAL_FIELD_PATTERN } from "./manifest.js";
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+	parseJsonText,
+} from "./json.js";
+import {
+	type ComponentResourceClass,
+	CREDENTIAL_FIELD_PATTERN,
+	compare,
+} from "./manifest.js";
 import type { LoadedResolverComponent } from "./runtime.js";
 
 // public-contract: per-resource attribute budget (D25: ≤ 16 KiB).
@@ -132,7 +141,8 @@ function componentResolver(
 				physicalId: parsed.ref.physicalId ?? null,
 			},
 			desiredJson: canonicalJson(parsed.desired),
-			observedJson: parsed.observed === undefined ? null : canonicalJson(parsed.observed),
+			observedJson:
+				parsed.observed === undefined ? null : canonicalJson(parsed.observed),
 			credentialRef: parsed.credentialRef,
 		};
 	};
@@ -154,7 +164,9 @@ function componentResolver(
 	const unwrap = <T>(result: WitResult<T>, operation: string): T => {
 		if ("ok" in result) return result.ok;
 		throw new ResolverComponentError(
-			result.err.tag === "rejected" ? "component.guest-rejected" : "component.guest-unsupported",
+			result.err.tag === "rejected"
+				? "component.guest-rejected"
+				: "component.guest-unsupported",
 			`${operation}: ${result.err.val}`,
 			manifest.id,
 			productId,
@@ -202,7 +214,9 @@ function componentResolver(
 	const resolver: ComponentResourceResolver = {
 		providerId: manifest.providerId,
 		productId,
-		...(resourceClass.directives.length > 0 ? { directives: resourceClass.directives } : undefined),
+		...(resourceClass.directives.length > 0
+			? { directives: resourceClass.directives }
+			: undefined),
 		component: Object.freeze({
 			id: manifest.id,
 			version: manifest.version,
@@ -212,13 +226,20 @@ function componentResolver(
 		}),
 		resourceClass,
 		async reconcile(request, transport) {
-			return toOutcome(await call("reconcile", prepare(request), transport, liftOutcome));
+			return toOutcome(
+				await call("reconcile", prepare(request), transport, liftOutcome),
+			);
 		},
 		async delete(request, transport) {
 			await call("delete", prepare(request), transport, liftNull);
 		},
 		async read(request, transport) {
-			const result = await call("read", prepare(request), transport, liftReadResult);
+			const result = await call(
+				"read",
+				prepare(request),
+				transport,
+				liftReadResult,
+			);
 			return result === null ? undefined : toOutcome(result.outcome);
 		},
 		async observe(request, transport, observeFields) {
@@ -261,10 +282,14 @@ interface ObservationInput {
  */
 export function observation(input: ObservationInput): ResourceObservation {
 	const declared = new Set(input.resourceClass.observeFields);
-	const wanted = [...new Set(input.observeFields)].filter((field) => declared.has(field));
+	const wanted = [...new Set(input.observeFields)].filter((field) =>
+		declared.has(field),
+	);
 	const attributes: Record<string, string> = {};
 	let bytes = 0;
-	for (const [name, value] of [...input.attributes].sort((left, right) => compare(left[0], right[0]))) {
+	for (const [name, value] of [...input.attributes].sort((left, right) =>
+		compare(left[0], right[0]),
+	)) {
 		if (!wanted.includes(name) || CREDENTIAL_FIELD_PATTERN.test(name)) continue;
 		const size = Buffer.byteLength(name) + Buffer.byteLength(value);
 		if (bytes + size > MAX_ATTRIBUTE_BYTES) continue;
@@ -303,7 +328,11 @@ export function driftedFields(
 	const fields: string[] = [];
 	for (const key of Object.keys(desired).sort(compare)) {
 		if (excluded.has(key) || !Object.hasOwn(observed, key)) continue;
-		if (canonicalJson(desired[key] ?? null) !== canonicalJson(observed[key] ?? null)) fields.push(key);
+		if (
+			canonicalJson(desired[key] ?? null) !==
+			canonicalJson(observed[key] ?? null)
+		)
+			fields.push(key);
 	}
 	return Object.freeze(fields);
 }
@@ -313,12 +342,16 @@ function requestJson(request: ResolveRequest): JsonValue {
 		slot: request.ref.slot,
 		productId: request.ref.productId,
 		logicalId: request.ref.logicalId,
-		...(request.ref.physicalId === undefined ? undefined : { physicalId: request.ref.physicalId }),
+		...(request.ref.physicalId === undefined
+			? undefined
+			: { physicalId: request.ref.physicalId }),
 	};
 	const out: JsonObject = {
 		ref,
 		desired: isJsonObject(request.desired) ? request.desired : {},
-		...(request.observed === undefined ? undefined : { observed: request.observed }),
+		...(request.observed === undefined
+			? undefined
+			: { observed: request.observed }),
 		credentialRef: request.credentialRef,
 	};
 	return out;

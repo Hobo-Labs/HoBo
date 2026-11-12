@@ -66,7 +66,10 @@ describe("component manifest (parse, don't validate)", () => {
 				})),
 			},
 		],
-		["memory above the CD_DEFAULTS cap", { limits: { memoryBytes: "134217729" } }],
+		[
+			"memory above the CD_DEFAULTS cap",
+			{ limits: { memoryBytes: "134217729" } },
+		],
 		["timeout above the cap", { limits: { callTimeoutMs: 30_001 } }],
 		["fuel above the cap", { limits: { fuel: "1000000001" } }],
 		["a foreign world", { world: "wasi:http/proxy@0.2.0" }],
@@ -84,20 +87,28 @@ describe("component manifest (parse, don't validate)", () => {
 				],
 			},
 		],
-		["an unknown slot", { classes: [{ productId: "acme/site", slot: "nope" }] }],
+		[
+			"an unknown slot",
+			{ classes: [{ productId: "acme/site", slot: "nope" }] },
+		],
 		["no classes", { classes: [] }],
 		["an unknown field", { surprise: true }],
 		[
 			"local addresses without agent mode",
 			{ egress: [{ host: "files.local", localAddresses: ["10.0.0.5"] }] },
 		],
-		["a credential-shaped retained field", {
-			classes: [
-				{ productId: "acme/site", slot: "web", retainedFields: ["apiToken"] },
-			],
-		}],
+		[
+			"a credential-shaped retained field",
+			{
+				classes: [
+					{ productId: "acme/site", slot: "web", retainedFields: ["apiToken"] },
+				],
+			},
+		],
 	])("refuses %s", (_label, overrides) => {
-		const error = refusal(() => parseComponentManifest(manifestJson(overrides)));
+		const error = refusal(() =>
+			parseComponentManifest(manifestJson(overrides)),
+		);
 		expect(error.componentCode).toBe("component.manifest-invalid");
 		expect(error.remediation).toMatch(/manifest/u);
 	});

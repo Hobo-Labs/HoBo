@@ -9,13 +9,28 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { JsonValue } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import { buildReferenceComponent, httpArtifactUpload } from "../src/components/index.js";
+import {
+	buildReferenceComponent,
+	httpArtifactUpload,
+} from "../src/components/index.js";
 import { createFakeUploadEndpoint } from "../src/conformance/index.js";
 import { defineResolverGuest, ok, outcome } from "../src/guest/index.js";
 import type { WitEgressResult } from "../src/guest/types.js";
-import { componentResolvers, isComponentResolver, ResolverComponentError } from "../src/index.js";
+import {
+	componentResolvers,
+	isComponentResolver,
+	ResolverComponentError,
+} from "../src/index.js";
+import { isJsonArray, isJsonObject } from "../src/json.js";
 import { manifestJson } from "./fixtures.js";
-import { CREDENTIAL_REF, hosted, request, SECRET, Upstream, respond } from "./harness.js";
+import {
+	CREDENTIAL_REF,
+	hosted,
+	request,
+	respond,
+	SECRET,
+	Upstream,
+} from "./harness.js";
 
 interface Interaction {
 	readonly description: string;
@@ -29,24 +44,36 @@ interface Pact {
 }
 
 function pact(name: string): Pact {
-	return JSON.parse(readFileSync(new URL(`../contracts/${name}`, import.meta.url), "utf8"));
+	return JSON.parse(
+		readFileSync(new URL(`../contracts/${name}`, import.meta.url), "utf8"),
+	);
 }
 
 function contains(actual: JsonValue | undefined, expected: JsonValue): boolean {
-	if (expected === null || typeof expected !== "object") return actual === expected;
-	if (Array.isArray(expected))
-		return Array.isArray(actual) && expected.length === actual.length && expected.every((item, index) => contains(actual[index], item));
-	if (actual === null || actual === undefined || typeof actual !== "object" || Array.isArray(actual)) return false;
-	return Object.entries(expected).every(([key, value]) => contains(actual[key], value));
+	if (isJsonArray(expected))
+		return (
+			isJsonArray(actual) &&
+			expected.length === actual.length &&
+			expected.every((item, index) => contains(actual[index], item))
+		);
+	if (!isJsonObject(expected)) return actual === expected;
+	if (!isJsonObject(actual)) return false;
+	return Object.entries(expected).every(([key, value]) =>
+		contains(actual[key], value),
+	);
 }
 
 function interaction(document: Pact, path: string): Interaction {
-	const found = document.interactions.find((entry) => entry.request.path === path);
-	if (found === undefined) throw new Error(`pact has no interaction for ${path}`);
+	const found = document.interactions.find(
+		(entry) => entry.request.path === path,
+	);
+	if (found === undefined)
+		throw new Error(`pact has no interaction for ${path}`);
 	return found;
 }
 
-const sha = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+const sha = (text: string) =>
+	`sha256:${createHash("sha256").update(text).digest("hex")}`;
 
 describe("pact: ResolverComponentHost (consumer @hobo/cd/reconcile)", () => {
 	const document = pact("resolver-component-host.pact.json");
@@ -58,29 +85,75 @@ describe("pact: ResolverComponentHost (consumer @hobo/cd/reconcile)", () => {
 	});
 
 	it("honors reconcile, noop and observe interactions", async () => {
-		const reference = httpArtifactUpload([{ host: "static.example.net", credential: true }]);
+		const reference = httpArtifactUpload([
+			{ host: "static.example.net", credential: true },
+		]);
 		const built = buildReferenceComponent(reference);
-		const { component } = await hosted(built.manifestJson, reference.guest, reference.source);
+		const { component } = await hosted(
+			built.manifestJson,
+			reference.guest,
+			reference.source,
+		);
 		const [resolver] = componentResolvers({ components: [component] });
-		if (resolver === undefined || !isComponentResolver(resolver)) throw new Error("no resolver");
-		const endpoint = createFakeUploadEndpoint({ host: "static.example.net", token: SECRET });
+		if (resolver === undefined || !isComponentResolver(resolver))
+			throw new Error("no resolver");
+		const endpoint = createFakeUploadEndpoint({
+			host: "static.example.net",
+			token: SECRET,
+		});
 		const desired = {
 			uploadUrl: "https://static.example.net/site/index.html",
 			artifactDigest: sha("v1"),
 			content: "v1",
 		};
-		const reconcile = document.interactions.filter((entry) => entry.request.path.endsWith("/reconcile") && entry.request.path.includes("artifact-upload"));
-		const first = await resolver.reconcile(request("http/artifact-upload", desired), endpoint.transport);
-		expect(contains(JSON.parse(JSON.stringify(first)), reconcile[0]?.response.body ?? null)).toBe(true);
-		const second = await resolver.reconcile(request("http/artifact-upload", desired, first.physicalId), endpoint.transport);
-		expect(contains(JSON.parse(JSON.stringify(second)), reconcile[1]?.response.body ?? null)).toBe(true);
-		const observe = interaction(document, "/resolver/http/artifact-upload/observe");
+		const reconcile = document.interactions.filter(
+			(entry) =>
+				entry.request.path.endsWith("/reconcile") &&
+				entry.request.path.includes("artifact-upload"),
+		);
+		const first = await resolver.reconcile(
+			request("http/artifact-upload", desired),
+			endpoint.transport,
+		);
+		expect(
+			contains(
+				JSON.parse(JSON.stringify(first)),
+				reconcile[0]?.response.body ?? null,
+			),
+		).toBe(true);
+		const second = await resolver.reconcile(
+			request("http/artifact-upload", desired, first.physicalId),
+			endpoint.transport,
+		);
+		expect(
+			contains(
+				JSON.parse(JSON.stringify(second)),
+				reconcile[1]?.response.body ?? null,
+			),
+		).toBe(true);
+		const observe = interaction(
+			document,
+			"/resolver/http/artifact-upload/observe",
+		);
 		const observed = await resolver.observe(
-			request("http/artifact-upload", { ...desired, lastModified: "yesterday" }, first.physicalId),
+			request(
+				"http/artifact-upload",
+				{ ...desired, lastModified: "yesterday" },
+				first.physicalId,
+			),
 			endpoint.transport,
 			["digest", "contentType"],
 		);
-		expect(contains({ driftKind: observed?.driftKind ?? "x", retained: observed?.retained ?? [], kind: observed?.kind ?? "" }, observe.response.body)).toBe(true);
+		expect(
+			contains(
+				{
+					driftKind: observed?.driftKind ?? "x",
+					retained: observed?.retained ?? [],
+					kind: observed?.kind ?? "",
+				},
+				observe.response.body,
+			),
+		).toBe(true);
 	});
 
 	it("honors the egress refusal interaction", async () => {
@@ -89,10 +162,23 @@ describe("pact: ResolverComponentHost (consumer @hobo/cd/reconcile)", () => {
 			describe: async () => ({
 				componentId: "acme-static",
 				version: "1.2.3",
-				classes: [{ productId: "acme/site", slot: "web", retainedFields: ["replicas"], observeFields: ["tls.version", "cacheTtl"], directives: ["forceDelete"] }],
+				classes: [
+					{
+						productId: "acme/site",
+						slot: "web",
+						retainedFields: ["replicas"],
+						observeFields: ["tls.version", "cacheTtl"],
+						directives: ["forceDelete"],
+					},
+				],
 			}),
 			reconcile: async () => {
-				await host.send({ method: "GET", url: "https://evil.example/", headers: [], body: null });
+				await host.send({
+					method: "GET",
+					url: "https://evil.example/",
+					headers: [],
+					body: null,
+				});
 				return ok(outcome("create", "x", {}));
 			},
 			read: async () => ok(null),
@@ -103,9 +189,13 @@ describe("pact: ResolverComponentHost (consumer @hobo/cd/reconcile)", () => {
 		const [resolver] = componentResolvers({ components: [component] });
 		let body: JsonValue = null;
 		try {
-			await resolver?.reconcile(request("acme/site", {}), new Upstream().transport);
+			await resolver?.reconcile(
+				request("acme/site", {}),
+				new Upstream().transport,
+			);
 		} catch (error) {
-			if (error instanceof ResolverComponentError) body = { code: error.code, componentCode: error.componentCode };
+			if (error instanceof ResolverComponentError)
+				body = { code: error.code, componentCode: error.componentCode };
 		}
 		expect(contains(body, expected.response.body)).toBe(true);
 	});
@@ -116,17 +206,48 @@ describe("pact: ResolverComponentHostImports (consumer hobo:resolver guest)", ()
 
 	it("honors authorized-fetch and send interactions", async () => {
 		const results: WitEgressResult[] = [];
-		const fetch = interaction(document, "/import/hobo:resolver/host@0.1.0/authorized-fetch");
-		const send = interaction(document, "/import/wasi:http/outgoing-handler@0.2.0/send");
+		const fetch = interaction(
+			document,
+			"/import/hobo:resolver/host@0.1.0/authorized-fetch",
+		);
+		const send = interaction(
+			document,
+			"/import/wasi:http/outgoing-handler@0.2.0/send",
+		);
 		const guest = defineResolverGuest((host) => ({
 			describe: async () => ({
 				componentId: "acme-static",
 				version: "1.2.3",
-				classes: [{ productId: "acme/site", slot: "web", retainedFields: ["replicas"], observeFields: ["tls.version", "cacheTtl"], directives: ["forceDelete"] }],
+				classes: [
+					{
+						productId: "acme/site",
+						slot: "web",
+						retainedFields: ["replicas"],
+						observeFields: ["tls.version", "cacheTtl"],
+						directives: ["forceDelete"],
+					},
+				],
 			}),
 			reconcile: async () => {
-				results.push(await host.authorizedFetch({ method: "GET", url: "https://api.acme.test/v1/site", headers: [], body: null }, CREDENTIAL_REF));
-				results.push(await host.send({ method: "GET", url: "https://evil.example/", headers: [], body: null }));
+				results.push(
+					await host.authorizedFetch(
+						{
+							method: "GET",
+							url: "https://api.acme.test/v1/site",
+							headers: [],
+							body: null,
+						},
+						CREDENTIAL_REF,
+					),
+				);
+				results.push(
+					await host.send({
+						method: "GET",
+						url: "https://evil.example/",
+						headers: [],
+						body: null,
+					}),
+				);
 				return ok(outcome("noop", "x", {}));
 			},
 			read: async () => ok(null),
@@ -135,10 +256,20 @@ describe("pact: ResolverComponentHostImports (consumer hobo:resolver guest)", ()
 		}));
 		const { component } = await hosted(manifestJson(), guest, "pact-imports");
 		const [resolver] = componentResolvers({ components: [component] });
-		const upstream = new Upstream().route("GET https://api.acme.test/v1/", () => respond(200, "{}"));
-		await resolver?.reconcile(request("acme/site", {}), upstream.transport).catch(() => undefined);
-		expect(contains(JSON.parse(JSON.stringify(results[0])), fetch.response.body)).toBe(true);
-		expect(contains(JSON.parse(JSON.stringify(results[1])), send.response.body)).toBe(true);
-		expect(upstream.requests[0]?.headers.authorization).toBe(`Bearer ${SECRET}`);
+		const upstream = new Upstream().route("GET https://api.acme.test/v1/", () =>
+			respond(200, "{}"),
+		);
+		await resolver
+			?.reconcile(request("acme/site", {}), upstream.transport)
+			.catch(() => undefined);
+		expect(
+			contains(JSON.parse(JSON.stringify(results[0])), fetch.response.body),
+		).toBe(true);
+		expect(
+			contains(JSON.parse(JSON.stringify(results[1])), send.response.body),
+		).toBe(true);
+		expect(upstream.requests[0]?.headers.authorization).toBe(
+			`Bearer ${SECRET}`,
+		);
 	});
 });

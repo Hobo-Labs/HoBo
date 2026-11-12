@@ -11,7 +11,8 @@ const root = fileURLToPath(new URL("../src", import.meta.url));
 function sources(dir: string): string[] {
 	return readdirSync(dir).flatMap((name) => {
 		const path = join(dir, name);
-		if (statSync(path).isDirectory()) return name === "_generated" ? [] : sources(path);
+		if (statSync(path).isDirectory())
+			return name === "_generated" ? [] : sources(path);
 		return path.endsWith(".ts") ? [path] : [];
 	});
 }
@@ -20,7 +21,9 @@ const files = sources(root).map((path) => ({
 	path: path.slice(root.length + 1),
 	text: readFileSync(path, "utf8")
 		.split("\n")
-		.filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+		.filter(
+			(line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"),
+		)
 		.join("\n"),
 }));
 
@@ -30,10 +33,18 @@ describe("resolver-components architecture", () => {
 		["ambient DNS", /node:dns/u],
 		["environment reads", /process\.env/u],
 		["randomness", /Math\.random|randomUUID|getRandomValues/u],
-		["shell or process escape hatch", /node:child_process|(?<!\.)\bspawn\(|(?<![.\w])exec\(/u],
-		["a raw network socket", /node:(?:tls|http|https|dgram)|createConnection|new\s+(?:net\.)?Socket|\.connect\(/u],
+		[
+			"shell or process escape hatch",
+			/node:child_process|(?<!\.)\bspawn\(|(?<![.\w])exec\(/u,
+		],
+		[
+			"a raw network socket",
+			/node:(?:tls|http|https|dgram)|createConnection|new\s+(?:net\.)?Socket|\.connect\(/u,
+		],
 	])("source performs no %s", (_label, pattern) => {
-		const offenders = files.filter((file) => pattern.test(file.text)).map((file) => file.path);
+		const offenders = files
+			.filter((file) => pattern.test(file.text))
+			.map((file) => file.path);
 		expect(offenders).toEqual([]);
 	});
 

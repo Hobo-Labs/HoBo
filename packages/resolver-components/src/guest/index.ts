@@ -48,17 +48,27 @@ export function outcome(
 		const value = outputs[key];
 		if (value !== undefined) sorted[key] = value;
 	}
-	return { action, physicalId, outputsJson: JSON.stringify(sorted), diagnostics };
+	return {
+		action,
+		physicalId,
+		outputsJson: JSON.stringify(sorted),
+		diagnostics,
+	};
 }
 
 /** Case-insensitive header lookup on a response. */
-export function header(response: WitHttpResponse, name: string): string | undefined {
+export function header(
+	response: WitHttpResponse,
+	name: string,
+): string | undefined {
 	const wanted = name.toLowerCase();
 	return response.headers.find(([key]) => key.toLowerCase() === wanted)?.[1];
 }
 
 /** Parse a desired/observed JSON object handed to the guest. */
-export function properties(json: string | null): Readonly<Record<string, string | number | boolean>> {
+export function properties(
+	json: string | null,
+): Readonly<Record<string, string | number | boolean>> {
 	if (json === null) return {};
 	const parsed: Record<string, string | number | boolean> = JSON.parse(json);
 	return parsed;

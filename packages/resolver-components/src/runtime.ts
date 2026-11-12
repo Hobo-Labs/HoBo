@@ -14,18 +14,19 @@
 // instance that trapped or tripped a limit is torn down and re-instantiated
 // fresh on the next call. Any denial during a call fails the call closed,
 // even if the component swallowed the error.
-import type { CredentialResolver, TelemetrySink } from "@hobo/cd";
+
 import { create } from "@bufbuild/protobuf";
+import type { CredentialResolver, TelemetrySink } from "@hobo/cd";
 import {
 	type ComponentHostPort,
+	guardTransport,
 	type HttpTransport,
+	type ParsedComponentDescriptor,
 	TRANSPORT_METHODS,
+	TransportGuardError,
 	type TransportMethod,
 	type TransportRequest,
 	type TransportResponse,
-	guardTransport,
-	TransportGuardError,
-	type ParsedComponentDescriptor,
 } from "@hobo/core";
 import {
 	type ComponentInvocationRecord,
@@ -35,9 +36,16 @@ import {
 	InvocationOutcome,
 } from "./_generated/resolver_components_pb.js";
 import type { VerifiedResolverComponent } from "./bundle.js";
+import {
+	type AddressResolver,
+	checkEgress,
+	type EgressDenial,
+} from "./egress.js";
 import type { ResolverComponentEngine, ResolverExportTable } from "./engine.js";
-import { type AddressResolver, checkEgress, type EgressDenial } from "./egress.js";
-import { ResolverComponentError, type ResolverComponentErrorCode } from "./errors.js";
+import {
+	ResolverComponentError,
+	type ResolverComponentErrorCode,
+} from "./errors.js";
 import {
 	AbiError,
 	liftAuthorizedFetch,
@@ -46,7 +54,11 @@ import {
 	liftLog,
 	lower,
 } from "./guest/abi.js";
-import type { WitHttpRequest, WitHttpResponse, WitLogLevel } from "./guest/types.js";
+import type {
+	WitHttpRequest,
+	WitHttpResponse,
+	WitLogLevel,
+} from "./guest/types.js";
 import { isJsonObject, type JsonValue } from "./json.js";
 import {
 	CallMeter,
@@ -171,7 +183,10 @@ class ComponentRuntime implements LoadedResolverComponent {
 	#call: CallState | undefined;
 	#queue: Promise<void> = Promise.resolve();
 
-	constructor(verified: VerifiedResolverComponent, options: ResolverComponentHostOptions) {
+	constructor(
+		verified: VerifiedResolverComponent,
+		options: ResolverComponentHostOptions,
+	) {
 		this.verified = verified;
 		this.#options = options;
 		this.#now = options.now ?? Date.now;
@@ -202,7 +217,9 @@ class ComponentRuntime implements LoadedResolverComponent {
 		} catch (caught) {
 			throw this.#refuse(
 				"component.output-unparseable",
-				caught instanceof Error ? caught.message : "describe() output is unparseable",
+				caught instanceof Error
+					? caught.message
+					: "describe() output is unparseable",
 			);
 		}
 		const manifest = this.verified.manifest;
@@ -230,8 +247,14 @@ class ComponentRuntime implements LoadedResolverComponent {
 		return manifest.classes;
 	}
 
-	invoke(operation: ResolverOperation, payload: JsonValue, scope: CallScope): Promise<JsonValue> {
-		const run = this.#queue.then(() => this.#invokeNow(operation, payload, scope));
+	invoke(
+		operation: ResolverOperation,
+		payload: JsonValue,
+		scope: CallScope,
+	): Promise<JsonValue> {
+		const run = this.#queue.then(() =>
+			this.#invokeNow(operation, payload, scope),
+		);
 		this.#queue = run.then(
 			() => undefined,
 			() => undefined,
@@ -261,7 +284,9 @@ class ComponentRuntime implements LoadedResolverComponent {
 			const payloadBytes = byteLength(JSON.stringify(payload));
 			call.meter.charge(payloadBytes * FUEL_COSTS.perByte);
 			call.meter.hold(payloadBytes);
-			const result = await this.#withBackstop(call, () => exports[operation](payload));
+			const result = await this.#withBackstop(call, () =>
+				exports[operation](payload),
+			);
 			call.meter.checkDeadline();
 			const text = JSON.stringify(result) ?? "null";
 			call.meter.charge(byteLength(text) * FUEL_COSTS.perByte);
@@ -275,7 +300,9 @@ class ComponentRuntime implements LoadedResolverComponent {
 					? InvocationOutcome.SECRET_EXFILTRATION
 					: InvocationOutcome.EGRESS_DENIED;
 				throw this.#refuse(
-					exfiltration ? "component.secret-exfiltration" : "component.egress-denied",
+					exfiltration
+						? "component.secret-exfiltration"
+						: "component.egress-denied",
 					`${operation}: ${call.denials.map((denial) => denial.detail).join("; ")}`,
 					scope.productId,
 				);
@@ -298,7 +325,8 @@ class ComponentRuntime implements LoadedResolverComponent {
 			if (isGuestError(result)) outcome = InvocationOutcome.GUEST_ERROR;
 			return result;
 		} catch (caught) {
-			const error = caught instanceof Error ? caught : new Error(String(caught));
+			const error =
+				caught instanceof Error ? caught : new Error(String(caught));
 			if (outcome === InvocationOutcome.OK) outcome = outcomeOf(error);
 			this.#teardown();
 			throw this.#asRefusal(error, operation, scope.productId);
@@ -308,10 +336,15 @@ class ComponentRuntime implements LoadedResolverComponent {
 		}
 	}
 
-	#withBackstop(call: CallState, run: () => JsonValue | Promise<JsonValue>): Promise<JsonValue> {
+	#withBackstop(
+		call: CallState,
+		run: () => JsonValue | Promise<JsonValue>,
+	): Promise<JsonValue> {
 		const remaining = Math.max(1, call.meter.deadline - this.#now());
 		return new Promise<JsonValue>((resolve, reject) => {
-			const cancel = this.#timers.set(remaining, () => reject(call.meter.expire()));
+			const cancel = this.#timers.set(remaining, () =>
+				reject(call.meter.expire()),
+			);
 			Promise.resolve()
 				.then(run)
 				.then(
@@ -337,7 +370,12 @@ class ComponentRuntime implements LoadedResolverComponent {
 			wasmDigest: this.verified.wasmDigest,
 			wasm: this.verified.wasm,
 			callImport: (importInterface, operation, payload) =>
-				host.invokeLinkedImport(instanceId, importInterface, operation, payload),
+				host.invokeLinkedImport(
+					instanceId,
+					importInterface,
+					operation,
+					payload,
+				),
 		});
 		if (exports === undefined)
 			throw this.#refuse(
@@ -357,7 +395,8 @@ class ComponentRuntime implements LoadedResolverComponent {
 			exports: {
 				[RESOLVER_HOST_IMPORT]: {
 					log: (payload: JsonValue) => this.#log(payload),
-					"authorized-fetch": (payload: JsonValue) => this.#authorizedFetch(payload),
+					"authorized-fetch": (payload: JsonValue) =>
+						this.#authorizedFetch(payload),
 				},
 				[WASI_HTTP_OUTGOING]: {
 					send: (payload: JsonValue) => this.#send(payload),
@@ -382,7 +421,9 @@ class ComponentRuntime implements LoadedResolverComponent {
 		this.#exports = undefined;
 		this.#instanceId = undefined;
 		if (instanceId === undefined) return;
-		this.#options.componentHost.teardownComponent(instanceId).catch(() => undefined);
+		this.#options.componentHost
+			.teardownComponent(instanceId)
+			.catch(() => undefined);
 	}
 
 	#current(): CallState {
@@ -399,7 +440,12 @@ class ComponentRuntime implements LoadedResolverComponent {
 		call.meter.charge(byteLength(line.message) * FUEL_COSTS.perByte);
 		call.meter.checkDeadline();
 		if (call.scanner.find(line.message)) {
-			this.#deny(call, EgressDenialCode.SECRET_EXFILTRATION, "", "log line carries injected credential material");
+			this.#deny(
+				call,
+				EgressDenialCode.SECRET_EXFILTRATION,
+				"",
+				"log line carries injected credential material",
+			);
 			return null;
 		}
 		if (call.logs.length < MAX_LOG_LINES) {
@@ -418,11 +464,16 @@ class ComponentRuntime implements LoadedResolverComponent {
 		return this.#egress(args.request, args.credentialRef);
 	}
 
-	async #egress(request: WitHttpRequest, credentialRef: string | undefined): Promise<JsonValue> {
+	async #egress(
+		request: WitHttpRequest,
+		credentialRef: string | undefined,
+	): Promise<JsonValue> {
 		const call = this.#current();
 		const manifest = this.verified.manifest;
 		const requestText = `${request.url}\n${request.headers.map(([name, value]) => `${name}:${value}`).join("\n")}\n${request.body ?? ""}`;
-		call.meter.charge(FUEL_COSTS.importCall + byteLength(requestText) * FUEL_COSTS.perByte);
+		call.meter.charge(
+			FUEL_COSTS.importCall + byteLength(requestText) * FUEL_COSTS.perByte,
+		);
 		call.meter.hold(byteLength(requestText));
 		call.meter.checkDeadline();
 		call.egressCalls += 1;
@@ -433,28 +484,56 @@ class ComponentRuntime implements LoadedResolverComponent {
 				hostOf(request.url),
 				"outbound request carries injected credential material",
 			);
-		const method = TRANSPORT_METHODS.find((candidate) => candidate === request.method.toUpperCase());
+		const method = TRANSPORT_METHODS.find(
+			(candidate) => candidate === request.method.toUpperCase(),
+		);
 		if (method === undefined)
-			return this.#denied(call, EgressDenialCode.SCHEME_FORBIDDEN, hostOf(request.url), `method ${request.method} is not allowed`);
+			return this.#denied(
+				call,
+				EgressDenialCode.SCHEME_FORBIDDEN,
+				hostOf(request.url),
+				`method ${request.method} is not allowed`,
+			);
 		const verdict = await checkEgress(request.url, {
 			manifest,
 			mode: this.#options.mode,
 			resolveHost: this.#options.resolveHost,
 		});
 		if (!verdict.ok)
-			return this.#denied(call, verdict.denial.code, verdict.denial.host, verdict.denial.detail);
+			return this.#denied(
+				call,
+				verdict.denial.code,
+				verdict.denial.host,
+				verdict.denial.detail,
+			);
 		const transport = call.scope.transport;
 		if (transport === undefined)
-			return this.#denied(call, EgressDenialCode.HOST_NOT_ALLOWLISTED, verdict.entry.host, "no egress during describe");
+			return this.#denied(
+				call,
+				EgressDenialCode.HOST_NOT_ALLOWLISTED,
+				verdict.entry.host,
+				"no egress during describe",
+			);
 		const headers: Record<string, string> = {};
 		for (const [name, value] of request.headers) {
-			if (!HOST_OWNED_HEADERS.has(name.toLowerCase())) headers[name.toLowerCase()] = value;
+			if (!HOST_OWNED_HEADERS.has(name.toLowerCase()))
+				headers[name.toLowerCase()] = value;
 		}
 		if (credentialRef !== undefined) {
 			if (credentialRef !== call.scope.credentialRef)
-				return this.#denied(call, EgressDenialCode.CREDENTIAL_SCOPE, verdict.entry.host, "credential locator is not the one this call carries");
+				return this.#denied(
+					call,
+					EgressDenialCode.CREDENTIAL_SCOPE,
+					verdict.entry.host,
+					"credential locator is not the one this call carries",
+				);
 			if (!manifest.credentialHosts.includes(verdict.entry.host))
-				return this.#denied(call, EgressDenialCode.CREDENTIAL_SCOPE, verdict.entry.host, `credential binding does not include ${verdict.entry.host}`);
+				return this.#denied(
+					call,
+					EgressDenialCode.CREDENTIAL_SCOPE,
+					verdict.entry.host,
+					`credential binding does not include ${verdict.entry.host}`,
+				);
 			let material: Readonly<Record<string, string>>;
 			try {
 				material = await this.#options.credentials.resolve(
@@ -464,7 +543,9 @@ class ComponentRuntime implements LoadedResolverComponent {
 			} catch (caught) {
 				throw this.#refuse(
 					"component.credential-unavailable",
-					caught instanceof Error ? caught.message : "credential locator did not resolve",
+					caught instanceof Error
+						? caught.message
+						: "credential locator did not resolve",
 					call.scope.productId,
 				);
 			}
@@ -483,9 +564,20 @@ class ComponentRuntime implements LoadedResolverComponent {
 		});
 		let response: TransportResponse;
 		try {
-			response = await guarded(transportRequest(method, verdict.url, headers, request.body, call, manifest.limits.memoryBytes, this.#now()));
+			response = await guarded(
+				transportRequest(
+					method,
+					verdict.url,
+					headers,
+					request.body,
+					call,
+					manifest.limits.memoryBytes,
+					this.#now(),
+				),
+			);
 		} catch (caught) {
-			const error = caught instanceof Error ? caught : new Error(String(caught));
+			const error =
+				caught instanceof Error ? caught : new Error(String(caught));
 			if (error instanceof TransportGuardError) {
 				const code =
 					error.code === "TRANSPORT_REDIRECT_REFUSED"
@@ -493,65 +585,124 @@ class ComponentRuntime implements LoadedResolverComponent {
 						: error.code === "TRANSPORT_BODY_TOO_LARGE"
 							? EgressDenialCode.BODY_TOO_LARGE
 							: EgressDenialCode.HOST_NOT_ALLOWLISTED;
-				if (error.code === "TRANSPORT_TIMEOUT_EXCEEDED") throw call.meter.expire();
+				if (error.code === "TRANSPORT_TIMEOUT_EXCEEDED")
+					throw call.meter.expire();
 				return this.#denied(call, code, verdict.entry.host, error.message);
 			}
 			throw error;
 		}
-		return lower({ ok: this.#admitResponse(call, verdict.entry.host, response) });
+		return lower({
+			ok: this.#admitResponse(call, verdict.entry.host, response),
+		});
 	}
 
-	#admitResponse(call: CallState, host: string, response: TransportResponse): WitHttpResponse {
+	#admitResponse(
+		call: CallState,
+		host: string,
+		response: TransportResponse,
+	): WitHttpResponse {
 		const headerPairs = Object.keys(response.headers)
 			.sort(compare)
-			.map((name): readonly [string, string] => [name, response.headers[name] ?? ""]);
+			.map((name): readonly [string, string] => [
+				name,
+				response.headers[name] ?? "",
+			]);
 		const responseText = `${headerPairs.map(([name, value]) => `${name}:${value}`).join("\n")}\n${response.body}`;
 		call.meter.charge(byteLength(responseText) * FUEL_COSTS.perByte);
 		call.meter.hold(byteLength(responseText));
 		call.meter.checkDeadline();
 		if (response.status >= 300 && response.status < 400)
-			this.#deny(call, EgressDenialCode.REDIRECT, host, `upstream answered ${response.status}; redirects are never followed`);
+			this.#deny(
+				call,
+				EgressDenialCode.REDIRECT,
+				host,
+				`upstream answered ${response.status}; redirects are never followed`,
+			);
 		if (call.scanner.find(responseText))
-			this.#deny(call, EgressDenialCode.SECRET_EXFILTRATION, host, "upstream response echoed injected credential material; it was redacted before the component read it");
+			this.#deny(
+				call,
+				EgressDenialCode.SECRET_EXFILTRATION,
+				host,
+				"upstream response echoed injected credential material; it was redacted before the component read it",
+			);
 		return Object.freeze({
 			status: response.status,
 			headers: Object.freeze(
-				headerPairs.map(([name, value]) => Object.freeze([name, call.scanner.redact(value)] as const)),
+				headerPairs.map(([name, value]) =>
+					Object.freeze([name, call.scanner.redact(value)] as const),
+				),
 			),
 			body: call.scanner.redact(response.body),
 		});
 	}
 
-	#deny(call: CallState, code: EgressDenialCode, host: string, detail: string): void {
+	#deny(
+		call: CallState,
+		code: EgressDenialCode,
+		host: string,
+		detail: string,
+	): void {
 		call.denials.push(Object.freeze({ code, host, detail }));
 	}
 
-	#denied(call: CallState, code: EgressDenialCode, host: string, detail: string): JsonValue {
+	#denied(
+		call: CallState,
+		code: EgressDenialCode,
+		host: string,
+		detail: string,
+	): JsonValue {
 		this.#deny(call, code, host, detail);
 		return lower({ err: { tag: "denied", val: detail } });
 	}
 
-	#refuse(code: ResolverComponentErrorCode, message: string, productId?: string): ResolverComponentError {
+	#refuse(
+		code: ResolverComponentErrorCode,
+		message: string,
+		productId?: string,
+	): ResolverComponentError {
 		return new ResolverComponentError(code, message, this.#id, productId);
 	}
 
-	#asRefusal(error: Error | ResolverComponentError, operation: string, productId: string): ResolverComponentError {
+	#asRefusal(
+		error: Error | ResolverComponentError,
+		operation: string,
+		productId: string,
+	): ResolverComponentError {
 		if (error instanceof ResolverComponentError) return error;
 		if (error instanceof LimitTrap)
-			return this.#refuse(LIMIT_CODES[error.kind], `${operation}: ${error.message}`, productId);
+			return this.#refuse(
+				LIMIT_CODES[error.kind],
+				`${operation}: ${error.message}`,
+				productId,
+			);
 		if (error instanceof AbiError)
-			return this.#refuse("component.output-unparseable", `${operation}: ${error.message}`, productId);
-		return this.#refuse("component.trap", `${operation}: ${errorMessage(error)}`, productId);
+			return this.#refuse(
+				"component.output-unparseable",
+				`${operation}: ${error.message}`,
+				productId,
+			);
+		return this.#refuse(
+			"component.trap",
+			`${operation}: ${errorMessage(error)}`,
+			productId,
+		);
 	}
 
-	#report(operation: ResolverOperation, productId: string, call: CallState, outcome: InvocationOutcome): void {
+	#report(
+		operation: ResolverOperation,
+		productId: string,
+		call: CallState,
+		outcome: InvocationOutcome,
+	): void {
 		const record = create(ComponentInvocationRecordSchema, {
 			componentId: this.#id,
 			wasmDigest: this.verified.wasmDigest,
 			productId,
 			operation,
 			outcome,
-			fuelUsed: BigInt(Math.min(call.meter.fuelUsed, this.verified.manifest.limits.fuel)),
+			fuelUsed: BigInt(
+				Math.min(call.meter.fuelUsed, this.verified.manifest.limits.fuel),
+			),
 			peakMemoryBytes: BigInt(call.meter.peakMemoryBytes),
 			durationMs: call.meter.durationMs,
 			egressCalls: call.egressCalls,
@@ -566,7 +717,9 @@ class ComponentRuntime implements LoadedResolverComponent {
 		this.#options.onInvocation?.(record);
 		const sink = this.#options.telemetry;
 		if (sink !== undefined)
-			sink.metrics(invocationMetrics(record, this.#now())).catch(() => undefined);
+			sink
+				.metrics(invocationMetrics(record, this.#now()))
+				.catch(() => undefined);
 	}
 }
 
@@ -584,10 +737,16 @@ function outcomeOf(error: Error | ResolverComponentError): InvocationOutcome {
 	}
 	if (error instanceof AbiError) return InvocationOutcome.OUTPUT_UNPARSEABLE;
 	if (error instanceof ResolverComponentError) {
-		if (error.componentCode === "component.output-unparseable") return InvocationOutcome.OUTPUT_UNPARSEABLE;
-		if (error.componentCode === "component.secret-exfiltration") return InvocationOutcome.SECRET_EXFILTRATION;
-		if (error.componentCode === "component.egress-denied") return InvocationOutcome.EGRESS_DENIED;
-		if (error.componentCode === "component.guest-rejected" || error.componentCode === "component.guest-unsupported")
+		if (error.componentCode === "component.output-unparseable")
+			return InvocationOutcome.OUTPUT_UNPARSEABLE;
+		if (error.componentCode === "component.secret-exfiltration")
+			return InvocationOutcome.SECRET_EXFILTRATION;
+		if (error.componentCode === "component.egress-denied")
+			return InvocationOutcome.EGRESS_DENIED;
+		if (
+			error.componentCode === "component.guest-rejected" ||
+			error.componentCode === "component.guest-unsupported"
+		)
 			return InvocationOutcome.GUEST_ERROR;
 	}
 	return InvocationOutcome.TRAP;
@@ -654,4 +813,3 @@ function byteLength(text: string): number {
 function errorMessage(error: Error): string {
 	return error.message;
 }
-

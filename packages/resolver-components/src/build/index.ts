@@ -28,7 +28,8 @@ import { RESOLVER_WIT_WORLD } from "../wit.js";
 // public-contract: custom section carrying the contract metadata.
 export const RESOLVER_CONTRACT_SECTION = "hobo.resolver.contract" as const;
 // public-contract: schema id of the contract metadata.
-export const RESOLVER_CONTRACT_SCHEMA = "hobo.resolver-components.contract/v1" as const;
+export const RESOLVER_CONTRACT_SCHEMA =
+	"hobo.resolver-components.contract/v1" as const;
 
 export interface ComponentizeResolverInput {
 	readonly componentId: string;
@@ -38,7 +39,9 @@ export interface ComponentizeResolverInput {
 }
 
 /** Deterministic contract bytes for a guest source (synthetic lane). */
-export function componentizeResolver(input: ComponentizeResolverInput): Uint8Array {
+export function componentizeResolver(
+	input: ComponentizeResolverInput,
+): Uint8Array<ArrayBuffer> {
 	const metadata = canonicalJson({
 		schema: RESOLVER_CONTRACT_SCHEMA,
 		world: RESOLVER_WIT_WORLD,
@@ -47,7 +50,11 @@ export function componentizeResolver(input: ComponentizeResolverInput): Uint8Arr
 		sourceDigest: `sha256:${createHash("sha256").update(input.source).digest("hex")}`,
 	});
 	const name = Buffer.from(RESOLVER_CONTRACT_SECTION, "utf8");
-	const payload = Buffer.concat([leb128(name.length), name, Buffer.from(metadata, "utf8")]);
+	const payload = Buffer.concat([
+		leb128(name.length),
+		name,
+		Buffer.from(metadata, "utf8"),
+	]);
 	return Uint8Array.from(
 		Buffer.concat([
 			Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]),
@@ -103,7 +110,10 @@ export function buildResolverComponent(
 	manifestJson: JsonObject,
 	wasm: Uint8Array,
 ): BuiltResolverComponent {
-	const stamped: JsonObject = { ...manifestJson, wasmDigest: wasmDigestOf(wasm) };
+	const stamped: JsonObject = {
+		...manifestJson,
+		wasmDigest: wasmDigestOf(wasm),
+	};
 	const manifest = parseComponentManifest(stamped);
 	const registryManifest = resolverRegistryManifest(manifest);
 	const ingested = ingestBundleManifest(registryManifest);

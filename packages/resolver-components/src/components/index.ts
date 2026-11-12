@@ -35,7 +35,9 @@ export interface ReferenceComponent {
 	readonly manifest: JsonObject;
 }
 
-export function httpArtifactUpload(hosts: readonly HttpUploadHost[]): ReferenceComponent {
+export function httpArtifactUpload(
+	hosts: readonly HttpUploadHost[],
+): ReferenceComponent {
 	return Object.freeze({
 		id: HTTP_ARTIFACT_UPLOAD_ID,
 		version: HTTP_ARTIFACT_UPLOAD_VERSION,
@@ -45,7 +47,9 @@ export function httpArtifactUpload(hosts: readonly HttpUploadHost[]): ReferenceC
 	});
 }
 
-export function sftpStatic(options: SftpBridgeOptions = {}): ReferenceComponent {
+export function sftpStatic(
+	options: SftpBridgeOptions = {},
+): ReferenceComponent {
 	const host = options.host ?? "sftp-bridge.hobo.local";
 	const port = options.port ?? "8443";
 	return Object.freeze({
@@ -58,7 +62,9 @@ export function sftpStatic(options: SftpBridgeOptions = {}): ReferenceComponent 
 }
 
 /** Componentize a reference component (synthetic lane) and stamp its manifest. */
-export function buildReferenceComponent(component: ReferenceComponent): BuiltResolverComponent {
+export function buildReferenceComponent(
+	component: ReferenceComponent,
+): BuiltResolverComponent {
 	const wasm = componentizeResolver({
 		componentId: component.id,
 		version: component.version,

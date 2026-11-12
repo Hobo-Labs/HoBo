@@ -95,13 +95,19 @@ export function parseComponentManifest(input: JsonValue): ComponentManifest {
 	return fromRecord(record);
 }
 
-function fromRecord(record: ResolverComponentManifestRecord): ComponentManifest {
+function fromRecord(
+	record: ResolverComponentManifestRecord,
+): ComponentManifest {
 	const id = record.id;
 	if (record.schema !== COMPONENT_MANIFEST_SCHEMA)
 		throw invalid(`schema must be ${COMPONENT_MANIFEST_SCHEMA}`, id);
-	if (!ID_PATTERN.test(id)) throw invalid(`id ${JSON.stringify(id)} is not a component id`);
+	if (!ID_PATTERN.test(id))
+		throw invalid(`id ${JSON.stringify(id)} is not a component id`);
 	if (!VERSION_PATTERN.test(record.version))
-		throw invalid(`version ${JSON.stringify(record.version)} is not semver`, id);
+		throw invalid(
+			`version ${JSON.stringify(record.version)} is not semver`,
+			id,
+		);
 	if (record.world !== RESOLVER_WIT_WORLD)
 		throw invalid(
 			`world ${JSON.stringify(record.world)} is not ${RESOLVER_WIT_WORLD}`,
@@ -145,10 +151,8 @@ function parseModes(
 ): readonly ReconcilerMode[] {
 	const modes = new Set<ReconcilerMode>();
 	for (const mode of record.modes) {
-		if (mode === ReconcilerModeRecord.CONDUCTOR)
-			modes.add("conductor");
-		else if (mode === ReconcilerModeRecord.AGENT)
-			modes.add("agent");
+		if (mode === ReconcilerModeRecord.CONDUCTOR) modes.add("conductor");
+		else if (mode === ReconcilerModeRecord.AGENT) modes.add("agent");
 		else throw invalid("modes may name only CONDUCTOR or AGENT", id);
 	}
 	if (modes.size === 0) throw invalid("modes must name at least one mode", id);
@@ -164,7 +168,10 @@ function parseClasses(
 	const seen = new Set<string>();
 	const classes = record.classes.map((entry): ComponentResourceClass => {
 		if (!PRODUCT_PATTERN.test(entry.productId))
-			throw invalid(`product_id ${JSON.stringify(entry.productId)} is invalid`, id);
+			throw invalid(
+				`product_id ${JSON.stringify(entry.productId)} is invalid`,
+				id,
+			);
 		if (seen.has(entry.productId))
 			throw invalid(`product ${entry.productId} is declared twice`, id);
 		seen.add(entry.productId);
@@ -194,7 +201,10 @@ function fieldList(
 ): readonly string[] {
 	for (const field of fields) {
 		if (!FIELD_PATTERN.test(field))
-			throw invalid(`${label} entry ${JSON.stringify(field)} is not a field path`, id);
+			throw invalid(
+				`${label} entry ${JSON.stringify(field)} is not a field path`,
+				id,
+			);
 		if (CREDENTIAL_FIELD_PATTERN.test(field))
 			throw invalid(
 				`${label} entry ${JSON.stringify(field)} names credential material; records are secret-free (I9)`,
@@ -204,10 +214,16 @@ function fieldList(
 	return sortedUnique(fields);
 }
 
-function directiveList(fields: readonly string[], id: string): readonly string[] {
+function directiveList(
+	fields: readonly string[],
+	id: string,
+): readonly string[] {
 	for (const field of fields) {
 		if (!DIRECTIVE_PATTERN.test(field))
-			throw invalid(`directive ${JSON.stringify(field)} is not a parameter name`, id);
+			throw invalid(
+				`directive ${JSON.stringify(field)} is not a parameter name`,
+				id,
+			);
 	}
 	return sortedUnique(fields);
 }
@@ -230,8 +246,12 @@ function parseEgress(
 				id,
 			);
 		if (/^[0-9.]+$/u.test(entry.host))
-			throw invalid(`egress host ${entry.host} is an IP literal; name the host`, id);
-		if (seen.has(entry.host)) throw invalid(`egress host ${entry.host} is listed twice`, id);
+			throw invalid(
+				`egress host ${entry.host} is an IP literal; name the host`,
+				id,
+			);
+		if (seen.has(entry.host))
+			throw invalid(`egress host ${entry.host} is listed twice`, id);
 		seen.add(entry.host);
 		for (const port of entry.ports) {
 			const value = Number(port);
@@ -240,7 +260,10 @@ function parseEgress(
 		}
 		for (const prefix of entry.pathPrefixes) {
 			if (!prefix.startsWith("/") || prefix.includes(".."))
-				throw invalid(`path prefix ${JSON.stringify(prefix)} must start with / and hold no ..`, id);
+				throw invalid(
+					`path prefix ${JSON.stringify(prefix)} must start with / and hold no ..`,
+					id,
+				);
 		}
 		if (entry.localAddresses.length > 0 && !modes.includes("agent"))
 			throw invalid(
@@ -256,7 +279,9 @@ function parseEgress(
 			localAddresses: sortedUnique(entry.localAddresses),
 		});
 	});
-	return Object.freeze(hosts.sort((left, right) => compare(left.host, right.host)));
+	return Object.freeze(
+		hosts.sort((left, right) => compare(left.host, right.host)),
+	);
 }
 
 function parseLimits(
@@ -271,7 +296,9 @@ function parseLimits(
 		id,
 	);
 	const callTimeoutMs = capped(
-		limits?.callTimeoutMs === undefined ? undefined : BigInt(limits.callTimeoutMs),
+		limits?.callTimeoutMs === undefined
+			? undefined
+			: BigInt(limits.callTimeoutMs),
 		CD_DEFAULTS.componentCallTimeoutMs,
 		"call_timeout_ms",
 		id,
@@ -288,7 +315,10 @@ function capped(
 ): number {
 	if (value === undefined || value === 0n) return cap;
 	if (value > BigInt(cap))
-		throw invalid(`limits.${label} ${value} exceeds the CD_DEFAULTS cap ${cap}`, id);
+		throw invalid(
+			`limits.${label} ${value} exceeds the CD_DEFAULTS cap ${cap}`,
+			id,
+		);
 	return Number(value);
 }
 
@@ -326,7 +356,9 @@ export function componentManifestDigest(manifest: ComponentManifest): string {
 				: "RECONCILER_MODE_RECORD_CONDUCTOR",
 		),
 	});
-	const canonical = canonicalJson(toJson(ResolverComponentManifestRecordSchema, record));
+	const canonical = canonicalJson(
+		toJson(ResolverComponentManifestRecordSchema, record),
+	);
 	return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 

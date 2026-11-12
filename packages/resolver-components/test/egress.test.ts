@@ -42,7 +42,10 @@ async function denial(url: string, overrides: Partial<EgressPolicy> = {}) {
 
 describe("egress allowlist and SSRF rules (relay proof promoted)", () => {
 	it("admits an allowlisted host, port and path and pins the resolved addresses", async () => {
-		const verdict = await checkEgress("https://api.acme.test/v1/sites", policy());
+		const verdict = await checkEgress(
+			"https://api.acme.test/v1/sites",
+			policy(),
+		);
 		expect(verdict.ok).toBe(true);
 		if (verdict.ok) expect(verdict.addresses).toEqual(["93.184.216.34"]);
 		const port = await checkEgress("https://upload.acme.test:8443/x", policy());
@@ -84,7 +87,9 @@ describe("egress allowlist and SSRF rules (relay proof promoted)", () => {
 		"https://[::1]/",
 		"https://[::ffff:10.0.0.1]/",
 	])("denies IP literal %s (allowlists name hosts)", async (url) => {
-		expect((await denial(url)).code).toBe(EgressDenialCode.HOST_NOT_ALLOWLISTED);
+		expect((await denial(url)).code).toBe(
+			EgressDenialCode.HOST_NOT_ALLOWLISTED,
+		);
 	});
 
 	it("denies plain http and embedded userinfo", async () => {
@@ -104,9 +109,10 @@ describe("egress allowlist and SSRF rules (relay proof promoted)", () => {
 
 	it("denies a host whose resolution fails", async () => {
 		const failing = async (): Promise<readonly string[]> => [];
-		expect((await denial("https://api.acme.test/v1/", { resolveHost: failing })).code).toBe(
-			EgressDenialCode.REBINDING,
-		);
+		expect(
+			(await denial("https://api.acme.test/v1/", { resolveHost: failing }))
+				.code,
+		).toBe(EgressDenialCode.REBINDING);
 	});
 
 	it("admits a private address only in agent mode and only from the local allowlist", async () => {
@@ -137,7 +143,9 @@ describe("egress allowlist and SSRF rules (relay proof promoted)", () => {
 			mode: "agent",
 			resolveHost: async () => ["10.9.9.9"],
 		});
-		expect(moved.ok ? undefined : moved.denial.code).toBe(EgressDenialCode.REBINDING);
+		expect(moved.ok ? undefined : moved.denial.code).toBe(
+			EgressDenialCode.REBINDING,
+		);
 	});
 
 	it.each([

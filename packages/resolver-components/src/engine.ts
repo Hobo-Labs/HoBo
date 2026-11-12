@@ -11,10 +11,10 @@
 // plugs in behind the same interface (README "Engines").
 import type { ComponentExport, InterfaceId } from "@hobo/core";
 import {
-	lower,
 	liftEgressResult,
 	liftInstancesPayload,
 	liftResolveRequest,
+	lower,
 } from "./guest/abi.js";
 import type {
 	ResolverGuestImports,
@@ -45,7 +45,9 @@ export interface EngineInstantiation {
 }
 
 /** The lowered `hobo:resolver/resolver` export table. */
-export type ResolverExportTable = Readonly<Record<ResolverOperation, ComponentExport>>;
+export type ResolverExportTable = Readonly<
+	Record<ResolverOperation, ComponentExport>
+>;
 
 export interface ResolverComponentEngine {
 	readonly kind: string;
@@ -60,7 +62,9 @@ function guestImports(callImport: ImportCall): ResolverGuestImports {
 			await callImport(RESOLVER_HOST_IMPORT, "log", lower({ level, message }));
 		},
 		async send(request: WitHttpRequest) {
-			return liftEgressResult(await callImport(WASI_HTTP_OUTGOING, "send", lower(request)));
+			return liftEgressResult(
+				await callImport(WASI_HTTP_OUTGOING, "send", lower(request)),
+			);
 		},
 		async authorizedFetch(request: WitHttpRequest, credentialRef: string) {
 			return liftEgressResult(
@@ -94,10 +98,11 @@ export function createGuestModuleEngine(
 					lower(await guest.delete(liftResolveRequest(payload))),
 				instances: async (payload: JsonValue) => {
 					const args = liftInstancesPayload(payload);
-					return lower(await guest.instances(args.productId, args.credentialRef));
+					return lower(
+						await guest.instances(args.productId, args.credentialRef),
+					);
 				},
 			});
 		},
 	});
 }
-

@@ -118,14 +118,22 @@ function embeddedV4(address: string): string | undefined {
 }
 
 function isMetadata(hostOrAddress: string): boolean {
-	return METADATA_ENDPOINTS.includes(stripBrackets(hostOrAddress).toLowerCase());
+	return METADATA_ENDPOINTS.includes(
+		stripBrackets(hostOrAddress).toLowerCase(),
+	);
 }
 
 function stripBrackets(value: string): string {
-	return value.startsWith("[") && value.endsWith("]") ? value.slice(1, -1) : value;
+	return value.startsWith("[") && value.endsWith("]")
+		? value.slice(1, -1)
+		: value;
 }
 
-function deny(code: EgressDenialCode, host: string, detail: string): EgressVerdict {
+function deny(
+	code: EgressDenialCode,
+	host: string,
+	detail: string,
+): EgressVerdict {
 	return { ok: false, denial: Object.freeze({ code, host, detail }) };
 }
 
@@ -138,11 +146,19 @@ export async function checkEgress(
 	try {
 		url = new URL(rawUrl);
 	} catch {
-		return deny(EgressDenialCode.SCHEME_FORBIDDEN, "", "request url is not an absolute URL");
+		return deny(
+			EgressDenialCode.SCHEME_FORBIDDEN,
+			"",
+			"request url is not an absolute URL",
+		);
 	}
 	const host = stripBrackets(url.hostname);
 	if (url.protocol !== "https:")
-		return deny(EgressDenialCode.SCHEME_FORBIDDEN, host, `scheme ${url.protocol} is not https`);
+		return deny(
+			EgressDenialCode.SCHEME_FORBIDDEN,
+			host,
+			`scheme ${url.protocol} is not https`,
+		);
 	if (url.username !== "" || url.password !== "")
 		return deny(
 			EgressDenialCode.HOST_NOT_ALLOWLISTED,
@@ -150,14 +166,20 @@ export async function checkEgress(
 			"userinfo hides the real host; credentials are attached by the host only",
 		);
 	if (isMetadata(host))
-		return deny(EgressDenialCode.METADATA_ENDPOINT, host, `${host} is a metadata endpoint`);
+		return deny(
+			EgressDenialCode.METADATA_ENDPOINT,
+			host,
+			`${host} is a metadata endpoint`,
+		);
 	if (isIP(host) !== 0)
 		return deny(
 			EgressDenialCode.HOST_NOT_ALLOWLISTED,
 			host,
 			"IP literals are never allowlisted; name the host in the manifest",
 		);
-	const entry = policy.manifest.egress.find((candidate) => candidate.host === host);
+	const entry = policy.manifest.egress.find(
+		(candidate) => candidate.host === host,
+	);
 	if (entry === undefined)
 		return deny(
 			EgressDenialCode.HOST_NOT_ALLOWLISTED,
@@ -165,7 +187,11 @@ export async function checkEgress(
 			`${host} is not in the signed egress allowlist`,
 		);
 	if (url.port !== "" && url.port !== "443" && !entry.ports.includes(url.port))
-		return deny(EgressDenialCode.PORT_FORBIDDEN, host, `port ${url.port} is not registered for ${host}`);
+		return deny(
+			EgressDenialCode.PORT_FORBIDDEN,
+			host,
+			`port ${url.port} is not registered for ${host}`,
+		);
 	if (
 		encodesPathSeparator(url.pathname) ||
 		!entry.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix))
@@ -192,10 +218,15 @@ async function resolveChecked(
 	}
 	if (addresses.length === 0)
 		return deny(EgressDenialCode.REBINDING, host, `${host} did not resolve`);
-	const localAllowed = policy.mode === "agent" && entry.localAddresses.length > 0;
+	const localAllowed =
+		policy.mode === "agent" && entry.localAddresses.length > 0;
 	for (const address of addresses) {
 		if (isMetadata(address))
-			return deny(EgressDenialCode.METADATA_ENDPOINT, host, `${host} resolved to a metadata endpoint`);
+			return deny(
+				EgressDenialCode.METADATA_ENDPOINT,
+				host,
+				`${host} resolved to a metadata endpoint`,
+			);
 		if (localAllowed) {
 			if (!entry.localAddresses.includes(address))
 				return deny(

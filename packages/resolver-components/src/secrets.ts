@@ -29,7 +29,9 @@ export interface SecretScanner {
  * Build a scanner over the material injected for one call. A header value
  * such as `Bearer abc` contributes both the full value and its token part.
  */
-export function createSecretScanner(material: readonly string[]): SecretScanner {
+export function createSecretScanner(
+	material: readonly string[],
+): SecretScanner {
 	const needles = new Set<string>();
 	for (const value of material) {
 		for (const part of [value, ...value.split(/\s+/u)]) {
@@ -40,14 +42,17 @@ export function createSecretScanner(material: readonly string[]): SecretScanner 
 		}
 	}
 	// Longest first, so redaction removes a full header before its token part.
-	const ordered = [...needles].sort((left, right) => right.length - left.length);
+	const ordered = [...needles].sort(
+		(left, right) => right.length - left.length,
+	);
 	return Object.freeze({
 		empty: ordered.length === 0,
 		find(text: string): boolean {
 			if (ordered.length === 0 || text.length === 0) return false;
 			const lower = text.toLowerCase();
 			return ordered.some(
-				(needle) => text.includes(needle) || lower.includes(needle.toLowerCase()),
+				(needle) =>
+					text.includes(needle) || lower.includes(needle.toLowerCase()),
 			);
 		},
 		redact(text: string): string {
