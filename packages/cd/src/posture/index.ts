@@ -14,6 +14,11 @@ export {
 	type RemediationPlan,
 	ruleKey,
 } from "./evaluate-camp.js";
+export {
+	POSTURE_EVENT_CONTRACTS,
+	postureCorpusBaseline,
+	toPostureCorpusBody,
+} from "./event-contracts.js";
 export { complianceOscal, toPostureComplianceInput } from "./oscal.js";
 export {
 	applyPostureFixes,
