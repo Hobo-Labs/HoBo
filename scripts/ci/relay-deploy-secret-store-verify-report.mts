@@ -78,12 +78,12 @@ if (envelope !== undefined) {
 		const identity = asText(check.identity) ?? "identity";
 		const method = asText(check.method) ?? "method";
 		const result = asText(check.result) ?? "unknown";
-		const detail = asText(check.detail) ?? "";
+		const detail = redactNoise(asText(check.detail) ?? "");
 		lines.push(`- ${identity} (${method}): ${result} — ${detail}`);
 	}
 	if (lines.length === 2) {
 		const code = asText(envelope.code) ?? "unknown";
-		const message = asText(envelope.message) ?? "(no message)";
+		const message = redactNoise(asText(envelope.message) ?? "(no message)");
 		lines.push(`- ${code}: ${message}`);
 	}
 } else {
@@ -102,7 +102,7 @@ console.log(summary);
 
 const headline =
 	envelope !== undefined
-		? `${asText(envelope.code) ?? "HOBO_CI_SECRET_STORE_VERIFY_FAILED"}: ${(asText(envelope.message) ?? "verify failed").split("\n")[0]}`
+		? `${asText(envelope.code) ?? "HOBO_CI_SECRET_STORE_VERIFY_FAILED"}: ${redactNoise(asText(envelope.message) ?? "verify failed").split("\n")[0]}`
 		: "HOBO_CI_SECRET_STORE_VERIFY_NO_ENVELOPE: verify produced no JSON envelope";
 
 if (exitCode !== 0) {

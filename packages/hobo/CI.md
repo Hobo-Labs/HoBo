@@ -444,9 +444,10 @@ In the relay deploy workflow, that verify command must finish before the
 summary step runs (`|| status=$?` under bash `-e`); otherwise a non-zero exit
 hides the JSON. The workflow calls
 `scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines,
-emit `::error::`, and never echo JWTs. On Infisical OIDC failure, verify
-appends `oidc_sub` and `oidc_aud` (GitHub OIDC audience
-`https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
+emit `::error::`, and never echo JWTs (details and messages pass JWT-shaped
+redaction). On Infisical OIDC failure, verify appends `oidc_sub` and
+`oidc_aud` from the same memoized workload JWT used for sign-in (GitHub OIDC
+audience `https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
 
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy

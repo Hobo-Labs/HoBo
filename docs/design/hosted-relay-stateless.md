@@ -877,7 +877,8 @@ Infisical ids given as inputs
 every push to `main` that touches the relay's pnpm-lock closure: after the
 binding exists it runs `hobo ci secret-store verify` (GitHub OIDC audience
 `https://github.com/Hobo-Labs`; failures print `oidc_sub` / `oidc_aud` through
-[`relay-deploy-secret-store-verify-report.mts`](../../scripts/ci/relay-deploy-secret-store-verify-report.mts)),
+[`relay-deploy-secret-store-verify-report.mts`](../../scripts/ci/relay-deploy-secret-store-verify-report.mts);
+summaries redact JWT-shaped text),
 then reads the Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
 the Vercel CLI when the project lacks it, deploys with `--target production
 --wait`, and smoke-checks `/healthz` and `/readyz`. Until a secret store is

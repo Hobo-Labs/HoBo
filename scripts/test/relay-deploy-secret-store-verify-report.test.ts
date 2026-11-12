@@ -55,6 +55,44 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 		}
 	});
 
+	it("redacts JWT-shaped text in check details", () => {
+		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
+		const json = join(dir, "out.json");
+		const err = join(dir, "err.txt");
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig";
+		try {
+			writeFileSync(
+				json,
+				`${JSON.stringify({
+					ok: false,
+					code: "HOBO_CI_SECRET_STORE_VERIFY_FAILED",
+					message: "fail",
+					data: {
+						checks: [
+							{
+								identity: "hobo-ci-writer",
+								method: "GitHub Actions OIDC",
+								result: "fail",
+								detail: `leaked ${jwt}`,
+							},
+						],
+					},
+				})}\n`,
+			);
+			writeFileSync(err, "");
+			const ran = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", "--no-warnings", report, json, err, "1"],
+				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /\[jwt redacted\]/u);
+			assert.doesNotMatch(ran.stdout, /eyJhbGciOiJIUzI1NiJ9/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("fails loudly when stdout had no JSON envelope", () => {
 		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
 		const json = join(dir, "empty.json");

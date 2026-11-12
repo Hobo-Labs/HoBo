@@ -152,11 +152,9 @@ async function signInOnly(
 	identity: string,
 	method: string,
 	client: () => ReturnType<typeof createInfisicalClient>,
-	jwtSource?: () => Promise<string>,
+	workloadJwt?: () => string | undefined,
 ): Promise<VerifyCheck> {
-	let workloadJwt: string | undefined;
 	try {
-		if (jwtSource !== undefined) workloadJwt = await jwtSource();
 		const session = client();
 		await session.signIn();
 		await session.revoke().catch(() => undefined);
@@ -169,7 +167,7 @@ async function signInOnly(
 			detail:
 				(error instanceof InfisicalError
 					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in could not run") + oidcHintSuffix(workloadJwt),
+					: "the sign-in could not run") + oidcHintSuffix(workloadJwt?.()),
 		};
 	}
 }
@@ -257,6 +255,11 @@ export async function runCiSecretStoreVerify(
 		audience: RELAY_GITHUB_OIDC_AUDIENCE,
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 	});
+	let githubWorkloadJwt: string | undefined;
+	const memoGithubJwt = async () => {
+		if (githubWorkloadJwt === undefined) githubWorkloadJwt = await githubJwt();
+		return githubWorkloadJwt;
+	};
 	checks.push(
 		inActions
 			? await signInOnly(
@@ -272,13 +275,13 @@ export async function runCiSecretStoreVerify(
 							}),
 							auth: oidcAuth({
 								identityId: store.deployIdentityId,
-								jwt: githubJwt,
+								jwt: memoGithubJwt,
 							}),
 							...(input.fetch !== undefined
 								? { fetch: input.fetch }
 								: undefined),
 						}),
-					githubJwt,
+					() => githubWorkloadJwt,
 				)
 			: {
 					identity: "hobo-ci-writer",
