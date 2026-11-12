@@ -193,6 +193,8 @@ export function createRolloutOrchestrator(
 ): RolloutOrchestrator {
 	const experiments = d.experiments ?? storeExperimentConclusions(d);
 	const locks = new Map<string, Promise<void>>();
+	/** Rollouts this instance saw terminal: tick skips them (the ledger never reopens). */
+	const terminal = new Set<string>();
 
 	// ── telemetry (the journal is the record: a failing sink never fails a step) ──
 	const metric = (
@@ -1266,6 +1268,7 @@ export function createRolloutOrchestrator(
 				}
 				if (result === "waiting") break;
 			}
+			if (state.finished || state.refused) terminal.add(rolloutId);
 			return snapshotOf(state);
 		});
 	}
@@ -1452,6 +1455,7 @@ export function createRolloutOrchestrator(
 					ids.add(entry.event.streamId.slice(prefix.length) as RolloutId);
 			}
 			for (const rolloutId of [...ids].sort()) {
+				if (terminal.has(rolloutId)) continue;
 				try {
 					await drive(rolloutId, ctx);
 				} catch {

@@ -168,14 +168,14 @@ function decodeCommand(value: JsonValue | undefined): Command | undefined {
 	}
 }
 
-const STATUS: Readonly<Record<RolloutState["status"], RolloutStatus>> = {
+const STATUS = {
 	running: "running",
 	awaiting_approval: "awaiting-approval",
 	halted: "halted",
 	promoted: "promoted",
 	rolled_back: "rolled-back",
 	failed: "failed",
-};
+} as const satisfies Readonly<Record<RolloutState["status"], RolloutStatus>>;
 
 function holdStatus(hold: ReasonRecord): RolloutStatus {
 	if (

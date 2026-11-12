@@ -67,15 +67,15 @@ function vets(definition: string, value: JsonValue | undefined): boolean {
 	}
 }
 
-const DEFINITION: Readonly<Record<string, string>> = {
-	[CD_EVENTS.RolloutLowered]: "#RolloutLowered",
-	[ROLLOUT_LEDGER.shiftRequested]: "#RolloutShiftRequested",
-	[ROLLOUT_LEDGER.shifted]: "#RolloutShifted",
-	[ROLLOUT_LEDGER.stageVerified]: "#RolloutStageVerified",
-	[ROLLOUT_LEDGER.held]: "#RolloutHeld",
-	[ROLLOUT_LEDGER.rollbackDeltaOpened]: "#RolloutRollbackDeltaOpened",
-	[ROLLOUT_LEDGER.finished]: "#RolloutFinished",
-};
+const DEFINITION = new Map([
+	[CD_EVENTS.RolloutLowered, "#RolloutLowered"],
+	[ROLLOUT_LEDGER.shiftRequested, "#RolloutShiftRequested"],
+	[ROLLOUT_LEDGER.shifted, "#RolloutShifted"],
+	[ROLLOUT_LEDGER.stageVerified, "#RolloutStageVerified"],
+	[ROLLOUT_LEDGER.held, "#RolloutHeld"],
+	[ROLLOUT_LEDGER.rollbackDeltaOpened, "#RolloutRollbackDeltaOpened"],
+	[ROLLOUT_LEDGER.finished, "#RolloutFinished"],
+]);
 
 describe.skipIf(cue === undefined)(
 	"rollout.cue agrees with the rollout boundary (skips with no cue binary: run scripts/bootstrap-dev.sh)",
@@ -110,7 +110,7 @@ describe.skipIf(cue === undefined)(
 				for (const event of r.store.events(
 					ROLLOUT_LEDGER.stream(planned.value.rolloutId),
 				)) {
-					const definition = DEFINITION[event.type];
+					const definition = DEFINITION.get(event.type);
 					if (!definition) continue;
 					expect(
 						vets(definition, jsonOf(event.data)),
@@ -119,8 +119,7 @@ describe.skipIf(cue === undefined)(
 					checked.push(event.type);
 				}
 			}
-			for (const type of Object.keys(DEFINITION))
-				expect(checked).toContain(type);
+			for (const type of DEFINITION.keys()) expect(checked).toContain(type);
 		});
 
 		it("refuses stage percents the parser refuses and vets the ones it accepts", () => {
