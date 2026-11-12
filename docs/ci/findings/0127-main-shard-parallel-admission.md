@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 125: main shard parallel admission"
+title: "Finding 127: main shard parallel admission"
 description: "Run 43161009890 passed in 12m48s but workspace shards started ~1–2 minutes apart despite ~9.7 GiB MemAvailable and three launch slots."
 tags: [hobo, ci, performance, shards, admission, memory, main-gate]
 ---
 
-# Finding 125: main shard parallel admission
+# Finding 127: main shard parallel admission
 
 ## Evidence (before)
 
