@@ -43,3 +43,5 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 ## Verified
 
 - `test/relevant-check-policy.test.ts` — *a change to scripts, root tests or .github selects the scripts lane once*; *the scripts lane is not selected for other paths, a staged commit, or CI* (both fail on the previous policy).
+- `scripts/test/scripts-tests-job.test.ts` — *the scripts lane is a pull-request gate*: the job's runner, events and step order; its scope step run in temporary repositories (a merge group, a pull request's merge commit, no base); and the gate's step run for every scripts-job result, with the other jobs passing and with them attested (fails before the job existed).
+- `pnpm run actions:lint`: the job needs `route` and uses the routed `runs-on` expression.
