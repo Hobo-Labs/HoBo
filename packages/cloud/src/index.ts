@@ -3,28 +3,64 @@
 // Planner resolves them to a content-addressed DeploymentPlan DAG, and the
 // DeploymentView projection reconstructs deployment state from the log.
 
-// Resolved Deployment Set and secret-free projections: the CD inputs that
-// @hobo/cd (plan 0024) consumes. The former fixture-only CD plane moved into
-// @hobo/cd reconcilers and realizers.
+// Continuous Delivery plane (workload-attested apply + Harness progressive + A2H).
 export {
+	type A2HHandoffPackage,
+	type ApplyStepResult,
+	ATTESTED_APPLY_SCHEMA,
+	type AttestedApplyResult,
+	type AttestedApplyWorkerOptions,
+	type AttestedPrincipal,
+	assertSecretFree,
+	CD_APPLY_EVENTS,
+	CD_PLANE_SCHEMA,
+	type CdApplyEvent,
+	type ContinuousDeliveryPlane,
+	type ContinuousDeliveryResult,
+	createAttestedApplyWorker,
+	createBuiltinProgressiveAnalysis,
+	createContinuousDeliveryPlane,
+	createContractAssertedApplyAttestation,
+	createContractAssertedCdFixtures,
+	createDefaultSafetyEnvelope,
+	createOfflineIacProvider,
+	createResidualProgressiveAnalysis,
 	createResolvedDeploymentSet,
+	createSecretFreeDiff,
+	createSecretFreeStatus,
+	decideFailurePath,
+	type FailureDisposition,
+	type FailureSignal,
 	type GatekeeperApproval,
+	INCIDENT_CD_SCHEMA,
+	INCIDENT_EVENTS,
+	type IncidentEvent,
+	type LaneGrant,
+	type LocalCdFixtures,
 	listResources,
 	type MatchSelection,
+	PROGRESSIVE_ANALYSIS_SCHEMA,
+	PROGRESSIVE_CD_SCHEMA,
+	type ProgressiveAnalysisPort,
+	type ProgressiveAnalysisResult,
+	type ProgressiveAnalysisVerdict,
+	type ProgressiveCdResult,
+	type ProposedDelta,
 	providerForResource,
 	RESOLVED_SET_SCHEMA,
 	type ResolvedDeploymentSet,
-} from "./cd/resolved-set.js";
-export {
-	assertSecretFree,
-	createSecretFreeDiff,
-	createSecretFreeStatus,
+	type RollbackResult,
+	runProgressiveComposition,
+	type SafetyEnvelope,
 	SECRET_FREE_SCHEMA,
 	type SecretFreeDiff,
 	type SecretFreeStatus,
 	type SecretRef,
+	type SelfHealAgentRegistration,
+	type SustainedEvidenceWindow,
+	selectProgressiveAnalysis,
 	toSecretFreeOutputs,
-} from "./cd/secret-free.js";
+} from "./cd/index.js";
 export {
 	capabilityCatalogHashFromCommercialRefs,
 	commercialProductRefsHash,
