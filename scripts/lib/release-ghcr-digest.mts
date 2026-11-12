@@ -7,13 +7,28 @@ import {
 	parseUnknownJson,
 } from "./pins-json.ts";
 
+/** OCI image digest: lowercase `sha256:` + 64 hex (fail closed on anything else). */
+export const SHA256_IMAGE_DIGEST = /^sha256:[a-f0-9]{64}$/;
+
+export function assertSha256ImageDigest(
+	digest: string,
+	context: string,
+): string {
+	const trimmed = digest.trim();
+	if (!SHA256_IMAGE_DIGEST.test(trimmed)) {
+		throw new Error(
+			`${context}: digest must match sha256:[a-f0-9]{64}, got ${JSON.stringify(trimmed)}`,
+		);
+	}
+	return trimmed;
+}
+
 /** `ghcr.io/owner/hobo/image-id@sha256:…` line attest grep expects. */
 export function ghcrDigestRef(
 	imageNameWithoutTag: string,
 	digest: string,
 ): string {
-	const normalized = digest.startsWith("sha256:") ? digest : `sha256:${digest}`;
-	return `${imageNameWithoutTag}@${normalized}`;
+	return `${imageNameWithoutTag}@${assertSha256ImageDigest(digest, "ghcrDigestRef")}`;
 }
 
 export function normalizeRepoDigestLine(
@@ -29,14 +44,17 @@ export function normalizeRepoDigestLine(
 	if (trimmed.includes(needle)) return trimmed;
 	const imageName = tag.split(":")[0] ?? tag;
 	if (trimmed.startsWith("sha256:")) {
-		return ghcrDigestRef(imageName, trimmed);
+		return ghcrDigestRef(imageName, assertSha256ImageDigest(trimmed, tag));
 	}
 	const at = trimmed.lastIndexOf("@");
 	if (at === -1) {
 		throw new Error(`repo digest missing @ for ${tag}: ${trimmed}`);
 	}
 	const digest = trimmed.slice(at + 1);
-	return ghcrDigestRef(imageName, digest);
+	return ghcrDigestRef(
+		imageName,
+		assertSha256ImageDigest(digest, `${tag} repo digest`),
+	);
 }
 
 export type ImagetoolsInspect = (
@@ -49,7 +67,14 @@ function readStringField(root: JsonObject, key: string): string | undefined {
 }
 
 function readDigestField(root: JsonObject): string | undefined {
-	return readStringField(root, "digest") ?? readStringField(root, "Digest");
+	const raw =
+		readStringField(root, "digest") ?? readStringField(root, "Digest");
+	if (raw === undefined) return undefined;
+	try {
+		return assertSha256ImageDigest(raw, "imagetools digest");
+	} catch {
+		return undefined;
+	}
 }
 
 function stringLabelsFromJson(
