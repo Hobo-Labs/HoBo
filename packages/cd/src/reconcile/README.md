@@ -49,10 +49,25 @@ and [`../adapters/hosting-transition.ts`](../adapters/hosting-transition.ts)
   Each body is `{ schema: "hobo.cd.reconcile-status/v1", observation, drift?, orphans? }`
   and is vetted against `#ReconcileStatusEvent` in
   [`data-models/reconcile.cue`](../../data-models/reconcile.cue).
-- **Projections / read models**: the status stream is the materialized
-  status of a Camp; `DesiredStateReader.status` (WP4), inventory (WP22) and
+- **Projections / read store**: the status stream is the materialized
+  view of a Camp's status (the read store other modules query); `DesiredStateReader.status` (WP4), inventory (WP22) and
   posture (WP24) fold it. Checkpoints are the reconciler's snapshot of
   progress: a restart resumes after the committed position.
+
+## Parse, don't validate
+
+Wire records are the generated `cd_pb.ts` types; constrained values are
+parsed once into derived types and never re-checked downstream:
+
+- `parseDriftKind(drift_kind)` → `DriftKind` (`driftClass` + sorted `fields`);
+  an unknown class parses to `unknown` and escalates.
+- `parseRetainProperty(value)` → the sorted retained-field list.
+- `parseObservation(json)` → `ReconcileObservationRecord` from a status body.
+- `sanitizeObservation` produces the only observation shape that is reported
+  (stamped with the lease fence, trimmed, secret-free); `isConvergedOn` is the
+  single convergence predicate.
+- Branded ids (`CampId`, `ReconcilerId`, `FenceToken`, `EventPosition`) come
+  from the frozen ports and the journal; the transport never invents one.
 
 ## Loop
 
