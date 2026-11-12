@@ -15,15 +15,20 @@ The first swarm run stopped when the account's weekly agent usage limit was reac
 
 - Implemented, self-reported, **not yet independently reviewed**: WP1–WP14, WP16, WP17, WP19, WP22–WP24 (branches `cd/wp<NN>-<slug>`, pushed).
 - Interrupted mid-work, checkpointed as an unreviewed `wip` commit: WP15 (`cd/wp15-up-down-build`), WP25 (`cd/wp25-cd-kube-fleet`).
-- Not started: WP18 (composition, CLI, MCP), WP20 (conformance, matrices, journeys), WP21 (docs and registration), WP26 (dogfood: HoBo CI relay and runner fleets delivered by HoBo CD).
+- Not started: WP18 (composition, CLI, MCP), WP20 (conformance, matrices, journeys), WP21 (docs and registration).
 - No work-package branch is merged into the stack yet; no PR beyond the contract is open.
 
 ## Remaining steps
 
 1. Finish WP15 and WP25; run WP18, WP20 and WP21.
 2. Independent review of every WP branch (diff ownership, gates, Accept tests), fixes.
-3. Integrate in stack layers and open stacked PRs: contract + ledger (WP1–5) → promotion/reconcile/verification/rollout (WP6, 7, 9, 10) → feed/service/boundary/governance/storage (WP11, 12, 16, 17, 19) → fleet and policy (WP22–25) → platform (WP8, 13, 14) → surfaces (WP15, 18, 20) → docs (WP21) → dogfood (WP26).
-4. WP26 dogfood: deliver the hosted CI relay (`packages/ci-vercel/deploy/yard.ts`) as Freight through a preview → production pipeline; make the self-hosted runner hosts (`hobo`, `hobo-trunk`, `hobo-local-host`) a Camp set managed by `hobo deploy agent run` with Placement and fan-out; discover runner images by OCI polling; switch `.github/workflows/relay-deploy.yml` to promote through `hobo deploy` (the owner's dogfood request overrides plan §12's workflow rule for this package only).
+3. Integrate in stack layers and open stacked PRs: contract + ledger (WP1–5) → promotion/reconcile/verification/rollout (WP6, 7, 9, 10) → feed/service/boundary/governance/storage (WP11, 12, 16, 17, 19) → fleet and policy (WP22–25) → platform (WP8, 13, 14) → surfaces (WP15, 18, 20). Each layer that touches HoBo's own delivery also switches that delivery onto the new code (step 4).
+4. Dogfooding is a property of the whole change, not a package: HoBo's own code must integrate, promote and deploy HoBo to its declared targets, using existing packages and repo config only.
+   - Every HoBo build (HoBo CI Fabric, `@hobo/ci`) emits a `hobo.freight-manifest/v1` with provenance, so HoBo's own artifacts enter `@hobo/cd` as Freight through the `HOBO_CI` source.
+   - The hosted CI relay (`packages/ci-vercel/deploy/yard.ts`, Vercel) is promoted by `@hobo/cd` through a preview → production pipeline: `hobo ci deploy` and `.github/workflows/relay-deploy.yml` become `hobo deploy promote`, verified on `/healthz` and `/readyz`.
+   - The self-hosted runner hosts and controllers (`hobo`, `hobo-trunk`, `hobo-local-host`; `@hobo/ci-gh-actions` fleet and mesh nodes) are Camps in a Camp set reconciled by `hobo deploy agent run`, rolled out by Placement and fan-out; runner images are discovered by OCI polling of GHCR.
+   - Releases (`release-hobo.yml`: npm, GHCR OCI images, the `site/` Pages deploy) record Freight and promote through `@hobo/cd` pipelines instead of ad-hoc publish steps.
+   - Workflow files change only to call HoBo; the owner's dogfooding request overrides plan §12's rule against touching `.github/workflows/` for these call sites.
 
 ## Work-package reports
 
