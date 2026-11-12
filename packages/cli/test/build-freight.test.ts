@@ -106,7 +106,7 @@ function harness(): BuildHarness {
 	return { fake, delivery, runtime: { ...base, delivery } };
 }
 
-function valueOf(
+function fieldOf(
 	value: JsonValue | undefined,
 	key: string,
 ): JsonValue | undefined {
@@ -212,7 +212,7 @@ describe("hobo build emits Freight", () => {
 			const declarationPut = fake.calls.find(
 				(c) =>
 					c.port === "artifacts.put" &&
-					valueOf(c.input, "mediaType") === DECLARATION_MEDIA_TYPE,
+					fieldOf(c.input, "mediaType") === DECLARATION_MEDIA_TYPE,
 			);
 			expect(declarationPut).toBeDefined();
 			expect(fake.blobs.has(declaration)).toBe(true);
@@ -240,13 +240,13 @@ describe("hobo build emits Freight", () => {
 				await readFile(path.join(projectRoot, FREIGHT_FILE)),
 			);
 			if (!built.ok) throw new Error("freight.json unreadable");
-			const recordedArtifacts = valueOf(
-				valueOf(recorded?.input, "manifest"),
+			const recordedArtifacts = fieldOf(
+				fieldOf(recorded?.input, "manifest"),
 				"artifacts",
 			);
 			expect(
 				isJsonArray(recordedArtifacts)
-					? recordedArtifacts.map((a) => valueOf(a, "digest"))
+					? recordedArtifacts.map((a) => fieldOf(a, "digest"))
 					: [],
 			).toEqual(built.value.artifacts.map((a) => a.digest));
 		});
