@@ -2,6 +2,15 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **The release contract reuses the worker image.** `release-hobo.yml` job
+  `release-contract` resolves `hobo-ci-worker` through
+  `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
+  runner's own content-keyed image, else a GHCR pull with the job token
+  (`packages: read`), and `build.sh` only when neither has it. The
+  `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
+  job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
+  legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
+  removes its own `<image>:candidate` when it finishes.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
