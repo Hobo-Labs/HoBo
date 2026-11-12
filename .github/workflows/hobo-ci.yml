@@ -68,6 +68,7 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
@@ -80,7 +81,6 @@ jobs:
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
-          fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
 
   ci-runner-image:
     name: CI runner image (mise oci)
