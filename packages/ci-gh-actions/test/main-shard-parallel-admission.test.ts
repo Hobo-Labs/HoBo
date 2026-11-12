@@ -4,7 +4,6 @@ import {
 	logMainShardAdmissionHold,
 	mainShardParallelLaunchCapacity,
 } from "../src/main-shard-parallel-admission.js";
-import type { TrunkWaitReason } from "../src/trunk-wait.js";
 
 describe("effectiveParallelLaunchSlots", () => {
 	it("preserves zero memory headroom without clamping to one", () => {
@@ -32,32 +31,6 @@ describe("mainShardParallelLaunchCapacity", () => {
 				launchSlots: 2,
 			}),
 		).toBe(2);
-	});
-});
-
-describe("main shard hold dedupe", () => {
-	it("logs at most one hold event per wait key per pass", () => {
-		const error = vi.spyOn(console, "error").mockImplementation(() => {});
-		const job = {
-			repository: "Hobo-Labs/HoBo",
-			runId: 1,
-			id: 9,
-			name: "Main workspace test shard 1",
-			runAttempt: 1,
-		};
-		const keys = new Set<string>();
-		const emit = (reason: TrunkWaitReason) => {
-			const key = `${job.repository}:${job.id}:${job.runAttempt}`;
-			if (keys.has(key)) return;
-			keys.add(key);
-			logMainShardAdmissionHold(job, reason);
-		};
-		emit("memory-headroom");
-		emit("fleet-capacity");
-		expect(error).toHaveBeenCalledTimes(1);
-		const line = JSON.parse(String(error.mock.calls[0]?.[0]));
-		expect(line.reason).toBe("memory-headroom");
-		error.mockRestore();
 	});
 });
 

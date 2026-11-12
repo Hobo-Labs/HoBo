@@ -1595,7 +1595,10 @@ export class HostedRelay {
 			const storageAdmission = this.options.storageAdmission;
 			const storageJobId = String(job.id);
 			if (storageAdmission) {
-				if (storageRefused) continue;
+				if (storageRefused) {
+					if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
+					continue;
+				}
 				const storageLeases = await this.options.store.activeLeases();
 				const reserve = this.options.storageJobReserve?.(job.name) ?? undefined;
 				const admitted = await storageAdmission.admit(

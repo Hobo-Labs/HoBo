@@ -2005,6 +2005,83 @@ describe("pull-mode box worker over SQLite", () => {
 		store.close();
 	});
 
+	it("logs one main shard hold per dispatch pass", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 0",
+					},
+					{
+						id: 2,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						name: "Main workspace test shard 1",
+					},
+				],
+			},
+		);
+		github.started.set(800, { event: "push", at: "2026-11-11T15:30:00Z" });
+		const holdCounts = new Map<number, number>();
+		const MainShardHold = z
+			.object({
+				event: z.literal("hobo_ci_main_shard_admission_hold"),
+				jobId: z.number(),
+			})
+			.passthrough();
+		const prevError = console.error;
+		console.error = (...args: unknown[]) => {
+			for (const arg of args) {
+				if (!z.string().safeParse(arg).success) continue;
+				const text = z.string().parse(arg);
+				const parsed = MainShardHold.safeParse(JSON.parse(text));
+				if (parsed.success) {
+					const prior = holdCounts.get(parsed.data.jobId) ?? 0;
+					holdCounts.set(parsed.data.jobId, prior + 1);
+				}
+			}
+			prevError(...args);
+		};
+		try {
+			const memoryAdmission = createWorkerMemoryAdmission(
+				resolveWorkerMemoryConfig(
+					{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+					{ totalMemoryMb: 16_384, trunkSlots: 1 },
+				),
+				{ availableMemoryMb: () => 256 },
+			);
+			const runtime = boxRuntime(store, github, [], undefined, {
+				labels: new Map(),
+				trunkSlots: 1,
+				memoryAdmission,
+				fleetCapacity: {
+					publish: async () => {},
+					snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 0 }),
+				},
+			});
+			const poller = createGithubJobPoller({
+				github,
+				admissionOrder: runtime.admissionOrder,
+				connections: async () =>
+					(await store.configuration())?.configuration?.connections ?? [],
+				ingest: (delivery) => runtime.ingestWebhook(delivery),
+				now: () => NOW,
+			});
+			await poller.poll();
+			await runtime.tick({ maxDeliveries: 10 });
+			expect(holdCounts.get(1)).toBe(1);
+			expect(holdCounts.get(2)).toBe(1);
+		} finally {
+			console.error = prevError;
+			store.close();
+		}
+	});
+
 	it("defers extra main workspace shards when local trunk slots are full but mesh has room", async () => {
 		const store = await configuredStore(4);
 		const github = new FakeGithub(
