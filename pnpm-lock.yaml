@@ -92,6 +92,78 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
 
+  examples/cd-airgap-agent:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-conformance-kit:
+    dependencies:
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
+  examples/cd-edge-fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-github-actions:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-gitlab:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
+  examples/cd-policy-rollout:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.1
+        version: 2.13.0
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../../packages/cd
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../packages/conformance
+
   examples/ci-runner-balancing:
     dependencies:
       '@bufbuild/protobuf':
@@ -1005,6 +1077,9 @@ importers:
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
       '@hobo/cloud':
         specifier: workspace:*
         version: link:../cloud
@@ -1604,6 +1679,12 @@ importers:
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../capability-profiles
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/cd-kube-fleet':
+        specifier: workspace:*
+        version: link:../cd-kube-fleet
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
@@ -1715,6 +1796,9 @@ importers:
       '@hobo/replay':
         specifier: workspace:*
         version: link:../replay
+      '@hobo/resolver-components':
+        specifier: workspace:*
+        version: link:../resolver-components
       '@hobo/runner-blacksmith':
         specifier: workspace:*
         version: link:../providers/runner-blacksmith
@@ -1742,6 +1826,12 @@ importers:
       '@hobo/stations':
         specifier: workspace:*
         version: link:../stations
+      '@hobo/storage-postgres':
+        specifier: workspace:*
+        version: link:../storage-postgres
+      '@hobo/storage-sqlite':
+        specifier: workspace:*
+        version: link:../storage-sqlite
       '@hobo/trails':
         specifier: workspace:*
         version: link:../trails
