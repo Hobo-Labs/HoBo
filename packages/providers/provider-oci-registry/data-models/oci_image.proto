@@ -1,0 +1,53 @@
+syntax = "proto3";
+package hobo.provider.oci_registry.v1;
+
+// The oci-registry.image/v1 resource: an image or index at a repository,
+// identified by digest, plus the tags HoBo declares for it. Records only
+// coordinates and observations: no credential, token or locator value.
+// Design-time wire view (no buf codegen is wired for this package); the CUE
+// definitions in oci_image.cue constrain the same records.
+
+// ResolveRequest.desired for oci-registry.image/v1.
+message OciImageDesired {
+  // Must equal the registry host the Camp binds; desired cannot redirect it.
+  string registry = 1;
+  string repository = 2;
+  // sha256:<64 hex>. The identity; never changes in flight (D22).
+  string digest = 3;
+  // Tags HoBo owns for this digest. Only these are ever written or deleted.
+  repeated string tags = 4;
+  // Where to copy content from when the target lacks it.
+  string source_registry = 5;
+  string source_repository = 6;
+  // Directive: copy referrers (attestations, signatures). Default true.
+  optional bool copy_referrers = 7;
+}
+
+message TagDigest {
+  string tag = 1;
+  // The digest the tag was observed at, or "absent".
+  string digest = 2;
+}
+
+// ResolveOutcome.outputs, always from observation (I5).
+message OciImageOutputs {
+  string registry = 1;
+  string repository = 2;
+  string digest = 3;
+  string artifact_digest = 4;
+  // <registry>/<repository>@<digest>
+  string reference = 5;
+  repeated TagDigest tag_digests = 6;
+  bool manifest_present = 7;
+  bool tags_converged = 8;
+  bool ready = 9;
+  bool operation_confirmed = 10;
+  bool operation_terminal = 11;
+  bool absence_confirmed = 12;
+  // ready | pending
+  string lifecycle_status = 13;
+  // Referrer digests copied or confirmed present at the target.
+  repeated string referrers = 14;
+  // Whether the target's referrers API lists every one of them.
+  optional bool referrers_discoverable = 15;
+}
