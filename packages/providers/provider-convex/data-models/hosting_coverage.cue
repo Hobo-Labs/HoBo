@@ -27,12 +27,14 @@ import "list"
 	providerId:         "convex"
 	resolvedProductIds: [...#CoverageProductId] & list.UniqueItems()
 	unresolved: [...#UnresolvedHostingProduct]
-	traffic: {
-		kind: "simple" | "cloudflare" | "funnel" | "vercel" | "lakebed" | "other"
-		// At least the portable floor or a native offering: never nothing.
-		offerings: [#TrafficOfferingId, ...#TrafficOfferingId] & list.UniqueItems()
-		fallbacks: [...#TrafficOfferingId]
-		// Present plus absent is the whole portable vocabulary (17 ids).
-		absent: [...#AbsentTrafficOffering] & list.MinItems(17-len(offerings)) & list.MaxItems(17-len(offerings))
-	}
+	traffic:    #TrafficCoverage
+}
+
+#TrafficCoverage: {
+	kind: "simple" | "cloudflare" | "funnel" | "vercel" | "lakebed" | "other"
+	// At least the portable floor or a native offering: never nothing.
+	offerings: [#TrafficOfferingId, ...#TrafficOfferingId] & list.UniqueItems()
+	fallbacks: [...#TrafficOfferingId]
+	// Present plus absent is the whole portable vocabulary (17 ids).
+	absent: [...#AbsentTrafficOffering] & list.MinItems(17-len(offerings)) & list.MaxItems(17-len(offerings))
 }

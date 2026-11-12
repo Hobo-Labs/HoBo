@@ -57,6 +57,7 @@ export const PORTABLE_TRAFFIC_OFFERING_IDS: readonly TrafficRoutingOfferingId[] 
 	]);
 
 /** A catalogued hosting product this package refuses to realize, and why. */
+// domain-view: frozen domain record built by defineHostingCoverage; wire form is UnresolvedHostingProduct in data-models/hosting_coverage.proto (CUE #UnresolvedHostingProduct).
 export interface UnresolvedHostingProduct {
 	readonly productId: string;
 	readonly reason: string;
@@ -64,6 +65,7 @@ export interface UnresolvedHostingProduct {
 }
 
 /** A traffic offering the provider cannot realize (ADR-0144: absent, not preview). */
+// domain-view: offeringId is the core TrafficRoutingOfferingId union, narrower than the proto string; wire form is AbsentTrafficOffering in data-models/hosting_coverage.proto.
 export interface AbsentTrafficOffering {
 	readonly offeringId: TrafficRoutingOfferingId;
 	readonly reason: string;
