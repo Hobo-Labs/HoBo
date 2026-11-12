@@ -49,10 +49,7 @@ function readStringField(root: JsonObject, key: string): string | undefined {
 }
 
 function readDigestField(root: JsonObject): string | undefined {
-	return (
-		readStringField(root, "digest") ??
-		readStringField(root, "Digest")
-	);
+	return readStringField(root, "digest") ?? readStringField(root, "Digest");
 }
 
 function stringLabelsFromJson(
@@ -86,15 +83,14 @@ function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	const manifest = parsed.Manifest;
 	const manifestObj = isObject(manifest) ? manifest : undefined;
 	return (
-		(manifestObj && readDigestField(manifestObj)) ??
-		readDigestField(parsed)
+		(manifestObj && readDigestField(manifestObj)) ?? readDigestField(parsed)
 	);
 }
 
 /** Test and production parser for `docker buildx imagetools inspect --format '{{json .}}'`. */
-export function parseImagetoolsInspectStdout(stdout: string):
-	| { digest?: string; labels?: Record<string, string> }
-	| undefined {
+export function parseImagetoolsInspectStdout(
+	stdout: string,
+): { digest?: string; labels?: Record<string, string> } | undefined {
 	let parsed: Json | undefined;
 	try {
 		parsed = parseUnknownJson(JSON.parse(stdout.trim()));

@@ -27,3 +27,4 @@ Release run [43176733275](https://github.com/Hobo-Labs/HoBo/actions/runs/4317673
 - `pnpm run test:smoke scripts/test/release-ghcr-digest.test.ts`
 - `pnpm run test:smoke scripts/test/push-release-ghcr-images.test.ts`
 - `pnpm run test:smoke scripts/test/release-oci-attest-contract.test.ts`
+- `pnpm run lint:code` (biome format on `scripts/lib/release-ghcr-digest.mts`)
