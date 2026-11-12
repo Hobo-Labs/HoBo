@@ -160,13 +160,13 @@ existing OIDC):
 - **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer is for deploy
   deposit paths, not the relay runtime token.
 - **Residual:** Member can read/write secrets in **all environments** in the
-  project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12) — accept until upgrade or **(b)**.
+  project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12) — accepted on Free until upgrade or a future **(b)** code path.
 
-Pursuing **(b)** on Free without paying requires HoBo's **provisioned**
-two-project layout (`deployProjectId` ≠ `projectId`) at first connect — not
-reconnecting an attach binding — because `hobo ci app deposit` writes the
-GitHub App credentials into the same project/path the binding names for the
-writer identity.
+**(b)** on Free does **not** tighten today's attach binding: `hobo ci app
+deposit` writes `store.projectId` and `store.secretPath`, so App credentials
+stay in the relay project. A second project (`deployProjectId`) scopes only
+the deploy-credential **viewer** layout from provisioned connect — not App
+deposit without a new binding/connect design.
 
 ### What provisioning creates
 
