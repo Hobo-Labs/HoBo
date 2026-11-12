@@ -25,12 +25,13 @@ concurrency:
 jobs:
   scorecard:
     name: Scorecard eval
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Check sibling pins (offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
@@ -44,7 +45,7 @@ jobs:
 
   strict-store:
     name: Strict v2 store + start fence
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     env:
       HOBO_FLEET_ENROLLMENT_CI: "1"
@@ -53,6 +54,7 @@ jobs:
         with:
           fetch-depth: 2
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Check sibling pins (offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
