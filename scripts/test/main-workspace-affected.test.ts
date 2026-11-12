@@ -96,7 +96,12 @@ describe("main workspace affected-only", () => {
 		assert.match(planner, /planHasWorkspaceWork/u);
 		assert.match(planner, /count === 0[\s\S]*"\[\]"/u);
 		assert.match(workflow, /PLAN_RESULT" != "success"/u);
-		assert.match(workflow, /plan did not emit shards=\[\]/u);
+		// An empty plan (`shards=[]`) passes the finish job without shards
+		// (finding 0139); main-gate-finish.test.ts runs that step's cases.
+		assert.match(
+			workflow,
+			/PLAN_SHARDS" = "\[\]"[\s\S]*No workspace test shards planned/u,
+		);
 		assert.match(planner, /TURBO_SCM_BASE/u);
 		assert.match(dependent, /planDependentTestsForTurboAffected/u);
 		assert.match(dependent, /intersectScopedPlanWithTurboAffected/u);
@@ -107,7 +112,7 @@ describe("main workspace affected-only", () => {
 		const mainStart = workflow.indexOf("  main-gate:", planStart);
 		const plan = workflow.slice(planStart, mainStart);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
-		assert.match(plan, /needs: \[ci-runner-image\]/u);
+		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
 		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
 		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
 	});

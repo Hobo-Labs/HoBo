@@ -1,0 +1,70 @@
+name: CI health
+
+# Reads what the last window of workflow runs left behind (route notices and
+# fallbacks, fleet waits, paid minutes, the relay's reporter status) and opens
+# or comments on one `ci-health` issue per breached signal, so a fallback to a
+# default never stays silent. See docs/ci/health-monitor.md.
+#
+# GitHub-hosted on purpose: it reads the fleet's record, so it must not wait
+# on the fleet. It checks out only the monitor, which loads no package.
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Print and upload the report; write nothing to issues
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  issues: write
+  # The relay's status route takes a workflow OIDC token.
+  id-token: write
+
+concurrency:
+  group: ci-health
+  cancel-in-progress: false
+
+env:
+  # Who new issues are assigned to (P5); an organization is not assignable,
+  # and the issue is then opened unassigned.
+  CI_HEALTH_ASSIGNEE: ${{ github.repository_owner }}
+  CI_HEALTH_PAID_MINUTES_PER_WINDOW: "150"
+  CI_HEALTH_STALL_MINUTES: "30"
+
+jobs:
+  ci-health:
+    name: CI health
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ci/ci-health.mts
+            .hobo/ci.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Read the window and raise breaches
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_HEALTH_DRY_RUN: ${{ inputs.dry-run }}
+        run: node scripts/ci/ci-health.mts
+      # Breach or not, so the next run starts where this window ended. A dry
+      # run uploads under its own name and leaves the scheduled window alone.
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.dry-run && 'ci-health-dry-run' || 'ci-health-report' }}
+          path: ci-health-report.json
+          if-no-files-found: error
+          retention-days: 30
