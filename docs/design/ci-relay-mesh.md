@@ -419,6 +419,12 @@ GitHub-hosted). `refusedBy` names what took the fleet out of the decision.
 When the routing step cannot run its script at all it says so in a
 `hobo-ci-route-fallback` warning and falls back as before.
 
+Nothing about the fleet reaches a workflow any other way. `scripts/lint-actions.ts`
+rejects any workflow or action that reads a `vars.HOBO_CI_FLEET_*` variable or
+declares an input or environment variable named `fleet-state`,
+`fleet-capacity`, `fleet-routes` or `HOBO_CI_FLEET_STATE`, `…_CAPACITY`,
+`…_ROUTES`.
+
 A label is blocked when no live healthy node serves it, or when none can admit
 a job for a reason other than its own running jobs and no other has a free
 slot. A label that is only busy is not blocked. No count of nodes, slots or
