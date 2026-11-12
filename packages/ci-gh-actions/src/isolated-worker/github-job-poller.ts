@@ -5,6 +5,10 @@ import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
 import { runnerCustody } from "../job-runner-custody.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
+import type {
+	HeldJobPollWitness,
+	HeldJobPruneReason,
+} from "./held-job-prune.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
@@ -76,6 +80,8 @@ export interface GithubJobPollSummary {
 	readonly githubErrors: number;
 	/** Queued `hobo` jobs this poll saw but did not newly accept: already in the inbox, ignored, or refused. */
 	readonly waiting: readonly WaitingJob[];
+	/** Terminal runs/jobs already on this poll's GitHub reads; feeds held-job prune. */
+	readonly heldPruneWitness?: HeldJobPollWitness;
 	readonly pausedUntil?: string;
 	readonly rateLimitRemaining?: number;
 }
@@ -112,6 +118,7 @@ const Runs = z.object({
 			id: z.number().int().positive(),
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
+			conclusion: z.string().nullable().optional(),
 			event: z.string().optional(),
 			head_branch: z.string().nullable().optional(),
 			head_sha: z.string().optional(),
@@ -129,6 +136,18 @@ export const HOBO_CI_FABRIC_WORKFLOW_BASENAME = "hobo-ci.yml";
 function runStartedAtMs(run: Run): number {
 	const parsed = Date.parse(run.run_started_at ?? "");
 	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function completedRunPruneReason(
+	conclusion: string | null | undefined,
+): HeldJobPruneReason {
+	return conclusion === "cancelled" ? "run-cancelled" : "run-completed";
+}
+
+function completedJobPruneReason(
+	conclusion: string | null | undefined,
+): "job-cancelled" | "job-completed" {
+	return conclusion === "cancelled" ? "job-cancelled" : "job-completed";
 }
 
 /** Newest in-flight HoBo CI Fabric push to `main`, if any. */
@@ -304,6 +323,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 
 	async function poll(): Promise<GithubJobPollSummary> {
 		const waiting: WaitingJob[] = [];
+		const witnessTerminalRuns: HeldJobPollWitness["terminalRuns"][number][] =
+			[];
+		const witnessTerminalJobs: HeldJobPollWitness["terminalJobs"][number][] =
+			[];
 		const summary = {
 			repositories: 0,
 			runs: 0,
@@ -398,6 +421,27 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
 				const supersededRuns = supersededMainFabricPushRunIds(activeRuns);
+				const witnessRunsSeen = new Set<string>();
+				for (const run of completedRuns.values()) {
+					const dedupe = `${connection.repositoryId}:${run.id}`;
+					if (witnessRunsSeen.has(dedupe)) continue;
+					witnessRunsSeen.add(dedupe);
+					witnessTerminalRuns.push({
+						repositoryId: connection.repositoryId,
+						runId: run.id,
+						reason: completedRunPruneReason(run.conclusion),
+					});
+				}
+				for (const runId of supersededRuns) {
+					const dedupe = `${connection.repositoryId}:${runId}`;
+					if (witnessRunsSeen.has(dedupe)) continue;
+					witnessRunsSeen.add(dedupe);
+					witnessTerminalRuns.push({
+						repositoryId: connection.repositoryId,
+						runId,
+						reason: "run-superseded",
+					});
+				}
 				const newestMainPush = newestMainFabricPushRunId(activeRuns);
 				let mainFabricPrewarmHinted = false;
 				summary.runs += runIds.size;
@@ -414,6 +458,14 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					for (const job of jobs?.jobs ?? []) {
 						const status = PolledStatus.safeParse(job.status);
 						if (!status.success || !servedRunnerLabel(job.labels)) continue;
+						if (status.data === "completed") {
+							witnessTerminalJobs.push({
+								repositoryId: connection.repositoryId,
+								jobId: job.id,
+								runAttempt: job.run_attempt,
+								reason: completedJobPruneReason(job.conclusion),
+							});
+						}
 						if (job.name !== undefined)
 							options.durations?.observe({
 								repository: connection.repository,
@@ -569,15 +621,23 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			pausedUntilMs = error.untilMs;
 			const paused: GithubJobPollSummary = {
 				...summary,
+				heldPruneWitness: {
+					terminalRuns: witnessTerminalRuns,
+					terminalJobs: witnessTerminalJobs,
+				},
 				pausedUntil: new Date(pausedUntilMs).toISOString(),
 			};
 			return rateLimitRemaining === undefined
 				? paused
 				: { ...paused, rateLimitRemaining };
 		}
+		const heldPruneWitness: HeldJobPollWitness = {
+			terminalRuns: witnessTerminalRuns,
+			terminalJobs: witnessTerminalJobs,
+		};
 		return rateLimitRemaining === undefined
-			? summary
-			: { ...summary, rateLimitRemaining };
+			? { ...summary, heldPruneWitness }
+			: { ...summary, heldPruneWitness, rateLimitRemaining };
 	}
 
 	return { poll };

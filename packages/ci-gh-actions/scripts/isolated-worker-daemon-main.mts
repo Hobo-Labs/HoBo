@@ -30,6 +30,7 @@ import {
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
+	createHeldJobPruner,
 	createHostedRelayRuntime,
 	createHostHealthMonitor,
 	createIsolatedContainerController,
@@ -1143,6 +1144,15 @@ try {
 			}),
 	);
 	const pollIngestCoalesce = createPollIngestCoalesce();
+	const heldJobPruner =
+		plan.admission === "pull"
+			? createHeldJobPruner({
+					store,
+					coalesce: pollIngestCoalesce,
+					clearTrunkWait: (job) => runtime.clearTrunkWait(job),
+					log: (event, fields) => log(event, fields),
+				})
+			: undefined;
 	const poller =
 		plan.admission === "pull"
 			? createGithubJobPoller({
@@ -1232,6 +1242,10 @@ try {
 		// Pull workers drain the inbox on a separate timer so admission ticks stay
 		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
 		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
+		if (heldJobPruner) {
+			const pruned = await heldJobPruner.maybePrune();
+			if (pruned > 0) void runTick().catch(() => undefined);
+		}
 	});
 
 	function runInboxDrain(): void {
@@ -1279,8 +1293,16 @@ try {
 		if (draining || !poller || jobPollInFlight) return;
 		jobPollInFlight = poller
 			.poll()
-			.then((summary) => {
-				if (summary.accepted > 0) void runTick().catch(() => undefined);
+			.then(async (summary) => {
+				heldJobPruner?.observePollWitness(
+					summary.heldPruneWitness ?? {
+						terminalRuns: [],
+						terminalJobs: [],
+					},
+				);
+				const pruned = (await heldJobPruner?.maybePrune()) ?? 0;
+				if (summary.accepted > 0 || pruned > 0)
+					void runTick().catch(() => undefined);
 				if (!pollWorthLogging(summary, Date.now())) return;
 				const { waiting, ...counts } = summary;
 				log("hobo_ci_isolated_worker_jobs_polled", {

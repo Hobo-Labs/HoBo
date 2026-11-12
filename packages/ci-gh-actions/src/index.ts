@@ -166,6 +166,12 @@ export {
 } from "./isolated-worker/github-job-poller.js";
 export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export {
+	createHeldJobPruner,
+	type HeldJobPollWitness,
+	type HeldJobPruneReason,
+	pruneHeldJobs,
+} from "./isolated-worker/held-job-prune.js";
+export {
 	classifyHostHealth,
 	createHostHealthMonitor,
 	DEFAULT_HOST_HEALTH_THRESHOLDS,

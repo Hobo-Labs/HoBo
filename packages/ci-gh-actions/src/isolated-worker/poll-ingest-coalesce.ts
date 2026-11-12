@@ -59,6 +59,11 @@ export function createPollIngestCoalesce(
 			const until = untilByKey.get(jobKey);
 			return until !== undefined && now() < until;
 		},
+		forget(repositoryId: number, jobId: number, runAttempt: number): void {
+			const jobKey = key(repositoryId, jobId, runAttempt);
+			untilByKey.delete(jobKey);
+			streakByKey.delete(jobKey);
+		},
 		observe(
 			repositoryId: number,
 			jobId: number,
