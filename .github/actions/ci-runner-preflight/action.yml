@@ -54,6 +54,7 @@ runs:
         HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL: ${{ inputs.install-toolchain == 'false' && '1' || '' }}
       run: |
         set -euo pipefail
+        export MISE_EXPERIMENTAL=1
         node --no-warnings scripts/ci-runner-preflight.mts
         node --experimental-strip-types scripts/ci/memory-env.mts
         # The live data-engine lane starts database servers beside the job. A job

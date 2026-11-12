@@ -200,9 +200,11 @@ function outputTail(output: string | null): string {
 }
 
 function commandFailure(result: CommandResult, fallback: string): string {
-	return (
-		result.failure ?? `${result.command ?? fallback}: ${result.out || "failed"}`
-	);
+	const command = result.command ?? fallback;
+	if (result.failure) {
+		return `${command}: ${result.failure}`;
+	}
+	return `${command}: ${result.out || "failed"}`;
 }
 
 export function spawnCommand(
