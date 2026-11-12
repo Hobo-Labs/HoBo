@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	cpuShareNotYetInLoad1,
 	createContainerStallGuard,
 	DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS,
 	hostCpuAdmitFits,
@@ -10,6 +11,7 @@ import {
 	hostMemoryAdmitFits,
 	hostPressureBlocksAdmission,
 	leaseCpuLoadAccountedInLoad1,
+	memoryShareNotYetResident,
 	parsePsiAverages,
 	pendingTrunkCpuReservationCpus,
 	readHostResourcePressureSample,
@@ -205,5 +207,58 @@ describe("host resource pressure", () => {
 		});
 		expect(guard.evaluate("lease-a")).toBeUndefined();
 		expect(guard.evaluate("lease-a")?.reason).toBe("memory-psi");
+	});
+
+	it("blocks admission on CPU `some` pressure, since the host never reports `full`", () => {
+		// /proc/pressure/cpu on a saturated host: the kernel prints full as zero.
+		const saturated = parsePsiAverages(
+			"some avg10=71.20 avg60=64.02 avg300=40.11 total=1447842\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+		);
+		expect(saturated).toEqual({ someAvg10: 71.2, fullAvg10: 0 });
+		expect(hostPressureBlocksAdmission({ atMs: 1, cpuPsi: saturated })).toBe(
+			true,
+		);
+		expect(
+			hostPressureBlocksAdmission({
+				atMs: 1,
+				cpuPsi: { someAvg10: 20, fullAvg10: 0 },
+			}),
+		).toBe(false);
+	});
+
+	it("subtracts promised memory from what the host shows free", () => {
+		expect(hostMemoryAdmitFits(7_500, 4_096, 2_048, 1_024)).toBe(true);
+		expect(
+			hostMemoryAdmitFits(
+				7_500,
+				4_096,
+				2_048,
+				1_024,
+				undefined,
+				undefined,
+				512,
+			),
+		).toBe(false);
+	});
+
+	it("follows the load average's lag for a started job's CPU", () => {
+		const now = Date.parse("2026-11-12T11:52:35.000Z");
+		const at = (agoMs: number) => new Date(now - agoMs).toISOString();
+		expect(cpuShareNotYetInLoad1(at(0), now)).toBe(1);
+		expect(cpuShareNotYetInLoad1(at(60_000), now)).toBeCloseTo(0.368, 3);
+		expect(cpuShareNotYetInLoad1(at(180_000), now)).toBe(0);
+		// No start time: the job is taken as already in the average.
+		expect(cpuShareNotYetInLoad1(undefined, now)).toBe(0);
+		expect(cpuShareNotYetInLoad1("", now)).toBe(0);
+	});
+
+	it("lets a started job's memory hold fall away over the ramp", () => {
+		const now = Date.parse("2026-11-12T11:52:35.000Z");
+		const at = (agoMs: number) => new Date(now - agoMs).toISOString();
+		expect(memoryShareNotYetResident(at(0), now, 120_000)).toBe(1);
+		expect(memoryShareNotYetResident(at(30_000), now, 120_000)).toBe(0.75);
+		expect(memoryShareNotYetResident(at(200_000), now, 120_000)).toBe(0);
+		expect(memoryShareNotYetResident(at(0), now, 0)).toBe(0);
+		expect(memoryShareNotYetResident(undefined, now, 120_000)).toBe(0);
 	});
 });

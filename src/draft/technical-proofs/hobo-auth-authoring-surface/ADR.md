@@ -37,3 +37,10 @@ The package's accepted record is the read model behind a small event flow:
 No runtime engine, projector, or event store is implemented here; this is a
 design-time contract that names the command, event, actor, and projection
 boundaries so later implementation inherits a consistent vocabulary.
+
+## CI typecheck hook (Finding 140)
+
+Main workspace shard 6 ran this proof's `tsc --noEmit` under host memory contention
+(run 43207388098). The proof now runs that compile once in `beforeAll` with an
+explicit Vitest hook timeout (and `spawnSync` subprocess timeout) so root draft
+shards and direct package runs share the same budget without weakening assertions.

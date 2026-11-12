@@ -330,6 +330,18 @@ const hostPressureSample = () => readHostResourcePressureSample(Date.now());
 const containerStallGuard = createContainerStallGuard({
 	read: hostPressureSample,
 });
+// A started job's reservation stays counted against host memory this long.
+const memoryRampMs = Number(
+	process.env.HOBO_CI_WORKER_MEMORY_RAMP_MS ?? "120000",
+);
+if (!Number.isInteger(memoryRampMs) || memoryRampMs < 0)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_RAMP_MS");
+// Free memory has to have lasted this long before a job is admitted on it.
+const memoryLowWaterMs = Number(
+	process.env.HOBO_CI_WORKER_MEMORY_LOW_WATER_MS ?? "60000",
+);
+if (!Number.isInteger(memoryLowWaterMs) || memoryLowWaterMs < 0)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_LOW_WATER_MS");
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
@@ -337,6 +349,8 @@ const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	volatilityMb: capacityVolatilityMb,
 	hostPressure: hostPressureSample,
 	hostCores: () => cpus().length,
+	memoryRampMs,
+	availableWindowMs: memoryLowWaterMs,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -915,7 +929,7 @@ try {
 		},
 		parallelLaunchCapacity: () =>
 			mainShardParallelLaunchCapacity({
-				availableMb: readAvailableMemoryMb(),
+				availableMb: memoryAdmission.availableLowWaterMb(),
 				requestMb: memoryConfig.classes.standard,
 				reserveMb: memoryConfig.reserveMb,
 				volatilityMb: capacityVolatilityMb,

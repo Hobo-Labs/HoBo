@@ -396,8 +396,19 @@ it("orders main-train release phases within one workflow_run", async () => {
 		mainTrainReleasePhase("Build all OCI images on tag (gate publish)"),
 	).toBe(2);
 	expect(
+		mainTrainReleasePhase(
+			"Build all OCI images on tag (gate publish) (hobo-ci-serve)",
+		),
+	).toBe(2);
+	expect(
 		isMainTrunkFleetDeferJob(
 			"Build all OCI images on tag (gate publish)",
+			"workflow_run",
+		),
+	).toBe(true);
+	expect(
+		isMainTrunkFleetDeferJob(
+			"Build all OCI images on tag (gate publish) (hobo-ci-serve)",
 			"workflow_run",
 		),
 	).toBe(true);
@@ -414,4 +425,29 @@ it("orders main-train release phases within one workflow_run", async () => {
 			)
 		).map((item) => item.jobId),
 	).toEqual([10, 20, 25, 30]);
+});
+
+it("orders release matrix legs with their non-matrix phase", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "workflow_run", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const job = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					job(30, "Publish GHCR images (tagged release) (hobo-cli)"),
+					job(25, "Build all OCI images on tag (gate publish) (hobo-mcp)"),
+					job(20, "Release contract + affected OCI images"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([20, 25, 30]);
 });
