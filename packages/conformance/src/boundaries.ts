@@ -156,6 +156,8 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
+	// HoBo.CD (plan 0024, D1): the delivery sibling of HoBo.CI at layer 3.
+	"packages/cd",
 	"packages/core",
 	"packages/contract-harness",
 	// Test-only harness for code that reads hostile text, reached only from
