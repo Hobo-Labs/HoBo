@@ -154,6 +154,8 @@ export function parseFleetCapacityPublished(
 	const admittedRaw = parsed.admittedParallel;
 	const hobo = parseMember(parsed.hobo);
 	const arc = parseMember(parsed.arc);
+	if (parsed.hobo !== undefined && hobo === undefined) return undefined;
+	if (parsed.arc !== undefined && arc === undefined) return undefined;
 	const publishedAt = parsed.publishedAt;
 	if (publishedAt !== undefined && !isString(publishedAt)) {
 		return undefined;
@@ -269,8 +271,29 @@ export async function resolveMainWorkspaceParallelCap(
 	)
 		return override;
 	const published = await fetchFleetCapacityVariable(options);
+	const nowMs = Date.now();
+	if (!published || !isFleetCapacityFresh(published, nowMs)) {
+		return DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP;
+	}
 	return mainWorkspaceParallelCap(
 		published,
 		DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
 	);
+}
+
+/** Contiguous shard indexes `[0, …, n-1]` from plan output; `-1` when malformed. */
+export function mainGateShardCountFromIndexesJson(raw: string): number {
+	const trimmed = raw.trim();
+	if (trimmed === "[]" || trimmed.length === 0) return 0;
+	try {
+		const parsed: unknown = JSON.parse(trimmed);
+		if (!Array.isArray(parsed)) return -1;
+		for (let index = 0; index < parsed.length; index += 1) {
+			const value = parsed[index];
+			if (value !== index) return -1;
+		}
+		return parsed.length;
+	} catch {
+		return -1;
+	}
 }

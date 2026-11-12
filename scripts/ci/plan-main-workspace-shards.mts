@@ -23,7 +23,10 @@ import {
 	readRepo,
 	scaleWorkspaceDurations,
 } from "./dependent-tests.mts";
-import { resolveMainWorkspaceParallelCap } from "./load-fleet-capacity.mts";
+import {
+	mainGateShardCountFromIndexesJson,
+	resolveMainWorkspaceParallelCap,
+} from "./load-fleet-capacity.mts";
 import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
@@ -47,19 +50,39 @@ function setOutput(name: string, value: string): void {
 	console.log(`${name}=${value}`);
 }
 
-function tryRestorePlanCache(head: string): boolean {
+async function tryRestorePlanCache(
+	head: string,
+	fleetOptions: { repository?: string; token?: string },
+): Promise<boolean> {
 	if (!CACHE_DIR || !GITHUB_OUTPUT) return false;
 	const manifest = join(CACHE_DIR, "manifest.json");
+	const outputsPath = join(CACHE_DIR, "outputs.env");
 	try {
-		// SAFETY: manifest.json is written by savePlanCache in this script as { head: string }.
+		// SAFETY: manifest.json is written by savePlanCache as { head, parallelCap }.
 		const parsed = JSON.parse(readFileSync(manifest, "utf8")) as {
 			head?: string;
+			parallelCap?: number;
 		};
 		if (parsed.head !== head) return false;
-		appendFileSync(
-			GITHUB_OUTPUT,
-			readFileSync(join(CACHE_DIR, "outputs.env"), "utf8"),
-		);
+		const outputsText = readFileSync(outputsPath, "utf8");
+		const shardsLine = outputsText
+			.split("\n")
+			.find((line) => line.startsWith("shards="));
+		if (!shardsLine) return false;
+		const shardsJson = shardsLine.slice("shards=".length).trim();
+		if (mainGateShardCountFromIndexesJson(shardsJson) < 0) return false;
+		const currentCap = await resolveMainWorkspaceParallelCap(fleetOptions);
+		const cachedCap = parsed.parallelCap;
+		if (
+			cachedCap !== undefined &&
+			(!Number.isInteger(cachedCap) || cachedCap !== currentCap)
+		) {
+			console.error(
+				`main gate plan: cache stale (parallelCap ${parsed.parallelCap} -> ${currentCap})`,
+			);
+			return false;
+		}
+		appendFileSync(GITHUB_OUTPUT, outputsText);
 		console.error(`main gate plan: restored cache for ${head}`);
 		return true;
 	} catch {
@@ -67,11 +90,18 @@ function tryRestorePlanCache(head: string): boolean {
 	}
 }
 
-function savePlanCache(head: string, outputs: Record<string, string>): void {
+function savePlanCache(
+	head: string,
+	outputs: Record<string, string>,
+	parallelCap: number,
+): void {
 	if (!CACHE_DIR) return;
 	mkdirSync(CACHE_DIR, { recursive: true });
 	writeFileSync(join(CACHE_DIR, "outputs.env"), formatOutputs(outputs));
-	writeFileSync(join(CACHE_DIR, "manifest.json"), JSON.stringify({ head }));
+	writeFileSync(
+		join(CACHE_DIR, "manifest.json"),
+		JSON.stringify({ head, parallelCap }),
+	);
 }
 
 async function main(): Promise<void> {
@@ -82,7 +112,8 @@ async function main(): Promise<void> {
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
-	if (head && tryRestorePlanCache(head)) {
+	const fleetOptions = { repository, token };
+	if (head && (await tryRestorePlanCache(head, fleetOptions))) {
 		return;
 	}
 	let base = "";
@@ -150,7 +181,6 @@ async function main(): Promise<void> {
 					repo,
 					base ? cliRootFileReader(base) : undefined,
 				);
-	const fleetOptions = { repository, token };
 	const parallelCap = await resolveMainWorkspaceParallelCap(fleetOptions);
 	const targetSeconds = Number(
 		process.env.MAIN_SHARD_TARGET_SECONDS ??
@@ -195,7 +225,7 @@ async function main(): Promise<void> {
 		shards,
 	};
 	for (const [name, value] of Object.entries(outputs)) setOutput(name, value);
-	if (head) savePlanCache(head, outputs);
+	if (head) savePlanCache(head, outputs, parallelCap);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
