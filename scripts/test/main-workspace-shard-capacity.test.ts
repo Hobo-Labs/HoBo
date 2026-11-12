@@ -22,28 +22,37 @@ describe("main workspace shard capacity", () => {
 		for (const cap of [1, 2, 4, 6, 8]) {
 			const planned = planMainWorkspaceShardCount(plan, cap);
 			assert.equal(planned.parallelCap, cap);
-			if (planned.count > cap) {
-				// Over the cap only as far as the slowest shard needs to fit.
-				assert.ok(
-					planned.peakShardSeconds <= MAIN_WORKSPACE_SHARD_BUDGET_SECONDS ||
-						planned.count === MAX_MAIN_WORKSPACE_SHARDS,
-					`planned ${planned.count} shards over cap ${cap}, slowest ${planned.peakShardSeconds}s`,
-				);
-			}
+			assert.ok(
+				planned.count <= cap,
+				`planned ${planned.count} shards over cap ${cap}`,
+			);
 		}
 	});
 
-	it("adds shards past the cap when a repo-wide plan would outrun the 20-minute job cap", () => {
-		// Run 43130657460: repo-wide, cap 4, slowest shard planned at 1375 s,
-		// cancelled at the 19-minute step limit (finding 117).
-		const all: TestPlan = { mode: "all", reason: "lockfile changed" };
-		const planned = planMainWorkspaceShardCount(all, 4);
-		assert.ok(planned.count > 4, `planned ${planned.count} shards`);
-		assert.ok(planned.count <= MAX_MAIN_WORKSPACE_SHARDS);
-		assert.ok(
-			planned.peakShardSeconds <= MAIN_WORKSPACE_SHARD_BUDGET_SECONDS,
-			`slowest shard ${planned.peakShardSeconds}s`,
-		);
+	// Run 43130657460: repo-wide at cap 4, slowest shard planned at 1375 s,
+	// cancelled at the 19-minute step limit (finding 117).
+	const fiveMinuteSuites = {
+		defaultSeconds: 300,
+		seconds: new Map<string, number>(),
+	};
+
+	it("adds shards past the cap, no more than the slowest shard needs", () => {
+		// Ten 5-minute suites: two fit the 12-minute budget per shard, so five
+		// shards, where the cap of two would leave 25 minutes on each.
+		const planned = planMainWorkspaceShardCount(scoped(10), 2, {
+			durations: fiveMinuteSuites,
+		});
+		assert.equal(planned.count, 5);
+		assert.ok(planned.peakShardSeconds <= MAIN_WORKSPACE_SHARD_BUDGET_SECONDS);
+	});
+
+	it("stops adding shards when one workspace alone is over budget", () => {
+		const planned = planMainWorkspaceShardCount(scoped(3), 1, {
+			durations: { defaultSeconds: 1000, seconds: new Map<string, number>() },
+		});
+		assert.equal(planned.count, 3);
+		assert.ok(planned.count < MAX_MAIN_WORKSPACE_SHARDS);
+		assert.equal(planned.peakShardSeconds, 1000);
 	});
 
 	it("raises shard floor when many scoped suites are in the plan", () => {

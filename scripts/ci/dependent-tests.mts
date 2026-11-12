@@ -446,12 +446,19 @@ export function planMainWorkspaceShardCount(
 	// stops an isolated container at 20 minutes plus grace), so when even
 	// `parallelCap` shards leave the slowest one over budget, plan more: the
 	// extra shards wait for a slot instead of being cancelled (finding 117).
+	// Stop once another shard no longer lowers the slowest one (one workspace
+	// alone over budget).
+	let peak = peakAt(count);
 	while (
 		count < MAX_MAIN_WORKSPACE_SHARDS &&
-		peakAt(count) > MAIN_WORKSPACE_SHARD_BUDGET_SECONDS
-	)
+		peak > MAIN_WORKSPACE_SHARD_BUDGET_SECONDS
+	) {
+		const next = peakAt(count + 1);
+		if (next >= peak) break;
 		count += 1;
-	return { count, parallelCap, peakShardSeconds: peakAt(count) };
+		peak = next;
+	}
+	return { count, parallelCap, peakShardSeconds: peak };
 }
 
 type Json =

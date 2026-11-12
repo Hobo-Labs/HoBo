@@ -147,14 +147,20 @@ describe("workspace test shards", () => {
 			{ taskId: "@t/lib#build", task: "build", directory: "packages/lib" },
 		];
 		const durations = { defaultSeconds: 1, seconds: new Map<string, number>() };
-		const shards = [0, 1, 2, 3].map((index) =>
-			shardTestPlan(plan, repo.workspaces, index, 4, durations, graph),
-		);
-		const full = shards.flatMap((part) =>
-			part.mode === "scoped" ? part.full : [],
-		);
-		assert.deepEqual([...full].sort(), [...tested].sort());
-		assert.equal(new Set(full).size, full.length);
+		// Main plans past the parallel cap when a shard would outrun its time
+		// limit (finding 117), so the split must hold at those counts too.
+		for (const count of [4, 8, 16]) {
+			const shards: ReturnType<typeof shardTestPlan>[] = [];
+			for (let index = 0; index < count; index++)
+				shards.push(
+					shardTestPlan(plan, repo.workspaces, index, count, durations, graph),
+				);
+			const full: string[] = shards.flatMap((part) =>
+				part.mode === "scoped" ? [...part.full] : [],
+			);
+			assert.deepEqual([...full].sort(), [...tested].sort(), `${count} shards`);
+			assert.equal(new Set(full).size, full.length, `${count} shards`);
+		}
 		// A test task in a directory the workspace list does not know would be
 		// dropped from every shard; the plan is refused instead. So is a graph
 		// with no test task at all.
