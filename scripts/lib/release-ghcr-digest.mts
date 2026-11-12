@@ -48,6 +48,13 @@ function readStringField(root: JsonObject, key: string): string | undefined {
 	return isString(value) ? value : undefined;
 }
 
+function readDigestField(root: JsonObject): string | undefined {
+	return (
+		readStringField(root, "digest") ??
+		readStringField(root, "Digest")
+	);
+}
+
 function stringLabelsFromJson(
 	labels: Json | undefined,
 ): Record<string, string> | undefined {
@@ -79,9 +86,31 @@ function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	const manifest = parsed.Manifest;
 	const manifestObj = isObject(manifest) ? manifest : undefined;
 	return (
-		(manifestObj && readStringField(manifestObj, "digest")) ??
-		readStringField(parsed, "digest")
+		(manifestObj && readDigestField(manifestObj)) ??
+		readDigestField(parsed)
 	);
+}
+
+/** Test and production parser for `docker buildx imagetools inspect --format '{{json .}}'`. */
+export function parseImagetoolsInspectStdout(stdout: string):
+	| { digest?: string; labels?: Record<string, string> }
+	| undefined {
+	let parsed: Json | undefined;
+	try {
+		parsed = parseUnknownJson(JSON.parse(stdout.trim()));
+	} catch {
+		return undefined;
+	}
+	if (parsed === undefined) return undefined;
+	const digest = digestFromImagetoolsJson(parsed);
+	const labels = labelsFromImagetoolsJson(parsed);
+	if (digest === undefined && labels === undefined) return undefined;
+	if (digest !== undefined && labels !== undefined) {
+		return { digest, labels };
+	}
+	if (digest !== undefined) return { digest };
+	if (labels !== undefined) return { labels };
+	return undefined;
 }
 
 /** Registry lookup via buildx (requires `docker login ghcr.io`). */
@@ -97,22 +126,7 @@ export function imagetoolsInspectTag(
 		},
 	);
 	if (result.status !== 0 || !result.stdout?.trim()) return undefined;
-	let parsed: Json | undefined;
-	try {
-		parsed = parseUnknownJson(JSON.parse(result.stdout.trim()));
-	} catch {
-		return undefined;
-	}
-	if (parsed === undefined) return undefined;
-	const digest = digestFromImagetoolsJson(parsed);
-	const labels = labelsFromImagetoolsJson(parsed);
-	if (digest === undefined && labels === undefined) return undefined;
-	if (digest !== undefined && labels !== undefined) {
-		return { digest, labels };
-	}
-	if (digest !== undefined) return { digest };
-	if (labels !== undefined) return { labels };
-	return undefined;
+	return parseImagetoolsInspectStdout(result.stdout);
 }
 
 export function assertReleaseImageMatchesBuild(options: {
@@ -150,6 +164,23 @@ export function assertReleaseImageMatchesBuild(options: {
 			`${options.imageId}: ${options.digestRef} version ${version} != expected ${options.releaseVersion}`,
 		);
 	}
+}
+
+/** Pull and read labels for an immutable `name@sha256:…` ref (not a mutable tag). */
+export function dockerConfigLabelsForDigestRef(
+	ref: string,
+	run = spawnSync,
+): Record<string, string> | undefined {
+	const pull = run("docker", ["pull", "--quiet", ref], {
+		encoding: "utf8",
+		stdio: "inherit",
+	});
+	if (pull.status !== 0) {
+		throw new Error(`docker pull ${ref} failed (${pull.status})`);
+	}
+	const labels = dockerConfigLabelsForRef(ref, run);
+	run("docker", ["rmi", "-f", ref], { encoding: "utf8", stdio: "inherit" });
+	return labels;
 }
 
 export function dockerConfigLabelsForRef(

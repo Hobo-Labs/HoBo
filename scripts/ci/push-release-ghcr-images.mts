@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
 import {
 	assertReleaseImageMatchesBuild,
-	dockerConfigLabelsForRef,
+	dockerConfigLabelsForDigestRef,
+	ghcrDigestRef,
 	imagetoolsInspectTag,
 	normalizeRepoDigestLine,
 	resolveRegistryDigestForTag,
@@ -85,35 +86,24 @@ function releaseRevisionFromEnv(): string {
 	return revision;
 }
 
-function labelsForRegistryTag(tag: string): Record<string, string> | undefined {
-	const fromImagetools = imagetoolsInspectTag(tag)?.labels;
-	if (fromImagetools && Object.keys(fromImagetools).length > 0) {
-		return fromImagetools;
-	}
-	const pull = spawnSync("docker", ["pull", "--quiet", tag], {
-		encoding: "utf8",
-		stdio: "inherit",
-	});
-	if (pull.status !== 0) {
-		throw new Error(`docker pull ${tag} failed (${pull.status})`);
-	}
-	const labels = dockerConfigLabelsForRef(tag);
-	spawnSync("docker", ["rmi", "-f", tag], {
-		encoding: "utf8",
-		stdio: "inherit",
-	});
-	return labels;
-}
-
 function tryReusePublishedTag(options: {
 	imageId: string;
 	tag: string;
 	revision: string;
 	releaseVersion: string;
 }): string | undefined {
-	const digestRef = resolveRegistryDigestForTag(options.tag);
+	const inspected = imagetoolsInspectTag(options.tag);
+	const digestRef =
+		inspected?.digest !== undefined
+			? normalizeRepoDigestLine(
+					options.tag,
+					ghcrDigestRef(options.tag.split(":")[0] ?? options.tag, inspected.digest),
+					options.imageId,
+				)
+			: resolveRegistryDigestForTag(options.tag);
 	if (!digestRef) return undefined;
-	const labels = labelsForRegistryTag(options.tag);
+	const labels =
+		inspected?.labels ?? dockerConfigLabelsForDigestRef(digestRef);
 	assertReleaseImageMatchesBuild({
 		imageId: options.imageId,
 		tag: options.tag,
