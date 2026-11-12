@@ -18,6 +18,7 @@ import {
 	replayVerificationFromStore,
 } from "../../src/verification/index.js";
 import {
+	bodyObject,
 	camp,
 	clock,
 	comparisonSpec,
@@ -488,12 +489,13 @@ describe("durability and idempotency", () => {
 		h.time.advance(10 * MINUTE);
 		await h.engine.tick(h.ctx);
 		const events = [...h.store.events(CD_STREAMS.verification(id))];
-		const tampered = events.map((event) =>
-			event.type === CD_EVENTS.RolloutEvidenceObserved &&
-			(event.data as { cohort?: string }).cohort === "COHORT_CANARY"
-				? { ...event, data: { ...(event.data as object), value: 1 } }
-				: event,
-		);
+		const tampered = events.map((event) => {
+			const data = bodyObject(event.data);
+			return event.type === CD_EVENTS.RolloutEvidenceObserved &&
+				data.cohort === "COHORT_CANARY"
+				? { ...event, data: { ...data, value: 1 } }
+				: event;
+		});
 		expect(replayVerification(tampered)?.matches).toBe(false);
 	});
 });

@@ -44,6 +44,7 @@ import {
 	startedBody,
 	type VerificationState,
 } from "./journal.js";
+import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 import { probeDue, runProbe } from "./probes.js";
 import { reason } from "./reasons.js";
 import {
@@ -176,13 +177,8 @@ export function createVerificationEngine(
 			tenant: d.tenant,
 			filter: { type: CD_EVENTS.VerificationStarted },
 		})) {
-			const data = entry.event.data;
-			if (
-				typeof data === "object" &&
-				data !== null &&
-				"verificationId" in data &&
-				typeof data.verificationId === "string"
-			) {
+			const data = jsonOf(entry.event.data);
+			if (isJsonObject(data) && isJsonString(data.verificationId)) {
 				// SAFETY: read back from a Started body this engine wrote.
 				ids.add(data.verificationId as VerificationId);
 			}

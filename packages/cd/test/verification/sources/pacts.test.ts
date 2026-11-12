@@ -161,20 +161,19 @@ const values = (outcome: Outcome<HealthSamples>) =>
 	outcome.ok ? outcome.value.values : undefined;
 
 describe("health-source pacts are v4 synchronous HTTP contracts", () => {
-	for (const [name, pact] of Object.entries({
-		prometheus,
-		datadog,
-		newrelic,
-		cloudwatch,
-		httpJson,
-		hoboMetering,
-	})) {
+	const pacts: ReadonlyArray<readonly [string, Pact]> = [
+		["prometheus", prometheus],
+		["datadog", datadog],
+		["newrelic", newrelic],
+		["cloudwatch", cloudwatch],
+		["http-json", httpJson],
+		["hobo-metering", hoboMetering],
+	];
+	for (const [name, pact] of pacts) {
 		it(name, () => {
-			expect((pact as Pact).metadata.pactSpecification.version).toBe("4.0.0");
+			expect(pact.metadata.pactSpecification.version).toBe("4.0.0");
 			expect(
-				(pact as Pact).interactions.every(
-					(item) => item.type === "Synchronous/HTTP",
-				),
+				pact.interactions.every((item) => item.type === "Synchronous/HTTP"),
 			).toBe(true);
 		});
 	}

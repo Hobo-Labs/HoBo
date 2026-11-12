@@ -15,6 +15,7 @@ import {
 } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS } from "../events.js";
 import type { Outcome } from "../ports.js";
+import { isJsonObject } from "./json.js";
 import { reason, refuse, type VerificationReasonCode } from "./reasons.js";
 
 export type ParsedVerificationSpec = VerificationSpecRecord & {
@@ -30,11 +31,13 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const MAX_QUERY_CHARS = 4096;
 const MAX_REQUIRED_OBSERVATIONS = 10_000;
 const MAX_WINDOW_MS = 7n * 24n * 3_600_000n;
-const SENSITIVITY_DEFAULT: Readonly<Record<string, Sensitivity>> = {
-	LOW: Sensitivity.LOW,
-	MEDIUM: Sensitivity.MEDIUM,
-	HIGH: Sensitivity.HIGH,
-};
+/** CD_DEFAULTS.verificationSensitivity as the generated enum. */
+function defaultSensitivity(): Sensitivity {
+	switch (CD_DEFAULTS.verificationSensitivity) {
+		case "MEDIUM":
+			return Sensitivity.MEDIUM;
+	}
+}
 
 export const thresholdCheckId = (query: HealthQueryRecord) =>
 	`threshold:${query.name}`;
@@ -238,9 +241,7 @@ export function parseVerificationSpec(
 			});
 		}
 		if (comparison.sensitivity === Sensitivity.UNSPECIFIED) {
-			comparison.sensitivity =
-				SENSITIVITY_DEFAULT[CD_DEFAULTS.verificationSensitivity] ??
-				Sensitivity.MEDIUM;
+			comparison.sensitivity = defaultSensitivity();
 		}
 		if (comparison.minSamples === 0)
 			comparison.minSamples = spec.requiredObservations;
@@ -340,7 +341,7 @@ export function parseVerificationSpec(
 export function parseVerificationSpecJson(
 	json: JsonValue,
 ): Outcome<ParsedVerificationSpec> {
-	if (json === null || typeof json !== "object" || Array.isArray(json)) {
+	if (!isJsonObject(json)) {
 		return refuse(
 			"verification-spec-invalid",
 			"a verification spec must be a JSON object",

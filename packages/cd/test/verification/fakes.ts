@@ -1,6 +1,10 @@
 // Test doubles and builders for the WP9 verification tests. Each double models
 // a frozen port (ports.ts, @hobo/core); none is reachable from production code.
-import { create, type MessageInitShape } from "@bufbuild/protobuf";
+import {
+	type JsonObject as BodyObject,
+	create,
+	type JsonValue,
+} from "@bufbuild/protobuf";
 import type {
 	AppendOptions,
 	AppendResult,
@@ -44,7 +48,26 @@ import type {
 	TelemetrySink,
 	VerifyPort,
 } from "../../src/ports.js";
+import {
+	isJsonObject,
+	isJsonString,
+	jsonOf,
+} from "../../src/verification/json.js";
 import { refuse } from "../../src/verification/reasons.js";
+
+/** An event body as a JSON object ({} when it is not one). */
+export function bodyObject<T>(data: T): BodyObject {
+	const json = jsonOf(data);
+	return isJsonObject(json) ? json : {};
+}
+
+/** Field initialisers accepted by `create` for each record. */
+export type QueryInit = NonNullable<
+	Parameters<typeof create<typeof HealthQueryRecordSchema>>[1]
+>;
+export type SpecInit = NonNullable<
+	Parameters<typeof create<typeof VerificationSpecRecordSchema>>[1]
+>;
 
 export const TENANT = "acme";
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
@@ -97,10 +120,9 @@ export class MemoryEventStore implements DurableEventStore {
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing =
-				typeof key === "string"
-					? stream.find((event) => event.meta?.idempotencyKey === key)
-					: undefined;
+			const existing = isJsonString(key)
+				? stream.find((event) => event.meta?.idempotencyKey === key)
+				: undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
@@ -286,7 +308,7 @@ export class ScriptedTransport {
 	};
 }
 
-export function json(status: number, body: unknown): TransportResponse {
+export function json(status: number, body: JsonValue): TransportResponse {
 	return {
 		status,
 		headers: { "content-type": "application/json" },
@@ -312,10 +334,7 @@ export class MapCredentials implements CredentialResolver {
 	}
 }
 
-export function query(
-	name: string,
-	fields: MessageInitShape<typeof HealthQueryRecordSchema> = {},
-) {
+export function query(name: string, fields: QueryInit = {}) {
 	return create(HealthQueryRecordSchema, {
 		name,
 		source: HealthSourceKind.PROMETHEUS,
@@ -327,9 +346,7 @@ export function query(
 }
 
 /** A ten-minute spec with an error-rate threshold. */
-export function thresholdSpec(
-	overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {},
-) {
+export function thresholdSpec(overrides: SpecInit = {}) {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(10 * MINUTE),
 		requiredObservations: 3,
@@ -348,9 +365,7 @@ export function thresholdSpec(
 }
 
 /** A ten-minute spec with a latency canary-vs-baseline comparison. */
-export function comparisonSpec(
-	overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {},
-) {
+export function comparisonSpec(overrides: SpecInit = {}) {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(10 * MINUTE),
 		requiredObservations: 3,

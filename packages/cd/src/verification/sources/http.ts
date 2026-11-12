@@ -2,6 +2,9 @@
 // one bounded request through the injected HttpTransport, typed refusals, and
 // cohort selection by a declared label. Credentials are resolved per query
 // and scoped to the Camp; they are sent, never stored, logged or echoed.
+// Response bodies are parsed once into JsonValue and read through the tag
+// guards in ../json.ts.
+import type { JsonValue } from "@bufbuild/protobuf";
 import type { HttpTransport, TransportMethod } from "@hobo/core";
 import { Cohort, type HealthQueryRecord } from "../../_generated/cd_pb.js";
 import type {
@@ -10,6 +13,7 @@ import type {
 	HealthSamples,
 	Outcome,
 } from "../../ports.js";
+import { isJsonNumber, isJsonString, parseJsonText } from "../json.js";
 import { refuse } from "../reasons.js";
 
 export type SourceDeps = Readonly<{
@@ -20,11 +24,12 @@ export type SourceDeps = Readonly<{
 export const SOURCE_TIMEOUT_MS = 10_000;
 export const SOURCE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
-/** The label value that selects each cohort; ALL selects every series. */
-export const COHORT_VALUES: Readonly<Record<number, string>> = {
-	[Cohort.CANARY]: "canary",
-	[Cohort.BASELINE]: "baseline",
-};
+/** The label value that selects a split cohort; undefined for ALL. */
+export function cohortValue(cohort: Cohort): "canary" | "baseline" | undefined {
+	if (cohort === Cohort.CANARY) return "canary";
+	if (cohort === Cohort.BASELINE) return "baseline";
+	return undefined;
+}
 
 /** Credential scope: one Camp's verification, so a resolver can narrow it. */
 export const credentialScope = (campId: CampId) => `cd.verification:${campId}`;
@@ -68,24 +73,23 @@ export async function credentialFor(
 	}
 }
 
-/** The cohort's label value, or a refusal when a split cohort has no declared label. */
+export type CohortSelector = Readonly<{ label: string; value: string }>;
+
+/** The cohort's label and value, or a refusal when a split cohort has no declared label. */
 export function cohortSelector(
 	query: HealthQueryRecord,
 	cohort: Cohort,
-): Outcome<Readonly<{ label: string; value: string }> | undefined> {
-	if (cohort === Cohort.ALL || cohort === Cohort.UNSPECIFIED)
-		return { ok: true, value: undefined };
+): Outcome<CohortSelector | undefined> {
+	const value = cohortValue(cohort);
+	if (value === undefined) return { ok: true, value: undefined };
 	if (query.cohortLabel === "") {
 		return refuse(
 			"health-source-cohort-label-missing",
-			`${query.name} needs cohort_label to select the ${COHORT_VALUES[cohort]} cohort`,
+			`${query.name} needs cohort_label to select the ${value} cohort`,
 			query.name,
 		);
 	}
-	return {
-		ok: true,
-		value: { label: query.cohortLabel, value: COHORT_VALUES[cohort] ?? "" },
-	};
+	return { ok: true, value: { label: query.cohortLabel, value } };
 }
 
 /** One bounded request; non-2xx, transport failure and non-JSON bodies are typed refusals. */
@@ -98,7 +102,7 @@ export async function requestJson(
 		body?: string;
 		subject: string;
 	}>,
-): Promise<Outcome<unknown>> {
+): Promise<Outcome<JsonValue>> {
 	let response: Awaited<ReturnType<HttpTransport>>;
 	try {
 		const request = {
@@ -125,33 +129,26 @@ export async function requestJson(
 			input.subject,
 		);
 	}
-	try {
-		return { ok: true, value: JSON.parse(response.body) };
-	} catch {
+	const value = parseJsonText(response.body);
+	if (value === undefined) {
 		return refuse(
 			"health-source-response-invalid",
 			`${input.url.host} answered with a body that is not JSON`,
 			input.subject,
 		);
 	}
-}
-
-export function isRecord(
-	value: unknown,
-): value is Readonly<Record<string, unknown>> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return { ok: true, value };
 }
 
 /** A sample value: numbers and numeric strings, ±Inf kept (and later judged invalid); "NaN" and null mean no sample. */
-export function sampleValue(value: unknown): number | undefined {
+export function sampleValue(value: JsonValue | undefined): number | undefined {
 	if (value === "+Inf" || value === "Inf") return Number.POSITIVE_INFINITY;
 	if (value === "-Inf") return Number.NEGATIVE_INFINITY;
-	const number =
-		typeof value === "number"
-			? value
-			: typeof value === "string" && value.trim() !== ""
-				? Number(value)
-				: Number.NaN;
+	const number = isJsonNumber(value)
+		? value
+		: isJsonString(value) && value.trim() !== ""
+			? Number(value)
+			: Number.NaN;
 	return Number.isNaN(number) ? undefined : number;
 }
 
@@ -168,10 +165,14 @@ export function invalid(subject: string, message: string): Outcome<never> {
 }
 
 /** Series order must not depend on the source's answer order (I8). */
-export function stableKey(labels: Readonly<Record<string, unknown>>): string {
+export function stableKey(labels: Readonly<Record<string, JsonValue>>): string {
 	return JSON.stringify(
 		Object.keys(labels)
 			.sort()
-			.map((key) => [key, labels[key]]),
+			.map((key) => [key, labels[key] ?? null]),
 	);
+}
+
+export function byKey<T extends Readonly<{ key: string }>>(a: T, b: T): number {
+	return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }

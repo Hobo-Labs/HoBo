@@ -22,6 +22,7 @@ import {
 } from "../_generated/cd_pb.js";
 import { CD_EVENTS } from "../events.js";
 import type { CampId, FreightId, VerificationId } from "../ports.js";
+import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 import { type ParsedVerificationSpec, parseVerificationSpec } from "./spec.js";
 
 export type VerificationState = Readonly<{
@@ -38,12 +39,8 @@ export type VerificationState = Readonly<{
 	seq: number;
 }>;
 
-function isObject(value: unknown): value is JsonObject {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function text(value: JsonValue | undefined): string {
-	return typeof value === "string" ? value : "";
+	return isJsonString(value) ? value : "";
 }
 
 /** verification.Started body. */
@@ -75,15 +72,16 @@ export function resultBody(record: VerificationResultRecord): JsonValue {
 	return toJson(VerificationResultRecordSchema, record);
 }
 
-function decodeStarted(
-	data: unknown,
+function decodeStarted<D>(
+	body: D,
 ): Omit<VerificationState, "evidence" | "result" | "seq"> | undefined {
-	if (!isObject(data)) return undefined;
+	const data = jsonOf(body);
+	if (!isJsonObject(data)) return undefined;
 	const startedAtMs = Date.parse(text(data.startedAt));
 	if (!Number.isFinite(startedAtMs)) return undefined;
 	let spec: ParsedVerificationSpec | undefined;
 	try {
-		const parsed = isObject(data.spec)
+		const parsed = isJsonObject(data.spec)
 			? parseVerificationSpec(fromJson(VerificationSpecRecordSchema, data.spec))
 			: undefined;
 		spec = parsed?.ok ? parsed.value : undefined;
@@ -124,8 +122,11 @@ export function foldVerification(
 			continue;
 		}
 		if (!state) continue;
-		const json = event.data;
-		if (event.type === CD_EVENTS.RolloutEvidenceObserved && isObject(json)) {
+		const json = jsonOf(event.data);
+		if (
+			event.type === CD_EVENTS.RolloutEvidenceObserved &&
+			isJsonObject(json)
+		) {
 			const record = decodeRecord(() =>
 				fromJson(EvidenceObservationRecordSchema, json),
 			);
@@ -136,7 +137,7 @@ export function foldVerification(
 			};
 		} else if (
 			event.type === CD_EVENTS.VerificationCompleted &&
-			isObject(json)
+			isJsonObject(json)
 		) {
 			const record = decodeRecord(() =>
 				fromJson(VerificationResultRecordSchema, json),

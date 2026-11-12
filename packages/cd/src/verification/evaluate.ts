@@ -204,12 +204,20 @@ export function holds(
 	}
 }
 
-const COMPARATOR_TEXT: Readonly<Record<number, string>> = {
-	[Comparator.LT]: "<",
-	[Comparator.LTE]: "<=",
-	[Comparator.GT]: ">",
-	[Comparator.GTE]: ">=",
-};
+function comparatorText(comparator: Comparator): string {
+	switch (comparator) {
+		case Comparator.LT:
+			return "<";
+		case Comparator.LTE:
+			return "<=";
+		case Comparator.GT:
+			return ">";
+		case Comparator.GTE:
+			return ">=";
+		default:
+			return "?";
+	}
+}
 
 export function evaluateVerification(input: EvaluationInput): Evaluation {
 	const { spec, evidence } = input;
@@ -272,7 +280,7 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 					? undefined
 					: {
 							code: "verification-threshold-breached",
-							message: `${Aggregation[threshold.aggregation]} ${value} is not ${COMPARATOR_TEXT[threshold.comparator] ?? "?"} ${threshold.value}`,
+							message: `${Aggregation[threshold.aggregation]} ${value} is not ${comparatorText(threshold.comparator)} ${threshold.value}`,
 						},
 			),
 		);

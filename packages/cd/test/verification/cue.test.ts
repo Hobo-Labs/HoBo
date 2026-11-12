@@ -19,7 +19,9 @@ import {
 	informVerificationSpec,
 	parseVerificationSpec,
 } from "../../src/verification/index.js";
+import { jsonOf } from "../../src/verification/json.js";
 import {
+	bodyObject,
 	camp,
 	clock,
 	comparisonSpec,
@@ -69,7 +71,7 @@ let written = 0;
  * (rather than `cue vet -d`) evaluates the hidden constraints against the
  * data only, never the bare definition.
  */
-function vets(definition: string, value: unknown): boolean {
+function vets(definition: string, value: JsonValue | undefined): boolean {
 	if (!cue) throw new Error("cue binary not found");
 	written += 1;
 	const file = join(scratch, `value-${written}.cue`);
@@ -175,22 +177,26 @@ describe.skipIf(cue === undefined)(
 			);
 			time.advance(10 * MINUTE);
 			await engine.tick(ctx);
-			const definitions: Record<string, string> = {
-				"verification.Started": "#VerificationStarted",
-				"rollout.EvidenceObserved": "#EvidenceObservationRecord",
-				"verification.Completed": "#VerificationResultRecord",
-			};
+			const definitionFor = (type: string) =>
+				type === "verification.Started"
+					? "#VerificationStarted"
+					: type === "rollout.EvidenceObserved"
+						? "#EvidenceObservationRecord"
+						: type === "verification.Completed"
+							? "#VerificationResultRecord"
+							: "#missing";
 			const events = store.events(CD_STREAMS.verification(id));
 			expect(events.length).toBeGreaterThan(2);
 			for (const event of events)
 				expect(
-					vets(definitions[event.type] ?? "#missing", event.data),
+					vets(definitionFor(event.type), jsonOf(event.data)),
 					event.type,
 				).toBe(true);
 			// A PASS without checks is not a valid result.
+			const completed = bodyObject(events[events.length - 1]?.data);
 			expect(
 				vets("#VerificationResultRecord", {
-					...(events[events.length - 1]?.data as object),
+					...completed,
 					verdict: "VERIFICATION_VERDICT_PASS",
 					checks: [],
 				}),

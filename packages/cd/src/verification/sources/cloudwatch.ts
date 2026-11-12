@@ -6,15 +6,22 @@
 //
 //   {"namespace":"AWS/ApplicationELB","metricName":"HTTPCode_Target_5XX_Count",
 //    "stat":"Sum","period":60,"dimensions":{"LoadBalancer":"app/web/123"}}
+
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
+import {
+	isJsonArray,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJsonText,
+} from "../json.js";
 import { refuse } from "../reasons.js";
 import {
 	cohortSelector,
 	credentialFor,
 	httpsEndpoint,
 	invalid,
-	isRecord,
 	requestJson,
 	type SourceDeps,
 	samplesOutcome,
@@ -36,27 +43,22 @@ type MetricStat = Readonly<{
 }>;
 
 function parseMetricStat(text: string): MetricStat | undefined {
-	let value: unknown;
-	try {
-		value = JSON.parse(text);
-	} catch {
-		return undefined;
-	}
-	if (!isRecord(value)) return undefined;
+	const value = parseJsonText(text);
+	if (!isJsonObject(value)) return undefined;
 	const { namespace, metricName, stat, period, dimensions } = value;
 	if (
-		typeof namespace !== "string" ||
-		typeof metricName !== "string" ||
-		typeof stat !== "string"
+		!isJsonString(namespace) ||
+		!isJsonString(metricName) ||
+		!isJsonString(stat)
 	)
 		return undefined;
-	if (typeof period !== "number" || !Number.isInteger(period) || period < 1)
+	if (!isJsonNumber(period) || !Number.isInteger(period) || period < 1)
 		return undefined;
 	const dims: Record<string, string> = {};
 	if (dimensions !== undefined) {
-		if (!isRecord(dimensions)) return undefined;
+		if (!isJsonObject(dimensions)) return undefined;
 		for (const [name, dim] of Object.entries(dimensions)) {
-			if (typeof dim !== "string") return undefined;
+			if (!isJsonString(dim)) return undefined;
 			dims[name] = dim;
 		}
 	}
@@ -108,7 +110,8 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 			const values: number[] = [];
 			let nextToken: string | undefined;
 			for (let page = 0; page < MAX_PAGES; page += 1) {
-				const request: Record<string, unknown> = {
+				// JSON.stringify drops NextToken while it is undefined (first page).
+				const request = {
 					MetricDataQueries: [
 						{
 							Id: "q0",
@@ -127,8 +130,8 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 					StartTime: Math.floor(input.fromMs / 1000),
 					EndTime: Math.floor(input.toMs / 1000),
 					ScanBy: "TimestampAscending",
+					NextToken: nextToken,
 				};
-				if (nextToken) request.NextToken = nextToken;
 				const body = JSON.stringify(request);
 				const headers = signV4({
 					method: "POST",
@@ -155,13 +158,13 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 				});
 				if (!response.ok) return response;
 				const answer = response.value;
-				if (!isRecord(answer) || !Array.isArray(answer.MetricDataResults))
+				if (!isJsonObject(answer) || !isJsonArray(answer.MetricDataResults))
 					return invalid(
 						query.name,
 						"CloudWatch answer has no MetricDataResults",
 					);
 				for (const result of answer.MetricDataResults) {
-					if (!isRecord(result) || !Array.isArray(result.Values))
+					if (!isJsonObject(result) || !isJsonArray(result.Values))
 						return invalid(query.name, "malformed MetricDataResult");
 					if (
 						result.StatusCode === "Forbidden" ||
@@ -179,7 +182,7 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 					}
 				}
 				nextToken =
-					typeof answer.NextToken === "string" && answer.NextToken !== ""
+					isJsonString(answer.NextToken) && answer.NextToken !== ""
 						? answer.NextToken
 						: undefined;
 				if (!nextToken) return samplesOutcome(values, input.fromMs, input.toMs);

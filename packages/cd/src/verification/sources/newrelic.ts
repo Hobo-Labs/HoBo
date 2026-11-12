@@ -5,15 +5,21 @@
 // own; NRQL travels as a GraphQL variable, never spliced into the document.
 // The cohort is selected from FACET rows by the declared attribute, so the
 // query must `FACET <cohort_label> TIMESERIES` and return one aggregate.
+
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
+import {
+	isJsonArray,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+} from "../json.js";
 import { refuse } from "../reasons.js";
 import {
 	cohortSelector,
 	credentialFor,
 	httpsEndpoint,
 	invalid,
-	isRecord,
 	requestJson,
 	type SourceDeps,
 	samplesOutcome,
@@ -66,8 +72,8 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 			if (!response.ok) return response;
 			const body = response.value;
 			if (
-				isRecord(body) &&
-				Array.isArray(body.errors) &&
+				isJsonObject(body) &&
+				isJsonArray(body.errors) &&
 				body.errors.length > 0
 			) {
 				return refuse(
@@ -77,18 +83,19 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 				);
 			}
 			const results =
-				isRecord(body) &&
-				isRecord(body.data) &&
-				isRecord(body.data.actor) &&
-				isRecord(body.data.actor.account) &&
-				isRecord(body.data.actor.account.nrql)
+				isJsonObject(body) &&
+				isJsonObject(body.data) &&
+				isJsonObject(body.data.actor) &&
+				isJsonObject(body.data.actor.account) &&
+				isJsonObject(body.data.actor.account.nrql)
 					? body.data.actor.account.nrql.results
 					: undefined;
-			if (!Array.isArray(results))
+			if (!isJsonArray(results))
 				return invalid(query.name, "NerdGraph answer has no nrql results");
 			const rows: Array<Readonly<{ at: number; value: number }>> = [];
 			for (const row of results) {
-				if (!isRecord(row)) return invalid(query.name, "malformed NRQL row");
+				if (!isJsonObject(row))
+					return invalid(query.name, "malformed NRQL row");
 				if (selector.value) {
 					const facet = row[selector.value.label] ?? row.facet;
 					if (facet !== selector.value.value) continue;
@@ -97,7 +104,7 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 					(key) =>
 						!TIME_KEYS.has(key) &&
 						key !== query.cohortLabel &&
-						typeof row[key] !== "string",
+						!isJsonString(row[key]),
 				);
 				if (valueKeys.length !== 1)
 					return refuse(
@@ -108,10 +115,7 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 				const value = sampleValue(row[valueKeys[0] ?? ""]);
 				if (value !== undefined)
 					rows.push({
-						at:
-							typeof row.beginTimeSeconds === "number"
-								? row.beginTimeSeconds
-								: 0,
+						at: isJsonNumber(row.beginTimeSeconds) ? row.beginTimeSeconds : 0,
 						value,
 					});
 			}

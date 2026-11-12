@@ -3,6 +3,9 @@
 // against botocore's SigV4Auth in test/verification/sources/sigv4.test.ts.
 import { createHash, createHmac } from "node:crypto";
 
+/** The headers to send: the inputs lower-cased, plus x-amz-date, an optional x-amz-security-token and authorization. */
+export type SignedHeaders = Readonly<Record<string, string>>;
+
 export type AwsCredentials = Readonly<{
 	accessKeyId: string;
 	secretAccessKey: string;
@@ -33,7 +36,7 @@ export function signV4(
 		credentials: AwsCredentials;
 		atMs: number;
 	}>,
-): Record<string, string> {
+): SignedHeaders {
 	const url = new URL(input.url);
 	const stamp = amzDate(input.atMs);
 	const day = stamp.slice(0, 8);

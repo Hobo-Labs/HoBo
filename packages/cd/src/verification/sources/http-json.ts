@@ -2,15 +2,16 @@
 // ms), `camp` and, for a split cohort, `<cohort_label>=canary|baseline`
 // added as query parameters; the query is an RFC 6901 JSON pointer to an
 // array of numbers (null entries mean no sample).
+import type { JsonValue } from "@bufbuild/protobuf";
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
+import { isJsonArray, isJsonNumber, isJsonObject } from "../json.js";
 import { refuse } from "../reasons.js";
 import {
 	cohortSelector,
 	credentialFor,
 	httpsEndpoint,
 	invalid,
-	isRecord,
 	requestJson,
 	type SourceDeps,
 	samplesOutcome,
@@ -18,16 +19,19 @@ import {
 } from "./http.js";
 
 /** Resolve an RFC 6901 JSON pointer; undefined when any token is missing. */
-export function resolvePointer(document: unknown, pointer: string): unknown {
+export function resolvePointer(
+	document: JsonValue,
+	pointer: string,
+): JsonValue | undefined {
 	if (pointer === "") return document;
 	if (!pointer.startsWith("/")) return undefined;
-	let current: unknown = document;
+	let current: JsonValue | undefined = document;
 	for (const raw of pointer.slice(1).split("/")) {
 		const token = raw.replace(/~1/g, "/").replace(/~0/g, "~");
-		if (Array.isArray(current)) {
+		if (isJsonArray(current)) {
 			if (!/^(0|[1-9]\d*)$/.test(token)) return undefined;
 			current = current[Number(token)];
-		} else if (isRecord(current) && Object.hasOwn(current, token)) {
+		} else if (isJsonObject(current) && Object.hasOwn(current, token)) {
 			current = current[token];
 		} else {
 			return undefined;
@@ -68,12 +72,12 @@ export function createHttpJsonSource(deps: SourceDeps): HealthSource {
 			});
 			if (!response.ok) return response;
 			const array = resolvePointer(response.value, query.query);
-			if (!Array.isArray(array))
+			if (!isJsonArray(array))
 				return invalid(query.name, `${query.query} does not point at an array`);
 			const values: number[] = [];
 			for (const item of array) {
 				if (item === null) continue;
-				if (typeof item !== "number")
+				if (!isJsonNumber(item))
 					return invalid(
 						query.name,
 						`${query.query} holds a non-numeric entry`,

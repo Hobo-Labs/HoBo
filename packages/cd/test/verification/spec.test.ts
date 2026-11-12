@@ -9,7 +9,13 @@ import {
 	parseVerificationSpec,
 	parseVerificationSpecJson,
 } from "../../src/verification/spec.js";
-import { comparisonSpec, MINUTE, query, thresholdSpec } from "./fakes.js";
+import {
+	bodyObject,
+	comparisonSpec,
+	MINUTE,
+	query,
+	thresholdSpec,
+} from "./fakes.js";
 
 const codes = (outcome: ReturnType<typeof parseVerificationSpec>) =>
 	outcome.ok ? [] : outcome.reasons.map((r) => r.code);
@@ -72,7 +78,7 @@ describe("parseVerificationSpec applies CD_DEFAULTS", () => {
 		const parsed = parseVerificationSpecJson(json);
 		expect(parsed.ok && parsed.value.failOnNoData).toBe(true);
 		const explicit = parseVerificationSpecJson({
-			...(json as object),
+			...bodyObject(json),
 			failOnNoData: false,
 		});
 		expect(explicit.ok && explicit.value.failOnNoData).toBe(false);

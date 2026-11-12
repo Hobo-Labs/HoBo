@@ -23,7 +23,7 @@ export {
 } from "./replay.js";
 // Vendor adapters stay behind createHealthSources (I11: vendor names only in sources/).
 export {
-	COHORT_VALUES,
+	cohortValue,
 	createHealthSources,
 	createHoboPostureSource,
 	credentialScope,

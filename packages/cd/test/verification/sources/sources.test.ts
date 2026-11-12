@@ -1,7 +1,7 @@
 // Health-source behaviour outside the happy-path contracts: refusals that
 // must be typed and secret-free, order independence (I8), the step rule, and
 // the HOBO_POSTURE source (D24) end to end through the engine.
-import { create, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, type JsonValue } from "@bufbuild/protobuf";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
 	Cohort,
@@ -35,6 +35,7 @@ import {
 	MapCredentials,
 	MemoryEventStore,
 	MINUTE,
+	type QueryInit,
 	RecordingVerifyPort,
 	ScriptedTransport,
 	T0,
@@ -44,9 +45,7 @@ import {
 const RAIL: Digest = `sha256:${"ab".repeat(32)}`;
 const HOUR = 60 * MINUTE;
 
-function promQuery(
-	fields: MessageInitShape<typeof HealthQueryRecordSchema> = {},
-) {
+function promQuery(fields: QueryInit = {}) {
 	return create(HealthQueryRecordSchema, {
 		name: "errors",
 		source: HealthSourceKind.PROMETHEUS,
@@ -214,7 +213,7 @@ describe("determinism (I8)", () => {
 	it("samples do not depend on the order the source returns series in", async () => {
 		const a = { metric: { track: "canary", pod: "a" }, values: [[1, "1"]] };
 		const b = { metric: { track: "canary", pod: "b" }, values: [[1, "2"]] };
-		const read = async (result: unknown[]) => {
+		const read = async (result: JsonValue[]) => {
 			const http = new ScriptedTransport(() =>
 				json(200, {
 					status: "success",

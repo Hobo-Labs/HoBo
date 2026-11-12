@@ -3,14 +3,16 @@
 // selected from the returned matrix by the declared label (no query
 // templating), so the expression must keep that label, e.g.
 // `sum by (track) (rate(http_requests_total{code=~"5.."}[1m]))`.
+
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
+import { isJsonArray, isJsonObject } from "../json.js";
 import {
+	byKey,
 	cohortSelector,
 	credentialFor,
 	httpsEndpoint,
 	invalid,
-	isRecord,
 	requestJson,
 	type SourceDeps,
 	samplesOutcome,
@@ -63,11 +65,11 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 			if (!response.ok) return response;
 			const body = response.value;
 			if (
-				!isRecord(body) ||
+				!isJsonObject(body) ||
 				body.status !== "success" ||
-				!isRecord(body.data) ||
+				!isJsonObject(body.data) ||
 				body.data.resultType !== "matrix" ||
-				!Array.isArray(body.data.result)
+				!isJsonArray(body.data.result)
 			) {
 				return invalid(
 					query.name,
@@ -77,9 +79,9 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 			const series: Array<Readonly<{ key: string; values: number[] }>> = [];
 			for (const item of body.data.result) {
 				if (
-					!isRecord(item) ||
-					!isRecord(item.metric) ||
-					!Array.isArray(item.values)
+					!isJsonObject(item) ||
+					!isJsonObject(item.metric) ||
+					!isJsonArray(item.values)
 				)
 					return invalid(query.name, "malformed Prometheus series");
 				if (
@@ -89,14 +91,14 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 					continue;
 				const values: number[] = [];
 				for (const point of item.values) {
-					if (!Array.isArray(point) || point.length !== 2)
+					if (!isJsonArray(point) || point.length !== 2)
 						return invalid(query.name, "malformed Prometheus point");
 					const value = sampleValue(point[1]);
 					if (value !== undefined) values.push(value);
 				}
 				series.push({ key: stableKey(item.metric), values });
 			}
-			series.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+			series.sort(byKey);
 			return samplesOutcome(
 				series.flatMap((item) => item.values),
 				input.fromMs,

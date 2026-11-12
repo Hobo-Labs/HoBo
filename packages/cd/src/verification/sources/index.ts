@@ -45,7 +45,7 @@ export {
 	informVerificationSpec,
 	POSTURE_SERIES,
 } from "./hobo-posture.js";
-export { COHORT_VALUES, credentialScope, type SourceDeps } from "./http.js";
+export { cohortValue, credentialScope, type SourceDeps } from "./http.js";
 export { createHttpJsonSource, resolvePointer } from "./http-json.js";
 export { createNewRelicSource, NERDGRAPH_NRQL_DOCUMENT } from "./newrelic.js";
 export { createPrometheusSource, prometheusStepSeconds } from "./prometheus.js";

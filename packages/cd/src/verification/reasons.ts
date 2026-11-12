@@ -18,8 +18,6 @@ export const VERIFICATION_REASONS = Object.freeze({
 		'max_error_budget_burn needs a threshold or comparison query whose unit is "burn_rate"; add one or set the ceiling to 0.',
 	"verification-probe-interval-exceeds-window":
 		"Lower the probe interval_ms below window_ms so the window can hold an observation.",
-	"verification-unknown":
-		"Start the verification first; the id names no cd-verification stream.",
 	"verification-no-data":
 		"The health source returned no samples for the window. Check the query, the cohort label and that the target emits the metric; absent evidence never passes.",
 	"verification-insufficient-observations":

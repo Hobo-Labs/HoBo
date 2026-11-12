@@ -3,14 +3,16 @@
 // resolves to the DD-API-KEY / DD-APPLICATION-KEY headers. The cohort is the
 // series whose tag_set holds `<cohort_label>:canary|baseline`, so the query
 // must group by that tag, e.g. `avg:trace.http.request.errors{env:prod} by {track}`.
+
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
+import { isJsonArray, isJsonObject, isJsonString } from "../json.js";
 import {
+	byKey,
 	cohortSelector,
 	credentialFor,
 	httpsEndpoint,
 	invalid,
-	isRecord,
 	requestJson,
 	type SourceDeps,
 	samplesOutcome,
@@ -41,9 +43,9 @@ export function createDatadogSource(deps: SourceDeps): HealthSource {
 			if (!response.ok) return response;
 			const body = response.value;
 			if (
-				!isRecord(body) ||
+				!isJsonObject(body) ||
 				body.status !== "ok" ||
-				!Array.isArray(body.series)
+				!isJsonArray(body.series)
 			)
 				return invalid(query.name, "Datadog answer has no series");
 			const wanted = selector.value
@@ -51,22 +53,22 @@ export function createDatadogSource(deps: SourceDeps): HealthSource {
 				: undefined;
 			const series: Array<Readonly<{ key: string; values: number[] }>> = [];
 			for (const item of body.series) {
-				if (!isRecord(item) || !Array.isArray(item.pointlist))
+				if (!isJsonObject(item) || !isJsonArray(item.pointlist))
 					return invalid(query.name, "malformed Datadog series");
-				const tags = Array.isArray(item.tag_set)
-					? item.tag_set.filter((tag): tag is string => typeof tag === "string")
+				const tags = isJsonArray(item.tag_set)
+					? item.tag_set.filter(isJsonString)
 					: [];
 				if (wanted && !tags.includes(wanted)) continue;
 				const values: number[] = [];
 				for (const point of item.pointlist) {
-					if (!Array.isArray(point) || point.length !== 2)
+					if (!isJsonArray(point) || point.length !== 2)
 						return invalid(query.name, "malformed Datadog point");
 					const value = sampleValue(point[1]);
 					if (value !== undefined) values.push(value);
 				}
 				series.push({ key: [...tags].sort().join(","), values });
 			}
-			series.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+			series.sort(byKey);
 			return samplesOutcome(
 				series.flatMap((item) => item.values),
 				input.fromMs,

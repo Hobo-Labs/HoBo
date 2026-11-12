@@ -4,14 +4,15 @@
 // `{ "series": [{ "atMs": <epoch ms>, "value": <number|null> }] }`, ordered by
 // the source and re-sorted here by time. The contract is pinned by
 // test/verification/pacts/hobo-metering.pact.json.
+
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
+import { isJsonArray, isJsonNumber, isJsonObject } from "../json.js";
 import {
 	cohortSelector,
 	credentialFor,
 	httpsEndpoint,
 	invalid,
-	isRecord,
 	requestJson,
 	type SourceDeps,
 	samplesOutcome,
@@ -48,11 +49,11 @@ export function createHoboMeteringSource(deps: SourceDeps): HealthSource {
 			});
 			if (!response.ok) return response;
 			const body = response.value;
-			if (!isRecord(body) || !Array.isArray(body.series))
+			if (!isJsonObject(body) || !isJsonArray(body.series))
 				return invalid(query.name, "metering answer has no series");
 			const points: Array<Readonly<{ atMs: number; value: number }>> = [];
 			for (const point of body.series) {
-				if (!isRecord(point) || typeof point.atMs !== "number")
+				if (!isJsonObject(point) || !isJsonNumber(point.atMs))
 					return invalid(query.name, "malformed metering point");
 				const value = sampleValue(point.value);
 				if (value !== undefined) points.push({ atMs: point.atMs, value });
