@@ -27,8 +27,11 @@ import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 // public-contract: names shared with @hobo/cd HOBO_CI_COMPONENTS.runnerFleet.
 export const RUNNER_FLEET_BINDLE = "hobo-ci-runner-fleet";
+// public-contract: pipeline name shared with @hobo/cd HOBO_CI_COMPONENTS.runnerFleet.
 export const RUNNER_FLEET_PIPELINE = "hobo-ci-runner-fleet";
+// public-contract: Camp set name the runner-fleet delivery config declares (exported for deploy/runner-fleet).
 export const RUNNER_FLEET_CAMP_SET = "hobo-ci-runner-fleet";
+// public-contract: placement name the runner-fleet pipeline targets (exported for deploy/runner-fleet).
 export const RUNNER_FLEET_PLACEMENT = "hobo-ci-runner-fleet";
 // public-contract: the Freight source polling GHCR for the worker image.
 export const RUNNER_IMAGE_SOURCE = "hobo-ci-runner-image";

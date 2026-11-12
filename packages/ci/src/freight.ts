@@ -18,14 +18,15 @@ import { createArtifact } from "./execution.js";
 
 // public-contract: the Freight manifest schema (@hobo/cd FREIGHT_MANIFEST_SCHEMA).
 export const CI_FREIGHT_MANIFEST_SCHEMA = "hobo.freight-manifest/v1" as const;
-// public-contract: in-toto Statement v1 and the SLSA provenance v1 predicate.
+// public-contract: the in-toto Statement v1 _type URI.
 export const IN_TOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1";
+// public-contract: the SLSA provenance v1 predicateType URI.
 export const SLSA_PROVENANCE_PREDICATE = "https://slsa.dev/provenance/v1";
 // public-contract: the SLSA buildType of a HoBo CI build.
 export const HOBO_CI_BUILD_TYPE = "https://hobo.dev/ci/build/v1";
-/** CI output path of the run's provenance statement. */
+// public-contract: CI output path of the run's provenance statement (README output layout).
 export const CI_PROVENANCE_OUTPUT = "freight/provenance.intoto.json";
-/** Suffix of a deliverable's Freight manifest output, next to its bytes. */
+// public-contract: suffix of a deliverable's Freight manifest output, next to its bytes (README output layout).
 export const CI_FREIGHT_MANIFEST_SUFFIX = ".freight.json";
 
 // public-contract: refusal codes, the same strings @hobo/cd's FREIGHT_REASON uses.

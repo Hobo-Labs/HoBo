@@ -18,6 +18,7 @@ import {
 	type Outcome,
 } from "./cd-shapes.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const HEALTH_SOURCE_SUITE = "hobo.cd.health-source/v1";
 
 // public-contract: assertion names of the HealthSource suite.

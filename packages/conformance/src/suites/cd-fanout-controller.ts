@@ -9,6 +9,7 @@ import {
 } from "./cd-kit.js";
 import { CD_FANOUT_STATE, CD_FANOUT_STRATEGY } from "./cd-shapes.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const FANOUT_CONTROLLER_SUITE = "hobo.cd.fanout-controller/v1";
 
 // public-contract: assertion names of the FanoutController suite.

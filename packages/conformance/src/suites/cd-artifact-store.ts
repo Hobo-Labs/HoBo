@@ -12,6 +12,7 @@ import {
 } from "./cd-kit.js";
 import { type ArtifactStoreLike, CD_ARTIFACT_KIND } from "./cd-shapes.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const ARTIFACT_STORE_SUITE = "hobo.cd.artifact-store/v1";
 
 // public-contract: assertion names of the ArtifactStore suite.

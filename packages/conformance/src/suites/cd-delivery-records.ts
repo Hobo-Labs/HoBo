@@ -12,6 +12,7 @@ import {
 	runCdAssertions,
 } from "./cd-kit.js";
 
+// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const DELIVERY_RECORDS_SUITE = "hobo.cd.delivery-records/v1";
 
 // public-contract: assertion names of the delivery-records suite.
