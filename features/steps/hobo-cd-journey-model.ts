@@ -79,6 +79,7 @@ export class DeliveryModel {
 	readonly overrides = new Map<string, number>();
 	readonly sets = new Map<string, string[]>();
 	readonly proposals: string[] = [];
+	readonly proposers = new Map<string, string>();
 	readonly journal: string[] = [];
 	readonly drift = new Set<string>();
 
@@ -120,6 +121,7 @@ export class DeliveryModel {
 		if (principal.kind === "agent") {
 			const proposalId = `proposal-${this.proposals.length + 1}`;
 			this.proposals.push(proposalId);
+			this.proposers.set(proposalId, principal.id);
 			this.journal.push(`env.PromoteRequested ${freightId} ${nodeName} proposal`);
 			return { status: "proposed", proposalId };
 		}
@@ -153,6 +155,22 @@ export class DeliveryModel {
 		this.approvals.set(`${freightId}@${nodeName}`, this.now + ttlMs);
 		this.journal.push(`freight.Approved ${freightId} ${nodeName}`);
 		return true;
+	}
+
+	/** I10: a proposal is approved by a human principal other than its proposer. */
+	approveProposal(proposalId: string, principal: Principal): boolean {
+		const proposer = this.proposers.get(proposalId);
+		if (proposer === undefined || principal.kind === "agent" || principal.id === proposer) return false;
+		this.journal.push(`approval.Granted ${proposalId} ${principal.id}`);
+		return true;
+	}
+
+	/** Drift adoption: observed state becomes desired state (SET_ORIGIN_DRIFT_ADOPTION); nothing heals backward. */
+	adoptDrift(camp: string, adoptedFreight: string): void {
+		const history = this.sets.get(camp) ?? [];
+		this.sets.set(camp, [...history, adoptedFreight]);
+		this.drift.delete(camp);
+		this.journal.push(`set.Created ${camp} drift-adoption`);
 	}
 
 	/** The reconciler's pass: drifted Camps re-converge to their desired Set. */

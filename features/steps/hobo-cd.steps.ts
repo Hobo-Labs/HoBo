@@ -281,6 +281,26 @@ Then("a proposal is recorded and nothing is applied to {string}", (node: string)
 	assert.equal(s.model.current(camp(node)), undefined);
 });
 
+Then("the proposing agent cannot approve the proposal", () => {
+	assert.equal(s.last?.status, "proposed");
+	const id = s.last?.status === "proposed" ? s.last.proposalId : "";
+	assert.equal(s.model.approveProposal(id, AGENT), false);
+});
+
+Then("a different human can approve the proposal", () => {
+	const id = s.last?.status === "proposed" ? s.last.proposalId : "";
+	assert.equal(s.model.approveProposal(id, HUMAN), true);
+});
+
+When("the drift is adopted as desired state {string}", (freight: string) => {
+	s.model.adoptDrift(camp("prod"), freight);
+});
+
+Then("reconciling {string} converges without remediation", (node: string) => {
+	assert.equal(s.model.reconcile(camp(node)), "converged");
+	assert.equal(s.model.journal.some((line) => line.includes("drift-remediate")), false);
+});
+
 Given("a preview of {string} with a TTL of {int} hour(s)", (freight: string, hours: number) => {
 	s.preview = `preview-${freight}`;
 	s.previews.create(s.preview, s.model.now, hours * HOUR);

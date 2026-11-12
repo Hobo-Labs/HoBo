@@ -21,6 +21,7 @@ every one of them.
 | `runFanoutControllerConformance` | `FanoutController` | Bounded concurrency, mandatory groups first, halts at the failure budget, deferred is not failed (I20), never wedges |
 | `runPostureEvaluatorConformance` | `@hobo/policy/posture` evaluator | Pure and order-free; unknown counts against compliance; the fixed operator set (D25) |
 | `runCampInventoryConformance` | `CampInventory` | An agent can never add `NO_RUN`; contradictory claims or silence taint `NO_PLACE` (D19) |
+| `runDeliveryRecordsConformance` | `hobo.delivery.ts` modules | DAG, sources and windows exist, one target per node, fan-out only with placement, ENFORCE after INFORM (I23), pinned publishers and provenance, secret-free |
 | `runToolsetMatrix` | Toolset matrix | Seven ingress paths, one Freight id (§10 WP20); a bare CDEvent creates nothing (I15) |
 | `runPlatformMatrix` | Platform matrix | Every traffic rung and none × every artifact kind × built-in and WASM-component resolvers (I1, I6, I14) |
 | `runAirgapConformance` | §10 WP20 | With egress disabled, promotes through a local source and an agent; the Station never dials the agent (I3) |

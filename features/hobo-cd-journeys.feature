@@ -1,3 +1,6 @@
+# Promotes the journey semantics of the frozen proofs
+# src/draft/exp-proofs/dx/{devops-canary-rollout,gitops-ci,sre-drift-remediation}-journey-contract
+# (plan 0024 §3) into shipped acceptance features; the proofs stay unedited.
 @hobo-cd
 Feature: HoBo.CD delivery journeys
   As a team delivering a Bindle through dev, staging and prod
@@ -72,6 +75,19 @@ Feature: HoBo.CD delivery journeys
     Given "shop@1.4.0" has passed verification in "staging"
     When an agent promotes "shop@1.4.0" to "prod"
     Then a proposal is recorded and nothing is applied to "prod"
+
+  Scenario: the proposing agent cannot approve its own proposal
+    Given "shop@1.4.0" has passed verification in "staging"
+    When an agent promotes "shop@1.4.0" to "prod"
+    Then the proposing agent cannot approve the proposal
+    And a different human can approve the proposal
+
+  Scenario: adopted drift is not healed backward
+    Given "shop@1.4.0" runs in "prod"
+    When the "prod" target drifts from its desired Set
+    And the drift is adopted as desired state "shop@1.4.0+hotpatch"
+    Then reconciling "prod" converges without remediation
+    And the "prod" Camp runs "shop@1.4.0+hotpatch"
 
   Scenario: preview lifecycle
     Given a preview of "shop@1.5.0" with a TTL of 1 hour
