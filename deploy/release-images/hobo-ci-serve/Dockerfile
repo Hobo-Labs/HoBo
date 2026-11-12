@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.title="HoBo CI relay" \
       org.opencontainers.image.revision="${HOBO_RELEASE_REVISION}"
 WORKDIR /app
 USER root
-RUN mkdir -p /var/lib/hobo-ci && chown 1000:1000 /var/lib/hobo-ci
+RUN mkdir -p /var/lib/hobo-ci/git && chown 1000:1000 /var/lib/hobo-ci /var/lib/hobo-ci/git
 COPY --chown=1000:1000 app /app
 EXPOSE 8787
 VOLUME ["/var/lib/hobo-ci"]
