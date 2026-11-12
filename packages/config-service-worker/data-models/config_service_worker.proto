@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package hobo.config_service_worker.v1;
+
+// HoBo's config-service Worker: the relay's config document and secrets in a
+// Durable Object's storage on a Cloudflare account HoBo created as a
+// temporary account and the owner claimed (ADR-0179 amendment "Secret store
+// chosen at deploy, provisioned by claim", 2026-11-12 Worker addendum).
+//
+// No record here carries a token, a claim URL or a secret value except the
+// entries of a folder, which only an authenticated reader receives.
+
+// The deploy-time binding, baked into the Worker as one plain-text variable
+// (`HOBO_CONFIG_BINDING`). Non-secret: issuers, audiences, ids and the hash
+// of a single-use credential.
+message ConfigServiceWorkerBinding {
+  // Random, non-secret; names this store in health answers and audiences.
+  string store_id = 1;
+  // Who may read the relay's folder: the relay's Vercel OIDC token.
+  VercelOidcReader relay = 2;
+  // Who may read the deploy folder and write the relay's: GitHub Actions
+  // OIDC for one repository and one ref.
+  GithubOidcWriter deploy = 3;
+  // SHA-256 (lower-case hex) of the single-use bootstrap credential that
+  // seeds the store once at provision time.
+  string bootstrap_sha256 = 4;
+  // RFC 3339 instant after which the bootstrap credential is refused.
+  string bootstrap_expires_at = 5;
+}
+
+// The relay's Vercel OIDC token, team issuer mode
+// (https://vercel.com/docs/oidc/reference, read 2026-11-12).
+message VercelOidcReader {
+  // `https://oidc.vercel.com/<team-slug>`.
+  string issuer = 1;
+  // `https://vercel.com/<team-slug>`, Vercel's default audience.
+  string audience = 2;
+  // `owner:<team-slug>:project:<project>:environment:<environment>`.
+  string subject = 3;
+  // `team_…`.
+  string owner_id = 4;
+  // `prj_…`.
+  string project_id = 5;
+  string environment = 6;
+}
+
+// GitHub Actions OIDC for the deploy workflow and `hobo ci app create` run
+// in it.
+message GithubOidcWriter {
+  // `https://token.actions.githubusercontent.com`.
+  string issuer = 1;
+  // A custom audience the job asks for: `urn:hobo:config-service:<store_id>`.
+  string audience = 2;
+  // `owner/repo`.
+  string repository = 3;
+  // `refs/heads/main`.
+  string ref = 4;
+  // The repository's numeric id, when known: survives a rename or a deleted
+  // and re-created name. Empty when not pinned.
+  string repository_id = 5;
+}
+
+// Set by the owner after the claim, as the `HOBO_CONFIG_OWNER_ACCESS`
+// variable: the Cloudflare Access application in front of the Worker's
+// workers.dev route. Until it is set, no owner route exists.
+message ConfigServiceOwnerAccess {
+  // `https://<team>.cloudflareaccess.com`.
+  string issuer = 1;
+  // The Access application's AUD tag.
+  string audience = 2;
+}
+
+// One folder's entries: names are the relay's environment variable names.
+message ConfigFolderEntries {
+  map<string, string> entries = 1;
+}
+
+// The single bootstrap write: every folder's initial entries.
+message ConfigServiceSeed {
+  map<string, ConfigFolderEntries> folders = 1;
+}
+
+// An authorized write to one folder: upserts, then deletions.
+message ConfigFolderWrite {
+  map<string, string> entries = 1;
+  repeated string delete = 2;
+}
+
+// What an authenticated reader receives.
+message ConfigFolderRead {
+  string folder = 1;
+  map<string, string> entries = 2;
+  uint32 version = 3;
+}
+
+// What a writer receives: names only.
+message ConfigFolderWritten {
+  string folder = 1;
+  repeated string names = 2;
+  uint32 version = 3;
+}
+
+// What the bootstrap seed receives: one written record per folder.
+message ConfigServiceSeeded {
+  repeated ConfigFolderWritten folders = 1;
+}
+
+// The unauthenticated liveness answer: proves this store's Worker runs, and
+// echoes a caller's nonce so a cached answer cannot pass for a live one.
+message ConfigServiceHealth {
+  string service = 1;
+  string store_id = 2;
+  string nonce = 3;
+}
+
+// One audit entry: who, what, which folder, which names. Never a value.
+message ConfigAuditEntry {
+  string at = 1;
+  // "bootstrap" | "vercel-relay" | "github-deploy" | "owner".
+  string principal = 2;
+  // "seed" | "write" | "denied".
+  string action = 3;
+  string folder = 4;
+  repeated string names = 5;
+}
+
+message ConfigAuditLog {
+  repeated ConfigAuditEntry entries = 1;
+}
+
+// The error envelope. The message names what failed in HoBo's words, never
+// a request body, a token or a value.
+message ConfigServiceError {
+  string code = 1;
+  string message = 2;
+}

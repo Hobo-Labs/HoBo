@@ -290,6 +290,8 @@ function parseCiArgs(args: readonly string[]) {
 			"vercel-team-slug": { type: "string" },
 			"vercel-project-id": { type: "string" },
 			"allow-designed": { type: "boolean" },
+			offer: { type: "string" },
+			"experiment-worker": { type: "boolean" },
 		},
 	});
 }

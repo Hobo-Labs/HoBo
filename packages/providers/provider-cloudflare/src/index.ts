@@ -150,6 +150,14 @@ export {
 	temporaryAccountProvisionedEvent,
 } from "./temporary-account.js";
 export {
+	type DurableObjectWorkerUpload,
+	MAX_WORKER_UPLOAD_BYTES,
+	type TemporaryWorkerDeployment,
+	type TemporaryWorkerModule,
+	uploadTemporaryAccountWorker,
+	workerUploadBody,
+} from "./temporary-account-worker.js";
+export {
 	assertManagementAuthorized,
 	type ClaimCompletedEvent,
 	type ClaimCompletion,
@@ -180,6 +188,7 @@ export {
 	depositOrFailClosed,
 	type OneTimeActionVaultPort,
 	SENSITIVE_ACTION_KINDS,
+	type SecretCustodyLendingPort,
 	type SecretCustodyPort,
 	type SecretDeposit,
 	type SensitiveActionDescriptor,
@@ -233,6 +242,7 @@ export {
 	solvePreviewChallenge,
 	verifyPreviewChallengeSolution,
 } from "./temporary-pow.js";
+export { solvePreviewChallengeOffThread } from "./temporary-pow-thread.js";
 export {
 	CF_API_BASE,
 	CF_PRIVACY_URL,

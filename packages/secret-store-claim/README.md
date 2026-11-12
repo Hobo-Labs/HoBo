@@ -12,7 +12,7 @@ secrets or variables.
 | # | Kind | Agent auth | Owner's claim | Relay binding |
 |---|---|---|---|---|
 | 1 | `auth-md` | anonymous registration through [`@hobo/auth-md`](../auth-md/README.md) | the store's claim page | designed |
-| 2 | `cloudflare-temporary` | a Cloudflare temporary account through [`@hobo/provider-cloudflare`](../providers/provider-cloudflare) | Cloudflare's claim URL, within 60 minutes | designed |
+| 2 | `cloudflare-temporary` (**experiment, opt-in only**) | a Cloudflare temporary account through [`@hobo/provider-cloudflare`](../providers/provider-cloudflare), optionally holding [`@hobo/config-service-worker`](../config-service-worker/README.md) | Cloudflare's claim URL, within 60 minutes | designed |
 | 3 | `infisical-self-hosted` | the self-hosted admin bootstrap through [`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md) | a sealed sign-in; finalize revokes HoBo | built |
 | 4 | `infisical-cloud-attach` | none (attach-only) | the owner's own `infisical login` | built |
 
@@ -31,7 +31,16 @@ with its reason.
 - `claim.ts`: the claim bundle (`@hobo/claims`), one-time action sealing
   scoped the way `hobo claim open` redeems.
 - `auth-md.ts`: `probeAuthMdStore`, `provisionAuthMdStore`.
-- `cloudflare.ts`: `provisionCloudflareTemporaryStore`.
+- `cloudflare.ts`: the Cloudflare experiment
+  ([ADR-0179 amendment](../../docs/design/adr/hosted-relay-stateless.md#the-cloudflare-experiment)),
+  which proves HoBo can obtain a valid claim link and is not the relay's
+  store: `provisionCloudflareTemporaryStore` (consent, proof of work on a
+  worker thread, account, optionally the config-service Worker uploaded,
+  health-checked and seeded once, the claim link sealed, the token destroyed
+  on every path) and `verifyCloudflareTemporaryClaim` (Cloudflare documents
+  no claim status, so finalize passes only when the experiment's Worker still
+  answers after the deadline). `selectSecretStore` reaches it only by name
+  (`only`, `--offer cloudflare-temporary`).
 - `infisical.ts`: `relayStoreLayout`, `provisionSelfHostedInfisical`,
   `verifySelfHostedInfisicalClaim`, `attachInfisicalCloud`.
 
@@ -61,6 +70,9 @@ binding carries one; the tests assert it. The owner reveals their action with
   through Infisical), verified by the real provisioning against a local
   Infisical stand-in. Infisical's admin API is pinned in
   `@hobo/adapter-infisical`'s `infisical-admin.pact.json`.
+- [`contracts/pacts/cloudflare-provisioning.pact.json`](contracts/pacts/cloudflare-provisioning.pact.json):
+  the experiment's requests to Cloudflare (challenge, account after consent,
+  Worker upload with the account's token, route, subdomain), consumer only.
 
 ## Parse, don't validate
 

@@ -63,6 +63,12 @@ export function selectSecretStore(input: {
 	readonly evidence: readonly ParsedSecretStoreEvidence[];
 	/** Route to a store the relay cannot read yet (tests, previews of the design). */
 	readonly allowDesigned?: boolean;
+	/**
+	 * Route only to this offer, by name: an explicit opt-in that lifts the
+	 * runtime-binding gate for it alone (the Cloudflare experiment). Its
+	 * evidence gates still hold.
+	 */
+	readonly only?: SecretStoreKind;
 	readonly now: Date;
 }): SecretStoreRoute {
 	const preferences = new Set(input.offers.map((offer) => offer.preference));
@@ -80,9 +86,16 @@ export function selectSecretStore(input: {
 	for (const offer of ordered) {
 		const seen = input.evidence.find((entry) => entry.kind === offer.kind);
 		let reason: string | undefined;
-		if (seen === undefined) reason = "not probed by this deploy";
+		const named = input.only === offer.kind;
+		if (input.only !== undefined && !named)
+			reason = `not the offer named (--offer ${input.only})`;
+		else if (seen === undefined) reason = "not probed by this deploy";
 		else if (!seen.available) reason = seen.detail;
-		else if (offer.runtimeBinding !== "built" && input.allowDesigned !== true)
+		else if (
+			offer.runtimeBinding !== "built" &&
+			input.allowDesigned !== true &&
+			!named
+		)
 			reason =
 				"the relay cannot read this store yet (runtime binding designed, not built)";
 		if (reason !== undefined) {

@@ -37,10 +37,16 @@ export {
 	secretStoreClaimItem,
 } from "./claim.js";
 export {
+	CLOUDFLARE_DELETION_GRACE_MS,
 	CLOUDFLARE_PROVIDER_ID,
 	type CloudflareStoreReceipt,
+	type CloudflareWorkerExperiment,
+	type CloudflareWorkerOutcome,
 	provisionCloudflareTemporaryStore,
+	verifyCloudflareTemporaryClaim,
 } from "./cloudflare.js";
+// The experiment's Worker build, so callers need no second import edge.
+export { configServiceWorkerModules } from "@hobo/config-service-worker";
 export {
 	SECRET_STORE_ERROR_CODES,
 	SecretStoreError,

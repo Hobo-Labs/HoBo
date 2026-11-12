@@ -411,6 +411,8 @@ Secret store options (hobo ci secret-store plan|provision; ADR-0179 amendment):
   --vercel-team-slug <slug>   Vercel team slug (the OIDC issuer's path)
   --vercel-project-id <id>    The relay's Vercel project id (prj_...)
   --allow-designed            Route to a store the relay cannot read yet
+  --offer <kind>              Route to this offer only (cloudflare-temporary: the claim-link experiment)
+  --experiment-worker         With cloudflare-temporary: also upload HoBo's config-service Worker
   Writes deploy/secret-store.binding.json (coordinates only); never prints a claim link.
 
 Run options:

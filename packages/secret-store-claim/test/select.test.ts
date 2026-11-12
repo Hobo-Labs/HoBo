@@ -105,6 +105,46 @@ describe("routing secrets.config-service/v1 at deploy time", () => {
 		expect(route.selection.selectedKind).toBe("cloudflare-temporary");
 	});
 
+	it("routes to the Cloudflare experiment only when it is named, and still needs its evidence", () => {
+		const all = [
+			evidence("auth-md", true),
+			evidence("cloudflare-temporary", true),
+			evidence("infisical-self-hosted", true),
+		];
+		const route = selectSecretStore({
+			offers: DEFAULT_SECRET_STORE_OFFERS,
+			evidence: all,
+			only: "cloudflare-temporary",
+			now: NOW,
+		});
+		expect(route.selection.selectedKind).toBe("cloudflare-temporary");
+		expect(route.selection.skipped.map((skip) => skip.reason)).toEqual([
+			"not the offer named (--offer cloudflare-temporary)",
+		]);
+		// Not named: the relay's default route never lands on it.
+		expect(
+			selectSecretStore({
+				offers: DEFAULT_SECRET_STORE_OFFERS,
+				evidence: all,
+				now: NOW,
+			}).selection.selectedKind,
+		).toBe("infisical-self-hosted");
+		expect(() =>
+			selectSecretStore({
+				offers: DEFAULT_SECRET_STORE_OFFERS,
+				evidence: [
+					evidence(
+						"cloudflare-temporary",
+						false,
+						"not an interactive terminal",
+					),
+				],
+				only: "cloudflare-temporary",
+				now: NOW,
+			}),
+		).toThrow(/not an interactive terminal/u);
+	});
+
 	it("falls to attach-only when no fleet host is free", () => {
 		const route = selectSecretStore({
 			offers: DEFAULT_SECRET_STORE_OFFERS,

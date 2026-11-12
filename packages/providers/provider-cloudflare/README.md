@@ -59,6 +59,10 @@ is unchanged). It runs entirely server-side through an **injected**
    `CONSENT_REQUIRED` and no request is sent.
 2. **Bounded proof of work.** The challenge is refused above `k * g = 64,000,000`
    (Cloudflare's own bound) or a lower caller budget (`WORK_BUDGET_EXCEEDED`).
+   `solveChallenge` picks the solver: in-thread `solvePreviewChallenge` by
+   default, or `solvePreviewChallengeOffThread`, the same ladder on a
+   `worker_threads` thread so a CLI or server stays responsive (pinned to the
+   same checkpoints by `test/temporary-account-worker.test.ts`).
 3. **Custody.** `account.apiToken` goes straight into a `SecretCustodyPort` and
    is returned only as a `SecretRef`. No returned value, event, or receipt
    contains it; a custody failure is `SECRET_CUSTODY_UNAVAILABLE`.
@@ -72,6 +76,19 @@ is unchanged). It runs entirely server-side through an **injected**
    window is carried alongside as documentation
    (`documentedClaimWindowMinutes` + source URL + checked date), never as the
    authority for an expiry decision.
+
+Before the claim, `uploadTemporaryAccountWorker()` can deploy a Worker with a
+Durable Object into the account, over the same transport and with the
+account's own token lent by custody (`SecretCustodyLendingPort`) for three
+calls: one multipart `PUT /accounts/{id}/workers/scripts/{name}` whose
+metadata declares the `durable_object_namespace` binding, plain-text
+variables and the migration `{ new_tag, new_sqlite_classes: [class] }`
+(SQLite, the only Durable Object backend of the Free plan), then the
+script's workers.dev route and the account's subdomain. Workers and Durable
+Objects are both gated through the allowlist first. The binding and
+migration fields are the Workers upload metadata, not observed against a
+temporary token; `@hobo/secret-store-claim`'s Cloudflare experiment is the
+first caller ([ADR-0179 amendment](../../../docs/design/adr/hosted-relay-stateless.md#the-cloudflare-experiment)).
 
 After the claim, `completeTemporaryAccountClaim()` verifies ownership through an
 independent `ClaimVerificationPort`, destroys the residual token and claim

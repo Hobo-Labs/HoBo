@@ -11,9 +11,11 @@
  *    through the store's own claim page. Generic: discovery picks up a secret
  *    manager the day it publishes auth.md. On 2026-11-12 none of Infisical,
  *    Doppler, 1Password, Bitwarden or Akeyless did.
- * 2. `cloudflare-temporary` — HoBo's config-service Worker on a Cloudflare
- *    temporary account: agent-created, claimed by the owner through
- *    Cloudflare's claim URL within 60 minutes.
+ * 2. `cloudflare-temporary` — a Cloudflare temporary account, optionally
+ *    holding HoBo's config-service Worker: agent-created, claimed by the
+ *    owner through Cloudflare's claim URL within 60 minutes. An experiment
+ *    that proves the claim link (ADR-0179 amendment): its runtime binding
+ *    stays "designed", so routing passes it over unless named.
  * 3. `infisical-self-hosted` — open-source Infisical on the owner's compute
  *    fleet, bootstrapped by HoBo, handed over through a HoBo sealed claim.
  * 4. `infisical-cloud-attach` — an Infisical Cloud organization the owner
@@ -145,7 +147,7 @@ export const DEFAULT_SECRET_STORE_OFFERS: readonly ParsedSecretStoreOffer[] =
 				runtimeBinding: "designed",
 				cost: "No charge on the temporary account; after the claim, the owner's Cloudflare plan (Workers, KV and Durable Objects free allowances).",
 				availability:
-					"Account creation is rate-limited; an account not claimed within 60 minutes is deleted with everything in it. Secret bindings are not listed as supported on temporary accounts.",
+					"An experiment, opt-in only (--offer cloudflare-temporary): proves HoBo can obtain a valid claim link, not the relay's store. Account creation is rate-limited; an account not claimed within 60 minutes is deleted with everything in it.",
 				sourceUrl:
 					"https://developers.cloudflare.com/workers/platform/claim-deployments/",
 				checkedAt: READ,

@@ -1,0 +1,36 @@
+{
+	"name": "@hobo/config-service-worker",
+	"version": "0.0.1",
+	"license": "MIT",
+	"private": true,
+	"description": "HoBo's config-service Worker: the hosted relay's config document and secrets in a Durable Object on a Cloudflare account the owner claims, read with the relay's Vercel OIDC token, written with GitHub Actions OIDC, seeded once with a single-use bootstrap credential (ADR-0179 amendment).",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"miniflare": "4.20260722.0",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/ contracts/",
+		"test:contract:provider": "vitest run contracts/provider",
+		"test:unit": "vitest run test/"
+	}
+}

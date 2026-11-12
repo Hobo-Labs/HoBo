@@ -51,6 +51,7 @@ import {
 } from "./temporary-account-resources.js";
 import {
 	type PreviewChallenge,
+	type PreviewChallengeSolution,
 	solvePreviewChallenge,
 } from "./temporary-pow.js";
 
@@ -87,7 +88,7 @@ export const MAX_REQUEST_TIMEOUT_MS = 60_000;
 /* -------------------------------------------------------------------------- */
 
 export type TemporaryAccountHttpRequest = {
-	readonly method: "GET" | "POST";
+	readonly method: "GET" | "POST" | "PUT";
 	readonly url: string;
 	readonly headers: Readonly<Record<string, string>>;
 	readonly body?: string;
@@ -156,7 +157,7 @@ function retryAfterSeconds(
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
-async function callCloudflare(
+export async function callCloudflare(
 	transport: TemporaryAccountTransportPort,
 	request: Omit<
 		TemporaryAccountHttpRequest,
@@ -505,6 +506,10 @@ export type ProvisionTemporaryAccountYardInput = {
 	/** Lower the accepted proof-of-work ceiling below Cloudflare's own bound. */
 	readonly maxProofOfWork?: number;
 	readonly requestTimeoutMs?: number;
+	/** Solves the proof of work; in-thread by default. `solvePreviewChallengeOffThread` keeps the caller responsive. */
+	readonly solveChallenge?: (
+		challenge: PreviewChallenge,
+	) => Promise<PreviewChallengeSolution>;
 };
 
 async function persistConsentFirst(
@@ -640,7 +645,9 @@ export async function provisionTemporaryAccountYard(
 			{ reason: "PROOF_OF_WORK_TOO_LARGE" },
 		);
 	}
-	const solved = await solvePreviewChallenge(challenge);
+	const solved = await (input.solveChallenge ?? solvePreviewChallenge)(
+		challenge,
+	);
 
 	await input.registry?.putAttempt({
 		idempotencyKey,
@@ -687,7 +694,11 @@ export type TemporaryAccountObservation =
 
 export type ObserveAndAdoptInput = Omit<
 	ProvisionTemporaryAccountYardInput,
-	"consent" | "consentLedger" | "maxProofOfWork" | "requestTimeoutMs"
+	| "consent"
+	| "consentLedger"
+	| "maxProofOfWork"
+	| "requestTimeoutMs"
+	| "solveChallenge"
 > & {
 	readonly idempotencyKey: string;
 	readonly registry: TemporaryAccountRegistryPort;

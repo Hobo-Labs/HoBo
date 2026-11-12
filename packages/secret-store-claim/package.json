@@ -20,6 +20,7 @@
 		"@hobo/adapter-infisical": "workspace:*",
 		"@hobo/auth-md": "workspace:*",
 		"@hobo/claims": "workspace:*",
+		"@hobo/config-service-worker": "workspace:*",
 		"@hobo/provider-cloudflare": "workspace:*"
 	},
 	"devDependencies": {

@@ -1,0 +1,19 @@
+{
+	"storeId": "hobo0fixture0store1",
+	"relay": {
+		"issuer": "https://oidc.vercel.com",
+		"audience": "https://vercel.com/hobo-team",
+		"subject": "owner:hobo-team:project:hobo-ci:environment:production",
+		"ownerId": "team_fixture",
+		"projectId": "prj_fixture",
+		"environment": "production"
+	},
+	"deploy": {
+		"issuer": "https://token.actions.githubusercontent.com",
+		"audience": "urn:hobo:config-service:hobo0fixture0store1",
+		"repository": "Hobo-Labs/HoBo",
+		"ref": "refs/heads/main"
+	},
+	"bootstrapSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+	"bootstrapExpiresAt": "2026-11-12T11:00:00.000Z"
+}

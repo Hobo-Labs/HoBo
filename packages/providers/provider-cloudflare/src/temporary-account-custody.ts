@@ -27,6 +27,15 @@ export type SecretCustodyPort = {
 	has(ref: SecretRef): Promise<boolean>;
 };
 
+/**
+ * Lends a deposited value to one call and takes it back: the only way a
+ * temporary token is used (the Worker upload), never returned or stored by
+ * the caller. Throws `SECRET_CUSTODY_UNAVAILABLE` once the value is destroyed.
+ */
+export type SecretCustodyLendingPort = {
+	lend<T>(ref: SecretRef, use: (value: string) => Promise<T>): Promise<T>;
+};
+
 const CUSTODY_AUTHORITY = "cloudflare-temporary";
 const SLUG = /^[A-Za-z0-9._~-]{1,64}$/u;
 
@@ -39,11 +48,22 @@ const SLUG = /^[A-Za-z0-9._~-]{1,64}$/u;
  */
 export function createInMemorySecretCustody(options?: {
 	readonly nextId?: () => string;
-}): SecretCustodyPort & { readonly size: number } {
+}): SecretCustodyPort & SecretCustodyLendingPort & { readonly size: number } {
 	const values = new Map<string, string>();
 	const nextId = options?.nextId ?? (() => randomUUID());
 
-	const port: SecretCustodyPort & { readonly size: number } = {
+	const port: SecretCustodyPort &
+		SecretCustodyLendingPort & { readonly size: number } = {
+		async lend(ref, use) {
+			const value = values.get(ref);
+			if (value === undefined)
+				throw new TemporaryAccountError(
+					"SECRET_CUSTODY_UNAVAILABLE",
+					"the custody reference holds no value (never deposited, or destroyed)",
+					{ reason: "NO_VALUE" },
+				);
+			return use(value);
+		},
 		async deposit(input) {
 			if (!SLUG.test(input.name)) {
 				throw new TemporaryAccountError(

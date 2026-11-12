@@ -41,11 +41,11 @@ takes it by claim.**
 
    It names the offer HoBo chose and why each preferred one was passed over.
    Preference: (1) any store that publishes auth.md with anonymous agent
-   registration; (2) HoBo's config-service Worker on a Cloudflare temporary
-   account; (3) HoBo-hosted Infisical on the owner's compute fleet; (4) an
-   Infisical Cloud organization the owner already has (attach-only). Offers
-   whose runtime binding is only designed are passed over unless
-   `--allow-designed` is given; say so plainly when that happens.
+   registration; (2) a Cloudflare temporary account (an experiment, below,
+   never the relay's store); (3) HoBo-hosted Infisical on the owner's compute
+   fleet; (4) an Infisical Cloud organization the owner already has
+   (attach-only). Offers whose runtime binding is only designed are passed
+   over unless `--allow-designed` is given; say so plainly when that happens.
 
 2. **Tell the owner what is about to happen, once, in plain words**: which
    store, what it costs (`offers[].cost`), what its availability means for the
@@ -94,6 +94,30 @@ takes it by claim.**
    reads no repository variable. Then `hobo ci deploy --target production`
    (or the workflow on `main`) reads the binding for the team and the store's
    coordinates.
+
+## The Cloudflare claim-link experiment (only when the owner asks for it)
+
+Not part of a relay deployment: the relay keeps its Vercel project and
+Infisical. It proves HoBo can hand the owner a valid Cloudflare claim link
+(ADR-0179 amendment, "The Cloudflare experiment"). The owner runs it once,
+in their own interactive terminal, because they must type the acceptance:
+
+```sh
+hobo ci secret-store provision --offer cloudflare-temporary \
+  [--experiment-worker --team <team_id> --vercel-team-slug <slug> --vercel-project-id <prj_id>]
+```
+
+Before they run it, tell them: it creates a real temporary Cloudflare
+account; they must type `accept` for Cloudflare's Terms of Service and
+Privacy Policy (you never answer that prompt); then **within 60 minutes**
+they run `hobo claim open secret-store` and complete Cloudflare's claim page,
+or Cloudflare deletes the account and everything in it. Relay
+`data.experiment.claimDeadline` and, with `--experiment-worker`,
+`data.experiment.worker` (serving, or the stage and code where it failed;
+the claim link is handed over either way). `hobo claim finalize secret-store`
+verifies only with the Worker, and only from 15 minutes after the deadline;
+without it, finalize refuses (Cloudflare documents no claim status) and the
+owner confirms in the dashboard.
 
 ## The other claim steps of a relay deployment
 

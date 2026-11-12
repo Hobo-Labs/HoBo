@@ -214,3 +214,152 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 		});
 	});
 });
+
+describe("the Cloudflare claim-link experiment (--offer cloudflare-temporary)", () => {
+	// Obviously fake: nothing here reaches Cloudflare.
+	const FAKE_TOKEN = "FAKE-cf-temporary-api-token-DO-NOT-USE-0000000000";
+	const FAKE_CLAIM_URL =
+		"https://dash.cloudflare.com/claim-preview?claimToken=FAKE-CLAIM-TOKEN-0000000000";
+
+	function cloudflareApi() {
+		const urls: string[] = [];
+		const send: typeof fetch = async (input) => {
+			const url = String(input);
+			urls.push(url);
+			const result = url.endsWith("/previews/challenge")
+				? {
+						challengeToken: "FAKE-CHALLENGE-TOKEN",
+						seed: Buffer.alloc(32, 7).toString("base64url"),
+						k: 2,
+						g: 2,
+					}
+				: {
+						account: {
+							id: "fake0000000040008000cloudflareacct",
+							apiToken: FAKE_TOKEN,
+							expiresAt: new Date(NOW + 3_600_000).toISOString(),
+						},
+						claim: {
+							url: FAKE_CLAIM_URL,
+							expiresAt: new Date(NOW + 3_600_000).toISOString(),
+						},
+					};
+			return Response.json({ success: true, result, errors: [], messages: [] });
+		};
+		return { urls, send };
+	}
+
+	it("is never chosen by default, even in an interactive terminal", async () => {
+		const cwd = await tempDir("hobo-secret-store-");
+		const result = await runCiSecretStore({
+			subcommand: "plan",
+			cwd,
+			values: { "fleet-host": stub.url },
+			env: {},
+			interactive: true,
+			prompt: never,
+			now: () => NOW,
+		});
+		// SAFETY: a successful plan's data is the shape runCiSecretStore builds.
+		const data = result.data as { selection: { selected: string } };
+		expect(data.selection.selected).toBe("infisical-self-hosted");
+	});
+
+	it("creates nothing unless the owner types the word", async () => {
+		const runtime = createDefaultYardRuntime();
+		// SAFETY: the default Yard runtime's store is the runtime-local SQLite one.
+		stores.push(runtime.store as RuntimeLocalEventStore);
+		const api = cloudflareApi();
+		const result = await runCiSecretStore({
+			subcommand: "provision",
+			cwd: await tempDir("hobo-secret-store-"),
+			values: {
+				offer: "cloudflare-temporary",
+				home: await tempDir("hobo-home-"),
+			},
+			env: {},
+			fetch: api.send,
+			runtime,
+			interactive: true,
+			prompt: async () => "y",
+			now: () => NOW,
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "SECRET_STORE_CONSENT_REQUIRED",
+		});
+		expect(api.urls).toHaveLength(0);
+	});
+
+	it("seals a claim link for the owner, writes no binding, and finalize says why it cannot verify", async () => {
+		const runtime = createDefaultYardRuntime();
+		// SAFETY: the default Yard runtime's store is the runtime-local SQLite one.
+		stores.push(runtime.store as RuntimeLocalEventStore);
+		const cwd = await tempDir("hobo-secret-store-");
+		const home = await tempDir("hobo-home-");
+		const api = cloudflareApi();
+		let asked = "";
+		const result = await runCiSecretStore({
+			subcommand: "provision",
+			cwd,
+			values: { offer: "cloudflare-temporary", home },
+			env: {},
+			fetch: api.send,
+			runtime,
+			interactive: true,
+			prompt: async (question) => {
+				asked = question;
+				return " Accept ";
+			},
+			now: () => NOW,
+		});
+		expect(asked).toContain("https://www.cloudflare.com/terms/");
+		expect(asked).toContain("60 minutes");
+		expect(asked).toContain("not the relay's secret store");
+		expect(result).toMatchObject({ ok: true, status: "claim_pending" });
+		expect(api.urls).toEqual([
+			"https://api.cloudflare.com/client/v4/provisioning/previews/challenge",
+			"https://api.cloudflare.com/client/v4/provisioning/previews",
+		]);
+		const visible = JSON.stringify(result);
+		expect(visible).not.toContain("FAKE-CLAIM-TOKEN");
+		expect(visible).not.toContain(FAKE_TOKEN);
+		expect(
+			existsSync(path.join(cwd, "deploy", "secret-store.binding.json")),
+		).toBe(false);
+
+		const ceremony = (subcommand: "open" | "finalize") =>
+			runClaimCeremony({
+				subcommand,
+				args: ["secret-store"],
+				flags: { home },
+				// SAFETY: the ceremony reads cwd and projectDir only, as claim-ceremony-verbs.test.ts does.
+				context: { cwd, projectDir: cwd, identity: null, clients: {} } as never,
+				deps: {
+					runtime,
+					env: {},
+					now: () => NOW + 60_000,
+					verifyOwnership: secretStoreOwnershipVerifier({ env: {} }),
+				},
+			});
+		// SAFETY: a successful open returns the redeemed action as data.actionUrl.
+		const opened = (await ceremony("open")) as { data: { actionUrl: string } };
+		expect(opened.data.actionUrl).toBe(FAKE_CLAIM_URL);
+		const finalized = await ceremony("finalize");
+		expect(finalized.ok).toBe(false);
+		expect(JSON.stringify(finalized)).toContain("no claim-status endpoint");
+	});
+
+	it("takes --experiment-worker only with the Cloudflare offer", async () => {
+		const result = await runCiSecretStore({
+			subcommand: "plan",
+			cwd: await tempDir("hobo-secret-store-"),
+			values: { "experiment-worker": true },
+			env: {},
+			interactive: true,
+			prompt: never,
+			now: () => NOW,
+		});
+		expect(result).toMatchObject({ ok: false, status: "usage" });
+	});
+});

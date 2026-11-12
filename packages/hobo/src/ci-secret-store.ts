@@ -41,7 +41,11 @@ import {
 } from "@hobo/provider-cloudflare";
 import {
 	attachInfisicalCloud,
+	CLOUDFLARE_DELETION_GRACE_MS,
+	CLOUDFLARE_PROVIDER_ID,
+	type CloudflareStoreReceipt,
 	claimScopeFor,
+	configServiceWorkerModules,
 	DEFAULT_SECRET_STORE_OFFERS,
 	formatSecretStoreBinding,
 	type ParsedSecretStoreBinding,
@@ -56,9 +60,12 @@ import {
 	SECRET_STORE_BINDING_FILE,
 	SECRET_STORE_CLAIM_ITEM,
 	SELF_HOSTED_PROVIDER_ID,
+	parseSecretStoreKind,
 	SecretStoreError,
 	SecretStoreEvidenceSchema,
+	type SecretStoreKind,
 	selectSecretStore,
+	verifyCloudflareTemporaryClaim,
 	verifySelfHostedInfisicalClaim,
 } from "@hobo/secret-store-claim";
 
@@ -78,6 +85,8 @@ export const CI_SECRET_STORE_OPTIONS = [
 	"vercel-project-id",
 	"repo",
 	"allow-designed",
+	"offer",
+	"experiment-worker",
 	"home",
 ] as const;
 
@@ -89,6 +98,8 @@ export const SECRET_STORE_ONLY_OPTIONS = [
 	"vercel-team-slug",
 	"vercel-project-id",
 	"allow-designed",
+	"offer",
+	"experiment-worker",
 ] as const;
 
 // The settings the relay's config-service binding asks the deploy for, and
@@ -356,7 +367,9 @@ function claimSteps(kind: string, cwd: string): readonly string[] {
 	switch (kind) {
 		case "cloudflare-temporary":
 			return [
-				`Within 60 minutes: run \`hobo claim open ${SECRET_STORE_CLAIM_ITEM} ${where}\` in your own terminal and open the Cloudflare claim link it prints; sign in or sign up, and claim the account. Cloudflare deletes an unclaimed account.`,
+				`Within 60 minutes: run \`hobo claim open ${SECRET_STORE_CLAIM_ITEM} ${where}\` in your own terminal and open the Cloudflare claim link it prints; sign in or sign up, and claim the account. Cloudflare deletes an unclaimed account and everything in it at the deadline.`,
+				`This is the claim-link experiment, not the relay's store: the relay keeps Infisical, and nothing about its deployment changed.`,
+				`With --experiment-worker, run \`hobo claim finalize ${SECRET_STORE_CLAIM_ITEM} ${where}\` no sooner than ${CLOUDFLARE_DELETION_GRACE_MS / 60_000} minutes after the deadline: Cloudflare offers no claim status, so HoBo verifies by the Worker still answering once an unclaimed account would be gone.`,
 			];
 		case "auth-md":
 			return [
@@ -383,6 +396,22 @@ export async function runCiSecretStore(
 			"Use hobo ci secret-store plan or hobo ci secret-store provision.",
 		);
 	const now = new Date(input.now?.() ?? Date.now());
+	const named = text(input.values, "offer");
+	let only: SecretStoreKind | undefined;
+	try {
+		only = named === undefined ? undefined : parseSecretStoreKind(named);
+	} catch {
+		return usage(
+			`--offer is one of ${DEFAULT_SECRET_STORE_OFFERS.map((offer) => offer.kind).join(", ")}.`,
+		);
+	}
+	if (
+		input.values["experiment-worker"] === true &&
+		only !== "cloudflare-temporary"
+	)
+		return usage(
+			"--experiment-worker applies to --offer cloudflare-temporary only.",
+		);
 	const gathered = await gatherEvidence(input);
 	let route: ReturnType<typeof selectSecretStore>;
 	try {
@@ -390,6 +419,7 @@ export async function runCiSecretStore(
 			offers: DEFAULT_SECRET_STORE_OFFERS,
 			evidence: gathered.evidence,
 			allowDesigned: input.values["allow-designed"] === true,
+			...(only !== undefined ? { only } : undefined),
 			now,
 		});
 	} catch (error) {
@@ -448,6 +478,7 @@ export async function runCiSecretStore(
 	try {
 		let bundle: ClaimBundle | undefined;
 		let binding: ParsedSecretStoreBinding | undefined;
+		let experiment: CloudflareStoreReceipt | undefined;
 		if (kind === "infisical-self-hosted" || kind === "infisical-cloud-attach") {
 			const teamId = text(input.values, "team");
 			const teamSlug = text(input.values, "vercel-team-slug");
@@ -514,28 +545,80 @@ export async function runCiSecretStore(
 				});
 			}
 		} else if (kind === "cloudflare-temporary") {
+			const withWorker = input.values["experiment-worker"] === true;
+			const teamId = text(input.values, "team");
+			const teamSlug = text(input.values, "vercel-team-slug");
+			const projectId = text(input.values, "vercel-project-id");
+			const yard = withWorker ? await loadRelayYard(input.cwd) : undefined;
+			const yardRepo = yard?.properties.repository;
+			const yardProject = yard?.properties.project;
+			const repository =
+				text(input.values, "repo") ??
+				(isJsonString(yardRepo) ? yardRepo : undefined);
+			if (
+				withWorker &&
+				(teamId === undefined ||
+					teamSlug === undefined ||
+					projectId === undefined ||
+					repository === undefined)
+			)
+				return usage(
+					"--experiment-worker needs --team <team_id>, --vercel-team-slug <slug>, --vercel-project-id <prj_id> and a repository (--repo or the Yard's): the Worker's binding names who may read and write it.",
+				);
+			// The owner types the word: a keypress is not acceptance of terms.
 			const answer = await input.prompt(
-				`HoBo will create a temporary Cloudflare account for the relay's secret store, which you claim within 60 minutes.\nCloudflare Terms of Service: ${CLOUDFLARE_TERMS_URL}\nCloudflare Privacy Policy: ${CLOUDFLARE_PRIVACY_URL}\nDo you accept both? [y/N] `,
+				[
+					"EXPERIMENT: HoBo will create a temporary Cloudflare account to prove it can hand you a claim link.",
+					"It is not the relay's secret store; the relay keeps Infisical and its Vercel project.",
+					withWorker
+						? "HoBo will also upload its config-service Worker (a Durable Object) into the account."
+						: "Nothing is deployed into the account.",
+					"You must claim it within 60 minutes or Cloudflare deletes it.",
+					`Cloudflare Terms of Service: ${CLOUDFLARE_TERMS_URL}`,
+					`Cloudflare Privacy Policy: ${CLOUDFLARE_PRIVACY_URL}`,
+					'To accept both, type "accept": ',
+				].join("\n"),
 			);
-			const accepted = /^y(es)?$/iu.test(answer.trim());
-			bundle = (
-				await provisionCloudflareTemporaryStore({
-					transport: fetchTemporaryAccountTransport(send),
-					consent: accepted
-						? {
-								subjectRef: `hobo-owner:${deploymentRef}`,
-								termsUrl: CLOUDFLARE_TERMS_URL,
-								privacyUrl: CLOUDFLARE_PRIVACY_URL,
-								acceptedAtMs: now.getTime(),
-								acceptanceMethod: "cli-confirmation",
-							}
-						: undefined,
-					deploymentRef,
-					store,
-					scope,
-					now,
-				})
-			).bundle;
+			const accepted = answer.trim().toLowerCase() === "accept";
+			const provisioned = await provisionCloudflareTemporaryStore({
+				transport: fetchTemporaryAccountTransport(send),
+				consent: accepted
+					? {
+							subjectRef: `hobo-owner:${deploymentRef}`,
+							termsUrl: CLOUDFLARE_TERMS_URL,
+							privacyUrl: CLOUDFLARE_PRIVACY_URL,
+							acceptedAtMs: now.getTime(),
+							acceptanceMethod: "cli-confirmation",
+						}
+					: undefined,
+				deploymentRef,
+				store,
+				scope,
+				now,
+				...(withWorker &&
+				teamId !== undefined &&
+				teamSlug !== undefined &&
+				projectId !== undefined &&
+				repository !== undefined
+					? {
+							worker: {
+								modules: await configServiceWorkerModules(),
+								binding: {
+									vercelTeamSlug: teamSlug,
+									vercelTeamId: teamId,
+									vercelProjectName: isJsonString(yardProject)
+										? yardProject
+										: "hobo-ci",
+									vercelProjectId: projectId,
+									repository,
+								},
+								fetch: send,
+							},
+						}
+					: undefined),
+			});
+			bundle = provisioned.bundle;
+			experiment = provisioned.receipt;
 		} else {
 			const discovery = gathered.discovered?.discovery;
 			const resource = discovery?.metadata.resource;
@@ -579,6 +662,13 @@ export async function runCiSecretStore(
 				written !== undefined
 					? `Wrote ${written} (coordinates only).`
 					: `The relay cannot read a ${kind} store yet; no binding was written.`,
+				...(experiment?.worker === undefined
+					? []
+					: [
+							experiment.worker.outcome === "serving"
+								? `The config-service Worker is serving at ${experiment.worker.origin} (store ${experiment.worker.storeId}), seeded empty.`
+								: `The config-service Worker experiment failed at ${experiment.worker.stage} (${experiment.worker.code}); the account and its claim link are still yours to claim.`,
+						]),
 				"Owner, next:",
 				...steps.map((step, index) => `  ${index + 1}. ${step}`),
 			].join("\n"),
@@ -606,6 +696,19 @@ export async function runCiSecretStore(
 									bundle.earliestDeadline !== undefined
 										? new Date(bundle.earliestDeadline).toISOString()
 										: null,
+							},
+						}
+					: undefined),
+				...(experiment !== undefined
+					? {
+							experiment: {
+								accountId: experiment.accountId,
+								claimDeadline: new Date(
+									experiment.claimDeadlineMs,
+								).toISOString(),
+								...(experiment.worker !== undefined
+									? { worker: { ...experiment.worker } }
+									: undefined),
 							},
 						}
 					: undefined),
@@ -637,6 +740,20 @@ export function secretStoreOwnershipVerifier(deps: {
 		readonly deploymentRef?: string;
 		readonly home?: string;
 	}): Promise<{ readonly verified: boolean; readonly evidenceRef: string }> => {
+		if (input.item.providerId === CLOUDFLARE_PROVIDER_ID) {
+			try {
+				return await verifyCloudflareTemporaryClaim({
+					verificationRef: input.item.verificationRef,
+					deadlineMs: input.item.deadline,
+					nowMs: input.nowMs,
+					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+				});
+			} catch (error) {
+				if (error instanceof SecretStoreError)
+					throw new ClaimError("CLAIM_NOT_VERIFIED", error.message);
+				throw error;
+			}
+		}
 		if (input.item.providerId !== SELF_HOSTED_PROVIDER_ID)
 			throw new ClaimError(
 				"CLAIM_NOT_VERIFIED",

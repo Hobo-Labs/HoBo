@@ -160,6 +160,10 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// amendment): a layer-3 package that composes the Infisical adapter, the
 	// Cloudflare provider and the auth.md and claim planes; `hobo` uses it.
 	"packages/secret-store-claim",
+	// HoBo's config-service Worker (ADR-0179 amendment, the Cloudflare
+	// experiment): a layer-3 package with no workspace runtime dependency;
+	// secret-store-claim uploads it.
+	"packages/config-service-worker",
 	"packages/core",
 	"packages/contract-harness",
 	// Test-only harness for code that reads hostile text, reached only from

@@ -410,7 +410,24 @@ hobo claim finalize secret-store
 | `--fleet-host <origin>` | A fresh Infisical the Yard placed on a compute fleet host; HoBo bootstraps it |
 | `--owner-email <address>` | The admin user a self-hosted store's claim hands over |
 | `--team`, `--vercel-team-slug`, `--vercel-project-id` | The Vercel team and project the relay's identity trusts (OIDC issuer, subject and pinned `owner_id`/`project_id`) |
-| `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare Worker, an auth.md store) |
+| `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare experiment, an auth.md store) |
+| `--offer <kind>` | Route to this offer only. `cloudflare-temporary` is the claim-link experiment ([ADR-0179 amendment](../../docs/design/adr/hosted-relay-stateless.md#the-cloudflare-experiment)): never chosen otherwise, never the relay's store |
+| `--experiment-worker` | With `--offer cloudflare-temporary` (and `--team`, `--vercel-team-slug`, `--vercel-project-id`, a repository): also upload HoBo's config-service Worker into the account before the owner claims it |
+
+The Cloudflare experiment, run once by the owner in their own interactive
+terminal:
+
+```sh
+hobo ci secret-store provision --offer cloudflare-temporary [--experiment-worker ...]
+# type "accept" at the Terms/Privacy prompt; then, within 60 minutes:
+hobo claim open secret-store     # prints Cloudflare's claim link, once
+```
+
+It writes no binding and changes nothing about the relay. `hobo claim
+finalize secret-store` can verify it only with `--experiment-worker`, and no
+sooner than 15 minutes after the claim deadline: Cloudflare documents no claim
+status, so the proof is the Worker still answering once an unclaimed account
+would have been deleted.
 
 `plan` contacts nothing but the `--auth-md` candidates. `provision` writes
 `deploy/secret-store.binding.json` (coordinates only) when the relay can read

@@ -1,0 +1,117 @@
+{
+	"consumer": { "name": "HoboSecretStoreClaim" },
+	"provider": { "name": "CloudflareTemporaryAccountsApi" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"documentation": "The Cloudflare experiment (ADR-0179 amendment): HoBo creates a temporary account through the documented REST flow and, with the Worker experiment, uploads its config-service Worker with a Durable Object binding and a SQLite-class migration. Shapes from https://developers.cloudflare.com/workers/platform/claim-deployments/ (read 2026-11-12) and the Workers script-upload metadata; not verified against Cloudflare (consumer only). Values in braces are fixtures, never real tokens or claim links. The Worker upload is multipart, so its body is pinned by provider-cloudflare's temporary-account-worker test, not here."
+	},
+	"interactions": [
+		{
+			"description": "request a proof-of-work challenge",
+			"request": {
+				"method": "POST",
+				"path": "/client/v4/provisioning/previews/challenge",
+				"headers": { "content-type": "application/json" },
+				"body": {}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"errors": [],
+					"messages": [],
+					"result": {
+						"challengeToken": "{challenge-token}",
+						"seed": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+						"k": 2,
+						"g": 2
+					}
+				}
+			}
+		},
+		{
+			"description": "create the temporary account, only after the owner accepted the Terms and the Privacy Policy",
+			"request": {
+				"method": "POST",
+				"path": "/client/v4/provisioning/previews",
+				"headers": { "content-type": "application/json" },
+				"body": {
+					"termsOfService": "https://www.cloudflare.com/terms/",
+					"privacyPolicy": "https://www.cloudflare.com/privacypolicy/",
+					"acceptTermsOfService": "yes",
+					"challengeToken": "{challenge-token}"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"errors": [],
+					"messages": [],
+					"result": {
+						"account": {
+							"id": "pactaccount0000000000000000000001",
+							"name": "temporary",
+							"type": "standard",
+							"apiToken": "{temporary-account-api-token}",
+							"tokenId": "{token-id}",
+							"expiresAt": "2099-01-01T01:00:00.000Z"
+						},
+						"claim": {
+							"token": "{claim-token}",
+							"url": "https://dash.cloudflare.com/claim-preview?claimToken={claim-token}",
+							"expiresAt": "2099-01-01T01:00:00.000Z"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "upload the config-service Worker with the account's own token (Durable Object binding and migration in its metadata part)",
+			"request": {
+				"method": "PUT",
+				"path": "/client/v4/accounts/pactaccount0000000000000000000001/workers/scripts/hobo-config-pactstore000",
+				"headers": { "authorization": "Bearer {temporary-account-api-token}" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"errors": [],
+					"messages": [],
+					"result": { "id": "hobo-config-pactstore000" }
+				}
+			}
+		},
+		{
+			"description": "enable the script's workers.dev route",
+			"request": {
+				"method": "POST",
+				"path": "/client/v4/accounts/pactaccount0000000000000000000001/workers/scripts/hobo-config-pactstore000/subdomain",
+				"headers": { "authorization": "Bearer {temporary-account-api-token}" },
+				"body": { "enabled": true }
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true, "errors": [], "messages": [], "result": { "enabled": true } }
+			}
+		},
+		{
+			"description": "read the account's workers.dev subdomain",
+			"request": {
+				"method": "GET",
+				"path": "/client/v4/accounts/pactaccount0000000000000000000001/workers/subdomain",
+				"headers": { "authorization": "Bearer {temporary-account-api-token}" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"errors": [],
+					"messages": [],
+					"result": { "subdomain": "pact-sub" }
+				}
+			}
+		}
+	]
+}

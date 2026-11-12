@@ -62,15 +62,19 @@ hobo claim finalize secret-store
 | Preference | Offer | How the owner takes it | Relay can read it |
 |---|---|---|---|
 | 1 | Any store that publishes auth.md with anonymous agent registration | the store's own claim page, opened through `hobo claim open` | designed |
-| 2 | HoBo's config-service Worker on a Cloudflare temporary account | Cloudflare's claim page, within 60 minutes | designed |
+| 2 | *Experiment, opt-in only:* a Cloudflare temporary account, optionally holding HoBo's config-service Worker | Cloudflare's claim page, within 60 minutes | no: not the relay's store |
 | 3 | Infisical on the owner's compute fleet, bootstrapped by HoBo | a sealed sign-in, revealed once by `hobo claim open`; finalize revokes HoBo's bootstrap identity | yes |
 | 4 | An Infisical Cloud organization the owner already has (attach-only) | the owner's own `infisical login`, for one run | yes |
 
 HoBo routes to the first offer whose evidence is present and whose runtime
 binding is built; `--allow-designed` lifts the second gate. Today that makes
-self-hosted Infisical the first store the relay can actually use; the
-Cloudflare Worker and auth.md stores are provisioned and claimed by the same
-command once their runtime binding lands (the amendment says what is built).
+self-hosted Infisical the first store the relay can actually use; auth.md
+stores are provisioned and claimed by the same command once their runtime
+binding lands (the amendment says what is built). The Cloudflare offer is an
+experiment that proves HoBo can obtain a claim link
+([The Cloudflare experiment](../../docs/design/adr/hosted-relay-stateless.md#the-cloudflare-experiment)):
+it runs only with `--offer cloudflare-temporary`, writes no binding, and the
+relay keeps reading Infisical.
 
 ### What provisioning creates
 

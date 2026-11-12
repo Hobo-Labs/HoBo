@@ -1,0 +1,107 @@
+{
+	"consumer": { "name": "HoboCiRelay" },
+	"provider": { "name": "HoboConfigServiceWorker" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"documentation": "The relay's config service when it is HoBo's config-service Worker (ADR-0179 amendment, Worker addendum). Consumers: the relay's loader (reads its folder with its Vercel OIDC token), HoBo's provisioning (health, the single-use seed) and the deploy workflow (writes the relay's folder with GitHub Actions OIDC); all three use createConfigServiceClient. Header values in braces are placeholders the provider verification replaces with tokens signed by local issuers; no interaction carries a real token or secret. Verified by contracts/provider/config-service-worker.provider.test.ts against the real handler and Durable Object class on the in-process stand-in."
+	},
+	"interactions": [
+		{
+			"description": "health answers with the store id and echoes the nonce, unauthenticated",
+			"providerState": "a store whose deploy-time binding is valid",
+			"request": {
+				"method": "GET",
+				"path": "/v1/health?nonce=pact-nonce-0123456789"
+			},
+			"response": {
+				"status": 200,
+				"headers": { "cache-control": "no-store" },
+				"body": {
+					"service": "hobo-config-service",
+					"nonce": "pact-nonce-0123456789"
+				}
+			}
+		},
+		{
+			"description": "provisioning seeds both folders once with the bootstrap credential",
+			"providerState": "a store that has not been seeded",
+			"request": {
+				"method": "POST",
+				"path": "/v1/seed",
+				"headers": { "authorization": "HoBo-Bootstrap {bootstrap}" },
+				"body": {
+					"folders": {
+						"relay": { "entries": { "HOBO_CI_CONFIG_JSON": "{}" } },
+						"deploy": { "entries": {} }
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"folders": [
+						{ "folder": "relay", "names": ["HOBO_CI_CONFIG_JSON"], "version": 1 },
+						{ "folder": "deploy", "version": 1 }
+					]
+				}
+			}
+		},
+		{
+			"description": "the relay reads its own folder with its Vercel OIDC token",
+			"providerState": "a seeded store",
+			"request": {
+				"method": "GET",
+				"path": "/v1/folders/relay",
+				"headers": { "authorization": "Bearer {vercel-relay}" }
+			},
+			"response": {
+				"status": 200,
+				"headers": { "cache-control": "no-store" },
+				"body": {
+					"folder": "relay",
+					"entries": { "HOBO_CI_CONFIG_JSON": "{}" },
+					"version": 1
+				}
+			}
+		},
+		{
+			"description": "the relay may not read the deploy folder",
+			"providerState": "a seeded store",
+			"request": {
+				"method": "GET",
+				"path": "/v1/folders/deploy",
+				"headers": { "authorization": "Bearer {vercel-relay}" }
+			},
+			"response": {
+				"status": 403,
+				"body": { "code": "FORBIDDEN" }
+			}
+		},
+		{
+			"description": "the deploy workflow on main writes the relay's folder with GitHub Actions OIDC; the answer names, never values",
+			"providerState": "a seeded store",
+			"request": {
+				"method": "PATCH",
+				"path": "/v1/folders/relay",
+				"headers": { "authorization": "Bearer {github-deploy}" },
+				"body": { "entries": { "HOBO_CI_GITHUB_APP_ID": "123456" }, "delete": [] }
+			},
+			"response": {
+				"status": 200,
+				"body": { "folder": "relay", "names": ["HOBO_CI_GITHUB_APP_ID"], "version": 2 }
+			}
+		},
+		{
+			"description": "the audit log refuses a caller with no credential",
+			"providerState": "a seeded store",
+			"request": {
+				"method": "GET",
+				"path": "/v1/audit"
+			},
+			"response": {
+				"status": 401,
+				"body": { "code": "UNAUTHENTICATED" }
+			}
+		}
+	]
+}

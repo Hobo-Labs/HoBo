@@ -219,15 +219,18 @@ withdrawn. Agent authentication with a claim replaces it.
    | # | Offer | Agent auth | Owner's claim | Cost | Availability | Relay binding |
    |---|---|---|---|---|---|---|
    | 1 | Any store that publishes auth.md with anonymous agent registration | `@hobo/auth-md` anonymous registration | the store's claim page, sealed, opened by `hobo claim open` | the store's | the store's | designed |
-   | 2 | HoBo's config-service Worker on a Cloudflare temporary account | Cloudflare temporary account (proof of work; the owner accepts Cloudflare's Terms and Privacy Policy first) | Cloudflare's claim URL, sealed; **within 60 minutes or Cloudflare deletes the account** | none while temporary; the owner's Workers plan after | account creation is rate-limited; the relay depends on Cloudflare | designed |
+   | 2 | *Experiment, opt-in only:* a Cloudflare temporary account, optionally holding HoBo's config-service Worker | Cloudflare temporary account (proof of work; the owner types acceptance of Cloudflare's Terms and Privacy Policy first) | Cloudflare's claim URL, sealed; **within 60 minutes or Cloudflare deletes the account** | none while temporary; the owner's Workers plan after | account creation is rate-limited; not the relay's store ([experiment](#the-cloudflare-experiment)) | designed |
    | 3 | HoBo-hosted Infisical (open source, self-hosted) on the owner's compute fleet | `POST /api/v1/admin/bootstrap` on a fresh instance | a sealed sign-in revealed once by `hobo claim open`; finalize revokes HoBo | no vendor fee; Infisical, PostgreSQL and Redis on the owner's hosts | **the relay's config availability becomes that host's** | built |
    | 4 | An Infisical Cloud organization the owner already has | none: attach-only | the owner's own `infisical login`, for one run | Infisical's free plan | Infisical Cloud's | built |
 
    The routing gate that passes over 1 and 2 today is the relay's runtime
    binding, not preference: the relay's loader reads Infisical, so
    `selectSecretStore` skips an offer whose binding is designed unless
-   `--allow-designed` is given, and says why in the plan. The offer table
-   does not change when the Worker lands; the gate opens.
+   `--allow-designed` is given, and says why in the plan. *Amended the same
+   day:* offer 2 is an experiment, and its gate stays shut for the relay; it
+   is reached only by name (`--offer cloudflare-temporary`), which lifts the
+   runtime-binding gate for that offer alone and keeps its evidence gate (an
+   interactive terminal where the owner can accept the terms).
 3. **Why this order, and the vendor evidence.** Infisical Cloud cannot be
    created by an agent: `infisical.com/auth.md` answers its agent 404 ("There
    is no agent-readable page"), `app.infisical.com/.well-known/*` serve the
@@ -252,26 +255,9 @@ withdrawn. Agent authentication with a claim replaces it.
    (`neon.com/auth.md`) is agent auth with a claim too, but a database, not a
    secret manager: it is relevant only as the PostgreSQL a self-hosted
    Infisical needs.
-4. **The Cloudflare offer, honestly against a dedicated secret manager.** A
-   temporary account holds Workers, KV, D1, Durable Objects, Queues and
-   Hyperdrive; Secrets Store and Worker secret bindings are not listed as
-   supported. The design is a small HoBo Worker: values envelope-encrypted
-   (AES-GCM) in a Durable Object; the root key a Worker secret binding, which
-   provisioning probes and, if the temporary account refuses it with an
-   authorization error, treats as the offer being unavailable (fail closed,
-   route on), never as a key stored beside the data; reads authorized by the
-   relay's Vercel OIDC token (issuer, audience, subject and pinned
-   `owner_id`/`project_id`, as Infisical's OIDC Auth does), writes by the
-   deploy workflow's GitHub OIDC token. That is agent-auth-and-claim with no
-   new vendor, and costs nothing while temporary. It is also HoBo writing a
-   secret manager: crypto, authorization, audit, rotation and versioning that
-   Infisical already has and HoBo would have to build and review. Claiming
-   gives the owner the account and its data; the platform keeps no access, so
-   later writes need the owner's own Cloudflare authorization. Built: the
-   account, its consent, proof of work and claim (`provisionCloudflareTemporaryStore`
-   over `@hobo/provider-cloudflare`'s temporary-account Yard). Designed: the
-   Worker, its upload, and the relay's loader for it; until then the temporary
-   token is destroyed when provisioning returns.
+4. **The Cloudflare offer is an experiment**, opt-in only and not the
+   relay's store: [The Cloudflare experiment](#the-cloudflare-experiment),
+   below.
 5. **Claim, expiry and threat model** (against
    [the anonymous-claim threat model](../anonymous-claim-threat-model.md)).
    Every claim is a `@hobo/claims` bundle on the deployment's claim journal,
@@ -288,10 +274,11 @@ withdrawn. Agent authentication with a claim replaces it.
      cannot redeem another's action. Completion is verified through the
      provider, never by a redirect: for self-hosted Infisical, finalize deletes
      HoBo's bootstrap identity with its own token and passes only on
-     Infisical's 401 for that token. Cloudflare's and auth.md's verification
-     is designed; finalize refuses those items rather than pass them.
-   - *Credentials HoBo must not keep.* Cloudflare's temporary token: destroyed
-     at once (designed: used once for the Worker upload, then destroyed).
+     Infisical's 401 for that token. A Cloudflare item is verified only by
+     the experiment's Worker outliving the deadline ([below](#the-cloudflare-experiment));
+     auth.md's verification is designed; finalize refuses rather than pass.
+   - *Credentials HoBo must not keep.* Cloudflare's temporary token: lent
+     from custody for the Worker upload only, then destroyed on every path.
      Infisical's instance-admin token: sealed under a separate audience only
      finalize redeems, and revoked there. The bootstrap admin password: sealed
      into the claim and never printed, but HoBo generated it, so the owner is
@@ -348,6 +335,101 @@ packs `pack-postgres-oci` and `pack-valkey-oci` exist; an Infisical image is
 not pinned by digest, so no Infisical pack is added), the Vercel deploy-token
 claim step, and verification of Cloudflare and auth.md claims. Details:
 [Secret store chosen at deploy](../hosted-relay-stateless.md#secret-store-chosen-at-deploy).
+
+*Added with the Cloudflare experiment (same day):* `--offer` on `hobo ci
+secret-store plan|provision` (routing by name, gate shut by default), the
+typed consent, the proof of work on a worker thread, the Worker upload with
+a Durable Object binding and migration (`uploadTemporaryAccountWorker`),
+`@hobo/config-service-worker` (the Worker, its records, its client, a pact
+for its callers verified against the real handler, a workerd suite), the
+experiment's pact with Cloudflare's API (consumer only), and finalize's
+verification by the Worker outliving the deadline. No request to Cloudflare
+has been made from this repository; the experiment is meant to be run once,
+live, by the owner. Still not built: the relay's loader for the Worker (by
+decision, not by gap: the relay keeps Infisical).
+
+### The Cloudflare experiment
+
+*Re-scoped 2026-11-12:* offer 2 is an experiment that proves HoBo can
+obtain a valid Cloudflare claim link by the documented REST flow. It is
+**not** the relay's store or deploy target: the relay keeps deploying to the
+owner's Vercel project `hobo-ci`, and its runtime secrets go to Infisical.
+Nothing about the relay changes: no binding is written, the relay's loader,
+Yard and deploy workflow are untouched, and the routing gate never picks
+the offer unless it is named.
+
+*The run.* `hobo ci secret-store provision --offer cloudflare-temporary`
+in an interactive terminal: the owner reads what will happen (an
+experiment, not the relay's store, 60 minutes to claim, the Terms and
+Privacy Policy URLs) and **types `accept`**; anything else creates
+nothing. Then, through `@hobo/provider-cloudflare`'s temporary-account Yard
+over an injected transport (`api.cloudflare.com` only): consent recorded,
+`POST /client/v4/provisioning/previews/challenge`, the SHA-256 proof of
+work on a worker thread (`solvePreviewChallengeOffThread`), `POST
+/client/v4/provisioning/previews`; the API token into custody, the claim
+URL into a one-time vault, then straight into HoBo's owner-only claim
+store for `hobo claim open secret-store`; the token destroyed on every
+path, success or failure.
+
+*With `--experiment-worker`* (and the Vercel team, project and repository
+its binding names), HoBo also uploads its config-service Worker
+([`@hobo/config-service-worker`](../../../packages/config-service-worker/README.md))
+with the account's token before handing the account over: one multipart
+`PUT …/workers/scripts/{name}` whose metadata declares the Durable Object
+binding and the migration `{ new_tag: "v1", new_sqlite_classes:
+["ConfigStore"] }`, then the workers.dev route and subdomain; it checks the
+Worker's health (store id and a fresh nonce) and seeds it once, empty,
+which burns the bootstrap credential. A failure there is recorded on the
+receipt (stage and code) and does not withhold the claim link.
+
+*The Worker's design, and one deviation.* The relay's config document
+and secrets live in a Durable Object's SQLite storage, private to the
+account and reachable only through the Worker. **No root secret:** the
+earlier design (values envelope-encrypted with a key in a Worker secret
+binding) is dropped, because temporary accounts list no secret bindings
+and a key held by the same Worker in the same account protects against no
+one who could not already reach the values through it. Reads: the relay's
+Vercel OIDC token, verified against the team issuer's JWKS (discovery,
+`jwks_uri` on the issuer's host) with issuer, audience, `sub`, `owner_id`,
+`project_id` and `environment` pinned by the deploy-time binding baked into
+the Worker's plain-text variable `HOBO_CONFIG_BINDING`; it returns only the
+`relay` folder. Writes: GitHub Actions OIDC, `repository` and `ref` pinned
+(and `repository_id` when known), with a custom audience naming this store
+(`urn:hobo:config-service:<store id>`), which may read `deploy` and write
+`relay`; and, once, the bootstrap credential, held as a SHA-256 hash and
+burned in the same storage write as the seed. After the claim, the owner
+writes through a Cloudflare Access application they put in front of a
+custom-domain route of the Worker (the workers.dev route stays for the
+relay and the deploy workflow): they set `HOBO_CONFIG_OWNER_ACCESS` (Access
+issuer and AUD tag) in their own dashboard, and the Worker verifies the
+`Cf-Access-Jwt-Assertion` against the Access team's keys. Until then no
+owner route exists; there is no unauthenticated write path, and `wrangler`
+offers no Durable Object storage command to use instead. Comparisons of
+the bootstrap hash are constant-time; bodies are bounded (64 KiB, 16 KiB a
+value, 64 entries a folder); the audit log records names only, never
+values. HoBo writing a secret manager remains the cost named before:
+rotation and versioning are not built.
+
+*Finalize.* Cloudflare documents no claim-status endpoint (read
+2026-11-12), and HoBo keeps no token. The one observable is the documented
+deletion of an unclaimed account at its deadline. So `hobo claim finalize
+secret-store` passes only when the experiment's Worker still answers with
+its store id and a fresh nonce at least 15 minutes after `claim.expiresAt`;
+without the Worker it refuses and says why, and the owner checks the
+dashboard.
+
+*Verified versus assumed.* From Cloudflare's page (read 2026-11-12): the
+REST endpoints and field names, the 60-minute claim, "Deploy Workers with
+Durable Object bindings and migrations" among supported resources, the
+upload endpoint with `main_module` and `compatibility_date`, and the
+subdomain read; secret bindings and Secrets Store are not listed. Tested
+locally: the uploaded modules run in workerd (Miniflare) with a
+SQLite-backed Durable Object. **Assumed, for the first live run to
+check:** that the temporary token accepts the binding and migration
+metadata on upload, the response of the workers.dev route call
+(`enabled: true`), how soon a new script answers on workers.dev, how soon
+after the deadline an unclaimed account disappears (the 15-minute margin),
+and that the claimed account keeps its workers.dev subdomain.
 
 ## Alternatives considered
 

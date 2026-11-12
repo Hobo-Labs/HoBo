@@ -773,11 +773,15 @@ For the store the relay can read today (self-hosted Infisical on the fleet):
 5. The agent commits `deploy/secret-store.binding.json` in a PR. From then on
    `hobo ci deploy` and the workflow on `main` read it.
 
-For a Cloudflare temporary account (once its Worker is built), step 2 asks the
-owner, in their terminal, to accept Cloudflare's Terms of Service and Privacy
-Policy (HoBo records the acceptance before any request), and step 3 opens
-Cloudflare's claim page, which the owner must complete **within 60 minutes**
-or Cloudflare deletes the account. For an auth.md store, step 3 opens the
+A Cloudflare temporary account is an experiment, not the relay's store
+([ADR amendment](adr/hosted-relay-stateless.md#the-cloudflare-experiment)):
+`hobo ci secret-store provision --offer cloudflare-temporary` asks the owner,
+in their terminal, to type `accept` for Cloudflare's Terms of Service and
+Privacy Policy (HoBo records the acceptance before any request), and
+`hobo claim open` then shows Cloudflare's claim page, which the owner must
+complete **within 60 minutes** or Cloudflare deletes the account. With
+`--experiment-worker` the account also holds HoBo's config-service Worker
+([`@hobo/config-service-worker`](../../packages/config-service-worker/README.md)). For an auth.md store, step 3 opens the
 store's own approval page before its `expires_at`. For an Infisical Cloud
 organization the owner already has, there is no claim: the owner's own
 `infisical login` provides `INFISICAL_TOKEN` for the one provisioning run.
@@ -817,9 +821,14 @@ and its sealed claim; the self-hosted Infisical bootstrap, layout, sealed
 sign-in and verified revocation; attach-only; `hobo ci secret-store`;
 `hobo claim finalize` for self-hosted stores; `hobo ci deploy` reading the
 binding; the workflow's gate on the binding and its routed runner; the
-`hobo-deploy` skill. Designed: the config-service Worker and the relay's loader
-for it, an auth.md store's runtime binding, fleet placement, the Vercel token
-claim step, and the verification of Cloudflare and auth.md claims.
+`hobo-deploy` skill. Designed: an auth.md store's runtime binding, fleet
+placement, the Vercel token claim step, and the verification of auth.md
+claims. The Cloudflare experiment (opt-in, `--offer cloudflare-temporary`) is
+built against stand-ins: the account and its sealed claim link, the proof of
+work off the main thread, the config-service Worker (run in workerd locally)
+and its upload with a Durable Object migration, and finalize by the Worker
+outliving the deadline; the relay's loader for the Worker is not built, by
+decision.
 
 The Aiven Valkey URL is an optional cache-fleet member an owner may add to the
 store; nothing waits on it.
