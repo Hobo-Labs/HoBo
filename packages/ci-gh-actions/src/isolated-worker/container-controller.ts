@@ -31,6 +31,7 @@ import {
 import {
 	correlateRunnerOnRun,
 	resolveRunnerAssignedJob,
+	RUNNER_HELD_JOB_STATUSES,
 	runnerHoldsActiveJob,
 } from "../jit-runner-correlation.js";
 import { deregisterGithubRunner } from "../jit-runner-deregister.js";
@@ -1132,21 +1133,7 @@ export function createIsolatedContainerController(options: {
 						preferRunIds: [lease.originalRunId],
 					},
 				);
-				if (runnerHoldsActiveJob(assignment)) {
-					await deregisterLeaseRunner(lease, "dead-container-active-binding");
-					assignment = await resolveRunnerAssignedJob(
-						options.github,
-						lease.installationId,
-						lease.repository,
-						lease.runnerName,
-						lease.runnerId,
-						{
-							reservedJobId: lease.jobId,
-							preferRunIds: [lease.originalRunId],
-						},
-					);
-					if (runnerHoldsActiveJob(assignment)) return;
-				}
+				if (runnerHoldsActiveJob(assignment)) return;
 			} catch {
 				// Fall through to getJob when assignment cannot be resolved.
 			}
@@ -1158,6 +1145,13 @@ export function createIsolatedContainerController(options: {
 			lease.repository,
 			servedJobId,
 		);
+		if (
+			RUNNER_HELD_JOB_STATUSES.has(original.status) &&
+			(lease.runnerId > 0
+				? original.runner_id === lease.runnerId
+				: original.runner_name?.trim() === lease.runnerName.trim())
+		)
+			return;
 		const custody = runnerCustody(original.runner_name);
 		const emptyKey = jitEmptyExitKey(
 			lease.repositoryId,
