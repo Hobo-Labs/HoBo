@@ -266,3 +266,60 @@ describe.skipIf(!hoboBuilt)("release Freight through hobo deploy", { timeout: 60
 		}
 	});
 });
+
+describe("release-hobo.yml publishes only release Freight", () => {
+	const workflow = readFileSync(
+		join(import.meta.dirname, "..", "..", ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+	function job(name: string): string {
+		const start = workflow.indexOf(`\n  ${name}:\n`);
+		expect(start, name).toBeGreaterThanOrEqual(0);
+		const rest = workflow.slice(start + 1);
+		const next = rest.slice(1).search(/\n {2}[a-z][a-z0-9-]+:\n/u);
+		return next === -1 ? rest : rest.slice(0, next + 1);
+	}
+	const before = (block: string, first: string, second: string) => {
+		const a = block.indexOf(first);
+		const b = block.indexOf(second);
+		expect(a, first).toBeGreaterThanOrEqual(0);
+		expect(b, second).toBeGreaterThan(a);
+	};
+
+	it("records GHCR digests as Freight in the push step and keeps the journal", () => {
+		const block = job("release-publish");
+		expect(block).toMatch(
+			/HOBO_RELEASE_CD_HOME: \$\{\{ runner\.temp \}\}\/hobo-release-cd\/oci/u,
+		);
+		before(block, "--filter=@hobo/hobo...", "push-release-ghcr-images.mts");
+		expect(block).toContain("name: hobo-release-freight-oci");
+	});
+
+	it("records npm tarballs before npm publish", () => {
+		const block = job("release-npm");
+		expect(block).toMatch(
+			/HOBO_RELEASE_CD_HOME: \$\{\{ runner\.temp \}\}\/hobo-release-cd\/npm/u,
+		);
+		before(block, "--filter=@hobo/hobo...", "publish-npm-sdk.mts");
+	});
+
+	it("records and promotes the Pages bundle before the gh-pages push", () => {
+		before(
+			job("release-pages"),
+			"deploy-site.mts --release-freight site/dist",
+			"peaceiris/actions-gh-pages",
+		);
+	});
+
+	it("promotes to stable before the signed tag and the GitHub Release", () => {
+		before(job("release-tag"), "promote-stable", "push-release-git-tag.mts");
+		before(job("release-tag"), "promote-stable", "create-github-release.mts --tag");
+		before(job("release-github"), "promote-stable", "create-github-release.mts --tag");
+	});
+
+	it("keeps the release permissions and OIDC flow unchanged", () => {
+		expect(job("release-npm")).toMatch(/id-token:\s*write/u);
+		expect(job("release-tag")).toMatch(/permissions:\n\s+contents: write\n/u);
+		expect(workflow).not.toMatch(/secrets\.HOBO_RELEASE_CD/u);
+	});
+});
