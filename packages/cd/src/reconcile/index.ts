@@ -1,5 +1,24 @@
 // "./reconcile" (WP7, plan 0024): fenced pull reconcilers, the in-process
 // transport, observation hygiene, retained fields, drift routing, departure.
+
+// The realizer adapters this module drives (src/adapters, WP7).
+export {
+	createHostingTransitionRealizer,
+	HOSTING_TRANSITION_KIND,
+	type HostingCoordinator,
+	type HostingTransitionRealizerDeps,
+	transitionStatus,
+} from "../adapters/hosting-transition.js";
+export {
+	createOrchestratorRealizer,
+	diffGraph,
+	failFastExecutor,
+	type HostAttestor,
+	ORCHESTRATOR_LEDGER,
+	type OrchestratorRealizerDeps,
+	RealizeExecFailed,
+	resourceNodeHash,
+} from "../adapters/orchestrator.js";
 export { backoffMs, jitterFraction, RECONCILE_BACKOFF } from "./backoff.js";
 export {
 	type DeparturePlan,
