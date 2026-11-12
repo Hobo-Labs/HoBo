@@ -39,3 +39,7 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 
 - A pull request that breaks one test under `scripts/test` shows **Scripts tests** red and the **PR impact gate** red.
 - `pnpm run test:scripts` exits 0 on the CI runner image.
+
+## Verified
+
+- `test/relevant-check-policy.test.ts` — *a change to scripts, root tests or .github selects the scripts lane once*; *the scripts lane is not selected for other paths, a staged commit, or CI* (both fail on the previous policy).
