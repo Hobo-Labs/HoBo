@@ -70,6 +70,7 @@ Immature, thin, internal, stub, or synthetic packages remain `"private": true` s
 - `@hobo/runtime-browser` — substantial browser/OPFS surface; hold until browser install path is productized
 - `@hobo/runtime-wasm` — wasm host; hold until componentize honesty + host maturity
 - HoBo.CD ([ADR-0180](./adr/01-architecture-core.md#adr-0180), [continuous-delivery.md](./continuous-delivery.md)) — `@hobo/cd`, `@hobo/cd-gitops`, `@hobo/cd-kube-fleet`, `@hobo/resolver-components`, `@hobo/storage-postgres`. Their manifests carry `publishConfig.access: public` so a later allowlist extension is a one-line change, but none is on the first-publish allowlist: hold until the CD live lanes (Vercel, Cloudflare, Prometheus-backed verification, `kind` for `@hobo/cd-kube-fleet`) have run green with credentials, and, for `@hobo/resolver-components`, until componentize emits real component bytes
+- HoBo.CD realizers `@hobo/provider-npm`, `@hobo/provider-oci-registry` and `@hobo/provider-github` — held like the other CD packages and not on the first-publish allowlist; today they are `"private": true` with the rest of `packages/providers/*` and reach users only through `@hobo/hobo`'s hosting catalog. Hold until their credential-gated live lanes ([live-provider-matrix](./live-provider-matrix.md)) have run green
 
 ## Dual-bin resolution
 
