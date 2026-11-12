@@ -21,6 +21,7 @@ const wait = (
 
 const reasons = [
 	"host-available",
+	"memory-headroom",
 	"memory-budget",
 	"trunk-pr-cap",
 	"host-pressure",

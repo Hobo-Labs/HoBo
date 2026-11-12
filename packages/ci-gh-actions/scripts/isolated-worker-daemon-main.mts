@@ -85,6 +85,8 @@ import {
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
+	countLiveBoxContainers,
+	localWorkerFreeSlots,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -719,7 +721,7 @@ try {
 		noContainerDrainMaxMs,
 	});
 	const firstReconciliation = await worker.reconcileLeases();
-	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
+	let liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
 	let drainJobInFlight = firstReconciliation.drainJobInFlight;
 	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
@@ -829,9 +831,21 @@ try {
 				},
 			})
 		: undefined;
-	const fleetCapacity = publishFleetRoutes
+	const fleetCapacityPublisher = publishFleetRoutes
 		? createFleetCapacityPublisher({ github, log })
 		: undefined;
+	const localFleetCapacitySnapshot = async () => {
+		const active = await store.activeLeases();
+		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
+		const meshCap = await mesh?.observe();
+		if (!meshCap) return { hoboFreeSlots };
+		const meshFree = meshCap.freeSlots;
+		return {
+			hoboFreeSlots,
+			meshFreeSlots: meshFree,
+			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
+		};
+	};
 	const headroomFleetDeferMs = Number(
 		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
 	);
@@ -898,21 +912,13 @@ try {
 			backlogImmediate:
 				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",
 		},
-		fleetCapacity: fleetCapacity
-			? {
-					publish: (input) => fleetCapacity.publish(input),
-					snapshot: async () => {
-						const hoboFreeSlots = Math.max(0, slots - liveWorkerLeaseIds.size);
-						const meshCap = await mesh?.observe();
-						const meshFree = meshCap?.freeSlots ?? hoboFreeSlots;
-						return {
-							hoboFreeSlots,
-							meshFreeSlots: meshFree,
-							arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
-						};
-					},
-				}
-			: undefined,
+		fleetCapacity: {
+			publish: async (input) => {
+				if (!fleetCapacityPublisher) return undefined;
+				return fleetCapacityPublisher.publish(input);
+			},
+			snapshot: localFleetCapacitySnapshot,
+		},
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -991,7 +997,7 @@ try {
 					requireTrusted: meshTrust.requireTrusted,
 					initialReliability: storedReliability?.record,
 					persistReliability: (record) => void meshReliability?.save(record),
-					freeSlots: () => slots - liveWorkerLeaseIds.size,
+					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
 					totalSlots: slots,
 					healthy: () => !meshDraining,
 					servesTrunk: trunkSlots > 0,
@@ -1211,7 +1217,7 @@ try {
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
-		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
 		drainJobInFlight = reconciliation.drainJobInFlight;
 		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		runOrphanJobReconcile();
@@ -1492,6 +1498,7 @@ try {
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
 				drainJobInFlight = reconciliation.drainJobInFlight;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();

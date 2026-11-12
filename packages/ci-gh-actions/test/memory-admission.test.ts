@@ -606,12 +606,13 @@ describe("worker memory admission", () => {
 		).toMatchObject({ admitted: false, reason: "host-pressure" });
 	});
 
-	it("blocks admission below the live host reserve and logs host-available", () => {
+	it("blocks admission below the live host reserve and logs memory-headroom", () => {
 		const log = vi.fn();
 		const availableMemoryMb = vi.fn(() => 2_500);
 		const admission = createWorkerMemoryAdmission(config(8_000), {
 			log,
 			availableMemoryMb,
+			volatilityMb: 1_024,
 		});
 		const request = {
 			jobId: 1,
@@ -627,8 +628,38 @@ describe("worker memory admission", () => {
 		expect(log).toHaveBeenCalledWith(
 			"hobo_ci_memory_admission_wait",
 			expect.objectContaining({
-				reason: "host-available",
+				reason: "memory-headroom",
 				availableMb: 2_500,
+				requiredMb: 1_024 + 2_048 + 1_024,
+			}),
+		);
+	});
+
+	it("logs memory-headroom for a standard job below MemAvailable + reserve + volatility", () => {
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(16_384), {
+			log,
+			availableMemoryMb: () => 5_100,
+			volatilityMb: 1_024,
+		});
+		const decision = admission.admit({
+			jobId: 42,
+			memoryClass: "standard",
+			memoryMb: 4_096,
+			rank: 0,
+			activeLeases: [],
+			generalLeaseIds: new Set<string>(),
+		});
+		expect(decision).toMatchObject({
+			admitted: false,
+			reason: "memory-headroom",
+		});
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				reason: "memory-headroom",
+				availableMb: 5_100,
+				requiredMb: 7_168,
 			}),
 		);
 	});

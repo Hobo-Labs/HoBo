@@ -42,6 +42,10 @@ export {
 	type FleetCapacityPublishInput,
 } from "./fleet-capacity.js";
 export {
+	countLiveBoxContainers,
+	localWorkerFreeSlots,
+} from "./live-container-count.js";
+export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,
