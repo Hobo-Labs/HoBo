@@ -1,8 +1,10 @@
 export {
 	NPM_CONFLICT_REASONS,
+	NPM_OTP_REMEDIATION,
 	NPM_PACKAGE_VERSION_PRODUCT_ID,
 	NPM_PROVIDER_ID,
 	type NpmConflictReason,
+	NpmOtpRequiredError,
 	NpmVersionConflictError,
 	npmProductRefusal,
 } from "./errors.js";

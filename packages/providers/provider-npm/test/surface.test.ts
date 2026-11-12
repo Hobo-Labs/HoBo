@@ -226,3 +226,36 @@ describe.skipIf(!Object.values(live).every(Boolean))(
 		});
 	},
 );
+
+// Opt-in write lane for the one unverified routing claim: a scoped name sent
+// unescaped (the transport guard refuses %2f) to the dist-tag route. It moves
+// HOBO_NPM_LIVE_PROMOTE_TAG to the live version; use a scratch tag.
+const promoteTag = process.env.HOBO_NPM_LIVE_PROMOTE_TAG;
+describe.skipIf(!(promoteTag && Object.values(live).every(Boolean)))(
+	"npm live lane (writes one dist-tag; skipped: set the read-only lane's variables plus HOBO_NPM_LIVE_PROMOTE_TAG=<scratch tag> on a scoped package)",
+	() => {
+		it("moves a dist-tag on a scoped package through the unescaped route and observes it", async () => {
+			const { readFileSync } = await import("node:fs");
+			const bytes = new Uint8Array(readFileSync(String(live.tarball)));
+			expect(String(live.packageName).startsWith("@")).toBe(true);
+			const outcome = await npmResolverRegistry(
+				options(memoryStore(bytes), {
+					resolveCredential: async () => String(live.token),
+				}),
+			)
+				.get(NPM_PACKAGE_VERSION_PRODUCT_ID)
+				?.reconcile(
+					request({
+						registry: String(live.registry),
+						packageName: String(live.packageName),
+						version: String(live.version),
+						distTag: String(promoteTag),
+						artifactDigest: digestOf(bytes),
+					}),
+					createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
+				);
+			expect(outcome?.outputs.distTagVersion).toBe(live.version);
+			expect(JSON.stringify(outcome)).not.toContain(String(live.token));
+		});
+	},
+);

@@ -10,10 +10,13 @@ import type { HttpTransport, TransportRequest } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	NPM_PACKAGE_VERSION_PRODUCT_ID,
+	NpmOtpRequiredError,
+	NpmVersionConflictError,
 	npmResolverRegistry,
 } from "../src/index.js";
 import { isJsonObject, isJsonString, type JsonValue } from "../src/json.js";
 import {
+	digestOf,
 	ID_TOKEN,
 	memoryStore,
 	options,
@@ -22,6 +25,8 @@ import {
 	registryWorld,
 	request,
 	TARBALL,
+	UNSCOPED_NAME,
+	UNSCOPED_TARBALL,
 } from "./support/world.js";
 
 interface Interaction {
@@ -33,7 +38,11 @@ interface Interaction {
 		readonly headers: Record<string, string>;
 		readonly body?: JsonValue;
 	};
-	readonly response: { readonly status: number; readonly body: JsonValue };
+	readonly response: {
+		readonly status: number;
+		readonly headers: Record<string, string>;
+		readonly body: JsonValue;
+	};
 }
 
 // SAFETY: the pact is a checked-in document of this shape; the first test pins its identity.
@@ -77,6 +86,45 @@ function recorded(description: string): Interaction {
 	return found;
 }
 
+/**
+ * A transport that serves the named interactions in order, each exactly as
+ * recorded (status, headers, body), and refuses any request the next one does
+ * not declare.
+ */
+function replay(...descriptions: string[]): HttpTransport {
+	const queue = descriptions.map(recorded);
+	return async (entry) => {
+		const next = queue.shift();
+		if (!next || !matches(next, entry))
+			throw new Error(`replay: ${entry.method} ${entry.url} is not next`);
+		return {
+			status: next.response.status,
+			headers: next.response.headers,
+			body: JSON.stringify(next.response.body),
+		};
+	};
+}
+
+function resolver() {
+	return npmResolverRegistry(options(memoryStore(TARBALL))).get(
+		NPM_PACKAGE_VERSION_PRODUCT_ID,
+	);
+}
+
+async function refused(promise: Promise<unknown> | undefined) {
+	try {
+		await promise;
+	} catch (error) {
+		return error;
+	}
+	throw new Error("expected a refusal");
+}
+
+const NEVER_PUBLISHED = "observe a package that has never been published";
+const PUBLISH = "publish version 1.2.3 with an explicit dist-tag";
+const UNCACHED =
+	"read the writable packument uncached (before deprecating, and to confirm any mutation)";
+
 describe("npm registry consumer pact", () => {
 	it("names the consumer and provider", () => {
 		expect(pact.consumer.name).toBe("HoBoCdReconciler");
@@ -96,7 +144,7 @@ describe("npm registry consumer pact", () => {
 			NPM_PACKAGE_VERSION_PRODUCT_ID,
 		);
 		const oidc = npmResolverRegistry(
-			options(memoryStore(TARBALL), {
+			options(memoryStore(UNSCOPED_TARBALL), {
 				auth: "oidc-trusted-publishing",
 				resolveCredential: async () => ID_TOKEN,
 			}),
@@ -106,12 +154,21 @@ describe("npm registry consumer pact", () => {
 		await token?.reconcile(request({ distTag: "stable" }), record(fresh));
 		await token?.delete(request(), record(fresh));
 		await oidc?.read?.(
-			request(),
+			request({
+				packageName: UNSCOPED_NAME,
+				artifactDigest: digestOf(UNSCOPED_TARBALL),
+			}),
 			record(
 				registryWorld({
 					bearer: PUBLISH_TOKEN,
 					idToken: ID_TOKEN,
-					packument: publishedPackument(TARBALL, { candidate: "1.2.3" }),
+					name: UNSCOPED_NAME,
+					packument: publishedPackument(
+						UNSCOPED_TARBALL,
+						{ candidate: "1.2.3" },
+						"1.2.3",
+						UNSCOPED_NAME,
+					),
 				}),
 			),
 		);
@@ -128,23 +185,90 @@ describe("npm registry consumer pact", () => {
 	});
 
 	it("parses the recorded packument as the converged fixture version", async () => {
-		const served = recorded("observe the published version and its dist-tags");
-		const transport: HttpTransport = async () => ({
-			status: served.response.status,
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify(served.response.body),
-		});
-		const outcome = await npmResolverRegistry(options(memoryStore(TARBALL)))
-			.get(NPM_PACKAGE_VERSION_PRODUCT_ID)
-			?.read?.(request(), transport);
+		const outcome = await resolver()?.read?.(
+			request(),
+			replay("observe the published version and its dist-tags"),
+		);
 		expect(outcome?.outputs).toMatchObject({
 			ready: true,
 			distTagVersion: "1.2.3",
 		});
 	});
 
+	it("records the registry's response headers on every interaction", () => {
+		for (const { description, request: sent, response } of pact.interactions) {
+			expect(response.headers["content-type"], description).toBe(
+				"application/json",
+			);
+			if (sent.method === "GET" && response.status === 200) {
+				expect(response.headers["cache-control"], description).toBe(
+					"public, max-age=300",
+				);
+				expect(response.headers.etag, description).toBeTruthy();
+				expect(response.headers["cf-cache-status"], description).toBe(
+					sent.query === "write=true" ? "DYNAMIC" : "HIT",
+				);
+			}
+			if (response.status === 401)
+				expect(response.headers["www-authenticate"], description).toBeTruthy();
+		}
+	});
+
+	it("maps the recorded 401 Basic, Bearer challenge to a credential refusal", async () => {
+		const error = await refused(
+			resolver()?.reconcile(
+				request(),
+				replay(
+					NEVER_PUBLISHED,
+					"publish refused: the token is invalid or lacks publish rights (401 Basic, Bearer challenge)",
+				),
+			),
+		);
+		expect(error).toMatchObject({ code: "RESOLVER_CREDENTIAL_MISSING" });
+		expect(error).not.toBeInstanceOf(NpmOtpRequiredError);
+	});
+
+	it("maps the recorded 401 OTP challenge to the 2FA refusal", async () => {
+		const error = await refused(
+			resolver()?.reconcile(
+				request(),
+				replay(
+					NEVER_PUBLISHED,
+					"publish refused: the account enforces 2FA on writes (401 OTP challenge)",
+				),
+			),
+		);
+		expect(error).toBeInstanceOf(NpmOtpRequiredError);
+	});
+
+	it("resolves the recorded 403 'cannot publish over' by the uncached read that shows our bytes", async () => {
+		const outcome = await resolver()?.reconcile(
+			request({ distTag: "latest" }),
+			replay(
+				NEVER_PUBLISHED,
+				"publish refused: the version already exists (403 cannot publish over)",
+				UNCACHED,
+			),
+		);
+		expect(outcome?.outputs).toMatchObject({ ready: true, distTag: "latest" });
+		expect(outcome?.physicalId).toBe("@hobo-fixtures/widget@1.2.3");
+	});
+
+	it("refuses a version listed by the recorded wholly-unpublished packument as previously unpublished", async () => {
+		const error = await refused(
+			resolver()?.reconcile(
+				request(),
+				replay("observe a package unpublished in its entirety"),
+			),
+		);
+		expect(error).toBeInstanceOf(NpmVersionConflictError);
+		expect(error).toMatchObject({
+			reason: "npm-version-previously-unpublished",
+		});
+	});
+
 	it("records the fixture tarball's real integrity in the publish document", () => {
-		const publish = recorded("publish version 1.2.3 with an explicit dist-tag");
+		const publish = recorded(PUBLISH);
 		// SAFETY: the publish interaction body is the npm publish document shape.
 		const body = publish.request.body as {
 			versions: Record<string, { dist: { integrity: string } }>;

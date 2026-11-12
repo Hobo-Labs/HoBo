@@ -9,8 +9,19 @@
 		"pactSpecification": {
 			"version": "3.0.0"
 		},
-		"provenance": "Hand-authored consumer expectations (plan 0024, HoBo.CD npm realizer) against the npm registry API as implemented by registry.npmjs.org, npm.pkg.github.com and Verdaccio, and as exercised by npm-registry-fetch/libnpmpublish (publish document, dist-tag add, deprecate, OIDC trusted-publishing exchange). Not provider-verified or captured live traffic. Integrity values are those of test/fixtures/widget-1.2.3.tgz, a real `npm pack` output. Bodies marked with a <placeholder> are matched by shape, not value, by test/contract.test.ts.",
-		"matching": "Requests match on method and path; request bodies match on their top-level key set; response bodies are served verbatim by the offline registry world."
+		"provenance": "Hand-authored consumer expectations (plan 0024, HoBo.CD npm realizer) against the npm registry API as implemented by registry.npmjs.org, npm.pkg.github.com and Verdaccio, and as exercised by npm-registry-fetch/libnpmpublish (publish document, dist-tag add, deprecate, OIDC trusted-publishing exchange). Not provider-verified. Response headers, the 401 Basic/Bearer challenge and its \"Unauthorized\" body, the npm-notice header, the CDN cache headers on packument GETs (cf-cache-status HIT for a plain GET, DYNAMIC for ?write=true) and the scoped-name routing below were captured from registry.npmjs.org on 2026-11-12 with unauthenticated or invalid-token requests (no successful write was captured). The OTP challenge (401, www-authenticate: OTP) and its body follow npm-registry-fetch's check-response.js and npm's 2FA error text. The wholly-unpublished packument follows npmjs's time.unpublished shape. Integrity values are those of test/fixtures/*.tgz, real `npm pack` outputs. Bodies marked with a <placeholder> are matched by shape, not value, by test/contract.test.ts.",
+		"matching": "Requests match on method and path; request bodies match on their top-level key set; response bodies are served verbatim by the offline registry world.",
+		"scopedNameRouting": {
+			"summary": "HoBo sends scoped names unescaped (@scope/name) because its transport guard refuses %2f; npm's own client sends @scope%2fname.",
+			"evidence": [
+				"GET /@types/node and GET /@types%2fnode?write=true: 200, same packument.",
+				"GET /-/package/@types/node/dist-tags and GET /-/package/@types%2fnode/dist-tags: 200, same body.",
+				"PUT /-/package/@scope/name/dist-tags/x with an invalid token, unescaped and escaped: both 401 www-authenticate: Basic, Bearer (same route, same auth check).",
+				"PUT /@scope/name (publish) with an invalid token: 401 www-authenticate: Basic, Bearer; escaped: 404 {\"error\":\"Not found\"} for a package that does not exist. A successful unescaped publish is not captured.",
+				"POST /-/npm/v1/oidc/token/exchange/package/@scope/name: 404 {\"code\":\"ResourceNotFound\"} (route miss); escaped: 400/401 from the exchange handler. Trusted publishing of scoped names is therefore refused by the realizer as an impedance limit."
+			],
+			"liveLane": "HOBO_NPM_LIVE_PROMOTE_TAG opts the live lane into one real dist-tag move on a scoped package."
+		}
 	},
 	"interactions": [
 		{
@@ -28,6 +39,10 @@
 				"status": 404,
 				"body": {
 					"error": "Not found"
+				},
+				"headers": {
+					"content-type": "application/json",
+					"cf-cache-status": "HIT"
 				}
 			}
 		},
@@ -75,6 +90,10 @@
 				"status": 200,
 				"body": {
 					"success": true
+				},
+				"headers": {
+					"content-type": "application/json",
+					"npm-notice": "npm tokens that bypass 2FA are being restricted for account changes and direct publishing. Learn how to prepare: https://gh.io/npm-gat-bypass2fa-deprecation"
 				}
 			}
 		},
@@ -115,6 +134,14 @@
 						"modified": "2026-11-12T00:00:00.000Z",
 						"1.2.3": "2026-11-12T00:00:00.000Z"
 					}
+				},
+				"headers": {
+					"content-type": "application/json",
+					"cache-control": "public, max-age=300",
+					"etag": "\"<etag>\"",
+					"last-modified": "Thu, 12 Nov 2026 00:00:00 GMT",
+					"cf-cache-status": "HIT",
+					"vary": "accept-encoding, accept"
 				}
 			}
 		},
@@ -135,15 +162,19 @@
 				"status": 201,
 				"body": {
 					"ok": true
+				},
+				"headers": {
+					"content-type": "application/json",
+					"npm-notice": "npm tokens that bypass 2FA are being restricted for account changes and direct publishing. Learn how to prepare: https://gh.io/npm-gat-bypass2fa-deprecation"
 				}
 			}
 		},
 		{
-			"description": "exchange a CI OIDC ID token for a short-lived publish token (trusted publishing, npmjs only)",
-			"providerState": "a trusted publisher is configured for @hobo-fixtures/widget",
+			"description": "exchange a CI OIDC ID token for a short-lived publish token (trusted publishing, npmjs only, unscoped names)",
+			"providerState": "a trusted publisher is configured for hobo-fixtures-widget",
 			"request": {
 				"method": "POST",
-				"path": "/-/npm/v1/oidc/token/exchange/package/@hobo-fixtures/widget",
+				"path": "/-/npm/v1/oidc/token/exchange/package/hobo-fixtures-widget",
 				"headers": {
 					"accept": "application/json",
 					"authorization": "Bearer <ci-oidc-id-token>"
@@ -153,11 +184,15 @@
 				"status": 201,
 				"body": {
 					"token": "<short-lived-publish-token>"
+				},
+				"headers": {
+					"content-type": "application/json",
+					"npm-notice": "npm tokens that bypass 2FA are being restricted for account changes and direct publishing. Learn how to prepare: https://gh.io/npm-gat-bypass2fa-deprecation"
 				}
 			}
 		},
 		{
-			"description": "read the writable packument before deprecating",
+			"description": "read the writable packument uncached (before deprecating, and to confirm any mutation)",
 			"providerState": "@hobo-fixtures/widget@1.2.3 is published",
 			"request": {
 				"method": "GET",
@@ -191,6 +226,14 @@
 					"time": {
 						"1.2.3": "2026-11-12T00:00:00.000Z"
 					}
+				},
+				"headers": {
+					"content-type": "application/json",
+					"cache-control": "public, max-age=300",
+					"etag": "\"<etag>\"",
+					"last-modified": "Thu, 12 Nov 2026 00:00:00 GMT",
+					"cf-cache-status": "DYNAMIC",
+					"vary": "accept-encoding, accept"
 				}
 			}
 		},
@@ -226,6 +269,247 @@
 				"status": 200,
 				"body": {
 					"ok": true
+				},
+				"headers": {
+					"content-type": "application/json",
+					"npm-notice": "npm tokens that bypass 2FA are being restricted for account changes and direct publishing. Learn how to prepare: https://gh.io/npm-gat-bypass2fa-deprecation"
+				}
+			}
+		},
+		{
+			"description": "observe an unscoped package with the exchanged short-lived publish token",
+			"providerState": "hobo-fixtures-widget@1.2.3 is published and tagged candidate",
+			"request": {
+				"method": "GET",
+				"path": "/hobo-fixtures-widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <short-lived-publish-token>"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json",
+					"cache-control": "public, max-age=300",
+					"etag": "\"<etag>\"",
+					"last-modified": "Thu, 12 Nov 2026 00:00:00 GMT",
+					"cf-cache-status": "HIT",
+					"vary": "accept-encoding, accept"
+				},
+				"body": {
+					"_id": "hobo-fixtures-widget",
+					"_rev": "1-0123456789abcdef",
+					"name": "hobo-fixtures-widget",
+					"dist-tags": {
+						"candidate": "1.2.3",
+						"latest": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"name": "hobo-fixtures-widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-e1UqZr0YPMOswIAIURCLEjUvVvMzObxr8GFwyzdfro/dO4Bh3f+6c51/Hsi4DL9IMK1gr8qZcebd8eWs3y2vMA==",
+								"shasum": "9e0b8b6c2df55b4ec76cde60876f526f754164fe",
+								"tarball": "https://registry.npmjs.org/hobo-fixtures-widget/-/hobo-fixtures-widget-1.2.3.tgz"
+							}
+						}
+					},
+					"time": {
+						"created": "2026-11-12T00:00:00.000Z",
+						"modified": "2026-11-12T00:00:00.000Z",
+						"1.2.3": "2026-11-12T00:00:00.000Z"
+					}
+				}
+			}
+		},
+		{
+			"description": "publish refused: the token is invalid or lacks publish rights (401 Basic, Bearer challenge)",
+			"providerState": "the registry token is revoked",
+			"request": {
+				"method": "PUT",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>",
+					"content-type": "application/json"
+				},
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"name": "@hobo-fixtures/widget",
+					"description": "HoBo npm realizer fixture",
+					"dist-tags": {
+						"candidate": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"_id": "@hobo-fixtures/widget@1.2.3",
+							"name": "@hobo-fixtures/widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-/2lMF+pHLO98EvhE7UwpjN3zIWIEAHGL6Ilj/V8hyz66K/Z+HjioNeRNfj/CkOf7e8ss+P9NcTTHGAB1wyL7NQ==",
+								"shasum": "7bf7ff758708f85075d2b6c9a7bc8afdac381911",
+								"tarball": "https://registry.npmjs.org/@hobo-fixtures/widget/-/widget-1.2.3.tgz"
+							}
+						}
+					},
+					"access": null,
+					"_attachments": {
+						"@hobo-fixtures/widget-1.2.3.tgz": {
+							"content_type": "application/octet-stream",
+							"data": "<base64 tarball>",
+							"length": 257
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"content-type": "application/json",
+					"www-authenticate": "Basic, Bearer"
+				},
+				"body": "Unauthorized"
+			}
+		},
+		{
+			"description": "publish refused: the account enforces 2FA on writes (401 OTP challenge)",
+			"providerState": "the token's account requires a one-time password to publish",
+			"request": {
+				"method": "PUT",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>",
+					"content-type": "application/json"
+				},
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"name": "@hobo-fixtures/widget",
+					"description": "HoBo npm realizer fixture",
+					"dist-tags": {
+						"candidate": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"_id": "@hobo-fixtures/widget@1.2.3",
+							"name": "@hobo-fixtures/widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-/2lMF+pHLO98EvhE7UwpjN3zIWIEAHGL6Ilj/V8hyz66K/Z+HjioNeRNfj/CkOf7e8ss+P9NcTTHGAB1wyL7NQ==",
+								"shasum": "7bf7ff758708f85075d2b6c9a7bc8afdac381911",
+								"tarball": "https://registry.npmjs.org/@hobo-fixtures/widget/-/widget-1.2.3.tgz"
+							}
+						}
+					},
+					"access": null,
+					"_attachments": {
+						"@hobo-fixtures/widget-1.2.3.tgz": {
+							"content_type": "application/octet-stream",
+							"data": "<base64 tarball>",
+							"length": 257
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"content-type": "application/json",
+					"www-authenticate": "OTP"
+				},
+				"body": {
+					"error": "This operation requires a one-time password from your authenticator.\nYou can provide a one-time password by passing --otp=<code> to the command you ran.\nIf you already provided a one-time password then it is likely that you either typoed\nit, or it timed out. Please try again."
+				}
+			}
+		},
+		{
+			"description": "publish refused: the version already exists (403 cannot publish over)",
+			"providerState": "@hobo-fixtures/widget@1.2.3 is published but the CDN still serves a 404",
+			"request": {
+				"method": "PUT",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>",
+					"content-type": "application/json"
+				},
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"name": "@hobo-fixtures/widget",
+					"description": "HoBo npm realizer fixture",
+					"dist-tags": {
+						"candidate": "1.2.3"
+					},
+					"versions": {
+						"1.2.3": {
+							"_id": "@hobo-fixtures/widget@1.2.3",
+							"name": "@hobo-fixtures/widget",
+							"version": "1.2.3",
+							"dist": {
+								"integrity": "sha512-/2lMF+pHLO98EvhE7UwpjN3zIWIEAHGL6Ilj/V8hyz66K/Z+HjioNeRNfj/CkOf7e8ss+P9NcTTHGAB1wyL7NQ==",
+								"shasum": "7bf7ff758708f85075d2b6c9a7bc8afdac381911",
+								"tarball": "https://registry.npmjs.org/@hobo-fixtures/widget/-/widget-1.2.3.tgz"
+							}
+						}
+					},
+					"access": null,
+					"_attachments": {
+						"@hobo-fixtures/widget-1.2.3.tgz": {
+							"content_type": "application/octet-stream",
+							"data": "<base64 tarball>",
+							"length": 257
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"error": "You cannot publish over the previously published versions: 1.2.3."
+				}
+			}
+		},
+		{
+			"description": "observe a package unpublished in its entirety",
+			"providerState": "@hobo-fixtures/widget was unpublished, including 1.2.3",
+			"request": {
+				"method": "GET",
+				"path": "/@hobo-fixtures/widget",
+				"headers": {
+					"accept": "application/json",
+					"authorization": "Bearer <registry-token>"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json",
+					"cache-control": "public, max-age=300",
+					"etag": "\"<etag>\"",
+					"last-modified": "Thu, 12 Nov 2026 00:00:00 GMT",
+					"cf-cache-status": "HIT",
+					"vary": "accept-encoding, accept"
+				},
+				"body": {
+					"_id": "@hobo-fixtures/widget",
+					"_rev": "3-0123456789abcdef",
+					"name": "@hobo-fixtures/widget",
+					"time": {
+						"created": "2026-01-01T00:00:00.000Z",
+						"modified": "2026-01-02T00:00:00.000Z",
+						"unpublished": {
+							"time": "2026-01-02T00:00:00.000Z",
+							"versions": [
+								"1.2.2",
+								"1.2.3"
+							]
+						}
+					}
 				}
 			}
 		}

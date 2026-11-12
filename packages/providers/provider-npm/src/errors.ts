@@ -41,6 +41,27 @@ export class NpmVersionConflictError extends ResolverError {
 	}
 }
 
+// public-contract: the remediation for an npm one-time-password (2FA) challenge.
+export const NPM_OTP_REMEDIATION =
+	"bind a credential that publishes without a one-time password behind credentialRef: an npm automation token, or a granular access token with bypass-2FA enabled; on npmjs prefer OIDC trusted publishing (auth: oidc-trusted-publishing). HoBo never prompts for or supplies a one-time password";
+
+/**
+ * The registry answered `401` with a `www-authenticate: OTP` challenge: the
+ * credential is valid but its account enforces two-factor auth on writes. A
+ * reconciler has no human to type a one-time password, so re-issuing the same
+ * kind of token cannot help; the remediation names the token kinds that can.
+ */
+export class NpmOtpRequiredError extends ResolverError {
+	constructor(what: string) {
+		super(
+			"RESOLVER_CREDENTIAL_MISSING",
+			`npm registry demands a one-time password (2FA) for ${what}. Remediation: ${NPM_OTP_REMEDIATION}`,
+			NPM_PACKAGE_VERSION_PRODUCT_ID,
+		);
+		this.name = "NpmOtpRequiredError";
+	}
+}
+
 export function fail(
 	code: ResolverErrorCode,
 	message: string,

@@ -34,8 +34,18 @@
  * short-lived publish token. Neither ever reaches an outcome, an error or a
  * record (I9).
  *
- * Scoped names travel unescaped (`/@scope/name`): the guard refuses `%2f` in
- * paths, and npmjs, GitHub Packages and Verdaccio all route the unescaped form.
+ * Scoped names travel unescaped (`/@scope/name`) because the transport guard
+ * refuses `%2f` in paths, while npm's own client sends `@scope%2fname`. Probed
+ * against registry.npmjs.org on 2026-11-12 (README "Scoped names"): packument
+ * and dist-tag reads route both forms identically, and dist-tag PUTs reach the
+ * same auth check in both forms; the OIDC exchange routes only the escaped
+ * form (unescaped is a route-level 404), so trusted publishing of a scoped
+ * name is refused here as an impedance limit. A successful unescaped publish
+ * or dist-tag move is not yet captured; the opt-in live lane exercises it.
+ *
+ * Reads that confirm a mutation use `?write=true`: npmjs serves plain packument
+ * GETs from its CDN (`cache-control: public, max-age=300`), so a plain read can
+ * miss a publish that landed; `?write=true` reaches the origin uncached.
  */
 import {
 	createResolverRegistry,
@@ -55,6 +65,7 @@ import {
 	fail,
 	NPM_PACKAGE_VERSION_PRODUCT_ID,
 	NPM_PROVIDER_ID,
+	NpmOtpRequiredError,
 	NpmVersionConflictError,
 	npmProductRefusal,
 	reject,
@@ -62,6 +73,7 @@ import {
 	unsupported,
 } from "./errors.js";
 import {
+	isJsonArray,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -221,6 +233,11 @@ export function createNpmResolvers(
 			unsupported(
 				`${registry.kind} publishes only scoped packages, not ${name}`,
 				"name the package @owner/name",
+			);
+		if (options.auth === "oidc-trusted-publishing" && name.startsWith("@"))
+			unsupported(
+				`npm OIDC trusted publishing of the scoped package ${name} is not supported: the registry routes the token exchange only for the %2f-escaped name, which the HoBo transport guard refuses`,
+				"bind token auth (an automation or granular access token) for scoped packages",
 			);
 		const version = desired.version;
 		if (!isJsonString(version) || !VERSION.test(version))
@@ -406,11 +423,7 @@ export function createNpmResolvers(
 				}
 				if (response.status === 404) return { status: 404 };
 				if (response.status === 401 || response.status === 403)
-					fail(
-						"RESOLVER_CREDENTIAL_MISSING",
-						`npm registry refused the read with HTTP ${response.status}`,
-						"re-issue the registry credential behind credentialRef",
-					);
+					authRefusal("the read", response);
 				if (response.status < 200 || response.status >= 300)
 					reject(
 						`npm registry read returned HTTP ${response.status}`,
@@ -436,7 +449,16 @@ export function createNpmResolvers(
 		const entry = versions[t.version];
 		if (entry === undefined) {
 			const time = isJsonObject(doc.time) ? doc.time : {};
-			if (time[t.version] !== undefined)
+			// A package unpublished in its entirety keeps no per-version time
+			// entries, only `time.unpublished` (with the version list when the
+			// registry records it).
+			const unpublished = isJsonObject(time.unpublished)
+				? time.unpublished.versions
+				: undefined;
+			if (
+				time[t.version] !== undefined ||
+				(isJsonArray(unpublished) && unpublished.includes(t.version))
+			)
 				throw new NpmVersionConflictError(
 					"npm-version-previously-unpublished",
 					`${t.physicalId} was published and later unpublished; npm never accepts that version again`,
@@ -572,12 +594,7 @@ export function createNpmResolvers(
 	): Promise<string> {
 		const response = await s.send(method, path, body);
 		if (response === undefined) return "the reply was lost";
-		if (response.status === 401)
-			fail(
-				"RESOLVER_CREDENTIAL_MISSING",
-				`npm registry refused ${method} with HTTP 401`,
-				"re-issue the registry credential behind credentialRef",
-			);
+		if (response.status === 401) authRefusal(method, response);
 		return `the registry answered HTTP ${response.status}`;
 	}
 
@@ -613,7 +630,7 @@ export function createNpmResolvers(
 					`/${t.name}`,
 					publishDocument(t, art),
 				);
-				judged = judge(t, art, await packument(s, t));
+				judged = judge(t, art, await packument(s, t, true));
 				if (judged.state === "absent")
 					reject(
 						`npm publish of ${t.physicalId} is not observable on the registry (${sent})`,
@@ -628,7 +645,7 @@ export function createNpmResolvers(
 					`/-/package/${t.name}/dist-tags/${t.distTag}`,
 					JSON.stringify(t.version),
 				);
-				judged = judge(t, art, await packument(s, t));
+				judged = judge(t, art, await packument(s, t, true));
 				if (judged.state !== "present" || !judged.tagged)
 					reject(
 						`npm dist-tag ${t.distTag} → ${t.version} is not observable on the registry (${sent})`,
@@ -663,7 +680,7 @@ export function createNpmResolvers(
 				},
 			});
 			const sent = await mutate(s, "PUT", `/${t.name}`, body);
-			const after = await packument(s, t);
+			const after = await packument(s, t, true);
 			const afterVersions =
 				after && isJsonObject(after.versions) ? after.versions : {};
 			const afterEntry = afterVersions[t.version];
@@ -678,6 +695,31 @@ export function createNpmResolvers(
 		},
 	};
 	return Object.freeze([resolver]);
+}
+
+/**
+ * A 401/403 from the registry. `www-authenticate` is parsed the way
+ * npm-registry-fetch does (comma-split, case-insensitive): `OTP` means the
+ * account enforces 2FA on this write, which no re-issued token of the same
+ * kind fixes. A 401 without the challenge whose body asks for a "one-time
+ * pass" is the same refusal (npm-registry-fetch's heuristic for older
+ * registries). The body is matched, never quoted (I9).
+ */
+function authRefusal(what: string, response: TransportResponse): never {
+	const challenge = Object.entries(response.headers)
+		.filter(([name]) => name.toLowerCase() === "www-authenticate")
+		.flatMap(([, value]) => value.split(/,\s*/u))
+		.map((scheme) => scheme.trim().toLowerCase());
+	if (
+		challenge.includes("otp") ||
+		(response.status === 401 && /one-time pass/iu.test(response.body))
+	)
+		throw new NpmOtpRequiredError(what);
+	return fail(
+		"RESOLVER_CREDENTIAL_MISSING",
+		`npm registry refused ${what} with HTTP ${response.status}`,
+		"re-issue the registry credential behind credentialRef",
+	);
 }
 
 function json(body: string): JsonObject {

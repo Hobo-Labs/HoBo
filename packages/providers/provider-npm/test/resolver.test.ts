@@ -12,6 +12,7 @@ import {
 	createNpmResolvers,
 	NPM_DEFAULT_DEPRECATION_MESSAGE,
 	NPM_PACKAGE_VERSION_PRODUCT_ID,
+	NpmOtpRequiredError,
 	NpmVersionConflictError,
 	npmProductRefusal,
 	npmResolverRegistry,
@@ -31,6 +32,9 @@ import {
 	TARBALL,
 	TARBALL_124,
 	TOKEN,
+	UNSCOPED_NAME,
+	UNSCOPED_TARBALL,
+	unpublishedPackument,
 } from "./support/world.js";
 
 function resolverFor(
@@ -156,6 +160,54 @@ describe("npm realizer: converge", () => {
 		expect(puts[0]?.body).toBe(JSON.stringify("1.2.3"));
 	});
 
+	it("never re-points a dist-tag desired state does not declare", async () => {
+		const seeded = {
+			latest: "1.2.4",
+			beta: "1.2.4",
+			candidate: "1.2.4",
+			stable: "1.2.4",
+		};
+		const doc = publishedPackument(TARBALL_124, seeded, "1.2.4");
+		const world = registryWorld({ packument: doc });
+		const resolver = resolverFor();
+		const others = (tag: string) =>
+			Object.fromEntries(
+				Object.entries(world.packument()?.["dist-tags"] ?? {}).filter(
+					([name]) => name !== tag,
+				),
+			);
+		const beforePublish = JSON.stringify(others("candidate"));
+		const created = await resolver.reconcile(request(), world.transport);
+		expect(created.action).toBe("create");
+		const publish = JSON.parse(
+			world.requests.find((entry) => entry.method === "PUT")?.body ?? "{}",
+		);
+		expect(publish["dist-tags"]).toEqual({ candidate: "1.2.3" });
+		expect(Object.keys(publish.versions["1.2.3"])).not.toContain("dist-tags");
+		expect(JSON.stringify(others("candidate"))).toBe(beforePublish);
+		expect(world.packument()?.["dist-tags"]?.candidate).toBe("1.2.3");
+
+		const beforePromote = JSON.stringify(others("stable"));
+		const promoted = await resolver.reconcile(
+			request({ distTag: "stable" }, `${NAME}@1.2.3`),
+			world.transport,
+		);
+		expect(promoted.action).toBe("update");
+		expect(JSON.stringify(others("stable"))).toBe(beforePromote);
+		expect(world.packument()?.["dist-tags"]).toEqual({
+			latest: "1.2.4",
+			beta: "1.2.4",
+			candidate: "1.2.3",
+			stable: "1.2.3",
+		});
+		const tagMoves = world.requests.filter((entry) =>
+			new URL(entry.url).pathname.includes("/dist-tags/"),
+		);
+		expect(tagMoves.map((entry) => new URL(entry.url).pathname)).toEqual([
+			`/-/package/${NAME}/dist-tags/stable`,
+		]);
+	});
+
 	it("refuses a version that exists with different bytes as a typed conflict and never overwrites", async () => {
 		const world = registryWorld({
 			packument: publishedPackument(TAMPERED, { latest: "1.2.3" }),
@@ -211,6 +263,84 @@ describe("npm realizer: converge", () => {
 		expect(world.mutations()).toBe(0);
 	});
 
+	it("refuses a version of a package unpublished in its entirety (time.unpublished.versions) without publishing", async () => {
+		const world = registryWorld({
+			packument: unpublishedPackument(["1.2.2", "1.2.3"]),
+		});
+		const error = await refusal(
+			resolverFor().reconcile(request(), world.transport),
+		);
+		expect(conflictReason(error)).toBe("npm-version-previously-unpublished");
+		expect(world.mutations()).toBe(0);
+		const read = await refusal(
+			resolverFor().read?.(request(), world.transport) ?? Promise.resolve(),
+		);
+		expect(conflictReason(read)).toBe("npm-version-previously-unpublished");
+	});
+
+	it("publishes a new version over a wholly unpublished package that does not list it", async () => {
+		const world = registryWorld({ packument: unpublishedPackument(["1.2.2"]) });
+		const outcome = await resolverFor().reconcile(request(), world.transport);
+		expect(outcome.action).toBe("create");
+	});
+
+	it("confirms a publish with an uncached ?write=true read, so a CDN-cached 404 does not refuse it", async () => {
+		const world = registryWorld({ cdn: true });
+		const outcome = parsed(
+			await resolverFor().reconcile(request(), world.transport),
+		);
+		expect(outcome.action).toBe("create");
+		const reads = world.requests.filter((entry) => entry.method === "GET");
+		expect(reads.map((entry) => new URL(entry.url).search)).toEqual([
+			"",
+			"?write=true",
+		]);
+		// The next pass still sees the CDN's stale 404, publishes, is refused
+		// with 403 "cannot publish over", and the uncached read adopts it.
+		const again = parsed(
+			await resolverFor().reconcile(
+				request({}, `${NAME}@1.2.3`),
+				world.transport,
+			),
+		);
+		expect(again.outputs.ready).toBe(true);
+	});
+
+	it("confirms a dist-tag move with an uncached read when the CDN still serves the old tag", async () => {
+		const world = registryWorld({
+			cdn: true,
+			packument: publishedPackument(TARBALL, { candidate: "1.2.3" }),
+		});
+		const resolver = resolverFor();
+		await resolver.read?.(request({ distTag: "stable" }), world.transport);
+		const outcome = parsed(
+			await resolver.reconcile(request({ distTag: "stable" }), world.transport),
+		);
+		expect(outcome.action).toBe("update");
+		expect(outcome.outputs.distTagVersion).toBe("1.2.3");
+	});
+
+	it("resolves a 403 'cannot publish over' after a stale read by observation: our bytes converge, other bytes conflict", async () => {
+		const ours = registryWorld({ cdn: true });
+		await resolverFor().read?.(request(), ours.transport);
+		ours.setPackument(publishedPackument(TARBALL, { candidate: "1.2.3" }));
+		const converged = parsed(
+			await resolverFor().reconcile(request(), ours.transport),
+		);
+		expect(converged.outputs.ready).toBe(true);
+		expect(ours.packument()?.versions?.["1.2.3"]?.dist.integrity).toBe(
+			converged.outputs.integrity,
+		);
+
+		const theirs = registryWorld({ cdn: true });
+		await resolverFor().read?.(request(), theirs.transport);
+		theirs.setPackument(publishedPackument(TAMPERED, { latest: "1.2.3" }));
+		const error = await refusal(
+			resolverFor().reconcile(request(), theirs.transport),
+		);
+		expect(conflictReason(error)).toBe("npm-version-integrity-mismatch");
+	});
+
 	it("resolves a lost publish reply by observation: the publish landed, so it is create", async () => {
 		const world = registryWorld();
 		world.faults.dropReplyOnce = true;
@@ -256,13 +386,48 @@ describe("npm realizer: converge", () => {
 		expect(outcome.outputs.ready).toBe(true);
 	});
 
-	it("maps a 401 on publish to a credential refusal", async () => {
+	it("maps a 401 Basic, Bearer challenge on publish to a credential refusal", async () => {
 		const world = registryWorld();
 		world.faults.statusOnce = 401;
 		const error = await refusal(
 			resolverFor().reconcile(request(), world.transport),
 		);
 		expect(error.code).toBe("RESOLVER_CREDENTIAL_MISSING");
+		expect(error).not.toBeInstanceOf(NpmOtpRequiredError);
+		expect(error.message).toContain("re-issue the registry credential");
+	});
+
+	it("maps a 401 www-authenticate: OTP challenge to a distinct 2FA refusal naming automation tokens and trusted publishing", async () => {
+		const world = registryWorld();
+		world.faults.otpOnce = true;
+		const error = await refusal(
+			resolverFor().reconcile(request(), world.transport),
+		);
+		expect(error).toBeInstanceOf(NpmOtpRequiredError);
+		expect(error.code).toBe("RESOLVER_CREDENTIAL_MISSING");
+		expect(error.message).toContain("one-time password");
+		expect(error.message).toContain("automation token");
+		expect(error.message).toContain("bypass-2FA");
+		expect(error.message).toContain("OIDC trusted publishing");
+		expect(error.message).not.toContain("re-issue the registry credential");
+		expect(error.message).not.toContain(TOKEN);
+		expect(world.packument()).toBeUndefined();
+	});
+
+	it("maps a 401 whose body asks for a one-time password but sends no challenge to the 2FA refusal", async () => {
+		const otp = registryWorld();
+		const transport: typeof otp.transport = async (entry) =>
+			entry.method === "PUT"
+				? {
+						status: 401,
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({
+							error: "You must provide a one-time pass. Upgrade your client.",
+						}),
+					}
+				: otp.transport(entry);
+		const error = await refusal(resolverFor().reconcile(request(), transport));
+		expect(error).toBeInstanceOf(NpmOtpRequiredError);
 	});
 
 	it("attaches the Freight's Sigstore provenance bundle and observes the registry's attestation", async () => {
@@ -301,17 +466,29 @@ describe("npm realizer: converge", () => {
 });
 
 describe("npm realizer: OIDC trusted publishing", () => {
-	it("exchanges the CI ID token through the transport and publishes with the short-lived token", async () => {
-		const world = registryWorld({ bearer: PUBLISH_TOKEN, idToken: ID_TOKEN });
-		const resolver = resolverFor(memoryStore(TARBALL), {
+	const unscoped = (overrides: DesiredOverrides = {}) =>
+		request({
+			packageName: UNSCOPED_NAME,
+			artifactDigest: digestOf(UNSCOPED_TARBALL),
+			...overrides,
+		});
+	const oidc = () =>
+		resolverFor(memoryStore(UNSCOPED_TARBALL), {
 			auth: "oidc-trusted-publishing",
 			resolveCredential: async () => ID_TOKEN,
 		});
-		const outcome = await resolver.reconcile(request(), world.transport);
+
+	it("exchanges the CI ID token through the transport and publishes with the short-lived token", async () => {
+		const world = registryWorld({
+			bearer: PUBLISH_TOKEN,
+			idToken: ID_TOKEN,
+			name: UNSCOPED_NAME,
+		});
+		const outcome = await oidc().reconcile(unscoped(), world.transport);
 		expect(outcome.action).toBe("create");
 		expect(world.requests[0]?.method).toBe("POST");
 		expect(new URL(world.requests[0]?.url ?? "").pathname).toBe(
-			`/-/npm/v1/oidc/token/exchange/package/${NAME}`,
+			`/-/npm/v1/oidc/token/exchange/package/${UNSCOPED_NAME}`,
 		);
 		const text = JSON.stringify(outcome);
 		expect(text).not.toContain(PUBLISH_TOKEN);
@@ -319,15 +496,27 @@ describe("npm realizer: OIDC trusted publishing", () => {
 	});
 
 	it("refuses an exchange the registry denies without echoing the ID token", async () => {
-		const world = registryWorld({ bearer: PUBLISH_TOKEN, idToken: "other" });
+		const world = registryWorld({
+			bearer: PUBLISH_TOKEN,
+			idToken: "other",
+			name: UNSCOPED_NAME,
+		});
+		const error = await refusal(oidc().reconcile(unscoped(), world.transport));
+		expect(error.message).toContain("trusted publisher");
+		expect(error.message).not.toContain(ID_TOKEN);
+	});
+
+	it("refuses a scoped name before any request: npmjs routes the exchange only for the %2f-escaped name, which the transport guard refuses", async () => {
+		const world = registryWorld({ bearer: PUBLISH_TOKEN, idToken: ID_TOKEN });
 		const error = await refusal(
 			resolverFor(memoryStore(TARBALL), {
 				auth: "oidc-trusted-publishing",
 				resolveCredential: async () => ID_TOKEN,
 			}).reconcile(request(), world.transport),
 		);
-		expect(error.message).toContain("trusted publisher");
-		expect(error.message).not.toContain(ID_TOKEN);
+		expect(error.code).toBe("RESOLVER_PRODUCT_UNSUPPORTED");
+		expect(error.message).toContain("scoped");
+		expect(world.requests).toHaveLength(0);
 	});
 
 	it("is unsupported on registries without an exchange", () => {
@@ -368,7 +557,7 @@ describe("npm realizer: delete deprecates, never unpublishes", () => {
 		});
 		const resolver = resolverFor();
 		await resolver.delete(request(), world.transport);
-		expect(world.packument()?.versions["1.2.3"].deprecated).toBe(
+		expect(world.packument()?.versions?.["1.2.3"]?.deprecated).toBe(
 			NPM_DEFAULT_DEPRECATION_MESSAGE,
 		);
 		expect(world.requests.some((entry) => entry.method === "DELETE")).toBe(
@@ -390,7 +579,7 @@ describe("npm realizer: delete deprecates, never unpublishes", () => {
 			request({ deprecationMessage: "use 2.x" }),
 			world.transport,
 		);
-		expect(world.packument()?.versions["1.2.3"].deprecated).toBe("use 2.x");
+		expect(world.packument()?.versions?.["1.2.3"]?.deprecated).toBe("use 2.x");
 	});
 
 	it("treats an absent version as already retired and never deprecates other bytes", async () => {
