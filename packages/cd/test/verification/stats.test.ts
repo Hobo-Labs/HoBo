@@ -4,13 +4,13 @@
 // tie and continuity correction for the rest) and is pinned here, so a change
 // in the implementation shows up as a diff against an independent reference.
 import { describe, expect, it } from "vitest";
+import { Direction, Sensitivity } from "../../src/_generated/cd_pb.js";
 import {
 	alphaFor,
 	compareCohorts,
 	mannWhitneyU,
 	normalSurvival,
 } from "../../src/verification/stats.js";
-import { Direction, Sensitivity } from "../../src/_generated/cd_pb.js";
 
 type Golden = Readonly<{
 	name: string;
@@ -110,7 +110,10 @@ describe("Mann–Whitney U golden vectors (D9)", () => {
 	}
 
 	it("all samples identical: no evidence of a difference (p = 1)", () => {
-		const result = mannWhitneyU([5, 5, 5, 5, 5, 5, 5, 5], [5, 5, 5, 5, 5, 5, 5, 5]);
+		const result = mannWhitneyU(
+			[5, 5, 5, 5, 5, 5, 5, 5],
+			[5, 5, 5, 5, 5, 5, 5, 5],
+		);
 		expect(result.u).toBe(32);
 		expect(result.p).toBe(1);
 	});

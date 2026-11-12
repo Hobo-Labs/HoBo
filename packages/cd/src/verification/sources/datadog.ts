@@ -13,8 +13,8 @@ import {
 	isRecord,
 	requestJson,
 	type SourceDeps,
-	sampleValue,
 	samplesOutcome,
+	sampleValue,
 } from "./http.js";
 
 export function createDatadogSource(deps: SourceDeps): HealthSource {
@@ -32,19 +32,35 @@ export function createDatadogSource(deps: SourceDeps): HealthSource {
 			url.searchParams.set("from", String(Math.floor(input.fromMs / 1000)));
 			url.searchParams.set("to", String(Math.floor(input.toMs / 1000)));
 			url.searchParams.set("query", query.query);
-			const response = await requestJson(deps, { method: "GET", url, headers: credential.value, subject: query.name });
+			const response = await requestJson(deps, {
+				method: "GET",
+				url,
+				headers: credential.value,
+				subject: query.name,
+			});
 			if (!response.ok) return response;
 			const body = response.value;
-			if (!isRecord(body) || body.status !== "ok" || !Array.isArray(body.series)) return invalid(query.name, "Datadog answer has no series");
-			const wanted = selector.value ? `${selector.value.label}:${selector.value.value}` : undefined;
+			if (
+				!isRecord(body) ||
+				body.status !== "ok" ||
+				!Array.isArray(body.series)
+			)
+				return invalid(query.name, "Datadog answer has no series");
+			const wanted = selector.value
+				? `${selector.value.label}:${selector.value.value}`
+				: undefined;
 			const series: Array<Readonly<{ key: string; values: number[] }>> = [];
 			for (const item of body.series) {
-				if (!isRecord(item) || !Array.isArray(item.pointlist)) return invalid(query.name, "malformed Datadog series");
-				const tags = Array.isArray(item.tag_set) ? item.tag_set.filter((tag): tag is string => typeof tag === "string") : [];
+				if (!isRecord(item) || !Array.isArray(item.pointlist))
+					return invalid(query.name, "malformed Datadog series");
+				const tags = Array.isArray(item.tag_set)
+					? item.tag_set.filter((tag): tag is string => typeof tag === "string")
+					: [];
 				if (wanted && !tags.includes(wanted)) continue;
 				const values: number[] = [];
 				for (const point of item.pointlist) {
-					if (!Array.isArray(point) || point.length !== 2) return invalid(query.name, "malformed Datadog point");
+					if (!Array.isArray(point) || point.length !== 2)
+						return invalid(query.name, "malformed Datadog point");
 					const value = sampleValue(point[1]);
 					if (value !== undefined) values.push(value);
 				}

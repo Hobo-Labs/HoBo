@@ -9,9 +9,17 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EventEnvelope } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import { Cohort, HealthSourceKind, VerificationVerdict } from "../../src/_generated/cd_pb.js";
+import {
+	Cohort,
+	HealthSourceKind,
+	VerificationVerdict,
+} from "../../src/_generated/cd_pb.js";
 import { CD_STREAMS } from "../../src/events.js";
-import { createVerificationEngine, foldVerification, replayVerification } from "../../src/verification/index.js";
+import {
+	createVerificationEngine,
+	foldVerification,
+	replayVerification,
+} from "../../src/verification/index.js";
 import {
 	camp,
 	clock,
@@ -41,11 +49,18 @@ async function record(name: string): Promise<readonly GoldenEvent[]> {
 	const store = new MemoryEventStore();
 	const time = clock();
 	const ctx = context(time.now);
-	const source = new ScriptedHealthSource(HealthSourceKind.PROMETHEUS, ({ cohort }) => {
-		if (name === "no-data") return samples([]);
-		if (name === "deadline") return samples([0.01]);
-		return samples(cohort === Cohort.CANARY ? [150, 151, 152, 153, 154, 155, 156, 157] : [100, 101, 102, 103, 104, 105, 106, 107]);
-	});
+	const source = new ScriptedHealthSource(
+		HealthSourceKind.PROMETHEUS,
+		({ cohort }) => {
+			if (name === "no-data") return samples([]);
+			if (name === "deadline") return samples([0.01]);
+			return samples(
+				cohort === Cohort.CANARY
+					? [150, 151, 152, 153, 154, 155, 156, 157]
+					: [100, 101, 102, 103, 104, 105, 106, 107],
+			);
+		},
+	);
 	const engine = createVerificationEngine({
 		store,
 		tenant: TENANT,
@@ -55,16 +70,28 @@ async function record(name: string): Promise<readonly GoldenEvent[]> {
 		http: new ScriptedTransport(() => json(200, {})).transport,
 	});
 	const spec = name === "canary-worse" ? comparisonSpec() : thresholdSpec();
-	const id = await engine.start({ spec, freightId: fid("sha256:golden"), campId: camp("camp-golden"), cohortAware: name === "canary-worse" }, ctx);
+	const id = await engine.start(
+		{
+			spec,
+			freightId: fid("sha256:golden"),
+			campId: camp("camp-golden"),
+			cohortAware: name === "canary-worse",
+		},
+		ctx,
+	);
 	time.advance(10 * MINUTE);
 	await engine.tick(ctx);
 	time.advance(20 * MINUTE);
 	await engine.tick(ctx);
-	return store.events(CD_STREAMS.verification(id)).map((event) => ({ type: event.type, seq: event.seq, data: event.data }));
+	return store
+		.events(CD_STREAMS.verification(id))
+		.map((event) => ({ type: event.type, seq: event.seq, data: event.data }));
 }
 
 const SCENARIOS = ["canary-worse", "no-data", "deadline"] as const;
-const EXPECTED: Readonly<Record<(typeof SCENARIOS)[number], VerificationVerdict>> = {
+const EXPECTED: Readonly<
+	Record<(typeof SCENARIOS)[number], VerificationVerdict>
+> = {
 	"canary-worse": VerificationVerdict.FAIL,
 	"no-data": VerificationVerdict.FAIL,
 	deadline: VerificationVerdict.INCONCLUSIVE,
@@ -96,7 +123,10 @@ describe("verification golden journal corpus", async () => {
 		it(`${name}: recorded bodies fold and replay to the recorded verdict`, () => {
 			const events = envelopes(corpus[name] ?? []);
 			expect(foldVerification(events)?.result?.verdict).toBe(EXPECTED[name]);
-			expect(replayVerification(events)).toMatchObject({ matches: true, recorded: EXPECTED[name] });
+			expect(replayVerification(events)).toMatchObject({
+				matches: true,
+				recorded: EXPECTED[name],
+			});
 		});
 
 		it(`${name}: the engine still writes byte-identical bodies`, async () => {

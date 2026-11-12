@@ -10,19 +10,41 @@ import {
 	EvidenceObservationRecordSchema,
 	VerificationVerdict,
 } from "../../src/_generated/cd_pb.js";
-import { aggregate, evaluateVerification, qualifies } from "../../src/verification/evaluate.js";
-import { type ParsedVerificationSpec, parseVerificationSpec } from "../../src/verification/spec.js";
+import {
+	aggregate,
+	evaluateVerification,
+	qualifies,
+} from "../../src/verification/evaluate.js";
+import {
+	type ParsedVerificationSpec,
+	parseVerificationSpec,
+} from "../../src/verification/spec.js";
 import { comparisonSpec, MINUTE, query, T0, thresholdSpec } from "./fakes.js";
 
-function parsed(spec: ReturnType<typeof thresholdSpec>): ParsedVerificationSpec {
+function parsed(
+	spec: ReturnType<typeof thresholdSpec>,
+): ParsedVerificationSpec {
 	const outcome = parseVerificationSpec(spec);
 	if (!outcome.ok) throw new Error(outcome.reasons.map((r) => r.code).join());
 	return outcome.value;
 }
 
-function evidence(signal: string, values: readonly number[], cohort = Cohort.ALL, healthy = true): EvidenceObservationRecord[] {
+function evidence(
+	signal: string,
+	values: readonly number[],
+	cohort = Cohort.ALL,
+	healthy = true,
+): EvidenceObservationRecord[] {
 	return values.map((value) =>
-		create(EvidenceObservationRecordSchema, { campId: "camp-a", signal, value, cohort, healthy, observedAt: new Date(T0).toISOString(), source: "test" }),
+		create(EvidenceObservationRecordSchema, {
+			campId: "camp-a",
+			signal,
+			value,
+			cohort,
+			healthy,
+			observedAt: new Date(T0).toISOString(),
+			source: "test",
+		}),
 	);
 }
 
@@ -40,7 +62,10 @@ describe("comparison verdicts (D9)", () => {
 			cohortAware: true,
 			startedAtMs: T0,
 			atMs: WINDOW_END,
-			evidence: [...evidence("comparison:latency_ms", canary, Cohort.CANARY), ...evidence("comparison:latency_ms", BASELINE, Cohort.BASELINE)],
+			evidence: [
+				...evidence("comparison:latency_ms", canary, Cohort.CANARY),
+				...evidence("comparison:latency_ms", BASELINE, Cohort.BASELINE),
+			],
 		});
 
 	it("canary significantly worse → FAIL", () => {
@@ -60,15 +85,29 @@ describe("comparison verdicts (D9)", () => {
 	});
 
 	it("a comparison without a baseline cohort fails closed", () => {
-		const result = evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: [] });
+		const result = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: WINDOW_END,
+			evidence: [],
+		});
 		expect(result.verdict).toBe(VerificationVerdict.FAIL);
-		expect(result.checks[0]?.reason?.code).toBe("verification-cohort-unavailable");
+		expect(result.checks[0]?.reason?.code).toBe(
+			"verification-cohort-unavailable",
+		);
 	});
 });
 
 describe("no data → FAIL (I5)", () => {
 	it("an empty window fails at window end, without waiting for the deadline", () => {
-		const result = evaluateVerification({ spec: parsed(thresholdSpec()), cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: [] });
+		const result = evaluateVerification({
+			spec: parsed(thresholdSpec()),
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: WINDOW_END,
+			evidence: [],
+		});
 		expect(result.complete).toBe(true);
 		expect(result.verdict).toBe(VerificationVerdict.FAIL);
 		expect(result.checks[0]?.reason?.code).toBe("verification-no-data");
@@ -100,8 +139,24 @@ describe("no data → FAIL (I5)", () => {
 	it("an unavailable source waits (retry) until the deadline, then is no data", () => {
 		const spec = parsed(thresholdSpec());
 		const unavailable = new Set(["threshold:error_rate"]);
-		expect(evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: [], unavailable }).complete).toBe(false);
-		const late = evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: DEADLINE, evidence: [], unavailable });
+		expect(
+			evaluateVerification({
+				spec,
+				cohortAware: false,
+				startedAtMs: T0,
+				atMs: WINDOW_END,
+				evidence: [],
+				unavailable,
+			}).complete,
+		).toBe(false);
+		const late = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: DEADLINE,
+			evidence: [],
+			unavailable,
+		});
 		expect(late.verdict).toBe(VerificationVerdict.FAIL);
 		expect(late.checks[0]?.reason?.code).toBe("verification-no-data");
 	});
@@ -112,21 +167,47 @@ describe("deadline → INCONCLUSIVE → treated as FAIL by rollout", () => {
 	const partial = evidence("threshold:error_rate", [0.01, 0.02]);
 
 	it("partial evidence before the deadline keeps the verification running", () => {
-		expect(evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: partial }).complete).toBe(false);
+		expect(
+			evaluateVerification({
+				spec,
+				cohortAware: false,
+				startedAtMs: T0,
+				atMs: WINDOW_END,
+				evidence: partial,
+			}).complete,
+		).toBe(false);
 	});
 
 	it("at the deadline it completes INCONCLUSIVE with the deadline reason, and does not qualify", () => {
-		const result = evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: DEADLINE, evidence: partial });
+		const result = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: DEADLINE,
+			evidence: partial,
+		});
 		expect(result.complete).toBe(true);
 		expect(result.verdict).toBe(VerificationVerdict.INCONCLUSIVE);
-		expect(result.checks[0]?.reason?.code).toBe("verification-insufficient-observations");
-		expect(result.reasons.map((r) => r.code)).toContain("verification-deadline-exceeded");
+		expect(result.checks[0]?.reason?.code).toBe(
+			"verification-insufficient-observations",
+		);
+		expect(result.reasons.map((r) => r.code)).toContain(
+			"verification-deadline-exceeded",
+		);
 		expect(qualifies(result.verdict)).toBe(false);
 	});
 
 	it("nothing completes before the window ends, even with full evidence", () => {
 		const full = evidence("threshold:error_rate", [0.01, 0.01, 0.01]);
-		expect(evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END - 1, evidence: full }).complete).toBe(false);
+		expect(
+			evaluateVerification({
+				spec,
+				cohortAware: false,
+				startedAtMs: T0,
+				atMs: WINDOW_END - 1,
+				evidence: full,
+			}).complete,
+		).toBe(false);
 	});
 });
 
@@ -150,7 +231,16 @@ describe("thresholds per aggregation", () => {
 		[Comparator.GTE, 0.25, VerificationVerdict.PASS],
 	])("comparator %s against the mean 0.25 (exact in binary)", (comparator, bound, verdict) => {
 		const spec = parsed(
-			thresholdSpec({ thresholds: [{ query: query("error_rate", { unit: "ratio" }), aggregation: Aggregation.MEAN, comparator, value: bound }] }),
+			thresholdSpec({
+				thresholds: [
+					{
+						query: query("error_rate", { unit: "ratio" }),
+						aggregation: Aggregation.MEAN,
+						comparator,
+						value: bound,
+					},
+				],
+			}),
 		);
 		const result = evaluateVerification({
 			spec,
@@ -180,7 +270,10 @@ describe("thresholds per aggregation", () => {
 			cohortAware: true,
 			startedAtMs: T0,
 			atMs: WINDOW_END,
-			evidence: [...evidence("threshold:error_rate", [0.9, 0.9, 0.9], Cohort.CANARY), ...evidence("threshold:error_rate", [0, 0, 0], Cohort.ALL)],
+			evidence: [
+				...evidence("threshold:error_rate", [0.9, 0.9, 0.9], Cohort.CANARY),
+				...evidence("threshold:error_rate", [0, 0, 0], Cohort.ALL),
+			],
 		});
 		expect(result.verdict).toBe(VerificationVerdict.FAIL);
 	});
@@ -190,13 +283,28 @@ describe("probes and suites", () => {
 	const spec = parsed(
 		thresholdSpec({
 			thresholds: [],
-			probes: [{ name: "health", urlRef: "https://api.example.com/healthz", minSuccessRatio: 0.75 }],
+			probes: [
+				{
+					name: "health",
+					urlRef: "https://api.example.com/healthz",
+					minSuccessRatio: 0.75,
+				},
+			],
 			suites: [{ suite: "smoke" }],
 		}),
 	);
 	it("probe ratio at or above min_success_ratio passes; a failed suite fails", () => {
-		const probe = [...evidence("probe:health", [200, 200, 200]), ...evidence("probe:health", [503], Cohort.ALL, false)];
-		const passing = evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: [...probe, ...evidence("suite:smoke", [1])] });
+		const probe = [
+			...evidence("probe:health", [200, 200, 200]),
+			...evidence("probe:health", [503], Cohort.ALL, false),
+		];
+		const passing = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: WINDOW_END,
+			evidence: [...probe, ...evidence("suite:smoke", [1])],
+		});
 		expect(passing.verdict).toBe(VerificationVerdict.PASS);
 		const suiteFailed = evaluateVerification({
 			spec,
@@ -206,19 +314,46 @@ describe("probes and suites", () => {
 			evidence: [...probe, ...evidence("suite:smoke", [0], Cohort.ALL, false)],
 		});
 		expect(suiteFailed.verdict).toBe(VerificationVerdict.FAIL);
-		expect(suiteFailed.checks.find((c) => c.check === "suite:smoke")?.reason?.code).toBe("verification-suite-failed");
+		expect(
+			suiteFailed.checks.find((c) => c.check === "suite:smoke")?.reason?.code,
+		).toBe("verification-suite-failed");
 	});
 
 	it("probe ratio below the minimum fails", () => {
-		const probe = [...evidence("probe:health", [200, 200]), ...evidence("probe:health", [503, 503], Cohort.ALL, false)];
-		const result = evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: [...probe, ...evidence("suite:smoke", [1])] });
-		expect(result.checks.find((c) => c.check === "probe:health")?.reason?.code).toBe("verification-probe-failed");
+		const probe = [
+			...evidence("probe:health", [200, 200]),
+			...evidence("probe:health", [503, 503], Cohort.ALL, false),
+		];
+		const result = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: WINDOW_END,
+			evidence: [...probe, ...evidence("suite:smoke", [1])],
+		});
+		expect(
+			result.checks.find((c) => c.check === "probe:health")?.reason?.code,
+		).toBe("verification-probe-failed");
 	});
 
 	it("a suite that never reported waits, then is no data at the deadline", () => {
 		const probe = evidence("probe:health", [200, 200, 200]);
-		expect(evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: WINDOW_END, evidence: probe }).complete).toBe(false);
-		const late = evaluateVerification({ spec, cohortAware: false, startedAtMs: T0, atMs: DEADLINE, evidence: probe });
+		expect(
+			evaluateVerification({
+				spec,
+				cohortAware: false,
+				startedAtMs: T0,
+				atMs: WINDOW_END,
+				evidence: probe,
+			}).complete,
+		).toBe(false);
+		const late = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: DEADLINE,
+			evidence: probe,
+		});
 		expect(late.verdict).toBe(VerificationVerdict.FAIL);
 	});
 });

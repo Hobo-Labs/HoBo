@@ -37,27 +37,56 @@ function railDigest(value: string): Digest | undefined {
 	return DIGEST.test(value) ? (value as Digest) : undefined;
 }
 
-export function createHoboPostureSource(posture: PostureSeriesReader): HealthSource {
+export function createHoboPostureSource(
+	posture: PostureSeriesReader,
+): HealthSource {
 	return {
 		kind: HealthSourceKind.HOBO_POSTURE,
 		async query(input) {
 			const { query } = input;
 			if (input.cohort === Cohort.BASELINE) {
-				return refuse("health-source-query-invalid", `${query.name}: posture has no baseline cohort; use a threshold`, query.name);
+				return refuse(
+					"health-source-query-invalid",
+					`${query.name}: posture has no baseline cohort; use a threshold`,
+					query.name,
+				);
 			}
-			const digest = query.endpointRef === "" ? undefined : railDigest(query.endpointRef);
+			const digest =
+				query.endpointRef === "" ? undefined : railDigest(query.endpointRef);
 			if (query.endpointRef !== "" && !digest) {
-				return refuse("health-source-endpoint-invalid", `${query.name}: endpoint_ref must be empty or a sha256 Rail digest`, query.name);
+				return refuse(
+					"health-source-endpoint-invalid",
+					`${query.name}: endpoint_ref must be empty or a sha256 Rail digest`,
+					query.name,
+				);
 			}
-			const window = { campId: input.campId, fromMs: input.fromMs, toMs: input.toMs };
+			const window = {
+				campId: input.campId,
+				fromMs: input.fromMs,
+				toMs: input.toMs,
+			};
 			let values: readonly number[];
 			if (query.query === POSTURE_SERIES.noncompliantRatio) {
-				values = await posture.noncompliantRatio(digest ? { ...window, railDigest: digest } : window);
+				values = await posture.noncompliantRatio(
+					digest ? { ...window, railDigest: digest } : window,
+				);
 			} else if (query.query === POSTURE_SERIES.shadowDivergenceCount) {
-				if (!digest) return refuse("health-source-query-invalid", `${query.name}: shadow_divergence_count needs the candidate Rail digest`, query.name);
-				values = await posture.shadowDivergence({ ...window, railDigest: digest });
+				if (!digest)
+					return refuse(
+						"health-source-query-invalid",
+						`${query.name}: shadow_divergence_count needs the candidate Rail digest`,
+						query.name,
+					);
+				values = await posture.shadowDivergence({
+					...window,
+					railDigest: digest,
+				});
 			} else {
-				return refuse("health-source-query-invalid", `${query.name}: posture series must be noncompliant_ratio or shadow_divergence_count`, query.name);
+				return refuse(
+					"health-source-query-invalid",
+					`${query.name}: posture series must be noncompliant_ratio or shadow_divergence_count`,
+					query.name,
+				);
 			}
 			return samplesOutcome(
 				values.filter((value) => !Number.isNaN(value)),
@@ -74,27 +103,49 @@ export function createHoboPostureSource(posture: PostureSeriesReader): HealthSou
  * intends to block something widens `maxShadowDivergence` explicitly.
  */
 export function informVerificationSpec(
-	input: Readonly<{ railDigest: Digest; maxNoncompliantRatio?: number; maxShadowDivergence?: number }>,
+	input: Readonly<{
+		railDigest: Digest;
+		maxNoncompliantRatio?: number;
+		maxShadowDivergence?: number;
+	}>,
 ): VerificationSpecRecord {
 	const query = (name: string, series: string, unit: string) =>
-		create(HealthQueryRecordSchema, { name, source: HealthSourceKind.HOBO_POSTURE, query: series, endpointRef: input.railDigest, unit });
+		create(HealthQueryRecordSchema, {
+			name,
+			source: HealthSourceKind.HOBO_POSTURE,
+			query: series,
+			endpointRef: input.railDigest,
+			unit,
+		});
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(CD_DEFAULTS.informWindowMs),
 		requiredObservations: 1,
-		progressDeadlineMs: BigInt(CD_DEFAULTS.informWindowMs + CD_DEFAULTS.verificationProgressDeadlineMs),
+		progressDeadlineMs: BigInt(
+			CD_DEFAULTS.informWindowMs + CD_DEFAULTS.verificationProgressDeadlineMs,
+		),
 		failOnNoData: true,
 		thresholds: [
 			{
-				query: query("posture-noncompliant-ratio", POSTURE_SERIES.noncompliantRatio, RATIO_UNIT),
+				query: query(
+					"posture-noncompliant-ratio",
+					POSTURE_SERIES.noncompliantRatio,
+					RATIO_UNIT,
+				),
 				aggregation: Aggregation.MAX,
 				comparator: Comparator.LTE,
-				value: input.maxNoncompliantRatio ?? CD_DEFAULTS.informMaxNoncompliantRatio,
+				value:
+					input.maxNoncompliantRatio ?? CD_DEFAULTS.informMaxNoncompliantRatio,
 			},
 			{
-				query: query("posture-shadow-divergence", POSTURE_SERIES.shadowDivergenceCount, "count"),
+				query: query(
+					"posture-shadow-divergence",
+					POSTURE_SERIES.shadowDivergenceCount,
+					"count",
+				),
 				aggregation: Aggregation.SUM,
 				comparator: Comparator.LTE,
-				value: input.maxShadowDivergence ?? CD_DEFAULTS.informMaxShadowDivergence,
+				value:
+					input.maxShadowDivergence ?? CD_DEFAULTS.informMaxShadowDivergence,
 			},
 		],
 	});

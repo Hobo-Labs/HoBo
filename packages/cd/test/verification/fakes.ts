@@ -74,7 +74,10 @@ export function clock(start = T0) {
 	};
 }
 
-export function context(now: () => number, principal: PrincipalRef = OPERATOR): CdContext {
+export function context(
+	now: () => number,
+	principal: PrincipalRef = OPERATOR,
+): CdContext {
 	return { tenant: TENANT, principal, now };
 }
 
@@ -84,19 +87,28 @@ export class MemoryEventStore implements DurableEventStore {
 	private readonly all: PositionedEvent[] = [];
 	private nextId = 1;
 
-	async append(streamId: string, events: EventInput[], opts: AppendOptions): Promise<AppendResult> {
+	async append(
+		streamId: string,
+		events: EventInput[],
+		opts: AppendOptions,
+	): Promise<AppendResult> {
 		const stream = this.streams.get(streamId) ?? [];
 		const deduped: EventEnvelope[] = [];
 		const fresh: EventInput[] = [];
 		for (const input of events) {
 			const key = input.meta?.idempotencyKey;
-			const existing = typeof key === "string" ? stream.find((event) => event.meta?.idempotencyKey === key) : undefined;
+			const existing =
+				typeof key === "string"
+					? stream.find((event) => event.meta?.idempotencyKey === key)
+					: undefined;
 			if (existing) deduped.push(existing);
 			else fresh.push(input);
 		}
 		if (fresh.length === 0) return { streamId, appended: [], deduped };
 		if (opts.expectedSeq !== stream.length) {
-			throw new Error(`expected seq ${opts.expectedSeq} but stream ${streamId} is at ${stream.length}`);
+			throw new Error(
+				`expected seq ${opts.expectedSeq} but stream ${streamId} is at ${stream.length}`,
+			);
 		}
 		const appended: EventEnvelope[] = [];
 		for (const input of fresh) {
@@ -124,29 +136,51 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 
 	async *read(streamId: string, fromSeq = 0): AsyncIterable<EventEnvelope> {
-		for (const event of this.streams.get(streamId) ?? []) if (event.seq > fromSeq) yield event;
+		for (const event of this.streams.get(streamId) ?? [])
+			if (event.seq > fromSeq) yield event;
 	}
 
 	async *readAll(options: ReadAllOptions = {}): AsyncIterable<PositionedEvent> {
 		for (const entry of this.all) {
-			if (options.after !== undefined && entry.position <= options.after) continue;
-			if (options.tenant !== undefined && entry.event.tenant !== options.tenant) continue;
-			if (options.filter?.type !== undefined && entry.event.type !== options.filter.type) continue;
-			if (options.filter?.streamId !== undefined && entry.event.streamId !== options.filter.streamId) continue;
+			if (options.after !== undefined && entry.position <= options.after)
+				continue;
+			if (options.tenant !== undefined && entry.event.tenant !== options.tenant)
+				continue;
+			if (
+				options.filter?.type !== undefined &&
+				entry.event.type !== options.filter.type
+			)
+				continue;
+			if (
+				options.filter?.streamId !== undefined &&
+				entry.event.streamId !== options.filter.streamId
+			)
+				continue;
 			yield entry;
 		}
 	}
 
-	subscribe(_filter: StreamFilter, _handler: (event: EventEnvelope) => void): Subscription {
+	subscribe(
+		_filter: StreamFilter,
+		_handler: (event: EventEnvelope) => void,
+	): Subscription {
 		return { unsubscribe: () => undefined };
 	}
 
-	async snapshot(streamId: string, state: never, seq: number): Promise<SnapshotRecord> {
+	async snapshot(
+		streamId: string,
+		state: never,
+		seq: number,
+	): Promise<SnapshotRecord> {
 		return { streamId, seq, state, savedAt: new Date(T0).toISOString() };
 	}
 
 	async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-		const result = await this.append(request.streamId, [...request.events], request.append);
+		const result = await this.append(
+			request.streamId,
+			[...request.events],
+			request.append,
+		);
 		return { ...result, effects: [] };
 	}
 
@@ -173,11 +207,20 @@ export class RecordingTelemetry implements TelemetrySink {
 	}
 }
 
-type Series = (input: Readonly<{ query: string; cohort: Cohort; fromMs: number; toMs: number }>) => Outcome<HealthSamples> | "throw";
+type Series = (
+	input: Readonly<{
+		query: string;
+		cohort: Cohort;
+		fromMs: number;
+		toMs: number;
+	}>,
+) => Outcome<HealthSamples> | "throw";
 
 /** A health source whose answers the test scripts per query and cohort. */
 export class ScriptedHealthSource implements HealthSource {
-	calls: Array<Readonly<{ query: string; cohort: Cohort; fromMs: number; toMs: number }>> = [];
+	calls: Array<
+		Readonly<{ query: string; cohort: Cohort; fromMs: number; toMs: number }>
+	> = [];
 	constructor(
 		readonly kind: HealthSourceKind,
 		private readonly series: Series,
@@ -185,7 +228,12 @@ export class ScriptedHealthSource implements HealthSource {
 	async query(
 		input: Parameters<HealthSource["query"]>[0],
 	): Promise<Outcome<HealthSamples>> {
-		const call = { query: input.query.query, cohort: input.cohort, fromMs: input.fromMs, toMs: input.toMs };
+		const call = {
+			query: input.query.query,
+			cohort: input.cohort,
+			fromMs: input.fromMs,
+			toMs: input.toMs,
+		};
 		this.calls.push(call);
 		const answer = this.series(call);
 		if (answer === "throw") throw new Error("source exploded");
@@ -193,25 +241,43 @@ export class ScriptedHealthSource implements HealthSource {
 	}
 }
 
-export function samples(values: readonly number[], fromMs = T0, toMs = T0 + 10 * MINUTE): Outcome<HealthSamples> {
+export function samples(
+	values: readonly number[],
+	fromMs = T0,
+	toMs = T0 + 10 * MINUTE,
+): Outcome<HealthSamples> {
 	return { ok: true, value: { values, fromMs, toMs } };
 }
 
-export const unavailable = (): Outcome<HealthSamples> => refuse("health-source-http-error", "503 from source");
+export const unavailable = (): Outcome<HealthSamples> =>
+	refuse("health-source-http-error", "503 from source");
 
 export class RecordingVerifyPort implements VerifyPort {
-	calls: Array<Readonly<{ suite: string; campId: string; freightId: string }>> = [];
+	calls: Array<Readonly<{ suite: string; campId: string; freightId: string }>> =
+		[];
 	constructor(private readonly ok: (suite: string) => boolean = () => true) {}
-	async run(input: Readonly<{ suite: string; campId: CampId; freightId: FreightId }>): Promise<Outcome<JsonObject>> {
-		this.calls.push({ suite: input.suite, campId: input.campId, freightId: input.freightId });
-		return this.ok(input.suite) ? { ok: true, value: { passed: 12 } } : refuse("verification-suite-failed", "2 failed");
+	async run(
+		input: Readonly<{ suite: string; campId: CampId; freightId: FreightId }>,
+	): Promise<Outcome<JsonObject>> {
+		this.calls.push({
+			suite: input.suite,
+			campId: input.campId,
+			freightId: input.freightId,
+		});
+		return this.ok(input.suite)
+			? { ok: true, value: { passed: 12 } }
+			: refuse("verification-suite-failed", "2 failed");
 	}
 }
 
 /** HttpTransport double: routes by URL prefix, records every request. */
 export class ScriptedTransport {
 	readonly requests: TransportRequest[] = [];
-	constructor(private readonly route: (request: TransportRequest) => TransportResponse | "throw") {}
+	constructor(
+		private readonly route: (
+			request: TransportRequest,
+		) => TransportResponse | "throw",
+	) {}
 	readonly transport: HttpTransport = async (request) => {
 		this.requests.push(request);
 		const response = this.route(request);
@@ -221,13 +287,24 @@ export class ScriptedTransport {
 }
 
 export function json(status: number, body: unknown): TransportResponse {
-	return { status, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+	return {
+		status,
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	};
 }
 
 export class MapCredentials implements CredentialResolver {
 	readonly resolved: Array<Readonly<{ ref: string; scope: string }>> = [];
-	constructor(private readonly values: Readonly<Record<string, Readonly<Record<string, string>>>>) {}
-	async resolve(ref: string, scope: string): Promise<Readonly<Record<string, string>>> {
+	constructor(
+		private readonly values: Readonly<
+			Record<string, Readonly<Record<string, string>>>
+		>,
+	) {}
+	async resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>> {
 		this.resolved.push({ ref, scope });
 		const value = this.values[ref];
 		if (!value) throw new Error(`no credential ${ref}`);
@@ -235,7 +312,10 @@ export class MapCredentials implements CredentialResolver {
 	}
 }
 
-export function query(name: string, fields: MessageInitShape<typeof HealthQueryRecordSchema> = {}) {
+export function query(
+	name: string,
+	fields: MessageInitShape<typeof HealthQueryRecordSchema> = {},
+) {
 	return create(HealthQueryRecordSchema, {
 		name,
 		source: HealthSourceKind.PROMETHEUS,
@@ -247,25 +327,43 @@ export function query(name: string, fields: MessageInitShape<typeof HealthQueryR
 }
 
 /** A ten-minute spec with an error-rate threshold. */
-export function thresholdSpec(overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {}) {
+export function thresholdSpec(
+	overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {},
+) {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(10 * MINUTE),
 		requiredObservations: 3,
 		progressDeadlineMs: BigInt(30 * MINUTE),
 		failOnNoData: true,
-		thresholds: [{ query: query("error_rate", { unit: "ratio" }), aggregation: Aggregation.MEAN, comparator: Comparator.LT, value: 0.05 }],
+		thresholds: [
+			{
+				query: query("error_rate", { unit: "ratio" }),
+				aggregation: Aggregation.MEAN,
+				comparator: Comparator.LT,
+				value: 0.05,
+			},
+		],
 		...overrides,
 	});
 }
 
 /** A ten-minute spec with a latency canary-vs-baseline comparison. */
-export function comparisonSpec(overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {}) {
+export function comparisonSpec(
+	overrides: MessageInitShape<typeof VerificationSpecRecordSchema> = {},
+) {
 	return create(VerificationSpecRecordSchema, {
 		windowMs: BigInt(10 * MINUTE),
 		requiredObservations: 3,
 		progressDeadlineMs: BigInt(30 * MINUTE),
 		failOnNoData: true,
-		comparisons: [{ query: query("latency_ms"), direction: Direction.HIGHER_IS_WORSE, sensitivity: Sensitivity.MEDIUM, minSamples: 8 }],
+		comparisons: [
+			{
+				query: query("latency_ms"),
+				direction: Direction.HIGHER_IS_WORSE,
+				sensitivity: Sensitivity.MEDIUM,
+				minSamples: 8,
+			},
+		],
 		...overrides,
 	});
 }

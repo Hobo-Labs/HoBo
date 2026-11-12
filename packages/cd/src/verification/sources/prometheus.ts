@@ -13,8 +13,8 @@ import {
 	isRecord,
 	requestJson,
 	type SourceDeps,
-	sampleValue,
 	samplesOutcome,
+	sampleValue,
 	stableKey,
 } from "./http.js";
 
@@ -25,7 +25,10 @@ export const PROMETHEUS_MIN_STEP_SECONDS = 15;
 /** Step in whole seconds that divides the window into at most 60 points. */
 export function prometheusStepSeconds(fromMs: number, toMs: number): number {
 	const windowSeconds = Math.max(1, Math.floor((toMs - fromMs) / 1000));
-	return Math.max(PROMETHEUS_MIN_STEP_SECONDS, Math.ceil(windowSeconds / PROMETHEUS_MAX_POINTS));
+	return Math.max(
+		PROMETHEUS_MIN_STEP_SECONDS,
+		Math.ceil(windowSeconds / PROMETHEUS_MAX_POINTS),
+	);
 }
 
 export function createPrometheusSource(deps: SourceDeps): HealthSource {
@@ -43,24 +46,51 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 			// Align start and end to the step so the same window always asks for the same points.
 			const start = Math.floor(input.fromMs / 1000 / step) * step;
 			const end = Math.floor(input.toMs / 1000 / step) * step;
-			const url = new URL(`${endpoint.value.pathname.replace(/\/$/, "")}/api/v1/query_range`, endpoint.value);
+			const url = new URL(
+				`${endpoint.value.pathname.replace(/\/$/, "")}/api/v1/query_range`,
+				endpoint.value,
+			);
 			url.searchParams.set("query", query.query);
 			url.searchParams.set("start", String(start));
 			url.searchParams.set("end", String(end));
 			url.searchParams.set("step", `${step}s`);
-			const response = await requestJson(deps, { method: "GET", url, headers: credential.value, subject: query.name });
+			const response = await requestJson(deps, {
+				method: "GET",
+				url,
+				headers: credential.value,
+				subject: query.name,
+			});
 			if (!response.ok) return response;
 			const body = response.value;
-			if (!isRecord(body) || body.status !== "success" || !isRecord(body.data) || body.data.resultType !== "matrix" || !Array.isArray(body.data.result)) {
-				return invalid(query.name, "Prometheus answer is not a successful matrix");
+			if (
+				!isRecord(body) ||
+				body.status !== "success" ||
+				!isRecord(body.data) ||
+				body.data.resultType !== "matrix" ||
+				!Array.isArray(body.data.result)
+			) {
+				return invalid(
+					query.name,
+					"Prometheus answer is not a successful matrix",
+				);
 			}
 			const series: Array<Readonly<{ key: string; values: number[] }>> = [];
 			for (const item of body.data.result) {
-				if (!isRecord(item) || !isRecord(item.metric) || !Array.isArray(item.values)) return invalid(query.name, "malformed Prometheus series");
-				if (selector.value && item.metric[selector.value.label] !== selector.value.value) continue;
+				if (
+					!isRecord(item) ||
+					!isRecord(item.metric) ||
+					!Array.isArray(item.values)
+				)
+					return invalid(query.name, "malformed Prometheus series");
+				if (
+					selector.value &&
+					item.metric[selector.value.label] !== selector.value.value
+				)
+					continue;
 				const values: number[] = [];
 				for (const point of item.values) {
-					if (!Array.isArray(point) || point.length !== 2) return invalid(query.name, "malformed Prometheus point");
+					if (!Array.isArray(point) || point.length !== 2)
+						return invalid(query.name, "malformed Prometheus point");
 					const value = sampleValue(point[1]);
 					if (value !== undefined) values.push(value);
 				}

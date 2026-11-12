@@ -6,7 +6,12 @@
 //   verification.Started     VerificationStartedBody (identity + spec)
 //   rollout.EvidenceObserved EvidenceObservationRecord (one per sample)
 //   verification.Completed   VerificationResultRecord
-import { fromJson, type JsonObject, type JsonValue, toJson } from "@bufbuild/protobuf";
+import {
+	fromJson,
+	type JsonObject,
+	type JsonValue,
+	toJson,
+} from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
 	type EvidenceObservationRecord,
@@ -43,7 +48,14 @@ function text(value: JsonValue | undefined): string {
 
 /** verification.Started body. */
 export function startedBody(
-	input: Readonly<{ id: VerificationId; freightId: FreightId; campId: CampId; cohortAware: boolean; startedAtMs: number; spec: JsonValue }>,
+	input: Readonly<{
+		id: VerificationId;
+		freightId: FreightId;
+		campId: CampId;
+		cohortAware: boolean;
+		startedAtMs: number;
+		spec: JsonValue;
+	}>,
 ): JsonObject {
 	return {
 		verificationId: input.id,
@@ -63,13 +75,17 @@ export function resultBody(record: VerificationResultRecord): JsonValue {
 	return toJson(VerificationResultRecordSchema, record);
 }
 
-function decodeStarted(data: unknown): Omit<VerificationState, "evidence" | "result" | "seq"> | undefined {
+function decodeStarted(
+	data: unknown,
+): Omit<VerificationState, "evidence" | "result" | "seq"> | undefined {
 	if (!isObject(data)) return undefined;
 	const startedAtMs = Date.parse(text(data.startedAt));
 	if (!Number.isFinite(startedAtMs)) return undefined;
 	let spec: ParsedVerificationSpec | undefined;
 	try {
-		const parsed = isObject(data.spec) ? parseVerificationSpec(fromJson(VerificationSpecRecordSchema, data.spec)) : undefined;
+		const parsed = isObject(data.spec)
+			? parseVerificationSpec(fromJson(VerificationSpecRecordSchema, data.spec))
+			: undefined;
 		spec = parsed?.ok ? parsed.value : undefined;
 	} catch {
 		spec = undefined;
@@ -96,21 +112,35 @@ function decodeRecord<T>(decode: () => T): T | undefined {
 }
 
 /** Fold a cd-verification stream; undefined when it has no Started event. */
-export function foldVerification(events: Iterable<EventEnvelope>): VerificationState | undefined {
+export function foldVerification(
+	events: Iterable<EventEnvelope>,
+): VerificationState | undefined {
 	let state: VerificationState | undefined;
 	for (const event of events) {
 		if (event.type === CD_EVENTS.VerificationStarted) {
 			const started = decodeStarted(event.data);
-			if (started) state = { ...started, evidence: [], result: undefined, seq: event.seq };
+			if (started)
+				state = { ...started, evidence: [], result: undefined, seq: event.seq };
 			continue;
 		}
 		if (!state) continue;
 		const json = event.data;
 		if (event.type === CD_EVENTS.RolloutEvidenceObserved && isObject(json)) {
-			const record = decodeRecord(() => fromJson(EvidenceObservationRecordSchema, json));
-			state = { ...state, evidence: record ? [...state.evidence, record] : state.evidence, seq: event.seq };
-		} else if (event.type === CD_EVENTS.VerificationCompleted && isObject(json)) {
-			const record = decodeRecord(() => fromJson(VerificationResultRecordSchema, json));
+			const record = decodeRecord(() =>
+				fromJson(EvidenceObservationRecordSchema, json),
+			);
+			state = {
+				...state,
+				evidence: record ? [...state.evidence, record] : state.evidence,
+				seq: event.seq,
+			};
+		} else if (
+			event.type === CD_EVENTS.VerificationCompleted &&
+			isObject(json)
+		) {
+			const record = decodeRecord(() =>
+				fromJson(VerificationResultRecordSchema, json),
+			);
 			state = { ...state, result: record ?? state.result, seq: event.seq };
 		} else {
 			state = { ...state, seq: event.seq };

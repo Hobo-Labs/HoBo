@@ -3,7 +3,12 @@
 // a timeout, guard refusal or reset is an unhealthy attempt, never skipped.
 import { create } from "@bufbuild/protobuf";
 import type { HttpTransport } from "@hobo/core";
-import { Cohort, type EvidenceObservationRecord, EvidenceObservationRecordSchema, type ProbeCheckRecord } from "../_generated/cd_pb.js";
+import {
+	Cohort,
+	type EvidenceObservationRecord,
+	EvidenceObservationRecordSchema,
+	type ProbeCheckRecord,
+} from "../_generated/cd_pb.js";
 import { CD_DEFAULTS } from "../events.js";
 import type { CampId } from "../ports.js";
 import { probeCheckId } from "./spec.js";
@@ -40,10 +45,24 @@ export async function runProbe(
 
 /** Whether a probe should fire now: on its interval, inside the window or until it has enough attempts. */
 export function probeDue(
-	input: Readonly<{ probe: ProbeCheckRecord; attempts: readonly EvidenceObservationRecord[]; atMs: number; windowEndMs: number; deadlineMs: number; required: number }>,
+	input: Readonly<{
+		probe: ProbeCheckRecord;
+		attempts: readonly EvidenceObservationRecord[];
+		atMs: number;
+		windowEndMs: number;
+		deadlineMs: number;
+		required: number;
+	}>,
 ): boolean {
 	if (input.atMs >= input.deadlineMs) return false;
-	if (input.atMs >= input.windowEndMs && input.attempts.length >= input.required) return false;
-	const last = input.attempts.reduce((latest, attempt) => Math.max(latest, Date.parse(attempt.observedAt)), Number.NEGATIVE_INFINITY);
+	if (
+		input.atMs >= input.windowEndMs &&
+		input.attempts.length >= input.required
+	)
+		return false;
+	const last = input.attempts.reduce(
+		(latest, attempt) => Math.max(latest, Date.parse(attempt.observedAt)),
+		Number.NEGATIVE_INFINITY,
+	);
 	return input.atMs - last >= Number(input.probe.intervalMs);
 }

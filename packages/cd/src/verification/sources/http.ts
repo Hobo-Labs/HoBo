@@ -4,16 +4,27 @@
 // and scoped to the Camp; they are sent, never stored, logged or echoed.
 import type { HttpTransport, TransportMethod } from "@hobo/core";
 import { Cohort, type HealthQueryRecord } from "../../_generated/cd_pb.js";
-import type { CampId, CredentialResolver, HealthSamples, Outcome } from "../../ports.js";
+import type {
+	CampId,
+	CredentialResolver,
+	HealthSamples,
+	Outcome,
+} from "../../ports.js";
 import { refuse } from "../reasons.js";
 
-export type SourceDeps = Readonly<{ http: HttpTransport; credentials: CredentialResolver }>;
+export type SourceDeps = Readonly<{
+	http: HttpTransport;
+	credentials: CredentialResolver;
+}>;
 
 export const SOURCE_TIMEOUT_MS = 10_000;
 export const SOURCE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /** The label value that selects each cohort; ALL selects every series. */
-export const COHORT_VALUES: Readonly<Record<number, string>> = { [Cohort.CANARY]: "canary", [Cohort.BASELINE]: "baseline" };
+export const COHORT_VALUES: Readonly<Record<number, string>> = {
+	[Cohort.CANARY]: "canary",
+	[Cohort.BASELINE]: "baseline",
+};
 
 /** Credential scope: one Camp's verification, so a resolver can narrow it. */
 export const credentialScope = (campId: CampId) => `cd.verification:${campId}`;
@@ -21,36 +32,72 @@ export const credentialScope = (campId: CampId) => `cd.verification:${campId}`;
 export function httpsEndpoint(query: HealthQueryRecord): Outcome<URL> {
 	try {
 		const url = new URL(query.endpointRef);
-		if (url.protocol === "https:" && url.username === "" && url.password === "") return { ok: true, value: url };
+		if (url.protocol === "https:" && url.username === "" && url.password === "")
+			return { ok: true, value: url };
 	} catch {
 		// fall through to the refusal
 	}
-	return refuse("health-source-endpoint-invalid", `endpoint_ref of ${query.name} is not an https URL without userinfo`, query.name);
+	return refuse(
+		"health-source-endpoint-invalid",
+		`endpoint_ref of ${query.name} is not an https URL without userinfo`,
+		query.name,
+	);
 }
 
-export async function credentialFor(deps: SourceDeps, query: HealthQueryRecord, campId: CampId): Promise<Outcome<Readonly<Record<string, string>>>> {
+export async function credentialFor(
+	deps: SourceDeps,
+	query: HealthQueryRecord,
+	campId: CampId,
+): Promise<Outcome<Readonly<Record<string, string>>>> {
 	if (query.credentialRef === "") return { ok: true, value: {} };
 	try {
-		return { ok: true, value: await deps.credentials.resolve(query.credentialRef, credentialScope(campId)) };
+		return {
+			ok: true,
+			value: await deps.credentials.resolve(
+				query.credentialRef,
+				credentialScope(campId),
+			),
+		};
 	} catch {
 		// The resolver's message may name the secret store; never forward it.
-		return refuse("health-source-credential-unavailable", `credential_ref of ${query.name} did not resolve`, query.name);
+		return refuse(
+			"health-source-credential-unavailable",
+			`credential_ref of ${query.name} did not resolve`,
+			query.name,
+		);
 	}
 }
 
 /** The cohort's label value, or a refusal when a split cohort has no declared label. */
-export function cohortSelector(query: HealthQueryRecord, cohort: Cohort): Outcome<Readonly<{ label: string; value: string }> | undefined> {
-	if (cohort === Cohort.ALL || cohort === Cohort.UNSPECIFIED) return { ok: true, value: undefined };
+export function cohortSelector(
+	query: HealthQueryRecord,
+	cohort: Cohort,
+): Outcome<Readonly<{ label: string; value: string }> | undefined> {
+	if (cohort === Cohort.ALL || cohort === Cohort.UNSPECIFIED)
+		return { ok: true, value: undefined };
 	if (query.cohortLabel === "") {
-		return refuse("health-source-cohort-label-missing", `${query.name} needs cohort_label to select the ${COHORT_VALUES[cohort]} cohort`, query.name);
+		return refuse(
+			"health-source-cohort-label-missing",
+			`${query.name} needs cohort_label to select the ${COHORT_VALUES[cohort]} cohort`,
+			query.name,
+		);
 	}
-	return { ok: true, value: { label: query.cohortLabel, value: COHORT_VALUES[cohort] ?? "" } };
+	return {
+		ok: true,
+		value: { label: query.cohortLabel, value: COHORT_VALUES[cohort] ?? "" },
+	};
 }
 
 /** One bounded request; non-2xx, transport failure and non-JSON bodies are typed refusals. */
 export async function requestJson(
 	deps: SourceDeps,
-	input: Readonly<{ method: TransportMethod; url: URL; headers: Readonly<Record<string, string>>; body?: string; subject: string }>,
+	input: Readonly<{
+		method: TransportMethod;
+		url: URL;
+		headers: Readonly<Record<string, string>>;
+		body?: string;
+		subject: string;
+	}>,
 ): Promise<Outcome<unknown>> {
 	let response: Awaited<ReturnType<HttpTransport>>;
 	try {
@@ -61,21 +108,37 @@ export async function requestJson(
 			timeoutMs: SOURCE_TIMEOUT_MS,
 			maxResponseBytes: SOURCE_MAX_RESPONSE_BYTES,
 		};
-		response = await deps.http(input.body === undefined ? request : { ...request, body: input.body });
+		response = await deps.http(
+			input.body === undefined ? request : { ...request, body: input.body },
+		);
 	} catch {
-		return refuse("health-source-transport-failed", `request to ${input.url.host} did not complete`, input.subject);
+		return refuse(
+			"health-source-transport-failed",
+			`request to ${input.url.host} did not complete`,
+			input.subject,
+		);
 	}
 	if (response.status < 200 || response.status > 299) {
-		return refuse("health-source-http-error", `${input.url.host} answered ${response.status}`, input.subject);
+		return refuse(
+			"health-source-http-error",
+			`${input.url.host} answered ${response.status}`,
+			input.subject,
+		);
 	}
 	try {
 		return { ok: true, value: JSON.parse(response.body) };
 	} catch {
-		return refuse("health-source-response-invalid", `${input.url.host} answered with a body that is not JSON`, input.subject);
+		return refuse(
+			"health-source-response-invalid",
+			`${input.url.host} answered with a body that is not JSON`,
+			input.subject,
+		);
 	}
 }
 
-export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+export function isRecord(
+	value: unknown,
+): value is Readonly<Record<string, unknown>> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -83,11 +146,20 @@ export function isRecord(value: unknown): value is Readonly<Record<string, unkno
 export function sampleValue(value: unknown): number | undefined {
 	if (value === "+Inf" || value === "Inf") return Number.POSITIVE_INFINITY;
 	if (value === "-Inf") return Number.NEGATIVE_INFINITY;
-	const number = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
+	const number =
+		typeof value === "number"
+			? value
+			: typeof value === "string" && value.trim() !== ""
+				? Number(value)
+				: Number.NaN;
 	return Number.isNaN(number) ? undefined : number;
 }
 
-export function samplesOutcome(values: readonly number[], fromMs: number, toMs: number): Outcome<HealthSamples> {
+export function samplesOutcome(
+	values: readonly number[],
+	fromMs: number,
+	toMs: number,
+): Outcome<HealthSamples> {
 	return { ok: true, value: { values, fromMs, toMs } };
 }
 
@@ -97,5 +169,9 @@ export function invalid(subject: string, message: string): Outcome<never> {
 
 /** Series order must not depend on the source's answer order (I8). */
 export function stableKey(labels: Readonly<Record<string, unknown>>): string {
-	return JSON.stringify(Object.keys(labels).sort().map((key) => [key, labels[key]]));
+	return JSON.stringify(
+		Object.keys(labels)
+			.sort()
+			.map((key) => [key, labels[key]]),
+	);
 }

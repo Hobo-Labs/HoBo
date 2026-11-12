@@ -1,9 +1,35 @@
 // "@hobo/cd/verification" (WP9): the verification engine and its health sources.
-export { createVerificationEngine, type VerificationEngineDeps } from "./engine.js";
-export { aggregate, type Evaluation, type EvaluationInput, evaluateVerification, holds, qualifies } from "./evaluate.js";
+export {
+	createVerificationEngine,
+	type VerificationEngineDeps,
+} from "./engine.js";
+export {
+	aggregate,
+	type Evaluation,
+	type EvaluationInput,
+	evaluateVerification,
+	holds,
+	qualifies,
+} from "./evaluate.js";
 export { foldVerification, type VerificationState } from "./journal.js";
-export { VERIFICATION_REASONS, type VerificationReasonCode } from "./reasons.js";
-export { replayVerification, replayVerificationFromStore, type VerificationReplay } from "./replay.js";
+export {
+	VERIFICATION_REASONS,
+	type VerificationReasonCode,
+} from "./reasons.js";
+export {
+	replayVerification,
+	replayVerificationFromStore,
+	type VerificationReplay,
+} from "./replay.js";
+// Vendor adapters stay behind createHealthSources (I11: vendor names only in sources/).
+export {
+	COHORT_VALUES,
+	createHealthSources,
+	createHoboPostureSource,
+	credentialScope,
+	informVerificationSpec,
+	POSTURE_SERIES,
+} from "./sources/index.js";
 export {
 	BURN_RATE_UNIT,
 	comparisonCheckId,
@@ -17,25 +43,11 @@ export {
 	thresholdCheckId,
 } from "./spec.js";
 export {
-	type AwsCredentials,
-	CLOUDWATCH_TARGET,
-	COHORT_VALUES,
-	createCloudWatchSource,
-	createDatadogSource,
-	createHealthSources,
-	createHoboMeteringSource,
-	createHoboPostureSource,
-	createHttpJsonSource,
-	createNewRelicSource,
-	createPrometheusSource,
-	credentialScope,
-	informVerificationSpec,
-	METERING_SERIES_PATH,
-	NERDGRAPH_NRQL_DOCUMENT,
-	POSTURE_SERIES,
-	prometheusStepSeconds,
-	resolvePointer,
-	type SourceDeps,
-	signV4,
-} from "./sources/index.js";
-export { alphaFor, type CohortComparison, compareCohorts, EXACT_BELOW, type MannWhitneyResult, mannWhitneyU, normalSurvival } from "./stats.js";
+	alphaFor,
+	type CohortComparison,
+	compareCohorts,
+	EXACT_BELOW,
+	type MannWhitneyResult,
+	mannWhitneyU,
+	normalSurvival,
+} from "./stats.js";

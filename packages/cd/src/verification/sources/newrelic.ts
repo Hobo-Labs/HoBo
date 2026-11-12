@@ -16,8 +16,8 @@ import {
 	isRecord,
 	requestJson,
 	type SourceDeps,
-	sampleValue,
 	samplesOutcome,
+	sampleValue,
 } from "./http.js";
 
 export const NERDGRAPH_NRQL_DOCUMENT =
@@ -34,10 +34,18 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 			if (!endpoint.ok) return endpoint;
 			const accountId = Number(endpoint.value.searchParams.get("accountId"));
 			if (!Number.isSafeInteger(accountId) || accountId <= 0) {
-				return refuse("health-source-endpoint-invalid", `endpoint_ref of ${query.name} needs ?accountId=<number>`, query.name);
+				return refuse(
+					"health-source-endpoint-invalid",
+					`endpoint_ref of ${query.name} needs ?accountId=<number>`,
+					query.name,
+				);
 			}
 			if (/\b(SINCE|UNTIL)\b/i.test(query.query)) {
-				return refuse("health-source-query-invalid", `${query.name}: the engine sets SINCE/UNTIL from the window`, query.name);
+				return refuse(
+					"health-source-query-invalid",
+					`${query.name}: the engine sets SINCE/UNTIL from the window`,
+					query.name,
+				);
 			}
 			const selector = cohortSelector(query, input.cohort);
 			if (!selector.ok) return selector;
@@ -49,19 +57,35 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 				method: "POST",
 				url,
 				headers: { ...credential.value, "content-type": "application/json" },
-				body: JSON.stringify({ query: NERDGRAPH_NRQL_DOCUMENT, variables: { accountId, nrql } }),
+				body: JSON.stringify({
+					query: NERDGRAPH_NRQL_DOCUMENT,
+					variables: { accountId, nrql },
+				}),
 				subject: query.name,
 			});
 			if (!response.ok) return response;
 			const body = response.value;
-			if (isRecord(body) && Array.isArray(body.errors) && body.errors.length > 0) {
-				return refuse("health-source-http-error", `NerdGraph returned ${body.errors.length} error(s)`, query.name);
+			if (
+				isRecord(body) &&
+				Array.isArray(body.errors) &&
+				body.errors.length > 0
+			) {
+				return refuse(
+					"health-source-http-error",
+					`NerdGraph returned ${body.errors.length} error(s)`,
+					query.name,
+				);
 			}
 			const results =
-				isRecord(body) && isRecord(body.data) && isRecord(body.data.actor) && isRecord(body.data.actor.account) && isRecord(body.data.actor.account.nrql)
+				isRecord(body) &&
+				isRecord(body.data) &&
+				isRecord(body.data.actor) &&
+				isRecord(body.data.actor.account) &&
+				isRecord(body.data.actor.account.nrql)
 					? body.data.actor.account.nrql.results
 					: undefined;
-			if (!Array.isArray(results)) return invalid(query.name, "NerdGraph answer has no nrql results");
+			if (!Array.isArray(results))
+				return invalid(query.name, "NerdGraph answer has no nrql results");
 			const rows: Array<Readonly<{ at: number; value: number }>> = [];
 			for (const row of results) {
 				if (!isRecord(row)) return invalid(query.name, "malformed NRQL row");
@@ -69,10 +93,27 @@ export function createNewRelicSource(deps: SourceDeps): HealthSource {
 					const facet = row[selector.value.label] ?? row.facet;
 					if (facet !== selector.value.value) continue;
 				}
-				const valueKeys = Object.keys(row).filter((key) => !TIME_KEYS.has(key) && key !== query.cohortLabel && typeof row[key] !== "string");
-				if (valueKeys.length !== 1) return refuse("health-source-query-invalid", `${query.name}: NRQL must return exactly one aggregate per row`, query.name);
+				const valueKeys = Object.keys(row).filter(
+					(key) =>
+						!TIME_KEYS.has(key) &&
+						key !== query.cohortLabel &&
+						typeof row[key] !== "string",
+				);
+				if (valueKeys.length !== 1)
+					return refuse(
+						"health-source-query-invalid",
+						`${query.name}: NRQL must return exactly one aggregate per row`,
+						query.name,
+					);
 				const value = sampleValue(row[valueKeys[0] ?? ""]);
-				if (value !== undefined) rows.push({ at: typeof row.beginTimeSeconds === "number" ? row.beginTimeSeconds : 0, value });
+				if (value !== undefined)
+					rows.push({
+						at:
+							typeof row.beginTimeSeconds === "number"
+								? row.beginTimeSeconds
+								: 0,
+						value,
+					});
 			}
 			rows.sort((a, b) => a.at - b.at || a.value - b.value);
 			return samplesOutcome(

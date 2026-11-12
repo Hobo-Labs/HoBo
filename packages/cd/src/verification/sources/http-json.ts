@@ -5,7 +5,17 @@
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
 import { refuse } from "../reasons.js";
-import { cohortSelector, credentialFor, httpsEndpoint, invalid, isRecord, requestJson, type SourceDeps, sampleValue, samplesOutcome } from "./http.js";
+import {
+	cohortSelector,
+	credentialFor,
+	httpsEndpoint,
+	invalid,
+	isRecord,
+	requestJson,
+	type SourceDeps,
+	samplesOutcome,
+	sampleValue,
+} from "./http.js";
 
 /** Resolve an RFC 6901 JSON pointer; undefined when any token is missing. */
 export function resolvePointer(document: unknown, pointer: string): unknown {
@@ -32,7 +42,11 @@ export function createHttpJsonSource(deps: SourceDeps): HealthSource {
 		async query(input) {
 			const { query } = input;
 			if (query.query !== "" && !query.query.startsWith("/")) {
-				return refuse("health-source-query-invalid", `${query.name}: query must be a JSON pointer such as /data/values`, query.name);
+				return refuse(
+					"health-source-query-invalid",
+					`${query.name}: query must be a JSON pointer such as /data/values`,
+					query.name,
+				);
 			}
 			const endpoint = httpsEndpoint(query);
 			if (!endpoint.ok) return endpoint;
@@ -44,15 +58,26 @@ export function createHttpJsonSource(deps: SourceDeps): HealthSource {
 			url.searchParams.set("from", String(input.fromMs));
 			url.searchParams.set("to", String(input.toMs));
 			url.searchParams.set("camp", input.campId);
-			if (selector.value) url.searchParams.set(selector.value.label, selector.value.value);
-			const response = await requestJson(deps, { method: "GET", url, headers: credential.value, subject: query.name });
+			if (selector.value)
+				url.searchParams.set(selector.value.label, selector.value.value);
+			const response = await requestJson(deps, {
+				method: "GET",
+				url,
+				headers: credential.value,
+				subject: query.name,
+			});
 			if (!response.ok) return response;
 			const array = resolvePointer(response.value, query.query);
-			if (!Array.isArray(array)) return invalid(query.name, `${query.query} does not point at an array`);
+			if (!Array.isArray(array))
+				return invalid(query.name, `${query.query} does not point at an array`);
 			const values: number[] = [];
 			for (const item of array) {
 				if (item === null) continue;
-				if (typeof item !== "number") return invalid(query.name, `${query.query} holds a non-numeric entry`);
+				if (typeof item !== "number")
+					return invalid(
+						query.name,
+						`${query.query} holds a non-numeric entry`,
+					);
 				const value = sampleValue(item);
 				if (value !== undefined) values.push(value);
 			}

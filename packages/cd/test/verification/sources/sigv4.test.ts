@@ -7,13 +7,19 @@ import { signV4 } from "../../../src/verification/sources/sigv4.js";
 const request = {
 	method: "POST",
 	url: "https://monitoring.eu-west-1.amazonaws.com/",
-	headers: { "content-type": "application/x-amz-json-1.0", "x-amz-target": "GraniteServiceVersion20100801.GetMetricData" },
+	headers: {
+		"content-type": "application/x-amz-json-1.0",
+		"x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+	},
 	body: '{"MetricDataQueries":[{"Id":"q0"}]}',
 	region: "eu-west-1",
 	service: "monitoring",
 	atMs: Date.UTC(2026, 10, 12, 4, 29, 17),
 };
-const KEYS = { accessKeyId: "AKIDEXAMPLE", secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY" };
+const KEYS = {
+	accessKeyId: "AKIDEXAMPLE",
+	secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+};
 
 describe("SigV4 (CloudWatch)", () => {
 	it("matches botocore without a session token", () => {
@@ -26,7 +32,10 @@ describe("SigV4 (CloudWatch)", () => {
 	});
 
 	it("matches botocore with a session token", () => {
-		const headers = signV4({ ...request, credentials: { ...KEYS, sessionToken: "SESSIONTOKEN" } });
+		const headers = signV4({
+			...request,
+			credentials: { ...KEYS, sessionToken: "SESSIONTOKEN" },
+		});
 		expect(headers["x-amz-security-token"]).toBe("SESSIONTOKEN");
 		expect(headers.authorization).toBe(
 			"AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/eu-west-1/monitoring/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target, Signature=2152f6ea80012950d0a430f48130cc1d7969eb5aad82434087f701cae280dfcb",

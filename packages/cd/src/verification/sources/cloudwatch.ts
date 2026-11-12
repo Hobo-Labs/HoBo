@@ -17,16 +17,23 @@ import {
 	isRecord,
 	requestJson,
 	type SourceDeps,
-	sampleValue,
 	samplesOutcome,
+	sampleValue,
 } from "./http.js";
 import { signV4 } from "./sigv4.js";
 
 export const CLOUDWATCH_TARGET = "GraniteServiceVersion20100801.GetMetricData";
-const REGIONAL_HOST = /^monitoring\.([a-z]{2}(?:-[a-z]+)+-\d)\.amazonaws\.com(?:\.cn)?$/;
+const REGIONAL_HOST =
+	/^monitoring\.([a-z]{2}(?:-[a-z]+)+-\d)\.amazonaws\.com(?:\.cn)?$/;
 const MAX_PAGES = 10;
 
-type MetricStat = Readonly<{ namespace: string; metricName: string; stat: string; period: number; dimensions: Readonly<Record<string, string>> }>;
+type MetricStat = Readonly<{
+	namespace: string;
+	metricName: string;
+	stat: string;
+	period: number;
+	dimensions: Readonly<Record<string, string>>;
+}>;
 
 function parseMetricStat(text: string): MetricStat | undefined {
 	let value: unknown;
@@ -37,8 +44,14 @@ function parseMetricStat(text: string): MetricStat | undefined {
 	}
 	if (!isRecord(value)) return undefined;
 	const { namespace, metricName, stat, period, dimensions } = value;
-	if (typeof namespace !== "string" || typeof metricName !== "string" || typeof stat !== "string") return undefined;
-	if (typeof period !== "number" || !Number.isInteger(period) || period < 1) return undefined;
+	if (
+		typeof namespace !== "string" ||
+		typeof metricName !== "string" ||
+		typeof stat !== "string"
+	)
+		return undefined;
+	if (typeof period !== "number" || !Number.isInteger(period) || period < 1)
+		return undefined;
 	const dims: Record<string, string> = {};
 	if (dimensions !== undefined) {
 		if (!isRecord(dimensions)) return undefined;
@@ -58,21 +71,39 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 			const endpoint = httpsEndpoint(query);
 			if (!endpoint.ok) return endpoint;
 			const region = REGIONAL_HOST.exec(endpoint.value.host)?.[1];
-			if (!region) return refuse("health-source-endpoint-invalid", `${query.name}: endpoint_ref must be https://monitoring.<region>.amazonaws.com`, query.name);
+			if (!region)
+				return refuse(
+					"health-source-endpoint-invalid",
+					`${query.name}: endpoint_ref must be https://monitoring.<region>.amazonaws.com`,
+					query.name,
+				);
 			const stat = parseMetricStat(query.query);
-			if (!stat) return refuse("health-source-query-invalid", `${query.name}: query must be a JSON metric stat`, query.name);
+			if (!stat)
+				return refuse(
+					"health-source-query-invalid",
+					`${query.name}: query must be a JSON metric stat`,
+					query.name,
+				);
 			const selector = cohortSelector(query, input.cohort);
 			if (!selector.ok) return selector;
 			const credential = await credentialFor(deps, query, input.campId);
 			if (!credential.ok) return credential;
 			const { accessKeyId, secretAccessKey, sessionToken } = credential.value;
 			if (!accessKeyId || !secretAccessKey) {
-				return refuse("health-source-credential-unavailable", `${query.name}: credential must hold accessKeyId and secretAccessKey`, query.name);
+				return refuse(
+					"health-source-credential-unavailable",
+					`${query.name}: credential must hold accessKeyId and secretAccessKey`,
+					query.name,
+				);
 			}
 			const dimensions = Object.entries(stat.dimensions)
 				.sort(([a], [b]) => (a < b ? -1 : 1))
 				.map(([Name, Value]) => ({ Name, Value }));
-			if (selector.value) dimensions.push({ Name: selector.value.label, Value: selector.value.value });
+			if (selector.value)
+				dimensions.push({
+					Name: selector.value.label,
+					Value: selector.value.value,
+				});
 			const url = new URL("/", endpoint.value);
 			const values: number[] = [];
 			let nextToken: string | undefined;
@@ -81,7 +112,15 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 					MetricDataQueries: [
 						{
 							Id: "q0",
-							MetricStat: { Metric: { Namespace: stat.namespace, MetricName: stat.metricName, Dimensions: dimensions }, Period: stat.period, Stat: stat.stat },
+							MetricStat: {
+								Metric: {
+									Namespace: stat.namespace,
+									MetricName: stat.metricName,
+									Dimensions: dimensions,
+								},
+								Period: stat.period,
+								Stat: stat.stat,
+							},
 							ReturnData: true,
 						},
 					],
@@ -94,31 +133,62 @@ export function createCloudWatchSource(deps: SourceDeps): HealthSource {
 				const headers = signV4({
 					method: "POST",
 					url: url.toString(),
-					headers: { accept: "application/json", "content-type": "application/x-amz-json-1.0", "x-amz-target": CLOUDWATCH_TARGET },
+					headers: {
+						accept: "application/json",
+						"content-type": "application/x-amz-json-1.0",
+						"x-amz-target": CLOUDWATCH_TARGET,
+					},
 					body,
 					region,
 					service: "monitoring",
-					credentials: sessionToken ? { accessKeyId, secretAccessKey, sessionToken } : { accessKeyId, secretAccessKey },
+					credentials: sessionToken
+						? { accessKeyId, secretAccessKey, sessionToken }
+						: { accessKeyId, secretAccessKey },
 					atMs: ctx.now(),
 				});
-				const response = await requestJson(deps, { method: "POST", url, headers, body, subject: query.name });
+				const response = await requestJson(deps, {
+					method: "POST",
+					url,
+					headers,
+					body,
+					subject: query.name,
+				});
 				if (!response.ok) return response;
 				const answer = response.value;
-				if (!isRecord(answer) || !Array.isArray(answer.MetricDataResults)) return invalid(query.name, "CloudWatch answer has no MetricDataResults");
+				if (!isRecord(answer) || !Array.isArray(answer.MetricDataResults))
+					return invalid(
+						query.name,
+						"CloudWatch answer has no MetricDataResults",
+					);
 				for (const result of answer.MetricDataResults) {
-					if (!isRecord(result) || !Array.isArray(result.Values)) return invalid(query.name, "malformed MetricDataResult");
-					if (result.StatusCode === "Forbidden" || result.StatusCode === "InternalError") {
-						return refuse("health-source-http-error", `CloudWatch status ${String(result.StatusCode)}`, query.name);
+					if (!isRecord(result) || !Array.isArray(result.Values))
+						return invalid(query.name, "malformed MetricDataResult");
+					if (
+						result.StatusCode === "Forbidden" ||
+						result.StatusCode === "InternalError"
+					) {
+						return refuse(
+							"health-source-http-error",
+							`CloudWatch status ${String(result.StatusCode)}`,
+							query.name,
+						);
 					}
 					for (const raw of result.Values) {
 						const value = sampleValue(raw);
 						if (value !== undefined) values.push(value);
 					}
 				}
-				nextToken = typeof answer.NextToken === "string" && answer.NextToken !== "" ? answer.NextToken : undefined;
+				nextToken =
+					typeof answer.NextToken === "string" && answer.NextToken !== ""
+						? answer.NextToken
+						: undefined;
 				if (!nextToken) return samplesOutcome(values, input.fromMs, input.toMs);
 			}
-			return refuse("health-source-response-invalid", `${query.name}: more than ${MAX_PAGES} pages of data; narrow the period`, query.name);
+			return refuse(
+				"health-source-response-invalid",
+				`${query.name}: more than ${MAX_PAGES} pages of data; narrow the period`,
+				query.name,
+			);
 		},
 	};
 }
