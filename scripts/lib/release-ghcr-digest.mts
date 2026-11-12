@@ -41,7 +41,18 @@ export function normalizeRepoDigestLine(
 		throw new Error(`empty repo digest for ${tag}`);
 	}
 	const needle = `/${imageId}@`;
-	if (trimmed.includes(needle)) return trimmed;
+	if (trimmed.includes(needle)) {
+		const at = trimmed.lastIndexOf("@");
+		if (at === -1) {
+			throw new Error(`repo digest missing @ for ${tag}: ${trimmed}`);
+		}
+		const digest = trimmed.slice(at + 1);
+		const imageName = tag.split(":")[0] ?? tag;
+		return ghcrDigestRef(
+			imageName,
+			assertSha256ImageDigest(digest, `${tag} repo digest`),
+		);
+	}
 	const imageName = tag.split(":")[0] ?? tag;
 	if (trimmed.startsWith("sha256:")) {
 		return ghcrDigestRef(imageName, assertSha256ImageDigest(trimmed, tag));
@@ -60,6 +71,12 @@ export function normalizeRepoDigestLine(
 export type ImagetoolsInspect = (
 	tag: string,
 ) => { digest?: string; labels?: Record<string, string> } | undefined;
+
+export type ImagetoolsCommandRunner = (
+	command: string,
+	args: readonly string[],
+	options: { encoding: "utf8" },
+) => { status: number | null; stdout?: string; stderr?: string };
 
 function readStringField(root: JsonObject, key: string): string | undefined {
 	const value = root[key];
@@ -140,7 +157,8 @@ export function parseImagetoolsInspectStdout(
 /** Registry lookup via buildx (requires `docker login ghcr.io`). */
 export function imagetoolsInspectTag(
 	tag: string,
-	run = spawnSync,
+	run: ImagetoolsCommandRunner = (command, args, options) =>
+		spawnSync(command, args, options),
 ): { digest?: string; labels?: Record<string, string> } | undefined {
 	const result = run(
 		"docker",
@@ -149,8 +167,26 @@ export function imagetoolsInspectTag(
 			encoding: "utf8",
 		},
 	);
-	if (result.status !== 0 || !result.stdout?.trim()) return undefined;
+	if (result.status !== 0 || !result.stdout?.trim()) {
+		const detail = `${result.stderr ?? ""}`.trim();
+		if (isImagetoolsTagAbsent(detail, result.status ?? -1)) return undefined;
+		const suffix = detail ? `: ${detail.split("\n").slice(-3).join(" ")}` : "";
+		throw new Error(
+			`imagetools inspect ${tag} failed (status ${result.status ?? "?"})${suffix}`,
+		);
+	}
 	return parseImagetoolsInspectStdout(result.stdout);
+}
+
+function isImagetoolsTagAbsent(stderr: string, status: number): boolean {
+	if (status === 0) return false;
+	const lower = stderr.toLowerCase();
+	return (
+		lower.includes("not found") ||
+		lower.includes("manifest unknown") ||
+		lower.includes("name unknown") ||
+		lower.includes("no such manifest")
+	);
 }
 
 export function assertReleaseImageMatchesBuild(options: {

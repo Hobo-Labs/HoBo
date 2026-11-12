@@ -1,8 +1,10 @@
+import type { SpawnSyncReturns } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import {
 	assertReleaseImageMatchesBuild,
 	assertSha256ImageDigest,
 	ghcrDigestRef,
+	imagetoolsInspectTag,
 	normalizeRepoDigestLine,
 	resolveRegistryDigestForTag,
 } from "../lib/release-ghcr-digest.mts";
@@ -13,6 +15,20 @@ const DIGEST_B =
 	"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const DIGEST_DEAD =
 	"sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+function stubSpawnSync(
+	status: number,
+	stderr: string,
+): SpawnSyncReturns<string> {
+	return {
+		pid: 1,
+		output: [null, "", stderr],
+		stdout: "",
+		stderr,
+		status,
+		signal: null,
+	};
+}
 
 describe("release ghcr digest helpers", () => {
 	it("formats ghcr digest refs with image name for attest grep", () => {
@@ -33,6 +49,30 @@ describe("release ghcr digest helpers", () => {
 		expect(normalizeRepoDigestLine(tag, DIGEST_A, "hobo-sdk")).toBe(
 			`ghcr.io/hobo-labs/hobo/hobo-sdk@${DIGEST_A}`,
 		);
+	});
+
+	it("re-normalizes full repo digest lines to the expected GHCR name", () => {
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1";
+		const foreign = `evil.io/hobo/hobo-sdk@${DIGEST_A}`;
+		expect(normalizeRepoDigestLine(tag, foreign, "hobo-sdk")).toBe(
+			`ghcr.io/hobo-labs/hobo/hobo-sdk@${DIGEST_A}`,
+		);
+		expect(() =>
+			normalizeRepoDigestLine(tag, `ghcr.io/x/hobo-sdk@sha256:bad`, "hobo-sdk"),
+		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
+	});
+
+	it("imagetools inspect fails closed on non-absent errors", () => {
+		const run = vi.fn(() => stubSpawnSync(1, "unexpected registry failure"));
+		expect(() => imagetoolsInspectTag("ghcr.io/x/y:v1", run)).toThrow(
+			/imagetools inspect/u,
+		);
+		expect(
+			imagetoolsInspectTag(
+				"ghcr.io/x/y:v1",
+				vi.fn(() => stubSpawnSync(1, "manifest unknown")),
+			),
+		).toBeUndefined();
 	});
 
 	it("resolves digest via imagetools inspect hook", () => {
