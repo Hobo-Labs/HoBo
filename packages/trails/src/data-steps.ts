@@ -43,6 +43,18 @@ export type DataDualView = Readonly<{
 	fidelity: "simulated" | "live";
 }>;
 
+/**
+ * Digest evidence over a source/target dual: counts and digests computed
+ * where the data lives. Preferred over `DataDualView` for live stores — a row
+ * view makes the oracle a custody point for the data it is checking
+ * (ADR-0177 decision 9).
+ */
+export type DataDualEvidence = Readonly<{
+	source: Readonly<{ count: number; digest: string }>;
+	target: Readonly<{ count: number; digest: string }>;
+	fidelity: "live";
+}>;
+
 export type DataDualFixture = Readonly<{
 	sourceRows: readonly JsonObject[];
 	targetRows: readonly JsonObject[];
@@ -118,6 +130,34 @@ export function evaluateDataDual(
 		continuous:
 			step.kind === "continuous-dual-data" || step.data?.mode === "cdc-dual",
 		fidelity: fixture.fidelity,
+	});
+}
+
+/**
+ * Evaluate data dual consistency from digest evidence. Same verdict shape as
+ * `evaluateDataDual`, with no row ever reaching the runner.
+ */
+export function evaluateDataDualEvidence(
+	step: TrailStep,
+	evidence: DataDualEvidence,
+): DataDualResult {
+	if (step.kind !== "data-transform" && step.kind !== "continuous-dual-data") {
+		throw Object.assign(new Error("not a data dual step"), {
+			code: "trail-step-kind",
+		});
+	}
+	const consistent = evidence.source.digest === evidence.target.digest;
+	return Object.freeze({
+		schemaVersion: DATA_DUAL_SCHEMA,
+		stepId: step.id,
+		mode: step.data?.mode ?? "cdc-dual",
+		sourceChecksum: `sha256:${evidence.source.digest}` as const,
+		targetChecksum: `sha256:${evidence.target.digest}` as const,
+		consistent,
+		zeroLoss: consistent && evidence.source.count === evidence.target.count,
+		continuous:
+			step.kind === "continuous-dual-data" || step.data?.mode === "cdc-dual",
+		fidelity: evidence.fidelity,
 	});
 }
 

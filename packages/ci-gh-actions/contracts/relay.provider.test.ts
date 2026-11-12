@@ -1,9 +1,12 @@
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { createRelayServer } from "../src/server.js";
-import { harness } from "../test/fixtures.js";
+import { createHostedRelayRuntime } from "../src/hosted-runtime.js";
+import { createRelayHandler } from "../src/http-handler.js";
+import { createNodeRelayHandler } from "../src/node-http.js";
+import { harness, SECRET } from "../test/fixtures.js";
 
 const Pact = z.object({
 	interactions: z.array(
@@ -15,13 +18,29 @@ const Pact = z.object({
 				headers: z.record(z.string(), z.string()).optional(),
 				body: z.json().optional(),
 			}),
-			response: z.object({ status: z.number(), body: z.json().optional() }),
+			response: z.object({ status: z.number(), body: z.json() }),
 		}),
 	),
 });
 it("verifies every relay HTTP pact interaction against simulated dependencies", async () => {
 	const h = harness();
-	const server = createRelayServer(h.relay);
+	const runtime = createHostedRelayRuntime({
+		store: h.ledger,
+		github: h.api,
+		identity: h.relay.options.identity,
+		webhookSecret: SECRET,
+		control: async () => undefined,
+		now: () => h.clock.now,
+	});
+	const server = createServer(
+		createNodeRelayHandler({
+			origin: "https://relay.example",
+			handle: createRelayHandler({
+				application: runtime,
+				webhookSecret: SECRET,
+			}),
+		}),
+	);
 	const listening = once(server, "listening");
 	server.listen(0, "127.0.0.1");
 	await listening;
@@ -49,18 +68,19 @@ it("verifies every relay HTTP pact interaction against simulated dependencies", 
 				interaction.response.status,
 			);
 			expect(response.headers.get("cache-control")).toBe("no-store");
-			if (interaction.response.body !== undefined)
-				expect(await response.json()).toEqual(interaction.response.body);
-			else
-				expect(await response.json()).toEqual({
-					status: expect.stringMatching(/^reserved:/),
-				});
+			expect(await response.json()).toEqual(interaction.response.body);
 		}
+		// The signed delivery was committed; the worker tick reserves it and
+		// dispatches its host. The provider fixture records the lease it is sent.
+		expect(h.store.all()).toEqual([]);
+		h.api.strictLeaseId = false;
+		await runtime.tick();
 		const lease = h.store.all()[0];
 		if (!lease) throw new Error("missing reserved lease");
-		h.api.leaseId = lease.id;
+		expect(lease.state).toBe("dispatched");
+		expect(h.api.leaseId).toBe(lease.id);
+		expect(h.api.dispatches).toBe(1);
 		h.api.host.display_title = `HoBo lease ${lease.id}`;
-		await h.relay.dispatchPending();
 		const claimUrl = `${base}/v1/leases/${lease.id}/jit`;
 		expect((await fetch(claimUrl, { method: "POST" })).status).toBe(403);
 		const result = await fetch(claimUrl, {

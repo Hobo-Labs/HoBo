@@ -1,0 +1,47 @@
+# The hosted relay's Aiven for Valkey cache offer (ADR-0179 amendment, phase 5).
+# Lowered into the @hobo/pricing catalog by scripts/generate-offers.mts.
+#
+# The free plan as Aiven stated it on 2026-11-11: 1 GB RAM (about 512 MB
+# usable), a single node, no command cap, powered off when idle, region not
+# selectable. Paid plans are not modelled. The connection URL is a secret the
+# owner stores in the config service (VALKEY_URL).
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: aiven
+  displayName: Aiven
+  homepage: https://aiven.io
+  description: Managed Valkey; the relay binds it over RESP with a connection URL.
+
+capabilities:
+  regions: [aiven-free]
+  mappings:
+    - id: kv/valkey-free
+      port: kv
+      resourceClass: valkey
+      providerService: aiven.valkey
+      features: [ttl, atomicIncrement, atomicCompareAndSet]
+      profiles: [kv.valkey/v1, kv.ephemeral-state/v1]
+      stability: stable
+      products: [valkey-free]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://aiven.io/docs/products/valkey/concepts/valkey-free-tier
+    checkedAt: 2026-11-11
+    note: Free plan, no command cap; https://aiven.io/docs/platform/concepts/free-plan.
+  billables:
+    - id: commands
+      category: service
+      unit: command
+  products:
+    - id: valkey-free
+      kind: service
+      plans:
+        - id: free
+          charges:
+            - id: commands
+              metered: { billable: commands, unitPrice: "0" }

@@ -1,8 +1,0 @@
-✓ auth login
-····················
- Logged in to Station station:local (local)
- tenant · local
- agent · human-free · no-elicitation
- sessionRef · sess_ce980a8…
- next · hobo-code agent --json · isolate --json
-────────────────────

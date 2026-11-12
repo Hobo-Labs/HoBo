@@ -1,9 +1,0 @@
-{
-  "code": "HOBO_CODE_UNKNOWN_VERB",
-  "human": "✕ cmd\n····················\n unknown · promot\n did you mean · promote\n try · hobo-code help\nFIX  → hobo-code promote … · → hobo-code help · → hobo-code \"<prompt>\"  # default dispatch · ✕ HOBO_CODE_UNKNOWN_VERB\n────────────────────\n",
-  "remediation": [
-    "hobo-code promote …",
-    "hobo-code help",
-    "hobo-code \"<prompt>\"  # default dispatch"
-  ]
-}

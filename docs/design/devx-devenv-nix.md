@@ -1,7 +1,7 @@
 ---
 type: Architecture Note
 title: "DevX: devenv-first local environments; Nix as optional IaC"
-description: "Recommend devenv for local/dev shells; treat Nix as an optional IacProvider adapter — never the default multi-cloud IaC path. Risks, hobo-code/dev integration, NixOS Stations, dendritic follow-on."
+description: "Recommend devenv for local/dev shells; treat Nix as an optional IacProvider adapter — never the default multi-cloud IaC path. Risks, hobo dev integration, NixOS Stations, dendritic follow-on."
 tags: [hobo, design, dx, iac, nix, devenv]
 ---
 
@@ -15,7 +15,7 @@ Maintenance note for local developer environments and where **Nix** sits relativ
 2. **Cloud / multi-cloud IaC stays pluggable** via the `IacProvider` port ([ADR-0006](./adr/01-architecture-core.md#adr-0006)): **Pulumi · Crossplane · Terraform · OpenTofu** are the first-party adapters. **None is sole primary.** Continuous placement/reconciliation stays on Planner + ResourceActors + **Trails** — Nix does not invent a parallel control plane.
 3. **Nix is optional IaC, never default.** A future `@hobo/iac-nix` (or git-registry module) may realize *system/image* resources through Nix flakes / NixOS modules for operators who already run that estate. It is **not** the recommended multi-cloud managed-resource path, not required for `hobo up`, and not implied by yard-first placement.
 4. **IaC / cloud selection is Yard-scoped** (or Matching under the selected Yard). Camps remain **provider-neutral until attached**; they do not pin cloud or IaC engines. Matching may select a Nix-backed realization **only under a Yard whose provider/substrate admits it** (e.g. self-host / NixOS Station) — never "Camp chooses Nix as cloud provider."
-5. **Highest-ROI path now: optional/auto-detected devenv in `hobo dev` / `hobo-code`.** See [Integration: hobo dev / hobo-code](#integration-hobo-dev--hobo-code).
+5. **Highest-ROI path now: optional/auto-detected devenv in `hobo dev`.** See [Integration: hobo dev](#integration-hobo-dev).
 
 ## Why not Nix-default
 
@@ -26,13 +26,13 @@ Maintenance note for local developer environments and where **Nix** sits relativ
 | Operator choice | Self-hosted Yards **configure** their IaC adapter; forcing Nix breaks ADR-0006's "no single primary." |
 | Local DX | devenv gives hermetic shells without making every deploy path a flake evaluation. |
 
-## Integration: hobo dev / hobo-code
+## Integration: hobo dev
 
 **Recommended (not yet fully shipped — design intent):**
 
 | Trigger | Behavior |
 |---|---|
-| `devenv.nix` / `devenv.yaml` present, or user opts in | `hobo dev` / `hobo-code` may **auto-detect** and activate a devenv shell (languages, processes, services) that mirrors local Camp/Station dual fixtures |
+| `devenv.nix` / `devenv.yaml` present, or user opts in | `hobo dev` may **auto-detect** and activate a devenv shell (languages, processes, services) that mirrors local Camp/Station dual fixtures |
 | No devenv files / opt-out | Existing Node/TS toolchain + `runtime-local` paths remain the default; **Nix is never required** |
 | Fidelity honesty | devenv-managed local services stay labeled `simulated` vs live the same way dual fixtures do today |
 | Profiles | Optional devenv profiles for station occupancy modes, agent harnesses, training loops |
@@ -47,7 +47,7 @@ Nix shines **outside** default multi-cloud managed resources:
 2. **NixOS-based Stations / self-hosted Yards** — Immutable system config, atomic upgrades/rollbacks ([ADR-0131](./adr/01-architecture-core.md#adr-0131) Station occupancy). Deploy via Colmena / deploy-rs / nixos-anywhere patterns behind the existing continuous layer — still one Yard provider for that self-host estate.
 3. **Continuous Trails** — Express system-package or image duals (expand-contract) as Trail steps; purity helps dual-consistency oracles. **Trails also own Camp re-home across Yards/clouds** — not Camp-local Nix pins.
 4. **Bridge patterns** — Terranix-style generation of TF/Pulumi configs from Nix modules if operators want one declarative surface that still drives existing adapters.
-5. **CI / agent environments** — Reproducible shells for hobo-code agents and Golden Suite runners via devenv.
+5. **CI / agent environments** — Reproducible shells for coding agents and Golden Suite runners via devenv.
 
 ## Dendritic module structure (follow-on)
 
@@ -71,7 +71,7 @@ If/when the Nix module surface becomes non-trivial (multiple hosts, home-manager
 
 ```text
 # contributor / agent sandbox (illustrative)
-devenv.nix          # languages, packages, processes for hobo dev / hobo-code
+devenv.nix          # languages, packages, processes for hobo dev
 .envrc / direnv     # optional activation
 # NOT required:
 # flake.nix that applies production cloud resources as the only IaC path
@@ -83,7 +83,7 @@ Cloud apply still goes through **Yard → Planner → `IacProvider.preview|apply
 
 | Surface | Role |
 |---|---|
-| devenv / direnv (repo tooling) | Local shells, services, agent preflight — **DevX only**; auto-detect in `hobo dev` / `hobo-code` |
+| devenv / direnv (repo tooling) | Local shells, services, agent preflight — **DevX only**; auto-detect in `hobo dev` |
 | `@hobo/iac-pulumi` / `-crossplane` / `-terraform` / `-opentofu` | First-party multi-cloud managed-resource IaC adapters |
 | `@hobo/iac-nix` (optional, later) | Optional adapter for Nix-centric / NixOS operators; never core default |
 | Optional Build / Station Nix adapters | Hermetic images + NixOS Station system config under existing ports |

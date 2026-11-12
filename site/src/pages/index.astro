@@ -1,563 +1,349 @@
 ---
 import { Code } from "astro:components";
 import Base from "../layouts/Base.astro";
-import Mascot from "../components/Mascot.astro";
-import ParallaxTrail from "../components/ParallaxTrail.astro";
+import TrailStage from "../components/TrailStage.astro";
 import WorldHero from "../components/WorldHero.astro";
-import Blimp from "../components/scenes/Blimp.astro";
-import Crossroads from "../components/scenes/Crossroads.astro";
-import Depot from "../components/scenes/Depot.astro";
-import Steamboat from "../components/scenes/Steamboat.astro";
-import Train from "../components/scenes/Train.astro";
 import { href } from "../lib/url";
+import "../styles/trail.css";
 
 const bindleSnippet = `import { bindle } from "@hobo/bindles";
 
-import { app as helloApi } from "./api";
-import { app as helloWeb } from "./webapp";
-
-// Pack once — provider-agnostic by construction.
+// One definition, any provider.
 export default bindle("hello-bindle", (b) => {
- const api = b.api(() => helloApi.fetch);
- const web = b.web(() => helloWeb.fetch).dependsOn(api);
- return { api, web };
+  const api = b.api(() => helloApi.fetch);
+  const web = b.web(() => helloWeb.fetch).dependsOn(api);
+  return { api, web };
 });`;
 
 const shikiThemes = {
 	light: "github-light-high-contrast",
 	dark: "github-dark-high-contrast",
 } as const;
+
+// The hobits a visitor can meet on the way, in the order they turn up.
+const hobits = ["tuck", "cog", "mags", "pip"];
 ---
 
 <Base
 	title="HoBo — pack your bindle, we'll find your app a home"
 	description="HoBo describes your app once, finds it the cheapest home that passes your policies, and keeps it moving with continuous, zero-drama migrations — across any provider, any mix, or your own metal."
 >
-	<!-- ===================== Trail ===================== -->
-	{/* Ink's band and hero render only when no world is chosen; each world
-	    brings its own art and its own opening argument instead. */}
-	<div class="ink-world">
-		<ParallaxTrail />
-	</div>
-
+	{/* Ink's page renders only when no world is chosen; each world brings its
+	    own art and its own opening argument instead. */}
 	<WorldHero />
 
-	<!-- ===================== Hero ===================== -->
-	<section class="hero ink-world">
-		<div class="container">
-			<div>
-				<h1>
-					Pack your bindle and hitch a ride —<br />
-					<em>we'll find your app a home.</em>
-				</h1>
-				<p class="hero-sub">
-					<strong>Pre-release</strong> — not on npm; clone the repo and build
-					<code>@hobo/hobo</code>. Default apply is an in-memory Pulumi
-					stand-in. HoBo continuously migrates your app to the
-					<strong>cheapest home that passes your policies</strong>. Describe
-					it once; when a better deal opens up — on any provider, a mix of
-					them, or your own metal — HoBo plans the move, gates it, and rides.
-				</p>
-				<div class="hero-ctas">
-					<a class="btn btn-primary" href={href("/guide/getting-started/")}
-						>Pack your bindle</a
-					>
-					<a class="btn btn-ghost" href={href("/guide/concepts/")}
-						>Learn the lingo</a
-					>
-				</div>
-			</div>
-			<div class="terminal-wrap">
-				<div class="terminal">
-				<div class="terminal-bar">
-					<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-					<span class="title">src/bindle.ts</span>
-				</div>
-				<Code
-					code={bindleSnippet}
-					lang="ts"
-					themes={shikiThemes}
-					defaultColor={false}
-				/>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- ===================== Problem ===================== -->
-	<section class="section ink-world">
-		<div class="container">
-			<div class="section-head">
-				<span class="badge">Why HoBo exists</span>
-				<h2>Two bad landlords, and the open road</h2>
-				<p>
-					Modern teams pick between a closed PaaS that owns them and raw IaC
-					that consumes them. HoBo's founding grudge:
-					<strong>your code shouldn't pay a loyalty tax to its landlord</strong>.
-				</p>
-			</div>
-			<Crossroads />
-			<div class="grid grid-3" style="align-items: stretch;">
-				<div class="card tradeoff">
-					<h3>The company town</h3>
-					<p>
-						A closed PaaS is easy right up until the rent triples. One
-						runtime, one bill, and the exits are decorative.
-					</p>
-				</div>
-				<div class="card tradeoff">
-					<h3>The fixer-upper</h3>
-					<p>
-						Raw cloud + IaC gives you full control — of a second job. Every
-						app team slowly becomes a part-time platform team.
-					</p>
-				</div>
-				<div class="card">
-					<h3><span class="card-icon" aria-hidden="true">→</span>The HoBo way</h3>
-					<p>
-						Travel light. Describe intent, not infrastructure, and let
-						policy, price, and reliability goals pick the home. Need
-						provider-native power? It's one typed
-						<code class="term">.with(...)</code> away.
-					</p>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- ===================== Continuous migration ===================== -->
-	<section class="section ink-world">
-		<div class="container">
-			<div class="section-head">
-				<span class="badge badge-accent">The guiding principle</span>
-				<h2>Deployment is not a destination. <span class="squiggle">It's a journey.</span></h2>
-				<p>
-					Other platforms deploy your app and call it a day. HoBo keeps
-					watching the market: when a cheaper home passes your policy gates,
-					it plans the move, rehearses it, and rides — with your blessing or
-					on full auto.
-				</p>
-			</div>
-			<div class="grid grid-3">
-				<div class="card">
-					<p class="step-num">01 · PACK</p>
-					<h3>Author the Bindle</h3>
-					<p>
-						Everything your app owns, rolled into one provider-agnostic
-						bundle: services, resources, wiring, and inline
-						<code>.allow()</code> least privilege. If it's not in the
-						bindle, it doesn't ship.
-					</p>
-				</div>
-				<div class="card">
-					<p class="step-num">02 · SETTLE</p>
-					<h3>Pitch a Camp</h3>
-					<p>
-						A Camp is the environment shape your app occupies (prod,
-						staging, …) and the durable runtime substrate. Pitch one to pin
-						env semantics — or write none and HoBo infers a camp. Provider
-						selection lives on the Yard.
-					</p>
-				</div>
-				<div class="card">
-					<p class="step-num">03 · RIDE</p>
-					<h3>Continuous migration</h3>
-					<p>
-						Price drops, credits appear, a region gets flaky — HoBo replans
-						placement continuously and moves the bindle when it's worth it.
-						Same convergence loop as <code class="term">hobo up</code>, so a
-						move is never a special event.
-					</p>
-					<div class="event-chips">
-						<code>MigrationPlanned</code>
-						<code>Gated</code>
-						<code>Migrated</code>
-					</div>
-				</div>
-			</div>
-			<Train />
-			<p class="section-foot">
-				Every hop is an event in an append-only log — replay the journey,
-				audit every fare, roll back any move.
-				<a href={href("/architecture/")}>How the moving works →</a>
-			</p>
-		</div>
-	</section>
-
-	<!-- ===================== Primitives bento ===================== -->
-	<section class="section ink-world" style="padding-top: 0;">
-		<div class="container">
-			<div class="section-head">
-				<span class="badge">The vocabulary</span>
-				<h2>Four words for traveling light</h2>
-				<p>
-					HoBo's primitives are named for the life: pack a bindle, pitch a
-					camp, work a yard, meet at the junction — plus stations for control
-					isolation and trails for continuous moves. Start with the bindle.
-				</p>
-			</div>
-			<Depot />
-			<div class="grid grid-3 bento">
-				<a class="card span-2" href={href("/primitives/bindles/")}>
-					<h3><span class="term">Bindle</span> <span class="sticker">start here</span></h3>
-					<p>
-						The app, packed: services, resources, wiring, policies, and
-						deployment intent — provider-agnostic by construction. The same
-						bindle unpacks anywhere, which is exactly what makes it cheap to
-						move.
-					</p>
-					<p class="card-cta">Pack your first bindle →</p>
-				</a>
-				<a class="card" href={href("/primitives/camps/")}>
-					<h3><span class="term">Camp</span> <span class="sticker meadow">then here</span></h3>
-					<p>
-						Environment shape and runtime requirements — not the cloud
-						account. Pitch one to pin prod/staging semantics, or skip it
-						and HoBo infers a camp on the local lane.
-					</p>
-					<p class="card-cta">Pitch a camp (optional) →</p>
-				</a>
-				<a class="card" href={href("/primitives/yards/")}>
-					<h3><span class="term">Yard</span> <span class="sticker sky">advanced</span></h3>
-					<p>
-						Provider selection point: one provider, zero or more camps,
-						shared policy and identity. Self-hostable — the Yard is itself
-						a bindle.
-					</p>
-					<p class="card-cta">Run a yard →</p>
-				</a>
-				<a class="card" href={href("/primitives/junctions/")}>
-					<h3><span class="term">Junction</span> <span class="sticker sky">advanced</span></h3>
-					<p>
-						Where yards meet: cross-cloud federation for hybrid and
-						multi-cloud — peer yards, no shared mutable state.
-					</p>
-					<p class="card-cta">Wire a junction →</p>
-				</a>
-				<a class="card" href={href("/primitives/stations/")}>
-					<h3><span class="term">Station</span> <span class="sticker sky">ops</span></h3>
-					<p>
-						Hard isolation boundary a Conductor occupies — rails,
-						connections, fail-closed setup. Not app topology.
-					</p>
-					<p class="card-cta">Init a station →</p>
-				</a>
-				<a class="card" href={href("/primitives/trails/")}>
-					<h3><span class="term">Trail</span> <span class="sticker meadow">migrate</span></h3>
-					<p>
-						App-owned continuous migration recipes: duals, rebinds,
-						cutover — composing identity continuous when you need it.
-					</p>
-					<p class="card-cta">Plan a trail →</p>
-				</a>
-				<div class="card">
-					<h3>Replayable event log</h3>
-					<p>
-						Every deploy, migration, and token grant is an appended event.
-						Time travel isn't a feature, it's the data model.
-					</p>
-				</div>
-				<div class="card span-2">
-					<h3>WIT/WASM ports</h3>
-					<p>
-						Ports are WIT interfaces; apps are wasm components (with an OCI
-						fallback); providers are capability providers. That thin, typed
-						port contract is what makes moving homes cheap — any Component-Model
-						language rides the same rails.
-					</p>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- ===================== Who writes what ===================== -->
-	<section class="section ink-world">
-		<div class="container">
-			<div class="section-head">
-				<span class="badge">The division of labor</span>
-				<h2>Who writes what</h2>
-				<p>
-					HoBo splits cleanly along the lines teams already have. Each role
-					owns one kind of artifact — and nobody has to touch the others'.
-				</p>
-			</div>
-			<div class="grid grid-3">
-				<a class="card" href={href("/roles/developers/")}>
-					<h3>Developers</h3>
-					<p class="step-num">WRITE BINDLES</p>
-					<p>
-						Describe the app — services, resources, wiring, permissions — in
-						plain code. No YAML, no infra tickets, no cloud console.
-					</p>
-					<p class="card-cta">HoBo for Developers →</p>
-				</a>
-				<a class="card" href={href("/roles/platform-engineers/")}>
-					<h3>Platform Engineers</h3>
-					<p class="step-num">WRITE CAMPS · YARDS · JUNCTIONS</p>
-					<p>
-						Own where apps live: approved providers, camp templates, yard
-						policy, and the junctions that federate clouds.
-					</p>
-					<p class="card-cta">HoBo for Platform Engineers →</p>
-				</a>
-				<a class="card" href={href("/roles/devsecops/")}>
-					<h3>DevSecOps</h3>
-					<p class="step-num">WRITE POLICY</p>
-					<p>
-						Decide what's allowed to run where — and what may cross a
-						junction. Every decision is enforced at the gate and logged as
-						an event.
-					</p>
-					<p class="card-cta">HoBo for DevSecOps →</p>
-				</a>
-			</div>
-		</div>
-	</section>
-
-	<!-- ===================== Agent-native ===================== -->
-	<section class="section ink-world">
-		<div class="container">
-			<div class="section-head">
-				<span class="badge">AI-native</span>
-				<h2>Built for humans, and the agents that work for them</h2>
-				<p>
-					Every capability is reachable via SDK, CLI, <strong>and</strong> MCP.
-					Agents aren't a chat box bolted on — they're principals with
-					their own scoped, short-lived credentials.
-				</p>
-			</div>
-			<Blimp />
-			<div class="grid grid-2">
-				<div class="grid" style="gap: 1rem;">
-					<div class="card">
-						<h3>Agents as principals</h3>
-						<p>
-							Agents self-provision exactly the credentials a task needs
-							through a machine-readable capability standard — and every
-							token issued is an auditable event like everything else.
-						</p>
-					</div>
-					<div class="card">
-						<h3>The Crew: a built-in operator workforce</h3>
-						<p>
-							SRE, Endpoint Monitor, GitOps, Platform Engineer, SWE, UX
-							Designer, and FinOps ship as policy-gated Yard operators —
-							HoBo ships the operators, not just the APIs they'd call.
-							<a href={href("/operations/")}>Built-in operators →</a>
-						</p>
-					</div>
-					<div class="card">
-						<h3>Greenfield from a declaration</h3>
-						<p>
-							Declare a <code>@component</code> class whose
-							<code>@operation</code> methods carry intent, a typed
-							contract shape, and an optional rubric enforced as policy —
-							then hand it to <code>b.api(...)</code>. Stubbed operations
-							run day one, and the generation pipeline grows the real
-							implementations — promoted only past conformance, eval
-							thresholds, and policy.
-							<a href={href("/primitives/bindles/#greenfield-declare-the-bindle-generate-the-code")}
-								>Declare first, generate the code →</a
-							>
-						</p>
-					</div>
-					<div class="card">
-						<h3>AI-generated providers, conformance-certified</h3>
-						<p>
-							Missing an adapter for your favorite discount host? The
-							generation pipeline writes it; the port's contract suite
-							certifies it. More homes on the map, cheaper moves for
-							everyone.
-							<a href={href("/customizations/providers/")}
-								>Build a custom provider →</a
-							>
-						</p>
-					</div>
-				</div>
-				{/* align-self:start, not justify-content:center: this card sits in a grid
-				    row beside a column of four stacked cards, so a stretched card
-				    centred its few lines inside ~1700px of height — a wall of empty
-				    space above and below the heading. Hug the content instead. */}
-				<div class="card" style="display:flex; flex-direction:column; gap: 0.75rem; align-self:start;">
-					<h3>Reading this as an agent?</h3>
-					<p>
-						Welcome, fellow traveler. This whole site is written to be as
-						useful to you as to the humans you work for: stable headings,
-						copy-pasteable snippets, canonical CLI verbs.
-					</p>
-					<p>
-						Start with the machine-readable briefing at
-						<a href={href("/llms.txt")}><code>llms.txt</code></a> (or the whole
-						site in one document at
-						<a href={href("/llms-full.txt")}><code>llms-full.txt</code></a>),
-						then the
-						<a href={href("/agents/")}>agent docs</a> for the MCP surface
-						and how to earn credentials.
-					</p>
-					<p class="card-cta">
-						<a href={href("/agents/")}>Read the agent docs →</a>
-					</p>
-					<p class="card-cta">
-						<a href={href("/testing/")}>Testing patterns →</a>
-						{" · "}
-						<a href={href("/reference/")}>Technical reference →</a>
-					</p>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- ===================== Landscape ===================== -->
-	<section class="section ink-world">
-		<div class="container">
-			<div class="section-head">
-				<span class="badge">The landscape</span>
-				<h2>Other roofs over your head</h2>
-				<p>
-					Cloud-agnostic options are IaC-flavored, Kubernetes-bound, or not
-					AI-native. AI-native options are single-runtime and locked in.
-					Nobody else keeps looking for a cheaper home after move-in day.
-				</p>
-			</div>
-			<Steamboat />
-			<div
-				class="table-wrap"
-				tabindex="0"
-				role="region"
-				aria-label="How HoBo compares to other platforms (scrollable table)"
+	{/* Each <section> is a stop on the trail. `data-stop-name` labels it on the
+	    trail marker, `data-stop-sign` (or its badge) is the road sign, and each
+	    card's `data-prop` is the prop that stands for it on the trail. With no
+	    script this is an ordinary page that reads top to bottom. */}
+	<div class="trail-page ink-world" data-trail-page>
+		<div class="trail-stops" data-trail-stops>
+			<section
+				class="hero stop stop-hero"
+				id="trailhead"
+				data-trail-stop="trailhead"
+				data-stop-name="Start"
+				data-stop-sign="Trailhead"
+				data-stop-extra="hint"
+				aria-labelledby="trailhead-title"
 			>
-				<table class="compare">
-					<thead>
-						<tr>
-							<th>Product</th>
-							<th>Category</th>
-							<th>Cloud-agnostic</th>
-							<th>Runtime model</th>
-							<th>AI-native</th>
-							<th>Self-host</th>
-						</tr>
-					</thead>
-					<tbody>
-						<tr>
-							<th>Lakebed</th>
-							<td>Agent-native PaaS</td>
-							<td class="no">✗ own runtime</td>
-							<td>sync RPC</td>
-							<td>agent-readable contracts</td>
-							<td class="no">✗</td>
-						</tr>
-						<tr>
-							<th>Vercel + Workflow SDK</th>
-							<td>PaaS + durable execution</td>
-							<td class="no">partial</td>
-							<td>durable workflows/steps</td>
-							<td>DurableAgent</td>
-							<td class="no">runtime only</td>
-						</tr>
-						<tr>
-							<th>Nitric</th>
-							<td>Infra-from-code framework</td>
-							<td class="yes">✓</td>
-							<td>functions/resources</td>
-							<td class="no">✗</td>
-							<td class="yes">✓</td>
-						</tr>
-						<tr>
-							<th>SST (v3 "Ion")</th>
-							<td>IfC framework (Pulumi/TF)</td>
-							<td class="no">◐ AWS-centric</td>
-							<td>serverless + containers</td>
-							<td class="no">✗</td>
-							<td class="yes">✓ OSS core</td>
-						</tr>
-						<tr>
-							<th>Crossplane</th>
-							<td>K8s control plane</td>
-							<td class="yes">✓</td>
-							<td>reconcilers (CRDs)</td>
-							<td class="no">✗</td>
-							<td class="yes">✓ (k8s)</td>
-						</tr>
-						<tr>
-							<th>wasmCloud</th>
-							<td>Wasm runtime (HoBo's default host)</td>
-							<td class="yes">✓</td>
-							<td>components + providers</td>
-							<td class="no">✗</td>
-							<td class="yes">✓</td>
-						</tr>
-						<tr class="hobo-row">
-							<th>HoBo</th>
-							<td>AI-native meta-cloud</td>
-							<td class="yes">✓ ports &amp; adapters</td>
-							<td>wasm components + actors + durable workflows + sagas</td>
-							<td class="yes">agents as principals · generation pipeline · MCP</td>
-							<td class="yes">✓ the Yard is a Bindle</td>
-						</tr>
-					</tbody>
-				</table>
-			</div>
-			<p class="section-foot">
-				And the HoBo-only column: <strong>continuous migration</strong> —
-				placement is re-decided for as long as your app lives, not once at
-				deploy time.
-			</p>
-		</div>
-	</section>
-
-	<!-- ===================== CTA ===================== -->
-	<section class="cta-band ink-world">
-		<div class="container">
-			<div class="postcard">
-				<div class="postcard-bo"><Mascot size={84} /></div>
-				<h2 class="cta-inner-title">Ready to hit the rails?</h2>
-				<p style="margin: 0 auto 1.5rem; max-width: 36rem; color: var(--text-mute);">
-					Pack a bindle — that's the only must — and let your app find its
-					way home. Pitch a camp if you're picky about the spot. Yards and
-					junctions can wait until it starts collecting passport stamps.
-				</p>
-				<div class="hero-ctas" style="justify-content: center; margin-bottom: 0;">
-					<a class="btn btn-primary" href={href("/guide/getting-started/")}
-						>Get started</a
-					>
-					<a class="btn btn-ghost" href={href("/primitives/")}
-						>Meet the primitives</a
-					>
+				<div class="container">
+					<div class="stop-head">
+						<h1 id="trailhead-title">
+							Pack your bindle and hitch a ride — <em>we'll find your app a home.</em>
+						</h1>
+						<p class="hero-sub">
+							HoBo keeps your app on the <strong>cheapest infrastructure that passes
+							your policies</strong>. Describe it once in code. When a better option
+							appears, HoBo plans the migration, gates it, and moves it.
+						</p>
+						<p class="hero-sub">
+							<strong>Pre-release.</strong> Not on npm yet: clone the repo and build
+							<code>@hobo/hobo</code>.
+						</p>
+						<div class="hero-ctas">
+							<a class="btn btn-primary" href={href("/guide/getting-started/")}>Get started</a>
+							<a class="btn btn-ghost" href={href("/guide/concepts/")}>Core concepts</a>
+						</div>
+					</div>
+					<div class="terminal-wrap stop-card">
+						<div class="terminal">
+							<div class="terminal-bar">
+								<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+								<span class="title">src/bindle.ts</span>
+							</div>
+							<Code code={bindleSnippet} lang="ts" themes={shikiThemes} defaultColor={false} />
+						</div>
+					</div>
 				</div>
-			</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="why"
+				data-trail-stop="crossroads"
+				data-stop-name="Why"
+				data-stop-extra="tuck"
+				aria-labelledby="why-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Why HoBo exists</span>
+						<h2 id="why-title">Two bad landlords, and the open road</h2>
+						<p>
+							Teams choose between a platform that locks them in and raw
+							infrastructure that becomes a second job. HoBo is a third option.
+						</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="company-gate">
+							<h3>Closed PaaS</h3>
+							<p>Easy until the price changes. One runtime, one bill, hard to leave.</p>
+						</article>
+						<article class="card stop-card" data-prop="shack">
+							<h3>Raw cloud + IaC</h3>
+							<p>Full control, and every app team becomes a part-time platform team.</p>
+						</article>
+						<article class="card stop-card" data-prop="signpost">
+							<h3>HoBo</h3>
+							<p>
+								Describe what the app needs. Policy, price and reliability decide
+								where it runs. Provider-specific features are one typed
+								<code>.with(...)</code> away.
+							</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="how"
+				data-trail-stop="rails"
+				data-stop-name="How"
+				data-stop-extra="cog"
+				aria-labelledby="how-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">How it works</span>
+						<h2 id="how-title">Deployment is not a destination. <em>It's a journey.</em></h2>
+						<p>
+							Most platforms deploy once and stop. HoBo keeps comparing options and
+							migrates when a cheaper one passes your policy gates, with your
+							approval or automatically.
+						</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="trunk">
+							<p class="step-num">1 · Describe</p>
+							<h3>Write a Bindle</h3>
+							<p>One provider-agnostic definition of your app: services, resources, wiring and permissions.</p>
+						</article>
+						<article class="card stop-card" data-prop="tent">
+							<p class="step-num">2 · Place</p>
+							<h3>Pick a Camp</h3>
+							<p>An environment such as prod or staging. Define one, or let HoBo infer it.</p>
+						</article>
+						<article class="card stop-card" data-prop="train">
+							<p class="step-num">3 · Migrate</p>
+							<h3>Continuous migration</h3>
+							<p>
+								When prices or reliability change, HoBo re-plans and moves the app if
+								it's worth it. Every move is logged and reversible.
+							</p>
+							<div class="event-chips">
+								<code>MigrationPlanned</code>
+								<code>Gated</code>
+								<code>Migrated</code>
+							</div>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="vocabulary"
+				data-trail-stop="depot"
+				data-stop-name="Vocabulary"
+				aria-labelledby="vocabulary-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Vocabulary</span>
+						<h2 id="vocabulary-title">Four words for traveling light</h2>
+						<p>The vocabulary is small. Start with the Bindle; the rest are optional until you need them.</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="milestone">
+							<div class="stop-pair">
+								<div><h3>Bindle</h3><p>Your app's definition: services, resources, wiring, policy.</p></div>
+								<div><h3>Camp</h3><p>An environment and its runtime requirements.</p></div>
+							</div>
+							<p class="card-cta"><a href={href("/primitives/bindles/")}>Bindle docs →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="switch-stand">
+							<div class="stop-pair">
+								<div><h3>Yard</h3><p>A provider, with shared policy and identity.</p></div>
+								<div><h3>Junction</h3><p>Federation between yards, for hybrid and multi-cloud.</p></div>
+							</div>
+							<p class="card-cta"><a href={href("/primitives/yards/")}>Yard docs →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="depot">
+							<div class="stop-pair">
+								<div><h3>Station</h3><p>An isolation boundary for the control plane.</p></div>
+								<div><h3>Trail</h3><p>A migration recipe your app owns.</p></div>
+							</div>
+							<p class="card-cta"><a href={href("/primitives/trails/")}>Trail docs →</a></p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="roles"
+				data-trail-stop="crew"
+				data-stop-name="Roles"
+				aria-labelledby="roles-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Roles</span>
+						<h2 id="roles-title">Who writes what</h2>
+						<p>Each role owns one kind of file and never has to touch the others.</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="drafting-table">
+							<p class="step-num">Write Bindles</p>
+							<h3>Developers</h3>
+							<p>Define the app in plain code. No YAML, no infra tickets.</p>
+							<p class="card-cta"><a href={href("/roles/developers/")}>For developers →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="toolbox">
+							<p class="step-num">Write Camps, Yards, Junctions</p>
+							<h3>Platform engineers</h3>
+							<p>Approve providers and define environments.</p>
+							<p class="card-cta"><a href={href("/roles/platform-engineers/")}>For platform engineers →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="barrier">
+							<p class="step-num">Write policy</p>
+							<h3>DevSecOps</h3>
+							<p>Decide what can run where. Every decision is enforced and logged.</p>
+							<p class="card-cta"><a href={href("/roles/devsecops/")}>For DevSecOps →</a></p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="ai-native"
+				data-trail-stop="airfield"
+				data-stop-name="AI-native"
+				aria-labelledby="ai-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">AI-native</span>
+						<h2 id="ai-title">Built for humans, and the agents that work for them</h2>
+						<p>
+							Everything is available through the SDK, the CLI and MCP. Agents are
+							first-class principals with scoped, short-lived credentials.
+						</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="padlock-post">
+							<h3>Agents as principals</h3>
+							<p>An agent requests only the credentials its task needs. Every token is an auditable event.</p>
+						</article>
+						<article class="card stop-card" data-prop="switchboard">
+							<h3>Built-in operators</h3>
+							<p>SRE, GitOps, FinOps and other agents ship with HoBo, gated by policy.</p>
+							<p class="card-cta"><a href={href("/operations/")}>Operators →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="radio-mast">
+							<h3>Are you an agent?</h3>
+							<p>
+								Start with <a href={href("/llms.txt")}><code>llms.txt</code></a>, then the
+								agent docs for the MCP surface.
+							</p>
+							<p class="card-cta"><a href={href("/agents/")}>Agent docs →</a></p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="compare"
+				data-trail-stop="river"
+				data-stop-name="Compare"
+				data-stop-sign="Alternatives"
+				aria-labelledby="compare-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Alternatives</span>
+						<h2 id="compare-title">Other roofs over your head</h2>
+						<p>
+							Cloud-agnostic tools aren't AI-native. AI-native platforms lock you in.
+							None of them keep optimizing after you deploy.
+						</p>
+					</div>
+					<div class="grid stop-cards stop-cards-one">
+						<article class="card stop-card stop-card-wide" data-prop="rooftops">
+							<div class="table-wrap" tabindex="0" role="region" aria-label="How HoBo compares (scrollable table)">
+								<table class="compare">
+									<thead>
+										<tr><th>Product</th><th>Cloud-agnostic</th><th>AI-native</th><th>Self-host</th></tr>
+									</thead>
+									<tbody>
+										<tr><th>Lakebed</th><td class="no">✗ own runtime</td><td class="yes">✓</td><td class="no">✗</td></tr>
+										<tr><th>Vercel + Workflow</th><td class="no">partial</td><td class="yes">✓</td><td class="no">runtime only</td></tr>
+										<tr><th>Nitric</th><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓</td></tr>
+										<tr><th>SST v3</th><td class="no">◐ AWS-centric</td><td class="no">✗</td><td class="yes">✓</td></tr>
+										<tr><th>Crossplane</th><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓ k8s</td></tr>
+										<tr><th>wasmCloud</th><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓</td></tr>
+										<tr class="hobo-row"><th>HoBo</th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+									</tbody>
+								</table>
+							</div>
+							<p class="stop-foot"><strong>Only HoBo</strong> keeps re-evaluating placement after you deploy.</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop stop-end"
+				id="get-started"
+				data-trail-stop="home"
+				data-stop-name="Get started"
+				aria-labelledby="start-title"
+			>
+				<div class="container">
+					<div class="card stop-card postcard" data-prop="cottage" data-prop-bare>
+						<h2 id="start-title" class="cta-inner-title">Ready to hit the rails?</h2>
+						<p>Write one Bindle to start. Everything else is optional until you need it.</p>
+						<div class="hero-ctas">
+							<a class="btn btn-primary" href={href("/guide/getting-started/")}>Get started</a>
+							<a class="btn btn-ghost" href={href("/primitives/")}>See the primitives</a>
+						</div>
+						<div class="stamps" data-stamps hidden>
+							<p class="stamps-title">Hobits met along the way</p>
+							{hobits.map((who) => (
+								<span class="stamp" data-who={who} role="img" aria-label="Not met yet">
+									<i style={`background-image:url("${href(`/cast/${who}.png`)}")`}></i>
+								</span>
+							))}
+						</div>
+					</div>
+				</div>
+			</section>
 		</div>
-	</section>
+
+		<TrailStage />
+	</div>
 </Base>
-
-<style>
-	.cta-inner-title {
-		margin: 0 0 0.65rem;
-		font-family: var(--font-display);
-		font-size: clamp(1.45rem, 2.8vw, 2rem);
-		letter-spacing: -0.01em;
-		font-weight: 620;
-	}
-
-	@keyframes postcard-sway {
-		from {
-			transform: rotate(-1.5deg);
-		}
-		to {
-			transform: rotate(1.5deg);
-		}
-	}
-
-	.postcard-bo {
-		position: absolute;
-		left: clamp(0.5rem, 3vw, 2.5rem);
-		bottom: 0.35rem;
-		transform-origin: 50% 96%;
-		animation: postcard-sway 2.2s var(--ease) infinite alternate;
-	}
-
-	@media (max-width: 820px) {
-		.postcard-bo {
-			display: none;
-		}
-	}
-</style>

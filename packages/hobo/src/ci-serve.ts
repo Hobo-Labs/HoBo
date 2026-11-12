@@ -11,13 +11,18 @@ import {
 	type CiJobAdmission,
 	type CiWorkerStore,
 	createGithubAppTransport,
-	createJobPollAdmissionWorker,
+	createGithubJobPoller,
+	createPollIngestCoalesce,
+	createPollLogFilter,
+	describeWaitingJobs,
+	type GithubTransport,
 	inferJobAdmission,
 	inventoryCiEnginesFromRepository,
 	loadCiProjectFromDirectory,
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
 } from "@hobo/ci-gh-actions/cli-serve";
+import { parseCiAgentBlock } from "@hobo/ci-gh-actions/project-config";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
 import { githubKeyEnvironment } from "./ci-github-keys.js";
@@ -52,6 +57,7 @@ interface ServeLogEntry {
 	readonly admission?: CiJobAdmission;
 	readonly trustProxy?: boolean;
 	readonly engines?: readonly string[];
+	readonly agent?: boolean;
 }
 
 export interface CiServeOptions {
@@ -67,6 +73,8 @@ export interface CiServeOptions {
 	readonly admission?: string;
 	readonly allowInsecure?: boolean;
 	readonly withWorker?: boolean;
+	/** Serve without the CI agent even when the project configures one. */
+	readonly noAgent?: boolean;
 	readonly printConfig?: boolean;
 	readonly repo?: string;
 	readonly remote?: string;
@@ -101,8 +109,7 @@ interface ResolvedServePlan {
 
 /**
  * Environment for the `--with-worker` sidecar. The worker keeps its own lease
- * journal: SQLite under the serve state dir unless the CI config names a
- * Postgres store, whose URL comes from the env var the config names.
+ * journal: SQLite under the serve state dir, never the relay's file.
  */
 export function ciWorkerEnvironment(input: {
 	relayEnv: NodeJS.ProcessEnv;
@@ -112,21 +119,111 @@ export function ciWorkerEnvironment(input: {
 	const env: NodeJS.ProcessEnv = { ...input.relayEnv };
 	// HOBO_CI_DB is the relay's journal; a second writer must not open it.
 	delete env.HOBO_CI_DB;
-	if (input.store.kind === "postgres") {
-		if (!env[input.store.urlEnv])
-			throw new Error(
-				`--with-worker postgres store requires ${input.store.urlEnv}`,
-			);
-		env.HOBO_CI_STORE = "postgres";
-		env.HOBO_CI_STORE_URL_ENV = input.store.urlEnv;
-		delete env.HOBO_CI_WORKER_DB;
-	} else {
-		env.HOBO_CI_STORE = "sqlite";
-		env.HOBO_CI_WORKER_DB =
-			input.relayEnv.HOBO_CI_WORKER_DB ?? join(input.stateDir, "worker.sqlite");
-		delete env.HOBO_CI_STORE_URL_ENV;
-	}
+	env.HOBO_CI_STORE = input.store.kind;
+	env.HOBO_CI_WORKER_DB =
+		input.relayEnv.HOBO_CI_WORKER_DB ?? join(input.stateDir, "worker.sqlite");
+	// A setting the removed Postgres store read; the worker reads it no more.
+	delete env.HOBO_CI_STORE_URL_ENV;
 	return env;
+}
+
+type RunningRelay = Awaited<ReturnType<typeof startRelayFromEnvironment>>;
+
+/**
+ * The relay's startup with the CI agent beside it, from `@hobo/ci-agent`. The
+ * agent and its model SDK are not part of the `hobo` CLI; they are loaded
+ * only when a project's `.hobo/ci.json` has an `agent` block.
+ */
+async function loadAgentRelay() {
+	try {
+		return (await import("@hobo/ci-agent/relay-main"))
+			.startRelayWithAgentFromEnvironment;
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			"code" in error &&
+			error.code === "ERR_MODULE_NOT_FOUND"
+		)
+			throw new Error(
+				"This project configures a CI agent (the agent block of .hobo/ci.json), which needs the @hobo/ci-agent package. Install it next to hobo, or pass --no-agent to serve without the agent.",
+			);
+		throw error;
+	}
+}
+
+/**
+ * Pull admission for a relay with no public webhook URL: the same GitHub job
+ * poller the box worker runs, feeding the relay's inbox. Only the repository
+ * this serve was started for is read, and only once the relay holds a
+ * connection for it; the relay's own tick then admits what was accepted.
+ */
+export function startPullAdmission(input: {
+	github: GithubTransport;
+	relay: {
+		runtime: Pick<RunningRelay["runtime"], "admissionOrder" | "ingestWebhook">;
+		store: Pick<RunningRelay["store"], "configuration">;
+	};
+	repository: string;
+	installationId: number;
+	intervalMs?: number;
+	emitProgress?: ((message: string) => void) | undefined;
+}) {
+	const { runtime, store } = input.relay;
+	const repository = input.repository.toLowerCase();
+	const poller = createGithubJobPoller({
+		github: input.github,
+		admissionOrder: runtime.admissionOrder,
+		ingestCoalesce: createPollIngestCoalesce(),
+		connections: async () =>
+			((await store.configuration())?.configuration?.connections ?? []).filter(
+				(connection) =>
+					connection.installationId === input.installationId &&
+					connection.repository.toLowerCase() === repository,
+			),
+		ingest: (delivery) => runtime.ingestWebhook(delivery),
+		onIngestError: (jobId, message) =>
+			input.emitProgress?.(`poll-admission job ${jobId} refused: ${message}`),
+		onGithubError: (failure) =>
+			input.emitProgress?.(
+				`poll-admission GitHub read failed (${failure.status}): ${failure.path}`,
+			),
+	});
+	const worthLogging = createPollLogFilter();
+	let inFlight: Promise<void> | undefined;
+	function poll(): Promise<void> {
+		inFlight ??= poller
+			.poll()
+			.then((summary) => {
+				if (!worthLogging(summary, Date.now())) return;
+				const waiting = describeWaitingJobs(summary.waiting);
+				input.emitProgress?.(
+					[
+						`poll-admission: ${summary.accepted} accepted`,
+						`${summary.failed} refused`,
+						`${summary.githubErrors} GitHub read errors`,
+						waiting ? `waiting ${waiting}` : "",
+						summary.pausedUntil ? `paused until ${summary.pausedUntil}` : "",
+					]
+						.filter(Boolean)
+						.join(", "),
+				);
+			})
+			.catch(() => {
+				// The next poll retries; a failed poll admits nothing.
+			})
+			.finally(() => {
+				inFlight = undefined;
+			});
+		return inFlight;
+	}
+	const timer = setInterval(() => void poll(), input.intervalMs ?? 15_000);
+	void poll();
+	return {
+		poll,
+		stop(): void {
+			clearInterval(timer);
+		},
+	};
 }
 
 function usage(message: string): CommandResult {
@@ -604,6 +701,18 @@ export async function startCiServe(input: {
 		throw new Error(
 			"gh-actions engine is required for local relay serve today",
 		);
+	// The agent is part of the project's configuration: an `agent` block turns
+	// it on. It keeps its journal and clones under this serve's state.
+	const agentBlock = input.options.noAgent
+		? undefined
+		: parseCiAgentBlock(await readFile(plan.configPath, "utf8"));
+	let startRelay: (env: NodeJS.ProcessEnv) => Promise<RunningRelay> =
+		startRelayFromEnvironment;
+	if (agentBlock !== undefined) {
+		relayEnv.HOBO_CI_AGENT_CONFIG = plan.configPath;
+		relayEnv.HOBO_CI_AGENT_DIR = join(stateDir, "agent");
+		startRelay = await loadAgentRelay();
+	}
 	serveLog(input.emitProgress, {
 		ts: new Date().toISOString(),
 		level: "info",
@@ -614,8 +723,9 @@ export async function startCiServe(input: {
 		admission: plan.admission,
 		trustProxy: plan.trustProxy,
 		engines: plan.engines,
+		agent: agentBlock !== undefined,
 	});
-	const running = await startRelayFromEnvironment(relayEnv);
+	const running = await startRelay(relayEnv);
 	let pollStop: (() => void) | undefined;
 	let worker: ChildProcess | undefined;
 	if (plan.admission === "pull") {
@@ -625,15 +735,13 @@ export async function startCiServe(input: {
 			appId: credentials.appId,
 			privateKey: await readFile(credentials.keyPath, "utf8"),
 		});
-		const poll = createJobPollAdmissionWorker({
+		const poll = startPullAdmission({
 			github,
+			relay: running,
 			repository: plan.repository,
 			installationId: plan.installationId,
-			processWorkflowJobWebhook: (body) =>
-				running.relay.processWebhook(body, "workflow_job"),
-			logger: (line) => input.emitProgress?.(line),
+			emitProgress: input.emitProgress,
 		});
-		poll.start();
 		pollStop = () => poll.stop();
 	}
 	if (input.options.withWorker) {

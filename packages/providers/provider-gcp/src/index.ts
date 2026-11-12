@@ -12,6 +12,7 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export { GCP_HOST_FORMS } from "./host-forms.js";
 export {
 	assertLocalIacProgram,
 	GCP_IAC_PROVIDER,
@@ -86,6 +87,7 @@ export {
 	type CloudStorageOptions,
 	type CloudStorageSiteOptions,
 	type CloudTasksOptions,
+	type ComputeEngineInstanceOptions,
 	cloudFunctions,
 	cloudRun,
 	cloudRunJob,
@@ -94,6 +96,7 @@ export {
 	cloudStorage,
 	cloudStorageSite,
 	cloudTasks,
+	computeEngineInstance,
 	FIRESTORE_MODES,
 	type FirestoreMode,
 	type FirestoreOptions,
@@ -102,7 +105,9 @@ export {
 	type MemorystoreRedisOptions,
 	type MemorystoreTier,
 	memorystoreRedis,
+	type PersistentDiskOptions,
 	type PubsubOptions,
+	persistentDisk,
 	pubsub,
 	SECRET_MANAGER_REPLICATION,
 	type SecretManagerOptions,

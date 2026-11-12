@@ -16,7 +16,11 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"hobo": {
+		"webUi": true
+	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/cli": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/identity": "workspace:*"

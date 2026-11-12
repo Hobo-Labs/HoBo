@@ -542,17 +542,15 @@ test("production package source changes select architecture guard and workspace 
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
 });
 
-test("staged test-only @hobo/code changes run vitest on package-relative paths", () => {
-	const { checks } = plan(["packages/code/test/hobo-code-signals.test.ts"], {
+test("staged test-only package changes run vitest on package-relative paths", () => {
+	const { checks } = plan(["packages/rift/test/rift.test.ts"], {
 		staged: true,
 		workspacePackageExists: () => true,
 	});
 
 	assert.ok(checks.some(narrowVitestCheck));
-	assert.deepEqual(narrowVitestPaths(checks), [
-		"test/hobo-code-signals.test.ts",
-	]);
-	assert.equal(turboTestSelects(checks, "packages/code"), false);
+	assert.deepEqual(narrowVitestPaths(checks), ["test/rift.test.ts"]);
+	assert.equal(turboTestSelects(checks, "packages/rift"), false);
 });
 
 test("examples package source changes select architecture guard and workspace tests", () => {
@@ -667,14 +665,14 @@ test("the behavior lane builds the proofs' dependencies first, serially", () => 
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
 	const { checks } = plan([
-		"packages/patterns/patterns/starter/code/openui-astryx-bindle/project/features/visual.feature",
+		"packages/patterns/patterns/starter/cli/todo/project/features/visual.feature",
 	]);
 	assert.equal(checks.some(isBehaviorLane), false);
 });
 
 test("OptimizeXP evidence features use their own gate, not the root behavior lane", () => {
 	const { checks } = plan([
-		"packages/code/.optimizexp/features/git-workbench/git-workbench.feature",
+		"packages/cli/.optimizexp/features/new-project/new-project.feature",
 	]);
 	assert.equal(checks.some(isBehaviorLane), false);
 	assert.ok(
@@ -706,7 +704,7 @@ test("global .optimizexp changes select the optimizexp drift lane", () => {
 
 test("project-local persona/feature changes select the optimizexp drift lane", () => {
 	const { checks } = plan([
-		"packages/code/.optimizexp/features/hobo-code-cost-zero/README.md",
+		"packages/cli/.optimizexp/features/new-project/README.md",
 	]);
 	assert.ok(checks.some(isOptimizexpLane));
 });
@@ -944,4 +942,69 @@ test("gate script changes select the optimizexp drift lane", () => {
 test("unrelated changes do not select the optimizexp drift lane", () => {
 	const { checks } = plan(["packages/core/src/index.ts"]);
 	assert.ok(!checks.some(isOptimizexpLane));
+});
+
+test("a change to anything that guards signed local runs runs those guards", () => {
+	const guardTests = [
+		"scripts/test/attestation.test.ts",
+		"scripts/test/verify-attestation.test.ts",
+		"scripts/test/attested-jobs.test.ts",
+		"scripts/test/merge-group-gate.test.ts",
+		"scripts/test/lint-actions-runner.test.ts",
+	];
+	const runsGuards = (checks: Check[]) => {
+		const tests = checks.find(
+			(check) =>
+				check.command === "node" &&
+				check.args.includes("scripts/test/attestation.test.ts"),
+		);
+		return {
+			tests: guardTests.every((file) => tests?.args.includes(file) === true),
+			nodeTest: tests?.args.slice(0, 3).join(" ") === "--import tsx --test",
+			actionsLint: checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run actions:lint",
+			),
+		};
+	};
+	// Each of these alone, with nothing else changed: a key-only change, a
+	// workflow-only change, the verifier, the description, the lint.
+	for (const file of [
+		".github/workflows/hobo-ci.yml",
+		".github/workflows/release-hobo.yml",
+		".github/actions/route-runner/action.yml",
+		".github/actions/route-runner/anything-new.sh",
+		"scripts/ci/attested-jobs.json",
+		"scripts/ci/attestation.mts",
+		"scripts/ci/verify-attestation.mts",
+		"scripts/lint-actions.ts",
+		".hobo/ci-attestors.json",
+		"scripts/ci/local-attest.mts",
+		"scripts/test/merge-group-gate.test.ts",
+	]) {
+		for (const overrides of [
+			{},
+			{ staged: true },
+			{ workspaceTestsCoveredExternally: true },
+		])
+			assert.deepEqual(
+				runsGuards(plan([file], overrides).checks),
+				{ tests: true, nodeTest: true, actionsLint: true },
+				`${file} ${JSON.stringify(overrides)}`,
+			);
+	}
+	// And not for a change that touches none of it.
+	for (const file of [
+		"docs/design/index.md",
+		"packages/core/src/index.ts",
+		".github/workflows/pricing-ci.yml",
+		".hobo/ci.json",
+		"scripts/ci/affected-lanes.mts",
+	])
+		assert.deepEqual(
+			runsGuards(plan([file]).checks),
+			{ tests: false, nodeTest: false, actionsLint: false },
+			file,
+		);
 });

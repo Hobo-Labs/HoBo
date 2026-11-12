@@ -97,13 +97,13 @@ Agent skill mirrors: `.agents/skills/design-md` and `.claude/skills/design-md`.
 |---|---|
 | `src/pages/index.astro` | The landing page. |
 | `src/pages/examples/` | Static Examples ship console and generated example catalog endpoint. |
-| `src/components/ParallaxTrail.astro` | The scrolling trail band above the hero (see below); `facing` turns it around. |
-| `src/components/BoIdle.astro` | Bo standing about — rest, bounce and blink (see below). |
-| `src/lib/trail-art.ts` | The telephone wire — the one thing the band draws for itself. |
+| `src/components/TrailStage.astro` | The trail on the landing page: the band, the trail marker and their fallback (see below). |
+| `src/lib/stage/landing.ts` | Turns the landing page into stops: hand-overs, Bo's walk, signs, and the cast's visits. |
+| `src/lib/stage/motion.ts` | The one "may I move?" switch: reduced motion plus the remembered pause. |
+| `src/lib/trail-props.ts` | The props that stand on the trail, one per card, and how tall each stands. |
 | `src/lib/trail-plates.ts` | Picks up supplied artwork from `public/parallax/plates/`. |
-| `src/lib/trail-clouds.ts` | The cloud sprites and where each one sits in the tile. |
-| `src/lib/bo-walk.ts` | The walk sheets, one per direction, and the refusal to fake a missing one. |
-| `src/pages/parallax/[layer].svg.ts` | Serves those tiles as static SVGs, one per layer and theme. |
+| `src/styles/trail.css` | The trail's styles, global because most of what they style is made by script. |
+| `src/components/BoIdle.astro` | Bo standing about — rest, bounce and blink (see below). |
 | `src/pages/{guide,primitives,testing,reference,crew,roles,agents}/**/*.md` | Docs pages; frontmatter picks the `Docs.astro` layout. Sections: Guide, Primitives, **Testing**, **Reference**, **Crew**, Roles/Agents. |
 | `src/nav.ts` | Single source of truth for header + sidebar navigation (all sections). |
 | `src/layouts/` | `Base.astro` (head/header/footer/theme) and `Docs.astro` (sidebar + prose). |
@@ -124,108 +124,151 @@ Agent skill mirrors: `.agents/skills/design-md` and `.claude/skills/design-md`.
 - **Voice:** playful "homeward bound" theme — the guiding principle is continuous
   migration to the cheapest home that passes policy. Whimsy in the prose, precision in
   the tables and code.
-- **Design language:** strict black-and-white **rubberhose** 1930s cartoon (Steamboat Willie / Cuphead / Fleischer) — see `DESIGN.md`. All artwork is *traced
-  from the reference illustrations* (never procedural): `Mascot.astro` is Bo, and
-  `src/components/scenes/` holds the five story panels (crossroads, depot, train,
-  blimp, steamboat) placed by narrative on the landing page. White paper/black ink by
-  day, exact inversion at night — everything routes through `--ink`/`--pop`/theme
-  tokens; no hues anywhere (code blocks are grayscale-filtered). Limelight title-card
-  display type, Baloo 2 for rounded UI chrome, film-grain overlay, thick ink outlines
-  with hard offset shadows. New components must use the tokens, not hardcoded colors.
-  Story panels stay traced. The trail band draws only what cannot be cropped out of a
-  plate — which is the telephone wire and nothing else. **Scenery objects are supplied
-  artwork, not drawn here:** clouds, hills, poles, ground, birds, wind, rocks, flowers
-  and plants go in `public/parallax/plates/` (or `public/parallax/clouds/`) and are used
-  as given. Do not hand-author replacements for them.
+- **Design language:** strict black-and-white **rubberhose** 1930s cartoon (Steamboat Willie / Cuphead / Fleischer) — see `DESIGN.md`. All artwork is *supplied*
+  (never procedural): Bo's sprite sheets, the scenery plates, the landmarks beside
+  the trail and the cast of hobits are files, traced or generated-then-reviewed,
+  and used as given. White paper/black ink by day, exact inversion at night —
+  everything routes through `--ink`/`--pop`/theme tokens; no hues anywhere (code
+  blocks are grayscale-filtered). Chewy title-card display type, film-grain
+  overlay, thick ink outlines with hard offset shadows. New components must use
+  the tokens, not hardcoded colors.
+  **The trail is the landing page's imagery.** Each card on the landing page has
+  a prop that stands for it on the trail. The only things drawn here are the road
+  signs, because their words have to be text. **Scenery objects are supplied
+  artwork, not drawn here:** clouds, hills, poles, ground and props go in
+  `public/parallax/` and are used as given. Do not hand-author replacements for
+  them.
 - **No new JS-family files:** repo policy (AGENTS.md) — config is `astro.config.ts`, not `.mjs`.
 - **Single lockfile:** never add a `site/pnpm-lock.yaml`; the architecture guard rejects
   nested lockfiles. Dependencies resolve through the root workspace lockfile.
 
-## The parallax trail band
+## The trail
 
-`ParallaxTrail.astro` sits between the header and the hero. Nearly all of it is supplied
-artwork; the split is deliberate.
+The landing page is a row of stops, not a long scroll. Each `<section>` in
+`src/pages/index.astro` is one stop (`data-trail-stop`, with `data-stop-name` for
+the trail marker and `data-stop-sign` or its badge for the road sign), and each
+of its cards names the prop that stands for it (`data-prop`). `TrailStage.astro`
+renders the band; `src/lib/stage/landing.ts` does the travelling.
 
-**Supplied artwork** goes in `public/parallax/plates/`, one file per slot, and is used
-exactly as given, at its own aspect ratio, tiled and scrolled at that slot's speed. See
-the README in that folder for the slot table and how the shipped plates were composed.
-An empty slot renders nothing. **Scenery objects are not to be hand-authored in this
-repo**; if a plate is missing, the answer is to supply it, not to draw a substitute.
+**On a desktop** (900×560 and up) the page keeps its own layout: the current
+section sits above the band and the band sits at the foot of the screen. Moving
+on is two parts. The page hands over first: what you were reading drifts back the
+way Bo came and goes out of focus while the next section is already coming in, so
+there is never a frame with nothing arriving. The band follows: the old stop folds
+flat, Bo walks on, and the new stop's props stand up around him, one under each
+card, with a road sign over his head naming the stop.
 
-Everything in the band is cut out of the reference plates: four clouds, three telephone
-poles, and the ground strip — split at the emptiest row in it into the part behind Bo
-and the near bank in front of him. Each capture is cropped to the rows actually used,
-normalized to the same 6-level grayscale + alpha the Bo sheets use, and recomposed on a
-full-height canvas so it lands at its scene position: 2.6MB of source crops became ~95KB
-of plates.
+**On a phone** there is not room for both, so the trail is the screen. The
+sections themselves are moved onto signs beside the trail — a billboard for the
+section's own text and a placard per card, each standing over its prop — and
+walking the trail is reading the page. A jump too far to walk closes an iris on
+Bo and opens it on the new place.
 
-**The clouds are sprites, not a plate.** They live in `public/parallax/clouds/` with
-their placements in `src/lib/trail-clouds.ts`, because each one squashes and bobs on its
-own and a single background image can only move as a whole. The layer is a track of
-identical segments scrolling by exactly one segment, so it loops on the same guarantee a
-tiled plate does.
+**Moving is always one stop.** The wheel, the arrow keys, Page Up/Down, a swipe
+and the Previous/Next buttons each move exactly one stop, however hard the wheel
+was spun, and the trail marker jumps anywhere. Every move is a minimum-jerk glide
+of fixed length: it starts from rest and arrives at rest, and a new request
+mid-glide bends from the speed it already has, so nothing cuts. Past the last stop
+the page lets go and the footer is a normal scroll away.
 
-**Night is per-layer, not one filter.** Grayscale artwork makes it cheap, but a single
-`invert(1)` across the band is wrong: it turns clouds into holes in the sky and
-telephone poles into white posts. Each slot declares its own treatment — `invert` for
-line art, `keep` for artwork whose own ink is the point, `rim` for silhouettes that
-should stay dark and take an outline instead — and each is graded by a `tone` that
-tracks the parallax speed, so the far layers sit back in the dark instead of all
-arriving at the same brilliant white. The plates folder README has the reasoning.
+A wheel gesture ends when the wheel goes quiet (140ms), or when a stream that was
+dying away rises again — a second flick — so two deliberate flicks are two steps
+and one long burst is one (`startsGesture` in `src/lib/stage/trail-logic.ts`). A
+gesture that begins down at the footer only brings the trail back to the stop the
+reader left; it never steps on past it. A flick that arrives while a stop is still
+being handed over steps on, even if that stop is taller than its box: it is read
+once it has arrived. The window only watches the wheel (a passive listener, so it
+never holds up scrolling elsewhere); the trail's own listener calls
+`preventDefault` only for an event it takes, and both exist only while the trail
+is staged.
 
-**Drawn here** is one thing only: the wire between the poles, in `src/lib/trail-art.ts`,
-served as one static SVG per theme. A wire cannot be cropped out of a plate the way an
-object can — it has to span whatever gap the poles happen to leave and close across the
-tile seam — so it is generated, as the stroked catenary it actually is. Everything else
-that used to be drawn here (ridges, posts, signposts, grass) was replaced by the
-captured props and deleted.
+**He turns round.** Heading back, Bo walks on `bo-walk-left.png`, his other side
+drawn as its own sheet. He is never mirrored and never walks backwards: Bo is not
+symmetric, and a flip hands the bindle to the wrong arm (see
+`public/parallax/README.md`). His stride is taken from the ground covered, so a
+planted foot stays planted, and when he stops he lands with the small boing and
+stands about on the idle strip.
 
-**How it stays aligned.** A drawn layer is a 1200×300 tile, sized in CSS as `4 × --band-h`
-wide by `--band-h` tall. A plate gets its own tile width — its aspect ratio times the band
-height — so it is never squashed, and it is composed on a full-height canvas against that
-same 300-unit scene, which is what keeps it registered with everything else. Either way a
-layer scrolls by translating exactly one of its own tile widths, so the wrap lands on
-identical pixels. A plate has to repeat cleanly on its own; nothing mirrors or blends the
-join for it at runtime, which is why the ground plates are mirrored into `A A'` tiles when
-they are composed. `--band-h` is a whole number at every breakpoint on purpose — a
-fractional tile width brings back sub-pixel seams.
+**Without a script** none of this happens. The sections read top to bottom as an
+ordinary page, and the band walks Bo along on a timer at the foot of the
+viewport, as scenery. The trail also steps aside for the other designs: picking a
+world puts the page back as it was, and picking ink again builds the trail again.
 
-**Which way he walks.** `<ParallaxTrail facing="west" />` turns him around: it picks the
-west sheet and reverses every layer, so the world slides the other way and his feet still
-plant. His own two animations never reverse — the gait plays forward whichever way he is
-pointed — and `animation-direction` does not inherit, so the cloud squash inside the
-cloud track is left alone too.
+**Supplied artwork.** The plates (`public/parallax/plates/`, read by
+`src/lib/trail-plates.ts`), the props (`public/parallax/landmarks/`, read by
+`src/lib/trail-props.ts`), the clouds and the cast are files, used as given. A
+plate keeps its own aspect and tiles at its own speed; a prop is scaled against
+Bo in tile units of the 300-unit scene, so a cottage stands taller than a
+toolbox. Night is per plate: `invert` for line art, `keep` for art whose own ink is
+the point, `rim` for silhouettes that stay dark and take an outline, each graded by
+a `tone` that tracks depth. Props are stored 640px tall, about twice the size the
+desktop band draws a tall one, and each stop's art is fetched when the reader
+is at or next to it (the rest once the page is idle).
 
-**The west sheet is a separate drawing, not a flip.** Bo is not symmetric: the bindle
-hangs from one specific anatomical arm, and mirroring hands it to the other one. Walking
-west that arm becomes the far arm, behind the fur silhouette, with the bundle trailing to
-screen-right — which is how the supplied sheet draws it. `public/parallax/README.md`
-carries the brief, how the sheet was rebuilt from the supplied artwork, and the one thing
-that could not be verified: the west poses do not carry a consistent ground contact, so
-his feet do not plant against the scrolling ground the way they do going east. If a
-sheet for a direction is missing, `facing` **fails the build** with that reason rather
-than falling back — a mirrored sheet looked plausible enough to ship once already.
+**How it stops.** One button at the bottom right of the band pauses everything
+that moves on its own — the clouds, the cast, Bo's idling — and is remembered
+(`localStorage` `hobo-motion`, mirrored to `<html data-motion="still">`).
+Travelling between stops is not ambient, so it still works. Under
+`prefers-reduced-motion` the stops swap in place and nothing travels at all.
 
-**How fast it goes.** Bo is a 36-frame sprite sheet (`public/parallax/bo-walk.png`, a 6×6
-grid, downscaled and posterized to the four tones the drawing uses, with the bindle sack
-filled white so it does not vanish on a dark ground). Nine frames make a step, eighteen a
-stride, and his planted foot tracks backwards about 11px of a 554px frame per frame. At
-the size the band draws him and the export's own 50ms frame timing, that is ~52 tile units
-a second, which is where `TRAIL_SECONDS` comes from. **Change his size or frame rate and
-`TRAIL_SECONDS` has to change with them**, or he skates — his stride length scales with
-him, so the two move together. Every other layer is a fraction of that one speed, and
-that fraction is the entire parallax.
+**For keyboards and screen readers.** The trail marker is a list of buttons, one
+per stop, with the current one marked `aria-current="step"`; arriving at a stop is
+announced in a polite live region, and a hidden note explains how the page moves.
+The scenery itself is `aria-hidden`: it carries nothing the sections do not.
+Moving on from the keyboard or the Previous/Next buttons while reading a stop takes
+focus to the next stop's heading, so it never falls back to the page; a marker click
+leaves it on the marker. Each stop is recorded in the URL (`history.replaceState`, so
+a reload or a shared link lands on it without a history entry per step), and a hash
+change goes to the stop it names.
 
-`TRAIL_SECONDS` is defined per 1200-unit tile, and each layer's duration is derived from
-it *and that layer's own tile width*. This is not decoration: a plate whose aspect is not
-4:1 covers a different distance per loop, so a duration taken straight from
-`TRAIL_SECONDS` would move it at the wrong speed and the parallax you get would not be
-the parallax the slot table claims.
+**No stop is ever clipped.** A desktop stop is its own scroll box between the header
+and the band: its content is centred while it fits, and once it does not (a laptop, a
+zoomed page) it reads from the top, the wheel and the down keys scroll it before they
+move on, and its foot fades while there is more below. On a short desktop the band
+gives back height first, and the stop's road sign stands beside Bo instead of over
+his head, clear of the trail marker's labels. A phone sign never rises under the
+trail marker; one taller than the sky scrolls inside its frame and keeps vertical
+swipes for that, while a short one passes them to the trail. The comparison on
+the Compare stop keeps all four columns on a phone sign: the table scrolls sideways
+inside the sign with the product names held in place, its right edge fades while
+columns are still hidden (`data-more`, from `moreSides` in `trail-logic.ts`), and
+an up-or-down swipe that starts on it still moves the trail (`touch-action: pan-x`,
+as on the code sign). Past the last stop, Next, the wheel and a swipe all go on to
+the footer.
 
-**How it stops.** A hovering cursor, a held or tapped finger, the pause button, a hidden
-tab and a band scrolled out of view all set one inherited custom property, `--plx-play`,
-which every animation in the band reads. Nothing can freeze Bo without freezing the
-scenery with him. `prefers-reduced-motion` pins it to paused and hides the button.
+**Checked as built.** `pnpm run landing:verify-dist` serves `dist/` and checks every
+stop at 900×560, 1024×600, 1280×620, 1366×657 and 1440×900 (nothing above its box,
+every link reachable and uncovered when focused), every phone sign at 390×844,
+every header and cell of the comparison reachable and uncovered on a phone sign at
+390×844 and 360×740 with no sideways page scroll, the desktop comparison inside its
+card with no sideways scroll at 900×560, 1024×600, 1280×620, 1280×800, 1366×657 and
+1440×900,
+focus on moving on, the URL and hash, wheel gestures and swipes, the footer past
+the last stop, and teardown. It never guesses how long a move takes: the trail
+page carries `data-travel="moving|still"`, and each check waits for "still" (and
+for the stop's sign to stand up) before it looks. Wheel gestures are dispatched
+inside the page, each burst in one task and bursts spaced by the page's own
+timer, so a loaded runner can only lengthen a gap, never squeeze two gestures
+into one. `scripts/deploy-site.mts` runs it with `examples:verify-dist` before publishing. The
+decisions behind the trail (which stop a hash names, where a step lands, which keys
+are the page's) live in `src/lib/stage/trail-logic.ts`, unit-tested beside it.
+
+## The troupe
+
+The cast of hobits (Tuck, Cog, Mags and Pip) each turn up once in a while, and
+meeting one stamps it in the "Hobits met along the way" card on the last stop:
+
+| Who | Where | What happens |
+|---|---|---|
+| Tuck | asleep by the road at "Why" | wakes when Bo arrives, waves |
+| Cog | on a handcar at "How" | waves and rolls off down the line |
+| Mags | behind a card, when the page is still | peeks over its top edge, looks round, waves, ducks |
+| Pip | on the trail, every few stops | races past |
+
+A card is only used for a peek if the gap above it is actually empty, measured at
+the moment of use. One visitor at a time, and moving on sends whoever is out away
+at once. All four share one sheet contract (`public/cast/README.md`), which the
+build writes to `public/cast/cast.json` for `landing.ts` to read.
 
 ## Bo idling
 
@@ -286,13 +329,27 @@ The `#` is hidden until the heading is hovered or the anchor is focused, and it
 occupies no layout when hidden — the heading's silhouette never shifts. It is
 never `display: none`, so a keyboard user can still reach it.
 
-## Publishing (no Actions)
+## Publishing
 
 The site is published by pushing the built output to the **`gh-pages` branch**,
-which GitHub Pages serves ("Deploy from a branch"). Local publish is
-`pnpm run site:deploy` — no in-repo workflow, and **agents must not** wait on,
-cancel, or re-request Action runners for gates or promote. Checkin gates stay
-local: `.githooks` + `pnpm agent:check`.
+which GitHub Pages serves ("Deploy from a branch"). Two things push it:
+
+- **The release workflow**, after every green `main` push. Its `release-pages-gate`
+  job compares the commit `gh-pages` names (`deploy: <sha>`) with the commit under
+  release and publishes when the site is behind and a release path (`site/**` among
+  them) changed in between. Because it asks what is *published* rather than what the
+  triggering commit touched, a deploy that failed or was skipped is retried by the
+  next green run; it never publishes a commit older than the one already live. To
+  publish `main` without waiting for a push, run the **HoBo release** workflow from
+  `main` with **`publish_pages`** ticked. See
+  [finding 110](../docs/ci/findings/0110-a-failed-pages-deploy-was-never-retried.md)
+  for why it works this way.
+- **`pnpm run site:deploy`**, by hand, below.
+
+"Merged" is not "live": check the `gh-pages` commit message for the sha it was built
+from before saying a site change has shipped. **Agents must not** wait on, cancel, or
+re-request Action runners for gates or promote. Checkin gates stay local: `.githooks`
++ `pnpm agent:check`.
 
 ```sh
 pnpm run site:deploy              # build deps + site, verify dist, publish

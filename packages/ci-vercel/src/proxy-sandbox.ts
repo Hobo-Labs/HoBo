@@ -1,4 +1,5 @@
 import { Sandbox, type Session } from "@vercel/sandbox";
+import { z } from "zod";
 import { sandboxProxyBundle } from "./_generated-assets/sandbox-proxy-bundle.js";
 import {
 	discoverIsolatedSandbox,
@@ -170,4 +171,45 @@ export async function bindProxySandbox(
 	});
 	if (response.status !== 204)
 		throw new Error("proxy guest binding unavailable");
+}
+
+const ProxyMeterReport = z
+	.object({
+		leaseId: z.string().uuid(),
+		proxySessionId: z.string().regex(/^sbx_[A-Za-z0-9_-]+$/),
+		bytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+		calls: z.number().int().min(0).max(1_000_000),
+	})
+	.strict();
+export type ProxyMeterReport = z.infer<typeof ProxyMeterReport>;
+
+/**
+ * Read the proxy VM's own meter (bytes it reserved, quota calls it made)
+ * through its exposed port, with the lease's derived token. Only a running
+ * proxy session answers; the caller reads it before stopping the VM.
+ */
+export async function meterProxySandbox(
+	name: string,
+	sessionId: string,
+	port: number,
+	token: string,
+): Promise<ProxyMeterReport> {
+	const session = await proxySession(name, sessionId);
+	const origin = new URL(session.domain(port));
+	if (
+		origin.protocol !== "https:" ||
+		origin.username ||
+		origin.password ||
+		origin.pathname !== "/" ||
+		origin.search ||
+		origin.hash
+	)
+		throw new Error("invalid proxy endpoint");
+	const response = await fetch(new URL("/internal/meter", origin), {
+		headers: { authorization: `Bearer ${token}` },
+		redirect: "error",
+		signal: AbortSignal.timeout(5000),
+	});
+	if (response.status !== 200) throw new Error("proxy meter unavailable");
+	return ProxyMeterReport.parse(await response.json());
 }

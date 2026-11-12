@@ -178,9 +178,30 @@ describe("bounded pnpm install", () => {
 		assert.equal(parseInstallTimeoutSeconds("240"), 240);
 	});
 
-	it("routes all six workflow installs through the bounded wrapper", () => {
+	it("routes every workflow install through the bounded wrapper", () => {
 		const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
-		assert.equal(workflow.split("scripts/ci/pnpm-install.mts").length - 1, 6);
+		const lines = workflow.split("\n");
+		// The wrapper is the only way a job installs; the count is not pinned,
+		// so a new job does not have to edit this test.
+		const wrapped = lines.filter((line) =>
+			line.includes("scripts/ci/pnpm-install.mts"),
+		);
+		assert.ok(wrapped.length > 0);
+		for (const line of wrapped) {
+			assert.ok(line.includes("--frozen-lockfile"), line.trim());
+		}
+		// Any other install, flagged or bare, is unbounded. The runner-image
+		// job's script-free install is the one there is, and it is pinned
+		// whole: it runs before the wrapper's own inputs exist
+		// (ci-runner-image-contract), and no other job may borrow its form.
+		assert.deepEqual(
+			lines
+				.filter((line) => /\bpnpm (?:install|i)\b/u.test(line))
+				.map((line) => line.trim()),
+			[
+				"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
+			],
+		);
 		assert.doesNotMatch(workflow, /^\s*pnpm install --frozen-lockfile/mu);
 	});
 });

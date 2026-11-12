@@ -52,7 +52,7 @@ repository; `list`/`ls`, `inspect`, `logs`, `grep`, and `rerun` operate on its
 GitHub Actions runs using the authenticated GitHub CLI (`gh`). `status` inspects
 the relay connection. A sole Git remote is selected automatically; pass
 `--remote <name>` to select among several. After connection, use `runs-on: hobo`
-in an Actions workflow and push a commit.
+in an Actions workflow and push a commit. `hobo ci --help` also lists `hobo ci deploy` and its options: the composed product's verb for deploying the hosted relay to Vercel from a git ref (preview by default, `--dry-run` sends nothing); this package only owns its help text and passes its options through to the `ci` command untouched.
 
 CI works in ordinary Git repositories without a Bindle. The shell handles output,
 cwd and help flags;
@@ -65,7 +65,11 @@ ships from `@hobo/hobo` (`hobo-mcp`).
 
 ## Usage
 
-Library consumers import from `@hobo/cli`. For a local shell binary without the
+Library consumers import from `@hobo/cli`. A caller that only needs the verb
+catalogue and the argv parser imports `@hobo/cli/argv` (`CANONICAL_VERBS`,
+`parseArgv`), which loads neither the commands nor the compiler.
+
+For a local shell binary without the
 composition root, run the built entry with Node (factories may return stubs
 until runtimes are injected):
 

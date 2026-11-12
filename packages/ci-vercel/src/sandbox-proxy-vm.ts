@@ -9,10 +9,11 @@ import {
 	type IncomingMessage,
 	type ServerResponse,
 } from "node:http";
+import { createNodeRelayHandler } from "@hobo/ci-gh-actions/node-http";
 import type { Session } from "@vercel/sandbox";
 import { defineSandboxProxy, type ProxyHandler } from "@vercel/sandbox/proxy";
 import { z } from "zod";
-import { createNodeRelayHandler } from "./node-handler.js";
+import { streamsBody } from "./relay-streams.js";
 import {
 	createVerifiedSandboxEgressHandler,
 	type SandboxEgressLedger,
@@ -91,12 +92,18 @@ export function parseProxyVmConfig(
 	return config;
 }
 
+/** What the proxy VM itself counted: bytes reserved (every attempted block,
+ * granted or lost) and quota calls made. It is the authority settlement
+ * reads back (ADR-0179 §10), so a relay that lost its cache can still settle. */
+export type ProxyMeter = Readonly<{ bytes: number; calls: number }>;
+export type ProxyQuotaLedger = SandboxEgressLedger & { meter(): ProxyMeter };
+
 /** Reserve blocks up front; loss of a quota response never refunds or retries.
  * Shared blocks serialize concurrent streams and cap external invocations. */
 export function createProxyQuotaLedger(
 	config: ProxyVmConfig,
 	send: typeof fetch = fetch,
-): SandboxEgressLedger {
+): ProxyQuotaLedger {
 	// Large transfers need fewer durable control calls. Bound the block relative
 	// to the lease quota and start small again after an idle credit expires.
 	const maxBlockBytes = Math.max(
@@ -115,6 +122,7 @@ export function createProxyQuotaLedger(
 	let attempts = 0;
 	let tail: Promise<void> = Promise.resolve();
 	return {
+		meter: () => ({ bytes: committed, calls: attempts }),
 		async reserveSandboxEgress(sandboxId, bytes) {
 			if (
 				!/^sbx_[A-Za-z0-9_-]+$/.test(sandboxId) ||
@@ -300,13 +308,18 @@ export function createSandboxProxyVmHandler(
 	config: ProxyVmConfig,
 	options: {
 		ledger?: SandboxEgressLedger;
+		/** The VM's own meter; the default ledger's when none is given. */
+		meter?: () => ProxyMeter;
 		proxy?: (request: Request) => Promise<Response>;
 		wrapProxy?: (
 			handler: ProxyHandler,
 		) => (request: Request) => Promise<Response>;
 	} = {},
 ) {
-	const ledger = options.ledger ?? createProxyQuotaLedger(config);
+	const quota = options.ledger ? undefined : createProxyQuotaLedger(config);
+	const ledger = options.ledger ?? quota;
+	const readMeter = options.meter ?? quota?.meter;
+	if (!ledger) throw new Error("proxy quota ledger missing");
 	let verifiedRequests = 0;
 	let boundSandboxId: string | undefined;
 	const reportedFailures = new Set<string>();
@@ -363,6 +376,25 @@ export function createSandboxProxyVmHandler(
 			return new Response(null, { status: 403 });
 		if (url.pathname === "/healthz" && request.method === "GET")
 			return new Response(null, { status: 204 });
+		if (url.pathname === "/internal/meter" && request.method === "GET") {
+			// The relay reads the VM's own counts before it stops the VM, with
+			// the lease's derived token: the same credential the VM holds.
+			if (
+				!authorizedBearer(request.headers.get("authorization"), config) ||
+				!readMeter
+			)
+				return new Response(null, { status: 403 });
+			const meter = readMeter();
+			return Response.json(
+				{
+					leaseId: config.leaseId,
+					proxySessionId: config.proxySessionId,
+					bytes: meter.bytes,
+					calls: meter.calls,
+				},
+				{ headers: { "cache-control": "no-store" } },
+			);
+		}
 		if (url.pathname === "/internal/bind" && request.method === "POST") {
 			if (!authorizedBearer(request.headers.get("authorization"), config))
 				return new Response(null, { status: 403 });
@@ -449,6 +481,7 @@ export function createSandboxProxyVmServer(
 	const adapt = createNodeRelayHandler({
 		origin: origin(config.proxyOrigin),
 		handle: handler,
+		streams: streamsBody,
 	});
 	let ingressWindow = Date.now();
 	let ingressCount = 0;
@@ -467,7 +500,18 @@ export function createSandboxProxyVmServer(
 			const method = request.method ?? "GET";
 			const health = path === "/healthz" && method === "GET";
 			const bind = path === "/internal/bind" && method === "POST";
-			if (bind) {
+			const meter = path === "/internal/meter" && method === "GET";
+			if (meter) {
+				if (
+					!authorizedBearer(request.headers.authorization, config) ||
+					request.headers["transfer-encoding"] ||
+					(request.headers["content-length"] &&
+						request.headers["content-length"] !== "0")
+				) {
+					response.writeHead(403, { connection: "close" }).end();
+					return;
+				}
+			} else if (bind) {
 				if (
 					!authorizedBearer(request.headers.authorization, config) ||
 					request.headers["transfer-encoding"] ||

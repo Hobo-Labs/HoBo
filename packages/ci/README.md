@@ -11,8 +11,8 @@ from changing that metadata.
 | SDK | State |
 | --- | --- |
 | `@hobo/ci` | Portable pipelines, allocation routing and durable budget reservations |
-| [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md) | Hosted relay, tenant API, repository installer and JIT-runner host |
-| [`@hobo/ci-vercel`](../ci-vercel/README.md) | Vercel relay hosting and local execution of Vercel CI-tagged Turbo checks |
+| [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md) | The relay (one core, with its Node service host for `hobo ci serve` and the container image), tenant API, repository installer and JIT-runner host |
+| [`@hobo/ci-vercel`](../ci-vercel/README.md) | The Vercel host of that same relay, and local execution of Vercel CI-tagged Turbo checks |
 | [`@hobo/ci-dagger`](../ci-dagger/README.md) | Native Dagger CI checks on local/self-hosted engines and portable SDK adapter |
 | [`@hobo/ci-cf`](../ci-cf/README.md) | Implemented native Cloudflare CI adapter |
 | [`@hobo/ci-ado`](../ci-ado/README.md) | Local command checks and self-hosted Azure Pipelines configuration |
@@ -46,31 +46,80 @@ this estimate is not a hard billing cap or proof of the globally cheapest price.
 A publisher must obtain and refresh provider-specific rates and free balances;
 no live Vercel inventory or price verification is built into this package.
 
-## PostgreSQL hosting adapter
+## Event cursor
 
-`PostgresCiStore` (`@hobo/ci/postgres`) stores journal events, leases, queued
-jobs, terminal tombstones, policy records, and verified webhook deliveries in
-PostgreSQL tables. Mutations lock a partition row, check policy revisions and
-commit all affected records together. GitHub and provider calls run outside the
-transaction. A scoped index lets recovery read active leases and their latest
-launch intents without reading historical jobs or the entire event journal.
+Every lease and job change is appended to the partition's event journal inside
+the transaction that makes it, so the journal is already the record of what
+changed. `eventsSince({accountId, after, limit})` on `LeaseStore` and
+`SqliteCiStore` reads it as a change feed: an account's
+events after a journal position, oldest first, with the position to read after
+next (`CiEventPage`, each event a `SequencedCiEvent`). Without `after` it
+returns the account's newest events. `leaseEvents({accountId, leaseId, limit})`
+reads one lease's newest events by the lease's id, through the lease index
+(`events_lease_type`, which the statement names, so the read fails if the
+index is missing and never walks the journal instead).
+Both are projections over the journal, not a second bus.
 
-A partition's first open atomically imports an existing SQLite snapshot and
-retains that original snapshot in `hobo_ci_snapshot_backups`. The migration
-preserves event and inbox ordering, claim state, deduplication fingerprints and
-control records. A database constraint prevents an older snapshot-based relay
-from overwriting the migrated partition. **Rollback to old relay code is not
-supported:** the backup predates subsequent native writes. Drain old relay
-instances before migration, back up PostgreSQL, and restore only after reconciling
-all active runners and post-migration journal changes.
+- **Exact.** A read returns exactly the account's events, whatever other
+  accounts have journalled. It goes through an index on the account each
+  event names, so it touches the account's own rows and none of anybody
+  else's: `events_account_seq (json_extract(body,'$.accountId'), seq)`. The
+  statement names its index, as the lease read does: without it the read
+  fails and never walks the journal, which would stop a single-threaded host
+  for as long as the journal is long.
+- **Order.** The position is the journal's own key (`seq`). A journal has one
+  writer at a time, so `seq` order is commit order and a cursor never skips
+  an event.
+- **Scope.** An event belongs to the account it names, and the query selects
+  by that name. A job event recorded before or apart from a lease
+  (`ci.JobQueued`, `ci.JobExpired`, `ci.JobCompleted`,
+  `ci.JobAssignmentCleared`) is written with the account whose connection
+  holds the job's repository and installation at that moment (`jobAccountId`
+  in `src/event-log.ts`), so it stays that account's however the connection
+  moves later. Writing the owner costs admission no extra read: it comes
+  from the configuration the transaction has already read.
+  Job events journalled before this was recorded name no account and are in
+  nobody's feed: nothing guesses an owner for them. `isJobEvent` tells them
+  apart for a reader, such as the account API's snapshot, that lists lease
+  events only. Partition events such as `ci.ConfigurationChanged` name no
+  account and are never returned.
+- **Bounds.** The only bound is the page: at most 500 events, and never more
+  than `limit`. `more` is set when a cursor read filled its page and the
+  account has events after it; `truncated` when a read of the newest events
+  filled its page and the account has events older than it. Neither is ever
+  set because of what another account wrote.
+- **Cursor.** A page's `cursor` is the position of its last event. A read that
+  finds nothing hands back the position it was given (zero for a read of the
+  newest events). So a cursor is always a position of the account's own, and
+  it does not move while only other accounts journal.
 
-The previous 28/32 MiB serialized-snapshot thresholds no longer apply. The
-partition lock still serializes all mutations for all accounts in that partition;
-account lease history is read for routing, and journal events, terminal tombstones
-and delivery fingerprints are not automatically archived. Monitor transaction
-latency and database growth and implement retention before operating at sustained
-scale. Removing completed webhook bytes from the current row does not erase
-PostgreSQL MVCC, WAL, replicas or backups; apply appropriate retention policies.
+The index is on the expression, built once when the store first opens an
+existing journal, and an event that names no account has no key in it.
+
+**Observers.** `CiObserver` is a store as something that only watches reads
+it: configuration, a lease, an account's leases, pending jobs, quarantined
+deliveries, the journal's head and the two event reads. `SqliteCiStore`
+satisfies it directly; the hosted relay's
+[cache store](../ci-gh-actions/README.md#relay-cache-store) through
+`observer()`.
+
+The shared store contract (`packages/ci-gh-actions/test/ci-store-contract.test.ts`)
+holds the store to this behaviour: exact pages and a cursor that stands still
+while a neighbour journals. It reads the plan of both event reads and drops
+the index to show the read fails without it.
+`test/event-log.test.ts` covers the page arithmetic, ownership at write time
+and a SQLite journal written before the index existed. The relay's MCP server is the consumer: see
+[`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#mcp-server).
+
+## Lease stores
+
+`SqliteCiStore` (`@hobo/ci/sqlite`) is the durable lease store: one file, one
+writer, used by `hobo ci serve` and the box worker. The hosted relay keeps no
+durable state ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179));
+its store is the [cache store](../ci-gh-actions/README.md#relay-cache-store) in
+`@hobo/ci-gh-actions`. The PostgreSQL store (`PostgresCiStore`), its schema and
+migrations were removed in phase 7 of that design. The rules below hold for
+both stores.
 
 The signed webhook body is hashed independently of GitHub's unsigned delivery
 ID and event headers. Exact byte-identical bodies for one installation received
@@ -112,13 +161,12 @@ units. An observation is only as reliable as its publisher; this accounting
 alone does not verify vendor entitlements or billed usage. Exact decimal
 allocation helpers (`allocationQuote`, `divideDecimalAtMost`) are implemented in
 `@hobo/pricing/legacy` and re-exported from this package for compatibility.
-
-Run the real PostgreSQL integration contract against a disposable local database
-by setting `HOBO_CI_TEST_POSTGRES` and executing
-`node --import tsx packages/ci/scripts/postgres-contract.ts`. It checks concurrent
-reservations, revision and settlement fencing, quota races, webhook deduplication,
-quarantine/replay, snapshot migration, old-writer refusal, admission beyond 32 MiB,
-and adapter reopen. It does not verify deployed provider billing.
+The package root also exports `allocationQuote`, the isolated-retirement
+transition check (`isIsolatedRetirementTransition`) and the webhook envelope
+parser (`parseWebhookEnvelope`, `isWebhookDeliveryId`), so a store outside this
+package, such as the hosted relay's
+[cache store](../ci-gh-actions/README.md#relay-cache-store), applies the same
+rules as `SqliteCiStore`.
 
 The GitHub Actions target keeps the original workflow and its logs, artifacts,
 permissions, environments, dependencies and status checks. After one-time repository
@@ -197,6 +245,12 @@ Validation: `pnpm --filter @hobo/ci build`, `pnpm --filter @hobo/ci test`,
 
 ## Local development machines
 
+A local box is also a tier in runner routing: when the fleet is not taking
+jobs, a run's jobs ask an enrolled local box (`hobo-local-host`) before they
+ask GitHub-hosted runners. `selectFleetBackend` orders the fleet, ARC, the
+local box, then GitHub-hosted; see "Runner routing" in
+[RUNNER-QUEUE.md](RUNNER-QUEUE.md).
+
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.
 The workstation has zero provider runner-minute price and zero free-minute
@@ -263,8 +317,10 @@ provider-specific toolchain/environment defaults are not part of this contract.
 ## Apply routing and budgets
 
 The Node coordinator `PipelineScheduler` from `@hobo/ci/scheduler` uses
-`LeaseStore` from `@hobo/ci/store`. The original Actions relay uses the same
-ledger, so its reservations and native pipelines cannot spend the same balance.
+`LeaseStore` from `@hobo/ci/store`. The Actions relay uses the same ledger
+(its SQLite store, `SqliteCiStore` from `@hobo/ci/sqlite`, wraps `LeaseStore`),
+so its reservations and native
+pipelines cannot spend the same balance.
 Bind eligible account offer IDs to real, account-scoped backend contexts;
 construct `new PipelineScheduler(store, account.id, bindings)` for that account.
 The scheduler rejects another account even if its offer IDs are identical.
@@ -329,7 +385,7 @@ and must have empty event and branch filters: every matching job may run.
 Changing that isolation mode
 requires draining active leases. The local workflow-bridge store leaves such
 jobs queued rather than selecting a shared host. If isolation is required after a
-PostgreSQL runner was reserved, the store cancels the unused lease and requeues
+runner was reserved, the relay cancels the unused lease and requeues
 the demand. A shared financial hold remains in place until an independently
 verified unused-evidence reference is supplied to `releaseUnusedSharedBudget`
 after that cancellation is durable; an unknown or claimed effect cannot be
@@ -401,6 +457,27 @@ The Node-only `@hobo/ci/workspace-backend` entrypoint owns shared POSIX process,
 path, cancellation and bounded-file artifact handling for Actions and ADO. It
 inherits only host plumbing and explicit step environments. The Worker-safe
 `@hobo/ci/execution` entrypoint remains free of Node process/filesystem imports.
+
+## Relay mesh
+
+`@hobo/ci/mesh` holds the claiming core for a relay with no central node. `rankNodes(job, nodes, now)`
+orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, scaled by the share of its recent jobs each node delivered (`./mesh/reliability.ts`: a decayed score that falls when a node drops jobs and recovers when it stops), and
+`claimTurn(...)` tells one node whether to start a runner now or how long to wait for its turn. Both
+are pure functions; the box worker in `@hobo/ci-gh-actions` calls them when `HOBO_CI_NATS_URL` is set.
+
+- **Trust** (`./mesh/trust.ts`): a node's Ed25519 identity, the signature over a fixed encoding of
+  its advertisement (node id and expiry included), and what a reader makes of it: `trusted` when the
+  key is in the mesh's set, `unverified` when it is not or the node does not sign, `invalid` when the
+  signature fails. `createTrustedMeshBoard` signs on the way out and assesses on the way in. `fitJob`
+  never fits a job to an `invalid` node, and with `requireTrusted` only to trusted ones.
+- **Reports** (`./mesh/report.ts`): `meshNodeReport` turns one advertisement into what a person or an
+  agent is shown (state `live`, `unhealthy` or `lost` and since when, capacity, trust, reliability);
+  `createMeshNodeTracker` keeps a node that stopped advertising on the list as `lost`; and
+  `meshLabelStates` counts, per runner label, the nodes a reader ranks and their free slots.
+
+A signature says which key wrote an advertisement, not what software the node runs. The design, its
+failure table, the trust model's limits and the remaining increments are in
+[CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
 
 ## GitHub Actions fabric (Hobo-Labs/HoBo)
 

@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "hobo.vercel-git-deployment-plan/v1",
+  "bindle": "hobo-ci-relay",
+  "resources": [
+    {
+      "kind": "queue",
+      "name": "hobo-ci"
+    },
+    {
+      "kind": "schedule",
+      "name": "hobo-ci-repair"
+    },
+    {
+      "kind": "api",
+      "name": "relay"
+    },
+    {
+      "kind": "secret",
+      "name": "secrets"
+    },
+    {
+      "kind": "data",
+      "name": "state"
+    }
+  ],
+  "project": "hobo-ci",
+  "scope": "team_hobo",
+  "gitSource": {
+    "type": "github",
+    "org": "example",
+    "repo": "hobo",
+    "ref": "main"
+  },
+  "settings": [
+    {
+      "key": "HOBO_CI_PUBLIC_URL",
+      "value": "https://ci.example.test"
+    }
+  ],
+  "operatorSecrets": [
+    "CRON_SECRET",
+    "HOBO_CI_BOOTSTRAP_TOKEN_SHA256",
+    "HOBO_CI_CONFIG_JSON",
+    "HOBO_CI_CONTROL_TOKENS_JSON",
+    "HOBO_CI_GITHUB_APP_CLIENT_SECRET",
+    "HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+    "HOBO_CI_ONBOARDING_CONTROL_TOKEN",
+    "HOBO_CI_SESSION_KEY",
+    "HOBO_CI_WEBHOOK_SECRET"
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
+      "when": "always: read what the project holds, before any write"
+    },
+    {
+      "method": "POST",
+      "path": "/v10/projects/hobo-ci/env?teamId=team_hobo",
+      "body": "{\"key\":\"HOBO_CI_PUBLIC_URL\",\"value\":\"https://ci.example.test\",\"type\":\"plain\",\"target\":[\"preview\"]}",
+      "when": "only if HOBO_CI_PUBLIC_URL is not set for preview; a plain preview-only value that differs is edited instead, and one already as asked is left alone"
+    },
+    {
+      "method": "POST",
+      "path": "/v13/deployments?teamId=team_hobo",
+      "body": "{\"name\":\"hobo-ci\",\"project\":\"hobo-ci\",\"gitSource\":{\"type\":\"github\",\"org\":\"example\",\"repo\":\"hobo\",\"ref\":\"main\"}}",
+      "when": "always: one deployment, built by Vercel from the commit"
+    }
+  ],
+  "placement": {
+    "yard": "hobo-ci-relay",
+    "camp": "hobo-ci-relay/preview",
+    "provider": "vercel",
+    "regions": [
+      "iad1"
+    ]
+  },
+  "bindings": [
+    {
+      "profile": "api.http/v1",
+      "productId": "vercel.function/v1",
+      "selected": true
+    },
+    {
+      "profile": "bucket.object/v1",
+      "productId": "vercel.blob/v1",
+      "connectivityId": "vercel.oidc/v1"
+    },
+    {
+      "profile": "data.sqlite/v1",
+      "productId": "turso.database/v1",
+      "connectivityId": "vercel.marketplace/v1",
+      "provisioning": "marketplace:tursocloud"
+    },
+    {
+      "profile": "kv.redis-compatible/v1",
+      "productId": "upstash.redis/v1",
+      "connectivityId": "vercel.marketplace/v1",
+      "selected": true,
+      "provisioning": "marketplace:upstash/upstash-kv"
+    },
+    {
+      "profile": "kv.valkey/v1",
+      "productId": "aiven.valkey/v1",
+      "connectivityId": "config-service.url/v1"
+    },
+    {
+      "profile": "kv.valkey/v1",
+      "productId": "valkey.self-hosted/v1",
+      "connectivityId": "config-service.url/v1"
+    },
+    {
+      "profile": "provider.project/v1",
+      "productId": "vercel.project/v1",
+      "selected": true
+    },
+    {
+      "profile": "queue.at-least-once/v1",
+      "productId": "vercel.queues/v1",
+      "selected": true
+    },
+    {
+      "profile": "queue.delay/v1",
+      "productId": "vercel.queues/v1",
+      "selected": true
+    },
+    {
+      "profile": "secret-ref.runtime-projection/v1",
+      "productId": "infisical.secrets/v1",
+      "connectivityId": "infisical.oidc-auth/v1",
+      "settings": [
+        "HOBO_CI_CONFIG_SERVICE",
+        "INFISICAL_SECRET_PATH",
+        "INFISICAL_SITE_URL"
+      ],
+      "inputs": [
+        "INFISICAL_IDENTITY_ID",
+        "INFISICAL_PROJECT_ID"
+      ]
+    },
+    {
+      "profile": "service.queue-consumer/v1",
+      "productId": "vercel.function/v1",
+      "selected": true
+    },
+    {
+      "profile": "service.scheduled/v1",
+      "productId": "vercel.schedules/v1",
+      "selected": true
+    }
+  ]
+}
