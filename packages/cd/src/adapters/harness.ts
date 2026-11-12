@@ -41,13 +41,16 @@ import type {
 	RolloutSnapshot,
 	RolloutStatus,
 } from "../ports.js";
+import { ledgerType, ROLLOUT_LEDGER } from "../rollout/journal.js";
 import { jsonOf, objectOf, text } from "../rollout/json.js";
 import { reason } from "../rollout/reasons.js";
 
-// public-contract: the engine command ledger (private to this adapter).
+// public-contract: the engine command ledger (private to this adapter). Its
+// type is the rollout ledger's `rollout.EngineCommanded`; the legacy
+// `cd.rollout.EngineCommanded` is upcast on read (rollout/journal ledgerType).
 export const HARNESS_LEDGER = Object.freeze({
 	stream: (rolloutId: string) => `cd-rollout-engine-${rolloutId}`,
-	commanded: "cd.rollout.EngineCommanded",
+	commanded: ROLLOUT_LEDGER.engineCommanded,
 } as const);
 
 export type HarnessRolloutEngineDeps = CdBase &
@@ -276,7 +279,7 @@ export function createHarnessRolloutEngine(
 		const instance = fresh();
 		for (const event of events) {
 			instance.seq = event.seq;
-			if (event.type !== HARNESS_LEDGER.commanded) continue;
+			if (ledgerType(event.type) !== HARNESS_LEDGER.commanded) continue;
 			const command = decodeCommand(jsonOf(event.data));
 			if (command) apply(instance, command);
 		}

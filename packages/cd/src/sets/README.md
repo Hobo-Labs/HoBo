@@ -54,7 +54,13 @@ inventory stream `cd-camp-inventory-<id>` (WP22), defaulting to `MANAGED`.
   predecessor chains as `journal-invalid` (HOBO-50 rules).
 - `foldCampStatus` — the latest observation; observations from a lower fence
   than one already seen, or whose fence is not a decimal FenceToken, are
-  ignored (I4, fail-closed).
+  ignored (I4, fail-closed). Bodies are parsed by `parseStatusBody`: the
+  `{ schema: "hobo.cd.reconcile-status/v1", observation }` envelope the
+  reconcile transport writes (`#ReconcileStatusEvent` in `reconcile.cue`), or
+  the legacy bare `ReconcileObservationRecord`. A body naming an unknown
+  schema is skipped (it proves nothing); a known envelope whose observation
+  does not decode is `journal-invalid`. Pinned by
+  `test/sets/fixtures/golden-status.json`.
 - `changes()` — streams `DesiredStateChange` frames by event-store position
   (`set.Created`, `policy.BindingChanged`, `camp.ManagementChanged`), resumes
   after a cursor, then tails live (store subscription plus a
