@@ -25,7 +25,9 @@ const decoder = new TextDecoder();
 
 // ── pkt-line ────────────────────────────────────────────────────────────────
 
+// public-contract: Git smart-HTTP v2 pkt-line flush packet (gitprotocol-common).
 export const FLUSH = "0000";
+// public-contract: Git smart-HTTP v2 pkt-line delimiter packet (gitprotocol-v2).
 export const DELIM = "0001";
 
 export function pktLine(payload: string): string {

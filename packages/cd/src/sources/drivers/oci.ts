@@ -55,7 +55,9 @@ export const OCI_ATTESTATION_TYPES = Object.freeze([
 	"application/vnd.dev.sigstore.bundle.v0.2+json",
 	"application/vnd.in-toto+json",
 ] as const);
+// public-contract: OCI image-spec pre-defined annotation key for the source revision.
 export const OCI_REVISION_ANNOTATION = "org.opencontainers.image.revision";
+// public-contract: OCI image-spec pre-defined annotation key for the build time.
 export const OCI_CREATED_ANNOTATION = "org.opencontainers.image.created";
 /** Bounds per discovery: tag pages, manifest reads for NEWEST_BUILD, referrers. */
 export const OCI_MAX_TAG_PAGES = 50;
