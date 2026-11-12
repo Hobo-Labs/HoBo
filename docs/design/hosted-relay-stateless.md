@@ -1174,4 +1174,4 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
 
 ## Maintenance (2026-11-12)
 
-Relay deploy workflow verify step: documents that `hobo ci secret-store verify` signs in only and does not assert Infisical role shape (Free attach may use Member). See `packages/ci-vercel/CONFIG-SERVICE.md`.
+Relay deploy workflow verify step: documents that `hobo ci secret-store verify` signs in only and does not assert Infisical role shape (Free attach may use Member). See `packages/ci-vercel/CONFIG-SERVICE.md`. The `hobo-deploy` skill fixed-facts table matches the Free **Member** vs Advanced+ custom-role split for `hobo-ci-writer`.

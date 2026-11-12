@@ -145,7 +145,7 @@ with compensating controls, without upgrading Infisical.
 | Candidate | Free? | HoBo / relay fit |
 |---|---|---|
 | **(a) Additional privileges** scoped to `prod` + `/hobo-ci-relay` | **No** — privileges layer on project RBAC; Free has no RBAC/ABAC ([pricing](https://infisical.com/pricing); [additional privileges](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges); checked 2026-11-12) | N/A |
-| **(b) Separate writer project** (`deployProjectId` ≠ `projectId`) | Yes (second project on Free) | HoBo's **provisioned** layout uses `hobo-ci-deploy` so the relay Viewer never shares a project with the writer ([`secret-store-claim`](../secret-store-claim/src/infisical.ts)); **attach** (`infisical-cloud-attach`) uses one project until the owner adds a second and reconnects |
+| **(b) Separate writer project** (`deployProjectId` ≠ `projectId`) | Yes (second project on Free) | HoBo's **provisioned** layout splits relay vs deploy-credential projects ([`secret-store-claim`](../secret-store-claim/src/infisical.ts)). **Attach** is single-project today. Reconnecting with `--deploy-project-id` scopes only the deploy-credential viewer; `hobo ci app deposit` still writes `store.projectId`, so a second project does not isolate App-credential writes without a new connect/provision design. |
 | **(c) Drop writer / Viewer-only** | — | **No** — `app-credentials` and MCP capture write into `/hobo-ci-relay` ([`relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)); verify only proves OIDC sign-in |
 | **(d) Member + compensating controls** | **Yes** | **Chosen** for current attach binding |
 

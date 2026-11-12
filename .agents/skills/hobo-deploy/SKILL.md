@@ -19,7 +19,7 @@ signs in to with OIDC.**
 | Deploy target | Vercel project `hobo-ci` (`prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO`), team `tyler-r-kendricks-projects` (`team_BRBUnG6uGhSsVV3EG5GFV3FM`), Yard `hobo-ci-relay`; deployed by Vercel's Git integration on a push to `main` |
 | Repository | `Hobo-Labs/HoBo`; `.github/workflows/relay-deploy.yml` verifies, finds the deployment, smoke-checks |
 | Relay runtime store | a secrets manager the relay signs in to with its Vercel OIDC token: today only **Infisical** can (OIDC Auth); folder `/hobo-ci-relay` of project `hobo-ci`, environment `prod` |
-| Identities | `hobo-ci-relay` (OIDC, Vercel, read), `hobo-ci-writer` (OIDC, GitHub Actions on `main`, create/edit only) |
+| Identities | `hobo-ci-relay` (OIDC, Vercel, Viewer/read), `hobo-ci-writer` (OIDC, GitHub Actions on `main`, write-capable: Advanced+ custom create/edit-only, Free **Member**) |
 | Binding | `packages/ci-vercel/deploy/secret-store.binding.json` (ids only) |
 | Secrets a person handles on the default path | **none** |
 
