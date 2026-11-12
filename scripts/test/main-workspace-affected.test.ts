@@ -93,6 +93,9 @@ describe("main workspace affected-only", () => {
 			"utf8",
 		);
 		assert.match(planner, /planDependentTestsForTurboAffected/u);
+		assert.match(planner, /planHasWorkspaceWork/u);
+		assert.match(planner, /count === 0[\s\S]*"\[\]"/u);
+		assert.match(workflow, /WORKSPACE_RESULT" != "skipped"/u);
 		assert.match(planner, /TURBO_SCM_BASE/u);
 		assert.match(dependent, /planDependentTestsForTurboAffected/u);
 		assert.match(dependent, /intersectScopedPlanWithTurboAffected/u);

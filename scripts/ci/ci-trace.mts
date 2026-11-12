@@ -300,7 +300,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			join(outDir, "turbo-profile.json"),
 			redact(readFileSync("turbo-profile.json", "utf8"), secrets),
 		);
+	const taskSpanCount = runs.reduce((n, r) => n + r.tasks.length, 0);
+	if (runs.length === 0) {
+		writeFileSync(join(outDir, ".skip-upload"), "no-turbo-runs\n");
+	}
 	console.error(
-		`ci-trace: ${runs.length} turbo run(s), ${runs.reduce((n, r) => n + r.tasks.length, 0)} task span(s) -> ${outDir}`,
+		`ci-trace: ${runs.length} turbo run(s), ${taskSpanCount} task span(s) -> ${outDir}`,
 	);
 }
