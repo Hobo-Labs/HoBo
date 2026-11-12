@@ -92,7 +92,7 @@ describe("the fleet reporter as a consumer of the verdict routes", () => {
 
 	it("reads the agreed verdict", async () => {
 		const standing = pact.interactions.find((entry) =>
-			entry.description.startsWith("answer the agreed verdict"),
+			entry.description.startsWith("answer the standing verdict"),
 		);
 		if (!standing) throw new Error("the Pact has no agreed verdict");
 		const client = createCiRelayClient({

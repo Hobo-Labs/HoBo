@@ -1,16 +1,22 @@
 import { readFileSync } from "node:fs";
-import { fromJsonString } from "@bufbuild/protobuf";
+import { create, fromJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema } from "@hobo/ci";
 import { meshIdentityFromPem } from "@hobo/ci/mesh";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { askRelay, relayRefusal } from "../../../scripts/ci/route-runner.mts";
 import {
+	FleetVerdictAllowanceSchema,
+	FleetVerdictLabelAllowanceSchema,
+} from "../src/_generated/fleet_verdict_pb.js";
+import {
 	createMemoryFleetVerdictKv,
 	createMemoryFleetVerdicts,
 	type FleetVerdictSettings,
+	fleetVerdictAllowanceJson,
 	MEMORY_FLEET_VERDICT_KEYS,
 	parseFleetReporters,
+	parseFleetVerdictAllowance,
 	parseFleetVerdictPath,
 } from "../src/fleet-verdict.js";
 import { signedFleetVerdictRequest } from "../src/fleet-verdict-auth.js";
@@ -118,17 +124,18 @@ it("serves the fleet verdict Pact over real HTTP: read by anyone, reported only 
 				if (!repository) throw new Error("no repository");
 				const key = MEMORY_FLEET_VERDICT_KEYS.allowance(repository);
 				const [current] = await kv.getMany([key]);
+				// What the relay already counted for other labels stays.
+				const allowance =
+					(current && parseFleetVerdictAllowance(current.value)) ??
+					create(FleetVerdictAllowanceSchema);
+				allowance.labels.hobo = create(FleetVerdictLabelAllowanceSchema, {
+					windowStart: new Date(nowMs - 3_600_000).toISOString(),
+					blockedSeconds: 14_400,
+					lastCountedAt: new Date(nowMs).toISOString(),
+				});
 				const written = await kv.write(
 					key,
-					JSON.stringify({
-						labels: {
-							hobo: {
-								windowStart: new Date(nowMs - 3_600_000).toISOString(),
-								blockedSeconds: 14_400,
-								lastCountedAt: new Date(nowMs).toISOString(),
-							},
-						},
-					}),
+					fleetVerdictAllowanceJson(allowance),
 					86_400_000,
 					current?.version,
 				);
