@@ -136,7 +136,8 @@ unindexed new finding files as notices.
 - [Finding 124: admission telemetry memory headroom](./findings/0124-admission-telemetry-memory-headroom.md)
 - [Finding 125: release pages affected build without merge base](./findings/0125-release-pages-affected-build-without-merge-base.md)
 - [Finding 126: release workflow_run trunk admission](./findings/0126-release-workflow-run-trunk-admission.md)
-- [Finding 127: light trunk plan and immediate fleet pickup for deps](./findings/0127-light-trunk-plan-and-immediate-fleet-pickup-for-deps.md)
+- [Finding 127: main shard parallel admission](./findings/0127-main-shard-parallel-admission.md)
+- [Finding 128: light trunk plan and immediate fleet pickup for deps](./findings/0128-light-trunk-plan-and-immediate-fleet-pickup-for-deps.md)
 <!-- findings-index:end -->
 
 ## Data

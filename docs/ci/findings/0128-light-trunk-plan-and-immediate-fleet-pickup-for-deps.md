@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 127: light trunk plan and immediate fleet pickup for deps"
+title: "Finding 128: light trunk plan and immediate fleet pickup for deps"
 description: "Run 43172214692 (05457ecf3) waited ~2m45s for plan and deps after a 15s route leg."
 tags: [hobo, ci, performance, main-gate, admission, fleet, memory-class]
 ---
 
-# Finding 127: light trunk plan and immediate fleet pickup for deps
+# Finding 128: light trunk plan and immediate fleet pickup for deps
 
 ## Evidence (before)
 

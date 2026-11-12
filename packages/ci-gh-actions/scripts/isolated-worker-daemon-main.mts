@@ -64,6 +64,7 @@ import {
 	loadMeshIdentity,
 	localWorkerFreeSlots,
 	type MeshJournal,
+	mainShardParallelLaunchCapacity,
 	memoryRequestForJob,
 	mergeHeldPruneWitness,
 	meshReliabilityJournal,
@@ -912,6 +913,14 @@ try {
 			backlogImmediate:
 				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",
 		},
+		parallelLaunchCapacity: () =>
+			mainShardParallelLaunchCapacity({
+				availableMb: readAvailableMemoryMb(),
+				requestMb: memoryConfig.classes.standard,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+				launchSlots: slots,
+			}),
 		fleetCapacity: {
 			publish: async (input) => {
 				if (!fleetCapacityPublisher) return undefined;

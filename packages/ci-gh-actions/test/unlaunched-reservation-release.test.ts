@@ -86,6 +86,39 @@ describe("unlaunched reservation release", () => {
 		expect(reason).toBeUndefined();
 	});
 
+	it("does not backlog-release when every pending job already holds a reservation", () => {
+		const nowMs = Date.parse("2026-11-11T12:00:30.000Z");
+		const releases = pickUnlaunchedReservationsToRelease(
+			[
+				baseLease,
+				{
+					...baseLease,
+					id: "lease-b",
+					jobId: 2,
+					createdAt: "2026-11-11T12:00:02.000Z",
+				},
+				{
+					...baseLease,
+					id: "lease-c",
+					jobId: 3,
+					createdAt: "2026-11-11T12:00:01.000Z",
+				},
+			],
+			nowMs,
+			{
+				boundMs: 60_000,
+				backlogMinAgeMs: 25_000,
+				pendingDemand: 0,
+				unlaunchedCount: 3,
+				launchSlots: 3,
+				liveContainerCount: 0,
+				backlogImmediate: true,
+				nonLocalFreeSlots: 3,
+			},
+		);
+		expect(releases).toEqual([]);
+	});
+
 	it("releases oldest unlaunched leases when backlog age and fleet capacity allow", () => {
 		const nowMs = Date.parse("2026-11-11T12:00:30.000Z");
 		const releases = pickUnlaunchedReservationsToRelease(
