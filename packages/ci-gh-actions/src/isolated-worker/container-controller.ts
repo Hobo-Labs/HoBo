@@ -1145,11 +1145,12 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
-		// `opts.force` (`forceStop`) skips fail-closed settlement defer only; confirmed
-		// executing custody still deferred when `jitRunnerBlocksSettlement` runs without force.
+		// `opts.force` (`forceStop`) only sets `failClosed: false` here; confirmed executing
+		// custody still defers settlement.
 		if (
-			!opts?.force &&
-			(await jitRunnerBlocksSettlement(lease, { failClosed: true }))
+			await jitRunnerBlocksSettlement(lease, {
+				failClosed: opts?.force !== true,
+			})
 		) {
 			options.log?.("hobo_ci_jit_settle_deferred_active_custody", {
 				leaseId: lease.id,
@@ -1989,13 +1990,9 @@ export function createIsolatedContainerController(options: {
 			// reconciliation cannot retire it until there is a reason to stop.
 			if (!stop) return;
 			if (runnerCustodyHoldsActive) return;
-			// Pre-kill: `forceStop` skips fail-closed unreadable-GitHub defer only — not
-			// `runnerCustodyHoldsActive` above.
-			if (
-				!forceStop &&
-				(await runnerTeardownBlocked(lease, true))
-			)
-				return;
+			// Pre-kill: `forceStop` uses `failClosed: false` only — guard still runs
+			// (correlation → getJob) so confirmed executing assignments defer.
+			if (await runnerTeardownBlocked(lease, forceStop !== true)) return;
 			let removed = false;
 			try {
 				try {

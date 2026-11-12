@@ -916,6 +916,58 @@ describe("shared hobo label JIT reassignment", () => {
 			vi.restoreAllMocks();
 		});
 
+		it("does not kill on forceStop when correlation fails but getJob shows in_progress", async () => {
+			const leaseId = "force-stop-getjob-in-progress";
+			const lease = crossJobLeaseFixture(leaseId);
+			const settle = vi.fn();
+			const stop = vi.fn();
+			const remove = vi.fn();
+			// SAFETY: reconcile touches only get, activeLeases, transition, settle.
+			const store = {
+				get: async (id: string) => (id === lease.id ? lease : undefined),
+				activeLeases: async () => [lease],
+				transition: transitionFor(lease),
+				settle,
+			} as SqliteCiStore & HostedRelayStore;
+			vi.spyOn(correlationModule, "resolveRunnerAssignedJob").mockRejectedValue(
+				new Error("correlation down"),
+			);
+			vi.spyOn(githubModule, "getJob").mockResolvedValue({
+				id: SHARD_JOB,
+				run_id: MAIN_RUN,
+				status: "in_progress",
+				labels: ["hobo"],
+				runner_name: lease.runnerName,
+				runner_id: lease.runnerId,
+				run_attempt: 1,
+			});
+			const docker: DockerDriver = {
+				create: vi.fn(),
+				start: vi.fn(),
+				exec: vi.fn(),
+				stop,
+				remove,
+				list: vi.fn(async () => [
+					{ name: lease.sandboxName, containerId: lease.sandboxSessionId },
+				]),
+				isRunning: vi.fn(async () => true),
+				exists: vi.fn(async () => false),
+			};
+			const controller = createIsolatedContainerController({
+				store,
+				github: deniedGithub(),
+				publicOrigin: "https://ci.example.test",
+				docker,
+				workerAccountId: "worker-a",
+				workerImage: "hobo-ci-worker:local",
+				now: () => "2026-11-12T12:05:00.000Z",
+			});
+			await controller.host.reconcile(lease.id, true);
+			expect(stop).not.toHaveBeenCalled();
+			expect(settle).not.toHaveBeenCalled();
+			vi.restoreAllMocks();
+		});
+
 		it("forceStop proceeds past unreadable GitHub on pre-kill while normal reconcile defers", async () => {
 			const leaseId = "force-stop-unreadable-github";
 			const lease = create(LeaseSchema, {

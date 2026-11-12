@@ -329,9 +329,9 @@ describe("isolated container controller reconcile", () => {
 			list: vi.fn(async () => []),
 		};
 		const github = deniedGithub();
-		vi.spyOn(githubModule, "getJob")
-			.mockRejectedValueOnce(new Error("temporary GitHub failure"))
-			.mockResolvedValue(githubJob(lease.jobId, "queued"));
+		vi.spyOn(githubModule, "getJob").mockImplementation(async () => {
+			throw new Error("temporary GitHub failure");
+		});
 		const controller = createIsolatedContainerController({
 			store,
 			github,
@@ -464,9 +464,9 @@ describe("isolated container controller reconcile", () => {
 				}),
 			};
 			const github = deniedGithub();
-			vi.spyOn(githubModule, "getJob")
-				.mockRejectedValueOnce(new Error("temporary GitHub failure"))
-				.mockResolvedValue(githubJob(job.id, "queued"));
+			vi.spyOn(githubModule, "getJob").mockImplementation(async () => {
+				throw new Error("temporary GitHub failure");
+			});
 			let clock = "2026-10-26T12:02:00.000Z";
 			let controller = createIsolatedContainerController({
 				store,
@@ -480,6 +480,9 @@ describe("isolated container controller reconcile", () => {
 			await expect(
 				controller.host.reconcile(reserved.id, true),
 			).rejects.toThrow("temporary GitHub failure");
+			vi.mocked(githubModule.getJob).mockResolvedValue(
+				githubJob(job.id, "queued"),
+			);
 			const held = await store.get(reserved.id);
 			expect(held).toMatchObject({
 				state: "uncertain",
