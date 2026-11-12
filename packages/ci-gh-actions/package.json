@@ -43,6 +43,10 @@
       "types": "./dist/node-http.d.ts",
       "default": "./dist/node-http.js"
     },
+    "./runner-host": {
+      "types": "./dist/runner-host.d.ts",
+      "default": "./dist/runner-host.js"
+    },
     "./relay-cache": {
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"

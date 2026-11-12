@@ -63,6 +63,7 @@ on:
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
       - "scripts/test/release-freight.test.ts"
+      - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
       - ".github/actions/release-oci-attest/**"
@@ -130,6 +131,7 @@ on:
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
       - "scripts/test/release-freight.test.ts"
+      - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
       - ".github/actions/release-oci-attest/**"
@@ -320,7 +322,8 @@ jobs:
     # tree. A local run signs for this job only when no OCI image is affected.
     if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 20
+    # The realize proof builds @hobo/hobo (turbo-cached) before its tests.
+    timeout-minutes: 35
     # packages: read lets a runner without the worker image (an ARC pod) pull it.
     permissions:
       contents: read
@@ -383,6 +386,29 @@ jobs:
         with:
           name: vitest-release-contract-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/release-contract-vitest.log
+          if-no-files-found: ignore
+      # The offline proof of the release realizer path: the built hobo CD
+      # composition with release/hobo-release.delivery.ts as topology, against
+      # the providers' recorded registry and GitHub worlds. It needs the built
+      # @hobo/hobo, and fails (never skips) here when the build is missing.
+      - name: Build the hobo CLI (release Freight realize proof)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Release Freight realize (offline)
+        id: release_realize_tests
+        env:
+          HOBO_RELEASE_REALIZE_REQUIRED: "1"
+        run: >-
+          node --no-warnings scripts/ci/run-job-command-report.mts
+          --label release-realize-vitest --
+          pnpm exec vitest run scripts/test/release-freight-realize.test.ts
+      - name: Upload release realize vitest log
+        if: failure() && steps.release_realize_tests.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vitest-release-realize-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/hobo-ci-job-logs/release-realize-vitest.log
           if-no-files-found: ignore
       - name: npm pack dry-run (allowlist staging)
         run: |
@@ -695,11 +721,12 @@ jobs:
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
           --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # GHCR has no @hobo/cd realizer, so the push stays the publish step. The
-      # digest GHCR reports for this leg's image becomes release Freight
-      # (verified at the registry) and is promoted into hobo-release/candidate;
-      # a blocked verdict fails this leg, so attestation, the signed tag and the
-      # GitHub Release never run.
+      # docker push uploads the image; the digest GHCR reports for this leg
+      # becomes release Freight (verified at the registry) and is promoted into
+      # hobo-release/oci-candidate, whose realizer (@hobo/provider-oci-registry)
+      # asserts the release tag on that digest with GITHUB_TOKEN and observes it.
+      # Anything but qualified fails this leg, so attestation, the signed tag
+      # and the GitHub Release never run.
       - name: Build and push release image, record it as release Freight
         # The token asks GHCR whether the tag is already published (finding 143).
         env:
@@ -838,8 +865,10 @@ jobs:
           pnpm exec turbo run build --filter=@hobo/hobo...
           --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
       # Tarballs are recorded as release Freight and promoted into
-      # hobo-release/candidate before any npm publish; a blocked verdict stops
-      # the publish (npm has no @hobo/cd realizer, so npm publish stays the step).
+      # hobo-release/npm-candidate before any npm publish. @hobo/provider-npm
+      # refuses OIDC trusted publishing of scoped names and has no Sigstore
+      # bundle (a typed impedance verdict), so `npm publish --provenance` stays
+      # the npm publisher; any other verdict stops the publish.
       - name: npm publish (@hobo-labs via OIDC or hobodev token + provenance)
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -994,26 +1023,20 @@ jobs:
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
           --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # GitHub Pages has no @hobo/cd realizer: the tree below is recorded as
-      # release Freight and promoted candidate -> stable through hobo deploy,
-      # and the gh-pages push runs only when neither step is blocked.
-      - name: Record and promote the Pages bundle (hobo deploy)
+      # The tree below is recorded as release Freight and promoted
+      # hobo-release/pages-candidate -> pages-stable through hobo deploy; the
+      # candidate Camp's realizer (@hobo/provider-github) publishes gh-pages with
+      # GITHUB_TOKEN (contents: write): one commit on the observed head, by
+      # compare-and-swap. Its message is `deploy: <HOBO_RELEASE_REVISION>`, the
+      # commit built here (not github.sha, which on a workflow_run event is the
+      # tip of main), because the freshness gate reads it back.
+      - name: Record, promote and publish the Pages site (hobo deploy)
         if: steps.fresh.outputs.deploy == 'true'
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
         run: node --no-warnings scripts/deploy-site.mts --release-freight site/dist
-      - name: Deploy to gh-pages branch
-        if: steps.fresh.outputs.deploy == 'true'
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: site/dist
-          force_orphan: true
-          # The default message names github.sha, which on a workflow_run event
-          # is the tip of main when the event fired, not the commit built here.
-          # The freshness gate reads this back, so it has to be the truth.
-          full_commit_message: "deploy: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}"
 
   release-tag:
     name: Signed git tag + GitHub Release (main train)
@@ -1066,8 +1089,11 @@ jobs:
           path: ${{ runner.temp }}/hobo-release-cd/npm
       # Candidate -> stable with lineage, through hobo deploy promote. The tag
       # and the GitHub Release are published only when this is not blocked.
-      - name: Promote release Freight to hobo-release/stable (hobo deploy)
+      - name: Promote release Freight to the hobo-release stable Camps (hobo deploy)
+        # The stable Camps re-observe GHCR by digest and tag (a read) with the
+        # workflow token their topology names (env://GITHUB_TOKEN).
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CD_ROOT: ${{ runner.temp }}/hobo-release-cd
           NPM_RESULT: ${{ needs.release-npm.result }}
         run: |
@@ -1138,8 +1164,11 @@ jobs:
           path: ${{ runner.temp }}/hobo-release-cd/npm
       # Candidate -> stable with lineage, through hobo deploy promote. The tag
       # and the GitHub Release are published only when this is not blocked.
-      - name: Promote release Freight to hobo-release/stable (hobo deploy)
+      - name: Promote release Freight to the hobo-release stable Camps (hobo deploy)
+        # The stable Camps re-observe GHCR by digest and tag (a read) with the
+        # workflow token their topology names (env://GITHUB_TOKEN).
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CD_ROOT: ${{ runner.temp }}/hobo-release-cd
           NPM_RESULT: ${{ needs.release-npm.result }}
         run: |

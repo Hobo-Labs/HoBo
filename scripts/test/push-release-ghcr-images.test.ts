@@ -420,3 +420,17 @@ describe("ociReleaseArtifacts", () => {
 		).toThrow(/not a pushed digest/);
 	});
 });
+
+describe("releaseTagsOf (the tag the oci-candidate realizer owns)", () => {
+	it("is the release ref's one GHCR tag, the tag docker push wrote, for the recorded digest", async () => {
+		const { releaseTagsOf } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		const digest = `sha256:${"b".repeat(64)}`;
+		expect(
+			releaseTagsOf("v0.0.0-alpha.3", "Hobo-Labs/HoBo", [
+				`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`,
+			]),
+		).toBe("v0.0.0-alpha.3");
+	});
+});

@@ -246,8 +246,9 @@ result keeps its JSON contract (`code`, `data.outputs`, `data.plan`) and adds
 
 Known gaps, stated rather than hidden:
 
-- **Probes read a fixed origin, not the deployment just made.** Nothing checks
-  that `$HOBO_CI_RELAY_PREVIEW_URL` (or `$HOBO_CI_RELAY_URL`) serves the
+- **Probes read a fixed origin, not the deployment just made** (the by-hand
+  token path; `--adopt` probes the adopted deployment's own URL). Nothing
+  checks that `$HOBO_CI_RELAY_PREVIEW_URL` (or `$HOBO_CI_RELAY_URL`) serves the
   Freight's commit, so a stale deployment behind the origin can qualify a newer
   commit, and production trusts that qualification. Closing it needs the
   deployment's own URL with a protection-bypass header, or `/healthz`
@@ -292,12 +293,15 @@ and on `workflow_dispatch`:
    the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
    only — role shape not asserted), then revokes the token, and reports it pass or
    fail by name (`hobo ci secret-store verify`).
-3. *Find Vercel's Git deployment of this commit*: Vercel's Git integration
+3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration
    deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
-   write); the job reads that deployment's URL from GitHub's Deployments API
-   with its own `GITHUB_TOKEN` (`deployments: read`).
-4. A smoke check fails the job on a 5xx from `/healthz` and reports `/readyz`
-   (which answers 503 until the relay can sign in to its store and read it).
+   write), and `hobo ci deploy --adopt --sha "$GITHUB_SHA"` adopts it
+   ([token-free relay mode](#token-free-relay-mode-hobo-ci-deploy---adopt)):
+   it reads the deployment from GitHub's Deployments API with the job's own
+   `GITHUB_TOKEN` (`deployments: read`), records it as relay Freight and
+   promotes it through HoBo CD preview then production, verifying `/healthz`
+   (preview) and `/healthz` and `/readyz` (production) at the deployment's
+   own URL, failing closed. The command's exit status is the step's.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:
@@ -310,11 +314,55 @@ binding (bundled through `vercel.json` `includeFiles`), and derives its
 session key, Sandbox proxy key and `CRON_SECRET` from the App private key
 (`src/relay-derived-keys.ts`).
 
-The workflow does not run `hobo ci deploy`: it holds no Vercel token, so it
-records no relay Freight and CD's promotion and probes above do not gate the
-Git integration's production deployment. HoBo CD delivery of the relay is the
-by-hand path (below) until a token-free realizer can adopt the deployment
-Vercel's Git integration made.
+#### Token-free relay mode (`hobo ci deploy --adopt`)
+
+The workflow holds no Vercel token, so it does not deploy: it adopts.
+`hobo ci deploy --adopt --sha <commit>` is a publisher with an observe-only
+realization:
+
+1. **Find.** It reads `GET /repos/{owner}/{repo}/deployments?sha=<commit>` and
+   each record's statuses from GitHub's API, through a transport guarded to
+   `api.github.com` and that repository's deployments, GET only, for up to 15
+   minutes. The token is the credentialRef `env://GITHUB_TOKEN`, resolved by
+   the CD `CredentialResolver` for each request; it is never recorded, logged
+   or returned. The deployment adopted is the Yard project's (`hobo-ci`)
+   `Production – hobo-ci` record of that exact commit, once a status names its
+   URL (`@hobo/provider-vercel` `vercelGitDeploymentRecords` /
+   `vercelGitDeploymentStatus`). None in time: `HOBO_CI_ADOPT_NOT_FOUND`, and
+   nothing is recorded.
+2. **Record.** The relay Freight's source pin holds the commit and the adopted
+   deployment: GitHub's deployment record id (GitHub carries no Vercel `dpl_`
+   id), its URL, its state when adopted, and Vercel's inspector URL when
+   reported.
+3. **Promote.** The Freight goes through the relay pipeline, preview then
+   production, in the shared CD journal. The conductor's realizer never creates
+   a deployment: it re-reads the record and its statuses and converges only
+   when the deployment is READY **and** is the deployment of the Freight's
+   commit (`vercelAdoptionVerdict`); ERROR, superseded (`inactive`) or another
+   commit is blocked (`HOBO_CI_DEPLOY_NOT_READY`, the state in the message).
+4. **Verify.** The pipeline's own fail-closed probes, aimed at the adopted
+   deployment's URL instead of `$HOBO_CI_RELAY_PREVIEW_URL` /
+   `$HOBO_CI_RELAY_URL`: `/healthz` for preview, `/healthz` and `/readyz` for
+   production, each 200 on every attempt. This closes the fixed-origin gap
+   below for the adopted path: what is verified is the deployment of this
+   commit.
+
+A production verification that fails ends the command with
+`HOBO_CI_DEPLOY_VERIFICATION_FAILED`, and CD records the promotion's end in the
+journal (its compensation restores the predecessor Set there). Nothing is
+rolled back or changed on Vercel: the realization has no write to do it with.
+Other deploy options (`--set`, `--provision`, `--target`, ...) are refused with
+`--adopt`; it takes `--sha`, `--repo` and `--ref` only. No `GITHUB_TOKEN`:
+`HOBO_CI_ADOPT_AUTH_REQUIRED` (it never reads `VERCEL_TOKEN`).
+
+Stated, not hidden: a deployment URL behind Vercel Deployment Protection
+answers 401, which fails verification closed; `/readyz` answers 503 until the
+relay can read its store, so production does not qualify until the store's
+folder is filled (the old smoke check only reported it). Exercised against
+recorded-shape GitHub answers, fake probes and a temporary journal
+(`packages/hobo/test/ci-relay-adopt.test.ts`); no live adoption has run.
+
+HoBo CD delivery with a deploy token stays the by-hand path below.
 
 By hand, for a preview or to read a plan:
 

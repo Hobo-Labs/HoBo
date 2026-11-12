@@ -88,6 +88,9 @@ import {
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
+	workerAdmissionPaused,
+	workerHostFiles,
+	writeWorkerMeshAdvert,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -423,6 +426,11 @@ let closeStore: () => Promise<void> = async () => {};
 // The worker's own SQLite journal, when it has one: where its mesh
 // reliability record is kept, and beside which its identity key lives.
 let meshJournal: MeshJournal | undefined;
+// Where this worker meets its host's CD agent (`hobo deploy agent run`): the
+// agent closes admission with a marker file here and reads the advert this
+// worker writes here (src/runner-host-worker-jobs.ts).
+const runnerHostFiles = workerHostFiles(plan.store.path);
+const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -1024,7 +1032,8 @@ try {
 					persistReliability: (record) => void meshReliability?.save(record),
 					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
 					totalSlots: slots,
-					healthy: () => !meshDraining,
+					// Closed admission is not healthy: others stop deferring to it.
+					healthy: () => !meshDraining && !admissionPausedByAgent(),
 					servesTrunk: trunkSlots > 0,
 					// Memory a new job could have: what the worker's budget has
 					// left, and no more than the host can spare above its reserve.
@@ -1106,6 +1115,12 @@ try {
 	const meshBeat = async () => {
 		await meshTrust.refresh();
 		await mesh?.advertise();
+		if (mesh)
+			await writeWorkerMeshAdvert(runnerHostFiles, mesh.self()).catch((error) =>
+				log("hobo_ci_mesh_advert_file_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			);
 		await mesh?.observe();
 		await publishFleetState();
 	};
@@ -1249,7 +1264,12 @@ try {
 		if (!reconciliation.inventoryKnown) return;
 		// Pull workers drain the inbox on a separate timer so admission ticks stay
 		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
-		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
+		// The host's CD agent may have closed admission to swap the controller:
+		// inspect leases, admit nothing new; running jobs are untouched.
+		await runtime.tick({
+			maxDeliveries: poller ? 0 : 10,
+			admit: !admissionPausedByAgent(),
+		});
 		if (heldJobPruner) {
 			const pruned = await heldJobPruner.maybePrune();
 			if (pruned > 0) void runTick().catch(() => undefined);

@@ -4,7 +4,16 @@
  * Non-empty NPM_TOKEN → NODE_AUTH_TOKEN + hobodev whoami check.
  * Empty token → npm trusted publishing (GitHub-hosted runners + id-token: write only).
  * Every tarball is recorded as release Freight and promoted into
- * hobo-release/candidate through `hobo deploy` before anything is published.
+ * hobo-release/npm-candidate through `hobo deploy`, whose realizer is
+ * @hobo/provider-npm. That realizer cannot realize this target as the release
+ * declares it: the Freight carries no Sigstore bundle for the provenance the
+ * Camp requires (npm-provenance-bundle-missing), and @hobo/provider-npm refuses
+ * OIDC trusted publishing of scoped @hobo-labs names
+ * (npm-oidc-scoped-unsupported). Only on exactly those typed codes, the
+ * `impedance` verdict, does `npm publish --provenance` below publish: an unmet
+ * requirement (release-channels.md), not a realized publish. A qualified
+ * verdict means the realizer published; anything else, including a
+ * misdeclared npm Camp or Freight (catalog-binding-invalid), stops before npm.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -104,14 +113,16 @@ export type NpmPublishDeps = {
 	readonly read?: (path: string) => Uint8Array;
 	readonly qualify?: (
 		input: Parameters<typeof qualifyReleaseCandidate>[0],
-	) => Promise<{ readonly freightId: string }>;
+	) => Promise<Awaited<ReturnType<typeof qualifyReleaseCandidate>>>;
 	readonly npm?: (args: string[]) => void;
 };
 
 /**
  * Stage the SDK tarballs, record them as release Freight and promote it into
- * `hobo-release/candidate` through `hobo deploy` (scripts/ci/create-github-release.mts),
- * then publish. A blocked verdict throws before any `npm publish`.
+ * `hobo-release/npm-candidate` through `hobo deploy`
+ * (scripts/ci/create-github-release.mts). `qualified`: the realizer published,
+ * nothing more runs. `impedance`: `npm publish --provenance` publishes. A
+ * blocked verdict throws before any `npm publish`.
  */
 export async function publishNpmSdkArtifacts(
 	options: {
@@ -146,7 +157,7 @@ export async function publishNpmSdkArtifacts(
 	}
 	const read =
 		deps.read ?? ((path: string) => new Uint8Array(readFileSync(path)));
-	await (deps.qualify ?? qualifyReleaseCandidate)({
+	const { verdict } = await (deps.qualify ?? qualifyReleaseCandidate)({
 		home: options.freightHome,
 		family: "npm",
 		stored: manifest.packages.map((entry, index) => ({
@@ -157,9 +168,14 @@ export async function publishNpmSdkArtifacts(
 		})),
 		labels: {
 			"hobo.release/ref": options.releaseRef,
-			"hobo.release/npm-dist-tag": parsed.npmDistTag,
+			"hobo.cd/npm.dist-tag": parsed.npmDistTag,
 		},
 	});
+	if (verdict.outcome === "qualified") return;
+	if (verdict.outcome !== "impedance")
+		throw new Error(
+			`release Freight npm is ${verdict.outcome} (${verdict.codes.join(", ")}); nothing is published`,
+		);
 	const npm =
 		deps.npm ?? ((args: string[]) => runNpm(args, options.stagingDir, authEnv));
 	for (const tarball of tarballs) {

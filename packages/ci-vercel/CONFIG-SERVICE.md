@@ -249,6 +249,13 @@ check (a 5xx from `/healthz` fails the job; `/readyz` is reported, and answers
 `config-unavailable` until the folder above is filled), and the attachment of
 the cache.
 
+**Today the workflow adopts instead** (Vercel's Git integration deploys; no
+deploy token): `hobo ci deploy --adopt` replaces the smoke check with HoBo CD's
+fail-closed verification of the adopted deployment's own URL, `/healthz` for
+preview and `/healthz` and `/readyz` for production, so production is not
+qualified until the folder above is filled and `/readyz` answers 200
+([README](README.md#token-free-relay-mode-hobo-ci-deploy---adopt)).
+
 **`hobo ci deploy` delivers through HoBo CD.** Run with a deploy token
 (by hand, see the [README](README.md#deploying-the-relay-with-hobo)), it
 records the commit as Freight, delivers it to preview and verifies it there

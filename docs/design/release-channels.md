@@ -165,47 +165,100 @@ what evidence M1 must prove, and which adjacent initiatives own publication or r
 ## HoBo Releases Through HoBo CD
 
 HoBo's own release train (`.github/workflows/release-hobo.yml`) maps the
-release-candidate and GA classes above onto two `@hobo/cd` Camps and records
-every artifact as Freight with provenance
+release-candidate and GA classes above onto `@hobo/cd` Camps, records every
+artifact as Freight with provenance, and lets the Camps' realizers publish
 ([plan 0024](../plans/0024-hobo-cd-swarm-instruction.md),
 [`hobo deploy`](../../packages/hobo/CD.md)).
 
-| Channel | Camp | What publishes on it | Gated step |
-|---|---|---|---|
-| Release candidate | `hobo-release/candidate` | npm tarballs (`alpha`/`next` dist-tag), GHCR images by digest | `npm publish`; attestation and the tag job after the GHCR push |
-| Stable | `hobo-release/stable` | the signed git tag, the GitHub Release, the Pages bundle | `push-release-git-tag`, `create-github-release`, the gh-pages push |
+The topology is delivery-as-code:
+[`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
+declares the Yard `hobo-release` with a candidate and a stable Camp per
+artifact family and one pipeline per family (`hobo-release-<family>`,
+`candidate` -> `stable`, all at once, one HTTP probe per node). Any CD command
+reads it with `--yard release/hobo-release.delivery.ts`; `hobo deploy pipeline
+apply --file release/hobo-release.delivery.ts` applies the pipelines.
 
-Each family (`npm`, `oci`, `pages`) is the Bindle `hobo-release-<family>`; its
-pipeline chains `candidate` -> `stable`. The steps are the `hobo deploy`
-subcommands, run through the `hobo` package's own CD host:
+| Family | Camps | Provider (realizer) | Target and credential | What the realizer does |
+|---|---|---|---|---|
+| `oci` | `hobo-release/oci-candidate`, `oci-stable` | `@hobo/provider-oci-registry` | `ghcr.io`, the workflow `GITHUB_TOKEN` (`env://GITHUB_TOKEN`) | candidate: asserts the release tag on the recorded digest (tag PUT by digest) and observes digest and tag; stable: re-observes |
+| `pages` | `hobo-release/pages-candidate`, `pages-stable` | `@hobo/provider-github` | this repository's `gh-pages` branch, `GITHUB_TOKEN` (`contents: write`) | candidate: uploads missing blobs, creates the tree (id computed before upload) and one commit `deploy: <sha>` on the observed head, moved by compare-and-swap; stable: re-observes the tree and its Pages build |
+| `npm` | `hobo-release/npm-candidate`, `npm-stable` | `@hobo/provider-npm` | `registry.npmjs.org`, OIDC trusted publishing, provenance required | refuses with a named impedance code (below); `npm publish --provenance` stays the npm publisher: **unmet requirement** |
+
+Candidate Camps converge; stable Camps declare `hobo.cd/realize-mode:
+observe`, so their realizer only calls the resolver's `read` (pull-only token
+scope) and never writes. The stable passes run in the tag and GitHub Release
+jobs, whose `GITHUB_TOKEN` has `contents: write` and no `packages`
+permission: they never ask GHCR for push scope, and a target that drifted
+after candidate blocks stable instead of being repaired there.
+
+The steps are the `hobo deploy` subcommands, run through the `hobo` package's
+own CD composition (`openCdRuntime` with the release topology, as `--yard`
+loads it):
 
 1. `freight record`: the manifest names each artifact by sha256 digest, the
-   release commit, the run id and the workflow as builder. Tarballs and the
-   Pages tree index go into the HoBo artifact store first; GHCR images are
-   verified at the registry. A refusal stops the job.
-2. `pipeline apply` of `hobo-release-<family>`.
-3. `promote <freight> --camp hobo-release/candidate`, then in the tag jobs (or
-   the Pages job) `promote <freight> --camp hobo-release/stable`. The journal
-   (`HOBO_RELEASE_CD_HOME`) travels between jobs as the
-   `hobo-release-freight-<family>` artifact, so stable sees the candidate
-   promotion of the same Freight.
+   release commit, the run id and the workflow as builder, and a declaration
+   (a Bindle with one resource on the family's product) under its canonical
+   hash. Tarballs and the Pages tree go into the HoBo artifact store first;
+   GHCR images are verified at the registry by the digest main's push logic
+   reads back from GHCR (`pushedDigestRef`, or the published tag reused). A
+   refusal stops the job.
+2. `pipeline apply --file release/hobo-release.delivery.ts`.
+3. `promote <freight> --camp hobo-release/<family>-candidate --pipeline
+   hobo-release-<family> --node candidate`, then in the tag jobs (or the Pages
+   job) the same into `<family>-stable` with `--source-camp`. Each promotion
+   is driven the way `hobo serve cd` ticks it (promotions, one conductor pass
+   of the Camp, rollouts, verification) until it is PROMOTED or the realizer
+   reports BLOCKED. The journal (`HOBO_RELEASE_CD_HOME`) travels between jobs
+   as the `hobo-release-freight-<family>` artifact, so `@hobo/cd` enforces the
+   candidate -> stable lineage itself.
 
-The verdict is `qualified` (promoted), `gap` (refused only with a typed code
-for missing topology or realizer: `pipeline-unknown-camp`,
-`promotion-resolve-failed`, `planning-camp-unknown`,
-`compose-realizer-missing`) or `blocked` (anything else). The existing publish
-step runs on `qualified` or `gap`; `gap` prints a warning naming the codes.
-Until the pipeline applies, stable additionally requires a journaled,
-non-blocked candidate promotion of the same Freight
-(`release-lineage-missing` otherwise). Which targets have no realizer is
-listed in the [live provider matrix](./live-provider-matrix.md#hobos-own-release-targets-release-freight-through-hobocd).
+The verdict is `qualified` (PROMOTED: the realizer converged by its own
+observation and the node's probe passed), `impedance` or `blocked`.
+`impedance` is read only from the two named npm provider limits,
+`npm-provenance-bundle-missing` and `npm-oidc-scoped-unsupported`; only the
+npm family may keep its existing publish step on it, and its stable Camp is
+reported, not promoted. Everything else blocks, including not finishing, a
+generic `RESOLVER_PRODUCT_UNSUPPORTED`, and `catalog-binding-invalid` (a
+missing or invalid Camp label such as `hobo.cd/credential-ref`,
+`hobo.cd/npm.registry` or `hobo.cd/npm.auth`, or a package artifact not named
+`<package>@<version>`): a misdeclared npm topology or Freight never publishes.
+There is no fallback that publishes on a missing topology or realizer either.
 
-Known limits: the GHCR push happens before the candidate verdict (registry
-verification needs the pushed digest), so a blocked verdict stops
-attestation, the tag and the GitHub Release but leaves the version tag in
-GHCR. The `hobo` binary's shell parser does not yet pass `--file`/`--camp` to
-`hobo deploy`, so the release scripts call the verb's host
-(`openDefaultCdHost`, `runCdDeploySubcommand`) directly.
+Remaining gaps and limits:
+
+- **OCI blobs and manifest (unmet).** `docker push` still uploads the image's
+  blobs and manifest (it is how the build produces the digest); the realizer
+  writes only the release tag by digest. The OCI Camp names no source
+  registry and the image is not stored in the CD artifact store, so the
+  realizer refuses an absent manifest instead of uploading it. Closing this
+  means storing the image (or naming a source registry) so
+  `@hobo/provider-oci-registry` uploads blobs and manifest by digest itself.
+  A blocked verdict stops attestation, the tag and the GitHub Release but
+  leaves what `docker push` wrote.
+- **npm publish and dist-tag moves (unmet).** The npm realizer does not
+  publish. The release records no Sigstore bundle for the provenance its Camp
+  requires (`npm-provenance-bundle-missing`; npm's CLI makes the bundle
+  during `npm publish --provenance`), and `@hobo/provider-npm` refuses OIDC
+  trusted publishing of scoped names (`npm-oidc-scoped-unsupported`: the
+  registry routes the token exchange only for the `%2f`-escaped name, which
+  the transport guard refuses). Closing it means recording the bundle in the
+  Freight and binding token auth for the scoped names.
+- **Pages history.** The Pages realizer commits on the observed head instead
+  of force-pushing an orphan commit, so `gh-pages` keeps one commit per
+  deploy. Blobs are shared by content, so each commit adds only the files
+  that changed (hashed `_astro/` bundles, regenerated pages), but the branch
+  and a full clone of it grow without bound. Nothing prunes it yet; resetting
+  the branch to a single orphan commit is a manual operation (the next deploy
+  commits on whatever head it observes).
+- **Pages upload rate.** Each new blob is one `POST /git/blobs`, which counts
+  against GitHub's secondary limit on content creation (80 per minute, 500 per
+  hour). The catalog realizer looks each blob up first (`GET`, outside that
+  limit) and remembers the blobs GitHub acknowledged across passes, so a
+  repeat pass or a re-run uploads only what GitHub does not hold yet. A deploy
+  that changes more than about 75 files at once (a full rebuild of the about
+  290-file site) can still hit the limit: that pass blocks with the
+  provider's rate-limit refusal and fails the release, and re-running the job
+  continues from the blobs already uploaded.
 
 ## Follow-Up Gate
 
