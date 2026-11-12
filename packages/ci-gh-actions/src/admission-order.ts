@@ -11,7 +11,7 @@ export type AdmissionKey = Readonly<{
 	headSha?: string | undefined;
 }>;
 
-/** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
+/** The rank of merge_group, push, workflow_run, and workflow_dispatch runs: trunk work. */
 export const TRUNK_RANK = 0;
 
 /** Merge-group checks outrank main-push gates on a shared trunk host. */
@@ -20,6 +20,7 @@ export function trunkEventPriority(event: string): number {
 		case "merge_group":
 			return 0;
 		case "push":
+		case "workflow_run":
 		case "workflow_dispatch":
 			return 1;
 		default:
@@ -35,6 +36,7 @@ export function admissionRank(event: string): number {
 	switch (event) {
 		case "merge_group":
 		case "push":
+		case "workflow_run":
 		case "workflow_dispatch":
 			return TRUNK_RANK;
 		case "schedule":
@@ -66,6 +68,40 @@ const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
 const MAIN_FULL_GATE_JOB = "Main full gate";
 const CI_DEPS_LAYER_JOB = "CI deps layer (pnpm)";
+const MAIN_TRAIN_RELEASE_GATE = "Main train release gate (nbgv)";
+const RELEASE_CONTRACT_JOB = "Release contract + affected OCI images";
+const RELEASE_OCI_GATE_JOB = "Build all OCI images on tag (gate publish)";
+const RELEASE_GHCR_PUBLISH_JOB = "Publish GHCR images (tagged release)";
+const RELEASE_PAGES_JOB = "Publish GitHub Pages (site/)";
+const RELEASE_NPM_JOB = "npm publish train (SDK allowlist)";
+const BUILD_VERIFY_RELEASE_IMAGE = /Build and verify release image/u;
+
+function isMainTrainReleaseRun(event: string): boolean {
+	return (
+		event === "workflow_run" ||
+		event === "push" ||
+		event === "workflow_dispatch"
+	);
+}
+
+/** Phase within a main-train release workflow run (lower admits first on the host). */
+export function mainTrainReleasePhase(
+	jobName: string | undefined,
+): number | undefined {
+	if (!jobName) return undefined;
+	if (jobName === "Route runners" || jobName === MAIN_TRAIN_RELEASE_GATE)
+		return 0;
+	if (jobName === RELEASE_CONTRACT_JOB) return 1;
+	if (jobName === RELEASE_OCI_GATE_JOB || BUILD_VERIFY_RELEASE_IMAGE.test(jobName))
+		return 2;
+	if (
+		jobName === RELEASE_GHCR_PUBLISH_JOB ||
+		jobName === RELEASE_PAGES_JOB ||
+		jobName === RELEASE_NPM_JOB
+	)
+		return 3;
+	return undefined;
+}
 
 export function mainWorkspaceShardIndex(
 	jobName: string | undefined,
@@ -84,7 +120,18 @@ export function isMainTrunkFleetDeferJob(
 	jobName: string | undefined,
 	runEvent?: string | undefined,
 ): boolean {
-	return mainFabricTrunkPhase(jobName, runEvent) <= 3;
+	return trunkAdmissionPhase(jobName, runEvent) <= 3;
+}
+
+function trunkAdmissionPhase(
+	jobName: string | undefined,
+	runEvent?: string | undefined,
+): number {
+	if (runEvent && isMainTrainReleaseRun(runEvent)) {
+		const releasePhase = mainTrainReleasePhase(jobName);
+		if (releasePhase !== undefined) return releasePhase;
+	}
+	return mainFabricTrunkPhase(jobName, runEvent);
 }
 
 function mainFabricTrunkPhase(
@@ -217,15 +264,18 @@ export function createAdmissionOrder(
 				// Main pushes queue (finding 113), so two push runs hold jobs at once only when
 				// one is winding down after a manual cancel or a re-run; admit the newest first
 				// so slots serve live trunk.
-				if (a.key.event === "push" && b.key.event === "push") {
+				if (
+					(a.key.event === "push" && b.key.event === "push") ||
+					(a.key.event === "workflow_run" && b.key.event === "workflow_run")
+				) {
 					const pushStart = (ms: number) => (Number.isFinite(ms) ? ms : 0);
 					if (pushStart(a.key.startedAtMs) !== pushStart(b.key.startedAtMs))
 						return pushStart(b.key.startedAtMs) - pushStart(a.key.startedAtMs);
 				} else if (a.key.startedAtMs !== b.key.startedAtMs)
 					return a.key.startedAtMs - b.key.startedAtMs;
 				if (a.ref.runId === b.ref.runId) {
-					const phaseA = mainFabricTrunkPhase(a.ref.jobName, a.key.event);
-					const phaseB = mainFabricTrunkPhase(b.ref.jobName, b.key.event);
+					const phaseA = trunkAdmissionPhase(a.ref.jobName, a.key.event);
+					const phaseB = trunkAdmissionPhase(b.ref.jobName, b.key.event);
 					if (phaseA !== phaseB) return phaseA - phaseB;
 					const shardA = mainWorkspaceShardIndex(a.ref.jobName);
 					const shardB = mainWorkspaceShardIndex(b.ref.jobName);
