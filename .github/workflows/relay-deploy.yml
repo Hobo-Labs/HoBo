@@ -5,9 +5,10 @@ name: HoBo relay deploy
 # it has been deployed so far (ADR-0179 amendment "Secretless first";
 # docs/design/hosted-relay-stateless.md). This workflow deploys nothing and
 # holds no Vercel token: it checks, by identity name, that the relay's secret
-# store accepts this repository's GitHub OIDC token, then finds the deployment
-# Vercel reported for the pushed commit through GitHub's Deployments API and
-# smoke-checks it.
+# store accepts this repository's GitHub OIDC token, then
+# `hobo ci deploy --adopt` finds the deployment Vercel reported for the pushed
+# commit through GitHub's Deployments API and promotes it through @hobo/cd,
+# preview then production, with fail-closed /healthz and /readyz verification.
 #
 # No secret and no repository variable configures this workflow. The store's
 # coordinates (ids and an origin, no credential) are committed to
@@ -89,7 +90,7 @@ jobs:
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: read
       deployments: read
@@ -129,7 +130,7 @@ jobs:
       # Pass/fail by identity name: hobo-ci-writer signs in with this job's
       # GitHub OIDC token (sign-in only, then revoke; Infisical role shape is
       # not asserted — on Free attach, Member may read). hobo-ci-relay is
-      # not-run here; Vercel OIDC is proved by /readyz below.
+      # not-run here; Vercel OIDC is proved by production's /readyz below.
       - name: Verify the secret store connection
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -142,58 +143,28 @@ jobs:
           node --experimental-strip-types --no-warnings \
             scripts/ci/relay-deploy-secret-store-verify-report.mts \
             "$verify_json" "$verify_err" "$status"
-      # Vercel's Git integration reports each deployment to GitHub's
-      # Deployments API with its URL; this reads it with the job's own token.
-      - name: Find Vercel's Git deployment of this commit
-        id: deploy
+      # Vercel's Git integration built and promoted this commit. hobo adopts
+      # that deployment (packages/ci-vercel/README.md "Token-free relay
+      # mode"): it finds it through GitHub's Deployments API with this job's
+      # own token (deployments: read), records it as relay Freight, and
+      # promotes it through @hobo/cd preview -> production, verifying /healthz
+      # (preview) and /healthz and /readyz (production) at the deployment's own
+      # URL, failing closed. Observe-only: no Vercel token, no deployment
+      # created or changed; a failed production verification is recorded in
+      # the CD journal, never rolled back on Vercel.
+      - name: Adopt Vercel's Git deployment of this commit
         if: steps.gate.outputs.run == 'true'
-        timeout-minutes: 20
+        timeout-minutes: 40
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          url=""
-          for _ in $(seq 1 90); do
-            for id in $(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$GITHUB_SHA&per_page=50" \
-              --jq '.[] | select((.environment | ascii_downcase | test("production")) and (.environment | test("hobo-ci"))) | .id'); do
-              url="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
-                --jq '[.[] | select(.state == "success")][0].environment_url // empty')"
-              [ -n "$url" ] && break
-            done
-            [ -n "$url" ] && break
-            sleep 10
-          done
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "- Vercel deployment of $GITHUB_SHA: ${url:-not reported within 15 minutes}" >> "$GITHUB_STEP_SUMMARY"
-          if [ -z "$url" ]; then
-            echo "::error title=Relay deploy::Vercel reported no successful production deployment of hobo-ci for this commit"
-            exit 1
-          fi
-      - name: Smoke-check /healthz and /readyz
-        if: steps.gate.outputs.run == 'true'
-        env:
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
-        run: |
-          set -uo pipefail
-          base="${DEPLOYMENT_URL%/}"
-          probe() {
-            curl -sS -o "$RUNNER_TEMP/probe.json" -w '%{http_code}' --max-time 20 \
-              --retry 3 --retry-delay 5 --retry-all-errors "$base$1" || echo 000
-          }
-          health="$(probe /healthz)"
-          echo "/healthz answered $health"
-          case "$health" in
-            5??) echo "::error title=Relay smoke check::/healthz answered $health"; exit 1 ;;
-            200) ;;
-            *) echo "::warning title=Relay smoke check::/healthz answered $health (a protected deployment URL answers 401)" ;;
-          esac
-          ready="$(probe /readyz)"
-          state="$(node -e 'try { const body = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(String(body.status ?? body.state ?? "")); } catch { console.log(""); }' "$RUNNER_TEMP/probe.json")"
-          echo "/readyz answered $ready ${state}"
-          echo "- /healthz: $health; /readyz: $ready ${state}" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$ready" != "200" ]; then
-            echo "::notice title=Relay readiness::/readyz answered $ready ${state}; until the store's folder is filled the relay reports config-unavailable"
-          fi
+          node packages/hobo/dist/bin/hobo.js ci deploy --adopt \
+            --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
+            --json > "$RUNNER_TEMP/relay-adopt.json"
+          status=$?
+          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-adopt.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+          exit "$status"
 
   # The GitHub App's credentials, from GitHub straight into the relay's
   # secrets manager (ADR-0179 amendment "Secretless first"): no person and no

@@ -430,6 +430,27 @@ failed deployments, project records, and guessed aliases provide no serving
 endpoint proof. Endpoint metadata never substitutes for artifact or business
 health evidence.
 
+## Observe-only adoption of a Git-integration deployment
+
+`src/git-integration-adoption.ts` is the Vercel side of adopting a deployment
+Vercel's Git integration made, for a publisher that holds no Vercel token
+(`hobo ci deploy --adopt`,
+[`packages/ci-vercel/README.md`](../../ci-vercel/README.md#token-free-relay-mode-hobo-ci-deploy---adopt)).
+Pure functions over the JSON GitHub's Deployments API returns; the caller owns
+the transport and the credential, and nothing here reads the network or the
+environment:
+
+| Export | What it decides |
+|---|---|
+| `vercelGitDeploymentRecords` | which records are Vercel's deployment of a commit for a project and target (`Production – hobo-ci`, exactly: `hobo-ci-relay` is not `hobo-ci`) |
+| `vercelGitDeploymentStatus` | the state the latest status reports (`success` READY, `failure`/`error` ERROR, `inactive` SUPERSEDED, otherwise QUEUED/BUILDING) and the https URL and `vercel.com` inspector URL of the newest status naming them |
+| `vercelAdoptionVerdict` | converged only when the deployment is READY and is the deployment of the pinned commit; ERROR, SUPERSEDED and COMMIT_MISMATCH are blocked (`VERCEL_GIT_BLOCKED_STATES`) |
+
+It never creates, promotes, aliases or cancels a deployment, and adds no method
+to the provider port. GitHub's records carry no Vercel `dpl_` id, so the id
+adopted is GitHub's record id. Exercised against recorded-shape fixtures only
+(`test/git-integration-adoption.test.ts`).
+
 ## Delivery coverage (plan 0024 WP14, I14)
 
 `VERCEL_HOSTING_COVERAGE` (contract `hobo.provider-hosting-coverage/v1`,
