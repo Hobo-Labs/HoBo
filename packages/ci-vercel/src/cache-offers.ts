@@ -159,6 +159,7 @@ const Document = z
 	.object({
 		offers: z.array(Offer).max(CACHE_BACKEND_IDS.length).optional(),
 		marks: Marks.optional(),
+		membershipEpochs: z.boolean().optional(),
 	})
 	.strict();
 
@@ -173,6 +174,8 @@ export const DEFAULT_CACHE_ROUTING_MARKS: FleetRoutingMarks =
 export type CacheOffers = Readonly<{
 	offers: ReadonlyMap<CacheBackendId, FleetOffer>;
 	marks: FleetRoutingMarks;
+	/** The cache fleet's `membership_epochs` (design §6.10): false until the last cutover step. */
+	membershipEpochs: boolean;
 }>;
 
 /**
@@ -187,7 +190,11 @@ export function parseCacheOffers(
 ): CacheOffers {
 	const offers = new Map(defaultCacheOffers(commands));
 	if (json === undefined || json === "")
-		return { offers, marks: DEFAULT_CACHE_ROUTING_MARKS };
+		return {
+			offers,
+			marks: DEFAULT_CACHE_ROUTING_MARKS,
+			membershipEpochs: false,
+		};
 	let document: z.infer<typeof Document>;
 	try {
 		document = Document.parse(JSON.parse(json));
@@ -222,6 +229,7 @@ export function parseCacheOffers(
 		const marks = document.marks ?? {};
 		return {
 			offers,
+			membershipEpochs: document.membershipEpochs ?? false,
 			marks: parseFleetRoutingMarks({
 				switchAt:
 					marks.switchAtPercent === undefined

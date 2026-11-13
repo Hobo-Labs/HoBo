@@ -12,6 +12,10 @@ message RelayCacheOffers {
   // An offer named here replaces the default for its backend entirely.
   repeated RelayCacheOffer offers = 1;
   optional RelayCacheMarks marks = 2;
+  // The cache fleet's FleetPolicy.membership_epochs (@hobo/fleet, design
+  // section 6.10): assignment entries carry member sets and a membership
+  // change is a decided epoch. Off until the last cutover step.
+  optional bool membership_epochs = 3;
 }
 
 message RelayCacheOffer {

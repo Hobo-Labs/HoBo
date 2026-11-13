@@ -53,6 +53,7 @@ import {
 	rebuildInflight,
 	rebuildLease,
 } from "@hobo/ci-gh-actions/relay-cache";
+import type { OneActiveTick } from "@hobo/fleet";
 import { bootstrap, workflow } from "./_generated-assets/relay-assets.js";
 import {
 	cacheBindingEnv,
@@ -61,11 +62,7 @@ import {
 	type OpenedCacheBackend,
 	openCacheBackends,
 } from "./cache-backend.js";
-import {
-	type CacheFleetOptions,
-	type CacheFleetTick,
-	createCacheFleet,
-} from "./cache-fleet.js";
+import { type CacheFleetOptions, createCacheFleet } from "./cache-fleet.js";
 import { cacheOfferRateCards, parseCacheOffers } from "./cache-offers.js";
 import {
 	denyDirectSandboxEgress,
@@ -594,7 +591,7 @@ export async function composeStatelessRelay(
 		await runtime.step(lease, step.step);
 	}
 
-	async function fleetTick(): Promise<CacheFleetTick | undefined> {
+	async function fleetTick(): Promise<OneActiveTick | undefined> {
 		try {
 			return await fleet.tick();
 		} catch (error) {

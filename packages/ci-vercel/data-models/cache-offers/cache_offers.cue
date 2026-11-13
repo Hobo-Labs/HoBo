@@ -50,4 +50,6 @@ package vercel
 #RelayCacheOffers: {
 	offers?: [...#RelayCacheOffer]
 	marks?: #RelayCacheMarks
+	// FleetPolicy.membership_epochs of the one-active cache fleet; false when unset.
+	membershipEpochs?: bool
 }
