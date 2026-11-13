@@ -485,6 +485,7 @@ async function served(
 			}
 			return 1;
 		}
+		if (decoder.decode(stdin) === "boom") throw new Error("exec failed");
 		output(encoder.encode(`ran: ${decoder.decode(stdin)}`));
 		return 7;
 	});
@@ -725,6 +726,129 @@ describe("serveSessions", () => {
 		};
 		await expect(fetching()).rejects.toThrow(/digest/);
 		await serving;
+	});
+
+	async function exchange(
+		s: Served,
+		grant: SignedEnvelope,
+		send: readonly Readonly<{ tag: number; text: string }>[],
+	): Promise<readonly Readonly<{ tag: number; text: string }>[]> {
+		const outcome = await s.dialler.dial({
+			grant,
+			signal: new AbortController().signal,
+		});
+		if (!outcome.ok) throw new Error(outcome.error.message);
+		for (const message of send)
+			await writeMessage(
+				outcome.value,
+				message.tag === SESSION_TAG.INPUT
+					? SESSION_TAG.INPUT
+					: message.tag === SESSION_TAG.END
+						? SESSION_TAG.END
+						: SESSION_TAG.REQUEST,
+				encoder.encode(message.text),
+			);
+		const received: { tag: number; text: string }[] = [];
+		for await (const message of readMessages(outcome.value))
+			received.push({
+				tag: message.tag,
+				text:
+					message.tag === SESSION_TAG.EXIT
+						? String(Buffer.from(message.payload).readInt32BE(0))
+						: decoder.decode(message.payload),
+			});
+		await outcome.value.close();
+		return received;
+	}
+
+	it("forwards to a port inside the order's sandbox", async () => {
+		const s = await served();
+		const grant = await s.f.grant({
+			purpose: SessionPurpose.FORWARD,
+			orderId: "ord_1",
+			port: 8080,
+		});
+		const received = await exchange(s, grant, [
+			{ tag: SESSION_TAG.INPUT, text: "GET /" },
+			{ tag: SESSION_TAG.END, text: "" },
+		]);
+		expect(s.sandbox.runs).toEqual([["nc", "127.0.0.1", "8080"]]);
+		expect(received).toEqual([
+			{ tag: SESSION_TAG.OUTPUT, text: "ran: GET /" },
+			{ tag: SESSION_TAG.EXIT, text: "7" },
+		]);
+	});
+
+	it("answers ERROR when the command cannot run or the session speaks out of turn", async () => {
+		const s = await served();
+		const shell = () =>
+			s.f.grant({ purpose: SessionPurpose.SHELL, orderId: "ord_1" });
+		const failed = await exchange(s, await shell(), [
+			{ tag: SESSION_TAG.INPUT, text: "boom" },
+			{ tag: SESSION_TAG.END, text: "" },
+		]);
+		expect(failed.map((message) => message.tag)).toEqual([SESSION_TAG.ERROR]);
+		const outOfTurn = await exchange(s, await shell(), [
+			{ tag: SESSION_TAG.REQUEST, text: BLOB_DIGEST },
+		]);
+		expect(outOfTurn.map((message) => message.tag)).toEqual([
+			SESSION_TAG.ERROR,
+		]);
+		const blobOutOfTurn = await exchange(
+			s,
+			await s.f.grant({
+				purpose: SessionPurpose.BLOB,
+				orderId: "ord_1",
+				blobDigests: [BLOB_DIGEST],
+			}),
+			[{ tag: SESSION_TAG.INPUT, text: "x" }],
+		);
+		expect(blobOutOfTurn.map((message) => message.tag)).toEqual([
+			SESSION_TAG.ERROR,
+		]);
+	});
+
+	it("refuses a blob it does not hold, and a blob session with no order", async () => {
+		const s = await served();
+		const other = `sha256:${"2".repeat(64)}`;
+		const notHeld = await exchange(
+			s,
+			await s.f.grant({
+				purpose: SessionPurpose.BLOB,
+				orderId: "ord_1",
+				blobDigests: [other],
+			}),
+			[{ tag: SESSION_TAG.REQUEST, text: other }],
+		);
+		expect(notHeld).toEqual([
+			{ tag: SESSION_TAG.ERROR, text: `blob ${other} is not held here` },
+		]);
+		const noOrder = await exchange(
+			s,
+			await s.f.grant({
+				purpose: SessionPurpose.BLOB,
+				blobDigests: [BLOB_DIGEST],
+			}),
+			[{ tag: SESSION_TAG.REQUEST, text: BLOB_DIGEST }],
+		);
+		expect(noOrder.map((message) => message.tag)).toEqual([SESSION_TAG.ERROR]);
+	});
+
+	it("does not finish a blob whose held bytes do not match its digest", async () => {
+		const s = await served({ blob: encoder.encode("not the blob") });
+		const received = await exchange(
+			s,
+			await s.f.grant({
+				purpose: SessionPurpose.BLOB,
+				orderId: "ord_1",
+				blobDigests: [BLOB_DIGEST],
+			}),
+			[{ tag: SESSION_TAG.REQUEST, text: BLOB_DIGEST }],
+		);
+		expect(received.at(-1)).toEqual({
+			tag: SESSION_TAG.ERROR,
+			text: `the held bytes do not match ${BLOB_DIGEST}`,
+		});
 	});
 
 	it("stop ends acceptance on every transport", async () => {
