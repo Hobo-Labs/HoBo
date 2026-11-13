@@ -4,8 +4,11 @@
  * configures one, and `hobo_fleet_sandbox_unavailable` with the reason when
  * nothing qualifies. Probing is replaced by its answers; no runtime runs.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type FleetLog, SandboxTier } from "@hobo/fleet";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
 	type HostSetup,
 	linuxCandidates,
@@ -16,6 +19,10 @@ import type { OciCalls } from "../../src/sandbox/oci-runtime.js";
 
 type Made = { binary: string; flags: readonly string[] };
 
+// No runtime runs here; the rootfs is a throwaway directory that nothing reads.
+const rootfs = mkdtempSync(join(tmpdir(), "hobo-platform-rootfs-"));
+afterAll(() => rmSync(rootfs, { recursive: true, force: true }));
+
 function build(setup: HostSetup) {
 	const made: Made[] = [];
 	const logged: Parameters<FleetLog>[1][] = [];
@@ -25,7 +32,7 @@ function build(setup: HostSetup) {
 	const drivers = linuxCandidates(setup, {
 		log,
 		run: "/run/hobo-test",
-		images: { rootfs: async () => "/nonexistent" },
+		images: { rootfs: async () => rootfs },
 		makeCalls(binary, _stateRoot, flags): OciCalls {
 			made.push({ binary, flags });
 			const fail = async () => {

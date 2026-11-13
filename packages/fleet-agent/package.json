@@ -2,12 +2,15 @@
 	"name": "@hobo/fleet-agent",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo Fleet device library: key stores, sandbox drivers, the per-order egress proxy, host capacity and service installers. A library; it has no binary.",
+	"description": "HoBo Fleet device library: key stores, sandbox drivers, the per-order egress proxy, host capacity and service installers, plus the `fleet-agent-sandbox-provision` command that provisions the pinned sandbox runtime (D58).",
 	"type": "module",
 	"files": [
 		"LICENSE",
 		"dist"
 	],
+	"bin": {
+		"fleet-agent-sandbox-provision": "./dist/cli/sandbox-provision.js"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",

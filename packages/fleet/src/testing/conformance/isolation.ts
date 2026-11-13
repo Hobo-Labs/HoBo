@@ -327,7 +327,9 @@ export const ISOLATION_ASSERTIONS: readonly ConformanceAssertion<IsolationProbe>
 							mount.target !== "/" &&
 							mount.target !== PROBE_MOUNT &&
 							!RUNTIME_FILES.has(mount.target) &&
-							!PSEUDO_FILESYSTEMS.has(mount.fstype),
+							!PSEUDO_FILESYSTEMS.has(mount.fstype) &&
+							// gVisor's sentry always mounts its own internal `dev` file system at /dev (D58); it is not a host mount.
+							!(mount.target === "/dev" && mount.fstype === "dev"),
 					);
 					ensure(
 						extra.length === 0,

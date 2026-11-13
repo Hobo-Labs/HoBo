@@ -53,6 +53,12 @@ gathers them here as the waves merge.
 - **Conformance:** key stores pass `runKeyStoreConformance`; sandbox drivers pass
   `runSandboxConformance` and, where the runtime is provisioned,
   `runSandboxIsolationProbe`.
+- **Sandbox runtime (D58):** the agent provisions gVisor `runsc` itself (pinned
+  release, SHA-512 checked, cached), so no host `crun`, `runc` or `nsenter` is
+  needed. `fleet-agent-sandbox-provision [--cache <dir>] [--probe]` runs the
+  same provisioning and privilege probe for CI and operators, and prints the
+  mode (`rootful`, `rootless` or `unavailable`). O10's fallback (A10) names this
+  runtime in `scripts/fleet-outcome.mts`.
 
 ## Architecture placement
 

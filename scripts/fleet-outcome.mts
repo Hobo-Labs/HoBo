@@ -244,7 +244,7 @@ export const OUTCOMES: readonly OutcomeSpec[] = [
 		threshold:
 			"An S1 driver is present; for each driver every isolation property of the probe holds",
 		fallbackThreshold:
-			"A10: the same properties on the rootful runtime with user-namespace remapping. A11, A12: only drivers whose self-test passed are probed; an S1 driver is still required",
+			"A10: the same properties on the agent-provisioned runsc, rootful or rootless (D58, L40). A11, A12: only drivers whose self-test passed are probed; an S1 driver is still required",
 		assumptions: ["A10", "A11", "A12"],
 		owner: "L38",
 	},

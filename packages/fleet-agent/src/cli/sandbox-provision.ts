@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * `fleet-agent sandbox provision` (D58): provisions the pinned gVisor runtime
  * and probes this host with the same code the agent's `sandboxDrivers` runs,
