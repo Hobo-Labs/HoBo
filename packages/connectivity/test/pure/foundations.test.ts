@@ -34,6 +34,7 @@ import {
 	createTenantIsolationRegistry,
 	tenantFromSlug,
 } from "../../src/tenancy/isolation.js";
+import { fleetDouble } from "../support/fleet-agent.js";
 
 describe("connectivity config + naming (pure)", () => {
 	it("parses public DNS managedBy modes", () => {
@@ -166,6 +167,7 @@ describe("overlay CLI stubs (no HTTP)", () => {
 				cloud: "aws",
 			},
 			overlay,
+			fleet: fleetDouble().fleet,
 			policy,
 			metering: bus,
 		});
@@ -447,6 +449,7 @@ describe("multi-tenant isolation + dynamic DNS (pure)", () => {
 				],
 			},
 			overlay,
+			fleet: fleetDouble().fleet,
 			metering: bus,
 			publicDns: dns,
 		});

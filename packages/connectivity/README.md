@@ -112,14 +112,53 @@ const metering = createMeteringBus([sink]);
 const policy = createTagAclPolicyEngine({ metering });
 const overlay = createTailscaleOverlay({ metering, policy });
 
+// A junction is a HoBo Fleet device with role JUNCTION (ADR-0182). The host
+// composes createFleetAgent (@hobo/fleet/agent) over its own deps; the junction
+// asks for one agent to enroll and one to run with the overlay transport.
 const agent = createJunctionAgent({
   config: { tenantId: "acme", name: "junction-aws-1", role: "junction", env: "dev", cloud: "aws" },
   overlay,
+  fleet: {
+    agent: (extra) =>
+      createFleetAgent({ ...deps, transports: [...deps.transports, ...extra] }),
+    enrollment, // EnrollmentRequest with a bootstrap token; omit once enrolled
+  },
   policy,
   metering,
 });
+// Enrolls (role JUNCTION added), joins the overlay with the single-use
+// OverlayJoin the authority returned, then runs the device agent with
+// createOverlayTransport(overlay).
 await agent.start();
 ```
+
+There is no configured overlay key: the join credential is only ever the
+`OverlayJoin.credential` from enrollment, and Tailscale reads it from a private
+file, never from the command line.
+
+### HoBo Fleet overlay transport (ADR-0182)
+
+`createOverlayTransport(overlay)` is the `overlay` `FleetTransport` of HoBo
+Fleet (design §6.12 item 2): a TCP stream between two devices' overlay
+addresses, for a tenant that already runs Tailscale, NetBird or WireGuard. The
+host joins the overlay first; `start` listens on the device's overlay address
+and answers the identity `overlay:<SEAL key>@<host>:<port>`.
+
+- Every session is end-to-end framed (`frameStream`) with keys from the X25519
+  agreement of the two SEAL keys the grant names, salted with a nonce from each
+  side and the grant's session id, so the overlay sees ciphertext and a replay
+  of a recorded handshake does not authenticate.
+- The acceptor reports the grant's initiator identity to `authorise` only when
+  the dialler proved that identity's SEAL key and connected from its overlay
+  host; otherwise it reports the identity the connection proves, which no
+  grant names. Nothing reaches the handler before `authorise` answers true.
+- `runTransportConformance` passes over a fake `OverlayNetwork` on loopback
+  (`test/overlay-transport.test.ts`, O12).
+- Limit: the session grant names one transport identity per party (the
+  `TRANSPORT` key of the bundle, today the `p2p` endpoint), so an overlay dial
+  needs a grant whose acceptor identity is an overlay identity; the transport
+  answers `unavailable` otherwise, and `selectTransport` falls through to
+  `bus-relay`.
 
 Example Tailscale ACL tags:
 
@@ -285,6 +324,7 @@ const agent = createJunctionAgent({
     dnsTargets: [{ resource: "web", app: "myapp", backendUrl: "http://127.0.0.1:7071" }],
   },
   overlay,
+  fleet, // as above: the junction's fleet device
   policy,
   publicDns: dns,
 });
@@ -329,7 +369,9 @@ import {
   DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK,
 } from "@hobo/connectivity";
 
-const membership = new EnvMembershipService({ tenant: "acme" });
+// Memberships bound to a device (nodeId: a fleet MemberId) count only while
+// that member is ACTIVE in the fleet registry passed here.
+const membership = new EnvMembershipService({ tenant: "acme", registry });
 membership.assign({
   principalId: "user:alice",
   isolationClass: "development",

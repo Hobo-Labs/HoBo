@@ -65,6 +65,9 @@ export {
 	type JunctionAgent,
 	type JunctionAgentConfig,
 	type JunctionAgentRole,
+	type JunctionAgentStart,
+	type JunctionFleet,
+	type JunctionFleetAgent,
 } from "./junction-agent.js";
 export {
 	attachNamedEndpoints,
