@@ -305,8 +305,10 @@ Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
 - **`runner-host-not-converged` / `runner-host-unready`** in a runner fleet
   promotion's verification: the host's agent reported the Set refused (for
   example `runner-host-verify-failed`, restored to the previous digest) or
-  the host is not ready. The fan-out halts at its progress deadline; fix the
-  host or the image and promote newer Freight.
+  the host is not ready. A BLOCKED report fails the host at once
+  (`rollout-camp-blocked`, carrying the agent's reasons) instead of waiting
+  out the progress deadline; the host's Set is restored to its predecessor
+  and the fan-out halts. Fix the host or the image and promote newer Freight.
 - **`cd-topology-station-mismatch`**: a Camp record names another Station.
   Leave `stationId` empty or match `HOBO_STATION`.
 - **`cd-topology-duplicate-camp`**: two topology files declare the same Camp.
