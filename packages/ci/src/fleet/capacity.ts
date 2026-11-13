@@ -3,9 +3,8 @@
  * size fits under the host reserve and volatility margin, and how many fit
  * side by side.
  *
- * The record the relay publishes to `HOBO_CI_FLEET_CAPACITY` is
- * `FleetCapacityPublished` in `capacity-input.ts`; it is the only shape of
- * that variable.
+ * No capacity record leaves the box: whether the fleet can take a run is the
+ * relay's to decide (ADR-0180).
  */
 
 export function memoryAdmitHeadroom(

@@ -43,13 +43,6 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
-	createFleetCapacityPublisher,
-	type FleetCapacityEvent,
-	type FleetCapacityLog,
-	type FleetCapacityPublisher,
-	type FleetCapacityPublishInput,
-} from "./fleet-capacity.js";
-export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,
@@ -58,13 +51,6 @@ export {
 	type FleetRoutePublishInput,
 	writeRepositoryVariable,
 } from "./fleet-routes.js";
-export {
-	createFleetStatePublisher,
-	FLEET_STATE_MAX_AGE_MS,
-	FLEET_STATE_VARIABLE,
-	type FleetStateEvent,
-	type FleetStatePublisher,
-} from "./fleet-state.js";
 export {
 	agreedFleetBlocks,
 	countFleetVerdictAllowance,
@@ -428,7 +414,6 @@ export {
 	MESH_REPORT_MAX_NODES,
 	type MeshReading,
 	meshAdvertJson,
-	meshFleetStateJson,
 	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,
