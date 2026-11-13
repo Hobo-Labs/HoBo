@@ -44,12 +44,18 @@ Progressive exposure for one promotion, Camp by Camp and stage by stage
 5. **Fail closed.** FAIL, INCONCLUSIVE, a passed progress deadline
    (`VerificationSpec.progress_deadline_ms`, default
    `CD_DEFAULTS.verificationProgressDeadlineMs`), a rejected experiment, a
-   denied approval or a refused capacity reservation rolls back.
+   denied approval or a refused capacity reservation rolls back. A reconciler
+   report of `BLOCKED` on the promoted Set never progresses, so it rolls back at
+   once (`rollout-camp-blocked`, carrying the reconciler's reasons) instead of
+   waiting out the progress deadline.
 6. **Rollback (D12, I7).** Zero exposure through Station cutover (the reverse
    cutover to the stable backend), then a rollback Delta (`intent: rollback`,
    base = the promoted Set, Freight = the predecessor Set's) opened on the
    Delta ledger for the promotion gate to decide and the reconciler to apply.
-   The orchestrator never applies a Set (I2).
+   The orchestrator never applies a Set (I2). That Delta records intent and
+   target only (no changes); the promotion saga's concrete rollback Delta on
+   the same base supersedes it (`delta-superseded`), so compensation is never
+   refused as `delta-overlap`.
 
 ## Architecture notes
 

@@ -158,6 +158,109 @@ describe("Delta lifecycle", () => {
 		).toEqual(["delta-overlap"]);
 	});
 
+	it("a concrete rollback Delta supersedes the open rollback Delta a rollout left on the same base", async () => {
+		const { desired, store } = setup();
+		const v1 = await applyResources(desired, "d1", SHOP_V1);
+		const v2 = await applyResources(desired, "d2", SHOP_V2);
+		// The rollout's rollback Delta: intent and target only, no resolved changes.
+		unwrap(
+			await desired.open(
+				delta("rollout-rollback", {
+					intent: "rollback",
+					baseSetId: v2.setId,
+				}),
+				ctxAt(T0 + 10),
+			),
+		);
+		const changes = diffResolvedSets(
+			await desired.resolved(v2),
+			await desired.resolved(v1),
+		);
+		unwrap(
+			await desired.open(
+				delta("compensate", {
+					intent: "rollback",
+					baseSetId: v2.setId,
+					changes,
+				}),
+				ctxAt(T0 + 11),
+			),
+		);
+		const tail = store.log.slice(-2).map((e) => e.event.type);
+		expect(tail).toEqual([CD_EVENTS.DeltaRejected, CD_EVENTS.DeltaOpened]);
+		expect(JSON.stringify(store.log.at(-2)?.event.data)).toContain(
+			"delta-superseded",
+		);
+		const restored = unwrap(
+			await desired.apply(
+				{
+					deltaId: deltaId("compensate"),
+					gateDecisionId: "gate-compensate",
+					resolved: resolvedFor("prod-aws", SHOP_V1),
+					origin: SetOrigin.ROLLBACK,
+				},
+				ctxAt(T0 + 12),
+			),
+		);
+		expect(restored.predecessorSetId).toBe(v2.setId);
+		expect((await desired.current(PROD))?.contentHash).toBe(v1.contentHash);
+		// The superseded Delta is closed as rejected: applying it is refused.
+		expect(
+			codes(
+				await desired.apply(
+					{
+						deltaId: deltaId("rollout-rollback"),
+						gateDecisionId: "gate-late",
+						resolved: resolvedFor("prod-aws", SHOP_V1),
+						origin: SetOrigin.ROLLBACK,
+					},
+					ctxAt(T0 + 13),
+				),
+			),
+		).toEqual(["delta-rejected"]);
+	});
+
+	it("one in-flight Delta still holds: a rollback never supersedes an open promote or concrete rollback Delta", async () => {
+		const { desired } = setup();
+		const v1 = await applyResources(desired, "d1", SHOP_V1);
+		const v2 = await applyResources(desired, "d2", SHOP_V2);
+		const changes = diffResolvedSets(
+			await desired.resolved(v2),
+			await desired.resolved(v1),
+		);
+		unwrap(
+			await desired.open(
+				delta("concrete", { intent: "rollback", baseSetId: v2.setId, changes }),
+				ctxAt(T0),
+			),
+		);
+		// A marker rollback Delta cannot displace a concrete one.
+		expect(
+			codes(
+				await desired.open(
+					delta("marker", { intent: "rollback", baseSetId: v2.setId }),
+					ctxAt(T0),
+				),
+			),
+		).toEqual(["delta-overlap"]);
+		await desired.reject(deltaId("concrete"), [], ctxAt(T0));
+		unwrap(
+			await desired.open(delta("promote", { baseSetId: v2.setId }), ctxAt(T0)),
+		);
+		expect(
+			codes(
+				await desired.open(
+					delta("rollback", {
+						intent: "rollback",
+						baseSetId: v2.setId,
+						changes,
+					}),
+					ctxAt(T0),
+				),
+			),
+		).toEqual(["delta-overlap"]);
+	});
+
 	it("refuses a Delta whose base is not the current Set", async () => {
 		const { desired } = setup();
 		await applyResources(desired, "d1", SHOP_V1);

@@ -115,7 +115,8 @@ A failing sink never fails a command.
 
 | Symptom (reason code) | Meaning | Action |
 |---|---|---|
-| `delta-overlap` | The Camp already has an open Delta. | Find it with `spec(campId).openDeltaId`; apply or reject it. A promotion that died mid-flight leaves its Delta open: reject it with reason `abandoned`. |
+| `delta-overlap` | The Camp already has an open Delta. | Find it with `spec(campId).openDeltaId`; apply or reject it. A promotion that died mid-flight leaves its Delta open: reject it with reason `abandoned`. The one exception: a concrete rollback Delta (declares changes) supersedes an open rollback Delta with no changes on the same base, rejecting it as `delta-superseded` in the same append. |
+| `delta-superseded` | A rollout's rollback Delta (intent and target, no changes) was replaced by the promotion's concrete rollback Delta on the same base. | Nothing to do; follow the replacement Delta. `hobo.cd.sets.deltas_superseded` counts these. |
 | `delta-stale-base` / `concurrent-apply` | Another writer moved the Camp's current Set. | Re-resolve against `current(campId)` and open a new Delta. Repeated `apply_conflicts` on one Camp means two controllers drive it; check fan-out/promotion leases. |
 | `delta-diff-mismatch` | The resolved set does not match the Delta's declared changes. | Recompute `changes` with `diffResolvedSets(base, resolved)`; a mismatch means the resolver and the Delta disagree about what changes. |
 | `secret-material` | A plaintext secret reached a resolved set. | Replace the value with a `secretRef:` locator at its source (declaration or Matching). Nothing was stored. |
