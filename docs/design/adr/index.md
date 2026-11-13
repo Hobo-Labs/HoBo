@@ -16,7 +16,8 @@
 ## Standalone ADRs
 - [`yard-first-placement.md`](./yard-first-placement.md) — Yard owns provider selection; Camp provider-neutral until attached; Camps movable via Trails (implemented)
 - [`hosted-relay-stateless.md`](./hosted-relay-stateless.md) — ADR-0179: the hosted CI relay keeps no durable state (config service, cache with TTL/CAS, Vercel Queues, GitHub as system of record)
-- [`fleet-verdict.md`](./fleet-verdict.md) — ADR-0180: runner routing asks the relay for a fleet verdict over HTTP at decision time; no capacity figure leaves the relay and nothing about the fleet reaches the route job through a variable
+- [`fleet-verdict.md`](./fleet-verdict.md) — ADR-0180: runner routing asks the relay for a fleet verdict over HTTP at decision time; no capacity figure leaves the relay and nothing about the fleet reaches the route job through a variable (transport superseded by ADR-0181)
+- [`routing-slips.md`](./routing-slips.md) — ADR-0181: the box relay hands each run its route on a routing slip (a parentless commit at `refs/hobo/routing-slip`) and routing policy is committed in `.hobo/ci.json`; no environment or repository variable carries routing
 
 ## Index
 
@@ -189,3 +190,4 @@
 | 0178 | A provider's auth flows, capability mappings, and billing models are one serialized manifest (`@hobo/provider-manifest`) deserialized into the existing pricing-catalog and capability-manifest types | [provider-manifest](provider-manifest.md#adr-0178) |
 | 0179 | The hosted CI relay keeps no durable state: config and secrets in a separate service (Infisical, Vercel OIDC), short-lived job state in a Redis-protocol cache it may lose, Vercel Queues for intake and per-lease steps, GitHub as the system of record; supersedes the relay database, relay database fleet and Neon broker | [hosted-relay-stateless](hosted-relay-stateless.md#adr-0179) |
 | 0180 | Runner routing asks the relay for a fleet verdict: the relay decides which fleet labels new work should stay off and reports them with an expiry, the hosted relay serves them at `GET /v1/fleet/verdicts/{owner}/{repo}`, and the route job asks at decision time; supersedes the `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables as route-job inputs | [fleet-verdict](fleet-verdict.md#adr-0180) |
+| 0181 | The box relay hands each run its route on a routing slip: its answer per class (`pr`, `fork`, `trunk`), written as the message of a parentless commit at `refs/hobo/routing-slip` and read by the route job with `contents: read`; used only unexpired, for its repository and with committed labels, else the queue rule decides; routing policy committed as `runnerRouting` in `.hobo/ci.json`; supersedes ADR-0180's hosted verdict transport | [routing-slips](routing-slips.md#adr-0181) |

@@ -5,6 +5,7 @@ import {
 	CiProjectProviderSchema,
 } from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
+import { RunnerRoutingSchema } from "./runner-routing.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
@@ -243,6 +244,12 @@ export const CiProjectDocumentSchema = z
 		 * and refuses credential values in it; the agent package owns its shape.
 		 */
 		agent: z.record(z.string(), z.json()).optional(),
+		/**
+		 * Committed routing policy (plan 0026, ADR-0181): labels, limits, the
+		 * box's slot split and the variables the relay retires. Read by the
+		 * route job and the box; never by the relay's environment selection.
+		 */
+		runnerRouting: RunnerRoutingSchema.optional(),
 	})
 	.strict();
 
@@ -342,6 +349,7 @@ export function resolveCiProjectReferences(
 		$schema: _schema,
 		integrations: _integrations,
 		agent: _agent,
+		runnerRouting: _runnerRouting,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

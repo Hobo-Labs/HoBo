@@ -1,6 +1,45 @@
 {
   "$schema": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
   "defaultEnvironment": "ci",
+  "runnerRouting": {
+    "pin": "auto",
+    "queue": { "maxWaitSeconds": 120, "maxQueued": 4 },
+    "labels": {
+      "fleet": "hobo",
+      "trunk": "hobo-trunk",
+      "local": "hobo-local-host",
+      "github": "ubuntu-24.04"
+    },
+    "localRunner": false,
+    "mainWorkspaceParallelCap": 4,
+    "verdict": {
+      "minFreeRunners": 1,
+      "enterMs": 60000,
+      "exitMs": 30000,
+      "stallMs": 600000
+    },
+    "box": {
+      "slots": 2,
+      "trunkSlots": 1,
+      "trunkLend": 0,
+      "prCapWithTrunk": 1,
+      "mergeGroupLeases": 1,
+      "capacityVolatilityMb": 1024,
+      "trunkHeadroomFleetDeferMs": 45000,
+      "jobAdmission": "pull"
+    },
+    "externalPools": [],
+    "retiredVariables": [
+      "HOBO_CI_FLEET_ROUTES",
+      "HOBO_CI_FLEET_STATE",
+      "HOBO_CI_FLEET_CAPACITY",
+      "HOBO_CI_ROUTE",
+      "HOBO_CI_LOCAL_RUNNER",
+      "HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
+      "HOBO_CI_ROUTE_MAX_QUEUED",
+      "HOBO_CI_TRUNK_RUNNER"
+    ]
+  },
   "selection": {
     "forkPullRequestEnvironment": "ci",
     "rules": [

@@ -11,6 +11,7 @@ import {
 	parseCiProjectConfig,
 	selectCiEnvironment,
 } from "./project-config.js";
+import { parseRunnerRouting, type RunnerRouting } from "./runner-routing.js";
 
 // public-contract: default committed CI project path at repository root.
 export const DEFAULT_CI_PROJECT_PATH = ".hobo/ci.json";
@@ -104,6 +105,21 @@ export interface ResolvedCiRelayRoute {
 	readonly admission: CiJobAdmission;
 	readonly configRef: string;
 	readonly isForkPullRequest: boolean;
+}
+
+/**
+ * The committed `runnerRouting` block of `.hobo/ci.json` (plan 0026, 3.4), or
+ * nothing when the file has none or it is not a policy. Never throws.
+ */
+export function parseCiRunnerRouting(json: string): RunnerRouting | undefined {
+	try {
+		const document = JsonObjectSchema.safeParse(JSON.parse(json));
+		return document.success
+			? parseRunnerRouting(document.data.runnerRouting)
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export function parseCiProjectSelection(
