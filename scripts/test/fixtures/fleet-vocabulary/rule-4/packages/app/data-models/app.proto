@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package fixture.app;
+
+// message Claim is named in a comment, which is not a declaration.
+message MemberRecord {
+  string id = 1;
+}
+
+message ClaimSet {
+  string id = 1;
+}

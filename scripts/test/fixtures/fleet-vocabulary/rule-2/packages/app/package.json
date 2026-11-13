@@ -1,0 +1,5 @@
+{
+	"name": "fixture-app",
+	"private": true,
+	"devDependencies": { "@number0/iroh": "0.35.0" }
+}

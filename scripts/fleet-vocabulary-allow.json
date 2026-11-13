@@ -1,0 +1,47 @@
+[
+	{
+		"rule": 1,
+		"path": "packages/fleet-nats/**",
+		"reason": "The NATS adapter is the one package that may name @nats-io/*."
+	},
+	{
+		"rule": 2,
+		"path": "packages/fleet-p2p/**",
+		"reason": "The peer-to-peer adapter is the one package that may name @number0/iroh."
+	},
+	{
+		"rule": 3,
+		"path": "packages/fleet/src/**",
+		"reason": "The fleet package holds the one implementation of DPoP, envelopes, ranking, claims and the assignment register."
+	},
+	{
+		"rule": 4,
+		"path": "packages/fleet/data-models/**",
+		"reason": "The fleet records are declared once, in the fleet package's data models."
+	},
+	{
+		"rule": 9,
+		"path": "packages/backend-routing/src/**",
+		"reason": "Cost-based choosing keeps its cost types (D5)."
+	},
+	{
+		"rule": 9,
+		"path": "packages/data-postgres/src/fleet/**",
+		"reason": "The Postgres one-active fleet's mechanics (FleetLayout, FleetLayoutInput, FleetReconcileOptions and the rest) name a fleet in the sense of the terms section."
+	},
+	{
+		"rule": 9,
+		"path": "packages/ci-gh-actions/src/jit-runner-fleet-recovery.ts",
+		"reason": "decideFleetGhostRecovery and FleetGhostRecoveryDecision name the hobo fleet."
+	},
+	{
+		"rule": 9,
+		"path": "packages/hobo/src/fleet-command.ts",
+		"reason": "The hobo fleet command itself."
+	},
+	{
+		"rule": 9,
+		"path": "scripts/ci/route-runner.mts",
+		"reason": "The route job's fleet mode (D12)."
+	}
+]

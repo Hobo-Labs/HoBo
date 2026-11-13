@@ -1,0 +1,8 @@
+name: fixture
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm --filter @hobo/backend-fleet test
+      - run: pnpm --filter @hobo/backend-routing test

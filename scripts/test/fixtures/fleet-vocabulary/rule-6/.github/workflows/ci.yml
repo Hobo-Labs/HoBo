@@ -1,0 +1,9 @@
+name: fixture
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HOBO_CI_MESH_URL: nats://example.invalid
+    steps:
+      - run: echo "$HOBO_FLEET_HOME"
