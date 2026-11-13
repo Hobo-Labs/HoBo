@@ -398,3 +398,90 @@ describe("the evaluator's answer for a lone idle box", () => {
 		expect(checked).toBe(2_000);
 	});
 });
+
+// Plan 0026, 3.3 and M6: a busy, healthy box is never refused (R4); critical
+// storage refuses whether or not the box is busy; pools are counted from
+// GitHub's runner list, and a list that cannot be read is unknown.
+describe("the evaluator behind the routing slip", () => {
+	const disk = {
+		availableMb: 64_000,
+		pressure: { atMs: NOW },
+		health: { state: "critical" as const, reasons: ["storage-bytes" as const] },
+	};
+
+	it("a busy box short of memory is busy, not refused", () => {
+		const evaluation = evaluateFleetVerdict(input({ idle: false }));
+		expect(evaluation.blocked.size).toBe(0);
+		expect(evaluation.labels.get("hobo")?.reasons).toEqual(["not-idle"]);
+	});
+
+	it("a busy box with a critical disk is refused", () => {
+		const evaluation = evaluateFleetVerdict(input({ idle: false, host: disk }));
+		expect([...evaluation.blocked.keys()]).toEqual(["hobo", "hobo-trunk"]);
+		expect(evaluation.labels.get("hobo")?.reasons).toEqual(["storage-bytes"]);
+	});
+
+	it("a busy box short of memory with a critical disk names only the disk", () => {
+		const evaluation = evaluateFleetVerdict(
+			input({ idle: false, host: { ...disk, availableMb: 1_000 } }),
+		);
+		expect(evaluation.labels.get("hobo")?.reasons).toEqual(["storage-bytes"]);
+	});
+
+	const pool = {
+		labels: ["hobo"],
+		runnerNamePrefix: "arc-",
+		maxRunners: 4,
+	};
+	const runner = (name: string, busy: boolean, online = true) => ({
+		name,
+		labels: ["self-hosted", "hobo"],
+		online,
+		busy,
+	});
+	const view = (runners: ReturnType<typeof runner>[]) => ({
+		view: { readAtMs: NOW - 1_000, runners },
+	});
+
+	it("counts a pool free only by an online, idle runner of its own", () => {
+		expect(
+			blocked({ pools: [pool], runners: view([runner("arc-1", false)]) }),
+		).toEqual(["hobo-trunk"]);
+		expect(
+			blocked({
+				pools: [pool],
+				runners: view([
+					runner("arc-1", true),
+					runner("arc-2", false, false),
+					runner("other-1", false),
+				]),
+			}),
+		).toEqual(["hobo", "hobo-trunk"]);
+	});
+
+	it("a runner list that could not be read, or is stale, refuses nothing (R3)", () => {
+		expect(blocked({ pools: [pool], runners: { view: undefined } })).toEqual(
+			[],
+		);
+		expect(
+			blocked({
+				pools: [pool],
+				runners: {
+					view: {
+						readAtMs: NOW - FLEET_VERDICT_POOL_FRESH_MS - 1,
+						runners: [],
+					},
+				},
+			}),
+		).toEqual([]);
+	});
+
+	it("with no pools declared, an empty list read now is known", () => {
+		expect(
+			blocked({
+				poll: undefined,
+				runners: { view: { readAtMs: NOW, runners: [] } },
+			}),
+		).toEqual(["hobo", "hobo-trunk"]);
+	});
+});

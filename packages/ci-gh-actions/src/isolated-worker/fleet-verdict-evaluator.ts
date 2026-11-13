@@ -6,19 +6,26 @@
  *
  * A label is blocked only while both hold:
  *
- * 1. The box is idle and admission would still refuse a job: memory
- *    headroom, memory or CPU pressure stall, or swap
- *    (`hostMemoryAdmitFits` with nothing committed), or a host health
- *    verdict that is `critical` for a disk or inode reason. The load-average
+ * 1. Admission would refuse a job for a reason other than the box's own
+ *    running jobs. Idle, that is memory headroom, memory or CPU pressure
+ *    stall, or swap (`hostMemoryAdmitFits` with nothing committed). Idle or
+ *    busy, it is a host health verdict that is `critical` for a disk or
+ *    inode reason (plan 0026, 3.3: critical host or storage health refuses
+ *    whether or not the box is busy). A busy box short of memory is short
+ *    because of its own jobs, and is never refused (R4). The load-average
  *    check admission also makes is left out on purpose: the one-minute load
- *    stays high for minutes after CI's own jobs end, and the relay never
- *    blocks a label because the box is busy with CI's own work (R4).
+ *    stays high for minutes after CI's own jobs end.
  * 2. Nothing else can take the job: no live healthy mesh peer serving the
  *    label has a free slot; the declared pools serving it have fewer free
- *    runners than the minimum, by a poll no older than 60 s; and no runner
+ *    runners than the minimum, by a count no older than 60 s; and no runner
  *    the relay cannot account for took a job on it in the last 15 minutes.
  *
- * Anything unknown (a stale poll, no poll) leaves the label open (R3).
+ * Pools are counted one of two ways. With `runners`, from GitHub's runner
+ * list (`GET /actions/runners`: online, `busy: false`, the pool's label and
+ * name prefix), which the routing slip issuer uses (plan 0026, 3.3.6).
+ * Without it, from the last poll's jobs in progress against `maxRunners`.
+ *
+ * Anything unknown (a stale count, no count) leaves the label open (R3).
  */
 import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import type { HostHealthVerdict } from "./host-health.js";
@@ -55,6 +62,17 @@ export type FleetPollView = Readonly<{
 	inProgress: readonly FleetJobOnRunner[];
 }>;
 
+/** GitHub's runner list for a repository, and when it was read. */
+export type FleetRunnersView = Readonly<{
+	readAtMs: number;
+	runners: readonly Readonly<{
+		name: string;
+		labels: readonly string[];
+		online: boolean;
+		busy: boolean;
+	}>[];
+}>;
+
 /** A live, healthy mesh peer (never this box). */
 export type FleetMeshPeer = Readonly<{
 	labels: readonly string[];
@@ -85,6 +103,11 @@ export type FleetVerdictEvaluatorInput = Readonly<{
 	minFreeRunners: number;
 	/** The last completed poll; absent when there has been none. */
 	poll: FleetPollView | undefined;
+	/**
+	 * GitHub's runner list, when pools are counted by it; absent when they
+	 * are counted from `poll`. An undefined `view` means it could not be read.
+	 */
+	runners?: Readonly<{ view: FleetRunnersView | undefined }> | undefined;
 	/** Live healthy peers; absent when there is no mesh. */
 	mesh: readonly FleetMeshPeer[] | undefined;
 	/** Lease ids this box holds or held, among the runners in `pickups`. */
@@ -180,11 +203,31 @@ function accounted(
 	);
 }
 
+/** Free runners of the declared pools serving `label`, or undefined when unknown. */
 function freeRunners(
 	input: FleetVerdictEvaluatorInput,
-	poll: FleetPollView,
+	poll: FleetPollView | undefined,
 	label: string,
-): number {
+): number | undefined {
+	if (input.runners) {
+		const view = input.runners.view;
+		if (!view || input.nowMs - view.readAtMs > FLEET_VERDICT_POOL_FRESH_MS)
+			return undefined;
+		let free = 0;
+		for (const pool of input.pools) {
+			if (!pool.labels.includes(label)) continue;
+			const idle = view.runners.filter(
+				(runner) =>
+					runner.online &&
+					!runner.busy &&
+					runner.labels.includes(label) &&
+					runner.name.startsWith(pool.runnerNamePrefix),
+			).length;
+			free += Math.min(idle, pool.maxRunners);
+		}
+		return free;
+	}
+	if (!poll) return undefined;
 	let free = 0;
 	for (const pool of input.pools) {
 		if (!pool.labels.includes(label)) continue;
@@ -203,6 +246,8 @@ export function evaluateFleetVerdict(
 ): FleetVerdictEvaluation {
 	const refusedFor = refusals(input);
 	const refused = refusedFor.length > 0;
+	// Busy, only a health refusal counts: memory is the box's own jobs' (R4).
+	const healthRefusals = refusedFor.filter((reason) => reason !== "memory");
 	const unaccountedPickups = input.pickups.filter(
 		(pickup) =>
 			input.nowMs - pickup.startedAtMs <= FLEET_VERDICT_UNACCOUNTED_WINDOW_MS &&
@@ -218,7 +263,7 @@ export function evaluateFleetVerdict(
 	const blocked = new Map<string, "no-capacity">();
 	for (const label of input.labels) {
 		const open: FleetLabelReason[] = [];
-		if (!input.idle) open.push("not-idle");
+		if (!input.idle && healthRefusals.length === 0) open.push("not-idle");
 		else if (!refused) open.push("admits");
 		else {
 			if (
@@ -227,14 +272,17 @@ export function evaluateFleetVerdict(
 				)
 			)
 				open.push("mesh-peer-free");
-			if (!poll) open.push("poll-stale");
-			else if (freeRunners(input, poll, label) >= input.minFreeRunners)
-				open.push("pool-free");
+			const free = freeRunners(input, poll, label);
+			if (free === undefined) open.push("poll-stale");
+			else if (free >= input.minFreeRunners) open.push("pool-free");
 			if (unaccountedPickups.some((pickup) => pickup.label === label))
 				open.push("unaccounted-runner");
 		}
 		if (open.length === 0) {
-			labels.set(label, { blocked: true, reasons: refusedFor });
+			labels.set(label, {
+				blocked: true,
+				reasons: input.idle ? refusedFor : healthRefusals,
+			});
 			blocked.set(label, "no-capacity");
 		} else labels.set(label, { blocked: false, reasons: open });
 	}
