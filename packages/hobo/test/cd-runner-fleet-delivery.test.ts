@@ -5,8 +5,9 @@
 //    agent enrolls by double opt-in, the fleet's Placement is decidable
 //    (its declared Rail approves the fleet's provider), and `agent run` on a
 //    box worker registers the runner-host realizer with the worker's job
-//    ports and runs its loop; a local runner, whose runner presence the
-//    worker's data directory cannot answer, is refused by name.
+//    ports and runs its loop, and so does a local runner whose controller
+//    is a supervised process (its runner presence read from its state
+//    directory).
 // 2. In process, on the durable SQLite journal, the same records in JSON
 //    form, a Station composed by `openCdRuntime` and an agent composed the
 //    way `agent run` composes it (its job ports read from a fake box
@@ -33,6 +34,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create, fromJson } from "@bufbuild/protobuf";
 import {
+	ArtifactKind,
+	AssemblyRule,
 	CampClaimRecordSchema,
 	CampConditionType,
 	type CampId,
@@ -57,8 +60,10 @@ import { diffResolvedSets } from "@hobo/cd/sets";
 import {
 	parseRunnerHosts,
 	RUNNER_IMAGE_SOURCE,
+	RUNNER_RELEASE_ARTIFACTS,
 	runnerFleetDelivery,
 	runnerFleetTopology,
+	runnerHostRealizationParameters,
 } from "@hobo/ci-gh-actions";
 import {
 	runnerFleetRail,
@@ -87,6 +92,7 @@ import {
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
+import { SupervisedRunnerHost } from "./fixtures/runner-host-supervised.js";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
@@ -401,7 +407,7 @@ describe.skipIf(!existsSync(BIN))(
 			expect(railless.code).toBe("rail-providers-unknown");
 		});
 
-		it("agent run on a box worker wires the worker's job ports and runs; a local runner is refused by name", async () => {
+		it("agent run on a box worker wires the worker's job ports and runs, and so does a local runner", async () => {
 			const home = await freshDir();
 			const keys = agentKeys();
 			const keyFile = join(home, "agent.jwk.json");
@@ -447,23 +453,26 @@ describe.skipIf(!existsSync(BIN))(
 			expect(runner.ok, runner.message).toBe(true);
 			expect(pick(runner.data, "reconcilerId")).toBe("rec_box");
 
-			// A local runner keeps a registered runner whose GitHub presence the
-			// worker's data directory cannot answer: refused by name, no loop.
+			// A local runner: its controller is a process its supervisor runs,
+			// and its runner's GitHub presence is read from its state directory
+			// (runner-presence.json). Every port is wired, so the loop starts.
 			await writeFile(
 				config,
 				JSON.stringify({
 					...AGENT_CONFIG,
 					hostKind: "local-runner",
-					worker: { database: join(workerDir, "worker.sqlite") },
+					worker: { directory: workerDir },
+					controller: { mode: "process", releases: join(home, "releases") },
 				}),
 			);
-			const local = await deploy(home, argv, {
-				[CD_RUNNER_HOST_ENV]: config,
-			});
-			expect(local.ok).toBe(false);
-			expect(local.code).toBe("runner-host-interface-missing");
-			expect(local.message).toContain("jobs.runners");
-			expect(local.message).not.toContain("jobs.leases");
+			const local = await runAgentFor(
+				home,
+				argv.slice(2),
+				{ HOBO_CD_TOPOLOGY: MODULE, [CD_RUNNER_HOST_ENV]: config },
+				8_000,
+			);
+			expect(local.exitedEarly, local.message).toBe(false);
+			expect(local.ok, local.message).toBe(true);
 		});
 	},
 );
@@ -1054,6 +1063,282 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			]);
 		} finally {
 			await fleet.close();
+		}
+	});
+	it("swaps a process host to the release its Freight pairs with the image, from the delivery module's source down to the supervisor", {
+		timeout: 120_000,
+	}, async () => {
+		const home = await freshDir();
+		const dataDirectory = join(home, "data");
+		const host = new SupervisedRunnerHost({ dataDirectory });
+		const now = () => host.nowMs;
+		const hosts = parseRunnerHosts(
+			await readFile(
+				join(REPO, "packages/ci-gh-actions/deploy/runner-fleet/hosts.json"),
+				"utf8",
+			),
+		);
+		if (!hosts.ok) throw new Error("hosts.json does not parse");
+		// The fleet's delivery module with its controller releases published.
+		const delivery = runnerFleetDelivery(hosts.value, {
+			repository: "Hobo-Labs/HoBo",
+			releaseIndexBase: "https://releases.hobo.test/hobo-ci/",
+		});
+		const [source] = delivery.sources;
+		const subscription = (name: string) => {
+			const found = source?.subscriptions.find(
+				(entry) => entry.artifactName === name,
+			);
+			if (!found) throw new Error(`the source has no ${name} subscription`);
+			return found;
+		};
+		const module = join(home, "hobo.delivery.mjs");
+		await writeFile(
+			module,
+			Object.entries({
+				...delivery,
+				camps: runnerFleetTopology(hosts.value, { stationId: "" }),
+				rails: [runnerFleetRail()],
+			})
+				.map(
+					([name, value]) => `export const ${name} = ${JSON.stringify(value)};`,
+				)
+				.join("\n"),
+		);
+		// What the release build publishes beside the index: one file per release.
+		const releases = join(home, "releases");
+		await mkdir(releases);
+		const bodies = ["export const v = 1;\n", "export const v = 2;\n"];
+		const releaseDigests: string[] = [];
+		for (const body of bodies) {
+			const hex = createHash("sha256").update(body).digest("hex");
+			await writeFile(join(releases, `${hex}.mjs`), body);
+			releaseDigests.push(`sha256:${hex}`);
+		}
+		const agentConfig = join(home, "agent.runner-host.json");
+		await writeFile(
+			agentConfig,
+			JSON.stringify({
+				...AGENT_CONFIG,
+				worker: { database: host.files.database },
+				controller: { mode: "process", releases },
+			}),
+		);
+		const opened = await openCdRuntime({
+			env: { HOBO_HOME: home },
+			home,
+			cwd: home,
+			simulate: false,
+			now,
+			topologyFiles: [module],
+			http: registry,
+		});
+		if (!opened.ok) throw new Error(opened.reasons[0]?.message);
+		const station = opened.value;
+		try {
+			const ops: CdContext = {
+				tenant: station.config.tenant,
+				principal: { kind: "user", id: "ops-alice" },
+				now,
+			};
+			const applied = await runCdDeploySubcommand(
+				station.host,
+				["pipeline", "apply"],
+				{ file: module, format: "json" },
+			);
+			expect(applied.ok, applied.message).toBe(true);
+			// The applied source pairs the image with the releases.
+			const appliedSource = (await station.cd.sources.list()).find(
+				(entry) => entry.name === RUNNER_IMAGE_SOURCE,
+			);
+			expect(appliedSource?.assembly).toBe(AssemblyRule.SAME_VERSION);
+			expect(appliedSource?.subscriptions).toHaveLength(3);
+
+			// One version's Freight as the source assembles it: the image from
+			// GHCR (its manifest digest) and the worker release from the index
+			// (its bytes' digest, the bytes held in the artifact store).
+			const worker = subscription(RUNNER_RELEASE_ARTIFACTS.workerRelease);
+			const image = subscription("hobo-ci-worker");
+			async function recordVersion(index: number, release: string) {
+				const body = bodies[index] ?? "";
+				await station.cd.artifacts.put(
+					new TextEncoder().encode(body),
+					{
+						name: worker.artifactName,
+						kind: ArtifactKind.FUNCTION_BUNDLE,
+						mediaType: "text/javascript",
+					},
+					ops,
+				);
+				const version = ["previous", "target"][index] ?? "";
+				const manifestDigest = digestOf(imageOf(version));
+				const recorded = await station.cd.ingest.manifest(
+					{
+						manifest: fromJson(FreightManifestRecordSchema, {
+							schemaVersion: "hobo.freight-manifest/v1",
+							bindle: FLEET,
+							declarationHash: `sha256:${createHash("sha256").update(`${FLEET}@${version}`).digest("hex")}`,
+							artifacts: [
+								{
+									name: image.artifactName,
+									kind: image.artifactKind,
+									digest: manifestDigest,
+									coordinate: imageOf(version),
+									ecosystem: "oci",
+								},
+								{
+									name: worker.artifactName,
+									kind: worker.artifactKind,
+									digest: release,
+									coordinate: `https://releases.hobo.test/hobo-ci/${release.slice(7)}.mjs`,
+									ecosystem: "http",
+								},
+							],
+						}),
+					},
+					ops,
+				);
+				if (!recorded.ok) throw new Error(recorded.reasons[0]?.message);
+				return recorded.value;
+			}
+
+			const keys = agentKeys();
+			const token = await station.cd.enrollment.issueToken(
+				{
+					campSet: FLEET,
+					campIds: [BOX],
+					mode: ReconcilerMode.AGENT,
+					ttlMs: 600_000,
+				},
+				ops,
+			);
+			if (!token.ok) throw new Error(token.reasons[0]?.message);
+			const enrolled = await station.cd.enrollment.enroll(
+				{ token: token.value.token, publicJwk: keys.publicJwk, claims: [] },
+				ops,
+			);
+			if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
+			// SAFETY: the id the enrollment ledger just minted.
+			const reconcilerId = enrolled.value.reconciler
+				.reconcilerId as ReconcilerId;
+			await station.cd.enrollment.approveKey(reconcilerId, ops);
+			const accepted = await station.cd.enrollment.accept(
+				{ reconcilerId, campIds: [BOX] },
+				{ ...ops, principal: { kind: "user", id: "ops-bob" } },
+			);
+			expect(accepted.ok).toBe(true);
+			// The agent `agent run` composes on a process host: every port its
+			// own default (the supervisor's control files, the data directory).
+			const chosen = await agentRealizer({
+				simulate: false,
+				env: { [CD_RUNNER_HOST_ENV]: agentConfig },
+				cwd: home,
+				now,
+				sleep: async (ms) => {
+					host.nowMs += ms;
+					await host.tick();
+				},
+				campIds: [BOX],
+				simulated: () => {
+					throw new Error("not simulated");
+				},
+			});
+			if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
+			const agentStore = await openCdStore({ backend: "memory" }, { now });
+			const agent = agentReconciler({
+				feedUrl: "https://station.test/v1/cd/",
+				reconcilerId,
+				privateJwk: keys.privateJwk,
+				svid: "",
+				campIds: [BOX],
+				realizer: chosen.value,
+				store: agentStore.store,
+				tenant: station.config.tenant,
+				now,
+				http: loopback(async (request) => {
+					const url = new URL(request.url);
+					return station.cd.feed.handle(
+						{
+							method: request.method,
+							path: `${url.pathname}${url.search}`,
+							headers: request.headers,
+							body: new TextEncoder().encode(request.body ?? ""),
+						},
+						new AbortController().signal,
+					);
+				}),
+			});
+			const agentCtx: CdContext = {
+				tenant: station.config.tenant,
+				principal: { kind: "service", id: `agent:${reconcilerId}` },
+				now,
+			};
+			// The Set each recorded Freight resolves to: its runner-host row's
+			// parameters come from the Freight's own artifacts (the known gap:
+			// promotion does not write it yet, so it is applied directly).
+			async function converge(index: number) {
+				const release = releaseDigests[index] ?? "";
+				const freight = await recordVersion(index, release);
+				const parameters = runnerHostRealizationParameters(
+					freight.manifest?.artifacts ?? [],
+				);
+				if (!parameters) throw new Error("the Freight has no image");
+				const resolved = runnerHostResolvedSet({
+					campId: BOX,
+					parameters,
+					tenant: station.config.tenant,
+				});
+				const current = await station.cd.desired.current(BOX);
+				const deltaId = `delta_process_${index}`;
+				const delta = await station.cd.desired.open(
+					create(DeltaRecordSchema, {
+						deltaId,
+						campId: BOX,
+						freightId: freight.freightId,
+						baseSetId: current?.setId ?? "",
+						intent: "promote",
+						changes: diffResolvedSets(
+							current ? await station.cd.desired.resolved(current) : undefined,
+							resolved,
+						),
+					}),
+					ops,
+				);
+				if (!delta.ok) throw new Error(delta.reasons[0]?.message);
+				const set = await station.cd.desired.apply(
+					{
+						deltaId,
+						gateDecisionId: `gate-${deltaId}`,
+						resolved,
+						origin: SetOrigin.PROMOTION,
+					},
+					ops,
+				);
+				if (!set.ok) throw new Error(set.reasons[0]?.message);
+				return {
+					parameters,
+					observed: await agent.reconcileOnce(BOX, agentCtx),
+				};
+			}
+
+			const first = await converge(0);
+			expect(ReconcileStatus[first.observed.status]).toBe("CONVERGED");
+			expect(host.running()).toEqual([releaseDigests[0]]);
+			const second = await converge(1);
+			expect(ReconcileStatus[second.observed.status]).toBe("CONVERGED");
+			// The host runs the release by its bytes' digest, not the image's
+			// manifest digest the same Freight carries.
+			expect(second.parameters.workerRelease).toBe(
+				`${RUNNER_RELEASE_ARTIFACTS.workerRelease}@${releaseDigests[1]}`,
+			);
+			expect(digestOf(second.parameters.image)).not.toBe(releaseDigests[1]);
+			expect(host.running()).toEqual([releaseDigests[1]]);
+			expect(second.observed.resources[0]?.physicalId).toBe(
+				`hobo-ci-runners/box/controller@${releaseDigests[1]}`,
+			);
+			await agentStore.close();
+		} finally {
+			await station.close();
 		}
 	});
 });

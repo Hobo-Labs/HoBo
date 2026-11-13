@@ -14,7 +14,7 @@ new one a host at a time.
 |---|---|
 | [`hosts.json`](hosts.json) | The declared runner hosts: mesh node id, kind (`box-worker`, `mesh-node`, `local-runner`), the runner labels it serves, and its ring (`pilot` or `fleet`). |
 | [`hobo.delivery.ts`](hobo.delivery.ts) | The delivery module `hobo deploy pipeline apply --file` applies; built from `hosts.json` by `runnerFleetDelivery` in [`src/runner-fleet-delivery.ts`](../../src/runner-fleet-delivery.ts). |
-| [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example), [`agent.runner-host.json.example`](agent.runner-host.json.example) | The CD agent each runner host runs beside its controller, and what it is told about its host (`HOBO_CD_RUNNER_HOST`). |
+| [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example), [`agent.runner-host.json.example`](agent.runner-host.json.example), [`agent.local-runner.json.example`](agent.local-runner.json.example) | The CD agent each runner host runs beside its controller, and what it is told about its host (`HOBO_CD_RUNNER_HOST`). |
 
 ## What the delivery module declares
 
@@ -33,6 +33,11 @@ new one a host at a time.
   pushes one such tag (`release-<UTC yyyymmddHHMMSS>-<content key>`) the first
   time it publishes a version, so publish order is lexical order and one
   version is one Freight. The content key alone (`v<12 hex>`) has no order.
+  With `releaseIndexBase` (from `HOBO_CI_RUNNER_RELEASE_INDEX`), the same
+  source also reads the controller releases' indexes
+  (`index.hobo-ci-worker-release.json`, `index.hobo-ci-local-runner-release.json`,
+  HTTP_INDEX, `FUNCTION_BUNDLE`) and assembles them `SAME_VERSION` with the
+  image, so one Freight carries a version's image and its releases.
 - **Station Rail** `hobo-ci-runner-fleet` (`runnerFleetRail`, exported as the
   module's `rails`): it binds the `hobo-ci-runner-fleet` Camp set and approves
   exactly the provider the fleet's Camps declare, `self-hosted`. Placement
@@ -118,7 +123,19 @@ read from the box worker's data directory, the directory of `worker.database`
 controller container must mount from the host: the journal read-only for
 leases, `mesh-advert.json` (the worker's own advert, rewritten every mesh
 beat) and the `admission-paused` marker the agent places to drain the host
-(package README, "Job ports from the worker's data directory"). A Set for the host's Camp then
+(package README, "Job ports from the worker's data directory"). A local
+runner names its state directory instead (`worker: {directory}`): its
+controller writes the advert, the GitHub presence of its registered runner
+(`runner-presence.json`) and honours the marker there. A host whose
+controller runs as a process (today's box worker and local runner) sets
+`controller: {mode: "process", releases: "<directory or https:// base URL>"}`
+and runs under `scripts/controller-supervisor.mts`; the agent stages the
+release by digest and asks the supervisor to swap it through
+`controller-desired.json` (package README, "A controller that runs as a
+process"). A process host runs the release its Freight pairs with the image
+(`workerRelease` or `localRunnerRelease` on the runner-host row, the
+release's own bytes' digest), never the image's manifest digest. A Set for
+the host's Camp then
 converges by pulling the image its runner-host row pins by digest, draining,
 swapping the controller and verifying by observation; a failed verify restores
 the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
@@ -130,13 +147,16 @@ the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
 
 These are refused, not faked:
 
-- **A local runner has no runner-presence port.** Its GitHub presence is not
-  in the worker's data directory, so `agent run` on a `local-runner` refuses
-  `runner-host-interface-missing ... jobs.runners` before it starts; upgrade
-  those hosts the way [the runner queue guide](../../../ci/RUNNER-QUEUE.md)
-  describes. The realizer also assumes the controller runs as a container
-  with the worker's data directory mounted from the host; today's box worker
-  daemon runs as a process (`restart-worker.sh`).
+- **No release index is published yet.** `release:build` bundles the box
+  worker and the local runner into single-file releases and writes the
+  indexes; nothing publishes them where `controller.releases` and the
+  delivery module's `releaseIndexBase` (`HOBO_CI_RUNNER_RELEASE_INDEX` when
+  this module is applied) point, so until it does a process host is adopted
+  by hand once (`HOBO_CI_CONTROLLER_RELEASE`) and upgraded as
+  [the runner queue guide](../../../ci/RUNNER-QUEUE.md) describes. Without
+  `releaseIndexBase` the Freight carries only the image, and a process host
+  refuses `runner-host-release-unresolved` rather than run an image digest
+  it cannot verify a release against.
 - **A placed node's promotion does not write the Set yet.** The fan-out runs
   the pilot group first, one host at a time, and defers a tainted host, but
   the composed `@hobo/cd` PromotionService has no placed-Camps reader or

@@ -11,10 +11,13 @@ import {
 	RUNNER_FLEET_YARD,
 	RUNNER_IMAGE_RELEASE_TAG_PATTERN,
 	RUNNER_IMAGE_SOURCE,
+	RUNNER_RELEASE_ARTIFACTS,
 	runnerFleetCampObservations,
 	runnerFleetDelivery,
 	runnerFleetRail,
 	runnerFleetTopology,
+	runnerHostRealizationParameters,
+	runnerHostReferenceParameter,
 } from "../src/runner-fleet-delivery.js";
 
 const root = join(import.meta.dirname, "..", "..", "..");
@@ -282,6 +285,86 @@ describe("the delivery module for the runner fleet", () => {
 		function placement() {
 			return delivery.placements[0]?.name;
 		}
+	});
+
+	it("pairs each image with the controller releases of the same version, each identified by its own bytes", () => {
+		const paired = runnerFleetDelivery(hosts(), {
+			repository: "Hobo-Labs/HoBo",
+			releaseIndexBase: "https://releases.hobo.test/hobo-ci/",
+		});
+		const [source] = paired.sources;
+		expect(source?.assembly).toBe("ASSEMBLY_RULE_SAME_VERSION");
+		expect(source?.subscriptions.slice(1)).toEqual(
+			Object.values(RUNNER_RELEASE_ARTIFACTS).map((artifact) => ({
+				name: artifact,
+				kind: "SUBSCRIPTION_KIND_HTTP_INDEX",
+				locator: `https://releases.hobo.test/hobo-ci/index.${artifact}.json`,
+				selection: "SELECTION_STRATEGY_LEXICAL",
+				allowPattern: RUNNER_IMAGE_RELEASE_TAG_PATTERN,
+				artifactName: artifact,
+				artifactKind: "ARTIFACT_KIND_FUNCTION_BUNDLE",
+			})),
+		);
+		// The same records without releases stay as they were.
+		expect(delivery.sources[0]?.assembly).toBe("ASSEMBLY_RULE_INDEPENDENT");
+		expect(() =>
+			runnerFleetDelivery(hosts(), {
+				repository: "Hobo-Labs/HoBo",
+				releaseIndexBase: "http://releases.hobo.test/",
+			}),
+		).toThrow(/https:\/\//u);
+		const problems = paired.sources.flatMap((r, i) =>
+			conformance(r, "FreightSourceRecord", `sources[${i}]`, readProto()),
+		);
+		expect(problems).toEqual([]);
+	});
+
+	it("maps a Freight to the runner-host row: the image by manifest digest, each release by its bytes' digest", () => {
+		const image = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"a".repeat(64)}`;
+		const worker = `sha256:${"b".repeat(64)}`;
+		const local = `sha256:${"c".repeat(64)}`;
+		const parameters = runnerHostRealizationParameters([
+			{
+				name: "hobo-ci-worker",
+				digest: `sha256:${"a".repeat(64)}`,
+				coordinate: image,
+			},
+			{
+				name: RUNNER_RELEASE_ARTIFACTS.workerRelease,
+				digest: worker,
+				coordinate: `https://releases.hobo.test/${"b".repeat(64)}.mjs`,
+			},
+			{
+				name: RUNNER_RELEASE_ARTIFACTS.localRunnerRelease,
+				digest: local,
+				coordinate: `https://releases.hobo.test/${"c".repeat(64)}.mjs`,
+			},
+		]);
+		expect(parameters).toEqual({
+			image,
+			workerRelease: `hobo-ci-worker-release@${worker}`,
+			localRunnerRelease: `hobo-ci-local-runner-release@${local}`,
+		});
+		// A Freight without releases asks container hosts only.
+		expect(
+			runnerHostRealizationParameters([
+				{ name: "hobo-ci-worker", digest: "", coordinate: image },
+			]),
+		).toEqual({ image });
+		expect(
+			runnerHostRealizationParameters([
+				{ name: "hobo-ci-worker", digest: "", coordinate: "ghcr.io/x:latest" },
+			]),
+		).toBeUndefined();
+		expect(runnerHostReferenceParameter("box-worker", "container")).toBe(
+			"image",
+		);
+		expect(runnerHostReferenceParameter("mesh-node", "process")).toBe(
+			"workerRelease",
+		);
+		expect(runnerHostReferenceParameter("local-runner", "process")).toBe(
+			"localRunnerRelease",
+		);
 	});
 
 	it("every record conforms to @hobo/cd's cd.proto wire schema", () => {

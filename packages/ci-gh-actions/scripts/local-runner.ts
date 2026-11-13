@@ -17,26 +17,61 @@ import { fileURLToPath } from "node:url";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { z } from "zod";
 import {
+	combineLocalRunnerObservers,
 	createLocalRunnerMeshNode,
+	createLocalRunnerPresenceReporter,
 	installLocalRunnerArchive,
+	LOCAL_RUNNER_ADMISSION_CHECK_MS,
 	LOCAL_RUNNER_MESH_REPORT,
 	LocalRunnerRegistrationUncertainError,
 	LocalRunnerShutdownUncertainError,
+	localRunnerWatchAction,
 	parseLocalRunnerEnvironment,
 	runLocalRunnerSession,
 } from "../src/local-runner.js";
 import { parseMeshNodeReports } from "../src/mesh-records.js";
 import { acquirePartitionLock } from "../src/partition-lock.js";
+import {
+	releaseEntryPath,
+	runningAsControllerRelease,
+} from "../src/runner-controller-process.js";
+import {
+	controllerDigestFromEnv,
+	workerAdmissionPaused,
+	workerHostFiles,
+} from "../src/runner-host-worker-jobs.js";
 
-const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
+// Run from a checkout this entry finds the repository from its own place; a
+// release (`scripts/build-controller-release.mts`) has no checkout around it,
+// so its state directory must be named (HOBO_CI_LOCAL_STATE_DIRECTORY).
+const release = runningAsControllerRelease();
+const self = fileURLToPath(import.meta.url);
 const state = resolve(
-	process.env.HOBO_CI_LOCAL_STATE_DIRECTORY ?? join(root, ".hobo", "ci-local"),
+	releaseEntryPath({
+		env: process.env,
+		name: "HOBO_CI_LOCAL_STATE_DIRECTORY",
+		release,
+		fallback: () =>
+			join(
+				fileURLToPath(new URL("../../..", import.meta.url)),
+				".hobo",
+				"ci-local",
+			),
+	}),
 );
 const socket = join(
 	tmpdir(),
 	`hobo-ci-${process.getuid?.()}-${createHash("sha256").update(state).digest("hex").slice(0, 16)}.sock`,
 );
 const reply = z.object({ status: z.string(), detail: z.string() });
+// Where this machine meets its host's CD agent (`hobo deploy agent run`, a
+// `local-runner` host): the agent closes admission with the
+// `admission-paused` marker here and reads the advert and runner presence
+// this controller writes here (src/runner-host-worker-jobs.ts). There is no
+// worker journal: a local runner has no leases, only its one runner.
+const hostFiles = workerHostFiles(join(state, "worker.sqlite"));
+const PAUSED_DETAIL =
+	"Admission is closed by this host's CD agent; no runner is registered until it reopens";
 
 /**
  * This machine's own mesh report, as the controller last wrote it: which
@@ -154,6 +189,8 @@ async function daemon() {
 			state,
 			hostname: hostname(),
 			journal,
+			hostFiles,
+			controllerDigest: controllerDigestFromEnv(process.env),
 			log: (event, fields) =>
 				process.stdout.write(`${JSON.stringify({ event, ...fields })}\n`),
 		});
@@ -168,7 +205,7 @@ async function daemon() {
 	}
 	const update = async (status: string, detail: string) => {
 		current = { status, detail };
-		mesh?.setHealthy(!["blocked", "waiting"].includes(status));
+		mesh?.setHealthy(!["blocked", "waiting", "paused"].includes(status));
 		await writeFile(
 			join(state, "status.json"),
 			`${JSON.stringify(current)}\n`,
@@ -205,12 +242,49 @@ async function daemon() {
 		process.send?.("ready");
 		process.disconnect?.();
 		while (!stopping.signal.aborted) {
+			// Closed admission: register no runner, and give up a waiting one
+			// that has no job (one with a job runs to its end).
+			if (workerAdmissionPaused(hostFiles)) {
+				if (current.status !== "paused") await update("paused", PAUSED_DETAIL);
+				await pause(5000, undefined, { signal: stopping.signal }).catch(
+					() => {},
+				);
+				continue;
+			}
+			const session = new AbortController();
+			let watch: ReturnType<typeof setInterval> | undefined;
+			let presence:
+				| ReturnType<typeof createLocalRunnerPresenceReporter>
+				| undefined;
 			try {
 				if (process.platform !== "linux" || process.arch !== "x64")
 					throw new Error(
 						"Local HoBo bridge requires Linux x64; use act on other platforms",
 					);
 				const repository = parseLocalRunnerEnvironment(process.env);
+				const reporter = createLocalRunnerPresenceReporter({
+					files: hostFiles,
+					repository,
+				});
+				presence = reporter;
+				// Admission is checked every 5 s; presence (a GitHub REST call on
+				// the user's own rate limit) only every 45 s, and on every session
+				// event the reporter observes.
+				let refreshedAtMs = Date.now();
+				watch = setInterval(() => {
+					const action = localRunnerWatchAction({
+						admissionPaused: workerAdmissionPaused(hostFiles),
+						work: reporter.work(),
+						nowMs: Date.now(),
+						presenceRefreshedAtMs: refreshedAtMs,
+					});
+					if (action === "abort") session.abort();
+					else if (action === "refresh") {
+						refreshedAtMs = Date.now();
+						void reporter.refresh();
+					}
+				}, LOCAL_RUNNER_ADMISSION_CHECK_MS);
+				watch.unref();
 				await update("preparing", `Preparing private repository ${repository}`);
 				const archive = await installLocalRunnerArchive(state, stopping.signal);
 				if (stopping.signal.aborted) break;
@@ -218,8 +292,11 @@ async function daemon() {
 					repository,
 					state,
 					archive,
-					signal: stopping.signal,
-					observer: mesh?.observer,
+					signal: AbortSignal.any([stopping.signal, session.signal]),
+					observer: combineLocalRunnerObservers(
+						mesh?.observer,
+						reporter.observer,
+					),
 					registered: () =>
 						update(
 							"registered",
@@ -227,6 +304,10 @@ async function daemon() {
 						),
 				});
 			} catch (error) {
+				if (session.signal.aborted && !stopping.signal.aborted) {
+					await update("paused", PAUSED_DETAIL);
+					continue;
+				}
 				if (
 					error instanceof LocalRunnerShutdownUncertainError ||
 					error instanceof LocalRunnerRegistrationUncertainError
@@ -241,6 +322,9 @@ async function daemon() {
 							? error.message
 							: "Set HOBO_CI_LOCAL_REPOSITORY=owner/repo and configure gh authentication",
 					);
+			} finally {
+				clearInterval(watch);
+				await presence?.refresh();
 			}
 			if (!stopping.signal.aborted)
 				await pause(30000, undefined, { signal: stopping.signal }).catch(
@@ -322,9 +406,12 @@ async function main() {
 	try {
 		const child = spawn(
 			process.execPath,
-			["--import", "tsx", fileURLToPath(import.meta.url), "daemon"],
+			// A release is plain JavaScript; a checkout's entry runs through tsx.
+			release ? [self, "daemon"] : ["--import", "tsx", self, "daemon"],
 			{
-				cwd: root,
+				cwd: release
+					? state
+					: fileURLToPath(new URL("../../..", import.meta.url)),
 				env: process.env,
 				detached: true,
 				stdio: ["ignore", log.fd, log.fd, "ipc"],

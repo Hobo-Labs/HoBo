@@ -23,8 +23,16 @@ import {
 
 /** A resolved Set whose plan has the runner-host row for `image` (what a promotion would resolve). */
 export function runnerHostResolvedSet(
-	input: Readonly<{ campId: string; image?: string; tenant?: string }>,
+	input: Readonly<{
+		campId: string;
+		image?: string;
+		/** The row's whole realization parameters (`runnerHostRealizationParameters`), in place of `image`. */
+		parameters?: Readonly<Record<string, string>>;
+		tenant?: string;
+	}>,
 ) {
+	const parameters =
+		input.parameters ?? (input.image ? { image: input.image } : undefined);
 	return createResolvedDeploymentSet({
 		tenant: input.tenant ?? "local",
 		environment: "ci",
@@ -37,10 +45,10 @@ export function runnerHostResolvedSet(
 					port: "compute",
 					provider: "self-hosted",
 					deps: [],
-					...(input.image
+					...(parameters
 						? {
 								productId: "hobo-ci.runner-host/v1",
-								realizationParameters: { image: input.image },
+								realizationParameters: { ...parameters },
 							}
 						: undefined),
 				},
