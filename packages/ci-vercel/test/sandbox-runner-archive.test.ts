@@ -7,6 +7,13 @@ import {
 } from "../src/sandbox-runner-archive.js";
 
 describe("host-side runner download", () => {
+	it("reports a failed fetch as a download failure, without its cause's text", async () => {
+		await expect(
+			downloadSandboxRunner(async () => {
+				throw new Error("ECONNRESET secret-host.internal");
+			}),
+		).rejects.toThrow(new Error("runner download failed"));
+	});
 	it("validates a complete bounded archive before making it available", async () => {
 		const content = Buffer.from("fixture-archive");
 		const sha = createHash("sha256").update(content).digest("hex");

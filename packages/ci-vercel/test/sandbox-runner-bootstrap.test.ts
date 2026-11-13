@@ -19,6 +19,7 @@ import {
 	prepareSandboxRunner,
 	type SandboxRunnerBootstrapPort,
 	START_SANDBOX_RUNNER,
+	sandboxRunnerBootstrapPort,
 	startSandboxRunner,
 } from "../src/sandbox-runner-bootstrap.js";
 import * as icu from "../src/sandbox-runner-icu.js";
@@ -356,5 +357,14 @@ printf 'home\\n' > "$HOME/probe"
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("the bootstrap port", () => {
+	it("is the specific Session itself, never a Sandbox handle that could resume", () => {
+		const session = { sessionId: "sbx_1" };
+		// SAFETY: the port only hands the Session back; no member of it is read.
+		const port = sandboxRunnerBootstrapPort(session as never);
+		expect(port).toBe(session);
 	});
 });

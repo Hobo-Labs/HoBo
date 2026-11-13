@@ -306,6 +306,15 @@ describe("the loader", () => {
 		expect(reported).toHaveLength(1);
 	});
 
+	it("reads the source again after invalidate, within the TTL", async () => {
+		const { source, reads } = counting(() => entries);
+		const loader = createRelayRuntimeConfigLoader({ source, now: () => 0 });
+		await loader.load();
+		loader.invalidate();
+		await loader.load();
+		expect(reads()).toBe(2);
+	});
+
 	it("fails a cold start that cannot read or parse", async () => {
 		const loader = createRelayRuntimeConfigLoader({
 			source: counting(() => ({ ...entries, CRON_SECRET: "x" })).source,

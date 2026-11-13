@@ -1,6 +1,6 @@
 {
   "issue": "L17: @hobo/ci-vercel cache fleet on createLocalFleet and createOneActiveFleet (HoBo Fleet, wave 5)",
-  "branch": "fleet/L17",
+  "branch": "fleet/L17-r",
   "gates": [
     { "command": "pnpm exec vitest run packages/ci-vercel/test/cache-fleet.test.ts packages/ci-vercel/test/cache-backend.test.ts packages/ci-vercel/test/cache-fleet-isolation.test.ts", "exitCode": 0 },
     { "command": "pnpm run fleet:moved-tests -- O16 --lane L17", "exitCode": 0 },
@@ -9,7 +9,9 @@
     { "command": "pnpm run lint:test-deps", "exitCode": 0 },
     { "command": "pnpm codegen:check", "exitCode": 0 },
     { "command": "pnpm exec turbo run test --filter @hobo/ci-vercel", "exitCode": 0 },
-    { "command": "pnpm --filter @hobo/ci-vercel run typecheck", "exitCode": 0 }
+    { "command": "pnpm --filter @hobo/ci-vercel run typecheck", "exitCode": 0 },
+    { "command": "pnpm exec vitest run --config vitest.coverage.config.ts --coverage.include=packages/ci-vercel/src/** packages/ci-vercel/test/", "exitCode": 0 },
+    { "command": "node --import tsx scripts/emit-fleet-contracts.mts --check", "exitCode": 0 }
   ],
   "cascadeDeltas": [
     {
@@ -31,5 +33,5 @@
     "No fleet-verdict, fleet-view or mesh code exists in packages/ci-vercel at fleet-wave-4, so there was nothing to delete or move to @hobo/fleet/client here."
   ],
   "fallbacks": [],
-  "notes": "Package-wide coverage of @hobo/ci-vercel is below 87/79/89/88 because of files outside the cache fleet (e.g. cache-backend.ts 72.6% lines, stateless-composition.ts 78.7%); src/cache-fleet.ts is at 92.8% lines, 77% branches, 87% functions, 90.8% statements. test/turbo-ci.test.ts 'stops a running task's process group on cancellation' failed once under parallel load and passed on rerun; unrelated."
+  "notes": "Rework (fleet/L17-r): the §10.2 step 4 coverage gate for packages/ci-vercel now passes at statements 90.23%, branches 85.48%, functions 90.06%, lines 92.53% (384 tests, 0 skipped) against 87/79/89/88; before it was 77.17/73.13/74.73/79.88. Tests were added only under packages/ci-vercel/test (SDK stand-ins for isolated-sandbox.ts and proxy-sandbox.ts, the proxy VM entry and fatal handler, the Node egress transport, ci:local arguments in process, the Vercel entry wiring, the stateless relay's internal routes and queue kinds, opening every cache-backend kind, the cache fleet's expire and close); no source file and no moved test changed. In the first L17 run, test/turbo-ci.test.ts 'stops a running task's process group on cancellation' failed once under parallel load and passed on rerun; unrelated."
 }
