@@ -152,13 +152,18 @@ the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
 {"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}
 ```
 
-The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: free launch slots on
-the box and on the rest of the mesh, and when the record was written. The
-**Route runners** job does not read it, or this table. Judging raw capacity in
-a workflow repeats, outside the relay, a decision only the relay can make
+The pass writes no other repository variable. A free-slot record it once
+published beside the table, and the mesh's routing snapshot, are retired
+([plan 0025](../plans/0025-relay-owned-runner-routing.md), section 6.8):
+judging raw capacity in a workflow repeats, outside the relay, a decision only
+the relay can make
 ([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
-It asks the relay instead for a fleet verdict: which fleet labels new work
-should stay off right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)).
+The **Route runners** job reads neither that record nor this table. It asks the
+relay instead for a fleet verdict: which fleet labels new work should stay off
+right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). Dispatch still counts
+free slots on the box and the rest of the mesh for its own trunk defer, but
+`@hobo/ci` no longer defines the published record or its CUE shape: the only
+fleet record a repository variable carries is `#FleetRoutes`.
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
@@ -191,9 +196,8 @@ would post for a new offer.
   relay records those jobs from their `workflow_job` events, a route to a paid
   label provider is bounded only by that provider's own spend limit. This must
   be closed before a workflow reads the table for a paid provider.
-- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet**, nor
-  `HOBO_CI_FLEET_CAPACITY`. Indexing the route table per job class is still
-  outstanding. Jobs that run off the box still
+- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet.** Indexing the route
+  table per job class is still outstanding. Jobs that run off the box still
   assume its toolchain image and mounts.
 - **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
   E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop).
