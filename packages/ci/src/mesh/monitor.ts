@@ -87,6 +87,28 @@ export function meshCapacity(
 	};
 }
 
+/**
+ * The mesh's leader: the live node with the lowest id, among advertisements
+ * that have not expired and whose signature holds. It is the one node that
+ * reports changes about others, and the one box relay that writes the routing
+ * slip (plan 0026, 3.2). A node that sees no live node leads itself, so a box
+ * without a mesh is its own leader. When the leader stops advertising, the
+ * next lowest takes over on its following reading.
+ */
+export function meshLeaderId(
+	nodes: readonly MeshNode[],
+	nowMs: number,
+	selfId: string,
+): string {
+	const live = nodes
+		.filter(
+			(node) => node.validUntilMs > nowMs && !meshAdvertRejected(node, nowMs),
+		)
+		.map((node) => node.id)
+		.sort();
+	return live[0] ?? selfId;
+}
+
 export type MeshMonitorEvent =
 	| "hobo_ci_mesh_node_joined"
 	| "hobo_ci_mesh_node_lost"
@@ -151,7 +173,7 @@ export function createMeshMonitor(options: {
 			});
 			// One reporter: the lowest live id. A node always reports for itself
 			// being alone, since then it is the lowest.
-			const reporter = [...live.keys()].sort()[0] ?? options.selfId;
+			const reporter = meshLeaderId(nodes, nowMs, options.selfId);
 			const reports = reporter === options.selfId;
 			let changed = previous === undefined;
 			if (previous && reports) {
