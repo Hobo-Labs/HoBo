@@ -117,8 +117,13 @@ export class JwtSvidIssuer {
 		};
 	}
 
+	/** The published keys: those of `jwksKeyIds` the KMS still holds (a retired key leaves once its tokens have expired). */
 	jwks(): JsonWebKeySet {
-		return { keys: this.jwksKeyIds.map((kid) => this.kms.publicJwk(kid)) };
+		return {
+			keys: this.jwksKeyIds
+				.filter((kid) => this.kms.hasKey(kid))
+				.map((kid) => this.kms.publicJwk(kid)),
+		};
 	}
 
 	async signJwtSvid(claims: JwtSvidClaims): Promise<string> {

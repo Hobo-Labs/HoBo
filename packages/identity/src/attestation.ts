@@ -1,9 +1,23 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
+	HOST_ATTESTATION_CONTEXT,
+	type KeyAlgorithm,
+	KeyPurpose,
+	type PublicKeyRef,
+	type SignedEnvelope,
+} from "@hobo/fleet";
+import { verifyEnvelope } from "@hobo/fleet/keys";
+import {
+	fleetEnvelopeAlgorithm,
+	launchMeasurementBytes,
+	SIGN_KEY_SUFFIX,
+} from "./fleet/host-envelope.js";
+import {
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
 	type JsonValue,
+	parseJsonValue,
 } from "./json.js";
 
 // public-contract: the schema id every attestation document carries and every verifier checks.
@@ -211,12 +225,17 @@ function verifyHostSignature(
 		verificationKey: string;
 	}[],
 ): boolean {
-	if (
-		!isPlainObject(signature) ||
-		signature.algorithm !== "fixture-hmac-sha256"
-	) {
-		return false;
+	if (!isPlainObject(signature)) return false;
+	const envelopeAlgorithm = fleetEnvelopeAlgorithm(signature.algorithm);
+	if (envelopeAlgorithm !== undefined) {
+		return verifyFleetEnvelopeSignature(
+			measurement,
+			signature,
+			envelopeAlgorithm,
+			hostPublicKeys,
+		);
 	}
+	if (signature.algorithm !== "fixture-hmac-sha256") return false;
 	const key = hostPublicKeys.find(
 		(candidate) =>
 			candidate.hostId === signature.hostId &&
@@ -234,6 +253,57 @@ function verifyHostSignature(
 	return timingSafeEqual(actual, expectedBuffer);
 }
 
+/**
+ * A device-signed document: `value` is `base64url(payload).base64url(signature)`,
+ * the payload the launch measurement's JSON bytes as signed, and the signature a
+ * fleet envelope signature under `hobo-fleet/host-attestation/v1` by the host's
+ * SIGN key (`<member id>#sign`). The signature is checked over the received
+ * bytes, and only then is the payload decoded and compared with the document.
+ */
+function verifyFleetEnvelopeSignature(
+	measurement: LaunchMeasurement,
+	signature: AttestationDocument["hostSignature"],
+	algorithm: KeyAlgorithm,
+	hostPublicKeys: readonly {
+		hostId: string;
+		keyId: string;
+		verificationKey: string;
+	}[],
+): boolean {
+	if (signature.keyId !== `${signature.hostId}${SIGN_KEY_SUFFIX}`) return false;
+	if (measurement.hostId !== signature.hostId) return false;
+	const key = hostPublicKeys.find(
+		(candidate) =>
+			candidate.hostId === signature.hostId &&
+			candidate.keyId === signature.keyId,
+	);
+	if (!key || !isJsonString(signature.value)) return false;
+	const parts = signature.value.split(".");
+	if (parts.length !== 2) return false;
+	const [encodedPayload = "", encodedSignature = ""] = parts;
+	const envelope: SignedEnvelope = {
+		$typeName: "hobo.fleet.v1.SignedEnvelope",
+		context: HOST_ATTESTATION_CONTEXT,
+		keyId: signature.keyId,
+		algorithm,
+		payload: new Uint8Array(Buffer.from(encodedPayload, "base64url")),
+		signature: new Uint8Array(Buffer.from(encodedSignature, "base64url")),
+	};
+	const ref: PublicKeyRef = {
+		$typeName: "hobo.fleet.v1.PublicKeyRef",
+		purpose: KeyPurpose.SIGN,
+		keyId: key.keyId,
+		algorithm,
+		value: key.verificationKey,
+	};
+	if (!verifyEnvelope(envelope, HOST_ATTESTATION_CONTEXT, ref)) return false;
+	const signed = parseJsonValue(Buffer.from(envelope.payload).toString("utf8"));
+	return (
+		isPlainObject(signed) &&
+		launchMeasurementBytes(signed) === launchMeasurementBytes(measurement)
+	);
+}
+
 function signLaunchMeasurement(
 	measurement: LaunchMeasurement,
 	verificationKey: string,
@@ -244,19 +314,7 @@ function signLaunchMeasurement(
 }
 
 function digestCanonical(measurement: LaunchMeasurement): string {
-	const canonical = JSON.stringify({
-		runId: measurement.runId,
-		tenant: measurement.tenant,
-		parentPrincipal: measurement.parentPrincipal,
-		codeVersion: measurement.codeVersion,
-		componentImageDigest: measurement.componentImageDigest,
-		hostId: measurement.hostId,
-		issuedAt: measurement.issuedAt,
-		expiresAt: measurement.expiresAt,
-		nonce: measurement.nonce,
-		isolationTier: measurement.isolationTier,
-	});
-	return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+	return `sha256:${createHash("sha256").update(launchMeasurementBytes(measurement)).digest("hex")}`;
 }
 
 function validateLaunchMeasurement(
