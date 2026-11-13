@@ -101,7 +101,10 @@ formatting and comments never count. The rename map (`RENAME_MAP`) and value
 map (`VALUE_MAP`: `failure`/`health` strings to `Health.<MEMBER>`) rewrite the
 base side; the new side drops `parseMemberName(<string literal>)` to its
 argument and `members: undefined` from objects passed to
-`parseAssignmentEntry`. In `exact` mode imports and the row's named helpers
+`parseAssignmentEntry`. A relative path in `new URL(<path>, import.meta.url)`
+is compared without its leading `./` and `../` segments on both sides, because
+a moved file may sit at another depth (the replica pact helper moves one
+directory deeper); any other string literal counts in full. In `exact` mode imports and the row's named helpers
 (the whole declaration) are dropped and any other difference fails; in
 `assertions` mode only the ordered test titles and the `expect(…)` statements
 inside `it`/`test` bodies are compared. A missing new file fails its row. It

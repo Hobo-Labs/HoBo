@@ -105,6 +105,28 @@ describe("exact mode", () => {
 		);
 	});
 
+	it("lets a moved file change the leading segments of a module-relative URL", () => {
+		const at = (path: string) =>
+			`export const pact = new URL("${path}", import.meta.url);\n`;
+		const base = at("../contracts/replica.pact.json");
+		expect(
+			compareExact(base, at("../../contracts/replica.pact.json"), []),
+		).toEqual([]);
+		expect(
+			compareExact(base, at("../../contracts/other.pact.json"), []),
+		).not.toEqual([]);
+		expect(
+			compareExact(base, at("../../fixtures/replica.pact.json"), []),
+		).not.toEqual([]);
+		expect(
+			compareExact(
+				`export const p = "../contracts/replica.pact.json";\n`,
+				`export const p = "../../contracts/replica.pact.json";\n`,
+				[],
+			),
+		).not.toEqual([]);
+	});
+
 	it("does not rename inside other identifiers or strings", () => {
 		const base = `export const MyFleetAssignment = "FleetAssignment";\n`;
 		expect(

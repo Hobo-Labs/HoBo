@@ -15,6 +15,9 @@
  *   its argument, and `members: undefined` is dropped from an object literal
  *   passed to `parseAssignmentEntry`.
  *
+ * A relative path in `new URL(<path>, import.meta.url)` is compared without
+ * its leading `./` and `../` segments, because a moved file sits elsewhere.
+ *
  * Mode `exact` then drops import declarations and the row's named helpers
  * (the whole declaration: signature and body) from both sides and refuses
  * any other difference. Mode `assertions` reduces each side to the ordered
@@ -218,6 +221,34 @@ function isStringish(
 	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
 
+/**
+ * A relative path literal in `new URL(<path>, import.meta.url)`. Like an
+ * import specifier it names a file relative to the test's own directory, so a
+ * moved file may change its leading `./` and `../` segments; the rest of the
+ * path still counts.
+ */
+function isModuleRelativeUrl(
+	node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
+): boolean {
+	const call = node.parent;
+	if (
+		call === undefined ||
+		!ts.isNewExpression(call) ||
+		!ts.isIdentifier(call.expression) ||
+		call.expression.text !== "URL"
+	)
+		return false;
+	const [path, base] = call.arguments ?? [];
+	return (
+		path === node &&
+		/^\.\.?\//u.test(node.text) &&
+		base !== undefined &&
+		ts.isPropertyAccessExpression(base) &&
+		ts.isMetaProperty(base.expression) &&
+		base.name.text === "url"
+	);
+}
+
 function calleeName(call: ts.CallExpression): string | undefined {
 	return ts.isIdentifier(call.expression) ? call.expression.text : undefined;
 }
@@ -306,6 +337,10 @@ function walk(
 	}
 	if (ts.isPrivateIdentifier(node)) {
 		push(`id:${node.text}`);
+		return;
+	}
+	if (isStringish(node) && isModuleRelativeUrl(node)) {
+		push(`url:${node.text.replace(/^(?:\.\.?\/)+/u, "")}`);
 		return;
 	}
 	if (isStringish(node)) {
