@@ -33,7 +33,15 @@ with its reason.
 - `auth-md.ts`: `probeAuthMdStore`, `provisionAuthMdStore`.
 - `cloudflare.ts`: `provisionCloudflareTemporaryStore`.
 - `infisical.ts`: `relayStoreLayout`, `provisionSelfHostedInfisical`,
-  `verifySelfHostedInfisicalClaim`, `attachInfisicalCloud`.
+  `verifySelfHostedInfisicalClaim`, `attachInfisicalCloud`,
+  `updateDeployIdentityTrust` (a connect re-run replaces the deploy
+  identity's OIDC trust in place).
+- `github-oidc.ts`: `resolveGithubOidcSubject` reads from GitHub the OIDC
+  subject a repository's tokens carry (`sub_claim_prefix`, or the immutable
+  `repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids) and fails
+  closed when GitHub does not say; `githubDeployTrust` binds it on a branch
+  with `repository_id` and `repository_owner_id` pinned. Pinned by
+  `contracts/pacts/github-oidc-subject.pact.json`.
 
 The CLI is `hobo ci secret-store plan|provision` in `@hobo/hobo`
 ([CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store));

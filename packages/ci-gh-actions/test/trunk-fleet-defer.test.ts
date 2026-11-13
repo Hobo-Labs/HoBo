@@ -75,10 +75,11 @@ describe("evaluateMainTrunkFleetDefer", () => {
 		expect(decision.peerAbsorbSlots).toBe(2);
 	});
 
-	it("defers plan and deps immediately on memory-headroom when peers exist", () => {
+	it("defers plan, deps, and finish immediately on memory-headroom when peers exist", () => {
 		for (const jobName of [
 			"Main workspace plan",
 			"CI deps layer (pnpm)",
+			"Main full gate (finish)",
 		] as const) {
 			const decision = evaluateMainTrunkFleetDefer({
 				jobName,
