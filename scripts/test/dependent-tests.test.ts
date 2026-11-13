@@ -1116,17 +1116,19 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	];
 	const withTiered = (...others: string[]) => [...tiered, ...others].sort();
 
-	// `packages/cli` merges the root config but its script builds first.
+	// Suites that merge the root config without a deep tier to leave out:
+	// `packages/cli` (its script builds first), `packages/secret-store-claim`,
+	// and the auth authoring proof (which raises its timeouts for tsc fixtures).
+	const merging = [
+		"packages/cli",
+		"packages/hobo",
+		"packages/secret-store-claim",
+		"src/draft/technical-proofs/hobo-auth-authoring-surface",
+	];
 	for (const [path, full] of [
-		["vitest.config.ts", withTiered("packages/cli", "packages/hobo")],
-		[
-			"test/setup/hobo-test-homes.ts",
-			withTiered("packages/cli", "packages/hobo"),
-		],
-		[
-			"test/setup/isolate-hobo-home.ts",
-			withTiered("packages/cli", "packages/hobo"),
-		],
+		["vitest.config.ts", withTiered(...merging)],
+		["test/setup/hobo-test-homes.ts", withTiered(...merging)],
+		["test/setup/isolate-hobo-home.ts", withTiered(...merging)],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
 			const planned = plan(path);
