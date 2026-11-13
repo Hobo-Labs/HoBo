@@ -2,15 +2,16 @@
  * The `github-actions-job` work kind of HoBo Fleet (L16). Signatures frozen by
  * the fleet contract commit (ADR-0182).
  */
-import {
-	type Clock,
-	type FleetLog,
-	FleetNotImplemented,
-	type Outcome,
-	type WorkRunner,
-	type WorkSource,
+import type {
+	Clock,
+	FleetLog,
+	Outcome,
+	WorkRunner,
+	WorkSource,
 } from "@hobo/fleet";
 import type { GithubJobPollerOptions } from "../isolated-worker/github-job-poller.js";
+import { githubActionsRunner } from "./runner.js";
+import { githubActionsSource } from "./source.js";
 
 export type GithubWorkOptions = Readonly<{
 	/** The existing poller's options, unchanged. */
@@ -31,11 +32,10 @@ export type GithubWorkOptions = Readonly<{
 export function createGithubActionsWorkSource(
 	options: GithubWorkOptions,
 ): WorkSource {
-	void options;
-	throw new FleetNotImplemented("createGithubActionsWorkSource");
+	return githubActionsSource(options);
 }
 
 /** Runs one just-in-time runner inside the order's sandbox and fences the job it is handed. */
 export function createGithubActionsWorkRunner(): WorkRunner {
-	throw new FleetNotImplemented("createGithubActionsWorkRunner");
+	return githubActionsRunner();
 }
