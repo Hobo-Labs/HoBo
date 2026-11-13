@@ -38,6 +38,33 @@ Each subpath is a barrel that only re-exports the directory of the lane that
 builds it; until a lane lands, its entry points have their final signatures and
 throw `FleetNotImplemented`.
 
+## Landed parts
+
+Each lane writes its part of this README next to its code; the coordinator
+gathers them here as the waves merge.
+
+- **Keys** (`@hobo/fleet/keys`, wave 1) —
+  [`src/keys/README.md`](src/keys/README.md). JWK parsing and RFC 7638
+  thumbprints, member ids (`dev_` + 32 hex of SHA-256 of the thumbprint text;
+  `bkd_`/`tgt_` from tenant, kind, fleet and name), signed and witnessed
+  envelopes, trust acceptance against the pinned record, RFC 9449 DPoP with
+  `jti` claimed per `dpop:<jkt>`, sealing and session keys with the §7.4
+  parameters, BIP-39 fingerprint words, and the in-memory key store and
+  credential issuer. `node:crypto` only. The memory key store also runs the
+  shared `runKeyStoreConformance` suite.
+- **Assignment** (`@hobo/fleet/assignment`, wave 1) —
+  [`src/assignment/README.md`](src/assignment/README.md). The one-active
+  register moved from `@hobo/backend-routing` with its algorithm unchanged,
+  log formats 1 and 2, the cache-key replica (stored key
+  `hobo:fleet:assignment`), membership epochs (off by default) and
+  `createOneActiveFleet`. Until `eligibleForActive` lands (wave 2) the loop
+  uses a private copy of the §6.8 rules.
+- **Conformance suites** (`@hobo/fleet/testing`, wave 1) —
+  [`src/testing/conformance/README.md`](src/testing/conformance/README.md).
+  The seven suites (bus, transport, sandbox logic, sandbox isolation probe,
+  key store, replica, journal) every adapter of a fleet port runs against
+  itself, and what each `make` must return.
+
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/fleet run build`.

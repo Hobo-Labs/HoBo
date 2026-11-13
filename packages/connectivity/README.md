@@ -185,6 +185,33 @@ getNamedEndpoint({
 
 Set `HOBO_TENANT`, optional `HOBO_PROJECT` / `HOBO_BRANCH` / `HOBO_ENV` for local promotion context.
 
+## Overlay credential minters (HoBo Fleet)
+
+`createTailscaleCredentialMinter` and `createNetbirdCredentialMinter`
+implement the `OverlayCredentialMinter` port of `@hobo/fleet`: the fleet
+authority calls one per `ACTIVE` device to mint a single-use overlay join
+credential through the provider's API, with the `fetch` it is given. They do
+not use or change the overlay clients in `src/overlay/`. Details, request
+shapes and failure handling are in
+[`src/minters/README.md`](src/minters/README.md).
+
+- **Single use, not ephemeral.** Tailscale keys are `reusable: false`,
+  `preauthorized: true`; NetBird setup keys are `one-off` with
+  `usage_limit: 1`. Both use `ephemeral: false`, so a device is not removed
+  when it goes offline.
+- **NetBird's one-day minimum.** NetBird refuses a setup-key `expires_in`
+  under 86400 s, so a NetBird join credential lives for one day rather than
+  the 10 minutes asked for (`max(ceil(ttlMs / 1000), 86400)`). It still cannot
+  be replayed once the device has joined.
+- **Failures** (token read, network, non-2xx, redirect, 10 s timeout, a reply
+  without key or expiry) are `unavailable`; neither the token nor the
+  credential appears in any message, detail or log line.
+- **Assumption A13: not tested, fallback taken.** No provider account or
+  provider-recorded interaction was available, so the consumer pacts in
+  `test/minters/pacts/` are written from the providers' API references and
+  the `[A13]` cases skip until recordings are committed under
+  `test/minters/recorded/`. A13 is listed in the root `fleet-fallbacks.json`.
+
 ## How to test
 
 ```bash
