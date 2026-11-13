@@ -247,7 +247,7 @@ Validation: `pnpm --filter @hobo/ci build`, `pnpm --filter @hobo/ci test`,
 
 A local box is also a tier in runner routing: when the fleet is not taking
 jobs, a run's jobs ask an enrolled local box (`hobo-local-host`) before they
-ask GitHub-hosted runners. `selectFleetBackend` orders the fleet, ARC, the
+ask GitHub-hosted runners. `selectRunnerTier` orders the hobo fleet, ARC, the
 local box, then GitHub-hosted; see "Runner routing" in
 [RUNNER-QUEUE.md](RUNNER-QUEUE.md).
 
@@ -458,26 +458,25 @@ path, cancellation and bounded-file artifact handling for Actions and ADO. It
 inherits only host plumbing and explicit step environments. The Worker-safe
 `@hobo/ci/execution` entrypoint remains free of Node process/filesystem imports.
 
-## Relay mesh
+## Runner routing
 
-`@hobo/ci/mesh` holds the claiming core for a relay with no central node. `rankNodes(job, nodes, now)`
-orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, scaled by the share of its recent jobs each node delivered (`./mesh/reliability.ts`: a decayed score that falls when a node drops jobs and recovers when it stops), and
-`claimTurn(...)` tells one node whether to start a runner now or how long to wait for its turn. Both
-are pure functions; the box worker in `@hobo/ci-gh-actions` calls them when `HOBO_CI_NATS_URL` is set.
+Choosing a runner *provider* by tier and cost is routing, not a fleet, so it
+lives here under `src/runner-routing/` with `Runner` names:
+`balanceRunnerProviders` ranks every connected provider for a job (eligibility,
+then the price the pricing engine quotes, then the budget policy) and gives a
+coded refusal for the rest; `runnerProvidersFromAccount` builds the providers
+from an account's offers and leases, and reads the hobo provider's health and
+active jobs from the hobo fleet's `FleetCapacity` when the caller passes
+`hoboCapacity`; `selectRunnerTier` and the other helpers in `tiers.ts` order the
+hobo fleet, ARC, a local box and GitHub-hosted. `memoryAdmitHeadroom` and
+`memoryAdmitParallelCount` (`src/admission/memory.ts`) answer whether a job's
+memory fits a host now. The generated parts of the docs site's runner routing
+pages come from `scripts/runner-routing-docs.ts`.
 
-- **Trust** (`./mesh/trust.ts`): a node's Ed25519 identity, the signature over a fixed encoding of
-  its advertisement (node id and expiry included), and what a reader makes of it: `trusted` when the
-  key is in the mesh's set, `unverified` when it is not or the node does not sign, `invalid` when the
-  signature fails. `createTrustedMeshBoard` signs on the way out and assesses on the way in. `fitJob`
-  never fits a job to an `invalid` node, and with `requireTrusted` only to trusted ones.
-- **Reports** (`./mesh/report.ts`): `meshNodeReport` turns one advertisement into what a person or an
-  agent is shown (state `live`, `unhealthy` or `lost` and since when, capacity, trust, reliability);
-  `createMeshNodeTracker` keeps a node that stopped advertising on the list as `lost`; and
-  `meshLabelStates` counts, per runner label, the nodes a reader ranks and their free slots.
-
-A signature says which key wrote an advertisement, not what software the node runs. The design, its
-failure table, the trust model's limits and the remaining increments are in
-[CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
+The compute mesh that used to live here (`@hobo/ci/mesh`: ranking, claiming,
+reliability, reports and the hand-edited trusted-key list) is gone. Ranking,
+claims, observation and member identity are `@hobo/fleet`'s; the hobo fleet's
+verdict replaces the repository variables the relay used to publish.
 
 ## GitHub Actions fabric (Hobo-Labs/HoBo)
 
