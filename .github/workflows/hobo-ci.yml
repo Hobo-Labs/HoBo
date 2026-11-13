@@ -212,8 +212,15 @@ jobs:
     # Always the fleet, never routed: this job checks and builds the deps image in the box's
     # own Docker context. On a GitHub-hosted machine there is no such context and no worker
     # image, so a routed run failed here before it reached the build. The required PR
-    # gate does not need this job, so a slow fleet does not delay it.
-    runs-on: hobo
+    # gate does not need this job, so a slow fleet does not delay it. Pull requests
+    # only: on main the deps layer is checked by steps of Main workspace plan.
+    # A pull request's run can ask for the box by its own label: it builds the deps image in
+    # the box's Docker context, and under the shared `hobo` label an ARC pod could take it and
+    # build several GB nothing reads. Opt-in with HOBO_CI_BOX_RUNNER=true once the deployed box
+    # daemon is seen to serve `hobo-box` (the first job to ask for it sat queued for 16 minutes
+    # with no runner); until then the job asks for `hobo`. Trunk events keep the trunk label.
+    # scripts/lint-actions.ts allows this expression for the job that runs build-deps.sh only.
+    runs-on: ${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     # A PR that changes the deps image inputs builds the image and runs the contract;
     # it never promotes. Main promotes from Main workspace plan and the daemon.
@@ -300,9 +307,19 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
+      - name: Wait for other isolated jobs
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
+        # Five of the job's 20 minutes; the build and verify need the rest.
+        env:
+          HOBO_CI_DEPS_BUILD_WAIT_MS: "300000"
+        run: node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts scripts/ci/wait-deps-build-window.mts
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         id: build
+        # A runner without the worker image pulls the published one; without
+        # this it rebuilds the base image from Debian (read-only token).
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
       - name: Verify deps image under job mount
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
@@ -1057,6 +1074,8 @@ jobs:
           attest: "false"
           include-own-run: "true"
       - uses: ./.github/actions/ci-runner-preflight
+        with:
+          install-toolchain: false
       # The secret scan starts here and runs beside the deps and plan steps; the last
       # step waits for it, so the job's 20 minutes hold the longer of the two, not
       # their sum. Only a range scan starts early: a full-history scan refetches every

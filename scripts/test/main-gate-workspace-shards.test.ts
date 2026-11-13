@@ -35,6 +35,7 @@ describe("main full gate workspace sharding", () => {
 		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
 		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
 		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
+		assert.match(plan, /install-toolchain: false/u);
 		assert.match(plan, /main-gate-plan-\$\{\{ github\.sha \}\}/u);
 		assert.match(main, /resolve-main-test-base\.mts/u);
 		assert.match(main, /--external-workspace-tests/u);

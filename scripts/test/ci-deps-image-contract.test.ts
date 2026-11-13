@@ -81,6 +81,7 @@ describe("CI deps image build contract", () => {
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
 		);
 		includes(installRun, '-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +');
+		includes(installRun, 'cp -al "$source" "$target"');
 		const move = installRun.indexOf("'set -e; for source do");
 		const partition = installRun.indexOf(
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
@@ -161,6 +162,11 @@ describe("CI deps image build contract", () => {
 		includes(dockerfile, "ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}");
 		includes(dockerfile, "ENV npm_config_store_dir=/pnpm-store");
 		includes(dockerfile, "npm_config_package_import_method=copy");
+		const install = dockerfile.slice(
+			dockerfile.indexOf("FROM fetch AS install"),
+			dockerfile.indexOf("FROM ${TOOLCHAIN_IMAGE} AS final"),
+		);
+		includes(install, "npm_config_package_import_method=hardlink");
 		includes(dockerfile, "/opt/hobo-deps/.hobo-ci-deps-key");
 		assert.ok(!dockerfile.includes("remote.origin.url"));
 		includes(build, "epoch=0");
@@ -269,6 +275,7 @@ describe("CI deps image build contract", () => {
 		includes(build, "HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
+		includes(build, "scripts/lib/deps-build-headroom.mts");
 		includes(build, "df --output=iavail");
 		includes(build, "df -B1 --output=avail");
 		assert.ok(!build.includes("df -P --output"));
@@ -290,9 +297,14 @@ describe("CI deps image build contract", () => {
 		const guard = build.indexOf("ensure_deps_build_headroom");
 		const call = build.lastIndexOf("ensure_deps_build_headroom");
 		const buildCommand = build.indexOf('"${build_command[@]}" \\');
+		const preBuildGc = build.indexOf(
+			'scripts/ci-runner-image-gc.mts "$candidate" || true',
+		);
 		assert.ok(guard > -1);
 		assert.ok(call > guard);
 		assert.ok(buildCommand > call);
+		assert.ok(preBuildGc > -1);
+		assert.ok(preBuildGc < call);
 	});
 
 	it("lets the worker cap build and verification memory", () => {
@@ -308,7 +320,7 @@ describe("CI deps image build contract", () => {
 		const gc = read("scripts/ci-runner-image-gc.mts");
 		const command =
 			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"';
-		assert.equal(build.split(command).length, 3);
+		assert.equal(build.split(command).length, 4);
 		includes(
 			gc,
 			"selectWorkerImagesForDeletion(inventoryWithUsage, currentDepsTag)",
@@ -344,6 +356,24 @@ describe("CI deps workflow contract", () => {
 	const start = workflow.indexOf("  ci-deps-image:");
 	const end = workflow.indexOf("  pr_gate_validation:", start);
 	const job = workflow.slice(start, end);
+
+	// A cluster runner has no worker image. build-deps.sh then asks
+	// ensure-ci-worker-image for it, which pulls the published image only when
+	// it is handed a token; without one it rebuilds the base image from Debian
+	// and ran out its 600 s budget on a pull request.
+	it("hands the build step the token it needs to pull the published worker image", () => {
+		const step = job.slice(
+			job.indexOf("      - name: Build deps image and verify offline install"),
+		);
+		const body = step.slice(0, step.indexOf("\n      - name:", 1));
+		includes(
+			body,
+			"        env:\n          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+		);
+		includes(body, "build-deps.sh --no-promote");
+		includes(job, "      packages: read\n");
+		includes(build, 'export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"');
+	});
 	const buildCondition =
 		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'";
 	const verifyCondition =
@@ -395,7 +425,12 @@ describe("CI deps workflow contract", () => {
 			job,
 			"if: ${{ !cancelled() && github.event_name == 'pull_request' }}",
 		);
-		includes(job, "    runs-on: hobo\n");
+		// Not routed: the box's own label on a pull request (opt-in), else the trunk expression.
+		includes(
+			job,
+			"    runs-on: ${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || ",
+		);
+		assert.ok(!job.includes("needs.route.outputs.runner"));
 		assert.ok(!job.includes('docker tag "$candidate" hobo-ci-deps:local'));
 		assert.ok(!job.includes("Promote verified deps image"));
 	});
@@ -758,6 +793,23 @@ describe("CI deps publisher contract", () => {
 		const login = publish.indexOf("docker login ghcr.io");
 		const manifest = publish.indexOf('docker manifest inspect "$image"');
 		const local = publish.indexOf("docker image inspect hobo-ci-deps:local");
+		const hoboCi = read(".github/workflows/hobo-ci.yml");
+		includes(hoboCi, "scripts/ci/wait-deps-build-window.mts");
+		includes(publish, "scripts/ci/wait-deps-build-window.mts");
+		// The wait leaves most of a 20-minute job for the build that follows it.
+		const waitStep = hoboCi.slice(
+			hoboCi.indexOf("- name: Wait for other isolated jobs"),
+			hoboCi.indexOf("scripts/ci/wait-deps-build-window.mts"),
+		);
+		includes(waitStep, 'HOBO_CI_DEPS_BUILD_WAIT_MS: "300000"');
+		includes(
+			publish,
+			'HOBO_CI_DEPS_BUILD_WAIT_MS="${HOBO_CI_DEPS_BUILD_WAIT_MS:-300000}"',
+		);
+		includes(
+			read("scripts/ci/wait-deps-build-window.mts"),
+			"process.env.HOBO_CI_DEPS_BUILD_WAIT_MS ?? 300_000",
+		);
 		const build = publish.indexOf(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
 		);

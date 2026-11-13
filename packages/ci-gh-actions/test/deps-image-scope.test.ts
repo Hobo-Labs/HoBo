@@ -118,11 +118,15 @@ describe("CI deps image push scope", () => {
 		});
 		expect(job["timeout-minutes"]).toBe(20);
 		// The publisher pushes the fleet's own image and the deps job builds
-		// it in the box's Docker context, so neither is routed: the PR-only deps
-		// job asks for `hobo`. Main's plan job follows the route job; with no
-		// route it asks for the publisher's label, and it only looks at the
-		// layer when it is the box worker.
-		expect(depsJob["runs-on"]).toBe("hobo");
+		// it in the box's Docker context, so neither is routed. The PR-only deps
+		// job asks for the publisher's label on trunk events and for the box's
+		// own label on pull requests, where it builds the image. Main's plan job
+		// follows the route job; with no route it asks for the publisher's
+		// label, and it only looks at the layer when it is the box worker.
+		expect(depsJob["runs-on"]).toBe(
+			`\${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (${job["runs-on"].slice(4, -3)}) }}`,
+		);
+		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job["runs-on"]).not.toContain("needs.route.outputs.runner");
 		const publisherLabel = String(job["runs-on"]).slice(
 			"${{ ".length,

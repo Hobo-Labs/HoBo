@@ -2,6 +2,12 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
+  pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
+  no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
+  label only when the repository variable `HOBO_CI_BOX_RUNNER` is `true`, set once the deployed box
+  daemon is seen to serve `hobo-box`; otherwise it asks for `hobo` as before. The runner-image and cold-loop jobs do not need the label: they materialize the
+  content-keyed worker image from the host cache or GHCR wherever they run.
 - **The release contract reuses the worker image.** `release-hobo.yml` job
   `release-contract` resolves `hobo-ci-worker` through
   `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
@@ -25,7 +31,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
-  GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
+  GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
   Postgres quota or webhook relay does. SQLite is the only store: the shared-Postgres option was removed
   with the hosted relay's database (ADR-0179 phase 7). `ci-store-contract.test.ts` runs the store
   contract against it; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
@@ -673,6 +679,12 @@ checks failed on main before anyone saw them:
   Docker context. The Dockerfile and the bucket
   script are unchanged, so image contents and paths are too: the digest is updated and
   `DEPS_LAYOUT.version` stays 1, which leaves the deps key and every existing layer as they were.
+  The next edit did change the Dockerfile: the deps install now sets
+  `npm_config_package_import_method=hardlink` and stages `node_modules` with `cp -al` instead of
+  `mv` ([finding 152](../ci/findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)).
+  An install flag is one of the things the rule names, so `DEPS_LAYOUT.version` is 2 and the digest
+  is new: the deps key changes once and the image is rebuilt with the new recipe. The scripts lane
+  only became a pull-request gate with #1962, which is how the stale digest was caught.
 - **Main shard planning vs Turbo affected.** The import-walk planner can list dependents Turbo
   would not schedule under `--affected`. `plan-main-workspace-shards.mts` and the shard CLI now
   intersect scoped plans with `turbo run test --affected --dry=json` at `TURBO_SCM_BASE` before
