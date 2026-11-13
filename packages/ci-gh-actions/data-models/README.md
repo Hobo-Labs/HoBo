@@ -24,13 +24,13 @@ to the board (`MeshAdvert`, with its identity key and signature), the mesh's
 trusted-key set (`MeshTrustConfig`), a node's reliability record as its
 journal keeps it, the node report every surface answers with
 (`MeshNodeReports`: availability, capacity and trust per node, and a capacity
-summary) and the routing snapshot published to `HOBO_CI_FLEET_STATE`
-(`MeshFleetState`). `onboarding.cue` constrains them. The `mesh-*` fixtures
-pin that an older node's advertisement (none of the new fields) is valid,
-that an advertisement cannot state its own trust level or carry a private
-key, that a report's trust level is one of three, and that the routing
-snapshot names labels and counts only, never a node. `src/mesh-records.ts` is
-the only place these are parsed and written.
+summary). `onboarding.cue` constrains them. The `mesh-*` fixtures pin that an
+older node's advertisement (none of the new fields) is valid, that an
+advertisement cannot state its own trust level or carry a private key, and
+that a report's trust level is one of three. `src/mesh-records.ts` is the only
+place these are parsed and written. The routing snapshot the mesh used to
+publish to a repository variable (`MeshFleetState`) is retired: runner routing
+asks the relay for a fleet verdict instead (ADR-0180).
 
 `fleet_verdict.proto` owns the fleet verdict runner routing asks a relay for
 (ADR-0180): `FleetVerdict`, the labels new work should stay off with one of
