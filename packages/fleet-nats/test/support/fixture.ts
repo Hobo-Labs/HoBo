@@ -1,0 +1,220 @@
+/**
+ * A tenant for unit tests: an authority and a witness key, the witnessed
+ * trust record, and helpers that sign member records and session tickets
+ * the way the authority does, published on an in-memory wire.
+ */
+import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
+import { create, toBinary } from "@bufbuild/protobuf";
+import {
+	type AuthorityBus,
+	type DeviceKeys,
+	KEY_BUNDLE_CONTEXT,
+	KeyAlgorithm,
+	KeyBundleSchema,
+	KeyPurpose,
+	MEMBER_RECORD_CONTEXT,
+	MemberKind,
+	MemberRecordSchema,
+	MemberState,
+	MembershipSchema,
+	PublicKeyRefSchema,
+	parseKeyId,
+	Role,
+	SESSION_TICKET_CONTEXT,
+	SessionTicketSchema,
+	type SignedEnvelope,
+	type Signer,
+	TRUST_RECORD_CONTEXT,
+	TrustRecordSchema,
+	type WitnessedEnvelope,
+	WitnessedEnvelopeSchema,
+} from "@hobo/fleet";
+import { createMemoryKeyStore, signEnvelope } from "@hobo/fleet/keys";
+import { authorityBusOverWire } from "../../src/bus/fleet-bus.js";
+import {
+	authorityPin,
+	createRegistryView,
+} from "../../src/bus/registry-view.js";
+import { createMemoryNats, type MemoryNats } from "./memory-wire.js";
+
+export const TENANT = "acme";
+export const INCARNATION = 3;
+const MINUTE = 60_000;
+
+type SuiteSigner = Readonly<{ signer: Signer; raw: string }>;
+
+function suiteSigner(keyId: string): SuiteSigner {
+	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+	const x = publicKey.export({ format: "jwk" }).x ?? "";
+	return {
+		raw: x,
+		signer: {
+			keyId: parseKeyId(keyId),
+			algorithm: KeyAlgorithm.EDDSA,
+			async sign(bytes) {
+				return new Uint8Array(sign(null, bytes, privateKey));
+			},
+		},
+	};
+}
+
+export type Tenant = Readonly<{
+	nats: MemoryNats;
+	bus: AuthorityBus;
+	trust: WitnessedEnvelope;
+	now: () => number;
+	setNow(ms: number): void;
+	authority: Signer;
+	device(
+		options?: Readonly<{
+			roles?: Role[];
+			state?: MemberState;
+			tenant?: string;
+		}>,
+	): Promise<DeviceKeys>;
+	ticket(
+		keys: DeviceKeys,
+		options?: Readonly<{
+			expiresInMs?: number;
+			incarnation?: number;
+			tenant?: string;
+			signer?: Signer;
+		}>,
+	): Promise<SignedEnvelope>;
+}>;
+
+export async function createTenant(): Promise<Tenant> {
+	let clock = Date.now();
+	const now = () => clock;
+	const authority = suiteSigner("authority#1");
+	const witness = suiteSigner("witness#1");
+	const payload = toBinary(
+		TrustRecordSchema,
+		create(TrustRecordSchema, {
+			tenant: TENANT,
+			sequence: 1,
+			authorityKeys: [
+				create(PublicKeyRefSchema, {
+					purpose: KeyPurpose.AUTHORITY,
+					keyId: "authority#1",
+					algorithm: KeyAlgorithm.EDDSA,
+					value: authority.raw,
+				}),
+			],
+			witnessKeys: [
+				create(PublicKeyRefSchema, {
+					purpose: KeyPurpose.WITNESS,
+					keyId: "witness#1",
+					algorithm: KeyAlgorithm.EDDSA,
+					value: witness.raw,
+				}),
+			],
+			authorityIncarnation: INCARNATION,
+			issuer: "https://authority.invalid",
+			jwksUri: "https://authority.invalid/jwks",
+			issuedAt: new Date(clock).toISOString(),
+		}),
+	);
+	const trust = create(WitnessedEnvelopeSchema, {
+		authority: await signEnvelope(
+			authority.signer,
+			TRUST_RECORD_CONTEXT,
+			payload,
+		),
+		witness: await signEnvelope(witness.signer, TRUST_RECORD_CONTEXT, payload),
+	});
+	const nats = createMemoryNats(now);
+	const wire = nats.connect();
+	const pin = authorityPin(() => {
+		throw new Error("no trust record");
+	});
+	const bus = authorityBusOverWire(
+		wire,
+		createRegistryView({ wire, pin, now }),
+		pin,
+		now,
+	);
+	await bus.publisher.putTrust(trust);
+
+	return {
+		nats,
+		bus,
+		trust,
+		now,
+		setNow(ms) {
+			clock = ms;
+		},
+		authority: authority.signer,
+		async device(options = {}) {
+			const keys = await createMemoryKeyStore().open();
+			const bundle = await signEnvelope(
+				keys.identity,
+				KEY_BUNDLE_CONTEXT,
+				toBinary(
+					KeyBundleSchema,
+					create(KeyBundleSchema, {
+						memberId: keys.memberId,
+						sequence: 1,
+						keys: [
+							create(PublicKeyRefSchema, {
+								purpose: KeyPurpose.SIGN,
+								keyId: keys.sign.keyId,
+								algorithm: keys.sign.algorithm,
+								value: keys.signPublicKey,
+							}),
+						],
+						issuedAt: new Date(clock).toISOString(),
+						notAfter: new Date(clock + 60 * MINUTE).toISOString(),
+					}),
+				),
+			);
+			const record = create(MemberRecordSchema, {
+				memberId: keys.memberId,
+				tenant: options.tenant ?? TENANT,
+				kind: MemberKind.DEVICE,
+				state: options.state ?? MemberState.ACTIVE,
+				memberships: [
+					create(MembershipSchema, {
+						fleet: "builders",
+						name: "box",
+						roles: options.roles ?? [Role.EXECUTOR],
+					}),
+				],
+				identityJwk: keys.identityJwk,
+				keyBundle: bundle,
+				recordSequence: 1,
+				authorityIncarnation: INCARNATION,
+				issuedAt: new Date(clock).toISOString(),
+				notAfter: new Date(clock + 30 * MINUTE).toISOString(),
+			});
+			await bus.publisher.putMember(
+				await signEnvelope(
+					authority.signer,
+					MEMBER_RECORD_CONTEXT,
+					toBinary(MemberRecordSchema, record),
+				),
+				keys.memberId,
+			);
+			return keys;
+		},
+		async ticket(keys, options = {}) {
+			return signEnvelope(
+				options.signer ?? authority.signer,
+				SESSION_TICKET_CONTEXT,
+				toBinary(
+					SessionTicketSchema,
+					create(SessionTicketSchema, {
+						ticketId: randomBytes(8).toString("hex"),
+						memberId: keys.memberId,
+						tenant: options.tenant ?? TENANT,
+						issuedAt: new Date(clock).toISOString(),
+						expiresAt: new Date(
+							clock + (options.expiresInMs ?? 10 * MINUTE),
+						).toISOString(),
+						authorityIncarnation: options.incarnation ?? INCARNATION,
+					}),
+				),
+			);
+		},
+	};
+}

@@ -127,7 +127,17 @@ export function authorityPayload(
 	trust: TrustRecord,
 ): Uint8Array | undefined {
 	const envelope = decodeEnvelope(bytes);
-	if (envelope === undefined) return undefined;
+	return envelope === undefined
+		? undefined
+		: authoritySigned(envelope, context, trust);
+}
+
+/** The envelope's payload if it is under `context` and signed by an authority key of `trust`. */
+export function authoritySigned(
+	envelope: SignedEnvelope,
+	context: FleetContext,
+	trust: TrustRecord,
+): Uint8Array | undefined {
 	const key = trust.authorityKeys.find(
 		(candidate) =>
 			candidate.keyId === envelope.keyId &&
