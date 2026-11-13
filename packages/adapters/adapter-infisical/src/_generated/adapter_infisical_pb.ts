@@ -760,7 +760,8 @@ export const InfisicalIdentityResponseSchema: GenMessage<InfisicalIdentityRespon
 
 /**
  * POST /api/v1/auth/oidc-auth/identities/{identityId}: trust one workload
- * issuer (Vercel's team issuer, GitHub Actions) for one identity.
+ * issuer (Vercel's team issuer, GitHub Actions) for one identity. PATCH of the
+ * same path takes the same body and replaces an existing trust in place.
  *
  * @generated from message hobo.adapter_infisical.v1.InfisicalAttachOidcAuthRequest
  */
