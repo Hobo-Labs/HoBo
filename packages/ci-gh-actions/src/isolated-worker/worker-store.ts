@@ -38,8 +38,8 @@ export function resolveWorkerStorePlan(
 	const admission = env.HOBO_CI_JOB_ADMISSION || "pull";
 	if (admission !== "pull" && admission !== "push")
 		throw new Error("HOBO_CI_JOB_ADMISSION must be pull or push");
-	const jobPollMs = Number(env.HOBO_CI_JOB_POLL_MS || "5000");
-	if (!Number.isInteger(jobPollMs) || jobPollMs < 5_000 || jobPollMs > 300_000)
+	const jobPollMs = Number(env.HOBO_CI_JOB_POLL_MS || "2000");
+	if (!Number.isInteger(jobPollMs) || jobPollMs < 2_000 || jobPollMs > 300_000)
 		throw new Error("invalid HOBO_CI_JOB_POLL_MS");
 	return { store, admission, jobPollMs };
 }

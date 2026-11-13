@@ -111,17 +111,40 @@ owner handles no secret value on the default path:
   subject `owner:tyler-r-kendricks-projects:project:hobo-ci:environment:production`,
   audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
   `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
-  Actions (subject `repo:Hobo-Labs/HoBo:ref:refs/heads/main`, audience
-  `https://github.com/Hobo-Labs`), create/edit only. (**Connected:** Tyler
+  Actions (subject `repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main`, GitHub's immutable subject for this repository,
+  audience `https://github.com/Hobo-Labs`, claims `repository_id`
+  `1274791462` and `repository_owner_id` `344805935` pinned), create/edit
+  only. The subject is never typed from the repository's name: `connect`
+  reads it from GitHub (below), because GitHub issues
+  `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/<branch>` to a
+  repository on the immutable subject format and Infisical refuses (HTTP 403)
+  a trust bound to the legacy `repo:<owner>/<repo>` one. (**Connected:** Tyler
   approved using built-in project **Member** (formerly Developer) for
   `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
   Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). `hobo ci secret-store verify` still checks OIDC sign-in only, not Infisical role shape.) Then:
 
   ```sh
-  hobo ci secret-store connect --cwd packages/ci-vercel \
-    --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
+  GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
+    --repo Hobo-Labs/HoBo --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
     --deploy-identity-id <hobo-ci-writer> --team team_BRBUnG6uGhSsVV3EG5GFV3FM
   ```
+
+  `connect` resolves the deploy trust from GitHub: `sub_claim_prefix` from
+  `GET /repos/{owner}/{repo}/actions/oidc/customization/sub` (or the
+  immutable form built from `GET /repos/{owner}/{repo}`'s ids when the
+  template says `use_immutable_subject`), checked against the repository's
+  ids, then `:ref:refs/heads/main`; it fails closed
+  (`HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED`, with the `gh api` command
+  to check) when GitHub does not say, and never writes a glob such as
+  `repo:Hobo-Labs@*/HoBo@*` (it would match a recycled name). The binding
+  records the subject (`deployOidcSubject`). **Repair:** re-run `connect`
+  (no ids needed once the binding exists); with `INFISICAL_TOKEN` from your
+  own `infisical login` for that one run it replaces `hobo-ci-writer`'s OIDC
+  trust in place (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new
+  identity), otherwise it prints the exact subject and claims to set in the
+  dashboard. When `verify` is denied with a token whose `sub` differs from
+  that subject (or is immutable while no subject was recorded), its failure
+  says so and names this repair.
 
 - **The remainder.** Only an optional third-party cache credential
   (`VALKEY_URL`, a `TURSO_AUTH_TOKEN` the Marketplace does not manage) is
@@ -156,9 +179,10 @@ with compensating controls, without upgrading Infisical.
 Compensating controls for **(d)** (no dashboard change required beyond
 existing OIDC):
 
-- **Trust:** GitHub OIDC subject `repo:Hobo-Labs/HoBo:ref:refs/heads/main`,
-  audience `https://github.com/Hobo-Labs`, writer token TTL **600s** (Tyler
-  configured).
+- **Trust:** GitHub OIDC subject `repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main`
+  (immutable; resolved by `connect`), `repository_id` and
+  `repository_owner_id` pinned, audience `https://github.com/Hobo-Labs`,
+  writer token TTL **600s** (Tyler configured).
 - **Separation:** `hobo-ci-relay` remains **Viewer**; only relay-deploy
   workflow jobs use `hobo-ci-writer` OIDC.
 - **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer is for deploy
@@ -180,14 +204,17 @@ loader and the deploy workflow read:
 | Project | Environment / folder | Identity | Role | Trusts |
 |---|---|---|---|---|
 | `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-relay` | viewer | the Vercel team issuer: `iss`/discovery `https://oidc.vercel.com/<team-slug>`, `aud` `https://vercel.com/<team-slug>`, `sub` `owner:<team-slug>:project:hobo-ci:environment:production`, claims `owner_id` and `project_id` pinned |
-| `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy` | viewer | GitHub Actions: `iss` `https://token.actions.githubusercontent.com`, `aud` `https://github.com/<owner>`, `sub` `repo:<owner>/<repo>:ref:refs/heads/main` |
+| `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy` | viewer | GitHub Actions: `iss` `https://token.actions.githubusercontent.com`, `aud` `https://github.com/<owner>`, `sub` `<sub_claim_prefix>:ref:refs/heads/main` as GitHub issues it for the repository (`repo:<owner>@<ownerId>/<repo>@<repoId>` on the immutable format), claims `repository_id` and `repository_owner_id` pinned |
 
 The deploy credential has a project of its own so the relay's identity, a
 member of `hobo-ci` only, can never read it (Infisical project roles cover the
 whole project). Endpoints: `POST /api/v1/admin/bootstrap` (self-hosted only),
 `POST /api/v1/projects`, `POST /api/v1/folders`,
 `POST /api/v1/projects/{projectId}/identities`,
-`POST /api/v1/auth/oidc-auth/identities/{identityId}`, and at finalize
+`POST /api/v1/auth/oidc-auth/identities/{identityId}` (`PATCH` of it on a
+connect re-run), GitHub's `GET /repos/{owner}/{repo}` and
+`GET /repos/{owner}/{repo}/actions/oidc/customization/sub` for the subject,
+and at finalize
 `DELETE`/`GET /api/v1/identities/{identityId}`, from Infisical's OpenAPI
 document (read 2026-11-12), pinned by
 [`infisical-admin.pact.json`](../adapters/adapter-infisical/contracts/pacts/infisical-admin.pact.json).
