@@ -92,7 +92,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			gate,
-			/needs: \[route, pr_gate_validation, workspace_tests, pr_affected\]/u,
+			/needs: \[route, pr_gate_validation, workspace_tests, pr_affected, scripts-tests\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
@@ -148,6 +148,8 @@ describe("merge-group required gate", () => {
 								VALIDATION_RESULT: validationResult,
 								WORKSPACE_RESULT: workspaceResult,
 								AFFECTED_RESULT: affectedResult,
+								// The scripts job's own cases: scripts-tests-job.test.ts.
+								SCRIPTS_RESULT: "success",
 							},
 						});
 						const expected =
@@ -218,6 +220,8 @@ describe("merge-group required gate", () => {
 			"gate() {",
 			'  ( export EVENT_NAME="$1" VALIDATION_RESULT="$2" WORKSPACE_RESULT="$3"',
 			'    export AFFECTED_RESULT="$4" ROUTE_RESULT="$5" ATTESTED="$6" ATTESTED_JOBS="$7"',
+			// The scripts job's own cases: scripts-tests-job.test.ts.
+			"    export SCRIPTS_RESULT=success",
 			script,
 			"  ) >/dev/null 2>&1",
 			"  echo $?",
