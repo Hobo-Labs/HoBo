@@ -126,7 +126,7 @@ the protobuf messages in `packages/cd/data-models/cd.proto`. Some families
 (`camp.*`, `delta.*`, `deployment.*`, `env.*`, `pipeline.*`, `policy.*`,
 `rollout.*`, `set.*`) already appear above for other packages; the CD names
 extend them. Design: [continuous-delivery.md](./continuous-delivery.md),
-[ADR-0181](./adr/01-architecture-core.md#adr-0181).
+[ADR-0182](./adr/01-architecture-core.md#adr-0182).
 
 | Family | `CD_EVENTS` names | Appended by (`packages/cd/src/`) |
 |---|---|---|

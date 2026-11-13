@@ -128,7 +128,7 @@ its work and reports status.
   OCM Placement; HoBo's fan-out, verification and rollback govern.
 - **Borrow** (done): double opt-in, claims, cluster sets, decision groups, rollout strategies,
   feedback rules, orphaning, read-only management, inform-then-enforce
-  ([ADR-0181](../design/adr/01-architecture-core.md#adr-0181)).
+  ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182)).
 - **Benchmark** on fleet governance reporting.
 
 ## Threats and lessons

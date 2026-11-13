@@ -1995,7 +1995,7 @@ classified 📘 deliberate-documented, not gaps.
 
 Appended by plan 0024 WP21. The delivery defects plan 0024 §4 recorded (C1–C23) close with the
 merge of `integration/hobo-cd`, which lands `@hobo/cd` and its adapter packages
-([ADR-0181](docs/design/adr/01-architecture-core.md#adr-0181),
+([ADR-0182](docs/design/adr/01-architecture-core.md#adr-0182),
 [continuous-delivery.md](docs/design/continuous-delivery.md)). Each row names the work package
 whose named tests carry the closure; the coordinator's final report (plan 0024 §13) holds the
 test names and gate results. A row whose owning work package does not merge stays open.

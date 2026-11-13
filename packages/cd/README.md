@@ -10,7 +10,7 @@ failed over only as a governed saga. Rails are delivered like software (INFORM,
 then ENFORCE) and observed continuously as posture.
 
 - Design: [`docs/design/continuous-delivery.md`](../../docs/design/continuous-delivery.md)
-- Decisions D1–D26: [ADR-0181](../../docs/design/adr/01-architecture-core.md#adr-0181)
+- Decisions D1–D26: [ADR-0182](../../docs/design/adr/01-architecture-core.md#adr-0182)
 - Runbooks: [`docs/runbooks/cd/`](../../docs/runbooks/cd/index.md)
 - Operator surface (`hobo deploy`, `hobo serve cd`, `hobo incident`): `packages/hobo/CD.md`
 

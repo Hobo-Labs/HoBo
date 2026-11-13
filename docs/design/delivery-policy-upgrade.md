@@ -8,7 +8,7 @@ tags: [hobo, design, cd, broker, delivery, upgrade]
 # Upgrading `DeliveryPolicy`
 
 **What changed.** The broker delivers through HoBo.CD
-([ADR-0181](./adr/01-architecture-core.md#adr-0181) D14). `DeliveryPolicy` in
+([ADR-0182](./adr/01-architecture-core.md#adr-0182) D14). `DeliveryPolicy` in
 `packages/broker/data-models/broker.proto` is neutral: it says which
 **reconciler mode** converges the delivery, and, for GitOps, which
 `@hobo/cd-gitops` publisher target to use. It no longer names an engine, a

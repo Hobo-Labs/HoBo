@@ -27,7 +27,7 @@ backup/restore runtime, cleanup sweepers, or support ticketing.
 
 ## HoBo.CD: environments as delivery targets
 
-HoBo.CD ([ADR-0181](./adr/01-architecture-core.md#adr-0181); [continuous-delivery.md](./continuous-delivery.md)) is the delivery engine for the lifecycle below:
+HoBo.CD ([ADR-0182](./adr/01-architecture-core.md#adr-0182); [continuous-delivery.md](./continuous-delivery.md)) is the delivery engine for the lifecycle below:
 
 - **Promotion between environments** is a pipeline node per environment: Freight
   reaches `prod` only after qualifying in the upstream node (a PASS

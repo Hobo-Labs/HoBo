@@ -132,7 +132,7 @@ member clusters according to policy. It graduated in the CNCF in September 2026.
   Karmada's scheduler, failover or overrides for its deliveries; that would be a second placement
   engine.
 - **Borrow** (done): spread, taints, purge modes, state handover, retained fields, explicit
-  rebalance ([ADR-0181](../design/adr/01-architecture-core.md#adr-0181)).
+  rebalance ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182)).
 - **Benchmark** on fleet-scale failover behavior.
 
 ## Threats and lessons

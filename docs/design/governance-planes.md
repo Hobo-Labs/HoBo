@@ -148,7 +148,7 @@ A model/prompt promotion is governed by the same four-lens taxonomy as any chang
 ## HoBo.CD: posture and compliance
 
 Governance at decision time (the gate) is joined by **continuous posture**
-([ADR-0181](./adr/01-architecture-core.md#adr-0181) D24, D25; [continuous-delivery.md](./continuous-delivery.md)):
+([ADR-0182](./adr/01-architecture-core.md#adr-0182) D24, D25; [continuous-delivery.md](./continuous-delivery.md)):
 
 - **Rails are delivered like software.** An approved Rail version is Freight.
   It is promoted through a pipeline first in `INFORM` mode, where the enforced

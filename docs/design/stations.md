@@ -88,7 +88,7 @@ The design always spoke of Station capabilities informally — PAM is "an option
 
 ## 5a. Rail `delivery` (HoBo.CD)
 
-A Rail may carry an opaque `delivery` JSON object ([ADR-0181](./adr/01-architecture-core.md#adr-0181) D19–D25). It is part of
+A Rail may carry an opaque `delivery` JSON object ([ADR-0182](./adr/01-architecture-core.md#adr-0182) D19–D25). It is part of
 the Rail's canonical content and digest; `@hobo/stations` never interprets it,
 and `@hobo/cd` parses it as `RailDeliveryRecord`:
 

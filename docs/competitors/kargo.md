@@ -144,7 +144,7 @@ State labels follow the research contract.
 ## Better-together / integration posture
 
 - **Borrow** (done): Freight, Warehouse → Freight source, availability, soak, auto-promotion,
-  supersession and expiring approvals are taken into HoBo.CD ([ADR-0181](../design/adr/01-architecture-core.md#adr-0181)).
+  supersession and expiring approvals are taken into HoBo.CD ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182)).
 - **Benchmark** on promotion-graph presentation.
 - Coexistence: a HoBo.CD `publisher` reconciler can write to the same GitOps repositories an
   existing Kargo estate uses, but two promotion engines over one environment would fight; pick one

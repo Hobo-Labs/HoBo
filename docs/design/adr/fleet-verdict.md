@@ -7,8 +7,12 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 
 # ADR-0180 — Runner Routing Asks the Relay for a Fleet Verdict {#adr-0180}
 
-**Status:** Accepted, amended 2026-11-12 ("Signed reports, agreement and
-allowance" and "Routing rules, workflows, monitor and retirement" below).
+**Status:** Superseded for transport by
+[ADR-0181](routing-slips.md#adr-0181) (2026-11-13): the route job reads the
+box relay's routing slip instead of asking the hosted relay. The rule stands:
+the relay decides and no capacity figure leaves it. Accepted, amended
+2026-11-12 ("Signed reports, agreement and allowance" and "Routing rules,
+workflows, monitor and retirement" below).
 Built: the record, the relay routes and stores, signed reports, agreement
 among enrolled reporters, the allowance, the reporter status route, the
 route job's client, the box's reporter, the main gate's re-ask, the monitor

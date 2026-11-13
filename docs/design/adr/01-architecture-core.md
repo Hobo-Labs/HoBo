@@ -982,7 +982,7 @@ Repo-wide, by rule: `no-known-value-widening` 127 → 5,880, `require-safety-com
 - **(+)** Each copy ships the upstream MIT `LICENSE`, so the vendored code carries its notice; the manifest holds it like any rule file.
 - **(−)** The skill's own `scripts/install.mjs` and `SKILL.md` stay at the older upstream version, which needs no `verify.mjs`. The current upstream installer imports `verify.mjs`, so syncing it would reopen point 3.
 
-## ADR-0181
+## ADR-0182
 **HoBo.CD: `@hobo/cd` delivers immutable Freight through a pipeline graph by pull, on every platform, with deterministic verification, Placement, fan-out, governed failover, and Rails delivered and observed like software (decisions D1–D26).**
 
 **Status:** Accepted. Design narrative: [continuous-delivery.md](../continuous-delivery.md).

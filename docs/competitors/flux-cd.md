@@ -232,7 +232,7 @@ State labels follow the research contract.
 
 ## HoBo.CD update (2026-11-12)
 
-HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0181](../design/adr/01-architecture-core.md#adr-0181), [continuous-delivery.md](../design/continuous-delivery.md)); the competitor research
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182), [continuous-delivery.md](../design/continuous-delivery.md)); the competitor research
 itself was not re-run.
 
 - **Pull reconciliation is HoBo's model too.** Freight sources poll registries and Git hosts

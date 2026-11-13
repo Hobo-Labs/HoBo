@@ -24,7 +24,7 @@ system, release pipeline, UI, support automation, or customer-data storage progr
 
 ## HoBo.CD: the delivery artifact store
 
-The `@hobo/cd` artifacts module is the artifact store for delivery ([ADR-0181](./adr/01-architecture-core.md#adr-0181) D3,
+The `@hobo/cd` artifacts module is the artifact store for delivery ([ADR-0182](./adr/01-architecture-core.md#adr-0182) D3,
 D18; [continuous-delivery.md](./continuous-delivery.md)):
 
 - **Content-addressed.** Artifacts and resolved-plan blobs are stored and
