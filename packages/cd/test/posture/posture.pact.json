@@ -1,0 +1,58 @@
+{
+  "consumer": { "name": "HoboCdGatePromotionVerificationAndFeed" },
+  "provider": { "name": "HoboCdPosture" },
+  "interactions": [
+    {
+      "description": "promotion binds a Rail in INFORM and the candidate is set",
+      "providerState": "Camp prod-1 has no Rail binding",
+      "request": { "method": "BIND", "body": { "campId": "prod-1", "railDigest": "sha256:bbbb", "mode": "POLICY_MODE_INFORM", "promotionId": "p1" } },
+      "response": {
+        "body": { "ok": true, "record": { "campId": "prod-1", "candidateRailDigest": "sha256:bbbb", "promotionId": "p1" }, "events": ["policy.BindingChanged"], "stream": "cd-camp-prod-1" },
+        "matchingRules": { "$.body.record.boundAt": { "match": "regex", "regex": "^\\d{4}-\\d{2}-\\d{2}T" } }
+      }
+    },
+    {
+      "description": "promotion binds a Rail in ENFORCE without a qualified INFORM node and is refused",
+      "providerState": "Rail sha256:bbbb has not qualified on an INFORM node",
+      "request": { "method": "BIND", "body": { "campId": "prod-1", "railDigest": "sha256:bbbb", "mode": "POLICY_MODE_ENFORCE", "promotionId": "p2" } },
+      "response": { "body": { "ok": false, "code": "shadow-required", "hasRemediation": true } }
+    },
+    {
+      "description": "promotion rolls an ENFORCE binding back to the previous digest",
+      "providerState": "Camp prod-1 enforces sha256:bbbb over sha256:aaaa",
+      "request": { "method": "RESTORE", "body": { "campId": "prod-1", "promotionId": "p3" } },
+      "response": { "body": { "ok": true, "record": { "campId": "prod-1", "enforcedRailDigest": "sha256:aaaa", "promotionId": "p3" } } }
+    },
+    {
+      "description": "the gate asks for the candidate Rail while the Camp is bound INFORM",
+      "providerState": "Camp prod-1 is bound INFORM to sha256:bbbb",
+      "request": { "method": "SHADOW_CANDIDATE", "body": { "campId": "prod-1" } },
+      "response": { "body": { "railDigest": "sha256:bbbb", "policyPack": "rail-new" } }
+    },
+    {
+      "description": "the gate records a diverged shadow decision",
+      "providerState": "Camp prod-1 is bound INFORM to sha256:bbbb",
+      "request": { "method": "SHADOW_RECORD", "body": { "campId": "prod-1", "deltaId": "d1", "enforcedEffect": "allow", "candidateEffect": "deny" } },
+      "response": { "body": { "events": ["policy.ShadowDecided"], "stream": "cd-compliance-prod-1", "record": { "diverged": true } } }
+    },
+    {
+      "description": "the gate reads open ownership conflicts",
+      "providerState": "prod-1's Set declares tls.min_version 1.0 under an enforce binding requiring >= 1.2",
+      "request": { "method": "CONFLICTS", "body": { "campId": "prod-1" } },
+      "response": { "body": { "conflicts": [{ "rule": "tls-baseline/tls-min-version", "resource": "api", "ownershipConflict": true, "state": "COMPLIANCE_STATE_NONCOMPLIANT" }] } }
+    },
+    {
+      "description": "the HOBO_POSTURE health source reads the noncompliant-ratio and divergence series",
+      "providerState": "prod-1 was evaluated compliant against the candidate and one gate decision diverged",
+      "request": { "method": "SERIES", "body": { "campId": "prod-1", "railDigest": "sha256:bbbb" } },
+      "response": { "body": { "noncompliantRatio": [0], "shadowDivergence": [0, 1], "emptyWindow": [] } }
+    },
+    {
+      "description": "the desired-state feed asks which attributes reconcilers must report",
+      "providerState": "prod-1 enforces tls-baseline and is bound INFORM to tls-strict",
+      "request": { "method": "OBSERVE_FIELDS", "body": { "campId": "prod-1" } },
+      "response": { "body": { "observeFields": ["hsts", "public", "tls.min_version"] } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "2.0.0" } }
+}
