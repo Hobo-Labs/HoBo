@@ -151,6 +151,7 @@ unindexed new finding files as notices.
 - [Finding 145: fleet verdict channel operating record](./findings/0145-fleet-verdict-channel-operating-record.md)
 - [Finding 146: route job read a capacity record no worker wrote](./findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)
 - [Finding 147: merge queue shard timed out a one-second test on a stalled box](./findings/0147-merge-queue-shard-timed-out-a-one-second-test-on-a-stalled-box.md)
+- [Finding 148: jit runner cross job custody kill](./findings/0148-jit-runner-cross-job-custody-kill.md)
 <!-- findings-index:end -->
 
 ## Data
