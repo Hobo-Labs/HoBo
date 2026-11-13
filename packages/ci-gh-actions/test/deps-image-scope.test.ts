@@ -100,7 +100,11 @@ describe("CI deps image push scope", () => {
 		// The publisher pushes the fleet's own image and the deps job builds
 		// it in the box's Docker context, so neither is routed: both ask for
 		// the fleet's label.
-		expect(depsJob["runs-on"]).toBe(job["runs-on"]);
+		// The deps job asks for the publisher's label on trunk events and for
+		// the box's own label on pull requests, where it builds the image.
+		expect(depsJob["runs-on"]).toBe(
+			`\${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (${job["runs-on"].slice(4, -3)}) }}`,
+		);
 		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
