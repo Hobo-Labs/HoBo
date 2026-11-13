@@ -159,6 +159,7 @@ export const FLEET_LOG_EVENTS = [
 	"hobo_fleet_assignment_sealed_too_long",
 	"hobo_fleet_witness_lag",
 	"hobo_fleet_witness_refused",
+	"hobo_fleet_egress_refused",
 ] as const;
 
 export type FleetEventType = (typeof FLEET_EVENT_TYPES)[number];

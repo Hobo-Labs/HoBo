@@ -14,6 +14,10 @@ export type KmsLike = Readonly<{
 	generateRsaKey(kid: string): void;
 	sign(kid: string, payload: string): Buffer;
 	publicJwk(kid: string): JsonObject;
+	/** Amendment 2 (optional): every key id held, for JWKS publication across rotation. */
+	keyIds?(): readonly string[];
+	/** Amendment 2 (optional): the key id new tokens are signed with. */
+	activeKeyId?(): string;
 }>;
 
 export function createInMemoryKms(): KmsLike {

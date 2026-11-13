@@ -48,6 +48,8 @@ export const ORDER_CONTEXT = "hobo-fleet/order/v1";
 export const HOST_ATTESTATION_CONTEXT = "hobo-fleet/host-attestation/v1";
 // public-contract: the sealing context of an order's secret (associated data `order_id ‖ 0x00 ‖ member_id`).
 export const ORDER_SECRET_CONTEXT = "hobo-fleet/order-secret/v1";
+// public-contract: HKDF info deriving the iroh endpoint secret from the TRANSPORT key (amendment 2).
+export const P2P_ENDPOINT_KEY_CONTEXT = "hobo-fleet/p2p-endpoint-key/v1";
 
 /** Exactly the context strings of the §7.4 table plus the order-secret sealing context. */
 export const FLEET_CONTEXTS = [

@@ -12,9 +12,9 @@
  * leave this function.
  */
 import { createHash } from "node:crypto";
-import type { DeviceKeys } from "@hobo/fleet";
+import { type DeviceKeys, P2P_ENDPOINT_KEY_CONTEXT } from "@hobo/fleet";
 
-const DERIVATION_CONTEXT = "hobo-fleet/p2p-endpoint-key/v1";
+const DERIVATION_CONTEXT = P2P_ENDPOINT_KEY_CONTEXT;
 
 export async function deriveEndpointSecret(
 	keys: DeviceKeys,

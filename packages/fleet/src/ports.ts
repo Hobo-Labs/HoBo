@@ -363,6 +363,10 @@ export interface AuditLog {
 	onWitnessed(
 		handler: (checkpoint: WitnessedEnvelope) => Promise<void>,
 	): Subscription;
+	/** Witness (optional, amendment 2): authority-signed checkpoints as appended, before co-signature. */
+	onCheckpoint?(
+		handler: (checkpoint: SignedEnvelope) => Promise<void>,
+	): Subscription;
 	/** Authority: publish a new authority-signed trust record on fleet.audit.trust for co-signature. */
 	proposeTrust(record: SignedEnvelope): Promise<void>;
 	/** Witness: proposed trust records, in stream order. */
@@ -882,7 +886,11 @@ export type AgentDeps = Readonly<{
 
 // ── The authority's API: one method per route of §6.15 ────────────────────
 type Empty = Readonly<Record<string, never>>;
-type ById<K extends string, T = Empty> = Readonly<Record<K, string>> & T;
+// Amendment 2: the default was `Empty` (Record<string, never>), which collapsed every id field to `never`.
+type ById<
+	K extends string,
+	T extends object = Readonly<Record<never, never>>,
+> = Readonly<Record<K, string>> & T;
 /** Method name: [request, response]. The comment is the route. Responses typed SignedEnvelope carry the record named. */
 export type FleetApi = {
 	authorityDiscovery: [Empty, AuthorityDiscovery]; // GET  /.well-known/hobo-fleet

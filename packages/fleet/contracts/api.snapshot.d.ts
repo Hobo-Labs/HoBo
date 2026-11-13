@@ -867,6 +867,7 @@ export declare const OFFER_CONTEXT = "hobo-fleet/offer/v1";
 export declare const ORDER_CONTEXT = "hobo-fleet/order/v1";
 export declare const HOST_ATTESTATION_CONTEXT = "hobo-fleet/host-attestation/v1";
 export declare const ORDER_SECRET_CONTEXT = "hobo-fleet/order-secret/v1";
+export declare const P2P_ENDPOINT_KEY_CONTEXT = "hobo-fleet/p2p-endpoint-key/v1";
 export declare const FLEET_CONTEXTS: readonly [
     "hobo-fleet/trust-record/v1",
     "hobo-fleet/key-bundle/v1",
@@ -1134,7 +1135,8 @@ export declare const FLEET_LOG_EVENTS: readonly [
     "hobo_fleet_assignment_tick",
     "hobo_fleet_assignment_sealed_too_long",
     "hobo_fleet_witness_lag",
-    "hobo_fleet_witness_refused"
+    "hobo_fleet_witness_refused",
+    "hobo_fleet_egress_refused"
 ];
 export type FleetEventType = (typeof FLEET_EVENT_TYPES)[number];
 export declare const POLICY_DECIDED_EVENT = "policy.Decided";
@@ -1370,6 +1372,7 @@ export interface AuditLog {
     appendCheckpoint(checkpoint: SignedEnvelope): Promise<void>;
     entries(fromSequence: number, toSequence: number): Promise<readonly AuditEntry[]>;
     onWitnessed(handler: (checkpoint: WitnessedEnvelope) => Promise<void>): Subscription;
+    onCheckpoint?(handler: (checkpoint: SignedEnvelope) => Promise<void>): Subscription;
     proposeTrust(record: SignedEnvelope): Promise<void>;
     onTrustProposed(handler: (record: SignedEnvelope) => Promise<void>): Subscription;
     onTrustWitnessed(handler: (trust: WitnessedEnvelope) => Promise<void>): Subscription;
