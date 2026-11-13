@@ -1,15 +1,16 @@
 /**
  * The runtime calls of the OCI sandbox drivers, behind one port so that the
  * driver's logic runs against a recording double in unit tests (L38 isolated
- * checks) and against the real runtime binary (`crun`, `runc`, `runsc`) here.
- * Every call is a child process; no secret is ever on its argv or environment:
- * an exec's process (argv and environment) is written to a private file and
- * passed with `--process`, and its standard input is piped.
+ * checks) and against the real runtime binary here: the provisioned `runsc`
+ * (D58), or an operator's host `crun` or `runc`. Every call is a child
+ * process of that one binary; no other host tool is run. No secret is ever on
+ * its argv or environment: an exec's process (argv and environment) is
+ * written to a private file and passed with `--process`, and its standard
+ * input is piped.
  */
 import { spawn } from "node:child_process";
 import { closeSync, openSync, readFileSync } from "node:fs";
-import type { ForwardRoute } from "./forwarder.js";
-import { FORWARDER_READY, FORWARDER_SCRIPT } from "./forwarder.js";
+import { FORWARDER_READY } from "./forwarder.js";
 
 export type ExecIo = Readonly<{
 	stdin?: Uint8Array;
@@ -24,16 +25,23 @@ export type OciCalls = Readonly<{
 	start(id: string, bundle: string): Promise<number>;
 	/** Runs the process described by `processFile` in the container; answers its exit code. */
 	exec(id: string, processFile: string, io: ExecIo): Promise<number>;
-	/** Starts the forwarder inside the network namespace of `pid`; resolves once it listens. */
+	/**
+	 * Starts the forwarder container of `bundle` (written by the driver: a
+	 * second container in the workload's runsc pod, or one joining the
+	 * workload's namespaces by path), its runtime attached and this process
+	 * holding its standard streams; resolves once it prints its ready line. `stop` closes
+	 * its standard input (it exits on that) and deletes the container.
+	 */
 	forward(
-		pid: number,
-		routes: readonly ForwardRoute[],
-	): Promise<Readonly<{ stop(): void }>>;
+		id: string,
+		bundle: string,
+	): Promise<Readonly<{ stop(): Promise<void> }>>;
 	/** Kills and deletes the container; succeeds when it is already gone. */
 	remove(id: string): Promise<void>;
 }>;
 
 const GRACE_MS = 5_000;
+const READY_MS = 60_000;
 
 type Collected = Readonly<{ code: number; stdout: string; stderr: string }>;
 
@@ -64,13 +72,28 @@ export function createOciCalls(
 	options: Readonly<{
 		binary: string;
 		stateRoot: string;
-		/** Runtime flags placed before the subcommand (`runsc` needs `--network=host`). */
+		/** Runtime flags placed before the subcommand (for runsc: `runscFlags` in index.ts). */
 		globalFlags: readonly string[];
-		/** True when the agent is not root: the forwarder also enters the container's user namespace. */
-		rootless: boolean;
 	}>,
 ): OciCalls {
 	const base = ["--root", options.stateRoot, ...options.globalFlags];
+
+	async function remove(id: string): Promise<void> {
+		const answer = await collect(options.binary, [
+			...base,
+			"delete",
+			"--force",
+			id,
+		]);
+		if (
+			answer.code !== 0 &&
+			!/does not exist|not found|no such|not exist/iu.test(answer.stderr)
+		)
+			throw new Error(
+				`${options.binary} delete failed (${answer.code}): ${answer.stderr.trim().slice(0, 300)}`,
+			);
+	}
+
 	return {
 		async version() {
 			const answer = await collect(options.binary, ["--version"]);
@@ -147,75 +170,70 @@ export function createOciCalls(
 				});
 			});
 		},
-		forward(pid, routes) {
-			const enter = options.rootless
-				? ["--user", "--preserve-credentials"]
-				: [];
+		forward(id, bundle) {
 			return new Promise((resolve, reject) => {
+				// Attached, not detached: runsc gives a detached sub-container an
+				// already-closed standard input, and the forwarder exits on that.
+				// Attached, the runtime relays these pipes for the container's life.
 				const child = spawn(
-					"nsenter",
-					[
-						"--target",
-						String(pid),
-						"--net",
-						...enter,
-						"--",
-						process.execPath,
-						"-e",
-						FORWARDER_SCRIPT,
-						JSON.stringify(routes),
-					],
+					options.binary,
+					[...base, "run", "--bundle", bundle, id],
 					{ stdio: ["pipe", "pipe", "pipe"] },
 				);
 				let stderr = "";
 				let out = "";
 				let settled = false;
-				const stop = () => {
+				const close = () => {
 					child.stdin.destroy();
-					child.kill("SIGKILL");
+					child.stdout.destroy();
+					child.stderr.destroy();
 				};
+				const stop = async () => {
+					close();
+					child.kill("SIGKILL");
+					await remove(id);
+				};
+				const settle = (error?: Error) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					if (error === undefined) {
+						resolve({ stop });
+						return;
+					}
+					close();
+					remove(id).then(
+						() => reject(error),
+						() => reject(error),
+					);
+				};
+				const timer = setTimeout(
+					() =>
+						settle(
+							new Error(
+								`the forwarder printed no ready line in ${READY_MS} ms: ${stderr.trim().slice(0, 300)}`,
+							),
+						),
+					READY_MS,
+				);
 				child.stderr.on("data", (chunk) => {
 					stderr += String(chunk);
 				});
 				child.stdout.on("data", (chunk) => {
 					out += String(chunk);
-					if (!settled && out.includes(FORWARDER_READY)) {
-						settled = true;
-						resolve({ stop });
-					}
+					if (out.includes(FORWARDER_READY)) settle();
 				});
-				child.on("error", (error) => {
-					if (!settled) {
-						settled = true;
-						reject(error);
-					}
-				});
-				child.on("close", (code) => {
-					if (!settled) {
-						settled = true;
-						reject(
-							new Error(
-								`the forwarder exited ${code}: ${stderr.trim().slice(0, 300)}`,
-							),
-						);
-					}
-				});
+				child.stdin.on("error", () => undefined);
+				child.on("error", (error) => settle(error));
+				child.on("exit", (code) =>
+					settle(
+						new Error(
+							`${options.binary} run of the forwarder exited ${code} before it was ready: ${stderr.trim().slice(0, 300)}`,
+						),
+					),
+				);
 			});
 		},
-		async remove(id) {
-			const answer = await collect(options.binary, [
-				...base,
-				"delete",
-				"--force",
-				id,
-			]);
-			if (
-				answer.code !== 0 &&
-				!/does not exist|not found|no such/iu.test(answer.stderr)
-			)
-				throw new Error(
-					`${options.binary} delete failed (${answer.code}): ${answer.stderr.trim().slice(0, 300)}`,
-				);
-		},
+		remove,
 	};
 }

@@ -20,13 +20,21 @@ import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import type { ForwardRoute } from "../../src/sandbox/forwarder.js";
-import type { OciConfig, OciProcess } from "../../src/sandbox/oci-config.js";
+import {
+	type OciConfig,
+	type OciProcess,
+	POD_CONTAINER_TYPE,
+	POD_SANDBOX_ID,
+} from "../../src/sandbox/oci-config.js";
+import { STDIN_RELAY } from "../../src/sandbox/oci-driver.js";
 import type { OciCalls } from "../../src/sandbox/oci-runtime.js";
 
 export type RecordedContainer = {
 	readonly id: string;
 	readonly pid: number;
 	readonly config: OciConfig;
+	/** The forwarder container's configuration, once started. */
+	forwarder: OciConfig | undefined;
 	routes: readonly ForwardRoute[];
 	readonly files: Map<string, Uint8Array>;
 	removed: boolean;
@@ -88,6 +96,14 @@ export function createRecordingOci(
 	const calls: string[] = [];
 	const processes: OciProcess[] = [];
 	const containers = new Map<string, RecordedContainer>();
+	const pods = new Map<
+		string,
+		{
+			config: OciConfig;
+			routes: readonly ForwardRoute[];
+			members: RecordedContainer[];
+		}
+	>();
 	let pids = 1000;
 
 	async function wget(
@@ -141,27 +157,58 @@ export function createRecordingOci(
 			const config: OciConfig = JSON.parse(
 				readFileSync(join(bundle, "config.json"), "utf8"),
 			);
-			containers.set(id, {
+			const container: RecordedContainer = {
 				id,
 				pid: pids,
 				config,
+				forwarder: undefined,
 				routes: [],
 				files: new Map(),
 				removed: false,
 				forwarderStopped: false,
-			});
+			};
+			// A runsc workload joins the pod its forwarder started.
+			const pod = pods.get(config.annotations[POD_SANDBOX_ID] ?? "");
+			if (pod !== undefined) {
+				container.forwarder = pod.config;
+				container.routes = pod.routes;
+				pod.members.push(container);
+			}
+			containers.set(id, container);
 			return pids;
 		},
-		async forward(pid, routes) {
-			calls.push(`forward ${pid}`);
+		async forward(id, bundle) {
+			calls.push(`forward ${id}`);
+			const config: OciConfig = JSON.parse(
+				readFileSync(join(bundle, "config.json"), "utf8"),
+			);
+			const routes: readonly ForwardRoute[] = JSON.parse(
+				config.process.args[3] ?? "[]",
+			);
+			if (config.annotations[POD_CONTAINER_TYPE] === "sandbox") {
+				// runsc: the forwarder is the pod; the workload joins it later.
+				const members: RecordedContainer[] = [];
+				const pod = { config, routes, members };
+				pods.set(id, pod);
+				return {
+					async stop() {
+						for (const member of pod.members) member.forwarderStopped = true;
+					},
+				};
+			}
+			// A host runtime: the forwarder joins the running workload's network namespace.
+			const netns = config.linux.namespaces.find(
+				(entry) => entry.type === "network",
+			)?.path;
 			const container = [...containers.values()].find(
-				(entry) => entry.pid === pid,
+				(entry) => netns === `/proc/${entry.pid}/ns/net`,
 			);
 			if (container === undefined)
-				throw new Error(`no container with pid ${pid}`);
+				throw new Error(`the forwarder ${id} names no running container`);
+			container.forwarder = config;
 			container.routes = routes;
 			return {
-				stop() {
+				async stop() {
 					container.forwarderStopped = true;
 				},
 			};
@@ -171,8 +218,16 @@ export function createRecordingOci(
 			const container = containers.get(id);
 			if (container === undefined || container.removed)
 				throw new Error(`container ${id} does not exist`);
-			const process: OciProcess = JSON.parse(readFileSync(processFile, "utf8"));
-			processes.push(process);
+			const recorded: OciProcess = JSON.parse(
+				readFileSync(processFile, "utf8"),
+			);
+			processes.push(recorded);
+			// The driver's standard-input relay runs the command itself after `cat |`.
+			const relayed =
+				recorded.args[2] === STDIN_RELAY && recorded.args[3] === "hobo-stdin";
+			const process: OciProcess = relayed
+				? { ...recorded, args: recorded.args.slice(4) }
+				: recorded;
 			const [program, flag, script, name, path] = process.args;
 			if (program === "env") {
 				io.onOutput(encoder.encode(`${process.env.join("\n")}\n`));

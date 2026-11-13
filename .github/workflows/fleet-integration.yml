@@ -8,18 +8,21 @@ name: Fleet integration
 #
 # Provisioning: `nats-server` 2.15.3 through mise.toml; the iroh relay of the
 # release the pinned `@number0/iroh` binding is built against (iroh-relay 1.4.1),
-# a pinned, checksum-verified download; an OCI runtime CLI (crun or runc) and
-# nsenter for the S1 sandbox driver, which writes its own OCI bundles and pulls
-# the probe image by digest itself (no Podman). gVisor, Kata and macOS are not
-# provisioned (A11, A12 in fleet-fallbacks.json).
+# a pinned, checksum-verified download; the sandbox runtime through the
+# agent's own provisioning code (D58): `sandbox-provision.ts` downloads the
+# pinned gVisor `runsc` release, checks its SHA-512 and unpacks it into
+# $RUNNER_TEMP/hobo-sandbox, exactly as a device does. The S1 sandbox driver
+# writes its own OCI bundles and pulls the probe image by digest itself (no
+# Podman). Kata and macOS are not provisioned (A11, A12 in
+# fleet-fallbacks.json).
 #
 # Runners: scripts/lint-actions.ts requires every enabled workflow to run on the
-# self-hosted hobo labels. The hobo runner image must carry crun or runc and
-# nsenter, and run the job either as root (rootful with user-namespace
-# remapping, the A10 fallback O10 was proven on) or with cgroup v2 delegation
-# for the runner user; without either the S1 self-test fails and O10 fails.
-# Both jobs check for the binaries first and fail with that message rather
-# than later in a test.
+# self-hosted hobo labels. Nothing sandbox-related has to be on the runner
+# image: the job needs only a Linux kernel that lets the job user run as root
+# or create unprivileged user namespaces. The provision step probes that; when
+# it is refused and passwordless sudo is available it lifts the
+# user-namespace restriction once and probes again, and otherwise fails naming
+# the kernel capability.
 #
 # Runs on the integration branch (`fleet/**`) and on demand.
 
@@ -74,16 +77,44 @@ jobs:
           set -euo pipefail
           nats-server --version
           iroh-relay --help > /dev/null
-          if ! command -v crun > /dev/null && ! command -v runc > /dev/null; then
-            echo "::error::this runner has no crun or runc; the fleet integration lane needs an OCI runtime CLI on the hobo runner image" >&2
-            exit 1
-          fi
-          if ! command -v nsenter > /dev/null; then
-            echo "::error::this runner has no nsenter; the S1 sandbox driver needs it" >&2
-            exit 1
-          fi
       - run: pnpm run install:check
       - run: pnpm run build
+      - name: Provision the sandbox runtime
+        run: |
+          set -euo pipefail
+          cache="${RUNNER_TEMP}/hobo-sandbox"
+          probe() {
+            set +e
+            report=$(node --import tsx packages/fleet-agent/src/cli/sandbox-provision.ts --cache "$cache" --probe)
+            code=$?
+            set -e
+            echo "$report"
+          }
+          probe
+          if [ "$code" -eq 3 ] && sudo -n true 2> /dev/null; then
+            lifted=""
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo -n sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+              lifted=yes
+            fi
+            if [ -e /proc/sys/kernel/unprivileged_userns_clone ]; then
+              sudo -n sysctl -w kernel.unprivileged_userns_clone=1
+              lifted=yes
+            fi
+            if [ -n "$lifted" ]; then probe; fi
+          fi
+          if [ "$code" -ne 0 ]; then
+            reason=$(printf '%s' "$report" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{try{console.log(JSON.parse(s).reason??"")}catch{console.log(s)}})')
+            case "$reason" in
+              no-root-or-userns*)
+                echo "::error::this runner's kernel lets the job user neither run as root nor create unprivileged user namespaces, so no sandbox can start (${reason}). Allow user namespaces (user.max_user_namespaces > 0, kernel.unprivileged_userns_clone=1, kernel.apparmor_restrict_unprivileged_userns=0) or run the job as root." >&2 ;;
+              *)
+                echo "::error::the sandbox runtime is unavailable on this runner: ${reason}" >&2 ;;
+            esac
+            exit 1
+          fi
+          echo "HOBO_FLEET_SANDBOX_CACHE=${cache}" >> "$GITHUB_ENV"
+          echo "HOBO_FLEET_SANDBOX_DOWNLOAD=0" >> "$GITHUB_ENV"
       - name: Every fleet outcome
         run: pnpm run fleet:verify
       - name: Keep the verification report
@@ -126,16 +157,44 @@ jobs:
           set -euo pipefail
           nats-server --version
           iroh-relay --help > /dev/null
-          if ! command -v crun > /dev/null && ! command -v runc > /dev/null; then
-            echo "::error::this runner has no crun or runc; the fleet integration lane needs an OCI runtime CLI on the hobo runner image" >&2
-            exit 1
-          fi
-          if ! command -v nsenter > /dev/null; then
-            echo "::error::this runner has no nsenter; the S1 sandbox driver needs it" >&2
-            exit 1
-          fi
       - run: pnpm run install:check
       - run: pnpm run build
+      - name: Provision the sandbox runtime
+        run: |
+          set -euo pipefail
+          cache="${RUNNER_TEMP}/hobo-sandbox"
+          probe() {
+            set +e
+            report=$(node --import tsx packages/fleet-agent/src/cli/sandbox-provision.ts --cache "$cache" --probe)
+            code=$?
+            set -e
+            echo "$report"
+          }
+          probe
+          if [ "$code" -eq 3 ] && sudo -n true 2> /dev/null; then
+            lifted=""
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo -n sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+              lifted=yes
+            fi
+            if [ -e /proc/sys/kernel/unprivileged_userns_clone ]; then
+              sudo -n sysctl -w kernel.unprivileged_userns_clone=1
+              lifted=yes
+            fi
+            if [ -n "$lifted" ]; then probe; fi
+          fi
+          if [ "$code" -ne 0 ]; then
+            reason=$(printf '%s' "$report" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{try{console.log(JSON.parse(s).reason??"")}catch{console.log(s)}})')
+            case "$reason" in
+              no-root-or-userns*)
+                echo "::error::this runner's kernel lets the job user neither run as root nor create unprivileged user namespaces, so no sandbox can start (${reason}). Allow user namespaces (user.max_user_namespaces > 0, kernel.unprivileged_userns_clone=1, kernel.apparmor_restrict_unprivileged_userns=0) or run the job as root." >&2 ;;
+              *)
+                echo "::error::the sandbox runtime is unavailable on this runner: ${reason}" >&2 ;;
+            esac
+            exit 1
+          fi
+          echo "HOBO_FLEET_SANDBOX_CACHE=${cache}" >> "$GITHUB_ENV"
+          echo "HOBO_FLEET_SANDBOX_DOWNLOAD=0" >> "$GITHUB_ENV"
       - name: Every fleet integration test
         run: |
           set -euo pipefail
