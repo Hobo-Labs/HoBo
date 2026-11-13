@@ -264,7 +264,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo-trunk\",\"relay\":\"verdict\",\"why\":\"\",\"refusedBy\":\"none\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo-trunk\",\"slip\":\"used\",\"why\":\"fleet-open\",\"refusedBy\":\"none\"}",
 				"raw_details": ""
 			}
 		],
@@ -275,7 +275,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo-trunk\",\"relay\":\"verdict\",\"why\":\"\",\"refusedBy\":\"none\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo-trunk\",\"slip\":\"used\",\"why\":\"fleet-open\",\"refusedBy\":\"none\"}",
 				"raw_details": ""
 			}
 		],
@@ -286,7 +286,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"verdict\",\"why\":\"\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"used\",\"why\":\"no-capacity\",\"refusedBy\":\"slip\"}",
 				"raw_details": ""
 			}
 		],
@@ -297,7 +297,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"pricing-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo\",\"relay\":\"verdict\",\"why\":\"\",\"refusedBy\":\"none\"}",
+				"message": "{\"v\":2,\"workflow\":\"pricing-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo\",\"slip\":\"used\",\"why\":\"fleet-open\",\"refusedBy\":\"none\"}",
 				"raw_details": ""
 			}
 		]

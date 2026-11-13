@@ -10,8 +10,10 @@ tags: [hobo, ci, relay, routing, fleet, monitoring]
 Every fallback to a default must leave a record something reads. The monitor is that reader: it turns the
 route job's notices, the fleet's queue waits, paid minutes and the hosted relay's reporter status into issues,
 so a signal that stops carrying a value is raised within two monitor runs instead of failing silently. Design:
-[plan 0025, section 6.6](../plans/0025-relay-owned-runner-routing.md); verdict authority:
-[ADR-0180](../design/adr/fleet-verdict.md#adr-0180).
+[plan 0025, section 6.6](../plans/0025-relay-owned-runner-routing.md); routing authority: the box relay's
+routing slip ([ADR-0181](../design/adr/routing-slips.md#adr-0181),
+[plan 0026](../plans/0026-relay-routing-slips.md)), which replaced the hosted relay's verdict
+([ADR-0180](../design/adr/fleet-verdict.md#adr-0180)) as what route jobs read.
 
 | Piece | Where |
 | --- | --- |
@@ -42,16 +44,26 @@ Actions OIDC token whose audience is that origin. When the route cannot be reach
 and H10 read `unknown`, which is not a breach on its own; an `unknown` after an `unknown` raises H2's issue
 with that note.
 
+**Route notices.** Each route decision prints one `hobo-ci-route` notice, version 2:
+`{"v":2,"workflow","tier","runner","slip","why","refusedBy"}`. `slip` is `used` (the routing slip decided;
+`why` is the relay's reason, such as `fleet-open` or `no-capacity`), `fallback` (no slip could be used and the
+queue rule decided; `why` says which: `no routing slip`, `slip expired`, `slip malformed`, `slip names another
+repository`, `slip names a label not in runnerRouting.labels`, or the Git API failure) or `unasked` (`why`:
+`pinned` or `attested`). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
+`hobo-ci-route-fallback` warning that starts `routing slip not used`; the monitor reads the notice for it, and
+counts under H1 only the warnings that say the route did not run at all. Version-1 notices (the hosted relay's
+`relay`/`verdict` fields) are no longer read.
+
 ## Signals
 
 | Signal | Computed from | Breach | First thing to check |
 | --- | --- | --- | --- |
-| **H1** routing did not run | `hobo-ci-route-fallback` warnings | any | The route job's log: the route script or its sparse checkout failed |
-| **H2** relay asked, no verdict | route notices with `relay: unanswered` over those with `verdict` or `unanswered` | more than 5% of at least 20, or all of at least 5; or the status route unread twice | The relay deploy's smoke check; the `why` in the evidence |
-| **H3** relay not asked | route notices with `relay: unasked` and `why: no-relay` | any | `.hobo/ci.json` in that commit names an `https` relay |
+| **H1** routing did not run | `hobo-ci-route-fallback` warnings that do not start `routing slip not used` | any | The route job's log: the route script or its sparse checkout failed |
+| **H2** routing slip unusable | route notices with `slip: fallback` for any reason but `no routing slip` or `slip expired`, over those plus `slip: used` | more than 5% of at least 20, or all of at least 5; or the hosted relay's status route unread twice | The `why` in the evidence: a malformed slip or an unknown label points at the box relay's writer; an HTTP status or `not read in time` at the Git API |
+| **H3** no routing slip | route notices with `slip: fallback` and `why` `no routing slip` or `slip expired` | any | The box relay: down, not restarted onto code that writes slips, or not the mesh leader; [finding 0149](findings/0149-routing-slip-facts-main-on-the-queue-rule-hosted-relay-down-box-on-c7ec8d449.md) |
 | **H4** reporter silent | status route: a reporter in `shadow` or `report` whose `lastReportAt` is more than 10 minutes old | any | The box daemon; its clock (refused `clock-skew`); its key (refused `bad-signature`); its enrollment |
 | **H6** stall | jobs on `hobo` or `hobo-trunk` that waited, or have been queued, more than `CI_HEALTH_STALL_MINUTES` (default 30) for a runner; **Main full gate** is left out (it waits on its concurrency group) | any | The box and ARC: a fleet that was refusing work the verdict did not block |
-| **H8** paid minutes | per job on `ubuntu-24.04`, started to completed rounded up to the minute, leaving out the route job, the gates and this monitor; split by what refused the fleet (`relay`, `queue`, `none`, `fallback`, `unrouted`) | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (default 150) | Which split carries the minutes |
+| **H8** paid minutes | per job on `ubuntu-24.04`, started to completed rounded up to the minute, leaving out the route job, the fleet probe's `local box enrolled` gate, the gates and this monitor; split by what refused the fleet (`slip`, `queue`, `none`, `fallback`, `unrouted`) | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (default 150) | Which split carries the minutes |
 | **H10** allowance spent | status route | any label | The box: a label blocked for its whole daily allowance is a fleet stuck refusing |
 
 `unrouted` minutes belong to runs with no route notice: workflows without a route job, and every run before

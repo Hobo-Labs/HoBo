@@ -178,12 +178,11 @@ jobs:
 	assert.match(result.stdout, /2 enabled workflow/);
 });
 const trunkRunsOn =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
-const routedRunsOn =
-	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
-/** The main gate's shards: the plan job's second ask, then the run's route, then the trunk label. */
+	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
+const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+/** The main gate's shards: the plan job's second ask, then the run's route, then GitHub-hosted. */
 const shardRunsOn =
-	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -324,7 +323,7 @@ jobs:
 	assert.equal(rejectedTrunkOnPr.status, 1);
 	assert.match(rejectedTrunkOnPr.stderr, /PR-only jobs must use plain hobo/);
 	for (const runsOn of [
-		"${{ vars.HOBO_CI_TRUNK_RUNNER }}",
+		"${{ needs.route.outputs.runner }}",
 		trunkRunsOn.replace("'hobo-trunk'", "'ubuntu-latest'"),
 		"ubuntu-latest",
 	]) {

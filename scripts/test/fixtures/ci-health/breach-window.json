@@ -356,7 +356,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo\",\"relay\":\"unasked\",\"why\":\"no-relay\",\"refusedBy\":\"none\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo\",\"slip\":\"fallback\",\"why\":\"no routing slip\",\"refusedBy\":\"none\"}",
 				"raw_details": ""
 			}
 		],
@@ -367,7 +367,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		],
@@ -378,7 +378,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		],
@@ -389,7 +389,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		],
@@ -400,7 +400,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		],
@@ -411,7 +411,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		],
@@ -422,7 +422,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		],
@@ -433,7 +433,7 @@
 				"end_line": 1,
 				"annotation_level": "notice",
 				"title": "hobo-ci-route",
-				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"message": "{\"v\":2,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"slip\":\"fallback\",\"why\":\"the routing slip was not read in time\",\"refusedBy\":\"queue\"}",
 				"raw_details": ""
 			}
 		]

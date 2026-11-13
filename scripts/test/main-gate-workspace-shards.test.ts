@@ -86,7 +86,7 @@ describe("main full gate workspace sharding", () => {
 			assert.equal(runsOn(job(name)), SHARD, name);
 		assert.match(
 			job("main-gate-plan"),
-			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.runner \|\| needs\.route\.outputs\.runner \}\}$/mu,
+			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.shard_runner \|\| needs\.route\.outputs\.shard_runner \}\}$/mu,
 		);
 		assert.match(job("main-gate"), /^    needs: \[route, ci-runner-image\]$/mu);
 	});
@@ -111,25 +111,23 @@ describe("main full gate workspace sharding", () => {
 		assert.match(step, /if: needs\.route\.outputs\.tier == 'fleet'/u);
 		assert.match(step, /uses: \.\/\.github\/actions\/route-runner/u);
 		assert.match(step, /token: \$\{\{ github\.token \}\}/u);
-		assert.match(
-			step,
-			/mode: \$\{\{ inputs\.route \|\| vars\.HOBO_CI_ROUTE \}\}/u,
-		);
 		for (const input of [
-			"local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}",
-			"max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}",
-			"max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}",
-			"trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}",
+			"route: ${{ inputs.route || 'auto' }}",
 			'attest: "false"',
 			'include-own-run: "true"',
 		])
 			assert.ok(step.includes(input), input);
+		// Routing settings are committed policy and the routing slip, never inputs.
+		assert.doesNotMatch(
+			step,
+			/vars\.|local-runner|trunk-runner|max-wait|max-queued/u,
+		);
 		// A second ask that cannot decide outputs no runner (the action's
 		// fallback, route-runner.test.ts), so the run's route stands; a skipped
-		// or failed plan job leaves the shards on the trunk expression.
+		// or failed plan job leaves the shards on the run's route, then GitHub-hosted.
 		assert.ok(
 			SHARD.includes(
-				"needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (",
+				"needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04'",
 			),
 		);
 	});
@@ -153,22 +151,19 @@ describe("main full gate workspace sharding", () => {
 		);
 	});
 
-	it("can be pinned from a dispatch without touching repository variables", () => {
+	it("can be pinned from a dispatch, which reaches the route script as an argument", () => {
 		assert.match(
 			workflow,
 			/^  workflow_dispatch:\n    inputs:\n      route:\n/mu,
 		);
-		assert.match(
-			job("route"),
-			/mode: \$\{\{ inputs\.route \|\| vars\.HOBO_CI_ROUTE \}\}/u,
-		);
+		assert.match(job("route"), /route: \$\{\{ inputs\.route \|\| 'auto' \}\}/u);
+		assert.doesNotMatch(workflow, /vars\.HOBO_CI_/u);
 	});
 });
 
-const TRUNK =
-	"(vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo')";
-const ROUTED = `\${{ needs.route.outputs.runner || ${TRUNK} }}`;
-const SHARD = `\${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || ${TRUNK} }}`;
+const ROUTED = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const SHARD =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 
 /** One job's block of the workflow, up to the next job. */
 function job(name: string): string {
