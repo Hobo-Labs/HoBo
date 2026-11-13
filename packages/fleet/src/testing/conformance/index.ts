@@ -16,6 +16,8 @@ import type {
 	KeyStore,
 	SandboxDriver,
 } from "../../ports.js";
+import { registerSuite } from "./assertion.js";
+import { JOURNAL_ASSERTIONS } from "./journal.js";
 
 export function runBusConformance(make: () => Promise<AuthorityBus>): void {
 	throw new FleetNotImplemented("runBusConformance");
@@ -62,5 +64,5 @@ export function runReplicaConformance(
 export function runJournalConformance(
 	make: () => Promise<FleetEventStore>,
 ): void {
-	throw new FleetNotImplemented("runJournalConformance");
+	registerSuite("journal conformance", JOURNAL_ASSERTIONS, make, 30_000);
 }
