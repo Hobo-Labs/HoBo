@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Proves the Git Data API calls the routing slip rests on (plan 0026, 3.2),
+ * Proves the Git Data API calls the routing slip rests on (ADR-0181, decision 2),
  * against the live repository or a fake one.
  *
  *   node scripts/ci/routing-slip-probe.mts --repository owner/name

@@ -73,24 +73,20 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
             .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          mode: ${{ vars.HOBO_CI_ROUTE }}
-          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
-          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
-          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
-          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
 
   deploy:
     name: Deploy the hosted CI relay (production)
     needs: route
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
     # gate hands the adopt step a deadline 3 minutes short of it, so the
     # command ends with a typed reason before the job is killed.
@@ -181,12 +177,13 @@ jobs:
           status=$?
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-adopt.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
-      # The route job asks the relay `.hobo/ci.json` names, at its public
-      # origin, for this repository's fleet verdict (ADR-0180). Vercel has
+      # The hosted relay's fleet verdict (ADR-0180) at its public origin. Route
+      # jobs no longer ask it: they read the box relay's routing slip (ADR-0181),
+      # which retires this route with the verdict store. Vercel has
       # already promoted the deploy, so this reports rather than gates: a red
       # check is the signal to roll back in the order of "Roll back" under
       # "Fleet verdict operations" in packages/ci-vercel/README.md. A relay
-      # that does not answer never stops a run; routing treats it as no relay.
+      # that does not answer never stops a run; route jobs never ask it.
       - name: Probe the fleet verdict at the public origin
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -209,7 +206,7 @@ jobs:
           echo "GET $origin/v1/fleet/verdicts/$repository answered $code"
           echo "- Fleet verdict at $origin: $code" >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" != "200" ]; then
-            echo "::error title=Relay fleet verdict::GET /v1/fleet/verdicts/$repository at $origin answered $code; route jobs read this as no relay. Follow the rollback order in the fleet verdict runbook (packages/ci-vercel/README.md)"
+            echo "::error title=Relay fleet verdict::GET /v1/fleet/verdicts/$repository at $origin answered $code; route jobs no longer ask it (ADR-0181). Follow the rollback order in the fleet verdict runbook (packages/ci-vercel/README.md)"
             exit 1
           fi
           node -e '
@@ -233,7 +230,7 @@ jobs:
     needs: route
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.manifest_code != ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read

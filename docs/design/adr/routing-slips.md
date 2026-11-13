@@ -35,9 +35,30 @@ Routing settings also travel as repository variables (`HOBO_CI_ROUTE`,
 `HOBO_CI_TRUNK_RUNNER`, …) and box environment variables
 (`HOBO_CI_WORKER_SLOTS`, `HOBO_CI_FLEET_VERDICT_*`, …). They are empty or
 unset in production, invisible in review and differ per box. The owner ruled
-(plan 0026, R1–R5): the relay decides; no environment or repository variable
+(R1–R5 below): the relay decides; no environment or repository variable
 carries routing; unknown changes nothing; a box busy with its own jobs is
 never refused; nothing is handed to the owner as a task.
+
+## Rules {#adr-0181-rules}
+
+- **R1** The relay (fleet host) decides routing. Workers and workflows do not
+  judge capacity.
+- **R2** No environment variable and no repository variable carries routing
+  or fleet information, or a routing setting, anywhere: workflows, actions,
+  the route script, the box daemon, the reporter, the hosted relay. Routing
+  travels as a routing slip written by the relay, and routing policy is
+  committed configuration (`runnerRouting` in `.hobo/ci.json`).
+- **R3** Unknown changes nothing: with no slip, routing behaves as it did
+  before slips (the queue rule).
+- **R4** A box that is only busy with its own jobs is never refused.
+- **R5** Nothing is handed to the owner as a task. What the code cannot do
+  itself is stated as a fact in a finding, once.
+
+**Boundary of R2.** Platform-provided runtime context (`GITHUB_*`,
+`RUNNER_*`, `GITHUB_TOKEN`), credentials, and settings unrelated to routing
+(build, test, telemetry) are not routing information. Everything that
+chooses a runner label, a tier, a pool, a slot split, a limit or a reporter
+is.
 
 ## Decision
 
@@ -75,9 +96,59 @@ never refused; nothing is handed to the owner as a task.
    `parseCiRunnerRouting` in `src/relay-routing.ts`), described by the
    editor schema and `#RunnerRouting`, and read without dependencies by
    `scripts/ci/runner-routing.mts` in the route job's sparse checkout.
-5. **Nothing routes through a variable.** Plan 0026 3.4 lists every name
-   that counts as routing. Platform context (`GITHUB_*`, `RUNNER_*`),
-   credentials and settings unrelated to routing are not routing.
+5. **How the relay decides**, per class, from what only it holds: it refuses
+   the fleet (`tier: github`) when no live node serves the class's label
+   (`no-node`); when every node refuses for a reason other than its own
+   running jobs, critical host or storage health included whether or not
+   the node is busy, and no external pool has a free runner (`no-capacity`);
+   or when work assigned to the label has not started for
+   `runnerRouting.verdict.stallMs` (`stalled`). Otherwise the fleet label,
+   `fleet-open`, or `fleet-busy` when every slot is taken (R4). A local box
+   enrolled by committed config takes the place of GitHub-hosted when the
+   fleet is refused; a committed `runnerRouting.pin` is written into every
+   class (`pinned`); forks use `classes.fork`, never the trunk label. An
+   external pool counts as free only when it can be counted (repository
+   runners with its label, not busy); one that cannot be counted never
+   allows a refusal (R3). The existing evaluator and its enter/exit
+   hysteresis are reused.
+6. **Nothing routes through a variable.** The routing list below names
+   every one that counts as routing. Platform context (`GITHUB_*`,
+   `RUNNER_*`), credentials and settings unrelated to routing are not
+   routing.
+
+### Routing list {#adr-0181-routing-list}
+
+Exhaustively: `HOBO_CI_ROUTE`, `HOBO_CI_ROUTE_MAX_WAIT_SECONDS`,
+`HOBO_CI_ROUTE_MAX_QUEUED`, `HOBO_CI_TRUNK_RUNNER`, `HOBO_CI_LOCAL_RUNNER`
+(the repository variable; not `scripts/local-runner.ts`'s switch),
+`HOBO_CI_INCLUDE_OWN_RUN`, `HOBO_CI_ATTESTED`, `HOBO_CI_FLEET_ROUTES`,
+`HOBO_CI_FLEET_VERDICT_*`, `HOBO_CI_FLEET_REPORTER_ID`,
+`HOBO_CI_FLEET_EXTERNAL_POOLS_JSON`, `HOBO_CI_FLEET_REPORTERS_JSON`,
+`HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB`, `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`,
+`HOBO_CI_WORKER_SLOTS`, `HOBO_CI_WORKER_TRUNK_SLOTS`,
+`HOBO_CI_WORKER_TRUNK_LEND`, `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`,
+`HOBO_CI_WORKER_MERGE_GROUP_LEASES`, `HOBO_CI_JOB_ADMISSION`,
+`MAIN_WORKSPACE_PARALLEL_CAP`, `HOBO_CI_BOX_RUNNER` (now
+`runnerRouting.boxRunner` and `runnerRouting.labels.box`: whether a pull
+request's deps-image job asks for the box's own label, which the route job
+outputs as `box_runner`), `HOBO_CI_MAIN_REUSE_MERGE_QUEUE` (now
+`runnerRouting.mainGate.reuseMergeQueue`, read by
+`scripts/ci/merge-queue-reuse.mts` from the route job's checkout), and the
+pool label and providers carried by `HOBO_CI_CONFIG`/`HOBO_CI_CONFIG_JSON`
+(the daemon takes labels and providers from `.hobo/ci.json` instead; those
+two keep only what is not routing). Each of these repository variables is
+listed in `runnerRouting.retiredVariables`, which the relay deletes.
+
+Not routing: `HOBO_CI_RELAY_URL` names a relay and is written as a literal by
+onboarding; `HOBO_CI_MERGE_QUEUE_BRANCH` names a branch, not a runner. The
+shared Turborepo cache's address (formerly the repository variable
+`HOBO_CI_TURBO_API`) is not routing either, but no workflow takes a
+`vars.HOBO_CI_*` at all: it is committed as `turboCache.api` in
+`.hobo/ci.json`, which `.github/actions/turbo-cache` reads from the checkout
+inside its step. Moving it changes who can set it from repository admins to
+anyone who can change `.hobo/ci.json` on a branch that runs CI with secrets;
+those already change the workflows, so no one gains the cache token, and fork
+pull requests never receive it.
 
 ## Considered and rejected
 
@@ -92,22 +163,42 @@ never refused; nothing is handed to the owner as a task.
 ## Consequences
 
 - **The hosted relay leaves the routing path.** Its verdict routes, stores,
-  reporter enrollment and PACT are removed in plan 0026 layer 04; the
+  reporter enrollment and PACT are removed (delivery layer 04); the
   evaluator stays and feeds slips.
 - **Unknown changes nothing.** With the box down, not restarted onto new
   code, or with no mesh leader, there is no slip or an expired one, and the
   route job behaves exactly as today.
 - **The box takes the new code after one restart** (finding 149); from then
-  on it keeps itself current (plan 0026, 3.8).
+  on it keeps itself current: every three hours, only while idle, the leader
+  prepares main's head in a separate worktree, runs a self-check, and
+  re-executes in place only when that passes (delivery layer 05).
 - **Write budget.** At most two writes per change, about 40 an hour steady,
   hard-capped at 20 a minute and 300 an hour, with a ten-minute back-off on
   403 or 429.
 
 ## Not built
 
-Plan 0026 layers 02–05: the route job reading slip and policy, the workflow
-and lint changes, the box's slip writer and decision, variable retirement,
-the hosted relay's retirement, and self-update.
+Delivered as one linear stack, each layer on the one below: 02 the route job
+reading slip and policy, the workflow and lint changes; 03 the box's slip
+writer and decision, variable retirement; 04 the hosted relay's retirement;
+05 self-update, the docs and a source guard over the routing list.
+
+## Measurable outcomes {#adr-0181-outcomes}
+
+| Id | Outcome | Check |
+| --- | --- | --- |
+| M1 | No `vars.HOBO_CI_*` in `.github/` or `packages/ci-gh-actions/templates/` | lint-actions test |
+| M2 | No `process.env` read of any name on the routing list in `scripts/`, `packages/ci*` | source guard test |
+| M3 | A valid slip decides; the route job adds at most 3 s; no slip adds no wait | route-runner tests with a fake GitHub API |
+| M4 | An expired, malformed, wrong-repository or unknown-label slip is never used | reader tests, invalid fixtures |
+| M5 | No slip gives the same outputs as before slips on the recorded production cases | route-runner replay tests |
+| M6 | Busy and healthy is `fleet-busy`; busy with critical disk is refused; assigned with nothing started for 10 minutes is `stalled` | evaluator and issuer tests |
+| M7 | Slip writes stay at or under 20 a minute and 300 an hour under a 100-run burst; one writer per mesh | issuer test with a fake clock |
+| M8 | Committed `runnerRouting` values equal the code's defaults | policy test |
+| M9 | Variable retirement: 204 and 404 succeed, 403 is logged once, nothing throws | unit test |
+| M10 | Self-update never re-executes onto a head whose preparation failed; re-execution keeps the PID and adopts containers | daemon test |
+| M11 | The hosted relay has no `/v1/fleet/` route and starts with retired keys present | tests and codegen check |
+| M12 | Every layer: script tests, actions lint, architecture guard, codegen, schema, docs freshness, and build, typecheck, lint and test of touched packages | CI |
 
 ## Contracts and gates
 

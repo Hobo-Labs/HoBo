@@ -11,13 +11,31 @@
  * Runs in the `route` job on a GitHub-hosted machine: node builtins only, no
  * checkout of the tree under test. It never fails the job: anything short of a
  * verified match is `reuse=false`, and main then runs its full gate as before.
+ *
+ * Whether reuse is on is committed policy, never a variable (ADR-0181):
+ * `runnerRouting.mainGate.reuseMergeQueue` in `.hobo/ci.json`, read with the
+ * dependency-free reader from the route job's sparse checkout. A file with no
+ * valid `runnerRouting` leaves reuse on, as an unset variable did.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { RUNNER_ROUTING_PATH, readRunnerRouting } from "./runner-routing.mts";
 
-/** Repository variable that turns reuse off (`false`). Unset means on. */
-// public-contract: operators set this to `false` to make main re-run its full gate.
-export const MERGE_QUEUE_REUSE_VARIABLE = "HOBO_CI_MAIN_REUSE_MERGE_QUEUE";
+/** The committed setting that turns reuse off (`false`). */
+// public-contract: set to `false` in .hobo/ci.json to make main re-run its full gate.
+export const MERGE_QUEUE_REUSE_SETTING =
+	"runnerRouting.mainGate.reuseMergeQueue";
+/** Reuse is on unless committed policy turns it off. */
+export const DEFAULT_REUSE_MERGE_QUEUE = true;
+
+/** The committed setting from `.hobo/ci.json`'s text; the default when it has none. */
+export function reuseMergeQueueSetting(text: string | undefined): boolean {
+	return (
+		readRunnerRouting(text)?.mainGate.reuseMergeQueue ??
+		DEFAULT_REUSE_MERGE_QUEUE
+	);
+}
 
 /** Merge-group runs read per decision; the matching run is almost always the newest. */
 export const MERGE_GROUP_RUN_LOOKUPS = 30;
@@ -45,8 +63,8 @@ export type MergeGroupRun = Readonly<{
 export type ReuseInput = Readonly<{
 	eventName: string;
 	ref: string;
-	/** `false` disables reuse; anything else leaves it on. */
-	setting: string;
+	/** Committed `runnerRouting.mainGate.reuseMergeQueue`; `false` disables reuse. */
+	enabled: boolean;
 	repository: string;
 	workflowBasename: string;
 	headSha: string;
@@ -77,8 +95,8 @@ function sameRepository(run: MergeGroupRun, repository: string): boolean {
  * the pushed tree.
  */
 export function decideMergeQueueReuse(input: ReuseInput): ReuseDecision {
-	if (input.setting.trim().toLowerCase() === "false")
-		return { reuse: false, reason: `${MERGE_QUEUE_REUSE_VARIABLE}=false` };
+	if (!input.enabled)
+		return { reuse: false, reason: `${MERGE_QUEUE_REUSE_SETTING} is false` };
 	if (input.eventName !== "push" || input.ref !== "refs/heads/main")
 		return { reuse: false, reason: "not a push to main" };
 	const headSha = input.headSha.trim().toLowerCase();
@@ -151,13 +169,25 @@ export async function fetchMergeGroupRuns(options: {
 	}
 }
 
+/** `.hobo/ci.json` from the checkout, or nothing when it is not there. */
+function readCommittedConfig(): string | undefined {
+	try {
+		return readFileSync(
+			join(process.env.GITHUB_WORKSPACE ?? process.cwd(), RUNNER_ROUTING_PATH),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 async function main(): Promise<void> {
 	const repository = process.env.GITHUB_REPOSITORY ?? "";
 	const workflowBasename = process.env.WORKFLOW_BASENAME ?? "hobo-ci.yml";
 	const base = {
 		eventName: process.env.GITHUB_EVENT_NAME ?? "",
 		ref: process.env.GITHUB_REF ?? "",
-		setting: process.env.HOBO_CI_MAIN_REUSE_MERGE_QUEUE ?? "",
+		enabled: reuseMergeQueueSetting(readCommittedConfig()),
 		repository,
 		workflowBasename,
 		headSha: process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "",

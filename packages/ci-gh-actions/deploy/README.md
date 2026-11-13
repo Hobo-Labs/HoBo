@@ -394,8 +394,10 @@ policy and what is still refused are in [`runner-fleet/README.md`](runner-fleet/
 `turbo-cache/compose.yml` runs the open-source Turborepo remote cache server
 (`ducktors/turborepo-remote-cache`, pinned by digest) with a local volume, so
 every box job, ARC pod and GitHub-hosted runner can replay what another already
-built. It is separate from the relay and optional; nothing uses it until the
-repository has the variable `HOBO_CI_TURBO_API` (the server's URL), the variable
+built. It is separate from the relay and optional; nothing uses it until
+`.hobo/ci.json` names the server's URL in `turboCache.api` (committed
+configuration, read by `.github/actions/turbo-cache` from the checkout; no
+repository variable carries it), and the repository has the variable
 `TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below).
 
 ```sh

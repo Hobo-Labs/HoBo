@@ -5,44 +5,26 @@ description: >-
   is. Never fails: when the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen (this step is running there, so it is the one tier
   known to be up) and a warning says why. Pinned to the fleet, it stays there.
-  What the fleet can take is not passed in: the script asks the relay that
-  .hobo/ci.json names for its verdict (ADR-0180), so the workflow must check
-  that file out, and a relay that does not answer changes nothing.
+  What the fleet can take is not passed in: the script reads the routing slip
+  the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
+  policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
+  out that file and scripts/ci/runner-routing.mts. With no usable slip the
+  queue rule decides at once, as before slips.
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and what is left goes to GitHub-hosted without reading the queue.
-  Each decision is one `hobo-ci-route` notice; a fallback is a
-  `hobo-ci-route-fallback` warning, so a monitor can count both.
+  Each decision is one `hobo-ci-route` notice; a fallback (the script did not
+  run, or no slip could be used) is a `hobo-ci-route-fallback` warning, so a
+  monitor can count both. What this run chooses reaches the script as
+  arguments, never as environment variables.
 inputs:
   token:
     description: A token that can read this repository's Actions runs and jobs.
     required: true
-  mode:
-    description: auto (default), or fleet, local, github to pin one tier.
+  route:
+    description: auto (default) follows runnerRouting.pin; fleet, local or github pins this run.
     required: false
-    default: ""
-  local-runner:
-    description: "`true` when a local box is enrolled under hobo-local-host."
-    required: false
-    default: ""
-  max-wait-seconds:
-    description: A job waiting this long for a label means that backend is not taking jobs.
-    required: false
-    default: ""
-  max-queued:
-    description: This many jobs already waiting for a label means that backend is not taking jobs.
-    required: false
-    default: ""
-  trunk-runner:
-    description: "`false` keeps trunk events on the shared `hobo` label."
-    required: false
-    default: ""
-  reuse-merge-queue:
-    description: >-
-      The HOBO_CI_MAIN_REUSE_MERGE_QUEUE repository variable. `false` makes a push
-      to main run its full gate even when the merge queue passed the same tree.
-    required: false
-    default: ""
+    default: "auto"
   attest:
     description: "`false` skips the check for a signed local run (a second ask within a run)."
     required: false
@@ -61,6 +43,14 @@ outputs:
   tier:
     description: fleet, local or github.
     value: ${{ steps.route.outputs.tier }}
+  shard_runner:
+    description: The runs-on label for the main gate's shards (the run's class).
+    value: ${{ steps.route.outputs.shard_runner }}
+  box_runner:
+    description: >-
+      runnerRouting.labels.box when committed runnerRouting.boxRunner is true,
+      else empty: the label a pull request's deps-image job asks for.
+    value: ${{ steps.route.outputs.box_runner }}
   attested:
     description: "`true` when a signed local run was verified for the checked-out tree, else `false`."
     value: ${{ steps.attest.outputs.attested || 'false' }}
@@ -71,7 +61,8 @@ outputs:
     description: >-
       `true` on a push to main whose tree a successful merge_group run of this
       workflow already tested (merge-queue-reuse.mts, when the workflow checked
-      that script out), else `false`.
+      that script out), else `false`. Committed
+      runnerRouting.mainGate.reuseMergeQueue `false` turns reuse off.
     value: ${{ steps.reuse.outputs.reuse || 'false' }}
 runs:
   using: composite
@@ -117,33 +108,30 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
-        HOBO_CI_ATTESTED: ${{ steps.attest.outputs.attested }}
-        HOBO_CI_ROUTE: ${{ inputs.mode }}
-        HOBO_CI_LOCAL_RUNNER: ${{ inputs.local-runner }}
-        HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
-        HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
-        HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
-        HOBO_CI_INCLUDE_OWN_RUN: ${{ inputs.include-own-run }}
       run: |
         set -uo pipefail
+        # What this run chose, as arguments. Each expression can only yield one of a fixed set
+        # of literals, so nothing a caller passes reaches the shell as code.
+        route='${{ contains(fromJSON('["auto","fleet","local","github"]'), inputs.route) && inputs.route || 'auto' }}'
+        include_own_run='${{ inputs.include-own-run == 'true' && 'true' || 'false' }}'
+        attested='${{ steps.attest.outputs.attested == 'true' && 'true' || 'false' }}'
         fleet=hobo
         case " push workflow_dispatch merge_group workflow_run " in
-          *" ${GITHUB_EVENT_NAME} "*)
-            if [ "${HOBO_CI_TRUNK_RUNNER}" != "false" ]; then fleet=hobo-trunk; fi ;;
+          *" ${GITHUB_EVENT_NAME} "*) fleet=hobo-trunk ;;
         esac
         # Without a decision, the one tier known to be up is the one this step is
         # running on. A run pinned to the fleet stays on the fleet. A second ask
         # within a run outputs nothing, so the run's first decision stands.
         # The titled warning is what a monitor counts (hobo-ci-route-fallback).
         without_a_decision() {
-          if [ "${HOBO_CI_INCLUDE_OWN_RUN}" = "true" ]; then
+          if [ "${include_own_run}" = "true" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); keeping the run's route"
-          elif [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
+          elif [ "${route}" = "fleet" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
-            { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
+            { echo "runner=${fleet}"; echo "tier=fleet"; echo "shard_runner=${fleet}"; } >> "$GITHUB_OUTPUT"
           else
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); using GitHub-hosted runners"
-            { echo "runner=ubuntu-24.04"; echo "tier=github"; } >> "$GITHUB_OUTPUT"
+            { echo "runner=ubuntu-24.04"; echo "tier=github"; echo "shard_runner=ubuntu-24.04"; } >> "$GITHUB_OUTPUT"
           fi
         }
         # The script is TypeScript run as written, which needs Node 22.18 or later.
@@ -161,7 +149,9 @@ runs:
           without_a_decision "no Node 22.18 or later on this machine"
           exit 0
         fi
-        "${node_bin}" --no-warnings scripts/ci/route-runner.mts || without_a_decision "the routing script failed"
+        "${node_bin}" --no-warnings scripts/ci/route-runner.mts \
+          --route "${route}" --include-own-run "${include_own_run}" --attested "${attested}" \
+          || without_a_decision "the routing script failed"
     # Never fails and never blocks: anything short of a verified green
     # merge-queue run of this tree is reuse=false, and main runs its full gate.
     - id: reuse
@@ -172,7 +162,6 @@ runs:
         GITHUB_TOKEN: ${{ inputs.token }}
         HEAD_SHA: ${{ github.sha }}
         HEAD_TREE: ${{ github.event.head_commit.tree_id }}
-        HOBO_CI_MAIN_REUSE_MERGE_QUEUE: ${{ inputs.reuse-merge-queue }}
       run: |
         set -uo pipefail
         no_reuse() {

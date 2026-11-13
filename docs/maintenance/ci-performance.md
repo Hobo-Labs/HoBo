@@ -12,8 +12,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
   pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
   no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
-  label only when the repository variable `HOBO_CI_BOX_RUNNER` is `true`, set once the deployed box
-  daemon is seen to serve `hobo-box`; otherwise it asks for `hobo` as before. The runner-image and cold-loop jobs do not need the label: they materialize the
+  label only when committed `runnerRouting.boxRunner` in `.hobo/ci.json` is `true` (the route job then
+  outputs `box_runner`, `runnerRouting.labels.box`), set once the deployed box daemon is seen to serve
+  `hobo-box`; otherwise it asks for `hobo` as before. No repository variable decides it (ADR-0181). The runner-image and cold-loop jobs do not need the label: they materialize the
   content-keyed worker image from the host cache or GHCR wherever they run.
 - **The release contract reuses the worker image.** `release-hobo.yml` job
   `release-contract` resolves `hobo-ci-worker` through
@@ -128,8 +129,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   that was in finish, and the plan. **Main full gate (finish)** is GitHub-hosted and only adds up results.
   The plan and the gate follow the route job and the shards follow the plan's second ask (#1965), so a
   run goes to GitHub-hosted runners when the fleet is not taking jobs; the plan's deps layer steps run
-  only on the box worker. Set the repository variable `HOBO_CI_MAIN_REUSE_MERGE_QUEUE=false` to
-  make every push run the full gate again. A reused push does not run the generated-output drift check or
+  only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
+  `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation

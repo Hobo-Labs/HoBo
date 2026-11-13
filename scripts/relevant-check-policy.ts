@@ -137,6 +137,8 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/verify-attestation.mts",
 	"scripts/ci/local-attest.mts",
 	"scripts/ci/route-runner.mts",
+	// The route script loads it, so it is on the attested path too.
+	"scripts/ci/runner-routing.mts",
 	"scripts/lib/workflow-job-steps.mts",
 	"scripts/lint-actions.ts",
 	...SIGNED_LOCAL_RUN_TESTS,

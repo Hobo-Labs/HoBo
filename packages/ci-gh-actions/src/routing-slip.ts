@@ -9,7 +9,7 @@
  * reason it is no slip. A slip is used only while it has not expired, names
  * the reader's repository, and every runner it names is a committed
  * `runnerRouting.labels` value. Anything else changes nothing: the queue rule
- * decides, as it does with no slip (plan 0026, R3).
+ * decides, as it does with no slip (ADR-0181, R3).
  *
  * `scripts/ci/runner-routing.mts` holds the same rules without dependencies,
  * for the route job's sparse checkout; the two agree on every fixture.

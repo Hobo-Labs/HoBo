@@ -5,7 +5,7 @@
 # Free and self-hosted: the open-source `turborepo-remote-cache` server with a
 # local volume. Nothing here runs unless an operator starts it, and CI uses it
 # only once the repository has all three of:
-#   - variable HOBO_CI_TURBO_API  (this server's URL, reachable from every runner)
+#   - turboCache.api in .hobo/ci.json (this server's https URL, reachable from every runner)
 #   - variable TURBO_TEAM         (any slug, for example `hobo`)
 #   - secret   TURBO_TOKEN        (the same value as HOBO_CI_TURBO_CACHE_TOKEN)
 #

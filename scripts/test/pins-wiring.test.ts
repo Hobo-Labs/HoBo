@@ -69,7 +69,11 @@ describe("pins wiring", () => {
 				`${name}: status follows checkout`,
 			);
 			assert.ok(install > status, `${name}: status precedes pnpm install`);
-			assert.match(job, /runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo')/u);
+			// The fleet, or the route job's choice (GitHub-hosted when it did not run).
+			assert.match(
+				job,
+				/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
+			);
 		}
 	});
 

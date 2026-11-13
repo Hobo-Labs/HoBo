@@ -58,26 +58,88 @@ const allowedEnabled = new Set([
 ]);
 
 /**
- * The probe asks for each label by name, which no other workflow may, so it
- * may do nothing else: no action, no checkout, no repository code.
+ * The probe's one GitHub-hosted job: it reads whether a local box is enrolled
+ * (`runnerRouting.localRunner` in `.hobo/ci.json`) with the route job's own
+ * dependency-free reader, and nothing else. Pinned line for line.
+ */
+const PROBE_GATE_JOB = `  local-box-enrolled:
+    name: local box enrolled
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      enrolled: \${{ steps.policy.outputs.enrolled }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ci/runner-routing.mts
+            .hobo/ci.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - id: policy
+        run: echo "enrolled=$(node --no-warnings scripts/ci/runner-routing.mts .hobo/ci.json --get localRunner)" >> "$GITHUB_OUTPUT"`;
+/** The local box's probe runs only when the gate job read `true`. */
+const PROBE_LOCAL_GATE = [
+	"    needs: local-box-enrolled",
+	"    if: needs.local-box-enrolled.outputs.enrolled == 'true'",
+];
+
+/**
+ * The probe asks for each label by name, which no other workflow may, so a
+ * probe job may do nothing else: no action, no checkout, no repository code.
+ * Its one other job is the pinned gate that reads whether a local box is
+ * enrolled.
  */
 function lintProbeWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
-	for (const [index, line] of lines.entries()) {
-		const runsOn = /^\s*runs-on:\s*(.*?)\s*$/.exec(line)?.[1];
-		if (runsOn !== undefined && !PROBE_RUNS_ON.has(runsOn))
-			errors.push(
-				`${probeFile}:${index + 1}: a probe job must ask for one self-hosted label by name (${[...PROBE_RUNS_ON].join(", ")})`,
-			);
-		if (/^\s*-?\s*uses:/.test(line))
-			errors.push(
-				`${probeFile}:${index + 1}: the probe must not use an action or check anything out`,
-			);
-		const run = /^\s*-?\s*run:\s*(.*?)\s*$/.exec(line)?.[1];
-		if (run !== undefined && run !== '"true"')
-			errors.push(
-				`${probeFile}:${index + 1}: a probe step must do nothing (run: "true")`,
-			);
+	const jobsIndex = lines.indexOf("jobs:");
+	const starts = lines.flatMap((line, index) =>
+		index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
+	);
+	if (jobsIndex === -1 || starts.length === 0)
+		errors.push(`${probeFile}: the probe needs its jobs`);
+	for (const [position, start] of starts.entries()) {
+		const end = starts[position + 1] ?? lines.length;
+		const block = lines.slice(start, end);
+		while (block.length > 0 && block.at(-1)?.trim() === "") block.pop();
+		while (block.length > 0 && block.at(-1)?.trim().startsWith("#"))
+			block.pop();
+		if (lines[start] === "  local-box-enrolled:") {
+			if (block.join("\n") !== PROBE_GATE_JOB)
+				errors.push(
+					`${probeFile}:${start + 1}: the local-box gate job must read runnerRouting.localRunner with scripts/ci/runner-routing.mts and do nothing else`,
+				);
+			continue;
+		}
+		if (lines[start] === "  local-box:")
+			for (const needed of PROBE_LOCAL_GATE)
+				if (!block.includes(needed))
+					errors.push(
+						`${probeFile}:${start + 1}: the local box's probe must be gated by: ${needed.trim()}`,
+					);
+		for (const [offset, line] of block.entries()) {
+			const index = start + offset;
+			const runsOn = /^\s*runs-on:\s*(.*?)\s*$/.exec(line)?.[1];
+			if (runsOn !== undefined && !PROBE_RUNS_ON.has(runsOn))
+				errors.push(
+					`${probeFile}:${index + 1}: a probe job must ask for one self-hosted label by name (${[...PROBE_RUNS_ON].join(", ")})`,
+				);
+			if (/^\s*-?\s*uses:/.test(line))
+				errors.push(
+					`${probeFile}:${index + 1}: the probe must not use an action or check anything out`,
+				);
+			const run = /^\s*-?\s*run:\s*(.*?)\s*$/.exec(line)?.[1];
+			if (run !== undefined && run !== '"true"')
+				errors.push(
+					`${probeFile}:${index + 1}: a probe step must do nothing (run: "true")`,
+				);
+		}
 	}
 	if (!/^permissions: \{\}$/m.test(text))
 		errors.push(`${probeFile}: the probe must hold no permissions`);
@@ -104,45 +166,109 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 	}
 }
 
-/** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
+/** The one runner choice besides `hobo`: trunk events ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
 /**
- * What a routed job asks for: the label the `route` job chose (the fleet, an
- * enrolled local box, or GitHub-hosted when neither is taking jobs), and the
- * fleet's own label when that job did not run.
+ * What a routed job asks for: the label the `route` job chose (the routing
+ * slip's answer, else the queue rule's), and GitHub-hosted when that job did
+ * not run, the one tier known to be up.
  */
-const ROUTED_RUNS_ON =
-	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 /**
  * What the main gate's shards and finish job ask for: the plan job's second
- * ask (`shard_runner`), then the run's route, then the trunk label, so a
- * failed or skipped plan job never leaves `runs-on` empty.
+ * ask (`shard_runner`), then the run's route, then GitHub-hosted, so a failed
+ * or skipped plan job never leaves `runs-on` empty.
  */
 const SHARD_RUNS_ON =
-	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 
 /**
- * Fleet state never reaches a workflow (rule R2 of ADR-0180): not through a
- * repository variable, an action input or an environment variable. A
- * workflow learns what the fleet can take by asking the relay when it decides.
+ * No repository variable reaches a workflow, an action or a template as
+ * `vars.HOBO_CI_*`, and no input, output or environment variable carries a
+ * routing name (rule R2 and the routing list of ADR-0181).
+ * Routing travels as the relay's routing slip, and routing policy is
+ * `runnerRouting` in `.hobo/ci.json`.
  */
-const FLEET_STATE_VARIABLE = /vars\.HOBO_CI_FLEET_/;
-const FLEET_STATE_NAME =
-	/^\s*-?\s*(fleet-(state|capacity|routes)|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES))[\w-]*\s*:/;
+const ROUTING_VARIABLE = /vars\.HOBO_CI_/;
+/** ADR-0181's routing list, exhaustively, with the retired fleet channels. */
+export const ROUTING_NAMES: readonly string[] = [
+	"HOBO_CI_ROUTE",
+	"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
+	"HOBO_CI_ROUTE_MAX_QUEUED",
+	"HOBO_CI_TRUNK_RUNNER",
+	"HOBO_CI_LOCAL_RUNNER",
+	"HOBO_CI_INCLUDE_OWN_RUN",
+	"HOBO_CI_ATTESTED",
+	"HOBO_CI_FLEET_ROUTES",
+	"HOBO_CI_FLEET_STATE",
+	"HOBO_CI_FLEET_CAPACITY",
+	"HOBO_CI_FLEET_VERDICT_[A-Z0-9_]+",
+	"HOBO_CI_FLEET_REPORTER_ID",
+	"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
+	"HOBO_CI_FLEET_REPORTERS_JSON",
+	"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+	"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
+	"HOBO_CI_WORKER_SLOTS",
+	"HOBO_CI_WORKER_TRUNK_SLOTS",
+	"HOBO_CI_WORKER_TRUNK_LEND",
+	"HOBO_CI_WORKER_PR_CAP_WITH_TRUNK",
+	"HOBO_CI_WORKER_MERGE_GROUP_LEASES",
+	"HOBO_CI_JOB_ADMISSION",
+	"MAIN_WORKSPACE_PARALLEL_CAP",
+	"HOBO_CI_BOX_RUNNER",
+	"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
+];
+const ROUTING_NAME = new RegExp(`\\b(${ROUTING_NAMES.join("|")})\\b`);
+/** Inputs and outputs that once carried those values, or fleet state. */
+const ROUTING_KEY =
+	/^\s*-?\s*(fleet-(state|capacity|routes)|local-runner|trunk-runner|max-wait-seconds|max-queued|reuse-merge-queue|box-runner)[\w-]*\s*:/;
+/**
+ * The one `vars.HOBO_CI_*` a template may hold: onboarding replaces the relay
+ * origin placeholder with a literal before the workflow is installed, and it
+ * names a relay, not a route (ADR-0181).
+ */
+const TEMPLATE_PLACEHOLDER = "${{ vars.HOBO_CI_RELAY_URL }}";
 
-function lintFleetState(errors: string[], file: string, text: string): void {
+function lintRouting(
+	errors: string[],
+	file: string,
+	text: string,
+	allowPlaceholder = false,
+): void {
 	for (const [index, line] of text.split("\n").entries()) {
-		if (FLEET_STATE_VARIABLE.test(line))
+		const checked = allowPlaceholder
+			? line.replace(TEMPLATE_PLACEHOLDER, "")
+			: line;
+		if (ROUTING_VARIABLE.test(checked))
 			errors.push(
-				`${file}:${index + 1}: fleet state must not reach a workflow through a repository variable; ask the relay (ADR-0180)`,
+				`${file}:${index + 1}: no repository variable reaches a workflow as vars.HOBO_CI_*; routing is the relay's routing slip and runnerRouting in .hobo/ci.json (ADR-0181)`,
 			);
-		if (FLEET_STATE_NAME.test(line))
+		const name = ROUTING_NAME.exec(checked)?.[1];
+		if (name)
 			errors.push(
-				`${file}:${index + 1}: fleet state must not reach a workflow through an input or environment variable; ask the relay (ADR-0180)`,
+				`${file}:${index + 1}: ${name} is routing and must not reach a workflow as an input, output or environment variable (ADR-0181)`,
 			);
+		if (ROUTING_KEY.test(checked))
+			errors.push(
+				`${file}:${index + 1}: routing must not reach a workflow through an input or output; the route job reads the routing slip and runnerRouting (ADR-0181)`,
+			);
+	}
+}
+
+/** The installable templates: no routing variable, as in the workflows. */
+function lintTemplates(errors: string[], repoRoot: string): void {
+	const templates = join(repoRoot, "packages/ci-gh-actions/templates");
+	if (!existsSync(templates)) return;
+	for (const name of readdirSync(templates).sort()) {
+		if (!/\.ya?ml$/.test(name)) continue;
+		const text = readFileSync(join(templates, name), "utf8").replaceAll(
+			"\r\n",
+			"\n",
+		);
+		lintRouting(errors, `packages/ci-gh-actions/templates/${name}`, text, true);
 	}
 }
 
@@ -153,10 +279,13 @@ const HOSTED_RUNS_ON = "ubuntu-24.04";
  * For the job that builds the deps image in the box's own Docker context: a
  * pull request's run asks for the box by its own label (`hobo-box`, which the
  * worker serves and no ARC pod does), trunk events keep the trunk label.
- * Opt-in: without `HOBO_CI_BOX_RUNNER=true` the job asks for the shared label.
+ * Opt-in by committed policy: the route job outputs `box_runner`
+ * (`runnerRouting.labels.box`) only when `runnerRouting.boxRunner` is true in
+ * `.hobo/ci.json`; otherwise, or when the route job gave no answer, the job
+ * asks for the shared label. No repository variable decides it (ADR-0181).
  */
 const BOX_OR_TRUNK_RUNS_ON =
-	"${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+	"${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 const DEPS_IMAGE_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
@@ -385,7 +514,7 @@ function isNpmOidcHostedReleaseJob(
 }
 
 const acceptanceDigest =
-	"d130e672fa517fb41465b742cf0b47e921849f73fadbe886f26f34e8aa9faaf6";
+	"ae9f17ce8d8d862722d50c0bd6b66077275edd376c068aaa42112e7ba7e150df";
 
 const TRUNK_EVENTS = new Set([
 	"push",
@@ -541,7 +670,7 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
-	lintFleetState(errors, file, text);
+	lintRouting(errors, file, text);
 	if (file === probeFile && !requireDisabledJobs) {
 		lintProbeWorkflow(errors, text);
 		return;
@@ -609,7 +738,7 @@ function lintWorkflowYaml(
 			);
 		}
 		if (
-			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON) &&
+			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || boxOrTrunk) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -741,7 +870,7 @@ function lintCompositeActions(errors: string[], githubRoot: string): void {
 			const rel = relative(githubRoot, path).replaceAll("\\", "/");
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 			lintPinnedActionRefs(errors, rel, text);
-			lintFleetState(errors, rel, text);
+			lintRouting(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);
@@ -794,6 +923,7 @@ export async function lintActionsRepository(
 	}
 
 	lintCompositeActions(errors, githubRoot);
+	lintTemplates(errors, repoRoot);
 
 	const verifyTargets: { file: string; text: string }[] = [];
 	for (const file of recognizedFiles) {
