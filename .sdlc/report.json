@@ -1,7 +1,13 @@
 {
 	"issue": "HoBo Fleet L34: @hobo/ci-gh-actions box composition (wave 5, proves O42)",
-	"branch": "fleet/L34",
+	"branch": "fleet/L34-r",
+	"verifierResponse": "Re-verification of 2ec93907: the four nonzero-exit violations (lint:test-deps, turbo test, tsc --noEmit, emit-fleet-contracts --check) all come from the 17 TS2307 imports of L34-deleted modules in src/index.ts (coordinator, rule 4; 8 errors) and L35's client.ts, hosted-control.ts, relay-mcp.ts and relay-mcp-server.ts (9 errors). No L34-owned file has a type error. L34 cannot fix them inside its owns: editing those files is outside-owns, and restoring the deleted modules is undeleted-path. Wave 5 is one unit for exactly this reason (its lanes delete code the others still import, so they merge and are checked together). They are resolved by the index.ts cascadeDelta below and by L35's own change.",
 	"gates": [
+		{
+			"command": "node --import tsx scripts/emit-fleet-contracts.mts --check",
+			"exitCode": 1,
+			"note": "Never reaches the snapshot comparison because packages/ci-gh-actions does not type-check, for the reason in verifierResponse. No snapshot or packages/fleet/data-models path is touched."
+		},
 		{
 			"command": "pnpm exec vitest run packages/ci-gh-actions/test/fleet-daemon.test.ts packages/ci-gh-actions/test/container-flags.test.ts",
 			"exitCode": 0
