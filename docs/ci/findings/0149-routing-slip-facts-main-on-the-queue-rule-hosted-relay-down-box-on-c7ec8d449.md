@@ -1,7 +1,7 @@
 ---
 type: CI Performance Finding
 title: "Finding 149: routing slip facts, main on the queue rule, hosted relay down, box on c7ec8d449"
-description: "Main runs go to GitHub-hosted because the queue rule refuses the fleet, not because of the hosted relay; the hosted relay answers 503; the box daemon runs c7ec8d449 and takes new code only after one restart; the five routing repository variables are empty. The facts ADR-0181 (routing slips, ADR-0181) starts from."
+description: "Main runs go to GitHub-hosted because the queue rule refuses the fleet, not because of the hosted relay; the hosted relay answers 503; the box daemon runs c7ec8d449 and takes new code only after one restart; the five routing repository variables are empty. The facts ADR-0181 (routing slips) starts from."
 tags: [hobo, ci, routing, relay, fleet, route-runner, routing-slip]
 ---
 

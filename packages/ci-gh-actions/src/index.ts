@@ -48,13 +48,10 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
-	createFleetRoutePublisher,
-	type FleetRouteEvent,
-	type FleetRouteLog,
-	type FleetRoutePublication,
-	type FleetRoutePublisher,
-	type FleetRoutePublishInput,
-	writeRepositoryVariable,
+	retireRepositoryVariables,
+	type VariableRetireEvent,
+	type VariableRetireLog,
+	type VariableRetireOutcome,
 } from "./fleet-routes.js";
 export {
 	agreedFleetBlocks,
@@ -159,6 +156,18 @@ export {
 	isIsolatedHostOffer,
 	isSandboxOffer,
 } from "./isolated-backend.js";
+export {
+	type BoxRoutingPolicy,
+	DEFAULT_CAPACITY_VOLATILITY_MB,
+	DEFAULT_FLEET_MIN_FREE_RUNNERS,
+	DEFAULT_ROUTING_STALL_MS,
+	DEFAULT_RUNNER_ROUTING,
+	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
+	ROUTING_ENVIRONMENT_NAMES,
+	ROUTING_ENVIRONMENT_PREFIXES,
+	readBoxRoutingPolicy,
+	routingEnvironmentNamesSet,
+} from "./isolated-worker/box-routing-policy.js";
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
 export {
@@ -213,6 +222,7 @@ export {
 	type FleetLabelReason,
 	type FleetMeshPeer,
 	type FleetPollView,
+	type FleetRunnersView,
 	type FleetVerdictEvaluation,
 	type FleetVerdictEvaluatorInput,
 	fleetRunnerNamePrefix,
@@ -224,9 +234,7 @@ export {
 	type FleetVerdictReporterEvent,
 	type FleetVerdictReporterLog,
 	type FleetVerdictReporterOptions,
-	type FleetVerdictReporterSettings,
 	type FleetVerdictSequenceSource,
-	parseFleetVerdictReporterSettings,
 } from "./isolated-worker/fleet-verdict-reporter.js";
 export {
 	createFleetPickupMemory,
@@ -326,6 +334,29 @@ export {
 	type PollIngestCoalesce,
 } from "./isolated-worker/poll-ingest-coalesce.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
+export {
+	createRoutingSlipBudget,
+	createRoutingSlipIssuer,
+	createRoutingStallWatch,
+	decideRoutingSlipClasses,
+	ROUTING_SLIP_REFUSED_BACKOFF_MS,
+	ROUTING_SLIP_SAMPLE_MS,
+	ROUTING_SLIP_TREE_CONTENT,
+	ROUTING_SLIP_TREE_PATH,
+	ROUTING_SLIP_WRITES_PER_HOUR,
+	ROUTING_SLIP_WRITES_PER_MINUTE,
+	type RoutingSlipClasses,
+	type RoutingSlipDecisionInput,
+	type RoutingSlipIssuer,
+	type RoutingSlipIssuerEvent,
+	type RoutingSlipIssuerLog,
+	type RoutingSlipIssuerOptions,
+	type RoutingSlipTarget,
+	type RoutingSlipWriteResult,
+	readRepositoryRunners,
+	type StallWatchLease,
+	writeRoutingSlipCommit,
+} from "./isolated-worker/routing-slip-issuer.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createStallJobRecovery,
@@ -355,7 +386,14 @@ export {
 	resolvedStorageReserve,
 	type StoragePeaks,
 } from "./isolated-worker/storage-peaks.js";
-export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
+export {
+	DEFAULT_WORKER_MERGE_GROUP_LEASES,
+	DEFAULT_WORKER_PR_CAP_WITH_TRUNK,
+	DEFAULT_WORKER_SLOTS,
+	resolveWorkerSlotConfig,
+	type WorkerSlotConfig,
+	type WorkerSlotPolicy,
+} from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,
 	resolveWorkerStorePlan,
