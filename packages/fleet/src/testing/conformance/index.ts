@@ -19,6 +19,7 @@ import type {
 import { registerSuite } from "./assertion.js";
 import { BUS_ASSERTIONS } from "./bus.js";
 import { JOURNAL_ASSERTIONS } from "./journal.js";
+import { KEYSTORE_ASSERTIONS } from "./keystore.js";
 import { REPLICA_ASSERTIONS } from "./replica.js";
 
 export function runBusConformance(make: () => Promise<AuthorityBus>): void {
@@ -54,7 +55,7 @@ export function runSandboxIsolationProbe(
 }
 
 export function runKeyStoreConformance(make: () => KeyStore): void {
-	throw new FleetNotImplemented("runKeyStoreConformance");
+	registerSuite("key store conformance", KEYSTORE_ASSERTIONS, make, 30_000);
 }
 
 export function runReplicaConformance(

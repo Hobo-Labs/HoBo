@@ -183,18 +183,17 @@ function openWith(
 	);
 }
 
-/** Device keys made in memory for a transport under test: Ed25519 identity and SIGN keys, an X25519 SEAL key. */
-export function createSuiteDeviceKeys(): DeviceKeys {
-	const memberId = randomMemberId();
-	const identity = createSuiteKey(`${memberId}#identity`);
-	const signing = createSuiteKey(`${memberId}#sign`);
+/** An X25519 SEAL key: its raw public half (base64url), and the two private operations of `DeviceKeys`. */
+export type SuiteSealKey = Readonly<{
+	publicKey: string;
+	openSealed: DeviceKeys["openSealed"];
+	agree: DeviceKeys["agree"];
+}>;
+
+export function createSuiteSealKey(): SuiteSealKey {
 	const seal = generateKeyPairSync("x25519");
 	return {
-		memberId,
-		identityJwk: identity.publicJwk,
-		identity: identity.signer,
-		sign: signing.signer,
-		sealPublicKey: rawX25519(seal.publicKey).toString("base64url"),
+		publicKey: rawX25519(seal.publicKey).toString("base64url"),
 		async openSealed(box, context, associatedData) {
 			return openWith(
 				seal.privateKey,
@@ -212,6 +211,23 @@ export function createSuiteDeviceKeys(): DeviceKeys {
 				}),
 			);
 		},
+	};
+}
+
+/** Device keys made in memory for a transport under test: Ed25519 identity and SIGN keys, an X25519 SEAL key. */
+export function createSuiteDeviceKeys(): DeviceKeys {
+	const memberId = randomMemberId();
+	const identity = createSuiteKey(`${memberId}#identity`);
+	const signing = createSuiteKey(`${memberId}#sign`);
+	const seal = createSuiteSealKey();
+	return {
+		memberId,
+		identityJwk: identity.publicJwk,
+		identity: identity.signer,
+		sign: signing.signer,
+		sealPublicKey: seal.publicKey,
+		openSealed: seal.openSealed,
+		agree: seal.agree,
 		heldKey: false,
 	};
 }

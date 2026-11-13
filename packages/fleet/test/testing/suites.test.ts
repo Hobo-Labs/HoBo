@@ -8,9 +8,11 @@ import { BUS_ASSERTIONS } from "../../src/testing/conformance/bus.js";
 import {
 	runBusConformance,
 	runJournalConformance,
+	runKeyStoreConformance,
 	runReplicaConformance,
 } from "../../src/testing/conformance/index.js";
 import { JOURNAL_ASSERTIONS } from "../../src/testing/conformance/journal.js";
+import { KEYSTORE_ASSERTIONS } from "../../src/testing/conformance/keystore.js";
 import { REPLICA_ASSERTIONS } from "../../src/testing/conformance/replica.js";
 import {
 	createMemoryBus,
@@ -18,6 +20,7 @@ import {
 } from "../../src/testing/plumbing/index.js";
 import { BROKEN_BUSES } from "./doubles/bus.js";
 import { BROKEN_JOURNALS } from "./doubles/journal.js";
+import { BROKEN_KEYSTORES, memoryKeyStore } from "./doubles/keystore.js";
 import { BROKEN_REPLICAS, memoryReplica } from "./doubles/replica.js";
 import { eachAssertionCatchesItsBreak } from "./harness.js";
 
@@ -27,6 +30,15 @@ describe("runBusConformance", () => {
 	});
 	describe("broken buses fail", () => {
 		eachAssertionCatchesItsBreak(BUS_ASSERTIONS, BROKEN_BUSES);
+	});
+});
+
+describe("runKeyStoreConformance", () => {
+	describe("an in-memory key store passes", () => {
+		runKeyStoreConformance(memoryKeyStore);
+	});
+	describe("broken key stores fail", () => {
+		eachAssertionCatchesItsBreak(KEYSTORE_ASSERTIONS, BROKEN_KEYSTORES);
 	});
 });
 
