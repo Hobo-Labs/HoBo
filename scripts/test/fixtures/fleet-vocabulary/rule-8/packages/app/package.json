@@ -1,0 +1,5 @@
+{
+	"name": "fixture-app",
+	"private": true,
+	"dependencies": { "@hobo/backend-fleet": "workspace:*", "@hobo/backend-routing": "workspace:*" }
+}
