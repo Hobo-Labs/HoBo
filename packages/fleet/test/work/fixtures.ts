@@ -78,7 +78,7 @@ import { workDigest } from "../../src/work/index.js";
 /** The init fields of a generated message (not a built message), for overrides. */
 type InitOf<S extends Parameters<typeof create>[0]> = Exclude<
 	Parameters<typeof create<S>>[1],
-	undefined
+	undefined | Readonly<{ $typeName: string }>
 >;
 
 export const NOW = Date.parse("2026-11-13T12:00:00.000Z");
@@ -285,7 +285,7 @@ export function offer(
 		label: "hobo",
 		needs: { labels: [] },
 		trustClass: TrustClass.ORG,
-		author: "github:1",
+		author: "github:2",
 		origin: WorkOrigin.INTERNAL,
 		repository: "acme/app",
 		ref: "refs/heads/main",

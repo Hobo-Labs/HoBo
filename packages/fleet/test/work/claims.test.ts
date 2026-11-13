@@ -20,6 +20,7 @@ import {
 	type SignedEnvelope,
 	SignedEnvelopeSchema,
 	TrustClass,
+	type ViolationReport,
 	type WorkOffer,
 	WorkOfferSchema,
 } from "../../src/_generated/fleet_pb.js";
@@ -370,7 +371,7 @@ describe("the dispatcher on the bus", () => {
 		vi.useRealTimers();
 	});
 
-	async function onBus() {
+	async function onBus(report?: (sent: ViolationReport) => Promise<void>) {
 		const authority = authorityKey();
 		const bus = createMemoryBus(() => Date.now());
 		const parts = await world();
@@ -390,11 +391,11 @@ describe("the dispatcher on the bus", () => {
 		source.queue.push(upstream("job-1", NOW), upstream("job-2", NOW));
 		const sent = reports();
 		const logs = recorder();
-		const dispatcher = createDispatcher({
+		const loop = createDispatcher({
 			self: parts.dispatcher.keys,
 			bus,
 			sources: [source],
-			report: sent.report,
+			report: report ?? sent.report,
 			now: () => Date.now(),
 			log: logs.log,
 		});
@@ -405,7 +406,7 @@ describe("the dispatcher on the bus", () => {
 				offer: fromBinary(WorkOfferSchema, envelope.payload),
 			});
 		});
-		dispatcher.start();
+		loop.start();
 		await vi.advanceTimersByTimeAsync(1_000);
 		const publish = async (claim: SignedEnvelope, fleet = FLEET) => {
 			const decoded = fromBinary(ClaimSchema, claim.payload);
@@ -418,7 +419,7 @@ describe("the dispatcher on the bus", () => {
 			// Every one of these is deleted, so the ledger is free again.
 			expect(await bus.claims.holder(fleet, subject)).toBeUndefined();
 		};
-		return { ...parts, extra, bus, dispatcher, offers, sent, logs, publish };
+		return { ...parts, extra, bus, loop, offers, sent, logs, publish };
 	}
 
 	const claimants = (report: { claims: readonly SignedEnvelope[] }) =>
@@ -461,7 +462,7 @@ describe("the dispatcher on the bus", () => {
 				(line) => line.event === "hobo_fleet_claim_discarded",
 			),
 		).toHaveLength(4);
-		await w.dispatcher.stop();
+		await w.loop.stop();
 	});
 
 	it("reports a signature-valid out-of-fleet claim once, on its signer", async () => {
@@ -478,7 +479,7 @@ describe("the dispatcher on the bus", () => {
 			w.outsider.keys.memberId,
 		]);
 		expect(report?.offer?.payload).toEqual(w.offers[0]?.envelope.payload);
-		await w.dispatcher.stop();
+		await w.loop.stop();
 	});
 
 	it("deletes early claims and reports three from one device inside an hour", async () => {
@@ -502,27 +503,24 @@ describe("the dispatcher on the bus", () => {
 			w.victim.keys.memberId,
 			w.victim.keys.memberId,
 		]);
-		await w.dispatcher.stop();
+		await w.loop.stop();
 	});
 
 	it("still deletes a claim it must report when the authority cannot be reached", async () => {
-		const w = await onBus();
+		let attempts = 0;
+		const w = await onBus(async () => {
+			attempts += 1;
+			throw new Error("authority down");
+		});
 		const first = w.offers[0]?.offer;
 		if (first === undefined) throw new Error("no offer");
-		const failing = createDispatcher({
-			self: w.dispatcher.keys,
-			bus: w.bus,
-			sources: [],
-			report: async () => {
-				throw new Error("authority down");
-			},
-			now: () => Date.now(),
-			log: () => undefined,
-		});
-		failing.start();
-		await vi.advanceTimersByTimeAsync(100);
 		await w.publish(await claimFor(w.outsider.keys, first));
-		await failing.stop();
-		await w.dispatcher.stop();
+		expect(attempts).toBe(1);
+		expect(
+			w.logs.lines.some(
+				(line) => line.event === "hobo_fleet_violation_reported",
+			),
+		).toBe(true);
+		await w.loop.stop();
 	});
 });
