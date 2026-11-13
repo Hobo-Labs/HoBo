@@ -12,7 +12,7 @@ import https from "node:https";
 import net from "node:net";
 import tls from "node:tls";
 import { parseEphemeralKey, parseEphemeralTtlMs } from "@hobo/core";
-import { CoordinationMode, MemberKind, MemberState } from "@hobo/fleet";
+import { CoordinationMode, Health, MemberKind, MemberState } from "@hobo/fleet";
 import {
 	createMemoryRedisExecutor,
 	createRedisEphemeralState,
@@ -25,6 +25,7 @@ import type {
 } from "../src/cache-backend.js";
 import {
 	type CacheFleetLogLine,
+	classifyCacheFailure,
 	createCacheFleet,
 } from "../src/cache-fleet.js";
 import { parseCacheOffers } from "../src/cache-offers.js";
@@ -216,5 +217,39 @@ describe("the cache fleet as a local-mode fleet", () => {
 			action: "single",
 			active: "upstash",
 		});
+	});
+
+	it("reseals to another member when the sealed target goes away", async () => {
+		const w = world();
+		await w.fleet.state.get(key);
+		await w.spend("upstash", 150_000);
+		expect((await w.fleet.tick()).target).toBe("valkey");
+		w.member("valkey").down = true;
+		w.clock.now += SEAL;
+		expect(await w.fleet.tick()).toMatchObject({
+			action: "reseal",
+			active: undefined,
+			target: "turso",
+			reasons: ["target-unreachable"],
+		});
+		await expect(w.fleet.state.get(key)).rejects.toMatchObject({
+			reason: "sealed",
+		});
+		expect(w.fleet.activeId()).toBeUndefined();
+	});
+});
+
+describe("the failure classes a cache call ends in", () => {
+	it("are the fleet's Health values, and only the class leaves", () => {
+		expect(classifyCacheFailure(undefined)).toBe(Health.UNKNOWN);
+		expect(
+			classifyCacheFailure(new Error("ERR max daily request limit exceeded")),
+		).toBe(Health.QUOTA_EXHAUSTED);
+		expect(classifyCacheFailure(new Error("WRONGPASS invalid password"))).toBe(
+			Health.AUTH,
+		);
+		expect(classifyCacheFailure(new Error("connection refused"))).toBe(
+			Health.UNREACHABLE,
+		);
 	});
 });
