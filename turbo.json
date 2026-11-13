@@ -85,6 +85,7 @@
         "test/designer-council-relevant-check.test.ts",
         "test/designer-council-sdlc.test.ts",
         "test/draft-artifact-gates.test.ts",
+        "test/fleet-enrollment-scorecard.eval.test.ts",
         "scripts/**",
         "!scripts/test/**",
         "docs/**",
