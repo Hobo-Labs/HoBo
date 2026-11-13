@@ -146,6 +146,7 @@ unindexed new finding files as notices.
 - [Finding 141: release digest read the local name](./findings/0141-release-digest-read-the-local-name.md)
 - [Finding 142: box admission counted neither promised memory nor lasting headroom](./findings/0142-box-admission-counted-neither-promised-memory-nor-lasting-headroom.md)
 - [Finding 143: release publish needed buildx the runners lack](./findings/0143-release-publish-needed-buildx-the-runners-lack.md)
+- [Finding 144: no pull-request job ran the scripts lane](./findings/0144-no-pull-request-job-ran-the-scripts-lane.md)
 - [Finding 146: route job read a capacity record no worker wrote](./findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)
 - [Finding 147: merge queue shard timed out a one-second test on a stalled box](./findings/0147-merge-queue-shard-timed-out-a-one-second-test-on-a-stalled-box.md)
 - [Finding 148: jit runner cross job custody kill](./findings/0148-jit-runner-cross-job-custody-kill.md)
