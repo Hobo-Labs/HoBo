@@ -403,8 +403,6 @@ describe("declaring sponsored members", () => {
 			admin.caller,
 		);
 		expect(token.ok ? "" : token.error.code).toBe("name-taken");
-		const other = await harness();
-		void other;
 		const sponsor = await h.person({ kind: "user", id: "someone-else" });
 		const backend = await h.authority.declare(
 			create(DeclareRequestSchema, {

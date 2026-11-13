@@ -1,6 +1,5 @@
 // One table case per transition of the member state machine (§6.5) and one
 // per refusal code of §7.6 that the enrollment authority answers.
-import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { OptimisticSequenceConflictError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -50,8 +49,6 @@ import {
 	token,
 	value,
 } from "./scenario.js";
-
-const DAY_MS = 24 * 3_600_000;
 
 async function setup(policy: Parameters<Harness["fleet"]>[1] = {}) {
 	const h = await harness();
@@ -1064,7 +1061,5 @@ describe("refusals that keep the record as it is", () => {
 			subject.caller,
 		);
 		expect(code(refused)).toBe("proof-invalid");
-		void DAY_MS;
-		void randomBytes;
 	});
 });
