@@ -91,7 +91,6 @@ function cliFiles(markdownFiles: string[]) {
 		return (
 			file === "README.md" ||
 			file === "CLAUDE.md" ||
-			file === "docs/implementation-plan.md" ||
 			file.startsWith("docs/design/")
 		);
 	});

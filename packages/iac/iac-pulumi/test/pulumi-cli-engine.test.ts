@@ -13,7 +13,7 @@ import {
 	renderPulumiYamlProgram,
 } from "../src/index.js";
 
-// docs/plans/0006 item 3-2: the real CLI-backed engine. Hermetic coverage —
+// The real CLI-backed engine. Hermetic coverage —
 // program rendering, type-token gating, binary gating, and adapter
 // compatibility — without requiring the pulumi binary; the live path is
 // exercised by the credential-gated workflow_dispatch lane.

@@ -63,7 +63,6 @@ SETUP
 3. Read repo instructions and context before acting:
    - AGENTS.md
    - CLAUDE.md
-   - docs/implementation-plan.md
    - docs/design/index.md
    - docs/design/adr/index.md
 4. Follow repo tooling guidance, including Codex MCP setup and repo skills.

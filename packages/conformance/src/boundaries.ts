@@ -434,7 +434,7 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// types into @hobo/core; recorded here rather than left invisible, and
 	// scoped to these EXACT edges so no new one is admitted.
 	"packages/packs/pack-framework->packages/cloud",
-	// The policy-engine gate-plane adapters (docs/plans/0017 F30) lower engine
+	// The policy-engine gate-plane adapters lower engine
 	// verdicts onto @hobo/contracts' shared vocabulary (GatekeeperEffect,
 	// PolicyDecisionRequest). The dependency deliberately points
 	// provider->contracts so @hobo/broker can depend on the adapters without a

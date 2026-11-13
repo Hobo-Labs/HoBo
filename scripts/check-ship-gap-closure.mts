@@ -1,5 +1,5 @@
 /**
- * Ship-readiness gap closure guard (plans 0011/0012).
+ * Ship-readiness gap closure guard.
  *
  * Asserts every residual human ID remains on the residual ledger, that key
  * agent remediations exist on disk, and that honesty markers forbid false
@@ -26,7 +26,6 @@ const REQUIRED_RESIDUAL_IDS = [
 ] as const;
 
 const REQUIRED_PATHS = [
-	"docs/plans/0011-ship-readiness-gap-review.md",
 	"docs/design/launch-ship-targets.md",
 	"docs/design/npm-publish-allowlist.md",
 	"docs/design/instances/README.md",

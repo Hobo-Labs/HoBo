@@ -126,6 +126,8 @@ reports/mutation/
 .mise/
 
 # Plans are working documents and are never committed (AGENTS.md, "Plans are
-# not committed"). Planning tools write here; `pnpm run plans:guard` refuses a
-# plan that is committed anywhere else.
+# not committed"). The repository keeps no plans directory. These paths are
+# ignored so a tool that writes a plan there cannot get it committed, and
+# `pnpm run plans:guard` refuses a plan anywhere else.
 /plans/
+/docs/plans/

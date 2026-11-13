@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hobo.provider_cedar.v1;
 
-// Wire shapes for the Cedar gate-plane boundary (docs/plans/0017 F30): the
+// Wire shapes for the Cedar gate-plane boundary: the
 // cedar-agent is_authorized verdict the adapter parses. Design-time contract
 // artifacts.
 

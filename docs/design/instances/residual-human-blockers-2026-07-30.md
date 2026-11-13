@@ -1,15 +1,13 @@
 ---
 type: Reference
 title: "Residual Human Blockers Ledger (2026-07-30)"
-description: "Populated instance of ship-remediation residual H-* items from plan 0012. Agents cannot close these; each row records why, the unblock condition, and owner role. Not a claim that any blocker is fixed."
+description: "Populated instance of ship-remediation residual H-* items. Agents cannot close these; each row records why, the unblock condition, and owner role. Not a claim that any blocker is fixed."
 tags: [hobo, design, instances, ship, residual, human-blockers]
 ---
 
 # Residual Human Blockers Ledger (2026-07-30)
 
 > **Status:** open ledger. **Agents must not mark these fixed.**  
-> **Parent plan:** `0012-ship-remediation-plan` (a plan, not kept in the repository)  
-> **Findings:** [`docs/plans/0011-ship-readiness-gap-review.md`](../../plans/0011-ship-readiness-gap-review.md)  
 > **Ship targets:** Target A (OSS public hygiene) → B (local-first npm) → C (hosted beta/GA). Most rows block B and/or C, not repo-public hygiene alone.
 
 This instance is the durable residual ledger for work that **requires a human, account, counsel, or multi-day product program**. Agent work packages (WP-A–E) implement max docs/config/code honesty; they do **not** restore Actions runners, publish to npm, draft counsel-approved legal text, or ship real multi-cloud apply.
@@ -18,7 +16,7 @@ This instance is the durable residual ledger for work that **requires a human, a
 
 | Field | Meaning |
 |---|---|
-| ID | Stable residual id from plan 0012 |
+| ID | Stable residual id |
 | Title | Short name |
 | Why agent cannot close | Hard dependency on account, credentials, counsel, staffed ops, or deferred product scope |
 | Unblock condition | Concrete human/product action that would close or downgrade the item |

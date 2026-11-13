@@ -4,9 +4,9 @@
  * not committed"). This gate refuses one that is.
  *
  * A plan is a Markdown file whose frontmatter `type` names a plan, or any file
- * under the root `plans/` folder, which is where planning tools write and which
- * git ignores. A record of what was decided or found (an ADR, a design
- * document, review findings, delivery state) is not a plan.
+ * under `plans/` or `docs/plans/`. The repository has no plans directory: git
+ * ignores both paths, so a tool that writes there cannot get a plan committed.
+ * A record of what was decided (an ADR, a design document) is not a plan.
  *
  * `--staged` checks what is staged for the commit, read from the index, so a
  * forced `git add` is caught. With no flag it checks every tracked file, so a
@@ -45,8 +45,8 @@ export function planReason(
 	file: string,
 	read: () => string,
 ): string | undefined {
-	if (file.startsWith("plans/"))
-		return "it is under plans/, the local folder planning tools write to";
+	if (file.startsWith("plans/") || file.startsWith("docs/plans/"))
+		return "it is in a plans directory, and the repository keeps none";
 	if (!/\.mdx?$/i.test(file)) return undefined;
 	const type = frontmatterType(read());
 	return type !== undefined && planTypes().has(type)
@@ -92,7 +92,7 @@ function main(argv: readonly string[]): number {
 	);
 	for (const { file, reason } of found) console.error(`  ${file}: ${reason}`);
 	console.error(
-		"Keep a plan in plans/ (ignored by git) or outside the repository. Commit what was decided as an ADR or design document, not the plan.",
+		"Keep a plan outside the repository. Commit what was decided as an ADR or design document, not the plan.",
 	);
 	return 1;
 }

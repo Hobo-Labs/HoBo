@@ -979,7 +979,6 @@ jobs:
         external
         features
         packages
-        plans
         release
         scripts
         site

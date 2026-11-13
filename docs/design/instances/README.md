@@ -44,5 +44,3 @@ Examples: `v1-readiness-dashboard-2026-07-30.md`, `go-no-go-repo-public-2026-07-
 | [`accepted-risks-2026-07-30.md`](./accepted-risks-2026-07-30.md) | Accepted risks | Single maintainer, CI outage, synthetic wasm, in-memory default |
 | [`residual-human-blockers-2026-07-30.md`](./residual-human-blockers-2026-07-30.md) | Human residual ledger | H-V1…H-T1 items agents cannot close |
 
-Parent audit: [`docs/plans/0011-ship-readiness-gap-review.md`](../../plans/0011-ship-readiness-gap-review.md).  
-Remediation: `0012-ship-remediation-plan` (a plan, not kept in the repository).

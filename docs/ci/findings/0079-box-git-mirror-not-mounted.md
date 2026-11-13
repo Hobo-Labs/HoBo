@@ -25,7 +25,7 @@ S0 gate set is **2 s** (do not cut). Install is finding 78 (#1750). This finding
 
 ## Cause
 
-`oci-layer-plan` (a plan, not kept in the repository) Phase 2 specified a worker-owned bare mirror,
+Phase 2 of the CI layer work specified a worker-owned bare mirror,
 per-run `git fetch` of the admitted SHA, and a read-only container mount. The job-side probe
 landed with Phase 1. The worker fetch, mount, and `HOBO_CI_GIT_MIRROR` env did not.
 

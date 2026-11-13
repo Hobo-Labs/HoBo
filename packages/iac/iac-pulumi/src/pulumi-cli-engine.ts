@@ -16,7 +16,7 @@ import {
 	parseJsonObject,
 } from "./json.js";
 
-// The REAL Pulumi backend (docs/plans/0006 item 3-2). This engine speaks the
+// The REAL Pulumi backend. This engine speaks the
 // exact preview/apply/refresh/destroy shape the in-memory stand-in defined
 // (see the ponytail note in iac-pulumi-automation-adapter.ts) but drives the
 // actual pinned `pulumi` CLI, per-resource stack, against a file:// state

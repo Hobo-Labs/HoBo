@@ -6,7 +6,7 @@ import type {
 } from "../plan-types.js";
 import type { ResourceDefinition } from "../registry/catalog.js";
 
-// E19 placement-constraint evaluation (0015 §B deliverable 2). Placement
+// E19 placement-constraint evaluation. Placement
 // criteria are HARD, deterministic candidate filters applied between
 // capability negotiation and objective ranking, so the lexicographic
 // `specificity → priority → objective → definition id` ranking (ADR-0033,

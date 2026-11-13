@@ -722,8 +722,7 @@ export function selectRelevantChecks(
 	}
 
 	// Any manifest or lockfile edit can change outbound licence metadata or
-	// pull in a dependency whose licence is not on the allowlist
-	// (docs/plans/0009-legal-compliance-audit.md findings 3 and 5).
+	// pull in a dependency whose licence is not on the allowlist.
 	if (
 		rootConfigChanged ||
 		touchedAny([

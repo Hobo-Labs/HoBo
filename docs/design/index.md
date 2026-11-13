@@ -232,7 +232,6 @@ as a Node service by `hobo ci serve` and the container image, on
 is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 `/mcp`, whose `wait_for_events` tool and resource subscriptions are a
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
-[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
+[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
-and model-backed conflict resolution beside the Node relay), and
-implementation plan with live acceptance gates.
+and model-backed conflict resolution beside the Node relay).

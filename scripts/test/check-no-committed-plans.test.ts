@@ -32,15 +32,19 @@ describe("plans:guard", () => {
 		"Design",
 		"Architecture Decision Record",
 		"Review Findings",
-		"Delivery State",
 		"Reference",
 	])("allows a document typed %s", (type) => {
 		expect(planReason("docs/design/x.md", () => doc(type))).toBeUndefined();
 	});
 
-	it("refuses anything under the root plans folder, whatever it holds", () => {
-		expect(planReason("plans/001-anything.md", () => "")).toContain("plans/");
-		expect(planReason("plans/notes.txt", () => "")).toContain("plans/");
+	it("refuses anything in a plans directory, whatever it holds", () => {
+		for (const file of [
+			"plans/001-anything.md",
+			"plans/notes.txt",
+			"docs/plans/index.md",
+			"docs/plans/x/sdlc-state.md",
+		])
+			expect(planReason(file, () => "")).toContain("plans directory");
 	});
 
 	it("does not read a file that cannot be a plan", () => {
@@ -48,7 +52,7 @@ describe("plans:guard", () => {
 			throw new Error("read");
 		};
 		expect(planReason("packages/ci/src/policy.ts", read)).toBeUndefined();
-		// A package may have its own folder called plans; only the root one is local.
+		// A package may have its own folder called plans; only the two above are refused.
 		expect(planReason("packages/x/plans/a.ts", read)).toBeUndefined();
 	});
 

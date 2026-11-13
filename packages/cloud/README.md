@@ -1,7 +1,6 @@
 # @hobo/cloud — the Yard control-plane kernel + Planner
 
-Production package for **S2-01** (Yard kernel) and **S2-02** (Planner + Matching)
-of the engineering build plan,
+Production package for **S2-01** (Yard kernel) and **S2-02** (Planner + Matching),
 implementing [`docs/design/control-plane.md`](../../docs/design/control-plane.md).
 
 A coherent vertical: a **Deploy command** becomes past-tense **events**, the pure

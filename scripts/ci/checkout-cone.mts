@@ -28,7 +28,6 @@ export const S0_DIRECTORY_CONES = [
 	"external",
 	"features",
 	"packages",
-	"plans",
 	"release",
 	"scripts",
 	"site",
