@@ -15,7 +15,7 @@ converge by pull, exposes the change progressively, verifies it, and rolls it
 back.**
 
 - **Decision record:** [ADR-0181](./adr/01-architecture-core.md#adr-0181) (D1–D26).
-- **Binding plan and research:** [plan 0024](../plans/0024-hobo-cd-swarm-instruction.md)
+- **Binding plan and research:** plan 0024
   (Kargo, Harness, Karmada and Open Cluster Management, what was taken and what
   was not).
 - **Operator surface:** `packages/hobo/CD.md` (`hobo deploy`, `hobo serve cd`, `hobo incident`).

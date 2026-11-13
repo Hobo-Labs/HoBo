@@ -1,6 +1,6 @@
 /**
  * Prints the enrollment entry for this box's fleet verdict reporter
- * (ADR-0180; plan 0025, step G2):
+ * (ADR-0180; operating step G2 in packages/ci-vercel/README.md):
  *
  *   node packages/ci-gh-actions/scripts/fleet-reporter-enroll.mts \
  *     --key-file <path> --id <reporter id> --account <account id> \

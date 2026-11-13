@@ -1,5 +1,5 @@
 /* oxlint-disable anti-slop/no-conditional-empty-object-spread, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
-// Test fakes owned by WP7 (plan 0024 §7.3): an in-memory DurableEventStore with
+// Test fakes owned by WP7: an in-memory DurableEventStore with
 // the SQLite journal's CAS, idempotency, owner-epoch fencing and subscription
 // lease/checkpoint semantics on an injected clock; a DesiredStateReader over
 // the spec stream; a target-modelling Realizer that counts mutating calls; and

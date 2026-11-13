@@ -985,7 +985,7 @@ Repo-wide, by rule: `no-known-value-widening` 127 → 5,880, `require-safety-com
 ## ADR-0181
 **HoBo.CD: `@hobo/cd` delivers immutable Freight through a pipeline graph by pull, on every platform, with deterministic verification, Placement, fan-out, governed failover, and Rails delivered and observed like software (decisions D1–D26).**
 
-**Status:** Accepted. Binding text: plan [0024](../../plans/0024-hobo-cd-swarm-instruction.md) Part II §5. Design narrative: [continuous-delivery.md](../continuous-delivery.md).
+**Status:** Accepted. Design narrative: [continuous-delivery.md](../continuous-delivery.md).
 
 **Numbering.** Plan 0024's decision register (R3) names this record ADR-0178. ADR-0178 (provider manifest) and ADR-0179 (stateless hosted relay) were assigned on `main` while the plan was written, and IDs are global and monotonic, so this record takes the next free number. Where plan 0024 says "ADR-0178" for HoBo.CD, it means this section.
 

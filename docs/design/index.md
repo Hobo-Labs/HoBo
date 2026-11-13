@@ -228,9 +228,8 @@ When a draft package, validation script, workflow, or public contract changes, u
 ## HoBo.CD
 
 [Design](./continuous-delivery.md), [package map](../../packages/cd/README.md),
-[runbooks](../runbooks/cd/index.md), [resolver component authoring](./resolver-component-authoring.md),
-[`DeliveryPolicy` upgrade notes](./delivery-policy-upgrade.md) and the
-[delivery state](../plans/hobo-cd/sdlc-state.md) of [plan 0024](../plans/0024-hobo-cd-swarm-instruction.md).
+[runbooks](../runbooks/cd/index.md), [resolver component authoring](./resolver-component-authoring.md)
+and [`DeliveryPolicy` upgrade notes](./delivery-policy-upgrade.md).
 
 ## HoBo.CI SDK family
 
@@ -242,7 +241,6 @@ as a Node service by `hobo ci serve` and the container image, on
 is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 `/mcp`, whose `wait_for_events` tool and resource subscriptions are a
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
-[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
+[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
-and model-backed conflict resolution beside the Node relay), and
-[implementation plan with live acceptance gates](../plans/hobo-ci/README.md).
+and model-backed conflict resolution beside the Node relay).

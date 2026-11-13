@@ -7,7 +7,7 @@ tags: [hobo, design, npm, publish, ship]
 
 # npm publish allowlist
 
-Ship-remediation WP-D ([`docs/plans/0012-ship-remediation-plan.md`](../plans/0012-ship-remediation-plan.md)). Prepares Target B (developer-tooling / local-first npm) **without** performing a live registry publish.
+Prepares Target B (developer-tooling / local-first npm) **without** performing a live registry publish.
 
 ## Policy summary
 
@@ -94,7 +94,5 @@ File: [`.github/workflows/publish.yml`](../../.github/workflows/publish.yml).
 
 ## Related
 
-- Ship remediation plan: [`docs/plans/0012-ship-remediation-plan.md`](../plans/0012-ship-remediation-plan.md) (WP-D)
-- Gap review: [`docs/plans/0011-ship-readiness-gap-review.md`](../plans/0011-ship-readiness-gap-review.md)
 - Residual human blockers: [`instances/residual-human-blockers-2026-07-30.md`](./instances/residual-human-blockers-2026-07-30.md) (H-E1b)
 - Package namespaces: [`package-namespaces.md`](./package-namespaces.md)

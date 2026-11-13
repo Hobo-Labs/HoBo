@@ -1,8 +1,7 @@
 # `@hobo/cd/artifacts`: artifact store and registry-digest verifier
 
 The content-addressed artifact store (C14) and the verifier the Freight ledger
-calls before it records a manifest (D3). This folder is work package WP3 of
-[plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md); the
+calls before it records a manifest (D3). This folder is work package WP3; the
 provenance half lives in [`../provenance`](../provenance/README.md).
 
 | Export | What it does |

@@ -1,7 +1,7 @@
 # @hobo/agent-skills
 
 The mirrored `.agents/skills` tree as a **distributable module**
-(docs/plans/0017 F27): a typed skills manifest (name / description / entry
+: a typed skills manifest (name / description / entry
 per skill), strict frontmatter parsing, and a conformance check every skill
 must pass. Distribution rides Registry listings the same way Resource Packs
 do — the manifest in

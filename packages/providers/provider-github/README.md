@@ -1,6 +1,6 @@
 # @hobo/provider-github
 
-The GitHub Pages realizer for HoBo.CD ([plan 0024](../../../docs/plans/0024-hobo-cd-swarm-instruction.md)):
+The GitHub Pages realizer for HoBo.CD (plan 0024):
 it realizes the **Pages site of one repository** from a static-site tree
 Freight, through the existing `ResourceResolver` port of `@hobo/core`. No
 provider port methods are added, no SDK is used, no git binary runs and no

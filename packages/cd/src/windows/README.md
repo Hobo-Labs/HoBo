@@ -5,8 +5,7 @@ Change windows say when a Camp may change (D10, I17). A window is `ALLOW` or
 `rollback_allowed` flag. The promotion gate evaluates windows. Rollouts check
 them at each stage boundary, and the pipeline controller checks them before
 each auto-promotion request. Overrides are governed, expiring and audited.
-This folder is half of work package WP5 of
-[plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md).
+This folder is half of work package WP5.
 
 | Export | What it does |
 |---|---|

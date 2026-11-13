@@ -1069,8 +1069,8 @@ error or its cause is a database refusal, the line also carries its five-charact
 
 ## Fleet verdict operations
 
-The runbooks for the fleet verdict channel ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment);
-[plan 0025](../../docs/plans/0025-relay-owned-runner-routing.md), sections 6.7 and 6.10). The box relay
+The runbooks for the fleet verdict channel ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment) and its
+[routing rules](../../docs/design/adr/fleet-verdict.md#adr-0180-rules)). The box relay
 decides whether a fleet label is blocked; this relay keeps signed reports, agrees them and serves the
 verdict at `GET /v1/fleet/verdicts/{owner}/{repo}`. Every gate passed is recorded in
 [finding 145](../../docs/ci/findings/0145-fleet-verdict-channel-operating-record.md).

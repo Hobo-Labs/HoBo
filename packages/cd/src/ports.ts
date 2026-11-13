@@ -1,4 +1,4 @@
-// Frozen by docs/plans/0024-hobo-cd-swarm-instruction.md (final). Types only.
+// Frozen contract. Types only.
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import type { GatekeeperEffect, PolicyPack } from "@hobo/contracts";
 import type {

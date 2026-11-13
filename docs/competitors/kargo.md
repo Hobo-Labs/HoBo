@@ -26,7 +26,7 @@ competitor:
 # Kargo — Competitor Reference
 
 > Captured for HoBo competitive analysis under the HoBo Competitive Research Contract.
-> Research date **2026-11-11**, read for [plan 0024](../plans/0024-hobo-cd-swarm-instruction.md)
+> Research date **2026-11-11**, read for plan 0024
 > (HoBo.CD). Read alongside the [Argo CD](argo-cd.md) and [Flux CD](flux-cd.md) captures,
 > which Kargo sits on top of, and [Harness](harness.md) for the verification model HoBo.CD
 > combines with it.
@@ -165,7 +165,7 @@ State labels follow the research contract.
 - [Working with Stages](https://main.docs.kargo.io/user-guide/how-to-guides/working-with-stages) — Stage graph, availability, soak, auto-promotion
 - [Verification](https://docs.kargo.io/user-guide/how-to-guides/verification) — analysis-based qualification
 - [v1.8.0 release notes](https://docs.kargo.io/release-notes/v1.8.0)
-- HoBo side: [continuous-delivery.md](../design/continuous-delivery.md), [plan 0024 §I.2](../plans/0024-hobo-cd-swarm-instruction.md)
+- HoBo side: [continuous-delivery.md](../design/continuous-delivery.md), plan 0024 §I.2
 
 Install base, pricing of the hosted offering and the full promotion-step catalog were not verified
 in this pass and are not asserted.

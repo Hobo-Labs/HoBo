@@ -23,5 +23,5 @@
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run"
 	},
-	"description": "HoBo evals engine (docs/plans/0017 F25, design PLAN-23): schema-versioned rubric declarations with weighted boolean/scale/golden-match criteria, deterministic frozen scoring reports mirroring the @hobo/conformance suite/report vocabulary, and promotion-gate verdicts shaped as Gatekeeper precomputed dimensions ({ok, reasons}) so evals feeds gatekeeping as a machine-readable reason gate value. Evaluators are ports; no model hosting."
+	"description": "HoBo evals engine (design PLAN-23): schema-versioned rubric declarations with weighted boolean/scale/golden-match criteria, deterministic frozen scoring reports mirroring the @hobo/conformance suite/report vocabulary, and promotion-gate verdicts shaped as Gatekeeper precomputed dimensions ({ok, reasons}) so evals feeds gatekeeping as a machine-readable reason gate value. Evaluators are ports; no model hosting."
 }

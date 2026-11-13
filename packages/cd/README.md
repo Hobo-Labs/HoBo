@@ -11,9 +11,6 @@ then ENFORCE) and observed continuously as posture.
 
 - Design: [`docs/design/continuous-delivery.md`](../../docs/design/continuous-delivery.md)
 - Decisions D1–D26: [ADR-0181](../../docs/design/adr/01-architecture-core.md#adr-0181)
-  (plan 0024 calls it ADR-0178; that number was taken)
-- Binding plan, invariants I1–I24 and the acceptance matrix:
-  [`docs/plans/0024-hobo-cd-swarm-instruction.md`](../../docs/plans/0024-hobo-cd-swarm-instruction.md)
 - Runbooks: [`docs/runbooks/cd/`](../../docs/runbooks/cd/index.md)
 - Operator surface (`hobo deploy`, `hobo serve cd`, `hobo incident`): `packages/hobo/CD.md`
 

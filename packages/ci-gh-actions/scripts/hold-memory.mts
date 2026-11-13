@@ -1,5 +1,5 @@
 /**
- * Holds memory for a game day (plan 0025, steps G3 and G5): allocates and
+ * Holds memory for a game day (operating steps G3 and G5): allocates and
  * touches `--mb` megabytes, keeps them for `--seconds`, then exits.
  *
  *   node packages/ci-gh-actions/scripts/hold-memory.mts --mb 12000 --seconds 300

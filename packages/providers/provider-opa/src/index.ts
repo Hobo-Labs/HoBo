@@ -11,7 +11,7 @@ import {
 export type { JsonObject, JsonValue } from "./json.js";
 
 // The OPA/Rego policy engine behind the broker's gate-plane port, extracted
-// from `@hobo/broker` per docs/plans/0017 F30 (the broker re-exports this
+// from `@hobo/broker` (the broker re-exports this
 // adapter, so `createOpaGatePlane` keeps its original import surface). Rego
 // is the broker's first-class external policy language
 // (contracts-policy-flags.md: the policy-engine port genuinely accepts

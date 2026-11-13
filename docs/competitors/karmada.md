@@ -26,7 +26,7 @@ competitor:
 # Karmada — Competitor Reference
 
 > Captured for HoBo competitive analysis under the HoBo Competitive Research Contract.
-> Research date **2026-11-11**, read for [plan 0024](../plans/0024-hobo-cd-swarm-instruction.md)
+> Research date **2026-11-11**, read for plan 0024
 > (HoBo.CD). Read alongside [Open Cluster Management](open-cluster-management.md), the other
 > multi-cluster reference, and [Kubernetes](kubernetes.md).
 
