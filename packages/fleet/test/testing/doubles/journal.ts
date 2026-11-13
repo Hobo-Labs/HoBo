@@ -90,8 +90,10 @@ export const BROKEN_JOURNALS: ReadonlyMap<string, JournalMake> = new Map([
 		"type, version, data and meta round-trip",
 		broken((base) => ({
 			async *read(streamId, fromSeq) {
-				for await (const entry of base.read(streamId, fromSeq))
-					yield { ...entry, v: 1, meta: undefined } satisfies EventEnvelope;
+				for await (const entry of base.read(streamId, fromSeq)) {
+					const { meta: _dropped, ...rest } = entry;
+					yield { ...rest, v: 1 } satisfies EventEnvelope;
+				}
 			},
 		})),
 	],
@@ -113,7 +115,9 @@ export const BROKEN_JOURNALS: ReadonlyMap<string, JournalMake> = new Map([
 		"readAll after a position resumes just after it",
 		broken((base) => ({
 			readAll(options) {
-				return base.readAll({ limit: options?.limit });
+				return base.readAll(
+					options?.limit === undefined ? {} : { limit: options.limit },
+				);
 			},
 		})),
 	],
@@ -121,7 +125,9 @@ export const BROKEN_JOURNALS: ReadonlyMap<string, JournalMake> = new Map([
 		"readAll honours limit",
 		broken((base) => ({
 			readAll(options) {
-				return base.readAll({ after: options?.after });
+				return base.readAll(
+					options?.after === undefined ? {} : { after: options.after },
+				);
 			},
 		})),
 	],

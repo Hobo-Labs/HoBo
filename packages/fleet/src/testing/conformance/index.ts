@@ -17,10 +17,11 @@ import type {
 	SandboxDriver,
 } from "../../ports.js";
 import { registerSuite } from "./assertion.js";
+import { BUS_ASSERTIONS } from "./bus.js";
 import { JOURNAL_ASSERTIONS } from "./journal.js";
 
 export function runBusConformance(make: () => Promise<AuthorityBus>): void {
-	throw new FleetNotImplemented("runBusConformance");
+	registerSuite("bus conformance", BUS_ASSERTIONS, make, 30_000);
 }
 
 export function runTransportConformance(
