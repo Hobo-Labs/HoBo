@@ -60,6 +60,7 @@ import {
 	workflowFile,
 } from "../ci/route-runner.mts";
 import {
+	ROUTING_SLIP_READ_TIMEOUT_MS,
 	RUNNER_ROUTING_PATH,
 	type RunnerRouting,
 	readRunnerRouting,
@@ -595,6 +596,33 @@ describe("the routing slip", () => {
 				ok: false,
 				why: "slip malformed",
 			});
+	});
+
+	it("adds at most the three-second limit when GitHub does not answer (M3)", async () => {
+		// A GitHub API that never answers: only the read's own limit ends the wait.
+		const hanging: typeof fetch = (_url, init) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () =>
+					reject(init.signal?.reason),
+				);
+			});
+		const startedMs = performance.now();
+		const reading = await askSlip({
+			apiUrl: "https://api.github.test",
+			repository: "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: "pr",
+			nowMs: () => SLIP_NOW,
+			fetch: hanging,
+		});
+		const tookMs = performance.now() - startedMs;
+		assert.deepEqual(reading, {
+			ok: false,
+			why: "the routing slip was not read in time",
+		});
+		assert.equal(ROUTING_SLIP_READ_TIMEOUT_MS, 3_000);
+		assert.ok(tookMs < ROUTING_SLIP_READ_TIMEOUT_MS + 500, `took ${tookMs} ms`);
 	});
 
 	it("reads an API failure as no slip, and says which", async () => {
