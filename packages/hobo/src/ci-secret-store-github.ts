@@ -15,12 +15,13 @@ import {
 } from "@hobo/secret-store-claim";
 
 import { loadRelayYard } from "./ci-relay-yard.js";
+import type { CiSecretStoreInput } from "./ci-secret-store.js";
 import { isJsonString } from "./json.js";
 
 /** `--repo`, else the relay Yard's repository, else undefined. */
 export async function relayRepository(
 	cwd: string,
-	values: Readonly<Record<string, unknown>>,
+	values: CiSecretStoreInput["values"],
 ): Promise<string | undefined> {
 	const flag = values.repo;
 	if (isJsonString(flag) && flag !== "") return flag;

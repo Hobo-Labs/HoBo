@@ -348,7 +348,7 @@ describe("re-running connect against an existing store", () => {
 			ownerAccessToken: stub.adminToken(),
 			deployIdentityId: "missing-identity",
 			trust: layout.deployTrust,
-		}).catch((caught: unknown) => caught);
+		}).catch((caught: Error) => caught);
 		expect(error).toMatchObject({ code: "SECRET_STORE_PROVIDER_FAILED" });
 		expect(String(error)).toContain("not-found");
 		expect(String(error)).not.toContain(stub.adminToken());

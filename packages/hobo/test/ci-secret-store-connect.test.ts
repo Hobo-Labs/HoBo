@@ -63,8 +63,15 @@ const GITHUB_TOKEN = "synthetic-github-token";
 const OWNER_TOKEN = "synthetic-infisical-owner-token";
 
 /** GitHub's REST API for the relay repository (the shapes of the pact in @hobo/secret-store-claim). */
+/** GitHub's JSON for the subject template (snake_case, as GitHub sends it). */
+type SubjectTemplateJson = Readonly<{
+	use_default: boolean;
+	use_immutable_subject?: boolean;
+	sub_claim_prefix?: string;
+}>;
+
 function github(
-	template: Record<string, unknown> = {
+	template: SubjectTemplateJson = {
 		use_default: true,
 		use_immutable_subject: true,
 		sub_claim_prefix: "repo:Hobo-Labs@344805935/HoBo@1274791462",
@@ -89,13 +96,21 @@ function github(
 	return { fetch, seen };
 }
 
+/** The OIDC Auth update body Infisical receives, the fields asserted. */
+type PatchedTrust = Readonly<{
+	boundIssuer: string;
+	boundAudiences: string;
+	boundSubject: string;
+	boundClaims: Readonly<Record<string, string>>;
+}>;
+
 /** Infisical Cloud's OIDC Auth update, answered for the deploy identity only. */
 function withInfisicalPatch(base: Fetch) {
-	const patches: { path: string; body: Record<string, unknown> }[] = [];
+	const patches: { path: string; body: PatchedTrust }[] = [];
 	const fetch: Fetch = async (request, init) => {
 		const url = new URL(String(request));
 		if (url.host === "app.infisical.com" && init?.method === "PATCH") {
-			const body = JSON.parse(String(init.body));
+			const body: PatchedTrust = JSON.parse(String(init.body));
 			patches.push({ path: url.pathname, body });
 			if (url.pathname !== "/api/v1/auth/oidc-auth/identities/deploy-identity")
 				return Response.json({ reqId: "req-404" }, { status: 404 });
@@ -325,7 +340,7 @@ describe("hobo ci secret-store connect, secretless first", () => {
 
 describe("hobo ci secret-store verify", () => {
 	function jwtWithSub(sub: string): string {
-		const part = (value: object) =>
+		const part = (value: Readonly<Record<string, string>>) =>
 			Buffer.from(JSON.stringify(value)).toString("base64url");
 		return `${part({ alg: "RS256" })}.${part({ sub, aud: "https://github.com/Hobo-Labs" })}.c2lnbmF0dXJl`;
 	}

@@ -1,6 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
+	type GithubOidcSubject,
 	GithubOidcSubjectTemplateSchema,
 	GithubRepositorySchema,
 	githubDeployTrust,
@@ -30,7 +31,7 @@ function template(
 	});
 }
 
-function codeOf(run: () => unknown): string {
+function codeOf(run: () => GithubOidcSubject): string {
 	try {
 		run();
 	} catch (error) {
@@ -85,13 +86,13 @@ describe("the OIDC subject GitHub issues for a repository", () => {
 				useImmutableSubject: true,
 			}),
 		];
-		for (const shape of cases)
+		for (const answer of cases)
 			expect(
 				codeOf(() =>
 					parseGithubOidcSubject({
 						requested: "Hobo-Labs/HoBo",
 						repository: REPO,
-						template: shape,
+						template: answer,
 					}),
 				),
 			).toBe("SECRET_STORE_OIDC_SUBJECT_UNRESOLVED");

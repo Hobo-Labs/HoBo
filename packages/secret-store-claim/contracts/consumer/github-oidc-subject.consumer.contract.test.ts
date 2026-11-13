@@ -124,7 +124,7 @@ describe("GitHub's REST API, the OIDC subject a repository's tokens carry (consu
 			token: TOKEN,
 			fetch: send,
 			apiUrl: API,
-		}).catch((caught: unknown) => caught);
+		}).catch((caught: Error) => caught);
 		expect(error).toBeInstanceOf(SecretStoreError);
 		expect(error).toMatchObject({
 			code: "SECRET_STORE_OIDC_SUBJECT_UNRESOLVED",

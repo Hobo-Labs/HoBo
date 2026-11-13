@@ -104,14 +104,12 @@ const CONNECT_ID_OPTIONS = [
 	"team",
 ] as const;
 type ConnectIdOption = (typeof CONNECT_ID_OPTIONS)[number];
-const CONNECT_IDS: Readonly<
-	Record<ConnectIdOption, keyof ParsedSecretStoreBinding>
-> = {
+const CONNECT_IDS = {
 	"project-id": "projectId",
 	"relay-identity-id": "relayIdentityId",
 	"deploy-identity-id": "deployIdentityId",
 	team: "vercelTeamId",
-};
+} as const satisfies Record<ConnectIdOption, keyof ParsedSecretStoreBinding>;
 
 function refusedConnect(code: string, message: string): CommandResult {
 	return { ok: false, status: "refused", code, message, data: data("connect") };
@@ -294,7 +292,7 @@ function oidcHintSuffix(jwt: string | undefined): string {
  * and name the repair. The subject is an identifier, not a secret.
  */
 function subjectRepairSuffix(
-	error: unknown,
+	error: Error,
 	jwt: string | undefined,
 	trustedSubject: string,
 ): string {
@@ -335,7 +333,9 @@ async function signInOnly(
 					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
 					: "the sign-in could not run") +
 				oidcHintSuffix(workloadJwt()) +
-				subjectRepairSuffix(error, workloadJwt(), trustedSubject),
+				(error instanceof Error
+					? subjectRepairSuffix(error, workloadJwt(), trustedSubject)
+					: ""),
 		};
 	}
 }
