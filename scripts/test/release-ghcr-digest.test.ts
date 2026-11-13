@@ -4,9 +4,11 @@ import {
 	assertReleaseImageMatchesBuild,
 	assertSha256ImageDigest,
 	ghcrDigestRef,
+	imagetoolsInspectArgv,
 	imagetoolsInspectTag,
 	isImagetoolsRegistryTagNotFound,
 	normalizeRepoDigestLine,
+	parseImagetoolsDefaultStdout,
 	resolveRegistryDigestForTag,
 	resolveRegistryDigestForTagWithRetry,
 	stderrReferencesExactTag,
@@ -20,6 +22,21 @@ const DIGEST_B =
 	"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const DIGEST_DEAD =
 	"sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+/** Empirical alpine:3.20 index digest (docker 27.3.1 + buildx 0.19.3, 2026-11-12). */
+const EMPIRICAL_ALPINE_INDEX_DIGEST =
+	"sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
+
+function syntheticDefaultImagetoolsStdout(tag: string, digest: string): string {
+	return [
+		`Name:      ${tag}`,
+		"MediaType: application/vnd.oci.image.index.v1+json",
+		`Digest:    ${digest}`,
+		"           ",
+		"Manifests: ",
+		"  Name:        example@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	].join("\n");
+}
 
 function stubSpawnSync(
 	status: number,
@@ -36,6 +53,16 @@ function stubSpawnSync(
 }
 
 describe("release ghcr digest helpers", () => {
+	it("builds docker buildx imagetools argv without a Go-template --format", () => {
+		const tag = `ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.${Date.now()}`;
+		expect(imagetoolsInspectArgv(tag)).toEqual([
+			"buildx",
+			"imagetools",
+			"inspect",
+			tag,
+		]);
+	});
+
 	it("formats ghcr digest refs with image name for attest grep", () => {
 		expect(ghcrDigestRef("ghcr.io/hobo-labs/hobo/hobo-codegen", DIGEST_A)).toBe(
 			`ghcr.io/hobo-labs/hobo/hobo-codegen@${DIGEST_A}`,
@@ -71,12 +98,85 @@ describe("release ghcr digest helpers", () => {
 		).toThrow(/sha256:\[a-f0-9\]\{64\}/u);
 	});
 
-	it("fails closed when imagetools returns success but unparsable JSON", () => {
+	it("fails closed when imagetools returns success but no top-level Digest line", () => {
 		const run = vi.fn(() => stubSpawnSync(0, ""));
-		run.mockReturnValueOnce({ ...stubSpawnSync(0, ""), stdout: "not-json" });
+		run.mockReturnValueOnce({
+			...stubSpawnSync(0, ""),
+			stdout: "digest",
+		});
 		expect(() => imagetoolsInspectTag("ghcr.io/x/y:v1", run)).toThrow(
-			/unparsable JSON/u,
+			/no top-level Digest line/u,
 		);
+	});
+
+	it("parses default buildx stdout shape from empirical alpine capture", () => {
+		const stdout = syntheticDefaultImagetoolsStdout(
+			"docker.io/library/alpine:3.20",
+			EMPIRICAL_ALPINE_INDEX_DIGEST,
+		);
+		expect(parseImagetoolsDefaultStdout(stdout)).toBe(
+			EMPIRICAL_ALPINE_INDEX_DIGEST,
+		);
+	});
+
+	it("fails closed on multiline Digest output", () => {
+		expect(
+			parseImagetoolsDefaultStdout(
+				"Name: docker.io/library/alpine:3.20\nDigest:\nsha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n",
+			),
+		).toBeUndefined();
+	});
+
+	it("fails loudly when buildx plugin is missing", () => {
+		expect(() =>
+			imagetoolsInspectTag(
+				"ghcr.io/x/y:v1",
+				vi.fn(() =>
+					stubSpawnSync(
+						1,
+						"docker: 'buildx' is not a docker command.\nSee 'docker --help'",
+					),
+				),
+			),
+		).toThrow(/buildx CLI plugin/u);
+	});
+
+	it("returns digest when tag exists (default buildx stdout)", () => {
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.1";
+		const stdout = syntheticDefaultImagetoolsStdout(tag, DIGEST_B);
+		const inspected = imagetoolsInspectTag(
+			tag,
+			vi.fn(() => ({
+				...stubSpawnSync(0, ""),
+				stdout,
+			})),
+		);
+		expect(inspected).toEqual({ digest: DIGEST_B });
+	});
+
+	it("returns undefined when tag is missing (buildx not-found stderr)", () => {
+		const tag = `ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.${Date.now()}`;
+		expect(
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() => stubSpawnSync(1, `ERROR: ${tag}: not found`)),
+			),
+		).toBeUndefined();
+	});
+
+	it("fails loudly on docker CLI usage errors (status 125)", () => {
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.168";
+		expect(() =>
+			imagetoolsInspectTag(
+				tag,
+				vi.fn(() =>
+					stubSpawnSync(
+						125,
+						"Run 'docker COMMAND --help' for more information on a command.\n",
+					),
+				),
+			),
+		).toThrow(/status 125/u);
 	});
 
 	it("imagetools inspect fails closed on non-absent errors", () => {

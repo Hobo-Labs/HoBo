@@ -4,12 +4,16 @@
  * (ADR-0179 amendment "Secret store chosen at deploy, provisioned by claim").
  */
 export type {
+	GithubOidcSubjectTemplate,
+	GithubRepository,
 	SecretStoreBinding,
 	SecretStoreEvidence,
 	SecretStoreOffer,
 	SecretStoreSelection,
 } from "./_generated/secret_store_claim_pb.js";
 export {
+	GithubOidcSubjectTemplateSchema,
+	GithubRepositorySchema,
 	SecretStoreBindingSchema,
 	SecretStoreEvidenceSchema,
 	SecretStoreOfferSchema,
@@ -47,11 +51,20 @@ export {
 	type SecretStoreErrorCode,
 } from "./errors.js";
 export {
+	GITHUB_ACTIONS_ISSUER,
+	type GithubOidcSubject,
+	githubDeployTrust,
+	githubSubjectMismatch,
+	parseGithubOidcSubject,
+	resolveGithubOidcSubject,
+} from "./github-oidc.js";
+export {
 	attachInfisicalCloud,
 	provisionSelfHostedInfisical,
 	type RelayStoreLayout,
 	relayStoreLayout,
 	SELF_HOSTED_PROVIDER_ID,
+	updateDeployIdentityTrust,
 	verifySelfHostedInfisicalClaim,
 } from "./infisical.js";
 export {
