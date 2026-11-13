@@ -11,18 +11,27 @@ import type { CampId, CdContext, FreightId } from "@hobo/cd";
 import { createHoboCli } from "@hobo/cli";
 import type { HttpTransport, TransportRequest } from "@hobo/core";
 import { afterAll, describe, expect, it } from "vitest";
+import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import { cdPrincipal } from "../src/cd-runtime.js";
 import { createCiCommand } from "../src/ci-command.js";
 import {
+	RELAY_ADOPT_BUDGET,
 	RELAY_ADOPT_CREDENTIAL_REF,
 	RELAY_ADOPT_REFUSAL,
+	relayAdoptDeadline,
+	relayAdoptStages,
 	runCiRelayAdopt,
 } from "../src/ci-relay-adopt.js";
-import { RELAY_DELIVERY_REFUSAL } from "../src/ci-relay-delivery.js";
+import {
+	RELAY_DELIVERY_FILE,
+	RELAY_DELIVERY_REFUSAL,
+} from "../src/ci-relay-delivery.js";
 import {
 	adoptedDeploymentSuites,
+	adoptedVerificationRecords,
 	COMMIT_MISMATCH_STATUS,
 	commitCheckingProbe,
+	RELAY_ADOPT_VERIFICATION,
 	RELAY_ADOPTED_DEPLOYMENT_SUITE,
 	relayProductionOrigin,
 } from "../src/ci-relay-verify.js";
@@ -501,6 +510,178 @@ describe("hobo ci deploy --adopt verification without Deployment Protection", ()
 	});
 });
 
+describe("hobo ci deploy --adopt within its time budget", () => {
+	const MINUTE = 60_000;
+	const BUILDING = [
+		{ state: "in_progress", environment_url: URL_OF_DEPLOYMENT },
+	];
+
+	it("takes the earlier of --deadline and --budget, else the default, and refuses a malformed one", () => {
+		const now = Date.UTC(2026, 10, 13, 12);
+		const at = (deadline?: string, budget?: string) =>
+			relayAdoptDeadline(now, { deadline, budget });
+		expect(at()).toEqual({ ok: true, at: now + RELAY_ADOPT_BUDGET.defaultMs });
+		expect(at(undefined, "9")).toEqual({ ok: true, at: now + 9 * MINUTE });
+		expect(at("2026-11-13T12:17:00Z")).toEqual({
+			ok: true,
+			at: now + 17 * MINUTE,
+		});
+		expect(at("2026-11-13T12:17:00.000Z", "8")).toEqual({
+			ok: true,
+			at: now + 8 * MINUTE,
+		});
+		expect(at("2026-11-13T13:05:00+01:00")).toEqual({
+			ok: true,
+			at: now + 5 * MINUTE,
+		});
+		for (const deadline of ["tomorrow", "2026-11-13T12:17:00", "1700000000"])
+			expect(at(deadline).ok).toBe(false);
+		for (const budget of ["0", "-5", "1.5", "21", "ten"])
+			expect(at(undefined, budget).ok).toBe(false);
+		// No deadline lies past the ceiling, however far --deadline names.
+		expect(at("2026-11-13T15:00:00Z")).toEqual({
+			ok: true,
+			at: now + RELAY_ADOPT_BUDGET.maxBudgetMinutes * MINUTE,
+		});
+	});
+
+	it("splits the deadline across lookup, preview and production, and refuses one too short for all three", () => {
+		const now = Date.UTC(2026, 10, 13, 12);
+		expect(relayAdoptStages(now, now + 12 * MINUTE)).toEqual({
+			lookupUntil: now + 7 * MINUTE,
+			previewUntil: now + 9 * MINUTE,
+			productionUntil: now + 12 * MINUTE,
+		});
+		const least =
+			RELAY_ADOPT_BUDGET.lookupMinMs +
+			RELAY_ADOPT_BUDGET.previewReserveMs +
+			RELAY_ADOPT_BUDGET.productionReserveMs;
+		expect(relayAdoptStages(now, now + least)).toBeDefined();
+		expect(relayAdoptStages(now, now + least - 1)).toBeUndefined();
+		// The reserves hold the adopted verification windows with room to spare.
+		expect(RELAY_ADOPT_BUDGET.previewReserveMs).toBeGreaterThan(
+			RELAY_ADOPT_VERIFICATION.progressDeadlineMs,
+		);
+		expect(RELAY_ADOPT_BUDGET.productionReserveMs).toBeGreaterThan(
+			RELAY_ADOPT_VERIFICATION.progressDeadlineMs,
+		);
+		// A late build ends as the budget's refusal, never as a failed rollout.
+		expect(RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs).toBeGreaterThan(
+			RELAY_ADOPT_BUDGET.maxBudgetMinutes * MINUTE,
+		);
+	});
+
+	it("gives each adopted node a short window that still requires every attempt to pass", async () => {
+		const loaded = await loadDeliveryFile(RELAY_DELIVERY_FILE, {
+			cwd: RELAY_DIR,
+		});
+		if (!loaded.ok) throw new Error(loaded.message);
+		const records = adoptedVerificationRecords(loaded.value, PRODUCTION);
+		const nodes = records.pipelines.flatMap((pipeline) => pipeline.nodes);
+		expect(nodes.map((node) => node.name).sort()).toEqual([
+			"preview",
+			"production",
+		]);
+		for (const node of nodes) {
+			const spec = node.verification;
+			expect(spec?.windowMs).toBe(BigInt(RELAY_ADOPT_VERIFICATION.windowMs));
+			expect(spec?.progressDeadlineMs).toBe(
+				BigInt(
+					node.name === "production"
+						? RELAY_ADOPT_VERIFICATION.progressDeadlineMs
+						: RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs,
+				),
+			);
+			expect(spec?.failOnNoData).toBe(true);
+			for (const probe of spec?.probes ?? [])
+				expect(probe.minSuccessRatio).toBe(1);
+		}
+	});
+
+	it("refuses a deadline too close to hold every stage before reading anything", async () => {
+		const h = await harness();
+		const result = await adopt(h, {
+			values: { adopt: true, sha: SHA, budget: "5" },
+		});
+		expect(result.ok).toBe(false);
+		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.budgetExhausted);
+		expect(h.github).toEqual([]);
+		expect(existsSync(join(h.home, "cd"))).toBe(false);
+	});
+
+	it("looks for the deployment only for the lookup's share of the budget", async () => {
+		const h = await harness({ listings: [[]] });
+		const started = h.clock.now;
+		const result = await adopt(h, {
+			values: { adopt: true, sha: SHA, budget: "10" },
+		});
+		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.notFound);
+		expect(result.message).toContain("re-run");
+		// 10 minutes less both reserves: the lookup gave up at 5 minutes.
+		expect(h.clock.now - started).toBeLessThanOrEqual(5 * MINUTE);
+		expect(h.clock.now - started).toBeGreaterThanOrEqual(5 * MINUTE - 10_000);
+	});
+
+	it("ends NOT_READY_IN_BUDGET by its deadline when the build is not READY in time, and a re-run adopts it", async () => {
+		const h = await harness({ statuses: [BUILDING] });
+		const started = h.clock.now;
+		const result = await adopt(h, {
+			values: { adopt: true, sha: SHA, budget: "8" },
+		});
+		expect(result.ok).toBe(false);
+		expect(result.code, result.message).toBe(
+			RELAY_ADOPT_REFUSAL.notReadyInBudget,
+		);
+		expect(result.message).toContain("BUILDING");
+		expect(result.message).toContain("re-run");
+		expect(result.message).toContain("Nothing was changed on Vercel");
+		// Preview's share ended 3 minutes before the deadline; production never ran.
+		expect(h.clock.now - started).toBeLessThanOrEqual(5 * MINUTE + 10_000);
+		expect(h.probed).toEqual([]);
+		expectReadOnly(h);
+
+		// The next run of the same commit, once Vercel reports it READY.
+		const rerun = await harness();
+		const adopted = await adopt(rerun, { home: h.home });
+		expect(adopted.ok, adopted.message).not.toBe(false);
+		expect(adopted.code).toBe("HOBO_CI_ADOPTED");
+	}, 120_000);
+
+	it("ends BUDGET_EXHAUSTED when the build turns READY too late to verify within preview's share", async () => {
+		const h = await harness();
+		const started = h.clock.now;
+		// budget 8: preview's share ends at 5 minutes; READY comes 15 s before.
+		const readyAt = started + 5 * MINUTE - 15_000;
+		const result = await adopt(h, {
+			values: { adopt: true, sha: SHA, budget: "8" },
+			github: async (request) => {
+				const building =
+					new URL(request.url).pathname.endsWith("/701/statuses") &&
+					h.clock.now < readyAt;
+				if (!building) return h.githubHttp(request);
+				h.github.push(request);
+				return {
+					status: 200,
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify(BUILDING),
+				};
+			},
+		});
+		expect(result.ok).toBe(false);
+		expect(result.code, result.message).toBe(
+			RELAY_ADOPT_REFUSAL.budgetExhausted,
+		);
+		expect(result.message).toContain("preview");
+		expect(result.message).toContain("re-run");
+		// SAFETY: runCiRelayAdopt returns this shape (see ci-relay-adopt.ts).
+		const data = result.data as { budget: { node: string } };
+		expect(data.budget.node).toBe("preview");
+		expect(h.clock.now - started).toBeLessThanOrEqual(5 * MINUTE + 10_000);
+		expect(h.probed).toEqual([]);
+		expectReadOnly(h);
+	}, 120_000);
+});
+
 describe("hobo ci deploy --adopt through the ci verb", () => {
 	const cli = createHoboCli({
 		commands: { ci: createCiCommand({ env: { GITHUB_TOKEN: TOKEN } }) },
@@ -516,6 +697,17 @@ describe("hobo ci deploy --adopt through the ci verb", () => {
 		expect(body.code).toBe("HOBO_CLI_USAGE");
 		expect(body.message).toContain(
 			"--set does not apply to hobo ci deploy --adopt",
+		);
+	});
+
+	it("takes --deadline and --budget, and refuses a malformed one as usage", async () => {
+		const result = await cli.run(
+			["ci", "deploy", "--adopt", "--sha", SHA, "--budget", "soon", "--json"],
+			{ cwd: RELAY_DIR },
+		);
+		expect(result.exitCode).toBe(2);
+		expect(JSON.parse(result.stdout).message).toContain(
+			"--budget takes whole minutes",
 		);
 	});
 
