@@ -324,14 +324,17 @@ describe("the HoBo CI Fabric workflow writes HoBo's own Freight", () => {
 		join(import.meta.dirname, "../../../.github/workflows/hobo-ci.yml"),
 		"utf8",
 	);
-	const finish = workflow.slice(
-		workflow.indexOf("\n  main_gate_finish:"),
-		workflow.indexOf("\n  artifact-trust:"),
-	);
+	const jobBlock = (id: string) => {
+		const start = workflow.indexOf(`\n  ${id}:\n`);
+		const rest = workflow.slice(start + 1);
+		const end = rest.search(/\n {2}[A-Za-z0-9_-]+:\n/);
+		return end < 0 ? rest : rest.slice(0, end);
+	};
+	const freight = jobBlock("hobo_freight");
 	const step = (name: string) => {
-		const start = finish.indexOf(`- name: ${name}`);
-		const end = finish.indexOf("\n      - ", start + 1);
-		return finish.slice(start, end < 0 ? undefined : end);
+		const start = freight.indexOf(`- name: ${name}`);
+		const end = freight.indexOf("\n      - ", start + 1);
+		return freight.slice(start, end < 0 ? undefined : end);
 	};
 
 	it("runs the freight writer only on a main push, after the gate and the secret scan", () => {
@@ -340,14 +343,15 @@ describe("the HoBo CI Fabric workflow writes HoBo's own Freight", () => {
 		expect(write).toContain("--pipeline hobo-ci");
 		expect(write).toContain('--deliverable "sdk=');
 		expect(write).toContain('--deliverable "cli=');
-		expect(write).toContain(
-			"if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+		expect(freight).toMatch(/^ {4}needs: \[route, main_gate_finish\]$/m);
+		expect(freight).toContain("github.event_name == 'push'");
+		expect(freight).toContain("github.ref == 'refs/heads/main'");
+		expect(freight).toContain("needs.main_gate_finish.result == 'success'");
+		// The finish gate requires the plan job, which runs the secret scan.
+		expect(jobBlock("main_gate_finish")).toMatch(
+			/needs: \[[^\]]*main-gate-plan/,
 		);
-		const at = finish.indexOf("Write HoBo's own Freight");
-		expect(
-			finish.indexOf("Require main gate and workspace shards"),
-		).toBeLessThan(at);
-		expect(finish.indexOf("Secret scan (full history)")).toBeLessThan(at);
+		expect(jobBlock("main-gate-plan")).toContain("gitleaks-main-scan.mts");
 	});
 
 	it("exposes the Freight as a run artifact without any credential", () => {
@@ -356,8 +360,6 @@ describe("the HoBo CI Fabric workflow writes HoBo's own Freight", () => {
 		const expose = step("Expose HoBo's own Freight as CI outputs");
 		expect(expose).toContain("uses: actions/upload-artifact@");
 		expect(expose).toContain("if-no-files-found: error");
-		expect(finish).toMatch(
-			/permissions:\n {6}actions: read\n {6}contents: read\n/,
-		);
+		expect(freight).toMatch(/permissions:\n {6}contents: read\n {4}steps:/);
 	});
 });
