@@ -8,15 +8,18 @@ name: Fleet integration
 #
 # Provisioning: `nats-server` 2.15.3 through mise.toml; the iroh relay of the
 # release the pinned `@number0/iroh` binding is built against (iroh-relay 1.4.1),
-# a pinned, checksum-verified download; a rootless OCI runtime (Podman); the
-# sandbox probe image pulled once by digest. gVisor, Kata and macOS are not
-# provisioned.
+# a pinned, checksum-verified download; an OCI runtime CLI (crun or runc) and
+# nsenter for the S1 sandbox driver, which writes its own OCI bundles and pulls
+# the probe image by digest itself (no Podman). gVisor, Kata and macOS are not
+# provisioned (A11, A12 in fleet-fallbacks.json).
 #
 # Runners: scripts/lint-actions.ts requires every enabled workflow to run on the
-# self-hosted hobo labels, so this lane cannot use the GitHub-hosted Ubuntu
-# image's preinstalled Podman that the design assumed. The hobo runner image
-# must therefore carry rootless Podman; both jobs check for it first and fail
-# with that message rather than later in a test.
+# self-hosted hobo labels. The hobo runner image must carry crun or runc and
+# nsenter, and run the job either as root (rootful with user-namespace
+# remapping, the A10 fallback O10 was proven on) or with cgroup v2 delegation
+# for the runner user; without either the S1 self-test fails and O10 fails.
+# Both jobs check for the binaries first and fail with that message rather
+# than later in a test.
 #
 # Runs on the integration branch (`fleet/**`) and on demand.
 
@@ -71,16 +74,14 @@ jobs:
           set -euo pipefail
           nats-server --version
           iroh-relay --help > /dev/null
-          if ! command -v podman > /dev/null; then
-            echo "::error::this runner has no podman; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+          if ! command -v crun > /dev/null && ! command -v runc > /dev/null; then
+            echo "::error::this runner has no crun or runc; the fleet integration lane needs an OCI runtime CLI on the hobo runner image" >&2
             exit 1
           fi
-          if ! podman info --format '{{.Host.Security.Rootless}}' | grep -qx true; then
-            echo "::error::podman on this runner is not rootless; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+          if ! command -v nsenter > /dev/null; then
+            echo "::error::this runner has no nsenter; the S1 sandbox driver needs it" >&2
             exit 1
           fi
-      - name: Pull the sandbox probe image
-        run: podman pull "${HOBO_FLEET_PROBE_IMAGE}"
       - run: pnpm run install:check
       - run: pnpm run build
       - name: Every fleet outcome
@@ -125,16 +126,14 @@ jobs:
           set -euo pipefail
           nats-server --version
           iroh-relay --help > /dev/null
-          if ! command -v podman > /dev/null; then
-            echo "::error::this runner has no podman; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+          if ! command -v crun > /dev/null && ! command -v runc > /dev/null; then
+            echo "::error::this runner has no crun or runc; the fleet integration lane needs an OCI runtime CLI on the hobo runner image" >&2
             exit 1
           fi
-          if ! podman info --format '{{.Host.Security.Rootless}}' | grep -qx true; then
-            echo "::error::podman on this runner is not rootless; the fleet integration lane needs rootless Podman on the hobo runner image" >&2
+          if ! command -v nsenter > /dev/null; then
+            echo "::error::this runner has no nsenter; the S1 sandbox driver needs it" >&2
             exit 1
           fi
-      - name: Pull the sandbox probe image
-        run: podman pull "${HOBO_FLEET_PROBE_IMAGE}"
       - run: pnpm run install:check
       - run: pnpm run build
       - name: Every fleet integration test

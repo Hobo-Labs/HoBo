@@ -18,6 +18,30 @@ library; it has no binary. `hobo fleet run` and the box worker compose it with
 Until each lane lands, its entry point has its final signature and throws
 `FleetNotImplemented`.
 
+## Landed parts
+
+Each lane writes its part of this README next to its code; the coordinator
+gathers them here as the waves merge.
+
+- **Key stores** (wave 2, L10) — [`src/keystore/README.md`](src/keystore/README.md).
+  `createFileKeyStore` (EC P-256 identity, Ed25519 `SIGN`, X25519 `SEAL`, tier
+  `T0`) and `createExternalSignerKeyStore` (identity key behind a helper
+  command speaking `public`, `sign` and `destroy`, tier `T1`). The key
+  directory is refused inside a git checkout or when others can read it.
+- **Host capacity** (wave 2, L10) — [`src/capacity/README.md`](src/capacity/README.md).
+  Slots, `MemAvailable` less the 2 GiB worker reserve, and `statfs` disk; an
+  unreadable figure is left out, never zero.
+- **Service installers** (wave 2, L10) — [`src/install/README.md`](src/install/README.md).
+  A systemd user unit, a launchd agent, or a Windows Task Scheduler task; the
+  caller enables it.
+- **Sandbox drivers** (wave 2, L38) — [`src/sandbox/README.md`](src/sandbox/README.md).
+  `S1` over `crun`/`runc` with bundles the driver writes, `S2` over gVisor
+  `runsc`; the `S3` drivers (Kata, Apple `container`) fail their self-test
+  closed until the vsock path is built (A11, A12).
+- **Egress proxy** (wave 2, L38) — [`src/egress/README.md`](src/egress/README.md).
+  One proxy per order, exact hosts only, the fleet allowlist read on every
+  request, loopback, link-local, metadata and multicast always refused.
+
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/fleet-agent run build`.

@@ -65,6 +65,35 @@ gathers them here as the waves merge.
   key store, replica, journal) every adapter of a fleet port runs against
   itself, and what each `make` must return.
 
+- **Membership** (`@hobo/fleet/membership`, wave 2, L02) —
+  [`src/membership/README.md`](src/membership/README.md). The enrollment
+  authority: members and bootstrap tokens, approval (`SINGLE`, `DUAL`,
+  `AUTO_OWNER`), sponsored members, credentials and session tickets,
+  `authenticate`, clone detection by generation, and claim reports. It
+  implements the member and token methods of `FleetApi` and routes the rest to
+  `AuthorityParts`; after each record change it also publishes the signed
+  record to the registry straight away.
+- **Sign-in** (`@hobo/fleet/membership`, wave 2, L30) —
+  [`src/signin/README.md`](src/signin/README.md). `createSignIn`: browser
+  (PKCE, loopback redirect) and device-code flows that issue a 15-minute,
+  DPoP-bound person token, refreshable for 12 hours.
+- **Observation** (`@hobo/fleet/observation`, wave 2, L03) —
+  [`src/observation/README.md`](src/observation/README.md). Signed
+  observations and `acceptObservation`, `fitWork`, `eligibleForActive`,
+  ranking and claim turns, fleet views and verdicts, `parseFleetVerdict`, and
+  the reliability ledger. Moved from `packages/ci/src/mesh/`.
+- **Transport** (`@hobo/fleet/transport`, wave 2, L28) —
+  [`src/transport/README.md`](src/transport/README.md). Session
+  authorisation, ChaCha20-Poly1305 framing, transport selection (`p2p`, then
+  `overlay`, then `bus-relay`), the session server with its private session
+  protocol (shell and forward are batched, not interactive), and verified blob
+  fetch.
+- **Audit** (`@hobo/fleet/audit`, wave 2, L06) —
+  [`src/audit/README.md`](src/audit/README.md). The authority's hash chain
+  with checkpoints every 60 s or 1,000 entries, `verifyAuditChain`, and the
+  witness that co-signs checkpoints and trust proposals. Only one replica may
+  run the chain.
+
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/fleet run build`.

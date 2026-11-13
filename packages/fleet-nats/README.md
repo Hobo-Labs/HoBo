@@ -21,6 +21,22 @@ grants trust is a signed envelope verified against the pinned trust record.
 Until each lane lands, its entry point has its final signature and throws
 `FleetNotImplemented`.
 
+## Landed parts
+
+Each lane writes its part of this README next to its code; the coordinator
+gathers them here as the waves merge.
+
+- **Bus** (wave 2, L08) — [`src/bus/README.md`](src/bus/README.md).
+  `provisionTopology`, `createNatsBusConnector`, `connectAuthorityBus` and
+  `startCalloutResponder` over narrow client ports, with the real
+  `@nats-io` client as the default. The authority static user's per-stream
+  `$JS.API` grants use one wildcard per stream so its JWT fits nats-server's
+  4 KiB control line.
+- **Journal event store** (wave 2, L36) — [`src/journal/README.md`](src/journal/README.md).
+  `createJournalEventStore` on `FLEET_JOURNAL`: one message per append with
+  `Nats-Expected-Last-Subject-Sequence` as the compare-and-set, the fencing
+  epoch stored with each batch, and idempotency keys enforced across replicas.
+
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/fleet-nats run build`.
