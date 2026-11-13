@@ -21,6 +21,7 @@ export function manualClock(start = START_MS): ManualClock {
 
 export async function opsFixture(
 	settings: Readonly<Record<string, string | number | readonly string[]>> = {},
+	start = START_MS,
 ) {
 	const dir = await mkdtemp(join(tmpdir(), "hobo-fleet-ops-"));
 	const configPath = join(dir, "authority.json");
@@ -30,7 +31,7 @@ export async function opsFixture(
 		"utf8",
 	);
 	const secrets = createMemorySecretsPort();
-	const clock = manualClock();
+	const clock = manualClock(start);
 	const logged: string[] = [];
 	const context: OpsContext = {
 		configPath,
