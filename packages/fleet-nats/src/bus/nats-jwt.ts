@@ -253,6 +253,8 @@ export function mintAccount(
 	keys: TenantKeys,
 	tenant: TenantId,
 	operatorSigningSeed: string,
+	/** The templates whose scoped keys the account lists; removing one revokes every credential it signs (§6.16). */
+	templates: readonly DeviceTemplate[] = DEVICE_TEMPLATES,
 ): Promise<string> {
 	const account = keys.account.getPublicKey();
 	return encodeAccount(
@@ -273,7 +275,7 @@ export function mintAccount(
 				streams: -1,
 				consumer: -1,
 			},
-			signing_keys: DEVICE_TEMPLATES.map((template) =>
+			signing_keys: templates.map((template) =>
 				newScopedSigner(keys.scoped[template], template, {
 					pub: { allow: [...TEMPLATES[template].publish] },
 					sub: { allow: [...TEMPLATES[template].subscribe] },

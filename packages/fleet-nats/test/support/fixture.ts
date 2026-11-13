@@ -4,7 +4,7 @@
  * the way the authority does, published on an in-memory wire.
  */
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { create, toBinary } from "@bufbuild/protobuf";
+import { clone, create, toBinary } from "@bufbuild/protobuf";
 import {
 	type AuthorityBus,
 	type DeviceKeys,
@@ -13,12 +13,15 @@ import {
 	KeyBundleSchema,
 	KeyPurpose,
 	MEMBER_RECORD_CONTEXT,
+	type MemberId,
 	MemberKind,
+	type MemberRecord,
 	MemberRecordSchema,
 	MemberState,
 	MembershipSchema,
 	PublicKeyRefSchema,
 	parseKeyId,
+	parseMemberId,
 	Role,
 	SESSION_TICKET_CONTEXT,
 	SessionTicketSchema,
@@ -71,6 +74,11 @@ export type Tenant = Readonly<{
 			tenant?: string;
 		}>,
 	): Promise<DeviceKeys>;
+	/** Re-signs a device's record with `change` applied and `record_sequence` one higher, and publishes it. */
+	update(
+		memberId: MemberId,
+		change: (record: MemberRecord) => void,
+	): Promise<MemberRecord>;
 	ticket(
 		keys: DeviceKeys,
 		options?: Readonly<{
@@ -150,6 +158,18 @@ export async function createTenantOn(
 		witness: await signEnvelope(witness.signer, TRUST_RECORD_CONTEXT, payload),
 	});
 	await bus.publisher.putTrust(trust);
+	const records = new Map<string, MemberRecord>();
+	const publish = async (record: MemberRecord) => {
+		records.set(record.memberId, record);
+		await bus.publisher.putMember(
+			await signEnvelope(
+				authority.signer,
+				MEMBER_RECORD_CONTEXT,
+				toBinary(MemberRecordSchema, record),
+			),
+			parseMemberId(record.memberId),
+		);
+	};
 
 	return {
 		bus,
@@ -199,15 +219,17 @@ export async function createTenantOn(
 				issuedAt: new Date(now()).toISOString(),
 				notAfter: new Date(now() + 30 * MINUTE).toISOString(),
 			});
-			await bus.publisher.putMember(
-				await signEnvelope(
-					authority.signer,
-					MEMBER_RECORD_CONTEXT,
-					toBinary(MemberRecordSchema, record),
-				),
-				keys.memberId,
-			);
+			await publish(record);
 			return keys;
+		},
+		async update(memberId, change) {
+			const current = records.get(memberId);
+			if (current === undefined) throw new Error(`no record for ${memberId}`);
+			const next = clone(MemberRecordSchema, current);
+			change(next);
+			next.recordSequence = current.recordSequence + 1;
+			await publish(next);
+			return next;
 		},
 		async ticket(keys, options = {}) {
 			return signEnvelope(

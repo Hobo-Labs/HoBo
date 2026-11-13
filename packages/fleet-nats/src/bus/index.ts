@@ -29,7 +29,6 @@ import {
 	accountOfCredentials,
 	mintAccount,
 	staticCredentials,
-	systemCredentials,
 	tenantKeys,
 } from "./nats-jwt.js";
 import { natsWire } from "./nats-wire.js";
@@ -38,6 +37,7 @@ import {
 	createRegistryView,
 	devicePin,
 } from "./registry-view.js";
+import { pushAccount } from "./resolver.js";
 import { applyTopology } from "./topology.js";
 
 const encoder = new TextEncoder();
@@ -45,36 +45,6 @@ const decoder = new TextDecoder();
 const CALLOUT_SUBJECT = "$SYS.REQ.USER.AUTH";
 
 const seedText = (seed: Uint8Array) => decoder.decode(seed);
-
-/** Pushes an account JWT to the full resolver as the system-account provisioning user. */
-async function pushAccount(
-	servers: readonly string[],
-	operatorSigningSeed: string,
-	accountJwt: string,
-): Promise<void> {
-	const system = await open({
-		servers,
-		authenticator: credsAuthenticator(
-			encoder.encode(await systemCredentials(operatorSigningSeed)),
-		),
-		name: "hobo-fleet-provision",
-		persistent: false,
-	});
-	try {
-		const reply = await system.request(
-			"$SYS.REQ.CLAIMS.UPDATE",
-			encoder.encode(accountJwt),
-			{ timeout: 10_000 },
-		);
-		const answer: { error?: { description?: string } } = reply.json();
-		if (answer.error !== undefined)
-			throw new Error(
-				`the resolver refused the account: ${answer.error.description ?? "unknown"}`,
-			);
-	} finally {
-		await system.close();
-	}
-}
 
 /** Creates the tenant account, its static users and scoped signing keys, and its streams and buckets. */
 export async function provisionTopology(
