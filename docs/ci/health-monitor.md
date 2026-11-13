@@ -1,19 +1,22 @@
 ---
 type: CI Runbook
 title: "CI health monitor: loud fallbacks"
-description: "What the CI health monitor reads every two hours, the seven signals it raises (H1, H2, H3, H4, H6, H8, H10), its window and request budget, its issues, and what to do when one opens."
+description: "What the CI health monitor reads every two hours, the five signals it raises (H1, H2, H3, H6, H8), its window and request budget, its issues, and what to do when one opens."
 tags: [hobo, ci, relay, routing, fleet, monitoring]
 ---
 
 # CI health monitor: loud fallbacks
 
 Every fallback to a default must leave a record something reads. The monitor is that reader: it turns the
-route job's notices, the fleet's queue waits, paid minutes and the hosted relay's reporter status into issues,
+route job's notices, the fleet's queue waits and paid minutes into issues,
 so a signal that stops carrying a value is raised within two monitor runs instead of failing silently. Design:
 [plan 0025, section 6.6](../plans/0025-relay-owned-runner-routing.md); routing authority: the box relay's
 routing slip ([ADR-0181](../design/adr/routing-slips.md#adr-0181),
 [plan 0026](../plans/0026-relay-routing-slips.md)), which replaced the hosted relay's verdict
-([ADR-0180](../design/adr/fleet-verdict.md#adr-0180)) as what route jobs read.
+([ADR-0180](../design/adr/fleet-verdict.md#adr-0180)) as what route jobs read. It asks no relay: H4
+(reporter silent) and H10 (allowance spent) read the hosted relay's reporter status route, which was retired
+with the verdict ([plan 0026](../plans/0026-relay-routing-slips.md), section 3.9), so they are no longer
+computed and their numbers are not reused.
 
 | Piece | Where |
 | --- | --- |
@@ -22,8 +25,8 @@ routing slip ([ADR-0181](../design/adr/routing-slips.md#adr-0181),
 | Workflow (every two hours and on dispatch) | [`.github/workflows/ci-health.yml`](../../.github/workflows/ci-health.yml) |
 | Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
 
-The workflow holds `actions: read`, `checks: read`, `issues: write`, `id-token: write`, and `contents: read`
-for its sparse checkout of the monitor and `.hobo/ci.json`. It needs no `pnpm install`: Node 24 runs the
+The workflow holds `actions: read`, `checks: read`, `issues: write`, and `contents: read` for its sparse
+checkout of the monitor; no OIDC token. It needs no `pnpm install`: Node 24 runs the
 `.mts` file directly.
 
 ## What it reads
@@ -35,14 +38,8 @@ on. A run that could not read its window (rate limit, request budget, API failur
 
 **Requests.** At most 100 runs, newest first (`truncated` in the report when more fell in the window); each
 run's jobs (one page); the annotations of two check runs per run, the route job (**Route runners**) and, on
-main-gate runs, **Main workspace plan**, whose `reroute` step prints the same titles. With the artifact, the
-OIDC token, the relay's status route and the issue calls, a run makes at most 320 requests against a hard
-budget of 350. A rate-limit answer ends the run as failed (exit 2) without opening an issue.
-
-**The relay.** `GET /v1/fleet/reporters/{owner}/{repo}` on the relay `.hobo/ci.json` names, with a GitHub
-Actions OIDC token whose audience is that origin. When the route cannot be reached or refuses the token, H4
-and H10 read `unknown`, which is not a breach on its own; an `unknown` after an `unknown` raises H2's issue
-with that note.
+main-gate runs, **Main workspace plan**, whose `reroute` step prints the same titles. With the artifact and
+the issue calls, a run makes at most 314 requests against a hard budget of 350. A rate-limit answer ends the run as failed (exit 2) without opening an issue.
 
 **Route notices.** Each route decision prints one `hobo-ci-route` notice, version 2:
 `{"v":2,"workflow","tier","runner","slip","why","refusedBy"}`. `slip` is `used` (the routing slip decided;
@@ -59,12 +56,10 @@ counts under H1 only the warnings that say the route did not run at all. Version
 | Signal | Computed from | Breach | First thing to check |
 | --- | --- | --- | --- |
 | **H1** routing did not run | `hobo-ci-route-fallback` warnings that do not start `routing slip not used` | any | The route job's log: the route script or its sparse checkout failed |
-| **H2** routing slip unusable | route notices with `slip: fallback` for any reason but `no routing slip` or `slip expired`, over those plus `slip: used` | more than 5% of at least 20, or all of at least 5; or the hosted relay's status route unread twice | The `why` in the evidence: a malformed slip or an unknown label points at the box relay's writer; an HTTP status or `not read in time` at the Git API |
+| **H2** routing slip unusable | route notices with `slip: fallback` for any reason but `no routing slip` or `slip expired`, over those plus `slip: used` | more than 5% of at least 20, or all of at least 5 | The `why` in the evidence: a malformed slip or an unknown label points at the box relay's writer; an HTTP status or `not read in time` at the Git API |
 | **H3** no routing slip | route notices with `slip: fallback` and `why` `no routing slip` or `slip expired` | any | The box relay: down, not restarted onto code that writes slips, or not the mesh leader; [finding 0149](findings/0149-routing-slip-facts-main-on-the-queue-rule-hosted-relay-down-box-on-c7ec8d449.md) |
-| **H4** reporter silent | status route: a reporter in `shadow` or `report` whose `lastReportAt` is more than 10 minutes old | any | The box daemon; its clock (refused `clock-skew`); its key (refused `bad-signature`); its enrollment |
-| **H6** stall | jobs on `hobo` or `hobo-trunk` that waited, or have been queued, more than `CI_HEALTH_STALL_MINUTES` (default 30) for a runner; **Main full gate** is left out (it waits on its concurrency group) | any | The box and ARC: a fleet that was refusing work the verdict did not block |
+| **H6** stall | jobs on `hobo` or `hobo-trunk` that waited, or have been queued, more than `CI_HEALTH_STALL_MINUTES` (default 30) for a runner; **Main full gate** is left out (it waits on its concurrency group) | any | The box and ARC: a fleet that was refusing work its routing slip did not refuse |
 | **H8** paid minutes | per job on `ubuntu-24.04`, started to completed rounded up to the minute, leaving out the route job, the fleet probe's `local box enrolled` gate, the gates and this monitor; split by what refused the fleet (`slip`, `queue`, `none`, `fallback`, `unrouted`) | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (default 150) | Which split carries the minutes |
-| **H10** allowance spent | status route | any label | The box: a label blocked for its whole daily allowance is a fleet stuck refusing |
 
 `unrouted` minutes belong to runs with no route notice: workflows without a route job, and every run before
 the route step printed notices.
@@ -85,9 +80,9 @@ GITHUB_TOKEN=<a token that can read Actions> node scripts/ci/ci-health.mts --dry
 
 `--dry-run` (or the workflow's `dry-run` input) prints and uploads the report under `ci-health-dry-run`, so it
 does not move the scheduled window, writes nothing to issues and exits 0 unless the window could not be read.
-Outside a workflow there is no OIDC token, so H4 and H10 read `unknown`. The report is written to
+The report is written to
 `ci-health-report.json` (`CI_HEALTH_REPORT_PATH` to change it) and to the step summary.
 
 The first local dry run against the live repository (2026-11-12, two-hour window, before the route notices
-reached `main`) read 100 runs (`truncated`) in 160 requests: H1, H2, H3 and H6 clear, H4 and H10 `unknown`,
-and H8 at 565 paid minutes, all `unrouted`. Revisit the H8 default once the notices are on `main`.
+reached `main`) read 100 runs (`truncated`) in 160 requests: H1, H2, H3 and H6 clear, H4 and H10 (since retired)
+`unknown`, and H8 at 565 paid minutes, all `unrouted`. Revisit the H8 default once the notices are on `main`.

@@ -1,9 +1,9 @@
 name: CI health
 
 # Reads what the last window of workflow runs left behind (route notices and
-# fallbacks, fleet waits, paid minutes, the relay's reporter status) and opens
-# or comments on one `ci-health` issue per breached signal, so a fallback to a
-# default never stays silent. See docs/ci/health-monitor.md.
+# fallbacks, fleet waits, paid minutes) and opens or comments on one
+# `ci-health` issue per breached signal, so a fallback to a default never
+# stays silent. It asks no relay. See docs/ci/health-monitor.md.
 #
 # GitHub-hosted on purpose: it reads the fleet's record, so it must not wait
 # on the fleet. It checks out only the monitor, which loads no package.
@@ -22,8 +22,6 @@ permissions:
   checks: read
   contents: read
   issues: write
-  # The relay's status route takes a workflow OIDC token.
-  id-token: write
 
 concurrency:
   group: ci-health
@@ -49,7 +47,6 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             scripts/ci/ci-health.mts
-            .hobo/ci.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"

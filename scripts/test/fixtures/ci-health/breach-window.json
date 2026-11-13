@@ -437,36 +437,5 @@
 				"raw_details": ""
 			}
 		]
-	},
-	"status": {
-		"repository": "hobo-labs/hobo",
-		"reporters": [
-			{
-				"id": "box-1",
-				"labels": [
-					"hobo",
-					"hobo-trunk"
-				],
-				"live": false,
-				"state": {
-					"lastSequence": "1794499205000",
-					"mode": "shadow",
-					"lastReportAt": "2026-11-12T11:40:00.000Z",
-					"labels": {
-						"hobo-trunk": {
-							"lastBlockedAt": "2026-11-12T07:00:00.000Z"
-						}
-					}
-				}
-			}
-		],
-		"allowance": {
-			"hobo-trunk": {
-				"usedSeconds": 14400,
-				"spent": true,
-				"windowStart": "2026-11-12T07:00:00.000Z"
-			}
-		},
-		"dailyBlockMinutes": 240
 	}
 }

@@ -9,46 +9,43 @@
  * the main gate's plan job, where the route step prints one `hobo-ci-route`
  * notice per decision (what became of the box relay's routing slip, and
  * why) and a `hobo-ci-route-fallback` warning when the route did not run or
- * no slip could be used. It asks the hosted relay's status route which reporters are alive
- * and how much of each label's block allowance is spent. From those it
- * computes seven signals (H1, H2, H3, H4, H6, H8, H10), opens or comments on
+ * no slip could be used. From those it computes five signals (H1, H2, H3,
+ * H6, H8), opens or comments on
  * one issue per breached signal, writes the report to the step summary and to
  * a file the workflow uploads as `ci-health-report`, and exits non-zero on any
  * breach. The next run starts where the newest uploaded report's window ended.
  *
  * It decides nothing about the fleet (R1): it only counts what the route job
- * and the relay already said. It loads no package, only node builtins, so it
+ * already said. It asks no relay: the hosted relay's reporter status route,
+ * which H4 (reporter silent) and H10 (allowance spent) read, was retired with
+ * the fleet verdict (plan 0026, section 3.9). It loads no package, only node builtins, so it
  * runs straight from a checkout with `node scripts/ci/ci-health.mts`.
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 
 /** The signals, in the order the report lists them. */
-export const SIGNALS = ["H1", "H2", "H3", "H4", "H6", "H8", "H10"] as const;
+export const SIGNALS = ["H1", "H2", "H3", "H6", "H8"] as const;
 export type Signal = (typeof SIGNALS)[number];
 
 export const SIGNAL_NAMES = {
 	H1: "routing did not run",
 	H2: "routing slip unusable",
 	H3: "no routing slip",
-	H4: "reporter silent",
 	H6: "stall",
 	H8: "paid minutes",
-	H10: "allowance spent",
 } as const satisfies Readonly<Record<Signal, string>>;
 
 /** Runs read per window; past this the report says `truncated`. */
 export const MAX_RUNS = 100;
-/** Every request a run may make, GitHub's and the relay's together. */
+/** Every request a run may make. */
 export const REQUEST_BUDGET = 350;
 /** The window when no earlier report exists. */
 export const DEFAULT_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_STALL_MINUTES = 30;
 export const DEFAULT_PAID_MINUTES_PER_WINDOW = 150;
-/** A reporter in `shadow` or `report` that has not reported for this long is silent. */
-export const REPORTER_SILENT_MS = 10 * 60 * 1000;
 export const REQUEST_TIMEOUT_MS = 15_000;
 
 export const ARTIFACT_NAME = "ci-health-report";
@@ -98,7 +95,7 @@ export const ABSENT_SLIP_WHYS: ReadonlySet<string> = new Set([
 
 // --- JSON, read at the boundary ---
 
-/** A parsed JSON document: what GitHub and the relay answer with. */
+/** A parsed JSON document: what GitHub answers with. */
 export type JsonValue =
 	| null
 	| boolean
@@ -144,7 +141,7 @@ export function parseJson(text: string): JsonValue | undefined {
 	}
 }
 
-// --- What the GitHub REST API and the relay answer (only the fields read) ---
+// --- What the GitHub REST API answers (only the fields read) ---
 
 export type WorkflowRun = Readonly<{
 	id: number;
@@ -172,30 +169,6 @@ export type Annotation = Readonly<{
 	message: string;
 }>;
 
-export type ReporterStatus = Readonly<{
-	id: string;
-	mode: string;
-	lastReportAt: string;
-}>;
-
-export type LabelAllowance = Readonly<{
-	label: string;
-	usedSeconds: number;
-	spent: boolean;
-}>;
-
-/** `FleetReporterStatusList` in `packages/ci-gh-actions/data-models/fleet_verdict.proto`, the fields read. */
-export type ReporterStatusList = Readonly<{
-	reporters: readonly ReporterStatus[];
-	allowance: readonly LabelAllowance[];
-	dailyBlockMinutes: number;
-}>;
-
-/** The relay's status, or why it could not be read. */
-export type StatusReading =
-	| Readonly<{ kind: "known"; list: ReporterStatusList }>
-	| Readonly<{ kind: "unknown"; why: string }>;
-
 /** One run of the window: the run, its jobs, and the route annotations by job id. */
 export type RunPages = Readonly<{
 	run: WorkflowRun;
@@ -206,7 +179,6 @@ export type RunPages = Readonly<{
 /** Everything one window's runs left behind. */
 export type WindowData = Readonly<{
 	runs: readonly RunPages[];
-	status: StatusReading;
 }>;
 
 /** The runs of a `GET /repos/{r}/actions/runs` page. */
@@ -264,45 +236,6 @@ export function parseAnnotations(page: JsonValue | undefined): Annotation[] {
 	});
 }
 
-/** A status list for `repository`, or nothing when the answer is not one. */
-export function parseStatusList(
-	document: JsonValue | undefined,
-	repository: string,
-): ReporterStatusList | undefined {
-	const list = asObject(document);
-	const reporters = list?.reporters;
-	if (
-		asText(list?.repository)?.toLowerCase() !== repository.toLowerCase() ||
-		!Array.isArray(reporters)
-	)
-		return undefined;
-	const allowance = asObject(list?.allowance) ?? {};
-	return {
-		reporters: asList(reporters).flatMap((entry) => {
-			const reporter = asObject(entry);
-			const id = asText(reporter?.id);
-			if (id === undefined) return [];
-			const state = asObject(reporter?.state);
-			return [
-				{
-					id,
-					mode: asText(state?.mode) ?? "",
-					lastReportAt: asText(state?.lastReportAt) ?? "",
-				},
-			];
-		}),
-		allowance: Object.entries(allowance).map(([label, value]) => {
-			const use = asObject(value);
-			return {
-				label,
-				usedSeconds: asNumber(use?.usedSeconds) ?? 0,
-				spent: use?.spent === true,
-			};
-		}),
-		dailyBlockMinutes: asNumber(list?.dailyBlockMinutes) ?? 0,
-	};
-}
-
 // --- The report ---
 
 export type SignalState = "breach" | "clear" | "unknown";
@@ -336,10 +269,8 @@ export type Signals = Readonly<{
 	H1: SignalResult;
 	H2: SignalResult;
 	H3: SignalResult;
-	H4: SignalResult;
 	H6: SignalResult;
 	H8: SignalResult;
-	H10: SignalResult;
 }>;
 
 export type HealthReport = Readonly<{
@@ -356,10 +287,6 @@ export type HealthReport = Readonly<{
 	truncated: boolean;
 	runs: number;
 	requests: number;
-	/** Whether the relay's status route answered; two `unknown` in a row raise H2. */
-	statusRoute: "known" | "unknown";
-	/** Why the status route was not read; empty when it was. */
-	statusWhy: string;
 	signals: Signals;
 	paidMinutes: Readonly<{ total: number; byRefusal: RefusalMinutes }>;
 }>;
@@ -369,10 +296,9 @@ export type Thresholds = Readonly<{
 	paidMinutesPerWindow: number;
 }>;
 
-/** The previous report's fields this run reads: where its window ended and whether the status route answered. */
+/** The previous report's field this run reads: where its window ended. */
 export type PreviousReport = Readonly<{
 	windowEnd: string;
-	statusRoute: "known" | "unknown";
 }>;
 
 // --- Pure: from parsed pages to a report ---
@@ -466,14 +392,9 @@ export function h2Breaches(unusable: number, read: number): boolean {
 /**
  * Slips that were there (or could not be read) and still could not be used:
  * malformed, another repository, a label `runnerRouting.labels` does not
- * allow, an API error or the three-second limit. `unknownTwice` is why the
- * hosted relay's status route went unread a second run running; empty when
- * it did not.
+ * allow, an API error or the three-second limit.
  */
-export function signalH2(
-	evidence: readonly RouteEvidence[],
-	unknownTwice: string,
-): SignalResult {
+export function signalH2(evidence: readonly RouteEvidence[]): SignalResult {
 	let read = 0;
 	const lines: string[] = [];
 	for (const entry of evidence)
@@ -484,16 +405,9 @@ export function signalH2(
 			read += 1;
 			lines.push(`${entry.run.htmlUrl}: ${notice.why}`);
 		}
-	const ratio = `${lines.length} of ${read} routing slips unusable`;
-	if (unknownTwice)
-		return {
-			state: "breach",
-			summary: `relay status route unread two runs running (${unknownTwice}); ${ratio}`,
-			evidence: cap(lines),
-		};
 	return {
 		state: h2Breaches(lines.length, read) ? "breach" : "clear",
-		summary: ratio,
+		summary: `${lines.length} of ${read} routing slips unusable`,
 		evidence: cap(lines),
 	};
 }
@@ -516,36 +430,6 @@ export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 		state: "breach",
 		summary: `${plural(hits.length, "run")} routed with no current routing slip`,
 		evidence: cap(hits.map((entry) => entry.run.htmlUrl)),
-	};
-}
-
-export function signalH4(status: StatusReading, nowMs: number): SignalResult {
-	if (status.kind === "unknown")
-		return {
-			state: "unknown",
-			summary: `status route: ${status.why}`,
-			evidence: [],
-		};
-	const silent = status.list.reporters.filter((reporter) => {
-		if (reporter.mode !== "shadow" && reporter.mode !== "report") return false;
-		const last = ms(reporter.lastReportAt);
-		return last === undefined || nowMs - last > REPORTER_SILENT_MS;
-	});
-	if (silent.length === 0)
-		return {
-			state: "clear",
-			summary: `${plural(status.list.reporters.length, "enrolled reporter")}, none silent`,
-			evidence: [],
-		};
-	return {
-		state: "breach",
-		summary: `${silent.map((reporter) => reporter.id).join(", ")} silent for more than 10 minutes`,
-		evidence: cap(
-			silent.map(
-				(reporter) =>
-					`${reporter.id} (${reporter.mode}): last report ${reporter.lastReportAt || "never"}`,
-			),
-		),
 	};
 }
 
@@ -648,32 +532,6 @@ export function signalH8(
 	};
 }
 
-export function signalH10(status: StatusReading): SignalResult {
-	if (status.kind === "unknown")
-		return {
-			state: "unknown",
-			summary: `status route: ${status.why}`,
-			evidence: [],
-		};
-	const spent = status.list.allowance.filter((use) => use.spent);
-	if (spent.length === 0)
-		return {
-			state: "clear",
-			summary: "no label's allowance is spent",
-			evidence: [],
-		};
-	return {
-		state: "breach",
-		summary: `block allowance spent for ${spent.map((use) => use.label).join(", ")}`,
-		evidence: cap(
-			spent.map(
-				(use) =>
-					`${use.label}: ${Math.round(use.usedSeconds / 60)} of ${status.list.dailyBlockMinutes} min`,
-			),
-		),
-	};
-}
-
 export type EvaluateInput = Readonly<{
 	repository: string;
 	data: WindowData;
@@ -689,19 +547,13 @@ export type EvaluateInput = Readonly<{
 
 export function evaluate(input: EvaluateInput): HealthReport {
 	const evidence = input.data.runs.map(routeEvidence);
-	const status = input.data.status;
-	const statusWhy = status.kind === "unknown" ? status.why : "";
-	const unknownTwice =
-		input.previous?.statusRoute === "unknown" ? statusWhy : "";
 	const h8 = signalH8(input.data.runs, input.thresholds.paidMinutesPerWindow);
 	const signals: Signals = {
 		H1: signalH1(evidence),
-		H2: signalH2(evidence, unknownTwice),
+		H2: signalH2(evidence),
 		H3: signalH3(evidence),
-		H4: signalH4(status, input.nowMs),
 		H6: signalH6(input.data.runs, input.nowMs, input.thresholds.stallMinutes),
 		H8: h8.result,
-		H10: signalH10(status),
 	};
 	const breach = SIGNALS.some((signal) => signals[signal].state === "breach");
 	return {
@@ -716,8 +568,6 @@ export function evaluate(input: EvaluateInput): HealthReport {
 		truncated: input.truncated,
 		runs: input.data.runs.length,
 		requests: input.requests,
-		statusRoute: status.kind,
-		statusWhy,
 		signals,
 		paidMinutes: { total: h8.total, byRefusal: h8.byRefusal },
 	};
@@ -778,25 +628,6 @@ export function issueBody(
 	].join("\n");
 }
 
-/** The relay's origin from `.hobo/ci.json`: the default environment's `relayOrigin`, `https` only. */
-export function parseRelayOrigin(text: string): string | undefined {
-	const project = asObject(parseJson(text));
-	const environment = asObject(
-		asObject(project?.environments)?.[
-			asText(project?.defaultEnvironment) ?? ""
-		],
-	);
-	let url: URL;
-	try {
-		url = new URL(asText(environment?.relayOrigin) ?? "");
-	} catch {
-		return undefined;
-	}
-	if (url.protocol !== "https:" || url.username || url.password)
-		return undefined;
-	return url.origin;
-}
-
 // --- The previous report, from the newest uploaded artifact ---
 
 /** The first `.json` file in a zip archive, found through its central directory. */
@@ -832,11 +663,7 @@ export function parsePreviousReport(
 	const report = asObject(document);
 	const end = ms(asText(report?.windowEnd) ?? "");
 	if (end === undefined || end > nowMs) return undefined;
-	return {
-		windowEnd: new Date(end).toISOString(),
-		statusRoute:
-			asText(report?.statusRoute) === "unknown" ? "unknown" : "known",
-	};
+	return { windowEnd: new Date(end).toISOString() };
 }
 
 // --- Fetching, within the budget ---
@@ -849,7 +676,7 @@ export type GithubRequest = Readonly<{ method: "GET" | "POST"; body: string }>;
 export type Http = Readonly<{
 	/** GitHub's REST API: a path below the API root; JSON out. */
 	github(path: string, request?: GithubRequest): Promise<JsonValue | undefined>;
-	/** A whole URL, raw; for the artifact archive, the OIDC token and the relay. */
+	/** A whole URL, raw; for the artifact archive. */
 	raw(url: string, headers: HeadersInit): Promise<Response>;
 	requests(): number;
 	/** The GitHub token, for the archive download; empty when there is none. */
@@ -979,59 +806,6 @@ export async function readWindow(
 	return { runs, truncated: total > MAX_RUNS };
 }
 
-export type OidcSource = Readonly<{ requestUrl: string; requestToken: string }>;
-
-/** The relay's status for this repository, through a workflow OIDC token; `unknown` on any failure. */
-export async function readStatus(
-	http: Http,
-	repository: string,
-	origin: string | undefined,
-	oidc: OidcSource,
-): Promise<StatusReading> {
-	if (!origin)
-		return { kind: "unknown", why: "no relay named in .hobo/ci.json" };
-	if (!oidc.requestUrl || !oidc.requestToken)
-		return {
-			kind: "unknown",
-			why: "no OIDC token (not in a workflow with id-token: write)",
-		};
-	try {
-		const tokenResponse = await http.raw(
-			`${oidc.requestUrl}&audience=${encodeURIComponent(origin)}`,
-			{ Authorization: `bearer ${oidc.requestToken}` },
-		);
-		if (!tokenResponse.ok)
-			return {
-				kind: "unknown",
-				why: `OIDC token request answered ${tokenResponse.status}`,
-			};
-		const token = asText(
-			asObject(parseJson(await tokenResponse.text()))?.value,
-		);
-		if (!token)
-			return { kind: "unknown", why: "OIDC token missing from the answer" };
-		const response = await http.raw(
-			`${origin}/v1/fleet/reporters/${repository}`,
-			{ Authorization: `Bearer ${token}`, Accept: "application/json" },
-		);
-		if (!response.ok)
-			return {
-				kind: "unknown",
-				why: `status route answered ${response.status}`,
-			};
-		const list = parseStatusList(parseJson(await response.text()), repository);
-		return list
-			? { kind: "known", list }
-			: { kind: "unknown", why: "status route answered something else" };
-	} catch (error) {
-		if (error instanceof BudgetSpent) throw error;
-		return {
-			kind: "unknown",
-			why: `status route unreachable (${error instanceof Error ? error.message : String(error)})`,
-		};
-	}
-}
-
 export type IssueOptions = Readonly<{ assignee: string; runUrl: string }>;
 
 /** Opens an issue per breached signal, or comments on the open one with its prefix. Never closes. */
@@ -1124,14 +898,6 @@ function repositoryFrom(env: NodeJS.ProcessEnv): string {
 	return match[1];
 }
 
-function readText(path: string): string {
-	try {
-		return readFileSync(path, "utf8");
-	} catch {
-		return "";
-	}
-}
-
 const NOT_COMPUTED: SignalResult = {
 	state: "unknown",
 	summary: "not computed",
@@ -1142,15 +908,12 @@ export type MainIo = Readonly<{
 	fetch: typeof fetch;
 	now: () => number;
 	log: (line: string) => void;
-	/** The contents of `.hobo/ci.json`. */
-	relayConfig: string;
 }>;
 
 const defaultIo = (): MainIo => ({
 	fetch,
 	now: Date.now,
 	log: (line) => console.log(line),
-	relayConfig: readText(".hobo/ci.json"),
 });
 
 /**
@@ -1187,18 +950,9 @@ export async function main(
 		previous = await readPreviousReport(http, repository, nowMs, io.log);
 		if (previous) windowStart = previous.windowEnd;
 		const window = await readWindow(http, repository, windowStart, windowEnd);
-		const status = await readStatus(
-			http,
-			repository,
-			parseRelayOrigin(io.relayConfig),
-			{
-				requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
-				requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
-			},
-		);
 		report = evaluate({
 			repository,
-			data: { runs: window.runs, status },
+			data: { runs: window.runs },
 			windowStart,
 			windowEnd,
 			nowMs,
@@ -1227,16 +981,12 @@ export async function main(
 			truncated: false,
 			runs: 0,
 			requests: http.requests(),
-			statusRoute: previous?.statusRoute ?? "known",
-			statusWhy: "",
 			signals: {
 				H1: NOT_COMPUTED,
 				H2: NOT_COMPUTED,
 				H3: NOT_COMPUTED,
-				H4: NOT_COMPUTED,
 				H6: NOT_COMPUTED,
 				H8: NOT_COMPUTED,
-				H10: NOT_COMPUTED,
 			},
 			paidMinutes: {
 				total: 0,

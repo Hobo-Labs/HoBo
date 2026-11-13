@@ -16,17 +16,13 @@ import {
 	parseJobs,
 	parseJson,
 	parsePreviousReport,
-	parseRelayOrigin,
 	parseRouteNotice,
 	parseRuns,
-	parseStatusList,
 	REQUEST_BUDGET,
 	type RunPages,
 	readJsonFromZip,
 	routeEvidence,
 	SLIP_FALLBACK_PREFIX,
-	type StatusReading,
-	type WindowData,
 } from "../ci/ci-health.mts";
 import {
 	ABSENT_SLIP_WHYS as ROUTE_ABSENT_SLIP_WHYS,
@@ -35,15 +31,13 @@ import {
 
 /**
  * A recorded window, hand-copied from the GitHub REST shapes: the run list
- * page, each run's jobs page, the route check runs' annotations, and the
- * relay's status list.
+ * page, each run's jobs page and the route check runs' annotations.
  */
 type Recorded = Readonly<{
 	now: string;
 	runs: readonly JsonValue[];
 	jobs: Readonly<Record<string, readonly JsonValue[]>>;
 	annotations: Readonly<Record<string, readonly JsonValue[]>>;
-	status: JsonValue;
 }>;
 
 const fixtureDir = join(import.meta.dirname, "fixtures", "ci-health");
@@ -70,24 +64,13 @@ function pagesOf(recorded: Recorded): RunPages[] {
 	});
 }
 
-function knownStatus(recorded: Recorded): StatusReading {
-	const list = parseStatusList(recorded.status, REPOSITORY);
-	assert.ok(list);
-	return { kind: "known", list };
-}
-
-function windowOf(recorded: Recorded, status: StatusReading): WindowData {
-	return { runs: pagesOf(recorded), status };
-}
-
 function report(
 	recorded: Recorded,
-	status: StatusReading = knownStatus(recorded),
 	previous: PreviousReport | undefined = undefined,
 ): HealthReport {
 	return evaluate({
 		repository: REPOSITORY,
-		data: windowOf(recorded, status),
+		data: { runs: pagesOf(recorded) },
 		windowStart: "2026-11-12T10:00:00.000Z",
 		windowEnd: recorded.now,
 		nowMs: Date.parse(recorded.now),
@@ -99,10 +82,6 @@ function report(
 	});
 }
 
-const unread: StatusReading = {
-	kind: "unknown",
-	why: "status route answered 401",
-};
 const clearReport = report(clear);
 const breachReport = report(breach);
 
@@ -154,21 +133,6 @@ describe("ci-health signals from recorded pages", () => {
 		]);
 	});
 
-	it("H4 is clear when the reporting reporter reported two minutes ago", () => {
-		assert.equal(clearReport.signals.H4.state, "clear");
-	});
-	it("H4 breaches on a shadow reporter silent for 20 minutes (a reporter refused for clock skew goes silent to the relay)", () => {
-		assert.equal(breachReport.signals.H4.state, "breach");
-		assert.match(breachReport.signals.H4.summary, /^box-1 silent/);
-	});
-	it("H4 is unknown, not a breach, when the status route cannot be read", () => {
-		const unknown = report(clear, unread);
-		assert.equal(unknown.signals.H4.state, "unknown");
-		assert.equal(unknown.signals.H10.state, "unknown");
-		assert.equal(unknown.outcome, "clear");
-		assert.equal(unknown.statusRoute, "unknown");
-	});
-
 	it("H6 is clear when fleet jobs waited under the limit, and the main gate's concurrency wait does not count", () => {
 		assert.equal(clearReport.signals.H6.state, "clear");
 	});
@@ -197,33 +161,26 @@ describe("ci-health signals from recorded pages", () => {
 		assert.equal(breachReport.paidMinutes.byRefusal.queue, 159);
 	});
 
-	it("H10 is clear while no label's allowance is spent", () => {
-		assert.equal(clearReport.signals.H10.state, "clear");
-	});
-	it("H10 breaches on a spent allowance", () => {
-		assert.equal(breachReport.signals.H10.state, "breach");
-		assert.equal(
-			breachReport.signals.H10.summary,
-			"block allowance spent for hobo-trunk",
+	it("computes no reporter or allowance signal: the status route they read is retired (plan 0026, 3.9)", () => {
+		assert.deepEqual(Object.keys(clearReport.signals), [
+			"H1",
+			"H2",
+			"H3",
+			"H6",
+			"H8",
+		]);
+		assert.equal("statusRoute" in clearReport, false);
+		assert.equal("statusWhy" in clearReport, false);
+		// A report written before the retirement still gives its window end.
+		assert.deepEqual(
+			parsePreviousReport(
+				parseJson(
+					'{"windowEnd":"2026-11-12T10:00:00.000Z","statusRoute":"unknown"}',
+				),
+				Date.parse(clear.now),
+			),
+			{ windowEnd: "2026-11-12T10:00:00.000Z" },
 		);
-	});
-
-	it("unknown twice: a second unread status route raises H2 with that note", () => {
-		const twice = report(clear, unread, {
-			windowEnd: "2026-11-12T10:00:00.000Z",
-			statusRoute: "unknown",
-		});
-		assert.equal(twice.signals.H2.state, "breach");
-		assert.match(
-			twice.signals.H2.summary,
-			/status route unread two runs running/,
-		);
-		assert.equal(twice.outcome, "breach");
-		const once = report(clear, unread, {
-			windowEnd: "2026-11-12T10:00:00.000Z",
-			statusRoute: "known",
-		});
-		assert.equal(once.signals.H2.state, "clear");
 	});
 
 	it("the clear window breaches nothing; the breach window breaches every signal", () => {
@@ -292,25 +249,8 @@ describe("ci-health readers", () => {
 			"runner routing did not run (the routing script failed); using GitHub-hosted runners",
 		]);
 	});
-	it("reads the relay origin from .hobo/ci.json, https only", () => {
-		assert.equal(
-			parseRelayOrigin(
-				readFileSync(join(import.meta.dirname, "../../.hobo/ci.json"), "utf8"),
-			),
-			"https://hobo-ci.vercel.app",
-		);
-		assert.equal(
-			parseRelayOrigin(
-				'{"defaultEnvironment":"a","environments":{"a":{"relayOrigin":"http://x.test"}}}',
-			),
-			undefined,
-		);
-	});
 	it("reads the report from an uploaded artifact's zip", () => {
-		const body = {
-			windowEnd: "2026-11-12T10:00:00.000Z",
-			statusRoute: "unknown",
-		};
+		const body = { windowEnd: "2026-11-12T10:00:00.000Z" };
 		assert.deepEqual(
 			readJsonFromZip(zipOf("ci-health-report.json", JSON.stringify(body))),
 			body,
@@ -372,7 +312,6 @@ type ApiOptions = Readonly<{
 	previous?: Buffer;
 	rateLimitAt?: RegExp;
 	openIssues?: readonly JsonValue[];
-	statusAnswer?: number;
 	refuseAssignees?: boolean;
 }>;
 
@@ -383,7 +322,7 @@ function json(value: JsonValue, status = 200): Response {
 	});
 }
 
-/** GitHub and the relay, answering from a recorded window. */
+/** GitHub, answering from a recorded window. */
 function fakeApi(
 	recorded: Recorded,
 	options: ApiOptions,
@@ -421,12 +360,6 @@ function fakeApi(
 		if (jobs) return json({ jobs: recorded.jobs[jobs] ?? [] });
 		const notes = /\/check-runs\/(\d+)\/annotations/.exec(path)?.[1];
 		if (notes) return json(recorded.annotations[notes] ?? []);
-		if (url.startsWith("https://token.test/"))
-			return json({ value: "oidc-token" });
-		if (url.startsWith("https://hobo-ci.vercel.app/v1/fleet/reporters/"))
-			return options.statusAnswer
-				? json({ reason: "unauthorized" }, options.statusAnswer)
-				: json(recorded.status);
 		if (method === "GET" && path.includes("/issues?"))
 			return json(options.openIssues ?? []);
 		if (method === "POST" && /\/issues\/\d+\/comments$/.test(path))
@@ -469,8 +402,6 @@ async function runMain(
 			{
 				GITHUB_REPOSITORY: REPOSITORY,
 				GITHUB_TOKEN: "test-token",
-				ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.test/?x=1",
-				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-token",
 				CI_HEALTH_REPORT_PATH: reportPath,
 				...env,
 			},
@@ -478,8 +409,6 @@ async function runMain(
 				fetch: fakeApi(recorded, options, calls),
 				now: () => Date.parse(recorded.now),
 				log: (line) => lines.push(line),
-				relayConfig:
-					'{"defaultEnvironment":"ci","environments":{"ci":{"relayOrigin":"https://hobo-ci.vercel.app"}}}',
 			},
 		);
 		return {
@@ -540,7 +469,9 @@ describe("ci-health run", () => {
 		assert.equal(result.report.outcome, "clear");
 		assert.equal(result.report.windowEnd, "2026-11-12T12:00:00.000Z");
 		assert.equal(result.report.windowStart, "2026-11-12T10:00:00.000Z");
-		assert.equal(result.report.statusRoute, "known");
+		// It asks GitHub only: no relay route, no OIDC token.
+		for (const call of result.calls)
+			assert.match(call.url, /^https:\/\/api\.github\.com\//);
 		assert.equal(
 			result.calls.filter((call) => call.method === "POST").length,
 			0,
@@ -584,14 +515,7 @@ describe("ci-health run", () => {
 		const opened = issuesOpened(result.calls);
 		assert.deepEqual(
 			opened.map((issue) => issue.title.split(":")[0]),
-			[
-				"[ci-health] H1",
-				"[ci-health] H2",
-				"[ci-health] H3",
-				"[ci-health] H4",
-				"[ci-health] H8",
-				"[ci-health] H10",
-			],
+			["[ci-health] H1", "[ci-health] H2", "[ci-health] H3", "[ci-health] H8"],
 		);
 		for (const issue of opened) {
 			assert.deepEqual(issue.labels, ["ci-health"]);
@@ -642,50 +566,18 @@ describe("ci-health run", () => {
 		);
 	});
 
-	it("unknown twice: an unread status route after an unknown report raises H2", async () => {
-		const result = await runMain(clear, {
-			previous: zipped(
-				'{"windowEnd":"2026-11-12T10:00:00.000Z","statusRoute":"unknown"}',
-			),
-			statusAnswer: 401,
-		});
-		assert.equal(result.code, 1);
-		assert.equal(result.report.statusRoute, "unknown");
-		assert.equal(result.report.signals.H4.state, "unknown");
-		const opened = issuesOpened(result.calls).map((issue) => issue.title);
-		assert.equal(opened.length, 1);
-		assert.match(
-			opened[0] ?? "",
-			/^\[ci-health\] H2: relay status route unread two runs running/,
-		);
-	});
-
-	it("without an OIDC token the status signals read unknown", async () => {
-		const result = await runMain(clear, {}, [], {
-			ACTIONS_ID_TOKEN_REQUEST_URL: "",
-			ACTIONS_ID_TOKEN_REQUEST_TOKEN: "",
-		});
-		assert.equal(result.code, 0);
-		assert.equal(result.report.signals.H4.state, "unknown");
-		assert.match(result.report.statusWhy, /no OIDC token/);
-	});
-
 	it(`B7: the largest window takes at most ${REQUEST_BUDGET} requests, issues included`, async () => {
-		// The status route unread twice, so the issue requests are counted too.
-		// The most any run can add on top: one more create per other signal,
-		// twice when an assignee is refused (6 x 2), still 320 in all.
+		// The most issues can add on top: the issue list and one create per
+		// signal, twice when an assignee is refused (1 + 5 x 2), 314 in all.
 		const result = await runMain(largestWindow(100), {
-			previous: zipped(
-				'{"windowEnd":"2026-11-12T10:00:00.000Z","statusRoute":"unknown"}',
-			),
-			statusAnswer: 500,
+			previous: zipped('{"windowEnd":"2026-11-12T10:00:00.000Z"}'),
 		});
 		const total = result.calls.length;
-		assert.ok(total <= REQUEST_BUDGET, `${total} requests`);
+		assert.ok(total + 11 <= REQUEST_BUDGET, `${total} requests`);
 		assert.equal(result.report.runs, 100);
-		assert.equal(result.report.requests, 305);
-		// 2 artifact + 1 run list + 100 jobs + 200 annotations + 2 status + 1 issue list + 1 issue.
-		assert.equal(total, 307);
+		// 2 artifact + 1 run list + 100 jobs + 200 annotations.
+		assert.equal(result.report.requests, 303);
+		assert.equal(total, 303);
 	});
 
 	it("reports truncated when more than 100 runs fall in the window", async () => {
@@ -714,16 +606,13 @@ describe("ci-health workflow", () => {
 		const workflow = read(".github/workflows/ci-health.yml");
 		assert.match(workflow, /cron: "\d+ \*\/2 \* \* \*"/);
 		assert.match(workflow, /workflow_dispatch:\n {4}inputs:\n {6}dry-run:/);
-		for (const permission of [
-			"actions: read",
-			"checks: read",
-			"issues: write",
-			"id-token: write",
-		])
+		for (const permission of ["actions: read", "checks: read", "issues: write"])
 			assert.match(workflow, new RegExp(`^  ${permission}$`, "m"));
+		// No OIDC token: no relay is asked (plan 0026, 3.9).
+		assert.doesNotMatch(workflow, /id-token/);
 		assert.match(
 			workflow,
-			/sparse-checkout: \|\n {12}scripts\/ci\/ci-health\.mts\n {12}\.hobo\/ci\.json\n/,
+			/sparse-checkout: \|\n {12}scripts\/ci\/ci-health\.mts\n {6}- /,
 		);
 		assert.match(workflow, /run: node scripts\/ci\/ci-health\.mts$/m);
 		assert.match(
