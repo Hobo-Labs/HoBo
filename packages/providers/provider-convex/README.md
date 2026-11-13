@@ -224,7 +224,7 @@ Convex's anonymous backend matrix remains an explicit refusal where the host can
 supply the official backend's memory and durable storage. A deployment acknowledgement
 is not application health, final billing, data fencing or retirement evidence.
 
-## Delivery coverage (plan 0024 WP13, I14)
+## Delivery coverage (ADR-0182: I14)
 
 | Export | What it is |
 |---|---|

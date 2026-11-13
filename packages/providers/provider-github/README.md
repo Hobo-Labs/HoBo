@@ -1,6 +1,6 @@
 # @hobo/provider-github
 
-The GitHub Pages realizer for HoBo.CD (plan 0024):
+The GitHub Pages realizer for HoBo.CD:
 it realizes the **Pages site of one repository** from a static-site tree
 Freight, through the existing `ResourceResolver` port of `@hobo/core`. No
 provider port methods are added, no SDK is used, no git binary runs and no

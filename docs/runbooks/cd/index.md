@@ -3,7 +3,7 @@
 Operator procedures for `@hobo/cd` ([design](../../design/continuous-delivery.md),
 [ADR-0182](../../design/adr/01-architecture-core.md#adr-0182)). Each page is
 assembled from the **Runbook** section of the owning module's README, which
-stays the source of truth (plan 0024 §7.11). Every refusal HoBo.CD returns
+stays the source of truth. Every refusal HoBo.CD returns
 carries a `ReasonRecord` with a `code` and a `remediation`; start from the code
 or the symptom below.
 

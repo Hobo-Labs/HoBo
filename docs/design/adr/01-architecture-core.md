@@ -987,7 +987,7 @@ Repo-wide, by rule: `no-known-value-widening` 127 → 5,880, `require-safety-com
 
 **Status:** Accepted. Design narrative: [continuous-delivery.md](../continuous-delivery.md).
 
-**Numbering.** Plan 0024's decision register (R3) names this record ADR-0178. ADR-0178 (provider manifest) and ADR-0179 (stateless hosted relay) were assigned on `main` while the plan was written, and IDs are global and monotonic, so this record takes the next free number. Where plan 0024 says "ADR-0178" for HoBo.CD, it means this section.
+**Numbering.** ADR-0178 (provider manifest), ADR-0179 (stateless hosted relay), ADR-0180 (fleet verdict) and ADR-0181 (routing slips) were assigned on `main` while HoBo.CD was designed. IDs are global and monotonic, so this record takes the next free number.
 
 ### Context
 `@hobo/ci` builds, verifies and produces artifacts; nothing moved them through environments. Four delivery lanes (`hobo up`, hosting transitions, the fixture-only CD plane in `@hobo/cloud`, broker `deliver`) shared no desired state (C1, C2). Evidence failed open (C3), rollback never re-applied the prior Set (C4), "gateway-weighted" changed no traffic (C5), and the neutral broker type carried Kubernetes fields (C6). There was no Freight contract, reconciler, multi-node fenced store, artifact store, lineage, change window, delivery authorization, fleet targeting, Camp liveness, enrollment model, policy rollout, posture, or Kubernetes-fleet interop (C7–C23).
@@ -995,7 +995,7 @@ Repo-wide, by rule: `no-known-value-widening` 127 → 5,880, `require-safety-com
 The owner's constraints: pull, not push; route by policy; canary, A/B and flags; every platform with no Kubernetes or OCI lock-in; no dependence on a CI/CD toolset; the best of Kargo, Harness, Karmada and Open Cluster Management without their APIs or runtimes; a natural extension of HoBo.
 
 ### Decision
-Each decision binds as written in plan 0024 §5; this section records all of them in one place.
+This section records every decision in one place.
 
 1. **D1 Package boundary.** `@hobo/cd` is a layer-3 sibling of `@hobo/ci`. It owns Freight, ingestion and discovery, the artifact store and provenance, Sets/Deltas, pipelines, change windows, promotion, previews, reconcilers and the delivery feed, verification, rollout, delivery authorization and telemetry. It composes Matching (`@hobo/cloud`), Gatekeeper and policy (`@hobo/contracts`), `OpenDeliveryEngine`, flags and SVIDs (`@hobo/identity`, which keeps them), provenance parsing (`@hobo/registry`), traffic ports (`@hobo/core`), Station cutover (`@hobo/stations`) and Trails.
 2. **D2 Freight.** The immutable, content-addressed promotion unit for one Bindle, or, with subject `RAIL`, one Rail version: declaration hash, artifact digests by kind, source and provenance. Its id is `sha256:` over the canonical manifest, and its alias is a deterministic two-word name. Promote means: carry the same Freight, re-run Matching per target Camp, apply the result as a Delta. Bytes are identical everywhere; infrastructure may differ and is shown as `infrastructure_diff`. A config-only change is new Freight with the same artifacts (Delta intent `config`).
@@ -1024,7 +1024,7 @@ Each decision binds as written in plan 0024 §5; this section records all of the
 25. **D25 Posture with one mutator.** Posture rules are policy-IR `observe` rules over declared attributes, with a fixed operator set and no expression language. Reconcilers report only declared, secret-free attributes (at most 16 KiB per resource). A Station-side service evaluates them with the pure `@hobo/policy/posture` evaluator and records `compliance.Observed` and `compliance.Changed`. Remediation is `inform`, `inform-only`, `enforce` on a Set-owned field (drift: the reconciler re-applies the Set), or `enforce` on an unowned field (a `posture-remediate` Delta through the gate). A rule that contradicts a Set-owned value is `ownership-conflict`. Compliance maps to OSCAL assessment results. Agents never evaluate posture.
 26. **D26 Kubernetes fleet managers are transports, never brains.** `@hobo/cd-kube-fleet` imports SIG-Multicluster ClusterProfiles as `OBSERVE_ONLY` Camps and realizes Sets through one OCM ManifestWork per Camp, or a Karmada PropagationPolicy pinned to exactly one member cluster. HoBo never uses ManifestWorkReplicaSet, OCM Placement, or Karmada scheduling, failover or overrides, and adds no message-broker transport.
 
-The numeric defaults are `CD_DEFAULTS` and `CD_RAMP_DEFAULTS` in `packages/cd/src/events.ts`. The invariants I1–I24 are in plan 0024 §6; each has a named test in the owning module.
+The numeric defaults are `CD_DEFAULTS` and `CD_RAMP_DEFAULTS` in `packages/cd/src/events.ts`. Each invariant I1–I24 has a named test in the owning module.
 
 ### Consequences
 - **(+)** One delivery path: `hobo up`/`down`, `hobo deploy *`, broker `deliver`, pipelines, MCP and agents all deliver through `@hobo/cd`, and every state rebuilds from the journal.

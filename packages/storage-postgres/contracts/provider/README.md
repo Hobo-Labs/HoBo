@@ -1,7 +1,7 @@
 # Contracts — eventstore boundary
 
 `../eventstore-boundary.pact.json` is the PACT between the CD reconciler
-transport (consumer `hobo-cd-reconciler`, plan 0024 WP7) and this store
+transport (consumer `hobo-cd-reconciler`) and this store
 (provider `hobo-storage-postgres`).
 
 - Consumer evidence: `../consumer/eventstore-boundary.test.ts`. Every expected

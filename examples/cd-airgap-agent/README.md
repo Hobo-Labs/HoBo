@@ -1,8 +1,7 @@
 # HoBo.CD in an air-gapped Yard
 
 This example delivers to a plant floor that has no route to the internet
-(plan 0024, D5, D19, I3, I24, and the §10 row "Air-gapped Yard, egress
-disabled").
+(ADR-0182: D5, D19, I3, I24; Yard egress disabled).
 
 - **Local source.** Images are mirrored by digest into
   `registry.plant.internal`, and CD polls that registry. A mirror never

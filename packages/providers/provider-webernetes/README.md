@@ -159,7 +159,7 @@ IPv6, private-network and overlay records, and rejects public locators labelled
 local, mismatched authority fields and invalid IPv4 ranges. The temporary station
 test also serves and probes a real loopback HTTP endpoint through the injected host.
 
-## Delivery coverage (plan 0024 WP13, I14)
+## Delivery coverage (ADR-0182: I14)
 
 | Export | What it is |
 |---|---|

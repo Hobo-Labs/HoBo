@@ -1,7 +1,7 @@
 # HoBo.CD for a retail edge fleet
 
 This example ships a point-of-sale release to hundreds of store Camps
-without ever hitting every store at once (plan 0024, D20, D21, D23).
+without ever hitting every store at once (ADR-0182: D20, D21, D23).
 
 - **Camp set and Placement.** `retail-stores` selects prod Camps labelled
   `fleet=retail`. The `all-stores` placement takes every eligible Camp and

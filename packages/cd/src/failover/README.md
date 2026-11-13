@@ -1,7 +1,7 @@
 # `@hobo/cd/failover` — governed failover and rebalance (WP23)
 
 Implements `createFailoverController` (frozen `FailoverController` port) for
-plan 0024 D23 and invariant I21. A failover is a saga that moves
+ADR-0182 D23 and invariant I21. A failover is a saga that moves
 **compute only**. It runs only when the Rail allows it (`automatic`) or an
 authorized principal approves it, within the Rail's per-Station
 `max_concurrent` budget. It never fails back automatically.

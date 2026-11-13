@@ -1,7 +1,6 @@
 # @hobo/provider-oci-registry
 
-A generic OCI distribution-spec registry realizer for HoBo.CD
-(plan 0024). One
+A generic OCI distribution-spec registry realizer for HoBo.CD. One
 resolver, `oci-registry.image/v1`, on the core `ResourceResolver` port, for any
 registry that speaks the distribution API: GHCR, Docker Hub, ECR, Artifact
 Registry, Harbor and Zot.

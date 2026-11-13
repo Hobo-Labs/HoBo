@@ -1,7 +1,6 @@
 # Rail rollout: inform, then enforce
 
-This example ships a policy change the same way you ship code (plan 0024,
-D24, D25, I22, I23, R12). The Rail `rail-eu-storage` gains a rule that
+This example ships a policy change the same way you ship code (ADR-0182: D24, D25, I22, I23). The Rail `rail-eu-storage` gains a rule that
 denies public buckets.
 
 - **Rail Freight.** Approving the new Rail version on the Station creates

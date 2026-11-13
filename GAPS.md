@@ -1991,40 +1991,38 @@ classified 📘 deliberate-documented, not gaps.
 | IMPL-030 | LOW | Package docs omit the shipped wave (stations routing loop/cutover/offering registry; trails executors; events upcaster/corpus) and the four `routing.*` loop payloads have no proto/CUE. | `packages/stations/README.md:47-61` · `packages/trails/ARCHITECTURE.md:23-31` | ✔ stations layering + ADR anchor fixed same-pass. 🧯 refresh the three package README/ARCHITECTURE sets + proto/CUE for routing.* payloads. |
 
 
-## HoBo.CD closures (2026-11-12, plan 0024)
+## HoBo.CD closures (2026-11-12)
 
-Appended by plan 0024 WP21. The delivery defects plan 0024 §4 recorded (C1–C23) close with the
-merge of `integration/hobo-cd`, which lands `@hobo/cd` and its adapter packages
+The delivery defects C1–C23 close with HoBo.CD, which lands `@hobo/cd` and its adapter packages
 ([ADR-0182](docs/design/adr/01-architecture-core.md#adr-0182),
 [continuous-delivery.md](docs/design/continuous-delivery.md)). Each row names the work package
-whose named tests carry the closure; the coordinator's final report (plan 0024 §13) holds the
-test names and gate results. A row whose owning work package does not merge stays open.
+whose named tests carry the closure.
 
 | ID | Defect | Closed by | Status |
 |---|---|---|---|
-| CD-C01 | Four uncoordinated delivery lanes (`up`, hosting transitions, CD plane, broker) shared no desired state | One desired-state model per Camp; `hobo up`/`down`, `hobo deploy`, broker `deliver`, pipelines and MCP all deliver through `@hobo/cd` (WP4, WP7, WP15, WP16, WP18) | ✔ with the plan 0024 merge |
-| CD-C02 | The CD plane ran only on fixtures | The fixture-only `@hobo/cloud` CD plane is deleted; fixtures are reachable only with `--simulate`, labelled in every result (WP7, WP18) | ✔ with the plan 0024 merge |
-| CD-C03 | Evidence failed open (`healthSamples ?? [{}, {}]`) | Deterministic verification; no data is FAIL (I5) (WP9, WP10) | ✔ with the plan 0024 merge |
-| CD-C04 | Rollback never re-applied the prior Set | Rollback is zero exposure, then a Delta to the predecessor Set through the same gate (I7) (WP6, WP7) | ✔ with the plan 0024 merge |
-| CD-C05 | "Gateway-weighted" changed no traffic; three ramp vocabularies | Capability lowering onto traffic rungs; one ramp engine and `CD_RAMP_DEFAULTS` (WP10, WP14) | ✔ with the plan 0024 merge |
-| CD-C06 | Kubernetes fields in a neutral broker type | Neutral `DeliveryPolicy`; `destination_namespace` never read; `argo` mapped to a `cd-gitops` publisher (WP16; [upgrade notes](docs/design/delivery-policy-upgrade.md)) | ✔ with the plan 0024 merge |
-| CD-C07 | No Freight/artifact contract between any build and CD | Freight, the Freight manifest and ingest (WP1, WP3) | ✔ with the plan 0024 merge |
-| CD-C08 | Imperative `deliver(set)`; no reconciler for drift | Fenced per-Camp pull reconcilers, drift by observation (I2, I4) (WP7) | ✔ with the plan 0024 merge |
-| CD-C09 | Promotion semantics undecided | Promote carries Freight and re-runs Matching per Camp (D2); decided in [gitops-runbook-promotion.md](docs/patterns/gitops-runbook-promotion.md) (WP6, WP21) | ✔ with the plan 0024 merge |
-| CD-C10 | Plan 25's Relay is a reverse tunnel | Agent-mode reconcilers read an outbound-only delivery feed (WP11; Plan 25 rewritten) | ✔ with the plan 0024 merge |
-| CD-C11 | No multi-node fenced store | `@hobo/storage-postgres` passes the EventStore suite (WP17) | ✔ with the plan 0024 merge |
-| CD-C12 | Six hosting providers had no resolver; the long tail could never be covered in-tree | In-tree resolvers added; out-of-tree `hobo:resolver` WASM components (I14) (WP8, WP13, WP14) | ✔ with the plan 0024 merge |
-| CD-C13 | No delivery authorization, metrics or visibility | `CdAction` authorization, OTel CI/CD telemetry, DORA, service read API (WP12, WP19) | ✔ with the plan 0024 merge |
-| CD-C14 | No artifact store or retention | Content-addressed artifact store and retention (WP1, WP3) | ✔ with the plan 0024 merge |
-| CD-C15 | Ingress push-only and tied to HoBo CI | Pull Freight sources; OIDC trusted publishing; in-toto/SLSA; CDEvents nudges (I15) (WP1, WP2) | ✔ with the plan 0024 merge |
-| CD-C16 | No lineage | Pipeline graph with qualification, soak and expiring approvals (I16) (WP5, WP6) | ✔ with the plan 0024 merge |
-| CD-C17 | No change windows, data-migration sequencing or config-only path | Change windows (I17), Trails sequencing, Delta intent `config` (WP5, WP6) | ✔ with the plan 0024 merge |
-| CD-C18 | Explicit Camp lists only; no groups, concurrency, failure budget or quorum | Placement and fan-out (I18, I20) (WP22, WP23) | ✔ with the plan 0024 merge |
-| CD-C19 | No Camp liveness, conditions, taints or failover | Camp inventory and governed failover (I21) (WP22, WP23) | ✔ with the plan 0024 merge |
-| CD-C20 | Single-approval enrollment; agent facts could be trusted by accident | Double opt-in enrollment; claims only narrow (I19, I24) (WP11, WP22) | ✔ with the plan 0024 merge |
-| CD-C21 | Rails activated everywhere at once | Rails delivered as Freight, INFORM before ENFORCE (I23) (WP2, WP5, WP24) | ✔ with the plan 0024 merge |
-| CD-C22 | Policy was admission-time only | Continuous posture, compliance and OSCAL assessment results (I22) (WP24) | ✔ with the plan 0024 merge |
-| CD-C23 | No way to use an existing Karmada/OCM estate or Kubernetes cluster inventory | `@hobo/cd-kube-fleet` as transport and inventory only (WP25) | ✔ with the plan 0024 merge |
+| CD-C01 | Four uncoordinated delivery lanes (`up`, hosting transitions, CD plane, broker) shared no desired state | One desired-state model per Camp; `hobo up`/`down`, `hobo deploy`, broker `deliver`, pipelines and MCP all deliver through `@hobo/cd` (WP4, WP7, WP15, WP16, WP18) | ✔ |
+| CD-C02 | The CD plane ran only on fixtures | The fixture-only `@hobo/cloud` CD plane is deleted; fixtures are reachable only with `--simulate`, labelled in every result (WP7, WP18) | ✔ |
+| CD-C03 | Evidence failed open (`healthSamples ?? [{}, {}]`) | Deterministic verification; no data is FAIL (I5) (WP9, WP10) | ✔ |
+| CD-C04 | Rollback never re-applied the prior Set | Rollback is zero exposure, then a Delta to the predecessor Set through the same gate (I7) (WP6, WP7) | ✔ |
+| CD-C05 | "Gateway-weighted" changed no traffic; three ramp vocabularies | Capability lowering onto traffic rungs; one ramp engine and `CD_RAMP_DEFAULTS` (WP10, WP14) | ✔ |
+| CD-C06 | Kubernetes fields in a neutral broker type | Neutral `DeliveryPolicy`; `destination_namespace` never read; `argo` mapped to a `cd-gitops` publisher (WP16; [upgrade notes](docs/design/delivery-policy-upgrade.md)) | ✔ |
+| CD-C07 | No Freight/artifact contract between any build and CD | Freight, the Freight manifest and ingest (WP1, WP3) | ✔ |
+| CD-C08 | Imperative `deliver(set)`; no reconciler for drift | Fenced per-Camp pull reconcilers, drift by observation (I2, I4) (WP7) | ✔ |
+| CD-C09 | Promotion semantics undecided | Promote carries Freight and re-runs Matching per Camp (D2); decided in [gitops-runbook-promotion.md](docs/patterns/gitops-runbook-promotion.md) (WP6, WP21) | ✔ |
+| CD-C10 | Plan 25's Relay is a reverse tunnel | Agent-mode reconcilers read an outbound-only delivery feed (WP11; Plan 25 rewritten) | ✔ |
+| CD-C11 | No multi-node fenced store | `@hobo/storage-postgres` passes the EventStore suite (WP17) | ✔ |
+| CD-C12 | Six hosting providers had no resolver; the long tail could never be covered in-tree | In-tree resolvers added; out-of-tree `hobo:resolver` WASM components (I14) (WP8, WP13, WP14) | ✔ |
+| CD-C13 | No delivery authorization, metrics or visibility | `CdAction` authorization, OTel CI/CD telemetry, DORA, service read API (WP12, WP19) | ✔ |
+| CD-C14 | No artifact store or retention | Content-addressed artifact store and retention (WP1, WP3) | ✔ |
+| CD-C15 | Ingress push-only and tied to HoBo CI | Pull Freight sources; OIDC trusted publishing; in-toto/SLSA; CDEvents nudges (I15) (WP1, WP2) | ✔ |
+| CD-C16 | No lineage | Pipeline graph with qualification, soak and expiring approvals (I16) (WP5, WP6) | ✔ |
+| CD-C17 | No change windows, data-migration sequencing or config-only path | Change windows (I17), Trails sequencing, Delta intent `config` (WP5, WP6) | ✔ |
+| CD-C18 | Explicit Camp lists only; no groups, concurrency, failure budget or quorum | Placement and fan-out (I18, I20) (WP22, WP23) | ✔ |
+| CD-C19 | No Camp liveness, conditions, taints or failover | Camp inventory and governed failover (I21) (WP22, WP23) | ✔ |
+| CD-C20 | Single-approval enrollment; agent facts could be trusted by accident | Double opt-in enrollment; claims only narrow (I19, I24) (WP11, WP22) | ✔ |
+| CD-C21 | Rails activated everywhere at once | Rails delivered as Freight, INFORM before ENFORCE (I23) (WP2, WP5, WP24) | ✔ |
+| CD-C22 | Policy was admission-time only | Continuous posture, compliance and OSCAL assessment results (I22) (WP24) | ✔ |
+| CD-C23 | No way to use an existing Karmada/OCM estate or Kubernetes cluster inventory | `@hobo/cd-kube-fleet` as transport and inventory only (WP25) | ✔ |
 
 Related existing rows: IMPL-004 already recorded `hobo deploy` as implemented; its delivery semantics
 are now HoBo.CD's (`docs/design/cli-spec.md`). No existing GAP or DRIFT row is reopened or

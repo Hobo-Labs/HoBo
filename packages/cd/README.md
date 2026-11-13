@@ -53,7 +53,7 @@ packages, each owned with the module that uses it: `planning`, `gatekeeper`,
 platform types may appear only in `adapters/` and `verification/sources/`
 (I11).
 
-Frozen contract files (plan 0024 Appendix A; amended only by the coordinator):
+Frozen contract files (changed only with an ADR-0182 amendment):
 `data-models/cd.proto`, `src/events.ts` (event names, streams, refusal codes,
 `CD_DEFAULTS`), `src/ports.ts` and `src/index.ts`. Generated code is in
 `src/_generated/`.

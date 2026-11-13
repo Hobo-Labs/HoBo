@@ -1,7 +1,7 @@
 # CD conformance kit
 
 This example shows how to prove an adapter against the `@hobo/cd`
-conformance suites in `@hobo/conformance` (plan 0024, WP20). It ships an
+conformance suites in `@hobo/conformance`. It ships an
 in-memory reference adapter for every suite. Each reference passes. Each one
 also has *mutants*, copies broken in exactly one way, and the suite catches
 every one of them.
@@ -49,8 +49,7 @@ real `@hobo/cd` implementation fits them. `test/kit.test.ts` checks the
 mirrored enum values against the generated `@hobo/cd` enums.
 
 A harness that leaves out a probe a suite needs, such as
-`target.lieOnNextApply`, fails that assertion. It does not pass by default
-(plan 0024 §12).
+`target.lieOnNextApply`, fails that assertion. It does not pass by default.
 
 ## Run
 

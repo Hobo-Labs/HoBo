@@ -1,8 +1,7 @@
 # `@hobo/cd/compose` — the CD composition root (WP18)
 
 One composition of `@hobo/cd` that every surface uses: `hobo up`/`down`,
-`hobo deploy *`, `hobo serve cd`, broker `deliver`, MCP and agents (plan 0024,
-C2). It binds the frozen factories (`CdFactories` in `../ports.ts`) in
+`hobo deploy *`, `hobo serve cd`, broker `deliver`, MCP and agents (ADR-0182: C2). It binds the frozen factories (`CdFactories` in `../ports.ts`) in
 dependency order and returns the `ContinuousDelivery` facade. It makes no
 delivery decision: every decision stays in the module that owns it.
 

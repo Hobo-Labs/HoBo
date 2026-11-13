@@ -321,7 +321,7 @@ hosts, userinfo, paths, queries and fragments are refused. Site control records
 and pending deployments provide no serving endpoint proof; mutable primary site
 URLs are not accepted as immutable deployment bindings.
 
-## Delivery coverage (plan 0024 WP14, I14)
+## Delivery coverage (ADR-0182: I14)
 
 The traffic audit found no Netlify profile and no Netlify routing adapter.
 `NETLIFY_TRAFFIC_ROUTING_PROFILE` (kind `other`; mirrored as

@@ -15,9 +15,9 @@ converge by pull, exposes the change progressively, verifies it, and rolls it
 back.**
 
 - **Decision record:** [ADR-0182](./adr/01-architecture-core.md#adr-0182) (D1–D26).
-- **Binding plan and research:** plan 0024
-  (Kargo, Harness, Karmada and Open Cluster Management, what was taken and what
-  was not).
+- **Research:** [Kargo](../competitors/kargo.md), [Karmada](../competitors/karmada.md)
+  and [Open Cluster Management](../competitors/open-cluster-management.md):
+  what was taken and what was not.
 - **Operator surface:** `packages/hobo/CD.md` (`hobo deploy`, `hobo serve cd`, `hobo incident`).
 - **Runbooks:** [`docs/runbooks/cd/`](../runbooks/cd/index.md).
 - **Package map:** [`packages/cd/README.md`](../../packages/cd/README.md).
@@ -330,7 +330,7 @@ container engine on the self-hosted runners. These are tracked in
 
 - Live lanes are credential- or availability-gated and skip with a visible
   reason. The `kind` lane for `@hobo/cd-kube-fleet` exists; the Vercel,
-  Cloudflare and Prometheus-backed verification lanes plan 0024 requires are
+  Cloudflare and Prometheus-backed verification lanes HoBo.CD requires are
   tracked in [live-provider-matrix.md](./live-provider-matrix.md#hobocd-live-lanes).
   Nothing here claims a live run that has not happened.
 - Fixtures are reachable only with `--simulate`, which labels every result.

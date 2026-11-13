@@ -26,7 +26,7 @@ competitor:
 # Open Cluster Management — Competitor Reference
 
 > Captured for HoBo competitive analysis under the HoBo Competitive Research Contract.
-> Research date **2026-11-11**, read for plan 0024
+> Research date **2026-11-11**, read for HoBo.CD
 > (HoBo.CD). Read alongside [Karmada](karmada.md). Red Hat Advanced Cluster Management is the
 > commercial distribution and is covered here as an alias.
 

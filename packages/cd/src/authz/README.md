@@ -1,6 +1,6 @@
 # `@hobo/cd/authz` — delivery authorization
 
-Owner: WP19 (plan 0024, D15, I10, R14). Export: `@hobo/cd/authz`.
+Owner: WP19 (ADR-0182: D15, I10). Export: `@hobo/cd/authz`.
 
 Every mutating `CdAction` is authorized before it changes anything. The
 authorizer composes two packs through `@hobo/contracts`' `evaluatePolicyPack`

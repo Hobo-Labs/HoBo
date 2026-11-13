@@ -167,8 +167,7 @@ what evidence M1 must prove, and which adjacent initiatives own publication or r
 HoBo's own release train (`.github/workflows/release-hobo.yml`) maps the
 release-candidate and GA classes above onto `@hobo/cd` Camps, records every
 artifact as Freight with provenance, and lets the Camps' realizers publish
-(plan 0024,
-[`hobo deploy`](../../packages/hobo/CD.md)).
+([`hobo deploy`](../../packages/hobo/CD.md)).
 
 The topology is delivery-as-code:
 [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)

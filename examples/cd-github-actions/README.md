@@ -1,7 +1,7 @@
 # HoBo.CD from GitHub Actions
 
 GitHub Actions builds the image. HoBo.CD delivers it. This example shows the
-workflow holding no HoBo credential at any point (plan 0024, D3):
+workflow holding no HoBo credential at any point (ADR-0182: D3):
 
 - **Trusted publishing.** The release job proves its identity with a GitHub
   OIDC token (`id-token: write`). CD trusts the token only when its claims

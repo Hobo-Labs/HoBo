@@ -1,6 +1,6 @@
 # `@hobo/cd/telemetry` — DORA, CI/CD semconv, fleet metrics, OTLP export
 
-Owner: WP19 (plan 0024, C13, D17, R8). Export: `@hobo/cd/telemetry`.
+Owner: WP19 (ADR-0182: C13, D17). Export: `@hobo/cd/telemetry`.
 
 ## What is here
 

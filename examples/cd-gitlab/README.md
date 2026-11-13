@@ -1,6 +1,6 @@
 # HoBo.CD from GitLab CI
 
-GitLab CI builds. HoBo.CD discovers and delivers (plan 0024, D3, D4, D10).
+GitLab CI builds. HoBo.CD discovers and delivers (ADR-0182: D3, D4, D10).
 
 - **Two subscriptions, one Freight.** CD reads `deploy/**` and
   `hobo.bindle.ts` from Git over smart-HTTP protocol v2. It does not need a
