@@ -18,6 +18,9 @@ export declare function provisionTopology(input: Readonly<{
     staticCredentials: Readonly<Record<"authority" | "witness" | "provisioner" | "sentinel", string>>;
     scopedSeeds: Readonly<Record<"observer" | "executor" | "dispatcher", string>>;
 }>>;
+export declare function publishAccountSigningKeys(input: SigningKeysInput): Promise<Outcome<Readonly<{
+    accountPublicKey: string;
+}>>>;
 export declare function startCalloutResponder(input: Readonly<{
     servers: readonly string[];
     credentials: string;
@@ -33,4 +36,8 @@ export declare function createJournalEventStore(input: Readonly<{
     servers: readonly string[];
     credentials: string;
 }>): Promise<FleetEventStore>;
+export declare function importJournalEvents(input: Readonly<{
+    servers: readonly string[];
+    credentials: string;
+}>, items: readonly JournalImportItem[]): Promise<Outcome<JournalImportResult>>;
 export declare function createBusRelayTransport(bus: () => FleetBus | undefined): FleetTransport;

@@ -2268,6 +2268,7 @@ export declare function createWitness(deps: Readonly<{
     start(): void;
     stop(): Promise<void>;
 }>;
+export declare function verifyChainAcrossTrust(entries: readonly AuditEntry[], checkpoints: readonly WitnessedEnvelope[], trust: TrustRecord, journal: readonly EventEnvelope[]): Outcome<Verified>;
 
 // ── src/agent.ts
 export declare function createFleetAgent(deps: AgentDeps): Readonly<{

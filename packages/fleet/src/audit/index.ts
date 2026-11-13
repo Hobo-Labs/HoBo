@@ -66,3 +66,6 @@ export function createWitness(
 ): Readonly<{ start(): void; stop(): Promise<void> }> {
 	return witnessProcess(deps);
 }
+
+// Amendment 3: verify checkpoints against the trust record in force at each (L41).
+export { verifyChainAcrossTrust } from "./verify.js";
