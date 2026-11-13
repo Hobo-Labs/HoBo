@@ -90,6 +90,11 @@ export function evaluateMainTrunkFleetDefer(
 		deferMs: number;
 		nowMs: number;
 		trunkSlots: number | undefined;
+		/**
+		 * ADDITIONAL standard launches that still fit in box memory right now
+		 * (`mainShardParallelLaunchCapacity`, #1926) — remaining room, not a total.
+		 */
+		parallelTrunkLaunchCapacity?: number;
 		localTrunkReserved: number;
 		fleetWitness: FleetCapacityWitness | undefined;
 	}>,
@@ -109,10 +114,18 @@ export function evaluateMainTrunkFleetDefer(
 		effectiveDeferMs,
 		input.nowMs,
 	);
+	// Memory capacity is remaining room, so the box's trunk ceiling is what is
+	// already reserved plus what still fits (same shape as
+	// `effectiveParallelLaunchSlots`), never below the configured trunk slots.
+	const trunkSlotCeiling = Math.max(
+		input.trunkSlots ?? 0,
+		input.parallelTrunkLaunchCapacity === undefined
+			? 0
+			: input.localTrunkReserved +
+					Math.max(0, input.parallelTrunkLaunchCapacity),
+	);
 	const slotsFull =
-		input.trunkSlots !== undefined &&
-		input.trunkSlots > 0 &&
-		input.localTrunkReserved >= input.trunkSlots;
+		trunkSlotCeiling > 0 && input.localTrunkReserved >= trunkSlotCeiling;
 	const peerImmediate =
 		fields.peerAbsorbSlots > 0 &&
 		(slotsFull ||

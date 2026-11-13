@@ -51,14 +51,11 @@ describe("main full gate workspace sharding", () => {
 		const block = workflow.slice(shardStart, finishStart);
 		assert.match(block, /Main workspace test shard \$\{\{ matrix\.shard \}\}/u);
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards/u);
-		assert.match(
-			block,
-			/needs: \[route, ci-runner-image, ci-deps-image, main-gate-plan\]/u,
-		);
+		assert.match(block, /needs: \[route, ci-runner-image, main-gate-plan\]/u);
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
 	});
 
-	it("finishes with gitleaks after workspace shards", () => {
+	it("finishes after the gate, the plan (with its secret scan) and the shards", () => {
 		const finishStart = workflow.indexOf("  main_gate_finish:");
 		const artifact = workflow.indexOf("  artifact-trust:", finishStart);
 		const finish = workflow.slice(finishStart, artifact);
@@ -66,8 +63,46 @@ describe("main full gate workspace sharding", () => {
 			finish,
 			/needs: \[route, main-gate, main-gate-plan, main_workspace_tests\]/u,
 		);
-		assert.match(finish, /gitleaks-main-scan\.mts --background/u);
-		assert.match(finish, /gitleaks-main-scan\.mts --wait/u);
+		const planStart = workflow.indexOf("  main-gate-plan:");
+		const plan = workflow.slice(
+			planStart,
+			workflow.indexOf("  main-gate:", planStart),
+		);
+		assert.match(plan, /gitleaks-main-scan\.mts --background/u);
+		assert.match(plan, /gitleaks-main-scan\.mts --wait/u);
+	});
+
+	it("skips the gate and plans no shards when the merge queue passed the tree", () => {
+		const gateStart = workflow.indexOf("  main-gate:");
+		const gate = workflow.slice(
+			gateStart,
+			workflow.indexOf("  main_workspace_tests:", gateStart),
+		);
+		assert.match(gate, /needs: \[route, ci-runner-image\]/u);
+		assert.match(
+			gate,
+			/!cancelled\(\) && needs\.route\.outputs\.merge-queue-green != 'true' && \(/u,
+		);
+		const planStart = workflow.indexOf("  main-gate-plan:");
+		const plan = workflow.slice(planStart, gateStart);
+		assert.match(
+			plan,
+			/MAIN_REUSE_MERGE_QUEUE: \$\{\{ needs\.route\.outputs\.merge-queue-green \}\}/u,
+		);
+		// The plan job itself never skips on reuse: it holds the secret scan.
+		assert.doesNotMatch(
+			plan.slice(0, plan.indexOf("    steps:")),
+			/merge-queue-green/u,
+		);
+		const route = workflow.slice(
+			workflow.indexOf("  route:"),
+			workflow.indexOf("  ci-runner-image:"),
+		);
+		assert.match(route, /scripts\/ci\/merge-queue-reuse\.mts/u);
+		assert.match(
+			route,
+			/reuse-merge-queue: \$\{\{ vars\.HOBO_CI_MAIN_REUSE_MERGE_QUEUE \}\}/u,
+		);
 	});
 
 	it("skips workspace shard jobs when the plan emits no shards", () => {
@@ -79,12 +114,16 @@ describe("main full gate workspace sharding", () => {
 	});
 
 	it("shards use the plan job's own route", () => {
-		// The plan job and the full gate follow the route job; the shards and
-		// the finish job follow the plan job's second ask, then the run's route.
+		// The plan job and the full gate follow the route job; the shards
+		// follow the plan job's second ask, then the run's route.
 		for (const name of ["main-gate-plan", "main-gate"])
 			assert.equal(runsOn(job(name)), ROUTED, name);
-		for (const name of ["main_workspace_tests", "main_gate_finish"])
-			assert.equal(runsOn(job(name)), SHARD, name);
+		assert.equal(runsOn(job("main_workspace_tests")), SHARD);
+		// The finish job only adds up the other jobs' results, so like the two
+		// required gates it never asks the fleet for a runner (finding 154).
+		assert.equal(runsOn(job("main_gate_finish")), "ubuntu-24.04");
+		assert.match(job("main_gate_finish"), /^    permissions: \{\}$/mu);
+		assert.doesNotMatch(job("main_gate_finish"), /^\s+(- )?uses: /mu);
 		assert.match(
 			job("main-gate-plan"),
 			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.runner \|\| needs\.route\.outputs\.runner \}\}$/mu,
@@ -136,22 +175,37 @@ describe("main full gate workspace sharding", () => {
 	});
 
 	it("keeps the deps image off a main run the route sent away from the fleet", () => {
+		// On main there is no deps image job to wait on the fleet for (finding
+		// 154): the plan job looks at the layer, and only on the box worker, so a
+		// run the route sent to GitHub-hosted or a local box does nothing here.
 		const deps = job("ci-deps-image");
 		assert.match(deps, /^    needs: \[route\]$/mu);
-		const condition = deps.slice(
-			deps.indexOf("    if:"),
-			deps.indexOf("    runs-on:"),
-		);
-		assert.match(condition, /github\.event_name == 'pull_request' \|\|/u);
 		assert.match(
-			condition,
-			/\(needs\.route\.outputs\.tier == 'fleet' \|\| needs\.route\.result != 'success'\)/u,
+			deps,
+			/^    if: \$\{\{ !cancelled\(\) && github\.event_name == 'pull_request' \}\}$/mu,
 		);
-		// A skipped deps job does not stop the shards.
-		assert.doesNotMatch(
-			job("main_workspace_tests"),
-			/needs\.ci-deps-image\.result/u,
+		const plan = job("main-gate-plan");
+		const check = plan.slice(
+			plan.indexOf("      - name: Check current local deps image"),
+			plan.indexOf("      - name: Login to GHCR for read-only cache"),
 		);
+		assert.match(check, /"\$\{HOBO_CI_PNPM_STORE_MOUNTED:-\}" != "1"/u);
+		assert.match(check, /echo "current=true" >> "\$GITHUB_OUTPUT"/u);
+		for (const name of [
+			"Login to GHCR for read-only cache",
+			"Resolve local or GHCR deps image",
+			"Verify deps image under job mount",
+			"Promote verified deps image",
+		]) {
+			const step = plan.slice(plan.indexOf(`      - name: ${name}`));
+			assert.match(
+				step.slice(0, step.indexOf("\n      - name:", 1)),
+				/if: steps\.deps-current\.outputs\.current != 'true'/u,
+				name,
+			);
+		}
+		// No shard waits on a deps job.
+		assert.doesNotMatch(job("main_workspace_tests"), /ci-deps-image/u);
 	});
 
 	it("can be pinned from a dispatch without touching repository variables", () => {

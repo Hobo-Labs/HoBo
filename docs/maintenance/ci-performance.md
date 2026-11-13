@@ -111,11 +111,26 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   links the deps layer first, and skips pnpm store/install on a layer hit; when the plan emits
   `shards=[]` the shard job is skipped and finish passes without workspace legs
   ([finding 139](../ci/findings/0139-main-gate-finish-empty-shard-matrix.md)). S0 uses
-  `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
-  ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
+  `--external-workspace-tests` when affected. Gitleaks runs in the plan job, outside S0
+  ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md),
+  [finding 154](../ci/findings/0154-main-waited-for-runners-between-jobs.md)).
   Box dispatch latency (early `dispatchPending`, poll-triggered tick, shard index ordering,
   `hobo_ci_job_reserved`) is [finding 99](../ci/findings/0099-main-gate-job-pickup-latency.md);
   poll coalesce strand fixes stay [finding 87](../ci/findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md) / [#1819](https://github.com/Hobo-Labs/HoBo/pull/1819).
+- **One trunk pickup per main run when the merge queue passed the tree.** A main run's jobs did 4 to 5
+  minutes of work and waited 2 to 7 more for runners between them
+  ([finding 154](../ci/findings/0154-main-waited-for-runners-between-jobs.md)). The route job
+  (`scripts/ci/merge-queue-reuse.mts`) looks for a successful `merge_group` run of this workflow whose head
+  is the pushed commit or tree; GitHub fast-forwards main to the commit the merge queue tested. On a match
+  its `merge-queue-green` output is `true`: **Main full gate** is skipped and the plan emits no shards.
+  **Main workspace plan** carries what main still owes on every push: the deps layer check that was the
+  `CI deps layer (pnpm)` job (now pull requests only; promotion happens on the box alone), the secret scan
+  that was in finish, and the plan. **Main full gate (finish)** is GitHub-hosted and only adds up results.
+  The plan and the gate follow the route job and the shards follow the plan's second ask (#1965), so a
+  run goes to GitHub-hosted runners when the fleet is not taking jobs; the plan's deps layer steps run
+  only on the box worker. Set the repository variable `HOBO_CI_MAIN_REUSE_MERGE_QUEUE=false` to
+  make every push run the full gate again. A reused push does not run the generated-output drift check or
+  refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
