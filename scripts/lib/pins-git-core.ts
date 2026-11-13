@@ -126,6 +126,8 @@ export const LOCAL_REPO_ENV = [
 	"GIT_PREFIX",
 	"GIT_SHALLOW_FILE",
 	"GIT_COMMON_DIR",
+	// Printed by git before 2.40 (the CI runner image's bookworm git is 2.39).
+	"GIT_INTERNAL_SUPER_PREFIX",
 	"GIT_NAMESPACE",
 ] as const;
 
