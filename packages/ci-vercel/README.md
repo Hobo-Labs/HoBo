@@ -833,6 +833,17 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 service, the cache, the execution host and the repair evidence (see the probes
 in [The stateless relay](#the-stateless-relay)).
 
+After Vercel promotes a deploy, `relay-deploy.yml` also probes the relay at its
+**public origin** (the default environment's `relayOrigin` in `.hobo/ci.json`,
+`https://hobo-ci.vercel.app`), not the deployment URL, which may be protected
+and answer 401: step *Probe the fleet verdict at the public origin* requires
+`GET /v1/fleet/verdicts/<this repository>` to answer 200 with this
+repository's lower-case `repository` and a `blocked` object. The deploy has
+already happened, so the step reports: a red step is the signal to roll back
+in the order of [Fleet verdict operations](#fleet-verdict-operations). Route
+jobs read a relay that does not answer as no relay, so a bad deploy never
+stops a run.
+
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
 
@@ -859,3 +870,94 @@ counts the ones held back since the last line. No request body, header or creden
 a failing logger never changes the response. When the
 error or its cause is a database refusal, the line also carries its five-character SQLSTATE as
 `sqlstate` (for example `28P01` for a rejected password).
+
+## Fleet verdict operations
+
+The runbooks for the fleet verdict channel ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment);
+[plan 0025](../../docs/plans/0025-relay-owned-runner-routing.md), sections 6.7 and 6.10). The box relay
+decides whether a fleet label is blocked; this relay keeps signed reports, agrees them and serves the
+verdict at `GET /v1/fleet/verdicts/{owner}/{repo}`. Every gate passed is recorded in
+[finding 145](../../docs/ci/findings/0145-fleet-verdict-channel-operating-record.md).
+
+**Order matters.** The relay's runtime configuration is a strict schema: a relay that does not know a key
+refuses the whole configuration at cold start and answers 503. So the relay learns a key (a merged and
+deployed change) before anyone sets it, and loses it (removal from the config service) before the change
+that taught it is reverted.
+
+### Enroll a box
+
+1. On the box: `node packages/ci-gh-actions/scripts/fleet-reporter-enroll.mts --key-file <the key file>
+   --id <reporter id> --account <account id> --labels hobo,hobo-trunk`. The key file is
+   `HOBO_CI_MESH_KEY_FILE` (default `mesh-node.key` beside the journal); the script makes it with mode 600
+   if there is none and prints one JSON entry carrying the **public** key only.
+2. Add that entry to `reporters` in `HOBO_CI_FLEET_REPORTERS_JSON` in the config service (`hobo ci`; at most
+   eight per account). The account must be the one the repository is connected under, and the labels only
+   those the box serves: anything else is refused `not-found` or `invalid-report`.
+3. On the box set `HOBO_CI_FLEET_VERDICT_MODE=shadow`, `HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN=https://hobo-ci.vercel.app`,
+   `HOBO_CI_FLEET_REPORTER_ID=<reporter id>`, the declared pools (`HOBO_CI_FLEET_EXTERNAL_POOLS_JSON`, e.g.
+   the ARC pool `[{"labels":["hobo","hobo-trunk"],"runnerNamePrefix":"hobo-runner-","maxRunners":1}]`) and
+   `HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS` (set it above the pools' size, or an ARC runner that is free keeps
+   the label open), then restart the daemon. Settings are listed in the
+   [runner queue runbook](../ci/RUNNER-QUEUE.md).
+4. Check: `GET /v1/fleet/reporters/{owner}/{repo}` (a GitHub Actions OIDC token whose audience is this
+   origin; the CI health monitor makes this call) shows the reporter live in `shadow`. A reporter that stays
+   silent was refused: the relay logs `hobo_ci_fleet_verdict_refused` with the reason (`unknown-reporter`,
+   `bad-signature`, `clock-skew`, `replayed`, `not-found`, `invalid-report`).
+
+**Take a box out for maintenance.** Agreement is unanimous among the enrolled reporters that serve a label,
+and a silent reporter keeps its labels open. An enrolled box that is switched off therefore can never let
+the others block. Remove its entry from `HOBO_CI_FLEET_REPORTERS_JSON` for the maintenance and add it back
+after.
+
+**A key that is lost, regenerated or stolen.** Remove the entry (a stolen key can block only its account's
+connected repositories on its enrolled labels, bounded by the allowance), then enroll again with the new
+key. Reports signed with the old one are refused `bad-signature` and the monitor raises H4.
+
+### Switches
+
+| Switch | Where | Effect |
+| --- | --- | --- |
+| `HOBO_CI_FLEET_VERDICT_SERVING=off` | the config service (this relay) | Kill switch: reads answer "nothing blocked", reports answer 503 |
+| `HOBO_CI_FLEET_VERDICT_MODE=shadow` or `off` | the box | `shadow` reports what it would block, which this relay keeps but never serves; `off` stops the reporter |
+| `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | the config service | The allowance: verdict-blocked minutes per label per 24-hour window (default 240) before the label is served open |
+| `HOBO_CI_ROUTE=fleet` | repository variable | Pins every routed run to the fleet; no workflow asks the relay |
+
+**What bounds cost.** The allowance bounds verdict-blocked *time* (two windows' worth across a window
+boundary or a lost cache), not money: the money is that time times the runs that start. A blocked main push
+costs on the order of 100 billed minutes. The monitor's H8 raises paid minutes per window, split by what
+refused the fleet, and H10 raises a spent allowance.
+
+**A GitHub Actions budget is not a routing control.** The route job and the required pull-request gate run on
+GitHub-hosted runners, so a spent budget stops all CI, including the jobs that would route around the fleet.
+Set the budget's alerts well below its limit and treat an alert as an incident; never rely on the limit to
+cap overflow.
+
+### Roll back
+
+Any step: use its own switch above. A relay that does not answer never stops a run (route jobs read it as
+no relay), so rollback is not urgent.
+
+To take the code out: first remove `HOBO_CI_FLEET_REPORTERS_JSON` and `HOBO_CI_FLEET_VERDICT_SERVING` (and
+`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES`, if set) from the config service, then revert on `main`.
+Reverting first would make the older relay refuse its configuration at cold start.
+
+A deploy whose step *Probe the fleet verdict at the public origin* in `relay-deploy.yml` is red is rolled
+back the same way: promote the previous deployment in Vercel, or revert, after removing any key the older
+relay does not know.
+
+### Game day: a forced block
+
+Run with the box's reporter in `shadow` first (G3), then in `report` (G5).
+
+1. Wait until CI is idle on the box: the rule blocks only an idle box (a box busy with CI's own jobs is never
+   blocked).
+2. Make sure the rest of the fleet is below the minimum free runners: with the minimum above the declared
+   pools' size it always is; otherwise hold their runners with a dispatched job for the same five minutes.
+3. On the box: `node packages/ci-gh-actions/scripts/hold-memory.mts --mb <enough to fail admission> --seconds 300`.
+   It prints `hold_memory_held`, then `hold_memory_released`.
+4. Evidence: the status route shows the label's `lastBlockedAt` within 90 s of `hold_memory_held` and
+   `lastClearedAt` within 60 s of `hold_memory_released`. In `shadow` the served verdict
+   (`GET /v1/fleet/verdicts/{owner}/{repo}`) stays open throughout. In `report`, a run dispatched during the
+   hold gets a route notice with `"refusedBy":"relay"` and its jobs use GitHub-hosted runners, and the next
+   run dispatched after the hold stays on the fleet.
+5. Record the times in finding 145.

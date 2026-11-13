@@ -419,6 +419,28 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	const healthJob = (job: string, run = "node scripts/ci/ci-health.mts") =>
+		lintFile(
+			"ci-health.yml",
+			`name: fixture\non:\n  workflow_dispatch:\npermissions:\n  actions: read\njobs:\n${job}    runs-on: ubuntu-24.04\n    steps:\n      - run: ${run}\n`,
+		);
+
+	it("lets the health monitor run one GitHub-hosted ci-health job that runs the monitor", () => {
+		assert.equal(healthJob("  ci-health:\n"), 0);
+	});
+
+	it("rejects a health monitor job by another name, on another runner, or running something else", () => {
+		assert.notEqual(healthJob("  monitor:\n"), 0);
+		assert.notEqual(healthJob("  ci-health:\n", "pnpm install"), 0);
+		assert.notEqual(
+			lintFile(
+				"ci-health.yml",
+				"name: fixture\non:\n  workflow_dispatch:\njobs:\n  ci-health:\n    runs-on: hobo\n    steps:\n      - run: node scripts/ci/ci-health.mts\n",
+			),
+			0,
+		);
+	});
+
 	it("keeps label-by-name out of every other workflow", () => {
 		assert.notEqual(
 			lintRunner("pricing-ci.yml", "probe", "hobo-local-host"),
