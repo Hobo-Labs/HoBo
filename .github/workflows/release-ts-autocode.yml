@@ -46,22 +46,18 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
             .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          mode: ${{ vars.HOBO_CI_ROUTE }}
-          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
-          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
-          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
-          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
 
   ts-autocode-release-contract:
     name: ts-autocode pin cone + npm dry-run
     needs: route
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

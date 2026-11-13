@@ -11,15 +11,17 @@ on:
     types: [checks_requested]
   schedule:
     - cron: "17 3 * * *"
-  # A dispatch's `route` pins that run's route without touching repository variables:
-  # fleet, local or github. Empty leaves vars.HOBO_CI_ROUTE in force.
+  # A dispatch's `route` pins that run's route: fleet, local or github. `auto` follows
+  # the routing slip and runnerRouting.pin in .hobo/ci.json. It reaches the route
+  # script as an argument (.github/actions/route-runner).
   workflow_dispatch:
     inputs:
       route:
-        description: "Pin the route for this run (fleet, local, github); empty keeps HOBO_CI_ROUTE"
-        type: string
+        description: "Route for this run: auto follows the routing slip; fleet, local or github pins it"
+        type: choice
+        options: [auto, fleet, local, github]
         required: false
-        default: ""
+        default: auto
 
 permissions:
   contents: read
@@ -63,6 +65,8 @@ jobs:
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
+      # The main gate's shards: the run's class (the trunk class on trunk events).
+      shard_runner: ${{ steps.route.outputs.shard_runner }}
       # A signed local run verified for this tree (scripts/ci/verify-attestation.mts):
       # the jobs it covers are skipped. `false` and `[]` when there is none.
       attested: ${{ steps.route.outputs.attested }}
@@ -76,6 +80,7 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
             .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
@@ -84,11 +89,7 @@ jobs:
         uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          mode: ${{ inputs.route || vars.HOBO_CI_ROUTE }}
-          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
-          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
-          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
-          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+          route: ${{ inputs.route || 'auto' }}
 
   ci-runner-image:
     name: CI runner image (mise oci)
@@ -109,13 +110,14 @@ jobs:
       contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/lib/ci-runner-contract.mts') ||
       contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/ci-runner-preflight.mts') ||
       contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/test/ci-runner-image-contract.test.ts'))
-    # The route job picks the label: the fleet while it takes jobs, else an enrolled local box,
-    # else GitHub-hosted. On the fleet, trunk runs ask for their own label by default;
-    # HOBO_CI_TRUNK_RUNNER=false is the kill switch for a box daemon too old to serve it. GitHub
+    # The route job picks the label: the routing slip's answer for the run's class, else the
+    # queue rule (the fleet while it takes jobs, else an enrolled local box, else GitHub-hosted).
+    # On the fleet, trunk runs ask for their own label (runnerRouting.labels.trunk). GitHub
     # hands a runner to the oldest queued job its labels match, so under the shared `hobo` label
-    # the runner the box launched for a main job went to an older PR job instead.
-    # scripts/lint-actions.ts allows this expression, the trunk expression and `hobo`.
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    # the runner the box launched for a main job went to an older PR job instead. A route job
+    # that itself failed leaves GitHub-hosted. scripts/lint-actions.ts allows this expression,
+    # the trunk expression and `hobo`.
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -216,7 +218,7 @@ jobs:
     # gate and Main full gate's S0 job do not need this job, so a slow fleet does not
     # delay them. Main's workspace plan and shards do, to start from the deps layer;
     # on main this job never builds: it reuses or pulls an image, or defers a miss.
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
     # and run the contract; non-PR misses defer to the publisher and daemon.
@@ -339,7 +341,7 @@ jobs:
     needs: [route, ci-runner-image]
     # Skipped when the route job verified a signed local run of this job for this tree.
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
     timeout-minutes: 20
     permissions:
@@ -571,7 +573,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -670,7 +672,7 @@ jobs:
     name: PR affected package lanes
     needs: [route, pr_gate_validation]
     if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_affected"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -761,7 +763,7 @@ jobs:
     # pull request that changes the image's inputs tests on the image it built.
     needs: [route, ci-runner-image]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # Build (6) and lane (12) step limits plus checkout and install fit the
     # 20-minute job limit (scripts/test/workflow-job-timeouts.test.ts).
     timeout-minutes: 20
@@ -936,7 +938,7 @@ jobs:
     name: PR off-path checks (ts-autocode surface, production packages)
     needs: route
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1009,7 +1011,7 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 12
     # actions: read for the second ask, which reads the run queue.
     permissions:
@@ -1021,7 +1023,7 @@ jobs:
       main_scope: ${{ steps.plan.outputs.main_scope }}
       shards: ${{ steps.plan.outputs.shards }}
       # The shards' and the finish job's runner: the second ask's answer, else the run's route.
-      shard_runner: ${{ steps.reroute.outputs.runner || needs.route.outputs.runner }}
+      shard_runner: ${{ steps.reroute.outputs.shard_runner || needs.route.outputs.shard_runner }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -1038,11 +1040,12 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
-      # After the full checkout: the route script, packages/ci/src/fleet-overflow.ts and
-      # .hobo/ci.json are not in the bootstrap checkout. Only a run the route job kept on
-      # the fleet asks again; one already sent away is not brought back to a fleet whose
-      # deps job was skipped. This run's own jobs count (include-own-run): a plan job that
-      # itself waited past the limit sends the shards elsewhere (finding 142). Without a
+      # After the full checkout: the route script, scripts/ci/runner-routing.mts,
+      # packages/ci/src/fleet-overflow.ts and .hobo/ci.json are not in the bootstrap checkout.
+      # Only a run the route job kept on the fleet asks again; one already sent away is not
+      # brought back to a fleet whose deps job was skipped. The routing slip is read again (it
+      # may have changed); without one, this run's own jobs count (include-own-run): a plan job
+      # that itself waited past the limit sends the shards elsewhere (finding 142). Without a
       # decision the step outputs nothing and the run's route stands.
       - name: Ask again before the shards
         id: reroute
@@ -1050,11 +1053,7 @@ jobs:
         uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          mode: ${{ inputs.route || vars.HOBO_CI_ROUTE }}
-          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
-          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
-          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
-          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+          route: ${{ inputs.route || 'auto' }}
           attest: "false"
           include-own-run: "true"
       - uses: ./.github/actions/ci-runner-preflight
@@ -1098,7 +1097,7 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
     # The daily schedule is the one whole-workspace sweep and gets an hour.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
@@ -1330,9 +1329,9 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
-    # The plan job's second ask, else the run's route, else the trunk label, so a failed
+    # The plan job's second ask, else the run's route, else GitHub-hosted, so a failed
     # or skipped plan job never leaves runs-on empty.
-    runs-on: ${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1425,7 +1424,7 @@ jobs:
     name: Main full gate (finish)
     needs: [route, main-gate, main-gate-plan, main_workspace_tests]
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       actions: read
@@ -1536,7 +1535,7 @@ jobs:
     name: artifact signing and install verification
     needs: route
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"artifact-trust"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1572,7 +1571,7 @@ jobs:
     name: hobo dev cold loop (offline <=60s)
     needs: route
     if: github.event_name == 'pull_request'
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image,
     # or builds it (build.sh has a 600 s budget) when GHCR has none for this key.
     timeout-minutes: 20
@@ -1680,7 +1679,7 @@ jobs:
     name: Live data engines (PostgreSQL 16, MongoDB 8)
     needs: route
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1790,7 +1789,7 @@ jobs:
     needs: route
     # On other events, these steps run inside Main full gate or PR impact gate.
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"ci-guard"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1812,7 +1811,7 @@ jobs:
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside Main full gate in parallel with its checks.
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"secret-scan"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read

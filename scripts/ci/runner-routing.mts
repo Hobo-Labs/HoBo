@@ -21,8 +21,8 @@
  *   `contents: read`: `GET /git/ref/hobo/routing-slip`, then
  *   `GET /git/commits/<sha>`, within three seconds together.
  *
- * Run directly, it prints the committed policy as JSON, or exits 1 when the
- * file has none.
+ * Run directly, it prints the committed policy as JSON (or one field of it
+ * with `--get <field>`), or exits 1 when the file has none.
  */
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -624,8 +624,20 @@ export async function readRoutingSlip(input: {
 	}
 }
 
+/**
+ * `[path] [--get <field>]`: the committed policy as JSON, or one top-level
+ * field of it (`--get localRunner` prints `true` or `false`, which the fleet
+ * probe's gate job reads). Exits 1 when the file has no valid policy or the
+ * field is not one of its own.
+ */
 function main(argv: readonly string[]): number {
-	const path = argv[0] ?? RUNNER_ROUTING_PATH;
+	const getAt = argv.indexOf("--get");
+	const field = getAt === -1 ? undefined : argv[getAt + 1];
+	const rest =
+		getAt === -1
+			? argv
+			: argv.filter((_, index) => index < getAt || index > getAt + 1);
+	const path = rest[0] ?? RUNNER_ROUTING_PATH;
 	let text: string | undefined;
 	try {
 		text = readFileSync(path, "utf8");
@@ -636,6 +648,15 @@ function main(argv: readonly string[]): number {
 	if (!policy) {
 		process.stderr.write(`${path} has no valid runnerRouting\n`);
 		return 1;
+	}
+	if (getAt !== -1) {
+		const entry = Object.entries(policy).find(([key]) => key === field);
+		if (!entry) {
+			process.stderr.write(`runnerRouting has no field ${field ?? "(none)"}\n`);
+			return 1;
+		}
+		process.stdout.write(`${JSON.stringify(entry[1])}\n`);
+		return 0;
 	}
 	process.stdout.write(`${JSON.stringify(policy)}\n`);
 	return 0;

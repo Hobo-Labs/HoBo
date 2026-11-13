@@ -294,7 +294,7 @@ Each layer is based on the one below and merged bottom-up.
 | --- | --- | --- |
 | M1 | No `vars.HOBO_CI_*` in `.github/` or `packages/ci-gh-actions/templates/` | lint-actions test |
 | M2 | No `process.env` read of any name in 3.4's list in `scripts/`, `packages/ci*` | source guard test |
-| M3 | A valid slip decides; route job adds ≤ 3 s; no slip adds 0 s wait | route-runner tests with a fake GitHub API |
+| M3 | A valid slip decides; route job adds ≤ 3 s; no slip adds 0 s wait | route-runner tests with a fake GitHub API (one that never answers ends at the 3 s limit) |
 | M4 | An expired, malformed, wrong-repository or unknown-label slip is never used | reader tests, invalid fixtures |
 | M5 | No slip → identical outputs to today on the recorded production cases | route-runner replay tests |
 | M6 | Busy + healthy → `fleet-busy`; busy + critical disk → refused; assigned + nothing started 10 min → `stalled` | evaluator/issuer tests |

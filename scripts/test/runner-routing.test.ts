@@ -26,6 +26,7 @@ import {
 	mainWorkspaceParallelCap,
 } from "../ci/plan-main-workspace-shards.mts";
 import {
+	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
 	fleetLabelFor,
@@ -266,11 +267,12 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 			local: LOCAL_HOST_RUNNER_LABEL,
 			github: DEFAULT_GITHUB_MACHINE_TYPE,
 		});
-		// The route job enrolls a local box only when the variable says `true`.
+		// The route job enrolls a local box only when the policy says so.
 		assert.match(
 			repoFile("scripts/ci/route-runner.mts"),
-			/const localEnrolled = env\.HOBO_CI_LOCAL_RUNNER === "true";/u,
+			/const localEnrolled = settings\.localRunner;/u,
 		);
+		assert.equal(committed.localRunner, DEFAULT_LOCAL_RUNNER);
 		assert.equal(committed.localRunner, false);
 	});
 
@@ -282,7 +284,12 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 		assert.equal(
 			committed.mainWorkspaceParallelCap,
-			mainWorkspaceParallelCap({}),
+			mainWorkspaceParallelCap(undefined),
+		);
+		// The plan reads the cap from the committed policy, not an environment variable.
+		assert.equal(
+			mainWorkspaceParallelCap(committed),
+			committed.mainWorkspaceParallelCap,
 		);
 	});
 

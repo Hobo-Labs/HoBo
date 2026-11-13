@@ -4,7 +4,6 @@ import { ConfigurationSchema } from "@hobo/ci";
 import { meshIdentityFromPem } from "@hobo/ci/mesh";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { askRelay, relayRefusal } from "../../../scripts/ci/route-runner.mts";
 import {
 	FleetVerdictAllowanceSchema,
 	FleetVerdictLabelAllowanceSchema,
@@ -273,7 +272,10 @@ it("is switched off by the kill switch: reads block nothing, reports answer 503"
 	}
 });
 
-it("is asked by the routing job's own client and reported by a signed reporter, end to end", async () => {
+// Route jobs no longer ask this route: they read the box relay's routing slip
+// (ADR-0181, plan 0026). Until the hosted verdict routes are removed, the
+// relay still answers a plain read with what a signed reporter reported.
+it("answers a plain read with what a signed reporter reported, end to end", async () => {
 	const nowMs = Date.parse(NOW);
 	const kept = createMemoryFleetVerdicts(() => nowMs);
 	const reads: string[] = [];
@@ -312,29 +314,27 @@ it("is asked by the routing job's own client and reported by a signed reporter, 
 		});
 		expect(response.status).toBe(200);
 	};
-	const ask = () => askRelay({ origin: h.base, repository: "Hobo-Labs/HoBo" });
+	const ask = async (repository = "Hobo-Labs/HoBo") => {
+		const response = await fetch(`${h.base}/v1/fleet/verdicts/${repository}`, {
+			headers: { accept: "application/json" },
+		});
+		expect(response.status).toBe(200);
+		return (await response.json()).blocked;
+	};
 	try {
-		// Nothing reported: the routing job is told nothing is blocked.
-		const before = await ask();
-		expect(before).toEqual({ kind: "verdict", blocked: new Map() });
-		expect(relayRefusal(before, "hobo-trunk")).toBeUndefined();
+		// Nothing reported: nothing is blocked.
+		expect(await ask()).toEqual({});
 
 		await report('{"hobo-trunk":{"reason":"no-capacity"}}');
-		const blocked = await ask();
-		expect(relayRefusal(blocked, "hobo-trunk")).toBe(
-			"the relay keeps new work off hobo-trunk: no node can admit a job and none has a free slot",
-		);
-		expect(relayRefusal(blocked, "hobo")).toBeUndefined();
+		expect(await ask()).toEqual({ "hobo-trunk": { reason: "no-capacity" } });
 
 		await report("{}");
-		expect(relayRefusal(await ask(), "hobo-trunk")).toBeUndefined();
+		expect(await ask()).toEqual({});
 
 		// Asking about a repository no account is connected to reads nothing
 		// from the store: a made-up name costs the relay no lookup.
 		const asked = reads.length;
-		expect(
-			await askRelay({ origin: h.base, repository: "acme/unknown" }),
-		).toEqual({ kind: "verdict", blocked: new Map() });
+		expect(await ask("acme/unknown")).toEqual({});
 		expect(reads).toHaveLength(asked);
 		expect(new Set(reads)).toEqual(new Set(["hobo-labs/hobo"]));
 	} finally {

@@ -228,6 +228,7 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
             .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
@@ -236,17 +237,12 @@ jobs:
         uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          mode: ${{ vars.HOBO_CI_ROUTE }}
-          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
-          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
-          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
-          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
 
   release-main-train-gate:
     name: Main train release gate (nbgv)
     needs: route
     if: github.repository == 'Hobo-Labs/HoBo'
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 15
     outputs:
       run: ${{ steps.version.outputs.run == 'true' }}
@@ -313,7 +309,7 @@ jobs:
     # Skipped when the route job verified a signed local run of this job for this
     # tree. A local run signs for this job only when no OCI image is affected.
     if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     # packages: read lets a runner without the worker image (an ARC pod) pull it.
     permissions:
@@ -514,7 +510,7 @@ jobs:
       HOBO_RELEASE_TURBO_BASE: ""
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # One at a time. Job containers on a box share its Docker daemon, and the
     # legs share tags there: the hobo-cli and hobo-mcp legs build
@@ -627,7 +623,7 @@ jobs:
         needs.release-contract.result == 'success'
       )
     needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-images]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
     # One image per job: all six built and pushed in one job ran past the
@@ -706,7 +702,7 @@ jobs:
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
     needs: [release-main-train-gate, release-publish, release-images]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -828,7 +824,7 @@ jobs:
           github.ref == 'refs/heads/main')
       )
     needs: [route]
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -875,7 +871,7 @@ jobs:
       needs.release-pages-gate.result == 'success' &&
       needs.release-pages-gate.outputs.deploy == 'true'
     needs: [release-pages-gate]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # One publish at a time. Two runs for different commits used to be free to
     # push gh-pages in either order.
@@ -974,7 +970,7 @@ jobs:
       contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
       contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)
     needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
     timeout-minutes: 10
     permissions:
@@ -1013,7 +1009,7 @@ jobs:
       (vars.HOBO_NPM_PUBLISH != 'true' || startsWith(github.ref, 'refs/tags/cli-v') || needs.release-npm.result == 'success') &&
       needs.release-attest.result == 'success'
     needs: [release-publish, release-npm, release-attest]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
     permissions:
       contents: write

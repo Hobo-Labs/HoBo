@@ -32,7 +32,7 @@ jobs:
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -66,7 +66,7 @@ jobs:
     concurrency:
       group: ci-runner-image-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
       cancel-in-progress: false
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     # The 20-minute job rule holds here too (finding 121): the build gets 15 of them, so a
     # build that cannot finish in that fails loudly instead of holding a box past its limit.
     timeout-minutes: 20

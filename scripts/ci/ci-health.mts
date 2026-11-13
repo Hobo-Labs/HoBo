@@ -7,8 +7,9 @@
  * Runs every two hours on a GitHub-hosted machine (`ci-health.yml`). It reads
  * the run list, each run's jobs, and the annotations of the route job and of
  * the main gate's plan job, where the route step prints one `hobo-ci-route`
- * notice per decision and a `hobo-ci-route-fallback` warning when it could not
- * decide. It asks the hosted relay's status route which reporters are alive
+ * notice per decision (what became of the box relay's routing slip, and
+ * why) and a `hobo-ci-route-fallback` warning when the route did not run or
+ * no slip could be used. It asks the hosted relay's status route which reporters are alive
  * and how much of each label's block allowance is spent. From those it
  * computes seven signals (H1, H2, H3, H4, H6, H8, H10), opens or comments on
  * one issue per breached signal, writes the report to the step summary and to
@@ -30,8 +31,8 @@ export type Signal = (typeof SIGNALS)[number];
 
 export const SIGNAL_NAMES = {
 	H1: "routing did not run",
-	H2: "relay asked, no verdict",
-	H3: "relay not asked",
+	H2: "routing slip unusable",
+	H3: "no routing slip",
 	H4: "reporter silent",
 	H6: "stall",
 	H8: "paid minutes",
@@ -61,9 +62,11 @@ export const PLAN_JOB = "Main workspace plan";
 export const STALL_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"Main full gate",
 ]);
-/** Hosted whatever the fleet does: the route job, the gates, this monitor. */
+/** Hosted whatever the fleet does: the route job, the probe's gate, the gates, this monitor. */
 export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	ROUTE_JOB,
+	// The fleet probe's gate: reads whether a local box is enrolled, in seconds.
+	"local box enrolled",
 	"PR impact gate",
 	"HoBo release PR gate (required)",
 	"CI health",
@@ -76,6 +79,22 @@ export const HOSTED_LABEL = "ubuntu-24.04";
 
 export const NOTICE_TITLE = "hobo-ci-route";
 export const FALLBACK_TITLE = "hobo-ci-route-fallback";
+/**
+ * How the route script's own fallback warning starts (`SLIP_FALLBACK_PREFIX`
+ * in `route-runner.mts`): no slip could be used and the queue decided. The
+ * notice carries why, so H1 counts only the warnings that say the route did
+ * not run at all.
+ */
+export const SLIP_FALLBACK_PREFIX = "routing slip not used";
+/**
+ * The fallbacks that mean the relay has no current slip (`ABSENT_SLIP_WHYS`
+ * in `route-runner.mts`): H3. Any other fallback is a slip that was there
+ * and could not be used, or could not be read: H2.
+ */
+export const ABSENT_SLIP_WHYS: ReadonlySet<string> = new Set([
+	"no routing slip",
+	"slip expired",
+]);
 
 // --- JSON, read at the boundary ---
 
@@ -295,17 +314,18 @@ export type SignalResult = Readonly<{
 	evidence: readonly string[];
 }>;
 
+/** A route notice (v2): what became of the slip (`used`, `fallback`, `unasked`) and why. */
 export type RouteNotice = Readonly<{
-	relay: string;
+	slip: string;
 	why: string;
 	refusedBy: string;
 }>;
 
 /** What took a run off the fleet, for the paid-minutes split. */
-export type Refusal = "relay" | "queue" | "none" | "fallback" | "unrouted";
+export type Refusal = "slip" | "queue" | "none" | "fallback" | "unrouted";
 
 export type RefusalMinutes = {
-	relay: number;
+	slip: number;
 	queue: number;
 	none: number;
 	fallback: number;
@@ -373,10 +393,10 @@ function plural(count: number, word: string): string {
 /** A `hobo-ci-route` notice's record, or nothing when it is not one. */
 export function parseRouteNotice(message: string): RouteNotice | undefined {
 	const record = asObject(parseJson(message));
-	const relay = asText(record?.relay);
-	if (asNumber(record?.v) !== 1 || !relay) return undefined;
+	const slip = asText(record?.slip);
+	if (asNumber(record?.v) !== 2 || !slip) return undefined;
 	return {
-		relay,
+		slip,
 		why: asText(record?.why) ?? "",
 		refusedBy: asText(record?.refusedBy) ?? "",
 	};
@@ -409,7 +429,11 @@ export function routeEvidence(pages: RunPages): RouteEvidence {
 	);
 	for (const job of checks)
 		for (const annotation of pages.annotations.get(job.id) ?? []) {
-			if (annotation.title === FALLBACK_TITLE)
+			// A slip fallback is not the route failing: its notice says why.
+			if (
+				annotation.title === FALLBACK_TITLE &&
+				!annotation.message.startsWith(SLIP_FALLBACK_PREFIX)
+			)
 				fallbacks.push(annotation.message);
 			if (annotation.title !== NOTICE_TITLE) continue;
 			const notice = parseRouteNotice(annotation.message);
@@ -432,29 +456,35 @@ export function signalH1(evidence: readonly RouteEvidence[]): SignalResult {
 	};
 }
 
-/** More than 5% of at least 20 asks, or every one of at least 5, went unanswered. */
-export function h2Breaches(unanswered: number, asked: number): boolean {
+/** More than 5% of at least 20 slips read, or every one of at least 5, could not be used. */
+export function h2Breaches(unusable: number, read: number): boolean {
 	return (
-		(asked >= 20 && unanswered / asked > 0.05) ||
-		(asked >= 5 && unanswered === asked)
+		(read >= 20 && unusable / read > 0.05) || (read >= 5 && unusable === read)
 	);
 }
 
-/** `unknownTwice` is why the status route went unread a second run running; empty when it did not. */
+/**
+ * Slips that were there (or could not be read) and still could not be used:
+ * malformed, another repository, a label `runnerRouting.labels` does not
+ * allow, an API error or the three-second limit. `unknownTwice` is why the
+ * hosted relay's status route went unread a second run running; empty when
+ * it did not.
+ */
 export function signalH2(
 	evidence: readonly RouteEvidence[],
 	unknownTwice: string,
 ): SignalResult {
-	let asked = 0;
+	let read = 0;
 	const lines: string[] = [];
 	for (const entry of evidence)
 		for (const notice of entry.notices) {
-			if (notice.relay !== "verdict" && notice.relay !== "unanswered") continue;
-			asked += 1;
-			if (notice.relay === "unanswered")
-				lines.push(`${entry.run.htmlUrl}: ${notice.why}`);
+			if (notice.slip === "used") read += 1;
+			if (notice.slip !== "fallback" || ABSENT_SLIP_WHYS.has(notice.why))
+				continue;
+			read += 1;
+			lines.push(`${entry.run.htmlUrl}: ${notice.why}`);
 		}
-	const ratio = `${lines.length} of ${asked} relay asks unanswered`;
+	const ratio = `${lines.length} of ${read} routing slips unusable`;
 	if (unknownTwice)
 		return {
 			state: "breach",
@@ -462,27 +492,29 @@ export function signalH2(
 			evidence: cap(lines),
 		};
 	return {
-		state: h2Breaches(lines.length, asked) ? "breach" : "clear",
+		state: h2Breaches(lines.length, read) ? "breach" : "clear",
 		summary: ratio,
 		evidence: cap(lines),
 	};
 }
 
+/** Runs the queue routed because the relay has no current slip: none written, or expired. */
 export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 	const hits = evidence.filter((entry) =>
 		entry.notices.some(
-			(notice) => notice.relay === "unasked" && notice.why === "no-relay",
+			(notice) =>
+				notice.slip === "fallback" && ABSENT_SLIP_WHYS.has(notice.why),
 		),
 	);
 	if (hits.length === 0)
 		return {
 			state: "clear",
-			summary: "every route job could ask the relay",
+			summary: "every route job that read a slip found a current one",
 			evidence: [],
 		};
 	return {
 		state: "breach",
-		summary: `${plural(hits.length, "run")} routed without a relay to ask`,
+		summary: `${plural(hits.length, "run")} routed with no current routing slip`,
 		evidence: cap(hits.map((entry) => entry.run.htmlUrl)),
 	};
 }
@@ -563,7 +595,7 @@ export function runRefusal(entry: RouteEvidence): Refusal {
 	if (entry.fallbacks.length > 0) return "fallback";
 	const last = entry.notices.at(-1);
 	if (!last) return "unrouted";
-	if (last.refusedBy === "relay") return "relay";
+	if (last.refusedBy === "slip") return "slip";
 	if (last.refusedBy === "queue") return "queue";
 	return "none";
 }
@@ -589,7 +621,7 @@ export function signalH8(
 	limit: number,
 ): PaidMinutesResult {
 	const byRefusal: RefusalMinutes = {
-		relay: 0,
+		slip: 0,
 		queue: 0,
 		none: 0,
 		fallback: 0,
@@ -1208,7 +1240,7 @@ export async function main(
 			},
 			paidMinutes: {
 				total: 0,
-				byRefusal: { relay: 0, queue: 0, none: 0, fallback: 0, unrouted: 0 },
+				byRefusal: { slip: 0, queue: 0, none: 0, fallback: 0, unrouted: 0 },
 			},
 		};
 	}
