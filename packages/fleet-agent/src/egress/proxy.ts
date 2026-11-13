@@ -110,6 +110,9 @@ export function createEgressProxyFactoryWith(
 				track(req.socket);
 				void forward(req, res, vet, refuse, options.deps, track);
 			});
+			// Clients such as busybox wget shut down their write side after the
+			// request; the answer must still reach them.
+			Object.assign(server, { httpAllowHalfOpen: true });
 			server.on("connection", track);
 			server.on(
 				"connect",

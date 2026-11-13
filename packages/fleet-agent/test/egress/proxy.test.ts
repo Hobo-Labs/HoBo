@@ -277,6 +277,33 @@ describe("createEgressProxyFactoryWith", () => {
 		}
 	});
 
+	it("answers a client that shuts down its write side after the request", async () => {
+		const port = await upstream();
+		const factory = createEgressProxyFactoryWith({
+			fleetAllow: () => [],
+			log,
+			deps: deps({ "allowed.test": ["93.184.216.34"] }, port, []),
+		});
+		const proxy = await factory.open(["allowed.test"]);
+		try {
+			const url = new URL(proxy.url);
+			const socket = tcpConnect(Number(url.port), url.hostname);
+			await once(socket, "connect");
+			let answer = "";
+			socket.on("data", (chunk) => {
+				answer += String(chunk);
+			});
+			socket.end(
+				"GET http://allowed.test/half HTTP/1.1\r\nHost: allowed.test\r\nConnection: close\r\n\r\n",
+			);
+			await once(socket, "close");
+			expect(answer).toMatch(/^HTTP\/1\.1 200/u);
+			expect(answer).toContain("upstream /half");
+		} finally {
+			await proxy.close();
+		}
+	});
+
 	it("reads the fleet's allowlist on each request", async () => {
 		const port = await upstream();
 		let fleet: readonly string[] = ["fleet.test"];
