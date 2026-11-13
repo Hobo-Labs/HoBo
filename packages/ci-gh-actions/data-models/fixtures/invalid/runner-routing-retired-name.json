@@ -1,0 +1,35 @@
+{
+  "pin": "auto",
+  "queue": {
+    "maxWaitSeconds": 120,
+    "maxQueued": 4
+  },
+  "labels": {
+    "fleet": "hobo",
+    "trunk": "hobo-trunk",
+    "local": "hobo-local-host",
+    "github": "ubuntu-24.04"
+  },
+  "localRunner": false,
+  "mainWorkspaceParallelCap": 4,
+  "verdict": {
+    "minFreeRunners": 1,
+    "enterMs": 60000,
+    "exitMs": 30000,
+    "stallMs": 600000
+  },
+  "box": {
+    "slots": 2,
+    "trunkSlots": 1,
+    "trunkLend": 0,
+    "prCapWithTrunk": 1,
+    "mergeGroupLeases": 1,
+    "capacityVolatilityMb": 1024,
+    "trunkHeadroomFleetDeferMs": 45000,
+    "jobAdmission": "pull"
+  },
+  "externalPools": [],
+  "retiredVariables": [
+    "GITHUB_TOKEN"
+  ]
+}

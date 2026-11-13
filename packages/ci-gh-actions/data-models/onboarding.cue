@@ -171,6 +171,48 @@ import "list"
 #FleetReporterStatus: {id: #FleetReporterId, labels: [...#FleetVerdictLabel], live: bool, state?: #FleetReporterState}
 #FleetVerdictAllowanceUse: {usedSeconds: int & >=0, spent: bool, windowStart?: #FleetVerdictTime}
 #FleetReporterStatusList: {repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$", reporters: [...#FleetReporterStatus], allowance: {[#FleetVerdictLabel]: #FleetVerdictAllowanceUse}, dailyBlockMinutes: int & >=1 & <=1440}
+// The routing slip (ADR-0181): the box relay's current routing answer for one
+// repository, kept as the message of a parentless commit at
+// `refs/hobo/routing-slip`. Times are the relay's `toISOString()` (fixed
+// width, so a later time sorts later). A class's reason is a code, never a
+// figure, and agrees with its tier: the fleet is open or busy, or refused.
+#RoutingSlipTime: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+// A runner label routing may name. GitHub's generic self-hosted labels match
+// any self-hosted runner, so no policy or slip may name one.
+#RunnerRoutingLabel: string & =~"^[a-z0-9][a-z0-9_.-]{0,79}$" & !="self-hosted" & !="linux" & !="x64" & !="arm64" & !="windows" & !="macos"
+#RoutingSlipClass: {runner: #RunnerRoutingLabel, tier: "fleet", reason: "fleet-open" | "fleet-busy" | "pinned"} | {runner: #RunnerRoutingLabel, tier: "local" | "github", reason: "no-node" | "no-capacity" | "stalled" | "pinned"}
+#RoutingSlipRelay: {nodeId: #MeshNodeId, commit: string & =~"^[0-9a-f]{7,40}$"}
+#RoutingSlip: {
+	version:    1
+	repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$"
+	issuedAt:   #RoutingSlipTime
+	expiresAt:  #RoutingSlipTime & >issuedAt
+	classes: {pr: #RoutingSlipClass, fork: #RoutingSlipClass, trunk: #RoutingSlipClass}
+	relay: #RoutingSlipRelay
+}
+// Committed routing policy: `runnerRouting` in `.hobo/ci.json` (plan 0026,
+// 3.4). Its values are the code's defaults, so moving them changed nothing.
+#RunnerRoutingPool: {labels: [#RunnerRoutingLabel, ...#RunnerRoutingLabel] & list.MaxItems(16), runnerNamePrefix: string & =~"^.{1,128}$", maxRunners: int & >=0 & <=10000}
+#RunnerRouting: {
+	pin: "auto" | "fleet" | "local" | "github"
+	queue: {maxWaitSeconds: int & >=1 & <=3600, maxQueued: int & >=1 & <=100}
+	labels: {fleet: #RunnerRoutingLabel, trunk: #RunnerRoutingLabel, local: #RunnerRoutingLabel, github: #RunnerRoutingLabel}
+	localRunner:              bool
+	mainWorkspaceParallelCap: int & >=1 & <=8
+	verdict: {minFreeRunners: int & >=1 & <=9999, enterMs: int & >=10000 & <=3600000, exitMs: int & >=10000 & <=3600000, stallMs: int & >=60000 & <=3600000}
+	box: {
+		slots:                     int & >=1 & <=8
+		trunkSlots:                int & >=0 & <slots
+		trunkLend:                 0 | 1
+		prCapWithTrunk:            int & >=0 & <=8
+		mergeGroupLeases:          int & >=1 & <=8
+		capacityVolatilityMb:      int & >=0 & <=1048576
+		trunkHeadroomFleetDeferMs: int & >=1000 & <=3600000
+		jobAdmission:              "pull" | "push"
+	}
+	externalPools:    [...#RunnerRoutingPool] & list.MaxItems(32)
+	retiredVariables: [...(string & =~"^HOBO_CI_[A-Z0-9_]{1,60}$")] & list.MaxItems(32)
+}
 #RelayCacheJobKey: string & =~"^[0-9]{1,16}:[0-9]{1,16}:[0-9]{1,10}$"
 #RelayCacheLeaseId: string & =~"^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 #RelayCacheIntent: {kind: "ci.DispatchRequested" | "ci.RunnerClaimed" | "ci.SandboxCreated", at: string & !=""}
@@ -205,4 +247,4 @@ import "list"
 #RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
 #RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
 #RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #FleetReporterEnrollments | #FleetReporterState | #FleetVerdictAllowance | #FleetReporterStatusList | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #FleetReporterEnrollments | #FleetReporterState | #FleetVerdictAllowance | #FleetReporterStatusList | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
