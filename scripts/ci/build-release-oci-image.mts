@@ -237,7 +237,11 @@ export function cleanupReleaseOciBuild(
 		}
 	}
 	if (!options.keepCandidate && !options.deferBuilderPrune) {
-		spawnSync("docker", ["builder", "prune", "-f"], {
+		const cap =
+			process.env.HOBO_RELEASE_BUILDER_CACHE_CAP ??
+			process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+			"2GB";
+		spawnSync("docker", ["builder", "prune", "-f", "--keep-storage", cap], {
 			cwd: root,
 			stdio: "inherit",
 		});
@@ -260,7 +264,11 @@ function cleanupReleaseOciBuildChain(
 		});
 	}
 	if (!options.keepCandidate) {
-		spawnSync("docker", ["builder", "prune", "-f"], {
+		const cap =
+			process.env.HOBO_RELEASE_BUILDER_CACHE_CAP ??
+			process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+			"2GB";
+		spawnSync("docker", ["builder", "prune", "-f", "--keep-storage", cap], {
 			cwd: root,
 			stdio: "inherit",
 		});

@@ -14,6 +14,7 @@
  * - POST   /api/v1/folders
  * - POST   /api/v1/projects/{projectId}/identities
  * - POST   /api/v1/auth/oidc-auth/identities/{identityId}
+ * - PATCH  /api/v1/auth/oidc-auth/identities/{identityId}           (repair an existing trust)
  * - GET    /api/v1/identities/{identityId}
  * - DELETE /api/v1/identities/{identityId}
  *
@@ -99,6 +100,12 @@ export interface InfisicalAdmin {
 		readonly role: "viewer" | "member";
 	}): Promise<{ readonly identityId: string }>;
 	attachOidcAuth(identityId: string, trust: InfisicalOidcTrust): Promise<void>;
+	/**
+	 * Replace the OIDC trust of an identity that already has OIDC Auth: the
+	 * repair path when the subject a workload's tokens carry has changed.
+	 * Never creates an identity or a second auth method.
+	 */
+	updateOidcAuth(identityId: string, trust: InfisicalOidcTrust): Promise<void>;
 	deleteIdentity(identityId: string): Promise<void>;
 	/**
 	 * Whether this admin's token still works: "revoked" when Infisical
@@ -123,7 +130,7 @@ function siteOf(siteUrl: string): string {
 async function once(
 	send: Send,
 	operation: string,
-	method: "GET" | "POST" | "DELETE",
+	method: "GET" | "POST" | "PATCH" | "DELETE",
 	url: string,
 	headers: Record<string, string>,
 	body: string | undefined,
@@ -252,7 +259,7 @@ export function createInfisicalAdmin(options: {
 	const auth = { authorization: `Bearer ${options.accessToken}` };
 	const call = (
 		operation: string,
-		method: "GET" | "POST" | "DELETE",
+		method: "GET" | "POST" | "PATCH" | "DELETE",
 		path: string,
 		body?: string,
 	) => once(send, operation, method, `${site}${path}`, auth, body, timeoutMs);
@@ -266,6 +273,60 @@ export function createInfisicalAdmin(options: {
 		const id = parsed.identity?.id ?? "";
 		if (!ID.test(id)) throw new InfisicalError(operation, "invalid-response");
 		return id;
+	}
+
+	/** The OIDC trust body; POST attaches it, PATCH replaces an existing one. */
+	async function sendOidcTrust(
+		operation: string,
+		method: "POST" | "PATCH",
+		identityId: string,
+		trust: InfisicalOidcTrust,
+	): Promise<void> {
+		const ttl = trust.ttlSeconds ?? 3600;
+		let issuer: URL | undefined;
+		try {
+			issuer = new URL(trust.issuer);
+		} catch {
+			issuer = undefined;
+		}
+		input(
+			operation,
+			ID.test(identityId) &&
+				issuer?.protocol === "https:" &&
+				trust.audiences.length > 0 &&
+				trust.audiences.every((aud) => /^[!-+\--~]{1,512}$/u.test(aud)) &&
+				/^[!-~]{1,512}$/u.test(trust.subject) &&
+				Number.isSafeInteger(ttl) &&
+				ttl > 0 &&
+				ttl <= 86_400,
+		);
+		const answer = await call(
+			operation,
+			method,
+			`/api/v1/auth/oidc-auth/identities/${encodeURIComponent(identityId)}`,
+			toJsonString(
+				InfisicalAttachOidcAuthRequestSchema,
+				create(InfisicalAttachOidcAuthRequestSchema, {
+					oidcDiscoveryUrl: trust.issuer,
+					boundIssuer: trust.issuer,
+					boundAudiences: trust.audiences.join(","),
+					boundClaims: { ...trust.claims },
+					boundSubject: trust.subject,
+					accessTokenTtl: ttl,
+					accessTokenMaxTtl: ttl,
+				}),
+				// `boundClaims` is required by Infisical even when empty.
+				{ alwaysEmitImplicit: true },
+			),
+		);
+		const body = okBody(operation, answer);
+		const parsed = parse(operation, () =>
+			fromJson(InfisicalAttachOidcAuthResponseSchema, body, {
+				ignoreUnknownFields: true,
+			}),
+		);
+		if (parsed.identityOidcAuth?.identityId !== identityId)
+			throw new InfisicalError(operation, "invalid-response");
 	}
 
 	return {
@@ -355,54 +416,11 @@ export function createInfisicalAdmin(options: {
 			return { identityId: identityIdOf(operation, okBody(operation, answer)) };
 		},
 
-		async attachOidcAuth(identityId, trust) {
-			const operation = "attach OIDC auth";
-			const ttl = trust.ttlSeconds ?? 3600;
-			let issuer: URL | undefined;
-			try {
-				issuer = new URL(trust.issuer);
-			} catch {
-				issuer = undefined;
-			}
-			input(
-				operation,
-				ID.test(identityId) &&
-					issuer?.protocol === "https:" &&
-					trust.audiences.length > 0 &&
-					trust.audiences.every((aud) => /^[!-+\--~]{1,512}$/u.test(aud)) &&
-					/^[!-~]{1,512}$/u.test(trust.subject) &&
-					Number.isSafeInteger(ttl) &&
-					ttl > 0 &&
-					ttl <= 86_400,
-			);
-			const answer = await call(
-				operation,
-				"POST",
-				`/api/v1/auth/oidc-auth/identities/${encodeURIComponent(identityId)}`,
-				toJsonString(
-					InfisicalAttachOidcAuthRequestSchema,
-					create(InfisicalAttachOidcAuthRequestSchema, {
-						oidcDiscoveryUrl: trust.issuer,
-						boundIssuer: trust.issuer,
-						boundAudiences: trust.audiences.join(","),
-						boundClaims: { ...trust.claims },
-						boundSubject: trust.subject,
-						accessTokenTtl: ttl,
-						accessTokenMaxTtl: ttl,
-					}),
-					// `boundClaims` is required by Infisical even when empty.
-					{ alwaysEmitImplicit: true },
-				),
-			);
-			const body = okBody(operation, answer);
-			const parsed = parse(operation, () =>
-				fromJson(InfisicalAttachOidcAuthResponseSchema, body, {
-					ignoreUnknownFields: true,
-				}),
-			);
-			if (parsed.identityOidcAuth?.identityId !== identityId)
-				throw new InfisicalError(operation, "invalid-response");
-		},
+		attachOidcAuth: (identityId, trust) =>
+			sendOidcTrust("attach OIDC auth", "POST", identityId, trust),
+
+		updateOidcAuth: (identityId, trust) =>
+			sendOidcTrust("update OIDC auth", "PATCH", identityId, trust),
 
 		async deleteIdentity(identityId) {
 			const operation = "delete identity";
