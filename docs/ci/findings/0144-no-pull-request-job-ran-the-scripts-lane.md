@@ -32,6 +32,9 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 6. **One workflow set the heap by hand.** Restacked on `claude/relay-fleet-verdict` (`dbff25e88`), the lane failed *job memory environment* › *sizes workers, heap, and turbo from a 4647 MiB job*: `.github/workflows/fleet-enrollment.yml` ([#1688](https://github.com/Hobo-Labs/HoBo/pull/1688)) set `NODE_OPTIONS: --max-old-space-size=3072` at workflow level, and `scripts/test/memory-env.test.ts` forbids `NODE_OPTIONS` in every workflow: the heap cap is set where the job's memory is known (the fleet worker injects `NODE_OPTIONS` at container creation, and `ci-runner-preflight` writes the job's sizing).
 7. **One root test was missing from its shard's inputs.** On the same restack, under Node 24, *turbo unit tasks cover the old runner and every root shard input* failed with `test/fleet-enrollment-scorecard.eval.test.ts is missing from //#test:unit:root:0 inputs`: #1688 added the test, the shard selector puts it in root shard 0, and `turbo.json` did not list it, so a change to it alone would replay a cached shard. Under Node 22 the same test failed earlier, on cause 4.
 
+8. **Some scripts tests read the machine they ran on.** The job's first run on a pull request ([#1962](https://github.com/Hobo-Labs/HoBo/pull/1962), run 43330791071) was routed to a GitHub-hosted `ubuntu-24.04` runner and failed tests that pass on the fleet box:
+   - *an override is unverified, and CI refuses it* and *bootstrap-siblings --status (assets)*: the `bootstrap-siblings.mts` children inherited the runner's `GITHUB_ACTIONS=true`, so a test that set `CI=""` or `CI=false` still ran "in CI" and its own `MIRROR_BIN` was refused with `OVERRIDE_IN_CI`.
+
 ## Fix
 
 - The two test expectations follow the code they describe: the suites that merge the root config, and the finish job's empty-plan pass.
@@ -39,6 +42,7 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 - `turbo.json` lists `test/fleet-enrollment-scorecard.eval.test.ts` in `//#test:unit:root:0`'s inputs.
 - `packages/ci-gh-actions/test/deps-image-scope.test.ts` pins the PR impact gate's needs; it now expects `scripts-tests` among them (it failed `@hobo/ci-gh-actions`'s tests until it did).
 - **The job `scripts-tests`** in `hobo-ci.yml` runs `pnpm run test:scripts` on pull requests and merge groups when the change touches `scripts/**`, `test/**` or `.github/**`, on the routed runner after `ci-runner-preflight`. Before the lane it restores the Turbo cache and builds the dependencies (`--filter=<package>^...`) of every package whose `src/` a scripts test imports, 88 build tasks. The **PR impact gate** needs it and fails unless it succeeded.
+- **The scripts tests are hermetic to the runner (cause 8).** `scripts/test/support/pins-support.ts` starts each `bootstrap-siblings.mts` child without `CI`, `GITHUB_ACTIONS`, `TF_BUILD`, `HOBO_PINS_ALLOW_OVERRIDE` or any override variable the script reads (`overrideEnv` of every asset name); a test sets only what it means.
 - **`scripts/relevant-check-policy.ts`** selects `test:scripts` for the same paths in a base-ref `pnpm agent:check`, and leaves it to the job when the caller runs workspace tests externally (CI) or checks a staged commit.
 
 ## Measure
