@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 import {
-	assertPinnedMiseToolchain,
 	evaluateCiRunnerContract,
 	formatContractFailure,
 	syncMissingMiseTools,
 } from "./lib/ci-runner-contract.mts";
 
-const verifyOnly = process.env.HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL === "1";
-const sync = verifyOnly
-	? assertPinnedMiseToolchain(process.cwd())
-	: syncMissingMiseTools(process.cwd());
+// Always installs only tools `mise ls --current --missing` reports (including a
+// pin bumped in mise.lock before the runner image is rebuilt), so skipping the
+// blanket `mise install --locked` step never fails closed on toolchain drift.
+const sync = syncMissingMiseTools(process.cwd());
 console.log(
 	`${sync.ok ? "ok  " : "ERR "} mise-tool-sync: ${sync.detail} (${sync.elapsedMs} ms)`,
 );

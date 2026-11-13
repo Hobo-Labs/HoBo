@@ -16,7 +16,6 @@ import { describe, it } from "node:test";
 import { expect } from "vitest";
 import {
 	assertBaseDockerfileDigestPinned,
-	assertPinnedMiseToolchain,
 	assertTurboLockSidecarsPresent,
 	CI_RUNNER_BASE_DOCKERFILE,
 	CI_RUNNER_BUILD_SCRIPT,
@@ -31,7 +30,6 @@ import {
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
-	parseMiseLockPinnedVersions,
 	parseMiseToolNames,
 	playwrightHeadlessShellExecutables,
 	probeMiseTool,
@@ -184,107 +182,52 @@ describe("ci-runner mise tool sync", () => {
 		expect(env.PATH).toContain(binDir);
 	});
 
-	it("verify-only preflight fails closed when locked install would be needed", () => {
-		const result = assertPinnedMiseToolchain(root, {
+	it("installs only the tool whose mise.lock pin is ahead of the runner image (no fail-closed drift)", () => {
+		// A PR bumped cue in mise.lock and merged before the fleet image was
+		// rebuilt: mise reports the new pin missing; preflight must install just
+		// that tool with --locked instead of failing Main workspace plan.
+		const calls: { cmd: string; args: string[] }[] = [];
+		const result = syncMissingMiseTools(root, {
 			run: (cmd, args) => {
-				if (cmd === "mise" && args.includes("--dry-run-code")) {
+				calls.push({ cmd, args });
+				if (cmd === "mise" && args.includes("ls")) {
 					return {
-						ok: false,
-						out: "",
-						command: "mise install --locked --dry-run-code",
-						failure: "would install node 24.0.0",
+						ok: true,
+						out: "cue 0.15.0 (missing) /checkout/mise.toml 0.15.0\n",
 					};
 				}
+				if (cmd === "sh") return { ok: true, out: "/usr/bin/fake" };
 				return { ok: true, out: "" };
 			},
+			env: { PATH: "/usr/bin" },
+			appendFile: () => {},
 		});
-		expect(result.ok).toBe(false);
-		expect(result.detail).toContain("dry-run-code");
-		expect(result.detail).toContain("mise.lock");
-	});
-
-	it("verify-only preflight does not duplicate command text from spawnCommand failures", () => {
-		const dryRunCommand =
-			"mise --cd /agent/repos/HoBo install --locked --dry-run-code";
-		const dryRunLine = `${dryRunCommand}: exited 1; stderr tail: would install`;
-		const result = assertPinnedMiseToolchain(root, {
-			run: (cmd, args) => {
-				if (cmd === "mise" && args.includes("--dry-run-code")) {
-					return {
-						ok: false,
-						out: "",
-						command: dryRunCommand,
-						failure: dryRunLine,
-					};
-				}
-				return { ok: true, out: "" };
-			},
-		});
-		expect(result.ok).toBe(false);
-		expect(result.detail).toContain(dryRunLine);
-		expect(result.detail).toContain("mise.lock");
-		expect(result.detail.split("install --locked --dry-run-code").length).toBe(
-			2,
-		);
-	});
-
-	it("parseMiseLockPinnedVersions reads [[tools.*]] version pins", () => {
-		const lock = `[[tools.cue]]\nversion = "0.14.0"\n[[tools.node]]\nversion = "24.0.0"\n`;
-		const versions = parseMiseLockPinnedVersions(lock);
-		expect([...versions.entries()]).toEqual([
-			["cue", "0.14.0"],
-			["node", "24.0.0"],
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual(["cue"]);
+		expect(calls.filter((call) => call.args.includes("install"))).toEqual([
+			{ cmd: "mise", args: ["--cd", root, "install", "--locked", "cue"] },
 		]);
 	});
 
-	it("verify-only preflight fails when active version differs from mise.lock", () => {
-		const result = assertPinnedMiseToolchain(root, {
+	it("install failures do not duplicate command text from spawnCommand failures", () => {
+		const installCommand = `mise --cd ${root} install --locked cue`;
+		const failure = `${installCommand}: exited 1; stderr tail: checksum mismatch`;
+		const result = syncMissingMiseTools(root, {
 			run: (cmd, args) => {
-				if (
-					cmd === "mise" &&
-					args.includes("current") &&
-					args.at(-1) === "cue"
-				) {
-					return { ok: true, out: "0.13.0\n" };
+				if (cmd === "mise" && args.includes("ls")) {
+					return { ok: true, out: "cue 0.15.0 (missing)\n" };
 				}
-				if (cmd === "mise" && args.includes("which")) {
-					const tool = args.at(-1)!;
-					return { ok: true, out: miseWhichExecutable(tool) };
-				}
-				if (cmd === "sh" && args.join(" ").includes("command -v")) {
-					return { ok: true, out: "/usr/bin/fake" };
+				if (cmd === "mise" && args.includes("install")) {
+					return { ok: false, out: "", command: installCommand, failure };
 				}
 				return { ok: true, out: "" };
 			},
+			env: { PATH: "/usr/bin" },
+			appendFile: () => {},
 		});
 		expect(result.ok).toBe(false);
-		expect(result.detail).toMatch(/active 0\.13\.0 != .*0\.14\.0/u);
-	});
-
-	it("verify-only preflight passes when dry-run-code is clean", () => {
-		const result = assertPinnedMiseToolchain(root, {
-			run: (cmd, args) => {
-				if (cmd === "mise" && args.includes("current")) {
-					const tool = args.at(-1)!;
-					const lock = parseMiseLockPinnedVersions(
-						readFileSync(join(root, MISE_LOCK), "utf8"),
-					);
-					const pinned = lock.get(tool) ?? "";
-					return { ok: true, out: `${pinned}\n` };
-				}
-				if (cmd === "mise" && args.includes("which")) {
-					const tool = args.at(-1)!;
-					return { ok: true, out: miseWhichExecutable(tool) };
-				}
-				if (cmd === "sh" && args.join(" ").includes("command -v")) {
-					return { ok: true, out: "/usr/bin/fake" };
-				}
-				return { ok: true, out: "" };
-			},
-		});
-		expect(result.ok).toBe(true);
-		expect(result.detail).toContain("verify-only");
-		expect(result.installed).toEqual([]);
+		expect(result.detail).toContain(failure);
+		expect(result.detail.split(installCommand).length).toBe(2);
 	});
 
 	it("exports PATH-invisible configured tools when already installed (syft preflight)", () => {
@@ -777,7 +720,7 @@ describe("ci-runner image contract (host smoke)", () => {
 		);
 		expect(action).toContain("install-toolchain:");
 		expect(action).toMatch(/if: inputs\.install-toolchain == 'true'/);
-		expect(action).toContain("HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL");
+		expect(action).not.toContain("HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL");
 		expect(action).toContain(
 			"node --no-warnings scripts/ci-runner-preflight.mts",
 		);

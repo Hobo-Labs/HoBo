@@ -9,8 +9,10 @@ inputs:
     default: "false"
   install-toolchain:
     description: >-
-      When `false`, skip `mise install --locked` on runners that already carry
-      the pinned toolchain (for example the fleet image on Main workspace plan).
+      When `false`, skip the blanket `mise install --locked` on runners that
+      already carry the pinned toolchain (for example the fleet image on Main
+      workspace plan). The preflight script still installs, with --locked, only
+      tools mise reports missing, so a pin bumped before an image rebuild self-heals.
     required: false
     default: "true"
 runs:
@@ -50,8 +52,6 @@ runs:
           mise install --locked
         fi
     - shell: bash
-      env:
-        HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL: ${{ inputs.install-toolchain == 'false' && '1' || '' }}
       run: |
         set -euo pipefail
         export MISE_EXPERIMENTAL=1

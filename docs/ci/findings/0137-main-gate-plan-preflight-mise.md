@@ -17,11 +17,13 @@ Main Fabric run [43183884926](https://github.com/Hobo-Labs/HoBo/actions/runs/431
 
 ## Fix
 
-Add composite input **`install-toolchain`** (default **true**). **`main-gate-plan`** passes **`install-toolchain: false`** so the fleet image's baked toolchain is used. Preflight then runs **verify-only** mise (`MISE_EXPERIMENTAL=1` on the verify step): `mise install --locked --dry-run-code`, **`mise current <tool>` vs each `[[tools.*]]` version in `mise.lock`**, missing-tool check, plus `evaluateCiRunnerContract` — no install, fail closed on drift from **`mise.lock`**; verify failures cite the failing mise command (including **`--dry-run-code`**) without duplicating **`spawnCommand`** diagnostics.
+Add composite input **`install-toolchain`** (default **true**). **`main-gate-plan`** passes **`install-toolchain: false`**, which skips only the blanket **`mise install --locked`** step so the fleet image's baked toolchain is used. **`scripts/ci-runner-preflight.mts`** still runs **`syncMissingMiseTools`**: it lists tools with **`mise ls --current --missing`** (tools requested but not installed) and installs only those with **`mise install --locked <tool>...`**, then runs `evaluateCiRunnerContract`.
+
+**Fallback on drift:** a PR that bumps a pin in **`mise.lock`** and merges before the runner image is rebuilt does not fail Main workspace plan; mise reports the new version as missing and preflight installs just that tool (no fail-closed verify-only path, no dependency on `mise install --dry-run-code`). A healthy image performs no install.
 
 ## Verified
 
-- **TypeScript (Vitest):** `pnpm run test:smoke scripts/test/ci-runner-image-contract.test.ts` (`assertPinnedMiseToolchain`, verify-only drift)
+- **TypeScript (Vitest):** `pnpm run test:smoke scripts/test/ci-runner-image-contract.test.ts` (`syncMissingMiseTools` installs only the tool whose lock pin is ahead of the image)
 - **Protobuf / CUE:** not applicable (shell/mise boundary only)
 - **PACT:** not applicable (composite preflight, no HTTP integration)
 
