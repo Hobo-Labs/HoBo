@@ -1,19 +1,19 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
  * The recorder and the registry projection (L31): bus envelopes into
- * `fleet-work-*` events, work status and logs, reliability, and the signed
- * registry and views. Re-exported by `@hobo/fleet/membership`.
- *
- * Contract commit: every body throws `FleetNotImplemented`; L31 replaces them.
+ * `fleet-work-*` and `fleet-session-*` events, work status and logs,
+ * reliability, and the signed registry and views. Re-exported by
+ * `@hobo/fleet/membership`. These two are the only emitters of the four
+ * fleet usage types (D40).
  */
 import type {
 	ReliabilitySamples,
 	WorkLogs,
 	WorkStatus,
 } from "../_generated/fleet_pb.js";
-import { FleetNotImplemented } from "../errors.js";
 import type { MemberId } from "../ids.js";
 import type { AuthorityDeps, Outcome } from "../ports.js";
+import { projection } from "./projection.js";
+import { recorder } from "./recorder.js";
 
 export function createRecorder(
 	deps: Pick<
@@ -27,7 +27,7 @@ export function createRecorder(
 	workLogs(submissionId: string): Promise<Outcome<WorkLogs>>;
 	reliability(): ReadonlyMap<MemberId, ReliabilitySamples>;
 }> {
-	throw new FleetNotImplemented("createRecorder");
+	return recorder(deps);
 }
 
 export function createRegistryProjection(
@@ -44,5 +44,5 @@ export function createRegistryProjection(
 	> &
 		Readonly<{ reliability(): ReadonlyMap<MemberId, ReliabilitySamples> }>,
 ): Readonly<{ tick(): Promise<void>; caughtUp(): Promise<void> }> {
-	throw new FleetNotImplemented("createRegistryProjection");
+	return projection(deps);
 }
