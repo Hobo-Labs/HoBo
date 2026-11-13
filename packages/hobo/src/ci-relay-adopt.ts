@@ -30,6 +30,17 @@
 // store refused it, or it is not ready. Nothing is rolled back on Vercel,
 // because this verb has no write to roll back with.
 //
+// Every wait is bounded by one total deadline (`--deadline <ISO time>`,
+// `--budget <minutes>`, else RELAY_ADOPT_BUDGET.defaultMs), split across the
+// three stages so the whole command fits the deploy job's timeout: the lookup
+// ends early enough to leave preview and production their reserves, preview
+// (which waits for Vercel's build to be READY) ends early enough to leave
+// production its reserve, and production ends at the deadline. A deployment
+// still not READY when preview's share runs out ends the command as
+// HOBO_CI_ADOPT_NOT_READY_IN_BUDGET; any other stage that runs out ends it as
+// HOBO_CI_ADOPT_BUDGET_EXHAUSTED. Neither changes anything on Vercel, and the
+// next push or a re-run of the same commit adopts the deployment.
+//
 // HONEST SCOPE: exercised against recorded-shape GitHub answers, fake probes
 // and a temporary journal; no live Vercel or GitHub lane runs here.
 
@@ -77,7 +88,14 @@ import { isJsonObject, isJsonString, parseJsonValue } from "./json.js";
 
 // The options `hobo ci deploy --adopt` takes; every other deploy option
 // configures a deployment this mode never makes.
-export const CI_DEPLOY_ADOPT_OPTIONS = ["adopt", "sha", "repo", "ref"] as const;
+export const CI_DEPLOY_ADOPT_OPTIONS = [
+	"adopt",
+	"sha",
+	"repo",
+	"ref",
+	"deadline",
+	"budget",
+] as const;
 
 // public-contract: where the GitHub token the lookup reads comes from.
 export const RELAY_ADOPT_CREDENTIAL_REF = "env://GITHUB_TOKEN";
@@ -90,17 +108,118 @@ export const RELAY_ADOPT_REFUSAL = Object.freeze({
 	notAdopted: "HOBO_CI_ADOPT_NOT_ADOPTED",
 	/** No production origin to verify at (HOBO_CI_RELAY_URL or the Yard's). */
 	originUnset: "HOBO_CI_ADOPT_ORIGIN_UNSET",
+	/**
+	 * The time budget left too little for a stage: refused before anything is
+	 * read when it cannot hold every stage's reserve, else the stage that ran
+	 * out (the deployment was READY, verification had not finished).
+	 */
+	budgetExhausted: "HOBO_CI_ADOPT_BUDGET_EXHAUSTED",
+	/** Vercel's deployment was still not READY when preview's share ran out. */
+	notReadyInBudget: "HOBO_CI_ADOPT_NOT_READY_IN_BUDGET",
 	/** Production verification failed for a named reason (ci-relay-verify.ts). */
 	...RELAY_VERIFY_REFUSAL,
 } as const);
 
 const GITHUB_API = "https://api.github.com";
 const COMMIT = /^[0-9a-f]{40}$/u;
-// How long to wait for Vercel to report the deployment, then how long each
-// promotion may take (READY, then verification).
-const FIND_LIMIT_MS = 15 * 60_000;
-const WAIT_LIMIT_MS = 20 * 60_000;
 const INTERVAL_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 20_000;
+
+// public-contract: how `hobo ci deploy --adopt` spends its time. The relay
+// deploy workflow's job timeout (20 minutes) holds the whole command; the
+// reserves fit the adopted verification windows (ci-relay-verify.ts,
+// RELAY_ADOPT_VERIFICATION: 30 s windows that give up after 90 s), and the
+// ceiling stays inside preview's convergence deadline there, so a build that
+// outlasts its share ends as the budget's refusal, not as a failed rollout.
+export const RELAY_ADOPT_BUDGET = Object.freeze({
+	/** The total when neither --deadline nor --budget is given. */
+	defaultMs: 12 * 60_000,
+	/** The ceiling of any deadline, and the largest --budget, in minutes. */
+	maxBudgetMinutes: 20,
+	/** The least the lookup is given; a smaller budget is refused up front. */
+	lookupMinMs: 60_000,
+	/** Held back from the lookup for preview's verification. */
+	previewReserveMs: 2 * 60_000,
+	/** Held back from preview for production's promotion and verification. */
+	productionReserveMs: 3 * 60_000,
+});
+
+/** When each stage of an adoption must end (epoch milliseconds). */
+export type RelayAdoptStages = Readonly<{
+	lookupUntil: number;
+	previewUntil: number;
+	productionUntil: number;
+}>;
+
+/**
+ * The total deadline split across lookup, preview and production, or
+ * undefined when it leaves the lookup less than its minimum after both
+ * reserves (the command then refuses before reading anything).
+ */
+export function relayAdoptStages(
+	now: number,
+	deadline: number,
+): RelayAdoptStages | undefined {
+	const previewUntil = deadline - RELAY_ADOPT_BUDGET.productionReserveMs;
+	const lookupUntil = previewUntil - RELAY_ADOPT_BUDGET.previewReserveMs;
+	if (lookupUntil - now < RELAY_ADOPT_BUDGET.lookupMinMs) return undefined;
+	return { lookupUntil, previewUntil, productionUntil: deadline };
+}
+
+const ISO_TIME =
+	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+/**
+ * The command's total deadline from `--deadline` (an ISO-8601 time with a
+ * zone) and `--budget` (whole minutes from now): the earlier of the two
+ * given, else now plus the default, and never later than the ceiling.
+ */
+export function relayAdoptDeadline(
+	now: number,
+	options: Readonly<{
+		deadline: string | undefined;
+		budget: string | undefined;
+	}>,
+):
+	| Readonly<{ ok: true; at: number }>
+	| Readonly<{ ok: false; message: string }> {
+	const candidates: number[] = [];
+	if (options.deadline !== undefined) {
+		const at = ISO_TIME.test(options.deadline)
+			? Date.parse(options.deadline)
+			: Number.NaN;
+		if (!Number.isFinite(at))
+			return {
+				ok: false,
+				message: `--deadline takes an ISO-8601 time with a zone (e.g. 2026-11-13T12:17:00Z), not ${JSON.stringify(options.deadline)}.`,
+			};
+		candidates.push(at);
+	}
+	if (options.budget !== undefined) {
+		const minutes = /^\d{1,3}$/u.test(options.budget)
+			? Number(options.budget)
+			: Number.NaN;
+		if (
+			!Number.isInteger(minutes) ||
+			minutes < 1 ||
+			minutes > RELAY_ADOPT_BUDGET.maxBudgetMinutes
+		)
+			return {
+				ok: false,
+				message: `--budget takes whole minutes from 1 to ${RELAY_ADOPT_BUDGET.maxBudgetMinutes}, not ${JSON.stringify(options.budget)}.`,
+			};
+		candidates.push(now + minutes * 60_000);
+	}
+	if (candidates.length === 0)
+		candidates.push(now + RELAY_ADOPT_BUDGET.defaultMs);
+	return {
+		ok: true,
+		at: Math.min(
+			...candidates,
+			now + RELAY_ADOPT_BUDGET.maxBudgetMinutes * 60_000,
+		),
+	};
+}
 
 export interface CiRelayAdoptInput {
 	/** The relay's project directory (holds `deploy/yard.ts`). */
@@ -141,15 +260,21 @@ function githubReader(
 	transport: HttpTransport,
 	repository: string,
 	token: () => Promise<string>,
+	remainingMs: () => number,
 ) {
 	const prefix = `/repos/${repository}/deployments`;
 	const guarded = guardTransport(transport, {
 		allowedHosts: ["api.github.com"],
 		allowedPathPrefixes: [prefix],
-		maxTimeoutMs: 20_000,
+		maxTimeoutMs: REQUEST_TIMEOUT_MS,
 		maxResponseBytes: 1024 * 1024,
 	});
 	return async (path: string): Promise<GitHubRead> => {
+		// No request outlives the command's deadline by more than a second.
+		const timeoutMs = Math.max(
+			1_000,
+			Math.min(REQUEST_TIMEOUT_MS, remainingMs()),
+		);
 		const response = await guarded({
 			method: "GET",
 			url: `${GITHUB_API}${prefix}${path}`,
@@ -159,7 +284,7 @@ function githubReader(
 				"X-GitHub-Api-Version": "2022-11-28",
 				"User-Agent": "hobo-ci-relay-adopt",
 			},
-			timeoutMs: 20_000,
+			timeoutMs,
 			maxResponseBytes: 1024 * 1024,
 		});
 		if (response.status !== 200) return { ok: false, status: response.status };
@@ -171,6 +296,7 @@ export async function runCiRelayAdopt(
 	input: CiRelayAdoptInput,
 ): Promise<CommandResult> {
 	const { values, env } = input;
+	const now = input.now ?? Date.now;
 	const text = (key: string) => {
 		const value = values[key];
 		return isJsonString(value) && value !== "" ? value : undefined;
@@ -180,6 +306,21 @@ export async function runCiRelayAdopt(
 		return usage(
 			"hobo ci deploy --adopt needs --sha <commit>: the full 40-character commit Vercel's Git integration deployed.",
 		);
+	const startedAt = now();
+	const parsedDeadline = relayAdoptDeadline(startedAt, {
+		deadline: text("deadline"),
+		budget: text("budget"),
+	});
+	if (!parsedDeadline.ok) return usage(parsedDeadline.message);
+	const deadline = parsedDeadline.at;
+	const stages = relayAdoptStages(startedAt, deadline);
+	if (stages === undefined)
+		return {
+			ok: false,
+			status: "rejected",
+			code: RELAY_ADOPT_REFUSAL.budgetExhausted,
+			message: `The adopt deadline ${new Date(deadline).toISOString()} leaves less than ${minutes(RELAY_ADOPT_BUDGET.lookupMinMs + RELAY_ADOPT_BUDGET.previewReserveMs + RELAY_ADOPT_BUDGET.productionReserveMs)} for the lookup, preview and production, so nothing was read or recorded. Re-run the workflow, or give a later --deadline or a larger --budget.`,
+		};
 	let yard: Awaited<ReturnType<typeof loadRelayYard>>;
 	let placement: ReturnType<typeof resolveRelayPlacement>;
 	try {
@@ -256,8 +397,8 @@ export async function runCiRelayAdopt(
 			createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
 		repository,
 		token,
+		() => deadline - now(),
 	);
-	const now = input.now ?? Date.now;
 	const sleep =
 		input.sleep ??
 		((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
@@ -268,8 +409,9 @@ export async function runCiRelayAdopt(
 		`looking for Vercel's production deployment of ${project} at ${repository}@${sha}`,
 	);
 	let adopted: VercelAdoptedDeployment | undefined;
-	const findUntil = now() + FIND_LIMIT_MS;
-	let passes = Math.ceil(FIND_LIMIT_MS / INTERVAL_MS) + 1;
+	const findUntil = stages.lookupUntil;
+	// A clock that does not move still ends: at most one pass per interval.
+	let passes = Math.ceil(Math.max(0, findUntil - now()) / INTERVAL_MS) + 1;
 	try {
 		for (;;) {
 			const listing = await read(`?sha=${sha}&per_page=50`);
@@ -309,7 +451,7 @@ export async function runCiRelayAdopt(
 		return {
 			ok: false,
 			code: RELAY_ADOPT_REFUSAL.notFound,
-			message: `Vercel reported no production deployment of ${project} for ${repository}@${sha} within ${FIND_LIMIT_MS / 60_000} minutes. Nothing was recorded.`,
+			message: `Vercel reported no production deployment of ${project} for ${repository}@${sha} within the lookup's share of the adopt budget (until ${new Date(findUntil).toISOString()}). Nothing was recorded; the next push or a re-run of this commit looks again.`,
 		};
 	const found = adopted;
 	input.emitProgress(
@@ -317,6 +459,8 @@ export async function runCiRelayAdopt(
 	);
 
 	// The conductor's realization: observe the adopted deployment, never make one.
+	// The last state observed names why preview ran out, if it does.
+	let lastReadyState = found.readyState;
 	const realization: RelayRealization = {
 		async deploy(pin) {
 			if (pin.adopted === undefined || pin.sha !== found.commit)
@@ -348,13 +492,14 @@ export async function runCiRelayAdopt(
 					isJsonObject(record.body) && isJsonString(record.body.sha)
 						? record.body.sha
 						: "";
-				return vercelAdoptionVerdict(
+				lastReadyState = vercelAdoptionVerdict(
 					{
 						commit,
 						readyState: vercelGitDeploymentStatus(statuses.body).readyState,
 					},
 					{ commit: found.commit },
 				).readyState;
+				return lastReadyState;
 			} catch {
 				// No answer is not a state: keep observing until the wait ends.
 				return "UNKNOWN";
@@ -401,7 +546,7 @@ export async function runCiRelayAdopt(
 				: undefined),
 		},
 	};
-	const deliver = (target: RelayTargetName) =>
+	const deliver = (target: RelayTargetName, until: number) =>
 		deliverRelay({
 			cwd: input.cwd,
 			env,
@@ -415,7 +560,7 @@ export async function runCiRelayAdopt(
 			http: probe.transport,
 			suites,
 			wait: true,
-			limitMs: WAIT_LIMIT_MS,
+			limitMs: Math.max(0, until - now()),
 			intervalMs: INTERVAL_MS,
 			...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 			...(input.now !== undefined ? { now: input.now } : undefined),
@@ -428,6 +573,7 @@ export async function runCiRelayAdopt(
 		mode: "adopt",
 		adopted: { ...found },
 		verifiedAt: production.origin,
+		deadline: new Date(deadline).toISOString(),
 		delivery: Object.fromEntries(
 			Object.entries(outcomes).map(([node, outcome]) => [
 				node,
@@ -435,9 +581,36 @@ export async function runCiRelayAdopt(
 			]),
 		),
 	});
-	const preview = await deliver("preview");
+	// A stage that ends incomplete at its share's end ran out of budget; one
+	// that ends incomplete earlier (held for approval) keeps its own reason.
+	const ranOut = (
+		outcome: RelayDeliveryOutcome,
+		until: number,
+	): outcome is Extract<RelayDeliveryOutcome, { ok: false }> =>
+		!outcome.ok &&
+		outcome.code === RELAY_DELIVERY_REFUSAL.incomplete &&
+		now() >= until;
+	const preview = await deliver("preview", stages.previewUntil);
+	if (ranOut(preview, stages.previewUntil))
+		return outOfBudget({
+			node: "preview",
+			outcome: preview,
+			found,
+			readyState: lastReadyState,
+			until: stages.previewUntil,
+			data: data({ preview }),
+		});
 	if (!preview.ok) return failed("preview", preview, found, data({ preview }));
-	const promoted = await deliver("production");
+	const promoted = await deliver("production", stages.productionUntil);
+	if (ranOut(promoted, stages.productionUntil))
+		return outOfBudget({
+			node: "production",
+			outcome: promoted,
+			found,
+			readyState: lastReadyState,
+			until: stages.productionUntil,
+			data: data({ preview, production: promoted }),
+		});
 	if (!promoted.ok)
 		return failed(
 			"production",
@@ -454,6 +627,43 @@ export async function runCiRelayAdopt(
 			`  deployment ${found.deploymentId}${found.inspectorUrl ? ` (${found.inspectorUrl})` : ""}; nothing was deployed or changed on Vercel`,
 		].join("\n"),
 		data: data({ preview, production: promoted }),
+	};
+}
+
+function minutes(ms: number): string {
+	return `${ms / 60_000} minutes`;
+}
+
+/**
+ * A stage that ran out of its share of the budget: not READY in time (the
+ * build outlasted preview's share), or READY but not verified in time.
+ */
+function outOfBudget(
+	input: Readonly<{
+		node: RelayTargetName;
+		outcome: Extract<RelayDeliveryOutcome, { ok: false }>;
+		found: VercelAdoptedDeployment;
+		readyState: string;
+		until: number;
+		data: CommandData;
+	}>,
+): CommandResult {
+	const { node, found } = input;
+	const notReady = input.readyState !== "READY";
+	const state = input.outcome.report?.state;
+	const until = new Date(input.until).toISOString();
+	return {
+		ok: false,
+		code: notReady
+			? RELAY_ADOPT_REFUSAL.notReadyInBudget
+			: RELAY_ADOPT_REFUSAL.budgetExhausted,
+		message: [
+			notReady
+				? `Vercel's deployment ${found.deploymentId} of ${found.commit} (${found.url}) was ${input.readyState}, not READY, when ${node}'s share of the adopt budget ran out (${until}).`
+				: `The ${node} promotion of deployment ${found.deploymentId} (${found.url}) had not finished verification when its share of the adopt budget ran out (${until}).`,
+			`  Nothing was changed on Vercel${state !== undefined ? `; CD holds the ${node} promotion as ${state}` : ""}. The next push to main, or a re-run of this commit (hobo ci deploy --adopt --sha ${found.commit}), adopts it.`,
+		].join("\n"),
+		data: { ...input.data, budget: { node, until } },
 	};
 }
 

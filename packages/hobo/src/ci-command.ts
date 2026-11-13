@@ -285,6 +285,8 @@ function parseCiArgs(args: readonly string[]) {
 			"create-project": { type: "boolean" },
 			provision: { type: "boolean" },
 			adopt: { type: "boolean" },
+			deadline: { type: "string" },
+			budget: { type: "string" },
 			"owner-id": { type: "string" },
 			name: { type: "string" },
 			"auth-md": { type: "string", multiple: true },

@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	adoptDeadline,
 	decide,
+	RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+	RELAY_DEPLOY_JOB_TIMEOUT_MINUTES,
 	RELAY_EXTRA_INPUTS,
 	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
@@ -220,6 +223,48 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(adopt, /--adopt[^\n]*\|\| true/u);
 		// The ad-hoc lookup and smoke check are gone: hobo does both, fail closed.
 		assert.doesNotMatch(workflow, /gh api|curl /u);
+	});
+
+	it("fits the deploy job in 20 minutes: the gate's deadline bounds the adoption, the step timeout only backs it up", () => {
+		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
+		assert.ok(deploy, "no deploy job");
+		const jobTimeout = Number(
+			/^ {4}timeout-minutes: (\d+)$/mu.exec(deploy)?.[1],
+		);
+		assert.equal(jobTimeout, RELAY_DEPLOY_JOB_TIMEOUT_MINUTES);
+		assert.ok(jobTimeout <= 20, "every job is capped at 20 minutes");
+		assert.ok(RELAY_DEPLOY_JOB_MARGIN_MINUTES >= 2);
+		// The deadline is counted from the gate's own run, the job's timeout
+		// less the margin.
+		assert.equal(
+			adoptDeadline(Date.UTC(2026, 10, 13, 12)),
+			"2026-11-13T12:17:00.000Z",
+		);
+		const gate = step("Decide whether to deploy");
+		assert.match(gate, /id: gate/u);
+		assert.match(gate, /relay-deploy-gate\.mts/u);
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.match(
+			adopt,
+			/ADOPT_DEADLINE: \$\{\{ steps\.gate\.outputs\.deadline \}\}/u,
+		);
+		assert.match(adopt, /--deadline "\$ADOPT_DEADLINE"/u);
+		// The step timeout cannot end the command before its deadline, and no
+		// step may outlast the job.
+		const stepTimeout = Number(/timeout-minutes: (\d+)/u.exec(adopt)?.[1]);
+		assert.ok(
+			stepTimeout >= jobTimeout - RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+			`adopt step timeout ${stepTimeout} would cut the command short of its deadline`,
+		);
+		const steps = workflow.slice(
+			workflow.indexOf("    steps:", workflow.indexOf("\n  deploy:")),
+			workflow.indexOf("\n  app-credentials:"),
+		);
+		for (const match of steps.matchAll(/timeout-minutes: (\d+)/gu))
+			assert.ok(Number(match[1]) <= jobTimeout, match[0]);
+		// The typed reasons a late build or a spent budget end with are named.
+		assert.match(workflow, /HOBO_CI_ADOPT_NOT_READY_IN_BUDGET/u);
+		assert.match(workflow, /HOBO_CI_ADOPT_BUDGET_EXHAUSTED/u);
 	});
 
 	it("verifies at the Yard's production domain, needing no Deployment Protection bypass", () => {

@@ -327,8 +327,8 @@ realization:
 
 1. **Find.** It reads `GET /repos/{owner}/{repo}/deployments?sha=<commit>` and
    each record's statuses from GitHub's API, through a transport guarded to
-   `api.github.com` and that repository's deployments, GET only, for up to 15
-   minutes. The token is the credentialRef `env://GITHUB_TOKEN`, resolved by
+   `api.github.com` and that repository's deployments, GET only, for the
+   lookup's share of the [time budget](#the-adopt-time-budget). The token is the credentialRef `env://GITHUB_TOKEN`, resolved by
    the CD `CredentialResolver` for each request; it is never recorded, logged
    or returned. The deployment adopted is the Yard project's (`hobo-ci`)
    `Production – hobo-ci` record of that exact commit, once a status names its
@@ -376,8 +376,45 @@ With neither `$HOBO_CI_RELAY_URL` nor a `productionOrigin`, the command is
 refused before it reads anything (`HOBO_CI_ADOPT_ORIGIN_UNSET`). Nothing is
 rolled back or changed on Vercel: the realization has no write to do it with.
 Other deploy options (`--set`, `--provision`, `--target`, ...) are refused with
-`--adopt`; it takes `--sha`, `--repo` and `--ref` only. No `GITHUB_TOKEN`:
-`HOBO_CI_ADOPT_AUTH_REQUIRED` (it never reads `VERCEL_TOKEN`).
+`--adopt`; it takes `--sha`, `--repo`, `--ref`, `--deadline` and `--budget`
+only. No `GITHUB_TOKEN`: `HOBO_CI_ADOPT_AUTH_REQUIRED` (it never reads
+`VERCEL_TOKEN`).
+
+##### The adopt time budget
+
+The whole command runs against one deadline, so the deploy job fits the
+20-minute cap every workflow job has (`scripts/test/workflow-job-timeouts.test.ts`).
+`--deadline <ISO-8601 time with a zone>` names it, `--budget <minutes>` (1 to
+20) counts it from now, the earlier wins, the default is 12 minutes and no
+deadline lies more than 20 minutes away (`RELAY_ADOPT_BUDGET` in
+`packages/hobo/src/ci-relay-adopt.ts`). It is split across the three stages:
+
+| Stage | Ends | Covers |
+|---|---|---|
+| lookup | 5 minutes before the deadline | Vercel reporting the deployment to GitHub |
+| preview | 3 minutes before the deadline | Vercel's build turning READY, then a 30 s record check |
+| production | at the deadline | a 30 s window of `/healthz` + `/readyz` probes, which fails after 90 s |
+
+A deadline that leaves the lookup less than a minute is refused before
+anything is read. The adopted verification windows are short (three
+observations 10 s apart, every one must pass) because the checks are
+deterministic: a commit match, a 200, a deployment record; a longer window
+adds wait, not evidence. When a stage runs out:
+
+| Code | Meaning |
+|---|---|
+| `HOBO_CI_ADOPT_NOT_FOUND` | Vercel reported no deployment of the commit within the lookup's share |
+| `HOBO_CI_ADOPT_NOT_READY_IN_BUDGET` | the deployment was still not READY (BUILDING, QUEUED) when preview's share ended |
+| `HOBO_CI_ADOPT_BUDGET_EXHAUSTED` | the deadline could not hold every stage, or a READY deployment had not finished verifying when its stage's share ended |
+
+None of them changes anything on Vercel, and the deployment is not lost: the
+next push to `main`, or a re-run of the workflow for the same commit, adopts
+it (the CD journal keeps the in-flight promotion). In the relay deploy
+workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
+checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
+so the install and build come out of the adopt budget and the command ends
+with its typed reason before GitHub would kill the job; the adopt step's own
+timeout is only a backstop that cannot fire first.
 
 Stated, not hidden: `/readyz` answers 503 until the relay can read its store,
 so production does not qualify until the store's folder is filled (the old
