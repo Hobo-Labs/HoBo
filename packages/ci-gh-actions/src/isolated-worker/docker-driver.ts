@@ -49,6 +49,11 @@ export type DockerContainer = Readonly<{
 	name: string;
 	containerId: string;
 	state: DockerContainerState;
+	/** When the container record was created on the host (best-effort). */
+	createdAtMs?: number;
+	/** From `hobo.ci/timeout-ms` when present. */
+	timeoutMs?: number;
+	labels?: Readonly<Record<string, string>>;
 }>;
 
 export type DockerImageInspection = Readonly<{
@@ -66,6 +71,9 @@ export interface DockerDriver {
 		runAsUser: string,
 	): Promise<{ exitCode: number }>;
 	list?(label: string): Promise<readonly DockerContainer[]>;
+	/** Labeled worker containers plus legacy `hobo-*` names missing the label. */
+	listWorkerContainers?(): Promise<readonly DockerContainer[]>;
+	containerExists?(name: string): Promise<boolean>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
 	start(name: string, containerId: string): Promise<void>;
 	exec(
@@ -103,4 +111,11 @@ export interface DockerDriver {
 	): Promise<Readonly<{ exitCode: number; oomKilled: boolean }>>;
 	/** Whether `path` exists inside the running container; rejects when docker cannot say. */
 	exists?(name: string, containerId: string, path: string): Promise<boolean>;
+	/** Read a small UTF-8 text file from a running container (diagnostics). */
+	readContainerFile?(
+		name: string,
+		containerId: string,
+		path: string,
+		maxBytes?: number,
+	): Promise<string | undefined>;
 }

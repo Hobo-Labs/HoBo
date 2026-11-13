@@ -9,7 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	boxGitMirrorInsteadOfConfig,
@@ -68,6 +68,45 @@ afterAll(() => {
 });
 
 describe("resolveBoxGitMirror", () => {
+	it("misses a promisor blob:none bare mirror", () => {
+		const partial = join(temp, "partial.git");
+		execFileSync("git", ["clone", "--bare", source, partial]);
+		execFileSync("git", [
+			"--git-dir",
+			partial,
+			"config",
+			"remote.origin.promisor",
+			"true",
+		]);
+		execFileSync("git", [
+			"--git-dir",
+			partial,
+			"config",
+			"extensions.partialclonefilter",
+			"blob:none",
+		]);
+		const result = resolveBoxGitMirror(env(sha, partial));
+		expect(result.status).toBe("miss");
+		if (result.status === "miss") {
+			expect(result.reason).toContain("partial or promisor");
+		}
+	});
+
+	it("uses HOBO_CI_GIT_MIRROR_ROOT before legacy /var/lib paths", () => {
+		const root = join(temp, "mirror-root");
+		mkdirSync(root, { recursive: true });
+		const rooted = join(root, `${repository}.git`);
+		execFileSync("git", ["clone", "--bare", source, rooted]);
+		const result = resolveBoxGitMirror({
+			GITHUB_REPOSITORY: repository,
+			GITHUB_SHA: sha,
+			HOBO_CI_GIT_MIRROR_ROOT: root,
+		});
+		expect(result.status).toBe("hit");
+		if (result.status === "hit") {
+			expect(result.mirror).toBe(realpathSync(rooted));
+		}
+	});
 	it("misses without throwing when the path does not exist", () => {
 		const result = resolveBoxGitMirror(env(sha, join(temp, "missing.git")));
 		expect(result.status).toBe("miss");
@@ -82,12 +121,43 @@ describe("resolveBoxGitMirror", () => {
 		});
 	});
 
+	it("uses HOBO_CI_GIT_MIRROR_ROOT for the default candidate path", () => {
+		const nested = join(temp, "custom-root", `${repository}.git`);
+		mkdirSync(dirname(nested), { recursive: true });
+		execFileSync("cp", ["-a", mirror, nested]);
+		const result = resolveBoxGitMirror({
+			GITHUB_REPOSITORY: repository,
+			GITHUB_SHA: sha,
+			HOBO_CI_GIT_MIRROR_ROOT: join(temp, "custom-root"),
+		});
+		expect(result.status).toBe("hit");
+		if (result.status === "hit") {
+			expect(result.mirror).toBe(realpathSync(nested));
+		}
+	});
+
 	it("misses a bare mirror that lacks the triggering commit", () => {
 		const result = resolveBoxGitMirror(env("0".repeat(40)));
 		expect(result.status).toBe("miss");
 		if (result.status === "miss") {
 			expect(result.reason).toContain("does not contain");
 		}
+	});
+
+	it("misses a blobless mirror that has the commit but not its files", () => {
+		// What the box built (finding 110): the commit is there, so the probe
+		// used to say hit, and the checkout then died asking the mirror for blobs.
+		git(source, ["config", "uploadpack.allowFilter", "true"]);
+		const blobless = join(temp, "blobless.git");
+		execFileSync("git", [
+			"clone",
+			"--bare",
+			"--filter=blob:none",
+			`file://${source}`,
+			blobless,
+		]);
+		const result = resolveBoxGitMirror(env(sha, blobless));
+		expect(result.status).toBe("miss");
 	});
 
 	it("never treats a missing SHA as a hit", () => {

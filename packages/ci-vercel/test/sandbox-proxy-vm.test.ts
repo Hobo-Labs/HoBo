@@ -154,6 +154,41 @@ describe("per-lease proxy quota", () => {
 		expect(calls[0]?.bytes).toBe(65536);
 		expect(calls[0]?.requestId).toMatch(/^[a-f0-9-]{36}$/);
 	});
+	it("counts what it reserved and the quota calls it made, lost answers included, and reports them only to the lease's token", async () => {
+		const send = vi.fn<typeof fetch>();
+		send.mockResolvedValueOnce(new Response(null, { status: 204 }));
+		send.mockRejectedValueOnce(new Error("answer lost"));
+		const ledger = createProxyQuotaLedger(config, send);
+		expect(ledger.meter()).toEqual({ bytes: 0, calls: 0 });
+		expect(await ledger.reserveSandboxEgress("sbx_good", 100_000)).toBe(true);
+		expect(await ledger.reserveSandboxEgress("sbx_good", 200_000)).toBe(false);
+		// Two blocks reserved, the second's answer lost: both count.
+		const meter = ledger.meter();
+		expect(meter.calls).toBe(2);
+		expect(meter.bytes).toBeGreaterThanOrEqual(200_000);
+		const handler = createSandboxProxyVmHandler(config, {
+			ledger,
+			meter: ledger.meter,
+		});
+		const read = (authorization?: string) =>
+			handler(
+				new Request(`${config.proxyOrigin}/internal/meter`, {
+					headers: authorization ? { authorization } : {},
+				}),
+			);
+		expect((await read()).status).toBe(403);
+		expect(
+			(await read(`Bearer ${Buffer.alloc(32, 8).toString("base64url")}`))
+				.status,
+		).toBe(403);
+		const answer = await read(`Bearer ${config.quotaToken}`);
+		expect(answer.status).toBe(200);
+		expect(await answer.json()).toEqual({
+			leaseId: config.leaseId,
+			proxySessionId: config.proxySessionId,
+			...meter,
+		});
+	});
 	it("expires local credit after five seconds without refunding the reserved block", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(0);

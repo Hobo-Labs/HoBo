@@ -7,6 +7,11 @@
  * reliably reaches a log, a receipt, and a support ticket.
  */
 
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
+
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
 	"PROVIDER_AUTH_FAILED",
@@ -48,41 +53,26 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-/** Shapes that must never survive into an error message, log line, or receipt. */
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	// Prisma Postgres hands out prisma+postgres://…?api_key=… as well as a
-	// direct postgres:// string, so both shapes are stripped.
-	/prisma\+postgres:\/\/\S+/giu,
-	/postgres(?:ql)?:\/\/\S+/giu,
-	/\bapi[_-]?key\s*[=:]\s*\S+/giu,
-	/\bBearer\s+\S+/giu,
-	/\b(?:password|pgpassword|pwd)\s*[=:]\s*\S+/giu,
-	// Vercel claim/transfer codes are bearer authority on this path.
-	/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu,
-	/\b(?:sk|pk)[-_][A-Za-z0-9_-]{8,}/giu,
-	/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
-];
+export { REDACTION_WINDOW } from "@hobo/provider-redaction";
 
-function flattenControlChars(text: string): string {
-	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
-	}
-	return out;
-}
+/** The provider's own patterns, on top of the shared ones. */
+export const VERCEL_REDACTION_PROFILE: ProviderRedactionProfile = {
+	// A claim or transfer code, and the rest of its run: what is glued to a
+	// code (`code=abc12345=…`) is not told apart from it.
+	patterns: [/\bcode\s*[=:]\s*[\u017F\u212AA-Za-z0-9-]{8,}\S*/gi],
+};
+
+const providerRedactor = createProviderRedactor(VERCEL_REDACTION_PROFILE);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control
- * characters so provider text cannot forge a log record.
+ * characters so provider text cannot forge a log record. The shared redactor
+ * (`@hobo/provider-redaction`) holds the shapes, the window and the cut;
+ * Vercel adds its claim and transfer codes, which are bearer authority on this
+ * path.
  */
 export function redactProviderText(text: string, maxLength = 256): string {
-	let out = text;
-	for (const pattern of CREDENTIAL_PATTERNS)
-		out = out.replace(pattern, "[redacted]");
-	out = flattenControlChars(out).trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
+	return providerRedactor(text, maxLength);
 }
 
 function redactOptionalText(value: string | undefined): string | undefined {

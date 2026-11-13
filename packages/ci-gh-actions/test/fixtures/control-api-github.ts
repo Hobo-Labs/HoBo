@@ -1,19 +1,25 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { type Configuration, ConfigurationSchema } from "@hobo/ci";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { expect } from "vitest";
 import { z } from "zod";
+import { createControlAuthenticator } from "../../src/control-auth.js";
 import {
-	createControlAuthenticator,
-	createControlPlane,
-} from "../../src/control-plane.js";
+	createHostedControlPlane,
+	type FleetVerdictService,
+} from "../../src/hosted-control.js";
+import { HostedRelay } from "../../src/hosted-relay.js";
+import { createRelayHandler } from "../../src/http-handler.js";
+import { createNodeRelayHandler } from "../../src/node-http.js";
 import {
 	type OnboardingGithubPort,
 	parseOnboardingPlan,
 } from "../../src/onboarding.js";
-import { Relay } from "../../src/relay.js";
 import { LeaseStore } from "../../src/store.js";
 
 const Interaction = z.object({
@@ -220,65 +226,95 @@ export function initialConfiguration(): Configuration {
 		],
 	});
 }
+/**
+ * The account control plane over real loopback HTTP: the relay's control
+ * plane behind the shared HTTP handler and Node adapter, on a real SQLite
+ * partition. `ledger` is the store the control plane writes through; `store`
+ * is a second, synchronous connection to the same file for arranging and
+ * asserting state. Pass a `relay` harness to serve its partition instead.
+ */
 export async function controlHttp(
 	options: {
 		path?: string;
 		github?: OnboardingGithubPort;
 		configuration?: Configuration;
-		relay?: Relay;
+		relay?: { relay: HostedRelay; ledger: SqliteCiStore; store: LeaseStore };
 		credentialJson?: string;
+		fleetVerdicts?: FleetVerdictService;
 	} = {},
 ) {
 	const api = options.github ?? strictGithub([]).github;
-	const store =
-		options.relay?.options.store ?? new LeaseStore(options.path ?? ":memory:");
+	let directory: string | undefined;
+	let ledger = options.relay?.ledger;
+	let store = options.relay?.store;
+	if (!ledger || !store) {
+		let file = options.path;
+		if (file === undefined) {
+			directory = mkdtempSync(join(tmpdir(), "hobo-ci-control-"));
+			file = join(directory, "relay.sqlite");
+		}
+		ledger = new SqliteCiStore(file);
+		store = new LeaseStore(file);
+	}
 	if (!store.configuration())
 		store.configure(options.configuration ?? initialConfiguration(), 0, NOW);
 	const configuration = store.configuration()?.configuration;
 	if (!configuration) throw new Error("missing control fixture configuration");
+	const webhookSecret = "control-http-webhook-secret-at-least-32-characters";
 	const relay =
-		options.relay ??
-		new Relay({
+		options.relay?.relay ??
+		new HostedRelay({
 			config: configuration,
-			store,
+			store: ledger,
 			github: api,
 			identity: {
 				verify: async () => {
 					throw new Error("unexpected runner identity request");
 				},
 			},
-			webhookSecret: "control-http-webhook-secret-at-least-32-characters",
+			webhookSecret,
 			now: () => NOW,
 		});
-	const handler = createControlPlane({
+	const control = createHostedControlPlane({
 		relay,
+		store: ledger,
 		github: api,
 		authenticate: createControlAuthenticator(
 			options.credentialJson ?? credentials(),
 		),
 		publicOrigin: source.metadata.consumerFixtures.options.relayUrl,
 		assets: source.metadata.consumerFixtures.options.assets,
+		// As the Node host composes it: its operator owns the provider inventory.
+		fullAccountUpdates: true,
+		fleetVerdicts: options.fleetVerdicts,
 	});
-	const server = createServer((request, response) => {
-		void handler(request, response)
-			.then((handled) => {
-				if (!handled)
-					response
-						.writeHead(404, { "Content-Type": "application/json" })
-						.end('{"error":"not found"}');
-			})
-			.catch(() => {
-				response.writeHead(500).end();
-			});
-	});
+	const refuse = async (): Promise<never> => {
+		throw new Error("unexpected relay request on the control fixture");
+	};
+	const server = createServer(
+		createNodeRelayHandler({
+			origin: source.metadata.consumerFixtures.options.relayUrl,
+			handle: createRelayHandler({
+				application: {
+					control,
+					ingestWebhook: refuse,
+					claim: refuse,
+					ready: async () => true,
+				},
+				webhookSecret,
+			}),
+		}),
+	);
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", resolve);
 	});
 	const address = z.object({ port: z.number() }).parse(server.address());
 	let stopped = false;
+	const owned = { ledger, store };
 	return {
 		store,
+		ledger,
 		relay,
 		base: `http://127.0.0.1:${address.port}`,
 		stop: async () => {
@@ -288,7 +324,9 @@ export async function controlHttp(
 				server.close((error) => (error ? reject(error) : resolve()));
 				server.closeAllConnections();
 			});
-			store.close();
+			owned.store.close();
+			owned.ledger.close();
+			if (directory) rmSync(directory, { recursive: true, force: true });
 		},
 	};
 }

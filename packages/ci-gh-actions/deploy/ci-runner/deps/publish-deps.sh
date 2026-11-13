@@ -3,6 +3,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 cd "$root"
+export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"
 
 key="$(node --no-warnings scripts/ci/deps-key.mts)"
 candidate="hobo-ci-deps:${key}"

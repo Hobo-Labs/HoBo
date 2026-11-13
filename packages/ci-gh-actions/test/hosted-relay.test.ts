@@ -6,7 +6,7 @@ import {
 	LeaseSchema,
 	OfferSchema,
 } from "@hobo/ci";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostedRelay, type HostedRelayStore } from "../src/hosted-relay.js";
 import {
 	createHostedRelayRuntime,
@@ -90,6 +90,10 @@ function setup() {
 		},
 		async abortIsolatedAndRequeue(id, job, at) {
 			h.store.abortIsolatedAndRequeue(id, job, at);
+		},
+		async withdrawQueuedJob(job, at, expectedRevision) {
+			revision(expectedRevision);
+			return h.store.withdrawQueuedJob(job, at);
 		},
 		async settleObserved(id, host, minutes, at, unmet, complete, observed) {
 			const current = h.store.get(id);
@@ -340,6 +344,7 @@ it("reads active leases immediately before storage admission", async () => {
 			return true;
 		},
 		release() {},
+		bindGrant() {},
 		reap: async () => undefined,
 		maintain: async () => undefined,
 	};
@@ -366,6 +371,23 @@ it("cancels and requeues a bridge reservation after isolation becomes required",
 	expect(h.store.get(lease.id)?.state).toBe("cancelled");
 	expect(h.store.pendingJobs()).toMatchObject([{ isolatedRequired: true }]);
 	expect(h.api.dispatches).toBe(0);
+});
+
+it("releases inode grants when a reserved lease is cancelled", async () => {
+	const h = setup();
+	const release = vi.fn();
+	h.relay.options.storageAdmission = {
+		admit: async () => true,
+		release,
+		bindGrant: vi.fn(),
+		reap: async () => undefined,
+		maintain: async () => undefined,
+	};
+	const lease = await reserve(h);
+	h.api.jobStatus = "completed";
+	await h.relay.dispatchPending();
+	expect(release).toHaveBeenCalledWith(lease.id);
+	expect(release).toHaveBeenCalledWith(String(lease.jobId));
 });
 
 it("does not claim an already dispatched bridge after isolation becomes required", async () => {
@@ -1091,9 +1113,7 @@ it("never acknowledges an inbox delivery if policy verification fails", async ()
 		control: async () => undefined,
 		now: () => NOW,
 	});
-	await expect(runtime.tick()).rejects.toThrow(
-		/one or more inbox deliveries failed/,
-	);
+	await runtime.tick();
 	expect(acked).toBe(false);
 	expect(released).toBe(true);
 	expect(h.store.all()).toEqual([]);
@@ -1322,11 +1342,51 @@ it("backs off a failed delivery and still processes subsequent accounts", async 
 		control: async () => undefined,
 		now: () => NOW,
 	});
-	await expect(runtime.tick()).rejects.toThrow(
-		"one or more inbox deliveries failed",
-	);
+	await runtime.tick();
 	expect(failed).toEqual(["poison"]);
 	expect(acknowledged).toEqual(["valid"]);
+});
+
+it("does not claim inbox deliveries when maxDeliveries is zero", async () => {
+	const h = setup();
+	let claims = 0;
+	const store: HostedInboxStore = {
+		...h.asyncStore,
+		async acceptIgnoredWebhook() {
+			return { duplicate: false };
+		},
+		async ready() {
+			return true;
+		},
+		async latestLeaseIntents() {
+			return [];
+		},
+		async acceptWebhook() {
+			return { duplicate: false };
+		},
+		async claimWebhook() {
+			claims += 1;
+			return undefined;
+		},
+		async ackWebhook() {
+			throw new Error("unexpected ack");
+		},
+		async failWebhook() {
+			throw new Error("unexpected fail");
+		},
+	};
+	const runtime = createHostedRelayRuntime({
+		store,
+		github: h.api,
+		identity: h.relay.options.identity,
+		webhookSecret: SECRET,
+		control: async () => undefined,
+		now: () => NOW,
+	});
+	const startedAt = Date.now();
+	await runtime.tick({ maxDeliveries: 0 });
+	expect(claims).toBe(0);
+	expect(Date.now() - startedAt).toBeLessThan(2_000);
 });
 
 function withPullRequestRun(h: ReturnType<typeof setup>, jobCalls: number[]) {

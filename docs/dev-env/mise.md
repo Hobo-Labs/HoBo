@@ -10,7 +10,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`. **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`, `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
@@ -23,6 +23,7 @@ Commit **both** `mise.toml` and `mise.lock`. CI and agents run `mise install` (n
 
 - **Reproducibility** — same bytes on Linux/macOS/Windows CI and devcontainers.
 - **Reviewability** — version bumps show up as lockfile diffs alongside `mise.toml`.
+- **Flaky networks** — installing mise itself (`scripts/lib/mise-path.sh`, used by `bootstrap-dev.sh` and the hosted-runner preflight) retries the whole install up to `MISE_INSTALL_ATTEMPTS` times (default 4) with doubling back-off from `MISE_INSTALL_RETRY_DELAY` seconds (default 2). The mise installer downloads the release and its checksum without retries of its own, so one reset connection used to fail a CI job.
 - **Offline / airgap** — after one online `mise install`, tools live under `~/.local/share/mise` (or `MISE_DATA_DIR`). With no network, mise uses the cache; pre-seed the cache or vendor tarballs for fully offline lanes. Lockfile URLs are still required for cold installs.
 - **Regenerate** — after editing `[tools]`, run `mise lock` and commit.
 

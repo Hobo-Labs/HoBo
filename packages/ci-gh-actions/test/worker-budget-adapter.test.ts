@@ -238,12 +238,13 @@ export function createCiWorkerBudgetAdapter() {
 		});
 		await expect(loadWorkerBudgetAdapter(bad, "sqlite")).rejects.toThrow();
 		expect(closed).toBe(1);
+		// An asynchronous authority cannot back the worker's SQLite journal.
 		const wrongBackend = fixture({
-			kind: "postgres",
+			kind: "sqlite",
 			options: {
 				authority: {
 					persistence: "durable-cas",
-					read: () => ({}),
+					read: async () => ({}),
 					lookup: () => ({}),
 					reserve: () => ({}),
 					claimExecution: () => ({}),
@@ -255,19 +256,19 @@ export function createCiWorkerBudgetAdapter() {
 			},
 		});
 		await expect(
-			loadWorkerBudgetAdapter(wrongBackend, "postgres"),
+			loadWorkerBudgetAdapter(wrongBackend, "sqlite"),
 		).rejects.toThrow("trusted CI budget adapter could not be initialized");
 	});
-	it("redacts asynchronous adapter operations and cleanup", async () => {
-		const fail = async () => {
-			throw new Error("secret-async-token");
+	it("redacts adapter operations and cleanup", async () => {
+		const fail = () => {
+			throw new Error("secret-adapter-token");
 		};
 		const path = fixture({
-			kind: "postgres",
+			kind: "sqlite",
 			options: {
 				authority: {
 					persistence: "durable-cas",
-					read: async () => ({}),
+					read: () => ({}),
 					lookup: fail,
 					reserve: fail,
 					claimExecution: fail,
@@ -276,16 +277,16 @@ export function createCiWorkerBudgetAdapter() {
 					release: fail,
 				},
 				quoteLease: () => {
-					throw new Error("secret-async-token");
+					throw new Error("secret-adapter-token");
 				},
 			},
 			close: () => {
-				throw new Error("secret-async-token");
+				throw new Error("secret-adapter-token");
 			},
 		});
-		const adapter = await loadWorkerBudgetAdapter(path, "postgres");
-		if (adapter?.kind !== "postgres") throw new Error("missing adapter");
-		await expect(adapter.hooks.reserve(lease("conservative"))).rejects.toThrow(
+		const adapter = await loadWorkerBudgetAdapter(path, "sqlite");
+		if (adapter?.kind !== "sqlite") throw new Error("missing adapter");
+		expect(() => adapter.hooks.reserve(lease("conservative"))).toThrow(
 			"trusted CI budget operation failed",
 		);
 		await expect(adapter.close()).rejects.toThrow(

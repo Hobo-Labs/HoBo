@@ -194,6 +194,10 @@ describe("createPulumiAutomationApiEngine", () => {
 				),
 			).resolves.toMatch(/diff|engaged-error/);
 		},
+		// A real `pulumi preview` starts the engine and its language host. On a
+		// loaded runner that alone has passed vitest's 10 s default; the bound
+		// here only guards a hang.
+		120_000,
 	);
 });
 

@@ -1,0 +1,9 @@
+{
+  "kind": "delivery",
+  "deliveryId": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+  "event": "workflow_job",
+  "installationId": 10,
+  "repositoryId": 101,
+  "rawBody": "eyJhY3Rpb24iOiJxdWV1ZWQifQ==",
+  "receivedAt": "2026-11-11T12:00:00.000Z"
+}

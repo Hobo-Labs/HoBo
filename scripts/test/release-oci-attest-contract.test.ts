@@ -53,7 +53,78 @@ describe("release-oci-attest composite action", () => {
 	it("fails fast when digest list file is missing", () => {
 		expect(actionYml).toMatch(/digest list not found/u);
 	});
+
+	it("generates a CycloneDX SBOM with syft before attest-sbom", () => {
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		expect(syftIdx).toBeGreaterThan(0);
+		expect(sbomAttestIdx).toBeGreaterThan(syftIdx);
+		expect(actionYml).toMatch(/cyclonedx-json=/u);
+	});
+
+	it("scans the pushed digest from the registry, not the local docker daemon", () => {
+		expect(actionYml).toMatch(/syft "registry:\$\{image_ref\}"/u);
+		expect(actionYml).not.toMatch(/syft "docker:/u);
+	});
+
+	it("retries the registry scan on a bounded budget (GHCR digest visibility lag)", () => {
+		expect(actionYml).toMatch(
+			/until mise exec -- syft "registry:\$\{image_ref\}"/u,
+		);
+		expect(actionYml).toMatch(/attempt\}" -ge 12/u);
+		expect(actionYml).toMatch(/sleep 10/u);
+	});
+
+	it("validates the SBOM is CycloneDX before attesting it", () => {
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		const checkIdx = actionYml.indexOf("is not CycloneDX JSON");
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		expect(checkIdx).toBeGreaterThan(syftIdx);
+		expect(sbomAttestIdx).toBeGreaterThan(checkIdx);
+		expect(actionYml).toMatch(
+			/"bomFormat"\[\[:space:\]\]\*:\[\[:space:\]\]\*"CycloneDX"/u,
+		);
+	});
+
+	it("installs locked syft before exec (attest jobs run no preflight)", () => {
+		const installIdx = actionYml.indexOf("mise install --locked syft");
+		const execIdx = actionYml.indexOf("mise exec -- syft");
+		expect(installIdx).toBeGreaterThan(0);
+		expect(execIdx).toBeGreaterThan(installIdx);
+	});
+
+	it("attests provenance before SBOM generation so syft failure cannot kill it", () => {
+		const provenanceIdx = actionYml.indexOf("attest-build-provenance");
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		expect(syftIdx).toBeGreaterThan(provenanceIdx);
+	});
+
+	it("passes sbom-path into attest-sbom", () => {
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		const block = actionYml.slice(sbomAttestIdx);
+		expect(block).toMatch(
+			/sbom-path:\s*\$\{\{\s*steps\.sbom\.outputs\.path\s*\}\}/u,
+		);
+	});
 });
+
+/** Jobs that hold release runners or the main-train concurrency queue must not use `always()`. */
+const RELEASE_PUBLISH_CHAIN_JOBS = [
+	"release-oci-build-tag",
+	"release-images",
+	"release-publish",
+	"release-attest",
+	"release-npm",
+	"release-pages",
+] as const;
+
+function jobIfBlock(block: string): string {
+	const match = /^    if: >?-\n([\s\S]*?)(?=\n    needs:)/m.exec(block);
+	if (match?.[1]) return match[1].replace(/\s+/g, " ").trim();
+	const single = /^    if: (.+)$/m.exec(block);
+	if (single?.[1]) return single[1].trim();
+	throw new Error("job block missing if:");
+}
 
 describe("release attest workflow jobs", () => {
 	const hoboWorkflow = readFileSync(
@@ -64,6 +135,22 @@ describe("release attest workflow jobs", () => {
 		join(root, ".github/workflows/release-code.yml"),
 		"utf8",
 	);
+
+	for (const jobId of RELEASE_PUBLISH_CHAIN_JOBS) {
+		it(`${jobId} does not gate on always()`, () => {
+			const block = parseReleaseJobBlock(hoboWorkflow, jobId);
+			const cond = jobIfBlock(block);
+			expect(cond).toMatch(/^!cancelled\(\)/);
+			expect(cond).not.toMatch(/\balways\(\)/);
+		});
+	}
+
+	it("release-publish waits for a green OCI build matrix", () => {
+		const block = parseReleaseJobBlock(hoboWorkflow, "release-publish");
+		expect(jobIfBlock(block)).toContain(
+			"needs.release-oci-build-tag.result == 'success'",
+		);
+	});
 
 	it("release-attest grants packages:write for push-to-registry attestations", () => {
 		const block = parseReleaseJobBlock(hoboWorkflow, "release-attest");

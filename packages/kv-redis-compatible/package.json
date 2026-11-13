@@ -2,7 +2,7 @@
 	"name": "@hobo/kv-redis-compatible",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo provider-neutral Redis-compatible key/value authoring and conformance: requirement builders for kv.redis-compatible/v1 and kv.valkey/v1, a declarative conformance suite of pure command cases driven by an injected executor, honestly-scoped consistency claims, and the guard that stops list/stream/pub-sub support from being read as a queue or topic capability.",
+	"description": "HoBo provider-neutral Redis-compatible key/value authoring and conformance: requirement builders for kv.redis-compatible/v1 and kv.valkey/v1, a declarative conformance suite of pure command cases driven by an injected executor, honestly-scoped consistency claims, the guard that stops list/stream/pub-sub support from being read as a queue or topic capability, and the Redis-protocol binding of the ephemeral-state port (TTL, CAS, counters, locks, capped rings) with its in-memory engine, RESP executor, command meter, and conformance suite.",
 	"type": "module",
 	"files": [
 		"LICENSE",
@@ -12,13 +12,19 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./resp": {
+			"types": "./dist/resp-executor.d.ts",
+			"default": "./dist/resp-executor.js"
 		}
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/capability-profiles": "workspace:*"
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"ioredis": "6.0.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",

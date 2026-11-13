@@ -1,0 +1,1 @@
+{ "mode": "suggest", "engines": [{ "id": "harness", "kind": "harness", "model": "claude-code" }], "queue": { "rollup": true } }

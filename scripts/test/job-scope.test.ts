@@ -109,6 +109,7 @@ describe("job-scope", () => {
 			"vitest.config.ts",
 			"scripts/ci/job-scope.mts",
 			"scripts/ci/affected-lanes.mts",
+			"scripts/lib/read-stdin.mts",
 			"packages/ci-gh-actions/deploy/ci-runner/Dockerfile.base",
 			"scripts/ci-runner-preflight.mts",
 		])
@@ -178,19 +179,36 @@ describe("job-scope", () => {
 				"src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts",
 			],
 			["scripts/ci/dev-cold-loop-timing.mts"],
+			[
+				"scripts/ci/data-live-servers.mts",
+				"scripts/ensure-built.mts",
+				"vitest.config.ts",
+				"packages/data-core/test/conformance.test.ts",
+				"packages/data-sqlite/test/conformance.test.ts",
+				"packages/data-postgres/test/engine-live.test.ts",
+				"packages/data-postgres/test/engine-hardening-live.test.ts",
+				"packages/data-postgres/test/native-live.test.ts",
+				"packages/data-postgres/test/cross-engine-live.test.ts",
+				"packages/data-mongodb/test/live.test.ts",
+				"packages/data-mongodb/test/cross-engine-live.test.ts",
+				"packages/trails/test/data-patterns-e2e.test.ts",
+			],
 		]);
 		const own = [
 			"src/draft/technical-proofs/componentize-artifact-trust-contract/src/index.ts",
 			"packages/cli/src/index.ts",
+			"packages/data-mongodb/src/index.ts",
 		];
+		// The jobs that run vitest from the root config load its setup files.
+		const vitestJobs = [0, 2];
 		for (const [index, entries] of jobs.entries()) {
 			const skip = jobScope(["docs/a.md"], entries, fs);
 			assert.equal(skip.run, false, skip.reason);
 			assert.equal(jobScope([own[index] ?? ""], entries, fs).run, true);
 			assert.equal(
 				jobScope(["test/setup/isolate-hobo-home.ts"], entries, fs).run,
-				index === 0,
-				"the root vitest setup is an input of the vitest-run job only",
+				vitestJobs.includes(index),
+				"the root vitest setup is an input of the vitest-run jobs only",
 			);
 		}
 	});
@@ -200,15 +218,21 @@ describe("job-scope", () => {
 		const imports = [...source.matchAll(/^import .* from "([^"]+)";$/gm)].map(
 			(match) => match[1],
 		);
+		const local = ["./affected-lanes.mts", "../lib/read-stdin.mts"];
 		assert.deepEqual(
 			imports.filter(
-				(name) => !name?.startsWith("node:") && name !== "./affected-lanes.mts",
+				(name) => !name?.startsWith("node:") && !local.includes(name ?? ""),
 			),
 			[],
 		);
-		const lanes = readFileSync("scripts/ci/affected-lanes.mts", "utf8");
-		for (const match of lanes.matchAll(/^import .* from "([^"]+)";$/gm))
-			assert.ok(match[1]?.startsWith("node:"), match[1]);
+		for (const path of [
+			"scripts/ci/affected-lanes.mts",
+			"scripts/lib/read-stdin.mts",
+		]) {
+			const text = readFileSync(path, "utf8");
+			for (const match of text.matchAll(/^import .* from "([^"]+)";$/gm))
+				assert.ok(match[1]?.startsWith("node:"), `${path}: ${match[1]}`);
+		}
 	});
 
 	it("prints a GITHUB_OUTPUT line from the CLI", () => {

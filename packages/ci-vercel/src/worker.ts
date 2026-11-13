@@ -182,3 +182,9 @@ export const QueueMessageSchema = z.union([
 	z.null(),
 ]);
 export type QueueMessage = z.infer<typeof QueueMessageSchema>;
+
+/** A run published by a Vercel Schedule carries the schedule's identity; the
+ * relay's own repair and continuation messages do not. */
+export function isPlatformScheduleRun(message: QueueMessage): boolean {
+	return message !== null && "scheduleId" in message;
+}

@@ -1,3 +1,10 @@
+---
+type: Reference
+title: "@hobo/pricing release pipeline"
+description: "Hermetic release workflow for @hobo/pricing: npm pack dry runs on pull requests, a tag-only provenance publish, and the ts-autocode pin it fetches first."
+tags: [hobo, release, ci, npm, pricing]
+---
+
 # @hobo/pricing release pipeline
 
 Hermetic **`runs-on: hobo`** workflow **`.github/workflows/release-pricing.yml`** publishes **`@hobo-labs/pricing`** from **`@hobo/pricing`** using **`release/npm-scope-map.json`** and **`scripts/ci/npm-publish-scope.mts`**.

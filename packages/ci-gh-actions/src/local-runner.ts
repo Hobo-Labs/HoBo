@@ -1,13 +1,16 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { readdirSync } from "node:fs";
 import {
 	chmod,
 	mkdir,
 	mkdtemp,
 	readFile,
+	rename,
 	rm,
 	writeFile,
 } from "node:fs/promises";
+import { freemem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -17,6 +20,20 @@ import {
 	runHostProcess,
 	runnerEnvironment,
 } from "./bootstrap.js";
+import {
+	type JoinedMesh,
+	joinMeshFromEnv,
+	meshNodeIdFromEnv,
+} from "./mesh-join.js";
+import {
+	createMeshReliabilityLedger,
+	freeDiskMb,
+	type MeshJournal,
+	type MeshNodeEvent,
+	meshReliabilityJournal,
+	meshReliabilityResetToken,
+} from "./mesh-node.js";
+import { meshNodeReportsJson } from "./mesh-records.js";
 
 const exec = promisify(execFile);
 const LOCAL_HOST_LABEL = "hobo-local-host";
@@ -175,6 +192,18 @@ export async function installLocalRunnerArchive(
 	return archive;
 }
 
+/** What a session tells whoever is reporting this machine to the mesh. */
+export type LocalRunnerSessionObserver = Readonly<{
+	/** A runner is registered and waiting for a job in `work`. */
+	waiting(work: string): void;
+	/**
+	 * The session is over. `delivered`: the runner ran to its own exit.
+	 * `dropped`: it was registered and then failed. `idle`: it was stopped, or
+	 * never got as far as registering; nothing to count.
+	 */
+	ended(outcome: "delivered" | "dropped" | "idle"): void;
+}>;
+
 /** One disposable host registration, including removal before the next registration. */
 export async function runLocalRunnerSession(options: {
 	repository: string;
@@ -184,6 +213,8 @@ export async function runLocalRunnerSession(options: {
 	env?: NodeJS.ProcessEnv;
 	registered?: () => Promise<void>;
 	signal?: AbortSignal;
+	/** Told when a runner starts waiting and how the session ended. */
+	observer?: LocalRunnerSessionObserver | undefined;
 }): Promise<void> {
 	if (process.platform !== "linux" || process.arch !== "x64")
 		throw new Error(
@@ -227,6 +258,7 @@ export async function runLocalRunnerSession(options: {
 	let runnerId: number | undefined;
 	let uncertain = false;
 	let failure: Error | undefined;
+	let outcome: "delivered" | "dropped" | "idle" = "idle";
 	try {
 		await exec("tar", ["xzf", options.archive, "-C", work], { timeout: 60000 });
 		options.signal?.throwIfAborted();
@@ -270,6 +302,7 @@ export async function runLocalRunnerSession(options: {
 		options.signal?.throwIfAborted();
 		await options.registered?.();
 		options.signal?.throwIfAborted();
+		options.observer?.waiting(work);
 		try {
 			await runHostProcess(
 				join(work, "run.sh"),
@@ -283,7 +316,10 @@ export async function runLocalRunnerSession(options: {
 				undefined,
 				options.signal,
 			);
+			outcome = "delivered";
 		} catch (error) {
+			// Stopped on request is not a job this machine lost.
+			if (!options.signal?.aborted) outcome = "dropped";
 			if (
 				error instanceof Error &&
 				error.message.includes("shutdown could not be confirmed")
@@ -322,8 +358,138 @@ export async function runLocalRunnerSession(options: {
 				if (removed) await rm(pendingFile, { force: true });
 			}
 		} finally {
+			options.observer?.ended(outcome);
 			if (!uncertain) await rm(work, { recursive: true, force: true });
 		}
 	}
 	if (failure) throw failure;
+}
+
+/** The file a local runner keeps its own mesh report in, beside its other state. */
+// public-contract: `hobo ci status` and `local:runner status` read this file name from the runner's state directory.
+export const LOCAL_RUNNER_MESH_REPORT = "mesh-node.json";
+
+/**
+ * Whether the runner waiting in `work` has been given a job. The runner
+ * starts a worker process for the job it is assigned, and that process opens
+ * a `Worker_*.log` in the runner's `_diag` folder; a waiting runner has none.
+ */
+function runnerHasJob(work: string): boolean {
+	try {
+		return readdirSync(join(work, "_diag")).some((name) =>
+			name.startsWith("Worker_"),
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * This machine as a mesh node. A developer's or an agent's machine that
+ * runs jobs for one repository is capacity like any other, so it says so:
+ * one slot, free while its runner waits for a job, with the memory and disk
+ * it has to give. With `HOBO_CI_NATS_URL` set it advertises to that mesh,
+ * signed with its own identity key. Without it the machine is offline and
+ * still writes its own report to `mesh-node.json` in `state`, which is what
+ * `status` shows when no relay can be asked.
+ *
+ * It takes no job through the mesh: GitHub assigns its jobs by the
+ * `hobo-local-host` label. Its reliability is the share of its sessions
+ * whose runner ran to its own exit, kept in `journal` across restarts.
+ */
+export async function createLocalRunnerMeshNode(options: {
+	env: Readonly<Record<string, string | undefined>>;
+	state: string;
+	hostname: string;
+	/** The node's SQLite journal, where its reliability record is kept. */
+	journal?: MeshJournal | undefined;
+	now?: () => number;
+	log?:
+		| ((
+				event:
+					| MeshNodeEvent
+					| "hobo_ci_mesh_nats"
+					| "hobo_ci_mesh_nodes_capped"
+					| "hobo_ci_mesh_reliability_journal_failed",
+				fields: Readonly<Record<string, string | number | boolean>>,
+		  ) => void)
+		| undefined;
+}): Promise<
+	JoinedMesh & {
+		observer: LocalRunnerSessionObserver;
+		/** False while the controller cannot run jobs (blocked, or waiting on a fix). */
+		setHealthy(healthy: boolean): void;
+	}
+> {
+	const now = options.now ?? Date.now;
+	// A worker on the same host has the host's name; this node is told apart.
+	const defaultNodeId = `local-${options.hostname}`;
+	const stored = options.journal
+		? meshReliabilityJournal(
+				options.journal,
+				meshNodeIdFromEnv(options.env, defaultNodeId),
+				(message) =>
+					options.log?.("hobo_ci_mesh_reliability_journal_failed", { message }),
+				// The same one-shot reset a box worker takes.
+				meshReliabilityResetToken(options.env.HOBO_CI_MESH_RELIABILITY_RESET),
+			)
+		: undefined;
+	// Advertised so the relay can show this machine in full to the account
+	// that owns the repository, and only to it.
+	const served = repositoryName.safeParse(options.env.HOBO_CI_LOCAL_REPOSITORY);
+	const ledger = createMeshReliabilityLedger({
+		initial: (await stored?.load(now()))?.record,
+		persist: (record) => void stored?.save(record),
+		now,
+	});
+	let waitingIn: string | undefined;
+	let healthy = true;
+	const reportFile = join(options.state, LOCAL_RUNNER_MESH_REPORT);
+	const joined = await joinMeshFromEnv({
+		env: options.env,
+		defaultNodeId,
+		keyFile: join(options.state, "mesh-node.key"),
+		connectionName: `hobo-ci-local ${options.hostname}`,
+		describe: () => ({
+			// One job at a time; the slot is free while a runner waits for one.
+			freeSlots: waitingIn !== undefined && !runnerHasJob(waitingIn) ? 1 : 0,
+			totalSlots: 1,
+			healthy,
+			labels: [LOCAL_HOST_LABEL],
+			free: {
+				memoryMb: Math.floor(freemem() / (1024 * 1024)),
+				diskMb: freeDiskMb(options.state),
+			},
+			platform: { os: process.platform, arch: process.arch },
+			reliability: ledger.score(),
+			samples: ledger.samples(),
+			repository: served.success ? served.data : undefined,
+		}),
+		afterBeat: async (node) => {
+			// Written whole or not at all: `status` may read it at any moment.
+			const temporary = `${reportFile}.${process.pid}.tmp`;
+			await writeFile(
+				temporary,
+				`${meshNodeReportsJson(await node.reports())}\n`,
+				{ mode: 0o600 },
+			);
+			await rename(temporary, reportFile);
+		},
+		log: options.log,
+	});
+	return {
+		...joined,
+		observer: {
+			waiting(work) {
+				waitingIn = work;
+			},
+			ended(outcome) {
+				waitingIn = undefined;
+				if (outcome !== "idle") ledger.count(outcome);
+			},
+		},
+		setHealthy(next) {
+			healthy = next;
+		},
+	};
 }

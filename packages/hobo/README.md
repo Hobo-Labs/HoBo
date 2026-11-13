@@ -187,7 +187,256 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
 | Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); its programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept, else in a `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it), so set `HOBO_PULUMI_WORKDIR` to keep the state |
 | Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
-| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN`; production hosting configuration required |
+| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
+
+The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
+`createVercelDeployProvider({ fixtureArtifact: true, token })`, which
+`selectIacProvider` never picks) deploys first, with one
+`POST /v13/deployments`. Only when Vercel refuses that because the project
+does not exist (404 `not_found`, "Project not found") does it create the project
+with `POST /v9/projects` and deploy once more. A 409 there whose `error.code` is
+`conflict` means it was made meanwhile, and a refusal of the deployment after it
+names that 409's reason (the reason cut at 200 characters, the note kept whole,
+and the refusal's own text cut to leave it room); any other 409 is a refusal
+like any other. So its first deploy from an account that has never seen the
+project deploys instead of failing, and a deploy to an existing project is one
+request. Any other refusal, or a second one, is a `VercelApiError` carrying
+Vercel's status, `error.code` and `error.message`. A response body can echo the
+request, and the executor keeps an error's message, so the error's `message` and
+`apiMessage` have the token, and anything bearer- or credential-shaped, replaced
+by `[redacted]`, and each is cut at 500 characters (a `…` marks the cut). The
+token is looked for as sent; in base64, alone, as a Basic header's `:token`, and
+as the part of a longer base64 value (such as `Bearer token`'s) that depends on
+the token alone; as the base64 of its base64; and as the base64 of its
+percent-encoding (`%XX`, either case). In each of those, every character may be
+written as itself (a `/` also as JSON's `\/`), as a JSON escape `\uXXXX` (hex
+in either case, after one backslash or more, as in JSON inside a JSON string),
+percent-encoded byte by byte as `%XX` or, encoded twice, as `%25XX` (either
+case), or as an HTML numeric reference, `&#xNN;` or `&#NN;` (either case, any
+number of leading zeros, the `;` optional). A run of whitespace (a newline,
+`\r\n`, spaces, tabs), control characters (NUL, ESC, DEL, NEL), format
+characters (a soft hyphen, a zero-width space or joiner, a word joiner) or any
+other default-ignorable code point (a variation selector, a combining grapheme
+joiner, a Hangul filler), which a message shows as spaces or not at all, may
+sit anywhere in it, inside an encoding too. A JSON body is also parsed and its strings, keys included,
+searched before it is written back out; any other body, or one too deep to
+write back out, is searched as text. The token is looked for again after the
+rest of the redaction has run, so nothing it does brings the token back. The
+error's `code` is kept only when it is a short identifier (letters, digits, `_`, `.` and `-`, at
+most 64 characters, and nothing the redaction would change), and is otherwise
+undefined. A request that gets no answer to read (the transport throws or
+rejects, or a 2xx body cannot be read) is a `VercelTransportError`: its
+`message` names the call and says what was thrown, down its `cause` chain and
+into an `AggregateError`'s `errors` (eight parts at most), redacted and cut the
+same way, and it keeps nothing of what was thrown, so it has no `cause`. A 2xx
+body that is not JSON is named by a fixed reason, `response body was not JSON`,
+and nothing of the body is quoted (a runtime's JSON error quotes its start, cut
+short). A token that holds whitespace, or a control, format or other default-ignorable
+character (CR, LF and NUL among them), is refused when the client is made,
+before any request, by an error that does not quote it. A credential binding's
+scope needs `POST` on `/v13/deployments`, and `POST` on `/v9/projects` for that
+first deploy; it needs no `GET` on the project.
+
+The project is created in the scope `teamId` names, or in the token's own scope
+when there is no `teamId`. Vercel answers "Project not found" for a project that
+lives only in another scope, so a missing `teamId`, or a wrong one the token can
+still deploy to, does not fail: it creates a second project of that name there
+and deploys to it. Set `teamId` (`createVercelClient({ token, teamId })`, or the
+helper's `teamId`) for a project that lives in a team. `selectIacProvider`, and
+so `hobo up`'s Vercel resolver plane, reads it from `VERCEL_TEAM_ID`, beside
+`VERCEL_TOKEN`, else from `VERCEL_ORG_ID`, the Vercel CLI's name for
+it, when that is a team id. The CLI writes a personal account's id
+there too, and the Vercel CLI treats an `orgId` that starts with `team_` as a
+team and any other as the user (its `getOrgById`, in
+`packages/cli/src/util/projects/get-org-by-id.ts` of vercel/vercel); so does
+this, and a `VERCEL_ORG_ID` that does not start with `team_` is taken as no
+team. A bare `team_`, with nothing after it, names neither, and is refused
+before anything is sent, with an error that names `VERCEL_ORG_ID`. So is a
+`VERCEL_TEAM_ID` that is not a canonical `team_…` id — a slug or a name: the
+resolvers compare it with the canonical `accountId` Vercel returns, so a slug
+would read as a different team on every later read, after a create succeeded. Every entry
+point (`createVercelClient` and `createVercelDeployProvider` too) takes a team
+id trimmed, and takes an empty or blank one as none: with none, the deploy and
+any create are in the token's own scope. The resolver plane's project lookups
+and creates carry that `teamId`. A run whose credentials
+come from OpenSesame (`HOBO_CREDENTIALS=opensesame`) keeps them too: the
+relaunched `hobo` starts from `@hobo/adapter-opensesame`'s allowlisted
+environment, and `VERCEL_TEAM_ID` and `VERCEL_ORG_ID`, team or account ids and
+not credentials, are on that allowlist. The helper's outputs say what happened:
+`projectCreated` is `"true"` when this deployment created the project and
+`"false"` otherwise, and `scope` is the `teamId`, or `"token-default"` when
+there is none: the scope Vercel gives a request with no `teamId`, which for a
+team's token need not be a personal account.
+
+**Deploying a commit instead of a file tree (`gitArtifact`).** A workspace
+package that Vercel has to build from the repository is not a file tree to
+upload: it is a commit. `createVercelDeployProvider({ token, projectName,
+gitArtifact: { org, repo, ref, sha? } })` is the explicit alternative to
+`fixtureArtifact` (the two together, or a git artifact with no `projectName`,
+are refused when the provider is made). Its `apply` sends one
+`POST /v13/deployments` whose body carries a `gitSource`
+(`{ type: "github", org, repo, ref, sha? }`) in place of `files`:
+`createVercelClient().createDeployment` takes either shape, and the file-tree
+request is unchanged byte for byte. What a git deployment does differently:
+
+- **Preview unless told otherwise.** The default target is `preview`, sent as a
+  request with no `target` (Vercel reads that as preview); `target:
+  "production"` is the only way to production, and any other target is refused
+  when the provider is made.
+- **No project settings unless given.** Vercel saves a deployment's
+  `projectSettings` on the project, so a git deployment sends none and an
+  existing project keeps its own; `gitArtifact.rootDirectory` sends
+  `{ rootDirectory }` for a project that has none yet.
+- **Configuration first, and only non-secret configuration.** `configuration`
+  (a name-to-value map) is set on the project for the target's environment
+  before the deployment, through `createVercelClient().setProjectEnv`: one
+  `GET /v10/projects/{project}/env`, then a `POST` to the same path
+  (`{ key, value, type: "plain", target: [environment] }`) for each name that
+  environment lacks, and a `PATCH /v9/projects/{project}/env/{id}`
+  (`{ value }`) for each plain variable of that environment alone whose value
+  differs. A name already as asked is left alone, so a second run sends the
+  read and the deployment and nothing else. It never asks Vercel to decrypt a
+  value. Refused with a `VercelEnvRefusal`, before any write: a variable the
+  project already holds encrypted or sensitive (the operator's), one shared
+  with another environment under a different value (editing it would change an
+  environment nobody asked to configure), and a listing that runs past one
+  page.
+- **Secrets are refused by name.** `src/vercel-env-policy.ts` screens every
+  name and value before the first request: `isForbiddenSecretEnvKey` from
+  `@hobo/bindles`, a storage integration's names (`DATABASE_*`, `POSTGRES_*`,
+  `PG*`, `REDIS_*`, …), and any name with a credential word in it (`TOKEN`,
+  `SECRET`, `KEY`, `PASSWORD`, `PRIVATE`, `CREDENTIAL`, `AUTH`, …); a value
+  that looks like a connection string, a bearer header, a private key or a JWT,
+  or that holds the client's own token; and a value with a control character.
+  The refusal names the variable and never quotes a value. Connection strings
+  and tokens reach a project from its operator or a storage integration; this
+  path is never handed one, sends none, and provisions no storage.
+- **`createMissingProject: false`** turns off the project create on "Project
+  not found" (it defaults to `true`, the fixture path's behaviour). For a
+  project that must already exist, such as a live service in a team, a wrong or
+  missing `teamId` is then a refusal instead of a second project.
+
+The outputs add, in the same string form: `artifact` (`"git"`),
+`gitRepository` (`org/repo`), `gitRef`, `gitSha` (empty when not pinned), and
+`configCreated`, `configUpdated` and `configUnchanged`, each the variable
+names comma-joined. `planVercelGitDeployment(options)` returns the requests an
+`apply` would send (method, path with the team query, JSON body, and when each
+is sent), formed by the functions the client sends with and with no token, no
+client and no network. A credential binding's scope for this mode needs `POST`
+on `/v13/deployments`, and for configuration `GET` and `POST` on
+`/v10/projects/{project}/env` and `PATCH` on `/v9/projects/{project}/env/*`.
+
+Each request shape was checked against Vercel's REST reference (the pages are
+named in `src/vercel-client.ts`). `contracts/vercel-git-deploy.pact.json` is
+the hand-authored consumer pact for this boundary, and
+`test/vercel-git-deploy.test.ts` replays it through `pactBackedTransport`
+(`@hobo/testing`), which sequences the pact's own recorded listings so the
+second-run claim is made against recorded states. **Status: exercised against
+a fake transport only. No live deployment has been made from this repository
+through this mode, and Vercel has not verified the pact.**
+
+**`hobo ci deploy`: HoBo deploys its own CI relay.** The hosted relay
+(`packages/ci-vercel`) is a HoBo app: its Bindle is
+[`packages/ci-vercel/src/bindle.ts`](../ci-vercel/src/bindle.ts). `hobo ci
+deploy` (`src/ci-relay-deploy.ts`, a subcommand of the `ci` verb beside `hobo ci
+serve`) loads that Bindle from the project directory, checks it names no
+provider (`assertNoBindleProviderSelection`), places it with the relay's Yard
+(`packages/ci-vercel/deploy/yard.ts`, loaded and resolved by
+`src/ci-relay-yard.ts`: the Yard names the provider, the project and repository;
+the target names a Camp, and the binding rows that Camp requires project the
+non-secret settings), and realizes it as one git-source Vercel deployment
+through the git-artifact mode above: the non-secret settings first, then each of
+the Bindle's resources applied through the provider the Yard names, which
+deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
+otherwise). Production is deployed by the workflow on `main`
+(`.github/workflows/relay-deploy.yml`), not by hand.
+
+```sh
+# From the repository root. Nothing is sent; no token is read.
+hobo ci deploy --cwd packages/ci-vercel --ref main \
+  --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
+
+# What the workflow on main runs: production, the Infisical ids the production
+# Camp's config-service binding asks for, the cache attached first.
+VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref main \
+  --sha <40-hex commit> --team team_… --target production \
+  --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
+```
+
+| Option | Meaning |
+|---|---|
+| `--ref <branch\|tag\|sha>` | the git ref Vercel builds (required) |
+| `--repo <owner/name>` | the GitHub repository; default the Yard's `repository` property |
+| `--sha <commit>` | pins the full commit sha, so a branch that moves cannot change what is deployed |
+| `--project <name>` | the Vercel project; default the Yard's `project` property |
+| `--target preview\|production` | default `preview`; production is never implied |
+| `--team <team_id>` | the Vercel team, else `VERCEL_TEAM_ID`; a canonical `team_…` id, or the token's own scope when neither is set |
+| `--set NAME=value` | a non-secret setting to apply for the target's environment first (repeatable): a `config()` `env.*` field, or an input a chosen binding asks for |
+| `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
+| `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
+| `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
+| `--wait` | wait up to 15 minutes for READY; ERROR, CANCELED or the timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--dry-run` | print the plan and send nothing |
+
+What it needs: `VERCEL_TOKEN` in the environment for a real run (never printed,
+never logged, and not read at all by a dry run), a project whose settings build
+`packages/ci-vercel` (or `--root-directory`), and Vercel's GitHub integration
+able to read the repository.
+
+What it deliberately does not do:
+
+- **Set a secret.** A `--set` must name a field the app's `config()` schema
+  (`relayConfig`) declares with `env.*`; a field declared `secret.*`, an
+  undeclared name, and any name or value the screen in
+  `src/vercel-env-policy.ts` refuses are all rejected before the plan is
+  formed (`HOBO_CI_DEPLOY_SETTING_REFUSED`), in a dry run too, and the refusal
+  never echoes the value. The declared secrets are listed by name as "not set
+  by this command".
+- **Provision storage unasked.** Only `--provision` attaches anything, and only
+  the Marketplace rows the Camp chooses (the relay's Upstash cache). A storage
+  integration's variables (`DATABASE_*`, `POSTGRES_*`, `REDIS_*`, `KV_*`,
+  `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) are written by the
+  integration, never set here, and so is any `INFISICAL_*` name other than the
+  config service's five coordinates (`CONFIG_SERVICE_COORDINATES`).
+- **Override the Yard.** A `--set` naming a setting the chosen bindings already
+  set is refused; the Yard is changed instead.
+- **Create the project, or reach production, unasked.**
+- **Schedule anything.** The Bindle declares the repair schedule; this verb
+  does not create a platform schedule or an external trigger for it.
+
+The dry run prints the plan, and `--json` carries it as `data.plan`: a
+`VercelGitDeploymentPlan` (`data-models/vercel_git_deployment.proto`, generated
+into `src/_generated/vercel_git_deployment_pb.ts`) with its requests formed by
+the functions the client sends with. `data-models/vercel_git_deployment.cue`
+constrains the record (target is `preview` or `production` and always present;
+the placement and the Yard's binding rows always present; no setting whose name
+or value looks like a credential; request paths under the API; provisioning
+commands are `vercel integration …` with no token argument), and its `fixtures/vercel_git_deployment/valid` files are the command's own
+dry-run output for the real relay: `test/ci-relay-deploy.test.ts` compares the
+two, so the record the schema vets is the record the command prints. A real run
+prints the provider's outputs (deployment id and URL, target, scope, and which
+settings were created, updated or left unchanged). **Status: exercised against
+a fake transport only; no live deployment was made from this repository by this
+change.**
+
+```text
+Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.
+Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)
+  to Vercel project hobo-ci, scope team_hobo, target preview
+  from github example/hobo@main
+  into a project that must already exist (pass --create-project to create it)
+Settings set for preview first (non-secret): HOBO_CI_PUBLIC_URL=https://ci.example.test
+Not set by this command (the operator or a storage integration holds them): CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256, …
+Requests to https://api.vercel.com:
+  1. GET /v10/projects/hobo-ci/env?teamId=team_hobo
+     always: read what the project holds, before any write
+  2. POST /v10/projects/hobo-ci/env?teamId=team_hobo
+     {"key":"HOBO_CI_PUBLIC_URL","value":"https://ci.example.test","type":"plain","target":["preview"]}
+     only if HOBO_CI_PUBLIC_URL is not set for preview; a plain preview-only value that differs is edited instead, and one already as asked is left alone
+  3. POST /v13/deployments?teamId=team_hobo
+     {"name":"hobo-ci","project":"hobo-ci","gitSource":{"type":"github","org":"example","repo":"hobo","ref":"main"}}
+     always: one deployment, built by Vercel from the commit
+```
 
 **Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as

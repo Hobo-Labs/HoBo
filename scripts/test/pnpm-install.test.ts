@@ -178,9 +178,32 @@ describe("bounded pnpm install", () => {
 		assert.equal(parseInstallTimeoutSeconds("240"), 240);
 	});
 
-	it("routes all six workflow installs through the bounded wrapper", () => {
+	it("routes every workflow install through the bounded wrapper", () => {
 		const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
-		assert.equal(workflow.split("scripts/ci/pnpm-install.mts").length - 1, 6);
+		const lines = workflow.split("\n");
+		// The wrapper is the only way a job installs; the count is not pinned,
+		// so a new job does not have to edit this test.
+		const wrapped = lines.filter((line) =>
+			line.includes("scripts/ci/pnpm-install.mts"),
+		);
+		assert.ok(wrapped.length > 0);
+		for (const line of wrapped) {
+			assert.ok(line.includes("--frozen-lockfile"), line.trim());
+		}
+		// Any other install, flagged or bare, is unbounded, so there is none:
+		// the runner-image job's script-free install goes through the wrapper
+		// too (the wrapper imports node builtins only, and passes its
+		// arguments on), where a cold store used to stall it unbounded.
+		assert.deepEqual(
+			lines
+				.filter((line) => /\bpnpm (?:install|i)\b/u.test(line))
+				.map((line) => line.trim()),
+			[],
+		);
+		assert.ok(
+			wrapped.some((line) => line.includes("--ignore-scripts")),
+			"the runner-image job installs without lifecycle scripts",
+		);
 		assert.doesNotMatch(workflow, /^\s*pnpm install --frozen-lockfile/mu);
 	});
 });

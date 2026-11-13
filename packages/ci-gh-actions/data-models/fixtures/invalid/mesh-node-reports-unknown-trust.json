@@ -1,0 +1,6 @@
+{
+  "mesh": "configured",
+  "nodes": [
+    { "id": "box-a", "state": "live", "validUntil": "2026-11-10T02:40:45.000Z", "trust": "attested" }
+  ]
+}

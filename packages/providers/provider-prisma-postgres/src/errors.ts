@@ -6,6 +6,11 @@
  * connection string, is the most credential-dense text in the system. Nothing
  * from it reaches a message without going through {@link redactProviderText}.
  */
+
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -37,48 +42,32 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/https?:\/\/create-db\.prisma\.io\/claim\S*/giu,
-	/\bproj_[A-Za-z0-9_-]+/gu,
-	/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-	/postgres(?:ql)?:\/\/\S+/giu,
-	/prisma\+postgres:\/\/\S+/giu,
-	/\bBearer\s+\S+/giu,
-	/\b(?:password|pgpassword|pwd)\s*[=:]\s*\S+/giu,
-	/\bapi_key=\S+/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
-];
+export { containsControlChar } from "@hobo/provider-redaction";
 
-function flattenControlChars(text: string): string {
-	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
-	}
-	return out;
-}
+/** The provider's own patterns, on top of the shared ones. */
+export const PRISMA_POSTGRES_REDACTION_PROFILE: ProviderRedactionProfile = {
+	patterns: [
+		/https?:\/\/create-db\.prisma\.io\/claim\S*/gi,
+		/\bproj_[A-Za-z0-9_-]+/gu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/gi,
+	],
+	decodePercent: true,
+};
 
-export function containsControlChar(text: string): boolean {
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		if (code <= 31 || code === 127) return true;
-	}
-	return false;
-}
+const providerRedactor = createProviderRedactor(
+	PRISMA_POSTGRES_REDACTION_PROFILE,
+);
 
+/**
+ * Replace anything credential-shaped with a marker and flatten control
+ * characters so provider text cannot forge a log record. The text is
+ * percent-decoded fully first, so an encoded credential is found too. The
+ * shared redactor (`@hobo/provider-redaction`) holds the shapes, the
+ * window and the cut; Prisma Postgres adds its claim URL, `proj_` ids and
+ * UUIDs.
+ */
 export function redactProviderText(text: string, maxLength = 256): string {
-	let out = text;
-	for (;;) {
-		const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
-			String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
-		);
-		if (decoded === out) break;
-		out = decoded;
-	}
-	for (const pattern of CREDENTIAL_PATTERNS)
-		out = out.replace(pattern, "[redacted]");
-	out = flattenControlChars(out).trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
+	return providerRedactor(text, maxLength);
 }
 
 export class PrismaProviderError extends Error {
@@ -105,7 +94,7 @@ export class PrismaProviderError extends Error {
 			Object.fromEntries(
 				Object.entries(options.detail ?? {}).map(([key, value]) => [
 					key,
-					/idempotency|database.?id|project.?id|claim.?url/iu.test(key)
+					/idempotency|database.?id|project.?id|claim.?url/i.test(key)
 						? "[redacted]"
 						: isJsonString(value)
 							? redactProviderText(value)

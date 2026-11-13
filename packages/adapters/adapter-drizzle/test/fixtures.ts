@@ -126,6 +126,34 @@ export function indexBuilder(
 	return { config: { name, columns: [...columns], unique } };
 }
 
+/** A partial index: the same builder with a `where` SQL object parked on it. */
+export function partialIndexBuilder(
+	name: string,
+	columns: readonly (string | JsonObject)[],
+): JsonObject {
+	return {
+		config: {
+			name,
+			columns: [...columns],
+			unique: false,
+			where: sqlExpression("deleted_at IS NULL"),
+		},
+	};
+}
+
+/** Mimics drizzle-orm's `SQL` object: an expression is a list of query chunks. */
+export function sqlExpression(text: string): JsonObject {
+	return { queryChunks: [{ value: [text] }] };
+}
+
+/** Mimics drizzle-orm's `IndexedColumn`: a column plus how the index keys it. */
+export function indexedColumn(
+	name: string,
+	indexConfig: JsonObject = { order: "asc", nulls: "last" },
+): JsonObject {
+	return { name, indexConfig };
+}
+
 /** The representative schema module the ingestion tests read. */
 export function representativeSchemaModule(): JsonObject {
 	const usersColumns = {

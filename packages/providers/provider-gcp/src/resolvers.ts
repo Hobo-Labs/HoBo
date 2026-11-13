@@ -78,6 +78,11 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import {
+	createProviderRedactor,
+	LONG_TOKEN_RUN_PROFILE,
+	type ProviderRedactionProfile,
+} from "@hobo/provider-redaction";
 
 import {
 	isJsonArray,
@@ -101,8 +106,10 @@ import {
 	cloudStorage,
 	cloudStorageSite,
 	cloudTasks,
+	computeEngineInstance,
 	firestore,
 	memorystoreRedis,
+	persistentDisk,
 	pubsub,
 	secretManager,
 } from "./slots.js";
@@ -205,10 +212,16 @@ export const GCP_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
  * `gcp.firestore/v1`: a database's id, location and mode are fixed at creation
  * and deletion is gated on an etag plus a delete-protection override this
  * package does not model, so only half the lifecycle would be expressible.
+ * `gcp.compute-engine-instance/v1`, `gcp.persistent-disk/v1`: catalog and
+ * declaration only. An instance needs a zone, a network and an image, and a
+ * disk needs the instance's zone; a Yard binding names none of them. No
+ * resolver is shipped.
  */
 export const GCP_UNRESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
 	[
 		productIdOf(apiGateway(), "apiGateway"),
+		productIdOf(computeEngineInstance(), "computeEngineInstance"),
+		productIdOf(persistentDisk(), "persistentDisk"),
 		productIdOf(appEngine(), "appEngine"),
 		productIdOf(cloudFunctions(), "cloudFunctions"),
 		productIdOf(cloudStorageSite(), "cloudStorageSite"),
@@ -271,8 +284,18 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9._~+/-]{20,}=*$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule. The length rule is searched
+ * last, so it cannot split a JWT or a key the shared shapes redact whole.
+ */
+/** The provider's own patterns, on top of the shared ones. */
+export const GCP_REDACTION_PROFILE: ProviderRedactionProfile =
+	LONG_TOKEN_RUN_PROFILE;
+
+const redactTokenText = createProviderRedactor(GCP_REDACTION_PROFILE);
 
 /** A Cloud Run operation name: `projects/…/locations/…/operations/…`. */
 const RUN_OPERATION_NAME_PATTERN =
@@ -294,8 +317,7 @@ const DATABASE_VERSION_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/u;
  * carried resource paths and token fragments before.
  */
 export function redactGcpText(text: string, limit = 400): string {
-	const scrubbed = text.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(text, limit);
 }
 
 // ---------------------------------------------------------------------------

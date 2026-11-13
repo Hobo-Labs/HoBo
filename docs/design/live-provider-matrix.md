@@ -21,6 +21,10 @@ tags: [hobo, design, providers, honesty]
 | **In-memory** | Deterministic offline stand-in (default for plan/up) |
 | **Stub** | Explicit unimplemented refuse |
 
+> **Not a readiness claim:** the [PostgreSQL backend catalog](./postgres-backend-catalog.md)
+> names managed and self-hosted PostgreSQL offerings from cited vendor
+> documentation only. It provisions nothing and adds no row to this matrix.
+
 ## Cloud providers (`packages/providers/`)
 
 | Adapter | Realize IR | Live apply | Notes |
@@ -31,18 +35,70 @@ tags: [hobo, design, providers, honesty]
 | `@hobo/provider-netlify` | Yes | **Anonymous CLI / Drop** | `netlify deploy --allow-anonymous` (+ injectable transport); Examples `/api/provider-temp/netlify` (`HOBO_NETLIFY_TEMP_MOCK=1` for CI — **never** `NETLIFY_AUTH_TOKEN`) |
 | `@hobo/provider-browser-wasm` | Yes | Local temporary | Examples same-origin `/api/anon/host/*` via `/api/provider-temp/browser-wasm` |
 | `@hobo/provider-webernetes` | Yes | Local temporary | Examples same-origin `/api/anon/host/*` via `/api/provider-temp/webernetes` |
-| `@hobo/provider-kubernetes` | Yes | Cred-gated / local | Placement driver reaches a real apiserver (injected transport, `kubectl proxy` opt-in). Also ships convergent apiserver `ResourceResolver`s for **all 9** catalog product ids (Deployment, StatefulSet, DaemonSet, Job, CronJob, Service, Ingress, PVC, Secret) — **fake-transport proof only**. The Secret's contents arrive through the injected `resolveSecretData(logicalId)` and never through `desired`; outputs publish the key names and the `k8s://` locator, never a value, and a rotation converges by comparing encoded values in memory so neither version is rendered anywhere. `realize()` emits `hobo.iac-program/v1` (the old driver document stays as `kubernetesDriverProgram()`). Catalog is built-ins only — `data`/`kv`/`queue`/`topic` need operators. **Not** an Examples OOB station target |
-| `@hobo/provider-aws` | Yes | No default | IR only unless wired through live IaC engine. Ships SigV4-signed `ResourceResolver`s for **7 of 19** catalog product ids (`AWS_RESOLVED_PRODUCT_IDS`) — **fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed |
-| `@hobo/provider-gcp` | Yes | No default | IR only. Ships HTTP `ResourceResolver`s for **9 of 14** catalog product ids (`GCP_RESOLVED_PRODUCT_IDS`) — **fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed |
-| `@hobo/provider-azure` | Yes | No default | IR only. Ships ARM `ResourceResolver`s for **9 of 16** catalog product ids (`AZURE_RESOLVED_PRODUCT_IDS`) — **fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed |
-| `@hobo/provider-digitalocean` | Yes | No default | IR only. Ships `ResourceResolver`s for **all 15** catalog product ids (`DIGITALOCEAN_RESOLVED_PRODUCT_IDS`) across three guarded surfaces: bearer-token against `api.digitalocean.com/v2`; **Spaces over SigV4** on its own host with its own key pair; and **Functions over OpenWhisk** on the namespace's own `faas-*.doserverless.co` host with the namespace's own Basic credential. App Platform workers and jobs converge by **read-modify-write on the owning app's spec** (`PUT /v2/apps/{id}`); they never create the app, and everything they do not own is carried through the write. A function converges through `PUT /api/v1/namespaces/{ns}/actions/{name}?overwrite=true`, which is create-or-replace and therefore idempotent; the namespace host is read from the control plane, shape-checked, and then guarded as an exact host. **Fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed. `queue`/`topic`/`secretRef` carry no rows: DigitalOcean sells no first-party queue or secret store |
-| `@hobo/provider-hetzner` | Yes | No default | IR only. Ships `ResourceResolver`s for **all 5** catalog product ids (`HETZNER_RESOLVED_PRODUCT_IDS`) across three guarded hosts: Cloud Server, Load Balancer and Volume on `api.hetzner.cloud/v1`; **Object Storage over SigV4** on `<location>.your-objectstorage.com`; and the **Storage Box on `api.hetzner.com/v1`**, the unified host Hetzner moved it to, with the same bearer-token scheme as the Cloud API. Its create password arrives through the injected `resolveStorageBoxPassword(logicalId)` and never through `desired`. **Fake-transport proof only**. Robot (`HETZNER_EXCLUDED_SURFACES`) stays unreachable — dedicated-server administration behind the web console password, which nothing catalogued here needs. Five slots carry no rows — no managed database, cache, queue, topic or secret store |
-| `@hobo/provider-hostinger` | Yes | **Adopt-only** | IR only. Ships `ResourceResolver`s for **all 5** catalog product ids (`HOSTINGER_RESOLVED_PRODUCT_IDS`): VPS and DNS zone on `/api/vps/v1/` and `/api/dns/v1/`, and web hosting, static site and MySQL on `/api/hosting/v1/`. Buying stays impossible: the guard does not allowlist `/api/billing/v1/`, a VPS is adopt-only, and a website create requires `desired.orderId` — a plan the account already owns. `delete()` on a VPS refuses (it would cancel a paid plan). The MySQL user password arrives through the injected `resolveDatabasePassword(logicalId)`, never through `desired`. **Fake-transport proof only** |
+| `@hobo/provider-kubernetes` | Yes | Cred-gated / local | Placement driver (`provisionWorkload`, not a resolver) targets a real apiserver through an injected transport (`kubectl proxy` opt-in); no live apply proven in-repo. Also ships convergent apiserver `ResourceResolver`s for its catalog product ids (count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)) (Deployment, StatefulSet, DaemonSet, Job, CronJob, Service, Ingress, PVC, Secret) — **fake-transport proof only**. The Secret's contents arrive through the injected `resolveSecretData(logicalId)` and never through `desired`; outputs publish the key names and the `k8s://` locator, never a value, and a rotation converges by comparing encoded values in memory so neither version is rendered anywhere. `realize()` emits `hobo.iac-program/v1` (the old driver document stays as `kubernetesDriverProgram()`). Catalog is built-ins only — `data`/`kv`/`queue`/`topic` need operators. **Not** an Examples OOB station target |
+| `@hobo/provider-aws` | Yes | No default | IR only unless wired through live IaC engine. Ships SigV4-signed `ResourceResolver`s for part of its catalog (`AWS_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)) — **fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed |
+| `@hobo/provider-gcp` | Yes | No default | IR only. Ships HTTP `ResourceResolver`s for part of its catalog (`GCP_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)) — **fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed |
+| `@hobo/provider-azure` | Yes | No default | IR only. Ships ARM `ResourceResolver`s for part of its catalog (`AZURE_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)) — **fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed |
+| `@hobo/provider-digitalocean` | Yes | No default | IR only. Ships `ResourceResolver`s for its catalog product ids (`DIGITALOCEAN_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)) across three guarded surfaces: bearer-token against `api.digitalocean.com/v2`; **Spaces over SigV4** on its own host with its own key pair; and **Functions over OpenWhisk** on the namespace's own `faas-*.doserverless.co` host with the namespace's own Basic credential. App Platform workers and jobs converge by **read-modify-write on the owning app's spec** (`PUT /v2/apps/{id}`); they never create the app, and everything they do not own is carried through the write. A function converges through `PUT /api/v1/namespaces/{ns}/actions/{name}?overwrite=true`, which is create-or-replace and therefore idempotent; the namespace host is read from the control plane, shape-checked, and then guarded as an exact host. **Fake-transport proof only**, no live call, and no Resource Definitions registered, so a deploy still fails closed. `queue`/`topic`/`secretRef` carry no rows: DigitalOcean sells no first-party queue or secret store |
+| `@hobo/provider-hetzner` | Yes | No default | IR only. Ships `ResourceResolver`s for its catalog product ids (`HETZNER_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)) across three guarded hosts: Cloud Server, Load Balancer and Volume on `api.hetzner.cloud/v1`; **Object Storage over SigV4** on `<location>.your-objectstorage.com`; and the **Storage Box on `api.hetzner.com/v1`**, the unified host Hetzner moved it to, with the same bearer-token scheme as the Cloud API. Its create password arrives through the injected `resolveStorageBoxPassword(logicalId)` and never through `desired`. **Fake-transport proof only**. Robot (`HETZNER_EXCLUDED_SURFACES`) stays unreachable — dedicated-server administration behind the web console password, which nothing catalogued here needs. Five slots carry no rows — no managed database, cache, queue, topic or secret store |
+| `@hobo/provider-hostinger` | Yes | **Adopt-only** | IR only. Ships `ResourceResolver`s for its catalog product ids (`HOSTINGER_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)): VPS and DNS zone on `/api/vps/v1/` and `/api/dns/v1/`, and web hosting, static site and MySQL on `/api/hosting/v1/`. Buying stays impossible: the guard does not allowlist `/api/billing/v1/`, a VPS is adopt-only, and a website create requires `desired.orderId` — a plan the account already owns. `delete()` on a VPS refuses (it would cancel a paid plan). The MySQL user password arrives through the injected `resolveDatabasePassword(logicalId)`, never through `desired`. **Fake-transport proof only** |
 | `@hobo/provider-kafka` | Capability | N/A messaging | Not a full cloud Yard provider |
 | `@hobo/provider-convex` | Yes | Cred-gated + Examples | `realize` → `applyDriverProgram`; Cloudflare Examples frontend = Temporary Pages; **anon Temporary Convex self-host fail-closed** under zero project API keys (`provisionConvexBackendAnonymous` rejection matrix: Instanode no anon containers, OpenPouch anon 256MiB cgroup, CF Temporary Containers 403); mock via `HOBO_CONVEX_SWAGHAUS_MOCK=1`; escapes `HOBO_CONVEX_OCI_HOST=cloudflare` / `HOBO_CONVEX_ALLOW_CLOUD=1`; WorkOS AuthKit for swaghaus; `/api/cf-temp/swaghaus` |
 | `@hobo/provider-ax` / `agentv` | Eval | N/A | AI-eval adapters |
 
 Shared temp contract: `hobo.temporary-environment-station/v1` in `@hobo/core` (`temporaryStationToAnonymousSessionShape` aligns with broker `AnonymousSessionResult`).
+
+## Data engines (`packages/data-*`, ADR-0177)
+
+Each engine implements the `@hobo/data-core` SPI and is run against one conformance kit
+([data-engines-continuous-migration](./data-engines-continuous-migration.md#9-verification)). "Live"
+here means the kit ran against a real server. The kit grows as defects are found, so this section
+gives no case or test counts; each run's counts are in that run's CI log, and
+[§9 "What each engine skips"](./data-engines-continuous-migration.md#what-each-engine-skips) lists
+the skipped cases. What follows states which cases each engine skips and why.
+
+| Engine package | Default lane | Live lane | Notes |
+|---|---|---|---|
+| `@hobo/data-sqlite` | **Real** — every test opens SQLite files | same | SQLite ↔ SQLite passes every case that applies and skips only the native cases (SQLite declares no native profile) and the size case (it states no `maxRecordBytes`); the kit also passes cross-engine with the reference engine in both directions. Capture is a transactional outbox; the fence is entry-point |
+| `@hobo/data-postgres` | Offline: decoder against recorded `pgoutput` bytes, statement and type tests, the executor Pact | **Cred-gated**: `HOBO_TEST_POSTGRES_URL` (needs `wal_level=logical`) | PostgreSQL ↔ PostgreSQL passes every case that applies, the native and crash-window cases included, and skips only the size case (it states no `maxRecordBytes`). The live lane also runs the kit against the reference engine and the cross-engine files with SQLite and MongoDB, both directions. Only PostgreSQL 16 is run; the SQL needs 14+. No driver dependency — an injected executor |
+| `@hobo/data-mongodb` | Offline: the whole kit over an in-memory executor | **Cred-gated**: `HOBO_TEST_MONGODB_URL` (needs a replica set) | Against a one-member replica set, MongoDB ↔ MongoDB passes every case that applies and skips the native cases and the cases that need the `schema` port (MongoDB declares neither). One case is reported `declared-limit`, not passed: `capture.acknowledged-positions-are-final`, under `MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING`. The live lane also runs the cross-engine files with SQLite and PostgreSQL, both directions. Sharded clusters and failover are untested. No driver dependency — an injected executor |
+
+CI provides both servers in one job. `Live data engines` in `.github/workflows/hobo-ci.yml` starts a
+digest-pinned PostgreSQL 16 (`wal_level=logical`) and a one-member MongoDB 8 replica set as sibling
+containers — the images are pinned in `packages/data-core/deploy/live-engine-images.json`, the same
+ones the compose file runs — and runs `pnpm run test:data-live` against them. It runs on a pull
+request whose diff reaches the live suites, and on a manual dispatch; never on a schedule, and not in the merge
+queue, and it blocks a merge only if the branch ruleset lists it as required. A regression in live
+change capture, in the fence under real concurrency, or in the native path is therefore caught on
+the pull request that touches those packages, and not otherwise. An intermittent failure once seen in the live PostgreSQL lane was traced to a
+replication slot created at a bad moment and is fixed by proving a slot decodable before use; the
+residual is the table-sync slots PostgreSQL creates itself
+([honest limits](./data-engines-continuous-migration.md#10-honest-limits)).
+
+**Native logical-copy, live.** `migration.postgres.logical-copy/v1` is the one native realization
+any engine declares. Its live proof is `packages/data-postgres/test/native-live.test.ts`, which
+creates one extra database on the server it is given and moves a dataset between the two databases
+under concurrent writers: digest-equal, fenced, flipped once, nothing left behind. The figures it
+prints are in each run's log. That proof is **one cluster, two databases, PostgreSQL 16 only**. The
+target role must also be able to turn statement logging off for its own transaction on a server that
+logs statements, or the subscription is refused rather than have the source connection string
+logged. Not tested: two separate clusters; any other PostgreSQL version;
+a subscription owner that is not a superuser; an initial copy longer than the poll budget on a real
+server; cleanup when the source is unreachable, against a real server; open-schema datasets
+natively; a network failure mid-copy; a native `offline-copy` on a real engine (none declares one).
+
+To run both live lanes locally:
+
+```bash
+docker compose -f packages/data-core/deploy/compose.live-engines.yml up -d --wait
+pnpm run test:data-live
+docker compose -f packages/data-core/deploy/compose.live-engines.yml down -v
+```
+
+`test:data-live` defaults the two URLs to the compose ports and honours values already set, so it also
+works against servers started another way. It calls `pnpm --filter … test` rather than turbo on
+purpose: turbo passes `HOBO_*` through without keying its cache on them, so a cached offline result
+could be replayed as if it were a live one.
 
 ## IaC engines (`packages/iac/`)
 

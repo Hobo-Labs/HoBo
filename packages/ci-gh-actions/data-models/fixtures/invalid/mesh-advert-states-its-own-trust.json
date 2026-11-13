@@ -1,0 +1,8 @@
+{
+  "id": "box-a",
+  "freeSlots": 2,
+  "healthy": true,
+  "labels": ["hobo"],
+  "validUntilMs": 1794268845000,
+  "trust": "trusted"
+}

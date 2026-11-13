@@ -9,10 +9,40 @@ import {
 	route,
 	SandboxPricingSchema,
 } from "@hobo/ci";
-import { PostgresCiStore } from "@hobo/ci/postgres";
-import pg from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { createSandboxComposition } from "../src/sandbox-composition.js";
+import {
+	createSandboxComposition,
+	type SandboxCompositionStore,
+} from "../src/sandbox-composition.js";
+
+/** A store that answers only what a test sets; anything else is a failure. */
+function stubStore(
+	overrides: Partial<SandboxCompositionStore> = {},
+): SandboxCompositionStore {
+	const unreachable = async () => {
+		throw new Error("unexpected store operation");
+	};
+	return {
+		configuration: unreachable,
+		policySnapshot: unreachable,
+		all: unreachable,
+		activeLeases: unreachable,
+		accountLeases: unreachable,
+		pendingJobs: unreachable,
+		observe: unreachable,
+		queue: unreachable,
+		reserve: unreachable,
+		cancelAndRequeue: unreachable,
+		settleObserved: unreachable,
+		get: unreachable,
+		transition: unreachable,
+		configureSandboxProxy: unreachable,
+		configureSandboxEgress: unreachable,
+		settleSandboxObserved: unreachable,
+		sandboxProxyUsage: unreachable,
+		...overrides,
+	};
+}
 
 describe("Sandbox billing team binding", () => {
 	it.each([
@@ -97,26 +127,24 @@ describe("Sandbox billing team binding", () => {
 			reservedPaidMicros: quote.paidMicros,
 			sandboxReservedAllowance: quote.sandboxReservedAllowance,
 		});
-		const pool = new pg.Pool();
-		const store = new PostgresCiStore(pool);
-		vi.spyOn(store, "get").mockResolvedValue(lease);
-		vi.spyOn(store, "policySnapshot").mockResolvedValue({
-			state: create(ConfigurationStateSchema, {
-				revision: 1,
-				configuration: create(ConfigurationSchema, {
-					accounts: [account],
-					connections: [connection],
+		const transition = vi.fn(async () => undefined);
+		const cancelAndRequeue = vi.fn(async () => undefined);
+		const store = stubStore({
+			get: async () => lease,
+			policySnapshot: async () => ({
+				state: create(ConfigurationStateSchema, {
+					revision: 1,
+					configuration: create(ConfigurationSchema, {
+						accounts: [account],
+						connections: [connection],
+					}),
 				}),
+				policies: [],
 			}),
-			policies: [],
+			accountLeases: async () => [],
+			transition,
+			cancelAndRequeue,
 		});
-		vi.spyOn(store, "accountLeases").mockResolvedValue([]);
-		const transition = vi
-			.spyOn(store, "transition")
-			.mockResolvedValue(undefined);
-		const cancelAndRequeue = vi
-			.spyOn(store, "cancelAndRequeue")
-			.mockResolvedValue(undefined);
 		const composition = createSandboxComposition({
 			env: {
 				HOBO_CI_SANDBOX_ENABLED: "1",
@@ -140,7 +168,6 @@ describe("Sandbox billing team binding", () => {
 		await composition.host.launch(lease.id);
 		expect(transition).toHaveBeenCalledTimes(accepted ? 1 : 0);
 		expect(cancelAndRequeue).toHaveBeenCalledTimes(accepted ? 0 : 1);
-		await pool.end();
 	});
 	it.each([
 		{ domains: ["https://secret.example/token"] },
@@ -148,7 +175,6 @@ describe("Sandbox billing team binding", () => {
 		{ domains: ["github.com", "github.com"] },
 		{ domains: Array.from({ length: 101 }, (_, i) => `host${i}.example.com`) },
 	])("never reports invalid Sandbox domains %#", async ({ domains }) => {
-		const pool = new pg.Pool();
 		const sandbox = createSandboxComposition({
 			env: {
 				HOBO_CI_SANDBOX_ENABLED: "1",
@@ -158,7 +184,7 @@ describe("Sandbox billing team binding", () => {
 				HOBO_CI_SANDBOX_DOMAINS_JSON: JSON.stringify(domains),
 			},
 			publicOrigin: "https://ci.example.com",
-			store: new PostgresCiStore(pool),
+			store: stubStore(),
 			github: {
 				request: async () => {
 					throw new Error("unexpected call");
@@ -166,6 +192,5 @@ describe("Sandbox billing team binding", () => {
 			},
 		});
 		expect(() => sandbox?.allowedDomains()).toThrow();
-		await pool.end();
 	});
 });

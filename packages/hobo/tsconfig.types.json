@@ -1,0 +1,18 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"rootDir": "."
+	},
+	"include": [
+		"test/vercel-client.test-d.ts",
+		"test/vercel-project.test.ts",
+		"test/vercel-deploy.test.ts",
+		"test/vercel-git-deploy.test.ts",
+		"test/ci-relay-deploy.test.ts",
+		"test/lane-e2e.test.ts",
+		"test/cloudflare-deploy.test.ts",
+		"test/resolver-iac-provider.test.ts",
+		"test/credentials-opensesame.test.ts"
+	]
+}

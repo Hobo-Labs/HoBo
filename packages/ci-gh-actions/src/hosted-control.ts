@@ -13,12 +13,14 @@ import {
 	type Configuration,
 	ConfigurationSchema,
 	type ConfigurationState,
+	type Connection,
 	ConnectionSchema,
 	type ControlRecord,
 	ciBudgetPolicyJson,
 	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
 	effectiveCiAccount,
+	isJobEvent,
 	LeaseSchema,
 	OfferSchema,
 	parseCiPolicy,
@@ -30,15 +32,48 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import { z } from "zod";
-import type {
-	ControlAuthenticator,
-	ControlPrincipal,
-} from "./control-plane.js";
+import {
+	accountLease,
+	ControlError,
+	configurationState,
+	type QuarantinedDelivery,
+	quarantinedDeliveries,
+	reconcileAccountLease,
+	retryQuarantinedDelivery,
+} from "./account-operations.js";
+import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
+import {
+	FLEET_REPORTERS_PATH,
+	FLEET_VERDICTS_PATH,
+	type FleetVerdictSettings,
+	type FleetVerdictStore,
+	fleetEnrollmentFor,
+	fleetReporterStatusListJson,
+	fleetVerdictJson,
+	noFleetVerdict,
+	parseFleetReportersPath,
+	parseFleetVerdictPath,
+	parseFleetVerdictReport,
+} from "./fleet-verdict.js";
+import {
+	FLEET_VERDICT_HEADERS,
+	isFleetVerdictIssuedAt,
+	isFleetVerdictSequence,
+	verifyFleetVerdictReport,
+} from "./fleet-verdict-auth.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
 	IsolatedOnboardingError,
 	prepareIsolatedConnection,
 } from "./isolated-onboarding.js";
+import {
+	createMeshNodesReader,
+	type MeshNodesReader,
+} from "./mesh-nodes-reader.js";
+import {
+	meshNodeReportsForAccount,
+	meshNodeReportsJson,
+} from "./mesh-records.js";
 import {
 	applyOnboarding,
 	connectRepository,
@@ -51,8 +86,10 @@ import {
 	parseOnboardingPlan,
 	prepareOnboarding,
 } from "./onboarding.js";
+import type { GithubWorkflowVerifier } from "./workflow-oidc.js";
 
-interface HostedControlStore extends HostedRelayStore {
+/** What the account control plane needs from a store beyond the relay's own port. */
+export interface HostedControlStore extends HostedRelayStore {
 	reattestRate(
 		input: {
 			accountId: string;
@@ -89,29 +126,12 @@ interface HostedControlStore extends HostedRelayStore {
 	quarantinedWebhooks(
 		accountId: string,
 		expectedRevision: number,
-	): Promise<
-		Array<{
-			deliveryId: string;
-			event: string;
-			installationId: number;
-			repositoryId: number;
-			receivedAt: string;
-			attempts: number;
-		}>
-	>;
+	): Promise<QuarantinedDelivery[]>;
 	retryQuarantinedWebhook(
 		accountId: string,
 		expectedRevision: number,
 		deliveryId: string,
 	): Promise<boolean>;
-}
-class ControlError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
-	}
 }
 function response(status: number, value: string, revision?: number): Response {
 	const headers = new Headers({
@@ -186,6 +206,211 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
+// public-contract: the relay route that lists the mesh's nodes.
+export const MESH_NODES_PATH = "/v1/mesh/nodes";
+
+/**
+ * The control routes that write configuration, or keep records a relay with
+ * a read-only config source has no place for (ADR-0179 §8): policy and
+ * provider writes, budget signals and usage observations, the inbox
+ * quarantine, and repository setup with its operation records. On such a
+ * relay each answers 410 (`readOnlyConfig`).
+ */
+export function isConfigWriteRoute(method: string, path: string): boolean {
+	if (path.startsWith("/v2/accounts/self/inbox/")) return true;
+	if (path.startsWith("/v1/accounts/self/repositories/")) return true;
+	if (method === "PUT")
+		return (
+			path === "/v1/accounts/self/policy" ||
+			path === "/v2/accounts/self/policy" ||
+			path === "/v2/accounts/self/providers"
+		);
+	if (method === "POST")
+		return (
+			path === "/v2/accounts/self/signals" ||
+			path === "/v2/accounts/self/observations" ||
+			path === "/v2/accounts/self/rate-observations"
+		);
+	return false;
+}
+
+/** Why the hosted relay refused a fleet verdict report (ADR-0180). */
+export type FleetVerdictRefusal =
+	| "bad-request"
+	| "unknown-reporter"
+	| "bad-signature"
+	| "clock-skew"
+	| "replayed"
+	| "not-found"
+	| "invalid-report";
+
+/** How far a report's issued-at may be from this relay's clock. */
+const FLEET_REPORT_SKEW_MS = 120_000;
+
+/** What a host gives the control plane to keep, agree and serve fleet verdicts. */
+export type FleetVerdictService = Readonly<{
+	store: FleetVerdictStore;
+	/** Who may report, the kill switch and the allowance; read per request. */
+	settings(): FleetVerdictSettings | Promise<FleetVerdictSettings>;
+	/** Verifies a workflow's OIDC token for the status route; absent, it answers 503. */
+	workflowIdentity?: GithubWorkflowVerifier | undefined;
+	/** `hobo_ci_fleet_verdict_refused`, with the reporter id and the reason. */
+	log?:
+		| ((
+				event: "hobo_ci_fleet_verdict_refused",
+				fields: Readonly<Record<string, string>>,
+		  ) => void)
+		| undefined;
+}>;
+
+function fleetRefusal(status: number, reason: FleetVerdictRefusal): Response {
+	return response(
+		status,
+		JSON.stringify({ error: reason.replaceAll("-", " "), reason }),
+	);
+}
+
+/**
+ * The fleet verdict routes (ADR-0180), or `undefined` for any other path.
+ * A verdict is read without a credential: runner routing asks from a job
+ * that has none to give, and the answer names labels and nothing else. A
+ * report is signed by an enrolled reporter's key and checked in the order
+ * of the ADR's table; the status route answers a workflow of the repository
+ * itself.
+ */
+async function fleetVerdictRoute(
+	request: Request,
+	url: URL,
+	deps: Readonly<{
+		service: FleetVerdictService | undefined;
+		connections: () => Promise<readonly Connection[]>;
+		publicOrigin: string;
+		nowMs: () => number;
+	}>,
+): Promise<Response | undefined> {
+	const path = url.pathname;
+	const { service } = deps;
+	if (path.startsWith(FLEET_REPORTERS_PATH)) {
+		const repository = parseFleetReportersPath(path);
+		if (!repository) return response(404, '{"error":"not found"}');
+		if (url.search) return fleetRefusal(400, "bad-request");
+		if (request.method !== "GET")
+			return response(405, '{"error":"method not allowed"}');
+		if (!service?.workflowIdentity)
+			return response(503, '{"error":"this relay keeps no fleet verdicts"}');
+		const authorization = request.headers.get("authorization") ?? "";
+		const token = /^Bearer (\S{1,16000})$/u.exec(authorization)?.[1];
+		let asking: string;
+		try {
+			if (!token) throw new Error("no token");
+			asking = (await service.workflowIdentity.verify(token)).repository;
+		} catch {
+			return response(401, '{"error":"workflow identity required"}');
+		}
+		if (asking.toLowerCase() !== repository)
+			return response(403, '{"error":"another repository"}');
+		const connection = (await deps.connections()).find(
+			(entry) => entry.repository.toLowerCase() === repository,
+		);
+		if (!connection) return response(404, '{"error":"not found"}');
+		const settings = await service.settings();
+		return response(
+			200,
+			fleetReporterStatusListJson(
+				await service.store.status(
+					repository,
+					fleetEnrollmentFor(settings, connection.accountId),
+				),
+			),
+		);
+	}
+	if (!path.startsWith(FLEET_VERDICTS_PATH)) return undefined;
+	const repository = parseFleetVerdictPath(path);
+	if (!repository) return response(404, '{"error":"not found"}');
+	if (request.method === "GET") {
+		if (url.search) return fleetRefusal(400, "bad-request");
+		const settings = service && (await service.settings());
+		if (!service || !settings?.serving)
+			return response(200, fleetVerdictJson(noFleetVerdict(repository)));
+		// Only a connected repository can have a verdict, so only one is
+		// looked up: a made-up name costs the relay no read of its store, and
+		// gets the same answer as one with nothing blocked.
+		const connection = (await deps.connections()).find(
+			(entry) => entry.repository.toLowerCase() === repository,
+		);
+		return response(
+			200,
+			fleetVerdictJson(
+				connection
+					? await service.store.read(
+							repository,
+							fleetEnrollmentFor(settings, connection.accountId),
+						)
+					: noFleetVerdict(repository),
+			),
+		);
+	}
+	if (request.method !== "PUT")
+		return response(405, '{"error":"method not allowed"}');
+	const settings = service && (await service.settings());
+	if (!service || !settings?.serving)
+		return response(503, '{"error":"this relay is not taking fleet verdicts"}');
+	const reporterId = request.headers.get(FLEET_VERDICT_HEADERS.reporter) ?? "";
+	const refuse = (status: number, reason: FleetVerdictRefusal) => {
+		try {
+			service.log?.("hobo_ci_fleet_verdict_refused", {
+				reporter: reporterId.slice(0, 64),
+				repository,
+				reason,
+			});
+		} catch {
+			// A failed log line must not change the answer.
+		}
+		return fleetRefusal(status, reason);
+	};
+	if (url.search) return refuse(400, "bad-request");
+	const reporter = settings.reporters.find((entry) => entry.id === reporterId);
+	if (!reporter) return refuse(401, "unknown-reporter");
+	const body = await readBody(request);
+	const sequence = request.headers.get(FLEET_VERDICT_HEADERS.sequence) ?? "";
+	const issuedAt = request.headers.get(FLEET_VERDICT_HEADERS.issuedAt) ?? "";
+	if (
+		!isFleetVerdictSequence(sequence) ||
+		!isFleetVerdictIssuedAt(issuedAt) ||
+		!verifyFleetVerdictReport(
+			reporter.publicKey,
+			// This relay's own origin, never the request's Host: a report
+			// signed for another relay is not one for this one.
+			{ origin: deps.publicOrigin, path, body, issuedAt, sequence },
+			request.headers.get(FLEET_VERDICT_HEADERS.signature) ?? "",
+		)
+	)
+		return refuse(401, "bad-signature");
+	if (Math.abs(Date.parse(issuedAt) - deps.nowMs()) > FLEET_REPORT_SKEW_MS)
+		return refuse(401, "clock-skew");
+	const seen = await service.store.lastSequence(repository, reporter.id);
+	if (seen !== undefined && seen >= BigInt(sequence))
+		return refuse(401, "replayed");
+	const connection = (await deps.connections()).find(
+		(entry) =>
+			entry.accountId === reporter.accountId &&
+			entry.repository.toLowerCase() === repository,
+	);
+	if (!connection) return refuse(404, "not-found");
+	const report = parseFleetVerdictReport(body);
+	if (
+		!report ||
+		[...report.blocked.keys()].some((label) => !reporter.labels.includes(label))
+	)
+		return refuse(400, "invalid-report");
+	const accepted = await service.store.accept(
+		{ repository, reporter, sequence: BigInt(sequence), report },
+		fleetEnrollmentFor(settings, reporter.accountId),
+	);
+	if (!accepted.accepted) return refuse(401, accepted.reason);
+	return response(200, fleetVerdictJson(accepted.entry));
+}
+
 /** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
@@ -194,19 +419,43 @@ export function createHostedControlPlane(options: {
 	authenticate: ControlAuthenticator;
 	publicOrigin: string;
 	assets: { workflow: string; bootstrap: string };
+	/**
+	 * Let an account replace its whole policy, offers included, through
+	 * `PUT /v1/accounts/self/policy`. For a relay whose operator owns the
+	 * provider inventory. Off, that route answers 410 and an account can only
+	 * change its v2 desired policy.
+	 */
+	fullAccountUpdates?: boolean;
 	runtimeDiagnostic?: () => {
 		sandboxEnabled: boolean;
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
+	/**
+	 * What the relay mesh looks like from this host, for `GET /v1/mesh/nodes`.
+	 * A host with no mesh leaves it out, and the route then answers
+	 * `mesh: "not-configured"`: an answer, not an error.
+	 */
+	meshNodes?: MeshNodesReader | undefined;
+	/**
+	 * The relay reads its configuration from a config service and never
+	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
+	 * answers 410 naming where configuration is written instead. Read
+	 * routes are unchanged.
+	 */
+	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
+	/**
+	 * Fleet verdicts (ADR-0180): where this relay keeps them, who may report,
+	 * and who may read reporter status, for `/v1/fleet/verdicts/…` and
+	 * `/v1/fleet/reporters/…`. A host that keeps none leaves it out: a read
+	 * then answers that nothing is blocked, which is all that no verdict
+	 * means, and a report or a status read answers 503.
+	 */
+	fleetVerdicts?: FleetVerdictService | undefined;
 }) {
 	const { store, relay } = options;
-	async function state(): Promise<ConfigurationState> {
-		const result = await store.configuration();
-		if (!result?.configuration)
-			throw new ControlError(503, "configuration unavailable");
-		return result;
-	}
+	const meshNodes = options.meshNodes ?? createMeshNodesReader();
+	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
 		repositoryId: number,
@@ -247,12 +496,44 @@ export function createHostedControlPlane(options: {
 		return fromJsonString(OnboardingOperationSchema, saved.bodyJson);
 	}
 	return async (request: Request): Promise<Response | undefined> => {
-		const path = new URL(request.url).pathname;
+		const url = new URL(request.url);
+		const path = url.pathname;
+		if (
+			path.startsWith(FLEET_VERDICTS_PATH) ||
+			path.startsWith(FLEET_REPORTERS_PATH)
+		) {
+			try {
+				return await fleetVerdictRoute(request, url, {
+					service: options.fleetVerdicts,
+					connections: async () =>
+						(await store.configuration())?.configuration?.connections ?? [],
+					publicOrigin: options.publicOrigin,
+					nowMs: () => Date.parse(relay.now()),
+				});
+			} catch (error) {
+				if (error instanceof ControlError)
+					return response(
+						error.status,
+						JSON.stringify({ error: error.message }),
+					);
+				throw error;
+			}
+		}
 		if (
 			!path.startsWith("/v1/accounts/self/") &&
-			!path.startsWith("/v2/accounts/self/")
+			!path.startsWith("/v2/accounts/self/") &&
+			path !== MESH_NODES_PATH
 		)
 			return undefined;
+		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
+			return response(
+				410,
+				JSON.stringify({
+					error:
+						"configuration is read-only on this relay: write it with `hobo ci`, which updates the config service",
+					configService: options.readOnlyConfig.configService,
+				}),
+			);
 		try {
 			const principal = await options.authenticate(
 				request.headers.get("authorization") ?? undefined,
@@ -276,6 +557,30 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
+			// The mesh is the relay's own infrastructure, not one account's: any
+			// account credential that may read (`policy:read`) may see it. The
+			// answer names nodes, capacity and public keys, never a secret.
+			if (path === MESH_NODES_PATH) {
+				if (request.method !== "GET")
+					throw new ControlError(405, "method not allowed");
+				// A machine running jobs for one repository is shown in full only
+				// to the account that owns that repository.
+				const connections =
+					(await store.configuration())?.configuration?.connections ?? [];
+				return response(
+					200,
+					meshNodeReportsJson(
+						meshNodeReportsForAccount(
+							await meshNodes(),
+							new Set(
+								connections
+									.filter((entry) => entry.accountId === principal.accountId)
+									.map((entry) => entry.repository),
+							),
+						),
+					),
+				);
+			}
 			if (path === "/v2/accounts/self/runtime" && request.method === "GET") {
 				if (!options.runtimeDiagnostic)
 					throw new ControlError(404, "runtime diagnostic unavailable");
@@ -310,14 +615,57 @@ export function createHostedControlPlane(options: {
 					current.revision,
 				);
 			}
-			if (path === "/v1/accounts/self/policy" && request.method === "PUT")
-				throw new ControlError(
-					410,
-					"use v2 desired policy; full account updates are disabled",
+			if (path === "/v1/accounts/self/policy" && request.method === "PUT") {
+				if (!options.fullAccountUpdates)
+					throw new ControlError(
+						410,
+						"use v2 desired policy; full account updates are disabled",
+					);
+				const expected = revision(request);
+				const account = fromJsonString(AccountSchema, await readBody(request));
+				if (account.id !== principal.accountId)
+					throw new ControlError(
+						403,
+						"account policy belongs to another account",
+					);
+				const latest = (await state()).configuration;
+				if (
+					(await store.controlRecord(`ci-policy:${principal.accountId}`)) ||
+					latest?.accounts.find((entry) => entry.id === principal.accountId)
+						?.budgetPolicy
+				)
+					throw new ControlError(410, "use v2 desired policy for this account");
+				const next = create(ConfigurationSchema, {
+					accounts: [
+						...(latest?.accounts ?? []).filter(
+							(entry) => entry.id !== principal.accountId,
+						),
+						account,
+					],
+					connections: latest?.connections ?? [],
+				});
+				try {
+					parseConfiguration(toJsonString(ConfigurationSchema, next));
+				} catch {
+					throw new ControlError(400, "invalid account policy");
+				}
+				const saved = await store.configure(next, expected, relay.now());
+				return response(
+					200,
+					policyState(saved, principal.accountId),
+					saved.revision,
 				);
+			}
 			if (path === "/v2/accounts/self/policy" && request.method === "PUT") {
 				const expected = revision(request);
-				const desired = parseCiPolicy(await readBody(request));
+				const input = await readBody(request);
+				let desired: ReturnType<typeof parseCiPolicy>;
+				try {
+					desired = parseCiPolicy(input);
+				} catch {
+					// A policy the parser refuses is the caller's to fix, not to retry.
+					throw new ControlError(400, "invalid desired CI policy");
+				}
 				if (desired.accountId !== principal.accountId)
 					throw new ControlError(
 						403,
@@ -353,6 +701,11 @@ export function createHostedControlPlane(options: {
 						throw new ControlError(
 							409,
 							"provider binding requires trusted provisioning",
+						);
+					if (offer.backend === "sandbox" && !relay.options.isolatedHost)
+						throw new ControlError(
+							409,
+							"sandbox providers are unavailable on this relay",
 						);
 				}
 				if (!desired.budget) throw new ControlError(400, "budget required");
@@ -682,12 +1035,11 @@ export function createHostedControlPlane(options: {
 				path === "/v2/accounts/self/inbox/quarantined" &&
 				request.method === "GET"
 			) {
-				const current = await state();
-				const deliveries = await store.quarantinedWebhooks(
+				const { revision: current, deliveries } = await quarantinedDeliveries(
+					store,
 					principal.accountId,
-					current.revision,
 				);
-				return response(200, JSON.stringify({ deliveries }), current.revision);
+				return response(200, JSON.stringify({ deliveries }), current);
 			}
 			const retry =
 				/^\/v2\/accounts\/self\/inbox\/([A-Za-z0-9-]{1,100})\/retry$/.exec(
@@ -697,21 +1049,27 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(400, "retry request must have an empty body");
 				const expected = revision(request);
-				const done = await store.retryQuarantinedWebhook(
+				await retryQuarantinedDelivery(
+					store,
 					principal.accountId,
 					expected,
 					retry[1],
 				);
-				if (!done)
-					throw new ControlError(404, "quarantined delivery not found");
 				return response(200, JSON.stringify({ status: "queued" }), expected);
 			}
 			if (path === "/v1/accounts/self/leases" && request.method === "GET") {
 				const leases = (await store.all())
 					.filter((entry) => entry.accountId === principal.accountId)
 					.slice(-100);
+				// The account's lease and record events, as this route has always
+				// returned them. A job's own events (queued, completed, expired)
+				// now name their account too; they are served by the relay's MCP
+				// server and must not crowd the lease events out of this window.
 				const events = (await store.events())
-					.filter((entry) => entry.accountId === principal.accountId)
+					.filter(
+						(entry) =>
+							entry.accountId === principal.accountId && !isJobEvent(entry),
+					)
 					.slice(-100);
 				return response(
 					200,
@@ -955,7 +1313,7 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(
 						400,
-						"setup actions use the stored reviewed plan",
+						"setup actions use the stored reviewed plan, not request JSON",
 					);
 				if (!op.plan) throw new Error("setup plan missing");
 				const plan = parseOnboardingPlan(
@@ -1113,9 +1471,7 @@ export function createHostedControlPlane(options: {
 				);
 			}
 			if (lease?.[1]) {
-				const found = await store.get(lease[1]);
-				if (!found || found.accountId !== principal.accountId)
-					throw new ControlError(404, "lease not found");
+				const found = await accountLease(store, principal.accountId, lease[1]);
 				if (request.method === "GET" && !lease[2])
 					return response(200, toJsonString(LeaseSchema, found));
 				if (request.method === "POST" && lease[2] === "reconcile") {
@@ -1123,12 +1479,18 @@ export function createHostedControlPlane(options: {
 						ReconcileRequestSchema,
 						await readBody(request),
 					);
-					if (!Number.isSafeInteger(input.hostRunId) || input.hostRunId < 1)
-						throw new ControlError(400, "positive host run id required");
-					await relay.reconcile(found.id, input.hostRunId);
 					return response(
 						200,
-						toJsonString(LeaseSchema, (await store.get(found.id)) ?? found),
+						toJsonString(
+							LeaseSchema,
+							await reconcileAccountLease(
+								relay,
+								store,
+								principal.accountId,
+								found.id,
+								input.hostRunId,
+							),
+						),
 					);
 				}
 				throw new ControlError(405, "method not allowed");

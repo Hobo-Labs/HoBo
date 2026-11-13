@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",
 	"topologyDigest": "sha256:31efdb46b045e2d1db930d204c3b69f1e00c8c7c9150cd35be81b152f9148a71",
-	"resolutionDigest": "sha256:c61019bac81bee3107aac1c05da0e5da5c863da491dba66f96e549610fe60b37",
+	"resolutionDigest": "sha256:727ef8b4984c507c2df69cc902ba425efa2f104777bca66f41a04c71c88220ff",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",

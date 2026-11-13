@@ -9,10 +9,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const linker = join(root, "scripts/ensure-ts-autocode-links.mts");
 
 describe("scripts/ensure-ts-autocode-links.mts", () => {
-	it("does not invoke pnpm install (prepare must not recurse into install)", () => {
+	it("fetches pins before install and only installs when still unlinked", () => {
 		const source = readFileSync(linker, "utf8");
-		assert.doesNotMatch(source, /execFile\s*\(\s*["']pnpm["']/);
-		assert.doesNotMatch(source, /\bspawn\s*\(\s*["']pnpm["']/);
+		assert.match(source, /pins:fetch/);
+		assert.doesNotMatch(
+			source,
+			/execFile\s*\(\s*["']pnpm["'],\s*\[\s*["']install["']/,
+		);
 		assert.doesNotMatch(
 			source,
 			/join\(\s*root,\s*["']node_modules\/ts-autocode-grounding/,

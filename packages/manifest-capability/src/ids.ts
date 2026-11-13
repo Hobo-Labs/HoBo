@@ -69,6 +69,9 @@ const PRIMITIVE_BY_SEGMENT = new Map<string, BindlePrimitive>(
 const PRIMITIVE_ALIASES = new Map<string, BindlePrimitive>([
 	["realtime", "webhook"],
 	["secret-ref", "secretRef"],
+	// A lease lifecycle driver (`lifecycle.lease-driver/v1`, ADR-0179) delivers
+	// a lease's delayed steps: a queue, whether Vercel Queues or a Workflow run.
+	["lifecycle", "queue"],
 ]);
 
 /**
@@ -78,7 +81,9 @@ const PRIMITIVE_ALIASES = new Map<string, BindlePrimitive>([
  * prefix. Anything else is rejected rather than coerced.
  */
 export function parseProfileId(input: string): ParsedProfileId {
-	if (typeof input !== "string" || input.length === 0) {
+	// `String(input) !== input` holds for anything but a string: a JavaScript
+	// caller can still pass one.
+	if (String(input) !== input || input.length === 0) {
 		throw new ProfileIdError(String(input), "must be a non-empty string");
 	}
 	if (input !== input.trim()) {
@@ -118,7 +123,7 @@ export function parseProfileId(input: string): ParsedProfileId {
 			);
 		}
 	}
-	const family = path[0] as string;
+	const [family = ""] = path;
 	const primitive =
 		PRIMITIVE_BY_SEGMENT.get(family) ?? PRIMITIVE_ALIASES.get(family);
 	if (primitive === undefined) {
@@ -128,6 +133,7 @@ export function parseProfileId(input: string): ParsedProfileId {
 		);
 	}
 	return {
+		// SAFETY: every check above passed; this is the brand's only constructor.
 		id: input as ProfileId,
 		primitive,
 		path,
@@ -145,9 +151,9 @@ export function tryParseProfileId(input: string): ParsedProfileId | undefined {
 }
 
 export function isBindlePrimitive(value: string): value is BindlePrimitive {
-	return (BINDLE_PRIMITIVES as readonly string[]).includes(value);
+	return BINDLE_PRIMITIVES.some((primitive) => primitive === value);
 }
 
 export function isBindleRuntime(value: string): value is BindleRuntime {
-	return (BINDLE_RUNTIMES as readonly string[]).includes(value);
+	return BINDLE_RUNTIMES.some((runtime) => runtime === value);
 }

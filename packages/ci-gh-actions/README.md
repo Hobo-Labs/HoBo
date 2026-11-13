@@ -8,11 +8,14 @@ startup remains an explicit operation.
 The exported browser/Node account client bounds response bodies to 2 MiB and
 rejects invalid UTF-8 before protobuf decoding. Its executable consumer contract
 covers these limits and disposal of error/redirect response streams. Product CLI setup is also checked through the production
-HTTPS control plane and native PostgreSQL store in
+HTTPS control plane and the relay's SQLite store in
 [`packages/hobo/e2e/ci.test.ts`](../hobo/e2e/ci.test.ts).
 
-`@hobo/ci-gh-actions` provides the hosted HoBo CI relay, account API, repository
-installer and ephemeral GitHub Actions runner host. Once the repository's setup
+`@hobo/ci-gh-actions` provides the HoBo CI relay, account API, repository
+installer and ephemeral GitHub Actions runner host. There is one relay; it is
+[hosted three ways](#one-relay-thin-hosts) (a Node service behind `hobo ci serve`
+and the container image, Vercel, and the box worker daemon), and each host adds
+only a store, a scheduler and runner backends. Once the repository's setup
 PR is merged and its connection activated, workflows select HoBo with one line:
 
 ```yaml
@@ -37,10 +40,10 @@ pnpm --filter @hobo/ci-gh-actions test:acceptance --local --act /tmp/hobo-ci-too
 
 This is a connected test of signed HTTP intake, durable reservations, dispatch,
 RS256 OIDC/JWKS, JIT authorization, the shipped host process launcher, actual act
-workflow execution, signed completion, runner cleanup and settlement. Seven
-original jobs consume five providers' free allocations, select the cheapest paid
+workflow execution, signed completion, runner cleanup and settlement. Six
+original jobs consume four providers' free allocations, select the cheapest paid
 provider and exercise provider-budget fallback. The exhausted account launches
-no eighth job. Reopening and replaying the database preserves billing and results.
+no seventh job. Reopening and replaying the database preserves billing and results.
 Missing JIT authorization, provider mismatch and skipped execution fail the test.
 See [acceptance evidence](acceptance/README.md).
 
@@ -76,6 +79,394 @@ replay cannot undo a newer transition. CAS conflicts are retried by the journal
 consumer, and `reconcile()` applies rule changes to existing signal state.
 Already running jobs retain their reservation and finish on their chosen host.
 
+## One relay, thin hosts
+
+There is one relay. Its core is `HostedRelay` (`src/hosted-relay.ts`:
+admission, reservation, dispatch, runner claim, reconciliation), driven by
+`createHostedRelayRuntime` (`src/hosted-runtime.ts`: the durable webhook inbox
+and the worker tick), with `createHostedControlPlane` (`src/hosted-control.ts`:
+the account API) and `createRelayHandler` (the HTTP surface, below). They are
+written against the `HostedInboxStore` port, which `SqliteCiStore` in
+[`@hobo/ci`](../ci/README.md) and the [relay cache store](#relay-cache-store)
+both implement.
+
+A host supplies a store, something that calls `runtime.tick`, and runner
+backends. Nothing else differs between them:
+
+| Host | Entry | Store | What calls the tick | Runner backends |
+| --- | --- | --- | --- | --- |
+| Node service: `hobo ci serve`, the container image | `createRelayHost` (`src/relay-host.ts`), started from `HOBO_CI_*` by `startRelayFromEnvironment` (`src/main.ts`) | `SqliteCiStore`, one file fenced by a lock file | A 5-second timer in `createRelayService` | Workflow bridge |
+| Vercel | `composeStatelessRelay` in [`@hobo/ci-vercel`](../ci-vercel/README.md#the-stateless-relay) | `RelayCacheStore` on the cache fleet | Vercel Queue messages (intake, lease steps) and a 15-minute schedule | Vercel Sandbox |
+| Box worker daemon | `scripts/isolated-worker-daemon-main.mts` (no HTTP; admission by polling) | `SqliteCiStore` | Its own loop | Isolated containers |
+
+With pull admission, `hobo ci serve` feeds the Node service's inbox from
+`createGithubJobPoller` (`src/isolated-worker/github-job-poller.ts`), the same
+poller the box worker runs; there is no second poller.
+
+Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the Vercel host keeps no durable state: its store is a cache store over `kv.redis-compatible/v1` (TTL, compare-and-set, increment), intake a Vercel Queue keyed by the delivery id, and lease steps delayed queue messages; config and secrets are read-only from a config service ([design](../../docs/design/hosted-relay-stateless.md)). `PostgresCiStore` and the box worker's Postgres option were removed in its phase 7.
+
+The Node service adds two things of its own to the shared handler: a cached
+readiness probe that also gates admission (`admitWhenReady`: while the probe
+fails or the service drains, a delivery answers 503 for GitHub to redeliver and
+a runner claim is refused; the account API stays reachable), and a bounded
+drain on SIGTERM. The Vercel host adds OAuth onboarding, the queue topics and
+the webhook and queued-job repair, all on its cache; the Node service does not
+have them.
+
+### The optional CI agent
+
+The Node service can run a second worker beside its tick: the
+[CI agent](../ci-agent/README.md), which plans the merge queue and resolves
+merge conflicts with a configured model. It is off unless a host passes
+`agent` to `createRelayHost` (or `ports.agent` to `startRelayFromEnvironment`).
+`hobo ci serve` does so when `.hobo/ci.json` has an `agent` block, and
+`@hobo/ci-agent` ships an entry that does so from `HOBO_CI_AGENT_CONFIG` and
+`HOBO_CI_AGENT_DIR`. Beside the box worker daemon or a relay on Vercel, the
+agent runs as a process of its own (see its README); it does not open the
+relay's store.
+
+The relay only schedules the agent. A pass runs at most once a minute by
+default, never overlaps another, runs only while the service is ready, and
+never delays the worker tick. A failed pass is logged as `agent.tick_failed`
+with no detail and the next one runs as scheduled; shutdown waits for a pass
+in flight. This package does not depend on `@hobo/ci-agent`.
+
+`.hobo/ci.json` may carry an `agent` block. `parseCiProjectConfig` accepts it
+and ignores its contents, except that a credential-shaped value anywhere in it
+rejects the document, as for `integrations`. `parseCiAgentBlock` returns the
+block as JSON text for `@hobo/ci-agent` to parse. `createGithubAppTransport`
+also returns `installationToken`, so an in-process agent can speak GraphQL and
+git over HTTPS with the same short-lived tokens.
+
+What a host can turn on, and who does:
+
+| Option | Node service | Vercel |
+| --- | --- | --- |
+| `ingressForwardSecret` (`X-Hobo-Ingress-Forward` intake) | `HOBO_CI_INGRESS_FORWARD_SECRET` | not configured |
+| `trustProxy` (refuse a plain-HTTP forward) | `HOBO_CI_TRUST_PROXY=1` | not configured |
+| `stubEngines` (health of engines it does not serve) | `HOBO_CI_STUB_ENGINES` | none |
+| `fullAccountUpdates` (`PUT /v1/accounts/self/policy`) | on | off (410) |
+| `isolatedHost` (Sandbox runner; also lets a desired policy name a Sandbox provider) | none | Vercel Sandbox |
+| `denyUnisolated` (no workflow bridge) | off | on |
+| MCP `sessions` (see [MCP server](#mcp-server)) | `memory`: sessions, streams and resource subscriptions | `none`: every request stands alone |
+
+Everything else, routes included, is the same code with the same behaviour:
+the `/engines/gh-actions` mount and the per-engine health map are served by
+every host, and the v2 runtime, providers, rate-observation, observation and
+inbox routes and `isolated-connect` are served by the Node service too.
+
+## One HTTP layer
+
+Every host of the relay serves the same Fetch handler, `createRelayHandler`
+(`src/http-handler.ts`). A Node server or function entrypoint puts
+`createNodeRelayHandler` (`src/node-http.ts`) in front of it. The handler owns:
+
+| Route | Behaviour |
+| --- | --- |
+| `GET /healthz`, `GET /readyz` | Process liveness and readiness, each with an `engines` map (`gh-actions` plus any stub engine the host declares) |
+| `GET /engines/{stub}/healthz`, `/readyz` | Health of an engine the host reports but this relay does not serve |
+| `/engines/gh-actions/…` | The same routes as the root |
+| `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
+| `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
+| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
+| `GET /v1/fleet/reporters/{owner}/{repo}` | Each enrolled reporter's state and liveness and each label's allowance (`FleetReporterStatusList`), for a GitHub Actions OIDC token from a workflow of that repository (audience: the relay's origin; any event). Handed to the host's control plane |
+| `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
+| `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
+
+A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
+configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
+[`createWebhookIngressHandler`](src/webhook-ingress.ts). Both are the same
+HMAC-SHA256 over the exact body bytes and are checked by one function,
+`verifyWebhookSignature` in `src/webhook-signature.ts`; nothing else in the
+package compares a webhook signature. With `trustProxy`, a request whose
+`X-Forwarded-Proto` is not `https` is refused with 403.
+
+`contracts/http-boundary.pact.json` pins this boundary and is executed by
+`contracts/http-boundary.provider.test.ts` through the Node adapter;
+`test/http-handler.test.ts` covers the engine mount, the forward and the proxy check.
+
+## MCP server
+
+The relay is an MCP server (Model Context Protocol, Streamable HTTP) at `/mcp`
+and `/engines/gh-actions/mcp`, so an agent can read job state, be told when it
+changes, and act on it without polling the account API or setting itself a
+reminder. It is one module, `createRelayMcp` (`src/relay-mcp.ts`, tools and
+resources in `src/relay-mcp-server.ts`, views in `src/relay-mcp-views.ts`),
+built on the official `@modelcontextprotocol/sdk` (`McpServer` over
+`WebStandardStreamableHTTPServerTransport`) and mounted by every HTTP host
+through `HostedRelayApplication.mcp`. A host that mounts none answers 404.
+
+### Authentication and scope
+
+`/mcp` takes the account API's bearer credentials, resolved by the same
+`ControlAuthenticator`. Every request is authenticated, including each request
+of a session.
+
+| Refusal | Answer |
+| --- | --- |
+| No or unknown credential | 401 `{"error":"account authentication required"}` with `WWW-Authenticate: Bearer` |
+| Credential holds neither `policy:read` nor `operations:write` | 403 `{"error":"account scope required"}` |
+| `Origin` header that is not the relay's public origin | 403 `{"error":"origin not allowed"}` |
+| Body over 1 MiB | 413 `{"error":"request body too large"}` |
+| Body that is not strict UTF-8 JSON (a byte-order mark included) | 400 `{"error":"request body is not JSON"}` |
+
+The account comes from the credential, never from an argument. A tool or
+resource sees only that account's leases, queued jobs and events; another
+account's lease is reported as `lease not found`, exactly like one that does
+not exist. Read tools and every resource need `policy:read`; a tool that
+changes something needs `operations:write`. A caller without a tool's scope
+gets a tool error naming it, and the operation is not attempted. The writes
+call the same functions as the account API (`src/account-operations.ts`), so
+the ownership checks are written once.
+
+The `Origin` check is the DNS-rebinding guard: a browser page on another
+origin cannot drive a relay on `localhost`. The SDK's own
+`allowedHosts`/`allowedOrigins` options are deprecated in favour of a check in
+front of the transport, which is what this is. `Host` is not compared: the
+Node adapter already resolves every request against the configured origin.
+
+### Tools
+
+| Tool | Scope | What it does |
+| --- | --- | --- |
+| `list_leases` | `policy:read` | The account's leases, newest first. Filters: `state`, `repository`, `runId`, `activeOnly`; `limit` 1 to 200 (default 50) |
+| `get_lease` | `policy:read` | One lease by id, with its latest 20 events, read by the lease's id |
+| `list_pending_jobs` | `policy:read` | Jobs queued for the account's repositories that have no lease yet. Filter: `repository` |
+| `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types`. Returns `{events, cursor, more, truncated}` |
+| `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut, more}` |
+| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, the per-account and per-request limits, and whether this host reads a relay mesh |
+| `list_mesh_nodes` | `policy:read` | The relay mesh's nodes: state and since when, free and total slots, memory, disk, platform, labels, reliability, trust, and a capacity summary. The relay's own, not one account's. `mesh: "not-configured"` on a host with no mesh |
+| `reconcile_lease` | `operations:write` | `POST /v1/accounts/self/leases/{id}/reconcile`: settle a lease against a verified `hostRunId` |
+| `list_quarantined_webhooks` | `operations:write` | The account's quarantined deliveries (identity and attempts, never the body) |
+| `retry_quarantined_webhook` | `operations:write` | Put one quarantined delivery back in the inbox |
+
+The inbox tools need `operations:write` to read as well as to retry, as the
+account API's `/v2/accounts/self/inbox/…` routes do.
+
+### Resources
+
+| Resource | Content (`application/json`) |
+| --- | --- |
+| `hobo-ci://leases` | The account's 100 newest leases |
+| `hobo-ci://leases/{leaseId}` | One lease and its latest 20 events, read by the lease's id |
+| `hobo-ci://events` | The account's 100 newest events, the cursor to read on from, and `truncated` when the account has older ones |
+| `hobo-ci://mesh/nodes` | The relay mesh's nodes and capacity summary: the same answer as `list_mesh_nodes`. Not subscribable: it changes with the board, not the journal |
+
+Results are protobuf JSON of the `RelayMcp*` messages in
+[`data-models/relay_mcp.proto`](data-models/relay_mcp.proto) (and, for the mesh's
+nodes, `MeshNodeReports` in [`data-models/mesh.proto`](data-models/mesh.proto)), written with zero
+and empty fields present. Each view is assembled field by field: a lease view
+carries no sandbox identity or budget digest, an event view carries the
+event's type, time, lease, repository and job and never its stored detail,
+and no view can carry a credential or a JIT configuration, which the relay
+does not journal. CUE closes the views, and two invalid fixtures pin that a
+`detail` or a sandbox identity does not fit.
+
+### Following job state
+
+Every lease and job change is an event appended to the store's journal in the
+transaction that makes it (`ci.JobQueued`, `ci.LeaseReserved`,
+`ci.DispatchRequested`, `ci.RunnerClaimed`, `ci.HostSettled`,
+`ci.LeaseUncertain`, `ci.LeaseCancelled`, `ci.LeaseExpired`, `ci.JobExpired`,
+`ci.JobCompleted` and the rest). The MCP feed is a projection over that event
+store, read with the store's cursor (`eventsSince`, see
+[`@hobo/ci`](../ci/README.md#event-cursor)); it is not a second bus, and it
+replays from any cursor because the journal is the source.
+
+**`wait_for_events` on every host.** Call it with the `cursor` of your last
+result. The relay polls its own journal once a second inside the call and
+answers as soon as there is a matching event, or with `timedOut: true` and the
+cursor to continue from. Without a cursor it waits for what happens next.
+
+```text
+list_events {}                                -> { events: […], cursor: "k3…Qw" }
+wait_for_events { cursor: "k3…Qw", leaseId }  -> { events: [ci.RunnerClaimed], cursor: "Zt…8A", timedOut: false }
+wait_for_events { cursor: "Zt…8A", leaseId }  -> { events: [], cursor: "Zt…8A", timedOut: true }
+```
+
+The wait is 25 seconds unless `timeoutSeconds` says otherwise and never more
+than the host's ceiling, 50 seconds: under the 60-second default request
+timeout of the MCP TypeScript SDK's client. A host passes the ceiling in
+(`waitMaxMs`); the Vercel host derives its own from the duration its function
+is given. A caller that hangs up, or cancels the request, ends its wait.
+
+**Cursors.** A cursor is an opaque token, issued to one account. It stands for
+a position in the journal, enciphered under a key derived for that account
+from a secret the host's instances share (`cursorSecret`; both hosts pass the
+webhook secret, which is only ever the input to that derivation). Pass back
+the `cursor` of an earlier result, or `"0"` to read from the start of the
+account's journal. Anything else, another account's cursor included, is
+refused as invalid input. Changing the secret invalidates issued cursors; a
+client then starts again from `list_events`.
+
+**`more` and `truncated`.** A read returns exactly the account's events: the
+store finds them through an index on the account, so what other accounts
+journal neither hides them nor cuts a read short. The only bounds are the
+page a caller asks for (`limit`, at most 200) and the window of the account's
+own events one read looks through for the ones that match its filters (500):
+
+| Field | Meaning | What to do |
+| --- | --- | --- |
+| `more: true` | The account has more events after the ones this read returned or looked through. With filters, `events` can be empty: none of the 500 it looked through matched | Read again from `cursor` at once |
+| `timedOut: true` | A wait reached the end of the account's events and nothing matched before its timeout | Wait again from `cursor` |
+| `truncated: true` | A read of the newest events (no cursor) left older events of the account unread: more matched than `limit`, or the account has more than the 500 it looked through | Read from `"0"` or an earlier cursor for them |
+
+Without filters `more` and `truncated` mean only that the page was full.
+`wait_for_events` keeps reading while there is `more`; if it has looked
+through eight windows of the account's events without a match it returns the
+cursor with `more: true` and `timedOut: false`, so that no call works without
+end.
+
+### Limits
+
+One account cannot take the server from the others, and one request is a
+bounded amount of work. `get_relay_status` reports the first three.
+
+| Limit | Value | Beyond it |
+| --- | --- | --- |
+| JSON-RPC messages in one request, whatever their methods | 8 | 400 `{"error":"too many JSON-RPC messages in one request; at most 8"}` |
+| Tools and resource reads in progress for one account | 8 | Tool error to retry; the call does not reach the store |
+| `wait_for_events` blocked for one account | 8, as many as it may hold sessions | Tool error to retry |
+| `wait_for_events` blocked in one process | 64, as many as the host holds sessions | Tool error to retry |
+| Events in one result | 200 (default 50) | `more: true` and the cursor to continue |
+| Reads by one `wait_for_events` while behind the journal's end | 8 | `more: true`, `timedOut: false` |
+
+The relay parses a request body once and hands the transport that parsed
+value, so the messages it counts are exactly the ones that run; a body its
+one parse does not accept is refused, not passed to a more lenient parser.
+The count covers every method: `tools/list`, `resources/list` and `ping` are
+bounded by it as tool calls are.
+
+Every agent an account may connect can follow the journal at once: a parked
+wait takes one of the account's wait places and none of its call places, so
+eight agents waiting do not keep any of them from calling a tool.
+
+A wait hands the event loop back before every read, so a long catch-up on a
+store that answers in the same turn (SQLite) does not hold up webhooks, health
+checks or the worker, and a caller's cancellation is seen between reads. A
+lease's events are read through the lease index; on SQLite the statement
+names the index, so it cannot fall back to walking the journal.
+
+On the hosted relay the server reads through the cache store's `observer()`.
+`reconcile_lease` and `retry_quarantined_webhook` are writes, as the account
+API's are.
+
+**Resource subscriptions on a host that keeps sessions.** With
+`sessions: "memory"` the server advertises `resources.subscribe`. Subscribe to
+`hobo-ci://events`, `hobo-ci://leases` or `hobo-ci://leases/{leaseId}`, keep
+the session's event stream open (`GET /mcp`), and the relay sends
+`notifications/resources/updated` for a subscribed resource when the
+account's journal moves; read the resource for the change. One pump per
+process reads the journal for the accounts that have a subscriber, and stops
+when the last subscription goes.
+
+| | Node service (`hobo ci serve`, container) | Vercel |
+| --- | --- | --- |
+| `sessions` | `memory` | `none` |
+| Tools and resources | yes | yes |
+| `wait_for_events` | yes | yes |
+| `resources/subscribe` and `notifications/resources/updated` | yes | not advertised |
+| Responses | event streams (`/mcp` is a streaming path of the Node adapter) | JSON |
+| `GET /mcp`, `DELETE /mcp` | the session's stream; end the session | 405 |
+
+The box worker daemon has no HTTP listener and serves no MCP; an agent reads
+its leases through whichever HTTP host shares its store.
+
+A session belongs to the account that opened it: another account naming its
+id gets 404, as for an unknown id. The Node service holds at most 64 sessions
+and 8 for one account, counting the ones an account is still opening (429
+beyond that). Only an `initialize` request opens a session; any other request
+without one is refused before it can cost anybody a place.
+
+When all 64 are taken, a session gives way to a new one only under this rule:
+
+- the caller holds fewer sessions than a fair share, the host's places
+  divided among the accounts that hold or ask for one;
+- some other account holds more than that share: its least recently used
+  session gives way, one with no open stream or call if it has one;
+- the caller has not displaced a session in the last 60 seconds;
+- the new session is opened first. Only once it is initialized is the other
+  closed, so no session is ever ended for a request that opened nothing.
+
+Otherwise the caller is answered 429. The client whose session gave way
+initializes again and continues from its cursor.
+
+A session's event stream is closed after 30 minutes for its client to open
+another, so a stream nobody is reading cannot hold a session for ever; a
+session with no open stream and no request for 15 minutes is closed; every
+session and stream is closed when the host drains. A process restart ends its
+sessions; a client initializes again and continues from its last cursor, which
+the journal still answers.
+
+While the store fails, the subscription pump asks it once per pass, not once
+per subscribed account, waits twice as long after each failure (up to a
+minute) and returns to its interval when a read succeeds. The failure log
+writes one `hobo_ci_mcp_pump_failed` line per window.
+
+On Vercel a wait occupies the function for its duration. `vercel.json` gives
+`api/relay.ts` a `maxDuration` of 300 seconds, and the host derives its wait
+ceiling from that number with 30 seconds kept back (`mcpWaitCeilingMs` in
+`@hobo/ci-vercel`): 50 seconds today. `test/function-limits.test.ts` there
+fails if the declared duration and the one the code assumes differ.
+
+### What an account can and cannot learn
+
+- **Only its own records.** Leases, queued jobs, quarantined deliveries and
+  events are read by the account the credential names.
+- **Events keep the owner they were written under.** A job event
+  (`ci.JobQueued`, `ci.JobExpired`, `ci.JobCompleted`,
+  `ci.JobAssignmentCleared`) is recorded for the account whose connection held
+  the job's repository at that moment. If a repository's connection moves to
+  another account, the earlier events stay with the earlier account and the
+  new one reads only what happens after the move.
+- **Job events journalled before this was recorded are in no feed.** They name
+  no account, and who owned the repository then cannot be known from them, so
+  they are not returned to anyone. Lease events always named their account and
+  are unaffected.
+- **The account API's snapshot is unchanged.** `GET /v1/accounts/self/leases`
+  still returns an account's newest 100 lease and record events and no job
+  events, so a busy account's jobs cannot push its lease events out of that
+  window. Job events are served here.
+- **Nothing about other accounts from a cursor.** A cursor is not a journal
+  position: two cursors cannot be subtracted, and two accounts at the same
+  place in the journal hold different tokens. And the position it stands for
+  is always one of the account's own events (or the journal's start): the last
+  one a read returned or looked at. While other accounts journal and this one
+  does not, every read and every wait that times out hands back the same
+  cursor. No read is cut short by other accounts' volume, so there is no case
+  in which a cursor reports how far a read got through rows that are not the
+  account's; the relay hands out no position that depends on them.
+- **Nothing about other accounts from `more` or `truncated`.** Both are set by
+  the account's own events and the page or window alone.
+- **What remains.** How long a read takes is not hidden. A read costs what the
+  account's own events cost, through its index.
+
+### Client configuration
+
+An HTTP MCP server entry, with the account token read from the environment
+(never written into the file):
+
+```json
+{
+  "mcpServers": {
+    "hobo-ci": {
+      "type": "http",
+      "url": "https://<relay-origin>/mcp",
+      "headers": { "Authorization": "Bearer ${HOBO_CI_ACCOUNT_TOKEN}" }
+    }
+  }
+}
+```
+
+`contracts/mcp-boundary.pact.json` pins the boundary every host honours and is
+executed by `contracts/mcp-boundary.provider.test.ts` through the Node
+adapter; `test/relay-mcp.test.ts` drives the SDK's own client against the
+shared handler for each tool and resource, account isolation, the wait and its
+timeout on an injected clock, sessions and subscriptions, and each limit
+above: the per-account shares, the request and catch-up bounds, the event-loop
+turns of a wait, opaque cursors, session shares and stream lifetime, and the
+pump's backoff.
+
 ## Deploy the relay
 
 For **`hobo ci serve`** in a checkout (bind/public origin split, ingress HMAC,
@@ -91,7 +482,10 @@ unsafe stale-PID removal. Kubernetes uses one replica and `Recreate`.
 The tested container lifecycle includes authenticated policy changes, restart
 persistence, duplicate-owner refusal, online backup, graceful SIGTERM and offline
 restore from a read-only backup. `/healthz` reports process liveness; `/readyz`
-reports recovered local partition readiness and becomes unavailable during drain.
+reports local partition readiness (the store answers and holds a configuration)
+and becomes unavailable during drain. A dispatch or runner claim that a crash
+interrupted is marked uncertain by the worker tick once it is two minutes old,
+never retried.
 External provider execution is verified by the separate runner acceptance path.
 A failed or hanging readiness probe cannot keep admissions open indefinitely.
 Process-spawning restore tests use a 15-second Vitest deadline for slow local
@@ -136,9 +530,10 @@ adapter. App keys and installation tokens remain in the relay.
 
 The GitHub App needs Actions, Administration, Contents, Workflows and Pull requests
 write access, plus Metadata read. Subscribe to `workflow_job` and `workflow_run`.
-The hosted Vercel adapter supplies the App bootstrap and OAuth callbacks described
-below. Self-hosted deployments must mount equivalent authenticated callbacks and
-provide encrypted secret storage. Customer repository setup is handled by the
+The Vercel host supplies the OAuth callbacks described below, on its cache; the
+Node service (`hobo ci serve`, the container image) does not serve them and
+takes an existing App's ID, key and webhook secret from its `HOBO_CI_*`
+bindings instead. The App itself is created with `hobo ci`. Customer repository setup is handled by the
 account APIs below.
 
 [Hosted GitHub App bootstrap and account onboarding](ONBOARDING.md) describes the operator and account flows.
@@ -164,10 +559,9 @@ overlay. Fork pull requests resolve config at the **base branch** ref and honor
 `selection.forkPullRequestEnvironment` so untrusted head refs cannot aim webhooks
 at an attacker-controlled relay.
 An optional `store` picks the isolated worker's lease journal for
-`hobo ci serve --with-worker`: `{ "kind": "sqlite" }` (the default, a local file
-that polls GitHub for `runs-on: hobo` jobs) or
-`{ "kind": "postgres", "urlEnv": "DATABASE_URL" }` for a shared relay partition.
-`urlEnv` names an environment variable; the schema refuses a connection string.
+`hobo ci serve --with-worker`: `{ "kind": "sqlite" }`, a local file that polls
+GitHub for `runs-on: hobo` jobs, is the only kind (the shared Postgres
+partition was removed under ADR-0179).
 Amounts are USD microdollars. Each policy still requires separately provisioned
 providers and a repository connection on its selected relay.
 
@@ -427,7 +821,11 @@ On Vercel, the runtime endpoint returns the Sandbox enablement flag, loaded
 allowed-domain patterns, and deployment ID for the process serving the request.
 It does not report credentials, URLs, or settings of an individual runner.
 
-`putPolicy(account, {revision})` changes budgets and publishes fresh allocation
+`putPolicy(account, {revision})` (`PUT /v1/accounts/self/policy`) replaces the
+whole account, offers included, so it is served only where the operator owns
+the provider inventory: the Node service enables it (`fullAccountUpdates`), for
+accounts that have no v2 desired policy; the Vercel host answers 410 and takes
+`putDesiredPolicy` only. It changes budgets and publishes fresh allocation
 facts without restarting the relay. Configuration and its audit event commit
 atomically in the lease journal. Read models, setup records and policy can be rebuilt.
 Changing/removing an active provider identity or repository bridge pin is refused;
@@ -444,7 +842,7 @@ any extra Sandbox proxy VM duration. The relay
 reserves worst-case runtime plus startup, checks account/provider budgets and concurrency, and rechecks delayed
 launches. Original Actions jobs and portable native pipelines share the ledger.
 Prices use integer USD microdollars; allocations use normalized runner minutes.
-Both relays reprice held offers with their pinned attempt and queue context, retaining
+The relay reprices held offers with their pinned attempt and queue context, retaining
 other payer measurements for all-of constraints. This preflight checks feasibility;
 the durable store must still claim the financial hold and revalidate strict native
 liability proof before dispatch. A feasible plan cannot authorize provider effects.
@@ -453,13 +851,12 @@ The isolated-worker daemon accepts `HOBO_CI_TRUSTED_BUDGET_ADAPTER` as an
 operator-controlled absolute path to a local `.js` or `.mjs` module. This is
 trusted host code, never a repository or job setting. Its exported
 `createCiWorkerBudgetAdapter({ kind })` returns `{ kind, options, close? }`,
-where `kind` matches the daemon store (`sqlite` or `postgres`) and `options`
-is the corresponding `@hobo/ci` shared-budget options object. The options must
-provide the same durable Broker authority used by hosting and a trusted quote
-publisher that binds the full provider account, price and execution plan. For
-PostgreSQL workers the parent authority must be shared PostgreSQL; a local
-SQLite authority cannot coordinate distributed hosts. For SQLite workers the
-parent authority must use a separate database file from the worker journal.
+where `kind` is the daemon store (`sqlite`) and `options` is the `@hobo/ci`
+shared-budget options object. The options must provide the same durable Broker
+authority used by hosting, with synchronous hooks (an asynchronous authority is
+refused), and a trusted quote publisher that binds the full provider account,
+price and execution plan. The parent authority must use a separate database
+file from the worker journal.
 
 Strict policies additionally require a provider-native liability verifier;
 credit allocations, settlement and unused holds require their respective trusted
@@ -498,6 +895,94 @@ free allocation.
 The publisher must supply complete snapshots and normalized prices for all billed
 components. Provider-native spending controls remain the external billing ceiling.
 Admission budgets do not migrate or terminate a running GitHub job mid-step.
+
+## Relay mesh
+
+Several box workers can share one queue with no central relay. Each reads GitHub's queue itself;
+NATS carries their advertisements and makes "one worker starts this job" exact. Without NATS they
+still agree by ranking, so NATS being down costs a duplicate runner start, not a stopped queue.
+The design is in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md); settings and behaviour are in
+the [runner queue runbook](../ci/RUNNER-QUEUE.md).
+
+**Try it on one machine.** No NATS needed for the first command:
+
+```sh
+pnpm --filter @hobo/ci-gh-actions run mesh:demo
+docker run --rm -p 4222:4222 nats:2 -js   # or: nats-server -js
+HOBO_CI_NATS_URL=nats://127.0.0.1:4222 pnpm --filter @hobo/ci-gh-actions run mesh:demo
+```
+
+The demo queues jobs across three nodes with 1, 2 and 5 free slots, then kills the largest and
+queues again. It prints who took what; every job is taken once.
+
+**Run the end-to-end test** against a real server (it is skipped when no binary is found):
+
+```sh
+HOBO_CI_NATS_SERVER_BIN="$(command -v nats-server)" \
+  pnpm --filter @hobo/ci-gh-actions exec vitest run test/mesh-nats.e2e.test.ts
+```
+
+**See the mesh.** Every node reports its availability, capacity and trust, and a relay host that is
+in the mesh serves one list of them:
+
+| Where | How |
+|---|---|
+| HTTP | `GET /v1/mesh/nodes` on the relay, with an account credential holding `policy:read` |
+| MCP | the `list_mesh_nodes` tool and the `hobo-ci://mesh/nodes` resource |
+| CLI | `hobo ci status`: node, state, free/total slots, memory, disk, reliability, trust |
+
+- **Who is on it:** box workers; a relay host started with `HOBO_CI_NATS_URL` (no slots, its health is
+  its readiness); and a machine running `local:runner`, which advertises one slot under
+  `hobo-local-host`. Without `HOBO_CI_NATS_URL` a local runner still writes its own report to
+  `mesh-node.json` in its state directory, so `local:runner status` and `hobo ci status` answer offline.
+- **States:** `live`, `unhealthy` (draining or under pressure) and `lost` (its advertisement expired;
+  the relay keeps listing it for an hour).
+- **No mesh:** a relay without `HOBO_CI_NATS_URL` (the hosted relay on Vercel) answers
+  `mesh: "not-configured"`, not an error.
+
+- **Per account:** fleet workers and relay hosts are shown to every account; a machine running jobs
+  for one repository is shown in full only to the account that owns that repository, and to others
+  under an opaque id without its platform or key. One answer lists at most 256 nodes (`truncated`).
+
+**Trust.** Each node makes an Ed25519 key on first start (`mesh-node.key` beside its SQLite journal,
+mode `0600`, never published; refused in a directory others can write) and signs what it advertises.
+A reader calls a node `trusted` when its key is listed for its node id, `unverified` when it is not
+listed or the node does not sign, and `invalid` when the signature fails, the id is bound to another
+key, or the expiry is further ahead than any node advertises; an `invalid` node is never ranked. With
+no set, each node trusts only itself and ranking is unchanged. Bind keys to node ids; `--any-node` is
+needed to list one unbound, and a local runner's key (readable by jobs on its machine) must never be.
+
+```sh
+export HOBO_CI_NATS_URL=nats://127.0.0.1:4222
+pnpm --filter @hobo/ci-gh-actions run mesh:trust list                 # nodes, their keys, the set
+pnpm --filter @hobo/ci-gh-actions run mesh:trust add <publicKey> --node <nodeId>
+pnpm --filter @hobo/ci-gh-actions run mesh:trust require on           # rank listed keys only
+```
+
+A signature shows which key wrote an advertisement. It does not attest what software the node runs,
+and a node's figures remain its own word. Whoever can write the mesh's NATS config bucket decides
+whom the mesh trusts. The limits are in
+[the design](../../docs/design/ci-relay-mesh.md#trust-whose-advertisement-is-this).
+
+**Records.** The advertisement (`MeshAdvert`), the trusted set, a node's reliability record, the node
+report and the routing snapshot are protobuf messages in `data-models/mesh.proto`, constrained in
+`data-models/onboarding.cue`. An advertisement from a node on an older version still parses and is
+`unverified`.
+
+**Join a worker to a mesh.** Set `HOBO_CI_NATS_URL` on each worker and restart it. One server with
+`HOBO_CI_NATS_REPLICAS=1` is enough for two boxes on a LAN. For more, run three NATS servers as a
+cluster with `HOBO_CI_NATS_REPLICAS=3`, and connect boxes behind NAT as leaf nodes: they only dial
+out. `createNatsMesh` is exported from `@hobo/ci-gh-actions/mesh-nats`; `createMemoryMesh` in
+`@hobo/ci/mesh` is the same contract in one process.
+
+## Tracing
+
+The box worker exports OpenTelemetry traces when `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`HOBO_CI_TRACE_FILE` is set: one span for each GitHub call that changes something and one for each
+structured log event, grouped by workflow run. `createRelayTrace`, `traceGithubTransport` and
+`relayTraceSinkFromEnv` are exported for other hosts of the relay. See
+[Tracing in the runner queue runbook](../ci/RUNNER-QUEUE.md) for the settings, the span list and how
+to tell who cancelled a run.
 
 ## Supported runner hosts
 
@@ -572,3 +1057,231 @@ The bound Actions/act command adapter delegates to the shared Node workspace
 backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
 [`@hobo/ci-ado`](../ci-ado/README.md) uses that same execution implementation;
 GitHub relay, runner authorization and account routing remain in this package.
+
+## Relay cache store
+
+`@hobo/ci-gh-actions/relay-cache` is the hosted relay's store without a
+database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179),
+[design](../../docs/design/hosted-relay-stateless.md)), phase 4a: everything
+the hosted relay needs from its store (`HostedRelayStore`, `HostedInboxStore`,
+the read paths of `HostedControlStore`, `IsolatedWorkerStore`, the MCP
+`RelayMcpStore`, and `@hobo/ci-vercel`'s sandbox lease and proxy-quota paths),
+kept as short-lived state behind `EphemeralStatePort` from `@hobo/core`
+([Relay ephemeral state](../../docs/design/relay-ephemeral-state.md)). Since
+phase 4b it is the hosted relay's store: `@hobo/ci-vercel`'s stateless
+composition builds it ([The stateless relay](../ci-vercel/README.md#the-stateless-relay)).
+`PostgresCiStore`, which it replaced, was removed in phase 7.
+
+```ts
+import { createMemoryEphemeralState } from "@hobo/kv-redis-compatible";
+import { RelayCacheStore, staticRelayConfig } from "@hobo/ci-gh-actions/relay-cache";
+
+const store = new RelayCacheStore({
+  state: createMemoryEphemeralState(), // Upstash REST or Valkey in a deployment
+  config: staticRelayConfig(snapshotFromConfigService), // read-only
+  environment: "production", // keys are under hobo-ci:production:
+  intake, // where verified deliveries go (the hosted relay's intake queue)
+  proxyTokenKey, // from the config service; sandbox proxy paths refuse without it
+  onLeaseChange, // after every lease write: the hosted relay schedules lease steps
+});
+```
+
+**What the host is told.** `onLeaseChange({ lease, type, at, previousState })`
+runs after every lease record the store writes (`previousState` is absent for a
+new record); the hosted relay starts a lease-step chain from it. A hook that
+throws is reported (`hobo_ci_relay_lease_hook_failed`), never propagated: the
+write has happened.
+
+**One write, no read before it.** The store remembers the lease records this
+instance wrote last (bounded); the next write of the same lease (a launch is a
+run of transitions) compares-and-sets against that version without reading
+first. If another instance wrote in between, the compare-and-set fails and the
+write is decided again on a fresh read; a remembered record is never served to
+a plain read.
+
+**No partition lock.** Every write is a compare-and-set on one key, and each
+keeps the expected-state checks the lease stores make. A lost race re-reads
+and re-decides (`casRetries()` counts them).
+
+**Deterministic lease ids.** `relayLeaseId` is a UUIDv5, under
+`RELAY_LEASE_NAMESPACE`, of `repositoryId:jobId:runAttempt`, with `:g<n>`
+appended for requeue generation `n > 0`. A job whose lease was cancelled,
+aborted or settled with unmet demand is re-admitted under the next
+generation. Names are unchanged: runner and sandbox `hobo-<id>`, proxy sandbox
+`hobo-proxy-<id>`, bridge run title `HoBo lease <id>`. Concurrent reservers of
+one job derive the same id, so `putIfAbsent` on the lease key admits exactly
+one.
+
+**Intent timestamps.** A transition whose event is `ci.DispatchRequested`,
+`ci.RunnerClaimed` or `ci.SandboxCreated` records `{kind, at}` on the lease
+record; `latestLeaseIntents` reads them back, so the tick's crash recovery
+(`hosted-runtime.ts`) needs no journal.
+
+**Queue deadline.** Pinned from the earliest of when the relay first saw the
+job and, where the caller passes it (`queue` and `reserve` take an optional
+`githubCreatedAt`; rebuild always has it), GitHub's `created_at`. `HostedRelay`
+passes the job's REST `created_at` to `queue` and, from the pickup metadata the
+webhook recorded, to `reserve`.
+
+**Budgets without history.** Routing counts every account's in-flight holds
+from the in-flight indexes plus the spend a `ProviderUsagePort` reports
+(`NO_PROVIDER_USAGE`: no provider usage API is bound in the repository yet, so
+exposure is configured spend plus holds); finished leases count nothing.
+An index the cache lost comes back with `holdsKnown: false`, and priced offers
+(a per-minute price, or any Sandbox offer) stay paused until the rebuild pass
+calls `markHoldsKnown`; free capacity keeps admitting. Broker budget-policy
+accounts are refused, as they always were on Vercel. Concurrency is checked
+across every account's index and committed by compare-and-set on the
+reserving account's own: two accounts that share one provider account can
+each pass the check in the same instant, so a cross-account shared offer can
+briefly exceed its concurrency by the number of racing accounts.
+
+**Sandbox proxy token.** Derived, not stored: 16 bytes of lease id then the
+first 16 bytes of HMAC-SHA256 of the lease id under `proxyTokenKey`
+(43 base64url characters, the shape the quota endpoint accepts).
+`configureSandboxProxy` accepts only the digest of that token;
+`authenticateSandboxProxy` takes the raw token, reads the lease id from it and
+checks the MAC. Caps are atomic counters with the sandbox's lifetime as TTL.
+
+**Rebuild pass.** `rebuildInflight(store, discovery, github, at)` restores the
+holds of every account `accountsAwaitingRebuild()` names (its in-flight index is
+missing or was recreated without a rebuild; one read when none is): for each of
+the account's connections it lists the queued and in-progress workflow runs
+(one page each), their jobs, and runs `rebuildLease` for every live job HoBo
+serves; an account whose listings all answered is marked holds-known. The
+hosted relay runs it on each repair tick. A rebuilt Sandbox lease also names
+its proxy VM (`hobo-proxy-<id>`), so cleanup finds it.
+
+**An uncertain lease whose job is running is adopted.** The hosted runtime does
+not stop an `uncertain` isolated lease whose runner GitHub assigned the job to
+and still shows running it (a rebuilt lease is the usual case): it waits until
+GitHub reports the job finished, then stops and settles. An unanswered GitHub
+read counts as running.
+
+**Rebuild by name.** `rebuildLease(store, discovery, job, at)` turns what
+GitHub and Vercel show under a job's candidate names (generations 0..3, or the
+job record's generation) back into a lease record, always `uncertain`;
+`resolveUncertainLease` re-admits the next generation only when nothing exists
+under the lease's names and GitHub still shows the job queued.
+Queued jobs use `runner_id` **0** or **null** in GitHub REST; `getJob` and run-job
+listing accept both as unassigned (inbox delivery no longer fails Zod on 0).
+
+`githubRelayDiscovery` is the GitHub side (`getJob`, runners by name, bridge
+runs by title); the Vercel side is the Sandbox host's lookup by name
+(`@hobo/ci-vercel`), where not found is a 404.
+
+### Keys, values and TTLs
+
+Every key is under `hobo-ci:<environment>:`. Values are protobuf JSON of the
+messages in [`data-models/relay_cache.proto`](data-models/relay_cache.proto)
+(constrained in `onboarding.cue`) or a decimal counter. Every TTL is within
+the port's 30-day cap.
+
+| Key | Value | TTL | Written by |
+|---|---|---|---|
+| `lease:<leaseId>` | `RelayCacheLease` (lease as `hobo.ci.v1.Lease` JSON, job key, generation, latest intent per kind, rebuild evidence) | Active: max(24 h, reserved minutes + proxy VM time) + 1 h, refreshed per transition. Ended: 24 h | `reserve` (putIfAbsent), every transition (CAS), rebuild |
+| `job:<repositoryId>:<jobId>:<runAttempt>` | `RelayCacheJob`: state (`pending`, `taken`, `idle`, `terminal`), generation, current lease id, pending job JSON, first-seen time, queue deadline, assignment fence | Terminal: 24 h. Taken: its lease's TTL. Otherwise 25 h | `queue`, `reserve`, `observe`, `expireQueued`, `withdrawQueuedJob`, `clearAssignedJob`, rebuild |
+| `inflight:<accountId>` | `RelayCacheInflight`: in-flight entries (offer, provider account, holds, allowance), the last 50 ended lease ids, `holdsKnown` | The longest entry's lease TTL | Admission, retirement, pruning, `markHoldsKnown` |
+| `pending` | `RelayCachePending`: job keys waiting for capacity, oldest first, at most 2000 | 25 h, refreshed | `queue` adds; `pendingJobs` prunes keys whose record left `pending`, by compare-and-set on the set it read |
+| `delivery:<deliveryId>` | `RelayCacheDelivery`: fingerprint, received time, ignored | 24 h | `acceptWebhook`, `acceptIgnoredWebhook` |
+| `delivery-body:<installationId>:<sha256>` | delivery id | 24 h | Same: a signed body under a new id is a replay |
+| `webhook-rate:<installationId>:<windowStart>` | counter, at most 600 | 1 min from first hit | Same |
+| `sbx:egress:<sandboxId>` | `RelayCacheSandboxEgress`: lease, account, byte cap | Sandbox lifetime + 1 h | `configureSandboxEgress` |
+| `sbx:egress-used:<sandboxId>` | counter (bytes) | Sandbox lifetime + 1 h | `reserveSandboxEgress`, `reserveSandboxProxyEgress` |
+| `sbx:proxy-calls:<leaseId>` | counter (authenticated attempts) | Sandbox lifetime + 1 h | `configureSandboxProxy` (creates at 0), `authenticateSandboxProxy` |
+| `sbx:proxy-requests:<leaseId>` | counter (accepted forwards) | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` |
+| `sbx:proxy-rate:<leaseId>:<windowStart>` | counter, at most 600 | 1 min from first hit | `reserveSandboxProxyEgress` |
+| `sbx:proxy-req:<leaseId>:<requestId>` | `1` | Sandbox lifetime + 1 h | `reserveSandboxProxyEgress` (a replayed request id fails closed) |
+| `sbx:proxy-meter:<leaseId>` | `RelayCacheProxyMeter`: what the proxy VM reported it reserved (bytes) and its quota calls, the largest report kept | Sandbox lifetime + 1 h | `recordSandboxProxyMeter` (the Sandbox host, before it stops the proxy VM) |
+| `repair:webhook:<appId>:lock`, `repair:queued:<appId>:lock` | lock owner token | 5 min, renewed at each checkpoint | `CacheWebhookRepairClaims.startScan`, `CacheQueuedJobRepairClaims.start` |
+| `repair:webhook:<appId>:cursor` | `RelayCacheWebhookScan`: next page of `GET /app/hook/deliveries` | 3 days | the delivery scan's checkpoint |
+| `repair:webhook:<appId>:claim:<guid>` | claim time | 15 min (the redelivery cooldown) | `claim` |
+| `repair:webhook:<appId>:ok:<guid>` | seen time | 4 days | `recordSuccesses` (only guids not already known) |
+| `repair:webhook:<appId>:rate:<windowStart>` | counter, at most 20 | 1 min from first hit | `claim` (a claim over the window is given back) |
+| `repair:queued:<appId>:scan:<account>:<installation>:<repository>:<status>` | `RelayCacheQueuedScan`: cursor, due and touched times | 24 h | the queued scan's checkpoint |
+| `repair:queued:<appId>:budget:<windowStart>` | counter, at most 10 (GitHub REST calls) | 1 min from first hit | `take` |
+| `oauth-state:<mac>`, `oauth-session:<mac>` | `RelayCacheSealed` holding `RelayCacheOAuthState` / `RelayCacheOAuthSession` | until the state (10 min) or session (15 min) expires | `CacheGithubOAuthSessionStore` |
+| `app-state:<mac>` | `RelayCacheAppState` | 10 min, consumed once | `CacheAppRegistrationStates` |
+| `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
+| `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
+| `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
+| `fleet-verdict:<owner>/<repo>:<reporter id>` | `FleetVerdict`: one reporter's last report as stamped (a shadow report blocks nothing) | Until the report expires (at most 180 s) | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
+| `fleet-reporter:<owner>/<repo>:<reporter id>` | `FleetReporterState`: last sequence, mode, last report, per label last blocked and cleared | 24 hours, refreshed on every accepted report | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
+| `fleet-allowance:<owner>/<repo>` | `FleetVerdictAllowance`: per label, the window's start and its blocked seconds | 24 hours from the latest window's start | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
+| `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
+
+### Helpers on the cache (phase 5)
+
+What the hosted relay kept in `hobo_ci_*` tables besides the store moves onto
+the same port, each record short-lived:
+
+- **Repair scanners** (`repair-claims.ts`): `CacheWebhookRepairClaims` and
+  `CacheQueuedJobRepairClaims` implement the claim ports of the unchanged
+  `createWebhookRepair` and `createQueuedJobRepair`. One lock per scanner and
+  App, renewed at each checkpoint: a scanner that stalled past its lock throws
+  at the checkpoint instead of overwriting the new holder's cursor, and its
+  release cannot free the new holder's lock. Losing the cache restarts a scan
+  from the newest page or page one; redeliveries collapse on the delivery id
+  and admissions on the job key.
+- **Sessions and state** (`sessions.ts`): every record is named by an HMAC of
+  the digest the flow already computes, under a key derived from the session
+  key in the config service, so no key names a token. Records holding a
+  credential (the control token an OAuth flow is bound to, the GitHub user
+  token, the PKCE verifier) are sealed with AES-256-GCM under a second derived
+  key, the record kind as associated data; a rotated session key reads them as
+  absent. `state` is single-use: a read, then a delete conditional on the
+  version read. The browser still carries only an opaque cookie: the session
+  holds a GitHub user token, which stays out of the browser.
+- **Onboarding** (`stateless-app-onboarding.ts`):
+  `createStatelessAppOnboarding` composes the OAuth session flow and the
+  installation flow on those stores, and an owner bootstrap that creates
+  nothing: the owner redeems the invitation in the config service once and
+  gets a ten-minute owner session that stands for the onboarding control
+  token. App registration (the manifest flow) answers 410; `hobo ci` creates
+  the App. A verified installation is usable for a day and logged by id for
+  `hobo ci` to write into the config service.
+- **Proxy VM meter**: `recordSandboxProxyMeter` keeps what the proxy VM
+  counted; settlement charges the larger of it and the store's own counters,
+  and uses it alone when the cache lost them, so a lease rebuilt after a cache
+  loss settles.
+
+### Command cost
+
+Measured with `meterExecutor` over the in-memory engine
+(`test/relay-cache-store.test.ts`, pinned there), scripts cached:
+
+| Step | Phase 4a | Phase 4b | What changed |
+|---|---|---|---|
+| Intake: delivery marker, body marker, rate window | 3 | 3 | |
+| Queue | 6 | 6 | |
+| Reserve | 11 | 8 | the pending set is pruned by `pendingJobs`, not on every take |
+| Dispatch intent / outcome | 5 / 4 | 4 / 3 | no read before writing a lease this instance just wrote |
+| Claim | 5 | 4 | same |
+| Intent check on the tick | 1 | 1 | |
+| In progress (observe, assign) | 8 | 3 | job and lease read in one round trip; no ring append for the observed job id or the assignment |
+| Running | 5 | 4 | no read before the write |
+| Completed (observe) | 8 | 2 | the lease already carries the job id: no write; no `ci.JobCompleted` for a job a lease held |
+| Settle | 6 | 5 | no read before the write |
+| **Job on the workflow bridge** | **62** | **43** | |
+| Sandbox proxy: authenticate / one forwarded request | 2 / 6 | 2 / 6 | |
+
+The ring takes seven appends on this path (one per state change, 2 commands
+each until an account's ring first fills, 3 after), so a steady-state job is 50
+(73 in phase 4a). The hosted relay's whole-composition cost for a Sandbox job,
+reads of the relay itself included, is pinned in `@hobo/ci-vercel`
+([The stateless relay](../ci-vercel/README.md#the-stateless-relay)). The design's
+estimate of about 25 assumed one command per ring append and no routing reads.
+
+### What the cache store does not do
+
+- Write configuration: `configure`, `configureWithRecord`, `reattestRate`,
+  `putControlRecord(Monotonic)` reject with `RelayConfigReadOnlyError`.
+  `controlRecord` serves `ci-policy:<accountId>` from config only.
+- Keep an inbox: `claimWebhook` finds nothing, `ackWebhook` is false,
+  `failWebhook` is `stale`, there is no quarantine. Intake is pushed.
+- Keep history: `events()` and `eventsSince` read the change ring (a cursor
+  the ring no longer covers answers the newest changes with `truncated`);
+  `journalHead()` is 0 because rings are per account; `all()` is in-flight
+  plus the last 50 ended leases per account.
+- Shared-budget settlement (`reconcileSharedBudget`,
+  `releaseUnusedSharedBudget`): budget-policy accounts are never admitted.

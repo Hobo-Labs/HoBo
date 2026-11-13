@@ -86,13 +86,22 @@ describe("CI deps image push scope", () => {
 			branches: ["main"],
 		});
 		expect(publisher.on.workflow_dispatch).toBeNull();
-		expect(publisher.concurrency).toEqual({
-			group: "ci-deps-publish-${{ github.repository }}",
+		const job = publisher.jobs.publish;
+		// Per job, so the worker image build is never cancelled with it. Keyed by
+		// the CI run's conclusion (finding 113): a skipped completion must not
+		// cancel a publish a green run started.
+		expect(publisher.concurrency).toBeUndefined();
+		expect(job.concurrency).toEqual({
+			group:
+				"ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}",
 			"cancel-in-progress": true,
 		});
-		const job = publisher.jobs.publish;
 		expect(job["timeout-minutes"]).toBe(20);
-		expect(job["runs-on"]).toBe(depsJob["runs-on"]);
+		// The publisher pushes the fleet's own image and the deps job builds
+		// it in the box's Docker context, so neither is routed: both ask for
+		// the fleet's label.
+		expect(depsJob["runs-on"]).toBe(job["runs-on"]);
+		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
 			"github.event.workflow_run.conclusion == 'success'",
@@ -105,17 +114,65 @@ describe("CI deps image push scope", () => {
 		);
 	});
 
+	it("publishes the worker image after a green main run when GHCR lacks it", () => {
+		// Finding 113: a dropped main push's image change is built by no later
+		// push, and release jobs on ARC pull the worker from GHCR.
+		const job = publisher.jobs["runner-image"];
+		expect(job.if).toContain(
+			"github.event.workflow_run.conclusion == 'success'",
+		);
+		expect(job.concurrency["cancel-in-progress"]).toBe(false);
+		expect(job["runs-on"]).toBe(publisher.jobs.publish["runs-on"]);
+		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
+		expect(job.steps[0].with.ref).toContain(
+			"github.event.workflow_run.head_sha",
+		);
+		const named = (name: string) =>
+			job.steps.find((step: { name?: string }) => step.name === name);
+		expect(named("Ask GHCR for this commit's worker image").run).toBe(
+			"node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status",
+		);
+		const build = named(
+			"Build the worker image from this commit and publish it",
+		);
+		expect(build.if).toBe("steps.status.outputs.ghcr != 'true'");
+		// Never publish an image a pull request left under this tag on the box:
+		// force the untag, and stop if the tag survives.
+		expect(build.run).toContain('docker image rm -f "$tag"');
+		expect(build.run.indexOf("docker image rm -f")).toBeLessThan(
+			build.run.indexOf("ensure-ci-worker-image.mts"),
+		);
+		expect(build.run).toContain("Worker image tag still present");
+		// 15 of the job's 20 minutes build; the push and the GHCR check get the rest.
+		expect(build.env.HOBO_CI_WORKER_BUILD_BUDGET_SEC).toBe("900");
+		expect(publisher.jobs["runner-image"]["timeout-minutes"]).toBe(20);
+		// The deps build waits, so it pulls the image instead of racing build.sh.
+		expect(publisher.jobs.publish.needs).toEqual(["runner-image"]);
+		expect(publisher.jobs.publish.if).toMatch(
+			/^!cancelled\(\) && needs\.runner-image\.result != 'cancelled' &&/u,
+		);
+		expect(build.run).toContain("HOBO_CI_SKIP_GHCR_PULL=1");
+		expect(named("Fail unless GHCR now has it").run).toContain("ghcr=true");
+	});
+
 	it("does not make either gate wait for the deps image", () => {
-		expect(mainGate.needs).toBe("ci-runner-image");
-		expect(prValidation.needs).toBe("ci-runner-image");
+		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
+		expect(prValidation.needs).toEqual(["route", "ci-runner-image"]);
 		expect(prGate.needs).toEqual([
+			"route",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests",
 		]);
-		expect(workspaceTests.needs).toBe("pr_gate_validation");
-		expect(prAffected.needs).toBe("pr_gate_validation");
-		expect(depsJob.needs).toBe("ci-runner-image");
+		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
+		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);
+		expect(mainGate.needs).not.toContain("ci-deps-image");
+		expect(prValidation.needs).not.toContain("ci-deps-image");
+		expect(prGate.needs).not.toContain("ci-deps-image");
+		// The deps job is not routed: it builds in the box's Docker context and
+		// starts from route so it can overlap runner image materialize (#1872).
+		expect(depsJob.needs).toEqual(["route"]);
 	});
 });
 

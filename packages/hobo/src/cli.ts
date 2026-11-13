@@ -30,6 +30,7 @@ import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
 import { createCiCommand } from "./ci-command.js";
+import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
 import { createClaimCommand } from "./claim-command.js";
 import {
 	createDefaultYardRuntime,
@@ -192,7 +193,7 @@ export function createComposedHoboCli(
 
 	return createHoboCli({
 		commands: {
-			ci: createCiCommand(),
+			ci: createCiCommand({ runtime }),
 			build: createBuildCommand({ requireRealComponentize: true }),
 			// Local loop: open the Yard, place the Bindle into a Camp, run the Camp's
 			// component host (services__* + bindle env + external-only TCP).
@@ -307,6 +308,8 @@ export function createComposedHoboCli(
 			claim: createClaimCommand({
 				runtime,
 				fetchImpl: options.authMdFetch ?? fetch,
+				// `hobo claim finalize secret-store` (ADR-0179 amendment).
+				verifyOwnership: secretStoreOwnershipVerifier({ env: process.env }),
 			}),
 			// Anonymous-to-owned: what HoBo can deploy before a provider login,
 			// and the proposal a human consents to before anything is created.

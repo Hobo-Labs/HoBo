@@ -75,16 +75,60 @@ function turboTestSelects(checks: Check[], workspace: string) {
 	);
 }
 
-test("external workspace coverage omits only workspace test commands", () => {
+function isScriptsLane(check: Check) {
+	return (
+		check.command === "pnpm" && check.args.join(" ") === "run test:scripts"
+	);
+}
+
+test("external workspace coverage omits only the commands CI runs in their own jobs", () => {
+	// pr_gate_validation passes --external-workspace-tests: workspace_tests
+	// runs the workspace suites and scripts-tests runs the scripts lane.
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
 	const external = plan(files, { workspaceTestsCoveredExternally: true });
 	assert.ok(normal.checks.some(isWorkspaceTurboTest));
+	assert.ok(normal.checks.some(isScriptsLane));
 	assert.ok(!external.checks.some(isWorkspaceTurboTest));
+	assert.ok(!external.checks.some(isScriptsLane));
 	assert.deepEqual(external.workspaces, normal.workspaces);
 	assert.deepEqual(
 		external.checks,
-		normal.checks.filter((check) => !isWorkspaceTurboTest(check)),
+		normal.checks.filter(
+			(check) => !isWorkspaceTurboTest(check) && !isScriptsLane(check),
+		),
+	);
+});
+
+test("a change to scripts, root tests or .github selects the scripts lane once", () => {
+	for (const file of [
+		"scripts/ci/route-runner.mts",
+		"scripts/test/route-runner.test.ts",
+		"test/actions-policy.test.ts",
+		".github/workflows/hobo-ci.yml",
+		".github/actions/route-runner/action.yml",
+	]) {
+		const { checks } = plan([file]);
+		assert.equal(checks.filter(isScriptsLane).length, 1, file);
+	}
+});
+
+test("the scripts lane is not selected for other paths, a staged commit, or CI", () => {
+	for (const file of [
+		"packages/ci/src/index.ts",
+		"docs/ci/performance.md",
+		"src/draft/technical-proofs/hobo-auth-authoring-surface/src/index.ts",
+		"scriptsx/example.ts",
+		"testing/example.ts",
+	])
+		assert.ok(!plan([file]).checks.some(isScriptsLane), file);
+	assert.ok(
+		!plan(["scripts/example.ts"], { staged: true }).checks.some(isScriptsLane),
+	);
+	assert.ok(
+		!plan(["scripts/example.ts"], {
+			workspaceTestsCoveredExternally: true,
+		}).checks.some(isScriptsLane),
 	);
 });
 
@@ -812,6 +856,28 @@ test("unrelated changes do not select the gitleaks hang-contract test", () => {
 	);
 });
 
+const isReadStdinTest = (check: { command: string; args: readonly string[] }) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/read-stdin.test.ts scripts/test/job-scope.test.ts";
+
+test("a changed-path stdin reader edit selects its regression tests", () => {
+	for (const file of [
+		"scripts/lib/read-stdin.mts",
+		"scripts/test/read-stdin.test.ts",
+		"scripts/test/job-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/dependent-tests.mts",
+		"scripts/ci/impact-classifier.mts",
+	]) {
+		assert.ok(plan([file]).checks.some(isReadStdinTest), file);
+	}
+});
+
+test("unrelated changes do not select the stdin reader tests", () => {
+	assert.ok(!plan(["packages/core/src/index.ts"]).checks.some(isReadStdinTest));
+});
+
 const isTsAutocodeSurfaceTest = (check: {
 	command: string;
 	args: readonly string[];
@@ -922,4 +988,69 @@ test("gate script changes select the optimizexp drift lane", () => {
 test("unrelated changes do not select the optimizexp drift lane", () => {
 	const { checks } = plan(["packages/core/src/index.ts"]);
 	assert.ok(!checks.some(isOptimizexpLane));
+});
+
+test("a change to anything that guards signed local runs runs those guards", () => {
+	const guardTests = [
+		"scripts/test/attestation.test.ts",
+		"scripts/test/verify-attestation.test.ts",
+		"scripts/test/attested-jobs.test.ts",
+		"scripts/test/merge-group-gate.test.ts",
+		"scripts/test/lint-actions-runner.test.ts",
+	];
+	const runsGuards = (checks: Check[]) => {
+		const tests = checks.find(
+			(check) =>
+				check.command === "node" &&
+				check.args.includes("scripts/test/attestation.test.ts"),
+		);
+		return {
+			tests: guardTests.every((file) => tests?.args.includes(file) === true),
+			nodeTest: tests?.args.slice(0, 3).join(" ") === "--import tsx --test",
+			actionsLint: checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run actions:lint",
+			),
+		};
+	};
+	// Each of these alone, with nothing else changed: a key-only change, a
+	// workflow-only change, the verifier, the description, the lint.
+	for (const file of [
+		".github/workflows/hobo-ci.yml",
+		".github/workflows/release-hobo.yml",
+		".github/actions/route-runner/action.yml",
+		".github/actions/route-runner/anything-new.sh",
+		"scripts/ci/attested-jobs.json",
+		"scripts/ci/attestation.mts",
+		"scripts/ci/verify-attestation.mts",
+		"scripts/lint-actions.ts",
+		".hobo/ci-attestors.json",
+		"scripts/ci/local-attest.mts",
+		"scripts/test/merge-group-gate.test.ts",
+	]) {
+		for (const overrides of [
+			{},
+			{ staged: true },
+			{ workspaceTestsCoveredExternally: true },
+		])
+			assert.deepEqual(
+				runsGuards(plan([file], overrides).checks),
+				{ tests: true, nodeTest: true, actionsLint: true },
+				`${file} ${JSON.stringify(overrides)}`,
+			);
+	}
+	// And not for a change that touches none of it.
+	for (const file of [
+		"docs/design/index.md",
+		"packages/core/src/index.ts",
+		".github/workflows/pricing-ci.yml",
+		".hobo/ci.json",
+		"scripts/ci/affected-lanes.mts",
+	])
+		assert.deepEqual(
+			runsGuards(plan([file]).checks),
+			{ tests: false, nodeTest: false, actionsLint: false },
+			file,
+		);
 });

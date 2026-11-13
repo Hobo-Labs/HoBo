@@ -7,9 +7,13 @@
  * side by side, because all four host a web capability. Which one a given app
  * gets is decided later, by ADR-0151 selection.
  *
- * HONEST SCOPE: `@hobo/provider-azure` ships no deployment resolvers, so
- * nothing here deploys. A deploy against this Yard fails closed at resolution
- * until Resource Definitions and resolvers land for the `azure.*` product ids.
+ * HONEST SCOPE: `@hobo/provider-azure` ships resolvers for part of this
+ * catalog (`AZURE_RESOLVED_PRODUCT_IDS`; the rest, with reasons, in
+ * `AZURE_UNRESOLVED_PRODUCT_IDS`), proven only against an injected fake
+ * transport. The current count is `providerParity()` in `./parity.js`, derived from
+ * those constants rather than restated here, because a restated count drifts.
+ * No Resource Definitions are registered for the `azure.*` product ids, so a
+ * deploy against this Yard still fails closed at resolution.
  */
 import { type AzureYardSpecOptions, azureYardSpec } from "@hobo/provider-azure";
 import type { Yard as ParsedYard } from "@hobo/yards";
@@ -56,6 +60,8 @@ export {
 	functions,
 	type KeyVaultOptions,
 	keyVault,
+	type ManagedDiskOptions,
+	managedDisk,
 	type PostgresFlexibleOptions,
 	postgresFlexible,
 	type RedisCacheOptions,
@@ -72,6 +78,8 @@ export {
 	sqlDatabase,
 	staticWebApps,
 	storageQueue,
+	type VirtualMachineOptions,
+	virtualMachine,
 } from "@hobo/provider-azure";
 
 /**

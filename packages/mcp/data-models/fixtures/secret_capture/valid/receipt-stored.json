@@ -1,0 +1,7 @@
+{
+	"ticketId": "cap_AAAAAAAAAAAAAAAAAAAAAA",
+	"name": "HOBO_CI_WEBHOOK_SECRET",
+	"stored": true,
+	"ref": "infisical://proj-1/prod/hobo-ci-relay/HOBO_CI_WEBHOOK_SECRET",
+	"status": "stored"
+}

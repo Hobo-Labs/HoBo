@@ -240,6 +240,26 @@ message Snapshot {
   repeated Lease leases = 1;
   repeated CiEvent events = 2;
 }
+// A stored event with its position in the partition's log. The position is
+// local to the database: it orders a catch-up read and is not part of the event.
+message SequencedCiEvent {
+  double seq = 1;
+  CiEvent event = 2;
+}
+// One cursor read of an account's events, oldest first. `cursor` is the
+// position to read after next: the position of the page's last event, or the
+// position the read was given when the page is empty (zero for a read of the
+// newest events). It is always a position of the account's own.
+message CiEventPage {
+  repeated SequencedCiEvent events = 1;
+  double cursor = 2;
+  // The page is full and the account has events after it: read again from
+  // `cursor`.
+  bool more = 3;
+  // A read of the newest events filled the page and the account has events
+  // older than it.
+  bool truncated = 4;
+}
 
 
 // A portable command pipeline. The backend binds its source workspace separately.

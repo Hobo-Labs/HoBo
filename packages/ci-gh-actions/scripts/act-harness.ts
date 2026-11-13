@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,8 +10,10 @@ import { parseArgs } from "node:util";
 import { create } from "@bufbuild/protobuf";
 import { OfferSchema } from "@hobo/ci";
 import { z } from "zod";
-import { createRelayServer } from "../src/server.js";
-import { harness, NOW, queued, signed } from "../test/fixtures.js";
+import { createHostedRelayRuntime } from "../src/hosted-runtime.js";
+import { createRelayHandler } from "../src/http-handler.js";
+import { createNodeRelayHandler } from "../src/node-http.js";
+import { harness, NOW, queued, SECRET, signed } from "../test/fixtures.js";
 
 const Provider = z.enum([
 	"github",
@@ -193,7 +196,25 @@ export async function runActHarness(options: {
 			);
 		for (const scenario of scenarios) {
 			const state = harness();
-			const server = createRelayServer(state.relay);
+			// The relay as a host serves it: durable inbox, shared HTTP handler.
+			const runtime = createHostedRelayRuntime({
+				store: state.ledger,
+				github: state.api,
+				identity: state.relay.options.identity,
+				webhookSecret: SECRET,
+				control: async () => undefined,
+				now: () => state.clock.now,
+			});
+			const server = createServer(
+				createNodeRelayHandler({
+					origin: "https://relay.example",
+					handle: createRelayHandler({
+						application: runtime,
+						webhookSecret: SECRET,
+						now: () => state.clock.now,
+					}),
+				}),
+			);
 			try {
 				const account = state.configuration.accounts[0];
 				if (!account) throw new Error("fixture account missing");
@@ -213,7 +234,11 @@ export async function runActHarness(options: {
 						validUntil: "2026-10-27T00:00:00Z",
 						sourceUrl: "https://example.test/local-contract-evidence",
 						bridgeAcknowledged: true,
-						backend: offer.provider === "local" ? "gh-actions" : "",
+						// A stored policy names the bridge backend for these two hosts.
+						backend:
+							offer.provider === "local" || offer.provider === "kubernetes"
+								? "gh-actions"
+								: "",
 					}),
 				);
 				const listening = once(server, "listening");
@@ -229,19 +254,31 @@ export async function runActHarness(options: {
 						method: "POST",
 						headers: {
 							"x-github-event": "workflow_job",
+							"x-github-delivery": `act-${scenario.name}`,
 							"x-hub-signature-256": request.signature,
 						},
 						body: request.body,
 					},
 				);
 				requireEqual(String(response.status), "202", "signed webhook intake");
+				requireEqual(
+					JSON.stringify(await response.json()),
+					'{"status":"accepted"}',
+					"signed delivery committed to the inbox",
+				);
+				// The worker tick admits the delivery, reserves a host and dispatches
+				// it; the provider fixture records the lease it is sent.
+				state.api.strictLeaseId = false;
+				if (scenario.expectedProvider !== "")
+					state.api.hostLabel = labels[scenario.expectedProvider];
+				await runtime.tick();
 				const lease = state.store.all()[0];
 				if (scenario.expectedProvider === "") {
 					if (lease || state.store.pendingJobs().length !== 1)
 						throw new Error(
 							"denied account launched a lease or lost pending demand",
 						);
-					await state.relay.dispatchPending();
+					await runtime.tick();
 					requireEqual(
 						String(state.api.dispatches),
 						"0",
@@ -261,10 +298,8 @@ export async function runActHarness(options: {
 					scenario.expectedProvider,
 					"provider selection",
 				);
-				state.api.leaseId = lease.id;
-				state.api.hostLabel = labels[scenario.expectedProvider];
+				requireEqual(state.api.leaseId, lease.id, "dispatched lease identity");
 				state.api.host.display_title = `HoBo lease ${lease.id}`;
-				await state.relay.dispatchPending();
 				requireEqual(
 					String(state.api.dispatches),
 					"1",
@@ -381,6 +416,7 @@ export async function runActHarness(options: {
 					server.close(() => resolvePromise()),
 				);
 				state.store.close();
+				state.ledger.close();
 			}
 		}
 		const summary = {

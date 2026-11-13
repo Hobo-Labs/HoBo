@@ -20,25 +20,35 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/adapter-infisical": "workspace:*",
+    "@hobo/backend-fleet": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/ci-gh-actions": "workspace:*",
-    "@neon/functions": "0.11.0",
+    "@hobo/core": "workspace:*",
+    "@hobo/kv-redis-compatible": "workspace:*",
+    "@hobo/provider-turso": "workspace:*",
+    "@hobo/provider-upstash": "workspace:*",
+    "@hobo/provider-vercel-blob": "workspace:*",
     "@vercel/oidc": "4.0.0",
     "@vercel/queue": "0.10.0",
     "@vercel/sandbox": "3.9.0",
-    "jose": "6.2.4",
-    "pg": "8.22.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@types/pg": "8.15.5",
-    "esbuild": "0.28.1"
+    "@hobo/bindles": "workspace:*",
+    "@hobo/camps": "workspace:*",
+    "@hobo/pricing": "workspace:*",
+    "@hobo/provider-manifest": "workspace:*",
+    "@hobo/provider-vercel": "workspace:*",
+    "@hobo/yards": "workspace:*",
+    "esbuild": "0.28.1",
+    "jose": "6.2.4"
   },
   "scripts": {
-    "build": "node --import tsx scripts/generate-assets.mts && node --import tsx scripts/generate-proxy-bundle.mts && tsc -p tsconfig.json",
+    "build": "node --import tsx scripts/generate-assets.mts && node --import tsx scripts/generate-proxy-bundle.mts && node --import tsx scripts/generate-offers.mts && tsc -p tsconfig.json",
     "ci:local": "node dist/turbo-ci-cli.js",
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "lint": "biome check .",
-    "test": "node --import tsx scripts/generate-proxy-bundle.mts --check && vitest run"
+    "test": "node --import tsx scripts/generate-proxy-bundle.mts --check && node --import tsx scripts/generate-offers.mts --check && vitest run"
   }
 }

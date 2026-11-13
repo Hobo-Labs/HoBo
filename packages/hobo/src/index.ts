@@ -139,6 +139,10 @@ export {
 	createCanDeployCommand,
 } from "./can-deploy-command.js";
 export {
+	type CiRelayDeployInput,
+	runCiRelayDeploy,
+} from "./ci-relay-deploy.js";
+export {
 	type ClaimCommandDeps,
 	createClaimCommand,
 	createClaimCommandWithMock,
@@ -420,6 +424,12 @@ export {
 	registerPluginExtensions,
 } from "./plugin-loader.js";
 export {
+	CATALOG_REGISTERED,
+	catalogRegisteredFact,
+	readStoredCatalog,
+	storedCatalogs,
+} from "./pricing-catalog-store.js";
+export {
 	createProductionHostingProviderCatalog,
 	type HostingProviderCatalogEntry,
 } from "./provider-hosting-catalog.js";
@@ -501,18 +511,40 @@ export {
 } from "./trails-command.js";
 export {
 	type CreateDeploymentInput,
+	type CreateGitDeploymentInput,
 	createVercelClient,
+	isProjectNotFound,
+	type SetProjectEnvInput,
+	VercelApiError,
 	type VercelClient,
 	type VercelClientOptions,
 	type VercelDeploymentFile,
 	type VercelDeploymentResult,
+	VercelEnvRefusal,
+	type VercelEnvTarget,
 	type VercelFetch,
 	type VercelFetchResponse,
+	type VercelGitSource,
+	type VercelPlannedRequest,
+	type VercelProjectEnvResult,
+	type VercelProjectResult,
+	VercelTransportError,
+	vercelEnvCreateRequest,
+	vercelEnvListRequest,
+	vercelGitDeploymentRequest,
 } from "./vercel-client.js";
 export {
 	createVercelDeployProvider,
+	planVercelGitDeployment,
 	type VercelDeployProviderOptions,
+	type VercelGitArtifact,
+	type VercelGitRequestPlan,
 } from "./vercel-deploy-provider.js";
+export {
+	isRefusedEnvKey,
+	refusedEnvKeyReason,
+	refusedEnvValueReason,
+} from "./vercel-env-policy.js";
 export {
 	createVerifyCommand,
 	type VerifyCommandDeps,

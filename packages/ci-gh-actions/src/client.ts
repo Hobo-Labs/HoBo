@@ -18,9 +18,27 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import {
+	FleetReporterStatusListSchema,
+	FleetVerdictSchema,
+} from "./_generated/fleet_verdict_pb.js";
+import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
+import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
+import {
+	FLEET_REPORTERS_PATH,
+	FLEET_VERDICTS_PATH,
+	parseFleetReportersPath,
+	parseFleetVerdictPath,
+} from "./fleet-verdict.js";
+
+export {
+	type MeshNodeReport,
+	type MeshNodeReports,
+	MeshNodeReportsSchema,
+} from "./_generated/mesh_pb.js";
+export { parseMeshNodeReports } from "./mesh-records.js";
 
 type ProtobufInput<Desc extends DescMessage> = NonNullable<
 	Parameters<typeof create<Desc>>[1]
@@ -42,6 +60,18 @@ export class CiRelayClientError extends Error {
 }
 function invalid(message: string): never {
 	throw new CiRelayClientError(0, message);
+}
+/** `verdicts/<owner>/<name>`, as the repository was given, once it is a repository. */
+function verdictPath(repository: string): string {
+	if (!parseFleetVerdictPath(`${FLEET_VERDICTS_PATH}${repository}`))
+		invalid("invalid repository");
+	return `verdicts/${repository}`;
+}
+/** `reporters/<owner>/<name>`, as the repository was given, once it is a repository. */
+function reportersPath(repository: string): string {
+	if (!parseFleetReportersPath(`${FLEET_REPORTERS_PATH}${repository}`))
+		invalid("invalid repository");
+	return `reporters/${repository}`;
 }
 function uuid(id: string): void {
 	if (
@@ -138,9 +168,20 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
+		// The account's own routes, or the relay's (its mesh, its fleet
+		// verdicts and reporters), which no account owns.
+		root: "accounts/self" | "mesh" | "fleet" = "accounts/self",
+		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
+		lenient = false,
+		/** A credential other than the account's, e.g. a workflow's OIDC token. */
+		bearer?: string,
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
-		if (options.ownerSession) {
+		if (bearer !== undefined) {
+			if (!bearer || /\s/.test(bearer) || bearer.length > 16000)
+				invalid("invalid workflow token");
+			headers.set("Authorization", `Bearer ${bearer}`);
+		} else if (options.ownerSession) {
 			headers.set("X-HoBo-Owner-Control", "1");
 		} else {
 			let token: string;
@@ -165,7 +206,7 @@ export function createCiRelayClient(
 		if (body !== undefined) init.body = body;
 		let response: Response;
 		try {
-			response = await send(`${base}/${version}/accounts/self/${path}`, init);
+			response = await send(`${base}/${version}/${root}/${path}`, init);
 		} catch {
 			throw new CiRelayClientError(
 				0,
@@ -190,7 +231,9 @@ export function createCiRelayClient(
 		if (!response.ok)
 			return refuseResponse(`relay request failed (${response.status})`);
 		try {
-			return fromJsonString(schema, await responseText(response));
+			return fromJsonString(schema, await responseText(response), {
+				ignoreUnknownFields: lenient,
+			});
 		} catch {
 			throw new CiRelayClientError(
 				response.status,
@@ -337,6 +380,60 @@ export function createCiRelayClient(
 		},
 		getLeases() {
 			return request("leases", "GET", SnapshotSchema);
+		},
+		/**
+		 * The relay mesh's nodes as the relay sees them: availability,
+		 * capacity and trust, with a capacity summary. A relay with no mesh
+		 * answers `mesh: "not-configured"`. Needs the `policy:read` scope.
+		 */
+		getMeshNodes() {
+			return request(
+				"nodes",
+				"GET",
+				MeshNodeReportsSchema,
+				undefined,
+				undefined,
+				"v1",
+				"mesh",
+				// A newer relay may add fields; the nodes are still shown.
+				true,
+			);
+		},
+		/**
+		 * The fleet verdict a relay keeps for one repository (ADR-0180): the
+		 * labels new work should stay off right now. Nothing blocked is the
+		 * answer when it keeps none.
+		 */
+		getFleetVerdict(repository: string) {
+			return request(
+				verdictPath(repository),
+				"GET",
+				FleetVerdictSchema,
+				undefined,
+				undefined,
+				"v1",
+				"fleet",
+				true,
+			);
+		},
+		/**
+		 * What the relay knows of the fleet reporters for one repository
+		 * (ADR-0180): each enrolled reporter's state and liveness, and each
+		 * label's allowance. Asked with an OIDC token from a workflow of that
+		 * repository, whose audience is this relay's origin.
+		 */
+		getFleetReporters(repository: string, oidcToken: string) {
+			return request(
+				reportersPath(repository),
+				"GET",
+				FleetReporterStatusListSchema,
+				undefined,
+				undefined,
+				"v1",
+				"fleet",
+				true,
+				oidcToken,
+			);
 		},
 		getLease(id: string) {
 			uuid(id);
