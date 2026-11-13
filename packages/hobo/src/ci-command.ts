@@ -445,6 +445,9 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...(deps.fetch !== undefined
+						? { credentialFetch: deps.fetch }
+						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),

@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,6 +99,7 @@ async function deploy(
 	options: {
 		readonly env?: NodeJS.ProcessEnv;
 		readonly fetch: VercelFetch;
+		readonly credentialFetch?: typeof fetch;
 		readonly json?: boolean;
 		readonly cwd?: string;
 		readonly vercelCli?: VercelCliRunner;
@@ -105,6 +113,9 @@ async function deploy(
 		commands: {
 			ci: createCiCommand({
 				env: options.env ?? {},
+				...(options.credentialFetch !== undefined
+					? { fetch: options.credentialFetch }
+					: undefined),
 				vercelFetch: options.fetch,
 				...(options.vercelCli !== undefined
 					? { vercelCli: options.vercelCli }
@@ -184,6 +195,103 @@ const ORIGINS = {
 	HOBO_CI_RELAY_PREVIEW_URL: "https://relay-preview.example.test",
 	HOBO_CI_RELAY_URL: "https://relay.example.test",
 };
+
+describe("Infisical deployment credential", () => {
+	it("uses the deploy identity's OIDC credential without writing it to output", async () => {
+		const cwd = mkdtempSync(join(RELAY_DIR, ".relay-project-"));
+		try {
+			mkdirSync(join(cwd, "deploy"));
+			symlinkSync(join(RELAY_DIR, "src"), join(cwd, "src"));
+			symlinkSync(
+				join(RELAY_DIR, "deploy", "yard.ts"),
+				join(cwd, "deploy", "yard.ts"),
+			);
+			symlinkSync(
+				join(RELAY_DIR, "deploy", "delivery.ts"),
+				join(cwd, "deploy", "delivery.ts"),
+			);
+			const binding = JSON.parse(
+				readFileSync(
+					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+					"utf8",
+				),
+			);
+			binding.deployProjectId = "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7";
+			writeFileSync(
+				join(cwd, "deploy", "secret-store.binding.json"),
+				JSON.stringify(binding),
+			);
+			const requests: string[] = [];
+			const credentialFetch: typeof fetch = async (input) => {
+				const url = String(input);
+				requests.push(url);
+				if (url.startsWith("https://token.actions.example.test/"))
+					return Response.json({ value: "synthetic.jwt.value" });
+				if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+					return Response.json({
+						accessToken: "synthetic-infisical-token",
+						expiresIn: 3600,
+						accessTokenMaxTTL: 3600,
+						tokenType: "Bearer",
+					});
+				if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+					return Response.json({
+						secret: {
+							secretKey: "VERCEL_TOKEN",
+							secretValue: TOKEN,
+							version: 1,
+							type: "shared",
+							environment: "prod",
+							secretPath: "/",
+						},
+					});
+				return Response.json({}, { status: 404 });
+			};
+			const seenAuthorization: string[] = [];
+			const vercelFetch: VercelFetch = async (_url, init) => {
+				seenAuthorization.push(init.headers.Authorization ?? "");
+				throw new Error("no request may be sent");
+			};
+			const ran = await deploy([...RELAY], {
+				cwd,
+				fetch: vercelFetch,
+				credentialFetch,
+				env: {
+					GITHUB_ACTIONS: "true",
+					VERCEL_TOKEN: "untrusted-runner-token",
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.example.test/token",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				},
+			});
+			expect(
+				requests.some((url) => url.includes("/api/v4/secrets/VERCEL_TOKEN")),
+				JSON.stringify(ran.envelope),
+			).toBe(true);
+			expect(seenAuthorization, JSON.stringify(ran.envelope)).toContain(
+				`Bearer ${TOKEN}`,
+			);
+			expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
+			seenAuthorization.length = 0;
+			const denied = await deploy([...RELAY], {
+				cwd,
+				fetch: vercelFetch,
+				credentialFetch: async () => Response.json({}, { status: 401 }),
+				env: {
+					GITHUB_ACTIONS: "true",
+					VERCEL_TOKEN: "untrusted-runner-token",
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.example.test/token",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				},
+			});
+			expect(denied.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
+			expect(seenAuthorization).toEqual([]);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+});
 // deploy/delivery.ts reads its probe origins from the process environment
 // when it loads, as it does when the workflow runs the command. Stubbed for
 // this file only, and restored after it.
@@ -804,6 +912,79 @@ function fakeVercelCli(listed: { project: string; team: string }) {
 
 describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 	const env = { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM, ...ORIGINS };
+
+	it("verifies the newly created protected preview with GitHub OIDC", async () => {
+		const probed: string[] = [];
+		const probe: HttpTransport = async (request) => {
+			probed.push(request.url);
+			expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
+				"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+			);
+			return {
+				status: 200,
+				headers: {},
+				body: JSON.stringify({ ok: true, commit: SHA }),
+			};
+		};
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			credentialFetch: async (input) => {
+				const url = String(input);
+				if (url.includes("token.actions.example.test"))
+					return Response.json({
+						value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+					});
+				if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+					return Response.json({
+						accessToken: "synthetic-infisical-token",
+						expiresIn: 3600,
+						accessTokenMaxTTL: 3600,
+						tokenType: "Bearer",
+					});
+				if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+					return Response.json({
+						secret: {
+							secretKey: "VERCEL_TOKEN",
+							secretValue: TOKEN,
+							version: 1,
+							type: "shared",
+							environment: "prod",
+							secretPath: "/",
+						},
+					});
+				return Response.json({}, { status: 404 });
+			},
+			env: {
+				...env,
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true",
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+			probe,
+			...steppingClock(),
+		});
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(probed).toContain(
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
+		);
+		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
+	});
+
+	it("does not qualify a pinned preview when its health check serves another commit", async () => {
+		const stale = healthyRelay(200, "f".repeat(40));
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			probe: stale.http,
+			...steppingClock(),
+		});
+		expect(ran.exitCode).not.toBe(0);
+		expect(ran.envelope.code).toBe(RELAY_VERIFY_REFUSAL.commitMismatch);
+		expect(stale.probed).toContain(
+			"https://relay-preview.example.test/healthz",
+		);
+	});
 
 	it("provisions the Marketplace cache the Camp chooses when the team has none, then deploys and waits for READY", async () => {
 		const vercel = scriptedVercel(["BUILDING", "READY"]);

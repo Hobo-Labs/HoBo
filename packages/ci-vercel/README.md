@@ -224,7 +224,7 @@ packages/ci-vercel/deploy/delivery.ts` applies the same records):
 
 | Node | Camp | Takes Freight from | Verified by |
 |---|---|---|---|
-| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz` (the preview Camp has no config-service binding, so its `/readyz` answers 503 and is not required) |
+| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz`; with `--sha` it must name that commit (the preview Camp has no config-service binding, so its `/readyz` is not required) |
 | `production` | `hobo-ci-relay/production` | **only** Freight `preview` qualified | probes of `$HOBO_CI_RELAY_URL/healthz` (which must name the Freight's commit) and `/readyz` |
 
 `hobo ci deploy --adopt` verifies the same nodes differently: preview by its
@@ -250,13 +250,13 @@ result keeps its JSON contract (`code`, `data.outputs`, `data.plan`) and adds
 
 Known gaps, stated rather than hidden:
 
-- **Preview on the by-hand token path reads a fixed origin.** `/healthz`
-  names the build's commit (`VERCEL_GIT_COMMIT_SHA`), and production on both
-  paths requires it to equal the Freight's commit, so a stale deployment
-  behind `$HOBO_CI_RELAY_URL` no longer qualifies a newer commit
-  (`HOBO_CI_DEPLOY_COMMIT_MISMATCH`). The by-hand preview probe of
-  `$HOBO_CI_RELAY_PREVIEW_URL` (a branch alias) does not check the commit yet;
-  `--adopt` verifies preview by its deployment record instead.
+- **The ordinary preview probe reads a fixed origin.** With `--sha`, its
+  `/healthz` must name that commit, as production's does. For a protected
+  Vercel preview, `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` makes HoBo probe the
+  deployment it just created using the GitHub Actions OIDC token. The project
+  must trust that workload for preview access, and `HOBO_CI_RELAY_PREVIEW_URL`
+  supplies the pipeline's placeholder origin. `--adopt` verifies preview by
+  its deployment record instead.
 
 The journal is the shared CD journal: `$HOBO_HOME/cd`, or the store
 `HOBO_CD_SQLITE_PATH` / `HOBO_CD_POSTGRES_URL` names, the same one
@@ -297,16 +297,12 @@ and on `workflow_dispatch`:
    the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
    only — role shape not asserted), then revokes the token, and reports it pass or
    fail by name (`hobo ci secret-store verify`).
-3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration
-   deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
-   write), and `hobo ci deploy --adopt --sha "$GITHUB_SHA"` adopts it
-   ([token-free relay mode](#token-free-relay-mode-hobo-ci-deploy---adopt)):
-   it reads the deployment from GitHub's Deployments API with the job's own
-   `GITHUB_TOKEN` (`deployments: read`), records it as relay Freight and
-   promotes it through HoBo CD preview then production, failing closed:
-   preview by its deployment record, production at the Yard's production
-   domain (`/healthz` names the commit, `/readyz` answers 200). The command's
-   exit status is the step's.
+3. *Deliver the relay through HoBo CD*: `hobo ci deploy` reads the Vercel
+   credential from the separate deploy project using the job's OIDC identity,
+   creates and verifies the pinned preview, then deploys production only after
+   preview qualifies the same commit. A Vercel Trusted Source lets the job
+   reach the protected preview using its GitHub OIDC token. Production checks
+   `/healthz` for the commit and requires `/readyz` to answer 200.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:
@@ -321,9 +317,9 @@ session key, Sandbox proxy key and `CRON_SECRET` from the App private key
 
 #### Token-free relay mode (`hobo ci deploy --adopt`)
 
-The workflow holds no Vercel token, so it does not deploy: it adopts.
+For projects that deliberately use a Vercel Git integration,
 `hobo ci deploy --adopt --sha <commit>` is a publisher with an observe-only
-realization:
+realization. The HoBo relay workflow uses direct CD delivery instead:
 
 1. **Find.** It reads `GET /repos/{owner}/{repo}/deployments?sha=<commit>` and
    each record's statuses from GitHub's API, through a transport guarded to
@@ -408,13 +404,8 @@ adds wait, not evidence. When a stage runs out:
 | `HOBO_CI_ADOPT_BUDGET_EXHAUSTED` | the deadline could not hold every stage, or a READY deployment had not finished verifying when its stage's share ended |
 
 None of them changes anything on Vercel, and the deployment is not lost: the
-next push to `main`, or a re-run of the workflow for the same commit, adopts
-it (the CD journal keeps the in-flight promotion). In the relay deploy
-workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
-checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
-so the install and build come out of the adopt budget and the command ends
-with its typed reason before GitHub would kill the job; the adopt step's own
-timeout is only a backstop that cannot fire first.
+operator can retry adoption for the same commit (the CD journal keeps the
+in-flight promotion).
 
 Stated, not hidden: `/readyz` answers 503 until the relay can read its store,
 so production does not qualify until the store's folder is filled (the old

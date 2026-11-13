@@ -12,9 +12,9 @@
  *    job ends with a notice and succeeds. No repository variable or secret is
  *    read: the gate is the committed binding.
  * 2. For a push: does the pushed range touch the relay? The relay's inputs are
- *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
- *    closure (`importerClosure`, the release OCI impact tooling's), plus this
- *    workflow and this gate. A manual run always deploys.
+ *    `packages/ci-vercel`, the HoBo deployment command, and every workspace
+ *    package in their pnpm-lock.yaml closures, plus this workflow and gate.
+ *    A manual run always deploys.
  *
  * Prints `run=true|false`, `reason=<text>` and `deadline=<ISO time>` to
  * `--github-output`, or to stdout without it. The deadline is when
@@ -70,7 +70,12 @@ export type GateDecision = Readonly<{ run: boolean; reason: string }>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
-	return [...importerClosure(parseLockfile(lockfileText), [RELAY_PACKAGE_DIR])]
+	return [
+		...importerClosure(parseLockfile(lockfileText), [
+			RELAY_PACKAGE_DIR,
+			"packages/hobo",
+		]),
+	]
 		.filter((dir) => dir !== "." && dir !== "")
 		.sort();
 }
