@@ -23,12 +23,29 @@ import {
 	readRepo,
 	scaleWorkspaceDurations,
 } from "./dependent-tests.mts";
-import { resolveMainWorkspaceParallelCap } from "./load-fleet-capacity.mts";
 import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
 } from "./resolve-main-test-base.mts";
 import { loadWorkspaceDurations } from "./workspace-test-durations.mts";
+
+/**
+ * How many shards the plan sizes for at once. A tuning setting of this script,
+ * not a reading of the fleet: where the shards run is the route's decision
+ * (the plan job asks the relay and the queue again before them).
+ */
+export const DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP = 4;
+
+/** `MAIN_WORKSPACE_PARALLEL_CAP` when it is a whole number from 1 to 8, else the default. */
+export function mainWorkspaceParallelCap(env: NodeJS.ProcessEnv): number {
+	const value = Number(env.MAIN_WORKSPACE_PARALLEL_CAP ?? "");
+	return env.MAIN_WORKSPACE_PARALLEL_CAP?.trim() &&
+		Number.isInteger(value) &&
+		value >= 1 &&
+		value <= 8
+		? value
+		: DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP;
+}
 
 const GITHUB_OUTPUT = process.env.GITHUB_OUTPUT?.trim();
 const CACHE_DIR = process.env.MAIN_GATE_PLAN_CACHE_DIR?.trim();
@@ -174,10 +191,7 @@ async function main(): Promise<void> {
 					repo,
 					base ? cliRootFileReader(base) : undefined,
 				);
-	const parallelCap = await resolveMainWorkspaceParallelCap({
-		repository,
-		token,
-	});
+	const parallelCap = mainWorkspaceParallelCap(process.env);
 	const targetSeconds = Number(
 		process.env.MAIN_SHARD_TARGET_SECONDS ??
 			String(MAIN_WORKSPACE_SHARD_TARGET_SECONDS),

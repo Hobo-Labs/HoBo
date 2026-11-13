@@ -11,7 +11,15 @@ on:
     types: [checks_requested]
   schedule:
     - cron: "17 3 * * *"
+  # A dispatch's `route` pins that run's route without touching repository variables:
+  # fleet, local or github. Empty leaves vars.HOBO_CI_ROUTE in force.
   workflow_dispatch:
+    inputs:
+      route:
+        description: "Pin the route for this run (fleet, local, github); empty keeps HOBO_CI_ROUTE"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -82,7 +90,7 @@ jobs:
         uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          mode: ${{ vars.HOBO_CI_ROUTE }}
+          mode: ${{ inputs.route || vars.HOBO_CI_ROUTE }}
           local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
@@ -984,22 +992,25 @@ jobs:
 
   main-gate-plan:
     name: Main workspace plan
-    # One trunk pickup for everything main needs beside its gate (finding 154): the
-    # deps layer check that was its own job (CI deps layer), the secret scan that
-    # waited for a runner after the gate (finish), and the shard plan. Each used to
-    # cost a 30 s to 2 min wait for a runner around seconds of work.
+    # One pickup for everything main needs beside its gate (finding 154): the deps
+    # layer check that was its own job (CI deps layer), the secret scan that waited
+    # for a runner after the gate (finish), and the shard plan. Each used to cost a
+    # 30 s to 2 min wait for a runner around seconds of work.
+    # Follows the route job like every routed job. Before the shards it asks again
+    # (`reroute`), so they follow what the fleet can take now, not a minute ago.
     needs: [route, ci-runner-image]
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     # Seconds on a push. A whole-workspace plan has taken almost seven minutes, and
     # a scan with no usable baseline covers the whole history (up to twelve).
     timeout-minutes: 20
+    # actions: read lists completed runs to find the last green main commit, and
+    # serves the second ask, which reads the run queue.
     permissions:
-      # Read-only: lists completed runs to find the last green main commit.
       actions: read
       contents: read
       packages: read
@@ -1008,6 +1019,8 @@ jobs:
       main_tests: ${{ steps.plan.outputs.main_tests }}
       main_scope: ${{ steps.plan.outputs.main_scope }}
       shards: ${{ steps.plan.outputs.shards }}
+      # The shards' and the finish job's runner: the second ask's answer, else the run's route.
+      shard_runner: ${{ steps.reroute.outputs.runner || needs.route.outputs.runner }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -1024,6 +1037,25 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
+      # After the full checkout: the route script, packages/ci/src/fleet-overflow.ts and
+      # .hobo/ci.json are not in the bootstrap checkout. Only a run the route job kept on
+      # the fleet asks again; one already sent away is not brought back to a fleet whose
+      # deps job was skipped. This run's own jobs count (include-own-run): a plan job that
+      # itself waited past the limit sends the shards elsewhere (finding 142). Without a
+      # decision the step outputs nothing and the run's route stands.
+      - name: Ask again before the shards
+        id: reroute
+        if: needs.route.outputs.tier == 'fleet'
+        uses: ./.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+          mode: ${{ inputs.route || vars.HOBO_CI_ROUTE }}
+          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
+          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
+          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
+          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+          attest: "false"
+          include-own-run: "true"
       - uses: ./.github/actions/ci-runner-preflight
       # The deps layer, as steps. Only the box has the Docker context its job
       # containers start from; on any other runner (an ARC pod pulled several GB
@@ -1148,7 +1180,7 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
     # The daily schedule is the one whole-workspace sweep and gets an hour.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
@@ -1380,12 +1412,10 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
-    # Routed, like every pull request job: the fleet while the route job finds it
-    # taking jobs, GitHub-hosted when it does not. These were pinned to the trunk
-    # label, so on a box whose memory other work held they waited for a 4 GiB
-    # reservation even on runs where the route job had already said the fleet was
-    # not taking jobs (finding 154). A shard installs for itself off the box.
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    # The plan job's second ask, else the run's route, else the trunk label, so a failed
+    # or skipped plan job never leaves runs-on empty. Off the box a shard installs
+    # for itself.
+    runs-on: ${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
       contents: read

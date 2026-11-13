@@ -13,7 +13,7 @@ describe("main full gate workspace sharding", () => {
 		// The route script stopped loading `fleet/capacity.ts` (finding 146);
 		// `route-runner.test.ts` checks every routed workflow against what the
 		// script loads today.
-		const routeStart = workflow.indexOf("  route:");
+		const routeStart = workflow.indexOf("\n  route:\n");
 		const runnerImage = workflow.indexOf("  ci-runner-image:", routeStart);
 		assert.ok(routeStart > -1);
 		const route = workflow.slice(routeStart, runnerImage);
@@ -42,7 +42,7 @@ describe("main full gate workspace sharding", () => {
 		assert.doesNotMatch(main, /Plan main workspace test shards/u);
 	});
 
-	it("shards workspace tests across fleet runners", () => {
+	it("shards workspace tests across the runners the plan job chose", () => {
 		const shardStart = workflow.indexOf("  main_workspace_tests:");
 		const finishStart = workflow.indexOf("  main_gate_finish:", shardStart);
 		assert.ok(shardStart > -1);
@@ -52,30 +52,6 @@ describe("main full gate workspace sharding", () => {
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards/u);
 		assert.match(block, /needs: \[route, ci-runner-image, main-gate-plan\]/u);
 		assert.match(block, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
-	});
-
-	it("routes shards like pull request jobs: GitHub-hosted when the fleet is not taking jobs", () => {
-		// Run 43271789046: the route job chose ubuntu-24.04 (the fleet had taken
-		// up to 1376 s to pick a job up) while every main job still asked for
-		// hobo-trunk. A shard is the one main job that needs nothing of the box.
-		const shardStart = workflow.indexOf("  main_workspace_tests:");
-		const finishStart = workflow.indexOf("  main_gate_finish:", shardStart);
-		const block = workflow.slice(shardStart, finishStart);
-		const runsOn = /^ {4}runs-on: (.+)$/mu.exec(block)?.[1] ?? "";
-		assert.ok(runsOn.startsWith("${{ needs.route.outputs.runner || ("), runsOn);
-		assert.ok(runsOn.endsWith("&& 'hobo-trunk' || 'hobo') }}"), runsOn);
-		// Off the box there is no deps layer: the shard installs for itself.
-		assert.match(block, /steps\.deps-layer\.outputs\.match != 'true'/u);
-		assert.match(block, /name: Restore pnpm store/u);
-		// The plan and the gate stay on the fleet: they use its Docker context.
-		for (const id of ["main-gate-plan", "main-gate"]) {
-			const start = workflow.indexOf(`  ${id}:\n`);
-			const job = workflow.slice(
-				start,
-				workflow.indexOf("\n    steps:", start),
-			);
-			assert.doesNotMatch(job, /needs\.route\.outputs\.runner/u, id);
-		}
 	});
 
 	it("finishes after the gate, the plan (with its secret scan) and the shards", () => {
@@ -135,4 +111,130 @@ describe("main full gate workspace sharding", () => {
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != '\[\]'/u);
 		assert.match(block, /needs\.main-gate-plan\.outputs\.shards != ''/u);
 	});
+
+	it("shards use the plan job's own route", () => {
+		// The plan job and the full gate follow the route job; the shards
+		// follow the plan job's second ask, then the run's route.
+		for (const name of ["main-gate-plan", "main-gate"])
+			assert.equal(runsOn(job(name)), ROUTED, name);
+		assert.equal(runsOn(job("main_workspace_tests")), SHARD);
+		// The finish job only adds up the other jobs' results, so like the two
+		// required gates it never asks the fleet for a runner (finding 154).
+		assert.equal(runsOn(job("main_gate_finish")), "ubuntu-24.04");
+		assert.match(job("main_gate_finish"), /^    permissions: \{\}$/mu);
+		assert.doesNotMatch(job("main_gate_finish"), /^\s+(- )?uses: /mu);
+		assert.match(
+			job("main-gate-plan"),
+			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.runner \|\| needs\.route\.outputs\.runner \}\}$/mu,
+		);
+		assert.match(job("main-gate"), /^    needs: \[route, ci-runner-image\]$/mu);
+	});
+
+	it("the re-ask runs after the full checkout and falls back to the run's route", () => {
+		const plan = job("main-gate-plan");
+		assert.match(
+			plan,
+			/^    permissions:\n      actions: read\n      contents: read$/mu,
+		);
+		const steps = plan.slice(plan.indexOf("    steps:"));
+		const full = steps.indexOf("          fetch-depth: 0");
+		const reroute = steps.indexOf("        id: reroute");
+		assert.ok(
+			full > -1 && reroute > full,
+			"reroute must follow the full checkout",
+		);
+		const step = steps.slice(
+			steps.lastIndexOf("      - ", reroute),
+			steps.indexOf("\n      - ", reroute),
+		);
+		assert.match(step, /if: needs\.route\.outputs\.tier == 'fleet'/u);
+		assert.match(step, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(step, /token: \$\{\{ github\.token \}\}/u);
+		assert.match(
+			step,
+			/mode: \$\{\{ inputs\.route \|\| vars\.HOBO_CI_ROUTE \}\}/u,
+		);
+		for (const input of [
+			"local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}",
+			"max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}",
+			"max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}",
+			"trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}",
+			'attest: "false"',
+			'include-own-run: "true"',
+		])
+			assert.ok(step.includes(input), input);
+		// A second ask that cannot decide outputs no runner (the action's
+		// fallback, route-runner.test.ts), so the run's route stands; a skipped
+		// or failed plan job leaves the shards on the trunk expression.
+		assert.ok(
+			SHARD.includes(
+				"needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (",
+			),
+		);
+	});
+
+	it("keeps the deps image off a main run the route sent away from the fleet", () => {
+		// On main there is no deps image job to wait on the fleet for (finding
+		// 154): the plan job looks at the layer, and only on the box worker, so a
+		// run the route sent to GitHub-hosted or a local box does nothing here.
+		const deps = job("ci-deps-image");
+		assert.match(deps, /^    needs: \[route\]$/mu);
+		assert.match(
+			deps,
+			/^    if: \$\{\{ !cancelled\(\) && github\.event_name == 'pull_request' \}\}$/mu,
+		);
+		const plan = job("main-gate-plan");
+		const check = plan.slice(
+			plan.indexOf("      - name: Check current local deps image"),
+			plan.indexOf("      - name: Login to GHCR for read-only cache"),
+		);
+		assert.match(check, /"\$\{HOBO_CI_PNPM_STORE_MOUNTED:-\}" != "1"/u);
+		assert.match(check, /echo "current=true" >> "\$GITHUB_OUTPUT"/u);
+		for (const name of [
+			"Login to GHCR for read-only cache",
+			"Resolve local or GHCR deps image",
+			"Verify deps image under job mount",
+			"Promote verified deps image",
+		]) {
+			const step = plan.slice(plan.indexOf(`      - name: ${name}`));
+			assert.match(
+				step.slice(0, step.indexOf("\n      - name:", 1)),
+				/if: steps\.deps-current\.outputs\.current != 'true'/u,
+				name,
+			);
+		}
+		// No shard waits on a deps job.
+		assert.doesNotMatch(job("main_workspace_tests"), /ci-deps-image/u);
+	});
+
+	it("can be pinned from a dispatch without touching repository variables", () => {
+		assert.match(
+			workflow,
+			/^  workflow_dispatch:\n    inputs:\n      route:\n/mu,
+		);
+		assert.match(
+			job("route"),
+			/mode: \$\{\{ inputs\.route \|\| vars\.HOBO_CI_ROUTE \}\}/u,
+		);
+	});
 });
+
+const TRUNK =
+	"(vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo')";
+const ROUTED = `\${{ needs.route.outputs.runner || ${TRUNK} }}`;
+const SHARD = `\${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || ${TRUNK} }}`;
+
+/** One job's block of the workflow, up to the next job. */
+function job(name: string): string {
+	const lines = workflow.split("\n");
+	const start = lines.indexOf(`  ${name}:`);
+	assert.ok(start > -1, name);
+	const next = lines.findIndex(
+		(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/u.test(line),
+	);
+	return lines.slice(start, next === -1 ? undefined : next).join("\n");
+}
+
+function runsOn(block: string): string | undefined {
+	return /^    runs-on: (.*)$/mu.exec(block)?.[1];
+}

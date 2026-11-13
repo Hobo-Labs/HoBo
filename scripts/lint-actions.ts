@@ -85,6 +85,36 @@ const TRUNK_RUNS_ON =
 const ROUTED_RUNS_ON =
 	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
+/**
+ * What the main gate's shards and finish job ask for: the plan job's second
+ * ask (`shard_runner`), then the run's route, then the trunk label, so a
+ * failed or skipped plan job never leaves `runs-on` empty.
+ */
+const SHARD_RUNS_ON =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+/**
+ * Fleet state never reaches a workflow (rule R2 of plan 0025): not through a
+ * repository variable, an action input or an environment variable. A
+ * workflow learns what the fleet can take by asking the relay when it decides.
+ */
+const FLEET_STATE_VARIABLE = /vars\.HOBO_CI_FLEET_/;
+const FLEET_STATE_NAME =
+	/^\s*-?\s*(fleet-(state|capacity|routes)|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES))[\w-]*\s*:/;
+
+function lintFleetState(errors: string[], file: string, text: string): void {
+	for (const [index, line] of text.split("\n").entries()) {
+		if (FLEET_STATE_VARIABLE.test(line))
+			errors.push(
+				`${file}:${index + 1}: fleet state must not reach a workflow through a repository variable; ask the relay (ADR-0180)`,
+			);
+		if (FLEET_STATE_NAME.test(line))
+			errors.push(
+				`${file}:${index + 1}: fleet state must not reach a workflow through an input or environment variable; ask the relay (ADR-0180)`,
+			);
+	}
+}
+
 /** The one GitHub-hosted machine type; never `ubuntu-latest`. */
 const HOSTED_RUNS_ON = "ubuntu-24.04";
 
@@ -114,7 +144,7 @@ function isAlwaysHostedJob(
 	);
 }
 
-function needsRoute(block: readonly string[]): boolean {
+function needsJob(block: readonly string[], job: string): boolean {
 	const header = block.slice(
 		0,
 		block.findIndex((line) => line === "    steps:"),
@@ -124,8 +154,16 @@ function needsRoute(block: readonly string[]): boolean {
 	const list = header
 		.slice(at)
 		.filter((line, index) => index === 0 || line.startsWith("      - "))
-		.join(" ");
-	return /(^|[\s[,-])route([\s\],]|$)/.test(list.replace(/^\s*needs:/, ""));
+		.join(" ")
+		.replace(/^\s*needs:/, "");
+	return list
+		.split(/[\s[\],]+/)
+		.filter((entry) => entry !== "" && entry !== "-")
+		.includes(job);
+}
+
+function needsRoute(block: readonly string[]): boolean {
+	return needsJob(block, "route");
 }
 
 /** What the route job must check out to verify a signed local run. */
@@ -443,6 +481,7 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
+	lintFleetState(errors, file, text);
 	if (file === probeFile && !requireDisabledJobs) {
 		lintProbeWorkflow(errors, text);
 		return;
@@ -490,22 +529,32 @@ function lintWorkflowYaml(
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			runsOn !== SHARD_RUNS_ON &&
 			!npmOidcHosted &&
 			!alwaysHosted
 		) {
 			errors.push(
-				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed label expression`,
+				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
 			);
 		}
-		if (runsOn === ROUTED_RUNS_ON && !needsRoute(block)) {
+		if (
+			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON) &&
+			!needsRoute(block)
+		) {
 			errors.push(
 				`${file}:${start + 1}: a job on the routed label must need the route job`,
+			);
+		}
+		if (runsOn === SHARD_RUNS_ON && !needsJob(block, "main-gate-plan")) {
+			errors.push(
+				`${file}:${start + 1}: a job on the shard label must need the main-gate-plan job`,
 			);
 		}
 		if (
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
-			runsOn === ROUTED_RUNS_ON
+			runsOn === ROUTED_RUNS_ON ||
+			runsOn === SHARD_RUNS_ON
 		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -619,6 +668,7 @@ function lintCompositeActions(errors: string[], githubRoot: string): void {
 			const rel = relative(githubRoot, path).replaceAll("\\", "/");
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 			lintPinnedActionRefs(errors, rel, text);
+			lintFleetState(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);

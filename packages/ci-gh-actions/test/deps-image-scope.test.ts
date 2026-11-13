@@ -119,11 +119,21 @@ describe("CI deps image push scope", () => {
 		expect(job["timeout-minutes"]).toBe(20);
 		// The publisher pushes the fleet's own image and the deps job builds
 		// it in the box's Docker context, so neither is routed: the PR-only deps
-		// job asks for `hobo`, main's plan job (which promotes) for the same
-		// label as the publisher.
+		// job asks for `hobo`. Main's plan job follows the route job; with no
+		// route it asks for the publisher's label, and it only looks at the
+		// layer when it is the box worker.
 		expect(depsJob["runs-on"]).toBe("hobo");
-		expect(mainPlan["runs-on"]).toBe(job["runs-on"]);
-		expect(mainPlan["runs-on"]).not.toContain("needs.route.outputs.runner");
+		expect(job["runs-on"]).not.toContain("needs.route.outputs.runner");
+		const publisherLabel = String(job["runs-on"]).slice(
+			"${{ ".length,
+			-" }}".length,
+		);
+		expect(mainPlan["runs-on"]).toBe(
+			`\${{ needs.route.outputs.runner || (${publisherLabel}) }}`,
+		);
+		expect(JSON.stringify(mainPlan.steps)).toContain(
+			'\\"${HOBO_CI_PNPM_STORE_MOUNTED:-}\\" != \\"1\\"',
+		);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
 			"github.event.workflow_run.conclusion == 'success'",

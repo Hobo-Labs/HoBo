@@ -113,8 +113,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   **Main workspace plan** carries what main still owes on every push: the deps layer check that was the
   `CI deps layer (pnpm)` job (now pull requests only; promotion happens on the box alone), the secret scan
   that was in finish, and the plan. **Main full gate (finish)** is GitHub-hosted and only adds up results.
-  Main shards are routed like pull request jobs, so they go to GitHub-hosted runners when the route job
-  finds the fleet not taking jobs. Set the repository variable `HOBO_CI_MAIN_REUSE_MERGE_QUEUE=false` to
+  The plan and the gate follow the route job and the shards follow the plan's second ask (#1965), so a
+  run goes to GitHub-hosted runners when the fleet is not taking jobs; the plan's deps layer steps run
+  only on the box worker. Set the repository variable `HOBO_CI_MAIN_REUSE_MERGE_QUEUE=false` to
   make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
