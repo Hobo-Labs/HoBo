@@ -69,7 +69,7 @@ Prefer ref-safe messages (“resolution rank failed at provider-federation”) o
 Why a runner provider was not chosen for a job. [Fleet balancing](/HoBo/ci/fleet-balancing/) returns one of these for every provider it skips; a pricing or budget refusal carries that engine's own code behind a `pricing.` or `budget.` prefix.
 
 <!-- generated:ci-fleet-codes:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Code | Meaning | Typical retry |
 | --- | --- | --- |

@@ -1,7 +1,7 @@
 /**
  * Runner financial models, compiled for the `@hobo/pricing` quote engine.
  *
- * The fleet never multiplies a rate by a duration itself. A model becomes a
+ * Runner routing never multiplies a rate by a duration itself. A model becomes a
  * catalog product with a rate card (usage per runner minute, the plan fee as
  * a fixed monthly charge) and an allowance grant for the included minutes;
  * the member's commercial state says whether the account exists and how much

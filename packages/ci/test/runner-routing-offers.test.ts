@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { FleetCapacitySchema } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {
 	AccountSchema,
@@ -6,16 +7,16 @@ import {
 	OfferSchema,
 } from "../src/_generated/ci_pb.js";
 import {
-	balanceFleet,
-	fleetAccountExposure,
-	fleetBudgetPolicy,
-	fleetMembersFromAccount,
-	fleetRoleOfOffer,
+	balanceRunnerProviders,
 	modelledOfferTerms,
 	RUNNER_FINANCIAL_MODELS,
+	runnerAccountExposure,
+	runnerBudgetPolicy,
 	runnerFinancialModel,
 	runnerModelForOffer,
-} from "../src/fleet/index.js";
+	runnerProviderRoleOfOffer,
+	runnerProvidersFromAccount,
+} from "../src/runner-routing/index.js";
 
 const NOW = "2026-11-10T00:00:00Z";
 
@@ -77,17 +78,17 @@ function lease(
 	});
 }
 
-describe("fleet offers", () => {
+describe("runner provider offers", () => {
 	it("reads an offer's tier from its provider's model", () => {
 		const [box, arc, blacksmith, github, sandbox] = account().offers;
 		if (!box || !arc || !blacksmith || !github || !sandbox)
 			throw new Error("fixture");
-		expect(fleetRoleOfOffer(box)).toBe("primary");
-		expect(fleetRoleOfOffer(arc)).toBe("overflow");
-		expect(fleetRoleOfOffer(blacksmith)).toBe("overflow");
-		expect(fleetRoleOfOffer(github)).toBe("last-resort");
+		expect(runnerProviderRoleOfOffer(box)).toBe("primary");
+		expect(runnerProviderRoleOfOffer(arc)).toBe("overflow");
+		expect(runnerProviderRoleOfOffer(blacksmith)).toBe("overflow");
+		expect(runnerProviderRoleOfOffer(github)).toBe("last-resort");
 		// No model prices a Sandbox as a runner host.
-		expect(fleetRoleOfOffer(sandbox)).toBeUndefined();
+		expect(runnerProviderRoleOfOffer(sandbox)).toBeUndefined();
 		expect(runnerModelForOffer(blacksmith)?.id).toBe("blacksmith-4vcpu");
 	});
 
@@ -126,7 +127,7 @@ describe("fleet offers", () => {
 			}),
 			lease("box", "expired"),
 		];
-		const members = fleetMembersFromAccount(account(), leases, {
+		const members = runnerProvidersFromAccount(account(), leases, {
 			poolLabel: "hobo",
 		});
 		expect(members.map((member) => member.model.id)).toEqual([
@@ -155,8 +156,70 @@ describe("fleet offers", () => {
 		});
 	});
 
+	it("reads the hobo provider's health and active jobs from the fleet's capacity", () => {
+		const leases = [lease("box", "running"), lease("arc", "running")];
+		const capacity = create(FleetCapacitySchema, {
+			live: 2,
+			healthy: 2,
+			totalSlots: 5,
+			freeSlots: 1,
+		});
+		const [box, arc] = runnerProvidersFromAccount(account(), leases, {
+			poolLabel: "hobo",
+			hoboCapacity: capacity,
+		});
+		// Busy slots across the fleet, not the relay's own leases; the ceiling is
+		// the lower of the offer's and the fleet's slots.
+		expect(box).toMatchObject({ activeJobs: 4, concurrency: 3, healthy: true });
+		// Only the hobo provider reads the fleet.
+		expect(arc).toMatchObject({ activeJobs: 1, healthy: true });
+
+		const [sick] = runnerProvidersFromAccount(account(), [], {
+			poolLabel: "hobo",
+			hoboCapacity: create(FleetCapacitySchema, {
+				live: 1,
+				healthy: 0,
+				totalSlots: 2,
+				freeSlots: 2,
+			}),
+		});
+		expect(sick).toMatchObject({
+			activeJobs: 0,
+			concurrency: 2,
+			healthy: false,
+		});
+
+		const [quiet] = runnerProvidersFromAccount(account(), [], {
+			poolLabel: "hobo",
+			hoboCapacity: create(FleetCapacitySchema, {}),
+		});
+		// A fleet with no live member has no slot to give.
+		expect(quiet).toMatchObject({
+			activeJobs: 0,
+			concurrency: 0,
+			healthy: false,
+		});
+		const decided = balanceRunnerProviders({
+			members: [quiet].flatMap((member) => (member ? [member] : [])),
+			demand: {
+				id: "acme/app:1:1:1",
+				minutes: 5,
+				repository: { visibility: "private", ownerType: "organization" },
+				forkPullRequest: false,
+				needsDocker: true,
+				isolationRequired: true,
+			},
+			policy: runnerBudgetPolicy(account()),
+			exposureMicros: 0,
+			activeWork: 0,
+			now: NOW,
+			allowNewProviderAgreements: false,
+		});
+		expect(decided.refusals[0]?.code).toBe("fleet.unhealthy");
+	});
+
 	it("gives an account without an authored policy its legacy ceiling as the policy", () => {
-		const legacy = fleetBudgetPolicy(account("maximize-credits"));
+		const legacy = runnerBudgetPolicy(account("maximize-credits"));
 		expect(legacy).toMatchObject({
 			tenantId: "hobo-labs",
 			limitMicros: 5_000_000,
@@ -180,7 +243,7 @@ describe("fleet offers", () => {
 				constraints: [],
 			},
 		});
-		expect(fleetBudgetPolicy(authored)).toMatchObject({
+		expect(runnerBudgetPolicy(authored)).toMatchObject({
 			budgetId: "engineering",
 			revision: "r7",
 			limitMicros: 9_000_000,
@@ -198,8 +261,8 @@ describe("fleet offers", () => {
 				...Array.from({ length: arcJobs }, () => lease("arc", "running")),
 			];
 			const current = account();
-			return balanceFleet({
-				members: fleetMembersFromAccount(current, leases, {
+			return balanceRunnerProviders({
+				members: runnerProvidersFromAccount(current, leases, {
 					poolLabel: "hobo",
 				}),
 				demand: {
@@ -210,8 +273,8 @@ describe("fleet offers", () => {
 					needsDocker: true,
 					isolationRequired,
 				},
-				policy: fleetBudgetPolicy(current),
-				...fleetAccountExposure(current, leases),
+				policy: runnerBudgetPolicy(current),
+				...runnerAccountExposure(current, leases),
 				now: NOW,
 				allowNewProviderAgreements: false,
 			}).ranking.map((choice) => choice.memberId);
@@ -236,7 +299,7 @@ describe("fleet offers", () => {
 				settledAt: "2026-11-09T12:00:00Z",
 			}),
 		];
-		const blacksmith = fleetMembersFromAccount(account(), leases, {
+		const blacksmith = runnerProvidersFromAccount(account(), leases, {
 			poolLabel: "hobo",
 		}).find((member) => member.model.id === "blacksmith");
 		expect(blacksmith).toMatchObject({
@@ -247,7 +310,7 @@ describe("fleet offers", () => {
 			...account(),
 			usageObservedAt: "2026-11-09T00:00:00Z",
 		});
-		expect(fleetAccountExposure(observed, leases).exposureMicros).toBe(40_000);
+		expect(runnerAccountExposure(observed, leases).exposureMicros).toBe(40_000);
 	});
 
 	it("sums one provider account's spend across every offer it backs", () => {
@@ -264,7 +327,7 @@ describe("fleet offers", () => {
 				providerAccountId: "depot-account",
 				reservedPaidMicros: 600_000,
 			});
-		const members = fleetMembersFromAccount(
+		const members = runnerProvidersFromAccount(
 			shared,
 			[held("depot-small"), held("depot-large")],
 			{ poolLabel: "hobo" },
@@ -281,7 +344,9 @@ describe("fleet offers", () => {
 			...account(),
 			offers: [offer("github", "github", "ubuntu-24.04", { concurrency: 60 })],
 		});
-		const [github] = fleetMembersFromAccount(raised, [], { poolLabel: "hobo" });
+		const [github] = runnerProvidersFromAccount(raised, [], {
+			poolLabel: "hobo",
+		});
 		expect(github?.concurrency).toBe(60);
 		expect(github?.model.concurrency).toBeUndefined();
 		expect(github?.payerBudgetMicros).toBe(10_000_000);
@@ -298,7 +363,7 @@ describe("fleet offers", () => {
 				offer("engine", "kubernetes", "dagger-engine", { backend: "dagger" }),
 			],
 		});
-		const members = fleetMembersFromAccount(mixed, [], {
+		const members = runnerProvidersFromAccount(mixed, [], {
 			poolLabel: "hobo",
 			extraPoolLabels: ["hobo-trunk"],
 		});
@@ -308,7 +373,7 @@ describe("fleet offers", () => {
 
 	it("counts held and settled money as exposure", () => {
 		expect(
-			fleetAccountExposure(account(), [
+			runnerAccountExposure(account(), [
 				lease("blacksmith", "running", { reservedPaidMicros: 80_000 }),
 				lease("blacksmith", "completed", { paidMicros: 40_000 }),
 				lease("blacksmith", "expired", { reservedPaidMicros: 999 }),

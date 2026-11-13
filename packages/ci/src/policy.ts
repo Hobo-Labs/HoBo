@@ -17,7 +17,7 @@ import {
 	type DesiredCiPolicy,
 	DesiredCiPolicySchema,
 } from "./_generated/policy_pb.js";
-import { isGithubLatestLabel } from "./fleet-overflow.js";
+import { isGithubLatestLabel } from "./runner-routing/tiers.js";
 
 declare const parsedCiPolicy: unique symbol;
 /** Generated authored intent, parsed and frozen before publishing. */

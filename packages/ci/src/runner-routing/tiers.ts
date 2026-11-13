@@ -1,21 +1,21 @@
 /**
- * Pure fleet admission: prefer the hobo fleet, spill to ARC, then a local box,
+ * Pure runner tier selection: prefer the hobo fleet, spill to ARC, then a local box,
  * then GitHub-hosted, only when those overflow members are enabled and have
  * free slots. No I/O. Callers pass already-resolved member capacity.
  */
 
-export type FleetBackend = "hobo" | "arc" | "local" | "github";
+export type RunnerTier = "hobo" | "arc" | "local" | "github";
 
-export type FleetMember = Readonly<{
+export type RunnerTierState = Readonly<{
 	id: string;
-	backend: FleetBackend;
+	backend: RunnerTier;
 	enabled: boolean;
 	runsOn: string;
 	freeSlots: number;
 }>;
 
-export type FleetSelection = Readonly<{
-	backend: FleetBackend;
+export type RunnerTierSelection = Readonly<{
+	backend: RunnerTier;
 	runsOn: string;
 	memberId: string;
 	spilled: boolean;
@@ -35,7 +35,7 @@ export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
  * Nearest first: capacity the operator already runs, then a workstation that
  * may or may not be connected, then GitHub's own machines, which always are.
  */
-const OVERFLOW_BACKEND_ORDER: readonly FleetBackend[] = [
+const OVERFLOW_BACKEND_ORDER: readonly RunnerTier[] = [
 	"arc",
 	"local",
 	"github",
@@ -57,7 +57,10 @@ export function isOverflowRunnerLabel(labels: readonly string[]): boolean {
 	return !HOBO_JIT_LABELS.has(label);
 }
 
-function selectionOf(member: FleetMember, spilled: boolean): FleetSelection {
+function selectionOf(
+	member: RunnerTierState,
+	spilled: boolean,
+): RunnerTierSelection {
 	return {
 		backend: member.backend,
 		runsOn: member.runsOn,
@@ -66,7 +69,7 @@ function selectionOf(member: FleetMember, spilled: boolean): FleetSelection {
 	};
 }
 
-function isOverflowBackend(backend: FleetBackend): boolean {
+function isOverflowBackend(backend: RunnerTier): boolean {
 	return backend !== "hobo";
 }
 
@@ -76,10 +79,10 @@ function isOverflowBackend(backend: FleetBackend): boolean {
  * Config off (no enabled overflow) → hobo, or undefined when hobo is also empty.
  * Already-bound overflow labels stay on that member (no re-relay back to hobo).
  */
-export function selectFleetBackend(input: {
-	members: readonly FleetMember[];
+export function selectRunnerTier(input: {
+	members: readonly RunnerTierState[];
 	currentLabels: readonly string[];
-}): FleetSelection | undefined {
+}): RunnerTierSelection | undefined {
 	const boundLabels = new Set(
 		input.currentLabels
 			.map((label) => label.trim())
@@ -151,21 +154,21 @@ export function queuedDemandLabels(
  * Kubernetes is aborted only when the offer proves isolated-container.
  * An unknown kubernetes backend is left alone so ARC cannot requeue-loop.
  */
-export function shouldAbortIsolatedFleetLease(
+export function shouldAbortIsolatedLease(
 	provider: string,
 	offer?: { backend: string; runsOn: string },
 ): boolean {
 	if (provider === "vercel" || provider === "hobo-box-worker") return true;
 	if (provider !== "kubernetes" || !offer) return false;
-	return isIsolatedFleetProvider(provider, offer.backend, offer.runsOn);
+	return isIsolatedProvider(provider, offer.backend, offer.runsOn);
 }
 
 /**
- * Isolated fleet hosts are the box worker and the kubernetes isolated-container
+ * Isolated hosts are the box worker and the kubernetes isolated-container
  * offer pinned to hobo-isolated-worker. Kubernetes + gh-actions (ARC) is shared
  * overflow capacity and must not be treated as isolated.
  */
-export function isIsolatedFleetProvider(
+export function isIsolatedProvider(
 	provider: string,
 	backend: string,
 	runsOn: string,

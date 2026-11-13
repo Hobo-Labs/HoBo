@@ -1,14 +1,14 @@
 /**
  * The generated parts of the HoBo CI pages on the docs site.
  *
- * The site demonstrates the fleet by showing what it actually decides, so the
+ * The site demonstrates runner routing by showing what it actually decides, so the
  * tables and worked examples on those pages are not typed by hand: they are
- * rendered here from the financial models and by running `balanceFleet`, and
+ * rendered here from the financial models and by running `balanceRunnerProviders`, and
  * written between `<!-- generated:… -->` markers in the page source.
- * `test/fleet-docs.test.ts` fails when a page no longer matches this output.
+ * `test/runner-routing-docs.test.ts` fails when a page no longer matches this output.
  *
- *   node --import tsx packages/ci/scripts/fleet-docs.ts          # rewrite
- *   node --import tsx packages/ci/scripts/fleet-docs.ts --check  # verify
+ *   node --import tsx packages/ci/scripts/runner-routing-docs.ts          # rewrite
+ *   node --import tsx packages/ci/scripts/runner-routing-docs.ts --check  # verify
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -17,19 +17,17 @@ import { fileURLToPath } from "node:url";
 import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
 import { isQuoteVector, QuoteEngine } from "@hobo/pricing";
 import {
-	balanceFleet,
-	FLEET_REFUSAL_CODES,
-	type FleetBalance,
-	type FleetBalanceInput,
-	type FleetDemand,
-	type FleetMemberState,
-	fleetRoutesVariableValue,
-	fleetRouteTable,
+	balanceRunnerProviders,
 	RUNNER_FINANCIAL_MODELS,
+	RUNNER_REFUSAL_CODES,
+	type RunnerBalance,
+	type RunnerBalanceInput,
+	type RunnerDemand,
 	type RunnerFinancialModel,
 	type RunnerModelId,
+	type RunnerProviderState,
 	runnerQuoteScenario,
-} from "../src/fleet/index.js";
+} from "../src/runner-routing/index.js";
 
 /**
  * Every example is priced the day after the newest price was read, so the
@@ -69,13 +67,13 @@ function policy(limitMicros: number): BudgetPolicy {
 	});
 }
 
-/** The whole catalog as one fleet: connected, healthy, plans already open. */
-function fleet(
-	overrides: Partial<Record<RunnerModelId, Partial<FleetMemberState>>> = {},
-): FleetMemberState[] {
+/** The whole catalog as one set of providers: connected, healthy, plans already open. */
+function catalog(
+	overrides: Partial<Record<RunnerModelId, Partial<RunnerProviderState>>> = {},
+): RunnerProviderState[] {
 	return RUNNER_FINANCIAL_MODELS.map((model) => {
 		const isBox = model.id === "hobo-box";
-		const member: FleetMemberState = {
+		const member: RunnerProviderState = {
 			model,
 			enabled: true,
 			activeJobs: 0,
@@ -92,7 +90,7 @@ function fleet(
 
 const BOX_FULL = { "hobo-box": { activeJobs: BOX_SLOTS } } as const;
 
-const PULL_REQUEST: FleetDemand = {
+const PULL_REQUEST: RunnerDemand = {
 	id: "acme/app:1001:1:1",
 	minutes: 20,
 	repository: { visibility: "public", ownerType: "organization" },
@@ -102,11 +100,11 @@ const PULL_REQUEST: FleetDemand = {
 };
 
 function decide(
-	members: readonly FleetMemberState[],
-	demand: FleetDemand,
-	overrides: Partial<FleetBalanceInput> = {},
-): FleetBalance {
-	return balanceFleet({
+	members: readonly RunnerProviderState[],
+	demand: RunnerDemand,
+	overrides: Partial<RunnerBalanceInput> = {},
+): RunnerBalance {
+	return balanceRunnerProviders({
 		members,
 		demand,
 		policy: policy(50_000_000),
@@ -139,7 +137,7 @@ function table(header: readonly string[], rows: readonly string[][]): string {
 
 const yesNo = (value: boolean) => (value ? "yes" : "no");
 
-function decision(result: FleetBalance): string {
+function decision(result: RunnerBalance): string {
 	const ranking =
 		result.ranking.length === 0
 			? "No member is admitted. The job waits on the label it has."
@@ -329,43 +327,42 @@ function pricing(): string {
 	);
 }
 
-function routes(members: readonly FleetMemberState[]): string {
+/**
+ * The label each class of job would ask for: the selected provider's label
+ * when it is a label provider, otherwise the class's own hobo label, where a
+ * waiting job can still be reached by injected capacity. Keys are sorted.
+ */
+function routes(members: readonly RunnerProviderState[]): string {
 	const demand = {
 		minutes: PULL_REQUEST.minutes,
 		repository: PULL_REQUEST.repository,
 		needsDocker: true,
+		isolationRequired: true,
 	};
-	const routed = fleetRouteTable({
-		members,
-		classes: [
-			{
-				name: "pr",
-				hoboLabel: "hobo",
-				demand: { ...demand, forkPullRequest: false, isolationRequired: true },
-			},
-			{
-				name: "fork",
-				hoboLabel: "hobo",
-				demand: { ...demand, forkPullRequest: true, isolationRequired: true },
-			},
-			{
-				name: "trunk",
-				hoboLabel: "hobo-trunk",
-				demand: { ...demand, forkPullRequest: false, isolationRequired: true },
-			},
-		],
-		policy: policy(50_000_000),
-		exposureMicros: 0,
-		activeWork: 0,
-		now: AT,
-		allowNewProviderAgreements: false,
-	});
-	return `\`\`\`json\n${fleetRoutesVariableValue(routed)}\n\`\`\``;
+	const classes = [
+		{ name: "fork", hoboLabel: "hobo", forkPullRequest: true },
+		{ name: "pr", hoboLabel: "hobo", forkPullRequest: false },
+		{ name: "trunk", hoboLabel: "hobo-trunk", forkPullRequest: false },
+	] as const;
+	const routed = Object.fromEntries(
+		classes.map((routeClass) => {
+			const { selected } = decide(members, {
+				...demand,
+				id: `runner-route:${routeClass.name}`,
+				forkPullRequest: routeClass.forkPullRequest,
+			});
+			return [
+				routeClass.name,
+				selected?.binding === "label" ? selected.runsOn : routeClass.hoboLabel,
+			];
+		}),
+	);
+	return `\`\`\`json\n${JSON.stringify(routed)}\n\`\`\``;
 }
 
 /** Fragment id to markdown, grouped by the page that holds it. */
-export function renderFleetDocs() {
-	const privateTrunk: FleetDemand = {
+export function renderRunnerRoutingDocs() {
+	const privateTrunk: RunnerDemand = {
 		...PULL_REQUEST,
 		id: "acme/app:1002:1:1",
 		repository: { visibility: "private", ownerType: "organization" },
@@ -375,7 +372,7 @@ export function renderFleetDocs() {
 		"reference/errors.md": {
 			"ci-fleet-codes": table(
 				["Code", "Meaning", "Typical retry"],
-				Object.entries(FLEET_REFUSAL_CODES).map(([code, entry]) => [
+				Object.entries(RUNNER_REFUSAL_CODES).map(([code, entry]) => [
 					`\`${code}\``,
 					entry.meaning,
 					entry.retry,
@@ -390,37 +387,37 @@ export function renderFleetDocs() {
 			sources: sources(),
 		},
 		"ci/fleet-balancing.md": {
-			"box-free": decision(decide(fleet(), PULL_REQUEST)),
-			"box-full": decision(decide(fleet(BOX_FULL), PULL_REQUEST)),
-			"private-trunk": decision(decide(fleet(BOX_FULL), privateTrunk)),
+			"box-free": decision(decide(catalog(), PULL_REQUEST)),
+			"box-full": decision(decide(catalog(BOX_FULL), PULL_REQUEST)),
+			"private-trunk": decision(decide(catalog(BOX_FULL), privateTrunk)),
 			queued: decision(
-				decide(fleet(BOX_FULL), { ...PULL_REQUEST, queuedOnLabel: "hobo" }),
+				decide(catalog(BOX_FULL), { ...PULL_REQUEST, queuedOnLabel: "hobo" }),
 			),
 			"budget-spent": decision(
-				decide(fleet(BOX_FULL), PULL_REQUEST, {
+				decide(catalog(BOX_FULL), PULL_REQUEST, {
 					policy: policy(5_000_000),
 					exposureMicros: 5_000_000,
 				}),
 			),
 			"box-unhealthy": decision(
-				decide(fleet({ "hobo-box": { healthy: false } }), PULL_REQUEST),
+				decide(catalog({ "hobo-box": { healthy: false } }), PULL_REQUEST),
 			),
 		},
 		"ci/route-table.md": {
-			"routes-box-free": routes(fleet()),
-			"routes-box-full": routes(fleet(BOX_FULL)),
+			"routes-box-free": routes(catalog()),
+			"routes-box-full": routes(catalog(BOX_FULL)),
 		},
 	};
 }
 
 const NOTICE =
-	"<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->";
+	"<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->";
 
 const marker = (id: string, edge: "start" | "end") =>
 	`<!-- generated:${id}:${edge} -->`;
 
 /** The page with every generated fragment replaced by its current output. */
-export function applyFleetDocs(
+export function applyRunnerRoutingDocs(
 	page: string,
 	fragments: Readonly<Record<string, string>>,
 ): string {
@@ -435,21 +432,23 @@ export function applyFleetDocs(
 	return next;
 }
 
-export function fleetDocsPages(): {
+export function runnerRoutingDocsPages(): {
 	path: string;
 	current: string;
 	next: string;
 }[] {
-	return Object.entries(renderFleetDocs()).map(([file, fragments]) => {
+	return Object.entries(renderRunnerRoutingDocs()).map(([file, fragments]) => {
 		const path = join(PAGES, file);
 		const current = readFileSync(path, "utf8");
-		return { path, current, next: applyFleetDocs(current, fragments) };
+		return { path, current, next: applyRunnerRoutingDocs(current, fragments) };
 	});
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	const check = process.argv.includes("--check");
-	const stale = fleetDocsPages().filter((page) => page.current !== page.next);
+	const stale = runnerRoutingDocsPages().filter(
+		(page) => page.current !== page.next,
+	);
 	for (const page of stale) {
 		if (check) console.error(`stale generated section: ${page.path}`);
 		else writeFileSync(page.path, page.next);

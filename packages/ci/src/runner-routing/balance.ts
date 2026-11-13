@@ -1,5 +1,5 @@
 /**
- * Pure fleet balancing: which member should take a job, and why not the rest.
+ * Pure runner routing: which provider should take a job, and why not the rest.
  *
  * Three questions, asked in this order and never merged:
  *
@@ -26,9 +26,9 @@ import {
 } from "@hobo/core";
 import { decideDispatchV2 } from "@hobo/dispatcher";
 import type {
-	FleetBinding,
-	FleetRole,
+	RunnerBinding,
 	RunnerFinancialModel,
+	RunnerProviderRole,
 } from "./models.js";
 import {
 	type RunnerCommercialState,
@@ -36,11 +36,11 @@ import {
 	usdToMicrosCeil,
 } from "./pricing.js";
 
-export type FleetMemberState = Readonly<{
+export type RunnerProviderState = Readonly<{
 	model: RunnerFinancialModel;
 	enabled: boolean;
 	/** Authored override of the model's tier. */
-	role?: FleetRole;
+	role?: RunnerProviderRole;
 	/** Authored ceiling on jobs at once; intersects the provider's own. */
 	concurrency?: number;
 	/** Jobs this member is running or holding a reservation for. */
@@ -60,7 +60,7 @@ export type FleetMemberState = Readonly<{
 	servesLabels?: readonly string[];
 }>;
 
-export type FleetDemand = Readonly<{
+export type RunnerDemand = Readonly<{
 	/** Stable dispatch identity, for example `owner/repo:run:job:attempt`. */
 	id: string;
 	/** Reserved runner minutes, startup included. */
@@ -91,9 +91,9 @@ export type FleetDemand = Readonly<{
 	attempt?: number;
 }>;
 
-export type FleetBalanceInput = Readonly<{
-	members: readonly FleetMemberState[];
-	demand: FleetDemand;
+export type RunnerBalanceInput = Readonly<{
+	members: readonly RunnerProviderState[];
+	demand: RunnerDemand;
 	policy: BudgetPolicy;
 	/** Spend and held commitments against the whole budget this period. */
 	exposureMicros: number;
@@ -110,11 +110,11 @@ export type FleetBalanceInput = Readonly<{
 	phase?: "plan" | "admit";
 }>;
 
-export type FleetChoice = Readonly<{
+export type RunnerChoice = Readonly<{
 	memberId: string;
 	provider: string;
-	binding: FleetBinding;
-	role: FleetRole;
+	binding: RunnerBinding;
+	role: RunnerProviderRole;
 	runsOn: string;
 	/** Conservative whole microdollars the job adds to this month's bill. */
 	incrementalBilledMicros: number;
@@ -124,14 +124,14 @@ export type FleetChoice = Readonly<{
 }>;
 
 /**
- * The codes the fleet's own gates refuse a member with: what each means, and
+ * The codes runner routing's own gates refuse a provider with: what each means, and
  * whether asking again can help.
  * One list: the gates below can only use a code that is in it, and the docs
  * site's error reference is generated from it. Pricing and budget refusals
  * carry their own engines' codes behind a `pricing.` or `budget.` prefix.
  */
 // public-contract: stable refusal codes callers and the docs site rely on.
-export const FLEET_REFUSAL_CODES = {
+export const RUNNER_REFUSAL_CODES = {
 	"fleet.disabled": {
 		meaning: "The provider is not enabled in policy",
 		retry: "No: enable the provider",
@@ -195,28 +195,32 @@ export const FLEET_REFUSAL_CODES = {
 	},
 } as const;
 
-export type FleetRefusalCode = keyof typeof FLEET_REFUSAL_CODES;
+export type RunnerRefusalCode = keyof typeof RUNNER_REFUSAL_CODES;
 
-export type FleetRefusal = Readonly<{
+export type RunnerRefusal = Readonly<{
 	memberId: string;
 	code: string;
 	reason: string;
 }>;
 
-export type FleetBalance = Readonly<{
+export type RunnerBalance = Readonly<{
 	/** Best admitted member, or undefined when the job must wait. */
-	selected: FleetChoice | undefined;
+	selected: RunnerChoice | undefined;
 	/** Every admitted member, best first. */
-	ranking: readonly FleetChoice[];
-	refusals: readonly FleetRefusal[];
+	ranking: readonly RunnerChoice[];
+	refusals: readonly RunnerRefusal[];
 }>;
 
-const ROLE_ORDER: readonly FleetRole[] = ["primary", "overflow", "last-resort"];
-function roleOf(member: FleetMemberState): FleetRole {
+const ROLE_ORDER: readonly RunnerProviderRole[] = [
+	"primary",
+	"overflow",
+	"last-resort",
+];
+function roleOf(member: RunnerProviderState): RunnerProviderRole {
 	return member.role ?? member.model.role;
 }
 
-function ceilingOf(member: FleetMemberState): number | undefined {
+function ceilingOf(member: RunnerProviderState): number | undefined {
 	const authored = member.concurrency;
 	const provider = member.model.concurrency;
 	if (authored === undefined) return provider;
@@ -226,12 +230,15 @@ function ceilingOf(member: FleetMemberState): number | undefined {
 
 /** Why this member cannot run the job, or undefined when it can. */
 function ineligible(
-	member: FleetMemberState,
-	input: FleetBalanceInput,
-): Omit<FleetRefusal, "memberId"> | undefined {
+	member: RunnerProviderState,
+	input: RunnerBalanceInput,
+): Omit<RunnerRefusal, "memberId"> | undefined {
 	const { model } = member;
 	const { demand } = input;
-	const refuse = (code: FleetRefusalCode, reason: string) => ({ code, reason });
+	const refuse = (code: RunnerRefusalCode, reason: string) => ({
+		code,
+		reason,
+	});
 	if (!member.enabled)
 		return refuse("fleet.disabled", "member is not enabled in policy");
 	if (!member.healthy)
@@ -316,8 +323,8 @@ function ineligible(
 }
 
 function policyContext(
-	member: FleetMemberState,
-	input: FleetBalanceInput,
+	member: RunnerProviderState,
+	input: RunnerBalanceInput,
 	costBoundMicros: number,
 	payerExposure: ReadonlyMap<string, number>,
 ): BudgetPolicyEvaluationContext {
@@ -360,15 +367,17 @@ function policyContext(
 	};
 }
 
-export function balanceFleet(input: FleetBalanceInput): FleetBalance {
+export function balanceRunnerProviders(
+	input: RunnerBalanceInput,
+): RunnerBalance {
 	if (!Number.isFinite(Date.parse(input.now)))
-		throw new TypeError("fleet balancing requires an authoritative time");
+		throw new TypeError("runner routing requires an authoritative time");
 	const ids = input.members.map((member) => member.model.id);
 	if (new Set(ids).size !== ids.length)
-		throw new TypeError("fleet member ids must be unique");
+		throw new TypeError("runner provider ids must be unique");
 
-	const refusals: FleetRefusal[] = [];
-	const eligible: FleetMemberState[] = [];
+	const refusals: RunnerRefusal[] = [];
+	const eligible: RunnerProviderState[] = [];
 	for (const member of input.members) {
 		const refusal = ineligible(member, input);
 		if (refusal) refusals.push({ memberId: member.model.id, ...refusal });
@@ -386,7 +395,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 			),
 		);
 	const authoredOrder = new Map(ids.map((id, index) => [id, index]));
-	const ranking: FleetChoice[] = [];
+	const ranking: RunnerChoice[] = [];
 
 	for (const role of ROLE_ORDER) {
 		const tier = eligible.filter((member) => roleOf(member) === role);
@@ -411,7 +420,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 				code: `pricing.${rejected.code}`,
 				reason: rejected.reason,
 			});
-		const admitted: FleetChoice[] = [];
+		const admitted: RunnerChoice[] = [];
 		for (const entry of decision.ranking) {
 			const member = tier.find(
 				(candidate) => candidate.model.id === entry.providerId,
@@ -435,7 +444,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 			) {
 				refusals.push({
 					memberId: member.model.id,
-					code: "fleet.payer-budget" satisfies FleetRefusalCode,
+					code: "fleet.payer-budget" satisfies RunnerRefusalCode,
 					reason: "job would exceed the operator's ceiling for this payer",
 				});
 				continue;
@@ -446,7 +455,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 			) {
 				refusals.push({
 					memberId: member.model.id,
-					code: "fleet.account-budget" satisfies FleetRefusalCode,
+					code: "fleet.account-budget" satisfies RunnerRefusalCode,
 					reason: "job would exceed the account's legacy ceiling",
 				});
 				continue;

@@ -1,5 +1,5 @@
 /**
- * Financial models for the runner providers the HoBo CI fleet can draw on.
+ * Financial models for the runner providers HoBo CI runner routing can draw on.
  *
  * One model is one machine class at one provider: what a minute costs, how the
  * provider rounds it, what it gives away each month, what it charges to have
@@ -16,14 +16,14 @@
  */
 
 /** How a job reaches the capacity. */
-export type FleetBinding =
+export type RunnerBinding =
 	/** The relay starts a one-shot runner labelled for the job on this compute. */
 	| "inject"
 	/** The provider brings the runner; the job must ask for the provider's label. */
 	| "label";
 
 /** Where a member sits before price is compared. */
-export type FleetRole =
+export type RunnerProviderRole =
 	/** Capacity already paid for. Used first. */
 	| "primary"
 	/** Rented capacity. Ranked by incremental billed cost. */
@@ -84,13 +84,13 @@ export type RunnerCapabilities = Readonly<{
 }>;
 
 export type RunnerFinancialModel = Readonly<{
-	/** Fleet member id and pricing product id. */
+	/** Runner provider id and pricing product id. */
 	id: string;
 	/** `DesiredCiPolicy` provider kind this model prices. */
 	provider: string;
 	displayName: string;
-	binding: FleetBinding;
-	role: FleetRole;
+	binding: RunnerBinding;
+	role: RunnerProviderRole;
 	/** Label the job asks for (label) or the runner registers with (inject). */
 	runsOn: string;
 	machine: Readonly<{ vcpus: number; memoryGb: number }>;
@@ -166,7 +166,7 @@ const HOSTED_VM = {
 } as const;
 
 /**
- * The fleet, in the order the page reads: capacity that is already paid for,
+ * The providers, in the order the page reads: capacity that is already paid for,
  * then rented capacity, then GitHub's own runners.
  */
 export const RUNNER_FINANCIAL_MODELS = [
@@ -852,7 +852,7 @@ export function runnerFinancialModel(
 	return RUNNER_FINANCIAL_MODELS.find((model) => model.id === id);
 }
 
-/** Provider kinds the fleet has a financial model for. */
-export const FLEET_PROVIDER_KINDS: readonly string[] = [
+/** Provider kinds runner routing has a financial model for. */
+export const RUNNER_PROVIDER_KINDS: readonly string[] = [
 	...new Set(RUNNER_FINANCIAL_MODELS.map((model) => model.provider)),
 ].sort();

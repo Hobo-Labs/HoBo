@@ -21,7 +21,6 @@ import {
 	jobAccountId,
 } from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
-import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import {
 	ACTIVE_STATES,
 	type Account,
@@ -56,6 +55,7 @@ import {
 	ciBudgetPolicyJson,
 	ciQueueBudgetMs,
 } from "./policy.js";
+import { shouldAbortIsolatedLease } from "./runner-routing/tiers.js";
 import {
 	type CiSharedBudgetHooks,
 	ciExecutionDigest,
@@ -2043,7 +2043,7 @@ export class LeaseStore {
 					.find((account) => account.id === lease.accountId)
 					?.offers.find((candidate) => candidate.id === lease.offerId);
 				if (
-					!shouldAbortIsolatedFleetLease(
+					!shouldAbortIsolatedLease(
 						lease.provider,
 						offer
 							? { backend: offer.backend, runsOn: offer.runsOn }
@@ -2081,7 +2081,7 @@ export class LeaseStore {
 				.find((account) => account.id === lease.accountId)
 				?.offers.find((candidate) => candidate.id === lease.offerId);
 			if (
-				!shouldAbortIsolatedFleetLease(
+				!shouldAbortIsolatedLease(
 					lease.provider,
 					offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
 				)

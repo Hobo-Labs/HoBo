@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
-	type FleetMember,
 	isGithubLatestLabel,
-	isIsolatedFleetProvider,
+	isIsolatedProvider,
 	isOverflowRunnerLabel,
 	LOCAL_HOST_RUNNER_LABEL,
 	queuedDemandLabels,
-	selectFleetBackend,
-	shouldAbortIsolatedFleetLease,
-} from "../src/fleet-overflow.js";
+	type RunnerTierState,
+	selectRunnerTier,
+	shouldAbortIsolatedLease,
+} from "../src/runner-routing/tiers.js";
 
 function member(
-	partial: Pick<FleetMember, "id" | "backend"> & Partial<FleetMember>,
-): FleetMember {
+	partial: Pick<RunnerTierState, "id" | "backend"> & Partial<RunnerTierState>,
+): RunnerTierState {
 	const runsOn =
 		partial.runsOn ??
 		(partial.backend === "github"
@@ -31,8 +31,8 @@ function member(
 
 const hobo = (
 	freeSlots: number,
-	extra: Partial<FleetMember> = {},
-): FleetMember =>
+	extra: Partial<RunnerTierState> = {},
+): RunnerTierState =>
 	member({
 		id: "hobo-1",
 		backend: "hobo",
@@ -43,8 +43,8 @@ const hobo = (
 
 const arc = (
 	freeSlots: number,
-	extra: Partial<FleetMember> = {},
-): FleetMember =>
+	extra: Partial<RunnerTierState> = {},
+): RunnerTierState =>
 	member({
 		id: "arc-1",
 		backend: "arc",
@@ -55,8 +55,8 @@ const arc = (
 
 const github = (
 	freeSlots: number,
-	extra: Partial<FleetMember> = {},
-): FleetMember =>
+	extra: Partial<RunnerTierState> = {},
+): RunnerTierState =>
 	member({
 		id: "gh-1",
 		backend: "github",
@@ -65,9 +65,9 @@ const github = (
 		...extra,
 	});
 
-describe("selectFleetBackend", () => {
+describe("selectRunnerTier", () => {
 	it("stays on hobo when overflow providers are disabled and hobo has slots", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [
 				hobo(2),
 				arc(5, { enabled: false }),
@@ -84,7 +84,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("does not spill to GitHub when overflow is disabled and hobo has no slots", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [
 				hobo(0),
 				arc(5, { enabled: false }),
@@ -96,7 +96,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("prefers hobo over an enabled github overflow member while hobo has slots", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [hobo(1), github(8, { enabled: true })],
 			currentLabels: ["hobo"],
 		});
@@ -109,7 +109,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("spills to github ubuntu-24.04 when hobo is full and github overflow is enabled", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [hobo(0), github(3, { enabled: true, runsOn: "ubuntu-24.04" })],
 			currentLabels: ["hobo"],
 		});
@@ -122,7 +122,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("spills to arc before github when hobo is full and arc has slots", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [
 				hobo(0),
 				github(4, { enabled: true }),
@@ -139,7 +139,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("spills to an enrolled local box before github, and after arc", () => {
-		const local = (freeSlots: number, enabled = true): FleetMember =>
+		const local = (freeSlots: number, enabled = true): RunnerTierState =>
 			member({
 				id: "local-1",
 				backend: "local",
@@ -147,8 +147,8 @@ describe("selectFleetBackend", () => {
 				freeSlots,
 				enabled,
 			});
-		const pick = (members: FleetMember[]) =>
-			selectFleetBackend({ members, currentLabels: ["hobo"] })?.backend;
+		const pick = (members: RunnerTierState[]) =>
+			selectRunnerTier({ members, currentLabels: ["hobo"] })?.backend;
 		expect(pick([hobo(0), github(4), local(1)])).toBe("local");
 		expect(pick([hobo(0), github(4), local(1), arc(1)])).toBe("arc");
 		// Enrolled but busy, or not enrolled at all: GitHub-hosted is next.
@@ -156,7 +156,7 @@ describe("selectFleetBackend", () => {
 		expect(pick([hobo(0), github(4), local(3, false)])).toBe("github");
 		expect(pick([hobo(1), github(4), local(1)])).toBe("hobo");
 		expect(
-			selectFleetBackend({
+			selectRunnerTier({
 				members: [hobo(0), local(1)],
 				currentLabels: ["hobo"],
 			}),
@@ -169,7 +169,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("stays on github when current labels are already ubuntu-24.04", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [hobo(5), github(1, { enabled: true, runsOn: "ubuntu-24.04" })],
 			currentLabels: ["ubuntu-24.04"],
 		});
@@ -183,7 +183,7 @@ describe("selectFleetBackend", () => {
 	});
 
 	it("stays on arc when current labels are already hobo-arc", () => {
-		const sel = selectFleetBackend({
+		const sel = selectRunnerTier({
 			members: [
 				hobo(5),
 				arc(1, { enabled: true, runsOn: "hobo-arc" }),
@@ -248,16 +248,16 @@ describe("fleet overflow labels", () => {
 	});
 });
 
-describe("isIsolatedFleetProvider", () => {
+describe("isIsolatedProvider", () => {
 	it("does not treat kubernetes gh-actions ARC as isolated", () => {
-		expect(
-			isIsolatedFleetProvider("kubernetes", "gh-actions", "hobo-arc"),
-		).toBe(false);
+		expect(isIsolatedProvider("kubernetes", "gh-actions", "hobo-arc")).toBe(
+			false,
+		);
 	});
 
 	it("treats the hobo box worker as isolated", () => {
 		expect(
-			isIsolatedFleetProvider(
+			isIsolatedProvider(
 				"hobo-box-worker",
 				"isolated-container",
 				"hobo-isolated-worker",
@@ -267,35 +267,33 @@ describe("isIsolatedFleetProvider", () => {
 
 	it("treats kubernetes isolated-container on the isolated worker label as isolated", () => {
 		expect(
-			isIsolatedFleetProvider(
+			isIsolatedProvider(
 				"kubernetes",
 				"isolated-container",
 				"hobo-isolated-worker",
 			),
 		).toBe(true);
 		expect(
-			isIsolatedFleetProvider("kubernetes", "isolated-container", "hobo-arc"),
+			isIsolatedProvider("kubernetes", "isolated-container", "hobo-arc"),
 		).toBe(false);
-		expect(
-			isIsolatedFleetProvider("github", "gh-actions", "ubuntu-24.04"),
-		).toBe(false);
+		expect(isIsolatedProvider("github", "gh-actions", "ubuntu-24.04")).toBe(
+			false,
+		);
 	});
 
 	it("aborts vercel and box workers, and kubernetes only when the offer is isolated", () => {
-		expect(shouldAbortIsolatedFleetLease("vercel", undefined)).toBe(true);
-		expect(shouldAbortIsolatedFleetLease("hobo-box-worker", undefined)).toBe(
-			true,
-		);
-		expect(shouldAbortIsolatedFleetLease("github", undefined)).toBe(false);
-		expect(shouldAbortIsolatedFleetLease("kubernetes", undefined)).toBe(false);
+		expect(shouldAbortIsolatedLease("vercel", undefined)).toBe(true);
+		expect(shouldAbortIsolatedLease("hobo-box-worker", undefined)).toBe(true);
+		expect(shouldAbortIsolatedLease("github", undefined)).toBe(false);
+		expect(shouldAbortIsolatedLease("kubernetes", undefined)).toBe(false);
 		expect(
-			shouldAbortIsolatedFleetLease("kubernetes", {
+			shouldAbortIsolatedLease("kubernetes", {
 				backend: "gh-actions",
 				runsOn: "hobo-arc",
 			}),
 		).toBe(false);
 		expect(
-			shouldAbortIsolatedFleetLease("kubernetes", {
+			shouldAbortIsolatedLease("kubernetes", {
 				backend: "isolated-container",
 				runsOn: "hobo-isolated-worker",
 			}),

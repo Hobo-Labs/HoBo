@@ -1,5 +1,5 @@
 /**
- * Where the fleet's financial models meet the relay's runtime offers.
+ * Where runner routing's financial models meet the relay's runtime offers.
  *
  * An offer is what an operator connected: a provider account, a label, a
  * ceiling. A model is what that provider charges. These functions read one in
@@ -9,14 +9,15 @@
  */
 
 import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
+import type { FleetCapacity } from "@hobo/fleet";
 import type { Account, Lease } from "../_generated/ci_pb.js";
 import { ciBudgetPolicy, ciRoutingObjective } from "../policy.js";
 import { ACTIVE_STATES, shouldCountLocalUsage } from "../routing.js";
-import type { FleetMemberState } from "./balance.js";
+import type { RunnerProviderState } from "./balance.js";
 import {
-	type FleetRole,
 	RUNNER_FINANCIAL_MODELS,
 	type RunnerFinancialModel,
+	type RunnerProviderRole,
 } from "./models.js";
 import { type RunnerCommercialState, usdToMicrosCeil } from "./pricing.js";
 
@@ -57,7 +58,9 @@ export function runnerModelForOffer(
  * An isolated host is always primary. Any other offer takes its model's role;
  * a provider with no model is unranked.
  */
-export function fleetRoleOfOffer(offer: OfferIdentity): FleetRole | undefined {
+export function runnerProviderRoleOfOffer(
+	offer: OfferIdentity,
+): RunnerProviderRole | undefined {
 	return runnerModelForOffer(offer)?.role;
 }
 
@@ -88,7 +91,7 @@ function usdFromMicros(micros: number): string {
 	return `${whole}.${fraction}`;
 }
 
-export type FleetAccountFacts = Readonly<{
+export type RunnerAccountFacts = Readonly<{
 	/** Label injected runners serve for this account's pool, normally `hobo`. */
 	poolLabel: string;
 	/** Other labels the pool's runners register with, such as `hobo-trunk`. */
@@ -97,10 +100,34 @@ export type FleetAccountFacts = Readonly<{
 	unhealthyOfferIds?: ReadonlySet<string>;
 	/** Opt-in providers where the owner has turned public repositories on. */
 	publicRepositoryOfferIds?: ReadonlySet<string>;
+	/**
+	 * The hobo fleet's capacity from its verdict. When present, the hobo
+	 * provider's health and active jobs are read from it instead of from the
+	 * relay's own leases, because the fleet runs work the relay never leased.
+	 */
+	hoboCapacity?: FleetCapacity;
 }>;
 
+/** How busy and how healthy one provider is, and its ceiling on jobs at once. */
+type ProviderOccupancy = Pick<
+	RunnerProviderState,
+	"activeJobs" | "concurrency" | "healthy"
+>;
+
+/** What the fleet says about the hobo provider, where the caller has it. */
+function hoboFromFleet(
+	capacity: FleetCapacity,
+	ceiling: number,
+): ProviderOccupancy {
+	return {
+		activeJobs: Math.max(0, capacity.totalSlots - capacity.freeSlots),
+		concurrency: Math.min(ceiling, capacity.totalSlots),
+		healthy: capacity.healthy > 0,
+	};
+}
+
 /**
- * The fleet as this account really has it: one member per connected offer the
+ * The providers as this account really has them: one per connected offer the
  * catalog can price. The provider's model supplies what does not vary by
  * account (rounding, plan fee, eligibility, tier); the offer supplies what
  * the operator observed for this account (label, rate, included minutes,
@@ -109,11 +136,11 @@ export type FleetAccountFacts = Readonly<{
  * An offer no model prices (a Vercel Sandbox, a Dagger engine) is left out:
  * it is not a runner host this balancer can compare.
  */
-export function fleetMembersFromAccount(
+export function runnerProvidersFromAccount(
 	account: Account,
 	leases: readonly Lease[],
-	facts: FleetAccountFacts,
-): FleetMemberState[] {
+	facts: RunnerAccountFacts,
+): RunnerProviderState[] {
 	return account.offers.flatMap((offer) => {
 		const base = runnerModelForOffer(offer);
 		if (!base) return [];
@@ -192,17 +219,25 @@ export function fleetMembersFromAccount(
 					),
 				}
 			: { subscribed: true };
+		const breakerClosed = facts.unhealthyOfferIds?.has(offer.id) !== true;
+		const occupancy: ProviderOccupancy =
+			isolated && facts.hoboCapacity
+				? hoboFromFleet(facts.hoboCapacity, offer.concurrency)
+				: {
+						concurrency: offer.concurrency,
+						// Admission holds an offer's ceiling against every lease on its
+						// provider account, not only its own.
+						activeJobs: payerLeases.filter((lease) =>
+							ACTIVE_STATES.has(lease.state),
+						).length,
+						healthy: true,
+					};
 		return [
 			{
 				model,
 				enabled: offer.enabled,
-				concurrency: offer.concurrency,
-				// Admission holds an offer's ceiling against every lease on its
-				// provider account, not only its own.
-				activeJobs: payerLeases.filter((lease) =>
-					ACTIVE_STATES.has(lease.state),
-				).length,
-				healthy: facts.unhealthyOfferIds?.has(offer.id) !== true,
+				...occupancy,
+				healthy: breakerClosed && occupancy.healthy,
 				commercial,
 				publicRepositoriesEnabled:
 					facts.publicRepositoryOfferIds?.has(offer.id) === true,
@@ -228,7 +263,7 @@ export function fleetMembersFromAccount(
  * same evaluator, under a policy that says exactly what its legacy ceiling
  * said: one budget, no other constraint.
  */
-export function fleetBudgetPolicy(account: Account): BudgetPolicy {
+export function runnerBudgetPolicy(account: Account): BudgetPolicy {
 	return (
 		ciBudgetPolicy(account) ??
 		parseBudgetPolicy({
@@ -249,7 +284,7 @@ export function fleetBudgetPolicy(account: Account): BudgetPolicy {
 }
 
 /** Spend and held commitments against the account's whole budget. */
-export function fleetAccountExposure(
+export function runnerAccountExposure(
 	account: Account,
 	leases: readonly Lease[],
 ) {

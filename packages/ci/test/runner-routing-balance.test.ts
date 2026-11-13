@@ -3,18 +3,16 @@ import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
 import { isQuoteVector, QuoteEngine } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
 import {
-	balanceFleet,
-	FLEET_PROVIDER_KINDS,
-	type FleetBalanceInput,
-	type FleetDemand,
-	type FleetMemberState,
-	fleetRoutesVariableValue,
-	fleetRouteTable,
+	balanceRunnerProviders,
 	RUNNER_FINANCIAL_MODELS,
+	RUNNER_PROVIDER_KINDS,
+	type RunnerBalanceInput,
+	type RunnerDemand,
 	type RunnerModelId,
+	type RunnerProviderState,
 	runnerFinancialModel,
 	runnerQuoteScenario,
-} from "../src/fleet/index.js";
+} from "../src/runner-routing/index.js";
 
 const NOW = "2026-11-10T00:00:00Z";
 
@@ -41,8 +39,8 @@ function policy(
 
 function member(
 	id: RunnerModelId,
-	overrides: Partial<FleetMemberState> = {},
-): FleetMemberState {
+	overrides: Partial<RunnerProviderState> = {},
+): RunnerProviderState {
 	const model = runnerFinancialModel(id);
 	if (!model) throw new Error(`no model ${id}`);
 	return {
@@ -57,7 +55,7 @@ function member(
 	};
 }
 
-const PUBLIC_ORG_PR: FleetDemand = {
+const PUBLIC_ORG_PR: RunnerDemand = {
 	id: "Hobo-Labs/HoBo:1:2:1",
 	minutes: 10,
 	repository: { visibility: "public", ownerType: "organization" },
@@ -67,10 +65,10 @@ const PUBLIC_ORG_PR: FleetDemand = {
 };
 
 function balance(
-	members: readonly FleetMemberState[],
-	overrides: Partial<FleetBalanceInput> = {},
+	members: readonly RunnerProviderState[],
+	overrides: Partial<RunnerBalanceInput> = {},
 ) {
-	return balanceFleet({
+	return balanceRunnerProviders({
 		members,
 		demand: PUBLIC_ORG_PR,
 		policy: policy(),
@@ -104,8 +102,8 @@ function billed(...args: Parameters<typeof quote>): string {
 }
 
 describe("runner financial models", () => {
-	it("cover every provider the fleet is asked to draw on", () => {
-		expect(FLEET_PROVIDER_KINDS).toEqual([
+	it("cover every provider runner routing is asked to draw on", () => {
+		expect(RUNNER_PROVIDER_KINDS).toEqual([
 			"agent37",
 			"blacksmith",
 			"blaxel",
@@ -232,7 +230,7 @@ describe("runner financial models", () => {
 	});
 });
 
-describe("fleet eligibility", () => {
+describe("runner provider eligibility", () => {
 	const all = RUNNER_FINANCIAL_MODELS.map((model) => member(model.id));
 	const refusal = (
 		result: ReturnType<typeof balance>,
@@ -346,7 +344,7 @@ describe("fleet eligibility", () => {
 	});
 
 	it("keeps a job off a machine class too small for it", () => {
-		const privateJob = (machine: FleetDemand["machine"]) =>
+		const privateJob = (machine: RunnerDemand["machine"]) =>
 			balance(all, {
 				demand: {
 					...PUBLIC_ORG_PR,
@@ -439,7 +437,7 @@ describe("fleet eligibility", () => {
 		expect(
 			refusal(isolatedJob(90, false), "lizard-sandbox-4vcpu"),
 		).toBeUndefined();
-		// None of them has a 16 GB machine in the class the fleet prices.
+		// None of them has a 16 GB machine in the class runner routing prices.
 		const large = balance(all, {
 			demand: { ...PUBLIC_ORG_PR, machine: { memoryGb: 16 } },
 		});
@@ -463,8 +461,8 @@ describe("fleet eligibility", () => {
 	});
 });
 
-describe("fleet balancing", () => {
-	const fleet = (boxActive: number): FleetMemberState[] => [
+describe("runner provider balancing", () => {
+	const providers = (boxActive: number): RunnerProviderState[] => [
 		member("hobo-box", { concurrency: 3, activeJobs: boxActive }),
 		member("boat-sandbox"),
 		member("agent37-vm-4vcpu"),
@@ -474,11 +472,11 @@ describe("fleet balancing", () => {
 	];
 
 	it("uses capacity that is already paid for first", () => {
-		expect(balance(fleet(0)).selected?.memberId).toBe("hobo-box");
+		expect(balance(providers(0)).selected?.memberId).toBe("hobo-box");
 	});
 
 	it("spills to the cheapest rented member when the box is full", () => {
-		const result = balance(fleet(3));
+		const result = balance(providers(3));
 		// Blacksmith is inside its included minutes, so it bills nothing.
 		expect(result.ranking.map((choice) => choice.memberId)).toEqual([
 			"blacksmith-4vcpu",
@@ -492,7 +490,7 @@ describe("fleet balancing", () => {
 	});
 
 	it("keeps GitHub-hosted as the last resort even though it is free", () => {
-		const result = balance(fleet(3));
+		const result = balance(providers(3));
 		expect(result.ranking.at(-1)?.memberId).toBe("github-hosted-public");
 		const alone = balance([
 			member("hobo-box", { concurrency: 3, activeJobs: 3 }),
@@ -527,7 +525,7 @@ describe("fleet balancing", () => {
 	});
 });
 
-describe("fleet budget policy", () => {
+describe("runner provider budget policy", () => {
 	const rented = [
 		member("modal-sandbox-4vcpu"),
 		member("agent37-vm-4vcpu"),
@@ -668,93 +666,5 @@ describe("fleet budget policy", () => {
 		expect(
 			result.refusals.every((entry) => entry.code.startsWith("budget.")),
 		).toBe(true);
-	});
-});
-
-describe("fleet route table", () => {
-	const classes = [
-		{
-			name: "pr",
-			hoboLabel: "hobo",
-			demand: {
-				minutes: 10,
-				repository: { visibility: "public", ownerType: "organization" },
-				forkPullRequest: false,
-				needsDocker: true,
-				isolationRequired: true,
-			},
-		},
-		{
-			name: "trunk",
-			hoboLabel: "hobo-trunk",
-			demand: {
-				minutes: 20,
-				repository: { visibility: "public", ownerType: "organization" },
-				forkPullRequest: false,
-				needsDocker: true,
-				isolationRequired: true,
-			},
-		},
-	] as const;
-	const table = (members: readonly FleetMemberState[]) =>
-		fleetRouteTable({
-			members,
-			classes,
-			policy: policy(),
-			exposureMicros: 0,
-			activeWork: 0,
-			now: NOW,
-			allowNewProviderAgreements: false,
-		});
-
-	it("keeps every class on its hobo label while the box has room", () => {
-		expect(
-			table([
-				member("hobo-box", { concurrency: 3 }),
-				member("github-hosted-public"),
-			]).routes,
-		).toEqual({ pr: "hobo", trunk: "hobo-trunk" });
-	});
-
-	it("points new jobs at a label provider once the box is full", () => {
-		const routed = table([
-			member("hobo-box", { concurrency: 3, activeJobs: 3 }),
-			member("blacksmith-4vcpu"),
-			member("github-hosted-public"),
-		]);
-		expect(routed.routes).toEqual({
-			pr: "blacksmith-4vcpu-ubuntu-2404",
-			trunk: "blacksmith-4vcpu-ubuntu-2404",
-		});
-		expect(fleetRoutesVariableValue(routed)).toBe(
-			'{"pr":"blacksmith-4vcpu-ubuntu-2404","trunk":"blacksmith-4vcpu-ubuntu-2404"}',
-		);
-	});
-
-	it("stays on the hobo label when the best member is injected or none is admitted", () => {
-		expect(
-			table([
-				member("hobo-box", { concurrency: 3, activeJobs: 3 }),
-				member("agent37-vm-4vcpu"),
-				member("github-hosted-public"),
-			]).routes.pr,
-		).toBe("hobo");
-		expect(
-			table([member("hobo-box", { concurrency: 3, activeJobs: 3 })]).routes,
-		).toEqual({ pr: "hobo", trunk: "hobo-trunk" });
-	});
-
-	it("rejects a repeated or malformed class", () => {
-		expect(() =>
-			fleetRouteTable({
-				members: [],
-				classes: [classes[0], classes[0]],
-				policy: policy(),
-				exposureMicros: 0,
-				activeWork: 0,
-				now: NOW,
-				allowNewProviderAgreements: false,
-			}),
-		).toThrow(/route class/);
 	});
 });
