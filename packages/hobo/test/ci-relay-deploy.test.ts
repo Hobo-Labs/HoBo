@@ -1133,7 +1133,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const vercel = scriptedVercel(["READY"]);
 		const events: string[] = [];
 		const fetch: VercelFetch = async (url, init) => {
+			if (url.includes("/v9/projects/hobo-ci")) {
+				return {
+					ok: true,
+					status: 200,
+					text: async () => '{"id":"prj_relay"}',
+					json: async () => ({ id: "prj_relay" }),
+				};
+			}
 			if (url.includes("/promote/")) {
+				expect(url).toContain("/projects/prj_relay/promote/");
 				events.push("promote");
 				return {
 					ok: true,

@@ -1160,9 +1160,25 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 		async promoteDeployment(project, deploymentId) {
 			if (!deploymentId || !/^[A-Za-z0-9_-]+$/u.test(deploymentId))
 				throw new TypeError("invalid deployment receipt identity");
+			const reference = projectRef(project);
+			const projectResponse = await send(
+				"get project",
+				"GET",
+				`${baseUrl}/v9/projects/${encodeURIComponent(reference)}${query}`,
+			);
+			if (!projectResponse.ok)
+				throw await failure("get project", projectResponse, secrets);
+			const projectData = await payloadFrom("get project", projectResponse);
+			if (
+				!isJsonString(projectData.id) ||
+				!/^prj_[A-Za-z0-9]+$/u.test(projectData.id)
+			)
+				throw new Error(
+					"vercel-client: project read returned an invalid identity",
+				);
 			const response = await post(
 				"promote deployment",
-				`/v10/projects/${encodeURIComponent(projectRef(project))}/promote/${encodeURIComponent(deploymentId)}`,
+				`/v10/projects/${encodeURIComponent(projectData.id)}/promote/${encodeURIComponent(deploymentId)}`,
 				"{}",
 			);
 			if (!response.ok)
