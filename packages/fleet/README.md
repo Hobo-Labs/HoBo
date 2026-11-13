@@ -111,6 +111,28 @@ gathers them here as the waves merge.
   `submitWork`, journalled on `fleet-fleet-*`, `fleet-session-*` and
   `fleet-work-*`; a fleet's coordination mode is immutable and `submitWork`
   is idempotent while the earlier submission is unexpired.
+- **Agent** (`@hobo/fleet/agent`, wave 4, L07) —
+  [`src/agent/README.md`](src/agent/README.md). `createFleetAgent`:
+  enrollment (a 24-hour key bundle, retried once as 1 hour when policy
+  refuses), credential refresh with a persisted nonce (F19), bundle renewal at
+  three quarters of its life, trust rotation through `acceptTrust`, one stable
+  `FleetBus` link that resumes subscriptions on reconnect, self and sponsored
+  observations every 10 s, the dispatcher and executor by role (the executor
+  drains and restarts when memberships change), session serving, and control
+  messages. It has no initiator API, and a newly joined fleet's offers are
+  read from "new".
+- **Client** (`@hobo/fleet/client`, wave 4, L07) —
+  [`src/client/README.md`](src/client/README.md). `createFleetClient`: one
+  method per `FleetApi` route except the four browser-only ones, protobuf
+  JSON bodies, `FleetFailure` answers (nothing throws), and DPoP per route.
+  Its PACT is `contracts/fleet-authority.pact.json`; the in-process authority
+  stand-in and memory bus connector are in `examples/`.
+- **Local mode** (`@hobo/fleet/membership`, wave 4, L33) —
+  [`src/local/README.md`](src/local/README.md). `createLocalFleet` composes
+  the real enrollment state machine and fleet commands in one process with
+  an in-memory event store and registry, nothing signed and no bus. It
+  rejects `SINGLE`/`DUAL` approval (`local-approval`) and duplicate member
+  names (`duplicate-name`).
 
 ## Gates
 
@@ -122,8 +144,9 @@ gathers them here as the waves merge.
   ids are branded derived types built only by `parseMemberId`, `parseFleetId`,
   `parseMemberName`, `parseWorkDigest` and `parseKeyId`, and every signed record
   is a parsed type reached only through envelope verification.
-- **PACT:** `contracts/` (a placeholder until the authority client and the
-  cache-key replica pacts land).
+- **PACT:** `contracts/fleet-authority.pact.json` (the authority client,
+  written by `test/client/client.pact.test.ts`); the cache-key replica pact
+  is still to land.
 - **Contract snapshot:** `contracts/api.snapshot.d.ts`, checked by
   `node --import tsx scripts/emit-fleet-contracts.mts --check`.
 - **Tests:** `test/<area>/` per subpath; `pnpm exec turbo run test --filter @hobo/fleet`.

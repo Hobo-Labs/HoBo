@@ -33,6 +33,18 @@ gathers them here as the waves merge.
 - **Status feed** (wave 3, L27) — [`src/status/README.md`](src/status/README.md).
   `createStatusFeed`: one `slo.Measured` event per finished minute for the
   enrollment API (target 0.999) and the NATS callout (target 0.9995).
+- **Authority service** (wave 4, L09) —
+  [`src/service/README.md`](src/service/README.md). The HTTP service over
+  `EnrollmentAuthority` (41 routes plus `/healthz` and `/readyz`, each with
+  its auth mode checked before the method runs), its composition for both
+  profiles from one `FleetAuthorityConfig` file, the identity pieces (RS256
+  token issuer carrying the incarnation, assertion verifier, directory,
+  accounts, tag-based fail-closed policy engine, decision recorder), the
+  `oidc`, `github` and `atproto` sign-in providers, and the binaries
+  `hobo-fleet-authority --config <file>` and `hobo-fleet-witness --config
+  <file>` (OpenBao secret store only). The witness binary composes and then
+  refuses to run until `@hobo/fleet-nats` can publish on
+  `fleet.audit.witness`. Fallbacks: none.
 
 ## Gates
 
@@ -41,7 +53,9 @@ gathers them here as the waves merge.
   deployment settings and `fleet_authority.cue` constrains them; requests and
   responses are `@hobo/fleet` records. Parse, don't validate: every request body
   is parsed into its derived type (the generated record, constrained) before a command sees it.
-- **PACT:** `contracts/` (a placeholder until the HTTP API pact lands).
+- **PACT:** the HTTP API's consumer pact is
+  `packages/fleet/contracts/fleet-authority.pact.json` (L07); its provider-side
+  replay against `test/support/harness.ts` is not yet in this package's tests.
 - **Tests:** `test/`, with `*.integration.test.ts` against `nats-server`.
 
 ## Architecture placement

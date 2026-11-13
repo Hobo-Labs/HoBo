@@ -8,6 +8,10 @@
 		"LICENSE",
 		"dist"
 	],
+	"bin": {
+		"hobo-fleet-authority": "./dist/bin/hobo-fleet-authority.js",
+		"hobo-fleet-witness": "./dist/bin/hobo-fleet-witness.js"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
