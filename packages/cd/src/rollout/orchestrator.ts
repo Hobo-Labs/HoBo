@@ -949,6 +949,29 @@ export function createRolloutOrchestrator(
 				observed?.status === ReconcileStatus.CONVERGED &&
 				observed.setId === current.setId;
 			if (!converged) {
+				// BLOCKED on the promoted Set never progresses: fail closed now (D12).
+				if (
+					current !== undefined &&
+					current.freightId === state.freightId &&
+					observed?.status === ReconcileStatus.BLOCKED &&
+					observed.setId === current.setId
+				) {
+					const why = observed.reasons
+						.map((r) => `${r.code}: ${r.message}`)
+						.join("; ");
+					return [
+						await beginRollback(
+							state,
+							reason(
+								"rollout-camp-blocked",
+								`Camp ${campId} reported BLOCKED on Set ${current.setId}${why === "" ? "" : ` (${why})`}`,
+								campId,
+							),
+							ctx,
+						),
+						"progressed",
+					];
+				}
 				if (now - state.lastProgressAtMs > deadline)
 					return [
 						await beginRollback(
