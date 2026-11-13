@@ -5,7 +5,9 @@
  *   the authority's own `CredentialIssuer` (a self-minted token never
  *   verifies), with a DPoP proof over this method and URL, `ath` of the token,
  *   a fresh `jti`, and the proof key equal to the token's `cnf.jkt`. A member
- *   token is refused at once when the member is no longer ACTIVE.
+ *   token is refused at once when the member is no longer ACTIVE. A token
+ *   whose `iat` is before the current authority incarnation began is
+ *   `incarnation-stale` (L41).
  * - `Authorization: Bearer <credential>`: the relay's account credential, else
  *   a workload OIDC token (audience: the authority's issuer).
  * - No `Authorization`, only a DPoP proof made with an enrolled device's SIGN
@@ -13,11 +15,66 @@
  *   lives as long as the proof's window.
  */
 
+import type { JsonValue } from "@hobo/core";
 import { verifyDpopProof } from "../keys/index.js";
 import type { Outcome, VerifiedToken } from "../ports.js";
 import { decodeBundle, signThumbprint } from "./bundle.js";
 import { type Ctx, refuse, stateRefusal } from "./context.js";
-import { isJsonNumber } from "./json.js";
+import { isJsonNumber, isJsonObject } from "./json.js";
+
+/**
+ * When each token `authenticate` verified was minted (its `iat`, epoch ms),
+ * keyed by the `VerifiedToken` it answered, so `credentials` can apply the
+ * incarnation rule again to the caller it is handed (`VerifiedToken` has no
+ * issue time of its own, and widening it would change a frozen contract).
+ */
+const mintedAt = new WeakMap<VerifiedToken, number>();
+
+/** The `iat` of a compact JWT the issuer has already verified, in epoch ms. */
+function issuedAtMs(jwt: string): number | undefined {
+	const payload = jwt.split(".")[1];
+	if (payload === undefined) return undefined;
+	try {
+		const claims: JsonValue = JSON.parse(
+			Buffer.from(payload, "base64url").toString(),
+		);
+		const iat = isJsonObject(claims) ? claims.iat : undefined;
+		return isJsonNumber(iat) && Number.isFinite(iat) ? iat * 1_000 : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * `incarnation-stale` for a token minted before the authority's current
+ * incarnation began (the restore that raised it, as journalled), else
+ * undefined. `iat` has one-second precision, so a token minted in the same
+ * second as the restore is accepted. A token with no `iat` is stale once an
+ * incarnation has begun. Before any restore nothing is stale.
+ */
+export async function incarnationRefusal<T>(
+	ctx: Ctx,
+	minted: number | undefined,
+): Promise<Outcome<T> | undefined> {
+	const began = (await ctx.catchUp()).incarnations.get(ctx.deps.incarnation);
+	if (began === undefined) return undefined;
+	if (minted !== undefined && minted >= Math.floor(began / 1_000) * 1_000)
+		return undefined;
+	return refuse(
+		"incarnation-stale",
+		`the token was minted before authority incarnation ${ctx.deps.incarnation} began`,
+	);
+}
+
+/** The incarnation rule for a caller `authenticate` answered from a token; a proof-only caller holds no minted token. */
+export function callerIncarnationRefusal<T>(
+	ctx: Ctx,
+	caller: VerifiedToken | undefined,
+): Promise<Outcome<T> | undefined> {
+	if (caller === undefined || !mintedAt.has(caller))
+		return Promise.resolve(undefined);
+	return incarnationRefusal<T>(ctx, mintedAt.get(caller));
+}
 
 const PROOF_WINDOW_MS = 60_000;
 const WORKLOAD_DEFAULT_MS = 5 * 60 * 1_000;
@@ -46,6 +103,9 @@ export async function authenticate(
 		if (!token.ok) return refuse("unauthenticated", token.error.message);
 		if (token.value.tenant !== deps.tenant)
 			return refuse("unauthenticated", "the token is for another tenant");
+		const minted = issuedAtMs(credential);
+		const stale = await incarnationRefusal<VerifiedToken>(ctx, minted);
+		if (stale !== undefined) return stale;
 		if (request.dpop.length === 0)
 			return refuse("proof-invalid", "a DPoP-bound token needs a DPoP proof");
 		const proof = await verifyDpopProof({
@@ -69,6 +129,7 @@ export async function authenticate(
 			const refusal = stateRefusal<VerifiedToken>(state.record);
 			if (refusal !== undefined) return refusal;
 		}
+		mintedAt.set(token.value, minted ?? Number.NEGATIVE_INFINITY);
 		return token;
 	}
 
