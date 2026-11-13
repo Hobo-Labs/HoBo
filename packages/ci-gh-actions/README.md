@@ -1176,7 +1176,12 @@ bytes. In the data directory:
 
 The supervisor (`scripts/controller-supervisor.mts`,
 `createControllerSupervisor`) acts on a new generation: it stops the old
-child (SIGTERM, which the worker drains on, then SIGKILL after 15 minutes),
+child (SIGTERM, which the worker drains on, then SIGKILL a minute after the
+worker's drain deadline: `controllerStopPolicy` starts the child with
+`HOBO_CI_WORKER_STOP_MODE` drain and `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS` two
+hours unless set, as `deploy/restart-worker.sh` does, so stopping the
+supervisor on a host restart drains like a graceful restart; give its
+service a `TimeoutStopSec` above that deadline),
 hashes the staged release again and starts it as `node <release> ...args`,
 never through a shell, with `HOBO_CI_CONTROLLER_DIGEST` set; a release that
 no longer hashes to its digest is never started (`failed`). A child that
@@ -1190,18 +1195,49 @@ with the generation the agent asked for. A swap is: stage, drain, ask for
 none and observe `stopped`, ask for the target, verify (status running at
 the target, a fresh healthy advert at the target digest, for a local runner
 an online runner), and on a failed verify ask for the previous digest again
-(still staged, verified again). Container settings (`config.command`, `env`,
+(still staged, verified again). If the supervisor has not reported the old
+child stopped when the agent's wait ends (its stop deadline can be longer),
+the agent asks for the old release again before it refuses
+`runner-host-retire-unobserved`, so the host is not left with no controller
+once the supervisor finishes. Container settings (`config.command`, `env`,
 `volumes`, `memoryMb`, `runAsUser`) do not apply to a process and are
 refused `runner-host-config-unsupported`.
+
+**Releases.** `pnpm --filter @hobo/ci-gh-actions release:build -- --out
+<dir> --version <image release tag> --base-url https://<host>/<path>/`
+(`scripts/build-controller-release.mts`) bundles the box worker daemon
+(`scripts/isolated-worker-daemon-main.mts`, artifact
+`hobo-ci-worker-release`) and the local runner (`scripts/local-runner.ts`,
+`hobo-ci-local-runner-release`) with esbuild into one self-contained
+`<hex>.mjs` each (only `node:` imports remain; the entry guards of the
+other modules it inlines are dead), and adds each to
+`index.<artifact>.json`, the `{version, url, digest}` list an HTTP_INDEX
+Freight subscription reads. A release has no checkout around it, so what an
+entry would derive from its own place must be given
+(`releaseEntryPath`): `HOBO_CI_DEPS_ROOT` for the box worker and
+`HOBO_CI_LOCAL_STATE_DIRECTORY` for a local runner, else it refuses to
+start. `test/controller-release.test.ts` builds the real entries, stages the
+local runner's release by digest and has the supervisor start it until it
+advertises that digest.
+
+**Release identity.** A release's digest is the sha256 of its bytes; the
+worker image's is its OCI manifest digest, and the two never match. So a
+process host never runs the image reference: `runnerFleetDelivery({
+releaseIndexBase })` adds an HTTP_INDEX subscription per release to the
+fleet's Freight source, assembled `SAME_VERSION` with the image (the release
+build is given the image's release tag as its version), and
+`runnerHostRealizationParameters(freight artifacts)` maps one Freight to the
+runner-host row: `image` (container hosts), `workerRelease` (box workers and
+mesh nodes in process mode) and `localRunnerRelease` (local runners),
+each `<artifact>@sha256:<hex>`. The agent reads the parameter its host runs
+(`runnerHostReferenceParameter`); a process host whose Set has no release
+reports `runner-host-release-unresolved`.
 
 Start the supervisor in place of the daemon: `HOBO_CI_WORKER_DB=<journal>
 HOBO_CI_CONTROLLER_RELEASE=<first release file> node
 scripts/controller-supervisor.mts` (`HOBO_CI_CONTROLLER_ARGS='["daemon"]'`
 for a local runner's release). The first release is hashed, staged and
-requested once; after that the agent's requests decide. Producing the
-single-file release (bundling the daemon entry) is the release pipeline's
-job; the supervisor and the agent accept any file whose digest is the one
-asked for.
+requested once; after that the agent's requests decide.
 
 #### Runbook
 
@@ -1225,6 +1261,13 @@ asked for.
   the realizer never guesses.
 - **`runner-host-interface-missing`.** The agent has no source for a port:
   fix the composition, not the host.
+- **`runner-host-retire-unobserved`** in process mode. The supervisor was
+  still stopping the old child when the agent stopped waiting; the agent
+  asked for that release again, so the supervisor restarts it once the stop
+  completes. Admission is open; the next pass retries.
+- **`runner-host-release-unresolved`.** A process host's Set has no release
+  for its kind: publish releases (`release:build`) and set the delivery
+  module's `releaseIndexBase` so the Freight carries them.
 - **`runner-host-stage-failed`.** The release could not be fetched from
   `controller.releases`, or its bytes did not hash to the digest; nothing was
   staged and the host keeps its controller. Publish the release under

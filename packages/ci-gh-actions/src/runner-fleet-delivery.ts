@@ -46,6 +46,20 @@ export const RUNNER_FLEET_PROVIDER = "self-hosted";
 export const RUNNER_FLEET_RAIL = "hobo-ci-runner-fleet";
 // public-contract: credential locator the CD Station resolves to read GHCR (never stored).
 export const RUNNER_IMAGE_CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
+// public-contract: the Freight artifact a container-mode controller runs (the worker image).
+export const RUNNER_IMAGE_ARTIFACT = "hobo-ci-worker";
+/**
+ * The single-file releases a process-mode controller runs, one per program:
+ * the box worker daemon (box workers and mesh nodes) and the local runner.
+ * `scripts/build-controller-release.mts` builds them under these names and
+ * writes `index.<artifact>.json` for each.
+ */
+// public-contract: Freight artifact names and runner-host realization parameter keys of the controller releases.
+export const RUNNER_RELEASE_ARTIFACTS = Object.freeze({
+	workerRelease: "hobo-ci-worker-release",
+	localRunnerRelease: "hobo-ci-local-runner-release",
+} as const);
+export type RunnerReleaseParameter = keyof typeof RUNNER_RELEASE_ARTIFACTS;
 
 const LOCAL_HOST_LABEL = "hobo-local-host";
 const SERVED_LABELS = [
@@ -265,17 +279,29 @@ export type RunnerFleetDelivery = Readonly<{
 		schemaVersion: "hobo.cd.source/v1";
 		name: string;
 		bindle: string;
-		subscriptions: readonly Readonly<{
-			name: string;
-			kind: "SUBSCRIPTION_KIND_OCI_REPOSITORY";
-			locator: string;
-			selection: "SELECTION_STRATEGY_LEXICAL";
-			allowPattern: string;
-			artifactName: string;
-			artifactKind: "ARTIFACT_KIND_OCI_IMAGE";
-			credentialRef: string;
-		}>[];
-		assembly: "ASSEMBLY_RULE_INDEPENDENT";
+		subscriptions: readonly Readonly<
+			| {
+					name: string;
+					kind: "SUBSCRIPTION_KIND_OCI_REPOSITORY";
+					locator: string;
+					selection: "SELECTION_STRATEGY_LEXICAL";
+					allowPattern: string;
+					artifactName: string;
+					artifactKind: "ARTIFACT_KIND_OCI_IMAGE";
+					credentialRef: string;
+			  }
+			| {
+					name: string;
+					kind: "SUBSCRIPTION_KIND_HTTP_INDEX";
+					locator: string;
+					selection: "SELECTION_STRATEGY_LEXICAL";
+					allowPattern: string;
+					artifactName: string;
+					artifactKind: "ARTIFACT_KIND_FUNCTION_BUNDLE";
+			  }
+		>[];
+		/** INDEPENDENT for the image alone; SAME_VERSION when releases ride with it. */
+		assembly: "ASSEMBLY_RULE_INDEPENDENT" | "ASSEMBLY_RULE_SAME_VERSION";
 		automatic: boolean;
 		definedBy: string;
 	}>[];
@@ -328,15 +354,52 @@ export function runnerImageRepository(repository: string): string {
 }
 
 /**
+ * The release index an HTTP_INDEX subscription reads for one release, under
+ * `base` (an `https://` directory the release build's output is published to).
+ */
+export function runnerReleaseIndexUrl(base: string, artifact: string): string {
+	const url = new URL(
+		`index.${artifact}.json`,
+		base.endsWith("/") ? base : `${base}/`,
+	);
+	if (url.protocol !== "https:" || url.username || url.password)
+		throw new Error(
+			"the runner release index base must be an https:// URL with no credentials in it",
+		);
+	return url.href;
+}
+
+/**
  * The delivery module (`hobo deploy pipeline apply --file`) for the runner
  * fleet. `hosts` only shapes the pilot group's presence; membership is by
  * label, so adding a host is a topology change, not a pipeline change.
+ *
+ * With `releaseIndexBase`, each Freight also carries the controller releases
+ * of the same version (HTTP_INDEX subscriptions on the indexes
+ * `scripts/build-controller-release.mts` writes, assembled SAME_VERSION with
+ * the image): a release's digest is the sha256 of its own bytes, which is
+ * what a process-mode host stages and verifies, never the image's manifest
+ * digest. `runnerHostRealizationParameters` maps such a Freight to the
+ * runner-host row's parameters.
  */
 export function runnerFleetDelivery(
 	hosts: readonly RunnerHost[],
-	options: Readonly<{ repository: string }>,
+	options: Readonly<{ repository: string; releaseIndexBase?: string }>,
 ): RunnerFleetDelivery {
 	const hasPilot = hosts.some((h) => h.ring === "pilot");
+	const base = options.releaseIndexBase;
+	const releases = base
+		? Object.values(RUNNER_RELEASE_ARTIFACTS).map((artifact) => ({
+				name: artifact,
+				kind: "SUBSCRIPTION_KIND_HTTP_INDEX" as const,
+				locator: runnerReleaseIndexUrl(base, artifact),
+				selection: "SELECTION_STRATEGY_LEXICAL" as const,
+				// The release build is given the image's release tag as its version.
+				allowPattern: RUNNER_IMAGE_RELEASE_TAG_PATTERN,
+				artifactName: artifact,
+				artifactKind: "ARTIFACT_KIND_FUNCTION_BUNDLE" as const,
+			}))
+		: [];
 	return Object.freeze({
 		sources: [
 			{
@@ -351,12 +414,16 @@ export function runnerFleetDelivery(
 						// Release tags carry their publish time, so lexical order is publish order.
 						selection: "SELECTION_STRATEGY_LEXICAL",
 						allowPattern: RUNNER_IMAGE_RELEASE_TAG_PATTERN,
-						artifactName: "hobo-ci-worker",
+						artifactName: RUNNER_IMAGE_ARTIFACT,
 						artifactKind: "ARTIFACT_KIND_OCI_IMAGE",
 						credentialRef: RUNNER_IMAGE_CREDENTIAL_REF,
 					},
+					...releases,
 				],
-				assembly: "ASSEMBLY_RULE_INDEPENDENT",
+				assembly:
+					releases.length > 0
+						? "ASSEMBLY_RULE_SAME_VERSION"
+						: "ASSEMBLY_RULE_INDEPENDENT",
 				automatic: true,
 				definedBy: DEFINED_BY,
 			},
@@ -419,6 +486,60 @@ export function runnerFleetDelivery(
 			},
 		],
 	});
+}
+
+const DIGEST = /^sha256:[0-9a-f]{64}$/u;
+const OCI_BY_DIGEST = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/u;
+
+/** One artifact of a Freight manifest, as `@hobo/cd` records it. */
+export type RunnerFreightArtifact = Readonly<{
+	name: string;
+	digest: string;
+	coordinate: string;
+}>;
+
+/**
+ * The runner-host row's realization parameters for one Freight: `image`, the
+ * worker image pinned by its manifest digest (what a container-mode host
+ * pulls), and, when the Freight carries them, each controller release as
+ * `<artifact>@sha256:<sha256 of its bytes>` (what a process-mode host
+ * stages: `workerRelease` on a box worker or mesh node, `localRunnerRelease`
+ * on a local runner). Undefined when the Freight has no digest-pinned image.
+ */
+export function runnerHostRealizationParameters(
+	artifacts: readonly RunnerFreightArtifact[],
+):
+	| Readonly<
+			{ image: string } & Partial<Record<RunnerReleaseParameter, string>>
+	  >
+	| undefined {
+	const image = artifacts.find(
+		(artifact) => artifact.name === RUNNER_IMAGE_ARTIFACT,
+	)?.coordinate;
+	if (!image || !OCI_BY_DIGEST.test(image)) return undefined;
+	const parameters: { image: string } & Partial<
+		Record<RunnerReleaseParameter, string>
+	> = { image };
+	for (const [parameter, name] of Object.entries(RUNNER_RELEASE_ARTIFACTS)) {
+		const release = artifacts.find((artifact) => artifact.name === name);
+		if (release && DIGEST.test(release.digest))
+			// SAFETY: Object.entries of RUNNER_RELEASE_ARTIFACTS yields its own keys.
+			parameters[parameter as RunnerReleaseParameter] =
+				`${name}@${release.digest}`;
+	}
+	return Object.freeze(parameters);
+}
+
+/**
+ * Which realization parameter a host runs: the image for a controller that
+ * runs as a container, else the release of the program its kind runs.
+ */
+export function runnerHostReferenceParameter(
+	kind: RunnerHostKind,
+	mode: "container" | "process",
+): "image" | RunnerReleaseParameter {
+	if (mode === "container") return "image";
+	return kind === "local-runner" ? "localRunnerRelease" : "workerRelease";
 }
 
 type ConditionStatus =

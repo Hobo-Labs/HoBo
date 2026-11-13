@@ -78,11 +78,13 @@ import {
 	readHostResourcePressureSample,
 	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
+	releaseEntryPath,
 	resolvedStorageReserve,
 	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
+	runningAsControllerRelease,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
@@ -541,8 +543,13 @@ try {
 	const depsRepository =
 		process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 	const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
-	const depsRoot =
-		process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
+	// A release staged by digest has no checkout to find the repository from.
+	const depsRoot = releaseEntryPath({
+		env: process.env,
+		name: "HOBO_CI_DEPS_ROOT",
+		release: runningAsControllerRelease(),
+		fallback: () => defaultDepsRoot(import.meta.url),
+	});
 	if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",

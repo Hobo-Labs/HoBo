@@ -15,12 +15,17 @@
  *
  * It starts each release as `node <release> ...args`, never through a shell,
  * with `HOBO_CI_CONTROLLER_DIGEST` set. SIGTERM or SIGINT stops the child
- * (the worker drains on SIGTERM) and then the supervisor.
+ * and then the supervisor. The child stops the way a graceful restart stops
+ * it (`deploy/restart-worker.sh`): `HOBO_CI_WORKER_STOP_MODE` (default
+ * drain) and `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS` (default two hours) are passed
+ * on, and SIGKILL comes only a minute after that deadline
+ * (`controllerStopPolicy`).
  */
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import {
+	controllerStopPolicy,
 	createControllerSupervisor,
 	defaultWorkerDatabasePath,
 	nodeControllerLauncher,
@@ -77,10 +82,20 @@ if (adopt && !(await readControllerDesired(files))) {
 	log("hobo_ci_controller_release_adopted", { digest });
 }
 
+let stopPolicy: ReturnType<typeof controllerStopPolicy>;
+try {
+	stopPolicy = controllerStopPolicy(process.env);
+} catch (error) {
+	fail(error instanceof Error ? error.message : String(error));
+}
 const { HOBO_CI_CONTROLLER_RELEASE: _adopted, ...env } = process.env;
 const supervisor = createControllerSupervisor({
 	files,
-	launch: nodeControllerLauncher({ args, env }),
+	launch: nodeControllerLauncher({
+		args,
+		env: { ...env, ...stopPolicy.childEnv },
+	}),
+	stopTimeoutMs: stopPolicy.stopTimeoutMs,
 	log,
 });
 

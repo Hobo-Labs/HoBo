@@ -802,7 +802,7 @@ export function createRunnerHostResolver(
 			// The supervisor stops its child; the status says when it has.
 			const generation = await port.process.run(undefined);
 			requested = Math.max(requested, generation);
-			await until(verifyMs, async () => {
+			const stopped = await until(verifyMs, async () => {
 				const status = await port.process.status();
 				return status !== undefined &&
 					status.generation >= generation &&
@@ -810,6 +810,26 @@ export function createRunnerHostResolver(
 					? status
 					: undefined;
 			});
+			if (!stopped) {
+				// The supervisor may still be stopping the child (its stop
+				// deadline can outlast this wait). The stop request must not
+				// outlive this refusal, or the host is left with no controller
+				// once the supervisor finishes: ask for the controller it ran.
+				let restore = `asked the supervisor to run ${controller.digest} again`;
+				if (controller.running)
+					try {
+						requested = Math.max(
+							requested,
+							await port.process.run(controller.digest),
+						);
+					} catch (error) {
+						restore = `could not ask the supervisor to run ${controller.digest} again (${error instanceof Error ? error.message : "unknown"})`;
+					}
+				else restore = "it was not running, so nothing is restarted";
+				rejected(
+					`runner-host-retire-unobserved: the supervisor did not report controller ${controller.name} stopped within ${verifyMs} ms; ${restore}`,
+				);
+			}
 		} else {
 			if (controller.running)
 				await port.containers.stop(controller.name, controller.id);

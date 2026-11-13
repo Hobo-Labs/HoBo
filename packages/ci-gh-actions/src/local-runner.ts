@@ -524,6 +524,41 @@ export async function createLocalRunnerMeshNode(options: {
 	};
 }
 
+/** How often a waiting local runner checks whether its host's CD agent closed admission. */
+export const LOCAL_RUNNER_ADMISSION_CHECK_MS = 5_000;
+/**
+ * How often a waiting local runner re-reads its GitHub presence: one REST
+ * call on the user's own rate limit each time (about 80 an hour), well
+ * inside `RUNNER_PRESENCE_MAX_AGE_MS`. Session events refresh it at once.
+ */
+export const LOCAL_RUNNER_PRESENCE_REFRESH_MS = 45_000;
+
+/**
+ * What one admission check does while a runner waits: give up a runner with
+ * no job once admission is closed, else refresh the presence when it is due,
+ * else nothing (no GitHub call).
+ */
+export function localRunnerWatchAction(
+	input: Readonly<{
+		admissionPaused: boolean;
+		/** The waiting runner's work folder, if one is registered. */
+		work: string | undefined;
+		nowMs: number;
+		presenceRefreshedAtMs: number;
+	}>,
+): "abort" | "refresh" | "none" {
+	if (
+		input.admissionPaused &&
+		input.work !== undefined &&
+		!runnerHasJob(input.work)
+	)
+		return "abort";
+	return input.nowMs - input.presenceRefreshedAtMs >=
+		LOCAL_RUNNER_PRESENCE_REFRESH_MS
+		? "refresh"
+		: "none";
+}
+
 /**
  * A local runner's side of the runner-host job ports
  * (`runner-host-worker-jobs.ts`): the GitHub presence of the runner it has

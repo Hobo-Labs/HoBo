@@ -21,24 +21,43 @@ import {
 	createLocalRunnerMeshNode,
 	createLocalRunnerPresenceReporter,
 	installLocalRunnerArchive,
+	LOCAL_RUNNER_ADMISSION_CHECK_MS,
 	LOCAL_RUNNER_MESH_REPORT,
 	LocalRunnerRegistrationUncertainError,
 	LocalRunnerShutdownUncertainError,
+	localRunnerWatchAction,
 	parseLocalRunnerEnvironment,
 	runLocalRunnerSession,
-	runnerHasJob,
 } from "../src/local-runner.js";
 import { parseMeshNodeReports } from "../src/mesh-records.js";
 import { acquirePartitionLock } from "../src/partition-lock.js";
+import {
+	releaseEntryPath,
+	runningAsControllerRelease,
+} from "../src/runner-controller-process.js";
 import {
 	controllerDigestFromEnv,
 	workerAdmissionPaused,
 	workerHostFiles,
 } from "../src/runner-host-worker-jobs.js";
 
-const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
+// Run from a checkout this entry finds the repository from its own place; a
+// release (`scripts/build-controller-release.mts`) has no checkout around it,
+// so its state directory must be named (HOBO_CI_LOCAL_STATE_DIRECTORY).
+const release = runningAsControllerRelease();
+const self = fileURLToPath(import.meta.url);
 const state = resolve(
-	process.env.HOBO_CI_LOCAL_STATE_DIRECTORY ?? join(root, ".hobo", "ci-local"),
+	releaseEntryPath({
+		env: process.env,
+		name: "HOBO_CI_LOCAL_STATE_DIRECTORY",
+		release,
+		fallback: () =>
+			join(
+				fileURLToPath(new URL("../../..", import.meta.url)),
+				".hobo",
+				"ci-local",
+			),
+	}),
 );
 const socket = join(
 	tmpdir(),
@@ -248,16 +267,23 @@ async function daemon() {
 					repository,
 				});
 				presence = reporter;
+				// Admission is checked every 5 s; presence (a GitHub REST call on
+				// the user's own rate limit) only every 45 s, and on every session
+				// event the reporter observes.
+				let refreshedAtMs = Date.now();
 				watch = setInterval(() => {
-					const work = reporter.work();
-					if (
-						workerAdmissionPaused(hostFiles) &&
-						work !== undefined &&
-						!runnerHasJob(work)
-					)
-						session.abort();
-					else void reporter.refresh();
-				}, 5000);
+					const action = localRunnerWatchAction({
+						admissionPaused: workerAdmissionPaused(hostFiles),
+						work: reporter.work(),
+						nowMs: Date.now(),
+						presenceRefreshedAtMs: refreshedAtMs,
+					});
+					if (action === "abort") session.abort();
+					else if (action === "refresh") {
+						refreshedAtMs = Date.now();
+						void reporter.refresh();
+					}
+				}, LOCAL_RUNNER_ADMISSION_CHECK_MS);
 				watch.unref();
 				await update("preparing", `Preparing private repository ${repository}`);
 				const archive = await installLocalRunnerArchive(state, stopping.signal);
@@ -380,9 +406,12 @@ async function main() {
 	try {
 		const child = spawn(
 			process.execPath,
-			["--import", "tsx", fileURLToPath(import.meta.url), "daemon"],
+			// A release is plain JavaScript; a checkout's entry runs through tsx.
+			release ? [self, "daemon"] : ["--import", "tsx", self, "daemon"],
 			{
-				cwd: root,
+				cwd: release
+					? state
+					: fileURLToPath(new URL("../../..", import.meta.url)),
 				env: process.env,
 				detached: true,
 				stdio: ["ignore", log.fd, log.fd, "ipc"],

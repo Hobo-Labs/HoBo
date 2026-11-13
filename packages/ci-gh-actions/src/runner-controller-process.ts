@@ -94,6 +94,41 @@ export async function stageControllerRelease(
 	return digest;
 }
 
+// ── Running as a release ───────────────────────────────────────────────────
+
+/**
+ * Whether this code runs as a bundled controller release: the release build
+ * (`scripts/controller-release.mts`) replaces the expression
+ * `process.env.HOBO_CI_RELEASE_BUILD` with "1", so it is read here as that
+ * literal expression, never through a variable.
+ */
+export function runningAsControllerRelease(): boolean {
+	return process.env.HOBO_CI_RELEASE_BUILD === "1";
+}
+
+/**
+ * A path an entry takes from `env[name]`, or else derives from its own
+ * location (`fallback`). A release runs from `controller-releases/` with no
+ * checkout around it, so there the path must be given: it is refused, never
+ * guessed from the release file's place.
+ */
+export function releaseEntryPath(
+	input: Readonly<{
+		env: Readonly<Record<string, string | undefined>>;
+		name: string;
+		release: boolean;
+		fallback: () => string;
+	}>,
+): string {
+	const given = input.env[input.name]?.trim();
+	if (given) return given;
+	if (input.release)
+		throw new Error(
+			`${input.name} must be set: this controller runs as a release staged by digest, with no checkout to derive it from`,
+		);
+	return input.fallback();
+}
+
 // ── Control records ────────────────────────────────────────────────────────
 
 const Digest = z.string().regex(DIGEST);
@@ -326,11 +361,53 @@ export function nodeControllerLauncher(
 	};
 }
 
+/** `restart-worker.sh`'s drain deadline: two hours. */
+const DEFAULT_WORKER_DRAIN_TIMEOUT_MS = 2 * 60 * 60_000;
+/** Time past the worker's own drain deadline before the supervisor kills it. */
+const STOP_GRACE_MS = 60_000;
+
+/**
+ * How the supervisor stops its child, tied to how the worker drains: the
+ * child is started in the same stop mode as a graceful restart
+ * (`deploy/restart-worker.sh`: `HOBO_CI_WORKER_STOP_MODE` drain, a two-hour
+ * `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS`) unless the environment says otherwise,
+ * and the supervisor waits that drain deadline plus a minute after SIGTERM
+ * before SIGKILL. A host restart (systemd SIGTERM to the supervisor) then
+ * drains like the documented restart instead of killing jobs after 15 min;
+ * give the unit a `TimeoutStopSec` above the deadline.
+ */
+export function controllerStopPolicy(
+	env: Readonly<Record<string, string | undefined>>,
+): Readonly<{
+	stopTimeoutMs: number;
+	childEnv: Readonly<{
+		HOBO_CI_WORKER_STOP_MODE: string;
+		HOBO_CI_WORKER_DRAIN_TIMEOUT_MS: string;
+	}>;
+}> {
+	const mode = env.HOBO_CI_WORKER_STOP_MODE?.trim() || "drain";
+	if (mode !== "drain" && mode !== "handoff")
+		throw new Error("HOBO_CI_WORKER_STOP_MODE must be drain or handoff");
+	const raw = env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS?.trim();
+	const drainMs = raw ? Number(raw) : DEFAULT_WORKER_DRAIN_TIMEOUT_MS;
+	if (!Number.isSafeInteger(drainMs) || drainMs < 1_000)
+		throw new Error(
+			"HOBO_CI_WORKER_DRAIN_TIMEOUT_MS must be a whole number of milliseconds, at least 1000",
+		);
+	return Object.freeze({
+		stopTimeoutMs: drainMs + STOP_GRACE_MS,
+		childEnv: Object.freeze({
+			HOBO_CI_WORKER_STOP_MODE: mode,
+			HOBO_CI_WORKER_DRAIN_TIMEOUT_MS: String(drainMs),
+		}),
+	});
+}
+
 export type ControllerSupervisorOptions = Readonly<{
 	files: WorkerHostFiles;
 	launch: ControllerLauncher;
 	now?: (() => number) | undefined;
-	/** How long a stopping child has after SIGTERM before SIGKILL (default 15 min). */
+	/** How long a stopping child has after SIGTERM before SIGKILL (default 15 min; the supervisor script uses `controllerStopPolicy`). */
 	stopTimeoutMs?: number | undefined;
 	/** Restarts allowed inside `crashWindowMs` before the state is `failed` (default 3). */
 	crashLimit?: number | undefined;

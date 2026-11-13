@@ -10,6 +10,9 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	createControllerSupervisor,
+	RUNNER_IMAGE_ARTIFACT,
+	RUNNER_RELEASE_ARTIFACTS,
+	runnerHostRealizationParameters,
 	type WorkerHostFiles,
 	workerAdmissionPaused,
 	workerHostFiles,
@@ -107,17 +110,48 @@ export class SupervisedRunnerHost {
 	}
 }
 
-/** Release bodies written as `<hex>.mjs` in `source`; returns each release's reference. */
+/**
+ * Release bodies written as `<hex>.mjs` in `source`, as the release build
+ * publishes them. Each comes back as the Freight a promotion would carry for
+ * one version: the worker image, pinned by an OCI manifest digest that is not
+ * the release's (as GHCR's never is), and the release under `artifact`,
+ * pinned by its bytes' sha256 (`runnerFleetDelivery({releaseIndexBase})`).
+ * `parameters` is the runner-host row that Freight resolves to.
+ */
 export async function writeReleases(
 	source: string,
 	bodies: readonly string[],
-): Promise<string[]> {
+	artifact: string = RUNNER_RELEASE_ARTIFACTS.workerRelease,
+): Promise<
+	{
+		digest: string;
+		image: string;
+		parameters: Readonly<Record<string, string>>;
+	}[]
+> {
 	await mkdir(source, { recursive: true });
-	const images: string[] = [];
+	const releases = [];
 	for (const body of bodies) {
 		const hex = createHash("sha256").update(body).digest("hex");
 		await writeFile(join(source, `${hex}.mjs`), body);
-		images.push(`releases.hobo.test/hobo-ci-worker@sha256:${hex}`);
+		const manifest = createHash("sha256")
+			.update(`oci manifest of ${body}`)
+			.digest("hex");
+		const image = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${manifest}`;
+		const parameters = runnerHostRealizationParameters([
+			{
+				name: RUNNER_IMAGE_ARTIFACT,
+				digest: `sha256:${manifest}`,
+				coordinate: image,
+			},
+			{
+				name: artifact,
+				digest: `sha256:${hex}`,
+				coordinate: `https://releases.hobo.test/hobo-ci/${hex}.mjs`,
+			},
+		]);
+		if (!parameters) throw new Error("the Freight has no worker image");
+		releases.push({ digest: `sha256:${hex}`, image, parameters });
 	}
-	return images;
+	return releases;
 }

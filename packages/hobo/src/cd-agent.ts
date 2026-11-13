@@ -180,6 +180,10 @@ async function runnerHostRealizer(
 			}),
 			hostId: config.hostId,
 			credentialRef: config.credentialRef,
+			reference: runnerHost.runnerHostReferenceParameter(
+				config.hostKind,
+				config.controller?.mode ?? "container",
+			),
 			now: input.now,
 		}),
 	};

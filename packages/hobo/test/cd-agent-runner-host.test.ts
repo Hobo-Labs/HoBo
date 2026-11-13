@@ -24,6 +24,7 @@ import {
 import type { RailCatalog } from "@hobo/cd/compose";
 import {
 	createRunnerHostResolver,
+	RUNNER_RELEASE_ARTIFACTS,
 	runnerFleetRail,
 } from "@hobo/ci-gh-actions/runner-host";
 import { afterEach, describe, expect, it } from "vitest";
@@ -71,12 +72,20 @@ const ctx: CdContext = {
 };
 
 function realizeInput(image: string | undefined, campId: CampId = BOX) {
+	return setInput(image ? { image } : undefined, campId);
+}
+
+/** A realize input whose runner-host row has these realization parameters. */
+function setInput(
+	parameters: Readonly<Record<string, string>> | undefined,
+	campId: CampId = BOX,
+) {
 	return {
 		campId,
 		desired: create(SetRecordSchema, { setId: "set_target", campId }),
 		resolved: runnerHostResolvedSet({
 			campId,
-			...(image ? { image } : undefined),
+			...(parameters ? { parameters } : undefined),
 		}),
 		// SAFETY: opaque ids a lease would carry; the realizer only echoes them.
 		reconcilerId: "rec_box" as ReconcilerId,
@@ -647,16 +656,23 @@ describe("agent run on a host whose controller is a supervised process (in-proce
 	) {
 		await writeConfig();
 		const source = join(dir, "releases");
-		const images = await writeReleases(source, [
-			"export const v = 1;\n",
-			"export const v = 2;\n",
-			"export const v = 3;\n",
-		]);
 		const local = options.hostKind === "local-runner";
+		const releases = await writeReleases(
+			source,
+			[
+				"export const v = 1;\n",
+				"export const v = 2;\n",
+				"export const v = 3;\n",
+			],
+			local
+				? RUNNER_RELEASE_ARTIFACTS.localRunnerRelease
+				: RUNNER_RELEASE_ARTIFACTS.workerRelease,
+		);
+		const digests = releases.map((release) => release.digest);
 		const host = new SupervisedRunnerHost({
 			dataDirectory: join(dir, "data"),
 			hostKind: options.hostKind ?? "box-worker",
-			unhealthy: (options.unhealthy?.(images) ?? []).map(digestOf),
+			unhealthy: options.unhealthy?.(digests) ?? [],
 			...(options.offline ? { offline: true } : undefined),
 		});
 		await writeFile(
@@ -685,60 +701,88 @@ describe("agent run on a host whose controller is a supervised process (in-proce
 			},
 		});
 		if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
-		return { realizer: chosen.value, host, images };
+		return {
+			realizer: chosen.value,
+			host,
+			/** The runner-host row each version's Freight resolves to. */
+			sets: releases.map((release) => release.parameters),
+			digests,
+			images: releases.map((release) => release.image),
+		};
 	}
 
-	it("swaps the box worker by digest under its supervisor and converges on the advert at the new version", async () => {
-		const { realizer, host, images } = await processAgent();
-		const [v1, v2] = images;
-		const first = await realizer.converge(realizeInput(v1), ctx);
+	it("swaps the box worker to the release its Freight pairs with the image, by the release's own digest", async () => {
+		const { realizer, host, sets, digests, images } = await processAgent();
+		const [v1, v2] = sets;
+		const [d1, d2] = digests;
+		// The image's manifest digest is not the release's: a process host
+		// runs the release the Set's row names, never the image digest.
+		expect(digestOf(images[1] ?? "")).not.toBe(d2);
+		expect(v2?.workerRelease).toBe(`hobo-ci-worker-release@${d2}`);
+		const first = await realizer.converge(setInput(v1), ctx);
 		expect(first.status).toBe(ReconcileStatus.CONVERGED);
-		const second = await realizer.converge(realizeInput(v2), ctx);
+		expect(host.running()).toEqual([d1]);
+		const second = await realizer.converge(setInput(v2), ctx);
 		expect(second.status).toBe(ReconcileStatus.CONVERGED);
 		expect(second.resources[0]?.physicalId).toBe(
-			`hobo-ci-runners/box/controller@${digestOf(v2 ?? "")}`,
+			`hobo-ci-runners/box/controller@${d2}`,
 		);
-		expect(host.running()).toEqual([digestOf(v2 ?? "")]);
+		expect(host.running()).toEqual([d2]);
 		expect(
 			second.claims.find((claim) => claim.name === "hobo.ci/runner-host-ready")
 				?.value,
 		).toBe("true");
-		expect((await realizer.observe(realizeInput(v2), ctx)).status).toBe(
+		expect((await realizer.observe(setInput(v2), ctx)).status).toBe(
 			ReconcileStatus.CONVERGED,
 		);
 	});
 
+	it("refuses a Set that carries only the image, which a process host cannot run", async () => {
+		const { realizer, host, images } = await processAgent();
+		const observed = await realizer.converge(realizeInput(images[0]), ctx);
+		expect(observed.status).toBe(ReconcileStatus.BLOCKED);
+		expect(observed.reasons[0]?.code).toBe("runner-host-release-unresolved");
+		expect(observed.reasons[0]?.remediation).toContain("releaseIndexBase");
+		expect(host.running()).toEqual([]);
+	});
+
 	it("restores the previous release when the new one never serves, BLOCKED with the realizer's code", async () => {
-		const { realizer, host, images } = await processAgent({
+		const { realizer, host, sets, digests } = await processAgent({
 			unhealthy: (all) => [all[2] ?? ""],
 		});
-		const [v1, , broken] = images;
-		await realizer.converge(realizeInput(v1), ctx);
-		const observed = await realizer.converge(realizeInput(broken), ctx);
+		const [v1, , broken] = sets;
+		const [d1] = digests;
+		await realizer.converge(setInput(v1), ctx);
+		const observed = await realizer.converge(setInput(broken), ctx);
 		expect(observed.status).toBe(ReconcileStatus.BLOCKED);
 		expect(observed.reasons[0]?.code).toBe("runner-host-verify-failed");
 		expect(observed.reasons[0]?.message).toContain(
-			`restored and observed the previous controller ${digestOf(v1 ?? "")}`,
+			`restored and observed the previous controller ${d1}`,
 		);
-		expect(host.running()).toEqual([digestOf(v1 ?? "")]);
+		expect(host.running()).toEqual([d1]);
 		expect(observed.resources[0]?.physicalId).toBe(
-			`hobo-ci-runners/box/controller@${digestOf(v1 ?? "")}`,
+			`hobo-ci-runners/box/controller@${d1}`,
 		);
 	});
 
 	it("converges a local runner once its runner is online in GitHub, and not before", async () => {
 		const online = await processAgent({ hostKind: "local-runner" });
-		const [v1] = online.images;
-		expect((await online.realizer.converge(realizeInput(v1), ctx)).status).toBe(
+		const [v1] = online.sets;
+		// A local runner runs its own release, not the box worker's.
+		expect(v1?.localRunnerRelease).toBe(
+			`hobo-ci-local-runner-release@${online.digests[0]}`,
+		);
+		expect((await online.realizer.converge(setInput(v1), ctx)).status).toBe(
 			ReconcileStatus.CONVERGED,
 		);
+		expect(online.host.running()).toEqual([online.digests[0]]);
 
 		const offline = await processAgent({
 			hostKind: "local-runner",
 			offline: true,
 		});
 		const blocked = await offline.realizer.converge(
-			realizeInput(offline.images[0]),
+			setInput(offline.sets[0]),
 			ctx,
 		);
 		expect(blocked.status).toBe(ReconcileStatus.BLOCKED);

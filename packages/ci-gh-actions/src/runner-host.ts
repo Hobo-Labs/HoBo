@@ -18,9 +18,15 @@ export {
 	RUNNER_FLEET_PROVIDER,
 	RUNNER_FLEET_RAIL,
 	RUNNER_FLEET_YARD,
+	RUNNER_IMAGE_ARTIFACT,
+	RUNNER_RELEASE_ARTIFACTS,
 	type RunnerFleetRail,
+	type RunnerFreightArtifact,
 	type RunnerHostKind,
+	type RunnerReleaseParameter,
 	runnerFleetRail,
+	runnerHostRealizationParameters,
+	runnerHostReferenceParameter,
 } from "./runner-fleet-delivery.js";
 export {
 	createRunnerHostResolver,

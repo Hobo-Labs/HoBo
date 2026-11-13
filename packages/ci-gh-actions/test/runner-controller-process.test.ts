@@ -16,6 +16,7 @@ import {
 	type ControllerChild,
 	type ControllerLauncher,
 	controllerReleasePath,
+	controllerStopPolicy,
 	createControllerProcessPort,
 	createControllerSupervisor,
 	nodeControllerLauncher,
@@ -314,6 +315,35 @@ describe("controller supervisor (daemon side)", () => {
 		expect((await port.status())?.digest).toBe(digests[1]);
 	});
 
+	it("stops its child the way a graceful restart does: drain mode, the drain deadline, then a minute", () => {
+		// restart-worker.sh's defaults: drain, two hours.
+		expect(controllerStopPolicy({})).toEqual({
+			stopTimeoutMs: 2 * 60 * 60_000 + 60_000,
+			childEnv: {
+				HOBO_CI_WORKER_STOP_MODE: "drain",
+				HOBO_CI_WORKER_DRAIN_TIMEOUT_MS: "7200000",
+			},
+		});
+		expect(
+			controllerStopPolicy({
+				HOBO_CI_WORKER_STOP_MODE: "handoff",
+				HOBO_CI_WORKER_DRAIN_TIMEOUT_MS: "600000",
+			}),
+		).toEqual({
+			stopTimeoutMs: 660_000,
+			childEnv: {
+				HOBO_CI_WORKER_STOP_MODE: "handoff",
+				HOBO_CI_WORKER_DRAIN_TIMEOUT_MS: "600000",
+			},
+		});
+		expect(() =>
+			controllerStopPolicy({ HOBO_CI_WORKER_DRAIN_TIMEOUT_MS: "soon" }),
+		).toThrow(/HOBO_CI_WORKER_DRAIN_TIMEOUT_MS/u);
+		expect(() =>
+			controllerStopPolicy({ HOBO_CI_WORKER_STOP_MODE: "kill" }),
+		).toThrow(/HOBO_CI_WORKER_STOP_MODE/u);
+	});
+
 	it("starts a real release with node, no shell, and the digest in its env", async () => {
 		const body = `import { writeFileSync } from "node:fs";
 writeFileSync(process.argv[2], process.env.HOBO_CI_CONTROLLER_DIGEST ?? "");
@@ -349,6 +379,8 @@ async function supervisedHost(
 		unhealthy?: (digests: string[]) => readonly string[];
 		/** A worker build that does not name its controller digest in its advert. */
 		anonymous?: boolean;
+		/** Children of these releases ignore SIGTERM; the supervisor's stop deadline is held open. */
+		stubborn?: (digests: string[]) => readonly string[];
 	} = {},
 ) {
 	const files = workerHostFiles(join(await freshDir(), "worker.sqlite"));
@@ -358,16 +390,29 @@ async function supervisedHost(
 		"export const v = 3; // never healthy\n",
 	]);
 	const unhealthy = new Set(options.unhealthy?.(releases.digests) ?? []);
-	const launcher = fakeLauncher();
+	const launcher = fakeLauncher({
+		stubborn: options.stubborn?.(releases.digests) ?? [],
+	});
 	let nowMs = Date.parse("2026-11-13T10:00:00.000Z");
+	// The supervisor's stop deadline passes only when the test says so.
+	let deadlinePassed: () => void = () => undefined;
+	const stopDeadline = new Promise<void>((resolve) => {
+		deadlinePassed = resolve;
+	});
 	const supervisor = createControllerSupervisor({
 		files,
 		launch: launcher.launch,
 		now: () => nowMs,
+		sleep: () => stopDeadline,
 	});
 	const started = new Map<number, number>();
 	async function beat(): Promise<void> {
-		await supervisor.tick();
+		// The supervisor runs beside the agent: a tick blocked on a stop
+		// deadline does not hold up the agent's polls.
+		const tick = supervisor.tick();
+		if (options.stubborn)
+			await Promise.race([tick, new Promise((done) => setImmediate(done))]);
+		else await tick;
 		const child = launcher.live()[0];
 		if (!child?.pid) {
 			await rm(files.meshAdvert, { force: true });
@@ -415,7 +460,16 @@ async function supervisedHost(
 		verifyDeadlineMs: 60_000,
 		drainDeadlineMs: 60_000,
 	});
-	return { files, releases, launcher, supervisor, resolver, beat, ports };
+	return {
+		files,
+		releases,
+		launcher,
+		supervisor,
+		resolver,
+		beat,
+		ports,
+		deadlinePassed,
+	};
 }
 
 const request = (
@@ -527,6 +581,35 @@ describe("runner-host realizer: a controller that runs as a process", () => {
 		).rejects.toThrow(/^runner-host-stage-failed: /u);
 		expect(host.launcher.live()).toHaveLength(1);
 		expect(workerAdmissionPaused(host.files)).toBe(false);
+	});
+
+	it("asks for the previous release again when its stop is not observed in time, so the host is not left with none", async () => {
+		const host = await supervisedHost({ stubborn: (d) => [d[0] ?? ""] });
+		const [v1] = host.releases.images;
+		const [d1] = host.releases.digests;
+		await host.resolver.reconcile(request(v1 ?? ""), transport);
+		// The supervisor is still waiting out its stop deadline (SIGTERM is
+		// ignored) when the agent's wait ends.
+		await expect(
+			host.resolver.delete?.(request(v1 ?? ""), transport),
+		).rejects.toThrow(
+			new RegExp(
+				`^runner-host-retire-unobserved: .*asked the supervisor to run ${d1} again`,
+				"u",
+			),
+		);
+		expect(workerAdmissionPaused(host.files)).toBe(false);
+		// The deadline passes: the child is killed, then the supervisor acts on
+		// the latest request, which names the previous release again.
+		host.deadlinePassed();
+		await host.supervisor.tick();
+		await host.supervisor.tick();
+		expect(host.launcher.children[0]?.signals).toEqual(["SIGTERM", "SIGKILL"]);
+		expect(host.launcher.live().map((child) => child.digest)).toEqual([d1]);
+		expect(await readControllerStatus(host.files)).toMatchObject({
+			state: "running",
+			digest: d1,
+		});
 	});
 
 	it("refuses container settings a supervised process cannot take", async () => {

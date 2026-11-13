@@ -57,6 +57,7 @@ import {
 	RUNNER_HOST_PRODUCT_ID,
 	type RunnerHostCampReport,
 	type RunnerHostKind,
+	type RunnerReleaseParameter,
 	runnerHostAbsentReport,
 	runnerHostCampReport,
 	runnerHostHealthConditions,
@@ -274,17 +275,23 @@ export function parseRunnerHostAgentConfig(
 
 const IMAGE_BY_DIGEST = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/u;
 
+/** Which realization parameter of the runner-host row a host runs. */
+export type RunnerHostReference = "image" | RunnerReleaseParameter;
+
 /**
- * The controller image a resolved Set asks a runner host for: the plan row
- * the Set resolved to `hobo-ci.runner-host/v1`, its `image` realization
- * parameter, pinned by digest. Undefined when the Set has no such row.
+ * The controller a resolved Set asks a runner host for: the plan row the Set
+ * resolved to `hobo-ci.runner-host/v1`, its `reference` realization parameter
+ * (`image` for a container, the host kind's release for a supervised
+ * process: `runnerHostRealizationParameters`), pinned by digest. Undefined
+ * when the Set has no such row or the row has no such parameter.
  */
 export function runnerHostImageOf(
 	resolved: RealizeInput["resolved"],
+	reference: RunnerHostReference = "image",
 ): string | undefined {
 	for (const resource of resolved.plan.resources) {
 		if (resource.productId !== RUNNER_HOST_PRODUCT_ID) continue;
-		const image = resource.realizationParameters?.image;
+		const image = resource.realizationParameters?.[reference];
 		if (isJsonString(image) && IMAGE_BY_DIGEST.test(image)) return image;
 	}
 	return undefined;
@@ -352,6 +359,12 @@ export type RunnerHostRealizerInput = Readonly<{
 	hostId: string;
 	credentialRef: string;
 	drainDeadlineMs?: number;
+	/**
+	 * The row parameter this host runs (default `image`): a process-mode host
+	 * runs its kind's release, whose digest is its bytes' sha256, never the
+	 * image's manifest digest.
+	 */
+	reference?: RunnerHostReference;
 	now: () => number;
 	/** The realizer makes no HTTP call; the transport refuses any. */
 	transport?: HttpTransport;
@@ -371,6 +384,7 @@ export function createRunnerHostRealizer(
 	input: RunnerHostRealizerInput,
 ): Realizer {
 	const transport = input.transport ?? NO_HTTP;
+	const reference = input.reference ?? "image";
 
 	function request(realize: RealizeInput, image: string) {
 		return runnerHostResolveRequest({
@@ -414,10 +428,15 @@ export function createRunnerHostRealizer(
 			input.now(),
 			[
 				{
-					code: "runner-host-image-unresolved",
-					message: `Set ${realize.desired.setId} resolves no ${RUNNER_HOST_PRODUCT_ID} row with a digest-pinned image`,
+					code:
+						reference === "image"
+							? "runner-host-image-unresolved"
+							: "runner-host-release-unresolved",
+					message: `Set ${realize.desired.setId} resolves no ${RUNNER_HOST_PRODUCT_ID} row with a digest-pinned ${reference}`,
 					remediation:
-						"resolve the runner fleet's Set to a hobo-ci.runner-host/v1 row whose image realization parameter is pinned by @sha256 digest",
+						reference === "image"
+							? "resolve the runner fleet's Set to a hobo-ci.runner-host/v1 row whose image realization parameter is pinned by @sha256 digest"
+							: `this host's controller runs as a process: resolve the Set from Freight that carries its release (runnerFleetDelivery releaseIndexBase, runnerHostRealizationParameters), so the row has a digest-pinned ${reference}`,
 				},
 			],
 		);
@@ -448,7 +467,7 @@ export function createRunnerHostRealizer(
 	return Object.freeze({
 		async converge(realize: RealizeInput, _ctx: CdContext) {
 			if (wrongHost(realize)) return foreign(realize);
-			const image = runnerHostImageOf(realize.resolved);
+			const image = runnerHostImageOf(realize.resolved, reference);
 			if (image === undefined) return unresolved(realize);
 			try {
 				const outcome = await input.resolver.reconcile(
@@ -495,7 +514,7 @@ export function createRunnerHostRealizer(
 
 		async observe(realize: RealizeInput, _ctx: CdContext) {
 			if (wrongHost(realize)) return foreign(realize);
-			const image = runnerHostImageOf(realize.resolved);
+			const image = runnerHostImageOf(realize.resolved, reference);
 			if (image === undefined) return unresolved(realize);
 			const { report, digest } = await current(realize, image);
 			const status =

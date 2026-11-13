@@ -9,10 +9,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	createLocalRunnerPresenceReporter,
+	LOCAL_RUNNER_ADMISSION_CHECK_MS,
+	LOCAL_RUNNER_PRESENCE_REFRESH_MS,
 	type LocalRunnerApiResponse,
+	localRunnerWatchAction,
 } from "../src/local-runner.js";
 import {
 	createWorkerHostJobs,
+	RUNNER_PRESENCE_MAX_AGE_MS,
 	workerHostFiles,
 } from "../src/runner-host-worker-jobs.js";
 
@@ -97,5 +101,57 @@ describe("local runner presence for the runner-host agent", () => {
 		expect(await reporter.presence()).toMatchObject({
 			runners: [{ name: "r", status: "offline", busy: false }],
 		});
+	});
+
+	it("asks GitHub about presence about once in 45 s while checking admission every 5 s", async () => {
+		const state = await mkdtemp(join(tmpdir(), "local-runner-presence-"));
+		dirs.push(state);
+		const work = join(state, "host-1");
+		await mkdir(work);
+		// An hour of a waiting runner's 5 s admission checks, admission open.
+		let refreshedAtMs = 0;
+		let refreshes = 0;
+		for (
+			let nowMs = LOCAL_RUNNER_ADMISSION_CHECK_MS;
+			nowMs <= 3_600_000;
+			nowMs += LOCAL_RUNNER_ADMISSION_CHECK_MS
+		)
+			if (
+				localRunnerWatchAction({
+					admissionPaused: false,
+					work,
+					nowMs,
+					presenceRefreshedAtMs: refreshedAtMs,
+				}) === "refresh"
+			) {
+				refreshes += 1;
+				refreshedAtMs = nowMs;
+			}
+		expect(refreshes).toBeLessThanOrEqual(80);
+		expect(refreshes).toBeGreaterThanOrEqual(60);
+		// The presence stays fresh for the agent between refreshes.
+		expect(
+			LOCAL_RUNNER_PRESENCE_REFRESH_MS + LOCAL_RUNNER_ADMISSION_CHECK_MS,
+		).toBeLessThan(RUNNER_PRESENCE_MAX_AGE_MS / 2);
+		// Closed admission gives up a runner with no job at the next check,
+		// whatever the presence schedule; one with a job is left to finish.
+		expect(
+			localRunnerWatchAction({
+				admissionPaused: true,
+				work,
+				nowMs: 1,
+				presenceRefreshedAtMs: 0,
+			}),
+		).toBe("abort");
+		await mkdir(join(work, "_diag"));
+		await writeFile(join(work, "_diag", "Worker_1.log"), "");
+		expect(
+			localRunnerWatchAction({
+				admissionPaused: true,
+				work,
+				nowMs: 1,
+				presenceRefreshedAtMs: 0,
+			}),
+		).toBe("none");
 	});
 });

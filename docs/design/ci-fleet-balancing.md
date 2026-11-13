@@ -220,8 +220,10 @@ would post for a new offer.
   admission marker from the worker's data directory, a local runner's GitHub
   presence from the report its controller writes there, and swaps a
   controller that runs as a process through its daemon's supervisor
-  (releases staged by digest). The fleet's promotion does not yet write the
-  Set the agent converges, and no single-file release is published yet; see
+  (single-file releases built by `release:build`, staged by their own
+  digest and paired with the image of the same version in the fleet's
+  Freight). The fleet's promotion does not yet write the Set the agent
+  converges, and the release indexes are not published yet; see
   [`deploy/runner-fleet/README.md`](../../packages/ci-gh-actions/deploy/runner-fleet/README.md).
 
 `jog` and `boat` are accepted as policy provider kinds and dispatch through the
