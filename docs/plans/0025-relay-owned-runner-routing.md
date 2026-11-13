@@ -7,7 +7,7 @@ tags: [hobo, ci, relay, routing, fleet, resilience, implementation, sdlc]
 
 # Relay-owned runner routing: one-shot delivery plan
 
-**Status:** ready to dispatch (revision 3). Revision 1 went through an adversarial review and an implementer walk-through; revision 2 through a confirming review that replayed the incident against it. Section 13 lists what each changed. Two design choices carry defaults the owner may change before dispatch: P3 and P10 in section 10.
+**Status:** implemented in the stack sdlc/routing-01…07; operating checklist (section 6.10) not yet run. Its record is [finding 145](../ci/findings/0145-fleet-verdict-channel-operating-record.md). Design revision 3: revision 1 went through an adversarial review and an implementer walk-through; revision 2 through a confirming review that replayed the incident against it. Section 13 lists what each changed. Two design choices carry defaults the owner may change before dispatch: P3 and P10 in section 10.
 **Design authority:** [ADR-0180](../design/adr/fleet-verdict.md#adr-0180). Layer 02 amends it with the decisions here.
 **Base of the stack:** `claude/relay-fleet-verdict` ([#1952](https://github.com/Hobo-Labs/HoBo/pull/1952)), which sits on [#1943](https://github.com/Hobo-Labs/HoBo/pull/1943). If both have merged, base on `main`.
 
