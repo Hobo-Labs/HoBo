@@ -175,3 +175,38 @@ The shipped `provisionGuest` / `releaseGuest` path requires a real `GuestRuntime
 A closed tab is an orphan requiring reconciliation. Released state requires actual
 worker termination and, unless explicitly retained, partition removal. Stateful moves
 require the app's write-ownership and transfer evidence in addition to those host facts.
+
+## Delivery coverage (plan 0024 WP14, I14)
+
+`browserWasmResolverRegistry()` ships one **observation-only** resolver,
+`browser-wasm.guest/v1`. A guest runs in visitors' browsers, so the part a
+reconciler can own is the host origin's publication: it reads
+`/_hobo/host/capabilities` and `/_hobo/guests/<id>/manifest.json` through the
+same guarded client and parsers a page uses, and reports `ready` only when the
+manifest names exactly the desired digest (`sha256:<hex>` against the
+manifest's `sha256-<hex>`) and the reported context can hold the guest's memory
+and persistence. It never mutates the origin, never fetches or runs a
+component and never resolves a credential. The host page itself is delivered
+by whatever provider serves that origin; until it publishes the guest the
+outcome is `pending`, not failed. `delete` succeeds only once the origin stops
+publishing the guest. The boundary is the existing host-origin pact; the
+resolver tests replay its recorded interactions.
+
+`BROWSER_WASM_HOSTING_COVERAGE` (`data-models/hosting_coverage.{proto,cue}`)
+refuses `browser-wasm.kv/v1` and `browser-wasm.queue/v1` with remediation, and
+declares the traffic profile (`kind: "other"`): only `inprocess.weighted`
+(host-page selection between published guest versions); the other sixteen
+portable offerings are absent with a reason. Metrics: with `metrics` and an
+injected `nowMs`, each call emits `hobo.cd.resolver.operations` and
+`hobo.cd.resolver.duration`.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| `pending`, "does not publish guest … yet" | the host page deployment has not landed the guest | deliver the host page; the reconciler re-observes |
+| `pending`, "publishes another digest" | the origin serves a different version | promote the Freight whose digest the host page publishes, or redeliver the host page |
+| `pending`, persistence or memory diagnostic | the host context cannot hold the guest | fix the host page headers (COOP/COEP) or lower the guest's requirement |
+| `RESOLVER_OUTPUT_UNPARSEABLE` | the origin's documents changed shape | compare against `contracts/provider-browser-wasm-host-origin.pact.json` |
+| `RESOLVER_PROVIDER_REJECTED` on delete | the origin still publishes the guest | remove it from the host page deployment, then delete again |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for kv or queue | in-browser stores are created in each tab | publish them as guests, or bind a hosted provider |

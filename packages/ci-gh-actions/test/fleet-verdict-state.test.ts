@@ -17,7 +17,7 @@ import {
 	FLEET_VERDICT_EXIT_MS,
 } from "../src/isolated-worker/fleet-verdict-state.js";
 
-/** The reporter's state (plan 0025, 6.2): holds, send schedule, sequence. */
+/** The reporter's state (ADR-0180 amendment, item 2): holds, send schedule, sequence. */
 const T0 = Date.parse("2026-11-12T11:14:00.000Z");
 const SAMPLE = 10_000;
 

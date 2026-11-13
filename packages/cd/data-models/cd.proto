@@ -1,0 +1,1130 @@
+syntax = "proto3";
+package hobo.cd.v1;
+
+// Frozen contract. Records reference each other by string id.
+// Constraints live in the per-module *.cue files beside this file.
+
+// ── Shared ──────────────────────────────────────────────────────────────────
+
+message ReasonRecord {
+  string code = 1;
+  string message = 2;
+  string remediation = 3;
+  string subject = 4;
+}
+
+message SelectorRecord {
+  map<string, string> labels = 1;
+  repeated string env_types = 2;
+  repeated string jurisdictions = 3;
+  repeated string camp_ids = 4;
+  repeated string bindles = 5;
+}
+
+// ── Artifacts and provenance ────────────────────────────────────────────────
+
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;
+  ARTIFACT_KIND_WASM_COMPONENT = 1;
+  ARTIFACT_KIND_FUNCTION_BUNDLE = 2;
+  ARTIFACT_KIND_STATIC_ASSETS = 3;
+  ARTIFACT_KIND_OCI_IMAGE = 4;
+  ARTIFACT_KIND_VM_IMAGE = 5;
+  ARTIFACT_KIND_PACKAGE = 6;
+  ARTIFACT_KIND_SOURCE_TREE = 7;
+}
+
+message ArtifactRef {
+  string name = 1;
+  ArtifactKind kind = 2;
+  // sha256:<64 lowercase hex>
+  string digest = 3;
+  // Artifact-store locator, registry coordinate, purl or Git URL@commit.
+  string coordinate = 4;
+  uint64 size_bytes = 5;
+  string media_type = 6;
+  // oci | npm | nuget | pypi | maven | cargo | rubygems | git | http | store
+  string ecosystem = 7;
+}
+
+message SourceRef {
+  string repository = 1;
+  string commit = 2;
+  string ref = 3;
+  string ci_run_id = 4;
+  string ci_system = 5;
+  string builder_id = 6;
+}
+
+message ProvenanceRef {
+  string statement_digest = 1;
+  string predicate_type = 2;
+  string builder_id = 3;
+  string signer_identity = 4;
+  string issuer = 5;
+  bool verified = 6;
+  // sigstore | hobo-jwt
+  string verifier = 7;
+  repeated string subject_digests = 8;
+}
+
+message ArtifactStoredRecord {
+  ArtifactRef artifact = 1;
+  string backend = 2;
+  string stored_at = 3;
+}
+
+message ArtifactDeletedRecord {
+  string digest = 1;
+  string backend = 2;
+  string reason = 3;
+  string deleted_at = 4;
+}
+
+// ── Freight ─────────────────────────────────────────────────────────────────
+
+// hobo.freight-manifest/v1: written by any build, parsed at one boundary.
+message FreightManifestRecord {
+  string schema_version = 1;
+  string bindle = 2;
+  string declaration_hash = 3;
+  repeated ArtifactRef artifacts = 4;
+  SourceRef source = 5;
+  repeated ProvenanceRef provenance = 6;
+  map<string, string> labels = 7;
+  // UNSPECIFIED reads as BINDLE. For RAIL: bindle = Rail id,
+  // declaration_hash = Rail content digest, artifacts empty (D24).
+  FreightSubject subject = 8;
+}
+
+enum FreightOrigin {
+  FREIGHT_ORIGIN_UNSPECIFIED = 0;
+  FREIGHT_ORIGIN_MANIFEST = 1;
+  FREIGHT_ORIGIN_ATTESTATION = 2;
+  FREIGHT_ORIGIN_SOURCE_DISCOVERY = 3;
+  FREIGHT_ORIGIN_CDEVENT = 4;
+  FREIGHT_ORIGIN_HOBO_CI = 5;
+  FREIGHT_ORIGIN_LOCAL_BUILD = 6;
+}
+
+message FreightRecord {
+  string schema_version = 1;
+  string freight_id = 2;
+  string alias = 3;
+  FreightManifestRecord manifest = 4;
+  FreightOrigin origin = 5;
+  string source_name = 6;
+  string recorded_by = 7;
+  string recorded_at = 8;
+}
+
+message FreightYankedRecord {
+  string freight_id = 1;
+  string reason = 2;
+  string yanked_by = 3;
+  string yanked_at = 4;
+}
+
+message FreightQualifiedRecord {
+  string freight_id = 1;
+  string camp_id = 2;
+  string pipeline = 3;
+  string node = 4;
+  string verification_id = 5;
+  string qualified_at = 6;
+}
+
+message FreightApprovedRecord {
+  string freight_id = 1;
+  string camp_id = 2;
+  string approved_by = 3;
+  string reason = 4;
+  string decision_id = 5;
+  string approved_at = 6;
+  string expires_at = 7;
+}
+
+message FreightRetiredRecord {
+  string freight_id = 1;
+  string reason = 2;
+  string retired_at = 3;
+}
+
+message RetentionPolicyRecord {
+  string bindle = 1;
+  uint32 keep_per_camp = 2;
+  uint64 keep_unpromoted_ms = 3;
+  repeated string legal_hold_labels = 4;
+  uint64 blob_grace_ms = 5;
+}
+
+message TrustedPublisherRecord {
+  string name = 1;
+  string issuer = 2;
+  string audience = 3;
+  // Exact-match claim constraints, e.g. repository, workflow_ref, environment.
+  map<string, string> required_claims = 4;
+  repeated string bindles = 5;
+}
+
+// ── Freight sources (pull discovery) ────────────────────────────────────────
+
+enum SubscriptionKind {
+  SUBSCRIPTION_KIND_UNSPECIFIED = 0;
+  SUBSCRIPTION_KIND_OCI_REPOSITORY = 1;
+  SUBSCRIPTION_KIND_GIT_REPOSITORY = 2;
+  SUBSCRIPTION_KIND_PACKAGE_REGISTRY = 3;
+  SUBSCRIPTION_KIND_HTTP_INDEX = 4;
+  SUBSCRIPTION_KIND_HOBO_CI = 5;
+  SUBSCRIPTION_KIND_HOBO_RAIL = 6;
+}
+
+enum SelectionStrategy {
+  SELECTION_STRATEGY_UNSPECIFIED = 0;
+  SELECTION_STRATEGY_SEMVER = 1;
+  SELECTION_STRATEGY_NEWEST_BUILD = 2;
+  SELECTION_STRATEGY_LEXICAL = 3;
+  SELECTION_STRATEGY_NEWEST_COMMIT = 4;
+}
+
+message SubscriptionRecord {
+  string name = 1;
+  SubscriptionKind kind = 2;
+  string locator = 3;
+  string ecosystem = 4;
+  SelectionStrategy selection = 5;
+  string semver_range = 6;
+  string allow_pattern = 7;
+  repeated string ignore_patterns = 8;
+  repeated string include_paths = 9;
+  repeated string exclude_paths = 10;
+  string branch = 11;
+  uint32 discovery_limit = 12;
+  string credential_ref = 13;
+  bool require_provenance = 14;
+  repeated string trusted_builder_ids = 15;
+  repeated string trusted_signer_identities = 16;
+  string artifact_name = 17;
+  ArtifactKind artifact_kind = 18;
+}
+
+enum AssemblyRule {
+  ASSEMBLY_RULE_UNSPECIFIED = 0;
+  ASSEMBLY_RULE_INDEPENDENT = 1;
+  ASSEMBLY_RULE_SAME_VERSION = 2;
+  ASSEMBLY_RULE_SAME_COMMIT = 3;
+}
+
+message FreightSourceRecord {
+  string schema_version = 1;
+  string name = 2;
+  string bindle = 3;
+  repeated SubscriptionRecord subscriptions = 4;
+  AssemblyRule assembly = 5;
+  bool automatic = 6;
+  uint64 poll_interval_ms = 7;
+  string defined_by = 8;
+}
+
+message DiscoveredArtifactRecord {
+  string source = 1;
+  string subscription = 2;
+  ArtifactRef artifact = 3;
+  string version = 4;
+  string commit = 5;
+  string discovered_at = 6;
+  repeated ProvenanceRef provenance = 7;
+}
+
+// ── Desired state ───────────────────────────────────────────────────────────
+
+enum SetOrigin {
+  SET_ORIGIN_UNSPECIFIED = 0;
+  SET_ORIGIN_PROMOTION = 1;
+  SET_ORIGIN_UP = 2;
+  SET_ORIGIN_ROLLBACK = 3;
+  SET_ORIGIN_DRIFT_ADOPTION = 4;
+  SET_ORIGIN_TEARDOWN = 5;
+  SET_ORIGIN_LEGACY_FOLD = 6;
+  SET_ORIGIN_PREVIEW = 7;
+  SET_ORIGIN_CONFIG = 8;
+  SET_ORIGIN_TOPOLOGY = 9;
+  SET_ORIGIN_FAILOVER = 10;
+  SET_ORIGIN_POSTURE_REMEDIATION = 11;
+  SET_ORIGIN_DEPARTURE = 12;
+}
+
+message SetRecord {
+  string schema_version = 1;
+  string set_id = 2;
+  string tenant = 3;
+  string environment = 4;
+  string camp_id = 5;
+  string freight_id = 6;
+  string plan_hash = 7;
+  string content_hash = 8;
+  string predecessor_set_id = 9;
+  string gate_decision_id = 10;
+  SetOrigin origin = 11;
+  // Content-addressed blob of the canonical, secret-free ResolvedDeploymentSet.
+  string resolved_set_digest = 12;
+  uint64 resolved_set_bytes = 13;
+  string created_at = 14;
+}
+
+enum ChangeKind {
+  CHANGE_KIND_UNSPECIFIED = 0;
+  CHANGE_KIND_ADD = 1;
+  CHANGE_KIND_UPDATE = 2;
+  CHANGE_KIND_REMOVE = 3;
+}
+
+message ResourceChange {
+  string resource = 1;
+  ChangeKind kind = 2;
+  string provider = 3;
+  string product_id = 4;
+  string before_hash = 5;
+  string after_hash = 6;
+}
+
+message DeltaRecord {
+  string schema_version = 1;
+  string delta_id = 2;
+  string camp_id = 3;
+  string base_set_id = 4;
+  string freight_id = 5;
+  repeated ResourceChange changes = 6;
+  repeated ResourceChange infrastructure_diff = 7;
+  string opened_by = 8;
+  bool proposal = 9;
+  string opened_at = 10;
+  // promote | rollback | drift-remediate | up | down | preview | config |
+  // topology | failover | depart | posture-remediate
+  string intent = 11;
+}
+
+message DeltaDecisionRecord {
+  string delta_id = 1;
+  string set_id = 2;
+  string gate_decision_id = 3;
+  repeated ReasonRecord reasons = 4;
+  string decided_at = 5;
+}
+
+// ── Promotion ───────────────────────────────────────────────────────────────
+
+message ObligationRef {
+  string id = 1;
+  string kind = 2;
+  bool satisfied = 3;
+  string deadline = 4;
+}
+
+enum RolloutStrategy {
+  ROLLOUT_STRATEGY_UNSPECIFIED = 0;
+  ROLLOUT_STRATEGY_ALL_AT_ONCE = 1;
+  ROLLOUT_STRATEGY_CANARY = 2;
+  ROLLOUT_STRATEGY_BLUE_GREEN = 3;
+  ROLLOUT_STRATEGY_EXPERIMENT = 4;
+}
+
+enum PromotionState {
+  PROMOTION_STATE_UNSPECIFIED = 0;
+  PROMOTION_STATE_QUEUED = 1;
+  PROMOTION_STATE_RESOLVING = 2;
+  PROMOTION_STATE_AWAITING_APPROVAL = 3;
+  PROMOTION_STATE_AWAITING_WINDOW = 4;
+  PROMOTION_STATE_APPLYING = 5;
+  PROMOTION_STATE_ROLLING_OUT = 6;
+  PROMOTION_STATE_VERIFYING = 7;
+  PROMOTION_STATE_PROMOTED = 8;
+  PROMOTION_STATE_ROLLED_BACK = 9;
+  PROMOTION_STATE_REJECTED = 10;
+  PROMOTION_STATE_FAILED = 11;
+  PROMOTION_STATE_SUPERSEDED = 12;
+}
+
+message PromotionRecord {
+  string schema_version = 1;
+  string promotion_id = 2;
+  string freight_id = 3;
+  string source_camp_id = 4;
+  repeated string target_camp_ids = 5;
+  string pipeline = 6;
+  string node = 7;
+  PromotionState state = 8;
+  string gate_decision_id = 9;
+  repeated ObligationRef obligations = 10;
+  string requested_by = 11;
+  string requested_at = 12;
+  repeated ReasonRecord reasons = 13;
+  RolloutStrategy strategy = 14;
+  bool proposal = 15;
+  string idempotency_key = 16;
+  string fanout_id = 17;
+  FreightSubject subject = 18;
+}
+
+message PreviewEnvironmentRecord {
+  string camp_id = 1;
+  string source_camp_id = 2;
+  string freight_id = 3;
+  uint64 ttl_ms = 4;
+  string expires_at = 5;
+  string created_by = 6;
+  SourceRef source = 7;
+  string pipeline = 8;
+  string node = 9;
+}
+
+// ── Verification ────────────────────────────────────────────────────────────
+
+enum HealthSourceKind {
+  HEALTH_SOURCE_KIND_UNSPECIFIED = 0;
+  HEALTH_SOURCE_KIND_PROMETHEUS = 1;
+  HEALTH_SOURCE_KIND_HOBO_METERING = 2;
+  HEALTH_SOURCE_KIND_HTTP_JSON = 3;
+  HEALTH_SOURCE_KIND_DATADOG = 4;
+  HEALTH_SOURCE_KIND_NEW_RELIC = 5;
+  HEALTH_SOURCE_KIND_CLOUDWATCH = 6;
+  HEALTH_SOURCE_KIND_HOBO_POSTURE = 7;
+}
+
+enum Cohort {
+  COHORT_UNSPECIFIED = 0;
+  COHORT_CANARY = 1;
+  COHORT_BASELINE = 2;
+  COHORT_ALL = 3;
+}
+
+message HealthQueryRecord {
+  string name = 1;
+  HealthSourceKind source = 2;
+  string endpoint_ref = 3;
+  string query = 4;
+  string unit = 5;
+  string credential_ref = 6;
+  // Label/tag/attribute/dimension that distinguishes canary from baseline.
+  string cohort_label = 7;
+}
+
+enum Comparator {
+  COMPARATOR_UNSPECIFIED = 0;
+  COMPARATOR_LT = 1;
+  COMPARATOR_LTE = 2;
+  COMPARATOR_GT = 3;
+  COMPARATOR_GTE = 4;
+}
+
+enum Aggregation {
+  AGGREGATION_UNSPECIFIED = 0;
+  AGGREGATION_MEAN = 1;
+  AGGREGATION_P50 = 2;
+  AGGREGATION_P95 = 3;
+  AGGREGATION_P99 = 4;
+  AGGREGATION_MAX = 5;
+  AGGREGATION_SUM = 6;
+}
+
+message ThresholdCheckRecord {
+  HealthQueryRecord query = 1;
+  Aggregation aggregation = 2;
+  Comparator comparator = 3;
+  double value = 4;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_HIGHER_IS_WORSE = 1;
+  DIRECTION_LOWER_IS_WORSE = 2;
+}
+
+enum Sensitivity {
+  SENSITIVITY_UNSPECIFIED = 0;
+  SENSITIVITY_LOW = 1;
+  SENSITIVITY_MEDIUM = 2;
+  SENSITIVITY_HIGH = 3;
+}
+
+message ComparisonCheckRecord {
+  HealthQueryRecord query = 1;
+  Direction direction = 2;
+  Sensitivity sensitivity = 3;
+  uint32 min_samples = 4;
+}
+
+message ProbeCheckRecord {
+  string name = 1;
+  string url_ref = 2;
+  uint32 expect_status = 3;
+  uint64 interval_ms = 4;
+  double min_success_ratio = 5;
+}
+
+message SuiteCheckRecord {
+  string suite = 1;
+}
+
+message VerificationSpecRecord {
+  uint64 window_ms = 1;
+  uint32 required_observations = 2;
+  uint64 progress_deadline_ms = 3;
+  bool fail_on_no_data = 4;
+  double max_error_budget_burn = 5;
+  repeated ThresholdCheckRecord thresholds = 6;
+  repeated ComparisonCheckRecord comparisons = 7;
+  repeated ProbeCheckRecord probes = 8;
+  repeated SuiteCheckRecord suites = 9;
+}
+
+enum VerificationVerdict {
+  VERIFICATION_VERDICT_UNSPECIFIED = 0;
+  VERIFICATION_VERDICT_PASS = 1;
+  VERIFICATION_VERDICT_FAIL = 2;
+  VERIFICATION_VERDICT_INCONCLUSIVE = 3;
+}
+
+message CheckOutcomeRecord {
+  string check = 1;
+  VerificationVerdict verdict = 2;
+  double statistic = 3;
+  double p_value = 4;
+  uint32 samples_canary = 5;
+  uint32 samples_baseline = 6;
+  ReasonRecord reason = 7;
+}
+
+message VerificationResultRecord {
+  string verification_id = 1;
+  string freight_id = 2;
+  string camp_id = 3;
+  VerificationVerdict verdict = 4;
+  repeated CheckOutcomeRecord checks = 5;
+  string started_at = 6;
+  string finished_at = 7;
+  repeated ReasonRecord reasons = 8;
+}
+
+message EvidenceObservationRecord {
+  string camp_id = 1;
+  string signal = 2;
+  bool healthy = 3;
+  double value = 4;
+  string observed_at = 5;
+  string source = 6;
+  Cohort cohort = 7;
+}
+
+// ── Rollout ─────────────────────────────────────────────────────────────────
+
+message RolloutLoweringRecord {
+  string camp_id = 1;
+  RolloutStrategy strategy = 2;
+  string offering_id = 3;
+  repeated string fallback_from = 4;
+  ReasonRecord refusal = 5;
+}
+
+message RolloutPlanRecord {
+  string rollout_id = 1;
+  string promotion_id = 2;
+  RolloutStrategy strategy = 3;
+  repeated uint32 stage_percents = 4;
+  repeated string target_camp_ids = 5;
+  repeated RolloutLoweringRecord lowerings = 6;
+  VerificationSpecRecord verification = 7;
+  string experiment_id = 8;
+}
+
+// ── Reconciliation ──────────────────────────────────────────────────────────
+
+enum ReconcilerMode {
+  RECONCILER_MODE_UNSPECIFIED = 0;
+  RECONCILER_MODE_CONDUCTOR = 1;
+  RECONCILER_MODE_AGENT = 2;
+  RECONCILER_MODE_PUBLISHER = 3;
+}
+
+message ReconcilerRecord {
+  string reconciler_id = 1;
+  ReconcilerMode mode = 2;
+  repeated string camp_ids = 3;
+  // RFC 7638 JWK thumbprint bound into the SVID cnf.jkt.
+  string key_thumbprint = 4;
+  string enrolled_by = 5;
+  string enrolled_at = 6;
+  string revoked_at = 7;
+  EnrollmentState enrollment = 8;
+  // Camp-set scope of the bootstrap token.
+  string bootstrap_scope = 9;
+  string key_approved_by = 10;
+  string accepted_by = 11;
+  // Rail auto-accept scope that replaced both grants, if any.
+  string auto_accepted_by_scope = 12;
+}
+
+enum ReconcileStatus {
+  RECONCILE_STATUS_UNSPECIFIED = 0;
+  RECONCILE_STATUS_CONVERGING = 1;
+  RECONCILE_STATUS_CONVERGED = 2;
+  RECONCILE_STATUS_BLOCKED = 3;
+  RECONCILE_STATUS_DRIFTED = 4;
+  // OBSERVE_ONLY Camps: read and reported, never applied.
+  RECONCILE_STATUS_OBSERVED = 5;
+}
+
+message ResourceObservation {
+  string resource = 1;
+  string physical_id = 2;
+  string outputs_hash = 3;
+  bool healthy = 4;
+  string drift_kind = 5;
+  string kind = 6;
+  string classification = 7;
+  // Only declared observe_fields; secret-free; <= 16 KiB per resource.
+  map<string, string> attributes = 8;
+  // Fields owned on the target side and excluded from drift (D22).
+  repeated string retained = 9;
+}
+
+message ReconcileObservationRecord {
+  string camp_id = 1;
+  string set_id = 2;
+  string reconciler_id = 3;
+  // Decimal FenceToken.
+  string fence_token = 4;
+  ReconcileStatus status = 5;
+  repeated ResourceObservation resources = 6;
+  repeated ReasonRecord reasons = 7;
+  string observed_at = 8;
+  repeated CampClaimRecord claims = 9;
+  // Declared handover outputs (D23), secret-free.
+  map<string, string> handover = 10;
+}
+
+message DeliveryFeedFrame {
+  // Decimal EventPosition.
+  string position = 1;
+  SetRecord set = 2;
+  // Inline canonical resolved set when <= 256 KiB; otherwise empty.
+  string resolved_set_json = 3;
+  // Attribute paths the Camp's posture packs need (D25).
+  repeated string observe_fields = 4;
+  CampManagement management = 5;
+  PolicyBindingRecord policy = 6;
+}
+
+// ── Pipeline graph ──────────────────────────────────────────────────────────
+
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_ONE_OF = 1;
+  AVAILABILITY_ALL = 2;
+  AVAILABILITY_QUORUM = 3;
+}
+
+enum AutoPromotion {
+  AUTO_PROMOTION_UNSPECIFIED = 0;
+  AUTO_PROMOTION_DISABLED = 1;
+  AUTO_PROMOTION_NEWEST = 2;
+  AUTO_PROMOTION_MATCH_UPSTREAM = 3;
+  // Late entrants converge to the node's current qualified Freight (D21).
+  AUTO_PROMOTION_MATCH_NODE = 4;
+}
+
+enum HookKind {
+  HOOK_KIND_UNSPECIFIED = 0;
+  HOOK_KIND_RUNBOOK = 1;
+  HOOK_KIND_NOTIFY = 2;
+  HOOK_KIND_SUITE = 3;
+}
+
+enum HookPoint {
+  HOOK_POINT_UNSPECIFIED = 0;
+  HOOK_POINT_BEFORE_APPLY = 1;
+  HOOK_POINT_AFTER_CONVERGED = 2;
+  HOOK_POINT_AFTER_QUALIFIED = 3;
+  HOOK_POINT_ON_FAILURE = 4;
+}
+
+message HookRecord {
+  HookKind kind = 1;
+  HookPoint point = 2;
+  string ref = 3;
+}
+
+message PipelineNodeRecord {
+  string name = 1;
+  repeated string camp_ids = 2;
+  repeated string from_sources = 3;
+  repeated string from_nodes = 4;
+  Availability availability = 5;
+  uint64 required_soak_ms = 6;
+  AutoPromotion auto_promotion = 7;
+  RolloutStrategy strategy = 8;
+  VerificationSpecRecord verification = 9;
+  repeated string windows = 10;
+  repeated HookRecord hooks = 11;
+  bool approval_required = 12;
+  uint64 preview_ttl_ms = 13;
+  repeated uint32 stage_percents = 14;
+  // Exactly one of camp_ids or placement (D21).
+  string placement = 15;
+  FanoutRecord fanout = 16;
+  QuorumRecord quorum = 17;
+  DepartureAction departure = 18;
+  FailoverPolicyRecord failover = 19;
+  // RAIL pipelines only (D24).
+  PolicyMode policy_mode = 20;
+}
+
+message PipelineRecord {
+  string schema_version = 1;
+  string name = 2;
+  string bindle = 3;
+  repeated PipelineNodeRecord nodes = 4;
+  string defined_by = 5;
+  // For RAIL, `bindle` holds the Rail id.
+  FreightSubject subject = 6;
+}
+
+message FreightAvailabilityRecord {
+  string pipeline = 1;
+  string node = 2;
+  string freight_id = 3;
+  // Upstream node names, source names, or "approval".
+  repeated string via = 4;
+  string available_at = 5;
+}
+
+// ── Change windows ──────────────────────────────────────────────────────────
+
+enum WindowKind {
+  WINDOW_KIND_UNSPECIFIED = 0;
+  WINDOW_KIND_ALLOW = 1;
+  WINDOW_KIND_FREEZE = 2;
+}
+
+message ChangeWindowRecord {
+  string name = 1;
+  WindowKind kind = 2;
+  SelectorRecord selector = 3;
+  // RFC 5545 RRULE subset; empty means a single occurrence [starts_at, ends_at).
+  string rrule = 4;
+  uint64 duration_ms = 5;
+  // IANA time zone, e.g. America/Chicago.
+  string timezone = 6;
+  string starts_at = 7;
+  string ends_at = 8;
+  bool rollback_allowed = 9;
+  string defined_by = 10;
+}
+
+message WindowOverrideRecord {
+  string window = 1;
+  repeated string camp_ids = 2;
+  string reason = 3;
+  string decision_id = 4;
+  string granted_by = 5;
+  string expires_at = 6;
+}
+
+// ── Inventory (D19) ─────────────────────────────────────────────────────────
+
+enum CampManagement {
+  CAMP_MANAGEMENT_UNSPECIFIED = 0;
+  CAMP_MANAGEMENT_MANAGED = 1;
+  CAMP_MANAGEMENT_OBSERVE_ONLY = 2;
+}
+
+enum CampConditionType {
+  CAMP_CONDITION_TYPE_UNSPECIFIED = 0;
+  CAMP_CONDITION_TYPE_READY = 1;
+  CAMP_CONDITION_TYPE_REACHABLE = 2;
+  CAMP_CONDITION_TYPE_LEASED = 3;
+  CAMP_CONDITION_TYPE_CREDENTIAL_VALID = 4;
+  CAMP_CONDITION_TYPE_CLAIMS_CONSISTENT = 5;
+  CAMP_CONDITION_TYPE_POSTURE_COMPLIANT = 6;
+}
+
+enum ConditionStatus {
+  CONDITION_STATUS_UNSPECIFIED = 0;
+  CONDITION_STATUS_TRUE = 1;
+  CONDITION_STATUS_FALSE = 2;
+  CONDITION_STATUS_UNKNOWN = 3;
+}
+
+enum SignalSource {
+  SIGNAL_SOURCE_UNSPECIFIED = 0;
+  SIGNAL_SOURCE_STATION = 1;
+  SIGNAL_SOURCE_RECONCILER = 2;
+  SIGNAL_SOURCE_HEALTH_SOURCE = 3;
+  SIGNAL_SOURCE_OPERATOR = 4;
+}
+
+message CampConditionRecord {
+  CampConditionType type = 1;
+  ConditionStatus status = 2;
+  SignalSource source = 3;
+  string reason = 4;
+  string since = 5;
+}
+
+// Observed, never trusted to grant (I19).
+message CampClaimRecord {
+  string name = 1;
+  string value = 2;
+  string reported_by = 3;
+  string observed_at = 4;
+}
+
+enum TaintEffect {
+  TAINT_EFFECT_UNSPECIFIED = 0;
+  TAINT_EFFECT_NO_PLACE = 1;
+  TAINT_EFFECT_NO_RUN = 2;
+}
+
+message TaintRecord {
+  string key = 1;
+  string value = 2;
+  TaintEffect effect = 3;
+  SignalSource source = 4;
+  string reason = 5;
+  string added_by = 6;
+  string added_at = 7;
+}
+
+message TolerationRecord {
+  string key = 1;
+  // Empty value tolerates any value of the key.
+  string value = 2;
+  TaintEffect effect = 3;
+  // 0 tolerates indefinitely.
+  uint64 toleration_ms = 4;
+}
+
+message CampStatusRecord {
+  string camp_id = 1;
+  CampManagement management = 2;
+  repeated CampConditionRecord conditions = 3;
+  repeated CampClaimRecord claims = 4;
+  repeated TaintRecord taints = 5;
+  string updated_at = 6;
+}
+
+message CampSetRecord {
+  string name = 1;
+  SelectorRecord selector = 2;
+  repeated string camp_ids = 3;
+  string defined_by = 4;
+}
+
+enum EnrollmentState {
+  ENROLLMENT_STATE_UNSPECIFIED = 0;
+  ENROLLMENT_STATE_PENDING = 1;
+  ENROLLMENT_STATE_ACCEPTED = 2;
+  ENROLLMENT_STATE_REVOKED = 3;
+}
+
+// ── Placement and fan-out (D20, D21) ────────────────────────────────────────
+
+message SpreadConstraintRecord {
+  // yard | provider | region | jurisdiction | label:<key>
+  string topology_key = 1;
+  uint32 min_groups = 2;
+  uint32 max_groups = 3;
+}
+
+message ScoreWeightRecord {
+  string score = 1;
+  double weight = 2;
+}
+
+message ScoreSnapshotRecord {
+  string score = 1;
+  map<string, double> by_camp = 2;
+  string valid_until = 3;
+  string reported_by = 4;
+  string reported_at = 5;
+  string digest = 6;
+}
+
+message PlacementGroupRecord {
+  string name = 1;
+  SelectorRecord selector = 2;
+  uint32 max_size = 3;
+  uint32 max_size_percent = 4;
+}
+
+message PlacementRecord {
+  string schema_version = 1;
+  string name = 2;
+  repeated string camp_sets = 3;
+  SelectorRecord predicate = 4;
+  repeated string required_claims = 5;
+  // 0 selects every eligible Camp.
+  uint32 count = 6;
+  repeated SpreadConstraintRecord spread = 7;
+  repeated ScoreWeightRecord scores = 8;
+  repeated TolerationRecord tolerations = 9;
+  repeated PlacementGroupRecord groups = 10;
+  uint32 default_group_size = 11;
+  uint32 default_group_size_percent = 12;
+  string defined_by = 13;
+}
+
+message PlacementCandidateRecord {
+  string camp_id = 1;
+  bool selected = 2;
+  repeated string exclusion_codes = 3;
+  double score = 4;
+}
+
+message PlacementGroupDecisionRecord {
+  string name = 1;
+  uint32 index = 2;
+  repeated string camp_ids = 3;
+  bool mandatory = 4;
+}
+
+message PlacementDecisionRecord {
+  string decision_id = 1;
+  string placement = 2;
+  string pipeline = 3;
+  string node = 4;
+  string inventory_digest = 5;
+  repeated string score_snapshot_digests = 6;
+  repeated PlacementGroupDecisionRecord groups = 7;
+  repeated PlacementCandidateRecord candidates = 8;
+  repeated ReasonRecord reasons = 9;
+  string decided_at = 10;
+}
+
+enum FanoutStrategy {
+  FANOUT_STRATEGY_UNSPECIFIED = 0;
+  FANOUT_STRATEGY_ALL = 1;
+  FANOUT_STRATEGY_PROGRESSIVE = 2;
+  FANOUT_STRATEGY_PROGRESSIVE_PER_GROUP = 3;
+}
+
+message FanoutRecord {
+  FanoutStrategy strategy = 1;
+  uint32 max_concurrency = 2;
+  uint32 max_concurrency_percent = 3;
+  uint64 min_success_ms = 4;
+  uint64 progress_deadline_ms = 5;
+  uint32 max_failures = 6;
+  uint32 max_failures_percent = 7;
+  repeated string mandatory_groups = 8;
+  bool rollback_on_halt = 9;
+}
+
+message QuorumRecord {
+  uint32 min_qualified = 1;
+  uint32 min_qualified_percent = 2;
+}
+
+enum DepartureAction {
+  DEPARTURE_ACTION_UNSPECIFIED = 0;
+  DEPARTURE_ACTION_DELETE = 1;
+  DEPARTURE_ACTION_ORPHAN = 2;
+  DEPARTURE_ACTION_ORPHAN_DATA = 3;
+}
+
+enum FanoutState {
+  FANOUT_STATE_UNSPECIFIED = 0;
+  FANOUT_STATE_RUNNING = 1;
+  FANOUT_STATE_HALTED = 2;
+  FANOUT_STATE_COMPLETED = 3;
+  FANOUT_STATE_ROLLED_BACK = 4;
+  FANOUT_STATE_SUPERSEDED = 5;
+}
+
+message FanoutStatusRecord {
+  string fanout_id = 1;
+  string pipeline = 2;
+  string node = 3;
+  string freight_id = 4;
+  string decision_id = 5;
+  FanoutState state = 6;
+  uint32 group_index = 7;
+  repeated string pending = 8;
+  repeated string in_flight = 9;
+  repeated string succeeded = 10;
+  repeated string failed = 11;
+  repeated string deferred = 12;
+  repeated ReasonRecord reasons = 13;
+  string updated_at = 14;
+}
+
+// ── Failover and rebalance (D23) ────────────────────────────────────────────
+
+enum PurgeMode {
+  PURGE_MODE_UNSPECIFIED = 0;
+  PURGE_MODE_GRACEFUL = 1;
+  PURGE_MODE_NEVER = 2;
+  PURGE_MODE_IMMEDIATE = 3;
+}
+
+message FailoverPolicyRecord {
+  PurgeMode purge = 1;
+  uint64 grace_ms = 2;
+  // Declared, secret-free outputs of the source passed to the replacement.
+  repeated string handover_outputs = 3;
+}
+
+enum FailoverState {
+  FAILOVER_STATE_UNSPECIFIED = 0;
+  FAILOVER_STATE_PROPOSED = 1;
+  FAILOVER_STATE_REPLACING = 2;
+  FAILOVER_STATE_VERIFYING = 3;
+  FAILOVER_STATE_SHIFTING = 4;
+  FAILOVER_STATE_PURGING = 5;
+  FAILOVER_STATE_COMPLETED = 6;
+  FAILOVER_STATE_REFUSED = 7;
+  FAILOVER_STATE_ABANDONED = 8;
+}
+
+message FailoverRecord {
+  string failover_id = 1;
+  string pipeline = 2;
+  string node = 3;
+  string from_camp_id = 4;
+  string to_camp_id = 5;
+  string freight_id = 6;
+  FailoverState state = 7;
+  PurgeMode purge = 8;
+  string trigger_taint = 9;
+  string decision_id = 10;
+  string promotion_id = 11;
+  map<string, string> handover = 12;
+  repeated ReasonRecord reasons = 13;
+  string updated_at = 14;
+}
+
+message RebalanceMoveRecord {
+  string from_camp_id = 1;
+  string to_camp_id = 2;
+}
+
+message RebalanceRecord {
+  string rebalance_id = 1;
+  string pipeline = 2;
+  string node = 3;
+  string decision_id = 4;
+  repeated RebalanceMoveRecord moves = 5;
+  string reason = 6;
+  string requested_by = 7;
+  string requested_at = 8;
+}
+
+// ── Policy delivery and posture (D24, D25) ─────────────────────────────────
+
+enum FreightSubject {
+  FREIGHT_SUBJECT_UNSPECIFIED = 0;
+  FREIGHT_SUBJECT_BINDLE = 1;
+  FREIGHT_SUBJECT_RAIL = 2;
+}
+
+enum PolicyMode {
+  POLICY_MODE_UNSPECIFIED = 0;
+  POLICY_MODE_INFORM = 1;
+  POLICY_MODE_ENFORCE = 2;
+}
+
+message PolicyBindingRecord {
+  string camp_id = 1;
+  string enforced_rail_digest = 2;
+  string candidate_rail_digest = 3;
+  string freight_id = 4;
+  string promotion_id = 5;
+  string bound_at = 6;
+}
+
+message ShadowDecisionRecord {
+  string camp_id = 1;
+  string delta_id = 2;
+  string enforced_rail_digest = 3;
+  string candidate_rail_digest = 4;
+  string enforced_effect = 5;
+  string candidate_effect = 6;
+  bool diverged = 7;
+  string decided_at = 8;
+}
+
+enum RemediationMode {
+  REMEDIATION_MODE_UNSPECIFIED = 0;
+  REMEDIATION_MODE_INFORM = 1;
+  REMEDIATION_MODE_INFORM_ONLY = 2;
+  REMEDIATION_MODE_ENFORCE = 3;
+}
+
+enum ComplianceState {
+  COMPLIANCE_STATE_UNSPECIFIED = 0;
+  COMPLIANCE_STATE_COMPLIANT = 1;
+  COMPLIANCE_STATE_NONCOMPLIANT = 2;
+  COMPLIANCE_STATE_UNKNOWN = 3;
+  COMPLIANCE_STATE_NOT_APPLICABLE = 4;
+}
+
+message PostureFindingRecord {
+  string rule = 1;
+  string resource = 2;
+  ComplianceState state = 3;
+  string severity = 4;
+  repeated string controls = 5;
+  // Secret-free summary of the observed value.
+  string observed = 6;
+  // Set when enforcement is impossible without fighting a Set (I22).
+  bool ownership_conflict = 7;
+}
+
+message ComplianceRecord {
+  string camp_id = 1;
+  string rail_digest = 2;
+  bool candidate = 3;
+  ComplianceState state = 4;
+  repeated PostureFindingRecord findings = 5;
+  // Decimal EventPosition of the status observation evaluated.
+  string observation_position = 6;
+  string evaluated_at = 7;
+}
+
+message PostureRemediationRecord {
+  string camp_id = 1;
+  string rule = 2;
+  string resource = 3;
+  RemediationMode mode = 4;
+  string delta_id = 5;
+  repeated ReasonRecord reasons = 6;
+}
+
+message RailPostureBindingRecord {
+  string pack = 1;
+  RemediationMode remediation = 2;
+  uint64 compliant_interval_ms = 3;
+  uint64 noncompliant_interval_ms = 4;
+}
+
+message RailFailoverRecord {
+  bool automatic = 1;
+  uint32 max_concurrent = 2;
+  bool allow_immediate_purge = 3;
+  uint32 required_signals = 4;
+}
+
+message RailEnrollmentRecord {
+  bool separate_approvers = 1;
+  repeated string auto_accept_scopes = 2;
+}
+
+// The Rail's opaque `delivery` object (D20), parsed by @hobo/cd.
+message RailDeliveryRecord {
+  string rail_digest = 1;
+  repeated string camp_sets = 2;
+  repeated RailPostureBindingRecord posture = 3;
+  RailFailoverRecord failover = 4;
+  RailEnrollmentRecord enrollment = 5;
+  uint32 max_fanout_camps = 6;
+}

@@ -1,0 +1,120 @@
+{
+	"consumer": {
+		"name": "HoboCdGitopsPublisher"
+	},
+	"provider": {
+		"name": "ArgoCdApplicationsApi"
+	},
+	"interactions": [
+		{
+			"description": "the Application has synced the published revision and is healthy",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/applications/hobo-prod",
+				"query": "appNamespace=argocd",
+				"headers": {
+					"authorization": "Bearer argo-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"metadata": {
+						"name": "hobo-prod",
+						"namespace": "argocd"
+					},
+					"status": {
+						"sync": {
+							"status": "Synced",
+							"revision": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5"
+						},
+						"health": {
+							"status": "Healthy"
+						},
+						"operationState": {
+							"phase": "Succeeded",
+							"syncResult": {
+								"revision": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5"
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "the Application is still on an older revision",
+			"providerState": "converging",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/applications/hobo-prod",
+				"query": "appNamespace=argocd"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": {
+						"sync": {
+							"status": "OutOfSync",
+							"revision": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+						},
+						"health": {
+							"status": "Healthy"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "the sync of the published revision failed",
+			"providerState": "blocked",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/applications/hobo-prod",
+				"query": "appNamespace=argocd"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": {
+						"sync": {
+							"status": "OutOfSync",
+							"revision": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+						},
+						"health": {
+							"status": "Degraded"
+						},
+						"operationState": {
+							"phase": "Failed",
+							"message": "one or more objects failed to apply",
+							"syncResult": {
+								"revision": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5"
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "the root app has not created the Application yet",
+			"providerState": "missing",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/applications/hobo-prod",
+				"query": "appNamespace=argocd"
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"error": "applications.argoproj.io \"hobo-prod\" not found",
+					"code": 5
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

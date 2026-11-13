@@ -1,0 +1,238 @@
+{
+	"consumer": { "name": "@hobo/hobo" },
+	"provider": { "name": "@hobo/control-api" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"description": "CD read API mounted under /v1/cd/ (plan 0024 WP12). Verified against the real handler in packages/cd/test/service/pact.test.ts, and every response body is also checked against GET /v1/cd/openapi.json. Bodies are subset matches; record payloads are canonical protobuf JSON of hobo.cd.v1.",
+		"openapi": "/v1/cd/openapi.json"
+	},
+	"interactions": [
+		{
+			"description": "GET pipeline graph",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/pipelines/shop" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": {
+					"ok": true,
+					"value": {
+						"pipeline": { "name": "shop", "bindle": "shop" },
+						"nodes": [
+							{
+								"name": "staging",
+								"edges": { "fromSources": ["shop-oci"], "fromNodes": [] },
+								"camps": [{ "campId": "stg-1", "setId": "set-1" }]
+							},
+							{
+								"name": "prod",
+								"placement": "eu-fleet",
+								"qualified": { "campIds": ["eu-1"] },
+								"camps": [{ "campId": "eu-1", "setId": "set-2" }]
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "GET unknown pipeline",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/pipelines/missing" },
+			"response": {
+				"status": 404,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": false, "reasons": [{ "code": "not-found", "subject": "missing" }] }
+			}
+		},
+		{
+			"description": "GET Freight timeline by alias",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/freight/brave-otter" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": {
+					"ok": true,
+					"value": {
+						"freight": { "alias": "brave-otter" },
+						"camps": ["eu-1", "eu-2", "stg-1"],
+						"timeline": [{ "kind": "recorded" }, { "kind": "promotion", "campId": "stg-1" }]
+					}
+				}
+			}
+		},
+		{
+			"description": "GET promotions for a Camp",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/promotions", "query": { "camp": "eu-1" } },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "promotions": [{ "promotionId": "prm-2", "state": "PROMOTION_STATE_VERIFYING" }] } }
+			}
+		},
+		{
+			"description": "GET promotions with an invalid limit",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/promotions", "query": { "limit": "5000" } },
+			"response": {
+				"status": 400,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": false, "reasons": [{ "code": "query-invalid", "subject": "limit" }] }
+			}
+		},
+		{
+			"description": "GET Camp status",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/camps/stg-1/status" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": {
+					"ok": true,
+					"value": {
+						"campId": "stg-1",
+						"current": { "setId": "set-1" },
+						"observation": { "status": "RECONCILE_STATUS_CONVERGED" }
+					}
+				}
+			}
+		},
+		{
+			"description": "GET Camps filtered by set and taint",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/camps", "query": { "set": "eu", "taint": "NO_PLACE" } },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "camps": [{ "topology": { "campId": "eu-2" } }] } }
+			}
+		},
+		{
+			"description": "GET Camps filtered by condition",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/camps", "query": { "condition": "READY=false" } },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "camps": [{ "topology": { "campId": "eu-2" } }] } }
+			}
+		},
+		{
+			"description": "GET Camp inventory",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/camps/eu-2/inventory" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": {
+					"ok": true,
+					"value": {
+						"campId": "eu-2",
+						"topology": { "regions": ["eu-west-1"] },
+						"status": { "taints": [{ "effect": "TAINT_EFFECT_NO_PLACE" }] }
+					}
+				}
+			}
+		},
+		{
+			"description": "GET placement decision",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/placements/eu-fleet/decisions/pd-1" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "decision": { "decisionId": "pd-1", "placement": "eu-fleet" } } }
+			}
+		},
+		{
+			"description": "GET fan-out",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/fanouts/fan-1" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "fanout": { "fanoutId": "fan-1", "state": "FANOUT_STATE_RUNNING", "deferred": ["eu-2"] } } }
+			}
+		},
+		{
+			"description": "GET failovers by state",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/failovers", "query": { "state": "PROPOSED" } },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "failovers": [{ "failoverId": "fo-1", "state": "FAILOVER_STATE_PROPOSED" }] } }
+			}
+		},
+		{
+			"description": "GET compliance for a Camp and Rail",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": {
+				"method": "GET",
+				"path": "/v1/cd/compliance",
+				"query": { "camp": "eu-1", "rail": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+			},
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "compliance": [{ "campId": "eu-1", "candidate": true, "state": "COMPLIANCE_STATE_COMPLIANT" }] } }
+			}
+		},
+		{
+			"description": "GET readiness before the service starts",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "GET", "path": "/v1/cd/ready" },
+			"response": {
+				"status": 503,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": false, "reasons": [{ "code": "not-ready" }] }
+			}
+		},
+		{
+			"description": "GET readiness of a started service",
+			"providerState": "the CD service is started",
+			"request": { "method": "GET", "path": "/v1/cd/ready" },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": true, "value": { "ok": true } }
+			}
+		},
+		{
+			"description": "POST to a read route",
+			"providerState": "pipeline shop with a list node and a placed node",
+			"request": { "method": "POST", "path": "/v1/cd/camps" },
+			"response": {
+				"status": 405,
+				"headers": { "content-type": "application/json; charset=utf-8", "allow": "GET" },
+				"body": { "ok": false, "reasons": [{ "code": "method-not-allowed" }] }
+			}
+		},
+		{
+			"description": "GET stream resuming after Last-Event-ID",
+			"providerState": "journal holds CD facts at positions 1-6",
+			"request": { "method": "GET", "path": "/v1/cd/stream", "headers": { "last-event-id": "4" } },
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "text/event-stream; charset=utf-8" },
+				"sse": [
+					{ "id": "5", "event": "failover.Proposed", "data": { "streamId": "cd-failover-fo-1" } },
+					{ "id": "6", "event": "compliance.Observed", "data": { "streamId": "cd-compliance-eu-1" } },
+					{ "event": "end", "data": { "reason": "long-poll" } }
+				]
+			}
+		},
+		{
+			"description": "GET stream with a malformed Last-Event-ID",
+			"providerState": "journal holds CD facts at positions 1-6",
+			"request": { "method": "GET", "path": "/v1/cd/stream", "headers": { "last-event-id": "x" } },
+			"response": {
+				"status": 400,
+				"headers": { "content-type": "application/json; charset=utf-8" },
+				"body": { "ok": false, "reasons": [{ "code": "last-event-id-invalid" }] }
+			}
+		}
+	]
+}

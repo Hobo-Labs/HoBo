@@ -50,10 +50,14 @@ and in `references/stacked-prs.md`. Official docs: https://gh.io/stacks
 
 ## Durable state (read this FIRST, every session)
 
-State lives in `docs/plans/<initiative-slug>/sdlc-state.md` (phase, decisions, dispatched issues →
+State lives in `.sdlc/<initiative-slug>/sdlc-state.md` (phase, decisions, dispatched issues →
 worktree/branch/PR/**stack layer**). On entry: read it; if it exists, **reconcile before anything
 else** (see `references/dispatch.md` § Resume). Write it at every phase boundary. Dispatch outcomes
-append to `docs/plans/dispatch-log.md`. Record stack id / branch chain / PR numbers in the state file.
+append to `.sdlc/dispatch-log.md`. Record stack id / branch chain / PR numbers in the state file.
+
+`.sdlc/` is ignored by git. This state is working material and is never committed (AGENTS.md,
+"Plans are not committed"); the issue tracker and the pull requests are the record that outlives
+a machine.
 
 For design-relevant layers, also record `designerConsensus.required`, `reviewId`,
 `cycle`, `result`, `consensusEntryId`, `proposalDigest`, `reviewedHeadSha`, and

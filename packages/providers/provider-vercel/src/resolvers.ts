@@ -59,6 +59,10 @@ import {
 	type TransportResponse,
 } from "@hobo/core";
 import {
+	instrumentResolvers,
+	type ResolverTelemetryOptions,
+} from "./delivery-coverage.js";
+import {
 	createVercelStaticDeploymentResolver,
 	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 } from "./deployment-resolver.js";
@@ -1176,10 +1180,18 @@ export function vercelResolvers(
 	]);
 }
 
-/** The same resolvers behind core's registry lookup. */
-export function vercelResolverRegistry(options: VercelResolverOptions): {
+/**
+ * The same resolvers behind core's registry lookup. With `metrics` and an
+ * injected `nowMs`, every call emits `hobo.cd.resolver.operations` and
+ * `hobo.cd.resolver.duration` (plan 0024 WP14).
+ */
+export function vercelResolverRegistry(
+	options: VercelResolverOptions & ResolverTelemetryOptions,
+): {
 	get(productId: string): ResourceResolver | undefined;
 	list(): readonly ResourceResolver[];
 } {
-	return createResolverRegistry(vercelResolvers(options));
+	return createResolverRegistry(
+		instrumentResolvers(vercelResolvers(options), options),
+	);
 }

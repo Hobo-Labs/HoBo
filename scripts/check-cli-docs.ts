@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 const SPEC_PATH = path.join("docs", "design", "cli-spec.md");
 const DEFAULT_SCAN_PATHS = [
 	path.join("docs", "design"),
-	path.join("docs", "implementation-plan.md"),
 	"README.md",
 	"CLAUDE.md",
 ];

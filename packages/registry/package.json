@@ -24,7 +24,7 @@
 		"@hobo/cloud": "workspace:*",
 		"@hobo/identity": "workspace:*"
 	},
-	"description": "HoBo Registry catalog service (docs/plans/0017 F24): wraps the @hobo/cloud registry catalog engine and adds bundle-manifest ingest (registry.BundleImported facts), fail-closed signature/provenance verification over the @hobo/identity issuer surface, and a deterministic in-memory bundle search index.",
+	"description": "HoBo Registry catalog service: wraps the @hobo/cloud registry catalog engine and adds bundle-manifest ingest (registry.BundleImported facts), fail-closed signature/provenance verification over the @hobo/identity issuer surface, and a deterministic in-memory bundle search index.",
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*"
 	}

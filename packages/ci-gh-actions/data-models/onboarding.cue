@@ -190,15 +190,17 @@ import "list"
 	classes: {pr: #RoutingSlipClass, fork: #RoutingSlipClass, trunk: #RoutingSlipClass}
 	relay: #RoutingSlipRelay
 }
-// Committed routing policy: `runnerRouting` in `.hobo/ci.json` (plan 0026,
-// 3.4). Its values are the code's defaults, so moving them changed nothing.
+// Committed routing policy: `runnerRouting` in `.hobo/ci.json` (ADR-0181,
+// "Routing list"). Its values are the code's defaults, so moving them changed nothing.
 #RunnerRoutingPool: {labels: [#RunnerRoutingLabel, ...#RunnerRoutingLabel] & list.MaxItems(16), runnerNamePrefix: string & =~"^.{1,128}$", maxRunners: int & >=0 & <=10000}
 #RunnerRouting: {
 	pin: "auto" | "fleet" | "local" | "github"
 	queue: {maxWaitSeconds: int & >=1 & <=3600, maxQueued: int & >=1 & <=100}
-	labels: {fleet: #RunnerRoutingLabel, trunk: #RunnerRoutingLabel, local: #RunnerRoutingLabel, github: #RunnerRoutingLabel}
+	labels: {fleet: #RunnerRoutingLabel, trunk: #RunnerRoutingLabel, local: #RunnerRoutingLabel, github: #RunnerRoutingLabel, box: #RunnerRoutingLabel}
 	localRunner:              bool
+	boxRunner:                bool
 	mainWorkspaceParallelCap: int & >=1 & <=8
+	mainGate: {reuseMergeQueue: bool}
 	verdict: {minFreeRunners: int & >=1 & <=9999, enterMs: int & >=10000 & <=3600000, exitMs: int & >=10000 & <=3600000, stallMs: int & >=60000 & <=3600000}
 	box: {
 		slots:                     int & >=1 & <=8

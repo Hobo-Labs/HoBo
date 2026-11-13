@@ -1,6 +1,6 @@
 import { type BundleManifest, bundleManifestDigest } from "./ingest.js";
 
-// Search/index (docs/plans/0017 F24): a small pure module — an in-memory
+// Search/index: a small pure module — an in-memory
 // index over ingested bundles queryable by name, capability, and provider
 // with deterministic ranking (fixed scores, codepoint tie-breaks). No IO,
 // no clock, no randomness: equal inputs always rank equally.

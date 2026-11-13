@@ -13,7 +13,7 @@
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
  *
- * The relay decides first, when it has said anything (plan 0026, ADR-0181):
+ * The relay decides first, when it has said anything (ADR-0181):
  * the box relay writes a routing slip to `refs/hobo/routing-slip`, and this
  * script reads it once (`GET /git/ref`, then `GET /git/commits`, three
  * seconds together, with the job's own token). A slip that has not expired,
@@ -62,6 +62,7 @@ import {
 	type RunnerRouting,
 	readRoutingSlip,
 	readRunnerRouting,
+	routingLabels,
 } from "./runner-routing.mts";
 
 /** `auto` falls back; the others pin one tier, `fleet` being the behaviour before routing. */
@@ -679,9 +680,12 @@ export const DEFAULT_RUNNER_LABELS: RunnerRouting["labels"] = {
 	trunk: "hobo-trunk",
 	local: LOCAL_HOST_RUNNER_LABEL,
 	github: DEFAULT_GITHUB_MACHINE_TYPE,
+	box: "hobo-box",
 };
 /** No local box is enrolled unless committed configuration says so. */
 export const DEFAULT_LOCAL_RUNNER = false;
+/** Pull requests' deps-image job keeps the fleet label unless committed configuration says so. */
+export const DEFAULT_BOX_RUNNER = false;
 
 /** What the route job takes from `runnerRouting`, or the code's defaults. */
 export type RouteSettings = Readonly<{
@@ -689,6 +693,12 @@ export type RouteSettings = Readonly<{
 	limits: RouteLimits;
 	labels: RunnerRouting["labels"];
 	localRunner: boolean;
+	/**
+	 * The label pull requests' deps-image job asks for (`box_runner`):
+	 * `labels.box` when `runnerRouting.boxRunner` is on, else empty, and the
+	 * job keeps the fleet label.
+	 */
+	boxRunner: string;
 	/** `false` when `.hobo/ci.json` held no valid `runnerRouting`. */
 	committed: boolean;
 }>;
@@ -702,6 +712,7 @@ export function routeSettings(
 			limits: policy.queue,
 			labels: policy.labels,
 			localRunner: policy.localRunner,
+			boxRunner: policy.boxRunner ? policy.labels.box : "",
 			committed: true,
 		};
 	return {
@@ -712,6 +723,7 @@ export function routeSettings(
 		},
 		labels: DEFAULT_RUNNER_LABELS,
 		localRunner: DEFAULT_LOCAL_RUNNER,
+		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
 		committed: false,
 	};
 }
@@ -830,7 +842,7 @@ export async function askSlip(input: {
 	const judged = judgeRoutingSlip(read.text, {
 		repository: input.repository,
 		nowMs: input.nowMs(),
-		labels: new Set(Object.values(input.labels)),
+		labels: routingLabels({ labels: input.labels }),
 	});
 	return judged.ok
 		? { ok: true, decision: slipDecision(judged.slip, input.routeClass) }
@@ -893,6 +905,9 @@ export async function main(
 		),
 	);
 	const { labels, limits } = settings;
+	// From committed policy alone, so it is written whatever the route turns out to be.
+	if (env.GITHUB_OUTPUT)
+		appendFileSync(env.GITHUB_OUTPUT, `box_runner=${settings.boxRunner}\n`);
 	const event = env.GITHUB_EVENT_NAME ?? "";
 	const fleetLabel = fleetLabelFor(event, labels);
 	// A dispatch's own choice wins; otherwise the committed pin.

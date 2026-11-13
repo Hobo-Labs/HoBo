@@ -62,6 +62,35 @@ package secret_store_claim
 	// Optional: a separate project for deploy-time credentials, empty when the
 	// default path needs none (ADR-0179 amendment "Secretless first").
 	deployProjectId?: #Id & !=projectId
+	// The exact subject the deploy identity trusts: GitHub's prefix for the
+	// repository, then the branch. Never a glob (a recycled name would match).
+	deployOidcSubject?: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"
+}
+
+// `repo:<owner>/<repo>` (legacy) or `repo:<owner>@<ownerId>/<repo>@<repoId>`
+// (immutable): no wildcard.
+#GithubSubjectPrefix: string & =~"^repo:[A-Za-z0-9-]{1,39}(@[0-9]{1,20})?/[A-Za-z0-9._-]{1,100}(@[0-9]{1,20})?" & !~"[*?]"
+
+// GitHub's REST answers, the fields read (JSON names as GitHub sends them).
+#GithubRepository: {
+	id:   int & >0
+	name: string & =~"^[A-Za-z0-9._-]{1,100}$"
+	owner: #GithubRepositoryOwner
+	...
+}
+
+#GithubRepositoryOwner: {
+	login: string & =~"^[A-Za-z0-9-]{1,39}$"
+	id:    int & >0
+	...
+}
+
+#GithubOidcSubjectTemplate: {
+	use_default: bool
+	include_claim_keys?: [...string & =~"^[A-Za-z0-9_]{1,64}$"]
+	use_immutable_subject?: bool
+	sub_claim_prefix?:      #GithubSubjectPrefix & =~"^[^:]+:[^:]+$"
+	...
 }
 
 // The flat fixture corpus holds bindings.

@@ -273,7 +273,7 @@ it("is switched off by the kill switch: reads block nothing, reports answer 503"
 });
 
 // Route jobs no longer ask this route: they read the box relay's routing slip
-// (ADR-0181, plan 0026). Until the hosted verdict routes are removed, the
+// (ADR-0181). Until the hosted verdict routes are removed, the
 // relay still answers a plain read with what a signed reporter reported.
 it("answers a plain read with what a signed reporter reported, end to end", async () => {
 	const nowMs = Date.parse(NOW);

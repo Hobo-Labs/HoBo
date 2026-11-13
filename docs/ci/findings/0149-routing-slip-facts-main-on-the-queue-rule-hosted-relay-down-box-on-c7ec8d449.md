@@ -1,13 +1,13 @@
 ---
 type: CI Performance Finding
 title: "Finding 149: routing slip facts, main on the queue rule, hosted relay down, box on c7ec8d449"
-description: "Main runs go to GitHub-hosted because the queue rule refuses the fleet, not because of the hosted relay; the hosted relay answers 503; the box daemon runs c7ec8d449 and takes new code only after one restart; the five routing repository variables are empty. The facts plan 0026 (routing slips, ADR-0181) starts from."
+description: "Main runs go to GitHub-hosted because the queue rule refuses the fleet, not because of the hosted relay; the hosted relay answers 503; the box daemon runs c7ec8d449 and takes new code only after one restart; the five routing repository variables are empty. The facts ADR-0181 (routing slips, ADR-0181) starts from."
 tags: [hobo, ci, routing, relay, fleet, route-runner, routing-slip]
 ---
 
 # Finding 149: routing slip facts, main on the queue rule, hosted relay down, box on c7ec8d449
 
-The facts [plan 0026](../../plans/0026-relay-routing-slips.md) and
+The facts
 [ADR-0181](../../design/adr/routing-slips.md#adr-0181) start from, each
 checked on 2026-11-13. They are stated once, here.
 
@@ -37,7 +37,7 @@ checked on 2026-11-13. They are stated once, here.
    checkout, has no update path, its jobs run in containers with no host
    access, and its start log `hobo_ci_isolated_worker_started` carries no
    commit. The fleet verdict reporter postdates `c7ec8d449`, so the box does
-   not run it. After one restart onto code with plan 0026's self-update
+   not run it. After one restart onto code with ADR-0181's self-update
    (3.8), the box keeps itself current.
 4. **The five routing repository variables are empty in production.**
    `HOBO_CI_ROUTE`, `HOBO_CI_LOCAL_RUNNER`, `HOBO_CI_ROUTE_MAX_WAIT_SECONDS`,

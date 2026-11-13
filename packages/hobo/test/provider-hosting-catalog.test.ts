@@ -6,10 +6,14 @@ import { join } from "node:path";
 import {
 	createBoundedFetchTransport,
 	createClaimableOperationKeyDeriver,
+	createResolverRegistry,
 	type HttpTransport,
 	parseResolveOutcome,
 	parseResolveRequest,
+	RESOLVER_CONTRACT,
 	type ResolveOutcome,
+	ResolverError,
+	type ResourceResolver,
 } from "@hobo/core";
 import { AWS_LAMBDA_PRODUCT_ID } from "@hobo/provider-aws";
 import { AZURE_CONTAINER_APPS_PRODUCT_ID } from "@hobo/provider-azure";
@@ -19,9 +23,14 @@ import {
 	DIGITALOCEAN_SPACES_PRODUCT_ID,
 } from "@hobo/provider-digitalocean";
 import { GCP_CLOUD_RUN_PRODUCT_ID } from "@hobo/provider-gcp";
+import { GITHUB_PAGES_SITE_PRODUCT_ID } from "@hobo/provider-github";
 import { HETZNER_CLOUD_SERVER_PRODUCT_ID } from "@hobo/provider-hetzner";
 import { HOSTINGER_VPS_PRODUCT_ID } from "@hobo/provider-hostinger";
 import { KUBERNETES_DEPLOYMENT_PRODUCT_ID } from "@hobo/provider-kubernetes";
+import {
+	LAKEBED_CAPSULE_PRODUCT_ID,
+	type LakebedDeployHost,
+} from "@hobo/provider-lakebed";
 import {
 	createNeonClaimableDatabaseDriver,
 	createNeonClient,
@@ -29,6 +38,8 @@ import {
 	createInMemoryIdempotencyStore as neonStore,
 } from "@hobo/provider-neon";
 import { NETLIFY_STATIC_DEPLOY_PRODUCT_ID } from "@hobo/provider-netlify";
+import { NPM_PACKAGE_VERSION_PRODUCT_ID } from "@hobo/provider-npm";
+import { OCI_REGISTRY_IMAGE_PRODUCT_ID } from "@hobo/provider-oci-registry";
 import {
 	createNodeProcessRunner,
 	createPrismaClaimableDatabaseDriver,
@@ -828,5 +839,360 @@ describe("production native provider catalog", () => {
 				},
 			]),
 		).toThrow("duplicate");
+	});
+});
+
+/** A minimal resolver for registration tests; it never touches a network. */
+function stubResolver(providerId: string, productId: string): ResourceResolver {
+	return {
+		providerId,
+		productId,
+		async reconcile(request) {
+			return {
+				contract: RESOLVER_CONTRACT,
+				action: "noop",
+				physicalId: request.ref.logicalId,
+				outputs: { desired: request.desired },
+				diagnostics: [],
+			};
+		},
+		async delete() {},
+		async read() {
+			return undefined;
+		},
+	};
+}
+
+async function browserWasmRegistry(): Promise<
+	(resolveCredential: (ref: string) => Promise<string>) => {
+		get(productId: string): ResourceResolver | undefined;
+		list(): readonly ResourceResolver[];
+	}
+> {
+	// @hobo/hobo does not depend on browser-wasm; the composition root binds it.
+	// SAFETY: the provider entry point exports browserWasmResolverRegistry.
+	const module = (await import(
+		new URL(
+			"../../providers/provider-browser-wasm/src/index.ts",
+			import.meta.url,
+		).href
+	)) as {
+		browserWasmResolverRegistry: () => {
+			get(productId: string): ResourceResolver | undefined;
+			list(): readonly ResourceResolver[];
+		};
+	};
+	return () => module.browserWasmResolverRegistry();
+}
+
+describe("plan 0024 WP14: registration of the remaining hosting providers", () => {
+	const digest = `sha256:${"c".repeat(64)}`;
+	const lakebedHost: LakebedDeployHost = {
+		deploy: refuseIO,
+		describe: refuseIO,
+		retire: refuseIO,
+	};
+
+	it("registers Lakebed natively under both aliases with the capsule resolver", async () => {
+		const fx = fixture();
+		const catalog = createProductionHostingProviderCatalog([
+			{
+				providerId: "lakebed",
+				lease: await fx.lease("lakebed", "lakebed://accounts/account", "tok"),
+				options: { host: lakebedHost },
+				observeOperatingLiability: refuseIO,
+			},
+		]);
+		const binding = catalog.get("lakebed");
+		expect(binding).toBe(catalog.get("@hobo/provider-lakebed"));
+		expect(binding?.registry.get(LAKEBED_CAPSULE_PRODUCT_ID)).toBeDefined();
+		expect(
+			binding?.prepareDesired?.({
+				productId: LAKEBED_CAPSULE_PRODUCT_ID,
+				source: false,
+				logicalId: "shop",
+				artifactId: digest,
+				contentDigest: digest,
+				operationId: "op",
+				ownershipRef: "tenant/deploy/shop",
+				parameters: { deploymentId: "shop-prod" },
+			}),
+		).toEqual({ deploymentId: "shop-prod", artifactDigest: digest });
+		expect(() =>
+			binding?.prepareDesired?.({
+				productId: LAKEBED_CAPSULE_PRODUCT_ID,
+				source: false,
+				logicalId: "shop",
+				artifactId: digest,
+				operationId: "op",
+				ownershipRef: "tenant/deploy/shop",
+				parameters: {},
+			}),
+		).toThrow("content digest");
+	});
+
+	it("registers the CD realizers (npm, OCI registry, GitHub Pages) under both aliases, pinning the approved content digest", async () => {
+		const fx = fixture();
+		const artifacts = { get: refuseIO };
+		const catalog = createProductionHostingProviderCatalog([
+			{
+				providerId: "npm",
+				lease: await fx.lease(
+					"npm",
+					`npm://registries/${encodeURIComponent("https://registry.npmjs.org")}`,
+					"npm-token",
+				),
+				options: { registry: { kind: "npmjs" }, auth: "token", artifacts },
+				observeOperatingLiability: refuseIO,
+			},
+			{
+				providerId: "oci-registry",
+				lease: await fx.lease(
+					"oci-registry",
+					"oci-registry://registries/ghcr.io",
+					{
+						kind: "bearer" as const,
+						token: "oci-token",
+					},
+				),
+				options: { registry: { host: "ghcr.io" } },
+				observeOperatingLiability: refuseIO,
+			},
+			{
+				providerId: "github",
+				lease: await fx.lease(
+					"github",
+					`github://apis/${encodeURIComponent("https://api.github.com")}/accounts/${account}`,
+					"gh-token",
+				),
+				options: { api: { kind: "github.com" }, artifacts },
+				observeOperatingLiability: refuseIO,
+			},
+		]);
+		for (const [id, product, field] of [
+			["npm", NPM_PACKAGE_VERSION_PRODUCT_ID, "artifactDigest"],
+			["oci-registry", OCI_REGISTRY_IMAGE_PRODUCT_ID, "digest"],
+			["github", GITHUB_PAGES_SITE_PRODUCT_ID, "artifactDigest"],
+		] as const) {
+			const binding = catalog.get(id);
+			expect(binding).toBe(catalog.get(`@hobo/provider-${id}`));
+			expect(binding?.registry.get(product)).toBeDefined();
+			const input = {
+				productId: product,
+				source: false,
+				logicalId: "pkg",
+				artifactId: digest,
+				operationId: "op",
+				ownershipRef: "tenant/deploy/pkg",
+				parameters: {},
+			};
+			expect(
+				binding?.prepareDesired?.({ ...input, contentDigest: digest }),
+			).toEqual({ [field]: digest });
+			expect(() => binding?.prepareDesired?.(input)).toThrow("content digest");
+		}
+	});
+
+	it("refuses a CD realizer whose credential scope names another registry, or an unenrolled OCI source credential", async () => {
+		const fx = fixture();
+		const artifacts = { get: refuseIO };
+		const elsewhere = await fx.lease("npm", "npm://registries/elsewhere", "t");
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "npm",
+					lease: elsewhere,
+					options: { registry: { kind: "npmjs" }, auth: "token", artifacts },
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow("native scope");
+		const oci = await fx.lease(
+			"oci-registry",
+			"oci-registry://registries/ghcr.io",
+			{
+				kind: "anonymous" as const,
+			},
+		);
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "oci-registry",
+					lease: oci,
+					options: {
+						registry: { host: "ghcr.io" },
+						sourceRegistries: [
+							{ host: "docker.io", credentialRef: "vault://other/docker" },
+						],
+					},
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow("source pull credential");
+	});
+
+	it("binds an external provider's registry under the pinned credential (browser-wasm)", async () => {
+		const fx = fixture();
+		const lease = await fx.lease(
+			"browser-wasm",
+			"browser-wasm://accounts/account",
+			"unused-material",
+		);
+		const catalog = createProductionHostingProviderCatalog([
+			{
+				providerId: "browser-wasm",
+				lease,
+				createRegistry: await browserWasmRegistry(),
+				observeOperatingLiability: refuseIO,
+			},
+		]);
+		const binding = catalog.get("@hobo/provider-browser-wasm");
+		expect(binding).toBe(catalog.get("browser-wasm"));
+		expect(binding?.registry.get("browser-wasm.guest/v1")).toBeDefined();
+	});
+
+	it("hands an external factory only the lease's own credential (WP13 names: convex, flux, webernetes)", async () => {
+		const fx = fixture();
+		for (const [providerId, productId] of [
+			["convex", "convex.cloud-deployment/v1"],
+			["flux", "flux.app/v1"],
+			["webernetes", "webernetes.pod/v1"],
+		] as const) {
+			let pinned: ((ref: string) => Promise<string>) | undefined;
+			const lease = await fx.lease(
+				providerId,
+				`${providerId}://accounts/account`,
+				`${providerId}-material`,
+			);
+			const catalog = createProductionHostingProviderCatalog([
+				{
+					providerId,
+					lease,
+					createRegistry(resolveCredential) {
+						pinned = resolveCredential;
+						return createResolverRegistry([
+							stubResolver(providerId, productId),
+						]);
+					},
+					observeOperatingLiability: refuseIO,
+				},
+			]);
+			expect(
+				catalog.get(`@hobo/provider-${providerId}`)?.registry.get(productId),
+			).toBeDefined();
+			await expect(pinned?.(lease.credentialRef)).resolves.toBe(
+				`${providerId}-material`,
+			);
+			await expect(pinned?.("vault://elsewhere")).rejects.toThrow(
+				"unverified credential",
+			);
+		}
+	});
+
+	it("refuses an external registry that returns a product outside its declared coverage", async () => {
+		const fx = fixture();
+		const lease = await fx.lease("convex", "convex://accounts/account", "m");
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "convex",
+					lease,
+					createRegistry: () =>
+						createResolverRegistry([
+							stubResolver("convex", "convex.functions/v1"),
+						]),
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow(ResolverError);
+	});
+
+	it("extraResolvers: a component joins its provider's registry and keeps its own desired grammar", async () => {
+		const fx = fixture();
+		const extra = stubResolver("lakebed", "lakebed.component-cron/v1");
+		const catalog = createProductionHostingProviderCatalog(
+			[
+				{
+					providerId: "lakebed",
+					lease: await fx.lease("lakebed", "lakebed://accounts/account", "t"),
+					options: { host: lakebedHost },
+					observeOperatingLiability: refuseIO,
+				},
+			],
+			{ extraResolvers: [extra] },
+		);
+		const binding = catalog.get("lakebed");
+		expect(binding?.registry.get("lakebed.component-cron/v1")).toBeDefined();
+		expect(binding?.registry.get(LAKEBED_CAPSULE_PRODUCT_ID)).toBeDefined();
+		expect(
+			binding?.prepareDesired?.({
+				productId: "lakebed.component-cron/v1",
+				source: false,
+				logicalId: "cron",
+				artifactId: digest,
+				operationId: "op",
+				ownershipRef: "tenant/deploy/cron",
+				parameters: { schedule: "@hourly" },
+			}),
+		).toEqual({ schedule: "@hourly" });
+	});
+
+	it("extraResolvers: an out-of-tree platform registers through a component entry", async () => {
+		const fx = fixture();
+		const catalog = createProductionHostingProviderCatalog(
+			[
+				{
+					providerId: "component",
+					componentProviderId: "sftp",
+					lease: await fx.lease("sftp", "sftp://accounts/account", "key"),
+					observeOperatingLiability: refuseIO,
+				},
+			],
+			{ extraResolvers: [stubResolver("sftp", "sftp.static-site/v1")] },
+		);
+		expect(
+			catalog.get("sftp")?.registry.get("sftp.static-site/v1"),
+		).toBeDefined();
+	});
+
+	it("extraResolvers: shadowing, orphans, empty component entries and native-id components are refused", async () => {
+		const fx = fixture();
+		const lakebed = {
+			providerId: "lakebed" as const,
+			lease: await fx.lease("lakebed", "lakebed://accounts/account", "t"),
+			options: { host: lakebedHost },
+			observeOperatingLiability: refuseIO,
+		};
+		expect(() =>
+			createProductionHostingProviderCatalog([lakebed], {
+				extraResolvers: [stubResolver("lakebed", LAKEBED_CAPSULE_PRODUCT_ID)],
+			}),
+		).toThrow("shadow");
+		expect(() =>
+			createProductionHostingProviderCatalog([lakebed], {
+				extraResolvers: [stubResolver("nowhere", "nowhere.thing/v1")],
+			}),
+		).toThrow("no verified catalog entry");
+		const sftpLease = await fx.lease("sftp", "sftp://accounts/account", "k");
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "component",
+					componentProviderId: "sftp",
+					lease: sftpLease,
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow("no component resolvers");
+		expect(() =>
+			createProductionHostingProviderCatalog([
+				{
+					providerId: "component",
+					componentProviderId: "vercel",
+					lease: sftpLease,
+					observeOperatingLiability: refuseIO,
+				},
+			]),
+		).toThrow("shadows a native catalog provider");
 	});
 });

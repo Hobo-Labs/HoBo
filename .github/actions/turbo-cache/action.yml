@@ -1,6 +1,10 @@
 name: HoBo Turbo cache
 description: >-
-  Vercel Turbo remote cache when configured. On the box worker the local cache
+  Turbo remote cache when configured: Vercel's, or the fleet's own cache server
+  when committed `turboCache.api` in .hobo/ci.json names one
+  (packages/ci-gh-actions/deploy/turbo-cache), which every box, ARC pod and
+  GitHub-hosted runner then shares. The address is read from the checkout
+  here, never passed in as a repository variable. On the box worker the local cache
   is a host directory every same-repository job shares (inside the bind-mounted
   pnpm store, HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request
   already ran on the same tree. A pull request from another repository (a fork)
@@ -65,12 +69,29 @@ runs:
           fi
         fi
         if [ -n "${INPUT_TOKEN}" ] && [ -n "${INPUT_TEAM}" ]; then
+          # The cache server, if any, is committed configuration: turboCache.api
+          # in .hobo/ci.json. No file, no Node or no such key is Vercel's cache.
+          api=""
+          if [ -f .hobo/ci.json ] && command -v node >/dev/null 2>&1; then
+            api="$(node -e 'const fs = require("node:fs"); let api = ""; try { const value = JSON.parse(fs.readFileSync(".hobo/ci.json", "utf8"))?.turboCache?.api; if (typeof value === "string") api = value; } catch {} process.stdout.write(api);')"
+          fi
+          # A cache server's address is a URL and nothing else: it is written to
+          # GITHUB_ENV, where a stray newline would set another variable.
+          if [ -n "${api}" ] && ! [[ "${api}" =~ ^https://[A-Za-z0-9._:/-]+$ ]]; then
+            echo "::error::turboCache.api in .hobo/ci.json must be an https URL: the token is sent to it" >&2
+            exit 1
+          fi
           {
             echo "TURBO_TOKEN=${INPUT_TOKEN}"
             echo "TURBO_TEAM=${INPUT_TEAM}"
+            if [ -n "${api}" ]; then echo "TURBO_API=${api}"; fi
             echo "TURBO_CACHE=local:rw,${REMOTE_MODE}"
           } >> "$GITHUB_ENV"
-          echo "Turbo remote cache enabled (${REMOTE_MODE})"
+          if [ -n "${api}" ]; then
+            echo "Turbo remote cache enabled (${REMOTE_MODE}, self-hosted)"
+          else
+            echo "Turbo remote cache enabled (${REMOTE_MODE})"
+          fi
         else
           echo "Turbo remote cache not configured"
         fi

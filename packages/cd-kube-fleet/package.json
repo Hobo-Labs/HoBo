@@ -1,0 +1,31 @@
+{
+	"name": "@hobo/cd-kube-fleet",
+	"version": "0.0.1",
+	"description": "HoBo CD Kubernetes fleet adapter: imports SIG-Multicluster ClusterProfiles as OBSERVE_ONLY Camps and realizes Sets through an Open Cluster Management hub (one ManifestWork per Camp) or a Karmada control plane (a PropagationPolicy pinned to one member) over HttpTransport, as transports only, never schedulers",
+	"license": "MIT",
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+		"lint": "biome check .",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/core": "workspace:*"
+	}
+}

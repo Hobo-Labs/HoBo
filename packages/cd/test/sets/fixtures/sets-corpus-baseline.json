@@ -1,0 +1,29 @@
+{
+  "schema": "hobo.golden-replay-corpus-baseline/v1",
+  "entries": [
+    {
+      "key": "set.Created@v1#set-Created-v1",
+      "bodyDigest": "sha256:b726b2f9493bb6b2c36b6edad0f5d53fe744b135038026c86a297de9469b55d0"
+    },
+    {
+      "key": "set.Created@v1#set-Created-v1-1",
+      "bodyDigest": "sha256:94481da7f2c6d2c5c69b28aaccb41de9835ddd8b1d6e65a85ade537305997960"
+    },
+    {
+      "key": "delta.Opened@v1#delta-Opened-v1",
+      "bodyDigest": "sha256:469800f93a396a7420d07d946a7e1b59c0f79c41fc19e3bafacb2cdb9ad11959"
+    },
+    {
+      "key": "delta.Updated@v1#delta-Updated-v1",
+      "bodyDigest": "sha256:d3edd04b547b37ac1a006e2feba06526ecb208d7f221ea8d943a9f2ca4217441"
+    },
+    {
+      "key": "delta.Applied@v1#delta-Applied-v1",
+      "bodyDigest": "sha256:b847a989238553124b72790bc4e3c1ea9b793c83690cef2642d49c8e001eb57c"
+    },
+    {
+      "key": "delta.Rejected@v1#delta-Rejected-v1",
+      "bodyDigest": "sha256:37d907843be6e6cd970eda9e369d96f641b85ef234cea938804f86daa8b85b5b"
+    }
+  ]
+}

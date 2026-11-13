@@ -156,6 +156,18 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
+	// HoBo.CD (ADR-0178) is the delivery sibling of HoBo.CI and
+	// sits at layer 3 beside it. `@hobo/cd` composes Matching, Gatekeeper,
+	// the Harness and SVIDs through their existing packages; the three
+	// adapters around it (`cd-gitops` publisher, `cd-kube-fleet` transport and
+	// inventory, `resolver-components` WASM host) depend on `@hobo/cd` and
+	// nothing depends on them from the core. Registered with the contract
+	// commit so the run that introduces each directory is also the run that
+	// enforces its edges.
+	"packages/cd",
+	"packages/cd-gitops",
+	"packages/cd-kube-fleet",
+	"packages/resolver-components",
 	// The secret store a deploy chooses and hands over by claim (ADR-0179
 	// amendment): a layer-3 package that composes the Infisical adapter, the
 	// Cloudflare provider and the auth.md and claim planes; `hobo` uses it.
@@ -217,6 +229,9 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/schema-tools",
 	"packages/stations",
 	"packages/storage-sqlite",
+	// The multi-node EventStore on PostgreSQL 16+ (ADR-0178 D16): the same
+	// port as `storage-sqlite`, a different engine.
+	"packages/storage-postgres",
 	"packages/trails",
 	"packages/agent-skills",
 	"packages/evals",
@@ -376,9 +391,13 @@ export function databaseDriverOf(specifier: string): string | undefined {
  * Workspace packages that are one engine's storage without being part of the
  * `data-<engine>` family. `@hobo/storage-sqlite` is the durable EventStore's
  * SQLite binding (ADR-0135): reaching it from an orchestrator is reaching
- * SQLite, whichever package the import names.
+ * SQLite, whichever package the import names. `@hobo/storage-postgres` is the
+ * same port on PostgreSQL (ADR-0178 D16), so it is one engine's storage too.
  */
-const ENGINE_SPECIFIC_STORAGE_PACKAGES = new Set(["packages/storage-sqlite"]);
+const ENGINE_SPECIFIC_STORAGE_PACKAGES = new Set([
+	"packages/storage-sqlite",
+	"packages/storage-postgres",
+]);
 
 function isEngineSpecificStorage(target: string): boolean {
 	return (
@@ -434,7 +453,7 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// types into @hobo/core; recorded here rather than left invisible, and
 	// scoped to these EXACT edges so no new one is admitted.
 	"packages/packs/pack-framework->packages/cloud",
-	// The policy-engine gate-plane adapters (docs/plans/0017 F30) lower engine
+	// The policy-engine gate-plane adapters lower engine
 	// verdicts onto @hobo/contracts' shared vocabulary (GatekeeperEffect,
 	// PolicyDecisionRequest). The dependency deliberately points
 	// provider->contracts so @hobo/broker can depend on the adapters without a

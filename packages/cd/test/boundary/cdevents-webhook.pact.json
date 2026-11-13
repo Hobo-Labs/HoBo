@@ -1,0 +1,50 @@
+{
+	"consumer": { "name": "HoboCdBoundary" },
+	"provider": { "name": "CloudEventsWebhookReceiver" },
+	"interactions": [
+		{
+			"description": "A signed CDEvent in CloudEvents binary mode is accepted",
+			"request": {
+				"method": "POST",
+				"path": "/cd",
+				"headers": {
+					"content-type": "application/json",
+					"ce-specversion": "1.0",
+					"ce-type": "dev.cdevents.service.deployed.0.3.0",
+					"ce-source": "/hobo/cd/acme",
+					"ce-subject": "checkout"
+				},
+				"requiredHeaders": ["ce-id", "ce-time", "webhook-id", "webhook-timestamp", "webhook-signature"],
+				"body": {
+					"context": {
+						"specversion": "0.5.1",
+						"type": "dev.cdevents.service.deployed.0.3.0",
+						"source": "/hobo/cd/acme"
+					},
+					"subject": {
+						"id": "checkout",
+						"content": { "environment": { "id": "staging" } }
+					}
+				}
+			},
+			"response": { "status": 202, "headers": {}, "body": "" },
+			"expected": { "outcome": "delivered", "attempts": 1 }
+		},
+		{
+			"description": "A receiver that rejects the signature makes the event dead-letter at once",
+			"request": { "method": "POST", "path": "/cd" },
+			"response": { "status": 401, "headers": {}, "body": "{\"error\":\"invalid signature\"}" },
+			"expected": { "outcome": "dead-lettered", "attempts": 1, "code": "webhook-rejected" }
+		},
+		{
+			"description": "An overloaded receiver is retried after Retry-After and then accepts",
+			"request": { "method": "POST", "path": "/cd" },
+			"responses": [
+				{ "status": 503, "headers": { "retry-after": "2" }, "body": "" },
+				{ "status": 200, "headers": {}, "body": "" }
+			],
+			"expected": { "outcome": "delivered", "attempts": 2 }
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

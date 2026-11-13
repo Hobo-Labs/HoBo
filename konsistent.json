@@ -34,6 +34,19 @@
         "haveType": "directory",
         "haveFiles": ["package.json", "tsconfig.json", "src", "test", "contracts", "data-models"]
       }
+    },
+    {
+      "name": "cd-source-folder-readme",
+      "description": "Every @hobo/cd source folder carries a README.md with a Runbook section (ADR-0178). docs/runbooks/cd/ is assembled from those sections. adapters/ is a flat folder of single-file adapters owned per file and documented in packages/cd/README.md.",
+      "paths": [
+        "packages/cd/src/{name}",
+        "!packages/cd/src/_generated",
+        "!packages/cd/src/adapters"
+      ],
+      "must": {
+        "haveType": "directory",
+        "haveFiles": ["README.md"]
+      }
     }
   ]
 }

@@ -188,12 +188,12 @@ const SHARD_RUNS_ON =
 /**
  * No repository variable reaches a workflow, an action or a template as
  * `vars.HOBO_CI_*`, and no input, output or environment variable carries a
- * routing name (rules R2 of plans 0025 and 0026, plan 0026 section 3.4).
+ * routing name (rule R2 and the routing list of ADR-0181).
  * Routing travels as the relay's routing slip, and routing policy is
  * `runnerRouting` in `.hobo/ci.json`.
  */
 const ROUTING_VARIABLE = /vars\.HOBO_CI_/;
-/** Plan 0026 section 3.4's list, exhaustively, with the retired fleet channels. */
+/** ADR-0181's routing list, exhaustively, with the retired fleet channels. */
 export const ROUTING_NAMES: readonly string[] = [
 	"HOBO_CI_ROUTE",
 	"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
@@ -218,15 +218,17 @@ export const ROUTING_NAMES: readonly string[] = [
 	"HOBO_CI_WORKER_MERGE_GROUP_LEASES",
 	"HOBO_CI_JOB_ADMISSION",
 	"MAIN_WORKSPACE_PARALLEL_CAP",
+	"HOBO_CI_BOX_RUNNER",
+	"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 ];
 const ROUTING_NAME = new RegExp(`\\b(${ROUTING_NAMES.join("|")})\\b`);
 /** Inputs and outputs that once carried those values, or fleet state. */
 const ROUTING_KEY =
-	/^\s*-?\s*(fleet-(state|capacity|routes)|local-runner|trunk-runner|max-wait-seconds|max-queued)[\w-]*\s*:/;
+	/^\s*-?\s*(fleet-(state|capacity|routes)|local-runner|trunk-runner|max-wait-seconds|max-queued|reuse-merge-queue|box-runner)[\w-]*\s*:/;
 /**
  * The one `vars.HOBO_CI_*` a template may hold: onboarding replaces the relay
  * origin placeholder with a literal before the workflow is installed, and it
- * names a relay, not a route (plan 0026 section 3.4).
+ * names a relay, not a route (ADR-0181).
  */
 const TEMPLATE_PLACEHOLDER = "${{ vars.HOBO_CI_RELAY_URL }}";
 
@@ -247,7 +249,7 @@ function lintRouting(
 		const name = ROUTING_NAME.exec(checked)?.[1];
 		if (name)
 			errors.push(
-				`${file}:${index + 1}: ${name} is routing and must not reach a workflow as an input, output or environment variable (plan 0026 section 3.4)`,
+				`${file}:${index + 1}: ${name} is routing and must not reach a workflow as an input, output or environment variable (ADR-0181)`,
 			);
 		if (ROUTING_KEY.test(checked))
 			errors.push(
@@ -272,6 +274,28 @@ function lintTemplates(errors: string[], repoRoot: string): void {
 
 /** The one GitHub-hosted machine type; never `ubuntu-latest`. */
 const HOSTED_RUNS_ON = "ubuntu-24.04";
+
+/**
+ * For the job that builds the deps image in the box's own Docker context: a
+ * pull request's run asks for the box by its own label (`hobo-box`, which the
+ * worker serves and no ARC pod does), trunk events keep the trunk label.
+ * Opt-in by committed policy: the route job outputs `box_runner`
+ * (`runnerRouting.labels.box`) only when `runnerRouting.boxRunner` is true in
+ * `.hobo/ci.json`; otherwise, or when the route job gave no answer, the job
+ * asks for the shared label. No repository variable decides it (ADR-0181).
+ */
+const BOX_OR_TRUNK_RUNS_ON =
+	"${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+const DEPS_IMAGE_BUILD_SCRIPT =
+	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
+
+/** Whether a job's steps (comments aside) run the deps image build. */
+function buildsDepsImage(block: readonly string[]): boolean {
+	return block.some(
+		(line) => !/^\s*#/.test(line) && line.includes(DEPS_IMAGE_BUILD_SCRIPT),
+	);
+}
 
 /**
  * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
@@ -685,6 +709,8 @@ function lintWorkflowYaml(
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
+		const depsImageBuild = buildsDepsImage(block);
+		const boxOrTrunk = runsOn === BOX_OR_TRUNK_RUNS_ON && depsImageBuild;
 		if (
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
@@ -692,6 +718,7 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
+			!boxOrTrunk &&
 			!npmOidcHosted &&
 			!alwaysHosted
 		) {
@@ -699,8 +726,14 @@ function lintWorkflowYaml(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
 			);
 		}
+		// The image has to land in the Docker context job containers start from.
+		if (depsImageBuild && activeCiFiles.has(file) && !boxOrTrunk) {
+			errors.push(
+				`${file}:${start + 1}: box-label-routing: a job that runs deps/build-deps.sh must use the box-or-trunk label expression`,
+			);
+		}
 		if (
-			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON) &&
+			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || boxOrTrunk) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -716,7 +749,8 @@ function lintWorkflowYaml(
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
 			runsOn === ROUTED_RUNS_ON ||
-			runsOn === SHARD_RUNS_ON
+			runsOn === SHARD_RUNS_ON ||
+			boxOrTrunk
 		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -804,7 +838,8 @@ function lintWorkflowYaml(
 		activeCiFiles.has(file) &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
-		!text.includes(ROUTED_RUNS_ON)
+		!text.includes(ROUTED_RUNS_ON) &&
+		!text.includes(BOX_OR_TRUNK_RUNS_ON)
 	) {
 		errors.push(
 			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,
