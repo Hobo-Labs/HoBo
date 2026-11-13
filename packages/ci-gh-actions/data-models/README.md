@@ -32,6 +32,15 @@ key, that a report's trust level is one of three, and that the routing
 snapshot names labels and counts only, never a node. `src/mesh-records.ts` is
 the only place these are parsed and written.
 
+`fleet_verdict.proto` owns the fleet verdict runner routing asks a relay for
+(ADR-0180): `FleetVerdict`, the labels new work should stay off with one of
+two reasons each, and `FleetVerdictReport`, what a relay with a view of the
+fleet sends to set it. `src/fleet-verdict.ts` is the only place they are
+parsed and written. The `fleet-verdict*` fixtures pin that a verdict may
+block nothing, that a report cannot stand longer than 300 seconds, that a
+reason outside the two is refused, and that a capacity figure in a verdict is
+invalid: none leaves the relay.
+
 `relay_cache.proto` owns the records the hosted relay keeps in its cache
 (ADR-0179): the lease record (the `hobo.ci.v1.Lease` as JSON, its job key,
 requeue generation and latest intents), the job record (taken marker, pending
