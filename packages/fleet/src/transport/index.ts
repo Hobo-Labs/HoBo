@@ -1,12 +1,11 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
  * `@hobo/fleet/transport` (L28): session authorisation, AEAD framing,
  * transport selection, the session server and blob fetch (§6.12).
  *
- * Contract commit: every body throws `FleetNotImplemented`; L28 replaces them.
+ * These are the frozen entry points of design §7.3; the modules beside this
+ * file are private to the lane.
  */
 import type { SessionGrant, SignedEnvelope } from "../_generated/fleet_pb.js";
-import { FleetNotImplemented } from "../errors.js";
 import type { MemberId } from "../ids.js";
 import type {
 	Clock,
@@ -20,6 +19,11 @@ import type {
 	Sandbox,
 	Subscription,
 } from "../ports.js";
+import { authorise } from "./authorise.js";
+import { fetchVerified } from "./blob.js";
+import { framedStream } from "./frame.js";
+import { select } from "./select.js";
+import { serve } from "./serve.js";
 
 export function authoriseSession(
 	peer: string,
@@ -30,7 +34,7 @@ export function authoriseSession(
 		nowMs: number;
 	}>,
 ): Promise<Outcome<SessionGrant>> {
-	throw new FleetNotImplemented("authoriseSession");
+	return authorise(peer, grant, context);
 }
 
 /** AEAD frames, counter nonce. */
@@ -38,7 +42,7 @@ export function frameStream(
 	raw: FleetStream,
 	keys: Readonly<{ send: Uint8Array; receive: Uint8Array }>,
 ): FleetStream {
-	throw new FleetNotImplemented("frameStream");
+	return framedStream(raw, keys);
 }
 
 export function selectTransport(
@@ -47,7 +51,7 @@ export function selectTransport(
 	signal: AbortSignal,
 	log: FleetLog,
 ): Promise<Outcome<FleetStream>> {
-	throw new FleetNotImplemented("selectTransport");
+	return select(transports, grant, signal, log);
 }
 
 export function serveSessions(
@@ -61,7 +65,7 @@ export function serveSessions(
 		log: FleetLog;
 	}>,
 ): Subscription {
-	throw new FleetNotImplemented("serveSessions");
+	return serve(deps);
 }
 
 /** Verifies the digest before completing. */
@@ -69,5 +73,5 @@ export function fetchBlob(
 	stream: FleetStream,
 	digest: string,
 ): AsyncIterable<Uint8Array> {
-	throw new FleetNotImplemented("fetchBlob");
+	return fetchVerified(stream, digest);
 }
