@@ -433,8 +433,8 @@ runtime store. The `hobo-deploy` skill walks the owner through the
 dashboard's OIDC trust one step at a time, then records the ids:
 
 ```sh
-hobo ci secret-store connect --cwd packages/ci-vercel \
-  --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
+GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
+  --repo <owner/name> --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
   --deploy-identity-id <hobo-ci-writer> --team team_… \
   [--deploy-project-id <id>] [--site-url https://<self-hosted Infisical>] [--yes]
 hobo ci secret-store verify --cwd packages/ci-vercel --json
@@ -452,8 +452,21 @@ audience `https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
 
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
-project is optional and empty by default) and refuses to replace one
-without `--yes`. `verify` reports `pass`, `fail` or `not-run` by identity
+project is optional and empty by default) and refuses to replace one for
+other ids without `--yes`. Both resolve `hobo-ci-writer`'s GitHub OIDC trust
+from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the repository's
+`sub_claim_prefix` (or the immutable `repo:<owner>@<ownerId>/<repo>@<repoId>`
+form from its ids when the template says `use_immutable_subject`), then
+`:ref:refs/heads/main`, with `repository_id` and `repository_owner_id`
+pinned; when GitHub does not say, they fail closed with
+`HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED` and the `gh api` command to
+check. The binding records the subject (`deployOidcSubject`). Re-running
+`connect` (ids optional once the binding exists) repairs the trust: with the
+owner's own `INFISICAL_TOKEN` for that run it replaces the identity's OIDC
+trust in place (no new identity); otherwise it prints the subject and claims
+to set in the dashboard. A denied `verify` whose token `sub` differs from the
+recorded subject (or is immutable when none was recorded) says so and names
+that repair. `verify` reports `pass`, `fail` or `not-run` by identity
 name: `hobo-ci-writer` inside a GitHub Actions job (GitHub OIDC sign-in, then
 a revoke; role shape not asserted), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
 present (secret names only). The deploy workflow runs it as *Verify the

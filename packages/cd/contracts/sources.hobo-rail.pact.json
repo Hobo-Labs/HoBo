@@ -1,0 +1,64 @@
+{
+	"consumer": {
+		"name": "HoboCdRailSubscriptionDriver"
+	},
+	"provider": {
+		"name": "HoboStationRailJournal"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Message contract for the frozen RailEventReader (D24): {cursor, railId, railDigest, status approved|active|retired, stationId}. Approved digests become Freight with subject RAIL; retired digests are never discovered. Verified by contracts/sources.consumer.test.ts."
+	},
+	"interactions": [
+		{
+			"type": "Asynchronous/Messages",
+			"description": "a Rail version approved",
+			"providerStates": [
+				{
+					"name": "rail rail-prod v1 approved"
+				}
+			],
+			"contents": {
+				"cursor": "1",
+				"railId": "rail-prod",
+				"railDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				"status": "approved",
+				"stationId": "station-eu"
+			}
+		},
+		{
+			"type": "Asynchronous/Messages",
+			"description": "the same Rail version activated",
+			"providerStates": [
+				{
+					"name": "rail rail-prod v1 active"
+				}
+			],
+			"contents": {
+				"cursor": "2",
+				"railId": "rail-prod",
+				"railDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				"status": "active",
+				"stationId": "station-eu"
+			}
+		},
+		{
+			"type": "Asynchronous/Messages",
+			"description": "a Rail version retired",
+			"providerStates": [
+				{
+					"name": "rail rail-prod v0 retired"
+				}
+			],
+			"contents": {
+				"cursor": "3",
+				"railId": "rail-prod",
+				"railDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+				"status": "retired",
+				"stationId": "station-eu"
+			}
+		}
+	]
+}

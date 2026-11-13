@@ -1,0 +1,430 @@
+{
+	"canary-worse": [
+		{
+			"type": "verification.Started",
+			"seq": 1,
+			"data": {
+				"verificationId": "ver-f4c454b693afb303978868a590b96165",
+				"freightId": "sha256:golden",
+				"campId": "camp-golden",
+				"cohortAware": true,
+				"startedAt": "2026-11-12T12:00:00.000Z",
+				"spec": {
+					"windowMs": "600000",
+					"requiredObservations": 3,
+					"progressDeadlineMs": "1800000",
+					"failOnNoData": true,
+					"comparisons": [
+						{
+							"query": {
+								"name": "latency_ms",
+								"source": "HEALTH_SOURCE_KIND_PROMETHEUS",
+								"endpointRef": "https://prometheus.example.com",
+								"query": "sum by (track) (latency_ms)",
+								"cohortLabel": "track"
+							},
+							"direction": "DIRECTION_HIGHER_IS_WORSE",
+							"sensitivity": "SENSITIVITY_MEDIUM",
+							"minSamples": 8
+						}
+					]
+				}
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 2,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 150,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 3,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 151,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 4,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 152,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 5,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 153,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 6,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 154,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 7,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 155,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 8,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 156,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 9,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 157,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_CANARY"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 10,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 100,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 11,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 101,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 12,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 102,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 13,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 103,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 14,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 104,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 15,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 105,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 16,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 106,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 17,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "comparison:latency_ms",
+				"healthy": true,
+				"value": 107,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_BASELINE"
+			}
+		},
+		{
+			"type": "verification.Completed",
+			"seq": 18,
+			"data": {
+				"verificationId": "ver-f4c454b693afb303978868a590b96165",
+				"freightId": "sha256:golden",
+				"campId": "camp-golden",
+				"verdict": "VERIFICATION_VERDICT_FAIL",
+				"checks": [
+					{
+						"check": "comparison:latency_ms",
+						"verdict": "VERIFICATION_VERDICT_FAIL",
+						"statistic": 64,
+						"pValue": 0.0009391056991171907,
+						"samplesCanary": 8,
+						"samplesBaseline": 8,
+						"reason": {
+							"code": "verification-canary-worse",
+							"message": "U=64 p=0.0009391056991171907 < alpha 0.05 (asymptotic)",
+							"remediation": "The canary is significantly worse than the baseline (Mann–Whitney U); roll back and compare the two cohorts.",
+							"subject": "comparison:latency_ms"
+						}
+					}
+				],
+				"startedAt": "2026-11-12T12:00:00.000Z",
+				"finishedAt": "2026-11-12T12:10:00.000Z",
+				"reasons": [
+					{
+						"code": "verification-canary-worse",
+						"message": "U=64 p=0.0009391056991171907 < alpha 0.05 (asymptotic)",
+						"remediation": "The canary is significantly worse than the baseline (Mann–Whitney U); roll back and compare the two cohorts.",
+						"subject": "comparison:latency_ms"
+					}
+				]
+			}
+		}
+	],
+	"no-data": [
+		{
+			"type": "verification.Started",
+			"seq": 1,
+			"data": {
+				"verificationId": "ver-c8157ffa2bf92f80fe790c0e30c8ed94",
+				"freightId": "sha256:golden",
+				"campId": "camp-golden",
+				"cohortAware": false,
+				"startedAt": "2026-11-12T12:00:00.000Z",
+				"spec": {
+					"windowMs": "600000",
+					"requiredObservations": 3,
+					"progressDeadlineMs": "1800000",
+					"failOnNoData": true,
+					"thresholds": [
+						{
+							"query": {
+								"name": "error_rate",
+								"source": "HEALTH_SOURCE_KIND_PROMETHEUS",
+								"endpointRef": "https://prometheus.example.com",
+								"query": "sum by (track) (error_rate)",
+								"unit": "ratio",
+								"cohortLabel": "track"
+							},
+							"aggregation": "AGGREGATION_MEAN",
+							"comparator": "COMPARATOR_LT",
+							"value": 0.05
+						}
+					]
+				}
+			}
+		},
+		{
+			"type": "verification.Completed",
+			"seq": 2,
+			"data": {
+				"verificationId": "ver-c8157ffa2bf92f80fe790c0e30c8ed94",
+				"freightId": "sha256:golden",
+				"campId": "camp-golden",
+				"verdict": "VERIFICATION_VERDICT_FAIL",
+				"checks": [
+					{
+						"check": "threshold:error_rate",
+						"verdict": "VERIFICATION_VERDICT_FAIL",
+						"reason": {
+							"code": "verification-no-data",
+							"message": "no samples for threshold:error_rate in the window",
+							"remediation": "The health source returned no samples for the window. Check the query, the cohort label and that the target emits the metric; absent evidence never passes.",
+							"subject": "threshold:error_rate"
+						}
+					}
+				],
+				"startedAt": "2026-11-12T12:00:00.000Z",
+				"finishedAt": "2026-11-12T12:10:00.000Z",
+				"reasons": [
+					{
+						"code": "verification-no-data",
+						"message": "no samples for threshold:error_rate in the window",
+						"remediation": "The health source returned no samples for the window. Check the query, the cohort label and that the target emits the metric; absent evidence never passes.",
+						"subject": "threshold:error_rate"
+					}
+				]
+			}
+		}
+	],
+	"deadline": [
+		{
+			"type": "verification.Started",
+			"seq": 1,
+			"data": {
+				"verificationId": "ver-c8157ffa2bf92f80fe790c0e30c8ed94",
+				"freightId": "sha256:golden",
+				"campId": "camp-golden",
+				"cohortAware": false,
+				"startedAt": "2026-11-12T12:00:00.000Z",
+				"spec": {
+					"windowMs": "600000",
+					"requiredObservations": 3,
+					"progressDeadlineMs": "1800000",
+					"failOnNoData": true,
+					"thresholds": [
+						{
+							"query": {
+								"name": "error_rate",
+								"source": "HEALTH_SOURCE_KIND_PROMETHEUS",
+								"endpointRef": "https://prometheus.example.com",
+								"query": "sum by (track) (error_rate)",
+								"unit": "ratio",
+								"cohortLabel": "track"
+							},
+							"aggregation": "AGGREGATION_MEAN",
+							"comparator": "COMPARATOR_LT",
+							"value": 0.05
+						}
+					]
+				}
+			}
+		},
+		{
+			"type": "rollout.EvidenceObserved",
+			"seq": 2,
+			"data": {
+				"campId": "camp-golden",
+				"signal": "threshold:error_rate",
+				"healthy": true,
+				"value": 0.01,
+				"observedAt": "2026-11-12T12:10:00.000Z",
+				"source": "PROMETHEUS",
+				"cohort": "COHORT_ALL"
+			}
+		},
+		{
+			"type": "verification.Completed",
+			"seq": 3,
+			"data": {
+				"verificationId": "ver-c8157ffa2bf92f80fe790c0e30c8ed94",
+				"freightId": "sha256:golden",
+				"campId": "camp-golden",
+				"verdict": "VERIFICATION_VERDICT_INCONCLUSIVE",
+				"checks": [
+					{
+						"check": "threshold:error_rate",
+						"verdict": "VERIFICATION_VERDICT_INCONCLUSIVE",
+						"samplesCanary": 1,
+						"reason": {
+							"code": "verification-insufficient-observations",
+							"message": "1 samples, 3 required, at the progress deadline",
+							"remediation": "Fewer samples than required_observations arrived before the progress deadline. Widen the window, lower the step or fix the scrape.",
+							"subject": "threshold:error_rate"
+						}
+					}
+				],
+				"startedAt": "2026-11-12T12:00:00.000Z",
+				"finishedAt": "2026-11-12T12:30:00.000Z",
+				"reasons": [
+					{
+						"code": "verification-insufficient-observations",
+						"message": "1 samples, 3 required, at the progress deadline",
+						"remediation": "Fewer samples than required_observations arrived before the progress deadline. Widen the window, lower the step or fix the scrape.",
+						"subject": "threshold:error_rate"
+					},
+					{
+						"code": "verification-deadline-exceeded",
+						"message": "the progress deadline passed before every check had evidence",
+						"remediation": "The progress deadline passed before every check had evidence; the rollout treats INCONCLUSIVE as FAIL."
+					}
+				]
+			}
+		}
+	]
+}

@@ -1,0 +1,709 @@
+{
+  "consumer": {
+    "name": "HoboCdArtifactStore"
+  },
+  "provider": {
+    "name": "S3CompatibleObjectStore"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "evidence": "Hand-authored HTTP contract for the s3-compatible artifact store backend (path-style, SigV4, conditional create, base64 object bodies over the text HttpTransport, ListObjectsV2, multipart). Verified by contracts/artifacts.consumer.test.ts against the real backend."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "put a new blob with a conditional create",
+      "providerStates": [
+        {
+          "name": "no object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z",
+          "content-type": "text/plain; charset=utf-8",
+          "x-amz-meta-hobo-encoding": "base64",
+          "x-amz-meta-hobo-digest": "sha256:d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+          "x-amz-meta-hobo-size": "14",
+          "x-amz-meta-hobo-media-type": "application/wasm",
+          "if-none-match": "*"
+        },
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "aGVsbG8gYXJ0aWZhY3Q="
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"9b2cf535f27731c974343645a3985328\""
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "put a blob that already exists",
+      "providerStates": [
+        {
+          "name": "an object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z",
+          "content-type": "text/plain; charset=utf-8",
+          "x-amz-meta-hobo-encoding": "base64",
+          "x-amz-meta-hobo-digest": "sha256:d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+          "x-amz-meta-hobo-size": "14",
+          "x-amz-meta-hobo-media-type": "application/wasm",
+          "if-none-match": "*"
+        },
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "aGVsbG8gYXJ0aWZhY3Q="
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 412,
+        "body": {
+          "contentType": "application/xml",
+          "encoded": false,
+          "content": "<Error><Code>PreconditionFailed</Code></Error>"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "get a stored blob",
+      "providerStates": [
+        {
+          "name": "an object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-amz-meta-hobo-encoding": "base64",
+          "x-amz-meta-hobo-digest": "sha256:d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b"
+        },
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "aGVsbG8gYXJ0aWZhY3Q="
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "get a missing blob",
+      "providerStates": [
+        {
+          "name": "no object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "contentType": "application/xml",
+          "encoded": false,
+          "content": "<Error><Code>NoSuchKey</Code></Error>"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "check a missing blob",
+      "providerStates": [
+        {
+          "name": "no object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "HEAD",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 404
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "delete a blob",
+      "providerStates": [
+        {
+          "name": "an object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "list blobs",
+      "providerStates": [
+        {
+          "name": "one object exists under blobs/sha256/"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/hobo-artifacts",
+        "query": {
+          "list-type": [
+            "2"
+          ],
+          "prefix": [
+            "blobs/sha256/"
+          ]
+        },
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/xml",
+          "encoded": false,
+          "content": "<ListBucketResult><Name>hobo-artifacts</Name><Contents><Key>blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b</Key><Size>20</Size></Contents><IsTruncated>false</IsTruncated></ListBucketResult>"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "start a multipart upload",
+      "providerStates": [
+        {
+          "name": "no object exists at the digest key"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "query": {
+          "uploads": [
+            ""
+          ]
+        },
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z",
+          "content-type": "text/plain; charset=utf-8",
+          "x-amz-meta-hobo-encoding": "base64",
+          "x-amz-meta-hobo-digest": "sha256:d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+          "x-amz-meta-hobo-size": "14",
+          "x-amz-meta-hobo-media-type": "application/wasm"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/xml",
+          "encoded": false,
+          "content": "<InitiateMultipartUploadResult><Bucket>hobo-artifacts</Bucket><UploadId>VXBsb2FkIElE</UploadId></InitiateMultipartUploadResult>"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "upload part 1",
+      "providerStates": [
+        {
+          "name": "a multipart upload is in progress"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "query": {
+          "partNumber": [
+            "1"
+          ],
+          "uploadId": [
+            "VXBsb2FkIElE"
+          ]
+        },
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "aGVsbG8gYXJ0"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"part-1\""
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "upload part 2",
+      "providerStates": [
+        {
+          "name": "a multipart upload is in progress"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "query": {
+          "partNumber": [
+            "2"
+          ],
+          "uploadId": [
+            "VXBsb2FkIElE"
+          ]
+        },
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z"
+        },
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "aWZhY3Q="
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "etag": "\"part-2\""
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "complete a multipart upload conditionally",
+      "providerStates": [
+        {
+          "name": "a multipart upload is in progress"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/hobo-artifacts/blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b",
+        "query": {
+          "uploadId": [
+            "VXBsb2FkIElE"
+          ]
+        },
+        "headers": {
+          "Authorization": "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261112/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-content-sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x-amz-date": "20261112T120000Z",
+          "content-type": "application/xml",
+          "if-none-match": "*"
+        },
+        "body": {
+          "contentType": "application/xml",
+          "encoded": false,
+          "content": "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>&quot;part-1&quot;</ETag></Part><Part><PartNumber>2</PartNumber><ETag>&quot;part-2&quot;</ETag></Part></CompleteMultipartUpload>"
+        },
+        "matchingRules": {
+          "header": {
+            "$.header.Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/us-east-1/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-content-sha256']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{64}$"
+                }
+              ]
+            },
+            "$.header['x-amz-date']": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9]{8}T[0-9]{6}Z$"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/xml",
+          "encoded": false,
+          "content": "<CompleteMultipartUploadResult><Key>blobs/sha256/d1cc3064379fca32757730461bd728cb7de430e46a0046aa59ab55c65be7ce3b</Key></CompleteMultipartUploadResult>"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "name": "@hobo/cd",
+  "version": "0.0.1",
+  "description": "HoBo CD: Freight discovery and ingestion from any toolset, pipeline graphs with lineage, fenced pull reconcilers, deterministic verification, capability-lowered progressive rollout, fleet placement and fan-out, governed failover, and policy delivery with posture for every platform",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": { "access": "public" },
+  "files": [
+    "LICENSE",
+    "dist"
+  ],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./freight": { "types": "./dist/freight/index.d.ts", "default": "./dist/freight/index.js" },
+    "./ingest": { "types": "./dist/ingest/index.d.ts", "default": "./dist/ingest/index.js" },
+    "./sources": { "types": "./dist/sources/index.d.ts", "default": "./dist/sources/index.js" },
+    "./artifacts": { "types": "./dist/artifacts/index.d.ts", "default": "./dist/artifacts/index.js" },
+    "./provenance": { "types": "./dist/provenance/index.d.ts", "default": "./dist/provenance/index.js" },
+    "./sets": { "types": "./dist/sets/index.d.ts", "default": "./dist/sets/index.js" },
+    "./pipelines": { "types": "./dist/pipelines/index.d.ts", "default": "./dist/pipelines/index.js" },
+    "./windows": { "types": "./dist/windows/index.d.ts", "default": "./dist/windows/index.js" },
+    "./promotion": { "types": "./dist/promotion/index.d.ts", "default": "./dist/promotion/index.js" },
+    "./reconcile": { "types": "./dist/reconcile/index.d.ts", "default": "./dist/reconcile/index.js" },
+    "./verification": { "types": "./dist/verification/index.d.ts", "default": "./dist/verification/index.js" },
+    "./rollout": { "types": "./dist/rollout/index.d.ts", "default": "./dist/rollout/index.js" },
+    "./feed": { "types": "./dist/feed/index.d.ts", "default": "./dist/feed/index.js" },
+    "./agent": { "types": "./dist/agent/index.d.ts", "default": "./dist/agent/index.js" },
+    "./service": { "types": "./dist/service/index.d.ts", "default": "./dist/service/index.js" },
+    "./boundary": { "types": "./dist/boundary/index.d.ts", "default": "./dist/boundary/index.js" },
+    "./telemetry": { "types": "./dist/telemetry/index.d.ts", "default": "./dist/telemetry/index.js" },
+    "./authz": { "types": "./dist/authz/index.d.ts", "default": "./dist/authz/index.js" },
+    "./inventory": { "types": "./dist/inventory/index.d.ts", "default": "./dist/inventory/index.js" },
+    "./placement": { "types": "./dist/placement/index.d.ts", "default": "./dist/placement/index.js" },
+    "./fanout": { "types": "./dist/fanout/index.d.ts", "default": "./dist/fanout/index.js" },
+    "./failover": { "types": "./dist/failover/index.d.ts", "default": "./dist/failover/index.js" },
+    "./posture": { "types": "./dist/posture/index.d.ts", "default": "./dist/posture/index.js" },
+    "./compose": { "types": "./dist/compose/index.d.ts", "default": "./dist/compose/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@hobo/cloud": "workspace:*",
+    "@hobo/contracts": "workspace:*",
+    "@hobo/core": "workspace:*",
+    "@hobo/dispatcher": "workspace:*",
+    "@hobo/events": "workspace:*",
+    "@hobo/identity": "workspace:*",
+    "@hobo/policy": "workspace:*",
+    "@hobo/registry": "workspace:*",
+    "@hobo/stations": "workspace:*",
+    "@hobo/trust": "workspace:*",
+    "sigstore": "5.0.1"
+  }
+}

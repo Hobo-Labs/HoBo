@@ -375,13 +375,17 @@ describe("CI deps workflow contract", () => {
 		includes(build, 'export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"');
 	});
 	const buildCondition =
-		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'";
-	const deferCondition =
-		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'";
+		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'";
 	const verifyCondition =
-		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && (steps.source.outputs.source != 'build' || github.event_name == 'pull_request')";
-	const promoteCondition =
-		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build' && github.event_name != 'pull_request'";
+		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'";
+	// On main the same check is steps of Main workspace plan (finding 154).
+	const planStart = workflow.indexOf("  main-gate-plan:");
+	const plan = workflow.slice(
+		planStart,
+		workflow.indexOf("  main-gate:", planStart),
+	);
+	const planVerifyCondition =
+		"if: steps.deps-current.outputs.current != 'true' && steps.deps-source.outputs.source != 'defer'";
 
 	it("logs in before resolving and builds PR misses without writing GHCR", () => {
 		assert.ok(start > -1);
@@ -416,42 +420,76 @@ describe("CI deps workflow contract", () => {
 		assert.ok(buildStep > resolve);
 	});
 
-	it("reuses local or GHCR hits on every event without building", () => {
-		const local = job.indexOf('if docker image inspect "$candidate"');
-		const manifest = job.indexOf('docker manifest inspect "$remote"');
-		const pull = job.indexOf('docker pull "$remote"');
-		const buildStep = job.indexOf(
-			"- name: Build deps image and verify offline install",
-		);
-		assert.ok(local > -1);
-		assert.ok(manifest > local);
-		assert.ok(pull > manifest);
-		assert.ok(buildStep > pull);
-		includes(job, promoteCondition);
+	it("runs as its own job on pull requests only, and never promotes there", () => {
 		includes(
 			job,
-			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"',
+			"if: ${{ !cancelled() && github.event_name == 'pull_request' }}",
 		);
+		// Not routed: the box's own label on a pull request (opt-in), else the trunk expression.
+		includes(
+			job,
+			"    runs-on: ${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || ",
+		);
+		assert.ok(!job.includes("needs.route.outputs.runner"));
+		assert.ok(!job.includes('docker tag "$candidate" hobo-ci-deps:local'));
+		assert.ok(!job.includes("Promote verified deps image"));
+	});
+
+	it("reuses local or GHCR hits without building, on pull requests and on main", () => {
+		for (const [name, block] of [
+			["ci-deps-image", job],
+			["main-gate-plan", plan],
+		] as const) {
+			const local = block.indexOf('if docker image inspect "$candidate"');
+			const manifest = block.indexOf('docker manifest inspect "$remote"');
+			const pull = block.indexOf('docker pull "$remote"');
+			assert.ok(local > -1, name);
+			assert.ok(manifest > local, name);
+			assert.ok(pull > manifest, name);
+			assert.ok(
+				!block.includes('if [ "${{ github.event_name }}" != "pull_request" ]'),
+				name,
+			);
+		}
 		assert.ok(
-			!job.includes('if [ "${{ github.event_name }}" != "pull_request" ]'),
+			job.indexOf("- name: Build deps image and verify offline install") >
+				job.indexOf('docker pull "$remote"'),
+		);
+		includes(plan, planVerifyCondition);
+		includes(
+			plan,
+			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"',
 		);
 	});
 
-	it("defers a non-PR miss without building, verifying, or promoting", () => {
-		const defer = job.indexOf("- name: Defer non-PR deps image miss");
-		const verify = job.indexOf("- name: Verify deps image under job mount");
-		assert.ok(defer > -1);
-		assert.ok(verify > defer);
-		const deferredStep = job.slice(defer, verify);
-		includes(deferredStep, deferCondition);
+	it("defers a main miss without building, verifying, or promoting", () => {
+		assert.ok(!plan.includes("build-deps.sh"));
+		includes(plan, "source=defer");
 		includes(
-			deferredStep,
-			"Key miss deferred to CI deps image publisher and the daemon ensure loop; skipping Fabric rebuild",
+			plan,
+			"Key miss deferred to CI deps image publisher and the daemon ensure loop; no rebuild here",
 		);
-		assert.ok(!deferredStep.includes("build-deps.sh"));
-		includes(job, buildCondition);
-		includes(job, verifyCondition);
-		includes(job, promoteCondition);
+		const verify = plan.indexOf("- name: Verify deps image under job mount");
+		const promote = plan.indexOf("- name: Promote verified deps image");
+		assert.ok(verify > -1);
+		assert.ok(promote > verify);
+		// Both steps are skipped on a deferred miss.
+		assert.equal(plan.split(planVerifyCondition).length, 3);
+	});
+
+	it("promotes on main only from the box, whose Docker context job containers start from", () => {
+		const current = plan.indexOf("- name: Check current local deps image");
+		const login = plan.indexOf("- name: Login to GHCR for read-only cache");
+		assert.ok(current > -1);
+		assert.ok(login > current);
+		const step = plan.slice(current, login);
+		// An ARC pod has Docker but not the box's images: it pulled several GB
+		// for a tag no job container reads.
+		includes(step, 'if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" != "1" ]; then');
+		includes(step, 'echo "current=true" >> "$GITHUB_OUTPUT"');
+		includes(plan, "packages: read");
+		assert.ok(!plan.includes("packages: write"));
+		assert.ok(!plan.includes("docker push"));
 	});
 
 	it("proves every candidate under a job mount before promotion", () => {
@@ -459,17 +497,21 @@ describe("CI deps workflow contract", () => {
 			"- name: Build deps image and verify offline install",
 		);
 		const mount = job.indexOf("- name: Verify deps image under job mount");
-		const promote = job.indexOf("- name: Promote verified deps image");
 		assert.ok(buildStep > -1);
 		assert.ok(mount > buildStep);
-		assert.ok(promote > mount);
 		includes(job, verifyCondition);
-		includes(job, "HOBO_CI_DEPS_MOUNT_CONTRACT: '1'");
-		includes(
-			job,
-			"node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts",
-		);
-		assert.doesNotMatch(job, /--import tsx/);
+		const planMount = plan.indexOf("- name: Verify deps image under job mount");
+		const planPromote = plan.indexOf("- name: Promote verified deps image");
+		assert.ok(planMount > -1);
+		assert.ok(planPromote > planMount);
+		for (const block of [job, plan]) {
+			includes(block, "HOBO_CI_DEPS_MOUNT_CONTRACT: '1'");
+			includes(
+				block,
+				"node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts",
+			);
+			assert.doesNotMatch(block, /--import tsx/);
+		}
 	});
 
 	it("loads the mount contract without an install and scopes every file it loads", () => {
@@ -602,36 +644,33 @@ describe("CI deps workflow contract", () => {
 		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
 		includes(job("main-gate").block, "Check deps layer match");
 
-		// Main's workspace plan and its shards wait for it on purpose (#1840):
-		// they start from the deps layer, and on main the deps job never builds
-		// (it reuses or pulls an image, or defers a miss). Any other job that
-		// starts to wait for the image has to be added here deliberately.
+		// Nothing waits for the PR-only deps job. On main its check is steps of
+		// Main workspace plan (finding 154), so the shards still start after the
+		// layer was looked at, without a fourth trunk pickup for it.
 		assert.deepEqual(
 			[...jobs]
 				.filter(([, { needs }]) => needs.includes("ci-deps-image"))
 				.map(([id]) => id),
-			["main_workspace_tests"],
+			[],
 		);
-		// Plan is install-free and runs beside the deps image job; only shards wait for it.
 		assert.deepEqual(job("main-gate-plan").needs, ["route", "ci-runner-image"]);
-		// A failed or skipped deps job must not take shards with it: they run
-		// unless the run is cancelled, and a shard installs on a layer miss.
+		assert.deepEqual(job("main_workspace_tests").needs, [
+			"route",
+			"ci-runner-image",
+			"main-gate-plan",
+		]);
+		includes(job("main-gate-plan").block, "Promote verified deps image");
+		// A shard installs on a layer miss, so a deferred promotion costs time,
+		// never correctness.
 		for (const id of ["main_workspace_tests"]) {
 			assert.match(job(id).block, /^ {4}if: >-\n {6}!cancelled\(\) && /mu, id);
-			assert.doesNotMatch(
-				job(id).block,
-				/needs\.ci-deps-image\.result/u,
-				`${id} is gated on the deps job's result`,
-			);
 		}
 		includes(job("main_workspace_tests").block, "Check deps layer match");
 		includes(
 			job("main_workspace_tests").block,
 			"steps.deps-layer.outputs.match != 'true'",
 		);
-		// The finish job therefore waits for the image only through the shards.
-		assert.ok(!job("main_gate_finish").needs.includes("ci-deps-image"));
-		assert.ok(waitsFor("main_gate_finish").has("ci-deps-image"));
+		assert.ok(!waitsFor("main_gate_finish").has("ci-deps-image"));
 	});
 });
 

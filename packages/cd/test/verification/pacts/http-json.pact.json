@@ -1,0 +1,47 @@
+{
+  "consumer": { "name": "HoboCdVerificationEngine" },
+  "provider": { "name": "GenericHttpJsonHealthEndpoint" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored HTTP contract for the generic HTTP JSON health source: GET endpoint_ref with from/to/camp/cohort parameters; the query is a JSON pointer to a numeric array. Verified by test/verification/sources/pacts.test.ts."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "series for the canary cohort at a JSON pointer",
+      "providerStates": [{ "name": "a health endpoint keeping a latency series" }],
+      "request": {
+        "method": "GET",
+        "path": "/health/latency",
+        "query": {
+          "region": ["eu"],
+          "from": ["1794484800000"],
+          "to": ["1794485400000"],
+          "camp": ["camp-a"],
+          "track": ["canary"]
+        },
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "data": { "p95": [120, null, 131.5, 128] } }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "pointer target that is not an array",
+      "providerStates": [{ "name": "a health endpoint answering a summary object" }],
+      "request": {
+        "method": "GET",
+        "path": "/health/latency",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "data": { "p95": { "value": 120 } } }
+      }
+    }
+  ]
+}
