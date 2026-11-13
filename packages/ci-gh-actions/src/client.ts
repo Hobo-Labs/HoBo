@@ -17,18 +17,20 @@ import {
 	RepositorySetupRequestSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
-import { FleetVerdictSchema } from "./_generated/fleet_verdict_pb.js";
+import {
+	FleetReporterStatusListSchema,
+	FleetVerdictSchema,
+} from "./_generated/fleet_verdict_pb.js";
 import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
 import {
+	FLEET_REPORTERS_PATH,
 	FLEET_VERDICTS_PATH,
-	type FleetVerdictReason,
-	fleetVerdictReportJson,
+	parseFleetReportersPath,
 	parseFleetVerdictPath,
-	parseFleetVerdictReport,
 } from "./fleet-verdict.js";
 
 export {
@@ -64,6 +66,12 @@ function verdictPath(repository: string): string {
 	if (!parseFleetVerdictPath(`${FLEET_VERDICTS_PATH}${repository}`))
 		invalid("invalid repository");
 	return `verdicts/${repository}`;
+}
+/** `reporters/<owner>/<name>`, as the repository was given, once it is a repository. */
+function reportersPath(repository: string): string {
+	if (!parseFleetReportersPath(`${FLEET_REPORTERS_PATH}${repository}`))
+		invalid("invalid repository");
+	return `reporters/${repository}`;
 }
 function uuid(id: string): void {
 	if (
@@ -161,13 +169,19 @@ export function createCiRelayClient(
 		match?: string,
 		version: "v1" | "v2" = "v1",
 		// The account's own routes, or the relay's (its mesh, its fleet
-		// verdicts), which no account owns.
+		// verdicts and reporters), which no account owns.
 		root: "accounts/self" | "mesh" | "fleet" = "accounts/self",
 		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
+		/** A credential other than the account's, e.g. a workflow's OIDC token. */
+		bearer?: string,
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
-		if (options.ownerSession) {
+		if (bearer !== undefined) {
+			if (!bearer || /\s/.test(bearer) || bearer.length > 16000)
+				invalid("invalid workflow token");
+			headers.set("Authorization", `Bearer ${bearer}`);
+		} else if (options.ownerSession) {
 			headers.set("X-HoBo-Owner-Control", "1");
 		} else {
 			let token: string;
@@ -403,28 +417,22 @@ export function createCiRelayClient(
 			);
 		},
 		/**
-		 * Report one repository's fleet verdict: the labels to keep new work
-		 * off, each with its reason, standing for `ttlSeconds` unless repeated.
-		 * An empty map clears it. Needs the `operations:write` scope and an
-		 * account the repository is connected under.
+		 * What the relay knows of the fleet reporters for one repository
+		 * (ADR-0180): each enrolled reporter's state and liveness, and each
+		 * label's allowance. Asked with an OIDC token from a workflow of that
+		 * repository, whose audience is this relay's origin.
 		 */
-		putFleetVerdict(
-			repository: string,
-			blocked: ReadonlyMap<string, FleetVerdictReason>,
-			ttlSeconds: number,
-		) {
-			const body = fleetVerdictReportJson(blocked, ttlSeconds);
-			if (!parseFleetVerdictReport(body))
-				invalid("invalid fleet verdict report");
+		getFleetReporters(repository: string, oidcToken: string) {
 			return request(
-				verdictPath(repository),
-				"PUT",
-				FleetVerdictSchema,
-				body,
+				reportersPath(repository),
+				"GET",
+				FleetReporterStatusListSchema,
+				undefined,
 				undefined,
 				"v1",
 				"fleet",
 				true,
+				oidcToken,
 			);
 		},
 		getLease(id: string) {

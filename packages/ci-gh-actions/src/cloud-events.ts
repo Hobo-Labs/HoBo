@@ -82,6 +82,14 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],
 	["hobo_ci_fleet_capacity_published", "ci.FleetCapacityPublished"],
 	["hobo_ci_fleet_capacity_error", "ci.FleetCapacityPublishError"],
+	// Fleet verdicts (ADR-0180): what the box's reporter decided, capacity it
+	// could not count, and reports the hosted relay refused
+	["hobo_ci_fleet_verdict_state", "ci.FleetVerdictStateReported"],
+	[
+		"hobo_ci_fleet_verdict_unaccounted_runner",
+		"ci.FleetVerdictUnaccountedRunnerSeen",
+	],
+	["hobo_ci_fleet_verdict_refused", "ci.FleetVerdictReportRefused"],
 	// A node's record of the jobs it took
 	["hobo_ci_mesh_job_dropped", "ci.MeshJobDropped"],
 	["hobo_ci_mesh_reliability", "ci.MeshReliabilityChanged"],

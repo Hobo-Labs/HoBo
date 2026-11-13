@@ -1,0 +1,11 @@
+{
+  "reporters": [
+    {
+      "id": "box-1",
+      "publicKey": "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+      "privateKey": "-----BEGIN PRIVATE KEY-----",
+      "accountId": "tenant",
+      "labels": ["hobo"]
+    }
+  ]
+}
