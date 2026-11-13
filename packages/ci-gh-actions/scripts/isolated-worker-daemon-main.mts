@@ -1543,6 +1543,12 @@ try {
 		string,
 		ReturnType<typeof createFleetVerdictHolds>
 	>();
+	const STALL_WAITING_STATES = new Set([
+		"reserved",
+		"dispatching",
+		"dispatched",
+		"claiming",
+	]);
 	const stallWatch = createRoutingStallWatch({
 		stallMs: routing.verdict.stallMs,
 		startedAtMs: Date.now(),
@@ -1593,17 +1599,20 @@ try {
 					if (node.healthy && node.freeSlots > 0) free.add(label);
 				}
 			}
+		// A label stalls on the box, whatever repository its work came from, so
+		// the watch sees every lease: filtered per repository, a running job of
+		// another repository would read as a fresh start on every pass. Work is
+		// waiting from reservation until its runner starts it, so a container
+		// whose runner never takes the job counts too.
 		const stalled = stallWatch.observe(
 			nowMs,
-			active
-				.filter((lease) => lease.repository === repository)
-				.map((lease) => ({
-					id: lease.id,
-					label: labelOfLease(lease),
-					waiting: lease.state === "reserved",
-					started: lease.state === "running",
-					assignedAtMs: Date.parse(lease.createdAt) || nowMs,
-				})),
+			active.map((lease) => ({
+				id: lease.id,
+				label: labelOfLease(lease),
+				waiting: STALL_WAITING_STATES.has(lease.state),
+				started: lease.state === "running",
+				assignedAtMs: Date.parse(lease.createdAt) || nowMs,
+			})),
 		);
 		return decideRoutingSlipClasses({
 			policy: routing,
