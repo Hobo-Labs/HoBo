@@ -20,8 +20,12 @@ if (!parsed.ok)
 	throw new Error(
 		`${parsed.code}: ${parsed.problems.join("; ")}\n${parsed.remediation}`,
 	);
+// Where the controller releases' indexes are published (an https:// base),
+// so process-mode hosts get a release paired with each image; see README.md.
+const releaseIndexBase = process.env.HOBO_CI_RUNNER_RELEASE_INDEX?.trim();
 const delivery = runnerFleetDelivery(parsed.value, {
 	repository: "Hobo-Labs/HoBo",
+	...(releaseIndexBase ? { releaseIndexBase } : undefined),
 });
 
 export const sources = delivery.sources;

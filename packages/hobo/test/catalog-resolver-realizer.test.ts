@@ -19,6 +19,7 @@ import {
 	SetRecordSchema,
 } from "@hobo/cd";
 import type { TransportRequest } from "@hobo/core";
+import { isLatin1Transport } from "@hobo/provider-oci-registry";
 import { describe, expect, it } from "vitest";
 import {
 	catalogPlannerProviders,
@@ -99,6 +100,79 @@ describe("catalogCampBinding", () => {
 			tags: ["v1.2.3"],
 			copyReferrers: false,
 		});
+	});
+
+	it("pushes OCI content on a byte transport and mounts from the Freight's mount source on the Camp's registry", () => {
+		const binding = catalogCampBinding(
+			camp("@hobo/provider-oci-registry", OCI_LABELS),
+			{ artifacts: noArtifacts, resolveCredential: async () => ({}) },
+		);
+		const [request] =
+			binding?.requests({
+				freightId: DIGEST,
+				labels: {
+					[L.ociTags]: "v1.2.3",
+					[L.ociMountFrom]: "hobo-labs/hobo/hobo-ci-worker",
+				},
+				artifacts: [
+					{
+						name: "hobo-cli",
+						kind: "OCI_IMAGE",
+						digest: DIGEST,
+						coordinate: `ghcr.io/hobo-labs/hobo/hobo-cli@${DIGEST}`,
+					},
+				],
+			}) ?? [];
+		expect(request?.desired).toMatchObject({
+			repository: "hobo-labs/hobo/hobo-cli",
+			sourceRegistry: "ghcr.io",
+			sourceRepository: "hobo-labs/hobo/hobo-ci-worker",
+			copyReferrers: false,
+		});
+		const host = async () => ({ status: 200, headers: {}, body: "" });
+		const transport = binding?.transport?.(host, new Set());
+		expect(transport && isLatin1Transport(transport)).toBe(true);
+	});
+
+	it("binds an anonymous npm Camp that observes without resolving a credential", async () => {
+		const resolved: string[] = [];
+		const binding = catalogCampBinding(
+			camp("@hobo/provider-npm", {
+				[L.npmRegistry]: "npmjs",
+				[L.npmAuth]: "anonymous",
+				[L.credentialRef]: "none://npm-public-read",
+				[L.realizeMode]: "observe",
+			}),
+			{
+				artifacts: noArtifacts,
+				resolveCredential: async (ref) => {
+					resolved.push(ref);
+					return {};
+				},
+			},
+		);
+		expect(binding?.mode).toBe("observe");
+		const resolver = binding?.registry.get(binding.productId);
+		const [request] =
+			binding?.requests({
+				freightId: DIGEST,
+				labels: { [L.npmDistTag]: "alpha" },
+				artifacts: [
+					{
+						name: "@hobo-labs/core@0.0.1",
+						kind: "PACKAGE",
+						digest: DIGEST,
+						coordinate: "",
+					},
+				],
+			}) ?? [];
+		if (!resolver || !request) throw new Error("npm binding has no request");
+		await expect(
+			resolver.reconcile(request, async () => {
+				throw new Error("an anonymous Camp reached the registry");
+			}),
+		).rejects.toMatchObject({ code: "RESOLVER_CREDENTIAL_MISSING" });
+		expect(resolved).toEqual([]);
 	});
 
 	it("refuses an image recorded on another registry than the Camp's", () => {

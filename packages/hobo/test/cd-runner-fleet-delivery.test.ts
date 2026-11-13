@@ -5,8 +5,9 @@
 //    agent enrolls by double opt-in, the fleet's Placement is decidable
 //    (its declared Rail approves the fleet's provider), and `agent run` on a
 //    box worker registers the runner-host realizer with the worker's job
-//    ports and runs its loop; a local runner, whose runner presence the
-//    worker's data directory cannot answer, is refused by name.
+//    ports and runs its loop, and so does a local runner whose controller
+//    is a supervised process (its runner presence read from its state
+//    directory).
 // 2. In process, on the durable SQLite journal, the same records in JSON
 //    form, a Station composed by `openCdRuntime` and an agent composed the
 //    way `agent run` composes it (its job ports read from a fake box
@@ -15,11 +16,16 @@
 //    fan-out over the pilot group that defers an unready host, a converge
 //    that swaps the controller digest, and a failed verify that restores it.
 //
-// Known gap, not asserted as correct: the composed PromotionService has no
-// placed-Camps reader or fan-out aggregate gate (packages/cd/src/compose/
-// wire.ts), so the fan-out's promotion does not yet write the Set the agent
-// converges; the converge legs below write that Set through the
-// desired-state ledger directly (see the it.todo at the end).
+// 3. The fan-out's pilot promotion through the composed PromotionService:
+//    lineage reads the box from the recorded placement decision and the
+//    aggregate gate checks the Rail's max_fanout_camps and the Station
+//    budget, so the promotion is admitted. It stops at Matching: the fleet's
+//    Bindle has no stored planning declaration that resolves the controller
+//    image, so the converge legs in 2 write the runner-host Set through the
+//    desired-state ledger directly. The full fan-out convergence (pilot
+//    first, next group after the pilot qualifies, deferred catch-up) is
+//    proven over composed modules in packages/cd/test/compose/
+//    fanout-convergence.test.ts.
 import { spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -28,6 +34,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create, fromJson } from "@bufbuild/protobuf";
 import {
+	ArtifactKind,
+	AssemblyRule,
 	CampClaimRecordSchema,
 	CampConditionType,
 	type CampId,
@@ -39,6 +47,7 @@ import {
 	type FeedResponse,
 	type FreightId,
 	FreightManifestRecordSchema,
+	FreightOrigin,
 	ReconcileObservationRecordSchema,
 	type ReconcilerId,
 	ReconcilerMode,
@@ -50,8 +59,11 @@ import {
 import { diffResolvedSets } from "@hobo/cd/sets";
 import {
 	parseRunnerHosts,
+	RUNNER_IMAGE_SOURCE,
+	RUNNER_RELEASE_ARTIFACTS,
 	runnerFleetDelivery,
 	runnerFleetTopology,
+	runnerHostRealizationParameters,
 } from "@hobo/ci-gh-actions";
 import {
 	runnerFleetRail,
@@ -80,6 +92,7 @@ import {
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
+import { SupervisedRunnerHost } from "./fixtures/runner-host-supervised.js";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
@@ -394,7 +407,7 @@ describe.skipIf(!existsSync(BIN))(
 			expect(railless.code).toBe("rail-providers-unknown");
 		});
 
-		it("agent run on a box worker wires the worker's job ports and runs; a local runner is refused by name", async () => {
+		it("agent run on a box worker wires the worker's job ports and runs, and so does a local runner", async () => {
 			const home = await freshDir();
 			const keys = agentKeys();
 			const keyFile = join(home, "agent.jwk.json");
@@ -440,23 +453,26 @@ describe.skipIf(!existsSync(BIN))(
 			expect(runner.ok, runner.message).toBe(true);
 			expect(pick(runner.data, "reconcilerId")).toBe("rec_box");
 
-			// A local runner keeps a registered runner whose GitHub presence the
-			// worker's data directory cannot answer: refused by name, no loop.
+			// A local runner: its controller is a process its supervisor runs,
+			// and its runner's GitHub presence is read from its state directory
+			// (runner-presence.json). Every port is wired, so the loop starts.
 			await writeFile(
 				config,
 				JSON.stringify({
 					...AGENT_CONFIG,
 					hostKind: "local-runner",
-					worker: { database: join(workerDir, "worker.sqlite") },
+					worker: { directory: workerDir },
+					controller: { mode: "process", releases: join(home, "releases") },
 				}),
 			);
-			const local = await deploy(home, argv, {
-				[CD_RUNNER_HOST_ENV]: config,
-			});
-			expect(local.ok).toBe(false);
-			expect(local.code).toBe("runner-host-interface-missing");
-			expect(local.message).toContain("jobs.runners");
-			expect(local.message).not.toContain("jobs.leases");
+			const local = await runAgentFor(
+				home,
+				argv.slice(2),
+				{ HOBO_CD_TOPOLOGY: MODULE, [CD_RUNNER_HOST_ENV]: config },
+				8_000,
+			);
+			expect(local.exitedEarly, local.message).toBe(false);
+			expect(local.ok, local.message).toBe(true);
 		});
 	},
 );
@@ -482,239 +498,287 @@ function loopback(
 	};
 }
 
+/**
+ * The in-process fleet: a Station composed by `openCdRuntime` over the
+ * durable SQLite journal and the delivery module's records, the box's agent
+ * enrolled by double opt-in and composed the way `agent run` composes it
+ * (its job ports read from a fake box worker's data directory), over a
+ * loopback transport to the Station's own feed.
+ */
+async function openFleet(
+	extra: Partial<Parameters<typeof openCdRuntime>[0]> = {},
+) {
+	const home = await freshDir();
+	// The box worker's data directory, as the controller mounts it.
+	const workerDir = join(home, "worker");
+	await mkdir(workerDir);
+	const worker = workerHostFiles(join(workerDir, "worker.sqlite"));
+	const host = new FakeRunnerHost({
+		running: PREVIOUS,
+		unhealthy: [BROKEN],
+		worker,
+	});
+	await host.beat();
+	const now = () => host.nowMs;
+	const hosts = parseRunnerHosts(
+		await readFile(
+			join(REPO, "packages/ci-gh-actions/deploy/runner-fleet/hosts.json"),
+			"utf8",
+		),
+	);
+	if (!hosts.ok) throw new Error("hosts.json does not parse");
+	const delivery = runnerFleetDelivery(hosts.value, {
+		repository: "Hobo-Labs/HoBo",
+	});
+	// The delivery module's exports as data (records, Camps and the
+	// Rail), as a plain ES module: the .ts module itself loads through
+	// tsx, whose state is process-wide (see cd-topology-files.test.ts).
+	const module = join(home, "hobo.delivery.mjs");
+	const exports = {
+		...delivery,
+		camps: runnerFleetTopology(hosts.value, { stationId: "" }),
+		rails: [runnerFleetRail()],
+	};
+	await writeFile(
+		module,
+		Object.entries(exports)
+			.map(
+				([name, value]) => `export const ${name} = ${JSON.stringify(value)};`,
+			)
+			.join("\n"),
+	);
+	const agentConfig = join(home, "agent.runner-host.json");
+	await writeFile(
+		agentConfig,
+		JSON.stringify({
+			...AGENT_CONFIG,
+			worker: { database: worker.database },
+		}),
+	);
+	const env = { HOBO_HOME: home };
+	// Every accepted report's health ingest must succeed; a failure is
+	// reported here, never dropped.
+	const ingestErrors: Error[] = [];
+	const opened = await openCdRuntime({
+		env,
+		home,
+		cwd: home,
+		simulate: false,
+		now,
+		topologyFiles: [module],
+		http: registry,
+		onRunnerHostIngestError: (error) => ingestErrors.push(error),
+		...extra,
+	});
+	if (!opened.ok) throw new Error(opened.reasons[0]?.message);
+	const station = opened.value;
+	try {
+		const operator = (id: string): CdContext => ({
+			tenant: station.config.tenant,
+			principal: { kind: "user", id },
+			now,
+		});
+		const applied = await runCdDeploySubcommand(
+			station.host,
+			["pipeline", "apply"],
+			{ file: module, format: "json" },
+		);
+		expect(applied.ok, applied.message).toBe(true);
+
+		// Enrollment, double opt-in.
+		const keys = agentKeys();
+		const token = await station.cd.enrollment.issueToken(
+			{
+				campSet: FLEET,
+				campIds: [BOX],
+				mode: ReconcilerMode.AGENT,
+				ttlMs: 600_000,
+			},
+			operator("ops-alice"),
+		);
+		if (!token.ok) throw new Error(token.reasons[0]?.message);
+		const enrolled = await station.cd.enrollment.enroll(
+			{ token: token.value.token, publicJwk: keys.publicJwk, claims: [] },
+			operator("ops-alice"),
+		);
+		if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
+		// SAFETY: the id the enrollment ledger just minted.
+		const reconcilerId = enrolled.value.reconciler.reconcilerId as ReconcilerId;
+		expect(
+			(
+				await station.cd.enrollment.approveKey(
+					reconcilerId,
+					operator("ops-alice"),
+				)
+			).ok,
+		).toBe(true);
+		expect(
+			(
+				await station.cd.enrollment.accept(
+					{ reconcilerId, campIds: [BOX] },
+					operator("ops-bob"),
+				)
+			).ok,
+		).toBe(true);
+
+		// The agent, composed as `agent run` composes it on the box: the
+		// job ports are its own, read from the worker's data directory; only
+		// the container engine is the fake's.
+		const chosen = await agentRealizer({
+			simulate: false,
+			env: { [CD_RUNNER_HOST_ENV]: agentConfig },
+			cwd: home,
+			now,
+			sleep: async (ms) => {
+				host.nowMs += ms;
+				await host.beat();
+			},
+			campIds: [BOX],
+			simulated: () => {
+				throw new Error("not simulated");
+			},
+			runnerHost: host.ports(),
+		});
+		if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
+		const agentStore = await openCdStore({ backend: "memory" }, { now });
+		const agent = agentReconciler({
+			feedUrl: "https://station.test/v1/cd/",
+			reconcilerId,
+			privateJwk: keys.privateJwk,
+			svid: "",
+			campIds: [BOX],
+			realizer: chosen.value,
+			store: agentStore.store,
+			tenant: station.config.tenant,
+			now,
+			http: loopback(async (request) => {
+				const url = new URL(request.url);
+				return station.cd.feed.handle(
+					{
+						method: request.method,
+						path: `${url.pathname}${url.search}`,
+						headers: request.headers,
+						body: new TextEncoder().encode(request.body ?? ""),
+					},
+					new AbortController().signal,
+				);
+			}),
+		});
+		const agentCtx: CdContext = {
+			tenant: station.config.tenant,
+			principal: { kind: "service", id: `agent:${reconcilerId}` },
+			now,
+		};
+
+		const ops = operator("ops-alice");
+		// Inventory scans the journal from where it starts (cold start).
+		await station.cd.inventory.tick(ops);
+
+		async function recordFreight(image: string) {
+			const recorded = await station.cd.ingest.manifest(
+				{
+					manifest: fromJson(FreightManifestRecordSchema, {
+						schemaVersion: "hobo.freight-manifest/v1",
+						bindle: FLEET,
+						// No declaration is stored under it: the fleet's planning
+						// declaration is not composed (see the report).
+						declarationHash: `sha256:${createHash("sha256").update(`${FLEET}@${image}`).digest("hex")}`,
+						artifacts: [
+							{
+								name: "hobo-ci-worker",
+								kind: "ARTIFACT_KIND_OCI_IMAGE",
+								digest: digestOf(image),
+								coordinate: image,
+								ecosystem: "oci",
+							},
+						],
+					}),
+				},
+				ops,
+			);
+			if (!recorded.ok) throw new Error(recorded.reasons[0]?.message);
+			return recorded.value;
+		}
+		// The Set a promotion of `image` would write for the box, written
+		// through the desired-state ledger directly: this bypasses promotion,
+		// whose Matching cannot resolve the controller image yet (file comment, 3).
+		async function setFor(image: string, deltaId: string, freightId: string) {
+			const resolved = runnerHostResolvedSet({
+				campId: BOX,
+				image,
+				tenant: station.config.tenant,
+			});
+			const current = await station.cd.desired.current(BOX);
+			const base = current
+				? await station.cd.desired.resolved(current)
+				: undefined;
+			const delta = await station.cd.desired.open(
+				create(DeltaRecordSchema, {
+					deltaId,
+					campId: BOX,
+					freightId,
+					baseSetId: current?.setId ?? "",
+					intent: "promote",
+					changes: diffResolvedSets(base, resolved),
+				}),
+				ops,
+			);
+			if (!delta.ok) throw new Error(delta.reasons[0]?.message);
+			const set = await station.cd.desired.apply(
+				{
+					deltaId,
+					gateDecisionId: `gate-${deltaId}`,
+					resolved,
+					origin: SetOrigin.PROMOTION,
+				},
+				ops,
+			);
+			if (!set.ok) throw new Error(set.reasons[0]?.message);
+			return set.value;
+		}
+
+		return {
+			station,
+			host,
+			worker,
+			now,
+			ingestErrors,
+			operator,
+			ops,
+			agent,
+			agentCtx,
+			agentStore,
+			recordFreight,
+			setFor,
+			async close() {
+				await agentStore.close();
+				await station.close();
+			},
+		};
+	} catch (error) {
+		await station.close();
+		throw error;
+	}
+}
+
 describe("the runner fleet delivered in process (durable SQLite, fake runner host)", () => {
 	it("enrolls, decides placement, defers an unready pilot host, swaps the controller digest and restores it on a failed verify", {
 		timeout: 120_000,
 	}, async () => {
-		const home = await freshDir();
-		// The box worker's data directory, as the controller mounts it.
-		const workerDir = join(home, "worker");
-		await mkdir(workerDir);
-		const worker = workerHostFiles(join(workerDir, "worker.sqlite"));
-		const host = new FakeRunnerHost({
-			running: PREVIOUS,
-			unhealthy: [BROKEN],
+		const fleet = await openFleet();
+		const {
+			station,
+			host,
 			worker,
-		});
-		await host.beat();
-		const now = () => host.nowMs;
-		const hosts = parseRunnerHosts(
-			await readFile(
-				join(REPO, "packages/ci-gh-actions/deploy/runner-fleet/hosts.json"),
-				"utf8",
-			),
-		);
-		if (!hosts.ok) throw new Error("hosts.json does not parse");
-		const delivery = runnerFleetDelivery(hosts.value, {
-			repository: "Hobo-Labs/HoBo",
-		});
-		// The delivery module's exports as data (records, Camps and the
-		// Rail), as a plain ES module: the .ts module itself loads through
-		// tsx, whose state is process-wide (see cd-topology-files.test.ts).
-		const module = join(home, "hobo.delivery.mjs");
-		const exports = {
-			...delivery,
-			camps: runnerFleetTopology(hosts.value, { stationId: "" }),
-			rails: [runnerFleetRail()],
-		};
-		await writeFile(
-			module,
-			Object.entries(exports)
-				.map(
-					([name, value]) => `export const ${name} = ${JSON.stringify(value)};`,
-				)
-				.join("\n"),
-		);
-		const agentConfig = join(home, "agent.runner-host.json");
-		await writeFile(
-			agentConfig,
-			JSON.stringify({
-				...AGENT_CONFIG,
-				worker: { database: worker.database },
-			}),
-		);
-		const env = { HOBO_HOME: home };
-		// Every accepted report's health ingest must succeed; a failure is
-		// reported here, never dropped.
-		const ingestErrors: Error[] = [];
-		const opened = await openCdRuntime({
-			env,
-			home,
-			cwd: home,
-			simulate: false,
 			now,
-			topologyFiles: [module],
-			http: registry,
-			onRunnerHostIngestError: (error) => ingestErrors.push(error),
-		});
-		if (!opened.ok) throw new Error(opened.reasons[0]?.message);
-		const station = opened.value;
+			ingestErrors,
+			ops,
+			agent,
+			agentCtx,
+			recordFreight,
+			setFor,
+		} = fleet;
 		try {
-			const operator = (id: string): CdContext => ({
-				tenant: station.config.tenant,
-				principal: { kind: "user", id },
-				now,
-			});
-			const applied = await runCdDeploySubcommand(
-				station.host,
-				["pipeline", "apply"],
-				{ file: module, format: "json" },
-			);
-			expect(applied.ok, applied.message).toBe(true);
-
-			// Enrollment, double opt-in.
-			const keys = agentKeys();
-			const token = await station.cd.enrollment.issueToken(
-				{
-					campSet: FLEET,
-					campIds: [BOX],
-					mode: ReconcilerMode.AGENT,
-					ttlMs: 600_000,
-				},
-				operator("ops-alice"),
-			);
-			if (!token.ok) throw new Error(token.reasons[0]?.message);
-			const enrolled = await station.cd.enrollment.enroll(
-				{ token: token.value.token, publicJwk: keys.publicJwk, claims: [] },
-				operator("ops-alice"),
-			);
-			if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
-			// SAFETY: the id the enrollment ledger just minted.
-			const reconcilerId = enrolled.value.reconciler
-				.reconcilerId as ReconcilerId;
-			expect(
-				(
-					await station.cd.enrollment.approveKey(
-						reconcilerId,
-						operator("ops-alice"),
-					)
-				).ok,
-			).toBe(true);
-			expect(
-				(
-					await station.cd.enrollment.accept(
-						{ reconcilerId, campIds: [BOX] },
-						operator("ops-bob"),
-					)
-				).ok,
-			).toBe(true);
-
-			// The agent, composed as `agent run` composes it on the box: the
-			// job ports are its own, read from the worker's data directory; only
-			// the container engine is the fake's.
-			const chosen = await agentRealizer({
-				simulate: false,
-				env: { [CD_RUNNER_HOST_ENV]: agentConfig },
-				cwd: home,
-				now,
-				sleep: async (ms) => {
-					host.nowMs += ms;
-					await host.beat();
-				},
-				campIds: [BOX],
-				simulated: () => {
-					throw new Error("not simulated");
-				},
-				runnerHost: host.ports(),
-			});
-			if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
-			const agentStore = await openCdStore({ backend: "memory" }, { now });
-			const agent = agentReconciler({
-				feedUrl: "https://station.test/v1/cd/",
-				reconcilerId,
-				privateJwk: keys.privateJwk,
-				svid: "",
-				campIds: [BOX],
-				realizer: chosen.value,
-				store: agentStore.store,
-				tenant: station.config.tenant,
-				now,
-				http: loopback(async (request) => {
-					const url = new URL(request.url);
-					return station.cd.feed.handle(
-						{
-							method: request.method,
-							path: `${url.pathname}${url.search}`,
-							headers: request.headers,
-							body: new TextEncoder().encode(request.body ?? ""),
-						},
-						new AbortController().signal,
-					);
-				}),
-			});
-			const agentCtx: CdContext = {
-				tenant: station.config.tenant,
-				principal: { kind: "service", id: `agent:${reconcilerId}` },
-				now,
-			};
-
-			const ops = operator("ops-alice");
-			// Inventory scans the journal from where it starts (cold start).
-			await station.cd.inventory.tick(ops);
-
-			async function recordFreight(image: string) {
-				const recorded = await station.cd.ingest.manifest(
-					{
-						manifest: fromJson(FreightManifestRecordSchema, {
-							schemaVersion: "hobo.freight-manifest/v1",
-							bindle: FLEET,
-							// No declaration is stored under it: the fleet's planning
-							// declaration is not composed (see the report).
-							declarationHash: `sha256:${createHash("sha256").update(`${FLEET}@${image}`).digest("hex")}`,
-							artifacts: [
-								{
-									name: "hobo-ci-worker",
-									kind: "ARTIFACT_KIND_OCI_IMAGE",
-									digest: digestOf(image),
-									coordinate: image,
-									ecosystem: "oci",
-								},
-							],
-						}),
-					},
-					ops,
-				);
-				if (!recorded.ok) throw new Error(recorded.reasons[0]?.message);
-				return recorded.value;
-			}
-			// The Set a promotion of `image` would write for the box, written
-			// through the desired-state ledger directly: this bypasses promotion,
-			// which cannot write it yet (the known gap in the file comment).
-			async function setFor(image: string, deltaId: string, freightId: string) {
-				const resolved = runnerHostResolvedSet({
-					campId: BOX,
-					image,
-					tenant: station.config.tenant,
-				});
-				const current = await station.cd.desired.current(BOX);
-				const base = current
-					? await station.cd.desired.resolved(current)
-					: undefined;
-				const delta = await station.cd.desired.open(
-					create(DeltaRecordSchema, {
-						deltaId,
-						campId: BOX,
-						freightId,
-						baseSetId: current?.setId ?? "",
-						intent: "promote",
-						changes: diffResolvedSets(base, resolved),
-					}),
-					ops,
-				);
-				if (!delta.ok) throw new Error(delta.reasons[0]?.message);
-				const set = await station.cd.desired.apply(
-					{
-						deltaId,
-						gateDecisionId: `gate-${deltaId}`,
-						resolved,
-						origin: SetOrigin.PROMOTION,
-					},
-					ops,
-				);
-				if (!set.ok) throw new Error(set.reasons[0]?.message);
-				return set.value;
-			}
-
 			// Before the agent's first report the box was never contacted: it
 			// carries the automatic unreachable taint and is not placed.
 			const unplaced = await station.cd.placement.decide(
@@ -847,8 +911,9 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			expect(await ingest(true)).toEqual({ ingested: true, ready: true });
 			await station.cd.fanout.tick(ops);
 			expect((await progressed()).map((p) => p.outcome)).toContain("requested");
-			// What the requested promotion then does is the known gap (see the
-			// file comment and the it.todo below): it is not asserted here.
+			// What the requested promotion then does is the next test's subject
+			// (file comment, 3); this run's Freight carries no source, so lineage
+			// refuses it and the legs below write the Set directly.
 
 			// The converge the pilot's promotion asks for: drain, swap by digest, verify.
 			const swapped = await setFor(
@@ -891,13 +956,389 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				),
 			).toBe(false);
 			expect(ingestErrors).toEqual([]);
+		} finally {
+			await fleet.close();
+		}
+	});
+
+	it("the fan-out's pilot promotion is admitted through the recorded placement decision and the Station's fan-out budget", {
+		timeout: 120_000,
+	}, async () => {
+		const budgetAsked: string[] = [];
+		const fleet = await openFleet({
+			fanoutCost: {
+				quote: async () => 1,
+				budget: async (stationId) => {
+					budgetAsked.push(stationId);
+					return { limit: 10, used: 0 };
+				},
+			},
+		});
+		const { station, ops, agent, agentCtx, recordFreight, setFor } = fleet;
+		try {
+			const baseline = await recordFreight(PREVIOUS);
+			await setFor(PREVIOUS, "delta_e2e_baseline", baseline.freightId);
+			expect(
+				ReconcileStatus[(await agent.reconcileOnce(BOX, agentCtx)).status],
+			).toBe("CONVERGED");
+			await station.cd.inventory.tick(ops);
+			const decided = await station.cd.placement.decide(
+				{
+					placement: FLEET,
+					pipeline: FLEET,
+					node: "fleet",
+					stationId: station.config.stationId,
+					subject: { classifications: [], residency: [] },
+				},
+				ops,
+			);
+			if (!decided.ok) throw new Error(decided.reasons[0]?.message);
+			// The new image arrives the way the node takes Freight: from its
+			// OCI source subscription.
+			const recorded = await station.cd.freight.record(
+				{
+					manifest: fromJson(FreightManifestRecordSchema, {
+						schemaVersion: "hobo.freight-manifest/v1",
+						bindle: FLEET,
+						declarationHash: `sha256:${createHash("sha256").update(`${FLEET}@${TARGET}`).digest("hex")}`,
+						artifacts: [
+							{
+								name: "hobo-ci-worker",
+								kind: "ARTIFACT_KIND_OCI_IMAGE",
+								digest: digestOf(TARGET),
+								coordinate: TARGET,
+								ecosystem: "oci",
+							},
+						],
+					}),
+					origin: FreightOrigin.SOURCE_DISCOVERY,
+					sourceName: RUNNER_IMAGE_SOURCE,
+				},
+				ops,
+			);
+			if (!recorded.ok) throw new Error(recorded.reasons[0]?.message);
+			const pipeline = await station.cd.pipelines.get(FLEET);
+			const node = pipeline?.nodes.find((n) => n.name === "fleet");
+			if (!node?.fanout) throw new Error("the fleet node has no fan-out");
+			const started = await station.cd.fanout.start(
+				{
+					pipeline: FLEET,
+					node: "fleet",
+					// SAFETY: the id the Freight ledger just recorded.
+					freightId: recorded.value.freightId as FreightId,
+					decision: decided.value,
+					fanout: node.fanout,
+					departure: node.departure,
+					idempotencyKey: "fanout-e2e-admitted",
+				},
+				ops,
+			);
+			if (!started.ok) throw new Error(started.reasons[0]?.message);
+			// The pilot's turn: the fan-out requests an ordinary promotion of
+			// the box, which the composed service admits — the box is a Camp
+			// of the recorded decision (lineage) and the fan-out fits the
+			// Rail's max_fanout_camps and the Station budget (aggregate).
+			await station.cd.fanout.tick(ops);
+			await station.cd.fanout.tick(ops);
+			await station.cd.promotions.tick(ops);
+			expect(budgetAsked).toContain(station.config.stationId);
+			const [promotion] = await station.cd.promotions.list({ campId: BOX });
+			expect(promotion?.fanoutId).toBe(started.value.fanoutId);
+			const reasons: string[] = [];
+			for await (const event of station.store.read(
+				`cd-fanout-${started.value.fanoutId}`,
+			))
+				if (
+					event.type === "fanout.Progressed" &&
+					pick(event.data, "outcome") === "failed"
+				)
+					for (const index of ["0", "1"])
+						reasons.push(String(pick(event.data, "reasons", index, "code")));
+			// It then stops at Matching: the fleet's Bindle has no stored
+			// planning declaration that resolves the controller image (the
+			// runner fleet README, "No Set resolves the controller image yet").
+			expect(reasons).toEqual([
+				"promotion-resolve-failed",
+				"planning-declaration-missing",
+			]);
+		} finally {
+			await fleet.close();
+		}
+	});
+	it("swaps a process host to the release its Freight pairs with the image, from the delivery module's source down to the supervisor", {
+		timeout: 120_000,
+	}, async () => {
+		const home = await freshDir();
+		const dataDirectory = join(home, "data");
+		const host = new SupervisedRunnerHost({ dataDirectory });
+		const now = () => host.nowMs;
+		const hosts = parseRunnerHosts(
+			await readFile(
+				join(REPO, "packages/ci-gh-actions/deploy/runner-fleet/hosts.json"),
+				"utf8",
+			),
+		);
+		if (!hosts.ok) throw new Error("hosts.json does not parse");
+		// The fleet's delivery module with its controller releases published.
+		const delivery = runnerFleetDelivery(hosts.value, {
+			repository: "Hobo-Labs/HoBo",
+			releaseIndexBase: "https://releases.hobo.test/hobo-ci/",
+		});
+		const [source] = delivery.sources;
+		const subscription = (name: string) => {
+			const found = source?.subscriptions.find(
+				(entry) => entry.artifactName === name,
+			);
+			if (!found) throw new Error(`the source has no ${name} subscription`);
+			return found;
+		};
+		const module = join(home, "hobo.delivery.mjs");
+		await writeFile(
+			module,
+			Object.entries({
+				...delivery,
+				camps: runnerFleetTopology(hosts.value, { stationId: "" }),
+				rails: [runnerFleetRail()],
+			})
+				.map(
+					([name, value]) => `export const ${name} = ${JSON.stringify(value)};`,
+				)
+				.join("\n"),
+		);
+		// What the release build publishes beside the index: one file per release.
+		const releases = join(home, "releases");
+		await mkdir(releases);
+		const bodies = ["export const v = 1;\n", "export const v = 2;\n"];
+		const releaseDigests: string[] = [];
+		for (const body of bodies) {
+			const hex = createHash("sha256").update(body).digest("hex");
+			await writeFile(join(releases, `${hex}.mjs`), body);
+			releaseDigests.push(`sha256:${hex}`);
+		}
+		const agentConfig = join(home, "agent.runner-host.json");
+		await writeFile(
+			agentConfig,
+			JSON.stringify({
+				...AGENT_CONFIG,
+				worker: { database: host.files.database },
+				controller: { mode: "process", releases },
+			}),
+		);
+		const opened = await openCdRuntime({
+			env: { HOBO_HOME: home },
+			home,
+			cwd: home,
+			simulate: false,
+			now,
+			topologyFiles: [module],
+			http: registry,
+		});
+		if (!opened.ok) throw new Error(opened.reasons[0]?.message);
+		const station = opened.value;
+		try {
+			const ops: CdContext = {
+				tenant: station.config.tenant,
+				principal: { kind: "user", id: "ops-alice" },
+				now,
+			};
+			const applied = await runCdDeploySubcommand(
+				station.host,
+				["pipeline", "apply"],
+				{ file: module, format: "json" },
+			);
+			expect(applied.ok, applied.message).toBe(true);
+			// The applied source pairs the image with the releases.
+			const appliedSource = (await station.cd.sources.list()).find(
+				(entry) => entry.name === RUNNER_IMAGE_SOURCE,
+			);
+			expect(appliedSource?.assembly).toBe(AssemblyRule.SAME_VERSION);
+			expect(appliedSource?.subscriptions).toHaveLength(3);
+
+			// One version's Freight as the source assembles it: the image from
+			// GHCR (its manifest digest) and the worker release from the index
+			// (its bytes' digest, the bytes held in the artifact store).
+			const worker = subscription(RUNNER_RELEASE_ARTIFACTS.workerRelease);
+			const image = subscription("hobo-ci-worker");
+			async function recordVersion(index: number, release: string) {
+				const body = bodies[index] ?? "";
+				await station.cd.artifacts.put(
+					new TextEncoder().encode(body),
+					{
+						name: worker.artifactName,
+						kind: ArtifactKind.FUNCTION_BUNDLE,
+						mediaType: "text/javascript",
+					},
+					ops,
+				);
+				const version = ["previous", "target"][index] ?? "";
+				const manifestDigest = digestOf(imageOf(version));
+				const recorded = await station.cd.ingest.manifest(
+					{
+						manifest: fromJson(FreightManifestRecordSchema, {
+							schemaVersion: "hobo.freight-manifest/v1",
+							bindle: FLEET,
+							declarationHash: `sha256:${createHash("sha256").update(`${FLEET}@${version}`).digest("hex")}`,
+							artifacts: [
+								{
+									name: image.artifactName,
+									kind: image.artifactKind,
+									digest: manifestDigest,
+									coordinate: imageOf(version),
+									ecosystem: "oci",
+								},
+								{
+									name: worker.artifactName,
+									kind: worker.artifactKind,
+									digest: release,
+									coordinate: `https://releases.hobo.test/hobo-ci/${release.slice(7)}.mjs`,
+									ecosystem: "http",
+								},
+							],
+						}),
+					},
+					ops,
+				);
+				if (!recorded.ok) throw new Error(recorded.reasons[0]?.message);
+				return recorded.value;
+			}
+
+			const keys = agentKeys();
+			const token = await station.cd.enrollment.issueToken(
+				{
+					campSet: FLEET,
+					campIds: [BOX],
+					mode: ReconcilerMode.AGENT,
+					ttlMs: 600_000,
+				},
+				ops,
+			);
+			if (!token.ok) throw new Error(token.reasons[0]?.message);
+			const enrolled = await station.cd.enrollment.enroll(
+				{ token: token.value.token, publicJwk: keys.publicJwk, claims: [] },
+				ops,
+			);
+			if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
+			// SAFETY: the id the enrollment ledger just minted.
+			const reconcilerId = enrolled.value.reconciler
+				.reconcilerId as ReconcilerId;
+			await station.cd.enrollment.approveKey(reconcilerId, ops);
+			const accepted = await station.cd.enrollment.accept(
+				{ reconcilerId, campIds: [BOX] },
+				{ ...ops, principal: { kind: "user", id: "ops-bob" } },
+			);
+			expect(accepted.ok).toBe(true);
+			// The agent `agent run` composes on a process host: every port its
+			// own default (the supervisor's control files, the data directory).
+			const chosen = await agentRealizer({
+				simulate: false,
+				env: { [CD_RUNNER_HOST_ENV]: agentConfig },
+				cwd: home,
+				now,
+				sleep: async (ms) => {
+					host.nowMs += ms;
+					await host.tick();
+				},
+				campIds: [BOX],
+				simulated: () => {
+					throw new Error("not simulated");
+				},
+			});
+			if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
+			const agentStore = await openCdStore({ backend: "memory" }, { now });
+			const agent = agentReconciler({
+				feedUrl: "https://station.test/v1/cd/",
+				reconcilerId,
+				privateJwk: keys.privateJwk,
+				svid: "",
+				campIds: [BOX],
+				realizer: chosen.value,
+				store: agentStore.store,
+				tenant: station.config.tenant,
+				now,
+				http: loopback(async (request) => {
+					const url = new URL(request.url);
+					return station.cd.feed.handle(
+						{
+							method: request.method,
+							path: `${url.pathname}${url.search}`,
+							headers: request.headers,
+							body: new TextEncoder().encode(request.body ?? ""),
+						},
+						new AbortController().signal,
+					);
+				}),
+			});
+			const agentCtx: CdContext = {
+				tenant: station.config.tenant,
+				principal: { kind: "service", id: `agent:${reconcilerId}` },
+				now,
+			};
+			// The Set each recorded Freight resolves to: its runner-host row's
+			// parameters come from the Freight's own artifacts (the known gap:
+			// promotion does not write it yet, so it is applied directly).
+			async function converge(index: number) {
+				const release = releaseDigests[index] ?? "";
+				const freight = await recordVersion(index, release);
+				const parameters = runnerHostRealizationParameters(
+					freight.manifest?.artifacts ?? [],
+				);
+				if (!parameters) throw new Error("the Freight has no image");
+				const resolved = runnerHostResolvedSet({
+					campId: BOX,
+					parameters,
+					tenant: station.config.tenant,
+				});
+				const current = await station.cd.desired.current(BOX);
+				const deltaId = `delta_process_${index}`;
+				const delta = await station.cd.desired.open(
+					create(DeltaRecordSchema, {
+						deltaId,
+						campId: BOX,
+						freightId: freight.freightId,
+						baseSetId: current?.setId ?? "",
+						intent: "promote",
+						changes: diffResolvedSets(
+							current ? await station.cd.desired.resolved(current) : undefined,
+							resolved,
+						),
+					}),
+					ops,
+				);
+				if (!delta.ok) throw new Error(delta.reasons[0]?.message);
+				const set = await station.cd.desired.apply(
+					{
+						deltaId,
+						gateDecisionId: `gate-${deltaId}`,
+						resolved,
+						origin: SetOrigin.PROMOTION,
+					},
+					ops,
+				);
+				if (!set.ok) throw new Error(set.reasons[0]?.message);
+				return {
+					parameters,
+					observed: await agent.reconcileOnce(BOX, agentCtx),
+				};
+			}
+
+			const first = await converge(0);
+			expect(ReconcileStatus[first.observed.status]).toBe("CONVERGED");
+			expect(host.running()).toEqual([releaseDigests[0]]);
+			const second = await converge(1);
+			expect(ReconcileStatus[second.observed.status]).toBe("CONVERGED");
+			// The host runs the release by its bytes' digest, not the image's
+			// manifest digest the same Freight carries.
+			expect(second.parameters.workerRelease).toBe(
+				`${RUNNER_RELEASE_ARTIFACTS.workerRelease}@${releaseDigests[1]}`,
+			);
+			expect(digestOf(second.parameters.image)).not.toBe(releaseDigests[1]);
+			expect(host.running()).toEqual([releaseDigests[1]]);
+			expect(second.observed.resources[0]?.physicalId).toBe(
+				`hobo-ci-runners/box/controller@${releaseDigests[1]}`,
+			);
 			await agentStore.close();
 		} finally {
 			await station.close();
 		}
 	});
-
-	it.todo(
-		"the PROGRESSIVE_PER_GROUP fan-out's pilot promotion writes the runner-host Set the agent converges (needs a placed-Camps reader and fan-out aggregate gate on the composed PromotionService, packages/cd/src/compose/wire.ts)",
-	);
 });

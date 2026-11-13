@@ -14,6 +14,12 @@
  *   `remove`, `isRunning`) plus the deps-image `pull`. The controller
  *   container is named `hoboci-runner-controller-<sha256 hex>`, so the digest
  *   a host runs is read back from the host, never remembered.
+ * - **Process**, in place of containers on a host whose controller is a
+ *   process its worker daemon supervises (`runner-controller-process.ts`):
+ *   `stage` a release fetched and verified by digest, `run` it (or none)
+ *   by a request generation, read the supervisor's `status`. The digest the
+ *   host runs is the status's, and verification also requires the mesh
+ *   advert to name it.
  * - **Jobs** are what the host already knows about its work: its leases
  *   (`ACTIVE_STATES` and `runnerCustody`), its registered runners'
  *   presence, its own signed mesh advertisement, and the admission gate the
@@ -192,9 +198,50 @@ export interface RunnerHostJobs {
 	resumeAdmission(): Promise<void>;
 }
 
-/** The ports as a host wires them; a missing method is a typed refusal, not a crash. */
+/** Where a process-mode controller is in its supervisor's lifecycle. */
+export type RunnerControllerProcessState =
+	| "starting"
+	| "running"
+	| "stopping"
+	| "stopped"
+	| "exited"
+	| "failed";
+
+/** What the worker daemon's supervisor reports about the controller it runs. */
+export type RunnerControllerProcessStatus = Readonly<{
+	/** The release (`sha256:<hex>`) it runs or last ran; absent when it runs none. */
+	digest?: string | undefined;
+	state: RunnerControllerProcessState;
+	/** The latest request generation the supervisor has acted on. */
+	generation: number;
+	pid?: number | undefined;
+	/** When the current process was started (epoch ms). */
+	startedAtMs?: number | undefined;
+	reason?: string | undefined;
+}>;
+
+/**
+ * The controller as a process the box worker daemon's supervisor runs
+ * (`runner-controller-process.ts`): a release fetched and verified by digest,
+ * swapped and restarted under the supervisor, read back from its status.
+ */
+export interface RunnerControllerProcess {
+	/** Fetch the release `image` names and verify its bytes against the digest; idempotent. */
+	stage(image: string): Promise<void>;
+	/** The supervisor's own status, or undefined when no supervisor has reported. */
+	status(): Promise<RunnerControllerProcessStatus | undefined>;
+	/** Ask the supervisor to run the staged release `digest`, or none; returns the request generation. */
+	run(digest: string | undefined): Promise<number>;
+}
+
+/**
+ * The ports as a host wires them; a missing method is a typed refusal, not a
+ * crash. A host whose controller runs as a container wires `containers`; a
+ * host whose controller is a supervised process wires `process` instead.
+ */
 export type RunnerHostPorts = Readonly<{
 	containers?: Partial<RunnerControllerContainers> | undefined;
+	process?: Partial<RunnerControllerProcess> | undefined;
 	jobs?: Partial<RunnerHostJobs> | undefined;
 }>;
 
@@ -208,6 +255,7 @@ const CONTAINER_METHODS = [
 	"start",
 	"stop",
 ] as const;
+const PROCESS_METHODS = ["run", "stage", "status"] as const;
 const JOB_METHODS = [
 	"leases",
 	"meshAdvert",
@@ -220,20 +268,32 @@ const JOB_METHODS = [
 export function runnerHostInterfaceGaps(
 	host: RunnerHostPorts,
 ): readonly string[] {
-	const containers: Partial<RunnerControllerContainers> = host.containers ?? {};
 	const jobs: Partial<RunnerHostJobs> = host.jobs ?? {};
+	const process = host.process;
+	const containers: Partial<RunnerControllerContainers> = host.containers ?? {};
+	const controller =
+		process === undefined
+			? CONTAINER_METHODS.filter(
+					(name) => !(containers[name] instanceof Function),
+				).map((name) => `containers.${name}`)
+			: PROCESS_METHODS.filter(
+					(name) => !(process[name] instanceof Function),
+				).map((name) => `process.${name}`);
 	return Object.freeze([
-		...CONTAINER_METHODS.filter(
-			(name) => !(containers[name] instanceof Function),
-		).map((name) => `containers.${name}`),
+		...controller,
 		...JOB_METHODS.filter((name) => !(jobs[name] instanceof Function)).map(
 			(name) => `jobs.${name}`,
 		),
 	]);
 }
 
+/** The controller port a wired host has: its container engine or its supervised process. */
+type ControllerPort =
+	| Readonly<{ mode: "container"; containers: RunnerControllerContainers }>
+	| Readonly<{ mode: "process"; process: RunnerControllerProcess }>;
+
 type WiredHost = Readonly<{
-	containers: RunnerControllerContainers;
+	controller: ControllerPort;
 	jobs: RunnerHostJobs;
 }>;
 
@@ -242,11 +302,28 @@ function wired(host: RunnerHostPorts): WiredHost {
 	if (gaps.length > 0)
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
-			`runner-host-interface-missing: this host has no ${gaps.join(", ")}; the runner-host realizer acts only through the worker's container driver and job ports, so wire them (packages/ci-gh-actions/README.md, Runner-host realizer) or run this host's upgrades by hand`,
+			`runner-host-interface-missing: this host has no ${gaps.join(", ")}; the runner-host realizer acts only through the worker's controller port (container driver or supervised process) and job ports, so wire them (packages/ci-gh-actions/README.md, Runner-host realizer) or run this host's upgrades by hand`,
 			RUNNER_HOST_PRODUCT_ID,
 		);
-	// SAFETY: runnerHostInterfaceGaps checked every method of both ports above.
-	return host as WiredHost;
+	// SAFETY: runnerHostInterfaceGaps checked every method of the wired ports above.
+	const jobs = host.jobs as RunnerHostJobs;
+	if (host.process !== undefined)
+		return {
+			// SAFETY: as above, for the process port.
+			controller: {
+				mode: "process",
+				process: host.process as RunnerControllerProcess,
+			},
+			jobs,
+		};
+	return {
+		// SAFETY: as above, for the container port.
+		controller: {
+			mode: "container",
+			containers: host.containers as RunnerControllerContainers,
+		},
+		jobs,
+	};
 }
 
 // ── Options and desired state ───────────────────────────────────────────────
@@ -366,7 +443,17 @@ function parseRequest(raw: ResolveRequest, hostId: string): DesiredController {
 
 // ── Observation ────────────────────────────────────────────────────────────
 
-type Controller = Readonly<{ container: DockerContainer; digest: string }>;
+/**
+ * One controller on the host, whichever way it runs: a container named by
+ * its digest, or the supervised process at a release digest.
+ */
+type Controller = Readonly<{
+	name: string;
+	/** The container id, or `pid:<pid>` for a supervised process. */
+	id: string;
+	digest: string;
+	running: boolean;
+}>;
 
 type HostSnapshot = Readonly<{
 	controllers: readonly Controller[];
@@ -385,8 +472,42 @@ function controllerOf(container: DockerContainer): Controller | undefined {
 	if (!name.startsWith(RUNNER_CONTROLLER_CONTAINER_PREFIX)) return undefined;
 	const hex = name.slice(RUNNER_CONTROLLER_CONTAINER_PREFIX.length);
 	return DIGEST_HEX.test(hex)
-		? { container, digest: `sha256:${hex}` }
+		? {
+				name: container.name,
+				id: container.containerId,
+				digest: `sha256:${hex}`,
+				running: container.state === "running",
+			}
 		: undefined;
+}
+
+/** States in which a supervised controller process still exists. */
+const PROCESS_PRESENT = new Set<RunnerControllerProcessState>([
+	"starting",
+	"running",
+	"stopping",
+	"exited",
+	"failed",
+]);
+
+/**
+ * The supervised process as a controller. It counts as running only once the
+ * supervisor has acted on `requested` (the generation this agent last asked
+ * for), so a status written before the request is never read as its answer.
+ */
+function processControllerOf(
+	status: RunnerControllerProcessStatus | undefined,
+	requested: number,
+): Controller | undefined {
+	if (!status?.digest || !PROCESS_PRESENT.has(status.state)) return undefined;
+	const hex = status.digest.replace(/^sha256:/u, "");
+	if (!DIGEST_HEX.test(hex)) return undefined;
+	return {
+		name: controllerContainerName(status.digest),
+		id: status.pid === undefined ? "pid:unknown" : `pid:${status.pid}`,
+		digest: `sha256:${hex}`,
+		running: status.state === "running" && status.generation >= requested,
+	};
 }
 
 /** Jobs this host is carrying: active leases it has not handed to another runner. */
@@ -403,22 +524,33 @@ export function inFlightJobCount(
 	return Math.max(leased, busy);
 }
 
-async function snapshot(host: WiredHost): Promise<HostSnapshot> {
-	const [containers, leases, runners, advert] = await Promise.all([
-		host.containers.listWorkerContainers(),
+async function listControllers(
+	port: ControllerPort,
+	requested: number,
+): Promise<readonly Controller[]> {
+	if (port.mode === "process") {
+		const controller = processControllerOf(
+			await port.process.status(),
+			requested,
+		);
+		return controller ? [controller] : [];
+	}
+	return (await port.containers.listWorkerContainers()).flatMap((container) => {
+		const controller = controllerOf(container);
+		return controller ? [controller] : [];
+	});
+}
+
+async function snapshot(host: WiredHost, requested = 0): Promise<HostSnapshot> {
+	const [controllers, leases, runners, advert] = await Promise.all([
+		listControllers(host.controller, requested),
 		host.jobs.leases(),
 		host.jobs.runners(),
 		host.jobs.meshAdvert(),
 	]);
-	const controllers = containers.flatMap((container) => {
-		const controller = controllerOf(container);
-		return controller ? [controller] : [];
-	});
 	return {
 		controllers,
-		running: controllers.filter(
-			(controller) => controller.container.state === "running",
-		),
+		running: controllers.filter((controller) => controller.running),
 		inFlightJobs: inFlightJobCount(leases, runners),
 		busyRunners: runners.filter((runner) => runner.presence.busy).length,
 		onlineRunners: runners.filter(
@@ -438,6 +570,8 @@ function servingGaps(
 		nowMs: number;
 		/** Set after a swap: the advert must come from the new controller. */
 		startedAtMs?: number;
+		/** A supervised process's advert must name its controller digest. */
+		advertDigestRequired?: boolean;
 	}>,
 ): readonly string[] {
 	const gaps: string[] = [];
@@ -468,6 +602,8 @@ function servingGaps(
 			advert.controllerDigest !== input.digest
 		)
 			gaps.push(`the mesh advert is at ${advert.controllerDigest}`);
+		if (input.advertDigestRequired && advert.controllerDigest === undefined)
+			gaps.push("the mesh advert names no controller digest");
 		if (
 			input.startedAtMs !== undefined &&
 			advert.controllerDigest === undefined &&
@@ -521,8 +657,8 @@ function outcome(
 	const outputs: RunnerHostOutputs = {
 		hostId,
 		controllerDigest: controller.digest,
-		containerName: controller.container.name,
-		containerId: controller.container.containerId,
+		containerName: controller.name,
+		containerId: controller.id,
 		image: `${desired.repository}@${controller.digest}`,
 		inFlightJobs: snap.inFlightJobs,
 		busyRunners: snap.busyRunners,
@@ -556,6 +692,27 @@ function outcome(
 	});
 }
 
+/**
+ * A supervised controller process runs its release as the daemon's
+ * supervisor starts it: there is no container command, env, mount, memory
+ * limit or user to set, so a request that sets one is refused rather than
+ * silently ignored.
+ */
+function processConfigRefusal(desired: DesiredController): void {
+	const { config } = desired;
+	const set = [
+		...(config.command.length > 0 ? ["command"] : []),
+		...(Object.keys(config.env).length > 0 ? ["env"] : []),
+		...(config.volumes.length > 0 ? ["volumes"] : []),
+		...(config.memoryMb === undefined ? [] : ["memoryMb"]),
+		...(config.runAsUser === undefined ? [] : ["runAsUser"]),
+	];
+	if (set.length > 0)
+		rejected(
+			`runner-host-config-unsupported: this host's controller is a supervised process, which takes no container ${set.join(", ")}; drop them from the request or run the controller as a container`,
+		);
+}
+
 // ── The resolver ───────────────────────────────────────────────────────────
 
 /**
@@ -580,6 +737,12 @@ export function createRunnerHostResolver(
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const pollMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	const verifyMs = options.verifyDeadlineMs ?? DEFAULT_VERIFY_DEADLINE_MS;
+	/**
+	 * The latest request generation this agent gave a supervised controller
+	 * process; a status that has not caught up with it is not its answer.
+	 */
+	let requested = 0;
+	const observe = (host: WiredHost) => snapshot(host, requested);
 
 	/** Poll until `probe` answers or the deadline passes. */
 	async function until<T>(
@@ -619,11 +782,11 @@ export function createRunnerHostResolver(
 		deadlineMs: number,
 	): Promise<void> {
 		const drained = await until(deadlineMs, async () => {
-			const snap = await snapshot(host);
+			const snap = await observe(host);
 			return snap.inFlightJobs === 0 ? snap : undefined;
 		});
 		if (drained) return;
-		const left = (await snapshot(host)).inFlightJobs;
+		const left = (await observe(host)).inFlightJobs;
 		rejected(
 			`runner-host-drain-deadline: ${left} job(s) still in flight after ${deadlineMs} ms; admission is reopened and the controller is unchanged (no job is cancelled); a later pass retries`,
 		);
@@ -634,22 +797,66 @@ export function createRunnerHostResolver(
 
 	/** Stop and remove a controller; observe that it is gone. */
 	async function retire(host: WiredHost, controller: Controller) {
-		const { name, containerId } = controller.container;
-		if (controller.container.state === "running")
-			await host.containers.stop(name, containerId);
-		try {
-			await host.containers.remove(name, containerId);
-		} catch {
-			// The driver creates with --rm, so a stopped controller may already
-			// be gone; the listing below decides.
+		const port = host.controller;
+		if (port.mode === "process") {
+			// The supervisor stops its child; the status says when it has.
+			const generation = await port.process.run(undefined);
+			requested = Math.max(requested, generation);
+			const stopped = await until(verifyMs, async () => {
+				const status = await port.process.status();
+				return status !== undefined &&
+					status.generation >= generation &&
+					processControllerOf(status, generation) === undefined
+					? status
+					: undefined;
+			});
+			if (!stopped) {
+				// The supervisor may still be stopping the child (its stop
+				// deadline can outlast this wait). The stop request must not
+				// outlive this refusal, or the host is left with no controller
+				// once the supervisor finishes: ask for the controller it ran.
+				let restore = `asked the supervisor to run ${controller.digest} again`;
+				if (controller.running)
+					try {
+						requested = Math.max(
+							requested,
+							await port.process.run(controller.digest),
+						);
+					} catch (error) {
+						restore = `could not ask the supervisor to run ${controller.digest} again (${error instanceof Error ? error.message : "unknown"})`;
+					}
+				else restore = "it was not running, so nothing is restarted";
+				rejected(
+					`runner-host-retire-unobserved: the supervisor did not report controller ${controller.name} stopped within ${verifyMs} ms; ${restore}`,
+				);
+			}
+		} else {
+			if (controller.running)
+				await port.containers.stop(controller.name, controller.id);
+			try {
+				await port.containers.remove(controller.name, controller.id);
+			} catch {
+				// The driver creates with --rm, so a stopped controller may already
+				// be gone; the listing below decides.
+			}
 		}
-		const still = (await snapshot(host)).controllers.some(
-			(other) => other.container.containerId === containerId,
+		const still = (await observe(host)).controllers.some(
+			(other) => other.id === controller.id,
 		);
 		if (still)
 			rejected(
-				`runner-host-retire-unobserved: controller ${name} is still present after stop and remove`,
+				`runner-host-retire-unobserved: controller ${controller.name} is still present after stop and remove`,
 			);
+	}
+
+	/** Fetch the target: pull and inspect the image, or stage the verified release. */
+	async function prepare(host: WiredHost, image: string): Promise<void> {
+		const port = host.controller;
+		if (port.mode === "process") await port.process.stage(image);
+		else {
+			await port.containers.pull(image);
+			await port.containers.inspectImage(image);
+		}
 	}
 
 	async function launch(
@@ -658,6 +865,16 @@ export function createRunnerHostResolver(
 		digest: string,
 		config: DesiredController["config"],
 	): Promise<number> {
+		const port = host.controller;
+		if (port.mode === "process") {
+			// Staging is idempotent by digest: a release the supervisor already
+			// ran (a rollback target) is verified again, not fetched again.
+			await port.process.stage(image);
+			const startedAtMs = now();
+			requested = Math.max(requested, await port.process.run(digest));
+			launched.set(digest, { image, config });
+			return startedAtMs;
+		}
 		const spec: IsolatedContainerSpec = {
 			name: controllerContainerName(digest),
 			image,
@@ -673,10 +890,22 @@ export function createRunnerHostResolver(
 			volumes: config.volumes.map(volumeOf),
 		};
 		const startedAtMs = now();
-		const handle = await host.containers.create(spec);
-		await host.containers.start(handle.name, handle.containerId);
+		const handle = await port.containers.create(spec);
+		await port.containers.start(handle.name, handle.containerId);
 		launched.set(digest, { image, config });
 		return startedAtMs;
+	}
+
+	/** Whether the controller is still alive at the moment of the check. */
+	async function alive(host: WiredHost, controller: Controller) {
+		const port = host.controller;
+		if (port.mode === "container")
+			return port.containers.isRunning(controller.name, controller.id);
+		const status = await port.process.status();
+		return (
+			processControllerOf(status, requested)?.running === true &&
+			status?.digest === controller.digest
+		);
 	}
 
 	async function verify(
@@ -686,26 +915,20 @@ export function createRunnerHostResolver(
 	): Promise<Readonly<{ snap?: HostSnapshot; gaps: readonly string[] }>> {
 		let gaps: readonly string[] = [];
 		const snap = await until(verifyMs, async () => {
-			const observed = await snapshot(host);
+			const observed = await observe(host);
 			gaps = servingGaps(observed, {
 				hostId,
 				hostKind: options.hostKind,
 				digest,
 				nowMs: now(),
+				advertDigestRequired: host.controller.mode === "process",
 				...(startedAtMs === undefined ? undefined : { startedAtMs }),
 			});
 			const live = observed.running.find(
 				(controller) => controller.digest === digest,
 			);
-			if (
-				gaps.length === 0 &&
-				live &&
-				!(await host.containers.isRunning(
-					live.container.name,
-					live.container.containerId,
-				))
-			)
-				gaps = ["the controller container is not running"];
+			if (gaps.length === 0 && live && !(await alive(host, live)))
+				gaps = ["the controller is not running"];
 			return gaps.length === 0 ? observed : undefined;
 		});
 		return snap ? { snap, gaps: [] } : { gaps };
@@ -722,7 +945,7 @@ export function createRunnerHostResolver(
 		previous: Controller | undefined,
 		why: string,
 	): Promise<Readonly<{ startedAtMs: number; source: string }>> {
-		const snap = await snapshot(host);
+		const snap = await observe(host);
 		if (snap.inFlightJobs > 0)
 			rejected(
 				`runner-host-verify-failed: ${why}; the new controller already holds ${snap.inFlightJobs} job(s), so it is left serving rather than stopped; a later pass re-verifies`,
@@ -799,7 +1022,8 @@ export function createRunnerHostResolver(
 		async reconcile(raw: ResolveRequest, _transport: HttpTransport) {
 			const desired = parseRequest(raw, hostId);
 			const host = wired(options.host);
-			const before = await snapshot(host);
+			if (host.controller.mode === "process") processConfigRefusal(desired);
+			const before = await observe(host);
 			if (before.running.length > 1)
 				rejected(
 					`runner-host-ambiguous: ${before.running.length} controllers are running (${before.running.map((controller) => controller.digest).join(", ")}); stop all but one by hand, a realizer never guesses which one holds jobs`,
@@ -818,11 +1042,12 @@ export function createRunnerHostResolver(
 			}
 
 			try {
-				await host.containers.pull(desired.image);
-				await host.containers.inspectImage(desired.image);
+				await prepare(host, desired.image);
 			} catch (error) {
 				rejected(
-					`runner-host-pull-failed: ${desired.image} could not be pulled or inspected (${error instanceof Error ? error.message : "unknown"}); the host keeps ${previous?.digest ?? "no controller"}`,
+					host.controller.mode === "process"
+						? `runner-host-stage-failed: the release ${desired.image} could not be fetched or did not verify against its digest (${error instanceof Error ? error.message : "unknown"}); the host keeps ${previous?.digest ?? "no controller"}`
+						: `runner-host-pull-failed: ${desired.image} could not be pulled or inspected (${error instanceof Error ? error.message : "unknown"}); the host keeps ${previous?.digest ?? "no controller"}`,
 				);
 			}
 
@@ -836,7 +1061,7 @@ export function createRunnerHostResolver(
 				await waitForDrain(host, drainMs);
 				try {
 					// Stopped controllers left behind by an earlier pass go too.
-					for (const controller of (await snapshot(host)).controllers)
+					for (const controller of (await observe(host)).controllers)
 						await retire(host, controller);
 					const startedAtMs = await launch(
 						host,
@@ -884,7 +1109,7 @@ export function createRunnerHostResolver(
 		async read(raw: ResolveRequest, _transport: HttpTransport) {
 			const desired = parseRequest(raw, hostId);
 			const host = wired(options.host);
-			const snap = await snapshot(host);
+			const snap = await observe(host);
 			const live = snap.running[0];
 			if (!live) return undefined;
 			const gaps = servingGaps(snap, {
@@ -892,6 +1117,7 @@ export function createRunnerHostResolver(
 				hostKind: options.hostKind,
 				digest: live.digest,
 				nowMs: now(),
+				advertDigestRequired: host.controller.mode === "process",
 			});
 			return outcome("noop", hostId, desired, live, snap, gaps.length === 0, [
 				...(snap.running.length > 1
@@ -913,7 +1139,7 @@ export function createRunnerHostResolver(
 						options.drainDeadlineMs ??
 						DEFAULT_DRAIN_DEADLINE_MS,
 				);
-				for (const controller of (await snapshot(host)).controllers)
+				for (const controller of (await observe(host)).controllers)
 					await retire(host, controller);
 			});
 		},

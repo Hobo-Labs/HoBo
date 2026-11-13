@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
+import { RELAY_VERIFY_REFUSAL } from "../src/ci-relay-verify.js";
 import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
@@ -151,12 +152,19 @@ afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
 });
 
-// The relay answering its probes, and the URLs it was asked for.
-function healthyRelay(status = 200) {
+// The relay answering its probes, and the URLs it was asked for. Its
+// `/healthz` names the commit its build is of, as the relay's entry does.
+function healthyRelay(status = 200, commit: string = SHA) {
 	const probed: string[] = [];
 	const http: HttpTransport = async (request) => {
 		probed.push(request.url);
-		return { status, headers: {}, body: "" };
+		return {
+			status,
+			headers: { "content-type": "application/json" },
+			body: request.url.endsWith("/healthz")
+				? JSON.stringify({ ok: true, commit })
+				: JSON.stringify({ ready: status === 200 }),
+		};
 	};
 	return { http, probed };
 }
@@ -1025,6 +1033,44 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			readyState: "READY",
 		});
 		expect(relay.probed).toContain("https://relay.example.test/readyz");
+	});
+
+	it("does not qualify production while HOBO_CI_RELAY_URL serves another commit", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			hoboHome: home,
+			probe: healthyRelay().http,
+			...clock,
+		});
+		expect(first.exitCode).toBe(0);
+		const stale = healthyRelay(200, "f".repeat(40));
+		const second = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				hoboHome: home,
+				probe: stale.http,
+				...clock,
+			},
+		);
+		expect(second.exitCode).toBe(1);
+		expect(second.envelope).toMatchObject({
+			code: RELAY_VERIFY_REFUSAL.commitMismatch,
+			message: expect.stringContaining("f".repeat(40)),
+		});
+		expect(stale.probed).toContain("https://relay.example.test/healthz");
 	});
 
 	it("without --wait returns once the deployment exists, unverified and unqualified", async () => {

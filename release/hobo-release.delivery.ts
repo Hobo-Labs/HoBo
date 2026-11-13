@@ -34,16 +34,16 @@ const PROVIDER = {
 // release on the target, stable re-observes the same Freight there and
 // qualifies it (promote, never rebuild).
 const BINDING = {
-	// npm trusted publishing with provenance, as release-npm runs it today.
-	// The realizer refuses both with named codes (npm-provenance-bundle-missing:
-	// the release records no Sigstore bundle yet; npm-oidc-scoped-unsupported:
-	// @hobo/provider-npm's scoped OIDC exchange), so `npm publish --provenance`
-	// stays the npm publisher: an unmet requirement (release-channels.md).
+	// npmjs with the hobodev automation token and provenance required: the
+	// release job signs each tarball's Sigstore bundle and records it in the
+	// Freight (scripts/ci/publish-npm-sdk.mts); the realizer attaches it to the
+	// publish. Token auth, because npm's OIDC exchange routes only for the
+	// escaped scope separator, which the transport guard refuses.
 	npm: {
 		"hobo.cd/npm.registry": "npmjs",
-		"hobo.cd/npm.auth": "oidc-trusted-publishing",
+		"hobo.cd/npm.auth": "token",
 		"hobo.cd/npm.provenance": "required",
-		"hobo.cd/credential-ref": "env://NPM_ID_TOKEN",
+		"hobo.cd/credential-ref": "env://NPM_TOKEN",
 	},
 	// GHCR with the workflow's GITHUB_TOKEN (packages: write).
 	oci: {
@@ -60,6 +60,20 @@ const BINDING = {
 		"hobo.cd/credential-ref": "env://GITHUB_TOKEN",
 	},
 } as const satisfies Record<Family, Readonly<Record<string, string>>>;
+
+// Per-channel binding overrides. The npm stable Camp only re-reads a public
+// package (`observe`), so it binds anonymous reads and resolves no credential:
+// the job that promotes stable never holds the npm token.
+const NPM_STABLE_BINDING = {
+	"hobo.cd/npm.auth": "anonymous",
+	"hobo.cd/credential-ref": "none://npm-public-read",
+} as const;
+
+function channelBinding(family: Family, channel: Channel) {
+	return family === "npm" && channel === "stable"
+		? NPM_STABLE_BINDING
+		: undefined;
+}
 
 // What each channel's Camp may do at the target. Candidate writes the release
 // there; stable only re-reads it (`observe`: resolver read, pull-only token
@@ -123,6 +137,7 @@ export const camps = RELEASE_FAMILIES.flatMap((family) =>
 			"hobo.release/family": family,
 			"hobo.release/channel": channel,
 			...BINDING[family],
+			...channelBinding(family, channel),
 			"hobo.cd/realize-mode": MODE[channel],
 		},
 	})),

@@ -57,6 +57,7 @@ import {
 	RUNNER_HOST_PRODUCT_ID,
 	type RunnerHostCampReport,
 	type RunnerHostKind,
+	type RunnerReleaseParameter,
 	runnerHostAbsentReport,
 	runnerHostCampReport,
 	runnerHostHealthConditions,
@@ -92,6 +93,8 @@ const CREDENTIAL_LOCATOR = /^[a-z][a-z0-9+.-]*:\/\/[^\s]{1,256}$/u;
 const DOCKER_BINARY = /^(?:docker|podman|\/[^\s\0]{1,255})$/u;
 const MAX_DRAIN_MS = 24 * 60 * 60_000;
 const ABSOLUTE_PATH = /^\/[^\0]{1,4095}$/u;
+/** An https base URL for controller releases; no userinfo, so no credential. */
+const RELEASE_URL = /^https:\/\/[^\s@/]{1,253}(?:\/[^\s@]{0,2048})?$/u;
 
 /** What a runner host's agent is told about itself (`HOBO_CD_RUNNER_HOST`). */
 export type RunnerHostAgentConfig = Readonly<{
@@ -104,11 +107,23 @@ export type RunnerHostAgentConfig = Readonly<{
 	dockerBinary?: string;
 	/**
 	 * The box worker's journal (`HOBO_CI_WORKER_DB`); the job ports are read
-	 * from its directory. Default: the worker's own default path.
+	 * from its directory. Default: the worker's own default path. A local
+	 * runner names its state directory instead (`worker.directory`), which
+	 * has no journal: its database path is `worker.sqlite` there.
 	 */
 	workerDatabase?: string;
 	drainDeadlineMs?: number;
+	/**
+	 * How the controller runs: a container (the default) or a process the
+	 * worker daemon's supervisor runs, with releases fetched by digest from
+	 * `releases` (an absolute directory or an `https://` base URL).
+	 */
+	controller?: RunnerHostControllerConfig;
 }>;
+
+export type RunnerHostControllerConfig =
+	| Readonly<{ mode: "container" }>
+	| Readonly<{ mode: "process"; releases: string }>;
 
 function refusal(code: string, message: string, remediation: string) {
 	return {
@@ -117,7 +132,7 @@ function refusal(code: string, message: string, remediation: string) {
 	};
 }
 
-const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<mesh node id>","hostKind":"box-worker|mesh-node|local-runner","credentialRef":"env://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
+const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<mesh node id>","hostKind":"box-worker|mesh-node|local-runner","credentialRef":"env://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"} or {"directory":"<local runner state directory>"},"controller":{"mode":"container"} or {"mode":"process","releases":"<absolute directory or https:// base URL>"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
 
 /** Parse the agent config once; every problem is listed, nothing partial is returned. */
 export function parseRunnerHostAgentConfig(
@@ -136,6 +151,7 @@ export function parseRunnerHostAgentConfig(
 	const docker = value.docker;
 	const drain = value.drainDeadlineMs;
 	const worker = value.worker;
+	const controllerValue = value.controller;
 	const known = new Set([
 		"hostId",
 		"hostKind",
@@ -143,6 +159,7 @@ export function parseRunnerHostAgentConfig(
 		"docker",
 		"worker",
 		"drainDeadlineMs",
+		"controller",
 	]);
 	for (const key of Object.keys(value))
 		if (!known.has(key)) problems.push(`unknown field ${key}`);
@@ -174,17 +191,52 @@ export function parseRunnerHostAgentConfig(
 	}
 	let workerDatabase: string | undefined;
 	if (worker !== undefined) {
-		const candidate = isJsonObject(worker) ? worker.database : undefined;
+		const keys = isJsonObject(worker) ? Object.keys(worker) : [];
+		const key = keys.length === 1 ? keys[0] : undefined;
+		const candidate =
+			isJsonObject(worker) && key !== undefined ? worker[key] : undefined;
 		if (
-			!isJsonObject(worker) ||
-			Object.keys(worker).some((key) => key !== "database") ||
+			(key !== "database" && key !== "directory") ||
 			!isJsonString(candidate) ||
 			!ABSOLUTE_PATH.test(candidate)
 		)
 			problems.push(
-				"worker must be {database: <absolute path of the worker's journal>} when given",
+				"worker must be {database: <absolute path of the worker's journal>} or {directory: <absolute path of a local runner's state directory>} when given",
 			);
-		else workerDatabase = candidate;
+		else
+			workerDatabase =
+				key === "database"
+					? candidate
+					: `${candidate.replace(/\/+$/u, "")}/worker.sqlite`;
+	}
+	let controller: RunnerHostControllerConfig | undefined;
+	if (controllerValue !== undefined) {
+		const mode = isJsonObject(controllerValue)
+			? controllerValue.mode
+			: undefined;
+		const releases = isJsonObject(controllerValue)
+			? controllerValue.releases
+			: undefined;
+		if (
+			isJsonObject(controllerValue) &&
+			mode === "container" &&
+			Object.keys(controllerValue).every((k) => k === "mode")
+		)
+			controller = { mode: "container" };
+		else if (
+			isJsonObject(controllerValue) &&
+			mode === "process" &&
+			Object.keys(controllerValue).every(
+				(k) => k === "mode" || k === "releases",
+			) &&
+			isJsonString(releases) &&
+			(ABSOLUTE_PATH.test(releases) || RELEASE_URL.test(releases))
+		)
+			controller = { mode: "process", releases };
+		else
+			problems.push(
+				"controller must be {mode: container} or {mode: process, releases: <absolute directory or https:// base URL with no credentials>} when given",
+			);
 	}
 	if (
 		drain !== undefined &&
@@ -214,6 +266,7 @@ export function parseRunnerHostAgentConfig(
 			...(binary ? { dockerBinary: binary } : undefined),
 			...(workerDatabase ? { workerDatabase } : undefined),
 			...(isJsonNumber(drain) ? { drainDeadlineMs: drain } : undefined),
+			...(controller ? { controller } : undefined),
 		}),
 	};
 }
@@ -222,17 +275,23 @@ export function parseRunnerHostAgentConfig(
 
 const IMAGE_BY_DIGEST = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/u;
 
+/** Which realization parameter of the runner-host row a host runs. */
+export type RunnerHostReference = "image" | RunnerReleaseParameter;
+
 /**
- * The controller image a resolved Set asks a runner host for: the plan row
- * the Set resolved to `hobo-ci.runner-host/v1`, its `image` realization
- * parameter, pinned by digest. Undefined when the Set has no such row.
+ * The controller a resolved Set asks a runner host for: the plan row the Set
+ * resolved to `hobo-ci.runner-host/v1`, its `reference` realization parameter
+ * (`image` for a container, the host kind's release for a supervised
+ * process: `runnerHostRealizationParameters`), pinned by digest. Undefined
+ * when the Set has no such row or the row has no such parameter.
  */
 export function runnerHostImageOf(
 	resolved: RealizeInput["resolved"],
+	reference: RunnerHostReference = "image",
 ): string | undefined {
 	for (const resource of resolved.plan.resources) {
 		if (resource.productId !== RUNNER_HOST_PRODUCT_ID) continue;
-		const image = resource.realizationParameters?.image;
+		const image = resource.realizationParameters?.[reference];
 		if (isJsonString(image) && IMAGE_BY_DIGEST.test(image)) return image;
 	}
 	return undefined;
@@ -300,6 +359,12 @@ export type RunnerHostRealizerInput = Readonly<{
 	hostId: string;
 	credentialRef: string;
 	drainDeadlineMs?: number;
+	/**
+	 * The row parameter this host runs (default `image`): a process-mode host
+	 * runs its kind's release, whose digest is its bytes' sha256, never the
+	 * image's manifest digest.
+	 */
+	reference?: RunnerHostReference;
 	now: () => number;
 	/** The realizer makes no HTTP call; the transport refuses any. */
 	transport?: HttpTransport;
@@ -319,6 +384,7 @@ export function createRunnerHostRealizer(
 	input: RunnerHostRealizerInput,
 ): Realizer {
 	const transport = input.transport ?? NO_HTTP;
+	const reference = input.reference ?? "image";
 
 	function request(realize: RealizeInput, image: string) {
 		return runnerHostResolveRequest({
@@ -362,10 +428,15 @@ export function createRunnerHostRealizer(
 			input.now(),
 			[
 				{
-					code: "runner-host-image-unresolved",
-					message: `Set ${realize.desired.setId} resolves no ${RUNNER_HOST_PRODUCT_ID} row with a digest-pinned image`,
+					code:
+						reference === "image"
+							? "runner-host-image-unresolved"
+							: "runner-host-release-unresolved",
+					message: `Set ${realize.desired.setId} resolves no ${RUNNER_HOST_PRODUCT_ID} row with a digest-pinned ${reference}`,
 					remediation:
-						"resolve the runner fleet's Set to a hobo-ci.runner-host/v1 row whose image realization parameter is pinned by @sha256 digest",
+						reference === "image"
+							? "resolve the runner fleet's Set to a hobo-ci.runner-host/v1 row whose image realization parameter is pinned by @sha256 digest"
+							: `this host's controller runs as a process: resolve the Set from Freight that carries its release (runnerFleetDelivery releaseIndexBase, runnerHostRealizationParameters), so the row has a digest-pinned ${reference}`,
 				},
 			],
 		);
@@ -396,7 +467,7 @@ export function createRunnerHostRealizer(
 	return Object.freeze({
 		async converge(realize: RealizeInput, _ctx: CdContext) {
 			if (wrongHost(realize)) return foreign(realize);
-			const image = runnerHostImageOf(realize.resolved);
+			const image = runnerHostImageOf(realize.resolved, reference);
 			if (image === undefined) return unresolved(realize);
 			try {
 				const outcome = await input.resolver.reconcile(
@@ -443,7 +514,7 @@ export function createRunnerHostRealizer(
 
 		async observe(realize: RealizeInput, _ctx: CdContext) {
 			if (wrongHost(realize)) return foreign(realize);
-			const image = runnerHostImageOf(realize.resolved);
+			const image = runnerHostImageOf(realize.resolved, reference);
 			if (image === undefined) return unresolved(realize);
 			const { report, digest } = await current(realize, image);
 			const status =

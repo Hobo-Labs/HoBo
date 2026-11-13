@@ -19,6 +19,7 @@ import type {
 	TransportRequest,
 	TransportResponse,
 } from "@hobo/core";
+import { declareLatin1Transport } from "../../src/byte-transport.js";
 import type { JsonValue } from "../../src/json.js";
 
 export type FakeAuth =
@@ -47,6 +48,8 @@ export interface FakeHostConfig {
 	readonly mount?: boolean;
 	readonly blobRedirectTo?: string;
 	readonly omitDigestHeader?: boolean;
+	/** Repositories whose `pull` the token endpoint never grants. */
+	readonly denyPull?: readonly string[];
 }
 
 interface Repo {
@@ -161,7 +164,7 @@ export class FakeRegistryWorld {
 			});
 	}
 
-	readonly transport: HttpTransport = async (request) => {
+	readonly transport: HttpTransport = this.declared(async (request) => {
 		this.calls.push(request);
 		const index = this.faults.findIndex((fault) => fault.match(request));
 		if (index >= 0) {
@@ -171,7 +174,14 @@ export class FakeRegistryWorld {
 			throw new Error("socket hang up after send");
 		}
 		return this.handle(request);
-	};
+	});
+
+	/** A latin1 world carries bytes, and says so as a host byte transport does. */
+	private declared(transport: HttpTransport): HttpTransport {
+		return this.encoding === "latin1"
+			? declareLatin1Transport(transport)
+			: transport;
+	}
 
 	private state(host: string): HostState {
 		const state = this.hosts.get(host);
@@ -204,7 +214,7 @@ export class FakeRegistryWorld {
 		for (const state of this.hosts.values()) {
 			const auth = state.config.auth;
 			if (auth?.kind === "bearer" && request.url.startsWith(auth.realm))
-				return this.token(auth, request, url);
+				return this.token(auth, request, url, state.config.denyPull ?? []);
 		}
 		const state = this.state(url.hostname);
 		const uploadMatch = /^\/v2\/(.+)\/blobs\/uploads\/([^/]*)$/u.exec(
@@ -288,6 +298,7 @@ export class FakeRegistryWorld {
 		auth: Extract<FakeAuth, { kind: "bearer" }>,
 		request: TransportRequest,
 		url: URL,
+		denyPull: readonly string[],
 	): TransportResponse {
 		if (url.searchParams.get("service") !== auth.service)
 			return error(400, "SERVICE_MISMATCH");
@@ -305,7 +316,10 @@ export class FakeRegistryWorld {
 				/^repository:(.+):([a-z,*]+)$/u.exec(scope) ?? [];
 			if (!repo || !actions) continue;
 			for (const action of actions.split(","))
-				if (authenticated || (auth.anonymousPull && action === "pull"))
+				if (
+					!(action === "pull" && denyPull.includes(repo)) &&
+					(authenticated || (auth.anonymousPull && action === "pull"))
+				)
 					granted.add(`${repo}:${action}`);
 		}
 		const token = `fixture-registry-token-${this.nextToken++}`;
@@ -448,12 +462,13 @@ export class FakeRegistryWorld {
 			return {
 				status: 200,
 				headers,
-				body: request.method === "HEAD" ? "" : entry.text,
+				body: request.method === "HEAD" ? "" : this.encode(utf8(entry.text)),
 			};
 		}
 		if (request.method === "PUT") {
-			const text = request.body ?? "";
-			const digest = sha256(utf8(text));
+			const bytes = this.decode(request.body);
+			const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+			const digest = sha256(bytes);
 			if (digestRef && digest !== reference)
 				return error(400, "DIGEST_INVALID");
 			const parsed = JSON.parse(text);

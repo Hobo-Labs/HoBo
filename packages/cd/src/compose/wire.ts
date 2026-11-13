@@ -18,6 +18,10 @@ import {
 	type RetentionPolicyRecord,
 	RetentionPolicyRecordSchema,
 } from "../_generated/cd_pb.js";
+import {
+	createFanoutAggregateGate,
+	type FanoutAggregateDeps,
+} from "../adapters/gatekeeper.js";
 import { CD_DEFAULTS } from "../events.js";
 import type {
 	ApprovalPort,
@@ -64,8 +68,11 @@ import type {
 	VerificationEngine,
 	VerifyPort,
 } from "../ports.js";
+import { placedCampsFrom } from "../promotion/placed.js";
+import type { PromotionServiceDeps } from "../promotion/service.js";
 import { ComposeError } from "./errors.js";
 import {
+	unconfiguredFanoutCost,
 	unconfiguredRunbooks,
 	unconfiguredSuites,
 	unconfiguredTraffic,
@@ -106,6 +113,17 @@ export type CdComposeScope = Readonly<{
 
 type Builder<T> = (scope: CdComposeScope) => T;
 
+/**
+ * The pricing and Station budget authorities the fan-out aggregate gate (D20)
+ * reads: a cost quote per Camp, the Station budget, and an optional Station
+ * entitlement for the Camps one fan-out may reach. There is no quota system
+ * of its own; the host binds its existing authorities.
+ */
+export type FanoutCostAuthority = Pick<
+	FanoutAggregateDeps,
+	"quote" | "budget" | "entitlement"
+>;
+
 /** Host-owned adapters. Optional ones fall back to fail-closed adapters (fail-closed.ts). */
 export type CdComposeAdapters = Readonly<{
 	gate: Builder<DeployGate>;
@@ -126,6 +144,12 @@ export type CdComposeAdapters = Readonly<{
 	runbooks?: Builder<RunbookExecutor>;
 	suites?: Builder<VerifyPort>;
 	notify?: Builder<NotificationPort>;
+	/**
+	 * Pricing and Station budget for the fan-out aggregate gate (D20). Without
+	 * it every fan-out promotion is refused before any Camp starts
+	 * (`fanout-aggregate-quote-missing`): the aggregate never assumes zero cost.
+	 */
+	fanoutCost?: Builder<FanoutCostAuthority>;
 }>;
 
 export type CdComposeInput = Readonly<{
@@ -398,27 +422,45 @@ export function wireContinuousDelivery(
 		}),
 	);
 	lateFanout.bind(fanout);
-	const promotions = put(
-		"promotions",
-		f.createPromotionService({
-			...base,
-			freight,
-			pipelines,
-			desired,
-			resolver: a.resolver(scope),
-			gate: a.gate(scope),
-			approvals,
-			rollouts,
-			verification,
-			runbooks:
-				a.runbooks?.(scope) ?? unconfiguredRunbooks({ telemetry: sink }),
-			suites,
-			notify,
-			campPolicy,
-			authorizer,
+	// Fan-out drives convergence through ordinary promotions (D21): a
+	// promotion reads a placed node's governed Camps from the recorded
+	// placement decision, and checks the fan-out aggregate (Rail
+	// max_fanout_camps, entitlement, Station budget) before any Camp starts.
+	const cost: FanoutCostAuthority =
+		a.fanoutCost?.(scope) ??
+		unconfiguredFanoutCost({ telemetry: sink, now: base.now });
+	const promotionDeps: PromotionServiceDeps = {
+		...base,
+		freight,
+		pipelines,
+		desired,
+		resolver: a.resolver(scope),
+		gate: a.gate(scope),
+		approvals,
+		rollouts,
+		verification,
+		runbooks: a.runbooks?.(scope) ?? unconfiguredRunbooks({ telemetry: sink }),
+		suites,
+		notify,
+		campPolicy,
+		authorizer,
+		telemetry: sink,
+		placed: placedCampsFrom({ fanout, placement }),
+		aggregate: createFanoutAggregateGate({
+			tenant: base.tenant,
+			fanout,
+			placement,
+			topology: input.topology,
+			rails,
+			quote: cost.quote,
+			budget: cost.budget,
+			...(cost.entitlement !== undefined
+				? { entitlement: cost.entitlement }
+				: undefined),
 			telemetry: sink,
 		}),
-	);
+	};
+	const promotions = put("promotions", f.createPromotionService(promotionDeps));
 	latePromotions.bind(promotions);
 
 	const failover = f.createFailoverController({
