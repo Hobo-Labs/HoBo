@@ -75,16 +75,17 @@ describe("runDockerPushWithRetry", () => {
 });
 
 describe("push-release-ghcr-images wiring", () => {
-	it("uses runDockerPushWithRetry for registry push", async () => {
+	it("publishes only through hobo deploy: an exported OCI layout, never docker push", async () => {
 		const { readFileSync } = await import("node:fs");
 		const { join } = await import("node:path");
 		const source = readFileSync(
 			join(import.meta.dirname, "..", "ci/push-release-ghcr-images.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/runDockerPushWithRetry/u);
-		expect(source).not.toMatch(/run\("docker", \["push"/u);
-		expect(source).toMatch(/resolveRegistryDigestForTagWithRetry/u);
+		expect(source).not.toMatch(/runDockerPushWithRetry/u);
+		expect(source).not.toMatch(/"push"/u);
+		expect(source).toMatch(/exportReleaseOciLayout/u);
+		expect(source).toMatch(/qualifyReleaseCandidate/u);
 		expect(source).toMatch(/tryReusePublishedTag/u);
 		expect(source).toMatch(/normalizeRepoDigestLine/u);
 	});
@@ -321,74 +322,6 @@ describe("release-images job", () => {
 	});
 });
 
-describe("pushedDigestRef (finding 141)", () => {
-	const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.159";
-	const digest =
-		"sha256:e9e01db3ed33237ceac6cf6b8ba6f5f3335287418739ff6992139f4599ab0a20";
-
-	it("takes the digest docker push printed, under the pushed repository", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		// Run 43176733275, ARC pod: RepoDigests[0] was the local name.
-		expect(
-			pushedDigestRef(
-				tag,
-				`abc: Layer already exists\nv0.0.0-alpha.159: digest: ${digest} size: 4307`,
-				`hobo-sdk@${digest}\n`,
-			),
-		).toBe(`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`);
-	});
-
-	it("falls back to the RepoDigests entry for the pushed repository, never the first", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		expect(
-			pushedDigestRef(
-				tag,
-				"",
-				`hobo-sdk@${digest}\nghcr.io/hobo-labs/hobo/hobo-sdk@${digest}\n`,
-			),
-		).toBe(`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`);
-	});
-
-	it("refuses rather than record a reference attest cannot find", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		expect(() => pushedDigestRef(tag, "", `hobo-sdk@${digest}\n`)).toThrow(
-			/no digest for .*hobo-sdk@sha256/u,
-		);
-		expect(() => pushedDigestRef(tag, "", "")).toThrow(
-			/RepoDigests has no ghcr.io\/hobo-labs\/hobo\/hobo-sdk@ entry \(none\)/u,
-		);
-	});
-
-	it("produces a line the attest step selects by image id", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		const line = pushedDigestRef(tag, `x: digest: ${digest} size: 1`, "");
-		// .github/actions/release-oci-attest: grep -F "/${IMAGE_ID}@"
-		expect(line.includes("/hobo-sdk@")).toBe(true);
-	});
-
-	it("returns the push output so the digest can be read from it", () => {
-		expect(
-			runDockerPushWithRetry({
-				tag,
-				log: () => {},
-				push: () => ({
-					exitCode: 0,
-					stdout: `v: digest: ${digest} size: 1`,
-					stderr: "",
-				}),
-			}),
-		).toContain(digest);
-	});
-});
-
 describe("ociReleaseArtifacts", () => {
 	const digest = `sha256:${"b".repeat(64)}`;
 
@@ -432,5 +365,230 @@ describe("releaseTagsOf (the tag the oci-candidate realizer owns)", () => {
 				`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`,
 			]),
 		).toBe("v0.0.0-alpha.3");
+	});
+});
+
+// ── OCI image layout export, read by digest (offline fixtures) ─────────────
+
+const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
+const OCI_INDEX = "application/vnd.oci.image.index.v1+json";
+
+async function layoutFixture(options: {
+	platforms?: readonly string[];
+	present?: readonly string[];
+	attestation?: boolean;
+	index?: boolean;
+}) {
+	const { createHash } = await import("node:crypto");
+	const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const dir = mkdtempSync(join(tmpdir(), "hobo-oci-layout-"));
+	mkdirSync(join(dir, "blobs", "sha256"), { recursive: true });
+	const put = (bytes: Uint8Array, write = true) => {
+		const hex = createHash("sha256").update(bytes).digest("hex");
+		if (write) writeFileSync(join(dir, "blobs", "sha256", hex), bytes);
+		return { digest: `sha256:${hex}`, size: bytes.byteLength };
+	};
+	const platforms = options.platforms ?? ["amd64"];
+	const children = platforms.map((arch) => {
+		const present = (options.present ?? platforms).includes(arch);
+		const config = put(
+			Buffer.from(JSON.stringify({ architecture: arch, os: "linux" })),
+			present,
+		);
+		const layer = put(
+			Uint8Array.from(
+				{ length: 300 },
+				(_, i) => (i * 13 + arch.charCodeAt(1)) % 256,
+			),
+			present,
+		);
+		const manifest = Buffer.from(
+			JSON.stringify({
+				schemaVersion: 2,
+				mediaType: OCI_MANIFEST,
+				config: {
+					mediaType: "application/vnd.oci.image.config.v1+json",
+					...config,
+				},
+				layers: [
+					{
+						mediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+						...layer,
+					},
+				],
+			}),
+		);
+		return {
+			mediaType: OCI_MANIFEST,
+			...put(manifest, present),
+			platform: { architecture: arch, os: "linux" },
+		};
+	});
+	const attestation = options.attestation
+		? [
+				{
+					mediaType: OCI_MANIFEST,
+					...put(
+						Buffer.from(
+							JSON.stringify({
+								schemaVersion: 2,
+								mediaType: OCI_MANIFEST,
+								config: {
+									mediaType: "application/vnd.oci.image.config.v1+json",
+									...put(Buffer.from("{}")),
+								},
+								layers: [],
+							}),
+						),
+					),
+					annotations: { "vnd.docker.reference.type": "attestation-manifest" },
+				},
+			]
+		: [];
+	let root = children[0];
+	if (options.index) {
+		const index = Buffer.from(
+			JSON.stringify({
+				schemaVersion: 2,
+				mediaType: OCI_INDEX,
+				manifests: [...children, ...attestation],
+			}),
+		);
+		root = {
+			mediaType: OCI_INDEX,
+			...put(index),
+			platform: { architecture: "", os: "" },
+		};
+	}
+	writeFileSync(join(dir, "oci-layout"), '{"imageLayoutVersion":"1.0.0"}');
+	writeFileSync(
+		join(dir, "index.json"),
+		JSON.stringify({ schemaVersion: 2, manifests: [root] }),
+	);
+	return { dir, root, children };
+}
+
+describe("readOciLayout (the image the oci-candidate realizer pushes)", () => {
+	it("reads a single-platform image: root manifest first, then config and layers, each re-hashed", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { root, dir } = await layoutFixture({});
+		const layout = readOciLayout(dir);
+		expect(layout.digest).toBe(root?.digest);
+		expect(layout.mediaType).toBe(OCI_MANIFEST);
+		expect(layout.size).toBe(root?.size);
+		expect(layout.blobs).toHaveLength(3);
+		expect(layout.blobs[0]?.digest).toBe(root?.digest);
+	});
+
+	it("publishes a complete index as the index", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { root, dir } = await layoutFixture({
+			platforms: ["amd64", "arm64"],
+			index: true,
+		});
+		const layout = readOciLayout(dir);
+		expect(layout.digest).toBe(root?.digest);
+		expect(layout.mediaType).toBe(OCI_INDEX);
+		expect(layout.blobs).toHaveLength(7);
+	});
+
+	it("publishes the one complete platform of an index saved from one platform, never the attestation", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { children, dir } = await layoutFixture({
+			platforms: ["amd64", "arm64"],
+			present: ["amd64"],
+			attestation: true,
+			index: true,
+		});
+		expect(readOciLayout(dir).digest).toBe(children[0]?.digest);
+	});
+
+	it("refuses a missing layer or a blob that does not hash to its name (nothing substituted)", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { rmSync, writeFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		const missing = await layoutFixture({});
+		rmSync(readOciLayout(missing.dir).blobs[2]?.path ?? "");
+		expect(() => readOciLayout(missing.dir)).toThrow(/missing blobs/u);
+		const tampered = await layoutFixture({});
+		writeFileSync(readOciLayout(tampered.dir).blobs[2]?.path ?? "", "other");
+		expect(() => readOciLayout(tampered.dir)).toThrow(/hashes to/u);
+		expect(() => readOciLayout(join(tampered.dir, "blobs"))).toThrow(
+			/not an OCI image layout/u,
+		);
+	});
+});
+
+describe("publishReleaseGhcrImages (release Freight for hobo deploy)", () => {
+	it("records a built image from the artifact store at its GHCR coordinate, with every blob, the release tag and the mount source", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { publishReleaseGhcrImages, releaseMountFrom } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		const { dir } = await layoutFixture({});
+		const layout = readOciLayout(dir);
+		const line = `ghcr.io/hobo-labs/hobo/hobo-cli@${layout.digest}`;
+		const reused = `ghcr.io/hobo-labs/hobo/hobo-sdk@sha256:${"b".repeat(64)}`;
+		let registry: unknown;
+		let labels: unknown;
+		let blobs = 0;
+		await publishReleaseGhcrImages(
+			{
+				releaseRef: "v0.0.0-alpha.3",
+				repository: "Hobo-Labs/HoBo",
+				freightHome: "/tmp/cd",
+				images: [
+					{ id: "hobo-cli", line, layout, layoutDir: dir },
+					{ id: "hobo-sdk", line: reused },
+				],
+			},
+			async (input) => {
+				registry = input.registry;
+				labels = input.labels;
+				for (const _blob of input.blobs ?? []) blobs++;
+				return {
+					freightId: "f",
+					verdict: { outcome: "qualified", codes: [], message: "" },
+				};
+			},
+		);
+		expect(registry).toEqual([
+			{
+				name: "hobo-cli",
+				kind: "ARTIFACT_KIND_OCI_IMAGE",
+				digest: layout.digest,
+				coordinate: line,
+				ecosystem: "store",
+				mediaType: OCI_MANIFEST,
+				sizeBytes: String(layout.size),
+			},
+			expect.objectContaining({ name: "hobo-sdk", ecosystem: "oci" }),
+		]);
+		expect(blobs).toBe(3);
+		expect(labels).toMatchObject({
+			"hobo.cd/oci.tags": "v0.0.0-alpha.3",
+			"hobo.cd/oci.mount-from": "hobo-labs/hobo/hobo-ci-worker",
+		});
+		expect(releaseMountFrom("Hobo-Labs/HoBo")).toBe(
+			"hobo-labs/hobo/hobo-ci-worker",
+		);
+	});
+
+	it("refuses a digest line that does not name the layout root", async () => {
+		const { storedOciReleaseArtifact } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		expect(() =>
+			storedOciReleaseArtifact(
+				`ghcr.io/hobo-labs/hobo/hobo-cli@sha256:${"e".repeat(64)}`,
+				{
+					digest: `sha256:${"f".repeat(64)}`,
+					mediaType: OCI_MANIFEST,
+					size: 1,
+				},
+			),
+		).toThrow(/does not name the layout root/u);
 	});
 });

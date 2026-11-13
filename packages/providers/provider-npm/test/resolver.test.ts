@@ -548,6 +548,41 @@ describe("npm realizer: observe", () => {
 		});
 		expect(world.mutations()).toBe(0);
 	});
+
+	it("anonymous auth observes a public package without resolving or sending any credential", async () => {
+		const world = registryWorld({
+			publicReads: true,
+			packument: publishedPackument(TARBALL, { candidate: "1.2.3" }),
+		});
+		const resolver = resolverFor(memoryStore(TARBALL), {
+			auth: "anonymous",
+			resolveCredential: async () => {
+				throw new Error("an anonymous binding resolved a credential");
+			},
+		});
+		const observed = parsed(await resolver.read?.(request(), world.transport));
+		expect(observed.outputs).toMatchObject({ ready: true });
+		expect(world.requests.length).toBeGreaterThan(0);
+		expect(
+			world.requests.every(
+				(entry) => entry.headers.authorization === undefined,
+			),
+		).toBe(true);
+	});
+
+	it("anonymous auth refuses to publish or deprecate before any request", async () => {
+		const world = registryWorld({ publicReads: true });
+		const resolver = resolverFor(memoryStore(TARBALL), { auth: "anonymous" });
+		for (const write of [
+			resolver.reconcile(request(), world.transport),
+			resolver.delete(request(), world.transport),
+		]) {
+			const error = await refusal(write);
+			expect(error.code).toBe("RESOLVER_CREDENTIAL_MISSING");
+			expect(error.message).toMatch(/only observes/u);
+		}
+		expect(world.requests).toEqual([]);
+	});
 });
 
 describe("npm realizer: delete deprecates, never unpublishes", () => {

@@ -123,45 +123,6 @@ describe("parseRelayRuntimeConfig", () => {
 		expect(error.message).not.toContain("valkey-password");
 	});
 
-	it("accepts the fleet verdict settings, and names a bad one without its value", () => {
-		const reporters = JSON.stringify({
-			reporters: [
-				{
-					id: "box-1",
-					publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
-					accountId: "tenant",
-					labels: ["hobo", "hobo-trunk"],
-				},
-			],
-		});
-		const config = parseRelayRuntimeConfig({
-			...entries,
-			HOBO_CI_FLEET_REPORTERS_JSON: reporters,
-			HOBO_CI_FLEET_VERDICT_SERVING: "off",
-			HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: "1440",
-		});
-		expect(config.HOBO_CI_FLEET_VERDICT_SERVING).toBe("off");
-		for (const [key, value] of [
-			// A private key in an enrollment is not an enrollment.
-			[
-				"HOBO_CI_FLEET_REPORTERS_JSON",
-				reporters.replace(
-					'"labels"',
-					'"privateKey":"secret-key-value","labels"',
-				),
-			],
-			["HOBO_CI_FLEET_VERDICT_SERVING", "maybe"],
-			["HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES", "1441"],
-			["HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES", "0"],
-		] as const) {
-			const error = errorOf(() =>
-				parseRelayRuntimeConfig({ ...entries, [key]: value }),
-			);
-			expect(error.keys).toEqual([key]);
-			expect(error.message).not.toContain("secret-key-value");
-		}
-	});
-
 	it("treats an empty entry as unset", () => {
 		expect(
 			parseRelayRuntimeConfig({ ...entries, HOBO_CI_SANDBOX_PLAN: "" })

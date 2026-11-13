@@ -98,9 +98,13 @@ import {
 } from "./tarball.js";
 
 // public-contract: how the resolved credential authenticates to the registry.
+// `anonymous` observes a public package and never resolves a credential: it
+// is for Camps that only re-read what another Camp published (`read`); a
+// write through it is refused.
 export const NPM_AUTH_MODES = Object.freeze([
 	"token",
 	"oidc-trusted-publishing",
+	"anonymous",
 ] as const);
 export type NpmAuthMode = (typeof NPM_AUTH_MODES)[number];
 
@@ -127,7 +131,7 @@ export interface NpmArtifactBlobReader {
 export interface NpmResolverOptions {
 	readonly registry: NpmRegistryBinding;
 	readonly auth: NpmAuthMode;
-	/** Resolves `credentialRef` to a registry token, or to a CI OIDC ID token. */
+	/** Resolves `credentialRef` to a registry token, or to a CI OIDC ID token; never called in `anonymous` mode. */
 	readonly resolveCredential: (ref: string) => Promise<string>;
 	readonly artifacts: NpmArtifactBlobReader;
 }
@@ -338,8 +342,11 @@ export function createNpmResolvers(
 
 	async function session(t: Target, supplied: HttpTransport): Promise<Session> {
 		const transport = guardTransport(supplied, registry.policy);
-		const credential = await options.resolveCredential(t.request.credentialRef);
-		if (!isJsonString(credential) || !TOKEN.test(credential))
+		const anonymous = options.auth === "anonymous";
+		const credential = anonymous
+			? ""
+			: await options.resolveCredential(t.request.credentialRef);
+		if (!anonymous && (!isJsonString(credential) || !TOKEN.test(credential)))
 			fail(
 				"RESOLVER_CREDENTIAL_MISSING",
 				"npm credential is missing or malformed",
@@ -356,7 +363,9 @@ export function createNpmResolvers(
 				url: `${registry.base}${path}`,
 				headers: {
 					accept: "application/json",
-					authorization: `Bearer ${bearer}`,
+					...(bearer === ""
+						? undefined
+						: { authorization: `Bearer ${bearer}` }),
 					...(body === undefined
 						? undefined
 						: { "content-type": "application/json" }),
@@ -432,6 +441,16 @@ export function createNpmResolvers(
 				return { status: response.status, body: json(response.body) };
 			},
 		};
+	}
+
+	/** An anonymous binding reads; it never publishes, tags or deprecates. */
+	function observeOnly(what: string): void {
+		if (options.auth === "anonymous")
+			fail(
+				"RESOLVER_CREDENTIAL_MISSING",
+				`npm anonymous binding cannot ${what}: it only observes`,
+				"bind token or oidc-trusted-publishing auth on a Camp that writes",
+			);
 	}
 
 	async function packument(s: Session, t: Target, write = false) {
@@ -620,6 +639,7 @@ export function createNpmResolvers(
 		},
 		async reconcile(raw, transport) {
 			const t = target(raw);
+			observeOnly("publish");
 			const { art, s, judged: first } = await observe(t, transport);
 			let judged = first;
 			let action: ResolverAction | undefined;
@@ -658,6 +678,7 @@ export function createNpmResolvers(
 		},
 		async delete(raw, transport) {
 			const t = target(raw);
+			observeOnly("deprecate");
 			const art = await artifact(t);
 			const s = await session(t, transport);
 			const doc = await packument(s, t, true);

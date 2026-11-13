@@ -21,10 +21,13 @@ enum NpmRegistryKind {
 // How the credential behind credentialRef authenticates. OIDC trusted
 // publishing exchanges a CI ID token for a short-lived publish token and is
 // offered only where the registry implements the exchange (npmjs).
+// ANONYMOUS observes a public package and never resolves a credential; a
+// write through it is refused.
 enum NpmAuthMode {
   NPM_AUTH_MODE_UNSPECIFIED = 0;
   NPM_AUTH_MODE_TOKEN = 1;
   NPM_AUTH_MODE_OIDC_TRUSTED_PUBLISHING = 2;
+  NPM_AUTH_MODE_ANONYMOUS = 3;
 }
 
 // Why an existing version can never converge. Versions are immutable.

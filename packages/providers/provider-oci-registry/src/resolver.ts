@@ -415,7 +415,13 @@ export function createOciRegistryResolvers(
 		reference: string,
 		scopes: readonly string[],
 	): Promise<
-		{ text: string; digest: string; mediaType: string | undefined } | undefined
+		| {
+				text: string;
+				bytes: Uint8Array;
+				digest: string;
+				mediaType: string | undefined;
+		  }
+		| undefined
 	> {
 		const response = await session.send({
 			method: "GET",
@@ -427,30 +433,43 @@ export function createOciRegistryResolvers(
 		if (response.status === 404) return undefined;
 		if (response.status !== 200)
 			unexpected(response, `GET manifest ${reference}`);
-		const digest = digestOf(Buffer.from(response.body, "utf8"));
+		const bytes = decodeBody(response.body, encoding);
+		const digest = digestOf(bytes);
 		if (isDigest(reference) && digest !== reference)
 			rejected(
 				`manifest bytes served for ${reference} hash to ${digest}`,
 				"the source or the transport altered the manifest; a mirror must keep digests",
 			);
 		const mediaType = header(response, "content-type");
-		return { text: response.body, digest, mediaType };
+		return { text: manifestText(bytes, reference), bytes, digest, mediaType };
+	}
+
+	/** A JSON body as text, whatever the transport's body encoding. */
+	function textOf(body: string): string {
+		return encoding === "utf-8"
+			? body
+			: manifestText(decodeBody(body, encoding), "the response");
 	}
 
 	async function loadManifest(
 		copy: Copy,
 		digest: string,
-	): Promise<{ text: string; mediaType: string | undefined }> {
+	): Promise<{
+		text: string;
+		bytes: Uint8Array;
+		mediaType: string | undefined;
+	}> {
 		const stored = await options.artifactStore?.get(digest);
 		if (stored !== undefined) {
 			if (digestOf(stored) !== digest)
 				rejected(
 					`artifact store returned bytes for ${digest} that hash elsewhere`,
 				);
-			const text = encodeBody(stored, "utf-8");
-			if (text === undefined)
-				unparseable(`stored manifest ${digest} is not UTF-8`);
-			return { text, mediaType: undefined };
+			return {
+				text: manifestText(stored, digest),
+				bytes: stored,
+				mediaType: undefined,
+			};
 		}
 		if (!copy.source)
 			rejected(
@@ -620,6 +639,35 @@ export function createOciRegistryResolvers(
 			unexpected(closed, `close upload of ${blob.digest}`);
 	}
 
+	/**
+	 * Ask the registry to mount `blob` from `from` on the same host. A mount is
+	 * an optimization, never a requirement: a refusal of the source scope (the
+	 * credential may not read `from`) returns undefined and the caller
+	 * uploads. A transport failure is not swallowed; the caller resolves it by
+	 * observation.
+	 */
+	async function mountBlob(
+		copy: Copy,
+		from: string,
+		blob: Descriptor,
+	): Promise<TransportResponse | undefined> {
+		try {
+			return await copy.target.send({
+				method: "POST",
+				path: `/v2/${copy.repository}/blobs/uploads/?mount=${encodeURIComponent(blob.digest)}&from=${encodeURIComponent(from)}`,
+				scopes: [...push(copy.repository), ...pull(from)],
+				headers: { "content-length": "0" },
+			});
+		} catch (error) {
+			if (
+				error instanceof ResolverError &&
+				error.code === "RESOLVER_PROVIDER_REJECTED"
+			)
+				return undefined;
+			throw error;
+		}
+	}
+
 	async function ensureBlob(copy: Copy, blob: Descriptor): Promise<void> {
 		if (await blobPresent(copy, blob.digest)) {
 			copy.stats.blobsPresent++;
@@ -628,13 +676,8 @@ export function createOciRegistryResolvers(
 		let session: string | undefined;
 		try {
 			if (copy.source?.sameHost) {
-				const mounted = await copy.target.send({
-					method: "POST",
-					path: `/v2/${copy.repository}/blobs/uploads/?mount=${encodeURIComponent(blob.digest)}&from=${encodeURIComponent(copy.source.repository)}`,
-					scopes: [...push(copy.repository), ...pull(copy.source.repository)],
-					headers: { "content-length": "0" },
-				});
-				if (mounted.status === 201) {
+				const mounted = await mountBlob(copy, copy.source.repository, blob);
+				if (mounted?.status === 201) {
 					if (!(await blobPresent(copy, blob.digest)))
 						rejected(
 							`registry acknowledged a mount of ${blob.digest} that HEAD does not show`,
@@ -643,9 +686,9 @@ export function createOciRegistryResolvers(
 					return;
 				}
 				// 202: the registry declined the mount and opened an upload session.
-				if (mounted.status !== 202)
-					unexpected(mounted, `mount blob ${blob.digest}`);
-				session = uploadLocation(copy, mounted);
+				// Anything else (the source is unknown or not readable with this
+				// credential) declines the mount too: the bytes are uploaded.
+				if (mounted?.status === 202) session = uploadLocation(copy, mounted);
 			}
 			if (blob.size > maxBlobBytes)
 				rejected(
@@ -670,9 +713,13 @@ export function createOciRegistryResolvers(
 		copy: Copy,
 		reference: string,
 		digest: string,
-		text: string,
+		bytes: Uint8Array,
 		mediaType: string,
 	): Promise<TransportResponse | undefined> {
+		// The exact manifest bytes, as this transport carries bytes.
+		const body = encodeBody(bytes, encoding);
+		if (body === undefined)
+			return unparseable(`manifest ${digest} is not UTF-8`);
 		let response: TransportResponse | undefined;
 		try {
 			response = await copy.target.send({
@@ -680,7 +727,7 @@ export function createOciRegistryResolvers(
 				path: `/v2/${copy.repository}/manifests/${reference}`,
 				scopes: push(copy.repository),
 				headers: { "content-type": mediaType },
-				body: text,
+				body,
 				maxResponseBytes: 64 * 1024,
 			});
 		} catch (error) {
@@ -732,7 +779,7 @@ export function createOciRegistryResolvers(
 			await copyManifest(copy, child.digest, depth + 1);
 		for (const blob of parsed.blobs) await ensureBlob(copy, blob);
 		copy.stats.blobsSkipped += parsed.skipped.length;
-		await putManifest(copy, digest, digest, loaded.text, parsed.mediaType);
+		await putManifest(copy, digest, digest, loaded.bytes, parsed.mediaType);
 		copy.stats.manifestsPut++;
 		return true;
 	}
@@ -752,7 +799,7 @@ export function createOciRegistryResolvers(
 			headers: { accept: OCI_IMAGE_INDEX },
 			maxResponseBytes: MAX_MANIFEST_BYTES,
 		});
-		if (response.status === 200) return parseReferrers(response.body);
+		if (response.status === 200) return parseReferrers(textOf(response.body));
 		if (response.status !== 404)
 			unexpected(response, `GET referrers of ${digest}`);
 		const fallback = await getManifest(
@@ -780,7 +827,7 @@ export function createOciRegistryResolvers(
 		if (response.status !== 200)
 			unexpected(response, `GET referrers of ${subject}`);
 		const listed = new Set(
-			parseReferrers(response.body).map((entry) => entry.digest),
+			parseReferrers(textOf(response.body)).map((entry) => entry.digest),
 		);
 		return expected.every((digest) => listed.has(digest));
 	}
@@ -789,7 +836,7 @@ export function createOciRegistryResolvers(
 		copy: Copy,
 		tag: string,
 		digest: string,
-		manifest: () => Promise<{ text: string; mediaType: string }>,
+		manifest: () => Promise<{ bytes: Uint8Array; mediaType: string }>,
 	): Promise<"noop" | "set"> {
 		const state = await headManifest(
 			copy.target,
@@ -798,8 +845,8 @@ export function createOciRegistryResolvers(
 			push(copy.repository),
 		);
 		if (state.present && state.digest === digest) return "noop";
-		const { text, mediaType } = await manifest();
-		await putManifest(copy, tag, digest, text, mediaType);
+		const { bytes, mediaType } = await manifest();
+		await putManifest(copy, tag, digest, bytes, mediaType);
 		return "set";
 	}
 
@@ -881,9 +928,9 @@ export function createOciRegistryResolvers(
 				const session = await targetSession(target, transport);
 				const copy = await copyContext(target, session, transport);
 				const created = await copyManifest(copy, target.digest, 0);
-				let manifestText: { text: string; mediaType: string } | undefined;
+				let manifestBytes: { bytes: Uint8Array; mediaType: string } | undefined;
 				const manifest = async () => {
-					if (manifestText) return manifestText;
+					if (manifestBytes) return manifestBytes;
 					const fetched = await getManifest(
 						session,
 						target.repository,
@@ -897,8 +944,8 @@ export function createOciRegistryResolvers(
 					const mediaType =
 						manifestMediaType(fetched.mediaType) ??
 						parseManifest(fetched.text, fetched.mediaType).mediaType;
-					manifestText = { text: fetched.text, mediaType };
-					return manifestText;
+					manifestBytes = { bytes: fetched.bytes, mediaType };
+					return manifestBytes;
 				};
 				const moved: string[] = [];
 				for (const tag of target.tags)
@@ -1106,6 +1153,17 @@ function locator(value: string, invalid: (why: string) => never): string {
 			"credentialRef must be a scheme://… locator, never credential material",
 		);
 	return value;
+}
+
+/** Manifest or index bytes as JSON text; a manifest is UTF-8 by definition. */
+function manifestText(bytes: Uint8Array, what: string): string {
+	try {
+		return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+			bytes,
+		);
+	} catch {
+		return unparseable(`manifest ${what} is not UTF-8`);
+	}
 }
 
 function bounded(

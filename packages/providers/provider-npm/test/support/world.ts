@@ -108,6 +108,8 @@ export interface WorldOptions {
 	readonly name?: string;
 	/** Serve plain GETs from a CDN cache that never expires within a test. */
 	readonly cdn?: boolean;
+	/** Serve packument GETs without credentials, as npmjs does for a public package. */
+	readonly publicReads?: boolean;
 }
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
@@ -184,7 +186,12 @@ export function registryWorld(options: WorldOptions = {}) {
 				return respond(401, { error: "invalid id token" });
 			return respond(201, { token: PUBLISH_TOKEN });
 		}
-		if (auth !== `Bearer ${bearer}`) return unauthorized();
+		const publicRead =
+			options.publicReads === true &&
+			auth === undefined &&
+			path === `/${name}` &&
+			request.method === "GET";
+		if (!publicRead && auth !== `Bearer ${bearer}`) return unauthorized();
 		if (path === `/${name}` && request.method === "GET")
 			return packument
 				? served(packument, new URL(request.url).search === "?write=true")

@@ -42,15 +42,4 @@ message RelayRuntimeConfig {
   // A RelayCacheOffers record (cache_offers.proto) as JSON: what each cache
   // backend costs and allows, its budget cap, and the switch marks.
   optional string hobo_ci_cache_offers_json = 26 [json_name = "HOBO_CI_CACHE_OFFERS_JSON"];
-  // Fleet verdicts (ADR-0180). A FleetReporterEnrollments record
-  // (packages/ci-gh-actions/data-models/fleet_verdict.proto) as JSON: the
-  // reporters whose signed reports this relay accepts, public keys only.
-  // Unset, no reporter is enrolled and every report is refused.
-  optional string hobo_ci_fleet_reporters_json = 27 [json_name = "HOBO_CI_FLEET_REPORTERS_JSON"];
-  // `on` (the default) or `off`, the kill switch: reads block nothing and
-  // reports answer 503.
-  optional string hobo_ci_fleet_verdict_serving = 28 [json_name = "HOBO_CI_FLEET_VERDICT_SERVING"];
-  // Verdict-blocked minutes per label per 24-hour window before a label is
-  // served open whatever the reporters say: 1 to 1440, default 240.
-  optional string hobo_ci_fleet_verdict_daily_block_minutes = 29 [json_name = "HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES"];
 }

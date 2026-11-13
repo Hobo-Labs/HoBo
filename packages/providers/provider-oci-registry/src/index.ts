@@ -4,6 +4,13 @@
  * `ResourceResolver` port. See `resolver.ts` for the convergence contract.
  */
 export {
+	createLatin1FetchTransport,
+	declareLatin1Transport,
+	HTTP_TRANSPORT_BODY_ENCODING,
+	isLatin1Transport,
+	ociLatin1Transport,
+} from "./byte-transport.js";
+export {
 	type AbsentTrafficOffering,
 	defineHostingCoverage,
 	HOSTING_COVERAGE_CONTRACT,

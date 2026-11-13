@@ -537,9 +537,6 @@ route 503.
 | `VALKEY_URL`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | the config service, optional | members the environment does not bind (an Aiven Valkey URL is stored here) |
 | `HOBO_CI_CACHE_OFFERS_JSON` | the config service or project env, optional | the declared offers, budget caps and switch marks ([below](#the-cache-fleet)) |
 | `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | Upstash's allowance in the default offers |
-| `HOBO_CI_FLEET_REPORTERS_JSON` | the config service, optional | the fleet reporters whose signed verdict reports the relay accepts: id, Ed25519 public key, account, labels; at most eight per account ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment)). Unset, every report is refused |
-| `HOBO_CI_FLEET_VERDICT_SERVING` | the config service, optional | `off` is the fleet verdict kill switch: reads block nothing, reports answer 503 |
-| `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | the config service, optional | verdict-blocked minutes per label per 24-hour window before the label is served open; 240 |
 | `HOBO_CI_EVENTS_URL`, `HOBO_CI_EVENTS_TENANT` | project env, optional | relay failures as CloudEvents |
 | Every `RelayRuntimeConfig` key | the config service | [Config service](CONFIG-SERVICE.md#what-the-folder-holds); `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url) is required with `HOBO_CI_SANDBOX_ENABLED` |
 
@@ -676,22 +673,13 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
   deployment, 24 hours. Missing is `starting`; a failure newer than the last
   success, or no success for 45 minutes, is `failing`, and `/readyz` answers
   503.
-- **Fleet verdicts** (`src/fleet-verdict-cache.ts`, the verdict store of
-  `@hobo/ci-gh-actions` on the cache;
-  [ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment)). Per
-  repository: each enrolled reporter's last signed report until it expires
-  (at most 180 seconds), each reporter's `FleetReporterState` for a day after
-  its last report (the replay guard), and the `FleetVerdictAllowance` for a
-  day from its window's start. The hosted relay keeps, agrees and serves; the
-  box relay decides. `GET /v1/fleet/verdicts/{owner}/{repo}` serves a label
-  blocked only while every reporter enrolled for it agrees, and not once its
-  daily allowance is spent; a read is one cache round trip, none for an
-  unconnected repository. `GET /v1/fleet/reporters/{owner}/{repo}` shows the
-  reporters and the allowance to a workflow of that repository (its OIDC
-  token). Losing the cache reads as "nothing blocked", which is what runner
-  routing assumes without a verdict; the reporters send again within a
-  minute, the replay guard resumes from the next report and the allowance
-  window restarts.
+- **Fleet verdicts** (`src/fleet-verdict-cache.ts`, record `FleetVerdict` from
+  `@hobo/ci-gh-actions`): what a relay with a view of the fleet last reported
+  for a repository, one key each, kept until the verdict expires (at most 300
+  seconds). The hosted relay only keeps and serves them, at
+  `/v1/fleet/verdicts/{owner}/{repo}`
+  ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)). Missing reads
+  as "nothing blocked", which is what runner routing assumes without one.
 - **Sessions, OAuth `state`, App installation**: `createStatelessAppOnboarding`
   from `@hobo/ci-gh-actions`. Records are named by an HMAC under a key derived
   from `HOBO_CI_SESSION_KEY` and, where they hold a credential, sealed with

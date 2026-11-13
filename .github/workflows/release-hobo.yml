@@ -721,13 +721,15 @@ jobs:
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
           --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # docker push uploads the image; the digest GHCR reports for this leg
-      # becomes release Freight (verified at the registry) and is promoted into
-      # hobo-release/oci-candidate, whose realizer (@hobo/provider-oci-registry)
-      # asserts the release tag on that digest with GITHUB_TOKEN and observes it.
-      # Anything but qualified fails this leg, so attestation, the signed tag
-      # and the GitHub Release never run.
-      - name: Build and push release image, record it as release Freight
+      # The image is built and exported as an OCI image layout; its blobs go
+      # into the HoBo artifact store and its root digest becomes release
+      # Freight, promoted into hobo-release/oci-candidate through hobo deploy.
+      # The realizer (@hobo/provider-oci-registry) uploads config and layers
+      # (mounting from the toolchain image's repository when it can), PUTs the
+      # manifest by digest, then the release tag, with GITHUB_TOKEN, and
+      # observes both. Nothing else pushes. Anything but qualified fails this
+      # leg, so attestation, the signed tag and the GitHub Release never run.
+      - name: Build release image, publish it through hobo deploy (release Freight)
         # The token asks GHCR whether the tag is already published (finding 143).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -804,11 +806,11 @@ jobs:
 
   release-npm:
     name: npm publish train (SDK allowlist)
-    # The @hobo-labs packages have never been published, and npm trusted
-    # publishing cannot attach to a package that does not exist yet: the first
-    # publish needs the one-time bootstrap in docs/release/pipelines.md. Until the
-    # repository variable HOBO_NPM_PUBLISH is 'true' this job is skipped, not run
-    # to fail with ENEEDAUTH and take the tag and GitHub Release down with it.
+    # The @hobo-labs packages have never been published: the first publish
+    # needs the one-time bootstrap in docs/release/pipelines.md (the hobodev
+    # NPM_TOKEN secret). Until the repository variable HOBO_NPM_PUBLISH is
+    # 'true' this job is skipped, not run to fail and take the tag and GitHub
+    # Release down with it.
     if: >-
       !cancelled() &&
       vars.HOBO_NPM_PUBLISH == 'true' &&
@@ -824,7 +826,8 @@ jobs:
         needs.release-contract.result == 'success'
       )
     needs: [release-main-train-gate, release-contract, release-oci-build-tag]
-    # npm trusted publishing (OIDC) requires GitHub-hosted runners — not self-hosted hobo.
+    # Keyless provenance signing names a GitHub-hosted builder (npm verifies
+    # it) — not self-hosted hobo.
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     environment: release
@@ -864,12 +867,13 @@ jobs:
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
           --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # Tarballs are recorded as release Freight and promoted into
-      # hobo-release/npm-candidate before any npm publish. @hobo/provider-npm
-      # refuses OIDC trusted publishing of scoped names and has no Sigstore
-      # bundle (a typed impedance verdict), so `npm publish --provenance` stays
-      # the npm publisher; any other verdict stops the publish.
-      - name: npm publish (@hobo-labs via OIDC or hobodev token + provenance)
+      # Each tarball's Sigstore provenance bundle is signed keyless with this
+      # job's OIDC identity (id-token: write); tarballs and bundles are
+      # recorded as release Freight and promoted into hobo-release/npm-candidate
+      # through hobo deploy. Its realizer (@hobo/provider-npm) publishes each
+      # version with its bundle, using the hobodev token through env://NPM_TOKEN,
+      # and observes it. Nothing else publishes; any other verdict fails here.
+      - name: Sign provenance, publish @hobo-labs through hobo deploy (release Freight)
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/npm

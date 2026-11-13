@@ -1,1 +1,1 @@
-{ "blocked": { "hobo": { "reason": "no-node" } }, "ttlSeconds": 181, "mode": "report" }
+{ "blocked": { "hobo": { "reason": "no-node" } }, "ttlSeconds": 86400 }

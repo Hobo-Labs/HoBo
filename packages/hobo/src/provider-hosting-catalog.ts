@@ -80,6 +80,7 @@ import {
 	OCI_REGISTRY_IMAGE_PRODUCT_ID,
 	type OciRegistryCredential,
 	type OciRegistryResolverOptions,
+	ociLatin1Transport,
 	ociRegistryResolverRegistry,
 } from "@hobo/provider-oci-registry";
 import { createPrismaClaimableResolver } from "@hobo/provider-prisma-postgres";
@@ -1401,6 +1402,12 @@ export const CATALOG_REALIZER_LABELS = Object.freeze({
 	ociUsername: "hobo.cd/oci.username",
 	/** Camp and Freight (both apply): comma-separated tags for the digest. */
 	ociTags: "hobo.cd/oci.tags",
+	/**
+	 * Freight (or Camp; Freight wins): a repository on the Camp's registry
+	 * whose blobs an upload may cross-repository mount (the image's base, for
+	 * example). A mount the registry or the credential declines is uploaded.
+	 */
+	ociMountFrom: "hobo.cd/oci.mount-from",
 	/** Camp: `owner/repo` of the Pages site. */
 	githubRepository: "hobo.cd/github.repository",
 	/** Camp: the branch Pages builds from (branch publish mode). */
@@ -1445,6 +1452,11 @@ export class CatalogRealizerError extends Error {
 }
 
 export type CatalogRealizeMode = "converge" | "observe";
+
+// public-contract: the largest image blob the OCI Camp moves from the artifact store.
+export const CATALOG_OCI_MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024;
+// public-contract: blobs past this size are uploaded in Content-Range chunks of it.
+export const CATALOG_OCI_CHUNK_BYTES = 32 * 1024 * 1024;
 
 // public-contract: the providers the catalog resolver realizer realizes, with their one product.
 export const CATALOG_REALIZED_PRODUCTS = Object.freeze({
@@ -1668,6 +1680,7 @@ export function catalogCampBinding(
 		}
 		case "oci-registry": {
 			const host = required(L.ociRegistry);
+			const mountFrom = label(L.ociMountFrom);
 			const realm = label(L.ociAuthRealm);
 			const username = label(L.ociUsername);
 			const endpoint = {
@@ -1683,6 +1696,12 @@ export function catalogCampBinding(
 					registry: endpoint,
 					sourceRegistries: [],
 					artifactStore: deps.artifacts,
+					// Layers are binary: the realizer runs on a byte transport
+					// (`transport` below) and moves blobs up to the bound from the
+					// artifact store, in chunks past CATALOG_OCI_CHUNK_BYTES.
+					transportBodyEncoding: "latin1",
+					maxBlobBytes: CATALOG_OCI_MAX_BLOB_BYTES,
+					chunkBytes: CATALOG_OCI_CHUNK_BYTES,
 					resolveCredential: async (ref: string) => {
 						const secret = await token(ref);
 						return username
@@ -1690,6 +1709,7 @@ export function catalogCampBinding(
 							: { kind: "bearer" as const, token: secret };
 					},
 				}),
+				transport: (http: HttpTransport) => ociLatin1Transport(http),
 				requests(freight: CatalogFreight) {
 					const tags = [
 						...new Set([
@@ -1697,6 +1717,7 @@ export function catalogCampBinding(
 							...listOf(label(L.ociTags)),
 						]),
 					];
+					const from = freight.labels[L.ociMountFrom]?.trim() || mountFrom;
 					const out: ResolveRequest[] = [];
 					for (const artifact of freight.artifacts) {
 						if (artifact.kind !== "OCI_IMAGE") continue;
@@ -1722,10 +1743,16 @@ export function catalogCampBinding(
 								repository,
 								digest: artifact.digest,
 								tags,
-								// Promote, never rebuild (I1): the Freight names content
-								// already at the target by digest; with no source, an
-								// absent manifest is refused, never rebuilt or substituted.
+								// Promote, never rebuild (I1): the content is the
+								// Freight's, by digest: already at the target, or pushed
+								// byte for byte from the HoBo artifact store (manifest,
+								// config and layers, each verified against its digest).
+								// Nothing is rebuilt or substituted; an absent blob is
+								// refused.
 								copyReferrers: false,
+								...(from && from !== repository
+									? { sourceRegistry: host, sourceRepository: from }
+									: undefined),
 							}),
 						);
 					}
