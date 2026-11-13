@@ -86,11 +86,20 @@ export {
 	isSandboxOffer,
 } from "./isolated-backend.js";
 export {
+	applyCommittedBoxProviders,
+	type BoxOfferChange,
+	type BoxOfferReport,
+	type CommittedBoxProvider,
+	readCommittedBoxProviders,
+} from "./isolated-worker/box-offers.js";
+export {
 	type BoxRoutingPolicy,
+	boxFleetLabels,
 	DEFAULT_CAPACITY_VOLATILITY_MB,
 	DEFAULT_FLEET_MIN_FREE_RUNNERS,
 	DEFAULT_ROUTING_STALL_MS,
 	DEFAULT_RUNNER_ROUTING,
+	DEFAULT_SELF_UPDATE_INTERVAL_HOURS,
 	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
 	ROUTING_ENVIRONMENT_NAMES,
 	ROUTING_ENVIRONMENT_PREFIXES,
@@ -273,6 +282,17 @@ export {
 	type StallWatchLease,
 	writeRoutingSlipCommit,
 } from "./isolated-worker/routing-slip-issuer.js";
+export {
+	createSelfUpdater,
+	SELF_CHECK_ARGUMENT,
+	SELF_UPDATE_CHECK_MS,
+	SELF_UPDATE_DEFAULT_ENTRY,
+	SELF_UPDATE_PATHS,
+	SELF_UPDATE_REFUSAL_HOLD_MS,
+	type SelfUpdateOutcome,
+	type SelfUpdaterOptions,
+	type SelfUpdateSettings,
+} from "./isolated-worker/self-update.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createStallJobRecovery,

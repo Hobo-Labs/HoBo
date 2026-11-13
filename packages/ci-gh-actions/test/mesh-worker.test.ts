@@ -136,6 +136,25 @@ describe("createWorkerMesh", () => {
 		]);
 	});
 
+	it("advertises the committed labels it is given (plan 0026, R2)", async () => {
+		const ports = createMemoryMesh({ now: () => NOW });
+		const mesh = createWorkerMesh({
+			settings: { ...settings, nodeId: "box-a" },
+			board: ports.board,
+			claims: ports.claims,
+			freeSlots: () => 1,
+			totalSlots: 2,
+			healthy: () => true,
+			servesTrunk: true,
+			labels: ["fleet-x", "trunk-x"],
+			now: () => NOW,
+		});
+		await mesh.advertise();
+		expect(await ports.board.nodes()).toMatchObject([
+			{ labels: ["fleet-x", "trunk-x"] },
+		]);
+	});
+
 	it("gives a job to the worker it fits, not the one with the most free slots", async () => {
 		const ports = createMemoryMesh({ now: () => NOW });
 		const logs: { node: string; event: string; lacking?: unknown }[] = [];

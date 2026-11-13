@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from its own SQLite journal. */
 import { toJsonString } from "@bufbuild/protobuf";
@@ -13,7 +13,9 @@ import {
 	meshLeaderId,
 } from "@hobo/ci/mesh";
 import {
+	applyCommittedBoxProviders,
 	awaitWorkerBackgroundDrainIdle,
+	boxFleetLabels,
 	boxGitMirrorPath,
 	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
@@ -45,6 +47,7 @@ import {
 	createRetiredWorkDirectorySweeper,
 	createRoutingSlipIssuer,
 	createRoutingStallWatch,
+	createSelfUpdater,
 	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
@@ -78,6 +81,7 @@ import {
 	ROUTING_SLIP_SAMPLE_MS,
 	readAvailableMemoryMb,
 	readBoxRoutingPolicy,
+	readCommittedBoxProviders,
 	readHostHealthSample,
 	readHostMemory,
 	readHostResourcePressureSample,
@@ -92,6 +96,10 @@ import {
 	retireRepositoryVariables,
 	routingEnvironmentNamesSet,
 	runnerRoutingLabels,
+	SELF_CHECK_ARGUMENT,
+	SELF_UPDATE_CHECK_MS,
+	SELF_UPDATE_DEFAULT_ENTRY,
+	shouldForceExitDrainOnRepeatSignal,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
@@ -229,7 +237,11 @@ async function output(
 	return stdout;
 }
 
-function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
+/** Runs a command to completion; rejects naming `what` when it fails. */
+function runProcess(
+	request: DepsImageProcessRequest,
+	what: string,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(request.command, request.args, {
 			cwd: request.cwd,
@@ -241,14 +253,13 @@ function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
 		child.once("error", reject);
 		child.once("close", (code, signal) => {
 			if (code === 0) resolve();
-			else
-				reject(
-					new Error(
-						`deps image command failed (${code ?? signal ?? "unknown"})`,
-					),
-				);
+			else reject(new Error(`${what} failed (${code ?? signal ?? "unknown"})`));
 		});
 	});
+}
+
+function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
+	return runProcess(request, "deps image command");
 }
 
 // Routing policy is committed configuration (plan 0026, 3.4; ADR-0181): the
@@ -265,6 +276,27 @@ const daemonCommit = await exec("git", ["rev-parse", "HEAD"], {
 	.then(({ stdout }) => stdout.trim())
 	.catch(() => "")
 	.then((sha) => (/^[0-9a-f]{40}$/u.test(sha) ? sha : undefined));
+// `--self-check` (plan 0026, 3.8): the self-update runs this entry in a
+// freshly prepared worktree before it re-execs onto it. Reaching this line
+// means every module above linked (a stale or missing export throws at
+// load); it also loads the modules the daemon imports later and parses the
+// committed providers, then exits 0 without starting anything.
+if (process.argv.includes(SELF_CHECK_ARGUMENT)) {
+	await import("@hobo/ci/sqlite");
+	await import("@hobo/ci-gh-actions/mesh-nats");
+	readCommittedBoxProviders(
+		checkoutRoot,
+		process.env.HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID ?? "",
+	);
+	console.error(
+		JSON.stringify({
+			event: "hobo_ci_self_check_passed",
+			commit: daemonCommit ?? "unknown",
+			routingPolicy: routingPolicy.source,
+		}),
+	);
+	process.exit(0);
+}
 const plan = resolveWorkerStorePlan(
 	process.env,
 	homedir(),
@@ -277,6 +309,12 @@ const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 // A worker's configuration is its own file or variable. One that has
 // neither and is told where a mesh is asks the mesh, so adding a box takes a
 // NATS address and App credentials and nothing else.
+// HOBO_CI_CONFIG / HOBO_CI_CONFIG_JSON carry only what is not routing (plan
+// 0026, 3.4): accounts, budgets and repository connections. The routing in
+// them is replaced from committed configuration below: the box's offers take
+// their label, provider kind and enabled state from the committed provider in
+// `.hobo/ci.json` and their concurrency from runnerRouting.box.slots, and the
+// fleet labels the box serves are runnerRouting.labels.
 const meshBootSettings = meshSettingsFromEnv(process.env, hostname());
 const localConfiguration = process.env.HOBO_CI_CONFIG
 	? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
@@ -319,6 +357,19 @@ const webhookSecret =
 // take it from the committed policy, whatever the configuration says.
 const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
 	resolveWorkerSlotConfig(routing.box);
+const fleetLabels = boxFleetLabels(routing, trunkSlots);
+const boxOffers = applyCommittedBoxProviders(
+	configuration,
+	workerAccountId,
+	readCommittedBoxProviders(checkoutRoot, workerAccountId),
+);
+for (const change of boxOffers.changed)
+	log("hobo_ci_isolated_worker_offer_committed", change);
+for (const entry of boxOffers.uncommitted)
+	log("hobo_ci_isolated_worker_offer_uncommitted", {
+		...entry,
+		conflicting: boxOffers.conflicting.includes(entry.offerId),
+	});
 for (const account of configuration.accounts)
 	for (const offer of account.offers)
 		if (
@@ -1014,6 +1065,7 @@ try {
 					totalSlots: slots,
 					healthy: () => !meshDraining,
 					servesTrunk: trunkSlots > 0,
+					labels: fleetLabels,
 					// Memory a new job could have: what the worker's budget has
 					// left, and no more than the host can spare above its reserve.
 					free: () => {
@@ -1439,10 +1491,6 @@ try {
 	// unreferenced timer, the mesh leader decides each connected repository's
 	// routing and writes it to refs/hobo/routing-slip when it changes and as a
 	// heartbeat. Nothing in admission, dispatch or the poller awaits it.
-	const fleetLabels =
-		trunkSlots > 0
-			? [routing.labels.fleet, routing.labels.trunk]
-			: [routing.labels.fleet];
 	const evaluateFleet = async (
 		runners: FleetRunnersView | undefined,
 		active: Awaited<ReturnType<typeof store.activeLeases>>,
@@ -1671,11 +1719,92 @@ try {
 	slipTimer?.unref();
 	void slipIssuer?.tick();
 
+	// The box relay keeps itself current (plan 0026, 3.8): every
+	// runnerRouting.selfUpdate.intervalHours, when idle, it prepares a newer
+	// main in a separate worktree and, only once that passes, stops with
+	// `handoff` and re-execs in place (same PID). See src/isolated-worker/
+	// self-update.ts.
+	const entryPath = relative(checkoutRoot, process.argv[1] ?? "");
+	const selfUpdater = createSelfUpdater({
+		settings: routing.selfUpdate,
+		checkoutRoot,
+		currentCommit: daemonCommit,
+		worktreesRoot: join(
+			process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+			"hobo-ci",
+			"self-update",
+		),
+		entry:
+			entryPath === "" || entryPath.startsWith("..")
+				? SELF_UPDATE_DEFAULT_ENTRY
+				: entryPath,
+		args: process.argv.slice(2),
+		execPath: process.execPath,
+		execArgv: process.execArgv,
+		env: process.env,
+		git: async (args, cwd) =>
+			(
+				await exec("git", [...args], {
+					cwd,
+					env: process.env,
+					timeout: 10 * 60_000,
+					maxBuffer: 16 * 1024 * 1024,
+				})
+			).stdout,
+		run: (command, args, cwd, env) =>
+			runProcess(
+				{ command, args: [...args], cwd, env: { ...env } },
+				`${command} ${args[0] ?? ""}`.trim(),
+			),
+		idle: async () =>
+			!draining &&
+			liveLaunchSlotsInUse === 0 &&
+			!depsImageWorkRunning &&
+			warmContainersStarting === 0 &&
+			gcInFlight === undefined &&
+			(await store.activeLeases()).length === 0,
+		stop: () =>
+			new Promise<void>((resolve) => {
+				void shutdown("self-update", {
+					mode: "handoff",
+					finish: async () => resolve(),
+				});
+			}),
+		// Node 22.15 / 23.11 and later; without it the update waits (ready).
+		execve: process.execve?.bind(process),
+		exit: (code) => process.exit(code),
+		log,
+	});
+	const selfUpdateTimer = setInterval(
+		() =>
+			void selfUpdater.tick().catch((error) =>
+				log("hobo_ci_self_update_check_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			),
+		SELF_UPDATE_CHECK_MS,
+	);
+	selfUpdateTimer.unref();
+
 	let shutdownOnce: Promise<void> | undefined;
 	let runningWorkerContainers = 0;
 
-	async function shutdown(signal: string) {
+	/**
+	 * Stops the daemon. A signal stops with HOBO_CI_WORKER_STOP_MODE and exits;
+	 * the self-update stops with `handoff` and, instead of exiting, gets
+	 * `finish` called so it can re-exec in place.
+	 */
+	async function shutdown(
+		signal: string,
+		override?: {
+			mode: typeof stopMode;
+			finish: (code: number) => Promise<void>;
+		},
+	) {
 		if (shutdownOnce) return shutdownOnce;
+		const mode = override?.mode ?? stopMode;
+		const finish =
+			override?.finish ?? (async (code: number) => process.exit(code));
 		shutdownOnce = (async () => {
 			draining = true;
 			workerDrainStartedAtMs = Date.now();
@@ -1692,6 +1821,7 @@ try {
 			await mesh?.advertise();
 			// No more slips: the last one expires on its own (plan 0026, 4).
 			if (slipTimer) clearInterval(slipTimer);
+			clearInterval(selfUpdateTimer);
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"
@@ -1744,7 +1874,6 @@ try {
 					drainStartedAtMs: workerDrainStartedAtMs,
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
-				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				liveLaunchSlotsInUse = countLiveBoxContainers(
 					await store.activeLeases(),
 				);
@@ -1764,14 +1893,14 @@ try {
 			};
 			const inFlight = async () => drainJobInFlight;
 			await reconcileDrain();
-			if (stopMode === "drain")
+			if (mode === "drain")
 				log("hobo_ci_isolated_worker_drain_started", {
 					inFlight: await inFlight(),
 					timeoutMs: drainTimeoutMs,
 				});
 			let reported = -1;
 			const result = await stopIsolatedWorker({
-				mode: stopMode,
+				mode,
 				inFlight,
 				reconcile: reconcileDrain,
 				pollMs: Math.min(intervalMs, 5_000),
@@ -1799,21 +1928,21 @@ try {
 					remaining: result.remaining,
 				});
 			}
-			if (stopMode === "drain") await retiredSweep.drain();
+			if (mode === "drain") await retiredSweep.drain();
 			await closeStore();
 			await Promise.race([
 				natsMesh?.close().catch(() => undefined),
 				new Promise((resolve) => setTimeout(resolve, 2000).unref()),
 			]);
 			await closeTrace();
-			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
+			await finish(result.mode === "handoff" || result.drained ? 0 : 1);
 		})().catch(async (error) => {
 			await closeStore().catch(() => undefined);
 			log("hobo_ci_isolated_worker_shutdown_failed", {
 				message: error instanceof Error ? error.message : "unknown",
 			});
 			await closeTrace();
-			process.exit(1);
+			await finish(1);
 		});
 		return shutdownOnce;
 	}
@@ -1839,9 +1968,6 @@ try {
 					} catch {
 						/* keep last runningWorkerContainers */
 					}
-					const { shouldForceExitDrainOnRepeatSignal } = await import(
-						"../src/isolated-worker/daemon-shutdown.js"
-					);
 					if (
 						await shouldForceExitDrainOnRepeatSignal({
 							signalCount: shutdownSignalCount,

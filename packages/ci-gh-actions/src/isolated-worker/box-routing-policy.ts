@@ -125,6 +125,20 @@ export function readBoxRoutingPolicy(checkoutRoot: string): BoxRoutingPolicy {
 }
 
 /**
+ * The fleet labels this box serves: `runnerRouting.labels.fleet`, and
+ * `labels.trunk` when it keeps trunk slots. The box's mesh advert, its
+ * routing decision and its stall watch all use these, never a constant.
+ */
+export function boxFleetLabels(
+	policy: RunnerRouting,
+	trunkSlots: number,
+): readonly string[] {
+	return trunkSlots > 0
+		? [policy.labels.fleet, policy.labels.trunk]
+		: [policy.labels.fleet];
+}
+
+/**
  * Every environment name plan 0026 (3.4) counts as routing. None of them is
  * read on the box any more; `routingEnvironmentNamesSet` names the ones still
  * set, for the start log.

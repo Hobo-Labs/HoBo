@@ -174,6 +174,11 @@ export function createWorkerMesh(options: {
 	/** True when this worker also starts trunk-label runners. */
 	servesTrunk: boolean;
 	/**
+	 * The labels this worker advertises. The box daemon passes its committed
+	 * `runnerRouting.labels` (plan 0026, R2); left out, the built-in names.
+	 */
+	labels?: readonly string[];
+	/**
 	 * What this worker has free besides slots (memory it could give a new job
 	 * right now). Left out, the worker is ranked by free slots alone.
 	 */
@@ -220,9 +225,11 @@ export function createWorkerMesh(options: {
 }) {
 	const now = options.now ?? Date.now;
 	const advertTtlMs = options.advertTtlMs ?? 45_000;
-	const labels = options.servesTrunk
-		? [RUNNER_LABEL, TRUNK_RUNNER_LABEL]
-		: [RUNNER_LABEL];
+	const labels = options.labels
+		? [...options.labels]
+		: options.servesTrunk
+			? [RUNNER_LABEL, TRUNK_RUNNER_LABEL]
+			: [RUNNER_LABEL];
 	const startDeadlineMs = options.startDeadlineMs ?? 10 * 60_000;
 	const scoring: MeshReliabilityOptions = {
 		halfLifeMs: options.settings.reliabilityHalfLifeMs,
