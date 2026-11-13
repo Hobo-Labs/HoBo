@@ -46,7 +46,7 @@ surfaces.
 | `stub` | authoring | Run with a contract-backed stub behind a WIT port while implementation is generated or deferred. | HOBO-160, HOBO-392 |
 | `drift` | diagnostics | Report drift and route governed remediation through proposals or gated `up` convergence. | HOBO-216, HOBO-369 |
 | `add` | distribution | Install a provider/listing as available to deterministic selection after signature, provenance, and conformance checks. | HOBO-362, HOBO-365 |
-| `registry` | distribution | Registry administration subcommands, including signed offline bundle import for air-gapped Yards. | HOBO-350, HOBO-383 |
+| `registry` | distribution | Registry administration subcommands, including signed offline bundle import for air-gapped Yards. `hobo registry add <manifest>` registers a provider described by a [provider manifest](./provider-manifest.md) data file: held on the first run, approved for matching on the second. | HOBO-350, HOBO-383 |
 | `import` | migration | Adopt an existing estate in place as adopted/external resources; never destroy/recreate on import. | HOBO-225, HOBO-369 |
 | `generate` | generation | Request the provider-generation loop for a backend/capability; certification still passes through conformance and Registry. | HOBO-207, HOBO-348 |
 | `sandbox` | test loop | Run a system-under-test in an isolated lane with out-of-scope boundaries served from contracts. | HOBO-190, HOBO-392 |

@@ -1,0 +1,407 @@
+{
+	"consumer": {
+		"name": "HoboInfisicalProvisioner"
+	},
+	"provider": {
+		"name": "InfisicalAdminApi"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"documentation": "Shapes from Infisical's OpenAPI document (https://app.infisical.com/api/docs/json, read 2026-11-12) and the automated bootstrapping guide (https://infisical.com/docs/self-hosting/guides/automated-bootstrapping). Replayed by contracts/consumer/infisical-admin.consumer.contract.test.ts against the pact mock; not verified against Infisical itself. Every token, password and id is a fixture."
+	},
+	"interactions": [
+		{
+			"description": "A fresh self-hosted instance is bootstrapped: admin user, organization and instance-admin identity",
+			"providerState": "the instance has never been bootstrapped",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/admin/bootstrap",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"email": "owner@hobo.invalid",
+					"password": "fixture-bootstrap-password-0123456789",
+					"organization": "hobo"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"message": "Successfully bootstrapped instance",
+					"user": {
+						"id": "user-1",
+						"email": "owner@hobo.invalid",
+						"username": "owner@hobo.invalid",
+						"firstName": "",
+						"lastName": "",
+						"superAdmin": true
+					},
+					"organization": {
+						"id": "org-1",
+						"name": "hobo",
+						"slug": "hobo"
+					},
+					"identity": {
+						"id": "bootstrap-identity",
+						"name": "Instance Admin Identity",
+						"credentials": {
+							"token": "fixture-instance-admin-token"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "A second bootstrap is refused",
+			"providerState": "the instance was already bootstrapped",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/admin/bootstrap",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"organization": "already-bootstrapped"
+				}
+			},
+			"response": {
+				"status": 400,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"reqId": "req-bootstrapped",
+					"statusCode": 400,
+					"error": "BadRequest"
+				}
+			}
+		},
+		{
+			"description": "The relay's project is created with the default environments",
+			"providerState": "the instance-admin token is valid",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/projects",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"projectName": "hobo-ci",
+					"slug": "hobo-ci",
+					"type": "secret-manager",
+					"shouldCreateDefaultEnvs": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"project": {
+						"id": "proj-1",
+						"slug": "hobo-ci",
+						"orgId": "org-1"
+					}
+				}
+			}
+		},
+		{
+			"description": "The deploy credential's own project is created, apart from the relay's",
+			"providerState": "the instance-admin token is valid",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/projects",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"projectName": "hobo-ci-deploy",
+					"slug": "hobo-ci-deploy",
+					"type": "secret-manager",
+					"shouldCreateDefaultEnvs": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"project": {
+						"id": "proj-2",
+						"slug": "hobo-ci-deploy",
+						"orgId": "org-1"
+					}
+				}
+			}
+		},
+		{
+			"description": "A token without the permission is refused a project",
+			"providerState": "the token may not create projects",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/projects",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"slug": "denied"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"reqId": "req-denied",
+					"statusCode": 403,
+					"error": "PermissionDenied"
+				}
+			}
+		},
+		{
+			"description": "The relay's folder is created in prod",
+			"providerState": "project proj-1 exists",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/folders",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"workspaceId": "proj-1",
+					"environment": "prod",
+					"name": "hobo-ci-relay",
+					"path": "/"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"folder": {
+						"id": "folder-1",
+						"name": "hobo-ci-relay",
+						"path": "/hobo-ci-relay"
+					}
+				}
+			}
+		},
+		{
+			"description": "The relay's read-only identity is created in the project",
+			"providerState": "project proj-1 exists",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/projects/proj-1/identities",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"name": "hobo-ci-relay",
+					"roles": [
+						{
+							"role": "viewer"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identity": {
+						"id": "relay-identity",
+						"name": "hobo-ci-relay",
+						"projectId": "proj-1"
+					}
+				}
+			}
+		},
+		{
+			"description": "The deploy identity, which reads the deploy credential only, is created in its project",
+			"providerState": "project proj-2 exists",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/projects/proj-2/identities",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"name": "hobo-ci-deploy",
+					"roles": [
+						{
+							"role": "viewer"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identity": {
+						"id": "deploy-identity",
+						"name": "hobo-ci-deploy",
+						"projectId": "proj-2"
+					}
+				}
+			}
+		},
+		{
+			"description": "The relay identity trusts the Vercel team issuer for one production project",
+			"providerState": "identity relay-identity exists",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/auth/oidc-auth/identities/relay-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"oidcDiscoveryUrl": "https://oidc.vercel.com/hobo-team",
+					"boundIssuer": "https://oidc.vercel.com/hobo-team",
+					"boundAudiences": "https://vercel.com/hobo-team",
+					"boundClaims": {
+						"owner_id": "team_fixture",
+						"project_id": "prj_fixture"
+					},
+					"boundSubject": "owner:hobo-team:project:hobo-ci:environment:production",
+					"accessTokenTTL": 3600,
+					"accessTokenMaxTTL": 3600
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityOidcAuth": {
+						"id": "oidc-1",
+						"identityId": "relay-identity"
+					}
+				}
+			}
+		},
+		{
+			"description": "The deploy identity trusts GitHub Actions on main",
+			"providerState": "identity deploy-identity exists",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/auth/oidc-auth/identities/deploy-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"oidcDiscoveryUrl": "https://token.actions.githubusercontent.com",
+					"boundIssuer": "https://token.actions.githubusercontent.com",
+					"boundAudiences": "https://github.com/Hobo-Labs",
+					"boundClaims": {},
+					"boundSubject": "repo:Hobo-Labs/HoBo:ref:refs/heads/main",
+					"accessTokenTTL": 3600,
+					"accessTokenMaxTTL": 3600
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityOidcAuth": {
+						"id": "oidc-2",
+						"identityId": "deploy-identity"
+					}
+				}
+			}
+		},
+		{
+			"description": "HoBo deletes its own bootstrap identity at the claim's finalize step",
+			"providerState": "identity bootstrap-identity exists",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/v1/identities/bootstrap-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identity": {
+						"id": "bootstrap-identity",
+						"name": "Instance Admin Identity"
+					}
+				}
+			}
+		},
+		{
+			"description": "A deleted identity's token is refused: the bootstrap authority is gone",
+			"providerState": "identity bootstrap-identity was deleted",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/identities/bootstrap-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token"
+				}
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"reqId": "req-revoked",
+					"statusCode": 401,
+					"error": "UnauthorizedError"
+				}
+			}
+		},
+		{
+			"description": "A working token reads an identity",
+			"providerState": "identity relay-identity exists",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/identities/relay-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identity": {
+						"id": "relay-identity",
+						"name": "hobo-ci-relay"
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "local-dev",
+  "freeSlots": 1,
+  "healthy": true,
+  "labels": ["hobo-local-host"],
+  "validUntilMs": 1794268845000,
+  "repository": "../etc/passwd"
+}

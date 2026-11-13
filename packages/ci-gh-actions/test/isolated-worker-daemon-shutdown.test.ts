@@ -2,8 +2,12 @@ import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema } from "@hobo/ci";
 import { describe, expect, it, vi } from "vitest";
 import {
+	awaitWorkerBackgroundDrainIdle,
 	countInFlightWorkerLeases,
+	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+	mergeDrainInFlightCount,
 	parseWorkerStopMode,
+	shouldForceExitDrainOnRepeatSignal,
 	stopIsolatedWorker,
 	waitForIsolatedWorkerDrain,
 	workerOfferKey,
@@ -49,6 +53,11 @@ describe("isolated worker daemon shutdown", () => {
 		expect(workerOfferKeys(undefined, "worker-a").size).toBe(0);
 	});
 
+	it("counts drain in-flight as the max of live leases and running worker containers", () => {
+		expect(mergeDrainInFlightCount(0, 2)).toBe(2);
+		expect(mergeDrainInFlightCount(3, 1)).toBe(3);
+	});
+
 	it("counts in-flight leases on this worker's offers, whatever customer account owns them", () => {
 		const offers = workerOfferKeys(configuration, "worker-a");
 		const leases = [
@@ -71,6 +80,42 @@ describe("isolated worker daemon shutdown", () => {
 				new Set([workerOfferKey("worker-a", "box")]),
 			),
 		).toBe(0);
+	});
+
+	it("bounds background drain idle wait and reports in-flight kinds", async () => {
+		let clock = 0;
+		let tick = true;
+		const progress: string[] = [];
+		const result = await awaitWorkerBackgroundDrainIdle({
+			inFlight: () => (tick ? (["tick"] as const) : []),
+			boundMs: 100,
+			pollMs: 25,
+			onProgress: ({ inFlight }) => progress.push(inFlight.join(",")),
+			sleep: async (ms) => {
+				clock += ms;
+				tick = false;
+			},
+			now: () => clock,
+		});
+		expect(result.timedOut).toBe(false);
+		expect(result.inFlight).toEqual([]);
+		expect(progress.length).toBeGreaterThan(0);
+		expect(DEFAULT_DRAIN_BACKGROUND_BOUND_MS).toBe(30_000);
+	});
+
+	it("times out background drain when non-job work keeps running", async () => {
+		let clock = 0;
+		const result = await awaitWorkerBackgroundDrainIdle({
+			inFlight: () => ["inbox", "tick"] as const,
+			boundMs: 50,
+			pollMs: 10,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+			now: () => clock,
+		});
+		expect(result.timedOut).toBe(true);
+		expect(result.inFlight).toEqual(["inbox", "tick"]);
 	});
 
 	it("reconciles before every count, so a running job is waited for until its runner exits", async () => {
@@ -209,6 +254,30 @@ describe("isolated worker daemon shutdown", () => {
 		});
 		expect(result).toEqual({ mode: "drain", drained: true, remaining: 0 });
 		expect(sleep).toHaveBeenCalledTimes(1);
+	});
+
+	it("forces exit on a repeat drain signal when no worker container is running", async () => {
+		expect(
+			await shouldForceExitDrainOnRepeatSignal({
+				signalCount: 1,
+				draining: true,
+				runningWorkerContainers: 0,
+			}),
+		).toBe(false);
+		expect(
+			await shouldForceExitDrainOnRepeatSignal({
+				signalCount: 2,
+				draining: true,
+				runningWorkerContainers: 0,
+			}),
+		).toBe(true);
+		expect(
+			await shouldForceExitDrainOnRepeatSignal({
+				signalCount: 3,
+				draining: true,
+				runningWorkerContainers: 1,
+			}),
+		).toBe(false);
 	});
 
 	it("drain mode reports the remaining work on timeout", async () => {

@@ -9,8 +9,10 @@ import {
 	createConfiguredEngines,
 	environmentCredentials,
 } from "./ai-sdk-engine.js";
-import { parseAgentConfig } from "./config.js";
-import { createRelayAgent } from "./relay.js";
+import { agentPolicies, parseAgentConfig } from "./config.js";
+import { createRelayAgent, reportLogEntries } from "./relay.js";
+import { parseCommitSigningKey } from "./signing.js";
+import { configuredStructuredMerger } from "./structured-merge.js";
 
 /**
  * Start the relay's Node host with the agent beside it.
@@ -28,7 +30,7 @@ import { createRelayAgent } from "./relay.js";
  */
 export async function startRelayWithAgentFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
-) {
+): Promise<Awaited<ReturnType<typeof startRelayFromEnvironment>>> {
 	const path = env.HOBO_CI_AGENT_CONFIG;
 	const block = path
 		? parseCiAgentBlock(readFileSync(path, "utf8"))
@@ -41,9 +43,18 @@ export async function startRelayWithAgentFromEnvironment(
 	if (!Number.isInteger(seconds) || seconds < 10 || seconds > 86_400)
 		throw new Error("invalid agent interval");
 	const config = parseAgentConfig(block);
-	const engines = await createConfiguredEngines(config, {
-		credential: environmentCredentials(env),
-	});
+	const credential = environmentCredentials(env);
+	const engines = await createConfiguredEngines(config, { credential });
+	const structured = await configuredStructuredMerger(config);
+	const signingReference = agentPolicies(config).commit.signingKey;
+	const signingText = signingReference
+		? credential(signingReference)
+		: undefined;
+	if (signingReference && !signingText)
+		throw new Error(`CI agent credential is not set: ${signingReference}`);
+	const signingKey = signingText
+		? parseCommitSigningKey(signingText)
+		: undefined;
 	const appId = env.HOBO_CI_GITHUB_APP_ID;
 	const keyFile = env.HOBO_CI_GITHUB_APP_KEY_FILE;
 	if (!appId || !keyFile)
@@ -62,7 +73,15 @@ export async function startRelayWithAgentFromEnvironment(
 				token: (installationId) => github.installationToken(installationId),
 				stateDirectory,
 				engines,
+				structured,
+				signingKey,
 				intervalMs: seconds * 1000,
+				onReport: (report) => {
+					for (const entry of reportLogEntries(report))
+						process.stdout.write(
+							`${JSON.stringify({ level: "info", ...entry })}\n`,
+						);
+				},
 			});
 			close = () => agent.close();
 			return agent;

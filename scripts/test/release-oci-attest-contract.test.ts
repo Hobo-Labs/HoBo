@@ -108,6 +108,24 @@ describe("release-oci-attest composite action", () => {
 	});
 });
 
+/** Jobs that hold release runners or the main-train concurrency queue must not use `always()`. */
+const RELEASE_PUBLISH_CHAIN_JOBS = [
+	"release-oci-build-tag",
+	"release-images",
+	"release-publish",
+	"release-attest",
+	"release-npm",
+	"release-pages",
+] as const;
+
+function jobIfBlock(block: string): string {
+	const match = /^    if: >?-\n([\s\S]*?)(?=\n    needs:)/m.exec(block);
+	if (match?.[1]) return match[1].replace(/\s+/g, " ").trim();
+	const single = /^    if: (.+)$/m.exec(block);
+	if (single?.[1]) return single[1].trim();
+	throw new Error("job block missing if:");
+}
+
 describe("release attest workflow jobs", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
@@ -117,6 +135,22 @@ describe("release attest workflow jobs", () => {
 		join(root, ".github/workflows/release-code.yml"),
 		"utf8",
 	);
+
+	for (const jobId of RELEASE_PUBLISH_CHAIN_JOBS) {
+		it(`${jobId} does not gate on always()`, () => {
+			const block = parseReleaseJobBlock(hoboWorkflow, jobId);
+			const cond = jobIfBlock(block);
+			expect(cond).toMatch(/^!cancelled\(\)/);
+			expect(cond).not.toMatch(/\balways\(\)/);
+		});
+	}
+
+	it("release-publish waits for a green OCI build matrix", () => {
+		const block = parseReleaseJobBlock(hoboWorkflow, "release-publish");
+		expect(jobIfBlock(block)).toContain(
+			"needs.release-oci-build-tag.result == 'success'",
+		);
+	});
 
 	it("release-attest grants packages:write for push-to-registry attestations", () => {
 		const block = parseReleaseJobBlock(hoboWorkflow, "release-attest");

@@ -5,6 +5,14 @@ description: >-
   is. Never fails: when the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen (this step is running there, so it is the one tier
   known to be up) and a warning says why. Pinned to the fleet, it stays there.
+  What the fleet can take is not passed in: the script asks the relay that
+  .hobo/ci.json names for its verdict (ADR-0180), so the workflow must check
+  that file out, and a relay that does not answer changes nothing.
+  First it checks for a signed local run of this tree (verify-attestation.mts,
+  when the workflow checked that script out): the jobs such a run covers are
+  skipped, and what is left goes to GitHub-hosted without reading the queue.
+  Each decision is one `hobo-ci-route` notice; a fallback is a
+  `hobo-ci-route-fallback` warning, so a monitor can count both.
 inputs:
   token:
     description: A token that can read this repository's Actions runs and jobs.
@@ -29,6 +37,17 @@ inputs:
     description: "`false` keeps trunk events on the shared `hobo` label."
     required: false
     default: ""
+  attest:
+    description: "`false` skips the check for a signed local run (a second ask within a run)."
+    required: false
+    default: "true"
+  include-own-run:
+    description: >-
+      `true` for a second ask later in a run: the queue reading keeps this
+      run's own jobs, and when the script cannot decide no runner is output,
+      so the run's first decision stands.
+    required: false
+    default: "false"
 outputs:
   runner:
     description: The runs-on label for this run's jobs.
@@ -36,18 +55,63 @@ outputs:
   tier:
     description: fleet, local or github.
     value: ${{ steps.route.outputs.tier }}
+  attested:
+    description: "`true` when a signed local run was verified for the checked-out tree, else `false`."
+    value: ${{ steps.attest.outputs.attested || 'false' }}
+  attested-jobs:
+    description: JSON array of the job ids that run covers; `[]` when there is none.
+    value: ${{ steps.attest.outputs.attested-jobs || '[]' }}
 runs:
   using: composite
   steps:
+    # Never fails and never blocks: anything short of a verified attestation
+    # is attested=false, and every job then runs as it always did.
+    - id: attest
+      if: inputs.attest != 'false'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: |
+        set -uo pipefail
+        not_attested() {
+          echo "not attested: $1"
+          { echo "attested=false"; echo "attested-jobs=[]"; } >> "$GITHUB_OUTPUT"
+        }
+        if [ ! -f scripts/ci/verify-attestation.mts ]; then
+          not_attested "this workflow does not check for a signed local run"
+          exit 0
+        fi
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          not_attested "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        # The script writes both outputs itself; if it dies first, say no here.
+        outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
+        if ! "${node_bin}" --no-warnings scripts/ci/verify-attestation.mts \
+          || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
+          not_attested "the verification script failed"
+        fi
     - id: route
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
+        HOBO_CI_ATTESTED: ${{ steps.attest.outputs.attested }}
         HOBO_CI_ROUTE: ${{ inputs.mode }}
         HOBO_CI_LOCAL_RUNNER: ${{ inputs.local-runner }}
         HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
         HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
         HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
+        HOBO_CI_INCLUDE_OWN_RUN: ${{ inputs.include-own-run }}
       run: |
         set -uo pipefail
         fleet=hobo
@@ -56,13 +120,17 @@ runs:
             if [ "${HOBO_CI_TRUNK_RUNNER}" != "false" ]; then fleet=hobo-trunk; fi ;;
         esac
         # Without a decision, the one tier known to be up is the one this step is
-        # running on. A run pinned to the fleet stays on the fleet.
+        # running on. A run pinned to the fleet stays on the fleet. A second ask
+        # within a run outputs nothing, so the run's first decision stands.
+        # The titled warning is what a monitor counts (hobo-ci-route-fallback).
         without_a_decision() {
-          if [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
-            echo "::warning::runner routing did not run ($1); pinned to the fleet"
+          if [ "${HOBO_CI_INCLUDE_OWN_RUN}" = "true" ]; then
+            echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); keeping the run's route"
+          elif [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
+            echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
             { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::runner routing did not run ($1); using GitHub-hosted runners"
+            echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); using GitHub-hosted runners"
             { echo "runner=ubuntu-24.04"; echo "tier=github"; } >> "$GITHUB_OUTPUT"
           fi
         }

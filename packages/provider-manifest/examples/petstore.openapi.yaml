@@ -1,0 +1,39 @@
+# A small OpenAPI document used to exercise client and MCP generation.
+openapi: 3.0.3
+info:
+  title: Acme Pets
+  version: 1.2.0
+servers:
+  - url: https://api.acme-cloud.example.com/v1
+components:
+  parameters:
+    Trace:
+      name: X-Trace-Id
+      in: header
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List pets
+      parameters:
+        - { name: limit, in: query }
+        - { name: tag, in: query }
+      responses: { "200": { description: ok } }
+    post:
+      operationId: createPet
+      summary: Create a pet
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses: { "201": { description: created } }
+  /pets/{petId}:
+    parameters:
+      - { name: petId, in: path, required: true }
+      - $ref: "#/components/parameters/Trace"
+    get:
+      operationId: getPet
+      summary: Fetch one pet
+      responses: { "200": { description: ok } }
+    delete:
+      summary: Remove a pet
+      responses: { "204": { description: gone } }

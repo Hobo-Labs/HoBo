@@ -4,14 +4,16 @@ import { describe, expect, it } from "vitest";
 import relay, {
 	RELAY_REPAIR_SCHEDULE,
 	RELAY_RESOURCES,
+	relayCache,
 	relayConfig,
-	relayState,
+	relayConfigService,
 } from "../src/bindle.js";
+import { RELAY_QUEUE_TOPICS } from "../src/relay-queue.js";
 
 // The relay's HoBo declaration (`src/bindle.ts`) against the relay itself: the
 // platform configuration Vercel reads (`vercel.json`), the entry files, and the
-// settings the source reads. A name changed on one side and not the other
-// fails here.
+// settings the deployed code reads. A name changed on one side and not the
+// other fails here.
 
 const packageUrl = new URL("../", import.meta.url);
 const text = (path: string) => readFileSync(new URL(path, packageUrl), "utf8");
@@ -46,27 +48,42 @@ const kinds = Object.fromEntries(
 );
 
 describe("the relay declared as a HoBo app", () => {
-	it("is an HTTP entry, a queue, a schedule, state and a secret store", () => {
+	it("is an HTTP entry, three queues, a schedule, a cache and a config service: no database", () => {
 		expect(relay.name).toBe("hobo-ci-relay");
 		expect(kinds).toEqual({
 			[RELAY_RESOURCES.http]: "api",
 			[RELAY_RESOURCES.queue]: "queue",
+			[RELAY_RESOURCES.intake]: "queue",
+			[RELAY_RESOURCES.steps]: "queue",
 			[RELAY_RESOURCES.schedule]: "schedule",
-			[RELAY_RESOURCES.state]: "data",
-			[RELAY_RESOURCES.secrets]: "secret",
+			[RELAY_RESOURCES.cache]: "kv",
+			[RELAY_RESOURCES.config]: "secret",
 		});
-		expect(relay.resources[RELAY_RESOURCES.queue]?.declaredAllow).toEqual([
-			"enqueue",
-			"dequeue",
-		]);
-		expect(relay.resources[RELAY_RESOURCES.secrets]?.declaredAllow).toEqual([
+		expect(Object.values(kinds)).not.toContain("data");
+		for (const topic of [
+			RELAY_RESOURCES.queue,
+			RELAY_RESOURCES.intake,
+			RELAY_RESOURCES.steps,
+		])
+			expect(relay.resources[topic]?.declaredAllow).toEqual([
+				"enqueue",
+				"dequeue",
+			]);
+		expect(relay.resources[RELAY_RESOURCES.config]?.declaredAllow).toEqual([
 			"access",
+		]);
+		expect(relay.resources[RELAY_RESOURCES.cache]?.declaredAllow).toEqual([
+			"get",
+			"set",
+			"delete",
 		]);
 		expect(relay.edges).toEqual(
 			expect.arrayContaining([
-				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.state },
-				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.secrets },
+				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.cache },
+				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.config },
 				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.queue },
+				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.intake },
+				{ from: RELAY_RESOURCES.http, to: RELAY_RESOURCES.steps },
 				{ from: RELAY_RESOURCES.schedule, to: RELAY_RESOURCES.queue },
 			]),
 		);
@@ -74,24 +91,36 @@ describe("the relay declared as a HoBo app", () => {
 
 	it("names no provider", () => {
 		expect(() => assertNoBindleProviderSelection(relay)).not.toThrow();
-		const declared = JSON.stringify({ relay, relayConfig, relayState });
+		const declared = JSON.stringify({
+			relay,
+			relayConfig,
+			relayCache,
+			relayConfigService,
+		});
 		expect(declared).not.toMatch(
-			/vercel|neon|aws|azure|gcp|cloudflare|netlify|railway/iu,
+			/vercel|neon|upstash|valkey|infisical|aws|azure|gcp|cloudflare|netlify|railway|postgres/iu,
 		);
 	});
 
-	it("asks for PostgreSQL state as a capability, not a product", () => {
-		expect(relayState.requiredProfiles.map((p) => p.profileId)).toEqual([
-			"data.postgres/v1",
+	it("asks for the cache as a capability: Redis semantics with TTL, increment and compare-and-set", () => {
+		expect(relayCache.requiredProfiles.map((p) => p.profileId)).toEqual([
+			"kv.redis-compatible/v1",
 		]);
-		const required = relayState.features
+		const required = relayCache.features
 			.filter((feature) => feature.necessity === "required")
 			.map((feature) => feature.key);
 		expect(required.sort()).toEqual([
-			"connectivityTransports",
-			"jsonb",
-			"pooling",
+			"atomicCompareAndSet",
+			"atomicIncrement",
+			"ttl",
 		]);
+	});
+
+	it("reads its config service and never writes it", () => {
+		expect(relayConfigService).toMatchObject({
+			access: "read-only",
+			authentication: "workload-identity",
+		});
 	});
 });
 
@@ -117,7 +146,7 @@ describe("the declaration is not deployed code", () => {
 });
 
 describe("the declaration and the platform configuration agree", () => {
-	it("consumes the declared queue topic from the queue entry", () => {
+	it("consumes each declared queue topic from its own queue entry", () => {
 		const triggers = Object.entries(platform.functions ?? {}).flatMap(
 			([file, settings]) =>
 				(settings.experimentalTriggers ?? [])
@@ -126,8 +155,13 @@ describe("the declaration and the platform configuration agree", () => {
 		);
 		expect(triggers).toEqual([
 			{ file: "api/queue.ts", topic: RELAY_RESOURCES.queue },
+			{ file: "api/intake.ts", topic: RELAY_RESOURCES.intake },
+			{ file: "api/lease-steps.ts", topic: RELAY_RESOURCES.steps },
 		]);
-		expect(existsSync(new URL("api/queue.ts", packageUrl))).toBe(true);
+		for (const { file } of triggers) {
+			expect(existsSync(new URL(file, packageUrl)), file).toBe(true);
+			expect(text(file), file).toContain('from "../src/entry.js"');
+		}
 	});
 
 	it("routes every request to the declared HTTP entry", () => {
@@ -138,14 +172,19 @@ describe("the declaration and the platform configuration agree", () => {
 		).toBe(true);
 	});
 
-	it("sends every queue message to the declared topic, and names repairs after the schedule", () => {
-		const entry = text("src/entry.ts");
-		const topics = [...entry.matchAll(/queue\.send\(\s*"([^"]+)"/gu)].map(
-			(match) => match[1],
-		);
-		expect(topics.length).toBeGreaterThan(0);
-		expect(new Set(topics)).toEqual(new Set([RELAY_RESOURCES.queue]));
-		const names = [...entry.matchAll(/\bname:\s*"([^"]+)"/gu)].map(
+	it("sends every queue message to a declared topic, and names repairs after the schedule", () => {
+		expect(RELAY_QUEUE_TOPICS).toEqual({
+			repair: RELAY_RESOURCES.queue,
+			intake: RELAY_RESOURCES.intake,
+			steps: RELAY_RESOURCES.steps,
+		});
+		// Every send names a topic from RELAY_QUEUE_TOPICS, never a literal.
+		const sources = readdirSync(new URL("src/", packageUrl))
+			.filter((name) => name.endsWith(".ts") && name !== "bindle.ts")
+			.map((name) => text(`src/${name}`));
+		for (const source of sources) expect(source).not.toMatch(/\.send\(\s*"/u);
+		const queueSource = text("src/relay-queue.ts");
+		const names = [...queueSource.matchAll(/\bname:\s*"([^"]+)"/gu)].map(
 			(match) => match[1],
 		);
 		expect(names.length).toBeGreaterThan(0);
@@ -184,22 +223,40 @@ describe("the declaration and the platform configuration agree", () => {
 	});
 });
 
-describe("the declared settings and the source agree", () => {
-	// Every HOBO_CI_*, CRON_SECRET and DATABASE_URL* name the relay's own source
-	// mentions. The broker's HOBO_BROKER_* settings belong to another deployable.
+describe("the declared settings and the deployed code agree", () => {
+	// Every HOBO_CI_* and CRON_SECRET name the deployed code mentions: the
+	// sources the queue and HTTP entries reach through their imports.
 	const SETTING =
 		/\b(?:HOBO_CI_[A-Z0-9_]+|CRON_SECRET|DATABASE_URL(?:_UNPOOLED)?)\b/gu;
-	const sources = readdirSync(new URL("src/", packageUrl), {
-		withFileTypes: true,
-	})
-		.filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
-		.map((entry) => entry.name)
-		.filter((name) => name !== "bindle.ts");
+	const reached = new Set<string>();
+	const pending = readdirSync(new URL("api/", packageUrl)).map(
+		(name) => `api/${name}`,
+	);
+	while (pending.length > 0) {
+		const file = pending.pop();
+		if (!file || reached.has(file)) continue;
+		reached.add(file);
+		for (const match of text(file).matchAll(
+			/from\s+"(\.{1,2}\/[^"]+)\.js"/gu,
+		)) {
+			const target = new URL(`${match[1]}.ts`, new URL(file, packageUrl));
+			const relative = target.pathname.slice(packageUrl.pathname.length);
+			if (existsSync(target) && !relative.startsWith("src/_generated"))
+				pending.push(relative);
+		}
+	}
 	const read = new Set(
-		sources.flatMap((name) => text(`src/${name}`).match(SETTING) ?? []),
+		[...reached].flatMap((file) => text(file).match(SETTING) ?? []),
 	);
 
-	it("declares exactly the settings the source reads", () => {
+	it("reaches the stateless composition and reads no database URL", () => {
+		expect(reached).toContain("src/stateless-composition.ts");
+		expect([...read].filter((name) => name.startsWith("DATABASE_URL"))).toEqual(
+			[],
+		);
+	});
+
+	it("declares exactly the settings the deployed code reads", () => {
 		expect(Object.keys(relayConfig.fields).sort()).toEqual([...read].sort());
 	});
 
@@ -216,10 +273,9 @@ describe("the declared settings and the source agree", () => {
 		}
 		expect(secrets).toEqual(
 			expect.arrayContaining([
-				"DATABASE_URL",
-				"DATABASE_URL_UNPOOLED",
 				"CRON_SECRET",
 				"HOBO_CI_CONFIG_JSON",
+				"HOBO_CI_SANDBOX_PROXY_TOKEN_KEY",
 			]),
 		);
 		// A secret is never a value set at deploy time.

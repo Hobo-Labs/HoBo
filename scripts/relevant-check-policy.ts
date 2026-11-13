@@ -18,7 +18,10 @@ export type RelevantCheckPolicyOptions = {
 	all?: boolean;
 	includeBuild?: boolean;
 	includeBroadSweeps?: boolean;
-	/** The caller requires a separate job to run all selected workspace tests. */
+	/**
+	 * The caller requires separate jobs to run all selected workspace tests
+	 * and the scripts lane (`workspace_tests` and `scripts-tests` in CI).
+	 */
 	workspaceTestsCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
@@ -112,6 +115,39 @@ function defaultImportsTsAutocode(file: string) {
 	} catch {
 		return false;
 	}
+}
+
+/** The tests that hold signed local runs (pnpm ci:attest) to their rules. */
+export const SIGNED_LOCAL_RUN_TESTS = [
+	"scripts/test/attestation.test.ts",
+	"scripts/test/verify-attestation.test.ts",
+	"scripts/test/attested-jobs.test.ts",
+	"scripts/test/merge-group-gate.test.ts",
+	"scripts/test/lint-actions-runner.test.ts",
+	"scripts/test/local-attest.test.ts",
+];
+
+const SIGNED_LOCAL_RUN_GUARDED = new Set([
+	".github/workflows/hobo-ci.yml",
+	".github/workflows/release-hobo.yml",
+	".hobo/ci-attestors.json",
+	"scripts/ci/attested-jobs.json",
+	"scripts/ci/attested-jobs.mts",
+	"scripts/ci/attestation.mts",
+	"scripts/ci/verify-attestation.mts",
+	"scripts/ci/local-attest.mts",
+	"scripts/ci/route-runner.mts",
+	"scripts/lib/workflow-job-steps.mts",
+	"scripts/lint-actions.ts",
+	...SIGNED_LOCAL_RUN_TESTS,
+]);
+
+/** Whether a changed file is one the signed-local-run guards protect. */
+function guardsSignedLocalRuns(file: string): boolean {
+	return (
+		SIGNED_LOCAL_RUN_GUARDED.has(file) ||
+		file.startsWith(".github/actions/route-runner/")
+	);
 }
 
 export function selectRelevantChecks(
@@ -527,6 +563,24 @@ export function selectRelevantChecks(
 		});
 	}
 
+	// The guards on signed local runs must run on the changes they guard: the
+	// workflows that skip jobs for one, the verifier, the trusted keys, the
+	// description a local run executes, and the lint that pins all of it.
+	if (files.some(guardsSignedLocalRuns)) {
+		checks.push({
+			command: "node",
+			args: ["--import", "tsx", "--test", ...SIGNED_LOCAL_RUN_TESTS],
+			reason:
+				"signed local runs: the verifier, the trusted keys, the gate's decision table and the job conditions must hold",
+		});
+		checks.push({
+			command: "pnpm",
+			args: ["run", "actions:lint"],
+			reason:
+				"signed local runs: only a covered job may be skipped for one, and a gate must read the route job's result",
+		});
+	}
+
 	if (
 		files.some(
 			(file) =>
@@ -657,6 +711,21 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"root scripts/tests must stay type-clean (turbo builds workspace deps first)",
+		});
+	}
+
+	// Every test under scripts/test (finding 0144). A staged commit leaves it
+	// to the pull request, and CI runs it in the required job scripts-tests.
+	if (
+		touched(["scripts", "test", ".github"]) &&
+		!staged &&
+		!options.workspaceTestsCoveredExternally
+	) {
+		checks.push({
+			command: "pnpm",
+			args: ["run", "test:scripts"],
+			reason:
+				"scripts, root tests or workflows changed; the scripts lane gates pull requests",
 		});
 	}
 

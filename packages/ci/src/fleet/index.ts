@@ -10,6 +10,10 @@ export {
 	type FleetRefusalCode,
 } from "./balance.js";
 export {
+	memoryAdmitHeadroom,
+	memoryAdmitParallelCount,
+} from "./capacity.js";
+export {
 	FLEET_PROVIDER_KINDS,
 	type FleetBinding,
 	type FleetRole,

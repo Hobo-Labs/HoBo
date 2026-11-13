@@ -1,0 +1,140 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// The relay mesh's records: what a node advertises on the board, which keys
+// the mesh trusts, what a node keeps about its own reliability, what a reader
+// reports about every node, and the snapshot runner routing reads. None
+// carries a private key, a token or a credential.
+
+// Free capacity a job is sized against. An absent field is unknown, not zero.
+message MeshFree {
+  optional uint32 memory_mb = 1;
+  // Measured on the runner work directory's filesystem.
+  optional uint32 disk_mb = 2;
+}
+message MeshPlatform {
+  string os = 1;
+  string arch = 2;
+}
+// The decayed counts a reliability score was computed from.
+message MeshReliabilitySamples {
+  double delivered = 1;
+  double dropped = 2;
+}
+// A node's identity key and its signature over one advertisement.
+message MeshIdentityProof {
+  // The raw Ed25519 public key, base64url without padding.
+  string public_key = 1;
+  // Ed25519 over the canonical encoding of the advertisement (its node id,
+  // expiry and this key among it), base64url without padding.
+  string signature = 2;
+}
+// One node's advertisement, as protobuf JSON under its id in the
+// `<namespace>-mesh-nodes` bucket. Fields 1 to 9 are what every version has
+// sent; a node that sends only those is read as before and is `unverified`.
+// How far a node is trusted is never a field: each reader computes it.
+message MeshAdvert {
+  string id = 1;
+  uint32 free_slots = 2;
+  optional uint32 total_slots = 3;
+  bool healthy = 4;
+  repeated string labels = 5;
+  // Epoch milliseconds until which the advertisement asks to be believed.
+  double valid_until_ms = 6;
+  MeshFree free = 7;
+  MeshPlatform platform = 8;
+  // The share of its recent jobs the node delivered, in (0, 1].
+  optional double reliability = 9;
+  MeshReliabilitySamples samples = 10;
+  // Epoch milliseconds since which the node has been in its health state.
+  optional double since_ms = 11;
+  MeshIdentityProof identity = 12;
+  // The one repository a machine running jobs for one repository serves.
+  // Box workers serve many and leave it empty. Signed with the rest.
+  optional string repository = 13;
+}
+
+// One key the mesh's operator vouches for.
+message MeshTrustedKey {
+  string public_key = 1;
+  // When set, the key is trusted for this node id only.
+  string node_id = 2;
+}
+// The mesh's trust settings, under `trust` in the `<namespace>-mesh-config`
+// bucket. With no keys listed, each node trusts only its own.
+message MeshTrustConfig {
+  repeated MeshTrustedKey trusted_keys = 1;
+  // Rank only nodes whose key is listed.
+  bool require_trusted = 2;
+}
+
+// A node's own record of the jobs it took, kept in its SQLite journal so a
+// restart does not clear it.
+message MeshReliabilityRecord {
+  double delivered = 1;
+  double dropped = 2;
+  // Epoch milliseconds the counts were last decayed to.
+  double at_ms = 3;
+  // The HOBO_CI_MESH_RELIABILITY_RESET value last applied. A reset happens
+  // once per value, so a variable left set does not clear every restart.
+  string reset_token = 4;
+}
+
+// One node as a reader reports it: availability, capacity and trust.
+message MeshNodeReport {
+  string id = 1;
+  // live, unhealthy or lost.
+  string state = 2;
+  // RFC 3339; since when the node has been in `state`. Empty when unknown.
+  string since = 3;
+  bool healthy = 4;
+  // RFC 3339; when the board last received its advertisement. Empty when unknown.
+  string last_seen_at = 5;
+  // RFC 3339; until when its last advertisement asked to be believed.
+  string valid_until = 6;
+  uint32 total_slots = 7;
+  uint32 free_slots = 8;
+  optional uint32 free_memory_mb = 9;
+  optional uint32 free_disk_mb = 10;
+  MeshPlatform platform = 11;
+  repeated string labels = 12;
+  // trusted, unverified or invalid; computed by the reader that answers.
+  string trust = 13;
+  // The key the advertisement was signed with. Empty when it was not signed.
+  string public_key = 14;
+  optional double reliability = 15;
+  optional double delivered = 16;
+  optional double dropped = 17;
+  // For a machine running jobs for one repository: that repository. Empty
+  // for fleet nodes, and for a caller whose account does not own it (the
+  // node's id, platform and key are then withheld too).
+  string repository = 18;
+}
+// What the live, validly signed nodes add up to.
+message MeshCapacitySummary {
+  uint32 nodes = 1;
+  uint32 healthy = 2;
+  uint32 available = 3;
+  uint32 total_slots = 4;
+  uint32 free_slots = 5;
+  uint32 free_memory_mb = 6;
+  uint32 largest_free_memory_mb = 7;
+  uint32 free_disk_mb = 8;
+}
+// The one answer of `GET /v1/mesh/nodes`, the `list_mesh_nodes` tool, the
+// `hobo-ci://mesh/nodes` resource and `hobo ci status`.
+message MeshNodeReports {
+  // configured: the host reads a mesh. not-configured: it has none, which is
+  // an answer and not an error. unreachable: it has one and could not read it;
+  // `nodes` is then its last reading.
+  string mesh = 1;
+  repeated MeshNodeReport nodes = 2;
+  MeshCapacitySummary capacity = 3;
+  // RFC 3339; when the host read the nodes it lists. Empty on a host with no
+  // mesh and no node of its own, which read nothing.
+  string read_at = 4;
+  // Whether the answering host ranks only nodes whose key it trusts.
+  bool require_trusted = 5;
+  // More nodes were known than one answer lists. `capacity` still covers all.
+  bool truncated = 6;
+}

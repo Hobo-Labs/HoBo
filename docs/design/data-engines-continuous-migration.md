@@ -787,9 +787,9 @@ What runs where:
 | SQLite ↔ SQLite, SQLite ↔ reference (both directions) | yes | the kit against real files, including `in-place-evolve` over real DDL |
 | Event-log patterns on the real SQLite event store + SQLite engines | yes (`packages/trails/test/data-patterns-e2e.test.ts`) | `rebuild-and-swap`, `log-pivot`, `stream-handoff` on disk; the migration journal on the event store |
 | MongoDB over its in-memory executor | yes | the binding's logic without a server; the executor interleaves transactions, so the fence race case can fail offline |
-| PostgreSQL, live | opt-in: `HOBO_TEST_POSTGRES_URL` | the kit against a real server, including logical-decoding capture and the native logical-copy cases |
-| MongoDB, live | opt-in: `HOBO_TEST_MONGODB_URL` | the kit against a real replica set, including change streams |
-| Cross-engine among SQLite, PostgreSQL, and MongoDB, live | opt-in: both variables | real records moving between real engines of different paradigms |
+| PostgreSQL, live | CI job `Live data engines`; locally with `HOBO_TEST_POSTGRES_URL` | the kit against a real server, including logical-decoding capture and the native logical-copy cases |
+| MongoDB, live | CI job `Live data engines`; locally with `HOBO_TEST_MONGODB_URL` | the kit against a real replica set, including change streams |
+| Cross-engine among SQLite, PostgreSQL, and MongoDB, live | CI job `Live data engines`; locally with both variables | real records moving between real engines of different paradigms |
 
 To run the live lanes locally, start the two servers from the compose file and run the one command
 (details in [live-provider-matrix](./live-provider-matrix.md#data-engines-packagesdata--adr-0177)):
@@ -799,49 +799,29 @@ docker compose -f packages/data-core/deploy/compose.live-engines.yml up -d --wai
 pnpm run test:data-live
 ```
 
-### Last recorded run
+### What each engine skips
 
-**Recorded 2026-11-10 at commit `45102736`.** PostgreSQL 16.15 with `wal_level=logical`, MongoDB
-8.0.4 single-node replica set. When the kit changes, the "Kit size" line and the two tables under it
-are the only numbers in this section to refresh.
+Each run of the live lanes is recorded in that run's CI log, not here. What does not change from run
+to run is which kit cases each engine skips and why:
 
-Kit size at this commit: **52** case ids, of which 3 are native cases, 5 need the `schema` port, and
-1 (the size case) needs a declared `maxRecordBytes`.
-
-| Kit run, engine as its own peer | Outcome | Passed | Declared limit | Skipped | Why skipped |
-|---|---|---|---|---|---|
-| Reference engine | `pass` | 43 | — | 9 | the size case (no bound stated), the 3 native cases, the 5 `schema` cases |
-| SQLite | `pass` | 48 | — | 4 | the size case, the 3 native cases |
-| PostgreSQL, live | `pass` | 51 | — | 1 | the size case |
-| MongoDB | `pass` | 43 | 1 | 8 | the 3 native cases, the 5 `schema` cases |
-
-MongoDB's declared limit is `capture.acknowledged-positions-are-final`, under
-`MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING`: its `acknowledge` releases and checks nothing, so a
-read from before an acknowledged position still succeeds.
-
-| Package | Tests, default lane | Tests, live lane (`pnpm run test:data-live`) |
+| Kit run, engine as its own peer | Skipped cases | Why |
 |---|---|---|
-| `@hobo/data-core` | 286 passed | 286 passed |
-| `@hobo/data-sqlite` | 40 passed | 40 passed |
-| `@hobo/data-postgres` | 311 passed, 41 skipped | 352 passed |
-| `@hobo/data-mongodb` | 106 passed, 31 skipped | 137 passed |
-| `@hobo/trails` | 223 passed | 223 passed |
-| `@hobo/events` | 95 passed | not part of the live command |
+| Reference engine | the size case, the native cases, the `schema` cases | it states no `maxRecordBytes`, declares no native profile, and has no `schema` port |
+| SQLite | the size case, the native cases | it states no `maxRecordBytes` and declares no native profile |
+| PostgreSQL, live | the size case | it states no `maxRecordBytes` |
+| MongoDB | the native cases, the `schema` cases | it declares no native profile and has no `schema` port |
 
-The live column is one run of `pnpm run test:data-live` with every test passing. The live totals
-include each engine's kit runs against the reference engine in both directions and the cross-engine
-files (`packages/data-postgres/test/cross-engine-live.test.ts`,
+MongoDB also reports one case as `declared-limit` rather than passed:
+`capture.acknowledged-positions-are-final`, under `MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING`. Its
+`acknowledge` releases and checks nothing, so a read from before an acknowledged position still
+succeeds.
+
+The live lanes also run each engine's kit against the reference engine in both directions, and the
+cross-engine files (`packages/data-postgres/test/cross-engine-live.test.ts`,
 `packages/data-mongodb/test/cross-engine-live.test.ts`: SQLite ↔ PostgreSQL, SQLite ↔ MongoDB,
-PostgreSQL ↔ MongoDB). Per-pair kit counts were not recorded separately for this run.
-
-The native logical-copy proof is `packages/data-postgres/test/native-live.test.ts`, part of the
-PostgreSQL live total: a dataset moves between two databases of one cluster under concurrent writers,
-digest-equal, fenced, flipped once, nothing left behind. The figures it prints were last noted at
-`85ae5267` (3398 records digest-equal after 488 concurrent transactions, 309 of which landed while
-racing the fence) and were not noted again for this run. One run on one machine is a correctness
-record, not a benchmark.
-
-The intermittent live PostgreSQL failure seen at `85ae5267` has a root cause and a fix; see §10.
+PostgreSQL ↔ MongoDB). The native logical-copy proof is `packages/data-postgres/test/native-live.test.ts`:
+a dataset moves between two databases of one cluster under concurrent writers, digest-equal, fenced,
+flipped once, nothing left behind. It prints its figures to the run's log.
 
 The kit earned its keep while it was being built. It caught the SQLite binding declaring strings
 `exact` while storing text truncated at the first U+0000 — now refused and declared `constrained` — and
@@ -981,20 +961,28 @@ Engines:
 
 Evidence:
 
-- **The live PostgreSQL and MongoDB lanes are opt-in and not in CI.** They need a server, no workflow
-  provides one, and nothing sets the two variables there. A regression in live capture, in the fence
-  under real concurrency, or in the native path is caught by whoever runs `pnpm run test:data-live`,
-  not by every push. The always-on lanes cover the contract logic, the decoder against recorded
-  bytes, MongoDB over its in-memory executor, and SQLite for real.
-- **The intermittent live PostgreSQL failure seen at `85ae5267` is explained and fixed; a residual
-  remains.** Root cause: a logical replication slot created while another session creates a table and
+- **The live PostgreSQL and MongoDB lanes run in CI where a diff can reach them — not on every push,
+  and not on a schedule.** The `Live data engines` job in `.github/workflows/hobo-ci.yml` starts a
+  digest-pinned PostgreSQL 16 and a one-member MongoDB 8 replica set as sibling containers
+  (`scripts/ci/data-live-servers.mts`) and runs `pnpm run test:data-live` against them. It runs on a
+  pull request when `scripts/ci/job-scope.mts` finds that the diff reaches the live suites — the data
+  packages, `@hobo/trails`, anything they import, or CI configuration — and on a manual dispatch.
+  A green run is checked, not assumed: the job fails unless each of the five packages reported and
+  no test was skipped, since a live test without its server skips rather than fails.
+  What that leaves open: it does not run in the merge queue; it blocks a merge only if the branch
+  ruleset names it as a required check, which is a repository setting, not something this change can
+  set; nothing runs the suites against a change whose diff does not reach them, short of a manual
+  dispatch; it covers
+  the two pinned server versions only; and it has so far run only on GitHub-hosted runners, not on
+  the self-hosted fleet, where the job is a container beside the two servers. The always-on lanes cover the contract logic, the decoder
+  against recorded bytes, MongoDB over its in-memory executor, and SQLite for real.
+- **An intermittent live PostgreSQL failure is explained and fixed; a residual remains.** Root cause: a logical replication slot created while another session creates a table and
   writes to it can be poisoned — every decode from it then fails with SQLSTATE `XX000`, "could not
-  map filenumber … to relation OID", for good, because each read replays the same log. Before the
-  fix 1 of 25 serial runs of the live lane failed, and 6 of 30 with two runs in parallel. The fix: a
+  map filenumber … to relation OID", for good, because each read replays the same log. The fix: a
   slot is **proven decodable before use**. `capture.start`, and a native `publish`, wait (bounded)
   for the transactions open at the slot's consistent point to end, decode once, and on exactly that
   failure drop the slot and create another, up to five times; failing that, `CAPTURE_SLOT_UNPROVEN`
-  and nothing is left started. After the fix 25 of 25 serial runs passed. Tests:
+  and nothing is left started. Tests:
   `packages/data-postgres/test/engine-slot-proof.test.ts` offline, and a deterministic regression in
   `engine-hardening-live.test.ts`. **Residual:** the slots PostgreSQL itself creates for a native
   subscription's initial table sync can be poisoned the same way, and the binding does not control

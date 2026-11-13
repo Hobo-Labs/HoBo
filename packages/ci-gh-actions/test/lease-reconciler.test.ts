@@ -16,6 +16,7 @@ import {
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
+import * as githubModule from "../src/github.js";
 import { waitForIsolatedWorkerDrain } from "../src/isolated-worker/daemon-shutdown.js";
 import type { DockerContainer } from "../src/isolated-worker/docker-driver.js";
 import {
@@ -603,6 +604,7 @@ describe("worker lease reconciliation", () => {
 			jobId: lease.jobId,
 			name: container.name,
 			timeoutMs: container.timeoutMs,
+			declaredTimeoutMs: container.timeoutMs,
 		});
 	});
 
@@ -684,11 +686,10 @@ describe("worker lease reconciliation", () => {
 		);
 	});
 
-	it("stops and removes a worker container that has no lease", async () => {
+	it("leaves a running worker container that has no lease until it exits", async () => {
 		const store = storeWith([]);
 		const stop = vi.fn(async () => undefined);
 		const remove = vi.fn(async () => undefined);
-		const log = vi.fn();
 		const reconciler = createWorkerLeaseReconciler({
 			store,
 			docker: {
@@ -697,6 +698,7 @@ describe("worker lease reconciliation", () => {
 						name: "hobo-00000000-0000-4000-8000-000000000099",
 						containerId: "c".repeat(64),
 						state: "running" as const,
+						createdAtMs: NOW,
 					},
 				]),
 				stop,
@@ -705,26 +707,12 @@ describe("worker lease reconciliation", () => {
 			workerAccountId: "worker-a",
 			workerMemoryMb: 6_144,
 			now: () => NOW,
-			log,
 		});
 
 		await reconciler.reconcile();
 
-		expect(stop).toHaveBeenCalledWith(
-			"hobo-00000000-0000-4000-8000-000000000099",
-			"c".repeat(64),
-		);
-		expect(remove).toHaveBeenCalledWith(
-			"hobo-00000000-0000-4000-8000-000000000099",
-			"c".repeat(64),
-		);
-		expect(log).toHaveBeenCalledWith(
-			"hobo_ci_container_orphan_removed",
-			expect.objectContaining({
-				containerId: "c".repeat(64),
-				name: "hobo-00000000-0000-4000-8000-000000000099",
-			}),
-		);
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
 	});
 
 	it("keeps a lease whose container is running", async () => {
@@ -849,14 +837,13 @@ describe("worker lease reconciliation", () => {
 			orphanGraceMs: 120_000,
 			now: () => NOW,
 		});
-		let liveLeaseIds = new Set([lease.id]);
+		let drainJobs = 1;
 		const sleep = vi.fn(async () => undefined);
 		const result = await waitForIsolatedWorkerDrain({
-			inFlight: async () => liveLeaseIds.size,
+			inFlight: async () => drainJobs,
 			reconcile: async () => {
-				liveLeaseIds = new Set(
-					(await reconciler.reconcile({ draining: true })).liveLeaseIds,
-				);
+				drainJobs = (await reconciler.reconcile({ draining: true }))
+					.drainJobInFlight;
 			},
 			pollMs: 500,
 			timeoutMs: 1_800_000,
@@ -909,6 +896,297 @@ describe("worker lease reconciliation", () => {
 		expect(result).toEqual({ drained: false, remaining: 1 });
 		expect(sleep).toHaveBeenCalled();
 		expect(active).toEqual([lease]);
+	});
+
+	it("drops a reserved unlaunched lease when GitHub already finished the run", async () => {
+		const lease = staleLease(
+			"00000000-0000-4000-8000-000000000010",
+			130_580_539_807,
+		);
+		lease.state = "reserved";
+		lease.sandboxName = "";
+		lease.sandboxSessionId = "";
+		lease.runnerId = 42;
+		lease.runnerName = `hobo-${lease.id}`;
+		const active = [lease];
+		const store = storeWith(active);
+		const cancelStaleGithubLease = vi.fn(async (l: Lease) => {
+			const index = active.findIndex((row) => row.id === l.id);
+			if (index >= 0) active.splice(index, 1);
+			return true;
+		});
+		vi.spyOn(githubModule, "getRun").mockResolvedValue({
+			id: lease.originalRunId,
+			run_attempt: 1,
+			event: "pull_request",
+			head_sha: "abc",
+			head_branch: "cursor/plan-shard-fleet-admission-2c7b",
+			path: ".github/workflows/ci.yml",
+			display_title: "test",
+			status: "completed",
+			conclusion: "cancelled",
+			updated_at: "2026-11-11T14:00:00.000Z",
+			actor: { id: 1 },
+			repository: { id: 101, private: true },
+			head_repository: { id: 101 },
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: lease.jobId,
+			run_id: lease.originalRunId,
+			status: "completed",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			run_attempt: 1,
+		});
+		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(),
+				remove: vi.fn(),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			github: {} as GithubTransport,
+			cancelStaleGithubLease,
+			now: () => NOW,
+		});
+		const result = await reconciler.reconcile();
+		expect(result.liveLeaseIds.has(lease.id)).toBe(false);
+		expect(cancelStaleGithubLease).toHaveBeenCalledWith(lease, "run-cancelled");
+		expect(active).toEqual([]);
+	});
+
+	it("releases reserved drain holds after the no-container cap", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000011", 2);
+		lease.state = "reserved";
+		lease.sandboxName = "";
+		lease.sandboxSessionId = "";
+		lease.runnerId = 99;
+		const active = [lease];
+		const store = storeWith(active);
+		const cancelStaleGithubLease = vi.fn(async (l: Lease) => {
+			const index = active.findIndex((row) => row.id === l.id);
+			if (index >= 0) active.splice(index, 1);
+			return true;
+		});
+		vi.spyOn(githubModule, "getRun").mockResolvedValue({
+			id: lease.originalRunId,
+			run_attempt: 1,
+			event: "pull_request",
+			head_sha: "abc",
+			head_branch: "main",
+			path: ".github/workflows/ci.yml",
+			display_title: "test",
+			status: "in_progress",
+			conclusion: null,
+			updated_at: "2026-11-11T14:00:00.000Z",
+			actor: { id: 1 },
+			repository: { id: 101, private: true },
+			head_repository: { id: 101 },
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue({
+			id: lease.jobId,
+			run_id: lease.originalRunId,
+			status: "queued",
+			labels: ["hobo"],
+			runner_name: lease.runnerName,
+			run_attempt: 1,
+		});
+		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(),
+				remove: vi.fn(),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			github: {} as GithubTransport,
+			cancelStaleGithubLease,
+			noContainerDrainMaxMs: 30_000,
+			now: () => NOW,
+		});
+		const early = await reconciler.reconcile({
+			draining: true,
+			drainStartedAtMs: NOW,
+		});
+		expect(early.liveLeaseIds.has(lease.id)).toBe(true);
+		expect(early.drainJobInFlight).toBe(0);
+		const late = await reconciler.reconcile({
+			draining: true,
+			drainStartedAtMs: NOW - 31_000,
+		});
+		expect(late.liveLeaseIds.has(lease.id)).toBe(false);
+		expect(cancelStaleGithubLease).toHaveBeenCalledWith(
+			lease,
+			"drain-no-container-cap",
+		);
+		expect(active).toEqual([]);
+	});
+
+	it("does not release a running lease with a missing container while draining", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000002", 1);
+		lease.state = "running";
+		const active = [lease];
+		const store = storeWith(active);
+		const afterRelease = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			afterRelease,
+		});
+		const result = await reconciler.reconcile({ draining: true });
+		expect(result.liveLeaseIds.has(lease.id)).toBe(true);
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(afterRelease).not.toHaveBeenCalled();
+		expect(active).toEqual([lease]);
+	});
+
+	it("does not stop a running container with no createdAtMs", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-00000000-0000-4000-8000-000000000099",
+						containerId: "cid",
+						state: "running" as const,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+		await reconciler.reconcile();
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("does not stop a running container while custody reports in-flight work", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const clock = NOW - 3 * 60_000;
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-00000000-0000-4000-8000-000000000099",
+						containerId: "cid",
+						state: "running" as const,
+						createdAtMs: clock,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			containerCustody: async () => true,
+		});
+		await reconciler.reconcile();
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("protects a legacy adopted container name tied to an active lease", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000099", 1);
+		lease.sandboxName = "hobo-90c3a3e3";
+		lease.runnerName = "hobo-90c3a3e3";
+		lease.state = "running";
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([lease]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-90c3a3e3",
+						containerId: "legacy",
+						state: "running" as const,
+						createdAtMs: NOW - 3 * 60_000,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			containerCustody: async ({ container }) =>
+				container.name === "hobo-90c3a3e3",
+		});
+		await reconciler.reconcile();
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("stops unleased running containers after the orphan grace", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const clock = NOW - 3 * 60_000;
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-00000000-0000-4000-8000-000000000099",
+						containerId: "cid",
+						state: "running" as const,
+						createdAtMs: clock,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+		await reconciler.reconcile();
+		expect(stop).toHaveBeenCalled();
+		expect(remove).toHaveBeenCalled();
+	});
+
+	it("does not stop unleased running containers while draining", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-orphan",
+						containerId: "cid",
+						state: "running" as const,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+		await reconciler.reconcile({ draining: true });
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
 	});
 
 	it("recovers a restarted SQLite journal full of stale leases on the first reconciliation", async () => {

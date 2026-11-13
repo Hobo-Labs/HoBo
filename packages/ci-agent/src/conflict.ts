@@ -133,7 +133,42 @@ export function regionContext(
 }
 
 /** Why an engine's text for one region was refused. Fixed codes, never text. */
-export type RegionRefusal = "conflict-marker" | "oversized-resolution";
+export type RegionRefusal =
+	| "conflict-marker"
+	| "oversized-resolution"
+	| "repeated-context";
+
+/** The lines of a text that have anything but whitespace, without terminators. */
+function contentLines(text: string): string[] {
+	return lines(text)
+		.map((line) => line.replace(/\r?\n$/, ""))
+		.filter((line) => line.trim() !== "");
+}
+
+/**
+ * Whether a resolution repeats the settled line next to its region. git's
+ * zdiff3 moves lines both sides share out of a region, and a model told about
+ * them as context sometimes writes them again; the file then has the line
+ * twice. A line either side itself starts or ends with is not a repeat.
+ */
+function repeatsContext(
+	region: Extract<MergeSegment, { kind: "conflict" }>,
+	resolution: string,
+	context: RegionContext,
+): boolean {
+	const said = contentLines(resolution);
+	const sides = [contentLines(region.ours), contentLines(region.theirs)];
+	const before = contentLines(context.before).at(-1);
+	const after = contentLines(context.after)[0];
+	return (
+		(before !== undefined &&
+			said[0] === before &&
+			sides.every((side) => side[0] !== before)) ||
+		(after !== undefined &&
+			said.at(-1) === after &&
+			sides.every((side) => side.at(-1) !== after))
+	);
+}
 
 /**
  * Check one region's replacement and fit it to the file: the region's line
@@ -142,6 +177,8 @@ export type RegionRefusal = "conflict-marker" | "oversized-resolution";
 export function fitRegionResolution(
 	region: Extract<MergeSegment, { kind: "conflict" }>,
 	resolution: string,
+	/** The settled text around the region, to catch a repeat of it. */
+	context: RegionContext = { before: "", after: "" },
 ): { text: string } | { refusal: RegionRefusal } {
 	const sides = region.ours + region.theirs;
 	// Room to combine both sides and add glue; not room for unrelated code.
@@ -149,6 +186,8 @@ export function fitRegionResolution(
 		return { refusal: "oversized-resolution" };
 	if (/^(?:<{7,}|>{7,}|\|{7,})(?: |\r?$)/m.test(resolution))
 		return { refusal: "conflict-marker" };
+	if (repeatsContext(region, resolution, context))
+		return { refusal: "repeated-context" };
 	let fitted = resolution.replace(/\r\n/g, "\n");
 	const terminated = [region.ours, region.theirs].every(
 		(text) => text === "" || text.endsWith("\n"),
@@ -171,4 +210,31 @@ export function composeMerged(
 			return text;
 		})
 		.join("");
+}
+
+/**
+ * The text each region had in a file built from these segments, found by
+ * matching the settled text around it. Undefined when the file no longer
+ * has that shape, or when two regions touch and cannot be told apart.
+ */
+export function regionTexts(
+	segments: readonly MergeSegment[],
+	file: string,
+): ReadonlyMap<number, string> | undefined {
+	const texts = new Map<number, string>();
+	let position = 0;
+	for (const [index, segment] of segments.entries()) {
+		if (segment.kind === "text") {
+			if (!file.startsWith(segment.text, position)) return undefined;
+			position += segment.text.length;
+			continue;
+		}
+		const next = segments[index + 1];
+		if (next?.kind === "conflict") return undefined;
+		const end = next ? file.indexOf(next.text, position) : file.length;
+		if (end < 0) return undefined;
+		texts.set(segment.id, file.slice(position, end));
+		position = end;
+	}
+	return position === file.length ? texts : undefined;
 }

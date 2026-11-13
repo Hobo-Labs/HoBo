@@ -424,6 +424,12 @@ export {
 	registerPluginExtensions,
 } from "./plugin-loader.js";
 export {
+	CATALOG_REGISTERED,
+	catalogRegisteredFact,
+	readStoredCatalog,
+	storedCatalogs,
+} from "./pricing-catalog-store.js";
+export {
 	createProductionHostingProviderCatalog,
 	type HostingProviderCatalogEntry,
 } from "./provider-hosting-catalog.js";

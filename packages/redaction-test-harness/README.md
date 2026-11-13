@@ -21,18 +21,16 @@ redactor keeps on purpose, are passed in.
 ## Linear time
 
 `linear-time` proves an operation linear without a wall-clock bound that a slow
-or loaded machine fails. `measureGrowth(run, input)` times `input(n)` and
-`input(4n)` in the CPU time of the thread that runs them (so other processes on
-a loaded machine do not count), the better of two runs each, taking turns. n
-doubles from 4096 (to at most 2^18) until a run takes 30 ms of CPU time, long
-against Linux's few-millisecond CPU-time ticks; an operation too quick for that
-is repeated within each timed run, the same number of times at both sizes. A
-measurement is calibrated when its calibrating run reached `minMs`, not its
-best timed one: a slowed calibrating run used to pass a quadratic operation as
-one that costs next to nothing. `assertGrowsLinearly` throws a
-`NonLinearGrowthError` at `LINEAR_GROWTH_LIMIT` (8: linear work grows about 4x,
-quadratic about 16x), then runs `input(1 MB)` once. `NEGATIVE_CONTROL` holds an
-expected-to-fail operation to small sizes and one run. The only absolute bound
+or loaded machine fails. `measureGrowth(run, input)` calibrates until the
+smallest ladder size takes about 100 ms of CPU (configurable `minMs`), then
+measures lengths `L`, `2L`, and `4L` in interleaved rounds and keeps the
+**minimum** CPU time at each length. A log–log slope near 1 and doubling ratios
+near 2 distinguish linear work from quadratic (slope near 2, doubling near 4).
+`assertGrowsLinearly` throws a `NonLinearGrowthError` when the slope, a doubling
+step, or the overall ratio crosses `LINEAR_LOG_SLOPE_LIMIT`,
+`LINEAR_DOUBLING_LIMIT`, or `LINEAR_GROWTH_LIMIT` (8), then runs `input(1 MB)`
+once. `NEGATIVE_CONTROL` holds an expected-to-fail operation to small sizes and
+short ladders. The only absolute bound
 is `HANG_BACKSTOP_MS` (20 s) on a single call, an `OperationHangError`.
 
 ## The sweep

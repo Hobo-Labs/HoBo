@@ -61,6 +61,7 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner

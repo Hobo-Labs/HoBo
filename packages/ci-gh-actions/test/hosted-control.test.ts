@@ -12,10 +12,10 @@ import {
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
 } from "@hobo/ci";
-import { createHostedCiBudgetRoutingBridge } from "@hobo/stations";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { foldBudgetSignals } from "../../broker/src/budget-signals.js";
+import { createHostedCiBudgetRoutingBridge } from "../../stations/src/hosted-ci-routing.js";
 import { createCiRelayClient } from "../src/client.js";
 import { createHostedControlPlane } from "../src/hosted-control.js";
 import { HostedRelay } from "../src/hosted-relay.js";

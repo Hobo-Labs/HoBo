@@ -12,11 +12,11 @@ and normalizes it into what the site ships:
       Everything that stands beside the trail: the five approved scene props
       and the props cut from the reviewed prop boards. Paper to alpha, one
       line weight across the set, the same grayscale + alpha the plates use.
-      Placed by site/src/lib/trail-landmarks.ts.
+      Stood on the trail by site/src/lib/trail-props.ts.
 
   site/public/cast/<name>.png
       One sheet per hobit, cut from that character's reviewed pose board and
-      packed to the contract in site/src/lib/stage/cast.ts: a 6x2 grid of
+      packed to the contract in site/public/cast/cast.json: a 6x2 grid of
       256px cells, the same pose in the same cell on every sheet, feet on one
       baseline and the body on one centre column.
 
@@ -62,9 +62,14 @@ CAST_OUT = ROOT / "site" / "public" / "cast"
 
 LEVELS = 8  # posterization steps for both channels, as the plates use
 
-# Stored height of the tallest landmark. The band draws them at well under
-# half this, so the surplus is what keeps the linework crisp on a 2x display.
-LANDMARK_H = 420
+# Stored height of the tallest landmark: about twice the ~300px the desktop
+# band draws a tall prop at, which keeps the linework crisp on a 2x display
+# without shipping more than that.
+LANDMARK_H = 640
+
+# Cut, so the approved set keeps one shared scale, but not shipped: no card on
+# the landing page stands for them (site/src/lib/trail-props.ts).
+UNPLACED = {"arch", "blimp", "lighthouse", "steamboat", "water-tower"}
 
 # ----------------------------------------------------------- approved props
 
@@ -325,6 +330,9 @@ def build_landmarks() -> None:
 					sized[name] = resize_la(piece, board.get("height", LANDMARK_H) / top)
 
 	for name, la in sized.items():
+		if name in UNPLACED:
+			(LANDMARKS_OUT / f"{name}.png").unlink(missing_ok=True)
+			continue
 		Image.fromarray(la, "LA").save(LANDMARKS_OUT / f"{name}.png", optimize=True)
 		print(f"landmarks/{name}.png  {la.shape[1]}x{la.shape[0]}")
 

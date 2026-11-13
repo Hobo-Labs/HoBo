@@ -1,0 +1,214 @@
+// Wire records of an engine-neutral backend fleet: a set of interchangeable
+// backends of which exactly one is active.
+//
+// The parsed TypeScript values under `src/` are narrowings of these records.
+// A backend id is an opaque token. Nothing here names a host or a credential,
+// so every record is safe to log and to replay. `@hobo/data-postgres` keeps
+// its own `hobo.data.postgres.fleet.v1` records for the SQL tables it stores
+// them in; the shapes are the same.
+
+syntax = "proto3";
+
+package hobo.backend_fleet.v1;
+
+// One entry of the assignment log: who is active for one epoch.
+//
+// An epoch is decided when a majority of the configured backends hold the same
+// entry for it. The current assignment is the highest decided epoch.
+message FleetAssignment {
+  // Starts at 1 and increases by exactly one per entry on every backend.
+  uint64 epoch = 1;
+  // The active backend. Unset means the fleet deliberately has none.
+  optional string active = 2;
+  // True while a move is in flight. Nobody may write.
+  bool sealed = 3;
+  // Where a sealed fleet is moving to. Set exactly when `sealed` is true.
+  optional string target = 4;
+  // A short fixed token, e.g. "bootstrap", "switch" or "failover".
+  string reason = 5;
+  // Upper bound on the writes an unplanned move lost. Unset for a planned one.
+  optional uint64 loss_window_ms = 6;
+  // The proposer's clock. Zero for the bootstrap entry, which must be the same
+  // bytes whoever writes it.
+  uint64 decided_at_ms = 7;
+  // Which process proposed the entry. Never a person's name or a credential.
+  string decided_by = 8;
+}
+
+// One backend's copy of the log, as `ephemeralAssignmentReplica` keeps it in a
+// single key of an ephemeral-state store: the newest entries, ascending.
+message FleetAssignmentLog {
+  // Format version of this record. 1.
+  uint32 format = 1;
+  repeated FleetAssignment entries = 2;
+}
+
+// The units an allowance, and therefore a measurement, is stated in.
+enum FleetUsageUnit {
+  FLEET_USAGE_UNIT_UNSPECIFIED = 0;
+  // One statement sent to a SQL backend.
+  FLEET_USAGE_UNIT_OPERATIONS = 1;
+  FLEET_USAGE_UNIT_COMPUTE_HOURS = 2;
+  FLEET_USAGE_UNIT_STORAGE_BYTES = 3;
+  // One command sent to a Redis-protocol store.
+  FLEET_USAGE_UNIT_COMMANDS = 4;
+  // Rows a libSQL database bills as read and written.
+  FLEET_USAGE_UNIT_ROWS_READ = 5;
+  FLEET_USAGE_UNIT_ROWS_WRITTEN = 6;
+  // The operation classes an object store such as Vercel Blob bills.
+  FLEET_USAGE_UNIT_SIMPLE_OPERATIONS = 7;
+  FLEET_USAGE_UNIT_ADVANCED_OPERATIONS = 8;
+}
+
+// A measured quantity: this period's total for a rate, the size for a level.
+message FleetUsageMeasurement {
+  FleetUsageUnit unit = 1;
+  uint64 used = 2;
+}
+
+enum FleetBackendHealth {
+  FLEET_BACKEND_HEALTH_UNSPECIFIED = 0;
+  FLEET_BACKEND_HEALTH_REACHABLE = 1;
+  FLEET_BACKEND_HEALTH_UNREACHABLE = 2;
+  // The backend answered that a plan quota is spent.
+  FLEET_BACKEND_HEALTH_QUOTA_EXHAUSTED = 3;
+  FLEET_BACKEND_HEALTH_AUTH = 4;
+  // A failure nobody has classified. Never treated as healthy.
+  FLEET_BACKEND_HEALTH_UNKNOWN = 5;
+}
+
+// What one tick saw of one backend (decideFleet's input).
+message FleetObservation {
+  string backend = 1;
+  FleetBackendHealth health = 2;
+  optional uint64 probe_latency_ms = 3;
+  // How long it has been failing without a success. Zero when reachable.
+  uint64 failing_for_ms = 4;
+  // The copied tables exist with the writer's columns and types.
+  bool schema_current = 5;
+  // Time since the standby's snapshot. Unset when it was never copied.
+  optional uint64 standby_lag_ms = 6;
+  repeated FleetUsageMeasurement usage = 7;
+}
+
+// What happens beyond an allowance.
+enum FleetOverageKind {
+  FLEET_OVERAGE_KIND_UNSPECIFIED = 0;
+  // The service stops until the period ends or the plan changes.
+  FLEET_OVERAGE_KIND_HARD_STOP = 1;
+  // Use beyond the allowance is billed per unit.
+  FLEET_OVERAGE_KIND_METERED = 2;
+  // Nobody has verified it. Treated as a stop.
+  FLEET_OVERAGE_KIND_UNKNOWN = 3;
+}
+
+message FleetAllowance {
+  FleetUsageUnit unit = 1;
+  // Included per period, or in total for storage. Unset means unknown.
+  optional uint64 included = 2;
+  FleetOverageKind beyond = 3;
+  // Millionths of a US dollar per unit, possibly fractional. Set exactly when
+  // `beyond` is METERED.
+  optional double metered_micros_per_unit = 4;
+}
+
+// Where a financial model's numbers came from.
+message FleetEvidence {
+  string source = 1;
+  // YYYY-MM-DD: the day somebody read the source.
+  string observed_at = 2;
+}
+
+// What running on one backend costs and how much it allows.
+message FleetFinancialModel {
+  string backend = 1;
+  string plan = 2;
+  // Millionths of a US dollar a month. Unset means unknown.
+  optional uint64 fixed_monthly_fee_micros = 3;
+  repeated FleetAllowance allowances = 4;
+  FleetEvidence evidence = 5;
+}
+
+enum FleetFeasibility {
+  FLEET_FEASIBILITY_UNSPECIFIED = 0;
+  FLEET_FEASIBILITY_FEASIBLE = 1;
+  FLEET_FEASIBILITY_UNKNOWN = 2;
+  FLEET_FEASIBILITY_INFEASIBLE = 3;
+}
+
+// One standby as decideFleet ranked it.
+message FleetCandidate {
+  string backend = 1;
+  bool eligible = 2;
+  FleetFeasibility feasibility = 3;
+  optional uint64 lag_ms = 4;
+  optional uint64 exhausts_in_ms = 5;
+  repeated string reasons = 6;
+}
+
+enum FleetAction {
+  FLEET_ACTION_UNSPECIFIED = 0;
+  FLEET_ACTION_KEEP = 1;
+  FLEET_ACTION_HOLD = 2;
+  FLEET_ACTION_SWITCH = 3;
+  FLEET_ACTION_FAILOVER = 4;
+}
+
+// decideFleet's answer.
+message FleetDecision {
+  FleetAction action = 1;
+  uint64 epoch = 2;
+  optional string writer = 3;
+  optional string target = 4;
+  optional uint64 loss_window_ms = 5;
+  repeated string reasons = 6;
+  repeated FleetCandidate candidates = 7;
+  uint64 decided_at_ms = 8;
+}
+
+// Cheapest first.
+enum FleetOfferTier {
+  FLEET_OFFER_TIER_UNSPECIFIED = 0;
+  FLEET_OFFER_TIER_FREE = 1;
+  FLEET_OFFER_TIER_PREPAID = 2;
+  FLEET_OFFER_TIER_PAYG = 3;
+}
+
+// One member as an offer: its model, its tier and the most it may cost.
+message FleetOffer {
+  FleetFinancialModel model = 1;
+  FleetOfferTier tier = 2;
+  // Micro-dollars a period. Unset means zero: no money.
+  optional uint64 cap_micros = 3;
+}
+
+// routeFleetByBudget's thresholds.
+message FleetRoutingMarks {
+  // Leave the active member at this projected fraction of an allowance.
+  double switch_at = 1;
+  // Take a member only below this projected fraction. Lower than switch_at.
+  double switch_back_below = 2;
+  uint64 min_dwell_ms = 3;
+  uint64 failover_after_ms = 4;
+}
+
+// One member as routeFleetByBudget ranked it.
+message FleetRouteCandidate {
+  string backend = 1;
+  optional FleetOfferTier tier = 2;
+  bool eligible = 3;
+  optional double projected_fraction = 4;
+  optional uint64 projected_cost_micros = 5;
+  repeated string reasons = 6;
+}
+
+// routeFleetByBudget's answer.
+message FleetRoute {
+  FleetAction action = 1;
+  uint64 epoch = 2;
+  optional string active = 3;
+  optional string target = 4;
+  repeated string reasons = 5;
+  repeated FleetRouteCandidate candidates = 6;
+  uint64 decided_at_ms = 7;
+}

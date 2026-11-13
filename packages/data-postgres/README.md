@@ -520,7 +520,9 @@ recorded bytes) and the executor pact are tested on every run, with no database.
 `test/fixtures/pgoutput-v1.recorded.json` holds real `pgoutput` bytes recorded
 from PostgreSQL 16.
 
-The live lane is gated on `HOBO_TEST_POSTGRES_URL` and skipped without it:
+The live lane is gated on `HOBO_TEST_POSTGRES_URL` and skipped without it. CI's
+`Live data engines` job starts a PostgreSQL 16 for it on pull requests whose diff
+reaches these suites, or on a manual dispatch. To run it yourself:
 
 ```bash
 HOBO_TEST_POSTGRES_URL=postgres://postgres@127.0.0.1:5432/postgres \
@@ -552,6 +554,20 @@ It opens no connection. A host gives it one `SqlExecutor` per backend (a
 `query(sql, parameters)` and a `session(run)` that pins one connection) and an
 opaque id for each. Nothing in it knows how many backends there are or what any
 of them is called.
+
+The engine-neutral parts — the assignment entry and its rules, majority,
+`resolveAssignment`, `readCurrentAssignment`, `proposeAssignment`,
+`bootstrapAssignment`, `completeAssignment`, `overrideAssignment`, the backend
+id and failure classes, billing periods and usage units, and `decideFleet` with
+its models and policy — live in
+[`@hobo/backend-fleet`](../backend-fleet/README.md) since ADR-0179 phase 4c, so
+the hosted relay's cache fleet can use them without this package. This package
+re-exports them under the names below (`PostgresFleetAssignment` is
+`FleetAssignment`, and so on) and keeps what is PostgreSQL's: the SQL replica
+(`sqlAssignmentReplica`, whose register classifies failures with
+`classifyFleetFailure`), control tables, usage rows, replication and
+reconcile. A parse failure in a moved part is a `BackendFleetError` with the
+same code and message it had as a `PostgresDataError`.
 
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
@@ -672,6 +688,20 @@ Step 2 is what makes it impossible to overwrite the writer. A backend that is
 the writer, or has been offered the entry that makes it one, holds that entry
 (rule 3 above), so it refuses however stale the caller's view is.
 
+**The copy on its own.** `copySnapshot({ source, target, layout, admit, record })`
+is the same copy without the fleet's rule about who may be overwritten: the
+source transaction, the row and byte limits, and steps 3 to 6. The caller
+supplies `admit`, which runs on the target inside its transaction before any
+copied table is read or changed, and `record`, which runs after the digests
+matched and commits with the copied rows. A refusal is thrown as
+`ReplicationRefused` (`oversized`, `schema-mismatch`, `digest-mismatch`), and
+anything thrown rolls both transactions back. `replicateSnapshot` is
+`copySnapshot` with steps 1 and 2 as `admit` and step 7 as `record`. It exists
+for a one-off copy between two databases that are not a fleet and so have no
+assignment log to consult; the CI relay's one-time import into a newly
+selected store is that case, and its `admit` is "this store holds no
+registration and no account".
+
 **Why text and not JSON values.** `row_to_json` writes an SQL `NULL` and a
 `json` column containing `null` identically, and `json_populate_recordset`
 reads both back as SQL `NULL`. Sending each column as the text PostgreSQL
@@ -771,8 +801,16 @@ schema seam and the budget check. Every tick, in order:
    failed for `failoverAfterMs`, so one tick tells a blip from an outage
    without remembering anything between ticks. One success ends the wait.
 3. **Copy** the writer to every reachable standby. If a copy is refused for a
-   schema mismatch, `ensureSchema` is called for both sides and the copy is
-   tried once more; `ensureSchema` is not called otherwise.
+   schema mismatch, `ensureSchema(backend, role)` is called for both sides,
+   the standby first (`role` is `"standby"`, then `"writer"`), and the copy is
+   tried once more; `ensureSchema` is not called otherwise. The role is the
+   backend's side under the assignment the tick resolved. It is there because
+   the two sides are prepared differently: a host may bring the writer
+   forward with its application's own initialisation, and must give a standby
+   its schema without the application, which does not write to a standby. A
+   copy compares tables and columns, not indexes, so a host that needs a
+   standby's indexes current checks that itself; the relay does, from its
+   migration ledger.
 4. **Measure**: standby lag from each watermark, operations from each usage
    counter, storage from the database size.
 5. **Decide** with `decideFleet`.

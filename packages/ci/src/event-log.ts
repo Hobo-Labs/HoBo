@@ -26,12 +26,6 @@ export type LeaseEventsQuery = Readonly<{
 	limit: number;
 }>;
 
-/**
- * How many of the journal's rows one read looks along. The journal holds
- * every account's events, so this bounds the work of a read whatever the
- * other accounts are doing; a page says when the bound cut it short.
- */
-export const EVENT_SCAN_SPAN = 10_000;
 const EVENT_PAGE_LIMIT = 500;
 
 /** Events recorded for a job before, or apart from, any lease. Their detail is the job. */
@@ -117,60 +111,36 @@ export function leaseEventsBounds(query: LeaseEventsQuery) {
 	};
 }
 
-/** The journal positions a read examines: after `from`, up to and including `to`. */
-export type EventScan = Readonly<{ from: number; to: number; head: number }>;
-
 /**
- * Which positions a read looks along in a journal whose positions are dense
- * (one row each, as in a SQLite partition), given its newest position. A
- * cursor read starts at its cursor; a read of the newest events ends at the
- * head. Either way it covers at most `EVENT_SCAN_SPAN` rows. A journal that
- * shares its sequence with others finds the same edges by counting rows.
- */
-export function eventScan(cursor: EventCursor, head: number): EventScan {
-	const { after } = eventCursorBounds(cursor);
-	if (after === undefined)
-		return { from: Math.max(0, head - EVENT_SCAN_SPAN), to: head, head };
-	return {
-		from: after,
-		to: Math.max(after, Math.min(head, after + EVENT_SCAN_SPAN)),
-		head,
-	};
-}
-
-/**
- * Build a page from the account's events a store found in a scan.
- * For a cursor read `found` holds the oldest events of the scan, in journal
- * order, one more than the page's limit when there are that many. For a read
- * of the newest events it holds the newest ones, in journal order, at most
- * the limit.
+ * Build a page from the account's events a store found by the account's index.
+ * `found` is in journal order and holds one event more than the page's limit
+ * when the account has that many: for a cursor read the oldest events after
+ * the cursor, for a read of the newest events the newest ones.
+ *
+ * The page's cursor is the position of its last event, and the position the
+ * read was given when it found none (zero for a read of the newest events).
+ * It is always a position of the account's own, so it moves only when the
+ * account's journal does.
  */
 export function accountEventPage(
 	found: readonly SequencedCiEvent[],
 	cursor: EventCursor,
-	scan: EventScan,
 ): CiEventPage {
 	const { after, limit } = eventCursorBounds(cursor);
-	if (after === undefined)
-		return create(CiEventPageSchema, {
-			events: found.slice(-limit),
-			cursor: scan.head,
-			// Fewer than asked for, and the scan did not reach the journal's
-			// start: there may be older events it never looked at.
-			truncated: found.length < limit && scan.from > 0,
-		});
-	if (found.length > limit) {
-		// A full page resumes after its last event, not after the scan.
-		const events = found.slice(0, limit);
+	if (after === undefined) {
+		const events = found.slice(-limit);
 		return create(CiEventPageSchema, {
 			events,
-			cursor: events.at(-1)?.seq ?? scan.to,
-			more: true,
+			cursor: events.at(-1)?.seq ?? 0,
+			// The page is full and the account has events older than it.
+			truncated: found.length > limit,
 		});
 	}
+	const events = found.slice(0, limit);
 	return create(CiEventPageSchema, {
-		events: [...found],
-		cursor: scan.to,
-		more: scan.to < scan.head,
+		events,
+		cursor: events.at(-1)?.seq ?? after,
+		// The page is full and the account has events after it.
+		more: found.length > limit,
 	});
 }

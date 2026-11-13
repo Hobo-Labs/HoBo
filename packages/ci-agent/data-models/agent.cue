@@ -44,6 +44,8 @@ import "list"
 	maxFileBytes?:       int & >=1 & <=1048576
 	minConfidence?:      (int | float) & >=0 & <=1
 	contextLines?:       int & >=0 & <=200
+	maxRepairs?:         int & >=0 & <=3
+	structuredMerge?:    bool
 }
 
 #AgentBudget: {
@@ -54,8 +56,15 @@ import "list"
 	maxResolutionsPerTick?:  int & >=1 & <=20
 }
 
+#CommitPolicy: {
+	name?:       string & =~"^[^<>\\n\\x00]{1,100}$"
+	email?:      string & =~"^[^<>\\s\\x00]+@[^<>\\s\\x00]+$"
+	signingKey?: #CredentialRef
+}
+
 #AgentConfig: {
 	mode:        "observe" | "suggest" | "apply"
+	commit?:     #CommitPolicy
 	engines:     [#AgentEngine, ...#AgentEngine] & list.MaxItems(8)
 	queue?:      #QueuePolicy
 	resolution?: #ResolutionPolicy
@@ -119,11 +128,17 @@ import "list"
 	outputTokens?: =~"^[0-9]{1,19}$" | (int & >=0)
 }
 
+#RecordedRegion: {
+	conflictSha256: #Digest
+	resolution:     string
+}
+
 #ResolvedFile: {
 	path:          #Path
 	regions?:      int & >=0
 	confidence?:   (int | float) & >=0 & <=1
 	contentSha256: #Digest
+	structured?:   bool
 }
 
 #Resolution: {
@@ -140,6 +155,11 @@ import "list"
 	usage?:        #TokenUsage
 	commitSha?:    "" | #Sha
 	publishedRef?: string
+	regions?:      [...#RecordedRegion]
+	repairs?:      "" | #Digest
+	attempt?:      int & >=0 & <=3
+	// A repair is a later attempt, and a later attempt repairs something.
+	if repairs != _|_ if repairs != "" {attempt: int & >=1}
 	// Only a resolved merge has a commit, and only a commit can be published.
 	if outcome == "resolved" {commitSha: #Sha}
 	if outcome != "resolved" {
@@ -151,14 +171,19 @@ import "list"
 
 #AgentEvent: {
 	id:          string & !=""
-	type:        "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" | "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" | "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" | "ci.agent.ApplyWithheld"
+	type:        "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" | "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" | "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" | "ci.agent.ApplyWithheld" | "ci.agent.ResolutionChecked" | "ci.agent.EntryEjected"
 	at:          string & =~"^\\d{4}-\\d{2}-\\d{2}T"
 	repository:  #Repository
 	plan?:       #QueuePlan
 	resolution?: #Resolution
 	numbers?:    [...#Number]
 	headSha?:    #Sha
+	checksState?: "" | "success" | "failure"
 	if type == "ci.agent.PlanProposed" {plan: #QueuePlan}
 	if type == "ci.agent.ResolutionSettled" || type == "ci.agent.ResolutionPublished" || type == "ci.agent.RollupPublished" {resolution: #Resolution}
-	if type == "ci.agent.EntryEnqueued" {numbers: [#Number], headSha: #Sha}
+	if type == "ci.agent.EntryEnqueued" || type == "ci.agent.EntryEjected" {numbers: [#Number], headSha: #Sha}
+	if type == "ci.agent.ResolutionChecked" {
+		resolution:  #Resolution
+		checksState: "success" | "failure"
+	}
 }

@@ -1,59 +1,99 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-/** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
+/** Box worker: launch isolated-container leases from its own SQLite journal. */
 import { toJsonString } from "@bufbuild/protobuf";
-import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
-	attachPostgresPoolErrorHandler,
+	ConfigurationSchema,
+	type Lease,
+	memoryAdmitHeadroom,
+	parseConfiguration,
+} from "@hobo/ci";
+import { createTrustedMeshBoard, meshAdvertRejected } from "@hobo/ci/mesh";
+import {
+	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
+	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
+	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
+	createContainerStallGuard,
 	createDepsImageEnsurer,
+	createFleetPickupMemory,
 	createFleetRoutePublisher,
+	createFleetVerdictReporter,
+	createFleetVerdictSequence,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
+	createHeldJobPruner,
 	createHostedRelayRuntime,
 	createHostHealthMonitor,
 	createIsolatedContainerController,
 	createJobDurations,
 	createMemoryPeaks,
+	createMergeQueuePositionCache,
+	createMeshTrust,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
+	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
+	defaultGitMirrorFallbackRoot,
+	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
+	evaluateFleetVerdict,
+	type FleetJobsSeen,
+	type FleetVerdictReporter,
+	freeDiskMb,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
+	hostPressureBlocksAdmission,
+	hostResourcePressureLogFields,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	loadMeshIdentity,
+	localWorkerFreeSlots,
+	type MeshJournal,
+	mainShardParallelLaunchCapacity,
 	memoryRequestForJob,
+	mergeHeldPruneWitness,
+	meshReliabilityJournal,
+	meshReliabilityResetToken,
 	meshSettingsFromEnv,
+	parseFleetVerdictReporterSettings,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
 	readHostMemory,
+	readHostResourcePressureSample,
+	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
+	resolvedStorageReserve,
+	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	singleFlight,
 	stopIsolatedWorker,
+	storageReserveForClass,
+	storageReserveForJob,
 	traceGithubTransport,
+	withGithubReadCache,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -98,7 +138,7 @@ function storageLeases(leases: readonly Lease[]) {
 	return leases.map((lease) => ({
 		id: lease.id,
 		sandboxName: lease.sandboxName,
-		jobId: String(lease.jobId),
+		jobId: String(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId),
 	}));
 }
 
@@ -282,10 +322,41 @@ const hostMemMb = Math.min(
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
+const capacityVolatilityMb = Number(
+	process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
+);
+if (
+	!Number.isFinite(capacityVolatilityMb) ||
+	capacityVolatilityMb < 0 ||
+	!Number.isInteger(capacityVolatilityMb)
+)
+	throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
+let lastHostPressureLogAt = 0;
+const hostPressureSample = () => readHostResourcePressureSample(Date.now());
+const containerStallGuard = createContainerStallGuard({
+	read: hostPressureSample,
+});
+// A started job's reservation stays counted against host memory this long.
+const memoryRampMs = Number(
+	process.env.HOBO_CI_WORKER_MEMORY_RAMP_MS ?? "120000",
+);
+if (!Number.isInteger(memoryRampMs) || memoryRampMs < 0)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_RAMP_MS");
+// Free memory has to have lasted this long before a job is admitted on it.
+const memoryLowWaterMs = Number(
+	process.env.HOBO_CI_WORKER_MEMORY_LOW_WATER_MS ?? "60000",
+);
+if (!Number.isInteger(memoryLowWaterMs) || memoryLowWaterMs < 0)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_LOW_WATER_MS");
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
 	availableMemoryMb: readAvailableMemoryMb,
+	volatilityMb: capacityVolatilityMb,
+	hostPressure: hostPressureSample,
+	hostCores: () => cpus().length,
+	memoryRampMs,
+	availableWindowMs: memoryLowWaterMs,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -298,15 +369,43 @@ const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
 if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
 	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
 const publishFleetRoutes = fleetRoutesFlag === "1";
-const NO_OFFERS: ReadonlySet<string> = new Set();
+// The fleet verdict reporter (ADR-0180): off unless HOBO_CI_FLEET_VERDICT_MODE
+// is shadow or report. Its id defaults to the mesh node id when there is a mesh.
+const fleetVerdictSettings = parseFleetVerdictReporterSettings(
+	process.env,
+	plan.admission === "pull" ? meshBootSettings?.nodeId : undefined,
+);
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
+const inboxDeliveryTimeoutMs = Number(
+	process.env.HOBO_CI_INBOX_DELIVERY_TIMEOUT_MS ?? "5000",
+);
+if (
+	!Number.isFinite(inboxDeliveryTimeoutMs) ||
+	inboxDeliveryTimeoutMs < 500 ||
+	!Number.isInteger(inboxDeliveryTimeoutMs)
+)
+	throw new Error("invalid HOBO_CI_INBOX_DELIVERY_TIMEOUT_MS");
+const inboxDrainBudgetMs = Number(
+	process.env.HOBO_CI_INBOX_DRAIN_BUDGET_MS ?? "30000",
+);
+if (
+	!Number.isFinite(inboxDrainBudgetMs) ||
+	inboxDrainBudgetMs < 1_000 ||
+	!Number.isInteger(inboxDrainBudgetMs)
+)
+	throw new Error("invalid HOBO_CI_INBOX_DRAIN_BUDGET_MS");
 const drainTimeoutMs = Number(
 	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "1800000",
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+const noContainerDrainMaxMs = Number(
+	process.env.HOBO_CI_WORKER_DRAIN_NO_CONTAINER_MS ?? "60000",
+);
+if (!Number.isFinite(noContainerDrainMaxMs) || noContainerDrainMaxMs < 1_000)
+	throw new Error("invalid HOBO_CI_WORKER_DRAIN_NO_CONTAINER_MS");
 const stopMode = parseWorkerStopMode(process.env.HOBO_CI_WORKER_STOP_MODE);
 const depsPollMs = Number(process.env.HOBO_CI_DEPS_POLL_MS ?? "300000");
 if (!Number.isFinite(depsPollMs) || depsPollMs < 1_000)
@@ -333,66 +432,48 @@ if (
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
+// The worker's own SQLite journal, when it has one: where its mesh
+// reliability record is kept, and beside which its identity key lives.
+let meshJournal: MeshJournal | undefined;
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
 );
 try {
-	if (plan.store.kind === "sqlite") {
-		const { SqliteCiStore } = await import("@hobo/ci/sqlite");
-		mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
-		const sqlite = new SqliteCiStore(
-			plan.store.path,
-			budgetAdapter?.kind === "sqlite"
-				? { sharedBudget: budgetAdapter.hooks }
-				: {},
-		);
-		store = sqlite;
-		closeStore = async () => sqlite.close();
-		// This worker owns its journal, so the operator's config file is the policy
-		// source: apply it when it changed. A refused change (for example an active
-		// lease pinning a provider identity) keeps the stored policy and says why.
-		const current = await sqlite.configuration();
-		const desired = toJsonString(ConfigurationSchema, configuration);
-		if (
-			!current?.configuration ||
-			toJsonString(ConfigurationSchema, current.configuration) !== desired
-		) {
-			try {
-				const applied = await sqlite.configure(
-					configuration,
-					current?.revision ?? 0,
-					new Date().toISOString(),
-				);
-				log("hobo_ci_isolated_worker_configured", {
-					revision: applied.revision,
-				});
-			} catch (error) {
-				if (!current?.configuration) throw error;
-				log("hobo_ci_isolated_worker_configuration_kept", {
-					revision: current.revision,
-					message: error instanceof Error ? error.message : "unknown",
-				});
-			}
+	const { SqliteCiStore } = await import("@hobo/ci/sqlite");
+	mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
+	const sqlite = new SqliteCiStore(
+		plan.store.path,
+		budgetAdapter ? { sharedBudget: budgetAdapter.hooks } : {},
+	);
+	store = sqlite;
+	closeStore = async () => sqlite.close();
+	meshJournal = sqlite;
+	// This worker owns its journal, so the operator's config file is the policy
+	// source: apply it when it changed. A refused change (for example an active
+	// lease pinning a provider identity) keeps the stored policy and says why.
+	const current = await sqlite.configuration();
+	const desired = toJsonString(ConfigurationSchema, configuration);
+	if (
+		!current?.configuration ||
+		toJsonString(ConfigurationSchema, current.configuration) !== desired
+	) {
+		try {
+			const applied = await sqlite.configure(
+				configuration,
+				current?.revision ?? 0,
+				new Date().toISOString(),
+			);
+			log("hobo_ci_isolated_worker_configured", {
+				revision: applied.revision,
+			});
+		} catch (error) {
+			if (!current?.configuration) throw error;
+			log("hobo_ci_isolated_worker_configuration_kept", {
+				revision: current.revision,
+				message: error instanceof Error ? error.message : "unknown",
+			});
 		}
-	} else {
-		const [{ PostgresCiStore }, { default: pg }] = await Promise.all([
-			import("@hobo/ci/postgres"),
-			import("pg"),
-		]);
-		const pool = new pg.Pool({
-			connectionString: required(plan.store.urlEnv),
-			max: 2,
-		});
-		attachPostgresPoolErrorHandler(pool);
-		closeStore = () => pool.end();
-		store = new PostgresCiStore(
-			pool,
-			"default",
-			budgetAdapter?.kind === "postgres"
-				? { sharedBudget: budgetAdapter.hooks }
-				: {},
-		);
 	}
 } catch (error) {
 	try {
@@ -442,7 +523,7 @@ try {
 		target: eventExport.target,
 	});
 	const github = traceGithubTransport(
-		createGithubAppTransport({ appId, privateKey }),
+		withGithubReadCache(createGithubAppTransport({ appId, privateKey })),
 		relayTrace,
 	);
 	// The poller learns job durations from the jobs lists it already reads; the
@@ -475,6 +556,8 @@ try {
 	});
 	retiredSweep.trigger();
 	const dockerDataRoot = await docker.dataRoot();
+	const storagePeaksPath = join(workRoot, "storage-peaks.json");
+	const storagePeaks = createStoragePeaks({ path: storagePeaksPath, log });
 	const storageAdmission = createWorkerStorageAdmission({
 		dockerDataRoot,
 		workRoot,
@@ -482,6 +565,8 @@ try {
 		docker,
 		activeLeases: async () => storageLeases(await store.activeLeases()),
 		scheduleRetiredSweep: retiredSweep.trigger,
+		drainRetiredSweep: retiredSweep.drain,
+		defaultJobReserve: storageReserveForClass("standard"),
 		pnpmStore: pnpmStore
 			? createPnpmStoreMaintenance({
 					path: pnpmStore,
@@ -508,6 +593,31 @@ try {
 		},
 		log,
 	});
+	const storageJobReserve = (jobName: string) =>
+		resolvedStorageReserve(
+			jobName,
+			storagePeaks.history[jobName],
+			storageReserveForJob(jobName),
+		);
+	const listWorkerContainers = () => {
+		if (docker.listWorkerContainers) return docker.listWorkerContainers();
+		if (!docker.list) throw new Error("docker driver missing list");
+		return docker.list("hobo.ci/isolated=1");
+	};
+	try {
+		for (const container of await listWorkerContainers()) {
+			if (container.state !== "running" || !container.name.startsWith("hobo-"))
+				continue;
+			log("hobo_ci_worker_adopt_running_container", {
+				name: container.name,
+				containerId: container.containerId,
+			});
+		}
+	} catch (error) {
+		log("hobo_ci_worker_adopt_failed", {
+			message: error instanceof Error ? error.message : "unknown",
+		});
+	}
 	const hostHealthPaths = [dockerDataRoot, workRoot];
 	// Collection cannot start inside the tick that noticed the pressure; it is
 	// asked for here and started when that tick ends.
@@ -531,7 +641,11 @@ try {
 		log,
 		// Collect now, not at the next interval: a job is about to need the room.
 		onPressure: (verdict) => {
-			if (verdict.reasons.some((reason) => reason.startsWith("storage")))
+			if (
+				verdict.state === "pressured" ||
+				verdict.state === "critical" ||
+				verdict.reasons.some((reason) => reason.startsWith("storage"))
+			)
 				gcRequested = true;
 		},
 	});
@@ -540,8 +654,17 @@ try {
 		string,
 		{ event?: string; jobCreatedAt?: string }
 	>();
-	const gitMirrorRoot =
-		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+	const preferredGitMirrorRoot = defaultGitMirrorPreferredRoot();
+	const gitMirrorRoot = resolveGitMirrorRoot(
+		preferredGitMirrorRoot,
+		defaultGitMirrorFallbackRoot(),
+	);
+	if (gitMirrorRoot !== preferredGitMirrorRoot) {
+		log("hobo_ci_git_mirror_root_fallback", {
+			preferred: preferredGitMirrorRoot,
+			root: gitMirrorRoot,
+		});
+	}
 	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
 	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
 	function gitMirrorFor(repository: string) {
@@ -552,9 +675,24 @@ try {
 		gitMirrors.set(key, created);
 		return created;
 	}
+	const containerEnv: Record<string, string> = {};
+	const memoryPeaksPath = join(workRoot, "memory-peaks.json");
+	const memoryPeaksTarget = "/run/hobo-ci/memory-peaks.json";
+	if (existsSync(memoryPeaksPath)) {
+		containerEnv.HOBO_CI_MEMORY_PEAKS_PATH = memoryPeaksTarget;
+	}
+	if (pnpmStore) {
+		containerEnv.npm_config_store_dir = PNPM_STORE_TARGET;
+		containerEnv.npm_config_package_import_method = "hardlink";
+		containerEnv.HOBO_CI_PNPM_STORE_MOUNTED = "1";
+	}
+	if (gitMirrorEnabled) {
+		containerEnv.HOBO_CI_GIT_MIRROR_ROOT = gitMirrorRoot;
+	}
 	const worker = createIsolatedContainerController({
 		store,
 		github,
+		onStorageGrantRelease: (jobId) => storageAdmission.release(String(jobId)),
 		publicOrigin,
 		docker,
 		workerAccountId,
@@ -565,6 +703,7 @@ try {
 		prewarmMemoryMb: memoryConfig.classes.standard,
 		memoryClasses: memoryConfig.classes,
 		memoryPeaks,
+		storagePeaks,
 		memoryAdmission,
 		generalLeaseIds: (activeLeases) =>
 			generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
@@ -590,25 +729,35 @@ try {
 			}),
 		log,
 		slots,
-		volumes: pnpmStore
-			? [{ source: pnpmStore, target: PNPM_STORE_TARGET }]
-			: [],
-		containerEnv: pnpmStore
-			? {
-					npm_config_store_dir: PNPM_STORE_TARGET,
-					npm_config_package_import_method: "hardlink",
-					HOBO_CI_PNPM_STORE_MOUNTED: "1",
-				}
-			: {},
+		volumes: [
+			...(pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : []),
+			...(existsSync(memoryPeaksPath)
+				? [
+						{
+							source: memoryPeaksPath,
+							target: memoryPeaksTarget,
+							readonly: true,
+						},
+					]
+				: []),
+		],
+		containerEnv,
 		workRoot,
 		workFs,
+		storageAdmission,
 		scheduleRetiredSweep: retiredSweep.trigger,
+		containerStallGuard,
+		noContainerDrainMaxMs,
 	});
 	const firstReconciliation = await worker.reconcileLeases();
-	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
+	let liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
+	let drainJobInFlight = firstReconciliation.drainJobInFlight;
 	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
+	await worker.reconcileStallRecoveries();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
+	let depsImageWorkRunning = false;
+	let warmContainersStarting = 0;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 		depsImageEnsurer = createDepsImageEnsurer({
 			root: depsRoot,
@@ -668,32 +817,111 @@ try {
 				},
 			},
 			processes: { run: runDepsProcess },
-			onEvent: ({ event, ...fields }) => log(event, fields),
+			onEvent: ({ event, ...fields }) => {
+				// The box's own deps-image work: while it runs the box is not idle.
+				if (event === "hobo_ci_deps_image_ensure_started")
+					depsImageWorkRunning = true;
+				else if (
+					event === "hobo_ci_deps_image_ensure" ||
+					event === "hobo_ci_deps_image_ensure_failed"
+				)
+					depsImageWorkRunning = false;
+				log(event, fields);
+			},
 		});
 	}
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
 	if (!host) throw new Error("worker host unavailable");
 	let workerReconcileMs = 0;
+	const mergeQueueBranch = process.env.HOBO_CI_MERGE_QUEUE_BRANCH ?? "main";
+	const mergeQueueCache = createMergeQueuePositionCache({
+		github,
+		branch: mergeQueueBranch,
+		connections: async () =>
+			(await store.configuration())?.configuration?.connections ?? [],
+	});
 	const fleetRoutes = publishFleetRoutes
 		? createFleetRoutePublisher({
 				github,
 				log,
-				// A critically short host stops being the fleet's first choice.
-				// Only this worker's offers: another host's health is its own.
-				unhealthyOfferIds: (account) =>
-					hostHealth.current().state === "critical"
-						? new Set(
-								account.offers
-									.filter(
-										(offer) =>
-											isIsolatedContainerOffer(offer) &&
-											offer.providerAccountId === workerAccountId,
-									)
-									.map((offer) => offer.id),
-							)
-						: NO_OFFERS,
+				unhealthyOfferIds: (account) => {
+					const bad = new Set<string>();
+					const isolated = account.offers.filter(
+						(offer) =>
+							isIsolatedContainerOffer(offer) &&
+							offer.providerAccountId === workerAccountId,
+					);
+					if (hostHealth.current().state === "critical") {
+						for (const offer of isolated) bad.add(offer.id);
+						return bad;
+					}
+					const availableMb = readAvailableMemoryMb();
+					const pressure = hostPressureSample();
+					if (
+						hostPressureBlocksAdmission(pressure) ||
+						!memoryAdmitHeadroom(
+							availableMb,
+							memoryConfig.classes.heavy,
+							memoryConfig.reserveMb,
+							capacityVolatilityMb,
+						)
+					) {
+						for (const offer of isolated) bad.add(offer.id);
+					}
+					return bad;
+				},
 			})
 		: undefined;
+	const localFleetCapacitySnapshot = async () => {
+		const active = await store.activeLeases();
+		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
+		const meshCap = await mesh?.observe();
+		if (!meshCap) return { hoboFreeSlots };
+		const meshFree = meshCap.freeSlots;
+		return {
+			hoboFreeSlots,
+			meshFreeSlots: meshFree,
+			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
+		};
+	};
+	const headroomFleetDeferMs = Number(
+		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
+	);
+	if (
+		!Number.isFinite(headroomFleetDeferMs) ||
+		headroomFleetDeferMs < 1_000 ||
+		!Number.isInteger(headroomFleetDeferMs)
+	)
+		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS");
+	const unlaunchedReserveMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
+	);
+	if (
+		!Number.isFinite(unlaunchedReserveMs) ||
+		unlaunchedReserveMs < 0 ||
+		!Number.isInteger(unlaunchedReserveMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_RESERVE_MS");
+	const unlaunchedBacklogMinAgeMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS ??
+			String(unlaunchedReserveMs),
+	);
+	if (
+		!Number.isFinite(unlaunchedBacklogMinAgeMs) ||
+		unlaunchedBacklogMinAgeMs < 0 ||
+		!Number.isInteger(unlaunchedBacklogMinAgeMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS");
+	const unlaunchedReReserveCooldownMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS ?? "30000",
+	);
+	if (
+		!Number.isFinite(unlaunchedReReserveCooldownMs) ||
+		unlaunchedReReserveCooldownMs < 0 ||
+		!Number.isInteger(unlaunchedReReserveCooldownMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
+	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -707,15 +935,39 @@ try {
 		mergeGroupLeaseLimit: mergeGroupLeases,
 		jobPickupMetadata,
 		lendTrunkSlots,
+		trunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		storageJobReserve,
+		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
+		headroomFleetDeferMs,
+		unlaunchedReservationRelease: {
+			boundMs: unlaunchedReserveMs,
+			backlogMinAgeMs: unlaunchedBacklogMinAgeMs,
+			reReserveCooldownMs: unlaunchedReReserveCooldownMs,
+			launchSlots: slots,
+			backlogImmediate:
+				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",
+		},
+		parallelLaunchCapacity: () =>
+			mainShardParallelLaunchCapacity({
+				availableMb: memoryAdmission.availableLowWaterMb(),
+				requestMb: memoryConfig.classes.standard,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+				launchSlots: slots,
+			}),
+		fleetCapacity: { snapshot: localFleetCapacitySnapshot },
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
 				...timing,
 				workerReconcileMs,
 			}),
+		inboxDeliveryTimeoutMs,
+		inboxDrainBudgetMs,
+		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
 	// Relay mesh: off unless HOBO_CI_NATS_URL names a server. With it, this
 	// worker advertises its free slots and takes a queued job only on its turn
@@ -732,17 +984,60 @@ try {
 				replicas: meshSettings.replicas,
 				name: `hobo-ci-worker ${meshSettings.nodeId}`,
 				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
+				onNodesCapped: (limit) => log("hobo_ci_mesh_nodes_capped", { limit }),
 				...natsCredentials(),
 			})
 		: undefined;
 	let meshDraining = false;
-	const mesh =
-		meshSettings && natsMesh
+	// The worker's identity: an Ed25519 key made on first start and kept
+	// beside its journal, readable by its owner only. The private half never
+	// leaves this file; the public half travels with every advertisement.
+	const meshIdentity = meshSettings
+		? await loadMeshIdentity(
+				process.env.HOBO_CI_MESH_KEY_FILE ??
+					join(dirname(plan.store.path), "mesh-node.key"),
+			)
+		: undefined;
+	// Which keys the mesh's operator vouches for, read from the mesh on every
+	// beat. With none listed this worker trusts only its own key.
+	const meshTrust = createMeshTrust({
+		store: natsMesh?.trust,
+		selfPublicKey: meshIdentity?.publicKey,
+		log,
+	});
+	// Signs what this worker advertises, and says of every advertisement it
+	// reads how far it is trusted. One whose signature fails is never ranked.
+	const meshBoard = natsMesh
+		? createTrustedMeshBoard({
+				board: natsMesh.board,
+				identity: meshIdentity,
+				policy: meshTrust.policy,
+			})
+		: undefined;
+	// The record of the jobs this worker took, kept in its journal so a
+	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=<token> starts
+	// it again once per token, for an operator who has repaired the box.
+	const meshReliability =
+		meshSettings && meshJournal
+			? meshReliabilityJournal(
+					meshJournal,
+					meshSettings.nodeId,
+					(message) =>
+						log("hobo_ci_mesh_reliability_journal_failed", { message }),
+					meshReliabilityResetToken(process.env.HOBO_CI_MESH_RELIABILITY_RESET),
+				)
+			: undefined;
+	const storedReliability = await meshReliability?.load();
+	mesh =
+		meshSettings && natsMesh && meshBoard
 			? createWorkerMesh({
 					settings: meshSettings,
-					board: natsMesh.board,
+					board: meshBoard,
 					claims: natsMesh.claims,
-					freeSlots: () => slots - liveWorkerLeaseIds.size,
+					requireTrusted: meshTrust.requireTrusted,
+					initialReliability: storedReliability?.record,
+					persistReliability: (record) => void meshReliability?.save(record),
+					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
 					totalSlots: slots,
 					healthy: () => !meshDraining,
 					servesTrunk: trunkSlots > 0,
@@ -759,10 +1054,14 @@ try {
 										? budgetLeftMb
 										: Math.min(
 												budgetLeftMb,
-												availableMb - memoryConfig.reserveMb,
+												availableMb -
+													memoryConfig.reserveMb -
+													capacityVolatilityMb,
 											),
 								),
 							),
+							// Measured on the filesystem jobs check out and build on.
+							diskMb: freeDiskMb(workRoot),
 						};
 					},
 					platform: { os: process.platform, arch: process.arch },
@@ -784,12 +1083,18 @@ try {
 					? "mesh"
 					: "none",
 		nodeId: meshSettings?.nodeId ?? "",
+		// The public half of the identity key, to list in the trusted set.
+		publicKey: meshIdentity?.publicKey ?? "",
+		reliabilityRestored: storedReliability?.record !== undefined,
+		reliabilityReset: storedReliability?.reset ?? false,
 		namespace: meshSettings?.namespace ?? "",
 		servers: meshSettings?.servers.length ?? 0,
 		stepMs: meshSettings?.stepMs ?? 0,
 	});
-	// Every 10 s: say what this worker can take, then read what the mesh can.
+	// Every 10 s: read the trust settings, say what this worker can take,
+	// and read what the mesh can.
 	const meshBeat = async () => {
+		await meshTrust.refresh();
 		await mesh?.advertise();
 		await mesh?.observe();
 	};
@@ -836,6 +1141,15 @@ try {
 			}),
 	);
 	const pollIngestCoalesce = createPollIngestCoalesce();
+	const heldJobPruner =
+		plan.admission === "pull"
+			? createHeldJobPruner({
+					store,
+					coalesce: pollIngestCoalesce,
+					clearTrunkWait: (job) => runtime.clearTrunkWait(job),
+					log: (event, fields) => log(event, fields),
+				})
+			: undefined;
 	const poller =
 		plan.admission === "pull"
 			? createGithubJobPoller({
@@ -854,15 +1168,39 @@ try {
 						}),
 					onGithubError: (failure) =>
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
+					beforePoll: () => mergeQueueCache.refresh(),
+					onMainFabricTrunkQueued: (repository) => {
+						warmContainersStarting += 1;
+						void worker
+							.prewarm(repository)
+							.catch((error) =>
+								log("hobo_ci_main_fabric_prewarm_failed", {
+									repository,
+									message: error instanceof Error ? error.message : "unknown",
+								}),
+							)
+							.finally(() => {
+								warmContainersStarting -= 1;
+							});
+					},
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
+	// What the fleet verdict reporter reads of GitHub: the last completed
+	// poll's jobs on fleet labels, and the jobs runners took lately.
+	const fleetPickups = createFleetPickupMemory();
+	let latestFleetJobs: FleetJobsSeen | undefined;
 
 	let draining = false;
+	let workerDrainStartedAtMs: number | undefined;
+	let shutdownSignalCount = 0;
+	let shutdownForceExitInFlight = false;
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 	let jobPollTimer: ReturnType<typeof setInterval> | undefined;
+	let inboxDrainTimer: ReturnType<typeof setInterval> | undefined;
 	let gcTimer: ReturnType<typeof setInterval> | undefined;
 	let tickInFlight: Promise<void> | undefined;
+	let inboxDrainInFlight: Promise<void> | undefined;
 	let jobPollInFlight: Promise<void> | undefined;
 	let gcInFlight: Promise<void> | undefined;
 	let orphanReconcileInFlight: Promise<void> | undefined;
@@ -878,6 +1216,7 @@ try {
 		lastOrphanReconcileAt = now;
 		orphanReconcileInFlight = worker
 			.reconcileOrphanJobs()
+			.then(() => worker.reconcileStallRecoveries())
 			.catch((error) => {
 				log("hobo_ci_orphan_job_reconcile_failed", {
 					message: error instanceof Error ? error.message : "unknown",
@@ -891,17 +1230,56 @@ try {
 	const reconcileAndLaunch = singleFlight(async () => {
 		// Sampled at most every ten seconds; never fails the tick.
 		await hostHealth.observe();
+		const pressureAt = Date.now();
+		if (pressureAt - lastHostPressureLogAt >= 10_000) {
+			lastHostPressureLogAt = pressureAt;
+			log(
+				"hobo_ci_host_resource_pressure",
+				hostResourcePressureLogFields(hostPressureSample()),
+			);
+		}
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
-		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		liveLaunchSlotsInUse = countLiveBoxContainers(await store.activeLeases());
+		drainJobInFlight = reconciliation.drainJobInFlight;
 		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		runOrphanJobReconcile();
 		if (!reconciliation.inventoryKnown) return;
-		// In push mode the hosted relay drains the shared inbox; in pull mode
-		// this worker is the only consumer of its own.
-		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+		// Pull workers drain the inbox on a separate timer so admission ticks stay
+		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
+		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
+		if (heldJobPruner) {
+			const pruned = await heldJobPruner.maybePrune();
+			if (pruned > 0) void runTick().catch(() => undefined);
+		}
 	});
+
+	function runInboxDrain(): void {
+		if (draining || !poller || inboxDrainInFlight) return;
+		inboxDrainInFlight = runtime
+			.drainInbox()
+			.then((result) => {
+				if (result.processed > 0 || result.failed > 0 || result.timedOut > 0) {
+					log("hobo_ci_inbox_drain_pass", {
+						processed: result.processed,
+						failed: result.failed,
+						timedOut: result.timedOut,
+						deliveriesMs: result.deliveriesMs,
+						budgetExhausted: result.budgetExhausted,
+					});
+				}
+				if (result.ingressWantsDispatch) void runTick();
+			})
+			.catch((error) => {
+				log("hobo_ci_inbox_drain_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			})
+			.finally(() => {
+				inboxDrainInFlight = undefined;
+			});
+	}
 
 	function runTick(): Promise<void> {
 		if (tickInFlight) return tickInFlight;
@@ -922,9 +1300,22 @@ try {
 		if (draining || !poller || jobPollInFlight) return;
 		jobPollInFlight = poller
 			.poll()
-			.then((summary) => {
+			.then(async (summary) => {
+				heldJobPruner?.observePollWitness(
+					summary.heldPruneWitness ?? {
+						terminalRuns: [],
+						terminalJobs: [],
+					},
+				);
+				const { waiting, fleetJobs, ...counts } = summary;
+				if (fleetJobs) {
+					latestFleetJobs = fleetJobs;
+					fleetPickups.remember(fleetJobs);
+				}
+				const pruned = (await heldJobPruner?.maybePrune()) ?? 0;
+				if (summary.accepted > 0 || pruned > 0)
+					void runTick().catch(() => undefined);
 				if (!pollWorthLogging(summary, Date.now())) return;
-				const { waiting, ...counts } = summary;
 				log("hobo_ci_isolated_worker_jobs_polled", {
 					...counts,
 					waitingJobs: waiting.length,
@@ -992,6 +1383,8 @@ try {
 		publicOrigin,
 		pollMs: intervalMs,
 		jobPollMs: plan.jobPollMs,
+		inboxDeliveryTimeoutMs,
+		inboxDrainBudgetMs,
 		hostMemMb,
 		workerMemoryMb,
 		memoryBudgetMb: memoryConfig.budgetMb,
@@ -1022,7 +1415,36 @@ try {
 		});
 	}, intervalMs);
 	if (poller) {
-		runJobPoll();
+		const inboxDrainIntervalMs = Math.min(intervalMs, 5_000);
+		runInboxDrain();
+		inboxDrainTimer = setInterval(runInboxDrain, inboxDrainIntervalMs);
+		void (async () => {
+			if (heldJobPruner) {
+				const storeWitness = await refreshHeldPruneWitnessFromStore({
+					store,
+					github,
+				});
+				if (
+					storeWitness.terminalRuns.length > 0 ||
+					storeWitness.terminalJobs.length > 0
+				) {
+					heldJobPruner.observePollWitness(
+						mergeHeldPruneWitness(
+							{ terminalRuns: [], terminalJobs: [] },
+							storeWitness,
+						),
+					);
+					const pruned = await heldJobPruner.maybePrune(true);
+					if (pruned > 0) void runTick().catch(() => undefined);
+				}
+			}
+			runJobPoll();
+		})().catch((error) => {
+			log("hobo_ci_held_job_startup_prune_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+			runJobPoll();
+		});
 		jobPollTimer = setInterval(() => {
 			runJobPoll();
 			runOrphanJobReconcile();
@@ -1030,14 +1452,129 @@ try {
 	}
 	runDepsImageEnsure();
 
+	// The fleet verdict reporter (ADR-0180; plan 0025, 6.1-6.3). It evaluates
+	// the box every 10 s on its own unreferenced timer and sends signed
+	// reports to the hosted relay; nothing here awaits it.
+	const fleetLabels = trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"];
+	const evaluateFleet = async () => {
+		const nowMs = Date.now();
+		const active = await store.activeLeases();
+		const idle =
+			active.length === 0 &&
+			liveLaunchSlotsInUse === 0 &&
+			!depsImageWorkRunning &&
+			warmContainersStarting === 0 &&
+			gcInFlight === undefined;
+		const pickups = fleetPickups.list(nowMs);
+		const ownLeaseIds = new Set<string>();
+		for (const id of boxLeaseIdsOf(pickups))
+			if (await store.get(id)) ownLeaseIds.add(id);
+		// A board that cannot be read throws: no report, and the relay's
+		// entry lapses (R3).
+		const peers =
+			mesh && meshBoard
+				? (await meshBoard.nodes())
+						.filter(
+							(node) =>
+								node.id !== mesh?.self().id &&
+								node.validUntilMs > nowMs &&
+								node.healthy &&
+								!meshAdvertRejected(node, nowMs),
+						)
+						.map((node) => ({ labels: node.labels, freeSlots: node.freeSlots }))
+				: undefined;
+		const seen = latestFleetJobs;
+		return evaluateFleetVerdict({
+			nowMs,
+			labels: fleetLabels,
+			idle,
+			host: {
+				availableMb: readAvailableMemoryMb(),
+				pressure: hostPressureSample(),
+				health: hostHealth.current(),
+			},
+			admission: {
+				standardClassMb: memoryConfig.classes.standard,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+			},
+			pools:
+				fleetVerdictSettings.mode === "off" ? [] : fleetVerdictSettings.pools,
+			minFreeRunners:
+				fleetVerdictSettings.mode === "off"
+					? 1
+					: fleetVerdictSettings.minFreeRunners,
+			poll:
+				seen === undefined
+					? undefined
+					: {
+							completedAtMs: Date.parse(seen.completedAt),
+							inProgress: seen.inProgress.map((job) => ({
+								label: job.label,
+								runnerName: job.runnerName,
+								startedAtMs: Date.parse(job.startedAt ?? seen.completedAt),
+							})),
+						},
+			mesh: peers,
+			ownLeaseIds,
+			pickups,
+		});
+	};
+	let fleetReporter: FleetVerdictReporter | undefined;
+	if (fleetVerdictSettings.mode === "off")
+		log("hobo_ci_fleet_verdict_state", { mode: "off" });
+	else {
+		// The same key as the mesh's, made on first start if there is none;
+		// its public half is what enrollment lists.
+		const reporterIdentity =
+			meshIdentity ??
+			(await loadMeshIdentity(
+				process.env.HOBO_CI_MESH_KEY_FILE ??
+					join(dirname(plan.store.path), "mesh-node.key"),
+			));
+		fleetReporter = createFleetVerdictReporter({
+			mode: fleetVerdictSettings.mode,
+			reporterId: fleetVerdictSettings.reporterId,
+			origin: fleetVerdictSettings.origin,
+			identity: reporterIdentity,
+			labels: fleetLabels,
+			evaluate: evaluateFleet,
+			repositories: async () => [
+				...new Set(
+					((await store.configuration())?.configuration?.connections ?? []).map(
+						(connection) => connection.repository,
+					),
+				),
+			],
+			sequence: createFleetVerdictSequence(
+				join(dirname(plan.store.path), "fleet-verdict-state.json"),
+			),
+			enterMs: fleetVerdictSettings.enterMs,
+			exitMs: fleetVerdictSettings.exitMs,
+			log,
+		});
+		log("hobo_ci_fleet_verdict_state", {
+			mode: fleetVerdictSettings.mode,
+			status: "started",
+			reporterId: fleetVerdictSettings.reporterId,
+			origin: fleetVerdictSettings.origin,
+			labels: fleetLabels.join(","),
+			publicKey: reporterIdentity.publicKey,
+		});
+		fleetReporter.start();
+	}
+
 	let shutdownOnce: Promise<void> | undefined;
+	let runningWorkerContainers = 0;
 
 	async function shutdown(signal: string) {
 		if (shutdownOnce) return shutdownOnce;
 		shutdownOnce = (async () => {
 			draining = true;
+			workerDrainStartedAtMs = Date.now();
 			if (pollTimer) clearInterval(pollTimer);
 			if (jobPollTimer) clearInterval(jobPollTimer);
+			if (inboxDrainTimer) clearInterval(inboxDrainTimer);
 			if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
@@ -1046,22 +1583,79 @@ try {
 			meshDraining = true;
 			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
 			await mesh?.advertise();
-			await jobPollInFlight;
-			await orphanReconcileInFlight;
-			await gcInFlight;
-			if (tickInFlight) {
-				await tickInFlight.catch(() => undefined);
+			// One last fleet verdict that blocks nothing, best effort.
+			await fleetReporter?.clear().catch(() => undefined);
+			const backgroundKinds = (): (
+				| "tick"
+				| "inbox"
+				| "jobPoll"
+				| "gc"
+				| "orphanReconcile"
+			)[] => {
+				const kinds: (
+					| "tick"
+					| "inbox"
+					| "jobPoll"
+					| "gc"
+					| "orphanReconcile"
+				)[] = [];
+				if (tickInFlight) kinds.push("tick");
+				if (inboxDrainInFlight) kinds.push("inbox");
+				if (jobPollInFlight) kinds.push("jobPoll");
+				if (gcInFlight) kinds.push("gc");
+				if (orphanReconcileInFlight) kinds.push("orphanReconcile");
+				return kinds;
+			};
+			const background = await awaitWorkerBackgroundDrainIdle({
+				inFlight: backgroundKinds,
+				boundMs: DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+				onProgress: ({ inFlight, elapsedMs, boundMs }) =>
+					log("hobo_ci_drain_progress", {
+						phase: "background",
+						inFlight: inFlight.join(","),
+						elapsedMs,
+						boundMs,
+					}),
+			});
+			if (background.timedOut) {
+				log("hobo_ci_drain_progress", {
+					phase: "background",
+					timedOut: true,
+					inFlight: background.inFlight.join(","),
+					boundMs: DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+				});
 			}
+			tickInFlight = undefined;
+			jobPollInFlight = undefined;
+			inboxDrainInFlight = undefined;
+			gcInFlight = undefined;
+			orphanReconcileInFlight = undefined;
 			const reconcileDrain = async () => {
 				const workerReconcileStartedAt = Date.now();
-				const reconciliation = await worker.reconcileLeases({ draining: true });
+				const reconciliation = await worker.reconcileLeases({
+					draining: true,
+					drainStartedAtMs: workerDrainStartedAtMs,
+				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				liveLaunchSlotsInUse = countLiveBoxContainers(
+					await store.activeLeases(),
+				);
+				drainJobInFlight = reconciliation.drainJobInFlight;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
+				await worker.reconcileStallRecoveries();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
+				try {
+					const listed = await listWorkerContainers();
+					runningWorkerContainers = listed.filter(
+						(c) => c.state === "running" && c.name.startsWith("hobo-"),
+					).length;
+				} catch {
+					runningWorkerContainers = 0;
+				}
 			};
-			const inFlight = async () => liveWorkerLeaseIds.size;
+			const inFlight = async () => drainJobInFlight;
 			await reconcileDrain();
 			if (stopMode === "drain")
 				log("hobo_ci_isolated_worker_drain_started", {
@@ -1080,6 +1674,14 @@ try {
 					reported = remaining;
 					log("hobo_ci_isolated_worker_drain_waiting", { remaining });
 				},
+				onProgress: ({ remaining, elapsedMs, timeoutMs }) =>
+					log("hobo_ci_drain_progress", {
+						phase: "jobs",
+						remaining,
+						elapsedMs,
+						timeoutMs,
+						runningWorkerContainers,
+					}),
 			});
 			if (result.mode === "handoff") {
 				log("hobo_ci_isolated_worker_handoff", { running: result.remaining });
@@ -1125,6 +1727,44 @@ try {
 	// with no listener would kill the drain.
 	for (const signal of ["SIGTERM", "SIGINT"] as const)
 		process.on(signal, () => {
+			shutdownSignalCount += 1;
+			void (async () => {
+				if (
+					!shutdownForceExitInFlight &&
+					draining &&
+					shutdownSignalCount >= 2
+				) {
+					let running = runningWorkerContainers;
+					try {
+						const listed = await listWorkerContainers();
+						running = listed.filter(
+							(c) => c.state === "running" && c.name.startsWith("hobo-"),
+						).length;
+					} catch {
+						/* keep last runningWorkerContainers */
+					}
+					const { shouldForceExitDrainOnRepeatSignal } = await import(
+						"../src/isolated-worker/daemon-shutdown.js"
+					);
+					if (
+						await shouldForceExitDrainOnRepeatSignal({
+							signalCount: shutdownSignalCount,
+							draining: true,
+							runningWorkerContainers: running,
+						})
+					) {
+						shutdownForceExitInFlight = true;
+						log("hobo_ci_isolated_worker_drain_force_exit", {
+							signal,
+							signals: shutdownSignalCount,
+							running,
+						});
+						await closeStore().catch(() => undefined);
+						await closeTrace();
+						process.exit(0);
+					}
+				}
+			})();
 			void shutdown(signal);
 		});
 } catch (error) {

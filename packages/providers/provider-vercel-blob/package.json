@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/provider-vercel-blob",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Vercel Blob binding of the ephemeral-state port: one private blob per key holding a protobuf-JSON record (value, incarnation, revision, expiry), compare-and-set through ETag-conditional writes (ifMatch), putIfAbsent through create-only writes, conditional deletes, increment as a bounded read-and-CAS loop, lazy TTL expiry with a bounded list-and-purge, a meter of Blob's simple and advanced operations, and the BLOB_STORE_ID + Vercel OIDC environment helper.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
+		"@hobo/kv-redis-compatible": "workspace:*",
+		"@vercel/blob": "2.8.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

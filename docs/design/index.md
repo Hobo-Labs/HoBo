@@ -57,11 +57,15 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`reliability-observability-cost.md`](./reliability-observability-cost.md#plan-05) | Reliability/HA, observability & cost/FinOps | 05 |
 | [`finops-budget-routing-control-plane.md`](./finops-budget-routing-control-plane.md) | Post-core standards-first FinOps budget routing control plane: resource intent, metric contracts, Pareto routing, stability, decision graph, feedback governance, and DX/OpsX/FinX surfaces | — |
 | [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) | Provider commercial terms and deterministic fail-closed quotes in `@hobo/pricing`; dispatcher v1 unchanged (ADR-0176) | — |
+| [`provider-manifest.md`](./provider-manifest.md) | Provider manifest: auth flows (OAuth, auth.md), capability mappings, and extensible billing models declared as one YAML/JSON document and deserialized into existing types by `@hobo/provider-manifest` (ADR-0178) | — |
 | [`provider-pricing-scorecard.md`](./provider-pricing-scorecard.md) | Acceptance scorecard for provider pricing design (§1, §10, §12–§14); CI-enforced via `@hobo/pricing` design-scorecard eval | — |
 | [`hosting-budget-transitions.md`](./hosting-budget-transitions.md) | Budgeted hosting placement and movement: effects, financial reservations, durable reconciliation, observed recovery and settlement | — |
 | [`ci-fleet-balancing.md`](./ci-fleet-balancing.md) | CI fleet balancing: per-provider runner financial models rated by `@hobo/pricing`, admission through the shared budget policy, and the `HOBO_CI_FLEET_ROUTES` route table for label providers (`packages/ci/src/fleet/`) | — |
 | [`ci-runner-balancing-example.md`](./ci-runner-balancing-example.md) | CI runner balancing reference example + dogfood record: credit-aware dispatch of this repo's CI across GitHub-hosted, self-hosted, and third-party runner providers (`examples/ci-runner-balancing/`) | — |
-| [`ci-relay-mesh.md`](./ci-relay-mesh.md) | Proposal: the CI relay as a mesh of equal nodes. Each node reads GitHub's queue and starts its own runners; nodes agree on who starts a job by weighted rendezvous ranking and a per-rank delay, so no relay is a single point of failure. Claiming core implemented in `@hobo/ci/mesh`; not yet wired | — |
+| [`ci-relay-mesh.md`](./ci-relay-mesh.md) | The CI relay as a mesh of equal nodes. Each node reads GitHub's queue and starts its own runners; nodes agree on who starts a job by weighted rendezvous ranking and a per-rank delay, so no relay is a single point of failure. Implemented behind `HOBO_CI_NATS_URL`: claiming, capacity-aware ranking, per-node reliability, signed advertisements with a trusted-key set, and one node list (availability, capacity, trust) on the relay's HTTP route, MCP tool and `hobo ci status` | — |
+| [`hosted-relay-stateless.md`](./hosted-relay-stateless.md) | The hosted CI relay keeps no durable state ([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)): config and secrets read-only from a separate service (Infisical via Vercel OIDC), short-lived job state in a Redis-protocol cache with TTL and compare-and-set whose loss is rebuilt from GitHub and Vercel by deterministic names, Vercel Queues for webhook intake and per-lease steps, read-only config at runtime; replaces the relay's PostgreSQL store, relay database fleet and Neon broker in eight phases (phase 7, the removals, is done). Amended 2026-11-12: the config/secret store (`secrets.config-service/v1`) is chosen when the deployment runs and handed to the owner by claim (auth.md stores, a Cloudflare temporary account, self-hosted Infisical, attach-only Infisical Cloud), with nothing in Vercel or GitHub secrets or variables; and, secretless first, the relay stays on its Vercel project `hobo-ci` (Vercel's Git integration, no deploy token), derives its keys, gets the GitHub App's credentials straight from GitHub, and keeps the rest in a secrets manager (Infisical, 1Password or Bitwarden, ranked by whether a workload signs in without a stored token), any optional leftover typed by the owner into the HoBo secret-capture MCP App without entering the agent's context. The compute fleet is unchanged | — |
+| [`adr/fleet-verdict.md`](./adr/fleet-verdict.md) | Runner routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)): which fleet labels new work should stay off is decided by the relay, kept with an expiry, and asked for over HTTP when a run is routed | — |
+| [`relay-ephemeral-state.md`](./relay-ephemeral-state.md) | The relay's loss-tolerant cache port (`EphemeralStatePort` in `@hobo/core`): TTL, compare-and-set, counters, locks and a capped change ring as Lua scripts over any Redis-protocol store; bound to Upstash REST on Vercel or a self-hosted Valkey over TCP with no relay code change; one 24-case conformance suite across in-memory, RESP and REST | — |
 | [`security-networking.md`](./security-networking.md#plan-12) | Security, networking & multi-tenant applications | 12, 50 |
 | [`developer-experience.md`](./developer-experience.md#plan-07) | Developer experience: dashboards, CLI, status pages & availability | 07, 49 |
 | [`cli-spec.md`](./cli-spec.md) | Canonical CLI verb surface + lifecycle semantics | — |
@@ -222,6 +226,7 @@ When a draft package, validation script, workflow, or public contract changes, u
 ## HoBo.CI SDK family
 
 [HoBo.CI contracts and routing](../../packages/ci/README.md),
+[Fleet enrollment and at-most-once claims](./fleet-enrollment-design.md) (scorecard: [`fleet-enrollment-scorecard.md`](./fleet-enrollment-scorecard.md), operator: [`fleet-enrollment-operator.md`](./fleet-enrollment-operator.md)),
 [GitHub Actions relay](../../packages/ci-gh-actions/README.md) (one core; hosted
 as a Node service by `hobo ci serve` and the container image, on
 [Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon; it
@@ -230,6 +235,5 @@ is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
 [Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
-and model-backed conflict resolution beside the Node relay; not yet run against
-GitHub or a live model), and
+and model-backed conflict resolution beside the Node relay), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).

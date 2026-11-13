@@ -64,6 +64,7 @@ import {
 	type ReadRootFile,
 } from "./affected-lanes.mts";
 import { readWorkspaces, type Workspace } from "./job-scope.mts";
+import { spawnTurbo } from "./turbo-invoke.mts";
 import {
 	loadWorkspaceDurations,
 	type WorkspaceDurationTable,
@@ -106,14 +107,21 @@ export function planUnits(
 	return [...new Set([...full, ...subsets.keys()])].sort();
 }
 
-/** Workspaces Turbo would run for this plan (test tasks only for repo-wide plans). */
+/**
+ * Workspaces Turbo would run for this plan (test tasks only for repo-wide plans).
+ *
+ * A repo-wide plan reads the test task graph. `graph` is injectable like the
+ * workspace list beside it, so a caller that describes a tree in memory
+ * describes its graph too instead of being compared with this repository's.
+ */
 export function testWorkspaceUnits(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
+	graph: TestGraph = turboTestGraph,
 ): string[] {
 	if (plan.mode !== "all") return planUnits(plan, workspaces);
 	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
-	const tests = turboTestGraph([]).filter((task) => task.task === "test");
+	const tests = graph([]).filter((task) => task.task === "test");
 	const dirs = tests
 		.map((task) => task.directory)
 		.filter((dir) => workspaceDirs.has(dir));
@@ -125,13 +133,51 @@ export function testWorkspaceUnits(
 	return [...new Set(dirs)].sort();
 }
 
+function countPackageTestFiles(repo: Repo, packageDir: string): number {
+	const testFile = /\.(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/;
+	let count = 0;
+	for (const path of repo.files) {
+		if (!path.startsWith(`${packageDir}/`)) continue;
+		if (!testFile.test(path)) continue;
+		if (/(?:^|\/)(?:node_modules|dist)\//.test(path)) continue;
+		count += 1;
+	}
+	return count;
+}
+
+/**
+ * Wall seconds one plan unit should contribute to shard balancing: whole suites
+ * use the package table; subsets use a per-test-file share of that package.
+ */
+export function planUnitLoadSeconds(
+	plan: TestPlan,
+	unit: string,
+	repo: Repo,
+	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+): number {
+	const packageSeconds = workspaceTestSeconds(unit, durations);
+	if (plan.mode === "all") return packageSeconds;
+	if (plan.full.includes(unit)) return packageSeconds;
+	const subset = plan.subsets.get(unit);
+	if (!subset || subset.length === 0) return packageSeconds;
+	const totalFiles = countPackageTestFiles(repo, unit);
+	if (totalFiles <= subset.length) return packageSeconds;
+	return Math.max(
+		durations.defaultSeconds,
+		(packageSeconds * subset.length) / totalFiles,
+	);
+}
+
 /** Longest-processing-time-first multi-way partition by measured workspace seconds. */
 export function partitionUnitsByWeight(
 	units: readonly string[],
 	durations: WorkspaceDurationTable,
 	count: number,
+	weightFor?: (unit: string) => number,
 ): readonly (readonly string[])[] {
 	if (count < 1 || count > 64) throw new Error("invalid workspace test shard");
+	const weight =
+		weightFor ?? ((unit: string) => workspaceTestSeconds(unit, durations));
 	const shards: Array<{ load: number; units: string[] }> = Array.from(
 		{ length: count },
 		() => ({
@@ -139,12 +185,9 @@ export function partitionUnitsByWeight(
 			units: [],
 		}),
 	);
-	const sorted = [...units].sort(
-		(a, b) =>
-			workspaceTestSeconds(b, durations) - workspaceTestSeconds(a, durations),
-	);
+	const sorted = [...units].sort((a, b) => weight(b) - weight(a));
 	for (const unit of sorted) {
-		const weight = workspaceTestSeconds(unit, durations);
+		const unitWeight = weight(unit);
 		let targetIdx = 0;
 		for (let index = 1; index < shards.length; index++) {
 			const shard = shards[index];
@@ -154,22 +197,39 @@ export function partitionUnitsByWeight(
 		const target = shards[targetIdx];
 		if (!target) throw new Error("partitionUnitsByWeight: empty shard set");
 		target.units.push(unit);
-		target.load += weight;
+		target.load += unitWeight;
 	}
 	return shards.map((shard) => shard.units);
+}
+
+export function shardLoadSpreadSeconds(
+	units: readonly string[],
+	durations: WorkspaceDurationTable,
+	count: number,
+	weightFor?: (unit: string) => number,
+): number {
+	const weight =
+		weightFor ?? ((unit: string) => workspaceTestSeconds(unit, durations));
+	const parts = partitionUnitsByWeight(units, durations, count, weight);
+	const loads = parts.map((part) =>
+		part.reduce((sum, dir) => sum + weight(dir), 0),
+	);
+	if (loads.length === 0) return 0;
+	return Math.max(...loads) - Math.min(...loads);
 }
 
 export function maxShardLoadSeconds(
 	units: readonly string[],
 	durations: WorkspaceDurationTable,
 	count: number,
+	weightFor?: (unit: string) => number,
 ): number {
-	const parts = partitionUnitsByWeight(units, durations, count);
+	const weight =
+		weightFor ?? ((unit: string) => workspaceTestSeconds(unit, durations));
+	const parts = partitionUnitsByWeight(units, durations, count, weight);
 	return Math.max(
 		0,
-		...parts.map((part) =>
-			part.reduce((sum, dir) => sum + workspaceTestSeconds(dir, durations), 0),
-		),
+		...parts.map((part) => part.reduce((sum, dir) => sum + weight(dir), 0)),
 	);
 }
 
@@ -180,6 +240,8 @@ export function shardTestPlan(
 	index: number,
 	count: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
+	repo?: Repo,
 ): TestPlan {
 	if (
 		!Number.isSafeInteger(index) ||
@@ -190,13 +252,17 @@ export function shardTestPlan(
 		index >= count
 	)
 		throw new Error("invalid workspace test shard");
-	const full =
-		plan.mode === "all" ? testWorkspaceUnits(plan, workspaces) : [...plan.full];
+	// Read once: for a repo-wide plan this is a `turbo --dry=json` run.
+	const dirs = testWorkspaceUnits(plan, workspaces, graph);
+	const full = plan.mode === "all" ? dirs : [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
-	const dirs = testWorkspaceUnits(plan, workspaces);
+	const weightFor =
+		repo !== undefined
+			? (unit: string) => planUnitLoadSeconds(plan, unit, repo, durations)
+			: undefined;
 	const selected = new Set(
-		partitionUnitsByWeight(dirs, durations, count)[index],
+		partitionUnitsByWeight(dirs, durations, count, weightFor)[index],
 	);
 	return {
 		mode: "scoped",
@@ -220,16 +286,35 @@ export function planShardCountBalanced(
 	max: number,
 	targetSeconds: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
+	repo?: Repo,
+	maxSpreadSeconds = MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
 ): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
 		throw new Error("invalid workspace test shard");
 	if (!(targetSeconds > 0)) throw new Error("invalid workspace shard target");
-	const units = testWorkspaceUnits(plan, workspaces);
+	const units = testWorkspaceUnits(plan, workspaces, graph);
 	if (units.length === 0) return 1;
+	const weightFor =
+		repo !== undefined
+			? (unit: string) => planUnitLoadSeconds(plan, unit, repo, durations)
+			: undefined;
 	let count = 1;
+	const fits = (shards: number) => {
+		if (
+			maxShardLoadSeconds(units, durations, shards, weightFor) > targetSeconds
+		)
+			return false;
+		if (
+			weightFor &&
+			shardLoadSpreadSeconds(units, durations, shards, weightFor) >
+				maxSpreadSeconds
+		)
+			return false;
+		return true;
+	};
 	while (count < max) {
-		if (maxShardLoadSeconds(units, durations, count) <= targetSeconds)
-			return count;
+		if (fits(count)) return count;
 		count += 1;
 	}
 	return max;
@@ -263,6 +348,117 @@ export function planShardCount(
 	if (plan.mode === "all") return max;
 	const units = plan.full.length + plan.subsets.size;
 	return Math.min(max, Math.max(1, Math.ceil(units / SUITES_PER_SHARD)));
+}
+
+/** Slowest-shard wall budget the main train targets when slots are available. */
+export const MAIN_WORKSPACE_SHARD_TARGET_SECONDS = 180;
+
+/** Many changed paths on main usually mean a cold turbo graph; plan wider shards. */
+export const MAIN_WORKSPACE_COLD_CACHE_PATH_THRESHOLD = 40;
+export const MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE = 2;
+
+export function scaleWorkspaceDurations(
+	table: WorkspaceDurationTable,
+	factor: number,
+): WorkspaceDurationTable {
+	if (!(factor > 1)) return table;
+	const seconds = new Map<string, number>();
+	for (const [dir, value] of table.seconds) seconds.set(dir, value * factor);
+	return { defaultSeconds: table.defaultSeconds * factor, seconds };
+}
+
+/**
+ * The most a main workspace shard is planned to take. Its tests step stops at
+ * 19 minutes and its job at 20 (the workflow-wide job cap); this leaves room
+ * for setup and for an estimate that runs short.
+ */
+export const MAIN_WORKSPACE_SHARD_BUDGET_SECONDS = 12 * 60;
+/** Most shards a main run plans, however far over budget the work is. */
+export const MAX_MAIN_WORKSPACE_SHARDS = 16;
+
+/** Target gap between slowest and fastest main workspace shard loads. */
+export const MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS = 10;
+
+export type MainWorkspaceShardPlan = Readonly<{
+	count: number;
+	parallelCap: number;
+	peakShardSeconds: number;
+}>;
+
+/**
+ * When several whole suites are in scope, use enough shards that each runner
+ * does not replay a multi-minute cold turbo graph alone.
+ */
+export function minimumScopedShardCount(
+	plan: TestPlan,
+	parallelCap: number,
+): number {
+	if (plan.mode !== "scoped") return 1;
+	const units = plan.full.length + plan.subsets.size;
+	if (units <= 3) return 1;
+	return Math.min(parallelCap, Math.max(2, Math.ceil(units / 2)));
+}
+
+/**
+ * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
+ * several duration-balanced workspace groups, targeting roughly
+ * `targetSeconds` on the slowest shard when capacity allows. Past the cap only
+ * when the slowest shard would otherwise exceed
+ * `MAIN_WORKSPACE_SHARD_BUDGET_SECONDS`, up to `MAX_MAIN_WORKSPACE_SHARDS`.
+ */
+export function planMainWorkspaceShardCount(
+	plan: TestPlan,
+	parallelCap: number,
+	options?: Readonly<{
+		targetSeconds?: number;
+		workspaces?: readonly Workspace[];
+		durations?: WorkspaceDurationTable;
+		repo?: Repo;
+		maxSpreadSeconds?: number;
+	}>,
+): MainWorkspaceShardPlan {
+	if (!Number.isSafeInteger(parallelCap) || parallelCap < 1 || parallelCap > 64)
+		throw new Error("invalid main workspace parallel cap");
+	const workspaces = options?.workspaces ?? readWorkspaces();
+	const durations = options?.durations ?? loadWorkspaceDurations();
+	const repo = options?.repo ?? readRepo();
+	const targetSeconds =
+		options?.targetSeconds ?? MAIN_WORKSPACE_SHARD_TARGET_SECONDS;
+	const maxSpreadSeconds =
+		options?.maxSpreadSeconds ?? MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS;
+	let count = planShardCountBalanced(
+		plan,
+		workspaces,
+		parallelCap,
+		targetSeconds,
+		durations,
+		turboTestGraph,
+		repo,
+		maxSpreadSeconds,
+	);
+	count = Math.max(count, minimumScopedShardCount(plan, parallelCap));
+	const units = testWorkspaceUnits(plan, workspaces);
+	const weightFor = (unit: string) =>
+		planUnitLoadSeconds(plan, unit, repo, durations);
+	const peakAt = (shards: number) =>
+		maxShardLoadSeconds(units, durations, shards, weightFor);
+	// A shard job may not run past 20 minutes (the workflow cap, and the box
+	// stops an isolated container at 20 minutes plus grace), so when even
+	// `parallelCap` shards leave the slowest one over budget, plan more: the
+	// extra shards wait for a slot instead of being cancelled (finding 117).
+	// Stop once another shard no longer lowers the slowest one (one workspace
+	// alone over budget).
+	let peak = peakAt(count);
+	while (
+		count < MAX_MAIN_WORKSPACE_SHARDS &&
+		peak > MAIN_WORKSPACE_SHARD_BUDGET_SECONDS
+	) {
+		const next = peakAt(count + 1);
+		if (next >= peak) break;
+		count += 1;
+		peak = next;
+	}
+	return { count, parallelCap, peakShardSeconds: peak };
 }
 
 type Json =
@@ -888,6 +1084,10 @@ export type TestGraph = (dirs: readonly string[]) => readonly GraphTask[];
  * (`--only`) with its files passed through to the package's `vitest run`.
  * `turboArgs` go to the first call only.
  */
+function turboAffectedArgs(): readonly string[] {
+	return process.env.HOBO_TURBO_USE_AFFECTED === "1" ? ["--affected"] : [];
+}
+
 export function planCommands(
 	plan: TestPlan,
 	turboArgs: readonly string[],
@@ -896,12 +1096,15 @@ export function planCommands(
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
-	if (plan.mode === "all") return [[...test, parallel, ...turboArgs]];
+	const affected = turboAffectedArgs();
+	if (plan.mode === "all")
+		return [[...test, ...affected, parallel, ...turboArgs]];
 	const commands: string[][] = [];
 	if (plan.subsets.size === 0) {
 		if (plan.full.length > 0)
 			commands.push([
 				...test,
+				...affected,
 				...plan.full.map((dir) => `--filter=./${dir}`),
 				"--continue",
 				parallel,
@@ -938,20 +1141,29 @@ export function planCommands(
 	return commands;
 }
 
+export type TurboGraphOptions = Readonly<{
+	/** When true, plan with `turbo run test --affected --dry=json`. */
+	affected?: boolean;
+	/** Sets `TURBO_SCM_BASE` for the dry run (required with `affected`). */
+	scmBase?: string;
+}>;
+
 /** Reads the `test` task graph from `turbo run test --dry=json`. */
-export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
-	const dry = spawnSync(
-		"pnpm",
-		[
-			"exec",
-			"turbo",
-			"run",
-			"test",
-			...dirs.map((dir) => `--filter=./${dir}`),
-			"--dry=json",
-		],
-		{ encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
-	);
+export function turboTestGraph(
+	dirs: readonly string[],
+	options?: TurboGraphOptions,
+): readonly GraphTask[] {
+	const turboArgs = [
+		"run",
+		"test",
+		...(options?.affected
+			? ["--affected"]
+			: dirs.map((dir) => `--filter=./${dir}`)),
+		"--dry=json",
+	];
+	const env = { ...process.env };
+	if (options?.scmBase) env.TURBO_SCM_BASE = options.scmBase;
+	const dry = spawnTurbo(turboArgs, env);
 	if (dry.status !== 0)
 		throw new Error(`turbo --dry=json failed:\n${dry.stderr}`);
 	const parsed: Json = JSON.parse(dry.stdout);
@@ -975,8 +1187,86 @@ export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
 	return tasks;
 }
 
+/** Package dirs Turbo would schedule a `test` task for under `--affected`. */
+export function turboAffectedTestDirectories(
+	scmBase: string,
+): ReadonlySet<string> {
+	const tasks = turboTestGraph([], { affected: true, scmBase });
+	return new Set(
+		tasks.filter((task) => task.task === "test").map((task) => task.directory),
+	);
+}
+
+/**
+ * Drop planner units Turbo's affected graph would not run; add Turbo-only
+ * workspaces the import walk skipped.
+ */
+export function intersectScopedPlanWithTurboAffected(
+	plan: TestPlan,
+	affected: ReadonlySet<string>,
+	workspaces: readonly Workspace[],
+): TestPlan {
+	if (plan.mode === "all") return plan;
+	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
+	const keep = (dir: string) => affected.has(dir) && workspaceDirs.has(dir);
+	const full = plan.full.filter(keep);
+	const subsets = new Map([...plan.subsets].filter(([dir]) => keep(dir)));
+	for (const dir of affected) {
+		if (!workspaceDirs.has(dir) || full.includes(dir) || subsets.has(dir))
+			continue;
+		full.push(dir);
+	}
+	full.sort();
+	return {
+		mode: "scoped",
+		full,
+		subsets,
+		skipped: plan.skipped.filter((dir) => !keep(dir)),
+	};
+}
+
+/** Plan workspace tests for a main push, narrowed to Turbo `--affected`. */
+export function planDependentTestsForTurboAffected(
+	changedPaths: readonly string[],
+	repo: Repo,
+	scmBase: string,
+	readRootFile?: ReadRootFile,
+): TestPlan {
+	const plan = planDependentTests(changedPaths, repo, readRootFile);
+	if (plan.mode === "all") return plan;
+	const affected = turboAffectedTestDirectories(scmBase);
+	if (affected.size === 0)
+		return { mode: "scoped", full: [], subsets: new Map(), skipped: [] };
+	return intersectScopedPlanWithTurboAffected(plan, affected, repo.workspaces);
+}
+
+function alignPlanWithTurboAffectedFromEnv(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+): TestPlan {
+	if (plan.mode === "all" || process.env.HOBO_TURBO_USE_AFFECTED !== "1")
+		return plan;
+	const scmBase = process.env.TURBO_SCM_BASE?.trim();
+	if (!scmBase) return plan;
+	return intersectScopedPlanWithTurboAffected(
+		plan,
+		turboAffectedTestDirectories(scmBase),
+		workspaces,
+	);
+}
+
+/** Whether a plan will run any workspace test suites (whole or subset). */
+export function planHasWorkspaceWork(plan: TestPlan): boolean {
+	if (plan.mode === "all") return true;
+	return plan.full.length > 0 || plan.subsets.size > 0;
+}
+
 /** Runs the plan. Every part runs, so one failure hides no other. */
 function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
+	if (!planHasWorkspaceWork(plan)) {
+		console.error("dependent-tests: no workspace tests selected");
+		return 0;
+	}
 	let status = 0;
 	for (const args of planCommands(
 		plan,
@@ -1064,6 +1354,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			? undefined
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
+	plan = alignPlanWithTurboAffectedFromEnv(plan, repo.workspaces);
 	if (planShards !== undefined) {
 		const count = planShardCount(
 			plan,
@@ -1107,6 +1398,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			repo.workspaces,
 			Number(match[1]),
 			Number(match[2]),
+			loadWorkspaceDurations(),
+			turboTestGraph,
+			repo,
 		);
 		console.log(`dependent-tests: shard ${match[1]}/${match[2]}`);
 	}

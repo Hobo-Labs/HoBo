@@ -106,7 +106,27 @@ function fixture(options: {
 							: options.responseRunner,
 				});
 			}
-			throw new Error("unexpected GitHub request");
+			if (
+				path ===
+				"/repos/org/repo/actions/runs/11/jobs?filter=latest&per_page=100"
+			)
+				return Response.json({
+					jobs: [
+						{
+							id: 1,
+							run_id: 11,
+							status: options.status ?? "completed",
+							runner_name:
+								options.responseRunner === undefined
+									? name
+									: options.responseRunner,
+							runner_id: 1,
+						},
+					],
+				});
+			if (path.startsWith("/repos/org/repo/actions/runs?status=in_progress"))
+				return Response.json({ workflow_runs: [] });
+			throw new Error(`unexpected GitHub request: ${path}`);
 		},
 	);
 	const reconcile = vi.fn(async (_id: string, _forceStop?: boolean) => {});
@@ -163,19 +183,18 @@ describe("isolated runner cancellation", () => {
 	it("reports phase timings for a slow tick", async () => {
 		const onTickTiming = vi.fn();
 		const h = fixture({ onTickTiming });
-		vi.spyOn(Date, "now")
-			.mockReturnValueOnce(0)
-			.mockReturnValueOnce(1_000)
-			.mockReturnValueOnce(1_000)
-			.mockReturnValueOnce(4_000)
-			.mockReturnValueOnce(4_000)
-			.mockReturnValueOnce(6_000)
-			.mockReturnValueOnce(6_000);
+		const clock = [0, 1_000, 4_000, 4_000, 6_000, 6_000];
+		let clockIndex = 0;
+		vi.spyOn(Date, "now").mockImplementation(() => {
+			const value = clock[Math.min(clockIndex, clock.length - 1)] ?? 6_000;
+			clockIndex += 1;
+			return value;
+		});
 
-		await h.runtime.tick();
+		await h.runtime.tick({ maxDeliveries: 0 });
 		expect(onTickTiming).toHaveBeenCalledWith({
 			totalMs: 6_000,
-			deliveriesMs: 1_000,
+			deliveriesMs: 0,
 			leaseReconcileMs: 3_000,
 			dispatchMs: 2_000,
 			leaseCount: 1,

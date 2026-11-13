@@ -340,33 +340,42 @@ through this mode, and Vercel has not verified the pact.**
 [`packages/ci-vercel/src/bindle.ts`](../ci-vercel/src/bindle.ts). `hobo ci
 deploy` (`src/ci-relay-deploy.ts`, a subcommand of the `ci` verb beside `hobo ci
 serve`) loads that Bindle from the project directory, checks it names no
-provider (`assertNoBindleProviderSelection`), and realizes it as one git-source
-Vercel deployment through the git-artifact mode above: the non-secret settings
-first, then each of the Bindle's resources applied through the provider, which
-deploys once.
+provider (`assertNoBindleProviderSelection`), places it with the relay's Yard
+(`packages/ci-vercel/deploy/yard.ts`, loaded and resolved by
+`src/ci-relay-yard.ts`: the Yard names the provider, the project and repository;
+the target names a Camp, and the binding rows that Camp requires project the
+non-secret settings), and realizes it as one git-source Vercel deployment
+through the git-artifact mode above: the non-secret settings first, then each of
+the Bindle's resources applied through the provider the Yard names, which
+deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
+otherwise). Production is deployed by the workflow on `main`
+(`.github/workflows/relay-deploy.yml`), not by hand.
 
 ```sh
 # From the repository root. Nothing is sent; no token is read.
-hobo ci deploy --cwd packages/ci-vercel \
-  --repo <owner>/<repository> --ref main --project hobo-ci \
+hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# A real run: preview unless --target production says otherwise.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel \
-  --repo <owner>/<repository> --ref main --sha <40-hex commit> \
-  --project hobo-ci --team team_… --target production
+# What the workflow on main runs: production, the Infisical ids the production
+# Camp's config-service binding asks for, the cache attached first.
+VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref main \
+  --sha <40-hex commit> --team team_… --target production \
+  --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
 ```
 
 | Option | Meaning |
 |---|---|
-| `--repo <owner/name>`, `--ref <branch\|tag\|sha>` | the GitHub commit Vercel builds (required) |
+| `--ref <branch\|tag\|sha>` | the git ref Vercel builds (required) |
+| `--repo <owner/name>` | the GitHub repository; default the Yard's `repository` property |
 | `--sha <commit>` | pins the full commit sha, so a branch that moves cannot change what is deployed |
-| `--project <name>` | the Vercel project (required) |
+| `--project <name>` | the Vercel project; default the Yard's `project` property |
 | `--target preview\|production` | default `preview`; production is never implied |
 | `--team <team_id>` | the Vercel team, else `VERCEL_TEAM_ID`; a canonical `team_…` id, or the token's own scope when neither is set |
-| `--set NAME=value` | a non-secret setting to apply for the target's environment first (repeatable) |
+| `--set NAME=value` | a non-secret setting to apply for the target's environment first (repeatable): a `config()` `env.*` field, or an input a chosen binding asks for |
 | `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
-| `--create-project` | create the project when Vercel has none by that name; without it a missing project is a refusal |
+| `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
+| `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
+| `--wait` | wait up to 15 minutes for READY; ERROR, CANCELED or the timeout is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
 
 What it needs: `VERCEL_TOKEN` in the environment for a real run (never printed,
@@ -383,9 +392,14 @@ What it deliberately does not do:
   formed (`HOBO_CI_DEPLOY_SETTING_REFUSED`), in a dry run too, and the refusal
   never echoes the value. The declared secrets are listed by name as "not set
   by this command".
-- **Provision storage.** No database, queue or storage integration is created
-  or connected; the operator or the integration supplies `DATABASE_URL` and
-  `DATABASE_URL_UNPOOLED`.
+- **Provision storage unasked.** Only `--provision` attaches anything, and only
+  the Marketplace rows the Camp chooses (the relay's Upstash cache). A storage
+  integration's variables (`DATABASE_*`, `POSTGRES_*`, `REDIS_*`, `KV_*`,
+  `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) are written by the
+  integration, never set here, and so is any `INFISICAL_*` name other than the
+  config service's five coordinates (`CONFIG_SERVICE_COORDINATES`).
+- **Override the Yard.** A `--set` naming a setting the chosen bindings already
+  set is refused; the Yard is changed instead.
 - **Create the project, or reach production, unasked.**
 - **Schedule anything.** The Bindle declares the repair schedule; this verb
   does not create a platform schedule or an external trigger for it.
@@ -395,8 +409,9 @@ The dry run prints the plan, and `--json` carries it as `data.plan`: a
 into `src/_generated/vercel_git_deployment_pb.ts`) with its requests formed by
 the functions the client sends with. `data-models/vercel_git_deployment.cue`
 constrains the record (target is `preview` or `production` and always present;
-no setting whose name or value looks like a credential; request paths under the
-API), and its `fixtures/vercel_git_deployment/valid` files are the command's own
+the placement and the Yard's binding rows always present; no setting whose name
+or value looks like a credential; request paths under the API; provisioning
+commands are `vercel integration …` with no token argument), and its `fixtures/vercel_git_deployment/valid` files are the command's own
 dry-run output for the real relay: `test/ci-relay-deploy.test.ts` compares the
 two, so the record the schema vets is the record the command prints. A real run
 prints the provider's outputs (deployment id and URL, target, scope, and which
@@ -406,12 +421,12 @@ change.**
 
 ```text
 Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.
-Deploy hobo-ci-relay (queue hobo-ci, schedule hobo-ci-repair, api relay, secret secrets, data state)
+Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)
   to Vercel project hobo-ci, scope team_hobo, target preview
   from github example/hobo@main
   into a project that must already exist (pass --create-project to create it)
 Settings set for preview first (non-secret): HOBO_CI_PUBLIC_URL=https://ci.example.test
-Not set by this command (the operator or a storage integration holds them): CRON_SECRET, DATABASE_URL, …
+Not set by this command (the operator or a storage integration holds them): CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256, …
 Requests to https://api.vercel.com:
   1. GET /v10/projects/hobo-ci/env?teamId=team_hobo
      always: read what the project holds, before any write

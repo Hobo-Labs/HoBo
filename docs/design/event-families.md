@@ -77,7 +77,7 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `pack.*` | `pack.Imported` |
 | `pipeline.*` | `pipeline.Triggered`, `pipeline.Completed` |
 | `policy.*` | `policy.Decided`, `policy.ObligationCreated`, `policy.ObligationSatisfied`, `policy.WaiverRequested`, `policy.WaiverApproved`, `policy.WaiverExpired`, `policy.WaiverRevoked` |
-| `pricing.*` | `pricing.RateCardPublished`, `pricing.ProviderAgreementObserved`, `pricing.GrantObserved`, `pricing.CommitmentObserved`, `pricing.QuoteCreated`, `pricing.ReservationCreated`, `pricing.ReservationConfirmed`, `pricing.ReservationReleased`, `pricing.ReservationExpired`, `pricing.ActualChargeObserved`, `pricing.ReconciliationRecorded` |
+| `pricing.*` | `pricing.RateCardPublished`, `pricing.ProviderAgreementObserved`, `pricing.GrantObserved`, `pricing.CommitmentObserved`, `pricing.QuoteCreated`, `pricing.ReservationCreated`, `pricing.ReservationConfirmed`, `pricing.ReservationReleased`, `pricing.ReservationExpired`, `pricing.ActualChargeObserved`, `pricing.ReconciliationRecorded`, `pricing.CatalogRegistered` |
 | `projection.*` | `projection.Declared`, `projection.Lagged` |
 | `provider.*` | `provider.Registered`, `provider.Approved`, `provider.Deprecated` |
 | `messaging.*` | `messaging.topic.created`, `messaging.subscription.created`, `messaging.dead_lettered`, `messaging.delivery.permanent_failure` (+ 6 more lowercase literals in `@hobo/core` ports/messaging.ts — naming diverges from `aggregate.PastTenseFact`; rename tracked in GAPS.md REM) |

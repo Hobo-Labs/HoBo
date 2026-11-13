@@ -10,7 +10,7 @@ const workflow = parse(
 );
 const imageJob = workflow.jobs["ci-runner-image"];
 const mainGate = workflow.jobs["main-gate"];
-const mainFinish = workflow.jobs["main_gate_finish"];
+const mainFinish = workflow.jobs.main_gate_finish;
 const imageInputPrefixes = [
 	"mise.toml",
 	"mise.lock",
@@ -48,6 +48,19 @@ describe("Main full gate image dependency", () => {
 		expect(imageJob.if).toContain("github.event_name != 'push'");
 		expect(imageJob.if).toContain("github.event.commits[0] == null");
 		expect(imageJob.if).toContain("github.event.forced == true");
+	});
+
+	it("builds when neither the box nor GHCR has the image", () => {
+		// --materialize-only exits 2 on a miss; the build steps run only if
+		// that does not fail the job.
+		const materialize = imageJob.steps.find(
+			(step) => step.id === "materialize",
+		);
+		expect(materialize["continue-on-error"]).toBe(true);
+		const build = imageJob.steps.find(
+			(step) => step.id === "ci_runner_image_build",
+		);
+		expect(build.if).toContain("steps.materialize.outcome != 'success'");
 	});
 
 	it("covers every ciRunnerImageVersion input", () => {

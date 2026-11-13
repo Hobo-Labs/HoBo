@@ -58,7 +58,7 @@ committed delivery, JIT authorization and single-use claims. This is local provi
 Relay MCP provider boundary: `mcp-boundary.pact.json` is exercised by
 `mcp-boundary.provider.test.ts` over real loopback HTTP, through the shared
 HTTP handler and Node adapter, against `SqliteCiStore` with one account and
-one queued job. It is a hand-authored consumer expectation of 16 interactions
+one queued job. It is a hand-authored consumer expectation of 18 interactions
 in the sessionless JSON form every host serves; the provider may answer more
 than a consumer names, so bodies are matched as subsets. A cursor's value is
 not pinned, since it is a token issued per account; the provider test checks

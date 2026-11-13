@@ -1,10 +1,23 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import pact from "../contracts/ci-cli.pact.json";
 import { ciRepositoryFromRemote, createCiCommand } from "../src/ci-command.js";
+
+/** The contract fixture of what a relay answers `GET /v1/mesh/nodes` with. */
+const MESH_REPORTS_FIXTURE = new URL(
+	"../../ci-gh-actions/data-models/fixtures/valid/mesh-node-reports.json",
+	import.meta.url,
+);
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -253,13 +266,14 @@ describe("hobo ci setup", () => {
 		expect(result.exitCode).toBe(0);
 		expect(calls).toBe(3);
 	});
-	it("reports connected status through the connected policy Pact interaction", async () => {
-		const interaction = pact.interactions[3];
-		if (!interaction) throw new Error("missing connected policy interaction");
+	it("reports connected status and the relay's mesh through their Pact interactions", async () => {
+		// The account's policy, then the relay's mesh nodes: two reads, in order.
+		const interactions = [pact.interactions[3], pact.interactions[4]];
 		let calls = 0;
 		const { cli, home } = await fixture({
 			fetch: async (url, init) => {
-				calls++;
+				const interaction = interactions[calls++];
+				if (!interaction) throw new Error("Unexpected request");
 				expect(String(url)).toBe(
 					`https://relay.example${interaction.request.path}`,
 				);
@@ -281,8 +295,163 @@ describe("hobo ci setup", () => {
 			connected: true,
 			isolated: true,
 			installationId: 42,
+			// A relay with no mesh says so; that is part of the status, not an error.
+			mesh: { mesh: "not-configured", nodes: [] },
 		});
-		expect(calls).toBe(1);
+		expect(calls).toBe(2);
+	});
+	it("lists the relay mesh's nodes as a table under the connection status", async () => {
+		const reports = await readFile(MESH_REPORTS_FIXTURE, "utf8");
+		const { cli, home } = await fixture({
+			fetch: async (url) =>
+				new URL(String(url)).pathname === "/v1/mesh/nodes"
+					? new Response(reports, {
+							headers: { "content-type": "application/json" },
+						})
+					: Response.json(pact.interactions[3]?.response.body),
+		});
+		const result = await cli.run(
+			["ci", "status", "--relay", "https://relay.example"],
+			{ cwd: home },
+		);
+		expect(result.exitCode).toBe(0);
+		const lines = result.stdout.split("\n").map((line) => line.trimEnd());
+		const start = lines.findIndex((line) => line.startsWith("CI connected"));
+		expect(lines.slice(start, start + 7)).toEqual([
+			"CI connected for example/project at https://relay.example.",
+			"Mesh: 2 node(s) as of 2026-11-10T02:40:05.000Z",
+			"NODE        STATE  SLOTS  MEMORY   DISK    RELIABILITY              TRUST",
+			"box-a       live   2/4    12.0 GB  200 GB  0.88 (10 ok, 2 dropped)  trusted",
+			// A node that is gone offers nothing: its last figures are not shown.
+			"relay-host  lost   -      -        -       -                        unverified",
+			"Capacity: 2/4 slots free on 1 healthy node(s); 12.0 GB memory and 200 GB disk free.",
+			"Trust: trusted = key in the mesh's trusted set; unverified = signed by an unlisted key, or unsigned; invalid = signature failed, never ranked.",
+		]);
+	});
+	it("says when the relay listed only some of the mesh's nodes", async () => {
+		const reports = JSON.parse(await readFile(MESH_REPORTS_FIXTURE, "utf8"));
+		const { cli, home } = await fixture({
+			fetch: async (url) =>
+				new URL(String(url)).pathname === "/v1/mesh/nodes"
+					? // A newer relay's field this CLI does not know is read past.
+						Response.json({ ...reports, truncated: true, newerField: 1 })
+					: Response.json(pact.interactions[3]?.response.body),
+		});
+		const result = await cli.run(
+			["ci", "status", "--relay", "https://relay.example"],
+			{ cwd: home },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain(
+			"More nodes are known than are listed; 2 shown.",
+		);
+	});
+	it("keeps the connection status when the relay is too old to list its mesh", async () => {
+		const { cli, home } = await fixture({
+			fetch: async (url) =>
+				new URL(String(url)).pathname === "/v1/mesh/nodes"
+					? Response.json({ error: "not found" }, { status: 404 })
+					: Response.json(pact.interactions[3]?.response.body),
+		});
+		const result = await cli.run(
+			["ci", "status", "--relay", "https://relay.example", "--json"],
+			{ cwd: home },
+		);
+		expect(result.exitCode).toBe(0);
+		const { data } = JSON.parse(result.stdout);
+		expect(data).toMatchObject({ connected: true });
+		expect(data.mesh).toBeUndefined();
+	});
+	it("answers status offline from this machine's own report when no relay can be asked", async () => {
+		const reports = await readFile(MESH_REPORTS_FIXTURE, "utf8");
+		const local = async (env: NodeJS.ProcessEnv, args: string[] = []) => {
+			const f = await fixture({ env });
+			// Where a local runner keeps its state: .hobo/ci-local in the repository.
+			await mkdir(join(f.home, ".hobo", "ci-local"), { recursive: true });
+			await writeFile(
+				join(f.home, ".hobo", "ci-local", "mesh-node.json"),
+				reports,
+			);
+			return {
+				...f,
+				result: await f.cli.run(["ci", "status", ...args], { cwd: f.home }),
+			};
+		};
+		// No relay selected at all.
+		const unselected = await local({});
+		expect(unselected.result.exitCode).toBe(0);
+		expect(unselected.result.stdout).toContain("No CI relay is selected.");
+		expect(unselected.result.stdout).toMatch(/^box-a\s+live\s+2\/4/m);
+		expect(unselected.requests).toEqual([]);
+		// A relay, but no credential to ask it with.
+		const unauthenticated = await local({ HOBO_CI_ACCOUNT_TOKEN: undefined }, [
+			"--relay",
+			"https://relay.example",
+			"--json",
+		]);
+		expect(unauthenticated.result.exitCode).toBe(0);
+		expect(JSON.parse(unauthenticated.result.stdout).data).toMatchObject({
+			source: "local",
+			mesh: {
+				mesh: "configured",
+				nodes: [{ id: "box-a" }, { id: "relay-host" }],
+			},
+		});
+		expect(unauthenticated.requests).toEqual([]);
+		// A relay that cannot be reached.
+		const f = await fixture({
+			fetch: async () => {
+				throw new TypeError("fetch failed");
+			},
+		});
+		await mkdir(join(f.home, ".hobo", "ci-local"), { recursive: true });
+		await writeFile(
+			join(f.home, ".hobo", "ci-local", "mesh-node.json"),
+			reports,
+		);
+		const unreachable = await f.cli.run(
+			["ci", "status", "--relay", "https://relay.example"],
+			{ cwd: f.home },
+		);
+		expect(unreachable.exitCode).toBe(0);
+		expect(unreachable.stdout).toContain("The CI relay could not be reached.");
+		expect(unreachable.stdout).toMatch(/^relay-host\s+lost/m);
+	});
+	it("answers as before when offline and this machine keeps no report", async () => {
+		const none = await fixture();
+		const unselected = await none.cli.run(["ci", "status"], { cwd: none.home });
+		expect(unselected.exitCode).toBe(2);
+		expect(unselected.stdout).toContain("Select your CI relay");
+		const noToken = await fixture({
+			env: { HOBO_CI_ACCOUNT_TOKEN: undefined },
+		});
+		const unauthenticated = await noToken.cli.run(
+			["ci", "status", "--relay", "https://relay.example", "--json"],
+			{ cwd: noToken.home },
+		);
+		expect(unauthenticated.exitCode).not.toBe(0);
+		expect(unauthenticated.stdout).toContain("HOBO_CI_AUTH_REQUIRED");
+		// A report that is not one is no report.
+		await mkdir(join(none.home, ".hobo", "ci-local"), { recursive: true });
+		await writeFile(
+			join(none.home, ".hobo", "ci-local", "mesh-node.json"),
+			'{"mesh":',
+		);
+		expect(
+			(await none.cli.run(["ci", "status"], { cwd: none.home })).exitCode,
+		).toBe(2);
+		// And an offline report never stands in for a command that changes something.
+		const enabling = await fixture();
+		await mkdir(join(enabling.home, ".hobo", "ci-local"), { recursive: true });
+		await writeFile(
+			join(enabling.home, ".hobo", "ci-local", "mesh-node.json"),
+			await readFile(MESH_REPORTS_FIXTURE, "utf8"),
+		);
+		const enable = await enabling.cli.run(["ci", "enable", ...consent], {
+			cwd: enabling.home,
+		});
+		expect(enable.exitCode).toBe(2);
+		expect(enable.stdout).toContain("Select your CI relay");
 	});
 	it("requires an explicit remote choice when several exist without a terminal", async () => {
 		const { cli, requests, home } = await fixture({

@@ -69,7 +69,8 @@ next node. When a node leaves, only the jobs it was first for move.
 
 The same check covers disk and platform (operating system and architecture)
 when a node reports them and a job asks for them. Today the worker reports
-memory and platform, and sizes jobs by memory only. Anything not reported is
+memory, disk (measured on the filesystem of its runner work directory) and
+platform, and sizes jobs by memory only. Anything not reported is
 unknown, not zero: a node on an older version that advertises only slots is
 ranked by slots alone, and a job with no stated size fits any node with a slot.
 A node that cannot take a job says which thing it lacks
@@ -77,8 +78,10 @@ A node that cannot take a job says which thing it lacks
 slot".
 
 **What nodes know about each other is advice.** A node advertises its id, free
-slots, free memory, platform, health, labels and an expiry. A missing or expired advertisement removes
-that node from the ordering and nothing else. A node that knows of no one ranks
+slots, free memory and disk, platform, health, labels and an expiry, and signs
+it with its own identity key ([Trust](#trust-whose-advertisement-is-this)). A
+missing or expired advertisement removes that node from the ordering and
+nothing else; so does one whose signature fails. A node that knows of no one ranks
 itself first and starts immediately, which is exactly what a single box does
 today. The mesh degrades to independent nodes, never to a stopped queue.
 
@@ -123,34 +126,50 @@ way:
 
 | Piece | In this topology | Needs |
 |---|---|---|
-| Lease journal | SQLite file on the box (`HOBO_CI_STORE` unset; the default) | Local disk |
+| Lease journal | SQLite file on the box (the only store) | Local disk |
 | Finding jobs | The worker polls GitHub (`pull` admission; the default with SQLite) | GitHub |
 | Starting runners | The worker mints just-in-time runners with its own App credentials | GitHub |
 | Sharing a queue between workers | Relay mesh | NATS, or nothing: ranking alone still works |
 | Hosted relay on Vercel | Not involved | — |
 
-The settings that would tie a worker to the hosted database are
-`HOBO_CI_STORE=postgres` and `HOBO_CI_JOB_ADMISSION=push`. Neither is a
-default, and a mesh needs neither; the mesh gate applies only to `pull`.
+Routing is not in that path. Before a run's jobs are queued, the routing job
+may ask the hosted relay for a fleet verdict
+([ADR-0180](./adr/fleet-verdict.md#adr-0180)); a relay that does not answer
+changes nothing, and a job already queued never touches it.
+
+The one setting that would tie a worker to the hosted relay is
+`HOBO_CI_JOB_ADMISSION=push`. It is not a default, and a mesh does not need
+it; the mesh gate applies only to `pull`. The shared Postgres store
+(`HOBO_CI_STORE=postgres`) was removed in phase 7 of
+[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179): the hosted relay keeps
+no database for a worker to share.
 
 ## The hosted relay stays; the mesh does not depend on it
 
 **Decision:** the hosted relay keeps running. The PWA and the account API
 behind `hobo ci` depend on it. What changes is that the path from a queued job
-to a running runner no longer goes through it, and that its database moves off
-Neon to a self-hosted Postgres.
+to a running runner no longer goes through it, and that the hosted relay keeps
+no durable state of its own
+([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179); design in
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md)). An
+earlier version of this section moved its database off Neon to a self-hosted
+Postgres; that plan is superseded.
 
 What nodes must agree on lives in JetStream; what one node needs stays on that
-node; what the hosted relay serves stays in its Postgres.
+node; what the hosted relay serves comes from its config service, from GitHub,
+and from a cache whose loss it tolerates.
 
 | State | Where | Why there |
 |---|---|---|
 | Who has which job | `<namespace>-mesh-claims`, an atomic create per job, aged out | Nodes must agree, without a database |
-| Which nodes exist and what they can take | `<namespace>-mesh-nodes`, one advertisement per node with total and free slots, aged out | Same |
-| The configuration nodes share (offers, connections, policy) | `<namespace>-mesh-config`, one key with history; replaced only by naming the current revision | Same; lets a new box start from a NATS address |
-| Lease journal and budget ledger | Each node's SQLite file (ADR-0135: one partition, one writer) | One writer |
+| Which nodes exist and what they can take | `<namespace>-mesh-nodes`, one signed advertisement per node with total and free slots, aged out | Same |
+| The configuration nodes share (offers, connections, policy) | `<namespace>-mesh-config`, key `configuration`, with history; replaced only by naming the current revision | Same; lets a new box start from a NATS address |
+| Whose advertisements the mesh trusts | `<namespace>-mesh-config`, key `trust`: the trusted public keys and whether trust is required; same history and revision rule | Nodes must agree on it; it holds public keys only |
+| Lease journal, budget ledger and the node's reliability record | Each node's SQLite file (ADR-0135: one partition, one writer) | One writer |
+| A node's identity key (Ed25519, private half) | A file beside that node's journal, mode `0600`, made on first start | The private key never leaves the node |
 | GitHub App credentials | Files on each node (`HOBO_CI_GITHUB_APP_ID`, `…_PRIVATE_KEY_FILE`) | Private keys are never written to NATS |
-| Accounts, App registration, sessions, the webhook inbox | The hosted relay's Postgres | What the PWA and the account API read |
+| Accounts, policy and the hosted relay's App credentials | The hosted relay's config service, read-only at runtime ([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)) | What the PWA and the account API read; written by `hobo ci`, not over HTTP |
+| The hosted relay's sessions, in-flight leases and webhook intake | Encrypted cookies, a cache it may lose, and a Vercel Queue | Rebuilt from GitHub and Vercel by deterministic names; see [Hosted CI Relay Without Durable State](./hosted-relay-stateless.md) |
 
 **Configuration.** A node with its own file runs that file and is never
 overwritten. The first node to connect publishes its configuration if the mesh
@@ -160,24 +179,20 @@ right. A node with no configuration of its own reads the mesh's at start, so
 adding a box takes a NATS address and App credentials. A changed configuration
 takes effect at the next start.
 
-**The hosted relay's database.** The relay speaks plain Postgres through
-`DATABASE_URL` and creates its own tables; nothing in its store is specific to
-Neon. Against a self-hosted PostgreSQL 16.15 the store's 68 real-database tests
-pass, and the relay starts, creates its 18 tables and reports that it is
-waiting for the GitHub App. `packages/ci-vercel/deploy/postgres/compose.yaml`
-runs one. Two things still tie a production relay to Neon, and are the work
-that remains:
-
-- Its production start-up reads credentials from a runtime-config broker whose
-  Neon address is fixed in `packages/ci-vercel/src/entry.ts`. Setting the App
-  credentials or the bootstrap token directly in the relay's environment
-  bypasses the broker today; removing the broker is a code change.
-- Its schema is 26 `CREATE TABLE IF NOT EXISTS` statements inside the store. The
-  plan is to make that schema a Drizzle definition with generated migrations
-  (`packages/adapters/adapter-drizzle` is the repository's Drizzle home), so a
-  self-hosted database is created and upgraded the same way everywhere.
-
-Neither is done in this change.
+**The hosted relay's database: superseded.** The plan recorded here was to
+keep the relay on plain Postgres, move it to a self-hosted server, replace the
+Neon runtime-config broker and turn its embedded schema into a Drizzle
+definition with migrations. [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)
+replaces that plan: the hosted relay keeps no database at all. Its config and
+secrets move to a separate config service it reads with its Vercel OIDC token
+(which also removes the broker), its in-flight job state moves to a
+Redis-protocol cache with TTL and compare-and-set, its webhook intake and
+per-lease steps move to Vercel Queues, and GitHub remains the record of every
+job. The PostgreSQL store, the relay database fleet, store selection and the
+Drizzle relay schema were removed in phase 7 of
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md#delivery-plan);
+the relay runs as [`@hobo/ci-vercel`](../../packages/ci-vercel/README.md#the-stateless-relay)
+describes.
 
 **A shared budget across nodes** is not solved either: each node meters its own
 spend, so priced offers belong on one node until per-node allowances exist
@@ -193,13 +208,258 @@ the changes, so every node also runs a monitor on its 10-second beat:
 | `hobo_ci_mesh_node_joined` | A node started advertising |
 | `hobo_ci_mesh_node_lost` | A node's advertisement aged out: it stopped, crashed or was cut off |
 | `hobo_ci_mesh_node_unhealthy`, `…_recovered` | A node is draining or under pressure, or is back |
+| `hobo_ci_mesh_node_invalid` | A reader rejects an advertisement: its signature failed, it claims a node id bound to another key, or it asks to be believed further ahead than any node advertises. It is not ranked or counted. Once per node id for as long as it keeps failing |
+| `hobo_ci_mesh_trust_changed` | The mesh's trusted-key set changed, with its revision and size |
 | `hobo_ci_mesh_capacity_exhausted`, `…_restored` | No healthy node has a free slot: a queued job waits for a slot, not a turn |
-| `hobo_ci_mesh_capacity` | Live, healthy and available nodes, total and free slots, free memory across the mesh and the most on any one node (the largest job that fits anywhere); on every change and once a minute |
+| `hobo_ci_mesh_capacity` | Live, healthy and available fleet nodes, total and free slots, free memory and disk across them and the most memory on any one node (the largest job that fits anywhere); on every change and once a minute. Relay hosts and machines running jobs for one repository are not fleet capacity, and with `requireTrusted` neither are untrusted nodes |
 | `hobo_ci_mesh_job_unfit` | This node has a free slot but cannot take a job, and what it lacks: memory, disk or platform. Once per job and reason |
 
 Only the live node with the lowest id reports changes about others, so one fact
 is reported once; if that node dies, the next takes over on its following
 reading and reports the loss.
+
+## Reporting: one list of every node
+
+The events above say what changed. The list says what is: every node, whether
+it is there, what it could take and how far its word is trusted. It is one
+record (`MeshNodeReport` in `packages/ci-gh-actions/data-models/mesh.proto`,
+constrained in CUE) and one function behind every place it is shown, so the
+places cannot disagree.
+
+**What a report holds.**
+
+| About | Fields |
+|---|---|
+| Availability | `state`: `live`, `unhealthy` (advertising, but draining or under pressure) or `lost` (its last advertisement expired); `since` when it entered that state; when the board last received its advertisement; until when that advertisement asked to be believed |
+| Capacity | Total and free slots, free memory, free disk, platform (operating system and architecture), labels |
+| Trust | `trusted`, `unverified` or `invalid`, and the public key it signed with; see [Trust](#trust-whose-advertisement-is-this) |
+| Reliability | The share of recent jobs delivered, and the decayed counts of delivered and dropped jobs behind it |
+
+A field a node does not send stays unknown in its report. It is never shown as
+zero. A capacity summary accompanies the list: what the live fleet nodes the
+reader does not reject add up to (with `requireTrusted`, only trusted ones).
+Relay hosts and machines running jobs for one repository are listed but are
+not fleet capacity. One answer lists at most 256 nodes, nodes that are there
+before lost ones, and says `truncated` when it left some out; the summary still
+covers them all. A reader takes in at most 1024 advertisements in one pass of
+the board and logs `hobo_ci_mesh_nodes_capped` (at most once a minute) when it
+stops there.
+
+**Who reports.** Every node, whatever else it does:
+
+| Node | What it advertises |
+|---|---|
+| A box worker | Its slots, memory, disk, platform and labels, and its reliability |
+| A developer's or agent's machine running jobs for one repository (`local:runner`) | One slot under `hobo-local-host`, free while its runner waits for a job; memory and disk; its reliability (the share of sessions whose runner ran to its own exit). With no `HOBO_CI_NATS_URL` it advertises nowhere and still writes its own report to `mesh-node.json` in its state directory |
+| A relay host | No slots and no labels: it takes no jobs. Its health is its readiness probe. It is on the list so the relay's availability is seen beside the workers' |
+
+A node that stops advertising does not vanish from the list. Its advertisement
+expires and the node is `lost` since that moment. A reader that keeps running
+(a relay host) goes on listing it as `lost` for an hour after the board has
+forgotten it.
+
+**Where to read it.** All three are the same function over the same board:
+
+| Surface | How |
+|---|---|
+| HTTP | `GET /v1/mesh/nodes` on the relay, with an account credential holding `policy:read`, as for the account API's other reads |
+| MCP | The relay's `list_mesh_nodes` tool and `hobo-ci://mesh/nodes` resource, same scope |
+| CLI | `hobo ci status` prints a table: node, state, free/total slots, memory, disk, reliability, trust |
+
+A relay with no mesh configured (the hosted relay on Vercel, for one) answers
+`mesh: "not-configured"` with an empty list. That is an answer, not an error.
+A relay whose board cannot be read answers `mesh: "unreachable"` with its last
+reading. `hobo ci status` with no relay to ask (none selected, no credential,
+or no network) shows the report the local runner keeps on this machine.
+
+Fleet nodes and relay hosts belong to the relay, not to one account: any
+account credential with `policy:read` on that relay sees them, their capacity
+and their public keys. A machine running jobs for one repository is somebody's
+own computer, and its id is derived from its host name. It advertises the
+repository it serves (signed), and is shown in full only to the account whose
+configuration connects that repository. Every other account sees it under a
+stable opaque id (`local-` and 16 hex digits) with its state, slots, trust and
+reliability, and without its platform, key or repository. A local runner that
+names no repository is opaque to everyone. None of it holds a secret.
+
+## Trust: whose advertisement is this?
+
+Before signatures, anything written to the board was believed. A node could
+not tell another node's advertisement from one written by anybody with access
+to the bucket.
+
+**Each node has an identity.** On first start a node makes an Ed25519 key
+pair. The private key is written beside the node's SQLite journal with mode
+`0600` and never leaves that file: it is not advertised, logged or sent. The
+public key travels with every advertisement.
+
+**Each advertisement is signed.** The signature covers a fixed encoding of
+what the advertisement says: the node id, the expiry, every figure a reader
+ranks by, and the signing key itself, led by a context string so the
+signature means nothing anywhere else. Change any of it and the signature no
+longer verifies. So an advertisement cannot be moved to another node id, and
+cannot be replayed past its expiry: the expiry it was signed with is the one
+a reader goes by, and it cannot be extended without the key.
+
+**Each reader decides how far to trust it.** The trust level is never a field
+of the advertisement. A node that states its own is not believed.
+
+| Level | When | Ranked for jobs |
+|---|---|---|
+| `trusted` | The signature verifies, and the key is in an entry bound to this node id; or no entry binds this id and the key is in an unbound entry | Yes |
+| `unverified` | No entry binds this id, and the signature verifies with a key the set does not list for any id (or lists only for another id); or there is no signature (a node on an older version) | Yes, as before signatures; no once the mesh sets `requireTrusted` |
+| `invalid` | A signature is present and does not verify; or an entry binds this id and the advertisement is signed with another key, or not signed at all; or it asks to be believed more than five minutes and a minute of clock skew ahead | Never. It is reported (`hobo_ci_mesh_node_invalid`) and listed, and counts towards nothing |
+
+**Binding a key to a node id is the normal case.** Once any entry names a
+node id, only the keys bound to that id can make it trusted. An unbound entry
+does not apply to it, and an advertisement under that id with any other key
+is `invalid`: it claims a node whose key the operator has named. An unbound
+entry trusts its key under every id nobody has bound, so it is for keys whose
+holder the operator trusts with any id. `mesh:trust add` therefore refuses an
+unbound entry unless `--any-node` is passed.
+
+**A local runner's key must only ever be bound.** A machine running jobs for
+one repository keeps its key at `.hobo/ci-local/mesh-node.key`, inside that
+repository's checkout. Every job that runs on that machine can read it. List
+it with `--node <its id>` and nothing else: then a job that steals it can sign
+only as that one machine, which is no more than it already was. Listed with
+`--any-node`, a stolen key could claim any unbound id.
+
+**Keys on disk.** A node refuses to start with its key in a directory group or
+others can write (anyone who can write there can swap the key). A key file
+others can read is tightened to `0600`; if that fails, the key is refused. A key
+already private is never touched, so a key on a read-only filesystem loads.
+
+**Trust settings a node cannot read.** A field a newer version added to the
+settings is ignored. Settings that do not parse at all are never half-applied:
+the node keeps the last settings it read, and if it has never read any it
+fails closed, trusting only its own key and ranking only trusted nodes, until
+it reads settings it understands (`hobo_ci_mesh_trust_unreadable` with
+`failedClosed`).
+
+The trusted set is the mesh's own configuration: key `trust` in
+`<namespace>-mesh-config`, public keys only, replaced only by naming its
+current revision. A mesh with no set has each node trust only itself, so
+every other node is `unverified` and is ranked as it always was. Nothing
+changes for a mesh until its operator lists keys. `mesh:trust` (in
+`@hobo/ci-gh-actions`) lists the keys on the board, adds and removes them,
+and turns `requireTrusted` on or off; nodes pick a change up within a beat.
+
+**What the signature proves, and what it does not.**
+
+- It proves the advertisement was written by whoever holds that private key,
+  for that node id, to be believed until that time, and was not altered.
+- It does not say what software the node runs. There is no attestation: a
+  node with a listed key that runs modified code is still `trusted`.
+- It does not make the node's figures true. Free slots, memory, disk and
+  reliability are the node's own word, now attributable to a key.
+- It does not prove the key belongs to a machine the operator knows. Listing
+  the key is the operator saying so.
+- It does not protect the key. Anyone who can read the key file can sign as
+  that node, and there is no revocation other than taking the key off the list.
+
+**What trust decides, and what it does not.** A node's trust level decides
+whether *other nodes defer to it* when ranking. It does not decide whether
+the node may run jobs: that is GitHub App credentials and each node's own
+admission, as before. A forged advertisement could only ever cost a job a
+step of delay, and an `invalid` one now costs nothing.
+
+**Limits that remain.**
+
+- Whoever can write the config bucket decides whom the mesh trusts. The NATS
+  accounts and permissions on that bucket are the root of this trust; the
+  mesh does not add one of its own.
+- Anyone who can write the nodes bucket can overwrite a node's entry. Under a
+  bound id the overwrite is `invalid`; under an unbound id it is `unverified`
+  (or, signed with a key listed unbound, `trusted` under that key's holder's
+  responsibility). It is never that node, but the node's real advertisement is
+  gone until its next beat (10 s). Restricting each node to its own key of the
+  bucket closes this; the mesh does not require it.
+- An advertisement replayed unchanged is believed until the expiry it was
+  signed with, at most 45 seconds as nodes advertise. A reader rejects any
+  advertisement asking to be believed more than six minutes ahead (five, plus
+  a minute of clock skew), so an old signed advertisement cannot be kept alive
+  by giving it a far expiry when it was made.
+- Without `requireTrusted`, an unsigned or unlisted node is still ranked.
+  That is what keeps a mesh of mixed versions working, and it means trust is
+  advisory until the operator turns the requirement on. With it on and no
+  keys listed, every node ranks only itself.
+- A node that loses its key file gets a new identity and must be listed again.
+
+## Routing asks the relay
+
+The routing job (`scripts/ci/route-runner.mts`) chooses the fleet, a local box
+or GitHub-hosted before a run's jobs are queued. It reads GitHub's queue,
+which says what happened to jobs already queued; it cannot see a fleet that is
+full or gone until jobs have waited on it.
+
+So it asks the relay ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). A relay
+with a view of the fleet reports, per repository, the labels new work should
+stay off; the hosted relay keeps each report until it lapses and serves it at
+`GET /v1/fleet/verdicts/{owner}/{repo}`. The routing job reads the relay's
+origin from `.hobo/ci.json` and asks on every pass of its decision, with a
+three-second limit.
+
+| The relay | What routing does |
+|---|---|
+| Names the run's label (`no-node`, `no-capacity`) | That backend is refusing jobs, at once, without waiting for queue evidence |
+| Answers and does not name it | Nothing new. The queue still decides: a verdict never makes a backend look available |
+| Is not named, does not answer in time, or answers something that is not a verdict | Nothing. The queue is read exactly as before, and the job's log says the relay gave no verdict |
+
+Every decision leaves one line a monitor reads from the job's check run:
+
+```text
+::notice title=hobo-ci-route::{"v":1,"workflow":"<file>","tier":"fleet|local|github","runner":"<label>","relay":"verdict|unanswered|unasked","why":"…","refusedBy":"relay|queue|none"}
+```
+
+`why` is empty for a verdict, the reason for an unanswered relay, and for an
+unasked one `no-relay`, `pinned`, `attested`, or `queue-unread` (the queue
+could not be read, so the relay was never reached and the run went to
+GitHub-hosted). `refusedBy` names what took the fleet out of the decision.
+When the routing step cannot run its script at all it says so in a
+`hobo-ci-route-fallback` warning and falls back as before.
+
+**The main gate follows the route, and asks again before its shards.** On a
+push to `main`, a schedule or a dispatch, `main-gate-plan` and `main-gate` need
+the route job and ask for its runner like every routed job. After its full
+checkout the plan job asks again (`reroute`, the same action with
+`attest: "false"` and `include-own-run: "true"`), but only for a run the route
+job kept on the fleet: a run already sent to GitHub-hosted runners is not
+brought back to a fleet whose deps job was skipped. The second ask reads this
+run's own jobs too, so a plan job that itself waited past the limit (444 s in
+finding 142) sends the shards elsewhere. The shards and the finish job ask for
+`needs.main-gate-plan.outputs.shard_runner`, else the run's route, else the
+trunk label; a second ask that cannot decide outputs nothing, so the run's
+route stands. `ci-deps-image` runs on these events only for a run kept on the
+fleet (or one the route job could not route), and the shards accept it
+skipped. A dispatch can pin its own run with the `route` input, leaving
+`HOBO_CI_ROUTE` untouched. Between the route job and the pickup of the plan
+and deps jobs, a fleet that becomes blocked still holds those two jobs; the
+monitor's stall signal reports it.
+
+The plan reads no capacity record: `scripts/ci/load-fleet-capacity.mts` is
+gone (its repository-variable read answered 403 to a job token, finding 146).
+`plan-main-workspace-shards.mts` sizes shards from `MAIN_WORKSPACE_PARALLEL_CAP`
+when set, else 4, a tuning setting of the script.
+
+Nothing about the fleet reaches a workflow any other way. `scripts/lint-actions.ts`
+rejects any workflow or action that reads a `vars.HOBO_CI_FLEET_*` variable or
+declares an input or environment variable named `fleet-state`,
+`fleet-capacity`, `fleet-routes` or `HOBO_CI_FLEET_STATE`, `…_CAPACITY`,
+`…_ROUTES`.
+
+A label is blocked when no live healthy node serves it, or when none can admit
+a job for a reason other than its own running jobs and no other has a free
+slot. A label that is only busy is not blocked. No count of nodes, slots or
+memory leaves the relay.
+
+**The reporter.** A box relay evaluates the verdict and reports it, signed
+with its node key ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). A relay that
+receives no report answers that nothing is blocked. The older snapshot in the
+repository variable `HOBO_CI_FLEET_STATE`, and the capacity record in
+`HOBO_CI_FLEET_CAPACITY`, are no longer written: no worker publishes them and
+no workflow reads them. Delete the two variables from the repository once the
+workers run this release.
 
 ## Reliability: a node that drops jobs gets fewer
 
@@ -251,13 +511,18 @@ as much. Nothing is reset by hand and nothing is held against a node forever.
   node one step later, as any failed first choice does.
 - **Old deliveries fade too**, so a long good record does not hide a node that
   has just started failing.
-- **A restart clears the record.** It is kept in the worker's memory. That is
-  the fast path after a repair: fix the box, restart the worker, and it is
-  trusted again at once. It is also a gap: a worker that crashes and restarts
-  in a loop starts each time with a clean record. A node that is down does not
-  advertise and is not ranked; one that is up between crashes is.
+- **A restart keeps the record.** It is written to the node's SQLite journal
+  each time a job is counted, and read back at start, decayed by the time the
+  node was down. A worker that crashes and restarts in a loop no longer
+  starts each time with a clean record. After a repair, set
+  `HOBO_CI_MESH_RELIABILITY_RESET` to a token (`1`, or a date) to clear it: the
+  record is cleared once per token, and the token is kept with the record, so a
+  variable left set does not clear it again at every restart. A local runner
+  takes the same variable. Left alone it recovers on the schedule above.
 - **The number is the node's own word**, like its free slots: advice other
-  nodes rank by, never a lock. A node cannot observe another's drops.
+  nodes rank by, never a lock. A node cannot observe another's drops. It is
+  advertised with the counts behind it, and signed, so it is attributable to
+  a key; it is not checked by anyone.
 
 `hobo_ci_mesh_job_dropped` reports each drop with its reason and the score it
 left, and `hobo_ci_mesh_reliability` reports the score each time it has moved
@@ -312,13 +577,17 @@ interface.
 | 2 | Board and claim ports, a coordinator that falls back to ranking when they fail, an in-memory adapter, and a NATS key-value adapter (`@hobo/ci-gh-actions/mesh-nats`) | Done |
 | 3 | The worker asks the mesh before it takes a queued job, advertises its free slots, and says so when it drains; settings in the runbook | Done; needs a second box to run for real |
 | 4 | Shared configuration in JetStream and a monitor for node capacity and availability; the hosted relay out of the job path | Done; wake-up hints on a NATS subject not started |
-| 7 | The hosted relay's database on self-hosted Postgres with a Drizzle schema and migrations; the Neon config broker removed | Not started |
+| 7 | ~~The hosted relay's database on self-hosted Postgres with a Drizzle schema and migrations; the Neon config broker removed~~ | Superseded by [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179): the hosted relay keeps no durable state; see [its delivery plan](./hosted-relay-stateless.md#delivery-plan) |
 | 5 | Per-node budget allowances so priced offers survive a partition | Not started |
-| 6 | The advertisement as a protobuf and CUE record; it is JSON checked at the NATS boundary today | Not started |
+| 6 | The advertisement as a protobuf and CUE record (`MeshAdvert`), read as protobuf JSON at the NATS boundary; an older node's advertisement still parses | Done |
+| 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
+| 9 | Trust: a per-node Ed25519 identity, signed advertisements, a trusted-key set in the mesh's configuration, `invalid` nodes never ranked | Done. No attestation of what a node runs, no key rotation or revocation list, and the buckets' access control is NATS's, not the mesh's |
+| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Done: the route and its stores, the routing job's client, and the box relay's signed reporter. The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
 
 A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
 peers, it ranks itself first for every job and takes them all, so turning the
-mesh on for one box changes nothing but the advertisements it writes.
+mesh on for one box changes nothing but the advertisements it writes. A mesh
+with no trusted keys listed ranks exactly as it did before signatures.
 
 ## What the tests establish
 
@@ -370,11 +639,63 @@ Reliability (`packages/ci/test/mesh-reliability.test.ts` and
 - Through two workers on one board, the one that dropped ten jobs is first for
   about a fifth of new jobs instead of half.
 
+Reporting and trust:
+
+`packages/ci/test/mesh-trust.test.ts`, `mesh-report.test.ts` and
+`packages/ci-gh-actions/test/mesh-records.test.ts`, `mesh-node.test.ts`,
+always run:
+
+- A signed advertisement verifies; changing any signed figure, its node id or
+  its expiry makes it invalid; so does another key's signature, or a key
+  swapped in under a good one.
+- A replayed advertisement is stale at the expiry it was signed with, and
+  cannot be given a later one.
+- An unlisted key and an unsigned (older) node are `unverified` and still
+  ranked; an `invalid` node is never ranked, over 500 job ids, and is not
+  counted as capacity; with `requireTrusted` only listed keys are ranked, and
+  a node always ranks itself.
+- An older node's advertisement (none of the new fields) parses, and what
+  this version writes is read by the schema the previous version used.
+- The identity key file is made once with mode `0600`, is the same after a
+  restart, and no part of it appears in an advertisement or a report.
+- A worker's reliability record survives closing and reopening its SQLite
+  journal, and is decayed for the time in between; the advertisement carries
+  measured free disk.
+
+Against a real `nats-server` (`packages/hobo/test/ci-mesh-status.test.ts`, run
+when a binary is available): two box workers, a local-runner machine and a
+relay host started from its environment, each with its own key file, three
+of the four keys listed.
+
+- The relay's HTTP route, its MCP tool and `hobo ci status` each list all
+  four with the same states, slots and trust levels (three `trusted`, the
+  unlisted worker `unverified`), and `hobo ci status` with no relay answers
+  from the local machine's own report.
+- An altered advertisement and one replayed with a later expiry are listed
+  as `invalid` and add nothing to the capacity.
+- One worker is killed: within its advertisement's lifetime all three
+  surfaces list it as `lost`, since the moment its advertisement expired.
+
+Routing (`scripts/test/route-runner.test.ts` and
+`packages/ci-gh-actions/contracts/fleet-verdict-boundary.provider.test.ts`): a
+verdict that names the run's label sends the run elsewhere at once; one that
+names nothing, a relay that fails or is slow, and no relay each leave the
+decision identical to the queue's alone; a pinned tier does not ask.
+`packages/ci-gh-actions/test/fleet-state.test.ts` covers the older snapshot's
+publisher.
+
 ## Open questions
 
-- **Reliability across restarts.** The record is in memory. Keeping it in the
-  worker's journal would close the crash-loop gap, at the cost of a repair no
-  longer clearing it by restart.
+- **What a node runs.** A signature names a key, not software. Attesting the
+  worker image (a signed build, or a TPM quote) is a separate mechanism.
+- **Key rotation and revocation.** A key is trusted until it is taken off the
+  list. There is no expiry on a listed key and no way for a node to announce
+  a new one under its old one.
+- **Per-node write access to the board.** NATS can restrict each node to its
+  own key of the nodes bucket; the mesh does not set that up.
+- **Agreement between reporters.** A label is blocked only when every
+  reporter enrolled for it agrees. A partitioned box that sees a smaller mesh
+  can withhold a block but cannot impose one alone.
 - **Rented providers.** The fleet balancer has a circuit breaker per member
   (healthy or not). The same decayed score could rank rented providers by how
   often their runners arrive; it does not yet.
@@ -389,6 +710,7 @@ Reliability (`packages/ci/test/mesh-reliability.test.ts` and
 
 ## Related
 
+[Hosted CI Relay Without Durable State](./hosted-relay-stateless.md) ·
 [Runner queue runbook](../../packages/ci/RUNNER-QUEUE.md) ·
 [CI runner balancing example](./ci-runner-balancing-example.md) ·
 [Shared budget policy](./shared-budget-policy.md)

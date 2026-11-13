@@ -93,9 +93,14 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("pr_gate_validation"),
 		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
 	);
-	assert.match(
-		jobText("ci-guard"),
-		/^ {4}if: github\.event_name == 'pull_request'$/mu,
+	// Pull requests only, and skipped there only for a signed local run the
+	// route job verified as covering this job by id.
+	assert.ok(
+		jobText("ci-guard")
+			.split("\n")
+			.includes(
+				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+			),
 	);
 });
 
@@ -130,7 +135,7 @@ test("feature/hobo-code gets the PR and push gates but publishes nothing", async
 	);
 	assert.match(
 		shards,
-		/^ {4}if: >-\n {6}!cancelled\(\) && needs\.main-gate-plan\.result == 'success' && \(\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\) \|\|\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\) \|\|$/mu,
+		/^ {4}if: >-\n {6}!cancelled\(\) && needs\.main-gate-plan\.result == 'success' &&\n {6}needs\.main-gate-plan\.outputs\.shards != '\[\]' &&\n {6}needs\.main-gate-plan\.outputs\.shards != '' && \(\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\) \|\|\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\) \|\|$/mu,
 	);
 	// The shards need the plan job, so it runs for the feature push too.
 	const plan = hoboCi.slice(
@@ -254,9 +259,22 @@ const trunkRunsOn =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 const routedRunsOn =
 	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+/** The main gate's shards: the plan job's second ask, then the run's route, then the trunk label. */
+const shardRunsOn =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
+on:
+  workflow_dispatch:
+jobs:
+  job:
+    if: \${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/ci-runner-preflight
+`;
+	const hoboCheckoutOnly = `name: x
 on:
   workflow_dispatch:
 jobs:
@@ -277,7 +295,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           sparse-checkout: .github/actions
-      - uses: ./.github/actions/hobo-checkout
+      - uses: ./.github/actions/ci-runner-preflight
 `;
 	const badResult = await lint(
 		await fixture({}, { "local-action-guard.yml": disabledBad }),
@@ -285,7 +303,15 @@ jobs:
 	assert.equal(badResult.status, 1);
 	assert.match(
 		badResult.stderr,
-		/repo-local action \.\/\.github\/actions\/hobo-checkout must follow a pinned actions\/checkout step/,
+		/repo-local action \.\/\.github\/actions\/ci-runner-preflight must follow a pinned actions\/checkout step/,
+	);
+	assert.equal(
+		(
+			await lint(
+				await fixture({}, { "local-action-guard.yml": hoboCheckoutOnly }),
+			)
+		).status,
+		0,
 	);
 	assert.equal(
 		(await lint(await fixture({}, { "local-action-guard.yml": disabledGood })))
@@ -506,9 +532,15 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.match(block, /uses: \.\/\.github\/actions\/route-runner$/m);
 				continue;
 			}
-			// A required gate runs no action and always runs: GitHub-hosted too.
+			// A required gate runs no action on GitHub-hosted too. `always()` is for
+			// PR gates that still summarize upstream jobs; `!cancelled()` is for
+			// release train gates that must drop when the run is cancelled.
 			if (runsOn === "ubuntu-24.04") {
-				assert.match(condition, /always\(\)/, `${file}:${lines[start]}`);
+				assert.match(
+					condition,
+					/always\(\)|!cancelled\(\)/,
+					`${file}:${lines[start]}`,
+				);
 				assert.doesNotMatch(block, /uses:/, `${file}:${lines[start]}`);
 				continue;
 			}
@@ -522,8 +554,19 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
-			// Everything in hobo-ci.yml is routed except the job that builds the
-			// deps image in the box's own Docker context.
+			// The main gate's shards and finish job follow the plan job's second
+			// ask, then the run's route, so they need both.
+			if (runsOn === shardRunsOn) {
+				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
+				assert.match(
+					lines[start] ?? "",
+					/^  (main_workspace_tests|main_gate_finish):$/,
+				);
+				assert.match(block, /^    needs: \[route, [^\n]*main-gate-plan/m);
+				continue;
+			}
+			// Everything in hobo-ci.yml is routed except deps-image, which builds in
+			// the box's own Docker context.
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",

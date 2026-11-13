@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHoboMcpServer } from "@hobo/mcp";
+import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
 
 import { createComposedHoboCli } from "../cli.js";
 import {
@@ -8,7 +8,16 @@ import {
 	reportingCredentialRefusals,
 	wantsOpenSesameRelaunch,
 } from "../credentials-opensesame.js";
-import { localOperatorAuth, serveMcpStdio } from "../mcp-stdio.js";
+import {
+	createInfisicalCaptureConnector,
+	RELAY_SECRET_CAPTURE_SPECS,
+	secretCaptureProjectDir,
+} from "../mcp-secret-capture.js";
+import {
+	createMcpStdioSession,
+	localOperatorAuth,
+	serveMcpStdio,
+} from "../mcp-stdio.js";
 import { removeOwnedDirsOnSignals } from "../owned-temp-dir.js";
 
 // The runnable MCP control surface (docs/plans/0006 item 3-3): the composed
@@ -20,12 +29,34 @@ async function serve(): Promise<number> {
 	// entry point, this process has it removed on a signal too.
 	removeOwnedDirsOnSignals();
 	const server = createHoboMcpServer({ cli: createComposedHoboCli() });
-	await serveMcpStdio({
-		server,
-		auth: localOperatorAuth(),
-		input: process.stdin,
-		output: process.stdout,
+	// The secret-capture MCP App (ADR-0179 amendment "Deploy secrets captured
+	// by an MCP App into the secret store"): values the owner types go from
+	// the form to this process to the store the relay's binding names, and
+	// never into a tool result. URL elicitation completion is the one
+	// notification this server sends.
+	const capture = createSecretCaptureApp({
+		specs: RELAY_SECRET_CAPTURE_SPECS,
+		connector: createInfisicalCaptureConnector({
+			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
+		}),
+		notify: (method, params) => {
+			process.stdout.write(
+				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
+			);
+		},
 	});
+	try {
+		await serveMcpStdio({
+			server,
+			auth: localOperatorAuth(),
+			input: process.stdin,
+			output: process.stdout,
+			session: createMcpStdioSession(capture),
+		});
+	} finally {
+		// Closes open captures, stops the page and revokes the writer token.
+		await capture.close();
+	}
 	return 0;
 }
 

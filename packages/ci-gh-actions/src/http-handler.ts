@@ -15,7 +15,9 @@ export type VerifiedWebhook = Readonly<{
 export type HostedRelayApplication = Readonly<{
 	ingestWebhook(
 		input: VerifiedWebhook,
-	): Promise<"accepted" | "duplicate" | "ignored" | "requeued">;
+	): Promise<
+		"accepted" | "duplicate" | "ignored" | "requeued" | "foreign-runner"
+	>;
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;
@@ -266,7 +268,15 @@ export function createRelayHandler(options: {
 		if (
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
-				path.startsWith("/v2/accounts/self/")) &&
+				path.startsWith("/v2/accounts/self/") ||
+				// The mesh's node list; the control plane authenticates it like
+				// the account API's other reads.
+				path === "/v1/mesh/nodes" ||
+				// Fleet verdicts (ADR-0180): read by anyone, reported by an
+				// enrolled reporter's signature; reporter status, read by a
+				// workflow of the repository with its OIDC token.
+				path.startsWith("/v1/fleet/verdicts/") ||
+				path.startsWith("/v1/fleet/reporters/")) &&
 			!/%2f|%5c/i.test(path)
 		) {
 			try {

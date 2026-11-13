@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package hobo.ci.vercel.v1;
+
+// The hosted relay's runtime configuration and secrets as the config service
+// holds them (ADR-0179): one entry per field, named by the field's JSON name,
+// which is also the environment variable the relay's composition reads. The
+// JSON form is the record; `src/relay-runtime-config.ts` parses it into the
+// derived `RelayRuntimeConfig` and a test pins its keys to these names.
+message RelayRuntimeConfig {
+  string hobo_ci_public_url = 1 [json_name = "HOBO_CI_PUBLIC_URL"];
+  string hobo_ci_session_key = 2 [json_name = "HOBO_CI_SESSION_KEY"];
+  string hobo_ci_bootstrap_account_id = 3 [json_name = "HOBO_CI_BOOTSTRAP_ACCOUNT_ID"];
+  string hobo_ci_bootstrap_token_sha256 = 4 [json_name = "HOBO_CI_BOOTSTRAP_TOKEN_SHA256"];
+  optional string hobo_ci_invitation_expires_at = 5 [json_name = "HOBO_CI_INVITATION_EXPIRES_AT"];
+  string hobo_ci_control_tokens_json = 6 [json_name = "HOBO_CI_CONTROL_TOKENS_JSON"];
+  optional string hobo_ci_onboarding_control_token = 7 [json_name = "HOBO_CI_ONBOARDING_CONTROL_TOKEN"];
+  string hobo_ci_config_json = 8 [json_name = "HOBO_CI_CONFIG_JSON"];
+  string cron_secret = 9 [json_name = "CRON_SECRET"];
+  optional string hobo_ci_sandbox_enabled = 10 [json_name = "HOBO_CI_SANDBOX_ENABLED"];
+  optional string hobo_ci_sandbox_team_id = 11 [json_name = "HOBO_CI_SANDBOX_TEAM_ID"];
+  optional string hobo_ci_sandbox_project_id = 12 [json_name = "HOBO_CI_SANDBOX_PROJECT_ID"];
+  optional string hobo_ci_sandbox_issuer = 13 [json_name = "HOBO_CI_SANDBOX_ISSUER"];
+  optional string hobo_ci_sandbox_plan = 14 [json_name = "HOBO_CI_SANDBOX_PLAN"];
+  optional string hobo_ci_sandbox_domains_json = 15 [json_name = "HOBO_CI_SANDBOX_DOMAINS_JSON"];
+  string hobo_ci_github_app_id = 16 [json_name = "HOBO_CI_GITHUB_APP_ID"];
+  string hobo_ci_github_app_private_key = 17 [json_name = "HOBO_CI_GITHUB_APP_PRIVATE_KEY"];
+  string hobo_ci_webhook_secret = 18 [json_name = "HOBO_CI_WEBHOOK_SECRET"];
+  string hobo_ci_github_app_client_id = 19 [json_name = "HOBO_CI_GITHUB_APP_CLIENT_ID"];
+  string hobo_ci_github_app_client_secret = 20 [json_name = "HOBO_CI_GITHUB_APP_CLIENT_SECRET"];
+  // The key the hosted relay derives each Sandbox proxy session token from
+  // (an HMAC of the lease id): 32 random bytes, base64url. Required when
+  // HOBO_CI_SANDBOX_ENABLED is set; nothing about a token is stored.
+  optional string hobo_ci_sandbox_proxy_token_key = 21 [json_name = "HOBO_CI_SANDBOX_PROXY_TOKEN_KEY"];
+  // Cache bindings the config service may hold, read only when the
+  // deployment's environment does not set the same name (ADR-0179 phase 4c).
+  // Values are secrets or identifiers; only the names are ever logged.
+  optional string valkey_url = 22 [json_name = "VALKEY_URL"];
+  optional string turso_database_url = 23 [json_name = "TURSO_DATABASE_URL"];
+  optional string turso_auth_token = 24 [json_name = "TURSO_AUTH_TOKEN"];
+  optional string blob_store_id = 25 [json_name = "BLOB_STORE_ID"];
+  // A RelayCacheOffers record (cache_offers.proto) as JSON: what each cache
+  // backend costs and allows, its budget cap, and the switch marks.
+  optional string hobo_ci_cache_offers_json = 26 [json_name = "HOBO_CI_CACHE_OFFERS_JSON"];
+  // Fleet verdicts (ADR-0180). A FleetReporterEnrollments record
+  // (packages/ci-gh-actions/data-models/fleet_verdict.proto) as JSON: the
+  // reporters whose signed reports this relay accepts, public keys only.
+  // Unset, no reporter is enrolled and every report is refused.
+  optional string hobo_ci_fleet_reporters_json = 27 [json_name = "HOBO_CI_FLEET_REPORTERS_JSON"];
+  // `on` (the default) or `off`, the kill switch: reads block nothing and
+  // reports answer 503.
+  optional string hobo_ci_fleet_verdict_serving = 28 [json_name = "HOBO_CI_FLEET_VERDICT_SERVING"];
+  // Verdict-blocked minutes per label per 24-hour window before a label is
+  // served open whatever the reporters say: 1 to 1440, default 240.
+  optional string hobo_ci_fleet_verdict_daily_block_minutes = 29 [json_name = "HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES"];
+}

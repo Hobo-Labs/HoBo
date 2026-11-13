@@ -82,6 +82,31 @@ describe("planMainGitleaksScan", () => {
 		});
 	});
 
+	it("starts from the last green main commit when pushes in between were dropped", () => {
+		const plan = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "ccc",
+			sha: "ddd",
+			lastGreenSha: "aaa",
+			commitExists: () => true,
+			isAncestor: (ancestor, commit) => ancestor === "aaa" && commit === "ccc",
+		});
+		assert.equal(plan.logOpts, "aaa..ddd");
+		assert.equal(plan.fetchBlobs, false);
+	});
+
+	it("keeps the push range when the last green commit is not behind it", () => {
+		const plan = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "ccc",
+			sha: "ddd",
+			lastGreenSha: "zzz",
+			commitExists: () => true,
+			isAncestor: () => false,
+		});
+		assert.equal(plan.logOpts, "ccc..ddd");
+	});
+
 	it("treats a forced push (zero before) as full history", () => {
 		const plan = planMainGitleaksScan({
 			eventName: "push",
@@ -175,5 +200,32 @@ describe("main-gate wiring", () => {
 		assert.ok(wait > -1);
 		assert.ok(FULL_WAIT_SECONDS <= 720);
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
+	});
+
+	it("requires finish workspace checkout before gitleaks (fail closed)", () => {
+		assert.ok(
+			mainGateFinish.includes("Ensure finish workspace checkout"),
+			"finish must populate the workspace or fail",
+		);
+		assert.ok(mainGateFinish.includes("Finish workspace checkout failed"));
+		assert.ok(mainGateFinish.includes("hobo-repo-checkout"));
+		assert.equal(
+			mainGateFinish.includes("steps.workspace.outputs.ready == 'true'"),
+			false,
+			"gitleaks and preflight must not be skipped when workspace is missing",
+		);
+		assert.ok(
+			mainGateFinish.includes("Bootstrap composite actions (git fallback)"),
+		);
+		const secretScan = mainGateFinish.indexOf(
+			"name: Secret scan (full history)",
+		);
+		const preflight = mainGateFinish.indexOf(
+			"./.github/actions/ci-runner-preflight",
+		);
+		assert.ok(
+			preflight > -1 && secretScan > -1,
+			"preflight and secret scan steps must remain unconditional after workspace ensure",
+		);
 	});
 });

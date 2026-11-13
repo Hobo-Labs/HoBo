@@ -20,6 +20,7 @@ import {
 	CI_RUNNER_BASE_DOCKERFILE,
 	CI_RUNNER_BUILD_SCRIPT,
 	CI_RUNNER_PLAYWRIGHT_CHROMIUM,
+	CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 	CI_RUNNER_PREFLIGHT_NODE_ARGS,
 	CI_RUNNER_SYSTEM_PACKAGES,
 	type CommandRunner,
@@ -529,6 +530,8 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(dockerfile).toContain(
 			`ENV PLAYWRIGHT_BROWSERS_PATH=${pins.browsersPath}\n`,
 		);
+		expect(dockerfile).toContain("install-playwright-headless-shell.sh");
+		expect(dockerfile).not.toContain("--retry-all-errors");
 
 		const packages = readFileSync(join(root, CI_RUNNER_SYSTEM_PACKAGES), "utf8")
 			.split("\n")
@@ -607,6 +610,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 			MISE_TOML,
 			CI_RUNNER_SYSTEM_PACKAGES,
 			CI_RUNNER_BASE_DOCKERFILE,
+			CI_RUNNER_PLAYWRIGHT_INSTALL_SCRIPT,
 			CI_RUNNER_BUILD_SCRIPT,
 		];
 		const copy = mkdtempSync(join(tmpdir(), "ci-runner-version-"));
@@ -653,7 +657,7 @@ describe("ci-runner image contract (host smoke)", () => {
 			"utf8",
 		);
 		const install = workflow.indexOf(
-			"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
+			"run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
 		);
 		expect(install).toBeGreaterThan(-1);
 		expect(

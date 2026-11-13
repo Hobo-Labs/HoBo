@@ -13,11 +13,30 @@
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
  *
+ * One thing is asked of the fleet, and only when it can be: the relay's
+ * verdict for this repository (`GET /v1/fleet/verdicts/{owner}/{repo}` on the
+ * relay `.hobo/ci.json` names). The relay decides it from what only it
+ * knows, and answers with the labels new work should stay off right now. A
+ * label it names counts as that backend refusing jobs, at once and without
+ * queue evidence. A relay that is not named, does not answer in three
+ * seconds, or names nothing changes nothing: the queue is read exactly as
+ * before. No capacity figure is read here, and none arrives through the
+ * workflow.
+ *
  * Runs that start together would each read the same queue before any of them
  * had added to it, so a run waits its turn: while a run that started just
  * ahead has not chosen, this one leaves the self-hosted runners to it.
+ *
+ * A run can ask again later (`HOBO_CI_INCLUDE_OWN_RUN=true`): the main gate's
+ * plan job does, before its shards. That reading keeps the run's own jobs,
+ * which by then are the freshest evidence there is: a plan job that itself
+ * waited past the limit takes the fleet out of the decision.
+ *
+ * Every decision prints one `hobo-ci-route` notice (`routeAnnotation`) that a
+ * monitor reads from the job's check run.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
@@ -82,6 +101,15 @@ export const SLOW_PICKUP_MEMORY_SECONDS = 60 * 60;
  */
 export const MAX_FINISHED_LOOKUPS = 3;
 
+/**
+ * How long the relay is waited on for its verdict. It answers from a cache in
+ * well under a second; past this the queue decides alone, as it does when
+ * there is no relay.
+ */
+export const RELAY_VERDICT_TIMEOUT_SECONDS = 3;
+/** The project file that names the relay; see `parseRelayOrigin`. */
+export const RELAY_CONFIG_PATH = ".hobo/ci.json";
+
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
 	runId: number;
@@ -104,10 +132,17 @@ export type LabelLoad = Readonly<{
 	slowestRecentPickupSeconds: number;
 }>;
 
+/** What took the fleet out of a decision: the relay's verdict, the queue, or nothing. */
+export type RefusedBy = "relay" | "queue" | "none";
+
 export type RouteDecision = Readonly<{
 	tier: RouteTier;
 	runner: string;
 	reason: string;
+	/** Left out where nothing could have refused the fleet (a pinned tier). */
+	refusedBy?: RefusedBy | undefined;
+	/** What the relay answered for this decision; left out when it was not asked. */
+	relay?: RelayAnswer | undefined;
 }>;
 
 const seconds = (fromMs: number, toMs: number) =>
@@ -176,6 +211,157 @@ export function takingJobs(load: LabelLoad, limits: RouteLimits): boolean {
 	return load.recentPickups > 0 && !refusingJobs(load, limits);
 }
 
+/**
+ * What the relay said when it was asked for this repository's verdict.
+ * `unasked`: no relay is named, or the tier is pinned. `unanswered`: it was
+ * asked and gave nothing usable, which is not a refusal. `verdict`: the
+ * labels it blocks, each with the relay's reason.
+ */
+export type RelayAnswer =
+	| Readonly<{ kind: "unasked" }>
+	| Readonly<{ kind: "unanswered"; why: string }>
+	| Readonly<{ kind: "verdict"; blocked: ReadonlyMap<string, string> }>;
+
+/**
+ * The relay's origin from the project's `.hobo/ci.json`: the `relayOrigin`
+ * of its default environment. Nothing when the file is missing or unreadable,
+ * names no relay, or names one that is not `https` (plain `http` is taken
+ * only for a loopback address the environment allows, for a local relay).
+ */
+export function parseRelayOrigin(text: string | undefined): string | undefined {
+	if (!text?.trim()) return undefined;
+	let document: JsonValue;
+	try {
+		// SAFETY: a JSON document is a JsonValue by construction.
+		document = JSON.parse(text) as JsonValue;
+	} catch {
+		return undefined;
+	}
+	const project = asObject(document);
+	const environment = asObject(
+		asObject(project?.environments)?.[
+			asText(project?.defaultEnvironment) ?? ""
+		],
+	);
+	let url: URL;
+	try {
+		url = new URL(asText(environment?.relayOrigin) ?? "");
+	} catch {
+		return undefined;
+	}
+	const loopback =
+		environment?.allowInsecureLoopback === true &&
+		url.protocol === "http:" &&
+		(url.hostname === "127.0.0.1" || url.hostname === "localhost");
+	if (url.protocol !== "https:" && !loopback) return undefined;
+	if (url.username || url.password) return undefined;
+	return url.origin;
+}
+
+/**
+ * A relay's answer for `repository` (`FleetVerdict` in
+ * `packages/ci-gh-actions/data-models/fleet_verdict.proto`): the labels it
+ * blocks. An answer for another repository, or one whose `blocked` is not a
+ * map of labels to reasons, is not a verdict. A reason this reader has not
+ * seen is still a block: the relay decides, and this job runs the reader of
+ * the commit it checked out, which can be older than the relay.
+ */
+export function parseFleetVerdict(
+	document: JsonValue,
+	repository: string,
+): ReadonlyMap<string, string> | undefined {
+	const verdict = asObject(document);
+	const blocked = asObject(verdict?.blocked);
+	if (
+		!blocked ||
+		asText(verdict?.repository)?.toLowerCase() !== repository.toLowerCase()
+	)
+		return undefined;
+	const labels = new Map<string, string>();
+	for (const [label, block] of Object.entries(blocked)) {
+		const reason = asText(asObject(block)?.reason);
+		// A short plain token only: it is printed in this job's log.
+		if (!reason || !/^[a-z][a-z0-9-]{0,39}$/.test(reason)) return undefined;
+		labels.set(label.toLowerCase(), reason);
+	}
+	return labels;
+}
+
+/**
+ * Asks the relay at `origin` for this repository's verdict. Never throws:
+ * a relay that cannot be reached, is slow, or answers something else is
+ * `unanswered`, and the queue decides as if there were no relay.
+ */
+export async function askRelay(input: {
+	origin: string | undefined;
+	repository: string;
+	fetch?: typeof fetch | undefined;
+}): Promise<RelayAnswer> {
+	// The relay's own pattern for a repository (`fleet-verdict.ts`).
+	if (
+		!input.origin ||
+		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(
+			input.repository,
+		)
+	)
+		return { kind: "unasked" };
+	try {
+		const response = await (input.fetch ?? fetch)(
+			`${input.origin}/v1/fleet/verdicts/${input.repository}`,
+			{
+				headers: { accept: "application/json" },
+				redirect: "error",
+				signal: AbortSignal.timeout(RELAY_VERDICT_TIMEOUT_SECONDS * 1000),
+			},
+		);
+		if (response.status !== 200) {
+			// An unread body would hold this process open until the limit.
+			await response.body?.cancel().catch(() => undefined);
+			return { kind: "unanswered", why: `it answered ${response.status}` };
+		}
+		const blocked = parseFleetVerdict(
+			// SAFETY: a JSON document is a JsonValue by construction.
+			(await response.json().catch(() => null)) as JsonValue,
+			input.repository,
+		);
+		return blocked
+			? { kind: "verdict", blocked }
+			: { kind: "unanswered", why: "its answer was not a verdict" };
+	} catch (error) {
+		return {
+			kind: "unanswered",
+			why:
+				error instanceof Error && error.name === "TimeoutError"
+					? `it did not answer in ${RELAY_VERDICT_TIMEOUT_SECONDS} s`
+					: "it could not be reached",
+		};
+	}
+}
+
+/** A reason in words; one this reader has not seen is shown as the relay named it. */
+function relayReason(reason: string): string {
+	if (reason === "no-node") return "no live node serves it";
+	if (reason === "no-capacity")
+		return "no node can admit a job and none has a free slot";
+	return reason;
+}
+
+/**
+ * Why the relay says a label is refusing jobs, or `undefined` when it does
+ * not: it was not asked, it did not answer, or its verdict does not name the
+ * label. A label the relay does not name is one it does not vouch for,
+ * never one it refuses.
+ */
+export function relayRefusal(
+	answer: RelayAnswer | undefined,
+	label: string,
+): string | undefined {
+	if (answer?.kind !== "verdict") return undefined;
+	const reason = answer.blocked.get(label.toLowerCase());
+	if (reason === undefined) return undefined;
+	return `the relay keeps new work off ${label}: ${relayReason(reason)}`;
+}
+
 export function parseRouteMode(value: string | undefined): RouteMode {
 	const mode = ROUTE_MODES.find((candidate) => candidate === value?.trim());
 	return mode ?? "auto";
@@ -204,6 +390,8 @@ export function routeRunner(input: {
 	local: LabelLoad;
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
+	/** What the relay answered when asked for this repository's verdict. */
+	relay?: RelayAnswer | undefined;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	if (mode === "fleet")
@@ -228,20 +416,30 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.undecidedAhead === 0;
+	// What the relay decided, when it answered: a label it keeps new work off
+	// is refusing, whatever the queue shows.
+	const fleetRefusal = relayRefusal(input.relay, fleetLabel);
+	const localRefusal = relayRefusal(input.relay, LOCAL_HOST_RUNNER_LABEL);
+	const unanswered =
+		input.relay?.kind === "unanswered"
+			? [`the relay gave no verdict (${input.relay.why})`]
+			: [];
 	const members = [
 		{
 			id: "fleet",
 			backend: "hobo",
 			enabled: true,
 			runsOn: fleetLabel,
-			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
+			freeSlots:
+				first && !fleetRefusal && takingJobs(input.fleet, limits) ? 1 : 0,
 		},
 		{
 			id: "local",
 			backend: "local",
 			enabled: input.localEnrolled,
 			runsOn: LOCAL_HOST_RUNNER_LABEL,
-			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
+			freeSlots:
+				first && !localRefusal && takingJobs(input.local, limits) ? 1 : 0,
 		},
 		{
 			id: "github",
@@ -262,17 +460,27 @@ export function routeRunner(input: {
 			: [
 					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
 				]),
+		...(fleetRefusal ? [fleetRefusal] : []),
+		...(input.localEnrolled && localRefusal ? [localRefusal] : []),
+		...unanswered,
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
-		return { tier: "fleet", runner: fleetLabel, reason: loads };
+		return {
+			tier: "fleet",
+			runner: fleetLabel,
+			reason: loads,
+			refusedBy: "none",
+		};
 	return {
 		tier: selected.backend === "local" ? "local" : "github",
 		runner: selected.runsOn,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
+		refusedBy: fleetRefusal ? "relay" : "queue",
 	};
 }
 
-type JsonValue =
+/** A parsed JSON document: what GitHub and the relay answer with. */
+export type JsonValue =
 	| null
 	| boolean
 	| number
@@ -476,6 +684,13 @@ export async function observeQueue(input: {
 	labels: readonly string[];
 	limits: RouteLimits;
 	nowMs: number;
+	/**
+	 * Read this run's own jobs first. The route job leaves its run out: at that
+	 * moment the run has queued nothing. A job asking again later in the run
+	 * (the main gate's plan job, before its shards) has no fresher evidence
+	 * than how long the run's own jobs have waited.
+	 */
+	includeOwnRun?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -486,6 +701,7 @@ export async function observeQueue(input: {
 		);
 	const seen: SeenJob[] = [];
 	for (const runId of [
+		...(input.includeOwnRun ? [input.ownRunId] : []),
 		...probeRunIds(runsPage),
 		...slowestFinishedRunIds(runsPage, input.ownRunId, input.nowMs),
 	])
@@ -531,6 +747,11 @@ export async function chooseRunner(input: {
 	fleetLabel: string;
 	localEnrolled: boolean;
 	limits: RouteLimits;
+	/**
+	 * Asks the relay for its verdict. Asked again on every pass: a wait for
+	 * the probe can outlast a verdict, and the relay keeps it current.
+	 */
+	askRelay?: () => Promise<RelayAnswer>;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const startMs = input.now();
@@ -539,6 +760,7 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, LOCAL_HOST_RUNNER_LABEL, nowMs);
+		const relay = await input.askRelay?.();
 		const decision = routeRunner({
 			mode: input.mode,
 			fleetLabel,
@@ -547,19 +769,26 @@ export async function chooseRunner(input: {
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
+			relay,
 		});
-		const unseen = (load: LabelLoad) =>
-			load.recentPickups === 0 && !refusingJobs(load, limits);
+		// A backend the relay keeps work off is not waited for: a probe being
+		// picked up would not change what the relay decided.
+		const unseen = (load: LabelLoad, refusal: string | undefined) =>
+			load.recentPickups === 0 && !refusingJobs(load, limits) && !refusal;
 		const probeMayHelp =
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
-			((decision.tier !== "fleet" && unseen(fleet)) ||
-				(decision.tier === "github" && localEnrolled && unseen(local)));
+			((decision.tier !== "fleet" &&
+				unseen(fleet, relayRefusal(relay, fleetLabel))) ||
+				(decision.tier === "github" &&
+					localEnrolled &&
+					unseen(local, relayRefusal(relay, LOCAL_HOST_RUNNER_LABEL))));
 		const waitedSeconds = seconds(startMs, nowMs);
-		if (!probeMayHelp) return decision;
+		if (!probeMayHelp) return { ...decision, relay };
 		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
 			return {
 				...decision,
+				relay,
 				reason: `${decision.reason}; waited ${waitedSeconds} s for the probe to be picked up`,
 			};
 		await input.sleep(PROBE_POLL_SECONDS);
@@ -604,8 +833,25 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** The project's relay file as checked out, or nothing when it is not there. */
+function readRelayConfig(env: NodeJS.ProcessEnv): string | undefined {
+	try {
+		return readFileSync(
+			join(env.GITHUB_WORKSPACE ?? process.cwd(), RELAY_CONFIG_PATH),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 export async function main(
 	env: NodeJS.ProcessEnv = process.env,
+	io: Readonly<{
+		/** The contents of `.hobo/ci.json`; read from the checkout when left out. */
+		relayConfig?: string | undefined;
+		fetch?: typeof fetch;
+	}> = {},
 ): Promise<RouteDecision> {
 	const fleetLabel = fleetLabelFor(
 		env.GITHUB_EVENT_NAME ?? "",
@@ -623,24 +869,50 @@ export async function main(
 			DEFAULT_MAX_QUEUED,
 		),
 	};
+	const relayOrigin = parseRelayOrigin(
+		"relayConfig" in io ? io.relayConfig : readRelayConfig(env),
+	);
+	const includeOwnRun = env.HOBO_CI_INCLUDE_OWN_RUN === "true";
+	// Why the relay was not asked, when it was not. With no relay named, that
+	// is the reason whatever else happened, so a monitor counting `no-relay`
+	// sees every run that had none.
+	const unaskedWhy = (why: UnaskedWhy): UnaskedWhy =>
+		relayOrigin === undefined ? "no-relay" : why;
+	let unasked: UnaskedWhy = unaskedWhy(mode === "auto" ? "no-relay" : "pinned");
 	let decision: RouteDecision;
+	// A signed local run was verified for this tree, so the jobs it covers are
+	// skipped and only a few short ones are left. They go where a job is known
+	// to start, without reading the queue. A pinned tier is an operator's own
+	// override and still wins.
+	if (mode === "auto" && env.HOBO_CI_ATTESTED === "true") {
+		decision = {
+			tier: "github",
+			runner: DEFAULT_GITHUB_MACHINE_TYPE,
+			reason:
+				"a signed local run covers this tree, so the jobs left do not wait for a fleet",
+			refusedBy: "none",
+		};
+		return report(decision, env, unaskedWhy("attested"));
+	}
 	try {
 		const read = githubReader(
 			env.GITHUB_API_URL ?? "https://api.github.com",
 			env.GITHUB_TOKEN ?? "",
 		);
+		const repository = env.GITHUB_REPOSITORY ?? "";
 		decision = await chooseRunner({
 			observe: (nowMs) =>
 				mode === "auto"
 					? observeQueue({
 							read,
-							repository: env.GITHUB_REPOSITORY ?? "",
+							repository,
 							ownRunId: Number(env.GITHUB_RUN_ID),
 							labels: localEnrolled
 								? [fleetLabel, LOCAL_HOST_RUNNER_LABEL]
 								: [fleetLabel],
 							limits,
 							nowMs,
+							includeOwnRun,
 						})
 					: Promise.resolve({
 							jobs: [],
@@ -653,6 +925,11 @@ export async function main(
 			fleetLabel,
 			localEnrolled,
 			limits,
+			// A pinned tier is decided without the queue, and without the relay.
+			askRelay: () =>
+				mode === "auto"
+					? askRelay({ origin: relayOrigin, repository, fetch: io.fetch })
+					: Promise.resolve({ kind: "unasked" }),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known
@@ -661,10 +938,68 @@ export async function main(
 			tier: "github",
 			runner: DEFAULT_GITHUB_MACHINE_TYPE,
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
+			refusedBy: "queue",
 		};
+		// The queue is read before the relay is asked.
+		unasked = unaskedWhy("queue-unread");
 	}
+	return report(decision, env, unasked);
+}
+
+/**
+ * Why the relay was not asked: no relay is named (whatever else happened),
+ * or, with one named, the tier is pinned, a signed local run covers the
+ * tree, or the queue could not be read first.
+ */
+export type UnaskedWhy = "no-relay" | "pinned" | "attested" | "queue-unread";
+
+/** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
+export function workflowFile(env: NodeJS.ProcessEnv): string {
+	const path = env.GITHUB_WORKFLOW_REF?.split("@")[0] ?? "";
+	return path.slice(path.lastIndexOf("/") + 1) || (env.GITHUB_WORKFLOW ?? "");
+}
+
+/**
+ * The one-line record of a decision a monitor reads from the job's check run
+ * (`::notice title=hobo-ci-route::{...}`): which tier and runner, whether the
+ * relay gave a verdict, and what took the fleet out of the decision.
+ */
+export function routeAnnotation(
+	decision: RouteDecision,
+	workflow: string,
+	unasked: UnaskedWhy,
+): string {
+	const relay = decision.relay?.kind ?? "unasked";
+	const record = {
+		v: 1,
+		workflow,
+		tier: decision.tier,
+		runner: decision.runner,
+		relay,
+		why:
+			decision.relay?.kind === "unanswered"
+				? decision.relay.why
+				: relay === "unasked"
+					? unasked
+					: "",
+		refusedBy: decision.refusedBy ?? "none",
+	};
+	// A workflow command's message ends at a newline; `%` starts an escape.
+	const message = JSON.stringify(record)
+		.replaceAll("%", "%25")
+		.replaceAll("\r", "%0D")
+		.replaceAll("\n", "%0A");
+	return `::notice title=hobo-ci-route::${message}`;
+}
+
+function report(
+	decision: RouteDecision,
+	env: NodeJS.ProcessEnv,
+	unasked: UnaskedWhy,
+): RouteDecision {
 	const line = `runner: ${decision.runner} (${decision.tier}): ${decision.reason}`;
 	console.log(line);
+	console.log(routeAnnotation(decision, workflowFile(env), unasked));
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,
