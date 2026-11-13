@@ -190,6 +190,8 @@ import "list"
 	}
 	externalPools:    [...#RunnerRoutingPool] & list.MaxItems(32)
 	retiredVariables: [...(string & =~"^HOBO_CI_[A-Z0-9_]{1,60}$")] & list.MaxItems(32)
+	// The box relay keeps itself current (plan 0026, 3.8).
+	selfUpdate: {enabled: bool, intervalHours: int & >=1 & <=168}
 }
 #RelayCacheJobKey: string & =~"^[0-9]{1,16}:[0-9]{1,16}:[0-9]{1,10}$"
 #RelayCacheLeaseId: string & =~"^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"

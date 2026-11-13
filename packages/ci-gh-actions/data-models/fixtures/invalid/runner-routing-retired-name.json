@@ -31,5 +31,9 @@
   "externalPools": [],
   "retiredVariables": [
     "GITHUB_TOKEN"
-  ]
+  ],
+  "selfUpdate": {
+    "enabled": true,
+    "intervalHours": 3
+  }
 }

@@ -93,6 +93,11 @@ export const RunnerRoutingSchema = z
 		retiredVariables: z
 			.array(z.string().regex(/^HOBO_CI_[A-Z0-9_]{1,60}$/u))
 			.max(32),
+		// The box relay keeps itself current (plan 0026, 3.8): whether it
+		// looks at main, and how often.
+		selfUpdate: z
+			.object({ enabled: z.boolean(), intervalHours: whole(1, 168) })
+			.strict(),
 	})
 	.strict()
 	.meta({ id: "RunnerRouting" });

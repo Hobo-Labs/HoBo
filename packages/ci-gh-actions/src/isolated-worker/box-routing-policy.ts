@@ -39,6 +39,9 @@ export const DEFAULT_FLEET_MIN_FREE_RUNNERS = 1;
 /** Work assigned to a label with nothing started this long is `stalled`. */
 export const DEFAULT_ROUTING_STALL_MS = 10 * 60_000;
 
+/** How often the box relay looks for a newer main (plan 0026, 3.8). */
+export const DEFAULT_SELF_UPDATE_INTERVAL_HOURS = 3;
+
 /**
  * The code's defaults. The committed `runnerRouting` equals them (plan 0026,
  * M8), so a checkout without the block routes exactly as one with it.
@@ -81,6 +84,10 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 		"HOBO_CI_ROUTE_MAX_QUEUED",
 		"HOBO_CI_TRUNK_RUNNER",
 	],
+	selfUpdate: {
+		enabled: true,
+		intervalHours: DEFAULT_SELF_UPDATE_INTERVAL_HOURS,
+	},
 };
 
 export type BoxRoutingPolicy = Readonly<{

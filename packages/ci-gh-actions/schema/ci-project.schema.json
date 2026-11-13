@@ -1190,6 +1190,9 @@
         },
         "retiredVariables": {
           "$ref": "#/$defs/__schema109"
+        },
+        "selfUpdate": {
+          "$ref": "#/$defs/__schema111"
         }
       },
       "required": [
@@ -1201,7 +1204,8 @@
         "verdict",
         "box",
         "externalPools",
-        "retiredVariables"
+        "retiredVariables",
+        "selfUpdate"
       ],
       "additionalProperties": false
     },
@@ -1437,6 +1441,24 @@
     "__schema110": {
       "type": "string",
       "pattern": "^HOBO_CI_[A-Z0-9_]{1,60}$"
+    },
+    "__schema111": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalHours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 168
+        }
+      },
+      "required": [
+        "enabled",
+        "intervalHours"
+      ],
+      "additionalProperties": false
     }
   },
   "$id": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",

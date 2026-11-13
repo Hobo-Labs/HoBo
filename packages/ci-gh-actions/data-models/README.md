@@ -45,6 +45,10 @@ the writing relay's node and commit. It is the message of a parentless commit
 at `refs/hobo/routing-slip`. `#RoutingSlip` in `onboarding.cue` constrains it,
 and `#RunnerRouting` the committed `runnerRouting` policy in `.hobo/ci.json`
 (no proto: it is authored JSON, parsed by zod in `src/runner-routing.ts`).
+Its `selfUpdate` block (`enabled`, `intervalHours` 1-168) sets how often the
+box relay looks for a newer `main` (plan 0026, 3.8);
+`runner-routing-self-update-interval.json` pins that an interval of zero is
+invalid.
 `src/routing-slip.ts` is the only place a slip is parsed and written; the
 route job's dependency-free reader `scripts/ci/runner-routing.mts` agrees with
 it on every fixture. The `routing-slip*` fixtures pin that an expired slip, a
