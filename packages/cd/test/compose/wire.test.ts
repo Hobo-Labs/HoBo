@@ -156,6 +156,22 @@ describe("wireContinuousDelivery", () => {
 		expect(verifier).not.toBe(cd.artifacts);
 	});
 
+	it("binds the placed-Camps reader and the fan-out aggregate gate into the promotion service (D20, D21)", async () => {
+		wireContinuousDelivery(
+			input(log, calls, {
+				adapters: fakeAdapters(log, {
+					fanoutCost: () => ({
+						quote: async () => 1,
+						budget: async () => ({ limit: 10, used: 0 }),
+					}),
+				}),
+			}),
+		);
+		const promotion = argsOf(calls, "createPromotionService");
+		expect(typeof promotion.placed).toBe("function");
+		expect(promotion.aggregate).toHaveProperty("evaluate");
+	});
+
 	it("passes the CI and Rail readers to the subscription drivers (CI bridge, C15)", () => {
 		const readCiEvents = async function* () {};
 		const readRailEvents = async function* () {};

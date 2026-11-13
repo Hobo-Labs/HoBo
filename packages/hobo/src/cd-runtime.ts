@@ -48,6 +48,7 @@ import {
 	createSimulatedRealizer,
 	defaultCdAdapters,
 	defaultCdFactories,
+	type FanoutCostAuthority,
 	parseCdComposeConfig,
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
@@ -124,6 +125,12 @@ export type CdRuntimeOptions = Readonly<{
 	policyPack?: PolicyPack;
 	resolvePack?: CdHostInputs["resolvePack"];
 	packs?: CdHostInputs["packs"];
+	/**
+	 * The pricing and Station budget authorities the fan-out aggregate gate
+	 * reads (D20). Without them every fan-out promotion is refused before any
+	 * Camp starts (`fanout-aggregate-quote-missing`); cost is never assumed zero.
+	 */
+	fanoutCost?: FanoutCostAuthority;
 	trustPolicy?: CdJsonObject;
 	readCiEvents?: Parameters<
 		typeof composeContinuousDelivery
@@ -400,10 +407,18 @@ export async function openCdRuntime(
 		},
 		options.onRunnerHostIngestError ?? reportRunnerHostIngestError,
 	);
+	const fanoutCost = options.fanoutCost;
 	const cd = composeContinuousDelivery({
 		base,
 		factories,
-		adapters: defaultCdAdapters(host),
+		adapters: {
+			...defaultCdAdapters(host),
+			// Fan-out promotions read placed Camps from the recorded decision
+			// and the aggregate gate from these authorities (compose/wire.ts).
+			...(fanoutCost !== undefined
+				? { fanoutCost: () => fanoutCost }
+				: undefined),
+		},
 		http,
 		credentials,
 		artifactStore:
