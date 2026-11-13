@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	applyRunnerRoutingDocs,
 	renderRunnerRoutingDocs,
 	runnerRoutingDocsPages,
 } from "../scripts/runner-routing-docs.js";
@@ -50,5 +51,29 @@ describe("HoBo CI docs pages", () => {
 		])
 			expect(row(name)).toContain("yes, through the bridge");
 		expect(row("Modal Sandbox")).toContain("no: modelled only");
+	});
+
+	it("rewrites the notice unless the page keeps its own", () => {
+		const page = [
+			"<!-- generated:x:start -->",
+			"<!-- Generated from older code by old.ts. Do not edit by hand. -->",
+			"",
+			"old",
+			"",
+			"<!-- generated:x:end -->",
+		].join("\n");
+		const fresh = applyRunnerRoutingDocs(page, { x: "new" });
+		expect(fresh).toContain("runner-routing-docs.ts");
+		expect(fresh).toContain("new");
+		const kept = applyRunnerRoutingDocs(
+			page,
+			{ x: "new" },
+			{ keepNotice: true },
+		);
+		expect(kept).toContain("by old.ts");
+		expect(kept).not.toContain("old\n");
+		expect(() => applyRunnerRoutingDocs("no markers", { x: "new" })).toThrow(
+			"page has no generated:x markers",
+		);
 	});
 });

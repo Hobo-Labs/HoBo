@@ -13,7 +13,7 @@ These are **ranking inputs with dated sources**, not billing: published list pri
 ## What each provider costs
 
 <!-- generated:providers:start -->
-<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Provider | Machine | Reaches a job by | USD per minute | Included each month | Plan fee | Jobs at once | Usable today |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -66,7 +66,7 @@ For a **public repository**, that leaves the box as the only provider admission 
 A provider that cannot run a job is never priced for it.
 
 <!-- generated:eligibility:start -->
-<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Provider | Public repos | Private repos | Orgs only | Docker | Fork PRs | Own machine |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -105,7 +105,7 @@ A provider that cannot run a job is never priced for it.
 A provider's limits are part of its model. A job that asks for more than the machine class has, or that would run longer than the provider lets one machine live, is refused there before it is priced.
 
 <!-- generated:capabilities:start -->
-<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Provider | Kept apart by | Longest run | Largest machine | CPU | Own image | Internet out | Egress allow list | Self-hostable |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -144,7 +144,7 @@ A provider's limits are part of its model. A job that asks for more than the mac
 The fleet does not multiply a rate by a duration. Each model becomes a rate card in the pricing engine, which rates the month **with and without** the job. The difference is the job's cost.
 
 <!-- generated:pricing:start -->
-<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Provider | 20-minute job | Same job after the included minutes are gone | Same job if it opens the plan |
 | --- | --- | --- | --- |
@@ -229,7 +229,7 @@ Jog, Boat and Lizard are the kinds `jog`, `boat` and `lizard`:
 ## Sources
 
 <!-- generated:sources:start -->
-<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 - **HoBo box worker** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci/RUNNER-QUEUE.md>. Operator-owned host; a job adds no marginal charge. Slots come from HOBO_CI_WORKER_SLOTS, not from this model.
 - **Box of the agent that opened the pull request** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci-gh-actions/README.md>. The agent's session already pays for the machine; a job adds no marginal charge. One job at a time.

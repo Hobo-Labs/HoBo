@@ -413,6 +413,19 @@ export function renderRunnerRoutingDocs() {
 const NOTICE =
 	"<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->";
 
+/**
+ * Pages whose generated blocks keep the notice they already carry. The fleet
+ * work (design §8.5) gives this generator's rename only `ci/route-table.md`
+ * and `ci/fleet-balancing.md`; the notice on these two pages is reworded by
+ * the change that owns them, so regenerating here changes only their tables.
+ */
+const KEEP_NOTICE: ReadonlySet<string> = new Set([
+	"reference/errors.md",
+	"ci/providers.md",
+]);
+
+const NOTICE_LINE = /^<!-- Generated from .* Do not edit by hand\. -->$/u;
+
 const marker = (id: string, edge: "start" | "end") =>
 	`<!-- generated:${id}:${edge} -->`;
 
@@ -420,6 +433,7 @@ const marker = (id: string, edge: "start" | "end") =>
 export function applyRunnerRoutingDocs(
 	page: string,
 	fragments: Readonly<Record<string, string>>,
+	options: { readonly keepNotice?: boolean } = {},
 ): string {
 	let next = page;
 	for (const [id, body] of Object.entries(fragments)) {
@@ -427,7 +441,15 @@ export function applyRunnerRoutingDocs(
 		const end = next.indexOf(marker(id, "end"));
 		if (start < 0 || end < start)
 			throw new Error(`page has no generated:${id} markers`);
-		next = `${next.slice(0, start)}${marker(id, "start")}\n${NOTICE}\n\n${body}\n\n${next.slice(end)}`;
+		const existing = next
+			.slice(start + marker(id, "start").length, end)
+			.split("\n")
+			.find((line) => line.trim() !== "");
+		const notice =
+			options.keepNotice && existing !== undefined && NOTICE_LINE.test(existing)
+				? existing
+				: NOTICE;
+		next = `${next.slice(0, start)}${marker(id, "start")}\n${notice}\n\n${body}\n\n${next.slice(end)}`;
 	}
 	return next;
 }
@@ -440,7 +462,13 @@ export function runnerRoutingDocsPages(): {
 	return Object.entries(renderRunnerRoutingDocs()).map(([file, fragments]) => {
 		const path = join(PAGES, file);
 		const current = readFileSync(path, "utf8");
-		return { path, current, next: applyRunnerRoutingDocs(current, fragments) };
+		return {
+			path,
+			current,
+			next: applyRunnerRoutingDocs(current, fragments, {
+				keepNotice: KEEP_NOTICE.has(file),
+			}),
+		};
 	});
 }
 
