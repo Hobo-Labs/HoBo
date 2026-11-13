@@ -213,3 +213,84 @@ describe("loadSecretStoreKms (O37)", () => {
 		expect(() => kms.sign("missing", "x")).toThrow(/unknown KMS key: missing/);
 	});
 });
+
+describe("loadSecretStoreKms active key (amendment 2)", () => {
+	type Entry = Readonly<{ kid: string; retiredAt?: number }>;
+
+	/** A ring holding `entries`, each with one valid private key, loaded fresh. */
+	async function seeded(entries: readonly Entry[]): Promise<KmsLike> {
+		const secrets = createMemorySecretsPort();
+		await loadSecretStoreKms(secrets, { prefix: PREFIX });
+		const access = await secrets.access(PREFIX);
+		const stored: { keys: { privateKey: string }[] } = JSON.parse(
+			access.status === "ok" ? (access.material ?? "{}") : "{}",
+		);
+		const privateKey = stored.keys[0]?.privateKey ?? "";
+		await secrets.put(
+			PREFIX,
+			JSON.stringify({
+				keys: entries.map((entry) => ({ ...entry, privateKey })),
+			}),
+		);
+		return loadSecretStoreKms(secrets, { prefix: PREFIX });
+	}
+
+	it("answers the only key of a fresh ring, and lists it", async () => {
+		const kms = await loadSecretStoreKms(createMemorySecretsPort(), {
+			prefix: PREFIX,
+		});
+		expect(kms.activeKeyId?.()).toBe(FIRST_KID);
+		expect(kms.keyIds?.()).toEqual([FIRST_KID]);
+	});
+
+	it("keeps the lowest-numbered unretired key active after add and publish, until the switch retires it", async () => {
+		// Add + publish: #2 joins the ring unretired; #1 still signs.
+		const published = await seeded([{ kid: NEXT_KID }, { kid: FIRST_KID }]);
+		expect(published.activeKeyId?.()).toBe(FIRST_KID);
+		expect(published.keyIds?.()).toEqual([FIRST_KID, NEXT_KID]);
+		// Switch: #1 retires and verifies for 15 minutes more; #2 signs.
+		const switched = await seeded([
+			{ kid: FIRST_KID, retiredAt: Date.now() },
+			{ kid: NEXT_KID },
+		]);
+		expect(switched.activeKeyId?.()).toBe(NEXT_KID);
+		expect(switched.keyIds?.()).toEqual([FIRST_KID, NEXT_KID]);
+		// Key numbers compare as numbers: #9 is below #10.
+		const tens = await seeded([
+			{ kid: `${PREFIX}#10` },
+			{ kid: `${PREFIX}#9` },
+		]);
+		expect(tens.activeKeyId?.()).toBe(`${PREFIX}#9`);
+		expect(tens.keyIds?.()).toEqual([`${PREFIX}#9`, `${PREFIX}#10`]);
+	});
+
+	it("follows generateRsaKey, which retires every older key at once", async () => {
+		const kms = await loadSecretStoreKms(createMemorySecretsPort(), {
+			prefix: PREFIX,
+		});
+		kms.generateRsaKey(NEXT_KID);
+		expect(kms.activeKeyId?.()).toBe(NEXT_KID);
+		expect(kms.keyIds?.()).toEqual([FIRST_KID, NEXT_KID]);
+		const issuer = issuerOver(kms, kms.activeKeyId?.() ?? "");
+		await expect(issuer.signJwtSvid(claimsAt(Date.now()))).resolves.toEqual(
+			expect.any(String),
+		);
+	});
+
+	it("drops a key from keyIds once its grace has passed", async () => {
+		vi.useFakeTimers({ toFake: ["Date"], now: T0 });
+		const kms = await loadSecretStoreKms(createMemorySecretsPort(), {
+			prefix: PREFIX,
+		});
+		kms.generateRsaKey(NEXT_KID);
+		vi.setSystemTime(T0 + TOKEN_LIFETIME_S * 1000 + 1000);
+		expect(kms.keyIds?.()).toEqual([NEXT_KID]);
+		expect(kms.activeKeyId?.()).toBe(NEXT_KID);
+	});
+
+	it("throws when every held key is retired", async () => {
+		const kms = await seeded([{ kid: FIRST_KID, retiredAt: Date.now() }]);
+		expect(kms.keyIds?.()).toEqual([FIRST_KID]);
+		expect(() => kms.activeKeyId?.()).toThrow(/no active key/);
+	});
+});
