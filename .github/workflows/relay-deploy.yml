@@ -8,7 +8,8 @@ name: HoBo relay deploy
 # store accepts this repository's GitHub OIDC token, then
 # `hobo ci deploy --adopt` finds the deployment Vercel reported for the pushed
 # commit through GitHub's Deployments API and promotes it through @hobo/cd,
-# preview then production, with fail-closed /healthz and /readyz verification.
+# preview then production, with fail-closed verification at the relay's
+# production domain (/healthz names the commit served, /readyz answers 200).
 #
 # No secret and no repository variable configures this workflow. The store's
 # coordinates (ids and an origin, no credential) are committed to
@@ -147,9 +148,12 @@ jobs:
       # that deployment (packages/ci-vercel/README.md "Token-free relay
       # mode"): it finds it through GitHub's Deployments API with this job's
       # own token (deployments: read), records it as relay Freight, and
-      # promotes it through @hobo/cd preview -> production, verifying /healthz
-      # (preview) and /healthz and /readyz (production) at the deployment's own
-      # URL, failing closed. Observe-only: no Vercel token, no deployment
+      # promotes it through @hobo/cd preview -> production, failing closed:
+      # preview by its deployment record (READY, this commit), production at
+      # the Yard's production domain (productionOrigin in deploy/yard.ts),
+      # whose /healthz must name this commit and whose /readyz must answer
+      # 200. The protected per-deployment URL is never probed, so Deployment
+      # Protection needs no bypass. Observe-only: no Vercel token, no deployment
       # created or changed; a failed production verification is recorded in
       # the CD journal, never rolled back on Vercel.
       - name: Adopt Vercel's Git deployment of this commit

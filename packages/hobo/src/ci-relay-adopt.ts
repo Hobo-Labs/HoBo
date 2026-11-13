@@ -16,21 +16,23 @@
 // Freight's commit, and it never creates, promotes, aliases or cancels a
 // deployment.
 //
-// Verification is the relay pipeline's own (`deploy/delivery.ts`): the
-// fail-closed probes of `/healthz` (preview) and `/healthz` and `/readyz`
-// (production), pointed at the adopted deployment's URL instead of a fixed
-// origin, so what is verified is the deployment of this commit. A production
-// verification that fails is recorded by CD as the promotion's end (CD's
-// compensation restores the predecessor Set in the journal); nothing is
-// rolled back on Vercel, because this verb has no write to roll back with.
+// Verification fails closed and never needs past Vercel Deployment
+// Protection (`ci-relay-verify.ts`): the per-deployment URL, which answers 401
+// under protection, is never probed. Production probes the relay's production
+// origin (`HOBO_CI_RELAY_URL`, else the Yard's `productionOrigin`): `/healthz`
+// must name the Freight's commit, which proves the production domain serves
+// the adopted deployment, and `/readyz` must answer 200. Preview, which has no
+// unprotected URL, is verified by its deployment record: READY, and the
+// deployment of the Freight's commit. A production verification that fails is
+// recorded by CD as the promotion's end (CD's compensation restores the
+// predecessor Set in the journal) and reported by its reason: the origin
+// serves another commit, or `/readyz` says the relay is not configured, its
+// store refused it, or it is not ready. Nothing is rolled back on Vercel,
+// because this verb has no write to roll back with.
 //
 // HONEST SCOPE: exercised against recorded-shape GitHub answers, fake probes
-// and a temporary journal. A deployment URL behind Vercel Deployment
-// Protection answers 401 to the probes, which fails verification closed; the
-// relay's production deployments must be reachable for adoption to qualify.
+// and a temporary journal; no live Vercel or GitHub lane runs here.
 
-import { clone } from "@bufbuild/protobuf";
-import { PipelineRecordSchema } from "@hobo/cd";
 import { type CommandResult, compileProjectManifest } from "@hobo/cli";
 import {
 	createBoundedFetchTransport,
@@ -49,11 +51,21 @@ import { envCredentials } from "./cd-runtime.js";
 import {
 	deliverRelay,
 	RELAY_DELIVERY_FILE,
+	RELAY_DELIVERY_REFUSAL,
 	type RelayDeliveryOutcome,
 	type RelayRealization,
 	type RelaySourcePin,
 	type RelayTargetName,
 } from "./ci-relay-delivery.js";
+import {
+	adoptedDeploymentSuites,
+	adoptedVerificationRecords,
+	commitCheckingProbe,
+	RELAY_VERIFY_REFUSAL,
+	type RelayProbeFindings,
+	relayProductionOrigin,
+	relayVerifyFailure,
+} from "./ci-relay-verify.js";
 import {
 	loadRelayYard,
 	RelayPlacementRefusal,
@@ -76,6 +88,10 @@ export const RELAY_ADOPT_REFUSAL = Object.freeze({
 	notFound: "HOBO_CI_ADOPT_NOT_FOUND",
 	lookupFailed: "HOBO_CI_ADOPT_LOOKUP_FAILED",
 	notAdopted: "HOBO_CI_ADOPT_NOT_ADOPTED",
+	/** No production origin to verify at (HOBO_CI_RELAY_URL or the Yard's). */
+	originUnset: "HOBO_CI_ADOPT_ORIGIN_UNSET",
+	/** Production verification failed for a named reason (ci-relay-verify.ts). */
+	...RELAY_VERIFY_REFUSAL,
 } as const);
 
 const GITHUB_API = "https://api.github.com";
@@ -110,27 +126,6 @@ type CommandData = NonNullable<CommandResult["data"]>;
 
 function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
-}
-
-/** The relay's delivery records with every probe aimed at `origin`. */
-export function recordsVerifiedAt(
-	records: DeliveryModule,
-	origin: string,
-): DeliveryModule {
-	return {
-		...records,
-		pipelines: records.pipelines.map((pipeline) => {
-			const copy = clone(PipelineRecordSchema, pipeline);
-			for (const node of copy.nodes)
-				for (const probe of node.verification?.probes ?? []) {
-					const path = URL.canParse(probe.urlRef)
-						? new URL(probe.urlRef).pathname
-						: `/${probe.name}`;
-					probe.urlRef = `${origin}${path}`;
-				}
-			return copy;
-		}),
-	};
 }
 
 type GitHubRead =
@@ -223,6 +218,14 @@ export async function runCiRelayAdopt(
 		return usage(
 			`Yard ${relayYard.name} names no Vercel project; --adopt looks for that project's deployment.`,
 		);
+	const production = relayProductionOrigin(env, placement.productionOrigin);
+	if (production === undefined)
+		return {
+			ok: false,
+			status: "usage",
+			code: RELAY_ADOPT_REFUSAL.originUnset,
+			message: `--adopt verifies production at the relay's production domain, and none is named: set HOBO_CI_RELAY_URL or the productionOrigin property of Yard ${relayYard.name} (an https origin, e.g. https://<project>.vercel.app). The per-deployment URL is not probed: Deployment Protection answers 401 there.`,
+		};
 	const declaration = await compileProjectManifest(input.cwd);
 	if (declaration === null)
 		return usage(
@@ -372,7 +375,19 @@ export async function runCiRelayAdopt(
 			};
 		records = loaded.value;
 	}
-	const verified = recordsVerifiedAt(records, new URL(found.url).origin);
+	const verified = adoptedVerificationRecords(records, production.origin);
+	const probe = commitCheckingProbe(
+		input.probe ?? createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
+		{ origin: production.origin, commit: found.commit },
+	);
+	const suites = adoptedDeploymentSuites({
+		deploymentId: found.deploymentId,
+		commit: found.commit,
+		readyState: (id) => realization.readyState(id),
+	});
+	input.emitProgress(
+		`verifying preview by deployment ${found.deploymentId}'s record, production at ${production.origin} (${production.from})`,
+	);
 	const source: RelaySourcePin = {
 		repository,
 		ref: text("ref") ?? sha,
@@ -397,10 +412,11 @@ export async function runCiRelayAdopt(
 			source,
 			realization,
 			records: verified,
+			http: probe.transport,
+			suites,
 			wait: true,
 			limitMs: WAIT_LIMIT_MS,
 			intervalMs: INTERVAL_MS,
-			...(input.probe !== undefined ? { http: input.probe } : undefined),
 			...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 			...(input.now !== undefined ? { now: input.now } : undefined),
 			emitProgress: input.emitProgress,
@@ -411,6 +427,7 @@ export async function runCiRelayAdopt(
 		command: "ci deploy",
 		mode: "adopt",
 		adopted: { ...found },
+		verifiedAt: production.origin,
 		delivery: Object.fromEntries(
 			Object.entries(outcomes).map(([node, outcome]) => [
 				node,
@@ -420,22 +437,23 @@ export async function runCiRelayAdopt(
 	});
 	const preview = await deliver("preview");
 	if (!preview.ok) return failed("preview", preview, found, data({ preview }));
-	const production = await deliver("production");
-	if (!production.ok)
+	const promoted = await deliver("production");
+	if (!promoted.ok)
 		return failed(
 			"production",
-			production,
+			promoted,
 			found,
-			data({ preview, production }),
+			data({ preview, production: promoted }),
+			{ origin: production.origin, findings: probe.findings() },
 		);
 	return {
 		code: "HOBO_CI_ADOPTED",
 		message: [
 			`Adopted Vercel's deployment of ${repository}@${sha}: ${found.url}`,
-			`  Freight ${production.report.alias} promoted through ${production.report.pipeline}: preview ${preview.report.state}, production ${production.report.state} (verified and qualified)`,
+			`  Freight ${promoted.report.alias} promoted through ${promoted.report.pipeline}: preview ${preview.report.state} (deployment record READY), production ${promoted.report.state} (${production.origin} serves ${sha.slice(0, 12)} and is ready)`,
 			`  deployment ${found.deploymentId}${found.inspectorUrl ? ` (${found.inspectorUrl})` : ""}; nothing was deployed or changed on Vercel`,
 		].join("\n"),
-		data: data({ preview, production }),
+		data: data({ preview, production: promoted }),
 	};
 }
 
@@ -452,17 +470,34 @@ function failed(
 	outcome: Extract<RelayDeliveryOutcome, { ok: false }>,
 	found: VercelAdoptedDeployment,
 	data: CommandData,
+	verify?: Readonly<{ origin: string; findings: RelayProbeFindings }>,
 ): CommandResult {
 	const state = outcome.report?.state;
+	const why =
+		verify !== undefined &&
+		outcome.code === RELAY_DELIVERY_REFUSAL.verificationFailed
+			? relayVerifyFailure(verify.origin, found.commit, verify.findings)
+			: undefined;
 	return {
 		ok: false,
-		code: outcome.code,
+		code: why?.code ?? outcome.code,
 		message: [
-			`The adopted deployment ${found.deploymentId} (${found.url}) did not pass ${node}: ${outcome.message}`,
+			`The adopted deployment ${found.deploymentId} (${found.url}) did not pass ${node}: ${why?.reason ?? outcome.message}`,
+			...(why !== undefined ? [`  ${why.remediation}`] : []),
 			state !== undefined
 				? `  CD recorded the ${node} promotion as ${state}; nothing was rolled back or changed on Vercel.`
 				: "  Nothing was changed on Vercel.",
 		].join("\n"),
-		data,
+		data:
+			why !== undefined
+				? {
+						...data,
+						verification: {
+							code: why.code,
+							reason: why.reason,
+							remediation: why.remediation,
+						},
+					}
+				: data,
 	};
 }

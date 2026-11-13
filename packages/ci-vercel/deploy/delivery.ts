@@ -28,14 +28,16 @@
  *   production is never deployed. `/healthz` answers 200 whenever the
  *   function runs (`src/entry.ts`).
  *
- * Known gap: the probes read a fixed origin, not the deployment just realized,
- * and nothing asserts that the origin serves the Freight's commit; a stale
- * deployment behind the origin can answer for a newer commit. Closing it needs
- * the deployment's own URL with a protection-bypass header, or `/healthz`
- * reporting the build SHA. `hobo ci deploy --adopt` (the token-free mode the
- * deploy workflow runs) applies these records with every probe aimed at the
- * adopted Git-integration deployment's own URL instead, so that path verifies
- * the deployment of the Freight's commit.
+ * The probes read an origin, not the deployment just realized; what ties the
+ * two together is `/healthz`, which names the commit the deployment was built
+ * from (`src/entry.ts`, `VERCEL_GIT_COMMIT_SHA`). `hobo ci deploy` requires
+ * production's `/healthz` to name the Freight's commit, so a stale deployment
+ * behind the production origin cannot qualify a newer commit. Known gap: the
+ * by-hand preview probe does not check the commit. `hobo ci deploy --adopt`
+ * (the token-free mode the deploy workflow runs) verifies preview by the
+ * deployment's GitHub record instead, and production at `HOBO_CI_RELAY_URL`
+ * or, unset, the Yard's `productionOrigin` (`yard.ts`); it never probes the
+ * per-deployment URL, which answers 401 under Deployment Protection.
  *
  * The origins are the module's only inputs, read once when it loads:
  * `HOBO_CI_RELAY_URL` (production, the same repository variable the smoke

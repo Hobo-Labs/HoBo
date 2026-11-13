@@ -222,6 +222,29 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /gh api|curl /u);
 	});
 
+	it("verifies at the Yard's production domain, needing no Deployment Protection bypass", () => {
+		// The production origin comes from the committed Yard, not a variable,
+		// and is an https origin with no path.
+		const yardSource = readFileSync(
+			join(root, "packages", "ci-vercel", "deploy", "yard.ts"),
+			"utf8",
+		);
+		const origin = /productionOrigin: "(https:\/\/[^"/]+)"/u.exec(yardSource);
+		assert.ok(origin, "deploy/yard.ts declares no productionOrigin");
+		assert.match(
+			yardSource,
+			/productionOrigin: RELAY_PLACEMENT\.productionOrigin/u,
+		);
+		// Nothing in the workflow reaches past protection or names a probe URL.
+		assert.doesNotMatch(
+			workflow,
+			/protection-bypass|VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-set-bypass-cookie/iu,
+		);
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.doesNotMatch(adopt, /https?:\/\//u);
+		assert.match(workflow, /productionOrigin in deploy\/yard\.ts/u);
+	});
+
 	it("verifies the secret store's CI identity by name before adopting the deployment", () => {
 		const verify = step("Verify the secret store connection");
 		assert.match(

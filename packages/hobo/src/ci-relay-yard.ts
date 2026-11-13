@@ -82,6 +82,8 @@ export interface RelayPlacement {
 	readonly project?: string;
 	readonly repository?: string;
 	readonly rootDirectory?: string;
+	// The production domain (an https origin) verification probes.
+	readonly productionOrigin?: string;
 	// Settings the chosen bindings and the Camp project, by name.
 	readonly settings: ReadonlyMap<string, string>;
 	// Names the deploy must be given, sorted.
@@ -324,6 +326,7 @@ export function resolveRelayPlacement(
 	const project = placementProperty(yard, "project");
 	const repository = placementProperty(yard, "repository");
 	const rootDirectory = placementProperty(yard, "rootDirectory");
+	const productionOrigin = placementProperty(yard, "productionOrigin");
 	return Object.freeze({
 		yard: yard.name,
 		camp: camp.id,
@@ -332,6 +335,7 @@ export function resolveRelayPlacement(
 		...(project !== undefined ? { project } : undefined),
 		...(repository !== undefined ? { repository } : undefined),
 		...(rootDirectory !== undefined ? { rootDirectory } : undefined),
+		...(productionOrigin !== undefined ? { productionOrigin } : undefined),
 		settings,
 		inputs: [...inputs].sort(),
 		bindings,

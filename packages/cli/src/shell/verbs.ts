@@ -411,6 +411,13 @@ Deploy options (hobo ci deploy; run in the relay's project directory, or pass --
                               A real run reads VERCEL_TOKEN from the environment, and
                               the team and the config service's coordinates from
                               deploy/secret-store.binding.json when it exists.
+  --adopt                     Token-free: adopt the deployment Vercel's Git integration
+                              made of --sha (takes --sha, --repo, --ref only). Reads
+                              GitHub's Deployments API with GITHUB_TOKEN, never a Vercel
+                              token; verifies preview by its deployment record (READY,
+                              that commit) and production at HOBO_CI_RELAY_URL or the
+                              Yard's productionOrigin: /healthz must name the commit,
+                              /readyz must answer 200. Creates or changes nothing on Vercel.
 
 Secret store options (hobo ci secret-store plan|provision; ADR-0179 amendment):
   --auth-md <origin>          A store that may publish auth.md (repeatable)

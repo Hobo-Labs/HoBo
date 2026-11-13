@@ -79,7 +79,7 @@ import {
 	loadBindleDefinition,
 } from "@hobo/cli";
 import type { IacOutputs, IacProgram } from "@hobo/cloud";
-import type { HttpTransport } from "@hobo/core";
+import { createBoundedFetchTransport, type HttpTransport } from "@hobo/core";
 import {
 	type ParsedSecretStoreBinding,
 	SECRET_STORE_BINDING_FILE,
@@ -103,6 +103,11 @@ import {
 	provisionRelayAttachments,
 	type VercelCliRunner,
 } from "./ci-relay-provision.js";
+import {
+	commitCheckingProbe,
+	relayOrigin,
+	relayVerifyFailure,
+} from "./ci-relay-verify.js";
 import {
 	loadRelayYard,
 	type RelayPlacement,
@@ -813,6 +818,24 @@ export async function runCiRelayDeploy(
 		return usage(
 			`${definition.name} did not compile to a declaration, so there is nothing to record as Freight.`,
 		);
+	// Production is verified at HOBO_CI_RELAY_URL, the production domain: its
+	// /healthz must name the commit just deployed, so an origin still serving
+	// an older deployment fails verification instead of qualifying this one.
+	const productionOrigin =
+		target === "production" && wait && sha !== undefined
+			? relayOrigin(env.HOBO_CI_RELAY_URL)
+			: undefined;
+	const verify =
+		productionOrigin !== undefined && sha !== undefined
+			? {
+					origin: productionOrigin,
+					probe: commitCheckingProbe(
+						input.probe ??
+							createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
+						{ origin: productionOrigin, commit: sha.toLowerCase() },
+					),
+				}
+			: undefined;
 	const delivered = await deliverRelay({
 		cwd: input.cwd,
 		env,
@@ -830,7 +853,11 @@ export async function runCiRelayDeploy(
 		wait,
 		limitMs: WAIT_LIMIT_MS,
 		intervalMs: WAIT_INTERVAL_MS,
-		...(input.probe !== undefined ? { http: input.probe } : undefined),
+		...(verify !== undefined
+			? { http: verify.probe.transport }
+			: input.probe !== undefined
+				? { http: input.probe }
+				: undefined),
 		...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 		...(input.now !== undefined ? { now: input.now } : undefined),
 		emitProgress: input.emitProgress,
@@ -911,15 +938,28 @@ export async function runCiRelayDeploy(
 			},
 		};
 	}
+	const why =
+		verify !== undefined && sha !== undefined
+			? relayVerifyFailure(
+					verify.origin,
+					sha.toLowerCase(),
+					verify.probe.findings(),
+				)
+			: undefined;
 	return {
 		ok: false,
-		code: delivered.code,
-		message: withoutToken(delivered.message),
+		code: why?.code ?? delivered.code,
+		message: withoutToken(
+			why !== undefined
+				? `${delivered.message}\n  ${why.reason}\n  ${why.remediation}`
+				: delivered.message,
+		),
 		data: {
 			command: "ci deploy",
 			dryRun: false,
 			plan: planJson,
 			...deliveryData,
+			...(why !== undefined ? { verification: { ...why } } : undefined),
 		},
 	};
 }
