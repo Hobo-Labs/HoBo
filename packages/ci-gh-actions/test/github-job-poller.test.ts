@@ -1920,8 +1920,7 @@ describe("pull-mode box worker over SQLite", () => {
 				backlogImmediate: true,
 			},
 			fleetCapacity: {
-				publish: async () => {},
-				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 1 }),
+				snapshot: async () => ({ hoboFreeSlots: 0, fleetFreeSlots: 1 }),
 			},
 			now: () => new Date(nowMs).toISOString(),
 		});
@@ -1984,8 +1983,7 @@ describe("pull-mode box worker over SQLite", () => {
 				backlogImmediate: true,
 			},
 			fleetCapacity: {
-				publish: async () => {},
-				snapshot: async () => ({ hoboFreeSlots: 3, arcFreeSlots: 0 }),
+				snapshot: async () => ({ hoboFreeSlots: 3, fleetFreeSlots: 3 }),
 			},
 		});
 		const poller = createGithubJobPoller({
@@ -2060,8 +2058,7 @@ describe("pull-mode box worker over SQLite", () => {
 				trunkSlots: 1,
 				memoryAdmission,
 				fleetCapacity: {
-					publish: async () => {},
-					snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 0 }),
+					snapshot: async () => ({ hoboFreeSlots: 0, fleetFreeSlots: 0 }),
 				},
 			});
 			const poller = createGithubJobPoller({
@@ -2109,8 +2106,7 @@ describe("pull-mode box worker over SQLite", () => {
 			labels: new Map(),
 			trunkSlots: 1,
 			fleetCapacity: {
-				publish: async () => {},
-				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 2 }),
+				snapshot: async () => ({ hoboFreeSlots: 0, fleetFreeSlots: 2 }),
 			},
 		});
 		const poller = createGithubJobPoller({
@@ -2171,8 +2167,7 @@ describe("pull-mode box worker over SQLite", () => {
 			headroomFleetDeferMs: 1_000,
 			skipLaunchFor: [1],
 			fleetCapacity: {
-				publish: async () => {},
-				snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 2 }),
+				snapshot: async () => ({ hoboFreeSlots: 0, fleetFreeSlots: 2 }),
 			},
 			now: () => new Date(nowMs).toISOString(),
 		});
@@ -2255,8 +2250,7 @@ describe("pull-mode box worker over SQLite", () => {
 					backlogImmediate: true,
 				},
 				fleetCapacity: {
-					publish: async () => {},
-					snapshot: async () => ({ hoboFreeSlots: 0, arcFreeSlots: 0 }),
+					snapshot: async () => ({ hoboFreeSlots: 0, fleetFreeSlots: 0 }),
 				},
 			});
 			const poller = createGithubJobPoller({

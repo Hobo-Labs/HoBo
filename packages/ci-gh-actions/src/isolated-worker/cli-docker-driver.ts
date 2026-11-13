@@ -2,16 +2,16 @@ import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
+import {
+	type ContainerHardening,
+	hardenedContainerFlags,
+} from "./container-flags.js";
 import type {
 	ContainerResourceWeights,
 	DockerContainer,
 	DockerDriver,
 	IsolatedContainerSpec,
 } from "./docker-driver.js";
-import {
-	type ContainerHardening,
-	hardenedContainerFlags,
-} from "./container-flags.js";
 import type { WorkerImage } from "./image-gc.js";
 import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 

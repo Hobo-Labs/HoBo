@@ -1,7 +1,7 @@
 import { mainWorkspaceShardIndex } from "./admission-order.js";
 import { CI_DEPS_LAYER_JOB_NAME } from "./isolated-worker/memory-classes.js";
 
-/** Node-only trunk jobs that should fleet-absorb on memory pressure without a 45s box hold. */
+/** Node-only trunk jobs that fleet peers should absorb on memory pressure without a 45s box hold. */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
 
 function isImmediateFleetMainTrunkPickupJob(
@@ -16,7 +16,7 @@ import {
 	type FleetCapacityWitness,
 	type FleetWitnessFields,
 	fleetWitnessFields,
-} from "./fleet-absorb.js";
+} from "./fleet-capacity-witness.js";
 
 export type TrunkWaitReason =
 	| "lease-capacity"
@@ -42,7 +42,7 @@ export type TrunkWaitCache = Map<string, TrunkWaitState>;
 // public-contract: bounds box memory hold without lowering standard class sizes.
 export const DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS = 45_000;
 
-/** Shorter cooperative window when mesh/ARC already report absorb slots (finding 119). */
+/** Shorter cooperative window when fleet peers already have absorb slots (finding 119). */
 export const PEER_PRESENT_TRUNK_HEADROOM_FLEET_DEFER_MS = 5_000;
 
 export function effectiveTrunkFleetDeferMs(

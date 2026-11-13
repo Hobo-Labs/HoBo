@@ -2,7 +2,7 @@ import type { Job, Lease } from "@hobo/ci";
 import {
 	type FleetCapacityWitness,
 	fleetCanAbsorbUnlaunchedRelease,
-} from "./fleet-absorb.js";
+} from "./fleet-capacity-witness.js";
 import {
 	type TrunkWaitCache,
 	type TrunkWaitState,
@@ -13,7 +13,7 @@ import {
 export {
 	type FleetCapacityWitness,
 	fleetCanAbsorbUnlaunchedRelease,
-} from "./fleet-absorb.js";
+} from "./fleet-capacity-witness.js";
 
 export const DEFAULT_UNLAUNCHED_RESERVE_MS = 25_000;
 export const DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS = 25_000;
@@ -75,7 +75,7 @@ function fleetWitnessFromReleaseContext(
 ): FleetCapacityWitness | undefined {
 	if (context.fleetWitness) return context.fleetWitness;
 	if (context.nonLocalFreeSlots === undefined) return undefined;
-	return { arcFreeSlots: context.nonLocalFreeSlots };
+	return { fleetFreeSlots: context.nonLocalFreeSlots };
 }
 
 export type UnlaunchedReleaseContext = Readonly<{
@@ -87,7 +87,7 @@ export type UnlaunchedReleaseContext = Readonly<{
 	liveContainerCount: number;
 	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
-	/** Mesh witness; release fail-closed when no peer absorb capacity. */
+	/** Fleet witness; release fail-closed when no peer absorb capacity. */
 	fleetWitness?: FleetCapacityWitness;
 	/** @deprecated use fleetWitness */
 	nonLocalFreeSlots?: number;

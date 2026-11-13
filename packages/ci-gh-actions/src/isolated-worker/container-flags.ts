@@ -22,7 +22,9 @@ export type ContainerHardening = Readonly<{
 	cpus?: number;
 }>;
 
-export function hardenedContainerFlags(hardening: ContainerHardening): string[] {
+export function hardenedContainerFlags(
+	hardening: ContainerHardening,
+): string[] {
 	const pidsLimit = hardening.pidsLimit ?? DEFAULT_PIDS_LIMIT;
 	if (!Number.isSafeInteger(pidsLimit) || pidsLimit < 1)
 		throw new Error("invalid container pids limit");

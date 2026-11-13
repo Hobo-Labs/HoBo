@@ -1,6 +1,12 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	statfsSync,
+	statSync,
+} from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -12,7 +18,6 @@ import {
 	memoryAdmitHeadroom,
 	parseConfiguration,
 } from "@hobo/ci";
-import { createTrustedMeshBoard } from "@hobo/ci/mesh";
 import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
@@ -24,9 +29,6 @@ import {
 	createCompositeIsolatedHost,
 	createContainerStallGuard,
 	createDepsImageEnsurer,
-	createFleetCapacityPublisher,
-	createFleetRoutePublisher,
-	createFleetStatePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -37,7 +39,6 @@ import {
 	createJobDurations,
 	createMemoryPeaks,
 	createMergeQueuePositionCache,
-	createMeshTrust,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
@@ -46,7 +47,6 @@ import {
 	createRetiredWorkDirectorySweeper,
 	createStoragePeaks,
 	createWorkerMemoryAdmission,
-	createWorkerMesh,
 	createWorkerStorageAdmission,
 	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	type DepsImageProcessRequest,
@@ -54,22 +54,15 @@ import {
 	defaultGitMirrorFallbackRoot,
 	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
-	freeDiskMb,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
 	hostPressureBlocksAdmission,
 	hostResourcePressureLogFields,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
-	loadMeshIdentity,
 	localWorkerFreeSlots,
-	type MeshJournal,
 	mainShardParallelLaunchCapacity,
-	memoryRequestForJob,
 	mergeHeldPruneWitness,
-	meshReliabilityJournal,
-	meshReliabilityResetToken,
-	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
@@ -112,20 +105,17 @@ function inodeReserve(name: string, fallback: number): number {
 	return reserve;
 }
 
-/** Optional NATS credentials, from the variable or its `_FILE`. */
-function natsCredentials() {
-	const read = (name: string) => {
-		const file = process.env[`${name}_FILE`];
-		const value = file
-			? readFileSync(file, "utf8").trimEnd()
-			: process.env[name];
-		return value ? value : undefined;
-	};
-	return {
-		token: read("HOBO_CI_NATS_TOKEN"),
-		user: read("HOBO_CI_NATS_USER"),
-		password: read("HOBO_CI_NATS_PASSWORD"),
-	};
+/** Free megabytes on the filesystem holding `path`; undefined when it cannot be read. */
+function freeDiskMbOf(path: string): number | undefined {
+	try {
+		const stats = statfsSync(path);
+		const megabytes = Math.floor((stats.bavail * stats.bsize) / (1024 * 1024));
+		return Number.isSafeInteger(megabytes) && megabytes >= 0
+			? megabytes
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function storageLeases(leases: readonly Lease[]) {
@@ -140,17 +130,6 @@ function secretOrFile(name: string): string {
 	const file = process.env[`${name}_FILE`];
 	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
 }
-
-/**
- * Set once the worker has joined a mesh: its own log events say what became
- * of the jobs it took, and that is what its reliability is scored from.
- */
-let meshOutcomes:
-	| ((
-			event: string,
-			fields: Readonly<Record<string, string | number | boolean>>,
-	  ) => void)
-	| undefined;
 
 // Off unless OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variable) or
 // HOBO_CI_TRACE_FILE is set. Every log event below is also a span, and so is
@@ -199,7 +178,6 @@ function log(
 	fields: Readonly<Record<string, string | number | boolean>> = {},
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
-	meshOutcomes?.(event, fields);
 	relayTrace.event(event, fields);
 	ciEvents.emit(event, fields);
 }
@@ -246,27 +224,12 @@ const appId = required("HOBO_CI_GITHUB_APP_ID");
 const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
 	: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
-// A worker's configuration is its own file or variable. One that has
-// neither and is told where a mesh is asks the mesh, so adding a box takes a
-// NATS address and App credentials and nothing else.
-const meshBootSettings = meshSettingsFromEnv(process.env, hostname());
+// A worker's configuration is its own file or variable.
 const localConfiguration = process.env.HOBO_CI_CONFIG
 	? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
 	: process.env.HOBO_CI_CONFIG_JSON;
-const sharedConfiguration =
-	localConfiguration === undefined && meshBootSettings
-		? await (await import("@hobo/ci-gh-actions/mesh-nats")).readNatsMeshConfig({
-				servers: meshBootSettings.servers,
-				namespace: meshBootSettings.namespace,
-				replicas: meshBootSettings.replicas,
-				name: `hobo-ci-worker ${meshBootSettings.nodeId} (configuration)`,
-				...natsCredentials(),
-			})
-		: undefined;
 const configuration = parseConfiguration(
-	localConfiguration ??
-		sharedConfiguration?.value ??
-		required("HOBO_CI_CONFIG_JSON"),
+	localConfiguration ?? required("HOBO_CI_CONFIG_JSON"),
 );
 const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
 // No ingress in pull mode, so the origin is informational (runner container env).
@@ -356,13 +319,6 @@ const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
 const lendTrunkSlots = trunkLend === "1";
-// Off unless set: the relay then keeps HOBO_CI_FLEET_ROUTES current so new jobs
-// can ask a label provider for a runner while the box is full. The App needs
-// repository "Variables: write" for it; a refused write is logged and ignored.
-const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
-if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
-	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
-const publishFleetRoutes = fleetRoutesFlag === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -420,9 +376,6 @@ if (
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
-// The worker's own SQLite journal, when it has one: where its mesh
-// reliability record is kept, and beside which its identity key lives.
-let meshJournal: MeshJournal | undefined;
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -436,7 +389,6 @@ try {
 	);
 	store = sqlite;
 	closeStore = async () => sqlite.close();
-	meshJournal = sqlite;
 	// This worker owns its journal, so the operator's config file is the policy
 	// source: apply it when it changed. A refused change (for example an active
 	// lease pinning a provider identity) keeps the stored policy and says why.
@@ -535,7 +487,13 @@ try {
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",
 		);
-	const docker = createCliDockerDriver({ env: process.env, log });
+	// The host Docker socket only while this box's fleet allows it (S1, §6.11).
+	let fleetHostDocker = () => false;
+	const docker = createCliDockerDriver({
+		env: process.env,
+		log,
+		hostDocker: () => fleetHostDocker(),
+	});
 	const workFs = createNodeWorkerStorageFileSystem();
 	const retiredSweep = createRetiredWorkDirectorySweeper({
 		fs: workFs,
@@ -814,52 +772,13 @@ try {
 		connections: async () =>
 			(await store.configuration())?.configuration?.connections ?? [],
 	});
-	const fleetRoutes = publishFleetRoutes
-		? createFleetRoutePublisher({
-				github,
-				log,
-				unhealthyOfferIds: (account) => {
-					const bad = new Set<string>();
-					const isolated = account.offers.filter(
-						(offer) =>
-							isIsolatedContainerOffer(offer) &&
-							offer.providerAccountId === workerAccountId,
-					);
-					if (hostHealth.current().state === "critical") {
-						for (const offer of isolated) bad.add(offer.id);
-						return bad;
-					}
-					const availableMb = readAvailableMemoryMb();
-					const pressure = hostPressureSample();
-					if (
-						hostPressureBlocksAdmission(pressure) ||
-						!memoryAdmitHeadroom(
-							availableMb,
-							memoryConfig.classes.heavy,
-							memoryConfig.reserveMb,
-							capacityVolatilityMb,
-						)
-					) {
-						for (const offer of isolated) bad.add(offer.id);
-					}
-					return bad;
-				},
-			})
-		: undefined;
-	const fleetCapacityPublisher = publishFleetRoutes
-		? createFleetCapacityPublisher({ github, log })
-		: undefined;
 	const localFleetCapacitySnapshot = async () => {
 		const active = await store.activeLeases();
 		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
-		const meshCap = await mesh?.observe();
-		if (!meshCap) return { hoboFreeSlots };
-		const meshFree = meshCap.freeSlots;
-		return {
-			hoboFreeSlots,
-			meshFreeSlots: meshFree,
-			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
-		};
+		const capacity = await fleetMember?.daemon.fleetCapacity();
+		return capacity === undefined
+			? { hoboFreeSlots }
+			: { hoboFreeSlots, fleetFreeSlots: capacity.freeSlots };
 	};
 	const headroomFleetDeferMs = Number(
 		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
@@ -898,7 +817,23 @@ try {
 		!Number.isInteger(unlaunchedReReserveCooldownMs)
 	)
 		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
-	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
+	// Set when shutdown starts, before the fleet agent drains.
+	let fleetMemberDraining = false;
+	let fleetMember:
+		| Readonly<{
+				daemon: Readonly<{
+					fleetCapacity(): Promise<{ freeSlots: number } | undefined>;
+					hostDocker(): boolean;
+					refreshFleet(): Promise<void>;
+					agent: Readonly<{
+						start(): Promise<void>;
+						drain(): Promise<void>;
+						stop(): Promise<void>;
+					}>;
+				}>;
+				timer: ReturnType<typeof setInterval>;
+		  }>
+		| undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -917,7 +852,6 @@ try {
 		storageAdmission,
 		storageJobReserve,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
-		fleetRoutes,
 		headroomFleetDeferMs,
 		unlaunchedReservationRelease: {
 			boundMs: unlaunchedReserveMs,
@@ -935,13 +869,7 @@ try {
 				volatilityMb: capacityVolatilityMb,
 				launchSlots: slots,
 			}),
-		fleetCapacity: {
-			publish: async (input) => {
-				if (!fleetCapacityPublisher) return undefined;
-				return fleetCapacityPublisher.publish(input);
-			},
-			snapshot: localFleetCapacitySnapshot,
-		},
+		fleetCapacity: { snapshot: localFleetCapacitySnapshot },
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -952,203 +880,131 @@ try {
 		inboxDrainBudgetMs,
 		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
-	// Relay mesh: off unless HOBO_CI_NATS_URL names a server. With it, this
-	// worker advertises its free slots and takes a queued job only on its turn
-	// (see docs/design/ci-relay-mesh.md). It only applies when the worker reads
-	// GitHub's queue itself.
-	const meshSettings =
-		plan.admission === "pull"
-			? meshSettingsFromEnv(process.env, hostname())
-			: undefined;
-	const natsMesh = meshSettings
-		? (await import("@hobo/ci-gh-actions/mesh-nats")).createNatsMesh({
-				servers: meshSettings.servers,
-				namespace: meshSettings.namespace,
-				replicas: meshSettings.replicas,
-				name: `hobo-ci-worker ${meshSettings.nodeId}`,
-				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
-				onNodesCapped: (limit) => log("hobo_ci_mesh_nodes_capped", { limit }),
-				...natsCredentials(),
-			})
-		: undefined;
-	let meshDraining = false;
-	// The worker's identity: an Ed25519 key made on first start and kept
-	// beside its journal, readable by its owner only. The private half never
-	// leaves this file; the public half travels with every advertisement.
-	const meshIdentity = meshSettings
-		? await loadMeshIdentity(
-				process.env.HOBO_CI_MESH_KEY_FILE ??
-					join(dirname(plan.store.path), "mesh-node.key"),
-			)
-		: undefined;
-	// Which keys the mesh's operator vouches for, read from the mesh on every
-	// beat. With none listed this worker trusts only its own key.
-	const meshTrust = createMeshTrust({
-		store: natsMesh?.trust,
-		selfPublicKey: meshIdentity?.publicKey,
-		log,
-	});
-	// Signs what this worker advertises, and says of every advertisement it
-	// reads how far it is trusted. One whose signature fails is never ranked.
-	const meshBoard = natsMesh
-		? createTrustedMeshBoard({
-				board: natsMesh.board,
-				identity: meshIdentity,
-				policy: meshTrust.policy,
-			})
-		: undefined;
-	// The record of the jobs this worker took, kept in its journal so a
-	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=<token> starts
-	// it again once per token, for an operator who has repaired the box.
-	const meshReliability =
-		meshSettings && meshJournal
-			? meshReliabilityJournal(
-					meshJournal,
-					meshSettings.nodeId,
-					(message) =>
-						log("hobo_ci_mesh_reliability_journal_failed", { message }),
-					meshReliabilityResetToken(process.env.HOBO_CI_MESH_RELIABILITY_RESET),
-				)
-			: undefined;
-	const storedReliability = await meshReliability?.load();
-	mesh =
-		meshSettings && natsMesh && meshBoard
-			? createWorkerMesh({
-					settings: meshSettings,
-					board: meshBoard,
-					claims: natsMesh.claims,
-					requireTrusted: meshTrust.requireTrusted,
-					initialReliability: storedReliability?.record,
-					persistReliability: (record) => void meshReliability?.save(record),
-					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
-					totalSlots: slots,
-					healthy: () => !meshDraining,
-					servesTrunk: trunkSlots > 0,
-					// Memory a new job could have: what the worker's budget has
-					// left, and no more than the host can spare above its reserve.
-					free: () => {
-						const budgetLeftMb = memoryConfig.budgetMb - inUseWorkerMemoryMb;
-						const availableMb = readAvailableMemoryMb();
-						return {
-							memoryMb: Math.max(
-								0,
-								Math.floor(
-									availableMb === undefined
-										? budgetLeftMb
-										: Math.min(
-												budgetLeftMb,
-												availableMb -
-													memoryConfig.reserveMb -
-													capacityVolatilityMb,
-											),
-								),
-							),
-							// Measured on the filesystem jobs check out and build on.
-							diskMb: freeDiskMb(workRoot),
-						};
-					},
-					platform: { os: process.platform, arch: process.arch },
-					// A job is sized by the same memory class the worker would
-					// reserve for it at launch.
-					needs: (job) => ({
-						memoryMb: memoryRequestForJob(job.name, memoryConfig).memoryMb,
-					}),
-					log,
-				})
-			: undefined;
-	meshOutcomes = mesh?.record;
-	log("hobo_ci_mesh", {
-		enabled: mesh !== undefined,
-		configuration:
-			localConfiguration !== undefined
-				? "local"
-				: sharedConfiguration
-					? "mesh"
-					: "none",
-		nodeId: meshSettings?.nodeId ?? "",
-		// The public half of the identity key, to list in the trusted set.
-		publicKey: meshIdentity?.publicKey ?? "",
-		reliabilityRestored: storedReliability?.record !== undefined,
-		reliabilityReset: storedReliability?.reset ?? false,
-		namespace: meshSettings?.namespace ?? "",
-		servers: meshSettings?.servers.length ?? 0,
-		stepMs: meshSettings?.stepMs ?? 0,
-	});
-	// The snapshot runner routing reads: per label, the nodes this worker
-	// ranks and their free slots. Published with the route table's flag, to
-	// each connected repository; see src/fleet-state.ts.
-	const fleetState =
-		publishFleetRoutes && mesh && meshBoard
-			? createFleetStatePublisher({
-					github,
-					board: meshBoard,
-					self: mesh.self,
-					labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
-					requireTrusted: meshTrust.requireTrusted,
-					log,
-				})
-			: undefined;
-	// Every 10 s: read the trust settings, say what this worker can take,
-	// read what the mesh can, and keep the routing snapshot fresh.
-	const publishFleetState = async (timing: { now?: boolean } = {}) => {
-		if (!fleetState) return;
-		const state = await store.configuration().catch(() => undefined);
-		await fleetState.publish(
-			(state?.configuration?.connections ?? []).map((connection) => ({
-				installationId: connection.installationId,
-				repository: connection.repository,
-			})),
-			timing,
+	// HoBo Fleet (ADR-0182): with HOBO_FLEET_AUTHORITY_URL this box is a
+	// DEDICATED fleet member with roles DISPATCHER and EXECUTOR. Its memory,
+	// storage and host-health admission is its capacity; GitHub's queue reaches
+	// it as the github-actions-job work kind, and each order runs in a sandbox
+	// from @hobo/fleet-agent behind the agent's egress proxy. Without it the box
+	// takes GitHub's queue alone, as before.
+	if (process.env.HOBO_FLEET_AUTHORITY_URL) {
+		const authorityUrl = process.env.HOBO_FLEET_AUTHORITY_URL;
+		const fleetName = required("HOBO_FLEET_NAME");
+		const tenant = required("HOBO_FLEET_TENANT");
+		const fleetHome =
+			process.env.HOBO_FLEET_HOME ??
+			join(dirname(plan.store.path), "fleet-member");
+		const [ciGh, fleetAgent, fleetNats, core] = await Promise.all([
+			import("@hobo/ci-gh-actions"),
+			import("@hobo/fleet-agent"),
+			import("@hobo/fleet-nats"),
+			import("@hobo/core"),
+		]);
+		const fleetLog = (
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+		) => log(event, fields);
+		const connections = async () =>
+			(await store.configuration())?.configuration?.connections ?? [];
+		const keys = fleetAgent.createFileKeyStore(fleetHome);
+		const standardDiskMb = Math.ceil(
+			storageReserveForClass("standard").workRootBytes / (1024 * 1024),
 		);
-	};
-	const meshBeat = async () => {
-		await meshTrust.refresh();
-		await mesh?.advertise();
-		await mesh?.observe();
-		await publishFleetState();
-	};
-	const meshAdvertTimer = mesh
-		? setInterval(() => void meshBeat(), 10_000)
-		: undefined;
-	meshAdvertTimer?.unref();
-	// Keep the mesh's copy of the configuration in step with this worker's.
-	// A worker with its own file never has it overwritten: a difference is
-	// reported, and an operator decides which side is right.
-	const syncMeshConfiguration = async () => {
-		if (!natsMesh) return;
-		const mine = toJsonString(ConfigurationSchema, configuration);
-		const shared = await natsMesh.config.read();
-		if (!shared) {
-			const published = await natsMesh.config.publish(mine);
-			log("hobo_ci_mesh_config_published", {
-				revision: published === "conflict" ? 0 : published.revision,
-				conflict: published === "conflict",
-			});
-		} else if (
-			toJsonString(ConfigurationSchema, parseConfiguration(shared.value)) !==
-			mine
-		)
-			log("hobo_ci_mesh_config_drift", {
-				revision: shared.revision,
-				source: localConfiguration === undefined ? "mesh" : "local",
-			});
-	};
-	// The first connection is made in the background; advertise as soon as it is up.
-	void natsMesh?.ready.then(
-		async () => {
-			await meshBeat();
-			await syncMeshConfiguration().catch((error) =>
-				log("hobo_ci_mesh_config_sync_failed", {
-					message: error instanceof Error ? error.message : "unknown",
+		let daemon: ReturnType<typeof ciGh.composeFleetDaemon>;
+		const egress = fleetAgent.createEgressProxyFactory({
+			fleetAllow: () => daemon.fleetAllow(),
+			log: fleetLog,
+		});
+		daemon = ciGh.composeFleetDaemon({
+			keys,
+			authorityUrl,
+			tenant: core.parseTenantId(tenant),
+			fleet: fleetName,
+			connector: fleetNats.createNatsBusConnector(),
+			admission: {
+				slots,
+				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+				read: async () => {
+					const availableMb = readAvailableMemoryMb();
+					const freeDisk = freeDiskMbOf(workRoot);
+					const budgetLeftMb = memoryConfig.budgetMb - inUseWorkerMemoryMb;
+					return {
+						usedSlots: liveLaunchSlotsInUse,
+						hostHealth: hostHealth.current().state,
+						draining: fleetMemberDraining,
+						memoryAdmits:
+							!hostPressureBlocksAdmission(hostPressureSample()) &&
+							memoryAdmitHeadroom(
+								availableMb,
+								memoryConfig.classes.standard,
+								memoryConfig.reserveMb,
+								capacityVolatilityMb,
+							),
+						storageAdmits: freeDisk === undefined || freeDisk >= standardDiskMb,
+						freeMemoryMb:
+							availableMb === undefined
+								? budgetLeftMb
+								: Math.min(
+										budgetLeftMb,
+										availableMb - memoryConfig.reserveMb - capacityVolatilityMb,
+									),
+						freeDiskMb: freeDisk,
+					};
+				},
+			},
+			work: {
+				source: ciGh.createGithubActionsWorkSource({
+					poller: {
+						github,
+						durations: jobDurations,
+						connections,
+						ingest: (delivery) => runtime.ingestWebhook(delivery),
+					},
+					mintRegistration: ciGh.createJitRegistrationMinter({
+						github,
+						connections,
+					}),
+					now: Date.now,
+					log: fleetLog,
+				}),
+				runner: ciGh.createGithubActionsWorkRunner(),
+			},
+			sandboxes: await fleetAgent.sandboxDrivers({ log: fleetLog }),
+			egress,
+			agentVersion: process.env.HOBO_FLEET_AGENT_VERSION ?? "0.0.1",
+			now: Date.now,
+			log: fleetLog,
+			fetch,
+		});
+		// First start: enroll with the single-use bootstrap token, read from a
+		// file so it never appears on a command line or in the environment.
+		if ((await keys.readState()).trust === undefined) {
+			const tokenFile = required("HOBO_FLEET_BOOTSTRAP_TOKEN_FILE");
+			const enrolled = await daemon.agent.enroll(
+				ciGh.boxEnrollment({
+					tenant: core.parseTenantId(tenant),
+					fleet: fleetName,
+					name: process.env.HOBO_FLEET_MEMBER_NAME ?? hostname(),
+					bootstrapToken: readFileSync(tokenFile, "utf8").trim(),
+					region: required("HOBO_FLEET_REGION"),
+					platform: { os: process.platform, arch: process.arch },
 				}),
 			);
-		},
-		(error) =>
-			log("hobo_ci_mesh_nats", {
-				status: "failed",
-				message: error instanceof Error ? error.message : "unknown",
-			}),
-	);
+			if (!enrolled.ok)
+				throw new Error(`fleet enrollment failed: ${enrolled.error.code}`);
+		}
+		await daemon.agent.start();
+		fleetHostDocker = () => daemon.hostDocker();
+		const timer = setInterval(() => {
+			void daemon.refreshFleet().catch(() => undefined);
+		}, 10_000);
+		timer.unref();
+		void daemon.refreshFleet().catch(() => undefined);
+		fleetMember = { daemon, timer };
+	}
+	log("hobo_ci_fleet_member", {
+		enabled: fleetMember !== undefined,
+		fleet: process.env.HOBO_FLEET_NAME ?? "",
+	});
 	const pollIngestCoalesce = createPollIngestCoalesce();
 	const heldJobPruner =
 		plan.admission === "pull"
@@ -1160,7 +1016,7 @@ try {
 				})
 			: undefined;
 	const poller =
-		plan.admission === "pull"
+		plan.admission === "pull" && fleetMember === undefined
 			? createGithubJobPoller({
 					github,
 					durations: jobDurations,
@@ -1169,7 +1025,6 @@ try {
 					connections: async () =>
 						(await store.configuration())?.configuration?.connections ?? [],
 					ingest: (delivery) => runtime.ingestWebhook(delivery),
-					claim: async (job) => (mesh ? mesh.claim(job) : true),
 					onIngestError: (jobId, message) =>
 						log("hobo_ci_isolated_worker_job_ingest_failed", {
 							jobId,
@@ -1392,7 +1247,6 @@ try {
 		trunkSlots,
 		mergeGroupLeases,
 		lendTrunkSlots,
-		publishFleetRoutes,
 		workRoot,
 		pnpmStoreMounted: pnpmStore !== "",
 		pnpmStorePruneIntervalMs,
@@ -1462,12 +1316,12 @@ try {
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
 			log("hobo_ci_isolated_worker_draining", { signal });
-			// Tell the mesh at once: the others stop waiting for this node's turn.
-			meshDraining = true;
-			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
-			await mesh?.advertise();
-			// And tell routing: this worker no longer counts towards its labels.
-			await publishFleetState({ now: true }).catch(() => undefined);
+			// Tell the fleet at once: dispatchers stop offering this box work.
+			fleetMemberDraining = true;
+			if (fleetMember) {
+				clearInterval(fleetMember.timer);
+				await fleetMember.daemon.agent.drain().catch(() => undefined);
+			}
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"
@@ -1576,20 +1430,9 @@ try {
 				});
 			}
 			if (stopMode === "drain") await retiredSweep.drain();
-			if (stopMode === "drain" && fleetRoutes) {
-				// Leaving for good: nobody will keep the route table current, so
-				// every class goes back to its hobo label. A handoff leaves it,
-				// because the successor takes over within seconds.
-				const state = await store.configuration().catch(() => undefined);
-				for (const connection of state?.configuration?.connections ?? [])
-					await fleetRoutes.reset({
-						installationId: connection.installationId,
-						repository: connection.repository,
-					});
-			}
 			await closeStore();
 			await Promise.race([
-				natsMesh?.close().catch(() => undefined),
+				fleetMember?.daemon.agent.stop().catch(() => undefined),
 				new Promise((resolve) => setTimeout(resolve, 2000).unref()),
 			]);
 			await closeTrace();

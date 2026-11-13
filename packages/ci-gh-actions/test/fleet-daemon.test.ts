@@ -7,16 +7,20 @@
  * egress from the proxy factory; the host Docker socket follows the fleet's
  * `allow_host_docker` on this `DEDICATED` device.
  */
-import { create, fromBinary } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	type EgressProxyFactory,
+	FLEET_VIEW_CONTEXT,
+	FleetViewSchema,
 	Health,
 	type MemberId,
 	ObservationSchema,
+	parseFleetId,
 	ReceiptStatus,
 	Role,
 	type SandboxDriver,
 	SandboxTier,
+	SignedEnvelopeSchema,
 	type UpstreamWork,
 	WorkNeedsSchema,
 	WorkOrigin,
@@ -33,9 +37,11 @@ import {
 	boxEnrollment,
 	capacityFromAdmission,
 	composeFleetDaemon,
+	createJitRegistrationMinter,
 	GITHUB_ACTIONS_JOB,
 	type WorkerAdmissionSample,
 } from "../src/fleet-daemon.js";
+import type { GithubTransport } from "../src/github.js";
 import {
 	AUTHORITY_ORIGIN,
 	boxWorld,
@@ -270,6 +276,35 @@ describe("the box worker's fleet daemon", () => {
 		await daemon.agent.stop();
 	});
 
+	it("reads its fleet's capacity from the registry's fleet view, and nothing before it is connected", async () => {
+		const { world, daemon } = await box();
+		await expect(daemon.fleetCapacity()).resolves.toBeUndefined();
+		await daemon.agent.start();
+		await until(() => daemon.agent.status().bus === "connected");
+		await expect(daemon.fleetCapacity()).resolves.toBeUndefined();
+		// The authority's projection signs a view; the memory registry decodes it without verifying.
+		await world.bus.publisher.putView(
+			create(SignedEnvelopeSchema, {
+				context: FLEET_VIEW_CONTEXT,
+				payload: toBinary(
+					FleetViewSchema,
+					create(FleetViewSchema, {
+						fleet: FLEET,
+						capacity: { live: 2, healthy: 2, totalSlots: 9, freeSlots: 5 },
+						asOf: new Date(now()).toISOString(),
+						notAfter: new Date(now() + 60_000).toISOString(),
+					}),
+				),
+			}),
+			parseFleetId(FLEET),
+		);
+		expect(await daemon.fleetCapacity()).toMatchObject({
+			totalSlots: 9,
+			freeSlots: 5,
+		});
+		await daemon.agent.stop();
+	});
+
 	it("mounts the host Docker socket only once the fleet allows it on this DEDICATED box", async () => {
 		const refused = await box({ allowHostDocker: false });
 		await refused.daemon.agent.start();
@@ -323,5 +358,86 @@ describe("capacityFromAdmission", () => {
 		expect(capacity.freeSlots).toBe(0);
 		expect(capacity.freeMemoryMb).toBeUndefined();
 		expect(capacity.freeDiskMb).toBeUndefined();
+	});
+});
+
+describe("createJitRegistrationMinter", () => {
+	const connections = async () => [
+		{ installationId: 7, repository: "acme/app", runnerGroupId: 3 },
+	];
+
+	function github(status: number, body: string) {
+		const calls: { installationId: number; path: string; body: string }[] = [];
+		const transport: GithubTransport = {
+			async request(installationId, path, _method, requestBody) {
+				calls.push({ installationId, path, body: requestBody ?? "" });
+				return new Response(body, { status });
+			},
+		};
+		return { transport, calls };
+	}
+
+	it("asks GitHub for a single-use runner registration and returns it as the sealed secret", async () => {
+		const { transport, calls } = github(
+			201,
+			JSON.stringify({ encoded_jit_config: "jit-secret", runner: { id: 31 } }),
+		);
+		const mint = createJitRegistrationMinter({
+			github: transport,
+			connections,
+		});
+		const outcome = await mint({
+			repository: "acme/app",
+			labels: ["hobo"],
+			runnerName: "box-1-order-1",
+		});
+		expect(outcome.ok).toBe(true);
+		if (outcome.ok)
+			expect(new TextDecoder().decode(outcome.value)).toBe("jit-secret");
+		expect(calls).toEqual([
+			{
+				installationId: 7,
+				path: "/repos/acme/app/actions/runners/generate-jitconfig",
+				body: JSON.stringify({
+					name: "box-1-order-1",
+					runner_group_id: 3,
+					labels: ["hobo"],
+					work_folder: "_hobo_work",
+				}),
+			},
+		]);
+	});
+
+	it("refuses a repository the worker is not connected to, and a refused or malformed answer", async () => {
+		const ok = github(201, JSON.stringify({ runner: { id: 31 } }));
+		const mint = createJitRegistrationMinter({
+			github: ok.transport,
+			connections,
+		});
+		const unknown = await mint({
+			repository: "acme/other",
+			labels: ["hobo"],
+			runnerName: "r",
+		});
+		expect(unknown.ok).toBe(false);
+		expect(ok.calls).toEqual([]);
+		const malformed = await mint({
+			repository: "acme/app",
+			labels: ["hobo"],
+			runnerName: "r",
+		});
+		expect(malformed.ok).toBe(false);
+		const refused = github(422, "{}");
+		const refusing = createJitRegistrationMinter({
+			github: refused.transport,
+			connections,
+		});
+		const answer = await refusing({
+			repository: "acme/app",
+			labels: ["hobo"],
+			runnerName: "r",
+		});
+		expect(answer.ok).toBe(false);
+		if (!answer.ok) expect(answer.error.message).not.toMatch(/jit/iu);
 	});
 });

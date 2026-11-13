@@ -25,11 +25,13 @@ import {
 	type EnrollmentRequest,
 	EnrollmentRequestSchema,
 	type FleetBusConnector,
+	type FleetCapacity,
 	type FleetLog,
 	type FleetRecord,
 	type FleetTransport,
 	Health,
 	type KeyStore,
+	type Outcome,
 	parseFleetId,
 	Role,
 	type SandboxDriver,
@@ -37,6 +39,8 @@ import {
 	type WorkSource,
 } from "@hobo/fleet";
 import { createFleetAgent } from "@hobo/fleet/agent";
+import { z } from "zod";
+import type { GithubTransport } from "./github.js";
 import { hostDockerAllowed } from "./isolated-worker/container-flags.js";
 import type { HostHealthState } from "./isolated-worker/host-health.js";
 
@@ -128,6 +132,71 @@ export function boxEnrollment(
 	});
 }
 
+const jitConfig = z.object({ encoded_jit_config: z.string().min(1) });
+
+/**
+ * `mintRegistration` for L16's `createGithubActionsWorkSource`: one
+ * single-use just-in-time runner registration from GitHub, for a repository
+ * this worker is connected to. The registration is the order's sealed secret;
+ * it is never logged and never put in an error message (§11.3 rule 11).
+ */
+export function createJitRegistrationMinter(
+	options: Readonly<{
+		github: GithubTransport;
+		connections: () => Promise<
+			readonly Readonly<{
+				installationId: number;
+				repository: string;
+				runnerGroupId: number;
+			}>[]
+		>;
+	}>,
+) {
+	const refused = (message: string): Outcome<Uint8Array> => ({
+		ok: false,
+		error: { code: "unavailable", message },
+	});
+	return async (
+		input: Readonly<{
+			repository: string;
+			labels: readonly string[];
+			runnerName: string;
+		}>,
+	): Promise<Outcome<Uint8Array>> => {
+		const connection = (await options.connections()).find(
+			(entry) =>
+				entry.repository.toLowerCase() === input.repository.toLowerCase(),
+		);
+		if (connection === undefined)
+			return {
+				ok: false,
+				error: {
+					code: "invalid-request",
+					message: "the worker is not connected to that repository",
+				},
+			};
+		const response = await options.github.request(
+			connection.installationId,
+			`/repos/${connection.repository}/actions/runners/generate-jitconfig`,
+			"POST",
+			JSON.stringify({
+				name: input.runnerName,
+				runner_group_id: connection.runnerGroupId,
+				labels: [...input.labels],
+				work_folder: "_hobo_work",
+			}),
+		);
+		if (response.status !== 201)
+			return refused(`runner registration answered ${response.status}`);
+		const parsed = jitConfig.safeParse(await response.json().catch(() => ({})));
+		if (!parsed.success) return refused("runner registration was malformed");
+		return {
+			ok: true,
+			value: new TextEncoder().encode(parsed.data.encoded_jit_config),
+		};
+	};
+}
+
 export type FleetDaemonOptions = Readonly<{
 	keys: KeyStore;
 	authorityUrl: string;
@@ -186,5 +255,11 @@ export function composeFleetDaemon(options: FleetDaemonOptions) {
 		hostDocker: (): boolean => allowed,
 		/** The fleet's egress allowlist, for `createEgressProxyFactory`'s `fleetAllow`. */
 		fleetAllow: (): readonly string[] => fleet?.policy?.egressAllow ?? [],
+		/** The fleet's capacity from the authority's signed fleet view; undefined while unknown. */
+		async fleetCapacity(): Promise<FleetCapacity | undefined> {
+			const registry = agent.bus()?.registry;
+			if (registry === undefined) return undefined;
+			return (await registry.view(fleetId))?.capacity;
+		},
 	};
 }

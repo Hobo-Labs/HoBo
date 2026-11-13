@@ -10,7 +10,6 @@ import {
 	type HostedInboxStore,
 } from "./hosted-runtime.js";
 import { createRelayHandler, type StubEngine } from "./http-handler.js";
-import type { MeshNodesReader } from "./mesh-nodes-reader.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { createRelayMcp, isRelayMcpPath } from "./relay-mcp.js";
 import type { RelayMcpStore } from "./relay-mcp-server.js";
@@ -65,13 +64,6 @@ export function createRelayHost(options: {
 	drainTimeoutMs?: number;
 	/** Off unless supplied. It never delays the worker tick or fails the relay. */
 	agent?: RelayAgent | undefined;
-	/**
-	 * What the relay mesh looks like from this host, when it is a node of one
-	 * (`createMeshNode`). The account API's `GET /v1/mesh/nodes` and the MCP
-	 * server's `list_mesh_nodes` both answer from it; without it both answer
-	 * `mesh: "not-configured"`.
-	 */
-	meshNodes?: MeshNodesReader | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
 }) {
@@ -112,7 +104,6 @@ export function createRelayHost(options: {
 				assets: options.assets,
 				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
-				meshNodes: options.meshNodes,
 			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
@@ -132,7 +123,6 @@ export function createRelayHost(options: {
 		relay,
 		authenticate: options.authenticate,
 		ready: async () => service.ready(),
-		meshNodes: options.meshNodes,
 		publicOrigin: options.publicOrigin,
 		sessions: "memory",
 		cursorSecret: webhookSecret,

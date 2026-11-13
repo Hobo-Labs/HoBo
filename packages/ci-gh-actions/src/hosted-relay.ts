@@ -26,10 +26,11 @@ import {
 	isMainWorkspaceShardJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
-import type { FleetCapacityWitness } from "./fleet-absorb.js";
-import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
-import type { FleetCapacityPublisher } from "./fleet-capacity.js";
-import type { FleetRoutePublisher } from "./fleet-routes.js";
+import {
+	type FleetCapacityWitness,
+	fleetPeerAbsorbSlots,
+	fleetWitnessFields,
+} from "./fleet-capacity-witness.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -311,17 +312,11 @@ export class HostedRelay {
 			storageAdmission?: WorkerStorageAdmission;
 			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
 			storageJobReserve?: (jobName: string) => WorkerStorageReserve;
-			/**
-			 * Publishes the fleet route table after each dispatch pass. Unset: the
-			 * relay balances nothing ahead of the queue and every job stays on its
-			 * hobo label.
-			 */
-			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
+			/** This box's free slots against its fleet's `FleetCapacity` (fleet-capacity-witness.ts). */
 			fleetCapacity?: Readonly<{
-				publish: FleetCapacityPublisher["publish"];
 				snapshot: () => Promise<
 					FleetCapacityWitness & { hoboFreeSlots: number }
 				>;
@@ -595,8 +590,7 @@ export class HostedRelay {
 			holdReason: decision.holdReason ?? "",
 			deferMs: decision.deferMs,
 			shardIndex: decision.shardIndex,
-			arcFreeSlots: decision.arcFreeSlots,
-			meshFreeSlots: decision.meshFreeSlots,
+			fleetFreeSlots: decision.fleetFreeSlots,
 			peerAbsorbSlots: decision.peerAbsorbSlots,
 		};
 		if (decision.hoboFreeSlots !== undefined) {
@@ -727,8 +721,7 @@ export class HostedRelay {
 					waitedMs: release.waitedMs,
 					nonLocalFreeSlots: peerSlots,
 					hoboFreeSlots: fleetWitness?.hoboFreeSlots ?? -1,
-					arcFreeSlots: fleetWitness?.arcFreeSlots ?? -1,
-					meshFreeSlots: fleetWitness?.meshFreeSlots ?? -1,
+					fleetFreeSlots: fleetWitness?.fleetFreeSlots ?? -1,
 					releaseCount,
 				}),
 			);
@@ -1980,63 +1973,7 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
-		await this.publishFleetRoutes();
-		await this.publishFleetCapacity();
 		return pending.length;
-	}
-	/** One table per connected repository, from the state this pass just left. */
-	private async publishFleetRoutes(): Promise<void> {
-		const publisher = this.options.fleetRoutes;
-		if (!publisher) return;
-		for (const connection of this.options.config.connections) {
-			const account = this.options.config.accounts.find(
-				(entry) => entry.id === connection.accountId,
-			);
-			if (!account) continue;
-			try {
-				await publisher.publish({
-					installationId: connection.installationId,
-					repository: connection.repository,
-					account,
-					leases: () => this.options.store.accountLeases(account.id),
-					isolatedOnly: connection.isolatedOnly,
-					at: this.now(),
-				});
-			} catch {
-				/* Routing ahead of the queue is advisory; admission already ran. */
-			}
-		}
-	}
-	private async publishFleetCapacity(): Promise<void> {
-		const publisher = this.options.fleetCapacity;
-		if (!publisher) return;
-		let snapshot: Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>;
-		try {
-			snapshot = await publisher.snapshot();
-		} catch {
-			return;
-		}
-		const at = this.now();
-		for (const connection of this.options.config.connections) {
-			try {
-				const base = {
-					installationId: connection.installationId,
-					repository: connection.repository,
-					hoboFreeSlots: snapshot.hoboFreeSlots,
-					at,
-				};
-				if (snapshot.arcFreeSlots === undefined) {
-					await publisher.publish(base);
-					continue;
-				}
-				await publisher.publish({
-					...base,
-					arcFreeSlots: snapshot.arcFreeSlots,
-				});
-			} catch {
-				/* Advisory only. */
-			}
-		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);
