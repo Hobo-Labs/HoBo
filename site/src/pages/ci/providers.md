@@ -59,7 +59,7 @@ These are **ranking inputs with dated sources**, not billing: published list pri
 | *yes, on a local relay* | The trusted runner on a workstation, for local environments |
 | *no: modelled only* | The fleet can price and rank it, but no host driver exists, so policy does not accept it |
 
-For a **public repository**, that leaves the box as the only provider admission can use today. A label provider can take public-repository jobs once a workflow asks for its label, which is what the [route table](/HoBo/ci/route-table/) prepares and no workflow does yet.
+For a **public repository**, that leaves the box as the only provider admission can use today. A label provider can take public-repository jobs once a workflow asks for its label, which the [routing slip](/HoBo/ci/route-table/) does not name yet: it routes only to the fleet, a local box or GitHub-hosted.
 
 ## Who each provider serves
 
@@ -231,7 +231,7 @@ Jog, Boat and Lizard are the kinds `jog`, `boat` and `lizard`:
 <!-- generated:sources:start -->
 <!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
-- **HoBo box worker** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci/RUNNER-QUEUE.md>. Operator-owned host; a job adds no marginal charge. Slots come from HOBO_CI_WORKER_SLOTS, not from this model.
+- **HoBo box worker** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci/RUNNER-QUEUE.md>. Operator-owned host; a job adds no marginal charge. Slots come from the committed `runnerRouting.box.slots` in `.hobo/ci.json`, not from this model.
 - **Box of the agent that opened the pull request** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci-gh-actions/README.md>. The agent's session already pays for the machine; a job adds no marginal charge. One job at a time.
 - **Remote actions-runner-controller scale set** — read 2026-11-09 from <https://docs.github.com/en/actions/tutorials/use-actions-runner-controller/deploy-runner-scale-sets>. Operator-owned cluster; a job adds no marginal charge. Concurrency is the scale set's maxRunners, authored in policy.
 - **Boat CI runner** — read 2026-11-09 from <https://docs.boat.dev/pricing.md>. Printed as $0.036 per hour for the default 4 vCPU / 8 GB size; 0.036 / 60 = 0.0006. $20/mo plan allows 100 sandboxes at once.

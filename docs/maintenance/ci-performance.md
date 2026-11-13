@@ -12,7 +12,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
   removes its own `<image>:candidate` when it finishes.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
-  runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
+  runs up to `runnerRouting.box.slots` (`.hobo/ci.json`) jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
   must sum within host/cgroup memory minus at least 2048 MiB reserve. On the 15989 MiB box that budget is
   13941 MiB, so three mixed classes can fit but three heavy jobs cannot. Job preflight derives the Node heap,
@@ -83,7 +83,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
 - **Main full gate workspace sharding.** `main-gate-plan` (runner image only; install-free mise turbo — [finding 93](../ci/findings/0093-main-sub3m-plan-pickup-shards.md), [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
-  base and prints a duration-balanced shard matrix capped by `MAIN_WORKSPACE_PARALLEL_CAP` (default four
+  base and prints a duration-balanced shard matrix capped by `runnerRouting.mainWorkspaceParallelCap` (committed four
   parallel slots; the fleet capacity record it once read is retired; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
   slowest shard when slots allow; weights refreshed from turbo build+test seconds in
@@ -476,7 +476,8 @@ shell first, and one storage test that needs the image's user is skipped
 there. With a Docker engine present, the Postgres container tests run rather
 than skip. The cold dev loop is the one job that differs: with no worker
 image, it runs in a network namespace whose only interface is loopback.
-Repository variable `HOBO_CI_ROUTE=fleet` turns routing off. The runbook is
+A dispatch's `route` input, or a committed `runnerRouting.pin` of `fleet`, keeps
+every run on the fleet; no variable does. The runbook is
 "Runner routing" in [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
 
 ## Running a pull request's CI on your own machine

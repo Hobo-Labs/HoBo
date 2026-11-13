@@ -188,7 +188,7 @@ export const RUNNER_FINANCIAL_MODELS = [
 		},
 		evidence: evidence(
 			"https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci/RUNNER-QUEUE.md",
-			"Operator-owned host; a job adds no marginal charge. Slots come from HOBO_CI_WORKER_SLOTS, not from this model.",
+			"Operator-owned host; a job adds no marginal charge. Slots come from the committed `runnerRouting.box.slots` in `.hobo/ci.json`, not from this model.",
 		),
 	},
 	{

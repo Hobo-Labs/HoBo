@@ -16,7 +16,7 @@ Which host is a **standing decision**: the same idea as [continuous migration](/
 |---|---|
 | [Providers](/HoBo/ci/providers/) | What each provider costs, who it serves, how to connect it |
 | [Fleet balancing](/HoBo/ci/fleet-balancing/) | Eligibility → price → policy, on worked decisions |
-| [Route table](/HoBo/ci/route-table/) | Publishing the choice so a job can ask for the right label |
+| [Route table](/HoBo/ci/route-table/) | The routing slip: how the box relay hands each run its label |
 | [Host health](/HoBo/ci/host-health/) | The box watching its own CPU, memory and disk |
 | [Errors & codes](/HoBo/reference/errors/#ci-fleet) | Stable refusal codes (reference) |
 
@@ -40,7 +40,7 @@ GitHub matches a job to a runner by label, and fixes the label when the job is q
 | **Inject** | The job keeps the label `hobo`. The relay starts a runner with that label on compute it controls. | Any time, including after the job is waiting |
 | **Label** | The provider's own GitHub App brings the runner. The job has to ask for the provider's label. | Only before the job is queued |
 
-Injected capacity is the only kind that can rescue a job that is already waiting. Label capacity has to be chosen ahead of the queue; that is what the [route table](/HoBo/ci/route-table/) is for.
+Injected capacity is the only kind that can rescue a job that is already waiting. Label capacity has to be chosen ahead of the queue; that is what the box relay's [routing slip](/HoBo/ci/route-table/) is for.
 
 ## What a job goes through
 
