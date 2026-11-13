@@ -97,6 +97,7 @@ jobs:
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
+          turbo-api: ${{ vars.HOBO_CI_TURBO_API }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - run: pnpm exec turbo run build test --filter=@hobo/pricing --concurrency=1
       - name: Save Turbo cache

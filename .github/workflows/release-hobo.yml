@@ -406,6 +406,7 @@ jobs:
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
+          turbo-api: ${{ vars.HOBO_CI_TURBO_API }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Ensure worker toolchain image
         if: steps.affected.outputs.image_ids != ''
