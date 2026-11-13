@@ -74,7 +74,7 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(publish).toMatch(/max-parallel: 1/u);
 		// 20 for the build and bounded push, plus the hobo CLI build that records
 		// the leg's image as release Freight.
-		expect(publish).toContain("timeout-minutes: 30");
+		expect(publish).toContain("timeout-minutes: 20");
 		expect(publish).toContain(
 			"push-release-ghcr-images.mts --image ${{ matrix.image_id }}",
 		);

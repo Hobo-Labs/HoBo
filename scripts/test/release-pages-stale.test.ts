@@ -312,7 +312,7 @@ describe("release-hobo pages jobs", () => {
 		expect(gate).toContain("    needs: [route]\n");
 		expect(gate).not.toContain("release-main-train-gate");
 		const pages = job("release-pages");
-		expect(pages).toContain("needs: [release-pages-gate]");
+		expect(pages).toContain("needs: [release-pages-gate, release-hobo-cli]");
 		expect(pages).toContain(
 			"needs.release-pages-gate.outputs.deploy == 'true'",
 		);
@@ -377,7 +377,9 @@ describe("release-hobo pages jobs", () => {
 		const tag = job("release-tag");
 		expect(tag).toContain("!cancelled() &&");
 		expect(tag).not.toContain("always()");
-		expect(tag).toMatch(/needs: \[[^\]]*release-pages-gate, release-pages\]/);
+		expect(tag).toMatch(
+			/needs: \[[^\]]*release-pages-gate, release-pages\b[^\]]*\]/,
+		);
 		// A failed gate skips the publish; that skip must not read as "nothing to do".
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result)`,
