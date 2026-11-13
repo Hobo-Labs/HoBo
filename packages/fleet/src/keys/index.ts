@@ -1,10 +1,10 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
  * `@hobo/fleet/keys` (L01): JWKs and thumbprints, member ids, the signed and
  * witnessed envelope, the trust rule, DPoP, sealing, session keys,
  * fingerprint words, the in-memory key store and credential issuer.
  *
- * Contract commit: every body throws `FleetNotImplemented`; L01 replaces them.
+ * These are the frozen entry points of design §7.3; the modules beside this
+ * file are private to the lane.
  */
 import type { KeyObject } from "node:crypto";
 import type { TenantId } from "@hobo/core";
@@ -16,7 +16,6 @@ import type {
 	TrustRecord,
 	WitnessedEnvelope,
 } from "../_generated/fleet_pb.js";
-import { FleetNotImplemented } from "../errors.js";
 import type { FleetId, MemberId, MemberName } from "../ids.js";
 import type {
 	Clock,
@@ -28,19 +27,34 @@ import type {
 	ReplayStore,
 	Signer,
 } from "../ports.js";
+import { createDpopProof } from "./dpop.js";
+import { verifyDpopWithReplay } from "./dpop-verifier.js";
+import {
+	acceptTrustRecord,
+	signEnvelopeWith,
+	verifyEnvelopeWith,
+	verifyWitnessedWith,
+} from "./envelope.js";
+import { wordsOf } from "./fingerprint.js";
+import { parsePublicJwkText, thumbprintOf } from "./jose.js";
+import { deviceMemberId, sponsoredId } from "./member-id.js";
+import { memoryCredentialIssuer } from "./memory-issuer.js";
+import { memoryKeyStore } from "./memory-key-store.js";
+import { deriveSessionKeys, openSealedBox, sealTo } from "./seal.js";
+import { freshDpopKey } from "./signers.js";
 
 /** EC P-256 or OKP Ed25519; rejects private members. */
 export function parsePublicJwk(json: string): Outcome<PublicJwk> {
-	throw new FleetNotImplemented("parsePublicJwk");
+	return parsePublicJwkText(json);
 }
 
 /** RFC 7638, base64url. */
 export function jwkThumbprint(jwk: PublicJwk): string {
-	throw new FleetNotImplemented("jwkThumbprint");
+	return thumbprintOf(jwk);
 }
 
 export function memberIdFromJwk(jwk: PublicJwk): MemberId {
-	throw new FleetNotImplemented("memberIdFromJwk");
+	return deviceMemberId(thumbprintOf(jwk));
 }
 
 /** §6.2 */
@@ -50,7 +64,7 @@ export function sponsoredMemberId(
 	fleet: FleetId,
 	name: MemberName,
 ): MemberId {
-	throw new FleetNotImplemented("sponsoredMemberId");
+	return sponsoredId(tenant, kind, fleet, name);
 }
 
 export function signEnvelope(
@@ -58,7 +72,7 @@ export function signEnvelope(
 	context: FleetContext,
 	payload: Uint8Array,
 ): Promise<SignedEnvelope> {
-	throw new FleetNotImplemented("signEnvelope");
+	return signEnvelopeWith(signer, context, payload);
 }
 
 export function verifyEnvelope(
@@ -66,7 +80,7 @@ export function verifyEnvelope(
 	expected: FleetContext,
 	key: PublicKeyRef | PublicJwk,
 ): boolean {
-	throw new FleetNotImplemented("verifyEnvelope");
+	return verifyEnvelopeWith(envelope, expected, key);
 }
 
 export function verifyWitnessed(
@@ -74,7 +88,7 @@ export function verifyWitnessed(
 	expected: FleetContext,
 	trust: TrustRecord,
 ): boolean {
-	throw new FleetNotImplemented("verifyWitnessed");
+	return verifyWitnessedWith(envelope, expected, trust);
 }
 
 /** §7.4 rule */
@@ -82,7 +96,7 @@ export function acceptTrust(
 	pinned: TrustRecord | undefined,
 	next: WitnessedEnvelope,
 ): Outcome<TrustRecord> {
-	throw new FleetNotImplemented("acceptTrust");
+	return acceptTrustRecord(pinned, next);
 }
 
 export function mintDpopProof(
@@ -95,7 +109,7 @@ export function mintDpopProof(
 		nowMs: number;
 	}>,
 ): Promise<string> {
-	throw new FleetNotImplemented("mintDpopProof");
+	return createDpopProof(signer, publicJwk, input);
 }
 
 export function verifyDpopProof(
@@ -108,7 +122,28 @@ export function verifyDpopProof(
 		replay: ReplayStore;
 	}>,
 ): Promise<Outcome<Readonly<{ jkt: string; jwk: PublicJwk }>>> {
-	throw new FleetNotImplemented("verifyDpopProof");
+	return verifyDpopWithReplay(
+		input.proof,
+		input.accessToken === undefined
+			? { htm: input.htm, htu: input.htu, nowMs: input.nowMs }
+			: {
+					htm: input.htm,
+					htu: input.htu,
+					nowMs: input.nowMs,
+					accessToken: input.accessToken,
+				},
+		input.replay,
+	).then((verified) =>
+		verified.ok
+			? {
+					ok: true,
+					value: Object.freeze({
+						jkt: verified.value.jkt,
+						jwk: verified.value.jwk,
+					}),
+				}
+			: verified,
+	);
 }
 
 export function seal(
@@ -117,7 +152,7 @@ export function seal(
 	context: FleetContext,
 	associatedData: Uint8Array,
 ): SealedBox {
-	throw new FleetNotImplemented("seal");
+	return sealTo(recipient, plaintext, context, associatedData);
 }
 
 export function openSealedWith(
@@ -126,7 +161,7 @@ export function openSealedWith(
 	context: FleetContext,
 	associatedData: Uint8Array,
 ): Outcome<Uint8Array> {
-	throw new FleetNotImplemented("openSealedWith");
+	return openSealedBox(privateKey, box, context, associatedData);
 }
 
 export function sessionKeys(
@@ -136,27 +171,27 @@ export function sessionKeys(
 	initiatorToAcceptor: Uint8Array;
 	acceptorToInitiator: Uint8Array;
 }> {
-	throw new FleetNotImplemented("sessionKeys");
+	return deriveSessionKeys(sharedSecret, sessionId);
 }
 
 export function fingerprintWords(
 	thumbprint: string,
 ): readonly [string, string, string, string] {
-	throw new FleetNotImplemented("fingerprintWords");
+	return wordsOf(thumbprint);
 }
 
 export function generateDpopKey(): Readonly<{
 	signer: Signer;
 	publicJwk: PublicJwk;
 }> {
-	throw new FleetNotImplemented("generateDpopKey");
+	return freshDpopKey();
 }
 
 export function createMemoryKeyStore(): KeyStore {
-	throw new FleetNotImplemented("createMemoryKeyStore");
+	return memoryKeyStore();
 }
 
 /** ES256 over an in-memory key, through the same JOSE code; for tests, createTestAuthority and offline development. */
 export function createMemoryCredentialIssuer(now: Clock): CredentialIssuer {
-	throw new FleetNotImplemented("createMemoryCredentialIssuer");
+	return memoryCredentialIssuer(now);
 }
