@@ -93,6 +93,24 @@ gathers them here as the waves merge.
   with checkpoints every 60 s or 1,000 entries, `verifyAuditChain`, and the
   witness that co-signs checkpoints and trust proposals. Only one replica may
   run the chain.
+- **Work** (`@hobo/fleet/work`, wave 3, L04) —
+  [`src/work/README.md`](src/work/README.md). Work digests, trust classes,
+  sandbox tiers, the dispatcher's claim rules (`discard`, `not-entitled`,
+  `early`, `valid`), the dispatcher and executor loops, order acceptance with
+  receipts, the start fence, and the `oci-command` work kind (its work key is
+  the submission id).
+- **Recorder and registry projection** (`@hobo/fleet/membership`, wave 3,
+  L31) — [`src/recorder/README.md`](src/recorder/README.md). The recorder
+  verifies and journals offers, claims, orders, receipts and session-close
+  facts with per-stream resume points, and is the only emitter of the four
+  fleet usage types; the projection re-signs member and fleet records (fleet
+  records first) and publishes fleet views.
+- **Fleet commands** (`@hobo/fleet/membership`, wave 3, L32) —
+  [`src/fleets/README.md`](src/fleets/README.md). `listFleets`, `getFleet`,
+  `defineFleet`, `fleetView`, `fleetVerdict`, `grantSession` and
+  `submitWork`, journalled on `fleet-fleet-*`, `fleet-session-*` and
+  `fleet-work-*`; a fleet's coordination mode is immutable and `submitWork`
+  is idempotent while the earlier submission is unexpired.
 
 ## Gates
 

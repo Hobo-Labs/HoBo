@@ -36,6 +36,11 @@ gathers them here as the waves merge.
   `createJournalEventStore` on `FLEET_JOURNAL`: one message per append with
   `Nats-Expected-Last-Subject-Sequence` as the compare-and-set, the fencing
   epoch stored with each batch, and idempotency keys enforced across replicas.
+- **Bus-relay transport** (wave 3, L37) — [`src/relay/README.md`](src/relay/README.md).
+  `createBusRelayTransport`: sessions as end-to-end encrypted messages on
+  `fleet.relay.<to>.<relaySessionId>`, transport identity
+  `relay:<SEAL public key>`, credit-based flow control (1 MiB unread, 128 KiB
+  messages), authorised by the grant before anything reaches the handler.
 
 ## Gates
 

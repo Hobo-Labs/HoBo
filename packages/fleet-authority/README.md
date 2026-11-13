@@ -18,6 +18,22 @@ composition roots are `hobo-fleet-authority` and `hobo-fleet-witness`.
 Until each lane lands, its entry point has its final signature and throws
 `FleetNotImplemented`.
 
+## Landed parts
+
+Each lane writes its part of this README next to its code; the coordinator
+gathers them here as the waves merge.
+
+- **Operations** (wave 3, L27) — [`src/ops/README.md`](src/ops/README.md).
+  `runCeremony`, `rotateKey`, `backup` and `restore` for both profiles. Each
+  reads the JSON configuration at `OpsContext.configPath` and composes the
+  deployment itself. Rotation is resumable (add, publish, switch, remove);
+  the backup is one `hobo-fleet-backup/v1` file; restore raises the authority
+  incarnation in a witnessed trust record. The high-availability restore
+  answers `unavailable` until the journal gains an envelope-preserving import.
+- **Status feed** (wave 3, L27) — [`src/status/README.md`](src/status/README.md).
+  `createStatusFeed`: one `slo.Measured` event per finished minute for the
+  enrollment API (target 0.999) and the NATS callout (target 0.9995).
+
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/fleet-authority run build`.
