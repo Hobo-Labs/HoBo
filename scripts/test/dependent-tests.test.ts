@@ -1128,7 +1128,10 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	for (const [path, full] of [
 		["vitest.config.ts", withTiered(...merging)],
 		["test/setup/hobo-test-homes.ts", withTiered(...merging, "packages/code")],
-		["test/setup/isolate-hobo-home.ts", withTiered(...merging, "packages/code")],
+		[
+			"test/setup/isolate-hobo-home.ts",
+			withTiered(...merging, "packages/code"),
+		],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
 			const planned = plan(path);

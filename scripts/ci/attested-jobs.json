@@ -709,7 +709,7 @@
 					"name": "Detect affected images",
 					"id": "affected",
 					"if": "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'",
-					"run": "set -euo pipefail\n# Editing this workflow edits how every image is built, so it builds them all.\nif [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ] \\\n  || ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release-hobo.yml; then\n  images=\"$(node --no-warnings scripts/ci/release-oci-affected.mts --all)\"\nelse\n  images=\"$(node --no-warnings scripts/ci/release-oci-affected.mts --explain)\"\nfi\necho \"affected: ${images}\"\necho \"image_ids=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(\" \"))' \"$images\")\" >> \"$GITHUB_OUTPUT\"\n",
+					"run": "set -euo pipefail\n# Editing this workflow edits how every image is built, so it builds them all.\nif [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ] \\\n  || ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release-hobo.yml; then\n  images=\"$(node --no-warnings scripts/ci/release-oci-affected.mts --all --exclude=hobo-code)\"\nelse\n  images=\"$(node --no-warnings scripts/ci/release-oci-affected.mts --exclude=hobo-code --explain)\"\nfi\necho \"affected: ${images}\"\necho \"image_ids=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(\" \"))' \"$images\")\" >> \"$GITHUB_OUTPUT\"\n",
 					"env": {
 						"HOBO_CHECK_BASE": "HEAD^1"
 					},

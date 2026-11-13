@@ -30,7 +30,7 @@ Deps-layer jobs reused the heavy unmeasured reservation (**4096 MiB**) until thr
 3. `memory-classes.ts` — `CI deps layer (pnpm)` uses `CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB` (**4352**) before learned peaks apply.
 4. `deps-build-headroom-defaults.mts` — `build-deps.sh` defaults align with `depsBuildDockerReserve()` (210000 free inodes, not legacy 400000).
 5. `deps-build-docker-reserve.ts` — zod-free reserve math so `build-deps.sh` can `node --import ts-source-resolve` before `pnpm install` (no `ERR_MODULE_NOT_FOUND: zod`).
-6. `ci-deps-image-mount.test.ts` — stage the synthetic job on `HOBO_CI_HOST_JOB_DIRECTORY` when set, not under `_hobo_work` inside the job container (nested `docker -v` must see `HoBo/HoBo` on the host path).
+6. `ci-deps-image-mount.test.ts` — the nested `docker -v` names the synthetic job by its host path (`HOBO_CI_HOST_JOB_DIRECTORY`), since the daemon must see `HoBo/HoBo` there. Inside a job container that host path does not exist (it is bind-mounted at `_hobo_work`), so the test writes the job under `_hobo_work` and mounts the matching host path; staging it at the host path itself failed `mkdtemp` with `ENOENT` in run 43369196424 (`mountScratchParents` in the test).
 7. Same test skips when `docker info` fails or `docker run` hits `EPIPE` (ARC runners without a reachable daemon).
 
 ## Proof
