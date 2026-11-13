@@ -2,6 +2,12 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
+  pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
+  no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
+  label only when the repository variable `HOBO_CI_BOX_RUNNER` is `true`, set once the deployed box
+  daemon is seen to serve `hobo-box`; otherwise it asks for `hobo` as before. The runner-image and cold-loop jobs do not need the label: they materialize the
+  content-keyed worker image from the host cache or GHCR wherever they run.
 - **The release contract reuses the worker image.** `release-hobo.yml` job
   `release-contract` resolves `hobo-ci-worker` through
   `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
