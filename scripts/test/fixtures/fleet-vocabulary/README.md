@@ -11,6 +11,7 @@ is wired to a root `package.json` command and each has a test under
 | `pnpm run fleet:contracts` | `scripts/check-fleet-contracts.mts` | The contracts did not drift (O26): the emitter's `--check`, then no snapshot or record changed since the newest `Fleet-Contract:` commit |
 | `pnpm run fleet:outcome <id>` | `scripts/fleet-outcome.mts` | Runs one outcome of the design and prints its verification object |
 | `pnpm run fleet:verify` | `scripts/fleet-verify.mts` | Runs every outcome through `fleet:outcome` and writes `fleet-verification.json` |
+| `pnpm run fleet:moved-tests <outcome>` | `scripts/check-fleet-moved-tests.mts` | Moved tests differ from their base at `fleet-wave-0` only as the rename, value and unwrapping rules allow (O15, O16, O17) |
 
 ## `fleet:vocabulary`
 
@@ -89,6 +90,24 @@ objects, in table order, to `fleet-verification.json` at the root (or
 `--out`). O21 and O23 are left out unless `--include-deferred` is given. It
 exits 1 when any outcome it ran did not pass; an outcome that printed no object
 is recorded as failed.
+
+## `fleet:moved-tests <outcome>`
+
+`node --import tsx scripts/check-fleet-moved-tests.mts <outcome> [--lane <id>] [--root=<dir>] [--base=<ref>]`
+compares each moved test of the outcome (O15, O16, O17; the table is
+`MOVED_TESTS` in the script) with its base file at tag `fleet-wave-0`. Both
+sides are parsed with the TypeScript compiler API and reduced to tokens, so
+formatting and comments never count. The rename map (`RENAME_MAP`) and value
+map (`VALUE_MAP`: `failure`/`health` strings to `Health.<MEMBER>`) rewrite the
+base side; the new side drops `parseMemberName(<string literal>)` to its
+argument and `members: undefined` from objects passed to
+`parseAssignmentEntry`. In `exact` mode imports and the row's named helpers
+(the whole declaration) are dropped and any other difference fails; in
+`assertions` mode only the ordered test titles and the `expect(…)` statements
+inside `it`/`test` bodies are compared. A missing new file fails its row. It
+exits 0 when every row passes, 1 with one line per failing file, and 2 on a
+usage error or an outcome or lane with no row. Before a lane moves its files,
+its rows fail by design.
 
 ## Fixtures
 
