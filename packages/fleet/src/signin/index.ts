@@ -82,11 +82,6 @@ const ROUTES = {
 	refresh: "/v1/fleet/signin/refresh",
 } as const;
 
-type Deps = Pick<
-	AuthorityDeps,
-	"tenant" | "store" | "bus" | "issuer" | "directory" | "signIn" | "now" | "log"
->;
-
 function fail<T>(code: FleetErrorCode, message: string): Outcome<T> {
 	return { ok: false, error: { code, message } };
 }
@@ -106,7 +101,19 @@ function fromStep(step: AppendStep, what: string): Outcome<true> {
 		: fail("unavailable", step.message);
 }
 
-export function createSignIn(deps: Deps): Readonly<{
+export function createSignIn(
+	deps: Pick<
+		AuthorityDeps,
+		| "tenant"
+		| "store"
+		| "bus"
+		| "issuer"
+		| "directory"
+		| "signIn"
+		| "now"
+		| "log"
+	>,
+): Readonly<{
 	start(request: SignInStart): Promise<Outcome<SignInChallenge>>;
 	device(request: SignInDeviceCode): Promise<Outcome<SignInChallenge>>;
 	callback(request: SignInCallback): Promise<Outcome<ApprovalView>>;
