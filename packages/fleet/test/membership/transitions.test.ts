@@ -44,6 +44,7 @@ import {
 	active,
 	code,
 	decoded,
+	ids,
 	pending,
 	stateOf,
 	token,
@@ -267,7 +268,7 @@ const transitions: readonly Transition[] = [
 			const record = decoded(
 				value(
 					await h.authority.leave(
-						{ memberId: subject.keys.memberId },
+						ids<"leave">({ memberId: subject.keys.memberId }),
 						subject.caller,
 					),
 				),
@@ -565,7 +566,7 @@ const refusals: readonly Refusal[] = [
 			const { h, admin } = await setup();
 			return code(
 				await h.authority.getMember(
-					{ memberId: `dev_${"0".repeat(32)}` },
+					ids<"getMember">({ memberId: `dev_${"0".repeat(32)}` }),
 					admin,
 				),
 			);
@@ -749,7 +750,10 @@ const refusals: readonly Refusal[] = [
 			const admin = await h.person({ kind: "user", id: "admin" });
 			return code(
 				await h.authority
-					.revokeToken({ tokenHash: "f".repeat(64) }, admin.caller)
+					.revokeToken(
+						ids<"revokeToken">({ tokenHash: "f".repeat(64) }),
+						admin.caller,
+					)
 					.then(async () =>
 						h.authority.issueToken(
 							create(TokenCreateRequestSchema, {

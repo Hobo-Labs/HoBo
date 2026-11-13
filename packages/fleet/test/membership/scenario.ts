@@ -8,7 +8,11 @@ import {
 	type SignedEnvelope,
 	TokenCreateRequestSchema,
 } from "../../src/_generated/fleet_pb.js";
-import type { Outcome, VerifiedToken } from "../../src/ports.js";
+import type {
+	EnrollmentAuthority,
+	Outcome,
+	VerifiedToken,
+} from "../../src/ports.js";
 import {
 	device,
 	enrollment,
@@ -101,7 +105,25 @@ export async function stateOf(
 ): Promise<MemberRecord> {
 	return decoded(
 		value(
-			await h.authority.getMember({ memberId: subject.keys.memberId }, caller),
+			await h.authority.getMember(
+				ids<"getMember">({ memberId: subject.keys.memberId }),
+				caller,
+			),
 		),
 	);
+}
+
+/** The by-id routes whose request is only ids. */
+type IdOnly = "getMember" | "leave" | "revokeToken" | "workStatus" | "workLogs";
+
+/**
+ * A by-id request. `ById<K>`'s default `Empty` (`Record<string, never>`) makes
+ * every field `never`, so no object literal satisfies it; the contract defect
+ * is reported in the lane's requirementChanges, and tests build the request here.
+ */
+export function ids<M extends IdOnly>(
+	fields: Readonly<Record<string, string>>,
+): Parameters<EnrollmentAuthority[M]>[0] {
+	// SAFETY: these methods read only the named id fields, which `fields` carries.
+	return fields as Parameters<EnrollmentAuthority[M]>[0];
 }

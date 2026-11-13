@@ -380,7 +380,7 @@ export type TestDevice = Readonly<{
 	signJwk: PublicJwk;
 	bundle: SignedEnvelope;
 	/** The caller `authenticate` yields for a proof with the SIGN key. */
-	caller: VerifiedToken;
+	caller: Extract<VerifiedToken, { kind: "member" }>;
 }>;
 
 export async function bundleFor(
