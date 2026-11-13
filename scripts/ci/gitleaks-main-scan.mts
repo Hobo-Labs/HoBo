@@ -11,6 +11,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	renameSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
@@ -227,7 +228,25 @@ function runTimed(
 	});
 }
 
-export async function runBackgroundScan(dir: string): Promise<void> {
+/**
+ * A scan started early, beside the plan, may only be a range scan: a full
+ * scan first refetches every blob into the clone, which must not happen while
+ * other steps use it. Such a scan is left to the last step.
+ */
+export function deferredByRangeOnly(
+	plan: GitleaksScanPlan,
+	rangeOnly: boolean,
+): boolean {
+	return rangeOnly && plan.fetchBlobs;
+}
+
+// public-contract: marker the early start leaves when it defers a full scan to the last step.
+export const DEFERRED_MARKER = "deferred";
+
+export async function runBackgroundScan(
+	dir: string,
+	options: Readonly<{ rangeOnly?: boolean }> = {},
+): Promise<void> {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "pid"), `${process.pid}\n`);
 	writeFileSync(join(dir, "log"), "");
@@ -252,6 +271,11 @@ export async function runBackgroundScan(dir: string): Promise<void> {
 		if (lastGreen !== undefined) planInput.lastGreenSha = lastGreen;
 	}
 	const plan = planMainGitleaksScan(planInput);
+	if (deferredByRangeOnly(plan, options.rangeOnly === true)) {
+		rmSync(join(dir, "pid"), { force: true });
+		writeFileSync(join(dir, DEFERRED_MARKER), "full\n");
+		return;
+	}
 	writeFileSync(join(dir, "plan.json"), `${JSON.stringify(plan)}\n`);
 	writeFileSync(join(dir, "wait"), `${plan.waitSeconds}\n`);
 	appendLog(
@@ -347,9 +371,14 @@ if (
 	const dirFlag = process.argv.indexOf("--dir");
 	const dir = dirFlag >= 0 ? process.argv[dirFlag + 1] : undefined;
 	if ((command !== "--background" && command !== "--wait") || !dir) {
-		console.error("gitleaks-main-scan: --background|--wait --dir <path>");
+		console.error(
+			"gitleaks-main-scan: --background [--range-only]|--wait --dir <path>",
+		);
 		process.exit(1);
 	}
 	if (command === "--wait") runWait(dir);
-	else await runBackgroundScan(dir);
+	else
+		await runBackgroundScan(dir, {
+			rangeOnly: process.argv.includes("--range-only"),
+		});
 }

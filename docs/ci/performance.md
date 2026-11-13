@@ -159,6 +159,7 @@ unindexed new finding files as notices.
 - [Finding 151: deps image builds take a storage grant on an idle box](./findings/0151-deps-image-builds-take-a-storage-grant-on-an-idle-box.md)
 - [Finding 152: two-second job poll and hard-linked deps staging](./findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)
 - [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
+- [Finding 154: main waited for runners between jobs](./findings/0154-main-waited-for-runners-between-jobs.md)
 <!-- findings-index:end -->
 
 ## Data
