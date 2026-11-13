@@ -280,14 +280,14 @@ const hostMemMb = Math.min(
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
 const capacityVolatilityMb = Number(
-	process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
+	process.env.HOBO_CI_WORKER_MEMORY_VOLATILITY_MB ?? "1024",
 );
 if (
 	!Number.isFinite(capacityVolatilityMb) ||
 	capacityVolatilityMb < 0 ||
 	!Number.isInteger(capacityVolatilityMb)
 )
-	throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_VOLATILITY_MB");
 let lastHostPressureLogAt = 0;
 const hostPressureSample = () => readHostResourcePressureSample(Date.now());
 const containerStallGuard = createContainerStallGuard({

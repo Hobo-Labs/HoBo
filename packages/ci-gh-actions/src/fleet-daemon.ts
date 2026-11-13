@@ -197,7 +197,7 @@ export function createJitRegistrationMinter(
 	};
 }
 
-export type FleetDaemonOptions = Readonly<{
+export type BoxMemberOptions = Readonly<{
 	keys: KeyStore;
 	authorityUrl: string;
 	tenant: TenantId;
@@ -218,7 +218,7 @@ export type FleetDaemonOptions = Readonly<{
 	fetch: typeof fetch;
 }>;
 
-export function composeFleetDaemon(options: FleetDaemonOptions) {
+export function composeFleetDaemon(options: BoxMemberOptions) {
 	const fleetId = parseFleetId(options.fleet);
 	const agent = createFleetAgent({
 		keys: options.keys,

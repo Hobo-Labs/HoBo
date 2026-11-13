@@ -7,32 +7,32 @@
  */
 import type { FleetCapacity } from "@hobo/fleet";
 
-export type FleetCapacityWitness = Readonly<{
+export type PeerCapacityWitness = Readonly<{
 	/** This box's own free hobo slots. */
 	hoboFreeSlots?: number;
 	/** Free slots across the fleet (`FleetCapacity.free_slots`), this box included. */
 	fleetFreeSlots?: number;
 }>;
 
-export type FleetWitnessFields = Readonly<{
+export type PeerWitnessFields = Readonly<{
 	hoboFreeSlots?: number;
 	fleetFreeSlots: number;
 	peerAbsorbSlots: number;
 }>;
 
 /** The witness of this box's free slots against its fleet's capacity; no capacity known means no peers. */
-export function fleetCapacityWitness(
+export function peerCapacityWitness(
 	hoboFreeSlots: number,
 	capacity: Pick<FleetCapacity, "freeSlots"> | undefined,
-): FleetCapacityWitness {
+): PeerCapacityWitness {
 	return capacity === undefined
 		? { hoboFreeSlots }
 		: { hoboFreeSlots, fleetFreeSlots: capacity.freeSlots };
 }
 
-export function fleetWitnessFields(
-	witness: FleetCapacityWitness | undefined,
-): FleetWitnessFields {
+export function peerWitnessFields(
+	witness: PeerCapacityWitness | undefined,
+): PeerWitnessFields {
 	const hoboFreeSlots = witness?.hoboFreeSlots;
 	const own = hoboFreeSlots ?? 0;
 	const fleetFreeSlots = witness?.fleetFreeSlots ?? own;
@@ -43,14 +43,14 @@ export function fleetWitnessFields(
 }
 
 /** Slots other fleet members have free to absorb released custody. */
-export function fleetPeerAbsorbSlots(
-	witness: FleetCapacityWitness | undefined,
+export function peerAbsorbSlotsOf(
+	witness: PeerCapacityWitness | undefined,
 ): number {
-	return fleetWitnessFields(witness).peerAbsorbSlots;
+	return peerWitnessFields(witness).peerAbsorbSlots;
 }
 
-export function fleetCanAbsorbUnlaunchedRelease(
-	witness: FleetCapacityWitness | undefined,
+export function peersCanAbsorbUnlaunchedRelease(
+	witness: PeerCapacityWitness | undefined,
 ): boolean {
-	return fleetPeerAbsorbSlots(witness) > 0;
+	return peerAbsorbSlotsOf(witness) > 0;
 }

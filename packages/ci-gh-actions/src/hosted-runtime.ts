@@ -3,7 +3,6 @@ import { ACTIVE_STATES, type CiEvent, type Job, type Lease } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
-import type { FleetCapacityWitness } from "./fleet-capacity-witness.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -24,6 +23,7 @@ import {
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
+import type { PeerCapacityWitness } from "./peer-capacity.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 
@@ -170,7 +170,7 @@ export function createHostedRelayRuntime(options: {
 	>[0]["headroomFleetDeferMs"];
 	/** See `HostedRelay`: this box's free slots against its fleet's capacity. */
 	fleetCapacity?: Readonly<{
-		snapshot: () => Promise<FleetCapacityWitness & { hoboFreeSlots: number }>;
+		snapshot: () => Promise<PeerCapacityWitness & { hoboFreeSlots: number }>;
 	}>;
 	/** Release reservations that never launch within policy bounds. */
 	unlaunchedReservationRelease?: ConstructorParameters<

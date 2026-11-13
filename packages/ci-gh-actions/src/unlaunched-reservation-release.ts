@@ -1,8 +1,8 @@
 import type { Job, Lease } from "@hobo/ci";
 import {
-	type FleetCapacityWitness,
-	fleetCanAbsorbUnlaunchedRelease,
-} from "./fleet-capacity-witness.js";
+	type PeerCapacityWitness,
+	peersCanAbsorbUnlaunchedRelease,
+} from "./peer-capacity.js";
 import {
 	type TrunkWaitCache,
 	type TrunkWaitState,
@@ -11,9 +11,9 @@ import {
 } from "./trunk-wait.js";
 
 export {
-	type FleetCapacityWitness,
-	fleetCanAbsorbUnlaunchedRelease,
-} from "./fleet-capacity-witness.js";
+	type PeerCapacityWitness,
+	peersCanAbsorbUnlaunchedRelease,
+} from "./peer-capacity.js";
 
 export const DEFAULT_UNLAUNCHED_RESERVE_MS = 25_000;
 export const DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS = 25_000;
@@ -72,7 +72,7 @@ export function unlaunchedReservationAgeMs(
 
 function fleetWitnessFromReleaseContext(
 	context: Pick<UnlaunchedReleaseContext, "fleetWitness" | "nonLocalFreeSlots">,
-): FleetCapacityWitness | undefined {
+): PeerCapacityWitness | undefined {
 	if (context.fleetWitness) return context.fleetWitness;
 	if (context.nonLocalFreeSlots === undefined) return undefined;
 	return { fleetFreeSlots: context.nonLocalFreeSlots };
@@ -88,7 +88,7 @@ export type UnlaunchedReleaseContext = Readonly<{
 	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
 	/** Fleet witness; release fail-closed when no peer absorb capacity. */
-	fleetWitness?: FleetCapacityWitness;
+	fleetWitness?: PeerCapacityWitness;
 	/** @deprecated use fleetWitness */
 	nonLocalFreeSlots?: number;
 }>;
@@ -99,7 +99,7 @@ export function unlaunchedReleaseReason(
 	context: UnlaunchedReleaseContext,
 ): string | undefined {
 	if (!isUnlaunchedReservation(lease)) return undefined;
-	if (!fleetCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
+	if (!peersCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
 		return undefined;
 	const ageMs = unlaunchedReservationAgeMs(lease, nowMs);
 	if (ageMs >= context.boundMs) return "launch-bound-exceeded";
@@ -120,7 +120,7 @@ export function pickUnlaunchedReservationsToRelease(
 	nowMs: number,
 	context: UnlaunchedReleaseContext,
 ): ReadonlyArray<Readonly<{ leaseId: string; jobId: number; reason: string }>> {
-	const canFleetAbsorb = fleetCanAbsorbUnlaunchedRelease(
+	const canFleetAbsorb = peersCanAbsorbUnlaunchedRelease(
 		fleetWitnessFromReleaseContext(context),
 	);
 	if (!canFleetAbsorb) return [];
@@ -162,7 +162,7 @@ export function pickTrunkHeadroomFleetReleases(
 	nowMs: number,
 	context: Readonly<{
 		deferMs: number;
-		fleetWitness?: FleetCapacityWitness;
+		fleetWitness?: PeerCapacityWitness;
 		nonLocalFreeSlots?: number;
 	}>,
 ): ReadonlyArray<
@@ -174,7 +174,7 @@ export function pickTrunkHeadroomFleetReleases(
 		waitedMs: number;
 	}>
 > {
-	if (!fleetCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
+	if (!peersCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
 		return [];
 	const releases: {
 		leaseId: string;

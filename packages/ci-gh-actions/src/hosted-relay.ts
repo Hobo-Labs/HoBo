@@ -27,11 +27,6 @@ import {
 	TRUNK_RANK,
 } from "./admission-order.js";
 import {
-	type FleetCapacityWitness,
-	fleetPeerAbsorbSlots,
-	fleetWitnessFields,
-} from "./fleet-capacity-witness.js";
-import {
 	type GithubRun,
 	type GithubTransport,
 	getHostJob,
@@ -73,6 +68,11 @@ import {
 } from "./main-shard-parallel-admission.js";
 import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
+import {
+	type PeerCapacityWitness,
+	peerAbsorbSlotsOf,
+	peerWitnessFields,
+} from "./peer-capacity.js";
 import {
 	type RunnerLabel,
 	servedRunnerLabel,
@@ -315,10 +315,10 @@ export class HostedRelay {
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
-			/** This box's free slots against its fleet's `FleetCapacity` (fleet-capacity-witness.ts). */
+			/** This box's free slots against its fleet's `FleetCapacity` (peer-capacity.ts). */
 			fleetCapacity?: Readonly<{
 				snapshot: () => Promise<
-					FleetCapacityWitness & { hoboFreeSlots: number }
+					PeerCapacityWitness & { hoboFreeSlots: number }
 				>;
 			}>;
 			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
@@ -603,15 +603,15 @@ export class HostedRelay {
 	}
 
 	private fleetPeerSlots(
-		fleetWitness: FleetCapacityWitness | undefined,
+		fleetWitness: PeerCapacityWitness | undefined,
 	): number {
-		return fleetPeerAbsorbSlots(fleetWitness);
+		return peerAbsorbSlotsOf(fleetWitness);
 	}
 
 	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
 	private async releaseBlockedUnlaunchedReservations(
 		pendingDemand: number,
-		fleetWitness: FleetCapacityWitness | undefined,
+		fleetWitness: PeerCapacityWitness | undefined,
 	): Promise<void> {
 		const policy = this.options.unlaunchedReservationRelease;
 		if (!policy || policy.launchSlots <= 0) return;
@@ -676,7 +676,7 @@ export class HostedRelay {
 
 	private async releaseTrunkHeadroomFleetReservations(
 		active: readonly Lease[],
-		fleetWitness: FleetCapacityWitness | undefined,
+		fleetWitness: PeerCapacityWitness | undefined,
 	): Promise<void> {
 		const baseDeferMs = this.headroomFleetDeferMs();
 		const peerSlots = this.fleetPeerSlots(fleetWitness);
@@ -1420,7 +1420,7 @@ export class HostedRelay {
 		this.shardAdmissionHoldLogged.clear();
 		const reservationRevision = await this.refreshConfig();
 		const queued = await this.options.store.pendingJobs();
-		let fleetWitness: FleetCapacityWitness | undefined;
+		let fleetWitness: PeerCapacityWitness | undefined;
 		try {
 			fleetWitness = await this.options.fleetCapacity?.snapshot();
 		} catch {
@@ -1649,7 +1649,7 @@ export class HostedRelay {
 									action: "defer",
 									waitedMs,
 									waitReason: "cpu-contention",
-									...fleetWitnessFields(fleetWitness),
+									...peerWitnessFields(fleetWitness),
 								});
 								waitingTrunk.add(
 									this.reportTrunkWait(job, "fleet-capacity", {
