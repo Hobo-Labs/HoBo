@@ -142,6 +142,7 @@ unindexed new finding files as notices.
 - [Finding 130: release OCI matrix legs missed main-train trunk admission](./findings/0130-release-oci-matrix-legs-missed-main-train-trunk-admission.md)
 - [Finding 131: main shard trunk slot ceiling ignored parallel launch capacity](./findings/0131-main-shard-trunk-slot-ceiling-ignored-parallel-launch-capacity.md)
 - [Finding 132: main gate finish immediate fleet pickup](./findings/0132-main-gate-finish-immediate-fleet-pickup.md)
+- [Finding 133: route job GitHub-hosted start latency](./findings/0133-route-job-github-hosted-start-latency.md)
 - [Finding 134: main trunk pickup delay after route](./findings/0134-main-trunk-pickup-delay-after-route.md)
 - [Finding 135: main gate and shard job wall profiling](./findings/0135-main-gate-and-shard-job-wall-profiling.md)
 - [Finding 137: main gate plan preflight mise](./findings/0137-main-gate-plan-preflight-mise.md)
