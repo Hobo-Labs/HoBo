@@ -140,7 +140,9 @@ unindexed new finding files as notices.
 - [Finding 128: light trunk plan and immediate fleet pickup for deps](./findings/0128-light-trunk-plan-and-immediate-fleet-pickup-for-deps.md)
 - [Finding 129: cancelled release run still queued publish legs](./findings/0129-cancelled-release-run-still-queued-publish-legs.md)
 - [Finding 130: release OCI matrix legs missed main-train trunk admission](./findings/0130-release-oci-matrix-legs-missed-main-train-trunk-admission.md)
+- [Finding 131: main shard trunk slot ceiling ignored parallel launch capacity](./findings/0131-main-shard-trunk-slot-ceiling-ignored-parallel-launch-capacity.md)
 - [Finding 132: main gate finish immediate fleet pickup](./findings/0132-main-gate-finish-immediate-fleet-pickup.md)
+- [Finding 133: route job GitHub-hosted start latency](./findings/0133-route-job-github-hosted-start-latency.md)
 - [Finding 134: main trunk pickup delay after route](./findings/0134-main-trunk-pickup-delay-after-route.md)
 - [Finding 135: main gate and shard job wall profiling](./findings/0135-main-gate-and-shard-job-wall-profiling.md)
 - [Finding 137: main gate plan preflight mise](./findings/0137-main-gate-plan-preflight-mise.md)
@@ -158,6 +160,7 @@ unindexed new finding files as notices.
 - [Finding 151: deps image builds take a storage grant on an idle box](./findings/0151-deps-image-builds-take-a-storage-grant-on-an-idle-box.md)
 - [Finding 152: two-second job poll and hard-linked deps staging](./findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)
 - [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
+- [Finding 154: main waited for runners between jobs](./findings/0154-main-waited-for-runners-between-jobs.md)
 <!-- findings-index:end -->
 
 ## Data
