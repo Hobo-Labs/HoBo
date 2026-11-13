@@ -1,0 +1,52 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// The routing slip (ADR-0181): the box relay's current routing answer for one
+// repository, written as the message of a parentless commit at
+// `refs/hobo/routing-slip`. The route job reads it with its own token and
+// `contents: read`, and uses it only while it has not expired, names the
+// route job's repository, and every runner it names is one of the committed
+// `runnerRouting.labels` in `.hobo/ci.json`. Anything else is no slip: the
+// queue rule decides, as it does today.
+//
+// Nothing in it is secret, and it carries no figure: no slot count, no
+// memory, no queue length. Those stay on the relay.
+
+// Where one class of run goes. `tier` is `fleet`, `local` or `github`.
+// `reason` is one of:
+//   fleet-open   the fleet serves the class and has a free slot;
+//   fleet-busy   the fleet serves the class and every slot is taken by its
+//                own jobs (busy is never refusal);
+//   no-node      no live node serves the class's label;
+//   no-capacity  every node refuses for a reason other than its own jobs,
+//                and no external pool has a free runner;
+//   stalled      work was assigned to the label and nothing started for ten
+//                minutes;
+//   pinned       committed `runnerRouting.pin` decides.
+message RoutingSlipClass {
+  string runner = 1;
+  string tier = 2;
+  string reason = 3;
+}
+
+// The relay that wrote the slip.
+message RoutingSlipRelay {
+  // The mesh node id, `^[A-Za-z0-9_-]{1,64}$`.
+  string node_id = 1;
+  // The commit the relay's daemon runs: 7 to 40 lower-case hex digits.
+  string commit = 2;
+}
+
+message RoutingSlip {
+  // 1.
+  uint32 version = 1;
+  // `owner/name`, lower case.
+  string repository = 2;
+  // RFC 3339 UTC, by the relay's clock. A slip lives at most ten minutes.
+  string issued_at = 3;
+  string expires_at = 4;
+  // `pr`, `fork` and `trunk`, each exactly once (the classes of
+  // `#FleetRoutes`). Shards use `trunk` on trunk events and `pr` otherwise.
+  map<string, RoutingSlipClass> classes = 5;
+  RoutingSlipRelay relay = 6;
+}

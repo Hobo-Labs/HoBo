@@ -6,6 +6,11 @@ export type {
 	FleetVerdictAllowance,
 	FleetVerdictAllowanceUse,
 } from "./_generated/fleet_verdict_pb.js";
+export type {
+	RoutingSlip,
+	RoutingSlipClass,
+	RoutingSlipRelay,
+} from "./_generated/routing_slip_pb.js";
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
@@ -486,6 +491,7 @@ export {
 	loadCiProjectConfigDocument,
 	mergeCiProjectLocalOverlay,
 	parseCiProjectSelection,
+	parseCiRunnerRouting,
 	type ResolvedCiRelayRoute,
 	relayWebhookPath,
 	resolveCiConfigRefForRun,
@@ -506,6 +512,38 @@ export {
 	toOtlpTraces,
 	traceGithubTransport,
 } from "./relay-trace.js";
+export {
+	judgeRoutingSlip,
+	type ParsedRoutingSlip,
+	parseRoutingSlip,
+	ROUTING_SLIP_CLASSES,
+	ROUTING_SLIP_HEARTBEAT_MS,
+	ROUTING_SLIP_LIFETIME_MS,
+	ROUTING_SLIP_OPEN_REASONS,
+	ROUTING_SLIP_REF,
+	ROUTING_SLIP_REFUSED_REASONS,
+	ROUTING_SLIP_TIERS,
+	ROUTING_SLIP_VERSION,
+	type RoutingSlipClassName,
+	type RoutingSlipContext,
+	type RoutingSlipInput,
+	type RoutingSlipJudgement,
+	type RoutingSlipReason,
+	type RoutingSlipRefusal,
+	type RoutingSlipRoute,
+	type RoutingSlipTier,
+	routingSlipJson,
+} from "./routing-slip.js";
+export {
+	GENERIC_RUNNER_LABELS,
+	parseRunnerRouting,
+	RUNNER_ROUTING_PINS,
+	type RunnerRouting,
+	RunnerRoutingLabelSchema,
+	type RunnerRoutingPin,
+	RunnerRoutingSchema,
+	runnerRoutingLabels,
+} from "./runner-routing.js";
 export {
 	admitWhenReady,
 	createRelayService,
