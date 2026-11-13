@@ -104,6 +104,7 @@ export async function device(
 		owner: "github:1",
 		ownerAliases: ["github:1"],
 		recordSequence: 1,
+		authorityIncarnation: 1,
 		issuedAt: iso(nowMs),
 		notAfter: iso(nowMs + 30 * DAY),
 	});
@@ -136,9 +137,9 @@ export function fleetRecord(nowMs: number): FleetRecord {
 
 export type AuthorityKey = Readonly<{ signer: Signer; ref: PublicKeyRef }>;
 
-export function authorityKey(): AuthorityKey {
+export function authorityKey(id = "authority#1"): AuthorityKey {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-	const keyId = parseKeyId("authority#1");
+	const keyId = parseKeyId(id);
 	return {
 		signer: {
 			keyId,
@@ -185,6 +186,16 @@ export async function seed(
 			),
 		}),
 	);
+	await publishRecords(bus, authority, members, fleet);
+}
+
+/** Puts the member and fleet records, signed by the authority. */
+export async function publishRecords(
+	bus: Pick<AuthorityBus, "publisher">,
+	authority: AuthorityKey,
+	members: readonly MemberRecord[],
+	fleet: FleetRecord,
+): Promise<void> {
 	for (const member of members)
 		await bus.publisher.putMember(
 			await signEnvelope(

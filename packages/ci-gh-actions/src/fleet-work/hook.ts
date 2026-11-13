@@ -83,9 +83,9 @@ printf '{"workKey":"%s","repository":"%s","ref":"%s","author":"%s","origin":"%s"
   "$(esc "$work")" "$(esc "$repository")" "$(esc "$ref")" "$(esc "$author")" "$origin" > "$body"
 
 if command -v wget >/dev/null 2>&1; then
-  answer=$(wget -q -T 10 -O- --header='Content-Type: application/json' --post-file="$body" "$fence" 2>/dev/null)
+  answer=$(wget -q -T 10 -O- --header='Content-Type: application/json' --post-file="$body" "$fence" 2>/dev/null || true)
 elif command -v curl >/dev/null 2>&1; then
-  answer=$(curl -fsS -m 10 -H 'Content-Type: application/json' --data-binary "@$body" "$fence" 2>/dev/null)
+  answer=$(curl -fsS -m 10 -H 'Content-Type: application/json' --data-binary "@$body" "$fence" 2>/dev/null || true)
 else
   answer=''
 fi
