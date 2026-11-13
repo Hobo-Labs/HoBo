@@ -6,8 +6,8 @@ import type { FleetEventStore } from "@hobo/fleet";
 import { createMemoryEventStore } from "@hobo/fleet/testing";
 import {
 	createStatusPageProjection,
-	STATUS_SIGNAL_EVENTS,
 	type SloMeasuredData,
+	STATUS_SIGNAL_EVENTS,
 } from "@hobo/status-page";
 import { describe, expect, it } from "vitest";
 import { createStatusFeed } from "../../src/status/index.js";
@@ -37,9 +37,7 @@ function dataOf(event: EventEnvelope): SloMeasuredData & JsonObject {
 }
 
 function byComponent(events: readonly EventEnvelope[], componentId: string) {
-	return events
-		.map(dataOf)
-		.filter((data) => data.componentId === componentId);
+	return events.map(dataOf).filter((data) => data.componentId === componentId);
 }
 
 describe("createStatusFeed", () => {
@@ -83,7 +81,9 @@ describe("createStatusFeed", () => {
 		expect(byComponent(events, "fleet-nats-callout")).toHaveLength(10);
 		// An idle minute has no failed request: its attainment is 1.
 		expect(
-			byComponent(events, "fleet-nats-callout").every((d) => d.attainment === 1),
+			byComponent(events, "fleet-nats-callout").every(
+				(d) => d.attainment === 1,
+			),
 		).toBe(true);
 		const minutes = byComponent(events, "fleet-enrollment-api").map(
 			(d) => d.measuredAt,

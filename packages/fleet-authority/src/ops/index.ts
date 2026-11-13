@@ -10,6 +10,8 @@ import {
 	type Outcome,
 } from "@hobo/fleet";
 import type { SecretsPort } from "@hobo/identity";
+import { ceremony } from "./ceremony.js";
+import { readOpsConfig } from "./config.js";
 
 export type OpsContext = Readonly<{
 	configPath: string;
@@ -36,8 +38,17 @@ export function runCeremony(
 		Readonly<{ operatorPublicKey: string; shares: readonly [string, string] }>
 	>
 > {
-	void context;
-	throw new FleetNotImplemented("runCeremony");
+	return readOpsConfig(context.configPath).then((config) =>
+		config.ok
+			? ceremony({
+					secrets: context.secrets,
+					prefix: config.value.secretPrefix,
+					operatorName: config.value.operatorName,
+					now: context.now,
+					log: context.log,
+				})
+			: config,
+	);
 }
 
 /** Add, publish, switch, remove. Resumable: a second call continues from the step the first reached. */

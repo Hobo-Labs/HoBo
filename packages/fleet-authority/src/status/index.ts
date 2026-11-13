@@ -14,7 +14,7 @@ import {
 	OptimisticSequenceConflictError,
 } from "@hobo/core";
 import type { Clock, FleetEventStore, FleetLog } from "@hobo/fleet";
-import { STATUS_SIGNAL_EVENTS, type SloMeasuredData } from "@hobo/status-page";
+import { type SloMeasuredData, STATUS_SIGNAL_EVENTS } from "@hobo/status-page";
 
 const MINUTE_MS = 60_000;
 const APPEND_RETRIES = 8;
