@@ -163,8 +163,9 @@ describe("createRecorder", () => {
 		);
 		// A tampered payload.
 		const tampered = await receipt(executor, ReceiptStatus.SUCCEEDED);
-		tampered.payload = tampered.payload.slice();
-		tampered.payload[tampered.payload.length - 1] ^= 1;
+		const bytes = tampered.payload.slice();
+		bytes.set([(bytes.at(-1) ?? 0) ^ 1], bytes.length - 1);
+		tampered.payload = bytes;
 		await at.bus.events.publish(tampered, executor.keys.memberId, "receipt");
 		// Signed by the dispatcher, published under the executor's subject.
 		await at.bus.events.publish(
