@@ -42,6 +42,7 @@ import {
 } from "../src/cd-declared-rails.js";
 import { parseDeliveryModule } from "../src/cd-delivery-module.js";
 import { openCdRuntime, stationOriginOf } from "../src/cd-runtime.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	digestOf,
 	FakeRunnerHost,
@@ -109,7 +110,7 @@ afterEach(async () => {
 	dir = "";
 });
 async function writeConfig(
-	value: Readonly<Record<string, unknown>> = CONFIG,
+	value: Readonly<Record<string, JsonValue>> = CONFIG,
 ): Promise<string> {
 	dir = await mkdtemp(join(tmpdir(), "runner-host-agent-"));
 	configPath = join(dir, "agent.runner-host.json");

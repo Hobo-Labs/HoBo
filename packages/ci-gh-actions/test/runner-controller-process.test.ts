@@ -418,7 +418,10 @@ async function supervisedHost(
 	return { files, releases, launcher, supervisor, resolver, beat, ports };
 }
 
-const request = (image: string, config?: { env: Record<string, string> }) =>
+const request = (
+	image: string,
+	config?: { command: string[]; env: Record<string, string>; volumes: [] },
+) =>
 	runnerHostResolveRequest({
 		campId: "hobo-ci-runners/box",
 		image,
@@ -530,7 +533,11 @@ describe("runner-host realizer: a controller that runs as a process", () => {
 		const host = await supervisedHost();
 		await expect(
 			host.resolver.reconcile(
-				request(host.releases.images[0] ?? "", { env: { A: "1" } }),
+				request(host.releases.images[0] ?? "", {
+					command: [],
+					env: { A: "1" },
+					volumes: [],
+				}),
 				transport,
 			),
 		).rejects.toThrow(/^runner-host-config-unsupported: .*env/u);
