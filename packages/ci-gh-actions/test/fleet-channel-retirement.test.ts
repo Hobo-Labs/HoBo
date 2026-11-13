@@ -18,7 +18,9 @@ describe("retired fleet variable channels", () => {
 		])
 			expect(exported).not.toContain(name);
 		expect(existsSync(file("../src/fleet-state.ts"))).toBe(false);
-		expect(existsSync(file("../data-models/fixtures/valid/mesh-fleet-state.json"))).toBe(false);
+		expect(
+			existsSync(file("../data-models/fixtures/valid/mesh-fleet-state.json")),
+		).toBe(false);
 	});
 
 	it("no longer publishes HOBO_CI_FLEET_CAPACITY", () => {
