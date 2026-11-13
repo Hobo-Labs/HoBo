@@ -250,6 +250,64 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 		expect(binding.deployOidcSubject).toBe(IMMUTABLE_SUB);
 	});
 
+	it("repairs from the subject a real token carried when GitHub's Actions settings cannot be read", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		// A proxy or narrow token reaches the repository but not its Actions
+		// settings; the observed sub must still name the repository's ids.
+		const refused: Fetch = async (request, init) =>
+			new URL(String(request)).pathname.endsWith(
+				"/actions/oidc/customization/sub",
+			)
+				? Response.json({ message: "Forbidden" }, { status: 403 })
+				: github().fetch(request, init);
+		const without = await runCiSecretStore(
+			input(
+				"connect",
+				{ repo: "Hobo-Labs/HoBo" },
+				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				withInfisicalPatch(refused).fetch,
+			),
+		);
+		expect(without).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED",
+		});
+		const foreign = await runCiSecretStore(
+			input(
+				"connect",
+				{
+					repo: "Hobo-Labs/HoBo",
+					"observed-subject": "repo:Hobo-Labs@344805935/HoBo@1:ref:refs/heads/main",
+				},
+				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				withInfisicalPatch(refused).fetch,
+			),
+		);
+		expect(foreign).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED",
+		});
+		const infisical = withInfisicalPatch(refused);
+		const result = await runCiSecretStore(
+			input(
+				"connect",
+				{ repo: "Hobo-Labs/HoBo", "observed-subject": IMMUTABLE_SUB },
+				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				infisical.fetch,
+			),
+		);
+		expect(result).toMatchObject({
+			ok: true,
+			data: { deployTrust: { applied: "updated" } },
+		});
+		expect(infisical.patches).toEqual([
+			{
+				path: "/api/v1/auth/oidc-auth/identities/deploy-identity",
+				body: expect.objectContaining({ boundSubject: IMMUTABLE_SUB }),
+			},
+		]);
+	});
+
 	it("keeps the binding and fails typed when Infisical refuses the update", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
 		const before = readFileSync(

@@ -144,7 +144,12 @@ owner handles no secret value on the default path:
   identity), otherwise it prints the exact subject and claims to set in the
   dashboard. When `verify` is denied with a token whose `sub` differs from
   that subject (or is immutable while no subject was recorded), its failure
-  says so and names this repair.
+  says so and names this repair. Where GitHub's Actions settings cannot be read (a
+  proxied session, a token without that access), `--observed-subject <sub>`
+  takes the `oidc_sub` that failure printed instead; it is used only then,
+  and only when its prefix names the repository's ids from
+  `GET /repos/{owner}/{repo}`, so a wrong or foreign subject still fails
+  closed.
 
 - **The remainder.** Only an optional third-party cache credential
   (`VALKEY_URL`, a `TURSO_AUTH_TOKEN` the Marketplace does not manage) is

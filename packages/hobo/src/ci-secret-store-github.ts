@@ -33,11 +33,16 @@ export function resolveDeploySubject(input: {
 	readonly repository: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly fetch?: typeof fetch;
+	/** `--observed-subject`: a token's `sub`, used only if GitHub's template cannot be read. */
+	readonly observedSubject?: string;
 }): Promise<GithubOidcSubject> {
 	const token = input.env.GH_TOKEN || input.env.GITHUB_TOKEN || undefined;
 	return resolveGithubOidcSubject({
 		repository: input.repository,
 		...(token !== undefined ? { token } : undefined),
+		...(input.observedSubject !== undefined
+			? { observedSubject: input.observedSubject }
+			: undefined),
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 	});
 }

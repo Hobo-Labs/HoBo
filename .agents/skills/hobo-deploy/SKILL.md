@@ -138,7 +138,11 @@ they paste (identifiers, not secrets).
    `connect` with `--repo` (no ids needed once the binding exists). With
    `INFISICAL_TOKEN` from the owner's own `infisical login` for that one run,
    it updates `hobo-ci-writer`'s OIDC trust in place; otherwise walk the owner
-   through setting the printed subject and claims.
+   through setting the printed subject and claims. Where GitHub's Actions
+   settings cannot be read (a proxied session, a narrow token), pass
+   `--observed-subject` with the `oidc_sub` the failed verify printed: it is
+   used only then, and only when it names the repository's ids, so a wrong
+   value still fails closed.
 
 ### 3. Fill the store, with no secret passing through anyone
 

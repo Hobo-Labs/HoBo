@@ -21,7 +21,7 @@
  * - GET /repos/{owner}/{repo}
  * - GET /repos/{owner}/{repo}/actions/oidc/customization/sub
  */
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import type { InfisicalOidcTrust } from "@hobo/adapter-infisical";
 import {
 	type GithubOidcSubjectTemplate,
@@ -203,6 +203,13 @@ async function getJson(
 	}
 }
 
+/** The part of an observed `sub` before `:ref:`, or undefined. */
+function observedPrefix(subject: string | undefined): string | undefined {
+	if (subject === undefined) return undefined;
+	const at = subject.indexOf(":ref:");
+	return at > 0 ? subject.slice(0, at) : undefined;
+}
+
 /**
  * Ask GitHub which subject `repository`'s tokens carry. Fails closed with
  * `SECRET_STORE_OIDC_SUBJECT_UNRESOLVED` and the remediation; the token is
@@ -214,6 +221,12 @@ export async function resolveGithubOidcSubject(options: {
 	/** A GitHub token that can read the repository and its Actions settings. */
 	readonly token?: string;
 	readonly fetch?: Send;
+	/**
+	 * The `sub` a real token from this repository carried (as a failed
+	 * `verify` prints it). Used only when GitHub's subject template cannot be
+	 * read, and only when its prefix names this repository's ids exactly.
+	 */
+	readonly observedSubject?: string;
 	/** Tests only: GitHub's API origin. Default https://api.github.com. */
 	readonly apiUrl?: string;
 	readonly timeoutMs?: number;
@@ -248,7 +261,8 @@ export async function resolveGithubOidcSubject(options: {
 		options.token,
 		timeoutMs,
 	);
-	if (sub.body === undefined)
+	const observed = observedPrefix(options.observedSubject);
+	if (sub.body === undefined && observed === undefined)
 		return unresolved(
 			options.repository,
 			why("its OIDC subject template", sub.status),
@@ -259,9 +273,18 @@ export async function resolveGithubOidcSubject(options: {
 		repository = fromJson(GithubRepositorySchema, repo.body, {
 			ignoreUnknownFields: true,
 		});
-		template = fromJson(GithubOidcSubjectTemplateSchema, sub.body, {
-			ignoreUnknownFields: true,
-		});
+		// The observed token's prefix stands in for the template only when the
+		// template cannot be read; parseGithubOidcSubject still requires it to
+		// name this repository's ids, so a wrong or foreign subject fails closed.
+		template =
+			sub.body === undefined
+				? create(GithubOidcSubjectTemplateSchema, {
+						useDefault: false,
+						subClaimPrefix: observed ?? "",
+					})
+				: fromJson(GithubOidcSubjectTemplateSchema, sub.body, {
+						ignoreUnknownFields: true,
+					});
 	} catch {
 		return unresolved(options.repository, "GitHub's answer has another shape");
 	}

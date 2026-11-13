@@ -298,6 +298,7 @@ function parseCiArgs(args: readonly string[]) {
 			"deploy-project-id": { type: "string" },
 			"relay-identity-id": { type: "string" },
 			"deploy-identity-id": { type: "string" },
+			"observed-subject": { type: "string" },
 			"site-url": { type: "string" },
 			"via-workflow": { type: "boolean" },
 		},

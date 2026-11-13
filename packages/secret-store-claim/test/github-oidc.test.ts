@@ -8,6 +8,7 @@ import {
 	githubSubjectMismatch,
 	parseGithubOidcSubject,
 	relayStoreLayout,
+	resolveGithubOidcSubject,
 	SecretStoreError,
 } from "../src/index.js";
 
@@ -175,5 +176,65 @@ describe("a denied token's subject against the trust", () => {
 		expect(
 			githubSubjectMismatch("repo:Hobo-Labs/HoBo:ref:refs/heads/main", ""),
 		).toBeUndefined();
+	});
+});
+
+describe("an observed token subject, when GitHub's template cannot be read", () => {
+	// GitHub answers the repository; the Actions settings path is refused, as
+	// a proxied or narrow token sees it.
+	const send = (async (url: string | URL | Request) =>
+		String(url).endsWith("/actions/oidc/customization/sub")
+			? new Response("{}", { status: 403 })
+			: new Response(
+					JSON.stringify({
+						id: 1274791462,
+						name: "HoBo",
+						owner: { login: "Hobo-Labs", id: 344805935 },
+					}),
+					{ status: 200 },
+				)) as typeof fetch;
+	const resolve = (observedSubject?: string) =>
+		resolveGithubOidcSubject({
+			repository: "Hobo-Labs/HoBo",
+			fetch: send,
+			...(observedSubject !== undefined ? { observedSubject } : undefined),
+		});
+	const codeOfAsync = (run: () => Promise<unknown>) =>
+		run().then(
+			() => "ok",
+			(error: unknown) =>
+				error instanceof SecretStoreError ? error.code : "thrown",
+		);
+
+	it("still fails closed with no observed subject", async () => {
+		expect(await codeOfAsync(() => resolve())).toBe(
+			"SECRET_STORE_OIDC_SUBJECT_UNRESOLVED",
+		);
+	});
+
+	it("takes the observed immutable subject when it names the repository's ids", async () => {
+		const subject = await resolve(
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+		);
+		expect(subject.subjectPrefix).toBe(
+			"repo:Hobo-Labs@344805935/HoBo@1274791462",
+		);
+		expect(subject.format).toBe("immutable");
+	});
+
+	it("refuses an observed subject with another repository's ids", async () => {
+		expect(
+			await codeOfAsync(() =>
+				resolve("repo:Hobo-Labs@344805935/HoBo@1:ref:refs/heads/main"),
+			),
+		).toBe("SECRET_STORE_OIDC_SUBJECT_UNRESOLVED");
+	});
+
+	it("refuses an observed value that is not a token subject", async () => {
+		expect(
+			await codeOfAsync(() =>
+				resolve("repo:Hobo-Labs@344805935/HoBo@1274791462"),
+			),
+		).toBe("SECRET_STORE_OIDC_SUBJECT_UNRESOLVED");
 	});
 });

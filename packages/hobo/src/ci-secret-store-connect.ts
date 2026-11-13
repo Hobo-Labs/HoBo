@@ -203,6 +203,7 @@ export async function runCiSecretStoreConnect(
 			`${SECRET_STORE_BINDING_FILE} already exists for other ids. Pass --yes to replace it, or re-run without ids to repair its deploy trust.`,
 		);
 
+	const observedSubject = text(input, "observed-subject");
 	let trust: ReturnType<typeof githubDeployTrust>;
 	try {
 		trust = githubDeployTrust(
@@ -210,6 +211,7 @@ export async function runCiSecretStoreConnect(
 				repository,
 				env: input.env,
 				...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+				...(observedSubject !== undefined ? { observedSubject } : undefined),
 			}),
 		);
 	} catch (error) {

@@ -117,7 +117,9 @@ writes to it.
   Actions OIDC to a separate admin identity bound to this repository: the
   subject GitHub issues for it (the immutable
   `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main` form, read from
-  GitHub by `hobo ci secret-store connect`, never a glob) with
+  GitHub by `hobo ci secret-store connect`, never a glob; where GitHub's
+  Actions settings cannot be read, `--observed-subject` takes the `sub` a real
+  token carried, accepted only when it names the repository's ids) with
   `repository_id` and `repository_owner_id` pinned. That identity can read the Vercel deploy
   credential and write configuration; the relay's identity can do neither.
 - **What lives there.** Config: accounts, policy, offers (with their declared
