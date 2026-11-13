@@ -45,7 +45,17 @@ const activeCiFiles = new Set([
  */
 const probeFile = "fleet-probe.yml";
 const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
-const allowedEnabled = new Set([acceptanceFile, probeFile, ...activeCiFiles]);
+/**
+ * The CI health monitor (docs/ci/health-monitor.md): one GitHub-hosted job,
+ * `ci-health`, that runs the monitor and nothing on the fleet it watches.
+ */
+const healthFile = "ci-health.yml";
+const allowedEnabled = new Set([
+	acceptanceFile,
+	probeFile,
+	healthFile,
+	...activeCiFiles,
+]);
 
 /**
  * The probe asks for each label by name, which no other workflow may, so it
@@ -73,6 +83,27 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 		errors.push(`${probeFile}: the probe must hold no permissions`);
 }
 
+/** The health monitor's workflow holds its one hosted job and nothing else. */
+function lintHealthWorkflow(errors: string[], text: string): void {
+	const lines = text.split("\n");
+	const jobsIndex = lines.indexOf("jobs:");
+	const starts = lines.flatMap((line, index) =>
+		index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
+	);
+	if (jobsIndex === -1 || starts.length === 0)
+		errors.push(`${healthFile}: the health monitor needs its ci-health job`);
+	for (const [position, start] of starts.entries()) {
+		const block = lines.slice(start, starts[position + 1] ?? lines.length);
+		const runsOn = block
+			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
+			.find((value) => value !== undefined);
+		if (!isAlwaysHostedJob(lines[start] ?? "", block, runsOn))
+			errors.push(
+				`${healthFile}:${start + 1}: the health monitor runs one job, ci-health, on ${HOSTED_RUNS_ON}, that runs node scripts/ci/ci-health.mts`,
+			);
+	}
+}
+
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
@@ -84,6 +115,36 @@ const TRUNK_RUNS_ON =
  */
 const ROUTED_RUNS_ON =
 	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+/**
+ * What the main gate's shards and finish job ask for: the plan job's second
+ * ask (`shard_runner`), then the run's route, then the trunk label, so a
+ * failed or skipped plan job never leaves `runs-on` empty.
+ */
+const SHARD_RUNS_ON =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+/**
+ * Fleet state never reaches a workflow (rule R2 of ADR-0180): not through a
+ * repository variable, an action input or an environment variable. A
+ * workflow learns what the fleet can take by asking the relay when it decides.
+ */
+const FLEET_STATE_VARIABLE = /vars\.HOBO_CI_FLEET_/;
+const FLEET_STATE_NAME =
+	/^\s*-?\s*(fleet-(state|capacity|routes)|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES))[\w-]*\s*:/;
+
+function lintFleetState(errors: string[], file: string, text: string): void {
+	for (const [index, line] of text.split("\n").entries()) {
+		if (FLEET_STATE_VARIABLE.test(line))
+			errors.push(
+				`${file}:${index + 1}: fleet state must not reach a workflow through a repository variable; ask the relay (ADR-0180)`,
+			);
+		if (FLEET_STATE_NAME.test(line))
+			errors.push(
+				`${file}:${index + 1}: fleet state must not reach a workflow through an input or environment variable; ask the relay (ADR-0180)`,
+			);
+	}
+}
 
 /** The one GitHub-hosted machine type; never `ubuntu-latest`. */
 const HOSTED_RUNS_ON = "ubuntu-24.04";
@@ -105,6 +166,11 @@ function isAlwaysHostedJob(
 		return block.some(
 			(line) => line.trim() === "uses: ./.github/actions/route-runner",
 		);
+	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
+	if (/^  ci-health:$/.test(jobLine))
+		return block.some((line) =>
+			/^\s*-?\s*run: node scripts\/ci\/ci-health\.mts$/.test(line),
+		);
 	const stepsAt = block.findIndex((line) => line === "    steps:");
 	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
 	const gateIf = header.join("\n");
@@ -114,7 +180,7 @@ function isAlwaysHostedJob(
 	);
 }
 
-function needsRoute(block: readonly string[]): boolean {
+function needsJob(block: readonly string[], job: string): boolean {
 	const header = block.slice(
 		0,
 		block.findIndex((line) => line === "    steps:"),
@@ -124,8 +190,16 @@ function needsRoute(block: readonly string[]): boolean {
 	const list = header
 		.slice(at)
 		.filter((line, index) => index === 0 || line.startsWith("      - "))
-		.join(" ");
-	return /(^|[\s[,-])route([\s\],]|$)/.test(list.replace(/^\s*needs:/, ""));
+		.join(" ")
+		.replace(/^\s*needs:/, "");
+	return list
+		.split(/[\s[\],]+/)
+		.filter((entry) => entry !== "" && entry !== "-")
+		.includes(job);
+}
+
+function needsRoute(block: readonly string[]): boolean {
+	return needsJob(block, "route");
 }
 
 /** What the route job must check out to verify a signed local run. */
@@ -443,10 +517,13 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
+	lintFleetState(errors, file, text);
 	if (file === probeFile && !requireDisabledJobs) {
 		lintProbeWorkflow(errors, text);
 		return;
 	}
+	if (file === healthFile && !requireDisabledJobs)
+		lintHealthWorkflow(errors, text);
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
@@ -490,22 +567,32 @@ function lintWorkflowYaml(
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			runsOn !== SHARD_RUNS_ON &&
 			!npmOidcHosted &&
 			!alwaysHosted
 		) {
 			errors.push(
-				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed label expression`,
+				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
 			);
 		}
-		if (runsOn === ROUTED_RUNS_ON && !needsRoute(block)) {
+		if (
+			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON) &&
+			!needsRoute(block)
+		) {
 			errors.push(
 				`${file}:${start + 1}: a job on the routed label must need the route job`,
+			);
+		}
+		if (runsOn === SHARD_RUNS_ON && !needsJob(block, "main-gate-plan")) {
+			errors.push(
+				`${file}:${start + 1}: a job on the shard label must need the main-gate-plan job`,
 			);
 		}
 		if (
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
-			runsOn === ROUTED_RUNS_ON
+			runsOn === ROUTED_RUNS_ON ||
+			runsOn === SHARD_RUNS_ON
 		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -619,6 +706,7 @@ function lintCompositeActions(errors: string[], githubRoot: string): void {
 			const rel = relative(githubRoot, path).replaceAll("\\", "/");
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 			lintPinnedActionRefs(errors, rel, text);
+			lintFleetState(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);

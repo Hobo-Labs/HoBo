@@ -194,6 +194,48 @@ jobs:
           if [ "$ready" != "200" ]; then
             echo "::notice title=Relay readiness::/readyz answered $ready ${state}; until the store's folder is filled the relay reports config-unavailable"
           fi
+      # The route job asks the relay `.hobo/ci.json` names, at its public
+      # origin, for this repository's fleet verdict (ADR-0180). Vercel has
+      # already promoted the deploy, so this reports rather than gates: a red
+      # check is the signal to roll back in the order of "Roll back" under
+      # "Fleet verdict operations" in packages/ci-vercel/README.md. A relay
+      # that does not answer never stops a run; routing treats it as no relay.
+      - name: Probe the fleet verdict at the public origin
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -uo pipefail
+          origin="$(node -e '
+            try {
+              const project = JSON.parse(require("node:fs").readFileSync(".hobo/ci.json", "utf8"));
+              const url = new URL(project.environments[project.defaultEnvironment].relayOrigin);
+              if (url.protocol === "https:" && !url.username && !url.password) console.log(url.origin);
+            } catch {}
+          ')"
+          if [ -z "$origin" ]; then
+            echo "::error title=Relay fleet verdict::.hobo/ci.json names no https relayOrigin for its defaultEnvironment"
+            exit 1
+          fi
+          repository="${GITHUB_REPOSITORY,,}"
+          code="$(curl -sS -o "$RUNNER_TEMP/verdict.json" -w '%{http_code}' --max-time 20 \
+            --retry 3 --retry-delay 5 --retry-all-errors \
+            "$origin/v1/fleet/verdicts/$repository" || echo 000)"
+          echo "GET $origin/v1/fleet/verdicts/$repository answered $code"
+          echo "- Fleet verdict at $origin: $code" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" != "200" ]; then
+            echo "::error title=Relay fleet verdict::GET /v1/fleet/verdicts/$repository at $origin answered $code; route jobs read this as no relay. Follow the rollback order in the fleet verdict runbook (packages/ci-vercel/README.md)"
+            exit 1
+          fi
+          node -e '
+            const want = String(process.env.GITHUB_REPOSITORY).toLowerCase();
+            const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+            let verdict;
+            try { verdict = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); } catch {}
+            if (!isObject(verdict) || verdict.repository !== want || !isObject(verdict.blocked)) {
+              console.log(`::error title=Relay fleet verdict::the answer is not a fleet verdict for ${want} with a blocked object`);
+              process.exit(1);
+            }
+            console.log(`fleet verdict for ${want}: blocked ${Object.keys(verdict.blocked).join(", ") || "nothing"}`);
+          ' "$RUNNER_TEMP/verdict.json"
 
   # The GitHub App's credentials, from GitHub straight into the relay's
   # secrets manager (ADR-0179 amendment "Secretless first"): no person and no

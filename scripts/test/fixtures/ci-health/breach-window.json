@@ -1,0 +1,472 @@
+{
+	"now": "2026-11-12T12:00:00Z",
+	"runs": [
+		{
+			"id": 201,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "push",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/201",
+			"created_at": "2026-11-12T10:05:00Z"
+		},
+		{
+			"id": 202,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "pull_request",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/202",
+			"created_at": "2026-11-12T10:10:00Z"
+		},
+		{
+			"id": 203,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "push",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/203",
+			"created_at": "2026-11-12T10:15:00Z"
+		},
+		{
+			"id": 204,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "pull_request",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/204",
+			"created_at": "2026-11-12T10:20:00Z"
+		},
+		{
+			"id": 205,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "push",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/205",
+			"created_at": "2026-11-12T10:25:00Z"
+		},
+		{
+			"id": 206,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "pull_request",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/206",
+			"created_at": "2026-11-12T10:30:00Z"
+		},
+		{
+			"id": 207,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "push",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/207",
+			"created_at": "2026-11-12T10:35:00Z"
+		},
+		{
+			"id": 208,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "pull_request",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/208",
+			"created_at": "2026-11-12T10:40:00Z"
+		},
+		{
+			"id": 209,
+			"name": "HoBo CI Fabric",
+			"path": ".github/workflows/hobo-ci.yml",
+			"event": "push",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/209",
+			"created_at": "2026-11-12T10:45:00Z"
+		}
+	],
+	"jobs": {
+		"201": [
+			{
+				"id": 2011,
+				"run_id": 201,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008711",
+				"created_at": "2026-11-12T10:05:00Z",
+				"started_at": "2026-11-12T10:05:00Z",
+				"completed_at": "2026-11-12T10:06:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/201/job/2011"
+			}
+		],
+		"202": [
+			{
+				"id": 2021,
+				"run_id": 202,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008712",
+				"created_at": "2026-11-12T10:10:00Z",
+				"started_at": "2026-11-12T10:10:00Z",
+				"completed_at": "2026-11-12T10:11:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/202/job/2021"
+			}
+		],
+		"203": [
+			{
+				"id": 2031,
+				"run_id": 203,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008713",
+				"created_at": "2026-11-12T10:15:00Z",
+				"started_at": "2026-11-12T10:15:00Z",
+				"completed_at": "2026-11-12T10:16:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/203/job/2031"
+			}
+		],
+		"204": [
+			{
+				"id": 2041,
+				"run_id": 204,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008714",
+				"created_at": "2026-11-12T10:20:00Z",
+				"started_at": "2026-11-12T10:20:00Z",
+				"completed_at": "2026-11-12T10:21:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/204/job/2041"
+			}
+		],
+		"205": [
+			{
+				"id": 2051,
+				"run_id": 205,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008715",
+				"created_at": "2026-11-12T10:25:00Z",
+				"started_at": "2026-11-12T10:25:00Z",
+				"completed_at": "2026-11-12T10:26:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/205/job/2051"
+			}
+		],
+		"206": [
+			{
+				"id": 2061,
+				"run_id": 206,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008716",
+				"created_at": "2026-11-12T10:30:00Z",
+				"started_at": "2026-11-12T10:30:00Z",
+				"completed_at": "2026-11-12T10:31:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/206/job/2061"
+			}
+		],
+		"207": [
+			{
+				"id": 2071,
+				"run_id": 207,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008717",
+				"created_at": "2026-11-12T10:35:00Z",
+				"started_at": "2026-11-12T10:35:00Z",
+				"completed_at": "2026-11-12T10:36:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/207/job/2071"
+			}
+		],
+		"208": [
+			{
+				"id": 2081,
+				"run_id": 208,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008718",
+				"created_at": "2026-11-12T10:40:00Z",
+				"started_at": "2026-11-12T10:40:00Z",
+				"completed_at": "2026-11-12T10:41:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/208/job/2081"
+			},
+			{
+				"id": 2082,
+				"run_id": 208,
+				"name": "Main workspace test shard 5",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"hobo-trunk"
+				],
+				"runner_name": "hobo-a1b2c3d4",
+				"created_at": "2026-11-12T10:42:00Z",
+				"started_at": "2026-11-12T11:18:00Z",
+				"completed_at": "2026-11-12T11:30:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/208/job/2082"
+			},
+			{
+				"id": 2083,
+				"run_id": 208,
+				"name": "Main full gate (finish)",
+				"status": "queued",
+				"conclusion": null,
+				"labels": [
+					"hobo-trunk"
+				],
+				"runner_name": null,
+				"created_at": "2026-11-12T11:15:00Z",
+				"started_at": null,
+				"completed_at": null,
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/208/job/2083"
+			}
+		],
+		"209": [
+			{
+				"id": 2091,
+				"run_id": 209,
+				"name": "Route runners",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008719",
+				"created_at": "2026-11-12T10:45:00Z",
+				"started_at": "2026-11-12T10:45:00Z",
+				"completed_at": "2026-11-12T10:46:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/209/job/2091"
+			},
+			{
+				"id": 2092,
+				"run_id": 209,
+				"name": "Main full gate",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008720",
+				"created_at": "2026-11-12T10:46:00Z",
+				"started_at": "2026-11-12T10:46:00Z",
+				"completed_at": "2026-11-12T11:46:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/209/job/2092"
+			},
+			{
+				"id": 2093,
+				"run_id": 209,
+				"name": "Main workspace test shard 0",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008721",
+				"created_at": "2026-11-12T10:50:00Z",
+				"started_at": "2026-11-12T10:50:00Z",
+				"completed_at": "2026-11-12T11:40:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/209/job/2093"
+			},
+			{
+				"id": 2094,
+				"run_id": 209,
+				"name": "Main workspace test shard 1",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008722",
+				"created_at": "2026-11-12T10:50:00Z",
+				"started_at": "2026-11-12T10:51:00Z",
+				"completed_at": "2026-11-12T11:40:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/209/job/2094"
+			},
+			{
+				"id": 2095,
+				"run_id": 209,
+				"name": "PR impact gate",
+				"status": "completed",
+				"conclusion": "success",
+				"labels": [
+					"ubuntu-24.04"
+				],
+				"runner_name": "GitHub Actions 1000008723",
+				"created_at": "2026-11-12T11:40:00Z",
+				"started_at": "2026-11-12T11:40:00Z",
+				"completed_at": "2026-11-12T11:41:00Z",
+				"html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/209/job/2095"
+			}
+		]
+	},
+	"annotations": {
+		"2011": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "warning",
+				"title": "hobo-ci-route-fallback",
+				"message": "runner routing did not run (route script exited 1); pinned to the fleet",
+				"raw_details": ""
+			}
+		],
+		"2021": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"fleet\",\"runner\":\"hobo\",\"relay\":\"unasked\",\"why\":\"no-relay\",\"refusedBy\":\"none\"}",
+				"raw_details": ""
+			}
+		],
+		"2031": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		],
+		"2041": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		],
+		"2051": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		],
+		"2061": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		],
+		"2071": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		],
+		"2081": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		],
+		"2091": [
+			{
+				"path": ".github",
+				"start_line": 1,
+				"end_line": 1,
+				"annotation_level": "notice",
+				"title": "hobo-ci-route",
+				"message": "{\"v\":1,\"workflow\":\"hobo-ci.yml\",\"tier\":\"github\",\"runner\":\"ubuntu-24.04\",\"relay\":\"unanswered\",\"why\":\"the relay did not answer in 3 s\",\"refusedBy\":\"queue\"}",
+				"raw_details": ""
+			}
+		]
+	},
+	"status": {
+		"repository": "hobo-labs/hobo",
+		"reporters": [
+			{
+				"id": "box-1",
+				"labels": [
+					"hobo",
+					"hobo-trunk"
+				],
+				"live": false,
+				"state": {
+					"lastSequence": "1794499205000",
+					"mode": "shadow",
+					"lastReportAt": "2026-11-12T11:40:00.000Z",
+					"labels": {
+						"hobo-trunk": {
+							"lastBlockedAt": "2026-11-12T07:00:00.000Z"
+						}
+					}
+				}
+			}
+		],
+		"allowance": {
+			"hobo-trunk": {
+				"usedSeconds": 14400,
+				"spent": true,
+				"windowStart": "2026-11-12T07:00:00.000Z"
+			}
+		},
+		"dailyBlockMinutes": 240
+	}
+}

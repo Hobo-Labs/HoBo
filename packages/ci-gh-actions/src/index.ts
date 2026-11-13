@@ -1,3 +1,11 @@
+export type {
+	FleetReporterState,
+	FleetReporterStatus,
+	FleetReporterStatusList,
+	FleetVerdict,
+	FleetVerdictAllowance,
+	FleetVerdictAllowanceUse,
+} from "./_generated/fleet_verdict_pb.js";
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
@@ -35,13 +43,6 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
-	createFleetCapacityPublisher,
-	type FleetCapacityEvent,
-	type FleetCapacityLog,
-	type FleetCapacityPublisher,
-	type FleetCapacityPublishInput,
-} from "./fleet-capacity.js";
-export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,
@@ -51,30 +52,66 @@ export {
 	writeRepositoryVariable,
 } from "./fleet-routes.js";
 export {
-	createFleetStatePublisher,
-	FLEET_STATE_MAX_AGE_MS,
-	FLEET_STATE_VARIABLE,
-	type FleetStateEvent,
-	type FleetStatePublisher,
-} from "./fleet-state.js";
-export {
+	agreedFleetBlocks,
+	countFleetVerdictAllowance,
+	createFleetVerdictStore,
+	createMemoryFleetVerdictKv,
 	createMemoryFleetVerdicts,
+	FLEET_REPORTERS_PATH,
+	FLEET_REPORTERS_PER_ACCOUNT,
+	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
 	FLEET_VERDICT_MAX_TTL_SECONDS,
+	FLEET_VERDICT_MODES,
 	FLEET_VERDICT_REASONS,
 	FLEET_VERDICTS_PATH,
+	type FleetEnrollment,
+	type FleetReporter,
+	type FleetVerdictAcceptance,
+	type FleetVerdictKeys,
+	type FleetVerdictKv,
+	type FleetVerdictKvEntry,
+	type FleetVerdictMode,
 	type FleetVerdictReason,
 	type FleetVerdictRepository,
+	type FleetVerdictSettings,
 	type FleetVerdictStore,
+	type FleetVerdictSubmission,
+	fleetAllowanceSpent,
+	fleetEnrollmentFor,
+	fleetReporterStateJson,
+	fleetReporterStatusListJson,
+	fleetVerdictAllowanceJson,
 	fleetVerdictExpiresAtMs,
 	fleetVerdictJson,
 	fleetVerdictReportJson,
+	MEMORY_FLEET_VERDICT_KEYS,
+	nextFleetReporterState,
 	noFleetVerdict,
 	type ParsedFleetVerdictReport,
+	parseFleetReporterState,
+	parseFleetReporters,
+	parseFleetReportersPath,
 	parseFleetVerdict,
+	parseFleetVerdictAllowance,
 	parseFleetVerdictPath,
 	parseFleetVerdictReport,
-	standingFleetVerdict,
+	reportedFleetVerdict,
 } from "./fleet-verdict.js";
+export {
+	FLEET_REPORTER_ID,
+	FLEET_REPORTER_PUBLIC_KEY,
+	FLEET_VERDICT_HEADERS,
+	FLEET_VERDICT_SIGNING_CONTEXT,
+	type FleetVerdictSigner,
+	type FleetVerdictSigningFields,
+	fleetVerdictSigningInput,
+	isFleetVerdictIssuedAt,
+	isFleetVerdictSequence,
+	type SignedFleetVerdictRequest,
+	signedFleetVerdictRequest,
+	signFleetVerdictReport,
+	verifyFleetVerdictReport,
+} from "./fleet-verdict-auth.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -87,6 +124,8 @@ export { verifyConvertedGithubApp } from "./github-app-manifest-validation.js";
 export { withGithubReadCache } from "./github-read-cache.js";
 export {
 	createHostedControlPlane,
+	type FleetVerdictRefusal,
+	type FleetVerdictService,
 	isConfigWriteRoute,
 	MESH_NODES_PATH,
 } from "./hosted-control.js";
@@ -159,6 +198,43 @@ export {
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
+	boxLeaseIdsOf,
+	evaluateFleetVerdict,
+	FLEET_VERDICT_POOL_FRESH_MS,
+	FLEET_VERDICT_UNACCOUNTED_WINDOW_MS,
+	type FleetExternalPool,
+	type FleetJobOnRunner,
+	type FleetLabelEvaluation,
+	type FleetLabelReason,
+	type FleetMeshPeer,
+	type FleetPollView,
+	type FleetVerdictEvaluation,
+	type FleetVerdictEvaluatorInput,
+	fleetRunnerNamePrefix,
+} from "./isolated-worker/fleet-verdict-evaluator.js";
+export {
+	createFleetVerdictReporter,
+	FLEET_VERDICT_SEND_TIMEOUT_MS,
+	type FleetVerdictReporter,
+	type FleetVerdictReporterEvent,
+	type FleetVerdictReporterLog,
+	type FleetVerdictReporterOptions,
+	type FleetVerdictReporterSettings,
+	type FleetVerdictSequenceSource,
+	parseFleetVerdictReporterSettings,
+} from "./isolated-worker/fleet-verdict-reporter.js";
+export {
+	createFleetPickupMemory,
+	createFleetVerdictHolds,
+	createFleetVerdictSchedule,
+	createFleetVerdictSequence,
+	FLEET_VERDICT_ENTER_MS,
+	FLEET_VERDICT_EXIT_MS,
+	FLEET_VERDICT_RESEND_MS,
+	FLEET_VERDICT_SAMPLE_MS,
+	FLEET_VERDICT_TTL_SECONDS,
+} from "./isolated-worker/fleet-verdict-state.js";
+export {
 	type BoxGitMirror,
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
@@ -171,6 +247,8 @@ export {
 	createGithubJobPoller,
 	createPollLogFilter,
 	describeWaitingJobs,
+	type FleetJobInProgress,
+	type FleetJobsSeen,
 	type GithubJobPollerOptions,
 	type GithubJobPollSummary,
 	type GithubReadFailure,
@@ -336,7 +414,6 @@ export {
 	MESH_REPORT_MAX_NODES,
 	type MeshReading,
 	meshAdvertJson,
-	meshFleetStateJson,
 	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,
@@ -447,3 +524,8 @@ export {
 	createWebhookIngressHandler,
 } from "./webhook-ingress.js";
 export { createWebhookRepair } from "./webhook-repair.js";
+export {
+	createGithubWorkflowVerifier,
+	type GithubWorkflowClaims,
+	type GithubWorkflowVerifier,
+} from "./workflow-oidc.js";

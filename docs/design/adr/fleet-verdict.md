@@ -7,10 +7,13 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 
 # ADR-0180 — Runner Routing Asks the Relay for a Fleet Verdict {#adr-0180}
 
-**Status:** Accepted. Built: the record, the relay routes and stores, the
-route job's client. Not built: the relay's reporter (waits on
-[#1935](https://github.com/Hobo-Labs/HoBo/pull/1935), which edits the files it
-lives in).
+**Status:** Accepted, amended 2026-11-12 ("Signed reports, agreement and
+allowance" and "Routing rules, workflows, monitor and retirement" below).
+Built: the record, the relay routes and stores, signed reports, agreement
+among enrolled reporters, the allowance, the reporter status route, the
+route job's client, the box's reporter, the main gate's re-ask, the monitor
+and the retirement. Its operating record is
+[finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
 **Date:** 2026-11-12
 **Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
 it can" and "No hosted database in the job path";
@@ -110,6 +113,184 @@ report, and a missing verdict already means "nothing blocked".
 | Is not named in `.hobo/ci.json`, or the tier is pinned | Not asked |
 | Does not answer in three seconds, answers another status, or answers something that is not a verdict | Nothing, and the job's log line says the relay gave no verdict and why |
 
+## Amendment: signed reports, agreement and allowance {#adr-0180-amendment}
+
+**Date:** 2026-11-12. It replaces items 3 and 5 of the decision and the
+`PUT` row of the routes table; the rest stands. The rules R1–R4 it cites are
+under [Routing rules](#adr-0180-routing-rules).
+
+**The box relay decides; the hosted relay keeps, agrees and serves.** The
+reporter is the relay core inside the box's worker daemon. The hosted relay
+never judges the fleet: it keeps each reporter's last report, works out
+what they agree on, and serves that.
+
+1. **When a label is blocked (the idle-only rule).** The box relay reports
+   a fleet label blocked only while both hold. *The box is idle* (no lease
+   in an active state for any connected repository, no launch slot in use,
+   none of its own background work running) *and admission would still
+   refuse a job*, evaluated purely on the current host sample:
+   `hostMemoryAdmitFits(…)` is false, or the host health monitor's
+   `current()` is `critical` for a disk or inode reason. The load average is
+   left out: it stays high for minutes after CI's own jobs end. *And
+   nothing else can take the job*: no mesh peer serving the label
+   advertises a free slot; the declared pools
+   (`HOBO_CI_FLEET_EXTERNAL_POOLS_JSON`) have fewer free runners than
+   `HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS`, counted only from a poll in the
+   last 60 seconds; and no runner the relay cannot account for took a job
+   on the label in the last 15 minutes. While CI's own jobs run, the box
+   is never blocked: a busy box is the queue's to judge (R4). The reason is
+   always `no-capacity`; `no-node` stays in the record and this reporter
+   never sends it.
+2. **Timing.** A sample every 10 s; enter blocked after 60 s of blocked
+   samples, leave after 30 s of clear ones; send at once on a change and
+   every 60 s otherwise, one request per connected repository, each with a
+   3 s limit and no retry beyond the next sample. A report lives 180 s (the
+   record's limit, down from 300). Reporter modes: `off` (the default),
+   `shadow`, `report`.
+3. **Signed reports (replaces item 5's account bearer).** A report is
+   `PUT /v1/fleet/verdicts/{owner}/{repo}` signed with the reporter's
+   Ed25519 key (`loadMeshIdentity` on `HOBO_CI_MESH_KEY_FILE`, mesh or no
+   mesh). No bearer or other secret is sent (ADR-0027); the key can do
+   nothing but sign reports. Headers: `X-HoBo-Reporter`, `X-HoBo-Sequence`
+   (a decimal integer, persisted beside the journal, never reused),
+   `X-HoBo-Issued-At` (RFC 3339 with milliseconds), `X-HoBo-Signature:
+   ed25519=<base64url>`. The signed text is seven fields joined by `\n`:
+   `hobo-fleet-verdict-v1`, `PUT`, the relay origin, the path (both lower
+   case), the hex SHA-256 of the body, the issued-at and the sequence
+   (`fleetVerdictSigningInput` in `src/fleet-verdict-auth.ts`, pinned by
+   three fixed vectors). The body adds `mode` (`shadow` or `report`).
+4. **Enrollment.** The hosted relay's runtime configuration lists who may
+   report: `HOBO_CI_FLEET_REPORTERS_JSON`, a `FleetReporterEnrollments`
+   record of id, public key, account and labels, at most eight per account,
+   public keys only. `HOBO_CI_FLEET_VERDICT_SERVING=off` is the kill switch
+   (reads block nothing, reports answer 503);
+   `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` sets the allowance (240).
+5. **Accepting a report.** Checked in this order, each refusal answering
+   its `reason` and logging `hobo_ci_fleet_verdict_refused` with the
+   reporter id: no query string (`400 bad-request`); the reporter is
+   enrolled (`401 unknown-reporter`); the signature verifies over this
+   relay's configured public origin, never the request's `Host`
+   (`401 bad-signature`); issued-at within 120 s of this relay's clock
+   (`401 clock-skew`); the sequence above the last accepted from this
+   reporter for this repository (`401 replayed`); the repository connected
+   under the reporter's account (`404 not-found`); the body a report naming
+   only labels the reporter is enrolled for (`400 invalid-report`).
+   Otherwise `200` with the entry as stamped.
+6. **What is kept**, per repository: `fleet-verdict:<repo>:<reporter>`
+   (the reporter's last report as stamped, until it expires; a `shadow`
+   report is kept as blocking nothing), `fleet-reporter:<repo>:<reporter>`
+   (`FleetReporterState`: last sequence, mode, last report, and per label
+   when it last blocked and cleared; a day, refreshed on every report) and
+   `fleet-allowance:<repo>` (`FleetVerdictAllowance`; a day from its
+   window's start).
+7. **Agreement.** The served verdict blocks a label only when every
+   reporter enrolled for the repository's account whose labels include it
+   is live, in `report` mode, and blocks it. One that is silent, in
+   `shadow`, or says the label is open leaves it open; one that does not
+   serve the label has no say. An enrolled box that is switched off
+   therefore keeps its labels open until it is taken out of enrollment.
+8. **Allowance.** The relay counts the time the agreed verdict blocks a
+   label: on each accepted report, for each label blocked just before it,
+   `min(now − lastCountedAt, 180 s)`. Two reporters blocking together are
+   counted once. A window starts at its first counted second and lasts a
+   day; once it holds the allowance, the label is served open and the
+   status route says so. A lost cache restarts the window, so the bound is
+   two allowances in any 24 hours.
+9. **Reporter status.** `GET /v1/fleet/reporters/{owner}/{repo}` answers a
+   GitHub Actions OIDC token whose audience is this relay's origin and whose
+   `repository` is the path's, from any event, for a connected repository:
+   a `FleetReporterStatusList` of each enrolled reporter's state and
+   liveness and each label's allowance. It never names a key. The verifier
+   is `createGithubWorkflowVerifier` (`src/workflow-oidc.ts`); the runner
+   claim verifier in `oidc.ts` is unchanged.
+
+**What is retired.** The account-bearer report and the client's
+`putFleetVerdict`. The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY`
+publishers and records are retired too ([Retirement](#adr-0180-retirement));
+the route table and its `HOBO_CI_FLEET_ROUTES` publisher stay.
+
+| Route | Who | Answer |
+| --- | --- | --- |
+| `GET /v1/fleet/verdicts/{owner}/{repo}` | Anyone | As before; the agreed verdict less any label whose allowance is spent. A query string answers 400. Two cache round trips at most for a connected repository (one on the hosted relay), none for an unconnected one |
+| `PUT /v1/fleet/verdicts/{owner}/{repo}` | An enrolled reporter's signature | The checks of item 5; `200` with the entry as stamped |
+| `GET /v1/fleet/reporters/{owner}/{repo}` | A workflow of that repository (OIDC) | `FleetReporterStatusList` |
+
+## Amendment: routing rules, workflows, monitor and retirement {#adr-0180-rules}
+
+**Date:** 2026-11-12. It carries the rules every part of the fleet verdict
+channel is built to, and what the workflows, the monitor and the retirement
+of the variable channels do. Operating the channel (enrollment, switches,
+cost, rollback, the game day) is in the
+[fleet verdict runbooks](../../../packages/ci-vercel/README.md#fleet-verdict-operations);
+its evidence gates G1–G7 are recorded in
+[finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
+
+### Routing rules {#adr-0180-routing-rules}
+
+- **R1.** Whether the fleet can take work is decided by the relay. No
+  workflow, script or action derives it from fleet figures (free memory,
+  free slots, node counts).
+- **R2.** No fleet state reaches a workflow through a repository variable,
+  an action input or an environment variable. A workflow learns it by asking
+  the relay when it decides. Operator settings (`HOBO_CI_ROUTE`,
+  `HOBO_CI_LOCAL_RUNNER`, `HOBO_CI_TRUNK_RUNNER`, the queue limits) are
+  configuration, not fleet state, and are untouched.
+- **R3.** A relay signal that is missing, stale, unreadable or unverified
+  changes nothing: the decision is whatever it would be with no relay.
+- **R4.** The relay never reports a label blocked because the box is busy
+  with CI's own jobs.
+
+### Workflows: route once, ask again before shards
+
+1. **Route annotations.** The route job writes one
+   `::notice title=hobo-ci-route::` line per decision, a JSON object with
+   `workflow`, `tier`, `runner`, `relay` (`verdict`, `unanswered` or
+   `unasked`), `why` (`no-relay`, `pinned`, `attested` or `queue-unread`
+   when unasked) and `refusedBy` (`relay`, `queue` or `none`). The action's
+   fallback path writes `::warning title=hobo-ci-route-fallback::<reason>`.
+2. **The main gate follows the route.** For `push` to `main`, `schedule`
+   and `workflow_dispatch`, `main-gate-plan` and `main-gate` need `route`
+   and use the routed expression. `main-gate-plan` asks again in a
+   `reroute` step after its full checkout, only when the route chose the
+   fleet, with `attest: "false"` and `include-own-run: "true"`, so the
+   queue reading includes this run's own jobs: a plan job that waited past
+   the queue limit takes the fleet out of the decision for the shards. Its
+   output `shard_runner` is the re-ask's runner or the route's.
+   `main_workspace_tests` and `main_gate_finish` run on `shard_runner`,
+   then the route's runner, then the trunk expression, so `runs-on` is
+   never empty. `ci-deps-image` is skipped for those events when the route
+   did not choose the fleet, unless the route job failed (fail open).
+3. **No capacity reader.** The shard planner takes its cap from
+   `MAIN_WORKSPACE_PARALLEL_CAP` when set, else 4: a tuning setting, not a
+   reading of the fleet.
+4. **Lint (R2).** `scripts/lint-actions.ts` rejects any workflow or action
+   text matching `vars\.HOBO_CI_FLEET_`, and any input or environment name
+   matching `^(fleet-(state|capacity|routes)|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES))`.
+
+A run already sent to GitHub-hosted runners is not asked again, so it cannot
+come back to a fleet whose deps job was skipped. If the fleet becomes
+blocked between the route job and the pickup of `ci-deps-image` or
+`main-gate-plan`, those two jobs wait on the fleet; the monitor's H6
+reports it.
+
+### Loud fallbacks
+
+Every fallback to a default leaves a record the
+[CI health monitor](../../ci/health-monitor.md) reads every two hours; it
+opens an issue per breach of its signals (H1 routing did not run, H2 relay
+asked without a verdict, H3 relay not asked, H4 reporter silent, H6 stall,
+H8 paid minutes, H10 allowance spent).
+
+### Retirement {#adr-0180-retirement}
+
+Removed: the `HOBO_CI_FLEET_STATE` publisher, record, fixtures and daemon
+wiring; the `HOBO_CI_FLEET_CAPACITY` publisher, record, CUE definition and
+the shard planner's reader of it. `fleetCapacity.snapshot` stays: dispatch
+reads it; only `publish` goes. The route table and its
+`HOBO_CI_FLEET_ROUTES` publisher stay: they belong to fleet balancing, are
+off by default, and no workflow may read the variable (R2). The two
+repository variables are deleted once the operating checklist reaches G7.
+
 ## Considered and rejected
 
 Each candidate was put through an adversarial review and a step-by-step
@@ -121,6 +302,10 @@ explanation against the code before this was chosen.
 | The relay's route table (`HOBO_CI_FLEET_ROUTES`) indexed in a workflow expression | The table has no timestamp and an expression cannot compare time. A relay that crashed with a paid label in the table would keep billing for as long as ARC answered the probe. The balancer also treats "every slot busy" as a reason to leave the fleet, and the expression would override a pinned tier |
 | The probe as the signal: the relay takes the probe job only when it could take a real one | The relay cannot stop an ARC runner or an idle runner taking the probe, a busy box reads as refusing, and a slow pickup is held against the fleet for an hour |
 | The relay posts an expiring verdict to a GitHub surface the job's token can read (a deployment status) | Workable and needs no hosted relay. Not chosen: it borrows a GitHub feature for something else, adds entries to the repository's deployments, and needs another App permission |
+| An account bearer for reports (this ADR as first written) | A stored secret on the box that can do more than report. Replaced by a signing key that can only sign reports |
+| Agreement among whichever reporters happen to be live, or one elected reporter | A stuck or unrelated reporter vetoes forever, a second box in shadow is ignored, and a partitioned node elects itself. Enrollment names who must agree |
+| The allowance kept on the box | It would not cover several reporters, a forged report or a restart |
+| Memory "as if CI's jobs were gone", from container cgroups | Job containers start siblings through the Docker socket and page cache is counted twice; it blocks a busy box and misses a blocked one. The idle-only rule replaces it |
 
 ## Consequences
 
@@ -128,14 +313,14 @@ explanation against the code before this was chosen.
   requires that taking a job from the queue to a runner never depends on the
   hosted relay. That still holds: a job already queued does not touch this
   route, and a route job the relay does not answer decides from the queue.
-- **A box reports to the hosted relay.** The reporter needs an account
-  credential and the hosted relay's origin, which a box in pull mode does not
-  hold today. This is the first thing a box sends there.
-- **A stolen reporting credential can keep a repository's runs off the fleet**
-  for as long as it keeps reporting, which spends money on the paid tier. The
-  credential is the account's own, the report is limited to repositories that
-  account is connected to, each report lapses in at most five minutes, and a
-  pinned `HOBO_CI_ROUTE=fleet` ignores the relay.
+- **A box reports to the hosted relay.** The reporter needs its signing key,
+  its enrollment and the hosted relay's origin; it holds no secret of the
+  hosted relay's. This is the first thing a box sends there.
+- **A stolen reporter key can keep a repository's runs off the fleet** only
+  for its account's connected repositories and enrolled labels, only while
+  every other reporter enrolled for a label agrees, and only up to the daily
+  allowance; taking it out of enrollment revokes it. A pinned
+  `HOBO_CI_ROUTE=fleet` ignores the relay.
 - **The read is open.** Anyone can ask whether a repository's fleet labels are
   blocked. The answer names labels and a reason. It cannot be used to learn
   whether a repository exists, and only a repository some account is
@@ -148,40 +333,52 @@ explanation against the code before this was chosen.
   GitHub-hosted never passes relay admission
   ([CI fleet balancing](../ci-fleet-balancing.md), "What is not built"). A
   verdict changes when that happens, not that it is unaccounted.
-- **Until the reporter exists, nothing is reported.** The route job asks, the
-  relay answers that nothing is blocked, and routing is what the queue says.
-  The mesh's `HOBO_CI_FLEET_STATE` publisher still writes its variable; the
-  route job no longer reads it.
+- **Until a reporter is enrolled and in `report` mode, nothing is blocked.**
+  The route job asks, the relay answers that nothing is blocked, and routing
+  is what the queue says. The mesh's `HOBO_CI_FLEET_STATE` publisher still
+  writes its variable; the route job no longer reads it.
 
-## Not built
+## Built since the decision
 
-- **The reporter.** A relay host with a view of the fleet computes the verdict
-  and sends it: `no-node` from the mesh board, and `no-capacity` from memory
-  admission asked as if this box's own leases were gone, together with the
-  mesh's free slots. It must hold a state for some seconds before reporting a
-  change, so a verdict does not flap with one reading. It replaces the
-  `HOBO_CI_FLEET_STATE` publisher. It lives in the daemon and relay files
-  [#1935](https://github.com/Hobo-Labs/HoBo/pull/1935) edits, and follows it.
-- **Main workspace plan** still reads `HOBO_CI_FLEET_CAPACITY`; #1935 hands it
-  the variable through an environment variable. Moving it onto a relay answer
-  is a separate change.
+- **The reporter.** The box relay's evaluator, hold and sender of the
+  amendment's items 1–3, in the worker daemon
+  (`packages/ci-gh-actions/src/isolated-worker/fleet-verdict-evaluator.ts`,
+  `fleet-verdict-reporter.ts`). It signs with `fleetVerdictSigningInput` and
+  reports with `signedFleetVerdictRequest`; its three log events are named in
+  `src/cloud-events.ts`.
+- **Main workspace plan** no longer reads `HOBO_CI_FLEET_CAPACITY`; its shard
+  cap is a tuning setting ([Workflows](#adr-0180-rules)), and its `reroute`
+  step asks the relay again before shards.
 
 ## Contracts and gates
 
 - **Protobuf:** `packages/ci-gh-actions/data-models/fleet_verdict.proto`
-  (`FleetVerdict`, `FleetVerdictBlock`, `FleetVerdictReport`); generated types
-  in `src/_generated/fleet_verdict_pb.ts` (`pnpm run codegen:check`).
-- **CUE:** `#FleetVerdict`, `#FleetVerdictReport` and their parts in
-  `data-models/onboarding.cue`, with valid and invalid fixtures
-  (`pnpm test:schema`). A capacity figure in a verdict is an invalid fixture.
+  (`FleetVerdict`, `FleetVerdictBlock`, `FleetVerdictReport`,
+  `FleetReporterEnrollments`, `FleetReporterState`, `FleetVerdictAllowance`,
+  `FleetReporterStatusList` and their parts); generated types in
+  `src/_generated/fleet_verdict_pb.ts` (`pnpm run codegen:check`). The
+  hosted relay's three settings are in `packages/ci-vercel/data-models/relay_runtime_config.proto`.
+- **CUE:** a definition for each in `data-models/onboarding.cue`, with valid
+  and invalid fixtures (`pnpm test:schema`). A capacity figure in a verdict,
+  a report without a mode, a private key in an enrollment and any key in a
+  status are invalid fixtures.
+- **Signing:** `src/fleet-verdict-auth.ts`, three fixed vectors in
+  `test/fleet-verdict-auth.test.ts`.
 - **Parse, don't validate:** `src/fleet-verdict.ts` is the one parser on the
   relay; a report becomes a `ParsedFleetVerdictReport` or nothing. The route
   job's reader is `parseFleetVerdict` in `route-runner.mts`, which loads no
   package.
-- **PACT:** `contracts/fleet-verdict-boundary.pact.json`, verified against the
-  real handler over HTTP (`fleet-verdict-boundary.provider.test.ts`). Its two
-  consumers replay it: the reporting client
-  (`fleet-verdict-client.consumer.test.ts`) and the route job
-  (`scripts/test/route-runner.test.ts`, *the relay's verdict*).
-- **Events:** none. A verdict is a relay's current answer held with a time to
-  live, not a fact to replay; the reporter's own state is its event history.
+- **PACT:** `contracts/fleet-verdict-boundary.pact.json`: one interaction per
+  check of item 5, agreement, a shadow report, a spent allowance and the
+  status route's answers, verified against the real handler over HTTP
+  (`fleet-verdict-boundary.provider.test.ts`). Its consumers replay it: the
+  reporter's signing (`fleet-verdict-client.consumer.test.ts` rebuilds every
+  signed request with `signedFleetVerdictRequest`), the status client, and
+  the route job (`scripts/test/route-runner.test.ts`, *the relay's verdict*).
+- **Agreement and allowance:** `test/fleet-verdict-agreement.test.ts`,
+  `test/fleet-verdict-allowance.test.ts`; the cache binding in
+  `packages/ci-vercel/test/fleet-verdict-cache.test.ts`.
+- **Events:** a verdict is a relay's current answer held with a time to
+  live, not a fact to replay. Three log events are named as CloudEvents
+  types: `hobo_ci_fleet_verdict_state`, `hobo_ci_fleet_verdict_unaccounted_runner`
+  (the reporter's) and `hobo_ci_fleet_verdict_refused` (the hosted relay's).
