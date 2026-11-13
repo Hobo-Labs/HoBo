@@ -156,7 +156,21 @@ import "list"
 #FleetVerdictBlocked: {[=~"^[a-z0-9][a-z0-9_.-]{0,79}$"]: #FleetVerdictBlock}
 #FleetVerdictTime: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$"
 #FleetVerdict: {repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$", blocked: #FleetVerdictBlocked, observedAt?: #FleetVerdictTime, expiresAt?: #FleetVerdictTime}
-#FleetVerdictReport: {blocked?: #FleetVerdictBlocked, ttlSeconds: int & >=1 & <=300}
+#FleetVerdictMode: "shadow" | "report"
+#FleetVerdictReport: {blocked?: #FleetVerdictBlocked, ttlSeconds: int & >=1 & <=180, mode: #FleetVerdictMode}
+// Who may report (public keys only), what the relay remembers of each, and
+// what the status route shows. No record here carries a private key.
+#FleetReporterId: string & =~"^[A-Za-z0-9_-]{1,64}$"
+#FleetVerdictLabel: string & =~"^[a-z0-9][a-z0-9_.-]{0,79}$"
+#FleetReporterEnrollment: {id: #FleetReporterId, publicKey: string & =~"^[A-Za-z0-9_-]{43}$", accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", labels: [#FleetVerdictLabel, ...#FleetVerdictLabel] & list.MaxItems(16)}
+#FleetReporterEnrollments: {reporters: [...#FleetReporterEnrollment] & list.MaxItems(64)}
+#FleetReporterLabelState: {lastBlockedAt?: #FleetVerdictTime, lastClearedAt?: #FleetVerdictTime}
+#FleetReporterState: {lastSequence: string & =~"^[1-9][0-9]{0,19}$", mode: #FleetVerdictMode, lastReportAt: #FleetVerdictTime, labels?: {[#FleetVerdictLabel]: #FleetReporterLabelState}}
+#FleetVerdictLabelAllowance: {windowStart: #FleetVerdictTime, blockedSeconds?: int & >=0, lastCountedAt?: #FleetVerdictTime}
+#FleetVerdictAllowance: {labels: {[#FleetVerdictLabel]: #FleetVerdictLabelAllowance}}
+#FleetReporterStatus: {id: #FleetReporterId, labels: [...#FleetVerdictLabel], live: bool, state?: #FleetReporterState}
+#FleetVerdictAllowanceUse: {usedSeconds: int & >=0, spent: bool, windowStart?: #FleetVerdictTime}
+#FleetReporterStatusList: {repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$", reporters: [...#FleetReporterStatus], allowance: {[#FleetVerdictLabel]: #FleetVerdictAllowanceUse}, dailyBlockMinutes: int & >=1 & <=1440}
 #RelayCacheJobKey: string & =~"^[0-9]{1,16}:[0-9]{1,16}:[0-9]{1,10}$"
 #RelayCacheLeaseId: string & =~"^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 #RelayCacheIntent: {kind: "ci.DispatchRequested" | "ci.RunnerClaimed" | "ci.SandboxCreated", at: string & !=""}
@@ -191,4 +205,4 @@ import "list"
 #RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
 #RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
 #RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #FleetReporterEnrollments | #FleetReporterState | #FleetVerdictAllowance | #FleetReporterStatusList | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
