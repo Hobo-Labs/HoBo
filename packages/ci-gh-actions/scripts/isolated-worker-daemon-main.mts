@@ -1506,7 +1506,7 @@ try {
 	}
 	runDepsImageEnsure();
 
-	// The fleet verdict reporter (ADR-0180; plan 0025, 6.1-6.3). It evaluates
+	// The fleet verdict reporter (ADR-0180 amendment, items 1-3). It evaluates
 	// the box every 10 s on its own unreferenced timer and sends signed
 	// reports to the hosted relay; nothing here awaits it.
 	const fleetLabels = trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"];

@@ -156,7 +156,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
-	// HoBo.CD (ADR-0178, plan 0024) is the delivery sibling of HoBo.CI and
+	// HoBo.CD (ADR-0178) is the delivery sibling of HoBo.CI and
 	// sits at layer 3 beside it. `@hobo/cd` composes Matching, Gatekeeper,
 	// the Harness and SVIDs through their existing packages; the three
 	// adapters around it (`cd-gitops` publisher, `cd-kube-fleet` transport and
@@ -453,7 +453,7 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// types into @hobo/core; recorded here rather than left invisible, and
 	// scoped to these EXACT edges so no new one is admitted.
 	"packages/packs/pack-framework->packages/cloud",
-	// The policy-engine gate-plane adapters (docs/plans/0017 F30) lower engine
+	// The policy-engine gate-plane adapters lower engine
 	// verdicts onto @hobo/contracts' shared vocabulary (GatekeeperEffect,
 	// PolicyDecisionRequest). The dependency deliberately points
 	// provider->contracts so @hobo/broker can depend on the adapters without a

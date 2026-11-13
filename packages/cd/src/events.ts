@@ -1,5 +1,5 @@
 // public-contract: event names, stream ids and schema ids are wire contract
-// frozen by docs/plans/0024-hobo-cd-swarm-instruction.md (final).
+// frozen contract.
 
 // public-contract: every event family @hobo/cd appends.
 export const CD_EVENTS = Object.freeze({

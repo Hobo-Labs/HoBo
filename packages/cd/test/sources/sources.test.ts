@@ -1,5 +1,5 @@
 // FreightSources end to end over recorded fixtures: every Accept bullet of
-// WP2 (plan 0024 §9) and the §10 rows WP2 owns are named tests here.
+// WP2 and the §10 rows WP2 owns are named tests here.
 import { createHmac } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import type { HttpTransport, JsonObject } from "@hobo/core";

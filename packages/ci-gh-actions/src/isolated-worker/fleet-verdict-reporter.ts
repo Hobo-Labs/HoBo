@@ -1,5 +1,5 @@
 /**
- * The box relay's fleet verdict reporter (ADR-0180; plan 0025, 6.2–6.3).
+ * The box relay's fleet verdict reporter (ADR-0180 amendment, items 2–3).
  *
  * Every 10 s, on its own unreferenced timer, it asks for an evaluation
  * (`fleet-verdict-evaluator.ts`), holds it (`fleet-verdict-state.ts`), and
@@ -285,7 +285,7 @@ const Pools = z
 	)
 	.max(32);
 
-/** The reporter's box settings (plan 0025, 6.3), parsed once at start. */
+/** The reporter's box settings (ADR-0180 amendment, item 3; `packages/ci/RUNNER-QUEUE.md`), parsed once at start. */
 export type FleetVerdictReporterSettings =
 	| Readonly<{ mode: "off" }>
 	| Readonly<{

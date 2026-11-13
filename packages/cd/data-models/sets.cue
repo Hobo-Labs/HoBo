@@ -1,4 +1,4 @@
-// CUE constraints for the Sets/Deltas records in cd.proto (WP4, plan 0024).
+// CUE constraints for the Sets/Deltas records in cd.proto (WP4).
 // Field names follow the protobuf JSON mapping the journal stores. The TS
 // parsers in src/sets/codec.ts (checkSet, checkDelta) apply the same rules.
 package cd

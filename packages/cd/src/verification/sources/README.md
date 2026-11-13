@@ -53,6 +53,6 @@ SigV4 is pinned against botocore in `test/verification/sources/sigv4.test.ts`.
 | `health-source-transport-failed` | Timeout, guard refusal or reset. | Check network policy and the transport guard allowlist. Retried. |
 | `health-source-response-invalid` | The answer does not match the source's contract. | Check the API version against the PACT; retried. |
 
-Live lane: the credential-gated Prometheus lane (plan 0024 R16) is owned by
+Live lane: the credential-gated Prometheus lane is owned by
 WP20; it runs the Prometheus source against a real server and skips with a
 visible reason when no endpoint is configured.

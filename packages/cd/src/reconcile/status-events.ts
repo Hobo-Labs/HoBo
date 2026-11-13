@@ -20,7 +20,7 @@ import { CD_EVENTS } from "../events.js";
 import { driftFindings } from "./drift.js";
 
 // public-contract: drift event names WP7 appends to the Camp status stream.
-// Plan 0024 names them (§9 WP7) but CD_EVENTS does not list them; reported
+// WP7 names them but CD_EVENTS does not list them; reported
 // to the coordinator as a contract amendment candidate.
 export const RECONCILE_EVENTS = Object.freeze({
 	DriftDetected: "resource.DriftDetected",

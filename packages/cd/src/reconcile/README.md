@@ -1,6 +1,6 @@
 # `@hobo/cd/reconcile` — fenced pull reconcilers (WP7)
 
-Plan 0024 §9 WP7 (D5, D6, D22, D25; invariants I2–I5). Every delivery change
+Decisions D5, D6, D22, D25; invariants I2–I5. Every delivery change
 reaches a target only through a Camp reconciler: it reads the Camp's desired
 state by cursor, fetches the resolved plan by digest, converges through a
 `Realizer`, reports to the Camp's **status** stream and checkpoints.

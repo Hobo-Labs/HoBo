@@ -125,7 +125,7 @@ const SHARD_RUNS_ON =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 /**
- * Fleet state never reaches a workflow (rule R2 of plan 0025): not through a
+ * Fleet state never reaches a workflow (rule R2 of ADR-0180): not through a
  * repository variable, an action input or an environment variable. A
  * workflow learns what the fleet can take by asking the relay when it decides.
  */

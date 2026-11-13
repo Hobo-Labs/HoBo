@@ -28,7 +28,7 @@ accept them:
 - A raw traceability entry becomes a `ParsedDeltaTraceabilityRecord` only after the source record
   and proof package resolve.
 
-Following parse, don't validate, implementation-plan mirrors and design docs consume parsed types
+Following parse, don't validate, design docs consume parsed types
 only. Completed-epic catch-alls and docs-only claims are unrepresentable past this boundary.
 
 ## Event Architecture
@@ -43,7 +43,7 @@ issues do not invent conflicting system-of-record behavior:
 - **Actor** - the design-record actor is the single writer for a capability plus source issue
   stream.
 - **Event store** - delta record events append to the docs governance event-store.
-- **Materialized view / projection** - a projection builds the implementation-plan, design-index,
+- **Materialized view / projection** - a projection builds the design-index
   and traceability coverage view.
 - **Snapshot** - snapshots bound replay cost for the coverage projection without changing accepted
   delta authority.

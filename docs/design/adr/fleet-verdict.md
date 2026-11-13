@@ -8,10 +8,12 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 # ADR-0180 — Runner Routing Asks the Relay for a Fleet Verdict {#adr-0180}
 
 **Status:** Accepted, amended 2026-11-12 ("Signed reports, agreement and
-allowance" below). Built: the record, the relay routes and stores, signed
-reports, agreement among enrolled reporters, the allowance, the reporter
-status route, the route job's client. Not built: the box's reporter
-([plan 0025](../../plans/0025-relay-owned-runner-routing.md), layer 03).
+allowance" and "Routing rules, workflows, monitor and retirement" below).
+Built: the record, the relay routes and stores, signed reports, agreement
+among enrolled reporters, the allowance, the reporter status route, the
+route job's client, the box's reporter, the main gate's re-ask, the monitor
+and the retirement. Its operating record is
+[finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
 **Date:** 2026-11-12
 **Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
 it can" and "No hosted database in the job path";
@@ -113,9 +115,9 @@ report, and a missing verdict already means "nothing blocked".
 
 ## Amendment: signed reports, agreement and allowance {#adr-0180-amendment}
 
-**Date:** 2026-11-12. **From:** [plan 0025](../../plans/0025-relay-owned-runner-routing.md),
-sections 6.1–6.4. It replaces items 3 and 5 of the decision and the `PUT`
-row of the routes table; the rest stands.
+**Date:** 2026-11-12. It replaces items 3 and 5 of the decision and the
+`PUT` row of the routes table; the rest stands. The rules R1–R4 it cites are
+under [Routing rules](#adr-0180-routing-rules).
 
 **The box relay decides; the hosted relay keeps, agrees and serves.** The
 reporter is the relay core inside the box's worker daemon. The hosted relay
@@ -204,14 +206,90 @@ what they agree on, and serves that.
 
 **What is retired.** The account-bearer report and the client's
 `putFleetVerdict`. The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY`
-publishers and records go in a later layer of the plan; the route table and
-its `HOBO_CI_FLEET_ROUTES` publisher stay.
+publishers and records are retired too ([Retirement](#adr-0180-retirement));
+the route table and its `HOBO_CI_FLEET_ROUTES` publisher stay.
 
 | Route | Who | Answer |
 | --- | --- | --- |
 | `GET /v1/fleet/verdicts/{owner}/{repo}` | Anyone | As before; the agreed verdict less any label whose allowance is spent. A query string answers 400. Two cache round trips at most for a connected repository (one on the hosted relay), none for an unconnected one |
 | `PUT /v1/fleet/verdicts/{owner}/{repo}` | An enrolled reporter's signature | The checks of item 5; `200` with the entry as stamped |
 | `GET /v1/fleet/reporters/{owner}/{repo}` | A workflow of that repository (OIDC) | `FleetReporterStatusList` |
+
+## Amendment: routing rules, workflows, monitor and retirement {#adr-0180-rules}
+
+**Date:** 2026-11-12. It carries the rules every part of the fleet verdict
+channel is built to, and what the workflows, the monitor and the retirement
+of the variable channels do. Operating the channel (enrollment, switches,
+cost, rollback, the game day) is in the
+[fleet verdict runbooks](../../../packages/ci-vercel/README.md#fleet-verdict-operations);
+its evidence gates G1–G7 are recorded in
+[finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
+
+### Routing rules {#adr-0180-routing-rules}
+
+- **R1.** Whether the fleet can take work is decided by the relay. No
+  workflow, script or action derives it from fleet figures (free memory,
+  free slots, node counts).
+- **R2.** No fleet state reaches a workflow through a repository variable,
+  an action input or an environment variable. A workflow learns it by asking
+  the relay when it decides. Operator settings (`HOBO_CI_ROUTE`,
+  `HOBO_CI_LOCAL_RUNNER`, `HOBO_CI_TRUNK_RUNNER`, the queue limits) are
+  configuration, not fleet state, and are untouched.
+- **R3.** A relay signal that is missing, stale, unreadable or unverified
+  changes nothing: the decision is whatever it would be with no relay.
+- **R4.** The relay never reports a label blocked because the box is busy
+  with CI's own jobs.
+
+### Workflows: route once, ask again before shards
+
+1. **Route annotations.** The route job writes one
+   `::notice title=hobo-ci-route::` line per decision, a JSON object with
+   `workflow`, `tier`, `runner`, `relay` (`verdict`, `unanswered` or
+   `unasked`), `why` (`no-relay`, `pinned`, `attested` or `queue-unread`
+   when unasked) and `refusedBy` (`relay`, `queue` or `none`). The action's
+   fallback path writes `::warning title=hobo-ci-route-fallback::<reason>`.
+2. **The main gate follows the route.** For `push` to `main`, `schedule`
+   and `workflow_dispatch`, `main-gate-plan` and `main-gate` need `route`
+   and use the routed expression. `main-gate-plan` asks again in a
+   `reroute` step after its full checkout, only when the route chose the
+   fleet, with `attest: "false"` and `include-own-run: "true"`, so the
+   queue reading includes this run's own jobs: a plan job that waited past
+   the queue limit takes the fleet out of the decision for the shards. Its
+   output `shard_runner` is the re-ask's runner or the route's.
+   `main_workspace_tests` and `main_gate_finish` run on `shard_runner`,
+   then the route's runner, then the trunk expression, so `runs-on` is
+   never empty. `ci-deps-image` is skipped for those events when the route
+   did not choose the fleet, unless the route job failed (fail open).
+3. **No capacity reader.** The shard planner takes its cap from
+   `MAIN_WORKSPACE_PARALLEL_CAP` when set, else 4: a tuning setting, not a
+   reading of the fleet.
+4. **Lint (R2).** `scripts/lint-actions.ts` rejects any workflow or action
+   text matching `vars\.HOBO_CI_FLEET_`, and any input or environment name
+   matching `^(fleet-(state|capacity|routes)|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES))`.
+
+A run already sent to GitHub-hosted runners is not asked again, so it cannot
+come back to a fleet whose deps job was skipped. If the fleet becomes
+blocked between the route job and the pickup of `ci-deps-image` or
+`main-gate-plan`, those two jobs wait on the fleet; the monitor's H6
+reports it.
+
+### Loud fallbacks
+
+Every fallback to a default leaves a record the
+[CI health monitor](../../ci/health-monitor.md) reads every two hours; it
+opens an issue per breach of its signals (H1 routing did not run, H2 relay
+asked without a verdict, H3 relay not asked, H4 reporter silent, H6 stall,
+H8 paid minutes, H10 allowance spent).
+
+### Retirement {#adr-0180-retirement}
+
+Removed: the `HOBO_CI_FLEET_STATE` publisher, record, fixtures and daemon
+wiring; the `HOBO_CI_FLEET_CAPACITY` publisher, record, CUE definition and
+the shard planner's reader of it. `fleetCapacity.snapshot` stays: dispatch
+reads it; only `publish` goes. The route table and its
+`HOBO_CI_FLEET_ROUTES` publisher stay: they belong to fleet balancing, are
+off by default, and no workflow may read the variable (R2). The two
+repository variables are deleted once the operating checklist reaches G7.
 
 ## Considered and rejected
 
@@ -260,17 +338,17 @@ explanation against the code before this was chosen.
   is what the queue says. The mesh's `HOBO_CI_FLEET_STATE` publisher still
   writes its variable; the route job no longer reads it.
 
-## Not built
+## Built since the decision
 
 - **The reporter.** The box relay's evaluator, hold and sender of the
   amendment's items 1–3, in the worker daemon
-  ([plan 0025](../../plans/0025-relay-owned-runner-routing.md), layer 03).
-  It signs with `fleetVerdictSigningInput` and reports with
-  `signedFleetVerdictRequest`; its three log events are already named in
+  (`packages/ci-gh-actions/src/isolated-worker/fleet-verdict-evaluator.ts`,
+  `fleet-verdict-reporter.ts`). It signs with `fleetVerdictSigningInput` and
+  reports with `signedFleetVerdictRequest`; its three log events are named in
   `src/cloud-events.ts`.
-- **Main workspace plan** still reads `HOBO_CI_FLEET_CAPACITY`; #1935 hands it
-  the variable through an environment variable. Moving it onto a relay answer
-  is a separate change.
+- **Main workspace plan** no longer reads `HOBO_CI_FLEET_CAPACITY`; its shard
+  cap is a tuning setting ([Workflows](#adr-0180-rules)), and its `reroute`
+  step asks the relay again before shards.
 
 ## Contracts and gates
 

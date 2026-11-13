@@ -4,8 +4,7 @@ Freight is the immutable, content-addressed unit HoBo CD promotes (D2): one
 Bindle's declaration hash, its artifact digests by kind, where it came from,
 and its provenance. This folder owns the ledger that records it, the
 `hobo.freight-manifest/v1` boundary every build writes, and the D18 retention
-decision. It is work package WP1 of
-[plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md).
+decision. It is work package WP1.
 
 | Export | What it does |
 |---|---|

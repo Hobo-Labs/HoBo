@@ -1,4 +1,4 @@
-// Promoted draft proofs (plan 0024 §3, WP3). The semantics of the frozen
+// Promoted draft proofs. The semantics of the frozen
 // proofs are restated here against the production store and verifiers; the
 // proofs themselves stay untouched under src/draft/technical-proofs/.
 //

@@ -24,7 +24,7 @@ This M0 record defines the accepted productionization scope for Stage 4 (Multi-C
 build provider adapters, Planner/Matching runtime code, Junction overlay execution, Relay/DNS
 productionization, or the `examples/multi-cloud-shop` fixture.
 
-Pattern: [`Post-399 Cross-Cutting Capability Deltas`](../implementation-plan.md#post-399-cross-cutting-capability-deltas)
+Pattern: `Post-399 Cross-Cutting Capability Deltas`
 and exemplar [`meta-cloud-broker.md`](./meta-cloud-broker.md). The S4-01 issue body, this record, and
 the four epic-proof simulate commands are the reviewable source of truth.
 

@@ -874,7 +874,7 @@ describe("fail-closed registry behaviour", () => {
 	});
 });
 
-describe("plan 0024 §10 (WP3 rows)", () => {
+describe("WP3 acceptance rows", () => {
 	it("Artifact corrupted at rest: detected; promotion blocked", async () => {
 		const backend = createMemoryBackend();
 		const telemetry = new RecordingTelemetry();

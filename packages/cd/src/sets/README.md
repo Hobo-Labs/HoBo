@@ -1,6 +1,6 @@
 # `@hobo/cd/sets` — Sets, Deltas and desired state
 
-Work package WP4 of [plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md)
+Work package WP4
 (C1, C8, B1–B4). `createDesiredState` implements the frozen
 `DesiredStateReader & DeltaLedger` ports (`src/ports.ts`) and is the single
 desired-state lane every delivery path writes through.
