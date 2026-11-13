@@ -9,8 +9,10 @@ import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { expect } from "vitest";
 import { z } from "zod";
 import { createControlAuthenticator } from "../../src/control-auth.js";
-import type { FleetVerdictStore } from "../../src/fleet-verdict.js";
-import { createHostedControlPlane } from "../../src/hosted-control.js";
+import {
+	createHostedControlPlane,
+	type FleetVerdictService,
+} from "../../src/hosted-control.js";
 import { HostedRelay } from "../../src/hosted-relay.js";
 import { createRelayHandler } from "../../src/http-handler.js";
 import { createNodeRelayHandler } from "../../src/node-http.js";
@@ -238,7 +240,7 @@ export async function controlHttp(
 		configuration?: Configuration;
 		relay?: { relay: HostedRelay; ledger: SqliteCiStore; store: LeaseStore };
 		credentialJson?: string;
-		fleetVerdicts?: FleetVerdictStore;
+		fleetVerdicts?: FleetVerdictService;
 	} = {},
 ) {
 	const api = options.github ?? strictGithub([]).github;
