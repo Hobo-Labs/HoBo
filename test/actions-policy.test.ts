@@ -183,6 +183,9 @@ const boxOrTrunkRunsOn =
 	"${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 const routedRunsOn =
 	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+/** The main gate's shards: the plan job's second ask, then the run's route, then the trunk label. */
+const shardRunsOn =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -524,12 +527,23 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
-			// Everything in hobo-ci.yml is routed except deps-image (box Docker) and
-			// main trunk jobs that pin hobo-trunk to skip the route pickup gate.
+			// The main gate's shards and finish job follow the plan job's second
+			// ask, then the run's route, so they need both.
+			if (runsOn === shardRunsOn) {
+				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
+				assert.match(
+					lines[start] ?? "",
+					/^  (main_workspace_tests|main_gate_finish):$/,
+				);
+				assert.match(block, /^    needs: \[route, [^\n]*main-gate-plan/m);
+				continue;
+			}
+			// Everything in hobo-ci.yml is routed except deps-image, which builds in
+			// the box's own Docker context.
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",
-					/^  (ci-deps-image|main-gate-plan|main-gate|main_workspace_tests|main_gate_finish):$/,
+					/^  ci-deps-image:$/,
 					`${file}:${lines[start]} is not routed`,
 				);
 			// The deps image job asks for the box on pull requests, the trunk

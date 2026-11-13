@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
-	parseFleetCapacityPublished,
-	resolveMainWorkspaceParallelCap,
-} from "../ci/load-fleet-capacity.mts";
+	mainWorkspaceParallelCap,
+} from "../ci/plan-main-workspace-shards.mts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPTS_CI = join(REPO_ROOT, "scripts", "ci");
@@ -39,42 +38,60 @@ function collectRelativeCiModules(
 	return [...seen];
 }
 
+function plan(env: Record<string, string>) {
+	return spawnSync(
+		process.execPath,
+		[
+			"--experimental-strip-types",
+			"--no-warnings",
+			"scripts/ci/plan-main-workspace-shards.mts",
+		],
+		{
+			cwd: REPO_ROOT,
+			env: {
+				PATH: process.env.PATH ?? "",
+				HOME: process.env.HOME ?? "",
+				EVENT_NAME: "workflow_dispatch",
+				...env,
+			},
+			encoding: "utf8",
+		},
+	);
+}
+
 describe("main-gate-plan install-free", () => {
-	it("parses fleet capacity JSON without workspace packages", () => {
-		assert.equal(parseFleetCapacityPublished(""), undefined);
-		assert.equal(parseFleetCapacityPublished("not-json"), undefined);
-		const parsed = parseFleetCapacityPublished(
-			'{"version":1,"admittedParallel":2,"hobo":{"freeSlots":2},"arc":{"freeSlots":0}}',
+	it("sizes shards from its own setting, never from a reading of the fleet", () => {
+		assert.equal(DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP, 4);
+		assert.equal(mainWorkspaceParallelCap({}), 4);
+		assert.equal(
+			mainWorkspaceParallelCap({ MAIN_WORKSPACE_PARALLEL_CAP: "2" }),
+			2,
 		);
-		assert.equal(parsed?.admittedParallel, 2);
+		for (const value of ["", "0", "9", "2.5", "two"])
+			assert.equal(
+				mainWorkspaceParallelCap({ MAIN_WORKSPACE_PARALLEL_CAP: value }),
+				4,
+				value,
+			);
+		// What a worker once published reaches it no more (rule R2).
+		assert.equal(
+			mainWorkspaceParallelCap({
+				HOBO_CI_FLEET_CAPACITY_JSON: JSON.stringify({
+					version: 1,
+					admittedParallel: 1,
+				}),
+			}),
+			4,
+		);
 	});
 
-	it("defaults parallel cap to 4 when capacity is missing or invalid", async () => {
-		const prior = process.env.HOBO_CI_FLEET_CAPACITY_JSON;
-		delete process.env.HOBO_CI_FLEET_CAPACITY_JSON;
-		delete process.env.MAIN_WORKSPACE_PARALLEL_CAP;
-		try {
-			assert.equal(
-				await resolveMainWorkspaceParallelCap({}),
-				DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
-			);
-			process.env.HOBO_CI_FLEET_CAPACITY_JSON = '{"version":99}';
-			assert.equal(
-				await resolveMainWorkspaceParallelCap({}),
-				DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
-			);
-		} finally {
-			if (prior === undefined) delete process.env.HOBO_CI_FLEET_CAPACITY_JSON;
-			else process.env.HOBO_CI_FLEET_CAPACITY_JSON = prior;
-		}
-	});
-
-	it("loads only builtins on the plan-main-workspace-shards dependency graph", () => {
+	it("loads only builtins on the plan-main-workspace-shards dependency graph, and no capacity reader", () => {
+		assert.ok(!existsSync(join(SCRIPTS_CI, "load-fleet-capacity.mts")));
 		const entry = join(SCRIPTS_CI, "plan-main-workspace-shards.mts");
 		const modules = collectRelativeCiModules(entry);
-		assert.ok(modules.some((path) => path.endsWith("load-fleet-capacity.mts")));
 		for (const path of modules) {
 			const source = readFileSync(path, "utf8");
+			assert.doesNotMatch(source, /HOBO_CI_FLEET_CAPACITY/u, path);
 			for (const match of source.matchAll(IMPORT_PATTERN)) {
 				const specifier = match[1];
 				if (specifier === undefined) continue;
@@ -87,30 +104,18 @@ describe("main-gate-plan install-free", () => {
 	});
 
 	it("runs plan-main-workspace-shards without resolving workspace node_modules", () => {
-		const result = spawnSync(
-			process.execPath,
-			[
-				"--experimental-strip-types",
-				"--no-warnings",
-				"scripts/ci/plan-main-workspace-shards.mts",
-			],
-			{
-				cwd: REPO_ROOT,
-				env: {
-					PATH: process.env.PATH ?? "",
-					HOME: process.env.HOME ?? "",
-					EVENT_NAME: "workflow_dispatch",
-					HOBO_CI_FLEET_CAPACITY_JSON: JSON.stringify({
-						version: 1,
-						admittedParallel: 2,
-						hobo: { freeSlots: 2 },
-						arc: { freeSlots: 0 },
-					}),
-				},
-				encoding: "utf8",
-			},
-		);
-		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-		assert.match(result.stderr, /parallelCap=2/u);
+		const capped = plan({ MAIN_WORKSPACE_PARALLEL_CAP: "2" });
+		assert.equal(capped.status, 0, `${capped.stdout}\n${capped.stderr}`);
+		assert.match(capped.stderr, /parallelCap=2/u);
+		const unset = plan({
+			HOBO_CI_FLEET_CAPACITY_JSON: JSON.stringify({
+				version: 1,
+				admittedParallel: 2,
+				hobo: { freeSlots: 2 },
+				arc: { freeSlots: 0 },
+			}),
+		});
+		assert.equal(unset.status, 0, `${unset.stdout}\n${unset.stderr}`);
+		assert.match(unset.stderr, /parallelCap=4/u);
 	});
 });

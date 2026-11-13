@@ -35,7 +35,7 @@ describe("main_gate_finish workspace prerequisites", () => {
 	it("waits on main-gate-plan so a failed plan cannot hide behind skipped shards", () => {
 		assert.match(
 			finish,
-			/needs: \[main-gate, main-gate-plan, main_workspace_tests\]/u,
+			/needs: \[route, main-gate, main-gate-plan, main_workspace_tests\]/u,
 		);
 	});
 
