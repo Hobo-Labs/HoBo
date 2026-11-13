@@ -1,10 +1,10 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
  * `@hobo/fleet/observation` (L03): signed observations, fit, one-active
  * eligibility, ranking and claim turns, fleet views and verdicts, and the
- * reliability ledger (§6.8).
+ * reliability ledger (design §6.8).
  *
- * Contract commit: every body throws `FleetNotImplemented`; L03 replaces them.
+ * These are the frozen entry points of §7.3; the modules beside this file are
+ * private to the lane.
  */
 import type {
 	FleetRecord,
@@ -17,7 +17,6 @@ import type {
 	WorkNeeds,
 	WorkReceipt,
 } from "../_generated/fleet_pb.js";
-import { FleetNotImplemented } from "../errors.js";
 import type { MemberId, WorkDigest } from "../ids.js";
 import type {
 	EligibleMember,
@@ -27,21 +26,28 @@ import type {
 	RegistryView,
 	Signer,
 } from "../ports.js";
+import { accept, build } from "./accept.js";
+import { eligibility, failing, fitObservation } from "./health.js";
+import { reliabilityLedger } from "./reliability.js";
+import { rank, turn } from "./rendezvous.js";
+import { buildFleetVerdict, buildFleetView } from "./view.js";
 
+/** Local mode (no signer) returns the observation; otherwise it is signed with the observer's SIGN key. */
 export function buildObservation(
 	input: Observation,
 	signer: Signer | undefined,
 ): Promise<SignedEnvelope | Observation> {
-	throw new FleetNotImplemented("buildObservation");
+	return build(input, signer);
 }
 
+/** §6.8: every acceptance rule; a refusal names its rule in `detail.reason`. */
 export function acceptObservation(
 	keyed: KeyedEnvelope,
 	registry: RegistryView,
 	lastIssuedAtMs: number | undefined,
 	nowMs: number,
 ): Promise<Outcome<Observation>> {
-	throw new FleetNotImplemented("acceptObservation");
+	return accept(keyed, registry, lastIssuedAtMs, nowMs);
 }
 
 export function fitWork(
@@ -61,14 +67,14 @@ export function fitWork(
 				| "docker";
 	  }
 > {
-	throw new FleetNotImplemented("fitWork");
+	return fitObservation(observation, needs);
 }
 
 export function failingLongerThan(
 	observation: Observation,
 	ms: number,
 ): boolean {
-	throw new FleetNotImplemented("failingLongerThan");
+	return failing(observation, ms);
 }
 
 /** One answer per observation, in input order; the rules of §6.8. */
@@ -79,7 +85,7 @@ export function eligibleForActive(
 		recoveryPointMs: number | undefined;
 	}>,
 ): readonly EligibleMember[] {
-	throw new FleetNotImplemented("eligibleForActive");
+	return eligibility(observations, options.mode, options.recoveryPointMs);
 }
 
 export function rankMembers(
@@ -90,9 +96,10 @@ export function rankMembers(
 		reliability: number;
 	}>[],
 ): readonly MemberId[] {
-	throw new FleetNotImplemented("rankMembers");
+	return rank(digest, candidates);
 }
 
+/** `waitMs` 0 means claim now; a member not in `ranked` gets rank -1 and an infinite wait. */
 export function claimTurn(
 	input: Readonly<{
 		digest: WorkDigest;
@@ -104,7 +111,7 @@ export function claimTurn(
 		maxRank: number;
 	}>,
 ): Readonly<{ rank: number; waitMs: number }> {
-	throw new FleetNotImplemented("claimTurn");
+	return turn(input);
 }
 
 export function fleetView(
@@ -114,7 +121,7 @@ export function fleetView(
 	reliability: ReadonlyMap<MemberId, ReliabilitySamples>,
 	nowMs: number,
 ): FleetView {
-	throw new FleetNotImplemented("fleetView");
+	return buildFleetView(fleet, members, observations, reliability, nowMs);
 }
 
 export function fleetVerdict(
@@ -122,7 +129,7 @@ export function fleetVerdict(
 	label: string,
 	nowMs: number,
 ): FleetVerdict {
-	throw new FleetNotImplemented("fleetVerdict");
+	return buildFleetVerdict(view, label, nowMs);
 }
 
 export function createReliabilityLedger(
@@ -131,5 +138,5 @@ export function createReliabilityLedger(
 	record(receipt: WorkReceipt): void;
 	samples(): ReadonlyMap<MemberId, ReliabilitySamples>;
 }> {
-	throw new FleetNotImplemented("createReliabilityLedger");
+	return reliabilityLedger(options?.halfLifeMs);
 }
