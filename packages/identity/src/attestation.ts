@@ -1,13 +1,30 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
+	HOST_ATTESTATION_CONTEXT,
+	KeyAlgorithm,
+	KeyPurpose,
+	type PublicKeyRef,
+	type SignedEnvelope,
+} from "@hobo/fleet";
+import { verifyEnvelope } from "@hobo/fleet/keys";
+import {
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
 	type JsonValue,
+	parseJsonValue,
 } from "./json.js";
 
 // public-contract: the schema id every attestation document carries and every verifier checks.
 export const ATTESTATION_SCHEMA_VERSION = "hobo.workload-attestation/v1";
+
+// public-contract: the `hostSignature.algorithm` prefix of a document a fleet device signed (design §7.4).
+export const FLEET_ENVELOPE_ALGORITHM_PREFIX = "hobo-fleet-envelope/";
+const FLEET_ENVELOPE_ALGORITHMS: ReadonlyMap<string, KeyAlgorithm> = new Map([
+	[`${FLEET_ENVELOPE_ALGORITHM_PREFIX}es256`, KeyAlgorithm.ES256],
+	[`${FLEET_ENVELOPE_ALGORITHM_PREFIX}eddsa`, KeyAlgorithm.EDDSA],
+]);
+const SIGN_KEY_SUFFIX = "#sign";
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -211,12 +228,17 @@ function verifyHostSignature(
 		verificationKey: string;
 	}[],
 ): boolean {
-	if (
-		!isPlainObject(signature) ||
-		signature.algorithm !== "fixture-hmac-sha256"
-	) {
-		return false;
+	if (!isPlainObject(signature)) return false;
+	const envelopeAlgorithm = FLEET_ENVELOPE_ALGORITHMS.get(signature.algorithm);
+	if (envelopeAlgorithm !== undefined) {
+		return verifyFleetEnvelopeSignature(
+			measurement,
+			signature,
+			envelopeAlgorithm,
+			hostPublicKeys,
+		);
 	}
+	if (signature.algorithm !== "fixture-hmac-sha256") return false;
 	const key = hostPublicKeys.find(
 		(candidate) =>
 			candidate.hostId === signature.hostId &&
@@ -234,17 +256,62 @@ function verifyHostSignature(
 	return timingSafeEqual(actual, expectedBuffer);
 }
 
-function signLaunchMeasurement(
+/**
+ * A device-signed document: `value` is `base64url(payload).base64url(signature)`,
+ * the payload the launch measurement's JSON bytes as signed, and the signature a
+ * fleet envelope signature under `hobo-fleet/host-attestation/v1` by the host's
+ * SIGN key (`<member id>#sign`). The signature is checked over the received
+ * bytes, and only then is the payload decoded and compared with the document.
+ */
+function verifyFleetEnvelopeSignature(
 	measurement: LaunchMeasurement,
-	verificationKey: string,
-): string {
-	return createHmac("sha256", verificationKey)
-		.update(digestCanonical(measurement))
-		.digest("hex");
+	signature: AttestationDocument["hostSignature"],
+	algorithm: KeyAlgorithm,
+	hostPublicKeys: readonly {
+		hostId: string;
+		keyId: string;
+		verificationKey: string;
+	}[],
+): boolean {
+	if (signature.keyId !== `${signature.hostId}${SIGN_KEY_SUFFIX}`) return false;
+	if (measurement.hostId !== signature.hostId) return false;
+	const key = hostPublicKeys.find(
+		(candidate) =>
+			candidate.hostId === signature.hostId &&
+			candidate.keyId === signature.keyId,
+	);
+	if (!key || !isJsonString(signature.value)) return false;
+	const parts = signature.value.split(".");
+	if (parts.length !== 2) return false;
+	const [encodedPayload = "", encodedSignature = ""] = parts;
+	const envelope: SignedEnvelope = {
+		$typeName: "hobo.fleet.v1.SignedEnvelope",
+		context: HOST_ATTESTATION_CONTEXT,
+		keyId: signature.keyId,
+		algorithm,
+		payload: new Uint8Array(Buffer.from(encodedPayload, "base64url")),
+		signature: new Uint8Array(Buffer.from(encodedSignature, "base64url")),
+	};
+	const ref: PublicKeyRef = {
+		$typeName: "hobo.fleet.v1.PublicKeyRef",
+		purpose: KeyPurpose.SIGN,
+		keyId: key.keyId,
+		algorithm,
+		value: key.verificationKey,
+	};
+	if (!verifyEnvelope(envelope, HOST_ATTESTATION_CONTEXT, ref)) return false;
+	const signed = parseJsonValue(Buffer.from(envelope.payload).toString("utf8"));
+	return (
+		isPlainObject(signed) &&
+		launchMeasurementBytes(signed) === launchMeasurementBytes(measurement)
+	);
 }
 
-function digestCanonical(measurement: LaunchMeasurement): string {
-	const canonical = JSON.stringify({
+/** The launch measurement's JSON bytes, in one field order: what a device signs. */
+export function launchMeasurementBytes(
+	measurement: LaunchMeasurement | JsonObject,
+): string {
+	return JSON.stringify({
 		runId: measurement.runId,
 		tenant: measurement.tenant,
 		parentPrincipal: measurement.parentPrincipal,
@@ -256,7 +323,19 @@ function digestCanonical(measurement: LaunchMeasurement): string {
 		nonce: measurement.nonce,
 		isolationTier: measurement.isolationTier,
 	});
-	return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
+function signLaunchMeasurement(
+	measurement: LaunchMeasurement,
+	verificationKey: string,
+): string {
+	return createHmac("sha256", verificationKey)
+		.update(digestCanonical(measurement))
+		.digest("hex");
+}
+
+function digestCanonical(measurement: LaunchMeasurement): string {
+	return `sha256:${createHash("sha256").update(launchMeasurementBytes(measurement)).digest("hex")}`;
 }
 
 function validateLaunchMeasurement(

@@ -149,9 +149,7 @@ describe("loadSecretStoreKms (O37)", () => {
 		vi.setSystemTime(T0 + TOKEN_LIFETIME_S * 1000 + 1000);
 		expect(rotated.jwks().keys.map((key) => key.kid)).toEqual([NEXT_KID]);
 		expect(rotated.kms.hasKey(FIRST_KID)).toBe(false);
-		expect(replicaIssuer.jwks().keys.map((key) => key.kid)).toEqual([
-			NEXT_KID,
-		]);
+		expect(replicaIssuer.jwks().keys.map((key) => key.kid)).toEqual([NEXT_KID]);
 		const later = await loadSecretStoreKms(secrets, { prefix: PREFIX });
 		expect(later.hasKey(FIRST_KID)).toBe(false);
 		expect(later.hasKey(NEXT_KID)).toBe(true);

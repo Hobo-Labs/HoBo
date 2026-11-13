@@ -156,6 +156,33 @@ The broker returns a deterministic fixture-scoped token derived inside the
 vault. The real keyless OIDC-federation / provider-STS token exchange is a later
 item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
 
+## HoBo Fleet additions (ADR-0182)
+
+- **`loadSecretStoreKms(secrets, { prefix })`** — the fleet authority's
+  token-signing key, shared by every replica and kept across restarts. One
+  secret named `prefix` holds a JSON key ring
+  (`{"keys":[{"kid","privateKey" (PKCS#8 PEM),"retiredAt"?}]}`). At start it is
+  read once (or created once, with kid `<prefix>#1`; replicas that start
+  together adopt the first version written) and held in memory behind the
+  synchronous `KmsLike`. Rotate with `JwtSvidIssuer.rotateSigningKey("<prefix>#<n+1>")`:
+  the previous key stops signing at once, stays in the key set for 15 minutes
+  (the longest token lifetime of design §6.6) so its tokens still verify, and
+  then leaves `jwks()` everywhere. The rotation is written back to the store in
+  the background, merged with what is there; another replica sees it when it
+  next loads. The active key is the highest `n` for which `hasKey` is true. A
+  store refusal other than `secret-not-found`, or a value without material,
+  fails closed. `createInMemoryKms` remains for tests and offline development.
+- **`createDeviceHostAttestor(signer)`** — a fleet device as attestation host.
+  It takes the device's SIGN key (`<member id>#sign`), uses the member id as
+  `hostId`, and signs the launch measurement's JSON bytes as a fleet envelope
+  under `hobo-fleet/host-attestation/v1`. `hostSignature.algorithm` is
+  `hobo-fleet-envelope/eddsa` or `…/es256`; `value` is
+  `base64url(payload).base64url(signature)`. `publicKeys()` is empty: the
+  verifier passes the SIGN key from the member's key bundle as
+  `verificationKey`. `verifyWorkloadAttestation` checks the signature over the
+  received bytes, then that they are the document's launch measurement.
+  `createFixtureHostAttestor` (HMAC) stays for tests.
+
 ## Exports
 
 - `IdentityService`, `createFixtureHostAttestor`, `verifyWorkloadAttestation`,
