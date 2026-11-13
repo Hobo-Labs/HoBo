@@ -1,7 +1,13 @@
 /**
- * Host capacity (L10). Signature frozen by the fleet contract commit (ADR-0182).
+ * Host capacity (L10, design §6.8). Signature frozen by the fleet contract
+ * commit (ADR-0182). How each figure is measured is in `measure.ts`.
  */
-import { type CapacitySource, FleetNotImplemented } from "@hobo/fleet";
+import type { CapacitySource } from "@hobo/fleet";
+import {
+	HOST_PROBES,
+	parseHostCapacityOptions,
+	readHostCapacity,
+} from "./measure.js";
 
 /** This host's slots, free memory and disk under `workRoot`, and labels. */
 export function createHostCapacity(
@@ -11,6 +17,8 @@ export function createHostCapacity(
 		labels: readonly string[];
 	}>,
 ): CapacitySource {
-	void options;
-	throw new FleetNotImplemented("createHostCapacity");
+	const parsed = parseHostCapacityOptions(options);
+	return Object.freeze({
+		read: () => readHostCapacity(parsed, HOST_PROBES),
+	} satisfies CapacitySource);
 }

@@ -1,0 +1,19 @@
+# Written by `hobo fleet service install`; reinstall to change it.
+[Unit]
+Description=HoBo Fleet agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="/usr/local/bin/node" "/opt/hobo/bin/hobo.js" "fleet" "run" "--fleets" "build,deploy"
+Environment="HOBO_FLEET_AUTHORITY_URL=https://fleet.example.test"
+Environment="HOBO_FLEET_KEYSTORE=file"
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=120
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

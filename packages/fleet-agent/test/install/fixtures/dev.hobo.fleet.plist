@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Written by `hobo fleet service install`; reinstall to change it. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.hobo.fleet</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/node</string>
+		<string>/opt/hobo/bin/hobo.js</string>
+		<string>fleet</string>
+		<string>run</string>
+		<string>--fleets</string>
+		<string>build,deploy</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOBO_FLEET_AUTHORITY_URL</key>
+		<string>https://fleet.example.test</string>
+		<key>HOBO_FLEET_KEYSTORE</key>
+		<string>file</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>ExitTimeOut</key>
+	<integer>120</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
