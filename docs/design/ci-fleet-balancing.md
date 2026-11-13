@@ -176,7 +176,13 @@ is unknown and refuses nothing (R3). The slip is written on a change and as a
 three-minute heartbeat, capped at 20 writes a minute and 300 an hour, and
 expires ten minutes after it is issued; with no fresh slip the route job falls
 back to the queue rule. The box's slot split, pools and holds are committed in
-`runnerRouting` (`.hobo/ci.json`), not set on the box.
+`runnerRouting` (`.hobo/ci.json`), not set on the box, and so are the labels
+it serves: `runnerRouting.labels`, and for its own offers the committed
+provider of the same id (`runsOn`, kind, `enabled`).
+`HOBO_CI_CONFIG` keeps only accounts, budgets and connections. The box relay
+keeps itself current from `main` every three hours when idle
+([plan 0026](../plans/0026-relay-routing-slips.md), 3.8), so a routing change
+committed to `.hobo/ci.json` reaches the box without anyone restarting it.
 
 The slip does not yet carry the balanced choice between paid label providers
 that the route table computed: its classes say fleet, local box or
@@ -211,10 +217,11 @@ would post for a new offer.
 - **A job's own size.** `fleet.machine` compares a job's stated CPU and memory
   need with the machine class, but the relay does not yet state one for a
   routed job, so the check constrains only callers that supply it.
-- **Circuit breakers for rented members.** The box daemon marks its own offers
-  unhealthy while its host is critically short of CPU, memory, disk or inodes
-  (see *Host health* in the runner queue guide). Nothing yet opens a breaker for
-  a rented provider after failed launches or slow pickups.
+- **Circuit breakers for rented members.** The box relay refuses its own labels
+  in the slip while its host's storage is critical, or while it is idle and
+  short of memory, and nothing else can take the job (see *Host health* in the
+  runner queue guide). Nothing yet opens a breaker for a rented provider after
+  failed launches or slow pickups.
 - **Live vendor billing.** The models are published list prices read by hand.
   No provider account, invoice or usage API was exercised.
 

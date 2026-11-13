@@ -408,9 +408,10 @@ it with its own `GITHUB_TOKEN` (two GET calls, three seconds at most).
 | Unexpired, for this repository, every runner one of `runnerRouting.labels` | It decides the run's runner and tier |
 | Missing, expired, malformed, for another repository, naming an unknown label, or not read in time | Nothing. The queue is read exactly as before, and a `hobo-ci-route-fallback` warning says why |
 
-The hosted relay is no longer asked. `GET /v1/fleet/verdicts/{owner}/{repo}`
-and `GET /v1/fleet/reporters/{owner}/{repo}` answer 404, and the relay keeps
-no verdict, report or reporter.
+The hosted relay holds no routing: it keeps no verdict, report or reporter.
+Every setting the slip is decided with is the committed `runnerRouting` block
+of `.hobo/ci.json`; no environment variable or repository variable carries
+routing ([plan 0026](../plans/0026-relay-routing-slips.md), R2).
 
 Every decision leaves one line a monitor reads from the job's check run:
 
@@ -437,21 +438,22 @@ finding 142) sends the shards elsewhere. The shards and the finish job ask for
 trunk label; a second ask that cannot decide outputs nothing, so the run's
 route stands. `ci-deps-image` runs on these events only for a run kept on the
 fleet (or one the route job could not route), and the shards accept it
-skipped. A dispatch can pin its own run with the `route` input, leaving
-`HOBO_CI_ROUTE` untouched. Between the route job and the pickup of the plan
+skipped. A dispatch can pin its own run with the `route` input (a choice of
+`auto`, `fleet`, `local`, `github`). Between the route job and the pickup of the plan
 and deps jobs, a fleet that becomes blocked still holds those two jobs; the
 monitor's stall signal reports it.
 
 The plan reads no capacity record: `scripts/ci/load-fleet-capacity.mts` is
 gone (its repository-variable read answered 403 to a job token, finding 146).
-`plan-main-workspace-shards.mts` sizes shards from `MAIN_WORKSPACE_PARALLEL_CAP`
-when set, else 4, a tuning setting of the script.
+`plan-main-workspace-shards.mts` sizes shards from the committed
+`runnerRouting.mainWorkspaceParallelCap` (4).
 
 Nothing about the fleet reaches a workflow any other way. `scripts/lint-actions.ts`
-rejects any workflow or action that reads a `vars.HOBO_CI_FLEET_*` variable or
-declares an input or environment variable named `fleet-state`,
-`fleet-capacity`, `fleet-routes` or `HOBO_CI_FLEET_STATE`, `…_CAPACITY`,
-`…_ROUTES`.
+rejects every `vars.HOBO_CI_*` in a workflow, action or template, and every
+input, output or environment variable plan 0026 (3.4) names as routing. A
+source guard (`scripts/test/routing-name-guard.test.ts`) fails on any read of
+those names, as `process.env`, `env.`, `vars.` or a YAML key, in `scripts/`,
+`packages/ci*`, `.github/` and the templates.
 
 A label is blocked when no live healthy node serves it, or when none can admit
 a job for a reason other than its own running jobs and no other has a free
@@ -463,8 +465,27 @@ memory leaves the relay.
 hosted relay, whose signed-report path was removed. The older snapshot in the
 repository variable `HOBO_CI_FLEET_STATE`, and the capacity record in
 `HOBO_CI_FLEET_CAPACITY`, are no longer written: no worker publishes them and
-no workflow reads them. Delete the two variables from the repository once the
-workers run this release.
+no workflow reads them. At each start the mesh leader deletes them, with the
+other `runnerRouting.retiredVariables`; a refused delete is logged once and
+changes nothing.
+
+**The relay keeps itself current.** Every
+`runnerRouting.selfUpdate.intervalHours` (3), and only when it is idle, a box
+relay fetches `main`. When `main` moved forward along its first-parent line
+and changed the daemon's own paths, it prepares the new head in a separate
+git worktree (install, submodules, build, and the daemon's `--self-check`),
+then stops with `handoff` and re-execs itself in place with `process.execve`:
+the same PID, so no supervisor is assumed, and the next daemon adopts the
+running containers. A preparation that fails keeps the old code running and
+holds that head for 24 hours. A slip carries the commit that wrote it, so a
+node that did not update is visible
+([runner queue guide](../../packages/ci/RUNNER-QUEUE.md)).
+
+**Continuous proof of the transport.** On every push to `main`, CI health
+writes and reads back `refs/hobo/routing-slip-probe` with its job's own
+`GITHUB_TOKEN`, through the same Git Data API calls the slip uses, and counts
+route fallbacks by reason (`no routing slip`, `slip expired`, …) over its
+window ([health monitor](../ci/health-monitor.md)).
 
 ## Reliability: a node that drops jobs gets fewer
 
@@ -588,6 +609,7 @@ interface.
 | 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
 | 9 | Trust: a per-node Ed25519 identity, signed advertisements, a trusted-key set in the mesh's configuration, `invalid` nodes never ranked | Done. No attestation of what a node runs, no key rotation or revocation list, and the buckets' access control is NATS's, not the mesh's |
 | 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Superseded by the routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)): the hosted verdict routes, stores, signed reporter and client were removed (plan 0026, 3.9). The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
+| 11 | Routing slips: the leader writes `refs/hobo/routing-slip` from committed `runnerRouting`; no routing environment or repository variable; the box relay keeps itself current ([plan 0026](../plans/0026-relay-routing-slips.md)) | Done. A box takes it after one restart onto a checkout that has it ([finding 149](../ci/findings/0149-routing-slip-facts-main-on-the-queue-rule-hosted-relay-down-box-on-c7ec8d449.md)) |
 
 A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
 peers, it ranks itself first for every job and takes them all, so turning the
