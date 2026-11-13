@@ -19,6 +19,7 @@ import {
 	type JetStreamPublishOptions,
 	type StreamConfig,
 } from "@nats-io/jetstream";
+import { type Account, type ClaimsData, decode } from "@nats-io/jwt";
 import type { Authenticator } from "@nats-io/transport-node";
 import { type OpenOptions, parseServers } from "../../src/bus/connection.js";
 import type {
@@ -123,10 +124,10 @@ export type FakeServer = Readonly<{
 	connect(name?: string): FakeConnection;
 	addStream(config: StreamSpec): void;
 	streamNames(): string[];
-	/** Answers requests on `subject`; `undefined` means no responder. */
+	/** Answers requests on `subject` (which may hold wildcards); `undefined` means no responder. */
 	reply(
 		subject: string,
-		answer: (data: Uint8Array) => Uint8Array | undefined,
+		answer: (data: Uint8Array, subject: string) => Uint8Array | undefined,
 	): void;
 	/** Moves the fake clock on. */
 	advance(ms: number): void;
@@ -155,7 +156,7 @@ export function createFakeServer(): FakeServer {
 	const subscribers = new Set<Subscriber>();
 	const responders = new Map<
 		string,
-		(data: Uint8Array) => Uint8Array | undefined
+		(data: Uint8Array, subject: string) => Uint8Array | undefined
 	>();
 	const connections: FakeConnection[] = [];
 	const opened: OpenRecord[] = [];
@@ -450,9 +451,11 @@ export function createFakeServer(): FakeServer {
 			},
 			subscribe,
 			async request(subject, data) {
-				const answer = responders.get(subject);
+				const answer =
+					responders.get(subject) ??
+					[...responders].find(([filter]) => matches(filter, subject))?.[1];
 				if (answer !== undefined) {
-					const reply = answer(data);
+					const reply = answer(data, subject);
 					if (reply === undefined) throw new Error("503 no responders");
 					return message(subject, reply);
 				}
@@ -512,12 +515,23 @@ export function createFakeServer(): FakeServer {
 	};
 }
 
-/** A resolver that accepts every account JWT, as `$SYS.REQ.CLAIMS.UPDATE` answers. */
+/**
+ * A resolver that accepts every account JWT, as `$SYS.REQ.CLAIMS.UPDATE`
+ * answers, and answers `$SYS.REQ.ACCOUNT.<account>.CLAIMS.LOOKUP` with the
+ * account's last pushed JWT, or nothing at all for one it does not hold.
+ */
 export function acceptAccounts(server: FakeServer): string[] {
 	const pushed: string[] = [];
+	const held = new Map<string, string>();
 	server.reply("$SYS.REQ.CLAIMS.UPDATE", (data) => {
-		pushed.push(decoder.decode(data));
+		const jwt = decoder.decode(data);
+		pushed.push(jwt);
+		const claims: ClaimsData<Account> = decode(jwt);
+		held.set(claims.sub, jwt);
 		return encoder.encode(JSON.stringify({ data: { code: 200 } }));
 	});
+	server.reply("$SYS.REQ.ACCOUNT.*.CLAIMS.LOOKUP", (_data, subject) =>
+		encoder.encode(held.get(subject.split(".")[3] ?? "") ?? ""),
+	);
 	return pushed;
 }

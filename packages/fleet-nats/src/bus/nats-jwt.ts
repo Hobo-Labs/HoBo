@@ -12,6 +12,7 @@
 import { hkdfSync } from "node:crypto";
 import type { TenantId } from "@hobo/core";
 import {
+	type Account,
 	type AuthorizationRequest,
 	type ClaimsData,
 	decode,
@@ -296,6 +297,44 @@ export type AccountSigningKeys = Readonly<{
 	scoped: Readonly<Record<DeviceTemplate, readonly string[]>>;
 }>;
 
+/**
+ * The signing keys a published tenant account JWT lists, or undefined when
+ * it lists none. Throws when `jwt` is not the JWT of `account`, so that a
+ * reply the caller cannot read is never taken for "no keys".
+ */
+export function signingKeysOfAccountJwt(
+	jwt: string,
+	account: string,
+): AccountSigningKeys | undefined {
+	let claims: ClaimsData<Account>;
+	try {
+		claims = decode(jwt);
+	} catch {
+		throw new Error("the resolver's account JWT does not decode");
+	}
+	if (claims.sub !== account)
+		throw new Error("the resolver answered another account's JWT");
+	const listed = claims.nats.signing_keys ?? [];
+	if (listed.length === 0) return undefined;
+	const plain: string[] = [];
+	const scoped = {
+		observer: new Array<string>(),
+		executor: new Array<string>(),
+		dispatcher: new Array<string>(),
+	} satisfies Record<DeviceTemplate, string[]>;
+	for (const key of listed) {
+		if (!(key instanceof Object)) {
+			plain.push(key);
+			continue;
+		}
+		const template = DEVICE_TEMPLATES.find((name) => name === key.role);
+		if (template === undefined)
+			throw new Error("the published account lists an unknown scoped role");
+		scoped[template].push(key.key);
+	}
+	return { account: plain, scoped };
+}
+
 /** Throws unless `key` is an account public key; never echoes the value, which could be a seed passed by mistake. */
 function checkAccountKey(key: string, place: number): void {
 	let valid = false;
@@ -453,7 +492,9 @@ export async function systemCredentials(
 		user,
 		systemAccount(operatorSigningSeed),
 		{
-			pub: { allow: ["$SYS.REQ.CLAIMS.UPDATE"] },
+			pub: {
+				allow: ["$SYS.REQ.CLAIMS.UPDATE", "$SYS.REQ.ACCOUNT.*.CLAIMS.LOOKUP"],
+			},
 			sub: { allow: ["_INBOX.>"] },
 		},
 	);

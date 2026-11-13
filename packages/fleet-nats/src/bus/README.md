@@ -94,10 +94,16 @@ unreachable or refuses. `staticCredentials(keys, user, signerSeed)` re-issues
 a static user under an account signing key with the same user key, so
 `auth_users` still exempts it from the callout; the provisioner's user JWT
 stays under the server's 4 KiB control line either way
-(`test/nats-jwt.test.ts`). `provisionTopology` still pushes only the derived
-scoped keys, so after a rotation it must not be re-run without publishing the
-slots' keys again. `test/signing-keys.integration.test.ts` adds, publishes and
-removes an account signing key on `nats-server`.
+(`test/nats-jwt.test.ts`). Re-running `provisionTopology` after a rotation
+does not undo it (L42): it reads the account JWT the resolver holds
+(`$SYS.REQ.ACCOUNT.<account>.CLAIMS.LOOKUP`, which the derived system user
+may publish) and re-issues the account with the signing keys listed there;
+only an account the resolver does not hold yet gets the derived scoped keys.
+A lookup answer that is not this account's JWT fails provisioning and pushes
+nothing. `provisionTopologyOver(clients, input, { signingKeys })` (internal)
+takes the slots' keys instead. `test/signing-keys.integration.test.ts` adds,
+publishes and removes an account signing key on `nats-server`, re-provisioning
+in between.
 
 ## The witness side of the audit log (L42)
 
