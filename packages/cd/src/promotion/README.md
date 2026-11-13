@@ -1,6 +1,6 @@
 # `@hobo/cd/promotion` — promotion saga, gate, previews, Trails
 
-Work package WP6 of [plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md)
+Work package WP6
 (C9, D2, D11, D12, I7, I13, I16; fleet and policy D20–D25).
 `createPromotionService` implements the frozen `PromotionService &
 PreviewEnvironments` ports (`src/ports.ts`). Promote means: carry the same

@@ -9,9 +9,8 @@ tags: [hobo, ci, relay, routing, fleet, monitoring]
 
 Every fallback to a default must leave a record something reads. The monitor is that reader: it turns the
 route job's notices, the fleet's queue waits, paid minutes and the hosted relay's reporter status into issues,
-so a signal that stops carrying a value is raised within two monitor runs instead of failing silently. Design:
-[plan 0025, section 6.6](../plans/0025-relay-owned-runner-routing.md); verdict authority:
-[ADR-0180](../design/adr/fleet-verdict.md#adr-0180).
+so a signal that stops carrying a value is raised within two monitor runs instead of failing silently. Design and verdict authority:
+[ADR-0180](../design/adr/fleet-verdict.md#adr-0180-rules).
 
 | Piece | Where |
 | --- | --- |

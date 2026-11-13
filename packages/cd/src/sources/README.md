@@ -8,9 +8,6 @@ gates provenance, assembles one Freight per qualifying combination, and
 records it through the Freight ledger. Webhooks only *nudge*: they schedule a
 poll and never create Freight (I15).
 
-Plan: [`docs/plans/0024-hobo-cd-swarm-instruction.md`](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md)
-§5 D3/D24, §6 I15, §9 WP2.
-
 ## Surface
 
 | Export | What it is |

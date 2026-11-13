@@ -1,4 +1,4 @@
-// Promoted proofs (plan 0024 §3; AGENTS.md "Draft-proof promotion policy").
+// Promoted proofs (AGENTS.md "Draft-proof promotion policy").
 // The semantics of three frozen technical proofs are copied here as package
 // tests against the production engine; the proofs themselves are untouched.
 //

@@ -1,4 +1,4 @@
-// "./reconcile" (WP7, plan 0024): fenced pull reconcilers, the in-process
+// "./reconcile" (WP7): fenced pull reconcilers, the in-process
 // transport, observation hygiene, retained fields, drift routing, departure.
 
 // The realizer adapters this module drives (src/adapters, WP7).

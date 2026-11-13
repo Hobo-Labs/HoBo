@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package hobo.evals.v1;
 
-// Wire shapes for the evals rubric + promotion-gate engine (docs/plans/0017
-// F25, design PLAN-23): schema-versioned rubric records, deterministic
+// Wire shapes for the evals rubric + promotion-gate engine (design PLAN-23): schema-versioned rubric records, deterministic
 // scored-run reports (mirroring the conformance report vocabulary), and the
 // promotion verdict Gatekeeper composes as its evals dimension.
 // Design-time contract artifacts; unknown-typed sides travel JSON-encoded.

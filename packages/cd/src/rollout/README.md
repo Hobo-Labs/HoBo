@@ -1,7 +1,7 @@
 # `@hobo/cd/rollout` — rollout orchestrator (WP10)
 
 Progressive exposure for one promotion, Camp by Camp and stage by stage
-(plan 0024: C3, C4, C5, D7, D8, D12). The promotion saga (WP6) calls
+(C3, C4, C5, D7, D8, D12). The promotion saga (WP6) calls
 `plan` then `run`; the CD service (WP12) calls `tick` every
 `CD_DEFAULTS.serviceTickMs`.
 

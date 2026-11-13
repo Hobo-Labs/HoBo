@@ -154,7 +154,7 @@ the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
 
 The pass writes no other repository variable. A free-slot record it once
 published beside the table, and the mesh's routing snapshot, are retired
-([plan 0025](../plans/0025-relay-owned-runner-routing.md), section 6.8):
+([ADR-0180, Retirement](./adr/fleet-verdict.md#adr-0180-retirement)):
 judging raw capacity in a workflow repeats, outside the relay, a decision only
 the relay can make
 ([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).

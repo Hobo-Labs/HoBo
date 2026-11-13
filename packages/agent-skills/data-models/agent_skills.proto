@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package hobo.agent_skills.v1;
 
-// Wire shapes for the distributable agent-skills bundle (docs/plans/0017
-// F27): the manifest a Registry listing serves so any agent harness can
+// Wire shapes for the distributable agent-skills bundle: the manifest a Registry listing serves so any agent harness can
 // discover the skills tree. Design-time contract artifacts.
 
 message SkillManifestEntry {

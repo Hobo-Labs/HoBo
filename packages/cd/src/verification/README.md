@@ -1,7 +1,6 @@
 # `@hobo/cd/verification` — verification engine (WP9)
 
-Deterministic, fail-closed verification of a Freight on one Camp (plan 0024
-D9, invariants I5, I8, I12). A `VerificationSpec` runs over a window; the
+Deterministic, fail-closed verification of a Freight on one Camp (D9, invariants I5, I8, I12). A `VerificationSpec` runs over a window; the
 engine records every sample it decides from, and the verdict is a pure
 function of that record, so replay reproduces it exactly.
 

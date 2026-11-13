@@ -4,7 +4,7 @@
 // type the rollout appends must pass the journal's `family.PastTenseFact`
 // check, and DesiredStateReader.status() must fold the `{ schema,
 // observation }` body the reconcile transport writes. HoBo delivering its own
-// CI relay found both broken (plan 0024); this is the regression.
+// CI relay found both broken; this is the regression.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

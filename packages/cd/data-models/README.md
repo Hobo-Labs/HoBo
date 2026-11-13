@@ -5,7 +5,7 @@ Protobuf first, CUE constraints beside it, parse-don't-validate in TypeScript
 
 | File | Role |
 |---|---|
-| `cd.proto` | Every `@hobo/cd` record and event body (`package hobo.cd.v1`). **Frozen** by plan 0024 Appendix A: only the coordinator amends it. Records reference each other by string id. |
+| `cd.proto` | Every `@hobo/cd` record and event body (`package hobo.cd.v1`). **Frozen**: only the coordinator amends it. Records reference each other by string id. |
 | `buf.yaml` | `buf lint` configuration (DEFAULT rules). |
 | `<module>.cue` | Constraints for the records one module owns (`freight.cue`, `sources.cue`, `artifacts.cue`, `sets.cue`, `pipelines.cue`, `windows.cue`, `promotion.cue`, `reconcile.cue`, `verification.cue`, `rollout.cue`, `inventory.cue`, `placement.cue`, `fanout.cue`, `failover.cue`, `posture.cue`). Each file is owned by the work package that owns the module. |
 

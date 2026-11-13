@@ -1,5 +1,5 @@
 /* oxlint-disable anti-slop/no-conditional-empty-object-spread, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
-// WP7 acceptance (plan 0024 §9 WP7, §10 rows owned by WP7).
+// WP7 acceptance.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
