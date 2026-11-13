@@ -3,15 +3,22 @@
  * ADR-0179 amendment records (Upstash 500,000 commands a month; Turso 500
  * million rows read and 10 million written), used here only as numbers.
  */
+import { create } from "@bufbuild/protobuf";
+import {
+	Health,
+	type NamedObservation,
+	ObservationSchema,
+	parseMemberName,
+	UsageMeasurementSchema,
+} from "@hobo/fleet";
+import { parseAssignmentEntry } from "@hobo/fleet/assignment";
 import { describe, expect, it } from "vitest";
 import {
 	billingPeriod,
 	DEFAULT_FLEET_ROUTING_MARKS,
 	type FleetOffer,
 	type FleetRoutingInput,
-	type FleetRoutingObservation,
 	type FleetUsageMeasurement,
-	parseFleetAssignment,
 	parseFleetFinancialModel,
 	parseFleetOffer,
 	parseFleetRoutingMarks,
@@ -105,12 +112,20 @@ function blob(capMicros: number | undefined): FleetOffer {
 	});
 }
 
+/** One member as a tick saw it: reachable unless `overrides` says otherwise. */
 function seen(
 	backend: string,
 	usage: FleetUsageMeasurement[] = [],
-	overrides: Partial<FleetRoutingObservation> = {},
-): FleetRoutingObservation {
-	return { backend, health: "reachable", failingForMs: 0, usage, ...overrides };
+	overrides: Readonly<{ health?: Health; failingForMs?: number }> = {},
+): NamedObservation {
+	return {
+		name: parseMemberName(backend),
+		observation: create(ObservationSchema, {
+			health: overrides.health ?? Health.REACHABLE,
+			failingForMs: overrides.failingForMs ?? 0,
+			usage: usage.map((entry) => create(UsageMeasurementSchema, entry)),
+		}),
+	};
 }
 
 /** A month's workload so far, in every unit, at `commands` port calls. */
@@ -129,15 +144,16 @@ function input(
 	overrides: Partial<FleetRoutingInput> = {},
 ): FleetRoutingInput {
 	return {
-		assignment: parseFleetAssignment({
+		assignment: parseAssignmentEntry({
 			epoch: 3,
-			active,
+			active: parseMemberName(active),
 			sealed: false,
 			target: undefined,
 			reason: "test",
 			lossWindowMs: undefined,
 			decidedAtMs: NOW - 5 * DAY,
 			decidedBy: "test",
+			members: undefined,
 		}),
 		members: ["upstash", "valkey", "turso", "blob"],
 		observations: [
@@ -288,15 +304,16 @@ describe("preference and budget caps", () => {
 				offers: [upstash, blob(100_000_000)],
 				observations: [seen("upstash"), seen("blob")],
 				members: ["upstash", "blob"],
-				assignment: parseFleetAssignment({
+				assignment: parseAssignmentEntry({
 					epoch: 3,
-					active: "blob",
+					active: parseMemberName("blob"),
 					sealed: false,
 					target: undefined,
 					reason: "test",
 					lossWindowMs: undefined,
 					decidedAtMs: NOW - 60_000,
 					decidedBy: "test",
+					members: undefined,
 				}),
 			}),
 		);
@@ -331,7 +348,7 @@ describe("failover", () => {
 			routeFleetByBudget(
 				input("upstash", {
 					observations: [
-						seen("upstash", [], { health: "unreachable", failingForMs }),
+						seen("upstash", [], { health: Health.UNREACHABLE, failingForMs }),
 						seen("valkey"),
 						seen("turso"),
 					],
@@ -354,7 +371,7 @@ describe("failover", () => {
 				offers: [upstash],
 				observations: [
 					seen("upstash", [], {
-						health: "quota-exhausted",
+						health: Health.QUOTA_EXHAUSTED,
 						failingForMs: 120_000,
 					}),
 					seen("redis"),
@@ -369,15 +386,16 @@ describe("failover", () => {
 	it("holds a sealed fleet", () => {
 		const route = routeFleetByBudget(
 			input("upstash", {
-				assignment: parseFleetAssignment({
+				assignment: parseAssignmentEntry({
 					epoch: 4,
-					active: "upstash",
+					active: parseMemberName("upstash"),
 					sealed: true,
-					target: "turso",
+					target: parseMemberName("turso"),
 					reason: "switch",
 					lossWindowMs: undefined,
 					decidedAtMs: NOW,
 					decidedBy: "test",
+					members: undefined,
 				}),
 			}),
 		);

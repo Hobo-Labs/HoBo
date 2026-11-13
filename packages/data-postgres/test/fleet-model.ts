@@ -8,13 +8,13 @@
  * goes down between the two steps has applied the write and lost the answer,
  * which is the case a real network produces.
  */
-import {
-	type AssignmentAcceptOutcome,
-	type AssignmentReplica,
-	assignmentKey,
-	fleetMajority,
-	type PostgresFleetAssignment,
-} from "../src/index.js";
+import type {
+	AssignmentAcceptOutcome,
+	AssignmentEntry,
+	AssignmentReplica,
+	MemberName,
+} from "@hobo/fleet";
+import { assignmentKey, fleetMajority } from "@hobo/fleet/assignment";
 
 export function seededRandom(seed: number): () => number {
 	let state = seed >>> 0;
@@ -69,12 +69,12 @@ export class Scheduler {
 }
 
 export class MemoryReplica implements AssignmentReplica {
-	readonly rows: PostgresFleetAssignment[] = [];
+	readonly rows: AssignmentEntry[] = [];
 	up = true;
 	busy = false;
 
 	constructor(
-		readonly id: string,
+		readonly id: MemberName,
 		private readonly pause: () => Promise<void> = () => Promise.resolve(),
 	) {}
 
@@ -82,7 +82,7 @@ export class MemoryReplica implements AssignmentReplica {
 		if (!this.up) throw new Error("connection refused");
 	}
 
-	async read(limit?: number): Promise<readonly PostgresFleetAssignment[]> {
+	async read(limit?: number): Promise<readonly AssignmentEntry[]> {
 		await this.pause();
 		this.requireUp();
 		const snapshot = [...this.rows];
@@ -92,7 +92,7 @@ export class MemoryReplica implements AssignmentReplica {
 	}
 
 	/** The single-statement rule of the SQL replica, applied atomically. */
-	apply(assignment: PostgresFleetAssignment): AssignmentAcceptOutcome {
+	apply(assignment: AssignmentEntry): AssignmentAcceptOutcome {
 		if (this.busy) return "busy";
 		const top = this.rows.at(-1)?.epoch ?? 0;
 		if (top === assignment.epoch - 1) {
@@ -106,9 +106,7 @@ export class MemoryReplica implements AssignmentReplica {
 			: "conflict";
 	}
 
-	async accept(
-		assignment: PostgresFleetAssignment,
-	): Promise<AssignmentAcceptOutcome> {
+	async accept(assignment: AssignmentEntry): Promise<AssignmentAcceptOutcome> {
 		await this.pause();
 		this.requireUp();
 		const outcome = this.apply(assignment);
@@ -121,11 +119,11 @@ export class MemoryReplica implements AssignmentReplica {
 /** What is decided, seen from outside: every replica, up or down. */
 export function decidedEntries(
 	replicas: readonly MemoryReplica[],
-): Map<number, PostgresFleetAssignment> {
+): Map<number, AssignmentEntry> {
 	const required = fleetMajority(replicas.length);
 	const counts = new Map<
 		string,
-		{ assignment: PostgresFleetAssignment; count: number }
+		{ assignment: AssignmentEntry; count: number }
 	>();
 	for (const replica of replicas)
 		for (const row of replica.rows) {
@@ -134,7 +132,7 @@ export function decidedEntries(
 			entry.count += 1;
 			counts.set(key, entry);
 		}
-	const decided = new Map<number, PostgresFleetAssignment>();
+	const decided = new Map<number, AssignmentEntry>();
 	for (const { assignment, count } of counts.values())
 		if (count >= required) {
 			if (decided.has(assignment.epoch))

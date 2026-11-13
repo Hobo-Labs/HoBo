@@ -21,8 +21,13 @@
  * is affordable is asked of an injected check, so there is one budget engine
  * and it is the host's.
  */
-import type { FleetAssignment } from "./assignment.js";
-import { type FleetFailureClass, parseFleetBackendId } from "./backend.js";
+import {
+	type AssignmentEntry,
+	Health,
+	type NamedObservation,
+	parseMemberName,
+} from "@hobo/fleet";
+import { eligibleForActive, failingLongerThan } from "@hobo/fleet/observation";
 import { BackendFleetError } from "./errors.js";
 import {
 	type BillingPeriod,
@@ -31,22 +36,6 @@ import {
 	type FleetUsageMeasurement,
 	type FleetUsageUnit,
 } from "./usage.js";
-
-export type FleetBackendHealth = "reachable" | FleetFailureClass;
-
-// domain-view: the in-process observation a host assembles per tick; the generated FleetObservation in backend_fleet_pb.ts is its wire form.
-export type FleetObservation = {
-	readonly backend: string;
-	readonly health: FleetBackendHealth;
-	readonly probeLatencyMs: number | undefined;
-	/** How long the backend has been failing without a success; 0 when reachable. */
-	readonly failingForMs: number;
-	/** The copied tables exist with the writer's columns and types. */
-	readonly schemaCurrent: boolean;
-	/** Time since the standby's snapshot. Absent when it was never copied. */
-	readonly standbyLagMs: number | undefined;
-	readonly usage: readonly FleetUsageMeasurement[];
-};
 
 export const FLEET_OVERAGE_KINDS = ["hard-stop", "metered", "unknown"] as const;
 
@@ -90,6 +79,19 @@ function refuse(message: string, field: string): never {
 	});
 }
 
+/**
+ * A member's name in its fleet (`parseMemberName`, which replaced
+ * `parseFleetBackendId`), refused with this package's configuration error so
+ * a caller that matches on `code` keeps working.
+ */
+export function memberName(value: string, field = "backend"): string {
+	try {
+		return parseMemberName(value, field);
+	} catch {
+		return refuse(`${field} must be a short lower-case token`, field);
+	}
+}
+
 function quantity(value: number | undefined, field: string): void {
 	if (value !== undefined && (!Number.isSafeInteger(value) || value < 0))
 		refuse(`${field} must be a non-negative integer`, field);
@@ -110,7 +112,7 @@ function price(value: number | undefined, field: string): void {
 export function parseFleetFinancialModel(
 	input: FleetFinancialModel,
 ): FleetFinancialModel {
-	const backend = parseFleetBackendId(input.backend);
+	const backend = memberName(input.backend);
 	if (!/^[a-z0-9][a-z0-9 ._-]{0,63}$/u.test(input.plan))
 		refuse("plan must be a short lower-case name", "plan");
 	quantity(input.fixedMonthlyFeeMicros, "fixedMonthlyFeeMicros");
@@ -250,8 +252,9 @@ export type FleetDecision = {
 };
 
 export type FleetDecisionInput = {
-	readonly assignment: FleetAssignment;
-	readonly observations: readonly FleetObservation[];
+	readonly assignment: AssignmentEntry;
+	/** Every backend as this tick saw it, by its name in the fleet. */
+	readonly observations: readonly NamedObservation[];
 	readonly models: readonly FleetFinancialModel[];
 	readonly policy: FleetPolicy;
 	readonly period: BillingPeriod;
@@ -268,10 +271,19 @@ type Projection = {
 };
 
 function measured(
-	observation: FleetObservation | undefined,
+	seen: NamedObservation | undefined,
 	unit: FleetUsageUnit,
 ): number | undefined {
-	return observation?.usage.find((entry) => entry.unit === unit)?.used;
+	return seen?.observation.usage.find((entry) => entry.unit === unit)?.used;
+}
+
+/**
+ * `eligibleForActive` reports a member that is not prepared to become active
+ * as `not-ready`; for a database standby that is its schema, so the reason
+ * keeps the name this policy always gave it.
+ */
+function standbyReason(reason: string): string {
+	return reason === "not-ready" ? "schema-not-current" : reason;
 }
 
 /**
@@ -286,10 +298,10 @@ function measured(
 function project(
 	input: FleetDecisionInput,
 	backend: string,
-	writer: FleetObservation | undefined,
+	writer: NamedObservation | undefined,
 ): Projection {
 	const model = input.models.find((entry) => entry.backend === backend);
-	const own = input.observations.find((entry) => entry.backend === backend);
+	const own = input.observations.find((entry) => entry.name === backend);
 	const elapsed = Math.max(1, input.nowMs - input.period.startsAtMs);
 	const remaining = Math.max(0, input.period.endsAtMs - input.nowMs);
 	const unknowns: string[] = [];
@@ -363,6 +375,15 @@ function span(ms: number): string {
 		: `${Math.round(ms / 60_000)}m`;
 }
 
+/** The health token `eligibleForActive` gives a failing member (`unreachable`, `quota-exhausted`, …). */
+export function healthReason(seen: NamedObservation): string {
+	const [verdict] = eligibleForActive([seen], {
+		mode: "switch",
+		recoveryPointMs: undefined,
+	});
+	return verdict?.reasons[0] ?? "unknown";
+}
+
 /** Decide what the fleet should do now. Pure: same input, same decision. */
 export function decideFleet(input: FleetDecisionInput): FleetDecision {
 	const { assignment, policy, nowMs } = input;
@@ -372,7 +393,7 @@ export function decideFleet(input: FleetDecisionInput): FleetDecision {
 		decidedAtMs: nowMs,
 	};
 	const writer = input.observations.find(
-		(entry) => entry.backend === assignment.active,
+		(entry) => entry.name === assignment.active,
 	);
 	if (assignment.sealed || assignment.active === undefined || !writer)
 		return {
@@ -389,23 +410,24 @@ export function decideFleet(input: FleetDecisionInput): FleetDecision {
 			],
 			candidates: [],
 		};
-	const failing = writer.health !== "reachable";
+	const failing = writer.observation.health !== Health.REACHABLE;
 	const required = policy.exhaustionHorizonMs * policy.hysteresisFactor;
-	const candidates = input.observations
-		.filter((entry) => entry.backend !== assignment.active)
-		.map((entry) => {
-			const projection = project(input, entry.backend, writer);
-			const reasons: string[] = [];
-			if (entry.health !== "reachable") reasons.push(entry.health);
-			if (!entry.schemaCurrent) reasons.push("schema-not-current");
-			if (failing) {
-				if (entry.standbyLagMs === undefined) reasons.push("never-copied");
-				else if (entry.standbyLagMs > policy.rpoMs)
-					reasons.push(
-						`lag ${span(entry.standbyLagMs)} exceeds rpo ${span(policy.rpoMs)}`,
-					);
-			}
-			const eligibleSoFar = reasons.length === 0;
+	const standbys = input.observations.filter(
+		(entry) => entry.name !== assignment.active,
+	);
+	// Health is decided in one place (`eligibleForActive`); lag is judged
+	// against the recovery point only for a failover, as it always was.
+	const health = eligibleForActive(standbys, {
+		mode: failing ? "failover" : "switch",
+		recoveryPointMs: policy.rpoMs,
+	});
+	const candidates = standbys
+		.map((entry, index) => {
+			const projection = project(input, entry.name, writer);
+			const reasons: string[] = (health[index]?.reasons ?? []).map(
+				standbyReason,
+			);
+			const eligibleSoFar = health[index]?.eligible === true;
 			const short =
 				projection.exhaustsInMs !== "never" &&
 				projection.exhaustsInMs !== "unknown" &&
@@ -423,20 +445,20 @@ export function decideFleet(input: FleetDecisionInput): FleetDecision {
 			if (!projection.verdict.ok) reasons.push(projection.verdict.code);
 			reasons.push(...projection.unknowns);
 			return {
-				backend: entry.backend,
+				backend: entry.name,
 				// A failover takes any standby within the objective, affordable or
 				// not: a relay that is down costs more than a plan. A planned
 				// switch moves only to a standby that is provably better.
 				eligible: eligibleSoFar && (failing || feasibility === "feasible"),
 				feasibility,
-				lagMs: entry.standbyLagMs,
+				lagMs: entry.observation.lagMs,
 				exhaustsInMs:
 					projection.exhaustsInMs === "never" ||
 					projection.exhaustsInMs === "unknown"
 						? undefined
 						: projection.exhaustsInMs,
 				reasons,
-				latency: entry.probeLatencyMs ?? Number.MAX_SAFE_INTEGER,
+				latency: entry.observation.probeLatencyMs ?? Number.MAX_SAFE_INTEGER,
 			};
 		})
 		.sort(
@@ -456,8 +478,8 @@ export function decideFleet(input: FleetDecisionInput): FleetDecision {
 	const best = candidates.find((candidate) => candidate.eligible);
 
 	if (failing) {
-		const cause = `writer-${writer.health}`;
-		if (writer.failingForMs < policy.failoverAfterMs)
+		const cause = `writer-${healthReason(writer)}`;
+		if (!failingLongerThan(writer.observation, policy.failoverAfterMs))
 			return {
 				...base,
 				action: "hold",
@@ -485,7 +507,7 @@ export function decideFleet(input: FleetDecisionInput): FleetDecision {
 		};
 	}
 
-	const projection = project(input, writer.backend, writer);
+	const projection = project(input, writer.name, writer);
 	const signals: string[] = [];
 	if (
 		projection.exhaustsInMs !== "never" &&

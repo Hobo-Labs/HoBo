@@ -1,47 +1,16 @@
-// Wire records of an engine-neutral backend fleet: a set of interchangeable
-// backends of which exactly one is active.
+// Wire records of cost-based choosing for a one-active fleet: what each
+// member costs, the decision `decideFleet` makes and the route
+// `routeFleetByBudget` takes.
 //
 // The parsed TypeScript values under `src/` are narrowings of these records.
-// A backend id is an opaque token. Nothing here names a host or a credential,
-// so every record is safe to log and to replay. `@hobo/data-postgres` keeps
-// its own `hobo.data.postgres.fleet.v1` records for the SQL tables it stores
-// them in; the shapes are the same.
+// The assignment log, observations and health are `@hobo/fleet` records
+// (`hobo.fleet.v1`: `AssignmentLog`, `Assignment`, `Observation`, `Health`).
+// A member name is an opaque token. Nothing here names a host or a
+// credential, so every record is safe to log and to replay.
 
 syntax = "proto3";
 
-package hobo.backend_fleet.v1;
-
-// One entry of the assignment log: who is active for one epoch.
-//
-// An epoch is decided when a majority of the configured backends hold the same
-// entry for it. The current assignment is the highest decided epoch.
-message FleetAssignment {
-  // Starts at 1 and increases by exactly one per entry on every backend.
-  uint64 epoch = 1;
-  // The active backend. Unset means the fleet deliberately has none.
-  optional string active = 2;
-  // True while a move is in flight. Nobody may write.
-  bool sealed = 3;
-  // Where a sealed fleet is moving to. Set exactly when `sealed` is true.
-  optional string target = 4;
-  // A short fixed token, e.g. "bootstrap", "switch" or "failover".
-  string reason = 5;
-  // Upper bound on the writes an unplanned move lost. Unset for a planned one.
-  optional uint64 loss_window_ms = 6;
-  // The proposer's clock. Zero for the bootstrap entry, which must be the same
-  // bytes whoever writes it.
-  uint64 decided_at_ms = 7;
-  // Which process proposed the entry. Never a person's name or a credential.
-  string decided_by = 8;
-}
-
-// One backend's copy of the log, as `ephemeralAssignmentReplica` keeps it in a
-// single key of an ephemeral-state store: the newest entries, ascending.
-message FleetAssignmentLog {
-  // Format version of this record. 1.
-  uint32 format = 1;
-  repeated FleetAssignment entries = 2;
-}
+package hobo.backend_routing.v1;
 
 // The units an allowance, and therefore a measurement, is stated in.
 enum FleetUsageUnit {
@@ -64,31 +33,6 @@ enum FleetUsageUnit {
 message FleetUsageMeasurement {
   FleetUsageUnit unit = 1;
   uint64 used = 2;
-}
-
-enum FleetBackendHealth {
-  FLEET_BACKEND_HEALTH_UNSPECIFIED = 0;
-  FLEET_BACKEND_HEALTH_REACHABLE = 1;
-  FLEET_BACKEND_HEALTH_UNREACHABLE = 2;
-  // The backend answered that a plan quota is spent.
-  FLEET_BACKEND_HEALTH_QUOTA_EXHAUSTED = 3;
-  FLEET_BACKEND_HEALTH_AUTH = 4;
-  // A failure nobody has classified. Never treated as healthy.
-  FLEET_BACKEND_HEALTH_UNKNOWN = 5;
-}
-
-// What one tick saw of one backend (decideFleet's input).
-message FleetObservation {
-  string backend = 1;
-  FleetBackendHealth health = 2;
-  optional uint64 probe_latency_ms = 3;
-  // How long it has been failing without a success. Zero when reachable.
-  uint64 failing_for_ms = 4;
-  // The copied tables exist with the writer's columns and types.
-  bool schema_current = 5;
-  // Time since the standby's snapshot. Unset when it was never copied.
-  optional uint64 standby_lag_ms = 6;
-  repeated FleetUsageMeasurement usage = 7;
 }
 
 // What happens beyond an allowance.

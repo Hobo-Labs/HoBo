@@ -36,10 +36,18 @@
  * unit a member does not run on is the host's estimate (a cache relay converts
  * port calls with each binding's cost table).
  */
-import type { FleetAssignment } from "./assignment.js";
-import { parseFleetBackendId } from "./backend.js";
+import {
+	type AssignmentEntry,
+	Health,
+	type NamedObservation,
+} from "@hobo/fleet";
+import { eligibleForActive, failingLongerThan } from "@hobo/fleet/observation";
 import { BackendFleetError } from "./errors.js";
-import type { FleetBackendHealth, FleetFinancialModel } from "./policy.js";
+import {
+	type FleetFinancialModel,
+	healthReason,
+	memberName,
+} from "./policy.js";
 import type {
 	BillingPeriod,
 	FleetUsageMeasurement,
@@ -130,20 +138,12 @@ export function parseFleetRoutingMarks(
 	return Object.freeze({ ...input });
 }
 
-/** What one tick saw of one member. `usage` is what it has spent this period. */
-export type FleetRoutingObservation = {
-	readonly backend: string;
-	readonly health: FleetBackendHealth;
-	/** How long it has been failing without a success; 0 when reachable. */
-	readonly failingForMs: number;
-	readonly usage: readonly FleetUsageMeasurement[];
-};
-
 export type FleetRoutingInput = {
-	readonly assignment: FleetAssignment;
+	readonly assignment: AssignmentEntry;
 	/** Every member, in configured order (the last tie-break). */
 	readonly members: readonly string[];
-	readonly observations: readonly FleetRoutingObservation[];
+	/** What one tick saw of each member; `usage` is what it has spent this period. */
+	readonly observations: readonly NamedObservation[];
 	/** The fleet's whole workload this period, in every unit any offer bills. */
 	readonly workload: readonly FleetUsageMeasurement[];
 	readonly offers: readonly FleetOffer[];
@@ -201,7 +201,7 @@ const TIER_RANK = {
 } as const satisfies Record<FleetOfferTier, number>;
 
 function amount(
-	measurements: readonly FleetUsageMeasurement[] | undefined,
+	measurements: readonly Readonly<{ unit: string; used: number }>[] | undefined,
 	unit: FleetUsageUnit,
 ): number | undefined {
 	return measurements?.find((entry) => entry.unit === unit)?.used;
@@ -209,7 +209,7 @@ function amount(
 
 function project(input: FleetRoutingInput, backend: string): Projection {
 	const offer = input.offers.find((entry) => entry.model.backend === backend);
-	const own = input.observations.find((entry) => entry.backend === backend);
+	const own = input.observations.find((entry) => entry.name === backend);
 	const elapsed = Math.max(1, input.nowMs - input.period.startsAtMs);
 	const remaining = Math.max(0, input.period.endsAtMs - input.nowMs);
 	const unknowns: string[] = [];
@@ -231,7 +231,7 @@ function project(input: FleetRoutingInput, backend: string): Projection {
 			unknowns.push(`${allowance.unit}:workload-not-measured`);
 			continue;
 		}
-		const spent = amount(own?.usage, allowance.unit) ?? 0;
+		const spent = amount(own?.observation.usage, allowance.unit) ?? 0;
 		const projected = spent + (workload / elapsed) * remaining;
 		if (allowance.included === undefined) {
 			unknowns.push(`${allowance.unit}:allowance-unknown`);
@@ -276,7 +276,7 @@ function percent(fraction: number): string {
 /** Decide which member should be active now. Pure: same input, same route. */
 export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 	const { assignment, marks, nowMs } = input;
-	const members = input.members.map((member) => parseFleetBackendId(member));
+	const members = input.members.map((member) => memberName(member));
 	const base = {
 		epoch: assignment.epoch,
 		active: assignment.active,
@@ -292,7 +292,7 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 	if (assignment.sealed) return hold(["switch-in-flight"]);
 	if (assignment.active === undefined) return hold(["no-writer"]);
 	const activeSeen = input.observations.find(
-		(entry) => entry.backend === assignment.active,
+		(entry) => entry.name === assignment.active,
 	);
 	if (activeSeen === undefined) return hold(["writer-not-observed"]);
 
@@ -300,13 +300,22 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 		const index = members.indexOf(backend);
 		return index < 0 ? Number.MAX_SAFE_INTEGER : index;
 	};
-	const failing = activeSeen.health !== "reachable";
+	const failing = activeSeen.observation.health !== Health.REACHABLE;
+	// Health is decided in one place (`eligibleForActive`); a cache member holds
+	// no replicated state, so lag is never considered.
+	const health = eligibleForActive(input.observations, {
+		mode: failing ? "failover" : "switch",
+		recoveryPointMs: undefined,
+	});
 	const evaluate = (backend: string, active: boolean) => {
-		const seen = input.observations.find((entry) => entry.backend === backend);
+		const index = input.observations.findIndex(
+			(entry) => entry.name === backend,
+		);
+		const verdict = index < 0 ? undefined : health[index];
 		const projection = project(input, backend);
 		const reasons: string[] = [];
-		if (seen === undefined) reasons.push("not-observed");
-		else if (seen.health !== "reachable") reasons.push(seen.health);
+		if (verdict === undefined) reasons.push("not-observed");
+		else reasons.push(...verdict.reasons);
 		reasons.push(...projection.unknowns);
 		const known = projection.unknowns.length === 0;
 		const mark = active ? marks.switchAt : marks.switchBackBelow;
@@ -320,7 +329,7 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 				`${projection.fractionUnit ?? "allowance"} projected ${percent(fraction)}`,
 			);
 		if (tooDear) reasons.push("over-budget-cap");
-		const reachable = seen?.health === "reachable";
+		const reachable = verdict?.eligible === true;
 		return {
 			candidate: {
 				backend,
@@ -364,8 +373,8 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 	): FleetRoute => ({ ...base, action, target, reasons, candidates });
 
 	if (failing) {
-		const cause = `writer-${activeSeen.health}`;
-		if (activeSeen.failingForMs < marks.failoverAfterMs)
+		const cause = `writer-${healthReason(activeSeen)}`;
+		if (!failingLongerThan(activeSeen.observation, marks.failoverAfterMs))
 			return route("hold", undefined, [cause, "awaiting-failover-threshold"]);
 		const target =
 			others.find((entry) => entry.candidate.eligible) ??

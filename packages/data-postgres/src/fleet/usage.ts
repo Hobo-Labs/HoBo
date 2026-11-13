@@ -17,7 +17,7 @@ import {
 } from "@hobo/backend-routing";
 import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
-import { column, type FleetBackend, parseCount } from "./sql.js";
+import { column, type PostgresBackend, parseCount } from "./sql.js";
 
 // The billing period and the units are engine-neutral (`@hobo/backend-routing`).
 export {
@@ -46,7 +46,7 @@ function parseUnit(value: string): FleetUsageUnit {
 
 /** Add `amount` to a backend's counter for one period and unit. */
 export async function addUsage(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 	usage: PostgresFleetUsage,
 ): Promise<void> {
@@ -67,7 +67,7 @@ export async function addUsage(
 
 /** A backend's counters for one period. */
 export async function readUsage(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 	period: string,
 ): Promise<readonly PostgresFleetUsage[]> {
@@ -85,7 +85,7 @@ export async function readUsage(
 
 /** The size of the backend's database, the measurement for a storage allowance. */
 export async function measureStorageBytes(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 ): Promise<number> {
 	const result = await backend.executor.query(
 		"SELECT pg_database_size(current_database())::text AS bytes",
@@ -100,7 +100,7 @@ export type UsageMeter = {
 	pending(backendId: string): number;
 	/** Write every backend's pending count to that backend, keeping what fails. */
 	flush(
-		backends: readonly FleetBackend[],
+		backends: readonly PostgresBackend[],
 		layout: FleetLayout,
 		nowMs: number,
 	): Promise<void>;

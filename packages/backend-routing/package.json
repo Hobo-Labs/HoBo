@@ -2,7 +2,7 @@
 	"name": "@hobo/backend-routing",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo engine-neutral backend fleet: the majority-decided assignment register (which one backend of a fleet is active, sealed moves, bootstrap, completion and override over any AssignmentReplica), that register kept on an EphemeralStatePort, billing periods and usage units, and the budget policies that keep, switch or fail over (decideFleet) and route by free, prepaid and pay-as-you-go preference with hysteresis (routeFleetByBudget).",
+	"description": "HoBo cost-based choosing for one-active fleets: billing periods and usage units, and the budget policies that keep, switch or fail over a database fleet (decideFleet) and route a loss-tolerant fleet by free, prepaid and pay-as-you-go preference with hysteresis (routeFleetByBudget). The assignment register and member health live in @hobo/fleet.",
 	"type": "module",
 	"files": [
 		"LICENSE",

@@ -1,37 +1,11 @@
 package data_models
 
-import (
-	"list"
-	"strings"
-)
+import "list"
 
-// Invariants for the fleet records. Each mirrors a check the TypeScript
-// parsers make, so a record `parseFleetAssignment` refuses is refused here too.
+// Invariants for the Postgres-specific fleet records. Each mirrors a check the
+// TypeScript code makes, so a record it would not write is refused here too.
 
 #PostgresFleetBackendId: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
-
-#PostgresFleetAssignment: {
-	epoch:         int & >=1
-	active?:       #PostgresFleetBackendId
-	sealed:        bool
-	target?:       #PostgresFleetBackendId
-	reason:        string & =~"^[a-z0-9][a-z0-9:._ -]{0,199}$"
-	lossWindowMs?: int & >=0
-	decidedAtMs:   int & >=0
-	decidedBy:     string & =~"^[A-Za-z0-9][A-Za-z0-9:._-]{0,119}$"
-
-	// A sealed fleet is moving somewhere, and not to where it already is.
-	if sealed {
-		target: #PostgresFleetBackendId
-		if active != _|_ {
-			target: !=active
-		}
-	}
-	// An unsealed entry has no target: there is no move in flight.
-	if !sealed {
-		target?: _|_
-	}
-}
 
 #PostgresFleetDigest: string & =~"^[0-9a-f]{64}$"
 
@@ -63,97 +37,6 @@ import (
 	used:   int & >=0
 }
 
-#PostgresFleetUsageMeasurement: {
-	unit: #PostgresFleetUsageUnit
-	used: int & >=0
-}
-
-#PostgresFleetBackendHealth: "reachable" | "unreachable" | "quota-exhausted" | "auth" | "unknown"
-
-#PostgresFleetObservation: {
-	backend:         #PostgresFleetBackendId
-	health:          #PostgresFleetBackendHealth
-	probeLatencyMs?: int & >=0
-	failingForMs:    int & >=0
-	schemaCurrent:   bool
-	standbyLagMs?:   int & >=0
-	usage: [...#PostgresFleetUsageMeasurement]
-
-	// A reachable backend is not failing.
-	if health == "reachable" {
-		failingForMs: 0
-	}
-}
-
-#PostgresFleetOverageKind: "hard-stop" | "metered" | "unknown"
-
-#PostgresFleetAllowance: {
-	unit:                  #PostgresFleetUsageUnit
-	included?:             int & >=0
-	beyond:                #PostgresFleetOverageKind
-	meteredMicrosPerUnit?: int & >=0
-
-	// Exactly a metered allowance carries a price.
-	if beyond == "metered" {
-		meteredMicrosPerUnit: int & >=0
-	}
-	if beyond != "metered" {
-		meteredMicrosPerUnit?: _|_
-	}
-}
-
-#PostgresFleetEvidence: {
-	source:     string & !="" & strings.MaxRunes(300)
-	observedAt: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
-}
-
-#PostgresFleetFinancialModel: {
-	backend:                #PostgresFleetBackendId
-	plan:                   string & =~"^[a-z0-9][a-z0-9 ._-]{0,63}$"
-	fixedMonthlyFeeMicros?: int & >=0
-	allowances: [...#PostgresFleetAllowance]
-	evidence: #PostgresFleetEvidence
-
-	// Each unit has at most one allowance.
-	_units: [for a in allowances {a.unit}]
-	_unique: list.UniqueItems(_units) & true
-}
-
-#PostgresFleetFeasibility: "feasible" | "unknown" | "infeasible"
-
-#PostgresFleetCandidate: {
-	backend:       #PostgresFleetBackendId
-	eligible:      bool
-	feasibility:   #PostgresFleetFeasibility
-	lagMs?:        int & >=0
-	exhaustsInMs?: int & >=0
-	reasons: [...string]
-}
-
-#PostgresFleetAction: "keep" | "hold" | "switch" | "failover"
-
-#PostgresFleetDecision: {
-	action:        #PostgresFleetAction
-	epoch:         int & >=1
-	writer?:       #PostgresFleetBackendId
-	target?:       #PostgresFleetBackendId
-	lossWindowMs?: int & >=0
-	reasons: [...string]
-	candidates: [...#PostgresFleetCandidate]
-	decidedAtMs: int & >=0
-
-	// Only a move has a target, and only an unplanned one loses anything.
-	if action == "switch" || action == "failover" {
-		target: #PostgresFleetBackendId
-	}
-	if action == "keep" || action == "hold" {
-		target?: _|_
-	}
-	if action != "failover" {
-		lossWindowMs?: _|_
-	}
-}
-
 #PostgresFleetReplicationStatus: "replicated" | "refused" | "failed"
 
 #PostgresFleetReplicationResult: {
@@ -162,7 +45,7 @@ import (
 	epoch:      int & >=1
 	status:     #PostgresFleetReplicationStatus
 	refusal?:   "same-backend" | "source-is-not-writer" | "target-is-writer" | "target-log-differs" | "schema-mismatch" | "oversized" | "busy" | "digest-mismatch"
-	failure?:   #PostgresFleetBackendHealth & !="reachable"
+	failureHealth?: "HEALTH_DRAINING" | "HEALTH_PRESSURED" | "HEALTH_UNREACHABLE" | "HEALTH_QUOTA_EXHAUSTED" | "HEALTH_AUTH" | "HEALTH_UNKNOWN"
 	rows?:      int & >=0
 	bytes?:     int & >=0
 	durationMs: int & >=0
@@ -172,17 +55,17 @@ import (
 		refusal: string
 	}
 	if status == "failed" {
-		failure: string
+		failureHealth: string
 	}
 	if status == "replicated" {
 		rows:     int
 		bytes:    int
-		refusal?: _|_
-		failure?: _|_
+		refusal?:       _|_
+		failureHealth?: _|_
 	}
 }
 
-#PostgresFleetTransitionStep: "bootstrap" | "seal" | "activate" | "unseal" | "failover"
+#PostgresFleetTransitionStep: "bootstrap" | "seal" | "activate" | "unseal" | "failover" | "membership"
 
 #PostgresFleetTransition: {
 	step:    #PostgresFleetTransitionStep
@@ -192,8 +75,8 @@ import (
 	target?: #PostgresFleetBackendId
 	reason:  string & =~"^[a-z0-9][a-z0-9:._ -]{0,199}$"
 
-	// Only sealing names a target.
-	if step != "seal" {
+	// Only sealing, for a switch or a failover, names a target.
+	if step != "seal" && step != "failover" {
 		target?: _|_
 	}
 }
