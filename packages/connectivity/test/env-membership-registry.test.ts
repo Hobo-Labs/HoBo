@@ -31,7 +31,11 @@ function registry(states: Map<MemberId, MemberState>): RegistryView {
 			if (state === MemberState.UNSPECIFIED)
 				throw new Error("registry unavailable");
 			// SAFETY: EnvMembershipService reads only `state` of a member record.
-			return { memberId: id, state } as MemberRecord;
+			return {
+				$typeName: "hobo.fleet.v1.MemberRecord",
+				memberId: id,
+				state,
+			} as MemberRecord;
 		},
 		fleet: refuse,
 		membersOf: refuse,
