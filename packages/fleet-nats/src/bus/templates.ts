@@ -141,13 +141,14 @@ export function staticUserPermissions(user: StaticUser): StaticPermissions {
 					"fleet.>",
 					"$JS.API.INFO",
 					...Object.values(BUCKETS).map((bucket) => `$KV.${bucket}.>`),
-					...ALL_FLEET_STREAMS.flatMap((stream) => [
-						`$JS.API.STREAM.INFO.${stream}`,
-						`$JS.API.STREAM.MSG.GET.${stream}`,
-						`$JS.API.STREAM.MSG.DELETE.${stream}`,
-						`$JS.API.DIRECT.GET.${stream}`,
-						`$JS.API.DIRECT.GET.${stream}.>`,
-					]),
+					// One token per stream: the tenant account holds only fleet
+					// streams, and naming each of them overflows the server's 4 KiB
+					// control line once the user JWT is in the CONNECT.
+					"$JS.API.STREAM.INFO.*",
+					"$JS.API.STREAM.MSG.GET.*",
+					"$JS.API.STREAM.MSG.DELETE.*",
+					"$JS.API.DIRECT.GET.*",
+					"$JS.API.DIRECT.GET.*.>",
 					"$JS.API.CONSUMER.>",
 					"$SYS.REQ.SERVER.PING.CONNZ",
 				],

@@ -21,12 +21,20 @@ the lane.
 | `topology.ts` | Stream and bucket configurations and their idempotent creation |
 | `resolver.ts` | Pushing an account JWT to the full resolver |
 | `connection.ts` | TLS-only connection options |
+| `nats-client.ts` | The client as ports: `BusConnection`, `JetStreamPort`, `JetStreamManagerPort`, `NatsClients` |
 | `nats-wire.ts` | `BusWire` over JetStream |
 
 Unit tests run every port against an in-memory `BusWire`
-(`test/support/memory-wire.ts`), including `runBusConformance`. The
-`*.integration.test.ts` files run against `nats-server` (`HOBO_FLEET_NATS_SERVER_BIN`
-or `nats-server` on `PATH`); they skip without it unless `CI` is set.
+(`test/support/memory-wire.ts`), including `runBusConformance`. `nats-wire.ts`,
+`resolver.ts` and the entry points of `index.ts` take the client as a port
+(`NatsClients` in `nats-client.ts`, which the real `@nats-io` client satisfies
+as it is); each frozen entry point runs its `…Over` twin on the real client.
+Their unit tests run the twins over a fake server (`test/support/fake-nats.ts`),
+`runBusConformance` included, and the frozen entry points against a port
+nothing listens on. The
+`*.integration.test.ts` files run against `nats-server` 2.15.3, the version
+`mise.toml` pins (`HOBO_FLEET_NATS_SERVER_BIN` or `nats-server` on `PATH`); they
+skip without it unless `CI` is set, and the lane's checks run them with it.
 
 ## Decisions
 
@@ -42,7 +50,15 @@ or `nats-server` on `PATH`); they skip without it unless `CI` is set.
   `$SYS.REQ.CLAIMS.UPDATE`, as a user of a system account also derived from
   the operator signing seed (`systemAccount`, `mintSystemAccount`). The
   operator JWT must name that account as `system_account` and the server
-  must preload its JWT.
+  must preload its JWT. Its JWT states unlimited connections and
+  subscriptions: the server reads an absent limit as zero and would refuse
+  the provisioning connection.
+- **The authority's stream rights.** The authority user names stream API
+  subjects with one `*` for the stream (`$JS.API.STREAM.INFO.*`,
+  `$JS.API.DIRECT.GET.*.>`, ...) rather than once per stream: the tenant
+  account holds only fleet streams, so the grant is the same, and the
+  per-stream list made its user JWT overflow the server's 4 KiB control line
+  in the `CONNECT`.
 - **Single-use tickets (A2 fallback).** `@nats-io/transport-node` calls its
   authenticator synchronously with the server nonce, and a device's `SIGN`
   key signs asynchronously, so the connector cannot put the nonce in its
@@ -64,10 +80,10 @@ or `nats-server` on `PATH`); they skip without it unless `CI` is set.
 
 | Id | Result in this lane | Evidence |
 |---|---|---|
-| A1 | Not verified here (no `nats-server` in the lane's environment) | `permissions.integration.test.ts` |
+| A1 | Holds on `nats-server` 2.15.3: each device writes only its own observation key and creates only its own consumers | `permissions.integration.test.ts` |
 | A2 | Fallback taken: single-use tickets (the client cannot bind the nonce, above) | `callout-checks.test.ts` |
 | A3 | Not verified; O5 asserted in its A3-and-A4-false form | `revocation.integration.test.ts` |
 | A4 | Not verified; the bus-level bound is "next reconnect" | `revocation.integration.test.ts` |
-| A5 | Not verified here; the stream configuration is the primary path | `claims.integration.test.ts`, `topology.test.ts` |
-| A6 | Not verified here | `permissions.integration.test.ts` |
+| A5 | Holds on `nats-server` 2.15.3: the stream configuration is the primary path | `claims.integration.test.ts`, `topology.test.ts` |
+| A6 | Holds on `nats-server` 2.15.3 | `permissions.integration.test.ts` |
 | A7 | Holds: `newScopedSigner`, `encodeUser` with `scopedUser`, `encodeAuthorizationResponse` | `nats-jwt.test.ts` |

@@ -3,7 +3,7 @@
  * as the system-account user derived from the operator signing seed.
  */
 import { credsAuthenticator } from "@nats-io/transport-node";
-import { open } from "./connection.js";
+import { NATS, type NatsClients } from "./nats-client.js";
 import { systemCredentials } from "./nats-jwt.js";
 
 const encoder = new TextEncoder();
@@ -14,8 +14,9 @@ export async function pushAccount(
 	servers: readonly string[],
 	operatorSigningSeed: string,
 	accountJwt: string,
+	clients: Pick<NatsClients, "open"> = NATS,
 ): Promise<void> {
-	const system = await open({
+	const system = await clients.open({
 		servers,
 		authenticator: credsAuthenticator(
 			encoder.encode(await systemCredentials(operatorSigningSeed)),

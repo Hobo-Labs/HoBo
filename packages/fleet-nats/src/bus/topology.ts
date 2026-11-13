@@ -6,12 +6,12 @@
  */
 import {
 	DiscardPolicy,
-	type JetStreamManager,
 	RetentionPolicy,
 	StorageType,
 	type StreamConfig,
 } from "@nats-io/jetstream";
 import { AUDIT_SUBJECTS, BUCKETS, bucketStream, STREAMS } from "./names.js";
+import type { JetStreamManagerPort } from "./nats-client.js";
 
 const SECOND_NS = 1_000_000_000;
 const MINUTE_NS = 60 * SECOND_NS;
@@ -112,7 +112,7 @@ export function topologySpecs(replicas: 1 | 3): readonly StreamSpec[] {
 
 /** Creates each stream, or brings an existing one to its configuration. */
 export async function applyTopology(
-	manager: JetStreamManager,
+	manager: JetStreamManagerPort,
 	replicas: 1 | 3,
 ): Promise<void> {
 	for (const config of topologySpecs(replicas)) {

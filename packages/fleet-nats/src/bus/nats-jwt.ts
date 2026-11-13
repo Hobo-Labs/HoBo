@@ -329,7 +329,19 @@ export function mintSystemAccount(
 	return encodeAccount(
 		"SYS",
 		systemAccount(operatorSigningSeed).getPublicKey(),
-		{},
+		// The server reads an absent limit as zero: no connections, no subscriptions.
+		{
+			limits: {
+				subs: -1,
+				data: -1,
+				payload: -1,
+				imports: -1,
+				exports: -1,
+				wildcards: true,
+				conn: -1,
+				leaf: -1,
+			},
+		},
 		{ signer: fromSeed(encoder.encode(operatorSigningSeed)) },
 	);
 }

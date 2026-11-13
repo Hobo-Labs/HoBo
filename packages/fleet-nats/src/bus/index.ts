@@ -1,6 +1,10 @@
 /**
  * Topology, credentials, auth callout and the bus ports over NATS (L08).
  * Signatures frozen by the fleet contract commit (ADR-0182).
+ *
+ * Each frozen entry point runs its `…Over` twin on the real client (`NATS`);
+ * the twins take the client as a `NatsClients` port, which is how the unit
+ * tests run them over a fake server.
  */
 import { randomBytes } from "node:crypto";
 import type { TenantId } from "@hobo/core";
@@ -15,16 +19,12 @@ import type {
 	Subscription,
 	TrustRecord,
 } from "@hobo/fleet";
-import { jetstreamManager } from "@nats-io/jetstream";
 import { fromSeed } from "@nats-io/jwt";
-import {
-	credsAuthenticator,
-	type NatsConnection,
-} from "@nats-io/transport-node";
+import { credsAuthenticator } from "@nats-io/transport-node";
 import { answerCallout } from "./callout.js";
 import { mintConnectToken } from "./connect-token.js";
-import { open } from "./connection.js";
 import { authorityBusOverWire, busOverWire } from "./fleet-bus.js";
+import { NATS, type NatsClients } from "./nats-client.js";
 import {
 	accountOfCredentials,
 	mintAccount,
@@ -46,8 +46,42 @@ const CALLOUT_SUBJECT = "$SYS.REQ.USER.AUTH";
 
 const seedText = (seed: Uint8Array) => decoder.decode(seed);
 
+type ProvisionInput = Readonly<{
+	servers: readonly string[];
+	operatorSigningSeed: string;
+	tenant: TenantId;
+	replicas: 1 | 3;
+}>;
+
+type Provisioned = Readonly<{
+	accountPublicKey: string;
+	staticCredentials: Readonly<
+		Record<"authority" | "witness" | "provisioner" | "sentinel", string>
+	>;
+	scopedSeeds: Readonly<Record<"observer" | "executor" | "dispatcher", string>>;
+}>;
+
+type AuthorityInput = Readonly<{
+	servers: readonly string[];
+	credentials: string;
+	trust: () => TrustRecord;
+	log: FleetLog;
+}>;
+
+type CalloutInput = Readonly<{
+	servers: readonly string[];
+	credentials: string;
+	xkeySeed: string;
+	scopedSeeds: Readonly<Record<"observer" | "executor" | "dispatcher", string>>;
+	registry: RegistryView;
+	replay: ReplayStore;
+	incarnation: number;
+	now: Clock;
+	log: FleetLog;
+}>;
+
 /** Creates the tenant account, its static users and scoped signing keys, and its streams and buckets. */
-export async function provisionTopology(
+export function provisionTopology(
 	input: Readonly<{
 		servers: readonly string[];
 		operatorSigningSeed: string;
@@ -65,11 +99,20 @@ export async function provisionTopology(
 		>;
 	}>
 > {
+	return provisionTopologyOver(NATS, input);
+}
+
+/** `provisionTopology` over `clients`. */
+export async function provisionTopologyOver(
+	clients: NatsClients,
+	input: ProvisionInput,
+): Promise<Provisioned> {
 	const keys = tenantKeys(input.operatorSigningSeed, input.tenant);
 	await pushAccount(
 		input.servers,
 		input.operatorSigningSeed,
 		await mintAccount(keys, input.tenant, input.operatorSigningSeed),
+		clients,
 	);
 	const credentials = {
 		authority: await staticCredentials(keys, "authority"),
@@ -77,14 +120,17 @@ export async function provisionTopology(
 		provisioner: await staticCredentials(keys, "provisioner"),
 		sentinel: await staticCredentials(keys, "sentinel"),
 	};
-	const provisioner = await open({
+	const provisioner = await clients.open({
 		servers: input.servers,
 		authenticator: credsAuthenticator(encoder.encode(credentials.provisioner)),
 		name: "hobo-fleet-provisioner",
 		persistent: false,
 	});
 	try {
-		await applyTopology(await jetstreamManager(provisioner), input.replicas);
+		await applyTopology(
+			await clients.jetstreamManager(provisioner),
+			input.replicas,
+		);
 	} finally {
 		await provisioner.close();
 	}
@@ -107,6 +153,11 @@ export async function provisionTopology(
  * cannot carry the server's nonce: each ticket connects once (A2 fallback).
  */
 export function createNatsBusConnector(): FleetBusConnector {
+	return natsBusConnectorOver(NATS);
+}
+
+/** `createNatsBusConnector` over `clients`. */
+export function natsBusConnectorOver(clients: NatsClients): FleetBusConnector {
 	return {
 		async connect(input) {
 			const { discovery, keys, log } = input;
@@ -130,7 +181,7 @@ export function createNatsBusConnector(): FleetBusConnector {
 				return preparing;
 			};
 			await prepare();
-			const connection = await open({
+			const connection = await clients.open({
 				servers: discovery.natsUrls,
 				authenticator: [
 					credsAuthenticator(encoder.encode(discovery.natsSentinelCredentials)),
@@ -141,13 +192,17 @@ export function createNatsBusConnector(): FleetBusConnector {
 				persistent: true,
 			});
 			void prepare();
-			const wire = natsWire(connection, {
-				consumerName: () => keys.memberId,
-				onStatus(status) {
-					log("hobo_fleet_bus_status", { status, member: keys.memberId });
-					void prepare();
+			const wire = natsWire(
+				connection,
+				{
+					consumerName: () => keys.memberId,
+					onStatus(status) {
+						log("hobo_fleet_bus_status", { status, member: keys.memberId });
+						void prepare();
+					},
 				},
-			});
+				clients,
+			);
 			const registry = createRegistryView({ wire, pin, now: Date.now });
 			return busOverWire(wire, registry);
 		},
@@ -155,7 +210,7 @@ export function createNatsBusConnector(): FleetBusConnector {
 }
 
 /** The authority's connection; positions are per subscription (`BusStart`). */
-export async function connectAuthorityBus(
+export function connectAuthorityBus(
 	input: Readonly<{
 		servers: readonly string[];
 		credentials: string;
@@ -163,16 +218,28 @@ export async function connectAuthorityBus(
 		log: FleetLog;
 	}>,
 ): Promise<AuthorityBus> {
-	const connection = await open({
+	return authorityBusOver(NATS, input);
+}
+
+/** `connectAuthorityBus` over `clients`. */
+export async function authorityBusOver(
+	clients: NatsClients,
+	input: AuthorityInput,
+): Promise<AuthorityBus> {
+	const connection = await clients.open({
 		servers: input.servers,
 		authenticator: credsAuthenticator(encoder.encode(input.credentials)),
 		name: "hobo-fleet-authority",
 		persistent: true,
 	});
-	const wire = natsWire(connection, {
-		consumerName: () => `authority_${randomBytes(8).toString("hex")}`,
-		onStatus: (status) => input.log("hobo_fleet_bus_status", { status }),
-	});
+	const wire = natsWire(
+		connection,
+		{
+			consumerName: () => `authority_${randomBytes(8).toString("hex")}`,
+			onStatus: (status) => input.log("hobo_fleet_bus_status", { status }),
+		},
+		clients,
+	);
 	const pin = authorityPin(input.trust);
 	const registry = createRegistryView({ wire, pin, now: Date.now });
 	await registry.caughtUp();
@@ -180,7 +247,7 @@ export async function connectAuthorityBus(
 }
 
 /** Answers NATS auth callouts with user credentials scoped to the member. */
-export async function startCalloutResponder(
+export function startCalloutResponder(
 	input: Readonly<{
 		servers: readonly string[];
 		credentials: string;
@@ -195,7 +262,15 @@ export async function startCalloutResponder(
 		log: FleetLog;
 	}>,
 ): Promise<Subscription> {
-	const connection: NatsConnection = await open({
+	return calloutResponderOver(NATS, input);
+}
+
+/** `startCalloutResponder` over `clients`. */
+export async function calloutResponderOver(
+	clients: NatsClients,
+	input: CalloutInput,
+): Promise<Subscription> {
+	const connection = await clients.open({
 		servers: input.servers,
 		authenticator: credsAuthenticator(encoder.encode(input.credentials)),
 		name: "hobo-fleet-callout",

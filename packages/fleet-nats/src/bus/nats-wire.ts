@@ -16,18 +16,20 @@ import {
 	AckPolicy,
 	DeliverPolicy,
 	JetStreamApiError,
-	type JetStreamClient,
-	type JetStreamManager,
-	jetstream,
-	jetstreamManager,
 } from "@nats-io/jetstream";
-import type { NatsConnection } from "@nats-io/transport-node";
 import {
 	type BucketName,
 	bucketStream,
 	bucketSubject,
 	type StreamName,
 } from "./names.js";
+import {
+	type BusConnection,
+	type JetStreamManagerPort,
+	type JetStreamPort,
+	NATS,
+	type NatsClients,
+} from "./nats-client.js";
 import type { BusWire, PublishResult, WireMessage } from "./wire.js";
 
 const NANOS_PER_MS = 1_000_000;
@@ -56,13 +58,14 @@ export type NatsWireOptions = Readonly<{
 }>;
 
 export function natsWire(
-	connection: NatsConnection,
+	connection: BusConnection,
 	options: NatsWireOptions,
+	clients: Pick<NatsClients, "jetstream" | "jetstreamManager"> = NATS,
 ): BusWire {
-	const js: JetStreamClient = jetstream(connection);
-	let manager: Promise<JetStreamManager> | undefined;
+	const js: JetStreamPort = clients.jetstream(connection);
+	let manager: Promise<JetStreamManagerPort> | undefined;
 	const jsm = () => {
-		manager ??= jetstreamManager(connection, { checkAPI: false });
+		manager ??= clients.jetstreamManager(connection, { checkAPI: false });
 		return manager;
 	};
 	let state: "connected" | "disconnected" | "closed" = "connected";
