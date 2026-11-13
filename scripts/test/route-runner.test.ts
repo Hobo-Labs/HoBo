@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -33,8 +41,10 @@ import {
 	RELAY_CONFIG_PATH,
 	RELAY_VERDICT_TIMEOUT_SECONDS,
 	type RelayAnswer,
+	type RouteDecision,
 	refusingJobs,
 	relayRefusal,
+	routeAnnotation,
 	routeRunner,
 	runsJustAhead,
 	type SeenJob,
@@ -44,6 +54,7 @@ import {
 	slowestFinishedRunIds,
 	takingJobs,
 	unfinishedRunIds,
+	workflowFile,
 } from "../ci/route-runner.mts";
 
 const NOW = Date.parse("2026-11-10T18:00:00Z");
@@ -509,7 +520,7 @@ describe("asking the relay", () => {
 			fetch: async (url, init) => respond(String(url), init ?? {}),
 		});
 
-	it("gets the repository's verdict from the relay, sending no credential", async () => {
+	it("sends no credential when it gets the repository's verdict from the relay", async () => {
 		const standing = pactAnswer("answer the standing verdict");
 		const asked: { url: string; init: RequestInit }[] = [];
 		const answer = await ask((url, init) => {
@@ -1456,6 +1467,442 @@ describe("the script asking the relay", () => {
 			);
 			assert.equal(decision.tier, "fleet");
 		});
+	});
+
+	/** The `hobo-ci-route` notice a decision should print, field by field. */
+	const notice = (fields: {
+		workflow?: string;
+		tier: string;
+		runner: string;
+		relay: string;
+		why: string;
+		refusedBy: string;
+	}) =>
+		`::notice title=hobo-ci-route::${JSON.stringify({
+			v: 1,
+			workflow: fields.workflow ?? "",
+			tier: fields.tier,
+			runner: fields.runner,
+			relay: fields.relay,
+			why: fields.why,
+			refusedBy: fields.refusedBy,
+		})}`;
+	/** The `hobo-ci-route` notices the script printed. */
+	const noticesOf = async (
+		run: () => Promise<RouteDecision | Readonly<{ decision: RouteDecision }>>,
+	): Promise<string[]> => {
+		const printed: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			printed.push(parts.map(String).join(" "));
+		};
+		try {
+			await run();
+		} finally {
+			console.log = log;
+		}
+		return printed.filter((line) =>
+			line.startsWith("::notice title=hobo-ci-route::"),
+		);
+	};
+	const hosted = { tier: "github", runner: "ubuntu-24.04" };
+	const fleet = { tier: "fleet", runner: "hobo" };
+
+	it("annotates a decision the relay's verdict made", async () => {
+		await withFleetUp(async (apiUrl) => {
+			const standing = pactAnswer("answer the standing verdict");
+			assert.deepEqual(
+				await noticesOf(() =>
+					route(apiUrl, () => Response.json(standing.response.body)),
+				),
+				[notice({ ...hosted, relay: "verdict", why: "", refusedBy: "relay" })],
+			);
+		});
+	});
+
+	it("annotates a relay that gave no verdict, and why", async () => {
+		await withFleetUp(async (apiUrl) => {
+			assert.deepEqual(
+				await noticesOf(() =>
+					route(apiUrl, () =>
+						Response.json({ error: "service unavailable" }, { status: 503 }),
+					),
+				),
+				[
+					notice({
+						...fleet,
+						relay: "unanswered",
+						why: "it answered 503",
+						refusedBy: "none",
+					}),
+				],
+			);
+		});
+	});
+
+	it("annotates why the relay was not asked", async () => {
+		await withFleetUp(async (apiUrl) => {
+			assert.deepEqual(
+				await noticesOf(() =>
+					route(apiUrl, () => Response.json({}), { relayConfig: undefined }),
+				),
+				[
+					notice({
+						...fleet,
+						relay: "unasked",
+						why: "no-relay",
+						refusedBy: "none",
+					}),
+				],
+			);
+		});
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+		};
+		const unasked = (why: string, refusedBy: string) => [
+			notice({
+				workflow: "hobo-ci.yml",
+				...hosted,
+				relay: "unasked",
+				why,
+				refusedBy,
+			}),
+		];
+		assert.deepEqual(
+			await noticesOf(() =>
+				main({ ...env, HOBO_CI_ROUTE: "github" }, NO_RELAY_CALL),
+			),
+			unasked("pinned", "none"),
+		);
+		assert.deepEqual(
+			await noticesOf(() =>
+				main({ ...env, HOBO_CI_ATTESTED: "true" }, NO_RELAY_CALL),
+			),
+			unasked("attested", "none"),
+		);
+		assert.deepEqual(
+			await noticesOf(() =>
+				main(
+					{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
+					NO_RELAY_CALL,
+				),
+			),
+			unasked("queue-unread", "queue"),
+		);
+	});
+
+	it("says no-relay whenever no relay is named, whatever else happened", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+		};
+		const noRelay = { ...NO_RELAY_CALL, relayConfig: undefined };
+		const unasked = (refusedBy: string) => [
+			notice({
+				workflow: "hobo-ci.yml",
+				...hosted,
+				relay: "unasked",
+				why: "no-relay",
+				refusedBy,
+			}),
+		];
+		assert.deepEqual(
+			await noticesOf(() =>
+				main(
+					{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
+					noRelay,
+				),
+			),
+			unasked("queue"),
+		);
+		assert.deepEqual(
+			await noticesOf(() => main({ ...env, HOBO_CI_ROUTE: "github" }, noRelay)),
+			unasked("none"),
+		);
+		assert.deepEqual(
+			await noticesOf(() =>
+				main({ ...env, HOBO_CI_ATTESTED: "true" }, noRelay),
+			),
+			unasked("none"),
+		);
+	});
+
+	it("says queue-unread only when a relay is named and the queue cannot be read", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			GITHUB_REPOSITORY: "acme/app",
+			GITHUB_RUN_ID: "1",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+		};
+		const unasked = (why: string) => [
+			notice({
+				workflow: "hobo-ci.yml",
+				...hosted,
+				relay: "unasked",
+				why,
+				refusedBy: "queue",
+			}),
+		];
+		assert.deepEqual(
+			await noticesOf(() => main(env, NO_RELAY_CALL)),
+			unasked("queue-unread"),
+		);
+		assert.deepEqual(
+			await noticesOf(() => main(env, { relayConfig: undefined })),
+			unasked("no-relay"),
+		);
+	});
+});
+
+describe("the route notice", () => {
+	it("is one line a workflow command cannot cut short", () => {
+		const line = routeAnnotation(
+			{
+				tier: "fleet",
+				runner: "hobo",
+				reason: "",
+				relay: { kind: "unanswered", why: "100% down\nnext" },
+			},
+			"hobo-ci.yml",
+			"no-relay",
+		);
+		assert.doesNotMatch(line, /\n|\r/);
+		assert.match(line, /^::notice title=hobo-ci-route::\{"v":1,/);
+		assert.match(line, /100%25 down/);
+		assert.match(line, /"refusedBy":"none"/);
+	});
+
+	it("names the workflow file the run belongs to", () => {
+		assert.equal(
+			workflowFile({
+				GITHUB_WORKFLOW_REF:
+					"Hobo-Labs/HoBo/.github/workflows/pricing-ci.yml@refs/pull/7/merge",
+			}),
+			"pricing-ci.yml",
+		);
+		assert.equal(
+			workflowFile({ GITHUB_WORKFLOW: "HoBo CI Fabric" }),
+			"HoBo CI Fabric",
+		);
+	});
+});
+
+/**
+ * Run 43207388098 (finding 142) as it stood when its plan job started: the
+ * box was refusing jobs for lack of memory, ARC took one job ten seconds
+ * after it was queued, and the run's own plan job waited 444 s for a runner.
+ */
+describe("a second ask within a run", () => {
+	const RUN = 43207388098;
+	const PROBE_RUN = RUN - 500;
+	const at = (time: string) => `2026-11-12T${time}Z`;
+	const NOW_142 = Date.parse(at("11:21:50"));
+	const runsPage = {
+		workflow_runs: [
+			{
+				id: RUN,
+				status: "in_progress",
+				created_at: at("11:14:02"),
+				updated_at: at("11:21:44"),
+			},
+			// The probe was picked up at once, so the label looked alive.
+			{
+				id: PROBE_RUN,
+				path: PROBE_WORKFLOW_PATH,
+				status: "completed",
+				created_at: at("11:10:00"),
+				updated_at: at("11:10:20"),
+			},
+		],
+	};
+	const jobsPages = new Map<number, JsonValue>([
+		[
+			RUN,
+			{
+				jobs: [
+					{
+						run_id: RUN,
+						name: "Route runners",
+						status: "completed",
+						labels: ["ubuntu-24.04"],
+						runner_name: "GitHub Actions 1000",
+						created_at: at("11:14:02"),
+						started_at: at("11:14:06"),
+					},
+					// Skipped: no image input changed.
+					{
+						run_id: RUN,
+						name: "CI runner image (mise oci)",
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "",
+						created_at: at("11:14:20"),
+						started_at: at("11:14:20"),
+					},
+					// ARC took it ten seconds after it was queued.
+					{
+						run_id: RUN,
+						name: "CI deps layer (pnpm)",
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-runner-7x2kq",
+						created_at: at("11:14:20"),
+						started_at: at("11:14:30"),
+					},
+					{
+						run_id: RUN,
+						name: "Main workspace plan",
+						status: "in_progress",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-4c1d9e2a-0b7f-4c55-9a8e-2f6b1d0c3e11",
+						created_at: at("11:14:20"),
+						started_at: at("11:21:44"),
+					},
+				],
+			},
+		],
+		[
+			PROBE_RUN,
+			{
+				jobs: [
+					{
+						run_id: PROBE_RUN,
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-runner-7x2kq",
+						created_at: at("11:10:01"),
+						started_at: at("11:10:04"),
+					},
+				],
+			},
+		],
+	]);
+	const read = async (path: string): Promise<JsonValue> => {
+		if (!path.includes("/jobs")) return runsPage;
+		const runId = Number(/\/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+		return jobsPages.get(runId) ?? { jobs: [] };
+	};
+	const reading = (includeOwnRun: boolean, paths: string[] = []) =>
+		observeQueue({
+			read: async (path) => {
+				paths.push(path);
+				return read(path);
+			},
+			repository: "Hobo-Labs/HoBo",
+			ownRunId: RUN,
+			labels: ["hobo-trunk"],
+			limits,
+			nowMs: NOW_142,
+			includeOwnRun,
+		});
+	const decide = (includeOwnRun: boolean) =>
+		chooseRunner({
+			observe: () => reading(includeOwnRun),
+			now: () => NOW_142,
+			sleep: async () => undefined,
+			mode: "auto",
+			fleetLabel: "hobo-trunk",
+			localEnrolled: false,
+			limits,
+			// The relay blocked nothing: the default minimum of one free runner.
+			askRelay: async () => ({ kind: "verdict", blocked: new Map() }),
+		});
+
+	it("replays finding 142: with include-own-run the plan job's wait sends the shards to GitHub-hosted", async () => {
+		const reask = await decide(true);
+		assert.deepEqual(
+			[reask.tier, reask.runner, reask.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(reask.reason, /took up to 444 s to pick a job up/);
+		// The route job's reading, which leaves its own run out, kept the fleet.
+		const first = await decide(false);
+		assert.deepEqual([first.tier, first.runner], ["fleet", "hobo-trunk"]);
+	});
+
+	it("reads this run's own jobs first, and only when asked to", async () => {
+		const asked: string[] = [];
+		await reading(true, asked);
+		assert.equal(
+			asked[1],
+			`/repos/Hobo-Labs/HoBo/actions/runs/${RUN}/jobs?filter=latest&per_page=100`,
+		);
+		const left: string[] = [];
+		await reading(false, left);
+		assert.ok(left.every((path) => !path.includes(`/runs/${RUN}/`)));
+	});
+});
+
+describe("the routing step without a decision", () => {
+	const root = resolve(import.meta.dirname, "..", "..");
+	/** The route step's shell script, as the action runs it. */
+	const script = (() => {
+		const lines = readFileSync(
+			join(root, ".github/actions/route-runner/action.yml"),
+			"utf8",
+		).split("\n");
+		const step = lines.indexOf("    - id: route");
+		const run = lines.indexOf("      run: |", step);
+		assert.ok(step > -1 && run > step);
+		const body: string[] = [];
+		for (const line of lines.slice(run + 1)) {
+			if (line.trim() !== "" && !line.startsWith("        ")) break;
+			body.push(line.slice(8));
+		}
+		return body.join("\n");
+	})();
+	/** Runs the step where the routing script was not checked out (finding 146). */
+	const fallBack = (env: Record<string, string>) => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-fallback-"));
+		try {
+			const output = join(dir, "output");
+			writeFileSync(output, "");
+			const run = spawnSync("bash", ["-c", script], {
+				cwd: dir,
+				encoding: "utf8",
+				env: {
+					PATH: process.env.PATH ?? "",
+					GITHUB_OUTPUT: output,
+					GITHUB_EVENT_NAME: "push",
+					HOBO_CI_ROUTE: "",
+					HOBO_CI_TRUNK_RUNNER: "",
+					HOBO_CI_INCLUDE_OWN_RUN: "",
+					...env,
+				},
+			});
+			assert.equal(run.status, 0, run.stderr);
+			return { stdout: run.stdout, output: readFileSync(output, "utf8") };
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+	const WARNING =
+		/^::warning title=hobo-ci-route-fallback::runner routing did not run \(the routing script failed\)/m;
+
+	it("names the fallback in a titled warning, and uses GitHub-hosted", () => {
+		const { stdout, output } = fallBack({});
+		assert.match(stdout, WARNING);
+		assert.equal(output, "runner=ubuntu-24.04\ntier=github\n");
+	});
+
+	it("names the fallback and keeps a pinned fleet on the fleet", () => {
+		const { stdout, output } = fallBack({ HOBO_CI_ROUTE: "fleet" });
+		assert.match(stdout, WARNING);
+		assert.equal(output, "runner=hobo-trunk\ntier=fleet\n");
+	});
+
+	it("names the fallback and outputs nothing on a second ask, so the run's route stands", () => {
+		const { stdout, output } = fallBack({ HOBO_CI_INCLUDE_OWN_RUN: "true" });
+		assert.match(stdout, WARNING);
+		assert.match(stdout, /keeping the run's route/);
+		assert.equal(output, "");
 	});
 });
 
