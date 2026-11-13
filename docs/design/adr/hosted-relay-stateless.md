@@ -499,10 +499,14 @@ prefilled: project `hobo-ci` (folder `/hobo-ci-relay`, `prod`);
 audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
 `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
 Actions (`https://token.actions.githubusercontent.com`, subject
-`repo:Hobo-Labs/HoBo:ref:refs/heads/main`, audience
+`repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main` — GitHub's immutable subject for this repository, which
+`hobo ci secret-store connect` reads from GitHub rather than formatting the
+legacy `repo:<owner>/<repo>` one Infisical now refuses — with
+`repository_id` and `repository_owner_id` pinned, audience
 `https://github.com/Hobo-Labs`), a write-capable project role (Advanced+
 custom create/edit-only, or Free **Member** when attach has no custom roles).
-`hobo ci secret-store connect` records the ids. Verification is by identity
+`hobo ci secret-store connect` records the ids and that subject, and a re-run
+repairs the writer's trust in place (amended 2026-11-13). Verification is by identity
 name: `hobo-ci-writer` in the deploy workflow's *Verify the secret store
 connection* step (`hobo ci secret-store verify`: GitHub OIDC sign-in, then
 revoke; does **not** assert Infisical role shape); `hobo-ci-relay` by

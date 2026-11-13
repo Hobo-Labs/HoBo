@@ -3,12 +3,15 @@ import { CI_DEPS_LAYER_JOB_NAME } from "./isolated-worker/memory-classes.js";
 
 /** Node-only trunk jobs that should fleet-absorb on memory pressure without a 45s box hold. */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
+const MAIN_FULL_GATE_FINISH_JOB = "Main full gate (finish)";
 
 function isImmediateFleetMainTrunkPickupJob(
 	jobName: string | undefined,
 ): boolean {
 	return (
-		jobName === MAIN_WORKSPACE_PLAN_JOB || jobName === CI_DEPS_LAYER_JOB_NAME
+		jobName === MAIN_WORKSPACE_PLAN_JOB ||
+		jobName === CI_DEPS_LAYER_JOB_NAME ||
+		jobName === MAIN_FULL_GATE_FINISH_JOB
 	);
 }
 

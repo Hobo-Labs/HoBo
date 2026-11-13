@@ -51,6 +51,7 @@ import {
 	createWorkerMesh,
 	createWorkerStorageAdmission,
 	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+	DEPS_BUILD_ADMISSION_ID,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
 	defaultGitMirrorFallbackRoot,
@@ -91,6 +92,7 @@ import {
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
+	storageReserveForDepsBuild,
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
@@ -817,6 +819,23 @@ try {
 				},
 			},
 			processes: { run: runDepsProcess },
+			idleForBuild: async () => {
+				try {
+					return (await store.activeLeases()).length === 0;
+				} catch {
+					return false;
+				}
+			},
+			// The grant is refused when the build's reserve does not fit.
+			onBuildSlot: {
+				acquire: async () =>
+					storageAdmission.admit(
+						storageLeases(await store.activeLeases()),
+						DEPS_BUILD_ADMISSION_ID,
+						storageReserveForDepsBuild(),
+					),
+				release: () => storageAdmission.release(DEPS_BUILD_ADMISSION_ID),
+			},
 			onEvent: ({ event, ...fields }) => {
 				// The box's own deps-image work: while it runs the box is not idle.
 				if (event === "hobo_ci_deps_image_ensure_started")
