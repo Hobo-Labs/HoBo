@@ -93,10 +93,13 @@ const encoder = new TextEncoder();
 
 type KeyRole = "account" | "user" | "curve";
 
-/** A key of the tenant, derived from the operator signing seed. Same inputs, same key. */
+/**
+ * A key derived from the operator signing seed. Same inputs, same key.
+ * `scope` is a tenant id, or `$SYS` for the system account.
+ */
 export function deriveKey(
 	operatorSigningSeed: string,
-	tenant: TenantId,
+	scope: TenantId | "$SYS",
 	purpose: string,
 	role: KeyRole,
 ): KeyPair {
@@ -104,7 +107,7 @@ export function deriveKey(
 		hkdfSync(
 			"sha256",
 			encoder.encode(operatorSigningSeed),
-			encoder.encode(`hobo-fleet/nats/${tenant}`),
+			encoder.encode(`hobo-fleet/nats/${scope}`),
 			encoder.encode(purpose),
 			32,
 		),
@@ -305,4 +308,48 @@ export async function staticCredentials(
 	if (permissions.allowResponses) claims.resp = { max: 1, ttl: 0 };
 	const jwt = await encodeUser(user, keys.users[user], keys.account, claims);
 	return new TextDecoder().decode(fmtCreds(jwt, keys.users[user]));
+}
+
+/**
+ * The system account's key, derived from the operator signing seed. The
+ * operator JWT names this account as its `system_account`;
+ * `provisionTopology` pushes account JWTs to the resolver
+ * (`$SYS.REQ.CLAIMS.UPDATE`) as a user of it.
+ */
+export function systemAccount(operatorSigningSeed: string): KeyPair {
+	return deriveKey(operatorSigningSeed, "$SYS", "account", "account");
+}
+
+/** The system account JWT, signed by the operator signing key. */
+export function mintSystemAccount(
+	operatorSigningSeed: string,
+): Promise<string> {
+	return encodeAccount(
+		"SYS",
+		systemAccount(operatorSigningSeed).getPublicKey(),
+		{},
+		{ signer: fromSeed(encoder.encode(operatorSigningSeed)) },
+	);
+}
+
+/** Credentials of the system-account user that pushes account JWTs. */
+export async function systemCredentials(
+	operatorSigningSeed: string,
+): Promise<string> {
+	const user = deriveKey(
+		operatorSigningSeed,
+		"$SYS",
+		"user/provisioner",
+		"user",
+	);
+	const jwt = await encodeUser(
+		"hobo-fleet-provisioner",
+		user,
+		systemAccount(operatorSigningSeed),
+		{
+			pub: { allow: ["$SYS.REQ.CLAIMS.UPDATE"] },
+			sub: { allow: ["_INBOX.>"] },
+		},
+	);
+	return new TextDecoder().decode(fmtCreds(jwt, user));
 }

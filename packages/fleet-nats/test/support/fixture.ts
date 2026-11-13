@@ -59,7 +59,6 @@ function suiteSigner(keyId: string): SuiteSigner {
 }
 
 export type Tenant = Readonly<{
-	nats: MemoryNats;
 	bus: AuthorityBus;
 	trust: WitnessedEnvelope;
 	now: () => number;
@@ -83,9 +82,36 @@ export type Tenant = Readonly<{
 	): Promise<SignedEnvelope>;
 }>;
 
-export async function createTenant(): Promise<Tenant> {
+export type MemoryTenant = Tenant & Readonly<{ nats: MemoryNats }>;
+
+/** A tenant on an in-memory bus. */
+export async function createTenant(): Promise<MemoryTenant> {
 	let clock = Date.now();
 	const now = () => clock;
+	const nats = createMemoryNats(now);
+	const wire = nats.connect();
+	const pin = authorityPin(() => {
+		throw new Error("no trust record");
+	});
+	const bus = authorityBusOverWire(
+		wire,
+		createRegistryView({ wire, pin, now }),
+		pin,
+		now,
+	);
+	const tenant = await createTenantOn(bus, now, (ms) => {
+		clock = ms;
+	});
+	return { ...tenant, nats };
+}
+
+/** A tenant whose authority publishes on `bus`: its trust record is published first. */
+export async function createTenantOn(
+	bus: AuthorityBus,
+	now: () => number,
+	setNow: (ms: number) => void = () => undefined,
+): Promise<Tenant> {
+	const clock = now();
 	const authority = suiteSigner("authority#1");
 	const witness = suiteSigner("witness#1");
 	const payload = toBinary(
@@ -123,27 +149,13 @@ export async function createTenant(): Promise<Tenant> {
 		),
 		witness: await signEnvelope(witness.signer, TRUST_RECORD_CONTEXT, payload),
 	});
-	const nats = createMemoryNats(now);
-	const wire = nats.connect();
-	const pin = authorityPin(() => {
-		throw new Error("no trust record");
-	});
-	const bus = authorityBusOverWire(
-		wire,
-		createRegistryView({ wire, pin, now }),
-		pin,
-		now,
-	);
 	await bus.publisher.putTrust(trust);
 
 	return {
-		nats,
 		bus,
 		trust,
 		now,
-		setNow(ms) {
-			clock = ms;
-		},
+		setNow,
 		authority: authority.signer,
 		async device(options = {}) {
 			const keys = await createMemoryKeyStore().open();
@@ -163,8 +175,8 @@ export async function createTenant(): Promise<Tenant> {
 								value: keys.signPublicKey,
 							}),
 						],
-						issuedAt: new Date(clock).toISOString(),
-						notAfter: new Date(clock + 60 * MINUTE).toISOString(),
+						issuedAt: new Date(now()).toISOString(),
+						notAfter: new Date(now() + 60 * MINUTE).toISOString(),
 					}),
 				),
 			);
@@ -184,8 +196,8 @@ export async function createTenant(): Promise<Tenant> {
 				keyBundle: bundle,
 				recordSequence: 1,
 				authorityIncarnation: INCARNATION,
-				issuedAt: new Date(clock).toISOString(),
-				notAfter: new Date(clock + 30 * MINUTE).toISOString(),
+				issuedAt: new Date(now()).toISOString(),
+				notAfter: new Date(now() + 30 * MINUTE).toISOString(),
 			});
 			await bus.publisher.putMember(
 				await signEnvelope(
@@ -207,9 +219,9 @@ export async function createTenant(): Promise<Tenant> {
 						ticketId: randomBytes(8).toString("hex"),
 						memberId: keys.memberId,
 						tenant: options.tenant ?? TENANT,
-						issuedAt: new Date(clock).toISOString(),
+						issuedAt: new Date(now()).toISOString(),
 						expiresAt: new Date(
-							clock + (options.expiresInMs ?? 10 * MINUTE),
+							now() + (options.expiresInMs ?? 10 * MINUTE),
 						).toISOString(),
 						authorityIncarnation: options.incarnation ?? INCARNATION,
 					}),
