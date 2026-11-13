@@ -14,9 +14,9 @@ export const DEPS_LAYOUT_RECIPE_PATHS = [
 ] as const;
 /** Bump version when a recipe edit changes image contents or paths (payload paths, install flags, rebuilt packages, or bucket assignment); otherwise update only recipeSha256. */
 export const DEPS_LAYOUT = {
-	version: 1,
+	version: 2,
 	recipeSha256:
-		"f6f272a14ac86d13663422ac01389a397899714822b65641b571fe7cc14eaf09",
+		"b675e1766ac8a79118a8dda662bc406ec5ac14671c3c5f51f21f597dc6682007",
 } as const;
 
 export type DepsKeyInputs = Readonly<{
