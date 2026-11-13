@@ -44,7 +44,7 @@ tags: [hobo, design, providers, honesty]
 | `@hobo/provider-hostinger` | Yes | **Adopt-only** | IR only. Ships `ResourceResolver`s for its catalog product ids (`HOSTINGER_RESOLVED_PRODUCT_IDS`; count: `providerParity()` in `@hobo/cloud-providers`, pinned in its [README parity block](../../packages/cloud-providers/README.md#parity-how-far-each-namespace-is-proven)): VPS and DNS zone on `/api/vps/v1/` and `/api/dns/v1/`, and web hosting, static site and MySQL on `/api/hosting/v1/`. Buying stays impossible: the guard does not allowlist `/api/billing/v1/`, a VPS is adopt-only, and a website create requires `desired.orderId` — a plan the account already owns. `delete()` on a VPS refuses (it would cancel a paid plan). The MySQL user password arrives through the injected `resolveDatabasePassword(logicalId)`, never through `desired`. **Fake-transport proof only** |
 | `@hobo/provider-kafka` | Capability | N/A messaging | Not a full cloud Yard provider |
 | `@hobo/provider-convex` | Yes | Cred-gated + Examples | `realize` → `applyDriverProgram`; Cloudflare Examples frontend = Temporary Pages; **anon Temporary Convex self-host fail-closed** under zero project API keys (`provisionConvexBackendAnonymous` rejection matrix: Instanode no anon containers, OpenPouch anon 256MiB cgroup, CF Temporary Containers 403); mock via `HOBO_CONVEX_SWAGHAUS_MOCK=1`; escapes `HOBO_CONVEX_OCI_HOST=cloudflare` / `HOBO_CONVEX_ALLOW_CLOUD=1`; WorkOS AuthKit for swaghaus; `/api/cf-temp/swaghaus` |
-| `@hobo/provider-npm` | Resolver (`npm.package-version/v1`) | **Cred-gated, read-only live lane** | HoBo.CD realizer (plan 0024 D6/I14): publishes a Freight tarball to npmjs, GitHub Packages or Verdaccio, moves dist-tags for promotion, deprecates on delete (unpublish refused). Credential modes: `token`, or `oidc-trusted-publishing` (npmjs, unscoped names only). Offline against a recorded registry world; the live lane observes one published version and skips unless `HOBO_NPM_LIVE_REGISTRY`, `HOBO_NPM_LIVE_TOKEN`, `HOBO_NPM_LIVE_PACKAGE`, `HOBO_NPM_LIVE_VERSION`, `HOBO_NPM_LIVE_DIST_TAG` and `HOBO_NPM_LIVE_TARBALL` are set; `HOBO_NPM_LIVE_PROMOTE_TAG` opts into one real dist-tag move. Registered in the `@hobo/hobo` production hosting catalog (scope `npm://registries/<origin>`) |
+| `@hobo/provider-npm` | Resolver (`npm.package-version/v1`) | **Cred-gated, read-only live lane** | HoBo.CD realizer (ADR-0182: D6, I14): publishes a Freight tarball to npmjs, GitHub Packages or Verdaccio, moves dist-tags for promotion, deprecates on delete (unpublish refused). Credential modes: `token`, or `oidc-trusted-publishing` (npmjs, unscoped names only). Offline against a recorded registry world; the live lane observes one published version and skips unless `HOBO_NPM_LIVE_REGISTRY`, `HOBO_NPM_LIVE_TOKEN`, `HOBO_NPM_LIVE_PACKAGE`, `HOBO_NPM_LIVE_VERSION`, `HOBO_NPM_LIVE_DIST_TAG` and `HOBO_NPM_LIVE_TARBALL` are set; `HOBO_NPM_LIVE_PROMOTE_TAG` opts into one real dist-tag move. Registered in the `@hobo/hobo` production hosting catalog (scope `npm://registries/<origin>`) |
 | `@hobo/provider-oci-registry` | Resolver (`oci-registry.image/v1`) | **Cred-gated, read-only live lane** | HoBo.CD realizer: copies an image or index by digest (mount, or upload from the artifact store) to any distribution-spec registry (GHCR, Docker Hub, ECR, Artifact Registry, Harbor, Zot), writes declared tags and copies referrers. Credential: basic, bearer or anonymous, exchanged at an allowlisted token realm. Offline against a fake registry; the live lane observes one image and skips unless `HOBO_OCI_LIVE_HOST`, `_REPOSITORY`, `_DIGEST`, `_REALM`, `_USERNAME` and `_PASSWORD` are set. In the `@hobo/hobo` catalog (scope `oci-registry://registries/<host>`), source registries pull anonymously or by same-host mount; a per-source pull credential is not catalogued yet |
 | `@hobo/provider-github` | Resolver (`github.pages-site/v1`) | **Cred-gated, read-only live lane** | HoBo.CD GitHub Pages realizer: publishes a static-site tree Freight to one repository's Pages branch, or through the Pages deployments API (needs the workflow OIDC token). Credential: a GitHub token with `contents: write` and `pages: write`. Offline against a recorded GitHub world; the live lane skips unless `HOBO_GITHUB_PAGES_LIVE_OWNER`, `_REPO`, `_BRANCH` and `_TOKEN` are set. In the `@hobo/hobo` catalog (scope `github://apis/<api base>/accounts/<account>`); the deployment OIDC token is an auxiliary lease on the same account. Distinct from the `@hobo/runner-github` CI runner |
 | `@hobo/provider-ax` / `agentv` | Eval | N/A | AI-eval adapters |
@@ -121,6 +121,33 @@ could be replayed as if it were a live one.
 | `runtime-cloud-native` | **Stub** providers (`HOBO_CLOUD_NATIVE_UNIMPLEMENTED`) |
 | `runtime-dapr` / `runtime-browser` | Specialized |
 
+## HoBo's own release targets (release Freight through `@hobo/cd`)
+
+HoBo releases itself through HoBo CD
+([`release-channels.md`](./release-channels.md#hobo-releases-through-hobo-cd)).
+Every artifact family is recorded as Freight and promoted
+`hobo-release/<family>-candidate` -> `hobo-release/<family>-stable` by the
+`hobo deploy` composition, with the topology
+[`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
+(`--yard`). Each Camp is realized by the catalog resolver realizer
+(`packages/hobo/src/provider-hosting-catalog.ts`, `cd-runtime.ts`): the
+provider's shipped `ResourceResolver`, no shell, no new port method, the
+Camp's one credential locator resolved by the host at call time.
+
+| Target | Freight artifact | Verified by | Realizer | Status |
+|---|---|---|---|---|
+| GHCR (`ghcr.io/<owner>/hobo/*`) | each built image, `ARTIFACT_KIND_OCI_IMAGE`, the root digest of its exported OCI layout, at its GHCR coordinate | every blob in the HoBo artifact store (`ecosystem: store`); a reused published tag by registry lookup | `@hobo/provider-oci-registry`, `GITHUB_TOKEN`, byte transport | **realized**: config and layers uploaded (or mounted from the toolchain repository), manifest PUT by digest with its exact bytes, release tag, digest and tag observed (I5); no `docker push`. Stable observes only (pull scope) |
+| GitHub Pages (`gh-pages`) | the `hobo.static-site-tree/v1` index (`ARTIFACT_KIND_STATIC_ASSETS`) plus file blobs | digests in the HoBo artifact store; git tree id computed locally | `@hobo/provider-github` (branch mode), `GITHUB_TOKEN` | **realized**: Git Data API blobs (looked up before upload, never re-posted), tree, commit `deploy: <sha>`, compare-and-swap ref move; replaces the gh-pages push action. Limits: history grows one commit per deploy; a change of more than about 75 files can hit GitHub's 80-per-minute content-creation limit ([release-channels.md](./release-channels.md#hobo-releases-through-hobo-cd)) |
+| npm (`@hobo-labs/*`) | each tarball, `ARTIFACT_KIND_PACKAGE`, and its Sigstore bundle `<package>@<version>.sigstore` | digests in the HoBo artifact store; the bundle bound to the tarball's sha512 | `@hobo/provider-npm`, hobodev token (`env://NPM_TOKEN`); stable anonymous | **realized offline, not yet run live**: keyless provenance signed in the release job (`@hobo/cd/provenance`), version published with the bundle attached, dist-tag set, both observed; no `npm publish`. Token auth because OIDC trusted publishing of a scoped name does not route through the transport guard. Every refusal blocks |
+
+Offline proof: `scripts/test/release-freight-realize.test.ts` runs the built
+composition with the release topology against the providers' recorded
+registry and GitHub worlds (and the built binary with `--yard` for topology
+and `pipeline apply`). No live lane runs here; the providers' opt-in live
+lanes are the live evidence. Unverified live: GHCR's token endpoint with the
+non-secret user name the Camp declares (`hobo-release`) and the workflow
+token.
+
 ## Traffic-routing staging cutover lane (`pnpm run staging:cutover`)
 
 The Phase-5 transparency demo: `scripts/staging-cutover-demo.mts` drives the
@@ -138,6 +165,19 @@ binding changes between lanes — the swap logic is identical.
 
 Success requires `reapplied` **and** zero failed probe samples; any probe
 failure exits non-zero and the archived evidence names the failing samples.
+
+## HoBo.CD live lanes
+
+HoBo.CD requires four credential- or availability-gated lanes for
+[HoBo.CD](./continuous-delivery.md). Each must skip with a visible reason when
+its environment is absent. Status is recorded here only when a lane has run.
+
+| Lane | Gate | Status |
+|---|---|---|
+| `@hobo/cd-kube-fleet` OCM and Karmada realizers against hubs in `kind` (`test/kind-lane.test.ts`) | `HOBO_KIND_OCM_*`, `HOBO_KIND_KARMADA_*` | Lane exists; skips naming the missing variable. No archived run yet |
+| Vercel delivery through a reconciler | Vercel credentials | Required by R16; not yet recorded |
+| Cloudflare delivery through a reconciler | Cloudflare credentials | Required by R16; not yet recorded |
+| Prometheus-backed verification | A Prometheus HTTP API endpoint | Required by R16; not yet recorded |
 
 ## Credential delivery (who holds the token)
 

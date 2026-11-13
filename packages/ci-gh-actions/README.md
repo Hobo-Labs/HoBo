@@ -1039,6 +1039,250 @@ startup, idle and cleanup time. Actual runner attribution requeues displaced dem
 without duplicate charging. Recovery paginates host discovery; ambiguous results
 or exhausted discovery windows retain reservations for authenticated reconciliation.
 
+## HoBo's runner fleet through HoBo CD
+
+HoBo's own runner hosts (box worker, mesh nodes, local runners on `hobo`,
+`hobo-trunk` and `hobo-local-host`) are Camps of the `hobo-ci-runners` Yard,
+and the worker image is Freight that `@hobo/cd` discovers by polling GHCR.
+`src/runner-fleet-delivery.ts` builds the records from the declared hosts:
+`parseRunnerHosts`, `runnerFleetTopology` (one Camp per host),
+`runnerFleetDelivery` (Camp set `hobo-ci-runner-fleet`, the OCI source, a
+pilot-first Placement and a `PROGRESSIVE_PER_GROUP` fan-out with a failure
+budget and quorum) and `runnerFleetCampObservations` (mesh advertisements as
+Camp inventory conditions and claims). Apply them with
+`hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`;
+each host runs `hobo deploy agent run` beside its controller. Job routing is
+unchanged. What is declared, how a host enrolls and what is still refused are
+in [`deploy/runner-fleet/README.md`](deploy/runner-fleet/README.md).
+
+### Runner-host realizer
+
+`src/runner-host-realizer.ts` is what moves one runner host to a new
+controller image. It is a typed `ResourceResolver` (`@hobo/core`, product
+`hobo-ci.runner-host/v1`, provider `hobo-ci`) that `hobo deploy agent run`
+calls on the host itself. No shell script and no new exec: it acts only
+through a controller port and a job port the host wires.
+
+| Port | Methods | Where they come from |
+|---|---|---|
+| `containers` (a controller container) | `listWorkerContainers`, `inspectImage`, `create`, `start`, `stop`, `remove`, `isRunning`, `pull` | the isolated worker's `DockerDriver` plus the deps-image `pull` |
+| `process` (a controller process, in place of `containers`) | `stage`, `status`, `run` | the worker daemon's supervisor through its control files, `createControllerProcessPort` (below) |
+| `jobs` | `leases`, `runners`, `meshAdvert`, `pauseAdmission`, `resumeAdmission` | the worker's lease store (`ACTIVE_STATES`, `runnerCustody`), GitHub runner presence, the host's mesh advert, the worker's admission gate; across the process boundary, `createWorkerHostJobs` (below) |
+
+A host missing any of them is refused with `RESOLVER_PRODUCT_UNSUPPORTED`
+and `runner-host-interface-missing: this host has no <port.method>, ...`
+before anything is touched (`runnerHostInterfaceGaps` lists them).
+
+The desired state is `{ hostId, image: <repo>@sha256:<hex>, config?,
+drainDeadlineMs? }`; `runnerHostResolveRequest({ campId, image,
+credentialRef })` builds it for a `hobo-ci-runners/<host id>` Camp and refuses
+any other Camp. A tag is refused: the realizer is idempotent by digest. The
+controller container is named `hoboci-runner-controller-<hex>`, so the
+running digest is read back from the host. `credentialRef` names the registry
+read credential the host's engine already holds; the realizer never resolves
+it and it appears in no output or refusal.
+
+What a pass does:
+
+1. **Observe.** A host already serving the target digest, observed, is a
+   `noop`: no pull, no drain.
+2. **Pull** the target by digest and inspect it. A failed pull refuses
+   (`runner-host-pull-failed`) before admission is touched.
+3. **Drain.** Close admission, wait until no active lease of this host and no
+   busy runner remains, up to `drainDeadlineMs` (default two hours, the box
+   worker's drain). At the deadline admission reopens and the pass refuses
+   (`runner-host-drain-deadline`) with the controller unchanged. No job is
+   ever picked up, stopped or cancelled.
+4. **Swap.** Stop and remove the old controller, create and start the new one,
+   reopen admission.
+5. **Verify** by observation within five minutes: the controller running at
+   the target, a fresh healthy mesh advert from this host dated after the
+   swap (or carrying the target digest), and for a local runner one online
+   registered runner. Only then is `create`/`update` reported (I5).
+6. **Roll back** on a failed swap or verification: restore the previous digest
+   and refuse with `runner-host-verify-failed` (CD records the rollback as a
+   Delta). If the new controller already holds a job it is left serving and
+   the pass refuses instead; a later pass re-verifies. The previous digest is
+   relaunched with the image and config this agent last launched it with; if
+   this agent never launched it (agent restarted, controller started by
+   hand) the driver cannot read a spec back, so it uses this release's
+   repository and config and the refusal says which. If that relaunch fails
+   the pass refuses `runner-host-rollback-failed ... the host has no
+   controller`.
+
+Admission is closed only inside one helper that reopens it on every exit:
+a drain deadline, a port error mid-drain, a failed swap or a failed rollback
+all leave admission open.
+
+`read` reports the controller digest, `inFlightJobs`, `busyRunners`,
+`onlineRunners`, `freeSlots` (retained fields: they change with load and are
+never drift), a typed `serving` flag and the claims `platform` and `capacity`
+from the advert. `runnerHostCampReport(outcome, now)` derives `healthy` from
+`serving` (never from diagnostic text) and turns an outcome into the
+`ResourceObservation` and `CampClaimRecord` JSON a CD reconcile observation
+carries. Traffic routing: none (`RUNNER_HOST_TRAFFIC_ROUTING_PROFILE`, kind
+`other`, every offering declared absent): jobs are routed by the relay.
+
+The report's claims also carry the host's health (`RUNNER_HOST_HEALTH_CLAIMS`:
+`hobo.ci/mesh-advert` fresh/expired/missing, `hobo.ci/mesh-advert-valid-until`,
+`hobo.ci/runner-host-ready`, and the served-label claims while the advert is
+fresh); `runnerHostAbsentReport` is the report for a host with no controller.
+The Station reads them back with `runnerHostHealthConditions(claims, now)`:
+health-source REACHABLE / LEASED / READY conditions at its own clock, the
+same table as the mesh board (`deploy/runner-fleet/README.md`).
+
+**Registration.** `hobo deploy agent run` registers this realizer when
+`HOBO_CD_RUNNER_HOST` names the host's agent config
+(`deploy/runner-fleet/agent.runner-host.json.example`); `hobo` imports it from
+the light `@hobo/ci-gh-actions/runner-host` entry, which also carries the
+fleet's Rail (`runnerFleetRail`) and `createCliDockerDriver`, whose `pull`
+(`docker pull <ref>`, option-shaped references refused) completes the
+container port.
+
+**Job ports from the worker's data directory.** The agent and the box worker
+are separate processes; they meet in the directory of the worker's journal
+(`HOBO_CI_WORKER_DB`, or the agent config's `worker.database`), which the
+controller container mounts from the host. `createWorkerHostJobs` reads it:
+`leases` opens the journal read-only (the worker stays its only writer),
+`meshAdvert` reads `mesh-advert.json`, which the worker rewrites with its own
+`MeshAdvert` after every mesh beat (`writeWorkerMeshAdvert`), and
+`pauseAdmission` / `resumeAdmission` place and remove the `admission-paused`
+marker. While the marker exists the worker's tick runs with `admit: false`
+(running jobs are untouched) and it advertises itself unhealthy. JIT hosts
+(`box-worker`, `mesh-node`) answer `runners` with no standing registrations:
+each job's runner is counted through its lease. A `local-runner` (its state
+directory is the data directory: agent config `worker.directory`) answers
+`runners` from `runner-presence.json`, which its controller rewrites with
+its registered runner's GitHub presence (`GET .../actions/runners/{id}`
+with its own `gh` credential) and the time it read it
+(`createLocalRunnerPresenceReporter`). Busy is also what the machine sees
+itself (a job's worker log), so a job is never missed while GitHub cannot be
+asked; online is only what GitHub said, and a missing, corrupt or stale
+(over two minutes) report answers no runner. A local runner honours the
+`admission-paused` marker too: it registers no runner while it exists, gives
+up a waiting runner that has no job, and reports `paused`.
+
+**A controller that runs as a process.** Today's box worker and local
+runner are processes, so the agent config's `controller: {mode: "process",
+releases}` swaps the controller through the worker daemon's supervisor
+instead of the container engine (`src/runner-controller-process.ts`). A
+release is a single-file Node entry identified by the sha256 digest of its
+bytes. In the data directory:
+
+| File | Written by | What it is |
+|---|---|---|
+| `controller-releases/<hex>.mjs` | the agent | a release staged by digest; `stage(<ref>@sha256:<hex>)` fetches it from `releases` (an absolute directory or an `https://` base URL with no credentials, `releaseFetchFrom`) and keeps it only when its bytes hash to the digest (`runner-host-stage-failed` otherwise) |
+| `controller-desired.json` | the agent | `{generation, digest \| null, requestedAtMs}`: the release to run, or none; each request is one generation above any before it |
+| `controller-status.json` | the supervisor | `{generation, digest, state, pid, startedAtMs, reason}`, state `starting`, `running`, `stopping`, `stopped`, `exited` or `failed` |
+
+The supervisor (`scripts/controller-supervisor.mts`,
+`createControllerSupervisor`) acts on a new generation: it stops the old
+child (SIGTERM, which the worker drains on, then SIGKILL a minute after the
+worker's drain deadline: `controllerStopPolicy` starts the child with
+`HOBO_CI_WORKER_STOP_MODE` drain and `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS` two
+hours unless set, as `deploy/restart-worker.sh` does, so stopping the
+supervisor on a host restart drains like a graceful restart; give its
+service a `TimeoutStopSec` above that deadline),
+hashes the staged release again and starts it as `node <release> ...args`,
+never through a shell, with `HOBO_CI_CONTROLLER_DIGEST` set; a release that
+no longer hashes to its digest is never started (`failed`). A child that
+exits on its own is restarted, up to three times in ten minutes, then
+`failed`. The worker writes its advert with `controllerDigest` beside the
+`MeshAdvert` fields (`writeWorkerMeshAdvert`; the field is never put on the
+board), and in process mode verification requires the advert to name the
+target digest, so an advert the old worker left behind is never taken for
+the new one's. The controller is running only once the status has caught up
+with the generation the agent asked for. A swap is: stage, drain, ask for
+none and observe `stopped`, ask for the target, verify (status running at
+the target, a fresh healthy advert at the target digest, for a local runner
+an online runner), and on a failed verify ask for the previous digest again
+(still staged, verified again). If the supervisor has not reported the old
+child stopped when the agent's wait ends (its stop deadline can be longer),
+the agent asks for the old release again before it refuses
+`runner-host-retire-unobserved`, so the host is not left with no controller
+once the supervisor finishes. Container settings (`config.command`, `env`,
+`volumes`, `memoryMb`, `runAsUser`) do not apply to a process and are
+refused `runner-host-config-unsupported`.
+
+**Releases.** `pnpm --filter @hobo/ci-gh-actions release:build -- --out
+<dir> --version <image release tag> --base-url https://<host>/<path>/`
+(`scripts/build-controller-release.mts`) bundles the box worker daemon
+(`scripts/isolated-worker-daemon-main.mts`, artifact
+`hobo-ci-worker-release`) and the local runner (`scripts/local-runner.ts`,
+`hobo-ci-local-runner-release`) with esbuild into one self-contained
+`<hex>.mjs` each (only `node:` imports remain; the entry guards of the
+other modules it inlines are dead), and adds each to
+`index.<artifact>.json`, the `{version, url, digest}` list an HTTP_INDEX
+Freight subscription reads. A release has no checkout around it, so what an
+entry would derive from its own place must be given
+(`releaseEntryPath`): `HOBO_CI_DEPS_ROOT` for the box worker and
+`HOBO_CI_LOCAL_STATE_DIRECTORY` for a local runner, else it refuses to
+start. `test/controller-release.test.ts` builds the real entries, stages the
+local runner's release by digest and has the supervisor start it until it
+advertises that digest.
+
+**Release identity.** A release's digest is the sha256 of its bytes; the
+worker image's is its OCI manifest digest, and the two never match. So a
+process host never runs the image reference: `runnerFleetDelivery({
+releaseIndexBase })` adds an HTTP_INDEX subscription per release to the
+fleet's Freight source, assembled `SAME_VERSION` with the image (the release
+build is given the image's release tag as its version), and
+`runnerHostRealizationParameters(freight artifacts)` maps one Freight to the
+runner-host row: `image` (container hosts), `workerRelease` (box workers and
+mesh nodes in process mode) and `localRunnerRelease` (local runners),
+each `<artifact>@sha256:<hex>`. The agent reads the parameter its host runs
+(`runnerHostReferenceParameter`); a process host whose Set has no release
+reports `runner-host-release-unresolved`.
+
+Start the supervisor in place of the daemon: `HOBO_CI_WORKER_DB=<journal>
+HOBO_CI_CONTROLLER_RELEASE=<first release file> node
+scripts/controller-supervisor.mts` (`HOBO_CI_CONTROLLER_ARGS='["daemon"]'`
+for a local runner's release). The first release is hashed, staged and
+requested once; after that the agent's requests decide.
+
+#### Runbook
+
+- **A pass refuses `runner-host-drain-deadline`.** A job outlived the drain
+  deadline. Nothing changed and admission is open; the next pass retries. To
+  move sooner, wait for the job or raise `drainDeadlineMs` on the Set; never
+  cancel the job to make room.
+- **`runner-host-verify-failed ... restored`.** The new image did not come up
+  serving; the host is back on the previous digest. The failed container was
+  created with `--rm`, so its logs went with it: reproduce on the pilot host
+  and read the refusal's gap list (which observation was missing).
+- **`runner-host-rollback-failed`.** The new image failed and the previous
+  one could not be relaunched; the host has no controller but admission is
+  open. Start the previous image by hand (the refusal names the digest and
+  which spec was used) or run a later pass to a known-good digest.
+- **`... left serving rather than stopped`.** The new controller took a job
+  before verification failed. It is serving; the next pass re-verifies and,
+  if still failing, rolls back once the job is done.
+- **`runner-host-ambiguous`.** Two controllers are running. Stop the one
+  holding no jobs by hand (`docker ps --filter name=hoboci-runner-controller-`);
+  the realizer never guesses.
+- **`runner-host-interface-missing`.** The agent has no source for a port:
+  fix the composition, not the host.
+- **`runner-host-retire-unobserved`** in process mode. The supervisor was
+  still stopping the old child when the agent stopped waiting; the agent
+  asked for that release again, so the supervisor restarts it once the stop
+  completes. Admission is open; the next pass retries.
+- **`runner-host-release-unresolved`.** A process host's Set has no release
+  for its kind: publish releases (`release:build`) and set the delivery
+  module's `releaseIndexBase` so the Freight carries them.
+- **`runner-host-stage-failed`.** The release could not be fetched from
+  `controller.releases`, or its bytes did not hash to the digest; nothing was
+  staged and the host keeps its controller. Publish the release under
+  `<hex>.mjs` and let the next pass retry.
+- **The supervisor reports `failed`.** `controller-status.json` says why: a
+  release that no longer verifies, or a child that kept exiting. The agent's
+  next request (a new generation) starts it again.
+- **A pass waits on a closed admission.** `admission-paused` beside the
+  worker's journal is the agent's drain marker; the agent removes it on every
+  exit. If an agent was killed mid-pass, remove the file to reopen admission.
+- **Live lane.** `HOBO_CI_RUNNER_HOST_LIVE_DOCKER=1 pnpm vitest run
+  test/runner-host-realizer.test.ts` observes a real Docker engine read-only;
+  it is skipped (and says so) otherwise.
+
 ## Portable pipelines
 
 `createActionsBackend({workspace})` executes the common parsed pipeline in a bound

@@ -657,11 +657,15 @@ export function selectRelevantChecks(
 				"build",
 				"--filter={./src/draft/epic-proofs/*}^...",
 				"--filter={./src/draft/projects/*}^...",
+				// features/steps/**/*.ts loads on every run and imports these
+				// packages from source; their dependencies resolve through dist/.
+				"--filter=@hobo/conformance^...",
+				"--filter=@hobo/example-cd-conformance-kit^...",
 				"--output-logs=new-only",
 				"--concurrency=100%",
 			],
 			reason:
-				"behavior steps import the proofs' workspace dependencies from dist, which a scoped run has not built",
+				"behavior steps import the proofs' and root steps' workspace dependencies from dist, which a scoped run has not built",
 			serial: true,
 		});
 		checks.push({

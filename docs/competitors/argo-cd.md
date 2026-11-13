@@ -231,6 +231,25 @@ State labels follow the research contract.
    Helm values because the tool does not offer one. That vacuum is precisely where HoBo's Bindle
    kinds claim to sit, and it is the clearest commercial argument in this capture.
 
+
+## HoBo.CD update (2026-11-12)
+
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182), [continuous-delivery.md](../design/continuous-delivery.md)). This changes several
+statements above; the competitor research itself was not re-run.
+
+- **Drift has a home.** Every Camp has one fenced reconciler that reports observations to a status
+  stream and converges the desired Set; drift is found by observation and routed through a Delta.
+  The `OutOfSync` mapping row above is now *implemented* as reconciler status, though HoBo still
+  has no per-resource diff UI comparable to Argo CD's.
+- **Progressive delivery and analysis-driven rollback exist** (deterministic verification with
+  Mann–Whitney U, failing on no data, lowered onto each Camp's traffic capability).
+- **Argo CD is a publisher target.** `@hobo/cd-gitops` renders a Set as an Argo CD `Application`,
+  commits it through the Git host's API, and counts the Camp converged only from Argo CD's observed
+  status. The broker's old `argo` engine maps to it.
+- **Pull, not a credential hub.** HoBo.CD agents run inside the target and read the delivery feed
+  outbound; the Station holds no target credential (lesson 4 above, applied).
+- **ApplicationSet generators** informed fan-out over a deterministic Placement, without templating.
+
 ## Sources
 
 - [Argo CD core concepts](https://argo-cd.readthedocs.io/en/stable/core_concepts/) — Application, sync, sync status, health, target/live state, refresh (definitions quoted above)

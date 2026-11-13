@@ -211,7 +211,7 @@ product and does not change the published Capability Manifest; it is read by
 has been deployed onto these products from this repository. See
 [`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
 
-## Delivery coverage (plan 0024 WP13, I14)
+## Delivery coverage (ADR-0182: I14)
 
 `@hobo/cd` reaches Railway only through the shipped resolver and a declared
 traffic profile; nothing here is new provider-port surface (D6).

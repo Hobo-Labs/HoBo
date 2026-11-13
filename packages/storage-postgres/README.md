@@ -1,12 +1,12 @@
 # `@hobo/storage-postgres`
 
 The multi-node durable EventStore: `DurableEventStore` (from `@hobo/core`) on
-PostgreSQL 16 or newer. Plan 0024 D16 / WP17 closes defect C11 ("no
+PostgreSQL 16 or newer. ADR-0182 D16 closes defect C11 ("no
 multi-node fenced store").
 
 SQLite (`@hobo/storage-sqlite`) stays the default for one node. PostgreSQL is
 required when `hobo serve cd` runs more than one replica, or when an agent
-fleet runs more than one Station process (plan 0024 R6). Store selection is
+fleet runs more than one Station process. Store selection is
 WP18's composition (`composeContinuousDelivery`).
 
 ```ts
@@ -65,8 +65,8 @@ goes through `parseEventEnvelope`).
 
 ## Defaults
 
-Mirrors `CD_DEFAULTS` (plan 0024 I.9: "PostgreSQL ≥ 16; statement timeout 5 s;
-pool 10"). A unit test holds the parity.
+Mirrors `CD_DEFAULTS` (PostgreSQL 16 or newer; statement timeout 5 s;
+pool 10). A unit test holds the parity.
 
 | Setting | Env | Default | Range |
 |---|---|---|---|

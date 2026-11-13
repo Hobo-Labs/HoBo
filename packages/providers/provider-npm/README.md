@@ -1,6 +1,6 @@
 # @hobo/provider-npm
 
-The npm realizer for HoBo.CD (plan 0024):
+The npm realizer for HoBo.CD:
 it realizes one **published package version** on an npm-compatible registry —
 `registry.npmjs.org`, GitHub Packages (`npm.pkg.github.com`) or a Verdaccio
 origin — from a Freight tarball, through the existing `ResourceResolver` port
@@ -25,8 +25,8 @@ The host binds everything a plan must not choose:
 ```ts
 npmResolverRegistry({
 	registry: { kind: "npmjs" }, // | { kind: "github-packages" } | { kind: "verdaccio", origin: "https://npm.internal:4873" }
-	auth: "token",               // | "oidc-trusted-publishing" (npmjs only)
-	resolveCredential,           // the CredentialResolver: credentialRef -> token or CI OIDC ID token
+	auth: "token",               // | "oidc-trusted-publishing" (npmjs only) | "anonymous" (observe only)
+	resolveCredential,           // the CredentialResolver: credentialRef -> token or CI OIDC ID token (never called when anonymous)
 	artifacts,                   // the artifact store (structurally ArtifactStore.get from @hobo/cd)
 });
 ```
@@ -86,13 +86,18 @@ Desired state (`ResolveRequest.desired`, `NpmPackageVersionDesired` in
 - **Provenance.** The bundle is bound to the tarball before upload: its DSSE
   in-toto statement must name `pkg:npm/<name>@<version>` with this tarball's
   sha512, else the reconcile is refused locally instead of by the registry.
-  Signatures are verified at ingest (`@hobo/cd/provenance`) and by the
-  registry. Only npmjs accepts provenance; elsewhere it is
-  `RESOLVER_PRODUCT_UNSUPPORTED`.
+  Signatures are verified by the registry. HoBo's own releases produce the
+  bundle with `signNpmProvenance` from `@hobo/cd/provenance` (keyless
+  Sigstore in the release job; the statement npm's client builds) and record
+  it in the Freight as `<package>@<version>.sigstore`. Only npmjs accepts
+  provenance; elsewhere it is `RESOLVER_PRODUCT_UNSUPPORTED`.
 - **Credentials (I9).** `credentialRef` resolves through the host. In
   `oidc-trusted-publishing` mode it yields the CI's OIDC ID token, exchanged at
   `POST /-/npm/v1/oidc/token/exchange/package/<name>` for a short-lived
-  publish token (unscoped names only; see below). No token reaches an
+  publish token (unscoped names only; see below). In `anonymous` mode no
+  credential is resolved and no `authorization` header is sent: `read`
+  observes a public package, and `reconcile`/`delete` are refused
+  (`RESOLVER_CREDENTIAL_MISSING`) before any request. No token reaches an
   outcome, an error, a record or a log; registry error bodies are never
   quoted.
 - **Auth failures.** `www-authenticate` is parsed as npm-registry-fetch does.
@@ -121,7 +126,9 @@ requests (recorded in the pact metadata):
 
 So OIDC trusted publishing of a scoped name is refused up front
 (`RESOLVER_PRODUCT_UNSUPPORTED`): use token auth for scoped packages until the
-guard can carry an escaped scope separator. A successful unescaped publish or
+guard can carry an escaped scope separator. HoBo's own release does exactly
+that: its `hobo-release/npm-candidate` Camp binds the hobodev token
+(`env://NPM_TOKEN`) for the scoped `@hobo-labs/*` names. A successful unescaped publish or
 dist-tag move has not been captured; the opt-in live write lane
 (`HOBO_NPM_LIVE_PROMOTE_TAG`) moves one real dist-tag on a scoped package to
 close that gap. Verdaccio rewrites `/@scope/name` to the escaped form itself;

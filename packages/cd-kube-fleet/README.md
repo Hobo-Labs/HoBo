@@ -1,7 +1,7 @@
 # `@hobo/cd-kube-fleet`
 
 Kubernetes fleet managers as **transports and inventory** for HoBo Camps,
-never as schedulers (plan 0024, WP25, D26, closes C23). An existing Open
+never as schedulers (ADR-0182: D26, C23). An existing Open
 Cluster Management hub, a Karmada control plane or any SIG-Multicluster
 ClusterProfile inventory can carry HoBo deliveries to Kubernetes Camps. None is
 required, and none ever places, rolls out, overrides or fails over a HoBo

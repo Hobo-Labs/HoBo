@@ -1,6 +1,6 @@
 # `@hobo/cd/boundary` — CDEvents, CloudEvents webhooks, notifications
 
-Owner: WP16 (plan 0024, C6, D17, R8). Export: `@hobo/cd/boundary`.
+Owner: WP16 (ADR-0182: C6, D17). Export: `@hobo/cd/boundary`.
 
 Status leaves HoBo CD as open standards, so no CI, observability vendor or
 chat tool is required to follow a delivery.

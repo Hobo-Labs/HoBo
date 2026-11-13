@@ -17,7 +17,7 @@ CLI: `hobo serve control` (when wired) or programmatic start above.
 
 PACT: `contracts/pacts/control-api.pact.json`
 
-## CD surface under `/v1/cd/` (plan 0024 WP12)
+## CD surface under `/v1/cd/`
 
 Pass `cd` to mount HoBo CD's read API, SSE fact stream and agent delivery
 feed. The mount is typed structurally (`CdHttpMount`: `pathPrefix` plus

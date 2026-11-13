@@ -1,7 +1,7 @@
 # `@hobo/policy/posture`
 
 Observe-phase posture rules, the pure posture evaluator and the OSCAL
-assessment-results export (plan 0024, D25). Dependency-free, like the rest of
+assessment-results export (ADR-0182: D25). Dependency-free, like the rest of
 `@hobo/policy`. `@hobo/cd`'s Station-side posture service is the only caller
 that turns evaluations into journal records; agents never evaluate posture.
 

@@ -1,7 +1,7 @@
 # `@hobo/cd-gitops`
 
 A `PublisherPort` (frozen in `@hobo/cd`) for Camps in **publisher** reconciler
-mode (plan 0024, WP16, D14). It renders a Set as an **Argo CD `Application`**
+mode (ADR-0182: D14). It renders a Set as an **Argo CD `Application`**
 or a **Flux `Kustomization`**, commits it through a Git host's HTTP API
 (**GitHub, GitLab, Gitea/Forgejo, Bitbucket Cloud**), and reports convergence
 only from the engine's own status API.

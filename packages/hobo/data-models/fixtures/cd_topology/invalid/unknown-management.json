@@ -1,0 +1,7 @@
+{
+	"campId": "hobo-ci-runners/box",
+	"yardId": "hobo-ci-runners",
+	"provider": "self-hosted",
+	"envType": "ci",
+	"management": "SOMETIMES"
+}

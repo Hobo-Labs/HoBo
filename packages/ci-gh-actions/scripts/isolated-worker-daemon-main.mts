@@ -18,6 +18,7 @@ import {
 	boxGitMirrorPath,
 	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
+	controllerDigestFromEnv,
 	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
@@ -84,11 +85,13 @@ import {
 	readHostResourcePressureSample,
 	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
+	releaseEntryPath,
 	resolvedStorageReserve,
 	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
+	runningAsControllerRelease,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
@@ -96,6 +99,9 @@ import {
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
+	workerAdmissionPaused,
+	workerHostFiles,
+	writeWorkerMeshAdvert,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -437,6 +443,14 @@ let closeStore: () => Promise<void> = async () => {};
 // The worker's own SQLite journal, when it has one: where its mesh
 // reliability record is kept, and beside which its identity key lives.
 let meshJournal: MeshJournal | undefined;
+// Where this worker meets its host's CD agent (`hobo deploy agent run`): the
+// agent closes admission with a marker file here and reads the advert this
+// worker writes here (src/runner-host-worker-jobs.ts).
+const runnerHostFiles = workerHostFiles(plan.store.path);
+const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
+// The release this worker runs, when its daemon's supervisor started it at
+// one (runner-controller-process.ts): the advert file names it for the agent.
+const controllerDigest = controllerDigestFromEnv(process.env);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -543,8 +557,13 @@ try {
 	const depsRepository =
 		process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 	const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
-	const depsRoot =
-		process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
+	// A release staged by digest has no checkout to find the repository from.
+	const depsRoot = releaseEntryPath({
+		env: process.env,
+		name: "HOBO_CI_DEPS_ROOT",
+		release: runningAsControllerRelease(),
+		fallback: () => defaultDepsRoot(import.meta.url),
+	});
 	if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",
@@ -1058,7 +1077,8 @@ try {
 					persistReliability: (record) => void meshReliability?.save(record),
 					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
 					totalSlots: slots,
-					healthy: () => !meshDraining,
+					// Closed admission is not healthy: others stop deferring to it.
+					healthy: () => !meshDraining && !admissionPausedByAgent(),
 					servesTrunk: trunkSlots > 0,
 					// Memory a new job could have: what the worker's budget has
 					// left, and no more than the host can spare above its reserve.
@@ -1115,6 +1135,16 @@ try {
 	const meshBeat = async () => {
 		await meshTrust.refresh();
 		await mesh?.advertise();
+		if (mesh)
+			await writeWorkerMeshAdvert(
+				runnerHostFiles,
+				mesh.self(),
+				controllerDigest,
+			).catch((error) =>
+				log("hobo_ci_mesh_advert_file_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			);
 		await mesh?.observe();
 	};
 	const meshAdvertTimer = mesh
@@ -1267,7 +1297,12 @@ try {
 		if (!reconciliation.inventoryKnown) return;
 		// Pull workers drain the inbox on a separate timer so admission ticks stay
 		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
-		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
+		// The host's CD agent may have closed admission to swap the controller:
+		// inspect leases, admit nothing new; running jobs are untouched.
+		await runtime.tick({
+			maxDeliveries: poller ? 0 : 10,
+			admit: !admissionPausedByAgent(),
+		});
 		if (heldJobPruner) {
 			const pruned = await heldJobPruner.maybePrune();
 			if (pruned > 0) void runTick().catch(() => undefined);

@@ -380,6 +380,15 @@ For immediate recovery from an unwritable promoted image, stop the daemon, run
 `HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure
 loop. Redeploy the fixed daemon and rebuild the image before re-enabling it.
 
+## Runner hosts as HoBo CD Camps
+
+The runner hosts themselves (this box worker, mesh nodes, local runners) are
+declared in [`runner-fleet/hosts.json`](runner-fleet/hosts.json) and delivered by
+HoBo CD: [`runner-fleet/hobo.delivery.ts`](runner-fleet/hobo.delivery.ts) is the
+delivery module, and [`runner-fleet/hobo-cd-agent.service`](runner-fleet/hobo-cd-agent.service)
+runs `hobo deploy agent run` beside the worker daemon. Enrollment, the rollout
+policy and what is still refused are in [`runner-fleet/README.md`](runner-fleet/README.md).
+
 ## Shared Turbo cache server
 
 `turbo-cache/compose.yml` runs the open-source Turborepo remote cache server

@@ -6,6 +6,22 @@ export {
 	type ProvenanceReasonCode,
 } from "./reasons.js";
 export {
+	GITHUB_ACTIONS_ISSUER,
+	GITHUB_WORKFLOW_BUILD_TYPE,
+	githubActionsBuild,
+	githubWorkflowIdentity,
+	INTOTO_PAYLOAD_TYPE,
+	type NpmProvenance,
+	npmPackagePurl,
+	npmProvenanceStatement,
+	type ProvenanceSigner,
+	ProvenanceSigningError,
+	SLSA_PROVENANCE_V1,
+	signNpmProvenance,
+	sigstoreKeylessSigner,
+	type WorkflowRunBuild,
+} from "./signer.js";
+export {
 	type HoboJwtPolicy,
 	ProvenanceTrustPolicyError,
 	parseTrustPolicy,

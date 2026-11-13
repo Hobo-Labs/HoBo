@@ -274,7 +274,32 @@ Automated, on every deploy: the setting of the production Camp's non-secret
 configuration, the deployment of the pushed commit, the wait for READY, a smoke
 check (a 5xx from `/healthz` fails the job; `/readyz` is reported, and answers
 `config-unavailable` until the folder above is filled), and the attachment of
-the cache. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
+the cache.
+
+**Today the workflow adopts instead** (Vercel's Git integration deploys; no
+deploy token): `hobo ci deploy --adopt` replaces the smoke check with HoBo CD's
+fail-closed verification: preview by the deployment's GitHub record (READY, of
+the commit), production at the relay's production domain (the Yard's
+`productionOrigin`, public under Standard Deployment Protection), whose
+`/healthz` must name the commit and whose `/readyz` must answer 200. So
+production is not qualified until the folder above is filled; until then the
+run fails as `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` (`/readyz` reports
+`state: "not-configured"`), and a store that refuses the relay identity as
+`HOBO_CI_DEPLOY_RELAY_NOT_READY` (`config-service-denied`), each with its
+remediation ([README](README.md#token-free-relay-mode-hobo-ci-deploy---adopt)).
+
+**`hobo ci deploy` delivers through HoBo CD.** Run with a deploy token
+(by hand, see the [README](README.md#deploying-the-relay-with-hobo)), it
+records the commit as Freight, delivers it to preview and verifies it there
+(`/healthz` only: the preview Camp has no config-service binding, so its
+`/readyz` answers 503 `started:false`), then promotes it to production only
+because preview qualified it, sets the production Camp's non-secret
+configuration, waits for READY and verifies `/healthz` and `/readyz` (each must
+answer 200). Production is not deployed until preview qualifies the commit; a
+production deployment that fails verification stays live on Vercel (nothing
+rolls it back) and is not qualified. The workflow does not run it today: it
+holds no Vercel token (secretless first), so Vercel's Git integration deploys
+and the workflow records no relay Freight. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
 and, when `hobo-ci-cache` is missing, connects the team's resource of that name
 for production or provisions one (`vercel integration add upstash/upstash-kv

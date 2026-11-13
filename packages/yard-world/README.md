@@ -39,7 +39,7 @@ service (control-api). The draft remains in place as reference; see its
 - [`src/layout-store.ts`](./src/layout-store.ts) — **node-only** JSON
   persistence for layouts (`YARD_WORLD_HOME`, default `~/.hobo-yard-world/`);
   excluded from `src/index.ts`, import via `@hobo/yard-world/layout-store`.
-- [`src/cd-views.ts`](./src/cd-views.ts) — HoBo CD views (plan 0024 WP19):
+- [`src/cd-views.ts`](./src/cd-views.ts) — HoBo CD views:
   `parseCdSpans` (parse boundary for OTel CI/CD spans), `freightTimeline`,
   `pipelineGraph`, `renderPromotionTrace`, and the fleet views `fleetView`
   (Camps by condition and taint) and `complianceHeatmap` (noncompliance by

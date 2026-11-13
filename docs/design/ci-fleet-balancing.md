@@ -214,6 +214,21 @@ would post for a new offer.
   a rented provider after failed launches or slow pickups.
 - **Live vendor billing.** The models are published list prices read by hand.
   No provider account, invoice or usage API was exercised.
+- **Upgrading the owned hosts through HoBo CD.** The box worker, mesh nodes
+  and local runners are Camps of the `hobo-ci-runner-fleet` Bindle; their
+  Station Rail approves the `self-hosted` provider, their CD agent registers
+  the runner-host realizer, and each agent report carries the host's mesh
+  advert, lease and readiness into Camp inventory, so an unready host is
+  tainted `NO_PLACE` and a fan-out defers it. Balancing reads the mesh board,
+  not that inventory. The agent reads the worker's leases, advert and
+  admission marker from the worker's data directory, a local runner's GitHub
+  presence from the report its controller writes there, and swaps a
+  controller that runs as a process through its daemon's supervisor
+  (single-file releases built by `release:build`, staged by their own
+  digest and paired with the image of the same version in the fleet's
+  Freight). The fleet's promotion does not yet write the Set the agent
+  converges, and the release indexes are not published yet; see
+  [`deploy/runner-fleet/README.md`](../../packages/ci-gh-actions/deploy/runner-fleet/README.md).
 
 `jog` and `boat` are accepted as policy provider kinds and dispatch through the
 existing companion-workflow bridge, with that bridge's limits: trusted private

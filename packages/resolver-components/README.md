@@ -1,7 +1,7 @@
 # `@hobo/resolver-components`
 
 Out-of-tree **`hobo:resolver` WASM components** behind the existing
-`@hobo/core` `ResourceResolver` seam (plan 0024 WP8; D6, I9, C12). Any
+`@hobo/core` `ResourceResolver` seam (ADR-0182: D6, I9, C12). Any
 platform HoBo has no in-tree resolver for is reachable by a signed component,
 with no change to HoBo: the reconciler, the hosting-transition coordinator and
 the resolver registry see an ordinary `ResourceResolver`.

@@ -1,7 +1,7 @@
 # `@hobo/cd/fanout` — fan-out over a placement decision (WP23)
 
 Implements `createFanoutController` (frozen `FanoutController` port) for
-plan 0024 D21 and invariant I20. A placed pipeline node does not list Camps;
+ADR-0182 D21 and invariant I20. A placed pipeline node does not list Camps;
 it names a Placement. The pipeline controller records a
 `PlacementDecisionRecord` and starts a fan-out over it. The fan-out only
 **schedules ordinary per-Camp promotions**. Gate, windows, verification and
