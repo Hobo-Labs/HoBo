@@ -66,9 +66,7 @@ export function unitTestCoverageProblems(): string[] {
 		encoding: "utf8",
 		shell: false,
 		env: sanitizeNodeOptions(),
-		// The --dry=json plan grows with the workspace (it lists every package
-		// task); 64 MiB overflowed once the HoBo.CD packages joined it.
-		maxBuffer: 256 * 1024 * 1024,
+		maxBuffer: 64 * 1024 * 1024,
 	});
 	if (result.status !== 0) {
 		return [`turbo dry run failed: ${result.stderr || result.error?.message}`];
