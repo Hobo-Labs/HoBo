@@ -289,7 +289,7 @@ function overlayFor(provider: string): OverlayNetwork | undefined {
 }
 
 /** A `FleetBus` that is the agent's live connection whenever one exists (for the oci-command source). */
-function liveBus(current: () => FleetBus | undefined): FleetBus {
+export function liveBus(current: () => FleetBus | undefined): FleetBus {
 	const bus = () => {
 		const connected = current();
 		if (connected === undefined)
