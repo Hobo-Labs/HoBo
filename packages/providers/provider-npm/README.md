@@ -1,6 +1,6 @@
 # @hobo/provider-npm
 
-The npm realizer for HoBo.CD ([plan 0024](../../../docs/plans/0024-hobo-cd-swarm-instruction.md)):
+The npm realizer for HoBo.CD (plan 0024):
 it realizes one **published package version** on an npm-compatible registry —
 `registry.npmjs.org`, GitHub Packages (`npm.pkg.github.com`) or a Verdaccio
 origin — from a Freight tarball, through the existing `ResourceResolver` port

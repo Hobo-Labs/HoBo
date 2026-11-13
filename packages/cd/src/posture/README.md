@@ -1,6 +1,6 @@
 # `@hobo/cd/posture` — policy delivery and posture
 
-Work package WP24 of [plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md)
+Work package WP24
 (C21, C22, D24, D25, I22, I23). Policy is delivered like software: a Rail
 version is Freight (subject `RAIL`), shadowed in `INFORM` and then enforced
 through the same pipelines, windows, fan-out and rollback as workloads.
