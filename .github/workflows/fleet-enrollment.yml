@@ -15,7 +15,6 @@ permissions:
   contents: read
 
 env:
-  NODE_OPTIONS: --max-old-space-size=3072
   HOBO_TURBO_CONCURRENCY: "1"
 
 concurrency:
