@@ -1,0 +1,1774 @@
+{
+	"consumer": {
+		"name": "@hobo/fleet/client"
+	},
+	"provider": {
+		"name": "@hobo/fleet-authority HTTP API"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "Written by packages/fleet/test/client/client.pact.test.ts (L07). Bodies are protobuf JSON of the records of design §7.1; errors are FleetError with the §7.6 status. `auth` names what the request carries: none; a bare DPoP proof (`DPoP` header); or `Authorization: DPoP <token>` plus a proof whose `ath` hashes it. Header values and record contents are examples: the provider matches them by type (matchingRules), not by value."
+	},
+	"interactions": [
+		{
+			"description": "the authority's discovery document",
+			"providerState": "an authority is running",
+			"request": {
+				"method": "GET",
+				"path": "/.well-known/hobo-fleet",
+				"headers": {
+					"Accept": "application/json"
+				},
+				"matchingRules": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"issuer": "https://authority.fleet.test",
+					"jwksUri": "https://authority.fleet.test/v1/fleet/jwks",
+					"signInProviders": [
+						"github",
+						"oidc"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "a tenant's discovery: bus, relays and the trust record",
+			"providerState": "tenant test exists",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/tenants/test/discovery",
+				"headers": {
+					"Accept": "application/json"
+				},
+				"matchingRules": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"tenant": "test",
+					"issuer": "https://authority.fleet.test",
+					"natsUrls": [
+						"tls://nats.fleet.test:4222"
+					],
+					"relayUrls": [
+						"https://relay.fleet.test"
+					],
+					"minAgentVersion": "1.0.0"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "the authority's token signing keys",
+			"providerState": "an authority is running",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/jwks",
+				"headers": {
+					"Accept": "application/json"
+				},
+				"matchingRules": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"keys": [
+						{
+							"kty": "EC",
+							"crv": "P-256",
+							"x": "AA",
+							"y": "AA",
+							"kid": "k1"
+						}
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "start a browser sign-in",
+			"providerState": "sign-in provider github is configured",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/signin/start",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"provider": "github",
+					"tenant": "test",
+					"redirectUri": "http://127.0.0.1:53682/callback",
+					"codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+					"dpopThumbprint": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs",
+					"hostName": "laptop"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"state": "st_1",
+					"authorizeUrl": "https://github.com/login/oauth/authorize?state=st_1",
+					"expiresAt": "2026-11-13T12:10:00.000Z"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "exchange the one-time authority code for a person token",
+			"providerState": "sign-in st_1 was approved",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/signin/complete",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>"
+				},
+				"body": {
+					"state": "st_1",
+					"code": "ac_1",
+					"codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"token": "eyJhbGciOiJFUzI1NiJ9.person.token",
+					"expiresAt": "2026-11-13T12:15:00.000Z",
+					"refreshUntil": "2026-11-14T00:00:00.000Z",
+					"principal": "user:alice",
+					"tenant": "test",
+					"tags": [
+						"fleet-admin"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "poll a device-code sign-in the person has not confirmed",
+			"providerState": "device sign-in st_2 is pending",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/signin/device/poll",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>"
+				},
+				"body": {
+					"state": "st_2"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					}
+				}
+			},
+			"response": {
+				"status": 428,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"code": "sign-in-pending",
+					"message": "the person has not confirmed yet"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "refresh a person token",
+			"providerState": "a person token for user:alice is valid",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/signin/refresh",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"token": "eyJhbGciOiJFUzI1NiJ9.person.token",
+					"expiresAt": "2026-11-13T12:15:00.000Z",
+					"refreshUntil": "2026-11-14T00:00:00.000Z",
+					"principal": "user:alice",
+					"tenant": "test",
+					"tags": [
+						"fleet-admin"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "issue a bootstrap token",
+			"providerState": "fleet hobo exists and user:alice may invite",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/tokens",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"fleet": "hobo",
+					"name": "laptop",
+					"displayName": "Alice's laptop",
+					"deviceClass": "DEVICE_CLASS_PERSONAL",
+					"roles": [
+						"ROLE_EXECUTOR"
+					],
+					"ttlSeconds": 900
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"token": "hft_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+					"tokenHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"expiresAt": "2026-11-13T12:15:00.000Z"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "list bootstrap tokens",
+			"providerState": "one bootstrap token is outstanding",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/tokens",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"tokens": [
+						{
+							"tokenHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+							"fleet": "hobo",
+							"name": "laptop"
+						}
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "revoke a bootstrap token",
+			"providerState": "one bootstrap token is outstanding",
+			"request": {
+				"method": "DELETE",
+				"path": "/v1/fleet/tokens/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "enroll a device with a bootstrap token",
+			"providerState": "a bootstrap token for fleet hobo, name laptop, is outstanding",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>"
+				},
+				"body": {
+					"tenant": "test",
+					"fleet": "hobo",
+					"name": "laptop",
+					"identityJwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"AA\",\"y\":\"AA\"}",
+					"keyBundle": {
+						"context": "hobo-fleet/key-bundle/v1",
+						"keyId": "dev_0123456789abcdef0123456789abcdef#identity",
+						"algorithm": "KEY_ALGORITHM_ES256",
+						"payload": "AQ==",
+						"signature": "Ag=="
+					},
+					"platform": {
+						"os": "linux",
+						"arch": "x64"
+					},
+					"agentVersion": "1.0.0",
+					"deviceClass": "DEVICE_CLASS_PERSONAL",
+					"requestedRoles": [
+						"ROLE_EXECUTOR"
+					],
+					"bootstrapToken": "hft_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"memberRecord": {
+						"context": "hobo-fleet/member-record/v1",
+						"keyId": "authority#1",
+						"algorithm": "KEY_ALGORITHM_EDDSA",
+						"payload": "CgM=",
+						"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+					},
+					"overlayJoins": [
+						{
+							"provider": "tailscale",
+							"credential": "tskey-x",
+							"expiresAt": "2026-11-13T12:10:00.000Z"
+						}
+					],
+					"discovery": {
+						"tenant": "test",
+						"issuer": "https://authority.fleet.test"
+					}
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "declare a sponsored backend",
+			"providerState": "fleet hobo exists and user:alice may declare",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members:declare",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"tenant": "test",
+					"fleet": "hobo",
+					"kind": "MEMBER_KIND_BACKEND",
+					"name": "cache-a",
+					"credentialRef": "secret://hobo/cache-a",
+					"endpointDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"memberRecord": {
+						"context": "hobo-fleet/member-record/v1",
+						"keyId": "authority#1",
+						"algorithm": "KEY_ALGORITHM_EDDSA",
+						"payload": "CgM=",
+						"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+					},
+					"overlayJoins": [
+						{
+							"provider": "tailscale",
+							"credential": "tskey-x",
+							"expiresAt": "2026-11-13T12:10:00.000Z"
+						}
+					],
+					"discovery": {
+						"tenant": "test",
+						"issuer": "https://authority.fleet.test"
+					}
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "approve-key a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may approve-key",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/approve-key",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "accept a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may accept",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/accept",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "reject a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may reject",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/reject",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "suspend a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may suspend",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/suspend",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "resume a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may resume",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/resume",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "unlock a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may unlock",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/unlock",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "revoke a member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists and user:alice may revoke",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/revoke",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"reason": "checked by a person",
+					"fleets": [
+						"hobo"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "add a membership in another fleet",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef is ACTIVE and fleet hobo-trunk exists",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/memberships",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"fleet": "hobo-trunk",
+					"name": "laptop",
+					"roles": [
+						"ROLE_EXECUTOR"
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "refresh a device's credentials",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef is ACTIVE at generation 3",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/credentials",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>"
+				},
+				"body": {
+					"generation": 3,
+					"refreshNonce": "BwcHBwcHBwcHBwcHBwcHBw==",
+					"agentVersion": "1.0.0"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"svid": "eyJ.svid.token",
+					"svidExpiresAt": "2026-11-13T12:15:00.000Z",
+					"sessionTicket": {
+						"context": "hobo-fleet/session-ticket/v1",
+						"keyId": "authority#1",
+						"algorithm": "KEY_ALGORITHM_EDDSA",
+						"payload": "CgE=",
+						"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+					},
+					"generation": 4
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "refresh at a generation the authority did not answer",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef is ACTIVE at generation 5",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/credentials",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>"
+				},
+				"body": {
+					"generation": 3,
+					"refreshNonce": "BwcHBwcHBwcHBwcHBwcHBw==",
+					"agentVersion": "1.0.0"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					}
+				}
+			},
+			"response": {
+				"status": 423,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"code": "generation-mismatch",
+					"message": "the device is locked",
+					"detail": {
+						"generation": "5"
+					}
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "replace a device's key bundle",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef is ACTIVE",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/keys",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"keyBundle": {
+						"context": "hobo-fleet/key-bundle/v1",
+						"keyId": "dev_0123456789abcdef0123456789abcdef#identity",
+						"algorithm": "KEY_ALGORITHM_ES256",
+						"payload": "AQ==",
+						"signature": "Ag=="
+					}
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "a device leaves",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef is ACTIVE",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef/leave",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "list the members of one fleet",
+			"providerState": "fleet hobo has members",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/members",
+				"query": "fleet=hobo",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"members": [
+						{
+							"context": "hobo-fleet/member-record/v1",
+							"keyId": "authority#1"
+						}
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read one member",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef exists",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/members/dev_0123456789abcdef0123456789abcdef",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "list fleets",
+			"providerState": "fleet hobo exists",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/fleets",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"fleets": [
+						{
+							"context": "hobo-fleet/fleet-record/v1"
+						}
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read one fleet",
+			"providerState": "fleet hobo exists",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/fleets/hobo",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/fleet-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "define a fleet's policy",
+			"providerState": "user:alice may define fleets",
+			"request": {
+				"method": "PUT",
+				"path": "/v1/fleet/fleets/hobo",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"fleetId": "hobo",
+					"tenant": "test",
+					"owner": "user:alice",
+					"policy": {
+						"sessionPurposes": [
+							"SESSION_PURPOSE_SHELL"
+						],
+						"keyBundleHours": 24
+					}
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/fleet-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read a fleet's signed view",
+			"providerState": "fleet hobo has a view",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/fleets/hobo/view",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/fleet-view/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read a fleet's verdict for a runner label",
+			"providerState": "fleet hobo has one live executor with a free slot",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/fleets/hobo/verdict",
+				"query": "label=hobo",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"fleet": "hobo",
+					"label": "hobo",
+					"state": "VERDICT_STATE_OPEN",
+					"members": 1,
+					"freeSlots": 1
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "grant a shell session into an order's sandbox",
+			"providerState": "member dev_0123456789abcdef0123456789abcdef runs order 00000000000000000000000000000000 in fleet hobo",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/sessions",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"peer": "dev_0123456789abcdef0123456789abcdef",
+					"purpose": "SESSION_PURPOSE_SHELL",
+					"orderId": "00000000000000000000000000000000",
+					"initiator": {
+						"principal": "user:alice",
+						"transportIdentity": "relay:AAAA",
+						"sealPublicKey": "AAAA"
+					},
+					"ttlSeconds": 600
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/session-grant/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "submit oci-command work",
+			"providerState": "fleet hobo allows oci-command and user:alice may submit",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/work",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {
+					"fleet": "hobo",
+					"image": "docker.io/library/alpine",
+					"imageDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					"argv": [
+						"echo",
+						"hi"
+					],
+					"ttlSeconds": 600
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"submissionId": "sub_1"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read submitted work's status",
+			"providerState": "submission sub_1 exists",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/work/sub_1",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"submissionId": "sub_1"
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read submitted work's logs",
+			"providerState": "submission sub_1 has logged",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/work/sub_1/logs",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "a dispatcher reports a violation",
+			"providerState": "a dispatcher of fleet hobo holds an early claim of dev_0123456789abcdef0123456789abcdef",
+			"request": {
+				"method": "POST",
+				"path": "/v1/fleet/reports",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"body": {},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					},
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"context": "hobo-fleet/member-record/v1",
+					"keyId": "authority#1",
+					"algorithm": "KEY_ALGORITHM_EDDSA",
+					"payload": "CgNkZXY=",
+					"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read audit checkpoints from a sequence",
+			"providerState": "the audit chain has checkpoints",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/audit/checkpoints",
+				"query": "from=1",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		},
+		{
+			"description": "read audit entries in a range",
+			"providerState": "the audit chain has entries 1 to 10",
+			"request": {
+				"method": "GET",
+				"path": "/v1/fleet/audit/entries",
+				"query": "from=1&to=10",
+				"headers": {
+					"Accept": "application/json",
+					"DPoP": "<compact JWS, typ dpop+jwt>",
+					"Authorization": "DPoP <token>"
+				},
+				"matchingRules": {
+					"$.headers.DPoP": {
+						"match": "regex",
+						"regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+					},
+					"$.headers.Authorization": {
+						"match": "regex",
+						"regex": "^DPoP .+$"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"entries": [
+						{
+							"sequence": 1,
+							"eventType": "fleet.MemberActivated"
+						}
+					]
+				},
+				"matchingRules": {
+					"$.body": {
+						"match": "type"
+					}
+				}
+			}
+		}
+	]
+}
