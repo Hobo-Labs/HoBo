@@ -1214,6 +1214,7 @@ export type DeviceKeys = Readonly<{
     identityJwk: string;
     identity: Signer;
     sign: Signer;
+    signPublicKey: string;
     sealPublicKey: string;
     openSealed(box: SealedBox, context: string, associatedData: Uint8Array): Promise<Uint8Array>;
     agree(peerSealPublicKey: string): Promise<Uint8Array>;

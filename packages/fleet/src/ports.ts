@@ -146,6 +146,8 @@ export type DeviceKeys = Readonly<{
 	identityJwk: string;
 	identity: Signer;
 	sign: Signer;
+	/** The SIGN key's public half: raw Ed25519, base64url, no padding. A device builds its key bundle from it. */
+	signPublicKey: string;
 	sealPublicKey: string;
 	openSealed(
 		box: SealedBox,

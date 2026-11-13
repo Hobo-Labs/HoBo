@@ -9,6 +9,7 @@ import { parseKeyId } from "../../../src/ids.js";
 import type { AgentState, DeviceKeys, KeyStore } from "../../../src/ports.js";
 import {
 	createSuiteKey,
+	ed25519RawOf,
 	createSuiteSealKey,
 	randomMemberId,
 } from "../../../src/testing/conformance/crypto.js";
@@ -59,6 +60,7 @@ function storeWith(faults: Faults): KeyStoreMake {
 						? { ...base.identity, sign: signing.signer.sign }
 						: base.identity,
 				sign: signing.signer,
+				signPublicKey: ed25519RawOf(signing.publicJwk),
 				sealPublicKey: seal.publicKey,
 				openSealed:
 					faults.openSealedFails === true

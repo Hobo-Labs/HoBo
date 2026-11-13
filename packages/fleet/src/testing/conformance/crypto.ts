@@ -214,6 +214,13 @@ export function createSuiteSealKey(): SuiteSealKey {
 	};
 }
 
+/** The raw Ed25519 public key (base64url) of a public JWK made by `createSuiteKey`. */
+export function ed25519RawOf(publicJwk: string): string {
+	const parsed: { x?: string } = JSON.parse(publicJwk);
+	if (parsed.x === undefined) throw new Error("not an OKP public JWK");
+	return parsed.x;
+}
+
 /** Device keys made in memory for a transport under test: Ed25519 identity and SIGN keys, an X25519 SEAL key. */
 export function createSuiteDeviceKeys(): DeviceKeys {
 	const memberId = randomMemberId();
@@ -225,6 +232,7 @@ export function createSuiteDeviceKeys(): DeviceKeys {
 		identityJwk: identity.publicJwk,
 		identity: identity.signer,
 		sign: signing.signer,
+		signPublicKey: ed25519RawOf(signing.publicJwk),
 		sealPublicKey: seal.publicKey,
 		openSealed: seal.openSealed,
 		agree: seal.agree,

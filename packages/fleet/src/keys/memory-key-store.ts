@@ -78,6 +78,7 @@ function deviceKeysOf(
 		identityJwk: identityJwkText,
 		identity: memorySigner(parseKeyId(`${memberId}#identity`), identity),
 		sign: memorySigner(parseKeyId(`${memberId}#sign`), sign.privateKey),
+		signPublicKey: rawValueOfJwk(sign.publicJwk),
 		sealPublicKey,
 		async openSealed(
 			box: SealedBox,
