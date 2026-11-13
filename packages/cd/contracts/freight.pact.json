@@ -1,0 +1,299 @@
+{
+  "consumer": {
+    "name": "HoboCdFreightLedger"
+  },
+  "provider": {
+    "name": "HoboFreightManifestPublisher"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "evidence": "Hand-authored synchronous-message contract for the hobo.freight-manifest/v1 boundary: any build writes the document with writeFreightManifest and the ledger parses it. Verified by contracts/freight.consumer.test.ts against the real parser and ledger."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "record a hobo.freight-manifest/v1 document whose digests verify",
+      "providerStates": [
+        {
+          "name": "every artifact coordinate holds bytes with the declared digest"
+        }
+      ],
+      "request": {
+        "contents": {
+          "operation": "record",
+          "origin": "FREIGHT_ORIGIN_MANIFEST",
+          "principal": "user:ops@acme",
+          "at": "2026-11-12T12:00:00.000Z",
+          "manifest": {
+            "artifacts": [
+              {
+                "coordinate": "store://api",
+                "digest": "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                "ecosystem": "store",
+                "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                "mediaType": "application/wasm",
+                "name": "api",
+                "sizeBytes": "1024"
+              },
+              {
+                "coordinate": "store://web",
+                "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+                "ecosystem": "store",
+                "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                "mediaType": "application/wasm",
+                "name": "web",
+                "sizeBytes": "1024"
+              }
+            ],
+            "bindle": "shop",
+            "declarationHash": "sha256:e77d7f3dc257d83b08015aa3dfff96a3539291d11e63129fc16a4d0669c33fca",
+            "labels": {
+              "team": "storefront"
+            },
+            "provenance": [
+              {
+                "builderId": "https://ci.example.com/builders/default",
+                "predicateType": "https://slsa.dev/provenance/v1",
+                "statementDigest": "sha256:b111c6e1d318f203063e5c16bab43c108326af0aa2f7b65760c95547a43dbe52",
+                "subjectDigests": [
+                  "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                  "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+                ],
+                "verified": true,
+                "verifier": "sigstore"
+              }
+            ],
+            "schemaVersion": "hobo.freight-manifest/v1",
+            "source": {
+              "builderId": "https://ci.example.com/builders/default",
+              "ciRunId": "run-42",
+              "ciSystem": "any-ci",
+              "commit": "4f2a9c1e0b7d3a5f6e8c9d0a1b2c3d4e5f6a7b8c",
+              "ref": "refs/heads/main",
+              "repository": "https://git.example.com/acme/shop"
+            },
+            "subject": "FREIGHT_SUBJECT_BINDLE"
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "schemaVersion": "hobo.cd.freight/v1",
+            "freightId": "sha256:ae0f98fdeeb128cba56de1013e09f0ee0f0e1939c05ab04da41293807b9c5a69",
+            "alias": "juicy-geyser",
+            "manifest": {
+              "schemaVersion": "hobo.freight-manifest/v1",
+              "bindle": "shop",
+              "declarationHash": "sha256:e77d7f3dc257d83b08015aa3dfff96a3539291d11e63129fc16a4d0669c33fca",
+              "artifacts": [
+                {
+                  "name": "api",
+                  "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                  "digest": "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                  "coordinate": "store://api",
+                  "sizeBytes": "1024",
+                  "mediaType": "application/wasm",
+                  "ecosystem": "store"
+                },
+                {
+                  "name": "web",
+                  "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                  "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+                  "coordinate": "store://web",
+                  "sizeBytes": "1024",
+                  "mediaType": "application/wasm",
+                  "ecosystem": "store"
+                }
+              ],
+              "source": {
+                "repository": "https://git.example.com/acme/shop",
+                "commit": "4f2a9c1e0b7d3a5f6e8c9d0a1b2c3d4e5f6a7b8c",
+                "ref": "refs/heads/main",
+                "ciRunId": "run-42",
+                "ciSystem": "any-ci",
+                "builderId": "https://ci.example.com/builders/default"
+              },
+              "provenance": [
+                {
+                  "statementDigest": "sha256:b111c6e1d318f203063e5c16bab43c108326af0aa2f7b65760c95547a43dbe52",
+                  "predicateType": "https://slsa.dev/provenance/v1",
+                  "builderId": "https://ci.example.com/builders/default",
+                  "verified": true,
+                  "verifier": "sigstore",
+                  "subjectDigests": [
+                    "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                    "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+                  ]
+                }
+              ],
+              "labels": {
+                "team": "storefront"
+              },
+              "subject": "FREIGHT_SUBJECT_BINDLE"
+            },
+            "origin": "FREIGHT_ORIGIN_MANIFEST",
+            "recordedBy": "user:ops@acme",
+            "recordedAt": "2026-11-12T12:00:00.000Z"
+          },
+          "contentType": "application/json"
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "refuse a manifest whose artifact digest does not match the bytes at its coordinate",
+      "providerStates": [
+        {
+          "name": "store://api holds different bytes"
+        }
+      ],
+      "request": {
+        "contents": {
+          "operation": "record",
+          "origin": "FREIGHT_ORIGIN_MANIFEST",
+          "principal": "user:ops@acme",
+          "at": "2026-11-12T12:00:00.000Z",
+          "manifest": {
+            "artifacts": [
+              {
+                "coordinate": "store://api",
+                "digest": "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                "ecosystem": "store",
+                "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                "mediaType": "application/wasm",
+                "name": "api",
+                "sizeBytes": "1024"
+              },
+              {
+                "coordinate": "store://web",
+                "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+                "ecosystem": "store",
+                "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                "mediaType": "application/wasm",
+                "name": "web",
+                "sizeBytes": "1024"
+              }
+            ],
+            "bindle": "shop",
+            "declarationHash": "sha256:e77d7f3dc257d83b08015aa3dfff96a3539291d11e63129fc16a4d0669c33fca",
+            "labels": {
+              "team": "storefront"
+            },
+            "provenance": [
+              {
+                "builderId": "https://ci.example.com/builders/default",
+                "predicateType": "https://slsa.dev/provenance/v1",
+                "statementDigest": "sha256:b111c6e1d318f203063e5c16bab43c108326af0aa2f7b65760c95547a43dbe52",
+                "subjectDigests": [
+                  "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                  "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+                ],
+                "verified": true,
+                "verifier": "sigstore"
+              }
+            ],
+            "schemaVersion": "hobo.freight-manifest/v1",
+            "source": {
+              "builderId": "https://ci.example.com/builders/default",
+              "ciRunId": "run-42",
+              "ciSystem": "any-ci",
+              "commit": "4f2a9c1e0b7d3a5f6e8c9d0a1b2c3d4e5f6a7b8c",
+              "ref": "refs/heads/main",
+              "repository": "https://git.example.com/acme/shop"
+            },
+            "subject": "FREIGHT_SUBJECT_BINDLE"
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "ok": false,
+            "codes": [
+              "freight-artifacts-unverified",
+              "artifact-digest-mismatch"
+            ]
+          },
+          "contentType": "application/json"
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "refuse a manifest with an unknown field instead of dropping it",
+      "request": {
+        "contents": {
+          "operation": "parse",
+          "manifest": {
+            "artifacts": [
+              {
+                "coordinate": "store://api",
+                "digest": "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                "ecosystem": "store",
+                "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                "mediaType": "application/wasm",
+                "name": "api",
+                "sizeBytes": "1024"
+              },
+              {
+                "coordinate": "store://web",
+                "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+                "ecosystem": "store",
+                "kind": "ARTIFACT_KIND_WASM_COMPONENT",
+                "mediaType": "application/wasm",
+                "name": "web",
+                "sizeBytes": "1024"
+              }
+            ],
+            "bindle": "shop",
+            "declarationHash": "sha256:e77d7f3dc257d83b08015aa3dfff96a3539291d11e63129fc16a4d0669c33fca",
+            "labels": {
+              "team": "storefront"
+            },
+            "provenance": [
+              {
+                "builderId": "https://ci.example.com/builders/default",
+                "predicateType": "https://slsa.dev/provenance/v1",
+                "statementDigest": "sha256:b111c6e1d318f203063e5c16bab43c108326af0aa2f7b65760c95547a43dbe52",
+                "subjectDigests": [
+                  "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479",
+                  "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+                ],
+                "verified": true,
+                "verifier": "sigstore"
+              }
+            ],
+            "schemaVersion": "hobo.freight-manifest/v1",
+            "source": {
+              "builderId": "https://ci.example.com/builders/default",
+              "ciRunId": "run-42",
+              "ciSystem": "any-ci",
+              "commit": "4f2a9c1e0b7d3a5f6e8c9d0a1b2c3d4e5f6a7b8c",
+              "ref": "refs/heads/main",
+              "repository": "https://git.example.com/acme/shop"
+            },
+            "subject": "FREIGHT_SUBJECT_BINDLE",
+            "deployNow": true
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "ok": false,
+            "codes": [
+              "freight-manifest-invalid"
+            ]
+          },
+          "contentType": "application/json"
+        }
+      ]
+    }
+  ]
+}
