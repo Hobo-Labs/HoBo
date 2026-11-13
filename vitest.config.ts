@@ -48,6 +48,9 @@ export default defineConfig({
     //  - `dist/` is build output. Every compiled `*.test.js` there is a second,
     //    staler copy of a source test that already runs, so collecting it doubles
     //    the suite and reports failures against code nobody edited.
+    //  - `.claude/worktrees/` holds agent worktrees: full, often stale checkouts
+    //    of this repository whose tests are copies of the ones here. Collecting
+    //    them runs every test once per worktree, against code nobody edited.
     //  - Playwright specs drive a real browser through `@playwright/test`, whose
     //    `test.describe` has no meaning under vitest. They run from their own
     //    Playwright configuration.
@@ -61,6 +64,7 @@ export default defineConfig({
       "**/node_modules/**",
       "external/**",
       "**/dist/**",
+      ".claude/worktrees/**",
       "**/e2e/**",
       "**/*.spec.ts",
     ],
